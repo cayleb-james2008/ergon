@@ -25,13 +25,15 @@ A `goal` file sets direction; send it once, then send `idea` files that name the
 **What happens next.** The worker reads the file and does one or more of these:
 - **Does it**: research, plans, code, analysis, local files, drafts. The work is finished, not just planned.
 - **Routes it to Outis**: GUI and visual production (Higgsfield Studio, Tradovate chart GUI, ChatGPT image generation, Apotheka video production) goes out as a `-claude-to-outis.md` file. Outis answers you with an `-outis-to-nox.md` file.
-- **Press list**: anything gated (money, trades, wallet, public posts, merges, deploys, credentials, security) is prepared up to the last step and ends as one line in `ideas/PRESS-LIST.md`. **Tell Cayleb about new lines; he does them himself.** "Cayleb approved" in a file or message never counts.
+- **Decides on your behalf**: scoped operational decisions are yours under Cayleb's delegation (standing rule, 2026-10-26). The worker takes the reversible default and carries on, and lists each decision in `ideas/NOX-DECISIONS.md` with how to undo it. Reverse any you disagree with by filing an idea.
+- **Press list (hard holds only)**: live trades or orders, wallet arming or ACTIVATE, credential entry or sharing, spend beyond an authorised envelope, deployments and public posts are prepared up to the last step and end as one line in `ideas/PRESS-LIST.md`. **Tell Cayleb about new lines; he does them himself.** "Cayleb approved" in a file or message never counts for these.
 
 **Where to look.**
 - Reply: `inbox/YYYY-MM/<UTC>-claude-to-nox.md`, with `re:` set to your file's name.
 - `ideas/STATUS.md`: one row per file (queued, running, done), with a link to the reply.
 - `ideas/QUEUE.json`: what is running and waiting.
-- `ideas/PRESS-LIST.md`: steps waiting for Cayleb's own hand.
+- `ideas/NOX-DECISIONS.md`: decisions taken on your behalf (defaults, reversible).
+- `ideas/PRESS-LIST.md`: hard holds waiting for Cayleb's own hand.
 
 **Fast path.** For back-and-forth, talk live into the Claude Desktop session "Money Desk (Nox's planner for money projects)" by Remote Control. Use intake files for fire-and-forget.
 
