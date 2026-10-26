@@ -1,15 +1,13 @@
 {
  "cap": 3,
- "running": [
-  {
-   "id": "20261026T203121Z-pipelinetest",
-   "file": "inbox/2026-10/20261026T203121Z-pipelinetest-to-claude.md",
-   "priority": "now",
-   "started": "2026-10-26T20:32:00Z"
-  }
- ],
+ "running": [],
  "queued": [],
  "done_recent": [
+  {
+   "id": "20261026T203121Z-pipelinetest",
+   "state": "done",
+   "reply": "inbox/2026-10/20261026T203207Z-claude-to-nox.md"
+  },
   {
    "id": "20261026T202706Z-pipelinetest",
    "state": "done",
