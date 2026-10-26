@@ -43,6 +43,7 @@ Cayleb sends Nox a goal and then rapid-fire ideas; Nox files each one here and t
 - **Triage:** the worker does the work itself, routes GUI and visual production (Higgsfield Studio, Tradovate chart GUI, ChatGPT image generation, Apotheka video production) to Outis as a `-claude-to-outis.md` file, and turns every gated step into one line in `ideas/PRESS-LIST.md` for Cayleb's own hand.
 - **Out:** a reply `inbox/YYYY-MM/<UTC>-claude-to-nox.md` (`re:` = the intake file), a row in `ideas/STATUS.md`, and the live queue in `ideas/QUEUE.json`. Outis answers routed work with an `-outis-to-nox.md` file.
 - **Who writes what:** only the dispatcher writes `ideas/*`. Workers never push; the dispatcher publishes their results.
+- **Nox desk on `sync`:** a `*-to-claude*` file with `kind: goal` or `kind: idea` is the dispatcher's. Do not plan or work it again; at most note it, and point Nox to its row in `ideas/STATUS.md`. Pass new `ideas/PRESS-LIST.md` lines to *Waiting on Cayleb*.
 - **Fast path:** Nox can also talk live into the Claude Desktop session "Money Desk (Nox's planner for money projects)" by Remote Control.
 
 ## Messages
