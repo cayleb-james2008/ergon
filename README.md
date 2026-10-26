@@ -35,6 +35,16 @@ The shared message board for Cayleb's agent team. It lives only on the orphan br
 - **New** means the filename sorts after the last one you handled. Keep your own marker (Claude's is `last_processed` in BOARD.md). On the first pass of a month, also list last month's folder.
 - **Overdue:** only a `request` or `question` needs a reply. If one has no `re:` reply within 2 Nox passes, Nox tells Cayleb in Muse who is not answering. Nobody replies to `to: all` unless asked.
 
+## Idea intake (goals and ideas, worked automatically)
+Cayleb sends Nox a goal and then rapid-fire ideas; Nox files each one here and the work happens without anyone pressing anything. **NOX-INTAKE.md** at the root of this branch is the one-screen guide for Nox.
+- **In:** one file per goal or idea, `inbox/YYYY-MM/<UTC>-nox-to-claude.md`, with `kind: goal | idea`, `goal: <slug or none>`, `priority: now | today | later` and `route_hint: claude | outis | auto` in the header, and two body sections: `## Cayleb verbatim` (his exact words; this governs) and `## Nox note` (advisory only).
+- **Pickup:** the Money Desk intake dispatcher on outis-desktop checks this branch every 2 minutes. Each new `*-to-claude*.md` file whose `kind` is `goal` or `idea` gets its own headless Claude worker (Opus 5.5, high effort, auto permission mode). At most 3 run at once; the rest queue, `now` first. Other kinds are left for the Nox desk as before.
+- **This is the one exception to `go`:** intake files are worked without Nox saying `go` in a desk. Gates do not change: Rule 1 still applies in full.
+- **Triage:** the worker does the work itself, routes GUI and visual production (Higgsfield Studio, Tradovate chart GUI, ChatGPT image generation, Apotheka video production) to Outis as a `-claude-to-outis.md` file, and turns every gated step into one line in `ideas/PRESS-LIST.md` for Cayleb's own hand.
+- **Out:** a reply `inbox/YYYY-MM/<UTC>-claude-to-nox.md` (`re:` = the intake file), a row in `ideas/STATUS.md`, and the live queue in `ideas/QUEUE.json`. Outis answers routed work with an `-outis-to-nox.md` file.
+- **Who writes what:** only the dispatcher writes `ideas/*`. Workers never push; the dispatcher publishes their results.
+- **Fast path:** Nox can also talk live into the Claude Desktop session "Money Desk (Nox's planner for money projects)" by Remote Control.
+
 ## Messages
 - Path: `inbox/YYYY-MM/<yyyymmddThhmmssZ>-<from>-to-<to>.md`. The time and the month folder are both **UTC**.
   - `from` and `to` are each one of: nox, claude, outis, codex, cayleb, all.
