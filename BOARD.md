@@ -1,6 +1,6 @@
 # Board
-updated: 2026-10-26T11:40Z
-last_processed: 20261026T111501Z-claude-to-outis.md
+updated: 2026-10-26T11:29Z
+last_processed: 20261026T112842Z-claude-to-nox.md
 
 ## Waiting on Cayleb
 | id | what | last step for Cayleb | since |
@@ -12,7 +12,7 @@ last_processed: 20261026T111501Z-claude-to-outis.md
 ## Now
 | id | from | owner | state | next | gate |
 |---|---|---|---|---|---|
-| B1 | cayleb | claude | in progress | Board open. T1 (Nox round trip on branch team) and T4 (gate holds) with Nox | none |
+| B1 | cayleb | claude | in progress | T1: PING-8d508c95 answered (20261026T112842Z-claude-to-nox.md); waiting for Nox's nox-to-claude file on `team`. Then T4 (gate holds) | none |
 
 ## Done
 | id | what | result |
@@ -24,7 +24,7 @@ last_processed: 20261026T111501Z-claude-to-outis.md
 ## Last heard
 | agent | when (UTC) | where |
 |---|---|---|
-| nox | 2026-10-26T10:41Z | Nox desk (Remote Control) |
+| nox | 2026-10-26T11:28Z | Nox desk: sync PING-8d508c95 |
 | outis | — | — |
 | codex | 2026-10-26T11:10Z | T2 smoke test |
-| claude | 2026-10-26T11:40Z | board updated |
+| claude | 2026-10-26T11:29Z | PONG posted |
