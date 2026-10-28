@@ -1,5 +1,5 @@
 {
- "generated_at": "2026-10-28T19:52:51Z",
+ "generated_at": "2026-10-28T19:55:54Z",
  "policy_version": 4.0,
  "lanes": {
   "moneydesk": {
@@ -17,8 +17,8 @@
    "meanwhile_path": null
   },
   "consolidation": {
-   "state": "IDLE",
-   "since": "2026-10-28T19:51:36Z",
+   "state": "WORKING",
+   "since": "2026-10-28T19:52:56Z",
    "flags": [],
    "doing": "street-unblock: 13469 clear (broker 2024960 killed 10:47 per Nox), fresh Street Studio up; run #1 GUARD_STOP at list_studio (Studio name null, nothing dispatched, no latch); retry needs host load <=8 ",
    "waiting_on": "host load to drop <=8 for the Street retry (my own agents + Kronos); S05 click worker",
@@ -66,7 +66,7 @@
   }
  },
  "flags": {
-  "moneydesk:WAIT_NO_MEANWHILE": "idle 10m waiting on 16:12 ET beta reconciliation, with no meanwhile work named",
+  "moneydesk:WAIT_NO_MEANWHILE": "idle 13m waiting on 16:12 ET beta reconciliation, with no meanwhile work named",
   "P-street-unblock:PROMISE_OVERDUE": "consolidation owes nox: Host-level Street unblock: disable the Roblox MCP server for all Codex threads at config level, end\u2026 (due 12:00)",
   "20261028T143440Z-nox-to-consolidation.md:PROMISE_OVERDUE": "consolidation owes nox: Ownership change: Outis has answered and its sandbox genuinely cannot do this \u2014 its kind: result (i\u2026 (due 12:00)",
   "20261028T144206Z-consolidation-to-nox.md:PROMISE_OVERDUE": "nox owes consolidation: STREET-UNBLOCK, steps 0-2 done, the last link of step 2 BLOCKED (10:41 ET). The Street Studio is NO\u2026 (due 12:00)"
@@ -244,9 +244,9 @@
    "at": "2026-10-28T15:39:05Z"
   },
   "20261028T160313Z-nox-to-consolidation.md": {
-   "state": "sent",
+   "state": "delivered",
    "route": "switchboard",
-   "at": "2026-10-28T19:52:51Z"
+   "at": "2026-10-28T19:55:54Z"
   },
   "20261028T161215Z-outis-to-nox.md": {
    "state": "delivered",
