@@ -1,5 +1,5 @@
 {
- "generated_at": "2026-10-28T19:58:55Z",
+ "generated_at": "2026-10-28T20:01:55Z",
  "policy_version": 4.0,
  "lanes": {
   "moneydesk": {
@@ -30,12 +30,12 @@
   },
   "outis": {
    "state": "WORKING",
-   "since": "2026-10-28T19:44:14Z",
+   "since": "2026-10-28T19:59:49Z",
    "flags": [],
-   "doing": "Plimsoll single-candidate integration and checker repair; board, handover and peer-mail checks continue",
+   "doing": "WS5 integration and independent checks; resume-site candidate and review; board, handover and mail checks",
    "waiting_on": "lanesAB-report",
    "expected_by": "2026-10-28T22:00:00Z",
-   "next_check_at": "2026-10-28T19:58:07Z",
+   "next_check_at": "2026-10-28T20:13:07Z",
    "last_deliverable_at": null,
    "meanwhile": "Board checks, handover verification, peer mail and authorised queue items",
    "meanwhile_path": "/home/cayleb/Documents/Codex/2026-10-26/task/BOARD.json"
@@ -66,9 +66,7 @@
   }
  },
  "flags": {
-  "moneydesk:WAIT_NO_MEANWHILE": "idle 16m waiting on 16:12 ET beta reconciliation, with no meanwhile work named",
-  "P-street-unblock:PROMISE_OVERDUE": "consolidation owes nox: Host-level Street unblock: disable the Roblox MCP server for all Codex threads at config level, end\u2026 (due 12:00)",
-  "20261028T143440Z-nox-to-consolidation.md:PROMISE_OVERDUE": "consolidation owes nox: Ownership change: Outis has answered and its sandbox genuinely cannot do this \u2014 its kind: result (i\u2026 (due 12:00)",
+  "moneydesk:WAIT_NO_MEANWHILE": "idle 19m waiting on 16:12 ET beta reconciliation, with no meanwhile work named",
   "20261028T144206Z-consolidation-to-nox.md:PROMISE_OVERDUE": "nox owes consolidation: STREET-UNBLOCK, steps 0-2 done, the last link of step 2 BLOCKED (10:41 ET). The Street Studio is NO\u2026 (due 12:00)"
  },
  "promises": [
@@ -83,18 +81,6 @@
    "sent_at": "2026-10-28T14:16:24Z",
    "to": "consolidation",
    "state": "OPEN"
-  },
-  {
-   "ask": "Host-level Street unblock: disable the Roblox MCP server for all Codex threads at config level, end the Codex wrapper/broker chain holding port 13469, verify no listener and no roblox-studio-mcp process under the Codex app process, then relaunch Street fresh (plan x2, token, dry run, run). Outis's sandbox could not do it (its result: street-codex-broker-unblock-20261028, BLOCKED) so ownership moved to consolidation as the host-level lane. Result must record the exact config change and its undo step.",
-   "done_when": {
-    "result_item": "street-unblock"
-   },
-   "expected_by": "2026-10-28T16:00:00Z",
-   "from": "nox",
-   "id": "P-street-unblock",
-   "sent_at": "2026-10-28T14:34:40Z",
-   "to": "consolidation",
-   "state": "OVERDUE"
   },
   {
    "ask": "After consolidation's street-unblock result reports the Street window closed, re-enable the Roblox MCP config change it recorded and confirm with kind: result item street-mcp-reenabled",
@@ -129,16 +115,6 @@
    "expected_by": "2026-10-28T22:00:00Z",
    "done": false,
    "state": "OPEN"
-  },
-  {
-   "id": "20261028T143440Z-nox-to-consolidation.md",
-   "from": "nox",
-   "to": "consolidation",
-   "ask": "Ownership change: Outis has answered and its sandbox genuinely cannot do this \u2014 its kind: result (item street-codex-brok",
-   "sent_at": "2026-10-28T14:34:40Z",
-   "expected_by": "2026-10-28T16:00:00Z",
-   "done": false,
-   "state": "OVERDUE"
   },
   {
    "id": "20261028T144206Z-consolidation-to-nox.md",
@@ -302,6 +278,11 @@
    "state": "sent",
    "route": "switchboard",
    "at": "2026-10-28T19:52:51Z"
+  },
+  "20261028T195855Z-consolidation-to-nox.md": {
+   "state": "delivered",
+   "route": "board",
+   "at": "2026-10-28T20:01:55Z"
   }
  }
 }
