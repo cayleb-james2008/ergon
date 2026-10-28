@@ -1,5 +1,5 @@
 {
- "generated_at": "2026-10-28T12:43:17Z",
+ "generated_at": "2026-10-28T12:44:26Z",
  "policy_version": 1,
  "lanes": {
   "moneydesk": {
@@ -53,12 +53,52 @@
    "expected_by": null,
    "next_check_at": null,
    "last_deliverable_at": null
+  },
+  "linktest": {
+   "state": "IDLE",
+   "since": "2026-10-28T11:53:11Z",
+   "flags": [],
+   "doing": null,
+   "waiting_on": null,
+   "expected_by": null,
+   "next_check_at": null,
+   "last_deliverable_at": null
+  },
+  "probe": {
+   "state": "WAITING",
+   "since": "2026-10-28T12:44:25Z",
+   "flags": [],
+   "doing": "build test: waits on T1",
+   "waiting_on": "T1",
+   "expected_by": "2026-10-28T13:24:25Z",
+   "next_check_at": null,
+   "last_deliverable_at": null
   }
  },
  "flags": {
-  "outis:IDLE_LONG": "quiet for 2h04m with no declared wait"
+  "outis:IDLE_LONG": "quiet for 2h05m with no declared wait"
  },
- "promises": [],
+ "promises": [
+  {
+   "id": "20261028T124425Z-build-to-linktest.md",
+   "from": "build",
+   "to": "linktest",
+   "ask": "Pipeline test of the lane-sensor mail route (PING-0d0439e7). No action needed: change nothing. The build will write the ",
+   "sent_at": "2026-10-28T12:44:25Z",
+   "expected_by": "2026-10-28T13:14:25Z",
+   "done": false,
+   "state": "OPEN"
+  }
+ ],
  "queue": [],
- "mail": {}
+ "mail": {
+  "20261028T124425Z-build-to-linktest.md": {
+   "state": "sent",
+   "from": "build",
+   "to": "linktest",
+   "kind": "order",
+   "sent_at": "2026-10-28T12:44:26Z",
+   "route": "switchboard"
+  }
+ }
 }
