@@ -2,10 +2,52 @@
  "owner": "nox",
  "note": "Nox owns this file: one row per lane the sensor watches. kind = claude (desktop session; host = its local_ id), lane (folder lane on outis-desktop; heartbeat in lanes/lane/<id>/LANE.json), board (reads the board itself), external (no machine route: mail to it is handed to Nox). Optional: idle_min (null = never flag idle), cadence_min, expect_open, activity_globs. See ops/README.md.",
  "lanes": [
-  {"id": "moneydesk", "name": "Money Desk", "kind": "claude", "host": "local_e5a40ad8-ebbf-413a-9bd8-802ffdfb8312", "idle_min": 45},
-  {"id": "consolidation", "name": "Consolidation (lanes A-E)", "kind": "claude", "host": "local_1e47a169-f754-4cdc-8987-6c024443b53c", "idle_min": 30},
-  {"id": "outis", "name": "Outis / Codex desktop", "kind": "lane", "cadence_min": 20, "idle_min": 30, "activity_globs": ["/home/cayleb/Documents/Codex/*/task-*"]},
-  {"id": "grok", "name": "Grok / RSI desk", "kind": "external"},
-  {"id": "nox", "name": "Nox", "kind": "board"}
+  {
+   "id": "moneydesk",
+   "name": "Money Desk",
+   "kind": "claude",
+   "host": "local_e5a40ad8-ebbf-413a-9bd8-802ffdfb8312",
+   "idle_min": 45
+  },
+  {
+   "id": "consolidation",
+   "name": "Consolidation (lanes A-E)",
+   "kind": "claude",
+   "host": "local_1e47a169-f754-4cdc-8987-6c024443b53c",
+   "idle_min": 30
+  },
+  {
+   "id": "outis",
+   "name": "Outis / Codex desktop",
+   "kind": "lane",
+   "cadence_min": 20,
+   "idle_min": 30,
+   "activity_globs": [
+    "/home/cayleb/Documents/Codex/*/task-*"
+   ]
+  },
+  {
+   "id": "grok",
+   "name": "Grok / RSI desk",
+   "kind": "external"
+  },
+  {
+   "id": "nox",
+   "name": "Nox",
+   "kind": "board"
+  },
+  {
+   "id": "linktest",
+   "name": "BUILD TEST (remove after 2026-10-28)",
+   "kind": "claude",
+   "host": "local_5e9af794-0b86-4de6-be2a-b43eb7043a1b",
+   "idle_min": null
+  },
+  {
+   "id": "probe",
+   "name": "BUILD TEST folder lane",
+   "kind": "lane",
+   "idle_min": null
+  }
  ]
 }
