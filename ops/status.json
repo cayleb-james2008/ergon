@@ -1,13 +1,12 @@
 {
- "generated_at": "2026-10-28T15:12:00Z",
+ "generated_at": "2026-10-28T15:15:00Z",
  "policy_version": 4.0,
  "lanes": {
   "moneydesk": {
    "state": "CLOSED",
    "since": null,
    "flags": [
-    "CLOSED",
-    "MAIL_FAILED"
+    "CLOSED"
    ],
    "doing": "Scalp check done: NO on MES and MNQ (8696055); usage throttle (weekly ~88%); ORB15 beta live, card 09:47 not taken",
    "waiting_on": "16:12 ET beta reconciliation",
@@ -33,14 +32,14 @@
   },
   "outis": {
    "state": "BLOCKED",
-   "since": "2026-10-28T15:00:03Z",
+   "since": "2026-10-28T15:14:42Z",
    "flags": [
     "BLOCKED"
    ],
    "doing": "Board checks, handover verification, peer mail and authorised queue items continue; Street broker cleanup awaits separate verification",
    "waiting_on": "lanesAB-report",
    "expected_by": "2026-10-28T22:00:00Z",
-   "next_check_at": "2026-10-28T15:13:07Z",
+   "next_check_at": "2026-10-28T15:28:07Z",
    "last_deliverable_at": null,
    "meanwhile": "Board checks, handover verification, peer mail and authorised queue items",
    "meanwhile_path": "/home/cayleb/Documents/Codex/2026-10-26/task/BOARD.json"
@@ -73,8 +72,7 @@
  "flags": {
   "moneydesk:CLOSED": "its session is not running",
   "consolidation:CLOSED": "its session is not running",
-  "outis:BLOCKED": "declared blocked: Board checks, handover verification, peer mail and authorised queue items continue; Street broker cleanup awaits separate verification",
-  "moneydesk/20261028T143442Z-nox-to-moneydesk.md:MAIL_FAILED": "20261028T143442Z-nox-to-moneydesk.md was not seen in the session after 3 tries"
+  "outis:BLOCKED": "declared blocked: Board checks, handover verification, peer mail and authorised queue items continue; Street broker cleanup awaits separate verification"
  },
  "promises": [
   {
