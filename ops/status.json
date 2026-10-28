@@ -1,10 +1,10 @@
 {
- "generated_at": "2026-10-28T21:31:58Z",
+ "generated_at": "2026-10-28T21:34:58Z",
  "policy_version": 4.0,
  "lanes": {
   "moneydesk": {
-   "state": "WORKING",
-   "since": "2026-10-28T21:29:36Z",
+   "state": "IDLE",
+   "since": "2026-10-28T21:32:44Z",
    "flags": [
     "IDLE_DECLARED"
    ],
