@@ -1,13 +1,11 @@
 {
- "generated_at": "2026-10-28T19:40:49Z",
+ "generated_at": "2026-10-28T19:43:49Z",
  "policy_version": 4.0,
  "lanes": {
   "moneydesk": {
-   "state": "CLOSED",
-   "since": null,
-   "flags": [
-    "CLOSED"
-   ],
+   "state": "IDLE",
+   "since": "2026-10-28T19:42:36Z",
+   "flags": [],
    "doing": "Scalp check done: NO on MES and MNQ (8696055); usage throttle (weekly ~88%); ORB15 beta live, card 09:47 not taken",
    "waiting_on": "16:12 ET beta reconciliation",
    "expected_by": "2026-10-28T16:12:00-04:00",
@@ -69,7 +67,6 @@
   }
  },
  "flags": {
-  "moneydesk:CLOSED": "its session is not running",
   "consolidation:CLOSED": "its session is not running",
   "P-street-unblock:PROMISE_OVERDUE": "consolidation owes nox: Host-level Street unblock: disable the Roblox MCP server for all Codex threads at config level, end\u2026 (due 12:00)",
   "20261028T143440Z-nox-to-consolidation.md:PROMISE_OVERDUE": "consolidation owes nox: Ownership change: Outis has answered and its sandbox genuinely cannot do this \u2014 its kind: result (i\u2026 (due 12:00)",
