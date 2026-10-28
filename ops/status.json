@@ -1,5 +1,5 @@
 {
- "generated_at": "2026-10-28T23:56:02Z",
+ "generated_at": "2026-10-28T23:59:02Z",
  "policy_version": 4.0,
  "lanes": {
   "moneydesk": {
@@ -22,6 +22,7 @@
    "since": "2026-10-28T22:50:19Z",
    "flags": [
     "IDLE_LONG",
+    "MAIL_FAILED",
     "WAIT_OVERDUE"
    ],
    "doing": "R07 HELD per Nox's in-session ruling (no click; denial record preserved; tab closed). Reply sent for order consolidation-meanwhile-20261028 (18:35 ET). Working: (1) Lane C dry-run-4 operator pack (off",
@@ -71,8 +72,8 @@
  },
  "flags": {
   "moneydesk:IDLE_DECLARED": "says it has nothing to do: Readiness baseline delivered (nothing new arms at 18:00). Usage throttle: weekly Claude meter about 90% until Mon 11-02 01:00 ET; only ORB15 beta check-ins run. Open ask fo\u2026",
-  "moneydesk:WAIT_NO_MEANWHILE": "idle 2h23m waiting on Thu 10-29 09:20 ET beta check, with no meanwhile work named",
-  "consolidation:IDLE_LONG": "idle for 1h05m with no declared wait",
+  "moneydesk:WAIT_NO_MEANWHILE": "idle 2h26m waiting on Thu 10-29 09:20 ET beta check, with no meanwhile work named",
+  "consolidation:IDLE_LONG": "idle for 1h08m with no declared wait",
   "consolidation:WAIT_OVERDUE": "waits on Nox: ruling on R07 (appeal / rework / drop) after reviewing the denial record, expected by 19:30",
   "P-street-mcp-reenable:PROMISE_OVERDUE": "outis owes nox: After consolidation's street-v24-run result reports the Street window closed (Nox GO 20:34Z; HOLD u\u2026 (due 18:00)",
   "P-moneydesk-waitidle:PROMISE_OVERDUE": "moneydesk owes nox: Reply to WAIT_IDLE flagged 17:22 ET (idle 45m since 16:37 ET waiting on 17:20 ET forward archive): \u2026 (due 18:00)",
@@ -81,7 +82,8 @@
   "20261028T202855Z-consolidation-to-nox.md:PROMISE_OVERDUE": "nox owes consolidation: EP27 STATUS 16:27 ET + ONE JUDGEMENT NEEDED (R07). Clicks so far (Seedance 2.5, Cinema Studio 4.0, \u2026 (due 16:55)",
   "20261028T203156Z-consolidation-to-nox.md:PROMISE_OVERDUE": "nox owes consolidation: STREET v2.4 READY, YOUR GO NEEDED (16:33 ET). The independent reviewer (A16, never the builder) pas\u2026 (due 17:15)",
   "20261028T212559Z-nox-to-moneydesk.md:PROMISE_OVERDUE": "moneydesk owes nox: WAIT_IDLE CHASE \u2014 Money Desk idle 45m (sensor 17:22 ET). (due 18:00)",
-  "20261028T212858Z-consolidation-to-nox.md:PROMISE_OVERDUE": "nox owes consolidation: R07 NEEDS YOUR OWN GO OR STOP (17:28 ET). I did not get an answer to my 16:27 ask, and my attempt t\u2026 (due 17:45)"
+  "20261028T212858Z-consolidation-to-nox.md:PROMISE_OVERDUE": "nox owes consolidation: R07 NEEDS YOUR OWN GO OR STOP (17:28 ET). I did not get an answer to my 16:27 ask, and my attempt t\u2026 (due 17:45)",
+  "consolidation/20261028T232007Z-nox-to-consolidation.md:MAIL_FAILED": "20261028T232007Z-nox-to-consolidation.md was not seen in the session after 3 tries"
  },
  "promises": [
   {
@@ -564,9 +566,9 @@
    "at": "2026-10-28T23:02:00Z"
   },
   "20261028T232007Z-nox-to-consolidation.md": {
-   "state": "sent",
+   "state": "failed",
    "route": "switchboard",
-   "at": "2026-10-28T23:47:02Z"
+   "at": "2026-10-28T23:59:02Z"
   },
   "20261028T232851Z-outis-to-nox.md": {
    "state": "delivered",
