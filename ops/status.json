@@ -1,5 +1,5 @@
 {
- "generated_at": "2026-10-28T16:36:16Z",
+ "generated_at": "2026-10-28T16:39:16Z",
  "policy_version": 4.0,
  "lanes": {
   "moneydesk": {
@@ -250,6 +250,16 @@
    "state": "delivered",
    "route": "board",
    "at": "2026-10-28T16:27:16Z"
+  },
+  "20261028T163616Z-outis-to-nox-2.md": {
+   "state": "delivered",
+   "route": "board",
+   "at": "2026-10-28T16:39:16Z"
+  },
+  "20261028T163616Z-outis-to-nox.md": {
+   "state": "delivered",
+   "route": "board",
+   "at": "2026-10-28T16:39:16Z"
   }
  }
 }
