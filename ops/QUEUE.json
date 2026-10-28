@@ -1,0 +1,5 @@
+{
+ "owner": "nox",
+ "note": "Nox owns this file. Work any lane in can_do may pull; a lane claims by writing lanes/lane/<id>/CLAIM.json. A result mail with the same item marks it done.",
+ "items": []
+}
