@@ -21,7 +21,7 @@
    "name": "Outis / Codex desktop",
    "kind": "lane",
    "cadence_min": 20,
-   "idle_min": 30,
+   "idle_min": null,
    "activity_globs": [
     "/home/cayleb/Documents/Codex/*/task-*"
    ]
