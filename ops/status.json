@@ -1,5 +1,5 @@
 {
- "generated_at": "2026-10-28T20:40:56Z",
+ "generated_at": "2026-10-28T20:43:56Z",
  "policy_version": 4.0,
  "lanes": {
   "moneydesk": {
@@ -28,12 +28,12 @@
   },
   "outis": {
    "state": "WORKING",
-   "since": "2026-10-28T20:29:45Z",
+   "since": "2026-10-28T20:43:56Z",
    "flags": [],
-   "doing": "Plimsoll integration and push readiness, resume variants and site fixes; standing board and mail checks",
+   "doing": "Plimsoll integration and push readiness, resume selection support and site proof restoration; standing board and mail checks",
    "waiting_on": "lanesAB-report",
    "expected_by": "2026-10-28T22:00:00Z",
-   "next_check_at": "2026-10-28T20:43:07Z",
+   "next_check_at": "2026-10-28T20:58:07Z",
    "last_deliverable_at": null,
    "meanwhile": "Board checks, handover verification, peer mail and authorised queue items",
    "meanwhile_path": "/home/cayleb/Documents/Codex/2026-10-26/task/BOARD.json"
