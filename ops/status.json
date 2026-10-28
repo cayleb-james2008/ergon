@@ -1,13 +1,11 @@
 {
- "generated_at": "2026-10-28T13:50:41Z",
+ "generated_at": "2026-10-28T13:53:41Z",
  "policy_version": 1.0,
  "lanes": {
   "moneydesk": {
-   "state": "STUCK",
+   "state": "IDLE",
    "since": "2026-10-28T13:20:20Z",
-   "flags": [
-    "STUCK"
-   ],
+   "flags": [],
    "doing": null,
    "waiting_on": null,
    "expected_by": null,
@@ -58,8 +56,7 @@
   }
  },
  "flags": {
-  "moneydesk:STUCK": "busy, but no conversation step for 30m",
-  "outis:IDLE_LONG": "quiet for 2h45m with no declared wait"
+  "outis:IDLE_LONG": "quiet for 2h48m with no declared wait"
  },
  "promises": [],
  "queue": [],

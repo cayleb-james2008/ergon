@@ -1,10 +1,10 @@
 # Lane status
 
-Updated 09:50 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
+Updated 09:53 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
 
 | lane | state | since | doing / waiting on | next check | flags |
 |---|---|---|---|---|---|
-| Money Desk | STUCK | 09:20 |  | — | STUCK |
+| Money Desk | IDLE | 09:20 |  | — | — |
 | Consolidation (lanes A-E) | WORKING | 07:00 |  | — | — |
 | Outis / Codex desktop | QUIET | 07:05 |  | — | IDLE_LONG |
 | Grok / RSI desk | — | — |  | — | — |
@@ -26,6 +26,6 @@ Empty.
 
 ## Today
 
-- Flag-minutes: {"IDLE_LONG": 64.5, "STUCK": 3.0}
-- Flags raised: {"IDLE_LONG": 1, "STUCK": 1}
+- Flag-minutes: {"IDLE_LONG": 67.5, "STUCK": 6.0}
+- Flags raised: {"IDLE_LONG": 1, "STUCK": 2}
 - Policy v1: idle 30m, stuck 30m, renotify 60m, claude delivery on.
