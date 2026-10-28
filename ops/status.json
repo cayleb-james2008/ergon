@@ -1,5 +1,5 @@
 {
- "generated_at": "2026-10-28T22:41:00Z",
+ "generated_at": "2026-10-28T22:44:00Z",
  "policy_version": 4.0,
  "lanes": {
   "moneydesk": {
@@ -68,7 +68,7 @@
  },
  "flags": {
   "moneydesk:IDLE_DECLARED": "says it has nothing to do: Readiness baseline delivered (nothing new arms at 18:00). Usage throttle: weekly Claude meter about 90% until Mon 11-02 01:00 ET; only ORB15 beta check-ins run. Open ask fo\u2026",
-  "moneydesk:WAIT_NO_MEANWHILE": "idle 1h08m waiting on Thu 10-29 09:20 ET beta check, with no meanwhile work named",
+  "moneydesk:WAIT_NO_MEANWHILE": "idle 1h11m waiting on Thu 10-29 09:20 ET beta check, with no meanwhile work named",
   "P-street-mcp-reenable:PROMISE_OVERDUE": "outis owes nox: After consolidation's street-v24-run result reports the Street window closed (Nox GO 20:34Z; HOLD u\u2026 (due 18:00)",
   "P-moneydesk-waitidle:PROMISE_OVERDUE": "moneydesk owes nox: Reply to WAIT_IDLE flagged 17:22 ET (idle 45m since 16:37 ET waiting on 17:20 ET forward archive): \u2026 (due 18:00)",
   "20261028T144206Z-consolidation-to-nox.md:PROMISE_OVERDUE": "nox owes consolidation: STREET-UNBLOCK, steps 0-2 done, the last link of step 2 BLOCKED (10:41 ET). The Street Studio is NO\u2026 (due 12:00)",
@@ -102,6 +102,18 @@
     "result_item": "moneydesk-waitidle-20261028"
    },
    "state": "OVERDUE"
+  },
+  {
+   "id": "P-moneydesk-overnight-meanwhile",
+   "from": "nox",
+   "to": "moneydesk",
+   "ask": "Reply to WAIT_NO_MEANWHILE still flagged 18:37 ET (idle 1h05m waiting on Thu 09:20 ET beta check, no meanwhile named): name meanwhile work + meanwhile_path for the overnight wait, or confirm IDLE_DECLARED is intentional under the Claude usage throttle (~90% until Mon 11-02 01:00 ET, only ORB15 beta check-ins run) and state Thu beta prep incl. the Tradovate sign-in path blocker from the readiness baseline; reply as kind: result with item moneydesk-overnight-meanwhile-20261028",
+   "sent_at": "2026-10-28T22:40:33Z",
+   "expected_by": "2026-10-29T12:00:00Z",
+   "done_when": {
+    "result_item": "moneydesk-overnight-meanwhile-20261028"
+   },
+   "state": "OPEN"
   },
   {
    "id": "20261028T144206Z-consolidation-to-nox.md",
@@ -170,6 +182,16 @@
    "ask": "Deploy h3 patch now? (needs your go)",
    "sent_at": "2026-10-28T21:58:58Z",
    "expected_by": "2026-10-29T14:00:00Z",
+   "done": false,
+   "state": "OPEN"
+  },
+  {
+   "id": "20261028T224033Z-nox-to-moneydesk.md",
+   "from": "nox",
+   "to": "moneydesk",
+   "ask": "WAIT_NO_MEANWHILE (still) \u2014 sensor 18:37 ET: idle 1h05m waiting on Thu 10-29 09:20 ET beta check, with no meanwhile work",
+   "sent_at": "2026-10-28T22:40:33Z",
+   "expected_by": "2026-10-29T12:00:00Z",
    "done": false,
    "state": "OPEN"
   }
@@ -525,6 +547,11 @@
    "state": "delivered",
    "route": "board",
    "at": "2026-10-28T22:41:00Z"
+  },
+  "20261028T224033Z-nox-to-moneydesk.md": {
+   "state": "sent",
+   "route": "switchboard",
+   "at": "2026-10-28T22:44:00Z"
   }
  }
 }
