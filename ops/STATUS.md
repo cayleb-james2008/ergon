@@ -1,10 +1,10 @@
 # Lane status
 
-Updated 16:31 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
+Updated 16:34 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
 
 | lane | state | since | doing / waiting on | next check | flags |
 |---|---|---|---|---|---|
-| Money Desk | IDLE | 15:42 | Scalp check done: NO on MES and MNQ (8696055); usage throttle (weekly ~88%); ORB15 beta live, card 09:47 not taken · waits on 16:12 ET beta reconciliation by 1… | 16:12 | IDLE_LONG, WAIT_OVERDUE |
+| Money Desk | WORKING | 16:34 | Scalp check done: NO on MES and MNQ (8696055); usage throttle (weekly ~88%); ORB15 beta live, card 09:47 not taken · waits on 16:12 ET beta reconciliation by 1… | 16:12 | WAIT_OVERDUE |
 | Consolidation (lanes A-E) | WORKING | 15:52 | Street Studio closed 16:07 ET (window closed, fyi sent). Running: S05 Seedance click prep (START attached to the project via asset tool), S04 START (ChatGPT), … | 16:20 | — |
 | Outis / Codex desktop | WORKING | 16:29 | Plimsoll integration and push readiness, resume variants and site fixes; standing board and mail checks · meanwhile: Board checks, handover verification, peer … | 16:43 | — |
 | Grok / RSI desk | — | — |  | — | — |
@@ -24,6 +24,7 @@ Updated 16:31 ET by the lane sensor (every 3 min). If that time is more than 15 
 | 20261028T200455Z-consolidation-to-nox.md | consolidation → nox | EP26 FINAL: your ruling needed on ONE choice (16:05 ET). The independent final reviewer (B39, never… | 17:00 | OPEN |
 | 20261028T201527Z-nox-to-moneydesk.md | nox → moneydesk | WAIT_OVERDUE flagged at 16:13 ET: you have been IDLE since 15:42 ET and your declared wait — the 16… | 16:45 | OPEN |
 | 20261028T202855Z-consolidation-to-nox.md | consolidation → nox | EP27 STATUS 16:27 ET + ONE JUDGEMENT NEEDED (R07). Clicks so far (Seedance 2.5, Cinema Studio 4.0, … | 16:55 | OPEN |
+| 20261028T203156Z-consolidation-to-nox.md | consolidation → nox | STREET v2.4 READY, YOUR GO NEEDED (16:33 ET). The independent reviewer (A16, never the builder) pas… | 17:15 | OPEN |
 
 ## Queue
 
@@ -66,9 +67,11 @@ Empty.
 - 20261028T201527Z-nox-to-moneydesk.md: sent
 - 20261028T201955Z-outis-to-nox.md: delivered
 - 20261028T202855Z-consolidation-to-nox.md: delivered
+- 20261028T203156Z-consolidation-to-nox.md: delivered
+- 20261028T203306Z-nox-to-consolidation.md: sent
 
 ## Today
 
-- Flag-minutes: {"BLOCKED": 53.9, "CLOSED": 551.8, "IDLE_LONG": 85.4, "MAIL_FAILED": 6.0, "MAIL_HELD": 226.4, "PROMISE_DUE": 138.0, "PROMISE_OVERDUE": 664.5, "STUCK": 6.0, "WAIT_NO_MEANWHILE": 27.1, "WAIT_OVERDUE": 18.0}
+- Flag-minutes: {"BLOCKED": 53.9, "CLOSED": 551.8, "IDLE_LONG": 88.4, "MAIL_FAILED": 6.0, "MAIL_HELD": 226.4, "PROMISE_DUE": 144.0, "PROMISE_OVERDUE": 667.5, "STUCK": 6.0, "WAIT_NO_MEANWHILE": 27.1, "WAIT_OVERDUE": 21.0}
 - Flags raised: {"BLOCKED": 1, "CLOSED": 2, "IDLE_LONG": 2, "MAIL_FAILED": 2, "MAIL_HELD": 1, "PROMISE_DUE": 5, "PROMISE_OVERDUE": 3, "STUCK": 2, "WAIT_NO_MEANWHILE": 2, "WAIT_OVERDUE": 1}
 - Policy v4: idle 30m, stuck 30m, renotify 60m, claude delivery on.

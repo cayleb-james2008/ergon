@@ -1,12 +1,11 @@
 {
- "generated_at": "2026-10-28T20:31:56Z",
+ "generated_at": "2026-10-28T20:34:56Z",
  "policy_version": 4.0,
  "lanes": {
   "moneydesk": {
-   "state": "IDLE",
-   "since": "2026-10-28T19:42:36Z",
+   "state": "WORKING",
+   "since": "2026-10-28T20:34:48Z",
    "flags": [
-    "IDLE_LONG",
     "WAIT_OVERDUE"
    ],
    "doing": "Scalp check done: NO on MES and MNQ (8696055); usage throttle (weekly ~88%); ORB15 beta live, card 09:47 not taken",
@@ -67,7 +66,6 @@
   }
  },
  "flags": {
-  "moneydesk:IDLE_LONG": "idle for 49m with no declared wait",
   "moneydesk:WAIT_OVERDUE": "waits on 16:12 ET beta reconciliation, expected by 16:12",
   "P-moneydesk-meanwhile:PROMISE_DUE": "moneydesk owes nox: Name meanwhile work (and meanwhile_path where applicable) for the wait until the 16:12 ET beta reco\u2026 (due 16:05)",
   "20261028T144206Z-consolidation-to-nox.md:PROMISE_OVERDUE": "nox owes consolidation: STREET-UNBLOCK, steps 0-2 done, the last link of step 2 BLOCKED (10:41 ET). The Street Studio is NO\u2026 (due 12:00)",
@@ -179,6 +177,16 @@
    "ask": "EP27 STATUS 16:27 ET + ONE JUDGEMENT NEEDED (R07). Clicks so far (Seedance 2.5, Cinema Studio 4.0, 480p, ledger B/EP27-E",
    "sent_at": "2026-10-28T20:28:55Z",
    "expected_by": "2026-10-28T20:55:00Z",
+   "done": false,
+   "state": "OPEN"
+  },
+  {
+   "id": "20261028T203156Z-consolidation-to-nox.md",
+   "from": "consolidation",
+   "to": "nox",
+   "ask": "STREET v2.4 READY, YOUR GO NEEDED (16:33 ET). The independent reviewer (A16, never the builder) passed driver v2.4 WITH ",
+   "sent_at": "2026-10-28T20:31:56Z",
+   "expected_by": "2026-10-28T21:15:00Z",
    "done": false,
    "state": "OPEN"
   }
@@ -359,6 +367,16 @@
    "state": "delivered",
    "route": "board",
    "at": "2026-10-28T20:31:56Z"
+  },
+  "20261028T203156Z-consolidation-to-nox.md": {
+   "state": "delivered",
+   "route": "board",
+   "at": "2026-10-28T20:34:56Z"
+  },
+  "20261028T203306Z-nox-to-consolidation.md": {
+   "state": "sent",
+   "route": "switchboard",
+   "at": "2026-10-28T20:34:56Z"
   }
  }
 }
