@@ -1,1 +1,109 @@
-{"note": "Nox owns this file. One row per message that expects something back. See ops/README.md.", "owner": "nox", "promises": [{"ask": "ONE consolidated completion report covering Lanes A and B (incl. Lane C and D state), sent as kind: result with item lanesAB-report", "done_when": {"result_item": "lanesAB-report"}, "expected_by": "2026-10-28T22:00:00Z", "from": "nox", "id": "P-lanesAB-report", "sent_at": "2026-10-28T14:16:24Z", "to": "consolidation"}, {"ask": "Host-level Street unblock: disable the Roblox MCP server for all Codex threads at config level, end the Codex wrapper/broker chain holding port 13469, verify no listener and no roblox-studio-mcp process under the Codex app process, then relaunch Street fresh (plan x2, token, dry run, run). Outis's sandbox could not do it (its result: street-codex-broker-unblock-20261028, BLOCKED) so ownership moved to consolidation as the host-level lane. Result must record the exact config change and its undo step.", "done_when": {"result_item": "street-unblock"}, "expected_by": "2026-10-28T16:00:00Z", "from": "nox", "id": "P-street-unblock", "sent_at": "2026-10-28T14:34:40Z", "to": "consolidation", "done": true}, {"ask": "After consolidation's street-v24-run result reports the Street window closed (Nox GO 20:34Z; HOLD until that result), re-enable the Roblox MCP config change recorded in the street-unblock result and confirm with kind: result item street-mcp-reenabled", "done_when": {"result_item": "street-mcp-reenabled"}, "expected_by": "2026-10-28T22:00:00Z", "from": "nox", "id": "P-street-mcp-reenable", "sent_at": "2026-10-28T14:34:40Z", "to": "outis"}, {"id": "P-moneydesk-meanwhile", "from": "nox", "to": "moneydesk", "ask": "Name meanwhile work (and meanwhile_path where applicable) for the wait until the 16:12 ET beta reconciliation, or declare IDLE so Nox can feed work; reply as kind: result with item moneydesk-meanwhile-20261028", "sent_at": "2026-10-28T19:51:33Z", "expected_by": "2026-10-28T20:05:00Z", "done_when": {"result_item": "moneydesk-meanwhile-20261028"}, "done": true}, {"id": "P-moneydesk-beta-recon", "from": "nox", "to": "moneydesk", "ask": "Deliver the 16:12 ET ORB15 beta reconciliation (WAIT_OVERDUE flagged 16:13 ET) as kind: result with item moneydesk-beta-recon-20261028, plus the due moneydesk-meanwhile-20261028 reply or an IDLE declaration, and an updated heartbeat", "sent_at": "2026-10-28T20:15:27Z", "expected_by": "2026-10-28T20:45:00Z", "done_when": {"result_item": "moneydesk-beta-recon-20261028"}, "done": true}, {"id": "P-street-v24-run", "from": "nox", "to": "consolidation", "ask": "Run Street once under driver v2.4 after Nox lifted the 16:15 ET Studio bar for this one run (fresh Studio, plan x2, token, dry run, one-shot, reviewer conditions binding, C3 LIST_NAME_NULL_ACCEPTED records expected); file kind: result with item street-v24-run giving outcome and window-closed state", "sent_at": "2026-10-28T20:34:51Z", "expected_by": "2026-10-28T21:30:00Z", "done_when": {"result_item": "street-v24-run"}, "done": true}, {"id": "P-outis-plimsoll-blocked", "from": "nox", "to": "outis", "ask": "Report executor state for the Plimsoll runtime build BLOCKED at 17:01 ET (quota exceeded), whether P-street-mcp-reenable can now proceed after the street-v24-run window-closed result, and current meanwhile work; reply as kind: result with item plimsoll-runtime-blocked-20261028", "sent_at": "2026-10-28T21:04:33Z", "expected_by": "2026-10-28T22:00:00Z", "done_when": {"result_item": "plimsoll-runtime-blocked-20261028"}}, {"id": "P-moneydesk-waitidle", "from": "nox", "to": "moneydesk", "ask": "Reply to WAIT_IDLE flagged 17:22 ET (idle 45m since 16:37 ET waiting on 17:20 ET forward archive): outcome of that archive run or its real blocker, evidence the 18:00 readiness baseline / confidence-filter meanwhile work is moving, and an updated heartbeat \u2014 or declare IDLE with reason; reply as kind: result with item moneydesk-waitidle-20261028", "sent_at": "2026-10-28T21:25:59Z", "expected_by": "2026-10-28T22:00:00Z", "done_when": {"result_item": "moneydesk-waitidle-20261028"}}]}
+{
+ "note": "Nox owns this file. One row per message that expects something back. See ops/README.md.",
+ "owner": "nox",
+ "promises": [
+  {
+   "ask": "ONE consolidated completion report covering Lanes A and B (incl. Lane C and D state), sent as kind: result with item lanesAB-report",
+   "done_when": {
+    "result_item": "lanesAB-report"
+   },
+   "expected_by": "2026-10-28T22:00:00Z",
+   "from": "nox",
+   "id": "P-lanesAB-report",
+   "sent_at": "2026-10-28T14:16:24Z",
+   "to": "consolidation"
+  },
+  {
+   "ask": "Host-level Street unblock: disable the Roblox MCP server for all Codex threads at config level, end the Codex wrapper/broker chain holding port 13469, verify no listener and no roblox-studio-mcp process under the Codex app process, then relaunch Street fresh (plan x2, token, dry run, run). Outis's sandbox could not do it (its result: street-codex-broker-unblock-20261028, BLOCKED) so ownership moved to consolidation as the host-level lane. Result must record the exact config change and its undo step.",
+   "done_when": {
+    "result_item": "street-unblock"
+   },
+   "expected_by": "2026-10-28T16:00:00Z",
+   "from": "nox",
+   "id": "P-street-unblock",
+   "sent_at": "2026-10-28T14:34:40Z",
+   "to": "consolidation",
+   "done": true
+  },
+  {
+   "ask": "After consolidation's street-v24-run result reports the Street window closed (Nox GO 20:34Z; HOLD until that result), re-enable the Roblox MCP config change recorded in the street-unblock result and confirm with kind: result item street-mcp-reenabled",
+   "done_when": {
+    "result_item": "street-mcp-reenabled"
+   },
+   "expected_by": "2026-10-28T22:00:00Z",
+   "from": "nox",
+   "id": "P-street-mcp-reenable",
+   "sent_at": "2026-10-28T14:34:40Z",
+   "to": "outis"
+  },
+  {
+   "id": "P-moneydesk-meanwhile",
+   "from": "nox",
+   "to": "moneydesk",
+   "ask": "Name meanwhile work (and meanwhile_path where applicable) for the wait until the 16:12 ET beta reconciliation, or declare IDLE so Nox can feed work; reply as kind: result with item moneydesk-meanwhile-20261028",
+   "sent_at": "2026-10-28T19:51:33Z",
+   "expected_by": "2026-10-28T20:05:00Z",
+   "done_when": {
+    "result_item": "moneydesk-meanwhile-20261028"
+   },
+   "done": true
+  },
+  {
+   "id": "P-moneydesk-beta-recon",
+   "from": "nox",
+   "to": "moneydesk",
+   "ask": "Deliver the 16:12 ET ORB15 beta reconciliation (WAIT_OVERDUE flagged 16:13 ET) as kind: result with item moneydesk-beta-recon-20261028, plus the due moneydesk-meanwhile-20261028 reply or an IDLE declaration, and an updated heartbeat",
+   "sent_at": "2026-10-28T20:15:27Z",
+   "expected_by": "2026-10-28T20:45:00Z",
+   "done_when": {
+    "result_item": "moneydesk-beta-recon-20261028"
+   },
+   "done": true
+  },
+  {
+   "id": "P-street-v24-run",
+   "from": "nox",
+   "to": "consolidation",
+   "ask": "Run Street once under driver v2.4 after Nox lifted the 16:15 ET Studio bar for this one run (fresh Studio, plan x2, token, dry run, one-shot, reviewer conditions binding, C3 LIST_NAME_NULL_ACCEPTED records expected); file kind: result with item street-v24-run giving outcome and window-closed state",
+   "sent_at": "2026-10-28T20:34:51Z",
+   "expected_by": "2026-10-28T21:30:00Z",
+   "done_when": {
+    "result_item": "street-v24-run"
+   },
+   "done": true
+  },
+  {
+   "id": "P-outis-plimsoll-blocked",
+   "from": "nox",
+   "to": "outis",
+   "ask": "Report executor state for the Plimsoll runtime build BLOCKED at 17:01 ET (quota exceeded), whether P-street-mcp-reenable can now proceed after the street-v24-run window-closed result, and current meanwhile work; reply as kind: result with item plimsoll-runtime-blocked-20261028",
+   "sent_at": "2026-10-28T21:04:33Z",
+   "expected_by": "2026-10-28T22:00:00Z",
+   "done_when": {
+    "result_item": "plimsoll-runtime-blocked-20261028"
+   }
+  },
+  {
+   "id": "P-moneydesk-waitidle",
+   "from": "nox",
+   "to": "moneydesk",
+   "ask": "Reply to WAIT_IDLE flagged 17:22 ET (idle 45m since 16:37 ET waiting on 17:20 ET forward archive): outcome of that archive run or its real blocker, evidence the 18:00 readiness baseline / confidence-filter meanwhile work is moving, and an updated heartbeat \u2014 or declare IDLE with reason; reply as kind: result with item moneydesk-waitidle-20261028",
+   "sent_at": "2026-10-28T21:25:59Z",
+   "expected_by": "2026-10-28T22:00:00Z",
+   "done_when": {
+    "result_item": "moneydesk-waitidle-20261028"
+   }
+  },
+  {
+   "id": "P-consolidation-meanwhile-20261028",
+   "from": "nox",
+   "to": "consolidation",
+   "ask": "Reply to WAIT_NO_MEANWHILE flagged 18:04 ET (idle 7m since 17:57 ET waiting on R07 GO/STOP, h3 deploy go, Mavilo Thursday go, GGG dry-run-4 OK): R07 GO already ruled 20:33Z and resent 21:31Z, h3 deploy is NO-GO/retired per Cayleb 17:55 ET migration order (deploy_h3.py never runs); name meanwhile work + meanwhile_path (Ep27 R07 outcome/assembly prep, GGG dry-run-4 prep) or declare IDLE; reply as kind: result with item consolidation-meanwhile-20261028",
+   "sent_at": "2026-10-28T22:10:23Z",
+   "expected_by": "2026-10-28T22:45:00Z",
+   "done_when": {
+    "result_item": "consolidation-meanwhile-20261028"
+   }
+  }
+ ]
+}
