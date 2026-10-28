@@ -1,6 +1,6 @@
 # Lane status
 
-Updated 08:53 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
+Updated 08:56 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
 
 | lane | state | since | doing / waiting on | next check | flags |
 |---|---|---|---|---|---|
@@ -9,8 +9,6 @@ Updated 08:53 ET by the lane sensor (every 3 min). If that time is more than 15 
 | Outis / Codex desktop | QUIET | 06:38 |  | — | IDLE_LONG |
 | Grok / RSI desk | — | — |  | — | — |
 | Nox | — | — |  | — | — |
-| BUILD TEST (remove after 2026-10-28) | IDLE | 08:44 |  | — | — |
-| BUILD TEST folder lane | WAITING | 08:44 | build test: waits on T1 · waits on T1 by 09:24 | — | — |
 
 ## Promises
 
@@ -28,6 +26,6 @@ Empty.
 
 ## Today
 
-- Flag-minutes: {"IDLE_LONG": 7.2}
+- Flag-minutes: {"IDLE_LONG": 10.3}
 - Flags raised: {"IDLE_LONG": 1}
 - Policy v1: idle 30m, stuck 30m, renotify 60m, claude delivery on.

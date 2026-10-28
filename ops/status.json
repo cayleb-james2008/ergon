@@ -1,5 +1,5 @@
 {
- "generated_at": "2026-10-28T12:53:26Z",
+ "generated_at": "2026-10-28T12:56:28Z",
  "policy_version": 1,
  "lanes": {
   "moneydesk": {
@@ -53,30 +53,10 @@
    "expected_by": null,
    "next_check_at": null,
    "last_deliverable_at": null
-  },
-  "linktest": {
-   "state": "IDLE",
-   "since": "2026-10-28T12:44:58Z",
-   "flags": [],
-   "doing": null,
-   "waiting_on": null,
-   "expected_by": null,
-   "next_check_at": null,
-   "last_deliverable_at": null
-  },
-  "probe": {
-   "state": "WAITING",
-   "since": "2026-10-28T12:44:25Z",
-   "flags": [],
-   "doing": "build test: waits on T1",
-   "waiting_on": "T1",
-   "expected_by": "2026-10-28T13:24:25Z",
-   "next_check_at": null,
-   "last_deliverable_at": null
   }
  },
  "flags": {
-  "outis:IDLE_LONG": "quiet for 2h14m with no declared wait"
+  "outis:IDLE_LONG": "quiet for 2h17m with no declared wait"
  },
  "promises": [],
  "queue": [],
