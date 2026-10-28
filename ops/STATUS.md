@@ -1,20 +1,18 @@
 # Lane status
 
-Updated 10:20 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
+Updated 10:23 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
 
 | lane | state | since | doing / waiting on | next check | flags |
 |---|---|---|---|---|---|
-| Money Desk | IDLE | 10:20 | Usage throttle: weekly Claude meter 87% (resets Mon 11-02 01:00 ET); trial-4 build PAUSED after day 1 (602a2e6); only the ORB15 beta check-ins and the 18:00 re… | 16:12 | — |
-| Consolidation (lanes A-E) | IDLE | 10:20 | Lane B: Ep26 G5 generated awaiting independent review; Ep27 awaiting Taste Card; Lane A: Card fixture PASSED natively and resealed, Street BLOCKED on a new Cod… | 10:40 | — |
+| Money Desk | WORKING | 10:21 | Usage throttle: weekly Claude meter 87% (resets Mon 11-02 01:00 ET); trial-4 build PAUSED after day 1 (602a2e6); only the ORB15 beta check-ins and the 18:00 re… | 16:12 | — |
+| Consolidation (lanes A-E) | WORKING | 07:00 | Lane B: Ep26 G5 generated awaiting independent review; Ep27 awaiting Taste Card; Lane A: Card fixture PASSED natively and resealed, Street BLOCKED on a new Cod… | 10:40 | — |
 | Outis / Codex desktop | WAITING | 10:19 | Board checks and handover prep verification continue; Lanes A/B await consolidation report · waits on lanesAB-report by 18:00 | 10:28 | — |
 | Grok / RSI desk | — | — |  | — | — |
 | Nox | — | — |  | — | — |
 
 ## Promises
 
-| id | from → to | ask | due | state |
-|---|---|---|---|---|
-| 20261028T141624Z-nox-to-consolidation.md | nox → consolidation | Your ONE consolidated completion report is the tracked board item "lanesAB-report". Outis is being … | 18:00 | OPEN |
+None open.
 
 ## Queue
 
@@ -27,6 +25,7 @@ Empty.
 - 20261028T125019Z-sensor-to-probe.md: delivered
 - 20261028T135411Z-build-to-linktest.md: delivered
 - 20261028T141624Z-nox-to-consolidation.md: delivered
+- 20261028T142041Z-consolidation-to-nox.md: delivered
 
 ## Today
 

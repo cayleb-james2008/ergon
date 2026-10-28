@@ -1,10 +1,10 @@
 {
- "generated_at": "2026-10-28T14:20:41Z",
+ "generated_at": "2026-10-28T14:23:41Z",
  "policy_version": 1.0,
  "lanes": {
   "moneydesk": {
-   "state": "IDLE",
-   "since": "2026-10-28T14:20:30Z",
+   "state": "WORKING",
+   "since": "2026-10-28T14:21:07Z",
    "flags": [],
    "doing": "Usage throttle: weekly Claude meter 87% (resets Mon 11-02 01:00 ET); trial-4 build PAUSED after day 1 (602a2e6); only the ORB15 beta check-ins and the 18:00 readiness report run today",
    "waiting_on": "16:12 ET beta reconciliation; the weekly usage reset Mon 11-02 01:00 ET for the build",
@@ -13,8 +13,8 @@
    "last_deliverable_at": null
   },
   "consolidation": {
-   "state": "IDLE",
-   "since": "2026-10-28T14:20:40Z",
+   "state": "WORKING",
+   "since": "2026-10-28T11:00:38Z",
    "flags": [],
    "doing": "Lane B: Ep26 G5 generated awaiting independent review; Ep27 awaiting Taste Card; Lane A: Card fixture PASSED natively and resealed, Street BLOCKED on a new Codex-owned Roblox MCP chain (asked Nox/Outi",
    "waiting_on": "nox/outis: disable Codex Roblox MCP and end broker chain 2024835/2024960",
@@ -54,18 +54,7 @@
   }
  },
  "flags": {},
- "promises": [
-  {
-   "id": "20261028T141624Z-nox-to-consolidation.md",
-   "from": "nox",
-   "to": "consolidation",
-   "ask": "Your ONE consolidated completion report is the tracked board item \"lanesAB-report\". Outis is being told to declare waiti",
-   "sent_at": "2026-10-28T14:16:24Z",
-   "expected_by": "2026-10-28T22:00:00Z",
-   "done": false,
-   "state": "OPEN"
-  }
- ],
+ "promises": [],
  "queue": [],
  "mail": {
   "20261028T124425Z-build-to-linktest.md": {
@@ -92,6 +81,11 @@
    "state": "delivered",
    "route": "switchboard",
    "at": "2026-10-28T14:20:41Z"
+  },
+  "20261028T142041Z-consolidation-to-nox.md": {
+   "state": "delivered",
+   "route": "board",
+   "at": "2026-10-28T14:23:41Z"
   }
  }
 }
