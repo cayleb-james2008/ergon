@@ -1,5 +1,5 @@
 {
- "generated_at": "2026-10-28T12:50:19Z",
+ "generated_at": "2026-10-28T12:50:23Z",
  "policy_version": 1,
  "lanes": {
   "moneydesk": {
@@ -91,12 +91,20 @@
    "to": "linktest"
   },
   "20261028T125015Z-linktest-to-nox.md": {
-   "state": "delivered",
+   "at": "2026-10-28T12:50:19Z",
    "from": "linktest",
-   "to": "nox",
    "kind": "result",
    "route": "board",
-   "at": "2026-10-28T12:50:19Z"
+   "state": "delivered",
+   "to": "nox"
+  },
+  "20261028T125019Z-sensor-to-probe.md": {
+   "state": "delivered",
+   "from": "sensor",
+   "to": "probe",
+   "kind": "fyi",
+   "route": "folder",
+   "at": "2026-10-28T12:50:23Z"
   }
  }
 }

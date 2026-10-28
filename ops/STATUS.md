@@ -24,9 +24,10 @@ Empty.
 
 - 20261028T124425Z-build-to-linktest.md: delivered
 - 20261028T125015Z-linktest-to-nox.md: delivered
+- 20261028T125019Z-sensor-to-probe.md: delivered
 
 ## Today
 
-- Flag-minutes: {"IDLE_LONG": 7.0}
+- Flag-minutes: {"IDLE_LONG": 7.1}
 - Flags raised: {"IDLE_LONG": 1}
 - Policy v1: idle 30m, stuck 30m, renotify 60m, claude delivery on.
