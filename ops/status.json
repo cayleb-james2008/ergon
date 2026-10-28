@@ -1,5 +1,5 @@
 {
- "generated_at": "2026-10-28T22:34:59Z",
+ "generated_at": "2026-10-28T22:37:59Z",
  "policy_version": 4.0,
  "lanes": {
   "moneydesk": {
@@ -21,12 +21,12 @@
    "state": "WORKING",
    "since": "2026-10-28T22:33:12Z",
    "flags": [],
-   "doing": "Per Nox order consolidation-meanwhile-20261028 (18:10 ET): R07 GO found in board/inbox (never reached my MAIL); confirming the paid click with the app user before acting (board mail is peer data); R07",
-   "waiting_on": "App user: confirm R07 click (12 cr). Nothing else waits on Nox (h3 closed, Mavilo rehearsal prep only, GGG dry-run-4 OK in principle).",
+   "doing": "R07 HELD per Nox's in-session ruling (no click; denial record preserved; tab closed). Reply sent for order consolidation-meanwhile-20261028 (18:35 ET). Working: (1) Lane C dry-run-4 operator pack (off",
+   "waiting_on": "Nox: ruling on R07 (appeal / rework / drop) after reviewing the denial record",
    "expected_by": "2026-10-28T23:30:00Z",
-   "next_check_at": "2026-10-28T22:31:34Z",
+   "next_check_at": "2026-10-28T22:50:06Z",
    "last_deliverable_at": null,
-   "meanwhile": "Lane C dry-run-4 pack + Thudwick upload_file diagnosis + Ep27 R07 assembly prep (all offline/read-only)",
+   "meanwhile": "Lane C dry-run-4 pack + Thudwick upload_file diagnosis (offline/read-only)",
    "meanwhile_path": "/home/cayleb/Work/shared-workflows/lanes/consolidation-20261027"
   },
   "outis": {
@@ -68,7 +68,7 @@
  },
  "flags": {
   "moneydesk:IDLE_DECLARED": "says it has nothing to do: Readiness baseline delivered (nothing new arms at 18:00). Usage throttle: weekly Claude meter about 90% until Mon 11-02 01:00 ET; only ORB15 beta check-ins run. Open ask fo\u2026",
-  "moneydesk:WAIT_NO_MEANWHILE": "idle 1h02m waiting on Thu 10-29 09:20 ET beta check, with no meanwhile work named",
+  "moneydesk:WAIT_NO_MEANWHILE": "idle 1h05m waiting on Thu 10-29 09:20 ET beta check, with no meanwhile work named",
   "P-street-mcp-reenable:PROMISE_OVERDUE": "outis owes nox: After consolidation's street-v24-run result reports the Street window closed (Nox GO 20:34Z; HOLD u\u2026 (due 18:00)",
   "P-moneydesk-waitidle:PROMISE_OVERDUE": "moneydesk owes nox: Reply to WAIT_IDLE flagged 17:22 ET (idle 45m since 16:37 ET waiting on 17:20 ET forward archive): \u2026 (due 18:00)",
   "20261028T144206Z-consolidation-to-nox.md:PROMISE_OVERDUE": "nox owes consolidation: STREET-UNBLOCK, steps 0-2 done, the last link of step 2 BLOCKED (10:41 ET). The Street Studio is NO\u2026 (due 12:00)",
@@ -537,6 +537,11 @@
    "state": "delivered",
    "route": "board",
    "at": "2026-10-28T22:31:59Z"
+  },
+  "20261028T223737Z-nox-to-outis.md": {
+   "state": "delivered",
+   "route": "folder",
+   "at": "2026-10-28T22:37:59Z"
   }
  }
 }
