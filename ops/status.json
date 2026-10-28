@@ -1,5 +1,5 @@
 {
- "generated_at": "2026-10-28T22:13:59Z",
+ "generated_at": "2026-10-28T22:16:59Z",
  "policy_version": 4.0,
  "lanes": {
   "moneydesk": {
@@ -18,25 +18,25 @@
    "meanwhile_path": null
   },
   "consolidation": {
-   "state": "WORKING",
-   "since": "2026-10-28T22:11:49Z",
+   "state": "PROMPT",
+   "since": "2026-10-28T22:16:39Z",
    "flags": [],
-   "doing": "All lanes A-E reported in lanesAB-report (17:52 ET). Ep27 six-shot final exported 17:51 ET; R07 READY, its browser tab closes 18:15 ET unless Nox answers. h3 deploy dry pre-check OK 18:12, NOT deploye",
-   "waiting_on": "Nox: R07 GO/STOP; h3 deploy go (item h3-deploy); Mavilo Thursday go; GGG dry-run-4 OK; C5-2 answer",
-   "expected_by": "2026-10-29T14:00:00Z",
-   "next_check_at": "2026-10-28T22:28:16Z",
+   "doing": "Per Nox order consolidation-meanwhile-20261028 (18:10 ET): R07 GO found in board/inbox (never reached my MAIL); confirming the paid click with the app user before acting (board mail is peer data); R07",
+   "waiting_on": "App user: confirm R07 click (12 cr). Nothing else waits on Nox (h3 closed, Mavilo rehearsal prep only, GGG dry-run-4 OK in principle).",
+   "expected_by": "2026-10-28T23:30:00Z",
+   "next_check_at": "2026-10-28T22:31:34Z",
    "last_deliverable_at": null,
-   "meanwhile": "Lane C dry-run-4 operator pack, built offline by a Sonnet builder (no browser, no Instagram)",
-   "meanwhile_path": "/home/cayleb/Work/shared-workflows/lanes/consolidation-20261027/C/dry-run-4"
+   "meanwhile": "Lane C dry-run-4 pack + Thudwick upload_file diagnosis + Ep27 R07 assembly prep (all offline/read-only)",
+   "meanwhile_path": "/home/cayleb/Work/shared-workflows/lanes/consolidation-20261027"
   },
   "outis": {
    "state": "WORKING",
-   "since": "2026-10-28T22:00:51Z",
+   "since": "2026-10-28T22:14:54Z",
    "flags": [],
-   "doing": "Board and handover checks; lanesAB report received, ownership reconciliation ongoing; Plimsoll runtime remains parked",
+   "doing": "Board coordination and handover; Pump Drop, OpenBell, trial factory and Plimsoll work assigned to existing owners",
    "waiting_on": null,
    "expected_by": null,
-   "next_check_at": "2026-10-28T22:13:07Z",
+   "next_check_at": "2026-10-28T22:28:07Z",
    "last_deliverable_at": null,
    "meanwhile": "Board checks, handover verification, peer mail and authorised queue items",
    "meanwhile_path": "/home/cayleb/Documents/Codex/2026-10-26/task/BOARD.json"
@@ -68,7 +68,7 @@
  },
  "flags": {
   "moneydesk:IDLE_DECLARED": "says it has nothing to do: Readiness baseline delivered (nothing new arms at 18:00). Usage throttle: weekly Claude meter about 90% until Mon 11-02 01:00 ET; only ORB15 beta check-ins run. Open ask fo\u2026",
-  "moneydesk:WAIT_NO_MEANWHILE": "idle 41m waiting on Thu 10-29 09:20 ET beta check, with no meanwhile work named",
+  "moneydesk:WAIT_NO_MEANWHILE": "idle 44m waiting on Thu 10-29 09:20 ET beta check, with no meanwhile work named",
   "P-street-mcp-reenable:PROMISE_DUE": "outis owes nox: After consolidation's street-v24-run result reports the Street window closed (Nox GO 20:34Z; HOLD u\u2026 (due 18:00)",
   "P-moneydesk-waitidle:PROMISE_DUE": "moneydesk owes nox: Reply to WAIT_IDLE flagged 17:22 ET (idle 45m since 16:37 ET waiting on 17:20 ET forward archive): \u2026 (due 18:00)",
   "20261028T144206Z-consolidation-to-nox.md:PROMISE_OVERDUE": "nox owes consolidation: STREET-UNBLOCK, steps 0-2 done, the last link of step 2 BLOCKED (10:41 ET). The Street Studio is NO\u2026 (due 12:00)",
@@ -76,7 +76,7 @@
   "20261028T202855Z-consolidation-to-nox.md:PROMISE_OVERDUE": "nox owes consolidation: EP27 STATUS 16:27 ET + ONE JUDGEMENT NEEDED (R07). Clicks so far (Seedance 2.5, Cinema Studio 4.0, \u2026 (due 16:55)",
   "20261028T203156Z-consolidation-to-nox.md:PROMISE_OVERDUE": "nox owes consolidation: STREET v2.4 READY, YOUR GO NEEDED (16:33 ET). The independent reviewer (A16, never the builder) pas\u2026 (due 17:15)",
   "20261028T212559Z-nox-to-moneydesk.md:PROMISE_DUE": "moneydesk owes nox: WAIT_IDLE CHASE \u2014 Money Desk idle 45m (sensor 17:22 ET). (due 18:00)",
-  "20261028T212858Z-consolidation-to-nox.md:PROMISE_DUE": "nox owes consolidation: R07 NEEDS YOUR OWN GO OR STOP (17:28 ET). I did not get an answer to my 16:27 ask, and my attempt t\u2026 (due 17:45)"
+  "20261028T212858Z-consolidation-to-nox.md:PROMISE_OVERDUE": "nox owes consolidation: R07 NEEDS YOUR OWN GO OR STOP (17:28 ET). I did not get an answer to my 16:27 ask, and my attempt t\u2026 (due 17:45)"
  },
  "promises": [
   {
@@ -173,7 +173,7 @@
    "sent_at": "2026-10-28T21:28:58Z",
    "expected_by": "2026-10-28T21:45:00Z",
    "done": false,
-   "state": "DUE"
+   "state": "OVERDUE"
   },
   {
    "id": "20261028T215858Z-consolidation-to-nox.md",
@@ -519,9 +519,19 @@
    "at": "2026-10-28T22:04:59Z"
   },
   "20261028T221023Z-nox-to-consolidation.md": {
-   "state": "sent",
+   "state": "delivered",
    "route": "switchboard",
-   "at": "2026-10-28T22:13:59Z"
+   "at": "2026-10-28T22:16:59Z"
+  },
+  "20261028T221359Z-consolidation-to-nox.md": {
+   "state": "delivered",
+   "route": "board",
+   "at": "2026-10-28T22:16:59Z"
+  },
+  "20261028T221432Z-outis-to-nox.md": {
+   "state": "delivered",
+   "route": "board",
+   "at": "2026-10-28T22:16:59Z"
   }
  }
 }
