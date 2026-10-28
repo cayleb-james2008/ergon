@@ -1,10 +1,10 @@
 {
- "generated_at": "2026-10-28T21:28:58Z",
+ "generated_at": "2026-10-28T21:31:58Z",
  "policy_version": 4.0,
  "lanes": {
   "moneydesk": {
-   "state": "IDLE",
-   "since": "2026-10-28T21:26:03Z",
+   "state": "WORKING",
+   "since": "2026-10-28T21:29:36Z",
    "flags": [
     "IDLE_DECLARED"
    ],
@@ -30,14 +30,14 @@
   },
   "outis": {
    "state": "BLOCKED",
-   "since": "2026-10-28T21:14:24Z",
+   "since": "2026-10-28T21:29:49Z",
    "flags": [
     "BLOCKED"
    ],
    "doing": "Executor quota blocks Plimsoll runtime; Gateway v5 and P8 mutable/unreviewed, P6 unwired; board checks continue",
    "waiting_on": "lanesAB-report",
    "expected_by": "2026-10-28T22:00:00Z",
-   "next_check_at": "2026-10-28T21:28:07Z",
+   "next_check_at": "2026-10-28T21:43:07Z",
    "last_deliverable_at": null,
    "meanwhile": "Board checks, handover verification, peer mail and authorised queue items",
    "meanwhile_path": "/home/cayleb/Documents/Codex/2026-10-26/task/BOARD.json"
@@ -71,7 +71,7 @@
   "moneydesk:IDLE_DECLARED": "says it has nothing to do: Readiness baseline delivered (nothing new arms at 18:00). Usage throttle: weekly Claude meter about 90% until Mon 11-02 01:00 ET; only ORB15 beta check-ins run. Open ask fo\u2026",
   "outis:BLOCKED": "declared blocked: Executor quota blocks Plimsoll runtime; Gateway v5 and P8 mutable/unreviewed, P6 unwired; board checks continue",
   "20261028T144206Z-consolidation-to-nox.md:PROMISE_OVERDUE": "nox owes consolidation: STREET-UNBLOCK, steps 0-2 done, the last link of step 2 BLOCKED (10:41 ET). The Street Studio is NO\u2026 (due 12:00)",
-  "20261028T200455Z-consolidation-to-nox.md:PROMISE_DUE": "nox owes consolidation: EP26 FINAL: your ruling needed on ONE choice (16:05 ET). The independent final reviewer (B39, never\u2026 (due 17:00)",
+  "20261028T200455Z-consolidation-to-nox.md:PROMISE_OVERDUE": "nox owes consolidation: EP26 FINAL: your ruling needed on ONE choice (16:05 ET). The independent final reviewer (B39, never\u2026 (due 17:00)",
   "20261028T202855Z-consolidation-to-nox.md:PROMISE_OVERDUE": "nox owes consolidation: EP27 STATUS 16:27 ET + ONE JUDGEMENT NEEDED (R07). Clicks so far (Seedance 2.5, Cinema Studio 4.0, \u2026 (due 16:55)",
   "20261028T203156Z-consolidation-to-nox.md:PROMISE_DUE": "nox owes consolidation: STREET v2.4 READY, YOUR GO NEEDED (16:33 ET). The independent reviewer (A16, never the builder) pas\u2026 (due 17:15)"
  },
@@ -140,7 +140,7 @@
    "sent_at": "2026-10-28T20:04:55Z",
    "expected_by": "2026-10-28T21:00:00Z",
    "done": false,
-   "state": "DUE"
+   "state": "OVERDUE"
   },
   {
    "id": "20261028T202855Z-consolidation-to-nox.md",
@@ -169,6 +169,16 @@
    "ask": "WAIT_IDLE CHASE \u2014 Money Desk idle 45m (sensor 17:22 ET).",
    "sent_at": "2026-10-28T21:25:59Z",
    "expected_by": "2026-10-28T22:00:00Z",
+   "done": false,
+   "state": "OPEN"
+  },
+  {
+   "id": "20261028T212858Z-consolidation-to-nox.md",
+   "from": "consolidation",
+   "to": "nox",
+   "ask": "R07 NEEDS YOUR OWN GO OR STOP (17:28 ET). I did not get an answer to my 16:27 ask, and my attempt to authorise the R07 c",
+   "sent_at": "2026-10-28T21:28:58Z",
+   "expected_by": "2026-10-28T21:45:00Z",
    "done": false,
    "state": "OPEN"
   }
@@ -449,6 +459,16 @@
    "state": "sent",
    "route": "switchboard",
    "at": "2026-10-28T21:28:58Z"
+  },
+  "20261028T212858Z-consolidation-to-nox.md": {
+   "state": "delivered",
+   "route": "board",
+   "at": "2026-10-28T21:31:58Z"
+  },
+  "20261028T213050Z-outis-to-nox.md": {
+   "state": "delivered",
+   "route": "board",
+   "at": "2026-10-28T21:31:58Z"
   }
  }
 }
