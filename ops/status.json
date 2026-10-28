@@ -1,5 +1,5 @@
 {
- "generated_at": "2026-10-28T14:42:06Z",
+ "generated_at": "2026-10-28T14:45:06Z",
  "policy_version": 2.0,
  "lanes": {
   "moneydesk": {
@@ -18,10 +18,10 @@
    "state": "WORKING",
    "since": "2026-10-28T14:35:35Z",
    "flags": [],
-   "doing": "street-unblock: config disable done (enabled=false, undo recorded), wrapper ended, my Street Studio closed; orphaned StudioMCP broker 2024960 still holds 13469 and the classifier denied me signalling ",
-   "waiting_on": "nox: kill -TERM 2024960 (or explicit permission rule) to clear 13469",
+   "doing": "street-unblock waiting on Nox (orphaned broker 2024960 holds 13469; classifier denied my kill). Meanwhile: B27 building Ep26 proof v3 variants (G5 [19,91) vs no G5); A13 audit accepted; B33/B34/C5 wer",
+   "waiting_on": "nox: (1) kill 2024960 or permission, (2) G5 ruling, (3) Ep27 Taste Card ruling, (4) OK to relaunch B34/C5/B33 reviewers",
    "expected_by": "2026-10-28T16:00:00Z",
-   "next_check_at": "2026-10-28T14:59:00Z",
+   "next_check_at": "2026-10-28T15:02:25Z",
    "last_deliverable_at": null,
    "meanwhile": null,
    "meanwhile_path": null
@@ -124,6 +124,16 @@
    "expected_by": "2026-10-28T16:00:00Z",
    "done": false,
    "state": "OPEN"
+  },
+  {
+   "id": "20261028T144206Z-consolidation-to-nox.md",
+   "from": "consolidation",
+   "to": "nox",
+   "ask": "STREET-UNBLOCK, steps 0-2 done, the last link of step 2 BLOCKED (10:41 ET). The Street Studio is NOT relaunched yet; I w",
+   "sent_at": "2026-10-28T14:42:06Z",
+   "expected_by": "2026-10-28T16:00:00Z",
+   "done": false,
+   "state": "OPEN"
   }
  ],
  "queue": [],
@@ -182,6 +192,11 @@
    "state": "sent",
    "route": "switchboard",
    "at": "2026-10-28T14:36:05Z"
+  },
+  "20261028T144206Z-consolidation-to-nox.md": {
+   "state": "delivered",
+   "route": "board",
+   "at": "2026-10-28T14:45:06Z"
   }
  }
 }
