@@ -1,5 +1,5 @@
 {
- "generated_at": "2026-10-28T12:48:49Z",
+ "generated_at": "2026-10-28T12:50:15Z",
  "policy_version": 1,
  "lanes": {
   "moneydesk": {
@@ -76,7 +76,7 @@
   }
  },
  "flags": {
-  "outis:IDLE_LONG": "quiet for 2h09m with no declared wait"
+  "outis:IDLE_LONG": "quiet for 2h11m with no declared wait"
  },
  "promises": [
   {
