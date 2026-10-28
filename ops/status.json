@@ -1,5 +1,5 @@
 {
- "generated_at": "2026-10-28T13:53:41Z",
+ "generated_at": "2026-10-28T13:54:12Z",
  "policy_version": 1.0,
  "lanes": {
   "moneydesk": {
@@ -53,6 +53,16 @@
    "expected_by": null,
    "next_check_at": null,
    "last_deliverable_at": null
+  },
+  "linktest": {
+   "state": "IDLE",
+   "since": "2026-10-28T12:44:58Z",
+   "flags": [],
+   "doing": null,
+   "waiting_on": null,
+   "expected_by": null,
+   "next_check_at": null,
+   "last_deliverable_at": null
   }
  },
  "flags": {
@@ -75,6 +85,11 @@
    "state": "delivered",
    "route": "folder",
    "at": "2026-10-28T12:50:23Z"
+  },
+  "20261028T135411Z-build-to-linktest.md": {
+   "state": "sent",
+   "route": "switchboard",
+   "at": "2026-10-28T13:54:12Z"
   }
  }
 }
