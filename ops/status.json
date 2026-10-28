@@ -1,13 +1,12 @@
 {
- "generated_at": "2026-10-28T21:25:57Z",
+ "generated_at": "2026-10-28T21:28:58Z",
  "policy_version": 4.0,
  "lanes": {
   "moneydesk": {
    "state": "IDLE",
-   "since": "2026-10-28T21:25:57Z",
+   "since": "2026-10-28T21:26:03Z",
    "flags": [
-    "IDLE_DECLARED",
-    "MAIL_FAILED"
+    "IDLE_DECLARED"
    ],
    "doing": "Readiness baseline delivered (nothing new arms at 18:00). Usage throttle: weekly Claude meter about 90% until Mon 11-02 01:00 ET; only ORB15 beta check-ins run. Open ask for Nox: a Tradovate sign-in f",
    "waiting_on": "Thu 10-29 09:20 ET beta check",
@@ -21,10 +20,10 @@
    "state": "WORKING",
    "since": "2026-10-28T19:52:56Z",
    "flags": [],
-   "doing": "Ep26 DELIVERED (A2, exported 16:35 ET). Street fixture RAN natively under v2.4 (PASS 31/31, console-line guard stop; window closed; reseal rule builder running). Ep27: S05 take1 HOLD -> re-roll with n",
-   "waiting_on": "Nox: R07 judgement (go/swap/stop). Browser queue: S02 click, S05 re-roll, S04, R07. Street reseal builder + reviewer",
-   "expected_by": "2026-10-28T22:15:00Z",
-   "next_check_at": "2026-10-28T21:08:47Z",
+   "doing": "Ep26 delivered. Street fixture SEALED offline (ran once, 31/31, reviewed rule). Ep27: 5 Seedance clicks done (72.0 cr; S05 take1 HOLD, re-roll + S04 in independent review, OUTRO/S02 accepted), assembl",
+   "waiting_on": "Nox: GO/STOP R07 (reply by 17:45 ET else treated as STOP); h3 deploy go after Thudwick closes",
+   "expected_by": "2026-10-28T22:30:00Z",
+   "next_check_at": "2026-10-28T21:39:16Z",
    "last_deliverable_at": null,
    "meanwhile": null,
    "meanwhile_path": null
@@ -74,8 +73,7 @@
   "20261028T144206Z-consolidation-to-nox.md:PROMISE_OVERDUE": "nox owes consolidation: STREET-UNBLOCK, steps 0-2 done, the last link of step 2 BLOCKED (10:41 ET). The Street Studio is NO\u2026 (due 12:00)",
   "20261028T200455Z-consolidation-to-nox.md:PROMISE_DUE": "nox owes consolidation: EP26 FINAL: your ruling needed on ONE choice (16:05 ET). The independent final reviewer (B39, never\u2026 (due 17:00)",
   "20261028T202855Z-consolidation-to-nox.md:PROMISE_OVERDUE": "nox owes consolidation: EP27 STATUS 16:27 ET + ONE JUDGEMENT NEEDED (R07). Clicks so far (Seedance 2.5, Cinema Studio 4.0, \u2026 (due 16:55)",
-  "20261028T203156Z-consolidation-to-nox.md:PROMISE_DUE": "nox owes consolidation: STREET v2.4 READY, YOUR GO NEEDED (16:33 ET). The independent reviewer (A16, never the builder) pas\u2026 (due 17:15)",
-  "moneydesk/20261028T204750Z-nox-to-moneydesk.md:MAIL_FAILED": "20261028T204750Z-nox-to-moneydesk.md was not seen in the session after 3 tries"
+  "20261028T203156Z-consolidation-to-nox.md:PROMISE_DUE": "nox owes consolidation: STREET v2.4 READY, YOUR GO NEEDED (16:33 ET). The independent reviewer (A16, never the builder) pas\u2026 (due 17:15)"
  },
  "promises": [
   {
@@ -100,6 +98,18 @@
    "id": "P-street-mcp-reenable",
    "sent_at": "2026-10-28T14:34:40Z",
    "to": "outis",
+   "state": "OPEN"
+  },
+  {
+   "id": "P-moneydesk-waitidle",
+   "from": "nox",
+   "to": "moneydesk",
+   "ask": "Reply to WAIT_IDLE flagged 17:22 ET (idle 45m since 16:37 ET waiting on 17:20 ET forward archive): outcome of that archive run or its real blocker, evidence the 18:00 readiness baseline / confidence-filter meanwhile work is moving, and an updated heartbeat \u2014 or declare IDLE with reason; reply as kind: result with item moneydesk-waitidle-20261028",
+   "sent_at": "2026-10-28T21:25:59Z",
+   "expected_by": "2026-10-28T22:00:00Z",
+   "done_when": {
+    "result_item": "moneydesk-waitidle-20261028"
+   },
    "state": "OPEN"
   },
   {
@@ -151,6 +161,16 @@
    "expected_by": "2026-10-28T21:15:00Z",
    "done": false,
    "state": "DUE"
+  },
+  {
+   "id": "20261028T212559Z-nox-to-moneydesk.md",
+   "from": "nox",
+   "to": "moneydesk",
+   "ask": "WAIT_IDLE CHASE \u2014 Money Desk idle 45m (sensor 17:22 ET).",
+   "sent_at": "2026-10-28T21:25:59Z",
+   "expected_by": "2026-10-28T22:00:00Z",
+   "done": false,
+   "state": "OPEN"
   }
  ],
  "queue": [],
@@ -414,6 +434,21 @@
    "state": "delivered",
    "route": "board",
    "at": "2026-10-28T21:16:57Z"
+  },
+  "20261028T212557Z-consolidation-to-nox.md": {
+   "state": "delivered",
+   "route": "board",
+   "at": "2026-10-28T21:28:58Z"
+  },
+  "20261028T212557Z-moneydesk-to-nox.md": {
+   "state": "delivered",
+   "route": "board",
+   "at": "2026-10-28T21:28:58Z"
+  },
+  "20261028T212559Z-nox-to-moneydesk.md": {
+   "state": "sent",
+   "route": "switchboard",
+   "at": "2026-10-28T21:28:58Z"
   }
  }
 }
