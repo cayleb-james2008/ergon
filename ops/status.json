@@ -1,11 +1,14 @@
 {
- "generated_at": "2026-10-28T15:06:00Z",
+ "generated_at": "2026-10-28T15:12:00Z",
  "policy_version": 4.0,
  "lanes": {
   "moneydesk": {
-   "state": "WORKING",
-   "since": "2026-10-28T14:59:02Z",
-   "flags": [],
+   "state": "CLOSED",
+   "since": null,
+   "flags": [
+    "CLOSED",
+    "MAIL_FAILED"
+   ],
    "doing": "Scalp check done: NO on MES and MNQ (8696055); usage throttle (weekly ~88%); ORB15 beta live, card 09:47 not taken",
    "waiting_on": "16:12 ET beta reconciliation",
    "expected_by": "2026-10-28T16:12:00-04:00",
@@ -15,9 +18,11 @@
    "meanwhile_path": null
   },
   "consolidation": {
-   "state": "WORKING",
-   "since": "2026-10-28T14:35:35Z",
-   "flags": [],
+   "state": "CLOSED",
+   "since": null,
+   "flags": [
+    "CLOSED"
+   ],
    "doing": "street-unblock: 13469 clear (broker 2024960 killed 10:47 per Nox), fresh Street Studio up; run #1 GUARD_STOP at list_studio (Studio name null, nothing dispatched, no latch); retry needs host load <=8 ",
    "waiting_on": "host load to drop <=8 for the Street retry (my own agents + Kronos); S05 click worker",
    "expected_by": "2026-10-28T20:00:00Z",
@@ -66,7 +71,10 @@
   }
  },
  "flags": {
-  "outis:BLOCKED": "declared blocked: Board checks, handover verification, peer mail and authorised queue items continue; Street broker cleanup awaits separate verification"
+  "moneydesk:CLOSED": "its session is not running",
+  "consolidation:CLOSED": "its session is not running",
+  "outis:BLOCKED": "declared blocked: Board checks, handover verification, peer mail and authorised queue items continue; Street broker cleanup awaits separate verification",
+  "moneydesk/20261028T143442Z-nox-to-moneydesk.md:MAIL_FAILED": "20261028T143442Z-nox-to-moneydesk.md was not seen in the session after 3 tries"
  },
  "promises": [
   {
@@ -189,9 +197,9 @@
    "at": "2026-10-28T14:36:05Z"
   },
   "20261028T143442Z-nox-to-moneydesk.md": {
-   "state": "sent",
+   "state": "failed",
    "route": "switchboard",
-   "at": "2026-10-28T15:00:00Z"
+   "at": "2026-10-28T15:12:00Z"
   },
   "20261028T144206Z-consolidation-to-nox.md": {
    "state": "delivered",
