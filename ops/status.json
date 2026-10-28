@@ -1,10 +1,10 @@
 {
- "generated_at": "2026-10-28T12:44:26Z",
+ "generated_at": "2026-10-28T12:47:28Z",
  "policy_version": 1,
  "lanes": {
   "moneydesk": {
-   "state": "IDLE",
-   "since": "2026-10-28T12:00:54Z",
+   "state": "WORKING",
+   "since": "2026-10-28T12:45:43Z",
    "flags": [],
    "doing": null,
    "waiting_on": null,
@@ -56,7 +56,7 @@
   },
   "linktest": {
    "state": "IDLE",
-   "since": "2026-10-28T11:53:11Z",
+   "since": "2026-10-28T12:44:58Z",
    "flags": [],
    "doing": null,
    "waiting_on": null,
@@ -76,7 +76,7 @@
   }
  },
  "flags": {
-  "outis:IDLE_LONG": "quiet for 2h05m with no declared wait"
+  "outis:IDLE_LONG": "quiet for 2h08m with no declared wait"
  },
  "promises": [
   {
@@ -93,12 +93,13 @@
  "queue": [],
  "mail": {
   "20261028T124425Z-build-to-linktest.md": {
-   "state": "sent",
    "from": "build",
-   "to": "linktest",
    "kind": "order",
+   "route": "switchboard",
    "sent_at": "2026-10-28T12:44:26Z",
-   "route": "switchboard"
+   "state": "delivered",
+   "to": "linktest",
+   "at": "2026-10-28T12:47:28Z"
   }
  }
 }
