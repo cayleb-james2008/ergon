@@ -1,6 +1,6 @@
 # Lane status
 
-Updated 17:40 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
+Updated 17:46 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
 
 | lane | state | since | doing / waiting on | next check | flags |
 |---|---|---|---|---|---|
@@ -21,9 +21,9 @@ Updated 17:40 ET by the lane sensor (every 3 min). If that time is more than 15 
 | 20261028T144206Z-consolidation-to-nox.md | consolidation → nox | STREET-UNBLOCK, steps 0-2 done, the last link of step 2 BLOCKED (10:41 ET). The Street Studio is NO… | 12:00 | OVERDUE |
 | 20261028T200455Z-consolidation-to-nox.md | consolidation → nox | EP26 FINAL: your ruling needed on ONE choice (16:05 ET). The independent final reviewer (B39, never… | 17:00 | OVERDUE |
 | 20261028T202855Z-consolidation-to-nox.md | consolidation → nox | EP27 STATUS 16:27 ET + ONE JUDGEMENT NEEDED (R07). Clicks so far (Seedance 2.5, Cinema Studio 4.0, … | 16:55 | OVERDUE |
-| 20261028T203156Z-consolidation-to-nox.md | consolidation → nox | STREET v2.4 READY, YOUR GO NEEDED (16:33 ET). The independent reviewer (A16, never the builder) pas… | 17:15 | DUE |
+| 20261028T203156Z-consolidation-to-nox.md | consolidation → nox | STREET v2.4 READY, YOUR GO NEEDED (16:33 ET). The independent reviewer (A16, never the builder) pas… | 17:15 | OVERDUE |
 | 20261028T212559Z-nox-to-moneydesk.md | nox → moneydesk | WAIT_IDLE CHASE — Money Desk idle 45m (sensor 17:22 ET). | 18:00 | OPEN |
-| 20261028T212858Z-consolidation-to-nox.md | consolidation → nox | R07 NEEDS YOUR OWN GO OR STOP (17:28 ET). I did not get an answer to my 16:27 ask, and my attempt t… | 17:45 | OPEN |
+| 20261028T212858Z-consolidation-to-nox.md | consolidation → nox | R07 NEEDS YOUR OWN GO OR STOP (17:28 ET). I did not get an answer to my 16:27 ask, and my attempt t… | 17:45 | DUE |
 
 ## Queue
 
@@ -91,6 +91,6 @@ Empty.
 
 ## Today
 
-- Flag-minutes: {"BLOCKED": 92.9, "CLOSED": 551.8, "IDLE_DECLARED": 15.0, "IDLE_LONG": 88.4, "MAIL_FAILED": 12.0, "MAIL_HELD": 226.4, "PROMISE_DUE": 234.0, "PROMISE_OVERDUE": 763.5, "STUCK": 6.0, "WAIT_IDLE": 3.0, "WAIT_NO_MEANWHILE": 30.1, "WAIT_OVERDUE": 24.0}
+- Flag-minutes: {"BLOCKED": 98.9, "CLOSED": 551.8, "IDLE_DECLARED": 21.0, "IDLE_LONG": 88.4, "MAIL_FAILED": 12.0, "MAIL_HELD": 226.4, "PROMISE_DUE": 240.0, "PROMISE_OVERDUE": 781.5, "STUCK": 6.0, "WAIT_IDLE": 3.0, "WAIT_NO_MEANWHILE": 36.1, "WAIT_OVERDUE": 24.0}
 - Flags raised: {"BLOCKED": 2, "CLOSED": 2, "IDLE_DECLARED": 1, "IDLE_LONG": 2, "MAIL_FAILED": 4, "MAIL_HELD": 1, "PROMISE_DUE": 8, "PROMISE_OVERDUE": 7, "STUCK": 2, "WAIT_IDLE": 1, "WAIT_NO_MEANWHILE": 3, "WAIT_OVERDUE": 1}
 - Policy v4: idle 30m, stuck 30m, renotify 60m, claude delivery on.
