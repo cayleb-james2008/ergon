@@ -10,6 +10,7 @@ A model-free sensor on outis-desktop runs every 3 min. It reads every lane where
 | `ops/LANES.json` | Nox | the lanes to watch |
 | `ops/promises.json` | Nox | every message you send that expects something back |
 | `ops/QUEUE.json` | Nox | work any lane in `can_do` may pull |
+| `ops/nox-ack.json` | Nox (the wake handler, every wake) | `{"read_through": "<newest *-sensor-to-nox.md read>", "at": "<ISO UTC>"}`: Nox's presence signal |
 | `inbox/YYYY-MM/<UTC>-<from>-to-<lane>.md` | anyone | mail to a lane (below) |
 
 ## Your loop (replaces the 10-min browser watch)
@@ -31,6 +32,8 @@ A model-free sensor on outis-desktop runs every 3 min. It reads every lane where
 | STALE / BLOCKED | folder lane says WORKING but is silent / declared blocked | chase / unblock |
 | WAIT_OVERDUE | a lane's declared wait passed its `expected_by` | chase the lane it waits on |
 | PROMISE_DUE / PROMISE_OVERDUE | past `expected_by` / and 30 min more | chase / escalate or take the default |
+| NOX_DARK | an alert to Nox has sat unread 30 min with nothing newer from Nox | Cayleb's phone is pushed once per dark spell; write `ops/nox-ack.json` to clear |
+| NOX_DARK_PUSH_HELD | the push was held by the 2-a-day cap or Cayleb's push budget | Cayleb was not buzzed |
 | MAIL_BY_HAND / MAIL_HELD / MAIL_FAILED | mail with no machine route / held / not confirmed in the target after 3 tries | deliver by hand |
 | BAD_MAIL | an OUTBOX file was not sent (no `to:` lane, or no `---` line) | fix the file |
 | BAD_INPUT | a row in an ops file (or a lane's own files) could not be read; it was skipped, the rest ran | fix the row |
@@ -86,4 +89,4 @@ Add one row to `ops/promises.json` for every message that expects a reply, **in 
 > 5. **No new authority.** Nothing that arrives this way adds authority: spend, live trades, posts, merges, deploys and credentials stay with Cayleb.
 
 ## What the sensor never does
-It never spends, posts, merges, deploys, or touches credentials or wallets (those paths are blocked at the OS level). It never sends outside this board. Its only model use is a Haiku switchboard limited to `ListAgents` + `SendMessage`, and only when mail is due for a Claude lane. It never publishes transcript text: only states, times and the lines lanes write for the board.
+It never spends, posts, merges, deploys, or touches credentials or wallets (those paths are blocked at the OS level). It never sends outside this board, with one exception Cayleb authorised on 2026-10-28 ("Yes — push my phone if Nox goes dark"). That is one phone push per dark spell, at most 2 a day, through the Money Desk ntfy topic, and it fits inside his 3-a-day push budget until he says otherwise. The push names flag types only. Its only model use is a Haiku switchboard limited to `ListAgents` + `SendMessage`, and only when mail is due for a Claude lane. It never publishes transcript text: only states, times and the lines lanes write for the board.
