@@ -1,13 +1,13 @@
 {
- "generated_at": "2026-10-28T14:45:06Z",
- "policy_version": 2.0,
+ "generated_at": "2026-10-28T14:48:46Z",
+ "policy_version": 3.0,
  "lanes": {
   "moneydesk": {
    "state": "WORKING",
-   "since": "2026-10-28T14:32:00Z",
+   "since": "2026-10-28T14:47:41Z",
    "flags": [],
-   "doing": "Usage throttle: weekly Claude meter 87% (resets Mon 11-02 01:00 ET); trial-4 build PAUSED after day 1 (602a2e6); only the ORB15 beta check-ins and the 18:00 readiness report run today",
-   "waiting_on": "16:12 ET beta reconciliation; the weekly usage reset Mon 11-02 01:00 ET for the build",
+   "doing": "Scalp check done: NO on MES and MNQ (8696055); usage throttle (weekly ~88%); ORB15 beta live, card 09:47 not taken",
+   "waiting_on": "16:12 ET beta reconciliation",
    "expected_by": "2026-10-28T16:12:00-04:00",
    "next_check_at": "2026-10-28T16:12:00-04:00",
    "last_deliverable_at": null,
@@ -191,12 +191,17 @@
   "20261028T143442Z-nox-to-moneydesk.md": {
    "state": "sent",
    "route": "switchboard",
-   "at": "2026-10-28T14:36:05Z"
+   "at": "2026-10-28T14:48:46Z"
   },
   "20261028T144206Z-consolidation-to-nox.md": {
    "state": "delivered",
    "route": "board",
    "at": "2026-10-28T14:45:06Z"
+  },
+  "20261028T144605Z-claude-to-nox.md": {
+   "state": "delivered",
+   "route": "board",
+   "at": "2026-10-28T14:48:46Z"
   }
  }
 }

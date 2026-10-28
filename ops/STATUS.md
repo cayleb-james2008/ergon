@@ -1,10 +1,10 @@
 # Lane status
 
-Updated 10:45 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
+Updated 10:48 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
 
 | lane | state | since | doing / waiting on | next check | flags |
 |---|---|---|---|---|---|
-| Money Desk | WORKING | 10:32 | Usage throttle: weekly Claude meter 87% (resets Mon 11-02 01:00 ET); trial-4 build PAUSED after day 1 (602a2e6); only the ORB15 beta check-ins and the 18:00 re… | 16:12 | — |
+| Money Desk | WORKING | 10:47 | Scalp check done: NO on MES and MNQ (8696055); usage throttle (weekly ~88%); ORB15 beta live, card 09:47 not taken · waits on 16:12 ET beta reconciliation by 1… | 16:12 | — |
 | Consolidation (lanes A-E) | WORKING | 10:35 | street-unblock waiting on Nox (orphaned broker 2024960 holds 13469; classifier denied my kill). Meanwhile: B27 building Ep26 proof v3 variants (G5 [19,91) vs n… | 11:02 | — |
 | Outis / Codex desktop | BLOCKED | 10:32 | Board checks, handover verification, peer mail and authorised queue items continue; Street broker unblock needs host-level controls · waits on lanesAB-report b… | 10:43 | BLOCKED |
 | Grok / RSI desk | — | — |  | — | — |
@@ -39,9 +39,10 @@ Empty.
 - 20261028T143441Z-nox-to-outis.md: delivered
 - 20261028T143442Z-nox-to-moneydesk.md: sent
 - 20261028T144206Z-consolidation-to-nox.md: delivered
+- 20261028T144605Z-claude-to-nox.md: delivered
 
 ## Today
 
-- Flag-minutes: {"BLOCKED": 12.0, "IDLE_LONG": 82.4, "STUCK": 6.0, "WAIT_NO_MEANWHILE": 3.0}
+- Flag-minutes: {"BLOCKED": 15.7, "IDLE_LONG": 82.4, "STUCK": 6.0, "WAIT_NO_MEANWHILE": 3.0}
 - Flags raised: {"BLOCKED": 1, "IDLE_LONG": 1, "STUCK": 2, "WAIT_NO_MEANWHILE": 1}
-- Policy v2: idle 30m, stuck 30m, renotify 60m, claude delivery on.
+- Policy v3: idle 30m, stuck 30m, renotify 60m, claude delivery on.
