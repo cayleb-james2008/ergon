@@ -1,12 +1,12 @@
 # Lane status
 
-Updated 11:24 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
+Updated 11:27 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
 
 | lane | state | since | doing / waiting on | next check | flags |
 |---|---|---|---|---|---|
 | Money Desk | CLOSED | — | Scalp check done: NO on MES and MNQ (8696055); usage throttle (weekly ~88%); ORB15 beta live, card 09:47 not taken · waits on 16:12 ET beta reconciliation by 1… | 16:12 | CLOSED |
 | Consolidation (lanes A-E) | CLOSED | — | street-unblock: 13469 clear (broker 2024960 killed 10:47 per Nox), fresh Street Studio up; run #1 GUARD_STOP at list_studio (Studio name null, nothing dispatch… | 11:18 | CLOSED |
-| Outis / Codex desktop | BLOCKED | 11:14 | Board checks, handover verification, peer mail and authorised queue items continue; Street broker cleanup awaits separate verification · meanwhile: Board check… | 11:28 | BLOCKED |
+| Outis / Codex desktop | WORKING | 11:25 | Offline prop trial factory and call-out procedure documentation; board and mail checks continue · meanwhile: Board checks, handover verification, peer mail and… | 11:28 | — |
 | Grok / RSI desk | — | — |  | — | — |
 | Nox | — | — |  | — | — |
 
@@ -44,6 +44,6 @@ Empty.
 
 ## Today
 
-- Flag-minutes: {"BLOCKED": 50.9, "CLOSED": 24.0, "IDLE_LONG": 82.4, "MAIL_FAILED": 3.0, "STUCK": 6.0, "WAIT_NO_MEANWHILE": 3.0}
+- Flag-minutes: {"BLOCKED": 53.9, "CLOSED": 30.0, "IDLE_LONG": 82.4, "MAIL_FAILED": 3.0, "STUCK": 6.0, "WAIT_NO_MEANWHILE": 3.0}
 - Flags raised: {"BLOCKED": 1, "CLOSED": 2, "IDLE_LONG": 1, "MAIL_FAILED": 1, "STUCK": 2, "WAIT_NO_MEANWHILE": 1}
 - Policy v4: idle 30m, stuck 30m, renotify 60m, claude delivery on.
