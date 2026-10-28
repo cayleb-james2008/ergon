@@ -1,5 +1,5 @@
 {
- "generated_at": "2026-10-28T12:50:15Z",
+ "generated_at": "2026-10-28T12:50:19Z",
  "policy_version": 1,
  "lanes": {
   "moneydesk": {
@@ -78,18 +78,7 @@
  "flags": {
   "outis:IDLE_LONG": "quiet for 2h11m with no declared wait"
  },
- "promises": [
-  {
-   "id": "20261028T124425Z-build-to-linktest.md",
-   "from": "build",
-   "to": "linktest",
-   "ask": "Pipeline test of the lane-sensor mail route (PING-0d0439e7). No action needed: change nothing. The build will write the ",
-   "sent_at": "2026-10-28T12:44:25Z",
-   "expected_by": "2026-10-28T13:14:25Z",
-   "done": false,
-   "state": "OPEN"
-  }
- ],
+ "promises": [],
  "queue": [],
  "mail": {
   "20261028T124425Z-build-to-linktest.md": {
@@ -100,6 +89,14 @@
    "sent_at": "2026-10-28T12:44:26Z",
    "state": "delivered",
    "to": "linktest"
+  },
+  "20261028T125015Z-linktest-to-nox.md": {
+   "state": "delivered",
+   "from": "linktest",
+   "to": "nox",
+   "kind": "result",
+   "route": "board",
+   "at": "2026-10-28T12:50:19Z"
   }
  }
 }

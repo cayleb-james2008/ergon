@@ -14,9 +14,7 @@ Updated 08:50 ET by the lane sensor (every 3 min). If that time is more than 15 
 
 ## Promises
 
-| id | from → to | ask | due | state |
-|---|---|---|---|---|
-| 20261028T124425Z-build-to-linktest.md | build → linktest | Pipeline test of the lane-sensor mail route (PING-0d0439e7). No action needed: change nothing. The … | 09:14 | OPEN |
+None open.
 
 ## Queue
 
@@ -25,9 +23,10 @@ Empty.
 ## Mail, last 24 h
 
 - 20261028T124425Z-build-to-linktest.md: delivered
+- 20261028T125015Z-linktest-to-nox.md: delivered
 
 ## Today
 
-- Flag-minutes: {"IDLE_LONG": 5.6}
+- Flag-minutes: {"IDLE_LONG": 7.0}
 - Flags raised: {"IDLE_LONG": 1}
 - Policy v1: idle 30m, stuck 30m, renotify 60m, claude delivery on.
