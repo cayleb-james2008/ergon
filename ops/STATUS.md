@@ -1,12 +1,12 @@
 # Lane status
 
-Updated 10:30 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
+Updated 10:33 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
 
 | lane | state | since | doing / waiting on | next check | flags |
 |---|---|---|---|---|---|
-| Money Desk | WORKING | 10:21 | Usage throttle: weekly Claude meter 87% (resets Mon 11-02 01:00 ET); trial-4 build PAUSED after day 1 (602a2e6); only the ORB15 beta check-ins and the 18:00 re… | 16:12 | — |
-| Consolidation (lanes A-E) | IDLE | 10:27 | Lane B: Ep26 G5 generated awaiting independent review; Ep27 awaiting Taste Card; Lane A: Card fixture PASSED natively and resealed, Street BLOCKED on a new Cod… | 10:40 | — |
-| Outis / Codex desktop | WORKING | 10:28 | Urgent Street broker unblock verification; board checks, handover verification, peer mail and authorised queue items · waits on lanesAB-report by 18:00 | 10:38 | — |
+| Money Desk | WORKING | 10:32 | Usage throttle: weekly Claude meter 87% (resets Mon 11-02 01:00 ET); trial-4 build PAUSED after day 1 (602a2e6); only the ORB15 beta check-ins and the 18:00 re… | 16:12 | — |
+| Consolidation (lanes A-E) | IDLE | 10:27 | Lane B: Ep26 G5 generated awaiting independent review; Ep27 awaiting Taste Card; Lane A: Card fixture PASSED natively and resealed, Street BLOCKED on a new Cod… | 10:40 | WAIT_NO_MEANWHILE |
+| Outis / Codex desktop | BLOCKED | 10:32 | Board checks, handover verification, peer mail and authorised queue items continue; Street broker unblock needs host-level controls · waits on lanesAB-report b… | 10:43 | BLOCKED |
 | Grok / RSI desk | — | — |  | — | — |
 | Nox | — | — |  | — | — |
 
