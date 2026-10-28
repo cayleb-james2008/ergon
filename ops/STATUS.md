@@ -1,10 +1,10 @@
 # Lane status
 
-Updated 17:22 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
+Updated 17:25 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
 
 | lane | state | since | doing / waiting on | next check | flags |
 |---|---|---|---|---|---|
-| Money Desk | IDLE | 16:37 | Beta reconciliation delivered (beta blind 10:45-15:50: Tradovate logout plus 15:38 reboot); assembling the 18:00 readiness baseline; resuming the confidence-fi… | 17:25 | WAIT_IDLE |
+| Money Desk | IDLE | 17:25 | Readiness baseline delivered (nothing new arms at 18:00). Usage throttle: weekly Claude meter about 90% until Mon 11-02 01:00 ET; only ORB15 beta check-ins run… | Thu 09:20 | IDLE_DECLARED, MAIL_FAILED |
 | Consolidation (lanes A-E) | WORKING | 15:52 | Ep26 DELIVERED (A2, exported 16:35 ET). Street fixture RAN natively under v2.4 (PASS 31/31, console-line guard stop; window closed; reseal rule builder running… | 17:08 | — |
 | Outis / Codex desktop | BLOCKED | 17:14 | Executor quota blocks Plimsoll runtime; Gateway v5 and P8 mutable/unreviewed, P6 unwired; board checks continue · meanwhile: Board checks, handover verificatio… | 17:28 | BLOCKED |
 | Grok / RSI desk | — | — |  | — | — |
@@ -19,7 +19,7 @@ Updated 17:22 ET by the lane sensor (every 3 min). If that time is more than 15 
 | 20261028T141624Z-nox-to-consolidation.md | nox → consolidation | Your ONE consolidated completion report is the tracked board item "lanesAB-report". Outis is being … | 18:00 | OPEN |
 | 20261028T144206Z-consolidation-to-nox.md | consolidation → nox | STREET-UNBLOCK, steps 0-2 done, the last link of step 2 BLOCKED (10:41 ET). The Street Studio is NO… | 12:00 | OVERDUE |
 | 20261028T200455Z-consolidation-to-nox.md | consolidation → nox | EP26 FINAL: your ruling needed on ONE choice (16:05 ET). The independent final reviewer (B39, never… | 17:00 | DUE |
-| 20261028T202855Z-consolidation-to-nox.md | consolidation → nox | EP27 STATUS 16:27 ET + ONE JUDGEMENT NEEDED (R07). Clicks so far (Seedance 2.5, Cinema Studio 4.0, … | 16:55 | DUE |
+| 20261028T202855Z-consolidation-to-nox.md | consolidation → nox | EP27 STATUS 16:27 ET + ONE JUDGEMENT NEEDED (R07). Clicks so far (Seedance 2.5, Cinema Studio 4.0, … | 16:55 | OVERDUE |
 | 20261028T203156Z-consolidation-to-nox.md | consolidation → nox | STREET v2.4 READY, YOUR GO NEEDED (16:33 ET). The independent reviewer (A16, never the builder) pas… | 17:15 | DUE |
 
 ## Queue
@@ -72,7 +72,7 @@ Empty.
 - 20261028T203756Z-moneydesk-to-nox.md: delivered
 - 20261028T203756Z-outis-to-nox.md: delivered
 - 20261028T204356Z-consolidation-to-nox.md: delivered
-- 20261028T204750Z-nox-to-moneydesk.md: sent
+- 20261028T204750Z-nox-to-moneydesk.md: failed
 - 20261028T210114Z-outis-to-nox.md: delivered
 - 20261028T210433Z-nox-to-outis.md: delivered
 - 20261028T210700Z-nox-to-outis.md: delivered
@@ -83,6 +83,6 @@ Empty.
 
 ## Today
 
-- Flag-minutes: {"BLOCKED": 74.9, "CLOSED": 551.8, "IDLE_LONG": 88.4, "MAIL_FAILED": 9.0, "MAIL_HELD": 226.4, "PROMISE_DUE": 204.0, "PROMISE_OVERDUE": 721.5, "STUCK": 6.0, "WAIT_NO_MEANWHILE": 27.1, "WAIT_OVERDUE": 24.0}
-- Flags raised: {"BLOCKED": 2, "CLOSED": 2, "IDLE_LONG": 2, "MAIL_FAILED": 3, "MAIL_HELD": 1, "PROMISE_DUE": 8, "PROMISE_OVERDUE": 5, "STUCK": 2, "WAIT_NO_MEANWHILE": 2, "WAIT_OVERDUE": 1}
+- Flag-minutes: {"BLOCKED": 77.9, "CLOSED": 551.8, "IDLE_LONG": 88.4, "MAIL_FAILED": 9.0, "MAIL_HELD": 226.4, "PROMISE_DUE": 213.0, "PROMISE_OVERDUE": 724.5, "STUCK": 6.0, "WAIT_IDLE": 3.0, "WAIT_NO_MEANWHILE": 27.1, "WAIT_OVERDUE": 24.0}
+- Flags raised: {"BLOCKED": 2, "CLOSED": 2, "IDLE_LONG": 2, "MAIL_FAILED": 3, "MAIL_HELD": 1, "PROMISE_DUE": 8, "PROMISE_OVERDUE": 5, "STUCK": 2, "WAIT_IDLE": 1, "WAIT_NO_MEANWHILE": 2, "WAIT_OVERDUE": 1}
 - Policy v4: idle 30m, stuck 30m, renotify 60m, claude delivery on.
