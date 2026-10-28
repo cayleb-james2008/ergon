@@ -1,5 +1,5 @@
 {
- "generated_at": "2026-10-28T14:39:06Z",
+ "generated_at": "2026-10-28T14:42:06Z",
  "policy_version": 2.0,
  "lanes": {
   "moneydesk": {
@@ -18,10 +18,10 @@
    "state": "WORKING",
    "since": "2026-10-28T14:35:35Z",
    "flags": [],
-   "doing": "Lane B: Ep26 G5 generated awaiting independent review; Ep27 awaiting Taste Card; Lane A: Card fixture PASSED natively and resealed, Street BLOCKED on a new Codex-owned Roblox MCP chain (asked Nox/Outi",
-   "waiting_on": "nox/outis: disable Codex Roblox MCP and end broker chain 2024835/2024960",
-   "expected_by": null,
-   "next_check_at": "2026-10-28T14:40:32Z",
+   "doing": "street-unblock: config disable done (enabled=false, undo recorded), wrapper ended, my Street Studio closed; orphaned StudioMCP broker 2024960 still holds 13469 and the classifier denied me signalling ",
+   "waiting_on": "nox: kill -TERM 2024960 (or explicit permission rule) to clear 13469",
+   "expected_by": "2026-10-28T16:00:00Z",
+   "next_check_at": "2026-10-28T14:59:00Z",
    "last_deliverable_at": null,
    "meanwhile": null,
    "meanwhile_path": null

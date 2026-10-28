@@ -1,11 +1,11 @@
 # Lane status
 
-Updated 10:39 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
+Updated 10:42 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
 
 | lane | state | since | doing / waiting on | next check | flags |
 |---|---|---|---|---|---|
 | Money Desk | WORKING | 10:32 | Usage throttle: weekly Claude meter 87% (resets Mon 11-02 01:00 ET); trial-4 build PAUSED after day 1 (602a2e6); only the ORB15 beta check-ins and the 18:00 re… | 16:12 | — |
-| Consolidation (lanes A-E) | WORKING | 10:35 | Lane B: Ep26 G5 generated awaiting independent review; Ep27 awaiting Taste Card; Lane A: Card fixture PASSED natively and resealed, Street BLOCKED on a new Cod… | 10:40 | — |
+| Consolidation (lanes A-E) | WORKING | 10:35 | street-unblock: config disable done (enabled=false, undo recorded), wrapper ended, my Street Studio closed; orphaned StudioMCP broker 2024960 still holds 13469… | 10:59 | — |
 | Outis / Codex desktop | BLOCKED | 10:32 | Board checks, handover verification, peer mail and authorised queue items continue; Street broker unblock needs host-level controls · waits on lanesAB-report b… | 10:43 | BLOCKED |
 | Grok / RSI desk | — | — |  | — | — |
 | Nox | — | — |  | — | — |
@@ -40,6 +40,6 @@ Empty.
 
 ## Today
 
-- Flag-minutes: {"BLOCKED": 6.0, "IDLE_LONG": 82.4, "STUCK": 6.0, "WAIT_NO_MEANWHILE": 3.0}
+- Flag-minutes: {"BLOCKED": 9.0, "IDLE_LONG": 82.4, "STUCK": 6.0, "WAIT_NO_MEANWHILE": 3.0}
 - Flags raised: {"BLOCKED": 1, "IDLE_LONG": 1, "STUCK": 2, "WAIT_NO_MEANWHILE": 1}
 - Policy v2: idle 30m, stuck 30m, renotify 60m, claude delivery on.
