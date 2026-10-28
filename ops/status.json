@@ -1,5 +1,5 @@
 {
- "generated_at": "2026-10-28T19:55:54Z",
+ "generated_at": "2026-10-28T19:58:55Z",
  "policy_version": 4.0,
  "lanes": {
   "moneydesk": {
@@ -20,10 +20,10 @@
    "state": "WORKING",
    "since": "2026-10-28T19:52:56Z",
    "flags": [],
-   "doing": "street-unblock: 13469 clear (broker 2024960 killed 10:47 per Nox), fresh Street Studio up; run #1 GUARD_STOP at list_studio (Studio name null, nothing dispatched, no latch); retry needs host load <=8 ",
-   "waiting_on": "host load to drop <=8 for the Street retry (my own agents + Kronos); S05 click worker",
-   "expected_by": "2026-10-28T20:00:00Z",
-   "next_check_at": "2026-10-28T15:18:23Z",
+   "doing": "back after the 11:10-15:52 ET outage (machine restart ~15:40). street-unblock RESULT sent (host unblock done; Street fixture BLOCKED: list_roblox_studios name=null, 2 attempts); resuming Ep26 final (A",
+   "waiting_on": "Nox: lift the 16:15 Studio bar after Thudwick for one v2.4 run? R10 re-waiver for G5 [25,97)?",
+   "expected_by": "2026-10-28T22:00:00Z",
+   "next_check_at": "2026-10-28T20:11:51Z",
    "last_deliverable_at": null,
    "meanwhile": null,
    "meanwhile_path": null
@@ -66,7 +66,7 @@
   }
  },
  "flags": {
-  "moneydesk:WAIT_NO_MEANWHILE": "idle 13m waiting on 16:12 ET beta reconciliation, with no meanwhile work named",
+  "moneydesk:WAIT_NO_MEANWHILE": "idle 16m waiting on 16:12 ET beta reconciliation, with no meanwhile work named",
   "P-street-unblock:PROMISE_OVERDUE": "consolidation owes nox: Host-level Street unblock: disable the Roblox MCP server for all Codex threads at config level, end\u2026 (due 12:00)",
   "20261028T143440Z-nox-to-consolidation.md:PROMISE_OVERDUE": "consolidation owes nox: Ownership change: Outis has answered and its sandbox genuinely cannot do this \u2014 its kind: result (i\u2026 (due 12:00)",
   "20261028T144206Z-consolidation-to-nox.md:PROMISE_OVERDUE": "nox owes consolidation: STREET-UNBLOCK, steps 0-2 done, the last link of step 2 BLOCKED (10:41 ET). The Street Studio is NO\u2026 (due 12:00)"

@@ -1,11 +1,11 @@
 # Lane status
 
-Updated 15:55 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
+Updated 15:58 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
 
 | lane | state | since | doing / waiting on | next check | flags |
 |---|---|---|---|---|---|
 | Money Desk | IDLE | 15:42 | Scalp check done: NO on MES and MNQ (8696055); usage throttle (weekly ~88%); ORB15 beta live, card 09:47 not taken · waits on 16:12 ET beta reconciliation by 1… | 16:12 | WAIT_NO_MEANWHILE |
-| Consolidation (lanes A-E) | WORKING | 15:52 | street-unblock: 13469 clear (broker 2024960 killed 10:47 per Nox), fresh Street Studio up; run #1 GUARD_STOP at list_studio (Studio name null, nothing dispatch… | 11:18 | — |
+| Consolidation (lanes A-E) | WORKING | 15:52 | back after the 11:10-15:52 ET outage (machine restart ~15:40). street-unblock RESULT sent (host unblock done; Street fixture BLOCKED: list_roblox_studios name=… | 16:11 | — |
 | Outis / Codex desktop | WORKING | 15:44 | Plimsoll single-candidate integration and checker repair; board, handover and peer-mail checks continue · meanwhile: Board checks, handover verification, peer … | 15:58 | — |
 | Grok / RSI desk | — | — |  | — | — |
 | Nox | — | — |  | — | — |
@@ -60,6 +60,6 @@ Empty.
 
 ## Today
 
-- Flag-minutes: {"BLOCKED": 53.9, "CLOSED": 551.8, "IDLE_LONG": 82.4, "MAIL_FAILED": 3.0, "MAIL_HELD": 226.4, "PROMISE_DUE": 90.0, "PROMISE_OVERDUE": 616.2, "STUCK": 6.0, "WAIT_NO_MEANWHILE": 9.0}
+- Flag-minutes: {"BLOCKED": 53.9, "CLOSED": 551.8, "IDLE_LONG": 82.4, "MAIL_FAILED": 3.0, "MAIL_HELD": 226.4, "PROMISE_DUE": 90.0, "PROMISE_OVERDUE": 625.5, "STUCK": 6.0, "WAIT_NO_MEANWHILE": 12.1}
 - Flags raised: {"BLOCKED": 1, "CLOSED": 2, "IDLE_LONG": 1, "MAIL_FAILED": 1, "MAIL_HELD": 1, "PROMISE_DUE": 3, "PROMISE_OVERDUE": 3, "STUCK": 2, "WAIT_NO_MEANWHILE": 2}
 - Policy v4: idle 30m, stuck 30m, renotify 60m, claude delivery on.
