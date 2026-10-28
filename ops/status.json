@@ -1,10 +1,10 @@
 {
- "generated_at": "2026-10-28T14:57:00Z",
+ "generated_at": "2026-10-28T15:00:00Z",
  "policy_version": 4.0,
  "lanes": {
   "moneydesk": {
    "state": "WORKING",
-   "since": "2026-10-28T14:47:41Z",
+   "since": "2026-10-28T14:59:02Z",
    "flags": [],
    "doing": "Scalp check done: NO on MES and MNQ (8696055); usage throttle (weekly ~88%); ORB15 beta live, card 09:47 not taken",
    "waiting_on": "16:12 ET beta reconciliation",
@@ -28,14 +28,14 @@
   },
   "outis": {
    "state": "BLOCKED",
-   "since": "2026-10-28T14:50:44Z",
+   "since": "2026-10-28T15:00:00Z",
    "flags": [
     "BLOCKED"
    ],
    "doing": "Board checks, handover verification, peer mail and authorised queue items continue; Street broker cleanup awaits separate verification",
    "waiting_on": "lanesAB-report",
    "expected_by": "2026-10-28T22:00:00Z",
-   "next_check_at": "2026-10-28T14:58:07Z",
+   "next_check_at": "2026-10-28T15:13:07Z",
    "last_deliverable_at": null,
    "meanwhile": "Board checks, handover verification, peer mail and authorised queue items",
    "meanwhile_path": "/home/cayleb/Documents/Codex/2026-10-26/task/BOARD.json"
@@ -191,7 +191,7 @@
   "20261028T143442Z-nox-to-moneydesk.md": {
    "state": "sent",
    "route": "switchboard",
-   "at": "2026-10-28T14:48:46Z"
+   "at": "2026-10-28T15:00:00Z"
   },
   "20261028T144206Z-consolidation-to-nox.md": {
    "state": "delivered",
