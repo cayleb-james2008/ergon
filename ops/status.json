@@ -1,5 +1,5 @@
 {
- "generated_at": "2026-10-28T20:58:57Z",
+ "generated_at": "2026-10-28T21:01:57Z",
  "policy_version": 4.0,
  "lanes": {
   "moneydesk": {
@@ -27,13 +27,15 @@
    "meanwhile_path": null
   },
   "outis": {
-   "state": "WORKING",
-   "since": "2026-10-28T20:44:00Z",
-   "flags": [],
-   "doing": "Plimsoll integration and push readiness, resume selection support and site proof restoration; standing board and mail checks",
+   "state": "BLOCKED",
+   "since": "2026-10-28T21:01:49Z",
+   "flags": [
+    "BLOCKED"
+   ],
+   "doing": "Plimsoll runtime build blocked by executor quota; standing board and mail checks continue",
    "waiting_on": "lanesAB-report",
    "expected_by": "2026-10-28T22:00:00Z",
-   "next_check_at": "2026-10-28T20:58:07Z",
+   "next_check_at": "2026-10-28T21:13:07Z",
    "last_deliverable_at": null,
    "meanwhile": "Board checks, handover verification, peer mail and authorised queue items",
    "meanwhile_path": "/home/cayleb/Documents/Codex/2026-10-26/task/BOARD.json"
@@ -64,7 +66,9 @@
   }
  },
  "flags": {
+  "outis:BLOCKED": "declared blocked: Plimsoll runtime build blocked by executor quota; standing board and mail checks continue",
   "20261028T144206Z-consolidation-to-nox.md:PROMISE_OVERDUE": "nox owes consolidation: STREET-UNBLOCK, steps 0-2 done, the last link of step 2 BLOCKED (10:41 ET). The Street Studio is NO\u2026 (due 12:00)",
+  "20261028T200455Z-consolidation-to-nox.md:PROMISE_DUE": "nox owes consolidation: EP26 FINAL: your ruling needed on ONE choice (16:05 ET). The independent final reviewer (B39, never\u2026 (due 17:00)",
   "20261028T202855Z-consolidation-to-nox.md:PROMISE_DUE": "nox owes consolidation: EP27 STATUS 16:27 ET + ONE JUDGEMENT NEEDED (R07). Clicks so far (Seedance 2.5, Cinema Studio 4.0, \u2026 (due 16:55)"
  },
  "promises": [
@@ -120,7 +124,7 @@
    "sent_at": "2026-10-28T20:04:55Z",
    "expected_by": "2026-10-28T21:00:00Z",
    "done": false,
-   "state": "OPEN"
+   "state": "DUE"
   },
   {
    "id": "20261028T202855Z-consolidation-to-nox.md",
@@ -368,7 +372,12 @@
   "20261028T204750Z-nox-to-moneydesk.md": {
    "state": "sent",
    "route": "switchboard",
-   "at": "2026-10-28T20:49:56Z"
+   "at": "2026-10-28T21:01:57Z"
+  },
+  "20261028T210114Z-outis-to-nox.md": {
+   "state": "delivered",
+   "route": "board",
+   "at": "2026-10-28T21:01:57Z"
   }
  }
 }
