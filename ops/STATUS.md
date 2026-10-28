@@ -1,11 +1,11 @@
 # Lane status
 
-Updated 18:16 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
+Updated 18:22 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
 
 | lane | state | since | doing / waiting on | next check | flags |
 |---|---|---|---|---|---|
 | Money Desk | IDLE | 17:32 | Readiness baseline delivered (nothing new arms at 18:00). Usage throttle: weekly Claude meter about 90% until Mon 11-02 01:00 ET; only ORB15 beta check-ins run… | Thu 09:20 | IDLE_DECLARED, WAIT_NO_MEANWHILE |
-| Consolidation (lanes A-E) | PROMPT | 18:16 | Per Nox order consolidation-meanwhile-20261028 (18:10 ET): R07 GO found in board/inbox (never reached my MAIL); confirming the paid click with the app user bef… | 18:31 | — |
+| Consolidation (lanes A-E) | PROMPT | 18:16 | Per Nox order consolidation-meanwhile-20261028 (18:10 ET): R07 GO found in board/inbox (never reached my MAIL); confirming the paid click with the app user bef… | 18:31 | PROMPT |
 | Outis / Codex desktop | WORKING | 18:14 | Board coordination and handover; Pump Drop, OpenBell, trial factory and Plimsoll work assigned to existing owners · meanwhile: Board checks, handover verificat… | 18:28 | — |
 | Grok / RSI desk | — | — |  | — | — |
 | Nox | — | — |  | — | — |
@@ -102,6 +102,6 @@ Empty.
 
 ## Today
 
-- Flag-minutes: {"BLOCKED": 113.9, "CLOSED": 551.8, "IDLE_DECLARED": 51.0, "IDLE_LONG": 88.4, "MAIL_FAILED": 15.0, "MAIL_HELD": 226.4, "PROMISE_DUE": 315.0, "PROMISE_OVERDUE": 901.5, "STUCK": 6.0, "WAIT_IDLE": 3.0, "WAIT_NO_MEANWHILE": 75.1, "WAIT_OVERDUE": 24.0}
-- Flags raised: {"BLOCKED": 2, "CLOSED": 2, "IDLE_DECLARED": 1, "IDLE_LONG": 2, "MAIL_FAILED": 5, "MAIL_HELD": 1, "PROMISE_DUE": 12, "PROMISE_OVERDUE": 8, "STUCK": 2, "WAIT_IDLE": 1, "WAIT_NO_MEANWHILE": 4, "WAIT_OVERDUE": 1}
+- Flag-minutes: {"BLOCKED": 113.9, "CLOSED": 551.8, "IDLE_DECLARED": 57.0, "IDLE_LONG": 88.4, "MAIL_FAILED": 15.0, "MAIL_HELD": 226.4, "PROMISE_DUE": 333.0, "PROMISE_OVERDUE": 931.5, "STUCK": 6.0, "WAIT_IDLE": 3.0, "WAIT_NO_MEANWHILE": 81.1, "WAIT_OVERDUE": 24.0}
+- Flags raised: {"BLOCKED": 2, "CLOSED": 2, "IDLE_DECLARED": 1, "IDLE_LONG": 2, "MAIL_FAILED": 5, "MAIL_HELD": 1, "PROMISE_DUE": 12, "PROMISE_OVERDUE": 9, "STUCK": 2, "WAIT_IDLE": 1, "WAIT_NO_MEANWHILE": 4, "WAIT_OVERDUE": 1}
 - Policy v4: idle 30m, stuck 30m, renotify 60m, claude delivery on.
