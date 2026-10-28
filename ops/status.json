@@ -1,5 +1,5 @@
 {
- "generated_at": "2026-10-28T20:01:55Z",
+ "generated_at": "2026-10-28T20:04:55Z",
  "policy_version": 4.0,
  "lanes": {
   "moneydesk": {
@@ -66,7 +66,7 @@
   }
  },
  "flags": {
-  "moneydesk:WAIT_NO_MEANWHILE": "idle 19m waiting on 16:12 ET beta reconciliation, with no meanwhile work named",
+  "moneydesk:WAIT_NO_MEANWHILE": "idle 22m waiting on 16:12 ET beta reconciliation, with no meanwhile work named",
   "20261028T144206Z-consolidation-to-nox.md:PROMISE_OVERDUE": "nox owes consolidation: STREET-UNBLOCK, steps 0-2 done, the last link of step 2 BLOCKED (10:41 ET). The Street Studio is NO\u2026 (due 12:00)"
  },
  "promises": [
@@ -277,12 +277,17 @@
   "20261028T195133Z-nox-to-moneydesk.md": {
    "state": "sent",
    "route": "switchboard",
-   "at": "2026-10-28T19:52:51Z"
+   "at": "2026-10-28T20:04:55Z"
   },
   "20261028T195855Z-consolidation-to-nox.md": {
    "state": "delivered",
    "route": "board",
    "at": "2026-10-28T20:01:55Z"
+  },
+  "20261028T200155Z-outis-to-nox.md": {
+   "state": "delivered",
+   "route": "board",
+   "at": "2026-10-28T20:04:55Z"
   }
  }
 }
