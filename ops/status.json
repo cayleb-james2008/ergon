@@ -1,0 +1,64 @@
+{
+ "generated_at": "2026-10-28T12:43:17Z",
+ "policy_version": 1,
+ "lanes": {
+  "moneydesk": {
+   "state": "IDLE",
+   "since": "2026-10-28T12:00:54Z",
+   "flags": [],
+   "doing": null,
+   "waiting_on": null,
+   "expected_by": null,
+   "next_check_at": null,
+   "last_deliverable_at": null
+  },
+  "consolidation": {
+   "state": "WORKING",
+   "since": "2026-10-28T11:00:38Z",
+   "flags": [],
+   "doing": null,
+   "waiting_on": null,
+   "expected_by": null,
+   "next_check_at": null,
+   "last_deliverable_at": null
+  },
+  "outis": {
+   "state": "QUIET",
+   "since": "2026-10-28T10:38:50Z",
+   "flags": [
+    "IDLE_LONG"
+   ],
+   "doing": null,
+   "waiting_on": null,
+   "expected_by": null,
+   "next_check_at": null,
+   "last_deliverable_at": null
+  },
+  "grok": {
+   "state": "\u2014",
+   "since": null,
+   "flags": [],
+   "doing": null,
+   "waiting_on": null,
+   "expected_by": null,
+   "next_check_at": null,
+   "last_deliverable_at": null
+  },
+  "nox": {
+   "state": "\u2014",
+   "since": null,
+   "flags": [],
+   "doing": null,
+   "waiting_on": null,
+   "expected_by": null,
+   "next_check_at": null,
+   "last_deliverable_at": null
+  }
+ },
+ "flags": {
+  "outis:IDLE_LONG": "quiet for 2h04m with no declared wait"
+ },
+ "promises": [],
+ "queue": [],
+ "mail": {}
+}
