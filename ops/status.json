@@ -1,5 +1,5 @@
 {
- "generated_at": "2026-10-28T12:47:28Z",
+ "generated_at": "2026-10-28T12:48:49Z",
  "policy_version": 1,
  "lanes": {
   "moneydesk": {
@@ -76,7 +76,7 @@
   }
  },
  "flags": {
-  "outis:IDLE_LONG": "quiet for 2h08m with no declared wait"
+  "outis:IDLE_LONG": "quiet for 2h09m with no declared wait"
  },
  "promises": [
   {
@@ -93,13 +93,13 @@
  "queue": [],
  "mail": {
   "20261028T124425Z-build-to-linktest.md": {
+   "at": "2026-10-28T12:47:28Z",
    "from": "build",
    "kind": "order",
    "route": "switchboard",
    "sent_at": "2026-10-28T12:44:26Z",
    "state": "delivered",
-   "to": "linktest",
-   "at": "2026-10-28T12:47:28Z"
+   "to": "linktest"
   }
  }
 }
