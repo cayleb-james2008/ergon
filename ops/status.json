@@ -1,35 +1,35 @@
 {
- "generated_at": "2026-10-28T14:17:41Z",
+ "generated_at": "2026-10-28T14:20:41Z",
  "policy_version": 1.0,
  "lanes": {
   "moneydesk": {
    "state": "IDLE",
-   "since": "2026-10-28T14:09:42Z",
+   "since": "2026-10-28T14:20:30Z",
    "flags": [],
-   "doing": null,
-   "waiting_on": null,
-   "expected_by": null,
-   "next_check_at": null,
+   "doing": "Usage throttle: weekly Claude meter 87% (resets Mon 11-02 01:00 ET); trial-4 build PAUSED after day 1 (602a2e6); only the ORB15 beta check-ins and the 18:00 readiness report run today",
+   "waiting_on": "16:12 ET beta reconciliation; the weekly usage reset Mon 11-02 01:00 ET for the build",
+   "expected_by": "2026-10-28T16:12:00-04:00",
+   "next_check_at": "2026-10-28T16:12:00-04:00",
    "last_deliverable_at": null
   },
   "consolidation": {
-   "state": "WORKING",
-   "since": "2026-10-28T11:00:38Z",
+   "state": "IDLE",
+   "since": "2026-10-28T14:20:40Z",
    "flags": [],
-   "doing": null,
-   "waiting_on": null,
+   "doing": "Lane B: Ep26 G5 generated awaiting independent review; Ep27 awaiting Taste Card; Lane A: Card fixture PASSED natively and resealed, Street BLOCKED on a new Codex-owned Roblox MCP chain (asked Nox/Outi",
+   "waiting_on": "nox/outis: disable Codex Roblox MCP and end broker chain 2024835/2024960",
    "expected_by": null,
-   "next_check_at": null,
+   "next_check_at": "2026-10-28T14:40:32Z",
    "last_deliverable_at": null
   },
   "outis": {
-   "state": "ACTIVE",
-   "since": "2026-10-28T14:15:26Z",
+   "state": "WAITING",
+   "since": "2026-10-28T14:19:57Z",
    "flags": [],
-   "doing": null,
-   "waiting_on": null,
-   "expected_by": null,
-   "next_check_at": null,
+   "doing": "Board checks and handover prep verification continue; Lanes A/B await consolidation report",
+   "waiting_on": "lanesAB-report",
+   "expected_by": "2026-10-28T22:00:00Z",
+   "next_check_at": "2026-10-28T14:28:07Z",
    "last_deliverable_at": null
   },
   "grok": {
@@ -89,9 +89,9 @@
    "at": "2026-10-28T13:54:51Z"
   },
   "20261028T141624Z-nox-to-consolidation.md": {
-   "state": "sent",
+   "state": "delivered",
    "route": "switchboard",
-   "at": "2026-10-28T14:17:41Z"
+   "at": "2026-10-28T14:20:41Z"
   }
  }
 }
