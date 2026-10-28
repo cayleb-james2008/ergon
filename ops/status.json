@@ -1,11 +1,13 @@
 {
- "generated_at": "2026-10-28T13:47:41Z",
- "policy_version": 1,
+ "generated_at": "2026-10-28T13:50:41Z",
+ "policy_version": 1.0,
  "lanes": {
   "moneydesk": {
-   "state": "WORKING",
-   "since": "2026-10-28T12:45:43Z",
-   "flags": [],
+   "state": "STUCK",
+   "since": "2026-10-28T13:20:20Z",
+   "flags": [
+    "STUCK"
+   ],
    "doing": null,
    "waiting_on": null,
    "expected_by": null,
@@ -24,7 +26,7 @@
   },
   "outis": {
    "state": "QUIET",
-   "since": "2026-10-28T10:38:50Z",
+   "since": "2026-10-28T11:05:18Z",
    "flags": [
     "IDLE_LONG"
    ],
@@ -56,35 +58,26 @@
   }
  },
  "flags": {
-  "outis:IDLE_LONG": "quiet for 3h08m with no declared wait"
+  "moneydesk:STUCK": "busy, but no conversation step for 30m",
+  "outis:IDLE_LONG": "quiet for 2h45m with no declared wait"
  },
  "promises": [],
  "queue": [],
  "mail": {
   "20261028T124425Z-build-to-linktest.md": {
-   "at": "2026-10-28T12:47:28Z",
-   "from": "build",
-   "kind": "order",
-   "route": "switchboard",
-   "sent_at": "2026-10-28T12:44:26Z",
    "state": "delivered",
-   "to": "linktest"
+   "route": "switchboard",
+   "at": "2026-10-28T12:47:28Z"
   },
   "20261028T125015Z-linktest-to-nox.md": {
-   "at": "2026-10-28T12:50:19Z",
-   "from": "linktest",
-   "kind": "result",
-   "route": "board",
    "state": "delivered",
-   "to": "nox"
+   "route": "board",
+   "at": "2026-10-28T12:50:19Z"
   },
   "20261028T125019Z-sensor-to-probe.md": {
-   "at": "2026-10-28T12:50:23Z",
-   "from": "sensor",
-   "kind": "fyi",
-   "route": "folder",
    "state": "delivered",
-   "to": "probe"
+   "route": "folder",
+   "at": "2026-10-28T12:50:23Z"
   }
  }
 }
