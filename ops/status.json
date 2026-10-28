@@ -1,5 +1,5 @@
 {
- "generated_at": "2026-10-28T15:00:00Z",
+ "generated_at": "2026-10-28T15:06:00Z",
  "policy_version": 4.0,
  "lanes": {
   "moneydesk": {
@@ -18,17 +18,17 @@
    "state": "WORKING",
    "since": "2026-10-28T14:35:35Z",
    "flags": [],
-   "doing": "street-unblock waiting on Nox (orphaned broker 2024960 holds 13469; classifier denied my kill). Meanwhile: B27 building Ep26 proof v3 variants (G5 [19,91) vs no G5); A13 audit accepted; B33/B34/C5 wer",
-   "waiting_on": "nox: (1) kill 2024960 or permission, (2) G5 ruling, (3) Ep27 Taste Card ruling, (4) OK to relaunch B34/C5/B33 reviewers",
-   "expected_by": "2026-10-28T16:00:00Z",
-   "next_check_at": "2026-10-28T15:02:25Z",
+   "doing": "street-unblock: 13469 clear (broker 2024960 killed 10:47 per Nox), fresh Street Studio up; run #1 GUARD_STOP at list_studio (Studio name null, nothing dispatched, no latch); retry needs host load <=8 ",
+   "waiting_on": "host load to drop <=8 for the Street retry (my own agents + Kronos); S05 click worker",
+   "expected_by": "2026-10-28T20:00:00Z",
+   "next_check_at": "2026-10-28T15:18:23Z",
    "last_deliverable_at": null,
    "meanwhile": null,
    "meanwhile_path": null
   },
   "outis": {
    "state": "BLOCKED",
-   "since": "2026-10-28T15:00:00Z",
+   "since": "2026-10-28T15:00:03Z",
    "flags": [
     "BLOCKED"
    ],
