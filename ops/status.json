@@ -1,5 +1,5 @@
 {
- "generated_at": "2026-10-28T14:05:41Z",
+ "generated_at": "2026-10-28T14:08:41Z",
  "policy_version": 1.0,
  "lanes": {
   "moneydesk": {
@@ -23,11 +23,9 @@
    "last_deliverable_at": null
   },
   "outis": {
-   "state": "QUIET",
-   "since": "2026-10-28T11:05:18Z",
-   "flags": [
-    "IDLE_LONG"
-   ],
+   "state": "ACTIVE",
+   "since": "2026-10-28T14:08:38Z",
+   "flags": [],
    "doing": null,
    "waiting_on": null,
    "expected_by": null,
@@ -55,9 +53,7 @@
    "last_deliverable_at": null
   }
  },
- "flags": {
-  "outis:IDLE_LONG": "quiet for 3h00m with no declared wait"
- },
+ "flags": {},
  "promises": [],
  "queue": [],
  "mail": {
