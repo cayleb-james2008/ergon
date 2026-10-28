@@ -1,5 +1,5 @@
 {
- "generated_at": "2026-10-28T21:52:58Z",
+ "generated_at": "2026-10-28T21:55:58Z",
  "policy_version": 4.0,
  "lanes": {
   "moneydesk": {
@@ -18,8 +18,8 @@
    "meanwhile_path": null
   },
   "consolidation": {
-   "state": "WORKING",
-   "since": "2026-10-28T19:52:56Z",
+   "state": "IDLE",
+   "since": "2026-10-28T21:55:58Z",
    "flags": [],
    "doing": "Ep27 EXPORTED 17:51 ET: six-shot 17.9 s final (sha da01c771...), independent final review B56 SHIP WITH CONDITIONS; R07 not generated (READY, waiting for Nox's own go; tab closed 18:15 ET if no answer",
    "waiting_on": "Nox: R07 GO/STOP; h3 deploy go; Mavilo Thursday go; GGG dry-run-4 OK",
@@ -70,7 +70,7 @@
  },
  "flags": {
   "moneydesk:IDLE_DECLARED": "says it has nothing to do: Readiness baseline delivered (nothing new arms at 18:00). Usage throttle: weekly Claude meter about 90% until Mon 11-02 01:00 ET; only ORB15 beta check-ins run. Open ask fo\u2026",
-  "moneydesk:WAIT_NO_MEANWHILE": "idle 20m waiting on Thu 10-29 09:20 ET beta check, with no meanwhile work named",
+  "moneydesk:WAIT_NO_MEANWHILE": "idle 23m waiting on Thu 10-29 09:20 ET beta check, with no meanwhile work named",
   "outis:BLOCKED": "declared blocked: Executor quota blocks Plimsoll runtime; Gateway v5 and P8 mutable/unreviewed, P6 unwired; board checks continue",
   "20261028T144206Z-consolidation-to-nox.md:PROMISE_OVERDUE": "nox owes consolidation: STREET-UNBLOCK, steps 0-2 done, the last link of step 2 BLOCKED (10:41 ET). The Street Studio is NO\u2026 (due 12:00)",
   "20261028T200455Z-consolidation-to-nox.md:PROMISE_OVERDUE": "nox owes consolidation: EP26 FINAL: your ruling needed on ONE choice (16:05 ET). The independent final reviewer (B39, never\u2026 (due 17:00)",
@@ -79,18 +79,6 @@
   "20261028T212858Z-consolidation-to-nox.md:PROMISE_DUE": "nox owes consolidation: R07 NEEDS YOUR OWN GO OR STOP (17:28 ET). I did not get an answer to my 16:27 ask, and my attempt t\u2026 (due 17:45)"
  },
  "promises": [
-  {
-   "ask": "ONE consolidated completion report covering Lanes A and B (incl. Lane C and D state), sent as kind: result with item lanesAB-report",
-   "done_when": {
-    "result_item": "lanesAB-report"
-   },
-   "expected_by": "2026-10-28T22:00:00Z",
-   "from": "nox",
-   "id": "P-lanesAB-report",
-   "sent_at": "2026-10-28T14:16:24Z",
-   "to": "consolidation",
-   "state": "OPEN"
-  },
   {
    "ask": "After consolidation's street-v24-run result reports the Street window closed (Nox GO 20:34Z; HOLD until that result), re-enable the Roblox MCP config change recorded in the street-unblock result and confirm with kind: result item street-mcp-reenabled",
    "done_when": {
@@ -113,16 +101,6 @@
    "done_when": {
     "result_item": "moneydesk-waitidle-20261028"
    },
-   "state": "OPEN"
-  },
-  {
-   "id": "20261028T141624Z-nox-to-consolidation.md",
-   "from": "nox",
-   "to": "consolidation",
-   "ask": "Your ONE consolidated completion report is the tracked board item \"lanesAB-report\". Outis is being told to declare waiti",
-   "sent_at": "2026-10-28T14:16:24Z",
-   "expected_by": "2026-10-28T22:00:00Z",
-   "done": false,
    "state": "OPEN"
   },
   {
@@ -477,6 +455,11 @@
    "state": "delivered",
    "route": "board",
    "at": "2026-10-28T21:49:58Z"
+  },
+  "20261028T215258Z-consolidation-to-nox.md": {
+   "state": "delivered",
+   "route": "board",
+   "at": "2026-10-28T21:55:58Z"
   }
  }
 }
