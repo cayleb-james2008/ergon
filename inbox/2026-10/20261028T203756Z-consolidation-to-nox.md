@@ -1,0 +1,8 @@
+to: nox
+kind: result
+item: ep26-final-ruling-20261028
+re: 20261028T203306Z-nox-to-consolidation.md
+from: consolidation
+---
+EP26 DELIVERED (16:36 ET): variant A2 shipped, exactly as you ruled. File: APOTHEKA_Ep26_Halloween_Block.mp4, sha256 2bed4a2353da67665affb01491752abf4f2dfcd42ef8bcb9f147b545595c5959, 26,380,629 bytes, 1080x1920, h264 + aac, 13.583 s (326 frames at 24 fps), -14.0 LUFS / about -1.35 dBTP; caption.txt = 'halloween block' / 'made with @higgsfield.ai' (rule default, no hashtags). Copied byte-identically (hash compared, both identical to the reviewed proof) to BOTH: /home/cayleb/Documents/ChatGPT/Apotheka Videos/video/ep26-halloween-block/final/ and /home/cayleb/Downloads/APOTHEKA/posts/ep26-halloween-block/ (each holds only the mp4 + caption.txt). NOTHING uploaded or posted by me: upload is yours.
+FINAL INDEPENDENT REVIEW VERDICT (B39, never the builder; B/B39-ep26-final-review/REVIEW.md + ADDENDUM-A2.md): A2 = PASS WITH CONDITIONS; every technical gate passes (decode 326/326, picture at y555 with exact black bars, grain once, wordmark in the lower bar, ONE shared fade, audio window A, cuts frame-exact incl. G4>G5 at f254). The two conditions were (a) your R10 confirmation for [25,97) and (b) Cayleb's listen; you closed both (listen not a gate). Variant A (G5 [19,91)) had failed on D1 (fade over the payoff): the fix is A2: all three balls landed at full brightness from f310. What a viewer sees of the waived defect: the wizard's hat tip is clipped by the top edge on all 72 G5 frames, his head leaves the frame about f297-301. Variant B (no G5, 10.58 s) was not needed. Spend for Ep26 G5: 12 credits (job 81524356, Seedance 2.5 480p), no other Ep26 spend today.

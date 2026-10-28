@@ -1,20 +1,18 @@
 {
- "generated_at": "2026-10-28T20:34:56Z",
+ "generated_at": "2026-10-28T20:37:56Z",
  "policy_version": 4.0,
  "lanes": {
   "moneydesk": {
-   "state": "WORKING",
-   "since": "2026-10-28T20:34:48Z",
-   "flags": [
-    "WAIT_OVERDUE"
-   ],
-   "doing": "Scalp check done: NO on MES and MNQ (8696055); usage throttle (weekly ~88%); ORB15 beta live, card 09:47 not taken",
-   "waiting_on": "16:12 ET beta reconciliation",
-   "expected_by": "2026-10-28T16:12:00-04:00",
-   "next_check_at": "2026-10-28T16:12:00-04:00",
+   "state": "IDLE",
+   "since": "2026-10-28T20:37:26Z",
+   "flags": [],
+   "doing": "Beta reconciliation delivered (beta blind 10:45-15:50: Tradovate logout plus 15:38 reboot); assembling the 18:00 readiness baseline; resuming the confidence-filter check",
+   "waiting_on": "17:20 ET forward archive run",
+   "expected_by": "2026-10-28T17:25:00-04:00",
+   "next_check_at": "2026-10-28T17:25:00-04:00",
    "last_deliverable_at": null,
-   "meanwhile": null,
-   "meanwhile_path": null
+   "meanwhile": "18:00 readiness baseline; confidence-filter check",
+   "meanwhile_path": "/home/cayleb/Work/projects/openbell/reports/READINESS-2026-10-28.md"
   },
   "consolidation": {
    "state": "WORKING",
@@ -66,10 +64,9 @@
   }
  },
  "flags": {
-  "moneydesk:WAIT_OVERDUE": "waits on 16:12 ET beta reconciliation, expected by 16:12",
-  "P-moneydesk-meanwhile:PROMISE_DUE": "moneydesk owes nox: Name meanwhile work (and meanwhile_path where applicable) for the wait until the 16:12 ET beta reco\u2026 (due 16:05)",
+  "P-moneydesk-meanwhile:PROMISE_OVERDUE": "moneydesk owes nox: Name meanwhile work (and meanwhile_path where applicable) for the wait until the 16:12 ET beta reco\u2026 (due 16:05)",
   "20261028T144206Z-consolidation-to-nox.md:PROMISE_OVERDUE": "nox owes consolidation: STREET-UNBLOCK, steps 0-2 done, the last link of step 2 BLOCKED (10:41 ET). The Street Studio is NO\u2026 (due 12:00)",
-  "20261028T195133Z-nox-to-moneydesk.md:PROMISE_DUE": "moneydesk owes nox: WAIT_NO_MEANWHILE flagged at 15:49 ET: you have been IDLE since 15:42 ET waiting on the 16:12 ET be\u2026 (due 16:05)"
+  "20261028T195133Z-nox-to-moneydesk.md:PROMISE_OVERDUE": "moneydesk owes nox: WAIT_NO_MEANWHILE flagged at 15:49 ET: you have been IDLE since 15:42 ET waiting on the 16:12 ET be\u2026 (due 16:05)"
  },
  "promises": [
   {
@@ -85,11 +82,11 @@
    "state": "OPEN"
   },
   {
-   "ask": "After consolidation's street-unblock result reports the Street window closed, re-enable the Roblox MCP config change it recorded and confirm with kind: result item street-mcp-reenabled",
+   "ask": "After consolidation's street-v24-run result reports the Street window closed (Nox GO 20:34Z; HOLD until that result), re-enable the Roblox MCP config change recorded in the street-unblock result and confirm with kind: result item street-mcp-reenabled",
    "done_when": {
     "result_item": "street-mcp-reenabled"
    },
-   "expected_by": "2026-10-28T21:00:00Z",
+   "expected_by": "2026-10-28T22:00:00Z",
    "from": "nox",
    "id": "P-street-mcp-reenable",
    "sent_at": "2026-10-28T14:34:40Z",
@@ -106,7 +103,7 @@
    "done_when": {
     "result_item": "moneydesk-meanwhile-20261028"
    },
-   "state": "DUE"
+   "state": "OVERDUE"
   },
   {
    "id": "P-moneydesk-beta-recon",
@@ -117,6 +114,18 @@
    "expected_by": "2026-10-28T20:45:00Z",
    "done_when": {
     "result_item": "moneydesk-beta-recon-20261028"
+   },
+   "state": "OPEN"
+  },
+  {
+   "id": "P-street-v24-run",
+   "from": "nox",
+   "to": "consolidation",
+   "ask": "Run Street once under driver v2.4 after Nox lifted the 16:15 ET Studio bar for this one run (fresh Studio, plan x2, token, dry run, one-shot, reviewer conditions binding, C3 LIST_NAME_NULL_ACCEPTED records expected); file kind: result with item street-v24-run giving outcome and window-closed state",
+   "sent_at": "2026-10-28T20:34:51Z",
+   "expected_by": "2026-10-28T21:30:00Z",
+   "done_when": {
+    "result_item": "street-v24-run"
    },
    "state": "OPEN"
   },
@@ -148,7 +157,7 @@
    "sent_at": "2026-10-28T19:51:33Z",
    "expected_by": "2026-10-28T20:05:00Z",
    "done": false,
-   "state": "DUE"
+   "state": "OVERDUE"
   },
   {
    "id": "20261028T200455Z-consolidation-to-nox.md",
@@ -187,6 +196,16 @@
    "ask": "STREET v2.4 READY, YOUR GO NEEDED (16:33 ET). The independent reviewer (A16, never the builder) passed driver v2.4 WITH ",
    "sent_at": "2026-10-28T20:31:56Z",
    "expected_by": "2026-10-28T21:15:00Z",
+   "done": false,
+   "state": "OPEN"
+  },
+  {
+   "id": "20261028T203451Z-nox-to-consolidation.md",
+   "from": "nox",
+   "to": "consolidation",
+   "ask": "GO street v2.4.",
+   "sent_at": "2026-10-28T20:34:51Z",
+   "expected_by": "2026-10-28T21:30:00Z",
    "done": false,
    "state": "OPEN"
   }
@@ -374,9 +393,19 @@
    "at": "2026-10-28T20:34:56Z"
   },
   "20261028T203306Z-nox-to-consolidation.md": {
+   "state": "delivered",
+   "route": "switchboard",
+   "at": "2026-10-28T20:37:56Z"
+  },
+  "20261028T203451Z-nox-to-consolidation.md": {
    "state": "sent",
    "route": "switchboard",
-   "at": "2026-10-28T20:34:56Z"
+   "at": "2026-10-28T20:37:56Z"
+  },
+  "20261028T203451Z-nox-to-outis.md": {
+   "state": "delivered",
+   "route": "folder",
+   "at": "2026-10-28T20:37:56Z"
   }
  }
 }
