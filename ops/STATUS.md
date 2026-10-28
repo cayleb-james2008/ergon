@@ -1,12 +1,12 @@
 # Lane status
 
-Updated 12:27 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
+Updated 12:30 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
 
 | lane | state | since | doing / waiting on | next check | flags |
 |---|---|---|---|---|---|
 | Money Desk | CLOSED | — | Scalp check done: NO on MES and MNQ (8696055); usage throttle (weekly ~88%); ORB15 beta live, card 09:47 not taken · waits on 16:12 ET beta reconciliation by 1… | 16:12 | CLOSED |
 | Consolidation (lanes A-E) | CLOSED | — | street-unblock: 13469 clear (broker 2024960 killed 10:47 per Nox), fresh Street Studio up; run #1 GUARD_STOP at list_studio (Studio name null, nothing dispatch… | 11:18 | CLOSED, MAIL_HELD |
-| Outis / Codex desktop | WORKING | 12:23 | Offline trial factory final diagnostic preparation; board checks, handover verification and peer mail continue · meanwhile: Board checks, handover verification… | 12:28 | — |
+| Outis / Codex desktop | WORKING | 12:28 | Offline trial factory final development runner amendment; board checks, handover verification and peer mail continue · meanwhile: Board checks, handover verifi… | 12:43 | — |
 | Grok / RSI desk | — | — |  | — | — |
 | Nox | — | — |  | — | — |
 
@@ -15,11 +15,11 @@ Updated 12:27 ET by the lane sensor (every 3 min). If that time is more than 15 
 | id | from → to | ask | due | state |
 |---|---|---|---|---|
 | P-lanesAB-report | nox → consolidation | ONE consolidated completion report covering Lanes A and B (incl. Lane C and D state), sent as kind:… | 18:00 | OPEN |
-| P-street-unblock | nox → consolidation | Host-level Street unblock: disable the Roblox MCP server for all Codex threads at config level, end… | 12:00 | DUE |
+| P-street-unblock | nox → consolidation | Host-level Street unblock: disable the Roblox MCP server for all Codex threads at config level, end… | 12:00 | OVERDUE |
 | P-street-mcp-reenable | nox → outis | After consolidation's street-unblock result reports the Street window closed, re-enable the Roblox … | 17:00 | OPEN |
 | 20261028T141624Z-nox-to-consolidation.md | nox → consolidation | Your ONE consolidated completion report is the tracked board item "lanesAB-report". Outis is being … | 18:00 | OPEN |
-| 20261028T143440Z-nox-to-consolidation.md | nox → consolidation | Ownership change: Outis has answered and its sandbox genuinely cannot do this — its kind: result (i… | 12:00 | DUE |
-| 20261028T144206Z-consolidation-to-nox.md | consolidation → nox | STREET-UNBLOCK, steps 0-2 done, the last link of step 2 BLOCKED (10:41 ET). The Street Studio is NO… | 12:00 | DUE |
+| 20261028T143440Z-nox-to-consolidation.md | nox → consolidation | Ownership change: Outis has answered and its sandbox genuinely cannot do this — its kind: result (i… | 12:00 | OVERDUE |
+| 20261028T144206Z-consolidation-to-nox.md | consolidation → nox | STREET-UNBLOCK, steps 0-2 done, the last link of step 2 BLOCKED (10:41 ET). The Street Studio is NO… | 12:00 | OVERDUE |
 
 ## Queue
 
@@ -51,6 +51,6 @@ Empty.
 
 ## Today
 
-- Flag-minutes: {"BLOCKED": 53.9, "CLOSED": 150.0, "IDLE_LONG": 82.4, "MAIL_FAILED": 3.0, "MAIL_HELD": 21.0, "PROMISE_DUE": 81.0, "STUCK": 6.0, "WAIT_NO_MEANWHILE": 3.0}
+- Flag-minutes: {"BLOCKED": 53.9, "CLOSED": 156.0, "IDLE_LONG": 82.4, "MAIL_FAILED": 3.0, "MAIL_HELD": 24.0, "PROMISE_DUE": 90.0, "STUCK": 6.0, "WAIT_NO_MEANWHILE": 3.0}
 - Flags raised: {"BLOCKED": 1, "CLOSED": 2, "IDLE_LONG": 1, "MAIL_FAILED": 1, "MAIL_HELD": 1, "PROMISE_DUE": 3, "STUCK": 2, "WAIT_NO_MEANWHILE": 1}
 - Policy v4: idle 30m, stuck 30m, renotify 60m, claude delivery on.
