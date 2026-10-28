@@ -1,11 +1,13 @@
 {
- "generated_at": "2026-10-28T20:22:55Z",
+ "generated_at": "2026-10-28T20:28:55Z",
  "policy_version": 4.0,
  "lanes": {
   "moneydesk": {
    "state": "IDLE",
    "since": "2026-10-28T19:42:36Z",
    "flags": [
+    "IDLE_LONG",
+    "MAIL_FAILED",
     "WAIT_OVERDUE"
    ],
    "doing": "Scalp check done: NO on MES and MNQ (8696055); usage throttle (weekly ~88%); ORB15 beta live, card 09:47 not taken",
@@ -66,10 +68,12 @@
   }
  },
  "flags": {
+  "moneydesk:IDLE_LONG": "idle for 46m with no declared wait",
   "moneydesk:WAIT_OVERDUE": "waits on 16:12 ET beta reconciliation, expected by 16:12",
   "P-moneydesk-meanwhile:PROMISE_DUE": "moneydesk owes nox: Name meanwhile work (and meanwhile_path where applicable) for the wait until the 16:12 ET beta reco\u2026 (due 16:05)",
   "20261028T144206Z-consolidation-to-nox.md:PROMISE_OVERDUE": "nox owes consolidation: STREET-UNBLOCK, steps 0-2 done, the last link of step 2 BLOCKED (10:41 ET). The Street Studio is NO\u2026 (due 12:00)",
-  "20261028T195133Z-nox-to-moneydesk.md:PROMISE_DUE": "moneydesk owes nox: WAIT_NO_MEANWHILE flagged at 15:49 ET: you have been IDLE since 15:42 ET waiting on the 16:12 ET be\u2026 (due 16:05)"
+  "20261028T195133Z-nox-to-moneydesk.md:PROMISE_DUE": "moneydesk owes nox: WAIT_NO_MEANWHILE flagged at 15:49 ET: you have been IDLE since 15:42 ET waiting on the 16:12 ET be\u2026 (due 16:05)",
+  "moneydesk/20261028T195133Z-nox-to-moneydesk.md:MAIL_FAILED": "20261028T195133Z-nox-to-moneydesk.md was not seen in the session after 3 tries"
  },
  "promises": [
   {
@@ -309,9 +313,9 @@
    "at": "2026-10-28T19:27:23Z"
   },
   "20261028T195133Z-nox-to-moneydesk.md": {
-   "state": "sent",
+   "state": "failed",
    "route": "switchboard",
-   "at": "2026-10-28T20:16:55Z"
+   "at": "2026-10-28T20:28:55Z"
   },
   "20261028T195855Z-consolidation-to-nox.md": {
    "state": "delivered",
@@ -336,7 +340,7 @@
   "20261028T201527Z-nox-to-moneydesk.md": {
    "state": "sent",
    "route": "switchboard",
-   "at": "2026-10-28T20:16:55Z"
+   "at": "2026-10-28T20:28:55Z"
   },
   "20261028T201955Z-outis-to-nox.md": {
    "state": "delivered",
