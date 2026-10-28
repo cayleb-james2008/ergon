@@ -1,11 +1,11 @@
 # Lane status
 
-Updated 18:01 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
+Updated 18:04 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
 
 | lane | state | since | doing / waiting on | next check | flags |
 |---|---|---|---|---|---|
-| Money Desk | IDLE | 17:32 | Readiness baseline delivered (nothing new arms at 18:00). Usage throttle: weekly Claude meter about 90% until Mon 11-02 01:00 ET; only ORB15 beta check-ins run… | Thu 09:20 | IDLE_DECLARED, WAIT_NO_MEANWHILE |
-| Consolidation (lanes A-E) | IDLE | 17:57 | Ep27 EXPORTED 17:51 ET: six-shot 17.9 s final (sha da01c771...), independent final review B56 SHIP WITH CONDITIONS; R07 not generated (READY, waiting for Nox's… | 18:07 | — |
+| Money Desk | IDLE | 17:32 | Readiness baseline delivered (nothing new arms at 18:00). Usage throttle: weekly Claude meter about 90% until Mon 11-02 01:00 ET; only ORB15 beta check-ins run… | Thu 09:20 | IDLE_DECLARED, MAIL_FAILED, WAIT_NO_MEANWHILE |
+| Consolidation (lanes A-E) | IDLE | 17:57 | Ep27 EXPORTED 17:51 ET: six-shot 17.9 s final (sha da01c771...), independent final review B56 SHIP WITH CONDITIONS; R07 not generated (READY, waiting for Nox's… | 18:07 | WAIT_NO_MEANWHILE |
 | Outis / Codex desktop | WORKING | 18:00 | Board and handover checks; lanesAB report received, ownership reconciliation ongoing; Plimsoll runtime remains parked · meanwhile: Board checks, handover verif… | 18:13 | — |
 | Grok / RSI desk | — | — |  | — | — |
 | Nox | — | — |  | — | — |
@@ -84,7 +84,7 @@ Empty.
 - 20261028T211550Z-outis-to-nox.md: delivered
 - 20261028T212557Z-consolidation-to-nox.md: delivered
 - 20261028T212557Z-moneydesk-to-nox.md: delivered
-- 20261028T212559Z-nox-to-moneydesk.md: sent
+- 20261028T212559Z-nox-to-moneydesk.md: failed
 - 20261028T212858Z-consolidation-to-nox.md: delivered
 - 20261028T213050Z-outis-to-nox.md: delivered
 - 20261028T214658Z-consolidation-to-nox.md: delivered
@@ -93,9 +93,10 @@ Empty.
 - 20261028T215858Z-consolidation-to-nox.md: delivered
 - 20261028T215910Z-outis-to-nox.md: delivered
 - 20261028T220058Z-outis-to-nox.md: delivered
+- 20261028T220345Z-nox-to-outis.md: delivered
 
 ## Today
 
-- Flag-minutes: {"BLOCKED": 113.9, "CLOSED": 551.8, "IDLE_DECLARED": 36.0, "IDLE_LONG": 88.4, "MAIL_FAILED": 12.0, "MAIL_HELD": 226.4, "PROMISE_DUE": 255.0, "PROMISE_OVERDUE": 841.5, "STUCK": 6.0, "WAIT_IDLE": 3.0, "WAIT_NO_MEANWHILE": 51.1, "WAIT_OVERDUE": 24.0}
-- Flags raised: {"BLOCKED": 2, "CLOSED": 2, "IDLE_DECLARED": 1, "IDLE_LONG": 2, "MAIL_FAILED": 4, "MAIL_HELD": 1, "PROMISE_DUE": 9, "PROMISE_OVERDUE": 8, "STUCK": 2, "WAIT_IDLE": 1, "WAIT_NO_MEANWHILE": 3, "WAIT_OVERDUE": 1}
+- Flag-minutes: {"BLOCKED": 113.9, "CLOSED": 551.8, "IDLE_DECLARED": 39.0, "IDLE_LONG": 88.4, "MAIL_FAILED": 12.0, "MAIL_HELD": 226.4, "PROMISE_DUE": 267.0, "PROMISE_OVERDUE": 853.5, "STUCK": 6.0, "WAIT_IDLE": 3.0, "WAIT_NO_MEANWHILE": 54.1, "WAIT_OVERDUE": 24.0}
+- Flags raised: {"BLOCKED": 2, "CLOSED": 2, "IDLE_DECLARED": 1, "IDLE_LONG": 2, "MAIL_FAILED": 4, "MAIL_HELD": 1, "PROMISE_DUE": 12, "PROMISE_OVERDUE": 8, "STUCK": 2, "WAIT_IDLE": 1, "WAIT_NO_MEANWHILE": 3, "WAIT_OVERDUE": 1}
 - Policy v4: idle 30m, stuck 30m, renotify 60m, claude delivery on.
