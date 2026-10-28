@@ -1,5 +1,5 @@
 {
- "generated_at": "2026-10-28T21:49:58Z",
+ "generated_at": "2026-10-28T21:52:58Z",
  "policy_version": 4.0,
  "lanes": {
   "moneydesk": {
@@ -21,10 +21,10 @@
    "state": "WORKING",
    "since": "2026-10-28T19:52:56Z",
    "flags": [],
-   "doing": "Ep27: S05 take 2 SELECTED (independent review B52 PASS WITH CONDITIONS, window [25,145); no take 3), 5 Seedance clicks = 72.0 cr so far; 6-shot proof X6c (17.9 s) building, then independent final revi",
-   "waiting_on": "Nox: GO/STOP R07 (reply by 17:45 ET else treated as STOP); h3 deploy go after Thudwick closes",
-   "expected_by": "2026-10-28T22:30:00Z",
-   "next_check_at": "2026-10-28T21:54:05Z",
+   "doing": "Ep27 EXPORTED 17:51 ET: six-shot 17.9 s final (sha da01c771...), independent final review B56 SHIP WITH CONDITIONS; R07 not generated (READY, waiting for Nox's own go; tab closed 18:15 ET if no answer",
+   "waiting_on": "Nox: R07 GO/STOP; h3 deploy go; Mavilo Thursday go; GGG dry-run-4 OK",
+   "expected_by": "2026-10-28T23:00:00Z",
+   "next_check_at": "2026-10-28T22:07:09Z",
    "last_deliverable_at": null,
    "meanwhile": null,
    "meanwhile_path": null
@@ -70,7 +70,7 @@
  },
  "flags": {
   "moneydesk:IDLE_DECLARED": "says it has nothing to do: Readiness baseline delivered (nothing new arms at 18:00). Usage throttle: weekly Claude meter about 90% until Mon 11-02 01:00 ET; only ORB15 beta check-ins run. Open ask fo\u2026",
-  "moneydesk:WAIT_NO_MEANWHILE": "idle 17m waiting on Thu 10-29 09:20 ET beta check, with no meanwhile work named",
+  "moneydesk:WAIT_NO_MEANWHILE": "idle 20m waiting on Thu 10-29 09:20 ET beta check, with no meanwhile work named",
   "outis:BLOCKED": "declared blocked: Executor quota blocks Plimsoll runtime; Gateway v5 and P8 mutable/unreviewed, P6 unwired; board checks continue",
   "20261028T144206Z-consolidation-to-nox.md:PROMISE_OVERDUE": "nox owes consolidation: STREET-UNBLOCK, steps 0-2 done, the last link of step 2 BLOCKED (10:41 ET). The Street Studio is NO\u2026 (due 12:00)",
   "20261028T200455Z-consolidation-to-nox.md:PROMISE_OVERDUE": "nox owes consolidation: EP26 FINAL: your ruling needed on ONE choice (16:05 ET). The independent final reviewer (B39, never\u2026 (due 17:00)",
@@ -461,7 +461,7 @@
   "20261028T212559Z-nox-to-moneydesk.md": {
    "state": "sent",
    "route": "switchboard",
-   "at": "2026-10-28T21:40:58Z"
+   "at": "2026-10-28T21:52:58Z"
   },
   "20261028T212858Z-consolidation-to-nox.md": {
    "state": "delivered",

@@ -1,11 +1,11 @@
 # Lane status
 
-Updated 17:49 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
+Updated 17:52 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
 
 | lane | state | since | doing / waiting on | next check | flags |
 |---|---|---|---|---|---|
 | Money Desk | IDLE | 17:32 | Readiness baseline delivered (nothing new arms at 18:00). Usage throttle: weekly Claude meter about 90% until Mon 11-02 01:00 ET; only ORB15 beta check-ins run… | Thu 09:20 | IDLE_DECLARED, WAIT_NO_MEANWHILE |
-| Consolidation (lanes A-E) | WORKING | 15:52 | Ep27: S05 take 2 SELECTED (independent review B52 PASS WITH CONDITIONS, window [25,145); no take 3), 5 Seedance clicks = 72.0 cr so far; 6-shot proof X6c (17.9… | 17:54 | — |
+| Consolidation (lanes A-E) | WORKING | 15:52 | Ep27 EXPORTED 17:51 ET: six-shot 17.9 s final (sha da01c771...), independent final review B56 SHIP WITH CONDITIONS; R07 not generated (READY, waiting for Nox's… | 18:07 | — |
 | Outis / Codex desktop | BLOCKED | 17:29 | Executor quota blocks Plimsoll runtime; Gateway v5 and P8 mutable/unreviewed, P6 unwired; board checks continue · meanwhile: Board checks, handover verificatio… | 17:43 | BLOCKED |
 | Grok / RSI desk | — | — |  | — | — |
 | Nox | — | — |  | — | — |
@@ -92,6 +92,6 @@ Empty.
 
 ## Today
 
-- Flag-minutes: {"BLOCKED": 101.9, "CLOSED": 551.8, "IDLE_DECLARED": 24.0, "IDLE_LONG": 88.4, "MAIL_FAILED": 12.0, "MAIL_HELD": 226.4, "PROMISE_DUE": 243.0, "PROMISE_OVERDUE": 793.5, "STUCK": 6.0, "WAIT_IDLE": 3.0, "WAIT_NO_MEANWHILE": 39.1, "WAIT_OVERDUE": 24.0}
+- Flag-minutes: {"BLOCKED": 104.9, "CLOSED": 551.8, "IDLE_DECLARED": 27.0, "IDLE_LONG": 88.4, "MAIL_FAILED": 12.0, "MAIL_HELD": 226.4, "PROMISE_DUE": 246.0, "PROMISE_OVERDUE": 805.5, "STUCK": 6.0, "WAIT_IDLE": 3.0, "WAIT_NO_MEANWHILE": 42.1, "WAIT_OVERDUE": 24.0}
 - Flags raised: {"BLOCKED": 2, "CLOSED": 2, "IDLE_DECLARED": 1, "IDLE_LONG": 2, "MAIL_FAILED": 4, "MAIL_HELD": 1, "PROMISE_DUE": 9, "PROMISE_OVERDUE": 8, "STUCK": 2, "WAIT_IDLE": 1, "WAIT_NO_MEANWHILE": 3, "WAIT_OVERDUE": 1}
 - Policy v4: idle 30m, stuck 30m, renotify 60m, claude delivery on.
