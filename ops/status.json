@@ -1,5 +1,5 @@
 {
- "generated_at": "2026-10-28T12:50:23Z",
+ "generated_at": "2026-10-28T12:53:26Z",
  "policy_version": 1,
  "lanes": {
   "moneydesk": {
@@ -76,7 +76,7 @@
   }
  },
  "flags": {
-  "outis:IDLE_LONG": "quiet for 2h11m with no declared wait"
+  "outis:IDLE_LONG": "quiet for 2h14m with no declared wait"
  },
  "promises": [],
  "queue": [],
@@ -99,12 +99,12 @@
    "to": "nox"
   },
   "20261028T125019Z-sensor-to-probe.md": {
-   "state": "delivered",
+   "at": "2026-10-28T12:50:23Z",
    "from": "sensor",
-   "to": "probe",
    "kind": "fyi",
    "route": "folder",
-   "at": "2026-10-28T12:50:23Z"
+   "state": "delivered",
+   "to": "probe"
   }
  }
 }
