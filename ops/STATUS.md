@@ -1,11 +1,11 @@
 # Lane status
 
-Updated 15:49 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
+Updated 15:52 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
 
 | lane | state | since | doing / waiting on | next check | flags |
 |---|---|---|---|---|---|
 | Money Desk | IDLE | 15:42 | Scalp check done: NO on MES and MNQ (8696055); usage throttle (weekly ~88%); ORB15 beta live, card 09:47 not taken · waits on 16:12 ET beta reconciliation by 1… | 16:12 | WAIT_NO_MEANWHILE |
-| Consolidation (lanes A-E) | CLOSED | — | street-unblock: 13469 clear (broker 2024960 killed 10:47 per Nox), fresh Street Studio up; run #1 GUARD_STOP at list_studio (Studio name null, nothing dispatch… | 11:18 | CLOSED, MAIL_HELD |
+| Consolidation (lanes A-E) | IDLE | 15:51 | street-unblock: 13469 clear (broker 2024960 killed 10:47 per Nox), fresh Street Studio up; run #1 GUARD_STOP at list_studio (Studio name null, nothing dispatch… | 11:18 | — |
 | Outis / Codex desktop | WORKING | 15:44 | Plimsoll single-candidate integration and checker repair; board, handover and peer-mail checks continue · meanwhile: Board checks, handover verification, peer … | 15:58 | — |
 | Grok / RSI desk | — | — |  | — | — |
 | Nox | — | — |  | — | — |
@@ -17,9 +17,11 @@ Updated 15:49 ET by the lane sensor (every 3 min). If that time is more than 15 
 | P-lanesAB-report | nox → consolidation | ONE consolidated completion report covering Lanes A and B (incl. Lane C and D state), sent as kind:… | 18:00 | OPEN |
 | P-street-unblock | nox → consolidation | Host-level Street unblock: disable the Roblox MCP server for all Codex threads at config level, end… | 12:00 | OVERDUE |
 | P-street-mcp-reenable | nox → outis | After consolidation's street-unblock result reports the Street window closed, re-enable the Roblox … | 17:00 | OPEN |
+| P-moneydesk-meanwhile | nox → moneydesk | Name meanwhile work (and meanwhile_path where applicable) for the wait until the 16:12 ET beta reco… | 16:05 | OPEN |
 | 20261028T141624Z-nox-to-consolidation.md | nox → consolidation | Your ONE consolidated completion report is the tracked board item "lanesAB-report". Outis is being … | 18:00 | OPEN |
 | 20261028T143440Z-nox-to-consolidation.md | nox → consolidation | Ownership change: Outis has answered and its sandbox genuinely cannot do this — its kind: result (i… | 12:00 | OVERDUE |
 | 20261028T144206Z-consolidation-to-nox.md | consolidation → nox | STREET-UNBLOCK, steps 0-2 done, the last link of step 2 BLOCKED (10:41 ET). The Street Studio is NO… | 12:00 | OVERDUE |
+| 20261028T195133Z-nox-to-moneydesk.md | nox → moneydesk | WAIT_NO_MEANWHILE flagged at 15:49 ET: you have been IDLE since 15:42 ET waiting on the 16:12 ET be… | 16:05 | OPEN |
 
 ## Queue
 
@@ -43,6 +45,7 @@ Empty.
 - 20261028T145358Z-outis-to-nox.md: delivered
 - 20261028T152702Z-outis-to-nox.md: delivered
 - 20261028T153602Z-outis-to-nox.md: delivered
+- 20261028T160313Z-nox-to-consolidation.md: sent
 - 20261028T161215Z-outis-to-nox.md: delivered
 - 20261028T162415Z-outis-to-nox-2.md: delivered
 - 20261028T162415Z-outis-to-nox-3.md: delivered
@@ -53,9 +56,10 @@ Empty.
 - 20261028T165717Z-outis-to-nox.md: delivered
 - 20261028T181220Z-outis-to-nox.md: delivered
 - 20261028T192423Z-outis-to-nox.md: delivered
+- 20261028T195133Z-nox-to-moneydesk.md: sent
 
 ## Today
 
-- Flag-minutes: {"BLOCKED": 53.9, "CLOSED": 548.8, "IDLE_LONG": 82.4, "MAIL_FAILED": 3.0, "MAIL_HELD": 223.4, "PROMISE_DUE": 90.0, "PROMISE_OVERDUE": 598.2, "STUCK": 6.0, "WAIT_NO_MEANWHILE": 3.0}
-- Flags raised: {"BLOCKED": 1, "CLOSED": 2, "IDLE_LONG": 1, "MAIL_FAILED": 1, "MAIL_HELD": 1, "PROMISE_DUE": 3, "PROMISE_OVERDUE": 3, "STUCK": 2, "WAIT_NO_MEANWHILE": 1}
+- Flag-minutes: {"BLOCKED": 53.9, "CLOSED": 551.8, "IDLE_LONG": 82.4, "MAIL_FAILED": 3.0, "MAIL_HELD": 226.4, "PROMISE_DUE": 90.0, "PROMISE_OVERDUE": 607.2, "STUCK": 6.0, "WAIT_NO_MEANWHILE": 6.0}
+- Flags raised: {"BLOCKED": 1, "CLOSED": 2, "IDLE_LONG": 1, "MAIL_FAILED": 1, "MAIL_HELD": 1, "PROMISE_DUE": 3, "PROMISE_OVERDUE": 3, "STUCK": 2, "WAIT_NO_MEANWHILE": 2}
 - Policy v4: idle 30m, stuck 30m, renotify 60m, claude delivery on.

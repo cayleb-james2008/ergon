@@ -1,5 +1,5 @@
 {
- "generated_at": "2026-10-28T19:49:51Z",
+ "generated_at": "2026-10-28T19:52:51Z",
  "policy_version": 4.0,
  "lanes": {
   "moneydesk": {
@@ -17,12 +17,9 @@
    "meanwhile_path": null
   },
   "consolidation": {
-   "state": "CLOSED",
-   "since": null,
-   "flags": [
-    "CLOSED",
-    "MAIL_HELD"
-   ],
+   "state": "IDLE",
+   "since": "2026-10-28T19:51:36Z",
+   "flags": [],
    "doing": "street-unblock: 13469 clear (broker 2024960 killed 10:47 per Nox), fresh Street Studio up; run #1 GUARD_STOP at list_studio (Studio name null, nothing dispatched, no latch); retry needs host load <=8 ",
    "waiting_on": "host load to drop <=8 for the Street retry (my own agents + Kronos); S05 click worker",
    "expected_by": "2026-10-28T20:00:00Z",
@@ -69,12 +66,10 @@
   }
  },
  "flags": {
-  "moneydesk:WAIT_NO_MEANWHILE": "idle 7m waiting on 16:12 ET beta reconciliation, with no meanwhile work named",
-  "consolidation:CLOSED": "its session is not running",
+  "moneydesk:WAIT_NO_MEANWHILE": "idle 10m waiting on 16:12 ET beta reconciliation, with no meanwhile work named",
   "P-street-unblock:PROMISE_OVERDUE": "consolidation owes nox: Host-level Street unblock: disable the Roblox MCP server for all Codex threads at config level, end\u2026 (due 12:00)",
   "20261028T143440Z-nox-to-consolidation.md:PROMISE_OVERDUE": "consolidation owes nox: Ownership change: Outis has answered and its sandbox genuinely cannot do this \u2014 its kind: result (i\u2026 (due 12:00)",
-  "20261028T144206Z-consolidation-to-nox.md:PROMISE_OVERDUE": "nox owes consolidation: STREET-UNBLOCK, steps 0-2 done, the last link of step 2 BLOCKED (10:41 ET). The Street Studio is NO\u2026 (due 12:00)",
-  "consolidation/20261028T160313Z-nox-to-consolidation.md:MAIL_HELD": "its session is not running"
+  "20261028T144206Z-consolidation-to-nox.md:PROMISE_OVERDUE": "nox owes consolidation: STREET-UNBLOCK, steps 0-2 done, the last link of step 2 BLOCKED (10:41 ET). The Street Studio is NO\u2026 (due 12:00)"
  },
  "promises": [
   {
@@ -114,6 +109,18 @@
    "state": "OPEN"
   },
   {
+   "id": "P-moneydesk-meanwhile",
+   "from": "nox",
+   "to": "moneydesk",
+   "ask": "Name meanwhile work (and meanwhile_path where applicable) for the wait until the 16:12 ET beta reconciliation, or declare IDLE so Nox can feed work; reply as kind: result with item moneydesk-meanwhile-20261028",
+   "sent_at": "2026-10-28T19:51:33Z",
+   "expected_by": "2026-10-28T20:05:00Z",
+   "done_when": {
+    "result_item": "moneydesk-meanwhile-20261028"
+   },
+   "state": "OPEN"
+  },
+  {
    "id": "20261028T141624Z-nox-to-consolidation.md",
    "from": "nox",
    "to": "consolidation",
@@ -142,6 +149,16 @@
    "expected_by": "2026-10-28T16:00:00Z",
    "done": false,
    "state": "OVERDUE"
+  },
+  {
+   "id": "20261028T195133Z-nox-to-moneydesk.md",
+   "from": "nox",
+   "to": "moneydesk",
+   "ask": "WAIT_NO_MEANWHILE flagged at 15:49 ET: you have been IDLE since 15:42 ET waiting on the 16:12 ET beta reconciliation, wi",
+   "sent_at": "2026-10-28T19:51:33Z",
+   "expected_by": "2026-10-28T20:05:00Z",
+   "done": false,
+   "state": "OPEN"
   }
  ],
  "queue": [],
@@ -226,6 +243,11 @@
    "route": "board",
    "at": "2026-10-28T15:39:05Z"
   },
+  "20261028T160313Z-nox-to-consolidation.md": {
+   "state": "sent",
+   "route": "switchboard",
+   "at": "2026-10-28T19:52:51Z"
+  },
   "20261028T161215Z-outis-to-nox.md": {
    "state": "delivered",
    "route": "board",
@@ -275,6 +297,11 @@
    "state": "delivered",
    "route": "board",
    "at": "2026-10-28T19:27:23Z"
+  },
+  "20261028T195133Z-nox-to-moneydesk.md": {
+   "state": "sent",
+   "route": "switchboard",
+   "at": "2026-10-28T19:52:51Z"
   }
  }
 }
