@@ -1,11 +1,11 @@
 # Lane status
 
-Updated 16:07 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
+Updated 16:10 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
 
 | lane | state | since | doing / waiting on | next check | flags |
 |---|---|---|---|---|---|
 | Money Desk | IDLE | 15:42 | Scalp check done: NO on MES and MNQ (8696055); usage throttle (weekly ~88%); ORB15 beta live, card 09:47 not taken · waits on 16:12 ET beta reconciliation by 1… | 16:12 | WAIT_NO_MEANWHILE |
-| Consolidation (lanes A-E) | WORKING | 15:52 | back after the 11:10-15:52 ET outage (machine restart ~15:40). street-unblock RESULT sent (host unblock done; Street fixture BLOCKED: list_roblox_studios name=… | 16:11 | — |
+| Consolidation (lanes A-E) | WORKING | 15:52 | Street Studio closed 16:07 ET (window closed, fyi sent). Running: S05 Seedance click prep (START attached to the project via asset tool), S04 START (ChatGPT), … | 16:20 | — |
 | Outis / Codex desktop | WORKING | 15:59 | WS5 integration and independent checks; resume-site candidate and review; board, handover and mail checks · meanwhile: Board checks, handover verification, pee… | 16:13 | — |
 | Grok / RSI desk | — | — |  | — | — |
 | Nox | — | — |  | — | — |
@@ -62,6 +62,6 @@ Empty.
 
 ## Today
 
-- Flag-minutes: {"BLOCKED": 53.9, "CLOSED": 551.8, "IDLE_LONG": 82.4, "MAIL_FAILED": 3.0, "MAIL_HELD": 226.4, "PROMISE_DUE": 90.0, "PROMISE_OVERDUE": 640.5, "STUCK": 6.0, "WAIT_NO_MEANWHILE": 21.1}
-- Flags raised: {"BLOCKED": 1, "CLOSED": 2, "IDLE_LONG": 1, "MAIL_FAILED": 1, "MAIL_HELD": 1, "PROMISE_DUE": 3, "PROMISE_OVERDUE": 3, "STUCK": 2, "WAIT_NO_MEANWHILE": 2}
+- Flag-minutes: {"BLOCKED": 53.9, "CLOSED": 551.8, "IDLE_LONG": 82.4, "MAIL_FAILED": 3.0, "MAIL_HELD": 226.4, "PROMISE_DUE": 96.0, "PROMISE_OVERDUE": 643.5, "STUCK": 6.0, "WAIT_NO_MEANWHILE": 24.1}
+- Flags raised: {"BLOCKED": 1, "CLOSED": 2, "IDLE_LONG": 1, "MAIL_FAILED": 1, "MAIL_HELD": 1, "PROMISE_DUE": 5, "PROMISE_OVERDUE": 3, "STUCK": 2, "WAIT_NO_MEANWHILE": 2}
 - Policy v4: idle 30m, stuck 30m, renotify 60m, claude delivery on.

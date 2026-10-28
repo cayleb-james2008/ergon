@@ -1,5 +1,5 @@
 {
- "generated_at": "2026-10-28T20:07:55Z",
+ "generated_at": "2026-10-28T20:10:55Z",
  "policy_version": 4.0,
  "lanes": {
   "moneydesk": {
@@ -20,10 +20,10 @@
    "state": "WORKING",
    "since": "2026-10-28T19:52:56Z",
    "flags": [],
-   "doing": "back after the 11:10-15:52 ET outage (machine restart ~15:40). street-unblock RESULT sent (host unblock done; Street fixture BLOCKED: list_roblox_studios name=null, 2 attempts); resuming Ep26 final (A",
-   "waiting_on": "Nox: lift the 16:15 Studio bar after Thudwick for one v2.4 run? R10 re-waiver for G5 [25,97)?",
+   "doing": "Street Studio closed 16:07 ET (window closed, fyi sent). Running: S05 Seedance click prep (START attached to the project via asset tool), S04 START (ChatGPT), driver v2.4 builder, Lane C r5 review, S0",
+   "waiting_on": "nox: Ep26 A2-vs-B + R10 [25,97) waiver; lift Studio bar for a v2.4 run; Ep27 scope (5-shot by 18:00 vs 7-shot later)",
    "expected_by": "2026-10-28T22:00:00Z",
-   "next_check_at": "2026-10-28T20:11:51Z",
+   "next_check_at": "2026-10-28T20:20:04Z",
    "last_deliverable_at": null,
    "meanwhile": null,
    "meanwhile_path": null
@@ -66,7 +66,7 @@
   }
  },
  "flags": {
-  "moneydesk:WAIT_NO_MEANWHILE": "idle 25m waiting on 16:12 ET beta reconciliation, with no meanwhile work named",
+  "moneydesk:WAIT_NO_MEANWHILE": "idle 28m waiting on 16:12 ET beta reconciliation, with no meanwhile work named",
   "P-moneydesk-meanwhile:PROMISE_DUE": "moneydesk owes nox: Name meanwhile work (and meanwhile_path where applicable) for the wait until the 16:12 ET beta reco\u2026 (due 16:05)",
   "20261028T144206Z-consolidation-to-nox.md:PROMISE_OVERDUE": "nox owes consolidation: STREET-UNBLOCK, steps 0-2 done, the last link of step 2 BLOCKED (10:41 ET). The Street Studio is NO\u2026 (due 12:00)",
   "20261028T195133Z-nox-to-moneydesk.md:PROMISE_DUE": "moneydesk owes nox: WAIT_NO_MEANWHILE flagged at 15:49 ET: you have been IDLE since 15:42 ET waiting on the 16:12 ET be\u2026 (due 16:05)"
