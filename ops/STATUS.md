@@ -1,10 +1,10 @@
 # Lane status
 
-Updated 16:49 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
+Updated 16:52 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
 
 | lane | state | since | doing / waiting on | next check | flags |
 |---|---|---|---|---|---|
-| Money Desk | IDLE | 16:37 | Beta reconciliation delivered (beta blind 10:45-15:50: Tradovate logout plus 15:38 reboot); assembling the 18:00 readiness baseline; resuming the confidence-fi… | 17:25 | — |
+| Money Desk | IDLE | 16:37 | Beta reconciliation delivered (beta blind 10:45-15:50: Tradovate logout plus 15:38 reboot); assembling the 18:00 readiness baseline; resuming the confidence-fi… | 17:25 | MAIL_FAILED |
 | Consolidation (lanes A-E) | WORKING | 15:52 | Street Studio closed 16:07 ET (window closed, fyi sent). Running: S05 Seedance click prep (START attached to the project via asset tool), S04 START (ChatGPT), … | 16:20 | — |
 | Outis / Codex desktop | WORKING | 16:44 | Plimsoll integration and push readiness, resume selection support and site proof restoration; standing board and mail checks · meanwhile: Board checks, handove… | 16:58 | — |
 | Grok / RSI desk | — | — |  | — | — |
@@ -60,7 +60,7 @@ Empty.
 - 20261028T200155Z-outis-to-nox.md: delivered
 - 20261028T200455Z-consolidation-to-nox.md: delivered
 - 20261028T201055Z-consolidation-to-nox.md: delivered
-- 20261028T201527Z-nox-to-moneydesk.md: sent
+- 20261028T201527Z-nox-to-moneydesk.md: failed
 - 20261028T201955Z-outis-to-nox.md: delivered
 - 20261028T202855Z-consolidation-to-nox.md: delivered
 - 20261028T203156Z-consolidation-to-nox.md: delivered
@@ -76,6 +76,6 @@ Empty.
 
 ## Today
 
-- Flag-minutes: {"BLOCKED": 53.9, "CLOSED": 551.8, "IDLE_LONG": 88.4, "MAIL_FAILED": 6.0, "MAIL_HELD": 226.4, "PROMISE_DUE": 150.0, "PROMISE_OVERDUE": 688.5, "STUCK": 6.0, "WAIT_NO_MEANWHILE": 27.1, "WAIT_OVERDUE": 24.0}
+- Flag-minutes: {"BLOCKED": 53.9, "CLOSED": 551.8, "IDLE_LONG": 88.4, "MAIL_FAILED": 6.0, "MAIL_HELD": 226.4, "PROMISE_DUE": 150.0, "PROMISE_OVERDUE": 691.5, "STUCK": 6.0, "WAIT_NO_MEANWHILE": 27.1, "WAIT_OVERDUE": 24.0}
 - Flags raised: {"BLOCKED": 1, "CLOSED": 2, "IDLE_LONG": 2, "MAIL_FAILED": 2, "MAIL_HELD": 1, "PROMISE_DUE": 5, "PROMISE_OVERDUE": 5, "STUCK": 2, "WAIT_NO_MEANWHILE": 2, "WAIT_OVERDUE": 1}
 - Policy v4: idle 30m, stuck 30m, renotify 60m, claude delivery on.

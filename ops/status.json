@@ -1,11 +1,13 @@
 {
- "generated_at": "2026-10-28T20:49:56Z",
+ "generated_at": "2026-10-28T20:52:56Z",
  "policy_version": 4.0,
  "lanes": {
   "moneydesk": {
    "state": "IDLE",
    "since": "2026-10-28T20:37:26Z",
-   "flags": [],
+   "flags": [
+    "MAIL_FAILED"
+   ],
    "doing": "Beta reconciliation delivered (beta blind 10:45-15:50: Tradovate logout plus 15:38 reboot); assembling the 18:00 readiness baseline; resuming the confidence-filter check",
    "waiting_on": "17:20 ET forward archive run",
    "expected_by": "2026-10-28T17:25:00-04:00",
@@ -64,7 +66,8 @@
   }
  },
  "flags": {
-  "20261028T144206Z-consolidation-to-nox.md:PROMISE_OVERDUE": "nox owes consolidation: STREET-UNBLOCK, steps 0-2 done, the last link of step 2 BLOCKED (10:41 ET). The Street Studio is NO\u2026 (due 12:00)"
+  "20261028T144206Z-consolidation-to-nox.md:PROMISE_OVERDUE": "nox owes consolidation: STREET-UNBLOCK, steps 0-2 done, the last link of step 2 BLOCKED (10:41 ET). The Street Studio is NO\u2026 (due 12:00)",
+  "moneydesk/20261028T201527Z-nox-to-moneydesk.md:MAIL_FAILED": "20261028T201527Z-nox-to-moneydesk.md was not seen in the session after 3 tries"
  },
  "promises": [
   {
@@ -305,9 +308,9 @@
    "at": "2026-10-28T20:13:55Z"
   },
   "20261028T201527Z-nox-to-moneydesk.md": {
-   "state": "sent",
+   "state": "failed",
    "route": "switchboard",
-   "at": "2026-10-28T20:40:56Z"
+   "at": "2026-10-28T20:52:56Z"
   },
   "20261028T201955Z-outis-to-nox.md": {
    "state": "delivered",
