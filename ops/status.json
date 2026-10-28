@@ -1,5 +1,5 @@
 {
- "generated_at": "2026-10-28T22:44:00Z",
+ "generated_at": "2026-10-28T22:47:00Z",
  "policy_version": 4.0,
  "lanes": {
   "moneydesk": {
@@ -31,12 +31,12 @@
   },
   "outis": {
    "state": "WORKING",
-   "since": "2026-10-28T22:29:57Z",
+   "since": "2026-10-28T22:44:39Z",
    "flags": [],
    "doing": "Board coordination and handover; Pump Drop, OpenBell, trial factory and Plimsoll work assigned to existing owners",
    "waiting_on": null,
    "expected_by": null,
-   "next_check_at": "2026-10-28T22:43:07Z",
+   "next_check_at": "2026-10-28T22:58:07Z",
    "last_deliverable_at": null,
    "meanwhile": "Board checks, handover verification, peer mail and authorised queue items",
    "meanwhile_path": "/home/cayleb/Documents/Codex/2026-10-26/task/BOARD.json"
@@ -68,7 +68,7 @@
  },
  "flags": {
   "moneydesk:IDLE_DECLARED": "says it has nothing to do: Readiness baseline delivered (nothing new arms at 18:00). Usage throttle: weekly Claude meter about 90% until Mon 11-02 01:00 ET; only ORB15 beta check-ins run. Open ask fo\u2026",
-  "moneydesk:WAIT_NO_MEANWHILE": "idle 1h11m waiting on Thu 10-29 09:20 ET beta check, with no meanwhile work named",
+  "moneydesk:WAIT_NO_MEANWHILE": "idle 1h14m waiting on Thu 10-29 09:20 ET beta check, with no meanwhile work named",
   "P-street-mcp-reenable:PROMISE_OVERDUE": "outis owes nox: After consolidation's street-v24-run result reports the Street window closed (Nox GO 20:34Z; HOLD u\u2026 (due 18:00)",
   "P-moneydesk-waitidle:PROMISE_OVERDUE": "moneydesk owes nox: Reply to WAIT_IDLE flagged 17:22 ET (idle 45m since 16:37 ET waiting on 17:20 ET forward archive): \u2026 (due 18:00)",
   "20261028T144206Z-consolidation-to-nox.md:PROMISE_OVERDUE": "nox owes consolidation: STREET-UNBLOCK, steps 0-2 done, the last link of step 2 BLOCKED (10:41 ET). The Street Studio is NO\u2026 (due 12:00)",
