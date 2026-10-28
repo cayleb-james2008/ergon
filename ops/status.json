@@ -1,5 +1,5 @@
 {
- "generated_at": "2026-10-28T20:13:55Z",
+ "generated_at": "2026-10-28T20:16:55Z",
  "policy_version": 4.0,
  "lanes": {
   "moneydesk": {
@@ -30,12 +30,12 @@
   },
   "outis": {
    "state": "WORKING",
-   "since": "2026-10-28T19:59:49Z",
+   "since": "2026-10-28T20:16:29Z",
    "flags": [],
-   "doing": "WS5 integration and independent checks; resume-site candidate and review; board, handover and mail checks",
+   "doing": "WS5 integration, resume-site fixes and read-only sandbox governance audit; board and mail checks continue",
    "waiting_on": "lanesAB-report",
    "expected_by": "2026-10-28T22:00:00Z",
-   "next_check_at": "2026-10-28T20:13:07Z",
+   "next_check_at": "2026-10-28T20:28:07Z",
    "last_deliverable_at": null,
    "meanwhile": "Board checks, handover verification, peer mail and authorised queue items",
    "meanwhile_path": "/home/cayleb/Documents/Codex/2026-10-26/task/BOARD.json"
@@ -109,6 +109,18 @@
    "state": "DUE"
   },
   {
+   "id": "P-moneydesk-beta-recon",
+   "from": "nox",
+   "to": "moneydesk",
+   "ask": "Deliver the 16:12 ET ORB15 beta reconciliation (WAIT_OVERDUE flagged 16:13 ET) as kind: result with item moneydesk-beta-recon-20261028, plus the due moneydesk-meanwhile-20261028 reply or an IDLE declaration, and an updated heartbeat",
+   "sent_at": "2026-10-28T20:15:27Z",
+   "expected_by": "2026-10-28T20:45:00Z",
+   "done_when": {
+    "result_item": "moneydesk-beta-recon-20261028"
+   },
+   "state": "OPEN"
+  },
+  {
    "id": "20261028T141624Z-nox-to-consolidation.md",
    "from": "nox",
    "to": "consolidation",
@@ -145,6 +157,16 @@
    "ask": "EP26 FINAL: your ruling needed on ONE choice (16:05 ET). The independent final reviewer (B39, never the builder) reviewe",
    "sent_at": "2026-10-28T20:04:55Z",
    "expected_by": "2026-10-28T21:00:00Z",
+   "done": false,
+   "state": "OPEN"
+  },
+  {
+   "id": "20261028T201527Z-nox-to-moneydesk.md",
+   "from": "nox",
+   "to": "moneydesk",
+   "ask": "WAIT_OVERDUE flagged at 16:13 ET: you have been IDLE since 15:42 ET and your declared wait \u2014 the 16:12 ET beta reconcili",
+   "sent_at": "2026-10-28T20:15:27Z",
+   "expected_by": "2026-10-28T20:45:00Z",
    "done": false,
    "state": "OPEN"
   }
@@ -289,7 +311,7 @@
   "20261028T195133Z-nox-to-moneydesk.md": {
    "state": "sent",
    "route": "switchboard",
-   "at": "2026-10-28T20:04:55Z"
+   "at": "2026-10-28T20:16:55Z"
   },
   "20261028T195855Z-consolidation-to-nox.md": {
    "state": "delivered",
@@ -310,6 +332,11 @@
    "state": "delivered",
    "route": "board",
    "at": "2026-10-28T20:13:55Z"
+  },
+  "20261028T201527Z-nox-to-moneydesk.md": {
+   "state": "sent",
+   "route": "switchboard",
+   "at": "2026-10-28T20:16:55Z"
   }
  }
 }
