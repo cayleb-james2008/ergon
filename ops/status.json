@@ -1,5 +1,5 @@
 {
- "generated_at": "2026-10-28T18:06:20Z",
+ "generated_at": "2026-10-28T18:12:20Z",
  "policy_version": 4.0,
  "lanes": {
   "moneydesk": {
@@ -33,9 +33,9 @@
   },
   "outis": {
    "state": "WORKING",
-   "since": "2026-10-28T17:59:43Z",
+   "since": "2026-10-28T18:09:28Z",
    "flags": [],
-   "doing": "Isolated Plimsoll build and checking; OpenBell dashboard file repairs; board and mail checks continue",
+   "doing": "Isolated Plimsoll build and independent checking; board, handover and peer-mail checks continue",
    "waiting_on": "lanesAB-report",
    "expected_by": "2026-10-28T22:00:00Z",
    "next_check_at": "2026-10-28T18:13:07Z",
