@@ -1,5 +1,5 @@
 {
- "generated_at": "2026-10-28T20:43:56Z",
+ "generated_at": "2026-10-28T20:46:56Z",
  "policy_version": 4.0,
  "lanes": {
   "moneydesk": {
@@ -28,7 +28,7 @@
   },
   "outis": {
    "state": "WORKING",
-   "since": "2026-10-28T20:43:56Z",
+   "since": "2026-10-28T20:44:00Z",
    "flags": [],
    "doing": "Plimsoll integration and push readiness, resume selection support and site proof restoration; standing board and mail checks",
    "waiting_on": "lanesAB-report",
@@ -92,18 +92,6 @@
    "state": "OPEN"
   },
   {
-   "id": "P-street-v24-run",
-   "from": "nox",
-   "to": "consolidation",
-   "ask": "Run Street once under driver v2.4 after Nox lifted the 16:15 ET Studio bar for this one run (fresh Studio, plan x2, token, dry run, one-shot, reviewer conditions binding, C3 LIST_NAME_NULL_ACCEPTED records expected); file kind: result with item street-v24-run giving outcome and window-closed state",
-   "sent_at": "2026-10-28T20:34:51Z",
-   "expected_by": "2026-10-28T21:30:00Z",
-   "done_when": {
-    "result_item": "street-v24-run"
-   },
-   "state": "OPEN"
-  },
-  {
    "id": "20261028T141624Z-nox-to-consolidation.md",
    "from": "nox",
    "to": "consolidation",
@@ -150,16 +138,6 @@
    "ask": "STREET v2.4 READY, YOUR GO NEEDED (16:33 ET). The independent reviewer (A16, never the builder) passed driver v2.4 WITH ",
    "sent_at": "2026-10-28T20:31:56Z",
    "expected_by": "2026-10-28T21:15:00Z",
-   "done": false,
-   "state": "OPEN"
-  },
-  {
-   "id": "20261028T203451Z-nox-to-consolidation.md",
-   "from": "nox",
-   "to": "consolidation",
-   "ask": "GO street v2.4.",
-   "sent_at": "2026-10-28T20:34:51Z",
-   "expected_by": "2026-10-28T21:30:00Z",
    "done": false,
    "state": "OPEN"
   }
@@ -380,6 +358,11 @@
    "state": "delivered",
    "route": "board",
    "at": "2026-10-28T20:40:56Z"
+  },
+  "20261028T204356Z-consolidation-to-nox.md": {
+   "state": "delivered",
+   "route": "board",
+   "at": "2026-10-28T20:46:56Z"
   }
  }
 }
