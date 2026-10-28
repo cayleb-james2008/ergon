@@ -1,5 +1,5 @@
 {
- "generated_at": "2026-10-28T20:55:56Z",
+ "generated_at": "2026-10-28T20:58:57Z",
  "policy_version": 4.0,
  "lanes": {
   "moneydesk": {
@@ -18,10 +18,10 @@
    "state": "WORKING",
    "since": "2026-10-28T19:52:56Z",
    "flags": [],
-   "doing": "Street Studio closed 16:07 ET (window closed, fyi sent). Running: S05 Seedance click prep (START attached to the project via asset tool), S04 START (ChatGPT), driver v2.4 builder, Lane C r5 review, S0",
-   "waiting_on": "nox: Ep26 A2-vs-B + R10 [25,97) waiver; lift Studio bar for a v2.4 run; Ep27 scope (5-shot by 18:00 vs 7-shot later)",
-   "expected_by": "2026-10-28T22:00:00Z",
-   "next_check_at": "2026-10-28T20:20:04Z",
+   "doing": "Ep26 DELIVERED (A2, exported 16:35 ET). Street fixture RAN natively under v2.4 (PASS 31/31, console-line guard stop; window closed; reseal rule builder running). Ep27: S05 take1 HOLD -> re-roll with n",
+   "waiting_on": "Nox: R07 judgement (go/swap/stop). Browser queue: S02 click, S05 re-roll, S04, R07. Street reseal builder + reviewer",
+   "expected_by": "2026-10-28T22:15:00Z",
+   "next_check_at": "2026-10-28T21:08:47Z",
    "last_deliverable_at": null,
    "meanwhile": null,
    "meanwhile_path": null

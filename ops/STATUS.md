@@ -1,11 +1,11 @@
 # Lane status
 
-Updated 16:55 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
+Updated 16:58 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
 
 | lane | state | since | doing / waiting on | next check | flags |
 |---|---|---|---|---|---|
 | Money Desk | IDLE | 16:37 | Beta reconciliation delivered (beta blind 10:45-15:50: Tradovate logout plus 15:38 reboot); assembling the 18:00 readiness baseline; resuming the confidence-fi… | 17:25 | — |
-| Consolidation (lanes A-E) | WORKING | 15:52 | Street Studio closed 16:07 ET (window closed, fyi sent). Running: S05 Seedance click prep (START attached to the project via asset tool), S04 START (ChatGPT), … | 16:20 | — |
+| Consolidation (lanes A-E) | WORKING | 15:52 | Ep26 DELIVERED (A2, exported 16:35 ET). Street fixture RAN natively under v2.4 (PASS 31/31, console-line guard stop; window closed; reseal rule builder running… | 17:08 | — |
 | Outis / Codex desktop | WORKING | 16:44 | Plimsoll integration and push readiness, resume selection support and site proof restoration; standing board and mail checks · meanwhile: Board checks, handove… | 16:58 | — |
 | Grok / RSI desk | — | — |  | — | — |
 | Nox | — | — |  | — | — |
@@ -76,6 +76,6 @@ Empty.
 
 ## Today
 
-- Flag-minutes: {"BLOCKED": 53.9, "CLOSED": 551.8, "IDLE_LONG": 88.4, "MAIL_FAILED": 9.0, "MAIL_HELD": 226.4, "PROMISE_DUE": 150.0, "PROMISE_OVERDUE": 694.5, "STUCK": 6.0, "WAIT_NO_MEANWHILE": 27.1, "WAIT_OVERDUE": 24.0}
-- Flags raised: {"BLOCKED": 1, "CLOSED": 2, "IDLE_LONG": 2, "MAIL_FAILED": 3, "MAIL_HELD": 1, "PROMISE_DUE": 5, "PROMISE_OVERDUE": 5, "STUCK": 2, "WAIT_NO_MEANWHILE": 2, "WAIT_OVERDUE": 1}
+- Flag-minutes: {"BLOCKED": 53.9, "CLOSED": 551.8, "IDLE_LONG": 88.4, "MAIL_FAILED": 9.0, "MAIL_HELD": 226.4, "PROMISE_DUE": 153.0, "PROMISE_OVERDUE": 697.5, "STUCK": 6.0, "WAIT_NO_MEANWHILE": 27.1, "WAIT_OVERDUE": 24.0}
+- Flags raised: {"BLOCKED": 1, "CLOSED": 2, "IDLE_LONG": 2, "MAIL_FAILED": 3, "MAIL_HELD": 1, "PROMISE_DUE": 6, "PROMISE_OVERDUE": 5, "STUCK": 2, "WAIT_NO_MEANWHILE": 2, "WAIT_OVERDUE": 1}
 - Policy v4: idle 30m, stuck 30m, renotify 60m, claude delivery on.
