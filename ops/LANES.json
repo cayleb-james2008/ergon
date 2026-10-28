@@ -35,6 +35,13 @@
    "id": "nox",
    "name": "Nox",
    "kind": "board"
+  },
+  {
+   "id": "linktest",
+   "name": "BUILD TEST (remove after 2026-10-28)",
+   "kind": "claude",
+   "host": "local_5e9af794-0b86-4de6-be2a-b43eb7043a1b",
+   "idle_min": null
   }
  ]
 }
