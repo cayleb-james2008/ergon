@@ -1,5 +1,5 @@
 {
- "generated_at": "2026-10-28T21:01:57Z",
+ "generated_at": "2026-10-28T21:07:57Z",
  "policy_version": 4.0,
  "lanes": {
   "moneydesk": {
@@ -97,6 +97,18 @@
    "state": "OPEN"
   },
   {
+   "id": "P-outis-plimsoll-blocked",
+   "from": "nox",
+   "to": "outis",
+   "ask": "Report executor state for the Plimsoll runtime build BLOCKED at 17:01 ET (quota exceeded), whether P-street-mcp-reenable can now proceed after the street-v24-run window-closed result, and current meanwhile work; reply as kind: result with item plimsoll-runtime-blocked-20261028",
+   "sent_at": "2026-10-28T21:04:33Z",
+   "expected_by": "2026-10-28T22:00:00Z",
+   "done_when": {
+    "result_item": "plimsoll-runtime-blocked-20261028"
+   },
+   "state": "OPEN"
+  },
+  {
    "id": "20261028T141624Z-nox-to-consolidation.md",
    "from": "nox",
    "to": "consolidation",
@@ -143,6 +155,16 @@
    "ask": "STREET v2.4 READY, YOUR GO NEEDED (16:33 ET). The independent reviewer (A16, never the builder) passed driver v2.4 WITH ",
    "sent_at": "2026-10-28T20:31:56Z",
    "expected_by": "2026-10-28T21:15:00Z",
+   "done": false,
+   "state": "OPEN"
+  },
+  {
+   "id": "20261028T210433Z-nox-to-outis.md",
+   "from": "nox",
+   "to": "outis",
+   "ask": "BLOCKED ACKNOWLEDGED \u2014 Plimsoll runtime build, executor quota (17:01 ET).",
+   "sent_at": "2026-10-28T21:04:33Z",
+   "expected_by": "2026-10-28T22:00:00Z",
    "done": false,
    "state": "OPEN"
   }
@@ -378,6 +400,16 @@
    "state": "delivered",
    "route": "board",
    "at": "2026-10-28T21:01:57Z"
+  },
+  "20261028T210433Z-nox-to-outis.md": {
+   "state": "delivered",
+   "route": "folder",
+   "at": "2026-10-28T21:07:57Z"
+  },
+  "20261028T210700Z-nox-to-outis.md": {
+   "state": "delivered",
+   "route": "folder",
+   "at": "2026-10-28T21:07:57Z"
   }
  }
 }
