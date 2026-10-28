@@ -1,5 +1,5 @@
 {
- "generated_at": "2026-10-28T20:37:56Z",
+ "generated_at": "2026-10-28T20:40:56Z",
  "policy_version": 4.0,
  "lanes": {
   "moneydesk": {
@@ -64,9 +64,7 @@
   }
  },
  "flags": {
-  "P-moneydesk-meanwhile:PROMISE_OVERDUE": "moneydesk owes nox: Name meanwhile work (and meanwhile_path where applicable) for the wait until the 16:12 ET beta reco\u2026 (due 16:05)",
-  "20261028T144206Z-consolidation-to-nox.md:PROMISE_OVERDUE": "nox owes consolidation: STREET-UNBLOCK, steps 0-2 done, the last link of step 2 BLOCKED (10:41 ET). The Street Studio is NO\u2026 (due 12:00)",
-  "20261028T195133Z-nox-to-moneydesk.md:PROMISE_OVERDUE": "moneydesk owes nox: WAIT_NO_MEANWHILE flagged at 15:49 ET: you have been IDLE since 15:42 ET waiting on the 16:12 ET be\u2026 (due 16:05)"
+  "20261028T144206Z-consolidation-to-nox.md:PROMISE_OVERDUE": "nox owes consolidation: STREET-UNBLOCK, steps 0-2 done, the last link of step 2 BLOCKED (10:41 ET). The Street Studio is NO\u2026 (due 12:00)"
  },
  "promises": [
   {
@@ -91,30 +89,6 @@
    "id": "P-street-mcp-reenable",
    "sent_at": "2026-10-28T14:34:40Z",
    "to": "outis",
-   "state": "OPEN"
-  },
-  {
-   "id": "P-moneydesk-meanwhile",
-   "from": "nox",
-   "to": "moneydesk",
-   "ask": "Name meanwhile work (and meanwhile_path where applicable) for the wait until the 16:12 ET beta reconciliation, or declare IDLE so Nox can feed work; reply as kind: result with item moneydesk-meanwhile-20261028",
-   "sent_at": "2026-10-28T19:51:33Z",
-   "expected_by": "2026-10-28T20:05:00Z",
-   "done_when": {
-    "result_item": "moneydesk-meanwhile-20261028"
-   },
-   "state": "OVERDUE"
-  },
-  {
-   "id": "P-moneydesk-beta-recon",
-   "from": "nox",
-   "to": "moneydesk",
-   "ask": "Deliver the 16:12 ET ORB15 beta reconciliation (WAIT_OVERDUE flagged 16:13 ET) as kind: result with item moneydesk-beta-recon-20261028, plus the due moneydesk-meanwhile-20261028 reply or an IDLE declaration, and an updated heartbeat",
-   "sent_at": "2026-10-28T20:15:27Z",
-   "expected_by": "2026-10-28T20:45:00Z",
-   "done_when": {
-    "result_item": "moneydesk-beta-recon-20261028"
-   },
    "state": "OPEN"
   },
   {
@@ -150,32 +124,12 @@
    "state": "OVERDUE"
   },
   {
-   "id": "20261028T195133Z-nox-to-moneydesk.md",
-   "from": "nox",
-   "to": "moneydesk",
-   "ask": "WAIT_NO_MEANWHILE flagged at 15:49 ET: you have been IDLE since 15:42 ET waiting on the 16:12 ET beta reconciliation, wi",
-   "sent_at": "2026-10-28T19:51:33Z",
-   "expected_by": "2026-10-28T20:05:00Z",
-   "done": false,
-   "state": "OVERDUE"
-  },
-  {
    "id": "20261028T200455Z-consolidation-to-nox.md",
    "from": "consolidation",
    "to": "nox",
    "ask": "EP26 FINAL: your ruling needed on ONE choice (16:05 ET). The independent final reviewer (B39, never the builder) reviewe",
    "sent_at": "2026-10-28T20:04:55Z",
    "expected_by": "2026-10-28T21:00:00Z",
-   "done": false,
-   "state": "OPEN"
-  },
-  {
-   "id": "20261028T201527Z-nox-to-moneydesk.md",
-   "from": "nox",
-   "to": "moneydesk",
-   "ask": "WAIT_OVERDUE flagged at 16:13 ET: you have been IDLE since 15:42 ET and your declared wait \u2014 the 16:12 ET beta reconcili",
-   "sent_at": "2026-10-28T20:15:27Z",
-   "expected_by": "2026-10-28T20:45:00Z",
    "done": false,
    "state": "OPEN"
   },
@@ -375,7 +329,7 @@
   "20261028T201527Z-nox-to-moneydesk.md": {
    "state": "sent",
    "route": "switchboard",
-   "at": "2026-10-28T20:28:55Z"
+   "at": "2026-10-28T20:40:56Z"
   },
   "20261028T201955Z-outis-to-nox.md": {
    "state": "delivered",
@@ -398,14 +352,34 @@
    "at": "2026-10-28T20:37:56Z"
   },
   "20261028T203451Z-nox-to-consolidation.md": {
-   "state": "sent",
+   "state": "delivered",
    "route": "switchboard",
-   "at": "2026-10-28T20:37:56Z"
+   "at": "2026-10-28T20:40:56Z"
   },
   "20261028T203451Z-nox-to-outis.md": {
    "state": "delivered",
    "route": "folder",
    "at": "2026-10-28T20:37:56Z"
+  },
+  "20261028T203756Z-consolidation-to-nox.md": {
+   "state": "delivered",
+   "route": "board",
+   "at": "2026-10-28T20:40:56Z"
+  },
+  "20261028T203756Z-moneydesk-to-nox-2.md": {
+   "state": "delivered",
+   "route": "board",
+   "at": "2026-10-28T20:40:56Z"
+  },
+  "20261028T203756Z-moneydesk-to-nox.md": {
+   "state": "delivered",
+   "route": "board",
+   "at": "2026-10-28T20:40:56Z"
+  },
+  "20261028T203756Z-outis-to-nox.md": {
+   "state": "delivered",
+   "route": "board",
+   "at": "2026-10-28T20:40:56Z"
   }
  }
 }
