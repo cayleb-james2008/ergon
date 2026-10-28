@@ -1,10 +1,10 @@
 # Lane status
 
-Updated 10:08 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
+Updated 10:11 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
 
 | lane | state | since | doing / waiting on | next check | flags |
 |---|---|---|---|---|---|
-| Money Desk | IDLE | 10:05 |  | — | — |
+| Money Desk | IDLE | 10:09 |  | — | — |
 | Consolidation (lanes A-E) | WORKING | 07:00 |  | — | — |
 | Outis / Codex desktop | ACTIVE | 10:08 |  | — | — |
 | Grok / RSI desk | — | — |  | — | — |
