@@ -103,6 +103,18 @@
    "expected_by": "2026-10-28T22:45:00Z",
    "done_when": {
     "result_item": "consolidation-meanwhile-20261028"
+   },
+   "done": true
+  },
+  {
+   "id": "P-moneydesk-overnight-meanwhile",
+   "from": "nox",
+   "to": "moneydesk",
+   "ask": "Reply to WAIT_NO_MEANWHILE still flagged 18:37 ET (idle 1h05m waiting on Thu 09:20 ET beta check, no meanwhile named): name meanwhile work + meanwhile_path for the overnight wait, or confirm IDLE_DECLARED is intentional under the Claude usage throttle (~90% until Mon 11-02 01:00 ET, only ORB15 beta check-ins run) and state Thu beta prep incl. the Tradovate sign-in path blocker from the readiness baseline; reply as kind: result with item moneydesk-overnight-meanwhile-20261028",
+   "sent_at": "2026-10-28T22:40:33Z",
+   "expected_by": "2026-10-29T12:00:00Z",
+   "done_when": {
+    "result_item": "moneydesk-overnight-meanwhile-20261028"
    }
   }
  ]
