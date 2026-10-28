@@ -1,13 +1,11 @@
 {
- "generated_at": "2026-10-28T20:52:56Z",
+ "generated_at": "2026-10-28T20:55:56Z",
  "policy_version": 4.0,
  "lanes": {
   "moneydesk": {
    "state": "IDLE",
    "since": "2026-10-28T20:37:26Z",
-   "flags": [
-    "MAIL_FAILED"
-   ],
+   "flags": [],
    "doing": "Beta reconciliation delivered (beta blind 10:45-15:50: Tradovate logout plus 15:38 reboot); assembling the 18:00 readiness baseline; resuming the confidence-filter check",
    "waiting_on": "17:20 ET forward archive run",
    "expected_by": "2026-10-28T17:25:00-04:00",
@@ -67,7 +65,7 @@
  },
  "flags": {
   "20261028T144206Z-consolidation-to-nox.md:PROMISE_OVERDUE": "nox owes consolidation: STREET-UNBLOCK, steps 0-2 done, the last link of step 2 BLOCKED (10:41 ET). The Street Studio is NO\u2026 (due 12:00)",
-  "moneydesk/20261028T201527Z-nox-to-moneydesk.md:MAIL_FAILED": "20261028T201527Z-nox-to-moneydesk.md was not seen in the session after 3 tries"
+  "20261028T202855Z-consolidation-to-nox.md:PROMISE_DUE": "nox owes consolidation: EP27 STATUS 16:27 ET + ONE JUDGEMENT NEEDED (R07). Clicks so far (Seedance 2.5, Cinema Studio 4.0, \u2026 (due 16:55)"
  },
  "promises": [
   {
@@ -132,7 +130,7 @@
    "sent_at": "2026-10-28T20:28:55Z",
    "expected_by": "2026-10-28T20:55:00Z",
    "done": false,
-   "state": "OPEN"
+   "state": "DUE"
   },
   {
    "id": "20261028T203156Z-consolidation-to-nox.md",
