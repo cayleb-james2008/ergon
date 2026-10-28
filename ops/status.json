@@ -1,12 +1,13 @@
 {
- "generated_at": "2026-10-28T21:34:58Z",
+ "generated_at": "2026-10-28T21:37:58Z",
  "policy_version": 4.0,
  "lanes": {
   "moneydesk": {
    "state": "IDLE",
    "since": "2026-10-28T21:32:44Z",
    "flags": [
-    "IDLE_DECLARED"
+    "IDLE_DECLARED",
+    "WAIT_NO_MEANWHILE"
    ],
    "doing": "Readiness baseline delivered (nothing new arms at 18:00). Usage throttle: weekly Claude meter about 90% until Mon 11-02 01:00 ET; only ORB15 beta check-ins run. Open ask for Nox: a Tradovate sign-in f",
    "waiting_on": "Thu 10-29 09:20 ET beta check",
@@ -69,6 +70,7 @@
  },
  "flags": {
   "moneydesk:IDLE_DECLARED": "says it has nothing to do: Readiness baseline delivered (nothing new arms at 18:00). Usage throttle: weekly Claude meter about 90% until Mon 11-02 01:00 ET; only ORB15 beta check-ins run. Open ask fo\u2026",
+  "moneydesk:WAIT_NO_MEANWHILE": "idle 5m waiting on Thu 10-29 09:20 ET beta check, with no meanwhile work named",
   "outis:BLOCKED": "declared blocked: Executor quota blocks Plimsoll runtime; Gateway v5 and P8 mutable/unreviewed, P6 unwired; board checks continue",
   "20261028T144206Z-consolidation-to-nox.md:PROMISE_OVERDUE": "nox owes consolidation: STREET-UNBLOCK, steps 0-2 done, the last link of step 2 BLOCKED (10:41 ET). The Street Studio is NO\u2026 (due 12:00)",
   "20261028T200455Z-consolidation-to-nox.md:PROMISE_OVERDUE": "nox owes consolidation: EP26 FINAL: your ruling needed on ONE choice (16:05 ET). The independent final reviewer (B39, never\u2026 (due 17:00)",
