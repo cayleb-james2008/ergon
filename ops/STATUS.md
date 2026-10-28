@@ -1,18 +1,20 @@
 # Lane status
 
-Updated 10:11 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
+Updated 10:17 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
 
 | lane | state | since | doing / waiting on | next check | flags |
 |---|---|---|---|---|---|
 | Money Desk | IDLE | 10:09 |  | — | — |
 | Consolidation (lanes A-E) | WORKING | 07:00 |  | — | — |
-| Outis / Codex desktop | ACTIVE | 10:08 |  | — | — |
+| Outis / Codex desktop | ACTIVE | 10:15 |  | — | — |
 | Grok / RSI desk | — | — |  | — | — |
 | Nox | — | — |  | — | — |
 
 ## Promises
 
-None open.
+| id | from → to | ask | due | state |
+|---|---|---|---|---|
+| 20261028T141624Z-nox-to-consolidation.md | nox → consolidation | Your ONE consolidated completion report is the tracked board item "lanesAB-report". Outis is being … | 18:00 | OPEN |
 
 ## Queue
 
@@ -24,6 +26,7 @@ Empty.
 - 20261028T125015Z-linktest-to-nox.md: delivered
 - 20261028T125019Z-sensor-to-probe.md: delivered
 - 20261028T135411Z-build-to-linktest.md: delivered
+- 20261028T141624Z-nox-to-consolidation.md: sent
 
 ## Today
 

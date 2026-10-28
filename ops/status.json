@@ -1,5 +1,5 @@
 {
- "generated_at": "2026-10-28T14:11:41Z",
+ "generated_at": "2026-10-28T14:17:41Z",
  "policy_version": 1.0,
  "lanes": {
   "moneydesk": {
@@ -24,7 +24,7 @@
   },
   "outis": {
    "state": "ACTIVE",
-   "since": "2026-10-28T14:08:38Z",
+   "since": "2026-10-28T14:15:26Z",
    "flags": [],
    "doing": null,
    "waiting_on": null,
@@ -54,7 +54,18 @@
   }
  },
  "flags": {},
- "promises": [],
+ "promises": [
+  {
+   "id": "20261028T141624Z-nox-to-consolidation.md",
+   "from": "nox",
+   "to": "consolidation",
+   "ask": "Your ONE consolidated completion report is the tracked board item \"lanesAB-report\". Outis is being told to declare waiti",
+   "sent_at": "2026-10-28T14:16:24Z",
+   "expected_by": "2026-10-28T22:00:00Z",
+   "done": false,
+   "state": "OPEN"
+  }
+ ],
  "queue": [],
  "mail": {
   "20261028T124425Z-build-to-linktest.md": {
@@ -76,6 +87,11 @@
    "state": "delivered",
    "route": "switchboard",
    "at": "2026-10-28T13:54:51Z"
+  },
+  "20261028T141624Z-nox-to-consolidation.md": {
+   "state": "sent",
+   "route": "switchboard",
+   "at": "2026-10-28T14:17:41Z"
   }
  }
 }
