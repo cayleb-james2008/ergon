@@ -1,5 +1,5 @@
 {
- "generated_at": "2026-10-29T14:35:28Z",
+ "generated_at": "2026-10-29T14:38:28Z",
  "policy_version": 4.0,
  "lanes": {
   "moneydesk": {
@@ -73,10 +73,10 @@
   }
  },
  "flags": {
-  "moneydesk:IDLE_LONG": "idle for 1h15m with no declared wait",
+  "moneydesk:IDLE_LONG": "idle for 1h18m with no declared wait",
   "moneydesk:IDLE_DECLARED": "says it has nothing to do: Readiness baseline delivered (nothing new arms at 18:00). Usage throttle: weekly Claude meter about 90% until Mon 11-02 01:00 ET; only ORB15 beta check-ins run. Open ask fo\u2026",
   "moneydesk:WAIT_OVERDUE": "waits on Thu 10-29 09:20 ET beta check, expected by 09:20",
-  "consolidation:IDLE_LONG": "idle for 15h45m with no declared wait",
+  "consolidation:IDLE_LONG": "idle for 15h48m with no declared wait",
   "consolidation:WAIT_OVERDUE": "waits on Nox: ruling on R07 (appeal / rework / drop) after reviewing the denial record, expected by Wed 19:30",
   "outis:IDLE_DECLARED": "says it has nothing to do: No eligible unowned queue work or pending dependency; board and peer-mail checks continue on scheduled wakes",
   "P-street-mcp-reenable:PROMISE_OVERDUE": "outis owes nox: After consolidation's street-v24-run result reports the Street window closed (Nox GO 20:34Z; HOLD u\u2026 (due Wed 18:00)",
@@ -127,6 +127,18 @@
     "result_item": "moneydesk-overnight-meanwhile-20261028"
    },
    "state": "OVERDUE"
+  },
+  {
+   "id": "P-outis-successor-20261029-1435",
+   "from": "nox",
+   "to": "outis",
+   "ask": "Reply to IDLE_DECLARED 10:35 ET (idle since 10:33 ET, after delivering outis-successor-20261029-1420): (1) Mavilo Thu 18:00 Pump Drop gap-closure chase - fresh owner/checker evidence or exact blocker + closure/escalation time for the 3 gaps ahead of the 17:15 ET mechanical checkpoint, also tracked for Fluvvy Thu 22:30 and Thudwick Fri 17:30 (prep only, no activation/upload/launch), (2) fresh Plimsoll runtime owner process state or exact blocker (updates P-outis-plimsoll-blocked); street-mcp-reenable state unchanged, conflicting reports escalated, do not attempt/mark complete, (3) read-only OpenBell armed/card evidence, report on change only; reply as kind: result with item outis-successor-20261029-1435",
+   "sent_at": "2026-10-29T14:37:48Z",
+   "expected_by": "2026-10-29T16:00:00Z",
+   "done_when": {
+    "result_item": "outis-successor-20261029-1435"
+   },
+   "state": "OPEN"
   },
   {
    "id": "20261028T144206Z-consolidation-to-nox.md",
@@ -207,24 +219,24 @@
    "expected_by": "2026-10-29T12:00:00Z",
    "done": false,
    "state": "OVERDUE"
+  },
+  {
+   "id": "20261029T143748Z-nox-to-outis.md",
+   "from": "nox",
+   "to": "outis",
+   "ask": "IDLE_DECLARED CHASE - sensor 10:35 ET: you declared idle at 10:33 ET after delivering outis-successor-20261029-1420 (202",
+   "sent_at": "2026-10-29T14:37:48Z",
+   "expected_by": "2026-10-29T16:00:00Z",
+   "done": false,
+   "state": "OPEN"
   }
  ],
  "queue": [],
  "mail": {
-  "20261028T143304Z-outis-to-nox.md": {
-   "state": "delivered",
-   "route": "board",
-   "at": "2026-10-28T14:36:05Z"
-  },
   "20261028T143440Z-nox-to-consolidation.md": {
    "state": "delivered",
    "route": "switchboard",
    "at": "2026-10-28T14:39:06Z"
-  },
-  "20261028T143441Z-nox-to-outis.md": {
-   "state": "delivered",
-   "route": "folder",
-   "at": "2026-10-28T14:36:05Z"
   },
   "20261028T143442Z-nox-to-moneydesk.md": {
    "state": "failed",
@@ -635,6 +647,11 @@
    "state": "delivered",
    "route": "board",
    "at": "2026-10-29T14:35:28Z"
+  },
+  "20261029T143748Z-nox-to-outis.md": {
+   "state": "delivered",
+   "route": "folder",
+   "at": "2026-10-29T14:38:28Z"
   }
  }
 }
