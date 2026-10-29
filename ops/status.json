@@ -1,5 +1,5 @@
 {
- "generated_at": "2026-10-29T13:32:27Z",
+ "generated_at": "2026-10-29T13:35:27Z",
  "policy_version": 4.0,
  "lanes": {
   "moneydesk": {
@@ -33,13 +33,15 @@
    "meanwhile_path": "/home/cayleb/Work/shared-workflows/lanes/consolidation-20261027"
   },
   "outis": {
-   "state": "WORKING",
-   "since": "2026-10-29T13:31:45Z",
-   "flags": [],
-   "doing": "Board coordination; beta readiness evidence checked and result staged pending board publication",
+   "state": "IDLE",
+   "since": "2026-10-29T13:33:22Z",
+   "flags": [
+    "IDLE_DECLARED"
+   ],
+   "doing": "No eligible unowned queue work or pending dependency; board checks continue on scheduled wakes",
    "waiting_on": null,
    "expected_by": null,
-   "next_check_at": "2026-10-29T13:34:00Z",
+   "next_check_at": "2026-10-29T13:43:07Z",
    "last_deliverable_at": null,
    "meanwhile": "Board checks, handover verification, peer mail and authorised queue items",
    "meanwhile_path": "/home/cayleb/Documents/Codex/2026-10-26/task/BOARD.json"
@@ -72,8 +74,9 @@
  "flags": {
   "moneydesk:IDLE_DECLARED": "says it has nothing to do: Readiness baseline delivered (nothing new arms at 18:00). Usage throttle: weekly Claude meter about 90% until Mon 11-02 01:00 ET; only ORB15 beta check-ins run. Open ask fo\u2026",
   "moneydesk:WAIT_OVERDUE": "waits on Thu 10-29 09:20 ET beta check, expected by 09:20",
-  "consolidation:IDLE_LONG": "idle for 14h42m with no declared wait",
+  "consolidation:IDLE_LONG": "idle for 14h45m with no declared wait",
   "consolidation:WAIT_OVERDUE": "waits on Nox: ruling on R07 (appeal / rework / drop) after reviewing the denial record, expected by Wed 19:30",
+  "outis:IDLE_DECLARED": "says it has nothing to do: No eligible unowned queue work or pending dependency; board checks continue on scheduled wakes",
   "P-street-mcp-reenable:PROMISE_OVERDUE": "outis owes nox: After consolidation's street-v24-run result reports the Street window closed (Nox GO 20:34Z; HOLD u\u2026 (due Wed 18:00)",
   "P-moneydesk-waitidle:PROMISE_OVERDUE": "moneydesk owes nox: Reply to WAIT_IDLE flagged 17:22 ET (idle 45m since 16:37 ET waiting on 17:20 ET forward archive): \u2026 (due Wed 18:00)",
   "P-moneydesk-overnight-meanwhile:PROMISE_OVERDUE": "moneydesk owes nox: Reply to WAIT_NO_MEANWHILE still flagged 18:37 ET (idle 1h05m waiting on Thu 09:20 ET beta check, n\u2026 (due 08:00)",
@@ -123,14 +126,14 @@
    "state": "OVERDUE"
   },
   {
-   "id": "P-outis-beta-cover-20261029",
+   "id": "P-outis-beta-evidence-20261029",
    "from": "nox",
    "to": "outis",
-   "ask": "Cover the Thu 09:20 ET ORB15 beta check Money Desk cannot cover (weekly Claude limit 100%, confirmed 08:07 ET, resets Mon 11-02 01:00 ET): confirm in one report engine armed + feed actually ticking + card channel live before the 09:45 ET card, or state the exact blocker; reply as kind: result with item outis-beta-cover-20261029",
-   "sent_at": "2026-10-29T13:24:09Z",
-   "expected_by": "2026-10-29T13:40:00Z",
+   "ask": "Before / at the 09:45 ET ORB15 card: obtain the missing evidence from your 09:30 ET cover report (20261029T133227Z-outis-to-nox.md) - (1) distinct armed attestation independent of heartbeat paused=false (host process / runtime config), and (2) card channel delivery evidence (fresh card log / recipient delivery, not the Oct 28 log); or state the exact blocker for each. No engine, strategy, order, account or channel changes. Reply as kind: result with item outis-beta-evidence-20261029",
+   "sent_at": "2026-10-29T13:33:38Z",
+   "expected_by": "2026-10-29T13:45:00Z",
    "done_when": {
-    "result_item": "outis-beta-cover-20261029"
+    "result_item": "outis-beta-evidence-20261029"
    },
    "state": "OPEN"
   },
@@ -215,12 +218,12 @@
    "state": "OVERDUE"
   },
   {
-   "id": "20261029T132409Z-nox-to-outis.md",
+   "id": "20261029T133338Z-nox-to-outis.md",
    "from": "nox",
    "to": "outis",
-   "ask": "WAIT_OVERDUE CHASE \u2014 Money Desk 09:20 ET beta check (sensor 09:20 ET, 20261029T132026Z-sensor-to-nox.md).",
-   "sent_at": "2026-10-29T13:24:09Z",
-   "expected_by": "2026-10-29T13:40:00Z",
+   "ask": "URGENT - 09:45 ET ORB15 card, readiness NOT VERIFIED.",
+   "sent_at": "2026-10-29T13:33:38Z",
+   "expected_by": "2026-10-29T13:45:00Z",
    "done": false,
    "state": "OPEN"
   }
@@ -616,6 +619,16 @@
    "state": "delivered",
    "route": "folder",
    "at": "2026-10-29T13:26:27Z"
+  },
+  "20261029T133227Z-outis-to-nox.md": {
+   "state": "delivered",
+   "route": "board",
+   "at": "2026-10-29T13:35:27Z"
+  },
+  "20261029T133338Z-nox-to-outis.md": {
+   "state": "delivered",
+   "route": "folder",
+   "at": "2026-10-29T13:35:27Z"
   }
  }
 }
