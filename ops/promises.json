@@ -138,7 +138,8 @@
    "expected_by": "2026-10-29T13:45:00Z",
    "done_when": {
     "result_item": "outis-beta-evidence-20261029"
-   }
+   },
+   "done": true
   }
  ]
 }
