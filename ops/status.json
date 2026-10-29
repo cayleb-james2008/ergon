@@ -1,5 +1,5 @@
 {
- "generated_at": "2026-10-29T08:59:19Z",
+ "generated_at": "2026-10-29T09:02:19Z",
  "policy_version": 4.0,
  "lanes": {
   "moneydesk": {
@@ -34,12 +34,12 @@
   },
   "outis": {
    "state": "WORKING",
-   "since": "2026-10-29T08:45:11Z",
+   "since": "2026-10-29T09:00:19Z",
    "flags": [],
-   "doing": "Board coordination; meme desk private receipt reconciliation and isolated safety checking remain with assigned owners",
+   "doing": "Board coordination; episode, project verification and strategy grading remain with their assigned owners",
    "waiting_on": null,
    "expected_by": null,
-   "next_check_at": "2026-10-29T08:58:07Z",
+   "next_check_at": "2026-10-29T09:13:07Z",
    "last_deliverable_at": null,
    "meanwhile": "Board checks, handover verification, peer mail and authorised queue items",
    "meanwhile_path": "/home/cayleb/Documents/Codex/2026-10-26/task/BOARD.json"
@@ -71,8 +71,8 @@
  },
  "flags": {
   "moneydesk:IDLE_DECLARED": "says it has nothing to do: Readiness baseline delivered (nothing new arms at 18:00). Usage throttle: weekly Claude meter about 90% until Mon 11-02 01:00 ET; only ORB15 beta check-ins run. Open ask fo\u2026",
-  "moneydesk:WAIT_NO_MEANWHILE": "idle 11h26m waiting on Thu 10-29 09:20 ET beta check, with no meanwhile work named",
-  "consolidation:IDLE_LONG": "idle for 10h08m with no declared wait",
+  "moneydesk:WAIT_NO_MEANWHILE": "idle 11h29m waiting on Thu 10-29 09:20 ET beta check, with no meanwhile work named",
+  "consolidation:IDLE_LONG": "idle for 10h11m with no declared wait",
   "consolidation:WAIT_OVERDUE": "waits on Nox: ruling on R07 (appeal / rework / drop) after reviewing the denial record, expected by Wed 19:30",
   "P-street-mcp-reenable:PROMISE_OVERDUE": "outis owes nox: After consolidation's street-v24-run result reports the Street window closed (Nox GO 20:34Z; HOLD u\u2026 (due Wed 18:00)",
   "P-moneydesk-waitidle:PROMISE_OVERDUE": "moneydesk owes nox: Reply to WAIT_IDLE flagged 17:22 ET (idle 45m since 16:37 ET waiting on 17:20 ET forward archive): \u2026 (due Wed 18:00)",
