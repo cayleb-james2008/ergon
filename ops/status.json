@@ -1,5 +1,5 @@
 {
- "generated_at": "2026-10-29T12:32:25Z",
+ "generated_at": "2026-10-29T12:35:25Z",
  "policy_version": 4.0,
  "lanes": {
   "moneydesk": {
@@ -73,8 +73,8 @@
  },
  "flags": {
   "moneydesk:IDLE_DECLARED": "says it has nothing to do: Readiness baseline delivered (nothing new arms at 18:00). Usage throttle: weekly Claude meter about 90% until Mon 11-02 01:00 ET; only ORB15 beta check-ins run. Open ask fo\u2026",
-  "moneydesk:WAIT_NO_MEANWHILE": "idle 25m waiting on Thu 10-29 09:20 ET beta check, with no meanwhile work named",
-  "consolidation:IDLE_LONG": "idle for 13h42m with no declared wait",
+  "moneydesk:WAIT_NO_MEANWHILE": "idle 28m waiting on Thu 10-29 09:20 ET beta check, with no meanwhile work named",
+  "consolidation:IDLE_LONG": "idle for 13h45m with no declared wait",
   "consolidation:WAIT_OVERDUE": "waits on Nox: ruling on R07 (appeal / rework / drop) after reviewing the denial record, expected by Wed 19:30",
   "outis:IDLE_DECLARED": "says it has nothing to do: No eligible unowned queue work or pending dependency; board checks continue on scheduled wakes",
   "P-street-mcp-reenable:PROMISE_OVERDUE": "outis owes nox: After consolidation's street-v24-run result reports the Street window closed (Nox GO 20:34Z; HOLD u\u2026 (due Wed 18:00)",
