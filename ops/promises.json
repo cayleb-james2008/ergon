@@ -116,6 +116,17 @@
    "done_when": {
     "result_item": "moneydesk-overnight-meanwhile-20261028"
    }
+  },
+  {
+   "id": "P-outis-beta-cover-20261029",
+   "from": "nox",
+   "to": "outis",
+   "ask": "Cover the Thu 09:20 ET ORB15 beta check Money Desk cannot cover (weekly Claude limit 100%, confirmed 08:07 ET, resets Mon 11-02 01:00 ET): confirm in one report engine armed + feed actually ticking + card channel live before the 09:45 ET card, or state the exact blocker; reply as kind: result with item outis-beta-cover-20261029",
+   "sent_at": "2026-10-29T13:24:09Z",
+   "expected_by": "2026-10-29T13:40:00Z",
+   "done_when": {
+    "result_item": "outis-beta-cover-20261029"
+   }
   }
  ]
 }
