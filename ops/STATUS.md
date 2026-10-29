@@ -1,6 +1,6 @@
 # Lane status
 
-Updated 17:20 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
+Updated 17:26 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
 
 | lane | state | since | doing / waiting on | next check | flags |
 |---|---|---|---|---|---|
@@ -35,7 +35,6 @@ Empty.
 
 ## Mail, last 24 h
 
-- 20261028T204750Z-nox-to-moneydesk.md: failed
 - 20261028T212557Z-consolidation-to-nox.md: delivered
 - 20261028T212557Z-moneydesk-to-nox.md: delivered
 - 20261028T212559Z-nox-to-moneydesk.md: failed
@@ -89,6 +88,6 @@ Empty.
 
 ## Today
 
-- Flag-minutes: {"IDLE_DECLARED": 1605.0, "IDLE_LONG": 1473.0, "MAIL_FAILED": 6.0, "PROMISE_DUE": 96.0, "PROMISE_OVERDUE": 9768.0, "WAIT_NO_MEANWHILE": 552.0, "WAIT_OVERDUE": 1518.0}
+- Flag-minutes: {"IDLE_DECLARED": 1617.0, "IDLE_LONG": 1485.0, "MAIL_FAILED": 6.0, "PROMISE_DUE": 96.0, "PROMISE_OVERDUE": 9834.0, "WAIT_NO_MEANWHILE": 552.0, "WAIT_OVERDUE": 1530.0}
 - Flags raised: {"IDLE_DECLARED": 6, "IDLE_LONG": 1, "MAIL_FAILED": 2, "PROMISE_DUE": 5, "PROMISE_OVERDUE": 3, "WAIT_NO_MEANWHILE": 1, "WAIT_OVERDUE": 1}
 - Policy v4: idle 30m, stuck 30m, renotify 60m, claude delivery on.
