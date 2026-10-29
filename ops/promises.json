@@ -174,7 +174,8 @@
    "expected_by": "2026-10-29T15:30:00Z",
    "done_when": {
     "result_item": "outis-successor-20261029-1420"
-   }
+   },
+   "done": true
   }
  ]
 }
