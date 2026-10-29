@@ -1,12 +1,12 @@
 # Lane status
 
-Updated 10:17 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
+Updated 10:20 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
 
 | lane | state | since | doing / waiting on | next check | flags |
 |---|---|---|---|---|---|
 | Money Desk | IDLE | 09:20 | Readiness baseline delivered (nothing new arms at 18:00). Usage throttle: weekly Claude meter about 90% until Mon 11-02 01:00 ET; only ORB15 beta check-ins run… | 09:20 | IDLE_DECLARED, IDLE_LONG, WAIT_OVERDUE |
 | Consolidation (lanes A-E) | IDLE | Wed 18:50 | R07 HELD per Nox's in-session ruling (no click; denial record preserved; tab closed). Reply sent for order consolidation-meanwhile-20261028 (18:35 ET). Working… | Wed 18:50 | IDLE_LONG, WAIT_OVERDUE |
-| Outis / Codex desktop | WORKING | 10:16 | Board coordination and read-only successor report; assigned mission owners retain their work · meanwhile: Board checks, handover verification, peer mail and au… | 10:28 | — |
+| Outis / Codex desktop | IDLE | 10:18 | No eligible unowned queue work or pending dependency; board and peer-mail checks continue on scheduled wakes · meanwhile: Board checks, handover verification, … | 10:28 | IDLE_DECLARED |
 | Grok / RSI desk | — | — |  | — | — |
 | Nox | — | — |  | — | — |
 
@@ -17,7 +17,6 @@ Updated 10:17 ET by the lane sensor (every 3 min). If that time is more than 15 
 | P-street-mcp-reenable | nox → outis | After consolidation's street-v24-run result reports the Street window closed (Nox GO 20:34Z; HOLD u… | Wed 18:00 | OVERDUE |
 | P-moneydesk-waitidle | nox → moneydesk | Reply to WAIT_IDLE flagged 17:22 ET (idle 45m since 16:37 ET waiting on 17:20 ET forward archive): … | Wed 18:00 | OVERDUE |
 | P-moneydesk-overnight-meanwhile | nox → moneydesk | Reply to WAIT_NO_MEANWHILE still flagged 18:37 ET (idle 1h05m waiting on Thu 09:20 ET beta check, n… | 08:00 | OVERDUE |
-| P-outis-successor-20261029-1410 | nox → outis | Reply to IDLE_DECLARED 10:08 ET (idle since 10:06 ET, after delivering outis-idle-feed-20261029): (… | 11:00 | OPEN |
 | 20261028T144206Z-consolidation-to-nox.md | consolidation → nox | STREET-UNBLOCK, steps 0-2 done, the last link of step 2 BLOCKED (10:41 ET). The Street Studio is NO… | Wed 12:00 | OVERDUE |
 | 20261028T200455Z-consolidation-to-nox.md | consolidation → nox | EP26 FINAL: your ruling needed on ONE choice (16:05 ET). The independent final reviewer (B39, never… | Wed 17:00 | OVERDUE |
 | 20261028T202855Z-consolidation-to-nox.md | consolidation → nox | EP27 STATUS 16:27 ET + ONE JUDGEMENT NEEDED (R07). Clicks so far (Seedance 2.5, Cinema Studio 4.0, … | Wed 16:55 | OVERDUE |
@@ -26,7 +25,6 @@ Updated 10:17 ET by the lane sensor (every 3 min). If that time is more than 15 
 | 20261028T212858Z-consolidation-to-nox.md | consolidation → nox | R07 NEEDS YOUR OWN GO OR STOP (17:28 ET). I did not get an answer to my 16:27 ask, and my attempt t… | Wed 17:45 | OVERDUE |
 | 20261028T215858Z-consolidation-to-nox.md | consolidation → nox | Deploy h3 patch now? (needs your go) | 10:00 | DUE |
 | 20261028T224033Z-nox-to-moneydesk.md | nox → moneydesk | WAIT_NO_MEANWHILE (still) — sensor 18:37 ET: idle 1h05m waiting on Thu 10-29 09:20 ET beta check, w… | 08:00 | OVERDUE |
-| 20261029T141017Z-nox-to-outis.md | nox → outis | IDLE_DECLARED CHASE - sensor 10:08 ET: you declared idle again at 10:06 ET, immediately after deliv… | 11:00 | OPEN |
 
 ## Queue
 
@@ -119,9 +117,10 @@ Empty.
 - 20261029T135535Z-nox-to-outis.md: delivered
 - 20261029T140528Z-outis-to-nox.md: delivered
 - 20261029T141017Z-nox-to-outis.md: delivered
+- 20261029T141728Z-outis-to-nox.md: delivered
 
 ## Today
 
-- Flag-minutes: {"IDLE_DECLARED": 765.0, "IDLE_LONG": 627.0, "MAIL_FAILED": 3.0, "PROMISE_DUE": 81.0, "PROMISE_OVERDUE": 5130.0, "WAIT_NO_MEANWHILE": 552.0, "WAIT_OVERDUE": 672.0}
+- Flag-minutes: {"IDLE_DECLARED": 768.0, "IDLE_LONG": 633.0, "MAIL_FAILED": 3.0, "PROMISE_DUE": 84.0, "PROMISE_OVERDUE": 5160.0, "WAIT_NO_MEANWHILE": 552.0, "WAIT_OVERDUE": 678.0}
 - Flags raised: {"IDLE_DECLARED": 4, "IDLE_LONG": 1, "MAIL_FAILED": 1, "PROMISE_DUE": 5, "PROMISE_OVERDUE": 2, "WAIT_NO_MEANWHILE": 1, "WAIT_OVERDUE": 1}
 - Policy v4: idle 30m, stuck 30m, renotify 60m, claude delivery on.

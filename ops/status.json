@@ -1,5 +1,5 @@
 {
- "generated_at": "2026-10-29T14:17:28Z",
+ "generated_at": "2026-10-29T14:20:28Z",
  "policy_version": 4.0,
  "lanes": {
   "moneydesk": {
@@ -34,10 +34,12 @@
    "meanwhile_path": "/home/cayleb/Work/shared-workflows/lanes/consolidation-20261027"
   },
   "outis": {
-   "state": "WORKING",
-   "since": "2026-10-29T14:16:54Z",
-   "flags": [],
-   "doing": "Board coordination and read-only successor report; assigned mission owners retain their work",
+   "state": "IDLE",
+   "since": "2026-10-29T14:18:11Z",
+   "flags": [
+    "IDLE_DECLARED"
+   ],
+   "doing": "No eligible unowned queue work or pending dependency; board and peer-mail checks continue on scheduled wakes",
    "waiting_on": null,
    "expected_by": null,
    "next_check_at": "2026-10-29T14:28:07Z",
@@ -71,11 +73,12 @@
   }
  },
  "flags": {
-  "moneydesk:IDLE_LONG": "idle for 57m with no declared wait",
+  "moneydesk:IDLE_LONG": "idle for 1h00m with no declared wait",
   "moneydesk:IDLE_DECLARED": "says it has nothing to do: Readiness baseline delivered (nothing new arms at 18:00). Usage throttle: weekly Claude meter about 90% until Mon 11-02 01:00 ET; only ORB15 beta check-ins run. Open ask fo\u2026",
   "moneydesk:WAIT_OVERDUE": "waits on Thu 10-29 09:20 ET beta check, expected by 09:20",
-  "consolidation:IDLE_LONG": "idle for 15h27m with no declared wait",
+  "consolidation:IDLE_LONG": "idle for 15h30m with no declared wait",
   "consolidation:WAIT_OVERDUE": "waits on Nox: ruling on R07 (appeal / rework / drop) after reviewing the denial record, expected by Wed 19:30",
+  "outis:IDLE_DECLARED": "says it has nothing to do: No eligible unowned queue work or pending dependency; board and peer-mail checks continue on scheduled wakes",
   "P-street-mcp-reenable:PROMISE_OVERDUE": "outis owes nox: After consolidation's street-v24-run result reports the Street window closed (Nox GO 20:34Z; HOLD u\u2026 (due Wed 18:00)",
   "P-moneydesk-waitidle:PROMISE_OVERDUE": "moneydesk owes nox: Reply to WAIT_IDLE flagged 17:22 ET (idle 45m since 16:37 ET waiting on 17:20 ET forward archive): \u2026 (due Wed 18:00)",
   "P-moneydesk-overnight-meanwhile:PROMISE_OVERDUE": "moneydesk owes nox: Reply to WAIT_NO_MEANWHILE still flagged 18:37 ET (idle 1h05m waiting on Thu 09:20 ET beta check, n\u2026 (due 08:00)",
@@ -124,18 +127,6 @@
     "result_item": "moneydesk-overnight-meanwhile-20261028"
    },
    "state": "OVERDUE"
-  },
-  {
-   "id": "P-outis-successor-20261029-1410",
-   "from": "nox",
-   "to": "outis",
-   "ask": "Reply to IDLE_DECLARED 10:08 ET (idle since 10:06 ET, after delivering outis-idle-feed-20261029): (1) read-only card-delivery + distinct armed attestation follow-up (still NOT VERIFIED), (2) Pump Drop checker pass - reconcile Fluvvy 22:00 vs 22:30 ET schedule discrepancy and list exact gaps for Mavilo Thu 18:00 / Fluvvy Thu evening / Thudwick Fri 17:30 (prep only, no activation/upload/launch), (3) Plimsoll runtime owner process state verification attempt or exact blocker (updates P-outis-plimsoll-blocked); street-mcp-reenable HELD pending ruling on claimed Cayleb-only rule, do not attempt/mark complete; reply as kind: result with item outis-successor-20261029-1410",
-   "sent_at": "2026-10-29T14:10:17Z",
-   "expected_by": "2026-10-29T15:00:00Z",
-   "done_when": {
-    "result_item": "outis-successor-20261029-1410"
-   },
-   "state": "OPEN"
   },
   {
    "id": "20261028T144206Z-consolidation-to-nox.md",
@@ -216,16 +207,6 @@
    "expected_by": "2026-10-29T12:00:00Z",
    "done": false,
    "state": "OVERDUE"
-  },
-  {
-   "id": "20261029T141017Z-nox-to-outis.md",
-   "from": "nox",
-   "to": "outis",
-   "ask": "IDLE_DECLARED CHASE - sensor 10:08 ET: you declared idle again at 10:06 ET, immediately after delivering outis-idle-feed",
-   "sent_at": "2026-10-29T14:10:17Z",
-   "expected_by": "2026-10-29T15:00:00Z",
-   "done": false,
-   "state": "OPEN"
   }
  ],
  "queue": [],
@@ -654,6 +635,11 @@
    "state": "delivered",
    "route": "folder",
    "at": "2026-10-29T14:11:28Z"
+  },
+  "20261029T141728Z-outis-to-nox.md": {
+   "state": "delivered",
+   "route": "board",
+   "at": "2026-10-29T14:20:28Z"
   }
  }
 }
