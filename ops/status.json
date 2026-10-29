@@ -1,5 +1,5 @@
 {
- "generated_at": "2026-10-29T21:56:41Z",
+ "generated_at": "2026-10-29T21:59:41Z",
  "policy_version": 4.0,
  "lanes": {
   "moneydesk": {
@@ -73,10 +73,10 @@
   }
  },
  "flags": {
-  "moneydesk:IDLE_LONG": "idle for 8h36m with no declared wait",
+  "moneydesk:IDLE_LONG": "idle for 8h39m with no declared wait",
   "moneydesk:IDLE_DECLARED": "says it has nothing to do: Readiness baseline delivered (nothing new arms at 18:00). Usage throttle: weekly Claude meter about 90% until Mon 11-02 01:00 ET; only ORB15 beta check-ins run. Open ask fo\u2026",
   "moneydesk:WAIT_OVERDUE": "waits on Thu 10-29 09:20 ET beta check, expected by 09:20",
-  "consolidation:IDLE_LONG": "idle for 23h06m with no declared wait",
+  "consolidation:IDLE_LONG": "idle for 23h09m with no declared wait",
   "consolidation:WAIT_OVERDUE": "waits on Nox: ruling on R07 (appeal / rework / drop) after reviewing the denial record, expected by Wed 19:30",
   "outis:IDLE_DECLARED": "says it has nothing to do: No eligible unowned queue work or pending dependency; board and peer-mail checks continue on scheduled wakes",
   "P-street-mcp-reenable:PROMISE_OVERDUE": "outis owes nox: After consolidation's street-v24-run result reports the Street window closed (Nox GO 20:34Z; HOLD u\u2026 (due Wed 18:00)",
@@ -249,11 +249,6 @@
    "state": "failed",
    "route": "switchboard",
    "at": "2026-10-28T22:04:59Z"
-  },
-  "20261028T215558Z-sensor-to-outis.md": {
-   "state": "delivered",
-   "route": "folder",
-   "at": "2026-10-28T21:58:58Z"
   },
   "20261028T215858Z-consolidation-to-nox.md": {
    "state": "delivered",
