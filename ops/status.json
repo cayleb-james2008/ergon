@@ -1,12 +1,13 @@
 {
- "generated_at": "2026-10-29T12:08:24Z",
+ "generated_at": "2026-10-29T12:14:24Z",
  "policy_version": 4.0,
  "lanes": {
   "moneydesk": {
    "state": "IDLE",
    "since": "2026-10-29T12:07:11Z",
    "flags": [
-    "IDLE_DECLARED"
+    "IDLE_DECLARED",
+    "WAIT_NO_MEANWHILE"
    ],
    "doing": "Readiness baseline delivered (nothing new arms at 18:00). Usage throttle: weekly Claude meter about 90% until Mon 11-02 01:00 ET; only ORB15 beta check-ins run. Open ask for Nox: a Tradovate sign-in f",
    "waiting_on": "Thu 10-29 09:20 ET beta check",
@@ -72,7 +73,8 @@
  },
  "flags": {
   "moneydesk:IDLE_DECLARED": "says it has nothing to do: Readiness baseline delivered (nothing new arms at 18:00). Usage throttle: weekly Claude meter about 90% until Mon 11-02 01:00 ET; only ORB15 beta check-ins run. Open ask fo\u2026",
-  "consolidation:IDLE_LONG": "idle for 13h18m with no declared wait",
+  "moneydesk:WAIT_NO_MEANWHILE": "idle 7m waiting on Thu 10-29 09:20 ET beta check, with no meanwhile work named",
+  "consolidation:IDLE_LONG": "idle for 13h24m with no declared wait",
   "consolidation:WAIT_OVERDUE": "waits on Nox: ruling on R07 (appeal / rework / drop) after reviewing the denial record, expected by Wed 19:30",
   "outis:IDLE_DECLARED": "says it has nothing to do: No eligible unowned queue work or pending dependency; board checks continue on scheduled wakes",
   "P-street-mcp-reenable:PROMISE_OVERDUE": "outis owes nox: After consolidation's street-v24-run result reports the Street window closed (Nox GO 20:34Z; HOLD u\u2026 (due Wed 18:00)",
