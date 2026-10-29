@@ -162,6 +162,18 @@
    "expected_by": "2026-10-29T15:00:00Z",
    "done_when": {
     "result_item": "outis-successor-20261029-1410"
+   },
+   "done": true
+  },
+  {
+   "id": "P-outis-successor-20261029-1420",
+   "from": "nox",
+   "to": "outis",
+   "ask": "Reply to IDLE_DECLARED 10:18 ET (idle 1 min after delivering outis-successor-20261029-1410): (1) Mavilo Thu 18:00 ET Pump Drop preflight gap pack (checker/prep only) - owner + closure/escalation time for identity-bound file-set, no-create actual-form rehearsal, and exclusive-Chromium ownership/release gaps, also checked for Fluvvy (settled Thu 22:30 ET, preflight 21:45, T-25 22:05) and Thudwick Fri 17:30; (2) read-only OpenBell armed/card evidence, report on change only plus consolidated update; street-mcp-reenable NOT closed by Nox (conflicting Outis reports escalated to main chat); reply as kind: result with item outis-successor-20261029-1420",
+   "sent_at": "2026-10-29T14:22:31Z",
+   "expected_by": "2026-10-29T15:30:00Z",
+   "done_when": {
+    "result_item": "outis-successor-20261029-1420"
    }
   }
  ]
