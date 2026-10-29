@@ -1,6 +1,6 @@
 # Lane status
 
-Updated 09:56 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
+Updated 10:02 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
 
 | lane | state | since | doing / waiting on | next check | flags |
 |---|---|---|---|---|---|
@@ -24,7 +24,7 @@ Updated 09:56 ET by the lane sensor (every 3 min). If that time is more than 15 
 | 20261028T203156Z-consolidation-to-nox.md | consolidation → nox | STREET v2.4 READY, YOUR GO NEEDED (16:33 ET). The independent reviewer (A16, never the builder) pas… | Wed 17:15 | OVERDUE |
 | 20261028T212559Z-nox-to-moneydesk.md | nox → moneydesk | WAIT_IDLE CHASE — Money Desk idle 45m (sensor 17:22 ET). | Wed 18:00 | OVERDUE |
 | 20261028T212858Z-consolidation-to-nox.md | consolidation → nox | R07 NEEDS YOUR OWN GO OR STOP (17:28 ET). I did not get an answer to my 16:27 ask, and my attempt t… | Wed 17:45 | OVERDUE |
-| 20261028T215858Z-consolidation-to-nox.md | consolidation → nox | Deploy h3 patch now? (needs your go) | 10:00 | OPEN |
+| 20261028T215858Z-consolidation-to-nox.md | consolidation → nox | Deploy h3 patch now? (needs your go) | 10:00 | DUE |
 | 20261028T224033Z-nox-to-moneydesk.md | nox → moneydesk | WAIT_NO_MEANWHILE (still) — sensor 18:37 ET: idle 1h05m waiting on Thu 10-29 09:20 ET beta check, w… | 08:00 | OVERDUE |
 | 20261029T135535Z-nox-to-outis.md | nox → outis | IDLE_DECLARED CHASE — sensor 09:53 ET: you declared idle (no eligible unowned queue work), queue is… | 10:20 | OPEN |
 
@@ -120,6 +120,6 @@ Empty.
 
 ## Today
 
-- Flag-minutes: {"IDLE_DECLARED": 726.0, "IDLE_LONG": 594.0, "MAIL_FAILED": 3.0, "PROMISE_DUE": 66.0, "PROMISE_OVERDUE": 4920.0, "WAIT_NO_MEANWHILE": 552.0, "WAIT_OVERDUE": 630.0}
+- Flag-minutes: {"IDLE_DECLARED": 738.0, "IDLE_LONG": 600.0, "MAIL_FAILED": 3.0, "PROMISE_DUE": 66.0, "PROMISE_OVERDUE": 4980.0, "WAIT_NO_MEANWHILE": 552.0, "WAIT_OVERDUE": 642.0}
 - Flags raised: {"IDLE_DECLARED": 3, "MAIL_FAILED": 1, "PROMISE_DUE": 4, "PROMISE_OVERDUE": 2, "WAIT_NO_MEANWHILE": 1, "WAIT_OVERDUE": 1}
 - Policy v4: idle 30m, stuck 30m, renotify 60m, claude delivery on.
