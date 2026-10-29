@@ -150,6 +150,18 @@
    "expected_by": "2026-10-29T14:20:00Z",
    "done_when": {
     "result_item": "outis-idle-feed-20261029"
+   },
+   "done": true
+  },
+  {
+   "id": "P-outis-successor-20261029-1410",
+   "from": "nox",
+   "to": "outis",
+   "ask": "Reply to IDLE_DECLARED 10:08 ET (idle since 10:06 ET, after delivering outis-idle-feed-20261029): (1) read-only card-delivery + distinct armed attestation follow-up (still NOT VERIFIED), (2) Pump Drop checker pass - reconcile Fluvvy 22:00 vs 22:30 ET schedule discrepancy and list exact gaps for Mavilo Thu 18:00 / Fluvvy Thu evening / Thudwick Fri 17:30 (prep only, no activation/upload/launch), (3) Plimsoll runtime owner process state verification attempt or exact blocker (updates P-outis-plimsoll-blocked); street-mcp-reenable HELD pending ruling on claimed Cayleb-only rule, do not attempt/mark complete; reply as kind: result with item outis-successor-20261029-1410",
+   "sent_at": "2026-10-29T14:10:17Z",
+   "expected_by": "2026-10-29T15:00:00Z",
+   "done_when": {
+    "result_item": "outis-successor-20261029-1410"
    }
   }
  ]
