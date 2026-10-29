@@ -126,6 +126,18 @@
    "expected_by": "2026-10-29T13:40:00Z",
    "done_when": {
     "result_item": "outis-beta-cover-20261029"
+   },
+   "done": true
+  },
+  {
+   "id": "P-outis-beta-evidence-20261029",
+   "from": "nox",
+   "to": "outis",
+   "ask": "Before / at the 09:45 ET ORB15 card: obtain the missing evidence from your 09:30 ET cover report (20261029T133227Z-outis-to-nox.md) - (1) distinct armed attestation independent of heartbeat paused=false (host process / runtime config), and (2) card channel delivery evidence (fresh card log / recipient delivery, not the Oct 28 log); or state the exact blocker for each. No engine, strategy, order, account or channel changes. Reply as kind: result with item outis-beta-evidence-20261029",
+   "sent_at": "2026-10-29T13:33:38Z",
+   "expected_by": "2026-10-29T13:45:00Z",
+   "done_when": {
+    "result_item": "outis-beta-evidence-20261029"
    }
   }
  ]
