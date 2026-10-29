@@ -87,7 +87,7 @@
    "id": "P-moneydesk-waitidle",
    "from": "nox",
    "to": "moneydesk",
-   "ask": "Reply to WAIT_IDLE flagged 17:22 ET (idle 45m since 16:37 ET waiting on 17:20 ET forward archive): outcome of that archive run or its real blocker, evidence the 18:00 readiness baseline / confidence-filter meanwhile work is moving, and an updated heartbeat \u2014 or declare IDLE with reason; reply as kind: result with item moneydesk-waitidle-20261028",
+   "ask": "Reply to WAIT_IDLE flagged 17:22 ET (idle 45m since 16:37 ET waiting on 17:20 ET forward archive): outcome of that archive run or its real blocker, evidence the 18:00 readiness baseline / confidence-filter meanwhile work is moving, and an updated heartbeat — or declare IDLE with reason; reply as kind: result with item moneydesk-waitidle-20261028",
    "sent_at": "2026-10-28T21:25:59Z",
    "expected_by": "2026-10-28T22:00:00Z",
    "done_when": {
@@ -186,6 +186,18 @@
    "expected_by": "2026-10-29T16:00:00Z",
    "done_when": {
     "result_item": "outis-successor-20261029-1435"
+   },
+   "done": true
+  },
+  {
+   "id": "P-outis-successor-20261029-1735",
+   "from": "nox",
+   "to": "outis",
+   "ask": "Reply to IDLE_DECLARED (still) flagged 13:35 ET (idle since 14:33Z, queue empty; 1435 result was a PARTIAL receipt blocked by outis-desktop is_authorized_for_tasks=false): (1) remote-only Mavilo 17:15 ET mechanical checkpoint prep pack from existing board evidence for the 3 Pump Drop gaps + Fluvvy/Thudwick structure (prep only, no activation/upload/launch), (2) task-access blocker escalation pack for Cayleb (prepare only, do not attempt authorisation change), (3) OpenBell/Plimsoll report on change only; reply as kind: result with item outis-successor-20261029-1735",
+   "sent_at": "2026-10-29T17:37:30Z",
+   "expected_by": "2026-10-29T18:30:00Z",
+   "done_when": {
+    "result_item": "outis-successor-20261029-1735"
    }
   }
  ]
