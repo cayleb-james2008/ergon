@@ -1,5 +1,5 @@
 {
- "generated_at": "2026-10-29T13:20:26Z",
+ "generated_at": "2026-10-29T13:26:27Z",
  "policy_version": 4.0,
  "lanes": {
   "moneydesk": {
@@ -74,7 +74,7 @@
  "flags": {
   "moneydesk:IDLE_DECLARED": "says it has nothing to do: Readiness baseline delivered (nothing new arms at 18:00). Usage throttle: weekly Claude meter about 90% until Mon 11-02 01:00 ET; only ORB15 beta check-ins run. Open ask fo\u2026",
   "moneydesk:WAIT_OVERDUE": "waits on Thu 10-29 09:20 ET beta check, expected by 09:20",
-  "consolidation:IDLE_LONG": "idle for 14h30m with no declared wait",
+  "consolidation:IDLE_LONG": "idle for 14h36m with no declared wait",
   "consolidation:WAIT_OVERDUE": "waits on Nox: ruling on R07 (appeal / rework / drop) after reviewing the denial record, expected by Wed 19:30",
   "outis:IDLE_DECLARED": "says it has nothing to do: No eligible unowned queue work or pending dependency; board checks continue on scheduled wakes",
   "P-street-mcp-reenable:PROMISE_OVERDUE": "outis owes nox: After consolidation's street-v24-run result reports the Street window closed (Nox GO 20:34Z; HOLD u\u2026 (due Wed 18:00)",
@@ -124,6 +124,18 @@
     "result_item": "moneydesk-overnight-meanwhile-20261028"
    },
    "state": "OVERDUE"
+  },
+  {
+   "id": "P-outis-beta-cover-20261029",
+   "from": "nox",
+   "to": "outis",
+   "ask": "Cover the Thu 09:20 ET ORB15 beta check Money Desk cannot cover (weekly Claude limit 100%, confirmed 08:07 ET, resets Mon 11-02 01:00 ET): confirm in one report engine armed + feed actually ticking + card channel live before the 09:45 ET card, or state the exact blocker; reply as kind: result with item outis-beta-cover-20261029",
+   "sent_at": "2026-10-29T13:24:09Z",
+   "expected_by": "2026-10-29T13:40:00Z",
+   "done_when": {
+    "result_item": "outis-beta-cover-20261029"
+   },
+   "state": "OPEN"
   },
   {
    "id": "20261028T144206Z-consolidation-to-nox.md",
@@ -204,6 +216,16 @@
    "expected_by": "2026-10-29T12:00:00Z",
    "done": false,
    "state": "OVERDUE"
+  },
+  {
+   "id": "20261029T132409Z-nox-to-outis.md",
+   "from": "nox",
+   "to": "outis",
+   "ask": "WAIT_OVERDUE CHASE \u2014 Money Desk 09:20 ET beta check (sensor 09:20 ET, 20261029T132026Z-sensor-to-nox.md).",
+   "sent_at": "2026-10-29T13:24:09Z",
+   "expected_by": "2026-10-29T13:40:00Z",
+   "done": false,
+   "state": "OPEN"
   }
  ],
  "queue": [],
@@ -592,6 +614,11 @@
    "state": "delivered",
    "route": "board",
    "at": "2026-10-29T09:17:19Z"
+  },
+  "20261029T132409Z-nox-to-outis.md": {
+   "state": "delivered",
+   "route": "folder",
+   "at": "2026-10-29T13:26:27Z"
   }
  }
 }
