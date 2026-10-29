@@ -1,6 +1,6 @@
 # Lane status
 
-Updated 18:26 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
+Updated 18:32 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
 
 | lane | state | since | doing / waiting on | next check | flags |
 |---|---|---|---|---|---|
@@ -17,7 +17,7 @@ Updated 18:26 ET by the lane sensor (every 3 min). If that time is more than 15 
 | P-street-mcp-reenable | nox → outis | After consolidation's street-v24-run result reports the Street window closed (Nox GO 20:34Z; HOLD u… | Wed 18:00 | OVERDUE |
 | P-moneydesk-waitidle | nox → moneydesk | Reply to WAIT_IDLE flagged 17:22 ET (idle 45m since 16:37 ET waiting on 17:20 ET forward archive): … | Wed 18:00 | OVERDUE |
 | P-moneydesk-overnight-meanwhile | nox → moneydesk | Reply to WAIT_NO_MEANWHILE still flagged 18:37 ET (idle 1h05m waiting on Thu 09:20 ET beta check, n… | 08:00 | OVERDUE |
-| P-moneydesk-idlelong-20261029-2005 | nox → moneydesk | Reply to IDLE_LONG (still) flagged 16:05 ET (idle 6h45m since 09:20 ET / 13:20Z, no declared wait, … | 18:00 | DUE |
+| P-moneydesk-idlelong-20261029-2005 | nox → moneydesk | Reply to IDLE_LONG (still) flagged 16:05 ET (idle 6h45m since 09:20 ET / 13:20Z, no declared wait, … | 18:00 | OVERDUE |
 | P-outis-successor-20261029-2115 | nox → outis | Fluvvy preflight reconciliation under the same four-proof bar as the Mavilo 17:15 ET checkpoint (wh… | 21:45 | OPEN |
 | 20261028T144206Z-consolidation-to-nox.md | consolidation → nox | STREET-UNBLOCK, steps 0-2 done, the last link of step 2 BLOCKED (10:41 ET). The Street Studio is NO… | Wed 12:00 | OVERDUE |
 | 20261028T200455Z-consolidation-to-nox.md | consolidation → nox | EP26 FINAL: your ruling needed on ONE choice (16:05 ET). The independent final reviewer (B39, never… | Wed 17:00 | OVERDUE |
@@ -27,7 +27,7 @@ Updated 18:26 ET by the lane sensor (every 3 min). If that time is more than 15 
 | 20261028T212858Z-consolidation-to-nox.md | consolidation → nox | R07 NEEDS YOUR OWN GO OR STOP (17:28 ET). I did not get an answer to my 16:27 ask, and my attempt t… | Wed 17:45 | OVERDUE |
 | 20261028T215858Z-consolidation-to-nox.md | consolidation → nox | Deploy h3 patch now? (needs your go) | 10:00 | OVERDUE |
 | 20261028T224033Z-nox-to-moneydesk.md | nox → moneydesk | WAIT_NO_MEANWHILE (still) — sensor 18:37 ET: idle 1h05m waiting on Thu 10-29 09:20 ET beta check, w… | 08:00 | OVERDUE |
-| 20261029T200834Z-nox-to-moneydesk.md | nox → moneydesk | IDLE_LONG CHASE (still) - sensor 16:05 ET: you are IDLE for 6h45m, since 09:20 ET / 2026-10-29T13:2… | 18:00 | DUE |
+| 20261029T200834Z-nox-to-moneydesk.md | nox → moneydesk | IDLE_LONG CHASE (still) - sensor 16:05 ET: you are IDLE for 6h45m, since 09:20 ET / 2026-10-29T13:2… | 18:00 | OVERDUE |
 
 ## Queue
 
@@ -35,7 +35,6 @@ Empty.
 
 ## Mail, last 24 h
 
-- 20261028T222937Z-outis-to-nox.md: delivered
 - 20261028T223737Z-nox-to-outis.md: delivered
 - 20261028T223759Z-consolidation-to-nox.md: delivered
 - 20261028T224033Z-nox-to-moneydesk.md: failed
@@ -73,6 +72,6 @@ Empty.
 
 ## Today
 
-- Flag-minutes: {"IDLE_DECLARED": 1737.0, "IDLE_LONG": 1605.0, "MAIL_FAILED": 6.0, "PROMISE_DUE": 144.0, "PROMISE_OVERDUE": 10494.0, "WAIT_NO_MEANWHILE": 552.0, "WAIT_OVERDUE": 1650.0}
+- Flag-minutes: {"IDLE_DECLARED": 1749.0, "IDLE_LONG": 1617.0, "MAIL_FAILED": 6.0, "PROMISE_DUE": 156.0, "PROMISE_OVERDUE": 10560.0, "WAIT_NO_MEANWHILE": 552.0, "WAIT_OVERDUE": 1662.0}
 - Flags raised: {"IDLE_DECLARED": 6, "IDLE_LONG": 1, "MAIL_FAILED": 2, "PROMISE_DUE": 7, "PROMISE_OVERDUE": 3, "WAIT_NO_MEANWHILE": 1, "WAIT_OVERDUE": 1}
 - Policy v4: idle 30m, stuck 30m, renotify 60m, claude delivery on.
