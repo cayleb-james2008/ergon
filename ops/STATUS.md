@@ -1,10 +1,10 @@
 # Lane status
 
-Updated 16:41 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
+Updated 16:47 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
 
 | lane | state | since | doing / waiting on | next check | flags |
 |---|---|---|---|---|---|
-| Money Desk | IDLE | 09:20 | Readiness baseline delivered (nothing new arms at 18:00). Usage throttle: weekly Claude meter about 90% until Mon 11-02 01:00 ET; only ORB15 beta check-ins run… | 09:20 | IDLE_DECLARED, IDLE_LONG, WAIT_OVERDUE |
+| Money Desk | IDLE | 09:20 | Readiness baseline delivered (nothing new arms at 18:00). Usage throttle: weekly Claude meter about 90% until Mon 11-02 01:00 ET; only ORB15 beta check-ins run… | 09:20 | IDLE_DECLARED, IDLE_LONG, MAIL_FAILED, WAIT_OVERDUE |
 | Consolidation (lanes A-E) | IDLE | Wed 18:50 | R07 HELD per Nox's in-session ruling (no click; denial record preserved; tab closed). Reply sent for order consolidation-meanwhile-20261028 (18:35 ET). Working… | Wed 18:50 | IDLE_LONG, WAIT_OVERDUE |
 | Outis / Codex desktop | IDLE | 10:33 | No eligible unowned queue work or pending dependency; board and peer-mail checks continue on scheduled wakes · meanwhile: Board checks, handover verification, … | 10:43 | IDLE_DECLARED |
 | Grok / RSI desk | — | — |  | — | — |
@@ -37,7 +37,6 @@ Empty.
 ## Mail, last 24 h
 
 - 20261028T201527Z-nox-to-moneydesk.md: failed
-- 20261028T204356Z-consolidation-to-nox.md: delivered
 - 20261028T204750Z-nox-to-moneydesk.md: failed
 - 20261028T210114Z-outis-to-nox.md: delivered
 - 20261028T210433Z-nox-to-outis.md: delivered
@@ -93,10 +92,10 @@ Empty.
 - 20261029T183806Z-nox-to-outis.md: delivered
 - 20261029T190103Z-outis-to-nox.md: delivered
 - 20261029T193819Z-nox-to-outis.md: delivered
-- 20261029T200834Z-nox-to-moneydesk.md: sent
+- 20261029T200834Z-nox-to-moneydesk.md: failed
 
 ## Today
 
-- Flag-minutes: {"IDLE_DECLARED": 1527.0, "IDLE_LONG": 1395.0, "MAIL_FAILED": 3.0, "PROMISE_DUE": 96.0, "PROMISE_OVERDUE": 9339.0, "WAIT_NO_MEANWHILE": 552.0, "WAIT_OVERDUE": 1440.0}
+- Flag-minutes: {"IDLE_DECLARED": 1539.0, "IDLE_LONG": 1407.0, "MAIL_FAILED": 3.0, "PROMISE_DUE": 96.0, "PROMISE_OVERDUE": 9405.0, "WAIT_NO_MEANWHILE": 552.0, "WAIT_OVERDUE": 1452.0}
 - Flags raised: {"IDLE_DECLARED": 6, "IDLE_LONG": 1, "MAIL_FAILED": 1, "PROMISE_DUE": 5, "PROMISE_OVERDUE": 3, "WAIT_NO_MEANWHILE": 1, "WAIT_OVERDUE": 1}
 - Policy v4: idle 30m, stuck 30m, renotify 60m, claude delivery on.
