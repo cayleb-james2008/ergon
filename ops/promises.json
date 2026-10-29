@@ -222,7 +222,8 @@
             "expected_by": "2026-10-29T21:30:00Z",
             "done_when": {
                 "result_item": "outis-successor-20261029-1938"
-            }
+            },
+            "done": true
         },
         {
             "id": "P-moneydesk-idlelong-20261029-2005",
@@ -233,6 +234,17 @@
             "expected_by": "2026-10-29T22:00:00Z",
             "done_when": {
                 "result_item": "moneydesk-idlelong-20261029-2005"
+            }
+        },
+        {
+            "id": "P-outis-successor-20261029-2115",
+            "from": "nox",
+            "to": "outis",
+            "ask": "Fluvvy preflight reconciliation under the same four-proof bar as the Mavilo 17:15 ET checkpoint (which was NO-GO / mechanical NOT READY, all four proofs unverified, outis-desktop is_authorized_for_tasks=false): remote evidence reconciliation for (1) verified-unique upload selector, (2) driver-level create-impossible, (3) actual-form no-create pass under fresh independent checker, (4) exclusive Chromium ownership/release for T-10 to T+10; mechanical preflight Thu 21:45 ET, T-25 evidence point 22:05 ET, slot Thu 22:30 ET; Thudwick Fri 17:30 ET on change only; OpenBell/Plimsoll on change only; street-mcp remains CLOSED; prep/assessment only, no activation/upload/launch/rehearsal, no authorisation change; reply as kind: result with item outis-successor-20261029-2115",
+            "sent_at": "2026-10-29T21:20:00Z",
+            "expected_by": "2026-10-30T01:45:00Z",
+            "done_when": {
+                "result_item": "outis-successor-20261029-2115"
             }
         }
     ]
