@@ -1,11 +1,11 @@
 # Lane status
 
-Updated 04:47 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
+Updated 04:56 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
 
 | lane | state | since | doing / waiting on | next check | flags |
 |---|---|---|---|---|---|
 | Money Desk | IDLE | Wed 17:32 | Readiness baseline delivered (nothing new arms at 18:00). Usage throttle: weekly Claude meter about 90% until Mon 11-02 01:00 ET; only ORB15 beta check-ins run… | 09:20 | IDLE_DECLARED, WAIT_NO_MEANWHILE |
-| Consolidation (lanes A-E) | IDLE | Wed 18:50 | R07 HELD per Nox's in-session ruling (no click; denial record preserved; tab closed). Reply sent for order consolidation-meanwhile-20261028 (18:35 ET). Working… | Wed 18:50 | IDLE_LONG, WAIT_OVERDUE |
+| Consolidation (lanes A-E) | IDLE | Wed 18:50 | R07 HELD per Nox's in-session ruling (no click; denial record preserved; tab closed). Reply sent for order consolidation-meanwhile-20261028 (18:35 ET). Working… | Wed 18:50 | IDLE_LONG, MAIL_FAILED, WAIT_OVERDUE |
 | Outis / Codex desktop | WORKING | 04:45 | Board coordination; meme desk private receipt reconciliation and isolated safety checking remain with assigned owners · meanwhile: Board checks, handover verif… | 04:58 | — |
 | Grok / RSI desk | — | — |  | — | — |
 | Nox | — | — |  | — | — |
@@ -108,12 +108,12 @@ Empty.
 - 20261028T232851Z-outis-to-nox.md: delivered
 - 20261028T235951Z-outis-to-nox.md: delivered
 - 20261029T002915Z-outis-to-nox.md: delivered
-- 20261029T081942Z-nox-to-consolidation.md: sent
+- 20261029T081942Z-nox-to-consolidation.md: failed
 - 20261029T082940Z-outis-to-nox.md: delivered
 - 20261029T084439Z-outis-to-nox.md: delivered
 
 ## Today
 
-- Flag-minutes: {"IDLE_DECLARED": 285.0, "IDLE_LONG": 285.0, "PROMISE_OVERDUE": 2280.0, "WAIT_NO_MEANWHILE": 285.0, "WAIT_OVERDUE": 285.0}
+- Flag-minutes: {"IDLE_DECLARED": 294.0, "IDLE_LONG": 294.0, "PROMISE_OVERDUE": 2352.0, "WAIT_NO_MEANWHILE": 294.0, "WAIT_OVERDUE": 294.0}
 - Flags raised: {}
 - Policy v4: idle 30m, stuck 30m, renotify 60m, claude delivery on.
