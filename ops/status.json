@@ -1,5 +1,5 @@
 {
- "generated_at": "2026-10-29T20:08:38Z",
+ "generated_at": "2026-10-29T20:11:38Z",
  "policy_version": 4.0,
  "lanes": {
   "moneydesk": {
@@ -73,10 +73,10 @@
   }
  },
  "flags": {
-  "moneydesk:IDLE_LONG": "idle for 6h48m with no declared wait",
+  "moneydesk:IDLE_LONG": "idle for 6h51m with no declared wait",
   "moneydesk:IDLE_DECLARED": "says it has nothing to do: Readiness baseline delivered (nothing new arms at 18:00). Usage throttle: weekly Claude meter about 90% until Mon 11-02 01:00 ET; only ORB15 beta check-ins run. Open ask fo\u2026",
   "moneydesk:WAIT_OVERDUE": "waits on Thu 10-29 09:20 ET beta check, expected by 09:20",
-  "consolidation:IDLE_LONG": "idle for 21h18m with no declared wait",
+  "consolidation:IDLE_LONG": "idle for 21h21m with no declared wait",
   "consolidation:WAIT_OVERDUE": "waits on Nox: ruling on R07 (appeal / rework / drop) after reviewing the denial record, expected by Wed 19:30",
   "outis:IDLE_DECLARED": "says it has nothing to do: No eligible unowned queue work or pending dependency; board and peer-mail checks continue on scheduled wakes",
   "P-street-mcp-reenable:PROMISE_OVERDUE": "outis owes nox: After consolidation's street-v24-run result reports the Street window closed (Nox GO 20:34Z; HOLD u\u2026 (due Wed 18:00)",
@@ -137,6 +137,18 @@
    "expected_by": "2026-10-29T21:30:00Z",
    "done_when": {
     "result_item": "outis-successor-20261029-1938"
+   },
+   "state": "OPEN"
+  },
+  {
+   "id": "P-moneydesk-idlelong-20261029-2005",
+   "from": "nox",
+   "to": "moneydesk",
+   "ask": "Reply to IDLE_LONG (still) flagged 16:05 ET (idle 6h45m since 09:20 ET / 13:20Z, no declared wait, WAIT_OVERDUE on the past 09:20 ET beta check; consolidates open overdue P-moneydesk-waitidle and P-moneydesk-overnight-meanwhile): outcome of Thu 09:20 ET ORB15 beta check or exact blocker, update LANE.json to WAITING with future expected_by + meanwhile/meanwhile_path or confirm IDLE_DECLARED intentional under Claude usage throttle (~90% until Mon 11-02 01:00 ET), and state the Tradovate sign-in ask exactly without credentials; reply as kind: result with item moneydesk-idlelong-20261029-2005",
+   "sent_at": "2026-10-29T20:08:34Z",
+   "expected_by": "2026-10-29T22:00:00Z",
+   "done_when": {
+    "result_item": "moneydesk-idlelong-20261029-2005"
    },
    "state": "OPEN"
   },
@@ -227,6 +239,16 @@
    "ask": "IDLE_DECLARED CHASE (still) - sensor 15:35 ET: you remain IDLE_DECLARED, idle since 10:33 ET per STATUS (14:33Z), queue ",
    "sent_at": "2026-10-29T19:38:19Z",
    "expected_by": "2026-10-29T21:30:00Z",
+   "done": false,
+   "state": "OPEN"
+  },
+  {
+   "id": "20261029T200834Z-nox-to-moneydesk.md",
+   "from": "nox",
+   "to": "moneydesk",
+   "ask": "IDLE_LONG CHASE (still) - sensor 16:05 ET: you are IDLE for 6h45m, since 09:20 ET / 2026-10-29T13:20:01Z, with no declar",
+   "sent_at": "2026-10-29T20:08:34Z",
+   "expected_by": "2026-10-29T22:00:00Z",
    "done": false,
    "state": "OPEN"
   }
@@ -577,6 +599,11 @@
    "state": "delivered",
    "route": "folder",
    "at": "2026-10-29T19:41:37Z"
+  },
+  "20261029T200834Z-nox-to-moneydesk.md": {
+   "state": "sent",
+   "route": "switchboard",
+   "at": "2026-10-29T20:11:38Z"
   }
  }
 }
