@@ -1,5 +1,5 @@
 {
- "generated_at": "2026-10-29T14:29:28Z",
+ "generated_at": "2026-10-29T14:32:28Z",
  "policy_version": 4.0,
  "lanes": {
   "moneydesk": {
@@ -34,15 +34,13 @@
    "meanwhile_path": "/home/cayleb/Work/shared-workflows/lanes/consolidation-20261027"
   },
   "outis": {
-   "state": "IDLE",
-   "since": "2026-10-29T14:18:11Z",
-   "flags": [
-    "IDLE_DECLARED"
-   ],
-   "doing": "No eligible unowned queue work or pending dependency; board and peer-mail checks continue on scheduled wakes",
+   "state": "WORKING",
+   "since": "2026-10-29T14:30:10Z",
+   "flags": [],
+   "doing": "Board checks and read-only Pump Drop preflight gap synthesis; mission owners retain their work",
    "waiting_on": null,
    "expected_by": null,
-   "next_check_at": "2026-10-29T14:28:07Z",
+   "next_check_at": "2026-10-29T14:43:07Z",
    "last_deliverable_at": null,
    "meanwhile": "Board checks, handover verification, peer mail and authorised queue items",
    "meanwhile_path": "/home/cayleb/Documents/Codex/2026-10-26/task/BOARD.json"
@@ -73,12 +71,11 @@
   }
  },
  "flags": {
-  "moneydesk:IDLE_LONG": "idle for 1h09m with no declared wait",
+  "moneydesk:IDLE_LONG": "idle for 1h12m with no declared wait",
   "moneydesk:IDLE_DECLARED": "says it has nothing to do: Readiness baseline delivered (nothing new arms at 18:00). Usage throttle: weekly Claude meter about 90% until Mon 11-02 01:00 ET; only ORB15 beta check-ins run. Open ask fo\u2026",
   "moneydesk:WAIT_OVERDUE": "waits on Thu 10-29 09:20 ET beta check, expected by 09:20",
-  "consolidation:IDLE_LONG": "idle for 15h39m with no declared wait",
+  "consolidation:IDLE_LONG": "idle for 15h42m with no declared wait",
   "consolidation:WAIT_OVERDUE": "waits on Nox: ruling on R07 (appeal / rework / drop) after reviewing the denial record, expected by Wed 19:30",
-  "outis:IDLE_DECLARED": "says it has nothing to do: No eligible unowned queue work or pending dependency; board and peer-mail checks continue on scheduled wakes",
   "P-street-mcp-reenable:PROMISE_OVERDUE": "outis owes nox: After consolidation's street-v24-run result reports the Street window closed (Nox GO 20:34Z; HOLD u\u2026 (due Wed 18:00)",
   "P-moneydesk-waitidle:PROMISE_OVERDUE": "moneydesk owes nox: Reply to WAIT_IDLE flagged 17:22 ET (idle 45m since 16:37 ET waiting on 17:20 ET forward archive): \u2026 (due Wed 18:00)",
   "P-moneydesk-overnight-meanwhile:PROMISE_OVERDUE": "moneydesk owes nox: Reply to WAIT_NO_MEANWHILE still flagged 18:37 ET (idle 1h05m waiting on Thu 09:20 ET beta check, n\u2026 (due 08:00)",
@@ -88,7 +85,7 @@
   "20261028T203156Z-consolidation-to-nox.md:PROMISE_OVERDUE": "nox owes consolidation: STREET v2.4 READY, YOUR GO NEEDED (16:33 ET). The independent reviewer (A16, never the builder) pas\u2026 (due Wed 17:15)",
   "20261028T212559Z-nox-to-moneydesk.md:PROMISE_OVERDUE": "moneydesk owes nox: WAIT_IDLE CHASE \u2014 Money Desk idle 45m (sensor 17:22 ET). (due Wed 18:00)",
   "20261028T212858Z-consolidation-to-nox.md:PROMISE_OVERDUE": "nox owes consolidation: R07 NEEDS YOUR OWN GO OR STOP (17:28 ET). I did not get an answer to my 16:27 ask, and my attempt t\u2026 (due Wed 17:45)",
-  "20261028T215858Z-consolidation-to-nox.md:PROMISE_DUE": "nox owes consolidation: Deploy h3 patch now? (needs your go) (due 10:00)",
+  "20261028T215858Z-consolidation-to-nox.md:PROMISE_OVERDUE": "nox owes consolidation: Deploy h3 patch now? (needs your go) (due 10:00)",
   "20261028T224033Z-nox-to-moneydesk.md:PROMISE_OVERDUE": "moneydesk owes nox: WAIT_NO_MEANWHILE (still) \u2014 sensor 18:37 ET: idle 1h05m waiting on Thu 10-29 09:20 ET beta check, w\u2026 (due 08:00)"
  },
  "promises": [
@@ -208,7 +205,7 @@
    "sent_at": "2026-10-28T21:58:58Z",
    "expected_by": "2026-10-29T14:00:00Z",
    "done": false,
-   "state": "DUE"
+   "state": "OVERDUE"
   },
   {
    "id": "20261028T224033Z-nox-to-moneydesk.md",
