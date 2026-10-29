@@ -1,0 +1,86 @@
+{
+  "created_at_utc": "2026-10-29T00:08:08.614743Z",
+  "files": [
+    {
+      "path": "/home/cayleb/Work/projects/pumpfun-automation/drops/29-thudwick/coin.json",
+      "sha256": "7b9767d9ab9e871f5b354e7d435ea2022e554a792096e1d7b6bccca886e760cc"
+    },
+    {
+      "path": "/home/cayleb/Work/projects/pumpfun-automation/drops/29-thudwick/launch.json",
+      "sha256": "c7cfa00f6f981df3dd97ef530bbde3dc1eed994ae61da7713ce490916012183a"
+    },
+    {
+      "path": "/home/cayleb/Work/projects/pumpfun-automation/drops/29-thudwick/coin-image.png",
+      "sha256": "86fd7849c65c107899e43b425f174caf2a395f8ad07aa090725ec8b4533e1c79"
+    },
+    {
+      "path": "/home/cayleb/Work/projects/pumpfun-automation/drops/29-thudwick/evidence/gate-T-10.json",
+      "sha256": "7fac32f31c5b9235549fe7da0e003e12a2b67a82952da3fa1b806e51cd1d21c2"
+    },
+    {
+      "path": "/home/cayleb/Work/projects/pumpfun-automation/drops/33-mavilo/coin.json",
+      "sha256": "7a7550e51599079ccf70c047a8152747d70d14aea5ee6d1fc7c4b7117d4c6810"
+    },
+    {
+      "path": "/home/cayleb/Work/projects/pumpfun-automation/drops/33-mavilo/launch.json",
+      "sha256": "54ed9d8ee7036f583b702b61fc989265ca02c2eec212a36b09a6a4a3ac94f87c"
+    },
+    {
+      "path": "/home/cayleb/Work/projects/pumpfun-automation/drops/33-mavilo/coin-image.png",
+      "sha256": "1c384c2dbe41580a261f73f1fda47e27725d9073e71b77f79239978e33ef3c93"
+    },
+    {
+      "path": "/home/cayleb/Work/projects/pumpfun-automation/drops/33-mavilo/evidence/gate-T-10.json",
+      "sha256": "142fd779e08abf847aabcaa3d2a0b6736fe630c4bc65631777691754862caaf0"
+    },
+    {
+      "path": "/home/cayleb/Work/projects/pumpfun-automation/drops/30-fluvvy/coin.json",
+      "sha256": "98644c96a260754b232df3c7b3a75000dc3555a86259f551fc007f30fb1b61f9"
+    },
+    {
+      "path": "/home/cayleb/Work/projects/pumpfun-automation/drops/30-fluvvy/launch.json",
+      "sha256": "29439439b9dd61a9e37a516f526cf90eda19ccf4bde947749ae211fbaed76827"
+    },
+    {
+      "path": "/home/cayleb/Work/projects/pumpfun-automation/drops/30-fluvvy/coin-image.png",
+      "sha256": "e53f225bb3cb7f55e751b52ee4e360e844e4423821dd677a7c88c72c4299a981"
+    },
+    {
+      "path": "/home/cayleb/Work/projects/pumpfun-automation/drops/30-fluvvy/evidence/gate-T-10.json",
+      "sha256": "d191a8d44c41f5ccf5e912698145a895f6c7621ba6a404cc57d9d293af5589ea"
+    },
+    {
+      "path": "/home/cayleb/Work/projects/pumpfun-automation/tools/twitter-gauge-accounts.json",
+      "sha256": "e039a95e242d0895d889030b9408c7d5a7aa4b2e95bd9dce12995613b610390d"
+    },
+    {
+      "path": "/home/cayleb/Work/projects/pumpfun-automation/schedule.json",
+      "sha256": "84290829e7c1652e5b81a2126fd375403b084cc241e3e8b2a4222b84110f4f1d"
+    },
+    {
+      "path": "/home/cayleb/Work/shared-workflows/pumpfun-drop/META-COIN-WORKFLOW.md",
+      "sha256": "b82da6ff362ccb81b2e7c5486c5084288923d2bb3513e19516d091b49c4f7e9d"
+    },
+    {
+      "path": "/home/cayleb/Work/shared-workflows/lanes/consolidation-20261027/D/j7tracker-eval/EVALUATION.md",
+      "sha256": "6ea47cdce5e9b4cfbda07d601a64ed05b24d62006eea9b300dfd3dc85a42379e"
+    },
+    {
+      "path": "/home/cayleb/Work/shared-workflows/lanes/consolidation-20261027/D/LEDGER.md",
+      "sha256": "6428826fe0b3d2cb3d6d57a91abf88dfa3e3a03f6b0bc05a0396d2a9f8bcb289"
+    },
+    {
+      "path": "/home/cayleb/Work/shared-workflows/lanes/consolidation-20261027/D/h3-retire-build/review/REVIEW-H3-V2.md",
+      "sha256": "9f2c457b2b939f7eda9318022f787d389996248ce0dbcbad2c896334377673fe"
+    },
+    {
+      "path": "/home/cayleb/Documents/Codex/2026-10-28/task-9/gate-preflight/search-observations.json",
+      "sha256": "acad31d628ac441a3c51f70b19dbf3e6cf49ebcc178640088c41b2d03e4410b2"
+    }
+  ],
+  "scope": "Evidence references only; hashes bind files, not gate clearance or current source observations.",
+  "approval_document": {
+    "path": "/home/cayleb/Documents/Codex/2026-10-28/task-9/gate-preflight/APPROVAL-PACKS.md",
+    "sha256": "509e8d0fc63c89865da3d8ea874d5cd0f7d20ab1d9289322d59817e311527677"
+  }
+}
