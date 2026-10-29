@@ -1,12 +1,12 @@
 # Lane status
 
-Updated 05:26 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
+Updated 05:32 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
 
 | lane | state | since | doing / waiting on | next check | flags |
 |---|---|---|---|---|---|
 | Money Desk | IDLE | Wed 17:32 | Readiness baseline delivered (nothing new arms at 18:00). Usage throttle: weekly Claude meter about 90% until Mon 11-02 01:00 ET; only ORB15 beta check-ins run… | 09:20 | IDLE_DECLARED, WAIT_NO_MEANWHILE |
 | Consolidation (lanes A-E) | IDLE | Wed 18:50 | R07 HELD per Nox's in-session ruling (no click; denial record preserved; tab closed). Reply sent for order consolidation-meanwhile-20261028 (18:35 ET). Working… | Wed 18:50 | IDLE_LONG, WAIT_OVERDUE |
-| Outis / Codex desktop | WORKING | 05:15 | Board coordination and handover; project verification and isolated safety work remain with assigned owners · meanwhile: Board checks, handover verification, pe… | 05:28 | — |
+| Outis / Codex desktop | WORKING | 05:30 | Board coordination; Pump Drop, isolated handover preparation and strategy grading remain with assigned owners · meanwhile: Board checks, handover verification,… | 05:43 | — |
 | Grok / RSI desk | — | — |  | — | — |
 | Nox | — | — |  | — | — |
 
@@ -115,6 +115,6 @@ Empty.
 
 ## Today
 
-- Flag-minutes: {"IDLE_DECLARED": 324.0, "IDLE_LONG": 324.0, "MAIL_FAILED": 3.0, "PROMISE_OVERDUE": 2592.0, "WAIT_NO_MEANWHILE": 324.0, "WAIT_OVERDUE": 324.0}
+- Flag-minutes: {"IDLE_DECLARED": 330.0, "IDLE_LONG": 330.0, "MAIL_FAILED": 3.0, "PROMISE_OVERDUE": 2640.0, "WAIT_NO_MEANWHILE": 330.0, "WAIT_OVERDUE": 330.0}
 - Flags raised: {"MAIL_FAILED": 1}
 - Policy v4: idle 30m, stuck 30m, renotify 60m, claude delivery on.
