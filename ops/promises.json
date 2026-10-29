@@ -198,6 +198,18 @@
    "expected_by": "2026-10-29T18:30:00Z",
    "done_when": {
     "result_item": "outis-successor-20261029-1735"
+   },
+   "done": true
+  },
+  {
+   "id": "P-outis-successor-20261029-1835",
+   "from": "nox",
+   "to": "outis",
+   "ask": "Reply to IDLE_DECLARED (still) flagged 14:35 ET (idle since 10:33 ET, queue empty; 1735 result delivered 17:45Z as documentation-only prep pack, gaps still NOT READY): (1) remote evidence reconciliation ahead of the Mavilo Thu 18:00 ET 17:15 ET mechanical checkpoint for the 3 Pump Drop gaps - new receipts with observation times or exact missing evidence per gap (prep/assessment only, no activation/upload/launch), (2) Fluvvy Thu 22:30 / Thudwick Fri 17:30 reconciled on change only, (3) OpenBell/Plimsoll report on change only; street-mcp remains CLOSED by Cayleb ruling; reply as kind: result with item outis-successor-20261029-1835",
+   "sent_at": "2026-10-29T18:38:06Z",
+   "expected_by": "2026-10-29T19:30:00Z",
+   "done_when": {
+    "result_item": "outis-successor-20261029-1835"
    }
   }
  ]
