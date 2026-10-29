@@ -1,5 +1,5 @@
 {
- "generated_at": "2026-10-29T13:53:27Z",
+ "generated_at": "2026-10-29T13:56:27Z",
  "policy_version": 4.0,
  "lanes": {
   "moneydesk": {
@@ -74,7 +74,7 @@
  "flags": {
   "moneydesk:IDLE_DECLARED": "says it has nothing to do: Readiness baseline delivered (nothing new arms at 18:00). Usage throttle: weekly Claude meter about 90% until Mon 11-02 01:00 ET; only ORB15 beta check-ins run. Open ask fo\u2026",
   "moneydesk:WAIT_OVERDUE": "waits on Thu 10-29 09:20 ET beta check, expected by 09:20",
-  "consolidation:IDLE_LONG": "idle for 15h03m with no declared wait",
+  "consolidation:IDLE_LONG": "idle for 15h06m with no declared wait",
   "consolidation:WAIT_OVERDUE": "waits on Nox: ruling on R07 (appeal / rework / drop) after reviewing the denial record, expected by Wed 19:30",
   "outis:IDLE_DECLARED": "says it has nothing to do: No eligible unowned queue work or pending dependency; board checks continue on scheduled wakes",
   "P-street-mcp-reenable:PROMISE_OVERDUE": "outis owes nox: After consolidation's street-v24-run result reports the Street window closed (Nox GO 20:34Z; HOLD u\u2026 (due Wed 18:00)",
@@ -124,6 +124,18 @@
     "result_item": "moneydesk-overnight-meanwhile-20261028"
    },
    "state": "OVERDUE"
+  },
+  {
+   "id": "P-outis-idle-feed-20261029",
+   "from": "nox",
+   "to": "outis",
+   "ask": "Reply to IDLE_DECLARED flagged 09:53 ET (queue empty, beta cover/evidence done): close out P-outis-plimsoll-blocked and P-street-mcp-reenable state (proceed with re-enable if street-v24-run window-closed confirmed, else exact blocker), continue read-only card-delivery/armed evidence follow-up, and report Pump Drop no-create dry-rehearsal prep state for Mavilo Thu 18:00 / Fluvvy Thu ~22:00 / Thudwick Fri 17:30 (prep only, no activation/upload/launch); reply as kind: result with item outis-idle-feed-20261029",
+   "sent_at": "2026-10-29T13:55:35Z",
+   "expected_by": "2026-10-29T14:20:00Z",
+   "done_when": {
+    "result_item": "outis-idle-feed-20261029"
+   },
+   "state": "OPEN"
   },
   {
    "id": "20261028T144206Z-consolidation-to-nox.md",
@@ -204,15 +216,20 @@
    "expected_by": "2026-10-29T12:00:00Z",
    "done": false,
    "state": "OVERDUE"
+  },
+  {
+   "id": "20261029T135535Z-nox-to-outis.md",
+   "from": "nox",
+   "to": "outis",
+   "ask": "IDLE_DECLARED CHASE \u2014 sensor 09:53 ET: you declared idle (no eligible unowned queue work), queue is confirmed empty. Bet",
+   "sent_at": "2026-10-29T13:55:35Z",
+   "expected_by": "2026-10-29T14:20:00Z",
+   "done": false,
+   "state": "OPEN"
   }
  ],
  "queue": [],
  "mail": {
-  "20261028T135411Z-build-to-linktest.md": {
-   "state": "delivered",
-   "route": "switchboard",
-   "at": "2026-10-28T13:54:51Z"
-  },
   "20261028T141624Z-nox-to-consolidation.md": {
    "state": "delivered",
    "route": "switchboard",
@@ -622,6 +639,11 @@
    "state": "delivered",
    "route": "board",
    "at": "2026-10-29T13:53:27Z"
+  },
+  "20261029T135535Z-nox-to-outis.md": {
+   "state": "delivered",
+   "route": "folder",
+   "at": "2026-10-29T13:56:27Z"
   }
  }
 }
