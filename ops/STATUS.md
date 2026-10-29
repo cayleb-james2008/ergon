@@ -1,6 +1,6 @@
 # Lane status
 
-Updated 08:35 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
+Updated 08:44 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
 
 | lane | state | since | doing / waiting on | next check | flags |
 |---|---|---|---|---|---|
@@ -115,6 +115,6 @@ Empty.
 
 ## Today
 
-- Flag-minutes: {"IDLE_DECLARED": 573.0, "IDLE_LONG": 513.0, "MAIL_FAILED": 3.0, "PROMISE_DUE": 60.0, "PROMISE_OVERDUE": 4110.0, "WAIT_NO_MEANWHILE": 507.0, "WAIT_OVERDUE": 513.0}
+- Flag-minutes: {"IDLE_DECLARED": 591.0, "IDLE_LONG": 522.0, "MAIL_FAILED": 3.0, "PROMISE_DUE": 60.0, "PROMISE_OVERDUE": 4200.0, "WAIT_NO_MEANWHILE": 516.0, "WAIT_OVERDUE": 522.0}
 - Flags raised: {"IDLE_DECLARED": 1, "MAIL_FAILED": 1, "PROMISE_DUE": 2, "PROMISE_OVERDUE": 2, "WAIT_NO_MEANWHILE": 1}
 - Policy v4: idle 30m, stuck 30m, renotify 60m, claude delivery on.
