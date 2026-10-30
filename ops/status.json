@@ -1,5 +1,5 @@
 {
- "generated_at": "2026-10-30T17:48:16Z",
+ "generated_at": "2026-10-30T17:54:16Z",
  "policy_version": 4.0,
  "lanes": {
   "moneydesk": {
@@ -35,14 +35,14 @@
   },
   "outis": {
    "state": "WAITING",
-   "since": "2026-10-30T17:15:43Z",
+   "since": "2026-10-30T17:52:22Z",
    "flags": [
     "WAIT_IDLE"
    ],
-   "doing": "Ergon coordination and board checks; awaiting independently reviewed integration handbacks",
-   "waiting_on": "independently reviewed integration handbacks",
+   "doing": "Frozen Order A candidate and management snapshot ready for independent review; board and coordination continue",
+   "waiting_on": "independent Order A candidate review and accepted integration handbacks",
    "expected_by": null,
-   "next_check_at": "2026-10-30T17:28:07Z",
+   "next_check_at": "2026-10-30T17:58:07Z",
    "last_deliverable_at": null,
    "meanwhile": "Board checks, handover verification, peer mail and authorised queue items",
    "meanwhile_path": "/home/cayleb/Documents/Codex/2026-10-26/task/BOARD.json"
@@ -73,12 +73,12 @@
   }
  },
  "flags": {
-  "moneydesk:IDLE_LONG": "idle for 28h28m with no declared wait",
+  "moneydesk:IDLE_LONG": "idle for 28h34m with no declared wait",
   "moneydesk:IDLE_DECLARED": "says it has nothing to do: Readiness baseline delivered (nothing new arms at 18:00). Usage throttle: weekly Claude meter about 90% until Mon 11-02 01:00 ET; only ORB15 beta check-ins run. Open ask fo\u2026",
   "moneydesk:WAIT_OVERDUE": "waits on Thu 10-29 09:20 ET beta check, expected by Thu 09:20",
-  "consolidation:IDLE_LONG": "idle for 16h05m with no declared wait",
+  "consolidation:IDLE_LONG": "idle for 16h11m with no declared wait",
   "consolidation:WAIT_OVERDUE": "waits on Nox: ruling on R07 (appeal / rework / drop) after reviewing the denial record, expected by Wed 19:30",
-  "outis:WAIT_IDLE": "waits on independently reviewed integration handbacks; nothing written to its meanwhile work (/home/cayleb/Documents/Codex/2026-10-26/task/BOARD.json) for 32m",
+  "outis:WAIT_IDLE": "waits on independent Order A candidate review and accepted integration handbacks; nothing written to its meanwhile work (/home/cayleb/Documents/Codex/2026-10-26/task/BOARD.json) for 38m",
   "P-street-mcp-reenable:PROMISE_OVERDUE": "outis owes nox: After consolidation's street-v24-run result reports the Street window closed (Nox GO 20:34Z; HOLD u\u2026 (due Wed 18:00)",
   "P-moneydesk-waitidle:PROMISE_OVERDUE": "moneydesk owes nox: Reply to WAIT_IDLE flagged 17:22 ET (idle 45m since 16:37 ET waiting on 17:20 ET forward archive): \u2026 (due Wed 18:00)",
   "P-moneydesk-overnight-meanwhile:PROMISE_OVERDUE": "moneydesk owes nox: Reply to WAIT_NO_MEANWHILE still flagged 18:37 ET (idle 1h05m waiting on Thu 09:20 ET beta check, n\u2026 (due Thu 08:00)",
