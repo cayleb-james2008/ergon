@@ -1,13 +1,13 @@
 {
- "generated_at": "2026-10-30T21:33:22Z",
+ "generated_at": "2026-10-30T21:39:22Z",
  "policy_version": 4.0,
  "lanes": {
   "moneydesk": {
-   "state": "IDLE",
-   "since": "2026-10-29T13:20:01Z",
+   "state": "CLOSED",
+   "since": null,
    "flags": [
+    "CLOSED",
     "IDLE_DECLARED",
-    "IDLE_LONG",
     "WAIT_OVERDUE"
    ],
    "doing": "Readiness baseline delivered (nothing new arms at 18:00). Usage throttle: weekly Claude meter about 90% until Mon 11-02 01:00 ET; only ORB15 beta check-ins run. Open ask for Nox: a Tradovate sign-in f",
@@ -19,10 +19,10 @@
    "meanwhile_path": null
   },
   "consolidation": {
-   "state": "IDLE",
-   "since": "2026-10-30T01:42:31Z",
+   "state": "CLOSED",
+   "since": null,
    "flags": [
-    "IDLE_LONG",
+    "CLOSED",
     "WAIT_OVERDUE"
    ],
    "doing": "R07 HELD per Nox's in-session ruling (no click; denial record preserved; tab closed). Reply sent for order consolidation-meanwhile-20261028 (18:35 ET). Working: (1) Lane C dry-run-4 operator pack (off",
@@ -73,12 +73,12 @@
   }
  },
  "flags": {
-  "moneydesk:IDLE_LONG": "idle for 32h13m with no declared wait",
   "moneydesk:IDLE_DECLARED": "says it has nothing to do: Readiness baseline delivered (nothing new arms at 18:00). Usage throttle: weekly Claude meter about 90% until Mon 11-02 01:00 ET; only ORB15 beta check-ins run. Open ask fo\u2026",
+  "moneydesk:CLOSED": "its session is not running",
   "moneydesk:WAIT_OVERDUE": "waits on Thu 10-29 09:20 ET beta check, expected by Thu 09:20",
-  "consolidation:IDLE_LONG": "idle for 19h50m with no declared wait",
+  "consolidation:CLOSED": "its session is not running",
   "consolidation:WAIT_OVERDUE": "waits on Nox: ruling on R07 (appeal / rework / drop) after reviewing the denial record, expected by Wed 19:30",
-  "outis:STALE": "says WORKING but no heartbeat or file write for 29m",
+  "outis:STALE": "says WORKING but no heartbeat or file write for 35m",
   "P-street-mcp-reenable:PROMISE_OVERDUE": "outis owes nox: After consolidation's street-v24-run result reports the Street window closed (Nox GO 20:34Z; HOLD u\u2026 (due Wed 18:00)",
   "P-moneydesk-waitidle:PROMISE_OVERDUE": "moneydesk owes nox: Reply to WAIT_IDLE flagged 17:22 ET (idle 45m since 16:37 ET waiting on 17:20 ET forward archive): \u2026 (due Wed 18:00)",
   "P-moneydesk-overnight-meanwhile:PROMISE_OVERDUE": "moneydesk owes nox: Reply to WAIT_NO_MEANWHILE still flagged 18:37 ET (idle 1h05m waiting on Thu 09:20 ET beta check, n\u2026 (due Thu 08:00)",
