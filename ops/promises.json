@@ -433,6 +433,17 @@
    "done_when": {
     "result_item": "outis-waitidle-20261030-1742"
    }
+  },
+  {
+   "id": "P-outis-waitidle-escalation-20261030-1845",
+   "from": "nox",
+   "to": "outis",
+   "ask": "WAIT_IDLE ESCALATION (sensor 14:45 ET): P-outis-waitidle-20261030-1742 is PROMISE_OVERDUE (due 14:15 ET / 18:15Z, no kind: result reply); WAITING since 14:43 ET / 18:43:39Z on reviewed Order A successor and accepted Order B/C integration handbacks, nothing written to meanwhile path /home/cayleb/Documents/Codex/2026-10-26/task/BOARD.json for 1h29m: deliver the full outstanding 1742 reply (exact handbacks outstanding or none), meanwhile progress evidence with observation times written to a watchable path (or pull the next authorised Order A/B/C successor), and an updated heartbeat with future expected_by/next_check_at or IDLE_DECLARED with reason; reply as kind: result with item outis-waitidle-escalation-20261030-1845",
+   "sent_at": "2026-10-30T18:49:11Z",
+   "expected_by": "2026-10-30T19:15:00Z",
+   "done_when": {
+    "result_item": "outis-waitidle-escalation-20261030-1845"
+   }
   }
  ]
 }
