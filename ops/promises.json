@@ -339,6 +339,18 @@
    "expected_by": "2026-10-30T10:30:00Z",
    "done_when": {
     "result_item": "outis-successor-20261030-0836"
+   },
+   "done": true
+  },
+  {
+   "id": "P-outis-successor-20261030-0938",
+   "from": "nox",
+   "to": "outis",
+   "ask": "Reply to IDLE_DECLARED flagged 05:36 ET (idle since 2026-10-30T09:33:46Z, queue empty): (1) checklist-restored reconciliation \u2014 state from the now-readable corrected checklist (9,532 bytes, SHA-256 6260af439d3586d7236e1b1b136d2440dca8077aa3ba59b858ebf161a117015d, found 09:29 UTC per 20261030T093303Z-outis-to-nox.md) whether the round-3 hash-search cursors are moot for the checklist-bytes question and update the conditional preflight pack per proof, (2) fresh is_authorized_for_tasks check with observation time, (3) preflight owner/escalation pack for the four mechanical proofs for Thudwick Fri 17:30 ET / 21:30 UTC (preflight 20:45 UTC, T-25 21:05 UTC), prep only, no activation/upload/launch; OpenBell/Plimsoll on change only, Street MCP CLOSED; reply as kind: result with item outis-successor-20261030-0938",
+   "sent_at": "2026-10-30T09:38:04Z",
+   "expected_by": "2026-10-30T11:30:00Z",
+   "done_when": {
+    "result_item": "outis-successor-20261030-0938"
    }
   }
  ]
