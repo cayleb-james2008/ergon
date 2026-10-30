@@ -388,6 +388,17 @@
    "done_when": {
     "result_item": "consolidation-idlelong-20261030-1015"
    }
+  },
+  {
+   "id": "P-outis-successor-20261030-1018",
+   "from": "nox",
+   "to": "outis",
+   "ask": "Reply to IDLE_DECLARED flagged 06:18 ET (idle since 06:15 ET, queue empty; 1003 result delivered 10:15Z as paper-only change check observed 10:13 UTC, evidence NO-GO / mechanical NOT READY, all four proofs unverified, parent-reported task-authorised not independently read): (1) change check since 10:13 UTC per mechanical proof with observation times, (2) task authorisation distinguished as independently read vs parent-reported, neither is browser ownership/gate clearance/launch permission, (3) confirm the 20:45 UTC Thudwick preflight escalation pack is final and ready verbatim or report any correction, missing evidence is not clearance, no launch authorised; OpenBell/Plimsoll change-only, Street MCP CLOSED; prep only, no activation/upload/launch/rehearsal; reply as kind: result with item outis-successor-20261030-1018",
+   "sent_at": "2026-10-30T10:20:11Z",
+   "expected_by": "2026-10-30T12:00:00Z",
+   "done_when": {
+    "result_item": "outis-successor-20261030-1018"
+   }
   }
  ]
 }
