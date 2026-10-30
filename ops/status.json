@@ -1,5 +1,5 @@
 {
- "generated_at": "2026-10-30T10:00:04Z",
+ "generated_at": "2026-10-30T10:03:04Z",
  "policy_version": 4.0,
  "lanes": {
   "moneydesk": {
@@ -34,10 +34,12 @@
    "meanwhile_path": "/home/cayleb/Work/shared-workflows/lanes/consolidation-20261027"
   },
   "outis": {
-   "state": "WORKING",
-   "since": "2026-10-30T09:59:39Z",
-   "flags": [],
-   "doing": "Read-only board and preflight status reconciliation; assigned owners retain their work",
+   "state": "IDLE",
+   "since": "2026-10-30T10:00:49Z",
+   "flags": [
+    "IDLE_DECLARED"
+   ],
+   "doing": "No eligible unowned queue work or pending dependency; board and peer-mail checks continue on scheduled wakes",
    "waiting_on": null,
    "expected_by": null,
    "next_check_at": "2026-10-30T10:13:07Z",
@@ -71,11 +73,12 @@
   }
  },
  "flags": {
-  "moneydesk:IDLE_LONG": "idle for 20h40m with no declared wait",
+  "moneydesk:IDLE_LONG": "idle for 20h43m with no declared wait",
   "moneydesk:IDLE_DECLARED": "says it has nothing to do: Readiness baseline delivered (nothing new arms at 18:00). Usage throttle: weekly Claude meter about 90% until Mon 11-02 01:00 ET; only ORB15 beta check-ins run. Open ask fo\u2026",
   "moneydesk:WAIT_OVERDUE": "waits on Thu 10-29 09:20 ET beta check, expected by Thu 09:20",
-  "consolidation:IDLE_LONG": "idle for 8h17m with no declared wait",
+  "consolidation:IDLE_LONG": "idle for 8h20m with no declared wait",
   "consolidation:WAIT_OVERDUE": "waits on Nox: ruling on R07 (appeal / rework / drop) after reviewing the denial record, expected by Wed 19:30",
+  "outis:IDLE_DECLARED": "says it has nothing to do: No eligible unowned queue work or pending dependency; board and peer-mail checks continue on scheduled wakes",
   "P-street-mcp-reenable:PROMISE_OVERDUE": "outis owes nox: After consolidation's street-v24-run result reports the Street window closed (Nox GO 20:34Z; HOLD u\u2026 (due Wed 18:00)",
   "P-moneydesk-waitidle:PROMISE_OVERDUE": "moneydesk owes nox: Reply to WAIT_IDLE flagged 17:22 ET (idle 45m since 16:37 ET waiting on 17:20 ET forward archive): \u2026 (due Wed 18:00)",
   "P-moneydesk-overnight-meanwhile:PROMISE_OVERDUE": "moneydesk owes nox: Reply to WAIT_NO_MEANWHILE still flagged 18:37 ET (idle 1h05m waiting on Thu 09:20 ET beta check, n\u2026 (due Thu 08:00)",
@@ -166,18 +169,6 @@
     "result_item": "consolidation-idlelong-20261030-0714"
    },
    "state": "OVERDUE"
-  },
-  {
-   "id": "P-outis-successor-20261030-0951",
-   "from": "nox",
-   "to": "outis",
-   "ask": "Reply to IDLE_DECLARED flagged 05:51 ET (idle since 2026-10-30T09:48:47Z, queue empty; 0938 result delivered 09:44Z observation as checklist-restored Thudwick pack, evidence NO-GO / mechanical NOT READY, all four proofs unverified, is_authorized_for_tasks not exposed): (1) change check since 09:44 UTC per mechanical proof with observation times, (2) fresh is_authorized_for_tasks value only if actually exposed, otherwise state not exposed, (3) finalised preflight escalation pack for Thudwick Fri 17:30 ET / 21:30 UTC (preflight 20:45 UTC, T-25 21:05 UTC) per proof missing evidence / owner / escalation to Nox, missing evidence is not clearance, no launch authorised; OpenBell/Plimsoll change-only, Street MCP CLOSED; prep only, no activation/upload/launch/rehearsal; reply as kind: result with item outis-successor-20261030-0951",
-   "sent_at": "2026-10-30T09:52:44Z",
-   "expected_by": "2026-10-30T11:30:00Z",
-   "done_when": {
-    "result_item": "outis-successor-20261030-0951"
-   },
-   "state": "OPEN"
   },
   {
    "id": "20261028T144206Z-consolidation-to-nox.md",
@@ -288,16 +279,6 @@
    "expected_by": "2026-10-30T08:30:00Z",
    "done": false,
    "state": "OVERDUE"
-  },
-  {
-   "id": "20261030T095244Z-nox-to-outis.md",
-   "from": "nox",
-   "to": "outis",
-   "ask": "IDLE_DECLARED SUCCESSOR \u2014 Thudwick preflight pack finalisation + change check since 09:44 UTC (prep only)",
-   "sent_at": "2026-10-30T09:52:44Z",
-   "expected_by": "2026-10-30T11:30:00Z",
-   "done": false,
-   "state": "OPEN"
   }
  ],
  "queue": [],
@@ -501,6 +482,11 @@
    "state": "delivered",
    "route": "folder",
    "at": "2026-10-30T09:54:04Z"
+  },
+  "20261030T100004Z-outis-to-nox.md": {
+   "state": "delivered",
+   "route": "board",
+   "at": "2026-10-30T10:03:04Z"
   }
  }
 }
