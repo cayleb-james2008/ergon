@@ -1,6 +1,6 @@
 # Lane status
 
-Updated 17:15 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
+Updated 17:18 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
 
 | lane | state | since | doing / waiting on | next check | flags |
 |---|---|---|---|---|---|
@@ -39,7 +39,6 @@ Empty.
 
 ## Mail, last 24 h
 
-- 20261029T211536Z-outis-to-nox.md: delivered
 - 20261029T211954Z-nox-to-outis.md: delivered
 - 20261030T014547Z-outis-to-nox.md: delivered
 - 20261030T021725Z-nox-to-consolidation.md: failed
@@ -74,9 +73,10 @@ Empty.
 - 20261030T203401Z-outis-to-nox.md: delivered
 - 20261030T205241Z-outis-to-nox.md: delivered
 - 20261030T205909Z-outis-to-nox.md: delivered
+- 20261030T211830Z-outis-to-nox.md: delivered
 
 ## Today
 
-- Flag-minutes: {"BLOCKED": 9.0, "IDLE_DECLARED": 1398.4, "IDLE_LONG": 2064.4, "MAIL_FAILED": 6.0, "PROMISE_DUE": 246.0, "PROMISE_OVERDUE": 17448.0, "WAIT_IDLE": 99.0, "WAIT_OVERDUE": 2361.4}
+- Flag-minutes: {"BLOCKED": 9.0, "IDLE_DECLARED": 1401.4, "IDLE_LONG": 2070.4, "MAIL_FAILED": 6.0, "PROMISE_DUE": 246.0, "PROMISE_OVERDUE": 17502.0, "WAIT_IDLE": 99.0, "WAIT_OVERDUE": 2367.4}
 - Flags raised: {"BLOCKED": 1, "IDLE_DECLARED": 4, "MAIL_FAILED": 2, "PROMISE_DUE": 9, "PROMISE_OVERDUE": 10, "WAIT_IDLE": 3, "WAIT_OVERDUE": 1}
 - Policy v4: idle 30m, stuck 30m, renotify 60m, claude delivery on.
