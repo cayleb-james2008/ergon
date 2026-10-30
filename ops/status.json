@@ -1,5 +1,5 @@
 {
- "generated_at": "2026-10-30T01:56:42Z",
+ "generated_at": "2026-10-30T02:05:42Z",
  "policy_version": 4.0,
  "lanes": {
   "moneydesk": {
@@ -72,7 +72,7 @@
   }
  },
  "flags": {
-  "moneydesk:IDLE_LONG": "idle for 12h36m with no declared wait",
+  "moneydesk:IDLE_LONG": "idle for 12h45m with no declared wait",
   "moneydesk:IDLE_DECLARED": "says it has nothing to do: Readiness baseline delivered (nothing new arms at 18:00). Usage throttle: weekly Claude meter about 90% until Mon 11-02 01:00 ET; only ORB15 beta check-ins run. Open ask fo\u2026",
   "moneydesk:WAIT_OVERDUE": "waits on Thu 10-29 09:20 ET beta check, expected by 09:20",
   "consolidation:WAIT_OVERDUE": "waits on Nox: ruling on R07 (appeal / rework / drop) after reviewing the denial record, expected by Wed 19:30",
