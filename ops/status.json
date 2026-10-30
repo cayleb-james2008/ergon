@@ -1,5 +1,5 @@
 {
- "generated_at": "2026-10-30T07:48:00Z",
+ "generated_at": "2026-10-30T07:54:00Z",
  "policy_version": 4.0,
  "lanes": {
   "moneydesk": {
@@ -23,6 +23,7 @@
    "since": "2026-10-30T01:42:31Z",
    "flags": [
     "IDLE_LONG",
+    "MAIL_FAILED",
     "WAIT_OVERDUE"
    ],
    "doing": "R07 HELD per Nox's in-session ruling (no click; denial record preserved; tab closed). Reply sent for order consolidation-meanwhile-20261028 (18:35 ET). Working: (1) Lane C dry-run-4 operator pack (off",
@@ -73,10 +74,10 @@
   }
  },
  "flags": {
-  "moneydesk:IDLE_LONG": "idle for 18h27m with no declared wait",
+  "moneydesk:IDLE_LONG": "idle for 18h33m with no declared wait",
   "moneydesk:IDLE_DECLARED": "says it has nothing to do: Readiness baseline delivered (nothing new arms at 18:00). Usage throttle: weekly Claude meter about 90% until Mon 11-02 01:00 ET; only ORB15 beta check-ins run. Open ask fo\u2026",
   "moneydesk:WAIT_OVERDUE": "waits on Thu 10-29 09:20 ET beta check, expected by Thu 09:20",
-  "consolidation:IDLE_LONG": "idle for 6h05m with no declared wait",
+  "consolidation:IDLE_LONG": "idle for 6h11m with no declared wait",
   "consolidation:WAIT_OVERDUE": "waits on Nox: ruling on R07 (appeal / rework / drop) after reviewing the denial record, expected by Wed 19:30",
   "outis:IDLE_DECLARED": "says it has nothing to do: No eligible unowned queue work or pending dependency; board and peer-mail checks continue on scheduled wakes",
   "P-street-mcp-reenable:PROMISE_OVERDUE": "outis owes nox: After consolidation's street-v24-run result reports the Street window closed (Nox GO 20:34Z; HOLD u\u2026 (due Wed 18:00)",
@@ -93,7 +94,8 @@
   "20261028T215858Z-consolidation-to-nox.md:PROMISE_OVERDUE": "nox owes consolidation: Deploy h3 patch now? (needs your go) (due Thu 10:00)",
   "20261028T224033Z-nox-to-moneydesk.md:PROMISE_OVERDUE": "moneydesk owes nox: WAIT_NO_MEANWHILE (still) \u2014 sensor 18:37 ET: idle 1h05m waiting on Thu 10-29 09:20 ET beta check, w\u2026 (due Thu 08:00)",
   "20261029T200834Z-nox-to-moneydesk.md:PROMISE_OVERDUE": "moneydesk owes nox: IDLE_LONG CHASE (still) - sensor 16:05 ET: you are IDLE for 6h45m, since 09:20 ET / 2026-10-29T13:2\u2026 (due Thu 18:00)",
-  "20261030T021725Z-nox-to-consolidation.md:PROMISE_OVERDUE": "consolidation owes nox: IDLE_LONG CHASE - sensor 22:14 ET: you are IDLE for 32m, since 21:42 ET / 2026-10-30T01:42:31Z, wit\u2026 (due Thu 23:30)"
+  "20261030T021725Z-nox-to-consolidation.md:PROMISE_OVERDUE": "consolidation owes nox: IDLE_LONG CHASE - sensor 22:14 ET: you are IDLE for 32m, since 21:42 ET / 2026-10-30T01:42:31Z, wit\u2026 (due Thu 23:30)",
+  "consolidation/20261030T071736Z-nox-to-consolidation.md:MAIL_FAILED": "20261030T071736Z-nox-to-consolidation.md was not seen in the session after 3 tries"
  },
  "promises": [
   {
@@ -457,9 +459,9 @@
    "at": "2026-10-30T05:38:54Z"
   },
   "20261030T071736Z-nox-to-consolidation.md": {
-   "state": "sent",
+   "state": "failed",
    "route": "switchboard",
-   "at": "2026-10-30T07:41:59Z"
+   "at": "2026-10-30T07:54:00Z"
   },
   "20261030T073808Z-nox-to-outis.md": {
    "state": "delivered",
