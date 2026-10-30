@@ -1,5 +1,5 @@
 {
- "generated_at": "2026-10-30T19:33:19Z",
+ "generated_at": "2026-10-30T19:42:19Z",
  "policy_version": 4.0,
  "lanes": {
   "moneydesk": {
@@ -35,9 +35,9 @@
   },
   "outis": {
    "state": "WORKING",
-   "since": "2026-10-30T19:27:50Z",
+   "since": "2026-10-30T19:39:51Z",
    "flags": [],
-   "doing": "Order A DSH lifecycle tests and source-specific integration; B/C/D coordination",
+   "doing": "Order A compiled handoff and active B/C/D coordination; v3 independent review blocked",
    "waiting_on": null,
    "expected_by": null,
    "next_check_at": "2026-10-30T19:43:07Z",
@@ -71,10 +71,10 @@
   }
  },
  "flags": {
-  "moneydesk:IDLE_LONG": "idle for 30h13m with no declared wait",
+  "moneydesk:IDLE_LONG": "idle for 30h22m with no declared wait",
   "moneydesk:IDLE_DECLARED": "says it has nothing to do: Readiness baseline delivered (nothing new arms at 18:00). Usage throttle: weekly Claude meter about 90% until Mon 11-02 01:00 ET; only ORB15 beta check-ins run. Open ask fo\u2026",
   "moneydesk:WAIT_OVERDUE": "waits on Thu 10-29 09:20 ET beta check, expected by Thu 09:20",
-  "consolidation:IDLE_LONG": "idle for 17h50m with no declared wait",
+  "consolidation:IDLE_LONG": "idle for 17h59m with no declared wait",
   "consolidation:WAIT_OVERDUE": "waits on Nox: ruling on R07 (appeal / rework / drop) after reviewing the denial record, expected by Wed 19:30",
   "P-street-mcp-reenable:PROMISE_OVERDUE": "outis owes nox: After consolidation's street-v24-run result reports the Street window closed (Nox GO 20:34Z; HOLD u\u2026 (due Wed 18:00)",
   "P-moneydesk-waitidle:PROMISE_OVERDUE": "moneydesk owes nox: Reply to WAIT_IDLE flagged 17:22 ET (idle 45m since 16:37 ET waiting on 17:20 ET forward archive): \u2026 (due Wed 18:00)",
@@ -300,11 +300,6 @@
  ],
  "queue": [],
  "mail": {
-  "20261029T193819Z-nox-to-outis.md": {
-   "state": "delivered",
-   "route": "folder",
-   "at": "2026-10-29T19:41:37Z"
-  },
   "20261029T200834Z-nox-to-moneydesk.md": {
    "state": "failed",
    "route": "switchboard",
