@@ -1,5 +1,5 @@
 {
- "generated_at": "2026-10-30T07:38:59Z",
+ "generated_at": "2026-10-30T07:48:00Z",
  "policy_version": 4.0,
  "lanes": {
   "moneydesk": {
@@ -73,10 +73,10 @@
   }
  },
  "flags": {
-  "moneydesk:IDLE_LONG": "idle for 18h18m with no declared wait",
+  "moneydesk:IDLE_LONG": "idle for 18h27m with no declared wait",
   "moneydesk:IDLE_DECLARED": "says it has nothing to do: Readiness baseline delivered (nothing new arms at 18:00). Usage throttle: weekly Claude meter about 90% until Mon 11-02 01:00 ET; only ORB15 beta check-ins run. Open ask fo\u2026",
   "moneydesk:WAIT_OVERDUE": "waits on Thu 10-29 09:20 ET beta check, expected by Thu 09:20",
-  "consolidation:IDLE_LONG": "idle for 5h56m with no declared wait",
+  "consolidation:IDLE_LONG": "idle for 6h05m with no declared wait",
   "consolidation:WAIT_OVERDUE": "waits on Nox: ruling on R07 (appeal / rework / drop) after reviewing the denial record, expected by Wed 19:30",
   "outis:IDLE_DECLARED": "says it has nothing to do: No eligible unowned queue work or pending dependency; board and peer-mail checks continue on scheduled wakes",
   "P-street-mcp-reenable:PROMISE_OVERDUE": "outis owes nox: After consolidation's street-v24-run result reports the Street window closed (Nox GO 20:34Z; HOLD u\u2026 (due Wed 18:00)",
@@ -165,18 +165,6 @@
    "expected_by": "2026-10-30T08:30:00Z",
    "done_when": {
     "result_item": "consolidation-idlelong-20261030-0714"
-   },
-   "state": "OPEN"
-  },
-  {
-   "id": "P-outis-successor-20261030-0735",
-   "from": "nox",
-   "to": "outis",
-   "ask": "Reply to IDLE_DECLARED (still) flagged 03:35 ET (idle since 10:33 ET / 2026-10-29T14:33:12Z, queue empty; 0535 result delivered 07:12Z as partial Thudwick countdown pack, NO-GO / mechanical NOT READY, all four proofs missing, corrected checklist not located): (1) corrected-checklist continuation on accessible surfaces only (older pages of evidence task and Library hash-query continuation cursor), (2) fresh home task authorisation check, (3) preflight-ready NO-GO draft for 16:45 ET preflight; OpenBell/Plimsoll change-only, Street MCP CLOSED; prep only, no activation/upload/launch/rehearsal; reply as kind: result with item outis-successor-20261030-0735",
-   "sent_at": "2026-10-30T07:38:08Z",
-   "expected_by": "2026-10-30T09:30:00Z",
-   "done_when": {
-    "result_item": "outis-successor-20261030-0735"
    },
    "state": "OPEN"
   },
@@ -287,16 +275,6 @@
    "ask": "IDLE_LONG ESCALATION (still) - sensor 03:14 ET: you are IDLE for 5h32m, since 21:42 ET / 2026-10-30T01:42:31Z, with no d",
    "sent_at": "2026-10-30T07:17:36Z",
    "expected_by": "2026-10-30T08:30:00Z",
-   "done": false,
-   "state": "OPEN"
-  },
-  {
-   "id": "20261030T073808Z-nox-to-outis.md",
-   "from": "nox",
-   "to": "outis",
-   "ask": "IDLE_DECLARED (STILL) SUCCESSOR \u2014 Thudwick corrected-checklist continuation + preflight NO-GO draft (prep only)",
-   "sent_at": "2026-10-30T07:38:08Z",
-   "expected_by": "2026-10-30T09:30:00Z",
    "done": false,
    "state": "OPEN"
   }
@@ -481,12 +459,17 @@
   "20261030T071736Z-nox-to-consolidation.md": {
    "state": "sent",
    "route": "switchboard",
-   "at": "2026-10-30T07:29:59Z"
+   "at": "2026-10-30T07:41:59Z"
   },
   "20261030T073808Z-nox-to-outis.md": {
    "state": "delivered",
    "route": "folder",
    "at": "2026-10-30T07:38:59Z"
+  },
+  "20261030T074623Z-outis-to-nox.md": {
+   "state": "delivered",
+   "route": "board",
+   "at": "2026-10-30T07:48:00Z"
   }
  }
 }
