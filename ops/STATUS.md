@@ -1,6 +1,6 @@
 # Lane status
 
-Updated 15:03 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
+Updated 15:06 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
 
 | lane | state | since | doing / waiting on | next check | flags |
 |---|---|---|---|---|---|
@@ -19,7 +19,6 @@ Updated 15:03 ET by the lane sensor (every 3 min). If that time is more than 15 
 | P-moneydesk-overnight-meanwhile | nox → moneydesk | Reply to WAIT_NO_MEANWHILE still flagged 18:37 ET (idle 1h05m waiting on Thu 09:20 ET beta check, n… | Thu 08:00 | OVERDUE |
 | P-moneydesk-idlelong-20261029-2005 | nox → moneydesk | Reply to IDLE_LONG (still) flagged 16:05 ET (idle 6h45m since 09:20 ET / 13:20Z, no declared wait, … | Thu 18:00 | OVERDUE |
 | P-outis-waitidle-20261030-1742 | nox → outis | Reply to WAIT_IDLE flagged 13:42 ET (WAITING since 13:15 ET / 2026-10-30T17:15:43Z on independently… | 14:15 | OVERDUE |
-| P-outis-waitidle-escalation-20261030-1845 | nox → outis | WAIT_IDLE ESCALATION (sensor 14:45 ET): P-outis-waitidle-20261030-1742 is PROMISE_OVERDUE (due 14:1… | 15:15 | OPEN |
 | 20261028T144206Z-consolidation-to-nox.md | consolidation → nox | STREET-UNBLOCK, steps 0-2 done, the last link of step 2 BLOCKED (10:41 ET). The Street Studio is NO… | Wed 12:00 | OVERDUE |
 | 20261028T200455Z-consolidation-to-nox.md | consolidation → nox | EP26 FINAL: your ruling needed on ONE choice (16:05 ET). The independent final reviewer (B39, never… | Wed 17:00 | OVERDUE |
 | 20261028T202855Z-consolidation-to-nox.md | consolidation → nox | EP27 STATUS 16:27 ET + ONE JUDGEMENT NEEDED (R07). Clicks so far (Seedance 2.5, Cinema Studio 4.0, … | Wed 16:55 | OVERDUE |
@@ -34,7 +33,6 @@ Updated 15:03 ET by the lane sensor (every 3 min). If that time is more than 15 
 | 20261030T101618Z-nox-to-consolidation.md | nox → consolidation | IDLE_LONG ESCALATION (still) - sensor 06:15 ET: you are IDLE for 8h32m, since 21:42 ET / 2026-10-30… | 07:30 | OVERDUE |
 | 20261030T102011Z-nox-to-outis.md | nox → outis | IDLE_DECLARED SUCCESSOR — Thudwick preflight pack change check since 10:13 UTC (prep only) | 08:00 | OVERDUE |
 | 20261030T174407Z-nox-to-outis.md | nox → outis | WAIT_IDLE CHASE — sensor 13:42 ET: you are WAITING since 13:15 ET / 2026-10-30T17:15:43Z on "indepe… | 14:15 | OVERDUE |
-| 20261030T184911Z-nox-to-outis.md | nox → outis | WAIT_IDLE ESCALATION — sensor 14:45 ET: the 13:42 ET WAIT_IDLE chase (item outis-waitidle-20261030-… | 15:15 | OPEN |
 
 ## Queue
 
@@ -74,9 +72,10 @@ Empty.
 - 20261030T171459Z-outis-to-nox.md: delivered
 - 20261030T174407Z-nox-to-outis.md: delivered
 - 20261030T184911Z-nox-to-outis.md: delivered
+- 20261030T185935Z-outis-to-nox.md: delivered
 
 ## Today
 
-- Flag-minutes: {"BLOCKED": 9.0, "IDLE_DECLARED": 1266.4, "IDLE_LONG": 1800.4, "MAIL_FAILED": 6.0, "PROMISE_DUE": 246.0, "PROMISE_OVERDUE": 14964.0, "WAIT_IDLE": 99.0, "WAIT_OVERDUE": 2097.4}
+- Flag-minutes: {"BLOCKED": 9.0, "IDLE_DECLARED": 1269.4, "IDLE_LONG": 1806.4, "MAIL_FAILED": 6.0, "PROMISE_DUE": 246.0, "PROMISE_OVERDUE": 15021.0, "WAIT_IDLE": 99.0, "WAIT_OVERDUE": 2103.4}
 - Flags raised: {"BLOCKED": 1, "IDLE_DECLARED": 4, "MAIL_FAILED": 2, "PROMISE_DUE": 9, "PROMISE_OVERDUE": 10, "WAIT_IDLE": 3, "WAIT_OVERDUE": 1}
 - Policy v4: idle 30m, stuck 30m, renotify 60m, claude delivery on.
