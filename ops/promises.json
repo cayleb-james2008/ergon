@@ -246,6 +246,17 @@
             "done_when": {
                 "result_item": "outis-successor-20261029-2115"
             }
+        },
+        {
+            "id": "P-consolidation-idlelong-20261030-2214",
+            "from": "nox",
+            "to": "consolidation",
+            "ask": "Reply to IDLE_LONG flagged 22:14 ET (idle 32m since 21:42 ET / 2026-10-30T01:42:31Z, no declared wait; WAIT_OVERDUE on Nox R07 appeal/rework/drop ruling): update LANE.json to WAITING with future expected_by + named meanwhile (Lane C dry-run-4 pack + Thudwick upload_file diagnosis, offline/read-only) or declare IDLE_DECLARED with reason, and give progress evidence or exact blocker for each meanwhile item; reply as kind: result with item consolidation-idlelong-20261030-2214",
+            "sent_at": "2026-10-30T02:17:25Z",
+            "expected_by": "2026-10-30T03:30:00Z",
+            "done_when": {
+                "result_item": "consolidation-idlelong-20261030-2214"
+            }
         }
     ]
 }
