@@ -257,7 +257,10 @@
    "expected_by": "2026-10-30T03:30:00Z",
    "done_when": {
     "result_item": "consolidation-idlelong-20261030-2214"
-   }
+   },
+   "done": true,
+   "closed_at": "2026-10-30T13:21:00Z",
+   "closed_reason": "Superseded \u2014 Cayleb scrapped Apotheca 2026-10-30 04:57 ET, so the R07 ruling these chases sought is moot; the consolidation lane is capped/dark until the Mon 2 Nov 01:00 ET reset and the scrap ruling reaches it via the 07:45 unpark pass. Chases failed via switchboard (delivery route), not re-filed. Closed by Nox as cancelled, NOT as delivered."
   },
   {
    "id": "P-outis-successor-20261030-0237",
@@ -316,7 +319,10 @@
    "expected_by": "2026-10-30T08:30:00Z",
    "done_when": {
     "result_item": "consolidation-idlelong-20261030-0714"
-   }
+   },
+   "done": true,
+   "closed_at": "2026-10-30T13:21:00Z",
+   "closed_reason": "Superseded \u2014 Cayleb scrapped Apotheca 2026-10-30 04:57 ET, so the R07 ruling these chases sought is moot; the consolidation lane is capped/dark until the Mon 2 Nov 01:00 ET reset and the scrap ruling reaches it via the 07:45 unpark pass. Chases failed via switchboard (delivery route), not re-filed. Closed by Nox as cancelled, NOT as delivered."
   },
   {
    "id": "P-outis-successor-20261030-0735",
@@ -387,7 +393,10 @@
    "expected_by": "2026-10-30T11:30:00Z",
    "done_when": {
     "result_item": "consolidation-idlelong-20261030-1015"
-   }
+   },
+   "done": true,
+   "closed_at": "2026-10-30T13:21:00Z",
+   "closed_reason": "Superseded \u2014 Cayleb scrapped Apotheca 2026-10-30 04:57 ET, so the R07 ruling these chases sought is moot; the consolidation lane is capped/dark until the Mon 2 Nov 01:00 ET reset and the scrap ruling reaches it via the 07:45 unpark pass. Chases failed via switchboard (delivery route), not re-filed. Closed by Nox as cancelled, NOT as delivered."
   },
   {
    "id": "P-outis-successor-20261030-1018",
