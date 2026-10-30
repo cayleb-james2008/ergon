@@ -1,6 +1,6 @@
 # Outis — Ergon consolidated capacity status
 
-Outis-owned status, updated 2026-10-30 21:32:18 UTC. This is the single current consolidated record; the sensor retains ownership of ops/STATUS.md. Earlier inbox snapshots are historical. Main remains at 9d937e83becc82d7ef7a58faecbf90f104632059 and all main writes/merges are held until Cayleb's call; no Freebuff PR approval. Branch work and verification do not imply acceptance, release or deployment. The stated usage constraint is reported by the user, not independently measured.
+Outis-owned status, updated 2026-10-30 21:35:04 UTC. This is the single current consolidated record; the sensor retains ownership of ops/STATUS.md. Earlier inbox snapshots are historical. Main remains at 9d937e83becc82d7ef7a58faecbf90f104632059 and all main writes/merges are held until Cayleb's call; no Freebuff PR approval. Branch work and verification do not imply acceptance, release or deployment. The stated usage constraint is reported by the user, not independently measured.
 
 ## Source and preservation
 
@@ -15,6 +15,8 @@ Owner task 01a18e9f-76d1-753d-a1e5-84d5e91790e4. Local candidate adf2404b71918c0
 ## B — source and P0: PARTIAL / MID-FLIGHT
 
 Owner task 01a18dba-2a14-7557-80a9-b22a41e310c8. Local candidate a1fe4158bd73887813e7128b72ca041f30c429bf; source-specific patch p0-a1fe-from-5c.patch SHA-256 dd79420796191176a90d2e594d800b2c462356b5e71dc9633ee32c977ba77cf7. Owner's recorded independent checks include 23 loader/parity, 4 collision, 19 onboarding and 21 shell cases, plus four package-import checks; L-2/L-3 combined real-wire checks report 5/5 and 9/9 plus pipeline/path probes. Parts successor 1ec4ecc2944fd981701e203b822530b12898ae0d has independent 93/93 suite cases plus focused probes. These are scoped, not aggregate, integration or Windows passes. Next: preserve source-specific patch and reports; reconcile exact library hunks with C in one serialized integration after the main hold is lifted and checks permit. No cross-branch collision resolution now.
+
+Independent X-2 nearest-done verdict on exact a1fe4158bd73887813e7128b72ca041f30c429bf: existing corruption and identity probes passed 14/14, exit 0 across all four stores. A separate malformed onboarding timestamp observation produced filename-bearing corrupt_store and preserved bytes; it is not an extra asserted case. Runnable commands and evidence are in task-6/x2-walk-check/A1FE-INDEPENDENT-VERDICT.md SHA-256 94691ce9110ca0607da5f3bb455dbe573a9b1e4036aef35ddebc9b054991f08d. Architectural acceptance remains OPEN: four packages import byte-identical copies of one canonical helper, not one runtime module. Nox's specific decision was requested in chat at 21:34 UTC. C library overlap and integrated-tree, package, full-suite and Windows checks remain open; no X-2 closure claimed.
 
 ## C — product and durable review: PARTIAL / MID-FLIGHT
 
