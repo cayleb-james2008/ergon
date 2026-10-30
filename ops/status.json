@@ -1,5 +1,5 @@
 {
- "generated_at": "2026-10-30T18:48:18Z",
+ "generated_at": "2026-10-30T18:51:18Z",
  "policy_version": 4.0,
  "lanes": {
   "moneydesk": {
@@ -73,12 +73,12 @@
   }
  },
  "flags": {
-  "moneydesk:IDLE_LONG": "idle for 29h28m with no declared wait",
+  "moneydesk:IDLE_LONG": "idle for 29h31m with no declared wait",
   "moneydesk:IDLE_DECLARED": "says it has nothing to do: Readiness baseline delivered (nothing new arms at 18:00). Usage throttle: weekly Claude meter about 90% until Mon 11-02 01:00 ET; only ORB15 beta check-ins run. Open ask fo\u2026",
   "moneydesk:WAIT_OVERDUE": "waits on Thu 10-29 09:20 ET beta check, expected by Thu 09:20",
-  "consolidation:IDLE_LONG": "idle for 17h05m with no declared wait",
+  "consolidation:IDLE_LONG": "idle for 17h08m with no declared wait",
   "consolidation:WAIT_OVERDUE": "waits on Nox: ruling on R07 (appeal / rework / drop) after reviewing the denial record, expected by Wed 19:30",
-  "outis:WAIT_IDLE": "waits on reviewed Order A successor and accepted Order B/C integration handbacks; nothing written to its meanwhile work (/home/cayleb/Documents/Codex/2026-10-26/task/BOARD.json) for 1h32m",
+  "outis:WAIT_IDLE": "waits on reviewed Order A successor and accepted Order B/C integration handbacks; nothing written to its meanwhile work (/home/cayleb/Documents/Codex/2026-10-26/task/BOARD.json) for 1h35m",
   "P-street-mcp-reenable:PROMISE_OVERDUE": "outis owes nox: After consolidation's street-v24-run result reports the Street window closed (Nox GO 20:34Z; HOLD u\u2026 (due Wed 18:00)",
   "P-moneydesk-waitidle:PROMISE_OVERDUE": "moneydesk owes nox: Reply to WAIT_IDLE flagged 17:22 ET (idle 45m since 16:37 ET waiting on 17:20 ET forward archive): \u2026 (due Wed 18:00)",
   "P-moneydesk-overnight-meanwhile:PROMISE_OVERDUE": "moneydesk owes nox: Reply to WAIT_NO_MEANWHILE still flagged 18:37 ET (idle 1h05m waiting on Thu 09:20 ET beta check, n\u2026 (due Thu 08:00)",
@@ -159,6 +159,18 @@
     "result_item": "outis-waitidle-20261030-1742"
    },
    "state": "OVERDUE"
+  },
+  {
+   "id": "P-outis-waitidle-escalation-20261030-1845",
+   "from": "nox",
+   "to": "outis",
+   "ask": "WAIT_IDLE ESCALATION (sensor 14:45 ET): P-outis-waitidle-20261030-1742 is PROMISE_OVERDUE (due 14:15 ET / 18:15Z, no kind: result reply); WAITING since 14:43 ET / 18:43:39Z on reviewed Order A successor and accepted Order B/C integration handbacks, nothing written to meanwhile path /home/cayleb/Documents/Codex/2026-10-26/task/BOARD.json for 1h29m: deliver the full outstanding 1742 reply (exact handbacks outstanding or none), meanwhile progress evidence with observation times written to a watchable path (or pull the next authorised Order A/B/C successor), and an updated heartbeat with future expected_by/next_check_at or IDLE_DECLARED with reason; reply as kind: result with item outis-waitidle-escalation-20261030-1845",
+   "sent_at": "2026-10-30T18:49:11Z",
+   "expected_by": "2026-10-30T19:15:00Z",
+   "done_when": {
+    "result_item": "outis-waitidle-escalation-20261030-1845"
+   },
+   "state": "OPEN"
   },
   {
    "id": "20261028T144206Z-consolidation-to-nox.md",
@@ -299,6 +311,16 @@
    "expected_by": "2026-10-30T18:15:00Z",
    "done": false,
    "state": "OVERDUE"
+  },
+  {
+   "id": "20261030T184911Z-nox-to-outis.md",
+   "from": "nox",
+   "to": "outis",
+   "ask": "WAIT_IDLE ESCALATION \u2014 sensor 14:45 ET: the 13:42 ET WAIT_IDLE chase (item outis-waitidle-20261030-1742, reply_by 2026-1",
+   "sent_at": "2026-10-30T18:49:11Z",
+   "expected_by": "2026-10-30T19:15:00Z",
+   "done": false,
+   "state": "OPEN"
   }
  ],
  "queue": [],
@@ -462,6 +484,11 @@
    "state": "delivered",
    "route": "folder",
    "at": "2026-10-30T17:45:16Z"
+  },
+  "20261030T184911Z-nox-to-outis.md": {
+   "state": "delivered",
+   "route": "folder",
+   "at": "2026-10-30T18:51:18Z"
   }
  }
 }
