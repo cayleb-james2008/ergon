@@ -1,5 +1,5 @@
 {
- "generated_at": "2026-10-30T20:48:21Z",
+ "generated_at": "2026-10-30T20:51:21Z",
  "policy_version": 4.0,
  "lanes": {
   "moneydesk": {
@@ -71,16 +71,15 @@
   }
  },
  "flags": {
-  "moneydesk:IDLE_LONG": "idle for 31h28m with no declared wait",
+  "moneydesk:IDLE_LONG": "idle for 31h31m with no declared wait",
   "moneydesk:IDLE_DECLARED": "says it has nothing to do: Readiness baseline delivered (nothing new arms at 18:00). Usage throttle: weekly Claude meter about 90% until Mon 11-02 01:00 ET; only ORB15 beta check-ins run. Open ask fo\u2026",
   "moneydesk:WAIT_OVERDUE": "waits on Thu 10-29 09:20 ET beta check, expected by Thu 09:20",
-  "consolidation:IDLE_LONG": "idle for 19h05m with no declared wait",
+  "consolidation:IDLE_LONG": "idle for 19h08m with no declared wait",
   "consolidation:WAIT_OVERDUE": "waits on Nox: ruling on R07 (appeal / rework / drop) after reviewing the denial record, expected by Wed 19:30",
   "P-street-mcp-reenable:PROMISE_OVERDUE": "outis owes nox: After consolidation's street-v24-run result reports the Street window closed (Nox GO 20:34Z; HOLD u\u2026 (due Wed 18:00)",
   "P-moneydesk-waitidle:PROMISE_OVERDUE": "moneydesk owes nox: Reply to WAIT_IDLE flagged 17:22 ET (idle 45m since 16:37 ET waiting on 17:20 ET forward archive): \u2026 (due Wed 18:00)",
   "P-moneydesk-overnight-meanwhile:PROMISE_OVERDUE": "moneydesk owes nox: Reply to WAIT_NO_MEANWHILE still flagged 18:37 ET (idle 1h05m waiting on Thu 09:20 ET beta check, n\u2026 (due Thu 08:00)",
   "P-moneydesk-idlelong-20261029-2005:PROMISE_OVERDUE": "moneydesk owes nox: Reply to IDLE_LONG (still) flagged 16:05 ET (idle 6h45m since 09:20 ET / 13:20Z, no declared wait, \u2026 (due Thu 18:00)",
-  "P-outis-waitidle-20261030-1742:PROMISE_OVERDUE": "outis owes nox: Reply to WAIT_IDLE flagged 13:42 ET (WAITING since 13:15 ET / 2026-10-30T17:15:43Z on independently\u2026 (due 14:15)",
   "20261028T144206Z-consolidation-to-nox.md:PROMISE_OVERDUE": "nox owes consolidation: STREET-UNBLOCK, steps 0-2 done, the last link of step 2 BLOCKED (10:41 ET). The Street Studio is NO\u2026 (due Wed 12:00)",
   "20261028T200455Z-consolidation-to-nox.md:PROMISE_OVERDUE": "nox owes consolidation: EP26 FINAL: your ruling needed on ONE choice (16:05 ET). The independent final reviewer (B39, never\u2026 (due Wed 17:00)",
   "20261028T202855Z-consolidation-to-nox.md:PROMISE_OVERDUE": "nox owes consolidation: EP27 STATUS 16:27 ET + ONE JUDGEMENT NEEDED (R07). Clicks so far (Seedance 2.5, Cinema Studio 4.0, \u2026 (due Wed 16:55)",
@@ -142,18 +141,6 @@
    "expected_by": "2026-10-29T22:00:00Z",
    "done_when": {
     "result_item": "moneydesk-idlelong-20261029-2005"
-   },
-   "state": "OVERDUE"
-  },
-  {
-   "id": "P-outis-waitidle-20261030-1742",
-   "from": "nox",
-   "to": "outis",
-   "ask": "Reply to WAIT_IDLE flagged 13:42 ET (WAITING since 13:15 ET / 2026-10-30T17:15:43Z on independently reviewed integration handbacks, next_check 13:28 ET passed, nothing written to meanwhile path /home/cayleb/Documents/Codex/2026-10-26/task/BOARD.json for 26m): list the exact outstanding handbacks (item, owner/session, handover and expected return times) or state none are outstanding, give progress evidence for the named meanwhile work and resume writing it (or name new meanwhile work with a watchable path), and update heartbeat to WAITING with future expected_by/next_check_at or declare IDLE_DECLARED with reason; reply as kind: result with item outis-waitidle-20261030-1742",
-   "sent_at": "2026-10-30T17:44:07Z",
-   "expected_by": "2026-10-30T18:15:00Z",
-   "done_when": {
-    "result_item": "outis-waitidle-20261030-1742"
    },
    "state": "OVERDUE"
   },
