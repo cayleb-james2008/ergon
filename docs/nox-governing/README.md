@@ -1,3 +1,5 @@
 # Nox governing documents
 
 These are Nox's live governing documents for the Ergon weekend build and the harness build, published to the team branch on 30 Oct 2026 so the desktop lanes (Outis/Codex) can read the same source and run their alignment checks against it. The live copies on Nox's side govern in case of any divergence — if a file here and Nox's copy disagree, Nox's copy wins and the divergence should be flagged, not silently resolved.
+
+**Correction note (30 Oct 2026):** `harness-spec-draft-2026-10-30.md` (the v1 harness spec draft) was published with its §7 truncated — the staged build plan consisted of a placeholder fragment, so every stage gate the draft deferred to was unwritten. Two goldfish spec passes found this and 31 further findings between them. **`harness-spec-v2-2026-10-30.md` supersedes v1 in full**: complete §7 with runnable done-checks per stage, corrected XIRYN claims, the bus decision staged as Cayleb's gate before any bus build, an engineered permission/lesson-quarantine model, and a findings ledger (§8) disposing of every critical and high finding. Read v2; v1 is retained only as the record of what was reviewed.
