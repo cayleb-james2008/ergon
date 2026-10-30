@@ -1,5 +1,5 @@
 {
- "generated_at": "2026-10-30T02:35:42Z",
+ "generated_at": "2026-10-30T02:38:42Z",
  "policy_version": 4.0,
  "lanes": {
   "moneydesk": {
@@ -73,10 +73,10 @@
   }
  },
  "flags": {
-  "moneydesk:IDLE_LONG": "idle for 13h15m with no declared wait",
+  "moneydesk:IDLE_LONG": "idle for 13h18m with no declared wait",
   "moneydesk:IDLE_DECLARED": "says it has nothing to do: Readiness baseline delivered (nothing new arms at 18:00). Usage throttle: weekly Claude meter about 90% until Mon 11-02 01:00 ET; only ORB15 beta check-ins run. Open ask fo\u2026",
   "moneydesk:WAIT_OVERDUE": "waits on Thu 10-29 09:20 ET beta check, expected by 09:20",
-  "consolidation:IDLE_LONG": "idle for 53m with no declared wait",
+  "consolidation:IDLE_LONG": "idle for 56m with no declared wait",
   "consolidation:WAIT_OVERDUE": "waits on Nox: ruling on R07 (appeal / rework / drop) after reviewing the denial record, expected by Wed 19:30",
   "outis:IDLE_DECLARED": "says it has nothing to do: No eligible unowned queue work or pending dependency; board and peer-mail checks continue on scheduled wakes",
   "P-street-mcp-reenable:PROMISE_OVERDUE": "outis owes nox: After consolidation's street-v24-run result reports the Street window closed (Nox GO 20:34Z; HOLD u\u2026 (due Wed 18:00)",
@@ -151,6 +151,18 @@
    "expected_by": "2026-10-30T03:30:00Z",
    "done_when": {
     "result_item": "consolidation-idlelong-20261030-2214"
+   },
+   "state": "OPEN"
+  },
+  {
+   "id": "P-outis-successor-20261030-0237",
+   "from": "nox",
+   "to": "outis",
+   "ask": "Reply to IDLE_DECLARED (still) flagged 22:35 ET (idle since 10:33 ET / 2026-10-29T14:33:12Z, queue empty; 2115 Fluvvy checkpoint delivered 01:45Z as NO-GO / mechanical NOT READY, all four proofs unverified, outis-desktop is_authorized_for_tasks=false): (1) Fluvvy post-slot reconciliation - what happened at T-25 Thu 22:05 ET and slot Thu 22:30 ET with observation times, confirm launch or NO-GO stood, fresh evidence or exact missing evidence per proof, never clearance, (2) Thudwick Fri 17:30 ET preflight prep under same four-proof bar, remote reconciliation only, no invented checkpoint time, (3) OpenBell/Plimsoll on change only; street-mcp remains CLOSED; prep/assessment only, no activation/upload/launch/rehearsal, no authorisation change; reply as kind: result with item outis-successor-20261030-0237",
+   "sent_at": "2026-10-30T02:37:35Z",
+   "expected_by": "2026-10-30T03:30:00Z",
+   "done_when": {
+    "result_item": "outis-successor-20261030-0237"
    },
    "state": "OPEN"
   },
@@ -396,6 +408,11 @@
    "state": "sent",
    "route": "switchboard",
    "at": "2026-10-30T02:29:42Z"
+  },
+  "20261030T023735Z-nox-to-outis.md": {
+   "state": "delivered",
+   "route": "folder",
+   "at": "2026-10-30T02:38:42Z"
   }
  }
 }
