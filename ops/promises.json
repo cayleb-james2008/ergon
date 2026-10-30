@@ -398,7 +398,10 @@
    "expected_by": "2026-10-30T12:00:00Z",
    "done_when": {
     "result_item": "outis-successor-20261030-1018"
-   }
+   },
+   "done": true,
+   "closed_at": "2026-10-30T12:35:00Z",
+   "closed_reason": "Superseded \u2014 Pump Drop killed by Cayleb 2026-10-30 08:29 ET; Thudwick slot and preflight cancelled, all Pump Drop work stood down. Closed by Nox as cancelled, NOT as delivered."
   }
  ]
 }
