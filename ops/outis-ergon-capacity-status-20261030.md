@@ -1,6 +1,6 @@
 # Outis — Ergon consolidated capacity status
 
-Outis-owned status, updated 2026-10-30 23:00:56 UTC. This is the single current consolidated record; the sensor retains ownership of ops/STATUS.md. Earlier inbox snapshots are historical. Main remains at 9d937e83becc82d7ef7a58faecbf90f104632059 and all main writes/merges are held until Cayleb's call; no Freebuff PR approval. Branch work and verification do not imply acceptance, release or deployment. The stated usage constraint is reported by the user, not independently measured.
+Outis-owned status, updated 2026-10-30 23:02:01 UTC. This is the single current consolidated record; the sensor retains ownership of ops/STATUS.md. Earlier inbox snapshots are historical. Main remains at 9d937e83becc82d7ef7a58faecbf90f104632059 and all main writes/merges are held until Cayleb's call; no Freebuff PR approval. Branch work and verification do not imply acceptance, release or deployment. The stated usage constraint is reported by the user, not independently measured.
 
 ## Email handoff — Cayleb to Claude Duet
 
@@ -69,14 +69,14 @@ The user reports a free Claude reset and says the laptop and desktop Claude lane
 
 ## Cursor branch — independent per-commit verdicts, no action authorized
 
-The checker pinned head 28d4a220165c03338173481aa0796d44033ca19d, tree fb35329801058ee282ab02d69e3328138c4bfe29, six linear commits ahead of base 9d937e83becc82d7ef7a58faecbf90f104632059. This corrects the earlier report of five. Receipt task-6/cursor-check/CURSOR-PER-COMMIT-VERDICTS.md SHA-256 12481ab31e728e7c5cb8b5833abbca7deaf2157ec2b874a3911d000c6291dc07 contains the exact snapshot reconstruction, commands, logs, exits and scope.
+The checker pinned head 28d4a220165c03338173481aa0796d44033ca19d, tree fb35329801058ee282ab02d69e3328138c4bfe29, six linear commits ahead of base 9d937e83becc82d7ef7a58faecbf90f104632059. This corrects the earlier report of five. Receipt task-6/cursor-check/CURSOR-PER-COMMIT-VERDICTS.md SHA-256 12481ab31e728e7c5cb8b5833abbca7deaf2157ec2b874a3911d000c6291dc07 contains the exact snapshot reconstruction, commands, logs, exits and scope. Cold-start handoff task-6/cursor-check/CURSOR-STATE-HANDOFF.md SHA-256 f02d86c6406c190e4550c6f1ad88e9dbadf638f22067e9b3e8d1dbec266cb967. A sanitized report publication receipt is pending from the publication owner.
 
 - 55ed631bdb1f50fbc0db8e40177c28803ae4e1db: UNVERIFIED. Discovery-contract 2/2 passed; full suite, Node 22 and before/after counts remain unverified.
-- d1bda5ad4c88a1857d4a18ee8cdb59230aec8d99: FAIL. Synthetic old onboarding data fails reload; independently packaged library import fails. Passing narrower cases do not override those regressions.
-- 9589e9823d3d5bfaa19b2b746d8adf58f491635f: BOUNDED SOURCE CHECK PASS. Dashboard tests 5/5 and selected contrast test 1/1 passed; base-matching preimages allow source-level isolation. Browser rendering, accessibility behavior and integration remain unverified. It is the sole bounded candidate for a future selective integration proposal, not authorization to cherry-pick.
-- daa8e457f51d03f578fce0c58131818dd0f50002: UNVERIFIED. CI was not dispatched; Node 22 and the complete suite remain unverified.
+- d1bda5ad4c88a1857d4a18ee8cdb59230aec8d99: FAIL. Synthetic valid legacy onboarding data fails reload while bytes remain intact; independently packaged library import fails. Narrow onboarding 20/20 and category 2/2 passes do not override those regressions.
+- 9589e9823d3d5bfaa19b2b746d8adf58f491635f: BOUNDED SOURCE CHECK PASS. Dashboard tests 5/5 and selected contrast test 1/1 passed; the copied new test on the old source failed its missing-skip-link assertion, and base-matching preimages allow source-level isolation. Browser rendering, accessibility behavior and integration remain unverified. It is the sole bounded candidate for a future selective integration proposal, not authorization to cherry-pick.
+- daa8e457f51d03f578fce0c58131818dd0f50002: UNVERIFIED. Static CI inspection and theme generation check passed; CI was not dispatched, and Node 22 and the complete suite remain unverified.
 - 98f605a82ec64c88eb21c0a98e8c30f039b3ffdd: UNVERIFIED. Audit claims and whole-commit doctrine alignment are not independently established.
-- 28d4a220165c03338173481aa0796d44033ca19d: UNVERIFIED. Some source tests passed; Windows, actual device, provider and browser behavior remain untested.
+- 28d4a220165c03338173481aa0796d44033ca19d: UNVERIFIED. Help text 5/5 and one selected static provider case passed; Windows, actual device, provider and browser behavior remain untested.
 
 No cherry-pick, merge or collision reconciliation was performed or authorized. Main remains frozen pending Cayleb's call; the Freebuff hold remains.
 
