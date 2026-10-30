@@ -1,5 +1,5 @@
 {
- "generated_at": "2026-10-30T17:06:15Z",
+ "generated_at": "2026-10-30T17:12:15Z",
  "policy_version": 4.0,
  "lanes": {
   "moneydesk": {
@@ -73,10 +73,10 @@
   }
  },
  "flags": {
-  "moneydesk:IDLE_LONG": "idle for 27h46m with no declared wait",
+  "moneydesk:IDLE_LONG": "idle for 27h52m with no declared wait",
   "moneydesk:IDLE_DECLARED": "says it has nothing to do: Readiness baseline delivered (nothing new arms at 18:00). Usage throttle: weekly Claude meter about 90% until Mon 11-02 01:00 ET; only ORB15 beta check-ins run. Open ask fo\u2026",
   "moneydesk:WAIT_OVERDUE": "waits on Thu 10-29 09:20 ET beta check, expected by Thu 09:20",
-  "consolidation:IDLE_LONG": "idle for 15h23m with no declared wait",
+  "consolidation:IDLE_LONG": "idle for 15h29m with no declared wait",
   "consolidation:WAIT_OVERDUE": "waits on Nox: ruling on R07 (appeal / rework / drop) after reviewing the denial record, expected by Wed 19:30",
   "outis:BLOCKED": "declared blocked: Ergon CURRENT-STATE publication needs approval after automatic review; source and owner handoff checks continue",
   "P-street-mcp-reenable:PROMISE_OVERDUE": "outis owes nox: After consolidation's street-v24-run result reports the Street window closed (Nox GO 20:34Z; HOLD u\u2026 (due Wed 18:00)",
@@ -145,6 +145,18 @@
     "result_item": "moneydesk-idlelong-20261029-2005"
    },
    "state": "OVERDUE"
+  },
+  {
+   "id": "P-outis-blocked-currentstate-20261030-1706",
+   "from": "nox",
+   "to": "outis",
+   "ask": "Reply to BLOCKED flagged 13:06 ET (blocked since 13:03 ET / 2026-10-30T17:03:18Z on approval for CURRENT-STATE.md publication to Ergon main after automatic review): state the automatic review outcome and specific findings, the exact file(s)/diff proposed for main and the exact outstanding approval step and whose hand it needs, confirm the merge/publication has NOT happened (or exactly what landed, where and when), and give progress evidence for the named meanwhile work (board checks, handover verification, peer mail, authorised queue, source/owner handoff checks). This chase does NOT grant merge approval: merges are gated under board Rule 1 and are Cayleb's own last step; reply as kind: result with item outis-blocked-currentstate-20261030-1706",
+   "sent_at": "2026-10-30T17:09:32Z",
+   "expected_by": "2026-10-30T18:30:00Z",
+   "done_when": {
+    "result_item": "outis-blocked-currentstate-20261030-1706"
+   },
+   "state": "OPEN"
   },
   {
    "id": "20261028T144206Z-consolidation-to-nox.md",
@@ -275,6 +287,16 @@
    "expected_by": "2026-10-30T12:00:00Z",
    "done": false,
    "state": "OVERDUE"
+  },
+  {
+   "id": "20261030T170932Z-nox-to-outis.md",
+   "from": "nox",
+   "to": "outis",
+   "ask": "BLOCKED CHASE \u2014 sensor 13:06 ET: you are BLOCKED since 13:03 ET / 2026-10-30T17:03:18Z: \"Ergon CURRENT-STATE publication",
+   "sent_at": "2026-10-30T17:09:32Z",
+   "expected_by": "2026-10-30T18:30:00Z",
+   "done": false,
+   "state": "OPEN"
   }
  ],
  "queue": [],
@@ -438,6 +460,11 @@
    "state": "delivered",
    "route": "board",
    "at": "2026-10-30T10:42:05Z"
+  },
+  "20261030T170932Z-nox-to-outis.md": {
+   "state": "delivered",
+   "route": "folder",
+   "at": "2026-10-30T17:12:15Z"
   }
  }
 }
