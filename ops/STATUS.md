@@ -1,6 +1,6 @@
 # Lane status
 
-Updated 03:26 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
+Updated 03:32 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
 
 | lane | state | since | doing / waiting on | next check | flags |
 |---|---|---|---|---|---|
@@ -19,7 +19,7 @@ Updated 03:26 ET by the lane sensor (every 3 min). If that time is more than 15 
 | P-moneydesk-overnight-meanwhile | nox → moneydesk | Reply to WAIT_NO_MEANWHILE still flagged 18:37 ET (idle 1h05m waiting on Thu 09:20 ET beta check, n… | Thu 08:00 | OVERDUE |
 | P-moneydesk-idlelong-20261029-2005 | nox → moneydesk | Reply to IDLE_LONG (still) flagged 16:05 ET (idle 6h45m since 09:20 ET / 13:20Z, no declared wait, … | Thu 18:00 | OVERDUE |
 | P-consolidation-idlelong-20261030-2214 | nox → consolidation | Reply to IDLE_LONG flagged 22:14 ET (idle 32m since 21:42 ET / 2026-10-30T01:42:31Z, no declared wa… | Thu 23:30 | OVERDUE |
-| P-outis-successor-20261030-0535 | nox → outis | Reply to IDLE_DECLARED (still) flagged 01:35 ET (idle since 10:33 ET / 2026-10-29T14:33:12Z, queue … | 03:30 | OPEN |
+| P-outis-successor-20261030-0535 | nox → outis | Reply to IDLE_DECLARED (still) flagged 01:35 ET (idle since 10:33 ET / 2026-10-29T14:33:12Z, queue … | 03:30 | DUE |
 | P-consolidation-idlelong-20261030-0714 | nox → consolidation | Reply to IDLE_LONG (still) flagged 03:14 ET (idle 5h32m since 21:42 ET / 2026-10-30T01:42:31Z, no d… | 04:30 | OPEN |
 | 20261028T144206Z-consolidation-to-nox.md | consolidation → nox | STREET-UNBLOCK, steps 0-2 done, the last link of step 2 BLOCKED (10:41 ET). The Street Studio is NO… | Wed 12:00 | OVERDUE |
 | 20261028T200455Z-consolidation-to-nox.md | consolidation → nox | EP26 FINAL: your ruling needed on ONE choice (16:05 ET). The independent final reviewer (B39, never… | Wed 17:00 | OVERDUE |
@@ -78,6 +78,6 @@ Empty.
 
 ## Today
 
-- Flag-minutes: {"IDLE_DECLARED": 408.4, "IDLE_LONG": 408.4, "PROMISE_OVERDUE": 3063.0, "WAIT_OVERDUE": 408.4}
+- Flag-minutes: {"IDLE_DECLARED": 420.4, "IDLE_LONG": 420.4, "PROMISE_OVERDUE": 3153.0, "WAIT_OVERDUE": 420.4}
 - Flags raised: {"PROMISE_OVERDUE": 2}
 - Policy v4: idle 30m, stuck 30m, renotify 60m, claude delivery on.
