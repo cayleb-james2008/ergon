@@ -1,6 +1,6 @@
 # Lane status
 
-Updated 09:18 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
+Updated 09:21 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
 
 | lane | state | since | doing / waiting on | next check | flags |
 |---|---|---|---|---|---|
@@ -18,9 +18,6 @@ Updated 09:18 ET by the lane sensor (every 3 min). If that time is more than 15 
 | P-moneydesk-waitidle | nox → moneydesk | Reply to WAIT_IDLE flagged 17:22 ET (idle 45m since 16:37 ET waiting on 17:20 ET forward archive): … | Wed 18:00 | OVERDUE |
 | P-moneydesk-overnight-meanwhile | nox → moneydesk | Reply to WAIT_NO_MEANWHILE still flagged 18:37 ET (idle 1h05m waiting on Thu 09:20 ET beta check, n… | Thu 08:00 | OVERDUE |
 | P-moneydesk-idlelong-20261029-2005 | nox → moneydesk | Reply to IDLE_LONG (still) flagged 16:05 ET (idle 6h45m since 09:20 ET / 13:20Z, no declared wait, … | Thu 18:00 | OVERDUE |
-| P-consolidation-idlelong-20261030-2214 | nox → consolidation | Reply to IDLE_LONG flagged 22:14 ET (idle 32m since 21:42 ET / 2026-10-30T01:42:31Z, no declared wa… | Thu 23:30 | OVERDUE |
-| P-consolidation-idlelong-20261030-0714 | nox → consolidation | Reply to IDLE_LONG (still) flagged 03:14 ET (idle 5h32m since 21:42 ET / 2026-10-30T01:42:31Z, no d… | 04:30 | OVERDUE |
-| P-consolidation-idlelong-20261030-1015 | nox → consolidation | Reply to IDLE_LONG (still) flagged 06:15 ET (idle 8h32m since 21:42 ET / 2026-10-30T01:42:31Z, no d… | 07:30 | OVERDUE |
 | 20261028T144206Z-consolidation-to-nox.md | consolidation → nox | STREET-UNBLOCK, steps 0-2 done, the last link of step 2 BLOCKED (10:41 ET). The Street Studio is NO… | Wed 12:00 | OVERDUE |
 | 20261028T200455Z-consolidation-to-nox.md | consolidation → nox | EP26 FINAL: your ruling needed on ONE choice (16:05 ET). The independent final reviewer (B39, never… | Wed 17:00 | OVERDUE |
 | 20261028T202855Z-consolidation-to-nox.md | consolidation → nox | EP27 STATUS 16:27 ET + ONE JUDGEMENT NEEDED (R07). Clicks so far (Seedance 2.5, Cinema Studio 4.0, … | Wed 16:55 | OVERDUE |
@@ -90,6 +87,6 @@ Empty.
 
 ## Today
 
-- Flag-minutes: {"IDLE_DECLARED": 921.4, "IDLE_LONG": 1110.4, "MAIL_FAILED": 6.0, "PROMISE_DUE": 186.0, "PROMISE_OVERDUE": 9054.0, "WAIT_IDLE": 51.0, "WAIT_OVERDUE": 1188.4}
+- Flag-minutes: {"IDLE_DECLARED": 924.4, "IDLE_LONG": 1116.4, "MAIL_FAILED": 6.0, "PROMISE_DUE": 186.0, "PROMISE_OVERDUE": 9114.0, "WAIT_IDLE": 51.0, "WAIT_OVERDUE": 1197.4}
 - Flags raised: {"IDLE_DECLARED": 4, "MAIL_FAILED": 2, "PROMISE_DUE": 7, "PROMISE_OVERDUE": 8, "WAIT_IDLE": 1, "WAIT_OVERDUE": 1}
 - Policy v4: idle 30m, stuck 30m, renotify 60m, claude delivery on.
