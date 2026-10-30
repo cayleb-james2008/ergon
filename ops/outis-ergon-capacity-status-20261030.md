@@ -1,6 +1,6 @@
 # Outis — Ergon consolidated capacity status
 
-Outis-owned status, updated 2026-10-30 21:38:29 UTC. This is the single current consolidated record; the sensor retains ownership of ops/STATUS.md. Earlier inbox snapshots are historical. Main remains at 9d937e83becc82d7ef7a58faecbf90f104632059 and all main writes/merges are held until Cayleb's call; no Freebuff PR approval. Branch work and verification do not imply acceptance, release or deployment. The stated usage constraint is reported by the user, not independently measured.
+Outis-owned status, updated 2026-10-30 21:39:46 UTC. This is the single current consolidated record; the sensor retains ownership of ops/STATUS.md. Earlier inbox snapshots are historical. Main remains at 9d937e83becc82d7ef7a58faecbf90f104632059 and all main writes/merges are held until Cayleb's call; no Freebuff PR approval. Branch work and verification do not imply acceptance, release or deployment. The stated usage constraint is reported by the user, not independently measured.
 
 ## Source and preservation
 
@@ -11,6 +11,8 @@ Already read-back-verified private review-only branches: review/month-validation
 ## A — consolidation: PARTIAL / MID-FLIGHT
 
 Owner task 01a18e9f-76d1-753d-a1e5-84d5e91790e4. Local candidate adf2404b71918c00321de09f269bfdd28fbabf67; it is not a merge. Restricted local recovery record task-9/handoff/ORDER-A-STATE.md SHA-256 6838f23fe2449e8f479b0730cdf012eb6f3b65db7a2d174f89b7be2a6c80cd3c; candidate patch SHA-256 11e808ea613eae3fd77622b9d7631577e3f2c6589a89add9cb5668cbd06af59f. Local bundle SHA-256 4213d4295f5d1675248153cc4ee4f0786bca8ba1b84551a881e022d462eb5f0a includes history and is not cleared for publication. The 21-file Lite inventory is complete as inventory but dispositions remain provisional; Lite main 04d053a2f7d5e4c6cfb364894252d89f908ba1e2. Full PR 5 patch is preserved locally, SHA-256 8aec76e34e374712b37210074cae022342c63779401f57cbcd4c36aa091dd41e; disposition and closure remain open. Four explicitly approved setup fixtures on pinned 5c0d84dc passed 7/7, 13/13, 9/9 and 4/4, each exit 0, no skips; task-9/ORDER-A-SETUP-FIXTURE-RESULTS.md SHA-256 b81f37bac98eecaf6d2d8ce93b5b84f3ec3324c1e46c6eaaf27009b82402afce. These do not make the prior root run or aggregate green. Next: preserve reviewed candidate and finish source dispositions/checks; no main write or collision resolution.
+
+Independent Order A preservation check: prepared local README snapshots plus the three-file zero-context patch reconstructed all five adf2404b71918c00321de09f269bfdd28fbabf67 candidate files byte-for-byte from main 9d937e83becc82d7ef7a58faecbf90f104632059. Receipt task-5/CAPACITY-A-PRESERVATION-CHECK.md SHA-256 9440221c8b0f53784d0518a29c2873f54686d196fdf634767b423fd4ebf4a09b. The checker did not independently access the published 9f97dae commit object; correspondence with remote bytes relies on the maker's prior readback receipt. This is preservation correctness only, not product execution, security review, integration, merge or acceptance.
 
 ## B — source and P0: PARTIAL / MID-FLIGHT
 
