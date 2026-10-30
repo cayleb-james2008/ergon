@@ -422,6 +422,17 @@
    "done_when": {
     "result_item": "outis-blocked-currentstate-20261030-1706"
    }
+  },
+  {
+   "id": "P-outis-waitidle-20261030-1742",
+   "from": "nox",
+   "to": "outis",
+   "ask": "Reply to WAIT_IDLE flagged 13:42 ET (WAITING since 13:15 ET / 2026-10-30T17:15:43Z on independently reviewed integration handbacks, next_check 13:28 ET passed, nothing written to meanwhile path /home/cayleb/Documents/Codex/2026-10-26/task/BOARD.json for 26m): list the exact outstanding handbacks (item, owner/session, handover and expected return times) or state none are outstanding, give progress evidence for the named meanwhile work and resume writing it (or name new meanwhile work with a watchable path), and update heartbeat to WAITING with future expected_by/next_check_at or declare IDLE_DECLARED with reason; reply as kind: result with item outis-waitidle-20261030-1742",
+   "sent_at": "2026-10-30T17:44:07Z",
+   "expected_by": "2026-10-30T18:15:00Z",
+   "done_when": {
+    "result_item": "outis-waitidle-20261030-1742"
+   }
   }
  ]
 }
