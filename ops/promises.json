@@ -432,7 +432,10 @@
    "expected_by": "2026-10-30T18:15:00Z",
    "done_when": {
     "result_item": "outis-waitidle-20261030-1742"
-   }
+   },
+   "done": true,
+   "closed_at": "2026-10-30T20:50:22Z",
+   "closed_reason": "Delivered substantively via the escalation result 20261030T185935Z-outis-to-nox.md (kind: result, item outis-waitidle-escalation-20261030-1845), which explicitly answers this 1742 chase: A-D handbacks listed with checkpoints, BOARD.json meanwhile evidence at 18:58:51Z, heartbeat corrected to WORKING at 18:59:03Z; lane confirmed WORKING in sensor status 20:45Z/20:48Z on Order A work. No item-specific receipt for this item was filed (Outis flagged that caveat himself), so closed by Nox as delivered via the escalation item, not as an item-specific receipt. No further chase filed."
   },
   {
    "id": "P-outis-waitidle-escalation-20261030-1845",
@@ -443,7 +446,8 @@
    "expected_by": "2026-10-30T19:15:00Z",
    "done_when": {
     "result_item": "outis-waitidle-escalation-20261030-1845"
-   }
+   },
+   "done": true
   }
  ]
 }
