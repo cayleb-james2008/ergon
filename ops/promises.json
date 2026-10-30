@@ -353,6 +353,17 @@
     "result_item": "outis-successor-20261030-0938"
    },
    "done": true
+  },
+  {
+   "id": "P-outis-successor-20261030-0951",
+   "from": "nox",
+   "to": "outis",
+   "ask": "Reply to IDLE_DECLARED flagged 05:51 ET (idle since 2026-10-30T09:48:47Z, queue empty; 0938 result delivered 09:44Z observation as checklist-restored Thudwick pack, evidence NO-GO / mechanical NOT READY, all four proofs unverified, is_authorized_for_tasks not exposed): (1) change check since 09:44 UTC per mechanical proof with observation times, (2) fresh is_authorized_for_tasks value only if actually exposed, otherwise state not exposed, (3) finalised preflight escalation pack for Thudwick Fri 17:30 ET / 21:30 UTC (preflight 20:45 UTC, T-25 21:05 UTC) per proof missing evidence / owner / escalation to Nox, missing evidence is not clearance, no launch authorised; OpenBell/Plimsoll change-only, Street MCP CLOSED; prep only, no activation/upload/launch/rehearsal; reply as kind: result with item outis-successor-20261030-0951",
+   "sent_at": "2026-10-30T09:52:44Z",
+   "expected_by": "2026-10-30T11:30:00Z",
+   "done_when": {
+    "result_item": "outis-successor-20261030-0951"
+   }
   }
  ]
 }
