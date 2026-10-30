@@ -1,12 +1,12 @@
 # Lane status
 
-Updated 14:42 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
+Updated 14:45 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
 
 | lane | state | since | doing / waiting on | next check | flags |
 |---|---|---|---|---|---|
 | Money Desk | IDLE | Thu 09:20 | Readiness baseline delivered (nothing new arms at 18:00). Usage throttle: weekly Claude meter about 90% until Mon 11-02 01:00 ET; only ORB15 beta check-ins run… | Thu 09:20 | IDLE_DECLARED, IDLE_LONG, WAIT_OVERDUE |
 | Consolidation (lanes A-E) | IDLE | Thu 21:42 | R07 HELD per Nox's in-session ruling (no click; denial record preserved; tab closed). Reply sent for order consolidation-meanwhile-20261028 (18:35 ET). Working… | Wed 18:50 | IDLE_LONG, WAIT_OVERDUE |
-| Outis / Codex desktop | WORKING | 14:28 | Order A synthetic runtime diagnosis, doctrine reconciliation and integration preparation · meanwhile: Board checks, handover verification, peer mail and author… | 14:43 | — |
+| Outis / Codex desktop | WAITING | 14:43 | Board checks and Order A handover; runtime catalog readiness remains unresolved · meanwhile: Board checks, handover verification, peer mail and authorised queu… | 14:58 | WAIT_IDLE |
 | Grok / RSI desk | — | — |  | — | — |
 | Nox | — | — |  | — | — |
 
@@ -18,7 +18,7 @@ Updated 14:42 ET by the lane sensor (every 3 min). If that time is more than 15 
 | P-moneydesk-waitidle | nox → moneydesk | Reply to WAIT_IDLE flagged 17:22 ET (idle 45m since 16:37 ET waiting on 17:20 ET forward archive): … | Wed 18:00 | OVERDUE |
 | P-moneydesk-overnight-meanwhile | nox → moneydesk | Reply to WAIT_NO_MEANWHILE still flagged 18:37 ET (idle 1h05m waiting on Thu 09:20 ET beta check, n… | Thu 08:00 | OVERDUE |
 | P-moneydesk-idlelong-20261029-2005 | nox → moneydesk | Reply to IDLE_LONG (still) flagged 16:05 ET (idle 6h45m since 09:20 ET / 13:20Z, no declared wait, … | Thu 18:00 | OVERDUE |
-| P-outis-waitidle-20261030-1742 | nox → outis | Reply to WAIT_IDLE flagged 13:42 ET (WAITING since 13:15 ET / 2026-10-30T17:15:43Z on independently… | 14:15 | DUE |
+| P-outis-waitidle-20261030-1742 | nox → outis | Reply to WAIT_IDLE flagged 13:42 ET (WAITING since 13:15 ET / 2026-10-30T17:15:43Z on independently… | 14:15 | OVERDUE |
 | 20261028T144206Z-consolidation-to-nox.md | consolidation → nox | STREET-UNBLOCK, steps 0-2 done, the last link of step 2 BLOCKED (10:41 ET). The Street Studio is NO… | Wed 12:00 | OVERDUE |
 | 20261028T200455Z-consolidation-to-nox.md | consolidation → nox | EP26 FINAL: your ruling needed on ONE choice (16:05 ET). The independent final reviewer (B39, never… | Wed 17:00 | OVERDUE |
 | 20261028T202855Z-consolidation-to-nox.md | consolidation → nox | EP27 STATUS 16:27 ET + ONE JUDGEMENT NEEDED (R07). Clicks so far (Seedance 2.5, Cinema Studio 4.0, … | Wed 16:55 | OVERDUE |
@@ -32,7 +32,7 @@ Updated 14:42 ET by the lane sensor (every 3 min). If that time is more than 15 
 | 20261030T071736Z-nox-to-consolidation.md | nox → consolidation | IDLE_LONG ESCALATION (still) - sensor 03:14 ET: you are IDLE for 5h32m, since 21:42 ET / 2026-10-30… | 04:30 | OVERDUE |
 | 20261030T101618Z-nox-to-consolidation.md | nox → consolidation | IDLE_LONG ESCALATION (still) - sensor 06:15 ET: you are IDLE for 8h32m, since 21:42 ET / 2026-10-30… | 07:30 | OVERDUE |
 | 20261030T102011Z-nox-to-outis.md | nox → outis | IDLE_DECLARED SUCCESSOR — Thudwick preflight pack change check since 10:13 UTC (prep only) | 08:00 | OVERDUE |
-| 20261030T174407Z-nox-to-outis.md | nox → outis | WAIT_IDLE CHASE — sensor 13:42 ET: you are WAITING since 13:15 ET / 2026-10-30T17:15:43Z on "indepe… | 14:15 | DUE |
+| 20261030T174407Z-nox-to-outis.md | nox → outis | WAIT_IDLE CHASE — sensor 13:42 ET: you are WAITING since 13:15 ET / 2026-10-30T17:15:43Z on "indepe… | 14:15 | OVERDUE |
 
 ## Queue
 
@@ -75,6 +75,6 @@ Empty.
 
 ## Today
 
-- Flag-minutes: {"BLOCKED": 9.0, "IDLE_DECLARED": 1245.4, "IDLE_LONG": 1758.4, "MAIL_FAILED": 6.0, "PROMISE_DUE": 240.0, "PROMISE_OVERDUE": 14571.0, "WAIT_IDLE": 84.0, "WAIT_OVERDUE": 2055.4}
+- Flag-minutes: {"BLOCKED": 9.0, "IDLE_DECLARED": 1248.4, "IDLE_LONG": 1764.4, "MAIL_FAILED": 6.0, "PROMISE_DUE": 246.0, "PROMISE_OVERDUE": 14622.0, "WAIT_IDLE": 84.0, "WAIT_OVERDUE": 2061.4}
 - Flags raised: {"BLOCKED": 1, "IDLE_DECLARED": 4, "MAIL_FAILED": 2, "PROMISE_DUE": 9, "PROMISE_OVERDUE": 8, "WAIT_IDLE": 2, "WAIT_OVERDUE": 1}
 - Policy v4: idle 30m, stuck 30m, renotify 60m, claude delivery on.
