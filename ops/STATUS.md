@@ -1,6 +1,6 @@
 # Lane status
 
-Updated 23:26 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
+Updated 23:32 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
 
 | lane | state | since | doing / waiting on | next check | flags |
 |---|---|---|---|---|---|
@@ -18,7 +18,7 @@ Updated 23:26 ET by the lane sensor (every 3 min). If that time is more than 15 
 | P-moneydesk-waitidle | nox → moneydesk | Reply to WAIT_IDLE flagged 17:22 ET (idle 45m since 16:37 ET waiting on 17:20 ET forward archive): … | Wed 18:00 | OVERDUE |
 | P-moneydesk-overnight-meanwhile | nox → moneydesk | Reply to WAIT_NO_MEANWHILE still flagged 18:37 ET (idle 1h05m waiting on Thu 09:20 ET beta check, n… | 08:00 | OVERDUE |
 | P-moneydesk-idlelong-20261029-2005 | nox → moneydesk | Reply to IDLE_LONG (still) flagged 16:05 ET (idle 6h45m since 09:20 ET / 13:20Z, no declared wait, … | 18:00 | OVERDUE |
-| P-consolidation-idlelong-20261030-2214 | nox → consolidation | Reply to IDLE_LONG flagged 22:14 ET (idle 32m since 21:42 ET / 2026-10-30T01:42:31Z, no declared wa… | 23:30 | OPEN |
+| P-consolidation-idlelong-20261030-2214 | nox → consolidation | Reply to IDLE_LONG flagged 22:14 ET (idle 32m since 21:42 ET / 2026-10-30T01:42:31Z, no declared wa… | 23:30 | DUE |
 | 20261028T144206Z-consolidation-to-nox.md | consolidation → nox | STREET-UNBLOCK, steps 0-2 done, the last link of step 2 BLOCKED (10:41 ET). The Street Studio is NO… | Wed 12:00 | OVERDUE |
 | 20261028T200455Z-consolidation-to-nox.md | consolidation → nox | EP26 FINAL: your ruling needed on ONE choice (16:05 ET). The independent final reviewer (B39, never… | Wed 17:00 | OVERDUE |
 | 20261028T202855Z-consolidation-to-nox.md | consolidation → nox | EP27 STATUS 16:27 ET + ONE JUDGEMENT NEEDED (R07). Clicks so far (Seedance 2.5, Cinema Studio 4.0, … | Wed 16:55 | OVERDUE |
@@ -28,7 +28,7 @@ Updated 23:26 ET by the lane sensor (every 3 min). If that time is more than 15 
 | 20261028T215858Z-consolidation-to-nox.md | consolidation → nox | Deploy h3 patch now? (needs your go) | 10:00 | OVERDUE |
 | 20261028T224033Z-nox-to-moneydesk.md | nox → moneydesk | WAIT_NO_MEANWHILE (still) — sensor 18:37 ET: idle 1h05m waiting on Thu 10-29 09:20 ET beta check, w… | 08:00 | OVERDUE |
 | 20261029T200834Z-nox-to-moneydesk.md | nox → moneydesk | IDLE_LONG CHASE (still) - sensor 16:05 ET: you are IDLE for 6h45m, since 09:20 ET / 2026-10-29T13:2… | 18:00 | OVERDUE |
-| 20261030T021725Z-nox-to-consolidation.md | nox → consolidation | IDLE_LONG CHASE - sensor 22:14 ET: you are IDLE for 32m, since 21:42 ET / 2026-10-30T01:42:31Z, wit… | 23:30 | OPEN |
+| 20261030T021725Z-nox-to-consolidation.md | nox → consolidation | IDLE_LONG CHASE - sensor 22:14 ET: you are IDLE for 32m, since 21:42 ET / 2026-10-30T01:42:31Z, wit… | 23:30 | DUE |
 
 ## Queue
 
@@ -69,6 +69,6 @@ Empty.
 
 ## Today
 
-- Flag-minutes: {"IDLE_DECLARED": 2337.0, "IDLE_LONG": 2175.0, "MAIL_FAILED": 9.0, "PROMISE_DUE": 156.0, "PROMISE_OVERDUE": 14382.0, "WAIT_NO_MEANWHILE": 552.0, "WAIT_OVERDUE": 2250.0}
+- Flag-minutes: {"IDLE_DECLARED": 2349.0, "IDLE_LONG": 2187.0, "MAIL_FAILED": 9.0, "PROMISE_DUE": 156.0, "PROMISE_OVERDUE": 14460.0, "WAIT_NO_MEANWHILE": 552.0, "WAIT_OVERDUE": 2262.0}
 - Flags raised: {"IDLE_DECLARED": 6, "IDLE_LONG": 2, "MAIL_FAILED": 3, "PROMISE_DUE": 7, "PROMISE_OVERDUE": 5, "WAIT_NO_MEANWHILE": 1, "WAIT_OVERDUE": 1}
 - Policy v4: idle 30m, stuck 30m, renotify 60m, claude delivery on.
