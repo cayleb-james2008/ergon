@@ -1,0 +1,60 @@
+{
+  "candidate": "MNQ-compression_break-50",
+  "fold_counts": {
+    "fold-2023": 15,
+    "fold-2024": 13,
+    "fold-2025-26": 31
+  },
+  "ledger_result_head": "ec9ec57d48a1b226e8ee94b5e44973bce1868d7e1f0b7c0ec769f54d8cdfdd29",
+  "limits": [
+    "One-minute backtest events and assumed costs, not live fills or actual commissions.",
+    "No tick-level fill times, seconds, actual broker fills or actual fee receipts appear in these event records.",
+    "Contract symbol and provider instrument identity are not fields on the saved trade events; no symbol was inferred or joined.",
+    "A standalone 59-trade CSV was not found among files in the independent checker task directory; the 59 rows were exported by pairing existing entry and exit events, with no backtest or fill reconstruction.",
+    "Only test-fold trades are exported; stored training events are outside this requested 59-trade scope.",
+    "Absence statements apply to the inspected checker record and directory, not every possible location."
+  ],
+  "pairing": "Within each saved fold, matched identical trade_id, date, entry minute, side, market and quantity across two scenarios. Scenario prices, exits and net values are copied independently from their original events.",
+  "publication_redaction": "Original local absolute paths replaced by neutral labels; source file hashes and byte sizes are preserved. The frozen protocol publication copy also redacts local paths; its source hash is recorded here.",
+  "scope": "stored round-two test-fold events only; 59 baseline and 59 double-cost trade records",
+  "source_files": {
+    "checker-round2/prop-search-round2-ledger.jsonl": {
+      "sha256": "e169ac84c76bf042af4d5211ee8b1dc806e7cfefef71229c455285916589df5c",
+      "size_bytes": 1258
+    },
+    "checker-round2/prop-search-round2-report.md": {
+      "sha256": "504574b42afc26e60e9d319d5edc284640478836192b014c9e16ae06d496f581",
+      "size_bytes": 11040
+    },
+    "checker-round2/prop-search-round2-result.json": {
+      "sha256": "d0b09d9327bde0a3a05cabc60373afc84187d70720ef4790c7d813e27c9ed8f2",
+      "size_bytes": 23479127
+    },
+    "checker-round2/prop-search-round2-summary.csv": {
+      "sha256": "37898f66237485531b3ce62c1edf091c10ad0a9b934b5bf6930f12e7e8426247",
+      "size_bytes": 11051
+    },
+    "frozen-round2/PROTOCOL.md": {
+      "sha256": "10f216ff48f9cc82a749ad4345c394b3f0425012ba2a0f21e491a452267ec869",
+      "size_bytes": 7113
+    },
+    "frozen-round2/candidates.py": {
+      "sha256": "d8d31568e1bb44055e0d247a4c20a868e1448818a44f812bcc2f6080d682b911",
+      "size_bytes": 2166
+    },
+    "frozen-round2/evaluate.py": {
+      "sha256": "1670661f691745e58e2b69eec7ea2d192a6ff85b0a7063276504e807a12ec5ad",
+      "size_bytes": 8417
+    },
+    "frozen-round2/manifest.json": {
+      "sha256": "6fdedaae48afc2674ffb2ab0a06b20b88facafcf736c1d949b0af9964ee1ebeb",
+      "size_bytes": 32788
+    },
+    "frozen-round2/portfolio.py": {
+      "sha256": "2606e888028f5f4a6c8becbe357bc6501acd7dc40d5a21e7c9ce7e2cf65840f8",
+      "size_bytes": 12434
+    }
+  },
+  "time_rendering": "HH:MM is only display formatting of the existing ET minute-of-day integer. The exit time labels the one-minute model bar; an intrabar stop has no stored tick-level execution time.",
+  "variant_scope": "Saved summary CSV rows for both 50 and 75 compression parameters in MNQ and MES; no additional variant trade records exported."
+}
