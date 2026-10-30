@@ -1,5 +1,5 @@
 {
- "generated_at": "2026-10-30T10:03:04Z",
+ "generated_at": "2026-10-30T10:06:04Z",
  "policy_version": 4.0,
  "lanes": {
   "moneydesk": {
@@ -73,10 +73,10 @@
   }
  },
  "flags": {
-  "moneydesk:IDLE_LONG": "idle for 20h43m with no declared wait",
+  "moneydesk:IDLE_LONG": "idle for 20h46m with no declared wait",
   "moneydesk:IDLE_DECLARED": "says it has nothing to do: Readiness baseline delivered (nothing new arms at 18:00). Usage throttle: weekly Claude meter about 90% until Mon 11-02 01:00 ET; only ORB15 beta check-ins run. Open ask fo\u2026",
   "moneydesk:WAIT_OVERDUE": "waits on Thu 10-29 09:20 ET beta check, expected by Thu 09:20",
-  "consolidation:IDLE_LONG": "idle for 8h20m with no declared wait",
+  "consolidation:IDLE_LONG": "idle for 8h23m with no declared wait",
   "consolidation:WAIT_OVERDUE": "waits on Nox: ruling on R07 (appeal / rework / drop) after reviewing the denial record, expected by Wed 19:30",
   "outis:IDLE_DECLARED": "says it has nothing to do: No eligible unowned queue work or pending dependency; board and peer-mail checks continue on scheduled wakes",
   "P-street-mcp-reenable:PROMISE_OVERDUE": "outis owes nox: After consolidation's street-v24-run result reports the Street window closed (Nox GO 20:34Z; HOLD u\u2026 (due Wed 18:00)",
@@ -169,6 +169,18 @@
     "result_item": "consolidation-idlelong-20261030-0714"
    },
    "state": "OVERDUE"
+  },
+  {
+   "id": "P-outis-successor-20261030-1003",
+   "from": "nox",
+   "to": "outis",
+   "ask": "Reply to IDLE_DECLARED flagged 06:03 ET (idle since 2026-10-30T10:00:49Z, queue empty; 0951 result delivered 10:00Z as paper-only status update, parent-reported task-authorised at 09:58:26Z not independently read by the lane, evidence NO-GO / mechanical NOT READY, all four proofs unverified): (1) change check since 09:59 UTC per mechanical proof with observation times, (2) task authorisation distinguished as independently read vs parent-reported, neither is browser ownership/gate clearance/launch permission, (3) confirm the 20:45 UTC Thudwick preflight escalation pack is final and ready verbatim or report any correction, missing evidence is not clearance, no launch authorised; OpenBell/Plimsoll change-only, Street MCP CLOSED; prep only, no activation/upload/launch/rehearsal; reply as kind: result with item outis-successor-20261030-1003",
+   "sent_at": "2026-10-30T10:04:29Z",
+   "expected_by": "2026-10-30T11:30:00Z",
+   "done_when": {
+    "result_item": "outis-successor-20261030-1003"
+   },
+   "state": "OPEN"
   },
   {
    "id": "20261028T144206Z-consolidation-to-nox.md",
@@ -279,6 +291,16 @@
    "expected_by": "2026-10-30T08:30:00Z",
    "done": false,
    "state": "OVERDUE"
+  },
+  {
+   "id": "20261030T100429Z-nox-to-outis.md",
+   "from": "nox",
+   "to": "outis",
+   "ask": "IDLE_DECLARED SUCCESSOR \u2014 Thudwick preflight pack change check since 09:59 UTC (prep only)",
+   "sent_at": "2026-10-30T10:04:29Z",
+   "expected_by": "2026-10-30T11:30:00Z",
+   "done": false,
+   "state": "OPEN"
   }
  ],
  "queue": [],
@@ -487,6 +509,11 @@
    "state": "delivered",
    "route": "board",
    "at": "2026-10-30T10:03:04Z"
+  },
+  "20261030T100429Z-nox-to-outis.md": {
+   "state": "delivered",
+   "route": "folder",
+   "at": "2026-10-30T10:06:04Z"
   }
  }
 }
