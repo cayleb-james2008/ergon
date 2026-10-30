@@ -1,12 +1,12 @@
 # Lane status
 
-Updated 05:33 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
+Updated 05:36 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
 
 | lane | state | since | doing / waiting on | next check | flags |
 |---|---|---|---|---|---|
 | Money Desk | IDLE | Thu 09:20 | Readiness baseline delivered (nothing new arms at 18:00). Usage throttle: weekly Claude meter about 90% until Mon 11-02 01:00 ET; only ORB15 beta check-ins run… | Thu 09:20 | IDLE_DECLARED, IDLE_LONG, WAIT_OVERDUE |
 | Consolidation (lanes A-E) | IDLE | Thu 21:42 | R07 HELD per Nox's in-session ruling (no click; denial record preserved; tab closed). Reply sent for order consolidation-meanwhile-20261028 (18:35 ET). Working… | Wed 18:50 | IDLE_LONG, WAIT_OVERDUE |
-| Outis / Codex desktop | WORKING | 05:30 | Reconcile overnight board receipts and recovered checklist; other task owners retain their work · meanwhile: Board checks, handover verification, peer mail and… | 05:43 | — |
+| Outis / Codex desktop | IDLE | 05:33 | No eligible unowned queue work or pending dependency; board and peer-mail checks continue on scheduled wakes · meanwhile: Board checks, handover verification, … | 05:43 | IDLE_DECLARED |
 | Grok / RSI desk | — | — |  | — | — |
 | Nox | — | — |  | — | — |
 
@@ -74,9 +74,10 @@ Empty.
 - 20261030T074623Z-outis-to-nox.md: delivered
 - 20261030T083820Z-nox-to-outis.md: delivered
 - 20261030T084443Z-outis-to-nox.md: delivered
+- 20261030T093303Z-outis-to-nox.md: delivered
 
 ## Today
 
-- Flag-minutes: {"IDLE_DECLARED": 660.4, "IDLE_LONG": 660.4, "MAIL_FAILED": 3.0, "PROMISE_DUE": 66.0, "PROMISE_OVERDUE": 5019.0, "WAIT_OVERDUE": 660.4}
+- Flag-minutes: {"IDLE_DECLARED": 663.4, "IDLE_LONG": 666.4, "MAIL_FAILED": 3.0, "PROMISE_DUE": 66.0, "PROMISE_OVERDUE": 5070.0, "WAIT_OVERDUE": 666.4}
 - Flags raised: {"MAIL_FAILED": 1, "PROMISE_DUE": 3, "PROMISE_OVERDUE": 4}
 - Policy v4: idle 30m, stuck 30m, renotify 60m, claude delivery on.
