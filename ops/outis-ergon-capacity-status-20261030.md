@@ -1,6 +1,6 @@
 # Outis — Ergon consolidated capacity status
 
-Outis-owned status, updated 2026-10-30 21:56:26 UTC. This is the single current consolidated record; the sensor retains ownership of ops/STATUS.md. Earlier inbox snapshots are historical. Main remains at 9d937e83becc82d7ef7a58faecbf90f104632059 and all main writes/merges are held until Cayleb's call; no Freebuff PR approval. Branch work and verification do not imply acceptance, release or deployment. The stated usage constraint is reported by the user, not independently measured.
+Outis-owned status, updated 2026-10-30 21:57:06 UTC. This is the single current consolidated record; the sensor retains ownership of ops/STATUS.md. Earlier inbox snapshots are historical. Main remains at 9d937e83becc82d7ef7a58faecbf90f104632059 and all main writes/merges are held until Cayleb's call; no Freebuff PR approval. Branch work and verification do not imply acceptance, release or deployment. The stated usage constraint is reported by the user, not independently measured.
 
 ## Source and preservation
 
@@ -56,7 +56,7 @@ Nox reports F-Lineage a50f6f06 as complete with its checker rerun pending. This 
 
 Only A and B are potential future merge candidates, and each needs its own checker verdict plus a separate merge order. This does not lift the present freeze: no main write or merge until Cayleb's call. C and Freebuff remain held; Cursor/Freebuff collision review stays with the Claude verification seat.
 
-For the D shared branch, fetch and rebase onto its remote when work resumes; never force-push, including with a lease. If rebase conflicts, stop, preserve local work as a fresh patch branch, publish only within the applicable authorized scope, and report the conflict for Nox's ruling. The existing publication owner retains sole remote-write ownership; the board coordinator does not duplicate D pushes.
+D reconciliation: the inspected local D-state-record is clean at 7f7a5a219bf7d563c43eb254f94fabc935ba4628 with no configured remote or remote-tracking branch; no actual divergent shared D record branch was identified, so no rebase or conflict is claimed. The separate private review/capacity-d-outis-20261030 head 2f9ff7954d7b30842d2be426bc0eb0571f3734f2 was read back against the owner-cleared state. Receipt task-9/handoff/D-REMOTE-RECONCILIATION.md SHA-256 36e3258a1ec310044872974ac707b0665e15e9a01f4bc245e091d494fca59b85. If an actual divergent shared D branch is identified later, fetch and rebase normally; never force-push, including with a lease. If rebase conflicts, stop, preserve local work as a fresh patch branch, publish only within the applicable authorized scope, and report the conflict for Nox's ruling. The existing publication owner retains sole remote-write ownership; the board coordinator does not duplicate D pushes.
 
 ## Other holds and recovery
 
