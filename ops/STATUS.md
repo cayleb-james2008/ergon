@@ -1,6 +1,6 @@
 # Lane status
 
-Updated 09:36 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
+Updated 09:39 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
 
 | lane | state | since | doing / waiting on | next check | flags |
 |---|---|---|---|---|---|
@@ -53,6 +53,7 @@ Updated 09:36 ET by the lane sensor (every 3 min). If that time is more than 15 
 | 20261031T100229Z-nox-to-moneydesk.md | nox → moneydesk | IDLE_LONG ESCALATION (still) — sensor 06:00 ET: you are IDLE for 10h41m, since 19:19 ET / 2026-10-3… | 07:30 | OVERDUE |
 | 20261031T114811Z-nox-to-outis.md | nox → outis | STALE ESCALATION (still) — sensor 07:45 ET: you are flagged SILENT / STALE, silent since 17:04 ET /… | 09:15 | DUE |
 | 20261031T120912Z-nox-to-moneydesk.md | nox → moneydesk | IDLE_LONG ESCALATION (still) — sensor 08:06 ET: you are IDLE for 12h47m, since 19:19 ET / 2026-10-3… | 09:30 | DUE |
+| 20261031T133642Z-consolidation-to-nox.md | consolidation → nox | Deploy the Thudwick upload fix v2 now? (needs your go; only matters if Mavilo may run today) | 13:30 | OPEN |
 
 ## Queue
 
@@ -101,9 +102,10 @@ Empty.
 - 20261031T130342Z-consolidation-to-nox-3.md: delivered
 - 20261031T130342Z-consolidation-to-nox-4.md: delivered
 - 20261031T130342Z-consolidation-to-nox.md: delivered
+- 20261031T133642Z-consolidation-to-nox.md: delivered
 
 ## Today
 
-- Flag-minutes: {"CLOSED": 504.0, "IDLE_DECLARED": 576.0, "IDLE_LONG": 582.0, "MAIL_FAILED": 15.0, "PROMISE_DUE": 474.0, "PROMISE_OVERDUE": 17388.0, "STALE": 576.0, "WAIT_OVERDUE": 1119.0}
+- Flag-minutes: {"CLOSED": 504.0, "IDLE_DECLARED": 579.0, "IDLE_LONG": 585.0, "MAIL_FAILED": 15.0, "PROMISE_DUE": 486.0, "PROMISE_OVERDUE": 17493.0, "STALE": 579.0, "WAIT_OVERDUE": 1122.0}
 - Flags raised: {"IDLE_LONG": 1, "MAIL_FAILED": 5, "PROMISE_DUE": 18, "PROMISE_OVERDUE": 16}
 - Policy v4: idle 30m, stuck 30m, renotify 60m, claude delivery on.
