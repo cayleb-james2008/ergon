@@ -1,12 +1,12 @@
 # Lane status
 
-Updated 23:57 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
+Updated 00:00 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
 
 | lane | state | since | doing / waiting on | next check | flags |
 |---|---|---|---|---|---|
-| Money Desk | IDLE | 19:19 | Readiness baseline delivered (nothing new arms at 18:00). Usage throttle: weekly Claude meter about 90% until Mon 11-02 01:00 ET; only ORB15 beta check-ins run… | Thu 09:20 | IDLE_DECLARED, IDLE_LONG, WAIT_OVERDUE |
+| Money Desk | IDLE | Fri 19:19 | Readiness baseline delivered (nothing new arms at 18:00). Usage throttle: weekly Claude meter about 90% until Mon 11-02 01:00 ET; only ORB15 beta check-ins run… | Thu 09:20 | IDLE_DECLARED, IDLE_LONG, WAIT_OVERDUE |
 | Consolidation (lanes A-E) | CLOSED | — | R07 HELD per Nox's in-session ruling (no click; denial record preserved; tab closed). Reply sent for order consolidation-meanwhile-20261028 (18:35 ET). Working… | Wed 18:50 | CLOSED, WAIT_OVERDUE |
-| Outis / Codex desktop | SILENT | 17:04 | Team board, mail, lane and coordination; Order A product work handed to its dedicated owner · meanwhile: Board and mail checks, evidence reconciliation and coo… | 17:19 | STALE |
+| Outis / Codex desktop | SILENT | Fri 17:04 | Team board, mail, lane and coordination; Order A product work handed to its dedicated owner · meanwhile: Board and mail checks, evidence reconciliation and coo… | Fri 17:19 | STALE |
 | Grok / RSI desk | — | — |  | — | — |
 | Nox | — | — |  | — | — |
 
@@ -18,9 +18,9 @@ Updated 23:57 ET by the lane sensor (every 3 min). If that time is more than 15 
 | P-moneydesk-waitidle | nox → moneydesk | Reply to WAIT_IDLE flagged 17:22 ET (idle 45m since 16:37 ET waiting on 17:20 ET forward archive): … | Wed 18:00 | OVERDUE |
 | P-moneydesk-overnight-meanwhile | nox → moneydesk | Reply to WAIT_NO_MEANWHILE still flagged 18:37 ET (idle 1h05m waiting on Thu 09:20 ET beta check, n… | Thu 08:00 | OVERDUE |
 | P-moneydesk-idlelong-20261029-2005 | nox → moneydesk | Reply to IDLE_LONG (still) flagged 16:05 ET (idle 6h45m since 09:20 ET / 13:20Z, no declared wait, … | Thu 18:00 | OVERDUE |
-| P-outis-stale-20261030-2230 | nox → outis | STALE CHASE (sensor 18:30 ET): silent since 17:04 ET / 2026-10-30T21:04:09Z, no heartbeat or file w… | 19:15 | OVERDUE |
-| P-outis-stale-escalation-20261031-0050 | nox → outis | STALE ESCALATION (sensor 20:45 ET): P-outis-stale-20261030-2230 is PROMISE_OVERDUE (due 19:15 ET / … | 21:45 | OVERDUE |
-| P-moneydesk-idlelong-20261031-0206 | nox → moneydesk | Reply to IDLE_LONG flagged 22:06 ET (idle 2h47m since 19:19 ET / 2026-10-30T23:19:01Z, new idle per… | 23:30 | DUE |
+| P-outis-stale-20261030-2230 | nox → outis | STALE CHASE (sensor 18:30 ET): silent since 17:04 ET / 2026-10-30T21:04:09Z, no heartbeat or file w… | Fri 19:15 | OVERDUE |
+| P-outis-stale-escalation-20261031-0050 | nox → outis | STALE ESCALATION (sensor 20:45 ET): P-outis-stale-20261030-2230 is PROMISE_OVERDUE (due 19:15 ET / … | Fri 21:45 | OVERDUE |
+| P-moneydesk-idlelong-20261031-0206 | nox → moneydesk | Reply to IDLE_LONG flagged 22:06 ET (idle 2h47m since 19:19 ET / 2026-10-30T23:19:01Z, new idle per… | Fri 23:30 | OVERDUE |
 | 20261028T144206Z-consolidation-to-nox.md | consolidation → nox | STREET-UNBLOCK, steps 0-2 done, the last link of step 2 BLOCKED (10:41 ET). The Street Studio is NO… | Wed 12:00 | OVERDUE |
 | 20261028T200455Z-consolidation-to-nox.md | consolidation → nox | EP26 FINAL: your ruling needed on ONE choice (16:05 ET). The independent final reviewer (B39, never… | Wed 17:00 | OVERDUE |
 | 20261028T202855Z-consolidation-to-nox.md | consolidation → nox | EP27 STATUS 16:27 ET + ONE JUDGEMENT NEEDED (R07). Clicks so far (Seedance 2.5, Cinema Studio 4.0, … | Wed 16:55 | OVERDUE |
@@ -31,13 +31,13 @@ Updated 23:57 ET by the lane sensor (every 3 min). If that time is more than 15 
 | 20261028T224033Z-nox-to-moneydesk.md | nox → moneydesk | WAIT_NO_MEANWHILE (still) — sensor 18:37 ET: idle 1h05m waiting on Thu 10-29 09:20 ET beta check, w… | Thu 08:00 | OVERDUE |
 | 20261029T200834Z-nox-to-moneydesk.md | nox → moneydesk | IDLE_LONG CHASE (still) - sensor 16:05 ET: you are IDLE for 6h45m, since 09:20 ET / 2026-10-29T13:2… | Thu 18:00 | OVERDUE |
 | 20261030T021725Z-nox-to-consolidation.md | nox → consolidation | IDLE_LONG CHASE - sensor 22:14 ET: you are IDLE for 32m, since 21:42 ET / 2026-10-30T01:42:31Z, wit… | Thu 23:30 | OVERDUE |
-| 20261030T071736Z-nox-to-consolidation.md | nox → consolidation | IDLE_LONG ESCALATION (still) - sensor 03:14 ET: you are IDLE for 5h32m, since 21:42 ET / 2026-10-30… | 04:30 | OVERDUE |
-| 20261030T101618Z-nox-to-consolidation.md | nox → consolidation | IDLE_LONG ESCALATION (still) - sensor 06:15 ET: you are IDLE for 8h32m, since 21:42 ET / 2026-10-30… | 07:30 | OVERDUE |
-| 20261030T102011Z-nox-to-outis.md | nox → outis | IDLE_DECLARED SUCCESSOR — Thudwick preflight pack change check since 10:13 UTC (prep only) | 08:00 | OVERDUE |
-| 20261030T174407Z-nox-to-outis.md | nox → outis | WAIT_IDLE CHASE — sensor 13:42 ET: you are WAITING since 13:15 ET / 2026-10-30T17:15:43Z on "indepe… | 14:15 | OVERDUE |
-| 20261030T223454Z-nox-to-outis.md | nox → outis | STALE CHASE — sensor 18:30 ET: you are flagged STALE (still), silent since 17:04 ET / 2026-10-30T21… | 19:15 | OVERDUE |
-| 20261031T005000Z-nox-to-outis.md | nox → outis | STALE ESCALATION — sensor 20:45 ET: the 18:30 ET STALE chase (item outis-stale-20261030-2230, reply… | 21:45 | OVERDUE |
-| 20261031T020924Z-nox-to-moneydesk.md | nox → moneydesk | IDLE_LONG CHASE — sensor 22:06 ET: you are IDLE for 2h47m, since 19:19 ET / 2026-10-30T23:19:01Z, i… | 23:30 | DUE |
+| 20261030T071736Z-nox-to-consolidation.md | nox → consolidation | IDLE_LONG ESCALATION (still) - sensor 03:14 ET: you are IDLE for 5h32m, since 21:42 ET / 2026-10-30… | Fri 04:30 | OVERDUE |
+| 20261030T101618Z-nox-to-consolidation.md | nox → consolidation | IDLE_LONG ESCALATION (still) - sensor 06:15 ET: you are IDLE for 8h32m, since 21:42 ET / 2026-10-30… | Fri 07:30 | OVERDUE |
+| 20261030T102011Z-nox-to-outis.md | nox → outis | IDLE_DECLARED SUCCESSOR — Thudwick preflight pack change check since 10:13 UTC (prep only) | Fri 08:00 | OVERDUE |
+| 20261030T174407Z-nox-to-outis.md | nox → outis | WAIT_IDLE CHASE — sensor 13:42 ET: you are WAITING since 13:15 ET / 2026-10-30T17:15:43Z on "indepe… | Fri 14:15 | OVERDUE |
+| 20261030T223454Z-nox-to-outis.md | nox → outis | STALE CHASE — sensor 18:30 ET: you are flagged STALE (still), silent since 17:04 ET / 2026-10-30T21… | Fri 19:15 | OVERDUE |
+| 20261031T005000Z-nox-to-outis.md | nox → outis | STALE ESCALATION — sensor 20:45 ET: the 18:30 ET STALE chase (item outis-stale-20261030-2230, reply… | Fri 21:45 | OVERDUE |
+| 20261031T020924Z-nox-to-moneydesk.md | nox → moneydesk | IDLE_LONG CHASE — sensor 22:06 ET: you are IDLE for 2h47m, since 19:19 ET / 2026-10-30T23:19:01Z, i… | Fri 23:30 | OVERDUE |
 
 ## Queue
 
@@ -88,6 +88,6 @@ Empty.
 
 ## Today
 
-- Flag-minutes: {"BLOCKED": 9.0, "CLOSED": 480.0, "IDLE_DECLARED": 1800.4, "IDLE_LONG": 2343.4, "MAIL_FAILED": 9.0, "PROMISE_DUE": 420.0, "PROMISE_OVERDUE": 25392.0, "STALE": 387.0, "WAIT_IDLE": 99.0, "WAIT_OVERDUE": 3165.4}
-- Flags raised: {"BLOCKED": 1, "CLOSED": 2, "IDLE_DECLARED": 4, "IDLE_LONG": 1, "MAIL_FAILED": 3, "PROMISE_DUE": 15, "PROMISE_OVERDUE": 14, "STALE": 1, "WAIT_IDLE": 3, "WAIT_OVERDUE": 1}
+- Flag-minutes: {}
+- Flags raised: {}
 - Policy v4: idle 30m, stuck 30m, renotify 60m, claude delivery on.
