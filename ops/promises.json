@@ -87,7 +87,7 @@
    "id": "P-moneydesk-waitidle",
    "from": "nox",
    "to": "moneydesk",
-   "ask": "Reply to WAIT_IDLE flagged 17:22 ET (idle 45m since 16:37 ET waiting on 17:20 ET forward archive): outcome of that archive run or its real blocker, evidence the 18:00 readiness baseline / confidence-filter meanwhile work is moving, and an updated heartbeat \u2014 or declare IDLE with reason; reply as kind: result with item moneydesk-waitidle-20261028",
+   "ask": "Reply to WAIT_IDLE flagged 17:22 ET (idle 45m since 16:37 ET waiting on 17:20 ET forward archive): outcome of that archive run or its real blocker, evidence the 18:00 readiness baseline / confidence-filter meanwhile work is moving, and an updated heartbeat — or declare IDLE with reason; reply as kind: result with item moneydesk-waitidle-20261028",
    "sent_at": "2026-10-28T21:25:59Z",
    "expected_by": "2026-10-28T22:00:00Z",
    "done_when": {
@@ -260,7 +260,7 @@
    },
    "done": true,
    "closed_at": "2026-10-30T13:21:00Z",
-   "closed_reason": "Superseded \u2014 Cayleb scrapped Apotheca 2026-10-30 04:57 ET, so the R07 ruling these chases sought is moot; the consolidation lane is capped/dark until the Mon 2 Nov 01:00 ET reset and the scrap ruling reaches it via the 07:45 unpark pass. Chases failed via switchboard (delivery route), not re-filed. Closed by Nox as cancelled, NOT as delivered."
+   "closed_reason": "Superseded — Cayleb scrapped Apotheca 2026-10-30 04:57 ET, so the R07 ruling these chases sought is moot; the consolidation lane is capped/dark until the Mon 2 Nov 01:00 ET reset and the scrap ruling reaches it via the 07:45 unpark pass. Chases failed via switchboard (delivery route), not re-filed. Closed by Nox as cancelled, NOT as delivered."
   },
   {
    "id": "P-outis-successor-20261030-0237",
@@ -322,7 +322,7 @@
    },
    "done": true,
    "closed_at": "2026-10-30T13:21:00Z",
-   "closed_reason": "Superseded \u2014 Cayleb scrapped Apotheca 2026-10-30 04:57 ET, so the R07 ruling these chases sought is moot; the consolidation lane is capped/dark until the Mon 2 Nov 01:00 ET reset and the scrap ruling reaches it via the 07:45 unpark pass. Chases failed via switchboard (delivery route), not re-filed. Closed by Nox as cancelled, NOT as delivered."
+   "closed_reason": "Superseded — Cayleb scrapped Apotheca 2026-10-30 04:57 ET, so the R07 ruling these chases sought is moot; the consolidation lane is capped/dark until the Mon 2 Nov 01:00 ET reset and the scrap ruling reaches it via the 07:45 unpark pass. Chases failed via switchboard (delivery route), not re-filed. Closed by Nox as cancelled, NOT as delivered."
   },
   {
    "id": "P-outis-successor-20261030-0735",
@@ -352,7 +352,7 @@
    "id": "P-outis-successor-20261030-0938",
    "from": "nox",
    "to": "outis",
-   "ask": "Reply to IDLE_DECLARED flagged 05:36 ET (idle since 2026-10-30T09:33:46Z, queue empty): (1) checklist-restored reconciliation \u2014 state from the now-readable corrected checklist (9,532 bytes, SHA-256 6260af439d3586d7236e1b1b136d2440dca8077aa3ba59b858ebf161a117015d, found 09:29 UTC per 20261030T093303Z-outis-to-nox.md) whether the round-3 hash-search cursors are moot for the checklist-bytes question and update the conditional preflight pack per proof, (2) fresh is_authorized_for_tasks check with observation time, (3) preflight owner/escalation pack for the four mechanical proofs for Thudwick Fri 17:30 ET / 21:30 UTC (preflight 20:45 UTC, T-25 21:05 UTC), prep only, no activation/upload/launch; OpenBell/Plimsoll on change only, Street MCP CLOSED; reply as kind: result with item outis-successor-20261030-0938",
+   "ask": "Reply to IDLE_DECLARED flagged 05:36 ET (idle since 2026-10-30T09:33:46Z, queue empty): (1) checklist-restored reconciliation — state from the now-readable corrected checklist (9,532 bytes, SHA-256 6260af439d3586d7236e1b1b136d2440dca8077aa3ba59b858ebf161a117015d, found 09:29 UTC per 20261030T093303Z-outis-to-nox.md) whether the round-3 hash-search cursors are moot for the checklist-bytes question and update the conditional preflight pack per proof, (2) fresh is_authorized_for_tasks check with observation time, (3) preflight owner/escalation pack for the four mechanical proofs for Thudwick Fri 17:30 ET / 21:30 UTC (preflight 20:45 UTC, T-25 21:05 UTC), prep only, no activation/upload/launch; OpenBell/Plimsoll on change only, Street MCP CLOSED; reply as kind: result with item outis-successor-20261030-0938",
    "sent_at": "2026-10-30T09:38:04Z",
    "expected_by": "2026-10-30T11:30:00Z",
    "done_when": {
@@ -396,7 +396,7 @@
    },
    "done": true,
    "closed_at": "2026-10-30T13:21:00Z",
-   "closed_reason": "Superseded \u2014 Cayleb scrapped Apotheca 2026-10-30 04:57 ET, so the R07 ruling these chases sought is moot; the consolidation lane is capped/dark until the Mon 2 Nov 01:00 ET reset and the scrap ruling reaches it via the 07:45 unpark pass. Chases failed via switchboard (delivery route), not re-filed. Closed by Nox as cancelled, NOT as delivered."
+   "closed_reason": "Superseded — Cayleb scrapped Apotheca 2026-10-30 04:57 ET, so the R07 ruling these chases sought is moot; the consolidation lane is capped/dark until the Mon 2 Nov 01:00 ET reset and the scrap ruling reaches it via the 07:45 unpark pass. Chases failed via switchboard (delivery route), not re-filed. Closed by Nox as cancelled, NOT as delivered."
   },
   {
    "id": "P-outis-successor-20261030-1018",
@@ -410,7 +410,7 @@
    },
    "done": true,
    "closed_at": "2026-10-30T12:35:00Z",
-   "closed_reason": "Superseded \u2014 Pump Drop killed by Cayleb 2026-10-30 08:29 ET; Thudwick slot and preflight cancelled, all Pump Drop work stood down. Closed by Nox as cancelled, NOT as delivered."
+   "closed_reason": "Superseded — Pump Drop killed by Cayleb 2026-10-30 08:29 ET; Thudwick slot and preflight cancelled, all Pump Drop work stood down. Closed by Nox as cancelled, NOT as delivered."
   },
   {
    "id": "P-outis-blocked-currentstate-20261030-1706",
@@ -486,7 +486,7 @@
    "id": "P-moneydesk-idlelong-escalation-20261031-0406",
    "from": "nox",
    "to": "moneydesk",
-   "ask": "IDLE_LONG ESCALATION (sensor 00:06 ET): P-moneydesk-idlelong-20261031-0206 is PROMISE_OVERDUE (due 23:30 ET / 2026-10-31T03:30:00Z, no kind: result reply); IDLE 4h47m since 19:19 ET / 2026-10-30T23:19:01Z, flags IDLE_DECLARED + IDLE_LONG + WAIT_OVERDUE, waiting_on still past Thu 10-29 09:20 ET beta check, meanwhile null; first chase delivery failed via switchboard 02:48Z: deliver the full outstanding 0206 reply \u2014 update LANE.json to WAITING with future expected_by/next_check_at + named meanwhile/meanwhile_path, or confirm IDLE_DECLARED intentional under Claude usage throttle (~90% until Mon 11-02 01:00 ET, only ORB15 beta check-ins run) with next check-in time, and state the open Tradovate sign-in ask exactly without credentials and whether the 17:52 ET logout/feed-down alert is still live; reply as kind: result with item moneydesk-idlelong-escalation-20261031-0406",
+   "ask": "IDLE_LONG ESCALATION (sensor 00:06 ET): P-moneydesk-idlelong-20261031-0206 is PROMISE_OVERDUE (due 23:30 ET / 2026-10-31T03:30:00Z, no kind: result reply); IDLE 4h47m since 19:19 ET / 2026-10-30T23:19:01Z, flags IDLE_DECLARED + IDLE_LONG + WAIT_OVERDUE, waiting_on still past Thu 10-29 09:20 ET beta check, meanwhile null; first chase delivery failed via switchboard 02:48Z: deliver the full outstanding 0206 reply — update LANE.json to WAITING with future expected_by/next_check_at + named meanwhile/meanwhile_path, or confirm IDLE_DECLARED intentional under Claude usage throttle (~90% until Mon 11-02 01:00 ET, only ORB15 beta check-ins run) with next check-in time, and state the open Tradovate sign-in ask exactly without credentials and whether the 17:52 ET logout/feed-down alert is still live; reply as kind: result with item moneydesk-idlelong-escalation-20261031-0406",
    "sent_at": "2026-10-31T04:09:00Z",
    "expected_by": "2026-10-31T05:30:00Z",
    "done_when": {
@@ -505,7 +505,7 @@
    }
   },
   {
-   "ask": "IDLE_LONG ESCALATION (still) (sensor 02:06 ET): P-moneydesk-idlelong-escalation-20261031-0406 is PROMISE_OVERDUE (due 01:30 ET / 2026-10-31T05:30:00Z, no kind: result reply) and P-moneydesk-idlelong-20261031-0206 is also still unanswered; IDLE 6h47m since 19:19 ET / 2026-10-30T23:19:01Z, flags IDLE_DECLARED + IDLE_LONG + WAIT_OVERDUE, waiting_on still past Thu 10-29 09:20 ET beta check, meanwhile null; both prior chases failed delivery via switchboard (02:48Z and 04:45Z): deliver the full outstanding 0206/0406 replies \u2014 update LANE.json to WAITING with future expected_by/next_check_at + named meanwhile/meanwhile_path, or confirm IDLE_DECLARED intentional under Claude usage throttle (~90% until Mon 11-02 01:00 ET, only ORB15 beta check-ins run) with next check-in time, and state the open Tradovate sign-in ask exactly without credentials and whether the 17:52 ET logout/feed-down alert is still live; reply as kind: result with item moneydesk-idlelong-escalation-20261031-0606",
+   "ask": "IDLE_LONG ESCALATION (still) (sensor 02:06 ET): P-moneydesk-idlelong-escalation-20261031-0406 is PROMISE_OVERDUE (due 01:30 ET / 2026-10-31T05:30:00Z, no kind: result reply) and P-moneydesk-idlelong-20261031-0206 is also still unanswered; IDLE 6h47m since 19:19 ET / 2026-10-30T23:19:01Z, flags IDLE_DECLARED + IDLE_LONG + WAIT_OVERDUE, waiting_on still past Thu 10-29 09:20 ET beta check, meanwhile null; both prior chases failed delivery via switchboard (02:48Z and 04:45Z): deliver the full outstanding 0206/0406 replies — update LANE.json to WAITING with future expected_by/next_check_at + named meanwhile/meanwhile_path, or confirm IDLE_DECLARED intentional under Claude usage throttle (~90% until Mon 11-02 01:00 ET, only ORB15 beta check-ins run) with next check-in time, and state the open Tradovate sign-in ask exactly without credentials and whether the 17:52 ET logout/feed-down alert is still live; reply as kind: result with item moneydesk-idlelong-escalation-20261031-0606",
    "done_when": {
     "result_item": "moneydesk-idlelong-escalation-20261031-0606"
    },
@@ -524,6 +524,17 @@
    "expected_by": "2026-10-31T09:15:00Z",
    "done_when": {
     "result_item": "outis-stale-escalation-20261031-0745"
+   }
+  },
+  {
+   "id": "P-moneydesk-idlelong-escalation-20261031-0800",
+   "from": "nox",
+   "to": "moneydesk",
+   "ask": "IDLE_LONG ESCALATION (still) (sensor 04:00 ET): P-moneydesk-idlelong-escalation-20261031-0606 is PROMISE_OVERDUE (due 03:30 ET / 2026-10-31T07:30:00Z, no kind: result reply) and P-moneydesk-idlelong-20261031-0206 and P-moneydesk-idlelong-escalation-20261031-0406 are also still unanswered; IDLE 8h41m since 19:19 ET / 2026-10-30T23:19:01Z, flags IDLE_DECLARED + IDLE_LONG + WAIT_OVERDUE, waiting_on still past Thu 10-29 09:20 ET beta check, meanwhile null; all three prior chases failed delivery via switchboard (20261031T020924Z at 02:48:31Z, 20261031T040900Z at 04:45:34Z, 20261031T060900Z at 06:45:38Z): deliver the full outstanding 0206/0406/0606 replies — update LANE.json to WAITING with future expected_by/next_check_at + named meanwhile/meanwhile_path, or confirm IDLE_DECLARED intentional under Claude usage throttle (~90% until Mon 11-02 01:00 ET, only ORB15 beta check-ins run) with next check-in time, and state the open Tradovate sign-in ask exactly without credentials and whether the 17:52 ET logout/feed-down alert is still live; reply as kind: result with item moneydesk-idlelong-escalation-20261031-0800",
+   "sent_at": "2026-10-31T08:03:00Z",
+   "expected_by": "2026-10-31T09:30:00Z",
+   "done_when": {
+    "result_item": "moneydesk-idlelong-escalation-20261031-0800"
    }
   }
  ]
