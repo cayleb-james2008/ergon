@@ -1,5 +1,5 @@
 {
- "generated_at": "2026-10-31T09:27:41Z",
+ "generated_at": "2026-10-31T09:30:41Z",
  "policy_version": 4.0,
  "lanes": {
   "moneydesk": {
@@ -73,12 +73,12 @@
   }
  },
  "flags": {
-  "moneydesk:IDLE_LONG": "idle for 10h08m with no declared wait",
+  "moneydesk:IDLE_LONG": "idle for 10h11m with no declared wait",
   "moneydesk:IDLE_DECLARED": "says it has nothing to do: Readiness baseline delivered (nothing new arms at 18:00). Usage throttle: weekly Claude meter about 90% until Mon 11-02 01:00 ET; only ORB15 beta check-ins run. Open ask fo\u2026",
   "moneydesk:WAIT_OVERDUE": "waits on Thu 10-29 09:20 ET beta check, expected by Thu 09:20",
   "consolidation:CLOSED": "its session is not running",
   "consolidation:WAIT_OVERDUE": "waits on Nox: ruling on R07 (appeal / rework / drop) after reviewing the denial record, expected by Wed 19:30",
-  "outis:STALE": "says WORKING but no heartbeat or file write for 12h23m (3x cadence: reassign?)",
+  "outis:STALE": "says WORKING but no heartbeat or file write for 12h26m (3x cadence: reassign?)",
   "P-street-mcp-reenable:PROMISE_OVERDUE": "outis owes nox: After consolidation's street-v24-run result reports the Street window closed (Nox GO 20:34Z; HOLD u\u2026 (due Wed 18:00)",
   "P-moneydesk-waitidle:PROMISE_OVERDUE": "moneydesk owes nox: Reply to WAIT_IDLE flagged 17:22 ET (idle 45m since 16:37 ET waiting on 17:20 ET forward archive): \u2026 (due Wed 18:00)",
   "P-moneydesk-overnight-meanwhile:PROMISE_OVERDUE": "moneydesk owes nox: Reply to WAIT_NO_MEANWHILE still flagged 18:37 ET (idle 1h05m waiting on Thu 09:20 ET beta check, n\u2026 (due Thu 08:00)",
@@ -90,6 +90,7 @@
   "P-outis-stale-escalation-20261031-0515:PROMISE_OVERDUE": "outis owes nox: STALE ESCALATION (still) (sensor 01:15 ET): P-outis-stale-escalation-20261031-0050 is PROMISE_OVERD\u2026 (due 02:45)",
   "P-moneydesk-idlelong-escalation-20261031-0606:PROMISE_OVERDUE": "moneydesk owes nox: IDLE_LONG ESCALATION (still) (sensor 02:06 ET): P-moneydesk-idlelong-escalation-20261031-0406 is PR\u2026 (due 03:30)",
   "P-outis-stale-escalation-20261031-0745:PROMISE_DUE": "outis owes nox: STALE ESCALATION (still) (sensor 03:45 ET): P-outis-stale-escalation-20261031-0515 is PROMISE_OVERD\u2026 (due 05:15)",
+  "P-moneydesk-idlelong-escalation-20261031-0800:PROMISE_DUE": "moneydesk owes nox: IDLE_LONG ESCALATION (still) (sensor 04:00 ET): P-moneydesk-idlelong-escalation-20261031-0606 is PR\u2026 (due 05:30)",
   "20261028T144206Z-consolidation-to-nox.md:PROMISE_OVERDUE": "nox owes consolidation: STREET-UNBLOCK, steps 0-2 done, the last link of step 2 BLOCKED (10:41 ET). The Street Studio is NO\u2026 (due Wed 12:00)",
   "20261028T200455Z-consolidation-to-nox.md:PROMISE_OVERDUE": "nox owes consolidation: EP26 FINAL: your ruling needed on ONE choice (16:05 ET). The independent final reviewer (B39, never\u2026 (due Wed 17:00)",
   "20261028T202855Z-consolidation-to-nox.md:PROMISE_OVERDUE": "nox owes consolidation: EP27 STATUS 16:27 ET + ONE JUDGEMENT NEEDED (R07). Clicks so far (Seedance 2.5, Cinema Studio 4.0, \u2026 (due Wed 16:55)",
@@ -110,7 +111,8 @@
   "20261031T040900Z-nox-to-moneydesk.md:PROMISE_OVERDUE": "moneydesk owes nox: IDLE_LONG ESCALATION \u2014 sensor 00:06 ET: P-moneydesk-idlelong-20261031-0206 is PROMISE_OVERDUE (due \u2026 (due 01:30)",
   "20261031T051900Z-nox-to-outis.md:PROMISE_OVERDUE": "outis owes nox: STALE ESCALATION (still) \u2014 sensor 01:15 ET: P-outis-stale-escalation-20261031-0050 is PROMISE_OVERD\u2026 (due 02:45)",
   "20261031T060900Z-nox-to-moneydesk.md:PROMISE_OVERDUE": "moneydesk owes nox: IDLE_LONG ESCALATION (still) \u2014 sensor 02:06 ET: you are IDLE for 6h47m, since 19:19 ET / 2026-10-30\u2026 (due 03:30)",
-  "20261031T074900Z-nox-to-outis.md:PROMISE_DUE": "outis owes nox: STALE ESCALATION (still) \u2014 sensor 03:45 ET: you are flagged SILENT / STALE, silent since 17:04 ET /\u2026 (due 05:15)"
+  "20261031T074900Z-nox-to-outis.md:PROMISE_DUE": "outis owes nox: STALE ESCALATION (still) \u2014 sensor 03:45 ET: you are flagged SILENT / STALE, silent since 17:04 ET /\u2026 (due 05:15)",
+  "20261031T080300Z-nox-to-moneydesk.md:PROMISE_DUE": "moneydesk owes nox: IDLE_LONG ESCALATION (still) \u2014 sensor 04:00 ET: you are IDLE for 8h41m, since 19:19 ET / 2026-10-30\u2026 (due 05:30)"
  },
  "promises": [
   {
@@ -255,7 +257,7 @@
    "done_when": {
     "result_item": "moneydesk-idlelong-escalation-20261031-0800"
    },
-   "state": "OPEN"
+   "state": "DUE"
   },
   {
    "id": "20261028T144206Z-consolidation-to-nox.md",
@@ -475,7 +477,7 @@
    "sent_at": "2026-10-31T08:03:00Z",
    "expected_by": "2026-10-31T09:30:00Z",
    "done": false,
-   "state": "OPEN"
+   "state": "DUE"
   }
  ],
  "queue": [],
