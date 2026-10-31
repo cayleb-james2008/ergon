@@ -1,0 +1,40 @@
+AFTER-STATE 2026-10-30T21:44:46-04:00
+gone /home/cayleb/.gemini
+gone /home/cayleb/.local/opt/Antigravity
+gone /home/cayleb/.openclaw
+gone /home/cayleb/.winvm-openclaw
+gone /home/cayleb/Applications/freebuff
+gone /home/cayleb/.config/Freebuff
+gone /home/cayleb/.grok
+gone /home/cayleb/.local/opt/openmausbot-0.1.102
+gone /home/cayleb/.config/com.differentai.openwork
+gone /home/cayleb/.omp
+--- HOLD untouched:
+present /home/cayleb/.local/share/opencode
+present /home/cayleb/.local/opt/grok-bot
+present /home/cayleb/.local/share/paperclip-pantheon
+present /home/cayleb/.local/share/outis-pilot
+present /home/cayleb/.prime
+present /home/cayleb/.local/share/uv/tools/browser-use
+present /home/cayleb/.config/herdr
+present /home/cayleb/.winvm-scratch
+present /home/cayleb/.config/voice-agent
+active active active
+--- KEEP:
+/home/cayleb/.claude
+/home/cayleb/.codex
+/home/cayleb/.local/opt/claude-desktop
+/usr/bin/chatgpt
+--- DSH fleet install state:
+ls: cannot access '/var/lib/fleet': No such file or directory
+dsh not on PATH (Stage 0 owner setup not yet run)
+--- archive:
+3.0G	/home/cayleb/Work/_archive/harness-removal-20261030
+freebuff
+gemini-antigravity
+grok-cli
+omp
+openclaw
+openmausbot
+openwork
+700 cayleb /home/cayleb/Work/_archive/harness-removal-20261030

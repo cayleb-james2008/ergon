@@ -1,0 +1,63 @@
+21:44:11 == backups of config files edited below
+21:44:11 BACKUP /home/cayleb/.bashrc.bak-20261030
+21:44:11 BACKUP /home/cayleb/.config/mise/config.toml.bak-20261030
+21:44:11 BACKUP /home/cayleb/.config/omarchy/plugins/cayleb.agents/manifest.json.bak-20261030
+21:44:11 BACKUP /home/cayleb/.config/omarchy/extensions/omarchy-menu.jsonc.bak-20261030
+21:44:11 == D1 Gemini CLI + Antigravity (agy)
+   mise by @jdx – removing 4 tools
+   mise ✓ gemini@0.61.0  17ms
+   mise ✓ gemini@0.63.0  14ms
+   mise ✓ gemini@0.64.0  14ms
+   mise ✓ gemini@0.65.0  14ms
+   mise ████████████████ 4/4 · removed 4 tools in 62ms
+21:44:12 mise config: gemini line removed
+   
+   removed 7 packages in 192ms
+21:44:12 ARCHIVED /home/cayleb/.local/bin/agy -> /home/cayleb/Work/_archive/harness-removal-20261030/gemini-antigravity/.local/bin/agy
+21:44:12 ARCHIVED /home/cayleb/.local/bin/agy.1792436412526340068.old -> /home/cayleb/Work/_archive/harness-removal-20261030/gemini-antigravity/.local/bin/agy.1792436412526340068.old
+21:44:12 ARCHIVED /home/cayleb/.local/bin/antigravity -> /home/cayleb/Work/_archive/harness-removal-20261030/gemini-antigravity/.local/bin/antigravity
+21:44:12 ARCHIVED /home/cayleb/.local/opt/Antigravity -> /home/cayleb/Work/_archive/harness-removal-20261030/gemini-antigravity/.local/opt/Antigravity
+21:44:12 ARCHIVED /home/cayleb/.config/Antigravity -> /home/cayleb/Work/_archive/harness-removal-20261030/gemini-antigravity/.config/Antigravity
+21:44:12 ARCHIVED /home/cayleb/.gemini -> /home/cayleb/Work/_archive/harness-removal-20261030/gemini-antigravity/.gemini
+21:44:12 ARCHIVED /home/cayleb/.local/share/applications/antigravity.desktop -> /home/cayleb/Work/_archive/harness-removal-20261030/gemini-antigravity/.local/share/applications/antigravity.desktop
+21:44:12 ARCHIVED /home/cayleb/.local/share/icons/hicolor/512x512/apps/antigravity.png -> /home/cayleb/Work/_archive/harness-removal-20261030/gemini-antigravity/.local/share/icons/hicolor/512x512/apps/antigravity.png
+21:44:12 ARCHIVED /home/cayleb/.local/bin/omarchy-agent-usage-antigravity -> /home/cayleb/Work/_archive/harness-removal-20261030/gemini-antigravity/.local/bin/omarchy-agent-usage-antigravity
+21:44:12 ARCHIVED /home/cayleb/.cache/mise/gemini -> /home/cayleb/Work/_archive/harness-removal-20261030/gemini-antigravity/.cache/mise/gemini
+21:44:12 omarchy agents manifest: antigravity provider removed
+21:44:12 omarchy menu: antigravity alias/description removed
+21:44:12 == D2 OpenClaw
+   
+   removed 491 packages in 1s
+21:44:13 ARCHIVED /home/cayleb/.openclaw -> /home/cayleb/Work/_archive/harness-removal-20261030/openclaw/.openclaw
+21:44:13 ARCHIVED /home/cayleb/.cache/openclaw -> /home/cayleb/Work/_archive/harness-removal-20261030/openclaw/.cache/openclaw
+21:44:13 ARCHIVED /home/cayleb/.winvm-openclaw -> /home/cayleb/Work/_archive/harness-removal-20261030/openclaw/.winvm-openclaw
+21:44:13 == D3 Freebuff
+21:44:13 ARCHIVED /home/cayleb/Applications/freebuff -> /home/cayleb/Work/_archive/harness-removal-20261030/freebuff/Applications/freebuff
+21:44:13 ARCHIVED /home/cayleb/.config/Freebuff -> /home/cayleb/Work/_archive/harness-removal-20261030/freebuff/.config/Freebuff
+21:44:13 ARCHIVED /home/cayleb/.config/freebuff-desktop -> /home/cayleb/Work/_archive/harness-removal-20261030/freebuff/.config/freebuff-desktop
+21:44:13 ARCHIVED /home/cayleb/.freebuff -> /home/cayleb/Work/_archive/harness-removal-20261030/freebuff/.freebuff
+21:44:13 ARCHIVED /home/cayleb/.config/manicode -> /home/cayleb/Work/_archive/harness-removal-20261030/freebuff/.config/manicode
+21:44:13 ARCHIVED /home/cayleb/.cache/@codebufffreebuff-desktop-updater -> /home/cayleb/Work/_archive/harness-removal-20261030/freebuff/.cache/@codebufffreebuff-desktop-updater
+21:44:13 ARCHIVED /home/cayleb/.local/bin/freebuff-desktop -> /home/cayleb/Work/_archive/harness-removal-20261030/freebuff/.local/bin/freebuff-desktop
+21:44:13 ARCHIVED /home/cayleb/.local/share/applications/freebuff.desktop -> /home/cayleb/Work/_archive/harness-removal-20261030/freebuff/.local/share/applications/freebuff.desktop
+21:44:13 ARCHIVED /home/cayleb/.knowledge.md -> /home/cayleb/Work/_archive/harness-removal-20261030/freebuff/.knowledge.md
+21:44:13 ARCHIVED /home/cayleb/.agents/mcp.json.before-freebuff-20261017 -> /home/cayleb/Work/_archive/harness-removal-20261030/freebuff/.agents/mcp.json.before-freebuff-20261017
+21:44:13 == D4 Grok CLI (not the Grok Bot app)
+21:44:13 ARCHIVED /home/cayleb/.grok -> /home/cayleb/Work/_archive/harness-removal-20261030/grok-cli/.grok
+21:44:13 ARCHIVED /home/cayleb/.local/bin/grok -> /home/cayleb/Work/_archive/harness-removal-20261030/grok-cli/.local/bin/grok
+21:44:13 ARCHIVED /home/cayleb/.local/bin/agent -> /home/cayleb/Work/_archive/harness-removal-20261030/grok-cli/.local/bin/agent
+21:44:13 .bashrc: grok installer block removed
+21:44:13 == D5 OpenMausBot
+21:44:13 ARCHIVED /home/cayleb/.local/opt/openmausbot-0.1.102 -> /home/cayleb/Work/_archive/harness-removal-20261030/openmausbot/.local/opt/openmausbot-0.1.102
+21:44:13 == D6 OpenWork remnant
+21:44:13 ARCHIVED /home/cayleb/.config/com.differentai.openwork -> /home/cayleb/Work/_archive/harness-removal-20261030/openwork/.config/com.differentai.openwork
+21:44:13 ARCHIVED /home/cayleb/.config/@openwork -> /home/cayleb/Work/_archive/harness-removal-20261030/openwork/.config/@openwork
+21:44:13 == D7 oh-my-pi + mise agent remnants (omp is never executed)
+21:44:13 ARCHIVED /home/cayleb/.local/bin/omp -> /home/cayleb/Work/_archive/harness-removal-20261030/omp/.local/bin/omp
+21:44:13 ARCHIVED /home/cayleb/.local/bin/omp.bak-20260918-192028 -> /home/cayleb/Work/_archive/harness-removal-20261030/omp/.local/bin/omp.bak-20260918-192028
+21:44:13 ARCHIVED /home/cayleb/.omp -> /home/cayleb/Work/_archive/harness-removal-20261030/omp/.omp
+21:44:13 ARCHIVED /home/cayleb/.cache/mise/pi -> /home/cayleb/Work/_archive/harness-removal-20261030/omp/.cache/mise/pi
+21:44:13 ARCHIVED /home/cayleb/.cache/mise/github-can1357-oh-my-pi -> /home/cayleb/Work/_archive/harness-removal-20261030/omp/.cache/mise/github-can1357-oh-my-pi
+21:44:13 ARCHIVED /home/cayleb/.cache/mise/cursor-agent -> /home/cayleb/Work/_archive/harness-removal-20261030/omp/.cache/mise/cursor-agent
+21:44:13 == finish
+21:44:13 archive size: 3.0G
