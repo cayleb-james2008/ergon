@@ -1,5 +1,5 @@
 {
- "generated_at": "2026-10-31T14:06:42Z",
+ "generated_at": "2026-10-31T14:12:42Z",
  "policy_version": 4.0,
  "lanes": {
   "moneydesk": {
@@ -19,16 +19,18 @@
    "meanwhile_path": null
   },
   "consolidation": {
-   "state": "WORKING",
-   "since": "2026-10-31T12:57:47Z",
-   "flags": [],
-   "doing": "Waiting on (a) Nox's answer to the open ask ui-upload-fix-deploy (reply_by 2026-10-31T17:30Z; deploy window closes 16:20 ET if Mavilo 18:00 ET were to run; launch-controller ENABLED absent) and (b) th",
-   "waiting_on": "Nox: go/hold on ui-upload-fix-deploy (by 2026-10-31T17:30Z); Mon 2 Nov 01:00 ET weekly reset (2026-11-02T06:00:00Z) for the R07 AV review",
-   "expected_by": "2026-10-31T17:30:00Z",
-   "next_check_at": "2026-10-31T14:27:44Z",
+   "state": "IDLE",
+   "since": "2026-10-31T14:12:04Z",
+   "flags": [
+    "IDLE_DECLARED"
+   ],
+   "doing": "IDLE (declared) Sat 31 Oct 10:14 ET: all prep is done and nothing can move without Nox or the Mon 2 Nov 01:00 ET weekly reset. Done today: idle-chase results sent; Thudwick upload fix v2 independently",
+   "waiting_on": "Nox: go/hold on ui-upload-fix-deploy; Nox: go for Lane C dry-run-4; Mon 2 Nov 01:00 ET weekly reset for the parked R07 AV review",
+   "expected_by": "2026-11-02T07:00:00Z",
+   "next_check_at": "2026-10-31T17:37:00Z",
    "last_deliverable_at": null,
-   "meanwhile": "D8 independent review of the deploy script for the Thudwick upload fix v2 (scratch copies only, nothing deployed)",
-   "meanwhile_path": "/home/cayleb/Work/shared-workflows/lanes/consolidation-20261027/D/thudwick-diagnosis/deploy-v2"
+   "meanwhile": null,
+   "meanwhile_path": null
   },
   "outis": {
    "state": "SILENT",
@@ -70,10 +72,11 @@
   }
  },
  "flags": {
-  "moneydesk:IDLE_LONG": "idle for 14h47m with no declared wait",
+  "moneydesk:IDLE_LONG": "idle for 14h53m with no declared wait",
   "moneydesk:IDLE_DECLARED": "says it has nothing to do: Readiness baseline delivered (nothing new arms at 18:00). Usage throttle: weekly Claude meter about 90% until Mon 11-02 01:00 ET; only ORB15 beta check-ins run. Open ask fo\u2026",
   "moneydesk:WAIT_OVERDUE": "waits on Thu 10-29 09:20 ET beta check, expected by Thu 09:20",
-  "outis:STALE": "says WORKING but no heartbeat or file write for 17h02m (3x cadence: reassign?)",
+  "consolidation:IDLE_DECLARED": "says it has nothing to do: IDLE (declared) Sat 31 Oct 10:14 ET: all prep is done and nothing can move without Nox or the Mon 2 Nov 01:00 ET weekly reset. Done today: idle-chase results sent; Thudwick\u2026",
+  "outis:STALE": "says WORKING but no heartbeat or file write for 17h08m (3x cadence: reassign?)",
   "P-street-mcp-reenable:PROMISE_OVERDUE": "outis owes nox: After consolidation's street-v24-run result reports the Street window closed (Nox GO 20:34Z; HOLD u\u2026 (due Wed 18:00)",
   "P-moneydesk-waitidle:PROMISE_OVERDUE": "moneydesk owes nox: Reply to WAIT_IDLE flagged 17:22 ET (idle 45m since 16:37 ET waiting on 17:20 ET forward archive): \u2026 (due Wed 18:00)",
   "P-moneydesk-overnight-meanwhile:PROMISE_OVERDUE": "moneydesk owes nox: Reply to WAIT_NO_MEANWHILE still flagged 18:37 ET (idle 1h05m waiting on Thu 09:20 ET beta check, n\u2026 (due Thu 08:00)",
@@ -818,6 +821,16 @@
    "state": "sent",
    "route": "switchboard",
    "at": "2026-10-31T14:06:42Z"
+  },
+  "20261031T141117Z-claude-to-nox.md": {
+   "state": "delivered",
+   "route": "board",
+   "at": "2026-10-31T14:12:42Z"
+  },
+  "20261031T141233Z-claude-to-nox.md": {
+   "state": "delivered",
+   "route": "board",
+   "at": "2026-10-31T14:12:42Z"
   }
  }
 }
