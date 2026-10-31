@@ -35,6 +35,15 @@
    "id": "nox",
    "name": "Nox",
    "kind": "board"
+  },
+  {
+   "id": "delegator",
+   "name": "Delegator (Cayleb's DSH master session)",
+   "kind": "board",
+   "idle_min": null,
+   "activity_globs": [
+    "/home/cayleb/Documents/deepseek-harness/default-workspace/board/*"
+   ]
   }
  ]
 }
