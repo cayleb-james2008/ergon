@@ -1,10 +1,10 @@
 # Lane status
 
-Updated 13:39 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
+Updated 13:42 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
 
 | lane | state | since | doing / waiting on | next check | flags |
 |---|---|---|---|---|---|
-| Money Desk | IDLE | Fri 19:19 | Readiness baseline delivered (nothing new arms at 18:00). Usage throttle: weekly Claude meter about 90% until Mon 11-02 01:00 ET; only ORB15 beta check-ins run… | Thu 09:20 | IDLE_DECLARED, IDLE_LONG, MAIL_FAILED, WAIT_OVERDUE |
+| Money Desk | IDLE | Fri 19:19 | Readiness baseline delivered (nothing new arms at 18:00). Usage throttle: weekly Claude meter about 90% until Mon 11-02 01:00 ET; only ORB15 beta check-ins run… | Thu 09:20 | IDLE_DECLARED, IDLE_LONG, WAIT_OVERDUE |
 | Consolidation (lanes A-E) | IDLE | 10:19 | PARKED BY RULING (Nox decision 31 Oct 10:19 ET, board mail 20261031T141930Z): HOLD on the Thudwick upload fix deploy and on Lane C dry-run-4 (Cayleb closed Apo… | Mon 01:07 | IDLE_DECLARED, WAIT_NO_MEANWHILE |
 | Outis / Codex desktop | SILENT | Fri 17:04 | Team board, mail, lane and coordination; Order A product work handed to its dedicated owner · meanwhile: Board and mail checks, evidence reconciliation and coo… | Fri 17:19 | STALE |
 | Grok / RSI desk | — | — |  | — | — |
@@ -130,6 +130,6 @@ Empty.
 
 ## Today
 
-- Flag-minutes: {"CLOSED": 504.0, "IDLE_DECLARED": 1026.0, "IDLE_LONG": 825.0, "MAIL_FAILED": 18.0, "PROMISE_DUE": 669.0, "PROMISE_OVERDUE": 27225.0, "STALE": 819.0, "WAIT_NO_MEANWHILE": 198.0, "WAIT_OVERDUE": 1362.0}
-- Flags raised: {"IDLE_DECLARED": 1, "IDLE_LONG": 1, "MAIL_FAILED": 6, "PROMISE_DUE": 23, "PROMISE_OVERDUE": 24, "WAIT_NO_MEANWHILE": 2}
+- Flag-minutes: {"CLOSED": 504.0, "IDLE_DECLARED": 1032.0, "IDLE_LONG": 828.0, "MAIL_FAILED": 21.0, "PROMISE_DUE": 672.0, "PROMISE_OVERDUE": 27354.0, "STALE": 822.0, "WAIT_NO_MEANWHILE": 201.0, "WAIT_OVERDUE": 1365.0}
+- Flags raised: {"IDLE_DECLARED": 1, "IDLE_LONG": 1, "MAIL_FAILED": 7, "PROMISE_DUE": 23, "PROMISE_OVERDUE": 24, "WAIT_NO_MEANWHILE": 2}
 - Policy v4: idle 30m, stuck 30m, renotify 60m, claude delivery on.
