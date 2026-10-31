@@ -1,5 +1,5 @@
 {
- "generated_at": "2026-10-31T12:45:42Z",
+ "generated_at": "2026-10-31T12:48:42Z",
  "policy_version": 4.0,
  "lanes": {
   "moneydesk": {
@@ -8,6 +8,7 @@
    "flags": [
     "IDLE_DECLARED",
     "IDLE_LONG",
+    "MAIL_FAILED",
     "WAIT_OVERDUE"
    ],
    "doing": "Readiness baseline delivered (nothing new arms at 18:00). Usage throttle: weekly Claude meter about 90% until Mon 11-02 01:00 ET; only ORB15 beta check-ins run. Open ask for Nox: a Tradovate sign-in f",
@@ -72,11 +73,11 @@
   }
  },
  "flags": {
-  "moneydesk:IDLE_LONG": "idle for 13h26m with no declared wait",
+  "moneydesk:IDLE_LONG": "idle for 13h29m with no declared wait",
   "moneydesk:IDLE_DECLARED": "says it has nothing to do: Readiness baseline delivered (nothing new arms at 18:00). Usage throttle: weekly Claude meter about 90% until Mon 11-02 01:00 ET; only ORB15 beta check-ins run. Open ask fo\u2026",
   "moneydesk:WAIT_OVERDUE": "waits on Thu 10-29 09:20 ET beta check, expected by Thu 09:20",
   "consolidation:WAIT_OVERDUE": "waits on Nox: ruling on R07 (appeal / rework / drop) after reviewing the denial record, expected by Wed 19:30",
-  "outis:STALE": "says WORKING but no heartbeat or file write for 15h41m (3x cadence: reassign?)",
+  "outis:STALE": "says WORKING but no heartbeat or file write for 15h44m (3x cadence: reassign?)",
   "P-street-mcp-reenable:PROMISE_OVERDUE": "outis owes nox: After consolidation's street-v24-run result reports the Street window closed (Nox GO 20:34Z; HOLD u\u2026 (due Wed 18:00)",
   "P-moneydesk-waitidle:PROMISE_OVERDUE": "moneydesk owes nox: Reply to WAIT_IDLE flagged 17:22 ET (idle 45m since 16:37 ET waiting on 17:20 ET forward archive): \u2026 (due Wed 18:00)",
   "P-moneydesk-overnight-meanwhile:PROMISE_OVERDUE": "moneydesk owes nox: Reply to WAIT_NO_MEANWHILE still flagged 18:37 ET (idle 1h05m waiting on Thu 09:20 ET beta check, n\u2026 (due Thu 08:00)",
@@ -114,7 +115,8 @@
   "20261031T074900Z-nox-to-outis.md:PROMISE_OVERDUE": "outis owes nox: STALE ESCALATION (still) \u2014 sensor 03:45 ET: you are flagged SILENT / STALE, silent since 17:04 ET /\u2026 (due 05:15)",
   "20261031T080300Z-nox-to-moneydesk.md:PROMISE_OVERDUE": "moneydesk owes nox: IDLE_LONG ESCALATION (still) \u2014 sensor 04:00 ET: you are IDLE for 8h41m, since 19:19 ET / 2026-10-30\u2026 (due 05:30)",
   "20261031T094803Z-nox-to-outis.md:PROMISE_OVERDUE": "outis owes nox: STALE ESCALATION (still) \u2014 sensor 05:45 ET: you are flagged SILENT / STALE, silent since 17:04 ET /\u2026 (due 07:15)",
-  "20261031T100229Z-nox-to-moneydesk.md:PROMISE_OVERDUE": "moneydesk owes nox: IDLE_LONG ESCALATION (still) \u2014 sensor 06:00 ET: you are IDLE for 10h41m, since 19:19 ET / 2026-10-3\u2026 (due 07:30)"
+  "20261031T100229Z-nox-to-moneydesk.md:PROMISE_OVERDUE": "moneydesk owes nox: IDLE_LONG ESCALATION (still) \u2014 sensor 06:00 ET: you are IDLE for 10h41m, since 19:19 ET / 2026-10-3\u2026 (due 07:30)",
+  "moneydesk/20261031T120912Z-nox-to-moneydesk.md:MAIL_FAILED": "20261031T120912Z-nox-to-moneydesk.md was not seen in the session after 3 tries"
  },
  "promises": [
   {
@@ -738,9 +740,9 @@
    "at": "2026-10-31T12:03:42Z"
   },
   "20261031T120912Z-nox-to-moneydesk.md": {
-   "state": "sent",
+   "state": "failed",
    "route": "switchboard",
-   "at": "2026-10-31T12:36:42Z"
+   "at": "2026-10-31T12:48:42Z"
   }
  }
 }
