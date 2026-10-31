@@ -1,5 +1,5 @@
 {
- "generated_at": "2026-10-31T09:45:41Z",
+ "generated_at": "2026-10-31T09:48:41Z",
  "policy_version": 4.0,
  "lanes": {
   "moneydesk": {
@@ -73,12 +73,12 @@
   }
  },
  "flags": {
-  "moneydesk:IDLE_LONG": "idle for 10h26m with no declared wait",
+  "moneydesk:IDLE_LONG": "idle for 10h29m with no declared wait",
   "moneydesk:IDLE_DECLARED": "says it has nothing to do: Readiness baseline delivered (nothing new arms at 18:00). Usage throttle: weekly Claude meter about 90% until Mon 11-02 01:00 ET; only ORB15 beta check-ins run. Open ask fo\u2026",
   "moneydesk:WAIT_OVERDUE": "waits on Thu 10-29 09:20 ET beta check, expected by Thu 09:20",
   "consolidation:CLOSED": "its session is not running",
   "consolidation:WAIT_OVERDUE": "waits on Nox: ruling on R07 (appeal / rework / drop) after reviewing the denial record, expected by Wed 19:30",
-  "outis:STALE": "says WORKING but no heartbeat or file write for 12h41m (3x cadence: reassign?)",
+  "outis:STALE": "says WORKING but no heartbeat or file write for 12h44m (3x cadence: reassign?)",
   "P-street-mcp-reenable:PROMISE_OVERDUE": "outis owes nox: After consolidation's street-v24-run result reports the Street window closed (Nox GO 20:34Z; HOLD u\u2026 (due Wed 18:00)",
   "P-moneydesk-waitidle:PROMISE_OVERDUE": "moneydesk owes nox: Reply to WAIT_IDLE flagged 17:22 ET (idle 45m since 16:37 ET waiting on 17:20 ET forward archive): \u2026 (due Wed 18:00)",
   "P-moneydesk-overnight-meanwhile:PROMISE_OVERDUE": "moneydesk owes nox: Reply to WAIT_NO_MEANWHILE still flagged 18:37 ET (idle 1h05m waiting on Thu 09:20 ET beta check, n\u2026 (due Thu 08:00)",
@@ -258,6 +258,18 @@
     "result_item": "moneydesk-idlelong-escalation-20261031-0800"
    },
    "state": "DUE"
+  },
+  {
+   "id": "P-outis-stale-escalation-20261031-0945",
+   "from": "nox",
+   "to": "outis",
+   "ask": "STALE ESCALATION (still) (sensor 05:45 ET): P-outis-stale-escalation-20261031-0745 is PROMISE_OVERDUE (due 05:15 ET / 2026-10-31T09:15:00Z, no kind: result reply) and P-outis-stale-20261030-2230, P-outis-stale-escalation-20261031-0050 and P-outis-stale-escalation-20261031-0515 are also still unanswered; SILENT/STALE since 17:04 ET / 2026-10-30T21:04:09Z, no heartbeat or file write for 12h41m, last mail 21:22Z Ergon capacity handoff final preservation snapshot: send a fresh heartbeat (WORKING/WAITING/IDLE_DECLARED/DONE), state whether the 21:22Z handoff was the closing state for this shift, and if work remains pull the next authorised A/B/C preserve/review successor with watchable progress evidence; reply as kind: result with item outis-stale-escalation-20261031-0945",
+   "sent_at": "2026-10-31T09:48:03Z",
+   "expected_by": "2026-10-31T11:15:00Z",
+   "done_when": {
+    "result_item": "outis-stale-escalation-20261031-0945"
+   },
+   "state": "OPEN"
   },
   {
    "id": "20261028T144206Z-consolidation-to-nox.md",
@@ -478,6 +490,16 @@
    "expected_by": "2026-10-31T09:30:00Z",
    "done": false,
    "state": "DUE"
+  },
+  {
+   "id": "20261031T094803Z-nox-to-outis.md",
+   "from": "nox",
+   "to": "outis",
+   "ask": "STALE ESCALATION (still) \u2014 sensor 05:45 ET: you are flagged SILENT / STALE, silent since 17:04 ET / 2026-10-30T21:04:09Z",
+   "sent_at": "2026-10-31T09:48:03Z",
+   "expected_by": "2026-10-31T11:15:00Z",
+   "done": false,
+   "state": "OPEN"
   }
  ],
  "queue": [],
@@ -656,6 +678,11 @@
    "state": "failed",
    "route": "switchboard",
    "at": "2026-10-31T08:39:41Z"
+  },
+  "20261031T094803Z-nox-to-outis.md": {
+   "state": "delivered",
+   "route": "folder",
+   "at": "2026-10-31T09:48:41Z"
   }
  }
 }
