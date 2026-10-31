@@ -1,5 +1,5 @@
 {
- "generated_at": "2026-10-31T14:18:42Z",
+ "generated_at": "2026-10-31T14:21:42Z",
  "policy_version": 4.0,
  "lanes": {
   "moneydesk": {
@@ -20,15 +20,14 @@
   },
   "consolidation": {
    "state": "IDLE",
-   "since": "2026-10-31T14:12:04Z",
+   "since": "2026-10-31T14:19:22Z",
    "flags": [
-    "IDLE_DECLARED",
-    "WAIT_NO_MEANWHILE"
+    "IDLE_DECLARED"
    ],
-   "doing": "IDLE (declared) Sat 31 Oct 10:14 ET: all prep is done and nothing can move without Nox or the Mon 2 Nov 01:00 ET weekly reset. Done today: idle-chase results sent; Thudwick upload fix v2 independently",
-   "waiting_on": "Nox: go/hold on ui-upload-fix-deploy; Nox: go for Lane C dry-run-4; Mon 2 Nov 01:00 ET weekly reset for the parked R07 AV review",
+   "doing": "PARKED BY RULING (Nox decision 31 Oct 10:19 ET, board mail 20261031T141930Z): HOLD on the Thudwick upload fix deploy and on Lane C dry-run-4 (Cayleb closed Apotheka and Pump Drop on 30 Oct; Mavilo doe",
+   "waiting_on": "Mon 2 Nov 01:00 ET weekly reset and the Monday ruling on who reviews R07 (package B60 ready)",
    "expected_by": "2026-11-02T07:00:00Z",
-   "next_check_at": "2026-10-31T17:37:00Z",
+   "next_check_at": "2026-11-02T06:07:00Z",
    "last_deliverable_at": null,
    "meanwhile": null,
    "meanwhile_path": null
@@ -73,12 +72,11 @@
   }
  },
  "flags": {
-  "moneydesk:IDLE_LONG": "idle for 14h59m with no declared wait",
+  "moneydesk:IDLE_LONG": "idle for 15h02m with no declared wait",
   "moneydesk:IDLE_DECLARED": "says it has nothing to do: Readiness baseline delivered (nothing new arms at 18:00). Usage throttle: weekly Claude meter about 90% until Mon 11-02 01:00 ET; only ORB15 beta check-ins run. Open ask fo\u2026",
   "moneydesk:WAIT_OVERDUE": "waits on Thu 10-29 09:20 ET beta check, expected by Thu 09:20",
-  "consolidation:IDLE_DECLARED": "says it has nothing to do: IDLE (declared) Sat 31 Oct 10:14 ET: all prep is done and nothing can move without Nox or the Mon 2 Nov 01:00 ET weekly reset. Done today: idle-chase results sent; Thudwick\u2026",
-  "consolidation:WAIT_NO_MEANWHILE": "idle 6m waiting on Nox: go/hold on ui-upload-fix-deploy; Nox: go for Lane C dry-run-4; Mon 2 Nov 01:00 ET weekly reset for the parked R07 AV review, with no meanwhile work named",
-  "outis:STALE": "says WORKING but no heartbeat or file write for 17h14m (3x cadence: reassign?)",
+  "consolidation:IDLE_DECLARED": "says it has nothing to do: PARKED BY RULING (Nox decision 31 Oct 10:19 ET, board mail 20261031T141930Z): HOLD on the Thudwick upload fix deploy and on Lane C dry-run-4 (Cayleb closed Apotheka and Pum\u2026",
+  "outis:STALE": "says WORKING but no heartbeat or file write for 17h17m (3x cadence: reassign?)",
   "P-street-mcp-reenable:PROMISE_OVERDUE": "outis owes nox: After consolidation's street-v24-run result reports the Street window closed (Nox GO 20:34Z; HOLD u\u2026 (due Wed 18:00)",
   "P-moneydesk-waitidle:PROMISE_OVERDUE": "moneydesk owes nox: Reply to WAIT_IDLE flagged 17:22 ET (idle 45m since 16:37 ET waiting on 17:20 ET forward archive): \u2026 (due Wed 18:00)",
   "P-moneydesk-overnight-meanwhile:PROMISE_OVERDUE": "moneydesk owes nox: Reply to WAIT_NO_MEANWHILE still flagged 18:37 ET (idle 1h05m waiting on Thu 09:20 ET beta check, n\u2026 (due Thu 08:00)",
@@ -840,9 +838,9 @@
    "at": "2026-10-31T14:15:42Z"
   },
   "20261031T141930Z-nox-to-consolidation.md": {
-   "state": "sent",
+   "state": "delivered",
    "route": "switchboard",
-   "at": "2026-10-31T14:18:42Z"
+   "at": "2026-10-31T14:21:42Z"
   }
  }
 }
