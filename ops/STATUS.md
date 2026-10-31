@@ -1,10 +1,10 @@
 # Lane status
 
-Updated 06:39 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
+Updated 06:42 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
 
 | lane | state | since | doing / waiting on | next check | flags |
 |---|---|---|---|---|---|
-| Money Desk | IDLE | Fri 19:19 | Readiness baseline delivered (nothing new arms at 18:00). Usage throttle: weekly Claude meter about 90% until Mon 11-02 01:00 ET; only ORB15 beta check-ins run… | Thu 09:20 | IDLE_DECLARED, IDLE_LONG, MAIL_FAILED, WAIT_OVERDUE |
+| Money Desk | IDLE | Fri 19:19 | Readiness baseline delivered (nothing new arms at 18:00). Usage throttle: weekly Claude meter about 90% until Mon 11-02 01:00 ET; only ORB15 beta check-ins run… | Thu 09:20 | IDLE_DECLARED, IDLE_LONG, WAIT_OVERDUE |
 | Consolidation (lanes A-E) | CLOSED | — | R07 HELD per Nox's in-session ruling (no click; denial record preserved; tab closed). Reply sent for order consolidation-meanwhile-20261028 (18:35 ET). Working… | Wed 18:50 | CLOSED, WAIT_OVERDUE |
 | Outis / Codex desktop | SILENT | Fri 17:04 | Team board, mail, lane and coordination; Order A product work handed to its dedicated owner · meanwhile: Board and mail checks, evidence reconciliation and coo… | Fri 17:19 | STALE |
 | Grok / RSI desk | — | — |  | — | — |
@@ -60,7 +60,6 @@ Empty.
 ## Mail, last 24 h
 
 - 20261030T101618Z-nox-to-consolidation.md: failed
-- 20261030T103905Z-outis-to-nox.md: delivered
 - 20261030T170932Z-nox-to-outis.md: delivered
 - 20261030T171459Z-outis-to-nox.md: delivered
 - 20261030T174407Z-nox-to-outis.md: delivered
@@ -93,6 +92,6 @@ Empty.
 
 ## Today
 
-- Flag-minutes: {"CLOSED": 399.0, "IDLE_DECLARED": 399.0, "IDLE_LONG": 399.0, "MAIL_FAILED": 9.0, "PROMISE_DUE": 300.0, "PROMISE_OVERDUE": 11046.0, "STALE": 399.0, "WAIT_OVERDUE": 798.0}
-- Flags raised: {"MAIL_FAILED": 3, "PROMISE_DUE": 10, "PROMISE_OVERDUE": 12}
+- Flag-minutes: {"CLOSED": 402.0, "IDLE_DECLARED": 402.0, "IDLE_LONG": 402.0, "MAIL_FAILED": 12.0, "PROMISE_DUE": 300.0, "PROMISE_OVERDUE": 11148.0, "STALE": 402.0, "WAIT_OVERDUE": 804.0}
+- Flags raised: {"MAIL_FAILED": 4, "PROMISE_DUE": 10, "PROMISE_OVERDUE": 12}
 - Policy v4: idle 30m, stuck 30m, renotify 60m, claude delivery on.
