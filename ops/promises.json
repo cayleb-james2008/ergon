@@ -580,6 +580,17 @@
    "done_when": {
     "result_item": "moneydesk-idlelong-escalation-20261031-1206"
    }
+  },
+  {
+   "id": "P-consolidation-idlelong-20261031-1254",
+   "from": "nox",
+   "to": "consolidation",
+   "ask": "IDLE_LONG CHASE (sensor 08:54 ET): idle 31m since 08:23 ET / 2026-10-31T12:23:00Z, no declared wait, flags IDLE_LONG + WAIT_OVERDUE; STATUS line still R07 HELD per Nox ruling, reply sent for consolidation-meanwhile-20261028: update LANE.json to WAITING with future expected_by/next_check_at + named meanwhile/meanwhile_path, or confirm IDLE_DECLARED intentional with reason and what arms next and when, and give one-line meanwhile evidence or exact blocker; reply as kind: result with item consolidation-idlelong-20261031-1254",
+   "sent_at": "2026-10-31T12:57:02Z",
+   "expected_by": "2026-10-31T14:30:00Z",
+   "done_when": {
+    "result_item": "consolidation-idlelong-20261031-1254"
+   }
   }
  ]
 }
