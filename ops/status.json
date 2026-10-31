@@ -1,5 +1,5 @@
 {
- "generated_at": "2026-10-31T13:03:42Z",
+ "generated_at": "2026-10-31T13:06:42Z",
  "policy_version": 4.0,
  "lanes": {
   "moneydesk": {
@@ -70,10 +70,10 @@
   }
  },
  "flags": {
-  "moneydesk:IDLE_LONG": "idle for 13h44m with no declared wait",
+  "moneydesk:IDLE_LONG": "idle for 13h47m with no declared wait",
   "moneydesk:IDLE_DECLARED": "says it has nothing to do: Readiness baseline delivered (nothing new arms at 18:00). Usage throttle: weekly Claude meter about 90% until Mon 11-02 01:00 ET; only ORB15 beta check-ins run. Open ask fo\u2026",
   "moneydesk:WAIT_OVERDUE": "waits on Thu 10-29 09:20 ET beta check, expected by Thu 09:20",
-  "outis:STALE": "says WORKING but no heartbeat or file write for 15h59m (3x cadence: reassign?)",
+  "outis:STALE": "says WORKING but no heartbeat or file write for 16h02m (3x cadence: reassign?)",
   "P-street-mcp-reenable:PROMISE_OVERDUE": "outis owes nox: After consolidation's street-v24-run result reports the Street window closed (Nox GO 20:34Z; HOLD u\u2026 (due Wed 18:00)",
   "P-moneydesk-waitidle:PROMISE_OVERDUE": "moneydesk owes nox: Reply to WAIT_IDLE flagged 17:22 ET (idle 45m since 16:37 ET waiting on 17:20 ET forward archive): \u2026 (due Wed 18:00)",
   "P-moneydesk-overnight-meanwhile:PROMISE_OVERDUE": "moneydesk owes nox: Reply to WAIT_NO_MEANWHILE still flagged 18:37 ET (idle 1h05m waiting on Thu 09:20 ET beta check, n\u2026 (due Thu 08:00)",
@@ -97,9 +97,6 @@
   "20261028T215858Z-consolidation-to-nox.md:PROMISE_OVERDUE": "nox owes consolidation: Deploy h3 patch now? (needs your go) (due Thu 10:00)",
   "20261028T224033Z-nox-to-moneydesk.md:PROMISE_OVERDUE": "moneydesk owes nox: WAIT_NO_MEANWHILE (still) \u2014 sensor 18:37 ET: idle 1h05m waiting on Thu 10-29 09:20 ET beta check, w\u2026 (due Thu 08:00)",
   "20261029T200834Z-nox-to-moneydesk.md:PROMISE_OVERDUE": "moneydesk owes nox: IDLE_LONG CHASE (still) - sensor 16:05 ET: you are IDLE for 6h45m, since 09:20 ET / 2026-10-29T13:2\u2026 (due Thu 18:00)",
-  "20261030T021725Z-nox-to-consolidation.md:PROMISE_OVERDUE": "consolidation owes nox: IDLE_LONG CHASE - sensor 22:14 ET: you are IDLE for 32m, since 21:42 ET / 2026-10-30T01:42:31Z, wit\u2026 (due Thu 23:30)",
-  "20261030T071736Z-nox-to-consolidation.md:PROMISE_OVERDUE": "consolidation owes nox: IDLE_LONG ESCALATION (still) - sensor 03:14 ET: you are IDLE for 5h32m, since 21:42 ET / 2026-10-30\u2026 (due Fri 04:30)",
-  "20261030T101618Z-nox-to-consolidation.md:PROMISE_OVERDUE": "consolidation owes nox: IDLE_LONG ESCALATION (still) - sensor 06:15 ET: you are IDLE for 8h32m, since 21:42 ET / 2026-10-30\u2026 (due Fri 07:30)",
   "20261030T102011Z-nox-to-outis.md:PROMISE_OVERDUE": "outis owes nox: IDLE_DECLARED SUCCESSOR \u2014 Thudwick preflight pack change check since 10:13 UTC (prep only) (due Fri 08:00)",
   "20261030T174407Z-nox-to-outis.md:PROMISE_OVERDUE": "outis owes nox: WAIT_IDLE CHASE \u2014 sensor 13:42 ET: you are WAITING since 13:15 ET / 2026-10-30T17:15:43Z on \"indepe\u2026 (due Fri 14:15)",
   "20261030T223454Z-nox-to-outis.md:PROMISE_OVERDUE": "outis owes nox: STALE CHASE \u2014 sensor 18:30 ET: you are flagged STALE (still), silent since 17:04 ET / 2026-10-30T21\u2026 (due Fri 19:15)",
@@ -307,18 +304,6 @@
    "state": "OPEN"
   },
   {
-   "id": "P-consolidation-idlelong-20261031-1254",
-   "from": "nox",
-   "to": "consolidation",
-   "ask": "IDLE_LONG CHASE (sensor 08:54 ET): idle 31m since 08:23 ET / 2026-10-31T12:23:00Z, no declared wait, flags IDLE_LONG + WAIT_OVERDUE; STATUS line still R07 HELD per Nox ruling, reply sent for consolidation-meanwhile-20261028: update LANE.json to WAITING with future expected_by/next_check_at + named meanwhile/meanwhile_path, or confirm IDLE_DECLARED intentional with reason and what arms next and when, and give one-line meanwhile evidence or exact blocker; reply as kind: result with item consolidation-idlelong-20261031-1254",
-   "sent_at": "2026-10-31T12:57:02Z",
-   "expected_by": "2026-10-31T14:30:00Z",
-   "done_when": {
-    "result_item": "consolidation-idlelong-20261031-1254"
-   },
-   "state": "OPEN"
-  },
-  {
    "id": "20261028T144206Z-consolidation-to-nox.md",
    "from": "consolidation",
    "to": "nox",
@@ -405,36 +390,6 @@
    "ask": "IDLE_LONG CHASE (still) - sensor 16:05 ET: you are IDLE for 6h45m, since 09:20 ET / 2026-10-29T13:20:01Z, with no declar",
    "sent_at": "2026-10-29T20:08:34Z",
    "expected_by": "2026-10-29T22:00:00Z",
-   "done": false,
-   "state": "OVERDUE"
-  },
-  {
-   "id": "20261030T021725Z-nox-to-consolidation.md",
-   "from": "nox",
-   "to": "consolidation",
-   "ask": "IDLE_LONG CHASE - sensor 22:14 ET: you are IDLE for 32m, since 21:42 ET / 2026-10-30T01:42:31Z, with no declared wait th",
-   "sent_at": "2026-10-30T02:17:25Z",
-   "expected_by": "2026-10-30T03:30:00Z",
-   "done": false,
-   "state": "OVERDUE"
-  },
-  {
-   "id": "20261030T071736Z-nox-to-consolidation.md",
-   "from": "nox",
-   "to": "consolidation",
-   "ask": "IDLE_LONG ESCALATION (still) - sensor 03:14 ET: you are IDLE for 5h32m, since 21:42 ET / 2026-10-30T01:42:31Z, with no d",
-   "sent_at": "2026-10-30T07:17:36Z",
-   "expected_by": "2026-10-30T08:30:00Z",
-   "done": false,
-   "state": "OVERDUE"
-  },
-  {
-   "id": "20261030T101618Z-nox-to-consolidation.md",
-   "from": "nox",
-   "to": "consolidation",
-   "ask": "IDLE_LONG ESCALATION (still) - sensor 06:15 ET: you are IDLE for 8h32m, since 21:42 ET / 2026-10-30T01:42:31Z, with no d",
-   "sent_at": "2026-10-30T10:16:18Z",
-   "expected_by": "2026-10-30T11:30:00Z",
    "done": false,
    "state": "OVERDUE"
   },
@@ -575,16 +530,6 @@
    "ask": "IDLE_LONG ESCALATION (still) \u2014 sensor 08:06 ET: you are IDLE for 12h47m, since 19:19 ET / 2026-10-30T23:19:01Z, after th",
    "sent_at": "2026-10-31T12:09:12Z",
    "expected_by": "2026-10-31T13:30:00Z",
-   "done": false,
-   "state": "OPEN"
-  },
-  {
-   "id": "20261031T125702Z-nox-to-consolidation.md",
-   "from": "nox",
-   "to": "consolidation",
-   "ask": "IDLE_LONG CHASE - sensor 08:54 ET: you are IDLE for 31m, since 08:23 ET / 2026-10-31T12:23:00Z, with no declared wait th",
-   "sent_at": "2026-10-31T12:57:02Z",
-   "expected_by": "2026-10-31T14:30:00Z",
    "done": false,
    "state": "OPEN"
   }
@@ -775,6 +720,26 @@
    "state": "delivered",
    "route": "switchboard",
    "at": "2026-10-31T13:00:42Z"
+  },
+  "20261031T130342Z-consolidation-to-nox-2.md": {
+   "state": "delivered",
+   "route": "board",
+   "at": "2026-10-31T13:06:42Z"
+  },
+  "20261031T130342Z-consolidation-to-nox-3.md": {
+   "state": "delivered",
+   "route": "board",
+   "at": "2026-10-31T13:06:42Z"
+  },
+  "20261031T130342Z-consolidation-to-nox-4.md": {
+   "state": "delivered",
+   "route": "board",
+   "at": "2026-10-31T13:06:42Z"
+  },
+  "20261031T130342Z-consolidation-to-nox.md": {
+   "state": "delivered",
+   "route": "board",
+   "at": "2026-10-31T13:06:42Z"
   }
  }
 }
