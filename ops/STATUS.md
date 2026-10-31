@@ -1,6 +1,6 @@
 # Lane status
 
-Updated 17:43 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
+Updated 17:46 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
 
 | lane | state | since | doing / waiting on | next check | flags |
 |---|---|---|---|---|---|
@@ -66,6 +66,7 @@ Updated 17:43 ET by the lane sensor (every 3 min). If that time is more than 15 
 | 20261031T170258Z-nox-to-moneydesk.md | nox → moneydesk | IDLE_LONG ESCALATION (still) — sensor 13:00 ET: you are IDLE for 17h41m, since 19:19 ET / 2026-10-3… | 14:30 | OVERDUE |
 | 20261031T183330Z-nox-to-moneydesk.md | nox → moneydesk | IDLE_LONG ESCALATION (still) — sensor 14:30 ET: you are IDLE for 19h11m, since 19:19 ET / 2026-10-3… | 16:30 | OVERDUE |
 | 20261031T183330Z-nox-to-outis.md | nox → outis | STALE ESCALATION (still) — sensor 14:30 ET: you are flagged SILENT / STALE, silent since 17:04 ET /… | 16:00 | OVERDUE |
+| 20261031T214549Z-delegator-to-nox.md | delegator → nox | Delegator session for Cayleb's 19-job programme (master prompt 31 Oct 2026). I am the single escala… | Sun 09:00 | OPEN |
 
 ## Queue
 
@@ -123,9 +124,10 @@ Empty.
 - 20261031T175115Z-claude-to-nox.md: delivered
 - 20261031T183330Z-nox-to-moneydesk.md: failed
 - 20261031T183330Z-nox-to-outis.md: delivered
+- 20261031T214549Z-delegator-to-nox.md: delivered
 
 ## Today
 
-- Flag-minutes: {"CLOSED": 666.0, "IDLE_DECLARED": 1512.0, "IDLE_LONG": 987.0, "MAIL_FAILED": 24.0, "PROMISE_DUE": 930.0, "PROMISE_OVERDUE": 38832.0, "STALE": 1062.0, "WAIT_NO_MEANWHILE": 360.0, "WAIT_OVERDUE": 1605.0}
+- Flag-minutes: {"CLOSED": 672.0, "IDLE_DECLARED": 1518.0, "IDLE_LONG": 987.0, "MAIL_FAILED": 24.0, "PROMISE_DUE": 930.0, "PROMISE_OVERDUE": 38988.0, "STALE": 1065.0, "WAIT_NO_MEANWHILE": 360.0, "WAIT_OVERDUE": 1608.0}
 - Flags raised: {"CLOSED": 2, "IDLE_DECLARED": 1, "IDLE_LONG": 1, "MAIL_FAILED": 8, "PROMISE_DUE": 31, "PROMISE_OVERDUE": 33, "WAIT_NO_MEANWHILE": 2}
 - Policy v4: idle 30m, stuck 30m, renotify 60m, claude delivery on.
