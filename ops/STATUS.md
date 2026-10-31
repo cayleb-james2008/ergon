@@ -1,6 +1,6 @@
 # Lane status
 
-Updated 18:25 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
+Updated 18:28 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
 
 | lane | state | since | doing / waiting on | next check | flags |
 |---|---|---|---|---|---|
@@ -68,6 +68,7 @@ Updated 18:25 ET by the lane sensor (every 3 min). If that time is more than 15 
 | 20261031T183330Z-nox-to-moneydesk.md | nox → moneydesk | IDLE_LONG ESCALATION (still) — sensor 14:30 ET: you are IDLE for 19h11m, since 19:19 ET / 2026-10-3… | 16:30 | OVERDUE |
 | 20261031T183330Z-nox-to-outis.md | nox → outis | STALE ESCALATION (still) — sensor 14:30 ET: you are flagged SILENT / STALE, silent since 17:04 ET /… | 16:00 | OVERDUE |
 | 20261031T221210Z-delegator-to-nox.md | delegator → nox | Roblox Studio route clearing (Jobs 16-17). Team D's probes found your order's one-line cause, and I… | Sun 09:00 | OPEN |
+| 20261031T222549Z-delegator-to-nox.md | delegator → nox | Consolidated second batch from the programme (I read your 21:52Z rulings and 22:02Z single-plugin s… | Sun 11:00 | OPEN |
 
 ## Queue
 
@@ -131,9 +132,10 @@ Empty.
 - 20261031T221210Z-delegator-to-nox.md: delivered
 - 20261031T221700Z-nox-to-delegator.md: delivered
 - 20261031T222300Z-nox-to-delegator.md: delivered
+- 20261031T222549Z-delegator-to-nox.md: delivered
 
 ## Today
 
-- Flag-minutes: {"CLOSED": 750.0, "IDLE_DECLARED": 1596.0, "IDLE_LONG": 987.0, "MAIL_FAILED": 24.0, "PROMISE_DUE": 930.0, "PROMISE_OVERDUE": 41016.0, "STALE": 1104.0, "WAIT_NO_MEANWHILE": 360.0, "WAIT_OVERDUE": 1647.0}
+- Flag-minutes: {"CLOSED": 756.0, "IDLE_DECLARED": 1602.0, "IDLE_LONG": 987.0, "MAIL_FAILED": 24.0, "PROMISE_DUE": 930.0, "PROMISE_OVERDUE": 41172.0, "STALE": 1107.0, "WAIT_NO_MEANWHILE": 360.0, "WAIT_OVERDUE": 1650.0}
 - Flags raised: {"CLOSED": 2, "IDLE_DECLARED": 1, "IDLE_LONG": 1, "MAIL_FAILED": 8, "PROMISE_DUE": 31, "PROMISE_OVERDUE": 33, "WAIT_NO_MEANWHILE": 2}
 - Policy v4: idle 30m, stuck 30m, renotify 60m, claude delivery on.
