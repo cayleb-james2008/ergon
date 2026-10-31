@@ -590,7 +590,10 @@
    "expected_by": "2026-10-31T14:30:00Z",
    "done_when": {
     "result_item": "consolidation-idlelong-20261031-1254"
-   }
+   },
+   "done": true,
+   "closed_at": "2026-10-31T13:06:31Z",
+   "closed_reason": "Delivered 2026-10-31T13:03:42Z in 20261031T130342Z-consolidation-to-nox-3.md (kind: result, item consolidation-idlelong-20261031-1254, filed 09:02 ET): LANE.json WAITING since 09:01 ET on Mon 2 Nov 01:00 ET Claude weekly reset, meanwhile named (Ep27 rebuild prep, Thudwick diagnosis review, Lane C dry-run-4 pack). Same batch also closed the older 2214/0714/1015 chases named in the 13:03 sensor alert as superseded by this result; those P- rows were already marked done. No new chase filed."
   }
  ]
 }
