@@ -1,11 +1,11 @@
 # Lane status
 
-Updated 09:33 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
+Updated 09:36 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
 
 | lane | state | since | doing / waiting on | next check | flags |
 |---|---|---|---|---|---|
 | Money Desk | IDLE | Fri 19:19 | Readiness baseline delivered (nothing new arms at 18:00). Usage throttle: weekly Claude meter about 90% until Mon 11-02 01:00 ET; only ORB15 beta check-ins run… | Thu 09:20 | IDLE_DECLARED, IDLE_LONG, WAIT_OVERDUE |
-| Consolidation (lanes A-E) | WORKING | 08:57 | Waiting on the Mon 2 Nov 01:00 ET weekly reset for the parked R07 native-speed AV review (Nox ruling 28 Oct 19:20 ET; no frame substitute, no paid attempt, Ep2… | 09:41 | — |
+| Consolidation (lanes A-E) | WORKING | 08:57 | Waiting on (a) Nox's answer to the open ask ui-upload-fix-deploy (reply_by 2026-10-31T17:30Z; deploy window closes 16:20 ET if Mavilo 18:00 ET were to run; ENA… | 10:04 | — |
 | Outis / Codex desktop | SILENT | Fri 17:04 | Team board, mail, lane and coordination; Order A product work handed to its dedicated owner · meanwhile: Board and mail checks, evidence reconciliation and coo… | Fri 17:19 | STALE |
 | Grok / RSI desk | — | — |  | — | — |
 | Nox | — | — |  | — | — |
@@ -104,6 +104,6 @@ Empty.
 
 ## Today
 
-- Flag-minutes: {"CLOSED": 504.0, "IDLE_DECLARED": 573.0, "IDLE_LONG": 579.0, "MAIL_FAILED": 15.0, "PROMISE_DUE": 462.0, "PROMISE_OVERDUE": 17283.0, "STALE": 573.0, "WAIT_OVERDUE": 1116.0}
+- Flag-minutes: {"CLOSED": 504.0, "IDLE_DECLARED": 576.0, "IDLE_LONG": 582.0, "MAIL_FAILED": 15.0, "PROMISE_DUE": 474.0, "PROMISE_OVERDUE": 17388.0, "STALE": 576.0, "WAIT_OVERDUE": 1119.0}
 - Flags raised: {"IDLE_LONG": 1, "MAIL_FAILED": 5, "PROMISE_DUE": 18, "PROMISE_OVERDUE": 16}
 - Policy v4: idle 30m, stuck 30m, renotify 60m, claude delivery on.
