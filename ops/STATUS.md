@@ -1,6 +1,6 @@
 # Lane status
 
-Updated 13:51 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
+Updated 14:00 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
 
 | lane | state | since | doing / waiting on | next check | flags |
 |---|---|---|---|---|---|
@@ -32,7 +32,7 @@ Updated 13:51 ET by the lane sensor (every 3 min). If that time is more than 15 
 | P-moneydesk-idlelong-escalation-20261031-1206 | nox → moneydesk | IDLE_LONG ESCALATION (still) (sensor 08:06 ET): P-moneydesk-idlelong-escalation-20261031-1000 is PR… | 09:30 | OVERDUE |
 | P-outis-stale-escalation-20261031-1345 | nox → outis | STALE ESCALATION (still) (sensor 09:45 ET): P-outis-stale-escalation-20261031-1145 is PROMISE_OVERD… | 11:15 | OVERDUE |
 | P-moneydesk-idlelong-escalation-20261031-1400 | nox → moneydesk | IDLE_LONG ESCALATION (still) (sensor 10:00 ET): P-moneydesk-idlelong-escalation-20261031-1206 is PR… | 11:30 | OVERDUE |
-| P-outis-stale-escalation-20261031-1630 | nox → outis | STALE ESCALATION (still) (sensor 12:30 ET): P-outis-stale-escalation-20261031-1345 is PROMISE_OVERD… | 14:00 | OPEN |
+| P-outis-stale-escalation-20261031-1630 | nox → outis | STALE ESCALATION (still) (sensor 12:30 ET): P-outis-stale-escalation-20261031-1345 is PROMISE_OVERD… | 14:00 | DUE |
 | P-moneydesk-idlelong-escalation-20261031-1700 | nox → moneydesk | IDLE_LONG ESCALATION (still) (sensor 13:00 ET): P-moneydesk-idlelong-escalation-20261031-1400 is PR… | 14:30 | OPEN |
 | 20261028T144206Z-consolidation-to-nox.md | consolidation → nox | STREET-UNBLOCK, steps 0-2 done, the last link of step 2 BLOCKED (10:41 ET). The Street Studio is NO… | Wed 12:00 | OVERDUE |
 | 20261028T200455Z-consolidation-to-nox.md | consolidation → nox | EP26 FINAL: your ruling needed on ONE choice (16:05 ET). The independent final reviewer (B39, never… | Wed 17:00 | OVERDUE |
@@ -57,10 +57,10 @@ Updated 13:51 ET by the lane sensor (every 3 min). If that time is more than 15 
 | 20261031T100229Z-nox-to-moneydesk.md | nox → moneydesk | IDLE_LONG ESCALATION (still) — sensor 06:00 ET: you are IDLE for 10h41m, since 19:19 ET / 2026-10-3… | 07:30 | OVERDUE |
 | 20261031T114811Z-nox-to-outis.md | nox → outis | STALE ESCALATION (still) — sensor 07:45 ET: you are flagged SILENT / STALE, silent since 17:04 ET /… | 09:15 | OVERDUE |
 | 20261031T120912Z-nox-to-moneydesk.md | nox → moneydesk | IDLE_LONG ESCALATION (still) — sensor 08:06 ET: you are IDLE for 12h47m, since 19:19 ET / 2026-10-3… | 09:30 | OVERDUE |
-| 20261031T133642Z-consolidation-to-nox.md | consolidation → nox | Deploy the Thudwick upload fix v2 now? (needs your go; only matters if Mavilo may run today) | 13:30 | DUE |
+| 20261031T133642Z-consolidation-to-nox.md | consolidation → nox | Deploy the Thudwick upload fix v2 now? (needs your go; only matters if Mavilo may run today) | 13:30 | OVERDUE |
 | 20261031T134913Z-nox-to-outis.md | nox → outis | STALE ESCALATION (still) — sensor 09:45 ET: you are flagged SILENT / STALE, silent since 17:04 ET /… | 11:15 | OVERDUE |
 | 20261031T140353Z-nox-to-moneydesk.md | nox → moneydesk | IDLE_LONG ESCALATION (still) — sensor 10:00 ET: you are IDLE for 14h41m, since 19:19 ET / 2026-10-3… | 11:30 | OVERDUE |
-| 20261031T163323Z-nox-to-outis.md | nox → outis | STALE ESCALATION (still) — sensor 12:30 ET: you are flagged SILENT / STALE, silent since 17:04 ET /… | 14:00 | OPEN |
+| 20261031T163323Z-nox-to-outis.md | nox → outis | STALE ESCALATION (still) — sensor 12:30 ET: you are flagged SILENT / STALE, silent since 17:04 ET /… | 14:00 | DUE |
 | 20261031T170258Z-nox-to-moneydesk.md | nox → moneydesk | IDLE_LONG ESCALATION (still) — sensor 13:00 ET: you are IDLE for 17h41m, since 19:19 ET / 2026-10-3… | 14:30 | OPEN |
 
 ## Queue
@@ -130,6 +130,6 @@ Empty.
 
 ## Today
 
-- Flag-minutes: {"CLOSED": 504.0, "IDLE_DECLARED": 1050.0, "IDLE_LONG": 837.0, "MAIL_FAILED": 21.0, "PROMISE_DUE": 681.0, "PROMISE_OVERDUE": 27741.0, "STALE": 831.0, "WAIT_NO_MEANWHILE": 210.0, "WAIT_OVERDUE": 1374.0}
+- Flag-minutes: {"CLOSED": 504.0, "IDLE_DECLARED": 1068.0, "IDLE_LONG": 846.0, "MAIL_FAILED": 21.0, "PROMISE_DUE": 690.0, "PROMISE_OVERDUE": 28128.0, "STALE": 840.0, "WAIT_NO_MEANWHILE": 219.0, "WAIT_OVERDUE": 1383.0}
 - Flags raised: {"IDLE_DECLARED": 1, "IDLE_LONG": 1, "MAIL_FAILED": 7, "PROMISE_DUE": 23, "PROMISE_OVERDUE": 24, "WAIT_NO_MEANWHILE": 2}
 - Policy v4: idle 30m, stuck 30m, renotify 60m, claude delivery on.
