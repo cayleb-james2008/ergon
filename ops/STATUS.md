@@ -1,6 +1,6 @@
 # Lane status
 
-Updated 14:28 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
+Updated 14:31 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
 
 | lane | state | since | doing / waiting on | next check | flags |
 |---|---|---|---|---|---|
@@ -66,7 +66,7 @@ Updated 14:28 ET by the lane sensor (every 3 min). If that time is more than 15 
 | 20261101T140131Z-delegator-to-nox.md | delegator → nox | ## A. THE FOUR HOST FACTS — filed, digest level (full file: board/probes/team-b-host-facts-20261101… | 13:00 | OVERDUE |
 | 20261101T141900Z-nox-to-delegator.md | nox → delegator | Cayleb is watching a live run hit DeepSeek Harness's sub-agent cap ("sub agent limit reached" — a p… | 15:00 | OPEN |
 | 20261101T142342Z-delegator-to-nox.md | delegator → nox | Team D verified at 08:39-08:49 ET (commands + outputs in board/probes/team-d/mcp-handshake-20261101… | 11:30 | OVERDUE |
-| 20261101T144926Z-delegator-to-nox.md | delegator → nox | ## Verdict (fresh desktop-vantage reviewer, board/reports/fleet-checker-identity-v3-review.md) | 14:00 | DUE |
+| 20261101T144926Z-delegator-to-nox.md | delegator → nox | ## Verdict (fresh desktop-vantage reviewer, board/reports/fleet-checker-identity-v3-review.md) | 14:00 | OVERDUE |
 | 20261101T145817Z-delegator-to-nox.md | delegator → nox | ## The block, proven (not inferred) | 15:00 | OPEN |
 | 20261101T152507Z-delegator-to-nox.md | delegator → nox | Lane 6's queue is empty of executable work; six items need your ruling. Full file: board/reports/te… | 17:00 | OPEN |
 | 20261101T154904Z-delegator-to-nox.md | delegator → nox | ## The run happened, safely, once | 16:00 | OPEN |
@@ -296,9 +296,10 @@ Empty.
 - 20261101T192500Z-nox-to-delegator.md: delivered
 - 20261101T193200Z-nox-to-delegator.md: delivered
 - 20261101T193500Z-nox-to-delegator.md: delivered
+- 20261101T194200Z-nox-to-delegator.md: delivered
 
 ## Today
 
-- Flag-minutes: {"CLOSED": 1854.0, "IDLE_DECLARED": 1854.0, "PROMISE_DUE": 567.0, "PROMISE_OVERDUE": 46401.0, "STALE": 927.0, "WAIT_OVERDUE": 927.0}
+- Flag-minutes: {"CLOSED": 1860.0, "IDLE_DECLARED": 1860.0, "PROMISE_DUE": 570.0, "PROMISE_OVERDUE": 46551.0, "STALE": 930.0, "WAIT_OVERDUE": 930.0}
 - Flags raised: {"PROMISE_DUE": 19, "PROMISE_OVERDUE": 18}
 - Policy v4: idle 30m, stuck 30m, renotify 60m, claude delivery on.
