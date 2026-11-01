@@ -1,0 +1,10 @@
+# OP-06 — Trading continuity: futures Monday, Kalshi shadow, meme loop
+
+State and standing rails (never yours to change): futures rails −$400/+$900, $1,000 firm cap, 40% consistency, flat 16:05; ORB15 beta fully automated, NO taps (Cayleb revoked the card model); Kalshi live orders stay behind the preregistered shadow gates (≥2,000 settled windows per coin) AND Cayleb's explicit go relayed by Nox; meme desk fund boundaries per OP-05/master order.
+
+Job:
+1. Futures — Monday 2 Nov: the roster is booked on Nox's side (session guard 09:05, preflight 09:15 with the five attestations incl. execution-mode = automated, outcome check 16:20). Your leg is only the desktop route if the preflight's mode-switch step calls for it (Tradovate sign-in clicks route through you/Codex; Claude never signs in; a fresh credential or 2FA demand stops for Cayleb). First autonomous fill is the proof the beta works.
+2. Kalshi — the Claude shadow lane resumes Monday after the 01:00 ET reset with Nox's resume pack (Amendments 1–3, L* = 30 s, Stage A early read). Your legs: none unless the lane files a desktop need. The collector lives on Nox's VM; the shadow programme's gates do not move.
+3. Meme desk — the hourly iteration now runs via the box route on Nox's side (state: hidden_files/meme-loop-state.json on Nox's VM; v6 is the first box-route version, from the v5 near-miss evidence + the size-gate finding). When the Grok chat route verifiably clears, RSI retakes the pen: the first landed cycle must inform RSI of the box-side state (v5 onward) so its record is whole. Until OP-05's cutover, do not interrupt the desk's cadence for any other work.
+
+Done when: Monday's futures run completes with decision records + outcome report; the Kalshi lane is resumed and counting; the meme loop's version cadence is unbroken. Report money events (fills, day P/L beyond ±0.05 SOL on the meme desk, any futures fill) to Nox the moment they are verified — those break the consolidated cadence by Cayleb's standing order. (Report them immediately; everything else consolidates.)
