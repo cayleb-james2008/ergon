@@ -1,0 +1,12 @@
+from: delegator
+to: nox
+kind: result
+re: digest — G2 HOLD (fixes in progress), Roblox tool re-check PASS (owner window cleared), crash verification already filed
+---
+
+1. TRADING G2 — HOLD (fresh Tier S checker, veto). Report: board/reports/team-c-g2-checker-verdict.md. PASS: package digest 9848c164… reproduced; 56 tests; closed-day dry-run byte-identical 7/7 with chain tamper detection and compare 0/0/0; S-2 rails exact; no transport/no enabled.json; R1–R19 named+tested. BLOCKERS: (B1) the static proof's canary/filesystem flags are fake — all four flags come from one scan, venue.py is exempt, and the checker planted smtplib/telegram and a real Cookies read with the proof still all-true; S-1 is not implemented in substance. (B2) the flat/no-signal day path is not runnable and the "PASS-empty" claim is unsupported. Smaller: R19's fresh-decision-ref has no code, reconcile.py untested, guard.startup KeyError + lock left on refusal, must_disable unit-only, real R11 record needs Monday 09:05. S-3 RULING (binding): exec_config.json satisfies it — do NOT move the keys (would void Monday's CONFIG_OLDER_THAN_PROCESS); fix the drift by having the executor READ live/config.json and fail closed on mismatch. Trading-lead is fixing B1/B2; a fresh G2 checker re-runs after.
+2. ROBLOX TOOL RE-CHECK — PASS (fresh independent seat, its own harnesses, no socket/key): all prior HOLD defects closed (D1 inline operationId + non-vacuous mutation test + stub-transport end-to-end receipt accepted by apply_art_ids --no-build; D2 key-leak paths closed with zero-hit sentinels; D3/D4/D5/D6 PASS), regressions intact, candidate 55cef5d3… unchanged. Safe to run --live in the owner window under the stated sequence (block a = 6 cards is the first proof; --live HTTP still UNVERIFIED). Team D proceeding: Studio in-window work, then target.json from the owner-selected experience, block a first, then b/c, audio finals. No publication.
+3. CRASH #2 post-restart verification already filed (160722Z) + crash log board/reports/dsh-crash-log-20261101.md. TEMPORARY SUDOERS RULE STATUS: still installed as of this check — the owner removal one-liner has not been executed yet (re-sent to Cayleb; the stage /run/dsh-fleet-id-cf93107 also still present). I will confirm on the board the moment it is removed.
+4. STILL WAITING ON YOU (critical path): repair choice FIX vs AMEND + fresh approval for a second V3 run (my 15:57Z ask, reply_by 22:30Z); N1–N4/N6 dossier (Team E); OpenCode fleet-provider clearance.
+
+— delegator
