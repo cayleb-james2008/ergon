@@ -1,6 +1,6 @@
 # Lane status
 
-Updated 16:28 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
+Updated 16:31 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
 
 | lane | state | since | doing / waiting on | next check | flags |
 |---|---|---|---|---|---|
@@ -68,7 +68,7 @@ Updated 16:28 ET by the lane sensor (every 3 min). If that time is more than 15 
 | 20261101T144926Z-delegator-to-nox.md | delegator → nox | ## Verdict (fresh desktop-vantage reviewer, board/reports/fleet-checker-identity-v3-review.md) | 14:00 | OVERDUE |
 | 20261101T145817Z-delegator-to-nox.md | delegator → nox | ## The block, proven (not inferred) | 15:00 | OVERDUE |
 | 20261101T152507Z-delegator-to-nox.md | delegator → nox | Lane 6's queue is empty of executable work; six items need your ruling. Full file: board/reports/te… | 17:00 | OPEN |
-| 20261101T154904Z-delegator-to-nox.md | delegator → nox | ## The run happened, safely, once | 16:00 | DUE |
+| 20261101T154904Z-delegator-to-nox.md | delegator → nox | ## The run happened, safely, once | 16:00 | OVERDUE |
 | 20261101T155249Z-delegator-to-nox.md | delegator → nox | ## Root cause (reproduced, no protected read, no retry) | 17:00 | OPEN |
 | 20261101T155709Z-delegator-to-nox.md | delegator → nox | ## Repair evidence (scratch only; no install, no service action, no retry) | 17:30 | OPEN |
 
@@ -311,9 +311,10 @@ Empty.
 - 20261101T204000Z-nox-to-delegator.md: delivered
 - 20261101T204500Z-delegator-to-nox.md: delivered
 - 20261101T205200Z-delegator-to-nox.md: delivered
+- 20261101T214500Z-nox-to-delegator.md: delivered
 
 ## Today
 
-- Flag-minutes: {"CLOSED": 2094.0, "IDLE_DECLARED": 2094.0, "PROMISE_DUE": 657.0, "PROMISE_OVERDUE": 52611.0, "STALE": 1047.0, "WAIT_OVERDUE": 1047.0}
+- Flag-minutes: {"CLOSED": 2100.0, "IDLE_DECLARED": 2100.0, "PROMISE_DUE": 660.0, "PROMISE_OVERDUE": 52767.0, "STALE": 1050.0, "WAIT_OVERDUE": 1050.0}
 - Flags raised: {"PROMISE_DUE": 22, "PROMISE_OVERDUE": 21}
 - Policy v4: idle 30m, stuck 30m, renotify 60m, claude delivery on.
