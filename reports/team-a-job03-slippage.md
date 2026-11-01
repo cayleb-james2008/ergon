@@ -1,0 +1,21 @@
+# Job 03 — slippage list (w/c 2 Nov deployment), with evidence
+
+Prepared by Team A, 2026-10-31 (rerun after the Job 02 merge; supersedes the list in `team-a-job03-prep.md` where they
+differ). Each line names the evidence, the consequence and the owner of the fix. The Lead reports this as slippage; the
+honest options are in `team-a-job03-package-plan.md` §"Date risk".
+
+| # | What will slip / is blocked | Evidence | Consequence | Owner |
+|---|---|---|---|---|
+| S1 | **Full three-piece package (management software + DSH baseline + Ergon plugin) is not ready for w/c 2 Nov** | No Ergon-on-DSH artefact exists (31 Oct): `grep -rn 'dsh.bundle'` over the `ergon` repo = 0 hits; `plugins/*` declare `"openclaw"`; no Kimi handback; build effort 11–14 days (`team-a-job03-package-plan.md`) | Full deployment in w/c 2 Nov is not achievable; a limited pilot or a slip is the choice (Lead reports it) | Lead/Nox ownership decision; Team A build once approved |
+| S2 | **Warehouse-board fold-in** | Accepted V11 board source lives only on the offline work PC `RHLCO-WKS-09` (doctrine v2 §"SOURCE WARNING"); repo copy is older; `tailscale status` lists 6 nodes with no work PC; no SSH route from `outis-desktop` (GROUND-STATE M0) | Board cannot be folded into the package or wired to Supabase until a work-PC window exists; must **never** be rebuilt from the repo copy | Work-PC window (Cayleb/office); Team A consumes it |
+| S3 | **Rehearsal host** | Single-tenant CPX22-class (~€8/mo) is a purchase — an owner act; nothing bought; asked in the consolidated ask | Rehearsal passes 1–3 can run on a throwaway local VM/container **if authorised**, but the real deployment needs the cloud host and its purchase comes first | Cayleb (purchase) / Lead (local-VM authorisation) |
+| S4 | **Supabase company-database provisioning** | One project per company is the rule; the seed "Ergon" project (schema `ergon_warehouse`, 19 lines / 12 entries, project ref `yhpjpjeedpuvcgnvfpka`) exists, but org plan and credential route are unverified from here | Data wiring cannot be rehearsal-tested against a fresh company project until the org/project route is confirmed; no credential will be handled by the team | Cayleb confirmation + secure credential route |
+| S5 | **Internet-facing security baseline** | Doctrine requires a deliberate revisit of the private-network-only clause for a cloud host, never a silent drop | A security decision (not a code detail) must be written before any public deployment; the rehearsal can run private-only meanwhile | Team A plan → checker; owner sees the decision |
+| S6 | **Windows-only surfaces** | Get Help window, native ReviewDesk, WPF setup window are Windows surfaces; this desktop has no .NET SDK (host 10.0.13 only, `dotnet --list-sdks` empty), no Mono/NSIS | Those rehearsal steps must be marked stand-in/pending, never clean; the Windows seat (laptop window) is needed for a clean pass | Laptop window (Job 04 / owner scheduling) |
+| S7 | **API-credit envelope** | Job 03 running cost is capped at ≤$100/mo per company (Lead's ruling); the ~$2,000/mo API figure is a planning anchor, not authorised spend; no live-model spend tonight (weekly reset Mon 01:00 ET) | Live-model stretches are bounded by the Ergon testing envelope; a per-company API cap is an owner decision before the first employee | Cayleb (cap) / Lead (envelope) |
+| S8 | **Kimi redo handback** | 93 remote `ergon` branches, 0 matching `kimi`/`redo`, no PR (Job 05 check, 31 Oct) | If it arrives and is adopted it may change the plugin/management pieces; the package plan does not wait on it | Outside (standing Job 05) |
+| S9 | **Board source not in repo / packaging allowlist** | `rg onboarding/README`-level facts: the board is not in the repo at all (only the scripted demo state); the package manifest ships tracked files only | A package built now would not contain the board app; the board slot in W2 is ready, the content waits on S2 | Team A with work-PC window |
+
+**Bottom line:** S1 is the date-determining line; S2/S3 are the two machine/purchase gates; S4/S7 are owner confirmations;
+nothing on this list is smoothed over. The w/c 2 Nov deployment as originally framed is not achievable on the evidence of
+31 Oct — the honest choices are the limited pilot or the slip in `team-a-job03-package-plan.md`.

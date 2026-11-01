@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>03 · Mobile Tasks — Ergon design comp</title>
+<link rel="stylesheet" href="../tokens.css">
+<link rel="stylesheet" href="../comp-kit.css">
+</head>
+<body>
+<div class="banner"><b>DESIGN COMP — NOT A BUILT SURFACE.</b> For Nox + owner grading · Midnight Slate pack v1.0.0 (main 32b0e02) · no code, no package files; builds stay behind G1 / C1–C6 / W1.</div>
+<div class="wrap">
+  <div>
+    <div class="phone">
+      <div class="status"><span>9:41</span><span>Ergon · one agent</span></div>
+      <div class="appbar">
+        <svg class="character" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="14" style="fill: var(--accent)"/><circle cx="11" cy="14" r="2.2" style="fill: var(--on-accent)"/><circle cx="21" cy="14" r="2.2" style="fill: var(--on-accent)"/><path d="M10 21c3 3 9 3 12 0" fill="none" style="stroke: var(--on-accent)" stroke-width="2" stroke-linecap="round"/></svg>
+        <div class="grow"><h3 style="font-size: 16px;">Tasks</h3><span class="caption">All tasks go to Marlow</span></div>
+        <span class="pill ok"><span class="state-disc working" aria-hidden="true"></span> Working</span>
+      </div>
+      <div class="content">
+        <div class="row" style="justify-content: space-between; align-items: center;">
+          <span class="caption">3 tasks · one agent, invisible delegation</span>
+          <button class="primary" style="min-height: var(--target);">New task</button>
+        </div>
+
+        <section class="card raise stack" aria-label="Task working">
+          <div class="row" style="justify-content: space-between;"><span class="pill ok">Working</span><span class="caption">Started 4 min ago</span></div>
+          <h4>Draft the weekly crew sheet</h4>
+          <p class="caption">Marlow pulled the November rate card and is checking Thursday's crew against the Oakridge move.</p>
+        </section>
+
+        <section class="card stack" aria-label="Task waiting on you" style="border-color: var(--line-strong);">
+          <div class="row" style="justify-content: space-between;"><span class="pill warn">Waiting on you</span><span class="caption">Question from Marlow</span></div>
+          <h4>Pick a rate card for Marcus's estimate</h4>
+          <p class="caption">"The estimate was built on the October card; November replaced it mid-week. Which one should the estimate use?"</p>
+          <div class="row"><button class="secondary">Answer</button><span class="caption">Expected today</span></div>
+        </section>
+
+        <section class="card stack" aria-label="Task done">
+          <div class="row" style="justify-content: space-between;"><span class="pill">Done</span><span class="caption">Finished 08:12</span></div>
+          <h4>Book the Oakridge move</h4>
+          <p class="caption">Booked for Thursday 07:00, crew of six. Priya has the run sheet; the receipt is on the job card.</p>
+        </section>
+
+        <details class="notice-box"><summary style="cursor: pointer; color: var(--ink);">Done earlier (4)</summary><p class="caption" style="margin-top:8px;">Yesterday's tasks, kept for a week, then cleared.</p></details>
+      </div>
+      <nav class="tabbar" aria-label="Sections">
+        <a href="01-mobile-chat.html">Chat</a><a href="03-mobile-tasks.html" aria-current="page">Tasks</a><a href="04-mobile-make.html">Make</a>
+      </nav>
+    </div>
+    <p class="frame-note">Mobile · task list · states: working / waiting on you / done.</p>
+  </div>
+
+  <div class="grow stack" style="max-width: 420px;">
+    <div class="card stack">
+      <h2 style="font-size: var(--body);">What this comp shows</h2>
+      <ul class="stack" style="margin:0; padding-left:18px; color: var(--muted); font-size: var(--caption);">
+        <li><b>One agent, invisible delegation</b> — no owner picker, no bot roster; every task is Marlow's, and the plumbing is hidden.</li>
+        <li><b>Three honest states</b> — working (ok), waiting on you (warn), done (neutral); state discs and words, colour never the only signal.</li>
+        <li><b>Waiting-on-you carries the question</b> — the agent's own words, so the employee can answer without opening another screen.</li>
+        <li><b>One accent action</b> — "New task" is the accent; "Answer" on the waiting card is secondary while the accent is taken.</li>
+        <li><b>Partner to the brief</b> — tapping the waiting card opens the triage/approvals sheet (comp 02) at the question's group.</li>
+      </ul>
+    </div>
+    <div class="card stack"><h3 style="font-size: var(--body);">Grading notes</h3><p class="caption">Brief §3 mobile Tasks row; §2.1 one personal agent. Tasks are delegatable units, not a crew board. <span class="muted">Design comp — not a built surface.</span></p></div>
+  </div>
+</div>
+</body>
+</html>

@@ -1,0 +1,8 @@
+=== memory plugin data presence at 2026-11-01T16:33:58Z ===
+ABSENT: /home/cayleb/.local/opt/deepseek-harness-official/apps/desktop/.desktop-build/development/home/profiles/desktop/../../home/.dsh-memory
+PRESENT: /home/cayleb/.local/opt/deepseek-harness-official/apps/desktop/.desktop-build/development/home/.dsh-memory
+544K	/home/cayleb/.local/opt/deepseek-harness-official/apps/desktop/.desktop-build/development/home/.dsh-memory
+PRESENT: /home/cayleb/.mdcg
+20K	/home/cayleb/.mdcg
+=== installed memory plugin package ===
+PACKAGE-ABSENT

@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Motion storyboard — Ergon design comp</title>
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="comp-kit.css">
+<style>
+  .timeline { display: grid; gap: var(--space-3); }
+  .t-row { display: grid; grid-template-columns: 160px 1fr 80px; gap: var(--space-2); align-items: center; }
+  .t-bar { height: 14px; border-radius: 3px; background: var(--accent); }
+  .t-bar.swap { background: var(--accent-hover); }
+  .t-bar.enter { background: var(--accent-press); }
+  .t-bar.sheet { background: var(--line-strong); }
+  .curve { width: 240px; height: 140px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); }
+  .forbid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: var(--space-2); }
+  .forbid .card { border-color: var(--line); }
+</style>
+</head>
+<body>
+<div class="banner"><b>DESIGN COMP — NOT A BUILT SURFACE.</b> For Nox + owner grading · Midnight Slate pack v1.0.0 (main 32b0e02) · no code, no package files; builds stay behind G1 / C1–C6 / W1.</div>
+<div class="stack-lg" style="max-width: 1040px; margin: 0 auto;">
+  <header class="stack">
+    <h1>Motion storyboard</h1>
+    <p class="muted">The pack's behaviour layer for the DSH-era faces: four budgets, one ease-out curve, and what is forbidden.
+    Source of record: <code>design/motion-spec.md</code> in the pack; adopted from the Duet motion budget (ruling
+    <code>20261031T171200Z</code>). These are <b>the floor, not a ceiling</b>; existing Windows surfaces keep their
+    documented 180 ms view transition.</p>
+  </header>
+
+  <section class="card stack">
+    <h2 style="font-size: var(--body);">The four budgets (scale: 1 ms = 1 px)</h2>
+    <div class="timeline">
+      <div class="t-row"><b>Tap · 120 ms</b><div><div class="t-bar" style="width: 120px;"></div></div><span class="caption">120 px</span></div>
+      <div class="t-row"><b>Swap · 200 ms</b><div><div class="t-bar swap" style="width: 200px;"></div></div><span class="caption">200 px</span></div>
+      <div class="t-row"><b>Enter · 250 ms</b><div><div class="t-bar enter" style="width: 250px;"></div></div><span class="caption">250 px</span></div>
+      <div class="t-row"><b>Sheet · 350 ms</b><div><div class="t-bar sheet" style="width: 350px;"></div></div><span class="caption">350 px</span></div>
+    </div>
+    <p class="caption">Applies to: tap feedback (buttons, tabs, list selection) · content replacement (tab/view swap, list → detail) · content arriving (message, card, live update, brief) · sheets and dialogs.</p>
+  </section>
+
+  <section class="card stack">
+    <h2 style="font-size: var(--body);">One ease-out curve</h2>
+    <div class="wrap">
+      <svg class="curve" viewBox="0 0 240 140" role="img" aria-label="Illustrative ease-out curve: fast start, slow finish">
+        <path d="M20 120 C 68 120, 40 20, 220 20" fill="none" style="stroke: var(--accent)" stroke-width="2"/>
+        <line x1="20" y1="120" x2="220" y2="120" style="stroke: var(--line)"/>
+        <line x1="20" y1="120" x2="20" y2="20" style="stroke: var(--line)"/>
+        <circle cx="20" cy="120" r="3" style="fill: var(--accent)"/>
+        <circle cx="220" cy="20" r="3" style="stroke: var(--accent)" fill="none" stroke-width="2"/>
+      </svg>
+      <div class="stack" style="max-width: 520px;">
+        <p class="caption">One curve across the product, defined once at build time — no per-component easing inventions. The
+        illustration shows the shape only; the build records the exact cubic-bezier with the motion tokens.</p>
+        <p class="caption"><b>Applied examples:</b> a tab switch swaps at 200 ms · a new message enters at 250 ms · the approval
+        sheet opens at 350 ms · a tap acknowledges at 120 ms. If removing the motion loses no meaning, it is not admitted.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="card stack">
+    <h2 style="font-size: var(--body);">Forbidden (the unslop fence)</h2>
+    <div class="forbid">
+      <div class="card"><b>No loops</b><p class="caption">Pulse, ping, breathing glows, shimmer sweeps, marquees, auto-advancing carousels.</p></div>
+      <div class="card"><b>No spectacle</b><p class="caption">Glow, parallax, 3D tilt, decorative blur, confetti, magnetic cursors, particle effects.</p></div>
+      <div class="card"><b>No shortcuts</b><p class="caption">No <code>transition-all</code>; animate the named property only. Animation never blocks input.</p></div>
+      <div class="card"><b>No motion-only meaning</b><p class="caption">Every animated state change has a static, worded equivalent (state disc + word).</p></div>
+    </div>
+  </section>
+
+  <section class="card stack">
+    <h2 style="font-size: var(--body);">Reduced motion and High Contrast</h2>
+    <ul class="stack" style="margin:0; padding-left:18px; color: var(--muted); font-size: var(--caption);">
+      <li>Decorative motion is off under Windows High Contrast and under reduced-motion settings; state changes remain immediate and legible.</li>
+      <li>High Contrast wins over the pack: system colours replace tokens, and nothing relies on animation to communicate.</li>
+      <li>Focus rings are never animated (pack rule: 2 px accent ring, always visible on keyboard focus).</li>
+    </ul>
+    <p class="frame-note">Storyboard only — static comp. Runtime motion is verified on a real machine by the fresh checker when a surface is built (pack gate), never claimed from this page. Design comp — not a built surface.</p>
+  </section>
+</div>
+</body>
+</html>

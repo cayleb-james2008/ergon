@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>05 · Desktop workspace — Ergon design comp</title>
+<link rel="stylesheet" href="../tokens.css">
+<link rel="stylesheet" href="../comp-kit.css">
+</head>
+<body>
+<div class="banner"><b>DESIGN COMP — NOT A BUILT SURFACE.</b> For Nox + owner grading · Midnight Slate pack v1.0.0 (main 32b0e02) · no code, no package files; builds stay behind G1 / C1–C6 / W1.</div>
+<div class="desktop">
+  <aside class="sidebar" aria-label="Sidebar">
+    <div class="char-top">
+      <svg class="character" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="14" style="fill: var(--accent)"/><circle cx="11" cy="14" r="2.2" style="fill: var(--on-accent)"/><circle cx="21" cy="14" r="2.2" style="fill: var(--on-accent)"/><path d="M10 21c3 3 9 3 12 0" fill="none" style="stroke: var(--on-accent)" stroke-width="2" stroke-linecap="round"/></svg>
+      <div class="grow"><h3 style="font-size:16px;">Marlow</h3><span class="caption">Your personal agent</span></div>
+      <span class="pill ok"><span class="state-disc working" aria-hidden="true"></span> Working</span>
+    </div>
+    <nav aria-label="Primary">
+      <a href="05-desktop-workspace.html" aria-current="page">Chat</a>
+      <a href="03-mobile-tasks.html">Tasks</a>
+      <a href="04-mobile-make.html">Apps</a>
+      <a href="05-desktop-workspace.html">Live</a>
+    </nav>
+    <div class="foot">One agent · one relationship<br>The machinery stays hidden.</div>
+  </aside>
+
+  <main class="main">
+    <div class="top"><h2 style="font-size: var(--body);">Chat · Marlow</h2><span class="pill warn">1 needs you</span></div>
+    <div class="thread">
+      <section class="card raise stack" aria-label="Morning brief">
+        <div class="row" style="justify-content: space-between;"><span class="label">TUESDAY BRIEF</span><span class="pill warn">3 needs you</span></div>
+        <h3>Two jobs before the Oakridge move.</h3>
+        <p class="caption">November's rate card replaced October's mid-job. Marcus's estimate is held until you pick a card. The fleet audit can wait until this afternoon.</p>
+        <div class="row"><button class="primary">Open needs-you</button><button class="secondary">Show can-wait</button></div>
+      </section>
+      <div class="msg agent">Morning. Oakridge is booked for Thursday 07:00, crew of six. I've held Marcus's estimate on the rate-card question.</div>
+      <div class="msg me">Use the November card; tell Marcus why.</div>
+      <div class="msg agent">Done — Marcus has the reason and the new estimate is ready. The weekly crew sheet is drafted from the same card.</div>
+    </div>
+    <div class="composer" style="margin: 0 var(--space-3) var(--space-3);">
+      <input type="text" placeholder="Ask Marlow anything" aria-label="Message Marlow">
+      <button class="ghost icon" aria-label="Send">&#8593;</button>
+    </div>
+  </main>
+
+  <aside class="live" aria-label="Live view">
+    <div class="top"><h2 style="font-size: var(--body);">Live</h2><p class="caption">Read-only. Act in the owning surface.</p></div>
+    <div class="body">
+      <section class="card raise stack" aria-label="In flight">
+        <div class="row"><span class="state-disc working" aria-hidden="true"></span><h4>Drafting the weekly crew sheet</h4></div>
+        <p class="caption">Working · last action 1 min ago: pulled the November rate card and checked Thursday's crew.</p>
+      </section>
+      <section class="card stack" aria-label="Waiting">
+        <div class="row"><span class="state-disc needs-you" aria-hidden="true"></span><h4>Waiting on you</h4></div>
+        <p class="caption">The rate-card question is answered; one Tier B approval is still waiting.</p>
+        <button class="secondary">Open the approval</button>
+      </section>
+      <section class="card stack" aria-label="Done recently">
+        <h4>Finished</h4>
+        <p class="caption">Oakridge move booked · estimate updated · keys signed out to Priya.</p>
+      </section>
+      <div class="notice-box">The live view shows what your agent is doing — it is not a crew board and there are no other agents to manage.</div>
+    </div>
+  </aside>
+</div>
+<p class="frame-note">Desktop · 1280 × 800 comp frame · character pinned above the navigation (one click into chat, live state visible).</p>
+<div class="card stack" style="max-width: 900px; margin-top: var(--space-3);">
+  <h2 style="font-size: var(--body);">What this comp shows</h2>
+  <ul class="stack" style="margin:0; padding-left:18px; color: var(--muted); font-size: var(--caption);">
+    <li><b>Character pinned at the top of the sidebar</b> — above navigation, one click into chat from anywhere, live state disc (working).</li>
+    <li><b>Same one agent as mobile</b> — same conversation, same character; the desktop adds room, not another agent.</li>
+    <li><b>Extra room goes to Tasks, Apps and the Live view</b> — never to a roster of bots.</li>
+    <li><b>One accent action</b> — "Open needs-you" is the accent in this view; composer send and the approval opener stay secondary.</li>
+    <li><b>Live is read-only</b> — presence, not a control surface; actions happen in the owning surface.</li>
+  </ul>
+  <p class="caption">Brief §4 desktop rows; ruling <code>20261031T170800Z</code> §2–3. <span class="muted">Design comp — not a built surface.</span></p>
+</div>
+</body>
+</html>

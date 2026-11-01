@@ -1,0 +1,46 @@
+{
+  "name": "dsh-profile-desktop",
+  "private": true,
+  "dependencies": {
+    "@changfenhuang/dsh-genui": "0.15.0",
+    "@deepseek-ai/dsh-subagent-claude-code": "link:/home/cayleb/.local/opt/deepseek-harness-official/packages/subagent/subagent-claude-code",
+    "@deepseek-ai/dsh-subagent-codex": "link:/home/cayleb/.local/opt/deepseek-harness-official/packages/subagent/subagent-codex",
+    "@jayyuen66/dsh-scrapling": "0.1.6",
+    "@opencode-compat/dsh-bridge": "0.4.4",
+    "@yiyunet/dsh-kill-ai-slop": "0.7.17",
+    "cursor-opencode-provider": "0.8.5",
+    "dsh-claude-style": "0.19.6",
+    "dsh-cool-git": "0.4.0",
+    "dsh-free-search": "0.9.26",
+    "dsh-inner-browser-use": "0.41.0",
+    "dsh-plugin-upgrader": "1.6.1",
+    "dsh-univer-office": "0.3.9"
+  },
+  "dsh": {
+    "profile": {
+      "bundles": [
+        "@deepseek-ai/dsh-base",
+        "@deepseek-ai/dsh-web-app",
+        "@deepseek-ai/dsh-experimental-agent-team-profile",
+        "@deepseek-ai/dsh-experimental-voice-input-bundle",
+        "@deepseek-ai/dsh-experimental-plugin-market-bundle",
+        "@deepseek-ai/dsh-experimental-tool-worktree",
+        "@deepseek-ai/dsh-experimental-session-titles-bundle",
+        "@deepseek-ai/dsh-subagent-codex",
+        "@deepseek-ai/dsh-subagent-claude-code",
+        "@deepseek-ai/dsh-personalized-recommendations",
+        "@deepseek-ai/dsh-experimental-forge-bundle",
+        "@changfenhuang/dsh-genui",
+        "dsh-claude-style",
+        "@opencode-compat/dsh-bridge",
+        "dsh-free-search",
+        "@jayyuen66/dsh-scrapling",
+        "dsh-inner-browser-use",
+        "@yiyunet/dsh-kill-ai-slop",
+        "dsh-univer-office",
+        "dsh-cool-git",
+        "dsh-plugin-upgrader"
+      ]
+    }
+  }
+}

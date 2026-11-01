@@ -1,0 +1,1 @@
+<templated at filing; filled at R0 by r0-preflight.sh on the fresh host — never by hand for the official pass>

@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>06 · Character sheet — Ergon design comp</title>
+<link rel="stylesheet" href="../tokens.css">
+<link rel="stylesheet" href="../comp-kit.css">
+<style>
+  .chars { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-3); }
+  .char-card { display: grid; place-items: center; gap: var(--space-2); padding: var(--space-3); }
+  .char-big { width: 96px; height: 96px; }
+  .states { display: flex; gap: var(--space-4); flex-wrap: wrap; align-items: center; }
+  .state-sample { display: grid; place-items: center; gap: 8px; padding: var(--space-2) var(--space-3); border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); }
+  .measure { display: grid; place-items: center; border: 1px dashed var(--line-strong); border-radius: var(--radius); color: var(--muted); font-size: var(--caption); padding: var(--space-2); }
+  label.field { display: grid; gap: 6px; color: var(--muted); font-size: var(--caption); }
+</style>
+</head>
+<body>
+<div class="banner"><b>DESIGN COMP — NOT A BUILT SURFACE.</b> For Nox + owner grading · Midnight Slate pack v1.0.0 (main 32b0e02) · no code, no package files; builds stay behind G1 / C1–C6 / W1.</div>
+<div class="stack-lg" style="max-width: 1040px; margin: 0 auto;">
+  <header class="stack"><h1>Character sheet</h1><p class="muted">The agent's character: bubbly defaults, three shapes and colours to start from, and the live-state language on a small face. Customisation is <b>shape + colour + name only</b> — there is no character creator.</p></header>
+
+  <section class="card stack">
+    <h2 style="font-size: var(--body);">Default characters (examples)</h2>
+    <div class="chars">
+      <div class="card raise char-card" aria-label="Character example: round, accent">
+        <svg class="char-big" viewBox="0 0 96 96" aria-hidden="true">
+          <circle cx="48" cy="50" r="40" style="fill: var(--accent)"/>
+          <circle cx="36" cy="44" r="6" style="fill: var(--on-accent)"/><circle cx="60" cy="44" r="6" style="fill: var(--on-accent)"/>
+          <path d="M32 62c8 8 24 8 32 0" fill="none" style="stroke: var(--on-accent)" stroke-width="5" stroke-linecap="round"/>
+        </svg>
+        <b>Round</b><span class="caption">Accent · shape one</span>
+      </div>
+      <div class="card raise char-card" aria-label="Character example: rounded square, ok">
+        <svg class="char-big" viewBox="0 0 96 96" aria-hidden="true">
+          <rect x="10" y="12" width="76" height="76" rx="26" style="fill: var(--ok)"/>
+          <circle cx="36" cy="46" r="6" style="fill: var(--base)"/><circle cx="60" cy="46" r="6" style="fill: var(--base)"/>
+          <path d="M34 62c7 7 21 7 28 0" fill="none" style="stroke: var(--base)" stroke-width="5" stroke-linecap="round"/>
+        </svg>
+        <b>Rounded</b><span class="caption">Green · shape two</span>
+      </div>
+      <div class="card raise char-card" aria-label="Character example: blob, warn">
+        <svg class="char-big" viewBox="0 0 96 96" aria-hidden="true">
+          <path d="M48 12c22 0 38 12 38 32 0 24-14 40-38 40S10 68 10 44C10 24 26 12 48 12z" style="fill: var(--warn)"/>
+          <circle cx="36" cy="44" r="6" style="fill: var(--base)"/><circle cx="60" cy="44" r="6" style="fill: var(--base)"/>
+          <path d="M34 61c7 6 21 6 28 0" fill="none" style="stroke: var(--base)" stroke-width="5" stroke-linecap="round"/>
+        </svg>
+        <b>Blob</b><span class="caption">Amber · shape three</span>
+      </div>
+    </div>
+    <p class="caption">Defaults are bubbly, buildable-icon characters; one pinned library supplies the shapes (identification is a research item; the fallback shape is a DiceBear-class bubbly persona style).</p>
+  </section>
+
+  <section class="card stack">
+    <h2 style="font-size: var(--body);">Live state on the character — flat disc, no glow</h2>
+    <div class="states">
+      <div class="state-sample"><div class="row"><span class="state-disc working" aria-hidden="true"></span><b>Working</b></div><span class="caption">ok token · disc</span></div>
+      <div class="state-sample"><div class="row"><span class="state-disc idle" aria-hidden="true"></span><b>Idle</b></div><span class="caption">muted token · disc</span></div>
+      <div class="state-sample"><div class="row"><span class="state-disc needs-you" aria-hidden="true"></span><b>Needs you</b></div><span class="caption">warn token · disc</span></div>
+    </div>
+    <p class="caption">State reads at a glance next to the face; the word is available (tap/tooltip) so colour is never the only signal. No pulse, no glow, no effects on the character — the transition between states is the animation (motion spec §3).</p>
+  </section>
+
+  <section class="card stack">
+    <h2 style="font-size: var(--body);">Customisation surface — exactly three things</h2>
+    <div class="grid2">
+      <div class="card raise stack"><b>Shape</b><p class="caption">Pick one of the default shapes.</p></div>
+      <div class="card raise stack"><b>Colour</b><p class="caption">Pick one token colour for the character.</p></div>
+      <div class="card raise stack"><b>Name</b>
+        <label class="field">Your agent's name
+          <input type="text" value="Marlow" aria-label="Your agent's name">
+        </label>
+      </div>
+      <div class="card stack"><b>Nothing else</b><p class="caption">No body editor, no accessories, no creator. Anything beyond shape, colour and name is scope creep against the owner ruling.</p></div>
+    </div>
+  </section>
+
+  <section class="card stack">
+    <h2 style="font-size: var(--body);">Small-size legibility and targets</h2>
+    <div class="wrap">
+      <div class="measure" style="width: 120px; height: 96px;"><svg class="character small" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="14" style="fill: var(--accent)"/><circle cx="11" cy="14" r="2.2" style="fill: var(--on-accent)"/><circle cx="21" cy="14" r="2.2" style="fill: var(--on-accent)"/><path d="M10 21c3 3 9 3 12 0" fill="none" style="stroke: var(--on-accent)" stroke-width="2" stroke-linecap="round"/></svg><span>24 px</span></div>
+      <div class="measure" style="width: 120px; height: 96px;"><svg class="character" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="14" style="fill: var(--accent)"/><circle cx="11" cy="14" r="2.2" style="fill: var(--on-accent)"/><circle cx="21" cy="14" r="2.2" style="fill: var(--on-accent)"/><path d="M10 21c3 3 9 3 12 0" fill="none" style="stroke: var(--on-accent)" stroke-width="2" stroke-linecap="round"/></svg><span>32 px</span></div>
+      <div class="measure" style="width: 160px; height: 96px;"><button class="secondary icon" style="width:44px; height:44px;" aria-label="44 DIP target"><svg class="character small" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="14" style="fill: var(--accent)"/><circle cx="11" cy="14" r="2.2" style="fill: var(--on-accent)"/><circle cx="21" cy="14" r="2.2" style="fill: var(--on-accent)"/><path d="M10 21c3 3 9 3 12 0" fill="none" style="stroke: var(--on-accent)" stroke-width="2" stroke-linecap="round"/></svg></button><span>44 DIP target</span></div>
+      <div class="measure" style="width: 180px; height: 96px;"><button class="secondary employee" aria-label="56 DIP employee target">Chat with Marlow</button><span>56 DIP employee</span></div>
+    </div>
+    <p class="caption">The character and its state stay legible at the smallest header size; the entry point to chat is always at least a 44 DIP target (56 DIP on employee screens).</p>
+  </section>
+
+  <p class="frame-note">Brief §6 character system; rulings <code>171200Z</code> (shape + colour + name only) and <code>170800Z</code> §3 (pinned top of sidebar, live state). Design comp — not a built surface.</p>
+</div>
+</body>
+</html>

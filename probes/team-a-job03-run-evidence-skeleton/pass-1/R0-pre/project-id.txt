@@ -1,0 +1,1 @@
+<templated at filing; filled at R0 with the company Supabase project id and region only — never a key, URL token or password>

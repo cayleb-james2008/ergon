@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>07 · Empty / loading / error / offline — Ergon design comp</title>
+<link rel="stylesheet" href="../tokens.css">
+<link rel="stylesheet" href="../comp-kit.css">
+<style>
+  .states-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); }
+  .state-card { display: flex; flex-direction: column; gap: var(--space-2); min-height: 220px; }
+  .state-card .face { color: var(--subtle); font-size: 11px; text-transform: none; }
+  .state-card .body { flex: 1; display: flex; flex-direction: column; gap: var(--space-2); justify-content: center; }
+  .offline-strip { background: var(--warn-wash); border: 1px solid var(--warn-wash); color: var(--warn); border-radius: var(--radius-sm); padding: 8px var(--space-2); font-size: var(--caption); font-weight: 600; }
+</style>
+</head>
+<body>
+<div class="banner"><b>DESIGN COMP — NOT A BUILT SURFACE.</b> For Nox + owner grading · Midnight Slate pack v1.0.0 (main 32b0e02) · no code, no package files; builds stay behind G1 / C1–C6 / W1.</div>
+<div class="stack-lg" style="max-width: 1040px; margin: 0 auto;">
+  <header class="stack"><h1>Empty, loading, error, offline</h1><p class="muted">The honest states for both faces. Plain words, one next step, never a dead end. Loading is a static placeholder with a worded label — no pulse or ping loop (motion spec §3).</p></header>
+
+  <div class="states-grid">
+    <section class="card state-card" aria-label="Mobile empty state"><span class="face">MOBILE · EMPTY</span><div class="body"><h3>No tasks yet</h3><p class="caption">Ask Marlow for something — a sheet, a booking, a question about the day.</p></div><div><button class="primary">New task</button></div></section>
+
+    <section class="card state-card" aria-label="Desktop empty state"><span class="face">DESKTOP · EMPTY</span><div class="body"><h3>Say hello to Marlow</h3><p class="caption">Your agent is ready. Tell it what today looks like, or open your brief when it arrives.</p><div class="composer" style="margin:0;"><input type="text" placeholder="Ask Marlow anything" aria-label="Message Marlow"><button class="ghost icon" aria-label="Send">&#8593;</button></div></div></section>
+
+    <section class="card state-card" aria-label="Mobile loading state"><span class="face">MOBILE · LOADING</span><div class="body"><h3>Loading your brief…</h3><div class="stack" style="gap:8px;"><div class="skeleton" style="width:82%"></div><div class="skeleton" style="width:64%"></div><div class="skeleton" style="width:74%"></div></div><p class="caption">Static placeholder — the brief appears when it is ready; nothing pulses.</p></div></section>
+
+    <section class="card state-card" aria-label="Desktop loading state"><span class="face">DESKTOP · LOADING</span><div class="body"><h3>Opening your session…</h3><div class="stack" style="gap:8px;"><div class="skeleton" style="width:56%"></div><div class="skeleton" style="width:88%"></div><div class="skeleton" style="width:70%"></div></div><p class="caption">Words first; no spinner loop, no shimmer (a shimmer is a tell).</p></div></section>
+
+    <section class="card state-card" aria-label="Mobile error state"><span class="face">MOBILE · ERROR</span><div class="body"><h3>The brief didn't load</h3><p class="caption">Nothing was lost — Marlow still has your day. Please try again in a minute.</p></div><div class="row"><button class="primary">Try again</button><button class="secondary">Tell IT</button></div></section>
+
+    <section class="card state-card" aria-label="Desktop error state"><span class="face">DESKTOP · ERROR</span><div class="body"><h3>Marlow couldn't reach the company host</h3><p class="caption">Your session is safe. If this keeps happening, tell IT and mention the time.</p></div><div class="row"><button class="primary">Try again</button><button class="secondary">Tell IT</button></div></section>
+
+    <section class="card state-card" aria-label="Mobile offline state"><span class="face">MOBILE · OFFLINE</span><div class="body"><div class="offline-strip">You're offline — showing your last saved brief.</div><h3>Marlow will pick up where you left off</h3><p class="caption">Last saved 08:12. Messages send when the connection returns; nothing is lost.</p></div><div class="row"><button class="secondary">Try now</button><span class="caption">Retries automatically</span></div></section>
+
+    <section class="card state-card" aria-label="Desktop offline state"><span class="face">DESKTOP · OFFLINE</span><div class="body"><div class="offline-strip">Offline — showing the last saved view.</div><h3>Work you can do is still here</h3><p class="caption">Opening a saved artefact still works. Sending and approvals wait for the connection.</p></div><div class="row"><button class="secondary">Try now</button><span class="caption">Reconnecting…</span></div></section>
+  </div>
+
+  <section class="card stack">
+    <h2 style="font-size: var(--body);">Rules these states follow</h2>
+    <ul class="stack" style="margin:0; padding-left:18px; color: var(--muted); font-size: var(--caption);">
+      <li><b>Plain words</b> — no "diagnostics", "enrolled", "payload", "unconfirmed" on employee screens.</li>
+      <li><b>One next step</b> — every state names the one thing to do next; Back/Dismiss stay secondary.</li>
+      <li><b>No dead ends</b> — errors say what happened, that nothing was lost, and what happens next.</li>
+      <li><b>No loop tells</b> — loading is a static skeleton with a worded label; no pulse, ping, shimmer or spinner loop.</li>
+      <li><b>Reduced motion / High Contrast</b> — nothing in these states depends on motion or colour alone.</li>
+    </ul>
+    <p class="frame-note">Brief §3/§4 layouts; §9 acceptance (plain words, no dead ends, 56 DIP employee buttons). Design comp — not a built surface.</p>
+  </section>
+</div>
+</body>
+</html>

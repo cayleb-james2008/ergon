@@ -1,0 +1,1 @@
+<templated at filing; filled at R0: sha256sum <package-tarball> and the tarball file name — never a credential value>

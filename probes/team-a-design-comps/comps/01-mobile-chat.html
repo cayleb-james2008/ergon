@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>01 · Mobile Chat — Ergon design comp</title>
+<link rel="stylesheet" href="../tokens.css">
+<link rel="stylesheet" href="../comp-kit.css">
+</head>
+<body>
+<div class="banner"><b>DESIGN COMP — NOT A BUILT SURFACE.</b> For Nox + owner grading · Midnight Slate pack v1.0.0 (main 32b0e02) · no code, no package files; builds stay behind G1 / C1–C6 / W1.</div>
+<div class="wrap">
+  <div>
+    <div class="phone">
+      <div class="status"><span>9:41</span><span>Ergon · one agent</span></div>
+      <div class="appbar">
+        <svg class="character" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="14" style="fill: var(--accent)"/><circle cx="11" cy="14" r="2.2" style="fill: var(--on-accent)"/><circle cx="21" cy="14" r="2.2" style="fill: var(--on-accent)"/><path d="M10 21c3 3 9 3 12 0" fill="none" style="stroke: var(--on-accent)" stroke-width="2" stroke-linecap="round"/></svg>
+        <div class="grow">
+          <h3 style="font-size: 16px;">Marlow</h3>
+          <span class="caption">Your personal agent</span>
+        </div>
+        <span class="pill warn"><span class="state-disc needs-you" aria-hidden="true"></span> Needs you</span>
+      </div>
+
+      <div class="content">
+        <section class="card raise stack" aria-label="Morning brief">
+          <div class="row" style="justify-content: space-between; align-items: flex-start;">
+            <div class="stack" style="gap: 2px;">
+              <span class="label">TUESDAY BRIEF</span>
+              <h3>Two jobs before the Oakridge move.</h3>
+            </div>
+            <span class="pill warn">3 needs you</span>
+          </div>
+          <p class="caption">The November rate card replaced October's mid-job. Marcus's estimate uses the old card — Marlow flagged it for you to see before it goes out.</p>
+        </section>
+
+        <div class="stack" aria-label="Conversation">
+          <div class="msg agent">Morning. Oakridge is booked for Thursday 07:00, crew of six. I've held Marcus's estimate until you pick the rate card.</div>
+          <div class="msg agent">The van keys are in the yard — Priya signed them out.</div>
+          <div class="turn"><button class="secondary employee">Use November card</button></div>
+          <div class="msg me">Use the November card and tell Marcus why.</div>
+          <div class="msg agent">Done — Marcus has the reason and the new estimate is ready to send.</div>
+        </div>
+
+        <section class="card stack" aria-label="Pinned approval" style="border-color: var(--line-strong);">
+          <div class="row" style="justify-content: space-between;">
+            <span class="pill warn">Approval needed</span>
+            <span class="caption">Tier B · one purchase</span>
+          </div>
+          <h4>Order 2 boxes of A4 for the main desk</h4>
+          <p class="caption">Vendor: the usual stationer. Grant: one purchase, this vendor, no standing permission.</p>
+          <div class="row">
+            <button class="primary">Review approval</button>
+            <button class="secondary">Later</button>
+          </div>
+        </section>
+      </div>
+
+      <div class="composer">
+        <input type="text" placeholder="Ask Marlow anything" aria-label="Message Marlow">
+        <button class="ghost icon" aria-label="Send">&#8593;</button>
+      </div>
+      <nav class="tabbar" aria-label="Sections">
+        <a href="01-mobile-chat.html" aria-current="page">Chat</a>
+        <a href="03-mobile-tasks.html">Tasks</a>
+        <a href="04-mobile-make.html">Make</a>
+      </nav>
+    </div>
+    <p class="frame-note">Mobile · 390 × 844 comp frame · flat Midnight Slate.</p>
+  </div>
+
+  <div class="grow stack" style="max-width: 420px;">
+    <div class="card stack">
+      <h2 style="font-size: var(--body);">What this comp shows</h2>
+      <ul class="stack" style="margin:0; padding-left:18px; color: var(--muted); font-size: var(--caption);">
+        <li><b>One long-running session feel</b> — brief on top, conversation below, one composer.</li>
+        <li><b>Character pinned and live</b> — avatar + name + "Needs you" state disc in the header; one click to chat from anywhere.</li>
+        <li><b>One-tap human turns</b> — the one-tap reply above the keyboard-style composer; typing still available.</li>
+        <li><b>One accent forward action per view</b> — the waiting Tier B approval takes the accent; Send is secondary while waiting.</li>
+        <li><b>Approvals fence</b> — Tier B shows "one purchase, this vendor"; no "Always allow" anywhere on this path.</li>
+        <li><b>No tells</b> — flat fills, hairline separators, state disc not a glowing orb; motion storyboard covers the 120/200/250/350 ms budget.</li>
+      </ul>
+    </div>
+    <div class="card stack">
+      <h3 style="font-size: var(--body);">Grading notes</h3>
+      <p class="caption">Brief: §3 mobile Chat row; §6 character/state; §5 motion. The character state reads at a glance in the
+      header circle; the composer stays docked above the tab bar. <span class="muted">Design comp — not a built surface.</span></p>
+    </div>
+  </div>
+</div>
+</body>
+</html>

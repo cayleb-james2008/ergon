@@ -1,0 +1,13 @@
+packages:
+  - .
+
+nodeLinker: hoisted
+autoInstallPeers: false
+allowBuilds:
+  protobufjs: false
+minimumReleaseAgeExclude:
+  - '@furongjun1999/dsh-memory@0.9.21'
+  - dsh-free-search@0.9.26
+  - '@jayyuen66/dsh-scrapling@0.1.6'
+  - dsh-flymemory@1.8.3
+  - dsh-inner-browser-use@0.41.0

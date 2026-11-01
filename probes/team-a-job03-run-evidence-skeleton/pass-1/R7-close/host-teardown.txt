@@ -1,0 +1,1 @@
+<templated at filing; filled at close-out: host id, destruction command/console action, confirmation the host no longer exists, timestamp>

@@ -1,0 +1,25 @@
+{
+ "name": "dsh-inner-browser-use",
+ "version": "0.41.0",
+ "description": "An agent-owned Chromium sidecar mirrored into the DeepSeek Harness right column: the agent drives it, the person watches and can take the mouse, and logins survive restarts.",
+ "license": "MIT",
+ "repository": {
+  "type": "git",
+  "url": "git+https://github.com/regrevia/dsh-inner-browser-use.git"
+ },
+ "homepage": "https://github.com/regrevia/dsh-inner-browser-use#readme",
+ "author": {
+  "name": "regrevia",
+  "url": "https://github.com/regrevia"
+ },
+ "dist": null,
+ "main": "index.js",
+ "module": null,
+ "exports": {
+  ".": "./index.js",
+  "./client": "./client.js",
+  "./locale/*.json": "./locale/*.json",
+  "./icon": "./icon.svg",
+  "./package.json": "./package.json"
+ }
+}

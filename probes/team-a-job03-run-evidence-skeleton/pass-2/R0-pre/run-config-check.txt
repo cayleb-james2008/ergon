@@ -1,0 +1,1 @@
+<templated at filing; filled at R0 by: node docs/acceptance/demo-company/fixtures/check-run-config.mjs — expected "accepted: ... route budget-proxy">

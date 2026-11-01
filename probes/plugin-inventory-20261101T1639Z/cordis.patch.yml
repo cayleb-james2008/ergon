@@ -1,0 +1,75 @@
+# Your patch layer for this dsh profile, applied after every bundle layer:
+# a top-level YAML array of loader patch entries (id-targeted config
+# overrides, disables, and insert lists; `!!js` expressions allowed).
+- id: speech-to-text
+  name: "@deepseek-ai/dsh-experimental-speech-to-text"
+  config:
+    defaultProvider: sensevoice-local
+    language: en
+- id: plugin-market
+  name: "@deepseek-ai/dsh-plugin-market"
+  config:
+    indexes:
+      - https://cdn.jsdelivr.net/npm/dsh-plugin-catalog/index.json
+      - https://cdn.dsh.so/market/top-rank.json
+      - https://cdn.dsh.so/market/index.json
+      - https://dshopen.org/index.json
+      - https://api.dshfind.com/market/dsh-index.json
+- id: llm-pi-ai
+  name: "@deepseek-ai/dsh-llm-pi-ai"
+  config:
+    providers:
+      opencode-go:
+        apiKeyEnv: OPENCODE_GO_API_KEY
+      opencode:
+        apiKeyEnv: OPENCODE_API_KEY
+      openrouter:
+        apiKeyEnv: OPENROUTER_API_KEY
+- id: ui-chat
+  name: "@deepseek-ai/dsh-client-ui-chat"
+  config:
+    transcriptView: standard
+    performanceUsage: detailed
+- id: ui-settings
+  name: "@deepseek-ai/dsh-client-ui-settings"
+  config:
+    enabled: true
+- id: ui-settings-account
+  name: "@deepseek-ai/dsh-client-ui-settings-account"
+  config:
+    version: 1
+    step: done
+    usage: detailed
+    developerTools: true
+    purpose: null
+    process: standard
+    completion: api-key
+- id: agent-default-model
+  name: "@deepseek-ai/dsh-agent-default-model"
+  config:
+    provider: opencode-go
+    model: deepseek-v4.1-flash
+    reasoningEffort: max
+- id: web
+  name: "@deepseek-ai/dsh-web"
+  config:
+    searchProvider: ddg
+    fetchProvider: fs-quality-fetch
+- id: ui-skin-claude-style
+  name: dsh-claude-style
+  config:
+    statusMotion: sweep
+- id: permission
+  name: "@deepseek-ai/dsh-permission-presets"
+  config:
+    presets:
+      read-only:
+        sandbox: read-only
+        approval: ask
+      workspace-write:
+        sandbox: workspace-write
+        approval: ask
+      danger-full-access:
+        sandbox: danger-full-access
+        approval: never
+    defaultPreset: danger-full-access

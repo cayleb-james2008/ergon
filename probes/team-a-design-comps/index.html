@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ergon front-end design pass — static comps (for grading)</title>
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="comp-kit.css">
+<style>
+  .cover { max-width: 1080px; margin: 0 auto; display: grid; gap: var(--space-4); }
+  .cover h1 { font-size: 28px; }
+  .cover .sub { color: var(--muted); font-size: var(--ember-body); max-width: 76ch; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: var(--space-3); }
+  .comp-link { display: grid; gap: 6px; text-decoration: none; color: var(--ink); }
+  .comp-link span { color: var(--muted); font-size: var(--caption); }
+  .comp-link:hover { border-color: var(--line-strong); }
+  table.grade { width: 100%; border-collapse: collapse; font-size: var(--caption); }
+  table.grade th, table.grade td { text-align: left; vertical-align: top; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+  table.grade th { color: var(--muted); font-weight: 600; }
+  .meta { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: var(--space-3); }
+</style>
+</head>
+<body>
+<div class="cover">
+  <div class="banner"><b>DESIGN COMP — NOT A BUILT SURFACE.</b> No code, no plugin rows, no package files. Builds stay behind G1 / C1–C6 / W1.</div>
+
+  <header class="stack">
+    <h1>Ergon front-end design pass — static comps</h1>
+    <p class="sub">Seven static comps + a motion storyboard for the two Ergon faces, on the Midnight Slate design pack
+    v1.0.0 (merged in <code>main</code> at <code>32b0e02</code>). Sources: the front-end design brief
+    (<code>board/reports/team-a-ergon-frontend-design-brief.md</code> §8) and the three Nox design rulings — the Open Duet
+    merge plan (<code>20261031T170100Z</code>), the desktop model (<code>170800Z</code>) and the character/motion scope
+    (<code>171200Z</code>).</p>
+    <p class="sub"><b>What this is not:</b> a built surface, a plugin bundle, a rehearsal artefact, or evidence that any
+    interaction works at runtime. Pixel rendering and behaviour are graded here, then verified only when a real surface is
+    built and passes the pack gate (unslop → all-states → screenshot compare → fresh checker) behind the gates.</p>
+  </header>
+
+  <section class="card">
+    <h2>Grading checklist</h2>
+    <table class="grade">
+      <thead><tr><th>Property</th><th>What to look for</th><th>Where</th></tr></thead>
+      <tbody>
+        <tr><td>One product, two faces</td><td>Mobile reads as one long-running session with the one agent; desktop is a task surface over the same agent and character</td><td>01, 03, 05</td></tr>
+        <tr><td>Character</td><td>Pinned at the top, one click into chat from anywhere, live state (working/idle/needs-you) as a flat disc — not a glow</td><td>01, 02, 05, 06</td></tr>
+        <tr><td>Duet interaction model</td><td>Floating Chat / Tasks / Make bar, composer above the bar, morning brief, needs-you vs can-wait triage, one-tap human turns</td><td>01, 02, 03, 04</td></tr>
+        <tr><td>Approvals fence</td><td>Tier A vs Tier B wording; "Always allow" never on a Tier B path; the grant scope shown</td><td>02</td></tr>
+        <tr><td>Midnight Slate discipline</td><td>Flat surfaces, no gradients/glass/shine/shadows, one indigo accent, tokens only, one accent forward action per view</td><td>all</td></tr>
+        <tr><td>Character system is light</td><td>Customisation is shape + colour + name only; no creator; state reads at small size</td><td>06</td></tr>
+        <tr><td>Motion</td><td>Four budgets and one ease-out curve; polish with purpose; no pulse/glow/parallax loops</td><td>storyboard</td></tr>
+        <tr><td>Honest states</td><td>Empty / loading / error / offline are plain-worded, one next step each, never dead ends, loading is not a pulse loop</td><td>07</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section class="stack">
+    <h2>The comps</h2>
+    <div class="grid">
+      <a class="card comp-link" href="comps/01-mobile-chat.html"><b>01 · Mobile Chat</b><span>Brief, conversation, one-tap turns, pinned approval, character state</span></a>
+      <a class="card comp-link" href="comps/02-mobile-triage-approvals.html"><b>02 · Mobile Triage + Approvals</b><span>Needs-you vs can-wait; Tier A vs Tier B; one accent action</span></a>
+      <a class="card comp-link" href="comps/03-mobile-tasks.html"><b>03 · Mobile Tasks</b><span>Working / waiting-on-you / done; all tasks to the one agent</span></a>
+      <a class="card comp-link" href="comps/04-mobile-make.html"><b>04 · Mobile Make</b><span>Artefacts, versions, open + request a change</span></a>
+      <a class="card comp-link" href="comps/05-desktop-workspace.html"><b>05 · Desktop workspace</b><span>Character pinned top of sidebar; Chat / Tasks / Apps / Live rail</span></a>
+      <a class="card comp-link" href="comps/06-character-sheet.html"><b>06 · Character sheet</b><span>Three shapes × colours, three state discs, name field, 44/56 px</span></a>
+      <a class="card comp-link" href="comps/07-states.html"><b>07 · Empty / loading / error / offline</b><span>Both faces, plain words, one next step each</span></a>
+      <a class="card comp-link" href="motion-storyboard.html"><b>Motion storyboard</b><span>120 / 200 / 250 / 350 ms, one ease-out curve, forbiddens</span></a>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Fences (held in every file)</h2>
+    <ul class="stack" style="margin:0; padding-left:18px; color: var(--muted); font-size: var(--caption);">
+      <li>No external assets: no CDN, no webfonts (system stack from the tokens), no images; all visuals are CSS or inline SVG.</li>
+      <li>Tokens only: every colour, type size, space, radius and target comes from <code>tokens.css</code>, generated from the pack's <code>design/tokens.json</code>; no hand-typed hex in any comp.</li>
+      <li>Nothing copied from the Glitch Cat Club source repository (that repo has no licence file; method only).</li>
+      <li>No code: the comps are static HTML/CSS with no scripts; nothing is wired to a plugin, package or fleet surface.</li>
+      <li>$0: no purchases, no sends, no credentials.</li>
+    </ul>
+  </section>
+
+  <p class="frame-note">Comp pack generated and checked by <code>check-comps.mjs</code>; tokens regenerated by <code>build-tokens.mjs</code>. Design comps for grading — not built surfaces.</p>
+</div>
+</body>
+</html>

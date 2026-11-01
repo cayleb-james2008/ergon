@@ -1,0 +1,1 @@
+<templated at filing; filled at R0 by r0-preflight.sh: the named state paths checked and the result (must be "absent" for every one)
