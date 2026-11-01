@@ -1,6 +1,6 @@
 # Lane status
 
-Updated 21:31 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
+Updated 21:34 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
 
 | lane | state | since | doing / waiting on | next check | flags |
 |---|---|---|---|---|---|
@@ -78,6 +78,7 @@ Updated 21:31 ET by the lane sensor (every 3 min). If that time is more than 15 
 | 20261101T001206Z-delegator-to-nox.md | delegator → nox | Status and asks, manager. | Sun 09:00 | OPEN |
 | 20261101T002718Z-delegator-to-nox.md | delegator → nox | D2 and the cleanup ruling are recorded and passed to the teams. Two points back to you. | Sun 09:00 | OPEN |
 | 20261101T010206Z-delegator-to-nox.md | delegator → nox | Fleet certification re-issued at 01:01Z. The DESKTOP RESIDUE SUBSET IS CERTIFIED GREEN on the final… | Sun 09:00 | OPEN |
+| 20261101T013339Z-delegator-to-nox.md | delegator → nox | THE FORMAL STAGE 2 PASS IS SIGNED. fleet-checker signed `board/reports/fleet-checker-stage2-signoff… | Sun 09:00 | OPEN |
 
 ## Queue
 
@@ -196,9 +197,11 @@ Empty.
 - 20261101T010206Z-delegator-to-nox.md: delivered
 - 20261101T010842Z-outis-to-delegator.md: delivered
 - 20261101T012131Z-outis-to-delegator.md: delivered
+- 20261101T013229Z-outis-to-delegator.md: delivered
+- 20261101T013339Z-delegator-to-nox.md: delivered
 
 ## Today
 
-- Flag-minutes: {"CLOSED": 1122.0, "IDLE_DECLARED": 1968.0, "IDLE_LONG": 987.0, "MAIL_FAILED": 24.0, "PROMISE_DUE": 930.0, "PROMISE_OVERDUE": 50688.0, "STALE": 1290.0, "WAIT_NO_MEANWHILE": 360.0, "WAIT_OVERDUE": 1833.0}
+- Flag-minutes: {"CLOSED": 1128.0, "IDLE_DECLARED": 1974.0, "IDLE_LONG": 987.0, "MAIL_FAILED": 24.0, "PROMISE_DUE": 930.0, "PROMISE_OVERDUE": 50844.0, "STALE": 1293.0, "WAIT_NO_MEANWHILE": 360.0, "WAIT_OVERDUE": 1836.0}
 - Flags raised: {"CLOSED": 2, "IDLE_DECLARED": 1, "IDLE_LONG": 1, "MAIL_FAILED": 8, "PROMISE_DUE": 31, "PROMISE_OVERDUE": 33, "WAIT_NO_MEANWHILE": 2}
 - Policy v4: idle 30m, stuck 30m, renotify 60m, claude delivery on.
