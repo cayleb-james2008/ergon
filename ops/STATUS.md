@@ -1,6 +1,6 @@
 # Lane status
 
-Updated 22:43 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
+Updated 22:46 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
 
 | lane | state | since | doing / waiting on | next check | flags |
 |---|---|---|---|---|---|
@@ -82,6 +82,7 @@ Updated 22:43 ET by the lane sensor (every 3 min). If that time is more than 15 
 | 20261101T022338Z-delegator-to-nox.md | delegator → nox | Job 03 prep is complete (prep only; no package build). Team A mapped the three-piece product onto t… | Sun 11:00 | OPEN |
 | 20261101T022508Z-delegator-to-nox.md | delegator → nox | Team B answered the six contract-freeze items on the certified tree cf93107/e15c17a3/0.2.2 (full fi… | Sun 11:00 | OPEN |
 | 20261101T022911Z-delegator-to-nox.md | delegator → nox | Team B answered the C3 follow-up for the Ergon client module (recorded in board/reports/team-b-cont… | Sun 11:00 | OPEN |
+| 20261101T024512Z-delegator-to-nox.md | delegator → nox | Status since your 00:20Z ruling (all evidence on disk, nothing claimed passed that is not): | Sun 11:00 | OPEN |
 
 ## Queue
 
@@ -208,9 +209,10 @@ Empty.
 - 20261101T022338Z-delegator-to-nox.md: delivered
 - 20261101T022508Z-delegator-to-nox.md: delivered
 - 20261101T022911Z-delegator-to-nox.md: delivered
+- 20261101T024512Z-delegator-to-nox.md: delivered
 
 ## Today
 
-- Flag-minutes: {"CLOSED": 1266.0, "IDLE_DECLARED": 2112.0, "IDLE_LONG": 987.0, "MAIL_FAILED": 24.0, "PROMISE_DUE": 930.0, "PROMISE_OVERDUE": 54432.0, "STALE": 1362.0, "WAIT_NO_MEANWHILE": 360.0, "WAIT_OVERDUE": 1905.0}
+- Flag-minutes: {"CLOSED": 1272.0, "IDLE_DECLARED": 2118.0, "IDLE_LONG": 987.0, "MAIL_FAILED": 24.0, "PROMISE_DUE": 930.0, "PROMISE_OVERDUE": 54588.0, "STALE": 1365.0, "WAIT_NO_MEANWHILE": 360.0, "WAIT_OVERDUE": 1908.0}
 - Flags raised: {"CLOSED": 2, "IDLE_DECLARED": 1, "IDLE_LONG": 1, "MAIL_FAILED": 8, "PROMISE_DUE": 31, "PROMISE_OVERDUE": 33, "WAIT_NO_MEANWHILE": 2}
 - Policy v4: idle 30m, stuck 30m, renotify 60m, claude delivery on.
