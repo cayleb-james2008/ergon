@@ -1,0 +1,5 @@
+# Builder 0.3.0 pack vs accepted 0.2.2 pack (pass 2 data)
+differences: 0
+pass-2 verdict tables byte-identical: true
+words 0.2.2: {"R0":"clean","R1":"clean","R2":"pending","R3":"pending","R4":"pending","R5":"clean","R6":"pending","R7":"clean"}
+words 0.3.0: {"R0":"clean","R1":"clean","R2":"pending","R3":"pending","R4":"pending","R5":"clean","R6":"pending","R7":"clean"}

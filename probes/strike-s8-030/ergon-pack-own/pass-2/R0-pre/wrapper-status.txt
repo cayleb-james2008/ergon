@@ -1,0 +1,10 @@
+command: sudo -n -u fleet /usr/local/bin/dsh-fleet-admin status
+exit: 0
+stdout:
+uid=951(fleet) gid=950(fleet) groups=950(fleet)
+drwxr-x--- 1 fleet fleet 102 Oct 31 07:52 /var/lib/fleet
+drwxr-x--- 1 fleet fleet  82 Nov  1 18:10 /var/lib/fleet/dsh
+0.2.2-alpha.2
+
+stderr:
+

@@ -1,0 +1,14 @@
+command: node /home/cayleb/workspace/harness-build/ergon-strike/docs/acceptance/demo-company/run-evidence/r0-preflight.sh <empty dir>
+exit: 1
+stdout:
+PASS  host fingerprint written
+FAIL  package hash not recorded (R0 blocking: pass --package TARBALL)
+FAIL  run-config check not run (R0 blocking: pass --repo PATH to the pinned checkout)
+PASS  no company state on the checked paths
+note  url name not recorded yet (not blocking R0 if DNS is arranged before the clock)
+FAIL  company project id not recorded (R0 blocking: write id + region only, no secret)
+
+R0 PREFLIGHT: FAIL (3 blocking)
+
+stderr:
+

@@ -1,0 +1,8 @@
+{
+  "baseline": 54,
+  "refusedCodes": [
+    "payload-too-large",
+    "payload-too-large",
+    "parse-error"
+  ]
+}

@@ -1,0 +1,5 @@
+2026-11-01T23:11:46Z
+pack: /home/cayleb/Documents/deepseek-harness/default-workspace/board/probes/strike-ergon-rehearsal-030
+driver_repo_head: cb909b4f03ff529349abcfafb36d1e419bf3ac52
+driver_branch: strike/ergon-rehearsal
+35fb2593c528b3bb9963ee8671ec471688c71824c044b9c07c7c38eb5f6e5817  /home/cayleb/workspace/harness-build/ergon-strike/docs/acceptance/demo-company/rehearsal/run-rehearsal.sh

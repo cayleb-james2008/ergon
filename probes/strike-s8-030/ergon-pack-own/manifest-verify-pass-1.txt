@@ -1,0 +1,7 @@
+# Manifest verification at seal time (pass 1)
+generated_utc: 2026-11-01T23:13:39Z
+manifest: /home/cayleb/workspace/harness-build/evidence/strike/checker-verify/s8-030/ergon-pack-own/pass-1/manifest.sha256
+manifest_sha256: bf939c9eee53bb837f0599dfd09247167902766234ff90ebbdd54b3f92e96166
+entries: 72
+verification: 72/72 OK
+result: PASS — every entry matches the file on disk

@@ -1,0 +1,24 @@
+{
+  "driver": "run-rehearsal.sh",
+  "pass": 2,
+  "packDir": "/home/cayleb/Documents/deepseek-harness/default-workspace/board/probes/strike-ergon-rehearsal-030",
+  "passDir": "/home/cayleb/Documents/deepseek-harness/default-workspace/board/probes/strike-ergon-rehearsal-030/pass-2",
+  "host": "outis-desktop",
+  "runRoot": "/tmp/ergon-rehearsal-20261101T230811Z-IvO8Gi",
+  "repo": "/home/cayleb/workspace/harness-build/ergon-strike",
+  "repoCommit": "cb909b4f03ff529349abcfafb36d1e419bf3ac52",
+  "repoBranch": "strike/ergon-rehearsal",
+  "node": "v26.7.0",
+  "seed": "20261102 (fixture default)",
+  "startedUtc": "2026-11-01T23:08:11Z",
+  "driverCommand": "bash docs/acceptance/demo-company/rehearsal/run-rehearsal.sh --pass 2 --out /home/cayleb/Documents/deepseek-harness/default-workspace/board/probes/strike-ergon-rehearsal-030",
+  "fleetSocket": "/run/fleet/control.sock",
+  "platform": "installed @cayleb/dsh-fleet 0.3.0 (cayleb-dsh-fleet-0.3.0.tgz, sha256 8173d13ebee542b328ffe0b4a3476e27ffa561e46172949d54f9757ddd4e1070) on this desktop (fleet-dsh)",
+  "installedRelease": {
+    "file": "cayleb-dsh-fleet-0.3.0.tgz",
+    "version": "0.3.0",
+    "sha256": "8173d13ebee542b328ffe0b4a3476e27ffa561e46172949d54f9757ddd4e1070",
+    "identitySource": "journald install audit line (dsh-fleet-admin plugin-add) — what the install reports",
+    "verified": true
+  }
+}

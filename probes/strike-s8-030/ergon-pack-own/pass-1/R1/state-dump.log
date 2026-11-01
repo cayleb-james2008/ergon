@@ -1,0 +1,4 @@
+command: node fixtures/dump-state.mjs /tmp/ergon-rehearsal-20261101T231336Z-yZ3rsU /home/cayleb/workspace/harness-build/evidence/strike/checker-verify/s8-030/ergon-pack-own/pass-1/R1/state-dump.json
+exit: 0
+stdout: {"sha256":"558df9edb29c8c5b8e449b53e6a68ae6e02f1259d257fabe3017d943a1b593c1","bytes":315258,"normalised":{"randomIdsAliased":1050,"wallClockTimestamps":73,"secretValuesHashed":3,"rootPathsReplaced":4}}
+stderr: 

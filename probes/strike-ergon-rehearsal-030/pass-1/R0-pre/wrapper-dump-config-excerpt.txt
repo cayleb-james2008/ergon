@@ -1,0 +1,156 @@
+command: sudo -n -u fleet /usr/local/bin/dsh-fleet-admin dump-config
+exit: 0
+sha256_of_full_output: 0eee39d2dc1fd60eb78028edb36ee73b39704dab049ed016b477e816df5918c6
+
+## mounted @cayleb/dsh-fleet rows (excerpt; the config carries no credential values)
+# == @cayleb/dsh-fleet
+- id: fleet
+  name: '@cayleb/dsh-fleet'
+- id: fleet-core
+  name: '@cayleb/dsh-fleet/core'
+- id: fleet-orders
+  name: '@cayleb/dsh-fleet/orders'
+- id: fleet-lessons
+  name: '@cayleb/dsh-fleet/lessons'
+- id: fleet-policy
+  name: '@cayleb/dsh-fleet/policy'
+- id: fleet-ledger
+  name: '@cayleb/dsh-fleet/ledger'
+- id: fleet-housekeeper
+  name: '@cayleb/dsh-fleet/housekeeper'
+- id: fleet-sandbox
+  name: '@cayleb/dsh-fleet/sandbox'
+- id: fleet-egress
+  name: '@cayleb/dsh-fleet/egress'
+- id: fleet-fsguard
+  name: '@cayleb/dsh-fleet/fsguard'
+- id: fleet-firstrun
+  name: '@cayleb/dsh-fleet/firstrun'
+- id: session-inspector
+  name: '@deepseek-ai/dsh-experimental-session-inspector'
+- id: client-ui-stats
+  name: '@deepseek-ai/dsh-experimental-client-ui-stats'
+- id: preset-fleet-lead
+  name: '@deepseek-ai/dsh-agent-preset'
+    name: Fleet Lead
+      - id: persona
+        name: '@deepseek-ai/dsh-persona'
+      - id: agent-instructions
+        name: '@deepseek-ai/dsh-agent-instructions'
+      - id: time-context
+        name: '@deepseek-ai/dsh-time-context'
+      - id: tool-fs
+        name: '@deepseek-ai/dsh-tool-fs'
+      - id: tool-fs-search
+        name: '@deepseek-ai/dsh-tool-fs-search'
+      - id: tool-session-query
+        name: '@deepseek-ai/dsh-tool-session-query'
+      - id: skill-filesystem
+        name: '@deepseek-ai/dsh-skill-filesystem'
+      - id: tool-skill
+        name: '@deepseek-ai/dsh-tool-skill'
+      - id: lessons-tools
+        name: '@cayleb/dsh-fleet/lessons-tools'
+      - id: compaction
+        name: cordis:group
+          - id: compaction-basic
+            name: '@deepseek-ai/dsh-compaction-basic'
+          - id: command-compact
+            name: '@deepseek-ai/dsh-command-compact'
+          - id: tool-result-pruner
+            name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
+- id: preset-fleet-builder
+  name: '@deepseek-ai/dsh-agent-preset'
+    name: Fleet Builder
+      - id: persona
+        name: '@deepseek-ai/dsh-persona'
+      - id: agent-instructions
+        name: '@deepseek-ai/dsh-agent-instructions'
+      - id: time-context
+        name: '@deepseek-ai/dsh-time-context'
+      - id: tool-bash
+        name: '@deepseek-ai/dsh-tool-bash'
+      - id: tool-jobs
+        name: '@deepseek-ai/dsh-tool-jobs'
+      - id: persistent-terminals
+        name: cordis:group
+          - id: terminal
+            name: '@deepseek-ai/dsh-terminal'
+          - id: terminal-bash
+            name: '@deepseek-ai/dsh-terminal-bash'
+          - id: tool-terminal
+            name: '@deepseek-ai/dsh-tool-terminal'
+      - id: tool-fs
+        name: '@deepseek-ai/dsh-tool-fs'
+      - id: skill-filesystem
+        name: '@deepseek-ai/dsh-skill-filesystem'
+      - id: tool-skill
+        name: '@deepseek-ai/dsh-tool-skill'
+      - id: lessons-tools
+        name: '@cayleb/dsh-fleet/lessons-tools'
+      - id: compaction
+        name: cordis:group
+          - id: compaction-basic
+            name: '@deepseek-ai/dsh-compaction-basic'
+          - id: command-compact
+            name: '@deepseek-ai/dsh-command-compact'
+          - id: tool-result-pruner
+            name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
+- id: preset-fleet-checker
+  name: '@deepseek-ai/dsh-agent-preset'
+    name: Fleet Checker
+      - id: persona
+        name: '@deepseek-ai/dsh-persona'
+      - id: time-context
+        name: '@deepseek-ai/dsh-time-context'
+      - id: tool-fs
+        name: '@deepseek-ai/dsh-tool-fs'
+      - id: tool-fs-search
+        name: '@deepseek-ai/dsh-tool-fs-search'
+      - id: skill-filesystem
+        name: '@deepseek-ai/dsh-skill-filesystem'
+      - id: tool-skill
+        name: '@deepseek-ai/dsh-tool-skill'
+      - id: lessons-tools
+        name: '@cayleb/dsh-fleet/lessons-tools'
+      - id: compaction
+        name: cordis:group
+          - id: compaction-basic
+            name: '@deepseek-ai/dsh-compaction-basic'
+          - id: command-compact
+            name: '@deepseek-ai/dsh-command-compact'
+          - id: tool-result-pruner
+            name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
+- id: preset-fleet-researcher
+  name: '@deepseek-ai/dsh-agent-preset'
+    name: Fleet Researcher
+      - id: persona
+        name: '@deepseek-ai/dsh-persona'
+      - id: agent-instructions
+        name: '@deepseek-ai/dsh-agent-instructions'
+      - id: time-context
+        name: '@deepseek-ai/dsh-time-context'
+      - id: tool-fs
+        name: '@deepseek-ai/dsh-tool-fs'
+      - id: tool-fs-search
+        name: '@deepseek-ai/dsh-tool-fs-search'
+      - id: tool-web
+        name: '@deepseek-ai/dsh-tool-web'
+      - id: tool-session-query
+        name: '@deepseek-ai/dsh-tool-session-query'
+      - id: skill-filesystem
+        name: '@deepseek-ai/dsh-skill-filesystem'
+      - id: tool-skill
+        name: '@deepseek-ai/dsh-tool-skill'
+      - id: lessons-tools
+        name: '@cayleb/dsh-fleet/lessons-tools'
+      - id: compaction
+        name: cordis:group
+          - id: compaction-basic
+            name: '@deepseek-ai/dsh-compaction-basic'
+          - id: command-compact
+            name: '@deepseek-ai/dsh-command-compact'
+          - id: tool-result-pruner
+            name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
+- id: fleet-mcp
+  name: '@cayleb/dsh-fleet/mcp'

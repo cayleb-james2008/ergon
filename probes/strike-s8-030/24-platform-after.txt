@@ -1,0 +1,8 @@
+2026-11-01T23:14:26Z
+ActiveState=active
+InvocationID=bc98f82dc22a4053b41f75f3a9e10231
+MainPID=518634
+-- control status --
+{"ok":true,"integrity":true,"rows":true,"lanes":true,"events":58543}
+-- leftovers --
+none

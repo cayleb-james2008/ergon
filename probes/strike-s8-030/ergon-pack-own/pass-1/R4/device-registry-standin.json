@@ -1,0 +1,11 @@
+{
+  "note": "Host-side device registry row for the phone, from the canonical state dump. Stand-in: proves the host-side registry and approval, not the phone surface.",
+  "alias": "teo-phone",
+  "device_map_row": {
+    "deviceId": "device:teo-phone",
+    "employeeId": "teo-brandvold",
+    "enrolment": "operator-registry",
+    "status": "approved"
+  },
+  "fleet_device_row": null
+}

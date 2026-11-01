@@ -1,0 +1,81 @@
+{
+  "ok": true,
+  "result": {
+    "version": 0,
+    "rows": {
+      "check.marker": "",
+      "hold.refused_patterns": [
+        "wallet",
+        "trade",
+        "tradovate",
+        "activate"
+      ],
+      "housekeeper.retention": {
+        "hourly": 48,
+        "daily": 14,
+        "weekly": 8
+      },
+      "ledger.day_cap_usd": 5,
+      "lessons.max_accepted_per_mission": 20,
+      "lessons.max_accepted_per_task": 3,
+      "lessons.max_rejected": 50,
+      "lessons.tier2_domains": [
+        "host-ops",
+        "pumpfun",
+        "paperclip",
+        "security",
+        "money",
+        "finance",
+        "trading",
+        "wallet",
+        "comms",
+        "external-comms",
+        "deploy",
+        "hands",
+        "policy"
+      ],
+      "orders.batch-floor-min": 10,
+      "orders.errand-max-min": 15,
+      "orders.errand-quota": 2,
+      "orders.goldfish-reviewers": 3,
+      "orders.lease-ms": 900000,
+      "orders.max-lost-leases": 3,
+      "orders.max-rounds": 3,
+      "orders.protected-paths": [
+        "/var/lib/fleet-mirrors",
+        "/var/lib/fleet/mirrors"
+      ],
+      "rates": {
+        "anthropic/claude-haiku-5-5": {
+          "input_per_mtok": 0.1,
+          "output_per_mtok": 0.5,
+          "cache_read_per_mtok": 0.01,
+          "cache_write_per_mtok": 0.125,
+          "tiers": [
+            {
+              "input_tokens_above": 100000,
+              "input_per_mtok": 0.5,
+              "output_per_mtok": 2.5,
+              "cache_read_per_mtok": 0.05,
+              "cache_write_per_mtok": 0.625
+            }
+          ]
+        },
+        "anthropic/claude-sonnet-5-5": {
+          "input_per_mtok": 2,
+          "output_per_mtok": 10,
+          "cache_read_per_mtok": 0.1,
+          "cache_write_per_mtok": 2.5
+        },
+        "anthropic/claude-opus-5-5": {
+          "input_per_mtok": 4,
+          "output_per_mtok": 20,
+          "cache_read_per_mtok": 0.2,
+          "cache_write_per_mtok": 5
+        }
+      },
+      "selftest": true,
+      "spend.hard_ceiling_usd": 5
+    }
+  }
+}

@@ -1,0 +1,7 @@
+command: sudo -n -u fleet /usr/local/bin/dsh-fleet-admin version
+exit: 0
+stdout:
+0.2.2-alpha.2
+
+stderr:
+

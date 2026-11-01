@@ -1,0 +1,50 @@
+Ergon dress rehearsal — pass 1 on the installed @cayleb/dsh-fleet platform
+pack: /home/cayleb/workspace/harness-build/evidence/strike/checker-verify/s8-030/ergon-pack-own
+fresh company root: /tmp/ergon-rehearsal-20261101T231336Z-yZ3rsU
+repo: /home/cayleb/workspace/harness-build/ergon-strike @ cb909b4f03ff (strike/ergon-rehearsal)
+
+── R0: r0-pre
+   exit 0  (log: logs/R0.log)
+platform: installed @cayleb/dsh-fleet 0.3.0 (cayleb-dsh-fleet-0.3.0.tgz, sha256 8173d13ebee542b328ffe0b4a3476e27ffa561e46172949d54f9757ddd4e1070) on this desktop (fleet-dsh)
+── R1: r1-setup
+   exit 0  (log: logs/R1.log)
+── R2: r2-assistants
+   exit 0  (log: logs/R2.log)
+── R3: r3-url
+   exit 0  (log: logs/R3.log)
+── R4: r4-phones
+   exit 0  (log: logs/R4.log)
+── R5: r5-desk
+   exit 0  (log: logs/R5.log)
+── R6: r6-voice
+   exit 0  (log: logs/R6.log)
+── R7: r7-close
+   exit 0  (log: logs/R7.log)
+   fresh company root removed (empty after teardown)
+
+── secrets scan (pre-index)
+   - Result: clean (0 hits)
+   exit 0
+
+── index build (pre-seal render; the manifest is sealed after this)
+   INDEX pass 1: clean=4 pending=4 failed=0 preSealIndexSha256=789b4f0c2d9c4837e32b63a9c100da2e1369fa076b8a80528662110cab4b8af6
+── secrets scan (pre-seal; this is the closing commands.log row)
+   preseal scan: SCAN: CLEAN
+
+── seal (manifest.sha256 is the LAST artefact in the pass directory)
+   SEAL pass 1: manifest 72/72 OK · manifestSha256=bf939c9eee53bb837f0599dfd09247167902766234ff90ebbdd54b3f92e96166 · indexSha256=716c9a1cadfe9e88d0455c685c2775ac82ea72ef16f9a64c57e49151f26a240e · sealedUtc=2026-11-01T23:13:39Z
+
+── manifest check (sha256sum -c, the done-when gate)
+   72/72 OK (output: manifest-check-pass-1.txt)
+
+── secrets scan (post-seal, finished pass)
+   post-seal scan: SCAN: CLEAN
+
+==================================================================
+pack:        /home/cayleb/workspace/harness-build/evidence/strike/checker-verify/s8-030/ergon-pack-own
+pass index:  /home/cayleb/workspace/harness-build/evidence/strike/checker-verify/s8-030/ergon-pack-own/pass-1/index.md
+index sha256: 716c9a1cadfe9e88d0455c685c2775ac82ea72ef16f9a64c57e49151f26a240e
+manifest:    bf939c9eee53bb837f0599dfd09247167902766234ff90ebbdd54b3f92e96166 — seal 72/72 · sha256sum -c 72/72 OK
+secrets scan: clean
+==================================================================
+REHEARSAL: PASS — pass 1 clean of failed steps; manifest sealed and sha256sum -c clean. Run --pass 2 into the same pack for the mandatory second pass.

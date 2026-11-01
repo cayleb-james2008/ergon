@@ -1,0 +1,20 @@
+# fleet-dsh unit (read-only)
+generated_utc: 2026-11-01T23:13:40Z
+
+## systemctl is-active
+active
+
+## systemctl show
+ActiveState=active
+SubState=running
+MainPID=518634
+ExecStart={ path=/var/lib/fleet/npm/bin/dsh ; argv[]=/var/lib/fleet/npm/bin/dsh --profile fleet --no-open --host 127.0.0.1 --port 3091 ; ignore_errors=no ; start_time=[Sun 2026-11-01 18:10:11 EST] ; stop_time=[n/a] ; pid=518634 ; code=(null) ; status=0/0 }
+IPAddressAllow=127.0.0.0/8 100.114.17.67/32 ::1/128 100.110.154.92/32
+IPAddressDeny=169.254.0.0/16 100.64.0.0/10 ::/0 192.168.0.0/16 172.16.0.0/12 10.0.0.0/8 0.0.0.0/8
+User=fleet
+Group=fleet
+ProtectSystem=strict
+NoNewPrivileges=yes
+
+## stderr
+(none)

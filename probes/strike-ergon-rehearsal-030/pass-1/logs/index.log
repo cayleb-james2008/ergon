@@ -1,0 +1,2 @@
+INDEX pass 1: clean=4 pending=4 failed=0 preSealIndexSha256=5c989944b643ac05aaffca6fdb5a726e101bc4d9fbf54d2458a504c06c095288
+{"pass":1,"passDir":"/home/cayleb/Documents/deepseek-harness/default-workspace/board/probes/strike-ergon-rehearsal-030/pass-1","words":{"R0":"clean","R1":"clean","R2":"pending","R3":"pending","R4":"pending","R5":"clean","R6":"pending","R7":"clean"},"counts":{"clean":4,"pending":4,"failed":0},"failedSteps":[],"pendingSteps":["R2","R3","R4","R6"],"preSealIndexSha256":"5c989944b643ac05aaffca6fdb5a726e101bc4d9fbf54d2458a504c06c095288","passDiff":null}

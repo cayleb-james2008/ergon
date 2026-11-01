@@ -1,0 +1,212 @@
+{
+  "dana-whitcomb": {
+    "profile": {
+      "aiAnnualTargetUsd": 110,
+      "approvedApps": [],
+      "approvedContactIds": [],
+      "approvedSourceIds": [],
+      "company": "Lanternfield Moving & Storage",
+      "displayName": "Dana Whitcomb",
+      "employeeId": "dana-whitcomb",
+      "expertModel": "anthropic/claude-opus-5-5",
+      "expertThinking": "high",
+      "gatewayPort": 19489,
+      "livePhoneAuthorized": false,
+      "optionalSkills": [],
+      "orchestratorModel": "anthropic/claude-haiku-5-5",
+      "orchestratorThinking": "low",
+      "outboundCommunicationsAuthorized": false,
+      "phoneMonthlyMinutes": 150,
+      "role": "operations-manager",
+      "specialistModel": "anthropic/claude-haiku-5-5",
+      "support": {
+        "mode": "local-draft",
+        "remoteManager": "existing-company-tool-unconfigured"
+      },
+      "timezone": "America/New_York",
+      "voicePort": 19334,
+      "wholeTechAnnualTargetUsd": 500
+    },
+    "onboarding_session": "installed",
+    "assigned_ports": {
+      "gatewayPort": 19489,
+      "voicePort": 19334
+    },
+    "orchestrator_model": "anthropic/claude-haiku-5-5"
+  },
+  "priya-lindqvist": {
+    "profile": {
+      "aiAnnualTargetUsd": 110,
+      "approvedApps": [],
+      "approvedContactIds": [],
+      "approvedSourceIds": [],
+      "company": "Lanternfield Moving & Storage",
+      "displayName": "Priya Lindqvist",
+      "employeeId": "priya-lindqvist",
+      "expertModel": "anthropic/claude-opus-5-5",
+      "expertThinking": "high",
+      "gatewayPort": 19491,
+      "livePhoneAuthorized": false,
+      "optionalSkills": [],
+      "orchestratorModel": "anthropic/claude-haiku-5-5",
+      "orchestratorThinking": "low",
+      "outboundCommunicationsAuthorized": false,
+      "phoneMonthlyMinutes": 150,
+      "role": "dispatch-coordinator",
+      "specialistModel": "anthropic/claude-haiku-5-5",
+      "support": {
+        "mode": "local-draft",
+        "remoteManager": "existing-company-tool-unconfigured"
+      },
+      "timezone": "America/New_York",
+      "voicePort": 19336,
+      "wholeTechAnnualTargetUsd": 500
+    },
+    "onboarding_session": "installed",
+    "assigned_ports": {
+      "gatewayPort": 19491,
+      "voicePort": 19336
+    },
+    "orchestrator_model": "anthropic/claude-haiku-5-5"
+  },
+  "marcus-oyelaran": {
+    "profile": {
+      "aiAnnualTargetUsd": 110,
+      "approvedApps": [],
+      "approvedContactIds": [],
+      "approvedSourceIds": [],
+      "company": "Lanternfield Moving & Storage",
+      "displayName": "Marcus Oyelaran",
+      "employeeId": "marcus-oyelaran",
+      "expertModel": "anthropic/claude-opus-5-5",
+      "expertThinking": "high",
+      "gatewayPort": 19493,
+      "livePhoneAuthorized": false,
+      "optionalSkills": [],
+      "orchestratorModel": "anthropic/claude-haiku-5-5",
+      "orchestratorThinking": "low",
+      "outboundCommunicationsAuthorized": false,
+      "phoneMonthlyMinutes": 150,
+      "role": "billing-estimates-clerk",
+      "specialistModel": "anthropic/claude-haiku-5-5",
+      "support": {
+        "mode": "local-draft",
+        "remoteManager": "existing-company-tool-unconfigured"
+      },
+      "timezone": "America/New_York",
+      "voicePort": 19338,
+      "wholeTechAnnualTargetUsd": 500
+    },
+    "onboarding_session": "installed",
+    "assigned_ports": {
+      "gatewayPort": 19493,
+      "voicePort": 19338
+    },
+    "orchestrator_model": "anthropic/claude-haiku-5-5"
+  },
+  "teo-brandvold": {
+    "profile": {
+      "aiAnnualTargetUsd": 110,
+      "approvedApps": [],
+      "approvedContactIds": [],
+      "approvedSourceIds": [],
+      "company": "Lanternfield Moving & Storage",
+      "displayName": "Teo Brandvold",
+      "employeeId": "teo-brandvold",
+      "expertModel": "anthropic/claude-opus-5-5",
+      "expertThinking": "high",
+      "gatewayPort": 19495,
+      "livePhoneAuthorized": false,
+      "optionalSkills": [],
+      "orchestratorModel": "anthropic/claude-haiku-5-5",
+      "orchestratorThinking": "low",
+      "outboundCommunicationsAuthorized": false,
+      "phoneMonthlyMinutes": 150,
+      "role": "warehouse-lead",
+      "specialistModel": "anthropic/claude-haiku-5-5",
+      "support": {
+        "mode": "local-draft",
+        "remoteManager": "existing-company-tool-unconfigured"
+      },
+      "timezone": "America/New_York",
+      "voicePort": 19340,
+      "wholeTechAnnualTargetUsd": 500
+    },
+    "onboarding_session": "installed",
+    "assigned_ports": {
+      "gatewayPort": 19495,
+      "voicePort": 19340
+    },
+    "orchestrator_model": "anthropic/claude-haiku-5-5"
+  },
+  "rosa-quintero-hale": {
+    "profile": {
+      "aiAnnualTargetUsd": 110,
+      "approvedApps": [],
+      "approvedContactIds": [],
+      "approvedSourceIds": [],
+      "company": "Lanternfield Moving & Storage",
+      "displayName": "Rosa Quintero-Hale",
+      "employeeId": "rosa-quintero-hale",
+      "expertModel": "anthropic/claude-opus-5-5",
+      "expertThinking": "high",
+      "gatewayPort": 19497,
+      "livePhoneAuthorized": false,
+      "optionalSkills": [],
+      "orchestratorModel": "anthropic/claude-haiku-5-5",
+      "orchestratorThinking": "low",
+      "outboundCommunicationsAuthorized": false,
+      "phoneMonthlyMinutes": 150,
+      "role": "crew-chief",
+      "specialistModel": "anthropic/claude-haiku-5-5",
+      "support": {
+        "mode": "local-draft",
+        "remoteManager": "existing-company-tool-unconfigured"
+      },
+      "timezone": "America/New_York",
+      "voicePort": 19342,
+      "wholeTechAnnualTargetUsd": 500
+    },
+    "onboarding_session": "installed",
+    "assigned_ports": {
+      "gatewayPort": 19497,
+      "voicePort": 19342
+    },
+    "orchestrator_model": "anthropic/claude-haiku-5-5"
+  },
+  "sam-akintola": {
+    "profile": {
+      "aiAnnualTargetUsd": 110,
+      "approvedApps": [],
+      "approvedContactIds": [],
+      "approvedSourceIds": [],
+      "company": "Lanternfield Moving & Storage",
+      "displayName": "Sam Akintola",
+      "employeeId": "sam-akintola",
+      "expertModel": "anthropic/claude-opus-5-5",
+      "expertThinking": "high",
+      "gatewayPort": 19499,
+      "livePhoneAuthorized": false,
+      "optionalSkills": [],
+      "orchestratorModel": "anthropic/claude-haiku-5-5",
+      "orchestratorThinking": "low",
+      "outboundCommunicationsAuthorized": false,
+      "phoneMonthlyMinutes": 150,
+      "role": "office-it-support",
+      "specialistModel": "anthropic/claude-haiku-5-5",
+      "support": {
+        "mode": "local-draft",
+        "remoteManager": "existing-company-tool-unconfigured"
+      },
+      "timezone": "America/New_York",
+      "voicePort": 19344,
+      "wholeTechAnnualTargetUsd": 500
+    },
+    "onboarding_session": "installed",
+    "assigned_ports": {
+      "gatewayPort": 19499,
+      "voicePort": 19344
+    },
+    "orchestrator_model": "anthropic/claude-haiku-5-5"
+  }
+}

@@ -1,0 +1,106 @@
+{
+  "order": {
+    "id": "o4375",
+    "state": "done",
+    "fixture": true,
+    "done_when": {
+      "mode": "command",
+      "text": "rehearsal fixture done-when exits 0",
+      "command": "true"
+    },
+    "post_id": "9837",
+    "claimant": "lead:selftest-lf5-lead-1"
+  },
+  "task": {
+    "id": "t5532",
+    "state": "done",
+    "banked": true,
+    "round": 1,
+    "built": {
+      "commit": "07c792195789cbc91f66c20ff3d186d2854bc08d",
+      "artefact_hashes": [
+        "94f000eccae07875962c8c98989b7a9296c97c00f8ae8b89bce55e607b443046"
+      ],
+      "evidence": [
+        "9833"
+      ],
+      "summary": "submitted as built",
+      "at": 1793574818959
+    }
+  },
+  "final_task": {
+    "id": "t5533",
+    "state": "done",
+    "banked": true
+  },
+  "verdict_post": "9835",
+  "evidence_post": "9833",
+  "checker": "checker:selftest-chk-e80d583c3165",
+  "board_posts": [
+    {
+      "id": "9829",
+      "kind": "order-created",
+      "entity": "o4375"
+    },
+    {
+      "id": "9830",
+      "kind": "preflight",
+      "entity": "o4375"
+    },
+    {
+      "id": "9831",
+      "kind": "preflight-answers",
+      "entity": "o4375"
+    },
+    {
+      "id": "9832",
+      "kind": "decomposition",
+      "entity": "o4375"
+    },
+    {
+      "id": "9833",
+      "kind": "evidence",
+      "entity": "t5532"
+    },
+    {
+      "id": "9834",
+      "kind": "built",
+      "entity": "t5532"
+    },
+    {
+      "id": "9835",
+      "kind": "verdict",
+      "entity": "t5532"
+    },
+    {
+      "id": "9836",
+      "kind": "task-done",
+      "entity": "t5532"
+    },
+    {
+      "id": "9837",
+      "kind": "report",
+      "entity": "o4375"
+    },
+    {
+      "id": "9838",
+      "kind": "built",
+      "entity": "t5533"
+    },
+    {
+      "id": "9839",
+      "kind": "verdict",
+      "entity": "t5533"
+    },
+    {
+      "id": "9840",
+      "kind": "task-done",
+      "entity": "t5533"
+    },
+    {
+      "id": "9841",
+      "kind": "order-done",
+      "entity": "o4375"
+    }
+  ]
+}

@@ -1,0 +1,54 @@
+{
+  "name": "fleet-mcp",
+  "version": "0.3.0-mcp",
+  "ok": true,
+  "degraded": [],
+  "bind": [
+    {
+      "host": "127.0.0.1",
+      "port": 8789,
+      "family": "IPv4"
+    },
+    {
+      "host": "::1",
+      "port": 8789,
+      "family": "IPv6"
+    },
+    {
+      "host": "100.114.17.67",
+      "port": 8789,
+      "family": "IPv4"
+    }
+  ],
+  "sources": {
+    "sources": [
+      "loopback",
+      "tailnet"
+    ],
+    "v4": [
+      "127.0.0.0/8",
+      "100.64.0.0/10"
+    ],
+    "v6": [
+      "::1"
+    ]
+  },
+  "admin": {
+    "path": "/run/fleet/mcp-admin.sock",
+    "listening": true,
+    "stats": {
+      "accepted": 2,
+      "refused": 0
+    }
+  },
+  "log": {
+    "path": "/var/lib/fleet/log/mcp-actions.jsonl",
+    "seq": 36,
+    "head": "7dacc1175d19aa81521d925fb6e8d52b9d88bd34064c6c4d3c7487f62b365ff9",
+    "open": true,
+    "broken": null,
+    "mode": "jsonl-hash-chain"
+  },
+  "model_route": "deterministic-stub (fleet-selftest-stub)",
+  "real_lane": "not-built (Stage 4 roster)"
+}

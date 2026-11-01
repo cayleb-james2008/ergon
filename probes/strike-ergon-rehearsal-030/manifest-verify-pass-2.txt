@@ -1,0 +1,7 @@
+# Manifest verification at seal time (pass 2)
+generated_utc: 2026-11-01T23:08:14Z
+manifest: /home/cayleb/Documents/deepseek-harness/default-workspace/board/probes/strike-ergon-rehearsal-030/pass-2/manifest.sha256
+manifest_sha256: 583293af72ddad37af5c878e6fe6cb12216f25747216cef1615b8e2623b088ef
+entries: 74
+verification: 74/74 OK
+result: PASS — every entry matches the file on disk

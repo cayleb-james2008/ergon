@@ -1,0 +1,96 @@
+{
+  "step": "R7",
+  "title": "Close-out: state record, teardown, second from-scratch pass",
+  "pass": 1,
+  "word": "clean",
+  "table_note": "state record (company/cast/tickets/board/order/digests) and teardown of the fresh company root; the second from-scratch pass runs R0-R7 into a new root and its verdict table is diffed (R7 is clean only when the tables match).",
+  "operator_action": "record the state (company page, employee list, tickets, URL, host logs), destroy the company root, and run the whole pass a second time from scratch",
+  "expected": "the state record names every entity the pass created; the root is emptied; a second full pass from a fresh root reproduces the same per-step verdict table",
+  "checks": [
+    {
+      "name": "prior step R0 produced its data",
+      "ok": true,
+      "detail": "R0"
+    },
+    {
+      "name": "prior step R1 produced its data",
+      "ok": true,
+      "detail": "R1"
+    },
+    {
+      "name": "prior step R2 produced its data",
+      "ok": true,
+      "detail": "R2"
+    },
+    {
+      "name": "prior step R3 produced its data",
+      "ok": true,
+      "detail": "R3"
+    },
+    {
+      "name": "prior step R4 produced its data",
+      "ok": true,
+      "detail": "R4"
+    },
+    {
+      "name": "prior step R5 produced its data",
+      "ok": true,
+      "detail": "R5"
+    },
+    {
+      "name": "prior step R6 produced its data",
+      "ok": true,
+      "detail": "R6"
+    },
+    {
+      "name": "final canonical state dump succeeds before teardown",
+      "ok": true,
+      "detail": "exit=0 sha256=472329f99ca0f836ab8e385f9d65b792058dcb3cb494eca8519af74eed30fe7a"
+    },
+    {
+      "name": "state record written (company / cast / tickets / order / digests)",
+      "ok": true,
+      "detail": "R7-close/state-record.md"
+    },
+    {
+      "name": "no fixture secret value appears in the evidence pack",
+      "ok": true,
+      "detail": "25 values checked, 0 hit(s)"
+    },
+    {
+      "name": "teardown empties the fresh company root",
+      "ok": true,
+      "detail": "exit=0 entries after=0"
+    },
+    {
+      "name": "the root was a fresh company root before teardown (state existed to destroy)",
+      "ok": true,
+      "detail": "entries before=2"
+    }
+  ],
+  "findings": [
+    {
+      "name": "state advanced by the pass",
+      "detail": "seed digest 558df9edb29c8c5b8e449b53e6a68ae6e02f1259d257fabe3017d943a1b593c1 -> final digest 472329f99ca0f836ab8e385f9d65b792058dcb3cb494eca8519af74eed30fe7a (the pass created real state: tickets, onboarded assistants, a acted-on board task via the fleet order)"
+    }
+  ],
+  "pending": [],
+  "notes": [],
+  "evidence": [
+    "R7-close/state-record.md",
+    "R7-close/secret-leak-check.txt",
+    "R7-close/host-teardown.txt"
+  ],
+  "meta": {
+    "teardownExit": 0,
+    "seedDumpSha256": "558df9edb29c8c5b8e449b53e6a68ae6e02f1259d257fabe3017d943a1b593c1",
+    "finalDumpSha256": "472329f99ca0f836ab8e385f9d65b792058dcb3cb494eca8519af74eed30fe7a",
+    "ticketIds": [],
+    "orderId": null,
+    "firstPass": true
+  },
+  "started_utc": "2026-11-01T23:08:07Z",
+  "finished_utc": "2026-11-01T23:08:07Z",
+  "failures": [],
+  "forced_failure": null
+}

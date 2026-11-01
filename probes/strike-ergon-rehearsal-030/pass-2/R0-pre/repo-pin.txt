@@ -1,0 +1,4 @@
+repo: /home/cayleb/workspace/harness-build/ergon-strike
+HEAD: cb909b4f03ff529349abcfafb36d1e419bf3ac52
+branch: strike/ergon-rehearsal
+dirty entries: 0

@@ -1,0 +1,15 @@
+command: node fixtures/check-voices.mjs
+exit: 0
+stdout:
+
+99 written lines checked (85 fixtures + 14 anchors); blind separation 99/99
+  sam-akintola          19 lines, average 16.1 words
+  teo-brandvold         12 lines, average 13.7 words
+  priya-lindqvist       13 lines, average 22.6 words
+  marcus-oyelaran       15 lines, average 20.1 words
+  dana-whitcomb         17 lines, average 7.7 words
+  rosa-quintero-hale     9 lines, average 19.4 words
+ALL VOICES PASS
+
+stderr:
+

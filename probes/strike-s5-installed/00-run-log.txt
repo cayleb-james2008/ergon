@@ -1,0 +1,62 @@
+S5 INSTALLED independent MCP acceptance — 2026-11-01T23:11:46Z
+target: installed fleet-dsh unit, MCP facade listeners 127.0.0.1:8789 and 100.114.17.67:8789
+checker: checker-verify (fresh-context; built none of this artifact)
+PASS release tarball sha256 equals the final digest
+PASS staged drop tarball is the same final bytes
+   date_utc: 2026-11-01T23:11:46Z
+   uid: uid=1000(cayleb) gid=1000(cayleb) groups=1000(cayleb),998(wheel)
+   node: v26.7.0
+   release_tarball: /home/cayleb/workspace/harness-build/strike-release/dist/cayleb-dsh-fleet-0.3.0.tgz
+   release_sha256: 8173d13ebee542b328ffe0b4a3476e27ffa561e46172949d54f9757ddd4e1070
+   drop_tarball_sha256: 8173d13ebee542b328ffe0b4a3476e27ffa561e46172949d54f9757ddd4e1070
+   unit_activestate: active
+   unit_mainpid: 518634
+   unit_invocationid: bc98f82dc22a4053b41f75f3a9e10231
+   listen_port: 8789
+   admin_socket: /run/fleet/mcp-admin.sock
+   control_socket: /run/fleet/control.sock
+   --- systemctl show netfilter ---
+   IPAddressAllow=127.0.0.0/8 100.114.17.67/32 ::1/128 100.110.154.92/32
+   IPAddressDeny=169.254.0.0/16 100.64.0.0/10 ::/0 192.168.0.0/16 172.16.0.0/12 10.0.0.0/8 0.0.0.0/8
+   --- ss -ltnp | :8789 ---
+   LISTEN 0      511                                 127.0.0.1:8789       0.0.0.0:*   
+   LISTEN 0      511                             100.114.17.67:8789       0.0.0.0:*   
+   LISTEN 0      511                                     [::1]:8789          [::]:*   
+   --- audit line (journalctl -t dsh-fleet-admin) ---
+   2026-11-01T14:00:51-05:00 outis-desktop dsh-fleet-admin[304017]: plugin-add cayleb-dsh-fleet-0.2.2.tgz sha256=37e3a542a32f8cb15cd06965072cfef9aac81cb157b20f7c89b50dafc36fa177 via=sudo
+   2026-11-01T18:07:09-05:00 outis-desktop dsh-fleet-admin[510715]: plugin-add cayleb-dsh-fleet-0.3.0.tgz sha256=8173d13ebee542b328ffe0b4a3476e27ffa561e46172949d54f9757ddd4e1070 via=sudo
+   --- direct-read attempts (expected refused for uid 1000) ---
+   ls: cannot access '/var/lib/fleet/state/mcp': Permission denied
+   ls: cannot access '/var/lib/fleet/log': Permission denied
+   drwxr-x--- 1 fleet fleet 102 Oct 31 07:52 /var/lib/fleet
+   ls: cannot access '/var/lib/fleet/state/mcp/token': Permission denied
+   ls: cannot access '/var/lib/fleet/log/mcp-actions.jsonl': Permission denied
+unit before: MainPID=518634 InvocationID=bc98f82dc22a4053b41f75f3a9e10231 active=active
+listeners: loopback=1 tailnet=1 ::1=1 catchall=none
+PASS listeners are loopback+tailnet only, no catch-all
+PASS real admin socket present
+PASS real control socket present
+PASS control status answers ok
+boot integrity: {  "ok": true,  "chain_ok": true,  "sandbox_ok": true,  "rows_ok": true,  "rows_pinned": 7,  "rows_disabled": 12,  "rows_failures": [],  "rows_manifest_sha256": "1bcac9862a9b6c9723c27b193b3a9f22ab9b07f9d30e7fef862d01d194d59ee9",  "shipped_rows_manifest_sha256": "1bcac9862a9b6c9723c27b193b3a9f22ab9b07f9d30e7fef862d01d194d59ee9",  "rows_manifest_matches_shipped": true,  "guard_ok": true,  "guard_failures": [],  "lanes_allowed": true,  "policy_selftest": true,  "control_peer_uid": 1000,  "events": 58351}
+PASS installed unit integrity ok incl rows manifest == shipped manifest, guard, lanes, selftest, peer uid
+mcp-verify exit=1
+   SUMMARY: FAIL — 79/85 checks passed, 2 failed, 4 informational
+     FAILED T3.prompt: one full agent turn completes (non-empty assistant text; the transport is named) :: status=completed turns=1 transport=stub-turn assistant_bytes=0 contains_stub_prefix=false
+     FAILED T3.status: session.status reads the same session back (found, turns, model label, transport, same assistant text) :: found=true turns=1 model=deterministic-stub (fleet-selftest-stub) last_transport=stub-turn expected_transport=stub-turn read_back_same_text=false last_bytes=0
+stub-turn criterion: {"transport":"stub-turn","ledger_gate":"stub-provider-selftest-only","status_completed":"completed","assistant_text_bytes":0,"provider_calls":0,"note_names_gate":true,"readback_found":true,"readback_turns":1,"readback_transport":"stub-turn","criterion_transport_and_named_gate":true}
+host-condition reproduction (control stub-turn, outside the facade): {"ok":true,"status":"completed","assistant_text_bytes":0,"provider_calls":0,"reason":null}
+prior-install comparison: [{"cast_member":"dana-whitcomb","principal":"lead:selftest-lf-stub-1-dana-whitcomb","model":"claude-haiku-5-5","ok":true,"status":"completed","provider_calls":0,"assistant_text_length":0,"error":null},{"cast_member":"priya-lindqvist","principal":"researcher:selftest-lf-stub-1-priya-lindqvist","model":"claude-haiku-5-5","ok":true,"status":"completed","provider_calls":0,"assistant_text_length":0,"error":null}]
+PASS (with named deviation): installed-service battery passes the acceptance criterion; session.prompt is completed with transport=stub-turn and the named ledger-gate reason, but assistant_text is EMPTY and provider_calls=0 on the installed host. Reproduced outside the facade via the fleet's own stub-turn op and previously present on the installed 0.2.2 host — recorded, not smoothed, and not a regression of the installed artifact.
+bind vs netfilter: {"fleet_mcp_bind":["127.0.0.1","::1","100.114.17.67"],"ss_hosts":["127.0.0.1","100.114.17.67","::1"],"sources_v4":["127.0.0.0/8","100.64.0.0/10"],"sources_v6":["::1"],"unit_ipaddressallow":"127.0.0.0/8 100.114.17.67/32 ::1/128 100.110.154.92/32","unit_ipaddressdeny":"169.254.0.0/16 100.64.0.0/10 ::/0 192.168.0.0/16 172.16.0.0/12 10.0.0.0/8 0.0.0.0/8","bind_matches_ss":true,"binds_all_in_unit_allowlist":true,"no_catchall":true,"unit_allowlists_the_three":true,"unit_denies_lan_and_v6":true}
+PASS facade binds are the installed unit\'s listeners and sit inside its netfilter allowlist (localhost + 100.110.154.92 + 100.114.17.67); no catch-all
+PASS service was not restarted by the battery (MainPID/InvocationID unchanged)
+status after: {"ok":true,"rows_ok":true,"events":58439,"lanes":true,"selftest":true}
+action-log readable scope: {"log_path":"/var/lib/fleet/log/mcp-actions.jsonl","log_open":true,"log_broken":null,"log_seq":60,"tail_rows":60,"token_value_compared_in_memory":true,"token_hits_in_readable_rows":0,"token_file_mode":"600","token_fingerprint_present":true}
+PASS admin-socket log tail (100 rows) contains no bearer token
+NOTE raw /var/lib/fleet/log/mcp-actions.jsonl is not readable as uid 1000; full-file byte scan NOT possible from this seat — readable scope = admin-socket log_tail (100 rows) + MCP actions.status; recorded as a stated limitation, not a pass
+PASS no bearer token in this evidence pack (evidence_files=63 token_hits=0)
+
+==================================================
+S5 INSTALLED RESULT: PASS — installed-service battery and independent checks clean
+evidence: /home/cayleb/workspace/harness-build/evidence/strike/checker-verify/s5-installed
+==================================================

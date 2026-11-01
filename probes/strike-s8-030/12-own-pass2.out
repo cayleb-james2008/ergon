@@ -1,0 +1,55 @@
+Ergon dress rehearsal — pass 2 on the installed @cayleb/dsh-fleet platform
+pack: /home/cayleb/workspace/harness-build/evidence/strike/checker-verify/s8-030/ergon-pack-own
+fresh company root: /tmp/ergon-rehearsal-20261101T231340Z-jeL4hn
+repo: /home/cayleb/workspace/harness-build/ergon-strike @ cb909b4f03ff (strike/ergon-rehearsal)
+
+── R0: r0-pre
+   exit 0  (log: logs/R0.log)
+platform: installed @cayleb/dsh-fleet 0.3.0 (cayleb-dsh-fleet-0.3.0.tgz, sha256 8173d13ebee542b328ffe0b4a3476e27ffa561e46172949d54f9757ddd4e1070) on this desktop (fleet-dsh)
+── R1: r1-setup
+   exit 0  (log: logs/R1.log)
+── R2: r2-assistants
+   exit 0  (log: logs/R2.log)
+── R3: r3-url
+   exit 0  (log: logs/R3.log)
+── R4: r4-phones
+   exit 0  (log: logs/R4.log)
+── R5: r5-desk
+   exit 0  (log: logs/R5.log)
+── R6: r6-voice
+   exit 0  (log: logs/R6.log)
+── R7: r7-close
+   exit 0  (log: logs/R7.log)
+   fresh company root removed (empty after teardown)
+
+── R7 diff: pass 2 vs pass 1
+   PASS DIFF: IDENTICAL (pass 1 vs pass 2)
+
+── secrets scan (pre-index)
+   - Result: clean (0 hits)
+   exit 0
+
+── index build (pre-seal render; the manifest is sealed after this)
+   INDEX pass 2: clean=4 pending=4 failed=0 preSealIndexSha256=9c1668278108f25867496f5b7ae2fbf1338e4a1dfa1b609d799194578c0c2b89
+── secrets scan (pre-seal; this is the closing commands.log row)
+   preseal scan: SCAN: CLEAN
+
+── seal (manifest.sha256 is the LAST artefact in the pass directory)
+   SEAL pass 2: manifest 74/74 OK · manifestSha256=135ccea8ef86bf130d2000528f6c4f5b3a3f6efa68201a691df131d7bdf9cb8f · indexSha256=f58f55beee5b0323ab91c4cee54746130cecc9c1cfa142e81689f6a7be59dca4 · sealedUtc=2026-11-01T23:13:43Z
+
+── manifest check (sha256sum -c, the done-when gate)
+   74/74 OK (output: manifest-check-pass-2.txt)
+
+── secrets scan (post-seal, finished pass)
+   post-seal scan: SCAN: CLEAN
+
+==================================================================
+pack:        /home/cayleb/workspace/harness-build/evidence/strike/checker-verify/s8-030/ergon-pack-own
+pass index:  /home/cayleb/workspace/harness-build/evidence/strike/checker-verify/s8-030/ergon-pack-own/pass-2/index.md
+index sha256: f58f55beee5b0323ab91c4cee54746130cecc9c1cfa142e81689f6a7be59dca4
+manifest:    135ccea8ef86bf130d2000528f6c4f5b3a3f6efa68201a691df131d7bdf9cb8f — seal 74/74 · sha256sum -c 74/74 OK
+verdict tables identical: yes
+pass diff:   /home/cayleb/workspace/harness-build/evidence/strike/checker-verify/s8-030/ergon-pack-own/pass-diff.md
+secrets scan: clean
+==================================================================
+REHEARSAL: PASS — both passes from scratch, identical verdict tables, sealed manifests verified, secrets scans clean.

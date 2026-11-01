@@ -1,0 +1,16 @@
+{
+  "sha256": "558df9edb29c8c5b8e449b53e6a68ae6e02f1259d257fabe3017d943a1b593c1",
+  "bytes": 315258,
+  "normalised": {
+    "randomIdsAliased": 1050,
+    "wallClockTimestamps": 73,
+    "secretValuesHashed": 3,
+    "rootPathsReplaced": 4
+  },
+  "file": "state-dump.json",
+  "file_sha256": "558df9edb29c8c5b8e449b53e6a68ae6e02f1259d257fabe3017d943a1b593c1",
+  "file_bytes": 315258,
+  "generated_utc": "2026-11-01T23:13:38Z",
+  "pinned_sha256": "558df9edb29c8c5b8e449b53e6a68ae6e02f1259d257fabe3017d943a1b593c1",
+  "pinned_bytes": 315258
+}

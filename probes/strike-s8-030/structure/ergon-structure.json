@@ -1,0 +1,195 @@
+{
+  "summary": {
+    "tool": "checker-verify/ergon-check.mjs",
+    "mode": "structure",
+    "at": "2026-11-01T23:13:08Z",
+    "checks": {
+      "total": 24,
+      "passed": 23,
+      "failed": 0,
+      "informational": 1
+    },
+    "failedIds": [],
+    "verdict": "STRUCTURE OK",
+    "repo": "/home/cayleb/workspace/harness-build/ergon-strike",
+    "driverSha256": "35fb2593c528b3bb9963ee8671ec471688c71824c044b9c07c7c38eb5f6e5817",
+    "referencedFixtures": [
+      "$REPO/docs/acceptance/demo-company/fixtures/setup.mjs",
+      "fixtures/check-voices.mjs",
+      "fixtures/dump-state.mjs",
+      "fixtures/lib/common.mjs",
+      "fixtures/lib/host.mjs",
+      "fixtures/lib/tickets.mjs",
+      "fixtures/setup.mjs",
+      "fixtures/teardown.mjs"
+    ],
+    "tarballs": [
+      {
+        "name": "cayleb-dsh-fleet-0.2.0.tgz",
+        "sha256": "842e76f258fcfbd1575d6c7fa48b5b10e1603a2b0d6fbc9dbf672d3351661415",
+        "size": 163847
+      },
+      {
+        "name": "cayleb-dsh-fleet-0.2.1.tgz",
+        "sha256": "55516f9ae9535dc585da96587af45f55d83edac67c88e48d3bdc32ad652d10d4",
+        "size": 164714
+      },
+      {
+        "name": "cayleb-dsh-fleet-0.2.2.tgz",
+        "sha256": "37e3a542a32f8cb15cd06965072cfef9aac81cb157b20f7c89b50dafc36fa177",
+        "size": 210358
+      },
+      {
+        "name": "cayleb-dsh-fleet-0.3.0.tgz",
+        "sha256": "8173d13ebee542b328ffe0b4a3476e27ffa561e46172949d54f9757ddd4e1070",
+        "size": 287772
+      }
+    ]
+  },
+  "checks": [
+    {
+      "id": "S.repo",
+      "title": "repo checkout identifiable",
+      "ok": true,
+      "detail": "HEAD=cb909b4f03ff branch=strike/ergon-rehearsal"
+    },
+    {
+      "id": "S.files",
+      "title": "driver, libs and per-step scripts are present",
+      "ok": true,
+      "detail": "17 files present"
+    },
+    {
+      "id": "S.shebang",
+      "title": "driver is a bash script",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "id": "S.cli",
+      "title": "driver takes --pass and --out and validates the pass number",
+      "ok": true,
+      "detail": "finds --pass/--out/^[1-9]$ validation"
+    },
+    {
+      "id": "S.fresh-root",
+      "title": "driver creates a fresh mktemp company root per pass",
+      "ok": true,
+      "detail": "finds mktemp -d"
+    },
+    {
+      "id": "S.overwrite-guard",
+      "title": "driver refuses to overwrite an existing pass without --force",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "id": "S.fleet-socket",
+      "title": "driver refuses early when the fleet control socket is missing",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "id": "S.steps",
+      "title": "driver runs every step R0→R7 in order",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "id": "S.index",
+      "title": "driver builds the pass index and manifest",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "id": "S.secrets-gate",
+      "title": "driver gates on the secrets scans",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "id": "S.pass2-diff",
+      "title": "driver computes and gates the second-pass verdict-table diff",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "id": "S.exit-contract",
+      "title": "driver exits non-zero on failed steps / unclean scans / differing passes",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "id": "S.syntax",
+      "title": "every rehearsal .mjs parses",
+      "ok": true,
+      "detail": "14 files"
+    },
+    {
+      "id": "S.no-dangerous-ops",
+      "title": "driver source performs no unit restart/install/owner-profile access and writes nothing in the fleet tree",
+      "ok": true,
+      "detail": "1 review-only mentions (recorded, not fatal)"
+    },
+    {
+      "id": "S.sudo-readonly",
+      "title": "any sudo use is read-only wrapper access (recorded for the run report)",
+      "ok": true,
+      "detail": "[{\"file\":\"docs/acceptance/demo-company/rehearsal/steps/r0-pre.mjs\",\"line\":163,\"pattern\":\"sudo\",\"fatal\":false,\"text\":\"const version = runCmd('sudo', ['-n', '-u', 'fleet', admin, 'version']);\"}]"
+    },
+    {
+      "id": "S.no-image-read",
+      "title": "driver source reads no images/screenshots",
+      "ok": true,
+      "detail": "[]"
+    },
+    {
+      "id": "S.fixtures",
+      "title": "every fixture path the driver references exists in the checkout",
+      "ok": true,
+      "detail": "8 referenced fixtures present"
+    },
+    {
+      "id": "S.seal",
+      "title": "a seal step exists and writes manifest.sha256 last with in-process re-verification",
+      "ok": true,
+      "detail": "lib/seal.mjs present"
+    },
+    {
+      "id": "S.seal-gate",
+      "title": "the driver runs sha256sum -c per pass and fails the run on a stale manifest",
+      "ok": true,
+      "detail": "sha256sum -c + manifest-check artefacts wired in run-rehearsal.sh"
+    },
+    {
+      "id": "S.pack-commands",
+      "title": "post-seal commands are recorded outside the sealed pass dir (pack-commands.log)",
+      "ok": true,
+      "detail": "finds pack-commands.log"
+    },
+    {
+      "id": "S.r0-version-agnostic",
+      "title": "R0 resolves the installed release from the installer audit line and lists staged-only tarballs",
+      "ok": true,
+      "detail": "r0-pre.mjs reads the dsh-fleet-admin plugin-add audit line + drop inventory"
+    },
+    {
+      "id": "S.r0-no-hardcoded-version",
+      "title": "the driver does not hardcode an installed release filename/version for R0 identity",
+      "ok": true,
+      "detail": "no release filename/path pin in run-rehearsal.sh"
+    },
+    {
+      "id": "S.run-meta-version",
+      "title": "run-meta platform string is version-agnostic (informational: cosmetic metadata only)",
+      "ok": null,
+      "detail": "no hardcoded version in run-meta"
+    },
+    {
+      "id": "S.identity",
+      "title": "installed package tarball readable for identity comparison",
+      "ok": true,
+      "detail": "[{\"name\":\"cayleb-dsh-fleet-0.2.0.tgz\",\"sha256\":\"842e76f258fcfbd1575d6c7fa48b5b10e1603a2b0d6fbc9dbf672d3351661415\",\"size\":163847},{\"name\":\"cayleb-dsh-fleet-0.2.1.tgz\",\"sha256\":\"55516f9ae9535dc585da96587af45f55d83edac67c88e48d3bdc32ad652d10d4\",\"size\":164714},{\"name\":\"cayleb-dsh-fleet-0.2.2.tgz\",\"sha256\":\"37e3a542a32f8cb15cd06965072cfef9aac81cb157b20f7c89b50dafc36fa177\",\"size\":210358},{\"name\":\"cayleb-dsh-fleet-0.3.0.tgz\",\"sha256\":\"8173d13ebee542b328ffe0b4a3476e27ffa561e46172949d54f9757ddd4e1070\",\"size\":287772}]"
+    }
+  ]
+}

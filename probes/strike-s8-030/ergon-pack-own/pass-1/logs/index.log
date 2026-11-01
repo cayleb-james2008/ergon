@@ -1,0 +1,2 @@
+INDEX pass 1: clean=4 pending=4 failed=0 preSealIndexSha256=789b4f0c2d9c4837e32b63a9c100da2e1369fa076b8a80528662110cab4b8af6
+{"pass":1,"passDir":"/home/cayleb/workspace/harness-build/evidence/strike/checker-verify/s8-030/ergon-pack-own/pass-1","words":{"R0":"clean","R1":"clean","R2":"pending","R3":"pending","R4":"pending","R5":"clean","R6":"pending","R7":"clean"},"counts":{"clean":4,"pending":4,"failed":0},"failedSteps":[],"pendingSteps":["R2","R3","R4","R6"],"preSealIndexSha256":"789b4f0c2d9c4837e32b63a9c100da2e1369fa076b8a80528662110cab4b8af6","passDiff":null}

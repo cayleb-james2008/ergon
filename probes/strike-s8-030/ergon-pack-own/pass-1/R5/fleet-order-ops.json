@@ -1,0 +1,310 @@
+{
+  "orderId": "o4375",
+  "taskId": "t5532",
+  "rid": "lf51-mvyg4zce-809ede",
+  "ops": [
+    {
+      "op": "order-create",
+      "request": {
+        "idempotency_key": "lf5-lf51-mvyg4zce-809ede",
+        "fixture": true,
+        "order": {
+          "title": "Lanternfield warehouse board (rehearsal pass 1): move Harlow Legal to line C",
+          "goal": "Prove a warehouse-board-shaped task end to end on the installed fleet plugin: create the order, decompose it, claim as a builder, submit the built task, check it as a checker, record a pass verdict, bank it and roll the order up through its done-when.",
+          "context": "Ergon demo-company dress rehearsal R5, pass 1. Model-free, fixture:true, cancelled only if it cannot complete. The warehouse-board app source is PACKAGE-PENDING (work PC); this order is the fleet-side board task.",
+          "constraints": [
+            "write only inside the lane work root",
+            "no product-repo writes",
+            "no spend"
+          ],
+          "anti_goals": [
+            "no publication",
+            "no live trading or money desks"
+          ],
+          "done_when": {
+            "mode": "command",
+            "command": "true",
+            "text": "rehearsal fixture done-when exits 0"
+          },
+          "example": "One evidence post citing an artefact sha256.",
+          "evidence_required": [
+            "evidence post with an artefact hash"
+          ],
+          "assumptions_policy": "log-and-proceed",
+          "budget": {
+            "usd": 1
+          },
+          "stop_conditions": [
+            "any refusal"
+          ],
+          "checkpoint_at": "2026-11-01T23:43:38.856Z",
+          "est_minutes": 30,
+          "size": "standard",
+          "successors": [],
+          "ambition": [
+            "exercise the real board pipeline"
+          ],
+          "base_hashes": {}
+        }
+      },
+      "ok": true,
+      "response": {
+        "id": "o4375",
+        "state": "open",
+        "duplicate": false
+      },
+      "call_id": null,
+      "session": null,
+      "at_utc": "2026-11-01T23:13:38Z"
+    },
+    {
+      "op": "order_claim (selftest lead)",
+      "request": {
+        "agent": "lead:selftest-lf5-lead-1",
+        "order": "o4375"
+      },
+      "ok": true,
+      "response": {
+        "order": "o4375",
+        "token": "<lease-token-not-recorded>",
+        "lease_until": 1793575718898,
+        "already_held": false,
+        "value": {
+          "order": "o4375",
+          "token": "<lease-token-not-recorded>",
+          "lease_until": 1793575718898,
+          "already_held": false
+        },
+        "text": "{\n \"order\": \"o4375\",\n \"token\": \"7823dae91a2774e30500c32aff4242a5\",\n \"lease_until\": 1793575718898,\n \"already_held\": false\n}"
+      },
+      "call_id": "selftest-5e939136-0211-43f7-8fe4-0fb6d6e54738",
+      "session": "fleet-selftest-lead-5e7086ad-8ac8-419d-b122-d4947ab2b2a8",
+      "at_utc": "2026-11-01T23:13:38Z"
+    },
+    {
+      "op": "preflight_raise",
+      "request": {
+        "order": "o4375"
+      },
+      "ok": true,
+      "response": {
+        "order": "o4375",
+        "seq": 2,
+        "preflight_state": "open",
+        "value": {
+          "order": "o4375",
+          "seq": 2,
+          "preflight_state": "open"
+        },
+        "text": "{\n \"order\": \"o4375\",\n \"seq\": 2,\n \"preflight_state\": \"open\"\n}"
+      },
+      "call_id": "selftest-f1454a74-97d7-4676-81d1-939dc77934be",
+      "session": "fleet-selftest-lead-5e7086ad-8ac8-419d-b122-d4947ab2b2a8",
+      "at_utc": "2026-11-01T23:13:38Z"
+    },
+    {
+      "op": "preflight-close",
+      "request": {
+        "order": "o4375",
+        "answers": [
+          "none"
+        ]
+      },
+      "ok": true,
+      "response": {
+        "order": "o4375",
+        "preflight_state": "closed",
+        "seq": 3
+      },
+      "call_id": null,
+      "session": null,
+      "at_utc": "2026-11-01T23:13:38Z"
+    },
+    {
+      "op": "task_decompose",
+      "request": {
+        "order": "o4375",
+        "tasks": 1
+      },
+      "ok": true,
+      "response": {
+        "order": "o4375",
+        "order_state": "in_progress",
+        "tasks": [
+          {
+            "key": "board-move",
+            "id": "t5532"
+          }
+        ],
+        "value": {
+          "order": "o4375",
+          "order_state": "in_progress",
+          "tasks": [
+            {
+              "key": "board-move",
+              "id": "t5532"
+            }
+          ]
+        },
+        "text": "{\n \"order\": \"o4375\",\n \"order_state\": \"in_progress\",\n \"tasks\": [\n  {\n   \"key\": \"board-move\",\n   \"id\": \"t5532\"\n  }\n ]\n}"
+      },
+      "call_id": "selftest-9571febe-5954-4214-a8ba-62fc34801c82",
+      "session": "fleet-selftest-lead-5e7086ad-8ac8-419d-b122-d4947ab2b2a8",
+      "at_utc": "2026-11-01T23:13:38Z"
+    },
+    {
+      "op": "task_claim (selftest builder)",
+      "request": {
+        "agent": "builder:selftest-lf5-builder-1",
+        "task": "t5532"
+      },
+      "ok": true,
+      "response": {
+        "task": "t5532",
+        "order": "o4375",
+        "token": "<lease-token-not-recorded>",
+        "lease_until": 1793575718950,
+        "already_held": false,
+        "value": {
+          "task": "t5532",
+          "order": "o4375",
+          "token": "<lease-token-not-recorded>",
+          "lease_until": 1793575718950,
+          "already_held": false
+        },
+        "text": "{\n \"task\": \"t5532\",\n \"order\": \"o4375\",\n \"token\": \"5d39cab1805960b6c4539b97366f94ab\",\n \"lease_until\": 1793575718950,\n \"already_held\": false\n}"
+      },
+      "call_id": "selftest-223e2981-92f3-4bc9-9795-27dba2f4c3c8",
+      "session": "fleet-selftest-builder-9887bfa5-15b4-43f0-bc62-0e4570097710",
+      "at_utc": "2026-11-01T23:13:38Z"
+    },
+    {
+      "op": "evidence_post",
+      "request": {
+        "order": "o4375",
+        "task": "t5532"
+      },
+      "ok": true,
+      "response": {
+        "id": "9833",
+        "seq": 5,
+        "value": {
+          "id": "9833",
+          "seq": 5
+        },
+        "text": "{\n \"id\": \"9833\",\n \"seq\": 5\n}"
+      },
+      "call_id": "selftest-5e808d93-acb9-44dc-8710-92a5a0afe846",
+      "session": "fleet-selftest-builder-9887bfa5-15b4-43f0-bc62-0e4570097710",
+      "at_utc": "2026-11-01T23:13:38Z"
+    },
+    {
+      "op": "task_submit_built",
+      "request": {
+        "task": "t5532"
+      },
+      "ok": true,
+      "response": {
+        "task": "t5532",
+        "state": "built",
+        "seq": 6,
+        "value": {
+          "task": "t5532",
+          "state": "built",
+          "seq": 6
+        },
+        "text": "{\n \"task\": \"t5532\",\n \"state\": \"built\",\n \"seq\": 6\n}"
+      },
+      "call_id": "selftest-0f14069d-f1a0-4969-b419-da4125223f5a",
+      "session": "fleet-selftest-builder-9887bfa5-15b4-43f0-bc62-0e4570097710",
+      "at_utc": "2026-11-01T23:13:38Z"
+    },
+    {
+      "op": "check-start",
+      "request": {
+        "task": "t5532"
+      },
+      "ok": true,
+      "response": {
+        "task": "t5532",
+        "checker": "checker:selftest-chk-e80d583c3165",
+        "round": 1,
+        "lease_until": 1793575718962
+      },
+      "call_id": null,
+      "session": null,
+      "at_utc": "2026-11-01T23:13:38Z"
+    },
+    {
+      "op": "verdict (selftest checker)",
+      "request": {
+        "agent": "checker:selftest-chk-e80d583c3165",
+        "task": "t5532",
+        "result": "pass"
+      },
+      "ok": true,
+      "response": {
+        "id": "9835",
+        "task": "t5532",
+        "result": "pass",
+        "round": 1,
+        "task_state": "done",
+        "value": {
+          "id": "9835",
+          "task": "t5532",
+          "result": "pass",
+          "round": 1,
+          "task_state": "done"
+        },
+        "text": "{\n \"id\": \"9835\",\n \"task\": \"t5532\",\n \"result\": \"pass\",\n \"round\": 1,\n \"task_state\": \"done\"\n}"
+      },
+      "call_id": "selftest-21ffe4d5-9d1e-4c7b-8f55-5c5c0aead21f",
+      "session": "fleet-selftest-checker-4078795c-0f16-473e-91aa-9a6f202f75c4",
+      "at_utc": "2026-11-01T23:13:39Z"
+    },
+    {
+      "op": "lesson_propose (bank the task)",
+      "request": {
+        "mission_id": "o4375",
+        "task": "t5532"
+      },
+      "ok": true,
+      "response": {
+        "id": "138",
+        "kind": "NO_ENTRY",
+        "state": "no_entry",
+        "tier": null,
+        "banked": true,
+        "duplicate": false,
+        "message": "Banked task t5532 as no_entry.",
+        "value": "{\"id\":\"138\",\"kind\":\"NO_ENTRY\",\"state\":\"no_entry\",\"tier\":null,\"banked\":true,\"duplicate\":false,\"message\":\"Banked task t5532 as no_entry.\"}",
+        "text": "{\"id\":\"138\",\"kind\":\"NO_ENTRY\",\"state\":\"no_entry\",\"tier\":null,\"banked\":true,\"duplicate\":false,\"message\":\"Banked task t5532 as no_entry.\"}"
+      },
+      "call_id": "selftest-ca309b43-c172-4298-9d14-4d379ce93463",
+      "session": "fleet-selftest-builder-9887bfa5-15b4-43f0-bc62-0e4570097710",
+      "at_utc": "2026-11-01T23:13:39Z"
+    },
+    {
+      "op": "report_file",
+      "request": {
+        "order": "o4375"
+      },
+      "ok": true,
+      "response": {
+        "order": "o4375",
+        "seq": 9,
+        "order_state": "in_progress",
+        "value": {
+          "order": "o4375",
+          "seq": 9,
+          "order_state": "in_progress"
+        },
+        "text": "{\n \"order\": \"o4375\",\n \"seq\": 9,\n \"order_state\": \"in_progress\"\n}"
+      },
+      "call_id": "selftest-d31d4850-1844-4d7c-8c0d-b2d747a0e1c6",
+      "session": "fleet-selftest-lead-5e7086ad-8ac8-419d-b122-d4947ab2b2a8",
+      "at_utc": "2026-11-01T23:13:39Z"
+    }
+  ],
+  "generated_utc": "2026-11-01T23:13:39Z"
+}

@@ -1,0 +1,8 @@
+# R0 preflight run — generated evidence
+- Generated (UTC): 2026-11-01T23:13:40Z
+- Hostname: outis-desktop
+- Blocking failures: (see summary at end)
+
+# Summary
+generated_utc: 2026-11-01T23:13:40Z
+result: FAIL (1 blocking failures)

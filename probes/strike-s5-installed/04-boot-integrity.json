@@ -1,0 +1,18 @@
+{
+  "ok": true,
+  "chain_ok": true,
+  "sandbox_ok": true,
+  "rows_ok": true,
+  "rows_pinned": 7,
+  "rows_disabled": 12,
+  "rows_failures": [],
+  "rows_manifest_sha256": "1bcac9862a9b6c9723c27b193b3a9f22ab9b07f9d30e7fef862d01d194d59ee9",
+  "shipped_rows_manifest_sha256": "1bcac9862a9b6c9723c27b193b3a9f22ab9b07f9d30e7fef862d01d194d59ee9",
+  "rows_manifest_matches_shipped": true,
+  "guard_ok": true,
+  "guard_failures": [],
+  "lanes_allowed": true,
+  "policy_selftest": true,
+  "control_peer_uid": 1000,
+  "events": 58351
+}

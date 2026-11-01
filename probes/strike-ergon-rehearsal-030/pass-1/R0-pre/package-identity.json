@@ -1,0 +1,57 @@
+{
+  "installed_file": "cayleb-dsh-fleet-0.3.0.tgz",
+  "installed_version": "0.3.0",
+  "sha256": "8173d13ebee542b328ffe0b4a3476e27ffa561e46172949d54f9757ddd4e1070",
+  "bytes": 287772,
+  "expected_sha256": "8173d13ebee542b328ffe0b4a3476e27ffa561e46172949d54f9757ddd4e1070",
+  "verified": true,
+  "identity_source": "journald install audit line (dsh-fleet-admin plugin-add) — what the install reports",
+  "audit": {
+    "timestamp": "2026-11-01T18:07:09-05:00",
+    "file": "cayleb-dsh-fleet-0.3.0.tgz",
+    "sha256": "8173d13ebee542b328ffe0b4a3476e27ffa561e46172949d54f9757ddd4e1070",
+    "line": "2026-11-01T18:07:09-05:00 outis-desktop dsh-fleet-admin[510715]: plugin-add cayleb-dsh-fleet-0.3.0.tgz sha256=8173d13ebee542b328ffe0b4a3476e27ffa561e46172949d54f9757ddd4e1070 via=sudo"
+  },
+  "audit_query": {
+    "window": "-14 days",
+    "exit": 0,
+    "stderr": ""
+  },
+  "published_sidecar_sha256": "",
+  "published_sidecar_matches": false,
+  "drop_inventory": [
+    {
+      "file": "cayleb-dsh-fleet-0.3.0.tgz",
+      "bytes": 287772,
+      "mtime_iso": "2026-11-01T23:00:32.799Z",
+      "sha256": "8173d13ebee542b328ffe0b4a3476e27ffa561e46172949d54f9757ddd4e1070",
+      "sidecar_sha256": "",
+      "sidecar_matches": false
+    },
+    {
+      "file": "cayleb-dsh-fleet-0.2.2.tgz",
+      "bytes": 210358,
+      "mtime_iso": "2026-11-01T03:45:22.107Z",
+      "sha256": "37e3a542a32f8cb15cd06965072cfef9aac81cb157b20f7c89b50dafc36fa177",
+      "sidecar_sha256": "37e3a542a32f8cb15cd06965072cfef9aac81cb157b20f7c89b50dafc36fa177",
+      "sidecar_matches": true
+    },
+    {
+      "file": "cayleb-dsh-fleet-0.2.1.tgz",
+      "bytes": 164714,
+      "mtime_iso": "2026-10-31T14:47:00.749Z",
+      "sha256": "55516f9ae9535dc585da96587af45f55d83edac67c88e48d3bdc32ad652d10d4",
+      "sidecar_sha256": "55516f9ae9535dc585da96587af45f55d83edac67c88e48d3bdc32ad652d10d4",
+      "sidecar_matches": true
+    },
+    {
+      "file": "cayleb-dsh-fleet-0.2.0.tgz",
+      "bytes": 163847,
+      "mtime_iso": "2026-10-31T13:41:29.972Z",
+      "sha256": "842e76f258fcfbd1575d6c7fa48b5b10e1603a2b0d6fbc9dbf672d3351661415",
+      "sidecar_sha256": "842e76f258fcfbd1575d6c7fa48b5b10e1603a2b0d6fbc9dbf672d3351661415",
+      "sidecar_matches": true
+    }
+  ],
+  "note": "The installed package tree (/var/lib/fleet/...) is readable only to user fleet. Identity is what the install itself reported: the latest plugin-add audit line names the release file and its SHA-256; this driver hashes that file and requires the digest to match. Every tarball staged in the drop directory is listed with its own hash so a reader can see which one is installed and which are merely staged."
+}

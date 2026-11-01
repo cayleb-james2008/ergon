@@ -1,0 +1,386 @@
+=== order-get o4375 ===
+{
+  "ok": true,
+  "result": {
+    "order": {
+      "id": "o4375",
+      "principal": "cayleb-local",
+      "title": "Lanternfield warehouse board (rehearsal pass 1): move Harlow Legal to line C",
+      "state": "done",
+      "block_reason": null,
+      "resume_state": null,
+      "fail_reason": null,
+      "size": "standard",
+      "tier": 1,
+      "est_minutes": 30,
+      "budget_usd": 1,
+      "budget": {
+        "usd": 1
+      },
+      "checkpoint_at": 1793576618856,
+      "claimant": "lead:selftest-lf5-lead-1",
+      "lease_until": null,
+      "attempts": 0,
+      "waiting_on": null,
+      "preflight_state": "closed",
+      "report_post_id": "9837",
+      "fixture": true,
+      "done_when": {
+        "mode": "command",
+        "text": "rehearsal fixture done-when exits 0",
+        "command": "true"
+      },
+      "done_when_rev": 1,
+      "facts": {
+        "posted_at": 1793574818859,
+        "unacked": false,
+        "claimed_at": 1793574818898,
+        "started_at": 1793574818909,
+        "done_at": 1793574819027
+      },
+      "tasks": {
+        "done": 2
+      },
+      "goldfish": null,
+      "goal": "Prove a warehouse-board-shaped task end to end on the installed fleet plugin: create the order, decompose it, claim as a builder, submit the built task, check it as a checker, record a pass verdict, bank it and roll the order up through its done-when.",
+      "context": "Ergon demo-company dress rehearsal R5, pass 1. Model-free, fixture:true, cancelled only if it cannot complete. The warehouse-board app source is PACKAGE-PENDING (work PC); this order is the fleet-side board task.",
+      "constraints": [
+        "write only inside the lane work root",
+        "no product-repo writes",
+        "no spend"
+      ],
+      "anti_goals": [
+        "no publication",
+        "no live trading or money desks"
+      ],
+      "ownership": "",
+      "example": "One evidence post citing an artefact sha256.",
+      "evidence_required": [
+        "evidence post with an artefact hash"
+      ],
+      "assumptions_policy": "log-and-proceed",
+      "stop_conditions": [
+        "any refusal"
+      ],
+      "successors": [],
+      "ambition": [
+        "exercise the real board pipeline"
+      ],
+      "base_hashes": {},
+      "budget_original": {
+        "usd": 1
+      }
+    },
+    "tasks": [
+      {
+        "id": "t5532",
+        "order": "o4375",
+        "seq": 1,
+        "key": "board-move",
+        "title": "Move the Harlow Legal job card to line C on the warehouse board and record the s",
+        "needs_role": "builder",
+        "state": "done",
+        "block_reason": null,
+        "resume_state": null,
+        "fail_reason": null,
+        "waiting_on": null,
+        "blocked_reason": null,
+        "errand": false,
+        "final": false,
+        "tier": 1,
+        "est_minutes": 15,
+        "budget_usd": 1,
+        "spent_usd": 0,
+        "goal": "Move the Harlow Legal job card to line C on the warehouse board and record the state change as evidence.",
+        "context": "",
+        "constraints": [],
+        "evidence_required": [],
+        "write_targets": [],
+        "done_when": {
+          "mode": "command",
+          "text": "exits 0",
+          "command": "true",
+          "authored_by": "lead"
+        },
+        "after": [],
+        "claimant": null,
+        "lease_until": null,
+        "attempts": 0,
+        "built": {
+          "commit": "07c792195789cbc91f66c20ff3d186d2854bc08d",
+          "artefact_hashes": [
+            "94f000eccae07875962c8c98989b7a9296c97c00f8ae8b89bce55e607b443046"
+          ],
+          "evidence": [
+            "9833"
+          ],
+          "summary": "submitted as built",
+          "at": 1793574818959
+        },
+        "round": 1,
+        "rounds_allowed": 3,
+        "banked": true,
+        "lesson_ref": "NO_ENTRY",
+        "replaced_by": null,
+        "facts": {
+          "created_at": 1793574818910,
+          "claimed_at": 1793574818950,
+          "done_at": 1793574819001
+        },
+        "maker": "builder:selftest-lf5-builder-1"
+      },
+      {
+        "id": "t5533",
+        "order": "o4375",
+        "seq": 2,
+        "key": null,
+        "title": "Run the order's own done-when",
+        "needs_role": "builder",
+        "state": "done",
+        "block_reason": null,
+        "resume_state": null,
+        "fail_reason": null,
+        "waiting_on": null,
+        "blocked_reason": null,
+        "errand": false,
+        "final": true,
+        "tier": 1,
+        "est_minutes": 15,
+        "budget_usd": null,
+        "spent_usd": 0,
+        "goal": "Run the order's own done-when end to end (harness-run; no lane builds it)",
+        "context": "",
+        "constraints": [],
+        "evidence_required": [
+          "done-when run output"
+        ],
+        "write_targets": [],
+        "done_when": {
+          "mode": "command",
+          "text": "rehearsal fixture done-when exits 0",
+          "command": "true",
+          "authored_by": "cayleb-local",
+          "from_order": true
+        },
+        "after": [],
+        "claimant": null,
+        "lease_until": null,
+        "attempts": 0,
+        "built": {
+          "commit": null,
+          "artefact_hashes": [
+            "93b00aaebe6811948b36127d128cb9c013f5632fde556477bc43584973dee270"
+          ],
+          "evidence": [],
+          "summary": "the Lead filed its report; the harness runs the order done-when",
+          "at": 1793574819012
+        },
+        "round": 1,
+        "rounds_allowed": 3,
+        "banked": true,
+        "lesson_ref": "harness-run done-when",
+        "replaced_by": null,
+        "facts": {
+          "created_at": 1793574818910,
+          "claimed_at": 1793574819011,
+          "done_at": 1793574819027
+        },
+        "maker": "builder:harness-done-when"
+      }
+    ]
+  }
+}
+
+=== order-get o4376 ===
+{
+  "ok": true,
+  "result": {
+    "order": {
+      "id": "o4376",
+      "principal": "cayleb-local",
+      "title": "Lanternfield warehouse board (rehearsal pass 2): move Harlow Legal to line C",
+      "state": "done",
+      "block_reason": null,
+      "resume_state": null,
+      "fail_reason": null,
+      "size": "standard",
+      "tier": 1,
+      "est_minutes": 30,
+      "budget_usd": 1,
+      "budget": {
+        "usd": 1
+      },
+      "checkpoint_at": 1793576622181,
+      "claimant": "lead:selftest-lf5-lead-2",
+      "lease_until": null,
+      "attempts": 0,
+      "waiting_on": null,
+      "preflight_state": "closed",
+      "report_post_id": "9850",
+      "fixture": true,
+      "done_when": {
+        "mode": "command",
+        "text": "rehearsal fixture done-when exits 0",
+        "command": "true"
+      },
+      "done_when_rev": 1,
+      "facts": {
+        "posted_at": 1793574822184,
+        "unacked": false,
+        "claimed_at": 1793574822220,
+        "started_at": 1793574822231,
+        "done_at": 1793574822349
+      },
+      "tasks": {
+        "done": 2
+      },
+      "goldfish": null,
+      "goal": "Prove a warehouse-board-shaped task end to end on the installed fleet plugin: create the order, decompose it, claim as a builder, submit the built task, check it as a checker, record a pass verdict, bank it and roll the order up through its done-when.",
+      "context": "Ergon demo-company dress rehearsal R5, pass 2. Model-free, fixture:true, cancelled only if it cannot complete. The warehouse-board app source is PACKAGE-PENDING (work PC); this order is the fleet-side board task.",
+      "constraints": [
+        "write only inside the lane work root",
+        "no product-repo writes",
+        "no spend"
+      ],
+      "anti_goals": [
+        "no publication",
+        "no live trading or money desks"
+      ],
+      "ownership": "",
+      "example": "One evidence post citing an artefact sha256.",
+      "evidence_required": [
+        "evidence post with an artefact hash"
+      ],
+      "assumptions_policy": "log-and-proceed",
+      "stop_conditions": [
+        "any refusal"
+      ],
+      "successors": [],
+      "ambition": [
+        "exercise the real board pipeline"
+      ],
+      "base_hashes": {},
+      "budget_original": {
+        "usd": 1
+      }
+    },
+    "tasks": [
+      {
+        "id": "t5534",
+        "order": "o4376",
+        "seq": 1,
+        "key": "board-move",
+        "title": "Move the Harlow Legal job card to line C on the warehouse board and record the s",
+        "needs_role": "builder",
+        "state": "done",
+        "block_reason": null,
+        "resume_state": null,
+        "fail_reason": null,
+        "waiting_on": null,
+        "blocked_reason": null,
+        "errand": false,
+        "final": false,
+        "tier": 1,
+        "est_minutes": 15,
+        "budget_usd": 1,
+        "spent_usd": 0,
+        "goal": "Move the Harlow Legal job card to line C on the warehouse board and record the state change as evidence.",
+        "context": "",
+        "constraints": [],
+        "evidence_required": [],
+        "write_targets": [],
+        "done_when": {
+          "mode": "command",
+          "text": "exits 0",
+          "command": "true",
+          "authored_by": "lead"
+        },
+        "after": [],
+        "claimant": null,
+        "lease_until": null,
+        "attempts": 0,
+        "built": {
+          "commit": "aab82548bbf535635b5963d6a18b89937abb9c2e",
+          "artefact_hashes": [
+            "0afbb5931e974c86481551078307b449bb542f25c5379d066407ee35755164f3"
+          ],
+          "evidence": [
+            "9846"
+          ],
+          "summary": "submitted as built",
+          "at": 1793574822276
+        },
+        "round": 1,
+        "rounds_allowed": 3,
+        "banked": true,
+        "lesson_ref": "NO_ENTRY",
+        "replaced_by": null,
+        "facts": {
+          "created_at": 1793574822231,
+          "claimed_at": 1793574822266,
+          "done_at": 1793574822317
+        },
+        "maker": "builder:selftest-lf5-builder-2"
+      },
+      {
+        "id": "t5535",
+        "order": "o4376",
+        "seq": 2,
+        "key": null,
+        "title": "Run the order's own done-when",
+        "needs_role": "builder",
+        "state": "done",
+        "block_reason": null,
+        "resume_state": null,
+        "fail_reason": null,
+        "waiting_on": null,
+        "blocked_reason": null,
+        "errand": false,
+        "final": true,
+        "tier": 1,
+        "est_minutes": 15,
+        "budget_usd": null,
+        "spent_usd": 0,
+        "goal": "Run the order's own done-when end to end (harness-run; no lane builds it)",
+        "context": "",
+        "constraints": [],
+        "evidence_required": [
+          "done-when run output"
+        ],
+        "write_targets": [],
+        "done_when": {
+          "mode": "command",
+          "text": "rehearsal fixture done-when exits 0",
+          "command": "true",
+          "authored_by": "cayleb-local",
+          "from_order": true
+        },
+        "after": [],
+        "claimant": null,
+        "lease_until": null,
+        "attempts": 0,
+        "built": {
+          "commit": null,
+          "artefact_hashes": [
+            "281682c5692f72e22a30dd88907f63fe42b01e1cdcd715ebc0c633b77cced3d4"
+          ],
+          "evidence": [],
+          "summary": "the Lead filed its report; the harness runs the order done-when",
+          "at": 1793574822331
+        },
+        "round": 1,
+        "rounds_allowed": 3,
+        "banked": true,
+        "lesson_ref": "harness-run done-when",
+        "replaced_by": null,
+        "facts": {
+          "created_at": 1793574822231,
+          "claimed_at": 1793574822330,
+          "done_at": 1793574822349
+        },
+        "maker": "builder:harness-done-when"
+      }
+    ]
+  }
+}
+

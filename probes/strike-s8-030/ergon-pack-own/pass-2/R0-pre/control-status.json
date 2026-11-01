@@ -1,0 +1,223 @@
+{
+  "ok": true,
+  "result": {
+    "name": "fleet-core",
+    "protocol": 1,
+    "pid": 518634,
+    "node": "v26.12.0",
+    "uptime_s": 208,
+    "db": {
+      "path": "/var/lib/fleet/state/fleet.db",
+      "journal_mode": "wal",
+      "events": 58491,
+      "head": {
+        "seq": 58491,
+        "hash": "bca5a37e78ed7c8269783e3172dd8fca98e22190ea33963f778ddf8cedf0273a"
+      }
+    },
+    "chain_head_sink": "journald",
+    "integrity": {
+      "ok": true,
+      "chain": {
+        "ok": true,
+        "verified_at_boot": 57853
+      },
+      "sandbox": {
+        "ok": true,
+        "id": "fleet-sandbox"
+      },
+      "rows": {
+        "ok": true,
+        "pinned": 7,
+        "disabled": 12,
+        "failures": [],
+        "manifest_sha256": "1bcac9862a9b6c9723c27b193b3a9f22ab9b07f9d30e7fef862d01d194d59ee9"
+      },
+      "mask_roots": {
+        "ok": true,
+        "roots": [
+          "/var/lib/fleet/dsh",
+          "/var/lib/fleet/state",
+          "/var/lib/fleet/log",
+          "/var/lib/fleet/work",
+          "/var/lib/fleet/backups",
+          "/var/lib/fleet/checks"
+        ]
+      },
+      "guard": {
+        "ok": true,
+        "required": [
+          "fleet-policy",
+          "fleet-ledger"
+        ],
+        "failures": []
+      },
+      "failures": []
+    },
+    "lanes_allowed": true,
+    "control": {
+      "path": "/run/fleet/control.sock",
+      "peer_uid": 1000,
+      "peer_cred_error": null,
+      "accepted": 231,
+      "rejected": 0
+    },
+    "policy": {
+      "selftest": true,
+      "selftest_source": "default",
+      "entries": {
+        "check.marker": {
+          "key": "check.marker",
+          "value": "",
+          "source": "default"
+        },
+        "hold.refused_patterns": {
+          "key": "hold.refused_patterns",
+          "value": [
+            "wallet",
+            "trade",
+            "tradovate",
+            "activate"
+          ],
+          "source": "default"
+        },
+        "housekeeper.retention": {
+          "key": "housekeeper.retention",
+          "value": {
+            "hourly": 48,
+            "daily": 14,
+            "weekly": 8
+          },
+          "source": "default"
+        },
+        "ledger.day_cap_usd": {
+          "key": "ledger.day_cap_usd",
+          "value": 5,
+          "source": "default"
+        },
+        "lessons.max_accepted_per_mission": {
+          "key": "lessons.max_accepted_per_mission",
+          "value": 20,
+          "source": "default"
+        },
+        "lessons.max_accepted_per_task": {
+          "key": "lessons.max_accepted_per_task",
+          "value": 3,
+          "source": "default"
+        },
+        "lessons.max_rejected": {
+          "key": "lessons.max_rejected",
+          "value": 50,
+          "source": "default"
+        },
+        "lessons.tier2_domains": {
+          "key": "lessons.tier2_domains",
+          "value": [
+            "host-ops",
+            "pumpfun",
+            "paperclip",
+            "security",
+            "money",
+            "finance",
+            "trading",
+            "wallet",
+            "comms",
+            "external-comms",
+            "deploy",
+            "hands",
+            "policy"
+          ],
+          "source": "default"
+        },
+        "orders.batch-floor-min": {
+          "key": "orders.batch-floor-min",
+          "value": 10,
+          "source": "default"
+        },
+        "orders.errand-max-min": {
+          "key": "orders.errand-max-min",
+          "value": 15,
+          "source": "default"
+        },
+        "orders.errand-quota": {
+          "key": "orders.errand-quota",
+          "value": 2,
+          "source": "default"
+        },
+        "orders.goldfish-reviewers": {
+          "key": "orders.goldfish-reviewers",
+          "value": 3,
+          "source": "default"
+        },
+        "orders.lease-ms": {
+          "key": "orders.lease-ms",
+          "value": 900000,
+          "source": "default"
+        },
+        "orders.max-lost-leases": {
+          "key": "orders.max-lost-leases",
+          "value": 3,
+          "source": "default"
+        },
+        "orders.max-rounds": {
+          "key": "orders.max-rounds",
+          "value": 3,
+          "source": "default"
+        },
+        "orders.protected-paths": {
+          "key": "orders.protected-paths",
+          "value": [
+            "/var/lib/fleet-mirrors",
+            "/var/lib/fleet/mirrors"
+          ],
+          "source": "default"
+        },
+        "rates": {
+          "key": "rates",
+          "value": {
+            "anthropic/claude-haiku-5-5": {
+              "input_per_mtok": 0.1,
+              "output_per_mtok": 0.5,
+              "cache_read_per_mtok": 0.01,
+              "cache_write_per_mtok": 0.125,
+              "tiers": [
+                {
+                  "input_tokens_above": 100000,
+                  "input_per_mtok": 0.5,
+                  "output_per_mtok": 2.5,
+                  "cache_read_per_mtok": 0.05,
+                  "cache_write_per_mtok": 0.625
+                }
+              ]
+            },
+            "anthropic/claude-sonnet-5-5": {
+              "input_per_mtok": 2,
+              "output_per_mtok": 10,
+              "cache_read_per_mtok": 0.1,
+              "cache_write_per_mtok": 2.5
+            },
+            "anthropic/claude-opus-5-5": {
+              "input_per_mtok": 4,
+              "output_per_mtok": 20,
+              "cache_read_per_mtok": 0.2,
+              "cache_write_per_mtok": 5
+            }
+          },
+          "source": "default"
+        },
+        "selftest": {
+          "key": "selftest",
+          "value": true,
+          "source": "default"
+        },
+        "spend.hard_ceiling_usd": {
+          "key": "spend.hard_ceiling_usd",
+          "value": 5,
+          "source": "default"
+        }
+      }
+    },
+    "owner_secret_path": "/var/lib/fleet/dsh/.credentials.yaml",
+    "test_plugins": []
+  }
+}

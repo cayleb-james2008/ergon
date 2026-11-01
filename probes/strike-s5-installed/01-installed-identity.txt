@@ -1,0 +1,28 @@
+date_utc: 2026-11-01T23:11:46Z
+uid: uid=1000(cayleb) gid=1000(cayleb) groups=1000(cayleb),998(wheel)
+node: v26.7.0
+release_tarball: /home/cayleb/workspace/harness-build/strike-release/dist/cayleb-dsh-fleet-0.3.0.tgz
+release_sha256: 8173d13ebee542b328ffe0b4a3476e27ffa561e46172949d54f9757ddd4e1070
+drop_tarball_sha256: 8173d13ebee542b328ffe0b4a3476e27ffa561e46172949d54f9757ddd4e1070
+unit_activestate: active
+unit_mainpid: 518634
+unit_invocationid: bc98f82dc22a4053b41f75f3a9e10231
+listen_port: 8789
+admin_socket: /run/fleet/mcp-admin.sock
+control_socket: /run/fleet/control.sock
+--- systemctl show netfilter ---
+IPAddressAllow=127.0.0.0/8 100.114.17.67/32 ::1/128 100.110.154.92/32
+IPAddressDeny=169.254.0.0/16 100.64.0.0/10 ::/0 192.168.0.0/16 172.16.0.0/12 10.0.0.0/8 0.0.0.0/8
+--- ss -ltnp | :8789 ---
+LISTEN 0      511                                 127.0.0.1:8789       0.0.0.0:*   
+LISTEN 0      511                             100.114.17.67:8789       0.0.0.0:*   
+LISTEN 0      511                                     [::1]:8789          [::]:*   
+--- audit line (journalctl -t dsh-fleet-admin) ---
+2026-11-01T14:00:51-05:00 outis-desktop dsh-fleet-admin[304017]: plugin-add cayleb-dsh-fleet-0.2.2.tgz sha256=37e3a542a32f8cb15cd06965072cfef9aac81cb157b20f7c89b50dafc36fa177 via=sudo
+2026-11-01T18:07:09-05:00 outis-desktop dsh-fleet-admin[510715]: plugin-add cayleb-dsh-fleet-0.3.0.tgz sha256=8173d13ebee542b328ffe0b4a3476e27ffa561e46172949d54f9757ddd4e1070 via=sudo
+--- direct-read attempts (expected refused for uid 1000) ---
+ls: cannot access '/var/lib/fleet/state/mcp': Permission denied
+ls: cannot access '/var/lib/fleet/log': Permission denied
+drwxr-x--- 1 fleet fleet 102 Oct 31 07:52 /var/lib/fleet
+ls: cannot access '/var/lib/fleet/state/mcp/token': Permission denied
+ls: cannot access '/var/lib/fleet/log/mcp-actions.jsonl': Permission denied

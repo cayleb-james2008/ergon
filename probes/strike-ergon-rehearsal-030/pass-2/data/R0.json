@@ -1,0 +1,197 @@
+{
+  "step": "R0",
+  "title": "Pre-pass install proof (read-only)",
+  "pass": 2,
+  "word": "clean",
+  "table_note": "read-only install proof: control socket status/integrity/policy, fleet-dsh unit, installed package identity digest + authorised wrapper, repo pin, repo r0-preflight. Dedicated fresh host/DNS/Supabase are owner acts, named out of scope.",
+  "operator_action": "(none — team-side pre-pass; no operator action)",
+  "expected": "control socket answers status with integrity ok and lanes allowed; fleet-dsh active as user fleet; the installed release tarball hashes to its published digest; the wrapper reports the pinned DSH; the repo preflight passes every install-related check.",
+  "checks": [
+    {
+      "name": "control socket answers status",
+      "ok": true,
+      "detail": "name=fleet-core protocol=1 pid=510804"
+    },
+    {
+      "name": "fleet-core identity",
+      "ok": true,
+      "detail": "name=fleet-core protocol=1 node=v26.12.0"
+    },
+    {
+      "name": "lanes allowed",
+      "ok": true,
+      "detail": "lanes_allowed=true"
+    },
+    {
+      "name": "integrity ok (chain, sandbox, rows, guard)",
+      "ok": true,
+      "detail": "integrity.ok=true chain.ok=true verified_at_boot=44218 sandbox.ok=true rows.ok=true guard.ok=true"
+    },
+    {
+      "name": "control peer is uid 1000 (normal user, no root)",
+      "ok": true,
+      "detail": "peer_uid=1000 accepted=37 rejected=0"
+    },
+    {
+      "name": "selftest flag on (fixture:true orders and selftest sessions are gated by it)",
+      "ok": true,
+      "detail": "policy.selftest=true source=default"
+    },
+    {
+      "name": "policy-get answers",
+      "ok": true,
+      "detail": "rows=19"
+    },
+    {
+      "name": "policy pins spend ceiling + selftest",
+      "ok": true,
+      "detail": "spend.hard_ceiling_usd=5 selftest=true"
+    },
+    {
+      "name": "fleet-dsh unit active",
+      "ok": true,
+      "detail": "is-active=active ActiveState=active SubState=running MainPID=510804"
+    },
+    {
+      "name": "unit runs as user fleet",
+      "ok": true,
+      "detail": "User=fleet Group=fleet"
+    },
+    {
+      "name": "unit is contained (ProtectSystem strict, NoNewPrivileges, egress IP deny)",
+      "ok": true,
+      "detail": "ProtectSystem=strict NoNewPrivileges=yes IPAddressDeny=169.254.0.0/16 100.64.0.0/10 ::/0 192.168.0.0/16 172.16.0.0/12 10.0.0.0/8 0.0.0.0/8"
+    },
+    {
+      "name": "installed release identity recorded from the install's own audit line",
+      "ok": true,
+      "detail": "cayleb-dsh-fleet-0.3.0.tgz sha256=8173d13ebee542b328ffe0b4a3476e27ffa561e46172949d54f9757ddd4e1070"
+    },
+    {
+      "name": "the installed release tarball is present and hashes to the installed digest",
+      "ok": true,
+      "detail": "cayleb-dsh-fleet-0.3.0.tgz sha256=8173d13ebee542b328ffe0b4a3476e27ffa561e46172949d54f9757ddd4e1070 expected=8173d13ebee542b328ffe0b4a3476e27ffa561e46172949d54f9757ddd4e1070"
+    },
+    {
+      "name": "installed release version recorded from the installed release name (not assumed)",
+      "ok": true,
+      "detail": "version=0.3.0"
+    },
+    {
+      "name": "drop directory holds no ambiguity about what is installed (staged releases enumerated)",
+      "ok": true,
+      "detail": "cayleb-dsh-fleet-0.3.0.tgz=8173d13ebee5…, cayleb-dsh-fleet-0.2.2.tgz=37e3a542a32f…, cayleb-dsh-fleet-0.2.1.tgz=55516f9ae953…, cayleb-dsh-fleet-0.2.0.tgz=842e76f258fc…"
+    },
+    {
+      "name": "wrapper version runs read-only and reports a DSH version",
+      "ok": true,
+      "detail": "exit=0 version=0.2.2-alpha.2"
+    },
+    {
+      "name": "wrapper status confirms the fleet install",
+      "ok": true,
+      "detail": "exit=0 (uid/version lines present)"
+    },
+    {
+      "name": "dump-config exits 0 and mounts the fleet bundle rows",
+      "ok": true,
+      "detail": "exit=0 bundle rows=77"
+    },
+    {
+      "name": "repo pin recorded",
+      "ok": true,
+      "detail": "HEAD=cb909b4f03ff529349abcfafb36d1e419bf3ac52 branch=strike/ergon-rehearsal dirty=0"
+    },
+    {
+      "name": "repo r0-preflight ran and every install-related check passed",
+      "ok": true,
+      "detail": "exit=1 PASS=5 FAIL=1 → FAIL  company project id not recorded (R0 blocking: write id + region only, no secret)"
+    },
+    {
+      "name": "r0-preflight names its only blocking item as the company Supabase project (P5 owner act) if it blocks",
+      "ok": true,
+      "detail": "exit=1 because project-id.txt is absent: the company Supabase project is a P5 owner act, out of scope for this strike (named, not silently skipped)"
+    },
+    {
+      "name": "preflight fails closed with no evidence supplied",
+      "ok": true,
+      "detail": "exit=1 stdin=R0 PREFLIGHT: FAIL (3 blocking)"
+    }
+  ],
+  "findings": [
+    {
+      "name": "staged but not installed",
+      "detail": "The drop directory also carries cayleb-dsh-fleet-0.2.2.tgz, cayleb-dsh-fleet-0.2.1.tgz, cayleb-dsh-fleet-0.2.0.tgz — listed in package-identity.json but NOT claimed as installed."
+    },
+    {
+      "name": "host",
+      "detail": "This pass runs on the platform host itself (outis-desktop), where the installed @cayleb/dsh-fleet release R0 resolved (version 0.3.0, cayleb-dsh-fleet-0.3.0.tgz, digest verified; source: journald install audit line (dsh-fleet-admin plugin-add) — what the install reports) is reported by the install. The real R0 also wants a dedicated fresh cloud host + DNS + company Supabase project: those are owner acts (R0-PROVISIONING P1/P4/P5) and out of scope for this strike by its anti-goals. They are named in the pass index, not skipped silently."
+    },
+    {
+      "name": "no company state on the deploy paths",
+      "detail": "The generic preflight checked /srv/ergon /opt/ergon /var/lib/ergon /etc/ergon: absent (see preflight/absence-of-company-state.txt)."
+    }
+  ],
+  "pending": [],
+  "notes": [],
+  "evidence": [
+    "R0-pre/control-status.json",
+    "R0-pre/policy-get.json",
+    "R0-pre/fleet-unit.txt",
+    "R0-pre/package-identity.json",
+    "R0-pre/package-identity.txt",
+    "R0-pre/wrapper-version.txt",
+    "R0-pre/wrapper-status.txt",
+    "R0-pre/wrapper-dump-config-excerpt.txt",
+    "R0-pre/wrapper-dump-config.json",
+    "R0-pre/repo-pin.txt",
+    "R0-pre/preflight/run.log",
+    "R0-pre/preflight/summary.txt",
+    "R0-pre/preflight-failclosed.txt"
+  ],
+  "meta": {
+    "control": {
+      "name": "fleet-core",
+      "protocol": 1,
+      "node": "v26.12.0",
+      "uptime_s": 60,
+      "db": {
+        "path": "/var/lib/fleet/state/fleet.db",
+        "journal_mode": "wal",
+        "events": 44271,
+        "head": {
+          "seq": 44271,
+          "hash": "f05e9c51d7d471da2b613a4c4a1d0d21e32408f965417cdaffbe6d4bed3f95e3"
+        }
+      },
+      "peer_uid": 1000,
+      "lanes_allowed": true
+    },
+    "unit": {
+      "ActiveState": "active",
+      "SubState": "running",
+      "MainPID": "510804",
+      "User": "fleet",
+      "ExecStart": "{ path=/var/lib/fleet/npm/bin/dsh ; argv[]=/var/lib/fleet/npm/bin/dsh --profile fleet --no-open --host 127.0.0.1 --port 3091 ; ignore_errors=no ; start_time=[Sun 2026-11-01 18:07:10 EST] ; stop_time=[n/a] ; pid=510804 ; code=(null) ; status=0/0 }"
+    },
+    "identityDigest": "8173d13ebee542b328ffe0b4a3476e27ffa561e46172949d54f9757ddd4e1070",
+    "identityFile": "cayleb-dsh-fleet-0.3.0.tgz",
+    "identityVersion": "0.3.0",
+    "identitySource": "journald install audit line (dsh-fleet-admin plugin-add) — what the install reports",
+    "wrapper": {
+      "version": "0.2.2-alpha.2",
+      "bundleRows": 77,
+      "dumpConfigSha256": "0eee39d2dc1fd60eb78028edb36ee73b39704dab049ed016b477e816df5918c6"
+    },
+    "repo": {
+      "HEAD": "cb909b4f03ff529349abcfafb36d1e419bf3ac52",
+      "branch": "strike/ergon-rehearsal",
+      "dirty": 0
+    },
+    "startedUtc": "2026-11-01T23:08:12Z"
+  },
+  "started_utc": "2026-11-01T23:08:12Z",
+  "finished_utc": "2026-11-01T23:08:12Z",
+  "failures": [],
+  "forced_failure": null
+}

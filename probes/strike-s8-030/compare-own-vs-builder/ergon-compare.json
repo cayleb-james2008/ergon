@@ -1,0 +1,32 @@
+{
+  "summary": {
+    "tool": "checker-verify/ergon-check.mjs",
+    "mode": "compare",
+    "at": "2026-11-01T23:13:50Z",
+    "checks": {
+      "total": 2,
+      "passed": 2,
+      "failed": 0,
+      "informational": 0
+    },
+    "failedIds": [],
+    "verdict": "REPRODUCED",
+    "mine": "/home/cayleb/workspace/harness-build/evidence/strike/checker-verify/s8-030/ergon-pack-own",
+    "theirs": "/home/cayleb/Documents/deepseek-harness/default-workspace/board/probes/strike-ergon-rehearsal-030",
+    "differences": []
+  },
+  "checks": [
+    {
+      "id": "C.reproduction",
+      "title": "my from-scratch run reproduces every step word the artifact recorded",
+      "ok": true,
+      "detail": "[]"
+    },
+    {
+      "id": "C.clean-reproduced",
+      "title": "every step the artifact recorded clean is also clean in my run",
+      "ok": true,
+      "detail": "[]"
+    }
+  ]
+}

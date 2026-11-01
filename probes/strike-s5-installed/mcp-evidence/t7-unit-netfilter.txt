@@ -1,0 +1,58 @@
+# systemctl cat fleet-dsh
+# /etc/systemd/system/fleet-dsh.service
+[Unit]
+Description=dsh-fleet: DeepSeek Harness host with the @cayleb/dsh-fleet bundle (user fleet)
+Documentation=file:///home/cayleb/workspace/harness-build/dsh-fleet/docs/fleet-plugin-design.md
+After=network-online.target tailscaled.service
+Wants=network-online.target
+ConditionPathExists=/var/lib/fleet/npm/bin/dsh
+
+[Service]
+Type=simple
+User=fleet
+Group=fleet
+StateDirectory=fleet
+StateDirectoryMode=0750
+RuntimeDirectory=fleet
+RuntimeDirectoryMode=0711
+# Keep /run/fleet across stop/restart: deleting it would also drop the fleet-hands mask mounted over it.
+RuntimeDirectoryPreserve=yes
+Environment=HOME=/var/lib/fleet
+Environment=DSH_HOME=/var/lib/fleet/dsh
+Environment=DSH_TELEMETRY_DISABLED=1
+Environment=DSH_TELEMETRY_MODE=DISABLED
+Environment=PATH=/var/lib/fleet/npm/bin:/usr/bin
+WorkingDirectory=/var/lib/fleet
+ExecStart=/var/lib/fleet/npm/bin/dsh --profile fleet --no-open --host 127.0.0.1 --port 3091
+
+# Containment (design §4.0)
+ProtectHome=yes
+PrivateTmp=yes
+ProtectSystem=strict
+NoNewPrivileges=yes
+# IPv6 is denied entirely except loopback: the LAN has global IPv6 addresses no prefix list can name.
+IPAddressDeny=0.0.0.0/8 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 169.254.0.0/16 100.64.0.0/10 ::/0
+IPAddressAllow=localhost 100.110.154.92 100.114.17.67
+
+# Kill switch and supervision (design §4.10)
+KillMode=control-group
+TimeoutStopSec=20
+Restart=on-failure
+RestartSec=5
+# A SIGKILL (systemctl kill -s KILL) is final, not a crash to recover from.
+RestartPreventExitStatus=SIGKILL
+
+# Resource caps (spec v2 §5.1)
+MemoryMax=8G
+CPUQuota=400%
+TasksMax=2048
+
+[Install]
+WantedBy=multi-user.target
+
+# systemctl show
+ActiveState=active
+MainPID=518634
+IPAddressAllow=127.0.0.0/8 100.114.17.67/32 ::1/128 100.110.154.92/32
+IPAddressDeny=169.254.0.0/16 100.64.0.0/10 ::/0 192.168.0.0/16 172.16.0.0/12 10.0.0.0/8 0.0.0.0/8
+

@@ -1,0 +1,138 @@
+checker-verify MCP probe — 2026-11-01T23:11:46.401Z — mode=real
+loopback: http://127.0.0.1:8789/mcp
+tailnet:  http://100.114.17.67:8789/mcp
+admin socket: /run/fleet/mcp-admin.sock
+control socket: /run/fleet/control.sock
+PASS  P0.token — bearer token readable over the owner admin socket :: token present (value never printed)
+PASS  P0.admin-stat — admin stat reports the token and the action log ready :: log.open=true log.broken=null token.exists=true token.mode=600
+PASS  P0.fleet-control — fleet control socket answers status with integrity ok :: ok=true integrity.ok=true failures=[]
+PASS  P0.reach.loopback — loopback listener 127.0.0.1:8789 accepts TCP :: connected from 127.0.0.1:56706
+PASS  P0.reach.tailnet — tailnet listener 100.114.17.67:8789 accepts TCP :: connected from 100.114.17.67:36938
+
+── T1: unauthenticated / wrong-token calls are refused before dispatch and logged
+PASS  T1.missing.status — missing token -> HTTP 401 :: status=401
+PASS  T1.missing.no-result — missing token -> refusal envelope, no tool result :: error.code=-32001 result=absent
+PASS  T1.wrong.status — wrong token -> HTTP 401 :: status=401
+PASS  T1.wrong.no-result — wrong token -> refusal envelope, no tool result :: error.code=-32001 result=absent
+PASS  T1.www-authenticate — 401 advertises the Bearer challenge :: www-authenticate=Bearer realm="fleet-mcp"
+PASS  T1.log.refused-rows — both refusals are appended as refused rows (principal null) :: refused=2 codes=["missing-token","invalid-token"] principals=[null,null]
+PASS  T1.log.no-dispatch — nothing was dispatched: no intent row for the refused call :: new intent rows=0
+
+── T2: authenticated initialize + tools/list over loopback and the tailnet address
+[http://127.0.0.1:8789/mcp] initialize -> HTTP 200 (3 ms) rpc_id=1
+PASS  T2.loopback.initialize — loopback initialize answers 200 with serverInfo fleet-mcp :: status=200 server=fleet-mcp version=0.3.0-mcp protocol=2025-03-26
+PASS  T2.loopback.session-id — loopback initialize issues Mcp-Session-Id :: header=(present, not a secret)
+PASS  T2.loopback.capabilities — loopback advertises tools capability :: {"tools":{"listChanged":false}}
+[http://127.0.0.1:8789/mcp] notifications/initialized -> HTTP 202 (2 ms)
+PASS  T2.loopback.initialized-notification — loopback notifications/initialized answers 202 with empty body :: status=202
+[http://127.0.0.1:8789/mcp] tools/list -> HTTP 200 (1 ms) rpc_id=3
+PASS  T2.loopback.tools-list — loopback tools/list lists the exact 9 contracted tools :: count=9 missing=[] extra=[]
+PASS  T2.loopback.schemas — loopback every tool has a description and an inputSchema :: specs=9
+[http://100.114.17.67:8789/mcp] initialize -> HTTP 200 (1 ms) rpc_id=1
+PASS  T2.tailnet.initialize — tailnet initialize answers 200 with serverInfo fleet-mcp :: status=200 server=fleet-mcp version=0.3.0-mcp protocol=2025-03-26
+PASS  T2.tailnet.session-id — tailnet initialize issues Mcp-Session-Id :: header=(present, not a secret)
+PASS  T2.tailnet.capabilities — tailnet advertises tools capability :: {"tools":{"listChanged":false}}
+[http://100.114.17.67:8789/mcp] notifications/initialized -> HTTP 202 (1 ms)
+PASS  T2.tailnet.initialized-notification — tailnet notifications/initialized answers 202 with empty body :: status=202
+[http://100.114.17.67:8789/mcp] tools/list -> HTTP 200 (0 ms) rpc_id=3
+PASS  T2.tailnet.tools-list — tailnet tools/list lists the exact 9 contracted tools :: count=9 missing=[] extra=[]
+PASS  T2.tailnet.schemas — tailnet every tool has a description and an inputSchema :: specs=9
+PASS  T2.tailnet.address — the tailnet leg is a 100.64.0.0/10 address :: host=100.114.17.67
+PASS  T2.legs.identical — both legs list the same tools :: loopback=9 tailnet=9
+
+── T3: deterministic stub session — create, one full turn, read-back
+[http://127.0.0.1:8789/mcp] tools/call -> HTTP 200 (37 ms) rpc_id=101
+[http://127.0.0.1:8789/mcp] tools/call session.create -> HTTP 200 OK
+PASS  T3.create — session.create returns a session id on the labelled stub route :: ok=true sessionId=(present) status=created mode=stub
+PASS  T3.model-label — session.create labels the model deterministic-stub and names no provider credential :: model=deterministic-stub (fleet-selftest-stub) provider=fleet-selftest-stub
+[http://127.0.0.1:8789/mcp] tools/call -> HTTP 200 (43 ms) rpc_id=102
+[http://127.0.0.1:8789/mcp] tools/call session.prompt -> HTTP 200 OK
+PASS  T3.prompt.transport — session.prompt names its real transport (agent | stub-turn), never an unlabelled turn :: transport=stub-turn turn_agent=builder:selftest-fleet-mcp-6c69f0a6-6db7-49c1-8a03-5ebf167433b6 ledger_gate=stub-provider-selftest-only turn_model=claude-haiku-5-5 provider_calls=0
+FAIL  T3.prompt — one full agent turn completes (non-empty assistant text; the transport is named) :: status=completed turns=1 transport=stub-turn assistant_bytes=0 contains_stub_prefix=false
+SKIP  T3.prompt.echo — the stub answer echoes the caller text literally (tool description says S3STUB:<your text>) — RECORDED, not required: no :: contains_caller_nonce=false contains_stub_prefix=false first_80=""
+PASS  T3.prompt.stub-turn-principal — the stub-turn transport names the selftest principal and the gate reason :: turn_agent=builder:selftest-fleet-mcp-6c69f0a6-6db7-49c1-8a03-5ebf167433b6 ledger_gate=stub-provider-selftest-only
+[http://127.0.0.1:8789/mcp] tools/call -> HTTP 200 (4 ms) rpc_id=103
+[http://127.0.0.1:8789/mcp] tools/call session.status -> HTTP 200 OK
+FAIL  T3.status — session.status reads the same session back (found, turns, model label, transport, same assistant text) :: found=true turns=1 model=deterministic-stub (fleet-selftest-stub) last_transport=stub-turn expected_transport=stub-turn read_back_same_text=false last_bytes=0
+[http://127.0.0.1:8789/mcp] tools/call -> HTTP 200 (2 ms) rpc_id=104
+[http://127.0.0.1:8789/mcp] tools/call session.create -> HTTP 200 TOOL-ERROR model-credential-not-entered
+PASS  T3.model-mode-staged — session.create mode:model is refused by name, never faked :: isError=true code=model-credential-not-entered
+
+── T4: order.drive_roundtrip through the facade, verified over the control socket
+[http://127.0.0.1:8789/mcp] tools/call -> HTTP 200 (654 ms) rpc_id=105
+[http://127.0.0.1:8789/mcp] tools/call order.drive_roundtrip -> HTTP 200 OK
+PASS  t4.ids — the id chain is shaped oN / tN and the post ids are digit strings :: order=o4373 task=t5528 final_task=null posts=12
+PASS  t4.honesty — the result labels the lifecycle fixture-validated and the real lane not-built :: mode=fixture-validated real_lane=not-built (Stage 4 roster) order.fixture=true
+PASS  t4.final_state — final_state reports order and task done with a pass verdict :: {"order_state":"done","task_state":"done","order_done":true,"task_done":true,"verdict":"pass","round":1,"final_task_state":"done"}
+PASS  t4.not-real-execution — the result claims no real-lane execution :: real_lane=not-built (Stage 4 roster)
+PASS  t4.control.order — control order-get shows the same order id, terminal done, fixture, and the nonce title :: ok=true id=o4373 state=done fixture=true titleMatch=true
+PASS  t4.control.task — control order-get shows the task done and banked, and the final task done :: task.state=done task.banked=true final.state=done
+PASS  t4.control.posts — every post id the tool reported exists on the order board over the control socket :: reported=12 control=12 missing=[]
+PASS  t4.control.order-list — the order is visible in order-list (no shadow row) :: listed=true state=done
+
+── T4B: order.drive_roundtrip through the facade, verified over the control socket
+[http://127.0.0.1:8789/mcp] tools/call -> HTTP 200 (655 ms) rpc_id=106
+[http://127.0.0.1:8789/mcp] tools/call order.drive_roundtrip -> HTTP 200 OK
+PASS  t4b.ids — the id chain is shaped oN / tN and the post ids are digit strings :: order=o4374 task=t5530 final_task=null posts=12
+PASS  t4b.honesty — the result labels the lifecycle fixture-validated and the real lane not-built :: mode=fixture-validated real_lane=not-built (Stage 4 roster) order.fixture=true
+PASS  t4b.final_state — final_state reports order and task done with a pass verdict :: {"order_state":"done","task_state":"done","order_done":true,"task_done":true,"verdict":"pass","round":1,"final_task_state":"done"}
+PASS  t4b.not-real-execution — the result claims no real-lane execution :: real_lane=not-built (Stage 4 roster)
+PASS  t4b.control.order — control order-get shows the same order id, terminal done, fixture, and the nonce title :: ok=true id=o4374 state=done fixture=true titleMatch=true
+PASS  t4b.control.task — control order-get shows the task done and banked, and the final task done :: task.state=done task.banked=true final.state=done
+PASS  t4b.control.posts — every post id the tool reported exists on the order board over the control socket :: reported=12 control=12 missing=[]
+PASS  t4b.control.order-list — the order is visible in order-list (no shadow row) :: listed=true state=done
+PASS  T4b.distinct-orders — a second independent roundtrip creates a different order (no planted one-shot) :: t4=o4373 t4b=o4374
+
+── T5: order.stage_real — non-fixture intention, runnable done-when, honest about not executing
+[http://127.0.0.1:8789/mcp] tools/call -> HTTP 200 (5 ms) rpc_id=107
+[http://127.0.0.1:8789/mcp] tools/call order.stage_real -> HTTP 200 TOOL-ERROR lanes-unavailable
+PASS  T5.control.no-order — staging created no order (fixture or real) and claims no execution :: orders titled with the staging marker=0
+PASS  T5.branch — no roster mounted -> clean staged refusal named lanes-unavailable :: branch A (real-lane-staged) is the expected honest shape on a host without fleetRoster
+PASS  T5.refusal — refusal is named lanes-unavailable with mode real-lane-staged and no order id :: code=lanes-unavailable mode=real-lane-staged stage_path=(present)
+PASS  T5.payload-digest — the returned payload digest equals sha256 of the canonical payload :: digest_match=true
+PASS  T5.payload.non-fixture — the staged payload is the non-fixture order form with its own title/goal :: fixture=undefined titleMatch=true goalMatch=true
+PASS  T5.payload.done-when — the staged payload carries the sent done-when :: {"mode":"command","command":"true","text":"checker-verify staged done-when cv-mvyg2km9-da8e80ab"}
+PASS  T5.done-when.runnable — the staged done-when actually runs (exit 0) in a throwaway cwd :: exit=0
+PASS  T5.honest — the staged refusal does not claim execution :: message/detail inspected for execution claims
+
+── T7: source allowlist — what is provable from this seat, and what is not
+[http://127.0.0.1:8789/mcp] tools/call -> HTTP 200 (4 ms) rpc_id=108
+[http://127.0.0.1:8789/mcp] tools/call fleet.status -> HTTP 200 OK
+PASS  T7.runtime-sources — fleet.status reports the loopback+tailnet allowlist :: {"sources":["loopback","tailnet"],"v4":["127.0.0.0/8","100.64.0.0/10"],"v6":["::1"]}
+PASS  T7.bind — the listener binds exact addresses, never a catch-all :: bind=[{"host":"127.0.0.1","port":8789,"family":"IPv4"},{"host":"::1","port":8789,"family":"IPv6"},{"host":"100.114.17.67","port":8789,"family":"IPv4"}]
+PASS  T7.honesty — fleet.status labels the model route and the real lane honestly :: model_route=deterministic-stub (fleet-selftest-stub) real_lane=not-built (Stage 4 roster)
+PASS  T7.fleet-integrity — fleet.status reports fleet integrity ok with no failures :: ok=true failures=[]
+PASS  T7.unit-netfilter — the unit netfilter allows only localhost and the two named tailnet peers :: fileAllow=true fileDeny=true effectiveAllow=true effectiveDeny=true; unit shown in t7-unit-netfilter.txt
+PASS  T7.listeners — ss shows :8789 only on loopback and the host tailnet address (never 0.0.0.0/::) :: lines=["LISTEN 0      511                                 127.0.0.1:8789       0.0.0.0:*","LISTEN 0      511                             100.114.17.67:8789       0.0.0.0:*","LISTEN 0      511                                     [::1]:8789          [::]:*"]
+SKIP  T7.foreign-source-live — a live foreign-source request is refused (NOT PROVEN from this seat — stated, not claimed) :: kernel refused local bind/route: EADDRNOTAVAIL. Requires a second host/namespace or root; this is recorded as not proven, never as a pass.
+
+── T8: body/parse limits refuse cleanly (and log the refusal)
+PASS  T8.oversized.status — a body over the limit is refused (413, or a reset AFTER the refusal is logged — recorded exactly) :: status=413 body={"jsonrpc":"2.0","id":null,"error":{"code":-32004,"message":"payload too large: the body limit is 262144 bytes"}}
+PASS  T8.malformed — malformed JSON is refused with 400 and a parse error (never dispatched) :: status=400 code=-32700
+PASS  T8.batch — a JSON-RPC batch is refused with 400 (one message per POST) :: status=400 code=-32600
+PASS  T8.log — the limit refusals are appended to the action log (payload-too-large, parse-error) :: ["payload-too-large","payload-too-large","parse-error"]
+SKIP  T8.log.batch-row — a batch refusal is ALSO appended as a refused row (observed behaviour, recorded not required) :: batch_logged=false codes=["payload-too-large","payload-too-large","parse-error"]
+
+── T6: action log — append-before-effect, principal/tool/outcome, no secret value
+[http://127.0.0.1:8789/mcp] tools/call -> HTTP 200 (4 ms) rpc_id=109
+[http://127.0.0.1:8789/mcp] tools/call actions.status -> HTTP 200 OK
+PASS  T6.actions.status — actions.status reports an open, unbroken hash-chained log :: open=true broken=null chain=jsonl-hash-chain seq=58
+PASS  T6.intents — every tool call this probe made has an append-before-effect intent row (same order) :: expected=["session.create","session.prompt","session.status","session.create","order.drive_roundtrip","order.drive_roundtrip","order.stage_real","fleet.status","actions.status"] logged=["session.create","session.prompt","session.status","session.create","order.drive_roundtrip","order.drive_roundtrip","order.stage_real","fleet.status","actions.status"]
+PASS  T6.principal — every intent row carries a non-empty principal :: ["mcp:bearer","mcp:bearer","mcp:bearer","mcp:bearer","mcp:bearer","mcp:bearer","mcp:bearer","mcp:bearer","mcp:bearer"]
+PASS  T6.args-digest — intent rows store only argument NAMES and a digest (no values) :: keys_sample=["n"]
+PASS  T6.append-before-effect — every intent has its outcome appended after it (ref_seq = intent seq) :: intents=9 outcomes=9 missing=[]
+PASS  T6.outcomes — outcome rows match the real results (ok vs error), call for call in order :: toolCalls=9 intents=9 errors=2 errorOutcomes=2 mismatches=[]
+PASS  T6.no-token — the bearer token never appears in the action log rows (value compared in memory) :: comparison only; the value is never printed
+PASS  T6.no-arg-values — no argument VALUE this probe sent appears in the log rows; only names/digests are stored :: markers checked=7 leaked=[]
+PASS  T6.chain-link — consecutive tail rows link by prev == previous hash :: rows=59 linkChecks=58 linkOk=true
+PASS  T6.chain-recompute — the documented hash recomputation reproduces the row hashes :: recomputeChecks=58 recomputeOk=true
+PASS  T6.actions.tail-agrees — actions.status tail and the admin-socket tail agree on the rows both can see :: actions_rows=58 admin_rows=59 lastSeq=58 sameChain=true trailing=1 trailingIsOwnOutcome=true
+SKIP  T6.full-file-scan — raw full-file byte scan of the action log (limitation stated, not hidden) :: log path /var/lib/fleet/log/mcp-actions.jsonl is not readable as uid 1000; tail scan is the provable scope, full scan needs the owner: sudo sh -c 'grep -c "$(cat /var/lib/fleet/state/mcp/token)" /var/lib/fleet/log/mcp-actions.jsonl' (expect 0)
+
+── T9: 60 requests/minute per-token rate limit
+PASS  T9.rate — the 61st-request-class call inside one minute is refused 429 with a retry-after and -32005 :: limited after 43 requests this run; retry-after=59s code=-32005
+PASS  T9.rate-logged — the rate-limit refusal is appended to the action log :: rows=1
+
+SUMMARY: FAIL — 79/85 checks passed, 2 failed, 4 informational
+  FAILED T3.prompt: one full agent turn completes (non-empty assistant text; the transport is named) :: status=completed turns=1 transport=stub-turn assistant_bytes=0 contains_stub_prefix=false
+  FAILED T3.status: session.status reads the same session back (found, turns, model label, transport, same assistant text) :: found=true turns=1 model=deterministic-stub (fleet-selftest-stub) last_transport=stub-turn expected_transport=stub-turn read_back_same_text=false last_bytes=0

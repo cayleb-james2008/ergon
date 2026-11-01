@@ -1,0 +1,11 @@
+{
+  "log_path": "/var/lib/fleet/log/mcp-actions.jsonl",
+  "log_open": true,
+  "log_broken": null,
+  "log_seq": 60,
+  "tail_rows": 60,
+  "token_value_compared_in_memory": true,
+  "token_hits_in_readable_rows": 0,
+  "token_file_mode": "600",
+  "token_fingerprint_present": true
+}

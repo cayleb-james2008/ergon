@@ -1,0 +1,1 @@
+direct_read: REFUSED (uid 1000 cannot read /var/lib/fleet/log/mcp-actions.jsonl; the log directory is fleet-owned 0750)

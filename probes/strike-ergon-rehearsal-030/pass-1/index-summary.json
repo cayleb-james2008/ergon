@@ -1,0 +1,42 @@
+{
+  "pass": 1,
+  "sealedUtc": "2026-11-01T23:08:07Z",
+  "passDir": "/home/cayleb/Documents/deepseek-harness/default-workspace/board/probes/strike-ergon-rehearsal-030/pass-1",
+  "words": {
+    "R0": "clean",
+    "R1": "clean",
+    "R2": "pending",
+    "R3": "pending",
+    "R4": "pending",
+    "R5": "clean",
+    "R6": "pending",
+    "R7": "clean"
+  },
+  "counts": {
+    "clean": 4,
+    "pending": 4,
+    "failed": 0
+  },
+  "failedSteps": [],
+  "pendingSteps": [
+    "R2",
+    "R3",
+    "R4",
+    "R6"
+  ],
+  "indexSha256": "b10d11bc343a9151aac2e302e252b0355bd5424065c91a2998d1be4950c338d4",
+  "manifestSha256": "75262e528d3c639dc604d3438511a7bca7a237f05db90f1202005e81431db3d3",
+  "manifestFiles": 72,
+  "manifestBytes": 832884,
+  "verification": {
+    "entries": 72,
+    "ok": 72,
+    "failures": []
+  },
+  "excludedFromManifest": [
+    "manifest.sha256",
+    "index.md",
+    "index-summary.json"
+  ],
+  "passDiff": null
+}

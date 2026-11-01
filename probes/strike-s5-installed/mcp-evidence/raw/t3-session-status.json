@@ -1,0 +1,25 @@
+{
+  "isError": false,
+  "result": {
+    "ok": true,
+    "sessionId": "fleet-mcp-6c69f0a6-6db7-49c1-8a03-5ebf167433b6",
+    "found": true,
+    "source": "facade",
+    "mode": "stub",
+    "model": "deterministic-stub (fleet-selftest-stub)",
+    "provider": "fleet-selftest-stub",
+    "preset": null,
+    "cwd": "/var/lib/fleet/work/mcp-sessions/fleet-mcp-6c69f0a6-6db7-49c1-8a03-5ebf167433b6",
+    "turn_agent": "builder:selftest-fleet-mcp-6c69f0a6-6db7-49c1-8a03-5ebf167433b6",
+    "busy": false,
+    "turns": 1,
+    "last_transport": "stub-turn",
+    "events": 0,
+    "created_at": "2026-11-01T23:11:46.634Z",
+    "last_used_at": "2026-11-01T23:11:46.678Z",
+    "inbox": [],
+    "last_assistant_text": "",
+    "in_registry": true,
+    "registry_session": true
+  }
+}

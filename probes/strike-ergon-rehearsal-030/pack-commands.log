@@ -1,0 +1,6 @@
+# Commands run after the pass directory was sealed — they cannot be appended to pass-2/commands.log
+# (the manifest covers commands.log as it stood at the seal; this record is the pack-level continuation)
+2026-11-01T23:08:14Z  node lib/seal.mjs --pass-dir /home/cayleb/Documents/deepseek-harness/default-workspace/board/probes/strike-ergon-rehearsal-030/pass-2 --pack-dir /home/cayleb/Documents/deepseek-harness/default-workspace/board/probes/strike-ergon-rehearsal-030 --pass 2  -> exit 0
+2026-11-01T23:08:14Z  sha256sum -c manifest.sha256 (cwd /home/cayleb/Documents/deepseek-harness/default-workspace/board/probes/strike-ergon-rehearsal-030/pass-2)  -> exit 0
+2026-11-01T23:08:14Z  node lib/secrets.mjs /home/cayleb/Documents/deepseek-harness/default-workspace/board/probes/strike-ergon-rehearsal-030/pass-2 /home/cayleb/Documents/deepseek-harness/default-workspace/board/probes/strike-ergon-rehearsal-030/secrets-scan-final-pass-2.txt (post-seal)  -> exit 0
+2026-11-01T23:08:14Z  diff verdict tables pass-1 pass-2  -> exit 0

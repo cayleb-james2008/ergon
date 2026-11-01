@@ -1,0 +1,10 @@
+{
+  "ok": true,
+  "result": {
+    "status": "completed",
+    "reason": null,
+    "assistant_text": "",
+    "inbox": [],
+    "provider_calls": 0
+  }
+}

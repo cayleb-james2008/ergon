@@ -1,0 +1,286 @@
+{
+  "url": "http://100.114.17.67:8789/mcp",
+  "toolCount": 9,
+  "names": [
+    "actions.status",
+    "board.op",
+    "fleet.selftest",
+    "fleet.status",
+    "order.drive_roundtrip",
+    "order.stage_real",
+    "session.create",
+    "session.prompt",
+    "session.status"
+  ],
+  "specs": [
+    {
+      "name": "fleet.status",
+      "description": "Read the fleet host status (integrity, lanes gate, policy selftest flag, board head, MCP listener/sessions/log) plus this facade's own counters. Read-only. No secrets.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "session.create",
+      "description": "Create a REAL DSH agent session on the deterministic stub route (\"deterministic-stub (fleet-selftest-stub)\"): model-free, labelled, no provider credential. Optional role preset (lead/builder/checker/researcher) and optional first prompt. Prompts run as real turns through llm/stream and the fleet budget gate; each result names its transport (agent | stub-turn). mode:\"model\" is staged and refused with model-credential-not-entered until the owner enters a provider key — no model call is ever faked.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "preset": {
+            "type": "string",
+            "description": "role preset: lead, builder, checker, researcher (or fleet-<role>)"
+          },
+          "prompt": {
+            "type": "string",
+            "description": "optional first prompt text, run as one stub turn"
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "stub",
+              "model"
+            ],
+            "description": "stub (default, deterministic) or model (staged: currently refused)"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "session.prompt",
+      "description": "Run ONE real agent turn on an existing stub-route session and return the assistant text (deterministic: the stub answers \"S3STUB:<your text>\"), plus `transport`: \"agent\" when fleet-ledger's gate allows a direct turn on the session, or \"stub-turn\" when the ledger reserves synthetic provider calls for selftest principals — then `turn_agent` names the selftest principal and `ledger_gate` says why (stub-provider-selftest-only). Nothing is faked: the stub-turn transport is the fleet's own one-real-turn op through the same gate.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string",
+            "description": "the sessionId from session.create"
+          },
+          "text": {
+            "type": "string",
+            "description": "the prompt text (non-empty)"
+          }
+        },
+        "required": [
+          "sessionId",
+          "text"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "session.status",
+      "description": "Report what the facade holds for a session (preset, model label, busy, turns, inbox, last assistant text). An unknown id answers found:false rather than an error.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string",
+            "description": "the sessionId to inspect"
+          }
+        },
+        "required": [
+          "sessionId"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "board.op",
+      "description": "Run ONE allowlisted board operation: a control-plane op (order-create, order-get, order-list, board-get, order-cancel, posts, pull, ack, preflight-close, done-when-amend, goldfish-disposition, verdict-tier2, unblock, check-start, lease-expire, sweep-now, goldfish-report, stub-turn, ledger-get, usage-feed, lessons-get) or a board bot tool through the model-free selftest transport (order_claim, preflight_raise, task_decompose, task_claim, evidence_post, task_submit_built, verdict, report_file, task_block, task_fail, task_write_claim, freshness_check, task_escalate, order_block, order_fail, board_read, lesson_propose, lessons_read). Fields are top-level beside op. task_claim_start -> task_claim and task_claim_finish -> task_submit_built; task-cancel does not exist (use task_fail/task_block/unblock). Control ops act as the fleet owner principal; selftest tool calls act only on fixture orders.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "op": {
+            "type": "string",
+            "description": "the board op or board tool name"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "lead",
+              "builder",
+              "checker",
+              "researcher"
+            ],
+            "description": "selftest transport role (default: the tool's normal role)"
+          },
+          "agent": {
+            "type": "string",
+            "description": "optional selftest agent id, <role>:selftest-<name>"
+          },
+          "args": {
+            "type": "object",
+            "description": "optional nested tool args (merged with the top-level fields)",
+            "additionalProperties": true
+          }
+        },
+        "required": [
+          "op"
+        ],
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "order.drive_roundtrip",
+      "description": "Run a REAL work-order lifecycle through the board rails, deterministically and model-free: order-create (fixture:true, the fidelity the fleet's own acceptance check uses) -> order_claim -> preflight -> task_decompose -> task_claim -> evidence_post -> task_submit_built -> check-start -> verdict pass -> lesson banking -> report_file -> wait for the harness finisher to read the done-when and roll the order up. Returns the id chain, posts and final state, labelled mode:\"fixture-validated\" and real_lane:\"not-built (Stage 4 roster)\" — it never claims a real lane drove it. Throws a named refusal when a step fails (and cancels a leftover fixture order).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "order title"
+          },
+          "done_when": {
+            "description": "the done-when: a shell command string, {mode:\"command\",command,text?}, or {mode:\"rubric\",criteria:[string]}",
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "object",
+                "additionalProperties": true
+              }
+            ]
+          },
+          "example": {
+            "type": "string",
+            "description": "what good work looks like (order form example)"
+          },
+          "est_minutes": {
+            "type": "integer",
+            "description": "estimate in whole minutes (default 15, >= 10)",
+            "minimum": 10,
+            "maximum": 10080
+          }
+        },
+        "required": [
+          "title"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "order.stage_real",
+      "description": "Stage (do NOT execute) a real, non-fixture work order exactly as a Nox delegation would create it (title, goal, done_when, example, est_minutes, budget_usd, checkpoint_at). The validated payload is written under <statePath>/staged/ for later firing; the order row is created fixture:false ONLY when a Stage 4 roster is mounted. Today no roster exists, so it refuses cleanly with lanes-unavailable and returns the staged file path + payload digest.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "order title (<= 200 chars)"
+          },
+          "goal": {
+            "type": "string",
+            "description": "the goal the order exists to reach"
+          },
+          "done_when": {
+            "description": "the done-when: a shell command string, {mode:\"command\",command,text?}, or {mode:\"rubric\",criteria:[string]}",
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "object",
+                "additionalProperties": true
+              }
+            ]
+          },
+          "example": {
+            "type": "string",
+            "description": "what good work looks like (order form example)"
+          },
+          "est_minutes": {
+            "type": "integer",
+            "description": "estimate in whole minutes (>= 10)",
+            "minimum": 10,
+            "maximum": 10080
+          },
+          "budget_usd": {
+            "type": "number",
+            "description": "the order budget in USD (default 1)",
+            "minimum": 0.000001,
+            "maximum": 100000
+          },
+          "checkpoint_at": {
+            "description": "future epoch ms or ISO timestamp (default: now + 24h)",
+            "oneOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          }
+        },
+        "required": [
+          "title",
+          "goal",
+          "done_when",
+          "example",
+          "est_minutes"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "fleet.selftest",
+      "description": "Run ONE board tool through the real ctx.tools pipeline inside a role's preset (the fleet's model-free selftest transport), exactly as the acceptance checks do. The tool is restricted to the board-tool allowlist — never shell/fs/web. Returns the tool result plus the DSH call_id and session.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "role": {
+            "type": "string",
+            "enum": [
+              "lead",
+              "builder",
+              "checker",
+              "researcher"
+            ],
+            "description": "the role whose preset the call runs in"
+          },
+          "tool": {
+            "type": "string",
+            "description": "the board tool name (order_claim, task_decompose, task_claim, evidence_post, verdict, ...)"
+          },
+          "args": {
+            "type": "object",
+            "description": "the tool arguments",
+            "additionalProperties": true
+          },
+          "agent": {
+            "type": "string",
+            "description": "optional selftest agent id, <role>:selftest-<name>"
+          }
+        },
+        "required": [
+          "role",
+          "tool"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "actions.status",
+      "description": "Read the tail of the hash-chained MCP action log (<logPath>, default /var/lib/fleet/log/mcp-actions.jsonl): principal, tool, argument NAMES and sha256 digest (never values), outcome, and the chain head. Read-only.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "n": {
+            "type": "integer",
+            "description": "how many rows, 1..100 (default 10)",
+            "minimum": 1,
+            "maximum": 100
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      }
+    }
+  ]
+}

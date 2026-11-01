@@ -1,0 +1,25 @@
+# My own 0.3.0 run vs builder 0.3.0 pack (pass 2 data)
+differences: 0
+pass-2 verdict tables byte-identical: true
+own R2 stub-turn probes: [
+  {
+    "cast_member": "dana-whitcomb",
+    "principal": "lead:selftest-lf-stub-1-dana-whitcomb",
+    "model": "claude-haiku-5-5",
+    "ok": true,
+    "status": "completed",
+    "provider_calls": 0,
+    "assistant_text_length": 0,
+    "error": null
+  },
+  {
+    "cast_member": "priya-lindqvist",
+    "principal": "researcher:selftest-lf-stub-1-priya-lindqvist",
+    "model": "claude-haiku-5-5",
+    "ok": true,
+    "status": "completed",
+    "provider_calls": 0,
+    "assistant_text_length": 0,
+    "error": null
+  }
+]

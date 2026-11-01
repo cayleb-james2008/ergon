@@ -1,0 +1,17 @@
+# Installed package identity — version-agnostic, from the install's own audit record
+generated_utc: 2026-11-01T23:08:12Z
+identity_source: journald install audit line (dsh-fleet-admin plugin-add) — what the install reports
+install_audit_line: 2026-11-01T18:07:09-05:00 outis-desktop dsh-fleet-admin[510715]: plugin-add cayleb-dsh-fleet-0.3.0.tgz sha256=8173d13ebee542b328ffe0b4a3476e27ffa561e46172949d54f9757ddd4e1070 via=sudo
+install_audit_timestamp: 2026-11-01T18:07:09-05:00
+installed_file: cayleb-dsh-fleet-0.3.0.tgz
+installed_version: 0.3.0
+bytes: 287772
+sha256: 8173d13ebee542b328ffe0b4a3476e27ffa561e46172949d54f9757ddd4e1070
+expected_sha256: 8173d13ebee542b328ffe0b4a3476e27ffa561e46172949d54f9757ddd4e1070
+verified: true
+## Drop directory inventory (staged releases are listed; only the installed digest is claimed as installed)
+8173d13ebee542b328ffe0b4a3476e27ffa561e46172949d54f9757ddd4e1070  cayleb-dsh-fleet-0.3.0.tgz  (287772 bytes, sidecar absent)
+37e3a542a32f8cb15cd06965072cfef9aac81cb157b20f7c89b50dafc36fa177  cayleb-dsh-fleet-0.2.2.tgz  (210358 bytes, sidecar matches)
+55516f9ae9535dc585da96587af45f55d83edac67c88e48d3bdc32ad652d10d4  cayleb-dsh-fleet-0.2.1.tgz  (164714 bytes, sidecar matches)
+842e76f258fcfbd1575d6c7fa48b5b10e1603a2b0d6fbc9dbf672d3351661415  cayleb-dsh-fleet-0.2.0.tgz  (163847 bytes, sidecar matches)
+The installed package tree is readable only to user fleet; the wrapper reads below prove the running version and the mounted bundle rows.
