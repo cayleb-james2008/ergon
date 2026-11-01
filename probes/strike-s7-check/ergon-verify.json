@@ -1,0 +1,508 @@
+{
+  "summary": {
+    "tool": "checker-verify/ergon-check.mjs",
+    "mode": "verify",
+    "at": "2026-11-01T22:23:48Z",
+    "checks": {
+      "total": 81,
+      "passed": 79,
+      "failed": 2,
+      "informational": 0
+    },
+    "failedIds": [
+      "P1.E7.manifest",
+      "P2.E7.manifest"
+    ],
+    "verdict": "FAIL",
+    "packRoot": "ergon-pack",
+    "passes": 2
+  },
+  "checks": [
+    {
+      "id": "P1.exists",
+      "title": "pass-1/ exists",
+      "ok": true,
+      "detail": "/home/cayleb/workspace/harness-build/evidence/strike/checker-verify/s7/ergon-pack/pass-1"
+    },
+    {
+      "id": "P1.E12.meta",
+      "title": "pass-1 run-meta names the pass number, fresh mktemp run root, repo commit and start time",
+      "ok": true,
+      "detail": "pass=1 runRoot=/tmp/ergon-rehearsal-20261101T222255Z-wqWAOs commit=e284135264f4 started=2026-11-01T22:22:55Z"
+    },
+    {
+      "id": "P1.E1.index",
+      "title": "pass-1 index.md exists with a verdict table",
+      "ok": true,
+      "detail": "/home/cayleb/workspace/harness-build/evidence/strike/checker-verify/s7/ergon-pack/pass-1/index.md"
+    },
+    {
+      "id": "P1.E1.table",
+      "title": "pass-1 verdict table has a row for R0–R7",
+      "ok": true,
+      "detail": "rows=8"
+    },
+    {
+      "id": "P1.E2.R0",
+      "title": "R0 data word is in the vocabulary and matches the index table",
+      "ok": true,
+      "detail": "data=clean index=clean"
+    },
+    {
+      "id": "P1.E6.R0",
+      "title": "R0 clean step carries hard checks, no pending items and no failures",
+      "ok": true,
+      "detail": "checks=20 hardOk=20 pending=0 failures=0"
+    },
+    {
+      "id": "P1.E7.R0",
+      "title": "R0 every evidence file it names exists",
+      "ok": true,
+      "detail": "13 evidence files"
+    },
+    {
+      "id": "P1.E2.R1",
+      "title": "R1 data word is in the vocabulary and matches the index table",
+      "ok": true,
+      "detail": "data=clean index=clean"
+    },
+    {
+      "id": "P1.E6.R1",
+      "title": "R1 clean step carries hard checks, no pending items and no failures",
+      "ok": true,
+      "detail": "checks=16 hardOk=16 pending=0 failures=0"
+    },
+    {
+      "id": "P1.E7.R1",
+      "title": "R1 every evidence file it names exists",
+      "ok": true,
+      "detail": "5 evidence files"
+    },
+    {
+      "id": "P1.E2.R2",
+      "title": "R2 data word is in the vocabulary and matches the index table",
+      "ok": true,
+      "detail": "data=pending index=pending"
+    },
+    {
+      "id": "P1.E7.R2",
+      "title": "R2 every evidence file it names exists",
+      "ok": true,
+      "detail": "5 evidence files"
+    },
+    {
+      "id": "P1.E2.R3",
+      "title": "R3 data word is in the vocabulary and matches the index table",
+      "ok": true,
+      "detail": "data=pending index=pending"
+    },
+    {
+      "id": "P1.E7.R3",
+      "title": "R3 every evidence file it names exists",
+      "ok": true,
+      "detail": "2 evidence files"
+    },
+    {
+      "id": "P1.E2.R4",
+      "title": "R4 data word is in the vocabulary and matches the index table",
+      "ok": true,
+      "detail": "data=pending index=pending"
+    },
+    {
+      "id": "P1.E7.R4",
+      "title": "R4 every evidence file it names exists",
+      "ok": true,
+      "detail": "1 evidence files"
+    },
+    {
+      "id": "P1.E2.R5",
+      "title": "R5 data word is in the vocabulary and matches the index table",
+      "ok": true,
+      "detail": "data=clean index=clean"
+    },
+    {
+      "id": "P1.E6.R5",
+      "title": "R5 clean step carries hard checks, no pending items and no failures",
+      "ok": true,
+      "detail": "checks=23 hardOk=23 pending=0 failures=0"
+    },
+    {
+      "id": "P1.E7.R5",
+      "title": "R5 every evidence file it names exists",
+      "ok": true,
+      "detail": "3 evidence files"
+    },
+    {
+      "id": "P1.E2.R6",
+      "title": "R6 data word is in the vocabulary and matches the index table",
+      "ok": true,
+      "detail": "data=pending index=pending"
+    },
+    {
+      "id": "P1.E7.R6",
+      "title": "R6 every evidence file it names exists",
+      "ok": true,
+      "detail": "2 evidence files"
+    },
+    {
+      "id": "P1.E2.R7",
+      "title": "R7 data word is in the vocabulary and matches the index table",
+      "ok": true,
+      "detail": "data=clean index=clean"
+    },
+    {
+      "id": "P1.E6.R7",
+      "title": "R7 clean step carries hard checks, no pending items and no failures",
+      "ok": true,
+      "detail": "checks=12 hardOk=12 pending=0 failures=0"
+    },
+    {
+      "id": "P1.E7.R7",
+      "title": "R7 every evidence file it names exists",
+      "ok": true,
+      "detail": "3 evidence files"
+    },
+    {
+      "id": "P1.E4.pending",
+      "title": "every pending item appears, named, in the index pending list",
+      "ok": true,
+      "detail": "[]"
+    },
+    {
+      "id": "P1.E5.counts",
+      "title": "the index counts line equals the per-step words",
+      "ok": true,
+      "detail": "index={\"clean\":4,\"pending\":4,\"failed\":0} data={\"clean\":4,\"pending\":4,\"failed\":0}"
+    },
+    {
+      "id": "P1.E3.no-failed",
+      "title": "pass-1 has zero failed steps",
+      "ok": true,
+      "detail": "failed=0 ()"
+    },
+    {
+      "id": "P1.E13.commands",
+      "title": "every logged toolchain command exited 0 (no silenced failure behind a clean word)",
+      "ok": true,
+      "detail": "12 commands, all exit 0"
+    },
+    {
+      "id": "P1.E13.command-log",
+      "title": "the pass has a command log with the step invocations",
+      "ok": true,
+      "detail": "12 rows"
+    },
+    {
+      "id": "P1.E9.scan",
+      "title": "pass-1 driver scans exist and report clean (not accepted as the only evidence)",
+      "ok": true,
+      "detail": "scan=present final=present"
+    },
+    {
+      "id": "P1.E7.manifest",
+      "title": "the pass manifest verifies every listed artefact hash",
+      "ok": false,
+      "detail": "entries=72 bad=[\"commands.log\",\"logs/index.log\"]"
+    },
+    {
+      "id": "P1.E2.summary",
+      "title": "pass-1 index-summary.json agrees with the data words",
+      "ok": true,
+      "detail": "words={\"R0\":\"clean\",\"R1\":\"clean\",\"R2\":\"pending\",\"R3\":\"pending\",\"R4\":\"pending\",\"R5\":\"clean\",\"R6\":\"pending\",\"R7\":\"clean\"}"
+    },
+    {
+      "id": "P1.E12.identity",
+      "title": "R0's recorded package identity matches an installed tarball",
+      "ok": true,
+      "detail": "matches cayleb-dsh-fleet-0.2.2.tgz"
+    },
+    {
+      "id": "P1.E12.order-id",
+      "title": "R5's claimed fleet order o3277 exists on the live control plane with the claimed state",
+      "ok": true,
+      "detail": "state=done fixture=true"
+    },
+    {
+      "id": "P1.E12.order-fixture",
+      "title": "R5's order o3277 is fixture-scoped and not claimed as a real lane execution",
+      "ok": true,
+      "detail": "fixture=true state=done"
+    },
+    {
+      "id": "P1.E12.order-honesty",
+      "title": "the pack does not claim a real lane drove the R5 order",
+      "ok": true,
+      "detail": "claimed_real=false"
+    },
+    {
+      "id": "P1.E12.run-values",
+      "title": "the index names per-run values (run root/commit), not a copied template",
+      "ok": true,
+      "detail": "runRootInIndex=true indexBytes=27814"
+    },
+    {
+      "id": "P2.exists",
+      "title": "pass-2/ exists",
+      "ok": true,
+      "detail": "/home/cayleb/workspace/harness-build/evidence/strike/checker-verify/s7/ergon-pack/pass-2"
+    },
+    {
+      "id": "P2.E12.meta",
+      "title": "pass-2 run-meta names the pass number, fresh mktemp run root, repo commit and start time",
+      "ok": true,
+      "detail": "pass=2 runRoot=/tmp/ergon-rehearsal-20261101T222336Z-KWQcWq commit=e284135264f4 started=2026-11-01T22:23:36Z"
+    },
+    {
+      "id": "P2.E1.index",
+      "title": "pass-2 index.md exists with a verdict table",
+      "ok": true,
+      "detail": "/home/cayleb/workspace/harness-build/evidence/strike/checker-verify/s7/ergon-pack/pass-2/index.md"
+    },
+    {
+      "id": "P2.E1.table",
+      "title": "pass-2 verdict table has a row for R0–R7",
+      "ok": true,
+      "detail": "rows=8"
+    },
+    {
+      "id": "P2.E2.R0",
+      "title": "R0 data word is in the vocabulary and matches the index table",
+      "ok": true,
+      "detail": "data=clean index=clean"
+    },
+    {
+      "id": "P2.E6.R0",
+      "title": "R0 clean step carries hard checks, no pending items and no failures",
+      "ok": true,
+      "detail": "checks=20 hardOk=20 pending=0 failures=0"
+    },
+    {
+      "id": "P2.E7.R0",
+      "title": "R0 every evidence file it names exists",
+      "ok": true,
+      "detail": "13 evidence files"
+    },
+    {
+      "id": "P2.E2.R1",
+      "title": "R1 data word is in the vocabulary and matches the index table",
+      "ok": true,
+      "detail": "data=clean index=clean"
+    },
+    {
+      "id": "P2.E6.R1",
+      "title": "R1 clean step carries hard checks, no pending items and no failures",
+      "ok": true,
+      "detail": "checks=16 hardOk=16 pending=0 failures=0"
+    },
+    {
+      "id": "P2.E7.R1",
+      "title": "R1 every evidence file it names exists",
+      "ok": true,
+      "detail": "5 evidence files"
+    },
+    {
+      "id": "P2.E2.R2",
+      "title": "R2 data word is in the vocabulary and matches the index table",
+      "ok": true,
+      "detail": "data=pending index=pending"
+    },
+    {
+      "id": "P2.E7.R2",
+      "title": "R2 every evidence file it names exists",
+      "ok": true,
+      "detail": "5 evidence files"
+    },
+    {
+      "id": "P2.E2.R3",
+      "title": "R3 data word is in the vocabulary and matches the index table",
+      "ok": true,
+      "detail": "data=pending index=pending"
+    },
+    {
+      "id": "P2.E7.R3",
+      "title": "R3 every evidence file it names exists",
+      "ok": true,
+      "detail": "2 evidence files"
+    },
+    {
+      "id": "P2.E2.R4",
+      "title": "R4 data word is in the vocabulary and matches the index table",
+      "ok": true,
+      "detail": "data=pending index=pending"
+    },
+    {
+      "id": "P2.E7.R4",
+      "title": "R4 every evidence file it names exists",
+      "ok": true,
+      "detail": "1 evidence files"
+    },
+    {
+      "id": "P2.E2.R5",
+      "title": "R5 data word is in the vocabulary and matches the index table",
+      "ok": true,
+      "detail": "data=clean index=clean"
+    },
+    {
+      "id": "P2.E6.R5",
+      "title": "R5 clean step carries hard checks, no pending items and no failures",
+      "ok": true,
+      "detail": "checks=23 hardOk=23 pending=0 failures=0"
+    },
+    {
+      "id": "P2.E7.R5",
+      "title": "R5 every evidence file it names exists",
+      "ok": true,
+      "detail": "3 evidence files"
+    },
+    {
+      "id": "P2.E2.R6",
+      "title": "R6 data word is in the vocabulary and matches the index table",
+      "ok": true,
+      "detail": "data=pending index=pending"
+    },
+    {
+      "id": "P2.E7.R6",
+      "title": "R6 every evidence file it names exists",
+      "ok": true,
+      "detail": "2 evidence files"
+    },
+    {
+      "id": "P2.E2.R7",
+      "title": "R7 data word is in the vocabulary and matches the index table",
+      "ok": true,
+      "detail": "data=clean index=clean"
+    },
+    {
+      "id": "P2.E6.R7",
+      "title": "R7 clean step carries hard checks, no pending items and no failures",
+      "ok": true,
+      "detail": "checks=13 hardOk=13 pending=0 failures=0"
+    },
+    {
+      "id": "P2.E7.R7",
+      "title": "R7 every evidence file it names exists",
+      "ok": true,
+      "detail": "3 evidence files"
+    },
+    {
+      "id": "P2.E4.pending",
+      "title": "every pending item appears, named, in the index pending list",
+      "ok": true,
+      "detail": "[]"
+    },
+    {
+      "id": "P2.E5.counts",
+      "title": "the index counts line equals the per-step words",
+      "ok": true,
+      "detail": "index={\"clean\":4,\"pending\":4,\"failed\":0} data={\"clean\":4,\"pending\":4,\"failed\":0}"
+    },
+    {
+      "id": "P2.E3.no-failed",
+      "title": "pass-2 has zero failed steps",
+      "ok": true,
+      "detail": "failed=0 ()"
+    },
+    {
+      "id": "P2.E13.commands",
+      "title": "every logged toolchain command exited 0 (no silenced failure behind a clean word)",
+      "ok": true,
+      "detail": "14 commands, all exit 0"
+    },
+    {
+      "id": "P2.E13.command-log",
+      "title": "the pass has a command log with the step invocations",
+      "ok": true,
+      "detail": "14 rows"
+    },
+    {
+      "id": "P2.E9.scan",
+      "title": "pass-2 driver scans exist and report clean (not accepted as the only evidence)",
+      "ok": true,
+      "detail": "scan=present final=present"
+    },
+    {
+      "id": "P2.E8.table-identical",
+      "title": "pass 2 reproduces pass 1's per-step verdict table exactly",
+      "ok": true,
+      "detail": "pass1={\"R0\":\"clean\",\"R1\":\"clean\",\"R2\":\"pending\",\"R3\":\"pending\",\"R4\":\"pending\",\"R5\":\"clean\",\"R6\":\"pending\",\"R7\":\"clean\"} pass2={\"R0\":\"clean\",\"R1\":\"clean\",\"R2\":\"pending\",\"R3\":\"pending\",\"R4\":\"pending\",\"R5\":\"clean\",\"R6\":\"pending\",\"R7\":\"clean\"}"
+    },
+    {
+      "id": "P2.E8.r7-clean-rule",
+      "title": "R7 of pass 2 is clean (the second pass matched)",
+      "ok": true,
+      "detail": "R7=clean"
+    },
+    {
+      "id": "P2.E8.diff-file",
+      "title": "the literal verdict-table diff exists and is empty",
+      "ok": true,
+      "detail": "bytes=0"
+    },
+    {
+      "id": "P2.E8.pack",
+      "title": "pack front page PACK.md records the identical verdict tables",
+      "ok": true,
+      "detail": "PACK.md present"
+    },
+    {
+      "id": "P2.E8.r7-passdiff",
+      "title": "pass 2 R7 carries the pass-diff verdict and it is identical",
+      "ok": true,
+      "detail": "{\"identical\":true,\"differences\":[],\"comparedWith\":\"pass-1\",\"seedDigest\":{\"pass1\":\"558df9edb29c8c5b8e449b53e6a68ae6e02f1259d257fabe3017d943a1b593c1\",\"pass2\":\"558df9edb29c8c5b8e449b53e6a68ae6e02f1259d257fabe3017d943a1b593c1\"}}"
+    },
+    {
+      "id": "P2.E7.manifest",
+      "title": "the pass manifest verifies every listed artefact hash",
+      "ok": false,
+      "detail": "entries=74 bad=[\"commands.log\",\"logs/index.log\"]"
+    },
+    {
+      "id": "P2.E2.summary",
+      "title": "pass-2 index-summary.json agrees with the data words",
+      "ok": true,
+      "detail": "words={\"R0\":\"clean\",\"R1\":\"clean\",\"R2\":\"pending\",\"R3\":\"pending\",\"R4\":\"pending\",\"R5\":\"clean\",\"R6\":\"pending\",\"R7\":\"clean\"}"
+    },
+    {
+      "id": "P2.E12.identity",
+      "title": "R0's recorded package identity matches an installed tarball",
+      "ok": true,
+      "detail": "matches cayleb-dsh-fleet-0.2.2.tgz"
+    },
+    {
+      "id": "P2.E12.order-id",
+      "title": "R5's claimed fleet order o3278 exists on the live control plane with the claimed state",
+      "ok": true,
+      "detail": "state=done fixture=true"
+    },
+    {
+      "id": "P2.E12.order-fixture",
+      "title": "R5's order o3278 is fixture-scoped and not claimed as a real lane execution",
+      "ok": true,
+      "detail": "fixture=true state=done"
+    },
+    {
+      "id": "P2.E12.order-honesty",
+      "title": "the pack does not claim a real lane drove the R5 order",
+      "ok": true,
+      "detail": "claimed_real=false"
+    },
+    {
+      "id": "P2.E12.run-values",
+      "title": "the index names per-run values (run root/commit), not a copied template",
+      "ok": true,
+      "detail": "runRootInIndex=true indexBytes=28374"
+    },
+    {
+      "id": "X.secrets",
+      "title": "independent secrets scan over the pack is clean (matches are named, never echoed)",
+      "ok": true,
+      "detail": "files=161 patterns=11 hits=[]"
+    },
+    {
+      "id": "X.live-token",
+      "title": "the live MCP bearer token does not appear anywhere in the pack",
+      "ok": true,
+      "detail": "token_readable=false (value compared in memory only)"
+    }
+  ]
+}

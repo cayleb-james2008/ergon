@@ -1,0 +1,31 @@
+# Manifest staleness evidence (independent check)
+generated_utc: 2026-11-01T22:26:55Z
+
+## pass-1
+commands.log
+  manifest: 977999164fd0c30f09e6ff037caf5e71f9565269c1ae490e611c2fcf5855f613
+  actual:   4d38ad1875121a02c141799c31ce4ff7e4d68e3e631425068cb24359b6d404a2
+  file:     3687 bytes, mtime 2026-11-01 17:22:58.750679716 -0500
+  MISMATCH
+logs/index.log
+  manifest: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+  actual:   e5b24a201a84dd2e5b2f48467389c8a3a110aa0c944e0716959740ced02332b1
+  file:     642 bytes, mtime 2026-11-01 17:22:58.706680855 -0500
+  MISMATCH
+
+## pass-2
+commands.log
+  manifest: d7b89cfe7b065a0b3c82897a0efcd5c318e3cbd47cc3cb9eb69d8884fba1ee43
+  actual:   80cf049a23a1d981a3cbbbaf8674acad94b883190efb13b3b263adcd5fd654ee
+  file:     3918 bytes, mtime 2026-11-01 17:23:40.048609869 -0500
+  MISMATCH
+logs/index.log
+  manifest: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+  actual:   e5b1c575ed3a5959887f096bf8b9cb08bfd345f7ed61c6cf55d0a39fa83a3d84
+  file:     656 bytes, mtime 2026-11-01 17:23:39.990611372 -0500
+  MISMATCH
+
+Cause: index-build.mjs writes pass-<n>/manifest.sha256 inside the same process that is still writing
+logs/index.log (stdout redirect), and the shell appends the index-build/final-scan/rmdir rows to commands.log
+after the manifest exists; both files are included in the manifest (only manifest.sha256, index.md and
+index-summary.json are excluded).

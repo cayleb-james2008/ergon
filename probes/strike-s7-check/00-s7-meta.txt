@@ -1,0 +1,3 @@
+2026-11-01T22:22:55Z
+85f66c1a23c59f7d62f0572bb5b81e6f7ff138e8275201286d08ad9c0bea50f9  /home/cayleb/workspace/harness-build/ergon-strike/docs/acceptance/demo-company/rehearsal/run-rehearsal.sh
+e284135264f4025a1527c6754261b23907620dea
