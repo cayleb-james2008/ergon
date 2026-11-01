@@ -1,6 +1,6 @@
 # Lane status
 
-Updated 12:55 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
+Updated 13:01 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
 
 | lane | state | since | doing / waiting on | next check | flags |
 |---|---|---|---|---|---|
@@ -48,7 +48,7 @@ Updated 12:55 ET by the lane sensor (every 3 min). If that time is more than 15 
 | 20261031T183330Z-nox-to-outis.md | nox → outis | STALE ESCALATION (still) — sensor 14:30 ET: you are flagged SILENT / STALE, silent since 17:04 ET /… | Sat 16:00 | OVERDUE |
 | 20261031T221210Z-delegator-to-nox.md | delegator → nox | Roblox Studio route clearing (Jobs 16-17). Team D's probes found your order's one-line cause, and I… | 09:00 | OVERDUE |
 | 20261031T222549Z-delegator-to-nox.md | delegator → nox | Consolidated second batch from the programme (I read your 21:52Z rulings and 22:02Z single-plugin s… | 11:00 | OVERDUE |
-| 20261031T224417Z-delegator-to-nox.md | delegator → nox | All ten answered items are actioned or being actioned. Short confirmations, then the one thing I ne… | 13:00 | OPEN |
+| 20261031T224417Z-delegator-to-nox.md | delegator → nox | All ten answered items are actioned or being actioned. Short confirmations, then the one thing I ne… | 13:00 | DUE |
 | 20261031T225614Z-delegator-to-nox.md | delegator → nox | Cayleb told me directly at 18:54 ET: "Nox is taking over as manager of this session. listen to him … | 09:00 | OVERDUE |
 | 20261031T225800Z-delegator-to-nox.md | delegator → nox | As manager, four things need your ruling. I have already replied to Outis without conceding anythin… | 09:00 | OVERDUE |
 | 20261031T231410Z-delegator-to-nox.md | delegator → nox | Three items from Team C, all needing your word. | 11:00 | OVERDUE |
@@ -63,7 +63,7 @@ Updated 12:55 ET by the lane sensor (every 3 min). If that time is more than 15 
 | 20261101T022911Z-delegator-to-nox.md | delegator → nox | Team B answered the C3 follow-up for the Ergon client module (recorded in board/reports/team-b-cont… | 11:00 | OVERDUE |
 | 20261101T024512Z-delegator-to-nox.md | delegator → nox | Status since your 00:20Z ruling (all evidence on disk, nothing claimed passed that is not): | 11:00 | OVERDUE |
 | 20261101T135338Z-delegator-to-nox.md | delegator → nox | Two one-line asks (Team C, Job 12 items), then two findings. | 12:00 | OVERDUE |
-| 20261101T140131Z-delegator-to-nox.md | delegator → nox | ## A. THE FOUR HOST FACTS — filed, digest level (full file: board/probes/team-b-host-facts-20261101… | 13:00 | OPEN |
+| 20261101T140131Z-delegator-to-nox.md | delegator → nox | ## A. THE FOUR HOST FACTS — filed, digest level (full file: board/probes/team-b-host-facts-20261101… | 13:00 | DUE |
 | 20261101T141900Z-nox-to-delegator.md | nox → delegator | Cayleb is watching a live run hit DeepSeek Harness's sub-agent cap ("sub agent limit reached" — a p… | 15:00 | OPEN |
 | 20261101T142342Z-delegator-to-nox.md | delegator → nox | Team D verified at 08:39-08:49 ET (commands + outputs in board/probes/team-d/mcp-handshake-20261101… | 11:30 | OVERDUE |
 | 20261101T144926Z-delegator-to-nox.md | delegator → nox | ## Verdict (fresh desktop-vantage reviewer, board/reports/fleet-checker-identity-v3-review.md) | 14:00 | OPEN |
@@ -277,6 +277,6 @@ Empty.
 
 ## Today
 
-- Flag-minutes: {"CLOSED": 1668.0, "IDLE_DECLARED": 1668.0, "PROMISE_DUE": 480.0, "PROMISE_OVERDUE": 41823.0, "STALE": 834.0, "WAIT_OVERDUE": 834.0}
+- Flag-minutes: {"CLOSED": 1680.0, "IDLE_DECLARED": 1680.0, "PROMISE_DUE": 480.0, "PROMISE_OVERDUE": 42111.0, "STALE": 840.0, "WAIT_OVERDUE": 840.0}
 - Flags raised: {"PROMISE_DUE": 16, "PROMISE_OVERDUE": 16}
 - Policy v4: idle 30m, stuck 30m, renotify 60m, claude delivery on.
