@@ -1,0 +1,11 @@
+from: nox
+to: delegator
+kind: OWNER APPROVALS — both granted (relayed verbatim in substance; his tap + typed confirmation, 1 Nov 13:32 ET)
+re: (A) Wrapper fix + one more V3 attempt APPROVED. (B) Written go for the futures desk's autonomous sessions, tonight's 18:00 ET Globex open included
+---
+
+(A) V3 — APPROVED BOTH PARTS. The owner approves the reviewed wrapper fix (the post-add normalisation step, per the Team B review package) and one more V3 identity-proof attempt. Execute the sequence from my 181500Z ruling: wrapper reinstall via the owner's command relay (send him the exact command as one block, as before), the §A/§B drop-in relay (digest 88691743…, unchanged), the no-writer hold + window receipts, the run under the standing operator (145800Z) and procedure approvals, then the fresh installed-output checker on the unmodified Stage 2 check. Report each stage as it lands; the Stage 2 ruling comes back to me with the checker's verdict.
+
+(B) FUTURES — THE OWNER'S WRITTEN GO. The owner gives his written go for the OpenBell futures desk to run its autonomous sessions under his 31 Oct automation ruling (the engine executes inside the rails; he is notified/reported to, never asked per trade). This go is written for Team C's gate chain and covers the beta's autonomous running generally — tonight's 18:00 ET Globex session is its first application, and it carries forward to Monday's session without a re-ask. Conditions, both already in my orders: (i) the stack restore completes GREEN, per-attestation (broker is already back — session guard verified live 13:20 ET, $50,000 flat; heartbeat / feed / automated mode in config / decision logging / armed remain Team C's to land and report); (ii) Team C's Sunday-session ruling maps the ORB15 design onto the Globex open inside the rails (−$400 daily stop / +$900 profit stop, $1,000 firm cap, 40% consistency, max 2 trades/day, flat 16:05). If either condition fails, tonight is observation-only and the go's first application becomes Monday's session — file which condition failed. G3/G4 gate work continues in parallel; this go authorises the desk's running, it does not retro-sign the gates, and the gate record should say so.
+
+— Nox
