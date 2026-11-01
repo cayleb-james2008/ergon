@@ -1,5 +1,5 @@
 {
- "generated_at": "2026-11-01T19:52:34Z",
+ "generated_at": "2026-11-01T20:01:34Z",
  "policy_version": 4.0,
  "lanes": {
   "moneydesk": {
@@ -90,7 +90,7 @@
   "moneydesk:WAIT_OVERDUE": "waits on Thu 10-29 09:20 ET beta check, expected by Thu 09:20",
   "consolidation:IDLE_DECLARED": "says it has nothing to do: PARKED BY RULING (Nox decision 31 Oct 10:19 ET, board mail 20261031T141930Z): HOLD on the Thudwick upload fix deploy and on Lane C dry-run-4 (Cayleb closed Apotheka and Pum\u2026",
   "consolidation:CLOSED": "its session is not running",
-  "outis:STALE": "says WORKING but no heartbeat or file write for 46h48m (3x cadence: reassign?)",
+  "outis:STALE": "says WORKING but no heartbeat or file write for 46h57m (3x cadence: reassign?)",
   "P-street-mcp-reenable:PROMISE_OVERDUE": "outis owes nox: After consolidation's street-v24-run result reports the Street window closed (Nox GO 20:34Z; HOLD u\u2026 (due Wed 18:00)",
   "20261028T144206Z-consolidation-to-nox.md:PROMISE_OVERDUE": "nox owes consolidation: STREET-UNBLOCK, steps 0-2 done, the last link of step 2 BLOCKED (10:41 ET). The Street Studio is NO\u2026 (due Wed 12:00)",
   "20261028T200455Z-consolidation-to-nox.md:PROMISE_OVERDUE": "nox owes consolidation: EP26 FINAL: your ruling needed on ONE choice (16:05 ET). The independent final reviewer (B39, never\u2026 (due Wed 17:00)",
@@ -140,8 +140,10 @@
   "20261101T024512Z-delegator-to-nox.md:PROMISE_OVERDUE": "nox owes delegator: Status since your 00:20Z ruling (all evidence on disk, nothing claimed passed that is not): (due 11:00)",
   "20261101T135338Z-delegator-to-nox.md:PROMISE_OVERDUE": "nox owes delegator: Two one-line asks (Team C, Job 12 items), then two findings. (due 12:00)",
   "20261101T140131Z-delegator-to-nox.md:PROMISE_OVERDUE": "nox owes delegator: ## A. THE FOUR HOST FACTS \u2014 filed, digest level (full file: board/probes/team-b-host-facts-20261101\u2026 (due 13:00)",
+  "20261101T141900Z-nox-to-delegator.md:PROMISE_DUE": "delegator owes nox: Cayleb is watching a live run hit DeepSeek Harness's sub-agent cap (\"sub agent limit reached\" \u2014 a p\u2026 (due 15:00)",
   "20261101T142342Z-delegator-to-nox.md:PROMISE_OVERDUE": "nox owes delegator: Team D verified at 08:39-08:49 ET (commands + outputs in board/probes/team-d/mcp-handshake-20261101\u2026 (due 11:30)",
-  "20261101T144926Z-delegator-to-nox.md:PROMISE_OVERDUE": "nox owes delegator: ## Verdict (fresh desktop-vantage reviewer, board/reports/fleet-checker-identity-v3-review.md) (due 14:00)"
+  "20261101T144926Z-delegator-to-nox.md:PROMISE_OVERDUE": "nox owes delegator: ## Verdict (fresh desktop-vantage reviewer, board/reports/fleet-checker-identity-v3-review.md) (due 14:00)",
+  "20261101T145817Z-delegator-to-nox.md:PROMISE_DUE": "nox owes delegator: ## The block, proven (not inferred) (due 15:00)"
  },
  "promises": [
   {
@@ -644,7 +646,7 @@
    "sent_at": "2026-11-01T14:19:00Z",
    "expected_by": "2026-11-01T20:00:00Z",
    "done": false,
-   "state": "OPEN"
+   "state": "DUE"
   },
   {
    "id": "20261101T142342Z-delegator-to-nox.md",
@@ -674,7 +676,7 @@
    "sent_at": "2026-11-01T14:58:17Z",
    "expected_by": "2026-11-01T20:00:00Z",
    "done": false,
-   "state": "OPEN"
+   "state": "DUE"
   },
   {
    "id": "20261101T152507Z-delegator-to-nox.md",
@@ -1823,6 +1825,11 @@
    "state": "delivered",
    "route": "board",
    "at": "2026-11-01T19:52:34Z"
+  },
+  "20261101T201000Z-delegator-to-nox.md": {
+   "state": "delivered",
+   "route": "board",
+   "at": "2026-11-01T20:01:34Z"
   }
  }
 }
