@@ -1,0 +1,10 @@
+date=2026-11-01T18:05:04-05:00
+host=outis-desktop user=cayleb uid=1000 groups=cayleb wheel
+root=/tmp/checker-s4a.BD0g5m
+DSH_HOME=/tmp/checker-s4a.BD0g5m/dsh
+tarball=/home/cayleb/workspace/harness-build/strike-release/dist/cayleb-dsh-fleet-0.3.0.tgz
+8173d13ebee542b328ffe0b4a3476e27ffa561e46172949d54f9757ddd4e1070  /home/cayleb/workspace/harness-build/strike-release/dist/cayleb-dsh-fleet-0.3.0.tgz
+node=v26.12.0 dsh_cli=/home/cayleb/.local/opt/deepseek-harness-official/apps/cli/lib/bin.js
+pnpm_path=/tmp/checker-s4a.BD0g5m/bin/pnpm pnpm_real=/home/cayleb/.local/opt/deepseek-harness-official/node_modules/.bin/pnpm pnpm_version=11.28.5
+umask=0027 pnpm_store=/tmp/checker-s4a.BD0g5m/pnpm-store mcp_port=35849
+port_35849=FREE

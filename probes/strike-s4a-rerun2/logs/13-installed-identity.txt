@@ -1,0 +1,22 @@
+installed_version=0.3.0
+--- profile manifest ---
+{
+  "name": "dsh-profile-fleet",
+  "private": true,
+  "dependencies": {
+    "@cayleb/dsh-fleet": "file:/home/cayleb/workspace/harness-build/strike-release/dist/cayleb-dsh-fleet-0.3.0.tgz"
+  },
+  "dsh": {
+    "profile": {
+      "bundles": [
+        "@deepseek-ai/dsh-base",
+        "@deepseek-ai/dsh-web-app",
+        "@cayleb/dsh-fleet"
+      ]
+    }
+  }
+}
+--- dsh.profile.bundles ---
+["@deepseek-ai/dsh-base","@deepseek-ai/dsh-web-app","@cayleb/dsh-fleet"]
+--- installed package dirs ---
+104

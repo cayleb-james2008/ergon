@@ -1,0 +1,2 @@
+store=/tmp/checker-s4a.BD0g5m/dsh/.credentials.yaml mode=600 size=225 owner=cayleb:cayleb
+store refs keys: OPENCODE_GO_API_KEY 

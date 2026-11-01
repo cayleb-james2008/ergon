@@ -1,0 +1,109 @@
+# S4A (FINAL artifact) full PASS/FAIL table — 2026-11-01T18:05:26-05:00
+# tarball: 8173d13ebee542b328ffe0b4a3476e27ffa561e46172949d54f9757ddd4e1070  /home/cayleb/workspace/harness-build/strike-release/dist/cayleb-dsh-fleet-0.3.0.tgz
+# scratch root: /tmp/checker-s4a.BD0g5m (removed after evidence capture for secret hygiene); mcp port 35849
+
+## install + normalise
+PASS  installed package present at /tmp/checker-s4a.BD0g5m/dsh/profiles/fleet/node_modules/@cayleb/dsh-fleet
+installed_version=0.3.0
+plugin-add rc=0 duration_s=1
+assert: archive=104 files; installed=104 files; missing=0; extra=0; problems=0; dirs_wrong_mode=0
+independent assert rc=0
+
+## compose
+PASS  baseline web-template profile composed 196 rows
+PASS  no duplicate row ids in the composed profile (0 duplicates)
+PASS  overlay profile composed 214 rows = 196 baseline + 18 inserted
+PASS  tarball bundle patches declare 18 inserted rows
+PASS  row present and enabled: client-ui-stats
+PASS  row present and enabled: fleet
+PASS  row present and enabled: fleet-core
+PASS  row present and enabled: fleet-egress
+PASS  row present and enabled: fleet-firstrun
+PASS  row present and enabled: fleet-fsguard
+PASS  row present and enabled: fleet-housekeeper
+PASS  row present and enabled: fleet-ledger
+PASS  row present and enabled: fleet-lessons
+PASS  row present and enabled: fleet-mcp
+PASS  row present and enabled: fleet-orders
+PASS  row present and enabled: fleet-policy
+PASS  row present and enabled: fleet-sandbox
+PASS  row present and enabled: preset-fleet-builder
+PASS  row present and enabled: preset-fleet-checker
+PASS  row present and enabled: preset-fleet-lead
+PASS  row present and enabled: preset-fleet-researcher
+PASS  row present and enabled: session-inspector
+PASS  fleet bundle plugin row present (@cayleb/dsh-fleet)
+PASS  overlay applied: fleet-core controlSocket is the scratch socket
+PASS  overlay applied: fleet-core dbPath is the scratch DB
+PASS  overlay applied: fleet-core fleetRoot is the scratch root
+PASS  overlay applied: fleet-mcp owns the chosen port
+PASS  overlay applied: fleet-mcp statePath is scratch
+PASS  overlay applied: fleet-mcp adminSocket is scratch
+PASS  overlay applied: fleet-egress guardInProcess
+PASS  overlay applied: fleet-policy peerUid is this uid
+check-compose: PASS — 0 failed
+
+## host status
+PASS  status ok=true
+PASS  integrity.ok=true
+PASS  integrity.failures empty
+PASS  lanes_allowed=true
+PASS  control.peer_uid=1000 accepted, 0 rejected
+PASS  policy.selftest=true
+PASS  db journal_mode=wal
+status-check: PASS
+
+## installed tree vs tarball
+first-run-status: name=@cayleb/dsh-fleet version=0.3.0 dshVersion=0.2.2-alpha.2
+status_files=104 tarball_members=104 missing=0 extra=0 sha/mode_mismatch=0
+compare-frstatus: PASS
+
+## MCP
+PASS  admin-socket token op ok (len=64; value never printed)
+PASS  initialize HTTP 200 protocol=2025-03-26 server=fleet-mcp 0.3.0-mcp session=issued
+PASS  notifications/initialized HTTP 202
+PASS  tools/list HTTP 200 9 tools: fleet.status, session.create, session.prompt, session.status, board.op, order.drive_roundtrip, order.stage_real, fleet.selftest, actions.status
+PASS  tools/list contains fleet.status
+PASS  tools/list contains session.create
+PASS  tools/list contains board.op
+PASS  tools/list contains actions.status
+PASS  auth.refuse wrong bearer HTTP 401
+mcp-probe: PASS — 0 failed
+
+## guided first-run --credentials under a real PTY
+store_exists_before=YES
+store_mode_before=600
+store_top_level_keys_before=version records 
+store_refs_keys_before=
+opencode_ref_present_before=0
+exit_code=0
+prompts_seen=4
+responses=['value', 'enter', 'enter', 'enter']
+transcript_bytes=735
+value_in_transcript=NO
+old_error_in_transcript=NO
+PASS  (a) PTY transcript has no 'needs a terminal secret reader' error
+PASS  (a) summary reports 'status: written'
+PASS  (a) summary reports 'stored: OPENCODE_GO_API_KEY via <transport>'
+      summary line: stored: OPENCODE_GO_API_KEY via control-op
+PASS  (b) scratch $DSH_HOME/.credentials.yaml exists
+PASS  (b) store mode is 0600 (got 0600)
+PASS  (b) document is version: 1
+PASS  (b) document has a top-level refs: section
+PASS  (b) fake value occurs exactly once in the store (got 1)
+PASS  (b) refs section holds exactly one entry, OPENCODE_GO_API_KEY (got 1)
+PASS  (b) the OPENCODE_GO_API_KEY ref value equals the injected fake value (plain or quoted YAML scalar both accepted)
+PASS  (b) the OPENCODE_GO_API_KEY ref did not exist before this run
+PASS  (b) pre-run refs keys did not include OPENCODE_GO_API_KEY
+      pre-run store: exists | top-level keys: version records  | refs keys: (none)
+PASS  (c) fake value appears nowhere outside the store (transcript/logs/reports/scratch tree; hits=0)
+verify-credentials: PASS — 0 failed
+store=/tmp/checker-s4a.BD0g5m/dsh/.credentials.yaml mode=600 size=225 owner=cayleb:cayleb
+store refs keys: OPENCODE_GO_API_KEY 
+(PTY transcript filed at 25-pty-transcript.txt; contains no fake value)
+
+## verdict
+############ S4A RESULT (final artifact 8173d13e) ############
+scratch_root=/tmp/checker-s4a.BD0g5m
+FAILS=0
+S4A: PASS

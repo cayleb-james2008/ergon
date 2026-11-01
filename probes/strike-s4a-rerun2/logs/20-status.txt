@@ -1,0 +1,8 @@
+PASS  status ok=true
+PASS  integrity.ok=true
+PASS  integrity.failures empty
+PASS  lanes_allowed=true
+PASS  control.peer_uid=1000 accepted, 0 rejected
+PASS  policy.selftest=true
+PASS  db journal_mode=wal
+status-check: PASS

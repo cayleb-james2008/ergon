@@ -88,3 +88,7 @@ The artifact was corrected after the review; the wrapper's count/modes logic was
 Re-run on this artifact: simulated-pnpm state + reviewed normalise block → **rc=0**, `normalise-archive: @cayleb/dsh-fleet 0.3.0 104 regular members`, independent assert **104/104 exact archive modes, 0 missing/extra, dirs 0750**; negative controls still fail closed (`archive package name is 'evil-package'…`; `missing member src/core/core.js…`). Independent delta vs the previous build: only `bin/rows-manifest.mjs` content changes; `rows.manifest.json` unchanged.
 
 Evidence: `evidence/strike/checker-verify/wrapper-review/logs/33-corrected-tarball-sim.txt` (manifest refreshed, all verify). **Verdict unchanged: ACCEPT.**
+
+## Addendum 3 2026-11-01 18:03 ET — wrapper facts re-confirmed on the FINAL tarball `8173d13e…`
+
+Final artifact `8173d13ebee542b328ffe0b4a3476e27ffa561e46172949d54f9757ddd4e1070`: **104 regular members, 101×0644 + 3×0755, `@cayleb/dsh-fleet 0.3.0`**; reviewed wrapper unchanged `75ab346e…`. Re-ran the normalise logic on this digest: simulated-pnpm state (masked + nlink=2) → block rc=0, `normalise-archive: @cayleb/dsh-fleet 0.3.0 104 regular members`, independent assert **104/104 exact archive modes, 0 missing/extra, dirs 0750**; negative controls fail closed (bad name; missing member). Evidence: `evidence/strike/checker-verify/wrapper-review/logs/34-final-tarball-sim.txt` (manifest refreshed, all verify). **Verdict unchanged: ACCEPT.**

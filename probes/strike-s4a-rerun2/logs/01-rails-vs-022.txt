@@ -1,0 +1,16 @@
+0.2.2 tarball members: 82  final tarball members: 104
+
+=== rails file-by-file vs the 0.2.2 artifact (lead claim: byte-identical) ===
+  src/core/          0.2.2= 15 final= 15 identical= 15 differ=[] missing_in_final=[] new_in_final=[]  -> MATCH
+  src/orders/        0.2.2= 17 final= 17 identical= 17 differ=[] missing_in_final=[] new_in_final=[]  -> MATCH
+  src/policy/        0.2.2=  9 final=  9 identical=  9 differ=[] missing_in_final=[] new_in_final=[]  -> MATCH
+  src/ledger/        0.2.2=  4 final=  4 identical=  4 differ=[] missing_in_final=[] new_in_final=[]  -> MATCH
+  src/lessons/       0.2.2=  7 final=  7 identical=  7 differ=[] missing_in_final=[] new_in_final=[]  -> MATCH
+  src/sandbox/       0.2.2=  4 final=  4 identical=  4 differ=[] missing_in_final=[] new_in_final=[]  -> MATCH
+  src/egress/        0.2.2=  6 final=  6 identical=  6 differ=[] missing_in_final=[] new_in_final=[]  -> MATCH
+  src/fsguard/       0.2.2=  4 final=  4 identical=  4 differ=[] missing_in_final=[] new_in_final=[]  -> MATCH
+  src/housekeeper/   0.2.2=  4 final=  4 identical=  4 differ=[] missing_in_final=[] new_in_final=[]  -> MATCH
+  src/client/        0.2.2=  2 final=  2 identical=  2 differ=[] missing_in_final=[] new_in_final=[]  -> MATCH
+  presets/           0.2.2=  4 final=  4 identical=  4 differ=[] missing_in_final=[] new_in_final=[]  -> MATCH
+
+ALL LISTED RAILS BYTE-IDENTICAL 0.2.2 -> FINAL: True

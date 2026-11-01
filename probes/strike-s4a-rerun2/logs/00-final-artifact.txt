@@ -1,0 +1,18 @@
+### FINAL artifact facts 2026-11-01T18:01:25-05:00
+8173d13ebee542b328ffe0b4a3476e27ffa561e46172949d54f9757ddd4e1070  /home/cayleb/workspace/harness-build/strike-release/dist/cayleb-dsh-fleet-0.3.0.tgz
+-rw-r--r-- 1 cayleb cayleb 287772 Nov  1 18:00 /home/cayleb/workspace/harness-build/strike-release/dist/cayleb-dsh-fleet-0.3.0.tgz
+expected: 8173d13ebee542b328ffe0b4a3476e27ffa561e46172949d54f9757ddd4e1070
+members=104
+mode distribution:
+    101 -rw-r--r--
+      3 -rwxr-xr-x
+package.json identity: @cayleb/dsh-fleet 0.3.0
+
+### independent delta vs d03ea2ac (reference = d03ea2ac installed tree proven 104/104 by first-run --status)
+new members=104 reference members=104
+added: []
+removed: []
+changed content (2): ['src/firstrun/capabilities.mjs', 'src/firstrun/credentials.mjs']
+rows.manifest.json new: 1bcac9862a9b6c9723c27b193b3a9f22ab9b07f9d30e7fef862d01d194d59ee9
+rows.manifest.json ref: 1bcac9862a9b6c9723c27b193b3a9f22ab9b07f9d30e7fef862d01d194d59ee9
+rows.manifest.json unchanged: True

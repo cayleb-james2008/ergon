@@ -1,0 +1,10 @@
+PASS  admin-socket token op ok (len=64; value never printed)
+PASS  initialize HTTP 200 protocol=2025-03-26 server=fleet-mcp 0.3.0-mcp session=issued
+PASS  notifications/initialized HTTP 202
+PASS  tools/list HTTP 200 9 tools: fleet.status, session.create, session.prompt, session.status, board.op, order.drive_roundtrip, order.stage_real, fleet.selftest, actions.status
+PASS  tools/list contains fleet.status
+PASS  tools/list contains session.create
+PASS  tools/list contains board.op
+PASS  tools/list contains actions.status
+PASS  auth.refuse wrong bearer HTTP 401
+mcp-probe: PASS — 0 failed

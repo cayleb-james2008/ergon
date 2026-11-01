@@ -1,0 +1,6 @@
+exit_code=0
+prompts_seen=4
+responses=['value', 'enter', 'enter', 'enter']
+transcript_bytes=735
+value_in_transcript=NO
+old_error_in_transcript=NO

@@ -1,0 +1,184 @@
+
+################ 0 environment ################
+date=2026-11-01T18:05:04-05:00
+host=outis-desktop user=cayleb uid=1000 groups=cayleb wheel
+root=/tmp/checker-s4a.BD0g5m
+DSH_HOME=/tmp/checker-s4a.BD0g5m/dsh
+tarball=/home/cayleb/workspace/harness-build/strike-release/dist/cayleb-dsh-fleet-0.3.0.tgz
+8173d13ebee542b328ffe0b4a3476e27ffa561e46172949d54f9757ddd4e1070  /home/cayleb/workspace/harness-build/strike-release/dist/cayleb-dsh-fleet-0.3.0.tgz
+node=v26.12.0 dsh_cli=/home/cayleb/.local/opt/deepseek-harness-official/apps/cli/lib/bin.js
+pnpm_path=/tmp/checker-s4a.BD0g5m/bin/pnpm pnpm_real=/home/cayleb/.local/opt/deepseek-harness-official/node_modules/.bin/pnpm pnpm_version=11.28.5
+umask=0027 pnpm_store=/tmp/checker-s4a.BD0g5m/pnpm-store mcp_port=35849
+port_35849=FREE
+
+################ 1 profile init from the default web template ################
+init rc=0 dump0_bytes=44801 dump0_rows=196
+
+################ 2 install ONLY the release tarball: dsh plugin --profile fleet add --save-exact --ignore-scripts ################
+plugin-add rc=0 duration_s=1
+--- add.log ---
+[WARN] The store at /home/cayleb/.local/share/pnpm/store/v11 is not used because packages cannot be hard linked from it into this project. Using the store at /tmp/.pnpm-store/v11 instead. Set storeDir to choose the store.
+Progress: resolved 0, reused 1, downloaded 0, added 0
+[WARN] Issues with peer dependencies found. Run "pnpm peers check" to list them.
+Packages: +1
++
+Packages are hard linked from the content-addressable store to the virtual store.
+  Content-addressable store is at: /tmp/.pnpm-store/v11
+  Virtual store is at:             node_modules/.pnpm
+Progress: resolved 1, reused 1, downloaded 0, added 1, done
+
+dependencies:
++ @cayleb/dsh-fleet 0.3.0
+
+Done in 360ms using pnpm v11.28.5
+PASS  installed package present at /tmp/checker-s4a.BD0g5m/dsh/profiles/fleet/node_modules/@cayleb/dsh-fleet
+installed_version=0.3.0
+--- profile manifest ---
+{
+  "name": "dsh-profile-fleet",
+  "private": true,
+  "dependencies": {
+    "@cayleb/dsh-fleet": "file:/home/cayleb/workspace/harness-build/strike-release/dist/cayleb-dsh-fleet-0.3.0.tgz"
+  },
+  "dsh": {
+    "profile": {
+      "bundles": [
+        "@deepseek-ai/dsh-base",
+        "@deepseek-ai/dsh-web-app",
+        "@cayleb/dsh-fleet"
+      ]
+    }
+  }
+}
+--- dsh.profile.bundles ---
+["@deepseek-ai/dsh-base","@deepseek-ai/dsh-web-app","@cayleb/dsh-fleet"]
+--- installed package dirs ---
+104
+
+################ 3 pnpm post-install state BEFORE normalise (nlink / masked modes) ################
+installed_files=104 archive_members=104
+installed mode distribution: {'0o640': 101, '0o751': 2, '0o750': 1}
+installed nlink distribution: {1: 104}
+archive mode distribution: {'0o644': 101, '0o755': 3}
+pre-normalise files already at archive mode: 0/104  (normalise must set the rest)
+pre-normalise nlink>1 files: 0 | nlink==1: 104
+NOTE: pre-normalise modes are pnpm+umask output, not the install result; step 4 sets exact archive modes and step 4b re-asserts them.
+
+################ 4 apply the reviewed normalise step to the scratch tree (as the sanctioned installer does) ################
+normalise rc=0
+stdout: normalise-archive: @cayleb/dsh-fleet 0.3.0 104 regular members
+normalise: 104 files single-link with archive modes; package dirs 0750
+stderr: 
+assert: archive=104 files; installed=104 files; missing=0; extra=0; problems=0; dirs_wrong_mode=0
+independent assert rc=0
+
+################ 5 scratch overlay + composed profile ################
+overlay dump-config rc=0 dump1_bytes=57304
+PASS  baseline web-template profile composed 196 rows
+PASS  no duplicate row ids in the composed profile (0 duplicates)
+PASS  overlay profile composed 214 rows = 196 baseline + 18 inserted
+PASS  tarball bundle patches declare 18 inserted rows
+PASS  row present and enabled: client-ui-stats
+PASS  row present and enabled: fleet
+PASS  row present and enabled: fleet-core
+PASS  row present and enabled: fleet-egress
+PASS  row present and enabled: fleet-firstrun
+PASS  row present and enabled: fleet-fsguard
+PASS  row present and enabled: fleet-housekeeper
+PASS  row present and enabled: fleet-ledger
+PASS  row present and enabled: fleet-lessons
+PASS  row present and enabled: fleet-mcp
+PASS  row present and enabled: fleet-orders
+PASS  row present and enabled: fleet-policy
+PASS  row present and enabled: fleet-sandbox
+PASS  row present and enabled: preset-fleet-builder
+PASS  row present and enabled: preset-fleet-checker
+PASS  row present and enabled: preset-fleet-lead
+PASS  row present and enabled: preset-fleet-researcher
+PASS  row present and enabled: session-inspector
+PASS  fleet bundle plugin row present (@cayleb/dsh-fleet)
+PASS  overlay applied: fleet-core controlSocket is the scratch socket
+PASS  overlay applied: fleet-core dbPath is the scratch DB
+PASS  overlay applied: fleet-core fleetRoot is the scratch root
+PASS  overlay applied: fleet-mcp owns the chosen port
+PASS  overlay applied: fleet-mcp statePath is scratch
+PASS  overlay applied: fleet-mcp adminSocket is scratch
+PASS  overlay applied: fleet-egress guardInProcess
+PASS  overlay applied: fleet-policy peerUid is this uid
+check-compose: PASS — 0 failed
+
+################ 6 boot the scratch fleet host ################
+host_pid=509456
+PASS  control socket appeared
+listening sockets:
+LISTEN 0      511                                 127.0.0.1:35849      0.0.0.0:*
+--- fleet-mcp host.log lines ---
+dsh web: http://127.0.0.1:35471/?token=<redacted-scratch-ui-token>
+
+################ 7 control socket status (my own client) ################
+PASS  status ok=true
+PASS  integrity.ok=true
+PASS  integrity.failures empty
+PASS  lanes_allowed=true
+PASS  control.peer_uid=1000 accepted, 0 rejected
+PASS  policy.selftest=true
+PASS  db journal_mode=wal
+status-check: PASS
+
+################ 8 dsh-fleet first-run --status vs tarball members ################
+first-run --status rc=0 bytes=16381
+first-run-status: name=@cayleb/dsh-fleet version=0.3.0 dshVersion=0.2.2-alpha.2
+status_files=104 tarball_members=104 missing=0 extra=0 sha/mode_mismatch=0
+compare-frstatus: PASS
+
+################ 9 MCP facade: my own initialize / notifications / tools/list / auth.refuse ################
+PASS  admin-socket token op ok (len=64; value never printed)
+PASS  initialize HTTP 200 protocol=2025-03-26 server=fleet-mcp 0.3.0-mcp session=issued
+PASS  notifications/initialized HTTP 202
+PASS  tools/list HTTP 200 9 tools: fleet.status, session.create, session.prompt, session.status, board.op, order.drive_roundtrip, order.stage_real, fleet.selftest, actions.status
+PASS  tools/list contains fleet.status
+PASS  tools/list contains session.create
+PASS  tools/list contains board.op
+PASS  tools/list contains actions.status
+PASS  auth.refuse wrong bearer HTTP 401
+mcp-probe: PASS — 0 failed
+
+################ 9b first-run --credentials under a REAL PTY (fake key; value never printed) ################
+store_exists_before=YES
+store_mode_before=600
+store_top_level_keys_before=version records 
+store_refs_keys_before=
+opencode_ref_present_before=0
+exit_code=0
+prompts_seen=4
+responses=['value', 'enter', 'enter', 'enter']
+transcript_bytes=735
+value_in_transcript=NO
+old_error_in_transcript=NO
+PASS  (a) PTY transcript has no 'needs a terminal secret reader' error
+PASS  (a) summary reports 'status: written'
+PASS  (a) summary reports 'stored: OPENCODE_GO_API_KEY via <transport>'
+      summary line: stored: OPENCODE_GO_API_KEY via control-op
+PASS  (b) scratch $DSH_HOME/.credentials.yaml exists
+PASS  (b) store mode is 0600 (got 0600)
+PASS  (b) document is version: 1
+PASS  (b) document has a top-level refs: section
+PASS  (b) fake value occurs exactly once in the store (got 1)
+PASS  (b) refs section holds exactly one entry, OPENCODE_GO_API_KEY (got 1)
+PASS  (b) the OPENCODE_GO_API_KEY ref value equals the injected fake value (plain or quoted YAML scalar both accepted)
+PASS  (b) the OPENCODE_GO_API_KEY ref did not exist before this run
+PASS  (b) pre-run refs keys did not include OPENCODE_GO_API_KEY
+      pre-run store: exists | top-level keys: version records  | refs keys: (none)
+PASS  (c) fake value appears nowhere outside the store (transcript/logs/reports/scratch tree; hits=0)
+verify-credentials: PASS — 0 failed
+PASS  PTY transcript contains no fake value; filed verbatim
+store=/tmp/checker-s4a.BD0g5m/dsh/.credentials.yaml mode=600 size=225 owner=cayleb:cayleb
+store refs keys: OPENCODE_GO_API_KEY 
+
+################ 10 teardown scratch host ################
+scratch host stopped; scratch root kept at /tmp/checker-s4a.BD0g5m
+
+############ S4A RESULT (final artifact 8173d13e) ############
+scratch_root=/tmp/checker-s4a.BD0g5m
+FAILS=0
+S4A: PASS

@@ -1,0 +1,16 @@
+plugin-add rc=0 duration_s=1
+--- add.log ---
+[WARN] The store at /home/cayleb/.local/share/pnpm/store/v11 is not used because packages cannot be hard linked from it into this project. Using the store at /tmp/.pnpm-store/v11 instead. Set storeDir to choose the store.
+Progress: resolved 0, reused 1, downloaded 0, added 0
+[WARN] Issues with peer dependencies found. Run "pnpm peers check" to list them.
+Packages: +1
++
+Packages are hard linked from the content-addressable store to the virtual store.
+  Content-addressable store is at: /tmp/.pnpm-store/v11
+  Virtual store is at:             node_modules/.pnpm
+Progress: resolved 1, reused 1, downloaded 0, added 1, done
+
+dependencies:
++ @cayleb/dsh-fleet 0.3.0
+
+Done in 360ms using pnpm v11.28.5

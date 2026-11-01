@@ -40,3 +40,14 @@ The release artifact was corrected (change scope: only `bin/rows-manifest.mjs`; 
 - **49 PASS / 0 FAIL / 0 BLOCKED, `S4A: PASS`** — every result reproduced: install rc=0 (0.3.0), normalise + independent assert 104/104 exact modes, compose **214 = 196 + 18** with 0 duplicate ids, host `ok=true/integrity.ok=true/lanes=true`, **`first-run --status` 104/104 with 0 missing/extra and 0 sha/mode mismatch**, MCP initialize 200 + 9 tools + 401.
 - Independent delta check: vs the prior `b60019a0…` build the corrected tarball changes **exactly `bin/rows-manifest.mjs`** and nothing else (0 added/removed; `rows.manifest.json` byte-identical) — consistent with the stated scope.
 - Evidence: `evidence/strike/checker-verify/s4a-rerun/` (27 files + verified `SHA256SUMS`; `99-console.txt`, `30-full-table.txt`, `REPORT.md`). **Verdict unchanged: ACCEPT.**
+
+---
+
+## Addendum 3 2026-11-01 18:06 ET — FINAL artifact `8173d13e…`: S4A PASS (63/0/0) + guided-credential proof
+
+Third fresh run, on the final release **`8173d13ebee542b328ffe0b4a3476e27ffa561e46172949d54f9757ddd4e1070`** (104 members: 101×0644+3×0755, `@cayleb/dsh-fleet 0.3.0`; fresh throwaway DSH_HOME, umask 027, own dynamic port). **63 PASS / 0 FAIL / 0 BLOCKED, `S4A: PASS`** — every S4A result reproduced (compose 214=196+18, normalise 104/104, host ok/integrity/lanes, `first-run --status` 104/104 with 0 missing/extra/sha+mode mismatch, MCP initialize 200 + 9 tools + 401) **plus the new guided-first-run credential proof under a real PTY with a fake key**:
+- (a) exit 0, no `needs a terminal secret reader`, summary `status: written` / `stored: OPENCODE_GO_API_KEY via control-op`;
+- (b) fake value in the scratch `$DSH_HOME/.credentials.yaml` refs **exactly once**, store mode **0600**, document `version: 1` + `refs:`; pre-run store had no OPENCODE_GO_API_KEY ref (the run added it);
+- (c) fake value appears **nowhere** outside the store (PTY transcript, host/fleet logs, report dirs, scratch tree: 0 hits); transcript filed verbatim with no echoed value.
+Independent artifact checks: delta vs d03ea2ac = exactly `src/firstrun/capabilities.mjs` + `src/firstrun/credentials.mjs` (rows.manifest.json unchanged); **all 11 rail areas byte-identical to the 0.2.2 artifact** file-for-file.
+Evidence: `evidence/strike/checker-verify/s4a-rerun2/` (36 files + verified `SHA256SUMS`; `99-console.txt`, `30-full-table.txt`, `REPORT.md`). **Verdict: ACCEPT.**

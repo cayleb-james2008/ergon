@@ -1,0 +1,16 @@
+OPENCODE_GO_API_KEY (opencode-go) [Enter to skip]: 
+accepted (not echoed)
+DEEPSEEK_API_KEY (deepseek) [Enter to skip]: 
+skipped: empty value (skipped)
+OPENROUTER_API_KEY (openrouter) [Enter to skip]: 
+skipped: empty value (skipped)
+XAI_API_KEY (grok-xai) [Enter to skip]: 
+skipped: empty value (skipped)
+status: written
+schema: @deepseek-ai/dsh-credentials-local version 1, refs section, mode 0600
+  OPENCODE_GO_API_KEY      opencode-go  official
+  DEEPSEEK_API_KEY         deepseek     official
+  OPENROUTER_API_KEY       openrouter   official
+  XAI_API_KEY              grok-xai     official
+  CURSOR_API_KEY           cursor       UNOFFICIAL (not prompted: off by default)
+stored: OPENCODE_GO_API_KEY via control-op
