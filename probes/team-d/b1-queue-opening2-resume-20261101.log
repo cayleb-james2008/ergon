@@ -1,0 +1,83 @@
+=== B1 OPENING 2 (post-reopen; Plays 4-6 of the run)  2026-11-01T14:02:13-05:00  host=outis-desktop ===
+Studio pid 302763 (fresh budget), window fitted 2200x1000 floating, place usg-desktop.rbxlx
+repo: /home/cayleb/Work/projects/untitled-street-game  branch: prep/b1-capture-format-20261101  commit: fe2bbdb3f192547f0a43c429390601322404c6d4
+capture contract: PNG or JPEG accepted (header-only dims); next entries are 3x traffic:abort-contact
+sealed artifacts BEFORE:
+84324d4342667dd163ab8e64adacbf8ef44ab786aeda5c7ab1403e76d52ef6ce  build/release.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  build/test.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  /home/cayleb/.var/app/org.vinegarhq.Vinegar/data/usg/usg-desktop.rbxlx
+
+--- status before ---
+    "backlog": 0,
+    "established": 0
+  },
+  "recentRuns": [
+    "20261101T190158Z-verify-clean",
+    "20261101T190150Z-verify-clean",
+    "20261101T181456Z-verify-clean",
+    "20261101T181436Z-smoke",
+    "20261101T181340Z-verify-clean",
+    "20261101T181324Z-smoke",
+    "20261101T181305Z-verify-clean",
+    "20261101T181256Z-verify-clean"
+  ]
+}
+
+--- queue --resume (3x traffic:abort-contact; pauses at 3 Plays) ---
+{"mcpClose": {"owned": [{"pid": 305258, "start": 34340718, "ppid": 305253, "ageSeconds": 388.1}], "foreignNew": [], "signals": [{"pid": 305258, "start": 34340718, "signal": "SIGTERM"}], "survivors": []}}
+{"fixture": "traffic:abort-contact", "exit": 1, "runDir": "/home/cayleb/Work/projects/untitled-street-game/docs/verify/2026-10-19/vinegar/20261101T190213Z-traffic-abort-contact", "error": "TimeoutError: collector did not receive runtime within 155s", "summary": null}
+{"fixture": "traffic:abort-contact", "exit": 5, "runDir": "/home/cayleb/Work/projects/untitled-street-game/docs/verify/2026-10-19/vinegar/20261101T190501Z-traffic-abort-contact", "error": "TimeoutError: collector did not receive runtime within 155s", "summary": null}
+{"queue": "stopped", "entry": "traffic:abort-contact", "exit": 5, "resume": "--resume retries this entry"}
+queue_rc=5
+
+--- verify-clean ---
+    },
+    "at": "2026-11-01T19:08:41+00:00",
+    "abort": {
+      "stop": "Disconnected('no response to tools/call within 60s')",
+      "cleanup": "Disconnected('MCP session unusable: no response to tools/call within 60s')",
+      "verifyClean": "Disconnected('MCP session unusable: no response to tools/call within 60s')"
+    }
+  },
+  "at": "2026-11-01T19:08:46+00:00",
+  "clean": false,
+  "error": "no Studio running: no RobloxStudioBeta process (the owner opens Studio; the runner never launches it)"
+}
+verify_rc=2
+
+--- status after ---
+    }
+  },
+  "lock": "free",
+  "studio": "no Studio running: no RobloxStudioBeta process (the owner opens Studio; the runner never launches it)",
+  "studioMcp": [],
+  "mcpPort": {
+    "port": 13469,
+    "listening": false,
+    "backlog": 0,
+    "established": 0
+  },
+  "recentRuns": [
+    "20261101T190846Z-verify-clean",
+    "20261101T190501Z-traffic-abort-contact",
+    "20261101T190213Z-traffic-abort-contact",
+    "20261101T190158Z-verify-clean",
+    "20261101T190150Z-verify-clean",
+    "20261101T181456Z-verify-clean",
+    "20261101T181436Z-smoke",
+    "20261101T181340Z-verify-clean"
+  ]
+}
+
+--- evidence dirs created this opening ---
+docs/verify/2026-10-19/vinegar/20261101T190846Z-verify-clean
+docs/verify/2026-10-19/vinegar/20261101T190501Z-traffic-abort-contact
+docs/verify/2026-10-19/vinegar/20261101T190213Z-traffic-abort-contact
+docs/verify/2026-10-19/vinegar/20261101T190158Z-verify-clean
+docs/verify/2026-10-19/vinegar/20261101T190150Z-verify-clean
+
+--- sealed artifacts AFTER ---
+84324d4342667dd163ab8e64adacbf8ef44ab786aeda5c7ab1403e76d52ef6ce  build/release.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  build/test.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  /home/cayleb/.var/app/org.vinegarhq.Vinegar/data/usg/usg-desktop.rbxlx
+=== END 2026-11-01T14:08:46-05:00 ===

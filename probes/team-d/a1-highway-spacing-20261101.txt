@@ -1,0 +1,5 @@
+=== HIGHWAY SPACING DIAGNOSIS (MCP execute_luau, Edit mode, read-only)  2026-11-01T12:23:34-05:00 ===
+seed 918273; per-lane car counts and minimum spacing ratio (spec threshold: >= 0.1)
+isError: False
+{"minSpacing":[{"id":"clockwise:36","length":10925.315494537354,"cars":9,"minSpacingRatio":0.08538698158744307},{"id":"clockwise:12","length":10772.735763549805,"cars":9,"minSpacingRatio":0.07438744904680386},{"id":"counterclockwise:12","length":10620.15636062622,"cars":9,"minSpacingRatio":0.09088285666786965},{"id":"clockwise:24","length":10849.025547027588,"cars":9,"minSpacingRatio":0.08968737160580022},{"id":"counterclockwise:36","length":10467.576704025269,"cars":9,"minSpacingRatio":0.08985377105159893},{"id":"counterclockwise:24","length":10543.866641998291,"cars":9,"minSpacingRatio":0.09351549299640788}],"perLane":{"clockwise:36":9,"clockwise:12":9,"counterclockwise:12":9,"clockwise:24":9,"counterclockwise:24":9,"counterclockwise:36":9},"seed":918273}
+=== END 2026-11-01T12:23:36-05:00 ===

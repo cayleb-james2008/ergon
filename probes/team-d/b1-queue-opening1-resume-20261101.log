@@ -1,0 +1,86 @@
+=== B1 OPENING 1 RESUME after capture-contract fix  2026-11-01T13:12:09-05:00  host=outis-desktop ===
+repo: /home/cayleb/Work/projects/untitled-street-game  branch: prep/b1-capture-format-20261101  commit: 32919dd2ca6ddd4b1b0646c5964f1f1aa4d43c90
+capture fix: PNG or JPEG accepted, header-only dimensions; evidence keeps .png/.jpg + mimeType + sha256
+sealed artifacts BEFORE:
+84324d4342667dd163ab8e64adacbf8ef44ab786aeda5c7ab1403e76d52ef6ce  build/release.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  build/test.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  /home/cayleb/.var/app/org.vinegarhq.Vinegar/data/usg/usg-desktop.rbxlx
+
+--- Studio + plays before ---
+    "pid": 254971,
+    "start": 33710185,
+    "argv0": "/home/cayleb/.var/app/org.vinegarhq.Vinegar/data/vinegar/versions/version-7062aec9dbe74b14/RobloxStudioBeta.exe",
+    "winePrefix": "/home/cayleb/.var/app/org.vinegarhq.Vinegar/data/vinegar/prefixes/studio",
+    "plays": 1
+  },
+  "studioMcp": [],
+  "mcpPort": {
+    "port": 13469,
+    "listening": false,
+    "backlog": 0,
+    "established": 0
+  },
+  "recentRuns": [
+    "20261101T180448Z-verify-clean",
+    "20261101T180431Z-smoke"
+  ]
+}
+
+--- queue --resume (retries smoke, then Plays 2-3; pauses at 3 Plays) ---
+$ python3 tools/vinegar_run.py queue docs/verify/2026-10-19/vinegar/v1.queue --resume
+{"mcpClose": {"owned": [{"pid": 278044, "start": 34040387, "ppid": 278039, "ageSeconds": 1.7}], "foreignNew": [], "signals": [{"pid": 278044, "start": 34040387, "signal": "SIGTERM"}], "survivors": []}}
+{"smoke": 3, "runDir": "/home/cayleb/Work/projects/untitled-street-game/docs/verify/2026-10-19/vinegar/20261101T181210Z-smoke", "error": "VerifyError: verify-clean failed: Source differs from the checkout: tests/studio/highway.spec.luau", "checks": {"S1 Edit": true, "S2 unpublished local place": true}, "findings": {}}
+{"queue": "stopped", "entry": "smoke", "exit": 3, "resume": "--resume retries this entry"}
+queue_rc=3
+
+--- verify-clean ---
+    "studio": {
+      "pid": 254971,
+      "start": 33710185,
+      "argv0": "/home/cayleb/.var/app/org.vinegarhq.Vinegar/data/vinegar/versions/version-7062aec9dbe74b14/RobloxStudioBeta.exe",
+      "winePrefix": "/home/cayleb/.var/app/org.vinegarhq.Vinegar/data/vinegar/prefixes/studio"
+    },
+    "at": "2026-11-01T18:12:11+00:00"
+  },
+  "at": "2026-11-01T18:12:16+00:00",
+  "clean": false,
+  "error": "verify-clean failed: Source differs from the checkout: tests/studio/highway.spec.luau",
+  "problems": [
+    "Source differs from the checkout: tests/studio/highway.spec.luau"
+  ]
+}
+verify_rc=3
+
+--- status after ---
+    "pid": 254971,
+    "start": 33710185,
+    "argv0": "/home/cayleb/.var/app/org.vinegarhq.Vinegar/data/vinegar/versions/version-7062aec9dbe74b14/RobloxStudioBeta.exe",
+    "winePrefix": "/home/cayleb/.var/app/org.vinegarhq.Vinegar/data/vinegar/prefixes/studio",
+    "plays": 1
+  },
+  "studioMcp": [],
+  "mcpPort": {
+    "port": 13469,
+    "listening": false,
+    "backlog": 0,
+    "established": 0
+  },
+  "recentRuns": [
+    "20261101T181216Z-verify-clean",
+    "20261101T181210Z-smoke",
+    "20261101T180448Z-verify-clean",
+    "20261101T180431Z-smoke"
+  ]
+}
+
+--- evidence dirs created ---
+docs/verify/2026-10-19/vinegar/20261101T181216Z-verify-clean
+docs/verify/2026-10-19/vinegar/20261101T181210Z-smoke
+docs/verify/2026-10-19/vinegar/20261101T180448Z-verify-clean
+docs/verify/2026-10-19/vinegar/20261101T180431Z-smoke
+
+--- sealed artifacts AFTER ---
+84324d4342667dd163ab8e64adacbf8ef44ab786aeda5c7ab1403e76d52ef6ce  build/release.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  build/test.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  /home/cayleb/.var/app/org.vinegarhq.Vinegar/data/usg/usg-desktop.rbxlx
+=== END 2026-11-01T13:12:23-05:00 ===

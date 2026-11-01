@@ -1,0 +1,8 @@
+=== HIGHWAY COHORT DIAGNOSIS (MCP execute_luau, Edit mode, read-only world build)  2026-11-01T12:22:48-05:00 ===
+Studio: org.vinegarhq.Vinegar  place: usg-desktop.rbxlx (sealed c6651793)
+seed=918273; requires HighwayBuilder (ServerScriptService.Nightshift), TrafficSim (ReplicatedStorage.Nightshift.Shared)
+--- raw execute_luau result ---
+isError: False
+{"offsets":3,"loops":[{"laneOffset":12,"laneIndex":1,"count":9,"baselineLength":6270.521883049592,"id":"clockwise:12","cars":9,"polyLength":10772.735763549805},{"laneOffset":24,"laneIndex":2,"count":9,"baselineLength":6346.811613211445,"id":"clockwise:24","cars":9,"polyLength":10849.025547027588},{"laneOffset":36,"laneIndex":3,"count":9,"baselineLength":6423.101343373298,"id":"clockwise:36","cars":9,"polyLength":10925.315494537354},{"laneOffset":12,"laneIndex":1,"count":9,"baselineLength":6117.942422725886,"id":"counterclockwise:12","cars":9,"polyLength":10620.15636062622},{"laneOffset":24,"laneIndex":2,"count":9,"baselineLength":6041.652692564034,"id":"counterclockwise:24","cars":9,"polyLength":10543.866641998291},{"laneOffset":36,"laneIndex":3,"count":9,"baselineLength":5965.3629624021809,"id":"counterclockwise:36","cars":9,"polyLength":10467.576704025269}],"lanesPerDirection":3,"routes":2,"baselineMainlineLength":6194.232152887739,"routeIds":["clockwise","counterclockwise"],"seed":918273,"totalCars":54,"geometryVersion":2,"baselineTurnMiter":3.178738756743869,"laneOffsets":[12,24,36]}
+rc=0
+=== END 2026-11-01T12:22:50-05:00 ===

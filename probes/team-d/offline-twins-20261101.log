@@ -1,0 +1,25 @@
+=== OFFLINE TWINS (E2 rejoin, F2 store)  2026-11-01T12:14:54-05:00  host=outis-desktop ===
+tree: pinned candidate b67abdd scratch copy; build/test hashes:
+84324d4342667dd163ab8e64adacbf8ef44ab786aeda5c7ab1403e76d52ef6ce  build/release.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  build/test.rbxlx
+
+--- E2: tests/playtest/rejoin.luau (SIMULATED) ---
+saved: CR 4918 L3 xp 485 fares 1 car shinku_sedan part true loadout street_dampers
+mid-shift: mode=driving event=true
+rejoined: CR 4918 L3 xp 485 fares 1 car shinku_sedan part true loadout street_dampers | mode garage event false
+OK: nothing lost across a mid-shift leave
+EXIT_E2=0
+
+--- F2: tests/playtest/store.luau (SIMULATED) ---
+Buy          Buy VIP                      | (no notice) | prompt call: pass 2037837874
+Buy          Buy Cash2x                   | (no notice) | prompt call: pass 2040741283
+Buy          Buy ExclusiveCar             | (no notice) | prompt call: pass 2037897750
+Buy          Buy StarterPack              | (no notice) | prompt call: product 3719525535
+Buy          Buy Boost30                  | (no notice) | prompt call: product 3719525571
+Buy          Buy CreditStack              | That item is not available yet. | prompt call: none
+PromptPlus   Plus subscription            | (no notice) | prompt call: subscription
+Monetization extras: boostSecondsLeft=0, isPlus=false, multiplier=1, plusBonus=0.1, starterPackAvailable=true
+prompt calls recorded: 6
+EXIT_F2=0
+
+=== END 2026-11-01T12:14:55-05:00 ===

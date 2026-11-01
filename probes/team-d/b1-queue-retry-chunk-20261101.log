@@ -1,0 +1,101 @@
+=== B1 CHUNK-TRANSPORT RETRY — opening 1 (accept c0d4b22)  2026-11-01T15:46:12-05:00 ===
+Studio pid 327254, place usg-desktop.rbxlx, window fitted 2200x1000 floating; branch prep/b1-capture-format-20261101 @ c0d4b22ca83be6dbf6d30a2933f8cee04b05e575
+sealed BEFORE:
+84324d4342667dd163ab8e64adacbf8ef44ab786aeda5c7ab1403e76d52ef6ce  build/release.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  build/test.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  /home/cayleb/.var/app/org.vinegarhq.Vinegar/data/usg/usg-desktop.rbxlx
+
+--- queue --resume: Play1 traffic:abort-contact, then atlas:scout, atlas:highway-extension (pause at 3) ---
+{"mcpClose": {"owned": [{"pid": 380899, "start": 34964627, "ppid": 380894, "ageSeconds": 41.9}], "foreignNew": [], "signals": [{"pid": 380899, "start": 34964627, "signal": "SIGTERM"}], "survivors": []}}
+{"fixture": "atlas:scout", "exit": 1, "runDir": "/home/cayleb/Work/projects/untitled-street-game/docs/verify/2026-10-19/vinegar/20261101T204612Z-atlas-scout", "error": "ValueError: runtime arrived before view-001: {\"error\": \"ServerScriptService.Nightshift.AtlasServer:74: actual seed/layout differ; regenerate plan, never infer\\nServerScriptService.Nightshift.AtlasServer:74 function start\\nServerScriptService.Nightshift.AtlasServerStarter:1\\nServerScriptService.Nightshift.AtlasServerStarter:1\\n\"}", "summary": null}
+{"fixture": "atlas:highway-extension", "exit": 1, "runDir": "/home/cayleb/Work/projects/untitled-street-game/docs/verify/2026-10-19/vinegar/20261101T204628Z-atlas-highway-extension", "error": "ValueError: runtime arrived before view-001: {\"error\": \"ServerScriptService.Nightshift.AtlasServer:74: actual seed/layout differ; regenerate plan, never infer\\nServerScriptService.Nightshift.AtlasServer:74 function start\\nServerScriptService.Nightshift.AtlasServerStarter:1\\nServerScriptService.Nightshift.AtlasServerStarter:1\\n\"}", "summary": null}
+{"fixture": "moving", "exit": 1, "runDir": "/home/cayleb/Work/projects/untitled-street-game/docs/verify/2026-10-19/vinegar/20261101T204642Z-moving", "error": "FixtureFailed: frame-001.jpg: probe reply lacks sidecar field(s) seed, lighting.technology (docs/art/SIDECAR.md)", "summary": null}
+{"queue": "complete", "done": [{"entry": "smoke", "exit": 0, "rerunAfterHostContamination": false, "at": "2026-11-01T18:14:50+00:00"}, {"entry": "traffic:abort-contact", "exit": 1, "rerunAfterHostContamination": false, "at": "2026-11-01T19:05:01+00:00"}, {"entry": "traffic:abort-contact", "exit": 1, "rerunAfterHostContamination": false, "at": "2026-11-01T19:19:35+00:00"}, {"entry": "traffic:abort-contact", "exit": 1, "rerunAfterHostContamination": false, "at": "2026-11-01T19:22:21+00:00"}, {"entry": "atlas:scout", "exit": 1, "rerunAfterHostContamination": false, "at": "2026-11-01T20:46:28+00:00"}, {"entry": "atlas:highway-extension", "exit": 1, "rerunAfterHostContamination": false, "at": "2026-11-01T20:46:42+00:00"}, {"entry": "moving", "exit": 1, "rerunAfterHostContamination": false, "at": "2026-11-01T20:46:54+00:00"}]}
+queue_rc=1
+
+--- verify-clean after ---
+      "StudioStartFares": {
+        "present": false
+      },
+      "StudioStartCredits": {
+        "present": false
+      },
+      "StudioStartLevel": {
+        "present": false
+      }
+    },
+    "sources": 101
+  },
+  "clean": true
+}
+verify_rc=0
+
+--- status ---
+    "pid": 327254,
+    "start": 34485859,
+    "argv0": "/home/cayleb/.var/app/org.vinegarhq.Vinegar/data/vinegar/versions/version-7062aec9dbe74b14/RobloxStudioBeta.exe",
+    "winePrefix": "/home/cayleb/.var/app/org.vinegarhq.Vinegar/data/vinegar/prefixes/studio",
+    "plays": 3
+  },
+  "studioMcp": [],
+  "mcpPort": {
+    "port": 13469,
+    "listening": false,
+    "backlog": 0,
+    "established": 0
+  },
+  "recentRuns": [
+    "20261101T204659Z-verify-clean",
+    "20261101T204642Z-moving",
+    "20261101T204628Z-atlas-highway-extension",
+    "20261101T204612Z-atlas-scout",
+    "20261101T204553Z-verify-clean",
+    "20261101T204544Z-verify-clean",
+    "20261101T192221Z-verify-clean",
+    "20261101T191935Z-traffic-abort-contact"
+  ]
+}
+
+--- run dirs this opening ---
+docs/verify/2026-10-19/vinegar/20261101T204659Z-verify-clean
+docs/verify/2026-10-19/vinegar/20261101T204642Z-moving
+docs/verify/2026-10-19/vinegar/20261101T204628Z-atlas-highway-extension
+docs/verify/2026-10-19/vinegar/20261101T204612Z-atlas-scout
+docs/verify/2026-10-19/vinegar/20261101T204553Z-verify-clean
+docs/verify/2026-10-19/vinegar/20261101T204544Z-verify-clean
+
+--- traffic report summary (text) ---
+== docs/verify/2026-10-19/vinegar/20261101T191935Z-traffic-abort-contact
+exit: 1 error: TimeoutError: collector did not receive runtime within 155s
+states: [('LOCKED', 0.0), ('PREFLIGHT', 0.0), ('STAGED', 0.227), ('PREPARED', 0.233), ('PLAYING', 2.01), ('RAN', 4.76)]
+play: {"server": {"players": 1, "running": true, "server": true}, "client": {"running": true, "player": true, "scripts": true}}
+abort: {"stop": "ok", "cleanup": "ok", "verifyClean": "ok"}
+collector phases: ['prepared', 'cleanup'] chunks: None
+summary: null
+report stages: ['prepared', 'cleanup']
+console-runtime-timeout.txt:
+CREATIVE_TOOLKIT_STUDIO_CONTROL {"atUtc":"2026-11-01T19:19:38Z","mode":"edit","version":"creative-toolkit-studio-test/1.0.0","event":"ready"}
+CREATIVE_TOOLKIT_STUDIO_CONTROL {"atUtc":"2026-11-01T19:19:39Z","mode":"edit","version":"creative-toolkit-studio-test/1.0.0","event":"ready"}
+Mode: rotate
+Mode: rotate
+Traffic probe collector: Post data too large. Limit: 1024 KB. Post size: 1390 KB== docs/verify/2026-10-19/vinegar/20261101T191648Z-traffic-abort-contact
+exit: 1 error: TimeoutError: collector did not receive runtime within 155s
+states: [('LOCKED', 0.0), ('PREFLIGHT', 0.0), ('STAGED', 2.195), ('PREPARED', 2.202), ('PLAYING', 3.978), ('RAN', 6.594)]
+play: {"server": {"players": 1, "running": true, "server": true}, "client": {"running": true, "player": true, "scripts": true}}
+abort: {"stop": "ok", "cleanup": "ok", "verifyClean": "ok"}
+collector phases: ['prepared', 'cleanup'] chunks: None
+summary: null
+report stages: ['prepared', 'cleanup']
+console-runtime-timeout.txt:
+CREATIVE_TOOLKIT_STUDIO_CONTROL {"atUtc":"2026-11-01T19:16:52Z","mode":"edit","version":"creative-toolkit-studio-test/1.0.0","event":"ready"}
+CREATIVE_TOOLKIT_STUDIO_CONTROL {"atUtc":"2026-11-01T19:16:53Z","mode":"edit","version":"creative-toolkit-studio-test/1.0.0","event":"ready"}
+Mode: rotate
+Mode: rotate
+Traffic probe collector: Post data too large. Limit: 1024 KB. Post size: 1493 KB
+--- atlas capture viewport confirmation (sidecar viewportMatchesPng) ---
+
+--- sealed AFTER ---
+84324d4342667dd163ab8e64adacbf8ef44ab786aeda5c7ab1403e76d52ef6ce  build/release.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  build/test.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  /home/cayleb/.var/app/org.vinegarhq.Vinegar/data/usg/usg-desktop.rbxlx
+=== END 2026-11-01T15:47:06-05:00 ===

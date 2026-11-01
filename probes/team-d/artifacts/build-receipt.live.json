@@ -1,0 +1,14 @@
+{
+  "built_utc": "2026-09-27T20:19:57+00:00",
+  "command": "tools/build.sh",
+  "manifest": "ops/release/source-manifest.sha256",
+  "manifest_sha256": "c976b6242c0d24b60f66816237452e414e6a0a06ecd2ca9f07c4a7749abe53e1",
+  "note": "Local staging build only. Lua/Lune presentation checks cover distinct per-card motifs, responsive navigation, decisive result-card presentation, and server-owned rewards. Phone and desktop browser reconstructions are diagnostic, not Roblox engine captures. Current-hash Studio Play and touch rendering remain unverified. No upload or publication.",
+  "place": "build/UntitledAnimeCardGame.rbxlx",
+  "place_sha256": "55cef5d3ea71173de62b7c1070543d566e6f26674eb64083833ea5590466d4c9",
+  "target": null,
+  "tools": {
+    "lune": "lune 0.10.5",
+    "rojo": "Rojo 7.7.0"
+  }
+}

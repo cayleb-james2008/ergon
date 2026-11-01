@@ -1,0 +1,83 @@
+=== G1-G3 COMPANION EVIDENCE  2026-11-01T09:52:25-05:00  host=outis-desktop ===
+repo: /home/cayleb/Work/projects/untitled-anime-card-game  branch: prep/audio-upload-20261101  HEAD: e7f885ca5274d773fc0026cb6c51d1161b71ae84
+pinned candidate before: 55cef5d3ea71173de62b7c1070543d566e6f26674eb64083833ea5590466d4c9  build/UntitledAnimeCardGame.rbxlx
+
+--- 1. tool written: tools/bind_art.py (620 lines) ---
+--- 2. selftest (receipt builder vs the REAL publish.validate_mapping_receipt in a /tmp tree) ---
+SELFTEST temp root: /tmp/uacg-bindart-selftest-r7_jsq4o
+SELFTEST PASS: PASS/PENDING/REJECTED receipt shapes accepted/refused exactly as publish.validate_mapping_receipt demands; no repo write, no network, no key read.
+rc=0
+
+--- 3. dry run, all 24 (no network, no writes, no key read) ---
+DRY RUN: 24 card(s); no network, no writes, no key read.
+target.json: ABSENT/BLOCKED — ops/release/target.json evidence file is missing or outside the project
+build receipt: current (55cef5d3ea71173d…)
+evidence dir (live): docs/verification/art-upload-20261101/
+blocks: a = Bleach+Naruto (6) · b = Dragon Ball+Berserk (6) · c = Vinland Saga+Vagabond+My Hero Academia+Black Clover (12). --live requires --block/--cards/--franchise, or --all explicitly.
+POST https://apis.roblox.com/assets/v1/assets (x-api-key: <redacted>) card=BC-SEA-01 franchise=Black Clover name=uacg-art-BC-SEA-01 sha256=5d336d1bf3a2968c state=ok
+POST https://apis.roblox.com/assets/v1/assets (x-api-key: <redacted>) card=BC-WIND-01 franchise=Black Clover name=uacg-art-BC-WIND-01 sha256=0109dd689df37c97 state=ok
+POST https://apis.roblox.com/assets/v1/assets (x-api-key: <redacted>) card=BK-FALCON-01 franchise=Berserk name=uacg-art-BK-FALCON-01 sha256=08e0a9369eaef18c state=ok
+POST https://apis.roblox.com/assets/v1/assets (x-api-key: <redacted>) card=BK-GUTS-01 franchise=Berserk name=uacg-art-BK-GUTS-01 sha256=877902fe39889b85 state=ok
+POST https://apis.roblox.com/assets/v1/assets (x-api-key: <redacted>) card=BK-WIND-01 franchise=Berserk name=uacg-art-BK-WIND-01 sha256=dc40e62a5d518504 state=ok
+POST https://apis.roblox.com/assets/v1/assets (x-api-key: <redacted>) card=BL-BYAKUYA-01 franchise=Bleach name=uacg-art-BL-BYAKUYA-01 sha256=e9c97ce755aa0208 state=ok
+POST https://apis.roblox.com/assets/v1/assets (x-api-key: <redacted>) card=BL-FROST-01 franchise=Bleach name=uacg-art-BL-FROST-01 sha256=9700ab9092b17ceb state=ok
+POST https://apis.roblox.com/assets/v1/assets (x-api-key: <redacted>) card=BL-ICHIGO-01 franchise=Bleach name=uacg-art-BL-ICHIGO-01 sha256=6a788b17a6ed366d state=ok
+POST https://apis.roblox.com/assets/v1/assets (x-api-key: <redacted>) card=DB-GOKU-01 franchise=Dragon Ball name=uacg-art-DB-GOKU-01 sha256=1b902cf89fd3206a state=ok
+POST https://apis.roblox.com/assets/v1/assets (x-api-key: <redacted>) card=DB-NAMEK-01 franchise=Dragon Ball name=uacg-art-DB-NAMEK-01 sha256=2a11fd9baf82a134 state=ok
+POST https://apis.roblox.com/assets/v1/assets (x-api-key: <redacted>) card=DB-PRINCE-01 franchise=Dragon Ball name=uacg-art-DB-PRINCE-01 sha256=1c519892a3b8a0d9 state=ok
+POST https://apis.roblox.com/assets/v1/assets (x-api-key: <redacted>) card=MHA-BLAST-01 franchise=My Hero Academia name=uacg-art-MHA-BLAST-01 sha256=a2f92d4a46523df2 state=ok
+POST https://apis.roblox.com/assets/v1/assets (x-api-key: <redacted>) card=MHA-DEKU-01 franchise=My Hero Academia name=uacg-art-MHA-DEKU-01 sha256=59e299705cd10aff state=ok
+POST https://apis.roblox.com/assets/v1/assets (x-api-key: <redacted>) card=MHA-FROSTBURN-01 franchise=My Hero Academia name=uacg-art-MHA-FROSTBURN-01 sha256=1278aa26d0b1b02d state=ok
+POST https://apis.roblox.com/assets/v1/assets (x-api-key: <redacted>) card=NR-KAKASHI-01 franchise=Naruto name=uacg-art-NR-KAKASHI-01 sha256=29033080c0f2b735 state=ok
+POST https://apis.roblox.com/assets/v1/assets (x-api-key: <redacted>) card=NR-NARUTO-01 franchise=Naruto name=uacg-art-NR-NARUTO-01 sha256=8b8a93da94dcd952 state=ok
+POST https://apis.roblox.com/assets/v1/assets (x-api-key: <redacted>) card=NR-SHADOW-01 franchise=Naruto name=uacg-art-NR-SHADOW-01 sha256=ec7040d01c7f8a0b state=ok
+POST https://apis.roblox.com/assets/v1/assets (x-api-key: <redacted>) card=VG-HEAD-01 franchise=Vagabond name=uacg-art-VG-HEAD-01 sha256=afbabdf807c605e1 state=ok
+POST https://apis.roblox.com/assets/v1/assets (x-api-key: <redacted>) card=VG-MUSASHI-01 franchise=Vagabond name=uacg-art-VG-MUSASHI-01 sha256=a9e887b42d5196fd state=ok
+POST https://apis.roblox.com/assets/v1/assets (x-api-key: <redacted>) card=VG-RIVAL-01 franchise=Vagabond name=uacg-art-VG-RIVAL-01 sha256=86d36a4fdbe9bcf6 state=ok
+POST https://apis.roblox.com/assets/v1/assets (x-api-key: <redacted>) card=VS-BEAR-01 franchise=Vinland Saga name=uacg-art-VS-BEAR-01 sha256=34e4f15c2494aa22 state=ok
+POST https://apis.roblox.com/assets/v1/assets (x-api-key: <redacted>) card=VS-SNAKE-01 franchise=Vinland Saga name=uacg-art-VS-SNAKE-01 sha256=0e30d7765732696d state=ok
+POST https://apis.roblox.com/assets/v1/assets (x-api-key: <redacted>) card=VS-THORFINN-01 franchise=Vinland Saga name=uacg-art-VS-THORFINN-01 sha256=a9d0d3bc91214a45 state=ok
+POST https://apis.roblox.com/assets/v1/assets (x-api-key: <redacted>) card=BC-ASTA-01 franchise=Black Clover name=uacg-art-BC-ASTA-01 sha256=59451c09724ae3f6 state=ok
+
+24 planned upload(s); 0 not uploadable as-is. Audio cues are a separate path (tools/upload_audio.py).
+rc=0
+
+--- 4. block filter: a (Bleach+Naruto) ---
+DRY RUN: 6 card(s); no network, no writes, no key read.
+target.json: ABSENT/BLOCKED — ops/release/target.json evidence file is missing or outside the project
+build receipt: current (55cef5d3ea71173d…)
+evidence dir (live): docs/verification/art-upload-20261101/
+POST https://apis.roblox.com/assets/v1/assets (x-api-key: <redacted>) card=BL-BYAKUYA-01 franchise=Bleach name=uacg-art-BL-BYAKUYA-01 sha256=e9c97ce755aa0208 state=ok
+POST https://apis.roblox.com/assets/v1/assets (x-api-key: <redacted>) card=BL-FROST-01 franchise=Bleach name=uacg-art-BL-FROST-01 sha256=9700ab9092b17ceb state=ok
+POST https://apis.roblox.com/assets/v1/assets (x-api-key: <redacted>) card=BL-ICHIGO-01 franchise=Bleach name=uacg-art-BL-ICHIGO-01 sha256=6a788b17a6ed366d state=ok
+POST https://apis.roblox.com/assets/v1/assets (x-api-key: <redacted>) card=NR-KAKASHI-01 franchise=Naruto name=uacg-art-NR-KAKASHI-01 sha256=29033080c0f2b735 state=ok
+POST https://apis.roblox.com/assets/v1/assets (x-api-key: <redacted>) card=NR-NARUTO-01 franchise=Naruto name=uacg-art-NR-NARUTO-01 sha256=8b8a93da94dcd952 state=ok
+POST https://apis.roblox.com/assets/v1/assets (x-api-key: <redacted>) card=NR-SHADOW-01 franchise=Naruto name=uacg-art-NR-SHADOW-01 sha256=ec7040d01c7f8a0b state=ok
+
+6 planned upload(s); 0 not uploadable as-is. Audio cues are a separate path (tools/upload_audio.py).
+rc=0
+
+--- 5. block filter counts ---
+block a POST lines: 6
+block b POST lines: 6
+block c POST lines: 12
+franchise Bleach POST lines: 3
+
+--- 6. guards ---
+BLOCKED: a live run needs an explicit block: --block a|b|c, --cards, --franchise, or --all (the default mode is the dry run)
+live-no-selection rc=2
+BLOCKED: environment variable ROBLOX_OPEN_CLOUD_API_KEY is missing; a live upload needs the owner's key through the secure route (never printed or stored by this tool)
+live-no-key rc=2
+BLOCKED: unknown card id(s): NOPE-01
+unknown-card rc=2
+BLOCKED: evidence dir must stay inside the project
+traversal rc=2
+
+--- 7. key never appears: sentinel env value, dry run output grep ---
+sentinel hits: 0
+
+--- 8. candidate bytes after everything ---
+55cef5d3ea71173de62b7c1070543d566e6f26674eb64083833ea5590466d4c9  build/UntitledAnimeCardGame.rbxlx
+--- 9. repo status (only the new tool is untracked; no evidence dirs written) ---
+?? tools/bind_art.py
+=== END 2026-11-01T09:52:26-05:00 ===

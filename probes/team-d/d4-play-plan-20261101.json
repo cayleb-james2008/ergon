@@ -1,0 +1,469 @@
+{
+ "schema": "usg-play-plan/v1",
+ "generated_utc": "2026-11-01T14:18:46+00:00",
+ "source": "docs/verify/2026-10-19/vinegar/SPRINTS.md",
+ "candidate_commit": "b67abdd",
+ "test_place_sha256": "c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98",
+ "plays": [
+  {
+   "play": 1,
+   "sprint": "B1",
+   "opening": 1,
+   "kind": "queue",
+   "fixture": null,
+   "desc": "**QUEUE ENTRY** `smoke` (`v1.queue`)",
+   "command": "python3 tools/vinegar_run.py queue docs/verify/2026-10-19/vinegar/v1.queue"
+  },
+  {
+   "play": 2,
+   "sprint": "B1",
+   "opening": 1,
+   "kind": "queue",
+   "fixture": null,
+   "desc": "**QUEUE ENTRY** `traffic:abort-contact` (`v1.queue`)",
+   "command": "python3 tools/vinegar_run.py queue docs/verify/2026-10-19/vinegar/v1.queue"
+  },
+  {
+   "play": 3,
+   "sprint": "B1",
+   "opening": 1,
+   "kind": "queue",
+   "fixture": null,
+   "desc": "**QUEUE ENTRY** `traffic:abort-contact` (`v1.queue`)",
+   "command": "python3 tools/vinegar_run.py queue docs/verify/2026-10-19/vinegar/v1.queue"
+  },
+  {
+   "play": 4,
+   "sprint": "B1",
+   "opening": 2,
+   "kind": "queue",
+   "fixture": null,
+   "desc": "**QUEUE ENTRY** `traffic:abort-contact` (`v1.queue`)",
+   "command": "python3 tools/vinegar_run.py queue docs/verify/2026-10-19/vinegar/v1.queue --resume"
+  },
+  {
+   "play": 5,
+   "sprint": "B1",
+   "opening": 2,
+   "kind": "queue",
+   "fixture": null,
+   "desc": "**QUEUE ENTRY** `atlas:scout` (`v1.queue`)",
+   "command": "python3 tools/vinegar_run.py queue docs/verify/2026-10-19/vinegar/v1.queue --resume"
+  },
+  {
+   "play": 6,
+   "sprint": "B1",
+   "opening": 2,
+   "kind": "queue",
+   "fixture": null,
+   "desc": "**QUEUE ENTRY** `atlas:highway-extension` (`v1.queue`)",
+   "command": "python3 tools/vinegar_run.py queue docs/verify/2026-10-19/vinegar/v1.queue --resume"
+  },
+  {
+   "play": 7,
+   "sprint": "B1",
+   "opening": 3,
+   "kind": "queue",
+   "fixture": null,
+   "desc": "**QUEUE ENTRY** `moving` (`v1.queue`) - the queue completes here",
+   "command": "python3 tools/vinegar_run.py queue docs/verify/2026-10-19/vinegar/v1.queue --resume"
+  },
+  {
+   "play": 8,
+   "sprint": "B1",
+   "opening": 3,
+   "kind": "run",
+   "fixture": "atlas:scout",
+   "desc": "**SINGLE RUN** - the `atlas:scout` baseline pack, every new look flag off",
+   "command": "python3 tools/vinegar_run.py run atlas:scout --visual-flags \"lightingKit=0,roadMaterial=0,wetNight=0,horizonEdge=0,buildingDetail=0,landmarks=0\""
+  },
+  {
+   "play": 9,
+   "sprint": "B1",
+   "opening": 3,
+   "kind": "run",
+   "fixture": "atlas:edge",
+   "desc": "**SINGLE RUN** - the `atlas:edge` baseline pack, every new look flag off",
+   "command": "python3 tools/vinegar_run.py run atlas:edge --visual-flags \"lightingKit=0,roadMaterial=0,wetNight=0,horizonEdge=0,buildingDetail=0,landmarks=0\""
+  },
+  {
+   "play": 10,
+   "sprint": "B1",
+   "opening": 4,
+   "kind": "run",
+   "fixture": "moving",
+   "desc": "**SINGLE RUN** - the `moving` baseline pack, every new look flag off",
+   "command": "python3 tools/vinegar_run.py run moving --visual-flags \"lightingKit=0,roadMaterial=0,wetNight=0,horizonEdge=0,buildingDetail=0,landmarks=0\""
+  },
+  {
+   "play": 1,
+   "sprint": "B2",
+   "opening": 1,
+   "kind": "run",
+   "fixture": "first-fare",
+   "desc": "**SINGLE RUN** `first-fare` (design order 8)",
+   "command": "python3 tools/vinegar_run.py run first-fare"
+  },
+  {
+   "play": 2,
+   "sprint": "B2",
+   "opening": 1,
+   "kind": "run",
+   "fixture": "handling",
+   "desc": "**SINGLE RUN** `handling` (design order 10)",
+   "command": "python3 tools/vinegar_run.py run handling"
+  },
+  {
+   "play": 3,
+   "sprint": "B2",
+   "opening": 1,
+   "kind": "run",
+   "fixture": "city:blocked-grade",
+   "desc": "**SINGLE RUN** `city:blocked-grade` (design order 11)",
+   "command": "python3 tools/vinegar_run.py run city:blocked-grade"
+  },
+  {
+   "play": 4,
+   "sprint": "B2",
+   "opening": 2,
+   "kind": "run",
+   "fixture": "city:junction",
+   "desc": "**SINGLE RUN** `city:junction` (design order 12)",
+   "command": "python3 tools/vinegar_run.py run city:junction"
+  },
+  {
+   "play": 1,
+   "sprint": "B3",
+   "opening": 1,
+   "kind": "run",
+   "fixture": "atlas:scout",
+   "desc": "**SINGLE RUN** L1 before",
+   "command": "python3 tools/vinegar_run.py run atlas:scout --visual-flags \"lightingKit=0\""
+  },
+  {
+   "play": 2,
+   "sprint": "B3",
+   "opening": 1,
+   "kind": "run",
+   "fixture": "atlas:scout",
+   "desc": "**SINGLE RUN** the `atlas:scout` defaults pack (the \"after\" of L1, L2, L3, L5)",
+   "command": "python3 tools/vinegar_run.py run atlas:scout"
+  },
+  {
+   "play": 3,
+   "sprint": "B3",
+   "opening": 1,
+   "kind": "run",
+   "fixture": "atlas:scout",
+   "desc": "**SINGLE RUN** L2 before",
+   "command": "python3 tools/vinegar_run.py run atlas:scout --visual-flags \"roadMaterial=0\""
+  },
+  {
+   "play": 4,
+   "sprint": "B3",
+   "opening": 2,
+   "kind": "run",
+   "fixture": "atlas:scout",
+   "desc": "**SINGLE RUN** L3 before",
+   "command": "python3 tools/vinegar_run.py run atlas:scout --visual-flags \"wetNight=0\""
+  },
+  {
+   "play": 5,
+   "sprint": "B3",
+   "opening": 2,
+   "kind": "run",
+   "fixture": "atlas:edge",
+   "desc": "**SINGLE RUN** L4 before",
+   "command": "python3 tools/vinegar_run.py run atlas:edge --visual-flags \"horizonEdge=0\""
+  },
+  {
+   "play": 6,
+   "sprint": "B3",
+   "opening": 2,
+   "kind": "run",
+   "fixture": "atlas:edge",
+   "desc": "**SINGLE RUN** the `atlas:edge` defaults pack (the \"after\" of L4, L6)",
+   "command": "python3 tools/vinegar_run.py run atlas:edge"
+  },
+  {
+   "play": 7,
+   "sprint": "B3",
+   "opening": 3,
+   "kind": "run",
+   "fixture": "atlas:scout",
+   "desc": "**SINGLE RUN** L5 before (the D3 back-face A/B)",
+   "command": "python3 tools/vinegar_run.py run atlas:scout --visual-flags \"buildingDetail=0\""
+  },
+  {
+   "play": 8,
+   "sprint": "B3",
+   "opening": 3,
+   "kind": "run",
+   "fixture": "atlas:edge",
+   "desc": "**SINGLE RUN** L6 before",
+   "command": "python3 tools/vinegar_run.py run atlas:edge --visual-flags \"landmarks=0\""
+  },
+  {
+   "play": 9,
+   "sprint": "B3",
+   "opening": 3,
+   "kind": "run",
+   "fixture": "atlas:highway-extension",
+   "desc": "**SINGLE RUN** the default day's highway views",
+   "command": "python3 tools/vinegar_run.py run atlas:highway-extension"
+  },
+  {
+   "play": 10,
+   "sprint": "B3",
+   "opening": 4,
+   "kind": "run",
+   "fixture": "atlas:highway-extension",
+   "desc": "**SINGLE RUN** the degraded highway day (the A7 named-day seed)",
+   "command": "python3 tools/vinegar_run.py run atlas:highway-extension --seed 3148688050"
+  },
+  {
+   "play": 11,
+   "sprint": "B3",
+   "opening": 4,
+   "kind": "run",
+   "fixture": "atlas:tiles-fogoff",
+   "desc": "**SINGLE RUN** the fog-off top-down tiles",
+   "command": "python3 tools/vinegar_run.py run atlas:tiles-fogoff"
+  },
+  {
+   "play": 12,
+   "sprint": "B3",
+   "opening": 4,
+   "kind": "run",
+   "fixture": "moving",
+   "desc": "**SINGLE RUN** the player-view route tour (moving frames, defaults)",
+   "command": "python3 tools/vinegar_run.py run moving"
+  },
+  {
+   "play": 1,
+   "sprint": "B4",
+   "opening": 1,
+   "kind": "run",
+   "fixture": "handling",
+   "desc": "**SINGLE RUN** the handling matrix (4 cars x 3 speeds)",
+   "command": "python3 tools/vinegar_run.py run handling"
+  },
+  {
+   "play": 2,
+   "sprint": "B4",
+   "opening": 1,
+   "kind": "run",
+   "fixture": "traffic:pass",
+   "desc": "**SINGLE RUN** the traffic pass mode (the mode B1 never ran)",
+   "command": "python3 tools/vinegar_run.py run traffic:pass"
+  },
+  {
+   "play": 3,
+   "sprint": "B4",
+   "opening": 1,
+   "kind": "run",
+   "fixture": "moving",
+   "desc": "**SINGLE RUN** the on-screen traffic evidence (brake lamps, sway, keep-right)",
+   "command": "python3 tools/vinegar_run.py run moving"
+  },
+  {
+   "play": 4,
+   "sprint": "B4",
+   "opening": 2,
+   "kind": "run",
+   "fixture": "race",
+   "desc": "**SINGLE RUN** race 1 of 3 (Normal)",
+   "command": "python3 tools/vinegar_run.py run race"
+  },
+  {
+   "play": 5,
+   "sprint": "B4",
+   "opening": 2,
+   "kind": "run",
+   "fixture": "race",
+   "desc": "**SINGLE RUN** race 2 of 3",
+   "command": "python3 tools/vinegar_run.py run race"
+  },
+  {
+   "play": 6,
+   "sprint": "B4",
+   "opening": 2,
+   "kind": "run",
+   "fixture": "race",
+   "desc": "**SINGLE RUN** race 3 of 3",
+   "command": "python3 tools/vinegar_run.py run race"
+  },
+  {
+   "play": 1,
+   "sprint": "C1",
+   "opening": 1,
+   "kind": "smoke",
+   "fixture": "smoke",
+   "desc": "**SINGLE RUN** `smoke` (design order 0)",
+   "command": "python3 tools/vinegar_run.py smoke"
+  },
+  {
+   "play": 2,
+   "sprint": "C1",
+   "opening": 1,
+   "kind": "run",
+   "fixture": "traffic:abort-contact",
+   "desc": "**SINGLE RUN** `traffic:abort-contact` (design order 1)",
+   "command": "python3 tools/vinegar_run.py run traffic:abort-contact"
+  },
+  {
+   "play": 3,
+   "sprint": "C1",
+   "opening": 1,
+   "kind": "run",
+   "fixture": "first-fare",
+   "desc": "**SINGLE RUN** `first-fare` (design order 8)",
+   "command": "python3 tools/vinegar_run.py run first-fare"
+  },
+  {
+   "play": 4,
+   "sprint": "C1",
+   "opening": 2,
+   "kind": "run",
+   "fixture": "handling",
+   "desc": "**SINGLE RUN** `handling` (design order 10)",
+   "command": "python3 tools/vinegar_run.py run handling"
+  },
+  {
+   "play": 5,
+   "sprint": "C1",
+   "opening": 2,
+   "kind": "run",
+   "fixture": "city:blocked-grade",
+   "desc": "**SINGLE RUN** `city:blocked-grade` (design order 11)",
+   "command": "python3 tools/vinegar_run.py run city:blocked-grade"
+  },
+  {
+   "play": 6,
+   "sprint": "C1",
+   "opening": 2,
+   "kind": "run",
+   "fixture": "city:junction",
+   "desc": "**SINGLE RUN** `city:junction` (design order 12)",
+   "command": "python3 tools/vinegar_run.py run city:junction"
+  },
+  {
+   "play": 7,
+   "sprint": "C1",
+   "opening": 3,
+   "kind": "run",
+   "fixture": "race",
+   "desc": "**SINGLE RUN** `race` (design order 13)",
+   "command": "python3 tools/vinegar_run.py run race"
+  },
+  {
+   "play": 1,
+   "sprint": "D2",
+   "opening": 1,
+   "kind": "run",
+   "fixture": "atlas:scout",
+   "desc": "**SINGLE RUN** L1 before (skip if `lightingKit` was flipped to false in B3)",
+   "command": "python3 tools/vinegar_run.py run atlas:scout --visual-flags \"lightingKit=0\""
+  },
+  {
+   "play": 2,
+   "sprint": "D2",
+   "opening": 1,
+   "kind": "run",
+   "fixture": "atlas:scout",
+   "desc": "**SINGLE RUN** the `atlas:scout` defaults pack",
+   "command": "python3 tools/vinegar_run.py run atlas:scout"
+  },
+  {
+   "play": 3,
+   "sprint": "D2",
+   "opening": 1,
+   "kind": "run",
+   "fixture": "atlas:scout",
+   "desc": "**SINGLE RUN** L2 before (skip if `roadMaterial` was flipped)",
+   "command": "python3 tools/vinegar_run.py run atlas:scout --visual-flags \"roadMaterial=0\""
+  },
+  {
+   "play": 4,
+   "sprint": "D2",
+   "opening": 2,
+   "kind": "run",
+   "fixture": "atlas:scout",
+   "desc": "**SINGLE RUN** L3 before (skip if `wetNight` was flipped)",
+   "command": "python3 tools/vinegar_run.py run atlas:scout --visual-flags \"wetNight=0\""
+  },
+  {
+   "play": 5,
+   "sprint": "D2",
+   "opening": 2,
+   "kind": "run",
+   "fixture": "atlas:edge",
+   "desc": "**SINGLE RUN** L4 before (skip if `horizonEdge` was flipped)",
+   "command": "python3 tools/vinegar_run.py run atlas:edge --visual-flags \"horizonEdge=0\""
+  },
+  {
+   "play": 6,
+   "sprint": "D2",
+   "opening": 2,
+   "kind": "run",
+   "fixture": "atlas:edge",
+   "desc": "**SINGLE RUN** the `atlas:edge` defaults pack",
+   "command": "python3 tools/vinegar_run.py run atlas:edge"
+  },
+  {
+   "play": 7,
+   "sprint": "D2",
+   "opening": 3,
+   "kind": "run",
+   "fixture": "atlas:scout",
+   "desc": "**SINGLE RUN** L5 before (skip if `buildingDetail` was flipped)",
+   "command": "python3 tools/vinegar_run.py run atlas:scout --visual-flags \"buildingDetail=0\""
+  },
+  {
+   "play": 8,
+   "sprint": "D2",
+   "opening": 3,
+   "kind": "run",
+   "fixture": "atlas:edge",
+   "desc": "**SINGLE RUN** L6 before (skip if `landmarks` was flipped)",
+   "command": "python3 tools/vinegar_run.py run atlas:edge --visual-flags \"landmarks=0\""
+  },
+  {
+   "play": 9,
+   "sprint": "D2",
+   "opening": 3,
+   "kind": "run",
+   "fixture": "atlas:highway-extension",
+   "desc": "**SINGLE RUN** the default day's highway views",
+   "command": "python3 tools/vinegar_run.py run atlas:highway-extension"
+  },
+  {
+   "play": 10,
+   "sprint": "D2",
+   "opening": 4,
+   "kind": "run",
+   "fixture": "atlas:highway-extension",
+   "desc": "**SINGLE RUN** the degraded highway day",
+   "command": "python3 tools/vinegar_run.py run atlas:highway-extension --seed 3148688050"
+  },
+  {
+   "play": 11,
+   "sprint": "D2",
+   "opening": 4,
+   "kind": "run",
+   "fixture": "atlas:tiles-fogoff",
+   "desc": "**SINGLE RUN** the fog-off top-down tiles",
+   "command": "python3 tools/vinegar_run.py run atlas:tiles-fogoff"
+  },
+  {
+   "play": 12,
+   "sprint": "D2",
+   "opening": 4,
+   "kind": "run",
+   "fixture": "moving",
+   "desc": "**SINGLE RUN** the player-view route tour",
+   "command": "python3 tools/vinegar_run.py run moving"
+  }
+ ],
+ "problems": []
+}

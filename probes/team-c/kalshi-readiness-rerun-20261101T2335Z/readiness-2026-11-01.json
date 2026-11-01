@@ -1,0 +1,2073 @@
+{
+ "checks": [
+  {
+   "detail": "5 files, 5734940 records (book=80987 fees=13 gap=32 market=19426 schedule=1 settled=855 status=284 trade=5633342), errors 0",
+   "name": "capture_validator",
+   "numbers": {
+    "errors": 0,
+    "files": {
+     "books": {
+      "bytes": 325003426,
+      "errors": 0,
+      "kinds": {
+       "book": 80987
+      },
+      "partial_tail": 0,
+      "records": 80987
+     },
+     "events": {
+      "bytes": 238608,
+      "errors": 0,
+      "kinds": {
+       "fees": 13,
+       "schedule": 1,
+       "status": 284
+      },
+      "partial_tail": 0,
+      "records": 298
+     },
+     "gaps": {
+      "bytes": 6913,
+      "errors": 0,
+      "kinds": {
+       "gap": 32
+      },
+      "partial_tail": 0,
+      "records": 32
+     },
+     "markets": {
+      "bytes": 45012047,
+      "errors": 0,
+      "kinds": {
+       "market": 19426,
+       "settled": 855
+      },
+      "partial_tail": 0,
+      "records": 20281
+     },
+     "trades": {
+      "bytes": 2522104084,
+      "errors": 0,
+      "kinds": {
+       "trade": 5633342
+      },
+      "partial_tail": 0,
+      "records": 5633342
+     }
+    },
+    "first_errors": [],
+    "kinds": {
+     "book": 80987,
+     "fees": 13,
+     "gap": 32,
+     "market": 19426,
+     "schedule": 1,
+     "settled": 855,
+     "status": 284,
+     "trade": 5633342
+    },
+    "partial_tail": 0,
+    "records": 5734940
+   },
+   "status": "PASS"
+  },
+  {
+   "detail": "unhealthy-book share worst 0.106% (XRP) over 9 coins, observed 2026-11-01T00:00:00Z..2026-11-01T23:39:09Z; gap records 32 (book 1234s trades 62s meta 0s); starts 0 restarts 0 crashes 0; longest gap 60s",
+   "name": "gap_ledger",
+   "numbers": {
+    "capture_lag_s": -0.0,
+    "coins": {
+     "BNB": {
+      "open_s": 85149.9,
+      "series": "KXBNB15M",
+      "unhealthy_s": 19.9,
+      "unhealthy_share": 0.000234,
+      "windows": 95,
+      "windows_without_market_record": 0
+     },
+     "BTC": {
+      "open_s": 85149.9,
+      "series": "KXBTC15M",
+      "unhealthy_s": 37.8,
+      "unhealthy_share": 0.000444,
+      "windows": 95,
+      "windows_without_market_record": 0
+     },
+     "DOGE": {
+      "open_s": 85149.9,
+      "series": "KXDOGE15M",
+      "unhealthy_s": 19.9,
+      "unhealthy_share": 0.000234,
+      "windows": 95,
+      "windows_without_market_record": 0
+     },
+     "ETH": {
+      "open_s": 85149.9,
+      "series": "KXETH15M",
+      "unhealthy_s": 23.9,
+      "unhealthy_share": 0.00028,
+      "windows": 95,
+      "windows_without_market_record": 0
+     },
+     "HYPE": {
+      "open_s": 85149.9,
+      "series": "KXHYPE15M",
+      "unhealthy_s": 47.8,
+      "unhealthy_share": 0.000561,
+      "windows": 95,
+      "windows_without_market_record": 0
+     },
+     "NEAR": {
+      "open_s": 85149.9,
+      "series": "KXNEAR15M",
+      "unhealthy_s": 71.6,
+      "unhealthy_share": 0.00084,
+      "windows": 95,
+      "windows_without_market_record": 0
+     },
+     "SOL": {
+      "open_s": 85149.9,
+      "series": "KXSOL15M",
+      "unhealthy_s": 13.2,
+      "unhealthy_share": 0.000155,
+      "windows": 95,
+      "windows_without_market_record": 0
+     },
+     "XRP": {
+      "open_s": 85149.9,
+      "series": "KXXRP15M",
+      "unhealthy_s": 90.1,
+      "unhealthy_share": 0.001058,
+      "windows": 95,
+      "windows_without_market_record": 0
+     },
+     "ZEC": {
+      "open_s": 85149.9,
+      "series": "KXZEC15M",
+      "unhealthy_s": 19.0,
+      "unhealthy_share": 0.000224,
+      "windows": 95,
+      "windows_without_market_record": 0
+     }
+    },
+    "crashes": 0,
+    "gap_records": 32,
+    "gap_seconds_by_kind": {
+     "book": 1233.772,
+     "meta": 0,
+     "trades": 61.628
+    },
+    "gap_seconds_by_series": {
+     "KXBNB15M": {
+      "book": 139.94
+     },
+     "KXBTC15M": {
+      "book": 127.787,
+      "trades": 61.628
+     },
+     "KXDOGE15M": {
+      "book": 108.652
+     },
+     "KXETH15M": {
+      "book": 110.218
+     },
+     "KXHYPE15M": {
+      "book": 167.799
+     },
+     "KXNEAR15M": {
+      "book": 161.554
+     },
+     "KXSOL15M": {
+      "book": 68.714
+     },
+     "KXXRP15M": {
+      "book": 210.071
+     },
+     "KXZEC15M": {
+      "book": 139.037
+     }
+    },
+    "longest_gap": {
+     "from": 1793511900.0,
+     "reason": "overrun",
+     "seconds": 59.71,
+     "series": "KXXRP15M",
+     "ticker": "KXXRP15M-26NOV010100EST-00",
+     "to": 1793511959.7102566,
+     "what": "book"
+    },
+    "observed_from": 1793491200.0,
+    "observed_to": 1793576349.8716905,
+    "reasons": {
+     "error streak ended after N errors": 1,
+     "error: TimeoutError: The read operation timed out": 1,
+     "overrun": 30
+    },
+    "restart_downtime_s": 0.0,
+    "restarts": 0,
+    "starts": 0,
+    "stops": [],
+    "thresholds": {
+     "fail": 0.05,
+     "warn": 0.01
+    },
+    "worst_unhealthy_share": 0.001058
+   },
+   "status": "PASS"
+  },
+  {
+   "detail": "seconds with n>=1: worst 100.000% (BNB), median n BNB=2,BTC=6,DOGE=5,ETH=6,HYPE=3,NEAR=3,SOL=5,XRP=4,ZEC=2; venue connects 3 disconnects 3 errors 3; clock 142 lines offset -23.961..41.934 ms stratum [2]",
+   "name": "ref_health",
+   "numbers": {
+    "clock": {
+     "last": {
+      "error": null,
+      "jitter_ms": 9.36,
+      "offset_ms": 0.253,
+      "root_distance_ms": 4.241,
+      "server": "2602:81c:1000:2::678 (2.arch.pool.ntp.org)",
+      "stratum": 2,
+      "utc": "2026-11-01T23:33:46.486Z"
+     },
+     "lines": 142,
+     "max_offset_ms": 41.934,
+     "min_offset_ms": -23.961,
+     "problem_lines": 0,
+     "samples": [
+      {
+       "delay_ms": 73.423,
+       "error": null,
+       "jitter_ms": 1.997,
+       "offset_ms": 2.181,
+       "root_distance_ms": 1.144,
+       "stratum": 2,
+       "utc": "2026-11-01T00:03:45.944Z"
+      },
+      {
+       "delay_ms": 73.423,
+       "error": null,
+       "jitter_ms": 1.997,
+       "offset_ms": 2.181,
+       "root_distance_ms": 1.144,
+       "stratum": 2,
+       "utc": "2026-11-01T00:13:45.950Z"
+      },
+      {
+       "delay_ms": 73.423,
+       "error": null,
+       "jitter_ms": 1.997,
+       "offset_ms": 2.181,
+       "root_distance_ms": 1.144,
+       "stratum": 2,
+       "utc": "2026-11-01T00:23:45.955Z"
+      },
+      {
+       "delay_ms": 73.938,
+       "error": null,
+       "jitter_ms": 2.312,
+       "offset_ms": 2.571,
+       "root_distance_ms": 1.159,
+       "stratum": 2,
+       "utc": "2026-11-01T00:33:45.960Z"
+      },
+      {
+       "delay_ms": 73.938,
+       "error": null,
+       "jitter_ms": 2.312,
+       "offset_ms": 2.571,
+       "root_distance_ms": 1.159,
+       "stratum": 2,
+       "utc": "2026-11-01T00:43:45.963Z"
+      },
+      {
+       "delay_ms": 73.938,
+       "error": null,
+       "jitter_ms": 2.312,
+       "offset_ms": 2.571,
+       "root_distance_ms": 1.159,
+       "stratum": 2,
+       "utc": "2026-11-01T00:53:45.968Z"
+      },
+      {
+       "delay_ms": 73.37,
+       "error": null,
+       "jitter_ms": 1.319,
+       "offset_ms": 0.983,
+       "root_distance_ms": 1.174,
+       "stratum": 2,
+       "utc": "2026-11-01T01:03:45.971Z"
+      },
+      {
+       "delay_ms": 73.37,
+       "error": null,
+       "jitter_ms": 1.319,
+       "offset_ms": 0.983,
+       "root_distance_ms": 1.174,
+       "stratum": 2,
+       "utc": "2026-11-01T01:13:45.975Z"
+      },
+      {
+       "delay_ms": 73.37,
+       "error": null,
+       "jitter_ms": 1.319,
+       "offset_ms": 0.983,
+       "root_distance_ms": 1.174,
+       "stratum": 2,
+       "utc": "2026-11-01T01:23:45.978Z"
+      },
+      {
+       "delay_ms": 73.37,
+       "error": null,
+       "jitter_ms": 1.319,
+       "offset_ms": 0.983,
+       "root_distance_ms": 1.174,
+       "stratum": 2,
+       "utc": "2026-11-01T01:33:45.981Z"
+      },
+      {
+       "delay_ms": 73.723,
+       "error": null,
+       "jitter_ms": 1.259,
+       "offset_ms": -0.85,
+       "root_distance_ms": 1.174,
+       "stratum": 2,
+       "utc": "2026-11-01T01:43:45.984Z"
+      },
+      {
+       "delay_ms": 73.723,
+       "error": null,
+       "jitter_ms": 1.259,
+       "offset_ms": -0.85,
+       "root_distance_ms": 1.174,
+       "stratum": 2,
+       "utc": "2026-11-01T01:53:45.987Z"
+      },
+      {
+       "delay_ms": 73.723,
+       "error": null,
+       "jitter_ms": 1.259,
+       "offset_ms": -0.85,
+       "root_distance_ms": 1.174,
+       "stratum": 2,
+       "utc": "2026-11-01T02:03:45.991Z"
+      },
+      {
+       "delay_ms": 73.287,
+       "error": null,
+       "jitter_ms": 2.112,
+       "offset_ms": -0.539,
+       "root_distance_ms": 1.029,
+       "stratum": 2,
+       "utc": "2026-11-01T02:13:45.995Z"
+      },
+      {
+       "delay_ms": 73.287,
+       "error": null,
+       "jitter_ms": 2.112,
+       "offset_ms": -0.539,
+       "root_distance_ms": 1.029,
+       "stratum": 2,
+       "utc": "2026-11-01T02:23:45.998Z"
+      },
+      {
+       "delay_ms": 73.287,
+       "error": null,
+       "jitter_ms": 2.112,
+       "offset_ms": -0.539,
+       "root_distance_ms": 1.029,
+       "stratum": 2,
+       "utc": "2026-11-01T02:33:46.002Z"
+      },
+      {
+       "delay_ms": 73.287,
+       "error": null,
+       "jitter_ms": 2.112,
+       "offset_ms": -0.539,
+       "root_distance_ms": 1.029,
+       "stratum": 2,
+       "utc": "2026-11-01T02:43:46.005Z"
+      },
+      {
+       "delay_ms": 73.886,
+       "error": null,
+       "jitter_ms": 1.785,
+       "offset_ms": -0.537,
+       "root_distance_ms": 1.029,
+       "stratum": 2,
+       "utc": "2026-11-01T02:53:46.009Z"
+      },
+      {
+       "delay_ms": 73.886,
+       "error": null,
+       "jitter_ms": 1.785,
+       "offset_ms": -0.537,
+       "root_distance_ms": 1.029,
+       "stratum": 2,
+       "utc": "2026-11-01T03:03:46.012Z"
+      },
+      {
+       "delay_ms": 73.886,
+       "error": null,
+       "jitter_ms": 1.785,
+       "offset_ms": -0.537,
+       "root_distance_ms": 1.029,
+       "stratum": 2,
+       "utc": "2026-11-01T03:13:46.017Z"
+      },
+      {
+       "delay_ms": 72.786,
+       "error": null,
+       "jitter_ms": 1.807,
+       "offset_ms": -0.625,
+       "root_distance_ms": 1.029,
+       "stratum": 2,
+       "utc": "2026-11-01T03:23:46.020Z"
+      },
+      {
+       "delay_ms": 72.786,
+       "error": null,
+       "jitter_ms": 1.807,
+       "offset_ms": -0.625,
+       "root_distance_ms": 1.029,
+       "stratum": 2,
+       "utc": "2026-11-01T03:33:46.024Z"
+      },
+      {
+       "delay_ms": 72.786,
+       "error": null,
+       "jitter_ms": 1.807,
+       "offset_ms": -0.625,
+       "root_distance_ms": 1.029,
+       "stratum": 2,
+       "utc": "2026-11-01T03:43:46.027Z"
+      },
+      {
+       "delay_ms": 72.534,
+       "error": null,
+       "jitter_ms": 1.343,
+       "offset_ms": 0.538,
+       "root_distance_ms": 1.014,
+       "stratum": 2,
+       "utc": "2026-11-01T03:53:46.031Z"
+      },
+      {
+       "delay_ms": 72.534,
+       "error": null,
+       "jitter_ms": 1.343,
+       "offset_ms": 0.538,
+       "root_distance_ms": 1.014,
+       "stratum": 2,
+       "utc": "2026-11-01T04:03:46.034Z"
+      },
+      {
+       "delay_ms": 72.534,
+       "error": null,
+       "jitter_ms": 1.343,
+       "offset_ms": 0.538,
+       "root_distance_ms": 1.014,
+       "stratum": 2,
+       "utc": "2026-11-01T04:13:46.037Z"
+      },
+      {
+       "delay_ms": 72.534,
+       "error": null,
+       "jitter_ms": 1.343,
+       "offset_ms": 0.538,
+       "root_distance_ms": 1.014,
+       "stratum": 2,
+       "utc": "2026-11-01T04:23:46.041Z"
+      },
+      {
+       "delay_ms": 73.655,
+       "error": null,
+       "jitter_ms": 1.269,
+       "offset_ms": -0.626,
+       "root_distance_ms": 0.929,
+       "stratum": 2,
+       "utc": "2026-11-01T04:33:46.044Z"
+      },
+      {
+       "delay_ms": 73.655,
+       "error": null,
+       "jitter_ms": 1.269,
+       "offset_ms": -0.626,
+       "root_distance_ms": 0.929,
+       "stratum": 2,
+       "utc": "2026-11-01T04:43:46.048Z"
+      },
+      {
+       "delay_ms": 73.655,
+       "error": null,
+       "jitter_ms": 1.269,
+       "offset_ms": -0.626,
+       "root_distance_ms": 0.929,
+       "stratum": 2,
+       "utc": "2026-11-01T04:53:46.051Z"
+      },
+      {
+       "delay_ms": 73.603,
+       "error": null,
+       "jitter_ms": 1.014,
+       "offset_ms": 0.304,
+       "root_distance_ms": 0.876,
+       "stratum": 2,
+       "utc": "2026-11-01T05:03:46.055Z"
+      },
+      {
+       "delay_ms": 73.603,
+       "error": null,
+       "jitter_ms": 1.014,
+       "offset_ms": 0.304,
+       "root_distance_ms": 0.876,
+       "stratum": 2,
+       "utc": "2026-11-01T05:13:46.058Z"
+      },
+      {
+       "delay_ms": 73.603,
+       "error": null,
+       "jitter_ms": 1.014,
+       "offset_ms": 0.304,
+       "root_distance_ms": 0.876,
+       "stratum": 2,
+       "utc": "2026-11-01T05:23:46.062Z"
+      },
+      {
+       "delay_ms": 73.603,
+       "error": null,
+       "jitter_ms": 1.014,
+       "offset_ms": 0.304,
+       "root_distance_ms": 0.876,
+       "stratum": 2,
+       "utc": "2026-11-01T05:33:46.066Z"
+      },
+      {
+       "delay_ms": 73.498,
+       "error": null,
+       "jitter_ms": 1.048,
+       "offset_ms": -0.296,
+       "root_distance_ms": 0.953,
+       "stratum": 2,
+       "utc": "2026-11-01T05:43:46.071Z"
+      },
+      {
+       "delay_ms": 73.498,
+       "error": null,
+       "jitter_ms": 1.048,
+       "offset_ms": -0.296,
+       "root_distance_ms": 0.953,
+       "stratum": 2,
+       "utc": "2026-11-01T05:53:46.074Z"
+      },
+      {
+       "delay_ms": 73.498,
+       "error": null,
+       "jitter_ms": 1.048,
+       "offset_ms": -0.296,
+       "root_distance_ms": 0.953,
+       "stratum": 2,
+       "utc": "2026-11-01T06:03:46.078Z"
+      },
+      {
+       "delay_ms": 74.204,
+       "error": null,
+       "jitter_ms": 0.909,
+       "offset_ms": 0.423,
+       "root_distance_ms": 0.953,
+       "stratum": 2,
+       "utc": "2026-11-01T06:13:46.082Z"
+      },
+      {
+       "delay_ms": 74.204,
+       "error": null,
+       "jitter_ms": 0.909,
+       "offset_ms": 0.423,
+       "root_distance_ms": 0.953,
+       "stratum": 2,
+       "utc": "2026-11-01T06:23:46.086Z"
+      },
+      {
+       "delay_ms": 74.204,
+       "error": null,
+       "jitter_ms": 0.909,
+       "offset_ms": 0.423,
+       "root_distance_ms": 0.953,
+       "stratum": 2,
+       "utc": "2026-11-01T06:33:46.089Z"
+      },
+      {
+       "delay_ms": 74.204,
+       "error": null,
+       "jitter_ms": 0.909,
+       "offset_ms": 0.423,
+       "root_distance_ms": 0.953,
+       "stratum": 2,
+       "utc": "2026-11-01T06:43:46.092Z"
+      },
+      {
+       "delay_ms": 73.761,
+       "error": null,
+       "jitter_ms": 0.92,
+       "offset_ms": -0.606,
+       "root_distance_ms": 0.785,
+       "stratum": 2,
+       "utc": "2026-11-01T06:53:46.095Z"
+      },
+      {
+       "delay_ms": 73.761,
+       "error": null,
+       "jitter_ms": 0.92,
+       "offset_ms": -0.606,
+       "root_distance_ms": 0.785,
+       "stratum": 2,
+       "utc": "2026-11-01T07:03:46.100Z"
+      },
+      {
+       "delay_ms": 73.761,
+       "error": null,
+       "jitter_ms": 0.92,
+       "offset_ms": -0.606,
+       "root_distance_ms": 0.785,
+       "stratum": 2,
+       "utc": "2026-11-01T07:13:46.103Z"
+      },
+      {
+       "delay_ms": 73.715,
+       "error": null,
+       "jitter_ms": 0.85,
+       "offset_ms": 1.065,
+       "root_distance_ms": 0.785,
+       "stratum": 2,
+       "utc": "2026-11-01T07:23:46.107Z"
+      },
+      {
+       "delay_ms": 73.715,
+       "error": null,
+       "jitter_ms": 0.85,
+       "offset_ms": 1.065,
+       "root_distance_ms": 0.785,
+       "stratum": 2,
+       "utc": "2026-11-01T07:33:46.111Z"
+      },
+      {
+       "delay_ms": 73.715,
+       "error": null,
+       "jitter_ms": 0.85,
+       "offset_ms": 1.065,
+       "root_distance_ms": 0.785,
+       "stratum": 2,
+       "utc": "2026-11-01T07:43:46.115Z"
+      },
+      {
+       "delay_ms": 72.873,
+       "error": null,
+       "jitter_ms": 0.79,
+       "offset_ms": -0.276,
+       "root_distance_ms": 0.831,
+       "stratum": 2,
+       "utc": "2026-11-01T07:53:46.119Z"
+      },
+      {
+       "delay_ms": 72.873,
+       "error": null,
+       "jitter_ms": 0.79,
+       "offset_ms": -0.276,
+       "root_distance_ms": 0.831,
+       "stratum": 2,
+       "utc": "2026-11-01T08:03:46.122Z"
+      },
+      {
+       "delay_ms": 72.873,
+       "error": null,
+       "jitter_ms": 0.79,
+       "offset_ms": -0.276,
+       "root_distance_ms": 0.831,
+       "stratum": 2,
+       "utc": "2026-11-01T08:13:46.127Z"
+      },
+      {
+       "delay_ms": 72.873,
+       "error": null,
+       "jitter_ms": 0.79,
+       "offset_ms": -0.276,
+       "root_distance_ms": 0.831,
+       "stratum": 2,
+       "utc": "2026-11-01T08:23:46.131Z"
+      },
+      {
+       "delay_ms": 73.77,
+       "error": null,
+       "jitter_ms": 1.145,
+       "offset_ms": -2.791,
+       "root_distance_ms": 0.815,
+       "stratum": 2,
+       "utc": "2026-11-01T08:33:46.134Z"
+      },
+      {
+       "delay_ms": 73.77,
+       "error": null,
+       "jitter_ms": 1.145,
+       "offset_ms": -2.791,
+       "root_distance_ms": 0.815,
+       "stratum": 2,
+       "utc": "2026-11-01T08:43:46.137Z"
+      },
+      {
+       "delay_ms": 73.77,
+       "error": null,
+       "jitter_ms": 1.145,
+       "offset_ms": -2.791,
+       "root_distance_ms": 0.815,
+       "stratum": 2,
+       "utc": "2026-11-01T08:53:46.141Z"
+      },
+      {
+       "delay_ms": 74.235,
+       "error": null,
+       "jitter_ms": 2.522,
+       "offset_ms": -6.233,
+       "root_distance_ms": 0.785,
+       "stratum": 2,
+       "utc": "2026-11-01T09:03:46.145Z"
+      },
+      {
+       "delay_ms": 74.235,
+       "error": null,
+       "jitter_ms": 2.522,
+       "offset_ms": -6.233,
+       "root_distance_ms": 0.785,
+       "stratum": 2,
+       "utc": "2026-11-01T09:13:46.149Z"
+      },
+      {
+       "delay_ms": 74.235,
+       "error": null,
+       "jitter_ms": 2.522,
+       "offset_ms": -6.233,
+       "root_distance_ms": 0.785,
+       "stratum": 2,
+       "utc": "2026-11-01T09:23:46.154Z"
+      },
+      {
+       "delay_ms": 74.235,
+       "error": null,
+       "jitter_ms": 2.522,
+       "offset_ms": -6.233,
+       "root_distance_ms": 0.785,
+       "stratum": 2,
+       "utc": "2026-11-01T09:33:46.158Z"
+      },
+      {
+       "delay_ms": 73.743,
+       "error": null,
+       "jitter_ms": 4.332,
+       "offset_ms": -9.613,
+       "root_distance_ms": 0.77,
+       "stratum": 2,
+       "utc": "2026-11-01T09:43:46.161Z"
+      },
+      {
+       "delay_ms": 73.743,
+       "error": null,
+       "jitter_ms": 4.332,
+       "offset_ms": -9.613,
+       "root_distance_ms": 0.77,
+       "stratum": 2,
+       "utc": "2026-11-01T09:53:46.165Z"
+      },
+      {
+       "delay_ms": 73.743,
+       "error": null,
+       "jitter_ms": 4.332,
+       "offset_ms": -9.613,
+       "root_distance_ms": 0.77,
+       "stratum": 2,
+       "utc": "2026-11-01T10:03:46.170Z"
+      },
+      {
+       "delay_ms": 72.351,
+       "error": null,
+       "jitter_ms": 6.737,
+       "offset_ms": 3.072,
+       "root_distance_ms": 0.785,
+       "stratum": 2,
+       "utc": "2026-11-01T10:13:46.173Z"
+      },
+      {
+       "delay_ms": 72.351,
+       "error": null,
+       "jitter_ms": 6.737,
+       "offset_ms": 3.072,
+       "root_distance_ms": 0.785,
+       "stratum": 2,
+       "utc": "2026-11-01T10:23:46.177Z"
+      },
+      {
+       "delay_ms": 72.351,
+       "error": null,
+       "jitter_ms": 6.737,
+       "offset_ms": 3.072,
+       "root_distance_ms": 0.785,
+       "stratum": 2,
+       "utc": "2026-11-01T10:33:46.181Z"
+      },
+      {
+       "delay_ms": 74.098,
+       "error": null,
+       "jitter_ms": 6.752,
+       "offset_ms": 0.169,
+       "root_distance_ms": 0.724,
+       "stratum": 2,
+       "utc": "2026-11-01T10:43:46.185Z"
+      },
+      {
+       "delay_ms": 74.098,
+       "error": null,
+       "jitter_ms": 6.752,
+       "offset_ms": 0.169,
+       "root_distance_ms": 0.724,
+       "stratum": 2,
+       "utc": "2026-11-01T10:53:46.188Z"
+      },
+      {
+       "delay_ms": 74.098,
+       "error": null,
+       "jitter_ms": 6.752,
+       "offset_ms": 0.169,
+       "root_distance_ms": 0.724,
+       "stratum": 2,
+       "utc": "2026-11-01T11:03:46.192Z"
+      },
+      {
+       "delay_ms": 74.098,
+       "error": null,
+       "jitter_ms": 6.752,
+       "offset_ms": 0.169,
+       "root_distance_ms": 0.724,
+       "stratum": 2,
+       "utc": "2026-11-01T11:13:46.196Z"
+      },
+      {
+       "delay_ms": 73.17,
+       "error": null,
+       "jitter_ms": 6.657,
+       "offset_ms": 0.907,
+       "root_distance_ms": 0.724,
+       "stratum": 2,
+       "utc": "2026-11-01T11:23:46.200Z"
+      },
+      {
+       "delay_ms": 73.17,
+       "error": null,
+       "jitter_ms": 6.657,
+       "offset_ms": 0.907,
+       "root_distance_ms": 0.724,
+       "stratum": 2,
+       "utc": "2026-11-01T11:33:46.204Z"
+      },
+      {
+       "delay_ms": 73.17,
+       "error": null,
+       "jitter_ms": 6.657,
+       "offset_ms": 0.907,
+       "root_distance_ms": 0.724,
+       "stratum": 2,
+       "utc": "2026-11-01T11:43:46.207Z"
+      },
+      {
+       "delay_ms": 73.593,
+       "error": null,
+       "jitter_ms": 6.779,
+       "offset_ms": -0.86,
+       "root_distance_ms": 0.739,
+       "stratum": 2,
+       "utc": "2026-11-01T11:53:46.211Z"
+      },
+      {
+       "delay_ms": 73.593,
+       "error": null,
+       "jitter_ms": 6.779,
+       "offset_ms": -0.86,
+       "root_distance_ms": 0.739,
+       "stratum": 2,
+       "utc": "2026-11-01T12:03:46.215Z"
+      },
+      {
+       "delay_ms": 73.593,
+       "error": null,
+       "jitter_ms": 6.779,
+       "offset_ms": -0.86,
+       "root_distance_ms": 0.739,
+       "stratum": 2,
+       "utc": "2026-11-01T12:13:46.219Z"
+      },
+      {
+       "delay_ms": 73.593,
+       "error": null,
+       "jitter_ms": 6.779,
+       "offset_ms": -0.86,
+       "root_distance_ms": 0.739,
+       "stratum": 2,
+       "utc": "2026-11-01T12:23:46.223Z"
+      },
+      {
+       "delay_ms": 72.884,
+       "error": null,
+       "jitter_ms": 6.687,
+       "offset_ms": 1.489,
+       "root_distance_ms": 0.838,
+       "stratum": 2,
+       "utc": "2026-11-01T12:33:46.226Z"
+      },
+      {
+       "delay_ms": 72.884,
+       "error": null,
+       "jitter_ms": 6.687,
+       "offset_ms": 1.489,
+       "root_distance_ms": 0.838,
+       "stratum": 2,
+       "utc": "2026-11-01T12:43:46.230Z"
+      },
+      {
+       "delay_ms": 72.884,
+       "error": null,
+       "jitter_ms": 6.687,
+       "offset_ms": 1.489,
+       "root_distance_ms": 0.838,
+       "stratum": 2,
+       "utc": "2026-11-01T12:53:46.234Z"
+      },
+      {
+       "delay_ms": 73.28,
+       "error": null,
+       "jitter_ms": 6.393,
+       "offset_ms": 0.333,
+       "root_distance_ms": 0.655,
+       "stratum": 2,
+       "utc": "2026-11-01T13:03:46.238Z"
+      },
+      {
+       "delay_ms": 73.28,
+       "error": null,
+       "jitter_ms": 6.393,
+       "offset_ms": 0.333,
+       "root_distance_ms": 0.655,
+       "stratum": 2,
+       "utc": "2026-11-01T13:13:46.241Z"
+      },
+      {
+       "delay_ms": 73.28,
+       "error": null,
+       "jitter_ms": 6.393,
+       "offset_ms": 0.333,
+       "root_distance_ms": 0.655,
+       "stratum": 2,
+       "utc": "2026-11-01T13:23:46.245Z"
+      },
+      {
+       "delay_ms": 73.28,
+       "error": null,
+       "jitter_ms": 6.393,
+       "offset_ms": 0.333,
+       "root_distance_ms": 0.655,
+       "stratum": 2,
+       "utc": "2026-11-01T13:33:46.250Z"
+      },
+      {
+       "delay_ms": 72.2,
+       "error": null,
+       "jitter_ms": 3.85,
+       "offset_ms": -0.284,
+       "root_distance_ms": 1.952,
+       "stratum": 2,
+       "utc": "2026-11-01T13:43:46.254Z"
+      },
+      {
+       "delay_ms": 72.2,
+       "error": null,
+       "jitter_ms": 3.85,
+       "offset_ms": -0.284,
+       "root_distance_ms": 1.952,
+       "stratum": 2,
+       "utc": "2026-11-01T13:53:46.261Z"
+      },
+      {
+       "delay_ms": 72.2,
+       "error": null,
+       "jitter_ms": 3.85,
+       "offset_ms": -0.284,
+       "root_distance_ms": 1.952,
+       "stratum": 2,
+       "utc": "2026-11-01T14:03:46.265Z"
+      },
+      {
+       "delay_ms": 72.834,
+       "error": null,
+       "jitter_ms": 2.106,
+       "offset_ms": 3.501,
+       "root_distance_ms": 1.181,
+       "stratum": 2,
+       "utc": "2026-11-01T14:13:46.270Z"
+      },
+      {
+       "delay_ms": 72.834,
+       "error": null,
+       "jitter_ms": 2.106,
+       "offset_ms": 3.501,
+       "root_distance_ms": 1.181,
+       "stratum": 2,
+       "utc": "2026-11-01T14:23:46.275Z"
+      },
+      {
+       "delay_ms": 72.834,
+       "error": null,
+       "jitter_ms": 2.106,
+       "offset_ms": 3.501,
+       "root_distance_ms": 1.181,
+       "stratum": 2,
+       "utc": "2026-11-01T14:33:46.281Z"
+      },
+      {
+       "delay_ms": 72.982,
+       "error": null,
+       "jitter_ms": 1.755,
+       "offset_ms": 1.048,
+       "root_distance_ms": 1.38,
+       "stratum": 2,
+       "utc": "2026-11-01T14:43:46.285Z"
+      },
+      {
+       "delay_ms": 72.982,
+       "error": null,
+       "jitter_ms": 1.755,
+       "offset_ms": 1.048,
+       "root_distance_ms": 1.38,
+       "stratum": 2,
+       "utc": "2026-11-01T14:53:46.288Z"
+      },
+      {
+       "delay_ms": 72.982,
+       "error": null,
+       "jitter_ms": 1.755,
+       "offset_ms": 1.048,
+       "root_distance_ms": 1.38,
+       "stratum": 2,
+       "utc": "2026-11-01T15:03:46.292Z"
+      },
+      {
+       "delay_ms": 72.982,
+       "error": null,
+       "jitter_ms": 1.755,
+       "offset_ms": 1.048,
+       "root_distance_ms": 1.38,
+       "stratum": 2,
+       "utc": "2026-11-01T15:13:46.295Z"
+      },
+      {
+       "delay_ms": 155.064,
+       "error": null,
+       "jitter_ms": 16.052,
+       "offset_ms": 41.934,
+       "root_distance_ms": 4.554,
+       "stratum": 2,
+       "utc": "2026-11-01T15:23:46.299Z"
+      },
+      {
+       "delay_ms": 155.064,
+       "error": null,
+       "jitter_ms": 16.052,
+       "offset_ms": 41.934,
+       "root_distance_ms": 4.554,
+       "stratum": 2,
+       "utc": "2026-11-01T15:33:46.304Z"
+      },
+      {
+       "delay_ms": 155.064,
+       "error": null,
+       "jitter_ms": 16.052,
+       "offset_ms": 41.934,
+       "root_distance_ms": 4.554,
+       "stratum": 2,
+       "utc": "2026-11-01T15:43:46.308Z"
+      },
+      {
+       "delay_ms": 73.866,
+       "error": null,
+       "jitter_ms": 16.056,
+       "offset_ms": 1.228,
+       "root_distance_ms": 4.569,
+       "stratum": 2,
+       "utc": "2026-11-01T15:53:46.312Z"
+      },
+      {
+       "delay_ms": 73.866,
+       "error": null,
+       "jitter_ms": 16.056,
+       "offset_ms": 1.228,
+       "root_distance_ms": 4.569,
+       "stratum": 2,
+       "utc": "2026-11-01T16:03:46.315Z"
+      },
+      {
+       "delay_ms": 73.866,
+       "error": null,
+       "jitter_ms": 16.056,
+       "offset_ms": 1.228,
+       "root_distance_ms": 4.569,
+       "stratum": 2,
+       "utc": "2026-11-01T16:13:46.319Z"
+      },
+      {
+       "delay_ms": 73.866,
+       "error": null,
+       "jitter_ms": 16.056,
+       "offset_ms": 1.228,
+       "root_distance_ms": 4.569,
+       "stratum": 2,
+       "utc": "2026-11-01T16:23:46.321Z"
+      },
+      {
+       "delay_ms": 72.458,
+       "error": null,
+       "jitter_ms": 16.06,
+       "offset_ms": -1.472,
+       "root_distance_ms": 4.493,
+       "stratum": 2,
+       "utc": "2026-11-01T16:33:46.324Z"
+      },
+      {
+       "delay_ms": 72.458,
+       "error": null,
+       "jitter_ms": 16.06,
+       "offset_ms": -1.472,
+       "root_distance_ms": 4.493,
+       "stratum": 2,
+       "utc": "2026-11-01T16:43:46.328Z"
+      },
+      {
+       "delay_ms": 72.458,
+       "error": null,
+       "jitter_ms": 16.06,
+       "offset_ms": -1.472,
+       "root_distance_ms": 4.493,
+       "stratum": 2,
+       "utc": "2026-11-01T16:53:46.331Z"
+      },
+      {
+       "delay_ms": 73.181,
+       "error": null,
+       "jitter_ms": 16.048,
+       "offset_ms": -0.922,
+       "root_distance_ms": 4.516,
+       "stratum": 2,
+       "utc": "2026-11-01T17:03:46.334Z"
+      },
+      {
+       "delay_ms": 73.181,
+       "error": null,
+       "jitter_ms": 16.048,
+       "offset_ms": -0.922,
+       "root_distance_ms": 4.516,
+       "stratum": 2,
+       "utc": "2026-11-01T17:13:46.338Z"
+      },
+      {
+       "delay_ms": 73.181,
+       "error": null,
+       "jitter_ms": 16.048,
+       "offset_ms": -0.922,
+       "root_distance_ms": 4.516,
+       "stratum": 2,
+       "utc": "2026-11-01T17:23:46.341Z"
+      },
+      {
+       "delay_ms": 72.612,
+       "error": null,
+       "jitter_ms": 16.053,
+       "offset_ms": 0.892,
+       "root_distance_ms": 4.455,
+       "stratum": 2,
+       "utc": "2026-11-01T17:33:46.348Z"
+      },
+      {
+       "delay_ms": 72.612,
+       "error": null,
+       "jitter_ms": 16.053,
+       "offset_ms": 0.892,
+       "root_distance_ms": 4.455,
+       "stratum": 2,
+       "utc": "2026-11-01T17:43:46.352Z"
+      },
+      {
+       "delay_ms": 72.612,
+       "error": null,
+       "jitter_ms": 16.053,
+       "offset_ms": 0.892,
+       "root_distance_ms": 4.455,
+       "stratum": 2,
+       "utc": "2026-11-01T17:53:46.356Z"
+      },
+      {
+       "delay_ms": 72.612,
+       "error": null,
+       "jitter_ms": 16.053,
+       "offset_ms": 0.892,
+       "root_distance_ms": 4.455,
+       "stratum": 2,
+       "utc": "2026-11-01T18:03:46.361Z"
+      },
+      {
+       "delay_ms": 73.183,
+       "error": null,
+       "jitter_ms": 16.598,
+       "offset_ms": -0.907,
+       "root_distance_ms": 4.447,
+       "stratum": 2,
+       "utc": "2026-11-01T18:13:46.364Z"
+      },
+      {
+       "delay_ms": 73.183,
+       "error": null,
+       "jitter_ms": 16.598,
+       "offset_ms": -0.907,
+       "root_distance_ms": 4.447,
+       "stratum": 2,
+       "utc": "2026-11-01T18:23:46.367Z"
+      },
+      {
+       "delay_ms": 73.183,
+       "error": null,
+       "jitter_ms": 16.598,
+       "offset_ms": -0.907,
+       "root_distance_ms": 4.447,
+       "stratum": 2,
+       "utc": "2026-11-01T18:33:46.371Z"
+      },
+      {
+       "delay_ms": 73.379,
+       "error": null,
+       "jitter_ms": 16.508,
+       "offset_ms": 0.469,
+       "root_distance_ms": 4.401,
+       "stratum": 2,
+       "utc": "2026-11-01T18:43:46.375Z"
+      },
+      {
+       "delay_ms": 73.379,
+       "error": null,
+       "jitter_ms": 16.508,
+       "offset_ms": 0.469,
+       "root_distance_ms": 4.401,
+       "stratum": 2,
+       "utc": "2026-11-01T18:53:46.378Z"
+      },
+      {
+       "delay_ms": 73.379,
+       "error": null,
+       "jitter_ms": 16.508,
+       "offset_ms": 0.469,
+       "root_distance_ms": 4.401,
+       "stratum": 2,
+       "utc": "2026-11-01T19:03:46.382Z"
+      },
+      {
+       "delay_ms": 73.379,
+       "error": null,
+       "jitter_ms": 16.508,
+       "offset_ms": 0.469,
+       "root_distance_ms": 4.401,
+       "stratum": 2,
+       "utc": "2026-11-01T19:13:46.385Z"
+      },
+      {
+       "delay_ms": 72.899,
+       "error": null,
+       "jitter_ms": 16.502,
+       "offset_ms": 0.763,
+       "root_distance_ms": 4.378,
+       "stratum": 2,
+       "utc": "2026-11-01T19:23:46.389Z"
+      },
+      {
+       "delay_ms": 72.899,
+       "error": null,
+       "jitter_ms": 16.502,
+       "offset_ms": 0.763,
+       "root_distance_ms": 4.378,
+       "stratum": 2,
+       "utc": "2026-11-01T19:33:46.392Z"
+      },
+      {
+       "delay_ms": 72.899,
+       "error": null,
+       "jitter_ms": 16.502,
+       "offset_ms": 0.763,
+       "root_distance_ms": 4.378,
+       "stratum": 2,
+       "utc": "2026-11-01T19:43:46.397Z"
+      },
+      {
+       "delay_ms": 73.134,
+       "error": null,
+       "jitter_ms": 1.862,
+       "offset_ms": -0.054,
+       "root_distance_ms": 4.386,
+       "stratum": 2,
+       "utc": "2026-11-01T19:53:46.400Z"
+      },
+      {
+       "delay_ms": 73.134,
+       "error": null,
+       "jitter_ms": 1.862,
+       "offset_ms": -0.054,
+       "root_distance_ms": 4.386,
+       "stratum": 2,
+       "utc": "2026-11-01T20:03:46.406Z"
+      },
+      {
+       "delay_ms": 73.134,
+       "error": null,
+       "jitter_ms": 1.862,
+       "offset_ms": -0.054,
+       "root_distance_ms": 4.386,
+       "stratum": 2,
+       "utc": "2026-11-01T20:13:46.410Z"
+      },
+      {
+       "delay_ms": 73.93,
+       "error": null,
+       "jitter_ms": 1.824,
+       "offset_ms": 1.04,
+       "root_distance_ms": 4.348,
+       "stratum": 2,
+       "utc": "2026-11-01T20:23:46.415Z"
+      },
+      {
+       "delay_ms": 73.93,
+       "error": null,
+       "jitter_ms": 1.824,
+       "offset_ms": 1.04,
+       "root_distance_ms": 4.348,
+       "stratum": 2,
+       "utc": "2026-11-01T20:33:46.418Z"
+      },
+      {
+       "delay_ms": 73.93,
+       "error": null,
+       "jitter_ms": 1.824,
+       "offset_ms": 1.04,
+       "root_distance_ms": 4.348,
+       "stratum": 2,
+       "utc": "2026-11-01T20:43:46.422Z"
+      },
+      {
+       "delay_ms": 73.93,
+       "error": null,
+       "jitter_ms": 1.824,
+       "offset_ms": 1.04,
+       "root_distance_ms": 4.348,
+       "stratum": 2,
+       "utc": "2026-11-01T20:53:46.426Z"
+      },
+      {
+       "delay_ms": 73.318,
+       "error": null,
+       "jitter_ms": 1.045,
+       "offset_ms": 0.825,
+       "root_distance_ms": 4.317,
+       "stratum": 2,
+       "utc": "2026-11-01T21:03:46.430Z"
+      },
+      {
+       "delay_ms": 73.318,
+       "error": null,
+       "jitter_ms": 1.045,
+       "offset_ms": 0.825,
+       "root_distance_ms": 4.317,
+       "stratum": 2,
+       "utc": "2026-11-01T21:13:46.434Z"
+      },
+      {
+       "delay_ms": 73.318,
+       "error": null,
+       "jitter_ms": 1.045,
+       "offset_ms": 0.825,
+       "root_distance_ms": 4.317,
+       "stratum": 2,
+       "utc": "2026-11-01T21:23:46.438Z"
+      },
+      {
+       "delay_ms": 74.037,
+       "error": null,
+       "jitter_ms": 0.81,
+       "offset_ms": 1.378,
+       "root_distance_ms": 4.317,
+       "stratum": 2,
+       "utc": "2026-11-01T21:33:46.441Z"
+      },
+      {
+       "delay_ms": 74.037,
+       "error": null,
+       "jitter_ms": 0.81,
+       "offset_ms": 1.378,
+       "root_distance_ms": 4.317,
+       "stratum": 2,
+       "utc": "2026-11-01T21:43:46.445Z"
+      },
+      {
+       "delay_ms": 74.037,
+       "error": null,
+       "jitter_ms": 0.81,
+       "offset_ms": 1.378,
+       "root_distance_ms": 4.317,
+       "stratum": 2,
+       "utc": "2026-11-01T21:53:46.449Z"
+      },
+      {
+       "delay_ms": 74.037,
+       "error": null,
+       "jitter_ms": 0.81,
+       "offset_ms": 1.378,
+       "root_distance_ms": 4.317,
+       "stratum": 2,
+       "utc": "2026-11-01T22:03:46.453Z"
+      },
+      {
+       "delay_ms": 73.196,
+       "error": null,
+       "jitter_ms": 0.811,
+       "offset_ms": -0.012,
+       "root_distance_ms": 4.295,
+       "stratum": 2,
+       "utc": "2026-11-01T22:13:46.457Z"
+      },
+      {
+       "delay_ms": 73.196,
+       "error": null,
+       "jitter_ms": 0.811,
+       "offset_ms": -0.012,
+       "root_distance_ms": 4.295,
+       "stratum": 2,
+       "utc": "2026-11-01T22:23:46.460Z"
+      },
+      {
+       "delay_ms": 73.196,
+       "error": null,
+       "jitter_ms": 0.811,
+       "offset_ms": -0.012,
+       "root_distance_ms": 4.295,
+       "stratum": 2,
+       "utc": "2026-11-01T22:33:46.463Z"
+      },
+      {
+       "delay_ms": 121.509,
+       "error": null,
+       "jitter_ms": 9.359,
+       "offset_ms": -23.961,
+       "root_distance_ms": 4.286,
+       "stratum": 2,
+       "utc": "2026-11-01T22:43:46.467Z"
+      },
+      {
+       "delay_ms": 121.509,
+       "error": null,
+       "jitter_ms": 9.359,
+       "offset_ms": -23.961,
+       "root_distance_ms": 4.286,
+       "stratum": 2,
+       "utc": "2026-11-01T22:53:46.470Z"
+      },
+      {
+       "delay_ms": 121.509,
+       "error": null,
+       "jitter_ms": 9.359,
+       "offset_ms": -23.961,
+       "root_distance_ms": 4.286,
+       "stratum": 2,
+       "utc": "2026-11-01T23:03:46.474Z"
+      },
+      {
+       "delay_ms": 121.509,
+       "error": null,
+       "jitter_ms": 9.359,
+       "offset_ms": -23.961,
+       "root_distance_ms": 4.286,
+       "stratum": 2,
+       "utc": "2026-11-01T23:13:46.478Z"
+      },
+      {
+       "delay_ms": 73.942,
+       "error": null,
+       "jitter_ms": 9.36,
+       "offset_ms": 0.253,
+       "root_distance_ms": 4.241,
+       "stratum": 2,
+       "utc": "2026-11-01T23:23:46.482Z"
+      },
+      {
+       "delay_ms": 73.942,
+       "error": null,
+       "jitter_ms": 9.36,
+       "offset_ms": 0.253,
+       "root_distance_ms": 4.241,
+       "stratum": 2,
+       "utc": "2026-11-01T23:33:46.486Z"
+      }
+     ],
+     "stratums": [
+      2
+     ]
+    },
+    "coins": {
+     "BNB": {
+      "covered_s": 85151,
+      "covered_share": 1.0,
+      "lines": 85151,
+      "median_n": 2,
+      "partial_tail": 0,
+      "seconds": 85151,
+      "unreadable": 0
+     },
+     "BTC": {
+      "covered_s": 85151,
+      "covered_share": 1.0,
+      "lines": 85151,
+      "median_n": 6,
+      "partial_tail": 0,
+      "seconds": 85151,
+      "unreadable": 0
+     },
+     "DOGE": {
+      "covered_s": 85151,
+      "covered_share": 1.0,
+      "lines": 85151,
+      "median_n": 5,
+      "partial_tail": 0,
+      "seconds": 85151,
+      "unreadable": 0
+     },
+     "ETH": {
+      "covered_s": 85151,
+      "covered_share": 1.0,
+      "lines": 85151,
+      "median_n": 6,
+      "partial_tail": 0,
+      "seconds": 85151,
+      "unreadable": 0
+     },
+     "HYPE": {
+      "covered_s": 85151,
+      "covered_share": 1.0,
+      "lines": 85151,
+      "median_n": 3,
+      "partial_tail": 0,
+      "seconds": 85151,
+      "unreadable": 0
+     },
+     "NEAR": {
+      "covered_s": 85151,
+      "covered_share": 1.0,
+      "lines": 85151,
+      "median_n": 3,
+      "partial_tail": 0,
+      "seconds": 85151,
+      "unreadable": 0
+     },
+     "SOL": {
+      "covered_s": 85151,
+      "covered_share": 1.0,
+      "lines": 85151,
+      "median_n": 5,
+      "partial_tail": 0,
+      "seconds": 85151,
+      "unreadable": 0
+     },
+     "XRP": {
+      "covered_s": 85151,
+      "covered_share": 1.0,
+      "lines": 85151,
+      "median_n": 4,
+      "partial_tail": 0,
+      "seconds": 85151,
+      "unreadable": 0
+     },
+     "ZEC": {
+      "covered_s": 85151,
+      "covered_share": 1.0,
+      "lines": 85151,
+      "median_n": 2,
+      "partial_tail": 0,
+      "seconds": 85151,
+      "unreadable": 0
+     }
+    },
+    "thresholds": {
+     "fail": 0.95,
+     "warn": 0.995
+    },
+    "venues": {
+     "cryptocom": {
+      "connect": 1,
+      "disconnect": 1,
+      "error": 1
+     },
+     "kraken": {
+      "connect": 2,
+      "disconnect": 2,
+      "error": 2
+     }
+    },
+    "worst_covered_share": 1.0,
+    "writer_skips_and_gaps": 0
+   },
+   "status": "PASS"
+  },
+  {
+   "detail": "846 windows settled in the day: result vs rule 846/846, shadow vs result 846/846 compared (0 pending in the ledger, 0 before the shadow started, 0 missing); mismatches 0; unsettled after T1+10min 0",
+   "name": "settlement_reconcile",
+   "numbers": {
+    "before_shadow_start": 0,
+    "mismatch_count": 0,
+    "mismatches": [],
+    "result_vs_rule_match": 846,
+    "settled": 846,
+    "shadow_compared": 846,
+    "shadow_match": 846,
+    "shadow_missing": 0,
+    "shadow_notes": [],
+    "shadow_pending": 0,
+    "unsettled_after_10min": [],
+    "unsettled_count": 0,
+    "value_not_rounded": []
+   },
+   "status": "PASS"
+  },
+  {
+   "detail": "wrong-side per coin BNB 3/90 (3.3%) |err| med 1.2634 p90 3.7342 bps, BTC 2/90 (2.2%) |err| med 0.4052 p90 1.0499 bps, DOGE 3/91 (3.3%) |err| med 1.88 p90 3.1777 bps, ETH 0/91 (0.0%) |err| med 0.4513 p90 1.0227 bps, HYPE 1/90 (1.1%) |err| med 1.5139 p90 3.2928 bps, NEAR 3/91 (3.3%) |err| med 7.3541 p90 10.4583 bps, SOL 0/92 (0.0%) |err| med 0.6279 p90 1.5711 bps, XRP 3/90 (3.3%) |err| med 0.6642 p90 1.5355 bps, ZEC 1/90 (1.1%) |err| med 1.2065 p90 3.1507 bps",
+   "name": "proxy_wrong_side",
+   "numbers": {
+    "coins": {
+     "BNB": {
+      "a60_with_fewer_than_60_seconds": 0,
+      "abs_error_bps_median": 1.2634,
+      "abs_error_bps_p90": 3.7342,
+      "error_bps_mean": -0.8155,
+      "n": 90,
+      "skipped_too_few_seconds": 0,
+      "wilson95": [
+       0.0114,
+       0.093474
+      ],
+      "wrong_side": 3,
+      "wrong_side_examples": [
+       "KXBNB15M-26NOV010315-15",
+       "KXBNB15M-26NOV011345-45",
+       "KXBNB15M-26OCT312115-15"
+      ],
+      "wrong_side_rate": 0.033333
+     },
+     "BTC": {
+      "a60_with_fewer_than_60_seconds": 0,
+      "abs_error_bps_median": 0.4052,
+      "abs_error_bps_p90": 1.0499,
+      "error_bps_mean": -0.3991,
+      "n": 90,
+      "skipped_too_few_seconds": 0,
+      "wilson95": [
+       0.006115,
+       0.077447
+      ],
+      "wrong_side": 2,
+      "wrong_side_examples": [
+       "KXBTC15M-26NOV010245-45",
+       "KXBTC15M-26NOV011615-15"
+      ],
+      "wrong_side_rate": 0.022222
+     },
+     "DOGE": {
+      "a60_with_fewer_than_60_seconds": 0,
+      "abs_error_bps_median": 1.88,
+      "abs_error_bps_p90": 3.1777,
+      "error_bps_mean": 1.9475,
+      "n": 91,
+      "skipped_too_few_seconds": 0,
+      "wilson95": [
+       0.011274,
+       0.092495
+      ],
+      "wrong_side": 3,
+      "wrong_side_examples": [
+       "KXDOGE15M-26NOV010115-15",
+       "KXDOGE15M-26NOV011800-00",
+       "KXDOGE15M-26OCT312215-15"
+      ],
+      "wrong_side_rate": 0.032967
+     },
+     "ETH": {
+      "a60_with_fewer_than_60_seconds": 0,
+      "abs_error_bps_median": 0.4513,
+      "abs_error_bps_p90": 1.0227,
+      "error_bps_mean": 0.4379,
+      "n": 91,
+      "skipped_too_few_seconds": 0,
+      "wilson95": [
+       0.0,
+       0.040505
+      ],
+      "wrong_side": 0,
+      "wrong_side_examples": [],
+      "wrong_side_rate": 0.0
+     },
+     "HYPE": {
+      "a60_with_fewer_than_60_seconds": 0,
+      "abs_error_bps_median": 1.5139,
+      "abs_error_bps_p90": 3.2928,
+      "error_bps_mean": 0.2622,
+      "n": 90,
+      "skipped_too_few_seconds": 0,
+      "wilson95": [
+       0.001964,
+       0.060286
+      ],
+      "wrong_side": 1,
+      "wrong_side_examples": [
+       "KXHYPE15M-26NOV011230-30"
+      ],
+      "wrong_side_rate": 0.011111
+     },
+     "NEAR": {
+      "a60_with_fewer_than_60_seconds": 0,
+      "abs_error_bps_median": 7.3541,
+      "abs_error_bps_p90": 10.4583,
+      "error_bps_mean": 7.2044,
+      "n": 91,
+      "skipped_too_few_seconds": 0,
+      "wilson95": [
+       0.011274,
+       0.092495
+      ],
+      "wrong_side": 3,
+      "wrong_side_examples": [
+       "KXNEAR15M-26NOV010515-15",
+       "KXNEAR15M-26NOV011215-15",
+       "KXNEAR15M-26NOV011800-00"
+      ],
+      "wrong_side_rate": 0.032967
+     },
+     "SOL": {
+      "a60_with_fewer_than_60_seconds": 0,
+      "abs_error_bps_median": 0.6279,
+      "abs_error_bps_p90": 1.5711,
+      "error_bps_mean": -0.0157,
+      "n": 92,
+      "skipped_too_few_seconds": 0,
+      "wilson95": [
+       0.0,
+       0.040083
+      ],
+      "wrong_side": 0,
+      "wrong_side_examples": [],
+      "wrong_side_rate": 0.0
+     },
+     "XRP": {
+      "a60_with_fewer_than_60_seconds": 0,
+      "abs_error_bps_median": 0.6642,
+      "abs_error_bps_p90": 1.5355,
+      "error_bps_mean": 0.3877,
+      "n": 90,
+      "skipped_too_few_seconds": 0,
+      "wilson95": [
+       0.0114,
+       0.093474
+      ],
+      "wrong_side": 3,
+      "wrong_side_examples": [
+       "KXXRP15M-26NOV010215-15",
+       "KXXRP15M-26NOV011015-15",
+       "KXXRP15M-26NOV011515-15"
+      ],
+      "wrong_side_rate": 0.033333
+     },
+     "ZEC": {
+      "a60_with_fewer_than_60_seconds": 0,
+      "abs_error_bps_median": 1.2065,
+      "abs_error_bps_p90": 3.1507,
+      "error_bps_mean": 0.7094,
+      "n": 90,
+      "skipped_too_few_seconds": 0,
+      "wilson95": [
+       0.001964,
+       0.060286
+      ],
+      "wrong_side": 1,
+      "wrong_side_examples": [
+       "KXZEC15M-26NOV011745-45"
+      ],
+      "wrong_side_rate": 0.011111
+     }
+    },
+    "unhealthy_windows_excluded": 31,
+    "warn_rule": {
+     "min_windows": 100,
+     "rate": 0.1
+    },
+    "windows": 815,
+    "windows_without_reference": 0
+   },
+   "status": "PASS"
+  },
+  {
+   "detail": "byte-identical over the common prefix: decisions 16417 lines, orders 122097 lines (live 16417/122097, replay 16426/122097) up to tick 2026-11-01T23:38:00Z, 175.5 s",
+   "name": "replay_determinism",
+   "numbers": {
+    "code_files_changed_since_the_ledger_head": [],
+    "decisions": {
+     "compared": 16417,
+     "first_difference_line": null,
+     "live_lines": 16417,
+     "replay_lines": 16426
+    },
+    "orders": {
+     "compared": 122097,
+     "first_difference_line": null,
+     "live_lines": 122097,
+     "replay_lines": 122097
+    },
+    "replay_stderr": "shadow replay: 16426 decisions, 122097 order events, last tick 1793576340, 0 unreadable records",
+    "seconds": 175.5,
+    "until": 1793576400
+   },
+   "status": "PASS"
+  },
+  {
+   "detail": "decisions: 16444 lines, head a1ad8d023f2dd024; orders: 122097 lines, head 427d4a9bcc4b8981",
+   "name": "chain_integrity",
+   "numbers": {
+    "stdout": "decisions: 16444 lines, head a1ad8d023f2dd024\norders: 122097 lines, head 427d4a9bcc4b8981"
+   },
+   "status": "PASS"
+  },
+  {
+   "detail": "no Nox file (or no capture folder) for the day",
+   "name": "nox_reconcile",
+   "numbers": {},
+   "status": "NA"
+  },
+  {
+   "detail": "healthy settled windows BNB=135 BTC=135 DOGE=136 ETH=136 HYPE=135 NEAR=135 SOL=136 XRP=135 ZEC=135; days to 2,000 at the observed rate BNB=20.1 BTC=20.1 DOGE=20.0 ETH=20.0 HYPE=20.1 NEAR=20.1 SOL=20.0 XRP=20.1 ZEC=20.1 (ideal 21.1 d at 94.9/day; counts.json is the ledger's own tally)",
+   "name": "counts",
+   "numbers": {
+    "coins": {
+     "BNB": {
+      "days_to_2000_at_observed_rate": 20.1,
+      "elapsed_days": 1.4583,
+      "fills": 8,
+      "fired": 135,
+      "healthy_share": 0.9643,
+      "rate_per_day": 92.57,
+      "window_events": 140,
+      "windows": 135
+     },
+     "BTC": {
+      "days_to_2000_at_observed_rate": 20.1,
+      "elapsed_days": 1.4583,
+      "fills": 9,
+      "fired": 135,
+      "healthy_share": 0.9643,
+      "rate_per_day": 92.57,
+      "window_events": 140,
+      "windows": 135
+     },
+     "DOGE": {
+      "days_to_2000_at_observed_rate": 20.0,
+      "elapsed_days": 1.4583,
+      "fills": 20,
+      "fired": 128,
+      "healthy_share": 0.9714,
+      "rate_per_day": 93.26,
+      "window_events": 140,
+      "windows": 136
+     },
+     "ETH": {
+      "days_to_2000_at_observed_rate": 20.0,
+      "elapsed_days": 1.4583,
+      "fills": 6,
+      "fired": 133,
+      "healthy_share": 0.9714,
+      "rate_per_day": 93.26,
+      "window_events": 140,
+      "windows": 136
+     },
+     "HYPE": {
+      "days_to_2000_at_observed_rate": 20.1,
+      "elapsed_days": 1.4583,
+      "fills": 13,
+      "fired": 133,
+      "healthy_share": 0.9643,
+      "rate_per_day": 92.57,
+      "window_events": 140,
+      "windows": 135
+     },
+     "NEAR": {
+      "days_to_2000_at_observed_rate": 20.1,
+      "elapsed_days": 1.4583,
+      "fills": 14,
+      "fired": 133,
+      "healthy_share": 0.9643,
+      "rate_per_day": 92.57,
+      "window_events": 140,
+      "windows": 135
+     },
+     "SOL": {
+      "days_to_2000_at_observed_rate": 20.0,
+      "elapsed_days": 1.4583,
+      "fills": 7,
+      "fired": 134,
+      "healthy_share": 0.9714,
+      "rate_per_day": 93.26,
+      "window_events": 140,
+      "windows": 136
+     },
+     "XRP": {
+      "days_to_2000_at_observed_rate": 20.1,
+      "elapsed_days": 1.4583,
+      "fills": 8,
+      "fired": 131,
+      "healthy_share": 0.9643,
+      "rate_per_day": 92.57,
+      "window_events": 140,
+      "windows": 135
+     },
+     "ZEC": {
+      "days_to_2000_at_observed_rate": 20.1,
+      "elapsed_days": 1.4583,
+      "fills": 11,
+      "fired": 131,
+      "healthy_share": 0.9643,
+      "rate_per_day": 92.57,
+      "window_events": 140,
+      "windows": 135
+     }
+    },
+    "ideal_days": 21.1,
+    "ideal_rate_per_day": 94.9,
+    "target": 2000
+   },
+   "status": "PASS"
+  },
+  {
+   "detail": "heartbeat age poll=0.4s ref=1.5s shadow=0.9s; errors_1h poll=0 shadow=0",
+   "name": "heartbeats",
+   "numbers": {
+    "fresh_s": 30.0,
+    "services": {
+     "poll": {
+      "age_s": 0.4,
+      "clock_offset_lower_s": 0.11097884178161621,
+      "errors_1h": 0,
+      "gaps_today": 32,
+      "max_book_age_s": 13.057,
+      "pid": 2588758,
+      "req_rate_60s": 1.65,
+      "state": "running"
+     },
+     "ref": {
+      "age_s": 1.5,
+      "clock": {
+       "delay_ms": 73.942,
+       "jitter_ms": 9.36,
+       "offset_ms": 0.253,
+       "root_distance_ms": 4.241,
+       "server": "2602:81c:1000:2::678 (2.arch.pool.ntp.org)",
+       "stratum": 2,
+       "t": 1793576026.487
+      },
+      "coins_with_n0": [],
+      "pid": 2588809,
+      "reconnects": {
+       "binance": 0,
+       "bitstamp": 1,
+       "bullish": 0,
+       "coinbase": 2,
+       "cryptocom": 3,
+       "gemini": 1,
+       "kraken": 4
+      },
+      "state": null,
+      "venues": 7,
+      "venues_connected": 7
+     },
+     "shadow": {
+      "age_s": 0.9,
+      "decisions_today": 11097,
+      "errors_1h": 0,
+      "fills_today": 17639,
+      "lag_s": 66.6,
+      "orders_open": 114,
+      "params_status": "PROVISIONAL (dry Stage A, theta unset)",
+      "pid": 2713864,
+      "state": "running"
+     }
+    }
+   },
+   "status": "PASS"
+  }
+ ],
+ "cutoff": {
+  "capture_books": {
+   "bytes_read": 325003426,
+   "last_t_recv": 1793576349.9152951,
+   "last_t_send": 1793576349.8716905,
+   "partial_tail": 0
+  },
+  "capture_events": {
+   "bytes_read": 238608,
+   "last_t_recv": 1793576329.0698605,
+   "last_t_send": 1793576329.035235,
+   "partial_tail": 0
+  },
+  "capture_gaps": {
+   "bytes_read": 6913,
+   "last_t_recv": 1793514653.542411,
+   "last_t_send": 1793514653.542411,
+   "partial_tail": 0
+  },
+  "capture_markets": {
+   "bytes_read": 45012047,
+   "last_t_recv": 1793576359.7914798,
+   "last_t_send": 1793576359.7487082,
+   "partial_tail": 0
+  },
+  "capture_trades": {
+   "bytes_read": 2522104084,
+   "last_t_recv": 1793576350.9271305,
+   "last_t_send": 1793576350.8719878,
+   "partial_tail": 0
+  },
+  "ledger_last_tick": 1793576280,
+  "ledger_lines": {
+   "decisions": 16417,
+   "orders": 122097
+  },
+  "observed_from": 1793491200.0,
+  "observed_to": 1793576349.8716905,
+  "read_at": 1793576349.865782,
+  "read_at_iso": "2026-11-01T23:39:09Z",
+  "ref_last_second": {
+   "BNB": 1793576350,
+   "BTC": 1793576350,
+   "DOGE": 1793576350,
+   "ETH": 1793576350,
+   "HYPE": 1793576350,
+   "NEAR": 1793576350,
+   "SOL": 1793576350,
+   "XRP": 1793576350,
+   "ZEC": 1793576350
+  }
+ },
+ "day": "2026-11-01",
+ "schema": 1,
+ "summary": {
+  "NA": 1,
+  "PASS": 9
+ }
+}

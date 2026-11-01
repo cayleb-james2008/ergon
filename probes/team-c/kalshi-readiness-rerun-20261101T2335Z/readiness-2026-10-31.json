@@ -1,0 +1,1507 @@
+{
+ "checks": [
+  {
+   "detail": "5 files, 3357672 records (book=38635 fees=39 gap=6 market=9221 schedule=3 settled=619 start=3 status=139 stop=2 trade=3309005), errors 0",
+   "name": "capture_validator",
+   "numbers": {
+    "errors": 0,
+    "files": {
+     "books": {
+      "bytes": 159521633,
+      "errors": 0,
+      "kinds": {
+       "book": 38635
+      },
+      "partial_tail": 0,
+      "records": 38635
+     },
+     "events": {
+      "bytes": 159889,
+      "errors": 0,
+      "kinds": {
+       "fees": 39,
+       "schedule": 3,
+       "start": 3,
+       "status": 139,
+       "stop": 2
+      },
+      "partial_tail": 0,
+      "records": 186
+     },
+     "gaps": {
+      "bytes": 1566,
+      "errors": 0,
+      "kinds": {
+       "gap": 6
+      },
+      "partial_tail": 0,
+      "records": 6
+     },
+     "markets": {
+      "bytes": 21889256,
+      "errors": 0,
+      "kinds": {
+       "market": 9221,
+       "settled": 619
+      },
+      "partial_tail": 0,
+      "records": 9840
+     },
+     "trades": {
+      "bytes": 1480763954,
+      "errors": 0,
+      "kinds": {
+       "trade": 3309005
+      },
+      "partial_tail": 0,
+      "records": 3309005
+     }
+    },
+    "first_errors": [],
+    "kinds": {
+     "book": 38635,
+     "fees": 39,
+     "gap": 6,
+     "market": 9221,
+     "schedule": 3,
+     "settled": 619,
+     "start": 3,
+     "status": 139,
+     "stop": 2,
+     "trade": 3309005
+    },
+    "partial_tail": 0,
+    "records": 3357672
+   },
+   "status": "PASS"
+  },
+  {
+   "detail": "unhealthy-book share worst 0.029% (HYPE) over 9 coins, observed 2026-10-31T12:33:55Z..2026-11-01T00:00:00Z; gap records 6 (book 63s trades 37s meta 0s); starts 3 restarts 2 crashes 0; longest gap 24s",
+   "name": "gap_ledger",
+   "numbers": {
+    "capture_lag_s": null,
+    "coins": {
+     "BNB": {
+      "open_s": 41164.7,
+      "series": "KXBNB15M",
+      "unhealthy_s": 0.0,
+      "unhealthy_share": 0.0,
+      "windows": 46,
+      "windows_without_market_record": 0
+     },
+     "BTC": {
+      "open_s": 41164.7,
+      "series": "KXBTC15M",
+      "unhealthy_s": 0.0,
+      "unhealthy_share": 0.0,
+      "windows": 46,
+      "windows_without_market_record": 0
+     },
+     "DOGE": {
+      "open_s": 41164.7,
+      "series": "KXDOGE15M",
+      "unhealthy_s": 0.0,
+      "unhealthy_share": 0.0,
+      "windows": 46,
+      "windows_without_market_record": 0
+     },
+     "ETH": {
+      "open_s": 41164.7,
+      "series": "KXETH15M",
+      "unhealthy_s": 0.1,
+      "unhealthy_share": 3e-06,
+      "windows": 46,
+      "windows_without_market_record": 0
+     },
+     "HYPE": {
+      "open_s": 41164.7,
+      "series": "KXHYPE15M",
+      "unhealthy_s": 12.1,
+      "unhealthy_share": 0.000294,
+      "windows": 46,
+      "windows_without_market_record": 0
+     },
+     "NEAR": {
+      "open_s": 41164.7,
+      "series": "KXNEAR15M",
+      "unhealthy_s": 11.1,
+      "unhealthy_share": 0.000271,
+      "windows": 46,
+      "windows_without_market_record": 0
+     },
+     "SOL": {
+      "open_s": 41164.7,
+      "series": "KXSOL15M",
+      "unhealthy_s": 1.3,
+      "unhealthy_share": 3.1e-05,
+      "windows": 46,
+      "windows_without_market_record": 0
+     },
+     "XRP": {
+      "open_s": 41164.7,
+      "series": "KXXRP15M",
+      "unhealthy_s": 0.8,
+      "unhealthy_share": 1.9e-05,
+      "windows": 46,
+      "windows_without_market_record": 0
+     },
+     "ZEC": {
+      "open_s": 41164.7,
+      "series": "KXZEC15M",
+      "unhealthy_s": 11.1,
+      "unhealthy_share": 0.000271,
+      "windows": 46,
+      "windows_without_market_record": 0
+     }
+    },
+    "crashes": 0,
+    "gap_records": 6,
+    "gap_seconds_by_kind": {
+     "book": 63.29,
+     "meta": 0,
+     "trades": 36.667
+    },
+    "gap_seconds_by_series": {
+     "KXBTCD": {
+      "book": 39.787
+     },
+     "KXNEAR15M": {
+      "book": 23.503
+     },
+     "KXSOL15M": {
+      "trades": 36.667
+     }
+    },
+    "longest_gap": {
+     "from": 1793479514.3268971,
+     "reason": "error streak ended after 1 errors",
+     "seconds": 23.692,
+     "series": "KXSOL15M",
+     "ticker": "KXSOL15M-26OCT311700-00",
+     "to": 1793479538.0191307,
+     "what": "trades"
+    },
+    "observed_from": 1793450035.2760644,
+    "observed_to": 1793491200.0,
+    "reasons": {
+     "error streak ended after N errors": 3,
+     "error: URLError: <urlopen error [Errno N] Connection reset b": 3
+    },
+    "restart_downtime_s": 14.4,
+    "restarts": 2,
+    "starts": 3,
+    "stops": [
+     {
+      "reason": "SIGTERM",
+      "t": 1793453472.7672625
+     },
+     {
+      "reason": "SIGTERM",
+      "t": 1793463823.9210596
+     }
+    ],
+    "thresholds": {
+     "fail": 0.05,
+     "warn": 0.01
+    },
+    "worst_unhealthy_share": 0.000294
+   },
+   "status": "PASS"
+  },
+  {
+   "detail": "seconds with n>=1: worst 99.975% (BNB), median n BNB=2,BTC=6,DOGE=5,ETH=6,HYPE=3,NEAR=3,SOL=5,XRP=4,ZEC=2; venue connects 34 disconnects 27 errors 20; clock 75 lines offset -2.678..2.448 ms stratum [2]",
+   "name": "ref_health",
+   "numbers": {
+    "clock": {
+     "last": {
+      "error": null,
+      "jitter_ms": 1.737,
+      "offset_ms": 0.832,
+      "root_distance_ms": 1.311,
+      "server": "2602:81c:1000:2::678 (2.arch.pool.ntp.org)",
+      "stratum": 2,
+      "utc": "2026-10-31T23:53:45.939Z"
+     },
+     "lines": 75,
+     "max_offset_ms": 2.448,
+     "min_offset_ms": -2.678,
+     "problem_lines": 0,
+     "samples": [
+      {
+       "delay_ms": 73.876,
+       "error": null,
+       "jitter_ms": 1.812,
+       "offset_ms": -2.507,
+       "root_distance_ms": 1.418,
+       "stratum": 2,
+       "utc": "2026-10-31T11:41:32.684Z"
+      },
+      {
+       "delay_ms": 73.876,
+       "error": null,
+       "jitter_ms": 1.812,
+       "offset_ms": -2.507,
+       "root_distance_ms": 1.418,
+       "stratum": 2,
+       "utc": "2026-10-31T11:51:32.689Z"
+      },
+      {
+       "delay_ms": 72.948,
+       "error": null,
+       "jitter_ms": 3.15,
+       "offset_ms": 2.29,
+       "root_distance_ms": 1.395,
+       "stratum": 2,
+       "utc": "2026-10-31T12:01:32.693Z"
+      },
+      {
+       "delay_ms": 72.948,
+       "error": null,
+       "jitter_ms": 3.15,
+       "offset_ms": 2.29,
+       "root_distance_ms": 1.395,
+       "stratum": 2,
+       "utc": "2026-10-31T12:11:32.696Z"
+      },
+      {
+       "delay_ms": 72.948,
+       "error": null,
+       "jitter_ms": 3.15,
+       "offset_ms": 2.29,
+       "root_distance_ms": 1.395,
+       "stratum": 2,
+       "utc": "2026-10-31T12:21:32.700Z"
+      },
+      {
+       "delay_ms": 72.948,
+       "error": null,
+       "jitter_ms": 3.15,
+       "offset_ms": 2.29,
+       "root_distance_ms": 1.395,
+       "stratum": 2,
+       "utc": "2026-10-31T12:31:32.705Z"
+      },
+      {
+       "delay_ms": 74.035,
+       "error": null,
+       "jitter_ms": 3.066,
+       "offset_ms": 1.746,
+       "root_distance_ms": 1.411,
+       "stratum": 2,
+       "utc": "2026-10-31T12:41:32.709Z"
+      },
+      {
+       "delay_ms": 74.035,
+       "error": null,
+       "jitter_ms": 3.066,
+       "offset_ms": 1.746,
+       "root_distance_ms": 1.411,
+       "stratum": 2,
+       "utc": "2026-10-31T12:51:32.749Z"
+      },
+      {
+       "delay_ms": 74.035,
+       "error": null,
+       "jitter_ms": 3.066,
+       "offset_ms": 1.746,
+       "root_distance_ms": 1.411,
+       "stratum": 2,
+       "utc": "2026-10-31T13:01:32.754Z"
+      },
+      {
+       "delay_ms": 73.613,
+       "error": null,
+       "jitter_ms": 2.971,
+       "offset_ms": 1.194,
+       "root_distance_ms": 1.411,
+       "stratum": 2,
+       "utc": "2026-10-31T13:11:32.760Z"
+      },
+      {
+       "delay_ms": 73.613,
+       "error": null,
+       "jitter_ms": 2.971,
+       "offset_ms": 1.194,
+       "root_distance_ms": 1.411,
+       "stratum": 2,
+       "utc": "2026-10-31T13:21:32.765Z"
+      },
+      {
+       "delay_ms": 73.613,
+       "error": null,
+       "jitter_ms": 2.971,
+       "offset_ms": 1.194,
+       "root_distance_ms": 1.411,
+       "stratum": 2,
+       "utc": "2026-10-31T13:31:32.772Z"
+      },
+      {
+       "delay_ms": 73.152,
+       "error": null,
+       "jitter_ms": 3.037,
+       "offset_ms": -0.005,
+       "root_distance_ms": 0.755,
+       "stratum": 2,
+       "utc": "2026-10-31T13:41:32.776Z"
+      },
+      {
+       "delay_ms": 73.152,
+       "error": null,
+       "jitter_ms": 3.037,
+       "offset_ms": -0.005,
+       "root_distance_ms": 0.755,
+       "stratum": 2,
+       "utc": "2026-10-31T13:51:32.787Z"
+      },
+      {
+       "delay_ms": 73.152,
+       "error": null,
+       "jitter_ms": 3.037,
+       "offset_ms": -0.005,
+       "root_distance_ms": 0.755,
+       "stratum": 2,
+       "utc": "2026-10-31T14:01:32.806Z"
+      },
+      {
+       "delay_ms": 73.152,
+       "error": null,
+       "jitter_ms": 3.037,
+       "offset_ms": -0.005,
+       "root_distance_ms": 0.755,
+       "stratum": 2,
+       "utc": "2026-10-31T14:11:32.813Z"
+      },
+      {
+       "delay_ms": 73.215,
+       "error": null,
+       "jitter_ms": 2.972,
+       "offset_ms": -0.193,
+       "root_distance_ms": 0.998,
+       "stratum": 2,
+       "utc": "2026-10-31T14:21:32.817Z"
+      },
+      {
+       "delay_ms": 73.215,
+       "error": null,
+       "jitter_ms": 2.972,
+       "offset_ms": -0.193,
+       "root_distance_ms": 0.998,
+       "stratum": 2,
+       "utc": "2026-10-31T14:31:32.823Z"
+      },
+      {
+       "delay_ms": 73.215,
+       "error": null,
+       "jitter_ms": 2.972,
+       "offset_ms": -0.193,
+       "root_distance_ms": 0.998,
+       "stratum": 2,
+       "utc": "2026-10-31T14:41:32.826Z"
+      },
+      {
+       "delay_ms": 74.181,
+       "error": null,
+       "jitter_ms": 3.025,
+       "offset_ms": -0.696,
+       "root_distance_ms": 0.495,
+       "stratum": 2,
+       "utc": "2026-10-31T14:51:32.831Z"
+      },
+      {
+       "delay_ms": 74.181,
+       "error": null,
+       "jitter_ms": 3.025,
+       "offset_ms": -0.696,
+       "root_distance_ms": 0.495,
+       "stratum": 2,
+       "utc": "2026-10-31T15:01:32.834Z"
+      },
+      {
+       "delay_ms": 74.181,
+       "error": null,
+       "jitter_ms": 3.025,
+       "offset_ms": -0.696,
+       "root_distance_ms": 0.495,
+       "stratum": 2,
+       "utc": "2026-10-31T15:11:32.838Z"
+      },
+      {
+       "delay_ms": 74.181,
+       "error": null,
+       "jitter_ms": 3.025,
+       "offset_ms": -0.696,
+       "root_distance_ms": 0.495,
+       "stratum": 2,
+       "utc": "2026-10-31T15:21:32.842Z"
+      },
+      {
+       "delay_ms": 73.727,
+       "error": null,
+       "jitter_ms": 2.651,
+       "offset_ms": 0.203,
+       "root_distance_ms": 1.532,
+       "stratum": 2,
+       "utc": "2026-10-31T15:31:32.845Z"
+      },
+      {
+       "delay_ms": 73.727,
+       "error": null,
+       "jitter_ms": 2.651,
+       "offset_ms": 0.203,
+       "root_distance_ms": 1.532,
+       "stratum": 2,
+       "utc": "2026-10-31T15:41:32.851Z"
+      },
+      {
+       "delay_ms": 73.727,
+       "error": null,
+       "jitter_ms": 2.651,
+       "offset_ms": 0.203,
+       "root_distance_ms": 1.532,
+       "stratum": 2,
+       "utc": "2026-10-31T15:51:32.855Z"
+      },
+      {
+       "delay_ms": 73.75,
+       "error": null,
+       "jitter_ms": 2.043,
+       "offset_ms": 0.551,
+       "root_distance_ms": 1.517,
+       "stratum": 2,
+       "utc": "2026-10-31T16:01:32.860Z"
+      },
+      {
+       "delay_ms": 73.75,
+       "error": null,
+       "jitter_ms": 2.043,
+       "offset_ms": 0.551,
+       "root_distance_ms": 1.517,
+       "stratum": 2,
+       "utc": "2026-10-31T16:11:32.863Z"
+      },
+      {
+       "delay_ms": 73.75,
+       "error": null,
+       "jitter_ms": 2.043,
+       "offset_ms": 0.551,
+       "root_distance_ms": 1.517,
+       "stratum": 2,
+       "utc": "2026-10-31T16:21:32.880Z"
+      },
+      {
+       "delay_ms": 73.75,
+       "error": null,
+       "jitter_ms": 2.043,
+       "offset_ms": 0.551,
+       "root_distance_ms": 1.517,
+       "stratum": 2,
+       "utc": "2026-10-31T16:23:45.756Z"
+      },
+      {
+       "delay_ms": 74.978,
+       "error": null,
+       "jitter_ms": 0.879,
+       "offset_ms": 0.188,
+       "root_distance_ms": 1.517,
+       "stratum": 2,
+       "utc": "2026-10-31T16:33:45.761Z"
+      },
+      {
+       "delay_ms": 74.978,
+       "error": null,
+       "jitter_ms": 0.879,
+       "offset_ms": 0.188,
+       "root_distance_ms": 1.517,
+       "stratum": 2,
+       "utc": "2026-10-31T16:43:45.766Z"
+      },
+      {
+       "delay_ms": 74.978,
+       "error": null,
+       "jitter_ms": 0.879,
+       "offset_ms": 0.188,
+       "root_distance_ms": 1.517,
+       "stratum": 2,
+       "utc": "2026-10-31T16:53:45.769Z"
+      },
+      {
+       "delay_ms": 74.978,
+       "error": null,
+       "jitter_ms": 0.879,
+       "offset_ms": 0.188,
+       "root_distance_ms": 1.517,
+       "stratum": 2,
+       "utc": "2026-10-31T17:03:45.773Z"
+      },
+      {
+       "delay_ms": 72.721,
+       "error": null,
+       "jitter_ms": 0.833,
+       "offset_ms": -0.45,
+       "root_distance_ms": 1.532,
+       "stratum": 2,
+       "utc": "2026-10-31T17:13:45.777Z"
+      },
+      {
+       "delay_ms": 72.721,
+       "error": null,
+       "jitter_ms": 0.833,
+       "offset_ms": -0.45,
+       "root_distance_ms": 1.532,
+       "stratum": 2,
+       "utc": "2026-10-31T17:23:45.781Z"
+      },
+      {
+       "delay_ms": 72.721,
+       "error": null,
+       "jitter_ms": 0.833,
+       "offset_ms": -0.45,
+       "root_distance_ms": 1.532,
+       "stratum": 2,
+       "utc": "2026-10-31T17:33:45.786Z"
+      },
+      {
+       "delay_ms": 73.454,
+       "error": null,
+       "jitter_ms": 1.008,
+       "offset_ms": -2.678,
+       "root_distance_ms": 1.761,
+       "stratum": 2,
+       "utc": "2026-10-31T17:43:45.790Z"
+      },
+      {
+       "delay_ms": 73.454,
+       "error": null,
+       "jitter_ms": 1.008,
+       "offset_ms": -2.678,
+       "root_distance_ms": 1.761,
+       "stratum": 2,
+       "utc": "2026-10-31T17:53:45.793Z"
+      },
+      {
+       "delay_ms": 73.454,
+       "error": null,
+       "jitter_ms": 1.008,
+       "offset_ms": -2.678,
+       "root_distance_ms": 1.761,
+       "stratum": 2,
+       "utc": "2026-10-31T18:03:45.798Z"
+      },
+      {
+       "delay_ms": 72.844,
+       "error": null,
+       "jitter_ms": 1.03,
+       "offset_ms": 0.262,
+       "root_distance_ms": 1.693,
+       "stratum": 2,
+       "utc": "2026-10-31T18:13:45.802Z"
+      },
+      {
+       "delay_ms": 72.844,
+       "error": null,
+       "jitter_ms": 1.03,
+       "offset_ms": 0.262,
+       "root_distance_ms": 1.693,
+       "stratum": 2,
+       "utc": "2026-10-31T18:23:45.807Z"
+      },
+      {
+       "delay_ms": 72.844,
+       "error": null,
+       "jitter_ms": 1.03,
+       "offset_ms": 0.262,
+       "root_distance_ms": 1.693,
+       "stratum": 2,
+       "utc": "2026-10-31T18:33:45.811Z"
+      },
+      {
+       "delay_ms": 72.844,
+       "error": null,
+       "jitter_ms": 1.03,
+       "offset_ms": 0.262,
+       "root_distance_ms": 1.693,
+       "stratum": 2,
+       "utc": "2026-10-31T18:43:45.815Z"
+      },
+      {
+       "delay_ms": 73.623,
+       "error": null,
+       "jitter_ms": 1.035,
+       "offset_ms": -0.074,
+       "root_distance_ms": 2.12,
+       "stratum": 2,
+       "utc": "2026-10-31T18:53:45.819Z"
+      },
+      {
+       "delay_ms": 73.623,
+       "error": null,
+       "jitter_ms": 1.035,
+       "offset_ms": -0.074,
+       "root_distance_ms": 2.12,
+       "stratum": 2,
+       "utc": "2026-10-31T19:03:45.822Z"
+      },
+      {
+       "delay_ms": 73.623,
+       "error": null,
+       "jitter_ms": 1.035,
+       "offset_ms": -0.074,
+       "root_distance_ms": 2.12,
+       "stratum": 2,
+       "utc": "2026-10-31T19:13:45.826Z"
+      },
+      {
+       "delay_ms": 74.047,
+       "error": null,
+       "jitter_ms": 1.284,
+       "offset_ms": -2.474,
+       "root_distance_ms": 1.426,
+       "stratum": 2,
+       "utc": "2026-10-31T19:23:45.830Z"
+      },
+      {
+       "delay_ms": 74.047,
+       "error": null,
+       "jitter_ms": 1.284,
+       "offset_ms": -2.474,
+       "root_distance_ms": 1.426,
+       "stratum": 2,
+       "utc": "2026-10-31T19:33:45.834Z"
+      },
+      {
+       "delay_ms": 74.047,
+       "error": null,
+       "jitter_ms": 1.284,
+       "offset_ms": -2.474,
+       "root_distance_ms": 1.426,
+       "stratum": 2,
+       "utc": "2026-10-31T19:43:45.839Z"
+      },
+      {
+       "delay_ms": 74.047,
+       "error": null,
+       "jitter_ms": 1.284,
+       "offset_ms": -2.474,
+       "root_distance_ms": 1.426,
+       "stratum": 2,
+       "utc": "2026-10-31T19:53:45.842Z"
+      },
+      {
+       "delay_ms": 73.933,
+       "error": null,
+       "jitter_ms": 1.462,
+       "offset_ms": -2.412,
+       "root_distance_ms": 1.266,
+       "stratum": 2,
+       "utc": "2026-10-31T20:03:45.847Z"
+      },
+      {
+       "delay_ms": 73.933,
+       "error": null,
+       "jitter_ms": 1.462,
+       "offset_ms": -2.412,
+       "root_distance_ms": 1.266,
+       "stratum": 2,
+       "utc": "2026-10-31T20:13:45.852Z"
+      },
+      {
+       "delay_ms": 73.933,
+       "error": null,
+       "jitter_ms": 1.462,
+       "offset_ms": -2.412,
+       "root_distance_ms": 1.266,
+       "stratum": 2,
+       "utc": "2026-10-31T20:23:45.856Z"
+      },
+      {
+       "delay_ms": 73.114,
+       "error": null,
+       "jitter_ms": 1.421,
+       "offset_ms": -0.874,
+       "root_distance_ms": 1.617,
+       "stratum": 2,
+       "utc": "2026-10-31T20:33:45.859Z"
+      },
+      {
+       "delay_ms": 73.114,
+       "error": null,
+       "jitter_ms": 1.421,
+       "offset_ms": -0.874,
+       "root_distance_ms": 1.617,
+       "stratum": 2,
+       "utc": "2026-10-31T20:43:45.863Z"
+      },
+      {
+       "delay_ms": 73.114,
+       "error": null,
+       "jitter_ms": 1.421,
+       "offset_ms": -0.874,
+       "root_distance_ms": 1.617,
+       "stratum": 2,
+       "utc": "2026-10-31T20:53:45.866Z"
+      },
+      {
+       "delay_ms": 73.114,
+       "error": null,
+       "jitter_ms": 1.421,
+       "offset_ms": -0.874,
+       "root_distance_ms": 1.617,
+       "stratum": 2,
+       "utc": "2026-10-31T21:03:45.870Z"
+      },
+      {
+       "delay_ms": 74.884,
+       "error": null,
+       "jitter_ms": 1.423,
+       "offset_ms": -1.122,
+       "root_distance_ms": 1.311,
+       "stratum": 2,
+       "utc": "2026-10-31T21:13:45.874Z"
+      },
+      {
+       "delay_ms": 74.884,
+       "error": null,
+       "jitter_ms": 1.423,
+       "offset_ms": -1.122,
+       "root_distance_ms": 1.311,
+       "stratum": 2,
+       "utc": "2026-10-31T21:23:45.878Z"
+      },
+      {
+       "delay_ms": 74.884,
+       "error": null,
+       "jitter_ms": 1.423,
+       "offset_ms": -1.122,
+       "root_distance_ms": 1.311,
+       "stratum": 2,
+       "utc": "2026-10-31T21:33:45.881Z"
+      },
+      {
+       "delay_ms": 73.699,
+       "error": null,
+       "jitter_ms": 1.956,
+       "offset_ms": -0.163,
+       "root_distance_ms": 1.403,
+       "stratum": 2,
+       "utc": "2026-10-31T21:43:45.886Z"
+      },
+      {
+       "delay_ms": 73.699,
+       "error": null,
+       "jitter_ms": 1.956,
+       "offset_ms": -0.163,
+       "root_distance_ms": 1.403,
+       "stratum": 2,
+       "utc": "2026-10-31T21:53:45.890Z"
+      },
+      {
+       "delay_ms": 73.699,
+       "error": null,
+       "jitter_ms": 1.956,
+       "offset_ms": -0.163,
+       "root_distance_ms": 1.403,
+       "stratum": 2,
+       "utc": "2026-10-31T22:03:45.895Z"
+      },
+      {
+       "delay_ms": 74.166,
+       "error": null,
+       "jitter_ms": 1.809,
+       "offset_ms": 2.448,
+       "root_distance_ms": 1.395,
+       "stratum": 2,
+       "utc": "2026-10-31T22:13:45.897Z"
+      },
+      {
+       "delay_ms": 74.166,
+       "error": null,
+       "jitter_ms": 1.809,
+       "offset_ms": 2.448,
+       "root_distance_ms": 1.395,
+       "stratum": 2,
+       "utc": "2026-10-31T22:23:45.901Z"
+      },
+      {
+       "delay_ms": 74.166,
+       "error": null,
+       "jitter_ms": 1.809,
+       "offset_ms": 2.448,
+       "root_distance_ms": 1.395,
+       "stratum": 2,
+       "utc": "2026-10-31T22:33:45.906Z"
+      },
+      {
+       "delay_ms": 74.166,
+       "error": null,
+       "jitter_ms": 1.809,
+       "offset_ms": 2.448,
+       "root_distance_ms": 1.395,
+       "stratum": 2,
+       "utc": "2026-10-31T22:43:45.910Z"
+      },
+      {
+       "delay_ms": 73.5,
+       "error": null,
+       "jitter_ms": 1.641,
+       "offset_ms": 0.43,
+       "root_distance_ms": 1.433,
+       "stratum": 2,
+       "utc": "2026-10-31T22:53:45.914Z"
+      },
+      {
+       "delay_ms": 73.5,
+       "error": null,
+       "jitter_ms": 1.641,
+       "offset_ms": 0.43,
+       "root_distance_ms": 1.433,
+       "stratum": 2,
+       "utc": "2026-10-31T23:03:45.917Z"
+      },
+      {
+       "delay_ms": 73.5,
+       "error": null,
+       "jitter_ms": 1.641,
+       "offset_ms": 0.43,
+       "root_distance_ms": 1.433,
+       "stratum": 2,
+       "utc": "2026-10-31T23:13:45.921Z"
+      },
+      {
+       "delay_ms": 73.857,
+       "error": null,
+       "jitter_ms": 1.737,
+       "offset_ms": 0.832,
+       "root_distance_ms": 1.311,
+       "stratum": 2,
+       "utc": "2026-10-31T23:23:45.926Z"
+      },
+      {
+       "delay_ms": 73.857,
+       "error": null,
+       "jitter_ms": 1.737,
+       "offset_ms": 0.832,
+       "root_distance_ms": 1.311,
+       "stratum": 2,
+       "utc": "2026-10-31T23:33:45.930Z"
+      },
+      {
+       "delay_ms": 73.857,
+       "error": null,
+       "jitter_ms": 1.737,
+       "offset_ms": 0.832,
+       "root_distance_ms": 1.311,
+       "stratum": 2,
+       "utc": "2026-10-31T23:43:45.934Z"
+      },
+      {
+       "delay_ms": 73.857,
+       "error": null,
+       "jitter_ms": 1.737,
+       "offset_ms": 0.832,
+       "root_distance_ms": 1.311,
+       "stratum": 2,
+       "utc": "2026-10-31T23:53:45.939Z"
+      }
+     ],
+     "stratums": [
+      2
+     ]
+    },
+    "coins": {
+     "BNB": {
+      "covered_s": 44296,
+      "covered_share": 0.999752,
+      "lines": 44297,
+      "median_n": 2.0,
+      "partial_tail": 0,
+      "seconds": 44307,
+      "unreadable": 0
+     },
+     "BTC": {
+      "covered_s": 44296,
+      "covered_share": 0.999752,
+      "lines": 44297,
+      "median_n": 6.0,
+      "partial_tail": 0,
+      "seconds": 44307,
+      "unreadable": 0
+     },
+     "DOGE": {
+      "covered_s": 44296,
+      "covered_share": 0.999752,
+      "lines": 44297,
+      "median_n": 5.0,
+      "partial_tail": 0,
+      "seconds": 44307,
+      "unreadable": 0
+     },
+     "ETH": {
+      "covered_s": 44296,
+      "covered_share": 0.999752,
+      "lines": 44297,
+      "median_n": 6.0,
+      "partial_tail": 0,
+      "seconds": 44307,
+      "unreadable": 0
+     },
+     "HYPE": {
+      "covered_s": 44296,
+      "covered_share": 0.999752,
+      "lines": 44297,
+      "median_n": 3.0,
+      "partial_tail": 0,
+      "seconds": 44307,
+      "unreadable": 0
+     },
+     "NEAR": {
+      "covered_s": 44296,
+      "covered_share": 0.999752,
+      "lines": 44297,
+      "median_n": 3.0,
+      "partial_tail": 0,
+      "seconds": 44307,
+      "unreadable": 0
+     },
+     "SOL": {
+      "covered_s": 44296,
+      "covered_share": 0.999752,
+      "lines": 44297,
+      "median_n": 5.0,
+      "partial_tail": 0,
+      "seconds": 44307,
+      "unreadable": 0
+     },
+     "XRP": {
+      "covered_s": 44296,
+      "covered_share": 0.999752,
+      "lines": 44297,
+      "median_n": 4.0,
+      "partial_tail": 0,
+      "seconds": 44307,
+      "unreadable": 0
+     },
+     "ZEC": {
+      "covered_s": 44296,
+      "covered_share": 0.999752,
+      "lines": 44297,
+      "median_n": 2.0,
+      "partial_tail": 0,
+      "seconds": 44307,
+      "unreadable": 0
+     }
+    },
+    "thresholds": {
+     "fail": 0.95,
+     "warn": 0.995
+    },
+    "venues": {
+     "binance": {
+      "connect": 2,
+      "disconnect": 1
+     },
+     "bitstamp": {
+      "connect": 3,
+      "disconnect": 2,
+      "error": 1
+     },
+     "bullish": {
+      "connect": 3,
+      "disconnect": 2,
+      "error": 1
+     },
+     "coinbase": {
+      "connect": 9,
+      "disconnect": 8,
+      "error": 7
+     },
+     "cryptocom": {
+      "connect": 6,
+      "disconnect": 5,
+      "error": 4
+     },
+     "gemini": {
+      "connect": 3,
+      "disconnect": 2,
+      "error": 1
+     },
+     "kraken": {
+      "connect": 8,
+      "disconnect": 7,
+      "error": 6
+     }
+    },
+    "worst_covered_share": 0.999752,
+    "writer_skips_and_gaps": 1
+   },
+   "status": "PASS"
+  },
+  {
+   "detail": "486 windows settled in the day: result vs rule 486/486, shadow vs result 414/414 compared (0 pending in the ledger, 72 before the shadow started, 0 missing); mismatches 0; unsettled after T1+10min 0",
+   "name": "settlement_reconcile",
+   "numbers": {
+    "before_shadow_start": 72,
+    "mismatch_count": 0,
+    "mismatches": [],
+    "result_vs_rule_match": 486,
+    "settled": 486,
+    "shadow_compared": 414,
+    "shadow_match": 414,
+    "shadow_missing": 0,
+    "shadow_notes": [],
+    "shadow_pending": 0,
+    "unsettled_after_10min": [],
+    "unsettled_count": 0,
+    "value_not_rounded": []
+   },
+   "status": "PASS"
+  },
+  {
+   "detail": "wrong-side per coin BNB 2/45 (4.4%) |err| med 2.1346 p90 5.2615 bps, BTC 2/45 (4.4%) |err| med 0.3818 p90 1.7265 bps, DOGE 2/45 (4.4%) |err| med 2.4036 p90 3.132 bps, ETH 1/45 (2.2%) |err| med 0.2268 p90 0.8171 bps, HYPE 1/45 (2.2%) |err| med 0.8953 p90 3.1003 bps, NEAR 3/44 (6.8%) |err| med 5.5869 p90 8.5743 bps, SOL 2/44 (4.5%) |err| med 0.7827 p90 1.9968 bps, XRP 2/45 (4.4%) |err| med 0.7409 p90 1.5486 bps, ZEC 3/45 (6.7%) |err| med 1.0606 p90 2.878 bps",
+   "name": "proxy_wrong_side",
+   "numbers": {
+    "coins": {
+     "BNB": {
+      "a60_with_fewer_than_60_seconds": 1,
+      "abs_error_bps_median": 2.1346,
+      "abs_error_bps_p90": 5.2615,
+      "error_bps_mean": -2.5723,
+      "n": 45,
+      "skipped_too_few_seconds": 0,
+      "wilson95": [
+       0.012274,
+       0.148278
+      ],
+      "wrong_side": 2,
+      "wrong_side_examples": [
+       "KXBNB15M-26OCT311330-30",
+       "KXBNB15M-26OCT311745-45"
+      ],
+      "wrong_side_rate": 0.044444
+     },
+     "BTC": {
+      "a60_with_fewer_than_60_seconds": 1,
+      "abs_error_bps_median": 0.3818,
+      "abs_error_bps_p90": 1.7265,
+      "error_bps_mean": -0.6314,
+      "n": 45,
+      "skipped_too_few_seconds": 0,
+      "wilson95": [
+       0.012274,
+       0.148278
+      ],
+      "wrong_side": 2,
+      "wrong_side_examples": [
+       "KXBTC15M-26OCT311015-15",
+       "KXBTC15M-26OCT311645-45"
+      ],
+      "wrong_side_rate": 0.044444
+     },
+     "DOGE": {
+      "a60_with_fewer_than_60_seconds": 1,
+      "abs_error_bps_median": 2.4036,
+      "abs_error_bps_p90": 3.132,
+      "error_bps_mean": 2.3622,
+      "n": 45,
+      "skipped_too_few_seconds": 0,
+      "wilson95": [
+       0.012274,
+       0.148278
+      ],
+      "wrong_side": 2,
+      "wrong_side_examples": [
+       "KXDOGE15M-26OCT311245-45",
+       "KXDOGE15M-26OCT312000-00"
+      ],
+      "wrong_side_rate": 0.044444
+     },
+     "ETH": {
+      "a60_with_fewer_than_60_seconds": 1,
+      "abs_error_bps_median": 0.2268,
+      "abs_error_bps_p90": 0.8171,
+      "error_bps_mean": 0.3019,
+      "n": 45,
+      "skipped_too_few_seconds": 0,
+      "wilson95": [
+       0.003933,
+       0.115669
+      ],
+      "wrong_side": 1,
+      "wrong_side_examples": [
+       "KXETH15M-26OCT311745-45"
+      ],
+      "wrong_side_rate": 0.022222
+     },
+     "HYPE": {
+      "a60_with_fewer_than_60_seconds": 1,
+      "abs_error_bps_median": 0.8953,
+      "abs_error_bps_p90": 3.1003,
+      "error_bps_mean": 0.0039,
+      "n": 45,
+      "skipped_too_few_seconds": 0,
+      "wilson95": [
+       0.003933,
+       0.115669
+      ],
+      "wrong_side": 1,
+      "wrong_side_examples": [
+       "KXHYPE15M-26OCT311800-00"
+      ],
+      "wrong_side_rate": 0.022222
+     },
+     "NEAR": {
+      "a60_with_fewer_than_60_seconds": 1,
+      "abs_error_bps_median": 5.5869,
+      "abs_error_bps_p90": 8.5743,
+      "error_bps_mean": 5.6801,
+      "n": 44,
+      "skipped_too_few_seconds": 0,
+      "wilson95": [
+       0.023459,
+       0.182253
+      ],
+      "wrong_side": 3,
+      "wrong_side_examples": [
+       "KXNEAR15M-26OCT311500-00",
+       "KXNEAR15M-26OCT311715-15",
+       "KXNEAR15M-26OCT311830-30"
+      ],
+      "wrong_side_rate": 0.068182
+     },
+     "SOL": {
+      "a60_with_fewer_than_60_seconds": 1,
+      "abs_error_bps_median": 0.7827,
+      "abs_error_bps_p90": 1.9968,
+      "error_bps_mean": -0.636,
+      "n": 44,
+      "skipped_too_few_seconds": 0,
+      "wilson95": [
+       0.012555,
+       0.151353
+      ],
+      "wrong_side": 2,
+      "wrong_side_examples": [
+       "KXSOL15M-26OCT310900-00",
+       "KXSOL15M-26OCT311545-45"
+      ],
+      "wrong_side_rate": 0.045455
+     },
+     "XRP": {
+      "a60_with_fewer_than_60_seconds": 1,
+      "abs_error_bps_median": 0.7409,
+      "abs_error_bps_p90": 1.5486,
+      "error_bps_mean": 0.1833,
+      "n": 45,
+      "skipped_too_few_seconds": 0,
+      "wilson95": [
+       0.012274,
+       0.148278
+      ],
+      "wrong_side": 2,
+      "wrong_side_examples": [
+       "KXXRP15M-26OCT311800-00",
+       "KXXRP15M-26OCT312000-00"
+      ],
+      "wrong_side_rate": 0.044444
+     },
+     "ZEC": {
+      "a60_with_fewer_than_60_seconds": 1,
+      "abs_error_bps_median": 1.0606,
+      "abs_error_bps_p90": 2.878,
+      "error_bps_mean": 0.932,
+      "n": 45,
+      "skipped_too_few_seconds": 0,
+      "wilson95": [
+       0.022932,
+       0.178569
+      ],
+      "wrong_side": 3,
+      "wrong_side_examples": [
+       "KXZEC15M-26OCT311400-00",
+       "KXZEC15M-26OCT311430-30",
+       "KXZEC15M-26OCT311615-15"
+      ],
+      "wrong_side_rate": 0.066667
+     }
+    },
+    "unhealthy_windows_excluded": 11,
+    "warn_rule": {
+     "min_windows": 100,
+     "rate": 0.1
+    },
+    "windows": 403,
+    "windows_without_reference": 0
+   },
+   "status": "PASS"
+  },
+  {
+   "detail": "byte-identical over the common prefix: decisions 16390 lines, orders 121991 lines (live 16390/121991, replay 16399/122097) up to tick 2026-11-01T23:35:00Z, 177.3 s",
+   "name": "replay_determinism",
+   "numbers": {
+    "code_files_changed_since_the_ledger_head": [],
+    "decisions": {
+     "compared": 16390,
+     "first_difference_line": null,
+     "live_lines": 16390,
+     "replay_lines": 16399
+    },
+    "orders": {
+     "compared": 121991,
+     "first_difference_line": null,
+     "live_lines": 121991,
+     "replay_lines": 122097
+    },
+    "replay_stderr": "shadow replay: 16399 decisions, 122097 order events, last tick 1793576160, 0 unreadable records",
+    "seconds": 177.3,
+    "until": 1793576220
+   },
+   "status": "PASS"
+  },
+  {
+   "detail": "decisions: 16417 lines, head df21488b774447f7; orders: 122097 lines, head 427d4a9bcc4b8981",
+   "name": "chain_integrity",
+   "numbers": {
+    "stdout": "decisions: 16417 lines, head df21488b774447f7\norders: 122097 lines, head 427d4a9bcc4b8981"
+   },
+   "status": "PASS"
+  },
+  {
+   "detail": "no time overlap with Nox's clean cycles; settlements both 45 (result disagree 0, value disagree 0)",
+   "name": "nox_reconcile",
+   "numbers": {
+    "common_trade_field_disagreements": 0,
+    "only_nox": 0,
+    "only_ours": 0,
+    "overlap_seconds": 0,
+    "reconcile_summary": "reconcile 2026-10-31: overlap None .. None = 0 s in 0 interval(s); ours run 41030.870296 s, Nox clean cycles 51 (missed 5)\n  settlements: both 45 result_disagree 0 value_disagree 0 (ours 477, nox 154)\n  tob 15m: nox records 0 matched 0 top_exact None bid |d| med/p90 None/None milli, ask None/None\n    ours older than nox ts: n 0 top_exact None; ours newer: n 0 top_exact None; some-book-in-cycle None\n  coverage: our gap records 6, Nox could fill 0.0 s; Nox-only time 3060.0 s in 6 range(s)",
+    "settlement_result_disagree": 0,
+    "settlement_value_disagree": 0,
+    "settlements_both": 45,
+    "strike_exact_disagree": 0,
+    "tob_matched": 0,
+    "tob_top_exact_share": null,
+    "trade_ids_both": 0,
+    "unexplained_only_nox": 0,
+    "unexplained_only_ours": 0,
+    "unexplained_rate": 0.0
+   },
+   "status": "NA"
+  },
+  {
+   "detail": "healthy settled windows BNB=134 BTC=135 DOGE=135 ETH=135 HYPE=135 NEAR=135 SOL=135 XRP=135 ZEC=135; days to 2,000 at the observed rate BNB=20.2 BTC=20.1 DOGE=20.0 ETH=20.0 HYPE=20.1 NEAR=20.1 SOL=20.0 XRP=20.1 ZEC=20.1 (ideal 21.1 d at 94.9/day; counts.json is the ledger's own tally)",
+   "name": "counts",
+   "numbers": {
+    "coins": {
+     "BNB": {
+      "days_to_2000_at_observed_rate": 20.2,
+      "elapsed_days": 1.4479,
+      "fills": 8,
+      "fired": 134,
+      "healthy_share": 0.964,
+      "rate_per_day": 92.55,
+      "window_events": 139,
+      "windows": 134
+     },
+     "BTC": {
+      "days_to_2000_at_observed_rate": 20.1,
+      "elapsed_days": 1.4583,
+      "fills": 9,
+      "fired": 135,
+      "healthy_share": 0.9643,
+      "rate_per_day": 92.57,
+      "window_events": 140,
+      "windows": 135
+     },
+     "DOGE": {
+      "days_to_2000_at_observed_rate": 20.0,
+      "elapsed_days": 1.4479,
+      "fills": 20,
+      "fired": 127,
+      "healthy_share": 0.9712,
+      "rate_per_day": 93.24,
+      "window_events": 139,
+      "windows": 135
+     },
+     "ETH": {
+      "days_to_2000_at_observed_rate": 20.0,
+      "elapsed_days": 1.4479,
+      "fills": 6,
+      "fired": 132,
+      "healthy_share": 0.9712,
+      "rate_per_day": 93.24,
+      "window_events": 139,
+      "windows": 135
+     },
+     "HYPE": {
+      "days_to_2000_at_observed_rate": 20.1,
+      "elapsed_days": 1.4583,
+      "fills": 13,
+      "fired": 133,
+      "healthy_share": 0.9643,
+      "rate_per_day": 92.57,
+      "window_events": 140,
+      "windows": 135
+     },
+     "NEAR": {
+      "days_to_2000_at_observed_rate": 20.1,
+      "elapsed_days": 1.4583,
+      "fills": 14,
+      "fired": 133,
+      "healthy_share": 0.9643,
+      "rate_per_day": 92.57,
+      "window_events": 140,
+      "windows": 135
+     },
+     "SOL": {
+      "days_to_2000_at_observed_rate": 20.0,
+      "elapsed_days": 1.4479,
+      "fills": 7,
+      "fired": 133,
+      "healthy_share": 0.9712,
+      "rate_per_day": 93.24,
+      "window_events": 139,
+      "windows": 135
+     },
+     "XRP": {
+      "days_to_2000_at_observed_rate": 20.1,
+      "elapsed_days": 1.4583,
+      "fills": 8,
+      "fired": 131,
+      "healthy_share": 0.9643,
+      "rate_per_day": 92.57,
+      "window_events": 140,
+      "windows": 135
+     },
+     "ZEC": {
+      "days_to_2000_at_observed_rate": 20.1,
+      "elapsed_days": 1.4583,
+      "fills": 11,
+      "fired": 131,
+      "healthy_share": 0.9643,
+      "rate_per_day": 92.57,
+      "window_events": 140,
+      "windows": 135
+     }
+    },
+    "ideal_days": 21.1,
+    "ideal_rate_per_day": 94.9,
+    "target": 2000
+   },
+   "status": "PASS"
+  },
+  {
+   "detail": "heartbeat age poll=0.6s ref=0.5s shadow=0.4s; errors_1h poll=0 shadow=0",
+   "name": "heartbeats",
+   "numbers": {
+    "fresh_s": 30.0,
+    "services": {
+     "poll": {
+      "age_s": 0.6,
+      "clock_offset_lower_s": 0.07882308959960938,
+      "errors_1h": 0,
+      "gaps_today": 32,
+      "max_book_age_s": 12.033,
+      "pid": 2588758,
+      "req_rate_60s": 1.617,
+      "state": "running"
+     },
+     "ref": {
+      "age_s": 0.5,
+      "clock": {
+       "delay_ms": 73.942,
+       "jitter_ms": 9.36,
+       "offset_ms": 0.253,
+       "root_distance_ms": 4.241,
+       "server": "2602:81c:1000:2::678 (2.arch.pool.ntp.org)",
+       "stratum": 2,
+       "t": 1793576026.487
+      },
+      "coins_with_n0": [],
+      "pid": 2588809,
+      "reconnects": {
+       "binance": 0,
+       "bitstamp": 1,
+       "bullish": 0,
+       "coinbase": 2,
+       "cryptocom": 3,
+       "gemini": 1,
+       "kraken": 4
+      },
+      "state": null,
+      "venues": 7,
+      "venues_connected": 7
+     },
+     "shadow": {
+      "age_s": 0.4,
+      "decisions_today": 11070,
+      "errors_1h": 0,
+      "fills_today": 17639,
+      "lag_s": 23.9,
+      "orders_open": 114,
+      "params_status": "PROVISIONAL (dry Stage A, theta unset)",
+      "pid": 2713864,
+      "state": "running"
+     }
+    }
+   },
+   "status": "PASS"
+  }
+ ],
+ "cutoff": {
+  "capture_books": {
+   "bytes_read": 159521633,
+   "last_t_recv": 1793491199.4041405,
+   "last_t_send": 1793491199.3555512,
+   "partial_tail": 0
+  },
+  "capture_events": {
+   "bytes_read": 159889,
+   "last_t_recv": 1793491128.2660992,
+   "last_t_send": 1793491128.2287762,
+   "partial_tail": 0
+  },
+  "capture_gaps": {
+   "bytes_read": 1566,
+   "last_t_recv": 1793479538.0191307,
+   "last_t_send": 1793479538.0191307,
+   "partial_tail": 0
+  },
+  "capture_markets": {
+   "bytes_read": 21889256,
+   "last_t_recv": 1793491160.924567,
+   "last_t_send": 1793491160.886587,
+   "partial_tail": 0
+  },
+  "capture_trades": {
+   "bytes_read": 1480763954,
+   "last_t_recv": 1793491197.2365863,
+   "last_t_send": 1793491197.1839797,
+   "partial_tail": 0
+  },
+  "ledger_last_tick": 1793576100,
+  "ledger_lines": {
+   "decisions": 16390,
+   "orders": 121991
+  },
+  "observed_from": 1793450035.2760644,
+  "observed_to": 1793491200.0,
+  "read_at": 1793576124.7603612,
+  "read_at_iso": "2026-11-01T23:35:24Z",
+  "ref_last_second": {
+   "BNB": 1793491199,
+   "BTC": 1793491199,
+   "DOGE": 1793491199,
+   "ETH": 1793491199,
+   "HYPE": 1793491199,
+   "NEAR": 1793491199,
+   "SOL": 1793491199,
+   "XRP": 1793491199,
+   "ZEC": 1793491199
+  }
+ },
+ "day": "2026-10-31",
+ "schema": 1,
+ "summary": {
+  "NA": 1,
+  "PASS": 9
+ }
+}

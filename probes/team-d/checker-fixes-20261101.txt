@@ -1,0 +1,64 @@
+=== CHECKER-HOLD FIX ROUND — EVIDENCE  2026-11-01T10:57:44-05:00  host=outis-desktop ===
+commit: cd91a883f16dd0523c35b66bb1ea50c359e0afff  (parent ddcdd79; prep/art-binding-20261101 and prep/audio-upload-20261101 both point here)
+files: tools/bind_art.py 764 lines; tools/upload_audio.py 567 lines
+candidate: 55cef5d3ea71173de62b7c1070543d566e6f26674eb64083833ea5590466d4c9  /home/cayleb/Work/projects/untitled-anime-card-game/build/UntitledAnimeCardGame.rbxlx
+
+--- DEFECT MAP ---
+D1 P0: publish.operation_id_of removed; inline response.get('operationId') + AMBIGUOUS journal; stub-transport selftest added.
+D2 MED: upload_audio catches ValueError at both call sites; key pre-validated with a generic message; run_live/main handlers; bind_art same pre-check.
+D3 LOW: absolute/.. evidence paths refused in main AND in write_json before mkdir.
+D4 LOW: --rebuild-receipts re-verifies recorded raw-operation.json and refuses on mismatch.
+D5 DOC: companion report line count corrected.
+
+--- 1. selftest incl. NEW stub-transport live path ---
+SELFTEST temp root: /tmp/uacg-bindart-selftest-jlsuuhu3
+SELFTEST PASS: receipt shapes accepted/refused exactly as publish.validate_mapping_receipt demands, and the stub-transport live path completes POST->poll->receipt with no AttributeError; no repo write, no network, no key read.
+HARNESS rc=0 net_attempts=0 key_reads=0 key_access=[]
+
+--- 2. checker STUB harness, FIX_OPID UNSET ---
+Bind the PASS cards (mapping receipts are validated by the tool's own gate):
+  python3 tools/apply_art_ids.py --receipt docs/verification/art-upload-20261101/BC-ASTA-01/mapping-receipt.json
+STUB_RESULT {"rc": 0, "net": 0, "methods": ["POST", "GET"], "calls": [{"method": "POST", "url": "https://apis.roblox.com/assets/v1/assets", "header_names": ["Content-Type", "x-api-key"], "body_len": 1488719}, {"method": "GET", "url": "https://apis.roblox.com/assets/v1/operations/op-stub-0001", "header_names": ["x-api-key"], "body_len": 0}]}
+docs/verification/art-upload-20261101/BC-ASTA-01/mapping-receipt.json
+docs/verification/art-upload-20261101/BC-ASTA-01/moderation-receipt.json
+docs/verification/art-upload-20261101/BC-ASTA-01/raw-operation.json
+docs/verification/art-upload-20261101/BC-ASTA-01/upload-receipt.json
+journal: {'BC-ASTA-01': {'state': 'ASSET_ID_RETURNED', 'asset_id': '1234567890', 'verdict': 'PASS'}}
+Validated offline mapping: BC-ASTA-01 → 1234567890
+Bound fields: current image hash, exact creator/universe/place, returned ID, upload receipt, PASS moderation, franchise permission, commercial model licence.
+
+--- 3. ambiguous branch: exactly one POST, rc3, AMBIGUOUS ---
+LIVE: 1 card(s) in this block, evidence under docs/verification/art-upload-20261101/; no publication and no experience change.
+STUB_RESULT {"rc": 3, "net": 0, "methods": ["POST"], "calls": [{"method": "POST", "url": "https://apis.roblox.com/assets/v1/assets", "header_names": ["Content-Type", "x-api-key"], "body_len": 1488719}]}
+journal: {'BC-ASTA-01': 'AMBIGUOUS'}
+
+--- 4. unresolved operation: POST + 8 bounded GETs, rc3 ---
+"methods": ["POST", "GET", "GET", "GET", "GET", "GET", "GET", "GET", "GET"]
+
+--- 5. D2 newline-key leak (audio): rc3, sentinel hits 0 ---
+BLOCKED: the owner-entered key contains whitespace, control or non-ASCII characters and was refused before any request; the value is never echoed
+HARNESS rc=3 net_attempts=0 key_reads=1 key_access=['get']
+sentinel_hits=0
+
+--- 6. D2 newline-key leak (bind_art): rc3, sentinel hits 0 ---
+BLOCKED: the owner-entered key contains whitespace, control or non-ASCII characters and was refused before any request; the value is never echoed
+HARNESS rc=3 net_attempts=0 key_reads=1 key_access=['get']
+sentinel_hits=0
+
+--- 7. D3 absolute evidence dir: rc2, no directory created ---
+BLOCKED: evidence dir must stay inside the project
+dir_present_rc=2
+
+--- 8. dry-run POST counts unchanged ---
+selection='all' POSTs=24
+selection='--block a' POSTs=6
+selection='--block b' POSTs=6
+selection='--block c' POSTs=12
+selection='--franchise Bleach' POSTs=3
+
+--- 9. candidate hash (copy + repo) and repo state ---
+55cef5d3ea71173de62b7c1070543d566e6f26674eb64083833ea5590466d4c9  /tmp/uacg-recheck/build/UntitledAnimeCardGame.rbxlx
+55cef5d3ea71173de62b7c1070543d566e6f26674eb64083833ea5590466d4c9  /home/cayleb/Work/projects/untitled-anime-card-game/build/UntitledAnimeCardGame.rbxlx
+cd91a88 fix: checker HOLD — D1 P0 missing operation_id_of, D2 key echo, D3/D4 LOWs
+ddcdd79 prep: bind-art companion (G1-G3) — evidence receipts, moderation capture, block filter
+=== END 2026-11-01T10:58:16-05:00 ===

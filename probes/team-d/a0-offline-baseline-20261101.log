@@ -1,0 +1,84 @@
+=== A0 OFFLINE BASELINE 2026-11-01T09:23:31-05:00 host=outis-desktop ===
+commit(b67abdd tree): b67abdd253029378a960a0899d06c672470e9072
+--- tools/usg test (build + Lune unit suite) ---
+  skill 0.80: places  9/22/36/34 % over 208 races (0 unplaced); win band 0-10 %
+nht caps: 54 logical highway candidates (cap 60), 30 highway packet rows (cap 30), 8 city rows (cap 8)
+nht platoon: steady minimum time gap 1.80 s, transient minimum 1.80 s
+nht seed 52391: 57 following samples, minimum time gap 2.99 s
+nht seed 204817: 58 following samples, minimum time gap 3.02 s
+nht seed 7: 0 following samples, minimum time gap inf s
+nht lane change: signal 1.70 s ahead of motion, 4.95 s signal to lane capture, peak lateral speed 6.4 studs/s
+nht seed 52391: 75 cars drawn in, nearest first draw 632 studs, pop-in 0, pop-out 0
+nht seed 204817: 76 cars drawn in, nearest first draw 632 studs, pop-in 0, pop-out 0
+nht seed 7: 80 cars drawn in, nearest first draw 630 studs, pop-in 0, pop-out 0
+nht lane sway: max |offset| 0.950 studs, max rate 0.500 studs/s, 112748 samples off the centre
+nht sway target: max |target| 0.949 studs, max rate 0.427 studs/s
+nht keep right: passed at 5.95 s, signalled at 14.45 s, captured at 19.40 s, signal lead 1.25 s
+nht preparing driver: prepared at 0.05 s with a 0.775 stud drift, committed at 1.60 s
+wet-night 2134783819: flag off 20400 parts, flag on 21523 parts, 1123 added, 0 removed
+  base (flag on, reconstructed)   descendants 27351 full def22a2c394b0f7cebbd205de6bd11596c0cb6a657225fc3a91ffe9cd0ff09e0
+  base (flag off, reconstructed)  descendants 27350 full 30096ee778bb844d73ce3821a5c54922282061d217e8f960ba6929e148edf3c8
+  the wet-night rows the flag on adds: 1123 (1122 parts)
+  wet-night parts by name: WetSheen 334, WetLampPool 120, WetNeonStreak 668, WetReflection 1
+  the city has 334 road surface pieces and 120 lamp heads
+  wet-night off seed 2134783819: descendants 23033, parts 16548, meshes 0, images 4643, max chunk 129, lights 9, particles 0, lamp heads 120
+  wet-night on seed 2134783819: descendants 24157, parts 17671, meshes 0, images 4643, max chunk 129, lights 9, particles 0, lamp heads 120
+  the client lamp pool (24 lights) still chooses from the same 120 lamp heads
+  landmarks off, wet night on: the harbour water and the wet reflection are still there
+wet-night 204817: flag off 20172 parts, flag on 21336 parts, 1164 added, 0 removed
+  base (flag on, reconstructed)   descendants 26937 full b0bc8049ab7c1dce74157a3f0fccb14f14a24f81f2ca3166cacc53cd5f98f340
+  base (flag off, reconstructed)  descendants 26936 full bc502c8c4384b5e097ac9fd8483ae982cc97c5f21d6d318fcabd3afee6c36c1c
+  the wet-night rows the flag on adds: 1164 (1163 parts)
+  wet-night parts by name: WetSheen 341, WetLampPool 140, WetNeonStreak 682, WetReflection 1
+  the city has 341 road surface pieces and 140 lamp heads
+  wet-night off seed 204817: descendants 22939, parts 16610, meshes 0, images 4497, max chunk 129, lights 9, particles 0, lamp heads 140
+  wet-night on seed 204817: descendants 24104, parts 17774, meshes 0, images 4497, max chunk 129, lights 9, particles 0, lamp heads 140
+  the client lamp pool (24 lights) still chooses from the same 140 lamp heads
+  landmarks off, wet night on: the harbour water and the wet reflection are still there
+  the flag is read at: 	local wetNight = VisualFlags.get("wetNight")
+  the caller is: function CityBuilder.build(graph: any, parent: Instance, injectedStreetKit: Instance?): Folder
+  the place model holds 19 declared instances and 62 mapped scripts, and no model file
+  the built release place holds: Folder=11 HttpService=1 Lighting=1 LocalScript=8 ModuleScript=78 RemoteEvent=2 ReplicatedStorage=1 Script=1 ServerScriptService=1 StarterGui=1 StarterPlayer=1 StarterPlayerScripts=1 TextChatService=1 Workspace=1
+unit: 914 passed, 0 failed (125 specs)
+build ok: release.rbxlx sha256 84324d4342667dd1 (1990548 bytes)
+rc=0
+--- python tests/tools ---
+
+OK
+seed 2134783819: worst 400-stud window holds 13 copies of image/inkcity/facade_1 (bound 14), window [-218.2, 211.25, 181.8, 611.25]
+seed 204817: worst 400-stud window holds 14 copies of image/inkcity/facade_1 (bound 15), window [-21.84, -753.95, 378.16, -353.95]
+seed 2134783819: image/city/storefront_1 is on 68 buildings (bound 15)
+seed 2134783819: image/city/storefront_2 is on 69 buildings (bound 15)
+seed 2134783819: image/city/storefront_3 is on 68 buildings (bound 15)
+seed 2134783819: image/city/windows_1_color is on 228 buildings (bound 15)
+seed 204817: image/city/storefront_1 is on 68 buildings (bound 15)
+seed 204817: image/city/storefront_2 is on 69 buildings (bound 15)
+seed 204817: image/city/storefront_3 is on 68 buildings (bound 15)
+seed 204817: image/city/windows_1_color is on 220 buildings (bound 15)
+seed 2134783819: 24 distinct designs in use (bound 23)
+seed 204817: 23 distinct designs in use (bound 23)
+city maximum-schema envelope bytes 9644950 limit 12582912
+rc=0
+--- store_check ---
+[description]
+  as written: 930 characters (code points), 943 if each newline counts as 2, max 1000
+  PASS (0 problems)
+[art]
+  icon  assets/export/store/icon_512.png  PNG 512×512 RGB 401,148 bytes  aspect 1.0000  ok
+  thumb assets/export/store/thumbs/thumb_1_konbini.png  PNG 1920×1080 RGB 1,946,999 bytes  aspect 1.7778  ok
+  thumb assets/export/store/thumbs/thumb_2_pink.png  PNG 1920×1080 RGB 1,920,794 bytes  aspect 1.7778  ok
+  thumb assets/export/store/thumbs/thumb_3_bridge.png  PNG 1920×1080 RGB 1,937,467 bytes  aspect 1.7778  ok
+  thumb assets/export/store/thumbs/thumb_4_station.png  PNG 1920×1080 RGB 1,518,310 bytes  aspect 1.7778  ok
+  PASS (0 problems)
+[citations]
+  docs/STORE_PAGE.md: 66 citations, 112 anchors
+  docs/launch/CREATOR_HUB_STEPS.md: 9 citations, 12 anchors
+  docs/launch/MATURITY_ANSWER_SHEET.md: 94 citations, 118 anchors
+  docs/launch/POST_LAUNCH.md: 13 citations, 19 anchors
+  docs/launch/PUBLIC_FLIP_CHECKLIST.md: 34 citations, 44 anchors
+  PASS (0 problems)
+rc=0
+--- build hashes after suite ---
+84324d4342667dd163ab8e64adacbf8ef44ab786aeda5c7ab1403e76d52ef6ce  build/release.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  build/test.rbxlx
+=== DONE 2026-11-01T09:36:07-05:00 ===

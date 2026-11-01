@@ -1,0 +1,12 @@
+# ts=2026-11-01T08:48:41-0500
+initialize OK
+ss @1s: LISTEN 0      128                                 127.0.0.1:13469      0.0.0.0:*    users:(("wineserver",pid=3336063,fd=597),("main",pid=39175,fd=152))
+poll0 (t=1s): {"studios":[{"id":"54682709-1f04-454a-81e0-7c20099a5101","name":"Place1"}]}
+## connected studio_id=54682709-1f04-454a-81e0-7c20099a5101
+## get_studio_state -> - Current Studio Mode: Edit
+- Available DataModels: Edit
+- Focused DataModel in the viewport: Edit
+## stderr last lines:
+   2026-11-01T13:48:41.237247Z  WARN studio_mcp_proxy::proxy_server::ws_client: WS host connection error: IO error: Connection refused. (os error 10061)
+   2026-11-01T13:48:41.613328Z  WARN studio_mcp_proxy::ws_server::server: No proxy found waiting for response init-tools-54682709-1f04-454a-81e0-7c20099a5101-e0134381-658f-413f-8ca0-5049fea7c9a1
+   2026-11-01T13:48:43.313219Z ERROR studio_mcp_proxy::ws_server::server: WebSocket error from proxy a21ecee2-1f0e-4bef-b0f2-9f21953bfdbd: WebSocket protocol error: Connection reset without closing handshake

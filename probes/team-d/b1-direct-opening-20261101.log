@@ -1,0 +1,13 @@
+=== B1 DIRECT OPENING — Play1 traffic retry, then atlas seeded  2026-11-01T15:50:56-05:00 ===
+Studio pid 382409, window 2200x1000 fitted, place usg-desktop.rbxlx; branch prep/b1-capture-format-20261101 @ c0d4b22ca83be6dbf6d30a2933f8cee04b05e575
+sealed BEFORE:
+84324d4342667dd163ab8e64adacbf8ef44ab786aeda5c7ab1403e76d52ef6ce  build/release.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  build/test.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  /home/cayleb/.var/app/org.vinegarhq.Vinegar/data/usg/usg-desktop.rbxlx
+
+--- Play 1: run traffic:abort-contact (chunk transport) ---
+{"mcpClose": {"owned": [{"pid": 384093, "start": 34993015, "ppid": 384086, "ageSeconds": 35.2}], "foreignNew": [], "signals": [{"pid": 384093, "start": 34993015, "signal": "SIGTERM"}], "survivors": []}}
+{"fixture": "traffic:abort-contact", "exit": 1, "runDir": "/home/cayleb/Work/projects/untitled-street-game/docs/verify/2026-10-19/vinegar/20261101T205056Z-traffic-abort-contact", "error": "FixtureFailed: runtime reported failure: {\"sourceHashes\": {\"src/server/Services/Progress.luau\": \"a1b30f44ec9047ad7ab9427918fe3e87a1efb9a95b7c4ad606c277fb2be10e95\", \"src/shared/TrafficSim.luau\": \"a72f19d620a9a17fe03371674b4637fb9598e13af1bc97bec2473ddb531261a0\", \"src/server/HighwayBuilder.luau\": \"cfedbd7c7526d6dae00b3600dbef6e97d8596f0a31893d5f5ebb843422e5ff9b\", \"tests/studio/TestCourse.luau\": \"585e12e952546a738ae3c46220c07f710d6f836056a450701d3dd5837e0e1e87\", \"src/client/Visual.client.luau\": \"1161457b01310802a41a1cd88be7b0a9bd8338eb43dc0fd7dee20b081cec14b0\", \"tests/studio/driving.spec.luau\": \"a04a509ce1a443b8a7ecffc43183e9e910e43046e5e9623c89be3b6765b80322\", \"src/client/Screens/Hud.luau\": \"d88640592a24a09a173bb9782383fb75ab08dba81dcfa7364532b7914d53bf35\", \"tools/handling_acceptance.py\": \"4536cd2753fa8986a6748c506138cb55e789a322ae", "summary": null}
+play1_rc=1
+PLAY 1 FAILED — stopping per instruction (no retry)
+=== END 2026-11-01T15:51:36-05:00 ===

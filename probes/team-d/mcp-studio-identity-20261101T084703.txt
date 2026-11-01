@@ -1,0 +1,5 @@
+# ts=2026-11-01T08:47:03-0500
+initialize ok
+## list_roblox_studios rc=False -> {"studios":[]}
+## parsed studio_id=None
+## get_studio_state rc=True -> No Roblox Studio instances are connected. Ask the user to confirm that Studio is running with a place open and the MCP server enabled in Assistant settings.

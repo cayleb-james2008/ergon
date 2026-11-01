@@ -1,0 +1,9 @@
+# screen_capture diagnosis (metadata only; no image decode) ts=2026-11-01T13:08:00-0500
+--- screen_capture tool schema ---
+description: Capture current edit-time screen, return the image data. If camera_position and look_at_position are provided, the camera will be temporarily set to the camera_position and look at the look_at_position.
+params: ["camera_position", "capture_id", "look_at_position", "studio_id"]
+studio={"id": "b9d99ec9-93dd-4dd9-99a0-75936cbea3a1", "name": "usg-desktop.rbxlx"}
+--- screen_capture call (edit) args={"studio_id": "b9d99ec9-93dd-4dd9-99a0-75936cbea3a1", "capture_id": "diag-edit"} ---
+  isError: False
+  image: mimeType='image/jpeg' data_len=16552 keys=['data', 'mimeType', 'type'] first4_chars='/9j/'
+stderr tail: 2026-11-01T18:08:00.655779Z  WARN studio_mcp_proxy::proxy_server::ws_client: WS host connection error: IO error: Connection refused. (os error 10061) || 2026-11-01T18:08:01.125020Z  WARN studio_mcp_proxy::ws_server::server: No proxy found waiting for response init-tools-b9d99ec9-93dd-4dd9-99a0-75936cbea3a1-47435f6d-ff88-4939-a841-79ae50890868 || 2026-11-01T18:08:02.226092Z ERROR studio_mcp_proxy::ws_server::server: WebSocket error from proxy 053b99a6-af71-4b2c-b33d-3ef6e4ec9521: WebSocket protocol error: Connection reset without closing handshake

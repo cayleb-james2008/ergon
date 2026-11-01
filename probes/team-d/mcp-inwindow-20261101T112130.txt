@@ -1,0 +1,13 @@
+# in-window MCP proof  ts=2026-11-01T11:21:30-0500  launcher=/home/cayleb/.local/bin/roblox-studio-mcp
+initialize OK
+tools/list count=33
+list_roblox_studios -> {"studios":[{"id":"54682709-1f04-454a-81e0-7c20099a5101","name":"Place1"}]}
+studio_id=54682709-1f04-454a-81e0-7c20099a5101
+get_studio_state -> - Current Studio Mode: Edit
+- Available DataModels: Edit
+- Focused DataModel in the viewport: Edit
+## stderr tail:
+   2026-11-01T16:21:30.914509Z  WARN studio_mcp_proxy::proxy_server::ws_client: WS host connection error: IO error: Connection refused. (os error 10061)
+   2026-11-01T16:21:31.037312Z  WARN studio_mcp_proxy::ws_server::server: No proxy found waiting for response init-tools-54682709-1f04-454a-81e0-7c20099a5101-8b7dd931-b647-4bbb-9a61-0e7c39bbb907
+   2026-11-01T16:21:31.469198Z ERROR studio_mcp_proxy::ws_server::server: WebSocket error from proxy 50c6c07e-cb1c-47a3-81ba-a70be9445ec9: WebSocket protocol error: Connection reset without closing handshake
+port_13469_after=free

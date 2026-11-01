@@ -1,0 +1,88 @@
+=== chunk-transport implementation — test evidence (2026-11-01) ===
+branch prep/b1-capture-format-20261101  base commit before this work 271b601277f67f0bc022a2790ae49ecdb4e45449
+
+--- py_compile ---
+py_compile_rc=0
+
+--- NEW offline chunk suite (pytest) ---
+.........                                                                [100%]
+9 passed in 2.35s
+pytest_rc=0
+
+--- new offline chunk suite (unittest, verbose names) ---
+test_conflicting_duplicate_is_rejected (test_collector_chunks.ChunkTransport.test_conflicting_duplicate_is_rejected) ... ok
+test_count_bytes_mismatch_is_rejected (test_collector_chunks.ChunkTransport.test_count_bytes_mismatch_is_rejected) ... ok
+test_dropped_chunk_never_delivers_runtime_and_exits_nonzero (test_collector_chunks.ChunkTransport.test_dropped_chunk_never_delivers_runtime_and_exits_nonzero) ... ok
+test_identical_duplicate_is_idempotent_and_still_completes (test_collector_chunks.ChunkTransport.test_identical_duplicate_is_idempotent_and_still_completes) ... ok
+test_identity_mismatch_is_rejected (test_collector_chunks.ChunkTransport.test_identity_mismatch_is_rejected) ... ok
+test_out_of_order_chunk_is_rejected (test_collector_chunks.ChunkTransport.test_out_of_order_chunk_is_rejected) ... ok
+test_oversized_wire_is_refused_with_413 (test_collector_chunks.ChunkTransport.test_oversized_wire_is_refused_with_413) ... ok
+test_reassembly_is_byte_identical_to_the_single_post_payload (test_collector_chunks.ChunkTransport.test_reassembly_is_byte_identical_to_the_single_post_payload) ... ok
+test_wrong_whole_envelope_sha256_is_rejected (test_collector_chunks.ChunkTransport.test_wrong_whole_envelope_sha256_is_rejected) ... ok
+
+----------------------------------------------------------------------
+Ran 9 tests in 2.275s
+
+OK
+
+--- existing traffic acceptance suite ---
+test_abort_needs_real_touch_and_matching_history_clock (test_traffic_acceptance.TrafficAcceptance.test_abort_needs_real_touch_and_matching_history_clock) ... ok
+test_each_fixed_scope_has_complete_synthetic_contract (test_traffic_acceptance.TrafficAcceptance.test_each_fixed_scope_has_complete_synthetic_contract) ... ok
+test_manifest_binds_mode_sources_and_fixed_server_only_starter (test_traffic_acceptance.TrafficAcceptance.test_manifest_binds_mode_sources_and_fixed_server_only_starter) ... ok
+test_rejects_corrupt_or_overclaimed_native_evidence (test_traffic_acceptance.TrafficAcceptance.test_rejects_corrupt_or_overclaimed_native_evidence) ... ok
+
+----------------------------------------------------------------------
+Ran 4 tests in 0.053s
+
+OK
+
+--- handling acceptance suite ---
+test_rejects_corrupt_missing_or_wrong_scope_evidence (test_handling_acceptance.ValidatorTests.test_rejects_corrupt_missing_or_wrong_scope_evidence) ... ok
+
+----------------------------------------------------------------------
+Ran 8 tests in 0.386s
+
+OK
+
+--- runner fixture suite (covers registry/apparatus) ---
+----------------------------------------------------------------------
+Ran 68 tests in 10.534s
+
+OK
+
+--- atlas capture index suite (PNG/JPEG mime adaptation) ---
+----------------------------------------------------------------------
+Ran 7 tests in 2.801s
+
+OK
+
+--- Luau traffic timing spec (transport mock) ---
+unit: 4 passed, 0 failed (1 specs)
+
+--- full Lune unit suite (from /tmp/lune_all2.log) ---
+  the built release place holds: Folder=11 HttpService=1 Lighting=1 LocalScript=8 ModuleScript=78 RemoteEvent=2 ReplicatedStorage=1 Script=1 ServerScriptService=1 StarterGui=1 StarterPlayer=1 StarterPlayerScripts=1 TextChatService=1 Workspace=1
+unit: 914 passed, 0 failed (125 specs)
+lune_rc=0
+--- full Python tests/tools suite (from /tmp/python_all2.log) ---
+seed 204817: 23 distinct designs in use (bound 23)
+city maximum-schema envelope bytes 9644950 limit 12582912
+python_rc=0
+
+--- fixture candidate digests (traffic manifest now) ---
+pass a8778b1fe0e4e6e58368d9e058a0eb117106e196537fa3be1307755627f24737 helpers= ['HandlingServer', 'ExactReportTransport'] EXPECTED= 3
+abort-contact b145a164a130dbb560e58390757313dab3b62dcaa398004c588940a15936a37a helpers= ['HandlingServer', 'ExactReportTransport'] EXPECTED= 3
+previous abort-contact candidate observed in Play prepared report: ddfcb24c0f4daff883d8628c772f45c53fb26932c8aca17cc6bf10400fdf172a
+
+--- sealed artifacts BEFORE commit ---
+84324d4342667dd163ab8e64adacbf8ef44ab786aeda5c7ab1403e76d52ef6ce  build/release.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  build/test.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  /home/cayleb/.var/app/org.vinegarhq.Vinegar/data/usg/usg-desktop.rbxlx
+commit_rc=0
+commit ec1c39471a1188b1314e8ce3fdd42959174bcde8
+--- sealed artifacts AFTER commit ---
+84324d4342667dd163ab8e64adacbf8ef44ab786aeda5c7ab1403e76d52ef6ce  build/release.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  build/test.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  /home/cayleb/.var/app/org.vinegarhq.Vinegar/data/usg/usg-desktop.rbxlx
+--- working tree (tracked) ---
+tracked_dirty=0
+--- frozen: no further source edits until the checker returns ---

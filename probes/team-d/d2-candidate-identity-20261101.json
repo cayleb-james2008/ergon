@@ -1,0 +1,65 @@
+{
+ "schema": "team-d-candidate-identity/v1",
+ "generated_utc": "2026-11-01T14:26:20+00:00",
+ "host": "outis-desktop",
+ "checker": "roblox-lead (maker); NOT independently checked yet",
+ "street_game": {
+  "repo": "/home/cayleb/Work/projects/untitled-street-game",
+  "candidate_source_commit": "b67abdd253029378a960a0899d06c672470e9072",
+  "tree_equal_commit": "b1e5ecd907945d4476675fd68b5da3ece2cd6163",
+  "commit_full": "b67abdd",
+  "head_at_probe": "8dfb2040f26187272fb28be3be8ca1775ce27310",
+  "head_build_release_sha256": "c34e4cc216271794724de3b66dfd5e77936b5917dd2ba43ce5e8b7ebb20bbfa5",
+  "head_build_test_sha256": "43aa732d6f32d9d7ab189ad17453030eb3b6c78fbd9119fe517734aa8e8f1f6d",
+  "candidate_release": {
+   "path": "build/release.rbxlx",
+   "sha256": "84324d4342667dd163ab8e64adacbf8ef44ab786aeda5c7ab1403e76d52ef6ce",
+   "bytes": 1990548
+  },
+  "candidate_test": {
+   "path": "build/test.rbxlx",
+   "sha256": "c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98",
+   "bytes": 2403691
+  },
+  "method": "git archive <commit> | tar -x into ~/.cache/team-d/rebuild-20261101/street-<commit>; copy .tools/bin; python3 tools/usg build; sha256sum",
+  "reproduced_twice": true,
+  "reproduces_from_b67abdd": true,
+  "reproduces_from_b1e5ecd": true,
+  "head_reproduces": false,
+  "toolchain": {
+   "rojo_sha256": "7ff204d777e2b8a93f2b587c7e09b5e827af94411f84574e97dcfee4d647152e",
+   "lune_sha256": "4de91e1e22f377aa3dc70219c7eb2dd9584dee8aa97369b02797d037067c759f",
+   "rojo": "Rojo 7.7.0",
+   "lune": "lune 0.10.5"
+  },
+  "note": "build/release.rbxlx and build/test.rbxlx mtime 2026-10-21 03:42:13 ET; commit b67abdd is 03:22, next commit dddeafa 03:47 -> build came from b67abdd. b1e5ecd and b67abdd are tree-equal for the Rojo source set."
+ },
+ "card_game": {
+  "repo": "/home/cayleb/Work/projects/untitled-anime-card-game",
+  "branch_at_probe_checkout": "preserve/candidate-55cef5d3 -> now prep/audio-upload-20261101 (source identical)",
+  "preserve_branch": "preserve/candidate-55cef5d3",
+  "preserve_pin_commit": "add37b63211f9e81b83c5164c7f99e360aaf957b",
+  "preserve_tip": "43574a56c9508cc17f2003b7fca29bd87ba1ca31",
+  "candidate": {
+   "path": "build/UntitledAnimeCardGame.rbxlx",
+   "sha256": "55cef5d3ea71173de62b7c1070543d566e6f26674eb64083833ea5590466d4c9",
+   "bytes": 520846
+  },
+  "reproduced_twice": true,
+  "matches_live": true,
+  "matches_build_receipt": true,
+  "superseded_doc_hash": {
+   "sha256": "be972098432f5bac4ccbc67712b104f3fb26073ab303d173f10b567baa70e7aa",
+   "bytes": 520854,
+   "reason": "CURRENT-STATE.md top line was stale; superseded by the 2026-09-29 operator-approved build"
+  },
+  "toolchain": {
+   "rojo_sha256": "7ff204d777e2b8a93f2b587c7e09b5e827af94411f84574e97dcfee4d647152e",
+   "lune_sha256": "4de91e1e22f377aa3dc70219c7eb2dd9584dee8aa97369b02797d037067c759f"
+  },
+  "prep_commit": "e7f885c",
+  "prep_branch": "prep/audio-upload-20261101",
+  "prep_content": "tools/upload_audio.py (dry-run only), .gitignore += ops/release/target.json, CURRENT-STATE dated candidate-of-record note",
+  "proof_tool_does_not_change_candidate": "scratch copy of tree 43574a5 + upload_audio.py rebuilt -> 55cef5d3\u2026/520,846 B (twice)"
+ }
+}

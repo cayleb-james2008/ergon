@@ -1,0 +1,153 @@
+=== B1 OPENING 1 RESUME #3 (smoke S5 KeyError fixed; 3rd/3 Plays in this Studio process)  2026-11-01T13:14:36-05:00 ===
+repo: /home/cayleb/Work/projects/untitled-street-game  branch: prep/b1-capture-format-20261101  commit: d079f559e4cbb5bfb069e03be08ed0f5f26b298a
+sealed artifacts BEFORE:
+84324d4342667dd163ab8e64adacbf8ef44ab786aeda5c7ab1403e76d52ef6ce  build/release.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  build/test.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  /home/cayleb/.var/app/org.vinegarhq.Vinegar/data/usg/usg-desktop.rbxlx
+
+--- queue --resume ---
+{"mcpClose": {"owned": [{"pid": 279425, "start": 34055045, "ppid": 279420, "ageSeconds": 14.2}], "foreignNew": [], "signals": [{"pid": 279425, "start": 34055045, "signal": "SIGTERM"}], "survivors": []}}
+{"smoke": 0, "runDir": "/home/cayleb/Work/projects/untitled-street-game/docs/verify/2026-10-19/vinegar/20261101T181436Z-smoke", "error": null, "checks": {"S1 Edit": true, "S2 unpublished local place": true, "S3 code sizes up to 64 KiB": true, "S3 12 KB and 90 KB responses intact": true, "S4 600 KiB loopback POST": true, "S4 HttpEnabled restored": true, "S5 Play, capture, Stop, verify-clean": true}, "findings": {"response110KBTruncated": true, "s4CollectorClose": {"clean": true, "workerAlive": false, "activeSockets": 0, "phases": ["smoke"], "rejections": [], "chunks": null}, "pngMatchesViewport": false, "secondCaptureDiffers": true, "mcpCameraHeld2s": false}}
+{"queue": "paused", "reason": "3 Plays in this Studio: owner reopens Studio, then --resume", "next": "traffic:abort-contact"}
+queue_rc=0
+
+--- verify-clean ---
+      },
+      "StudioStartCredits": {
+        "present": false
+      },
+      "StudioStartLevel": {
+        "present": false
+      }
+    },
+    "sources": 101
+  },
+  "clean": true
+}
+verify_rc=0
+
+--- status after (plays + recent runs) ---
+    "pid": 254971,
+    "start": 33710185,
+    "argv0": "/home/cayleb/.var/app/org.vinegarhq.Vinegar/data/vinegar/versions/version-7062aec9dbe74b14/RobloxStudioBeta.exe",
+    "winePrefix": "/home/cayleb/.var/app/org.vinegarhq.Vinegar/data/vinegar/prefixes/studio",
+    "plays": 3
+  },
+  "studioMcp": [],
+  "mcpPort": {
+    "port": 13469,
+    "listening": false,
+    "backlog": 0,
+    "established": 0
+  },
+  "recentRuns": [
+    "20261101T181456Z-verify-clean",
+    "20261101T181436Z-smoke",
+    "20261101T181340Z-verify-clean",
+    "20261101T181324Z-smoke",
+    "20261101T181305Z-verify-clean",
+    "20261101T181256Z-verify-clean",
+    "20261101T181216Z-verify-clean",
+    "20261101T181210Z-smoke"
+  ]
+}
+
+--- newest evidence dirs ---
+docs/verify/2026-10-19/vinegar/20261101T181456Z-verify-clean
+docs/verify/2026-10-19/vinegar/20261101T181436Z-smoke
+docs/verify/2026-10-19/vinegar/20261101T181340Z-verify-clean
+docs/verify/2026-10-19/vinegar/20261101T181324Z-smoke
+docs/verify/2026-10-19/vinegar/20261101T181305Z-verify-clean
+
+--- smoke result json (text, newest) ---
+dir=docs/verify/2026-10-19/vinegar/20261101T181436Z-smoke
+{
+  "schema": 1,
+  "startedAt": "2026-11-01T18:14:36+00:00",
+  "steps": {
+    "S0": {
+      "studio": {
+        "pid": 254971,
+        "start": 33710185,
+        "argv0": "/home/cayleb/.var/app/org.vinegarhq.Vinegar/data/vinegar/versions/version-7062aec9dbe74b14/RobloxStudioBeta.exe",
+        "winePrefix": "/home/cayleb/.var/app/org.vinegarhq.Vinegar/data/vinegar/prefixes/studio"
+      },
+      "host": {
+        "ts": 1793556876.702124,
+        "cores": 32,
+        "load1": 1.67,
+        "load_per_core": 0.052,
+        "cpu_some10": 0.0,
+        "mem_full10": 0.0,
+        "io_full10": 0.21,
+        "quiet": true,
+        "reasons": []
+      },
+      "journal": {
+        "status": "clean"
+      },
+      "gpuJobs": [],
+      "crashDumps": {
+        "count": 2,
+        "newest": 1793553119.5224159,
+        "dir": "/home/cayleb/.var/app/org.vinegarhq.Vinegar/data/vinegar/prefixes/studio/drive_c/users/cayleb/AppData/Local/Roblox/logs/crashes/reports"
+      },
+      "studioMcp": [],
+      "mcpPort": {
+        "port": 13469,
+        "listening": false,
+        "backlog": 0,
+        "established": 0
+      },
+      "place": {
+        "place": "/home/cayleb/.var/app/org.vinegarhq.Vinegar/data/usg/usg-desktop.rbxlx",
+        "placeSha256": "c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98",
+        "build": "/home/cayleb/Work/projects/untitled-street-game/build/test.rbxlx",
+        "buildSha256": "c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98",
+        "matchesBuild": true
+      },
+      "refusals": [],
+      "advisories": []
+    },
+    "S1": {
+      "tools": [
+        "upload_image",
+        "search_game_tree",
+        "script_search",
+        "skill",
+        "subagent",
+        "multi_edit",
+        "execute_luau",
+        "get_console_output",
+        "user_mouse_input",
+        "auto_setup_avatar",
+        "store_image",
+        "http_get",
+        "character_navigation",
+        "script_read",
+        "screen_capture",
+        "get_studio_state",
+        "start_stop_play",
+        "generate_scene",
+        "user_keyboard_input",
+        "script_grep",
+        "wait_job_finished",
+        "generate_procedural_model",
+        "segment_mesh",
+        "generate_texture",
+        "create_skill",
+        "generate_avatar",
+        "generate_mesh",
+        "generate_material",
+        "inspect_instance",
+        "list_skills",
+        "search_asset",
+        "edit_skill",
+        "insert_asset",
+        "list_roblox_studios"
+      ],
+--- sealed artifacts AFTER ---
+84324d4342667dd163ab8e64adacbf8ef44ab786aeda5c7ab1403e76d52ef6ce  build/release.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  build/test.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  /home/cayleb/.var/app/org.vinegarhq.Vinegar/data/usg/usg-desktop.rbxlx
+=== END 2026-11-01T13:15:02-05:00 ===

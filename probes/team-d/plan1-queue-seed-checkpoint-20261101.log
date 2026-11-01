@@ -1,0 +1,125 @@
+=== Plan 1 — queue per-entry seed + checkpoint semantics (2026-11-01) ===
+branch prep/b1-capture-format-20261101  base c0d4b22ca83be6dbf6d30a2933f8cee04b05e575
+
+--- diff stat ---
+ tests/tools/test_collector_chunks.py |  21 ++++-
+ tests/tools/test_vinegar_run.py      | 155 ++++++++++++++++++++-----------
+ tools/vinegar_run.py                 | 174 +++++++++++++++++++++++++++--------
+ 3 files changed, 257 insertions(+), 93 deletions(-)
+
+--- py_compile ---
+py_compile_rc=0
+
+--- runner suite (queue semantics) ---
+test_queue_changed_text_invalidates_the_checkpoint (test_vinegar_run.StateMachineTests.test_queue_changed_text_invalidates_the_checkpoint) ... ok
+test_queue_done_holds_only_passes_and_a_failure_needs_an_explicit_rerun (test_vinegar_run.StateMachineTests.test_queue_done_holds_only_passes_and_a_failure_needs_an_explicit_rerun) ... ok
+test_queue_failed_smoke_is_harness_and_needs_an_explicit_rerun (test_vinegar_run.StateMachineTests.test_queue_failed_smoke_is_harness_and_needs_an_explicit_rerun) ... ok
+test_queue_harness_failures_are_classified_and_require_an_explicit_rerun (test_vinegar_run.StateMachineTests.test_queue_harness_failures_are_classified_and_require_an_explicit_rerun) ... ok
+test_queue_parses_per_entry_options_with_the_run_validation (test_vinegar_run.StateMachineTests.test_queue_parses_per_entry_options_with_the_run_validation) ... ok
+test_queue_pauses_at_three_plays_and_resumes_from_the_checkpoint (test_vinegar_run.StateMachineTests.test_queue_pauses_at_three_plays_and_resumes_from_the_checkpoint) ... ok
+Ran 73 tests in 10.623s
+OK
+
+--- chunk suite (deterministic 413) ---
+Ran 10 tests in 3.213s
+
+OK
+
+--- full Python suite ---
+Ran 290 tests in 42.854s
+OK
+
+--- CLI surface ---
+usage: vinegar_run.py queue [-h] [--resume] [--plays-per-open PLAYS_PER_OPEN]
+                            [--rerun]
+                            file
+  file
+  --resume              continue from the checkpoint; retries an entry that
+  --rerun               with --resume: retry the checkpoint's failed entry
+
+--- sealed BEFORE commit ---
+84324d4342667dd163ab8e64adacbf8ef44ab786aeda5c7ab1403e76d52ef6ce  build/release.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  build/test.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  /home/cayleb/.var/app/org.vinegarhq.Vinegar/data/usg/usg-desktop.rbxlx
+commit_rc=0
+commit a639fa2b717bea0bd58a42071d4f95abd3aeddcd
+tracked_dirty=0  untracked_evidence_lines=792
+--- sealed AFTER commit ---
+84324d4342667dd163ab8e64adacbf8ef44ab786aeda5c7ab1403e76d52ef6ce  build/release.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  build/test.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  /home/cayleb/.var/app/org.vinegarhq.Vinegar/data/usg/usg-desktop.rbxlx
+a639fa2 runner: per-entry queue options and failure-aware checkpoint semantics
+c0d4b22 tests: guard validate_report's cleaned clause and import the computed helper count
+
+=== mutation proofs 2026-11-01T16:25:22-05:00 ===
+baseline sha256 df0a0ad9b345f0d7c9dfe45d9e14e2352cfce0035e27cecb4afbde7b37a8a7fd
+
+--- MUTATION (c): remove the --rerun-without---resume CLI guard ---
+    with self.assertRaises(SystemExit) as raised:
+         ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^
+AssertionError: SystemExit not raised
+
+----------------------------------------------------------------------
+Ran 1 test in 5.042s
+
+FAILED (failures=1)
+restoring...
+restored sha256 df0a0ad9b345f0d7c9dfe45d9e14e2352cfce0035e27cecb4afbde7b37a8a7fd
+test_queue_rerun_requires_resume (test_vinegar_run.StateMachineTests.test_queue_rerun_requires_resume) ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 0.002s
+
+OK
+
+--- MUTATION (d2): auto-continue after a failed rerun (exactly-once bound broken) ---
+    self.assertEqual(V.queue(ctx, qfile, resume=True, rerun=True), V.EXIT_FAIL)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 0 != 1
+
+----------------------------------------------------------------------
+Ran 1 test in 0.003s
+
+FAILED (failures=1)
+restoring...
+restored sha256 df0a0ad9b345f0d7c9dfe45d9e14e2352cfce0035e27cecb4afbde7b37a8a7fd
+test_queue_failed_rerun_stops_after_exactly_one_fixture_call (test_vinegar_run.StateMachineTests.test_queue_failed_rerun_stops_after_exactly_one_fixture_call) ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 0.002s
+
+OK
+
+--- suite after restore ---
+Ran 75 tests in 10.432s
+
+OK
+--- full Python suite ---
+python_rc=0
+Ran 292 tests in 43.749s
+OK
+--- sealed ---
+84324d4342667dd163ab8e64adacbf8ef44ab786aeda5c7ab1403e76d52ef6ce  build/release.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  build/test.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  /home/cayleb/.var/app/org.vinegarhq.Vinegar/data/usg/usg-desktop.rbxlx
+
+=== checker-fix re-freeze 2026-11-01T16:26:36-05:00 ===
+--- diff stat ---
+ tests/tools/test_vinegar_run.py | 30 +++++++++++++++++++++++++++++-
+ tools/vinegar_run.py            |  8 ++++++--
+ 2 files changed, 35 insertions(+), 3 deletions(-)
+--- runner suite ---
+Ran 75 tests in 10.603s
+
+OK
+--- full Python suite ---
+Ran 292 tests in 43.749s
+OK
+--- help/doc lines ---
+16:  vinegar_run.py queue FILE [--resume] [--rerun]  fixtures in design order, checkpointed, pauses at 3 Plays per Studio
+1101:        raise checks.Refused("queue entry smoke takes no options (smoke runs the fixed S0-S6 transport check)")
+1367:    q.add_argument("--resume", action="store_true", help="continue from the checkpoint; a failed entry is not retried automatically — pass --rerun to retry it exactly once per invocation; interrupted entries stay undone")
+--- sealed BEFORE commit ---
+84324d4342667dd163ab8e64adacbf8ef44ab786aeda5c7ab1403e76d52ef6ce  build/release.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  build/test.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  /home/cayleb/.var/app/org.vinegarhq.Vinegar/data/usg/usg-desktop.rbxlx

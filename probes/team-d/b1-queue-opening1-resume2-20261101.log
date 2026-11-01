@@ -1,0 +1,86 @@
+=== B1 OPENING 1 RESUME #2 (after branch-aligned re-sync + latch clear)  2026-11-01T13:13:24-05:00 ===
+repo: /home/cayleb/Work/projects/untitled-street-game  branch: prep/b1-capture-format-20261101  commit: 32919dd2ca6ddd4b1b0646c5964f1f1aa4d43c90
+capture fix: PNG or JPEG accepted (mcp.py/frames.py); place re-synced from THIS tree so verify-clean matches (101 sources)
+sealed artifacts BEFORE:
+84324d4342667dd163ab8e64adacbf8ef44ab786aeda5c7ab1403e76d52ef6ce  build/release.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  build/test.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  /home/cayleb/.var/app/org.vinegarhq.Vinegar/data/usg/usg-desktop.rbxlx
+
+--- status before ---
+  "studioMcp": [],
+  "mcpPort": {
+    "port": 13469,
+    "listening": false,
+    "backlog": 0,
+    "established": 0
+  },
+  "recentRuns": [
+    "20261101T181305Z-verify-clean",
+    "20261101T181256Z-verify-clean",
+    "20261101T181216Z-verify-clean",
+    "20261101T181210Z-smoke",
+    "20261101T180448Z-verify-clean",
+    "20261101T180431Z-smoke"
+  ]
+}
+
+--- queue --resume (smoke retry, then Plays 2-3; pauses at 3 Plays) ---
+{"mcpClose": {"owned": [{"pid": 278688, "start": 34047847, "ppid": 278683, "ageSeconds": 10.3}], "foreignNew": [], "signals": [{"pid": 278688, "start": 34047847, "signal": "SIGTERM"}], "survivors": []}}
+{"smoke": 1, "runDir": "/home/cayleb/Work/projects/untitled-street-game/docs/verify/2026-10-19/vinegar/20261101T181324Z-smoke", "error": "KeyError: 'png'", "checks": {"S1 Edit": true, "S2 unpublished local place": true, "S3 code sizes up to 64 KiB": true, "S3 12 KB and 90 KB responses intact": true, "S4 600 KiB loopback POST": true, "S4 HttpEnabled restored": true}, "findings": {"response110KBTruncated": true, "s4CollectorClose": {"clean": true, "workerAlive": false, "activeSockets": 0, "phases": ["smoke"], "rejections": [], "chunks": null}}}
+{"queue": "stopped", "entry": "smoke", "exit": 1, "resume": "--resume retries this entry"}
+queue_rc=1
+
+--- verify-clean ---
+      },
+      "StudioStartCredits": {
+        "present": false
+      },
+      "StudioStartLevel": {
+        "present": false
+      }
+    },
+    "sources": 101
+  },
+  "clean": true
+}
+verify_rc=0
+
+--- status after ---
+    "argv0": "/home/cayleb/.var/app/org.vinegarhq.Vinegar/data/vinegar/versions/version-7062aec9dbe74b14/RobloxStudioBeta.exe",
+    "winePrefix": "/home/cayleb/.var/app/org.vinegarhq.Vinegar/data/vinegar/prefixes/studio",
+    "plays": 2
+  },
+  "studioMcp": [],
+  "mcpPort": {
+    "port": 13469,
+    "listening": false,
+    "backlog": 0,
+    "established": 0
+  },
+  "recentRuns": [
+    "20261101T181340Z-verify-clean",
+    "20261101T181324Z-smoke",
+    "20261101T181305Z-verify-clean",
+    "20261101T181256Z-verify-clean",
+    "20261101T181216Z-verify-clean",
+    "20261101T181210Z-smoke",
+    "20261101T180448Z-verify-clean",
+    "20261101T180431Z-smoke"
+  ]
+}
+
+--- evidence dirs ---
+docs/verify/2026-10-19/vinegar/20261101T181340Z-verify-clean
+docs/verify/2026-10-19/vinegar/20261101T181324Z-smoke
+docs/verify/2026-10-19/vinegar/20261101T181305Z-verify-clean
+docs/verify/2026-10-19/vinegar/20261101T181256Z-verify-clean
+docs/verify/2026-10-19/vinegar/20261101T181216Z-verify-clean
+docs/verify/2026-10-19/vinegar/20261101T181210Z-smoke
+docs/verify/2026-10-19/vinegar/20261101T180448Z-verify-clean
+docs/verify/2026-10-19/vinegar/20261101T180431Z-smoke
+
+--- sealed artifacts AFTER ---
+84324d4342667dd163ab8e64adacbf8ef44ab786aeda5c7ab1403e76d52ef6ce  build/release.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  build/test.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  /home/cayleb/.var/app/org.vinegarhq.Vinegar/data/usg/usg-desktop.rbxlx
+=== END 2026-11-01T13:13:46-05:00 ===

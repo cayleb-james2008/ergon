@@ -1,0 +1,51 @@
+=== STREET A1 — OFFICIAL RE-RUN (post spec-review)  2026-11-01T12:58:29-05:00  host=outis-desktop ===
+repo branch: prep/a1-highway-spec-20261101   commit: 1abe30391caf88db9d76bd424d87461899b5cdf9
+base candidate: b67abdd   spec diff:  1 file changed, 67 insertions(+), 20 deletions(-)
+sealed artifacts BEFORE (must stay unchanged; no rebuild is run):
+84324d4342667dd163ab8e64adacbf8ef44ab786aeda5c7ab1403e76d52ef6ce  build/release.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  build/test.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  /home/cayleb/.var/app/org.vinegarhq.Vinegar/data/usg/usg-desktop.rbxlx
+
+--- Studio state before (MCP) ---
+$ python3 tools/studio.py list
+{"studios":[{"id":"b9d99ec9-93dd-4dd9-99a0-75936cbea3a1","name":"usg-desktop.rbxlx"}]}
+$ python3 tools/studio.py play state
+- Current Studio Mode: Edit
+- Available DataModels: Edit
+- Focused DataModel in the viewport: Edit
+
+--- A1.1 sync --test (updated spec + candidate sources into the sealed open place) ---
+{"synced":101}
+sync_rc=0
+
+--- A1.2 tests (11 Studio spec modules; expect all PASS incl highway.spec) ---
+{"customization.spec":{"passed":3},"visual.spec":{"passed":6,"suites":["saved preset defaults and neutral baseline","zero-intensity and bounded resolution","shared night lighting floor preserves brighter authored environments","legacy and malformed persistence compatibility","validated, copied server settings updates","old-profile migration and persistent three-filter round-trip"]},"showroom.spec":{"passed":15,"suites":["safe-area preview projection","visual-only local stage","responsive and asymmetric preview-region framing","non-clipping showroom lighting","camera handoff and fresh state restoration","active camera ownership and release cleanup","vehicle replacement and cleanup"]},"game.spec":{"passed":19,"suites":["seeded graph","city builder integration","walkable hub interactions","chassis mass calibration","seated driver mass lifecycle","imported vehicle asset integration","cockpit steering rig","catalog and handling stats","profile transactions","server style scoring","career events and payouts","single shared world and opening fare policy","settings revision ordering and legacy compatibility","event start concurrency guard","server countdown and GO","destroyed/off-world car recovery and stale spawn cleanup","profile load concurrency and retry","versioned session persistence","expired session invalidation and stale gameplay rejection"]},"baseline-mechanics.spec":{"sightlineCars":["neon_hatch","shinku_sedan","crow_coupe","kiba_awd","yoru_lux","tsukino_gt","hayate_rs"],"success":true,"checks":3,"pursuit":{"styleScore":112,"styleBonus":56,"success":true,"careerCount":1,"reward":2675},"reset":"production handler repositions upright and clears linear/angular assembly motion without payout"},"gameplay-settings.spec":{"passed":4,"suites":["difficulty defaults, ids, and pressure constants","v1 and legacy profile settings migration","difficulty and baby-mode persistence round-trip","atomic patch validation and malformed-profile rejection"]},"driving.spec":{"passed":29},"driving-modes.spec":{"passed":7,"suites":["career pressure scales clocks and AI while Baby Mode applies its floor/cap","time-trial best records identify course/day and separate difficulty/assisted cohorts","activity validation, highway selection, practice reset, and no-practice-payout guards","career result packets report frozen difficulty and assisted status","highway style rejects implausible teleports and breaks chains on collision without payout","career reset lock, mid-drive Baby Mode lock, and safe shared-world switching","Baby career reset keeps checkpoint and suspicion, applies penalty, and rebases telemetry/style"]},"highway.spec":{"expectedTrafficCount":54,"groundSamples":5,"suites":["100 deterministic highway graph and circuit checks","shared world: highway zone, arrival bays, design-contract traffic density and spacing, road and safety-ground integration"],"passed":2,"seedsPassed":100,"minimumAccessClearanceStuds":64,"minimumTrafficSpacingSlots":0.6694870414212347,"roadSamples":3142,"graphNodesChecked":20686},"traffic-shared.spec":{"timing":{"maxMs":4.601399996317923,"scope":"engine Luau algorithm only; excludes solver/replication/rendering and live-player observations","samples":40,"obstacles":24,"p95Ms":4.082999948877841,"running":false,"cars":54,"representativeBudget":false,"p50Ms":3.778599959332496,"warmupSteps":5,"meanMs":3.808677503548097},"note":"adapter/algorithm CPU only; two-client collision and representative performance unverified","passed":9,"failed":0},"ui.spec":{"passed":4,"suites":["theme and responsive breakpoints","screen-key mapping","editable GUI shell and bindings","cosmetic group and restore controls"]}}
+tests_rc=0
+
+--- A1.3 console tail (text) ---
+Nightshift: imported visual for crow_coupe needs four named tires; using authored fallback
+Nightshift: imported visual for kiba_awd needs four named tires; using authored fallback
+Nightshift: imported visual for yoru_lux needs four named tires; using authored fallback
+Nightshift: imported visual for tsukino_gt needs four named tires; using authored fallback
+Nightshift: imported visual for hayate_rs needs four named tires; using authored fallback
+Nightshift: imported visual for neon_hatch needs four named tires; using authored fallback
+Nightshift: imported visual for neon_hatch needs four named tires; using authored fallback
+Nightshift: imported visual for neon_hatch needs four named tires; using authored fallback
+Nightshift: imported visual for neon_hatch needs four named tires; using authored fallback
+Nightshift: imported visual for shinku_sedan needs four named tires; using authored fallback
+Nightshift: imported visual for neon_hatch needs four named tires; using authored fallback
+Nightshift: imported visual for neon_hatch needs four named tires; using authored fallback
+Nightshift: imported visual for shinku_sedan needs four named tires; using authored fallback
+Nightshift: imported visual for crow_coupe needs four named tires; using authored fallback
+Nightshift: imported visual for kiba_awd needs four named tires; using authored fallback
+Nightshift: imported visual for yoru_lux needs four named tires; using authored fallback
+Nightshift: imported visual for tsukino_gt needs four named tires; using authored fallback
+Nightshift: imported visual for hayate_rs needs four named tires; using authored fallback
+DataStore unavailable; player loads will fail safely: You must publish this place to the web to access DataStore.
+Player data save failed 88302 save-failed
+
+--- sealed artifacts AFTER ---
+84324d4342667dd163ab8e64adacbf8ef44ab786aeda5c7ab1403e76d52ef6ce  build/release.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  build/test.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  /home/cayleb/.var/app/org.vinegarhq.Vinegar/data/usg/usg-desktop.rbxlx
+=== DONE 2026-11-01T12:59:25-05:00 ===

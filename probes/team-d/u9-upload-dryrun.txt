@@ -1,0 +1,25 @@
+DRY RUN: 24 candidate image upload(s); operator authorization is recorded, public rights/license are not independently verified, and no network requests are made.
+POST https://apis.roblox.com/assets/v1/assets (x-api-key: <redacted>) card=BC-SEA-01
+POST https://apis.roblox.com/assets/v1/assets (x-api-key: <redacted>) card=BC-WIND-01
+POST https://apis.roblox.com/assets/v1/assets (x-api-key: <redacted>) card=BK-FALCON-01
+POST https://apis.roblox.com/assets/v1/assets (x-api-key: <redacted>) card=BK-GUTS-01
+POST https://apis.roblox.com/assets/v1/assets (x-api-key: <redacted>) card=BK-WIND-01
+POST https://apis.roblox.com/assets/v1/assets (x-api-key: <redacted>) card=BL-BYAKUYA-01
+POST https://apis.roblox.com/assets/v1/assets (x-api-key: <redacted>) card=BL-FROST-01
+POST https://apis.roblox.com/assets/v1/assets (x-api-key: <redacted>) card=BL-ICHIGO-01
+POST https://apis.roblox.com/assets/v1/assets (x-api-key: <redacted>) card=DB-GOKU-01
+POST https://apis.roblox.com/assets/v1/assets (x-api-key: <redacted>) card=DB-NAMEK-01
+POST https://apis.roblox.com/assets/v1/assets (x-api-key: <redacted>) card=DB-PRINCE-01
+POST https://apis.roblox.com/assets/v1/assets (x-api-key: <redacted>) card=MHA-BLAST-01
+POST https://apis.roblox.com/assets/v1/assets (x-api-key: <redacted>) card=MHA-DEKU-01
+POST https://apis.roblox.com/assets/v1/assets (x-api-key: <redacted>) card=MHA-FROSTBURN-01
+POST https://apis.roblox.com/assets/v1/assets (x-api-key: <redacted>) card=NR-KAKASHI-01
+POST https://apis.roblox.com/assets/v1/assets (x-api-key: <redacted>) card=NR-NARUTO-01
+POST https://apis.roblox.com/assets/v1/assets (x-api-key: <redacted>) card=NR-SHADOW-01
+POST https://apis.roblox.com/assets/v1/assets (x-api-key: <redacted>) card=VG-HEAD-01
+POST https://apis.roblox.com/assets/v1/assets (x-api-key: <redacted>) card=VG-MUSASHI-01
+POST https://apis.roblox.com/assets/v1/assets (x-api-key: <redacted>) card=VG-RIVAL-01
+POST https://apis.roblox.com/assets/v1/assets (x-api-key: <redacted>) card=VS-BEAR-01
+POST https://apis.roblox.com/assets/v1/assets (x-api-key: <redacted>) card=VS-SNAKE-01
+POST https://apis.roblox.com/assets/v1/assets (x-api-key: <redacted>) card=VS-THORFINN-01
+POST https://apis.roblox.com/assets/v1/assets (x-api-key: <redacted>) card=BC-ASTA-01

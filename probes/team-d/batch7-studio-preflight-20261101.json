@@ -1,0 +1,86 @@
+{"mcpClose": {"owned": [{"pid": 535365, "start": 35984801, "ppid": 535360, "ageSeconds": 3.6}], "foreignNew": [], "signals": [{"pid": 535365, "start": 35984801, "signal": "SIGTERM"}], "survivors": []}}
+{
+  "studio": {
+    "pid": 388820,
+    "start": 35081170,
+    "argv0": "/home/cayleb/.var/app/org.vinegarhq.Vinegar/data/vinegar/versions/version-7062aec9dbe74b14/RobloxStudioBeta.exe",
+    "winePrefix": "/home/cayleb/.var/app/org.vinegarhq.Vinegar/data/vinegar/prefixes/studio"
+  },
+  "host": {
+    "ts": 1793576174.226469,
+    "cores": 32,
+    "load1": 3.92,
+    "load_per_core": 0.122,
+    "cpu_some10": 0.76,
+    "mem_full10": 0.03,
+    "io_full10": 0.03,
+    "quiet": true,
+    "reasons": []
+  },
+  "journal": {
+    "status": "clean"
+  },
+  "gpuJobs": [],
+  "crashDumps": {
+    "count": 2,
+    "newest": 1793560063.5841548,
+    "dir": "/home/cayleb/.var/app/org.vinegarhq.Vinegar/data/vinegar/prefixes/studio/drive_c/users/cayleb/AppData/Local/Roblox/logs/crashes/reports"
+  },
+  "studioMcp": [],
+  "mcpPort": {
+    "port": 13469,
+    "listening": false,
+    "backlog": 0,
+    "established": 0
+  },
+  "place": {
+    "place": "/home/cayleb/.var/app/org.vinegarhq.Vinegar/data/usg/usg-desktop.rbxlx",
+    "placeSha256": "c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98",
+    "build": "/home/cayleb/Work/projects/untitled-street-game/build/test.rbxlx",
+    "buildSha256": "c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98",
+    "matchesBuild": true
+  },
+  "refusals": [],
+  "advisories": [],
+  "mcp": {
+    "studioId": "cdefa06f-afc8-45ac-b3d5-3977cdb25ce6",
+    "tools": [
+      "upload_image",
+      "search_game_tree",
+      "script_search",
+      "skill",
+      "subagent",
+      "multi_edit",
+      "execute_luau",
+      "get_console_output",
+      "user_mouse_input",
+      "auto_setup_avatar",
+      "store_image",
+      "http_get",
+      "character_navigation",
+      "script_read",
+      "screen_capture",
+      "get_studio_state",
+      "start_stop_play",
+      "generate_scene",
+      "user_keyboard_input",
+      "script_grep",
+      "wait_job_finished",
+      "generate_procedural_model",
+      "segment_mesh",
+      "generate_texture",
+      "create_skill",
+      "generate_avatar",
+      "generate_mesh",
+      "generate_material",
+      "inspect_instance",
+      "list_skills",
+      "search_asset",
+      "edit_skill",
+      "insert_asset",
+      "list_roblox_studios"
+    ]
+  },
+  "edit": true,
+  "plays": 0
+}

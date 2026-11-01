@@ -1,0 +1,108 @@
+=== checker-verdict fixes (blockers 1+2, minors) — test evidence 2026-11-01T15:25:18-05:00 ===
+branch prep/b1-capture-format-20261101  previous commit ec1c39471a1188b1314e8ce3fdd42959174bcde8
+
+--- diff stat (this fix) ---
+ tests/tools/test_collector_chunks.py   | 168 +++++++++++++++++++++------------
+ tests/tools/test_traffic_acceptance.py |   2 +-
+ tests/tools/test_vinegar_run.py        |  20 ++++
+ tools/traffic_acceptance.py            |   2 +-
+ tools/vinegar_run.py                   |   4 +-
+ 5 files changed, 132 insertions(+), 64 deletions(-)
+
+--- BLOCKER 1 reproduction: before/after cleaned ---
+BEFORE registry literal 2: helpers=2 removedHelpers=3 cleaned=False
+AFTER registry EXPECTED_HELPERS: helpers=3 removedHelpers=3 cleaned=True
+registry traffic:pass: helpers=3 chunks=True
+registry traffic:abort-contact: helpers=3 chunks=True
+
+--- NEW chunk suite (production-shaped envelopes, pytest) ---
+..........                                                          [100%]
+10 passed, 5 subtests passed in 3.33s
+pytest_rc=0
+
+--- NEW chunk suite verbose names ---
+test_cleanup_cleaned_flag_depends_on_the_computed_helper_count (test_collector_chunks.ChunkTransport.test_cleanup_cleaned_flag_depends_on_the_computed_helper_count) ... ok
+test_conflicting_duplicate_is_rejected (test_collector_chunks.ChunkTransport.test_conflicting_duplicate_is_rejected) ... ok
+test_count_bytes_mismatch_is_rejected (test_collector_chunks.ChunkTransport.test_count_bytes_mismatch_is_rejected) ... ok
+test_dropped_chunk_never_delivers_runtime_and_exits_nonzero (test_collector_chunks.ChunkTransport.test_dropped_chunk_never_delivers_runtime_and_exits_nonzero) ... ok
+test_identical_duplicate_is_idempotent_and_still_completes (test_collector_chunks.ChunkTransport.test_identical_duplicate_is_idempotent_and_still_completes) ... ok
+test_identity_mismatch_is_rejected_on_every_identity_field (test_collector_chunks.ChunkTransport.test_identity_mismatch_is_rejected_on_every_identity_field) ... ok
+test_out_of_order_chunk_is_rejected (test_collector_chunks.ChunkTransport.test_out_of_order_chunk_is_rejected) ... ok
+test_oversized_wire_is_refused_with_413_and_the_runner_exit_code (test_collector_chunks.ChunkTransport.test_oversized_wire_is_refused_with_413_and_the_runner_exit_code) ... ok
+test_reassembly_is_byte_identical_to_the_single_post_payload (test_collector_chunks.ChunkTransport.test_reassembly_is_byte_identical_to_the_single_post_payload) ... ok
+test_wrong_whole_envelope_sha256_is_rejected (test_collector_chunks.ChunkTransport.test_wrong_whole_envelope_sha256_is_rejected) ... ok
+
+----------------------------------------------------------------------
+Ran 10 tests in 3.235s
+
+OK
+
+--- traffic acceptance suite ---
+Ran 4 tests in 0.054s
+
+OK
+--- runner suite (includes registry regression test) ---
+test_only_the_traffic_fixtures_take_the_chunk_transport_with_the_computed_helper_count (test_vinegar_run.FixtureTests.test_only_the_traffic_fixtures_take_the_chunk_transport_with_the_computed_helper_count)
+Ran 69 tests in 10.510s
+OK
+--- Luau traffic timing spec ---
+unit: 4 passed, 0 failed (1 specs)
+--- full Lune suite ---
+unit: 914 passed, 0 failed (125 specs)
+lune_rc=0
+--- full Python suite ---
+city maximum-schema envelope bytes 9644950 limit 12582912
+python_rc=0
+
+--- sealed BEFORE commit ---
+84324d4342667dd163ab8e64adacbf8ef44ab786aeda5c7ab1403e76d52ef6ce  build/release.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  build/test.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  /home/cayleb/.var/app/org.vinegarhq.Vinegar/data/usg/usg-desktop.rbxlx
+Traceback (most recent call last):
+  File "<stdin>", line 10, in <module>
+  File "<mutation: clause removed>", line 13, in <module>
+NameError: name '__file__' is not defined. Did you mean: '__name__'?
+=== direct validate_report evidence ===
+cleaned=False  REAL clause present      raised=True (final Edit/source cleanup missing or the collector did not confirm cleaned (helper-count bookkeeping))
+cleaned=False  MUTATED clause removed   raised=False (accepted)
+cleaned absent REAL clause present      raised=True (final Edit/source cleanup missing or the collector did not confirm cleaned (helper-count bookkeeping))
+cleaned absent MUTATED clause removed   raised=False (accepted)
+
+=== unit-test-level mutation proof ===
+Traceback (most recent call last):
+  File "<stdin>", line 32, in <module>
+AttributeError: 'TrafficAcceptance' object has no attribute 'runTest'. Did you mean: 'subTest'?
+=== direct validate_report evidence ===
+cleaned=False  REAL clause present      raised=True (final Edit/source cleanup missing or the collector did not confirm cleaned (helper-count bookkeeping))
+cleaned=False  MUTATED clause removed   raised=False (accepted)
+cleaned absent REAL clause present      raised=True (final Edit/source cleanup missing or the collector did not confirm cleaned (helper-count bookkeeping))
+cleaned absent MUTATED clause removed   raised=False (accepted)
+
+=== unit-test-level mutation proof ===
+MUTATED: failure/error count = 2/0 (successful=False)
+MUTATED: the new cases FAIL as required -> the clause is load-bearing and guarded
+RESTORED: failure/error count = 0/0 (successful=True)
+RESTORED: the new cases PASS with the real clause
+
+=== re-check narrow REJECT fixes — test-only, 2026-11-01T15:36:57-05:00 ===
+--- diff stat ---
+ tests/tools/test_collector_chunks.py   | 3 ++-
+ tests/tools/test_traffic_acceptance.py | 4 +++-
+ 2 files changed, 5 insertions(+), 2 deletions(-)
+--- full Python suite ---
+Ran 286 tests in 45.379s
+OK
+--- chunk suite ---
+Ran 10 tests in 3.232s
+
+OK
+--- traffic acceptance ---
+Ran 4 tests in 0.055s
+
+OK
+--- Luau traffic-timing ---
+unit: 4 passed, 0 failed (1 specs)
+--- sealed BEFORE commit ---
+84324d4342667dd163ab8e64adacbf8ef44ab786aeda5c7ab1403e76d52ef6ce  build/release.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  build/test.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  /home/cayleb/.var/app/org.vinegarhq.Vinegar/data/usg/usg-desktop.rbxlx

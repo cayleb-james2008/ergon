@@ -1,0 +1,148 @@
+diff --git a/tests/studio/highway.spec.luau b/tests/studio/highway.spec.luau
+index ccb69e4..a44aacc 100644
+--- a/tests/studio/highway.spec.luau
++++ b/tests/studio/highway.spec.luau
+@@ -2,6 +2,12 @@
+ 
+ -- Run from the Studio server Command Bar:
+ -- local report = require(game.ServerScriptService.Nightshift.tests["highway.spec"]).run()
++--
++-- Highway traffic density/alignment contract: docs/TRAFFIC_SPEC.md row 7 ("Initial spacing in every lane … never
++-- closer than 0.6 slot") and line 56 ("one per ~1,100 studs, and 26 of 54 cars"). The density rule was introduced by
++-- commit bdcfcb9 (2026-10-18, "Expand the seeded highway with bounded scenery and feasible shared traffic") and this
++-- spec's fixed five-cars-per-lane assertion predates it (last changed c89edb9, 2026-10-14). The assertions below
++-- therefore assert the design contract derived from the graph, not a stale constant.
+ 
+ local ReplicatedStorage = game:GetService("ReplicatedStorage")
+ local ServerScriptService = game:GetService("ServerScriptService")
+@@ -165,20 +171,53 @@ local function surfaceChecks(world: any): (number, number)
+ 	return roadSamples, groundSamples
+ end
+ 
+--- Highway traffic is Shared/TrafficSim: one closed loop per direction and lane offset, five cars each.
+-local function trafficCohortChecks(world: any): (number, number)
+-	local graph = world.highwayGraph
+-	local sim = world.traffic.highway
+-	local counts: { [string]: number } = {}
+-	local positions: { [string]: { number } } = {}
+-	local lengths: { [string]: number } = {}
++-- Highway traffic density is the shared design contract (docs/TRAFFIC_SPEC.md row 7 and line 56, commit bdcfcb9):
++-- one seeded density for every player, five cars per baseline mainline length per directional lane clamped to ten,
++-- and no car closer than 0.6 of a slot to the one ahead in its lane. Curved lane loops are longer than the mainline
++-- baseline, so the cohort grows proportionally and the physical slot stays constant (9 cars per lane / 54 total at
++-- seed 918273).
++local HIGHWAY_CARS_PER_LANE = 5
++local HIGHWAY_CARS_PER_LANE_MAX = 10
++local HIGHWAY_MIN_SPACING_SLOTS = 0.6
++
++local function expectedLaneCounts(graph: any): { [string]: number }
++	local baselineMainline = graph.highway.baselineMainlineLength
++	local expected: { [string]: number } = {}
+ 	for _, route in graph.highway.trafficRoutes do
+ 		for _, offset in graph.highway.trafficLaneOffsets do
+ 			local key = route.id .. ":" .. tostring(offset)
+-			counts[key] = 0
+-			positions[key] = {}
++			local count = HIGHWAY_CARS_PER_LANE
++			if baselineMainline then
++				local baseline = baselineMainline
++					+ (if route.id == "clockwise" then 1 else -1) * 2 * offset * graph.highway.baselineTurnMiter
++				local poly = TrafficSim.laneLoop(graph, route.nodeIds, offset)
++				count = math.min(HIGHWAY_CARS_PER_LANE_MAX, math.ceil(HIGHWAY_CARS_PER_LANE * poly.length / baseline))
++			end
++			expected[key] = count
+ 		end
+ 	end
++	return expected
++end
++
++local function trafficCohortChecks(world: any): (number, number, number)
++	local graph = world.highwayGraph
++	local sim = world.traffic.highway
++	local expected = expectedLaneCounts(graph)
++	local expectedTotal = 0
++	local sharedExpectedCount: number? = nil
++	for _, expectedCount in expected do
++		sharedExpectedCount = if sharedExpectedCount == nil then expectedCount else sharedExpectedCount
++		assert(expectedCount == sharedExpectedCount,
++			"graph density contract must give one shared per-lane car count across both directions and all six lanes")
++		expectedTotal += expectedCount
++	end
++	local counts: { [string]: number } = {}
++	local positions: { [string]: { number } } = {}
++	local lengths: { [string]: number } = {}
++	for key in expected do
++		counts[key] = 0
++		positions[key] = {}
++	end
+ 	for _, car in sim.cars do
+ 		local key = car.loop.id
+ 		assert(counts[key] ~= nil, "highway traffic car is outside the directional lane-offset contract")
+@@ -186,22 +225,27 @@ local function trafficCohortChecks(world: any): (number, number)
+ 		lengths[key] = car.loop.poly.length
+ 		table.insert(positions[key], TrafficSim.carDistance(car, 0))
+ 	end
+-	-- Every car in a lane shares its speed, so spacing at t = 0 holds forever.
+-	local minimumSpacingRatio = math.huge
++	-- Every car in a lane shares its speed, so spacing at t = 0 holds forever. The contract measures the gap in
++	-- slots (slot = lane length / cars in the lane) and requires at least 0.6 slot: docs/TRAFFIC_SPEC.md row 7.
++	local minimumSpacingSlots = math.huge
+ 	for key, count in counts do
+-		assert(count == 5, "highway traffic must spread evenly across both directions and all six lanes")
++		local expectedCount = expected[key]
++		assert(count == expectedCount,
++			string.format("highway lane %s has %d cars but the graph density contract expects %d", key, count, expectedCount))
+ 		local lanePositions = positions[key]
+ 		local length = lengths[key]
+ 		assert(type(length) == "number" and length > 0, "highway traffic lane length missing")
++		local slot = length / count
+ 		table.sort(lanePositions)
+ 		for index, position in lanePositions do
+ 			local nextPosition = lanePositions[index % #lanePositions + 1]
+ 			if index == #lanePositions then nextPosition += length end
+-			minimumSpacingRatio = math.min(minimumSpacingRatio, (nextPosition - position) / length)
++			minimumSpacingSlots = math.min(minimumSpacingSlots, (nextPosition - position) / slot)
+ 		end
+ 	end
+-	assert(minimumSpacingRatio >= 0.1, "highway traffic cars are clustered within a directional lane")
+-	return #sim.cars, minimumSpacingRatio
++	assert(minimumSpacingSlots >= HIGHWAY_MIN_SPACING_SLOTS,
++		string.format("highway traffic cars are clustered closer than %.1f slot (design contract)", HIGHWAY_MIN_SPACING_SLOTS))
++	return #sim.cars, minimumSpacingSlots, expectedTotal
+ end
+ 
+ function Spec.run(): any
+@@ -228,8 +272,9 @@ function Spec.run(): any
+ 		for _, name in { "City", "Highway", "Hub", "Gates" } do
+ 			assert(root:FindFirstChild(name), "shared world did not build " .. name)
+ 		end
+-		local trafficCount, trafficSpacingRatio = trafficCohortChecks(world)
+-		assert(trafficCount == 30, "highway ambient traffic density changed")
++		local trafficCount, trafficSpacingSlots, expectedTrafficCount = trafficCohortChecks(world)
++		assert(trafficCount == expectedTrafficCount,
++			"highway ambient traffic density changed from the graph-derived design contract")
+ 		local graph = world.highwayGraph
+ 		local garage = graph.nodes[graph.garageId].position
+ 		local accessOffset = graph.nodes[graph.highway.accessRouteIds[2]].position - garage
+@@ -242,7 +287,8 @@ function Spec.run(): any
+ 				"highway arrival bay is not on the collidable access road")
+ 		end
+ 		local roadSamples, groundSamples = surfaceChecks(world)
+-		return { roadSamples = roadSamples, groundSamples = groundSamples, trafficSpacingRatio = trafficSpacingRatio }
++		return { roadSamples = roadSamples, groundSamples = groundSamples,
++			trafficSpacingSlots = trafficSpacingSlots, expectedTrafficCount = expectedTrafficCount }
+ 	end, debug.traceback)
+ 	root:Destroy()
+ 	assert(ok, tostring(result))
+@@ -253,8 +299,9 @@ function Spec.run(): any
+ 		minimumAccessClearanceStuds = minimumAccessClearance,
+ 		roadSamples = result.roadSamples,
+ 		groundSamples = result.groundSamples,
+-		minimumTrafficSpacingRatio = result.trafficSpacingRatio,
+-		suites = { "100 deterministic highway graph and circuit checks", "shared world: highway zone, arrival bays, deterministic traffic, road and safety-ground integration" },
++		minimumTrafficSpacingSlots = result.trafficSpacingSlots,
++		expectedTrafficCount = result.expectedTrafficCount,
++		suites = { "100 deterministic highway graph and circuit checks", "shared world: highway zone, arrival bays, design-contract traffic density and spacing, road and safety-ground integration" },
+ 	}
+ end
+ 

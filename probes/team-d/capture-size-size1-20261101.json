@@ -1,0 +1,39 @@
+{
+ "tag": "size1",
+ "ts": "2026-11-01T13:26:32-0500",
+ "viewport": [
+  3053,
+  1134
+ ],
+ "capture": {
+  "mimeType": "image/jpeg",
+  "bytes": 12413,
+  "sha256": "66be3f76852797475d91248ceac8dcb1420437bfe646822cbce156071c4c268a",
+  "dims": [
+   1920,
+   713
+  ],
+  "content_items": 1,
+  "isError": false
+ },
+ "studio_window": {
+  "at": [
+   12,
+   38
+  ],
+  "size": [
+   3416,
+   1390
+  ],
+  "title": "Z:\\home\\cayleb\\.var\\app\\org.vinegarhq.Vinegar\\data\\usg\\usg-desktop.rbxlx - Roblox Studio",
+  "pid": 254971
+ },
+ "ratio_image_over_viewport": [
+  0.62889,
+  0.628748
+ ],
+ "ratio_image_over_window": [
+  0.562061,
+  0.51295
+ ]
+}

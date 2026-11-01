@@ -1,0 +1,13 @@
+readiness 2026-10-31  read at 2026-11-01T23:35:24Z  observed 2026-10-31T12:33:55Z..2026-11-01T00:00:00Z  ledger tick 2026-11-01T23:35:00Z
+cutoff  capture books 2026-10-31T23:59:59Z  ref 2026-10-31T23:59:59Z  ledger decisions/orders tick 2026-11-01T23:35:00Z  (16390/121991 complete lines)
+PASS  capture_validator     5 files, 3357672 records (book=38635 fees=39 gap=6 market=9221 schedule=3 settled=619 start=3 status=139 stop=2 trade=3309005), errors 0
+PASS  gap_ledger            unhealthy-book share worst 0.029% (HYPE) over 9 coins, observed 2026-10-31T12:33:55Z..2026-11-01T00:00:00Z; gap records 6 (book 63s trades 37s meta 0s); starts 3 restarts 2 crashes 0; longest gap 24s
+PASS  ref_health            seconds with n>=1: worst 99.975% (BNB), median n BNB=2,BTC=6,DOGE=5,ETH=6,HYPE=3,NEAR=3,SOL=5,XRP=4,ZEC=2; venue connects 34 disconnects 27 errors 20; clock 75 lines offset -2.678..2.448 ms stratum [2]
+PASS  settlement_reconcile  486 windows settled in the day: result vs rule 486/486, shadow vs result 414/414 compared (0 pending in the ledger, 72 before the shadow started, 0 missing); mismatches 0; unsettled after T1+10min 0
+PASS  proxy_wrong_side      wrong-side per coin BNB 2/45 (4.4%) |err| med 2.1346 p90 5.2615 bps, BTC 2/45 (4.4%) |err| med 0.3818 p90 1.7265 bps, DOGE 2/45 (4.4%) |err| med 2.4036 p90 3.132 bps, ETH 1/45 (2.2%) |err| med 0.2268 p90 0.8171 bps, HYPE 1/45 (2.2%) |err| med 0.8953 p90 3.1003 bps, NEAR 3/44 (6.8%) |err| med 5.5869 p90 8.5743 bps, SOL 2/44 (4.5%) |err| med 0.7827 p90 1.9968 bps, XRP 2/45 (4.4%) |err| med 0.7409 p90 1.5486 bps, ZEC 3/45 (6.7%) |err| med 1.0606 p90 2.878 bps
+PASS  replay_determinism    byte-identical over the common prefix: decisions 16390 lines, orders 121991 lines (live 16390/121991, replay 16399/122097) up to tick 2026-11-01T23:35:00Z, 177.3 s
+PASS  chain_integrity       decisions: 16417 lines, head df21488b774447f7; orders: 122097 lines, head 427d4a9bcc4b8981
+NA    nox_reconcile         no time overlap with Nox's clean cycles; settlements both 45 (result disagree 0, value disagree 0)
+PASS  counts                healthy settled windows BNB=134 BTC=135 DOGE=135 ETH=135 HYPE=135 NEAR=135 SOL=135 XRP=135 ZEC=135; days to 2,000 at the observed rate BNB=20.2 BTC=20.1 DOGE=20.0 ETH=20.0 HYPE=20.1 NEAR=20.1 SOL=20.0 XRP=20.1 ZEC=20.1 (ideal 21.1 d at 94.9/day; counts.json is the ledger's own tally)
+PASS  heartbeats            heartbeat age poll=0.6s ref=0.5s shadow=0.4s; errors_1h poll=0 shadow=0
+  wrote readiness-2026-10-31.json

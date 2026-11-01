@@ -1,0 +1,834 @@
+{
+ "schema": "team-d/uacg-candidate-receipt/v1",
+ "generated_utc": "2026-10-31T22:16:32+00:00",
+ "purpose": "Pin the card-game candidate's SOURCE without committing to git: the candidate is reproducible from the working tree, not from any commit.",
+ "git": {
+  "head": "04031c0f9da5d0b41d9e5395d30023098e9086be",
+  "head_subject": "Refine native card identity and result presentation",
+  "branch": "master",
+  "dirty_tracked": 61,
+  "untracked": 114,
+  "note": "HEAD is 2026-09-26; the candidate's code is UNCOMMITTED working-tree state (21 modified files under src/, 3 untracked source entries including src/server/AwayProgressService.luau and src/shared/offers/)."
+ },
+ "candidate_artifact": {
+  "path": "build/UntitledAnimeCardGame.rbxlx",
+  "sha256": "55cef5d3ea71173de62b7c1070543d566e6f26674eb64083833ea5590466d4c9",
+  "bytes": 520846,
+  "matches_build_receipt": "55cef5d3ea71173de62b7c1070543d566e6f26674eb64083833ea5590466d4c9"
+ },
+ "reproduced": {
+  "by": "bash tools/build.sh on a copy of this working tree, run twice",
+  "sha256_both_builds": "55cef5d3ea71173de62b7c1070543d566e6f26674eb64083833ea5590466d4c9",
+  "bytes": 520846,
+  "stamped_manifest": "c976b6242c0d",
+  "pinned_commit_build": {
+   "commit": "04031c0f9da5d0b41d9e5395d30023098e9086be",
+   "sha256": "1259b13621e9ab21d12c006317571c263e47496223ec2a26887e6e72f547fc09",
+   "bytes": 497070,
+   "verdict": "commit alone reproduces an OLDER historical place (1259b136 is the pre-September build cited in docs/VISUAL-DIRECTION-20260926.md), not the candidate"
+  },
+  "recorded_2026_09_27_candidate_be972098": "superseded per CURRENT-STATE.md '2026-09-28 current-build reconciliation'; its P5 receipt remains valid for its own bytes only"
+ },
+ "source_manifest": {
+  "files_hashed": 157,
+  "aggregate_sha256": "727993e39bce2fd10ef7f5020cf023df091713f6feaad0a2feff09c0e198dc2f",
+  "roots": [
+   "src/",
+   "tools/",
+   "ops/",
+   "tests/",
+   "default.project.json"
+  ]
+ },
+ "toolchain_sha256": {
+  "rojo": "7ff204d777e2b8a93f2b587c7e09b5e827af94411f84574e97dcfee4d647152e",
+  "lune": "4de91e1e22f377aa3dc70219c7eb2dd9584dee8aa97369b02797d037067c759f"
+ },
+ "hashes": [
+  {
+   "path": "default.project.json",
+   "sha256": "5bd6038b98031a6cf765e2dc17cd03031f2d259da5284239d8bf657d32279c6c",
+   "bytes": 1003
+  },
+  {
+   "path": "ops/art/anima/preflight-report.json",
+   "sha256": "1ee3ae8ab79a3efb97375e1b882fda66afca7b49a64b8452571deca735cd6aab",
+   "bytes": 7827
+  },
+  {
+   "path": "ops/art/world-prop-recipe.json",
+   "sha256": "2f6a41db2ef4b750dc10cfd5fe299b2c13af8725dcdffad4657c6f029c188667",
+   "bytes": 598
+  },
+  {
+   "path": "ops/audio/status.json",
+   "sha256": "8008c602302c7b49f296e6d6c289d2a1484a26042c7f114d9f2d5c3330b85181",
+   "bytes": 9305
+  },
+  {
+   "path": "ops/audio/studio-proof.json",
+   "sha256": "ec3bd0a0e02143ae5721847bc4e698019f0c13053cfcd668c857754627eaa4ec",
+   "bytes": 2304
+  },
+  {
+   "path": "ops/environment/inventory.json",
+   "sha256": "156061ab32e742a19d2abf098c4e3d14bc4ac6b68c0ce29445658f23093b976a",
+   "bytes": 5107
+  },
+  {
+   "path": "ops/release/art-use-attestation.json",
+   "sha256": "fa8a222a95d844cbee5bee818905406b252cc3769a58b1f9c09d444dd42ac6bc",
+   "bytes": 596
+  },
+  {
+   "path": "ops/release/build-receipt.json",
+   "sha256": "0262ce83a46a124a66f9268391b77ab88b2df05cec3926b324c7982209891f8e",
+   "bytes": 801
+  },
+  {
+   "path": "ops/release/connectors/audio_connector.py",
+   "sha256": "3cca1489488e23e623837447da6016f318ca3b31f4e7b76749e108ac661cfb68",
+   "bytes": 27563
+  },
+  {
+   "path": "ops/release/connectors/studio_connector.py",
+   "sha256": "b534627808f34f91c16b460cacf43b55e461edebd5ed803aeece3dd332c8cc5a",
+   "bytes": 19149
+  },
+  {
+   "path": "ops/release/last-run/gate-check-tmp.json",
+   "sha256": "58f1390c24a5cd4dc36955caaa51fe1e4d49fa8f4eb8ef32e6bcc6b7fe72a25a",
+   "bytes": 3181
+  },
+  {
+   "path": "ops/release/last-run/gate-report.json",
+   "sha256": "47da7aa9d852a698c9a3ba61f4c26bfc3feecdbca2ac6f76e95fbd66bfe0def7",
+   "bytes": 2709
+  },
+  {
+   "path": "ops/release/last-run/p2-lua.log",
+   "sha256": "e561a7c9e85af458382c0decaea0ed5ee20de2c5feda5c4a5bc912147d61b9f1",
+   "bytes": 283
+  },
+  {
+   "path": "ops/release/last-run/p2-lune.log",
+   "sha256": "e22b7905b6abaac41103c8c66d27d8d2933f3f69b9979d711572eb4fa9a6012b",
+   "bytes": 256
+  },
+  {
+   "path": "ops/release/last-run/p3-lua.log",
+   "sha256": "7ca0140d3a84aeb35f22434066742037a10f544c03b8514e04141e57abad5993",
+   "bytes": 709
+  },
+  {
+   "path": "ops/release/last-run/p3-lune.log",
+   "sha256": "23a1adbeaf11e154c7e19e625230898402fe862f2dfc6b75bbb16940f8205602",
+   "bytes": 545
+  },
+  {
+   "path": "ops/release/last-run/p3sec-lua.log",
+   "sha256": "77ce58dd699ea0a612f9d17eda28b397f9d19c2e641f024b2d09d74c2a825fe8",
+   "bytes": 35
+  },
+  {
+   "path": "ops/release/last-run/p4-lua.log",
+   "sha256": "3c310f498dd66ec03834e003636b57d73fa2b7ca3460a52aaaf69cd85bd4b7e8",
+   "bytes": 547
+  },
+  {
+   "path": "ops/release/last-run/p4-lune.log",
+   "sha256": "6d38c91f58871b0b737c10b7d1adec1cb90c3ae20bd17858f743456f78775b6d",
+   "bytes": 418
+  },
+  {
+   "path": "ops/release/last-run/p6-lua.log",
+   "sha256": "e922d24d39a0d87a4f5fe8d87df3fd3b752879f2911eb70e7458b6417d8ca76e",
+   "bytes": 225
+  },
+  {
+   "path": "ops/release/last-run/p6-lune.log",
+   "sha256": "e922d24d39a0d87a4f5fe8d87df3fd3b752879f2911eb70e7458b6417d8ca76e",
+   "bytes": 225
+  },
+  {
+   "path": "ops/release/last-run/preflight-selftest.log",
+   "sha256": "d4e268fb3e3b16881c8b08de0053995217dc5720f8cd9b4f008e90308b8ea1ce",
+   "bytes": 69
+  },
+  {
+   "path": "ops/release/last-run/studio-lua.log",
+   "sha256": "4e30d24c3b8bcb0884c0932430e073726018c67298c18d011fe3dc3f17aeae1f",
+   "bytes": 241
+  },
+  {
+   "path": "ops/release/last-run/studio-lune.log",
+   "sha256": "4fdb519271168cf03fcccd25e7a4abb661ab559871076ba7255cd41326c12cba",
+   "bytes": 242
+  },
+  {
+   "path": "ops/release/launch.sh",
+   "sha256": "3be9a563aeaf3f96a0792217785841ca412e4627261827ef4a546a493c2b0158",
+   "bytes": 595
+  },
+  {
+   "path": "ops/release/preflight.py",
+   "sha256": "e32685a61483537d86244dfeef1dbf20762bdb3a1d48a599a3006a7409742577",
+   "bytes": 48962
+  },
+  {
+   "path": "ops/release/publish.py",
+   "sha256": "87dc2c1c7c396a41b4366408bf408120954f88dad0c75bf77b0b681f40920604",
+   "bytes": 41106
+  },
+  {
+   "path": "ops/release/run_p6.sh",
+   "sha256": "8ab22343c6b02387622986d9d337f07b4c975e43d09d9ccb7dde6ab73b8d59f8",
+   "bytes": 916
+  },
+  {
+   "path": "ops/release/source-manifest.sha256",
+   "sha256": "c976b6242c0d24b60f66816237452e414e6a0a06ecd2ca9f07c4a7749abe53e1",
+   "bytes": 5351
+  },
+  {
+   "path": "ops/release/stamp_manifest_hash.py",
+   "sha256": "5e07c984d8bf721adb305ed93223dd28bb9126943b8e65352c6fddbfb67faa5d",
+   "bytes": 2913
+  },
+  {
+   "path": "ops/release/target.example.json",
+   "sha256": "1b66e23c46a68a4644c2978375238a30cc9cfca45feedeb0613c42119e8b9fad",
+   "bytes": 314
+  },
+  {
+   "path": "ops/toolchain-receipt.md",
+   "sha256": "494f1c0dee5195ed527d302532516c730bf66011e6f630a346cc43c6466e42c6",
+   "bytes": 1312
+  },
+  {
+   "path": "src/client/Actions.luau",
+   "sha256": "ae70810bf91da8a3f07b6a51bc18b81b72cf0c56b2d03af282ccb1e41cabd232",
+   "bytes": 51481
+  },
+  {
+   "path": "src/client/App.luau",
+   "sha256": "3ef29d3075b1fe803bb47f4efb65c8da0bfcf1e890d3e9cf96d7a1cdd63cf774",
+   "bytes": 3511
+  },
+  {
+   "path": "src/client/Audio.luau",
+   "sha256": "3f5c50fff93f6a07a9403fc33953850670a5cbd9fb759514c708d47660fa773d",
+   "bytes": 9939
+  },
+  {
+   "path": "src/client/AudioCatalog.luau",
+   "sha256": "dc43a9b2cd878d875ec17639ff432691faeabc264e32f5a05eb325166659e0ab",
+   "bytes": 5686
+  },
+  {
+   "path": "src/client/AudioEngine.luau",
+   "sha256": "d2235380cc18779b38bc00f83774e83aba141d5865cf42638b0de366c46ac6d3",
+   "bytes": 11093
+  },
+  {
+   "path": "src/client/BattlePresenter.luau",
+   "sha256": "8b089559edfe87747cd214552093c68850f8722285ecf60d7b3123ca0d2c66f3",
+   "bytes": 22945
+  },
+  {
+   "path": "src/client/BattleScene.luau",
+   "sha256": "2ee976d2e3b7c80952ef54c31c730ed55c99e589918c36f6c7caef4a9787bb05",
+   "bytes": 5244
+  },
+  {
+   "path": "src/client/Boot.client.luau",
+   "sha256": "cb33295ff3ba60f5ab352a5fe438a9ea2f6c8be7e2219e6564b7ac8e6f766f82",
+   "bytes": 6349
+  },
+  {
+   "path": "src/client/CardMotif.luau",
+   "sha256": "349ad2b8a8246f7a2542d39e650ad3b80d34e399c9faef79859811cc4124f799",
+   "bytes": 2716
+  },
+  {
+   "path": "src/client/CardView.luau",
+   "sha256": "f7af65ec363f9fe90020e7ee4c1217de4ea86984c01502c7602461e0a5fc1f16",
+   "bytes": 9173
+  },
+  {
+   "path": "src/client/ClientProtocol.luau",
+   "sha256": "9ceb0a4d5d08ba4c0ddc02f6de7a0170040caf91fc50427d3c88a21dee5fd1a0",
+   "bytes": 11249
+  },
+  {
+   "path": "src/client/EncounterRoutes.luau",
+   "sha256": "0c170b37a8d095a453d2941c621c87f7d9387daeef1778cae732edf583d0df2d",
+   "bytes": 7030
+  },
+  {
+   "path": "src/client/Geometry.luau",
+   "sha256": "1c77da9b98cd51bea5bfc50cb9e544deb736aa4ecbbccdd3d162fa0ce1fe49bb",
+   "bytes": 7457
+  },
+  {
+   "path": "src/client/Screens.luau",
+   "sha256": "6d75baf686723275ddc9cb43fd79e3c88688f3838430e3c6ddddd6623bb4b90f",
+   "bytes": 10917
+  },
+  {
+   "path": "src/client/State.luau",
+   "sha256": "efdd7a548e5dc1ea214de9868b4a646062f3f29a75c6f7394e4a0dad309c2949",
+   "bytes": 9131
+  },
+  {
+   "path": "src/client/StoreView.luau",
+   "sha256": "0532d4967cff1a0c0b4e9b249ae6fc8a42b3d7ac35cd27475dc4305bef14f088",
+   "bytes": 7469
+  },
+  {
+   "path": "src/client/StudioDemo.luau",
+   "sha256": "d79856741c15cda5b4c5840c00d7b0aa45f8c7f6a88563770328332c2c4442c2",
+   "bytes": 15606
+  },
+  {
+   "path": "src/client/StudioSelfReport.client.luau",
+   "sha256": "703e6dd9e1fd5bed11120df9209d8c1cccf515d7809b5308c41a5b92e7205bfa",
+   "bytes": 7501
+  },
+  {
+   "path": "src/client/Theme.luau",
+   "sha256": "a39e8108d6d10290c85a2be5e17c88f0b40746a26a4a793dfb3badc234b7916b",
+   "bytes": 6539
+  },
+  {
+   "path": "src/client/Timeline.luau",
+   "sha256": "b50750b79c60477821169f53a689a72bfdf049d897c67a386e18f3366ee3c70f",
+   "bytes": 8222
+  },
+  {
+   "path": "src/client/UiView.luau",
+   "sha256": "deb55d766de5b4ab72c1175eb4cac69c1f0eae78981cc062f6dfdd101e047e95",
+   "bytes": 32277
+  },
+  {
+   "path": "src/client/World.luau",
+   "sha256": "891dabbffeaf6f7eae27ca3f5b115fefcd319c9c8bd2c97ab81a23b8caa16bf1",
+   "bytes": 13648
+  },
+  {
+   "path": "src/server/AwayProgressService.luau",
+   "sha256": "b45a773046540ef63b77e2ffca9279f1b0892de6c1f206891fee3c0985dad62d",
+   "bytes": 4316
+  },
+  {
+   "path": "src/server/BattleService.luau",
+   "sha256": "00c78add2de276826c33c6603d37306b01f39b5632609b279bc9a554821ec790",
+   "bytes": 13442
+  },
+  {
+   "path": "src/server/Bootstrap.luau",
+   "sha256": "a896c58e2da593a5de086b8964af68204ca6cbe2b2683d46f5d40dfdf7993a17",
+   "bytes": 14370
+  },
+  {
+   "path": "src/server/DataStoreAdapter.luau",
+   "sha256": "2884c9617e100a2ff90c7fb97edc0d0ea63f260ede0be18db569fe1586e6f39d",
+   "bytes": 3377
+  },
+  {
+   "path": "src/server/Init.server.luau",
+   "sha256": "eea5219e0eaa58adf090c42a1cab61f270f8307dc8740d4f9b497f3b06de89bb",
+   "bytes": 1896
+  },
+  {
+   "path": "src/server/MemoryAdapter.luau",
+   "sha256": "15c87cf5a1524633e0d910b4564a2487669215ee658d8218423933d56a928482",
+   "bytes": 2998
+  },
+  {
+   "path": "src/server/RateLimit.luau",
+   "sha256": "0c5813cdbeb15f5d6615a98c6d70a887dc744a52c5036bad4c2318ce8ae5ddf7",
+   "bytes": 1302
+  },
+  {
+   "path": "src/server/RebirthService.luau",
+   "sha256": "ecd0673cc8d67e281a4e932f0433bbb84d2a7b5848c187fd4002b158b2f36c27",
+   "bytes": 6586
+  },
+  {
+   "path": "src/server/ReleaseConfig.luau",
+   "sha256": "3ce0d5b69f6d6b6068d9742c6357e86b8d721ffbff3ff502d8fba97cef310633",
+   "bytes": 311
+  },
+  {
+   "path": "src/server/Remotes.luau",
+   "sha256": "b5d1355c83ed6d72e0b2b6d69e2bef6fd3340f62b20dc80174128bbfe337b276",
+   "bytes": 14451
+  },
+  {
+   "path": "src/server/RobloxRequire.luau",
+   "sha256": "50e87d1ac081b2fa67bc740eb61a82924d30e044e3b5bf910b4dbe7ebba3d95f",
+   "bytes": 1227
+  },
+  {
+   "path": "src/server/RollService.luau",
+   "sha256": "4ffd33ec9cdd104f0b977d42a58ea47f01212647b05a9992556e91f63de0644c",
+   "bytes": 14378
+  },
+  {
+   "path": "src/server/SkillService.luau",
+   "sha256": "f408793bc1149bfb23e2e8e25695623bbe6ed2b5b12c1a5e73b79e9c260c6ca2",
+   "bytes": 5468
+  },
+  {
+   "path": "src/server/Store.luau",
+   "sha256": "656d8cad44694e216c0499acff34f33c95d578a0921443981d97206ef8acbe89",
+   "bytes": 23191
+  },
+  {
+   "path": "src/server/StudioDemoDrill.server.luau",
+   "sha256": "259de817883df450e9d79b880e8a11ccd9792577c685bd4905071b60381bcf94",
+   "bytes": 6819
+  },
+  {
+   "path": "src/server/StudioSelfReport.server.luau",
+   "sha256": "63912b51872f49d20a54d172a39a19c18045a33dbfb4d2579dc418c7250625f6",
+   "bytes": 7557
+  },
+  {
+   "path": "src/server/SupporterPass.luau",
+   "sha256": "b219eca8188625889c3db996c7802cef3f34ca90b164d53e1b145e7690dd58f4",
+   "bytes": 5348
+  },
+  {
+   "path": "src/shared/combat/Events.luau",
+   "sha256": "87f7613ab966c143377cf9201b8455be8dcae9372b27df2793cc9c043a183cdf",
+   "bytes": 2752
+  },
+  {
+   "path": "src/shared/combat/Prng.luau",
+   "sha256": "45b38fb9c4ec087928f92df5dfa15cf8b3d8110a7bf00d4dd8a625ba79980cb7",
+   "bytes": 2901
+  },
+  {
+   "path": "src/shared/combat/Resolver.luau",
+   "sha256": "a26c7361a3ed1ace01b755d2f86fdbfeb69c94312d75930ded6071c7e243a5be",
+   "bytes": 11561
+  },
+  {
+   "path": "src/shared/combat/Statuses.luau",
+   "sha256": "dbac7b614f9feb27e3305ba7fca3d57743ff219a91f6b595ea472ed1aa2626d1",
+   "bytes": 3153
+  },
+  {
+   "path": "src/shared/combat/Validate.luau",
+   "sha256": "34c62a4467f3b462e547319be954ab896b61deda9f4cea491b873bbeafd3821c",
+   "bytes": 3914
+  },
+  {
+   "path": "src/shared/content/ArtIds.luau",
+   "sha256": "21e4d0f155947825900d88766cf8ee479f4c5b8ccd4454a4021b6cf88a75c351",
+   "bytes": 688
+  },
+  {
+   "path": "src/shared/content/Cards.luau",
+   "sha256": "33ff8fe2fddaacaadd7ce4a5c9b6ca28cd7d4273daa841aaf5a8cc083fef0af0",
+   "bytes": 11610
+  },
+  {
+   "path": "src/shared/content/Pools.luau",
+   "sha256": "c138d27c0ade3aa6593867f8695efdb317e07a55a6d2b9d53383ccf144d4ec30",
+   "bytes": 1478
+  },
+  {
+   "path": "src/shared/offers/OfferConfig.luau",
+   "sha256": "10a2f3e0d6d10d904774d122d842421c7215c50f477588f1d7160a8eaf887c96",
+   "bytes": 5923
+  },
+  {
+   "path": "src/shared/progression/AwayProgress.luau",
+   "sha256": "8de49bb373fc85d7f9b44b794713b38b70dc05d51b3bad3e98121ac1883a7af7",
+   "bytes": 1654
+  },
+  {
+   "path": "src/shared/progression/Battles.luau",
+   "sha256": "fd7db4594848286e2eebf98f58751163fa6bf0f5f6af3597165618c30e8ad0ae",
+   "bytes": 3812
+  },
+  {
+   "path": "src/shared/progression/Config.luau",
+   "sha256": "c8c6de4386936cdd4376d23e99711bca7bd19961f5407e30c5ed7fb10391e9be",
+   "bytes": 10271
+  },
+  {
+   "path": "src/shared/progression/Profile.luau",
+   "sha256": "cc74218fb89b97bbcd603898197365873a9c06e4e925c697900178284689d3e5",
+   "bytes": 28157
+  },
+  {
+   "path": "src/shared/progression/Progression.luau",
+   "sha256": "f6186549a6e3c36f2632ddaffb6262041b97c0e295c9448284dda9ff59e29110",
+   "bytes": 6872
+  },
+  {
+   "path": "src/shared/progression/Rebirth.luau",
+   "sha256": "3241b4f1a28e6ce50b4b0edf029806d2d02092b20634a583bd19defb94394966",
+   "bytes": 9594
+  },
+  {
+   "path": "src/shared/progression/Rolls.luau",
+   "sha256": "dea58bddd49b64e3b4479a26d82d5133c4969c65aab4460cd65de722bb3478e4",
+   "bytes": 4169
+  },
+  {
+   "path": "src/shared/studio/P6StudioChecks.luau",
+   "sha256": "2cbf45d2f5b1c237e7c848f0f1ff19d04e45a47bc89d7e23cbf382d1582e720f",
+   "bytes": 11950
+  },
+  {
+   "path": "tests/art/test_apply_art_ids.py",
+   "sha256": "9413f53be18697028ca7bbadbf3cd12c59611f0e7bfd95018c62ee290a1bdec1",
+   "bytes": 18942
+  },
+  {
+   "path": "tests/art/test_ingest_art.py",
+   "sha256": "49f2a19a16daa74d835610e17f6c5ab38ee64ab83e000a3738d033d07be46745",
+   "bytes": 30162
+  },
+  {
+   "path": "tests/combat/test_content.luau",
+   "sha256": "49092e08d8ca885d2839bd9bafede3c2622b98363c0c3ba6bbdd030ef1c117e1",
+   "bytes": 9683
+  },
+  {
+   "path": "tests/combat/test_determinism.luau",
+   "sha256": "e54f60bc4e5498adbe1c00012096a015dd105baf6172688f4559dcf6751307ba",
+   "bytes": 4067
+  },
+  {
+   "path": "tests/combat/test_resolution.luau",
+   "sha256": "b6557a4e2a458856d3ada61c39b63c2bef455478c89ed96b4c6a0fd82a4c597d",
+   "bytes": 8542
+  },
+  {
+   "path": "tests/integration/FREE-ECONOMY-REPORT.md",
+   "sha256": "5b69fb71311100d80966d9d0a7f302f570cf8b49ee1eb3eef8d00010094c3f8f",
+   "bytes": 9651
+  },
+  {
+   "path": "tests/integration/route_progression.luau",
+   "sha256": "35b443f7b0c9afa99aa956262c47e1ad2e29dd00a97927a990d60e2a3b1d8c92",
+   "bytes": 1288
+  },
+  {
+   "path": "tests/integration/run_all.luau",
+   "sha256": "996facb695a667713f494846d763d571f69ef7a0a8942d0b13bc37dd116ed823",
+   "bytes": 1089
+  },
+  {
+   "path": "tests/integration/test_first_session.luau",
+   "sha256": "37e3ed64784d48313527e2b565ff2cf8c5f0f7e00fd5efb17612c18d49744323",
+   "bytes": 11520
+  },
+  {
+   "path": "tests/integration/test_free_reachability.luau",
+   "sha256": "321d0ddca1a5ae266d2b226b60e22ac7a670d9e8d5a860de7fae1ba853d71776",
+   "bytes": 15365
+  },
+  {
+   "path": "tests/integration/test_full_loop.luau",
+   "sha256": "7083f6d09b3f4d0faded426240b24bf384a061727e6f7078594c505c8d447195",
+   "bytes": 11724
+  },
+  {
+   "path": "tests/integration/test_starter_journey.luau",
+   "sha256": "e6a98520c5a0c44adeb9fcc340cdd0aac3b40231653ea61fe7b24b3bd7d4f636",
+   "bytes": 19951
+  },
+  {
+   "path": "tests/offers/CHECKOUT-DISABLED-REPORT.md",
+   "sha256": "d44b66676a19aa779438cbea4cedc5d49f7ba087b8ee46d32391f7470543c98f",
+   "bytes": 3809
+  },
+  {
+   "path": "tests/offers/run_all.luau",
+   "sha256": "14e5f84fd948fa97c3610b04004775099580ed664f388c36897d3b26147067f8",
+   "bytes": 635
+  },
+  {
+   "path": "tests/offers/test_checkout_disabled.luau",
+   "sha256": "ceab753662b628ec297d867eb25ce5d3fb2946397b1076baf03c4d07415b7f4e",
+   "bytes": 8809
+  },
+  {
+   "path": "tests/offers/test_offer_policy.luau",
+   "sha256": "ea6f5c6d395af6ee17c9f517a13237c57523a3ddf6bdaa490facaeb29eff0d1b",
+   "bytes": 6439
+  },
+  {
+   "path": "tests/presentation/run_all.luau",
+   "sha256": "5a72caee191e30527e258f7c7a67706cacda20ec49ab972f6d0568b496112a99",
+   "bytes": 1967
+  },
+  {
+   "path": "tests/presentation/test_app.luau",
+   "sha256": "e1b676d037b50a8d8bbcb2e9ba7cdf69c53680c796d37073c400daa16af164a0",
+   "bytes": 46987
+  },
+  {
+   "path": "tests/presentation/test_audio.luau",
+   "sha256": "a0a01e89c141bed2d133e6c0da7b7e39919bd7438b03cb9dfc576ff93b821013",
+   "bytes": 10755
+  },
+  {
+   "path": "tests/presentation/test_card_art.luau",
+   "sha256": "3ec5f1a522b936657275512dea24380da07101aab1f9257d114278011b57bc5a",
+   "bytes": 6647
+  },
+  {
+   "path": "tests/presentation/test_card_motif.luau",
+   "sha256": "6f00ff62eeb0d61ec47f962e414861f6a3acaf483813a62cbc873437c9ee60cf",
+   "bytes": 1506
+  },
+  {
+   "path": "tests/presentation/test_geometry.luau",
+   "sha256": "721d9a15e5078f081826ea696b5c50e6240b2fed3b87d1915350c6259e662370",
+   "bytes": 3828
+  },
+  {
+   "path": "tests/presentation/test_integration.luau",
+   "sha256": "5826109abcb64cb7b643f60db4d04424d8ba2885ffafb2711e55eb6179511a57",
+   "bytes": 12274
+  },
+  {
+   "path": "tests/presentation/test_journey_states.luau",
+   "sha256": "b05218e191b4ecb8b6fab074fa26cff176788f3ff2619f389c4da0aedd639609",
+   "bytes": 19109
+  },
+  {
+   "path": "tests/presentation/test_r2_repair.luau",
+   "sha256": "2424b215b1aa9f72e7ee99e2ab08aaf2916584446ba1fc5d4d91555a973adeeb",
+   "bytes": 26892
+  },
+  {
+   "path": "tests/presentation/test_route_states.luau",
+   "sha256": "6b8f55d5740cb50405dd25f5aa1898521c79b11b4d68467ab06e7394cd2ca1f8",
+   "bytes": 8773
+  },
+  {
+   "path": "tests/presentation/test_supporter_store.luau",
+   "sha256": "eb3592457897a2cd67f0b2fd9d81780d0ef777e089c3cbd4585d6b8d520036b8",
+   "bytes": 2233
+  },
+  {
+   "path": "tests/presentation/test_theme_status.luau",
+   "sha256": "c6672b618b44d8361ca0732f85528d87769682dd145c9711e8da188af2fad878",
+   "bytes": 12713
+  },
+  {
+   "path": "tests/presentation/test_timeline.luau",
+   "sha256": "9eac70735b0018d309965e278419a3ac326098f98a92b1155c4c85fd6e46afaf",
+   "bytes": 6297
+  },
+  {
+   "path": "tests/presentation/test_u2_battle_presentation.luau",
+   "sha256": "632f11c51d1d9a07b84763fb89c4f65f5829abfb1fc1ae216705083cbcee98e0",
+   "bytes": 8820
+  },
+  {
+   "path": "tests/presentation/test_u2_r2_defects.luau",
+   "sha256": "8b764440f2f3a422e97a3db631e29dc8ebad01fff762c52a8e0d876ca4982541",
+   "bytes": 7568
+  },
+  {
+   "path": "tests/presentation/test_u2_support.luau",
+   "sha256": "137948ab19e390db3977c4e695c6d31aa7e8a867750d3411a55bdd8f0bab341a",
+   "bytes": 9409
+  },
+  {
+   "path": "tests/progression/helper.luau",
+   "sha256": "cde692fec73eca2dc62d8975e832e887984dbe93501ade186d72c58b37f7a8bd",
+   "bytes": 4167
+  },
+  {
+   "path": "tests/progression/run_all.luau",
+   "sha256": "a0a7968fffaa4e88fb3b3a9347aca158eae4b532a27edb280007deb41464815f",
+   "bytes": 2504
+  },
+  {
+   "path": "tests/progression/test_away_progress.luau",
+   "sha256": "8ac4e492d32d826b9e75967cec142b5b6835696ad3da5a6a90888f5de216c5ba",
+   "bytes": 11530
+  },
+  {
+   "path": "tests/progression/test_battles.luau",
+   "sha256": "4b994a5d02f7530a4f02d318e83869a53fb665ab6deb50d2b238ac6c27de7e91",
+   "bytes": 3976
+  },
+  {
+   "path": "tests/progression/test_deck_skills_settings.luau",
+   "sha256": "681833582e176b0fe286c6e227a0d2e2f006eb6b0f19190c6d28ebee2682358e",
+   "bytes": 3368
+  },
+  {
+   "path": "tests/progression/test_durability.luau",
+   "sha256": "a407c299a1fe950873c8043515e5e5d52f2ad9a46091f15371f62aac450caf65",
+   "bytes": 5545
+  },
+  {
+   "path": "tests/progression/test_earned_store.luau",
+   "sha256": "a0d53d73e93e1cbb17de5f5e5b108b34dd5e28414d779b210710da388036941c",
+   "bytes": 20091
+  },
+  {
+   "path": "tests/progression/test_pity1800.luau",
+   "sha256": "1763b5be847115d351fcf7681d9e1ee39d404443f23a6b5fe4ddf56144e05545",
+   "bytes": 2880
+  },
+  {
+   "path": "tests/progression/test_rebirth.luau",
+   "sha256": "d3af3d939b1cc767028a43c8983bd0041d584e65e9dad1a6ae3699366c0e854b",
+   "bytes": 7800
+  },
+  {
+   "path": "tests/progression/test_repair.luau",
+   "sha256": "a45c993067e535c96e31a0ece1ea11946c493671cf887f9dad85477c1e524f9d",
+   "bytes": 8527
+  },
+  {
+   "path": "tests/progression/test_retention.luau",
+   "sha256": "cb3893b8b9e137d2f06d387433749d7e732cfddd028b2920ac2a1b97cd05aec8",
+   "bytes": 4552
+  },
+  {
+   "path": "tests/progression/test_rolls.luau",
+   "sha256": "f3d58aa87615238508858dd92dda1c576f7509d37a7fb597236d02ad575a890e",
+   "bytes": 3486
+  },
+  {
+   "path": "tests/progression/test_supporter_pass.luau",
+   "sha256": "0b867075fe2462f70f0f6b4e6978c440f7d1865e181ee96be2589dbcec6cd4c1",
+   "bytes": 3104
+  },
+  {
+   "path": "tests/progression/test_validation.luau",
+   "sha256": "1fe4706d426ab09950c6d2b798aa34e74fb4d5669bd4edea098cb5bed0d6b58b",
+   "bytes": 23878
+  },
+  {
+   "path": "tests/release/test_publish.py",
+   "sha256": "d0fb336a25164b83963b9cd63fd625ba6b1ebdc48a01b6f144d62ee3f8421704",
+   "bytes": 19766
+  },
+  {
+   "path": "tests/run_all.luau",
+   "sha256": "2fd783e024bb6cb218479998e28ca0d389b2da3055570695c4b9500e82fb13c5",
+   "bytes": 1146
+  },
+  {
+   "path": "tests/security/test_earned_store_security.luau",
+   "sha256": "acaeb4cd0bfddef06d6d6243ab7befcc1cf5689bd8035c1e571bc0d4beb12df5",
+   "bytes": 4758
+  },
+  {
+   "path": "tests/security/test_pending_snapshot.luau",
+   "sha256": "cd487d05996f615844ffe75d14957bb908d2cb071f6f76e9ac8d4507a5eca92b",
+   "bytes": 7904
+  },
+  {
+   "path": "tests/security/test_security.luau",
+   "sha256": "588a47740f5c77ee404013ef3fe11b63f641f2fe1aac5246bface240a82f2036",
+   "bytes": 5510
+  },
+  {
+   "path": "tests/server/CONCURRENCY-REPORT.md",
+   "sha256": "48bea7d39ba5d101e19114d0128ef2d9a2270a3aaf69b098698e2b8d065fed31",
+   "bytes": 6782
+  },
+  {
+   "path": "tests/server/run_all.luau",
+   "sha256": "14af973e3d89aa75bce2cce7078b831264aa0c89b365f6d9bc38a4ecd86a2b21",
+   "bytes": 944
+  },
+  {
+   "path": "tests/server/test_concurrency.luau",
+   "sha256": "f60d6aa31bde9ff424b5d84d42db480bece76652e4696f45a96e8bea2bd69186",
+   "bytes": 19511
+  },
+  {
+   "path": "tests/server/test_hot_path_locks.luau",
+   "sha256": "78876cb012d8063770475b376e003600940394d235072d02ff117f87ccd3a9cf",
+   "bytes": 6101
+  },
+  {
+   "path": "tests/studio/test_studio_checks.luau",
+   "sha256": "fd05c1bb0fb16f46590415eb3eb9687603efba352f2db150158655c81d2ae579",
+   "bytes": 11234
+  },
+  {
+   "path": "tests/support/assert.luau",
+   "sha256": "8f22c0f1645a4c9227f527a3072ba8baa5a32d81d901d9c1979f63692f58530b",
+   "bytes": 831
+  },
+  {
+   "path": "tests/support/load.luau",
+   "sha256": "5e1967fcb00a346812b5a517f0370268225c61f10dfb535c398159cea6980e42",
+   "bytes": 696
+  },
+  {
+   "path": "tests/test_audio_connector.py",
+   "sha256": "1c0b6725aead23132c7a3f481ac6dacd64cce40460b724e0fcc9ecc8c2840f5a",
+   "bytes": 6483
+  },
+  {
+   "path": "tools/apply_art_ids.py",
+   "sha256": "285e7297ca5773ffb14505e2fb1c837eb9e177b313b9b26eb4b8448a8eb789b7",
+   "bytes": 3860
+  },
+  {
+   "path": "tools/bootstrap.sh",
+   "sha256": "cbee7657cb0d8fa2a66b0cec09f3db021060d426d9277de8e9c5dba5048cb324",
+   "bytes": 3516
+  },
+  {
+   "path": "tools/build.sh",
+   "sha256": "8522bc85599883608f41f4d8002949949efebfba997c4331408ae73aa170afd0",
+   "bytes": 1155
+  },
+  {
+   "path": "tools/build_review.py",
+   "sha256": "79af21fea83eac6441e78c1b5568b27f7ae054ee5f86f9ea9a0b6cd30bae0d4e",
+   "bytes": 16149
+  },
+  {
+   "path": "tools/ingest_art.py",
+   "sha256": "99d78042309108fe6147fe28bc981f014bf3990189745baba6a67661ea258d82",
+   "bytes": 27094
+  },
+  {
+   "path": "tools/rawinput",
+   "sha256": "ef8c0afa5f9ce407af96d18fd9cf72ab9346a73f14f838529bf1c613b3f1fb37",
+   "bytes": 16688
+  },
+  {
+   "path": "tools/rawinput.c",
+   "sha256": "1f4c3ced037827f445ed18b5229c487bfeccd656029e47e8b44b6c28a6abeb28",
+   "bytes": 4886
+  },
+  {
+   "path": "tools/studio_cua_driver.py",
+   "sha256": "23b06fa8ddf17a6ebc89069b8b4364a00bdd412c953d9d9f26dc3c0c72246b1e",
+   "bytes": 6165
+  },
+  {
+   "path": "tools/test.sh",
+   "sha256": "fd3c35257b3f9200638f9cc6e3487c7042d56f5d328b1ae679c3852cbfcdfcad",
+   "bytes": 490
+  },
+  {
+   "path": "tools/verify.sh",
+   "sha256": "537d4736be9a04d9b4106e9a0fed7278dbec54406acf82b231feb48e4a8ed093",
+   "bytes": 10824
+  }
+ ]
+}
