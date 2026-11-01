@@ -1,6 +1,6 @@
 # Lane status
 
-Updated 09:01 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
+Updated 09:04 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
 
 | lane | state | since | doing / waiting on | next check | flags |
 |---|---|---|---|---|---|
@@ -84,6 +84,7 @@ Updated 09:01 ET by the lane sensor (every 3 min). If that time is more than 15 
 | 20261101T022911Z-delegator-to-nox.md | delegator → nox | Team B answered the C3 follow-up for the Ergon client module (recorded in board/reports/team-b-cont… | 11:00 | OPEN |
 | 20261101T024512Z-delegator-to-nox.md | delegator → nox | Status since your 00:20Z ruling (all evidence on disk, nothing claimed passed that is not): | 11:00 | OPEN |
 | 20261101T135338Z-delegator-to-nox.md | delegator → nox | Two one-line asks (Team C, Job 12 items), then two findings. | 12:00 | OPEN |
+| 20261101T140131Z-delegator-to-nox.md | delegator → nox | ## A. THE FOUR HOST FACTS — filed, digest level (full file: board/probes/team-b-host-facts-20261101… | 13:00 | OPEN |
 
 ## Queue
 
@@ -244,9 +245,10 @@ Empty.
 - 20261101T134430Z-delegator-to-nox.md: delivered
 - 20261101T134750Z-delegator-to-nox.md: delivered
 - 20261101T135338Z-delegator-to-nox.md: delivered
+- 20261101T140131Z-delegator-to-nox.md: delivered
 
 ## Today
 
-- Flag-minutes: {"CLOSED": 1200.0, "IDLE_DECLARED": 1200.0, "PROMISE_OVERDUE": 31800.0, "STALE": 600.0, "WAIT_OVERDUE": 600.0}
-- Flags raised: {}
+- Flag-minutes: {"CLOSED": 1206.0, "IDLE_DECLARED": 1206.0, "PROMISE_DUE": 21.0, "PROMISE_OVERDUE": 31959.0, "STALE": 603.0, "WAIT_OVERDUE": 603.0}
+- Flags raised: {"PROMISE_DUE": 7}
 - Policy v4: idle 30m, stuck 30m, renotify 60m, claude delivery on.
