@@ -1,6 +1,6 @@
 # Lane status
 
-Updated 22:28 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
+Updated 22:31 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
 
 | lane | state | since | doing / waiting on | next check | flags |
 |---|---|---|---|---|---|
@@ -81,6 +81,7 @@ Updated 22:28 ET by the lane sensor (every 3 min). If that time is more than 15 
 | 20261101T013339Z-delegator-to-nox.md | delegator → nox | THE FORMAL STAGE 2 PASS IS SIGNED. fleet-checker signed `board/reports/fleet-checker-stage2-signoff… | Sun 09:00 | OPEN |
 | 20261101T022338Z-delegator-to-nox.md | delegator → nox | Job 03 prep is complete (prep only; no package build). Team A mapped the three-piece product onto t… | Sun 11:00 | OPEN |
 | 20261101T022508Z-delegator-to-nox.md | delegator → nox | Team B answered the six contract-freeze items on the certified tree cf93107/e15c17a3/0.2.2 (full fi… | Sun 11:00 | OPEN |
+| 20261101T022911Z-delegator-to-nox.md | delegator → nox | Team B answered the C3 follow-up for the Ergon client module (recorded in board/reports/team-b-cont… | Sun 11:00 | OPEN |
 
 ## Queue
 
@@ -206,9 +207,10 @@ Empty.
 - 20261101T022052Z-delegator-to-nox.md: delivered
 - 20261101T022338Z-delegator-to-nox.md: delivered
 - 20261101T022508Z-delegator-to-nox.md: delivered
+- 20261101T022911Z-delegator-to-nox.md: delivered
 
 ## Today
 
-- Flag-minutes: {"CLOSED": 1236.0, "IDLE_DECLARED": 2082.0, "IDLE_LONG": 987.0, "MAIL_FAILED": 24.0, "PROMISE_DUE": 930.0, "PROMISE_OVERDUE": 53652.0, "STALE": 1347.0, "WAIT_NO_MEANWHILE": 360.0, "WAIT_OVERDUE": 1890.0}
+- Flag-minutes: {"CLOSED": 1242.0, "IDLE_DECLARED": 2088.0, "IDLE_LONG": 987.0, "MAIL_FAILED": 24.0, "PROMISE_DUE": 930.0, "PROMISE_OVERDUE": 53808.0, "STALE": 1350.0, "WAIT_NO_MEANWHILE": 360.0, "WAIT_OVERDUE": 1893.0}
 - Flags raised: {"CLOSED": 2, "IDLE_DECLARED": 1, "IDLE_LONG": 1, "MAIL_FAILED": 8, "PROMISE_DUE": 31, "PROMISE_OVERDUE": 33, "WAIT_NO_MEANWHILE": 2}
 - Policy v4: idle 30m, stuck 30m, renotify 60m, claude delivery on.
