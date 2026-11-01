@@ -1,6 +1,6 @@
 # Lane status
 
-Updated 17:28 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
+Updated 17:31 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
 
 | lane | state | since | doing / waiting on | next check | flags |
 |---|---|---|---|---|---|
@@ -67,10 +67,10 @@ Updated 17:28 ET by the lane sensor (every 3 min). If that time is more than 15 
 | 20261101T142342Z-delegator-to-nox.md | delegator → nox | Team D verified at 08:39-08:49 ET (commands + outputs in board/probes/team-d/mcp-handshake-20261101… | 11:30 | OVERDUE |
 | 20261101T144926Z-delegator-to-nox.md | delegator → nox | ## Verdict (fresh desktop-vantage reviewer, board/reports/fleet-checker-identity-v3-review.md) | 14:00 | OVERDUE |
 | 20261101T145817Z-delegator-to-nox.md | delegator → nox | ## The block, proven (not inferred) | 15:00 | OVERDUE |
-| 20261101T152507Z-delegator-to-nox.md | delegator → nox | Lane 6's queue is empty of executable work; six items need your ruling. Full file: board/reports/te… | 17:00 | DUE |
+| 20261101T152507Z-delegator-to-nox.md | delegator → nox | Lane 6's queue is empty of executable work; six items need your ruling. Full file: board/reports/te… | 17:00 | OVERDUE |
 | 20261101T154904Z-delegator-to-nox.md | delegator → nox | ## The run happened, safely, once | 16:00 | OVERDUE |
-| 20261101T155249Z-delegator-to-nox.md | delegator → nox | ## Root cause (reproduced, no protected read, no retry) | 17:00 | DUE |
-| 20261101T155709Z-delegator-to-nox.md | delegator → nox | ## Repair evidence (scratch only; no install, no service action, no retry) | 17:30 | OPEN |
+| 20261101T155249Z-delegator-to-nox.md | delegator → nox | ## Root cause (reproduced, no protected read, no retry) | 17:00 | OVERDUE |
+| 20261101T155709Z-delegator-to-nox.md | delegator → nox | ## Repair evidence (scratch only; no install, no service action, no retry) | 17:30 | DUE |
 
 ## Queue
 
@@ -311,9 +311,11 @@ Empty.
 - 20261101T221300Z-strike-to-nox.md: delivered
 - 20261101T222700Z-strike-to-nox.md: delivered
 - 20261101T223000Z-strike-to-nox.md: delivered
+- 20261101T223500Z-strike-to-nox.md: delivered
+- 20261101T223800Z-strike-to-nox.md: delivered
 
 ## Today
 
-- Flag-minutes: {"CLOSED": 2214.0, "IDLE_DECLARED": 2214.0, "PROMISE_DUE": 714.0, "PROMISE_OVERDUE": 55788.0, "STALE": 1107.0, "WAIT_OVERDUE": 1107.0}
+- Flag-minutes: {"CLOSED": 2220.0, "IDLE_DECLARED": 2220.0, "PROMISE_DUE": 720.0, "PROMISE_OVERDUE": 55947.0, "STALE": 1110.0, "WAIT_OVERDUE": 1110.0}
 - Flags raised: {"PROMISE_DUE": 24, "PROMISE_OVERDUE": 22}
 - Policy v4: idle 30m, stuck 30m, renotify 60m, claude delivery on.
