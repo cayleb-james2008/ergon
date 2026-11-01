@@ -1,0 +1,1 @@
+init rc=0 dump0_bytes=44801 dump0_rows=196

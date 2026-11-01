@@ -1,0 +1,2 @@
+pinned: fleet-ledger,fleet-policy,permission,preset-fleet-builder,preset-fleet-checker,preset-fleet-lead,preset-fleet-researcher
+fleet-mcp pinned as insert: false

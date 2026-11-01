@@ -1,0 +1,41 @@
+{
+  "sessionId": "fleet-mcp-bae2ca13-e965-4539-aa18-a1ea1b48cc18",
+  "promptText": "checker-verify prompt cv-mvyf66s0-c11229fe",
+  "turn": {
+    "ok": true,
+    "sessionId": "fleet-mcp-bae2ca13-e965-4539-aa18-a1ea1b48cc18",
+    "status": "completed",
+    "model": "deterministic-stub (fleet-selftest-stub)",
+    "transport": "stub-turn",
+    "turn_agent": "builder:selftest-fleet-mcp-bae2ca13-e965-4539-aa18-a1ea1b48cc18",
+    "ledger_gate": "stub-provider-selftest-only",
+    "turn_model": "claude-haiku-5-5",
+    "provider_calls": 1,
+    "assistant_text": "S3STUB:Current runtime context. This snapshot supersedes earlier runtime-context snapshots.\n\nCurrent working directory: \"/tmp/cv-s5.v43Ga1/fleet/work\".\n\nCurrent DSH file policy: workspace-write. Any available operation enforced by the DSH file sandbox may modify files under the session workspace: \"/tmp/cv-s5.v43Ga1/fleet/work\". Some platform temporary areas may also be writable.\n\nApproval prompts are enabled in this session: operations that require approval may ask through the configured answerers; without an available answerer, the request fails closed.\n\nCurrent DeepSeek Harness implementation checkout: \"/home/cayleb/.local/opt/deepseek-harness-official/\".\n\nCurrent DeepSeek Harness Web GUI URL: \"http://127.0.0.1:38479\".",
+    "inbox": [],
+    "turns": 1,
+    "note": "the fleet-ledger gate reserves the stub provider for selftest principals (stub-provider-selftest-only), so this real turn ran through the fleet stub-turn op as builder:selftest-fleet-mcp-bae2ca13-e965-4539-aa18-a1ea1b48cc18"
+  },
+  "state": {
+    "ok": true,
+    "sessionId": "fleet-mcp-bae2ca13-e965-4539-aa18-a1ea1b48cc18",
+    "found": true,
+    "source": "facade",
+    "mode": "stub",
+    "model": "deterministic-stub (fleet-selftest-stub)",
+    "provider": "fleet-selftest-stub",
+    "preset": null,
+    "cwd": "/tmp/cv-s5.v43Ga1/fleet/work/mcp-sessions/fleet-mcp-bae2ca13-e965-4539-aa18-a1ea1b48cc18",
+    "turn_agent": "builder:selftest-fleet-mcp-bae2ca13-e965-4539-aa18-a1ea1b48cc18",
+    "busy": false,
+    "turns": 1,
+    "last_transport": "stub-turn",
+    "events": 0,
+    "created_at": "2026-11-01T22:46:35.675Z",
+    "last_used_at": "2026-11-01T22:46:35.708Z",
+    "inbox": [],
+    "last_assistant_text": "S3STUB:Current runtime context. This snapshot supersedes earlier runtime-context snapshots.\n\nCurrent working directory: \"/tmp/cv-s5.v43Ga1/fleet/work\".\n\nCurrent DSH file policy: workspace-write. Any available operation enforced by the DSH file sandbox may modify files under the session workspace: \"/tmp/cv-s5.v43Ga1/fleet/work\". Some platform temporary areas may also be writable.\n\nApproval prompts are enabled in this session: operations that require approval may ask through the configured answerers; without an available answerer, the request fails closed.\n\nCurrent DeepSeek Harness implementation checkout: \"/home/cayleb/.local/opt/deepseek-harness-official/\".\n\nCurrent DeepSeek Harness Web GUI URL: \"http://127.0.0.1:38479\".",
+    "in_registry": true,
+    "registry_session": true
+  }
+}

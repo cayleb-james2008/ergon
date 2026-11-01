@@ -1,0 +1,78 @@
+# S4A re-run full PASS/FAIL table — CORRECTED tarball d03ea2ac — 2026-11-01T17:46:05-05:00
+# tarball: d03ea2ac8163985732baf1b64a907f698cd62cd41c5ed96be5d72b6d99394aab  /home/cayleb/workspace/harness-build/strike-release/dist/cayleb-dsh-fleet-0.3.0.tgz
+# scratch root: /tmp/checker-s4a.lRmJgn   mcp port: 33123 (own, dynamic)
+
+## install + normalise
+PASS  installed package present at /tmp/checker-s4a.lRmJgn/dsh/profiles/fleet/node_modules/@cayleb/dsh-fleet
+installed_version=0.3.0
+plugin-add rc=0 duration_s=0
+normalise rc=0
+assert: archive=104 files; installed=104 files; missing=0; extra=0; problems=0; dirs_wrong_mode=0
+independent assert rc=0
+
+## compose
+PASS  baseline web-template profile composed 196 rows
+PASS  no duplicate row ids in the composed profile (0 duplicates)
+PASS  overlay profile composed 214 rows = 196 baseline + 18 inserted
+PASS  tarball bundle patches declare 18 inserted rows
+PASS  row present and enabled: client-ui-stats
+PASS  row present and enabled: fleet
+PASS  row present and enabled: fleet-core
+PASS  row present and enabled: fleet-egress
+PASS  row present and enabled: fleet-firstrun
+PASS  row present and enabled: fleet-fsguard
+PASS  row present and enabled: fleet-housekeeper
+PASS  row present and enabled: fleet-ledger
+PASS  row present and enabled: fleet-lessons
+PASS  row present and enabled: fleet-mcp
+PASS  row present and enabled: fleet-orders
+PASS  row present and enabled: fleet-policy
+PASS  row present and enabled: fleet-sandbox
+PASS  row present and enabled: preset-fleet-builder
+PASS  row present and enabled: preset-fleet-checker
+PASS  row present and enabled: preset-fleet-lead
+PASS  row present and enabled: preset-fleet-researcher
+PASS  row present and enabled: session-inspector
+PASS  fleet bundle plugin row present (@cayleb/dsh-fleet)
+PASS  overlay applied: fleet-core controlSocket is the scratch socket
+PASS  overlay applied: fleet-core dbPath is the scratch DB
+PASS  overlay applied: fleet-core fleetRoot is the scratch root
+PASS  overlay applied: fleet-mcp owns the chosen port
+PASS  overlay applied: fleet-mcp statePath is scratch
+PASS  overlay applied: fleet-mcp adminSocket is scratch
+PASS  overlay applied: fleet-egress guardInProcess
+PASS  overlay applied: fleet-policy peerUid is this uid
+check-compose: PASS — 0 failed
+
+## running host status
+PASS  status ok=true
+PASS  integrity.ok=true
+PASS  integrity.failures empty
+PASS  lanes_allowed=true
+PASS  control.peer_uid=1000 accepted, 0 rejected
+PASS  policy.selftest=true
+PASS  db journal_mode=wal
+status-check: PASS
+
+## installed tree vs tarball
+first-run-status: name=@cayleb/dsh-fleet version=0.3.0 dshVersion=0.2.2-alpha.2
+status_files=104 tarball_members=104 missing=0 extra=0 sha/mode_mismatch=0
+compare-frstatus: PASS
+
+## MCP facade (own port 33123)
+PASS  admin-socket token op ok (len=64; value never printed)
+PASS  initialize HTTP 200 protocol=2025-03-26 server=fleet-mcp 0.3.0-mcp session=issued
+PASS  notifications/initialized HTTP 202
+PASS  tools/list HTTP 200 9 tools: fleet.status, session.create, session.prompt, session.status, board.op, order.drive_roundtrip, order.stage_real, fleet.selftest, actions.status
+PASS  tools/list contains fleet.status
+PASS  tools/list contains session.create
+PASS  tools/list contains board.op
+PASS  tools/list contains actions.status
+PASS  auth.refuse wrong bearer HTTP 401
+mcp-probe: PASS — 0 failed
+
+## verdict
+############ S4A RESULT ############
+scratch_root=/tmp/checker-s4a.lRmJgn
+FAILS=0
+S4A: PASS

@@ -1,0 +1,58 @@
+{
+  "loopback": {
+    "url": "http://127.0.0.1:18889/mcp",
+    "session_header": "785168cda35d422b9bd891c63d6e794335db",
+    "init": {
+      "protocolVersion": "2025-03-26",
+      "capabilities": {
+        "tools": {
+          "listChanged": false
+        }
+      },
+      "serverInfo": {
+        "name": "fleet-mcp",
+        "version": "0.3.0-mcp"
+      },
+      "instructions": "The fleet board only. Tools: fleet.status, session.create/prompt/status, board.op, order.drive_roundtrip, fleet.selftest, actions.status. Every call is logged. Board writes act as the fleet owner principal; selftest tool calls act only on fixture orders."
+    },
+    "tools": [
+      "actions.status",
+      "board.op",
+      "fleet.selftest",
+      "fleet.status",
+      "order.drive_roundtrip",
+      "order.stage_real",
+      "session.create",
+      "session.prompt",
+      "session.status"
+    ]
+  },
+  "tailnet": {
+    "url": "http://100.114.17.67:18889/mcp",
+    "session_header": "0cf8ad78ddbb79755e2ac491460d61649d4a",
+    "init": {
+      "protocolVersion": "2025-03-26",
+      "capabilities": {
+        "tools": {
+          "listChanged": false
+        }
+      },
+      "serverInfo": {
+        "name": "fleet-mcp",
+        "version": "0.3.0-mcp"
+      },
+      "instructions": "The fleet board only. Tools: fleet.status, session.create/prompt/status, board.op, order.drive_roundtrip, fleet.selftest, actions.status. Every call is logged. Board writes act as the fleet owner principal; selftest tool calls act only on fixture orders."
+    },
+    "tools": [
+      "actions.status",
+      "board.op",
+      "fleet.selftest",
+      "fleet.status",
+      "order.drive_roundtrip",
+      "order.stage_real",
+      "session.create",
+      "session.prompt",
+      "session.status"
+    ]
+  }
+}

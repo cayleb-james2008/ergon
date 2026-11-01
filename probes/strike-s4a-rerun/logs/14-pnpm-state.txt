@@ -1,0 +1,7 @@
+installed_files=104 archive_members=104
+installed mode distribution: {'0o640': 101, '0o751': 2, '0o750': 1}
+installed nlink distribution: {1: 104}
+archive mode distribution: {'0o644': 101, '0o755': 3}
+pre-normalise files already at archive mode: 0/104  (normalise must set the rest)
+pre-normalise nlink>1 files: 0 | nlink==1: 104
+NOTE: pre-normalise modes are pnpm+umask output, not the install result; step 4 sets exact archive modes and step 4b re-asserts them.

@@ -30,3 +30,13 @@ The delivered-tree comparison is the core: `first-run --status` reads the instal
 ## Evidence
 
 `/home/cayleb/workspace/harness-build/evidence/strike/checker-verify/s4a/` — 28 files + verified `SHA256SUMS`; full transcript `logs/99-console.txt`, complete table `logs/30-full-table.txt`, report `REPORT.md` (sha256 `6fe19a30ba2a002e2f1d180d13ec90c6311bd161334bcb8a1685aaca6474a0df`).
+
+---
+
+## Addendum 2026-11-01 17:46 ET — re-run on the CORRECTED release `d03ea2ac…`: PASS
+
+The release artifact was corrected (change scope: only `bin/rows-manifest.mjs`; `rows.manifest.json` unchanged). Fresh re-run of the whole S4A battery on the corrected tarball **`d03ea2ac8163985732baf1b64a907f698cd62cd41c5ed96be5d72b6d99394aab`** (104 members: 101×0644 + 3×0755, `@cayleb/dsh-fleet 0.3.0`; fresh throwaway `DSH_HOME=/tmp/checker-s4a.lRmJgn`, umask 027, own MCP port 33123):
+
+- **49 PASS / 0 FAIL / 0 BLOCKED, `S4A: PASS`** — every result reproduced: install rc=0 (0.3.0), normalise + independent assert 104/104 exact modes, compose **214 = 196 + 18** with 0 duplicate ids, host `ok=true/integrity.ok=true/lanes=true`, **`first-run --status` 104/104 with 0 missing/extra and 0 sha/mode mismatch**, MCP initialize 200 + 9 tools + 401.
+- Independent delta check: vs the prior `b60019a0…` build the corrected tarball changes **exactly `bin/rows-manifest.mjs`** and nothing else (0 added/removed; `rows.manifest.json` byte-identical) — consistent with the stated scope.
+- Evidence: `evidence/strike/checker-verify/s4a-rerun/` (27 files + verified `SHA256SUMS`; `99-console.txt`, `30-full-table.txt`, `REPORT.md`). **Verdict unchanged: ACCEPT.**

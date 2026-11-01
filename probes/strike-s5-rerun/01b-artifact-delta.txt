@@ -1,0 +1,3 @@
+Files /tmp/cv-tar-inspect/package/bin/rows-manifest.mjs and /home/cayleb/workspace/harness-build/evidence/strike/checker-verify/s5-rerun/.new-extract/package/bin/rows-manifest.mjs differ
+rows_manifest_sha256_old: 1bcac9862a9b6c9723c27b193b3a9f22ab9b07f9d30e7fef862d01d194d59ee9
+rows_manifest_sha256_new: 1bcac9862a9b6c9723c27b193b3a9f22ab9b07f9d30e7fef862d01d194d59ee9

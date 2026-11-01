@@ -1,0 +1,42 @@
+S5 RERUN independent MCP acceptance (corrected artifact) — 2026-11-01T22:46:33Z
+checker: checker-verify (fresh-context; built none of this artifact)
+tarball: /home/cayleb/workspace/harness-build/strike-release/dist/cayleb-dsh-fleet-0.3.0.tgz
+sha256: d03ea2ac8163985732baf1b64a907f698cd62cd41c5ed96be5d72b6d99394aab
+members (entries with '/'): 104
+PASS artifact sha256 equals the Lead-declared digest
+PASS member count 104
+artifact delta vs superseded b60019a0: exit=1 (1 differing lines)
+PASS rows.manifest.json byte-identical old vs corrected
+scratch root: /tmp/cv-s5.v43Ga1
+PASS profile initialised from the shipped web template
+plugin add exit=0 ; installed version: 0.3.0
+installed tree vs tar members: exit=0 (0 differing lines)
+PASS installed profile tree is byte-identical to the tarball
+composed overlay dump-config exit=0
+PASS fleet-mcp row composes
+composed rows (fleet-*): 15
+scratch host pid 497739; waiting for sockets…
+PASS control + admin sockets are up
+control status: ok=true integrity=true lanes=true failures=[]
+boot integrity (shipped rows manifest): {  "integrity_ok": true,  "chain_ok": true,  "sandbox_ok": true,  "rows_ok": true,  "rows_pinned": 7,  "rows_disabled": 12,  "rows_failures": [],  "rows_manifest_sha256": "1bcac9862a9b6c9723c27b193b3a9f22ab9b07f9d30e7fef862d01d194d59ee9",  "installed_rows_manifest_sha256": "1bcac9862a9b6c9723c27b193b3a9f22ab9b07f9d30e7fef862d01d194d59ee9",  "rows_manifest_matches_installed": true,  "guard_ok": true,  "guard_failures": [],  "lanes_allowed": true}
+PASS boot integrity ok incl. rows manifest match, guard rows, lanes
+PASS shipped rows-manifest generator reproduces rows.manifest.json byte-identically
+rows.manifest pins: pinned: fleet-ledger,fleet-policy,permission,preset-fleet-builder,preset-fleet-checker,preset-fleet-lead,preset-fleet-researcher
+PASS fleet-mcp is NOT pinned as an exact insert (corrected generator rule)
+listeners :18889:
+   LISTEN 0      511                             100.114.17.67:18889      0.0.0.0:*
+   LISTEN 0      511                                 127.0.0.1:18889      0.0.0.0:*
+   LISTEN 0      511                                     [::1]:18889         [::]:*
+mcp-verify exit=0
+PASS my MCP probe passed every mandatory check
+status after: {"ok":true,"integrity_ok":true,"lanes":true,"events":92,"control_peer_uid":1000,"policy_selftest":true}
+action log: 24 rows sha256=abe4b1367127de8ba42bc08f7bef9b86c2723a884f029d24b1f4017fc50aaa50
+PASS whole action-log file contains no bearer token (whole_file_token_hits=0 rows=24 bytes=8599)
+PASS no bearer token in my evidence pack (evidence_files=62 token_hits=0)
+
+==================================================
+S5 RESULT: PASS — probe and independent checks clean
+evidence: /home/cayleb/workspace/harness-build/evidence/strike/checker-verify/s5-rerun
+scratch root (deleted unless KEEP_ROOT=1): /tmp/cv-s5.v43Ga1
+==================================================
+── stopping scratch host

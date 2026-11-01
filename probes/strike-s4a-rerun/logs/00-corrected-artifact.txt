@@ -1,0 +1,21 @@
+### corrected-release facts 2026-11-01T17:45:34-05:00
+d03ea2ac8163985732baf1b64a907f698cd62cd41c5ed96be5d72b6d99394aab  /home/cayleb/workspace/harness-build/strike-release/dist/cayleb-dsh-fleet-0.3.0.tgz
+-rw-r--r-- 1 cayleb cayleb 287191 Nov  1 17:44 /home/cayleb/workspace/harness-build/strike-release/dist/cayleb-dsh-fleet-0.3.0.tgz
+expected: d03ea2ac8163985732baf1b64a907f698cd62cd41c5ed96be5d72b6d99394aab
+members=104
+mode distribution:
+    101 -rw-r--r--
+      3 -rwxr-xr-x
+package.json identity: @cayleb/dsh-fleet 0.3.0
+files[] count: 21
+
+### independent delta vs the b60019a0 build, using my proven b60019a0 installed tree
+reference tree: /tmp/checker-s4a.Khlcwt/dsh/profiles/fleet/node_modules/@cayleb/dsh-fleet
+  (that tree's 104/104 sha256+mode equality to b60019a0 was proven by first-run --status in the prior S4A run)
+new members=104 reference members=104
+added=[]
+removed=[]
+changed content (1): ['bin/rows-manifest.mjs']
+rows.manifest.json sha256 new: 1bcac9862a9b6c9723c27b193b3a9f22ab9b07f9d30e7fef862d01d194d59ee9
+rows.manifest.json sha256 ref: 1bcac9862a9b6c9723c27b193b3a9f22ab9b07f9d30e7fef862d01d194d59ee9
+rows.manifest.json unchanged: True

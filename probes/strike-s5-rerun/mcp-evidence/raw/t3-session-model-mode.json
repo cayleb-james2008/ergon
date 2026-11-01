@@ -1,0 +1,10 @@
+{
+  "isError": true,
+  "result": {
+    "ok": false,
+    "error": {
+      "code": "model-credential-not-entered",
+      "message": "session.create mode:\"model\" is staged and NOT faked: no model provider credential is entered in the fleet profile, so no model route is available. The owner enters the credential; until then use mode:\"stub\" (the labelled deterministic fleet-selftest-stub route)."
+    }
+  }
+}

@@ -1,0 +1,3 @@
+path: /tmp/cv-s5.v43Ga1/fleet/log/mcp-actions.jsonl
+rows: 24
+sha256: abe4b1367127de8ba42bc08f7bef9b86c2723a884f029d24b1f4017fc50aaa50

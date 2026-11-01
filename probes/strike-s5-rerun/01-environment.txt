@@ -1,0 +1,32 @@
+date_utc: 2026-11-01T22:46:33Z
+uid: uid=1000(cayleb) gid=1000(cayleb) groups=1000(cayleb),998(wheel)
+node: v26.7.0
+tarball: /home/cayleb/workspace/harness-build/strike-release/dist/cayleb-dsh-fleet-0.3.0.tgz
+sha256: d03ea2ac8163985732baf1b64a907f698cd62cd41c5ed96be5d72b6d99394aab
+expected_sha256: d03ea2ac8163985732baf1b64a907f698cd62cd41c5ed96be5d72b6d99394aab
+members: 104
+hostname: outis-desktop
+State  Recv-Q Send-Q                          Local Address:Port  Peer Address:Port
+LISTEN 0      4096                 100.114.17.67%tailscale0:443        0.0.0.0:*
+LISTEN 0      511                                 127.0.0.1:9333       0.0.0.0:*
+LISTEN 0      10                                  127.0.0.1:9222       0.0.0.0:*
+LISTEN 0      5                                   127.0.0.1:8791       0.0.0.0:*
+LISTEN 0      511                                 127.0.0.1:8788       0.0.0.0:*
+LISTEN 0      511                                 127.0.0.1:8787       0.0.0.0:*
+LISTEN 0      511                                 127.0.0.1:8737       0.0.0.0:*
+LISTEN 0      4096                               127.0.0.54:53         0.0.0.0:*
+LISTEN 0      128                                 127.0.0.1:5037       0.0.0.0:*
+LISTEN 0      511                                 127.0.0.1:3091       0.0.0.0:*
+LISTEN 0      4096                 100.114.17.67%tailscale0:8443       0.0.0.0:*
+LISTEN 0      511                                 127.0.0.1:35645      0.0.0.0:*
+LISTEN 0      4096                            127.0.0.53%lo:53         0.0.0.0:*
+LISTEN 0      511                                 127.0.0.1:32825      0.0.0.0:*
+LISTEN 0      4096                                127.0.0.1:631        0.0.0.0:*
+LISTEN 0      4096                 100.114.17.67%tailscale0:54806      0.0.0.0:*
+LISTEN 0      4096                               172.17.0.1:53         0.0.0.0:*
+LISTEN 0      128                                 127.0.0.1:54451      0.0.0.0:*
+LISTEN 0      512                                 127.0.0.1:49374      0.0.0.0:*
+LISTEN 0      4096   [fd7a:115c:a1e0::ff39:1144]%tailscale0:443           [::]:*
+LISTEN 0      4096   [fd7a:115c:a1e0::ff39:1144]%tailscale0:41364         [::]:*
+LISTEN 0      4096   [fd7a:115c:a1e0::ff39:1144]%tailscale0:8443          [::]:*
+LISTEN 0      4096                                    [::1]:631           [::]:*

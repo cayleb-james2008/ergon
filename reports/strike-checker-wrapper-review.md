@@ -80,3 +80,11 @@ The release tarball was replaced after this review: it is now `b60019a0f3611c83f
 - the **installed (0.2.2) block** on the current 0.3.0 archive → **rc=1** `normalise: expected 82 members, got 104` (the blocker is still real; the fix is still required).
 
 Evidence: `evidence/strike/checker-verify/wrapper-review/logs/31-current-tarball-recheck.txt` and `logs/32-current-tarball-sim.txt` (manifest `SHA256SUMS` refreshed, 36 files, all verify). **Verdict unchanged: ACCEPT.**
+
+## Addendum 2 2026-11-01 17:46 ET — wrapper facts re-confirmed on the CORRECTED tarball `d03ea2ac…`
+
+The artifact was corrected after the review; the wrapper's count/modes logic was re-confirmed on the digest that will actually be installed: `d03ea2ac8163985732baf1b64a907f698cd62cd41c5ed96be5d72b6d99394aab` — **104 regular members, 101×0644 + 3×0755, `package/package.json` = `@cayleb/dsh-fleet 0.3.0`**; reviewed new wrapper unchanged (`75ab346e…1209`).
+
+Re-run on this artifact: simulated-pnpm state + reviewed normalise block → **rc=0**, `normalise-archive: @cayleb/dsh-fleet 0.3.0 104 regular members`, independent assert **104/104 exact archive modes, 0 missing/extra, dirs 0750**; negative controls still fail closed (`archive package name is 'evil-package'…`; `missing member src/core/core.js…`). Independent delta vs the previous build: only `bin/rows-manifest.mjs` content changes; `rows.manifest.json` unchanged.
+
+Evidence: `evidence/strike/checker-verify/wrapper-review/logs/33-corrected-tarball-sim.txt` (manifest refreshed, all verify). **Verdict unchanged: ACCEPT.**
