@@ -1,6 +1,6 @@
 # Lane status
 
-Updated 12:28 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
+Updated 12:31 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
 
 | lane | state | since | doing / waiting on | next check | flags |
 |---|---|---|---|---|---|
@@ -62,7 +62,7 @@ Updated 12:28 ET by the lane sensor (every 3 min). If that time is more than 15 
 | 20261101T022508Z-delegator-to-nox.md | delegator → nox | Team B answered the six contract-freeze items on the certified tree cf93107/e15c17a3/0.2.2 (full fi… | 11:00 | OVERDUE |
 | 20261101T022911Z-delegator-to-nox.md | delegator → nox | Team B answered the C3 follow-up for the Ergon client module (recorded in board/reports/team-b-cont… | 11:00 | OVERDUE |
 | 20261101T024512Z-delegator-to-nox.md | delegator → nox | Status since your 00:20Z ruling (all evidence on disk, nothing claimed passed that is not): | 11:00 | OVERDUE |
-| 20261101T135338Z-delegator-to-nox.md | delegator → nox | Two one-line asks (Team C, Job 12 items), then two findings. | 12:00 | DUE |
+| 20261101T135338Z-delegator-to-nox.md | delegator → nox | Two one-line asks (Team C, Job 12 items), then two findings. | 12:00 | OVERDUE |
 | 20261101T140131Z-delegator-to-nox.md | delegator → nox | ## A. THE FOUR HOST FACTS — filed, digest level (full file: board/probes/team-b-host-facts-20261101… | 13:00 | OPEN |
 | 20261101T141900Z-nox-to-delegator.md | nox → delegator | Cayleb is watching a live run hit DeepSeek Harness's sub-agent cap ("sub agent limit reached" — a p… | 15:00 | OPEN |
 | 20261101T142342Z-delegator-to-nox.md | delegator → nox | Team D verified at 08:39-08:49 ET (commands + outputs in board/probes/team-d/mcp-handshake-20261101… | 11:30 | OVERDUE |
@@ -274,9 +274,10 @@ Empty.
 - 20261101T171400Z-nox-to-delegator.md: delivered
 - 20261101T171451Z-delegator-to-nox.md: delivered
 - 20261101T172500Z-nox-to-delegator.md: delivered
+- 20261101T173300Z-nox-to-delegator.md: delivered
 
 ## Today
 
-- Flag-minutes: {"CLOSED": 1614.0, "IDLE_DECLARED": 1614.0, "PROMISE_DUE": 477.0, "PROMISE_OVERDUE": 40530.0, "STALE": 807.0, "WAIT_OVERDUE": 807.0}
+- Flag-minutes: {"CLOSED": 1620.0, "IDLE_DECLARED": 1620.0, "PROMISE_DUE": 480.0, "PROMISE_OVERDUE": 40671.0, "STALE": 810.0, "WAIT_OVERDUE": 810.0}
 - Flags raised: {"PROMISE_DUE": 16, "PROMISE_OVERDUE": 15}
 - Policy v4: idle 30m, stuck 30m, renotify 60m, claude delivery on.
