@@ -1,0 +1,7 @@
+# first-run --status vs tarball members (independent)
+status_name: @cayleb/dsh-fleet version: 0.3.0 dsh_pin: 0.2.2-alpha.2
+status_files: 104 tarball_files: 104
+sha+matching_entries: 104 of 104
+mismatches: 0 
+tarball_files_not_listed: 0 
+executable_entries: bin/dsh-fleet.mjs,bin/mcp-selftest.mjs,src/core/bin/dsh-fleet.mjs

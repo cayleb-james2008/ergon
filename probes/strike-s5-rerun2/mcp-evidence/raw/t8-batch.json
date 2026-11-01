@@ -1,0 +1,20 @@
+{
+  "status": 400,
+  "headers": {
+    "cache-control": "no-store",
+    "connection": "keep-alive",
+    "content-length": "133",
+    "content-type": "application/json; charset=utf-8",
+    "date": "Sun, 01 Nov 2026 23:02:03 GMT",
+    "keep-alive": "timeout=5"
+  },
+  "text": "{\"jsonrpc\":\"2.0\",\"id\":null,\"error\":{\"code\":-32600,\"message\":\"invalid request: batches are not supported; send one message per POST\"}}",
+  "parsed": {
+    "jsonrpc": "2.0",
+    "id": null,
+    "error": {
+      "code": -32600,
+      "message": "invalid request: batches are not supported; send one message per POST"
+    }
+  }
+}

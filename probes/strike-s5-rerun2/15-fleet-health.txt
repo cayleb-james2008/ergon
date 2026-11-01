@@ -1,0 +1,5 @@
+2026-11-01T23:02:21Z
+ActiveState=active
+InvocationID=9e3929d0d99c45ca98ff0d01fd275eb6
+MainPID=427587
+no leftover scratch roots

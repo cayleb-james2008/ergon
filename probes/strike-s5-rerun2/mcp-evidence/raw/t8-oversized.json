@@ -1,0 +1,19 @@
+{
+  "status": 413,
+  "headers": {
+    "cache-control": "no-store",
+    "connection": "close",
+    "content-length": "113",
+    "content-type": "application/json; charset=utf-8",
+    "date": "Sun, 01 Nov 2026 23:02:03 GMT"
+  },
+  "text": "{\"jsonrpc\":\"2.0\",\"id\":null,\"error\":{\"code\":-32004,\"message\":\"payload too large: the body limit is 262144 bytes\"}}",
+  "parsed": {
+    "jsonrpc": "2.0",
+    "id": null,
+    "error": {
+      "code": -32004,
+      "message": "payload too large: the body limit is 262144 bytes"
+    }
+  }
+}

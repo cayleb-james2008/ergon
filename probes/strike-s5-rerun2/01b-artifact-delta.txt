@@ -1,0 +1,4 @@
+Files /tmp/cv-tar-new/package/src/firstrun/capabilities.mjs and /home/cayleb/workspace/harness-build/evidence/strike/checker-verify/s5-rerun2/.new-extract/package/src/firstrun/capabilities.mjs differ
+Files /tmp/cv-tar-new/package/src/firstrun/credentials.mjs and /home/cayleb/workspace/harness-build/evidence/strike/checker-verify/s5-rerun2/.new-extract/package/src/firstrun/credentials.mjs differ
+rows_manifest_sha256_old: 1bcac9862a9b6c9723c27b193b3a9f22ab9b07f9d30e7fef862d01d194d59ee9
+rows_manifest_sha256_new: 1bcac9862a9b6c9723c27b193b3a9f22ab9b07f9d30e7fef862d01d194d59ee9

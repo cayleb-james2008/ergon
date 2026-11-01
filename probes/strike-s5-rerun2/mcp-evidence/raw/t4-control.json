@@ -1,0 +1,383 @@
+{
+  "orderGet": {
+    "ok": true,
+    "result": {
+      "order": {
+        "id": "o1",
+        "principal": "cayleb-local",
+        "title": "checker-verify roundtrip cv-mvyfq1lu-ebf6b7d7 t4",
+        "state": "done",
+        "block_reason": null,
+        "resume_state": null,
+        "fail_reason": null,
+        "size": "standard",
+        "tier": 1,
+        "est_minutes": 10,
+        "budget_usd": 1,
+        "budget": {
+          "usd": 1
+        },
+        "checkpoint_at": 1793577722180,
+        "claimant": "lead:selftest-mcp-807b1d9562",
+        "lease_until": null,
+        "attempts": 0,
+        "waiting_on": null,
+        "preflight_state": "closed",
+        "report_post_id": "8",
+        "fixture": true,
+        "done_when": {
+          "mode": "command",
+          "text": "checker-verify done-when cv-mvyfq1lu-ebf6b7d7",
+          "command": "true"
+        },
+        "done_when_rev": 1,
+        "facts": {
+          "posted_at": 1793574122182,
+          "unacked": false,
+          "claimed_at": 1793574122193,
+          "started_at": 1793574122201,
+          "done_at": 1793574122246
+        },
+        "tasks": {
+          "done": 2
+        },
+        "goldfish": null,
+        "goal": "checker-verify roundtrip cv-mvyfq1lu-ebf6b7d7 t4",
+        "context": "model-free work order driven end to end through the fleet MCP facade (request 807b1d9562); fixture-scoped so no model provider is involved",
+        "constraints": [],
+        "anti_goals": [],
+        "ownership": "",
+        "example": "one evidence note citing an artefact sha256",
+        "evidence_required": [
+          "one evidence post with an artefact sha256"
+        ],
+        "assumptions_policy": "log-and-proceed",
+        "stop_conditions": [],
+        "successors": [],
+        "ambition": [
+          "exercise the board end to end through the MCP facade"
+        ],
+        "base_hashes": {},
+        "budget_original": {
+          "usd": 1
+        }
+      },
+      "tasks": [
+        {
+          "id": "t1",
+          "order": "o1",
+          "seq": 1,
+          "key": "t0",
+          "title": "one deterministic fixture task for checker-verify roundtrip cv-mvyfq1lu-ebf6b7d7",
+          "needs_role": "builder",
+          "state": "done",
+          "block_reason": null,
+          "resume_state": null,
+          "fail_reason": null,
+          "waiting_on": null,
+          "blocked_reason": null,
+          "errand": false,
+          "final": false,
+          "tier": 1,
+          "est_minutes": 10,
+          "budget_usd": 1,
+          "spent_usd": 0,
+          "goal": "one deterministic fixture task for checker-verify roundtrip cv-mvyfq1lu-ebf6b7d7 t4",
+          "context": "",
+          "constraints": [],
+          "evidence_required": [],
+          "write_targets": [],
+          "done_when": {
+            "mode": "command",
+            "text": "the model-free roundtrip task check exits 0",
+            "command": "true",
+            "authored_by": "lead"
+          },
+          "after": [],
+          "claimant": null,
+          "lease_until": null,
+          "attempts": 0,
+          "built": {
+            "commit": null,
+            "artefact_hashes": [
+              "09d63ce15f778d876c5dd8f09a8ec894cec6597e54456e7f28da8dd9c8951802"
+            ],
+            "evidence": [
+              "4"
+            ],
+            "summary": "roundtrip 807b1d9562: deterministic artefact",
+            "at": 1793574122214
+          },
+          "round": 1,
+          "rounds_allowed": 3,
+          "banked": true,
+          "lesson_ref": "NO_ENTRY",
+          "replaced_by": null,
+          "facts": {
+            "created_at": 1793574122201,
+            "claimed_at": 1793574122209,
+            "done_at": 1793574122223
+          },
+          "maker": "builder:selftest-mcp-807b1d9562"
+        },
+        {
+          "id": "t2",
+          "order": "o1",
+          "seq": 2,
+          "key": null,
+          "title": "Run the order's own done-when",
+          "needs_role": "builder",
+          "state": "done",
+          "block_reason": null,
+          "resume_state": null,
+          "fail_reason": null,
+          "waiting_on": null,
+          "blocked_reason": null,
+          "errand": false,
+          "final": true,
+          "tier": 1,
+          "est_minutes": 15,
+          "budget_usd": null,
+          "spent_usd": 0,
+          "goal": "Run the order's own done-when end to end (harness-run; no lane builds it)",
+          "context": "",
+          "constraints": [],
+          "evidence_required": [
+            "done-when run output"
+          ],
+          "write_targets": [],
+          "done_when": {
+            "mode": "command",
+            "text": "checker-verify done-when cv-mvyfq1lu-ebf6b7d7",
+            "command": "true",
+            "authored_by": "cayleb-local",
+            "from_order": true
+          },
+          "after": [],
+          "claimant": null,
+          "lease_until": null,
+          "attempts": 0,
+          "built": {
+            "commit": null,
+            "artefact_hashes": [
+              "4a26090cd468b7cf97af772fbb6888470a51e5182a4ac78fca70eb2f57372153"
+            ],
+            "evidence": [],
+            "summary": "the Lead filed its report; the harness runs the order done-when",
+            "at": 1793574122229
+          },
+          "round": 1,
+          "rounds_allowed": 3,
+          "banked": true,
+          "lesson_ref": "harness-run done-when",
+          "replaced_by": null,
+          "facts": {
+            "created_at": 1793574122201,
+            "claimed_at": 1793574122229,
+            "done_at": 1793574122246
+          },
+          "maker": "builder:harness-done-when"
+        }
+      ]
+    }
+  },
+  "posts": {
+    "ok": true,
+    "result": {
+      "board": "o1",
+      "head": 12,
+      "acked": 0,
+      "posts": [
+        {
+          "id": "1",
+          "seq": 1,
+          "board": "o1",
+          "kind": "order-created",
+          "author": "cayleb-local",
+          "data_class": "principal",
+          "entity": "o1",
+          "created_at": 1793574122182,
+          "body": "{\"title\":\"checker-verify roundtrip cv-mvyfq1lu-ebf6b7d7 t4\",\"goal\":\"checker-verify roundtrip cv-mvyfq1lu-ebf6b7d7 t4\",\"est_minutes\":10,\"size\":\"standard\",\"tier\":1}",
+          "meta": null,
+          "body_sha256": "5aa83bfa4f6e58eeda572f5121a52b8649b7e1c8470d7728e7ad155530fb7620"
+        },
+        {
+          "id": "2",
+          "seq": 2,
+          "board": "o1",
+          "kind": "preflight",
+          "author": "lead:selftest-mcp-807b1d9562",
+          "data_class": "bot-authored",
+          "entity": "o1",
+          "created_at": 1793574122198,
+          "body": "{\"questions\":[]}",
+          "meta": {
+            "questions": []
+          },
+          "body_sha256": "5c9253d29ca1fc9c4f7683bfe5dadd87e2dbce3e46af6ee80404bc7259b41e1e"
+        },
+        {
+          "id": "3",
+          "seq": 3,
+          "board": "o1",
+          "kind": "decomposition",
+          "author": "lead:selftest-mcp-807b1d9562",
+          "data_class": "bot-authored",
+          "entity": "o1",
+          "created_at": 1793574122201,
+          "body": "{\"tasks\":[\"t1\"]}",
+          "meta": {
+            "tasks": [
+              "t1"
+            ]
+          },
+          "body_sha256": "047885a937611b393424557e910545168cb3861340495a23ddb092b6c3f5906e"
+        },
+        {
+          "id": "4",
+          "seq": 4,
+          "board": "o1",
+          "kind": "evidence",
+          "author": "builder:selftest-mcp-807b1d9562",
+          "data_class": "bot-authored",
+          "entity": "t1",
+          "created_at": 1793574122212,
+          "body": "roundtrip evidence for checker-verify roundtrip cv-mvyfq1lu-ebf6b7d7 t4",
+          "meta": {
+            "artefact_hashes": [
+              "09d63ce15f778d876c5dd8f09a8ec894cec6597e54456e7f28da8dd9c8951802"
+            ]
+          },
+          "body_sha256": "efde3798ebe2bd9e45ca080e3e15aedc19b7b1cdab750dd4fa4b4e8510a828a2"
+        },
+        {
+          "id": "5",
+          "seq": 5,
+          "board": "o1",
+          "kind": "built",
+          "author": "builder:selftest-mcp-807b1d9562",
+          "data_class": "bot-authored",
+          "entity": "t1",
+          "created_at": 1793574122214,
+          "body": "{\"commit\":null,\"artefact_hashes\":[\"09d63ce15f778d876c5dd8f09a8ec894cec6597e54456e7f28da8dd9c8951802\"],\"evidence\":[\"4\"],\"summary\":\"roundtrip 807b1d9562: deterministic artefact\",\"at\":1793574122214}",
+          "meta": {
+            "artefact_hashes": 1,
+            "commit": null,
+            "evidence": [
+              "4"
+            ]
+          },
+          "body_sha256": "4b2fd93c82e8dc6e3ea4189e15a763f324cb92add190b0a10983196314a29f99"
+        },
+        {
+          "id": "6",
+          "seq": 6,
+          "board": "o1",
+          "kind": "verdict",
+          "author": "checker:selftest-chk-61691b0a433b",
+          "data_class": "bot-authored",
+          "entity": "t1",
+          "created_at": 1793574122222,
+          "body": "{\"round\":1,\"result\":\"pass\",\"notes\":\"\",\"exit_code\":0,\"artefact_hashes\":[\"09d63ce15f778d876c5dd8f09a8ec894cec6597e54456e7f28da8dd9c8951802\"],\"evidence\":[\"4\"]}",
+          "meta": {
+            "result": "pass",
+            "round": 1,
+            "source": "checker"
+          },
+          "body_sha256": "81c5ac8314345bae2a61038ba26ff2118523b85175f0d3011e7dc0b662e4f5af"
+        },
+        {
+          "id": "7",
+          "seq": 7,
+          "board": "o1",
+          "kind": "task-done",
+          "author": "harness",
+          "data_class": "harness",
+          "entity": "t1",
+          "created_at": 1793574122223,
+          "body": "{\"via\":\"checker verdict\",\"round\":1}",
+          "meta": null,
+          "body_sha256": "6b31da8aa26171fd5f4654c259f857d01311a188d3e59dd11f5cadff6e7df712"
+        },
+        {
+          "id": "8",
+          "seq": 8,
+          "board": "o1",
+          "kind": "report",
+          "author": "lead:selftest-mcp-807b1d9562",
+          "data_class": "bot-authored",
+          "entity": "o1",
+          "created_at": 1793574122228,
+          "body": "roundtrip 807b1d9562: task t1 done and banked; harness finishes the order done-when",
+          "meta": {
+            "evidence": []
+          },
+          "body_sha256": "4a26090cd468b7cf97af772fbb6888470a51e5182a4ac78fca70eb2f57372153"
+        },
+        {
+          "id": "9",
+          "seq": 9,
+          "board": "o1",
+          "kind": "built",
+          "author": "builder:harness-done-when",
+          "data_class": "harness",
+          "entity": "t2",
+          "created_at": 1793574122229,
+          "body": "{\"commit\":null,\"artefact_hashes\":[\"4a26090cd468b7cf97af772fbb6888470a51e5182a4ac78fca70eb2f57372153\"],\"evidence\":[],\"summary\":\"the Lead filed its report; the harness runs the order done-when\",\"at\":1793574122229}",
+          "meta": {
+            "artefact_hashes": 1,
+            "commit": null,
+            "evidence": []
+          },
+          "body_sha256": "66e6f19ef92a10b58f0cb94eae135a9bae1280a421638964cf7306f4a2a7838a"
+        },
+        {
+          "id": "10",
+          "seq": 10,
+          "board": "o1",
+          "kind": "verdict",
+          "author": "checker:harness-919189da31",
+          "data_class": "harness",
+          "entity": "t2",
+          "created_at": 1793574122246,
+          "body": "{\"round\":1,\"result\":\"pass\",\"notes\":\"\",\"exit_code\":0,\"artefact_hashes\":[\"4a26090cd468b7cf97af772fbb6888470a51e5182a4ac78fca70eb2f57372153\"],\"evidence\":[]}",
+          "meta": {
+            "result": "pass",
+            "round": 1,
+            "source": "checker"
+          },
+          "body_sha256": "32ab871b1b045e7d5925026b28febcfc2ce09825aa14d74f63dcf440d61c8aca"
+        },
+        {
+          "id": "11",
+          "seq": 11,
+          "board": "o1",
+          "kind": "task-done",
+          "author": "harness",
+          "data_class": "harness",
+          "entity": "t2",
+          "created_at": 1793574122246,
+          "body": "{\"via\":\"checker verdict\",\"round\":1}",
+          "meta": null,
+          "body_sha256": "6b31da8aa26171fd5f4654c259f857d01311a188d3e59dd11f5cadff6e7df712"
+        },
+        {
+          "id": "12",
+          "seq": 12,
+          "board": "o1",
+          "kind": "order-done",
+          "author": "harness",
+          "data_class": "harness",
+          "entity": "o1",
+          "created_at": 1793574122247,
+          "body": "{\"tasks\":2,\"report_post_id\":\"8\"}",
+          "meta": null,
+          "body_sha256": "6688f48200bb4487d593bca4019c30c29f0adfbd4888b6fbe7b27f7ce32b05aa"
+        }
+      ]
+    }
+  },
+  "listIds": [
+    "o1"
+  ]
+}

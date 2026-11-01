@@ -1,0 +1,45 @@
+{
+  "isError": true,
+  "result": {
+    "ok": false,
+    "error": {
+      "code": "lanes-unavailable",
+      "message": "a real (non-fixture) work order needs a Stage 4 roster lane to claim it, and this host has none mounted; the validated payload is staged at /tmp/cv-s5.ALdnCQ/fleet/state/mcp/staged/real-order-1793574123285-0d749f5d37.json for the owner/Lead to fire when the roster lands",
+      "details": {
+        "mode": "real-lane-staged",
+        "real_lane": "not-built (Stage 4 roster)",
+        "stage_path": "/tmp/cv-s5.ALdnCQ/fleet/state/mcp/staged/real-order-1793574123285-0d749f5d37.json",
+        "payload_sha256": "8820966066fe9dc0f3a1ce432fbd2f98a2312d73e6b5edbfe6ba994b107fd606",
+        "payload": {
+          "title": "checker-verify staged cv-mvyfq1lu-ebf6b7d7",
+          "goal": "stage only (checker-verify cv-mvyfq1lu-ebf6b7d7)",
+          "context": "staged through the fleet MCP facade at 2026-11-01T23:02:03.285Z; fires as a real Nox delegation when the Stage 4 roster lands",
+          "constraints": [],
+          "anti_goals": [],
+          "done_when": {
+            "mode": "command",
+            "command": "true",
+            "text": "checker-verify staged done-when cv-mvyfq1lu-ebf6b7d7"
+          },
+          "example": "a sha256 artefact",
+          "evidence_required": [
+            "the artefacts the done-when names, with their sha256"
+          ],
+          "assumptions_policy": "log-and-proceed",
+          "budget": {
+            "usd": 1
+          },
+          "stop_conditions": [],
+          "checkpoint_at": 1793660523284,
+          "est_minutes": 10,
+          "size": "standard",
+          "successors": [],
+          "ambition": [
+            "complete the delegated work order"
+          ],
+          "base_hashes": {}
+        }
+      }
+    }
+  }
+}

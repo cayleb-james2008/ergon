@@ -1,0 +1,408 @@
+{
+  "schemaVersion": 1,
+  "kind": "dsh-fleet-first-run-plan",
+  "generatedAt": "2026-11-01T23:02:03.735Z",
+  "tool": {
+    "name": "@cayleb/dsh-fleet",
+    "version": "0.3.0",
+    "command": "dsh-fleet first-run"
+  },
+  "dshPin": "0.2.2-alpha.2",
+  "modes": {
+    "writes": "none",
+    "profileWrites": "none"
+  },
+  "fleetProfile": {
+    "name": "fleet",
+    "path": "/var/lib/fleet/dsh/profiles/fleet",
+    "readableByCurrentUid": false,
+    "note": "fleet-owned (0750 fleet:fleet); this plan inventories only profiles it could read"
+  },
+  "profiles": [
+    {
+      "name": "desktop",
+      "path": "/home/cayleb/.local/opt/deepseek-harness-official/apps/desktop/.desktop-build/development/home/profiles/desktop",
+      "kind": "desktop",
+      "packageJsonSha256": "cf67caa3dd4aa6934348676e698beddd6eee829b8bfdf8d28ea4d84992e5de8e",
+      "patchSha256": "77476b79afe6d601a75f0b6e17b88683ba71cfb3e44cae30eb83047ead052a0c",
+      "pluginCount": 22
+    },
+    {
+      "name": "tauri",
+      "path": "/home/cayleb/.dsh/profiles/tauri",
+      "kind": "profile",
+      "packageJsonSha256": "f487341d54e2a6fec950c27873bd93ff8b8e5d1d2aebfcb64aa5ad377f260c49",
+      "patchSha256": "ef189a8c27db6d63930aa3046a3040482e952eafcb7487c644d508e8d461f027",
+      "pluginCount": 14
+    },
+    {
+      "name": "web",
+      "path": "/home/cayleb/.dsh/profiles/web",
+      "kind": "profile",
+      "packageJsonSha256": "210068ddb9ebc4cdf395ebb53020be6ccaaedb917e74dae16296d62394626398",
+      "patchSha256": "ef189a8c27db6d63930aa3046a3040482e952eafcb7487c644d508e8d461f027",
+      "pluginCount": 2
+    }
+  ],
+  "items": [
+    {
+      "name": "@changfenhuang/dsh-genui",
+      "version": "0.15.0",
+      "source": "dependency+bundle",
+      "fromProfile": "desktop",
+      "disposition": "KEEP-AS-DEPENDENCY",
+      "reason": "generative-UI renderer; the fleet package ships no equivalent, so it is a deliberate dependency"
+    },
+    {
+      "name": "@deepseek-ai/dsh-base",
+      "version": null,
+      "source": "bundle",
+      "fromProfile": "desktop",
+      "disposition": "KEEP-DSH-BUNDLE",
+      "reason": "official DSH package pinned with the DSH release; not packaged by the fleet bundle"
+    },
+    {
+      "name": "@deepseek-ai/dsh-experimental-agent-team-profile",
+      "version": null,
+      "source": "bundle",
+      "fromProfile": "desktop",
+      "disposition": "KEEP-DSH-BUNDLE",
+      "reason": "official DSH package pinned with the DSH release; not packaged by the fleet bundle"
+    },
+    {
+      "name": "@deepseek-ai/dsh-experimental-forge-bundle",
+      "version": null,
+      "source": "bundle",
+      "fromProfile": "desktop",
+      "disposition": "KEEP-DSH-BUNDLE",
+      "reason": "official DSH package pinned with the DSH release; not packaged by the fleet bundle"
+    },
+    {
+      "name": "@deepseek-ai/dsh-experimental-plugin-market-bundle",
+      "version": null,
+      "source": "bundle",
+      "fromProfile": "desktop",
+      "disposition": "KEEP-DSH-BUNDLE",
+      "reason": "official DSH package pinned with the DSH release; not packaged by the fleet bundle"
+    },
+    {
+      "name": "@deepseek-ai/dsh-experimental-session-titles-bundle",
+      "version": null,
+      "source": "bundle",
+      "fromProfile": "desktop",
+      "disposition": "KEEP-DSH-BUNDLE",
+      "reason": "official DSH package pinned with the DSH release; not packaged by the fleet bundle"
+    },
+    {
+      "name": "@deepseek-ai/dsh-experimental-tool-worktree",
+      "version": null,
+      "source": "bundle",
+      "fromProfile": "desktop",
+      "disposition": "KEEP-DSH-BUNDLE",
+      "reason": "official DSH package pinned with the DSH release; not packaged by the fleet bundle"
+    },
+    {
+      "name": "@deepseek-ai/dsh-experimental-voice-input-bundle",
+      "version": null,
+      "source": "bundle",
+      "fromProfile": "desktop",
+      "disposition": "KEEP-DSH-BUNDLE",
+      "reason": "official DSH package pinned with the DSH release; not packaged by the fleet bundle"
+    },
+    {
+      "name": "@deepseek-ai/dsh-personalized-recommendations",
+      "version": null,
+      "source": "bundle",
+      "fromProfile": "desktop",
+      "disposition": "KEEP-DSH-BUNDLE",
+      "reason": "official DSH package pinned with the DSH release; not packaged by the fleet bundle"
+    },
+    {
+      "name": "@deepseek-ai/dsh-subagent-claude-code",
+      "version": "0.2.2-alpha.2",
+      "source": "dependency+bundle",
+      "fromProfile": "desktop",
+      "disposition": "KEEP-DSH-BUNDLE",
+      "reason": "official DSH package pinned with the DSH release; not packaged by the fleet bundle"
+    },
+    {
+      "name": "@deepseek-ai/dsh-subagent-codex",
+      "version": "0.2.2-alpha.2",
+      "source": "dependency+bundle",
+      "fromProfile": "desktop",
+      "disposition": "KEEP-DSH-BUNDLE",
+      "reason": "official DSH package pinned with the DSH release; not packaged by the fleet bundle"
+    },
+    {
+      "name": "@deepseek-ai/dsh-web-app",
+      "version": null,
+      "source": "bundle",
+      "fromProfile": "desktop",
+      "disposition": "KEEP-DSH-BUNDLE",
+      "reason": "official DSH package pinned with the DSH release; not packaged by the fleet bundle"
+    },
+    {
+      "name": "@jayyuen66/dsh-scrapling",
+      "version": "0.1.6",
+      "source": "dependency+bundle",
+      "fromProfile": "desktop",
+      "disposition": "KEEP-AS-DEPENDENCY",
+      "reason": "named capability \"search\" (dsh-free-search) that the fleet package does not bundle in this release; keep the installed provider deliberately"
+    },
+    {
+      "name": "@opencode-compat/dsh-bridge",
+      "version": "0.4.4",
+      "source": "dependency+bundle",
+      "fromProfile": "desktop",
+      "disposition": "KEEP-AS-DEPENDENCY",
+      "reason": "third-party OpenCode provider compat bridge: runs unmodified OpenCode aisdk provider plugins as DSH LLM adapters; the fleet package does not bundle it and the fleet's llm-pi-ai mounts no provider routes by default, so keep it as a deliberate dependency until the fleet's provider stage ships"
+    },
+    {
+      "name": "@yiyunet/dsh-kill-ai-slop",
+      "version": "0.7.17",
+      "source": "dependency+bundle",
+      "fromProfile": "desktop",
+      "disposition": "KEEP-AS-DEPENDENCY",
+      "reason": "owner tooling the fleet package does not bundle and does not replace; keep it as a deliberate dependency"
+    },
+    {
+      "name": "cursor-opencode-provider",
+      "version": "0.8.5",
+      "source": "dependency",
+      "fromProfile": "desktop",
+      "disposition": "KEEP-AS-DEPENDENCY",
+      "reason": "unofficial provider route: the fleet credential roster carries CURSOR_API_KEY flagged unofficial and off by default; this tool never removes an unofficial-but-working provider, so it is kept as a deliberate, opt-in dependency"
+    },
+    {
+      "name": "dsh-claude-style",
+      "version": "0.19.6",
+      "source": "dependency+bundle",
+      "fromProfile": "desktop",
+      "disposition": "KEEP-AS-DEPENDENCY",
+      "reason": "owner tooling the fleet package does not bundle and does not replace; keep it as a deliberate dependency"
+    },
+    {
+      "name": "dsh-cool-git",
+      "version": "0.4.0",
+      "source": "dependency+bundle",
+      "fromProfile": "desktop",
+      "disposition": "KEEP-AS-DEPENDENCY",
+      "reason": "owner tooling the fleet package does not bundle and does not replace; keep it as a deliberate dependency"
+    },
+    {
+      "name": "dsh-free-search",
+      "version": "0.9.26",
+      "source": "dependency+bundle",
+      "fromProfile": "desktop",
+      "disposition": "KEEP-AS-DEPENDENCY",
+      "reason": "named capability \"search\" (dsh-free-search) that the fleet package does not bundle in this release; keep the installed provider deliberately"
+    },
+    {
+      "name": "dsh-inner-browser-use",
+      "version": "0.41.0",
+      "source": "dependency+bundle",
+      "fromProfile": "desktop",
+      "disposition": "ABSORB-PENDING",
+      "reason": "fleet capability not yet mounted in this release; keep the installed plugin until the package ships it (browser/mirror => dsh-inner-browser-use)"
+    },
+    {
+      "name": "dsh-plugin-upgrader",
+      "version": "1.6.1",
+      "source": "dependency+bundle",
+      "fromProfile": "desktop",
+      "disposition": "REMOVE",
+      "reason": "self-updating plugin installer: it performs network plugin upgrades on its own, bypassing the fleet's hash-pinned owner-gated install path (dsh-fleet-admin plugin-add <sha256> <file.tgz>); the fleet deliberately has no such capability. Removal is a recommendation only: the owner confirms it, this tool never removes it automatically, and only the fleet profile with per-item consent may be changed"
+    },
+    {
+      "name": "dsh-univer-office",
+      "version": "0.3.9",
+      "source": "dependency+bundle",
+      "fromProfile": "desktop",
+      "disposition": "KEEP-AS-DEPENDENCY",
+      "reason": "named capability \"report/office\" (dsh-univer-office) that the fleet package does not bundle in this release; keep the installed provider deliberately"
+    },
+    {
+      "name": "@deepseek-ai/dsh-base",
+      "version": null,
+      "source": "bundle",
+      "fromProfile": "tauri",
+      "disposition": "KEEP-DSH-BUNDLE",
+      "reason": "official DSH package pinned with the DSH release; not packaged by the fleet bundle"
+    },
+    {
+      "name": "@deepseek-ai/dsh-web-app",
+      "version": null,
+      "source": "bundle",
+      "fromProfile": "tauri",
+      "disposition": "KEEP-DSH-BUNDLE",
+      "reason": "official DSH package pinned with the DSH release; not packaged by the fleet bundle"
+    },
+    {
+      "name": "dsh-tauri",
+      "version": null,
+      "source": "dependency+bundle",
+      "fromProfile": "tauri",
+      "disposition": "UNKNOWN",
+      "reason": "no capability rule matched; shown as UNKNOWN for owner review and never assumed deletable"
+    },
+    {
+      "name": "dsh-tauri-archive",
+      "version": null,
+      "source": "dependency+bundle",
+      "fromProfile": "tauri",
+      "disposition": "UNKNOWN",
+      "reason": "no capability rule matched; shown as UNKNOWN for owner review and never assumed deletable"
+    },
+    {
+      "name": "dsh-tauri-extension",
+      "version": null,
+      "source": "dependency+bundle",
+      "fromProfile": "tauri",
+      "disposition": "UNKNOWN",
+      "reason": "no capability rule matched; shown as UNKNOWN for owner review and never assumed deletable"
+    },
+    {
+      "name": "dsh-tauri-mobile-ui",
+      "version": null,
+      "source": "dependency+bundle",
+      "fromProfile": "tauri",
+      "disposition": "UNKNOWN",
+      "reason": "no capability rule matched; shown as UNKNOWN for owner review and never assumed deletable"
+    },
+    {
+      "name": "dsh-tauri-model",
+      "version": null,
+      "source": "dependency+bundle",
+      "fromProfile": "tauri",
+      "disposition": "UNKNOWN",
+      "reason": "no capability rule matched; shown as UNKNOWN for owner review and never assumed deletable"
+    },
+    {
+      "name": "dsh-tauri-notification",
+      "version": null,
+      "source": "dependency+bundle",
+      "fromProfile": "tauri",
+      "disposition": "UNKNOWN",
+      "reason": "no capability rule matched; shown as UNKNOWN for owner review and never assumed deletable"
+    },
+    {
+      "name": "dsh-tauri-pet",
+      "version": null,
+      "source": "dependency+bundle",
+      "fromProfile": "tauri",
+      "disposition": "UNKNOWN",
+      "reason": "no capability rule matched; shown as UNKNOWN for owner review and never assumed deletable"
+    },
+    {
+      "name": "dsh-tauri-remote",
+      "version": null,
+      "source": "dependency+bundle",
+      "fromProfile": "tauri",
+      "disposition": "UNKNOWN",
+      "reason": "no capability rule matched; shown as UNKNOWN for owner review and never assumed deletable"
+    },
+    {
+      "name": "dsh-tauri-rightclick",
+      "version": null,
+      "source": "dependency+bundle",
+      "fromProfile": "tauri",
+      "disposition": "UNKNOWN",
+      "reason": "no capability rule matched; shown as UNKNOWN for owner review and never assumed deletable"
+    },
+    {
+      "name": "dsh-tauri-scheduler",
+      "version": null,
+      "source": "dependency+bundle",
+      "fromProfile": "tauri",
+      "disposition": "UNKNOWN",
+      "reason": "no capability rule matched; shown as UNKNOWN for owner review and never assumed deletable"
+    },
+    {
+      "name": "dsh-tauri-ui",
+      "version": null,
+      "source": "dependency+bundle",
+      "fromProfile": "tauri",
+      "disposition": "UNKNOWN",
+      "reason": "no capability rule matched; shown as UNKNOWN for owner review and never assumed deletable"
+    },
+    {
+      "name": "dsh-tauri-worktree",
+      "version": null,
+      "source": "dependency+bundle",
+      "fromProfile": "tauri",
+      "disposition": "UNKNOWN",
+      "reason": "no capability rule matched; shown as UNKNOWN for owner review and never assumed deletable"
+    },
+    {
+      "name": "@deepseek-ai/dsh-base",
+      "version": null,
+      "source": "bundle",
+      "fromProfile": "web",
+      "disposition": "KEEP-DSH-BUNDLE",
+      "reason": "official DSH package pinned with the DSH release; not packaged by the fleet bundle"
+    },
+    {
+      "name": "@deepseek-ai/dsh-web-app",
+      "version": null,
+      "source": "bundle",
+      "fromProfile": "web",
+      "disposition": "KEEP-DSH-BUNDLE",
+      "reason": "official DSH package pinned with the DSH release; not packaged by the fleet bundle"
+    }
+  ],
+  "summary": {
+    "ABSORB": 0,
+    "ABSORB-PENDING": 1,
+    "REMOVE": 1,
+    "KEEP-AS-DEPENDENCY": 9,
+    "KEEP-DSH-BUNDLE": 15,
+    "UNKNOWN": 12
+  },
+  "gaps": [
+    {
+      "component": "dsh-inner-browser-use",
+      "capability": "browser/mirror (background browser)",
+      "pin": "0.41.0",
+      "license": "MIT",
+      "status": "ABSORB-PENDING",
+      "note": "Nox ruled this the fleet's absorbed background-browser component; the 0.3.0 package does not mount it, so the installed plugin must stay until the release that does"
+    },
+    {
+      "component": "sage-mem (or any dsh-memory plugin)",
+      "capability": "memory",
+      "pin": null,
+      "license": null,
+      "status": "ABSORB-PENDING",
+      "note": "ruled with a named limitation; no memory provider is mounted by 0.3.0 and none was found installed in the discovered profiles, so there is nothing to keep and nothing to remove"
+    }
+  ],
+  "ownerActs": [
+    {
+      "profile": "desktop",
+      "action": "remove dsh-plugin-upgrader",
+      "command": "dsh plugin --profile desktop remove -- dsh-plugin-upgrader",
+      "note": "record only: first-run never writes a non-fleet profile; the owner runs this exact command by hand if they agree"
+    },
+    {
+      "profile": "fleet",
+      "action": "classify the installed fleet profile",
+      "command": null,
+      "note": "the fleet profile (fleet) is fleet-owned and not readable by this uid; run the same first-run command as the fleet user to inventory it"
+    },
+    {
+      "profile": "fleet",
+      "action": "enter provider credentials",
+      "command": "dsh-fleet first-run --credentials",
+      "note": "interactive terminal only; values are never echoed, logged or written by this tool outside the fleet credential store (or a 0600 staging file the authorised install step places)"
+    }
+  ],
+  "safety": {
+    "removableDispositions": [
+      "REMOVE"
+    ],
+    "fleetOnly": true,
+    "applyNeedsPlanAndPerItemConsent": true,
+    "unknownIsNeverDeletable": true
+  },
+  "inventorySha256": "8442a732d62da90d6866f797af3e0911f12fd7bfd9aa52c4ed4f915096108f6f"
+}

@@ -1,0 +1,1 @@
+opencode_bridge_dependency=true wrongly_absorb=false

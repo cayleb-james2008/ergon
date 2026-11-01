@@ -1,0 +1,14 @@
+{
+  "status": 401,
+  "headers": {
+    "www-authenticate": "Bearer realm=\"fleet-mcp\""
+  },
+  "body": {
+    "jsonrpc": "2.0",
+    "id": null,
+    "error": {
+      "code": -32001,
+      "message": "unauthorized: a valid bearer token is required"
+    }
+  }
+}

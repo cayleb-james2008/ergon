@@ -1,0 +1,29 @@
+{
+  "seq": 2,
+  "fresh": [
+    {
+      "kind": "refused",
+      "principal": null,
+      "tool": "auth-missing",
+      "op": "",
+      "outcome": "refused",
+      "code": "missing-token",
+      "seq": 1,
+      "ts": 1793574121923,
+      "prev": "0000000000000000000000000000000000000000000000000000000000000000",
+      "hash": "7bf2f42004e1a7223d6ed3cdde1442a209d3325240707ceee1482e4be88a6b30"
+    },
+    {
+      "kind": "refused",
+      "principal": null,
+      "tool": "auth-invalid",
+      "op": "",
+      "outcome": "refused",
+      "code": "invalid-token",
+      "seq": 2,
+      "ts": 1793574121935,
+      "prev": "7bf2f42004e1a7223d6ed3cdde1442a209d3325240707ceee1482e4be88a6b30",
+      "hash": "fae0e2c7aa3f1d5f5477b87a84e721213b2ecfd7b9ec30df9b90f0c438ad27c5"
+    }
+  ]
+}

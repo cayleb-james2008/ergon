@@ -1,0 +1,116 @@
+{
+  "ok": true,
+  "mcp": {
+    "name": "fleet-mcp",
+    "version": "0.3.0-mcp",
+    "protocol_versions": [
+      "2025-03-26",
+      "2024-11-05"
+    ],
+    "transport": "streamable-http (POST JSON; GET 405; DELETE session)",
+    "port": 18889,
+    "bind": [
+      {
+        "host": "127.0.0.1",
+        "port": 18889,
+        "family": "IPv4"
+      },
+      {
+        "host": "::1",
+        "port": 18889,
+        "family": "IPv6"
+      },
+      {
+        "host": "100.114.17.67",
+        "port": 18889,
+        "family": "IPv4"
+      }
+    ],
+    "sources": {
+      "sources": [
+        "loopback",
+        "tailnet"
+      ],
+      "v4": [
+        "127.0.0.0/8",
+        "100.64.0.0/10"
+      ],
+      "v6": [
+        "::1"
+      ]
+    },
+    "sessions": {
+      "held": 1,
+      "max": 8,
+      "sessions": [
+        {
+          "sessionId": "fleet-mcp-b29bb903-0e58-4ddb-b7b0-ce4da484f703",
+          "preset": null,
+          "busy": false,
+          "turns": 1,
+          "last_transport": "stub-turn"
+        }
+      ]
+    },
+    "requests": {
+      "requests": 16,
+      "accepted": 14,
+      "refused": 2,
+      "toolCalls": 7,
+      "byTool": {
+        "session.create": 2,
+        "session.prompt": 1,
+        "session.status": 1,
+        "order.drive_roundtrip": 2,
+        "order.stage_real": 1
+      },
+      "byRefusal": {
+        "unauthorized": 2
+      },
+      "sessionsOpened": 2,
+      "sessionsClosed": 0,
+      "initialized": 2
+    },
+    "action_log": {
+      "path": "/tmp/cv-s5.ALdnCQ/fleet/log/mcp-actions.jsonl",
+      "seq": 17,
+      "head": "e68690bf8f911bbf1779a6a7a1ac3a3a73bc6149618a87e220c01fce40c21e65",
+      "open": true,
+      "broken": null,
+      "mode": "jsonl-hash-chain"
+    },
+    "model_route": "deterministic-stub (fleet-selftest-stub)",
+    "real_lane": "not-built (Stage 4 roster)"
+  },
+  "fleet": {
+    "name": "fleet-core",
+    "protocol": 1,
+    "pid": 507292,
+    "node": "v26.7.0",
+    "uptime_s": 2,
+    "db": {
+      "path": "/tmp/cv-s5.ALdnCQ/fleet/state/fleet.db",
+      "journal_mode": "wal",
+      "events": 92,
+      "head": {
+        "seq": 92,
+        "hash": "889ca4770d55ccef3b719460cbb150d61828e99521b9130f79a44fbe52517ec7"
+      }
+    },
+    "integrity": {
+      "ok": true,
+      "failures": []
+    },
+    "lanes_allowed": true,
+    "control": {
+      "path": "/tmp/cv-s5.ALdnCQ/ctl/control.sock",
+      "peer_uid": 1000,
+      "accepted": 9,
+      "rejected": 0
+    },
+    "policy": {
+      "selftest": true,
+      "selftest_source": "default"
+    }
+  }
+}

@@ -1,0 +1,73 @@
+@cayleb/dsh-fleet first-run 0.3.0   DSH pin 0.2.2-alpha.2
+mode: plan (read-only inventory; the plan file is the only write)
+
+profiles: 3   plugins: 38   ABSORB-PENDING=1  REMOVE=1  KEEP-AS-DEPENDENCY=9  KEEP-DSH-BUNDLE=15  UNKNOWN=12
+
+desktop  (desktop, 22 plugins)  /home/cayleb/.local/opt/deepseek-harness-official/apps/desktop/.desktop-build/development/home/profiles/desktop
+  package.json sha256 cf67caa3dd4aa6934348676e698beddd6eee829b8bfdf8d28ea4d84992e5de8e  cordis.patch.yml sha256 77476b79afe6d601a75f0b6e17b88683ba71cfb3e44cae30eb83047ead052a0c
+
+  PLUGIN                                        VERSION        SOURCE             DISPOSITION         REASON
+  @changfenhuang/dsh-genui                      0.15.0         dependency+bundle  KEEP-AS-DEPENDENCY  generative-UI renderer; the fleet package ships no equivalent, so it is a deliberate dependency
+  @deepseek-ai/dsh-base                         -              bundle             KEEP-DSH-BUNDLE     official DSH package pinned with the DSH release; not packaged by the fleet bundle
+  @deepseek-ai/dsh-experimental-agent-team-pr…  -              bundle             KEEP-DSH-BUNDLE     official DSH package pinned with the DSH release; not packaged by the fleet bundle
+  @deepseek-ai/dsh-experimental-forge-bundle    -              bundle             KEEP-DSH-BUNDLE     official DSH package pinned with the DSH release; not packaged by the fleet bundle
+  @deepseek-ai/dsh-experimental-plugin-market…  -              bundle             KEEP-DSH-BUNDLE     official DSH package pinned with the DSH release; not packaged by the fleet bundle
+  @deepseek-ai/dsh-experimental-session-title…  -              bundle             KEEP-DSH-BUNDLE     official DSH package pinned with the DSH release; not packaged by the fleet bundle
+  @deepseek-ai/dsh-experimental-tool-worktree   -              bundle             KEEP-DSH-BUNDLE     official DSH package pinned with the DSH release; not packaged by the fleet bundle
+  @deepseek-ai/dsh-experimental-voice-input-b…  -              bundle             KEEP-DSH-BUNDLE     official DSH package pinned with the DSH release; not packaged by the fleet bundle
+  @deepseek-ai/dsh-personalized-recommendatio…  -              bundle             KEEP-DSH-BUNDLE     official DSH package pinned with the DSH release; not packaged by the fleet bundle
+  @deepseek-ai/dsh-subagent-claude-code         0.2.2-alpha.2  dependency+bundle  KEEP-DSH-BUNDLE     official DSH package pinned with the DSH release; not packaged by the fleet bundle
+  @deepseek-ai/dsh-subagent-codex               0.2.2-alpha.2  dependency+bundle  KEEP-DSH-BUNDLE     official DSH package pinned with the DSH release; not packaged by the fleet bundle
+  @deepseek-ai/dsh-web-app                      -              bundle             KEEP-DSH-BUNDLE     official DSH package pinned with the DSH release; not packaged by the fleet bundle
+  @jayyuen66/dsh-scrapling                      0.1.6          dependency+bundle  KEEP-AS-DEPENDENCY  named capability "search" (dsh-free-search) that the fleet package does not bundle in this rele…
+  @opencode-compat/dsh-bridge                   0.4.4          dependency+bundle  KEEP-AS-DEPENDENCY  third-party OpenCode provider compat bridge: runs unmodified OpenCode aisdk provider plugins as…
+  @yiyunet/dsh-kill-ai-slop                     0.7.17         dependency+bundle  KEEP-AS-DEPENDENCY  owner tooling the fleet package does not bundle and does not replace; keep it as a deliberate d…
+  cursor-opencode-provider                      0.8.5          dependency         KEEP-AS-DEPENDENCY  unofficial provider route: the fleet credential roster carries CURSOR_API_KEY flagged unofficia…
+  dsh-claude-style                              0.19.6         dependency+bundle  KEEP-AS-DEPENDENCY  owner tooling the fleet package does not bundle and does not replace; keep it as a deliberate d…
+  dsh-cool-git                                  0.4.0          dependency+bundle  KEEP-AS-DEPENDENCY  owner tooling the fleet package does not bundle and does not replace; keep it as a deliberate d…
+  dsh-free-search                               0.9.26         dependency+bundle  KEEP-AS-DEPENDENCY  named capability "search" (dsh-free-search) that the fleet package does not bundle in this rele…
+  dsh-inner-browser-use                         0.41.0         dependency+bundle  ABSORB-PENDING      fleet capability not yet mounted in this release; keep the installed plugin until the package s…
+  dsh-plugin-upgrader                           1.6.1          dependency+bundle  REMOVE              self-updating plugin installer: it performs network plugin upgrades on its own, bypassing the f…
+  dsh-univer-office                             0.3.9          dependency+bundle  KEEP-AS-DEPENDENCY  named capability "report/office" (dsh-univer-office) that the fleet package does not bundle in …
+
+tauri  (profile, 14 plugins)  /home/cayleb/.dsh/profiles/tauri
+  package.json sha256 f487341d54e2a6fec950c27873bd93ff8b8e5d1d2aebfcb64aa5ad377f260c49  cordis.patch.yml sha256 ef189a8c27db6d63930aa3046a3040482e952eafcb7487c644d508e8d461f027
+
+  PLUGIN                    VERSION  SOURCE             DISPOSITION      REASON
+  @deepseek-ai/dsh-base     -        bundle             KEEP-DSH-BUNDLE  official DSH package pinned with the DSH release; not packaged by the fleet bundle
+  @deepseek-ai/dsh-web-app  -        bundle             KEEP-DSH-BUNDLE  official DSH package pinned with the DSH release; not packaged by the fleet bundle
+  dsh-tauri                 -        dependency+bundle  UNKNOWN          no capability rule matched; shown as UNKNOWN for owner review and never assumed deletable
+  dsh-tauri-archive         -        dependency+bundle  UNKNOWN          no capability rule matched; shown as UNKNOWN for owner review and never assumed deletable
+  dsh-tauri-extension       -        dependency+bundle  UNKNOWN          no capability rule matched; shown as UNKNOWN for owner review and never assumed deletable
+  dsh-tauri-mobile-ui       -        dependency+bundle  UNKNOWN          no capability rule matched; shown as UNKNOWN for owner review and never assumed deletable
+  dsh-tauri-model           -        dependency+bundle  UNKNOWN          no capability rule matched; shown as UNKNOWN for owner review and never assumed deletable
+  dsh-tauri-notification    -        dependency+bundle  UNKNOWN          no capability rule matched; shown as UNKNOWN for owner review and never assumed deletable
+  dsh-tauri-pet             -        dependency+bundle  UNKNOWN          no capability rule matched; shown as UNKNOWN for owner review and never assumed deletable
+  dsh-tauri-remote          -        dependency+bundle  UNKNOWN          no capability rule matched; shown as UNKNOWN for owner review and never assumed deletable
+  dsh-tauri-rightclick      -        dependency+bundle  UNKNOWN          no capability rule matched; shown as UNKNOWN for owner review and never assumed deletable
+  dsh-tauri-scheduler       -        dependency+bundle  UNKNOWN          no capability rule matched; shown as UNKNOWN for owner review and never assumed deletable
+  dsh-tauri-ui              -        dependency+bundle  UNKNOWN          no capability rule matched; shown as UNKNOWN for owner review and never assumed deletable
+  dsh-tauri-worktree        -        dependency+bundle  UNKNOWN          no capability rule matched; shown as UNKNOWN for owner review and never assumed deletable
+
+web  (profile, 2 plugins)  /home/cayleb/.dsh/profiles/web
+  package.json sha256 210068ddb9ebc4cdf395ebb53020be6ccaaedb917e74dae16296d62394626398  cordis.patch.yml sha256 ef189a8c27db6d63930aa3046a3040482e952eafcb7487c644d508e8d461f027
+
+  PLUGIN                    VERSION  SOURCE  DISPOSITION      REASON
+  @deepseek-ai/dsh-base     -        bundle  KEEP-DSH-BUNDLE  official DSH package pinned with the DSH release; not packaged by the fleet bundle
+  @deepseek-ai/dsh-web-app  -        bundle  KEEP-DSH-BUNDLE  official DSH package pinned with the DSH release; not packaged by the fleet bundle
+
+named gaps (absorbed but not yet mounted):
+  - dsh-inner-browser-use: browser/mirror (background browser) — ABSORB-PENDING; pin 0.41.0; licence MIT
+      Nox ruled this the fleet's absorbed background-browser component; the 0.3.0 package does not mount it, so the installed plugin must stay until the release that does
+  - sage-mem (or any dsh-memory plugin): memory — ABSORB-PENDING; pin not installed; licence not read
+      ruled with a named limitation; no memory provider is mounted by 0.3.0 and none was found installed in the discovered profiles, so there is nothing to keep and nothing to remove
+
+owner acts:
+  - remove dsh-plugin-upgrader [desktop]: dsh plugin --profile desktop remove -- dsh-plugin-upgrader
+      record only: first-run never writes a non-fleet profile; the owner runs this exact command by hand if they agree
+  - classify the installed fleet profile [fleet]
+      the fleet profile (fleet) is fleet-owned and not readable by this uid; run the same first-run command as the fleet user to inventory it
+  - enter provider credentials [fleet]: dsh-fleet first-run --credentials
+      interactive terminal only; values are never echoed, logged or written by this tool outside the fleet credential store (or a 0600 staging file the authorised install step places)
+
+plan: /home/cayleb/workspace/harness-build/evidence/strike/checker-verify/s5-rerun2/13-firstrun-smoke/plan.json (15575 bytes, sha256 9f0de84db5dd007e94a41bc7ba84b173bb46cab0f93aeef83f7a97ef309270cd)
