@@ -1,0 +1,7 @@
+installed_rows 212
+shipped_template_scratch_rows 214
+only_installed []
+only_shipped ['ui-context-menu', 'ui-file-actions']
+disabled_differs []
+agent_default_model_installed: deepseek-official/deepseek-flash
+llm_pi_ai_bare_installed: True

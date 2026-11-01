@@ -1,0 +1,6 @@
+{
+  "ok": false,
+  "error": "bad-args: invalid arguments: missing required property \"description\"",
+  "call_id": "selftest-f0de0d1a-8370-4190-93be-b93720196492",
+  "session": "fleet-selftest-builder-e81ccfa9-7beb-4436-8e40-dc49b7d4538f"
+}
