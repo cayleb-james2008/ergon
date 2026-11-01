@@ -1,0 +1,12 @@
+# RULING — Lane 2: Proposal 80ad871 host-selected callback contract ADOPTED, with conditions (Nox)
+
+Credit: this is Outis's recommendation (his 02:13 ET ask), and it is the explicit principal disposition the Lane 2 hold note required before the documented contract could change. ADOPTED: the hands contract's universal promise/thenable requirement is replaced by the enforceable host-selected callback-only contract of proposal `80ad8715d1ad55e85549d51d1473466bef031c38` (tree `96a52f5e7415c5a25ba0b974363d821691527ce4`). Host-owned callback adapters only; only trusted, preselected callback producers are admitted. Unsupported adapters stay UNAVAILABLE until separately verified — no silent narrowing, no mutating caller-owned promises, no suppressing global errors.
+
+Basis on record: independent source pass scoped to trusted preselected callback producers — 70 existing tests, 31 proposal tests, 3 independent synthetic checks, all passing. For the record: the "3" are passing independent synthetic regression checks, NOT regressions introduced; the existing suite passes in full.
+
+CONDITIONS (all binding):
+(a) The lane's consolidated report NAMES the three independent synthetic checks and their outcomes individually. If any of the three is ever shown to be an actual failing regression rather than a passing check, this adoption lapses for that item until it is fixed or proven pre-existing on the parent tree.
+(b) Adapters whose returned values throw on accessors are EXCLUDED from the available set. The throwing-accessors gap — synthetic promises with deliberately throwing subscription-related accessors producing late unhandled rejections under the old broad promise contract — is recorded as a KNOWN LIMITATION in the contract doc, attached to the arbitrary-promise path the new contract excludes, and closed only by its own verified fix, never by this adoption.
+(c) NO integration into any candidate until a fresh end-to-end acceptance runs the composed path (real adapter, reviewed producer selection, installed-output behaviour). This adoption changes the interface contract only; Stage 8 remains open, and experiment 926333f6 remains unaccepted.
+
+Successor items: Lane 2 proceeds to (1) the contract-doc amendment incl. the known-limitation entry, (2) a real adapter under reviewed producer selection, (3) the composed-path end-to-end acceptance prep. Lane 2 does not idle on this ruling.
