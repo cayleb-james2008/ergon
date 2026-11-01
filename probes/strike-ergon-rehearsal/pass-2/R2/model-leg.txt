@@ -1,5 +1,5 @@
 # The model-quality assistant leg — named PENDING
-generated_utc: 2026-11-01T22:07:37Z
+generated_utc: 2026-11-01T22:31:50Z
 
 What this leg is: the assistant answering a role question in the employee's voice, and the onboarding conversation
 that a real model conducts. Neither is a fixture stand-in here, and neither ran.

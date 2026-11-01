@@ -8,7 +8,7 @@
 - Actual: 8/8 hard checks held; 1 named pending; 2 recorded finding(s)
 - Word: **pending**
 - Evidence files: `R2/fixture-assistant-records.json`, `R2/onboarding-drive.json`, `R2/fleet-sessions.json`, `R2/stub-turn-probes.json`, `R2/model-leg.txt`
-- Timestamp (UTC): 2026-11-01T22:07:37Z .. 2026-11-01T22:07:37Z
+- Timestamp (UTC): 2026-11-01T22:31:50Z .. 2026-11-01T22:31:50Z
 - Blocker / finding: provider credential for the fleet profile (owner act): the assistant's model-quality role answer and the model-conducted onboarding conversation cannot run. The deterministic stub route produced no provider call on this install (stub-turn probes recorded). What ran instead: fixture assistant records, onboarding to `active` through the product protocol with fixture answers (stand-in for the employee's own words), and one real fleet agent session per cast member.
 
 ## Checks
@@ -29,12 +29,12 @@
 - provider credential for the fleet profile (owner act): the assistant's model-quality role answer and the model-conducted onboarding conversation cannot run. The deterministic stub route produced no provider call on this install (stub-turn probes recorded). What ran instead: fixture assistant records, onboarding to `active` through the product protocol with fixture answers (stand-in for the employee's own words), and one real fleet agent session per cast member.
 
 ## Notes
-- dana-whitcomb → lead:selftest-lf-2-dana-whitcomb: real session fleet-selftest-lead-8ad1d719-3f0f-47fc-9b6c-f4b0b862cbbf, call selftest-bfb968df-5f9a-4959-9947-500ddf06cc74, board scope mine
-- priya-lindqvist → researcher:selftest-lf-2-priya-lindqvist: real session fleet-selftest-researcher-7567479c-600d-46cf-b56c-fdbaf6134a4a, call selftest-dbcc810a-757e-4ca8-ac0e-3345a1b0351c, board scope mine
-- marcus-oyelaran → builder:selftest-lf-2-marcus-oyelaran: real session fleet-selftest-builder-c767180d-a1ff-4dd7-965b-c8ebc6da02f0, call selftest-42479534-0f53-46eb-8a2c-eb67c1146789, board scope mine
-- teo-brandvold → builder:selftest-lf-2-teo-brandvold: real session fleet-selftest-builder-8cb20d45-e2ec-4796-9389-7e810bfba622, call selftest-b706f418-6981-45e9-b08b-5b098aec2068, board scope mine
-- rosa-quintero-hale → researcher:selftest-lf-2-rosa-quintero-hale: real session fleet-selftest-researcher-84db37ac-af9c-4a8b-b8eb-1a38194739dd, call selftest-27d19808-2a5e-42bd-9f48-1d609c9c3ce6, board scope mine
-- sam-akintola → checker:selftest-lf-2-sam-akintola: real session fleet-selftest-checker-6bb5b868-579b-4179-af50-b55ece0c1baf, call selftest-b66035bc-9258-41a4-81bc-7155fb37da65, board scope mine
+- dana-whitcomb → lead:selftest-lf-2-dana-whitcomb: real session fleet-selftest-lead-b2b4283e-33e4-4357-8ae6-3538141b9d92, call selftest-111d0858-b2f8-42ca-aacd-972e4b79452f, board scope mine
+- priya-lindqvist → researcher:selftest-lf-2-priya-lindqvist: real session fleet-selftest-researcher-daec618d-1375-457f-af8f-3efd6cb7f592, call selftest-a8d71064-cdf6-4a0b-a029-a2b07a83dfaa, board scope mine
+- marcus-oyelaran → builder:selftest-lf-2-marcus-oyelaran: real session fleet-selftest-builder-b2f3eaf1-8270-484f-bbb0-dfaa96671556, call selftest-b7de63cb-9bda-49ae-977c-aa00a0946df0, board scope mine
+- teo-brandvold → builder:selftest-lf-2-teo-brandvold: real session fleet-selftest-builder-0b4a26f5-ba07-49f7-9ad0-a9cc541e6292, call selftest-923a6d97-c888-478c-959c-520789391a96, board scope mine
+- rosa-quintero-hale → researcher:selftest-lf-2-rosa-quintero-hale: real session fleet-selftest-researcher-9cd20cd2-2444-43d6-a1fa-a35c0f17b506, call selftest-62f541b5-d162-403a-a9fc-18e7c7e0f9de, board scope mine
+- sam-akintola → checker:selftest-lf-2-sam-akintola: real session fleet-selftest-checker-e83b8bd4-aecd-48f5-af84-629d718d2bac, call selftest-cbe5fecb-e1a9-4df6-8a12-76d0e3fdb2af, board scope mine
 
 ## Recorded metadata
 ```json

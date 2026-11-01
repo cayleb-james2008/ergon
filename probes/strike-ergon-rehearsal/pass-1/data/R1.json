@@ -10,7 +10,7 @@
     {
       "name": "fresh rehearsal root is empty before setup",
       "ok": true,
-      "detail": "root=/tmp/ergon-rehearsal-20261101T220733Z-zlFPPI entries=0"
+      "detail": "root=/tmp/ergon-rehearsal-20261101T223146Z-FNbPrs entries=0"
     },
     {
       "name": "setup.mjs exits 0",
@@ -45,7 +45,7 @@
     {
       "name": "setup root is this pass's fresh root",
       "ok": true,
-      "detail": "summary.root=/tmp/ergon-rehearsal-20261101T220733Z-zlFPPI"
+      "detail": "summary.root=/tmp/ergon-rehearsal-20261101T223146Z-FNbPrs"
     },
     {
       "name": "company record matches the demo company",
@@ -113,8 +113,8 @@
     "deviceCount": 9,
     "reviewDeskLedgers": 6
   },
-  "started_utc": "2026-11-01T22:07:34Z",
-  "finished_utc": "2026-11-01T22:07:34Z",
+  "started_utc": "2026-11-01T22:31:47Z",
+  "finished_utc": "2026-11-01T22:31:47Z",
   "failures": [],
   "forced_failure": null
 }

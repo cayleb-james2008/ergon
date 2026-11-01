@@ -8,7 +8,7 @@
 - Actual: 3/3 hard checks held; 1 named pending; 2 recorded finding(s)
 - Word: **pending**
 - Evidence files: `R4/device-registry-standin.json`
-- Timestamp (UTC): 2026-11-01T22:07:37Z .. 2026-11-01T22:07:37Z
+- Timestamp (UTC): 2026-11-01T22:31:50Z .. 2026-11-01T22:31:50Z
 - Blocker / finding: phone surface (PACKAGE-PENDING: no phone client; a phone cannot use the fleet join — SCENARIOS.md F5 / package boundary item 6): "Add this phone" and the manager approval on the phone cannot be shown, and the desktop-off answer test needs the host agent runtime/model credential. Host-side device registry row for the phone recorded as a stand-in (operator-registered, approved).
 
 ## Checks

@@ -1,0 +1,52 @@
+# Verdict tables (from my run's pass indexes)
+
+## pass-1
+<!-- VERDICT-TABLE-START -->
+| Step | What it covers | Word | Named piece / notes |
+|---|---|---|---|
+| R0 | Install proof (read-only): control socket, fleet-dsh unit, installed package identity, repo pin, r0-preflight | clean | read-only install proof: control socket status/integrity/policy, fleet-dsh unit, installed package identity digest + authorised wrapper, repo pin, repo r0-preflight. Dedicated fresh host/DNS/Supabase are owner acts, named out of scope. |
+| R1 | Company setup into a fresh mktemp root; canonical state dump hashed | clean | fixture company/cast/seed stood up in a fresh mktemp root through the product's own modules; canonical state dump hash matches the pinned digest in both passes. The installer first-run UI is not in the installed plugin (stand-in named). |
+| R2 | First personalised assistants: fixture record + real fleet agent sessions | pending | fixture profile + onboarding session per cast member; onboarding driven to active through the product protocol with fixture answers (stand-in for the employee's own words); one real fleet agent session per cast member on the installed plugin. The model-quality assistant leg is PENDING: no provider credential (owner act). |
+| R3 | Shareable non-localhost URL from a second device | pending | company host origin recorded from the fixture config and shape-checked; the fixture origin is a made-up name that does not resolve and the host binds 127.0.0.1 only. Hosted non-localhost URL + DNS + second-device reachability PENDING (not built; owner acts out of scope). |
+| R4 | Phone enrolment | pending | host-side device registry row for the warehouse lead's phone recorded as a stand-in (operator-registered, approved). The phone surface is PACKAGE-PENDING (no phone client; a phone cannot use the fleet join — F5), so the step is pending with the missing piece named. |
+| R5 | Desk task: ticket round trip + a real warehouse-board task as a fleet order | clean | scenario (a)+(b) ticket round trip through the product's control service (ids, states, receipts, device readback, recorded product limits F3/F4/F6) AND a real warehouse-board-shaped task as a fleet order on the installed plugin (create -> decompose -> claim -> built -> check -> verdict -> bank -> done). Stand-ins named: Get Help/phone UI, scripted board. |
+| R6 | Voice / message flow | pending | voice/phone surface PACKAGE-PENDING (P20-F5): no voice button, dictation client or phone surface on the installed plugin. Supporting fixture check only: the cast's written voices separate blind; that is not the voice surface and the step stays pending. |
+| R7 | Close-out: state record, teardown, and the second from-scratch pass (pass-2 diff) | clean | state record (company/cast/tickets/board/order/digests) and teardown of the fresh company root; the second from-scratch pass runs R0-R7 into a new root and its verdict table is diffed (R7 is clean only when the tables match). |
+<!-- VERDICT-TABLE-END -->
+
+## pass-2
+<!-- VERDICT-TABLE-START -->
+| Step | What it covers | Word | Named piece / notes |
+|---|---|---|---|
+| R0 | Install proof (read-only): control socket, fleet-dsh unit, installed package identity, repo pin, r0-preflight | clean | read-only install proof: control socket status/integrity/policy, fleet-dsh unit, installed package identity digest + authorised wrapper, repo pin, repo r0-preflight. Dedicated fresh host/DNS/Supabase are owner acts, named out of scope. |
+| R1 | Company setup into a fresh mktemp root; canonical state dump hashed | clean | fixture company/cast/seed stood up in a fresh mktemp root through the product's own modules; canonical state dump hash matches the pinned digest in both passes. The installer first-run UI is not in the installed plugin (stand-in named). |
+| R2 | First personalised assistants: fixture record + real fleet agent sessions | pending | fixture profile + onboarding session per cast member; onboarding driven to active through the product protocol with fixture answers (stand-in for the employee's own words); one real fleet agent session per cast member on the installed plugin. The model-quality assistant leg is PENDING: no provider credential (owner act). |
+| R3 | Shareable non-localhost URL from a second device | pending | company host origin recorded from the fixture config and shape-checked; the fixture origin is a made-up name that does not resolve and the host binds 127.0.0.1 only. Hosted non-localhost URL + DNS + second-device reachability PENDING (not built; owner acts out of scope). |
+| R4 | Phone enrolment | pending | host-side device registry row for the warehouse lead's phone recorded as a stand-in (operator-registered, approved). The phone surface is PACKAGE-PENDING (no phone client; a phone cannot use the fleet join — F5), so the step is pending with the missing piece named. |
+| R5 | Desk task: ticket round trip + a real warehouse-board task as a fleet order | clean | scenario (a)+(b) ticket round trip through the product's control service (ids, states, receipts, device readback, recorded product limits F3/F4/F6) AND a real warehouse-board-shaped task as a fleet order on the installed plugin (create -> decompose -> claim -> built -> check -> verdict -> bank -> done). Stand-ins named: Get Help/phone UI, scripted board. |
+| R6 | Voice / message flow | pending | voice/phone surface PACKAGE-PENDING (P20-F5): no voice button, dictation client or phone surface on the installed plugin. Supporting fixture check only: the cast's written voices separate blind; that is not the voice surface and the step stays pending. |
+| R7 | Close-out: state record, teardown, and the second from-scratch pass (pass-2 diff) | clean | state record (company/cast/tickets/board/order/digests) and teardown of the fresh company root; the second from-scratch pass runs R0-R7 into a new root and its verdict table is diffed (R7 is clean only when the tables match). |
+<!-- VERDICT-TABLE-END -->
+
+# Pass-2 vs pass-1 verdict-table diff
+(empty — tables identical)
+
+# Pending named (pass 2)
+## Pending named (counted)
+
+| Step | Named missing piece |
+|---|---|
+| R2 | provider credential for the fleet profile (owner act): the assistant's model-quality role answer and the model-conducted onboarding conversation cannot run. The deterministic stub route produced no provider call on this install (stub-turn probes recorded). What ran instead: fixture assistant records, onboarding to `active` through the product protocol with fixture answers (stand-in for the employee's own words), and one real fleet agent session per cast member. |
+| R3 | hosted shareable non-localhost URL + DNS name + second-device reachability: not built in this strike. The fixture origin (https://lf-host-01.example-tailnet.ts.net:8443) is a made-up name that never resolves, the current host binds 127.0.0.1 only, and a dedicated host/DNS name are owner acts out of scope (no purchase, no DNS work). Device-approval via a second device therefore cannot be shown; the host-side device registry is covered as a stand-in under R4. |
+| R4 | phone surface (PACKAGE-PENDING: no phone client; a phone cannot use the fleet join — SCENARIOS.md F5 / package boundary item 6): "Add this phone" and the manager approval on the phone cannot be shown, and the desktop-off answer test needs the host agent runtime/model credential. Host-side device registry row for the phone recorded as a stand-in (operator-registered, approved). |
+| R6 | voice/message flow — voice surface PACKAGE-PENDING (P20-F5): no voice button, dictation client, transcript round trip or voice-control badge exists on the installed plugin; the Windows-only surfaces are stand-in/pending, never clean. Only the fixture's written-voices check ran (labelled: not the voice surface). |
+
+## Out of scope for this strike (named, not silently skipped)
+
+# Sealed digests (index-summary.json)
+pass 1 {"words":{"R0":"clean","R1":"clean","R2":"pending","R3":"pending","R4":"pending","R5":"clean","R6":"pending","R7":"clean"},"counts":{"clean":4,"pending":4,"failed":0},"manifestSha256":"b3cb6d40a383177dcf905693fc2f7651876de29f820f3b64d19ccfbd858e2422","indexSha256":"32bd26028a4d6ed703c2b1d5ae5644ff14ab3e9f51e5f95f542c089cea2424a3","manifestFiles":72,"verification":{"entries":72,"ok":72,"failures":[]},"excludedFromManifest":["manifest.sha256","index.md","index-summary.json"],"passDiff":null}
+pass 2 {"words":{"R0":"clean","R1":"clean","R2":"pending","R3":"pending","R4":"pending","R5":"clean","R6":"pending","R7":"clean"},"counts":{"clean":4,"pending":4,"failed":0},"manifestSha256":"17bfa5c5478bc1906a4739493e0ee9b831f4e746b78ec51482888ee2d8e0c21a","indexSha256":"e39f002ab867f878b99a9962aecdabbfd12f9454c4c161bc9a995bb42703cc62","manifestFiles":74,"verification":{"entries":74,"ok":74,"failures":[]},"excludedFromManifest":["manifest.sha256","index.md","index-summary.json"],"passDiff":{"identical":true}}
+
+# Pack front page claim
+| Verdict tables identical | — | **yes** |
+- Integrity: each pass was sealed last, its manifest verified in-process at seal time and then with an independent `sha256sum -c` (`manifest-check-pass-N.txt`); nothing is written inside a pass directory after its seal (`pack-commands.log` records the post-seal commands).

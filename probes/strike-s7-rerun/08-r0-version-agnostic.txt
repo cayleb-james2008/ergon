@@ -1,0 +1,56 @@
+# R0 version-agnostic identity (my run)
+
+{
+  "installed_file": "cayleb-dsh-fleet-0.2.2.tgz",
+  "installed_version": "0.2.2",
+  "sha256": "37e3a542a32f8cb15cd06965072cfef9aac81cb157b20f7c89b50dafc36fa177",
+  "expected_sha256": "37e3a542a32f8cb15cd06965072cfef9aac81cb157b20f7c89b50dafc36fa177",
+  "verified": true,
+  "identity_source": "journald install audit line (dsh-fleet-admin plugin-add) — what the install reports",
+  "audit": {
+    "timestamp": "2026-11-01T14:00:51-05:00",
+    "file": "cayleb-dsh-fleet-0.2.2.tgz",
+    "sha256": "37e3a542a32f8cb15cd06965072cfef9aac81cb157b20f7c89b50dafc36fa177",
+    "line": "2026-11-01T14:00:51-05:00 outis-desktop dsh-fleet-admin[304017]: plugin-add cayleb-dsh-fleet-0.2.2.tgz sha256=37e3a542a32f8cb15cd06965072cfef9aac81cb157b20f7c89b50dafc36fa177 via=sudo"
+  },
+  "drop_inventory": [
+    {
+      "file": "cayleb-dsh-fleet-0.3.0.tgz",
+      "bytes": 286952,
+      "mtime_iso": "2026-11-01T22:17:41.357Z",
+      "sha256": "b60019a0f3611c83fb13a374444c46b05092df89737f803661408fd7151a0b10",
+      "sidecar_sha256": "",
+      "sidecar_matches": false
+    },
+    {
+      "file": "cayleb-dsh-fleet-0.2.2.tgz",
+      "bytes": 210358,
+      "mtime_iso": "2026-11-01T03:45:22.107Z",
+      "sha256": "37e3a542a32f8cb15cd06965072cfef9aac81cb157b20f7c89b50dafc36fa177",
+      "sidecar_sha256": "37e3a542a32f8cb15cd06965072cfef9aac81cb157b20f7c89b50dafc36fa177",
+      "sidecar_matches": true
+    },
+    {
+      "file": "cayleb-dsh-fleet-0.2.1.tgz",
+      "bytes": 164714,
+      "mtime_iso": "2026-10-31T14:47:00.749Z",
+      "sha256": "55516f9ae9535dc585da96587af45f55d83edac67c88e48d3bdc32ad652d10d4",
+      "sidecar_sha256": "55516f9ae9535dc585da96587af45f55d83edac67c88e48d3bdc32ad652d10d4",
+      "sidecar_matches": true
+    },
+    {
+      "file": "cayleb-dsh-fleet-0.2.0.tgz",
+      "bytes": 163847,
+      "mtime_iso": "2026-10-31T13:41:29.972Z",
+      "sha256": "842e76f258fcfbd1575d6c7fa48b5b10e1603a2b0d6fbc9dbf672d3351661415",
+      "sidecar_sha256": "842e76f258fcfbd1575d6c7fa48b5b10e1603a2b0d6fbc9dbf672d3351661415",
+      "sidecar_matches": true
+    }
+  ]
+}
+
+# driver has no hardcoded installed-release pin (grep)
+no hardcoded release filename/path in run-rehearsal.sh
+
+# remaining hardcoded version string (cosmetic run-meta only)
+91:  printf '  "platform": "installed @cayleb/dsh-fleet 0.2.2 on this desktop (fleet-dsh)"\n'

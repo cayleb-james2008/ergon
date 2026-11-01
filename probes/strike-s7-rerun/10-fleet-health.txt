@@ -1,0 +1,13 @@
+2026-11-01T22:36:36Z
+ActiveState=active
+InvocationID=9e3929d0d99c45ca98ff0d01fd275eb6
+MainPID=427587
+-- control status --
+{"ok":true,"integrity":true,"failures":[],"lanes":true,"events":44215,"selftest":true}
+-- leftovers --
+no leftover rehearsal roots
+-- fleet-drop --
+/var/lib/fleet-drop/cayleb-dsh-fleet-0.2.0.tgz
+/var/lib/fleet-drop/cayleb-dsh-fleet-0.2.1.tgz
+/var/lib/fleet-drop/cayleb-dsh-fleet-0.2.2.tgz
+/var/lib/fleet-drop/cayleb-dsh-fleet-0.3.0.tgz

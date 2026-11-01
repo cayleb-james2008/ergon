@@ -8,30 +8,30 @@
 - Actual: 23/23 hard checks held; 0 named pending; 4 recorded finding(s)
 - Word: **clean**
 - Evidence files: `R5/tickets-round-trip.json`, `R5/fleet-order-ops.json`, `R5/fleet-order-readback.json`
-- Timestamp (UTC): 2026-11-01T22:07:37Z .. 2026-11-01T22:07:38Z
+- Timestamp (UTC): 2026-11-01T22:31:50Z .. 2026-11-01T22:31:51Z
 - Blocker / finding: none
 
 ## Checks
-- PASS a1 ticket stored queued from the phone device, duplicate false — ticketId=3094f609-8220-42ea-aa39-cc8a18d0c1e1 state=queued duplicate=false
+- PASS a1 ticket stored queued from the phone device, duplicate false — ticketId=c32bdd43-c3d4-4420-85a0-aeb16e637fc5 state=queued duplicate=false
 - PASS a1 host record: state queued, device teo-phone, the exact reviewed preview — state=queued device=lf-teo-phone subject=Which line for the Harlow Legal job, C or D?
-- PASS a2 operator queue lists the new ticket first (newest first) — first=3094f609-8220-42ea-aa39-cc8a18d0c1e1 new=3094f609-8220-42ea-aa39-cc8a18d0c1e1 total=100
+- PASS a2 operator queue lists the new ticket first (newest first) — first=c32bdd43-c3d4-4420-85a0-aeb16e637fc5 new=c32bdd43-c3d4-4420-85a0-aeb16e637fc5 total=100
 - PASS a3 worker credential claims the ticket and gets a real lease — lease=issued (64 hex) leaseUntil=1793625000000
 - PASS a3 ticket reads back working with the claiming worker — state=working worker=agent-sam-akintola
 - PASS a4a worker reply refused (agent cannot reply on current code — F4 recorded) — HTTP 403 worker_route_denied (SCENARIOS.md F4: only the operator token can reply)
-- PASS a4b operator (Sam, the person) posts the reply — replyId=lf-2-lf52-mvyds2xq-3c0bb0-a4 duplicate=false
+- PASS a4b operator (Sam, the person) posts the reply — replyId=lf-2-lf52-mvyen7yo-688d98-a4 duplicate=false
 - PASS a5a agent resolved-finish outcome recorded against SCENARIOS.md F3 (409 remote_binding_required unless the device is remote-bound) — HTTP 409 remote_binding_required
 - PASS a5b operator resolves the ticket with the repair receipt — state=resolved
 - PASS a6 device read equals the host record: resolved, Sam's reply, the receipt summary — state=resolved replies=1 receipt=Told the warehouse lead: line C.
-- PASS b1 ticket stored queued from marcus-desktop — ticketId=7fb33cc5-91ca-45e2-8423-08dffd1fb44e state=queued
+- PASS b1 ticket stored queued from marcus-desktop — ticketId=8963c19e-2557-4d9a-a186-5d3f25a684a3 state=queued
 - PASS b2 ticket resolved with the reply and receipt, and Marcus's device reads both — host=resolved device=resolved replies=1
 - PASS b3 the management record names the worker who handled it — worker=sam-akintola
 - PASS both tickets have a product audit trail (stored -> claimed -> reply_added -> resolved) — audit rows=8: stored,claimed,reply_added,resolved,stored,claimed,reply_added,resolved
-- PASS B1 fixture order created open on the installed plugin — order=o3276 state=open duplicate=false
+- PASS B1 fixture order created open on the installed plugin — order=o3283 state=open duplicate=false
 - PASS B2 lead claims the order and closes its pre-flight — preflight=closed
-- PASS B3 order decomposed to one board-shaped task — task=t4142 order_state=in_progress
-- PASS B4 builder claims, posts evidence and submits the task as built — state=built evidence_post=7318
-- PASS B5 a checker runs and records a pass verdict — checker=checker:selftest-chk-80ae9fbb5258 verdict_post=7320 task_state=done
-- PASS B6 the order rolls up to done through its own done-when — state=done waited=508ms
+- PASS B3 order decomposed to one board-shaped task — task=t4156 order_state=in_progress
+- PASS B4 builder claims, posts evidence and submits the task as built — state=built evidence_post=7409
+- PASS B5 a checker runs and records a pass verdict — checker=checker:selftest-chk-33648f1f8671 verdict_post=7411 task_state=done
+- PASS B6 the order rolls up to done through its own done-when — state=done waited=506ms
 - PASS B6b the board task is done and banked, and the order's final task is done+banked — task=done/banked=true final=done/banked=true
 - PASS B7 every board post the pipeline wrote is readable (evidence + verdict + order-created + report) — posts=13: order-created,preflight,preflight-answers,decomposition,evidence,built,verdict,task-done,report,built,verdict,task-done,order-done
 - PASS every fleet op answered ok and is recorded — ops=12, refused=none
@@ -48,10 +48,10 @@
 ## Recorded metadata
 ```json
 {
-  "orderId": "o3276",
-  "taskId": "t4142",
-  "verdictId": "7320",
-  "evidenceId": "7318",
+  "orderId": "o3283",
+  "taskId": "t4156",
+  "verdictId": "7411",
+  "evidenceId": "7409",
   "ops": 12
 }
 ```

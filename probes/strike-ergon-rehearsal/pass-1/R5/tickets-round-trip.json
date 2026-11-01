@@ -1,8 +1,8 @@
 {
   "a": {
-    "ticketId": "8f97658d-2515-432e-930b-f90d95e85b3b",
+    "ticketId": "a75fa503-3198-4e37-9054-d3977efb0e0e",
     "submitted": {
-      "ticketId": "8f97658d-2515-432e-930b-f90d95e85b3b",
+      "ticketId": "a75fa503-3198-4e37-9054-d3977efb0e0e",
       "state": "queued",
       "duplicate": false
     },
@@ -16,7 +16,7 @@
     },
     "reply": "Line C. Dispatch has updated the plan.",
     "finish": {
-      "ticketId": "8f97658d-2515-432e-930b-f90d95e85b3b",
+      "ticketId": "a75fa503-3198-4e37-9054-d3977efb0e0e",
       "state": "resolved",
       "remoteBinding": "none"
     },
@@ -36,30 +36,30 @@
     "audit": [
       {
         "at": 1793624400000,
-        "ticket_id": "8f97658d-2515-432e-930b-f90d95e85b3b",
+        "ticket_id": "a75fa503-3198-4e37-9054-d3977efb0e0e",
         "event": "stored"
       },
       {
         "at": 1793624400000,
-        "ticket_id": "8f97658d-2515-432e-930b-f90d95e85b3b",
+        "ticket_id": "a75fa503-3198-4e37-9054-d3977efb0e0e",
         "event": "claimed"
       },
       {
         "at": 1793624400000,
-        "ticket_id": "8f97658d-2515-432e-930b-f90d95e85b3b",
+        "ticket_id": "a75fa503-3198-4e37-9054-d3977efb0e0e",
         "event": "reply_added"
       },
       {
         "at": 1793624400000,
-        "ticket_id": "8f97658d-2515-432e-930b-f90d95e85b3b",
+        "ticket_id": "a75fa503-3198-4e37-9054-d3977efb0e0e",
         "event": "resolved"
       }
     ]
   },
   "b": {
-    "ticketId": "d2f69377-cf9d-458e-8e42-36913028c2e7",
+    "ticketId": "98336924-aae2-408b-b2a9-fa3981ae6030",
     "submitted": {
-      "ticketId": "d2f69377-cf9d-458e-8e42-36913028c2e7",
+      "ticketId": "98336924-aae2-408b-b2a9-fa3981ae6030",
       "state": "queued",
       "duplicate": false
     },
@@ -69,7 +69,7 @@
     },
     "reply": "The rate card is in the shared estimates folder; I have pointed your assistant at it",
     "finish": {
-      "ticketId": "d2f69377-cf9d-458e-8e42-36913028c2e7",
+      "ticketId": "98336924-aae2-408b-b2a9-fa3981ae6030",
       "state": "resolved",
       "remoteBinding": "none"
     },
@@ -94,22 +94,22 @@
     "audit": [
       {
         "at": 1793624400000,
-        "ticket_id": "d2f69377-cf9d-458e-8e42-36913028c2e7",
+        "ticket_id": "98336924-aae2-408b-b2a9-fa3981ae6030",
         "event": "stored"
       },
       {
         "at": 1793624400000,
-        "ticket_id": "d2f69377-cf9d-458e-8e42-36913028c2e7",
+        "ticket_id": "98336924-aae2-408b-b2a9-fa3981ae6030",
         "event": "claimed"
       },
       {
         "at": 1793624400000,
-        "ticket_id": "d2f69377-cf9d-458e-8e42-36913028c2e7",
+        "ticket_id": "98336924-aae2-408b-b2a9-fa3981ae6030",
         "event": "reply_added"
       },
       {
         "at": 1793624400000,
-        "ticket_id": "d2f69377-cf9d-458e-8e42-36913028c2e7",
+        "ticket_id": "98336924-aae2-408b-b2a9-fa3981ae6030",
         "event": "resolved"
       }
     ]
@@ -131,5 +131,5 @@
       "observed": "worker=sam-akintola reply-authors=0"
     }
   ],
-  "generated_utc": "2026-11-01T22:07:35Z"
+  "generated_utc": "2026-11-01T22:31:48Z"
 }

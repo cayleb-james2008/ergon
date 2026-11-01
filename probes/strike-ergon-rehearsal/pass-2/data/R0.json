@@ -30,7 +30,7 @@
     {
       "name": "control peer is uid 1000 (normal user, no root)",
       "ok": true,
-      "detail": "peer_uid=1000 accepted=694 rejected=0"
+      "detail": "peer_uid=1000 accepted=906 rejected=0"
     },
     {
       "name": "selftest flag on (fixture:true orders and selftest sessions are gated by it)",
@@ -63,17 +63,27 @@
       "detail": "ProtectSystem=strict NoNewPrivileges=yes IPAddressDeny=169.254.0.0/16 100.64.0.0/10 ::/0 192.168.0.0/16 172.16.0.0/12 10.0.0.0/8 0.0.0.0/8"
     },
     {
-      "name": "release tarball hashes to its published digest",
+      "name": "installed release identity recorded from the install's own audit line",
       "ok": true,
-      "detail": "sha256=37e3a542a32f8cb15cd06965072cfef9aac81cb157b20f7c89b50dafc36fa177"
+      "detail": "cayleb-dsh-fleet-0.2.2.tgz sha256=37e3a542a32f8cb15cd06965072cfef9aac81cb157b20f7c89b50dafc36fa177"
     },
     {
-      "name": "release tarball names version 0.2.2",
+      "name": "the installed release tarball is present and hashes to the installed digest",
       "ok": true,
-      "detail": "cayleb-dsh-fleet-0.2.2.tgz"
+      "detail": "cayleb-dsh-fleet-0.2.2.tgz sha256=37e3a542a32f8cb15cd06965072cfef9aac81cb157b20f7c89b50dafc36fa177 expected=37e3a542a32f8cb15cd06965072cfef9aac81cb157b20f7c89b50dafc36fa177"
     },
     {
-      "name": "wrapper version runs read-only",
+      "name": "installed release version recorded from the installed release name (not assumed)",
+      "ok": true,
+      "detail": "version=0.2.2"
+    },
+    {
+      "name": "drop directory holds no ambiguity about what is installed (staged releases enumerated)",
+      "ok": true,
+      "detail": "cayleb-dsh-fleet-0.3.0.tgz=b60019a0f361…, cayleb-dsh-fleet-0.2.2.tgz=37e3a542a32f…, cayleb-dsh-fleet-0.2.1.tgz=55516f9ae953…, cayleb-dsh-fleet-0.2.0.tgz=842e76f258fc…"
+    },
+    {
+      "name": "wrapper version runs read-only and reports a DSH version",
       "ok": true,
       "detail": "exit=0 version=0.2.2-alpha.2"
     },
@@ -90,7 +100,7 @@
     {
       "name": "repo pin recorded",
       "ok": true,
-      "detail": "HEAD=e284135264f4025a1527c6754261b23907620dea branch=strike/ergon-rehearsal dirty=0"
+      "detail": "HEAD=003d9ef2265af313d4fbde796b1827dbe5b72b5f branch=strike/ergon-rehearsal dirty=0"
     },
     {
       "name": "repo r0-preflight ran and every install-related check passed",
@@ -109,6 +119,10 @@
     }
   ],
   "findings": [
+    {
+      "name": "staged but not installed",
+      "detail": "The drop directory also carries cayleb-dsh-fleet-0.3.0.tgz, cayleb-dsh-fleet-0.2.1.tgz, cayleb-dsh-fleet-0.2.0.tgz — listed in package-identity.json but NOT claimed as installed."
+    },
     {
       "name": "host",
       "detail": "This pass runs on the platform host itself (outis-desktop), where the fleet plugin 0.2.2 is installed. The real R0 also wants a dedicated fresh cloud host + DNS + company Supabase project: those are owner acts (R0-PROVISIONING P1/P4/P5) and out of scope for this strike by its anti-goals. They are named in the pass index, not skipped silently."
@@ -140,14 +154,14 @@
       "name": "fleet-core",
       "protocol": 1,
       "node": "v26.12.0",
-      "uptime_s": 1384,
+      "uptime_s": 2837,
       "db": {
         "path": "/var/lib/fleet/state/fleet.db",
         "journal_mode": "wal",
-        "events": 43695,
+        "events": 44059,
         "head": {
-          "seq": 43695,
-          "hash": "d5c5d059691c520115d300f1685539a88931b1e70f10fa51f4b558168cb44489"
+          "seq": 44059,
+          "hash": "471d63644574ac9be0230abf2d84e60ad7ae3b2763c8e8dcc8612cc009a5f823"
         }
       },
       "peer_uid": 1000,
@@ -162,20 +176,22 @@
     },
     "identityDigest": "37e3a542a32f8cb15cd06965072cfef9aac81cb157b20f7c89b50dafc36fa177",
     "identityFile": "cayleb-dsh-fleet-0.2.2.tgz",
+    "identityVersion": "0.2.2",
+    "identitySource": "journald install audit line (dsh-fleet-admin plugin-add) — what the install reports",
     "wrapper": {
       "version": "0.2.2-alpha.2",
       "bundleRows": 75,
       "dumpConfigSha256": "0614f4f796ba7fff13be968982096f0ca2213b527877b01b85bd7ff7c8de4756"
     },
     "repo": {
-      "HEAD": "e284135264f4025a1527c6754261b23907620dea",
+      "HEAD": "003d9ef2265af313d4fbde796b1827dbe5b72b5f",
       "branch": "strike/ergon-rehearsal",
       "dirty": 0
     },
-    "startedUtc": "2026-11-01T22:07:36Z"
+    "startedUtc": "2026-11-01T22:31:49Z"
   },
-  "started_utc": "2026-11-01T22:07:36Z",
-  "finished_utc": "2026-11-01T22:07:36Z",
+  "started_utc": "2026-11-01T22:31:49Z",
+  "finished_utc": "2026-11-01T22:31:49Z",
   "failures": [],
   "forced_failure": null
 }

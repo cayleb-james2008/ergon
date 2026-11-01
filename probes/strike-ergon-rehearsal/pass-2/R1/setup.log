@@ -1,4 +1,4 @@
-command: node fixtures/setup.mjs /tmp/ergon-rehearsal-20261101T220736Z-ZUb78e
+command: node fixtures/setup.mjs /tmp/ergon-rehearsal-20261101T223149Z-GWu5wW
 exit: 0
 stdout:
 {
@@ -219,7 +219,7 @@ stdout:
       "employeeId": "sales-one"
     }
   },
-  "root": "/tmp/ergon-rehearsal-20261101T220736Z-ZUb78e",
+  "root": "/tmp/ergon-rehearsal-20261101T223149Z-GWu5wW",
   "seed": 20261102
 }
 

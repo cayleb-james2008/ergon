@@ -1,0 +1,6 @@
+o3284 state=done fixture=true title=Lanternfield warehouse board (rehearsal pass 1): move Harlow
+  task t4158 done banked=true final=false
+  task t4159 done banked=true final=true
+o3285 state=done fixture=true title=Lanternfield warehouse board (rehearsal pass 2): move Harlow
+  task t4160 done banked=true final=false
+  task t4161 done banked=true final=true

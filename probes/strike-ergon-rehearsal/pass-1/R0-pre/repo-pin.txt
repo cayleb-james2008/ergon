@@ -1,4 +1,4 @@
 repo: /home/cayleb/workspace/harness-build/ergon-strike
-HEAD: e284135264f4025a1527c6754261b23907620dea
+HEAD: 003d9ef2265af313d4fbde796b1827dbe5b72b5f
 branch: strike/ergon-rehearsal
 dirty entries: 0

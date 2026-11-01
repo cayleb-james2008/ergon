@@ -2487,42 +2487,42 @@
   {
    "at": 1793624400000,
    "event": "stored",
-   "ticket_id": "ticket:lf-1-lf51-mvyds0uh-bff1fc-a1"
+   "ticket_id": "ticket:lf-1-lf51-mvyen63l-c41d50-a1"
   },
   {
    "at": 1793624400000,
    "event": "claimed",
-   "ticket_id": "ticket:lf-1-lf51-mvyds0uh-bff1fc-a1"
+   "ticket_id": "ticket:lf-1-lf51-mvyen63l-c41d50-a1"
   },
   {
    "at": 1793624400000,
    "event": "reply_added",
-   "ticket_id": "ticket:lf-1-lf51-mvyds0uh-bff1fc-a1"
+   "ticket_id": "ticket:lf-1-lf51-mvyen63l-c41d50-a1"
   },
   {
    "at": 1793624400000,
    "event": "resolved",
-   "ticket_id": "ticket:lf-1-lf51-mvyds0uh-bff1fc-a1"
+   "ticket_id": "ticket:lf-1-lf51-mvyen63l-c41d50-a1"
   },
   {
    "at": 1793624400000,
    "event": "stored",
-   "ticket_id": "ticket:lf-1-lf51-mvyds0uh-bff1fc-b1"
+   "ticket_id": "ticket:lf-1-lf51-mvyen63l-c41d50-b1"
   },
   {
    "at": 1793624400000,
    "event": "claimed",
-   "ticket_id": "ticket:lf-1-lf51-mvyds0uh-bff1fc-b1"
+   "ticket_id": "ticket:lf-1-lf51-mvyen63l-c41d50-b1"
   },
   {
    "at": 1793624400000,
    "event": "reply_added",
-   "ticket_id": "ticket:lf-1-lf51-mvyds0uh-bff1fc-b1"
+   "ticket_id": "ticket:lf-1-lf51-mvyen63l-c41d50-b1"
   },
   {
    "at": 1793624400000,
    "event": "resolved",
-   "ticket_id": "ticket:lf-1-lf51-mvyds0uh-bff1fc-b1"
+   "ticket_id": "ticket:lf-1-lf51-mvyen63l-c41d50-b1"
   }
  ],
  "board": {
@@ -3513,12 +3513,12 @@
   {
    "attempts": 0,
    "delivered_at": null,
-   "ticket_id": "ticket:lf-1-lf51-mvyds0uh-bff1fc-a1"
+   "ticket_id": "ticket:lf-1-lf51-mvyen63l-c41d50-a1"
   },
   {
    "attempts": 0,
    "delivered_at": null,
-   "ticket_id": "ticket:lf-1-lf51-mvyds0uh-bff1fc-b1"
+   "ticket_id": "ticket:lf-1-lf51-mvyen63l-c41d50-b1"
   },
   {
    "attempts": 0,
@@ -8365,15 +8365,15 @@
  "ticketReplies": [
   {
    "created_at": 1793624400000,
-   "reply_id": "lf-1-lf51-mvyds0uh-bff1fc-a4",
+   "reply_id": "lf-1-lf51-mvyen63l-c41d50-a4",
    "text": "Line C. Dispatch has updated the plan.",
-   "ticket_id": "ticket:lf-1-lf51-mvyds0uh-bff1fc-a1"
+   "ticket_id": "ticket:lf-1-lf51-mvyen63l-c41d50-a1"
   },
   {
    "created_at": 1793624400000,
-   "reply_id": "lf-1-lf51-mvyds0uh-bff1fc-b2",
+   "reply_id": "lf-1-lf51-mvyen63l-c41d50-b2",
    "text": "The rate card is in the shared estimates folder; I have pointed your assistant at it",
-   "ticket_id": "ticket:lf-1-lf51-mvyds0uh-bff1fc-b1"
+   "ticket_id": "ticket:lf-1-lf51-mvyen63l-c41d50-b1"
   },
   {
    "created_at": 1790161740000,
@@ -12804,11 +12804,11 @@
   {
    "created_at": 1793624400000,
    "device_id": "device:teo-phone",
-   "draft_id": "lf-1-lf51-mvyds0uh-bff1fc-a1",
-   "id": "ticket:lf-1-lf51-mvyds0uh-bff1fc-a1",
+   "draft_id": "lf-1-lf51-mvyen63l-c41d50-a1",
+   "id": "ticket:lf-1-lf51-mvyen63l-c41d50-a1",
    "lease_hash": null,
    "lease_until": null,
-   "payload_hash": "d238247bdd1a6e6fe7146b44061775a67c2d1796ad344edc8224e73b1589ee75",
+   "payload_hash": "ffa96dd41dc7d1a048ca9a1d41f96dda14ad447f15eb8137bc4bac79adc93b64",
    "preview": {
     "attachments": [],
     "category": "Question",
@@ -12820,7 +12820,7 @@
      "enrollment": "registered",
      "remoteSession": "unknown"
     },
-    "localDraftId": "lf-1-lf51-mvyds0uh-bff1fc-a1",
+    "localDraftId": "lf-1-lf51-mvyen63l-c41d50-a1",
     "schemaVersion": 1,
     "state": "draft",
     "subject": "Which line for the Harlow Legal job, C or D?"
@@ -12840,11 +12840,11 @@
   {
    "created_at": 1793624400000,
    "device_id": "device:marcus-desktop",
-   "draft_id": "lf-1-lf51-mvyds0uh-bff1fc-b1",
-   "id": "ticket:lf-1-lf51-mvyds0uh-bff1fc-b1",
+   "draft_id": "lf-1-lf51-mvyen63l-c41d50-b1",
+   "id": "ticket:lf-1-lf51-mvyen63l-c41d50-b1",
    "lease_hash": null,
    "lease_until": null,
-   "payload_hash": "9e8f06edab77e283527837ee1be297189288319f6e2eabeb2c4964a4abd27c8b",
+   "payload_hash": "e7f8a7436f72f25d4b9ab6d0e41045bb7476da9f7561ae892fdb4c4a86137464",
    "preview": {
     "attachments": [],
     "category": "Assistant issue",
@@ -12856,7 +12856,7 @@
      "enrollment": "registered",
      "remoteSession": "unknown"
     },
-    "localDraftId": "lf-1-lf51-mvyds0uh-bff1fc-b1",
+    "localDraftId": "lf-1-lf51-mvyen63l-c41d50-b1",
     "schemaVersion": 1,
     "state": "draft",
     "subject": "Assistant cannot find the rate card"

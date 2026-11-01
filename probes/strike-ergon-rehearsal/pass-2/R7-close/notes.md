@@ -8,7 +8,7 @@
 - Actual: 12/12 hard checks held; 0 named pending; 1 recorded finding(s)
 - Word: **clean**
 - Evidence files: `R7-close/state-record.md`, `R7-close/secret-leak-check.txt`, `R7-close/host-teardown.txt`
-- Timestamp (UTC): 2026-11-01T22:07:38Z .. 2026-11-01T22:07:38Z
+- Timestamp (UTC): 2026-11-01T22:31:51Z .. 2026-11-01T22:31:51Z
 - Blocker / finding: none
 
 ## Checks
@@ -19,21 +19,21 @@
 - PASS prior step R4 produced its data — R4
 - PASS prior step R5 produced its data — R5
 - PASS prior step R6 produced its data — R6
-- PASS final canonical state dump succeeds before teardown — exit=0 sha256=1572becb1b8baa5458c65611edb7e5aae5e0de3dd3941c8873beb809905931fa
+- PASS final canonical state dump succeeds before teardown — exit=0 sha256=6f35be79869ed76df062f68691b8508be47a7d5d0a87ba63bc820c56f71984c9
 - PASS state record written (company / cast / tickets / order / digests) — R7-close/state-record.md
 - PASS no fixture secret value appears in the evidence pack — 25 values checked, 0 hit(s)
 - PASS teardown empties the fresh company root — exit=0 entries after=0
 - PASS the root was a fresh company root before teardown (state existed to destroy) — entries before=2
 
 ## Findings recorded (not a failure of this step)
-- state advanced by the pass — seed digest 558df9edb29c8c5b8e449b53e6a68ae6e02f1259d257fabe3017d943a1b593c1 -> final digest 1572becb1b8baa5458c65611edb7e5aae5e0de3dd3941c8873beb809905931fa (the pass created real state: tickets, onboarded assistants, a acted-on board task via the fleet order)
+- state advanced by the pass — seed digest 558df9edb29c8c5b8e449b53e6a68ae6e02f1259d257fabe3017d943a1b593c1 -> final digest 6f35be79869ed76df062f68691b8508be47a7d5d0a87ba63bc820c56f71984c9 (the pass created real state: tickets, onboarded assistants, a acted-on board task via the fleet order)
 
 ## Recorded metadata
 ```json
 {
   "teardownExit": 0,
   "seedDumpSha256": "558df9edb29c8c5b8e449b53e6a68ae6e02f1259d257fabe3017d943a1b593c1",
-  "finalDumpSha256": "1572becb1b8baa5458c65611edb7e5aae5e0de3dd3941c8873beb809905931fa",
+  "finalDumpSha256": "6f35be79869ed76df062f68691b8508be47a7d5d0a87ba63bc820c56f71984c9",
   "ticketIds": [],
   "orderId": null,
   "firstPass": false

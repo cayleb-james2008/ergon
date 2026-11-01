@@ -1,6 +1,6 @@
 # Ergon dress rehearsal — pass 2 (installed @cayleb/dsh-fleet platform)
 
-Generated: 2026-11-01T22:07:38Z · Driver: `bash docs/acceptance/demo-company/rehearsal/run-rehearsal.sh --pass 2 --out <pack>`
+Generated: 2026-11-01T22:31:51Z · Driver: `bash docs/acceptance/demo-company/rehearsal/run-rehearsal.sh --pass 2 --out <pack>`
 
 ## Run metadata
 
@@ -8,11 +8,11 @@ Generated: 2026-11-01T22:07:38Z · Driver: `bash docs/acceptance/demo-company/re
 |---|---|
 | Pass | 2 |
 | Host | outis-desktop (the host the platform is installed on) |
-| Fresh company root | `/tmp/ergon-rehearsal-20261101T220736Z-ZUb78e` (mktemp, fresh for this pass) |
-| Repo pin | `e284135264f4025a1527c6754261b23907620dea` on `strike/ergon-rehearsal` |
+| Fresh company root | `/tmp/ergon-rehearsal-20261101T223149Z-GWu5wW` (mktemp, fresh for this pass) |
+| Repo pin | `003d9ef2265af313d4fbde796b1827dbe5b72b5f` on `strike/ergon-rehearsal` |
 | Seed | 20261102 (fixture default) |
 | Installed package identity | `37e3a542a32f8cb15cd06965072cfef9aac81cb157b20f7c89b50dafc36fa177` (`cayleb-dsh-fleet-0.2.2.tgz`) |
-| Started / finished (UTC) | 2026-11-01T22:07:36Z / 2026-11-01T22:07:38Z |
+| Started / finished (UTC) | 2026-11-01T22:31:49Z / 2026-11-01T22:31:51Z |
 | Verdicts | clean 4 · pending 4 · failed 0 |
 
 ## Verdict table
@@ -57,7 +57,7 @@ Result: **clean**. The driver scanned its own evidence for key-like material (pr
 # Secrets scan — rehearsal evidence pack
 
 - Directory: `/home/cayleb/Documents/deepseek-harness/default-workspace/board/probes/strike-ergon-rehearsal/pass-2`
-- Files scanned: 72
+- Files scanned: 71
 - Patterns checked: 11
 - Result: clean (0 hits)
 ```
@@ -69,35 +69,38 @@ Result: **clean**. The driver scanned its own evidence for key-like material (pr
 - PASS fleet-core identity — name=fleet-core protocol=1 node=v26.12.0
 - PASS lanes allowed — lanes_allowed=true
 - PASS integrity ok (chain, sandbox, rows, guard) — integrity.ok=true chain.ok=true verified_at_boot=42154 sandbox.ok=true rows.ok=true guard.ok=true
-- PASS control peer is uid 1000 (normal user, no root) — peer_uid=1000 accepted=694 rejected=0
+- PASS control peer is uid 1000 (normal user, no root) — peer_uid=1000 accepted=906 rejected=0
 - PASS selftest flag on (fixture:true orders and selftest sessions are gated by it) — policy.selftest=true source=default
 - PASS policy-get answers — rows=19
 - PASS policy pins spend ceiling + selftest — spend.hard_ceiling_usd=5 selftest=true
 - PASS fleet-dsh unit active — is-active=active ActiveState=active SubState=running MainPID=427587
 - PASS unit runs as user fleet — User=fleet Group=fleet
 - PASS unit is contained (ProtectSystem strict, NoNewPrivileges, egress IP deny) — ProtectSystem=strict NoNewPrivileges=yes IPAddressDeny=169.254.0.0/16 100.64.0.0/10 ::/0 192.168.0.0/16 172.16.0.0/12 10.0.0.0/8 0.0.0.0/8
-- PASS release tarball hashes to its published digest — sha256=37e3a542a32f8cb15cd06965072cfef9aac81cb157b20f7c89b50dafc36fa177
-- PASS release tarball names version 0.2.2 — cayleb-dsh-fleet-0.2.2.tgz
-- PASS wrapper version runs read-only — exit=0 version=0.2.2-alpha.2
+- PASS installed release identity recorded from the install's own audit line — cayleb-dsh-fleet-0.2.2.tgz sha256=37e3a542a32f8cb15cd06965072cfef9aac81cb157b20f7c89b50dafc36fa177
+- PASS the installed release tarball is present and hashes to the installed digest — cayleb-dsh-fleet-0.2.2.tgz sha256=37e3a542a32f8cb15cd06965072cfef9aac81cb157b20f7c89b50dafc36fa177 expected=37e3a542a32f8cb15cd06965072cfef9aac81cb157b20f7c89b50dafc36fa177
+- PASS installed release version recorded from the installed release name (not assumed) — version=0.2.2
+- PASS drop directory holds no ambiguity about what is installed (staged releases enumerated) — cayleb-dsh-fleet-0.3.0.tgz=b60019a0f361…, cayleb-dsh-fleet-0.2.2.tgz=37e3a542a32f…, cayleb-dsh-fleet-0.2.1.tgz=55516f9ae953…, cayleb-dsh-fleet-0.2.0.tgz=842e76f258fc…
+- PASS wrapper version runs read-only and reports a DSH version — exit=0 version=0.2.2-alpha.2
 - PASS wrapper status confirms the fleet install — exit=0 (uid/version lines present)
 - PASS dump-config exits 0 and mounts the fleet bundle rows — exit=0 bundle rows=75
-- PASS repo pin recorded — HEAD=e284135264f4025a1527c6754261b23907620dea branch=strike/ergon-rehearsal dirty=0
+- PASS repo pin recorded — HEAD=003d9ef2265af313d4fbde796b1827dbe5b72b5f branch=strike/ergon-rehearsal dirty=0
 - PASS repo r0-preflight ran and every install-related check passed — exit=1 PASS=5 FAIL=1 → FAIL  company project id not recorded (R0 blocking: write id + region only, no secret)
 - PASS r0-preflight names its only blocking item as the company Supabase project (P5 owner act) if it blocks — exit=1 because project-id.txt is absent: the company Supabase project is a P5 owner act, out of scope for this strike (named, not silently skipped)
 - PASS preflight fails closed with no evidence supplied — exit=1 stdin=R0 PREFLIGHT: FAIL (3 blocking)
+- note staged but not installed — The drop directory also carries cayleb-dsh-fleet-0.3.0.tgz, cayleb-dsh-fleet-0.2.1.tgz, cayleb-dsh-fleet-0.2.0.tgz — listed in package-identity.json but NOT claimed as installed.
 - note host — This pass runs on the platform host itself (outis-desktop), where the fleet plugin 0.2.2 is installed. The real R0 also wants a dedicated fresh cloud host + DNS + company Supabase project: those are owner acts (R0-PROVISIONING P1/P4/P5) and out of scope for this strike by its anti-goals. They are named in the pass index, not skipped silently.
 - note no company state on the deploy paths — The generic preflight checked /srv/ergon /opt/ergon /var/lib/ergon /etc/ergon: absent (see preflight/absence-of-company-state.txt).
 - evidence: `R0-pre/control-status.json`, `R0-pre/policy-get.json`, `R0-pre/fleet-unit.txt`, `R0-pre/package-identity.json`, `R0-pre/package-identity.txt`, `R0-pre/wrapper-version.txt`, `R0-pre/wrapper-status.txt`, `R0-pre/wrapper-dump-config-excerpt.txt`, `R0-pre/wrapper-dump-config.json`, `R0-pre/repo-pin.txt`, `R0-pre/preflight/run.log`, `R0-pre/preflight/summary.txt`, `R0-pre/preflight-failclosed.txt`
 
 ### R1 — Company setup and canonical state dump → **clean**
-- PASS fresh rehearsal root is empty before setup — root=/tmp/ergon-rehearsal-20261101T220736Z-ZUb78e entries=0
+- PASS fresh rehearsal root is empty before setup — root=/tmp/ergon-rehearsal-20261101T223149Z-GWu5wW entries=0
 - PASS setup.mjs exits 0 — exit=0
 - PASS setup summary parses as JSON — keys=tickets,reviewDesk,library,profiles,stackArtefacts,devices,root,seed
 - PASS setup reports one profile per cast member (6) — profiles=6 ids=dana-whitcomb,priya-lindqvist,marcus-oyelaran,teo-brandvold,rosa-quintero-hale,sam-akintola
 - PASS setup reports the enrolled device set (6 cast devices + 4 background, incl. the pending sales laptop) — devices=10
 - PASS setup reports the open-source stack artefacts — stackArtefacts=9
 - PASS setup reports the seeded backlog + ReviewDesk + library summaries — tickets={"raised":104,"outcomes":{"resolved":79,"waiting":13,"escalated":3,"abandoned":1,"queued":8},"replies":133,"firstAt":"20 reviewDesk={"dana-whitcomb":{"requests":5,"later":2,"approve":1,"pending":1,"reject":1},"pr library={"tools":[{"name":"crew-sheet-builder","latestPublished":"1.0.0","versions":["1.
-- PASS setup root is this pass's fresh root — summary.root=/tmp/ergon-rehearsal-20261101T220736Z-ZUb78e
+- PASS setup root is this pass's fresh root — summary.root=/tmp/ergon-rehearsal-20261101T223149Z-GWu5wW
 - PASS company record matches the demo company — Lanternfield Moving & Storage / America/New_York
 - PASS cast record holds six distinct named employees, each with a personalised agent profile — dana-whitcomb,priya-lindqvist,marcus-oyelaran,teo-brandvold,rosa-quintero-hale,sam-akintola
 - PASS dump-state.mjs exits 0 — exit=0
@@ -127,7 +130,7 @@ Result: **clean**. The driver scanned its own evidence for key-like material (pr
 - PASS origin is a DNS name, not localhost and not a raw IP — hostname=lf-host-01.example-tailnet.ts.net scheme=https: port=8443
 - PASS origin is recorded as a made-up name that is never resolved (fixture note) — The Anthropic budget proxy's activation gate accepts only an https://*.ts.net:8443 origin (support/server/anthropic-budget-proxy.mjs validOrigin). The name is made up and never resolved; the rehearsal
 - PASS the shareable name does not resolve (hosted URL/DNS absent) — getent exit=2 stdout=(none)
-- PASS current host code listens on 127.0.0.1 only (no shareable listener) — address=127.0.0.1 port=45623 base=http://127.0.0.1:45623
+- PASS current host code listens on 127.0.0.1 only (no shareable listener) — address=127.0.0.1 port=42045 base=http://127.0.0.1:42045
 - note device approval flow — The product's device approval flow is exercised host-side by the fixture setup (USB-kit join + operator approval asserted at R1/R4). What R3 needs and cannot show is the second device reaching a real URL.
 - evidence: `R3/url-check.txt`, `R3/listener.json`
 
@@ -140,26 +143,26 @@ Result: **clean**. The driver scanned its own evidence for key-like material (pr
 - evidence: `R4/device-registry-standin.json`
 
 ### R5 — Desk task: ticket round trip and a real fleet order → **clean**
-- PASS a1 ticket stored queued from the phone device, duplicate false — ticketId=3094f609-8220-42ea-aa39-cc8a18d0c1e1 state=queued duplicate=false
+- PASS a1 ticket stored queued from the phone device, duplicate false — ticketId=c32bdd43-c3d4-4420-85a0-aeb16e637fc5 state=queued duplicate=false
 - PASS a1 host record: state queued, device teo-phone, the exact reviewed preview — state=queued device=lf-teo-phone subject=Which line for the Harlow Legal job, C or D?
-- PASS a2 operator queue lists the new ticket first (newest first) — first=3094f609-8220-42ea-aa39-cc8a18d0c1e1 new=3094f609-8220-42ea-aa39-cc8a18d0c1e1 total=100
+- PASS a2 operator queue lists the new ticket first (newest first) — first=c32bdd43-c3d4-4420-85a0-aeb16e637fc5 new=c32bdd43-c3d4-4420-85a0-aeb16e637fc5 total=100
 - PASS a3 worker credential claims the ticket and gets a real lease — lease=issued (64 hex) leaseUntil=1793625000000
 - PASS a3 ticket reads back working with the claiming worker — state=working worker=agent-sam-akintola
 - PASS a4a worker reply refused (agent cannot reply on current code — F4 recorded) — HTTP 403 worker_route_denied (SCENARIOS.md F4: only the operator token can reply)
-- PASS a4b operator (Sam, the person) posts the reply — replyId=lf-2-lf52-mvyds2xq-3c0bb0-a4 duplicate=false
+- PASS a4b operator (Sam, the person) posts the reply — replyId=lf-2-lf52-mvyen7yo-688d98-a4 duplicate=false
 - PASS a5a agent resolved-finish outcome recorded against SCENARIOS.md F3 (409 remote_binding_required unless the device is remote-bound) — HTTP 409 remote_binding_required
 - PASS a5b operator resolves the ticket with the repair receipt — state=resolved
 - PASS a6 device read equals the host record: resolved, Sam's reply, the receipt summary — state=resolved replies=1 receipt=Told the warehouse lead: line C.
-- PASS b1 ticket stored queued from marcus-desktop — ticketId=7fb33cc5-91ca-45e2-8423-08dffd1fb44e state=queued
+- PASS b1 ticket stored queued from marcus-desktop — ticketId=8963c19e-2557-4d9a-a186-5d3f25a684a3 state=queued
 - PASS b2 ticket resolved with the reply and receipt, and Marcus's device reads both — host=resolved device=resolved replies=1
 - PASS b3 the management record names the worker who handled it — worker=sam-akintola
 - PASS both tickets have a product audit trail (stored -> claimed -> reply_added -> resolved) — audit rows=8: stored,claimed,reply_added,resolved,stored,claimed,reply_added,resolved
-- PASS B1 fixture order created open on the installed plugin — order=o3276 state=open duplicate=false
+- PASS B1 fixture order created open on the installed plugin — order=o3283 state=open duplicate=false
 - PASS B2 lead claims the order and closes its pre-flight — preflight=closed
-- PASS B3 order decomposed to one board-shaped task — task=t4142 order_state=in_progress
-- PASS B4 builder claims, posts evidence and submits the task as built — state=built evidence_post=7318
-- PASS B5 a checker runs and records a pass verdict — checker=checker:selftest-chk-80ae9fbb5258 verdict_post=7320 task_state=done
-- PASS B6 the order rolls up to done through its own done-when — state=done waited=508ms
+- PASS B3 order decomposed to one board-shaped task — task=t4156 order_state=in_progress
+- PASS B4 builder claims, posts evidence and submits the task as built — state=built evidence_post=7409
+- PASS B5 a checker runs and records a pass verdict — checker=checker:selftest-chk-33648f1f8671 verdict_post=7411 task_state=done
+- PASS B6 the order rolls up to done through its own done-when — state=done waited=506ms
 - PASS B6b the board task is done and banked, and the order's final task is done+banked — task=done/banked=true final=done/banked=true
 - PASS B7 every board post the pipeline wrote is readable (evidence + verdict + order-created + report) — posts=13: order-created,preflight,preflight-answers,decomposition,evidence,built,verdict,task-done,report,built,verdict,task-done,order-done
 - PASS every fleet op answered ok and is recorded — ops=12, refused=none
@@ -183,36 +186,54 @@ Result: **clean**. The driver scanned its own evidence for key-like material (pr
 - PASS prior step R4 produced its data — R4
 - PASS prior step R5 produced its data — R5
 - PASS prior step R6 produced its data — R6
-- PASS final canonical state dump succeeds before teardown — exit=0 sha256=1572becb1b8baa5458c65611edb7e5aae5e0de3dd3941c8873beb809905931fa
+- PASS final canonical state dump succeeds before teardown — exit=0 sha256=6f35be79869ed76df062f68691b8508be47a7d5d0a87ba63bc820c56f71984c9
 - PASS state record written (company / cast / tickets / order / digests) — R7-close/state-record.md
 - PASS no fixture secret value appears in the evidence pack — 25 values checked, 0 hit(s)
 - PASS teardown empties the fresh company root — exit=0 entries after=0
 - PASS the root was a fresh company root before teardown (state existed to destroy) — entries before=2
 - PASS second from-scratch pass reproduces the same verdict table — pass 2 reproduced pass 1's words, named pending pieces and hard-check results from a fresh company root; seed digests identical (558df9edb29c8c5b8e449b53e6a68ae6e02f1259d257fabe3017d943a1b593c1)
-- note state advanced by the pass — seed digest 558df9edb29c8c5b8e449b53e6a68ae6e02f1259d257fabe3017d943a1b593c1 -> final digest 1572becb1b8baa5458c65611edb7e5aae5e0de3dd3941c8873beb809905931fa (the pass created real state: tickets, onboarded assistants, a acted-on board task via the fleet order)
+- note state advanced by the pass — seed digest 558df9edb29c8c5b8e449b53e6a68ae6e02f1259d257fabe3017d943a1b593c1 -> final digest 6f35be79869ed76df062f68691b8508be47a7d5d0a87ba63bc820c56f71984c9 (the pass created real state: tickets, onboarded assistants, a acted-on board task via the fleet order)
 - evidence: `R7-close/state-record.md`, `R7-close/secret-leak-check.txt`, `R7-close/host-teardown.txt`
 
 ## Commands run (this pass)
 
 ```
-2026-11-01T22:07:36Z  node /home/cayleb/workspace/harness-build/ergon-strike/docs/acceptance/demo-company/rehearsal/steps/r0-pre.mjs --pass 2 --repo /home/cayleb/workspace/harness-build/ergon-strike --run-root /tmp/ergon-rehearsal-20261101T220736Z-ZUb78e --pass-dir /home/cayleb/Documents/deepseek-harness/default-workspace/board/probes/strike-ergon-rehearsal/pass-2  -> exit 0
-2026-11-01T22:07:37Z  node /home/cayleb/workspace/harness-build/ergon-strike/docs/acceptance/demo-company/rehearsal/steps/r1-setup.mjs --pass 2 --repo /home/cayleb/workspace/harness-build/ergon-strike --run-root /tmp/ergon-rehearsal-20261101T220736Z-ZUb78e --pass-dir /home/cayleb/Documents/deepseek-harness/default-workspace/board/probes/strike-ergon-rehearsal/pass-2  -> exit 0
-2026-11-01T22:07:37Z  node /home/cayleb/workspace/harness-build/ergon-strike/docs/acceptance/demo-company/rehearsal/steps/r2-assistants.mjs --pass 2 --repo /home/cayleb/workspace/harness-build/ergon-strike --run-root /tmp/ergon-rehearsal-20261101T220736Z-ZUb78e --pass-dir /home/cayleb/Documents/deepseek-harness/default-workspace/board/probes/strike-ergon-rehearsal/pass-2  -> exit 0
-2026-11-01T22:07:37Z  node /home/cayleb/workspace/harness-build/ergon-strike/docs/acceptance/demo-company/rehearsal/steps/r3-url.mjs --pass 2 --repo /home/cayleb/workspace/harness-build/ergon-strike --run-root /tmp/ergon-rehearsal-20261101T220736Z-ZUb78e --pass-dir /home/cayleb/Documents/deepseek-harness/default-workspace/board/probes/strike-ergon-rehearsal/pass-2  -> exit 0
-2026-11-01T22:07:37Z  node /home/cayleb/workspace/harness-build/ergon-strike/docs/acceptance/demo-company/rehearsal/steps/r4-phones.mjs --pass 2 --repo /home/cayleb/workspace/harness-build/ergon-strike --run-root /tmp/ergon-rehearsal-20261101T220736Z-ZUb78e --pass-dir /home/cayleb/Documents/deepseek-harness/default-workspace/board/probes/strike-ergon-rehearsal/pass-2  -> exit 0
-2026-11-01T22:07:38Z  node /home/cayleb/workspace/harness-build/ergon-strike/docs/acceptance/demo-company/rehearsal/steps/r5-desk.mjs --pass 2 --repo /home/cayleb/workspace/harness-build/ergon-strike --run-root /tmp/ergon-rehearsal-20261101T220736Z-ZUb78e --pass-dir /home/cayleb/Documents/deepseek-harness/default-workspace/board/probes/strike-ergon-rehearsal/pass-2  -> exit 0
-2026-11-01T22:07:38Z  node /home/cayleb/workspace/harness-build/ergon-strike/docs/acceptance/demo-company/rehearsal/steps/r6-voice.mjs --pass 2 --repo /home/cayleb/workspace/harness-build/ergon-strike --run-root /tmp/ergon-rehearsal-20261101T220736Z-ZUb78e --pass-dir /home/cayleb/Documents/deepseek-harness/default-workspace/board/probes/strike-ergon-rehearsal/pass-2  -> exit 0
-2026-11-01T22:07:38Z  node /home/cayleb/workspace/harness-build/ergon-strike/docs/acceptance/demo-company/rehearsal/steps/r7-close.mjs --pass 2 --repo /home/cayleb/workspace/harness-build/ergon-strike --run-root /tmp/ergon-rehearsal-20261101T220736Z-ZUb78e --pass-dir /home/cayleb/Documents/deepseek-harness/default-workspace/board/probes/strike-ergon-rehearsal/pass-2  -> exit 0
-2026-11-01T22:07:38Z  rmdir /tmp/ergon-rehearsal-20261101T220736Z-ZUb78e  -> exit 0
-2026-11-01T22:07:38Z  node lib/pass-diff.mjs --pack /home/cayleb/Documents/deepseek-harness/default-workspace/board/probes/strike-ergon-rehearsal --pass 2 --other 1  -> exit 0
-2026-11-01T22:07:38Z  node lib/secrets.mjs /home/cayleb/Documents/deepseek-harness/default-workspace/board/probes/strike-ergon-rehearsal/pass-2  -> exit 0
+2026-11-01T22:31:49Z  node /home/cayleb/workspace/harness-build/ergon-strike/docs/acceptance/demo-company/rehearsal/steps/r0-pre.mjs --pass 2 --repo /home/cayleb/workspace/harness-build/ergon-strike --run-root /tmp/ergon-rehearsal-20261101T223149Z-GWu5wW --pass-dir /home/cayleb/Documents/deepseek-harness/default-workspace/board/probes/strike-ergon-rehearsal/pass-2  -> exit 0
+2026-11-01T22:31:50Z  node /home/cayleb/workspace/harness-build/ergon-strike/docs/acceptance/demo-company/rehearsal/steps/r1-setup.mjs --pass 2 --repo /home/cayleb/workspace/harness-build/ergon-strike --run-root /tmp/ergon-rehearsal-20261101T223149Z-GWu5wW --pass-dir /home/cayleb/Documents/deepseek-harness/default-workspace/board/probes/strike-ergon-rehearsal/pass-2  -> exit 0
+2026-11-01T22:31:50Z  node /home/cayleb/workspace/harness-build/ergon-strike/docs/acceptance/demo-company/rehearsal/steps/r2-assistants.mjs --pass 2 --repo /home/cayleb/workspace/harness-build/ergon-strike --run-root /tmp/ergon-rehearsal-20261101T223149Z-GWu5wW --pass-dir /home/cayleb/Documents/deepseek-harness/default-workspace/board/probes/strike-ergon-rehearsal/pass-2  -> exit 0
+2026-11-01T22:31:50Z  node /home/cayleb/workspace/harness-build/ergon-strike/docs/acceptance/demo-company/rehearsal/steps/r3-url.mjs --pass 2 --repo /home/cayleb/workspace/harness-build/ergon-strike --run-root /tmp/ergon-rehearsal-20261101T223149Z-GWu5wW --pass-dir /home/cayleb/Documents/deepseek-harness/default-workspace/board/probes/strike-ergon-rehearsal/pass-2  -> exit 0
+2026-11-01T22:31:50Z  node /home/cayleb/workspace/harness-build/ergon-strike/docs/acceptance/demo-company/rehearsal/steps/r4-phones.mjs --pass 2 --repo /home/cayleb/workspace/harness-build/ergon-strike --run-root /tmp/ergon-rehearsal-20261101T223149Z-GWu5wW --pass-dir /home/cayleb/Documents/deepseek-harness/default-workspace/board/probes/strike-ergon-rehearsal/pass-2  -> exit 0
+2026-11-01T22:31:51Z  node /home/cayleb/workspace/harness-build/ergon-strike/docs/acceptance/demo-company/rehearsal/steps/r5-desk.mjs --pass 2 --repo /home/cayleb/workspace/harness-build/ergon-strike --run-root /tmp/ergon-rehearsal-20261101T223149Z-GWu5wW --pass-dir /home/cayleb/Documents/deepseek-harness/default-workspace/board/probes/strike-ergon-rehearsal/pass-2  -> exit 0
+2026-11-01T22:31:51Z  node /home/cayleb/workspace/harness-build/ergon-strike/docs/acceptance/demo-company/rehearsal/steps/r6-voice.mjs --pass 2 --repo /home/cayleb/workspace/harness-build/ergon-strike --run-root /tmp/ergon-rehearsal-20261101T223149Z-GWu5wW --pass-dir /home/cayleb/Documents/deepseek-harness/default-workspace/board/probes/strike-ergon-rehearsal/pass-2  -> exit 0
+2026-11-01T22:31:51Z  node /home/cayleb/workspace/harness-build/ergon-strike/docs/acceptance/demo-company/rehearsal/steps/r7-close.mjs --pass 2 --repo /home/cayleb/workspace/harness-build/ergon-strike --run-root /tmp/ergon-rehearsal-20261101T223149Z-GWu5wW --pass-dir /home/cayleb/Documents/deepseek-harness/default-workspace/board/probes/strike-ergon-rehearsal/pass-2  -> exit 0
+2026-11-01T22:31:51Z  rmdir /tmp/ergon-rehearsal-20261101T223149Z-GWu5wW  -> exit 0
+2026-11-01T22:31:51Z  node lib/pass-diff.mjs --pack /home/cayleb/Documents/deepseek-harness/default-workspace/board/probes/strike-ergon-rehearsal --pass 2 --other 1  -> exit 0
+2026-11-01T22:31:51Z  node lib/secrets.mjs /home/cayleb/Documents/deepseek-harness/default-workspace/board/probes/strike-ergon-rehearsal/pass-2  -> exit 0
 ```
 
 ## Evidence manifest
 
-74 evidence artefacts, 831717 bytes. Every evidence artefact's SHA-256 is in `manifest.sha256` (own digest `6937384feca9dfb9ba9c5029b54146a27b55f81a9d85c02854b70373fa41244f`). The index and its summary are hashed outside the manifest: this index's SHA-256 is in `index-summary.json` and is reported by the driver.
+The manifest is **sealed last** by `lib/seal.mjs`, after every other file in this pass directory is final
+(steps, data, logs, `commands.log`, `secrets-scan.txt`, this index and its log). It covers every artefact in the
+pass directory except the three hashed outside it: this index, `index-summary.json` and `manifest.sha256` itself.
+The seal record — file count, bytes, the manifest's own SHA-256 and the seal-time verification result — is
+appended below; the driver then runs `sha256sum -c manifest.sha256` from the pass directory and fails the run if
+any entry is stale. Nothing is appended to the pass directory after the seal.
 
 Each step directory also carries `notes.md` with the action → expected → actual → word record and the raw logs.
+
+## Evidence manifest (sealed 2026-11-01T22:31:51Z)
+
+- **Coverage:** 74 artefacts, 838058 bytes — every file in this pass directory except the three hashed
+  outside it: `index.md` (this index), `index-summary.json` and `manifest.sha256` itself.
+- **`manifest.sha256` SHA-256:** `04ffeaf1255e504b6104c74f6999ed038e618183ceae09bb47a159de089be1f6`
+- **Verification at seal time:** 74/74 OK (all entries re-read and re-hashed in the same process).
+- **Independent check:** after the seal, the driver runs `sha256sum -c manifest.sha256` from this directory; its output
+  is `<pack>/manifest-check-pass-2.txt` and a non-clean result fails the run.
+- **Nothing is appended to this pass directory after the seal.** `commands.log`'s last row is the pre-seal scan; the
+  seal's own record is `<pack>/seal-pass-2.log`, and the post-seal secrets scan is
+  `<pack>/secrets-scan-final-pass-2.txt`.
+
 
 ## Second pass (R7)
 

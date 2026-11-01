@@ -1,0 +1,25 @@
+# Manifest coverage + mtime (independent check)
+generated_utc: 2026-11-01T22:36:13Z
+pack: /home/cayleb/workspace/harness-build/evidence/strike/checker-verify/s7-rerun/ergon-pack
+
+## pass-1
+listed_entries: 72
+on_disk_files_excluding_3: 72
+missing: 0
+extra: 0
+stale: 0
+manifest_mtime: 2026-11-01T22:35:22.631Z
+included_files_newer_than_manifest: 0
+formerly-stale commands.log: manifest=26801a2ae29f26dc22c4b2f5c5f87160709a499e5c99de5af5095e291e016735 actual=26801a2ae29f26dc22c4b2f5c5f87160709a499e5c99de5af5095e291e016735 match=true
+formerly-stale logs/index.log: manifest=545859d07c55ddb7836eec4c259cebf15c07f383d57816dcc9cfa693c38f2671 actual=545859d07c55ddb7836eec4c259cebf15c07f383d57816dcc9cfa693c38f2671 match=true
+
+## pass-2
+listed_entries: 74
+on_disk_files_excluding_3: 74
+missing: 0
+extra: 0
+stale: 0
+manifest_mtime: 2026-11-01T22:35:29.548Z
+included_files_newer_than_manifest: 0
+formerly-stale commands.log: manifest=34c0cb5c9b3ad9ad927b3039a2e3d2b99c90025e0259a7447658b6352faaa987 actual=34c0cb5c9b3ad9ad927b3039a2e3d2b99c90025e0259a7447658b6352faaa987 match=true
+formerly-stale logs/index.log: manifest=6cc7b266f7cd17dfafa92b8c6fdc19172672d48c63fa59f6c2b3cf8925853906 actual=6cc7b266f7cd17dfafa92b8c6fdc19172672d48c63fa59f6c2b3cf8925853906 match=true

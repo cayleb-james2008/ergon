@@ -1,5 +1,5 @@
 # Shareable URL identity and what actually exists
-generated_utc: 2026-11-01T22:07:37Z
+generated_utc: 2026-11-01T22:31:50Z
 company: Lanternfield Moving & Storage
 origin_from_config: https://lf-host-01.example-tailnet.ts.net:8443
 hostname: lf-host-01.example-tailnet.ts.net

@@ -5,14 +5,14 @@
     "protocol": 1,
     "pid": 427587,
     "node": "v26.12.0",
-    "uptime_s": 1381,
+    "uptime_s": 2834,
     "db": {
       "path": "/var/lib/fleet/state/fleet.db",
       "journal_mode": "wal",
-      "events": 43643,
+      "events": 44007,
       "head": {
-        "seq": 43643,
-        "hash": "6c46554bfdd12fe308b8f1d0575a20d3f829a93a64b3985ba6fce2c731589279"
+        "seq": 44007,
+        "hash": "9d0bc9a426231851e785710b015f3ac1aa6c5b77eb40e52bb1cbdad921f4a425"
       }
     },
     "chain_head_sink": "journald",
@@ -59,7 +59,7 @@
       "path": "/run/fleet/control.sock",
       "peer_uid": 1000,
       "peer_cred_error": null,
-      "accepted": 666,
+      "accepted": 878,
       "rejected": 0
     },
     "policy": {

@@ -10,7 +10,7 @@
     {
       "name": "a1 ticket stored queued from the phone device, duplicate false",
       "ok": true,
-      "detail": "ticketId=3094f609-8220-42ea-aa39-cc8a18d0c1e1 state=queued duplicate=false"
+      "detail": "ticketId=c32bdd43-c3d4-4420-85a0-aeb16e637fc5 state=queued duplicate=false"
     },
     {
       "name": "a1 host record: state queued, device teo-phone, the exact reviewed preview",
@@ -20,7 +20,7 @@
     {
       "name": "a2 operator queue lists the new ticket first (newest first)",
       "ok": true,
-      "detail": "first=3094f609-8220-42ea-aa39-cc8a18d0c1e1 new=3094f609-8220-42ea-aa39-cc8a18d0c1e1 total=100"
+      "detail": "first=c32bdd43-c3d4-4420-85a0-aeb16e637fc5 new=c32bdd43-c3d4-4420-85a0-aeb16e637fc5 total=100"
     },
     {
       "name": "a3 worker credential claims the ticket and gets a real lease",
@@ -40,7 +40,7 @@
     {
       "name": "a4b operator (Sam, the person) posts the reply",
       "ok": true,
-      "detail": "replyId=lf-2-lf52-mvyds2xq-3c0bb0-a4 duplicate=false"
+      "detail": "replyId=lf-2-lf52-mvyen7yo-688d98-a4 duplicate=false"
     },
     {
       "name": "a5a agent resolved-finish outcome recorded against SCENARIOS.md F3 (409 remote_binding_required unless the device is remote-bound)",
@@ -60,7 +60,7 @@
     {
       "name": "b1 ticket stored queued from marcus-desktop",
       "ok": true,
-      "detail": "ticketId=7fb33cc5-91ca-45e2-8423-08dffd1fb44e state=queued"
+      "detail": "ticketId=8963c19e-2557-4d9a-a186-5d3f25a684a3 state=queued"
     },
     {
       "name": "b2 ticket resolved with the reply and receipt, and Marcus's device reads both",
@@ -80,7 +80,7 @@
     {
       "name": "B1 fixture order created open on the installed plugin",
       "ok": true,
-      "detail": "order=o3276 state=open duplicate=false"
+      "detail": "order=o3283 state=open duplicate=false"
     },
     {
       "name": "B2 lead claims the order and closes its pre-flight",
@@ -90,22 +90,22 @@
     {
       "name": "B3 order decomposed to one board-shaped task",
       "ok": true,
-      "detail": "task=t4142 order_state=in_progress"
+      "detail": "task=t4156 order_state=in_progress"
     },
     {
       "name": "B4 builder claims, posts evidence and submits the task as built",
       "ok": true,
-      "detail": "state=built evidence_post=7318"
+      "detail": "state=built evidence_post=7409"
     },
     {
       "name": "B5 a checker runs and records a pass verdict",
       "ok": true,
-      "detail": "checker=checker:selftest-chk-80ae9fbb5258 verdict_post=7320 task_state=done"
+      "detail": "checker=checker:selftest-chk-33648f1f8671 verdict_post=7411 task_state=done"
     },
     {
       "name": "B6 the order rolls up to done through its own done-when",
       "ok": true,
-      "detail": "state=done waited=508ms"
+      "detail": "state=done waited=506ms"
     },
     {
       "name": "B6b the board task is done and banked, and the order's final task is done+banked",
@@ -151,14 +151,14 @@
     "R5/fleet-order-readback.json"
   ],
   "meta": {
-    "orderId": "o3276",
-    "taskId": "t4142",
-    "verdictId": "7320",
-    "evidenceId": "7318",
+    "orderId": "o3283",
+    "taskId": "t4156",
+    "verdictId": "7411",
+    "evidenceId": "7409",
     "ops": 12
   },
-  "started_utc": "2026-11-01T22:07:37Z",
-  "finished_utc": "2026-11-01T22:07:38Z",
+  "started_utc": "2026-11-01T22:31:50Z",
+  "finished_utc": "2026-11-01T22:31:51Z",
   "failures": [],
   "forced_failure": null
 }

@@ -1,5 +1,5 @@
 # fleet-dsh unit (read-only)
-generated_utc: 2026-11-01T22:07:33Z
+generated_utc: 2026-11-01T22:31:46Z
 
 ## systemctl is-active
 active

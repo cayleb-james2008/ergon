@@ -8,18 +8,18 @@
 - Actual: 16/16 hard checks held; 0 named pending; 1 recorded finding(s)
 - Word: **clean**
 - Evidence files: `R1/setup.log`, `R1/setup-summary.json`, `R1/company-cast.json`, `R1/state-dump.log`, `R1/state-dump-summary.json`
-- Timestamp (UTC): 2026-11-01T22:07:36Z .. 2026-11-01T22:07:37Z
+- Timestamp (UTC): 2026-11-01T22:31:49Z .. 2026-11-01T22:31:50Z
 - Blocker / finding: none
 
 ## Checks
-- PASS fresh rehearsal root is empty before setup — root=/tmp/ergon-rehearsal-20261101T220736Z-ZUb78e entries=0
+- PASS fresh rehearsal root is empty before setup — root=/tmp/ergon-rehearsal-20261101T223149Z-GWu5wW entries=0
 - PASS setup.mjs exits 0 — exit=0
 - PASS setup summary parses as JSON — keys=tickets,reviewDesk,library,profiles,stackArtefacts,devices,root,seed
 - PASS setup reports one profile per cast member (6) — profiles=6 ids=dana-whitcomb,priya-lindqvist,marcus-oyelaran,teo-brandvold,rosa-quintero-hale,sam-akintola
 - PASS setup reports the enrolled device set (6 cast devices + 4 background, incl. the pending sales laptop) — devices=10
 - PASS setup reports the open-source stack artefacts — stackArtefacts=9
 - PASS setup reports the seeded backlog + ReviewDesk + library summaries — tickets={"raised":104,"outcomes":{"resolved":79,"waiting":13,"escalated":3,"abandoned":1,"queued":8},"replies":133,"firstAt":"20 reviewDesk={"dana-whitcomb":{"requests":5,"later":2,"approve":1,"pending":1,"reject":1},"pr library={"tools":[{"name":"crew-sheet-builder","latestPublished":"1.0.0","versions":["1.
-- PASS setup root is this pass's fresh root — summary.root=/tmp/ergon-rehearsal-20261101T220736Z-ZUb78e
+- PASS setup root is this pass's fresh root — summary.root=/tmp/ergon-rehearsal-20261101T223149Z-GWu5wW
 - PASS company record matches the demo company — Lanternfield Moving & Storage / America/New_York
 - PASS cast record holds six distinct named employees, each with a personalised agent profile — dana-whitcomb,priya-lindqvist,marcus-oyelaran,teo-brandvold,rosa-quintero-hale,sam-akintola
 - PASS dump-state.mjs exits 0 — exit=0

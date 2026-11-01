@@ -1,6 +1,6 @@
 {
   "order": {
-    "id": "o3275",
+    "id": "o3282",
     "state": "done",
     "fixture": true,
     "done_when": {
@@ -8,99 +8,99 @@
       "text": "rehearsal fixture done-when exits 0",
       "command": "true"
     },
-    "post_id": "7309",
+    "post_id": "7400",
     "claimant": "lead:selftest-lf5-lead-1"
   },
   "task": {
-    "id": "t4140",
+    "id": "t4154",
     "state": "done",
     "banked": true,
     "round": 1,
     "built": {
-      "commit": "b50035ed7a49d36a199ad014c12d080436ac89a1",
+      "commit": "73df0212694ea8ffaedea09d4b140458a9b24ddd",
       "artefact_hashes": [
-        "f38c7a2c444b369258e77b22b88e0cef23fa25969f3eb4777cc6b83986f69fdf"
+        "ccb9daf98205cee7039262defe98becc6edd57ca64a4182db4ada7906bf4852b"
       ],
       "evidence": [
-        "7305"
+        "7396"
       ],
       "summary": "submitted as built",
-      "at": 1793570855101
+      "at": 1793572308216
     }
   },
   "final_task": {
-    "id": "t4141",
+    "id": "t4155",
     "state": "done",
     "banked": true
   },
-  "verdict_post": "7307",
-  "evidence_post": "7305",
-  "checker": "checker:selftest-chk-a322b857a021",
+  "verdict_post": "7398",
+  "evidence_post": "7396",
+  "checker": "checker:selftest-chk-eb540dea3653",
   "board_posts": [
     {
-      "id": "7301",
+      "id": "7392",
       "kind": "order-created",
-      "entity": "o3275"
+      "entity": "o3282"
     },
     {
-      "id": "7302",
+      "id": "7393",
       "kind": "preflight",
-      "entity": "o3275"
+      "entity": "o3282"
     },
     {
-      "id": "7303",
+      "id": "7394",
       "kind": "preflight-answers",
-      "entity": "o3275"
+      "entity": "o3282"
     },
     {
-      "id": "7304",
+      "id": "7395",
       "kind": "decomposition",
-      "entity": "o3275"
+      "entity": "o3282"
     },
     {
-      "id": "7305",
+      "id": "7396",
       "kind": "evidence",
-      "entity": "t4140"
+      "entity": "t4154"
     },
     {
-      "id": "7306",
+      "id": "7397",
       "kind": "built",
-      "entity": "t4140"
+      "entity": "t4154"
     },
     {
-      "id": "7307",
+      "id": "7398",
       "kind": "verdict",
-      "entity": "t4140"
+      "entity": "t4154"
     },
     {
-      "id": "7308",
+      "id": "7399",
       "kind": "task-done",
-      "entity": "t4140"
+      "entity": "t4154"
     },
     {
-      "id": "7309",
+      "id": "7400",
       "kind": "report",
-      "entity": "o3275"
+      "entity": "o3282"
     },
     {
-      "id": "7310",
+      "id": "7401",
       "kind": "built",
-      "entity": "t4141"
+      "entity": "t4155"
     },
     {
-      "id": "7311",
+      "id": "7402",
       "kind": "verdict",
-      "entity": "t4141"
+      "entity": "t4155"
     },
     {
-      "id": "7312",
+      "id": "7403",
       "kind": "task-done",
-      "entity": "t4141"
+      "entity": "t4155"
     },
     {
-      "id": "7313",
+      "id": "7404",
       "kind": "order-done",
-      "entity": "o3275"
+      "entity": "o3282"
     }
   ]
 }

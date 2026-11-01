@@ -5,12 +5,12 @@
     "fleet_role": "lead",
     "principal": "lead:selftest-lf-1-dana-whitcomb",
     "ok": true,
-    "call_id": "selftest-6beb1237-b77e-417c-934b-a02f5f22888c",
-    "session_id": "fleet-selftest-lead-e5f3db0f-1094-4473-9fa8-11827686cd1a",
+    "call_id": "selftest-822cb03d-2eae-4a44-953f-c8d8c20279fb",
+    "session_id": "fleet-selftest-lead-ca61220b-3bc5-4afa-8370-8d77a0e58791",
     "result_scope": "mine",
     "error": null,
-    "started_utc": "2026-11-01T22:07:34Z",
-    "finished_utc": "2026-11-01T22:07:34Z"
+    "started_utc": "2026-11-01T22:31:47Z",
+    "finished_utc": "2026-11-01T22:31:47Z"
   },
   {
     "cast_member": "priya-lindqvist",
@@ -18,12 +18,12 @@
     "fleet_role": "researcher",
     "principal": "researcher:selftest-lf-1-priya-lindqvist",
     "ok": true,
-    "call_id": "selftest-0fba0f28-fc86-422b-9b9d-36c349e421ee",
-    "session_id": "fleet-selftest-researcher-87ca0946-680f-4c7e-8ea7-9ff235e0dad6",
+    "call_id": "selftest-90f80b6a-4c07-4eba-9637-7e912c8dcc48",
+    "session_id": "fleet-selftest-researcher-ba68a034-ed90-4d51-b7a8-b90f725c1c01",
     "result_scope": "mine",
     "error": null,
-    "started_utc": "2026-11-01T22:07:34Z",
-    "finished_utc": "2026-11-01T22:07:34Z"
+    "started_utc": "2026-11-01T22:31:47Z",
+    "finished_utc": "2026-11-01T22:31:47Z"
   },
   {
     "cast_member": "marcus-oyelaran",
@@ -31,12 +31,12 @@
     "fleet_role": "builder",
     "principal": "builder:selftest-lf-1-marcus-oyelaran",
     "ok": true,
-    "call_id": "selftest-a11526e8-c0fd-4bcd-9fbd-4144f55553c3",
-    "session_id": "fleet-selftest-builder-5b19ccc7-5dda-4e85-b78d-fa8b39ba2597",
+    "call_id": "selftest-250711d8-ef16-4849-862a-3534b23aacc9",
+    "session_id": "fleet-selftest-builder-7e419432-a801-4c21-a8a5-309f280a3242",
     "result_scope": "mine",
     "error": null,
-    "started_utc": "2026-11-01T22:07:34Z",
-    "finished_utc": "2026-11-01T22:07:34Z"
+    "started_utc": "2026-11-01T22:31:47Z",
+    "finished_utc": "2026-11-01T22:31:47Z"
   },
   {
     "cast_member": "teo-brandvold",
@@ -44,12 +44,12 @@
     "fleet_role": "builder",
     "principal": "builder:selftest-lf-1-teo-brandvold",
     "ok": true,
-    "call_id": "selftest-52efdf3e-d60d-4251-9d58-2aa8825b7f37",
-    "session_id": "fleet-selftest-builder-ad13dc84-4c2c-45df-b003-97199952c508",
+    "call_id": "selftest-97f3fdd0-5042-481a-8668-8152b0c151d6",
+    "session_id": "fleet-selftest-builder-d1f8e23f-9782-44a7-a127-3ebc9f583770",
     "result_scope": "mine",
     "error": null,
-    "started_utc": "2026-11-01T22:07:34Z",
-    "finished_utc": "2026-11-01T22:07:34Z"
+    "started_utc": "2026-11-01T22:31:47Z",
+    "finished_utc": "2026-11-01T22:31:47Z"
   },
   {
     "cast_member": "rosa-quintero-hale",
@@ -57,12 +57,12 @@
     "fleet_role": "researcher",
     "principal": "researcher:selftest-lf-1-rosa-quintero-hale",
     "ok": true,
-    "call_id": "selftest-1ed64e60-559f-4d43-97f9-2813c6d270d0",
-    "session_id": "fleet-selftest-researcher-5d2242ba-3d8b-43e7-9e27-f6aeb9fa32bd",
+    "call_id": "selftest-91c985da-2912-47bf-8a04-c2443710d88c",
+    "session_id": "fleet-selftest-researcher-a584e6c4-adac-4858-9c99-5650f62a6ddf",
     "result_scope": "mine",
     "error": null,
-    "started_utc": "2026-11-01T22:07:34Z",
-    "finished_utc": "2026-11-01T22:07:34Z"
+    "started_utc": "2026-11-01T22:31:47Z",
+    "finished_utc": "2026-11-01T22:31:47Z"
   },
   {
     "cast_member": "sam-akintola",
@@ -70,11 +70,11 @@
     "fleet_role": "checker",
     "principal": "checker:selftest-lf-1-sam-akintola",
     "ok": true,
-    "call_id": "selftest-5e43906a-85a2-4764-b5c8-27b7b8dfe3fc",
-    "session_id": "fleet-selftest-checker-690bbb94-e0e1-466a-bbaf-801d4243322a",
+    "call_id": "selftest-5c04292d-786a-4e4b-9e26-32e449ab6a13",
+    "session_id": "fleet-selftest-checker-643ce554-9bf9-4bea-be79-20fbf9f514c3",
     "result_scope": "mine",
     "error": null,
-    "started_utc": "2026-11-01T22:07:34Z",
-    "finished_utc": "2026-11-01T22:07:34Z"
+    "started_utc": "2026-11-01T22:31:47Z",
+    "finished_utc": "2026-11-01T22:31:47Z"
   }
 ]

@@ -30,7 +30,7 @@
     {
       "name": "current host code listens on 127.0.0.1 only (no shareable listener)",
       "ok": true,
-      "detail": "address=127.0.0.1 port=45623 base=http://127.0.0.1:45623"
+      "detail": "address=127.0.0.1 port=42045 base=http://127.0.0.1:42045"
     }
   ],
   "findings": [
@@ -52,12 +52,12 @@
     "listener": {
       "address": "127.0.0.1",
       "family": "IPv4",
-      "port": 45623,
-      "base": "http://127.0.0.1:45623"
+      "port": 42045,
+      "base": "http://127.0.0.1:42045"
     }
   },
-  "started_utc": "2026-11-01T22:07:37Z",
-  "finished_utc": "2026-11-01T22:07:37Z",
+  "started_utc": "2026-11-01T22:31:50Z",
+  "finished_utc": "2026-11-01T22:31:50Z",
   "failures": [],
   "forced_failure": null
 }

@@ -1,6 +1,6 @@
 # Pass diff — second from-scratch pass (R7)
 
-Generated: 2026-11-01T22:07:38Z
+Generated: 2026-11-01T22:31:51Z
 
 - Pass 2 (second) compared with pass 1 (first).
 - Seed-state digest: pass 1 `558df9edb29c8c5b8e449b53e6a68ae6e02f1259d257fabe3017d943a1b593c1` · pass 2 `558df9edb29c8c5b8e449b53e6a68ae6e02f1259d257fabe3017d943a1b593c1` (identical)

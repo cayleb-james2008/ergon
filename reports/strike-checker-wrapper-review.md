@@ -66,3 +66,17 @@ What I **cannot** read as cayleb (stated, not guessed): content of `/etc/sudoers
 `/home/cayleb/workspace/harness-build/evidence/strike/checker-verify/wrapper-review/` — 34 files + `SHA256SUMS` (`sha256sum -c` all OK). Key: `00-full-diff.txt`, `01-heredoc-strip-proof.txt`, `normalise-heredoc.py` (extracted new block), `old-normalise-heredoc.py`, `sim-pnpm.py`, `assert-normalised.py`, `mk-bad-archive.py`, `run-simulated-test.sh`, `logs/16-full-console.txt` (whole suite), `logs/10..15-*` per case, `logs/17-old-block-vs-030.txt`, `logs/20-sudoers-polkit.txt`, `logs/30-final-state.txt`, `README.md`.
 
 Fences respected: no root actions, no installs, no relay run, no modification of the reviewed artifact or its tree, no secret values, no image reads.
+
+---
+
+## Addendum 2026-11-01 17:29 ET — tarball superseded; logic re-confirmed on the current build
+
+The release tarball was replaced after this review: it is now `b60019a0f3611c83fb13a374444c46b05092df89737f803661408fd7151a0b10` (the post-MCP-fix build) instead of the `5c91f430…` build reviewed above. The reviewed new wrapper is unchanged (`75ab346e8b314c25b1da630c78ded154efa5669aff62c474afa7da2d53c01209`). I re-ran the count/modes logic against the current tarball (independent of the S4A install run):
+
+- current tarball: **104 regular members, 101×0644 + 3×0755**, `package/package.json` = `@cayleb/dsh-fleet 0.3.0` — identical count/modes class as the reviewed build, so the wrapper's logic is unaffected;
+- simulated-pnpm case (masked modes, nlink=2, dirs 0750) + reviewed block → **rc=0**, `normalise-archive: @cayleb/dsh-fleet 0.3.0 104 regular members`, independent assert **104/104 exact archive modes, 0 missing/extra, dirs 0750**;
+- negative control foreign package name → **rc=1** `normalise: archive package name is 'evil-package', not '@cayleb/dsh-fleet'`;
+- negative control member missing from installed root → **rc=1** `normalise: missing member src/core/core.js: …`;
+- the **installed (0.2.2) block** on the current 0.3.0 archive → **rc=1** `normalise: expected 82 members, got 104` (the blocker is still real; the fix is still required).
+
+Evidence: `evidence/strike/checker-verify/wrapper-review/logs/31-current-tarball-recheck.txt` and `logs/32-current-tarball-sim.txt` (manifest `SHA256SUMS` refreshed, 36 files, all verify). **Verdict unchanged: ACCEPT.**

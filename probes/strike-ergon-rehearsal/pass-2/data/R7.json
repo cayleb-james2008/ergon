@@ -45,7 +45,7 @@
     {
       "name": "final canonical state dump succeeds before teardown",
       "ok": true,
-      "detail": "exit=0 sha256=1572becb1b8baa5458c65611edb7e5aae5e0de3dd3941c8873beb809905931fa"
+      "detail": "exit=0 sha256=6f35be79869ed76df062f68691b8508be47a7d5d0a87ba63bc820c56f71984c9"
     },
     {
       "name": "state record written (company / cast / tickets / order / digests)",
@@ -76,7 +76,7 @@
   "findings": [
     {
       "name": "state advanced by the pass",
-      "detail": "seed digest 558df9edb29c8c5b8e449b53e6a68ae6e02f1259d257fabe3017d943a1b593c1 -> final digest 1572becb1b8baa5458c65611edb7e5aae5e0de3dd3941c8873beb809905931fa (the pass created real state: tickets, onboarded assistants, a acted-on board task via the fleet order)"
+      "detail": "seed digest 558df9edb29c8c5b8e449b53e6a68ae6e02f1259d257fabe3017d943a1b593c1 -> final digest 6f35be79869ed76df062f68691b8508be47a7d5d0a87ba63bc820c56f71984c9 (the pass created real state: tickets, onboarded assistants, a acted-on board task via the fleet order)"
     }
   ],
   "pending": [],
@@ -89,7 +89,7 @@
   "meta": {
     "teardownExit": 0,
     "seedDumpSha256": "558df9edb29c8c5b8e449b53e6a68ae6e02f1259d257fabe3017d943a1b593c1",
-    "finalDumpSha256": "1572becb1b8baa5458c65611edb7e5aae5e0de3dd3941c8873beb809905931fa",
+    "finalDumpSha256": "6f35be79869ed76df062f68691b8508be47a7d5d0a87ba63bc820c56f71984c9",
     "ticketIds": [],
     "orderId": null,
     "firstPass": false,
@@ -103,8 +103,8 @@
       }
     }
   },
-  "started_utc": "2026-11-01T22:07:38Z",
-  "finished_utc": "2026-11-01T22:07:38Z",
+  "started_utc": "2026-11-01T22:31:51Z",
+  "finished_utc": "2026-11-01T22:31:51Z",
   "failures": [],
   "forced_failure": null
 }
