@@ -1,0 +1,87 @@
+CAPTURE 2026-11-01T23:36:21Z / 2026-11-01 18:36:21 EST
+== BEFORE: documented cache path
+total 12
+drwxr-xr-x 1 cayleb cayleb 186 Oct 29 04:44 .
+drwxr-xr-x 1 cayleb cayleb 252 Oct 30 21:44 ..
+-rw-r--r-- 1 cayleb cayleb  32 Sep 19 20:57 remote_versions-59399.msgpack.z
+-rw-r--r-- 1 cayleb cayleb  32 Sep 18 19:21 remote_versions-8a230.msgpack.z
+-rw-r--r-- 1 cayleb cayleb  32 Sep 25 20:43 remote_versions-d5c33.msgpack.z
+
+-- du
+96	/home/cayleb/.cache/mise/http-muse
+12K	/home/cayleb/.cache/mise/http-muse
+
+-- files (names/sizes/mtimes)
+remote_versions-59399.msgpack.z	32	2026-09-19T20:57
+remote_versions-8a230.msgpack.z	32	2026-09-18T19:21
+remote_versions-d5c33.msgpack.z	32	2026-09-25T20:43
+
+== bounded re-check for any 300 MB Muse tarball (Nox: non-item unless it surfaces)
+/home/cayleb/.local/share/mise/http-tarballs/a86cc70d90c3397528ef5e15206fa3f9b28235b811bbe5ad8b861fd005a613ef/muse-bin-1.3.0-R3401.1	313800920
+(end of >100MB muse search)
+
+== STEP: REMOVE documented cache path (12 KB, re-downloadable; N4 REMOVE ruling)
+exit=0
+
+== AFTER: path absent?
+total 4
+drwxr-xr-x 1 cayleb cayleb   234 Nov  1 18:36 .
+drwxr-xr-x 1 cayleb cayleb  2476 Oct 31 18:14 ..
+drwxr-xr-x 1 cayleb cayleb     0 Oct 29 04:44 .auto_prune
+drwxr-xr-x 1 cayleb cayleb   898 Oct 25 06:48 claude
+drwxr-xr-x 1 cayleb cayleb   842 Oct 25 06:48 codex
+drwxr-xr-x 1 cayleb cayleb    42 Oct 12 10:33 downloads-cas
+drwxr-xr-x 1 cayleb cayleb   676 Oct 25 06:48 gh
+drwxr-xr-x 1 cayleb cayleb 13884 Oct 25 06:48 github
+-rw-r--r-- 1 cayleb cayleb     9 Sep 18 19:19 latest-version
+-- http-muse exists: NO
+
+== ~/.local/share/muse-os (dossier: empty; left in place)
+total 0
+drwxr-xr-x 1 cayleb cayleb   74 Oct  7 12:18 .
+drwxr-xr-x 1 cayleb cayleb 1446 Nov  1 11:24 ..
+drwxr-xr-x 1 cayleb cayleb    0 Oct  7 12:18 characters
+drwxr-xr-x 1 cayleb cayleb    0 Oct  7 12:18 logs
+
+== SURFACED 300MB MUSE TARBALL — REMOVE ON SIGHT (N4 ruling) 2026-11-01T23:36:36Z
+-- path: /home/cayleb/.local/share/mise/http-tarballs/a86cc70d90c3397528ef5e15206fa3f9b28235b811bbe5ad8b861fd005a613ef
+total 306500
+drwxr-xr-x 1 cayleb cayleb       196 Sep 18 19:49 .
+drwxr-xr-x 1 cayleb cayleb       128 Sep 18 19:21 ..
+-rw-r--r-- 1 cayleb cayleb       145 Sep 18 19:21 metadata.json
+-rwxr-xr-x 1 cayleb cayleb     33118 Sep 18 19:21 muse
+-rwxr-xr-x 1 cayleb cayleb 313800920 Sep 18 19:22 muse-bin-1.3.0-R3401.1
+-rw-r--r-- 1 cayleb cayleb       254 Sep 18 19:21 .muse-release-info.json
+-rw-r--r-- 1 cayleb cayleb        11 Sep 18 19:49 .muse-update-checked-at
+-rw-r--r-- 1 cayleb cayleb        14 Sep 18 19:22 .muse-version
+-- du
+313834462	/home/cayleb/.local/share/mise/http-tarballs/a86cc70d90c3397528ef5e15206fa3f9b28235b811bbe5ad8b861fd005a613ef
+300M	/home/cayleb/.local/share/mise/http-tarballs/a86cc70d90c3397528ef5e15206fa3f9b28235b811bbe5ad8b861fd005a613ef
+-- file identity (name/size/type)
+muse	33118	2026-09-18T19:21
+metadata.json	145	2026-09-18T19:21
+muse-bin-1.3.0-R3401.1	313800920	2026-09-18T19:22
+.muse-release-info.json	254	2026-09-18T19:21
+.muse-version	14	2026-09-18T19:22
+.muse-update-checked-at	11	2026-09-18T19:49
+/home/cayleb/.local/share/mise/http-tarballs/a86cc70d90c3397528ef5e15206fa3f9b28235b811bbe5ad8b861fd005a613ef/metadata.json:          JSON text data
+/home/cayleb/.local/share/mise/http-tarballs/a86cc70d90c3397528ef5e15206fa3f9b28235b811bbe5ad8b861fd005a613ef/muse:                   Bourne-Again shell script, ASCII text executable
+/home/cayleb/.local/share/mise/http-tarballs/a86cc70d90c3397528ef5e15206fa3f9b28235b811bbe5ad8b861fd005a613ef/muse-bin-1.3.0-R3401.1: ELF 64-bit LSB executable, x86-64, version 1 (SYSV), statically linked, BuildID[sha1]=c8d998a9c1606b1d3783d95b507213584246bcf3, stripped
+-- other entries in that hash dir:
+metadata.json
+muse
+muse-bin-1.3.0-R3401.1
+
+-- removing (re-downloadable mise http-tarball cache)
+exit=0
+-- gone? YES
+
+== any remaining muse entries in mise cache >100MB
+(end)
+
+== TOTAL freed: ~12 KB (http-muse) + 313,800,920 B (~299.3 MiB) = ~299.3 MiB
+
+== PATH references to the removed muse cache (recorded, no action)
+(muse not on PATH in this shell)
+(no ~/.local/bin/muse)
+(end)

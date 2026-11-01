@@ -1,0 +1,23 @@
+EXEC 2026-11-01T23:35:57Z / 2026-11-01 18:35:57 EST
+== STEP 1: create archive dir /home/cayleb/Work/_archive/lane6-retirement-20261101/talos-orphan-units
+exit=0
+
+== STEP 2: move the two dead unit files (data kept, reversible)
+renamed '/home/cayleb/.config/systemd/user/talos-dashboard.service' -> '/home/cayleb/Work/_archive/lane6-retirement-20261101/talos-orphan-units/talos-dashboard.service'
+renamed '/home/cayleb/.config/systemd/user/talos-facilitator.service' -> '/home/cayleb/Work/_archive/lane6-retirement-20261101/talos-orphan-units/talos-facilitator.service'
+exit=0
+
+== STEP 3: archive sha256 ===
+702794311f72eef3c49b9d4343258c942edf3d40337ee3790c7a7c9d8b905742  /home/cayleb/Work/_archive/lane6-retirement-20261101/talos-orphan-units/talos-dashboard.service
+01066b7124d47615fce53b5d50bc039896a259fcc6d31cd012314f80ffd82f9d  /home/cayleb/Work/_archive/lane6-retirement-20261101/talos-orphan-units/talos-facilitator.service
+
+== STEP 4: daemon-reload
+exit=0
+
+== STEP 5: verify units gone
+-- talos-dashboard.service: is-enabled=not-found is-active=inactive
+-- talos-facilitator.service: is-enabled=not-found is-active=inactive
+
+== STEP 6: unit files no longer in ~/.config/systemd/user
+ls: cannot access '/home/cayleb/.config/systemd/user/talos-*.service': No such file or directory
+(no talos-*.service files remain)

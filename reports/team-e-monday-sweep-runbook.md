@@ -2,6 +2,7 @@
 
 Owner: `upkeep-lead` (Team E). Backup: `lead`. Booking source: `board/BOARD.md` timed table
 ("Mon 2 Nov 07:45 — Monday loose-ends sweep"). Written 2026-10-31 18:30 ET.
+**Last re-verified 2026-11-01T23:50Z (18:50 ET) by Lane 6:** §0 GitHub cadence current (armed Tue 3 Nov 09:00 ET / 14:00Z, Lead-owned); §1-§5 commands unchanged and still valid; §7 **added** for the now-ruled N5 post-16:20 step (Nox 20261101T233413Z §2). Nothing else changed.
 **Hard deadlines:** findings file written by **08:30 ET**; chat report to `lead` by **08:45 ET**;
 the futures 09:05 guard is Team C's and this sweep must not delay it.
 
@@ -159,3 +160,43 @@ Sensor: STATUS.md at <time>; BOARD.md read at <time>.
 
 1. Findings file (08:30) → 2. Lead's batch (08:45) → 3. Team C's 09:05 guard (owner trading-lead) →
 4. Monday's outcome check 16:20 (Team C) → 5. Next hygiene pass (**Tue 3 Nov 2026 09:00 ET**, Lead-armed every-2-days read-only sweep; manual fallback retired) → 6. Next loose-ends sweep is the following Monday.
+
+---
+
+## 7. N5 — Codex extension-host stop, Monday 2 Nov POST-16:20 ET slot (RULED — executes in this slot only)
+
+**Authority:** Nox **20261101T233413Z §2** — N5 ruled and closed as a scheduled act, replacing the open dependency question (Team C's G2.5 plan established the futures desk's CDP route is its own Chromium, PID 2960519; the Codex extension-host PID 2960775 is separate and NOT a desk dependency). Method A approved earlier (Lead ruling N5 + `APPROVED.md`); owner-approved window = **Monday 2 Nov after the 16:20 ET outcome check** (the 16:00 booking carries the N5 steer; execution is after Team C's outcome check, **N5 first**).
+**Status at runbook write (2026-11-01T23:44Z / 18:44 ET, read-only):** PREPARED, **NOTHING STOPPED**. `ss -ltnp` → `127.0.0.1:9222` owned by `chromium pid=2960519`; extension-host `2960775` alive with PPID **2960519**; `APPROVED.md` present in the N5 archive dir; `openbell-tabkeeper.service` active (its log-invariant is the desk route, not touched).
+**Hard scope:** stop **ONLY** the extension-host. **Never** touch Chromium 2960519, `:9222`, `openbell-tabkeeper`, the Chromium profile, or any desk process/tab. No credential read. Nothing is stopped before the slot.
+
+### 7.1 At the slot — read-only PID re-identification FIRST (Chromium may have been restarted since 1 Nov; the script's constants are 2960519 / 2960775)
+```bash
+date; TZ=America/New_York date '+%Y-%m-%d %H:%M %Z'
+ss -ltnp | grep ':9222'
+pgrep -af 'extension-host' | grep -v pgrep
+```
+- PID pair unchanged (`chromium 2960519` owns :9222, host `2960775` PPID 2960519) → run the approved script as-is.
+- Either PID changed (Chromium restart) → copy the script, update **only** the two constants `CHROME_PID`/`HOST_PID` to the values just read, `diff` the copy, run the dry-run first, record the diff in the result file. Method A and the acceptance rules are unchanged. If there is no extension-host process at all, record that and skip the kill — do not substitute a wider kill.
+
+### 7.2 Execute (dry-run first, then apply — the script refuses `--apply` before the 16:20 ET window by its own gate)
+```bash
+cd /home/cayleb/Documents/deepseek-harness/default-workspace/board/probes/team-e-lane6/n5-codex-extension-host
+./stop-codex-extension-host.sh            # dry-run: prints window, preconditions, actions, acceptance
+./stop-codex-extension-host.sh --apply    # moves the 2 native-host manifests to the archive, TERMs the host only
+```
+
+### 7.3 Acceptance (Nox's conditions — read-only, quote each in the result file)
+```bash
+ss -ltnp | grep ':9222'                    # MUST still show chromium (same PID); if the extension-host respawns as a Chromium child, note its PID and LEAVE it — no broader kill
+pgrep -af 'extension-host' | grep -v pgrep # expect none (or the noted respawn PID, left alone)
+journalctl --user -u openbell-live.service -n 20 --no-pager | tail -5
+                                           # last feed line must remain the "no trader.tradovate.com tab" class;
+                                           # must NOT become "no Chromium on CDP port 9222"
+cat /home/cayleb/Work/_archive/lane6-retirement-20261101/codex-extension-host/N5-RESULT.txt
+```
+
+### 7.4 File the execution evidence in the slot (the row closes on this, not before)
+Write `board/reports/team-e-n5-result-20261102.md`: timestamp; PIDs before/after; the two manifests moved + sha256 lines; the `ss :9222` read-back; the quoted `openbell-live` journal line; any respawn note; the script's own output. Then report to `lead`. **Do not mark N5 closed until those read-backs are in the file.**
+
+### 7.5 Reversal
+Move the two manifests back from the archive dir to their original `NativeMessagingHosts/` dirs, then reload the browser so the extension reconnects. Reversal line is recorded in `N5-RESULT.txt`. The stop touches nothing else, so no other reversal exists.

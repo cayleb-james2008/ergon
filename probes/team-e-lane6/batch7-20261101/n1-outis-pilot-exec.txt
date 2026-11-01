@@ -1,0 +1,18 @@
+EXEC 2026-11-01T23:35:10Z / 2026-11-01 18:35:10 EST
+== STEP 1: systemctl --user stop outis-mesh.service
+exit=0
+-- is-active: failed
+-- port 8788: 0 listener(s)
+-- outis-pilot procs still alive: 3
+
+== STEP 2: systemctl --user stop outis-control.service
+exit=0
+-- is-active: inactive
+-- port 8787: 0 listener(s)
+-- outis-pilot procs still alive: 2
+
+== STEP 3: systemctl --user disable outis-mesh.service outis-control.service
+Removed '/home/cayleb/.config/systemd/user/default.target.wants/outis-mesh.service'.
+Removed '/home/cayleb/.config/systemd/user/default.target.wants/outis-control.service'.
+exit=0
+-- is-enabled after: disabled disabled 

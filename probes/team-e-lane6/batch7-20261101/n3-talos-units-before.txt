@@ -1,0 +1,83 @@
+CAPTURE 2026-11-01T23:35:35Z / 2026-11-01 18:35:35 EST
+== unit files + sha256 (unit FILES only, no wallet material)
+702794311f72eef3c49b9d4343258c942edf3d40337ee3790c7a7c9d8b905742  /home/cayleb/.config/systemd/user/talos-dashboard.service
+01066b7124d47615fce53b5d50bc039896a259fcc6d31cd012314f80ffd82f9d  /home/cayleb/.config/systemd/user/talos-facilitator.service
+
+== ~/.talos manifest (names/sizes/mtimes ONLY — contents never read)
+soul.md	692	2026-09-11T18:42:03.9383191470
+workspace/analysis/market-outlook.md	774	2026-09-12T20:19:22.6892855380
+workspace/artifacts/ai-agent-economics-market-research.md	3730	2026-09-12T14:20:54.3377857570
+workspace/artifacts/market_analysis.md	1306	2026-09-12T08:54:23.4519950830
+workspace/artifacts/productivity-suite/README.md	456	2026-09-12T16:01:27.5301846720
+workspace/artifacts/revenue-plan-2025-06-21.md	1230	2026-09-12T10:31:37.4716598460
+workspace/artifacts/service-offering.md	833	2026-09-12T09:30:48.9826558430
+workspace/artifacts/services.md	428	2026-09-12T10:54:42.0149970480
+workspace/artifacts/services/web-analysis.md	593	2026-09-12T11:30:48.7496111020
+workspace/artifacts/talos-services.md	736	2026-09-12T14:21:37.2678061260
+workspace/briefings/ai-agent-economics-briefing.md	1270	2026-09-12T11:27:33.5516539610
+workspace/content/ai-economics-2025.md	2634	2026-09-12T17:22:04.8298376910
+workspace/hello.txt	3	2026-09-22T18:31:43.5772187190
+workspace/notes/budget.md	590	2026-09-12T10:19:46.3923194000
+workspace/notes/budget-plan.md	343	2026-09-12T17:33:57.0896300730
+workspace/notes/multi.md	5	2026-09-22T18:31:23.7917907990
+workspace/notes/plan.md	796	2026-09-12T13:20:24.1577462940
+workspace/notes/revenue-strategy.md	774	2026-09-12T18:08:09.1162193470
+workspace/notes/services.md	546	2026-09-12T09:01:37.7732467000
+workspace/notes/strategy.md	743	2026-09-12T08:59:57.3192329080
+workspace/notes/talos-revenue-plan.md	1094	2026-09-12T16:42:14.0231741950
+workspace/p2_exec_allowed.txt	7	2026-09-22T18:31:43.2782534340
+workspace/p2_probe.txt	8	2026-09-22T18:31:43.2848005010
+workspace/p2_round2_allowed.txt	9	2026-09-11T23:19:47.4335145760
+workspace/plan/revenue.md	398	2026-09-12T15:41:30.7850840170
+workspace/plan/revenue-plan-final.md	3	2026-09-13T04:07:50.1623869540
+workspace/plan/revenue-plan-grounded.md	50	2026-09-13T06:59:14.5499240490
+workspace/plan/revenue_plan.md	1195	2026-09-12T10:08:10.8887955560
+workspace/plan/revenue-strategy.md	1775	2026-09-12T13:16:10.1770317820
+workspace/plan/revenue_strategy.md	841	2026-09-12T14:45:48.2018295540
+workspace/products/5-day-productivity-plan.md	953	2026-09-12T17:39:29.7778883670
+workspace/products/csv2json.py	934	2026-09-12T19:01:22.1081039180
+workspace/products/freelance-contract-template.md	1205	2026-09-12T19:31:57.2760461230
+workspace/products/market-briefing-template.md	657	2026-09-17T18:52:37.3255638360
+workspace/promo/ai-agent-economics-pitch.md	956	2026-09-12T11:25:31.5555451380
+workspace/README.md	343	2026-09-12T14:39:16.2790329380
+workspace/reports/market-insight-2025.md	1166	2026-09-12T22:12:20.0533417850
+workspace/reports/market-insight-2026-09-13.md	1293	2026-09-13T00:10:49.1021240310
+workspace/reports/market-insight-2026.md	594	2026-09-17T18:50:45.6685984220
+workspace/reports/service-offer-2026-09-13.md	1808	2026-09-12T23:44:24.2834790850
+workspace/revenue-plan-2025-06-21.md	557	2026-09-12T11:12:43.4526299090
+workspace/revenue_plan.md	977	2026-09-12T19:13:33.0999908410
+workspace/revenue_strategy.md	1005	2026-09-12T19:32:54.8343175690
+workspace/revenue-strategy.md	1392	2026-09-12T08:46:08.8779527000
+workspace/scraper.py	762	2026-09-12T19:14:23.2560828000
+workspace/services/offer.md	705	2026-09-17T18:58:54.9652571300
+workspace/services/text-analysis.sh	589	2026-09-12T09:04:11.3130099980
+workspace/talos-revenue-plan.md	984	2026-09-12T16:55:36.5959714440
+workspace/tools/organize_files.py	2054	2026-09-12T20:13:54.2816527840
+workspace/tools/talos_fmt.py	1059	2026-09-12T09:53:54.3179400050
+
+== ~/.talos-wallet manifest (names/sizes/mtimes ONLY — wallet material NEVER read/copied/hashed)
+backups/wallet.json.20260911T011503Z.bak	184	2026-09-10T18:59:46.7445251870
+backups/wallet.project-dir-copy-20260910.json	184	2026-09-10T18:59:46.7445251870
+float.json	332	2026-09-12T09:11:31.2877870470
+relayer.json	254	2026-09-12T08:49:29.1259887480
+wallet.json	184	2026-09-10T18:59:46.7445251870
+
+== dir mtimes
+/home/cayleb/.talos | 2026-09-11 22:31:16.055298235 -0400
+/home/cayleb/.talos-wallet | 2026-09-12 09:11:31.287787047 -0400
+
+== symlink/timer referencing talos units anywhere in user units
+/home/cayleb/.config/systemd/user/talos-dashboard.service
+/home/cayleb/.config/systemd/user/talos-dashboard.service.d/x402-facilitator.conf
+/home/cayleb/.config/systemd/user/talos-facilitator.service
+/home/cayleb/.config/systemd/user/talos-runtime.service.d/90-bounded-operation.conf
+/home/cayleb/.config/systemd/user/talos-runtime.service.d/91-workspace-boundary.conf
+/home/cayleb/.config/systemd/user/olympus-pump-primary.service
+/home/cayleb/.config/systemd/user/kairos-pump-followup.service
+/home/cayleb/.config/systemd/user/kairos-forward-evaluation.service
+/home/cayleb/.config/systemd/user/outisz-watchdog.service
+/home/cayleb/.config/systemd/user/outisz-freshness.service
+/home/cayleb/.config/systemd/user/outisz-state-maintenance.service
+/home/cayleb/.config/systemd/user/lane-sensor.service
+/home/cayleb/.config/systemd/user/memedesk-refresh.service.d/shadow-fence.conf
+/home/cayleb/.config/systemd/user/memedesk-sync.service.d/shadow-fence.conf

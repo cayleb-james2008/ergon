@@ -1,0 +1,10 @@
+CAPTURE 2026-11-01T23:40:13Z
+== THE 7 BASELINE-HELD PRs — current state (REST)
+[sophos] #11 state=closed draft=true merged=false merged_at=null closed_at=2026-11-01T00:18:53Z head_sha=dba3303901 title=Draft: compose Prime Agent hardening on PR9 runtime baseline
+[talos-workspace] #23 state=closed draft=true merged=false merged_at=null closed_at=2026-11-01T00:18:44Z head_sha=27a6972a1f title=Propose review evidence for the order-bound transaction auth
+[daedalus] #1 state=closed draft=true merged=false merged_at=null closed_at=2026-11-01T00:18:49Z head_sha=10ae80d081 title=Daedalus v0.2: git-native ratchet architecture for recursive
+[kairos-cloud] #35 state=closed draft=true merged=false merged_at=null closed_at=2026-11-01T00:18:24Z head_sha=34af5d3811 title=Threat model and historical evidence package for order-bound
+[kairos-cloud] #10 state=closed draft=true merged=false merged_at=null closed_at=2026-11-01T00:18:29Z head_sha=4287f8ad0c title=Persist recognized ambiguous submissions before reconciliati
+[kairos-cloud] #7 state=closed draft=true merged=false merged_at=null closed_at=2026-11-01T00:18:33Z head_sha=ecdc3792ad title=Independent verification review for PR #6 (v3, head 80b055e)
+[kairos-cloud] #6 state=closed draft=true merged=false merged_at=null closed_at=2026-11-01T00:18:38Z head_sha=c08575b8d7 title=Fail closed on an entry quote we cannot date, depth or corro
+0

@@ -1,0 +1,23 @@
+CAPTURE 2026-11-01T23:35:05Z / 2026-11-01 18:35:05 EST
+== systemctl --user is-enabled/is-active
+enabled
+enabled
+active
+active
+
+== ss listeners 8787/8788
+LISTEN 0      511                                 127.0.0.1:8788       0.0.0.0:*    users:(("node-MainThread",pid=1839,fd=27))
+LISTEN 0      511                                 127.0.0.1:8787       0.0.0.0:*    users:(("node-MainThread",pid=1488,fd=30))
+
+== processes outis-pilot
+1488 /usr/bin/node /home/cayleb/.local/share/outis-pilot/releases/099ce52bf1e08aa17ce23425c9c79d269faaafc8/support/server/server.mjs /home/cayleb/.local/share/outis-pilot/control-config.json
+1489 /home/cayleb/.local/share/mise/installs/node/26.7.0/bin/node /home/cayleb/.local/share/outis-pilot/mesh-launch-20261013/start-meshcentral.mjs /home/cayleb/.local/share/outis-pilot /home/cayleb/.local/share/outis-pilot/mesh-state outis-desktop.tail1b30fd.ts.net
+1764 /home/cayleb/.local/share/mise/installs/node/26.7.0/bin/node /home/cayleb/.local/share/outis-pilot/node_modules/meshcentral/meshcentral.js --datapath /home/cayleb/.local/share/outis-pilot/mesh-state/data --configfile /home/cayleb/.local/share/outis-pilot/mesh-state/data/config.json --npmpath /usr/bin/false
+1839 /home/cayleb/.local/share/mise/installs/node/26.7.0/bin/node --disable-proto=delete /home/cayleb/.local/share/outis-pilot/node_modules/meshcentral/meshcentral.js --datapath /home/cayleb/.local/share/outis-pilot/mesh-state/data --configfile /home/cayleb/.local/share/outis-pilot/mesh-state/data/config.json --npmpath /usr/bin/false --launch 1764
+533594 bash -c export XDG_RUNTIME_DIR=/run/user/$(id -u); cd /home/cayleb/Documents/deepseek-harness/default-workspace/board; mkdir -p probes/team-e-lane6/batch7-20261101; L=probes/team-e-lane6/batch7-20261101/n1-outis-pilot-before.txt; { echo "CAPTURE $(date -u +%Y-%m-%dT%H:%M:%SZ) / $(TZ=America/New_York date '+%Y-%m-%d %H:%M:%S %Z')"; echo "== systemctl --user is-enabled/is-active"; systemctl --user is-enabled outis-mesh.service outis-control.service; systemctl --user is-active outis-mesh.service outis-control.service; echo; echo "== ss listeners 8787/8788"; ss -tlnp 2>/dev/null | grep -E ':8787|:8788' || echo "(none)"; echo; echo "== processes outis-pilot"; pgrep -af 'outis-pilot' || echo "(none)"; echo; echo "== data dir size"; du -sh ~/.local/share/outis-pilot 2>/dev/null; echo; echo "== data dir mtime"; stat -c '%y %n' ~/.local/share/outis-pilot; } > "$L" 2>&1; cat "$L"
+
+== data dir size
+1.4G	/home/cayleb/.local/share/outis-pilot
+
+== data dir mtime
+2026-10-23 18:35:16.476842617 -0400 /home/cayleb/.local/share/outis-pilot

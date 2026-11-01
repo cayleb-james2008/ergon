@@ -1,0 +1,65 @@
+CAPTURE 2026-11-01T23:37:21Z / 2026-11-01 18:37:21 EST
+== N2 herdr package
+herdr 0.9.1-2
+Name            : herdr
+Version         : 0.9.1-2
+Description     : Herdr terminal workspace manager for AI coding agents
+Installed Size  : 20.73 MiB
+Install Date    : Mon 19 Oct 2026 12:05:59 PM EDT
+-- /usr/bin/herdr
+-rwxr-xr-x 1 root root 21721208 Oct  9 11:37 /usr/bin/herdr
+bc20ad9255c358ea0cdde1eca854ddacb16b385f41ab3b012f40b88960bde83e  /usr/bin/herdr
+-- config
+-rw-r--r-- 1 cayleb cayleb 2771 Aug 25 07:04 /home/cayleb/.config/herdr/config.toml
+d618349e3a17b84a530e5c4b41429aae2e98d6fd06601cd59f0386965bc95ca4  /home/cayleb/.config/herdr/config.toml
+-- processes
+536519 bash -c cd /home/cayleb/Documents/deepseek-harness/default-workspace/board; L=probes/team-e-lane6/batch7-20261101/n2-n6-state-before.txt; { echo "CAPTURE $(date -u +%Y-%m-%dT%H:%M:%SZ) / $(TZ=America/New_York date '+%Y-%m-%d %H:%M:%S %Z')"; echo "== N2 herdr package"; pacman -Q herdr 2>&1; pacman -Qi herdr 2>&1 | grep -E '^(Name|Version|Installed Size|Install Date|Description)' ; echo "-- /usr/bin/herdr"; ls -la /usr/bin/herdr 2>&1; sha256sum /usr/bin/herdr 2>&1; echo "-- config"; ls -la ~/.config/herdr/config.toml 2>&1; sha256sum ~/.config/herdr/config.toml 2>&1; echo "-- processes"; pgrep -af herdr || echo "(0 processes)"; echo "-- units"; systemctl --user list-units --all --no-pager 2>/dev/null | grep -i herdr || echo "(no user units)"; systemctl list-units --all --no-pager 2>/dev/null | grep -i herdr || echo "(no system units)"; echo; echo "== N6 /dev/kvm"; ls -l /dev/kvm; stat -c 'mode=%a owner=%U group=%G gid=%g' /dev/kvm; echo "-- group kvm"; getent group kvm; echo "-- cayleb groups"; id cayleb; echo "-- existing kvm udev rules"; grep -rn 'kvm' /etc/udev/rules.d/ /usr/lib/udev/rules.d/ 2>/dev/null | grep -vE '^Binary' | head -10; echo "-- udev rules dir contents"; ls /etc/udev/rules.d/ 2>/dev/null; echo; echo "== virtualisation"; systemd-detect-virt 2>/dev/null; grep -c -E 'svm|vmx' /proc/cpuinfo; } > "$L" 2>&1; cat "$L"
+-- units
+  dsh-subprocess-266358-66f668d1b15e.scope                                                                                                                                                     loaded    active   running   [systemd-run] /home/cayleb/.local/opt/deepseek-harness-official/node_modules/.pnpm/electron@44.7.0_supports-color@9.4.0/node_modules/electron/dist/electron /home/cayleb/.local/opt/deepseek-harness-official/packages/subprocess/subprocess-local/lib/runner.js -- bash -c "cd /home/cayleb/Documents/deepseek-harness/default-workspace/board; L=probes/team-e-lane6/batch7-20261101/n2-n6-state-before.txt; { echo \"CAPTURE \$(date -u +%Y-%m-%dT%H:%M:%SZ) / \$(TZ=America/New_York date '+%Y-%m-%d %H:%M:%S %Z')\"; echo \"== N2 herdr package\"; pacman -Q herdr 2>&1; pacman -Qi herdr 2>&1 | grep -E '^(Name|Version|Installed Size|Install Date|Description)' ; echo \"-- /usr/bin/herdr\"; ls -la /usr/bin/herdr 2>&1; sha256sum /usr/bin/herdr 2>&1; echo \"-- config\"; ls -la ~/.config/herdr/config.toml 2>&1; sha256sum ~/.config/herdr/config.toml 2>&1; echo \"-- processes\"; pgrep -af herdr || echo \"(0 processes)\"; echo \"-- units\"; systemctl --user list-units --all --no-pager 2>/dev/null | grep -i herdr || echo \"(no user units)\"; systemctl list-units --all --no-pager 2>/dev/null | grep -i herdr || echo \"(no system units)\"; echo; echo \"== N6 /dev/kvm\"; ls -l /dev/kvm; stat -c 'mode=%a owner=%U group=%G gid=%g' /dev/kvm; echo \"-- group kvm\"; getent group kvm; echo \"-- cayleb groups\"; id cayleb; echo \"-- existing kvm udev rules\"; grep -rn 'kvm' /etc/udev/rules.d/ /usr/lib/udev/rules.d/ 2>/dev/null | grep -vE '^Binary' | head -10; echo \"-- udev rules dir contents\"; ls /etc/udev/rules.d/ 2>/dev/null; echo; echo \"== virtualisation\"; systemd-detect-virt 2>/dev/null; grep -c -E 'svm|vmx' /proc/cpuinfo; } > \"\$L\" 2>&1; cat \"\$L\""
+(no system units)
+
+== N6 /dev/kvm
+crw-rw-rw- 1 root kvm 10, 232 Nov  1 12:40 /dev/kvm
+mode=666 owner=root group=kvm gid=990
+-- group kvm
+kvm:x:990:qemu
+-- cayleb groups
+uid=1000(cayleb) gid=1000(cayleb) groups=1000(cayleb),998(wheel)
+-- existing kvm udev rules
+/usr/lib/udev/rules.d/50-udev-default.rules:35:SUBSYSTEM=="ptp", ATTR{clock_name}=="KVM virtual PTP", SYMLINK+="ptp_kvm"
+/usr/lib/udev/rules.d/50-udev-default.rules:116:KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"
+/usr/lib/udev/rules.d/50-udev-default.rules:121:KERNEL=="vhost-vsock", GROUP="kvm", MODE="0666", OPTIONS+="static_node=vhost-vsock"
+/usr/lib/udev/rules.d/50-udev-default.rules:123:KERNEL=="vhost-net", GROUP="kvm", MODE="0666", OPTIONS+="static_node=vhost-net"
+/usr/lib/udev/rules.d/50-udev-default.rules:125:KERNEL=="udmabuf", GROUP="kvm"
+-- udev rules dir contents
+61-gamemode-amdgpu.rules
+
+== virtualisation
+none
+32
+
+== herdr full pacman info (deps / required-by)
+Architecture    : x86_64
+Depends On      : gcc-libs  glibc
+Optional Deps   : None
+Required By     : None
+Conflicts With  : omarchy-herdr
+Replaces        : omarchy-herdr
+Packager        : Omarchy <pkgs@omarchy.org>
+Build Date      : Fri 09 Oct 2026 11:37:10 AM EDT
+
+== pacman removal SIMULATION (no act)
+error: invalid option: '--nosave' and '--print' may not be used together
+exit=1
+
+== pacman removal SIMULATION -Rs --print (no act; -n omitted because --print rejects it)
+herdr-0.9.1-2
+exit=0
+
+== does anything reference herdr? (bounded grep, read-only)
+-- keybinds in ~/.config/hypr:
+(end herdr refs)
+
+== path binaries/symlinks named herdr
+/usr/bin/herdr
+(none in ~/.local/bin)

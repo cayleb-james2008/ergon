@@ -1,0 +1,41 @@
+CAPTURE 2026-11-01T23:44:11Z / 2026-11-01 18:44:11 EST
+== :9222 owner
+LISTEN 0      10                                  127.0.0.1:9222       0.0.0.0:*    users:(("chromium",pid=2960519,fd=96))
+
+== chromium procs
+167436 /usr/lib/chromium/chromium --type=renderer --crashpad-handler-pid=2960522 --enable-crash-reporter=,Arch Linux --change-stack-guard-on-fork=enable --remot
+224379 /usr/lib/chromium/chromium --type=renderer --crashpad-handler-pid=2960522 --enable-crash-reporter=,Arch Linux --extension-process --change-stack-guard-on
+244481 /usr/lib/chromium/chromium --type=renderer --crashpad-handler-pid=2960522 --enable-crash-reporter=,Arch Linux --change-stack-guard-on-fork=enable --remot
+285375 /usr/lib/chromium/chromium --type=renderer --crashpad-handler-pid=2960522 --enable-crash-reporter=,Arch Linux --change-stack-guard-on-fork=enable --remot
+300014 /usr/lib/chromium/chromium --type=renderer --crashpad-handler-pid=2960522 --enable-crash-reporter=,Arch Linux --change-stack-guard-on-fork=enable --remot
+
+== extension-host proc
+552367 bash -c cd /home/cayleb/Documents/deepseek-harness/default-workspace/board; L=probes/team-e-lane6/batch7-20261101/n5-state-now.txt; { echo "CAPTURE $(dat
+2960775 /home/cayleb/.codex/plugins/cache/openai-bundled/chrome/latest/extension-host/linux/x64/extension-host chrome-extension://hehggadaopoacecdllhhajmbjkdcma
+
+== host pid 2960775 state
+2960775 2960519 Sl   /home/cayleb/.codex/plugins/cache/openai-bundled/chrome/latest/extension-host/linux/x64/extension-host chrome-extension://hehggadaopoacecdl
+
+== APPROVED marker
+total 4
+drwxr-xr-x 1 cayleb cayleb   22 Nov  1 10:37 .
+drwxr-xr-x 1 cayleb cayleb  350 Nov  1 18:35 ..
+-rw-r--r-- 1 cayleb cayleb 1334 Nov  1 10:37 APPROVED.md
+
+== openbell desk units
+  dsh-subprocess-266358-6e8bcb305733.scope                                                                              
+  money-desk-scoreboard.service                                                                                         
+  openbell-arena.service                                                                                                
+  openbell-dash.service                                                                                                 
+  openbell-forward-archive.service                                                                                      
+  openbell-kalshi-poll.service                                                                                          
+  openbell-kalshi-ref.service                                                                                           
+  openbell-kalshi-shadow.service                                                                                        
+  openbell-live.service                                                                                                 
+  openbell-tabkeeper.service                                                                                            
+  openbell-forward-archive.timer                                                                                        
+
+== openbell-live last 3 journal lines
+Nov 01 13:26:20 outis-desktop python3[1484]: 2026-11-01 13:26:20,162 openbell.feed WARNING feed attach/read error: RuntimeError('no trader.tradovate.com tab'); retry in 30s
+Nov 01 13:59:04 outis-desktop python3[1484]: 2026-11-01 13:59:04,727 openbell.engine INFO session day 2026-11-01: pnl 0.00 trades 0
+Nov 01 18:01:00 outis-desktop python3[1484]: 2026-11-01 18:01:00,109 openbell.engine INFO session day 2026-11-02: pnl 0.00 trades 0

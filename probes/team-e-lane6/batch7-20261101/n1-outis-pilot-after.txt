@@ -1,0 +1,38 @@
+AFTER 2026-11-01T23:35:20Z / 2026-11-01 18:35:20 EST
+== systemctl --user status (units)
+× outis-mesh.service - Outis remote management pilot
+     Loaded: loaded (/home/cayleb/.config/systemd/user/outis-mesh.service; disabled; preset: enabled)
+     Active: failed (Result: exit-code) since Sun 2026-11-01 18:35:10 EST; 10s ago
+Nov 01 18:35:10 outis-desktop systemd[1387]: outis-mesh.service: Main process exited, code=exited, status=1/FAILURE
+Nov 01 18:35:10 outis-desktop systemd[1387]: outis-mesh.service: Failed with result 'exit-code'.
+Nov 01 18:35:10 outis-desktop systemd[1387]: outis-mesh.service: Consumed 17.392s CPU time over 4d 3h 55min 1.141s wall clock time, 453.4M memory peak, 183.3M memory swap peak.
+○ outis-control.service - Outis reviewed support and budget control
+     Loaded: loaded (/home/cayleb/.config/systemd/user/outis-control.service; disabled; preset: enabled)
+
+== is-enabled / is-active
+disabled
+disabled
+failed
+inactive
+
+== listeners 8787/8788
+(none - both ports closed)
+
+== outis-pilot processes (exact paths; excluding this shell)
+(none)
+
+== data KEPT: size + top entries
+1.4G	/home/cayleb/.local/share/outis-pilot
+ai-state
+anthropic-proxy.json
+approved-test-destinations.json
+connector-jobs.sqlite
+control
+control-config-before-149.json
+control-config.json
+control-connectors-before-099ce52b
+file count: 8299
+
+== CLEANUP 2026-11-01T23:35:24Z: reset-failed (cosmetic; stop-induced exit 1)
+exit=0
+FINAL: is-active=inactive inactive  is-enabled=disabled disabled 

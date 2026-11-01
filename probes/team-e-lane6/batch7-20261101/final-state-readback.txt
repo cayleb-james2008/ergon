@@ -1,0 +1,25 @@
+FINAL READ-BACK 2026-11-01T23:50:33Z / 2026-11-01 18:50:33 EST
+== N1
+is-active: inactive inactive 
+is-enabled: disabled disabled 
+listeners 8787/8788: 0
+outis-pilot procs: 0
+data: 1.4G / 8299 files
+== N3
+talos unit files present: 0
+is-enabled: not-found not-found 
+archive: talos-dashboard.service talos-facilitator.service 
+~/.talos files: 50  ~/.talos-wallet files: 5
+wallet dir mtime: 2026-09-12 09:11:31.287787047 -0400
+== N4
+http-muse exists: NO
+muse >100M in caches: 0
+== N2/N6 untouched (no root run)
+herdr: herdr 0.9.1-2
+kvm: crw-rw-rw- root kvm  cayleb groups: cayleb wheel
+
+== deliverables
+-rw------- 1 cayleb cayleb 14788 Nov  1 18:48 reports/status-digest.md
+-rw------- 1 cayleb cayleb 17560 Nov  1 18:50 reports/team-e-batch7.md
+-rw------- 1 cayleb cayleb 14968 Nov  1 18:47 reports/team-e-monday-sweep-runbook.md
+-rw------- 1 cayleb cayleb  7657 Nov  1 18:43 reports/team-e-owner-relay-n2-n6.md

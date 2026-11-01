@@ -1,0 +1,13 @@
+AFTER 2026-11-01T23:36:09Z / 2026-11-01 18:36:09 EST
+== UNTOUCHED PROOF: ~/.talos manifest diff (names/sizes/mtimes; no content read)
+IDENTICAL — 50 files, no drift
+
+== UNTOUCHED PROOF: ~/.talos-wallet manifest diff (names/sizes/mtimes; wallet material never read)
+IDENTICAL — 5 files, no drift
+
+== dir mtimes after
+/home/cayleb/.talos | 2026-09-11 22:31:16.055298235 -0400
+/home/cayleb/.talos-wallet | 2026-09-12 09:11:31.287787047 -0400
+
+== no talos process running
+(none)
