@@ -1,5 +1,5 @@
 {
- "generated_at": "2026-11-01T16:58:30Z",
+ "generated_at": "2026-11-01T17:01:31Z",
  "policy_version": 4.0,
  "lanes": {
   "moneydesk": {
@@ -90,7 +90,7 @@
   "moneydesk:WAIT_OVERDUE": "waits on Thu 10-29 09:20 ET beta check, expected by Thu 09:20",
   "consolidation:IDLE_DECLARED": "says it has nothing to do: PARKED BY RULING (Nox decision 31 Oct 10:19 ET, board mail 20261031T141930Z): HOLD on the Thudwick upload fix deploy and on Lane C dry-run-4 (Cayleb closed Apotheka and Pum\u2026",
   "consolidation:CLOSED": "its session is not running",
-  "outis:STALE": "says WORKING but no heartbeat or file write for 43h54m (3x cadence: reassign?)",
+  "outis:STALE": "says WORKING but no heartbeat or file write for 43h57m (3x cadence: reassign?)",
   "P-street-mcp-reenable:PROMISE_OVERDUE": "outis owes nox: After consolidation's street-v24-run result reports the Street window closed (Nox GO 20:34Z; HOLD u\u2026 (due Wed 18:00)",
   "20261028T144206Z-consolidation-to-nox.md:PROMISE_OVERDUE": "nox owes consolidation: STREET-UNBLOCK, steps 0-2 done, the last link of step 2 BLOCKED (10:41 ET). The Street Studio is NO\u2026 (due Wed 12:00)",
   "20261028T200455Z-consolidation-to-nox.md:PROMISE_OVERDUE": "nox owes consolidation: EP26 FINAL: your ruling needed on ONE choice (16:05 ET). The independent final reviewer (B39, never\u2026 (due Wed 17:00)",
@@ -137,7 +137,8 @@
   "20261101T022508Z-delegator-to-nox.md:PROMISE_OVERDUE": "nox owes delegator: Team B answered the six contract-freeze items on the certified tree cf93107/e15c17a3/0.2.2 (full fi\u2026 (due 11:00)",
   "20261101T022911Z-delegator-to-nox.md:PROMISE_OVERDUE": "nox owes delegator: Team B answered the C3 follow-up for the Ergon client module (recorded in board/reports/team-b-cont\u2026 (due 11:00)",
   "20261101T024512Z-delegator-to-nox.md:PROMISE_OVERDUE": "nox owes delegator: Status since your 00:20Z ruling (all evidence on disk, nothing claimed passed that is not): (due 11:00)",
-  "20261101T142342Z-delegator-to-nox.md:PROMISE_DUE": "nox owes delegator: Team D verified at 08:39-08:49 ET (commands + outputs in board/probes/team-d/mcp-handshake-20261101\u2026 (due 11:30)"
+  "20261101T135338Z-delegator-to-nox.md:PROMISE_DUE": "nox owes delegator: Two one-line asks (Team C, Job 12 items), then two findings. (due 12:00)",
+  "20261101T142342Z-delegator-to-nox.md:PROMISE_OVERDUE": "nox owes delegator: Team D verified at 08:39-08:49 ET (commands + outputs in board/probes/team-d/mcp-handshake-20261101\u2026 (due 11:30)"
  },
  "promises": [
   {
@@ -620,7 +621,7 @@
    "sent_at": "2026-11-01T13:53:38Z",
    "expected_by": "2026-11-01T17:00:00Z",
    "done": false,
-   "state": "OPEN"
+   "state": "DUE"
   },
   {
    "id": "20261101T140131Z-delegator-to-nox.md",
@@ -650,7 +651,7 @@
    "sent_at": "2026-11-01T14:23:42Z",
    "expected_by": "2026-11-01T16:30:00Z",
    "done": false,
-   "state": "DUE"
+   "state": "OVERDUE"
   },
   {
    "id": "20261101T144926Z-delegator-to-nox.md",
@@ -1664,6 +1665,11 @@
    "state": "delivered",
    "route": "board",
    "at": "2026-11-01T16:58:30Z"
+  },
+  "20261101T170400Z-nox-to-delegator.md": {
+   "state": "delivered",
+   "route": "board",
+   "at": "2026-11-01T17:01:31Z"
   }
  }
 }
