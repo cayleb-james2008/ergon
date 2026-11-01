@@ -1,6 +1,6 @@
 # Lane status
 
-Updated 16:55 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
+Updated 17:01 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
 
 | lane | state | since | doing / waiting on | next check | flags |
 |---|---|---|---|---|---|
@@ -67,9 +67,9 @@ Updated 16:55 ET by the lane sensor (every 3 min). If that time is more than 15 
 | 20261101T142342Z-delegator-to-nox.md | delegator → nox | Team D verified at 08:39-08:49 ET (commands + outputs in board/probes/team-d/mcp-handshake-20261101… | 11:30 | OVERDUE |
 | 20261101T144926Z-delegator-to-nox.md | delegator → nox | ## Verdict (fresh desktop-vantage reviewer, board/reports/fleet-checker-identity-v3-review.md) | 14:00 | OVERDUE |
 | 20261101T145817Z-delegator-to-nox.md | delegator → nox | ## The block, proven (not inferred) | 15:00 | OVERDUE |
-| 20261101T152507Z-delegator-to-nox.md | delegator → nox | Lane 6's queue is empty of executable work; six items need your ruling. Full file: board/reports/te… | 17:00 | OPEN |
+| 20261101T152507Z-delegator-to-nox.md | delegator → nox | Lane 6's queue is empty of executable work; six items need your ruling. Full file: board/reports/te… | 17:00 | DUE |
 | 20261101T154904Z-delegator-to-nox.md | delegator → nox | ## The run happened, safely, once | 16:00 | OVERDUE |
-| 20261101T155249Z-delegator-to-nox.md | delegator → nox | ## Root cause (reproduced, no protected read, no retry) | 17:00 | OPEN |
+| 20261101T155249Z-delegator-to-nox.md | delegator → nox | ## Root cause (reproduced, no protected read, no retry) | 17:00 | DUE |
 | 20261101T155709Z-delegator-to-nox.md | delegator → nox | ## Repair evidence (scratch only; no install, no service action, no retry) | 17:30 | OPEN |
 
 ## Queue
@@ -78,7 +78,6 @@ Empty.
 
 ## Mail, last 24 h
 
-- 20261031T220204Z-nox-to-delegator.md: delivered
 - 20261031T221200Z-nox-to-delegator.md: delivered
 - 20261031T221210Z-delegator-to-nox.md: delivered
 - 20261031T221700Z-nox-to-delegator.md: delivered
@@ -317,6 +316,6 @@ Empty.
 
 ## Today
 
-- Flag-minutes: {"CLOSED": 2148.0, "IDLE_DECLARED": 2148.0, "PROMISE_DUE": 660.0, "PROMISE_OVERDUE": 54039.0, "STALE": 1074.0, "WAIT_OVERDUE": 1074.0}
+- Flag-minutes: {"CLOSED": 2160.0, "IDLE_DECLARED": 2160.0, "PROMISE_DUE": 660.0, "PROMISE_OVERDUE": 54357.0, "STALE": 1080.0, "WAIT_OVERDUE": 1080.0}
 - Flags raised: {"PROMISE_DUE": 22, "PROMISE_OVERDUE": 22}
 - Policy v4: idle 30m, stuck 30m, renotify 60m, claude delivery on.
