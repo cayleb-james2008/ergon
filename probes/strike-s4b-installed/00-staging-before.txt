@@ -1,0 +1,41 @@
+=== staging state before restoring the conventional sidecar 2026-11-01T18:08:48-05:00 ===
+total 836
+drwxr-xr-x 1 cayleb cayleb    440 Nov  1 17:26 .
+drwxr-xr-x 1 root   root      642 Oct 31 07:44 ..
+-rw-r--r-- 1 cayleb cayleb 163847 Oct 31 09:41 cayleb-dsh-fleet-0.2.0.tgz
+-rw-r--r-- 1 cayleb cayleb     93 Oct 31 09:41 cayleb-dsh-fleet-0.2.0.tgz.sha256
+-rw-r--r-- 1 cayleb cayleb 164714 Oct 31 10:47 cayleb-dsh-fleet-0.2.1.tgz
+-rw-r--r-- 1 cayleb cayleb     93 Oct 31 10:47 cayleb-dsh-fleet-0.2.1.tgz.sha256
+-rw-r--r-- 1 cayleb cayleb 210358 Oct 31 23:45 cayleb-dsh-fleet-0.2.2.tgz
+-rw-r--r-- 1 cayleb cayleb     93 Oct 31 23:45 cayleb-dsh-fleet-0.2.2.tgz.sha256
+-rw-r--r-- 1 cayleb cayleb 287772 Nov  1 18:00 cayleb-dsh-fleet-0.3.0.tgz
+-rw-r--r-- 1 cayleb cayleb    186 Nov  1 18:00 SHA256SUMS.strike
+--- SHA256SUMS.strike (published digest) ---
+37e3a542a32f8cb15cd06965072cfef9aac81cb157b20f7c89b50dafc36fa177  cayleb-dsh-fleet-0.2.2.tgz
+8173d13ebee542b328ffe0b4a3476e27ffa561e46172949d54f9757ddd4e1070  cayleb-dsh-fleet-0.3.0.tgz
+--- drop tarball sha256 ---
+8173d13ebee542b328ffe0b4a3476e27ffa561e46172949d54f9757ddd4e1070  /var/lib/fleet-drop/cayleb-dsh-fleet-0.3.0.tgz
+--- SIDEcar present? ---
+NO — the check's 2.1a requires <tgz>.sha256 and would fail
+
+=== sidecar restored by checker 2026-11-01T18:08:48-05:00 ===
+command: printf '%s  %s\n' "$(sha256sum /var/lib/fleet-drop/cayleb-dsh-fleet-0.3.0.tgz | cut -d' ' -f1)" cayleb-dsh-fleet-0.3.0.tgz > /var/lib/fleet-drop/cayleb-dsh-fleet-0.3.0.tgz.sha256
+content:
+8173d13ebee542b328ffe0b4a3476e27ffa561e46172949d54f9757ddd4e1070  cayleb-dsh-fleet-0.3.0.tgz
+sidecar sha256: 6b52bbdd34f1ac5faa6b68806119a232eb58f7365e1bf6506e1605cd2c19627b
+match with tarball: YES
+match with published SHA256SUMS.strike line: YES
+not touched: the check, the installed profile, the tarball.
+--- drop dir after ---
+total 840
+drwxr-xr-x 1 cayleb cayleb    506 Nov  1 18:08 .
+drwxr-xr-x 1 root   root      642 Oct 31 07:44 ..
+-rw-r--r-- 1 cayleb cayleb 163847 Oct 31 09:41 cayleb-dsh-fleet-0.2.0.tgz
+-rw-r--r-- 1 cayleb cayleb     93 Oct 31 09:41 cayleb-dsh-fleet-0.2.0.tgz.sha256
+-rw-r--r-- 1 cayleb cayleb 164714 Oct 31 10:47 cayleb-dsh-fleet-0.2.1.tgz
+-rw-r--r-- 1 cayleb cayleb     93 Oct 31 10:47 cayleb-dsh-fleet-0.2.1.tgz.sha256
+-rw-r--r-- 1 cayleb cayleb 210358 Oct 31 23:45 cayleb-dsh-fleet-0.2.2.tgz
+-rw-r--r-- 1 cayleb cayleb     93 Oct 31 23:45 cayleb-dsh-fleet-0.2.2.tgz.sha256
+-rw-r--r-- 1 cayleb cayleb 287772 Nov  1 18:00 cayleb-dsh-fleet-0.3.0.tgz
+-rw-r--r-- 1 cayleb cayleb     93 Nov  1 18:08 cayleb-dsh-fleet-0.3.0.tgz.sha256
+-rw-r--r-- 1 cayleb cayleb    186 Nov  1 18:00 SHA256SUMS.strike

@@ -1,0 +1,23 @@
+=== INSTALLED-SERVICE IDENTITY BEFORE THE CHECK 2026-11-01T18:08:56-05:00 ===
+--- systemctl show ---
+ActiveState=active
+SubState=running
+InvocationID=baf7bf9344ad450f82b0f7422c8d07f7
+MainPID=510804
+ExecStart={ path=/var/lib/fleet/npm/bin/dsh ; argv[]=/var/lib/fleet/npm/bin/dsh --profile fleet --no-open --host 127.0.0.1 --port 3091 ; ignore_errors=no ; start_time=[Sun 2026-11-01 18:07:10 EST] ; stop_time=[n/a] ; pid=510804 ; code=(null) ; status=0/0 }
+User=fleet
+--- control socket status ---
+{
+  "ok": true,
+  "integrity": true,
+  "integrity_failures": [],
+  "lanes_allowed": true,
+  "pid": 510804,
+  "protocol": 1,
+  "selftest": true,
+  "events": 44411
+}
+--- first-run --status (release CLI) ---
+rc=0
+name=@cayleb/dsh-fleet version=0.3.0 dshVersion=None files=104
+modes: ['0644', '0755']

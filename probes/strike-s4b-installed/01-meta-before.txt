@@ -1,0 +1,17 @@
+checker: checker-install (independent; S4B installed-output acceptance)
+date_start_iso: 2026-11-01T18:08:48-05:00
+command: OUT=/home/cayleb/workspace/harness-build/evidence/strike/s4b-stage2-installed FLEET_CLI=/home/cayleb/workspace/harness-build/strike-release/package/bin/dsh-fleet.mjs bash /home/cayleb/workspace/harness-build/strike-release/checks/stage2-check.sh
+check_script: /home/cayleb/workspace/harness-build/strike-release/checks/stage2-check.sh
+check_sha256: 7df6344c0846491e1130e9fb4c198aeed01de480b2ca47b03d9a5c3529fcca95
+expected_check_sha256: 7df6344c0846491e1130e9fb4c198aeed01de480b2ca47b03d9a5c3529fcca95
+release_tree: /home/cayleb/workspace/harness-build/strike-release
+tree_head: 7d4eb95070364c006344ee19b7a7222e6dd46a93
+tree_branch: strike/0.3.0
+tree_status_porcelain: [ M package/bin/rows-manifest.mjs; M package/src/core/test/cli.test.mjs; M release/WRAPPER-CHANGE-0.3.0.md; M release/owner-relay-wrapper.sh;?? release/install-0.3.0.sh;]
+package_json_sha256: 62aa36d3a0f4788f1b1aefbf2dc652c0048efc42d95105b18b8cfdd3cd84107a
+fleet_cli_sha256: 3d839901391080047aa55607533d4e533ae0840b8f21a6b9225e0f55ab37e83a
+tarball_drop_sha256: 8173d13ebee542b328ffe0b4a3476e27ffa561e46172949d54f9757ddd4e1070
+tarball_dist_sha256: 8173d13ebee542b328ffe0b4a3476e27ffa561e46172949d54f9757ddd4e1070
+tarball_members: 104
+service_before: active inv=baf7bf9344ad450f82b0f7422c8d07f7 pid=510804
+node: v26.7.0 python3: Python 3.14.8 jq: jq-1.8.2

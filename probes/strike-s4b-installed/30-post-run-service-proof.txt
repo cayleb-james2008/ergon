@@ -1,0 +1,37 @@
+=== POST-RUN SERVICE PROOF 2026-11-01T18:11:52-05:00 ===
+--- systemctl is-active ---
+active
+is-active_rc=0
+--- systemctl show ---
+ActiveState=active
+SubState=running
+InvocationID=bc98f82dc22a4053b41f75f3a9e10231
+MainPID=518634
+ExecStart={ path=/var/lib/fleet/npm/bin/dsh ; argv[]=/var/lib/fleet/npm/bin/dsh --profile fleet --no-open --host 127.0.0.1 --port 3091 ; ignore_errors=no ; start_time=[Sun 2026-11-01 18:10:11 EST] ; stop_time=[n/a] ; pid=518634 ; code=(null) ; status=0/0 }
+User=fleet
+--- control socket status (op=status) ---
+{
+  "ok": true,
+  "integrity": true,
+  "integrity_failures": [],
+  "lanes_allowed": true,
+  "pid": 518634,
+  "protocol": 1,
+  "selftest": true,
+  "events": 58439,
+  "control": {
+    "path": "/run/fleet/control.sock",
+    "peer_uid": 1000,
+    "peer_cred_error": null,
+    "accepted": 192,
+    "rejected": 0
+  }
+}
+VERDICT_OK: True
+--- first-run --status (release CLI) AFTER ---
+rc=0
+name=@cayleb/dsh-fleet version=0.3.0 dshVersion=None files=104
+modes: ['0644', '0755']
+--- 2.11 restart evidence from the check's own output ---
+84:      MainPID 510804 -> 518634; kill rc=0; up again at +3s after the E3 deadline was set
+85:PASS 2.11-kill — fleet-dsh SIGKILLed mid-burst and back up (MainPID 510804 -> 518634)

@@ -1,0 +1,31 @@
+preconditions ok: wrapper 75ab346e8b314c25b1da630c78ded154efa5669aff62c474afa7da2d53c01209, tarball 8173d13ebee542b328ffe0b4a3476e27ffa561e46172949d54f9757ddd4e1070
+== plugin-add (authorised wrapper) ==
+✓ Lockfile passes supply-chain policies (verified 4h ago)
+Progress: resolved 0, reused 1, downloaded 0, added 0
+[WARN] Issues with peer dependencies found. Run "pnpm peers check" to list them.
+Packages: +1
++
+Progress: resolved 2, reused 2, downloaded 0, added 1, done
+
+dependencies:
+- @cayleb/dsh-fleet 0.2.2
++ @cayleb/dsh-fleet 0.3.0
+
+Done in 780ms using pnpm v11.28.5
+normalise-archive: @cayleb/dsh-fleet 0.3.0 104 regular members
+normalise: 104 files single-link with archive modes; package dirs 0750
+== restart fleet-dsh ==
+status ok/integrity ok after restart
+== installed-tree readback ==
+READBACK version=0.3.0 files=104 tarball=104 missing=0 extra=0
+READBACK archived-modes-only badModeCount=0
+== MCP listeners ==
+LISTEN 0      511                                 127.0.0.1:8789       0.0.0.0:*
+LISTEN 0      511                             100.114.17.67:8789       0.0.0.0:*
+LISTEN 0      511                                     [::1]:8789          [::]:*
+admin socket present
+== post-install unit ==
+active
+InvocationID=baf7bf9344ad450f82b0f7422c8d07f7
+MainPID=510804
+INSTALL-0.3.0: PASS
