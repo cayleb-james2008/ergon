@@ -1,0 +1,15 @@
+command: bash /home/cayleb/workspace/harness-build/ergon-strike/docs/acceptance/demo-company/run-evidence/r0-preflight.sh /home/cayleb/Documents/deepseek-harness/default-workspace/board/probes/strike-ergon-rehearsal/pass-1/R0-pre/preflight --repo /home/cayleb/workspace/harness-build/ergon-strike --package /var/lib/fleet-drop/cayleb-dsh-fleet-0.2.2.tgz --url lf-host-01.example-tailnet.ts.net
+exit: 1
+
+## stdout
+PASS  host fingerprint written
+PASS  package hashed: cayleb-dsh-fleet-0.2.2.tgz 37e3a542a32f8cb15cd06965072cfef9aac81cb157b20f7c89b50dafc36fa177
+PASS  run config accepted (route budget-proxy)
+PASS  no company state on the checked paths
+PASS  url name recorded: lf-host-01.example-tailnet.ts.net
+FAIL  company project id not recorded (R0 blocking: write id + region only, no secret)
+
+R0 PREFLIGHT: FAIL (1 blocking)
+
+## stderr
+

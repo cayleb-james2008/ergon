@@ -1,0 +1,6 @@
+case1 main        rc=0            stdout=normalise-archive: @cayleb/dsh-fleet 0.3.0 104 regular members
+normalise: 104 files single-link with archive modes; package dirs 0750
+case2 variant     rc=0         stdout=normalise-archive: @cayleb/dsh-fleet 0.3.0 104 regular members
+normalise: 104 files single-link with archive modes; package dirs 0750
+case3 bad-name    rc=1    stderr=normalise: archive package name is 'evil-package', not '@cayleb/dsh-fleet'
+case4 missing     rc=1     stderr=normalise: missing member src/core/core.js: [Errno 2] No such file or directory: '/tmp/checker-wrapper-review.458405/case4/root/package/src/core/core.js'

@@ -1,0 +1,2 @@
+summary: pass=60 fail=0 (evidence: /home/cayleb/workspace/harness-build/evidence/strike/s1-stage2-check)
+STAGE 2: PASS

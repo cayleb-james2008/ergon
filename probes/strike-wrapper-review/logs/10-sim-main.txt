@@ -1,0 +1,10 @@
+sim-pnpm: 104 regular files masked(0644->0640,0755->0750)+hardlinked(nlink=2); dirs 750; bad=0
+-- pre-state spot check (nlink/mode of 3 members) --
+-rw-r----- nlink=2 /tmp/checker-wrapper-review.458405/case1/root/package/package.json
+-rwxr-x--- nlink=2 /tmp/checker-wrapper-review.458405/case1/root/package/bin/dsh-fleet.mjs
+-rw-r----- nlink=2 /tmp/checker-wrapper-review.458405/case1/root/package/src/core/core.js
+-- run extracted normalise block --
+block rc=0 (dur 29 ms)
+stdout: normalise-archive: @cayleb/dsh-fleet 0.3.0 104 regular members
+normalise: 104 files single-link with archive modes; package dirs 0750
+stderr: []

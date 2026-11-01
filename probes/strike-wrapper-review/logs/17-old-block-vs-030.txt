@@ -1,0 +1,5 @@
+### CASE 5: OLD installed block vs 0.3.0 (104 members) — demonstrates the failure the change fixes
+sim-pnpm: 104 regular files masked(0644->0640,0755->0750)+hardlinked(nlink=2); dirs 750; bad=0
+OLD block rc=1
+stdout: []
+stderr: normalise: expected 82 members, got 104

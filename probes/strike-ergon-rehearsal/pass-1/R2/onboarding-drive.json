@@ -1,0 +1,146 @@
+{
+  "dana-whitcomb": {
+    "stages": [
+      "installed",
+      "connecting",
+      "observing",
+      "interviewing",
+      "model_draft",
+      "employee_confirmed",
+      "active"
+    ],
+    "final_stage": "active",
+    "model_status": "confirmed",
+    "model_revision": 2,
+    "observations": 2,
+    "answered_stages": 6,
+    "role_learned": null,
+    "facts": {
+      "responsibilities": 2,
+      "recurringTasks": 2,
+      "tools": 2,
+      "standards": 1,
+      "examples": 1
+    }
+  },
+  "priya-lindqvist": {
+    "stages": [
+      "installed",
+      "connecting",
+      "observing",
+      "interviewing",
+      "model_draft",
+      "employee_confirmed",
+      "active"
+    ],
+    "final_stage": "active",
+    "model_status": "confirmed",
+    "model_revision": 2,
+    "observations": 2,
+    "answered_stages": 6,
+    "role_learned": null,
+    "facts": {
+      "responsibilities": 2,
+      "recurringTasks": 1,
+      "tools": 2,
+      "standards": 1,
+      "examples": 1
+    }
+  },
+  "marcus-oyelaran": {
+    "stages": [
+      "installed",
+      "connecting",
+      "observing",
+      "interviewing",
+      "model_draft",
+      "employee_confirmed",
+      "active"
+    ],
+    "final_stage": "active",
+    "model_status": "confirmed",
+    "model_revision": 2,
+    "observations": 2,
+    "answered_stages": 6,
+    "role_learned": null,
+    "facts": {
+      "responsibilities": 2,
+      "recurringTasks": 1,
+      "tools": 2,
+      "standards": 1,
+      "examples": 1
+    }
+  },
+  "teo-brandvold": {
+    "stages": [
+      "installed",
+      "connecting",
+      "observing",
+      "interviewing",
+      "model_draft",
+      "employee_confirmed",
+      "active"
+    ],
+    "final_stage": "active",
+    "model_status": "confirmed",
+    "model_revision": 2,
+    "observations": 2,
+    "answered_stages": 6,
+    "role_learned": null,
+    "facts": {
+      "responsibilities": 2,
+      "recurringTasks": 2,
+      "tools": 1,
+      "standards": 1,
+      "examples": 1
+    }
+  },
+  "rosa-quintero-hale": {
+    "stages": [
+      "installed",
+      "connecting",
+      "observing",
+      "interviewing",
+      "model_draft",
+      "employee_confirmed",
+      "active"
+    ],
+    "final_stage": "active",
+    "model_status": "confirmed",
+    "model_revision": 2,
+    "observations": 2,
+    "answered_stages": 6,
+    "role_learned": null,
+    "facts": {
+      "responsibilities": 2,
+      "recurringTasks": 1,
+      "tools": 1,
+      "standards": 1,
+      "examples": 1
+    }
+  },
+  "sam-akintola": {
+    "stages": [
+      "installed",
+      "connecting",
+      "observing",
+      "interviewing",
+      "model_draft",
+      "employee_confirmed",
+      "active"
+    ],
+    "final_stage": "active",
+    "model_status": "confirmed",
+    "model_revision": 2,
+    "observations": 2,
+    "answered_stages": 6,
+    "role_learned": null,
+    "facts": {
+      "responsibilities": 2,
+      "recurringTasks": 1,
+      "tools": 1,
+      "standards": 1,
+      "examples": 1
+    }
+  }
+}

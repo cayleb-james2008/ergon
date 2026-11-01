@@ -1,0 +1,4 @@
+exit: 1
+passes: 5
+fails: 1
+blocking: FAIL  company project id not recorded (R0 blocking: write id + region only, no secret)

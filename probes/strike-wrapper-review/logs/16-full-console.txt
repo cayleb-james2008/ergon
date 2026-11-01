@@ -1,0 +1,63 @@
+workdir=/tmp/checker-wrapper-review.458405
+archive sha256: 5c91f430b0c9219e802211779eb81eab030f4218a17fa3bb24dfba39f18d1fd5  /home/cayleb/workspace/harness-build/strike-release/dist/cayleb-dsh-fleet-0.3.0.tgz
+block sha256:   3bb9875841da421809ca1e74cc34012bd28e25adf571e3cb5542c5bedddc57f7  /home/cayleb/workspace/harness-build/evidence/strike/checker-verify/wrapper-review/normalise-heredoc.py
+
+############ CASE 1: MAIN — 0.3.0, 104 members, masked+hardlinked, dirs 0750 ############
+sim-pnpm: 104 regular files masked(0644->0640,0755->0750)+hardlinked(nlink=2); dirs 750; bad=0
+-- pre-state spot check (nlink/mode of 3 members) --
+-rw-r----- nlink=2 /tmp/checker-wrapper-review.458405/case1/root/package/package.json
+-rwxr-x--- nlink=2 /tmp/checker-wrapper-review.458405/case1/root/package/bin/dsh-fleet.mjs
+-rw-r----- nlink=2 /tmp/checker-wrapper-review.458405/case1/root/package/src/core/core.js
+-- run extracted normalise block --
+block rc=0 (dur 29 ms)
+stdout: normalise-archive: @cayleb/dsh-fleet 0.3.0 104 regular members
+normalise: 104 files single-link with archive modes; package dirs 0750
+stderr: []
+assert: archive=104 files; installed=104 files; missing=0; extra=0; problems=0; dirs_wrong_mode=0
+assert rc=0
+
+############ CASE 2: VARIANT — dirs start 0755 -> normalise must set 0750 ############
+sim-pnpm: 104 regular files masked(0644->0640,0755->0750)+hardlinked(nlink=2); dirs 755; bad=0
+block rc=0
+stdout: normalise-archive: @cayleb/dsh-fleet 0.3.0 104 regular members
+normalise: 104 files single-link with archive modes; package dirs 0750
+sim-pnpm: 104 regular files masked(0644->0640,0755->0750)+hardlinked(nlink=2); dirs 755; bad=0
+block rc=0
+stdout: normalise-archive: @cayleb/dsh-fleet 0.3.0 104 regular members
+normalise: 104 files single-link with archive modes; package dirs 0750
+assert: archive=104 files; installed=104 files; missing=0; extra=0; problems=0; dirs_wrong_mode=0
+assert rc=0
+
+############ CASE 3: NEGATIVE A — archive package name changed -> fail closed ############
+mk-bad-archive: wrote /tmp/checker-wrapper-review.458405/badname.tgz (package.json name -> 'evil-package'; changed_members=1)
+block rc=1
+stdout: []
+stderr: normalise: archive package name is 'evil-package', not '@cayleb/dsh-fleet'
+installed tree UNCHANGED by the refusal: YES
+
+############ CASE 4: NEGATIVE B — one member missing from installed root -> fail closed ############
+sim-pnpm: 104 regular files masked(0644->0640,0755->0750)+hardlinked(nlink=2); dirs 750; bad=0
+removed from installed root: package/src/core/core.js
+block rc=1
+stdout: [normalise-archive: @cayleb/dsh-fleet 0.3.0 104 regular members]
+stderr: normalise: missing member src/core/core.js: [Errno 2] No such file or directory: '/tmp/checker-wrapper-review.458405/case4/root/package/src/core/core.js'
+
+############ EXPECTATION GATE ############
+EXPECT PASS  case1 main rc==0 (rc=0)
+EXPECT PASS  case1 assert rc==0 (rc=0)
+EXPECT PASS  case2 variant rc==0 (rc=0)
+EXPECT PASS  case2 dirs 0750 + assert clean (rc=0)
+EXPECT PASS  case3 bad-name rc!=0 (rc=1)
+EXPECT PASS  case3 message exact (rc=0)
+EXPECT PASS  case3 tree untouched (rc=0)
+EXPECT PASS  case4 missing-member rc!=0 (rc=1)
+EXPECT PASS  case4 message exact (rc=0)
+EXPECTATION GATE: ALL-PASS
+
+############ SUMMARY ############
+case1 main        rc=0            stdout=normalise-archive: @cayleb/dsh-fleet 0.3.0 104 regular members
+normalise: 104 files single-link with archive modes; package dirs 0750
+case2 variant     rc=0         stdout=normalise-archive: @cayleb/dsh-fleet 0.3.0 104 regular members
+normalise: 104 files single-link with archive modes; package dirs 0750
+case3 bad-name    rc=1    stderr=normalise: archive package name is 'evil-package', not '@cayleb/dsh-fleet'
+case4 missing     rc=1     stderr=normalise: missing member src/core/core.js: [Errno 2] No such file or directory: '/tmp/checker-wrapper-review.458405/case4/root/package/src/core/core.js'

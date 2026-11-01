@@ -1,0 +1,17 @@
+# Company root teardown
+generated_utc: 2026-11-01T22:07:35Z
+root: /tmp/ergon-rehearsal-20261101T220733Z-zlFPPI
+entries before: 2
+command: node fixtures/teardown.mjs /tmp/ergon-rehearsal-20261101T220733Z-zlFPPI
+exit: 0
+stdout: {
+  "root": "/tmp/ergon-rehearsal-20261101T220733Z-zlFPPI",
+  "removed": [
+    ".lanternfield-rehearsal-root.json",
+    "host"
+  ],
+  "empty": true
+}
+stderr: 
+entries after: 0
+root marker present after: false

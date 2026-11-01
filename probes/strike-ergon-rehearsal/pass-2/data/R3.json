@@ -1,0 +1,63 @@
+{
+  "step": "R3",
+  "title": "Shareable non-localhost URL from a second device",
+  "pass": 2,
+  "word": "pending",
+  "table_note": "company host origin recorded from the fixture config and shape-checked; the fixture origin is a made-up name that does not resolve and the host binds 127.0.0.1 only. Hosted non-localhost URL + DNS + second-device reachability PENDING (not built; owner acts out of scope).",
+  "operator_action": "operator opens the shareable non-localhost URL from a second device and signs in through the device approval flow",
+  "expected": "the same company and assistant are visible from a second device through a real DNS name (never localhost, never a raw IP); the device approval record exists",
+  "checks": [
+    {
+      "name": "company host origin recorded from the fixture config",
+      "ok": true,
+      "detail": "origin=https://lf-host-01.example-tailnet.ts.net:8443 port=0 (0 = ephemeral loopback at run time)"
+    },
+    {
+      "name": "origin is a DNS name, not localhost and not a raw IP",
+      "ok": true,
+      "detail": "hostname=lf-host-01.example-tailnet.ts.net scheme=https: port=8443"
+    },
+    {
+      "name": "origin is recorded as a made-up name that is never resolved (fixture note)",
+      "ok": true,
+      "detail": "The Anthropic budget proxy's activation gate accepts only an https://*.ts.net:8443 origin (support/server/anthropic-budget-proxy.mjs validOrigin). The name is made up and never resolved; the rehearsal"
+    },
+    {
+      "name": "the shareable name does not resolve (hosted URL/DNS absent)",
+      "ok": true,
+      "detail": "getent exit=2 stdout=(none)"
+    },
+    {
+      "name": "current host code listens on 127.0.0.1 only (no shareable listener)",
+      "ok": true,
+      "detail": "address=127.0.0.1 port=45623 base=http://127.0.0.1:45623"
+    }
+  ],
+  "findings": [
+    {
+      "name": "device approval flow",
+      "detail": "The product's device approval flow is exercised host-side by the fixture setup (USB-kit join + operator approval asserted at R1/R4). What R3 needs and cannot show is the second device reaching a real URL."
+    }
+  ],
+  "pending": [
+    "hosted shareable non-localhost URL + DNS name + second-device reachability: not built in this strike. The fixture origin (https://lf-host-01.example-tailnet.ts.net:8443) is a made-up name that never resolves, the current host binds 127.0.0.1 only, and a dedicated host/DNS name are owner acts out of scope (no purchase, no DNS work). Device-approval via a second device therefore cannot be shown; the host-side device registry is covered as a stand-in under R4."
+  ],
+  "notes": [],
+  "evidence": [
+    "R3/url-check.txt",
+    "R3/listener.json"
+  ],
+  "meta": {
+    "origin": "https://lf-host-01.example-tailnet.ts.net:8443",
+    "listener": {
+      "address": "127.0.0.1",
+      "family": "IPv4",
+      "port": 45623,
+      "base": "http://127.0.0.1:45623"
+    }
+  },
+  "started_utc": "2026-11-01T22:07:37Z",
+  "finished_utc": "2026-11-01T22:07:37Z",
+  "failures": [],
+  "forced_failure": null
+}

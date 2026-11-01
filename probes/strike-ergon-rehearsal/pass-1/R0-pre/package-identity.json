@@ -1,0 +1,11 @@
+{
+  "file": "cayleb-dsh-fleet-0.2.2.tgz",
+  "bytes": 210358,
+  "mtime_iso": "2026-11-01T03:45:22.107Z",
+  "sha256": "37e3a542a32f8cb15cd06965072cfef9aac81cb157b20f7c89b50dafc36fa177",
+  "published_sha256": "37e3a542a32f8cb15cd06965072cfef9aac81cb157b20f7c89b50dafc36fa177",
+  "published_matches": true,
+  "version_from_name": "0.2.2",
+  "dsh_pin_expected": "0.2.2-alpha.2",
+  "note": "The installed tree itself (/var/lib/fleet/...) is readable only to user fleet; identity is pinned by the hash-verified release tarball staged for the install plus the authorised wrapper reads below."
+}

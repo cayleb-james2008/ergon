@@ -1,0 +1,260 @@
+{
+  "isError": false,
+  "result": {
+    "ok": true,
+    "mode": "fixture-validated",
+    "real_lane": "not-built (Stage 4 roster)",
+    "order": {
+      "id": "o1",
+      "title": "checker-verify roundtrip cv-mvyeb7vc-9cf27687 t4",
+      "state": "done",
+      "done_when": {
+        "mode": "command",
+        "command": "true",
+        "text": "checker-verify done-when cv-mvyeb7vc-9cf27687"
+      },
+      "fixture": true
+    },
+    "task": {
+      "id": "t1",
+      "state": "done",
+      "banked": true,
+      "rounds": null,
+      "checker": "checker:selftest-chk-0272379e46f1"
+    },
+    "ids": {
+      "order": "o1",
+      "task": "t1",
+      "final_task": null,
+      "agents": {
+        "lead": "lead:selftest-mcp-f7762f604a",
+        "builder": "builder:selftest-mcp-f7762f604a",
+        "checker": "checker:selftest-chk-0272379e46f1"
+      },
+      "posts": [
+        {
+          "id": "1",
+          "seq": 1,
+          "kind": "order-created",
+          "author": "cayleb-local"
+        },
+        {
+          "id": "2",
+          "seq": 2,
+          "kind": "preflight",
+          "author": "lead:selftest-mcp-f7762f604a"
+        },
+        {
+          "id": "3",
+          "seq": 3,
+          "kind": "decomposition",
+          "author": "lead:selftest-mcp-f7762f604a"
+        },
+        {
+          "id": "4",
+          "seq": 4,
+          "kind": "evidence",
+          "author": "builder:selftest-mcp-f7762f604a"
+        },
+        {
+          "id": "5",
+          "seq": 5,
+          "kind": "built",
+          "author": "builder:selftest-mcp-f7762f604a"
+        },
+        {
+          "id": "6",
+          "seq": 6,
+          "kind": "verdict",
+          "author": "checker:selftest-chk-0272379e46f1"
+        },
+        {
+          "id": "7",
+          "seq": 7,
+          "kind": "task-done",
+          "author": "harness"
+        },
+        {
+          "id": "8",
+          "seq": 8,
+          "kind": "report",
+          "author": "lead:selftest-mcp-f7762f604a"
+        },
+        {
+          "id": "9",
+          "seq": 9,
+          "kind": "built",
+          "author": "builder:harness-done-when"
+        },
+        {
+          "id": "10",
+          "seq": 10,
+          "kind": "verdict",
+          "author": "checker:harness-caf735a598"
+        },
+        {
+          "id": "11",
+          "seq": 11,
+          "kind": "task-done",
+          "author": "harness"
+        },
+        {
+          "id": "12",
+          "seq": 12,
+          "kind": "order-done",
+          "author": "harness"
+        }
+      ],
+      "check_round": 1
+    },
+    "posts": [
+      {
+        "id": "1",
+        "seq": 1,
+        "kind": "order-created",
+        "author": "cayleb-local"
+      },
+      {
+        "id": "2",
+        "seq": 2,
+        "kind": "preflight",
+        "author": "lead:selftest-mcp-f7762f604a"
+      },
+      {
+        "id": "3",
+        "seq": 3,
+        "kind": "decomposition",
+        "author": "lead:selftest-mcp-f7762f604a"
+      },
+      {
+        "id": "4",
+        "seq": 4,
+        "kind": "evidence",
+        "author": "builder:selftest-mcp-f7762f604a"
+      },
+      {
+        "id": "5",
+        "seq": 5,
+        "kind": "built",
+        "author": "builder:selftest-mcp-f7762f604a"
+      },
+      {
+        "id": "6",
+        "seq": 6,
+        "kind": "verdict",
+        "author": "checker:selftest-chk-0272379e46f1"
+      },
+      {
+        "id": "7",
+        "seq": 7,
+        "kind": "task-done",
+        "author": "harness"
+      },
+      {
+        "id": "8",
+        "seq": 8,
+        "kind": "report",
+        "author": "lead:selftest-mcp-f7762f604a"
+      },
+      {
+        "id": "9",
+        "seq": 9,
+        "kind": "built",
+        "author": "builder:harness-done-when"
+      },
+      {
+        "id": "10",
+        "seq": 10,
+        "kind": "verdict",
+        "author": "checker:harness-caf735a598"
+      },
+      {
+        "id": "11",
+        "seq": 11,
+        "kind": "task-done",
+        "author": "harness"
+      },
+      {
+        "id": "12",
+        "seq": 12,
+        "kind": "order-done",
+        "author": "harness"
+      }
+    ],
+    "final_state": {
+      "order_state": "done",
+      "task_state": "done",
+      "order_done": true,
+      "task_done": true,
+      "verdict": "pass",
+      "round": 1,
+      "final_task_state": "done"
+    },
+    "cleanup": {
+      "attempted": false,
+      "reason": "the order is done (terminal); order-cancel refuses `order-closed`, and the stage check leaves done fixtures on the append-only board too"
+    },
+    "steps": [
+      {
+        "step": "order-create",
+        "ok": true,
+        "ms": 2
+      },
+      {
+        "step": "order_claim",
+        "ok": true,
+        "ms": 12
+      },
+      {
+        "step": "preflight_raise",
+        "ok": true,
+        "ms": 3
+      },
+      {
+        "step": "task_decompose",
+        "ok": true,
+        "ms": 3
+      },
+      {
+        "step": "task_claim",
+        "ok": true,
+        "ms": 9
+      },
+      {
+        "step": "evidence_post",
+        "ok": true,
+        "ms": 2
+      },
+      {
+        "step": "task_submit_built",
+        "ok": true,
+        "ms": 3
+      },
+      {
+        "step": "check-start",
+        "ok": true,
+        "ms": 1
+      },
+      {
+        "step": "verdict",
+        "ok": true,
+        "ms": 8
+      },
+      {
+        "step": "board-get-task",
+        "ok": true,
+        "ms": 0
+      },
+      {
+        "step": "lesson_propose",
+        "ok": true,
+        "ms": 1
+      },
+      {
+        "step": "report_file",
+        "ok": true,
+        "ms": 3
+      }
+    ]
+  }
+}

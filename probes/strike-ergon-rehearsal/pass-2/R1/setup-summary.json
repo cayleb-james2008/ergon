@@ -1,0 +1,221 @@
+{
+  "tickets": {
+    "raised": 104,
+    "outcomes": {
+      "resolved": 79,
+      "waiting": 13,
+      "escalated": 3,
+      "abandoned": 1,
+      "queued": 8
+    },
+    "replies": 133,
+    "firstAt": "2026-09-22T15:30:00.000Z",
+    "lastAt": "2026-10-30T15:10:00.000Z",
+    "byDevice": {
+      "teo-phone": 22,
+      "marcus-desktop": 14,
+      "priya-desktop": 17,
+      "north-kiosk": 13,
+      "crew-tablet-2": 12,
+      "dana-desktop": 5,
+      "crew-tablet-1": 13,
+      "front-desk": 5,
+      "sam-desktop": 3
+    }
+  },
+  "reviewDesk": {
+    "dana-whitcomb": {
+      "requests": 5,
+      "later": 2,
+      "approve": 1,
+      "pending": 1,
+      "reject": 1
+    },
+    "priya-lindqvist": {
+      "requests": 5,
+      "pending": 2,
+      "approve": 2,
+      "request_changes": 1
+    },
+    "marcus-oyelaran": {
+      "requests": 3,
+      "later": 1,
+      "approve": 1,
+      "request_changes": 1
+    },
+    "teo-brandvold": {
+      "requests": 3,
+      "approve": 2,
+      "later": 1
+    },
+    "rosa-quintero-hale": {
+      "requests": 5,
+      "request_changes": 1,
+      "pending": 3,
+      "approve": 1
+    },
+    "sam-akintola": {
+      "requests": 7,
+      "approve": 2,
+      "request_changes": 1,
+      "later": 1,
+      "pending": 1,
+      "reject": 2
+    }
+  },
+  "library": {
+    "tools": [
+      {
+        "name": "crew-sheet-builder",
+        "latestPublished": "1.0.0",
+        "versions": [
+          "1.0.0:published"
+        ]
+      },
+      {
+        "name": "damage-note-writer",
+        "latestPublished": "1.0.0",
+        "versions": [
+          "1.0.0:published"
+        ]
+      },
+      {
+        "name": "invoice-chaser",
+        "latestPublished": "1.0.0",
+        "versions": [
+          "1.0.0:published"
+        ]
+      },
+      {
+        "name": "kiosk-auto-reboot",
+        "latestPublished": null,
+        "versions": [
+          "1.0.0:rejected"
+        ]
+      }
+    ]
+  },
+  "profiles": {
+    "dana-whitcomb": {
+      "writerPorts": {
+        "gatewayPort": 19489,
+        "voicePort": 19334
+      },
+      "assignedPorts": {
+        "gatewayPort": 19489,
+        "voicePort": 19334
+      },
+      "model": "anthropic/claude-haiku-5-5"
+    },
+    "priya-lindqvist": {
+      "writerPorts": {
+        "gatewayPort": 19489,
+        "voicePort": 19334
+      },
+      "assignedPorts": {
+        "gatewayPort": 19491,
+        "voicePort": 19336
+      },
+      "model": "anthropic/claude-haiku-5-5"
+    },
+    "marcus-oyelaran": {
+      "writerPorts": {
+        "gatewayPort": 19489,
+        "voicePort": 19334
+      },
+      "assignedPorts": {
+        "gatewayPort": 19493,
+        "voicePort": 19338
+      },
+      "model": "anthropic/claude-haiku-5-5"
+    },
+    "teo-brandvold": {
+      "writerPorts": {
+        "gatewayPort": 19489,
+        "voicePort": 19334
+      },
+      "assignedPorts": {
+        "gatewayPort": 19495,
+        "voicePort": 19340
+      },
+      "model": "anthropic/claude-haiku-5-5"
+    },
+    "rosa-quintero-hale": {
+      "writerPorts": {
+        "gatewayPort": 19489,
+        "voicePort": 19334
+      },
+      "assignedPorts": {
+        "gatewayPort": 19497,
+        "voicePort": 19342
+      },
+      "model": "anthropic/claude-haiku-5-5"
+    },
+    "sam-akintola": {
+      "writerPorts": {
+        "gatewayPort": 19489,
+        "voicePort": 19334
+      },
+      "assignedPorts": {
+        "gatewayPort": 19499,
+        "voicePort": 19344
+      },
+      "model": "anthropic/claude-haiku-5-5"
+    }
+  },
+  "stackArtefacts": 9,
+  "devices": {
+    "dana-desktop": {
+      "enrolment": "fleet-join",
+      "status": "approved",
+      "employeeId": "dana-whitcomb"
+    },
+    "priya-desktop": {
+      "enrolment": "fleet-join",
+      "status": "approved",
+      "employeeId": "priya-lindqvist"
+    },
+    "marcus-desktop": {
+      "enrolment": "fleet-join",
+      "status": "approved",
+      "employeeId": "marcus-oyelaran"
+    },
+    "teo-phone": {
+      "enrolment": "operator-registry",
+      "status": "approved",
+      "employeeId": "teo-brandvold"
+    },
+    "north-kiosk": {
+      "enrolment": "fleet-join",
+      "status": "approved",
+      "employeeId": "rosa-quintero-hale"
+    },
+    "sam-desktop": {
+      "enrolment": "fleet-join",
+      "status": "approved",
+      "employeeId": "sam-akintola"
+    },
+    "crew-tablet-1": {
+      "enrolment": "fleet-join",
+      "status": "approved",
+      "employeeId": "crew-shared-one"
+    },
+    "crew-tablet-2": {
+      "enrolment": "fleet-join",
+      "status": "approved",
+      "employeeId": "crew-shared-two"
+    },
+    "front-desk": {
+      "enrolment": "fleet-join",
+      "status": "approved",
+      "employeeId": "front-desk"
+    },
+    "sales-laptop": {
+      "enrolment": "fleet-join",
+      "status": "pending",
+      "employeeId": "sales-one"
+    }
+  },
+  "root": "/tmp/ergon-rehearsal-20261101T220736Z-ZUb78e",
+  "seed": 20261102
+}

@@ -1,0 +1,19 @@
+# The model-quality assistant leg — named PENDING
+generated_utc: 2026-11-01T22:07:34Z
+
+What this leg is: the assistant answering a role question in the employee's voice, and the onboarding conversation
+that a real model conducts. Neither is a fixture stand-in here, and neither ran.
+
+Why it cannot run in this strike:
+- No provider credential is present for the fleet profile. The credential store is owner-only
+  (`/var/lib/fleet/dsh/.credentials.yaml`, reported as `owner_secret_path` by the control socket status); the fleet
+  profile mounts the credentials plugin and a default route (deepseek-official/deepseek-flash) but this rehearsal has
+  no credential and takes no owner act.
+- The deterministic stub route is the only model-adjacent route and it produced no provider call on this install
+  (stub-turn probes above: status=completed, provider_calls=0, empty assistant_text). No model was called and none
+  could be claimed.
+- No model call was attempted through a real provider route: that would need the owner's credential and is fenced
+  by the strike (no spend, no owner acts).
+
+What DID run: the fixture host-side record, the product onboarding state machine to `active`, and real fleet agent
+sessions per cast member on the installed plugin. Those prove the assistant machinery, not model quality.

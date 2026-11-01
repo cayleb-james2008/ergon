@@ -1,0 +1,80 @@
+[
+  {
+    "cast_member": "dana-whitcomb",
+    "cast_role": "operations-manager",
+    "fleet_role": "lead",
+    "principal": "lead:selftest-lf-2-dana-whitcomb",
+    "ok": true,
+    "call_id": "selftest-bfb968df-5f9a-4959-9947-500ddf06cc74",
+    "session_id": "fleet-selftest-lead-8ad1d719-3f0f-47fc-9b6c-f4b0b862cbbf",
+    "result_scope": "mine",
+    "error": null,
+    "started_utc": "2026-11-01T22:07:37Z",
+    "finished_utc": "2026-11-01T22:07:37Z"
+  },
+  {
+    "cast_member": "priya-lindqvist",
+    "cast_role": "dispatch-coordinator",
+    "fleet_role": "researcher",
+    "principal": "researcher:selftest-lf-2-priya-lindqvist",
+    "ok": true,
+    "call_id": "selftest-dbcc810a-757e-4ca8-ac0e-3345a1b0351c",
+    "session_id": "fleet-selftest-researcher-7567479c-600d-46cf-b56c-fdbaf6134a4a",
+    "result_scope": "mine",
+    "error": null,
+    "started_utc": "2026-11-01T22:07:37Z",
+    "finished_utc": "2026-11-01T22:07:37Z"
+  },
+  {
+    "cast_member": "marcus-oyelaran",
+    "cast_role": "billing-estimates-clerk",
+    "fleet_role": "builder",
+    "principal": "builder:selftest-lf-2-marcus-oyelaran",
+    "ok": true,
+    "call_id": "selftest-42479534-0f53-46eb-8a2c-eb67c1146789",
+    "session_id": "fleet-selftest-builder-c767180d-a1ff-4dd7-965b-c8ebc6da02f0",
+    "result_scope": "mine",
+    "error": null,
+    "started_utc": "2026-11-01T22:07:37Z",
+    "finished_utc": "2026-11-01T22:07:37Z"
+  },
+  {
+    "cast_member": "teo-brandvold",
+    "cast_role": "warehouse-lead",
+    "fleet_role": "builder",
+    "principal": "builder:selftest-lf-2-teo-brandvold",
+    "ok": true,
+    "call_id": "selftest-b706f418-6981-45e9-b08b-5b098aec2068",
+    "session_id": "fleet-selftest-builder-8cb20d45-e2ec-4796-9389-7e810bfba622",
+    "result_scope": "mine",
+    "error": null,
+    "started_utc": "2026-11-01T22:07:37Z",
+    "finished_utc": "2026-11-01T22:07:37Z"
+  },
+  {
+    "cast_member": "rosa-quintero-hale",
+    "cast_role": "crew-chief",
+    "fleet_role": "researcher",
+    "principal": "researcher:selftest-lf-2-rosa-quintero-hale",
+    "ok": true,
+    "call_id": "selftest-27d19808-2a5e-42bd-9f48-1d609c9c3ce6",
+    "session_id": "fleet-selftest-researcher-84db37ac-af9c-4a8b-b8eb-1a38194739dd",
+    "result_scope": "mine",
+    "error": null,
+    "started_utc": "2026-11-01T22:07:37Z",
+    "finished_utc": "2026-11-01T22:07:37Z"
+  },
+  {
+    "cast_member": "sam-akintola",
+    "cast_role": "office-it-support",
+    "fleet_role": "checker",
+    "principal": "checker:selftest-lf-2-sam-akintola",
+    "ok": true,
+    "call_id": "selftest-b66035bc-9258-41a4-81bc-7155fb37da65",
+    "session_id": "fleet-selftest-checker-6bb5b868-579b-4179-af50-b55ece0c1baf",
+    "result_scope": "mine",
+    "error": null,
+    "started_utc": "2026-11-01T22:07:37Z",
+    "finished_utc": "2026-11-01T22:07:37Z"
+  }
+]

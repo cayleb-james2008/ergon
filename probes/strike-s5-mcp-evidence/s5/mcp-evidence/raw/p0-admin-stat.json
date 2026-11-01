@@ -1,0 +1,86 @@
+{
+  "ok": true,
+  "result": {
+    "name": "fleet-mcp",
+    "version": "0.3.0-mcp",
+    "pid": 464358,
+    "uptime_s": 0,
+    "ok": true,
+    "degraded": [],
+    "transport": "streamable-http",
+    "protocol_versions": [
+      "2025-03-26",
+      "2024-11-05"
+    ],
+    "bind": [
+      {
+        "host": "127.0.0.1",
+        "port": 18889,
+        "family": "IPv4"
+      },
+      {
+        "host": "::1",
+        "port": 18889,
+        "family": "IPv6"
+      },
+      {
+        "host": "100.114.17.67",
+        "port": 18889,
+        "family": "IPv4"
+      }
+    ],
+    "sources": {
+      "sources": [
+        "loopback",
+        "tailnet"
+      ],
+      "v4": [
+        "127.0.0.0/8",
+        "100.64.0.0/10"
+      ],
+      "v6": [
+        "::1"
+      ]
+    },
+    "admin": {
+      "path": "/tmp/cv-s5.tbqAwQ/ctl/mcp-admin.sock",
+      "listening": true,
+      "stats": {
+        "accepted": 2,
+        "refused": 0
+      }
+    },
+    "token": {
+      "path": "/tmp/cv-s5.tbqAwQ/fleet/state/mcp/token",
+      "exists": true,
+      "mode": "600",
+      "size": 65,
+      "fingerprint": "ab4dbc7f5ed4efc4"
+    },
+    "log": {
+      "path": "/tmp/cv-s5.tbqAwQ/fleet/log/mcp-actions.jsonl",
+      "seq": 0,
+      "head": "0000000000000000000000000000000000000000000000000000000000000000",
+      "open": true,
+      "broken": null,
+      "mode": "jsonl-hash-chain"
+    },
+    "sessions": {
+      "held": 0,
+      "max": 8,
+      "sessions": []
+    },
+    "requests": {
+      "requests": 0,
+      "accepted": 0,
+      "refused": 0,
+      "toolCalls": 0,
+      "byTool": {},
+      "byRefusal": {},
+      "sessionsOpened": 0,
+      "sessionsClosed": 0
+    },
+    "model_route": "deterministic-stub (fleet-selftest-stub)",
+    "real_lane": "not-built (Stage 4 roster)"
+  }
+}

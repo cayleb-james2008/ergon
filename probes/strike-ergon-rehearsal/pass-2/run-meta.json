@@ -1,0 +1,17 @@
+{
+  "driver": "run-rehearsal.sh",
+  "pass": 2,
+  "packDir": "/home/cayleb/Documents/deepseek-harness/default-workspace/board/probes/strike-ergon-rehearsal",
+  "passDir": "/home/cayleb/Documents/deepseek-harness/default-workspace/board/probes/strike-ergon-rehearsal/pass-2",
+  "host": "outis-desktop",
+  "runRoot": "/tmp/ergon-rehearsal-20261101T220736Z-ZUb78e",
+  "repo": "/home/cayleb/workspace/harness-build/ergon-strike",
+  "repoCommit": "e284135264f4025a1527c6754261b23907620dea",
+  "repoBranch": "strike/ergon-rehearsal",
+  "node": "v26.7.0",
+  "seed": "20261102 (fixture default)",
+  "startedUtc": "2026-11-01T22:07:36Z",
+  "driverCommand": "bash docs/acceptance/demo-company/rehearsal/run-rehearsal.sh --pass 2 --out /home/cayleb/Documents/deepseek-harness/default-workspace/board/probes/strike-ergon-rehearsal",
+  "fleetSocket": "/run/fleet/control.sock",
+  "platform": "installed @cayleb/dsh-fleet 0.2.2 on this desktop (fleet-dsh)"
+}

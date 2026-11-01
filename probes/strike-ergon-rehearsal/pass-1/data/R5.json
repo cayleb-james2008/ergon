@@ -1,0 +1,164 @@
+{
+  "step": "R5",
+  "title": "Desk task: ticket round trip and a real fleet order",
+  "pass": 1,
+  "word": "clean",
+  "table_note": "scenario (a)+(b) ticket round trip through the product's control service (ids, states, receipts, device readback, recorded product limits F3/F4/F6) AND a real warehouse-board-shaped task as a fleet order on the installed plugin (create -> decompose -> claim -> built -> check -> verdict -> bank -> done). Stand-ins named: Get Help/phone UI, scripted board.",
+  "operator_action": "operator raises a ticket from an employee device, works it on the management screen (claim, reply, receipt), and confirms the employee sees the resolution; the warehouse-board task is worked as a fleet order on the platform",
+  "expected": "the ticket moves queued -> working -> resolved with a stored receipt, and the employee device reads exactly the host record; the fleet order reaches done with its task done+banked and every op id recorded",
+  "checks": [
+    {
+      "name": "a1 ticket stored queued from the phone device, duplicate false",
+      "ok": true,
+      "detail": "ticketId=8f97658d-2515-432e-930b-f90d95e85b3b state=queued duplicate=false"
+    },
+    {
+      "name": "a1 host record: state queued, device teo-phone, the exact reviewed preview",
+      "ok": true,
+      "detail": "state=queued device=lf-teo-phone subject=Which line for the Harlow Legal job, C or D?"
+    },
+    {
+      "name": "a2 operator queue lists the new ticket first (newest first)",
+      "ok": true,
+      "detail": "first=8f97658d-2515-432e-930b-f90d95e85b3b new=8f97658d-2515-432e-930b-f90d95e85b3b total=100"
+    },
+    {
+      "name": "a3 worker credential claims the ticket and gets a real lease",
+      "ok": true,
+      "detail": "lease=issued (64 hex) leaseUntil=1793625000000"
+    },
+    {
+      "name": "a3 ticket reads back working with the claiming worker",
+      "ok": true,
+      "detail": "state=working worker=agent-sam-akintola"
+    },
+    {
+      "name": "a4a worker reply refused (agent cannot reply on current code — F4 recorded)",
+      "ok": true,
+      "detail": "HTTP 403 worker_route_denied (SCENARIOS.md F4: only the operator token can reply)"
+    },
+    {
+      "name": "a4b operator (Sam, the person) posts the reply",
+      "ok": true,
+      "detail": "replyId=lf-1-lf51-mvyds0uh-bff1fc-a4 duplicate=false"
+    },
+    {
+      "name": "a5a agent resolved-finish outcome recorded against SCENARIOS.md F3 (409 remote_binding_required unless the device is remote-bound)",
+      "ok": true,
+      "detail": "HTTP 409 remote_binding_required"
+    },
+    {
+      "name": "a5b operator resolves the ticket with the repair receipt",
+      "ok": true,
+      "detail": "state=resolved"
+    },
+    {
+      "name": "a6 device read equals the host record: resolved, Sam's reply, the receipt summary",
+      "ok": true,
+      "detail": "state=resolved replies=1 receipt=Told the warehouse lead: line C."
+    },
+    {
+      "name": "b1 ticket stored queued from marcus-desktop",
+      "ok": true,
+      "detail": "ticketId=d2f69377-cf9d-458e-8e42-36913028c2e7 state=queued"
+    },
+    {
+      "name": "b2 ticket resolved with the reply and receipt, and Marcus's device reads both",
+      "ok": true,
+      "detail": "host=resolved device=resolved replies=1"
+    },
+    {
+      "name": "b3 the management record names the worker who handled it",
+      "ok": true,
+      "detail": "worker=sam-akintola"
+    },
+    {
+      "name": "both tickets have a product audit trail (stored -> claimed -> reply_added -> resolved)",
+      "ok": true,
+      "detail": "audit rows=8: stored,claimed,reply_added,resolved,stored,claimed,reply_added,resolved"
+    },
+    {
+      "name": "B1 fixture order created open on the installed plugin",
+      "ok": true,
+      "detail": "order=o3275 state=open duplicate=false"
+    },
+    {
+      "name": "B2 lead claims the order and closes its pre-flight",
+      "ok": true,
+      "detail": "preflight=closed"
+    },
+    {
+      "name": "B3 order decomposed to one board-shaped task",
+      "ok": true,
+      "detail": "task=t4140 order_state=in_progress"
+    },
+    {
+      "name": "B4 builder claims, posts evidence and submits the task as built",
+      "ok": true,
+      "detail": "state=built evidence_post=7305"
+    },
+    {
+      "name": "B5 a checker runs and records a pass verdict",
+      "ok": true,
+      "detail": "checker=checker:selftest-chk-a322b857a021 verdict_post=7307 task_state=done"
+    },
+    {
+      "name": "B6 the order rolls up to done through its own done-when",
+      "ok": true,
+      "detail": "state=done waited=508ms"
+    },
+    {
+      "name": "B6b the board task is done and banked, and the order's final task is done+banked",
+      "ok": true,
+      "detail": "task=done/banked=true final=done/banked=true"
+    },
+    {
+      "name": "B7 every board post the pipeline wrote is readable (evidence + verdict + order-created + report)",
+      "ok": true,
+      "detail": "posts=13: order-created,preflight,preflight-answers,decomposition,evidence,built,verdict,task-done,report,built,verdict,task-done,order-done"
+    },
+    {
+      "name": "every fleet op answered ok and is recorded",
+      "ok": true,
+      "detail": "ops=12, refused=none"
+    }
+  ],
+  "findings": [
+    {
+      "name": "product limit F4",
+      "detail": "agent ticket-worker credential cannot post a reply — observed HTTP 403 worker_route_denied"
+    },
+    {
+      "name": "product limit F3",
+      "detail": "agent ticket-worker credential cannot finish resolved without a remote binding — observed HTTP 409 remote_binding_required"
+    },
+    {
+      "name": "product limit F6",
+      "detail": "the ticket record carries a free-text worker and replies have no author; Dana and Sam share one operator token — observed worker=sam-akintola reply-authors=0"
+    },
+    {
+      "name": "warehouse board app",
+      "detail": "The warehouse-board app source lives only on the offline work PC (PACKAGE-PENDING). This order is a real fleet order carrying the board-shaped task; the board state it names is the fixture's scripted board (see R1: board.scriptedState=true). Named stand-in: the board app, never counted clean."
+    }
+  ],
+  "pending": [],
+  "notes": [
+    "Fleet order ops (all on /run/fleet/control.sock, peer uid 1000): order-create -> order_claim (selftest lead) -> preflight_raise -> preflight-close -> task_decompose -> task_claim (selftest builder) -> evidence_post -> task_submit_built -> check-start -> verdict (selftest checker) -> lesson_propose (bank the task) -> report_file"
+  ],
+  "evidence": [
+    "R5/tickets-round-trip.json",
+    "R5/fleet-order-ops.json",
+    "R5/fleet-order-readback.json"
+  ],
+  "meta": {
+    "orderId": "o3275",
+    "taskId": "t4140",
+    "verdictId": "7307",
+    "evidenceId": "7305",
+    "ops": 12
+  },
+  "started_utc": "2026-11-01T22:07:34Z",
+  "finished_utc": "2026-11-01T22:07:35Z",
+  "failures": [],
+  "forced_failure": null
+}

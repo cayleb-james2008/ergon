@@ -1,0 +1,16 @@
+{
+  "isError": false,
+  "result": {
+    "ok": true,
+    "sessionId": "fleet-mcp-a694a59e-f8d3-47ca-93f3-9e2b61066223",
+    "status": "created",
+    "mode": "stub",
+    "model": "deterministic-stub (fleet-selftest-stub)",
+    "provider": "fleet-selftest-stub",
+    "preset": null,
+    "cwd": "/tmp/cv-s5.tbqAwQ/fleet/work/mcp-sessions/fleet-mcp-a694a59e-f8d3-47ca-93f3-9e2b61066223",
+    "turn_agent": "builder:selftest-fleet-mcp-a694a59e-f8d3-47ca-93f3-9e2b61066223",
+    "turns": 0,
+    "note": "deterministic stub route: real DSH agent session, model-free (no provider credential needed); prompts name their transport (agent | stub-turn)"
+  }
+}

@@ -1,0 +1,16 @@
+checker: checker-install (independent, fresh context)
+host: outis-desktop
+user: cayleb uid=1000
+date_start_iso: 2026-11-01T16:43:16-05:00
+command: OUT=/home/cayleb/workspace/harness-build/evidence/strike/s1-stage2-check FLEET_CLI=/home/cayleb/workspace/harness-build/dsh-fleet-integration/package/bin/dsh-fleet.mjs bash /home/cayleb/workspace/harness-build/dsh-fleet-integration/checks/stage2-check.sh
+tree: /home/cayleb/workspace/harness-build/dsh-fleet-integration
+tree_commit: cf93107bc6e31ed265332b005d75b63d8acb300e
+tree_branch: integration/0.2.2
+tree_status_porcelain: []
+script_sha256: 7df6344c0846491e1130e9fb4c198aeed01de480b2ca47b03d9a5c3529fcca95
+expected_script_sha256: 7df6344c0846491e1130e9fb4c198aeed01de480b2ca47b03d9a5c3529fcca95
+package_json_sha256: ef93187aec289d70bd29446c66c5b63abe44f78f4d2342871af2338274b4f52c
+service_before: active inv=66d3f8b4eb3f40f59d1d39aaab5e1cc4 pid=415240
+node: v26.7.0
+python3: Python 3.14.8
+jq: jq-1.8.2

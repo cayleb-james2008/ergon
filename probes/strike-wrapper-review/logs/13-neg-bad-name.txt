@@ -1,0 +1,6 @@
+mk-bad-archive: wrote /tmp/checker-wrapper-review.458405/badname.tgz (package.json name -> 'evil-package'; changed_members=1)
+sim-pnpm: 104 regular files masked(0644->0640,0755->0750)+hardlinked(nlink=2); dirs 750; bad=0
+block rc=1
+stdout: []
+stderr: normalise: archive package name is 'evil-package', not '@cayleb/dsh-fleet'
+installed tree UNCHANGED by the refusal: YES

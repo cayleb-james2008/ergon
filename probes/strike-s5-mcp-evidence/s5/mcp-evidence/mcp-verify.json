@@ -1,0 +1,4329 @@
+{
+  "summary": {
+    "probe": "checker-verify/mcp-verify.mjs",
+    "started": "2026-11-01T22:22:30.552Z",
+    "finished": "2026-11-01T22:22:32.104Z",
+    "mode": "real",
+    "urls": {
+      "loopback": "http://127.0.0.1:18889/mcp",
+      "tailnet": "http://100.114.17.67:18889/mcp",
+      "tailnet_established": true
+    },
+    "nonce": "cv-mvyeb7vc-9cf27687",
+    "checks": {
+      "total": 87,
+      "passed": 84,
+      "failed": 0,
+      "informational": 3
+    },
+    "failedIds": [],
+    "verdict": "PASS"
+  },
+  "checks": [
+    {
+      "id": "P0.token",
+      "title": "bearer token readable over the owner admin socket",
+      "ok": true,
+      "detail": "token present (value never printed)"
+    },
+    {
+      "id": "P0.admin-stat",
+      "title": "admin stat reports the token and the action log ready",
+      "ok": true,
+      "detail": "log.open=true log.broken=null token.exists=true token.mode=600"
+    },
+    {
+      "id": "P0.fleet-control",
+      "title": "fleet control socket answers status with integrity ok",
+      "ok": true,
+      "detail": "ok=true integrity.ok=true failures=[]"
+    },
+    {
+      "id": "P0.reach.loopback",
+      "title": "loopback listener 127.0.0.1:18889 accepts TCP",
+      "ok": true,
+      "detail": "connected from 127.0.0.1:40340"
+    },
+    {
+      "id": "P0.reach.tailnet",
+      "title": "tailnet listener 100.114.17.67:18889 accepts TCP",
+      "ok": true,
+      "detail": "connected from 100.114.17.67:34972"
+    },
+    {
+      "id": "T1.missing.status",
+      "title": "missing token -> HTTP 401",
+      "ok": true,
+      "detail": "status=401"
+    },
+    {
+      "id": "T1.missing.no-result",
+      "title": "missing token -> refusal envelope, no tool result",
+      "ok": true,
+      "detail": "error.code=-32001 result=absent"
+    },
+    {
+      "id": "T1.wrong.status",
+      "title": "wrong token -> HTTP 401",
+      "ok": true,
+      "detail": "status=401"
+    },
+    {
+      "id": "T1.wrong.no-result",
+      "title": "wrong token -> refusal envelope, no tool result",
+      "ok": true,
+      "detail": "error.code=-32001 result=absent"
+    },
+    {
+      "id": "T1.www-authenticate",
+      "title": "401 advertises the Bearer challenge",
+      "ok": true,
+      "detail": "www-authenticate=Bearer realm=\"fleet-mcp\""
+    },
+    {
+      "id": "T1.log.refused-rows",
+      "title": "both refusals are appended as refused rows (principal null)",
+      "ok": true,
+      "detail": "refused=2 codes=[\"missing-token\",\"invalid-token\"] principals=[null,null]"
+    },
+    {
+      "id": "T1.log.no-dispatch",
+      "title": "nothing was dispatched: no intent row for the refused call",
+      "ok": true,
+      "detail": "new intent rows=0"
+    },
+    {
+      "id": "T2.loopback.initialize",
+      "title": "loopback initialize answers 200 with serverInfo fleet-mcp",
+      "ok": true,
+      "detail": "status=200 server=fleet-mcp version=0.3.0-mcp protocol=2025-03-26"
+    },
+    {
+      "id": "T2.loopback.session-id",
+      "title": "loopback initialize issues Mcp-Session-Id",
+      "ok": true,
+      "detail": "header=(present, not a secret)"
+    },
+    {
+      "id": "T2.loopback.capabilities",
+      "title": "loopback advertises tools capability",
+      "ok": true,
+      "detail": "{\"tools\":{\"listChanged\":false}}"
+    },
+    {
+      "id": "T2.loopback.initialized-notification",
+      "title": "loopback notifications/initialized answers 202 with empty body",
+      "ok": true,
+      "detail": "status=202"
+    },
+    {
+      "id": "T2.loopback.tools-list",
+      "title": "loopback tools/list lists the exact 9 contracted tools",
+      "ok": true,
+      "detail": "count=9 missing=[] extra=[]"
+    },
+    {
+      "id": "T2.loopback.schemas",
+      "title": "loopback every tool has a description and an inputSchema",
+      "ok": true,
+      "detail": "specs=9"
+    },
+    {
+      "id": "T2.tailnet.initialize",
+      "title": "tailnet initialize answers 200 with serverInfo fleet-mcp",
+      "ok": true,
+      "detail": "status=200 server=fleet-mcp version=0.3.0-mcp protocol=2025-03-26"
+    },
+    {
+      "id": "T2.tailnet.session-id",
+      "title": "tailnet initialize issues Mcp-Session-Id",
+      "ok": true,
+      "detail": "header=(present, not a secret)"
+    },
+    {
+      "id": "T2.tailnet.capabilities",
+      "title": "tailnet advertises tools capability",
+      "ok": true,
+      "detail": "{\"tools\":{\"listChanged\":false}}"
+    },
+    {
+      "id": "T2.tailnet.initialized-notification",
+      "title": "tailnet notifications/initialized answers 202 with empty body",
+      "ok": true,
+      "detail": "status=202"
+    },
+    {
+      "id": "T2.tailnet.tools-list",
+      "title": "tailnet tools/list lists the exact 9 contracted tools",
+      "ok": true,
+      "detail": "count=9 missing=[] extra=[]"
+    },
+    {
+      "id": "T2.tailnet.schemas",
+      "title": "tailnet every tool has a description and an inputSchema",
+      "ok": true,
+      "detail": "specs=9"
+    },
+    {
+      "id": "T2.tailnet.address",
+      "title": "the tailnet leg is a 100.64.0.0/10 address",
+      "ok": true,
+      "detail": "host=100.114.17.67"
+    },
+    {
+      "id": "T2.legs.identical",
+      "title": "both legs list the same tools",
+      "ok": true,
+      "detail": "loopback=9 tailnet=9"
+    },
+    {
+      "id": "T3.create",
+      "title": "session.create returns a session id on the labelled stub route",
+      "ok": true,
+      "detail": "ok=true sessionId=(present) status=created mode=stub"
+    },
+    {
+      "id": "T3.model-label",
+      "title": "session.create labels the model deterministic-stub and names no provider credential",
+      "ok": true,
+      "detail": "model=deterministic-stub (fleet-selftest-stub) provider=fleet-selftest-stub"
+    },
+    {
+      "id": "T3.prompt.transport",
+      "title": "session.prompt names its real transport (agent | stub-turn), never an unlabelled turn",
+      "ok": true,
+      "detail": "transport=stub-turn turn_agent=builder:selftest-fleet-mcp-a694a59e-f8d3-47ca-93f3-9e2b61066223 ledger_gate=stub-provider-selftest-only turn_model=claude-haiku-5-5 provider_calls=1"
+    },
+    {
+      "id": "T3.prompt",
+      "title": "one full agent turn completes (non-empty assistant text; the transport is named)",
+      "ok": true,
+      "detail": "status=completed turns=1 transport=stub-turn assistant_bytes=730 contains_stub_prefix=true"
+    },
+    {
+      "id": "T3.prompt.echo",
+      "title": "the stub answer echoes the caller text literally (tool description says S3STUB:<your text>) — RECORDED, not required: no",
+      "ok": null,
+      "detail": "contains_caller_nonce=false contains_stub_prefix=true first_80=\"S3STUB:Current runtime context. This snapshot supersedes earlier runtime-context\""
+    },
+    {
+      "id": "T3.prompt.stub-turn-principal",
+      "title": "the stub-turn transport names the selftest principal and the gate reason",
+      "ok": true,
+      "detail": "turn_agent=builder:selftest-fleet-mcp-a694a59e-f8d3-47ca-93f3-9e2b61066223 ledger_gate=stub-provider-selftest-only"
+    },
+    {
+      "id": "T3.status",
+      "title": "session.status reads the same session back (found, turns, model label, transport, same assistant text)",
+      "ok": true,
+      "detail": "found=true turns=1 model=deterministic-stub (fleet-selftest-stub) last_transport=stub-turn expected_transport=stub-turn read_back_same_text=true last_bytes=730"
+    },
+    {
+      "id": "T3.model-mode-staged",
+      "title": "session.create mode:model is refused by name, never faked",
+      "ok": true,
+      "detail": "isError=true code=model-credential-not-entered"
+    },
+    {
+      "id": "t4.ids",
+      "title": "the id chain is shaped oN / tN and the post ids are digit strings",
+      "ok": true,
+      "detail": "order=o1 task=t1 final_task=null posts=12"
+    },
+    {
+      "id": "t4.honesty",
+      "title": "the result labels the lifecycle fixture-validated and the real lane not-built",
+      "ok": true,
+      "detail": "mode=fixture-validated real_lane=not-built (Stage 4 roster) order.fixture=true"
+    },
+    {
+      "id": "t4.final_state",
+      "title": "final_state reports order and task done with a pass verdict",
+      "ok": true,
+      "detail": "{\"order_state\":\"done\",\"task_state\":\"done\",\"order_done\":true,\"task_done\":true,\"verdict\":\"pass\",\"round\":1,\"final_task_state\":\"done\"}"
+    },
+    {
+      "id": "t4.not-real-execution",
+      "title": "the result claims no real-lane execution",
+      "ok": true,
+      "detail": "real_lane=not-built (Stage 4 roster)"
+    },
+    {
+      "id": "t4.control.order",
+      "title": "control order-get shows the same order id, terminal done, fixture, and the nonce title",
+      "ok": true,
+      "detail": "ok=true id=o1 state=done fixture=true titleMatch=true"
+    },
+    {
+      "id": "t4.control.task",
+      "title": "control order-get shows the task done and banked, and the final task done",
+      "ok": true,
+      "detail": "task.state=done task.banked=true final.state=done"
+    },
+    {
+      "id": "t4.control.posts",
+      "title": "every post id the tool reported exists on the order board over the control socket",
+      "ok": true,
+      "detail": "reported=12 control=12 missing=[]"
+    },
+    {
+      "id": "t4.control.order-list",
+      "title": "the order is visible in order-list (no shadow row)",
+      "ok": true,
+      "detail": "listed=true state=done"
+    },
+    {
+      "id": "t4b.ids",
+      "title": "the id chain is shaped oN / tN and the post ids are digit strings",
+      "ok": true,
+      "detail": "order=o2 task=t3 final_task=null posts=12"
+    },
+    {
+      "id": "t4b.honesty",
+      "title": "the result labels the lifecycle fixture-validated and the real lane not-built",
+      "ok": true,
+      "detail": "mode=fixture-validated real_lane=not-built (Stage 4 roster) order.fixture=true"
+    },
+    {
+      "id": "t4b.final_state",
+      "title": "final_state reports order and task done with a pass verdict",
+      "ok": true,
+      "detail": "{\"order_state\":\"done\",\"task_state\":\"done\",\"order_done\":true,\"task_done\":true,\"verdict\":\"pass\",\"round\":1,\"final_task_state\":\"done\"}"
+    },
+    {
+      "id": "t4b.not-real-execution",
+      "title": "the result claims no real-lane execution",
+      "ok": true,
+      "detail": "real_lane=not-built (Stage 4 roster)"
+    },
+    {
+      "id": "t4b.control.order",
+      "title": "control order-get shows the same order id, terminal done, fixture, and the nonce title",
+      "ok": true,
+      "detail": "ok=true id=o2 state=done fixture=true titleMatch=true"
+    },
+    {
+      "id": "t4b.control.task",
+      "title": "control order-get shows the task done and banked, and the final task done",
+      "ok": true,
+      "detail": "task.state=done task.banked=true final.state=done"
+    },
+    {
+      "id": "t4b.control.posts",
+      "title": "every post id the tool reported exists on the order board over the control socket",
+      "ok": true,
+      "detail": "reported=12 control=12 missing=[]"
+    },
+    {
+      "id": "t4b.control.order-list",
+      "title": "the order is visible in order-list (no shadow row)",
+      "ok": true,
+      "detail": "listed=true state=done"
+    },
+    {
+      "id": "T4b.distinct-orders",
+      "title": "a second independent roundtrip creates a different order (no planted one-shot)",
+      "ok": true,
+      "detail": "t4=o1 t4b=o2"
+    },
+    {
+      "id": "T5.control.no-order",
+      "title": "staging created no order (fixture or real) and claims no execution",
+      "ok": true,
+      "detail": "orders titled with the staging marker=0"
+    },
+    {
+      "id": "T5.branch",
+      "title": "no roster mounted -> clean staged refusal named lanes-unavailable",
+      "ok": true,
+      "detail": "branch A (real-lane-staged) is the expected honest shape on a host without fleetRoster"
+    },
+    {
+      "id": "T5.refusal",
+      "title": "refusal is named lanes-unavailable with mode real-lane-staged and no order id",
+      "ok": true,
+      "detail": "code=lanes-unavailable mode=real-lane-staged stage_path=(present)"
+    },
+    {
+      "id": "T5.payload-digest",
+      "title": "the returned payload digest equals sha256 of the canonical payload",
+      "ok": true,
+      "detail": "digest_match=true"
+    },
+    {
+      "id": "T5.payload.non-fixture",
+      "title": "the staged payload is the non-fixture order form with its own title/goal",
+      "ok": true,
+      "detail": "fixture=undefined titleMatch=true goalMatch=true"
+    },
+    {
+      "id": "T5.payload.done-when",
+      "title": "the staged payload carries the sent done-when",
+      "ok": true,
+      "detail": "{\"mode\":\"command\",\"command\":\"true\",\"text\":\"checker-verify staged done-when cv-mvyeb7vc-9cf27687\"}"
+    },
+    {
+      "id": "T5.done-when.runnable",
+      "title": "the staged done-when actually runs (exit 0) in a throwaway cwd",
+      "ok": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "T5.honest",
+      "title": "the staged refusal does not claim execution",
+      "ok": true,
+      "detail": "message/detail inspected for execution claims"
+    },
+    {
+      "id": "T7.runtime-sources",
+      "title": "fleet.status reports the loopback+tailnet allowlist",
+      "ok": true,
+      "detail": "{\"sources\":[\"loopback\",\"tailnet\"],\"v4\":[\"127.0.0.0/8\",\"100.64.0.0/10\"],\"v6\":[\"::1\"]}"
+    },
+    {
+      "id": "T7.bind",
+      "title": "the listener binds exact addresses, never a catch-all",
+      "ok": true,
+      "detail": "bind=[{\"host\":\"127.0.0.1\",\"port\":18889,\"family\":\"IPv4\"},{\"host\":\"::1\",\"port\":18889,\"family\":\"IPv6\"},{\"host\":\"100.114.17.67\",\"port\":18889,\"family\":\"IPv4\"}]"
+    },
+    {
+      "id": "T7.honesty",
+      "title": "fleet.status labels the model route and the real lane honestly",
+      "ok": true,
+      "detail": "model_route=deterministic-stub (fleet-selftest-stub) real_lane=not-built (Stage 4 roster)"
+    },
+    {
+      "id": "T7.fleet-integrity",
+      "title": "fleet.status reports fleet integrity ok with no failures",
+      "ok": true,
+      "detail": "ok=true failures=[]"
+    },
+    {
+      "id": "T7.unit-netfilter",
+      "title": "the unit netfilter allows only localhost and the two named tailnet peers",
+      "ok": true,
+      "detail": "fileAllow=true fileDeny=true effectiveAllow=true effectiveDeny=true; unit shown in t7-unit-netfilter.txt"
+    },
+    {
+      "id": "T7.listeners",
+      "title": "ss shows :18889 only on loopback and the host tailnet address (never 0.0.0.0/::)",
+      "ok": true,
+      "detail": "lines=[\"LISTEN 0      511                             100.114.17.67:18889      0.0.0.0:*\",\"LISTEN 0      511                                 127.0.0.1:18889      0.0.0.0:*\",\"LISTEN 0      511                                     [::1]:18889         [::]:*\"]"
+    },
+    {
+      "id": "T7.foreign-source-live",
+      "title": "a live foreign-source request is refused (NOT PROVEN from this seat — stated, not claimed)",
+      "ok": null,
+      "detail": "kernel refused local bind/route: EADDRNOTAVAIL. Requires a second host/namespace or root; this is recorded as not proven, never as a pass."
+    },
+    {
+      "id": "T8.oversized.status",
+      "title": "a body over the limit is refused (413, or a reset AFTER the refusal is logged — recorded exactly)",
+      "ok": true,
+      "detail": "status=413 body={\"jsonrpc\":\"2.0\",\"id\":null,\"error\":{\"code\":-32004,\"message\":\"payload too large: the body limit is 262144 bytes\"}}"
+    },
+    {
+      "id": "T8.malformed",
+      "title": "malformed JSON is refused with 400 and a parse error (never dispatched)",
+      "ok": true,
+      "detail": "status=400 code=-32700"
+    },
+    {
+      "id": "T8.batch",
+      "title": "a JSON-RPC batch is refused with 400 (one message per POST)",
+      "ok": true,
+      "detail": "status=400 code=-32600"
+    },
+    {
+      "id": "T8.log",
+      "title": "the limit refusals are appended to the action log (payload-too-large, parse-error)",
+      "ok": true,
+      "detail": "[\"payload-too-large\",\"payload-too-large\",\"parse-error\"]"
+    },
+    {
+      "id": "T8.log.batch-row",
+      "title": "a batch refusal is ALSO appended as a refused row (observed behaviour, recorded not required)",
+      "ok": null,
+      "detail": "batch_logged=false codes=[\"payload-too-large\",\"payload-too-large\",\"parse-error\"]"
+    },
+    {
+      "id": "T6.actions.status",
+      "title": "actions.status reports an open, unbroken hash-chained log",
+      "ok": true,
+      "detail": "open=true broken=null chain=jsonl-hash-chain seq=22"
+    },
+    {
+      "id": "T6.intents",
+      "title": "every tool call this probe made has an append-before-effect intent row (same order)",
+      "ok": true,
+      "detail": "expected=[\"session.create\",\"session.prompt\",\"session.status\",\"session.create\",\"order.drive_roundtrip\",\"order.drive_roundtrip\",\"order.stage_real\",\"fleet.status\",\"actions.status\"] logged=[\"session.create\",\"session.prompt\",\"session.status\",\"session.create\",\"order.drive_roundtrip\",\"order.drive_roundtrip\",\"order.stage_real\",\"fleet.status\",\"actions.status\"]"
+    },
+    {
+      "id": "T6.principal",
+      "title": "every intent row carries a non-empty principal",
+      "ok": true,
+      "detail": "[\"mcp:bearer\",\"mcp:bearer\",\"mcp:bearer\",\"mcp:bearer\",\"mcp:bearer\",\"mcp:bearer\",\"mcp:bearer\",\"mcp:bearer\",\"mcp:bearer\"]"
+    },
+    {
+      "id": "T6.args-digest",
+      "title": "intent rows store only argument NAMES and a digest (no values)",
+      "ok": true,
+      "detail": "keys_sample=[\"n\"]"
+    },
+    {
+      "id": "T6.append-before-effect",
+      "title": "every intent has its outcome appended after it (ref_seq = intent seq)",
+      "ok": true,
+      "detail": "intents=9 outcomes=9 missing=[]"
+    },
+    {
+      "id": "T6.outcomes",
+      "title": "outcome rows match the real results (ok vs error), call for call in order",
+      "ok": true,
+      "detail": "toolCalls=9 intents=9 errors=2 errorOutcomes=2 mismatches=[]"
+    },
+    {
+      "id": "T6.no-token",
+      "title": "the bearer token never appears in the action log rows (value compared in memory)",
+      "ok": true,
+      "detail": "comparison only; the value is never printed"
+    },
+    {
+      "id": "T6.no-arg-values",
+      "title": "no argument VALUE this probe sent appears in the log rows; only names/digests are stored",
+      "ok": true,
+      "detail": "markers checked=7 leaked=[]"
+    },
+    {
+      "id": "T6.chain-link",
+      "title": "consecutive tail rows link by prev == previous hash",
+      "ok": true,
+      "detail": "rows=23 linkChecks=22 linkOk=true"
+    },
+    {
+      "id": "T6.chain-recompute",
+      "title": "the documented hash recomputation reproduces the row hashes",
+      "ok": true,
+      "detail": "recomputeChecks=22 recomputeOk=true"
+    },
+    {
+      "id": "T6.actions.tail-agrees",
+      "title": "actions.status tail and the admin-socket tail agree on the rows both can see",
+      "ok": true,
+      "detail": "actions_rows=22 admin_rows=23 lastSeq=22 sameChain=true trailing=1 trailingIsOwnOutcome=true"
+    },
+    {
+      "id": "T6.full-file-scan-token",
+      "title": "the whole action log (every byte) contains no bearer token",
+      "ok": true,
+      "detail": "log=/tmp/cv-s5.tbqAwQ/fleet/log/mcp-actions.jsonl bytes=8323 rows=23 (value compared in memory only)"
+    },
+    {
+      "id": "T6.full-file-scan-values",
+      "title": "the whole action log contains no argument value this probe sent",
+      "ok": true,
+      "detail": "markers=7 leaked=[]"
+    },
+    {
+      "id": "T6.full-file-scan-chain",
+      "title": "every row in the whole log parses and the full hash chain links and recomputes",
+      "ok": true,
+      "detail": "rows=23 parsed=true linkOk=true recomputeOk=true"
+    },
+    {
+      "id": "T9.rate",
+      "title": "the 61st-request-class call inside one minute is refused 429 with a retry-after and -32005",
+      "ok": true,
+      "detail": "limited after 43 requests this run; retry-after=59s code=-32005"
+    },
+    {
+      "id": "T9.rate-logged",
+      "title": "the rate-limit refusal is appended to the action log",
+      "ok": true,
+      "detail": "rows=1"
+    }
+  ],
+  "tests": {
+    "p0-admin-stat": {
+      "ok": true,
+      "result": {
+        "name": "fleet-mcp",
+        "version": "0.3.0-mcp",
+        "pid": 464358,
+        "uptime_s": 0,
+        "ok": true,
+        "degraded": [],
+        "transport": "streamable-http",
+        "protocol_versions": [
+          "2025-03-26",
+          "2024-11-05"
+        ],
+        "bind": [
+          {
+            "host": "127.0.0.1",
+            "port": 18889,
+            "family": "IPv4"
+          },
+          {
+            "host": "::1",
+            "port": 18889,
+            "family": "IPv6"
+          },
+          {
+            "host": "100.114.17.67",
+            "port": 18889,
+            "family": "IPv4"
+          }
+        ],
+        "sources": {
+          "sources": [
+            "loopback",
+            "tailnet"
+          ],
+          "v4": [
+            "127.0.0.0/8",
+            "100.64.0.0/10"
+          ],
+          "v6": [
+            "::1"
+          ]
+        },
+        "admin": {
+          "path": "/tmp/cv-s5.tbqAwQ/ctl/mcp-admin.sock",
+          "listening": true,
+          "stats": {
+            "accepted": 2,
+            "refused": 0
+          }
+        },
+        "token": {
+          "path": "/tmp/cv-s5.tbqAwQ/fleet/state/mcp/token",
+          "exists": true,
+          "mode": "600",
+          "size": 65,
+          "fingerprint": "ab4dbc7f5ed4efc4"
+        },
+        "log": {
+          "path": "/tmp/cv-s5.tbqAwQ/fleet/log/mcp-actions.jsonl",
+          "seq": 0,
+          "head": "0000000000000000000000000000000000000000000000000000000000000000",
+          "open": true,
+          "broken": null,
+          "mode": "jsonl-hash-chain"
+        },
+        "sessions": {
+          "held": 0,
+          "max": 8,
+          "sessions": []
+        },
+        "requests": {
+          "requests": 0,
+          "accepted": 0,
+          "refused": 0,
+          "toolCalls": 0,
+          "byTool": {},
+          "byRefusal": {},
+          "sessionsOpened": 0,
+          "sessionsClosed": 0
+        },
+        "model_route": "deterministic-stub (fleet-selftest-stub)",
+        "real_lane": "not-built (Stage 4 roster)"
+      }
+    },
+    "p0-fleet-mcp-stat": {
+      "name": "fleet-mcp",
+      "version": "0.3.0-mcp",
+      "ok": true,
+      "degraded": [],
+      "bind": [
+        {
+          "host": "127.0.0.1",
+          "port": 18889,
+          "family": "IPv4"
+        },
+        {
+          "host": "::1",
+          "port": 18889,
+          "family": "IPv6"
+        },
+        {
+          "host": "100.114.17.67",
+          "port": 18889,
+          "family": "IPv4"
+        }
+      ],
+      "sources": {
+        "sources": [
+          "loopback",
+          "tailnet"
+        ],
+        "v4": [
+          "127.0.0.0/8",
+          "100.64.0.0/10"
+        ],
+        "v6": [
+          "::1"
+        ]
+      },
+      "admin": {
+        "path": "/tmp/cv-s5.tbqAwQ/ctl/mcp-admin.sock",
+        "listening": true,
+        "stats": {
+          "accepted": 2,
+          "refused": 0
+        }
+      },
+      "log": {
+        "path": "/tmp/cv-s5.tbqAwQ/fleet/log/mcp-actions.jsonl",
+        "seq": 0,
+        "head": "0000000000000000000000000000000000000000000000000000000000000000",
+        "open": true,
+        "broken": null,
+        "mode": "jsonl-hash-chain"
+      },
+      "model_route": "deterministic-stub (fleet-selftest-stub)",
+      "real_lane": "not-built (Stage 4 roster)"
+    },
+    "p0-fleet-status": {
+      "ok": true,
+      "result": {
+        "name": "fleet-core",
+        "protocol": 1,
+        "pid": 464358,
+        "node": "v26.7.0",
+        "uptime_s": 1,
+        "db": {
+          "path": "/tmp/cv-s5.tbqAwQ/fleet/state/fleet.db",
+          "journal_mode": "wal",
+          "events": 3,
+          "head": {
+            "seq": 3,
+            "hash": "5c72ce3e458ede4ec108f4967ec6a6a5bfd07e58e306de70bc42b5b1bc1f60b7"
+          }
+        },
+        "chain_head_sink": "journald",
+        "integrity": {
+          "ok": true,
+          "chain": {
+            "ok": true,
+            "verified_at_boot": 0
+          },
+          "sandbox": {
+            "ok": true,
+            "id": "fleet-sandbox"
+          },
+          "rows": {
+            "ok": true,
+            "pinned": 7,
+            "disabled": 12,
+            "failures": [],
+            "manifest_sha256": "1bcac9862a9b6c9723c27b193b3a9f22ab9b07f9d30e7fef862d01d194d59ee9"
+          },
+          "mask_roots": {
+            "ok": true,
+            "roots": [
+              "/tmp/cv-s5.tbqAwQ/fleet/dsh",
+              "/tmp/cv-s5.tbqAwQ/fleet/state",
+              "/tmp/cv-s5.tbqAwQ/fleet/log",
+              "/tmp/cv-s5.tbqAwQ/fleet/work",
+              "/tmp/cv-s5.tbqAwQ/fleet/backups",
+              "/tmp/cv-s5.tbqAwQ/fleet/checks"
+            ]
+          },
+          "guard": {
+            "ok": true,
+            "required": [
+              "fleet-policy",
+              "fleet-ledger"
+            ],
+            "failures": []
+          },
+          "failures": []
+        },
+        "lanes_allowed": true,
+        "control": {
+          "path": "/tmp/cv-s5.tbqAwQ/ctl/control.sock",
+          "peer_uid": 1000,
+          "peer_cred_error": null,
+          "accepted": 2,
+          "rejected": 0
+        },
+        "policy": {
+          "selftest": true,
+          "selftest_source": "default",
+          "entries": {
+            "check.marker": {
+              "key": "check.marker",
+              "value": "",
+              "source": "default"
+            },
+            "hold.refused_patterns": {
+              "key": "hold.refused_patterns",
+              "value": [
+                "wallet",
+                "trade",
+                "tradovate",
+                "activate"
+              ],
+              "source": "default"
+            },
+            "housekeeper.retention": {
+              "key": "housekeeper.retention",
+              "value": {
+                "hourly": 48,
+                "daily": 14,
+                "weekly": 8
+              },
+              "source": "default"
+            },
+            "ledger.day_cap_usd": {
+              "key": "ledger.day_cap_usd",
+              "value": 5,
+              "source": "default"
+            },
+            "lessons.max_accepted_per_mission": {
+              "key": "lessons.max_accepted_per_mission",
+              "value": 20,
+              "source": "default"
+            },
+            "lessons.max_accepted_per_task": {
+              "key": "lessons.max_accepted_per_task",
+              "value": 3,
+              "source": "default"
+            },
+            "lessons.max_rejected": {
+              "key": "lessons.max_rejected",
+              "value": 50,
+              "source": "default"
+            },
+            "lessons.tier2_domains": {
+              "key": "lessons.tier2_domains",
+              "value": [
+                "host-ops",
+                "pumpfun",
+                "paperclip",
+                "security",
+                "money",
+                "finance",
+                "trading",
+                "wallet",
+                "comms",
+                "external-comms",
+                "deploy",
+                "hands",
+                "policy"
+              ],
+              "source": "default"
+            },
+            "orders.batch-floor-min": {
+              "key": "orders.batch-floor-min",
+              "value": 10,
+              "source": "default"
+            },
+            "orders.errand-max-min": {
+              "key": "orders.errand-max-min",
+              "value": 15,
+              "source": "default"
+            },
+            "orders.errand-quota": {
+              "key": "orders.errand-quota",
+              "value": 2,
+              "source": "default"
+            },
+            "orders.goldfish-reviewers": {
+              "key": "orders.goldfish-reviewers",
+              "value": 3,
+              "source": "default"
+            },
+            "orders.lease-ms": {
+              "key": "orders.lease-ms",
+              "value": 900000,
+              "source": "default"
+            },
+            "orders.max-lost-leases": {
+              "key": "orders.max-lost-leases",
+              "value": 3,
+              "source": "default"
+            },
+            "orders.max-rounds": {
+              "key": "orders.max-rounds",
+              "value": 3,
+              "source": "default"
+            },
+            "orders.protected-paths": {
+              "key": "orders.protected-paths",
+              "value": [
+                "/var/lib/fleet-mirrors",
+                "/var/lib/fleet/mirrors"
+              ],
+              "source": "default"
+            },
+            "rates": {
+              "key": "rates",
+              "value": {
+                "anthropic/claude-haiku-5-5": {
+                  "input_per_mtok": 0.1,
+                  "output_per_mtok": 0.5,
+                  "cache_read_per_mtok": 0.01,
+                  "cache_write_per_mtok": 0.125,
+                  "tiers": [
+                    {
+                      "input_tokens_above": 100000,
+                      "input_per_mtok": 0.5,
+                      "output_per_mtok": 2.5,
+                      "cache_read_per_mtok": 0.05,
+                      "cache_write_per_mtok": 0.625
+                    }
+                  ]
+                },
+                "anthropic/claude-sonnet-5-5": {
+                  "input_per_mtok": 2,
+                  "output_per_mtok": 10,
+                  "cache_read_per_mtok": 0.1,
+                  "cache_write_per_mtok": 2.5
+                },
+                "anthropic/claude-opus-5-5": {
+                  "input_per_mtok": 4,
+                  "output_per_mtok": 20,
+                  "cache_read_per_mtok": 0.2,
+                  "cache_write_per_mtok": 5
+                }
+              },
+              "source": "default"
+            },
+            "selftest": {
+              "key": "selftest",
+              "value": true,
+              "source": "default"
+            },
+            "spend.hard_ceiling_usd": {
+              "key": "spend.hard_ceiling_usd",
+              "value": 5,
+              "source": "default"
+            }
+          }
+        },
+        "owner_secret_path": "/tmp/cv-s5.tbqAwQ/dsh/.credentials.yaml",
+        "test_plugins": []
+      }
+    },
+    "t1-baseline": {
+      "seq": 0,
+      "head": "0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    "t1-missing-token": {
+      "status": 401,
+      "headers": {
+        "www-authenticate": "Bearer realm=\"fleet-mcp\""
+      },
+      "body": {
+        "jsonrpc": "2.0",
+        "id": null,
+        "error": {
+          "code": -32001,
+          "message": "unauthorized: a valid bearer token is required"
+        }
+      }
+    },
+    "t1-wrong-token": {
+      "status": 401,
+      "headers": {
+        "www-authenticate": "Bearer realm=\"fleet-mcp\""
+      },
+      "body": {
+        "jsonrpc": "2.0",
+        "id": null,
+        "error": {
+          "code": -32001,
+          "message": "unauthorized: a valid bearer token is required"
+        }
+      }
+    },
+    "t1-log-after": {
+      "seq": 2,
+      "fresh": [
+        {
+          "kind": "refused",
+          "principal": null,
+          "tool": "auth-missing",
+          "op": "",
+          "outcome": "refused",
+          "code": "missing-token",
+          "seq": 1,
+          "ts": 1793571750575,
+          "prev": "0000000000000000000000000000000000000000000000000000000000000000",
+          "hash": "3fbe0ff757eccd613224dcf9f06ca5ffcb6fa5ed2e3b8421e780e620e3492e1b"
+        },
+        {
+          "kind": "refused",
+          "principal": null,
+          "tool": "auth-invalid",
+          "op": "",
+          "outcome": "refused",
+          "code": "invalid-token",
+          "seq": 2,
+          "ts": 1793571750582,
+          "prev": "3fbe0ff757eccd613224dcf9f06ca5ffcb6fa5ed2e3b8421e780e620e3492e1b",
+          "hash": "12214ca2fddef100ed4e568acb39d7c5a053539cf50c46aff79cc6109a2cacd1"
+        }
+      ]
+    },
+    "t2-loopback-tools-list": {
+      "url": "http://127.0.0.1:18889/mcp",
+      "toolCount": 9,
+      "names": [
+        "actions.status",
+        "board.op",
+        "fleet.selftest",
+        "fleet.status",
+        "order.drive_roundtrip",
+        "order.stage_real",
+        "session.create",
+        "session.prompt",
+        "session.status"
+      ],
+      "specs": [
+        {
+          "name": "fleet.status",
+          "description": "Read the fleet host status (integrity, lanes gate, policy selftest flag, board head, MCP listener/sessions/log) plus this facade's own counters. Read-only. No secrets.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "session.create",
+          "description": "Create a REAL DSH agent session on the deterministic stub route (\"deterministic-stub (fleet-selftest-stub)\"): model-free, labelled, no provider credential. Optional role preset (lead/builder/checker/researcher) and optional first prompt. Prompts run as real turns through llm/stream and the fleet budget gate; each result names its transport (agent | stub-turn). mode:\"model\" is staged and refused with model-credential-not-entered until the owner enters a provider key — no model call is ever faked.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "preset": {
+                "type": "string",
+                "description": "role preset: lead, builder, checker, researcher (or fleet-<role>)"
+              },
+              "prompt": {
+                "type": "string",
+                "description": "optional first prompt text, run as one stub turn"
+              },
+              "mode": {
+                "type": "string",
+                "enum": [
+                  "stub",
+                  "model"
+                ],
+                "description": "stub (default, deterministic) or model (staged: currently refused)"
+              }
+            },
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "session.prompt",
+          "description": "Run ONE real agent turn on an existing stub-route session and return the assistant text (deterministic: the stub answers \"S3STUB:<your text>\"), plus `transport`: \"agent\" when fleet-ledger's gate allows a direct turn on the session, or \"stub-turn\" when the ledger reserves synthetic provider calls for selftest principals — then `turn_agent` names the selftest principal and `ledger_gate` says why (stub-provider-selftest-only). Nothing is faked: the stub-turn transport is the fleet's own one-real-turn op through the same gate.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "sessionId": {
+                "type": "string",
+                "description": "the sessionId from session.create"
+              },
+              "text": {
+                "type": "string",
+                "description": "the prompt text (non-empty)"
+              }
+            },
+            "required": [
+              "sessionId",
+              "text"
+            ],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "session.status",
+          "description": "Report what the facade holds for a session (preset, model label, busy, turns, inbox, last assistant text). An unknown id answers found:false rather than an error.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "sessionId": {
+                "type": "string",
+                "description": "the sessionId to inspect"
+              }
+            },
+            "required": [
+              "sessionId"
+            ],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "board.op",
+          "description": "Run ONE allowlisted board operation: a control-plane op (order-create, order-get, order-list, board-get, order-cancel, posts, pull, ack, preflight-close, done-when-amend, goldfish-disposition, verdict-tier2, unblock, check-start, lease-expire, sweep-now, goldfish-report, stub-turn, ledger-get, usage-feed, lessons-get) or a board bot tool through the model-free selftest transport (order_claim, preflight_raise, task_decompose, task_claim, evidence_post, task_submit_built, verdict, report_file, task_block, task_fail, task_write_claim, freshness_check, task_escalate, order_block, order_fail, board_read, lesson_propose, lessons_read). Fields are top-level beside op. task_claim_start -> task_claim and task_claim_finish -> task_submit_built; task-cancel does not exist (use task_fail/task_block/unblock). Control ops act as the fleet owner principal; selftest tool calls act only on fixture orders.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "op": {
+                "type": "string",
+                "description": "the board op or board tool name"
+              },
+              "role": {
+                "type": "string",
+                "enum": [
+                  "lead",
+                  "builder",
+                  "checker",
+                  "researcher"
+                ],
+                "description": "selftest transport role (default: the tool's normal role)"
+              },
+              "agent": {
+                "type": "string",
+                "description": "optional selftest agent id, <role>:selftest-<name>"
+              },
+              "args": {
+                "type": "object",
+                "description": "optional nested tool args (merged with the top-level fields)",
+                "additionalProperties": true
+              }
+            },
+            "required": [
+              "op"
+            ],
+            "additionalProperties": true
+          }
+        },
+        {
+          "name": "order.drive_roundtrip",
+          "description": "Run a REAL work-order lifecycle through the board rails, deterministically and model-free: order-create (fixture:true, the fidelity the fleet's own acceptance check uses) -> order_claim -> preflight -> task_decompose -> task_claim -> evidence_post -> task_submit_built -> check-start -> verdict pass -> lesson banking -> report_file -> wait for the harness finisher to read the done-when and roll the order up. Returns the id chain, posts and final state, labelled mode:\"fixture-validated\" and real_lane:\"not-built (Stage 4 roster)\" — it never claims a real lane drove it. Throws a named refusal when a step fails (and cancels a leftover fixture order).",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "title": {
+                "type": "string",
+                "description": "order title"
+              },
+              "done_when": {
+                "description": "the done-when: a shell command string, {mode:\"command\",command,text?}, or {mode:\"rubric\",criteria:[string]}",
+                "oneOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": true
+                  }
+                ]
+              },
+              "example": {
+                "type": "string",
+                "description": "what good work looks like (order form example)"
+              },
+              "est_minutes": {
+                "type": "integer",
+                "description": "estimate in whole minutes (default 15, >= 10)",
+                "minimum": 10,
+                "maximum": 10080
+              }
+            },
+            "required": [
+              "title"
+            ],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "order.stage_real",
+          "description": "Stage (do NOT execute) a real, non-fixture work order exactly as a Nox delegation would create it (title, goal, done_when, example, est_minutes, budget_usd, checkpoint_at). The validated payload is written under <statePath>/staged/ for later firing; the order row is created fixture:false ONLY when a Stage 4 roster is mounted. Today no roster exists, so it refuses cleanly with lanes-unavailable and returns the staged file path + payload digest.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "title": {
+                "type": "string",
+                "description": "order title (<= 200 chars)"
+              },
+              "goal": {
+                "type": "string",
+                "description": "the goal the order exists to reach"
+              },
+              "done_when": {
+                "description": "the done-when: a shell command string, {mode:\"command\",command,text?}, or {mode:\"rubric\",criteria:[string]}",
+                "oneOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": true
+                  }
+                ]
+              },
+              "example": {
+                "type": "string",
+                "description": "what good work looks like (order form example)"
+              },
+              "est_minutes": {
+                "type": "integer",
+                "description": "estimate in whole minutes (>= 10)",
+                "minimum": 10,
+                "maximum": 10080
+              },
+              "budget_usd": {
+                "type": "number",
+                "description": "the order budget in USD (default 1)",
+                "minimum": 0.000001,
+                "maximum": 100000
+              },
+              "checkpoint_at": {
+                "description": "future epoch ms or ISO timestamp (default: now + 24h)",
+                "oneOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "string"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "title",
+              "goal",
+              "done_when",
+              "example",
+              "est_minutes"
+            ],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "fleet.selftest",
+          "description": "Run ONE board tool through the real ctx.tools pipeline inside a role's preset (the fleet's model-free selftest transport), exactly as the acceptance checks do. The tool is restricted to the board-tool allowlist — never shell/fs/web. Returns the tool result plus the DSH call_id and session.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "role": {
+                "type": "string",
+                "enum": [
+                  "lead",
+                  "builder",
+                  "checker",
+                  "researcher"
+                ],
+                "description": "the role whose preset the call runs in"
+              },
+              "tool": {
+                "type": "string",
+                "description": "the board tool name (order_claim, task_decompose, task_claim, evidence_post, verdict, ...)"
+              },
+              "args": {
+                "type": "object",
+                "description": "the tool arguments",
+                "additionalProperties": true
+              },
+              "agent": {
+                "type": "string",
+                "description": "optional selftest agent id, <role>:selftest-<name>"
+              }
+            },
+            "required": [
+              "role",
+              "tool"
+            ],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "actions.status",
+          "description": "Read the tail of the hash-chained MCP action log (<logPath>, default /var/lib/fleet/log/mcp-actions.jsonl): principal, tool, argument NAMES and sha256 digest (never values), outcome, and the chain head. Read-only.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "n": {
+                "type": "integer",
+                "description": "how many rows, 1..100 (default 10)",
+                "minimum": 1,
+                "maximum": 100
+              }
+            },
+            "required": [],
+            "additionalProperties": false
+          }
+        }
+      ]
+    },
+    "t2-tailnet-tools-list": {
+      "url": "http://100.114.17.67:18889/mcp",
+      "toolCount": 9,
+      "names": [
+        "actions.status",
+        "board.op",
+        "fleet.selftest",
+        "fleet.status",
+        "order.drive_roundtrip",
+        "order.stage_real",
+        "session.create",
+        "session.prompt",
+        "session.status"
+      ],
+      "specs": [
+        {
+          "name": "fleet.status",
+          "description": "Read the fleet host status (integrity, lanes gate, policy selftest flag, board head, MCP listener/sessions/log) plus this facade's own counters. Read-only. No secrets.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "session.create",
+          "description": "Create a REAL DSH agent session on the deterministic stub route (\"deterministic-stub (fleet-selftest-stub)\"): model-free, labelled, no provider credential. Optional role preset (lead/builder/checker/researcher) and optional first prompt. Prompts run as real turns through llm/stream and the fleet budget gate; each result names its transport (agent | stub-turn). mode:\"model\" is staged and refused with model-credential-not-entered until the owner enters a provider key — no model call is ever faked.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "preset": {
+                "type": "string",
+                "description": "role preset: lead, builder, checker, researcher (or fleet-<role>)"
+              },
+              "prompt": {
+                "type": "string",
+                "description": "optional first prompt text, run as one stub turn"
+              },
+              "mode": {
+                "type": "string",
+                "enum": [
+                  "stub",
+                  "model"
+                ],
+                "description": "stub (default, deterministic) or model (staged: currently refused)"
+              }
+            },
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "session.prompt",
+          "description": "Run ONE real agent turn on an existing stub-route session and return the assistant text (deterministic: the stub answers \"S3STUB:<your text>\"), plus `transport`: \"agent\" when fleet-ledger's gate allows a direct turn on the session, or \"stub-turn\" when the ledger reserves synthetic provider calls for selftest principals — then `turn_agent` names the selftest principal and `ledger_gate` says why (stub-provider-selftest-only). Nothing is faked: the stub-turn transport is the fleet's own one-real-turn op through the same gate.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "sessionId": {
+                "type": "string",
+                "description": "the sessionId from session.create"
+              },
+              "text": {
+                "type": "string",
+                "description": "the prompt text (non-empty)"
+              }
+            },
+            "required": [
+              "sessionId",
+              "text"
+            ],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "session.status",
+          "description": "Report what the facade holds for a session (preset, model label, busy, turns, inbox, last assistant text). An unknown id answers found:false rather than an error.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "sessionId": {
+                "type": "string",
+                "description": "the sessionId to inspect"
+              }
+            },
+            "required": [
+              "sessionId"
+            ],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "board.op",
+          "description": "Run ONE allowlisted board operation: a control-plane op (order-create, order-get, order-list, board-get, order-cancel, posts, pull, ack, preflight-close, done-when-amend, goldfish-disposition, verdict-tier2, unblock, check-start, lease-expire, sweep-now, goldfish-report, stub-turn, ledger-get, usage-feed, lessons-get) or a board bot tool through the model-free selftest transport (order_claim, preflight_raise, task_decompose, task_claim, evidence_post, task_submit_built, verdict, report_file, task_block, task_fail, task_write_claim, freshness_check, task_escalate, order_block, order_fail, board_read, lesson_propose, lessons_read). Fields are top-level beside op. task_claim_start -> task_claim and task_claim_finish -> task_submit_built; task-cancel does not exist (use task_fail/task_block/unblock). Control ops act as the fleet owner principal; selftest tool calls act only on fixture orders.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "op": {
+                "type": "string",
+                "description": "the board op or board tool name"
+              },
+              "role": {
+                "type": "string",
+                "enum": [
+                  "lead",
+                  "builder",
+                  "checker",
+                  "researcher"
+                ],
+                "description": "selftest transport role (default: the tool's normal role)"
+              },
+              "agent": {
+                "type": "string",
+                "description": "optional selftest agent id, <role>:selftest-<name>"
+              },
+              "args": {
+                "type": "object",
+                "description": "optional nested tool args (merged with the top-level fields)",
+                "additionalProperties": true
+              }
+            },
+            "required": [
+              "op"
+            ],
+            "additionalProperties": true
+          }
+        },
+        {
+          "name": "order.drive_roundtrip",
+          "description": "Run a REAL work-order lifecycle through the board rails, deterministically and model-free: order-create (fixture:true, the fidelity the fleet's own acceptance check uses) -> order_claim -> preflight -> task_decompose -> task_claim -> evidence_post -> task_submit_built -> check-start -> verdict pass -> lesson banking -> report_file -> wait for the harness finisher to read the done-when and roll the order up. Returns the id chain, posts and final state, labelled mode:\"fixture-validated\" and real_lane:\"not-built (Stage 4 roster)\" — it never claims a real lane drove it. Throws a named refusal when a step fails (and cancels a leftover fixture order).",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "title": {
+                "type": "string",
+                "description": "order title"
+              },
+              "done_when": {
+                "description": "the done-when: a shell command string, {mode:\"command\",command,text?}, or {mode:\"rubric\",criteria:[string]}",
+                "oneOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": true
+                  }
+                ]
+              },
+              "example": {
+                "type": "string",
+                "description": "what good work looks like (order form example)"
+              },
+              "est_minutes": {
+                "type": "integer",
+                "description": "estimate in whole minutes (default 15, >= 10)",
+                "minimum": 10,
+                "maximum": 10080
+              }
+            },
+            "required": [
+              "title"
+            ],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "order.stage_real",
+          "description": "Stage (do NOT execute) a real, non-fixture work order exactly as a Nox delegation would create it (title, goal, done_when, example, est_minutes, budget_usd, checkpoint_at). The validated payload is written under <statePath>/staged/ for later firing; the order row is created fixture:false ONLY when a Stage 4 roster is mounted. Today no roster exists, so it refuses cleanly with lanes-unavailable and returns the staged file path + payload digest.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "title": {
+                "type": "string",
+                "description": "order title (<= 200 chars)"
+              },
+              "goal": {
+                "type": "string",
+                "description": "the goal the order exists to reach"
+              },
+              "done_when": {
+                "description": "the done-when: a shell command string, {mode:\"command\",command,text?}, or {mode:\"rubric\",criteria:[string]}",
+                "oneOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": true
+                  }
+                ]
+              },
+              "example": {
+                "type": "string",
+                "description": "what good work looks like (order form example)"
+              },
+              "est_minutes": {
+                "type": "integer",
+                "description": "estimate in whole minutes (>= 10)",
+                "minimum": 10,
+                "maximum": 10080
+              },
+              "budget_usd": {
+                "type": "number",
+                "description": "the order budget in USD (default 1)",
+                "minimum": 0.000001,
+                "maximum": 100000
+              },
+              "checkpoint_at": {
+                "description": "future epoch ms or ISO timestamp (default: now + 24h)",
+                "oneOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "string"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "title",
+              "goal",
+              "done_when",
+              "example",
+              "est_minutes"
+            ],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "fleet.selftest",
+          "description": "Run ONE board tool through the real ctx.tools pipeline inside a role's preset (the fleet's model-free selftest transport), exactly as the acceptance checks do. The tool is restricted to the board-tool allowlist — never shell/fs/web. Returns the tool result plus the DSH call_id and session.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "role": {
+                "type": "string",
+                "enum": [
+                  "lead",
+                  "builder",
+                  "checker",
+                  "researcher"
+                ],
+                "description": "the role whose preset the call runs in"
+              },
+              "tool": {
+                "type": "string",
+                "description": "the board tool name (order_claim, task_decompose, task_claim, evidence_post, verdict, ...)"
+              },
+              "args": {
+                "type": "object",
+                "description": "the tool arguments",
+                "additionalProperties": true
+              },
+              "agent": {
+                "type": "string",
+                "description": "optional selftest agent id, <role>:selftest-<name>"
+              }
+            },
+            "required": [
+              "role",
+              "tool"
+            ],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "actions.status",
+          "description": "Read the tail of the hash-chained MCP action log (<logPath>, default /var/lib/fleet/log/mcp-actions.jsonl): principal, tool, argument NAMES and sha256 digest (never values), outcome, and the chain head. Read-only.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "n": {
+                "type": "integer",
+                "description": "how many rows, 1..100 (default 10)",
+                "minimum": 1,
+                "maximum": 100
+              }
+            },
+            "required": [],
+            "additionalProperties": false
+          }
+        }
+      ]
+    },
+    "t2-legs": {
+      "loopback": {
+        "url": "http://127.0.0.1:18889/mcp",
+        "session_header": "6d750488873a962e3ef6a005c99ca290a276",
+        "init": {
+          "protocolVersion": "2025-03-26",
+          "capabilities": {
+            "tools": {
+              "listChanged": false
+            }
+          },
+          "serverInfo": {
+            "name": "fleet-mcp",
+            "version": "0.3.0-mcp"
+          },
+          "instructions": "The fleet board only. Tools: fleet.status, session.create/prompt/status, board.op, order.drive_roundtrip, fleet.selftest, actions.status. Every call is logged. Board writes act as the fleet owner principal; selftest tool calls act only on fixture orders."
+        },
+        "tools": [
+          "actions.status",
+          "board.op",
+          "fleet.selftest",
+          "fleet.status",
+          "order.drive_roundtrip",
+          "order.stage_real",
+          "session.create",
+          "session.prompt",
+          "session.status"
+        ]
+      },
+      "tailnet": {
+        "url": "http://100.114.17.67:18889/mcp",
+        "session_header": "554204f8c23fc415c75fac8b7bf8441c7b1b",
+        "init": {
+          "protocolVersion": "2025-03-26",
+          "capabilities": {
+            "tools": {
+              "listChanged": false
+            }
+          },
+          "serverInfo": {
+            "name": "fleet-mcp",
+            "version": "0.3.0-mcp"
+          },
+          "instructions": "The fleet board only. Tools: fleet.status, session.create/prompt/status, board.op, order.drive_roundtrip, fleet.selftest, actions.status. Every call is logged. Board writes act as the fleet owner principal; selftest tool calls act only on fixture orders."
+        },
+        "tools": [
+          "actions.status",
+          "board.op",
+          "fleet.selftest",
+          "fleet.status",
+          "order.drive_roundtrip",
+          "order.stage_real",
+          "session.create",
+          "session.prompt",
+          "session.status"
+        ]
+      }
+    },
+    "t3-session-create": {
+      "isError": false,
+      "result": {
+        "ok": true,
+        "sessionId": "fleet-mcp-a694a59e-f8d3-47ca-93f3-9e2b61066223",
+        "status": "created",
+        "mode": "stub",
+        "model": "deterministic-stub (fleet-selftest-stub)",
+        "provider": "fleet-selftest-stub",
+        "preset": null,
+        "cwd": "/tmp/cv-s5.tbqAwQ/fleet/work/mcp-sessions/fleet-mcp-a694a59e-f8d3-47ca-93f3-9e2b61066223",
+        "turn_agent": "builder:selftest-fleet-mcp-a694a59e-f8d3-47ca-93f3-9e2b61066223",
+        "turns": 0,
+        "note": "deterministic stub route: real DSH agent session, model-free (no provider credential needed); prompts name their transport (agent | stub-turn)"
+      }
+    },
+    "t3-session-prompt": {
+      "isError": false,
+      "result": {
+        "ok": true,
+        "sessionId": "fleet-mcp-a694a59e-f8d3-47ca-93f3-9e2b61066223",
+        "status": "completed",
+        "model": "deterministic-stub (fleet-selftest-stub)",
+        "transport": "stub-turn",
+        "turn_agent": "builder:selftest-fleet-mcp-a694a59e-f8d3-47ca-93f3-9e2b61066223",
+        "ledger_gate": "stub-provider-selftest-only",
+        "turn_model": "claude-haiku-5-5",
+        "provider_calls": 1,
+        "assistant_text": "S3STUB:Current runtime context. This snapshot supersedes earlier runtime-context snapshots.\n\nCurrent working directory: \"/tmp/cv-s5.tbqAwQ/fleet/work\".\n\nCurrent DSH file policy: workspace-write. Any available operation enforced by the DSH file sandbox may modify files under the session workspace: \"/tmp/cv-s5.tbqAwQ/fleet/work\". Some platform temporary areas may also be writable.\n\nApproval prompts are enabled in this session: operations that require approval may ask through the configured answerers; without an available answerer, the request fails closed.\n\nCurrent DeepSeek Harness implementation checkout: \"/home/cayleb/.local/opt/deepseek-harness-official/\".\n\nCurrent DeepSeek Harness Web GUI URL: \"http://127.0.0.1:40911\".",
+        "inbox": [],
+        "turns": 1,
+        "note": "the fleet-ledger gate reserves the stub provider for selftest principals (stub-provider-selftest-only), so this real turn ran through the fleet stub-turn op as builder:selftest-fleet-mcp-a694a59e-f8d3-47ca-93f3-9e2b61066223"
+      }
+    },
+    "t3-session-status": {
+      "isError": false,
+      "result": {
+        "ok": true,
+        "sessionId": "fleet-mcp-a694a59e-f8d3-47ca-93f3-9e2b61066223",
+        "found": true,
+        "source": "facade",
+        "mode": "stub",
+        "model": "deterministic-stub (fleet-selftest-stub)",
+        "provider": "fleet-selftest-stub",
+        "preset": null,
+        "cwd": "/tmp/cv-s5.tbqAwQ/fleet/work/mcp-sessions/fleet-mcp-a694a59e-f8d3-47ca-93f3-9e2b61066223",
+        "turn_agent": "builder:selftest-fleet-mcp-a694a59e-f8d3-47ca-93f3-9e2b61066223",
+        "busy": false,
+        "turns": 1,
+        "last_transport": "stub-turn",
+        "events": 0,
+        "created_at": "2026-11-01T22:22:30.758Z",
+        "last_used_at": "2026-11-01T22:22:30.790Z",
+        "inbox": [],
+        "last_assistant_text": "S3STUB:Current runtime context. This snapshot supersedes earlier runtime-context snapshots.\n\nCurrent working directory: \"/tmp/cv-s5.tbqAwQ/fleet/work\".\n\nCurrent DSH file policy: workspace-write. Any available operation enforced by the DSH file sandbox may modify files under the session workspace: \"/tmp/cv-s5.tbqAwQ/fleet/work\". Some platform temporary areas may also be writable.\n\nApproval prompts are enabled in this session: operations that require approval may ask through the configured answerers; without an available answerer, the request fails closed.\n\nCurrent DeepSeek Harness implementation checkout: \"/home/cayleb/.local/opt/deepseek-harness-official/\".\n\nCurrent DeepSeek Harness Web GUI URL: \"http://127.0.0.1:40911\".",
+        "in_registry": true,
+        "registry_session": true
+      }
+    },
+    "t3-session-model-mode": {
+      "isError": true,
+      "result": {
+        "ok": false,
+        "error": {
+          "code": "model-credential-not-entered",
+          "message": "session.create mode:\"model\" is staged and NOT faked: no model provider credential is entered in the fleet profile, so no model route is available. The owner enters the credential; until then use mode:\"stub\" (the labelled deterministic fleet-selftest-stub route)."
+        }
+      }
+    },
+    "t4-roundtrip": {
+      "isError": false,
+      "result": {
+        "ok": true,
+        "mode": "fixture-validated",
+        "real_lane": "not-built (Stage 4 roster)",
+        "order": {
+          "id": "o1",
+          "title": "checker-verify roundtrip cv-mvyeb7vc-9cf27687 t4",
+          "state": "done",
+          "done_when": {
+            "mode": "command",
+            "command": "true",
+            "text": "checker-verify done-when cv-mvyeb7vc-9cf27687"
+          },
+          "fixture": true
+        },
+        "task": {
+          "id": "t1",
+          "state": "done",
+          "banked": true,
+          "rounds": null,
+          "checker": "checker:selftest-chk-0272379e46f1"
+        },
+        "ids": {
+          "order": "o1",
+          "task": "t1",
+          "final_task": null,
+          "agents": {
+            "lead": "lead:selftest-mcp-f7762f604a",
+            "builder": "builder:selftest-mcp-f7762f604a",
+            "checker": "checker:selftest-chk-0272379e46f1"
+          },
+          "posts": [
+            {
+              "id": "1",
+              "seq": 1,
+              "kind": "order-created",
+              "author": "cayleb-local"
+            },
+            {
+              "id": "2",
+              "seq": 2,
+              "kind": "preflight",
+              "author": "lead:selftest-mcp-f7762f604a"
+            },
+            {
+              "id": "3",
+              "seq": 3,
+              "kind": "decomposition",
+              "author": "lead:selftest-mcp-f7762f604a"
+            },
+            {
+              "id": "4",
+              "seq": 4,
+              "kind": "evidence",
+              "author": "builder:selftest-mcp-f7762f604a"
+            },
+            {
+              "id": "5",
+              "seq": 5,
+              "kind": "built",
+              "author": "builder:selftest-mcp-f7762f604a"
+            },
+            {
+              "id": "6",
+              "seq": 6,
+              "kind": "verdict",
+              "author": "checker:selftest-chk-0272379e46f1"
+            },
+            {
+              "id": "7",
+              "seq": 7,
+              "kind": "task-done",
+              "author": "harness"
+            },
+            {
+              "id": "8",
+              "seq": 8,
+              "kind": "report",
+              "author": "lead:selftest-mcp-f7762f604a"
+            },
+            {
+              "id": "9",
+              "seq": 9,
+              "kind": "built",
+              "author": "builder:harness-done-when"
+            },
+            {
+              "id": "10",
+              "seq": 10,
+              "kind": "verdict",
+              "author": "checker:harness-caf735a598"
+            },
+            {
+              "id": "11",
+              "seq": 11,
+              "kind": "task-done",
+              "author": "harness"
+            },
+            {
+              "id": "12",
+              "seq": 12,
+              "kind": "order-done",
+              "author": "harness"
+            }
+          ],
+          "check_round": 1
+        },
+        "posts": [
+          {
+            "id": "1",
+            "seq": 1,
+            "kind": "order-created",
+            "author": "cayleb-local"
+          },
+          {
+            "id": "2",
+            "seq": 2,
+            "kind": "preflight",
+            "author": "lead:selftest-mcp-f7762f604a"
+          },
+          {
+            "id": "3",
+            "seq": 3,
+            "kind": "decomposition",
+            "author": "lead:selftest-mcp-f7762f604a"
+          },
+          {
+            "id": "4",
+            "seq": 4,
+            "kind": "evidence",
+            "author": "builder:selftest-mcp-f7762f604a"
+          },
+          {
+            "id": "5",
+            "seq": 5,
+            "kind": "built",
+            "author": "builder:selftest-mcp-f7762f604a"
+          },
+          {
+            "id": "6",
+            "seq": 6,
+            "kind": "verdict",
+            "author": "checker:selftest-chk-0272379e46f1"
+          },
+          {
+            "id": "7",
+            "seq": 7,
+            "kind": "task-done",
+            "author": "harness"
+          },
+          {
+            "id": "8",
+            "seq": 8,
+            "kind": "report",
+            "author": "lead:selftest-mcp-f7762f604a"
+          },
+          {
+            "id": "9",
+            "seq": 9,
+            "kind": "built",
+            "author": "builder:harness-done-when"
+          },
+          {
+            "id": "10",
+            "seq": 10,
+            "kind": "verdict",
+            "author": "checker:harness-caf735a598"
+          },
+          {
+            "id": "11",
+            "seq": 11,
+            "kind": "task-done",
+            "author": "harness"
+          },
+          {
+            "id": "12",
+            "seq": 12,
+            "kind": "order-done",
+            "author": "harness"
+          }
+        ],
+        "final_state": {
+          "order_state": "done",
+          "task_state": "done",
+          "order_done": true,
+          "task_done": true,
+          "verdict": "pass",
+          "round": 1,
+          "final_task_state": "done"
+        },
+        "cleanup": {
+          "attempted": false,
+          "reason": "the order is done (terminal); order-cancel refuses `order-closed`, and the stage check leaves done fixtures on the append-only board too"
+        },
+        "steps": [
+          {
+            "step": "order-create",
+            "ok": true,
+            "ms": 2
+          },
+          {
+            "step": "order_claim",
+            "ok": true,
+            "ms": 12
+          },
+          {
+            "step": "preflight_raise",
+            "ok": true,
+            "ms": 3
+          },
+          {
+            "step": "task_decompose",
+            "ok": true,
+            "ms": 3
+          },
+          {
+            "step": "task_claim",
+            "ok": true,
+            "ms": 9
+          },
+          {
+            "step": "evidence_post",
+            "ok": true,
+            "ms": 2
+          },
+          {
+            "step": "task_submit_built",
+            "ok": true,
+            "ms": 3
+          },
+          {
+            "step": "check-start",
+            "ok": true,
+            "ms": 1
+          },
+          {
+            "step": "verdict",
+            "ok": true,
+            "ms": 8
+          },
+          {
+            "step": "board-get-task",
+            "ok": true,
+            "ms": 0
+          },
+          {
+            "step": "lesson_propose",
+            "ok": true,
+            "ms": 1
+          },
+          {
+            "step": "report_file",
+            "ok": true,
+            "ms": 3
+          }
+        ]
+      }
+    },
+    "t4-control": {
+      "orderGet": {
+        "ok": true,
+        "result": {
+          "order": {
+            "id": "o1",
+            "principal": "cayleb-local",
+            "title": "checker-verify roundtrip cv-mvyeb7vc-9cf27687 t4",
+            "state": "done",
+            "block_reason": null,
+            "resume_state": null,
+            "fail_reason": null,
+            "size": "standard",
+            "tier": 1,
+            "est_minutes": 10,
+            "budget_usd": 1,
+            "budget": {
+              "usd": 1
+            },
+            "checkpoint_at": 1793575350796,
+            "claimant": "lead:selftest-mcp-f7762f604a",
+            "lease_until": null,
+            "attempts": 0,
+            "waiting_on": null,
+            "preflight_state": "closed",
+            "report_post_id": "8",
+            "fixture": true,
+            "done_when": {
+              "mode": "command",
+              "text": "checker-verify done-when cv-mvyeb7vc-9cf27687",
+              "command": "true"
+            },
+            "done_when_rev": 1,
+            "facts": {
+              "posted_at": 1793571750797,
+              "unacked": false,
+              "claimed_at": 1793571750808,
+              "started_at": 1793571750814,
+              "done_at": 1793571750866
+            },
+            "tasks": {
+              "done": 2
+            },
+            "goldfish": null,
+            "goal": "checker-verify roundtrip cv-mvyeb7vc-9cf27687 t4",
+            "context": "model-free work order driven end to end through the fleet MCP facade (request f7762f604a); fixture-scoped so no model provider is involved",
+            "constraints": [],
+            "anti_goals": [],
+            "ownership": "",
+            "example": "one evidence note citing an artefact sha256",
+            "evidence_required": [
+              "one evidence post with an artefact sha256"
+            ],
+            "assumptions_policy": "log-and-proceed",
+            "stop_conditions": [],
+            "successors": [],
+            "ambition": [
+              "exercise the board end to end through the MCP facade"
+            ],
+            "base_hashes": {},
+            "budget_original": {
+              "usd": 1
+            }
+          },
+          "tasks": [
+            {
+              "id": "t1",
+              "order": "o1",
+              "seq": 1,
+              "key": "t0",
+              "title": "one deterministic fixture task for checker-verify roundtrip cv-mvyeb7vc-9cf27687",
+              "needs_role": "builder",
+              "state": "done",
+              "block_reason": null,
+              "resume_state": null,
+              "fail_reason": null,
+              "waiting_on": null,
+              "blocked_reason": null,
+              "errand": false,
+              "final": false,
+              "tier": 1,
+              "est_minutes": 10,
+              "budget_usd": 1,
+              "spent_usd": 0,
+              "goal": "one deterministic fixture task for checker-verify roundtrip cv-mvyeb7vc-9cf27687 t4",
+              "context": "",
+              "constraints": [],
+              "evidence_required": [],
+              "write_targets": [],
+              "done_when": {
+                "mode": "command",
+                "text": "the model-free roundtrip task check exits 0",
+                "command": "true",
+                "authored_by": "lead"
+              },
+              "after": [],
+              "claimant": null,
+              "lease_until": null,
+              "attempts": 0,
+              "built": {
+                "commit": null,
+                "artefact_hashes": [
+                  "5be77963e1f5dfb3ab15fe6fdc8107b19f444b0bed906f7572a7d36c808e0331"
+                ],
+                "evidence": [
+                  "4"
+                ],
+                "summary": "roundtrip f7762f604a: deterministic artefact",
+                "at": 1793571750829
+              },
+              "round": 1,
+              "rounds_allowed": 3,
+              "banked": true,
+              "lesson_ref": "NO_ENTRY",
+              "replaced_by": null,
+              "facts": {
+                "created_at": 1793571750815,
+                "claimed_at": 1793571750823,
+                "done_at": 1793571750838
+              },
+              "maker": "builder:selftest-mcp-f7762f604a"
+            },
+            {
+              "id": "t2",
+              "order": "o1",
+              "seq": 2,
+              "key": null,
+              "title": "Run the order's own done-when",
+              "needs_role": "builder",
+              "state": "done",
+              "block_reason": null,
+              "resume_state": null,
+              "fail_reason": null,
+              "waiting_on": null,
+              "blocked_reason": null,
+              "errand": false,
+              "final": true,
+              "tier": 1,
+              "est_minutes": 15,
+              "budget_usd": null,
+              "spent_usd": 0,
+              "goal": "Run the order's own done-when end to end (harness-run; no lane builds it)",
+              "context": "",
+              "constraints": [],
+              "evidence_required": [
+                "done-when run output"
+              ],
+              "write_targets": [],
+              "done_when": {
+                "mode": "command",
+                "text": "checker-verify done-when cv-mvyeb7vc-9cf27687",
+                "command": "true",
+                "authored_by": "cayleb-local",
+                "from_order": true
+              },
+              "after": [],
+              "claimant": null,
+              "lease_until": null,
+              "attempts": 0,
+              "built": {
+                "commit": null,
+                "artefact_hashes": [
+                  "c698e472bce1529125dfdb65ed02d23e74929b017e16ef3a14090979466af403"
+                ],
+                "evidence": [],
+                "summary": "the Lead filed its report; the harness runs the order done-when",
+                "at": 1793571750845
+              },
+              "round": 1,
+              "rounds_allowed": 3,
+              "banked": true,
+              "lesson_ref": "harness-run done-when",
+              "replaced_by": null,
+              "facts": {
+                "created_at": 1793571750815,
+                "claimed_at": 1793571750844,
+                "done_at": 1793571750866
+              },
+              "maker": "builder:harness-done-when"
+            }
+          ]
+        }
+      },
+      "posts": {
+        "ok": true,
+        "result": {
+          "board": "o1",
+          "head": 12,
+          "acked": 0,
+          "posts": [
+            {
+              "id": "1",
+              "seq": 1,
+              "board": "o1",
+              "kind": "order-created",
+              "author": "cayleb-local",
+              "data_class": "principal",
+              "entity": "o1",
+              "created_at": 1793571750797,
+              "body": "{\"title\":\"checker-verify roundtrip cv-mvyeb7vc-9cf27687 t4\",\"goal\":\"checker-verify roundtrip cv-mvyeb7vc-9cf27687 t4\",\"est_minutes\":10,\"size\":\"standard\",\"tier\":1}",
+              "meta": null,
+              "body_sha256": "33dec8009bc2b57d25c64f1fc9e3a428e60a15ea45c9df85c3e72c7c2912e4f0"
+            },
+            {
+              "id": "2",
+              "seq": 2,
+              "board": "o1",
+              "kind": "preflight",
+              "author": "lead:selftest-mcp-f7762f604a",
+              "data_class": "bot-authored",
+              "entity": "o1",
+              "created_at": 1793571750812,
+              "body": "{\"questions\":[]}",
+              "meta": {
+                "questions": []
+              },
+              "body_sha256": "5c9253d29ca1fc9c4f7683bfe5dadd87e2dbce3e46af6ee80404bc7259b41e1e"
+            },
+            {
+              "id": "3",
+              "seq": 3,
+              "board": "o1",
+              "kind": "decomposition",
+              "author": "lead:selftest-mcp-f7762f604a",
+              "data_class": "bot-authored",
+              "entity": "o1",
+              "created_at": 1793571750815,
+              "body": "{\"tasks\":[\"t1\"]}",
+              "meta": {
+                "tasks": [
+                  "t1"
+                ]
+              },
+              "body_sha256": "047885a937611b393424557e910545168cb3861340495a23ddb092b6c3f5906e"
+            },
+            {
+              "id": "4",
+              "seq": 4,
+              "board": "o1",
+              "kind": "evidence",
+              "author": "builder:selftest-mcp-f7762f604a",
+              "data_class": "bot-authored",
+              "entity": "t1",
+              "created_at": 1793571750826,
+              "body": "roundtrip evidence for checker-verify roundtrip cv-mvyeb7vc-9cf27687 t4",
+              "meta": {
+                "artefact_hashes": [
+                  "5be77963e1f5dfb3ab15fe6fdc8107b19f444b0bed906f7572a7d36c808e0331"
+                ]
+              },
+              "body_sha256": "dc7b28eae2cc8e31f77d587339565a7d946223cc9a2fbbe3f871a79ddfa48657"
+            },
+            {
+              "id": "5",
+              "seq": 5,
+              "board": "o1",
+              "kind": "built",
+              "author": "builder:selftest-mcp-f7762f604a",
+              "data_class": "bot-authored",
+              "entity": "t1",
+              "created_at": 1793571750829,
+              "body": "{\"commit\":null,\"artefact_hashes\":[\"5be77963e1f5dfb3ab15fe6fdc8107b19f444b0bed906f7572a7d36c808e0331\"],\"evidence\":[\"4\"],\"summary\":\"roundtrip f7762f604a: deterministic artefact\",\"at\":1793571750829}",
+              "meta": {
+                "artefact_hashes": 1,
+                "commit": null,
+                "evidence": [
+                  "4"
+                ]
+              },
+              "body_sha256": "d44ab2726d33506c27206e2c5182507aac531c7c0c49845a65303f87a8023168"
+            },
+            {
+              "id": "6",
+              "seq": 6,
+              "board": "o1",
+              "kind": "verdict",
+              "author": "checker:selftest-chk-0272379e46f1",
+              "data_class": "bot-authored",
+              "entity": "t1",
+              "created_at": 1793571750838,
+              "body": "{\"round\":1,\"result\":\"pass\",\"notes\":\"\",\"exit_code\":0,\"artefact_hashes\":[\"5be77963e1f5dfb3ab15fe6fdc8107b19f444b0bed906f7572a7d36c808e0331\"],\"evidence\":[\"4\"]}",
+              "meta": {
+                "result": "pass",
+                "round": 1,
+                "source": "checker"
+              },
+              "body_sha256": "13b784a3c437e8794d91c910a79769c2de719041dedea446c013e842699942e9"
+            },
+            {
+              "id": "7",
+              "seq": 7,
+              "board": "o1",
+              "kind": "task-done",
+              "author": "harness",
+              "data_class": "harness",
+              "entity": "t1",
+              "created_at": 1793571750838,
+              "body": "{\"via\":\"checker verdict\",\"round\":1}",
+              "meta": null,
+              "body_sha256": "6b31da8aa26171fd5f4654c259f857d01311a188d3e59dd11f5cadff6e7df712"
+            },
+            {
+              "id": "8",
+              "seq": 8,
+              "board": "o1",
+              "kind": "report",
+              "author": "lead:selftest-mcp-f7762f604a",
+              "data_class": "bot-authored",
+              "entity": "o1",
+              "created_at": 1793571750844,
+              "body": "roundtrip f7762f604a: task t1 done and banked; harness finishes the order done-when",
+              "meta": {
+                "evidence": []
+              },
+              "body_sha256": "c698e472bce1529125dfdb65ed02d23e74929b017e16ef3a14090979466af403"
+            },
+            {
+              "id": "9",
+              "seq": 9,
+              "board": "o1",
+              "kind": "built",
+              "author": "builder:harness-done-when",
+              "data_class": "harness",
+              "entity": "t2",
+              "created_at": 1793571750845,
+              "body": "{\"commit\":null,\"artefact_hashes\":[\"c698e472bce1529125dfdb65ed02d23e74929b017e16ef3a14090979466af403\"],\"evidence\":[],\"summary\":\"the Lead filed its report; the harness runs the order done-when\",\"at\":1793571750845}",
+              "meta": {
+                "artefact_hashes": 1,
+                "commit": null,
+                "evidence": []
+              },
+              "body_sha256": "e9241887a5e8945236a02db9e6151bdb64012f9a41acd2a404404173abeefe87"
+            },
+            {
+              "id": "10",
+              "seq": 10,
+              "board": "o1",
+              "kind": "verdict",
+              "author": "checker:harness-caf735a598",
+              "data_class": "harness",
+              "entity": "t2",
+              "created_at": 1793571750866,
+              "body": "{\"round\":1,\"result\":\"pass\",\"notes\":\"\",\"exit_code\":0,\"artefact_hashes\":[\"c698e472bce1529125dfdb65ed02d23e74929b017e16ef3a14090979466af403\"],\"evidence\":[]}",
+              "meta": {
+                "result": "pass",
+                "round": 1,
+                "source": "checker"
+              },
+              "body_sha256": "578e0a500bc08795b014e384b291714f5d5e052d347fe375ce64ac06117502e1"
+            },
+            {
+              "id": "11",
+              "seq": 11,
+              "board": "o1",
+              "kind": "task-done",
+              "author": "harness",
+              "data_class": "harness",
+              "entity": "t2",
+              "created_at": 1793571750866,
+              "body": "{\"via\":\"checker verdict\",\"round\":1}",
+              "meta": null,
+              "body_sha256": "6b31da8aa26171fd5f4654c259f857d01311a188d3e59dd11f5cadff6e7df712"
+            },
+            {
+              "id": "12",
+              "seq": 12,
+              "board": "o1",
+              "kind": "order-done",
+              "author": "harness",
+              "data_class": "harness",
+              "entity": "o1",
+              "created_at": 1793571750866,
+              "body": "{\"tasks\":2,\"report_post_id\":\"8\"}",
+              "meta": null,
+              "body_sha256": "6688f48200bb4487d593bca4019c30c29f0adfbd4888b6fbe7b27f7ce32b05aa"
+            }
+          ]
+        }
+      },
+      "listIds": [
+        "o1"
+      ]
+    },
+    "t4b-roundtrip": {
+      "isError": false,
+      "result": {
+        "ok": true,
+        "mode": "fixture-validated",
+        "real_lane": "not-built (Stage 4 roster)",
+        "order": {
+          "id": "o2",
+          "title": "checker-verify roundtrip cv-mvyeb7vc-9cf27687 t4b",
+          "state": "done",
+          "done_when": {
+            "mode": "command",
+            "command": "true",
+            "text": "checker-verify done-when cv-mvyeb7vc-9cf27687"
+          },
+          "fixture": true
+        },
+        "task": {
+          "id": "t3",
+          "state": "done",
+          "banked": true,
+          "rounds": null,
+          "checker": "checker:selftest-chk-9155fb4990bd"
+        },
+        "ids": {
+          "order": "o2",
+          "task": "t3",
+          "final_task": null,
+          "agents": {
+            "lead": "lead:selftest-mcp-da397e5b2f",
+            "builder": "builder:selftest-mcp-da397e5b2f",
+            "checker": "checker:selftest-chk-9155fb4990bd"
+          },
+          "posts": [
+            {
+              "id": "13",
+              "seq": 1,
+              "kind": "order-created",
+              "author": "cayleb-local"
+            },
+            {
+              "id": "14",
+              "seq": 2,
+              "kind": "preflight",
+              "author": "lead:selftest-mcp-da397e5b2f"
+            },
+            {
+              "id": "15",
+              "seq": 3,
+              "kind": "decomposition",
+              "author": "lead:selftest-mcp-da397e5b2f"
+            },
+            {
+              "id": "16",
+              "seq": 4,
+              "kind": "evidence",
+              "author": "builder:selftest-mcp-da397e5b2f"
+            },
+            {
+              "id": "17",
+              "seq": 5,
+              "kind": "built",
+              "author": "builder:selftest-mcp-da397e5b2f"
+            },
+            {
+              "id": "18",
+              "seq": 6,
+              "kind": "verdict",
+              "author": "checker:selftest-chk-9155fb4990bd"
+            },
+            {
+              "id": "19",
+              "seq": 7,
+              "kind": "task-done",
+              "author": "harness"
+            },
+            {
+              "id": "20",
+              "seq": 8,
+              "kind": "report",
+              "author": "lead:selftest-mcp-da397e5b2f"
+            },
+            {
+              "id": "21",
+              "seq": 9,
+              "kind": "built",
+              "author": "builder:harness-done-when"
+            },
+            {
+              "id": "22",
+              "seq": 10,
+              "kind": "verdict",
+              "author": "checker:harness-c8eae6b674"
+            },
+            {
+              "id": "23",
+              "seq": 11,
+              "kind": "task-done",
+              "author": "harness"
+            },
+            {
+              "id": "24",
+              "seq": 12,
+              "kind": "order-done",
+              "author": "harness"
+            }
+          ],
+          "check_round": 1
+        },
+        "posts": [
+          {
+            "id": "13",
+            "seq": 1,
+            "kind": "order-created",
+            "author": "cayleb-local"
+          },
+          {
+            "id": "14",
+            "seq": 2,
+            "kind": "preflight",
+            "author": "lead:selftest-mcp-da397e5b2f"
+          },
+          {
+            "id": "15",
+            "seq": 3,
+            "kind": "decomposition",
+            "author": "lead:selftest-mcp-da397e5b2f"
+          },
+          {
+            "id": "16",
+            "seq": 4,
+            "kind": "evidence",
+            "author": "builder:selftest-mcp-da397e5b2f"
+          },
+          {
+            "id": "17",
+            "seq": 5,
+            "kind": "built",
+            "author": "builder:selftest-mcp-da397e5b2f"
+          },
+          {
+            "id": "18",
+            "seq": 6,
+            "kind": "verdict",
+            "author": "checker:selftest-chk-9155fb4990bd"
+          },
+          {
+            "id": "19",
+            "seq": 7,
+            "kind": "task-done",
+            "author": "harness"
+          },
+          {
+            "id": "20",
+            "seq": 8,
+            "kind": "report",
+            "author": "lead:selftest-mcp-da397e5b2f"
+          },
+          {
+            "id": "21",
+            "seq": 9,
+            "kind": "built",
+            "author": "builder:harness-done-when"
+          },
+          {
+            "id": "22",
+            "seq": 10,
+            "kind": "verdict",
+            "author": "checker:harness-c8eae6b674"
+          },
+          {
+            "id": "23",
+            "seq": 11,
+            "kind": "task-done",
+            "author": "harness"
+          },
+          {
+            "id": "24",
+            "seq": 12,
+            "kind": "order-done",
+            "author": "harness"
+          }
+        ],
+        "final_state": {
+          "order_state": "done",
+          "task_state": "done",
+          "order_done": true,
+          "task_done": true,
+          "verdict": "pass",
+          "round": 1,
+          "final_task_state": "done"
+        },
+        "cleanup": {
+          "attempted": false,
+          "reason": "the order is done (terminal); order-cancel refuses `order-closed`, and the stage check leaves done fixtures on the append-only board too"
+        },
+        "steps": [
+          {
+            "step": "order-create",
+            "ok": true,
+            "ms": 1
+          },
+          {
+            "step": "order_claim",
+            "ok": true,
+            "ms": 8
+          },
+          {
+            "step": "preflight_raise",
+            "ok": true,
+            "ms": 2
+          },
+          {
+            "step": "task_decompose",
+            "ok": true,
+            "ms": 2
+          },
+          {
+            "step": "task_claim",
+            "ok": true,
+            "ms": 6
+          },
+          {
+            "step": "evidence_post",
+            "ok": true,
+            "ms": 4
+          },
+          {
+            "step": "task_submit_built",
+            "ok": true,
+            "ms": 2
+          },
+          {
+            "step": "check-start",
+            "ok": true,
+            "ms": 0
+          },
+          {
+            "step": "verdict",
+            "ok": true,
+            "ms": 7
+          },
+          {
+            "step": "board-get-task",
+            "ok": true,
+            "ms": 1
+          },
+          {
+            "step": "lesson_propose",
+            "ok": true,
+            "ms": 0
+          },
+          {
+            "step": "report_file",
+            "ok": true,
+            "ms": 4
+          }
+        ]
+      }
+    },
+    "t4b-control": {
+      "orderGet": {
+        "ok": true,
+        "result": {
+          "order": {
+            "id": "o2",
+            "principal": "cayleb-local",
+            "title": "checker-verify roundtrip cv-mvyeb7vc-9cf27687 t4b",
+            "state": "done",
+            "block_reason": null,
+            "resume_state": null,
+            "fail_reason": null,
+            "size": "standard",
+            "tier": 1,
+            "est_minutes": 10,
+            "budget_usd": 1,
+            "budget": {
+              "usd": 1
+            },
+            "checkpoint_at": 1793575351352,
+            "claimant": "lead:selftest-mcp-da397e5b2f",
+            "lease_until": null,
+            "attempts": 0,
+            "waiting_on": null,
+            "preflight_state": "closed",
+            "report_post_id": "20",
+            "fixture": true,
+            "done_when": {
+              "mode": "command",
+              "text": "checker-verify done-when cv-mvyeb7vc-9cf27687",
+              "command": "true"
+            },
+            "done_when_rev": 1,
+            "facts": {
+              "posted_at": 1793571751353,
+              "unacked": false,
+              "claimed_at": 1793571751361,
+              "started_at": 1793571751364,
+              "done_at": 1793571751402
+            },
+            "tasks": {
+              "done": 2
+            },
+            "goldfish": null,
+            "goal": "checker-verify roundtrip cv-mvyeb7vc-9cf27687 t4b",
+            "context": "model-free work order driven end to end through the fleet MCP facade (request da397e5b2f); fixture-scoped so no model provider is involved",
+            "constraints": [],
+            "anti_goals": [],
+            "ownership": "",
+            "example": "one evidence note citing an artefact sha256",
+            "evidence_required": [
+              "one evidence post with an artefact sha256"
+            ],
+            "assumptions_policy": "log-and-proceed",
+            "stop_conditions": [],
+            "successors": [],
+            "ambition": [
+              "exercise the board end to end through the MCP facade"
+            ],
+            "base_hashes": {},
+            "budget_original": {
+              "usd": 1
+            }
+          },
+          "tasks": [
+            {
+              "id": "t3",
+              "order": "o2",
+              "seq": 1,
+              "key": "t0",
+              "title": "one deterministic fixture task for checker-verify roundtrip cv-mvyeb7vc-9cf27687",
+              "needs_role": "builder",
+              "state": "done",
+              "block_reason": null,
+              "resume_state": null,
+              "fail_reason": null,
+              "waiting_on": null,
+              "blocked_reason": null,
+              "errand": false,
+              "final": false,
+              "tier": 1,
+              "est_minutes": 10,
+              "budget_usd": 1,
+              "spent_usd": 0,
+              "goal": "one deterministic fixture task for checker-verify roundtrip cv-mvyeb7vc-9cf27687 t4b",
+              "context": "",
+              "constraints": [],
+              "evidence_required": [],
+              "write_targets": [],
+              "done_when": {
+                "mode": "command",
+                "text": "the model-free roundtrip task check exits 0",
+                "command": "true",
+                "authored_by": "lead"
+              },
+              "after": [],
+              "claimant": null,
+              "lease_until": null,
+              "attempts": 0,
+              "built": {
+                "commit": null,
+                "artefact_hashes": [
+                  "58c02d278a22a6ddc2c3b958de618571307eed9d1459405501ce455e825bcd6e"
+                ],
+                "evidence": [
+                  "16"
+                ],
+                "summary": "roundtrip da397e5b2f: deterministic artefact",
+                "at": 1793571751376
+              },
+              "round": 1,
+              "rounds_allowed": 3,
+              "banked": true,
+              "lesson_ref": "NO_ENTRY",
+              "replaced_by": null,
+              "facts": {
+                "created_at": 1793571751364,
+                "claimed_at": 1793571751370,
+                "done_at": 1793571751384
+              },
+              "maker": "builder:selftest-mcp-da397e5b2f"
+            },
+            {
+              "id": "t4",
+              "order": "o2",
+              "seq": 2,
+              "key": null,
+              "title": "Run the order's own done-when",
+              "needs_role": "builder",
+              "state": "done",
+              "block_reason": null,
+              "resume_state": null,
+              "fail_reason": null,
+              "waiting_on": null,
+              "blocked_reason": null,
+              "errand": false,
+              "final": true,
+              "tier": 1,
+              "est_minutes": 15,
+              "budget_usd": null,
+              "spent_usd": 0,
+              "goal": "Run the order's own done-when end to end (harness-run; no lane builds it)",
+              "context": "",
+              "constraints": [],
+              "evidence_required": [
+                "done-when run output"
+              ],
+              "write_targets": [],
+              "done_when": {
+                "mode": "command",
+                "text": "checker-verify done-when cv-mvyeb7vc-9cf27687",
+                "command": "true",
+                "authored_by": "cayleb-local",
+                "from_order": true
+              },
+              "after": [],
+              "claimant": null,
+              "lease_until": null,
+              "attempts": 0,
+              "built": {
+                "commit": null,
+                "artefact_hashes": [
+                  "0991f974e0c1b570a855cc00358ab7584b312a2eea51e347b25a71dcb58d7d1d"
+                ],
+                "evidence": [],
+                "summary": "the Lead filed its report; the harness runs the order done-when",
+                "at": 1793571751389
+              },
+              "round": 1,
+              "rounds_allowed": 3,
+              "banked": true,
+              "lesson_ref": "harness-run done-when",
+              "replaced_by": null,
+              "facts": {
+                "created_at": 1793571751364,
+                "claimed_at": 1793571751389,
+                "done_at": 1793571751402
+              },
+              "maker": "builder:harness-done-when"
+            }
+          ]
+        }
+      },
+      "posts": {
+        "ok": true,
+        "result": {
+          "board": "o2",
+          "head": 12,
+          "acked": 0,
+          "posts": [
+            {
+              "id": "13",
+              "seq": 1,
+              "board": "o2",
+              "kind": "order-created",
+              "author": "cayleb-local",
+              "data_class": "principal",
+              "entity": "o2",
+              "created_at": 1793571751353,
+              "body": "{\"title\":\"checker-verify roundtrip cv-mvyeb7vc-9cf27687 t4b\",\"goal\":\"checker-verify roundtrip cv-mvyeb7vc-9cf27687 t4b\",\"est_minutes\":10,\"size\":\"standard\",\"tier\":1}",
+              "meta": null,
+              "body_sha256": "c746b3c9c6d2b3e83ffaa5147e34bcfb2d6493f187f3bb66c9e1647a991b20d1"
+            },
+            {
+              "id": "14",
+              "seq": 2,
+              "board": "o2",
+              "kind": "preflight",
+              "author": "lead:selftest-mcp-da397e5b2f",
+              "data_class": "bot-authored",
+              "entity": "o2",
+              "created_at": 1793571751362,
+              "body": "{\"questions\":[]}",
+              "meta": {
+                "questions": []
+              },
+              "body_sha256": "5c9253d29ca1fc9c4f7683bfe5dadd87e2dbce3e46af6ee80404bc7259b41e1e"
+            },
+            {
+              "id": "15",
+              "seq": 3,
+              "board": "o2",
+              "kind": "decomposition",
+              "author": "lead:selftest-mcp-da397e5b2f",
+              "data_class": "bot-authored",
+              "entity": "o2",
+              "created_at": 1793571751364,
+              "body": "{\"tasks\":[\"t3\"]}",
+              "meta": {
+                "tasks": [
+                  "t3"
+                ]
+              },
+              "body_sha256": "53d5e2012be16feeca9b44440a294d27184ed559d76d9e9a461bd13923b46fae"
+            },
+            {
+              "id": "16",
+              "seq": 4,
+              "board": "o2",
+              "kind": "evidence",
+              "author": "builder:selftest-mcp-da397e5b2f",
+              "data_class": "bot-authored",
+              "entity": "t3",
+              "created_at": 1793571751374,
+              "body": "roundtrip evidence for checker-verify roundtrip cv-mvyeb7vc-9cf27687 t4b",
+              "meta": {
+                "artefact_hashes": [
+                  "58c02d278a22a6ddc2c3b958de618571307eed9d1459405501ce455e825bcd6e"
+                ]
+              },
+              "body_sha256": "376c0e63950cb78c700011dc1b3f3db0c509f7c0d21260e4cdd7a29b0195f2b4"
+            },
+            {
+              "id": "17",
+              "seq": 5,
+              "board": "o2",
+              "kind": "built",
+              "author": "builder:selftest-mcp-da397e5b2f",
+              "data_class": "bot-authored",
+              "entity": "t3",
+              "created_at": 1793571751376,
+              "body": "{\"commit\":null,\"artefact_hashes\":[\"58c02d278a22a6ddc2c3b958de618571307eed9d1459405501ce455e825bcd6e\"],\"evidence\":[\"16\"],\"summary\":\"roundtrip da397e5b2f: deterministic artefact\",\"at\":1793571751376}",
+              "meta": {
+                "artefact_hashes": 1,
+                "commit": null,
+                "evidence": [
+                  "16"
+                ]
+              },
+              "body_sha256": "6146433a7f0eef90e8eda31a949797c5d325771e1de6f986146138d091edbd68"
+            },
+            {
+              "id": "18",
+              "seq": 6,
+              "board": "o2",
+              "kind": "verdict",
+              "author": "checker:selftest-chk-9155fb4990bd",
+              "data_class": "bot-authored",
+              "entity": "t3",
+              "created_at": 1793571751383,
+              "body": "{\"round\":1,\"result\":\"pass\",\"notes\":\"\",\"exit_code\":0,\"artefact_hashes\":[\"58c02d278a22a6ddc2c3b958de618571307eed9d1459405501ce455e825bcd6e\"],\"evidence\":[\"16\"]}",
+              "meta": {
+                "result": "pass",
+                "round": 1,
+                "source": "checker"
+              },
+              "body_sha256": "a45af62abe6dfbea0918f9e2af27a4db5af5cc65abc102797ea48f369bfa7852"
+            },
+            {
+              "id": "19",
+              "seq": 7,
+              "board": "o2",
+              "kind": "task-done",
+              "author": "harness",
+              "data_class": "harness",
+              "entity": "t3",
+              "created_at": 1793571751384,
+              "body": "{\"via\":\"checker verdict\",\"round\":1}",
+              "meta": null,
+              "body_sha256": "6b31da8aa26171fd5f4654c259f857d01311a188d3e59dd11f5cadff6e7df712"
+            },
+            {
+              "id": "20",
+              "seq": 8,
+              "board": "o2",
+              "kind": "report",
+              "author": "lead:selftest-mcp-da397e5b2f",
+              "data_class": "bot-authored",
+              "entity": "o2",
+              "created_at": 1793571751388,
+              "body": "roundtrip da397e5b2f: task t3 done and banked; harness finishes the order done-when",
+              "meta": {
+                "evidence": []
+              },
+              "body_sha256": "0991f974e0c1b570a855cc00358ab7584b312a2eea51e347b25a71dcb58d7d1d"
+            },
+            {
+              "id": "21",
+              "seq": 9,
+              "board": "o2",
+              "kind": "built",
+              "author": "builder:harness-done-when",
+              "data_class": "harness",
+              "entity": "t4",
+              "created_at": 1793571751389,
+              "body": "{\"commit\":null,\"artefact_hashes\":[\"0991f974e0c1b570a855cc00358ab7584b312a2eea51e347b25a71dcb58d7d1d\"],\"evidence\":[],\"summary\":\"the Lead filed its report; the harness runs the order done-when\",\"at\":1793571751389}",
+              "meta": {
+                "artefact_hashes": 1,
+                "commit": null,
+                "evidence": []
+              },
+              "body_sha256": "6eceebd5cc2cc7f96f3e2b98cdac69ec6005bc83f88f6284635a0cbade2fb240"
+            },
+            {
+              "id": "22",
+              "seq": 10,
+              "board": "o2",
+              "kind": "verdict",
+              "author": "checker:harness-c8eae6b674",
+              "data_class": "harness",
+              "entity": "t4",
+              "created_at": 1793571751402,
+              "body": "{\"round\":1,\"result\":\"pass\",\"notes\":\"\",\"exit_code\":0,\"artefact_hashes\":[\"0991f974e0c1b570a855cc00358ab7584b312a2eea51e347b25a71dcb58d7d1d\"],\"evidence\":[]}",
+              "meta": {
+                "result": "pass",
+                "round": 1,
+                "source": "checker"
+              },
+              "body_sha256": "8c2346730039201c8495f97ed10e01bcdaa25b64df337f9716e9d5df8fcf7955"
+            },
+            {
+              "id": "23",
+              "seq": 11,
+              "board": "o2",
+              "kind": "task-done",
+              "author": "harness",
+              "data_class": "harness",
+              "entity": "t4",
+              "created_at": 1793571751402,
+              "body": "{\"via\":\"checker verdict\",\"round\":1}",
+              "meta": null,
+              "body_sha256": "6b31da8aa26171fd5f4654c259f857d01311a188d3e59dd11f5cadff6e7df712"
+            },
+            {
+              "id": "24",
+              "seq": 12,
+              "board": "o2",
+              "kind": "order-done",
+              "author": "harness",
+              "data_class": "harness",
+              "entity": "o2",
+              "created_at": 1793571751402,
+              "body": "{\"tasks\":2,\"report_post_id\":\"20\"}",
+              "meta": null,
+              "body_sha256": "aa1c7142d3fe9ccb5b0c013726860ccf5ecd09819f70f07229c9446f0f98aec8"
+            }
+          ]
+        }
+      },
+      "listIds": [
+        "o2",
+        "o1"
+      ]
+    },
+    "t5-stage-real": {
+      "isError": true,
+      "result": {
+        "ok": false,
+        "error": {
+          "code": "lanes-unavailable",
+          "message": "a real (non-fixture) work order needs a Stage 4 roster lane to claim it, and this host has none mounted; the validated payload is staged at /tmp/cv-s5.tbqAwQ/fleet/state/mcp/staged/real-order-1793571751896-e2b1ce5f9f.json for the owner/Lead to fire when the roster lands",
+          "details": {
+            "mode": "real-lane-staged",
+            "real_lane": "not-built (Stage 4 roster)",
+            "stage_path": "/tmp/cv-s5.tbqAwQ/fleet/state/mcp/staged/real-order-1793571751896-e2b1ce5f9f.json",
+            "payload_sha256": "a17b6021d8e23a1ddc82c4588f1cd82eb40f288b59a25eae01fdb46c8c524f21",
+            "payload": {
+              "title": "checker-verify staged cv-mvyeb7vc-9cf27687",
+              "goal": "stage only (checker-verify cv-mvyeb7vc-9cf27687)",
+              "context": "staged through the fleet MCP facade at 2026-11-01T22:22:31.895Z; fires as a real Nox delegation when the Stage 4 roster lands",
+              "constraints": [],
+              "anti_goals": [],
+              "done_when": {
+                "mode": "command",
+                "command": "true",
+                "text": "checker-verify staged done-when cv-mvyeb7vc-9cf27687"
+              },
+              "example": "a sha256 artefact",
+              "evidence_required": [
+                "the artefacts the done-when names, with their sha256"
+              ],
+              "assumptions_policy": "log-and-proceed",
+              "budget": {
+                "usd": 1
+              },
+              "stop_conditions": [],
+              "checkpoint_at": 1793658151894,
+              "est_minutes": 10,
+              "size": "standard",
+              "successors": [],
+              "ambition": [
+                "complete the delegated work order"
+              ],
+              "base_hashes": {}
+            }
+          }
+        }
+      }
+    },
+    "t5-control-order-list": {
+      "ok": true,
+      "matchingOrders": []
+    },
+    "t7-fleet-status": {
+      "isError": false,
+      "result": {
+        "ok": true,
+        "mcp": {
+          "name": "fleet-mcp",
+          "version": "0.3.0-mcp",
+          "protocol_versions": [
+            "2025-03-26",
+            "2024-11-05"
+          ],
+          "transport": "streamable-http (POST JSON; GET 405; DELETE session)",
+          "port": 18889,
+          "bind": [
+            {
+              "host": "127.0.0.1",
+              "port": 18889,
+              "family": "IPv4"
+            },
+            {
+              "host": "::1",
+              "port": 18889,
+              "family": "IPv6"
+            },
+            {
+              "host": "100.114.17.67",
+              "port": 18889,
+              "family": "IPv4"
+            }
+          ],
+          "sources": {
+            "sources": [
+              "loopback",
+              "tailnet"
+            ],
+            "v4": [
+              "127.0.0.0/8",
+              "100.64.0.0/10"
+            ],
+            "v6": [
+              "::1"
+            ]
+          },
+          "sessions": {
+            "held": 1,
+            "max": 8,
+            "sessions": [
+              {
+                "sessionId": "fleet-mcp-a694a59e-f8d3-47ca-93f3-9e2b61066223",
+                "preset": null,
+                "busy": false,
+                "turns": 1,
+                "last_transport": "stub-turn"
+              }
+            ]
+          },
+          "requests": {
+            "requests": 16,
+            "accepted": 14,
+            "refused": 2,
+            "toolCalls": 7,
+            "byTool": {
+              "session.create": 2,
+              "session.prompt": 1,
+              "session.status": 1,
+              "order.drive_roundtrip": 2,
+              "order.stage_real": 1
+            },
+            "byRefusal": {
+              "unauthorized": 2
+            },
+            "sessionsOpened": 2,
+            "sessionsClosed": 0,
+            "initialized": 2
+          },
+          "action_log": {
+            "path": "/tmp/cv-s5.tbqAwQ/fleet/log/mcp-actions.jsonl",
+            "seq": 17,
+            "head": "7d238e1fb99dc8c698dfd537da974b6048329375c060890e0a56e004f1968aca",
+            "open": true,
+            "broken": null,
+            "mode": "jsonl-hash-chain"
+          },
+          "model_route": "deterministic-stub (fleet-selftest-stub)",
+          "real_lane": "not-built (Stage 4 roster)"
+        },
+        "fleet": {
+          "name": "fleet-core",
+          "protocol": 1,
+          "pid": 464358,
+          "node": "v26.7.0",
+          "uptime_s": 2,
+          "db": {
+            "path": "/tmp/cv-s5.tbqAwQ/fleet/state/fleet.db",
+            "journal_mode": "wal",
+            "events": 92,
+            "head": {
+              "seq": 92,
+              "hash": "310894cd6b734db947ede23ad4c7f04d47e43aa38f44646adc0e6026909d115a"
+            }
+          },
+          "integrity": {
+            "ok": true,
+            "failures": []
+          },
+          "lanes_allowed": true,
+          "control": {
+            "path": "/tmp/cv-s5.tbqAwQ/ctl/control.sock",
+            "peer_uid": 1000,
+            "accepted": 9,
+            "rejected": 0
+          },
+          "policy": {
+            "selftest": true,
+            "selftest_source": "default"
+          }
+        }
+      }
+    },
+    "t7-unit": {
+      "show": "ActiveState=active\nMainPID=427587\nIPAddressAllow=127.0.0.0/8 100.114.17.67/32 ::1/128 100.110.154.92/32\nIPAddressDeny=169.254.0.0/16 100.64.0.0/10 ::/0 192.168.0.0/16 172.16.0.0/12 10.0.0.0/8 0.0.0.0/8\n",
+      "cat": "# /etc/systemd/system/fleet-dsh.service\n[Unit]\nDescription=dsh-fleet: DeepSeek Harness host with the @cayleb/dsh-fleet bundle (user fleet)\nDocumentation=file:///home/cayleb/workspace/harness-build/dsh-fleet/docs/fleet-plugin-design.md\nAfter=network-online.target tailscaled.service\nWants=network-online.target\nConditionPathExists=/var/lib/fleet/npm/bin/dsh\n\n[Service]\nType=simple\nUser=fleet\nGroup=fleet\nStateDirectory=fleet\nStateDirectoryMode=0750\nRuntimeDirectory=fleet\nRuntimeDirectoryMode=0711\n# Keep /run/fleet across stop/restart: deleting it would also drop the fleet-hands mask mounted over it.\nRuntimeDirectoryPreserve=yes\nEnvironment=HOME=/var/lib/fleet\nEnvironment=DSH_HOME=/var/lib/fleet/dsh\nEnvironment=DSH_TELEMETRY_DISABLED=1\nEnvironment=DSH_TELEMETRY_MODE=DISABLED\nEnvironment=PATH=/var/lib/fleet/npm/bin:/usr/bin\nWorkingDirectory=/var/lib/fleet\nExecStart=/var/lib/fleet/npm/bin/dsh --profile fleet --no-open --host 127.0.0.1 --port 3091\n\n# Containment (design §4.0)\nProtectHome=yes\nPrivateTmp=yes\nProtectSystem=strict\nNoNewPrivileges=yes\n# IPv6 is denied entirely except loopback: the LAN has global IPv6 addresses no prefix list can name.\nIPAddressDeny=0.0.0.0/8 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 169.254.0.0/16 100.64.0.0/10 ::/0\nIPAddressAllow=localhost 100.110.154.92 100.114.17.67\n\n# Kill switch and supervision (design §4.10)\nKillMode=control-group\nTimeoutStopSec=20\nRestart=on-failure\nRestartSec=5\n# A SIGKILL (systemctl kill -s KILL) is final, not a crash to recover from.\nRestartPreventExitStatus=SIGKILL\n\n# Resource caps (spec v2 §5.1)\nMemoryMax=8G\nCPUQuota=400%\nTasksMax=2048\n\n[Install]\nWantedBy=multi-user.target\n"
+    },
+    "t7-source-attempt": {
+      "outcome": "kernel refused local bind/route: EADDRNOTAVAIL"
+    },
+    "t8-oversized": {
+      "status": 413,
+      "headers": {
+        "cache-control": "no-store",
+        "connection": "close",
+        "content-length": "113",
+        "content-type": "application/json; charset=utf-8",
+        "date": "Sun, 01 Nov 2026 22:22:31 GMT"
+      },
+      "text": "{\"jsonrpc\":\"2.0\",\"id\":null,\"error\":{\"code\":-32004,\"message\":\"payload too large: the body limit is 262144 bytes\"}}",
+      "parsed": {
+        "jsonrpc": "2.0",
+        "id": null,
+        "error": {
+          "code": -32004,
+          "message": "payload too large: the body limit is 262144 bytes"
+        }
+      }
+    },
+    "t8-malformed": {
+      "status": 400,
+      "headers": {
+        "cache-control": "no-store",
+        "connection": "close",
+        "content-length": "75",
+        "content-type": "application/json; charset=utf-8",
+        "date": "Sun, 01 Nov 2026 22:22:31 GMT"
+      },
+      "text": "{\"jsonrpc\":\"2.0\",\"id\":null,\"error\":{\"code\":-32700,\"message\":\"parse error\"}}",
+      "parsed": {
+        "jsonrpc": "2.0",
+        "id": null,
+        "error": {
+          "code": -32700,
+          "message": "parse error"
+        }
+      }
+    },
+    "t8-batch": {
+      "status": 400,
+      "headers": {
+        "cache-control": "no-store",
+        "connection": "keep-alive",
+        "content-length": "133",
+        "content-type": "application/json; charset=utf-8",
+        "date": "Sun, 01 Nov 2026 22:22:31 GMT",
+        "keep-alive": "timeout=5"
+      },
+      "text": "{\"jsonrpc\":\"2.0\",\"id\":null,\"error\":{\"code\":-32600,\"message\":\"invalid request: batches are not supported; send one message per POST\"}}",
+      "parsed": {
+        "jsonrpc": "2.0",
+        "id": null,
+        "error": {
+          "code": -32600,
+          "message": "invalid request: batches are not supported; send one message per POST"
+        }
+      }
+    },
+    "t8-log-refusals": {
+      "baseline": 18,
+      "refusedCodes": [
+        "payload-too-large",
+        "payload-too-large",
+        "parse-error"
+      ]
+    },
+    "t6-actions-status": {
+      "isError": false,
+      "result": {
+        "ok": true,
+        "log": {
+          "path": "/tmp/cv-s5.tbqAwQ/fleet/log/mcp-actions.jsonl",
+          "seq": 22,
+          "head": "ab28a0801c9d4e2564d73ca7cfc3f9ff77448625a8591154fbffd5242e1d4a77",
+          "open": true,
+          "broken": null,
+          "chain": "jsonl-hash-chain",
+          "exists": true
+        },
+        "rows": [
+          {
+            "seq": 1,
+            "ts": 1793571750575,
+            "kind": "refused",
+            "principal": null,
+            "tool": "auth-missing",
+            "op": "",
+            "args_sha256": null,
+            "args_keys": null,
+            "args_bytes": null,
+            "outcome": "refused",
+            "code": "missing-token",
+            "ms": null,
+            "detail": null,
+            "ref_seq": null,
+            "hash": "3fbe0ff757eccd613224dcf9f06ca5ffcb6fa5ed2e3b8421e780e620e3492e1b"
+          },
+          {
+            "seq": 2,
+            "ts": 1793571750582,
+            "kind": "refused",
+            "principal": null,
+            "tool": "auth-invalid",
+            "op": "",
+            "args_sha256": null,
+            "args_keys": null,
+            "args_bytes": null,
+            "outcome": "refused",
+            "code": "invalid-token",
+            "ms": null,
+            "detail": null,
+            "ref_seq": null,
+            "hash": "12214ca2fddef100ed4e568acb39d7c5a053539cf50c46aff79cc6109a2cacd1"
+          },
+          {
+            "seq": 3,
+            "ts": 1793571750747,
+            "kind": "intent",
+            "principal": "mcp:bearer",
+            "tool": "session.create",
+            "op": "session.create",
+            "args_sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+            "args_keys": [],
+            "args_bytes": 2,
+            "outcome": "pending",
+            "code": null,
+            "ms": null,
+            "detail": null,
+            "ref_seq": null,
+            "hash": "ce455eeaf8fd3a56348e0003e8fe6279c650119e4dab01029048b1d51a8dd0a5"
+          },
+          {
+            "seq": 4,
+            "ts": 1793571750758,
+            "kind": "outcome",
+            "principal": "mcp:bearer",
+            "tool": "session.create",
+            "op": "session.create",
+            "args_sha256": null,
+            "args_keys": null,
+            "args_bytes": null,
+            "outcome": "ok",
+            "code": null,
+            "ms": 11,
+            "detail": "session.create",
+            "ref_seq": 3,
+            "hash": "4917051bf92c33eaad8058b46cc6cbc7f65bc3805900df8f0fd91ef5261513f0"
+          },
+          {
+            "seq": 5,
+            "ts": 1793571750764,
+            "kind": "intent",
+            "principal": "mcp:bearer",
+            "tool": "session.prompt",
+            "op": "session.prompt",
+            "args_sha256": "e9eae07fde6516bd09dea91f5630f9737c1dc27adcab3b56f84d2459e8b67c34",
+            "args_keys": [
+              "sessionId",
+              "text"
+            ],
+            "args_bytes": 114,
+            "outcome": "pending",
+            "code": null,
+            "ms": null,
+            "detail": null,
+            "ref_seq": null,
+            "hash": "6d4c5e1adf2c48cd3288259979b2306092927a4b139022479dc277a823738cad"
+          },
+          {
+            "seq": 6,
+            "ts": 1793571750790,
+            "kind": "outcome",
+            "principal": "mcp:bearer",
+            "tool": "session.prompt",
+            "op": "session.prompt",
+            "args_sha256": null,
+            "args_keys": null,
+            "args_bytes": null,
+            "outcome": "ok",
+            "code": null,
+            "ms": 26,
+            "detail": "session.prompt",
+            "ref_seq": 5,
+            "hash": "8ff0a34778935da0b9483592cd26e3be00f30d2ad8e374d9ef94042f37c8a307"
+          },
+          {
+            "seq": 7,
+            "ts": 1793571750792,
+            "kind": "intent",
+            "principal": "mcp:bearer",
+            "tool": "session.status",
+            "op": "session.status",
+            "args_sha256": "8fbbb139b1f66731cd5796e8b4c992dc62a5734917d9451c351f0ec390513145",
+            "args_keys": [
+              "sessionId"
+            ],
+            "args_bytes": 62,
+            "outcome": "pending",
+            "code": null,
+            "ms": null,
+            "detail": null,
+            "ref_seq": null,
+            "hash": "2165ef7d310fd814b15b5fc3526630c0098c931c69c60ddf866276391d84346a"
+          },
+          {
+            "seq": 8,
+            "ts": 1793571750793,
+            "kind": "outcome",
+            "principal": "mcp:bearer",
+            "tool": "session.status",
+            "op": "session.status",
+            "args_sha256": null,
+            "args_keys": null,
+            "args_bytes": null,
+            "outcome": "ok",
+            "code": null,
+            "ms": 1,
+            "detail": "session.status",
+            "ref_seq": 7,
+            "hash": "fda243beac948c238ee9f9b9e45b815152aac6228602247c3a4bfc04b44b4bfa"
+          },
+          {
+            "seq": 9,
+            "ts": 1793571750794,
+            "kind": "intent",
+            "principal": "mcp:bearer",
+            "tool": "session.create",
+            "op": "session.create",
+            "args_sha256": "6e530aab1645671b8245afda3cb8698e571e8b4cfee4d88cea237efe44402709",
+            "args_keys": [
+              "mode"
+            ],
+            "args_bytes": 16,
+            "outcome": "pending",
+            "code": null,
+            "ms": null,
+            "detail": null,
+            "ref_seq": null,
+            "hash": "86b18013a93f85909622493856d2cdddca4caa8c065f3ca70d0e09e7fe0d7804"
+          },
+          {
+            "seq": 10,
+            "ts": 1793571750794,
+            "kind": "outcome",
+            "principal": "mcp:bearer",
+            "tool": "session.create",
+            "op": "session.create",
+            "args_sha256": null,
+            "args_keys": null,
+            "args_bytes": null,
+            "outcome": "error",
+            "code": "model-credential-not-entered",
+            "ms": 0,
+            "detail": "session.create:model-credential-not-entered",
+            "ref_seq": 9,
+            "hash": "b086471e70e90cebb3249911dcb2d80cd468569a3068c9de1154aa9a0af4660f"
+          },
+          {
+            "seq": 11,
+            "ts": 1793571750795,
+            "kind": "intent",
+            "principal": "mcp:bearer",
+            "tool": "order.drive_roundtrip",
+            "op": "order.drive_roundtrip",
+            "args_sha256": "495d8549bea9620f8ba57fcd2a9e85ab4c4353f5fa8c4ed9ac2f5d58cc33bd86",
+            "args_keys": [
+              "done_when",
+              "est_minutes",
+              "example",
+              "title"
+            ],
+            "args_bytes": 236,
+            "outcome": "pending",
+            "code": null,
+            "ms": null,
+            "detail": null,
+            "ref_seq": null,
+            "hash": "d340dd725e4b44d89541394ceb25d918d58589a2cc09b1c24f0cb335c2dc5d6e"
+          },
+          {
+            "seq": 12,
+            "ts": 1793571751348,
+            "kind": "outcome",
+            "principal": "mcp:bearer",
+            "tool": "order.drive_roundtrip",
+            "op": "order.drive_roundtrip",
+            "args_sha256": null,
+            "args_keys": null,
+            "args_bytes": null,
+            "outcome": "ok",
+            "code": null,
+            "ms": 553,
+            "detail": "order.drive_roundtrip",
+            "ref_seq": 11,
+            "hash": "5e530a9aff36afa1afccf4c69c66ae53fa9212b239a9ceddca0520118cecd1a3"
+          },
+          {
+            "seq": 13,
+            "ts": 1793571751352,
+            "kind": "intent",
+            "principal": "mcp:bearer",
+            "tool": "order.drive_roundtrip",
+            "op": "order.drive_roundtrip",
+            "args_sha256": "ecef6b47a39e5e7e241a12b13ed52f25b220d0f955cfd3795d83814e8e9069f4",
+            "args_keys": [
+              "done_when",
+              "est_minutes",
+              "example",
+              "title"
+            ],
+            "args_bytes": 237,
+            "outcome": "pending",
+            "code": null,
+            "ms": null,
+            "detail": null,
+            "ref_seq": null,
+            "hash": "966336ff7cda13601bc55727dbeeaa8ca21195c60e7195f786d95234bab76465"
+          },
+          {
+            "seq": 14,
+            "ts": 1793571751891,
+            "kind": "outcome",
+            "principal": "mcp:bearer",
+            "tool": "order.drive_roundtrip",
+            "op": "order.drive_roundtrip",
+            "args_sha256": null,
+            "args_keys": null,
+            "args_bytes": null,
+            "outcome": "ok",
+            "code": null,
+            "ms": 539,
+            "detail": "order.drive_roundtrip",
+            "ref_seq": 13,
+            "hash": "029dda30cb903504949da813784801e4df10113bad6ce0020b75d0b2c542aed4"
+          },
+          {
+            "seq": 15,
+            "ts": 1793571751895,
+            "kind": "intent",
+            "principal": "mcp:bearer",
+            "tool": "order.stage_real",
+            "op": "order.stage_real",
+            "args_sha256": "6ef02ddd3a84d929523eb06dcf154c9aef2e42f249e2e943222c74e969da3c25",
+            "args_keys": [
+              "budget_usd",
+              "checkpoint_at",
+              "done_when",
+              "est_minutes",
+              "example",
+              "goal",
+              "title"
+            ],
+            "args_bytes": 327,
+            "outcome": "pending",
+            "code": null,
+            "ms": null,
+            "detail": null,
+            "ref_seq": null,
+            "hash": "e7b847026214d4e0fe28f019289a09764bcc245f16fcb416605faccfe497261f"
+          },
+          {
+            "seq": 16,
+            "ts": 1793571751896,
+            "kind": "outcome",
+            "principal": "mcp:bearer",
+            "tool": "order.stage_real",
+            "op": "order.stage_real",
+            "args_sha256": null,
+            "args_keys": null,
+            "args_bytes": null,
+            "outcome": "error",
+            "code": "lanes-unavailable",
+            "ms": 1,
+            "detail": "order.stage_real:lanes-unavailable",
+            "ref_seq": 15,
+            "hash": "e6dbe215e74c314805d4b1f5df049a87b6b73137e9a5bdcd8d3a1882ab1f4646"
+          },
+          {
+            "seq": 17,
+            "ts": 1793571751902,
+            "kind": "intent",
+            "principal": "mcp:bearer",
+            "tool": "fleet.status",
+            "op": "fleet.status",
+            "args_sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+            "args_keys": [],
+            "args_bytes": 2,
+            "outcome": "pending",
+            "code": null,
+            "ms": null,
+            "detail": null,
+            "ref_seq": null,
+            "hash": "7d238e1fb99dc8c698dfd537da974b6048329375c060890e0a56e004f1968aca"
+          },
+          {
+            "seq": 18,
+            "ts": 1793571751903,
+            "kind": "outcome",
+            "principal": "mcp:bearer",
+            "tool": "fleet.status",
+            "op": "fleet.status",
+            "args_sha256": null,
+            "args_keys": null,
+            "args_bytes": null,
+            "outcome": "ok",
+            "code": null,
+            "ms": 1,
+            "detail": "fleet.status",
+            "ref_seq": 17,
+            "hash": "d8a3d7d7afb4bd361d43e051220483d0cea99d60232b2602313ad96d5266d491"
+          },
+          {
+            "seq": 19,
+            "ts": 1793571751922,
+            "kind": "refused",
+            "principal": null,
+            "tool": "transport",
+            "op": "",
+            "args_sha256": null,
+            "args_keys": null,
+            "args_bytes": null,
+            "outcome": "refused",
+            "code": "payload-too-large",
+            "ms": null,
+            "detail": null,
+            "ref_seq": null,
+            "hash": "c1814566b950374e415f77c2d2c86a85bddf1dc804555923b92b0f882453b1ec"
+          },
+          {
+            "seq": 20,
+            "ts": 1793571751922,
+            "kind": "refused",
+            "principal": null,
+            "tool": "transport",
+            "op": "",
+            "args_sha256": null,
+            "args_keys": null,
+            "args_bytes": null,
+            "outcome": "refused",
+            "code": "payload-too-large",
+            "ms": null,
+            "detail": null,
+            "ref_seq": null,
+            "hash": "370c24b13e2e9a7b93327f7b0d38a5db35899df90b9f075dc3f9be8a613af57f"
+          },
+          {
+            "seq": 21,
+            "ts": 1793571751923,
+            "kind": "refused",
+            "principal": null,
+            "tool": "transport",
+            "op": "",
+            "args_sha256": null,
+            "args_keys": null,
+            "args_bytes": null,
+            "outcome": "refused",
+            "code": "parse-error",
+            "ms": null,
+            "detail": null,
+            "ref_seq": null,
+            "hash": "7a69399ba581471b7bdd3244948a6e691b9ff82dea4c4766d524ef7590218490"
+          },
+          {
+            "seq": 22,
+            "ts": 1793571752077,
+            "kind": "intent",
+            "principal": "mcp:bearer",
+            "tool": "actions.status",
+            "op": "actions.status",
+            "args_sha256": "b39022c4ed96525c42cd0e7ce55308533962a655f1c19d5dac2f03e9dd995b2c",
+            "args_keys": [
+              "n"
+            ],
+            "args_bytes": 9,
+            "outcome": "pending",
+            "code": null,
+            "ms": null,
+            "detail": null,
+            "ref_seq": null,
+            "hash": "ab28a0801c9d4e2564d73ca7cfc3f9ff77448625a8591154fbffd5242e1d4a77"
+          }
+        ]
+      }
+    },
+    "t6-admin-log-tail": {
+      "seq": 23,
+      "head": "84706cb34586ecd79353ec12f8727c573adb32dd628b68194f7d344daf06e1ba",
+      "path": "/tmp/cv-s5.tbqAwQ/fleet/log/mcp-actions.jsonl",
+      "rows": [
+        {
+          "kind": "refused",
+          "principal": null,
+          "tool": "auth-missing",
+          "op": "",
+          "outcome": "refused",
+          "code": "missing-token",
+          "seq": 1,
+          "ts": 1793571750575,
+          "prev": "0000000000000000000000000000000000000000000000000000000000000000",
+          "hash": "3fbe0ff757eccd613224dcf9f06ca5ffcb6fa5ed2e3b8421e780e620e3492e1b"
+        },
+        {
+          "kind": "refused",
+          "principal": null,
+          "tool": "auth-invalid",
+          "op": "",
+          "outcome": "refused",
+          "code": "invalid-token",
+          "seq": 2,
+          "ts": 1793571750582,
+          "prev": "3fbe0ff757eccd613224dcf9f06ca5ffcb6fa5ed2e3b8421e780e620e3492e1b",
+          "hash": "12214ca2fddef100ed4e568acb39d7c5a053539cf50c46aff79cc6109a2cacd1"
+        },
+        {
+          "kind": "intent",
+          "principal": "mcp:bearer",
+          "tool": "session.create",
+          "op": "session.create",
+          "outcome": "pending",
+          "args_sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+          "args_keys": [],
+          "args_bytes": 2,
+          "seq": 3,
+          "ts": 1793571750747,
+          "prev": "12214ca2fddef100ed4e568acb39d7c5a053539cf50c46aff79cc6109a2cacd1",
+          "hash": "ce455eeaf8fd3a56348e0003e8fe6279c650119e4dab01029048b1d51a8dd0a5"
+        },
+        {
+          "kind": "outcome",
+          "ref_seq": 3,
+          "principal": "mcp:bearer",
+          "tool": "session.create",
+          "op": "session.create",
+          "outcome": "ok",
+          "detail": "session.create",
+          "ms": 11,
+          "seq": 4,
+          "ts": 1793571750758,
+          "prev": "ce455eeaf8fd3a56348e0003e8fe6279c650119e4dab01029048b1d51a8dd0a5",
+          "hash": "4917051bf92c33eaad8058b46cc6cbc7f65bc3805900df8f0fd91ef5261513f0"
+        },
+        {
+          "kind": "intent",
+          "principal": "mcp:bearer",
+          "tool": "session.prompt",
+          "op": "session.prompt",
+          "outcome": "pending",
+          "args_sha256": "e9eae07fde6516bd09dea91f5630f9737c1dc27adcab3b56f84d2459e8b67c34",
+          "args_keys": [
+            "sessionId",
+            "text"
+          ],
+          "args_bytes": 114,
+          "seq": 5,
+          "ts": 1793571750764,
+          "prev": "4917051bf92c33eaad8058b46cc6cbc7f65bc3805900df8f0fd91ef5261513f0",
+          "hash": "6d4c5e1adf2c48cd3288259979b2306092927a4b139022479dc277a823738cad"
+        },
+        {
+          "kind": "outcome",
+          "ref_seq": 5,
+          "principal": "mcp:bearer",
+          "tool": "session.prompt",
+          "op": "session.prompt",
+          "outcome": "ok",
+          "detail": "session.prompt",
+          "ms": 26,
+          "seq": 6,
+          "ts": 1793571750790,
+          "prev": "6d4c5e1adf2c48cd3288259979b2306092927a4b139022479dc277a823738cad",
+          "hash": "8ff0a34778935da0b9483592cd26e3be00f30d2ad8e374d9ef94042f37c8a307"
+        },
+        {
+          "kind": "intent",
+          "principal": "mcp:bearer",
+          "tool": "session.status",
+          "op": "session.status",
+          "outcome": "pending",
+          "args_sha256": "8fbbb139b1f66731cd5796e8b4c992dc62a5734917d9451c351f0ec390513145",
+          "args_keys": [
+            "sessionId"
+          ],
+          "args_bytes": 62,
+          "seq": 7,
+          "ts": 1793571750792,
+          "prev": "8ff0a34778935da0b9483592cd26e3be00f30d2ad8e374d9ef94042f37c8a307",
+          "hash": "2165ef7d310fd814b15b5fc3526630c0098c931c69c60ddf866276391d84346a"
+        },
+        {
+          "kind": "outcome",
+          "ref_seq": 7,
+          "principal": "mcp:bearer",
+          "tool": "session.status",
+          "op": "session.status",
+          "outcome": "ok",
+          "detail": "session.status",
+          "ms": 1,
+          "seq": 8,
+          "ts": 1793571750793,
+          "prev": "2165ef7d310fd814b15b5fc3526630c0098c931c69c60ddf866276391d84346a",
+          "hash": "fda243beac948c238ee9f9b9e45b815152aac6228602247c3a4bfc04b44b4bfa"
+        },
+        {
+          "kind": "intent",
+          "principal": "mcp:bearer",
+          "tool": "session.create",
+          "op": "session.create",
+          "outcome": "pending",
+          "args_sha256": "6e530aab1645671b8245afda3cb8698e571e8b4cfee4d88cea237efe44402709",
+          "args_keys": [
+            "mode"
+          ],
+          "args_bytes": 16,
+          "seq": 9,
+          "ts": 1793571750794,
+          "prev": "fda243beac948c238ee9f9b9e45b815152aac6228602247c3a4bfc04b44b4bfa",
+          "hash": "86b18013a93f85909622493856d2cdddca4caa8c065f3ca70d0e09e7fe0d7804"
+        },
+        {
+          "kind": "outcome",
+          "ref_seq": 9,
+          "principal": "mcp:bearer",
+          "tool": "session.create",
+          "op": "session.create",
+          "outcome": "error",
+          "code": "model-credential-not-entered",
+          "detail": "session.create:model-credential-not-entered",
+          "ms": 0,
+          "seq": 10,
+          "ts": 1793571750794,
+          "prev": "86b18013a93f85909622493856d2cdddca4caa8c065f3ca70d0e09e7fe0d7804",
+          "hash": "b086471e70e90cebb3249911dcb2d80cd468569a3068c9de1154aa9a0af4660f"
+        },
+        {
+          "kind": "intent",
+          "principal": "mcp:bearer",
+          "tool": "order.drive_roundtrip",
+          "op": "order.drive_roundtrip",
+          "outcome": "pending",
+          "args_sha256": "495d8549bea9620f8ba57fcd2a9e85ab4c4353f5fa8c4ed9ac2f5d58cc33bd86",
+          "args_keys": [
+            "done_when",
+            "est_minutes",
+            "example",
+            "title"
+          ],
+          "args_bytes": 236,
+          "seq": 11,
+          "ts": 1793571750795,
+          "prev": "b086471e70e90cebb3249911dcb2d80cd468569a3068c9de1154aa9a0af4660f",
+          "hash": "d340dd725e4b44d89541394ceb25d918d58589a2cc09b1c24f0cb335c2dc5d6e"
+        },
+        {
+          "kind": "outcome",
+          "ref_seq": 11,
+          "principal": "mcp:bearer",
+          "tool": "order.drive_roundtrip",
+          "op": "order.drive_roundtrip",
+          "outcome": "ok",
+          "detail": "order.drive_roundtrip",
+          "ms": 553,
+          "seq": 12,
+          "ts": 1793571751348,
+          "prev": "d340dd725e4b44d89541394ceb25d918d58589a2cc09b1c24f0cb335c2dc5d6e",
+          "hash": "5e530a9aff36afa1afccf4c69c66ae53fa9212b239a9ceddca0520118cecd1a3"
+        },
+        {
+          "kind": "intent",
+          "principal": "mcp:bearer",
+          "tool": "order.drive_roundtrip",
+          "op": "order.drive_roundtrip",
+          "outcome": "pending",
+          "args_sha256": "ecef6b47a39e5e7e241a12b13ed52f25b220d0f955cfd3795d83814e8e9069f4",
+          "args_keys": [
+            "done_when",
+            "est_minutes",
+            "example",
+            "title"
+          ],
+          "args_bytes": 237,
+          "seq": 13,
+          "ts": 1793571751352,
+          "prev": "5e530a9aff36afa1afccf4c69c66ae53fa9212b239a9ceddca0520118cecd1a3",
+          "hash": "966336ff7cda13601bc55727dbeeaa8ca21195c60e7195f786d95234bab76465"
+        },
+        {
+          "kind": "outcome",
+          "ref_seq": 13,
+          "principal": "mcp:bearer",
+          "tool": "order.drive_roundtrip",
+          "op": "order.drive_roundtrip",
+          "outcome": "ok",
+          "detail": "order.drive_roundtrip",
+          "ms": 539,
+          "seq": 14,
+          "ts": 1793571751891,
+          "prev": "966336ff7cda13601bc55727dbeeaa8ca21195c60e7195f786d95234bab76465",
+          "hash": "029dda30cb903504949da813784801e4df10113bad6ce0020b75d0b2c542aed4"
+        },
+        {
+          "kind": "intent",
+          "principal": "mcp:bearer",
+          "tool": "order.stage_real",
+          "op": "order.stage_real",
+          "outcome": "pending",
+          "args_sha256": "6ef02ddd3a84d929523eb06dcf154c9aef2e42f249e2e943222c74e969da3c25",
+          "args_keys": [
+            "budget_usd",
+            "checkpoint_at",
+            "done_when",
+            "est_minutes",
+            "example",
+            "goal",
+            "title"
+          ],
+          "args_bytes": 327,
+          "seq": 15,
+          "ts": 1793571751895,
+          "prev": "029dda30cb903504949da813784801e4df10113bad6ce0020b75d0b2c542aed4",
+          "hash": "e7b847026214d4e0fe28f019289a09764bcc245f16fcb416605faccfe497261f"
+        },
+        {
+          "kind": "outcome",
+          "ref_seq": 15,
+          "principal": "mcp:bearer",
+          "tool": "order.stage_real",
+          "op": "order.stage_real",
+          "outcome": "error",
+          "code": "lanes-unavailable",
+          "detail": "order.stage_real:lanes-unavailable",
+          "ms": 1,
+          "seq": 16,
+          "ts": 1793571751896,
+          "prev": "e7b847026214d4e0fe28f019289a09764bcc245f16fcb416605faccfe497261f",
+          "hash": "e6dbe215e74c314805d4b1f5df049a87b6b73137e9a5bdcd8d3a1882ab1f4646"
+        },
+        {
+          "kind": "intent",
+          "principal": "mcp:bearer",
+          "tool": "fleet.status",
+          "op": "fleet.status",
+          "outcome": "pending",
+          "args_sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+          "args_keys": [],
+          "args_bytes": 2,
+          "seq": 17,
+          "ts": 1793571751902,
+          "prev": "e6dbe215e74c314805d4b1f5df049a87b6b73137e9a5bdcd8d3a1882ab1f4646",
+          "hash": "7d238e1fb99dc8c698dfd537da974b6048329375c060890e0a56e004f1968aca"
+        },
+        {
+          "kind": "outcome",
+          "ref_seq": 17,
+          "principal": "mcp:bearer",
+          "tool": "fleet.status",
+          "op": "fleet.status",
+          "outcome": "ok",
+          "detail": "fleet.status",
+          "ms": 1,
+          "seq": 18,
+          "ts": 1793571751903,
+          "prev": "7d238e1fb99dc8c698dfd537da974b6048329375c060890e0a56e004f1968aca",
+          "hash": "d8a3d7d7afb4bd361d43e051220483d0cea99d60232b2602313ad96d5266d491"
+        },
+        {
+          "kind": "refused",
+          "principal": null,
+          "tool": "transport",
+          "op": "",
+          "outcome": "refused",
+          "code": "payload-too-large",
+          "seq": 19,
+          "ts": 1793571751922,
+          "prev": "d8a3d7d7afb4bd361d43e051220483d0cea99d60232b2602313ad96d5266d491",
+          "hash": "c1814566b950374e415f77c2d2c86a85bddf1dc804555923b92b0f882453b1ec"
+        },
+        {
+          "kind": "refused",
+          "principal": null,
+          "tool": "transport",
+          "op": "",
+          "outcome": "refused",
+          "code": "payload-too-large",
+          "seq": 20,
+          "ts": 1793571751922,
+          "prev": "c1814566b950374e415f77c2d2c86a85bddf1dc804555923b92b0f882453b1ec",
+          "hash": "370c24b13e2e9a7b93327f7b0d38a5db35899df90b9f075dc3f9be8a613af57f"
+        },
+        {
+          "kind": "refused",
+          "principal": null,
+          "tool": "transport",
+          "op": "",
+          "outcome": "refused",
+          "code": "parse-error",
+          "seq": 21,
+          "ts": 1793571751923,
+          "prev": "370c24b13e2e9a7b93327f7b0d38a5db35899df90b9f075dc3f9be8a613af57f",
+          "hash": "7a69399ba581471b7bdd3244948a6e691b9ff82dea4c4766d524ef7590218490"
+        },
+        {
+          "kind": "intent",
+          "principal": "mcp:bearer",
+          "tool": "actions.status",
+          "op": "actions.status",
+          "outcome": "pending",
+          "args_sha256": "b39022c4ed96525c42cd0e7ce55308533962a655f1c19d5dac2f03e9dd995b2c",
+          "args_keys": [
+            "n"
+          ],
+          "args_bytes": 9,
+          "seq": 22,
+          "ts": 1793571752077,
+          "prev": "7a69399ba581471b7bdd3244948a6e691b9ff82dea4c4766d524ef7590218490",
+          "hash": "ab28a0801c9d4e2564d73ca7cfc3f9ff77448625a8591154fbffd5242e1d4a77"
+        },
+        {
+          "kind": "outcome",
+          "ref_seq": 22,
+          "principal": "mcp:bearer",
+          "tool": "actions.status",
+          "op": "actions.status",
+          "outcome": "ok",
+          "detail": "actions.status",
+          "ms": 0,
+          "seq": 23,
+          "ts": 1793571752077,
+          "prev": "ab28a0801c9d4e2564d73ca7cfc3f9ff77448625a8591154fbffd5242e1d4a77",
+          "hash": "84706cb34586ecd79353ec12f8727c573adb32dd628b68194f7d344daf06e1ba"
+        }
+      ]
+    },
+    "t6-fresh-rows": {
+      "baselineSeq": 2,
+      "intentCount": 9,
+      "outcomeCount": 9,
+      "intents": [
+        {
+          "seq": 3,
+          "tool": "session.create",
+          "principal": "mcp:bearer",
+          "args_keys": []
+        },
+        {
+          "seq": 5,
+          "tool": "session.prompt",
+          "principal": "mcp:bearer",
+          "args_keys": [
+            "sessionId",
+            "text"
+          ]
+        },
+        {
+          "seq": 7,
+          "tool": "session.status",
+          "principal": "mcp:bearer",
+          "args_keys": [
+            "sessionId"
+          ]
+        },
+        {
+          "seq": 9,
+          "tool": "session.create",
+          "principal": "mcp:bearer",
+          "args_keys": [
+            "mode"
+          ]
+        },
+        {
+          "seq": 11,
+          "tool": "order.drive_roundtrip",
+          "principal": "mcp:bearer",
+          "args_keys": [
+            "done_when",
+            "est_minutes",
+            "example",
+            "title"
+          ]
+        },
+        {
+          "seq": 13,
+          "tool": "order.drive_roundtrip",
+          "principal": "mcp:bearer",
+          "args_keys": [
+            "done_when",
+            "est_minutes",
+            "example",
+            "title"
+          ]
+        },
+        {
+          "seq": 15,
+          "tool": "order.stage_real",
+          "principal": "mcp:bearer",
+          "args_keys": [
+            "budget_usd",
+            "checkpoint_at",
+            "done_when",
+            "est_minutes",
+            "example",
+            "goal",
+            "title"
+          ]
+        },
+        {
+          "seq": 17,
+          "tool": "fleet.status",
+          "principal": "mcp:bearer",
+          "args_keys": []
+        },
+        {
+          "seq": 22,
+          "tool": "actions.status",
+          "principal": "mcp:bearer",
+          "args_keys": [
+            "n"
+          ]
+        }
+      ],
+      "outcomes": [
+        {
+          "seq": 4,
+          "ref_seq": 3,
+          "tool": "session.create",
+          "outcome": "ok",
+          "ms": 11
+        },
+        {
+          "seq": 6,
+          "ref_seq": 5,
+          "tool": "session.prompt",
+          "outcome": "ok",
+          "ms": 26
+        },
+        {
+          "seq": 8,
+          "ref_seq": 7,
+          "tool": "session.status",
+          "outcome": "ok",
+          "ms": 1
+        },
+        {
+          "seq": 10,
+          "ref_seq": 9,
+          "tool": "session.create",
+          "outcome": "error",
+          "code": "model-credential-not-entered",
+          "ms": 0
+        },
+        {
+          "seq": 12,
+          "ref_seq": 11,
+          "tool": "order.drive_roundtrip",
+          "outcome": "ok",
+          "ms": 553
+        },
+        {
+          "seq": 14,
+          "ref_seq": 13,
+          "tool": "order.drive_roundtrip",
+          "outcome": "ok",
+          "ms": 539
+        },
+        {
+          "seq": 16,
+          "ref_seq": 15,
+          "tool": "order.stage_real",
+          "outcome": "error",
+          "code": "lanes-unavailable",
+          "ms": 1
+        },
+        {
+          "seq": 18,
+          "ref_seq": 17,
+          "tool": "fleet.status",
+          "outcome": "ok",
+          "ms": 1
+        },
+        {
+          "seq": 23,
+          "ref_seq": 22,
+          "tool": "actions.status",
+          "outcome": "ok",
+          "ms": 0
+        }
+      ]
+    },
+    "t9-rate": {
+      "sent": 43,
+      "firstLimited": {
+        "after": 43,
+        "headers": {
+          "retry-after": "59"
+        },
+        "error": {
+          "code": -32005,
+          "message": "rate-limited: 60 requests per minute per token"
+        }
+      }
+    },
+    "t3-session-summary": {
+      "sessionId": "fleet-mcp-a694a59e-f8d3-47ca-93f3-9e2b61066223",
+      "promptText": "checker-verify prompt cv-mvyeb7vc-9cf27687",
+      "turn": {
+        "ok": true,
+        "sessionId": "fleet-mcp-a694a59e-f8d3-47ca-93f3-9e2b61066223",
+        "status": "completed",
+        "model": "deterministic-stub (fleet-selftest-stub)",
+        "transport": "stub-turn",
+        "turn_agent": "builder:selftest-fleet-mcp-a694a59e-f8d3-47ca-93f3-9e2b61066223",
+        "ledger_gate": "stub-provider-selftest-only",
+        "turn_model": "claude-haiku-5-5",
+        "provider_calls": 1,
+        "assistant_text": "S3STUB:Current runtime context. This snapshot supersedes earlier runtime-context snapshots.\n\nCurrent working directory: \"/tmp/cv-s5.tbqAwQ/fleet/work\".\n\nCurrent DSH file policy: workspace-write. Any available operation enforced by the DSH file sandbox may modify files under the session workspace: \"/tmp/cv-s5.tbqAwQ/fleet/work\". Some platform temporary areas may also be writable.\n\nApproval prompts are enabled in this session: operations that require approval may ask through the configured answerers; without an available answerer, the request fails closed.\n\nCurrent DeepSeek Harness implementation checkout: \"/home/cayleb/.local/opt/deepseek-harness-official/\".\n\nCurrent DeepSeek Harness Web GUI URL: \"http://127.0.0.1:40911\".",
+        "inbox": [],
+        "turns": 1,
+        "note": "the fleet-ledger gate reserves the stub provider for selftest principals (stub-provider-selftest-only), so this real turn ran through the fleet stub-turn op as builder:selftest-fleet-mcp-a694a59e-f8d3-47ca-93f3-9e2b61066223"
+      },
+      "state": {
+        "ok": true,
+        "sessionId": "fleet-mcp-a694a59e-f8d3-47ca-93f3-9e2b61066223",
+        "found": true,
+        "source": "facade",
+        "mode": "stub",
+        "model": "deterministic-stub (fleet-selftest-stub)",
+        "provider": "fleet-selftest-stub",
+        "preset": null,
+        "cwd": "/tmp/cv-s5.tbqAwQ/fleet/work/mcp-sessions/fleet-mcp-a694a59e-f8d3-47ca-93f3-9e2b61066223",
+        "turn_agent": "builder:selftest-fleet-mcp-a694a59e-f8d3-47ca-93f3-9e2b61066223",
+        "busy": false,
+        "turns": 1,
+        "last_transport": "stub-turn",
+        "events": 0,
+        "created_at": "2026-11-01T22:22:30.758Z",
+        "last_used_at": "2026-11-01T22:22:30.790Z",
+        "inbox": [],
+        "last_assistant_text": "S3STUB:Current runtime context. This snapshot supersedes earlier runtime-context snapshots.\n\nCurrent working directory: \"/tmp/cv-s5.tbqAwQ/fleet/work\".\n\nCurrent DSH file policy: workspace-write. Any available operation enforced by the DSH file sandbox may modify files under the session workspace: \"/tmp/cv-s5.tbqAwQ/fleet/work\". Some platform temporary areas may also be writable.\n\nApproval prompts are enabled in this session: operations that require approval may ask through the configured answerers; without an available answerer, the request fails closed.\n\nCurrent DeepSeek Harness implementation checkout: \"/home/cayleb/.local/opt/deepseek-harness-official/\".\n\nCurrent DeepSeek Harness Web GUI URL: \"http://127.0.0.1:40911\".",
+        "in_registry": true,
+        "registry_session": true
+      }
+    },
+    "t5-summary": {
+      "branch": "A",
+      "details": {
+        "mode": "real-lane-staged",
+        "real_lane": "not-built (Stage 4 roster)",
+        "stage_path": "/tmp/cv-s5.tbqAwQ/fleet/state/mcp/staged/real-order-1793571751896-e2b1ce5f9f.json",
+        "payload_sha256": "a17b6021d8e23a1ddc82c4588f1cd82eb40f288b59a25eae01fdb46c8c524f21",
+        "payload": {
+          "title": "checker-verify staged cv-mvyeb7vc-9cf27687",
+          "goal": "stage only (checker-verify cv-mvyeb7vc-9cf27687)",
+          "context": "staged through the fleet MCP facade at 2026-11-01T22:22:31.895Z; fires as a real Nox delegation when the Stage 4 roster lands",
+          "constraints": [],
+          "anti_goals": [],
+          "done_when": {
+            "mode": "command",
+            "command": "true",
+            "text": "checker-verify staged done-when cv-mvyeb7vc-9cf27687"
+          },
+          "example": "a sha256 artefact",
+          "evidence_required": [
+            "the artefacts the done-when names, with their sha256"
+          ],
+          "assumptions_policy": "log-and-proceed",
+          "budget": {
+            "usd": 1
+          },
+          "stop_conditions": [],
+          "checkpoint_at": 1793658151894,
+          "est_minutes": 10,
+          "size": "standard",
+          "successors": [],
+          "ambition": [
+            "complete the delegated work order"
+          ],
+          "base_hashes": {}
+        }
+      },
+      "matchingOrders": 0
+    },
+    "t7-summary": {
+      "ok": true,
+      "mcp": {
+        "name": "fleet-mcp",
+        "version": "0.3.0-mcp",
+        "protocol_versions": [
+          "2025-03-26",
+          "2024-11-05"
+        ],
+        "transport": "streamable-http (POST JSON; GET 405; DELETE session)",
+        "port": 18889,
+        "bind": [
+          {
+            "host": "127.0.0.1",
+            "port": 18889,
+            "family": "IPv4"
+          },
+          {
+            "host": "::1",
+            "port": 18889,
+            "family": "IPv6"
+          },
+          {
+            "host": "100.114.17.67",
+            "port": 18889,
+            "family": "IPv4"
+          }
+        ],
+        "sources": {
+          "sources": [
+            "loopback",
+            "tailnet"
+          ],
+          "v4": [
+            "127.0.0.0/8",
+            "100.64.0.0/10"
+          ],
+          "v6": [
+            "::1"
+          ]
+        },
+        "sessions": {
+          "held": 1,
+          "max": 8,
+          "sessions": [
+            {
+              "sessionId": "fleet-mcp-a694a59e-f8d3-47ca-93f3-9e2b61066223",
+              "preset": null,
+              "busy": false,
+              "turns": 1,
+              "last_transport": "stub-turn"
+            }
+          ]
+        },
+        "requests": {
+          "requests": 16,
+          "accepted": 14,
+          "refused": 2,
+          "toolCalls": 7,
+          "byTool": {
+            "session.create": 2,
+            "session.prompt": 1,
+            "session.status": 1,
+            "order.drive_roundtrip": 2,
+            "order.stage_real": 1
+          },
+          "byRefusal": {
+            "unauthorized": 2
+          },
+          "sessionsOpened": 2,
+          "sessionsClosed": 0,
+          "initialized": 2
+        },
+        "action_log": {
+          "path": "/tmp/cv-s5.tbqAwQ/fleet/log/mcp-actions.jsonl",
+          "seq": 17,
+          "head": "7d238e1fb99dc8c698dfd537da974b6048329375c060890e0a56e004f1968aca",
+          "open": true,
+          "broken": null,
+          "mode": "jsonl-hash-chain"
+        },
+        "model_route": "deterministic-stub (fleet-selftest-stub)",
+        "real_lane": "not-built (Stage 4 roster)"
+      },
+      "fleet": {
+        "name": "fleet-core",
+        "protocol": 1,
+        "pid": 464358,
+        "node": "v26.7.0",
+        "uptime_s": 2,
+        "db": {
+          "path": "/tmp/cv-s5.tbqAwQ/fleet/state/fleet.db",
+          "journal_mode": "wal",
+          "events": 92,
+          "head": {
+            "seq": 92,
+            "hash": "310894cd6b734db947ede23ad4c7f04d47e43aa38f44646adc0e6026909d115a"
+          }
+        },
+        "integrity": {
+          "ok": true,
+          "failures": []
+        },
+        "lanes_allowed": true,
+        "control": {
+          "path": "/tmp/cv-s5.tbqAwQ/ctl/control.sock",
+          "peer_uid": 1000,
+          "accepted": 9,
+          "rejected": 0
+        },
+        "policy": {
+          "selftest": true,
+          "selftest_source": "default"
+        }
+      }
+    }
+  }
+}

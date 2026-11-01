@@ -1,0 +1,135 @@
+{
+  "a": {
+    "ticketId": "8f97658d-2515-432e-930b-f90d95e85b3b",
+    "submitted": {
+      "ticketId": "8f97658d-2515-432e-930b-f90d95e85b3b",
+      "state": "queued",
+      "duplicate": false
+    },
+    "claimed": {
+      "worker": "agent-sam-akintola",
+      "leaseUntil": 1793625000000
+    },
+    "workerReply": {
+      "status": 403,
+      "error": "worker_route_denied"
+    },
+    "reply": "Line C. Dispatch has updated the plan.",
+    "finish": {
+      "ticketId": "8f97658d-2515-432e-930b-f90d95e85b3b",
+      "state": "resolved",
+      "remoteBinding": "none"
+    },
+    "deviceRead": {
+      "state": "resolved",
+      "replies": [
+        "Line C. Dispatch has updated the plan."
+      ],
+      "receipt": {
+        "summary": "Told the warehouse lead: line C.",
+        "sessionId": "lf-1-a5",
+        "before": "Teo could not see which line Harlow Legal was on.",
+        "action": "Checked the dispatch plan for Harlow Legal and confirmed line C.",
+        "verification": "Teo read the reply on his phone."
+      }
+    },
+    "audit": [
+      {
+        "at": 1793624400000,
+        "ticket_id": "8f97658d-2515-432e-930b-f90d95e85b3b",
+        "event": "stored"
+      },
+      {
+        "at": 1793624400000,
+        "ticket_id": "8f97658d-2515-432e-930b-f90d95e85b3b",
+        "event": "claimed"
+      },
+      {
+        "at": 1793624400000,
+        "ticket_id": "8f97658d-2515-432e-930b-f90d95e85b3b",
+        "event": "reply_added"
+      },
+      {
+        "at": 1793624400000,
+        "ticket_id": "8f97658d-2515-432e-930b-f90d95e85b3b",
+        "event": "resolved"
+      }
+    ]
+  },
+  "b": {
+    "ticketId": "d2f69377-cf9d-458e-8e42-36913028c2e7",
+    "submitted": {
+      "ticketId": "d2f69377-cf9d-458e-8e42-36913028c2e7",
+      "state": "queued",
+      "duplicate": false
+    },
+    "claim": {
+      "worker": "sam-akintola",
+      "leaseUntil": 1793625000000
+    },
+    "reply": "The rate card is in the shared estimates folder; I have pointed your assistant at it",
+    "finish": {
+      "ticketId": "d2f69377-cf9d-458e-8e42-36913028c2e7",
+      "state": "resolved",
+      "remoteBinding": "none"
+    },
+    "deviceRead": {
+      "state": "resolved",
+      "replies": [
+        "The rate card is in the shared estimates folder; I have pointed your assistant at it"
+      ],
+      "receipt": {
+        "summary": "Pointed the assistant at the shared rate card.",
+        "sessionId": "lf-1-b2",
+        "before": "Marcus's assistant could not find the rate card.",
+        "action": "Located the shared estimates folder and pointed the assistant at it.",
+        "verification": "Marcus read the reply on his desktop."
+      }
+    },
+    "managementRecord": {
+      "worker": "sam-akintola",
+      "state": "resolved",
+      "replyAuthors": 0
+    },
+    "audit": [
+      {
+        "at": 1793624400000,
+        "ticket_id": "d2f69377-cf9d-458e-8e42-36913028c2e7",
+        "event": "stored"
+      },
+      {
+        "at": 1793624400000,
+        "ticket_id": "d2f69377-cf9d-458e-8e42-36913028c2e7",
+        "event": "claimed"
+      },
+      {
+        "at": 1793624400000,
+        "ticket_id": "d2f69377-cf9d-458e-8e42-36913028c2e7",
+        "event": "reply_added"
+      },
+      {
+        "at": 1793624400000,
+        "ticket_id": "d2f69377-cf9d-458e-8e42-36913028c2e7",
+        "event": "resolved"
+      }
+    ]
+  },
+  "recorded_product_limits": [
+    {
+      "finding": "F4",
+      "what": "agent ticket-worker credential cannot post a reply",
+      "observed": "HTTP 403 worker_route_denied"
+    },
+    {
+      "finding": "F3",
+      "what": "agent ticket-worker credential cannot finish resolved without a remote binding",
+      "observed": "HTTP 409 remote_binding_required"
+    },
+    {
+      "finding": "F6",
+      "what": "the ticket record carries a free-text worker and replies have no author; Dana and Sam share one operator token",
+      "observed": "worker=sam-akintola reply-authors=0"
+    }
+  ],
+  "generated_utc": "2026-11-01T22:07:35Z"
+}

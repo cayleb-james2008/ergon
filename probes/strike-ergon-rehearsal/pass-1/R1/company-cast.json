@@ -1,0 +1,97 @@
+{
+  "company": {
+    "id": "lanternfield",
+    "name": "Lanternfield Moving & Storage",
+    "timezone": "America/New_York",
+    "headcount": 34,
+    "emailDomain": "lanternfield.example"
+  },
+  "origin": "https://lf-host-01.example-tailnet.ts.net:8443",
+  "cast": [
+    {
+      "id": "dana-whitcomb",
+      "displayName": "Dana Whitcomb",
+      "role": "operations-manager",
+      "roleTitle": "Operations manager",
+      "agentId": "assistant",
+      "devices": [
+        {
+          "alias": "dana-desktop",
+          "kind": "desktop",
+          "enrolment": "fleet-join"
+        }
+      ]
+    },
+    {
+      "id": "priya-lindqvist",
+      "displayName": "Priya Lindqvist",
+      "role": "dispatch-coordinator",
+      "roleTitle": "Dispatch and scheduling coordinator",
+      "agentId": "assistant",
+      "devices": [
+        {
+          "alias": "priya-desktop",
+          "kind": "desktop",
+          "enrolment": "fleet-join"
+        }
+      ]
+    },
+    {
+      "id": "marcus-oyelaran",
+      "displayName": "Marcus Oyelaran",
+      "role": "billing-estimates-clerk",
+      "roleTitle": "Billing and estimates clerk",
+      "agentId": "assistant",
+      "devices": [
+        {
+          "alias": "marcus-desktop",
+          "kind": "desktop",
+          "enrolment": "fleet-join"
+        }
+      ]
+    },
+    {
+      "id": "teo-brandvold",
+      "displayName": "Teo Brandvold",
+      "role": "warehouse-lead",
+      "roleTitle": "Warehouse lead (phone-first)",
+      "agentId": "assistant",
+      "devices": [
+        {
+          "alias": "teo-phone",
+          "kind": "phone",
+          "enrolment": "operator-registry"
+        }
+      ]
+    },
+    {
+      "id": "rosa-quintero-hale",
+      "displayName": "Rosa Quintero-Hale",
+      "role": "crew-chief",
+      "roleTitle": "Crew chief, North Yard",
+      "agentId": "assistant",
+      "devices": [
+        {
+          "alias": "north-kiosk",
+          "kind": "kiosk",
+          "enrolment": "fleet-join"
+        }
+      ]
+    },
+    {
+      "id": "sam-akintola",
+      "displayName": "Sam Akintola",
+      "role": "office-it-support",
+      "roleTitle": "Office and IT support coordinator",
+      "agentId": "assistant",
+      "devices": [
+        {
+          "alias": "sam-desktop",
+          "kind": "desktop",
+          "enrolment": "fleet-join"
+        }
+      ]
+    }
+  ],
+  "castCount": 6
+}

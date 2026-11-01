@@ -1,0 +1,36 @@
+--- /usr/local/bin/dsh-fleet-admin	2026-11-01 13:58:22.890323215 -0500
++++ /home/cayleb/workspace/harness-build/strike-release/ops/dsh-fleet-admin.new	2026-11-01 17:11:43.364163321 -0500
+@@ -67,12 +67,29 @@
+   [ -f "$tgz" ] && [ ! -L "$tgz" ] || die "normalise: tarball missing or a symlink"
+   [ -d "$root" ] && [ ! -L "$root" ] || die "normalise: package root missing or a symlink"
+   /usr/bin/python3 -I -S -B - "$tgz" "$root" <<'PYNORM' || die "normalise: failed (tree left for inspection; re-run plugin-add then this step)"
+-import os, stat, sys, shutil, tarfile
++import json, os, stat, sys, shutil, tarfile
+ tgz, root = sys.argv[1], sys.argv[2]
+ with tarfile.open(tgz, "r:gz") as tf:
+-    members = [(m.name[len("package/"):], m.mode & 0o7777) for m in tf.getmembers() if m.isfile()]
+-if len(members) != 82:
+-    raise SystemExit(f"normalise: expected 82 members, got {len(members)}")
++    all_members = tf.getmembers()
++    members = [(m.name[len("package/"):], m.mode & 0o7777) for m in all_members if m.isfile()]
++    # The member count is derived from the hash-verified archive, not pinned to a release: a pinned count blocks every
++    # later release (0.3.0 ships 104 members). The archive's own identity is the binding check.
++    if not members:
++        raise SystemExit("normalise: the archive has no regular file members")
++    manifest = tf.extractfile("package/package.json")
++    if manifest is None:
++        raise SystemExit("normalise: the archive has no package/package.json")
++    try:
++        meta = json.loads(manifest.read().decode("utf-8"))
++    except Exception as exc:
++        raise SystemExit(f"normalise: package/package.json is not JSON: {exc}")
++    if meta.get("name") != "@cayleb/dsh-fleet":
++        raise SystemExit(f"normalise: archive package name is {meta.get('name')!r}, not '@cayleb/dsh-fleet'")
++    if not isinstance(meta.get("version"), str) or not meta["version"]:
++        raise SystemExit("normalise: archive package.json has no version")
++    if any(not rel or rel.startswith("/") or ".." in rel.split("/") for rel, _m in members):
++        raise SystemExit("normalise: archive member path is not a clean relative path")
++    print(f"normalise-archive: @cayleb/dsh-fleet {meta['version']} {len(members)} regular members")
+ for rel, mode in members:
+     if mode not in (0o644, 0o755):
+         raise SystemExit(f"normalise: unexpected archive mode {mode:o} for {rel}")

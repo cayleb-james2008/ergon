@@ -1,0 +1,10 @@
+# Installed package identity (readable to uid 1000)
+generated_utc: 2026-11-01T22:07:36Z
+file: cayleb-dsh-fleet-0.2.2.tgz
+bytes: 210358
+mtime: 2026-11-01T03:45:22.107Z
+sha256: 37e3a542a32f8cb15cd06965072cfef9aac81cb157b20f7c89b50dafc36fa177
+published_sha256: 37e3a542a32f8cb15cd06965072cfef9aac81cb157b20f7c89b50dafc36fa177
+published_matches: true
+
+The installed package tree is readable only to user fleet. This identity is the hash-verified release tarball the install was staged from; the wrapper reads below prove the running version and the mounted bundle rows.

@@ -1,0 +1,88 @@
+{
+  "step": "R2",
+  "title": "First personalised assistants",
+  "pass": 2,
+  "word": "pending",
+  "table_note": "fixture profile + onboarding session per cast member; onboarding driven to active through the product protocol with fixture answers (stand-in for the employee's own words); one real fleet agent session per cast member on the installed plugin. The model-quality assistant leg is PENDING: no provider credential (owner act).",
+  "operator_action": "operator adds the first employees and onboards each through the product's onboarding conversation, then confirms the assistant draft; here the fixture answer set stands in for the employee's own answers, and the model-quality conversation leg cannot run (named PENDING)",
+  "expected": "each cast member has a personalised agent profile and an onboarding session; the product's onboarding protocol reaches `active` with a confirmed operating model; a real fleet agent session exists for each cast member on the installed plugin.",
+  "checks": [
+    {
+      "name": "every cast member has a personalised agent profile in the fixture state",
+      "ok": true,
+      "detail": "6/6 profiles"
+    },
+    {
+      "name": "every cast member has an onboarding session (fresh stage `installed`)",
+      "ok": true,
+      "detail": "6/6 sessions"
+    },
+    {
+      "name": "each profile names its own employee and role",
+      "ok": true,
+      "detail": "dana-whitcomb:operations-manager priya-lindqvist:dispatch-coordinator marcus-oyelaran:billing-estimates-clerk teo-brandvold:warehouse-lead rosa-quintero-hale:crew-chief sam-akintola:office-it-support"
+    },
+    {
+      "name": "assigned agent ports are distinct per cast member",
+      "ok": true,
+      "detail": "19489,19491,19493,19495,19497,19499"
+    },
+    {
+      "name": "product onboarding protocol reaches `active` for every cast member with a confirmed operating model",
+      "ok": true,
+      "detail": "6/6 active+confirmed"
+    },
+    {
+      "name": "every onboarding drive answered all six interview stages and recorded observations",
+      "ok": true,
+      "detail": "6/2 6/2 6/2 6/2 6/2 6/2"
+    },
+    {
+      "name": "a real fleet agent session runs for every cast member on the installed plugin",
+      "ok": true,
+      "detail": "6/6 sessions with session id + call id"
+    },
+    {
+      "name": "the sessions are distinct real sessions",
+      "ok": true,
+      "detail": "6 distinct session ids"
+    }
+  ],
+  "findings": [
+    {
+      "name": "stand-in",
+      "detail": "The onboarding drive uses the fixture answer set (data/onboarding.json) as the employee's own answers and confirmation; that is a named stand-in for the employee's device taps. The state machine, validation and gate are the product's own code, and the confirmation gate still refuses a non-employee confirmer by construction (suite/onboarding/src/protocol.js confirm())."
+    },
+    {
+      "name": "stub-turn route",
+      "detail": "On this install the deterministic stub route (`stub-turn`, provider fleet-selftest-stub) returned status=completed with provider_calls=0 and empty assistant text for 2/2 probes: the turn machinery starts a session but no model turn is produced. The stub route therefore does NOT stand in for a model-quality answer here; the model leg is named PENDING below."
+    }
+  ],
+  "pending": [
+    "provider credential for the fleet profile (owner act): the assistant's model-quality role answer and the model-conducted onboarding conversation cannot run. The deterministic stub route produced no provider call on this install (stub-turn probes recorded). What ran instead: fixture assistant records, onboarding to `active` through the product protocol with fixture answers (stand-in for the employee's own words), and one real fleet agent session per cast member."
+  ],
+  "notes": [
+    "dana-whitcomb → lead:selftest-lf-2-dana-whitcomb: real session fleet-selftest-lead-8ad1d719-3f0f-47fc-9b6c-f4b0b862cbbf, call selftest-bfb968df-5f9a-4959-9947-500ddf06cc74, board scope mine",
+    "priya-lindqvist → researcher:selftest-lf-2-priya-lindqvist: real session fleet-selftest-researcher-7567479c-600d-46cf-b56c-fdbaf6134a4a, call selftest-dbcc810a-757e-4ca8-ac0e-3345a1b0351c, board scope mine",
+    "marcus-oyelaran → builder:selftest-lf-2-marcus-oyelaran: real session fleet-selftest-builder-c767180d-a1ff-4dd7-965b-c8ebc6da02f0, call selftest-42479534-0f53-46eb-8a2c-eb67c1146789, board scope mine",
+    "teo-brandvold → builder:selftest-lf-2-teo-brandvold: real session fleet-selftest-builder-8cb20d45-e2ec-4796-9389-7e810bfba622, call selftest-b706f418-6981-45e9-b08b-5b098aec2068, board scope mine",
+    "rosa-quintero-hale → researcher:selftest-lf-2-rosa-quintero-hale: real session fleet-selftest-researcher-84db37ac-af9c-4a8b-b8eb-1a38194739dd, call selftest-27d19808-2a5e-42bd-9f48-1d609c9c3ce6, board scope mine",
+    "sam-akintola → checker:selftest-lf-2-sam-akintola: real session fleet-selftest-checker-6bb5b868-579b-4179-af50-b55ece0c1baf, call selftest-b66035bc-9258-41a4-81bc-7155fb37da65, board scope mine"
+  ],
+  "evidence": [
+    "R2/fixture-assistant-records.json",
+    "R2/onboarding-drive.json",
+    "R2/fleet-sessions.json",
+    "R2/stub-turn-probes.json",
+    "R2/model-leg.txt"
+  ],
+  "meta": {
+    "sessions": 6,
+    "onboardingActive": 6,
+    "stubProbes": 2
+  },
+  "started_utc": "2026-11-01T22:07:37Z",
+  "finished_utc": "2026-11-01T22:07:37Z",
+  "failures": [],
+  "forced_failure": null
+}

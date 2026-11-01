@@ -1,0 +1,5 @@
+sim-pnpm: 104 regular files masked(0644->0640,0755->0750)+hardlinked(nlink=2); dirs 750; bad=0
+removed from installed root: package/src/core/core.js
+block rc=1
+stdout: [normalise-archive: @cayleb/dsh-fleet 0.3.0 104 regular members]
+stderr: normalise: missing member src/core/core.js: [Errno 2] No such file or directory: '/tmp/checker-wrapper-review.458405/case4/root/package/src/core/core.js'

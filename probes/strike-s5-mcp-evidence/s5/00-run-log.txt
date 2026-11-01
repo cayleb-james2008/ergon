@@ -1,0 +1,36 @@
+S5 independent MCP acceptance — 2026-11-01T22:22:28Z
+checker: checker-verify (fresh-context; built none of this artifact)
+tarball: /home/cayleb/workspace/harness-build/strike-release/dist/cayleb-dsh-fleet-0.3.0.tgz
+sha256: b60019a0f3611c83fb13a374444c46b05092df89737f803661408fd7151a0b10
+members (entries with '/'): 104
+PASS artifact sha256 equals the Lead-declared digest
+PASS member count 104
+scratch root: /tmp/cv-s5.tbqAwQ
+PASS profile initialised from the shipped web template
+plugin add exit=0 ; installed version: 0.3.0
+installed tree vs tar members: exit=0 (0 differing lines)
+PASS installed profile tree is byte-identical to the tarball
+composed overlay dump-config exit=0
+PASS fleet-mcp row composes
+composed rows (fleet-*): 15
+scratch host pid 464358; waiting for sockets…
+PASS control + admin sockets are up
+control status: ok=true integrity=true lanes=true failures=[]
+listeners :18889:
+   LISTEN 0      511                             100.114.17.67:18889      0.0.0.0:*
+   LISTEN 0      511                                 127.0.0.1:18889      0.0.0.0:*
+   LISTEN 0      511                                     [::1]:18889         [::]:*
+mcp-verify exit=0
+   SUMMARY: PASS — 84/87 checks passed, 0 failed, 3 informational
+PASS my MCP probe passed every mandatory check
+status after: {"ok":true,"integrity_ok":true,"lanes":true,"events":92,"control_peer_uid":1000,"policy_selftest":true}
+action log: 24 rows sha256=d0e9331096ccddbf44e8a1d9db519529464e82b49fb97f0e9bb04e5a3c196e33
+PASS whole action-log file contains no bearer token (whole_file_token_hits=0 rows=24 bytes=8599)
+PASS no bearer token in my evidence pack (evidence_files=61 token_hits=0)
+
+==================================================
+S5 RESULT: PASS — probe and independent checks clean
+evidence: /home/cayleb/workspace/harness-build/evidence/strike/checker-verify/s5
+scratch root (deleted unless KEEP_ROOT=1): /tmp/cv-s5.tbqAwQ
+==================================================
+── stopping scratch host

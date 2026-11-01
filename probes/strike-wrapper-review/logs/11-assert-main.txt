@@ -1,0 +1,2 @@
+assert: archive=104 files; installed=104 files; missing=0; extra=0; problems=0; dirs_wrong_mode=0
+assert rc=0

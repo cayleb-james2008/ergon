@@ -1,0 +1,51 @@
+{
+  "step": "R4",
+  "title": "Phone enrolment",
+  "pass": 1,
+  "word": "pending",
+  "table_note": "host-side device registry row for the warehouse lead's phone recorded as a stand-in (operator-registered, approved). The phone surface is PACKAGE-PENDING (no phone client; a phone cannot use the fleet join — F5), so the step is pending with the missing piece named.",
+  "operator_action": "operator opens the same link on the phone, taps \"Add this phone\", and the manager approves; then tests the assistant with the desktop off",
+  "expected": "the phone is listed as an approved device and the assistant answers from the phone while the desktop is off",
+  "checks": [
+    {
+      "name": "a phone device row exists in the host-side device registry",
+      "ok": true,
+      "detail": "aliases=crew-tablet-1,crew-tablet-2,dana-desktop,front-desk,marcus-desktop,north-kiosk,priya-desktop,sales-laptop,sam-desktop,teo-phone"
+    },
+    {
+      "name": "phone device is operator-registered and approved",
+      "ok": true,
+      "detail": "enrolment=operator-registry status=approved employee=teo-brandvold"
+    },
+    {
+      "name": "phone device belongs to the phone-first cast member",
+      "ok": true,
+      "detail": "employeeId=teo-brandvold"
+    }
+  ],
+  "findings": [
+    {
+      "name": "device registry",
+      "detail": "Host-side fleet registry: 9 devices, 8 approved, 1 pending (the sales laptop is left waiting by design — a Monday act for the support desk)."
+    },
+    {
+      "name": "desktop-off answer test",
+      "detail": "Scenario (e) — assistant answers while the desktop is off — needs the host agent runtime and a model; it is covered by the R2 model-leg PENDING, not claimed here."
+    }
+  ],
+  "pending": [
+    "phone surface (PACKAGE-PENDING: no phone client; a phone cannot use the fleet join — SCENARIOS.md F5 / package boundary item 6): \"Add this phone\" and the manager approval on the phone cannot be shown, and the desktop-off answer test needs the host agent runtime/model credential. Host-side device registry row for the phone recorded as a stand-in (operator-registered, approved)."
+  ],
+  "notes": [],
+  "evidence": [
+    "R4/device-registry-standin.json"
+  ],
+  "meta": {
+    "phoneAlias": "teo-phone",
+    "phoneEmployee": "teo-brandvold"
+  },
+  "started_utc": "2026-11-01T22:07:34Z",
+  "finished_utc": "2026-11-01T22:07:34Z",
+  "failures": [],
+  "forced_failure": null
+}

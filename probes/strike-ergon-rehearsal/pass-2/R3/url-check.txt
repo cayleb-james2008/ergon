@@ -1,0 +1,13 @@
+# Shareable URL identity and what actually exists
+generated_utc: 2026-11-01T22:07:37Z
+company: Lanternfield Moving & Storage
+origin_from_config: https://lf-host-01.example-tailnet.ts.net:8443
+hostname: lf-host-01.example-tailnet.ts.net
+origin_note: The Anthropic budget proxy's activation gate accepts only an https://*.ts.net:8443 origin (support/server/anthropic-budget-proxy.mjs validOrigin). The name is made up and never resolved; the rehearsal listens on 127.0.0.1 only. See finding P20-F13.
+
+## getent hosts lf-host-01.example-tailnet.ts.net (offline resolution, no network call)
+exit: 2
+(no local resolution)
+
+
+The real reachability proof is a second device opening the URL; that device and URL do not exist in this strike.

@@ -1,0 +1,155 @@
+{
+  "baselineSeq": 2,
+  "intentCount": 9,
+  "outcomeCount": 9,
+  "intents": [
+    {
+      "seq": 3,
+      "tool": "session.create",
+      "principal": "mcp:bearer",
+      "args_keys": []
+    },
+    {
+      "seq": 5,
+      "tool": "session.prompt",
+      "principal": "mcp:bearer",
+      "args_keys": [
+        "sessionId",
+        "text"
+      ]
+    },
+    {
+      "seq": 7,
+      "tool": "session.status",
+      "principal": "mcp:bearer",
+      "args_keys": [
+        "sessionId"
+      ]
+    },
+    {
+      "seq": 9,
+      "tool": "session.create",
+      "principal": "mcp:bearer",
+      "args_keys": [
+        "mode"
+      ]
+    },
+    {
+      "seq": 11,
+      "tool": "order.drive_roundtrip",
+      "principal": "mcp:bearer",
+      "args_keys": [
+        "done_when",
+        "est_minutes",
+        "example",
+        "title"
+      ]
+    },
+    {
+      "seq": 13,
+      "tool": "order.drive_roundtrip",
+      "principal": "mcp:bearer",
+      "args_keys": [
+        "done_when",
+        "est_minutes",
+        "example",
+        "title"
+      ]
+    },
+    {
+      "seq": 15,
+      "tool": "order.stage_real",
+      "principal": "mcp:bearer",
+      "args_keys": [
+        "budget_usd",
+        "checkpoint_at",
+        "done_when",
+        "est_minutes",
+        "example",
+        "goal",
+        "title"
+      ]
+    },
+    {
+      "seq": 17,
+      "tool": "fleet.status",
+      "principal": "mcp:bearer",
+      "args_keys": []
+    },
+    {
+      "seq": 22,
+      "tool": "actions.status",
+      "principal": "mcp:bearer",
+      "args_keys": [
+        "n"
+      ]
+    }
+  ],
+  "outcomes": [
+    {
+      "seq": 4,
+      "ref_seq": 3,
+      "tool": "session.create",
+      "outcome": "ok",
+      "ms": 11
+    },
+    {
+      "seq": 6,
+      "ref_seq": 5,
+      "tool": "session.prompt",
+      "outcome": "ok",
+      "ms": 26
+    },
+    {
+      "seq": 8,
+      "ref_seq": 7,
+      "tool": "session.status",
+      "outcome": "ok",
+      "ms": 1
+    },
+    {
+      "seq": 10,
+      "ref_seq": 9,
+      "tool": "session.create",
+      "outcome": "error",
+      "code": "model-credential-not-entered",
+      "ms": 0
+    },
+    {
+      "seq": 12,
+      "ref_seq": 11,
+      "tool": "order.drive_roundtrip",
+      "outcome": "ok",
+      "ms": 553
+    },
+    {
+      "seq": 14,
+      "ref_seq": 13,
+      "tool": "order.drive_roundtrip",
+      "outcome": "ok",
+      "ms": 539
+    },
+    {
+      "seq": 16,
+      "ref_seq": 15,
+      "tool": "order.stage_real",
+      "outcome": "error",
+      "code": "lanes-unavailable",
+      "ms": 1
+    },
+    {
+      "seq": 18,
+      "ref_seq": 17,
+      "tool": "fleet.status",
+      "outcome": "ok",
+      "ms": 1
+    },
+    {
+      "seq": 23,
+      "ref_seq": 22,
+      "tool": "actions.status",
+      "outcome": "ok",
+      "ms": 0
+    }
+  ]
+}

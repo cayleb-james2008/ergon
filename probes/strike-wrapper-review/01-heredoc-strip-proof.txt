@@ -1,0 +1,6 @@
+OLD: non-heredoc lines=227 heredoc body lines=36
+NEW: non-heredoc lines=227 heredoc body lines=53
+NON-HEREDOC TEXT IDENTICAL: True
+HEREDOC BODY IDENTICAL: False
+ONLY THE HEREDOC BODY DIFFERS: True
+extracted new heredoc -> /home/cayleb/workspace/harness-build/evidence/strike/checker-verify/wrapper-review/normalise-heredoc.py (53 lines)

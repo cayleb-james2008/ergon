@@ -1,0 +1,19 @@
+### installed wrapper state now (2026-11-01T17:16:49-05:00)
+-rwxr-xr-x 1 root root 17569 Nov  1 13:58 /usr/local/bin/dsh-fleet-admin
+eb0ad02480282b9b89341beb991ce38e4b6ffcace5c755d945dbcf6f0f4fb888  /usr/local/bin/dsh-fleet-admin
+
+### hashes of review artifacts
+75ab346e8b314c25b1da630c78ded154efa5669aff62c474afa7da2d53c01209  /home/cayleb/workspace/harness-build/strike-release/ops/dsh-fleet-admin.new
+5c91f430b0c9219e802211779eb81eab030f4218a17fa3bb24dfba39f18d1fd5  /home/cayleb/workspace/harness-build/strike-release/dist/cayleb-dsh-fleet-0.3.0.tgz
+3bb9875841da421809ca1e74cc34012bd28e25adf571e3cb5542c5bedddc57f7  /home/cayleb/workspace/harness-build/evidence/strike/checker-verify/wrapper-review/normalise-heredoc.py
+48581296084516f57f0246a3ea53020a27837ca7ca4fb5787c62d0385d1912d9  /home/cayleb/workspace/harness-build/evidence/strike/checker-verify/wrapper-review/old-normalise-heredoc.py
+
+### archive mode distribution
+    101 -rw-r--r--
+      3 -rwxr-xr-x
+
+### archive package.json identity
+@cayleb/dsh-fleet 0.3.0
+
+### review package hash
+3adc9a354496c47578ad1f12892d3c81fd0f59778eab8a1c69017a91e6e78047  /home/cayleb/workspace/harness-build/strike-release/release/WRAPPER-CHANGE-0.3.0.md
