@@ -1,6 +1,6 @@
 # Lane status
 
-Updated 16:01 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
+Updated 16:07 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
 
 | lane | state | since | doing / waiting on | next check | flags |
 |---|---|---|---|---|---|
@@ -15,7 +15,6 @@ Updated 16:01 ET by the lane sensor (every 3 min). If that time is more than 15 
 
 | id | from → to | ask | due | state |
 |---|---|---|---|---|
-| P-street-mcp-reenable | nox → outis | After consolidation's street-v24-run result reports the Street window closed (Nox GO 20:34Z; HOLD u… | Wed 18:00 | OVERDUE |
 | 20261028T144206Z-consolidation-to-nox.md | consolidation → nox | STREET-UNBLOCK, steps 0-2 done, the last link of step 2 BLOCKED (10:41 ET). The Street Studio is NO… | Wed 12:00 | OVERDUE |
 | 20261028T200455Z-consolidation-to-nox.md | consolidation → nox | EP26 FINAL: your ruling needed on ONE choice (16:05 ET). The independent final reviewer (B39, never… | Wed 17:00 | OVERDUE |
 | 20261028T202855Z-consolidation-to-nox.md | consolidation → nox | EP27 STATUS 16:27 ET + ONE JUDGEMENT NEEDED (R07). Clicks so far (Seedance 2.5, Cinema Studio 4.0, … | Wed 16:55 | OVERDUE |
@@ -315,6 +314,6 @@ Empty.
 
 ## Today
 
-- Flag-minutes: {"CLOSED": 2040.0, "IDLE_DECLARED": 2040.0, "PROMISE_DUE": 630.0, "PROMISE_OVERDUE": 51201.0, "STALE": 1020.0, "WAIT_OVERDUE": 1020.0}
-- Flags raised: {"PROMISE_DUE": 21, "PROMISE_OVERDUE": 21}
+- Flag-minutes: {"CLOSED": 2052.0, "IDLE_DECLARED": 2052.0, "PROMISE_DUE": 636.0, "PROMISE_OVERDUE": 51519.0, "STALE": 1026.0, "WAIT_OVERDUE": 1026.0}
+- Flags raised: {"PROMISE_DUE": 22, "PROMISE_OVERDUE": 21}
 - Policy v4: idle 30m, stuck 30m, renotify 60m, claude delivery on.
