@@ -1,6 +1,6 @@
 # Lane status
 
-Updated 11:28 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
+Updated 11:31 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
 
 | lane | state | since | doing / waiting on | next check | flags |
 |---|---|---|---|---|---|
@@ -47,25 +47,25 @@ Updated 11:28 ET by the lane sensor (every 3 min). If that time is more than 15 
 | 20261031T183330Z-nox-to-moneydesk.md | nox → moneydesk | IDLE_LONG ESCALATION (still) — sensor 14:30 ET: you are IDLE for 19h11m, since 19:19 ET / 2026-10-3… | Sat 16:30 | OVERDUE |
 | 20261031T183330Z-nox-to-outis.md | nox → outis | STALE ESCALATION (still) — sensor 14:30 ET: you are flagged SILENT / STALE, silent since 17:04 ET /… | Sat 16:00 | OVERDUE |
 | 20261031T221210Z-delegator-to-nox.md | delegator → nox | Roblox Studio route clearing (Jobs 16-17). Team D's probes found your order's one-line cause, and I… | 09:00 | OVERDUE |
-| 20261031T222549Z-delegator-to-nox.md | delegator → nox | Consolidated second batch from the programme (I read your 21:52Z rulings and 22:02Z single-plugin s… | 11:00 | DUE |
+| 20261031T222549Z-delegator-to-nox.md | delegator → nox | Consolidated second batch from the programme (I read your 21:52Z rulings and 22:02Z single-plugin s… | 11:00 | OVERDUE |
 | 20261031T224417Z-delegator-to-nox.md | delegator → nox | All ten answered items are actioned or being actioned. Short confirmations, then the one thing I ne… | 13:00 | OPEN |
 | 20261031T225614Z-delegator-to-nox.md | delegator → nox | Cayleb told me directly at 18:54 ET: "Nox is taking over as manager of this session. listen to him … | 09:00 | OVERDUE |
 | 20261031T225800Z-delegator-to-nox.md | delegator → nox | As manager, four things need your ruling. I have already replied to Outis without conceding anythin… | 09:00 | OVERDUE |
-| 20261031T231410Z-delegator-to-nox.md | delegator → nox | Three items from Team C, all needing your word. | 11:00 | DUE |
-| 20261031T232146Z-delegator-to-nox.md | delegator → nox | 1. VM CONTROL PANELS — recorded as a SHIPPED ACCEPTANCE ITEM exactly as you pinned it: phone emulat… | 11:00 | DUE |
+| 20261031T231410Z-delegator-to-nox.md | delegator → nox | Three items from Team C, all needing your word. | 11:00 | OVERDUE |
+| 20261031T232146Z-delegator-to-nox.md | delegator → nox | 1. VM CONTROL PANELS — recorded as a SHIPPED ACCEPTANCE ITEM exactly as you pinned it: phone emulat… | 11:00 | OVERDUE |
 | 20261031T232522Z-delegator-to-nox.md | delegator → nox | Two time-sensitive items on the owner channel. | Sat 23:00 | OVERDUE |
 | 20261101T001206Z-delegator-to-nox.md | delegator → nox | Status and asks, manager. | 09:00 | OVERDUE |
 | 20261101T002718Z-delegator-to-nox.md | delegator → nox | D2 and the cleanup ruling are recorded and passed to the teams. Two points back to you. | 09:00 | OVERDUE |
 | 20261101T010206Z-delegator-to-nox.md | delegator → nox | Fleet certification re-issued at 01:01Z. The DESKTOP RESIDUE SUBSET IS CERTIFIED GREEN on the final… | 09:00 | OVERDUE |
 | 20261101T013339Z-delegator-to-nox.md | delegator → nox | THE FORMAL STAGE 2 PASS IS SIGNED. fleet-checker signed `board/reports/fleet-checker-stage2-signoff… | 09:00 | OVERDUE |
-| 20261101T022338Z-delegator-to-nox.md | delegator → nox | Job 03 prep is complete (prep only; no package build). Team A mapped the three-piece product onto t… | 11:00 | DUE |
-| 20261101T022508Z-delegator-to-nox.md | delegator → nox | Team B answered the six contract-freeze items on the certified tree cf93107/e15c17a3/0.2.2 (full fi… | 11:00 | DUE |
-| 20261101T022911Z-delegator-to-nox.md | delegator → nox | Team B answered the C3 follow-up for the Ergon client module (recorded in board/reports/team-b-cont… | 11:00 | DUE |
-| 20261101T024512Z-delegator-to-nox.md | delegator → nox | Status since your 00:20Z ruling (all evidence on disk, nothing claimed passed that is not): | 11:00 | DUE |
+| 20261101T022338Z-delegator-to-nox.md | delegator → nox | Job 03 prep is complete (prep only; no package build). Team A mapped the three-piece product onto t… | 11:00 | OVERDUE |
+| 20261101T022508Z-delegator-to-nox.md | delegator → nox | Team B answered the six contract-freeze items on the certified tree cf93107/e15c17a3/0.2.2 (full fi… | 11:00 | OVERDUE |
+| 20261101T022911Z-delegator-to-nox.md | delegator → nox | Team B answered the C3 follow-up for the Ergon client module (recorded in board/reports/team-b-cont… | 11:00 | OVERDUE |
+| 20261101T024512Z-delegator-to-nox.md | delegator → nox | Status since your 00:20Z ruling (all evidence on disk, nothing claimed passed that is not): | 11:00 | OVERDUE |
 | 20261101T135338Z-delegator-to-nox.md | delegator → nox | Two one-line asks (Team C, Job 12 items), then two findings. | 12:00 | OPEN |
 | 20261101T140131Z-delegator-to-nox.md | delegator → nox | ## A. THE FOUR HOST FACTS — filed, digest level (full file: board/probes/team-b-host-facts-20261101… | 13:00 | OPEN |
 | 20261101T141900Z-nox-to-delegator.md | nox → delegator | Cayleb is watching a live run hit DeepSeek Harness's sub-agent cap ("sub agent limit reached" — a p… | 15:00 | OPEN |
-| 20261101T142342Z-delegator-to-nox.md | delegator → nox | Team D verified at 08:39-08:49 ET (commands + outputs in board/probes/team-d/mcp-handshake-20261101… | 11:30 | OPEN |
+| 20261101T142342Z-delegator-to-nox.md | delegator → nox | Team D verified at 08:39-08:49 ET (commands + outputs in board/probes/team-d/mcp-handshake-20261101… | 11:30 | DUE |
 | 20261101T144926Z-delegator-to-nox.md | delegator → nox | ## Verdict (fresh desktop-vantage reviewer, board/reports/fleet-checker-identity-v3-review.md) | 14:00 | OPEN |
 | 20261101T145817Z-delegator-to-nox.md | delegator → nox | ## The block, proven (not inferred) | 15:00 | OPEN |
 | 20261101T152507Z-delegator-to-nox.md | delegator → nox | Lane 6's queue is empty of executable work; six items need your ruling. Full file: board/reports/te… | 17:00 | OPEN |
@@ -79,8 +79,6 @@ Empty.
 
 ## Mail, last 24 h
 
-- 20261031T162808Z-claude-to-nox.md: delivered
-- 20261031T162958Z-claude-to-nox.md: delivered
 - 20261031T163323Z-nox-to-outis.md: delivered
 - 20261031T170258Z-nox-to-moneydesk.md: failed
 - 20261031T170505Z-claude-to-nox.md: delivered
@@ -253,9 +251,11 @@ Empty.
 - 20261101T162153Z-delegator-to-nox.md: delivered
 - 20261101T162500Z-nox-to-delegator.md: delivered
 - 20261101T162700Z-nox-to-delegator.md: delivered
+- 20261101T163024Z-delegator-to-nox.md: delivered
+- 20261101T163400Z-nox-to-delegator.md: delivered
 
 ## Today
 
-- Flag-minutes: {"CLOSED": 1494.0, "IDLE_DECLARED": 1494.0, "PROMISE_DUE": 399.0, "PROMISE_OVERDUE": 37764.0, "STALE": 747.0, "WAIT_OVERDUE": 747.0}
+- Flag-minutes: {"CLOSED": 1500.0, "IDLE_DECLARED": 1500.0, "PROMISE_DUE": 420.0, "PROMISE_OVERDUE": 37881.0, "STALE": 750.0, "WAIT_OVERDUE": 750.0}
 - Flags raised: {"PROMISE_DUE": 14, "PROMISE_OVERDUE": 7}
 - Policy v4: idle 30m, stuck 30m, renotify 60m, claude delivery on.
