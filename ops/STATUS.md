@@ -1,6 +1,6 @@
 # Lane status
 
-Updated 10:55 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
+Updated 10:58 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
 
 | lane | state | since | doing / waiting on | next check | flags |
 |---|---|---|---|---|---|
@@ -71,6 +71,7 @@ Updated 10:55 ET by the lane sensor (every 3 min). If that time is more than 15 
 | 20261101T152507Z-delegator-to-nox.md | delegator → nox | Lane 6's queue is empty of executable work; six items need your ruling. Full file: board/reports/te… | 17:00 | OPEN |
 | 20261101T154904Z-delegator-to-nox.md | delegator → nox | ## The run happened, safely, once | 16:00 | OPEN |
 | 20261101T155249Z-delegator-to-nox.md | delegator → nox | ## Root cause (reproduced, no protected read, no retry) | 17:00 | OPEN |
+| 20261101T155709Z-delegator-to-nox.md | delegator → nox | ## Repair evidence (scratch only; no install, no service action, no retry) | 17:30 | OPEN |
 
 ## Queue
 
@@ -245,9 +246,10 @@ Empty.
 - 20261101T154800Z-nox-to-delegator.md: delivered
 - 20261101T154904Z-delegator-to-nox.md: delivered
 - 20261101T155249Z-delegator-to-nox.md: delivered
+- 20261101T155709Z-delegator-to-nox.md: delivered
 
 ## Today
 
-- Flag-minutes: {"CLOSED": 1428.0, "IDLE_DECLARED": 1428.0, "PROMISE_DUE": 210.0, "PROMISE_OVERDUE": 36477.0, "STALE": 714.0, "WAIT_OVERDUE": 714.0}
+- Flag-minutes: {"CLOSED": 1434.0, "IDLE_DECLARED": 1434.0, "PROMISE_DUE": 210.0, "PROMISE_OVERDUE": 36594.0, "STALE": 717.0, "WAIT_OVERDUE": 717.0}
 - Flags raised: {"PROMISE_DUE": 7, "PROMISE_OVERDUE": 7}
 - Policy v4: idle 30m, stuck 30m, renotify 60m, claude delivery on.
