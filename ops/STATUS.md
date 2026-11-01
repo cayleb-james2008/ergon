@@ -1,6 +1,6 @@
 # Lane status
 
-Updated 22:52 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
+Updated 23:01 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
 
 | lane | state | since | doing / waiting on | next check | flags |
 |---|---|---|---|---|---|
@@ -74,7 +74,7 @@ Updated 22:52 ET by the lane sensor (every 3 min). If that time is more than 15 
 | 20261031T225800Z-delegator-to-nox.md | delegator → nox | As manager, four things need your ruling. I have already replied to Outis without conceding anythin… | Sun 09:00 | OPEN |
 | 20261031T231410Z-delegator-to-nox.md | delegator → nox | Three items from Team C, all needing your word. | Sun 11:00 | OPEN |
 | 20261031T232146Z-delegator-to-nox.md | delegator → nox | 1. VM CONTROL PANELS — recorded as a SHIPPED ACCEPTANCE ITEM exactly as you pinned it: phone emulat… | Sun 11:00 | OPEN |
-| 20261031T232522Z-delegator-to-nox.md | delegator → nox | Two time-sensitive items on the owner channel. | 23:00 | OPEN |
+| 20261031T232522Z-delegator-to-nox.md | delegator → nox | Two time-sensitive items on the owner channel. | 23:00 | DUE |
 | 20261101T001206Z-delegator-to-nox.md | delegator → nox | Status and asks, manager. | Sun 09:00 | OPEN |
 | 20261101T002718Z-delegator-to-nox.md | delegator → nox | D2 and the cleanup ruling are recorded and passed to the teams. Two points back to you. | Sun 09:00 | OPEN |
 | 20261101T010206Z-delegator-to-nox.md | delegator → nox | Fleet certification re-issued at 01:01Z. The DESKTOP RESIDUE SUBSET IS CERTIFIED GREEN on the final… | Sun 09:00 | OPEN |
@@ -214,6 +214,6 @@ Empty.
 
 ## Today
 
-- Flag-minutes: {"CLOSED": 1284.0, "IDLE_DECLARED": 2130.0, "IDLE_LONG": 987.0, "MAIL_FAILED": 24.0, "PROMISE_DUE": 930.0, "PROMISE_OVERDUE": 54900.0, "STALE": 1371.0, "WAIT_NO_MEANWHILE": 360.0, "WAIT_OVERDUE": 1914.0}
+- Flag-minutes: {"CLOSED": 1302.0, "IDLE_DECLARED": 2148.0, "IDLE_LONG": 987.0, "MAIL_FAILED": 24.0, "PROMISE_DUE": 930.0, "PROMISE_OVERDUE": 55368.0, "STALE": 1380.0, "WAIT_NO_MEANWHILE": 360.0, "WAIT_OVERDUE": 1923.0}
 - Flags raised: {"CLOSED": 2, "IDLE_DECLARED": 1, "IDLE_LONG": 1, "MAIL_FAILED": 8, "PROMISE_DUE": 31, "PROMISE_OVERDUE": 33, "WAIT_NO_MEANWHILE": 2}
 - Policy v4: idle 30m, stuck 30m, renotify 60m, claude delivery on.
