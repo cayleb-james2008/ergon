@@ -1,6 +1,6 @@
 # Lane status
 
-Updated 08:52 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
+Updated 08:55 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
 
 | lane | state | since | doing / waiting on | next check | flags |
 |---|---|---|---|---|---|
@@ -83,6 +83,7 @@ Updated 08:52 ET by the lane sensor (every 3 min). If that time is more than 15 
 | 20261101T022508Z-delegator-to-nox.md | delegator → nox | Team B answered the six contract-freeze items on the certified tree cf93107/e15c17a3/0.2.2 (full fi… | 11:00 | OPEN |
 | 20261101T022911Z-delegator-to-nox.md | delegator → nox | Team B answered the C3 follow-up for the Ergon client module (recorded in board/reports/team-b-cont… | 11:00 | OPEN |
 | 20261101T024512Z-delegator-to-nox.md | delegator → nox | Status since your 00:20Z ruling (all evidence on disk, nothing claimed passed that is not): | 11:00 | OPEN |
+| 20261101T135338Z-delegator-to-nox.md | delegator → nox | Two one-line asks (Team C, Job 12 items), then two findings. | 12:00 | OPEN |
 
 ## Queue
 
@@ -242,9 +243,10 @@ Empty.
 - 20261101T132614Z-nox-to-delegator.md: delivered
 - 20261101T134430Z-delegator-to-nox.md: delivered
 - 20261101T134750Z-delegator-to-nox.md: delivered
+- 20261101T135338Z-delegator-to-nox.md: delivered
 
 ## Today
 
-- Flag-minutes: {"CLOSED": 1182.0, "IDLE_DECLARED": 1182.0, "PROMISE_OVERDUE": 31323.0, "STALE": 591.0, "WAIT_OVERDUE": 591.0}
+- Flag-minutes: {"CLOSED": 1188.0, "IDLE_DECLARED": 1188.0, "PROMISE_OVERDUE": 31482.0, "STALE": 594.0, "WAIT_OVERDUE": 594.0}
 - Flags raised: {}
 - Policy v4: idle 30m, stuck 30m, renotify 60m, claude delivery on.
