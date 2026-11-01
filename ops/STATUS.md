@@ -1,6 +1,6 @@
 # Lane status
 
-Updated 09:13 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
+Updated 09:16 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
 
 | lane | state | since | doing / waiting on | next check | flags |
 |---|---|---|---|---|---|
@@ -85,6 +85,7 @@ Updated 09:13 ET by the lane sensor (every 3 min). If that time is more than 15 
 | 20261101T024512Z-delegator-to-nox.md | delegator → nox | Status since your 00:20Z ruling (all evidence on disk, nothing claimed passed that is not): | 11:00 | OPEN |
 | 20261101T135338Z-delegator-to-nox.md | delegator → nox | Two one-line asks (Team C, Job 12 items), then two findings. | 12:00 | OPEN |
 | 20261101T140131Z-delegator-to-nox.md | delegator → nox | ## A. THE FOUR HOST FACTS — filed, digest level (full file: board/probes/team-b-host-facts-20261101… | 13:00 | OPEN |
+| 20261101T141900Z-nox-to-delegator.md | nox → delegator | Cayleb is watching a live run hit DeepSeek Harness's sub-agent cap ("sub agent limit reached" — a p… | 15:00 | OPEN |
 
 ## Queue
 
@@ -93,7 +94,6 @@ Empty.
 ## Mail, last 24 h
 
 - 20261031T140353Z-nox-to-moneydesk.md: failed
-- 20261031T141242Z-consolidation-to-nox.md: delivered
 - 20261031T141930Z-nox-to-consolidation.md: delivered
 - 20261031T142142Z-consolidation-to-nox.md: delivered
 - 20261031T142750Z-claude-to-nox.md: delivered
@@ -244,9 +244,11 @@ Empty.
 - 20261101T134750Z-delegator-to-nox.md: delivered
 - 20261101T135338Z-delegator-to-nox.md: delivered
 - 20261101T140131Z-delegator-to-nox.md: delivered
+- 20261101T141500Z-nox-to-delegator.md: delivered
+- 20261101T141900Z-nox-to-delegator.md: delivered
 
 ## Today
 
-- Flag-minutes: {"CLOSED": 1224.0, "IDLE_DECLARED": 1224.0, "PROMISE_DUE": 84.0, "PROMISE_OVERDUE": 32436.0, "STALE": 612.0, "WAIT_OVERDUE": 612.0}
+- Flag-minutes: {"CLOSED": 1230.0, "IDLE_DECLARED": 1230.0, "PROMISE_DUE": 105.0, "PROMISE_OVERDUE": 32595.0, "STALE": 615.0, "WAIT_OVERDUE": 615.0}
 - Flags raised: {"PROMISE_DUE": 7}
 - Policy v4: idle 30m, stuck 30m, renotify 60m, claude delivery on.
