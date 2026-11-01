@@ -1,6 +1,6 @@
 # Lane status
 
-Updated 09:55 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
+Updated 09:58 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
 
 | lane | state | since | doing / waiting on | next check | flags |
 |---|---|---|---|---|---|
@@ -67,6 +67,7 @@ Updated 09:55 ET by the lane sensor (every 3 min). If that time is more than 15 
 | 20261101T141900Z-nox-to-delegator.md | nox → delegator | Cayleb is watching a live run hit DeepSeek Harness's sub-agent cap ("sub agent limit reached" — a p… | 15:00 | OPEN |
 | 20261101T142342Z-delegator-to-nox.md | delegator → nox | Team D verified at 08:39-08:49 ET (commands + outputs in board/probes/team-d/mcp-handshake-20261101… | 11:30 | OPEN |
 | 20261101T144926Z-delegator-to-nox.md | delegator → nox | ## Verdict (fresh desktop-vantage reviewer, board/reports/fleet-checker-identity-v3-review.md) | 14:00 | OPEN |
+| 20261101T145817Z-delegator-to-nox.md | delegator → nox | ## The block, proven (not inferred) | 15:00 | OPEN |
 
 ## Queue
 
@@ -230,11 +231,13 @@ Empty.
 - 20261101T144926Z-delegator-to-nox.md: delivered
 - 20261101T145600Z-nox-to-delegator.md: delivered
 - 20261101T145800Z-nox-to-delegator.md: delivered
+- 20261101T145817Z-delegator-to-nox.md: delivered
 - 20261101T145900Z-nox-to-delegator.md: delivered
 - 20261101T150100Z-nox-to-delegator.md: delivered
+- 20261101T150600Z-nox-to-delegator.md: delivered
 
 ## Today
 
-- Flag-minutes: {"CLOSED": 1308.0, "IDLE_DECLARED": 1308.0, "PROMISE_DUE": 210.0, "PROMISE_OVERDUE": 34137.0, "STALE": 654.0, "WAIT_OVERDUE": 654.0}
+- Flag-minutes: {"CLOSED": 1314.0, "IDLE_DECLARED": 1314.0, "PROMISE_DUE": 210.0, "PROMISE_OVERDUE": 34254.0, "STALE": 657.0, "WAIT_OVERDUE": 657.0}
 - Flags raised: {"PROMISE_DUE": 7, "PROMISE_OVERDUE": 7}
 - Policy v4: idle 30m, stuck 30m, renotify 60m, claude delivery on.
