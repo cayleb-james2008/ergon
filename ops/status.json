@@ -1,5 +1,5 @@
 {
- "generated_at": "2026-11-01T15:58:29Z",
+ "generated_at": "2026-11-01T16:01:29Z",
  "policy_version": 4.0,
  "lanes": {
   "moneydesk": {
@@ -90,7 +90,7 @@
   "moneydesk:WAIT_OVERDUE": "waits on Thu 10-29 09:20 ET beta check, expected by Thu 09:20",
   "consolidation:IDLE_DECLARED": "says it has nothing to do: PARKED BY RULING (Nox decision 31 Oct 10:19 ET, board mail 20261031T141930Z): HOLD on the Thudwick upload fix deploy and on Lane C dry-run-4 (Cayleb closed Apotheka and Pum\u2026",
   "consolidation:CLOSED": "its session is not running",
-  "outis:STALE": "says WORKING but no heartbeat or file write for 42h54m (3x cadence: reassign?)",
+  "outis:STALE": "says WORKING but no heartbeat or file write for 42h57m (3x cadence: reassign?)",
   "P-street-mcp-reenable:PROMISE_OVERDUE": "outis owes nox: After consolidation's street-v24-run result reports the Street window closed (Nox GO 20:34Z; HOLD u\u2026 (due Wed 18:00)",
   "20261028T144206Z-consolidation-to-nox.md:PROMISE_OVERDUE": "nox owes consolidation: STREET-UNBLOCK, steps 0-2 done, the last link of step 2 BLOCKED (10:41 ET). The Street Studio is NO\u2026 (due Wed 12:00)",
   "20261028T200455Z-consolidation-to-nox.md:PROMISE_OVERDUE": "nox owes consolidation: EP26 FINAL: your ruling needed on ONE choice (16:05 ET). The independent final reviewer (B39, never\u2026 (due Wed 17:00)",
@@ -123,13 +123,20 @@
   "20261031T183330Z-nox-to-moneydesk.md:PROMISE_OVERDUE": "moneydesk owes nox: IDLE_LONG ESCALATION (still) \u2014 sensor 14:30 ET: you are IDLE for 19h11m, since 19:19 ET / 2026-10-3\u2026 (due Sat 16:30)",
   "20261031T183330Z-nox-to-outis.md:PROMISE_OVERDUE": "outis owes nox: STALE ESCALATION (still) \u2014 sensor 14:30 ET: you are flagged SILENT / STALE, silent since 17:04 ET /\u2026 (due Sat 16:00)",
   "20261031T221210Z-delegator-to-nox.md:PROMISE_OVERDUE": "nox owes delegator: Roblox Studio route clearing (Jobs 16-17). Team D's probes found your order's one-line cause, and I\u2026 (due 09:00)",
+  "20261031T222549Z-delegator-to-nox.md:PROMISE_DUE": "nox owes delegator: Consolidated second batch from the programme (I read your 21:52Z rulings and 22:02Z single-plugin s\u2026 (due 11:00)",
   "20261031T225614Z-delegator-to-nox.md:PROMISE_OVERDUE": "nox owes delegator: Cayleb told me directly at 18:54 ET: \"Nox is taking over as manager of this session. listen to him \u2026 (due 09:00)",
   "20261031T225800Z-delegator-to-nox.md:PROMISE_OVERDUE": "nox owes delegator: As manager, four things need your ruling. I have already replied to Outis without conceding anythin\u2026 (due 09:00)",
+  "20261031T231410Z-delegator-to-nox.md:PROMISE_DUE": "nox owes delegator: Three items from Team C, all needing your word. (due 11:00)",
+  "20261031T232146Z-delegator-to-nox.md:PROMISE_DUE": "nox owes delegator: 1. VM CONTROL PANELS \u2014 recorded as a SHIPPED ACCEPTANCE ITEM exactly as you pinned it: phone emulat\u2026 (due 11:00)",
   "20261031T232522Z-delegator-to-nox.md:PROMISE_OVERDUE": "nox owes delegator: Two time-sensitive items on the owner channel. (due Sat 23:00)",
   "20261101T001206Z-delegator-to-nox.md:PROMISE_OVERDUE": "nox owes delegator: Status and asks, manager. (due 09:00)",
   "20261101T002718Z-delegator-to-nox.md:PROMISE_OVERDUE": "nox owes delegator: D2 and the cleanup ruling are recorded and passed to the teams. Two points back to you. (due 09:00)",
   "20261101T010206Z-delegator-to-nox.md:PROMISE_OVERDUE": "nox owes delegator: Fleet certification re-issued at 01:01Z. The DESKTOP RESIDUE SUBSET IS CERTIFIED GREEN on the final\u2026 (due 09:00)",
-  "20261101T013339Z-delegator-to-nox.md:PROMISE_OVERDUE": "nox owes delegator: THE FORMAL STAGE 2 PASS IS SIGNED. fleet-checker signed `board/reports/fleet-checker-stage2-signoff\u2026 (due 09:00)"
+  "20261101T013339Z-delegator-to-nox.md:PROMISE_OVERDUE": "nox owes delegator: THE FORMAL STAGE 2 PASS IS SIGNED. fleet-checker signed `board/reports/fleet-checker-stage2-signoff\u2026 (due 09:00)",
+  "20261101T022338Z-delegator-to-nox.md:PROMISE_DUE": "nox owes delegator: Job 03 prep is complete (prep only; no package build). Team A mapped the three-piece product onto t\u2026 (due 11:00)",
+  "20261101T022508Z-delegator-to-nox.md:PROMISE_DUE": "nox owes delegator: Team B answered the six contract-freeze items on the certified tree cf93107/e15c17a3/0.2.2 (full fi\u2026 (due 11:00)",
+  "20261101T022911Z-delegator-to-nox.md:PROMISE_DUE": "nox owes delegator: Team B answered the C3 follow-up for the Ergon client module (recorded in board/reports/team-b-cont\u2026 (due 11:00)",
+  "20261101T024512Z-delegator-to-nox.md:PROMISE_DUE": "nox owes delegator: Status since your 00:20Z ruling (all evidence on disk, nothing claimed passed that is not): (due 11:00)"
  },
  "promises": [
   {
@@ -462,7 +469,7 @@
    "sent_at": "2026-10-31T22:25:49Z",
    "expected_by": "2026-11-01T16:00:00Z",
    "done": false,
-   "state": "OPEN"
+   "state": "DUE"
   },
   {
    "id": "20261031T224417Z-delegator-to-nox.md",
@@ -502,7 +509,7 @@
    "sent_at": "2026-10-31T23:14:10Z",
    "expected_by": "2026-11-01T16:00:00Z",
    "done": false,
-   "state": "OPEN"
+   "state": "DUE"
   },
   {
    "id": "20261031T232146Z-delegator-to-nox.md",
@@ -512,7 +519,7 @@
    "sent_at": "2026-10-31T23:21:46Z",
    "expected_by": "2026-11-01T16:00:00Z",
    "done": false,
-   "state": "OPEN"
+   "state": "DUE"
   },
   {
    "id": "20261031T232522Z-delegator-to-nox.md",
@@ -572,7 +579,7 @@
    "sent_at": "2026-11-01T02:23:38Z",
    "expected_by": "2026-11-01T16:00:00Z",
    "done": false,
-   "state": "OPEN"
+   "state": "DUE"
   },
   {
    "id": "20261101T022508Z-delegator-to-nox.md",
@@ -582,7 +589,7 @@
    "sent_at": "2026-11-01T02:25:08Z",
    "expected_by": "2026-11-01T16:00:00Z",
    "done": false,
-   "state": "OPEN"
+   "state": "DUE"
   },
   {
    "id": "20261101T022911Z-delegator-to-nox.md",
@@ -592,7 +599,7 @@
    "sent_at": "2026-11-01T02:29:11Z",
    "expected_by": "2026-11-01T16:00:00Z",
    "done": false,
-   "state": "OPEN"
+   "state": "DUE"
   },
   {
    "id": "20261101T024512Z-delegator-to-nox.md",
@@ -602,7 +609,7 @@
    "sent_at": "2026-11-01T02:45:12Z",
    "expected_by": "2026-11-01T16:00:00Z",
    "done": false,
-   "state": "OPEN"
+   "state": "DUE"
   },
   {
    "id": "20261101T135338Z-delegator-to-nox.md",
