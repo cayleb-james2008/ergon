@@ -1,6 +1,6 @@
 # Team A — Ergon design v2: owner-APPROVED Lumen direction — polish round applied, re-frozen
 
-**STATUS: v2 DIRECTION APPROVED BY THE OWNER** (2026-11-02 04:55 ET: "Overall pretty impressed by the content… another additional polish round… other than that it's really not bad at all.") — **direction LOCKED; polish round applied and RE-FROZEN** (digest below) for the final grade presentation as live animated pages.** The comps are live, self-contained pages under
+**STATUS: v2 DIRECTION APPROVED BY THE OWNER** (2026-11-02 04:55 ET: "Overall pretty impressed by the content… another additional polish round… other than that it's really not bad at all.") — **direction LOCKED; polish round applied; checker notes N1–N6 closed; RE-FROZEN final** (digest below) for the final grade presentation as live animated pages.** The comps are live, self-contained pages under
 `board/probes/team-a-design-v2/` (grader index: `index.html`), with the pack-change proposal filed alongside them as
 `PACK-CHANGE-PROPOSAL.md` and summarised here. Nothing was presented to the owner by this lane — the standing rule is
 checker first, then the owner sees it rendered in his browser. **Spend $0**; no purchases; no image reads/screenshots; no
@@ -209,7 +209,7 @@ and model.
 | **Motion polish** | tab indicator now cross-fades over **200 ms** (`--motion-swap`) instead of hard-swapping; character signal transitions; approval-resolve state styled (`[data-resolved]`, ok edge); all still one-shot, no loops | probe: selected tab ::before = opacity **1**, unselected **0**, transition `opacity / 0.2s`; after settle **0 running / 0 infinite** |
 | **Interaction completeness** | focusable, labelled character control (`role=button`, `tabindex=0`, Enter/Space activates, visible focus ring); sidebar row hover; link focus ring; disabled/read-only field states; focus ring kept visible at the phone frame edge | uiautomator/a11y text now exposes "Marlow — agent character; activate to signal"; computed outline accent; no removed outlines (asserted) |
 | **Detail finish** | tabular numerals for numeric readouts; display leading; nowrap pills; token-driven selection colour and thin scrollbars | probe: `font-variant-numeric: tabular-nums` on `.kv`; selection/scrollbar rules asserted |
-| **Self-check hardening** | 13 polish assertions added (depth-shade coverage, composer depth, tabbar rim, selection/scrollbars, character focusability, disabled/read-only fields, sidebar hover, tabular numerals, resolved state, no `outline:none`) | `check-comps.mjs` PASS with all assertions |
+| **Self-check hardening** | 14 polish assertions added (count corrected per checker N6; the note-fix round adds 11 more) (depth-shade coverage, composer depth, tabbar rim, selection/scrollbars, character focusability, disabled/read-only fields, sidebar hover, tabular numerals, resolved state, no `outline:none`) | `check-comps.mjs` PASS with all assertions |
 
 **Floors unchanged and re-measured (both ambient washes):** ink **9.21:1** · muted **5.62:1** · subtle **6.14:1** · accent
 **5.01:1** · status **4.66/4.93/4.77:1** · focus **6.47:1** · control boundary **3.28:1** · field boundary **3.30:1**;
@@ -250,9 +250,55 @@ battery on the final freeze before/with presentation.
 **Manifest digest: `222364fd85e34079f4f874c11111e253508442670633834863d350433b5323de`** (`sha256sum FREEZE.sha256`). Verify:
 `cd board/probes/team-a-design-v2 && sha256sum -c FREEZE.sha256 && node check-comps.mjs`.
 
+
+## 6e. Checker notes N1–N6 closed (final re-freeze for this cycle)
+
+Fresh polish check: **ACCEPT-WITH-NOTES** (`board/reports/team-a-polish-check.md`); freezes, finish-only delta, direction-
+untouched, floors and live-page claim all PASS, six notes named. All six are closed here; the note-fix round changes **5 files**
+(`comps/05-desktop-workspace.html`, `comps/07-states.html`, `comp-kit.css`, `comp-motion.js`, `check-comps.mjs`) and leaves
+**12 byte-identical** to the polish freeze. Direction untouched; graded deltas only.
+
+| Note | Defect | Fix (state exactly what changed) | Proof |
+|---|---|---|---|
+| **N1** | §6d over-claimed: "every translucent plane now carries lift + top rim + bottom shade" and "composer, tab bar, banner, sidebar … no flat chrome". The `.sidebar` has **no box-shadow** (probe `insetSurfaces.sidebars: 0`); tab bar/banner carry rim only. | **Report wording corrected, artifact unchanged:** the nine raised planes that carry `lift + rim + shade` are named (glass-1/2/3, card, sheet, phone, desktop, composer, light-pool); the **tab bar and banner carry the rim finish only**; the **sidebar is a full-height plane with a border-right and no shadow by design**. No new shadow was invented for the sidebar. | this corrected claim + the existing probe (`insetSurfaces`: cards 9 / glass 2 / frames 1 / sidebars 0) |
+| **N2** | Two dormant polish states: selected-sidebar-row rule could not render (no `aria-current` in any comp); `input:disabled`/`input[readonly]` declared but not demonstrated. | **Set changes:** (a) comp 05's active sidebar row now carries `aria-current="page"`, and `comp-motion.js` maintains `aria-current` on sidebar selection (not only `aria-selected`) — the selected row renders (`surface-3` + `line-strong`); (b) comp 07 now demonstrates a **disabled field** ("Locked by IT") and a **read-only field** ("Frozen quote"), token-driven and labelled. | live: comp 05 row before = `rgba(198,222,255,0.1)` bg + `rgba(206,228,255,0.24)` border, `aria-current=page`; tab click moves `aria-current` to the new row (`[null,"page",null,null]`); comp 07 disabled = `subtle` text + `surface-1` + `line` border, read-only = `ink` text + `line` border |
+| **N3** | HC-preview finish gap: composer/tab bar/banner had no reset in the `forced-colors` / `[data-contrast="high"]` blocks, and their children (sidebar rows, tab buttons, fields incl. disabled/read-only) kept author surfaces. | **Set change (comp-kit.css):** both HC paths now reset `.phone .composer`, `.phone .tabbar`, `.banner`, `.sidebar` **and their children** — sidebar rows (selected → system `Highlight`), tab-bar buttons (selected → `CanvasText`/`Highlight` indicator), inputs incl. `:disabled`/`[readonly]` → `Field`/`FieldText`. Assertions added for both media paths. | live/real-Chromium (served CSS re-read with `cache: no-store`): composer/tabbar/banner shadow `none`, blur `none`, bg `Canvas`; synthetic selected sidebar row under the HC hook = `rgba(85,163,254,0.6)` (`Highlight`) + Highlight border; disabled/read-only inputs = `Field` bg + `FieldText` border (see `final-01-proof.json`, `def-proof.json`, `synth-proof.json`) |
+| **N4** | Live transport unlogged: `httpd.log` had no GET lines; served directory inferred. | **Evidence-chain fix:** the final live run served the frozen set with the invocation recorded (`serve argv: python3 -m http.server 8792 --bind 127.0.0.1 --directory board/probes/team-a-design-v2`) and a **transport access log** kept: `board/probes/team-a-design-v2-polish-evidence/httpd-access-r2.log` — **64 GET requests**, page + `tokens.css` + `comp-kit.css` + `comp-motion.js` all **200** for the probed pages. | `httpd-r2.log` (invocation + access lines), `httpd-access-r2.log`, `teardown-r2.txt` |
+| **N5** | Contract drift: header said "polish round is in progress"; `--depth-shade` missing from the plane mapping; timestamp inconsistent. | **Contract fixed** (`team-a-fleet-face-token-contract.md`): header now says the polish round is **applied** and the notes are closed; **`--depth-shade` added to the plane mapping** (raised planes carry `lift` + `rim` + `shade`; tab bar/banner rim only; sidebar border only); timestamp `2026-11-02T09:31Z`; pin = new digest. | contract file §1/§7 |
+| **N6** | §6d said "13 polish assertions"; the diff adds **14**. | **Corrected:** polish round added **14** additive assertions; this note-fix round adds **11 more** (N2 state assertions + N3 HC coverage, both media paths). No existing check was relaxed. | `check-comps.mjs` (92 `check(...)` calls total) |
+
+**Verification on the final set:** `sha256sum -c FREEZE.sha256` → **17/17 OK**; `node build-tokens.mjs --check` → **CURRENT**;
+`node check-comps.mjs` → **PASS**; live probe: RDP-free, text/computed-only, no images. Fresh checker re-runs the affected legs
+(Lead spawns) — this note round makes no "met" claim beyond the artifact.
+
+### Current freeze (note-fix round) — `FREEZE.sha256` (17 content files, 2,273 lines)
+
+| File | sha256 |
+|---|---|
+| `index.html` | `0b7a26c6fe99eaeaa9e8c3e6655ebbdd8acdb4675add2af04f35b4e652edef83` |
+| `motion-storyboard.html` | `30440f4dccd27836561d6eb24908acb759b230998effd3189e66ad46eca1a086` |
+| `comps/01-mobile-chat.html` | `66c5edbe28dda5e6d95467a99c35564a3ea84af007a43ffabf1cda912b2c001c` |
+| `comps/02-mobile-triage-approvals.html` | `150b070a1b8281063af0564fac12c2ee41c16b4ee0f618c176b5f9aab0ce020b` |
+| `comps/03-mobile-tasks.html` | `2a7205ce40f37b8ea92edc519c4eb2b31e2e1167041a04d8ed029f03928f187c` |
+| `comps/04-mobile-make.html` | `9f0c0126dd889da5fb9bb46512c06176e47ca8d9357436540ad4d98a796535d7` |
+| `comps/05-desktop-workspace.html` | `b4e19303eeded11308b65e54b2e9c26c8ab227b97d42171ba5cdaec8799192e2` |
+| `comps/06-character-sheet.html` | `4256ac66d6610b63d24aaba510ccafad101f5af9d79648db6dd35fa1f39c5d4b` |
+| `comps/07-states.html` | `d2331904652a9293d6dfab61672b7d2268c81180ad41c45f7ea0224effbd7f98` |
+| `tokens.json` | `23be162b1282c34f95cca927aa3a7a43fe31aa22c3c1c353ddd487a1eea90616` |
+| `tokens.css` | `19af9c3cb51f5cd00315c356139e785a9a082c3449ab9c392021252b9e9873f6` |
+| `build-tokens.mjs` | `14d09c792823d67af71ca2a2c8002d8ed5796d08a203197d8265e362782d8b06` |
+| `comp-kit.css` | `fb57ba12a13f99c4b6fea83f367e23d5a688e4a2e7dca8413929c40af461b715` |
+| `comp-motion.js` | `6eddb369d6f5d8ce3edb55e9b4a7a6a2132dc57eb53dd3aee7e8cd89141906f2` |
+| `check-comps.mjs` | `8ec87c918566d457f87d93429bff67bca68d01ef615ed022fdf488231653431a` |
+| `README.md` | `ca6064c3c40eef884de3cc6cc793e06d917135b59af7225bffc4af915ab73808` |
+| `PACK-CHANGE-PROPOSAL.md` | `6d56a0e58bf212b92b9e100216b0cd203f90fdec989db525c6b108e75373befa` |
+
+**Manifest digest: `7799a87fab21514576468405f06486b0b642a20461e6e9d63bf83500ce8b8d12`** (`sha256sum FREEZE.sha256`). Verify:
+`cd board/probes/team-a-design-v2 && sha256sum -c FREEZE.sha256 && node check-comps.mjs`.
+
 ## 7. Checker handoff (Lead preps/spawns; maker never checker)
 
-- **Frozen set (polish round, post-owner-grade):** `board/probes/team-a-design-v2/` — **17 content files, 2,235 lines**, plus `FREEZE.sha256` (18 files in the directory; manifest excludes itself; digest **`222364fd85e34079f4f874c11111e253508442670633834863d350433b5323de`**). Every hash is listed in section 6d and asserted by `check-comps.mjs`. Do not edit after this report; any change is a new freeze.
+- **Frozen set (note-fix round, final for this cycle):** `board/probes/team-a-design-v2/` — **17 content files, 2,273 lines**, plus `FREEZE.sha256` (18 files in the directory; manifest excludes itself; digest **`7799a87fab21514576468405f06486b0b642a20461e6e9d63bf83500ce8b8d12`**). Every hash is listed in section 6e and asserted by `check-comps.mjs`. Do not edit after this report; any change is a new freeze.
   `index.html` and the seven comps from the folder (file:// is enough; no network, no server).
 - **Judge:** pack-conformance (tokens discipline, floors, anatomy, versioning per PACK-CHANGE-PROPOSAL §3/§4/§8) and
   **unslop** (no gradient text, glows, uppercase tracked labels, 800 weights, emoji icons, sparkle badges, `transition-all`,
