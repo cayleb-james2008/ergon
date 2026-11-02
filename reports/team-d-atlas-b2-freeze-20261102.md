@@ -61,8 +61,10 @@ any test because nothing pinned the zonePath-first `fitBounds` order. Smallest f
 4. Missing log filed: `board/probes/team-d/atlas-b2-freeze-20261102.log`.
 5. Stale runbook run-7 "27 views" paragraph removed (only the 30-view paragraph remains).
 6. Report untracked count corrected 792 → **823**; anchor deviation recorded (above).
-**Delta tip:** see the commit after `746a99e` (same checker seat re-verifies). Suites re-run on the delta tip: atlas
-acceptance **24 OK**, full Python, Lune atlas + full Lune.
+**Delta tip: `e8d18f407d3f9d576737b198cac94978999697cf`** (`e8d18f4`; parent `1eed7e7`; tree
+`93019c4350c717aa08f8e916b745c1974bf4c07f`; 2 files +25/−8; tracked clean; sealed unchanged). Suites re-run on the delta
+tip: atlas acceptance **24 OK**, runner **91 OK**, full Python **333 OK**, Lune atlas **10/0**, full Lune **924/0 (127
+specs)**; mutations **M24 FAILED (1)** and **M25b FAILED (1)**; report untracked count 823; log filed.
 
 ## 3 · Freeze evidence (fresh checkout of `746a99e`)
 

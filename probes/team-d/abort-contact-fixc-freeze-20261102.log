@@ -1,0 +1,25 @@
+=== ABORT-CONTACT RE-FREEZE: option-B start + fix C (Nox run-10 (i)) 2026-11-02 ===
+commit 1eed7e776d6d2484371b72e6632eb7129cdbee7d  tree 8abc65e560d2f7e7f93d9bf2ff40df8b6e2594  parent 746a99e  4 files +71/-104
+ruling: B-bounded RETIRED as tested-and-rejected (0/3 convergence, abort gap ~73.5, monotone growth, <=25 trigger
+structurally unreachable, bounded pre-leg failed closed as designed); revert to option-B leg start + apply C (pursuit
+forward clamp 10->40 inside the unchanged 40 cap). No ruled value changes (12 s window, 40 cap, closing clamp, guards).
+changes: Server.luau (B-bounded trigger/timeout/constants removed, offset 80 restored, preLegSpeed 30, no -18, fix C
+pursuit -38,40, obstacle -38,10, cap 40); Lune spec (obstacle+pursuit pins: pursuit reaches 40, obstacle keeps 10, total
+cap); Python tests (option-B start pins, B-bounded artifacts pinned absent, fix-C pins, kinematic clamp40 <12 s vs clamp10
+>12 s); runbook (option-B + fix C, B-bounded retired).
+mutations: M22 revert pursuit clamp to 10 -> traffic acceptance FAILED (1) + Lune pursuit spec FAILED (1); M29 restore
+B-bounded gap trigger -> traffic acceptance FAILED (1). Restored, tracked clean.
+
+--- suites on the freeze commit ---
+traffic acceptance 10 OK; runner 91 OK; full Python 331 OK; Lune traffic 94/0 (18 specs); full Lune 924/0 (127 specs).
+
+--- sealed ---
+84324d4342667dd163ab8e64adacbf8ef44ab786aeda5c7ab1403e76d52ef6ce  build/release.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  build/test.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  /home/cayleb/.var/app/org.vinegarhq.Vinegar/data/usg/usg-desktop.rbxlx
+
+--- B2 delta fix (second freeze, same batch) ---
+commit e8d18f407d3f9d576737b198cac94978999697cf (parent 1eed7e7) 2 files +25/-8; M24 pinned order -> FAILED (1);
+cap test restored; bounded-span negative -> M25b FAILED (1); missing log filed; stale runbook 27-view paragraph removed;
+report untracked 792->823; anchor deviation recorded. Suites: atlas acceptance 24 OK, runner 91 OK, Python 333 OK, Lune
+atlas 10/0, full Lune 924/0 (127 specs); sealed unchanged.

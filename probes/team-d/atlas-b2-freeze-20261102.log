@@ -1,0 +1,35 @@
+=== ATLAS B2 + A2 + ORDERING FOLD FREEZE (Nox run-9) 2026-11-02 ===
+commit 746a99ed16b46a6ab6f1c45b71394b01a782bdf1  tree c70c1d0b5005e0a38e26e47139eca716057acbd0  parent e6ae134  7 files +120/-72
+time 2026-11-02T07:0xZ (frozen after the abort-contact sample batch; no Play)
+plan: world-overhead -> four bounded world-region-1..4-overhead views (native City/Junctions/JunctionPad_* anchors; four
+distinct city pads n_3_2, n_10_10, n_6_12, n_12_6 - the design note's region-3/4 highway-road anchors were replaced by
+distinct pads to keep all eight role anchors unique; justified deviation recorded in the freeze report); highway zones
+tagged zoneRole; scout 27 -> 30; world regions last (27-30), zone views 21-24 (ordering fold); count assert 24-1+4-1+4.
+server: overhead fit-bounds zonePath-first (world-region views take the native bounded model, not the world support).
+validator: role groups (4+4), pinned ids, 8 distinct anchors, no whole-map ids anywhere, ordering fold, world-region
+spans strictly smaller than native support spans.
+tests: counts 27->30, settles 6->9, golden digest recomputed; map/acceptance role positives + negatives; fake support
+bounds widened. Mutations: whole-map id / wrong anchor / dropped role / duplicated anchor fail the pins.
+A2: limitation note final (whole-map class: highway Play 7 + world Play 10; build Studio 0.745.0.7451137 / Wine 11.0
+(Vinegar 1.9.4); fail-closed; one retest per framing per new Studio build). C/D rejected.
+
+--- suites on the freeze commit ---
+Ran 91 tests in ~12s   OK          (runner)
+Ran 6 tests in ~0.4s   OK          (map atlas)
+Ran 22 tests in ~0.7s  OK          (atlas acceptance)
+Ran 330 tests in ~45s  OK          (full Python)
+unit: 10 passed, 0 failed (4 specs)   (Lune atlas)
+unit: 923 passed, 0 failed (127 specs)   (full Lune, ~12 min)
+
+--- sealed ---
+84324d4342667dd163ab8e64adacbf8ef44ab786aeda5c7ab1403e76d52ef6ce  build/release.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  build/test.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  /home/cayleb/.var/app/org.vinegarhq.Vinegar/data/usg/usg-desktop.rbxlx
+
+--- delta round (checker-trading REJECT on M24) ---
+M24 (zonePath-first fit-bounds order reverted to world-first) did not fail any test -> fixed: wiring test now pins the
+exact 'if view.zonePath then actual.fitBounds=actualBounds(anchor)\n   elseif view.zone=="world" then' order AND asserts the
+old world-first order is absent. Restored the server/client cap test (30 views, <=32, 33 rejected) and added the
+bounded-span negative (support smaller than the region fit -> rejected). Missing log filed; stale runbook 27-view
+paragraph removed; report untracked count corrected 792->823; anchor deviation recorded.
+diff --git a/tests/tools/test_atlas_acceptance.py...
