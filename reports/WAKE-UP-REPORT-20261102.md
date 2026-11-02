@@ -91,6 +91,13 @@ Fences held overnight: no spend, no publication, no credential values in chat/bo
   The run then fail-closed honestly at view-021 on a **stale duplicate capture**, which the guard correctly refused to keep — the
   capture-path layer is named and a bounded fresh-capture retry (max 2 attempts, stale rule stays final) is approved and being frozen.
   Sealed place/release unchanged; no cell "pass" is claimed (views 21–24 + runtime/validator still absent).
+- **Diagnostic Play 7 — the honest limitation point:** the bounded overhead settle+retry ran (view-020 settled fresh; view-021 returned
+  byte-identical frames on all 3 attempts, `cameraDelta:0`) ⇒ the **overhead frame is genuinely frozen on this Studio/Wine build**, not a
+  race; the audit file stays consistent (21/21) and there was no crash this Play (Play-6's minidump = intermittent Wine shutdown crash).
+  20/24 views captured with `viewportMatchesPng:true`; sealed unchanged; plays 1/3. **A ruling is queued for Nox on the limitation
+  (documented limitation + named view vs per-zone functional overhead views vs framing-cost experiments vs capping the set; Team D
+  recommends per-zone functional views + a documented limitation).** No plan/validator change will be made without that ruling; the
+  ruled abort-contact fixture A+C fix is being implemented offline in parallel (no Play consumed), with Play B after its checker delta.
 - **Next (ruled):** the client `FogEnabled` legacy-API fix is approved and being implemented (guarded capability accessors that
   record availability instead of raising) → freeze → checker delta → fresh 3-Play opening → one atlas Play; then the
   **abort-contact fixture geometry fix ruled A+C** (closed-loop pursuit with clamped closing speed + two named fail-fast guards;
