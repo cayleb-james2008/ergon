@@ -1,4 +1,4 @@
-# WAKE-UP REPORT — 2026-11-02 (refreshed 23:40 ET; owner asleep) — refresh #4 per Nox run 7 (Windows wording final, layer-5 status, fence closed)
+# WAKE-UP REPORT — 2026-11-02 (refreshed 01:10 ET; owner asleep) — refresh #5 (B+A zones/layer-6, Play 9/10, two rulings with Nox, Windows final)
 Consolidated for the owner's morning. Everything below is on the board with checker evidence; nothing is smoothed.
 Fences held overnight: no spend, no publication, no credential values in chat/board/logs, no image reads in the app, desks untouched.
 
@@ -60,6 +60,17 @@ Fences held overnight: no spend, no publication, no credential values in chat/bo
   shareable URL = carried (host + package absent); R6 voice = carried (package absent); R2 model-quality = proof pre-written, runs the
   moment roster activation lands; Windows companions = package-pending on an installed+bootable guest. The upgraded FL2 verdict will
   checker spot-verified (ACCEPT with two corrections, now applied as r3) and a settled probe re-confirmation is pending before any wording upgrade.
+
+## ROBLOX — one-line status for the morning
+The instrumented block is complete and five diagnostic Plays have each converted a blind failure into a named, checker-verified cause:
+truncated upload channels (closed), starter/require and Instance-root legacy APIs (fixed), guarded fog (fixed), bounded retries + audit
+(fixed), and now the **renderer/Wine limitation is isolated to whole-map overhead framings** (whole-highway, whole-world) while
+`city-overhead` and 20 ordinary views capture fresh with `viewportMatchesPng:true`. The authorised **B substitution** (per-zone
+functional overhead views) is implemented, checker-verified and partly exercised; the **A limitation** is recorded with the exact
+build, fail-closed verdict and one-retest-per-new-build rule. Two small rulings are with Nox (abort-contact pursuit ramp; extending the
+B substitution to world-overhead + optional zone ordering). **No cell pass is claimed** — the cell remains blocked on those two
+rulings; every step is on disk with the checker evidence. Plays are budgeted and reserved; the sealed place/release has been unchanged
+through every Play, crash and recovery.
 
 ## ROBLOX (Team D) — instrumented diagnostic block COMPLETE; two diagnostic Plays ran honestly
 - Plans 2/3/4 + the C1 fix round all fresh-checker ACCEPTED (suites and mutation proofs reproduced from clean copies; sealed place
