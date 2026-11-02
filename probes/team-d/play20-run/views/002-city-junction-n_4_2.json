@@ -1,0 +1,357 @@
+{
+  "schema": 2,
+  "ok": true,
+  "report": {
+    "visualEffectsPreserved": true,
+    "lighting": {
+      "clockTime": 0.5,
+      "diffuse": 0.25,
+      "effects": {
+        "NightshiftMenuGrade": {
+          "enabled": false,
+          "saturation": 0,
+          "contrast": 0,
+          "tintColor": [
+            1,
+            1,
+            1
+          ],
+          "brightness": 0
+        },
+        "NightshiftShowroomFocus": {
+          "enabled": false
+        },
+        "NightshiftMenuBlur": {
+          "enabled": false
+        },
+        "NightshiftPlayerGrade": {
+          "enabled": true,
+          "saturation": 0.05999999865889549,
+          "contrast": 0.03999999910593033,
+          "tintColor": [
+            0.9490196108818054,
+            0.9686274528503418,
+            1
+          ],
+          "brightness": 0.019999999552965164
+        },
+        "NightshiftPlayerBloom": {
+          "enabled": true,
+          "threshold": 1.2999999523162842,
+          "intensity": 0.5299999713897705,
+          "size": 28
+        }
+      },
+      "ambient": [
+        0.0941176488995552,
+        0.10980392247438431,
+        0.1411764770746231
+      ],
+      "fog": {
+        "available": {
+          "start": true,
+          "enabled": false,
+          "color": true,
+          "finish": true
+        },
+        "color": [
+          0.04313725605607033,
+          0.04313725605607033,
+          0.054901961237192154
+        ],
+        "legacy": true,
+        "start": 200,
+        "finish": 700
+      },
+      "atmosphere": {
+        "haze": 1.25,
+        "present": true,
+        "glare": 0.10000000149011612,
+        "density": 0.4000000059604645,
+        "offset": 0.10000000149011612
+      },
+      "outdoorAmbient": [
+        0.22745098173618317,
+        0.25882354378700256,
+        0.3294117748737335
+      ],
+      "overlay": {
+        "enabled": true,
+        "present": true,
+        "children": {
+          "PaperGrain": {
+            "visible": false,
+            "transparency": 1,
+            "present": true,
+            "class": "ImageLabel",
+            "image": "rbxassetid://140312386101515"
+          },
+          "InkVignette": {
+            "visible": false,
+            "transparency": 1,
+            "present": true,
+            "class": "ImageLabel",
+            "image": "rbxassetid://93284621719010"
+          }
+        }
+      },
+      "exposure": 0.3499999940395355,
+      "technology": "Future",
+      "technologySource": "sealed-place-xml",
+      "technologyEvidence": {
+        "file": "/home/cayleb/Work/projects/untitled-street-game/build/test.rbxlx",
+        "sha256": "c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98",
+        "raw": 4,
+        "enum": "Enum.Technology",
+        "mapping": "Technology 4 = Future (0=Legacy; 1=Voxel; 2=Compatibility; 3=ShadowMap; 4=Future)",
+        "project": {
+          "file": "/home/cayleb/Work/projects/untitled-street-game/test.project.json",
+          "declared": "Future"
+        }
+      },
+      "sky": {
+        "present": true
+      }
+    },
+    "menuOpen": false,
+    "twoSettledFrames": [
+      true,
+      true
+    ],
+    "candidate": "1f24da33cbfd4b6f7c5b5cffb6c29bf954adc2129149fffcf57a066bba0c064c",
+    "time": 1793633835.847329,
+    "noDriver": true,
+    "focus": [
+      -849.4967651367188,
+      3.549999952316284,
+      -462.53375244140625,
+      1,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      1
+    ],
+    "baselineLighting": {
+      "clockTime": 0.5,
+      "diffuse": 0.25,
+      "effects": {
+        "NightshiftMenuGrade": {
+          "enabled": true,
+          "saturation": -0.25,
+          "contrast": 0,
+          "tintColor": [
+            1,
+            1,
+            1
+          ],
+          "brightness": -0.05000000074505806
+        },
+        "NightshiftShowroomFocus": {
+          "enabled": false
+        },
+        "NightshiftMenuBlur": {
+          "enabled": true
+        },
+        "NightshiftPlayerGrade": {
+          "enabled": true,
+          "saturation": 0.05999999865889549,
+          "contrast": 0.03999999910593033,
+          "tintColor": [
+            0.9490196108818054,
+            0.9686274528503418,
+            1
+          ],
+          "brightness": 0.019999999552965164
+        },
+        "NightshiftPlayerBloom": {
+          "enabled": true,
+          "threshold": 1.2999999523162842,
+          "intensity": 0.5299999713897705,
+          "size": 28
+        }
+      },
+      "ambient": [
+        0.0941176488995552,
+        0.10980392247438431,
+        0.1411764770746231
+      ],
+      "fog": {
+        "available": {
+          "start": true,
+          "enabled": false,
+          "color": true,
+          "finish": true
+        },
+        "color": [
+          0.04313725605607033,
+          0.04313725605607033,
+          0.054901961237192154
+        ],
+        "legacy": true,
+        "start": 200,
+        "finish": 700
+      },
+      "atmosphere": {
+        "haze": 1.25,
+        "present": true,
+        "glare": 0.10000000149011612,
+        "density": 0.4000000059604645,
+        "offset": 0.10000000149011612
+      },
+      "outdoorAmbient": [
+        0.22745098173618317,
+        0.25882354378700256,
+        0.3294117748737335
+      ],
+      "overlay": {
+        "enabled": true,
+        "present": true,
+        "children": {
+          "PaperGrain": {
+            "visible": false,
+            "transparency": 1,
+            "present": true,
+            "class": "ImageLabel",
+            "image": "rbxassetid://140312386101515"
+          },
+          "InkVignette": {
+            "visible": false,
+            "transparency": 1,
+            "present": true,
+            "class": "ImageLabel",
+            "image": "rbxassetid://93284621719010"
+          }
+        }
+      },
+      "exposure": 0.3499999940395355
+    },
+    "layoutVersion": 2,
+    "reason": "native anchors present; visual judgement still required",
+    "viewport": [
+      1837,
+      744
+    ],
+    "anchors": [
+      {
+        "present": true,
+        "path": "Workspace/Nightshift/City/Junctions/JunctionPad_n_4_2"
+      }
+    ],
+    "fullZoneAnchors": true,
+    "id": "city-junction-n_4_2",
+    "index": 2,
+    "clientAnchorCounts": {
+      "highwayRoads": 223,
+      "cityJunctions": 144,
+      "cityRoads": 217,
+      "cityCells": 121
+    },
+    "qualifiedCoverage": true,
+    "drivingProof": false,
+    "geometryAnchorsQualified": true,
+    "fov": 70,
+    "showroomActive": false,
+    "noChassis": true,
+    "seed": 2134783819,
+    "focusOwned": true,
+    "frame": [
+      -849.4903564453125,
+      9.649999618530273,
+      -494.53375244140625,
+      -1,
+      -3.750148607650772e-05,
+      0.00019672911730594933,
+      0,
+      0.9823116660118103,
+      0.18725313246250153,
+      -0.0002002716064453125,
+      0.18725313246250153,
+      -0.9823116064071655
+    ],
+    "presentation": "static camera inventory under driving presentation settings",
+    "visualReviewRequired": true,
+    "artLoaded": 24,
+    "artExpected": 24,
+    "artFailed": {},
+    "visualFlags": ""
+  },
+  "index": 2,
+  "file": "002-city-junction-n_4_2.jpg",
+  "sha256": "dc944983eca556d7d88494328f1b82269d04340b0dc1cec570b2fd5bacd44659",
+  "mimeType": "image/jpeg",
+  "png": [
+    1837,
+    744
+  ],
+  "label": "stationary",
+  "speeds": [
+    null,
+    null
+  ],
+  "cameraDelta": 0.0,
+  "cameraHeld": true,
+  "accepted": true,
+  "reason": null,
+  "viewport": [
+    1837,
+    744
+  ],
+  "viewportMatchesPng": true,
+  "camera": {
+    "before": {
+      "frame": [
+        -849.4903564453125,
+        9.649999618530273,
+        -494.53375244140625,
+        -1,
+        -3.750148607650772e-05,
+        0.00019672911730594933,
+        0,
+        0.9823116660118103,
+        0.18725313246250153,
+        -0.0002002716064453125,
+        0.18725313246250153,
+        -0.9823116064071655
+      ],
+      "cameraType": "Enum.CameraType.Scriptable",
+      "fov": 70
+    },
+    "after": {
+      "frame": [
+        -849.4903564453125,
+        9.649999618530273,
+        -494.53375244140625,
+        -1,
+        -3.750148607650772e-05,
+        0.00019672911730594933,
+        0,
+        0.9823116660118103,
+        0.18725313246250153,
+        -0.0002002716064453125,
+        0.18725313246250153,
+        -0.9823116064071655
+      ],
+      "cameraType": "Enum.CameraType.Scriptable",
+      "fov": 70
+    }
+  },
+  "car": {
+    "before": {
+      "position": null,
+      "speed": null
+    },
+    "after": {
+      "position": null,
+      "speed": null
+    }
+  },
+  "serverTime": [
+    1793633835.918766,
+    1793633836.235417
+  ],
+  "ack": "view-002"
+}

@@ -1,0 +1,12 @@
+{
+  "actualLayout": 2,
+  "t0": 23354.908396399987,
+  "expectedLayout": 2,
+  "actualSeed": 2134783819,
+  "worldReadyAt": 23359.081926899962,
+  "rootFoundAt": 23354.908400999964,
+  "rebuild": false,
+  "fastPathApplied": true,
+  "starter": "{\"applied\":2134783819,\"t0\":23354.86694769998,\"seed\":2134783819}",
+  "expectedSeed": 2134783819
+}

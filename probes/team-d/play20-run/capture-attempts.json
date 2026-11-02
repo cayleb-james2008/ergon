@@ -1,0 +1,392 @@
+[
+  {
+    "phase": "view-001",
+    "kind": "road",
+    "settledSeconds": 0.0,
+    "attempts": [
+      {
+        "attempt": 1,
+        "sha256": "73b5fbc1ccc47c929eb3351f746fbb147c19c30f888b1afed5cfb97cdb5a1600",
+        "duplicate": false,
+        "cameraDelta": 0.0
+      }
+    ]
+  },
+  {
+    "phase": "view-002",
+    "kind": "junction",
+    "settledSeconds": 0.0,
+    "attempts": [
+      {
+        "attempt": 1,
+        "sha256": "dc944983eca556d7d88494328f1b82269d04340b0dc1cec570b2fd5bacd44659",
+        "duplicate": false,
+        "cameraDelta": 0.0
+      }
+    ]
+  },
+  {
+    "phase": "view-003",
+    "kind": "cell-frontage",
+    "settledSeconds": 0.0,
+    "attempts": [
+      {
+        "attempt": 1,
+        "sha256": "11e6b25a63ca5711f78d93e3838997e41a49ca3e1e4bd2a5f2158cd563f0223a",
+        "duplicate": false,
+        "cameraDelta": 0.0
+      }
+    ]
+  },
+  {
+    "phase": "view-004",
+    "kind": "cell-frontage",
+    "settledSeconds": 0.0,
+    "attempts": [
+      {
+        "attempt": 1,
+        "sha256": "bf587626b9d3b1034feb6c26a4683c0499017ce92bcc8785b6f826cdb0739476",
+        "duplicate": false,
+        "cameraDelta": 0.0
+      }
+    ]
+  },
+  {
+    "phase": "view-005",
+    "kind": "road",
+    "settledSeconds": 0.0,
+    "attempts": [
+      {
+        "attempt": 1,
+        "sha256": "a7ffb588d963920587ed1b687174673e57887204948702ea597cc4e9a835d90c",
+        "duplicate": false,
+        "cameraDelta": 0.0
+      }
+    ]
+  },
+  {
+    "phase": "view-006",
+    "kind": "junction",
+    "settledSeconds": 0.0,
+    "attempts": [
+      {
+        "attempt": 1,
+        "sha256": "27d8cf9d60d910e908006f69c9cc44196436f9a64146378d9719c3f1f5393fe5",
+        "duplicate": false,
+        "cameraDelta": 0.0
+      }
+    ]
+  },
+  {
+    "phase": "view-007",
+    "kind": "cell-frontage",
+    "settledSeconds": 0.0,
+    "attempts": [
+      {
+        "attempt": 1,
+        "sha256": "72a06d6ffec91cfd9236134f420ff849afa0f67ce549ee2f616616e391b8490b",
+        "duplicate": false,
+        "cameraDelta": 0.0
+      }
+    ]
+  },
+  {
+    "phase": "view-008",
+    "kind": "cell-frontage",
+    "settledSeconds": 0.0,
+    "attempts": [
+      {
+        "attempt": 1,
+        "sha256": "cbed582773e679d4825bfadf914e69f5895878d570f6e226dc95e37e5840a031",
+        "duplicate": false,
+        "cameraDelta": 0.0
+      }
+    ]
+  },
+  {
+    "phase": "view-009",
+    "kind": "road",
+    "settledSeconds": 0.0,
+    "attempts": [
+      {
+        "attempt": 1,
+        "sha256": "ff8bcbeb32467e1a9b7dd12ed1659f60c5a96d002ad0ba6d7f054fa3a6fd1372",
+        "duplicate": false,
+        "cameraDelta": 0.0
+      }
+    ]
+  },
+  {
+    "phase": "view-010",
+    "kind": "junction",
+    "settledSeconds": 0.0,
+    "attempts": [
+      {
+        "attempt": 1,
+        "sha256": "2d3e2d240409c0c1b36b984c75ae866de242e7ae377e9b255f0578ec6ea946f0",
+        "duplicate": false,
+        "cameraDelta": 0.0
+      }
+    ]
+  },
+  {
+    "phase": "view-011",
+    "kind": "cell-frontage",
+    "settledSeconds": 0.0,
+    "attempts": [
+      {
+        "attempt": 1,
+        "sha256": "6bba532db31f6dca0ca67a988fadebda7913251ddd801ad4af3b7439c91e2dd0",
+        "duplicate": false,
+        "cameraDelta": 0.0
+      }
+    ]
+  },
+  {
+    "phase": "view-012",
+    "kind": "cell-frontage",
+    "settledSeconds": 0.0,
+    "attempts": [
+      {
+        "attempt": 1,
+        "sha256": "f3f1245975106fd5162432034d1c28f3dd1162231bed617e5f73547c24efa807",
+        "duplicate": false,
+        "cameraDelta": 0.0
+      }
+    ]
+  },
+  {
+    "phase": "view-013",
+    "kind": "road",
+    "settledSeconds": 0.0,
+    "attempts": [
+      {
+        "attempt": 1,
+        "sha256": "93dbb6d0b77f3d8d7f95b9adfbd2f3ffe27bcd087002bf388101f2245428e1e9",
+        "duplicate": false,
+        "cameraDelta": 0.0
+      }
+    ]
+  },
+  {
+    "phase": "view-014",
+    "kind": "road",
+    "settledSeconds": 0.0,
+    "attempts": [
+      {
+        "attempt": 1,
+        "sha256": "46aa13dbe0c8eca9788a777f82fa89b87ab07a4ce3a473b3639bf48aea01588f",
+        "duplicate": false,
+        "cameraDelta": 0.0
+      }
+    ]
+  },
+  {
+    "phase": "view-015",
+    "kind": "road",
+    "settledSeconds": 0.0,
+    "attempts": [
+      {
+        "attempt": 1,
+        "sha256": "53f0375a9272158f31e089d93007d0276a0f7d5843507efd3469e6c2a4f447bf",
+        "duplicate": false,
+        "cameraDelta": 0
+      }
+    ]
+  },
+  {
+    "phase": "view-016",
+    "kind": "road",
+    "settledSeconds": 0.0,
+    "attempts": [
+      {
+        "attempt": 1,
+        "sha256": "22608b25c8d5b3cc061d1728b325bc0ba202286b77159cf4b737f61128cf20b2",
+        "duplicate": false,
+        "cameraDelta": 0
+      }
+    ]
+  },
+  {
+    "phase": "view-017",
+    "kind": "transition",
+    "settledSeconds": 0.0,
+    "attempts": [
+      {
+        "attempt": 1,
+        "sha256": "f19ea0f572daa3aba768be813d032c4e47b2f30fce7e1718ea9e9cd0612ee455",
+        "duplicate": false,
+        "cameraDelta": 0.0
+      }
+    ]
+  },
+  {
+    "phase": "view-018",
+    "kind": "transition",
+    "settledSeconds": 0.0,
+    "attempts": [
+      {
+        "attempt": 1,
+        "sha256": "0eb4cc93d9ed770ebc43c4f9efd737fab27d3bf5dd939a91fa3317e854e641ae",
+        "duplicate": false,
+        "cameraDelta": 0.0
+      }
+    ]
+  },
+  {
+    "phase": "view-019",
+    "kind": "garage",
+    "settledSeconds": 0.0,
+    "attempts": [
+      {
+        "attempt": 1,
+        "sha256": "ca3755a7bbbb9aacdb0428eac89ddb03d2467cd164c989b19afe162211b7d819",
+        "duplicate": false,
+        "cameraDelta": 0.0
+      }
+    ]
+  },
+  {
+    "phase": "view-020",
+    "kind": "overhead",
+    "settledSeconds": 1.0,
+    "attempts": [
+      {
+        "attempt": 1,
+        "sha256": "74d4f7e9934dd49d486f52c4b7f0b2066fe94897780b0ba1545f073a39efae0f",
+        "duplicate": false,
+        "cameraDelta": 0.0
+      }
+    ]
+  },
+  {
+    "phase": "view-021",
+    "kind": "overhead",
+    "settledSeconds": 1.0,
+    "attempts": [
+      {
+        "attempt": 1,
+        "sha256": "f6c64fd8b0d92f58062803b01b48c89a03903aa744bf5f10dd98d65eeeed8c13",
+        "duplicate": false,
+        "cameraDelta": 0.0
+      }
+    ]
+  },
+  {
+    "phase": "view-022",
+    "kind": "overhead",
+    "settledSeconds": 1.0,
+    "attempts": [
+      {
+        "attempt": 1,
+        "sha256": "73778fd300d4bdcd894920ddc1f241ec8443138010c6e67aaeb1e72654f7d412",
+        "duplicate": false,
+        "cameraDelta": 0.0
+      }
+    ]
+  },
+  {
+    "phase": "view-023",
+    "kind": "overhead",
+    "settledSeconds": 1.0,
+    "attempts": [
+      {
+        "attempt": 1,
+        "sha256": "50c2deeb1c7f6423397f534a099821e483082aaa29ff412281201b440825a125",
+        "duplicate": false,
+        "cameraDelta": 0
+      }
+    ]
+  },
+  {
+    "phase": "view-024",
+    "kind": "overhead",
+    "settledSeconds": 1.0,
+    "attempts": [
+      {
+        "attempt": 1,
+        "sha256": "c593575eefc81a837d3cecc29b3b1b175707cbbef4dd89e893f1eab0ff47a4d8",
+        "duplicate": false,
+        "cameraDelta": 0
+      }
+    ]
+  },
+  {
+    "phase": "view-025",
+    "kind": "junction",
+    "settledSeconds": 0.0,
+    "attempts": [
+      {
+        "attempt": 1,
+        "sha256": "76578a8488c86839cff64cc87311165ee2a435107cff8afc0adfd2b5775ff13d",
+        "duplicate": false,
+        "cameraDelta": 0.0
+      }
+    ]
+  },
+  {
+    "phase": "view-026",
+    "kind": "road",
+    "settledSeconds": 0.0,
+    "attempts": [
+      {
+        "attempt": 1,
+        "sha256": "c1527d7b029bea441bf3616a7849297ad8a0feb3ee1c111d608bf62df5b0db52",
+        "duplicate": false,
+        "cameraDelta": 0.0
+      }
+    ]
+  },
+  {
+    "phase": "view-027",
+    "kind": "overhead",
+    "settledSeconds": 1.0,
+    "attempts": [
+      {
+        "attempt": 1,
+        "sha256": "7f73f0b7257106b71a33b73028e1bb2f3f9d1182519facef3f48ad9c80d443ea",
+        "duplicate": false,
+        "cameraDelta": 0.0
+      }
+    ]
+  },
+  {
+    "phase": "view-028",
+    "kind": "overhead",
+    "settledSeconds": 1.0,
+    "attempts": [
+      {
+        "attempt": 1,
+        "sha256": "14a93cb6066e34264074a29478ac86d44482857fe113a43b8343b8372df869ad",
+        "duplicate": false,
+        "cameraDelta": 0.0
+      }
+    ]
+  },
+  {
+    "phase": "view-029",
+    "kind": "overhead",
+    "settledSeconds": 1.0,
+    "attempts": [
+      {
+        "attempt": 1,
+        "sha256": "d99fe4bc1b36e1fe5412fbbfd2a46a51649c60aaa015fa393c20a623f13367f1",
+        "duplicate": false,
+        "cameraDelta": 0.0
+      }
+    ]
+  },
+  {
+    "phase": "view-030",
+    "kind": "overhead",
+    "settledSeconds": 1.0,
+    "attempts": [
+      {
+        "attempt": 1,
+        "sha256": "f6ff179b3e2d871b25dba49d1c9361eebbe9ead02ddd5acf3db1d658f85c6e81",
+        "duplicate": false,
+        "cameraDelta": 0.0
+      }
+    ]
+  }
+]

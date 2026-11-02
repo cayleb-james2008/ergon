@@ -1,0 +1,826 @@
+{
+  "schema": 1,
+  "candidate": "1f24da33cbfd4b6f7c5b5cffb6c29bf954adc2129149fffcf57a066bba0c064c",
+  "seed": 2134783819,
+  "layoutVersion": 2,
+  "batch": "scout",
+  "sourceHead": null,
+  "highwayGeometryVersion": 2,
+  "counts": {
+    "cityRoads": 217,
+    "cityJunctions": 144,
+    "cells": 121,
+    "highwayRoads": 223
+  },
+  "sources": [
+    {
+      "parent": "ReplicatedStorage/Nightshift/Shared",
+      "name": "ArtRigs",
+      "class": "ModuleScript",
+      "file": "src/shared/ArtRigs.luau"
+    },
+    {
+      "parent": "ReplicatedStorage/Nightshift/Shared",
+      "name": "AssetIds",
+      "class": "ModuleScript",
+      "file": "src/shared/AssetIds.luau"
+    },
+    {
+      "parent": "ReplicatedStorage/Nightshift/Shared",
+      "name": "AudioConfig",
+      "class": "ModuleScript",
+      "file": "src/shared/AudioConfig.luau"
+    },
+    {
+      "parent": "ReplicatedStorage/Nightshift/Shared",
+      "name": "Badges",
+      "class": "ModuleScript",
+      "file": "src/shared/Badges.luau"
+    },
+    {
+      "parent": "ReplicatedStorage/Nightshift/Shared",
+      "name": "CarBuilder",
+      "class": "ModuleScript",
+      "file": "src/shared/CarBuilder.luau"
+    },
+    {
+      "parent": "ReplicatedStorage/Nightshift/Shared",
+      "name": "Catalog",
+      "class": "ModuleScript",
+      "file": "src/shared/Catalog.luau"
+    },
+    {
+      "parent": "ReplicatedStorage/Nightshift/Shared",
+      "name": "Chassis",
+      "class": "ModuleScript",
+      "file": "src/shared/Chassis.luau"
+    },
+    {
+      "parent": "ReplicatedStorage/Nightshift/Shared",
+      "name": "ChatLayout",
+      "class": "ModuleScript",
+      "file": "src/shared/ChatLayout.luau"
+    },
+    {
+      "parent": "ReplicatedStorage/Nightshift/Shared",
+      "name": "CityKit",
+      "class": "ModuleScript",
+      "file": "src/shared/CityKit.luau"
+    },
+    {
+      "parent": "ReplicatedStorage/Nightshift/Shared",
+      "name": "CityTrafficPaths",
+      "class": "ModuleScript",
+      "file": "src/shared/CityTrafficPaths.luau"
+    },
+    {
+      "parent": "ReplicatedStorage/Nightshift/Shared",
+      "name": "CustomizationBuilder",
+      "class": "ModuleScript",
+      "file": "src/shared/CustomizationBuilder.luau"
+    },
+    {
+      "parent": "ReplicatedStorage/Nightshift/Shared",
+      "name": "FacadeSlots",
+      "class": "ModuleScript",
+      "file": "src/shared/FacadeSlots.luau"
+    },
+    {
+      "parent": "ReplicatedStorage/Nightshift/Shared",
+      "name": "GameplayConfig",
+      "class": "ModuleScript",
+      "file": "src/shared/GameplayConfig.luau"
+    },
+    {
+      "parent": "ReplicatedStorage/Nightshift/Shared",
+      "name": "GarageLayout",
+      "class": "ModuleScript",
+      "file": "src/shared/GarageLayout.luau"
+    },
+    {
+      "parent": "ReplicatedStorage/Nightshift/Shared",
+      "name": "GarageShowroom",
+      "class": "ModuleScript",
+      "file": "src/shared/GarageShowroom.luau"
+    },
+    {
+      "parent": "ReplicatedStorage/Nightshift/Shared",
+      "name": "Graph",
+      "class": "ModuleScript",
+      "file": "src/shared/Graph.luau"
+    },
+    {
+      "parent": "ReplicatedStorage/Nightshift/Shared",
+      "name": "HubLayout",
+      "class": "ModuleScript",
+      "file": "src/shared/HubLayout.luau"
+    },
+    {
+      "parent": "ReplicatedStorage/Nightshift/Shared",
+      "name": "HudLayout",
+      "class": "ModuleScript",
+      "file": "src/shared/HudLayout.luau"
+    },
+    {
+      "parent": "ReplicatedStorage/Nightshift/Shared",
+      "name": "InkFxLogic",
+      "class": "ModuleScript",
+      "file": "src/shared/InkFxLogic.luau"
+    },
+    {
+      "parent": "ReplicatedStorage/Nightshift/Shared",
+      "name": "Mastery",
+      "class": "ModuleScript",
+      "file": "src/shared/Mastery.luau"
+    },
+    {
+      "parent": "ReplicatedStorage/Nightshift/Shared",
+      "name": "NeonInk",
+      "class": "ModuleScript",
+      "file": "src/shared/NeonInk.luau"
+    },
+    {
+      "parent": "ReplicatedStorage/Nightshift/Shared",
+      "name": "NightOS",
+      "class": "ModuleScript",
+      "file": "src/shared/NightOS.luau"
+    },
+    {
+      "parent": "ReplicatedStorage/Nightshift/Shared",
+      "name": "Products",
+      "class": "ModuleScript",
+      "file": "src/shared/Products.luau"
+    },
+    {
+      "parent": "ReplicatedStorage/Nightshift/Shared",
+      "name": "RadioStations",
+      "class": "ModuleScript",
+      "file": "src/shared/RadioStations.luau"
+    },
+    {
+      "parent": "ReplicatedStorage/Nightshift/Shared",
+      "name": "ReceiptLayout",
+      "class": "ModuleScript",
+      "file": "src/shared/ReceiptLayout.luau"
+    },
+    {
+      "parent": "ReplicatedStorage/Nightshift/Shared",
+      "name": "RestLayout",
+      "class": "ModuleScript",
+      "file": "src/shared/RestLayout.luau"
+    },
+    {
+      "parent": "ReplicatedStorage/Nightshift/Shared",
+      "name": "Theme",
+      "class": "ModuleScript",
+      "file": "src/shared/Theme.luau"
+    },
+    {
+      "parent": "ReplicatedStorage/Nightshift/Shared",
+      "name": "TrafficSim",
+      "class": "ModuleScript",
+      "file": "src/shared/TrafficSim.luau"
+    },
+    {
+      "parent": "ReplicatedStorage/Nightshift/Shared",
+      "name": "UIBuild",
+      "class": "ModuleScript",
+      "file": "src/shared/UIBuild.luau"
+    },
+    {
+      "parent": "ReplicatedStorage/Nightshift/Shared",
+      "name": "VisualConfig",
+      "class": "ModuleScript",
+      "file": "src/shared/VisualConfig.luau"
+    },
+    {
+      "parent": "ReplicatedStorage/Nightshift/Shared",
+      "name": "VisualFlags",
+      "class": "ModuleScript",
+      "file": "src/shared/VisualFlags.luau"
+    },
+    {
+      "parent": "ServerScriptService/Nightshift",
+      "name": "ArtLoader",
+      "class": "ModuleScript",
+      "file": "src/server/ArtLoader.luau"
+    },
+    {
+      "parent": "ServerScriptService/Nightshift",
+      "name": "Bootstrap",
+      "class": "Script",
+      "file": "src/server/Bootstrap.server.luau"
+    },
+    {
+      "parent": "ServerScriptService/Nightshift",
+      "name": "Budget",
+      "class": "ModuleScript",
+      "file": "src/server/Budget.luau"
+    },
+    {
+      "parent": "ServerScriptService/Nightshift",
+      "name": "CityBuilder",
+      "class": "ModuleScript",
+      "file": "src/server/CityBuilder.luau"
+    },
+    {
+      "parent": "ServerScriptService/Nightshift",
+      "name": "CityJunctions",
+      "class": "ModuleScript",
+      "file": "src/server/CityJunctions.luau"
+    },
+    {
+      "parent": "ServerScriptService/Nightshift",
+      "name": "Events",
+      "class": "ModuleScript",
+      "file": "src/server/Events.luau"
+    },
+    {
+      "parent": "ServerScriptService/Nightshift",
+      "name": "GameService",
+      "class": "ModuleScript",
+      "file": "src/server/GameService.luau"
+    },
+    {
+      "parent": "ServerScriptService/Nightshift",
+      "name": "HighwayBuilder",
+      "class": "ModuleScript",
+      "file": "src/server/HighwayBuilder.luau"
+    },
+    {
+      "parent": "ServerScriptService/Nightshift",
+      "name": "HubBuilder",
+      "class": "ModuleScript",
+      "file": "src/server/HubBuilder.luau"
+    },
+    {
+      "parent": "ServerScriptService/Nightshift",
+      "name": "Persistence",
+      "class": "ModuleScript",
+      "file": "src/server/Persistence.luau"
+    },
+    {
+      "parent": "ServerScriptService/Nightshift",
+      "name": "Progression",
+      "class": "ModuleScript",
+      "file": "src/server/Progression.luau"
+    },
+    {
+      "parent": "ServerScriptService/Nightshift/Services",
+      "name": "Badges",
+      "class": "ModuleScript",
+      "file": "src/server/Services/Badges.luau"
+    },
+    {
+      "parent": "ServerScriptService/Nightshift/Services",
+      "name": "Earnings",
+      "class": "ModuleScript",
+      "file": "src/server/Services/Earnings.luau"
+    },
+    {
+      "parent": "ServerScriptService/Nightshift/Services",
+      "name": "Fx",
+      "class": "ModuleScript",
+      "file": "src/server/Services/Fx.luau"
+    },
+    {
+      "parent": "ServerScriptService/Nightshift/Services",
+      "name": "Leaderboard",
+      "class": "ModuleScript",
+      "file": "src/server/Services/Leaderboard.luau"
+    },
+    {
+      "parent": "ServerScriptService/Nightshift/Services",
+      "name": "Mastery",
+      "class": "ModuleScript",
+      "file": "src/server/Services/Mastery.luau"
+    },
+    {
+      "parent": "ServerScriptService/Nightshift/Services",
+      "name": "Monetization",
+      "class": "ModuleScript",
+      "file": "src/server/Services/Monetization.luau"
+    },
+    {
+      "parent": "ServerScriptService/Nightshift/Services",
+      "name": "Progress",
+      "class": "ModuleScript",
+      "file": "src/server/Services/Progress.luau"
+    },
+    {
+      "parent": "ServerScriptService/Nightshift/Services",
+      "name": "World",
+      "class": "ModuleScript",
+      "file": "src/server/Services/World.luau"
+    },
+    {
+      "parent": "ServerScriptService/Nightshift",
+      "name": "StreetProps",
+      "class": "ModuleScript",
+      "file": "src/server/StreetProps.luau"
+    },
+    {
+      "parent": "ServerScriptService/Nightshift",
+      "name": "StyleScoring",
+      "class": "ModuleScript",
+      "file": "src/server/StyleScoring.luau"
+    },
+    {
+      "parent": "ServerScriptService/Nightshift",
+      "name": "TrafficController",
+      "class": "ModuleScript",
+      "file": "src/server/TrafficController.luau"
+    },
+    {
+      "parent": "ServerScriptService/Nightshift",
+      "name": "World",
+      "class": "ModuleScript",
+      "file": "src/server/World.luau"
+    },
+    {
+      "parent": "StarterPlayer/StarterPlayerScripts",
+      "name": "Actors",
+      "class": "LocalScript",
+      "file": "src/client/Actors.client.luau"
+    },
+    {
+      "parent": "StarterPlayer/StarterPlayerScripts",
+      "name": "AudioDirector",
+      "class": "ModuleScript",
+      "file": "src/client/AudioDirector.luau"
+    },
+    {
+      "parent": "StarterPlayer/StarterPlayerScripts",
+      "name": "Chat",
+      "class": "LocalScript",
+      "file": "src/client/Chat.client.luau"
+    },
+    {
+      "parent": "StarterPlayer/StarterPlayerScripts",
+      "name": "Driving",
+      "class": "LocalScript",
+      "file": "src/client/Driving.client.luau"
+    },
+    {
+      "parent": "StarterPlayer/StarterPlayerScripts",
+      "name": "InkFx",
+      "class": "LocalScript",
+      "file": "src/client/InkFx.client.luau"
+    },
+    {
+      "parent": "StarterPlayer/StarterPlayerScripts",
+      "name": "InkOverlay",
+      "class": "ModuleScript",
+      "file": "src/client/InkOverlay.luau"
+    },
+    {
+      "parent": "StarterPlayer/StarterPlayerScripts",
+      "name": "InputState",
+      "class": "ModuleScript",
+      "file": "src/client/InputState.luau"
+    },
+    {
+      "parent": "StarterPlayer/StarterPlayerScripts",
+      "name": "LampPool",
+      "class": "LocalScript",
+      "file": "src/client/LampPool.client.luau"
+    },
+    {
+      "parent": "StarterPlayer/StarterPlayerScripts/Screens",
+      "name": "Appearance",
+      "class": "ModuleScript",
+      "file": "src/client/Screens/Appearance.luau"
+    },
+    {
+      "parent": "StarterPlayer/StarterPlayerScripts/Screens",
+      "name": "Flow",
+      "class": "ModuleScript",
+      "file": "src/client/Screens/Flow.luau"
+    },
+    {
+      "parent": "StarterPlayer/StarterPlayerScripts/Screens",
+      "name": "Format",
+      "class": "ModuleScript",
+      "file": "src/client/Screens/Format.luau"
+    },
+    {
+      "parent": "StarterPlayer/StarterPlayerScripts/Screens",
+      "name": "Garage",
+      "class": "ModuleScript",
+      "file": "src/client/Screens/Garage.luau"
+    },
+    {
+      "parent": "StarterPlayer/StarterPlayerScripts/Screens",
+      "name": "HintBar",
+      "class": "ModuleScript",
+      "file": "src/client/Screens/HintBar.luau"
+    },
+    {
+      "parent": "StarterPlayer/StarterPlayerScripts/Screens",
+      "name": "Hub",
+      "class": "ModuleScript",
+      "file": "src/client/Screens/Hub.luau"
+    },
+    {
+      "parent": "StarterPlayer/StarterPlayerScripts/Screens",
+      "name": "Hud",
+      "class": "ModuleScript",
+      "file": "src/client/Screens/Hud.luau"
+    },
+    {
+      "parent": "StarterPlayer/StarterPlayerScripts/Screens",
+      "name": "Kit",
+      "class": "ModuleScript",
+      "file": "src/client/Screens/Kit.luau"
+    },
+    {
+      "parent": "StarterPlayer/StarterPlayerScripts/Screens",
+      "name": "Leaderboard",
+      "class": "ModuleScript",
+      "file": "src/client/Screens/Leaderboard.luau"
+    },
+    {
+      "parent": "StarterPlayer/StarterPlayerScripts/Screens",
+      "name": "Mastery",
+      "class": "ModuleScript",
+      "file": "src/client/Screens/Mastery.luau"
+    },
+    {
+      "parent": "StarterPlayer/StarterPlayerScripts/Screens",
+      "name": "Minimap",
+      "class": "ModuleScript",
+      "file": "src/client/Screens/Minimap.luau"
+    },
+    {
+      "parent": "StarterPlayer/StarterPlayerScripts/Screens",
+      "name": "Motion",
+      "class": "ModuleScript",
+      "file": "src/client/Screens/Motion.luau"
+    },
+    {
+      "parent": "StarterPlayer/StarterPlayerScripts/Screens",
+      "name": "Panes",
+      "class": "ModuleScript",
+      "file": "src/client/Screens/Panes.luau"
+    },
+    {
+      "parent": "StarterPlayer/StarterPlayerScripts/Screens",
+      "name": "Progress",
+      "class": "ModuleScript",
+      "file": "src/client/Screens/Progress.luau"
+    },
+    {
+      "parent": "StarterPlayer/StarterPlayerScripts/Screens",
+      "name": "Radio",
+      "class": "ModuleScript",
+      "file": "src/client/Screens/Radio.luau"
+    },
+    {
+      "parent": "StarterPlayer/StarterPlayerScripts/Screens",
+      "name": "Receipt",
+      "class": "ModuleScript",
+      "file": "src/client/Screens/Receipt.luau"
+    },
+    {
+      "parent": "StarterPlayer/StarterPlayerScripts/Screens",
+      "name": "Records",
+      "class": "ModuleScript",
+      "file": "src/client/Screens/Records.luau"
+    },
+    {
+      "parent": "StarterPlayer/StarterPlayerScripts/Screens",
+      "name": "Settings",
+      "class": "ModuleScript",
+      "file": "src/client/Screens/Settings.luau"
+    },
+    {
+      "parent": "StarterPlayer/StarterPlayerScripts/Screens",
+      "name": "Shop",
+      "class": "ModuleScript",
+      "file": "src/client/Screens/Shop.luau"
+    },
+    {
+      "parent": "StarterPlayer/StarterPlayerScripts",
+      "name": "TouchDrive",
+      "class": "LocalScript",
+      "file": "src/client/TouchDrive.client.luau"
+    },
+    {
+      "parent": "StarterPlayer/StarterPlayerScripts",
+      "name": "UI",
+      "class": "LocalScript",
+      "file": "src/client/UI.client.luau"
+    },
+    {
+      "parent": "StarterPlayer/StarterPlayerScripts",
+      "name": "Visual",
+      "class": "LocalScript",
+      "file": "src/client/Visual.client.luau"
+    },
+    {
+      "parent": "StarterPlayer/StarterPlayerScripts",
+      "name": "WorldGuides",
+      "class": "ModuleScript",
+      "file": "src/client/WorldGuides.luau"
+    },
+    {
+      "parent": "StarterPlayer/StarterPlayerScripts",
+      "name": "WorldRender",
+      "class": "ModuleScript",
+      "file": "src/client/WorldRender.luau"
+    },
+    {
+      "parent": "StarterPlayer/StarterPlayerScripts",
+      "name": "WorldTraffic",
+      "class": "ModuleScript",
+      "file": "src/client/WorldTraffic.luau"
+    },
+    {
+      "parent": "ServerScriptService/Nightshift/tests",
+      "name": "CareersRuntimeServer",
+      "class": "ModuleScript",
+      "file": "tests/studio/CareersRuntimeServer.luau"
+    },
+    {
+      "parent": "ServerScriptService/Nightshift/tests",
+      "name": "PhysicsIntegration",
+      "class": "ModuleScript",
+      "file": "tests/studio/PhysicsIntegration.luau"
+    },
+    {
+      "parent": "ServerScriptService/Nightshift/tests",
+      "name": "TestCourse",
+      "class": "ModuleScript",
+      "file": "tests/studio/TestCourse.luau"
+    },
+    {
+      "parent": "ServerScriptService/Nightshift/tests",
+      "name": "baseline-mechanics.spec",
+      "class": "ModuleScript",
+      "file": "tests/studio/baseline-mechanics.spec.luau"
+    },
+    {
+      "parent": "ServerScriptService/Nightshift/tests",
+      "name": "customization.spec",
+      "class": "ModuleScript",
+      "file": "tests/studio/customization.spec.luau"
+    },
+    {
+      "parent": "ServerScriptService/Nightshift/tests",
+      "name": "driving-modes.spec",
+      "class": "ModuleScript",
+      "file": "tests/studio/driving-modes.spec.luau"
+    },
+    {
+      "parent": "ServerScriptService/Nightshift/tests",
+      "name": "driving.spec",
+      "class": "ModuleScript",
+      "file": "tests/studio/driving.spec.luau"
+    },
+    {
+      "parent": "ServerScriptService/Nightshift/tests",
+      "name": "game.spec",
+      "class": "ModuleScript",
+      "file": "tests/studio/game.spec.luau"
+    },
+    {
+      "parent": "ServerScriptService/Nightshift/tests",
+      "name": "gameplay-settings.spec",
+      "class": "ModuleScript",
+      "file": "tests/studio/gameplay-settings.spec.luau"
+    },
+    {
+      "parent": "ServerScriptService/Nightshift/tests",
+      "name": "highway.spec",
+      "class": "ModuleScript",
+      "file": "tests/studio/highway.spec.luau"
+    },
+    {
+      "parent": "ServerScriptService/Nightshift/tests",
+      "name": "showroom.spec",
+      "class": "ModuleScript",
+      "file": "tests/studio/showroom.spec.luau"
+    },
+    {
+      "parent": "ServerScriptService/Nightshift/tests",
+      "name": "traffic-shared.spec",
+      "class": "ModuleScript",
+      "file": "tests/studio/traffic-shared.spec.luau"
+    },
+    {
+      "parent": "ServerScriptService/Nightshift/tests",
+      "name": "ui.spec",
+      "class": "ModuleScript",
+      "file": "tests/studio/ui.spec.luau"
+    },
+    {
+      "parent": "ServerScriptService/Nightshift/tests",
+      "name": "visual.spec",
+      "class": "ModuleScript",
+      "file": "tests/studio/visual.spec.luau"
+    }
+  ],
+  "helpers": [
+    {
+      "name": "AtlasRoadGround",
+      "parent": "ServerScriptService/Nightshift",
+      "file": "tests/atlas/RoadGround.luau",
+      "class": "ModuleScript"
+    },
+    {
+      "name": "AtlasExactReportTransport",
+      "parent": "ServerScriptService/Nightshift",
+      "file": "tests/diagnostics/ExactReportTransport.luau",
+      "class": "ModuleScript"
+    },
+    {
+      "name": "AtlasPaths",
+      "parent": "ReplicatedStorage/Nightshift",
+      "file": "tests/atlas/Paths.luau",
+      "class": "ModuleScript"
+    },
+    {
+      "name": "AtlasServer",
+      "parent": "ServerScriptService/Nightshift",
+      "file": "tests/atlas/Server.luau",
+      "class": "ModuleScript"
+    },
+    {
+      "name": "AtlasClient",
+      "parent": "StarterPlayer/StarterPlayerScripts",
+      "file": "tests/atlas/Client.luau",
+      "class": "ModuleScript"
+    },
+    {
+      "name": "AtlasCameraState",
+      "parent": "StarterPlayer/StarterPlayerScripts",
+      "file": "tests/atlas/CameraState.luau",
+      "class": "ModuleScript"
+    },
+    {
+      "name": "AtlasWorldSeed",
+      "parent": "ServerScriptService/Nightshift",
+      "file": "tests/atlas/WorldSeed.luau",
+      "class": "ModuleScript"
+    }
+  ],
+  "sha256": {
+    "atlas/source-graph.json": "d0285fdefe368d564da0788f40e3ae1f10ec75b41a91b459663b55c691b0e6d2",
+    "src/client/Actors.client.luau": "320ec3fd5cc8126f66a8980794f14f031016571da88f19c88032207b23b06e17",
+    "src/client/AudioDirector.luau": "0d024488af6f187f5f551dd41649ab05442f031ad574757646b2cf6fb4d644b4",
+    "src/client/Chat.client.luau": "69b29186b39e5b2d929fc7dec2f640f687f046c7769dffa8a87b2421199885f0",
+    "src/client/Driving.client.luau": "efdcfd59aed843e584a7297029ab3aa55259ba333218894c44330cd3148898ce",
+    "src/client/InkFx.client.luau": "cc9c432cf0934a7a609872a1f50f14e44b943254fdd36160e4649d6547500ada",
+    "src/client/InkOverlay.luau": "9db09aa0b375502c4bb8afa8352f03966bd841c188b1eddbceffa918f384b76d",
+    "src/client/InputState.luau": "5b2c86366b28b09140602dae276795dd0b3598c6d2cf2c1b0fb8f184be815ff4",
+    "src/client/LampPool.client.luau": "de48e74a3d4702db45032211d0643565f49e9b75c6b39c2f5a6ba754c20a781b",
+    "src/client/Screens/Appearance.luau": "b9e94451fadb4b638e9a7c4fa6fff3484453290207cd85fa1684ce41174b49a8",
+    "src/client/Screens/Flow.luau": "cbed2190f32a81ad595d2371b3d5c5767104eb1fd18d4d8378a2164bb23b1a20",
+    "src/client/Screens/Format.luau": "8f50832fdca4ab9cce549e1d1b7e16ae346b9ecd084e2b59f166d6ab2828dee9",
+    "src/client/Screens/Garage.luau": "649d90a662a1b7aa5a2e4e12edcaaee8b6e586efb7854b4f5cd9cf16e9f438a7",
+    "src/client/Screens/HintBar.luau": "20153869f53c9994e07c51c85575029ccd673aaf9848dde4a3c2dc2cab520d1d",
+    "src/client/Screens/Hub.luau": "3c39be391d7ed144238cf8585e292cdca6994cfac0ac9060e0a2108513936286",
+    "src/client/Screens/Hud.luau": "d88640592a24a09a173bb9782383fb75ab08dba81dcfa7364532b7914d53bf35",
+    "src/client/Screens/Kit.luau": "9814e10cdd365ea96847090a36a34e366d3521a33f0974c5e911b8e8973762c2",
+    "src/client/Screens/Leaderboard.luau": "d3ddafff0e537f49dfe096c471b99ca98cd2518d22c64ea4fb94f9d799c051a2",
+    "src/client/Screens/Mastery.luau": "34c4296a0467ff4b4c822bea72cc6820067e4ef93b78103fa2dccd0406d0223f",
+    "src/client/Screens/Minimap.luau": "b006e9d80f33c2b473bb9d0c2d7bcb360dd4a4d7845bb5ab85cc342189221061",
+    "src/client/Screens/Motion.luau": "0872c04667a489382a2f5b205ccb039dc0d7303a62823cc70cae5f56165c3932",
+    "src/client/Screens/Panes.luau": "2b34b7d97cc1db57deb7a33ffab04d7ab78c950e76dfc486c2fce5cd47cada9b",
+    "src/client/Screens/Progress.luau": "450c1560ab8150402d03461d5d3b8bb0072f0376e8d0d7db2b0381e42b06b210",
+    "src/client/Screens/Radio.luau": "eb8a4244b5b24c5cd2c7d54195947d64d9ca332c41cf96a1a445456d8ba73752",
+    "src/client/Screens/Receipt.luau": "def6d912b474c33a3475ff57ed1cfd44084df2bced92974f1eca71a8801f1c66",
+    "src/client/Screens/Records.luau": "048509ade8275c9e543af4353744caa44b8df979a2040295417c3b6cadc7c0dc",
+    "src/client/Screens/Settings.luau": "8bfdce0556f05801d03f3657385154a272ea14a8c9cc583a18368ca64cc383f4",
+    "src/client/Screens/Shop.luau": "9224c7cad8bcd1a2e0209972336d5cf6b1aca4ee5aa640218b6aa8c17a9b4365",
+    "src/client/TouchDrive.client.luau": "a9cd75a6f8e924a19f0844e8d38b05ed861fb6ded3d9c51f214d5276b3736eeb",
+    "src/client/UI.client.luau": "bf965c6ba9e3897ea19eae037a0ce35dcb430ac8b8e1cc7984e3751b5b3dc063",
+    "src/client/Visual.client.luau": "1161457b01310802a41a1cd88be7b0a9bd8338eb43dc0fd7dee20b081cec14b0",
+    "src/client/WorldGuides.luau": "025c17e525d366636e05e7bd9adaf237fbbc69d510712ab886070e30e1dc57d1",
+    "src/client/WorldRender.luau": "f4d8a0ef86da54c2f39f6f2fa59fe09ed175b921863f638962fabd01d9391ca5",
+    "src/client/WorldTraffic.luau": "58c8719c6a08837f41c284c89367839d2969699a1fb095141e3f445ebbfaf9e5",
+    "src/server/ArtLoader.luau": "d9cd83895efd975fdb0e87f21b7a6f59f37628a4dbf4d8078245c038779bcea4",
+    "src/server/Bootstrap.server.luau": "18ab46ecd531cd69d7470e6096d7134b3fcb39ff914dc47396f2c1e8cc8e17db",
+    "src/server/Budget.luau": "1585e672cfc21dc8495bb92f24ad0c1a872d1aef44d02c4d2876a881252f1a19",
+    "src/server/CityBuilder.luau": "d476596036e19f97a33d3084a56ea295da3bb26c1c77a97f9da0cc10d8fd2a4e",
+    "src/server/CityJunctions.luau": "09e7a129c572da331ab263fb0d64bb7b0de0013fc596a406eddcad59461579be",
+    "src/server/Events.luau": "a7a763bab5b11212fe7b33279a37b4230ebe7e0532c7886d9b191887af645d61",
+    "src/server/GameService.luau": "24ff653e5be44ad04e1a34b27864c349ac48793f908295759720eca4ccea3e1c",
+    "src/server/HighwayBuilder.luau": "cfedbd7c7526d6dae00b3600dbef6e97d8596f0a31893d5f5ebb843422e5ff9b",
+    "src/server/HubBuilder.luau": "b34ea6be6066bac35a1646149679be9223dfb76d1e801ad99f33b8191fe46d89",
+    "src/server/Persistence.luau": "c2ab937ea1b43e3f03dc991fe42acd8c8896c68ad4ce233838fdb22fbe631267",
+    "src/server/Progression.luau": "1b36f981079b2ca109ad28e31db62c4dc857ea595245268705de4da87cde9b16",
+    "src/server/Services/Badges.luau": "f3e466be22911758893ac17efee610a969244969e5bf94d7bcde6ce264322b34",
+    "src/server/Services/Earnings.luau": "7fc7e862edc459d1751532b782ccab49d835850b32add570e4f9d948e94815d0",
+    "src/server/Services/Fx.luau": "c53b1def86de4f900dab59a9b6a303ca562e1604061095d5b1bcdf36e38920bf",
+    "src/server/Services/Leaderboard.luau": "6ecfc99cd9139d7c0cc86cc7d270a357819d2b901f1523ec3e0d0ea620d97c99",
+    "src/server/Services/Mastery.luau": "b87845bd5be540cb933b79ee56f84fbacf6287b3e3ef81713ba98d551cfe50a2",
+    "src/server/Services/Monetization.luau": "bdff2a54371c8b0ebdeef431cb6537da3c36115ecbed59f68090a84550fdffd2",
+    "src/server/Services/Progress.luau": "a1b30f44ec9047ad7ab9427918fe3e87a1efb9a95b7c4ad606c277fb2be10e95",
+    "src/server/Services/World.luau": "f63a46be5cca3f68062668c359d2d4431ff529cce8bda99ee3cf48ed172ca1d8",
+    "src/server/StreetProps.luau": "7250c4db1cec8a6d85e48b6d2bd65bc60ac1c704fcf5e8f610ca463685822956",
+    "src/server/StyleScoring.luau": "5f8ec872d54575b1f6a43aa5ab78a7623425f711eab977dde49f92de3cc30832",
+    "src/server/TrafficController.luau": "e8339a8e1d3f5b0ceb6b3355a8784b8913c46358c58eba1d648cce0c42cd7ebd",
+    "src/server/World.luau": "393da86003369e3d2fc3cc4f3345e70a96eec01f077e822d7a48277460f221a2",
+    "src/shared/ArtRigs.luau": "27347bcf7ba96d3ea7836b67f6f4981b53181f94c932aa2725ad95bd5dd28df2",
+    "src/shared/AssetIds.luau": "4b9cc509391c74e111324a8f9c96d439e51536812ede3f597e8816869d0a687a",
+    "src/shared/AudioConfig.luau": "cd7a3a92f5b54324602d47f9bb5aa81e93b04af2fe5c6740f734c46604cef05e",
+    "src/shared/Badges.luau": "78c681a0c4bbf2e48e32739da5dc8c680338edf8cf0ffb19d5968994257e573f",
+    "src/shared/CarBuilder.luau": "8c706f4e35afa200edfb247c744e9ae172555d4fccaff0bb669695978d896c16",
+    "src/shared/Catalog.luau": "7a852ca3e2f3772bd1d0687ab26557b900751a69aa33db50be6843b262868658",
+    "src/shared/Chassis.luau": "e61d91992d2513635e9978a756f8a8564ca3521d4587413db2ef0430c1c4e19b",
+    "src/shared/ChatLayout.luau": "6e1476c25a70f73aa8c5a3371bcd65aaa81eee2805a1e3e40d048e47c86c4a83",
+    "src/shared/CityKit.luau": "f02a42338a20edef18d78ce08ac3cae7fa25f9f46101e7f08c7b881c5d9e5dcb",
+    "src/shared/CityTrafficPaths.luau": "b545565c5da297f210e4cce62fdc0661af7654862bc88a190d23dd65b4c9c511",
+    "src/shared/CustomizationBuilder.luau": "5cee912e9f73e4ad19c27de434051c28abde2df6442b5369a2bb4c4167a6a226",
+    "src/shared/FacadeSlots.luau": "e251211fd28fb89a2f1cb334383bc1e9bba0ff43d0acb41a99e3d8ea6319837c",
+    "src/shared/GameplayConfig.luau": "a9c4df17dd5ad1dec80946f58f4204568da291d2db1f9c320813b601c2f26eba",
+    "src/shared/GarageLayout.luau": "7ecc3e90cfd668ab6ea4c43f44f21bcda6c541d2c7a49b317c67a7896578819f",
+    "src/shared/GarageShowroom.luau": "5efb4debee9aff8663311e7019d0e47c0df28d30e7161d4b29e9b3a7f79732c5",
+    "src/shared/Graph.luau": "108571fd944be67acbb7d6bff92103897509d59973bcf0bd089b7360a86c8195",
+    "src/shared/HubLayout.luau": "3ff2b3eda1c7d558f8993f34438b056f02f72b65e27bac72b793d2b0b3269b48",
+    "src/shared/HudLayout.luau": "c1448cd8c9f4237cb0d75d1c06c701e9baed4dbc1208d989a5159e3fd7697a74",
+    "src/shared/InkFxLogic.luau": "d19b411d13588bcdebf2b1ab35aca784328b3b5dd9019103f13f0f67be596a2c",
+    "src/shared/Mastery.luau": "b558ce43d193fe7a441650d2016a51fdd8bca9bd2ec57405bed5a2833223a22c",
+    "src/shared/NeonInk.luau": "51ac0328c6ac972c57b408ff723919b43546c6d0dd95f22420bba481708c0fc0",
+    "src/shared/NightOS.luau": "a501104cc72f2eb02d6c19bb7da4886f708bbb8d1defa5d52c780d103b463813",
+    "src/shared/Products.luau": "64d91909e445c46af2846f6b560883c78a914640661066bebcbcb4b14897b756",
+    "src/shared/RadioStations.luau": "2d15655668fad68cf70c1dd9e4e15a1ce9dfbe68e49103e9e7ced71c997caa18",
+    "src/shared/ReceiptLayout.luau": "9be6e40489cd989385634cd08b90d3313a08359b80c1ce68696c956a00bd0ebc",
+    "src/shared/RestLayout.luau": "fd49368fce34c9318fc0ba782b8641f77dc8d4e418d1fa4cd2a0bb09747f8894",
+    "src/shared/Theme.luau": "cd32b586b6359fd8b9e62470640e12d9cc230c6f719d2c73339b9289442a6c13",
+    "src/shared/TrafficSim.luau": "a72f19d620a9a17fe03371674b4637fb9598e13af1bc97bec2473ddb531261a0",
+    "src/shared/UIBuild.luau": "5775c70051d70967008784cfaabc835f1c55995a033650c90d9438b4de8216f9",
+    "src/shared/VisualConfig.luau": "b5b4bc4b6439f9dd64e94791a70fdd5ab309c11d60f7366b15f552e31957d7a9",
+    "src/shared/VisualFlags.luau": "f0beb22e2e6c6e32122a2a05bcc1c6a2a0fac2961899421e74770408ee537677",
+    "test.project.json": "59f86ccfe628ffbb99b3fd6ff1ad46e995bc2c6556f40c14242af41f8f2372b6",
+    "tests/atlas/CameraState.luau": "6bc5af1e54034e6f35ac63e9fc8d6e133e75446dad4d3c64313c03ae6d23bb36",
+    "tests/atlas/Client.luau": "688e4d7cf18f418ae726e8d6a131235675bf2c913f4b5883f0f6988fca0ebabf",
+    "tests/atlas/Paths.luau": "cbd26ec55a550f04e47077ac7e119c7b07df92f019e76d9dd351ace21cf55d06",
+    "tests/atlas/RoadGround.luau": "8c074868baa4ca2d187fe5b0ef23178440d7945186476089cc535f82aa887b0d",
+    "tests/atlas/Server.luau": "05b4fbb299fc29e2d414b0af8b8abb99baa6ce8a17a76299e67034b5c257c648",
+    "tests/atlas/WorldSeed.luau": "bab38731fe57a5ff1b27c23266ad9386abaff3d69e71e82f4b453c9cd9efb8da",
+    "tests/diagnostics/ExactReportTransport.luau": "e5edc5f9dc14ece3a660b38e66761be5e29339cf232c0d5830fe97af124bf34b",
+    "tests/studio/CareersRuntimeServer.luau": "cfdbeb0417c8062c8683af2dc92fdaddafbf63ca0a9d96eec07ee127a8f0cf92",
+    "tests/studio/PhysicsIntegration.luau": "d5125f96f4aa666be80108993926f3ddd4f7ee96a28b92e9ba268494f86ae73b",
+    "tests/studio/TestCourse.luau": "585e12e952546a738ae3c46220c07f710d6f836056a450701d3dd5837e0e1e87",
+    "tests/studio/baseline-mechanics.spec.luau": "ef77df346478a48b3a082d9528bbd6fd7279938e5f7da968bb55537d18a67a17",
+    "tests/studio/customization.spec.luau": "cf0f1055faf14cd07680a389c4465a3cc0e65170283030d1f8fcf92ddd58330b",
+    "tests/studio/driving-modes.spec.luau": "064057a7f685df048ddfe1e2ff094a6729bc5571badf7019f84b58e49ddec8bf",
+    "tests/studio/driving.spec.luau": "a04a509ce1a443b8a7ecffc43183e9e910e43046e5e9623c89be3b6765b80322",
+    "tests/studio/game.spec.luau": "db49c2e4aea9c0e6191fdd5eb5cd86a2c3318d5626041641d36684b7f0c9de6d",
+    "tests/studio/gameplay-settings.spec.luau": "ccb2faaaaca5691a96a462900af44732c1fd2685203eb7dc77226d1d51532ed9",
+    "tests/studio/highway.spec.luau": "c49631fb77e9b6bcddbfc25729589b4973c3b3d970f8a1ae04c4c76918db35b9",
+    "tests/studio/showroom.spec.luau": "5f79b7a83228dbadad70ecf6c383fc74eb94d70fdbcb504bcd848b7cf5ffe96b",
+    "tests/studio/traffic-shared.spec.luau": "e1591ff596f118435c4529a741cf369d4adb40db63556feed3170970ae04759a",
+    "tests/studio/ui.spec.luau": "d0f137abc2cea9f7b7c9489278a47f3c98a51f933d2677b5e1f3f59402504230",
+    "tests/studio/visual.spec.luau": "43537dc773974896f3452895714f835b38a9d81dd35d3717faf7d686a03f71a2",
+    "tools/atlas_acceptance.py": "54c92994fb56a1fb3a7a863524cf1044ba838062ae039dace103d74a5dcab9d1",
+    "tools/export_map_atlas.luau": "9fb54939e003f469e42283ac2c4e4b0d51dd4a7279cb64045445c1aefafb6445",
+    "tools/map_atlas.py": "2c2386a950fa40a6c13d2c36e562208f61c21cdb9bd6fd8a876816f67ca4cca4"
+  },
+  "direction": "Keep shared city, add building detail, expand procedural highways; preserve IDs/careers/saves",
+  "namedSeed": 2134783819,
+  "fogOff": false,
+  "edgeStarts": null,
+  "bounds": null,
+  "headings": null,
+  "views": [
+    "city-road-n_3_2__n_4_2-forward",
+    "city-junction-n_4_2",
+    "cell-3-2-front",
+    "cell-8-3-back",
+    "city-road-n_6_5__n_6_6-forward",
+    "city-junction-n_7_6",
+    "cell-5-6-front",
+    "cell-9-5-left",
+    "city-road-n_8_10__n_9_10-forward",
+    "city-junction-n_10_10",
+    "cell-7-9-front",
+    "cell-3-10-right",
+    "highway-road-h_top_05__h_top_06-forward",
+    "highway-road-h_east_03__h_east_04-forward",
+    "highway-road-h_access_030__h_access_031-forward",
+    "highway-road-h_access_062__h_bottom_09-forward",
+    "planned-city-expressway-gate",
+    "planned-highway-city-gate",
+    "city-garage",
+    "city-overhead",
+    "highway-zone-1-overhead",
+    "highway-zone-2-overhead",
+    "highway-zone-3-overhead",
+    "highway-zone-4-overhead",
+    "city-junction-n_12_12",
+    "city-road-n_6_7__n_6_8-forward",
+    "world-region-1-overhead",
+    "world-region-2-overhead",
+    "world-region-3-overhead",
+    "world-region-4-overhead"
+  ],
+  "envelope": {
+    "session": "vinegar-ff754dbf4be4",
+    "request": "900a08607ed14ba3b9a0cfdcfda77e17",
+    "nonce": "17fcec9e904f45a0acce6a46670fee1b"
+  },
+  "origin": "http://127.0.0.1:41463/17fcec9e904f45a0acce6a46670fee1b/"
+}

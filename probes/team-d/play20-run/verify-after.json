@@ -1,0 +1,19 @@
+{
+  "properties": {
+    "bootstrapDisabled": false,
+    "gravity": 35,
+    "httpEnabled": false
+  },
+  "attributes": {
+    "StudioStartFares": {
+      "present": false
+    },
+    "StudioStartCredits": {
+      "present": false
+    },
+    "StudioStartLevel": {
+      "present": false
+    }
+  },
+  "sources": 101
+}
