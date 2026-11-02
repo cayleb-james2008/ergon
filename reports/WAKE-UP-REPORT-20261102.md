@@ -1,4 +1,4 @@
-# WAKE-UP REPORT — 2026-11-02 (refreshed 04:00 ET; owner asleep) — refresh #9 (OWNER DIRECTION: one DSH setup, fleet plugin consolidates into it, duplicate key entry CANCELLED; atlas one camera-restore layer from a pass; Windows final)
+# WAKE-UP REPORT — 2026-11-02 (refreshed 04:16 ET; owner asleep) — refresh #10 (consolidation ruled+Phase 1 proved, Phase 2 approved; atlas camera-restore cause narrowed, diagnostics round 2; Windows final; one owner item: v2 grade)
 Consolidated for the owner's morning. Everything below is on the board with checker evidence; nothing is smoothed.
 Fences held overnight: no spend, no publication, no credential values in chat/board/logs, no image reads in the app, desks untouched.
 
@@ -15,7 +15,7 @@ Fences held overnight: no spend, no publication, no credential values in chat/bo
 - **Owner direction:** one DSH setup only; the fleet plugin consolidates into it; the duplicate key entry is cancelled (the plugin uses
   the OpenCode Go credential already present in his setup — entered once by him). The 0.3.1 install/acceptance proofs on the fleet
   scaffold stay on the record as build evidence; **the finish line closes on the consolidated setup.**
-- **Consolidation in progress (Team B, scoping first):** what the single setup is, where the plugin installs, how the roster/doctrine/
+- **Rulings in (Nox 091500Z):** Option B (sibling `fleet` profile under the same desktop home) **is** the one setup — his credential ref is used in place, never copied or re-entered; installing into his live `desktop` profile was rejected. **Scoped consolidated acceptance adopted** (identity/rows readback, dump-config, Boolean-only credential presence, Option-A roster lane-spawn real-provider proof with a real priced ledger event, `order.stage_real`, MCP nine-tool battery; unit legs recorded N/A with reason; unit-grade containment recorded as build-evidence-only, consolidated containment = plugin sandbox + single-writer + care fence). **Phase 1 proved offline** (byte-identical install, 15-row compose, roster/subagent-32/opencode-go ref, scratch host integrity ok, 8/12 rows, state layout) and **Phase 2 (live profile create, no start, desktop untouched) is approved on Lead timing**; Phase 3 (unit stop/retire + consolidated start) is held pending the `fleet-mcp` pinned-integrity ruling and the Lead's app-idle approval. Consolidation in progress (Team B): what the single setup is, where the plugin installs, how the roster/doctrine/
   rates/opencode-go route mount there with the credential **referenced** (never copied/re-entered), what happens to the fleet data/state,
   single-writer discipline + care fence (no disruption to his live sessions/apps), and the re-proof chain on that setup: installed
   acceptance → roster lane-spawn real-provider proof (Option A) → the staged first real order (plugin sidebar section + phone-VM and
@@ -75,7 +75,12 @@ is with Nox (window vs fixture/physics vs scenario). No cell pass is claimed for
   the same fences. Abort-contact: Nox ruled **B** — give the ego physics-consistent authority for the contact leg (vehicle setup /
   drive assist and/or start geometry; all ruled values untouched), measuring success on achieved acceleration and gap direction
   first; C stays in place, scenario reconsideration held as the honest fallback. The evidence note records the probe entering the
-  leg with velocity opposite its heading (v·LookVector −33.17) — a realignment/braking phase, not a clean chase.
+  leg with velocity opposite its heading (v·LookVector −33.17) — a realignment/braking phase, not a clean chase. **Play 17 update:** 30/30 views captured again and the camera-restore diagnostics are decisive — `savedType:"Custom"`,
+`beforeType:"Scriptable"`, `afterType`/`afterFrameType` both `"Scriptable"` — so wrong-target and late-read-back are ruled out and
+the `CameraType = saved.type` write simply **does not take effect**; a second diagnostics-only round (subject identity, pcall +
+immediate in-write read-back, one deferred re-assert) is being frozen to discriminate "write rejected" vs "same-tick reassert".
+Play 17's Studio crash during cleanup (4th intermittent Wine shutdown dump) meant no validator verdict — recorded as a crash class,
+not a cell failure; sealed artifacts unchanged through every crash.
 
 ## ROBLOX (Team D) — instrumented diagnostic block COMPLETE; two diagnostic Plays ran honestly
 - Plans 2/3/4 + the C1 fix round all fresh-checker ACCEPTED (suites and mutation proofs reproduced from clean copies; sealed place
