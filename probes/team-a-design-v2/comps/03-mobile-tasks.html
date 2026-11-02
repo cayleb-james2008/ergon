@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>03 · Mobile Tasks — Ergon Lumen v2 design comp</title>
+<link rel="stylesheet" href="../tokens.css">
+<link rel="stylesheet" href="../comp-kit.css">
+<script src="../comp-motion.js" defer></script>
+</head>
+<body>
+<div class="banner"><b>DESIGN COMP — NOT A BUILT SURFACE.</b> v2 direction pass · Ergon Lumen (proposal) · owner grade pending · builds stay behind G1 / C1–C6 / W1.</div>
+<div class="wrap">
+  <div>
+    <div class="phone">
+      <div class="status"><span>9:41</span><span>Ergon · tasks</span></div>
+      <div class="appbar">
+        <span class="nn" data-name="Marlow" data-density="10" data-state="working" data-reveal="chrome" aria-hidden="true"></span>
+        <div class="grow"><h3 style="font-size: var(--emp-body);">Tasks</h3><span class="caption">One agent · no bots to manage</span></div>
+        <button class="primary" data-reveal="chrome">New task</button>
+      </div>
+
+      <div class="content">
+        <span class="label">working now</span>
+        <div class="card raise stack" data-reveal="content">
+          <div class="row" style="justify-content: space-between;"><b>Reorder A4 stock</b><span class="pill ok">working</span></div>
+          <p class="caption">Marlow is checking the usual stationer's lead time; the order waits for your one purchase approval.</p>
+        </div>
+
+        <span class="label">waiting on you</span>
+        <div class="card stack" data-reveal="content">
+          <div class="row" style="justify-content: space-between;"><b>Thursday crew confirmations</b><span class="pill warn">waiting on you</span></div>
+          <p class="caption">Two of six confirmed. The rest need a nudge from you or Marlow can send it as you.</p>
+          <div class="row"><button class="secondary">Nudge all</button><button class="ghost">Open</button></div>
+        </div>
+
+        <span class="label">done</span>
+        <div class="card stack" data-reveal="content" style="opacity:.92;">
+          <div class="row" style="justify-content: space-between;"><b>Oakridge quote filed</b><span class="pill ok">done</span></div>
+          <p class="caption">Filed to Oakridge, copied to Priya. Receipts stored with the job.</p>
+        </div>
+
+        <div class="inset stack" data-reveal="content" style="padding: var(--space-2);">
+          <span class="label">task states</span>
+          <div class="row-wrap">
+            <span class="pill ok">working</span>
+            <span class="pill warn">waiting on you</span>
+            <span class="pill">can wait</span>
+            <span class="pill ok">done</span>
+            <span class="pill danger">blocked</span>
+          </div>
+          <p class="caption">Every state carries a word, not only a colour.</p>
+        </div>
+      </div>
+
+      <nav class="tabbar" aria-label="Sections"><button type="button">Chat</button><button type="button" aria-current="page">Tasks</button><button type="button">Make</button></nav>
+    </div>
+    <p class="frame-note">Mobile · task surface over the one agent (list reveal, 250 ms; no bot roster).</p>
+  </div>
+
+  <div class="grow stack" style="max-width: 430px;">
+    <div class="glass-2 stack" data-reveal="panel" style="padding: var(--space-3);">
+      <h2 style="font-size: var(--body);">What v2 changed here</h2>
+      <ul class="stack" style="margin:0; padding-left:18px; color: var(--muted); font-size: var(--caption);">
+        <li><b>Cards are translucent planes</b> that lift off the phone surface — the working card is a brighter layer than the done card, which reads quieter without being disabled.</li>
+        <li><b>State is word + colour,</b> never colour alone; the state strip is shown openly so the grading can check it.</li>
+        <li><b>Motion:</b> the list reveals in a stagger (enter 250 ms); hover/press feedback on cards and buttons (tap 120 ms).</li>
+        <li><b>Unchanged:</b> one agent owns every task; no roster, no agent management; one accent forward action (New task).</li>
+      </ul>
+    </div>
+    <div class="glass-2 stack" data-reveal="panel" style="padding: var(--space-3);">
+      <h3 style="font-size: var(--body);">Grading notes</h3>
+      <p class="caption">The accepted desktop/mobile model is untouched: tasks are the employee's units, the agent is behind them.
+      <span class="muted">Design comp — not a built surface.</span></p>
+    </div>
+  </div>
+</div>
+</body>
+</html>

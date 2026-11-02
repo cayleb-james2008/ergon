@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>07 · States + Depth — Ergon Lumen v2 design comp</title>
+<link rel="stylesheet" href="../tokens.css">
+<link rel="stylesheet" href="../comp-kit.css">
+<script src="../comp-motion.js" defer></script>
+<style>
+  /* state simulation for a static comp: uses only generated tokens */
+  .sim-hover { border-color: var(--line-bright); background: var(--surface-3); }
+  .sim-press { transform: translateY(1px); background: var(--surface-3); }
+  .sim-focus { outline: var(--focus-ring) solid var(--accent); outline-offset: var(--focus-gap); }
+  .sim-disabled { color: var(--subtle); background: var(--surface-1); border-color: var(--line); }
+  .sim-error { border-color: var(--danger); }
+  .sim-loading { color: var(--muted); }
+  .layer { padding: var(--space-3); border-radius: var(--radius-panel); border: 1px solid var(--line); background: var(--surface-1); backdrop-filter: blur(var(--blur-panel)); box-shadow: var(--depth-lift), var(--depth-rim); }
+  .layer .layer { background: var(--surface-2); border-color: var(--line-strong); backdrop-filter: blur(var(--blur-card)); margin-top: var(--space-2); }
+  .layer .layer .layer { background: var(--surface-3); border-color: var(--line-bright); backdrop-filter: blur(var(--blur-sheet)); margin-top: var(--space-2); }
+  .swatch { height: 44px; border-radius: var(--radius-control); border: 1px solid var(--line); }
+</style>
+</head>
+<body>
+<div class="banner"><b>DESIGN COMP — NOT A BUILT SURFACE.</b> v2 direction pass · Ergon Lumen (proposal) · owner grade pending · builds stay behind G1 / C1–C6 / W1.</div>
+<div class="stack-3" style="max-width: 1080px; margin: 0 auto;">
+  <header class="glass-1 stack" data-reveal="head" style="padding: var(--space-4);">
+    <span class="label">states · material · floors</span>
+    <h1>The finish, checked state by state.</h1>
+    <p class="muted" style="max-width: 76ch;">v1 failed on finish. This page exposes every state and the material itself, so "not finished" has a
+    concrete checklist: each control below is shown in its default, hover, focus, pressed, disabled, loading and error states; the last panel is the
+    depth system with its blur/border tokens named.</p>
+  </header>
+
+  <section class="glass-2 stack" data-reveal="controls" style="padding: var(--space-4);">
+    <h2>Controls</h2>
+    <div class="states">
+      <span class="h">state</span><span class="h">primary</span><span class="h">secondary</span><span class="h">ghost / icon</span>
+      <span class="h">default</span><button class="primary">Approve once</button><button class="secondary">Later</button><button class="ghost">Cancel</button>
+      <span class="h">hover</span><button class="primary sim-hover">Approve once</button><button class="secondary sim-hover">Later</button><button class="ghost sim-hover">Cancel</button>
+      <span class="h">focus (2 px ring)</span><button class="primary sim-focus">Approve once</button><button class="secondary sim-focus">Later</button><button class="ghost sim-focus">Cancel</button>
+      <span class="h">pressed</span><button class="primary sim-press">Approve once</button><button class="secondary sim-press">Later</button><button class="ghost sim-press">Cancel</button>
+      <span class="h">disabled</span><button class="primary" disabled>Approve once</button><button class="secondary" disabled>Later</button><button class="ghost" disabled>Cancel</button>
+      <span class="h">loading</span><button class="primary" data-busy="true">Approving</button><button class="secondary" data-busy="true">Sending</button><span class="caption">busy states keep the target size</span>
+      <span class="h">error</span><button class="secondary sim-error">Retry send</button><span class="caption" style="color: var(--danger);">That didn't send. Try again, or tell IT if it keeps happening.</span><span class="caption">plain words + next step</span>
+    </div>
+    <hr class="hairline">
+    <div class="grid-2">
+      <div class="stack">
+        <span class="label">field · default / focus / error</span>
+        <input type="text" placeholder="Search the job record" aria-label="Search">
+        <input type="text" class="sim-focus" value="Oakridge" aria-label="Focused field">
+        <input type="text" class="sim-error" value="07:00 Thu" aria-label="Error field">
+        <span class="caption" style="color: var(--danger);">That date is in the past. Use a date after today.</span>
+      </div>
+      <div class="stack">
+        <span class="label">pills · always a word</span>
+        <div class="row-wrap"><span class="pill ok">working</span><span class="pill warn">needs you</span><span class="pill danger">blocked</span><span class="pill">can wait</span></div>
+        <span class="label">character states</span>
+        <div class="row"><span class="nn" data-name="Marlow" data-density="8" data-state="idle" aria-hidden="true"></span><span class="nn" data-name="Marlow" data-density="8" data-state="working" aria-hidden="true"></span><span class="nn" data-name="Marlow" data-density="8" data-state="needs-you" aria-hidden="true"></span></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="glass-2 stack" data-reveal="depth" style="padding: var(--space-4);">
+    <h2>The material — three translucent planes</h2>
+    <p class="caption">The same stack the product uses: base → surface-1 (sidebar/phone shell, 14 px blur) → surface-2 (cards, 18 px)
+    → surface-3 (the sheet / selected plane, 24 px). Borders step `line → line-strong → line-bright`; each plane adds `depth-lift` + `depth-rim`.</p>
+    <div class="layer">
+      <span class="label">surface-1 · panel · blur 14 · line</span>
+      <p class="caption">Sidebar / window shell.</p>
+      <div class="layer">
+        <span class="label">surface-2 · card · blur 18 · line-strong</span>
+        <p class="caption">Content cards and the composer sit one plane up.</p>
+        <div class="layer">
+          <span class="label">surface-3 · sheet / selected · blur 24 · line-bright</span>
+          <p class="caption">The sheet is the brightest layer — depth is the hierarchy.</p>
+        </div>
+      </div>
+    </div>
+    <div class="grid-2">
+      <div class="stack"><span class="label">tokens (from tokens.json)</span><div class="kv"><b>blur</b><span>14 / 18 / 24 / 32</span><b>surface</b><span>1 · 2 · 3 (+light-1)</span><b>border</b><span>line / line-strong / line-bright</span><b>depth</b><span>lift + rim (inset highlight)</span></div></div>
+      <div class="stack"><span class="label">floors (unchanged, non-negotiable)</span><div class="kv"><b>ink</b><span>≥ 7:1 on the brightest text plane</span><b>muted / status</b><span>≥ 4.5:1</span><b>focus</b><span>2 px accent ring + 2 px gap, always visible</span><b>motion</b><span>reduced-motion path; no loops</span><b>high contrast</b><span>translucency removed, system colours</span></div></div>
+    </div>
+    <div class="row"><button class="ghost" data-floors aria-pressed="false">Floors preview</button><span class="caption" data-floors-label>Floors preview OFF</span></div>
+  </section>
+
+  <p class="caption muted" style="text-align:center;">Design comp — not a built surface. Contrast ratios are asserted by <code>check-comps.mjs</code> from tokens.json.</p>
+</div>
+</body>
+</html>

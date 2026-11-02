@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>06 · Character — Ergon Lumen v2 design comp</title>
+<link rel="stylesheet" href="../tokens.css">
+<link rel="stylesheet" href="../comp-kit.css">
+<script src="../comp-motion.js" defer></script>
+</head>
+<body>
+<div class="banner"><b>DESIGN COMP — NOT A BUILT SURFACE.</b> v2 direction pass · Ergon Lumen (proposal) · owner grade pending · builds stay behind G1 / C1–C6 / W1.</div>
+<div class="stack-3" style="max-width: 1080px; margin: 0 auto;">
+  <header class="glass-1 stack" data-reveal="head" style="padding: var(--space-4);">
+    <span class="label">character system · light by design</span>
+    <h1 style="max-width: 24ch;">A little neural net, not a blob.</h1>
+    <p class="muted" style="max-width: 76ch;">The character is a node-and-connection mark. Customisation is deliberately light: <b>structure
+    (density)</b>, <b>colour</b> and <b>name</b>. It carries live state (idle / working / needs you) and nothing else — no creator, no
+    accessories, no second library.</p>
+  </header>
+
+  <section class="grid-3">
+    <div class="glass-2 stack" data-character data-reveal="cards" style="padding: var(--space-3);">
+      <span class="label">density 6 · sparse</span>
+      <div class="row" style="align-items: flex-start; gap: var(--space-3);">
+        <span class="nn" data-name="Marlow" data-density="6" data-state="idle" aria-hidden="true"></span>
+        <div class="stack" style="gap:2px;"><b>Marlow</b><span class="caption">idle · compact mark</span></div>
+      </div>
+      <div class="row-wrap"><button class="secondary" data-density="6" aria-pressed="true" style="min-height:36px;">6</button><button class="secondary" data-density="10" aria-pressed="false" style="min-height:36px;">10</button><button class="secondary" data-density="14" aria-pressed="false" style="min-height:36px;">14</button></div>
+      <p class="caption">Density is the structure control: how many nodes and connections the mark shows.</p>
+    </div>
+
+    <div class="glass-2 stack" data-character data-reveal="cards" style="padding: var(--space-3);">
+      <span class="label">density 10 · standard</span>
+      <div class="row" style="align-items: flex-start; gap: var(--space-3);">
+        <span class="nn" data-name="Priya" data-density="10" data-state="working" data-colour="ok" aria-hidden="true"></span>
+        <div class="stack" style="gap:2px;"><b>Priya</b><span class="caption">working · signal on the edges</span></div>
+      </div>
+      <div class="row-wrap"><button class="secondary" data-colour="accent" aria-pressed="true" style="min-height:36px;">accent</button><button class="secondary" data-colour="ok" aria-pressed="false" style="min-height:36px;">ok</button><button class="secondary" data-colour="warn" aria-pressed="false" style="min-height:36px;">warn</button></div>
+      <p class="caption">Colour is one token, not a palette. State changes the core node and the word.</p>
+    </div>
+
+    <div class="glass-2 stack" data-character data-reveal="cards" style="padding: var(--space-3);">
+      <span class="label">density 14 · dense</span>
+      <div class="row" style="align-items: flex-start; gap: var(--space-3);">
+        <span class="nn" data-name="Dev" data-density="14" data-state="needs-you" data-colour="warn" aria-hidden="true"></span>
+        <div class="stack" style="gap:2px;"><b>Dev</b><span class="caption">needs you · core reads warm</span></div>
+      </div>
+      <div class="row"><input type="text" data-name value="Dev" aria-label="Character name"></div>
+      <p class="caption">Name is the third control. Nothing more than density, colour and name.</p>
+    </div>
+  </section>
+
+  <section class="glass-2 stack" data-reveal="states" style="padding: var(--space-4);">
+    <h2>Live state — and the one-shot signal</h2>
+    <div class="row-wrap" style="gap: var(--space-4);">
+      <div class="row"><span class="nn" data-name="Marlow" data-density="10" data-state="idle" aria-hidden="true"></span><span class="caption">idle — static mark, core in ink</span></div>
+      <div class="row"><span class="nn" data-name="Marlow" data-density="10" data-state="working" aria-hidden="true"></span><span class="caption">working — one signal along the edges</span></div>
+      <div class="row"><span class="nn" data-name="Marlow" data-density="10" data-state="needs-you" aria-hidden="true"></span><span class="caption">needs you — core takes the warn token</span></div>
+    </div>
+    <div class="row">
+      <button class="secondary" data-cycle-state=".row .nn">Change state</button>
+      <span class="caption">A single directional signal per change — no pulse, no loop, no glow. Under reduced motion the state simply changes.</span>
+    </div>
+  </section>
+
+  <section class="glass-1 stack" data-reveal="note" style="padding: var(--space-4);">
+    <h2 style="font-size: var(--body);">Why this reads as Ergon, not a mascot</h2>
+    <ul class="stack" style="margin:0; padding-left:18px; color: var(--muted); font-size: var(--caption);">
+      <li><b>Engineered, not cute:</b> nodes and connections are drawn from a deterministic seed — the same name always gives the same network, so an employee's character is stable and theirs.</li>
+      <li><b>State is data:</b> the core node and the word carry idle/working/needs-you; the mark never animates attention at you.</li>
+      <li><b>No creator:</b> density, colour, name. That is the whole surface — matching the accepted light-customisation ruling.</li>
+      <li><b>It works small:</b> the mark stays legible at 24 px in the desktop sidebar; at 34 px it shows the edges.</li>
+    </ul>
+    <p class="caption muted">Design comp — not a built surface.</p>
+  </section>
+</div>
+</body>
+</html>

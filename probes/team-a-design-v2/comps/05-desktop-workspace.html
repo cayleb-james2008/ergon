@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>05 · Desktop Workspace — Ergon Lumen v2 design comp</title>
+<link rel="stylesheet" href="../tokens.css">
+<link rel="stylesheet" href="../comp-kit.css">
+<script src="../comp-motion.js" defer></script>
+</head>
+<body>
+<div class="banner"><b>DESIGN COMP — NOT A BUILT SURFACE.</b> v2 direction pass · Ergon Lumen (proposal) · owner grade pending · builds stay behind G1 / C1–C6 / W1.</div>
+
+<div class="desktop" data-reveal="frame">
+  <aside class="sidebar">
+    <div class="char-top">
+      <span class="nn" data-name="Marlow" data-density="12" data-state="working" aria-hidden="true"></span>
+      <div class="grow"><b>Marlow</b><div class="caption"><span class="state-dot working" aria-hidden="true"></span> working · 2 tasks</div></div>
+    </div>
+    <nav aria-label="Workspace sections" data-tabs>
+      <button type="button" role="tab" aria-selected="true" aria-controls="view-thread">Chat</button>
+      <button type="button" role="tab" aria-selected="false" aria-controls="view-tasks">Tasks</button>
+      <button type="button" role="tab" aria-selected="false" aria-controls="view-make">Make</button>
+      <button type="button" role="tab" aria-selected="false" aria-controls="view-live">Live view</button>
+    </nav>
+    <div class="grow"></div>
+    <div style="padding: var(--space-3); border-top: 1px solid var(--line);" class="caption">
+      One agent. Everything here routes to Marlow.
+    </div>
+  </aside>
+
+  <section class="main">
+    <div class="top">
+      <div class="stack" style="gap:0;"><b>Oakridge move</b><span class="caption">Thursday 07:00 · crew of six</span></div>
+      <div class="row"><span class="pill warn">3 needs you</span><button class="secondary">New task</button></div>
+    </div>
+    <div class="thread" id="view-thread" role="tabpanel">
+      <div class="card raise stack" data-reveal="thread">
+        <div class="row" style="justify-content: space-between;"><span class="label">morning brief</span><span class="caption">07:00</span></div>
+        <p class="caption">Two jobs before Thursday. One rate-card decision is waiting on you; the crew sheet is drafted.</p>
+      </div>
+      <div class="msg agent" data-reveal="thread">Oakridge is booked. I've held Marcus's estimate until you pick the rate card.</div>
+      <div class="msg me" data-reveal="thread">Use the November card and tell Marcus why.</div>
+      <div class="msg agent" data-reveal="thread">Done. The new estimate is ready; the van keys are logged out to Priya.</div>
+      <div class="card stack" data-approval data-reveal="thread" style="border-color: var(--line-bright);">
+        <div class="row" style="justify-content: space-between;"><span class="pill warn">Approval needed</span><span class="caption">Tier B · one purchase</span></div>
+        <p class="caption">Order 2 boxes of A4 for the main desk — one purchase, this vendor.</p>
+        <div class="row"><button class="primary" data-approve>Review approval</button><button class="secondary">Later</button></div>
+      </div>
+    </div>
+    <div class="thread" id="view-tasks" role="tabpanel" hidden>
+      <div class="card stack" data-reveal="thread"><div class="row" style="justify-content: space-between;"><b>Reorder A4 stock</b><span class="pill ok">working</span></div><p class="caption">Checking the usual stationer's lead time.</p></div>
+      <div class="card stack" data-reveal="thread"><div class="row" style="justify-content: space-between;"><b>Thursday crew confirmations</b><span class="pill warn">waiting on you</span></div><p class="caption">Two of six confirmed.</p></div>
+    </div>
+    <div class="thread" id="view-make" role="tabpanel" hidden>
+      <div class="card stack" data-reveal="thread"><div class="row" style="justify-content: space-between;"><b>Oakridge move brief</b><span class="pill ok">ready</span></div><p class="caption">Two pages, from the job record.</p></div>
+    </div>
+    <div class="thread" id="view-live" role="tabpanel" hidden>
+      <div class="card stack" data-reveal="thread"><b>Live view</b><p class="caption">The same agent's state, pinned. Nothing to manage.</p></div>
+    </div>
+    <form class="composer" data-send data-thread="#view-thread" style="margin: var(--space-3); display:flex; gap: var(--space-1); padding:6px; border:1px solid var(--line); border-radius: var(--radius-card); background: var(--surface-2);" aria-label="Message Marlow">
+      <input type="text" placeholder="Ask Marlow anything" aria-label="Message Marlow">
+      <button class="secondary icon" type="submit" aria-label="Send">↑</button>
+    </form>
+  </section>
+
+  <aside class="live">
+    <div class="top stack" style="gap:4px;"><span class="label">live view</span><b>Marlow</b><span class="caption">working · last action 2 min ago</span></div>
+    <div class="body">
+      <div class="card stack" data-reveal="live">
+        <span class="label">right now</span>
+        <p class="caption">Checking the stationer's lead time for the A4 reorder. Nothing needs you yet.</p>
+      </div>
+      <div class="card stack" data-reveal="live">
+        <span class="label">the day</span>
+        <div class="kv"><b>Tasks</b><span>2 open · 1 done</span><b>Approvals</b><span>1 waiting (Tier B)</span><b>Make</b><span>1 ready · 1 draft</span></div>
+      </div>
+      <div class="card stack" data-reveal="live">
+        <span class="label">agent state</span>
+        <div class="row"><button class="secondary" data-cycle-state=".nn" style="min-height: 36px;">Change state</button><span class="caption">cycles idle / working / needs-you</span></div>
+      </div>
+    </div>
+  </aside>
+</div>
+<p class="frame-note" style="max-width:1120px; margin-left:auto; margin-right:auto;">Desktop · 1280 × 800 comp frame · three translucent planes (sidebar / workspace / live view).</p>
+
+<div class="wrap" style="max-width:1120px; margin: var(--space-5) auto 0;">
+  <div class="glass-2 stack" data-reveal="panel" style="padding: var(--space-3); flex: 1 1 480px;">
+    <h2 style="font-size: var(--body);">What v2 changed here</h2>
+    <ul class="stack" style="margin:0; padding-left:18px; color: var(--muted); font-size: var(--caption);">
+      <li><b>Three planes, one light:</b> sidebar, workspace and live view are separate translucent layers with their own blur and border weight — depth tells you where you are.</li>
+      <li><b>Character pinned and live</b> at the top of the sidebar; the neural mark carries the state, the word confirms it.</li>
+      <li><b>Motion:</b> window frame reveals (enter 250 ms), section swap (200 ms), message send (250 ms), approval resolve (200 ms), character state change (one-shot signal).</li>
+      <li><b>Unchanged:</b> the accepted desktop model — task surface over the one agent; extra room goes to tasks/apps/live view, never to more agents.</li>
+    </ul>
+  </div>
+  <div class="glass-1 stack" data-reveal="panel" style="padding: var(--space-3); flex: 1 1 320px;">
+    <h3 style="font-size: var(--body);">Grading notes</h3>
+    <p class="caption">Try the sidebar sections (swap), send a message, approve, change the agent state. Focus ring is visible on every control;
+    targets are ≥ 44 DIP. <span class="muted">Design comp — not a built surface.</span></p>
+  </div>
+</div>
+</body>
+</html>
