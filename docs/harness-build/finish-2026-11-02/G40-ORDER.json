@@ -1,0 +1,45 @@
+{
+ "title": "G40 PROBE (throwaway): lane-shell confinement, read-only",
+ "goal": "Run the G40 read-only probe from a real Builder lane's own shell and post the output as evidence (cgroup, mounts, uid, the socket checks). One task only.",
+ "context": "G40 PROBE (throwaway, one task, read-only). Purpose: find out whether a fleet lane's own shell is confined (case C) or can reach the owner's sockets (case W). This order exists ONLY for that probe: Nox ruled it (2 Nov 23:05Z PA-7 / L4-4, and the go of 2 Nov 18:08 ET). It must carry exactly ONE task and nothing else.\n\nLEAD: decompose into exactly ONE task for a Builder with this goal: \"Write the following seven read-only lines into a file g40.sh in your lane workspace, run it with bash from your own shell, save its complete output to g40-output.txt followed by a final line G40-END, commit both files with git (git add -A && git commit) and pass the commit sha to task_submit_built, and evidence_post the full output text. Run nothing else. Do not edit, create or delete anything outside the lane workspace. No network.\"\nThe seven lines:\n  id -u\n  cat /proc/self/cgroup\n  grep -E ' /run | /home ' /proc/self/mountinfo\n  test -w ~/.config/systemd/user ; echo \"systemd-user-dir-writable=$?\"\n  test -S /run/user/1000/wayland-1 ; echo \"wayland-socket=$?\"\n  test -S /run/user/1000/fleet/control.sock ; echo \"control-socket=$?\"\n  ls /run/user\nThe task's done-when is a RUBRIC with exactly these five criteria (copy them verbatim into the task):\n  1. g40-output.txt exists in the lane workspace, is committed with git, and ends with the line G40-END\n  2. g40-output.txt shows the lane's OWN cgroup (the output of cat /proc/self/cgroup, a path line) and the uid (id -u)\n  3. g40-output.txt shows the /run and /home mount lines from /proc/self/mountinfo (or states that grep found none)\n  4. g40-output.txt shows the four probe results as exit codes: systemd-user-dir-writable, wayland-socket, control-socket, and the ls /run/user listing (or its error)\n  5. the commands run were exactly the seven read-only lines of the order's context; no write outside the lane workspace, no network, nothing else was run\nDo not add tasks, do not create orders, do not change this order's caps. The output is read by Lane 6 (Team E), who observes the run, and by a fresh Checker. Reading the result: all three tests true means case W (a lane can reach the owner's sockets), failures mean case C; the cgroup line says whether the shell sits inside the fleet unit.",
+ "constraints": [
+  "exactly one task",
+  "read-only probe: no write outside the lane workspace",
+  "no network",
+  "no spend beyond the lane's own model calls"
+ ],
+ "anti_goals": [
+  "no second task",
+  "no other probe",
+  "no installs, no unit or config changes",
+  "do not run anything that is not one of the seven lines"
+ ],
+ "done_when": {
+  "mode": "command",
+  "command": "true",
+  "text": "mechanical close only: the evidence is the lane's posted output, observed by Lane 6 and rubric-checked by a fresh Checker at the task level"
+ },
+ "example": "g40-output.txt with the cgroup path, the /run and /home mount lines, the uid, the three exit codes and the ls listing, ending with G40-END",
+ "evidence_required": [
+  "the full text of g40-output.txt posted with evidence_post",
+  "the commit sha of the lane workspace commit"
+ ],
+ "assumptions_policy": "log-and-proceed",
+ "budget": {
+  "usd": 0.5
+ },
+ "stop_conditions": [
+  "the output is posted and the task is checked",
+  "any command in the probe errors in a way that needs a write outside the workspace: stop and report"
+ ],
+ "checkpoint_at": 1794265768396,
+ "est_minutes": 15,
+ "size": "standard",
+ "successors": [],
+ "ambition": [
+  "settle case W or case C for the four legs"
+ ],
+ "base_hashes": {},
+ "ownership": "",
+ "tier": 1
+}
