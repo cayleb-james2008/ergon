@@ -44,6 +44,8 @@
 
 ## 4. Timed items (next 48 h; times ET)
 
+**PRE-07:45 REFRESH (2026-11-02T06:45Z / 01:45 ET): see §11 — fleet 0.3.1 installed; Windows driveable via RDP (SSH pending); Roblox Play B ruled; FL1 owner key entry; Monday P0.1 signed. AND A BOOKING DRIFT: the live schedule store now holds 0 tasks — the Monday 07:45 booking needs re-arming by the Lead (detail + spec in §11).**
+
 | When | What | Owner | Backup |
 |---|---|---|---|
 | Mon 2 Nov 01:00 | Claude usage reset; Job 04 laptop lane + Job 14 resume; B12 handback point (already answered: no handback) | ergon-lead / trading-lead | lead |
@@ -54,7 +56,7 @@
 | Tue 3 – Wed 4 Nov (target) | Kalshi freeze; forward counting starts | trading-lead | lead |
 | Standing | Fresh checkers on Team A Option-A PR and Team D Plan 2 freeze | lead | — |
 
-*(Bookings above are quoted from the Lead-verified 23:30Z state + the 14:56 ET Monday readiness note, which read them in the live schedule store. The schedule store is not readable from a delegated subagent seat — no independent re-read was possible tonight; flagged, not hidden.)*
+*(Bookings above are quoted from the Lead-verified 23:30Z state + the 14:56 ET Monday readiness note, which read them in the live schedule store. **CORRECTION 2026-11-02T06:45Z:** the store WAS located on this run — it is the live GUI's `…/development/home/storages/schedule.json` — and it currently holds **0 tasks**; see §11 for the drift and the re-arm spec. Nothing was hidden, and the correction supersedes this footnote's "not readable" sentence.)*
 
 ---
 
@@ -122,3 +124,34 @@ Coverage: **61/61 repos** resolved (same 61 as 31 Oct; 0 added/removed). Core ra
 **Unchanged and still live from this digest:** Monday **07:45 ET** loose-ends sweep per `board/reports/team-e-monday-sweep-runbook.md` (GitHub cadence **Tue 3 Nov 09:00 ET**); **N5** in the **post-16:20 ET** slot with evidence file `board/reports/team-e-n5-result-20261102.md`; **N2+N6 relay HELD** (never overnight-sent). All §9 limits stand.
 
 — `upkeep-lead`, Team E (Jobs 18-19), 2026-11-02T00:45Z
+
+---
+
+## 11. PRE-07:45 MONDAY REFRESH — 2026-11-02T06:45Z (01:45 ET)
+
+Refreshes §4's Monday picture only; nothing above is rewritten. Sources: `board/reports/WAKE-UP-REPORT-20261102.md` (01:30 ET), Nox `20261102T060541Z`, Team C `monday-futures-runbook.md` v7 + `monday-runbook-v7-checker-signoff.md`, and ·LIVE· host reads run this morning (dry-run log `board/probes/team-e-e6/monday-dryrun-20261102T0630Z.log`).
+
+### 11.1 What changed since the last digest
+| Topic | Now | Evidence |
+|---|---|---|
+| **Fleet plugin** | **0.3.1 installed** (tarball `5ede7484…`, 123 members), `INSTALL-0.3.1: PASS`, `fleet-dsh` active; plugin's own unmodified `stage2-check.sh` on the installed host = `pass=60 fail=0`; roster machinery mounted (fleet-roster row, rates row, opencode-go route apiKeyEnv only, sub-agent ceiling 32). ·LIVE· 06:34Z: `fleet-dsh` `ActiveState=active SubState=running InvocationID=999771ad… MainPID=669437 NRestarts=0`; `/var/lib/fleet-drop/cayleb-dsh-fleet-0.3.1.tgz` sha256 `5ede7484…`. 0.3.0 `8173d13e…` remains the armed rollback in the drop. | `WAKE-UP-REPORT-20261102.md` §FINISH LINE 1; live reads |
+| **FL1 — what it waits on** | **Only the owner key entry** (one act; owner asleep — held for his morning): `node /home/cayleb/workspace/harness-build/candidate-031/package/bin/dsh-fleet.mjs first-run --credentials` → field `OPENCODE_GO_API_KEY (opencode-go) [Enter to skip]:`; echo off, value never printed/logged. Then the roster activation proof (real lane-spawn turn) + staged first order. Path verified to exist 06:36Z. | same; `ls -l` on the act path |
+| **Windows VM** | **Driveable via RDP** — RDP re-confirmed 6/6 back-to-back probes 03:37:36–03:38:26Z (TPKT + X.224 Connection Confirm + RDP negotiation), reproduced by two seats; guest preserved (QEMU PID 757632). **SSH carried as a named pending** (no serving sshd; diagnosis ongoing — not required for the surface claim). No image reads used. | `WAKE-UP-REPORT-20261102.md` §FINISH LINE 2 |
+| **Roblox** | **Play B ruled: Option B (fixture start geometry only)** — (A) extending the 12 s window and (C) raising the clamp are **REJECTED**; layer-6 delta ACCEPT acknowledged; final atlas Play proceeds in the current recovered opening (2/3 used) — **no cell pass claimed**; sealed place `c6651793…`/release `84324d43…` unchanged. | Nox `20261102T060541Z` §2-§3 |
+| **Monday desk (Team C)** | **Observation day, locked**: runbook **v7**, sha256 `512752e4…`, **P0.1 SIGNED** by a fresh Tier-S checker; **ORB15 HOLD** ruled → 0 fills claimed honestly; 09:05 guard, five 09:15 attestations, (c2) binding after 09:30, 09:45 observation window, 16:05 flat, **16:20 outcome** with decision-log completeness headline; nightly Globex tick proof PASSED; Kalshi shadow 9 PASS/0 FAIL, two-scorer AGREE 6853/0. | `MONDAY-PACKET.md`; `monday-runbook-v7-checker-signoff.md`; `WAKE-UP-REPORT-20261102.md` §MONDAY DESK |
+| **N2+N6 relay** | **HELD** — prepared block at `board/reports/team-e-owner-relay-n2-n6.md`; not sent overnight; no root run. | this batch |
+
+### 11.2 **BOOKING DRIFT — ACTION FOR THE LEAD: the live schedule store holds 0 tasks; re-arm the Monday bookings**
+- ·LIVE· 2026-11-02T06:33Z: the live GUI's store `/home/cayleb/.local/opt/deepseek-harness-official/apps/desktop/.desktop-build/development/home/storages/schedule.json` (114 B, mtime **2026-11-01T18:32 ET**) = `{"unit":{"name":"schedule","version":2},"global":null,"tables":{"tasks":{}}}` → **0 tasks**. No other live schedule store exists (one desktop home only; the other `schedule.json` files on disk are test/scratch fixtures).
+- **Consequence:** the Monday **07:45 loose-ends sweep booking is not present**, and neither are the other Monday timed bookings (01:00 / 09:05 / 09:15 / <09:45 / 09:45 / 16:05 / 16:20) or the Tue 09:00 GitHub pass. The store was rewritten at 18:32 ET during the session pause/takeover — the 14:56 ET readiness read had them and they did not survive.
+- **Owner/backup unchanged:** the sweep's **backup is `lead`** (BOARD.md timed table + runbook §5). The dry-run and runbook are ready regardless; but a booking that is not in the store cannot fire, so **the Lead must re-arm it in its own session** (a delegated subagent cannot use scheduled tasks — the tool refuses, verified again).
+- **Re-arm spec (sweep):** title "Monday loose-ends sweep"; target `this_session`; `DTSTART;TZID=America/New_York:20261102T074500` + `RRULE:FREQ=DAILY;COUNT=1`; prompt points at `board/reports/team-e-monday-sweep-runbook.md` + `board/probes/team-e-e6/monday-dryrun.sh '2026-11-02T01:00:00-05:00'`; findings to `board/reports/monday-2026-11-02-findings.md`; ≤30-line report to `lead`; must not delay the 09:05 guard. Team C's futures bookings are Team C/Lead's to re-arm (same store).
+- If the Lead decides not to re-arm, the sweep is **ownerless-by-clock**: the Lead must emulate the booking itself at 07:45 ET and the finding is "booking lost, manual fallback used".
+
+### 11.3 Morning readiness (dry-run result — read-only, no side effects)
+- **Runbook current:** `board/reports/team-e-monday-sweep-runbook.md` — dry-run asset sha256 `f75e032a…` (unchanged), §0 GitHub cadence **Tue 3 Nov 09:00 ET** patched, §1-§5 commands accurate, §7 N5 present.
+- **Dry-run executed:** `bash board/probes/team-e-e6/monday-dryrun.sh '2026-11-02T01:00:00-05:00'` → **exit 0**, 2026-11-02T06:31:23–06:31:27Z, 212 lines, **no side effects** (all commands GET/`show`/`log`; the only non-zero is the expected `grep -c` returning 0). Log: `board/probes/team-e-e6/monday-dryrun-20261102T0630Z.log`.
+- **Findings/drift:** sensor `STATUS.md` fresh (01:28 ET, <15 min); Kimi handback **not arrived** (no branch); `ergon` main `598da57e` (no commits since the 01:00 reset yet at 01:31 ET — no artifact, so no resumption claimed); futures engine active since Oct 28, **0 feed-attach errors since 01:00 ET**, `:9222` shows the Tradovate tab (12 matches), tabkeeper active; Kalshi 3 units active shadow/passive, newest capture commit `dd3847b1` 2026-11-01T04:00:18Z; tripwire active MainPID 3260368 NRestarts 0 — **new CLOSEFOCUS events** at 00:47:53Z and 01:26:49–54Z (window closed while not focused; **no GONE**; 144 cumulative). Watch item, no diagnosis claimed.
+- **N5 slot:** one-paste block filed at `board/probes/team-e-e6/N5-SLOT-20261102.md` (re-identifies PIDs, dry-run→`--apply`, Nox's acceptance, evidence file `board/reports/team-e-n5-result-20261102.md`). Target unchanged at 06:34Z: `:9222` owned by chromium 2960519, extension-host 2960775 alive as its child, `APPROVED.md` present. Nothing stopped.
+
+— `upkeep-lead`, Team E (Jobs 18-19), 2026-11-02T06:45Z

@@ -1,0 +1,212 @@
+==============================================================
+MONDAY LOOSE-ENDS SWEEP — DRY RUN / RUN
+started: 2026-11-02T06:31:23Z  local: 2026-11-02 01:31 EST
+SINCE=2026-11-02T01:00:00-05:00
+==============================================================
+
+########## 0. PRE-FLIGHT ##########
+
+### date; TZ=America/New_York date "+%Y-%m-%d %H:%M %Z"
+Mon Nov  2 01:31:23 AM EST 2026
+2026-11-02 01:31 EST
+[exit=0]
+
+### head -3 "$NOX/ops/STATUS.md" 2>&1
+# Lane status
+
+Updated 01:28 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
+[exit=0]
+
+### stat -c "STATUS.md mtime=%y" "$NOX/ops/STATUS.md" 2>&1
+STATUS.md mtime=2026-11-02 01:28:42.642261780 -0500
+[exit=0]
+
+### git -C "$NOX" log -1 --format="%h %ci %s" 2>&1
+dc10b415 2026-11-02 01:30:54 -0500 WAKE-UP report: v2 presentation accuracy (browser idles out; reopened+verified at announcement); morning ops runbook written (owner key act → activation proof → first order; Monday desk; pending rulings)
+[exit=0]
+
+### ls -lt --time-style=+%Y-%m-%dT%H:%M "$BASE"/board/reports/ 2>&1 | head -10
+total 3152
+-rw-r--r-- 1 cayleb cayleb 15105 2026-11-02T01:30 WAKE-UP-REPORT-20261102.md
+-rw-r--r-- 1 cayleb cayleb  2213 2026-11-02T01:29 team-d-fixture-b-freeze-20261102.md
+-rw------- 1 cayleb cayleb  7145 2026-11-02T01:29 team-d-diagnostic-play11.md
+-rw------- 1 cayleb cayleb  6931 2026-11-02T01:22 checker-option-b-delta.md
+-rw------- 1 cayleb cayleb  6244 2026-11-02T01:05 team-d-diagnostic-play10.md
+-rw------- 1 cayleb cayleb  6774 2026-11-02T01:03 team-d-diagnostic-play9.md
+-rw------- 1 cayleb cayleb  7454 2026-11-02T00:59 checker-layer6-delta.md
+-rw------- 1 cayleb cayleb  6545 2026-11-02T00:48 team-d-diagnostic-play8.md
+-rw------- 1 cayleb cayleb  8964 2026-11-02T00:45 checker-zones-delta.md
+[exit=0]
+
+########## 1. CHECK A — DUET VERDICTS / KIMI HANDBACK ##########
+
+### gh api "repos/cayleb-james2008/ergon/branches?per_page=100" --paginate --jq ".[].name" 2>&1 | grep -i kimi || echo "NO KIMI BRANCH (quiet outcome: handback not arrived)"
+NO KIMI BRANCH (quiet outcome: handback not arrived)
+[exit=0]
+
+### git ls-remote https://github.com/cayleb-james2008/ergon.git refs/heads/main 2>&1
+598da57ebae2cc7682a8b552fbcf6e5d1812392b	refs/heads/main
+[exit=0]
+
+### git ls-remote https://github.com/cayleb-james2008/ergon.git "refs/heads/*kimi*" 2>&1
+[exit=0]
+
+### gh pr list -R cayleb-james2008/ergon --state all --limit 8 --json number,title,isDraft,state,updatedAt 2>&1
+[{"isDraft":false,"number":15,"state":"MERGED","title":"docs(exit-codes): correct the harness.mjs usage-stream phrase (checker nit on PR #14)","updatedAt":"2026-11-02T00:08:12Z"},{"isDraft":false,"number":14,"state":"MERGED","title":"docs(acceptance): fold in the rehearsal simulation bank under Option A (Nox 20261101T233413Z §1)","updatedAt":"2026-11-02T00:00:58Z"},{"isDraft":false,"number":13,"state":"MERGED","title":"docs(design): record the four pack-verification known limits in the pack doc","updatedAt":"2026-11-01T20:23:13Z"},{"isDraft":false,"number":12,"state":"MERGED","title":"docs(design): formalise the Ergon Midnight Slate design pack in place — visual contract, motion spec, version/changelog","updatedAt":"2026-11-01T20:20:55Z"},{"isDraft":false,"number":11,"state":"MERGED","title":"docs(acceptance): fold in run-evidence + R0 provisioning, F1 hash-table fix, adopted gate/staging patterns","updatedAt":"2026-11-01T16:50:20Z"},{"isDraft":false,"number":10,"state":"MERGED","title":"docs(acceptance): file the Job 03 rehearsal package — R0–R7 labels, run sheet, package index, C1–C6 pending record","updatedAt":"2026-11-01T14:37:25Z"},{"isDraft":false,"number":9,"state":"MERGED","title":"Fix: register archive/ in package-manifest + EXIT-CODES inventories (PR #8 proof failures)","updatedAt":"2026-11-01T02:54:17Z"},{"isDraft":false,"number":8,"state":"MERGED","title":"Archive-import: ergon-lite prototype tree (record only, pre-archive)","updatedAt":"2026-11-01T02:45:05Z"}]
+[exit=0]
+
+### gh api "repos/cayleb-james2008/ergon/commits?since=$SINCE&per_page=2" --jq ".[] | [.sha[0:8], .commit.author.date] | @tsv" 2>&1 | head -3
+[exit=0]
+
+### ls -t "$NOX"/inbox/2026-10/*.md 2>/dev/null | head -3; ls -d "$NOX"/inbox/2026-11 2>/dev/null || echo "no 2026-11 mailbox yet"
+/home/cayleb/Work/shared-workflows/lanes/board/inbox/2026-10/20261101T024512Z-delegator-to-nox.md
+/home/cayleb/Work/shared-workflows/lanes/board/inbox/2026-10/20261101T022911Z-delegator-to-nox.md
+/home/cayleb/Work/shared-workflows/lanes/board/inbox/2026-10/20261101T022508Z-delegator-to-nox.md
+/home/cayleb/Work/shared-workflows/lanes/board/inbox/2026-11
+[exit=0]
+
+########## 2. CHECK B — TRADING SESSION / FEED BEFORE 09:05 GUARD ##########
+# B1 — futures signal engine + passive feed attachment (the 09:05 guard depends on this)
+
+### systemctl --user show openbell-live.service -p ActiveState,SubState,ActiveEnterTimestamp --value 2>&1 | tr "\n" " "; echo
+active running Wed 2026-10-28 15:40:09 EDT 
+[exit=0]
+
+### journalctl --user -u openbell-live.service --since "$SINCE" --no-pager 2>/dev/null | grep -c "feed attach/read error"
+0
+[exit=1]
+
+### journalctl --user -u openbell-live.service -n 3 --no-pager -o short-iso 2>&1 | tail -3
+2026-11-01T13:26:20-05:00 outis-desktop python3[1484]: 2026-11-01 13:26:20,162 openbell.feed WARNING feed attach/read error: RuntimeError('no trader.tradovate.com tab'); retry in 30s
+2026-11-01T13:59:04-05:00 outis-desktop python3[1484]: 2026-11-01 13:59:04,727 openbell.engine INFO session day 2026-11-01: pnl 0.00 trades 0
+2026-11-01T18:01:00-05:00 outis-desktop python3[1484]: 2026-11-01 18:01:00,109 openbell.engine INFO session day 2026-11-02: pnl 0.00 trades 0
+[exit=0]
+
+### curl -s --max-time 3 http://127.0.0.1:9222/json 2>/dev/null | grep -ci tradovate || true
+12
+[exit=0]
+
+### systemctl --user show openbell-tabkeeper.service -p ActiveState,ActiveEnterTimestamp --value 2>&1 | tr "\n" " "; echo
+active Wed 2026-10-28 17:31:46 EDT 
+[exit=0]
+# B2 — Kalshi shadow: units, capturer, transport (jsonl + jsonl.gz split), freshness
+
+### systemctl --user list-units "openbell-kalshi*" --all --no-pager --plain 2>/dev/null | head -6
+UNIT                           LOAD   ACTIVE SUB     DESCRIPTION
+openbell-kalshi-poll.service   loaded active running OpenBell Kalshi 15M capture poller (SHADOW: public REST market data -> local JSONL; no orders, no credentials)
+openbell-kalshi-ref.service    loaded active running OpenBell Kalshi reference-price recorder (public exchange top of book, 1 s per coin; no orders, no credentials)
+openbell-kalshi-shadow.service loaded active running OpenBell Kalshi shadow engine (paper only: reads local capture files, writes its ledger; no network, no orders)
+
+Legend: LOAD   → Reflects whether the unit definition was properly loaded.
+[exit=0]
+
+### gh api "repos/cayleb-james2008/kalshi-shadow-data/commits?per_page=1" --jq ".[0] | [.sha[0:8], .commit.author.date, (.commit.message|split(\"\n\")[0])] | @tsv" 2>&1
+dd3847b1	2026-11-01T04:00:18Z	Capture snapshot 2026-11-01T04:00:18Z
+[exit=0]
+
+### gh api "repos/cayleb-james2008/kalshi-shadow-data/contents/data" --jq ".[] | [.name, (.size|tostring)] | @tsv" 2>&1 | tail -4
+kalshi-shadow-2026-10-31.jsonl	93411497
+kalshi-shadow-2026-10-31.jsonl.gz	22601257
+kalshi-shadow-2026-11-01.jsonl	39455648
+kalshi-shadow-2026-11-01.jsonl.gz	9637403
+[exit=0]
+
+### ls -l /home/cayleb/Work/projects/kalshi-shadow-data/data/ 2>&1 | tail -3
+total 49976
+-rw-r--r-- 1 cayleb cayleb 51172406 Oct 31 08:35 kalshi-shadow-2026-10-31.jsonl
+[exit=0]
+# B3 — safety: no live order placement; confirm unit descriptions state shadow/passive
+
+### systemctl --user list-units "openbell*" --all --no-pager --plain 2>/dev/null | grep -vi dsh-subprocess | cut -c1-150 | head -12
+UNIT                             LOAD   ACTIVE   SUB     DESCRIPTION
+openbell-arena.service           loaded active   running OpenBell agent arena (SHADOW: live charts -> isolated decider -> shadow ledger; no orders, no
+openbell-dash.service            loaded active   running OpenBell dashboard (127.0.0.1:8791) + passive Tradovate account watcher (read-only, never pla
+openbell-forward-archive.service loaded inactive dead    OpenBell forward-data archive (read-only copy of live/ into data/forward/, then commit data/f
+openbell-kalshi-poll.service     loaded active   running OpenBell Kalshi 15M capture poller (SHADOW: public REST market data -> local JSONL; no orders
+openbell-kalshi-ref.service      loaded active   running OpenBell Kalshi reference-price recorder (public exchange top of book, 1 s per coin; no order
+openbell-kalshi-shadow.service   loaded active   running OpenBell Kalshi shadow engine (paper only: reads local capture files, writes its ledger; no n
+openbell-live.service            loaded active   running OpenBell MES signal engine (passive Tradovate feed, shadow ledger, ntfy cards; never places o
+openbell-tabkeeper.service       loaded active   running OpenBell tab keeper (keeps Chromium + the Tradovate tab open; alerts on logout; never signs i
+openbell-forward-archive.timer   loaded active   waiting OpenBell forward-data archive, weekdays 17:20 ET (after the 17:00 settlement)
+
+Legend: LOAD   → Reflects whether the unit definition was properly loaded.
+[exit=0]
+
+### pgrep -af "trader\.js|momo|supervisor" 2>/dev/null | grep -vE "dsh-subprocess|monday-dryrun" | head -5 || echo "none (expected on this desktop)"
+[exit=0]
+
+### ls -l /home/cayleb/Work/projects/openbell-meme-desk/data 2>/dev/null | tail -3 || echo "no openbell-meme-desk/data dir"
+-rw-r--r-- 1 cayleb cayleb     570 Oct 28 09:24 slotkeeper_last.json
+-rw-r--r-- 1 cayleb cayleb      21 Oct 28 09:24 slot_proposals.json
+-rw-r--r-- 1 cayleb cayleb   50567 Oct 28 09:24 watchlist.json
+[exit=0]
+
+########## 3. CHECK C — WHICH SURFACES RESUMED AFTER THE RESET ##########
+
+### sed -n "1,13p" "$NOX/ops/STATUS.md" 2>&1
+# Lane status
+
+Updated 01:28 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
+
+| lane | state | since | doing / waiting on | next check | flags |
+|---|---|---|---|---|---|
+| Money Desk | CLOSED | — | Readiness baseline delivered (nothing new arms at 18:00). Usage throttle: weekly Claude meter about 90% until Mon 11-02 01:00 ET; only ORB15 beta check-ins run… | Thu 09:20 | CLOSED, IDLE_DECLARED, WAIT_OVERDUE |
+| Consolidation (lanes A-E) | CLOSED | — | PARKED BY RULING (Nox decision 31 Oct 10:19 ET, board mail 20261031T141930Z): HOLD on the Thudwick upload fix deploy and on Lane C dry-run-4 (Cayleb closed Apo… | 01:07 | CLOSED, IDLE_DECLARED |
+| Outis / Codex desktop | SILENT | Fri 17:04 | Team board, mail, lane and coordination; Order A product work handed to its dedicated owner · meanwhile: Board and mail checks, evidence reconciliation and coo… | Fri 17:19 | STALE |
+| Grok / RSI desk | — | — |  | — | — |
+| Nox | — | — |  | — | — |
+| Delegator (Cayleb's DSH master session) | — | — |  | — | — |
+
+[exit=0]
+
+### gh api "repos/cayleb-james2008/ergon/commits?since=$SINCE&per_page=1" --jq ".[] | [.sha[0:8], .commit.author.date] | @tsv" 2>&1 | head -1
+[exit=0]
+
+### gh api "repos/cayleb-james2008/dsh-fleet/commits?since=$SINCE&per_page=1" --jq ".[] | [.sha[0:8], .commit.author.date] | @tsv" 2>&1 | head -1
+[exit=0]
+
+### gh api "repos/cayleb-james2008/kalshi-shadow-data/commits?since=$SINCE&per_page=1" --jq ".[] | [.sha[0:8], .commit.author.date] | @tsv" 2>&1 | head -1
+[exit=0]
+
+### systemctl --user list-units --all --no-pager 2>/dev/null | grep -iE "fleet|tripwire|kalshi|openbell" | grep -vi dsh-subprocess | cut -c1-150 | head -6 || echo "no matching user units"
+  fleet-incident-tripwire.service                                                                                                                     
+  money-desk-scoreboard.service                                                                                                                       
+  openbell-arena.service                                                                                                                              
+  openbell-dash.service                                                                                                                               
+  openbell-forward-archive.service                                                                                                                    
+  openbell-kalshi-poll.service                                                                                                                        
+[exit=0]
+
+### systemctl list-units --all --no-pager 2>/dev/null | grep -iE "fleet-dsh|fleet-hands" | head -4 || echo "no fleet system units"
+  fleet-dsh.service                                                                                                                                                                            loaded    active   running   dsh-fleet: DeepSeek Harness host with the @cayleb/dsh-fleet bundle (user fleet)
+[exit=0]
+
+########## 4. TRIPWIRE WATCH (Job 19 mystery 4) ##########
+
+### systemctl --user show fleet-incident-tripwire.service -p ActiveState,MainPID,NRestarts --value 2>&1 | tr "\n" " "; echo
+active 3260368 0 
+[exit=0]
+
+### grep -E "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+ (GONE|CLOSEFOCUS)" "$TRIP/tripwire.log" | tail -8
+2026-11-02T00:47:53.950 CLOSEFOCUS closed=558c7f94c100 focused=558c7f61b570 window closed while NOT focused
+2026-11-02T00:47:53.951 CLOSEFOCUS-SNAPSHOT load=4.09 4.40 5.42
+2026-11-02T01:26:49.651 CLOSEFOCUS closed=558c7f892380 focused=558c7f97c1f0 window closed while NOT focused
+2026-11-02T01:26:49.651 CLOSEFOCUS-SNAPSHOT load=3.52 3.93 4.02
+2026-11-02T01:26:51.842 CLOSEFOCUS closed=558c7f7b0380 focused=558c7f831f20 window closed while NOT focused
+2026-11-02T01:26:51.842 CLOSEFOCUS-SNAPSHOT load=3.52 3.93 4.02
+2026-11-02T01:26:54.114 CLOSEFOCUS closed=558c7f70a0f0 focused=558c7f779290 window closed while NOT focused
+2026-11-02T01:26:54.114 CLOSEFOCUS-SNAPSHOT load=3.56 3.93 4.02
+[exit=0]
+
+### echo "real CLOSEFOCUS: $(grep -cE "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+ CLOSEFOCUS" "$TRIP/tripwire.log")"
+real CLOSEFOCUS: 144
+[exit=0]
+
+### echo "hypr stream: $(stat -c "%s bytes mtime=%y" "$TRIP/hypr-events.log")"
+hypr stream: 632457 bytes mtime=2026-11-02 01:26:54.404964495 -0500
+[exit=0]
+
+########## 5. CLOSE-OUT ##########
+finished: 2026-11-02T06:31:27Z
+Findings -> board/reports/monday-<date>-findings.md; report to lead <=30 lines;
+the 09:05 futures guard is Team C's — this sweep must not delay it.
