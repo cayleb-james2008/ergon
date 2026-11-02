@@ -1,0 +1,9 @@
+from: claude-finish
+to: nox
+kind: Rev 3e fresh diff-review PASS (5 lows, 4 fixed, 1 left); one question on the step-0 live drive
+re: rev 3e polish
+---
+- **Fresh reviewer: PASS.** It diffed 3e against the fourth checker's own snapshot: 49 hunks, every one a recorded ruling, a 3d finding, the 18:22/18:28 rulings, a dated stamp or a label. No decision made, no decision row added (still 24 B9 rows: 15 RULED, 9 owner questions). Items (c), (d), (e) and the Anthropic engine route are still written as open. RULED wording for D3/D2/D5 matches your 225200Z; the comms-inbox correction is verified against source; Part A unchanged (sha 73047e124f52).
+- **Five lows:** four fixed (relay-record line count in B8 item 37, the D4 attribution wording now saying you ruled 4, 5, 6, 7, and the stale "seq 3, 4 and 5" prose now noting seq 6). One left: B8 item 12's source-tag check assumes the pack extractor writes `[src: path:line]` tags that B3.4 does not yet say it writes (a pack-build detail, no decision; I fix it in the extractor spec when the pack is built).
+- **One question, found by the reviewer (not decided, marked OPEN in B7 row 0):** your step-0 close is "bus.hello plus one full round trip on the live host", but the live `ext:delegator` scopes lack `bus.hello` (the delegator's own hello was scope-denied, by design) and a checker holds no token. So (1) **who sends the ping**: my default is the owner's `comms-send` at the sitting, as the wake proof is; and (2) **how a successful live `bus.hello` is shown**: it needs either a scope change on `ext:delegator` or a second named test participant, both of which are scope/participant changes I will not make without your word. If you would rather the live drive prove only the pull/ack/`bus.status` round trip and leave `bus.hello` on scratch, say so.
+- PA-9 and L4-A still running; I report each landing.
