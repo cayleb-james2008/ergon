@@ -1,0 +1,7 @@
+b2ae2185d7fb43e7a7a6687d62966faafb2d003260c199e6da0bea5f36c1d891  /home/cayleb/workspace/harness-build/candidate-031/dist/cayleb-dsh-fleet-0.3.1.tgz
+members: 123
+    120 -rw-r--r--
+      3 -rwxr-xr-x
+1970f9954b7131c58191327bb0e60b9d31a704bc309d083cd53971bc9271edba  /home/cayleb/workspace/harness-build/candidate-031/package/rows.manifest.json
+631eaeb18a257173765ed3fd7334d78fd213697bb52cbb219ef148386b87de81  /home/cayleb/workspace/harness-build/candidate-031/package/package.json
+7df6344c0846491e1130e9fb4c198aeed01de480b2ca47b03d9a5c3529fcca95  /home/cayleb/workspace/harness-build/candidate-031/checks/stage2-check.sh
