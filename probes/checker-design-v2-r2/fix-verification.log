@@ -1,0 +1,53 @@
+== D-fix verification against frozen bytes, 2026-11-01T20:24:38-05:00 ==
+--- D1: generator kebab splits letter->digit ---
+12:const kebab = (s) => s.replace(/([a-z0-9])([A-Z])/g, '$1-$2').replace(/([a-z])([0-9])/g, '$1-$2').toLowerCase().replace(/_/g, '-');
+--- D1: tokens.css emits surface/light props ---
+9:  --surface-1: rgba(198, 222, 255, 0.04);
+10:  --surface-2: rgba(198, 222, 255, 0.07);
+11:  --surface-3: rgba(198, 222, 255, 0.10);
+12:  --light-1: rgba(198, 222, 255, 0.14);
+--- D1: unresolved var() count (independent resolver) ---
+defined(tokens.css): 72 | union: 73 | used: 64 | unresolved: NONE
+--- D2a: lineBright alpha ---
+38:    "lineBright": "rgba(206, 228, 255, 0.44)",
+--- D2b: fieldLine token + input border ---
+41:    "fieldLine": "rgba(206, 228, 255, 0.46)",
+102:  background: var(--surface-1); border: 1px solid var(--field-line); border-radius: var(--radius-control);
+--- D2c: inline min-height values < 44 in pages ---
+--- D2d: employee class counts per page ---
+grep: warning: stray \ before "
+grep: warning: stray \ before "
+comps/01-mobile-chat.html: 3
+grep: warning: stray \ before "
+grep: warning: stray \ before "
+comps/02-mobile-triage-approvals.html: 4
+grep: warning: stray \ before "
+grep: warning: stray \ before "
+comps/03-mobile-tasks.html: 3
+grep: warning: stray \ before "
+grep: warning: stray \ before "
+comps/04-mobile-make.html: 4
+grep: warning: stray \ before "
+grep: warning: stray \ before "
+comps/05-desktop-workspace.html: 0
+grep: warning: stray \ before "
+grep: warning: stray \ before "
+comps/06-character-sheet.html: 6
+grep: warning: stray \ before "
+grep: warning: stray \ before "
+comps/07-states.html: 1
+--- D2e: empty state specimen ---
+95:    <div class="empty" role="status">
+96:      <b>No tasks yet.</b>
+--- D2e: floors rows ---
+103:      <span>reduced motion</span><span>state changes are instant; travel and stagger are removed (Floors preview toggle)</span>
+104:      <span>High Contrast</span><span>system colours and 1 px borders replace translucency, blur and soft depth (Floors preview toggle)</span>
+--- D2f: comp 02 sheet is the data-approval target ---
+59:        <div class="sheet" role="dialog" aria-modal="true" aria-label="Approval — Marcus's estimate" data-approval>
+78:            <button class="primary employee" data-approve>Approve once</button>
+--- D2f: JS sheet receipt branch ---
+156:          if (primary) primary.textContent = 'Approved once — recorded';
+--- light-1 / blur-deep used ---
+comp-kit.css:201:.light-pool { height: 52px; border-radius: var(--radius-panel); border: 1px solid var(--line-strong); background: var(--light-1); box-shadow: var(--depth-lift), var(--depth-rim-strong); backdrop-filter: blur(var(--blur-deep)) saturate(115%); -webkit-backdrop-filter: blur(var(--blur-deep)) saturate(115%); }
+comp-kit.css:236:[data-contrast="high"] .light-pool { background: Canvas; border-color: CanvasText; box-shadow: none; backdrop-filter: none; }
+comps/07-states.html:88:      <div class="light-pool" role="presentation" aria-hidden="true"></div>

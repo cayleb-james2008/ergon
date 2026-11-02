@@ -1,0 +1,296 @@
+{
+  "external_refs": {
+    "check-comps.mjs": [
+      "text = read(file).replaceAll('http://www.w3.org/2000/svg', '');   c",
+      "with no network)`);   check(!/@import/i.test(text), `${file}: conta",
+      "est(text), `${file}: contains @import`);   check(!/url\\(\\s*['\"]?(ht",
+      "s a remote url()`);   check(!/<img\\b/i.test(text), `${file}: con",
+      "(text), `${file}: contains an <img> asset (no image dependency)`",
+      ";   check(!/fonts\\.googleapis|@font-face/i.test(text), `${file}: conta"
+    ],
+    "comp-motion.js": [
+      "      }     }     const ns = 'http://www.w3.org/2000/svg';     cons"
+    ]
+  },
+  "local_refs": {
+    "count": 35,
+    "missing": [],
+    "unique": [
+      "../comp-kit.css",
+      "../comp-motion.js",
+      "../tokens.css",
+      "comp-kit.css",
+      "comp-motion.js",
+      "comps/01-mobile-chat.html",
+      "comps/02-mobile-triage-approvals.html",
+      "comps/03-mobile-tasks.html",
+      "comps/04-mobile-make.html",
+      "comps/05-desktop-workspace.html",
+      "comps/06-character-sheet.html",
+      "comps/07-states.html",
+      "motion-storyboard.html",
+      "tokens.css"
+    ]
+  },
+  "colour_literals": {
+    "PACK-CHANGE-PROPOSAL.md": [
+      [
+        "white",
+        3
+      ],
+      [
+        "#050606",
+        1
+      ],
+      [
+        "#0a0a0a",
+        1
+      ],
+      [
+        "#0e0e0e",
+        1
+      ],
+      [
+        "#141415",
+        1
+      ],
+      [
+        "#191a1a",
+        1
+      ],
+      [
+        "#2c2d2e",
+        1
+      ],
+      [
+        "#ffffff0f",
+        1
+      ],
+      [
+        "#ffffff1a",
+        1
+      ]
+    ],
+    "check-comps.mjs": [
+      [
+        "rgba(",
+        18
+      ],
+      [
+        "white",
+        3
+      ],
+      [
+        "#fff",
+        1
+      ],
+      [
+        "black",
+        1
+      ],
+      [
+        "red",
+        1
+      ],
+      [
+        "blue",
+        1
+      ],
+      [
+        "green",
+        1
+      ],
+      [
+        "gray",
+        1
+      ],
+      [
+        "grey",
+        1
+      ],
+      [
+        "silver",
+        1
+      ]
+    ],
+    "comp-kit.css": [
+      [
+        "transparent",
+        9
+      ],
+      [
+        "currentColor",
+        1
+      ]
+    ]
+  },
+  "custom_props": {
+    "defined": 72,
+    "used": 64,
+    "missing": {},
+    "unused": [
+      "--base-deep",
+      "--emp-caption",
+      "--emp-heading",
+      "--motion-enter",
+      "--motion-sheet",
+      "--rim",
+      "--rim-strong",
+      "--space-6",
+      "--space-7"
+    ]
+  },
+  "structure": {
+    "comps/01-mobile-chat.html": {
+      "unclosed": [],
+      "errors": [],
+      "ids_dup": [],
+      "aria_controls_missing": [],
+      "label": true,
+      "buttons": 6,
+      "inputs": 1
+    },
+    "comps/02-mobile-triage-approvals.html": {
+      "unclosed": [],
+      "errors": [],
+      "ids_dup": [],
+      "aria_controls_missing": [],
+      "label": true,
+      "buttons": 7,
+      "inputs": 1
+    },
+    "comps/03-mobile-tasks.html": {
+      "unclosed": [],
+      "errors": [],
+      "ids_dup": [],
+      "aria_controls_missing": [],
+      "label": true,
+      "buttons": 6,
+      "inputs": 0
+    },
+    "comps/04-mobile-make.html": {
+      "unclosed": [],
+      "errors": [],
+      "ids_dup": [],
+      "aria_controls_missing": [],
+      "label": true,
+      "buttons": 7,
+      "inputs": 1
+    },
+    "comps/05-desktop-workspace.html": {
+      "unclosed": [],
+      "errors": [],
+      "ids_dup": [],
+      "aria_controls_missing": [],
+      "label": true,
+      "buttons": 9,
+      "inputs": 1
+    },
+    "comps/06-character-sheet.html": {
+      "unclosed": [],
+      "errors": [],
+      "ids_dup": [],
+      "aria_controls_missing": [],
+      "label": true,
+      "buttons": 7,
+      "inputs": 1
+    },
+    "comps/07-states.html": {
+      "unclosed": [],
+      "errors": [],
+      "ids_dup": [],
+      "aria_controls_missing": [],
+      "label": true,
+      "buttons": 20,
+      "inputs": 3
+    },
+    "index.html": {
+      "unclosed": [],
+      "errors": [],
+      "ids_dup": [],
+      "aria_controls_missing": [],
+      "label": true,
+      "buttons": 2,
+      "inputs": 0
+    },
+    "motion-storyboard.html": {
+      "unclosed": [],
+      "errors": [],
+      "ids_dup": [],
+      "aria_controls_missing": [],
+      "label": true,
+      "buttons": 4,
+      "inputs": 1
+    }
+  },
+  "labels": {
+    "comps/01-mobile-chat.html": true,
+    "comps/02-mobile-triage-approvals.html": true,
+    "comps/03-mobile-tasks.html": true,
+    "comps/04-mobile-make.html": true,
+    "comps/05-desktop-workspace.html": true,
+    "comps/06-character-sheet.html": true,
+    "comps/07-states.html": true,
+    "index.html": true,
+    "motion-storyboard.html": true
+  },
+  "target_literals": [
+    [
+      "check-comps.mjs",
+      "\\s*var\\(--target-employee\\)/.test(kit), 'comp-kit.css: employee 56 DIP target rule missing')",
+      121
+    ],
+    [
+      "check-comps.mjs",
+      "\\s*(\\d+)px/g)) check(Number(px) >= 44, `${page",
+      126
+    ],
+    [
+      "comp-kit.css",
+      "100vh",
+      9
+    ],
+    [
+      "comp-kit.css",
+      "24px",
+      110
+    ],
+    [
+      "comp-kit.css",
+      "58px",
+      153
+    ],
+    [
+      "motion-storyboard.html",
+      "126px",
+      11
+    ]
+  ],
+  "employee_class_used": {
+    "PACK-CHANGE-PROPOSAL.md": 5,
+    "build-tokens.mjs": 5,
+    "check-comps.mjs": 9,
+    "comp-kit.css": 2,
+    "comps/01-mobile-chat.html": 3,
+    "comps/02-mobile-triage-approvals.html": 4,
+    "comps/03-mobile-tasks.html": 4,
+    "comps/04-mobile-make.html": 4,
+    "comps/06-character-sheet.html": 7,
+    "comps/07-states.html": 1,
+    "tokens.css": 1,
+    "tokens.json": 4
+  },
+  "motion": {
+    "duration_literals": {
+      "comp-kit.css:0.01ms": 4,
+      "comp-motion.js:120ms": 1,
+      "comp-motion.js:200ms": 1,
+      "comp-motion.js:250ms": 1,
+      "comp-motion.js:350ms": 1,
+      "tokens.css:120ms": 1,
+      "tokens.css:200ms": 1,
+      "tokens.css:250ms": 1,
+      "tokens.css:350ms": 1
+    },
+    "ease_values": [
+      "cubic-b

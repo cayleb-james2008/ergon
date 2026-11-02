@@ -1,0 +1,93 @@
+== re-frozen set: checker non-vacuity mutations, 2026-11-01T20:22:07-05:00 ==
+=== MUTATION ext_url: rc=1
+V2 COMPS CHECK: FAIL (2)
+  - comps/01-mobile-chat.html: contains an external URL (comps must render offline with no network)
+  - FREEZE.sha256 hash mismatch: comps/01-mobile-chat.html
+
+=== MUTATION hex_literal: rc=1
+V2 COMPS CHECK: FAIL (2)
+  - comp-kit.css: hand-typed colour literal(s) #EAF2FA — use the generated tokens
+  - FREEZE.sha256 hash mismatch: comp-kit.css
+
+=== MUTATION named_colour: rc=1
+V2 COMPS CHECK: FAIL (2)
+  - comp-kit.css: raw colour keyword in a style context — use a token
+  - FREEZE.sha256 hash mismatch: comp-kit.css
+
+=== MUTATION loop_shorthand: rc=1
+V2 COMPS CHECK: FAIL (2)
+  - comp-kit.css: infinite/looping animation is banned
+  - FREEZE.sha256 hash mismatch: comp-kit.css
+
+=== MUTATION broken_tag: rc=1
+V2 COMPS CHECK: FAIL (2)
+  - comps/04-mobile-make.html: tag balance broken — <div> 23 open / 22 close
+  - FREEZE.sha256 hash mismatch: comps/04-mobile-make.html
+
+=== MUTATION missing_local_asset: rc=1
+V2 COMPS CHECK: FAIL (2)
+  - comps/01-mobile-chat.html: local ref "missing-helper.js" does not resolve to a file
+  - FREEZE.sha256 hash mismatch: comps/01-mobile-chat.html
+
+=== MUTATION unresolved_var: rc=1
+V2 COMPS CHECK: FAIL (2)
+  - unresolved custom properties (declared nowhere): --surface-9
+  - FREEZE.sha256 hash mismatch: comp-kit.css
+
+=== MUTATION stale_tokens: rc=1
+V2 COMPS CHECK: FAIL (2)
+  - tokens.css is stale — run node build-tokens.mjs
+  - FREEZE.sha256 hash mismatch: tokens.css
+
+=== MUTATION no_employee: rc=1
+V2 COMPS CHECK: FAIL (1)
+  - FREEZE.sha256 hash mismatch: comps/01-mobile-chat.html
+
+=== MUTATION no_empty: rc=1
+V2 COMPS CHECK: FAIL (2)
+  - comps/07: the empty-state specimen is missing
+  - FREEZE.sha256 hash mismatch: comps/07-states.html
+
+=== MUTATION no_label: rc=1
+V2 COMPS CHECK: FAIL (2)
+  - comps/03-mobile-tasks.html: missing the "DESIGN COMP — NOT A BUILT SURFACE" label
+  - FREEZE.sha256 hash mismatch: comps/03-mobile-tasks.html
+
+=== MUTATION freeze_mismatch: rc=1
+V2 COMPS CHECK: FAIL (1)
+  - FREEZE.sha256 hash mismatch: index.html
+
+=== MUTATION no_freeze: rc=0
+V2 COMPS CHECK: PASS (hardened after checker D1–D4)
+  pages: 9 labelled comp pages (7 comps + index + motion storyboard)
+  self-containment: 0 external refs, 0 remote assets, 0 webfonts, 0 images; every local href/src resolves
+  tokens: tokens.css generated-current; 0 colour literals / raw colour keywords outside the token files
+
+=== MUTATION extra_file: rc=0
+V2 COMPS CHECK: PASS (hardened after checker D1–D4)
+  pages: 9 labelled comp pages (7 comps + index + motion storyboard)
+  self-containment: 0 external refs, 0 remote assets, 0 webfonts, 0 images; every local href/src resolves
+  tokens: tokens.css generated-current; 0 colour literals / raw colour keywords outside the token files
+
+=== MUTATION target_36: rc=1
+V2 COMPS CHECK: FAIL (2)
+  - comps/05-desktop-workspace.html: inline min-height 36px is below the 44 DIP floor
+  - FREEZE.sha256 hash mismatch: comps/05-desktop-workspace.html
+
+=== MUTATION linebright_040: rc=1
+V2 COMPS CHECK: FAIL (1)
+  - control boundary (line-bright vs card, both ambient washes) is 2.97:1 (floor 3)
+
+=== MUTATION fieldline_010: rc=1
+V2 COMPS CHECK: FAIL (1)
+  - field boundary (field-line vs field fill) is 1.30:1 (pack fieldLine rule: floor 3)
+
+=== MUTATION floor_break: rc=1
+V2 COMPS CHECK: FAIL (1)
+  - ink on the brightest text plane is 2.41:1 (floor 7)
+
+=== MUTATION motion_break: rc=1
+V2 COMPS CHECK: FAIL (1)
+  - motion budgets must be 120/200/250/350 ms
+
+restored mut from set

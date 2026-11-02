@@ -1,0 +1,20 @@
+== independent recompute (my implementation; CSS layer order: accent over cool over base) ==
+ink on p3                                9.209   claimed 9.21
+muted on p3                              5.625   claimed 5.62
+subtle on p1                             6.138   claimed 6.14
+accent on p3                             5.009   claimed 5.01
+ok on washOk/p3                          4.661   claimed 4.66
+warn on washWarn/p3                      4.931   claimed 4.93
+danger on washDanger/p3                  4.766   claimed 4.77
+focus accent on p2                       6.467   claimed 6.47
+control lineBright on p2                 3.277   claimed 3.28
+field fieldLine on inputBg               3.296   claimed 3.30
+
+floors: {'ink': 7.0, 'muted': 4.5, 'text': 4.5, 'nonText': 3.0}
+
+== residual / unasserted boundaries ==
+composer border --line on p1             1.552   claimed pack field rule 3.0
+composer border --line on p2             1.553   claimed pack field rule 3.0
+lineStrong on p2 (decorative)            1.936   claimed n/a
+light1 as text plane muted               3.992   claimed no text allowed
+pill.accent on washAccent/p3 (unused)    4.197   claimed 4.5

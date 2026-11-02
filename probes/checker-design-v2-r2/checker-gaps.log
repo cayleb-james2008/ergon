@@ -1,0 +1,22 @@
+== residual checker-gap probes, 2026-11-01T20:24:38-05:00 ==
+--- 1) delete FREEZE.sha256 ---
+V2 COMPS CHECK: PASS (hardened after checker D1–D4)
+  pages: 9 labelled comp pages (7 comps + index + motion storyboard)
+rc=0
+--- 2) add an extra unlisted file ---
+V2 COMPS CHECK: PASS (hardened after checker D1–D4)
+  pages: 9 labelled comp pages (7 comps + index + motion storyboard)
+rc=0
+--- 3) inline-style first-declaration raw colour keyword (style="color: white") ---
+V2 COMPS CHECK: PASS (hardened after checker D1–D4)
+  pages: 9 labelled comp pages (7 comps + index + motion storyboard)
+rc=0
+--- 4) all employee classes removed + manifest refreshed (assertion must fire) ---
+V2 COMPS CHECK: FAIL (5)
+  - comps/01-mobile-chat.html: no employee-surface control carries the 56 DIP employee target
+  - comps/02-mobile-triage-approvals.html: no employee-surface control carries the 56 DIP employee target
+  - comps/03-mobile-tasks.html: no employee-surface control carries the 56 DIP employee target
+  - comps/04-mobile-make.html: no employee-surface control carries the 56 DIP employee target
+  - comps/06-character-sheet.html: no employee-surface control carries the 56 DIP employee target
+rc=0
+restored mut

@@ -1,0 +1,1 @@
+sha256sum -c rc=0

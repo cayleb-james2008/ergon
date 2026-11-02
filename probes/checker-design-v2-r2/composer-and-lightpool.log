@@ -1,0 +1,10 @@
+== light-1 / blur-deep usage, 2026-11-01T20:25:01-05:00 ==
+comp-kit.css:201:.light-pool { height: 52px; border-radius: var(--radius-panel); border: 1px solid var(--line-strong); background: var(--light-1); box-shadow: var(--depth-lift), var(--depth-rim-strong); backdrop-filter: blur(var(--blur-deep)) saturate(115%); -webkit-backdrop-filter: blur(var(--blur-deep)) saturate(115%); }
+comp-kit.css:236:[data-contrast="high"] .light-pool { background: Canvas; border-color: CanvasText; box-shadow: none; backdrop-filter: none; }
+comps/07-states.html:88:      <div class="light-pool" role="presentation" aria-hidden="true"></div>
+201:.light-pool { height: 52px; border-radius: var(--radius-panel); border: 1px solid var(--line-strong); background: var(--light-1); box-shadow: var(--depth-lift), var(--depth-rim-strong); backdrop-filter: blur(var(--blur-deep)) saturate(115%); -webkit-backdrop-filter: blur(var(--blur-deep)) saturate(115%); }
+
+== message composer boundary (residual C1) ==
+150:.phone .composer { margin: 0 var(--space-3) var(--space-2); display: flex; gap: var(--space-1); align-items: center; padding: 6px; border: 1px solid var(--line); border-radius: var(--radius-card); background: var(--surface-2); backdrop-filter: blur(var(--blur-card)); }
+151:.phone .composer input { border-color: transparent; background: transparent; }
+61:    <form class="composer" data-send data-thread="#view-thread" style="margin: var(--space-3); display:flex; gap: var(--space-1); padding:6px; border:1px solid var(--line); border-radius: var(--radius-card); background: var(--surface-2);" aria-label="Message Marlow">
