@@ -1,0 +1,17 @@
+=== FIX19 (Play-19 one-shot fix) delta provenance — checker fresh copy 2026-11-02T15:26:10Z ===
+commit: e475d4688f3243932105cf4a0fef0561564e2811  tree: a36ed97a517173aed279219425b45f659c1dbbb7  parent: 0ec48d6768224721dbd5987dfb058a2e2b6b4c52
+branch tip: e475d4688f3243932105cf4a0fef0561564e2811  tracked mods: 0  untracked: 835
+fresh copy: git archive e475d468 -> /tmp/checker-fix19; 1443 tracked entries blob-for-blob (0 missing/0 mismatch)
+--- delta 0ec48d6..e475d468 ---
+24	0	tests/atlas/Client.luau
+5	2	tests/tools/test_atlas_acceptance.py
+ 2 files changed, 29 insertions(+), 2 deletions(-)
+--- every changed file ---
+tests/atlas/Client.luau
+tests/tools/test_atlas_acceptance.py
+--- plan/validator/runner/traffic/fixture/src/build in delta (must be none) ---
+(none)
+--- sealed ---
+84324d4342667dd163ab8e64adacbf8ef44ab786aeda5c7ab1403e76d52ef6ce  build/release.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  build/test.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  /home/cayleb/.var/app/org.vinegarhq.Vinegar/data/usg/usg-desktop.rbxlx

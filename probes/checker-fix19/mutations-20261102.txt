@@ -1,0 +1,11 @@
+=== fix19 mutation proofs — checker reproduction (throwaway /tmp/checker-fix19-mut; restored after each) ===
+M35 recompute reverted (whole recompute block removed):
+  atlas acceptance -> Ran 25 tests | FAILED (failures=1)   [caught by the fix pins]
+Fail-closed guard probes (do the tests pin the safety conditions?):
+  remove `if finalCheck.cameraTypeRestored then` guard -> atlas acceptance OK  [NOT caught: guard not pinned]
+  remove the per-frame stability loop                 -> atlas acceptance OK  [NOT caught: guard not pinned]
+  -> current code is correct by inspection; recommend adding two needles next freeze.
+Residual pins folded and EFFECTIVE:
+  remove `afterReassertType=afterReassertType,` table entry -> FAILED (1)  [closed]
+  remove `diagnostics.typeWriteOk=writeOk` recording       -> FAILED (1)  [closed]
+Restore: files copied back from the pristine copy; mut-tree diff vs fresh copy = only __pycache__ .pyc files.

@@ -1,0 +1,23 @@
+=== fix19 narrowness / fail-closed proof (parent 0ec48d6 vs e475d468) ===
+- Recompute block (Client.luau restore(), after the re-assert + 5-frame series):
+    local verdictRecomputed=false
+    if attempted and reassertOk==true and #frameSeries==5 then
+      local stable=true; for _,row in frameSeries do if row.type~=savedType then stable=false end end
+      if stable then
+        local finalCheck=State.check(player,workspace.CurrentCamera,saved)
+        if finalCheck.cameraTypeRestored then
+          -- recompute menuGrade/effects/noDriver/bindings/monitor/focus from a fresh readLighting/noDriver
+          details=finalCheck; verdictRecomputed=true
+        end end end
+    diagnostics.verdictRecomputed=verdictRecomputed
+- Fail-closed paths (code inspection): reassertOk must be exactly true; #frameSeries must be 5; EVERY series frame must equal
+  savedType; the FRESH State.check.cameraTypeRestored must be true (same camera AND CameraType==saved.type at that instant).
+  Any of those failing -> details stays the ORIGINAL failed check -> payload restored=checkAll(details) false -> validator fails.
+  If attempted is false (the first check already passed) -> no recompute; the original details are used.
+- Narrowness: payload lines `restored=checkAll(details)` and `cleanup=details` are byte-identical between commits; the
+  checkAll block is byte-identical; validator/plan/runner are NOT in the delta (byte-identical); the only diagnostics change is
+  `diagnostics.verdictRecomputed`; the recomputed details are the same 8 State.check fields + the same 6 extra fields the
+  original details path sets (menuGradeRestored/visualEffectsPreserved/noDriver/bindingsDisconnected/monitorDisconnected/
+  focusBindingDisconnected) -> payload shape unchanged.
+- Residual limit: a CameraType reversion AFTER the fresh check and before the finish payload is not covered by this block;
+  the Play-19 evidence (one-shot reverter, 5/5 frames Custom) is the basis, and Play 20 is the runtime pass gate.
