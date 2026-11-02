@@ -1,0 +1,36 @@
+=== ATLAS PER-ZONE OVERHEAD SUBSTITUTION (Nox run-7 B+A) 2026-11-02 ===
+plan commit 701f70c331fc0f38423f4f2284b380bba78bc99b  |  test-pin follow-up d83efa88348ef055ece2602843b5986482677c55 (freeze tip)
+tree d93b9970b0760cd084d69c1d148c95cfe369c45a  parent 701f70c
+time 2026-11-02T05:39:50Z
+
+--- ruling ---
+Nox 20261102T051200Z: B+A adopted; C rejected for now (settings/draw-distance experiments change what the cell tests; revisit only if per-zone views hit the same freeze); D rejected.
+
+--- B implemented (substitution only) ---
+plan: four bounded per-zone functional overheads anchored on ONE native highway road each (zonePath Highway/Roads/Road_<edge>): h_top_05__h_top_06, h_east_03__h_east_04, h_access_030__h_access_031, h_access_062__h_bottom_09; ids highway-zone-1..4-overhead; the single whole-highway overhead view is removed from the plan; scout 24 -> 27 views.
+server: zone overhead anchors on the exact native road model and records zonePath/zoneLabel; client view cap 24->32; validator (scout only) requires >=2 distinct zone views anchored under Highway/Roads/Road_, zone=highway/kind=overhead, no highway-overhead framing, per-view zone identity + non-empty native bounds. Other batches untouched.
+
+--- A implemented (limitation note) ---
+board/probes/team-d/overhead-render-limitation-contingency-20261102.md rewritten as the NAMED limitation: Studio 0.745.0.7451137 / Wine 11.0 (Vinegar 1.9.4); Play 7 evidence (3 attempts byte-identical sha 74d4f7e9..., settle 1.0 s, cameraDelta 0, audit 21/21); fail-closed verdict for that one framing; one retest per new Studio build authorised; C/D rejected.
+
+--- tests + mutation proofs ---
+zone substitution pinned: plan list/paths/distinctness, validator rejects stripped plan / non-highway anchor / duplicate path, source-shape plan+server+client+validator
+M18 zonePath anchored on the city -> test_map_atlas FAILED (1) + test_atlas_acceptance FAILED (2 failures, 4 errors)
+M19 validator substitution requirement removed -> test_atlas_acceptance FAILED (2)
+restored, tracked clean
+
+--- suites on the freeze tip ---
+Ran 91 tests in 12.863s
+
+OK
+Ran 22 tests in 0.918s
+
+OK
+Ran 327 tests in 47.512s
+OK
+unit: 10 passed, 0 failed (4 specs)
+
+--- sealed ---
+84324d4342667dd163ab8e64adacbf8ef44ab786aeda5c7ab1403e76d52ef6ce  build/release.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  build/test.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  /home/cayleb/.var/app/org.vinegarhq.Vinegar/data/usg/usg-desktop.rbxlx

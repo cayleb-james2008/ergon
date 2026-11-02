@@ -1,4 +1,30 @@
-# RULING NOTE — whole-highway overhead render/capture stall is ESTABLISHED (layer 5) / prepared, NOT implemented
+# ATLAS OVERHEAD FRAMING — NAMED RENDERER/WINE LIMITATION (adopted per Nox run-7, 2026-11-02)
+
+**Ruling:** Nox 20261102T051200Z adopted **B + A**; **C** rejected for now (settings/draw-distance experiments change
+what the cell tests; revisit only if per-zone views hit the same freeze); **D** rejected.
+
+**A — the limitation, named.** The single **whole-highway overhead framing** (`highway-overhead`, camera fitted to the
+whole highway model) **fails closed on this build: Studio `0.745.0.7451137` / Wine 11.0 (Vinegar 1.9.4, proton prefix
+`studio`)**. Evidence (Play 7, run `20261102T045824Z-atlas-scout`, 2026-11-02T04:58:24Z): after the bounded **1.0 s
+overhead render settle**, **three captures 1.0 s apart returned byte-identical frames** (`sha 74d4f7e9934dd49d…`, the
+view-020 `city-overhead` image) with **`cameraDelta:0`**; the client had acknowledged view 021; `capture-attempts`
+audit **21/21 consistent** (`result.json.captureAttempts` == `capture-attempts.json`). Verdict for that one framing:
+**fail closed (named), never a pass claim.** Supporting/adjacent evidence: Play 6's intermittent **userland** Studio
+minidump (106,116,768 B at Play shutdown after `StopPlaySoloShutdownDataModels`) did **not** repeat in Play 7 (clean
+abort); `gpuJournal:null`; no kernel `amdgpu|MES|ring|GPU reset` lines. The stall/crash mechanism is **not** established
+beyond the persistent-previous-frame fact; no kernel GPU fault is observed.
+**Retirement rule:** one retest of the whole-highway framing per **new Studio build** is authorised; if it captures a
+fresh frame, the limitation closes (record the build id + capture evidence).
+
+**B — adopted substitution (implemented).** The single whole-highway overhead is replaced in the scout plan by **four
+bounded per-zone functional overheads** (zone views `highway-zone-1..4-overhead`, each anchored on ONE native highway
+road: `Highway/Roads/Road_h_top_05__h_top_06`, `…h_east_03__h_east_04`, `…h_access_030__h_access_031`,
+`…h_access_062__h_bottom_09`). They go through the **same audited capture path** (settle/retry/`capture-attempts`
+consistency, fog-capability and viewport records); the sealed place is untouched. Scout plan: **27 views** (24 − 1 + 4).
+
+**C/D:** C rejected for now; D rejected. No plan/validator change beyond the B substitution.
+
+## History (pre-ruling analysis, retained)
 
 **Status update 2026-11-02T04:59Z (Play 7):** the 1.0 s overhead render settle did **not** unfreeze the frame —
 view-021 `highway-overhead` returned view-020's exact bytes on all three attempts after a 1.0 s settle
