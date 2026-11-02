@@ -93,7 +93,7 @@ check(read('tokens.css') === build(tokens), 'tokens.css is stale — run node bu
 const defined = definedProps([read('tokens.css'), read('comp-kit.css')]);
 const missingProps = [...unresolved(usedProps([...CODE.map(read)]), defined)];
 check(missingProps.length === 0, `unresolved custom properties (declared nowhere): ${missingProps.slice(0, 10).join(', ')}`);
-for (const required of ['--surface-1', '--surface-2', '--surface-3', '--light-1', '--field-line', '--line-bright', '--blur-deep']) {
+for (const required of ['--surface-1', '--surface-2', '--surface-3', '--light-1', '--field-line', '--line-bright', '--blur-deep', '--depth-shade']) {
   check(defined.has(required), `required token ${required} is not emitted by tokens.css (kebab/generator regression)`);
 }
 
@@ -147,6 +147,23 @@ check(composerLine.includes('var(--field-line)'), 'comps/05: the desktop compose
 check(!composerLine.includes('var(--line)'), 'comps/05: the desktop composer inline border must not use var(--line)');
 check(/input\[type="checkbox"\]:focus-visible\s*\{[^}]*outline:\s*var\(--focus-ring\)\s*solid\s*var\(--accent\)/.test(kit), 'comp-kit.css: native checkboxes must carry the 2px accent focus ring');
 check(!/\.pill\.accent\s*\{/.test(kit), 'comp-kit.css: latent unused `.pill.accent` (4.20 on wash) must not be reintroduced');
+
+/* ---------- 8c. polish-round assertions (finish pass, post-owner-grade) ---------- */
+check((kit.match(/var\(--depth-shade\)/g) || []).length >= 5, 'comp-kit.css: the polish edge shade (--depth-shade) must be applied to the plane system (>=5 surfaces)');
+check(/\n\.phone \.composer \{[^}]*var\(--depth-lift\)/.test(kit), 'comp-kit.css: the composer must carry plane depth (no flat composer)');
+check(/\n\.phone \.tabbar \{[^}]*box-shadow: var\(--depth-rim\)/.test(kit), 'comp-kit.css: the tab bar must carry the rim finish');
+check(/::selection \{ background: var\(--accent\)/.test(kit), 'comp-kit.css: selection colour must be token-driven');
+check(/scrollbar-color: var\(--line-strong\) transparent/.test(kit), 'comp-kit.css: scrollbars must be token-styled');
+check(/\.nn:focus-visible \{[^}]*outline: var\(--focus-ring\)/.test(kit), 'comp-kit.css: the character must be keyboard-focusable with the focus ring');
+check(/input:disabled \{/.test(kit) && /input\[readonly\] \{/.test(kit), 'comp-kit.css: disabled and read-only field states missing');
+check(/\.sidebar nav button:hover \{/.test(kit), 'comp-kit.css: sidebar rows need a hover finish');
+check(/font-variant-numeric: tabular-nums/.test(kit), 'comp-kit.css: numeric readouts need tabular figures');
+check(/\.card\[data-resolved="true"\]/.test(kit), 'comp-kit.css: the resolved-approval surface state is missing');
+check(!/outline:\s*none/i.test(kit), 'comp-kit.css: focus outlines must never be removed');
+const js = read('comp-motion.js');
+check(/tabIndex = 0/.test(js) && /role', 'button'/.test(js), 'comp-motion.js: the character must be a focusable, labelled control');
+check(/aria-label', `\$\{el\.dataset\.name/.test(js), 'comp-motion.js: the character control needs an accessible name');
+check(/keydown/.test(js), 'comp-motion.js: the character must activate from the keyboard');
 
 /* ---------- 9. approvals wording (scoped remember only, no standing-permission wording) ---------- */
 for (const page of PAGES) {

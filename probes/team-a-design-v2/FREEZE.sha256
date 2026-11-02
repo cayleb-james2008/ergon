@@ -1,7 +1,7 @@
-# Ergon Lumen v2 direction set — FREEZE manifest (frozen after the checker fix round D1–D4 and the r2 C1–C4 round).
+# Ergon Lumen v2 direction set — FREEZE manifest (polish round after the owner grade; direction locked).
 # DESIGN COMP — NOT A BUILT SURFACE. This manifest lists the 17 frozen content files; it excludes itself.
 # Verify: node check-comps.mjs (asserts existence, every hash, and that the directory is exactly this set) or: sha256sum -c FREEZE.sha256
-6ff011e5355b7b4d6358ec00025e5e743ef5e2f39815971827493f0d31e5ae39  index.html
+0b7a26c6fe99eaeaa9e8c3e6655ebbdd8acdb4675add2af04f35b4e652edef83  index.html
 30440f4dccd27836561d6eb24908acb759b230998effd3189e66ad46eca1a086  motion-storyboard.html
 66c5edbe28dda5e6d95467a99c35564a3ea84af007a43ffabf1cda912b2c001c  comps/01-mobile-chat.html
 150b070a1b8281063af0564fac12c2ee41c16b4ee0f618c176b5f9aab0ce020b  comps/02-mobile-triage-approvals.html
@@ -10,11 +10,11 @@
 6a9ad11d780ae1ef2122eafea5d8fd8ca154922ba9678e26a16f5d85526488d0  comps/05-desktop-workspace.html
 4256ac66d6610b63d24aaba510ccafad101f5af9d79648db6dd35fa1f39c5d4b  comps/06-character-sheet.html
 73c286cb3be54bfde2c05ada95cefb0c761e8364e4c855482b17d5b5f1f86797  comps/07-states.html
-666a3707213c9bbe3fc4ada5d51470ff0b3a2d5a08cff95457fb1b53cc013766  tokens.json
-c71496d670832630066efad14b7136cc1314174d2d7686fb1da3c9c9649d719e  tokens.css
+23be162b1282c34f95cca927aa3a7a43fe31aa22c3c1c353ddd487a1eea90616  tokens.json
+19af9c3cb51f5cd00315c356139e785a9a082c3449ab9c392021252b9e9873f6  tokens.css
 14d09c792823d67af71ca2a2c8002d8ed5796d08a203197d8265e362782d8b06  build-tokens.mjs
-31fdef879c23c963d5492f095485a5a037ac4087fdc0420804e5896d7c9bc67b  comp-kit.css
-9bedd51a96d36248ae449e4dc544f8a5aff6319801075563617d9a903c3cef86  comp-motion.js
-1b78ce90db6072b37279402590ee615528b85a3fa2f3b1131f8edfae4a25dc75  check-comps.mjs
+74081b24faec166b51633b1dbd71f8859de09b21f18ec2fe47db67dc50eb752a  comp-kit.css
+280b0490e11e5363a23f27ba78c18fa57ddbf2ec03f3bec66cfd78162fff4864  comp-motion.js
+47234b4b3896ad8923790ac9fc365df6f8e995b8e22fc5809c44bd3496f35321  check-comps.mjs
 ca6064c3c40eef884de3cc6cc793e06d917135b59af7225bffc4af915ab73808  README.md
 6d56a0e58bf212b92b9e100216b0cd203f90fdec989db525c6b108e75373befa  PACK-CHANGE-PROPOSAL.md

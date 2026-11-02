@@ -227,6 +227,14 @@
   }
   function wireCharacters(root = document) {
     root.querySelectorAll('.nn').forEach((el) => {
+      // the character is a real control: focusable, labelled, activates for keyboard users
+      el.removeAttribute('aria-hidden');
+      el.tabIndex = 0;
+      el.setAttribute('role', 'button');
+      el.setAttribute('aria-label', `${el.dataset.name || 'Agent'} — agent character; activate to signal`);
+      el.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); signal(el); }
+      });
       renderNeural(el);
       const wrap = el.closest('[data-character]');
       if (wrap) {
