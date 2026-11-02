@@ -23,6 +23,21 @@ is not the fallback-(a) case: the assert-and-skip code was never executed. The s
 inference** — the rebuild never ran. The real named-seed blocker is this one-line starter wiring bug; the 45 s bound,
 sealed-hash guard, clean abort and trace-retention plumbing all behaved exactly as designed.
 
+## 1a · CORRECTION — the 2026-10-31/11-01 "in-Play rebuild hang" reading is SUPERSEDED
+
+The earlier Team-D reading (batch 6, 2026-11-01) attributed the seeded atlas timeout to `WorldSeed.ensure` calling
+`World.generateSafe` on a populated world ("seeded run reached the seed path but hung 600 s in an in-Play City+Highway
+rebuild"). **That reading is wrong and is withdrawn.** The 2026-11-02 diagnostic Play's read-only Studio console shows
+the seeded starter crashed on **line 1** — `apply is not a valid member of ModuleScript
+"ServerScriptService.Nightshift.AtlasWorldSeed"` — because `SEED_PATCH` called `S.apply(W, seed)` where `S` was the
+`AtlasWorldSeed` **ModuleScript Instance** returned by `WaitForChild`, never `require`d. The error sits **outside** the
+starter's `xpcall`, so no runtime phase was posted, `AtlasServer.start` was never called, no world/seed logic ran and no
+trace was written: the 600 s wait (now 45 s bound) was silent because the server never started. The identical
+`SEED_PATCH` exists in the pre-Plan-4 tree (`git show 9022c53^:tools/atlas_acceptance.py`), so this was never an
+in-Play rebuild: **the rebuild never ran.** The same-symptom 2026-11-01 run is explained by this bug, not by a hang in
+`World.generateSafe`. Plan 4's assert-and-skip remains correct and is now actually reachable; the one-line starter fix
+(require + one error-reporting `xpcall`) is committed as `e2165f5` with offline tests.
+
 ## 2 · Evidence table (verbatim)
 
 | Fact | Value |
