@@ -1,0 +1,47 @@
+== listeners
+127.0.0.1:8790
+127.0.0.1:3092
+100.114.17.67:8790
+[::1]:8790
+== H1 status
+integrity.ok True | chain {'ok': True, 'verified_at_boot': 1546} | rows ok True pinned 9 disabled 12 failures []
+manifest 8b1f87d6aebffdc3 (want 4cc45e7148efe7fa) | sandbox True | lanes_allowed True | head seq 1547
+fleet.status keys: ['chain_head_sink', 'control', 'db', 'integrity', 'lanes_allowed', 'name', 'node', 'owner_secret_path', 'pid', 'policy', 'protocol', 'test_plugins', 'uptime_s']
+== H3 providers (booleans only)
+anthropic credential.present = False
+opencode-go credential.present = True
+claude-code credential.present = False
+codex credential.present = False
+== H4 MCP
+PASS  initialize                         rpc=1
+PASS  tools/list                         rpc=2
+      15 tools: ['fleet.status', 'session.create', 'session.prompt', 'session.status', 'board.op', 'order.drive_roundtrip', 'order.stage_real', 'fleet.selftest', 'actions.status', 'bus.hello', 'bus.who', 'bus.send', 'bus.pull', 'bus.ack', 'bus.status']
+PASS  tools/call fleet.status            rpc=3
+PASS  tools/call actions.status          rpc=4
+CLIENT-DONE
+== H5 parked lane is a real isolated repo, then stopped
+spawn: parked opencode-go builder:2
+cwd tail: ...home/fleet/work/lanes/builder_2-7be5eb2c
+toplevel == lane dir: YES
+.git is a real directory: yes
+branch: main   hooks inherited: 0
+commit in lane: d4f1fc4 h5 gate
+parent DSH repo head unchanged: yes
+lane-stop -> stopped
+== A10 desktop profile
+cordis.patch.yml 77476b79afe6d601 (want 77476b79afe6d601)
+package.json     ce364672e9bac647 (want ce364672e9bac6476)
+desktop app scopes running: 3
+== A11 writers of this DSH home
+writers of this home: [(3236494, 'dsh-fleet-consolidated.service')]
+== lanes / orders / log scan
+principal  state
+---------  ------
+lead       idle
+builder:2  parked
+id     state     block_reason
+--  -----------  ------------
+ 1  in_progress
+ 2  failed
+ 3  failed
+log /home/cayleb/.local/opt/deepseek-harness-official/apps/desktop/.desktop-build/development/home/fleet/log/consolidated-20261102T200010Z.out: lines 1

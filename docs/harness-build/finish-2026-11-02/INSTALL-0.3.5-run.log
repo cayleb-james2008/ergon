@@ -1,0 +1,32 @@
+target:  /home/cayleb/.local/opt/deepseek-harness-official/apps/desktop/.desktop-build/development/home/profiles/fleet/node_modules/@cayleb/dsh-fleet
+profile: /home/cayleb/.local/opt/deepseek-harness-official/apps/desktop/.desktop-build/development/home/profiles/fleet
+home:    /home/cayleb/.local/opt/deepseek-harness-official/apps/desktop/.desktop-build/development/home
+release: /home/cayleb/workspace/harness-build/finish-rel/package (5 package files in FILES-0.3.5.sha256, 2 host artefacts)
+  replace  pkg/VARIANT.md
+  replace  pkg/cordis.patch.yml
+  replace  pkg/package.json
+  replace  pkg/src/mcp/server.js
+  replace  pkg/src/mcp/tools.js
+  replace  profile/cordis.patch.yml
+  replace  pkg/rows.manifest.json
+0 already installed, 7 to install
+installed manifest sha256 will be: 8b1f87d6aebffdc3fb65f93c0034042b7a1d8ecd767e287db4d7e3e58111afc9
+stop: systemctl --user stop dsh-fleet-consolidated
+stopped (ports 8790 and 3092 closed, control socket gone)
+backup: /home/cayleb/.local/opt/deepseek-harness-official/apps/desktop/.desktop-build/development/home/fleet/backups/rel035-20261102T200010Z
+installed 7 file(s); every installed artefact verified against its expected sha256
+manifest check: the installed rows.manifest.json is exactly what bin/rows-manifest.mjs generates from the installed patch files (9 pinned row(s), 12 disabled id(s))
+compose check: dump-config mounts @cayleb/dsh-fleet/comms once
+rollback: release/install-0.3.5.sh --rollback (restores every replaced file from /home/cayleb/.local/opt/deepseek-harness-official/apps/desktop/.desktop-build/development/home/fleet/backups/rel035-20261102T200010Z)
+start: systemd-run --user --unit=dsh-fleet-consolidated (log /home/cayleb/.local/opt/deepseek-harness-official/apps/desktop/.desktop-build/development/home/fleet/log/consolidated-20261102T200010Z.out)
+Running as unit: dsh-fleet-consolidated.service; invocation ID: 5b30779c5db84c48a091bc73f7e2ad97
+up: 127.0.0.1:8790 and the control socket after 1 s
+start log is clean.
+self-check: bus-selfcheck.mjs against the running host (the bearer is read inside the process and never printed)
+  PASS  control status: integrity ok, rows ok, expected pins: rows pinned 9 disabled 12 failures [] manifest 8b1f87d6aebf
+  PASS  control comms-list: ok, with the seeded participants: participants cayleb-local, nox
+  PASS  facade: initialize: fleet-mcp 0.3.5-mcp
+  PASS  facade: 15 tools, 6 of them bus.*: 15 tools
+  PASS  facade: bus.status is routed to the mounted comms service (not bus-unavailable): code not-a-participant
+BUS SELF-CHECK: PASS
+INSTALL PASS: the bus is mounted on the running host
