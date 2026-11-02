@@ -10,7 +10,9 @@ Design note: `board/probes/team-d/design-b2-world-regions-20261102.md`. Log: `bo
 
 - **B2 — plan** (`tools/map_atlas.py`): `world-overhead` is removed; four bounded **`world-region-1..4-overhead`** views
   replace it, each anchored on ONE native bounded model — `City/Junctions/JunctionPad_n_3_2`, `…n_10_10`, `…n_6_12`,
-  `…n_12_6` (four spread city-junction pads; never the world support) — `zone:'world'`, `regionRole:'world-region'`,
+  `…n_12_6` (four spread city-junction pads; never the world support). **Justified deviation from the design note:** the
+  note's region-3/4 anchors reused two highway-zone road anchors; the commit uses four **distinct** city pads instead so
+  the validator's eight-distinct-anchor rule holds and the 8 anchors are unique across both role groups. — `zone:'world'`, `regionRole:'world-region'`,
   `coverageIds:['world:overview']`, planned cameras like other overheads. The four existing highway-zone views carry
   `zoneRole:'highway-zone'`. Scout count goes **27 → 30** (`24 − 2 + 8`), assert updated, html scout count derived.
 - **Ordering fold**: scout order is `city-overhead`, four `highway-zone` overheads (ordinals **21–24**), perimeter,
@@ -45,11 +47,28 @@ Design note: `board/probes/team-d/design-b2-world-regions-20261102.md`. Log: `bo
 - **Mutations (design note M23/M24/M25)**: an added/restored whole-map overhead or a broken role/anchor/bound fails the
   plan/validator pins; the B2 negatives above cover drop/duplicate/wrong-anchor/whole-map-id regressions.
 
+## 2b · Checker-trading delta (REJECT → fixed, second freeze)
+
+Checker delta (`board/reports/checker-b2-delta.md`) rejected only on **M24**: "revert the server fit order" did not fail
+any test because nothing pinned the zonePath-first `fitBounds` order. Smallest fix + folded residuals:
+1. `test_atlas_acceptance.py` wiring test now pins the exact order
+   (`if view.zonePath then actual.fitBounds=actualBounds(anchor)\n   elseif view.zone=="world" then`) **and** asserts the old
+   world-first form is absent. **M24 re-run: FAILED (1)** — mutation now caught.
+2. The old server/client **cap test restored** (`#manifest.views<=32` / `#plan.views<=32`, no `<=24`, 30-view scout fits,
+   33 rejected).
+3. The **bounded-span negative is unit-tested**: shrinking `server.support` below a region's fit now fails with
+   `world-region framing must be strictly smaller than the world support`; **M25b (rule removed) → FAILED (1)**.
+4. Missing log filed: `board/probes/team-d/atlas-b2-freeze-20261102.log`.
+5. Stale runbook run-7 "27 views" paragraph removed (only the 30-view paragraph remains).
+6. Report untracked count corrected 792 → **823**; anchor deviation recorded (above).
+**Delta tip:** see the commit after `746a99e` (same checker seat re-verifies). Suites re-run on the delta tip: atlas
+acceptance **24 OK**, full Python, Lune atlas + full Lune.
+
 ## 3 · Freeze evidence (fresh checkout of `746a99e`)
 
 | # | Command | Result |
 |---|---|---|
-| 1 | `git rev-parse HEAD; git status --short` | `746a99e…`; tracked tree clean (792 pre-existing untracked evidence-dir lines, R2 cosmetic) |
+| 1 | `git rev-parse HEAD; git status --short` | `746a99e…`; tracked tree clean (823 pre-existing untracked evidence-dir lines, R2 cosmetic) |
 | 2 | `python3 -m unittest discover -s tests/tools -p 'test_vinegar_run.py'` | **Ran 91 tests … OK** |
 | 3 | `python3 -m unittest discover -s tests/tools -p 'test_map_atlas.py'` | **Ran 6 tests … OK** |
 | 4 | `python3 -m unittest discover -s tests/tools -p 'test_atlas_acceptance.py'` | **Ran 22 tests … OK** |
