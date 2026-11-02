@@ -1,0 +1,9 @@
+== capture-retry mutation proofs (throwaway clone), 2026-11-01T23:17:33-05:00 ==
+M8 retry bound raised to 5 -> runner suite: Ran 88 tests, FAILED (failures=1)
+   FAIL: test_atlas_always_duplicate_capture_fails_closed_after_max_retries (expects 3 attempts / 4 captures / 'on all 3 attempts')
+M7 retry disabled (max 1) -> runner suite: Ran 88 tests, FAILED (failures=2)
+   FAIL: test_atlas_always_duplicate_capture_fails_closed_after_max_retries
+   FAIL: test_atlas_duplicate_capture_retries_once_and_keeps_the_attempts
+M9 camera-held check removed -> runner suite: Ran 88 tests, FAILED (failures=1)
+   FAIL: test_atlas_camera_moved_during_capture_retry_fails_closed
+restored: git status clean; tools/vinegar_run.py sha256 b1874c5b27587b48927c4d65acdc4b751ac1184ae72a4e177ef88e10206661e9

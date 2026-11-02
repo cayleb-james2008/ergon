@@ -1,0 +1,85 @@
+== capture-retry delta provenance/scope, 2026-11-01T23:17:33-05:00 ==
+HEAD=74cb299d6a6fbbb1020629a73af1bb53173af970
+parent=a231e3ffc36218822c285b3c25cdd60fed4216b3
+tree=5caad7ada5cee68b6bc423848de46b383bfdf691
+branch=prep/b1-capture-format-20261101
+tracked_mods=0 untracked=802
+--- delta a231e3f..74cb299 numstat ---
+50	1	tests/tools/test_vinegar_run.py
+35	6	tools/vinegar_run.py
+--- sum ---
+insertions=85 deletions=7
+--- changed paths ---
+tests/tools/test_vinegar_run.py
+tools/vinegar_run.py
+--- game/asset/sealed touched ---
+(empty=untouched)
+--- 45s/assert-and-skip/guarded fog intact (files untouched) ---
+(empty=untouched)
+160:ATLAS_FIRST_VIEW_TIMEOUT = 45  # Plan 4: bounded wait for view-001; a named-seed hang is caught in tens of seconds
+--- sealed hashes ---
+84324d4342667dd163ab8e64adacbf8ef44ab786aeda5c7ab1403e76d52ef6ce  build/release.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  build/test.rbxlx
+
+--- claim 1: bounded retry implementation ---
+class Atlas(CollectorFixture):
+    timeout, max_report, chunks = 600, 2 * 1024 * 1024, True
+    first_view_timeout = ATLAS_FIRST_VIEW_TIMEOUT  # Plan 4: bounded bind of view-001 (named-seed hang detector)
+    capture_attempts_max = 3  # launch March: one capture + at most 2 bounded retries when bytes duplicate an earlier view
+    capture_retry_wait = 0.3  # seconds between the duplicate and the retry (lets the Play frame repaint)
+
+    def __init__(self, name, seed=None):
+                self.read_world_trace(ctx, out)
+            ack = body["report"]
+            # Bounded fresh-capture retry: a capture that duplicates an earlier view's bytes is re-taken (at most
+            # capture_attempts_max total) after a short wait, with the camera re-probed each time. The duplicate rule
+            # stays the final fail-closed outcome, and every attempt is kept as evidence so the retry path is auditable.
+            attempts = []
+            for attempt in range(1, self.capture_attempts_max + 1):
+                before = probe(ctx)
+                raw, mime = ctx.studio.capture()
+                after = probe(ctx)
+                sha = digest(raw)
+                duplicate = any(c["sha256"] == sha for c in self.captures)
+                delta = max(max(abs(a - b) for a, b in zip(p["camera"]["frame"], ack["frame"])) for p in (before, after))
+                attempts.append({"attempt": attempt, "sha256": sha, "duplicate": duplicate, "cameraDelta": delta})
+                if not duplicate:
+                    break
+                if delta > frames.CAMERA_TOLERANCE:
+                    self.capture_attempts.append({"phase": phase, "attempts": attempts})
+                    raise FixtureFailed(f"{phase}: camera moved during the capture retry ({delta:.4g} > "
+                                        f"{frames.CAMERA_TOLERANCE}); no capture accepted")
+                if attempt == self.capture_attempts_max:
+                    self.capture_attempts.append({"phase": phase, "attempts": attempts})
+                    raise FixtureFailed(f"{phase}: screen_capture returned the same bytes as an earlier view on all "
+                                        f"{attempt} attempts (stale capture; attempts recorded)")
+                ctx.sleep(self.capture_retry_wait)
+            self.capture_attempts.append({"phase": phase, "attempts": attempts})
+            if any(a["duplicate"] for a in attempts):
+                write(out / "capture-attempts.json", self.capture_attempts)
+            for which, p in (("before", before), ("after", after)):
+                delta = max(abs(a - b) for a, b in zip(p["camera"]["frame"], ack["frame"]))
+                if delta > frames.CAMERA_TOLERANCE:
+                    raise FixtureFailed(f"{phase} camera {which} capture differs from the ack by {delta:.4g} > {frames.CAMERA_TOLERANCE}")
+            name = f"{index:03d}-{view['id']}"
+            image_name = name + frames.image_ext(mime)
+            write(out / "views" / image_name, raw)
+            try:
+                row = frames.sidecar(index, before, after, raw, image_name, self.visual_flags, mime, ctx.place_technology)
+            except ValueError as exc:
+                raise FixtureFailed(f"{phase}: {exc}") from exc
+            # The view's native acknowledgement (seed, twoSettledFrames, qualifiedCoverage, anchors, ...) under the probe's fields.
+            row.update(ok=body.get("ok") is True, report=frames.merged(ack, row["report"]), ack=phase)
+            if len(attempts) > 1:
+                row["captureAttempts"] = attempts
+            write(out / "views" / (name + ".json"), row)
+            self.captures.append({"id": view["id"], "phase": phase, "path": f"views/{image_name}", "mimeType": mime, "sha256": digest(raw)})
+
+--- claim 2: the three offline tests ---
+1683:    def test_atlas_duplicate_capture_retries_once_and_keeps_the_attempts(self):
+1700:    def test_atlas_always_duplicate_capture_fails_closed_after_max_retries(self):
+1713:    def test_atlas_camera_moved_during_capture_retry_fails_closed(self):
+1728:    def test_atlas_stale_identical_capture_is_rejected(self):
+
+--- claim 4: Lune-read files touched by delta ---
+(empty = no Lune-read file changed; full Lune relied on prior 920/0 at a231e3f)
