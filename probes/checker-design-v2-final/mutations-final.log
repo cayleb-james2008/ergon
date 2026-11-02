@@ -1,0 +1,32 @@
+== final-freeze C1-C5 mutation re-proofs, 2026-11-01T20:37:20-05:00 ==
+=== MUTATION no_manifest: rc=1
+V2 COMPS CHECK: FAIL (1)
+  - FREEZE.sha256 is missing — the set is not frozen (no manifest, no integrity)
+
+=== MUTATION extra_file: rc=1
+V2 COMPS CHECK: FAIL (1)
+  - directory contents are not exactly the frozen set — extra: extra-unfrozen.txt; missing: none
+
+=== MUTATION inline_colour: rc=1
+V2 COMPS CHECK: FAIL (1)
+  - index.html: raw colour keyword in a style context — use a token
+
+=== MUTATION composer_kit: rc=1
+V2 COMPS CHECK: FAIL (2)
+  - comp-kit.css: `.phone .composer` must use the field-line boundary (3:1 field rule)
+  - comp-kit.css: `.phone .composer` must not use the decorative --line token
+
+=== MUTATION composer_inline: rc=1
+V2 COMPS CHECK: FAIL (2)
+  - comps/05: the desktop composer inline border must use var(--field-line)
+  - comps/05: the desktop composer inline border must not use var(--line)
+
+=== MUTATION pill_accent_readd: rc=1
+V2 COMPS CHECK: FAIL (1)
+  - comp-kit.css: latent unused `.pill.accent` (4.20 on wash) must not be reintroduced
+
+=== MUTATION checkbox_rule_removed: rc=1
+V2 COMPS CHECK: FAIL (1)
+  - comp-kit.css: native checkboxes must carry the 2px accent focus ring
+
+restored mut

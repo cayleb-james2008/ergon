@@ -1,0 +1,27 @@
+== C1 composer boundary: independent recompute, both ambient washes, 2026-11-01T20:37:45-05:00 ==
+composer fill (surface-2 over phone surface-1 over both washes): rgba (37, 48, 58)
+composer border (field-line 0.46 over fill): rgba (115, 131, 149) = rgba(206,228,255,0.46) composited
+composer boundary contrast: 3.4620:1  (floor 3; claimed 3.46)
+generic input[type=text] field boundary (checker model): 3.2965:1
+
+== C4 checkbox computed-style derivation (static; headless browser not feasible in this env) ==
+token --accent = "accent": "#8DB4FF"  -> computed outline-color rgb(141, 180, 255)
+108:input[type="checkbox"] { accent-color: var(--accent); }
+109:input[type="checkbox"]:focus-visible { outline: var(--focus-ring) solid var(--accent); outline-offset: var(--focus-gap); }
+no later override of input[type=checkbox] focus ring:
+108:input[type="checkbox"] { accent-color: var(--accent); }
+109:input[type="checkbox"]:focus-visible { outline: var(--focus-ring) solid var(--accent); outline-offset: var(--focus-gap); }
+checkbox elements in pages:
+comps/02-mobile-triage-approvals.html:72:            <input type="checkbox" style="margin-top:3px;">
+motion-storyboard.html:30:      <label class="row caption" style="gap:6px;"><input type="checkbox" data-slow> slow motion ×0.25 (grading aid)</label>
+custom-property substitution is deterministic: var(--accent) -> #8DB4FF -> rgb(141,180,255); var(--focus-ring) -> 2px; var(--focus-gap) -> 2px
+
+== C5 .pill.accent removed ==
+no .pill.accent rule (removed)
+
+== C2/C3/C1/C4/C5 assertions present in check-comps.mjs ==
+38:  // An inline style's FIRST declaration has no leading ';'/'{' — scan each style="" value with a synthetic separator.
+149:check(!/\.pill\.accent\s*\{/.test(kit), 'comp-kit.css: latent unused `.pill.accent` (4.20 on wash) must not be reintroduced');
+195:check(exists('FREEZE.sha256'), 'FREEZE.sha256 is missing — the set is not frozen (no manifest, no integrity)');
+205:  check([...CONTENT].every((f) => listed.has(f)), `FREEZE.sha256 is missing content files: ${CONTENT.filter((f) => !listed.has(f)).join(', ')}`);
+216:  check(JSON.stringify(onDisk) === JSON.stringify([...CONTENT].sort()), `directory contents are not exactly the frozen set — extra: ${onDisk.filter((f) => !CONTENT.includes(f)).join(', ') || 'none'}; missing: ${CONTENT.filter((f) => !onDisk.includes(f)).join(', ') || 'none'}`);
