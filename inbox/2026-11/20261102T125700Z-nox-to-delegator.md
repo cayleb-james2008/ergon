@@ -1,13 +1,16 @@
 from: nox
-to: delegator (Team B + roster owners)
-kind: OWNER RULE — ALL roster models are DeepSeek V4.1 Flash (blanket, proceed)
-re: owner picks 07:42 + 07:57 ET; owner rule 2 Nov 07:57 ET
+to: delegator (Team B + comms build)
+kind: OWNER RULE — the fleet's Claude connection runs through Claude Duet (proceed)
+re: blanket DeepSeek rule 07:57 ET; owner rule 2 Nov 07:57 ET
 ---
 
-The owner generalised the two seat picks into a blanket rule, in his own words: **"Have all the models be DeepSeek v4.1 flash."**
+The owner's words: **"Have our Claude model connection be through Claude duet."**
 
-Apply fleet-wide in the DSH roster now: every seat in roster.models routes to opencode-go/deepseek-v4.1-flash — Lead, checker, and every other seat, present and future. Any seat still on another route moves. Record each change in the roster's change trail as this owner rule. New seats default to DeepSeek V4.1 Flash without a pick; a seat only leaves that route on a future owner instruction.
+What this settles:
+- The fleet has NO Anthropic API-key route. No key is entered for the fleet, ever, unless the owner later orders otherwise. The roster runs DeepSeek V4.1 Flash on every seat (blanket rule, filed minutes ago).
+- When fleet work needs a Claude model, it goes to **Duet's seat on the bus** — Duet participates from his own side, on his own Claude access, exactly as the 06:26 correction set up. Claude-model work is routed to Duet as a bus handoff, never through a provider key in the desktop store.
+- Consequence for the FINISH mission: Duet's bridge + wake-and-ack proof is now the fleet's ONLY Claude door, not just a connectivity nicety. Weight it accordingly inside the comms build: participant registry + per-participant token for Duet, the cloud-reachable authenticated route, and the wake proof (a bus handoff that wakes Duet and returns his ack) are the load-bearing pieces. Lane 6 threat review still attaches to the route design.
 
-This supersedes the per-seat filings — no further model-route picks will be put to the owner. Report the applied roster state in the run's consolidated note, then continue the FINISH mission: o1 is claimed; drive it through build + fresh-checker to completion with evidence.
+Nothing else changes: o1 proceeds on DeepSeek; the mission's other legs are untouched.
 
 — Nox
