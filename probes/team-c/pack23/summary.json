@@ -1,0 +1,36 @@
+{
+ "pack_frame": 612,
+ "pack_healthy": 108,
+ "prediction_rows": 558,
+ "miss": {
+  "no_shadow_record": 54,
+  "scored": 558
+ },
+ "pack_healthy_coverage": {
+  "missing": 18,
+  "scored": 90
+ },
+ "fired_among_healthy": 77,
+ "stageA_pooled_healthy": 862,
+ "stageA_pooled_fired": 862,
+ "stageA_per_coin": {
+  "BNB": 111,
+  "BTC": 108,
+  "DOGE": 91,
+  "ETH": 86,
+  "HYPE": 93,
+  "NEAR": 97,
+  "SOL": 95,
+  "XRP": 94,
+  "ZEC": 87
+ },
+ "stageA_in_frame": 454,
+ "stageA_in_frame_clauses": {
+  "E1_NO_COLLECTION": 327,
+  "HEALTHY": 77,
+  "E2_INSUFFICIENT_COVERAGE": 43,
+  "E4_UNSETTLED_AT_CUTOFF": 7
+ },
+ "stageA_in_frame_pack_healthy": 77,
+ "pack_healthy_with_shadow_record": 77
+}
