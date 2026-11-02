@@ -1,4 +1,10 @@
 # FACE LIVE-INSTALL GATE CHECKLIST — pre-written so the window is fast and safe (Lead, 2 Nov 17:00 ET)
+**Fence scope note (added 2 Nov 17:13 ET, after the leg-3 Part B fence sweep):** the "owner's desktop profile untouched" fences in this
+checklist (preconditions 5 and gate **H8**) apply to this **pre-relocation face install** window only. Once the relocation's app switch lands
+(owner order: one profile, the fleet plugin as his personal profile), the desktop-profile hash fence is **superseded** by that order — the
+checklist must not be cited as a live fence after the switch, and the relocation's own gates take over. Flagged here so the fence sweep sees
+the scope rather than a stale rule.
+
 Scope: installing `0.3.5.1-face-prep` (tarball `7a125df2…ecf5`, manifest `d8226990…9e42`, overlay `74e763b0…`) into the **fleet profile**
 (`:3092` surface; G-D1 = fleet profile, never the owner's personal profile). Owner: executing session gates it; Team B supplies the artifact;
 Lead verifies; a fresh checker audits after. **No install without Nox's go.**
