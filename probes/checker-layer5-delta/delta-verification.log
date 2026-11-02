@@ -1,0 +1,91 @@
+== layer-5 delta provenance/scope, 2026-11-01T23:41:27-05:00 ==
+HEAD=ed9b797ffe553ec7cc09bae02012ea2e2be153c9
+parent=74cb299d6a6fbbb1020629a73af1bb53173af970
+tree=1ddd75fd5f1c5ca0860c0d5ce49eb4f2aaa09862
+branch=prep/b1-capture-format-20261101
+tracked_mods=0 untracked=805
+--- delta 74cb299..ed9b797 numstat ---
+45	1	tests/tools/test_vinegar_run.py
+36	9	tools/vinegar_run.py
+--- sum ---
+insertions=81 deletions=10
+--- changed paths ---
+tests/tools/test_vinegar_run.py
+tools/vinegar_run.py
+--- game/asset/sealed touched ---
+(empty=untouched)
+--- invariants (files untouched) ---
+(empty=untouched)
+160:ATLAS_FIRST_VIEW_TIMEOUT = 45  # Plan 4: bounded wait for view-001; a named-seed hang is caught in tens of seconds
+617:    capture_attempts_max = 3  # one capture + at most 2 bounded retries when bytes duplicate an earlier view
+621:    overhead_kinds = ("overhead", "cell-roof", "tile")
+622:    overhead_settle = 1.0
+623:    overhead_retry_wait = 1.0
+708:            overhead = kind in self.overhead_kinds
+--- sealed hashes ---
+84324d4342667dd163ab8e64adacbf8ef44ab786aeda5c7ab1403e76d52ef6ce  build/release.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  build/test.rbxlx
+
+--- claim 1: settle/retry code ---
+class Atlas(CollectorFixture):
+    timeout, max_report, chunks = 600, 2 * 1024 * 1024, True
+    first_view_timeout = ATLAS_FIRST_VIEW_TIMEOUT  # Plan 4: bounded bind of view-001 (named-seed hang detector)
+    capture_attempts_max = 3  # one capture + at most 2 bounded retries when bytes duplicate an earlier view
+    capture_retry_wait = 0.3  # seconds between the duplicate and the retry (lets the Play frame repaint)
+    # Overhead frames render the whole city/highway (the heaviest of a batch): give the renderer a bounded settle before
+    # the first capture and a longer bounded retry wait. Still fail-closed after capture_attempts_max attempts.
+    overhead_kinds = ("overhead", "cell-roof", "tile")
+    overhead_settle = 1.0
+    overhead_retry_wait = 1.0
+
+            # bounded render settle before the first capture and a longer bounded retry wait (the heaviest frames). The
+            # duplicate rule stays the final fail-closed outcome, and every attempt is kept as evidence so the retry path
+            # is auditable — including on fail-closed paths.
+            kind = view.get("kind")
+            overhead = kind in self.overhead_kinds
+            settled = 0.0
+            if overhead:
+                ctx.sleep(self.overhead_settle)
+                settled = self.overhead_settle
+            attempts = []
+            for attempt in range(1, self.capture_attempts_max + 1):
+                before = probe(ctx)
+                raw, mime = ctx.studio.capture()
+                after = probe(ctx)
+                sha = digest(raw)
+                duplicate = any(c["sha256"] == sha for c in self.captures)
+                delta = max(max(abs(a - b) for a, b in zip(p["camera"]["frame"], ack["frame"])) for p in (before, after))
+                attempts.append({"attempt": attempt, "sha256": sha, "duplicate": duplicate, "cameraDelta": delta})
+                if not duplicate:
+                    break
+                if delta > frames.CAMERA_TOLERANCE:
+                    self.capture_attempts.append({"phase": phase, "kind": kind, "settledSeconds": settled,
+                                                  "attempts": attempts})
+                    self.flush_capture_attempts(out)
+                    raise FixtureFailed(f"{phase}: camera moved during the capture retry ({delta:.4g} > "
+                                        f"{frames.CAMERA_TOLERANCE}); no capture accepted")
+                if attempt == self.capture_attempts_max:
+                    self.capture_attempts.append({"phase": phase, "kind": kind, "settledSeconds": settled,
+                                                  "attempts": attempts})
+                    self.flush_capture_attempts(out)
+                    raise FixtureFailed(f"{phase}: screen_capture returned the same bytes as an earlier view on all "
+                                        f"{attempt} attempts (stale capture; kind={kind} settle={settled:.1f}s; "
+                                        f"attempts recorded)")
+                ctx.sleep(self.overhead_retry_wait if overhead else self.capture_retry_wait)
+            self.capture_attempts.append({"phase": phase, "kind": kind, "settledSeconds": settled, "attempts": attempts})
+            if any(a["duplicate"] for a in attempts):
+                self.flush_capture_attempts(out)
+
+--- claim 2: flush implementation (exclusive write; FileExistsError swallowed) ---
+    def flush_capture_attempts(self, out):
+        """Write the capture-attempt audit once (also on fail-closed paths, so attempts are always on disk)."""
+        if not self.capture_attempts:
+            return
+        try:
+            write(out / "capture-attempts.json", self.capture_attempts)
+        except FileExistsError:
+            pass
+--- failure-path flush calls ---
+727:                    self.flush_capture_attempts(out)
+733:                    self.flush_capture_attempts(out)
+740:                self.flush_capture_attempts(out)

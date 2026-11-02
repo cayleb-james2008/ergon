@@ -1,0 +1,33 @@
+{
+ "exit": 1,
+ "error": "FixtureFailed: view-020: screen_capture returned the same bytes as an earlier view on all 3 attempts (stale capture; kind=overhead settle=1.0s; attempts recorded)",
+ "result_attempt_entries": 20,
+ "result_phases": [
+  "view-001",
+  "view-002",
+  "view-003",
+  "view-004",
+  "view-005",
+  "...",
+  "view-018",
+  "view-019",
+  "view-020"
+ ],
+ "audit_file_present": true,
+ "audit_entries": 2,
+ "audit_phases": [
+  "view-001",
+  "view-002"
+ ],
+ "consistent_lengths": false,
+ "result_view2_attempts": [
+  true,
+  false
+ ],
+ "result_view20_attempts": [
+  true,
+  true,
+  true
+ ],
+ "audit_last_phase": "view-002"
+}

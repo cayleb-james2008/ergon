@@ -1,0 +1,8 @@
+== layer-5 mutation proofs (throwaway clone), 2026-11-01T23:41:27-05:00 ==
+M10 overhead_settle = 0.0 (settle removed) -> runner suite: Ran 90 tests, FAILED (failures=3)
+   FAIL: test_atlas_duplicate_capture_retries_once_and_keeps_the_attempts
+   FAIL: test_atlas_overhead_views_take_a_bounded_render_settle
+   FAIL: test_atlas_still_frozen_overhead_fails_closed_with_kind_and_settle_evidence
+M11 failure-path audit flushes removed -> runner suite: Ran 90 tests, FAILED (errors=1)
+   ERROR: test_atlas_still_frozen_overhead_fails_closed_with_kind_and_settle_evidence (capture-attempts.json missing)
+restored: git status clean; tools/vinegar_run.py sha256 7c0790df5d25e79fdbed976736197cc3e80bdf61c36655d6026d97e92b85dd74
