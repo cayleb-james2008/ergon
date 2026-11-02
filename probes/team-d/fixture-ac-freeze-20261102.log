@@ -1,0 +1,45 @@
+=== ABORT-CONTACT FIXTURE A+C (Nox run-6 ruling) 2026-11-02 ===
+commit 1e8b5b774832bbaac2de9bbb0487fbd3baba5ae7  tree 4d6dcdb47682581528f9f0e3ccbe0ae198d9c4e3  parent fc546e5
+time 2026-11-02T05:07:35Z
+
+--- why (Play 1 attribution 2026-11-02T02:29:40Z) ---
+probe's contact drive drove the sole observer away: distance 23.9 studs at contactDriveAt 9.003 s -> >800 (RETIRE_RADIUS) at t=22.283 s -> controller's documented unobserved (>1 s) rule retired the car 0.95 s later (generation 2->3, contacts/touches 0). Nox run-6 ruled A+C; B fallback only if A cannot close (exact bounded values); D rejected.
+
+--- implemented (fixture/test files only; no production code) ---
+A: tests/traffic/Server.luau contact leg chases the proxy's CURRENT lane position: proxyS=Sim.project(source.poly,proxy.body.Position), 0.15 s lead, closing clamp(proxySpeed+8,12,60), new pure Server.pursuitAcceleration(...) with unchanged 40 studs/s^2 cap; report.contactLeg{t,distance,proxyS,targetS,proxySpeed,speed,lead}; old blind wantedSpeed=-18 removed.
+C: pure Server.contactLegGuard(distance,touches,sinceContactDrive) with both named fail-fast messages (radius >700 of 800; 12 s no-touch); reached contact never overridden.
+B not used (no proxy-speed bound); D absent (rejected).
+
+--- tests ---
+new Lune spec tests/unit/traffic-contact-pursuit.spec.luau (3/3: pursuit direction+cap+closing; both named guards + reached-contact exemption; synthetic Play-1 series regression: escaping 23.9->862 trips radius guard, closing does not)
+Python source-shape test pins wiring, lead/clamp, unchanged force cap, absence of the blind reverse
+
+--- mutation proofs (maker self-check, restored, tracked clean) ---
+M14 blind reverse restored (no pursuit) -> traffic acceptance FAILED (1)
+M15 observation-radius guard removed    -> Lune spec FAILED (2)
+M16 12 s no-touch timer removed         -> Lune spec FAILED (1)
+M17 closing clamp widened to 80         -> traffic acceptance FAILED (1)
+
+--- suites on the freeze commit ---
+Ran 91 tests in 12.287s
+
+OK
+Ran 7 tests in 0.078s
+
+OK
+Ran 325 tests in 46.153s
+OK
+unit: 93 passed, 0 failed (18 specs)
+
+--- sealed ---
+84324d4342667dd163ab8e64adacbf8ef44ab786aeda5c7ab1403e76d52ef6ce  build/release.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  build/test.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  /home/cayleb/.var/app/org.vinegarhq.Vinegar/data/usg/usg-desktop.rbxlx
+
+--- full Lune unit suite (freeze tree) ---
+unit: 923 passed, 0 failed (127 specs)  lune_rc=0
+
+--- final state 2026-11-02T05:18:22Z ---
+HEAD 1e8b5b774832bbaac2de9bbb0487fbd3baba5ae7  tree 4d6dcdb47682581528f9f0e3ccbe0ae198d9c4e3  tracked_modified=0
+sealed unchanged: 84324d43.../c6651793...
+Studio: idle, pid 814951, recovered opening 1/3 used (untouched this task); no Play performed
