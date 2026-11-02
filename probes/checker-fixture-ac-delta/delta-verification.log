@@ -1,0 +1,74 @@
+== fixture A+C provenance/scope, 2026-11-02T00:22:02-05:00 ==
+HEAD=1e8b5b774832bbaac2de9bbb0487fbd3baba5ae7
+parent=fc546e582bc4e9729875b612e74b8302c8ad9704
+tree=4d6dcdb47682581528f9f0e3ccbe0ae198d9c4e3
+branch=prep/b1-capture-format-20261101
+tracked_mods=5 untracked=807
+--- delta fc546e5..1e8b5b7 numstat ---
+15	12	tests/tools/test_traffic_acceptance.py
+35	2	tests/traffic/Server.luau
+55	0	tests/unit/traffic-contact-pursuit.spec.luau
+--- sum ---
+insertions=105 deletions=14
+--- changed paths ---
+tests/tools/test_traffic_acceptance.py
+tests/traffic/Server.luau
+tests/unit/traffic-contact-pursuit.spec.luau
+--- game/asset/sealed touched ---
+(empty=untouched)
+--- earlier layers intact (files untouched) ---
+(empty=untouched)
+160:ATLAS_FIRST_VIEW_TIMEOUT = 45  # Plan 4: bounded wait for view-001; a named-seed hang is caught in tens of seconds
+617:    capture_attempts_max = 3  # one capture + at most 2 bounded retries when bytes duplicate an earlier view
+622:    overhead_settle = 1.0
+--- sealed hashes ---
+84324d4342667dd163ab8e64adacbf8ef44ab786aeda5c7ab1403e76d52ef6ce  build/release.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  build/test.rbxlx
+
+--- A: pure pursuit helper + unchanged cap ---
+-- Fixture fix A (Nox run-6 ruling): the contact leg pursues the proxy's CURRENT lane position instead of driving back
+-- along the ego's own projection. Closing speed is clamp(proxy+8,12,60); the 40 studs/s^2 force cap is unchanged.
+function Server.pursuitAcceleration(loop,targetS,position,velocity,speed)
+ local lane=Sim.frame(loop.poly,targetS)
+ local forward=Vector3.new(lane.LookVector.X,0,lane.LookVector.Z).Unit
+ local right=Vector3.new(-forward.Z,0,forward.X)
+ local acc=forward*math.clamp((speed-velocity:Dot(forward))*2,-38,10)+right*math.clamp((lane.Position-position):Dot(right)*1.5-velocity:Dot(right)*2,-12,12)
+ if acc.Magnitude>40 then acc=acc.Unit*40 end
+ return acc,lane
+end
+-- Fixture fix C (Nox run-6 ruling): both named fail-fast guards for the contact leg. Pure, so the offline spec can pin
+-- them; nil means the leg is still valid. A reached contact (touches>0) is never overridden by these guards.
+function Server.contactLegGuard(distance,touches,sinceContactDrive)
+--- A wiring (proxyS/lead/closing/report) ---
+     local acc,lane
+     if contactAt then
+      -- Fixture fix A: closed-loop pursuit of the proxy's current lane position (0.15 s lead, closing clamp(proxy+8,12,60)).
+      local proxyForward=proxy.body.CFrame.LookVector
+      local proxySpeed=proxy.body.AssemblyLinearVelocity:Dot(Vector3.new(proxyForward.X,0,proxyForward.Z).Unit)
+      local proxyS=Sim.project(source.poly,proxy.body.Position)
+      local leadS=proxyS+math.max(0,proxySpeed)*0.15
+      local closing=math.clamp(proxySpeed+8,12,60)
+      local distance=(ego.Position-proxy.body.Position).Magnitude
+      -- Fixture fix C: both named guards run before the next acceleration write.
+      local guardError=Server.contactLegGuard(distance,#report.touches,age-contactAt)
+      if guardError then error(guardError) end
+      report.contactLeg={t=age,distance=distance,proxyS=proxyS,targetS=leadS,proxySpeed=proxySpeed,speed=closing,lead=0.15}
+      acc,lane=Server.pursuitAcceleration(source,leadS,ego.Position,ego.AssemblyLinearVelocity,closing)
+     else
+      acc,lane=Server.obstacleAcceleration(wantedLoop,ego.Position,ego.AssemblyLinearVelocity,wantedSpeed)
+--- C: guard helper + ordering before the acceleration write ---
+ if touches<=0 and distance>700 then return "probe left the controller's observation radius (>700 of 800 studs): contact leg unreachable" end
+ if touches<=0 and sinceContactDrive>=12 then return "contact leg never reached within 12 s of contactDriveAt" end
+ return nil
+end
+function Server.start(nonce)
+ assert(Run:IsStudio() and Run:IsRunning() and game.GameId==0 and game.PlaceId==0 and W:GetAttribute("UseLiveDataStore")~=true,"local unpublished preview Play required")
+ assert(W:GetAttribute("HandlingNonce")==nonce and SSS.Nightshift.Bootstrap.Disabled,"owned disabled Bootstrap required")
+214:      local guardError=Server.contactLegGuard(distance,#report.touches,age-contactAt)
+215:      if guardError then error(guardError) end
+217:      acc,lane=Server.pursuitAcceleration(source,leadS,ego.Position,ego.AssemblyLinearVelocity,closing)
+--- no blind reverse / B / D ---
+no wantedSpeed=-18
+no B/D constructs
+--- force cap occurrences ---
+2

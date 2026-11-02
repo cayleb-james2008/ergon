@@ -1,0 +1,16 @@
+== tip movement observation, 2026-11-02T00:31:47-05:00 ==
+verified commit: 1e8b5b774832bbaac2de9bbb0487fbd3baba5ae7 (tree 4d6dcdb47682581528f9f0e3ccbe0ae198d9c4e3)
+current HEAD: d83efa88348ef055ece2602843b5986482677c55 (tests: pin the Nox run-7 zone-overhead substitution (plan/validator/server/client))
+1e8b5b7 ancestor of current HEAD: yes
+files changed 1e8b5b7..HEAD:
+docs/verify/2026-10-19/VINEGAR_RUNBOOK.md
+tests/atlas/Client.luau
+tests/atlas/Server.luau
+tests/tools/test_atlas_acceptance.py
+tests/tools/test_atlas_capture_index.py
+tests/tools/test_map_atlas.py
+tests/tools/test_vinegar_run.py
+tools/atlas_acceptance.py
+tools/map_atlas.py
+
+During the verification window the maker working tree showed 5 tracked modifications (atlas Client/Server, test_atlas_acceptance, tools/atlas_acceptance, tools/map_atlas; mtimes 00:20-00:21) which are now committed as the new tip; the frozen 1e8b5b7 commit itself and my fresh clone of it are clean.

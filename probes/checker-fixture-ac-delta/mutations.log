@@ -1,0 +1,11 @@
+== fixture A+C mutation proofs (throwaway clone), 2026-11-02T00:22:02-05:00 ==
+M14 blind wantedSpeed=-18 reverse restored -> traffic acceptance: Ran 7 tests, FAILED (failures=1)
+   FAIL: test_abort_contact_uses_closed_loop_pursuit_and_both_named_guards
+M15 observation-radius guard removed -> Lune pursuit spec: 1 passed, 2 failed (1 specs)
+   FAIL guards: named observation-radius guard expected true, got false
+   FAIL synthetic Play-1 series: escaping series trips the radius guard expected true, got false
+M16 12 s no-touch timer removed -> Lune pursuit spec: 2 passed, 1 failed (1 specs)
+   FAIL guards: named 12 s no-touch timer expected true, got false
+M17 closing clamp widened to 80 -> traffic acceptance: Ran 7 tests, FAILED (failures=1)
+   FAIL: test_abort_contact_uses_closed_loop_pursuit_and_both_named_guards
+restored: git status clean; tests/traffic/Server.luau sha256 bf29900eee5e75cead4be0b5a1a37238679c329ef3f68e91182bd12afc7b0d28 (frozen)
