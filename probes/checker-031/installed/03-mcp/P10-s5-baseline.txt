@@ -1,0 +1,3 @@
+S5 summary: {"probe": "checker-verify/mcp-verify.mjs", "started": "2026-11-01T23:11:46.401Z", "finished": "2026-11-01T23:11:48.253Z", "mode": "real", "urls": {"loopback": "http://127.0.0.1:8789/mcp", "tailnet": "http://100.114.17.67:8789/mcp", "tailnet_established": true}, "nonce": "cv-mvyg2km9-da8e80ab", "checks": {"total": 85, "passed": 79, "failed": 2, "informational": 4}, "failedIds": ["T3.prompt", "T3.status"], "verdict": "FAIL"}
+S5 failed ids: ['T3.prompt', 'T3.status']
+S5 informational ids: ['T3.prompt.echo', 'T7.foreign-source-live', 'T8.log.batch-row', 'T6.full-file-scan']

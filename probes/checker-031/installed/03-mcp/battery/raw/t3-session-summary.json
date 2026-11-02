@@ -1,0 +1,41 @@
+{
+  "sessionId": "fleet-mcp-ae5aea9f-b596-456c-9ef6-c4795db56627",
+  "promptText": "checker-verify prompt cv-mvyknnsn-3db3ce7b",
+  "turn": {
+    "ok": true,
+    "sessionId": "fleet-mcp-ae5aea9f-b596-456c-9ef6-c4795db56627",
+    "status": "completed",
+    "model": "deterministic-stub (fleet-selftest-stub)",
+    "transport": "stub-turn",
+    "turn_agent": "builder:selftest-fleet-mcp-ae5aea9f-b596-456c-9ef6-c4795db56627",
+    "ledger_gate": "stub-provider-selftest-only",
+    "turn_model": "claude-haiku-5-5",
+    "provider_calls": 0,
+    "assistant_text": "",
+    "inbox": [],
+    "turns": 1,
+    "note": "the fleet-ledger gate reserves the stub provider for selftest principals (stub-provider-selftest-only), so this real turn ran through the fleet stub-turn op as builder:selftest-fleet-mcp-ae5aea9f-b596-456c-9ef6-c4795db56627"
+  },
+  "state": {
+    "ok": true,
+    "sessionId": "fleet-mcp-ae5aea9f-b596-456c-9ef6-c4795db56627",
+    "found": true,
+    "source": "facade",
+    "mode": "stub",
+    "model": "deterministic-stub (fleet-selftest-stub)",
+    "provider": "fleet-selftest-stub",
+    "preset": null,
+    "cwd": "/var/lib/fleet/work/mcp-sessions/fleet-mcp-ae5aea9f-b596-456c-9ef6-c4795db56627",
+    "turn_agent": "builder:selftest-fleet-mcp-ae5aea9f-b596-456c-9ef6-c4795db56627",
+    "busy": false,
+    "turns": 1,
+    "last_transport": "stub-turn",
+    "events": 0,
+    "created_at": "2026-11-02T01:20:08.984Z",
+    "last_used_at": "2026-11-02T01:20:09.027Z",
+    "inbox": [],
+    "last_assistant_text": "",
+    "in_registry": true,
+    "registry_session": true
+  }
+}

@@ -1,0 +1,22 @@
+total 13068
+drwxr-xr-x 1 cayleb cayleb    1346 Nov  1 20:19 .
+drwxr-xr-x 1 cayleb cayleb     492 Nov  1 20:21 ..
+-rw------- 1 cayleb cayleb    6776 Nov  1 20:17 2.10-turn-samples.jsonl
+-rw------- 1 cayleb cayleb    3512 Nov  1 20:17 2.10-wait-samples.jsonl
+-rw------- 1 cayleb cayleb   62496 Nov  1 20:18 2.11-burst.jsonl
+-rw------- 1 cayleb cayleb  262831 Nov  1 20:18 2.11-burst-verify.jsonl
+-rw------- 1 cayleb cayleb  224313 Nov  1 20:18 2.11-order-get.json
+-rw------- 1 cayleb cayleb       0 Nov  1 20:18 2.11-start.err
+-rw------- 1 cayleb cayleb       3 Nov  1 20:18 2.12-restore-test.txt
+-rw------- 1 cayleb cayleb     597 Nov  1 20:18 2.14e-lessons_read.txt
+-rw------- 1 cayleb cayleb     266 Nov  1 20:18 2.16-lessons-get-lesson.json
+-rw------- 1 cayleb cayleb     248 Nov  1 20:18 2.16-lessons-get-noentry.json
+-rw------- 1 cayleb cayleb    3405 Nov  1 20:18 2.16-order-get.json
+-rw------- 1 cayleb cayleb   65358 Nov  1 20:18 2.16-order-list.json
+-rw------- 1 cayleb cayleb       0 Nov  1 20:16 2.1a-A.err
+-rw------- 1 cayleb cayleb  707391 Nov  1 20:17 2.1a-A.jsonl
+-rw------- 1 cayleb cayleb       0 Nov  1 20:16 2.1a-B.err
+-rw------- 1 cayleb cayleb  728150 Nov  1 20:17 2.1a-B.jsonl
+-rw------- 1 cayleb cayleb       0 Nov  1 20:16 2.1a-seed.log
+stage2-check.out vs console.out identical: YES
+console.err bytes: 0

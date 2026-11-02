@@ -1,0 +1,9 @@
+version 0.3.1 files 123
+=== install-log claim lines ===
+preconditions ok: wrapper 75ab346e8b314c25b1da630c78ded154efa5669aff62c474afa7da2d53c01209, tarball 5ede748489e448c525b1b201cddb8ea5b5a4b9305e231328b49fd49a5653aef4, rollback 8173d13ebee542b328ffe0b4a3476e27ffa561e46172949d54f9757ddd4e1070, status ok
+normalise-archive: @cayleb/dsh-fleet 0.3.1 123 regular members
+normalise: 123 files single-link with archive modes; package dirs 0750
+status ok/integrity ok after start
+READBACK version=0.3.1 files=123 tarball=123 missing=0 extra=0 badModes=0
+status ok/integrity ok (final)
+INSTALL-0.3.1: PASS

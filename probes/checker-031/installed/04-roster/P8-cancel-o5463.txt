@@ -1,0 +1,2 @@
+=== cleanup: cancel the acceptance-created real order o5463 (not fired; owner op) ===
+request {"op": "order-cancel", "id": "o5463"} -> {"ok": true, "result": {"id": "o5463", "state": "failed"}}

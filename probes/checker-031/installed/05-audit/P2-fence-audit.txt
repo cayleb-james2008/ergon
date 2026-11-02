@@ -1,0 +1,6 @@
+=== fence audit ===
+no image files in evidence: 0 images
+credential files read: none (providers-get present:false; no key value read)
+spend: $0 (no model calls, no purchases)
+host input injection: none
+install/restart by checker: none; unit restarted only by the plugin's own stage2 2.11 leg

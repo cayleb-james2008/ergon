@@ -1,0 +1,7 @@
+False T3.prompt :: status=completed turns=1 transport=stub-turn assistant_bytes=0 contains_stub_prefix=false
+None T3.prompt.echo :: contains_caller_nonce=false contains_stub_prefix=false first_80=""
+False T3.status :: found=true turns=1 model=deterministic-stub (fleet-selftest-stub) last_transport=stub-turn expected_transport=stub-turn read_back_same_text=
+False T7.honesty :: model_route=deterministic-stub (fleet-selftest-stub) real_lane=fleetRoster mounted
+None T7.foreign-source-live :: kernel refused local bind/route: EADDRNOTAVAIL. Requires a second host/namespace or root; this is recorded as not proven, never as a pass.
+None T8.log.batch-row :: batch_logged=false codes=["payload-too-large","parse-error"]
+None T6.full-file-scan :: log path /var/lib/fleet/log/mcp-actions.jsonl is not readable as uid 1000; tail scan is the provable scope, full scan needs the owner: sudo 

@@ -1,0 +1,3 @@
+summary: pass=60 fail=0 (evidence: /home/cayleb/Documents/deepseek-harness/default-workspace/board/probes/checker-031/installed/01-installed-output/OUT)
+STAGE 2: PASS
+PASS_lines=60 FAIL_lines=0 NOT_RUN=0

@@ -1,0 +1,5 @@
+ok True integrity.ok True failures []
+rows {"ok": true, "pinned": 8, "disabled": 12, "failures": [], "manifest_sha256": "1970f9954b7131c58191327bb0e60b9d31a704bc309d083cd53971bc9271edba"}
+chain {"ok": true, "verified_at_boot": 58590} sandbox {"ok": true, "id": "fleet-sandbox"} guard {"ok": true, "required": ["fleet-policy", "fleet-ledger"], "failures": []}
+lanes_allowed True selftest True
+db {"path": "/var/lib/fleet/state/fleet.db", "journal_mode": "wal", "events": 58591, "head": {"seq": 58591, "hash": "e92ed447688f6a96587c4b482c88c0d89ad4369bd9888d5f76bc1b16a5ed99a0"}}

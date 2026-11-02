@@ -1,0 +1,7 @@
+=== identity after 2026-11-02T01:19:34Z ===
+ActiveState=active
+InvocationID=999771adc0a84fa7b07d3e56fe97bc28
+MainPID=669437
+== 2.11 kill DSH mid-test (systemctl kill); the sweep restores state
+PASS 2.11-orderget — order-get o5460 lists all 300 decomposed tasks plus exactly one final:true task, uncapped: {"rows":301,"decomposed":300,"missing":0,"final":1,"final_is_extra":true}
+PASS 2.11-kill — fleet-dsh SIGKILLed mid-burst and back up (MainPID 663330 -> 669437)

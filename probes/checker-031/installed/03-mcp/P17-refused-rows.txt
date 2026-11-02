@@ -1,0 +1,7 @@
+rows_readable 97 refused_rows 19
+{"seq": 62, "kind": "refused", "tool": "auth-missing", "op": "", "principal": null, "code": "missing-token", "outcome": "refused"}
+{"seq": 75, "kind": "refused", "tool": "auth-missing", "op": "", "principal": null, "code": "missing-token", "outcome": "refused"}
+{"seq": 76, "kind": "refused", "tool": "auth-invalid", "op": "", "principal": null, "code": "invalid-token", "outcome": "refused"}
+{"seq": 93, "kind": "refused", "tool": "transport", "op": "", "principal": null, "code": "payload-too-large", "outcome": "refused"}
+{"seq": 94, "kind": "refused", "tool": "transport", "op": "", "principal": null, "code": "parse-error", "outcome": "refused"}
+{"seq": 97, "kind": "refused", "tool": "rate", "op": "", "principal": null, "code": "rate-limited", "outcome": "refused"}

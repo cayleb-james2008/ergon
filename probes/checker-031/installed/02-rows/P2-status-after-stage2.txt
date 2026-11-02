@@ -1,0 +1,4 @@
+ok True integrity.ok True failures []
+rows {"ok": true, "pinned": 8, "disabled": 12, "failures": [], "manifest_sha256": "1970f9954b7131c58191327bb0e60b9d31a704bc309d083cd53971bc9271edba"}
+chain {"ok": true, "verified_at_boot": 72025} sandbox {"ok": true, "id": "fleet-sandbox"} guard {"ok": true, "required": ["fleet-policy", "fleet-ledger"], "failures": []}
+lanes_allowed True selftest True

@@ -1,0 +1,8 @@
+roster.models ok True value {"lead": {"provider": "anthropic", "model": "claude-sonnet-5-5"}, "builder": {"provider": "opencode-go", "model": "deepseek-v4.1-flash"}, "checker": {"provider": "anthropic", "model": "claude-haiku-5-5"}, "researcher": {"provider": "opencode-go", "model": "deepseek-v4.1-flash"}}
+rates ok True opencode-go row {"input_per_mtok": 0.15, "output_per_mtok": 0.6, "cache_read_per_mtok": 0.003, "cache_write_per_mtok": 0}
+providers-get ok True
+  {"id": "anthropic", "kind": "llm", "credential": {"present": false, "path": null, "owner": null, "mode": null}, "base_url_override": null, "models": ["claude-haiku-5-5", "claude-sonnet-5-5", "claude-opus-5-5"]}
+  {"id": "opencode-go", "kind": "llm", "credential": {"present": false, "path": null, "owner": null, "mode": null}, "base_url_override": null, "models": ["deepseek-v4.1-flash"]}
+  {"id": "claude-code", "kind": "engine", "installed": false, "version": null, "binary": null, "credential": {"present": false, "path": null, "owner": null, "mode": null}}
+  {"id": "codex", "kind": "engine", "installed": false, "version": null, "binary": null, "credential": {"present": false, "path": null, "owner": null, "mode": null}}
+ok True order {"id": "o5463", "title": "checker-verify staged cv-mvyknnsn-3db3ce7b", "state": "open", "fixture": false, "principal": "cayleb-local", "done_when": {"mode": "command", "text": "checker-verify staged done-when cv-mvyknnsn-3db3ce7b", "command": "true"}}

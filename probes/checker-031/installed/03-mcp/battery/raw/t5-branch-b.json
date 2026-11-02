@@ -1,0 +1,100 @@
+{
+  "out": {
+    "ok": true,
+    "mode": "real-lane",
+    "real_lane": "fleetRoster mounted",
+    "order": {
+      "id": "o5463",
+      "state": "open"
+    },
+    "stage_path": "/var/lib/fleet/state/mcp/staged/real-order-1793582410372-2a6d2caf3a.json",
+    "payload_sha256": "f054f161a2e5ff3f773ed9a389af6fee99dabc4dd459260b207d0eb99b500c3b",
+    "payload": {
+      "title": "checker-verify staged cv-mvyknnsn-3db3ce7b",
+      "goal": "stage only (checker-verify cv-mvyknnsn-3db3ce7b)",
+      "context": "staged through the fleet MCP facade at 2026-11-02T01:20:10.372Z; fires as a real Nox delegation when the Stage 4 roster lands",
+      "constraints": [],
+      "anti_goals": [],
+      "done_when": {
+        "mode": "command",
+        "command": "true",
+        "text": "checker-verify staged done-when cv-mvyknnsn-3db3ce7b"
+      },
+      "example": "a sha256 artefact",
+      "evidence_required": [
+        "the artefacts the done-when names, with their sha256"
+      ],
+      "assumptions_policy": "log-and-proceed",
+      "budget": {
+        "usd": 1
+      },
+      "stop_conditions": [],
+      "checkpoint_at": 1793668810370,
+      "est_minutes": 10,
+      "size": "standard",
+      "successors": [],
+      "ambition": [
+        "complete the delegated work order"
+      ],
+      "base_hashes": {}
+    }
+  },
+  "orderRow": {
+    "id": "o5463",
+    "principal": "cayleb-local",
+    "title": "checker-verify staged cv-mvyknnsn-3db3ce7b",
+    "state": "open",
+    "block_reason": null,
+    "resume_state": null,
+    "fail_reason": null,
+    "size": "standard",
+    "tier": 1,
+    "est_minutes": 10,
+    "budget_usd": 1,
+    "budget": {
+      "usd": 1
+    },
+    "checkpoint_at": 1793668810370,
+    "claimant": null,
+    "lease_until": null,
+    "attempts": 0,
+    "waiting_on": null,
+    "preflight_state": "none",
+    "report_post_id": null,
+    "fixture": false,
+    "done_when": {
+      "mode": "command",
+      "text": "checker-verify staged done-when cv-mvyknnsn-3db3ce7b",
+      "command": "true"
+    },
+    "done_when_rev": 1,
+    "facts": {
+      "posted_at": 1793582410373,
+      "unacked": true,
+      "claimed_at": null,
+      "started_at": null,
+      "done_at": null
+    },
+    "tasks": {},
+    "goldfish": null,
+    "goal": "stage only (checker-verify cv-mvyknnsn-3db3ce7b)",
+    "context": "staged through the fleet MCP facade at 2026-11-02T01:20:10.372Z; fires as a real Nox delegation when the Stage 4 roster lands",
+    "constraints": [],
+    "anti_goals": [],
+    "ownership": "",
+    "example": "a sha256 artefact",
+    "evidence_required": [
+      "the artefacts the done-when names, with their sha256"
+    ],
+    "assumptions_policy": "log-and-proceed",
+    "stop_conditions": [],
+    "successors": [],
+    "ambition": [
+      "complete the delegated work order"
+    ],
+    "base_hashes": {},
+    "budget_original": {
+      "usd": 1
+    }
+  }
+}

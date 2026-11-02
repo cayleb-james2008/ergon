@@ -1,0 +1,1 @@
+8449913ac8186825e39004333818a9974f6893dc6cd129abef7c5575c6e7c1e0  /home/cayleb/Documents/deepseek-harness/default-workspace/board/probes/checker-031/installed/03-mcp/scripts/mcp-verify.mjs

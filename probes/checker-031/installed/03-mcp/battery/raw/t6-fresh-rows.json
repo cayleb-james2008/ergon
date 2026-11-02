@@ -1,0 +1,154 @@
+{
+  "baselineSeq": 76,
+  "intentCount": 9,
+  "outcomeCount": 9,
+  "intents": [
+    {
+      "seq": 77,
+      "tool": "session.create",
+      "principal": "mcp:bearer",
+      "args_keys": []
+    },
+    {
+      "seq": 79,
+      "tool": "session.prompt",
+      "principal": "mcp:bearer",
+      "args_keys": [
+        "sessionId",
+        "text"
+      ]
+    },
+    {
+      "seq": 81,
+      "tool": "session.status",
+      "principal": "mcp:bearer",
+      "args_keys": [
+        "sessionId"
+      ]
+    },
+    {
+      "seq": 83,
+      "tool": "session.create",
+      "principal": "mcp:bearer",
+      "args_keys": [
+        "mode"
+      ]
+    },
+    {
+      "seq": 85,
+      "tool": "order.drive_roundtrip",
+      "principal": "mcp:bearer",
+      "args_keys": [
+        "done_when",
+        "est_minutes",
+        "example",
+        "title"
+      ]
+    },
+    {
+      "seq": 87,
+      "tool": "order.drive_roundtrip",
+      "principal": "mcp:bearer",
+      "args_keys": [
+        "done_when",
+        "est_minutes",
+        "example",
+        "title"
+      ]
+    },
+    {
+      "seq": 89,
+      "tool": "order.stage_real",
+      "principal": "mcp:bearer",
+      "args_keys": [
+        "budget_usd",
+        "checkpoint_at",
+        "done_when",
+        "est_minutes",
+        "example",
+        "goal",
+        "title"
+      ]
+    },
+    {
+      "seq": 91,
+      "tool": "fleet.status",
+      "principal": "mcp:bearer",
+      "args_keys": []
+    },
+    {
+      "seq": 95,
+      "tool": "actions.status",
+      "principal": "mcp:bearer",
+      "args_keys": [
+        "n"
+      ]
+    }
+  ],
+  "outcomes": [
+    {
+      "seq": 78,
+      "ref_seq": 77,
+      "tool": "session.create",
+      "outcome": "ok",
+      "ms": 29
+    },
+    {
+      "seq": 80,
+      "ref_seq": 79,
+      "tool": "session.prompt",
+      "outcome": "ok",
+      "ms": 39
+    },
+    {
+      "seq": 82,
+      "ref_seq": 81,
+      "tool": "session.status",
+      "outcome": "ok",
+      "ms": 0
+    },
+    {
+      "seq": 84,
+      "ref_seq": 83,
+      "tool": "session.create",
+      "outcome": "error",
+      "code": "model-credential-not-entered",
+      "ms": 0
+    },
+    {
+      "seq": 86,
+      "ref_seq": 85,
+      "tool": "order.drive_roundtrip",
+      "outcome": "ok",
+      "ms": 650
+    },
+    {
+      "seq": 88,
+      "ref_seq": 87,
+      "tool": "order.drive_roundtrip",
+      "outcome": "ok",
+      "ms": 654
+    },
+    {
+      "seq": 90,
+      "ref_seq": 89,
+      "tool": "order.stage_real",
+      "outcome": "ok",
+      "ms": 4
+    },
+    {
+      "seq": 92,
+      "ref_seq": 91,
+      "tool": "fleet.status",
+      "outcome": "ok",
+      "ms": 1
+    },
+    {
+      "seq": 96,
+      "ref_seq": 95,
+      "tool": "actions.status",
+      "outcome": "ok",
+      "ms": 1
+    }
+  ]
+}

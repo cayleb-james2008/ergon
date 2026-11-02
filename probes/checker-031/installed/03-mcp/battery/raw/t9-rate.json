@@ -1,0 +1,13 @@
+{
+  "sent": 43,
+  "firstLimited": {
+    "after": 43,
+    "headers": {
+      "retry-after": "59"
+    },
+    "error": {
+      "code": -32005,
+      "message": "rate-limited: 60 requests per minute per token"
+    }
+  }
+}

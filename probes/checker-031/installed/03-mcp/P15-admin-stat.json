@@ -1,0 +1,41 @@
+{
+ "name": "fleet-mcp",
+ "version": "0.3.1-mcp",
+ "ok": true,
+ "bind": [
+  {
+   "host": "127.0.0.1",
+   "port": 8789,
+   "family": "IPv4"
+  },
+  {
+   "host": "::1",
+   "port": 8789,
+   "family": "IPv6"
+  },
+  {
+   "host": "100.114.17.67",
+   "port": 8789,
+   "family": "IPv4"
+  }
+ ],
+ "log": {
+  "path": "/var/lib/fleet/log/mcp-actions.jsonl",
+  "seq": 97,
+  "head": "29787f716cdc3a0b54e8f85c6f68e5f4508348728bb2be416f2a1f5ed5e01cf2",
+  "open": true,
+  "broken": null,
+  "mode": "jsonl-hash-chain"
+ },
+ "token": {
+  "path": "/var/lib/fleet/state/mcp/token",
+  "exists": true,
+  "mode": "600",
+  "size": 65,
+  "fingerprint": "<redacted-fingerprint>"
+ },
+ "protocol_versions": [
+  "2025-03-26",
+  "2024-11-05"
+ ]
+}

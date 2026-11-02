@@ -1,0 +1,17 @@
+total 1176
+drwxr-xr-x 1 cayleb cayleb    624 Nov  1 20:07 .
+drwxr-xr-x 1 root   root      642 Oct 31 07:44 ..
+-rw-r--r-- 1 cayleb cayleb 163847 Oct 31 09:41 cayleb-dsh-fleet-0.2.0.tgz
+-rw-r--r-- 1 cayleb cayleb     93 Oct 31 09:41 cayleb-dsh-fleet-0.2.0.tgz.sha256
+-rw-r--r-- 1 cayleb cayleb 164714 Oct 31 10:47 cayleb-dsh-fleet-0.2.1.tgz
+-rw-r--r-- 1 cayleb cayleb     93 Oct 31 10:47 cayleb-dsh-fleet-0.2.1.tgz.sha256
+-rw-r--r-- 1 cayleb cayleb 210358 Oct 31 23:45 cayleb-dsh-fleet-0.2.2.tgz
+-rw-r--r-- 1 cayleb cayleb     93 Oct 31 23:45 cayleb-dsh-fleet-0.2.2.tgz.sha256
+-rw-r--r-- 1 cayleb cayleb 287772 Nov  1 18:00 cayleb-dsh-fleet-0.3.0.tgz
+-rw-r--r-- 1 cayleb cayleb     93 Nov  1 18:08 cayleb-dsh-fleet-0.3.0.tgz.sha256
+-rw-r--r-- 1 cayleb cayleb 337454 Nov  1 20:07 cayleb-dsh-fleet-0.3.1.tgz
+-rw-r--r-- 1 cayleb cayleb     93 Nov  1 20:07 cayleb-dsh-fleet-0.3.1.tgz.sha256
+-rw-r--r-- 1 cayleb cayleb    186 Nov  1 18:00 SHA256SUMS.strike
+5ede748489e448c525b1b201cddb8ea5b5a4b9305e231328b49fd49a5653aef4  /var/lib/fleet-drop/cayleb-dsh-fleet-0.3.1.tgz
+8173d13ebee542b328ffe0b4a3476e27ffa561e46172949d54f9757ddd4e1070  /var/lib/fleet-drop/cayleb-dsh-fleet-0.3.0.tgz
+5ede748489e448c525b1b201cddb8ea5b5a4b9305e231328b49fd49a5653aef4  cayleb-dsh-fleet-0.3.1.tgz

@@ -1,0 +1,7 @@
+=== listeners ===
+LISTEN 0      511                                 127.0.0.1:8789       0.0.0.0:*
+LISTEN 0      511                             100.114.17.67:8789       0.0.0.0:*
+LISTEN 0      511                                     [::1]:8789          [::]:*
+=== sockets ===
+srw-rw-rw- 1 fleet fleet 0 Nov  1 20:15 /run/fleet/control.sock
+srw-rw-rw- 1 fleet fleet 0 Nov  1 20:15 /run/fleet/mcp-admin.sock

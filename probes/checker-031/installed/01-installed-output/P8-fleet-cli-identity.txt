@@ -1,0 +1,8 @@
+=== FLEET_CLI used by stage2 vs installed-tree readback ===
+3d839901391080047aa55607533d4e533ae0840b8f21a6b9225e0f55ab37e83a  /home/cayleb/workspace/harness-build/candidate-031/package/bin/dsh-fleet.mjs
+bin/dsh-fleet.mjs 3d839901391080047aa55607533d4e533ae0840b8f21a6b9225e0f55ab37e83a 0755
+package.json 631eaeb18a257173765ed3fd7334d78fd213697bb52cbb219ef148386b87de81 0644
+src/mcp/server.js 1ca418b40a5ede33a7a62957e2e3349eb1a905b0e02c6e324f04a352606c0703 0644
+dshVersion field: None
+=== tarball member sha for bin/dsh-fleet.mjs ===
+3d839901391080047aa55607533d4e533ae0840b8f21a6b9225e0f55ab37e83a  -

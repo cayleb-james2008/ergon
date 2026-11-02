@@ -1,0 +1,119 @@
+{
+  "isError": false,
+  "result": {
+    "ok": true,
+    "mcp": {
+      "name": "fleet-mcp",
+      "version": "0.3.1-mcp",
+      "protocol_versions": [
+        "2025-03-26",
+        "2024-11-05"
+      ],
+      "transport": "streamable-http (POST JSON; GET 405; DELETE session)",
+      "port": 8789,
+      "bind": [
+        {
+          "host": "127.0.0.1",
+          "port": 8789,
+          "family": "IPv4"
+        },
+        {
+          "host": "::1",
+          "port": 8789,
+          "family": "IPv6"
+        },
+        {
+          "host": "100.114.17.67",
+          "port": 8789,
+          "family": "IPv4"
+        }
+      ],
+      "sources": {
+        "sources": [
+          "loopback",
+          "tailnet"
+        ],
+        "v4": [
+          "127.0.0.0/8",
+          "100.64.0.0/10"
+        ],
+        "v6": [
+          "::1"
+        ]
+      },
+      "sessions": {
+        "held": 1,
+        "max": 8,
+        "sessions": [
+          {
+            "sessionId": "fleet-mcp-ae5aea9f-b596-456c-9ef6-c4795db56627",
+            "preset": null,
+            "busy": false,
+            "turns": 1,
+            "last_transport": "stub-turn"
+          }
+        ]
+      },
+      "requests": {
+        "requests": 16,
+        "accepted": 14,
+        "refused": 2,
+        "toolCalls": 7,
+        "byTool": {
+          "session.create": 2,
+          "session.prompt": 1,
+          "session.status": 1,
+          "order.drive_roundtrip": 2,
+          "order.stage_real": 1
+        },
+        "byRefusal": {
+          "unauthorized": 2
+        },
+        "sessionsOpened": 2,
+        "sessionsClosed": 0,
+        "initialized": 2
+      },
+      "action_log": {
+        "path": "/var/lib/fleet/log/mcp-actions.jsonl",
+        "seq": 91,
+        "head": "a82e696648e7b3275b48958335f6c6dc8c896801989e6e27dfb05e033d30be28",
+        "open": true,
+        "broken": null,
+        "mode": "jsonl-hash-chain"
+      },
+      "model_route": "deterministic-stub (fleet-selftest-stub)",
+      "real_lane": "fleetRoster mounted"
+    },
+    "fleet": {
+      "name": "fleet-core",
+      "protocol": 1,
+      "pid": 669437,
+      "node": "v26.12.0",
+      "uptime_s": 123,
+      "db": {
+        "path": "/var/lib/fleet/state/fleet.db",
+        "journal_mode": "wal",
+        "events": 72613,
+        "head": {
+          "seq": 72613,
+          "hash": "b9d2c77c8ab61c3ff67161d599ca6f2aef93525bc8e659cfca3801381579071d"
+        }
+      },
+      "integrity": {
+        "ok": true,
+        "failures": []
+      },
+      "lanes_allowed": true,
+      "control": {
+        "path": "/run/fleet/control.sock",
+        "peer_uid": 1000,
+        "accepted": 190,
+        "rejected": 0
+      },
+      "policy": {
+        "selftest": true,
+        "selftest_source": "default"
+      }
+    }
+  }
+}

@@ -1,0 +1,2 @@
+=== token/secret scan across installed evidence ===
+token_pattern_hits=0

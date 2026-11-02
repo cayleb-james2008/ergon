@@ -1,0 +1,23 @@
+summary: {"checks": {"total": 81, "passed": 74, "failed": 3, "informational": 4}, "failedIds": ["T3.prompt", "T3.status", "T7.honesty"], "verdict": "FAIL", "mode": "real", "urls": {"loopback": "http://127.0.0.1:8789/mcp", "tailnet": "http://100.114.17.67:8789/mcp", "tailnet_established": true}}
+total 81
+S5 total 85
+new ids (in current not S5): ['T5.control.order-chain', 'T5.real-order']
+missing ids (in S5 not current): ['T5.control.no-order', 'T5.done-when.runnable', 'T5.payload-digest', 'T5.payload.done-when', 'T5.payload.non-fixture', 'T5.refusal']
+new failures vs S5: ['T7.honesty']
+fixed vs S5: []
+585-    bindHosts.includes('127.0.0.1') && bindHosts.includes('::1') && (hasTailnetBind || MODE === 'dryrun') &&
+586-    !bindHosts.includes('0.0.0.0') && !bindHosts.includes('::'),
+587-    `bind=${JSON.stringify(bind)}${MODE === 'dryrun' && !hasTailnetBind ? ' (dryrun: self-test only)' : ''}`)
+588:  check('T7.honesty', 'fleet.status labels the model route and the real lane honestly',
+589-    data?.mcp?.model_route === 'deterministic-stub (fleet-selftest-stub)' && /not-built/i.test(String(data?.mcp?.real_lane ?? '')),
+590-    `model_route=${data?.mcp?.model_route} real_lane=${data?.mcp?.real_lane}`)
+591-  check('T7.fleet-integrity', 'fleet.status reports fleet integrity ok with no failures',
+592-    data?.fleet?.integrity?.ok === true && (data?.fleet?.integrity?.failures ?? []).length === 0,
+593-    `ok=${data?.fleet?.integrity?.ok} failures=${JSON.stringify(data?.fleet?.integrity?.failures ?? [])}`)
+594-
+595-  // Unit netfilter, read from systemd (no root needed for a system unit's properties on this host).
+596-  const show = spawnSync('systemctl', ['show', 'fleet-dsh', '-p', 'IPAddressDeny', '-p', 'IPAddressAllow', '-p', 'MainPID', '-p', 'ActiveState'], { encoding: 'utf8', timeout: 10_000 })
+597-  const unitFile = spawnSync('systemctl', ['cat', 'fleet-dsh', '--no-pager'], { encoding: 'utf8', timeout: 10_000 })
+598-  writeTextFile('t7-unit-netfilter.txt', `# systemctl cat fleet-dsh\n${unitFile.stdout ?? ''}\n# systemctl show\n${show.stdout ?? ''}\n`)
+599-  record('t7-unit', { show: show.stdout ?? '', cat: unitFile.stdout ?? '' })
+600-  const unitText = unitFile.stdout ?? ''

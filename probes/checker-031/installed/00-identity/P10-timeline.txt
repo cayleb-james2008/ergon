@@ -1,0 +1,9 @@
+=== identity timeline (from evidence) ===
+install before: InvocationID=bc98f82dc22a4053b41f75f3a9e10231 MainPID=518634 (install log)
+install after:  InvocationID=cd1208c35d68470b8ba84e32f44db50a MainPID=663330 (install log + my read 01:16:35Z)
+stage2 before:  InvocationID=cd1208c3... MainPID=663330 (my read 01:16:58Z)
+stage2 2.11:    PASS 2.11-kill — MainPID 663330 -> 669437 (check's own kill/restart; InvocationID -> 999771adc0a84fa7b07d3e56fe97bc28)
+after stage2:   InvocationID=999771ad... MainPID=669437 active (01:19:34Z)
+after MCP:      InvocationID=999771ad... MainPID=669437 active (unchanged; battery does not restart)
+final:          InvocationID=999771ad... MainPID=669437 active (01:21:40Z)
+log {"seq": 97, "head": "29787f716cdc3a0b54e8f85c6f68e5f4508348728bb2be416f2a1f5ed5e01cf2", "open": true, "broken": null, "mode": "jsonl-hash-chain"}

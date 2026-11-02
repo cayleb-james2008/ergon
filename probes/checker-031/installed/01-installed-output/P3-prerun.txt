@@ -1,0 +1,6 @@
+=== pre-run checks 2026-11-02T01:16:58Z ===
+7df6344c0846491e1130e9fb4c198aeed01de480b2ca47b03d9a5c3529fcca95  /home/cayleb/workspace/harness-build/candidate-031/checks/stage2-check.sh
+3d839901391080047aa55607533d4e533ae0840b8f21a6b9225e0f55ab37e83a  /home/cayleb/workspace/harness-build/candidate-031/package/bin/dsh-fleet.mjs
+ActiveState=active
+InvocationID=cd1208c35d68470b8ba84e32f44db50a
+MainPID=663330
