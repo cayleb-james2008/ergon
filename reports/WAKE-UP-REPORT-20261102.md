@@ -77,6 +77,11 @@ Fences held overnight: no spend, no publication, no credential values in chat/bo
   the fog fix is approved offline and the next atlas Play follows its checker delta.
 - Studio: pid 759088 (fresh opening after `studiocycle`), sealed place/build unchanged (`c6651793…`/`84324d43…`), 2/3 Plays used
   in the current opening (third reserved); no publication, no build.
+- **Diagnostic Play 6 — retry net proven, defect attributed:** 3 retries at view-021 all returned byte-identical to view-020 → the
+  duplicate is a **persistent overhead-frame render/capture stall, not retry logic** (the guard correctly refused dishonest evidence).
+  Studio crashed on the fail-closed Play shutdown (106 MB userland minidump, no kernel GPU evidence) and recovered cleanly with
+  `studiocycle` (sealed place/release unchanged through crash + recovery; fresh 0/3 opening). A bounded overhead-settle fix is approved
+  and being frozen; if frames still freeze after it, an honest renderer/Wine-limitation note with plan options goes for a ruling.
 - **Diagnostic Play 5 (fresh opening, 1/3) — the cell now captures real evidence:** **20/24 views captured (20 distinct sha256, all
   accepted/stationary, viewport 1837×744)** and **`viewportMatchesPng:true` observed on every view — the first observation of that
   outstanding datum**; the guarded fog layer is clean in Play (legacy absence recorded, no false claim); `fastPathApplied=true` again.
