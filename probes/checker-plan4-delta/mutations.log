@@ -1,0 +1,6 @@
+== Plan 4 fix-round mutation proofs (throwaway clone /tmp/checker-plan4-delta/mut), 2026-11-01T21:24:58-05:00 ==
+G: move the first AtlasWorldTrace publication back below WorldSeed.requireApplied (delete the pre-check line)
+   -> atlas acceptance: Ran 15 tests, FAILED (failures=1) [test_seeded_starter_traces_the_fast_path_and_the_server_asserts_instead_of_rebuilding]
+H: remove ValueError from the first-view except tuple
+   -> runner suite: Ran 85 tests, FAILED (failures=1) [test_atlas_early_stop_runtime_error_keeps_the_world_trace]
+restored: git diff clean; file sha256 Server 90193193ba68…, vinegar_run 3e102893f644…; commit blobs ac94b2b1…/6a8cb3f3…

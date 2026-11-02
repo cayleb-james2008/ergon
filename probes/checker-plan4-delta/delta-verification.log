@@ -1,0 +1,49 @@
+== Plan 4 fix-round provenance/delta, 2026-11-01T21:24:30-05:00 ==
+HEAD=659779ce89fa18c8ab2dc13a29906f7ab05e1499
+parent=9022c538966e84b014607e565ccfb61845458c60
+tree=844523c3fcbd97dcca0caf2db8fbb25d9217a34c
+branch=prep/b1-capture-format-20261101
+tracked_mods=0 untracked=792
+--- delta 9022c53..659779c numstat ---
+2	1	tests/atlas/Server.luau
+3	0	tests/tools/test_atlas_acceptance.py
+25	0	tests/tools/test_vinegar_run.py
+3	1	tools/vinegar_run.py
+--- sum ---
+insertions=33 deletions=2
+--- original 9022c53 stat (C3) ---
+ 9 files changed, 185 insertions(+), 71 deletions(-)
+--- delta changed paths (must be exactly 4) ---
+tests/atlas/Server.luau
+tests/tools/test_atlas_acceptance.py
+tests/tools/test_vinegar_run.py
+tools/vinegar_run.py
+--- game/asset/sealed touched in delta ---
+(empty = untouched)
+--- sealed hashes ---
+84324d4342667dd163ab8e64adacbf8ef44ab786aeda5c7ab1403e76d52ef6ce  build/release.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  build/test.rbxlx
+
+--- ordering in Server.luau (fix tip) ---
+73: trace.actualSeed,trace.actualLayout=seed,layout
+74: workspace:SetAttribute("AtlasWorldTrace",Http:JSONEncode(trace))  -- publish BEFORE the check: a fail-fast keeps it
+75: if manifest.namedSeed then
+80:  local applied=WorldSeed.requireApplied(root,manifest.namedSeed,manifest.layoutVersion)
+83:  trace.actualSeed,trace.actualLayout=seed,layout
+86: workspace:SetAttribute("AtlasWorldTrace",Http:JSONEncode(trace))  -- refresh with the decision, before any view
+87: assert(seed==manifest.seed and layout==manifest.layoutVersion,"actual seed/layout differ; regenerate plan, never infer")
+
+--- 45 s bound + ValueError catch intact ---
+160:ATLAS_FIRST_VIEW_TIMEOUT = 45  # Plan 4: bounded wait for view-001; a named-seed hang is caught in tens of seconds
+672:            except (TimeoutError, FixtureFailed, ValueError) as exc:
+--- AtlasStarterTrace ordering intact (file untouched in delta) ---
+50: 'workspace:SetAttribute("AtlasStarterTrace",H:JSONEncode({t0=t0,applied=S.applied(W),seed=seed,rootSeed=if root then root:GetAttribute("WorldSeed") else nil})) end; ')
+69:        patched['AtlasServerStarter'] = (parent, cls, SEED_PATCH + source)
+--- no rebuild path reintroduced ---
+no rebuild call
+
+--- C3 report bookkeeping ---
+11:untracked evidence-dir lines, pre-existing). Fix round = 4 files, +33/−2 (C1/C2 + regression tests). The original Plan 4
+12:commit `9022c53` is 9 files, **+185/−71** — the batch-9 first report said +186/−71; **C3 corrects it here**. Includes the
+72:- **C3 (bookkeeping, fixed):** `9022c53` is **+185/−71** (the first report said +186/−71); corrected above.
+89:| 7 | `git show --stat 9022c53; git show --stat 659779c` | 9 files +185/−71 (corrected per C3) + fix round 4 files +33/−2 |
