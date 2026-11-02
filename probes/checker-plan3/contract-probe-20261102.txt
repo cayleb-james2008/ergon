@@ -1,0 +1,13 @@
+=== contract probe (fresh copy /tmp/checker-plan3/repo ) ===
+derived: {'source': 'sealed-place-xml', 'raw': 4, 'value': 'Future', 'enum': 'Enum.Technology'}
+file: /tmp/checker-plan3/repo/build/test.rbxlx sha256: c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98
+sealed sha256: c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98 | raw match: True
+mapping: Technology 4 = Future (0=Legacy; 1=Voxel; 2=Compatibility; 3=ShadowMap; 4=Future)
+project cross-check: {'file': '/tmp/checker-plan3/repo/test.project.json', 'declared': 'Future'}
+sidecar lighting: {"technology": "Future", "technologySource": "sealed-place-xml", "technologyEvidence": {"file": "/tmp/checker-plan3/repo/build/test.rbxlx", "sha256": "c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98", "raw": 4, "enum": "Enum.Technology", "mapping": "Technology 4 = Future (0=Legacy; 1=Voxel; 2=Compatibility; 3=ShadowMap; 4=Future)", "project": {"file": "/tmp/checker-plan3/repo/test.project.json", "declared": "Future"}}}
+sidecar technologyEvidence keys: ['enum', 'file', 'mapping', 'project', 'raw', 'sha256']
+probe technologyReadable dropped from sidecar report (never required): True
+look_metrics reasons (correct build): []
+look_metrics reasons (stale build hash): ['lighting technology evidence build hash c6651793ace089a0... does not match the measured build 0000000000000000... (stale or wrong XML)']
+look_metrics reasons (wrong XML): ['lighting technology evidence build hash c6651793ace089a0... does not match the measured build ffffffffffffffff... (stale or wrong XML)']
+missing record refused: place technology record missing: the runner derives report.lighting.technology offline from the sealed place XML (docs/art/SIDECAR

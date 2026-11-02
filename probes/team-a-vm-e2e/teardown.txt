@@ -1,0 +1,21 @@
+=== teardown 2026-11-02T01:33:48Z
+--- adb forward remove:
+--- graceful emulator kill:
+OK: killing emulator, bye bye
+OK
+--- qemu processes after:
+(none)
+--- http server:
+=== teardown complete 2026-11-02T01:33:59Z
+--- qemu/emulator processes:
+(none)
+--- http server on 8765:
+(none)
+curl-rc=000
+--- windows disk unchanged:
+/home/cayleb/workspace/harness-build/scratch-tb-l4/rig/disks/win11-eval.qcow2 size=393216 mtime=2026-11-01 11:52:59.451108133 -0500
+--- host :9222 owner chrome listener count:
+1
+--- adb devices:
+List of devices attached
+

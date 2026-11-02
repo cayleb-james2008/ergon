@@ -1,0 +1,15 @@
+{
+ "target": {
+  "title": "07 \u00b7 States + Depth \u2014 Ergon Lumen v2 design comp",
+  "url": "http://10.0.2.2:8765/comps/07-states.html?p3=2"
+ },
+ "result": {
+  "id": 1,
+  "result": {
+   "result": {
+    "type": "string",
+    "value": "{\"url\":\"http://10.0.2.2:8765/comps/07-states.html?p3=2\",\"fieldBoundary\":{\"token\":\"rgba(206, 228, 255, 0.46)\",\"contrast\":3.3,\"floor\":3,\"pass\":true},\"emptyState\":{\"present\":true,\"text\":\"No tasks yet. Marlow has nothing in the queue. Ask for a task, or wait for the morning brief. New task\"},\"lightPool\":{\"bg\":\"rgba(198, 222, 255, 0.14)\",\"blur\":\"blur(32px) saturate(1.15)\"},\"floorsRows\":true,\"labelPresent\":true}"
+   }
+  }
+ }
+}

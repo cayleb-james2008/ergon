@@ -32,8 +32,15 @@ const tokens = JSON.parse(read('tokens.json'));
 const COLOUR = /#(?:[0-9a-f]{3,8})\b|\brgba?\(|\bhsla?\(/gi;
 const detectsColourLiteral = (text) => [...text.matchAll(COLOUR)].length > 0;
 const PALETTE_WORDS = 'white|black|red|blue|green|gray|grey|silver|yellow|orange|purple|pink|brown|cyan|magenta|lime|teal|navy|maroon|olive|aqua|fuchsia';
-const COLOUR_KEYWORD = new RegExp(`(?:^|[;{])\\s*(?:color|background(?:-color)?|border(?:-[a-z]+)?|fill|stroke|outline(?:-color)?|box-shadow|text-shadow)\\s*:\\s*[^;{}]*\\b(?:${PALETTE_WORDS})\\b`, 'i');
-const detectsColourKeyword = (text) => COLOUR_KEYWORD.test(text);
+const COLOUR_KEYWORD = () => new RegExp(`(?:^|[;{])\\s*(?:color|background(?:-color)?|border(?:-[a-z]+)?|fill|stroke|outline(?:-color)?|box-shadow|text-shadow)\\s*:\\s*[^;{}]*\\b(?:${PALETTE_WORDS})\\b`, 'i');
+const detectsColourKeyword = (text) => {
+  if (COLOUR_KEYWORD().test(text)) return true;
+  // An inline style's FIRST declaration has no leading ';'/'{' — scan each style="" value with a synthetic separator.
+  for (const m of text.matchAll(/style\s*=\s*["']([^"']*)["']/gi)) {
+    if (COLOUR_KEYWORD().test(';' + m[1])) return true;
+  }
+  return false;
+};
 const detectsInfinite = (text) => /\binfinite\b/i.test(text.replace(/animation-iteration-count:\s*1\s*!important/g, ''));
 const detectsBrokenTag = (text) => {
   const tags = ['div', 'section', 'article', 'aside', 'nav', 'header', 'footer', 'main', 'form', 'button', 'span', 'p', 'a', 'table', 'thead', 'tbody', 'tr', 'td', 'th', 'ul', 'li', 'h1', 'h2', 'h3', 'h4', 'label'];
@@ -131,6 +138,16 @@ for (const page of ['comps/01-mobile-chat.html', 'comps/02-mobile-triage-approva
 check(/No tasks yet/.test(read('comps/07-states.html')) && /class="empty"/.test(read('comps/07-states.html')), 'comps/07: the empty-state specimen is missing');
 check(/reduced motion/.test(read('comps/07-states.html')) && /High Contrast/.test(read('comps/07-states.html')), 'comps/07: reduced-motion/High Contrast floors rows are not labelled');
 
+/* ---------- 8b. C1–C5 hard assertions (composer boundary, checkbox focus, latent pill) ---------- */
+check(/\.phone \.composer\s*\{[^}]*border:\s*1px solid var\(--field-line\)/.test(kit), 'comp-kit.css: `.phone .composer` must use the field-line boundary (3:1 field rule)');
+check(!/\.phone \.composer\s*\{[^}]*border:[^;]*var\(--line\)/.test(kit), 'comp-kit.css: `.phone .composer` must not use the decorative --line token');
+const desktop = read('comps/05-desktop-workspace.html');
+const composerLine = desktop.split('\n').find((l) => l.includes('aria-label="Message Marlow"')) || '';
+check(composerLine.includes('var(--field-line)'), 'comps/05: the desktop composer inline border must use var(--field-line)');
+check(!composerLine.includes('var(--line)'), 'comps/05: the desktop composer inline border must not use var(--line)');
+check(/input\[type="checkbox"\]:focus-visible\s*\{[^}]*outline:\s*var\(--focus-ring\)\s*solid\s*var\(--accent\)/.test(kit), 'comp-kit.css: native checkboxes must carry the 2px accent focus ring');
+check(!/\.pill\.accent\s*\{/.test(kit), 'comp-kit.css: latent unused `.pill.accent` (4.20 on wash) must not be reintroduced');
+
 /* ---------- 9. approvals wording (scoped remember only, no standing-permission wording) ---------- */
 for (const page of PAGES) {
   check(!/always\s+allow/i.test(read(page)), `${page}: contains banned "always allow" wording`);
@@ -173,7 +190,9 @@ check(contrast(lineBright, p2) >= floors.nonText, `control boundary (line-bright
 const fieldLine = over(inputBg, rgba(c.fieldLine).rgb, rgba(c.fieldLine).a);
 check(contrast(fieldLine, inputBg) >= floors.nonText, `field boundary (field-line vs field fill) is ${contrast(fieldLine, inputBg).toFixed(2)}:1 (pack fieldLine rule: floor ${floors.nonText})`);
 
-/* ---------- 11. freeze-manifest integrity ---------- */
+/* ---------- 11. freeze-manifest integrity (C2: exists, hashes match, directory is EXACTLY the listed set) ---------- */
+const CONTENT = [...PAGES, 'tokens.json', 'tokens.css', 'build-tokens.mjs', 'comp-kit.css', 'comp-motion.js', 'check-comps.mjs', 'README.md', 'PACK-CHANGE-PROPOSAL.md'].sort();
+check(exists('FREEZE.sha256'), 'FREEZE.sha256 is missing — the set is not frozen (no manifest, no integrity)');
 if (exists('FREEZE.sha256')) {
   const lines = read('FREEZE.sha256').split('\n').filter((l) => l.trim() && !l.startsWith('#'));
   const listed = new Set();
@@ -183,13 +202,25 @@ if (exists('FREEZE.sha256')) {
     check(exists(file), `FREEZE.sha256 lists a missing file: ${file}`);
     if (exists(file)) check(sha256(file) === hash, `FREEZE.sha256 hash mismatch: ${file}`);
   }
-  const content = [...PAGES, 'tokens.json', 'tokens.css', 'build-tokens.mjs', 'comp-kit.css', 'comp-motion.js', 'check-comps.mjs', 'README.md', 'PACK-CHANGE-PROPOSAL.md'].sort();
-  check(content.every((f) => listed.has(f)), `FREEZE.sha256 is missing content files: ${content.filter((f) => !listed.has(f)).join(', ')}`);
+  check([...CONTENT].every((f) => listed.has(f)), `FREEZE.sha256 is missing content files: ${CONTENT.filter((f) => !listed.has(f)).join(', ')}`);
+  const walk = (dir, rel = '') => {
+    const out = [];
+    for (const entry of fs.readdirSync(path.join(dir, rel), { withFileTypes: true })) {
+      const next = rel ? `${rel}/${entry.name}` : entry.name;
+      if (entry.isDirectory()) out.push(...walk(dir, next));
+      else out.push(next);
+    }
+    return out;
+  };
+  const onDisk = walk(HERE).filter((f) => f !== 'FREEZE.sha256').sort();
+  check(JSON.stringify(onDisk) === JSON.stringify([...CONTENT].sort()), `directory contents are not exactly the frozen set — extra: ${onDisk.filter((f) => !CONTENT.includes(f)).join(', ') || 'none'}; missing: ${CONTENT.filter((f) => !onDisk.includes(f)).join(', ') || 'none'}`);
 }
 
 /* ---------- 12. non-vacuity self-tests (the assertions exist for a reason) ---------- */
 check(detectsColourLiteral('color: white') === false && detectsColourLiteral('color: #fff') === true, 'self-test: colour-literal detector is vacuous');
 check(detectsColourKeyword('color: white') === true && detectsColourKeyword('color: var(--ink)') === false, 'self-test: colour-keyword detector is vacuous');
+check(detectsColourKeyword('<h3 style="color: white">x</h3>') === true, 'self-test: colour-keyword detector misses a first-declaration inline style (C3)');
+check(detectsColourKeyword('<h3 style="font-size: 14px">x</h3>') === false, 'self-test: colour-keyword detector false-positives on a clean inline style');
 check(detectsInfinite('animation: float 2s infinite') === true && detectsInfinite('animation-duration: 250ms') === false, 'self-test: infinite-animation detector is vacuous');
 check(detectsBrokenTag('<div><span></div>').ok === false && detectsBrokenTag('<div><span></span></div>').ok === true, 'self-test: tag-balance detector is vacuous');
 check(unresolved(usedProps(['var(--surface-1) var(--nope)']), definedProps(['--surface-1: x'])).join() === '--nope', 'self-test: custom-property resolver is vacuous');

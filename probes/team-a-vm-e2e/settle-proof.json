@@ -1,0 +1,15 @@
+{
+ "target": {
+  "title": "01 \u00b7 Mobile Chat \u2014 Ergon Lumen v2 design comp",
+  "url": "http://10.0.2.2:8765/comps/01-mobile-chat.html?settle=1"
+ },
+ "result": {
+  "id": 1,
+  "result": {
+   "result": {
+    "type": "string",
+    "value": "{\"animationsAfter2_5s\":18,\"running\":0,\"infiniteIterations\":0}"
+   }
+  }
+ }
+}

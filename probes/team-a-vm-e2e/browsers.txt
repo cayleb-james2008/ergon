@@ -1,0 +1,9 @@
+=== browser-ish packages:
+package:com.google.android.overlay.googlewebview
+package:com.google.android.webview
+package:com.android.chrome
+package:com.android.htmlviewer
+=== toybox net applets:
+nc
+netcat
+ping

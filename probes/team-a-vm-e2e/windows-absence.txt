@@ -1,0 +1,35 @@
+=== Windows VM state (read-only) at 2026-11-02T01:31:12Z
+--- qcow2 image:
+/home/cayleb/workspace/harness-build/scratch-tb-l4/rig/disks/win11-eval.qcow2 size=393216 bytes mtime=2026-11-01 11:52:59.451108133 -0500
+image: /home/cayleb/workspace/harness-build/scratch-tb-l4/rig/disks/win11-eval.qcow2
+file format: qcow2
+virtual size: 80 GiB (85899345920 bytes)
+disk size: 324 KiB
+cluster_size: 65536
+Format specific information:
+    compat: 1.1
+    compression type: zlib
+--- qemu processes:
+682783 /home/cayleb/workspace/harness-build/scratch-tb-l4/rig/sdk/emulator/qemu/linux-x86_64/qemu-system-x86_64-headless -avd rig-phone -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -no-metrics -no-snapshot-save -port 5554
+--- monitor socket / VNC / guest ports:
+ls: cannot access '/home/cayleb/workspace/harness-build/scratch-tb-l4/rig/win/monitor.sock': No such file or directory
+(no monitor/VNC/RDP/SSH listener)
+--- swtpm:
+685488 bash -c E=/home/cayleb/Documents/deepseek-harness/default-workspace/board/probes/team-a-vm-e2e; R=~/workspace/harness-build/scratch-tb-l4/rig; cd $E; { echo "=== Windows VM state (read-only) at $(date -u +%Y-%m-%dT%H:%M:%SZ)"; echo "--- qcow2 image:"; stat -c '%n size=%s bytes mtime=%y' $R/disks/win11-eval.qcow2; qemu-img info $R/disks/win11-eval.qcow2 2>&1 | sed -n '1,8p'; echo "--- qemu processes:"; pgrep -af "qemu-system-x86_64" | grep -v pgrep || echo "(none)"; echo "--- monitor socket / VNC / guest ports:"; ls -la $R/win/monitor.sock 2>&1 | head -2; ss -ltnp 2>/dev/null | grep -E ":5902|:3389|:2222" || echo "(no monitor/VNC/RDP/SSH listener)"; echo "--- swtpm:"; pgrep -af swtpm || echo "(swtpm not running)"; echo "--- install media:"; ls -la $R/iso/Win11_Enterprise_Eval_26H2_x64_en-us.iso $R/iso/virtio-win.iso 2>/dev/null; cat $R/iso/Win11-ISO.sha256 2>/dev/null; echo "--- answer media present:"; ls -la $R/win/answer.img $R/win/unattend.img $R/win/unattend/autounattend.xml 2>/dev/null; echo "--- last install logs (tail):"; for f in win11-install7.log win11-install8.log win11-install9.log; do echo "[$f]"; tail -4 $R/logs/$f 2>/dev/null; done; } | tee windows-absence.txt
+685498 bash -c E=/home/cayleb/Documents/deepseek-harness/default-workspace/board/probes/team-a-vm-e2e; R=~/workspace/harness-build/scratch-tb-l4/rig; cd $E; { echo "=== Windows VM state (read-only) at $(date -u +%Y-%m-%dT%H:%M:%SZ)"; echo "--- qcow2 image:"; stat -c '%n size=%s bytes mtime=%y' $R/disks/win11-eval.qcow2; qemu-img info $R/disks/win11-eval.qcow2 2>&1 | sed -n '1,8p'; echo "--- qemu processes:"; pgrep -af "qemu-system-x86_64" | grep -v pgrep || echo "(none)"; echo "--- monitor socket / VNC / guest ports:"; ls -la $R/win/monitor.sock 2>&1 | head -2; ss -ltnp 2>/dev/null | grep -E ":5902|:3389|:2222" || echo "(no monitor/VNC/RDP/SSH listener)"; echo "--- swtpm:"; pgrep -af swtpm || echo "(swtpm not running)"; echo "--- install media:"; ls -la $R/iso/Win11_Enterprise_Eval_26H2_x64_en-us.iso $R/iso/virtio-win.iso 2>/dev/null; cat $R/iso/Win11-ISO.sha256 2>/dev/null; echo "--- answer media present:"; ls -la $R/win/answer.img $R/win/unattend.img $R/win/unattend/autounattend.xml 2>/dev/null; echo "--- last install logs (tail):"; for f in win11-install7.log win11-install8.log win11-install9.log; do echo "[$f]"; tail -4 $R/logs/$f 2>/dev/null; done; } | tee windows-absence.txt
+--- install media:
+-rw-r--r-- 1 cayleb cayleb  877373440 Nov  1 10:58 /home/cayleb/workspace/harness-build/scratch-tb-l4/rig/iso/virtio-win.iso
+-rw-r--r-- 1 cayleb cayleb 8225329152 Nov  1 10:34 /home/cayleb/workspace/harness-build/scratch-tb-l4/rig/iso/Win11_Enterprise_Eval_26H2_x64_en-us.iso
+bc3f24086ebadc94489066b5ad78089e2cf5c3491e90e790bb81a2b199c10e38  Win11_Enterprise_Eval_26H2_x64_en-us.iso
+--- answer media present:
+-rw-r--r-- 1 cayleb cayleb 67108864 Nov  1 12:27 /home/cayleb/workspace/harness-build/scratch-tb-l4/rig/win/answer.img
+-rw-r--r-- 1 cayleb cayleb     5269 Nov  1 11:58 /home/cayleb/workspace/harness-build/scratch-tb-l4/rig/win/unattend/autounattend.xml
+-rw-r--r-- 1 cayleb cayleb  1474560 Nov  1 12:05 /home/cayleb/workspace/harness-build/scratch-tb-l4/rig/win/unattend.img
+--- last install logs (tail):
+[win11-install7.log]
+qemu-system-x86_64: terminating on signal 15 from pid 256367 (python3)
+[win11-install8.log]
+qemu-system-x86_64: -device usb-storage,drive=ans: No 'usb-bus' bus found for device 'usb-storage'
+[win11-install9.log]
+qemu-system-x86_64: terminating on signal 15 from pid 1387 (/usr/lib/systemd/systemd)
+qemu-system-x86_64: tpm-emulator: Could not cleanly shutdown the TPM

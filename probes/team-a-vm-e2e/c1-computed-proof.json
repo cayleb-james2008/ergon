@@ -1,0 +1,15 @@
+{
+ "target": {
+  "title": "01 \u00b7 Mobile Chat \u2014 Ergon Lumen v2 design comp",
+  "url": "http://10.0.2.2:8765/comps/01-mobile-chat.html?c1c4=2"
+ },
+ "result": {
+  "id": 1,
+  "result": {
+   "result": {
+    "type": "string",
+    "value": "{\"url\":\"http://10.0.2.2:8765/comps/01-mobile-chat.html?c1c4=2\",\"tokensResolved\":{\"--base\":\"#05070A\",\"--ambient-cool\":\"rgba(120, 226, 210, 0.035)\",\"--ambient-accent\":\"rgba(141, 180, 255, 0.07)\",\"--surface-1\":\"rgba(198, 222, 255, 0.04)\",\"--surface-2\":\"rgba(198, 222, 255, 0.07)\",\"--surface-3\":\"rgba(198, 222, 255, 0.10)\",\"--light-1\":\"rgba(198, 222, 255, 0.14)\",\"--field-line\":\"rgba(206, 228, 255, 0.46)\",\"--line-bright\":\"rgba(206, 228, 255, 0.44)\"},\"surfaces\":{\"phoneBg\":\"rgba(198, 222, 255, 0.04)\",\"phoneBlur\":\"blur(14px)\",\"cardBg\":\"rgba(198, 222, 255, 0.1)\",\"composerBg\":\"rgba(198, 222, 255, 0.07)\"},\"composerBoundary\":{\"borderToken\":\"rgba(206, 228, 255, 0.46)\",\"expected\":\"rgba(206, 228, 255, 0.46)\",\"compositedStack\":\"rgba(37,48,58,1)\",\"contrast\":3.46,\"floor\":3,\"pass\":true},\"motion\":{\"reduced\":false,\"animationsNow\":26,\"pillBefore\":\"Approval needed\",\"pillAfter\":\"Approved \u2014 one action, recorded\",\"tabBefore\":[\"true\",\"false\",\"false\"],\"tabAfter\":[\"false\",\"true\",\"false\"]},\"labelPresent\":true,\"textSample\":\"DESIGN COMP \u2014 NOT A BUILT SURFACE. v2 direction pass \u00b7 Ergon Lumen (proposal) \u00b7 owner grade pending \u00b7 builds stay behind G1 / C1\u2013C6 / W1. 9:41 Ergon \u00b7 one agent\"}"
+   }
+  }
+ }
+}

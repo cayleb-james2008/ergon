@@ -1,6 +1,6 @@
 # Team A — Ergon design v2: owner-directed translucent pass (comps built, frozen for the checker)
 
-**STATUS: v2 DIRECTION PASS BUILT, CHECKER-REJECTED ONCE, FIXED (D1-D4), AND RE-FROZEN FOR THE CHECKER'S RE-RUN.** NOT A FINISHED FRONT END, NOT A
+**STATUS: v2 DIRECTION PASS — checker r1 REJECT fixed (D1-D4); checker r2 **ACCEPT-WITH-NAMED-CONCERNS**, C1-C4 fixed and RE-FROZEN again for the final checker re-run. Presentation to the owner is held for the wake-up report.** NOT A FINISHED FRONT END, NOT A
 BUILT SURFACE, NOT A PACK RELEASE.** The comps are live, self-contained pages under
 `board/probes/team-a-design-v2/` (grader index: `index.html`), with the pack-change proposal filed alongside them as
 `PACK-CHANGE-PROPOSAL.md` and summarised here. Nothing was presented to the owner by this lane — the standing rule is
@@ -124,7 +124,7 @@ cannot run a browser either (no image reads in DSH). D1 was a **static certainty
 rendered appearance still needs an **image-permitted visual seat** before the owner sees it - that is a separate step and is
 not claimed here.
 
-### New freeze - `FREEZE.sha256` (17 content files; the manifest excludes itself)
+### First re-freeze - `FREEZE.sha256` (17 content files; the manifest excludes itself) — **superseded by section 6c**
 
 | File | sha256 |
 |---|---|
@@ -148,9 +148,53 @@ not claimed here.
 
 Verify: `cd board/probes/team-a-design-v2 && sha256sum -c FREEZE.sha256 && node check-comps.mjs`.
 
+
+## 6c. Checker r2 - ACCEPT-WITH-NAMED-CONCERNS, then C1-C4 fixed (this is the current re-freeze)
+
+Checker r2 (`board/reports/checker-design-v2-r2.md`) passed the direction: **ACCEPT-WITH-NAMED-CONCERNS**, 5 named
+concerns, one must-fix. All four actionable items are fixed below; the fifth (C6, rendered look) is the owner's visual
+grade. No image reads; the C1 proof is a **real-Chromium computed-style probe** run in the phone VM (Finish Line 2 rig).
+
+| Concern | What was wrong | Fix applied | Proof |
+|---|---|---|---|
+| **C1 (must-fix)** | Message composer boundary still used `--line` = **1.55:1** (`.phone .composer` in `comp-kit.css` + comp 05 inline) while `input[type=text]` was correctly 3.30 | composer border -> **`var(--field-line)`** in both places (kit + comp 05 inline); assertion added so it cannot regress | **Real Chromium (phone VM)**: computed border token = `rgba(206, 228, 255, 0.46)` = `--field-line`; composited stack `rgba(37,48,58,1)`; **computed contrast 3.46:1 >= 3** (`c1-computed-proof.json`) |
+| **C2** | Freeze integrity was conditional: deleting `FREEZE.sha256` or adding an unlisted file still PASSed | self-check now **requires the manifest**, verifies every hash, and asserts the directory contains **exactly** the listed 17 files | mutations: delete manifest -> **FAIL**; add unlisted `EXTRA.txt` -> **FAIL**; clean set -> PASS |
+| **C3** | Raw-colour-keyword detector missed a **first-declaration** inline style (`style="color: white"`) | detector now scans each `style=""` value with a synthetic declaration separator plus the stylesheet rules; self-tests added for both hit and clean cases | mutation `<h1 style="color: white">` -> **FAIL** ("raw colour keyword in a style context"); clean inline -> no finding |
+| **C4** | Native checkboxes (comp 02 remember, storyboard slow-mo) kept the UA focus ring | `input[type="checkbox"]` now carries `accent-color: var(--accent)` and `:focus-visible { outline: 2px accent ring + 2px gap }`; assertion added | real-Chromium probe on comp 02: checkbox **focus-visible = true**, outline colour `rgb(141, 180, 255)` (= `--accent`), accent-colour same; raw computed width recorded as 1.90476 CSS px under the phone viewport scale (the 2 px token ring scaled by the mobile viewport) |
+| **C5 (note)** | latent unused `.pill.accent` (4.20 on wash) | **removed** from the kit; assertion prevents reintroduction | `check-comps.mjs` asserts `.pill.accent` is absent |
+| **C6 (note)** | rendered look unverified by the checker; visual seat = the owner | **partially addressed tonight**: real-Chromium computed-style probe in the phone VM (tokens resolve, planes non-transparent + blur, composer 3.46:1, motion runs and settles to **0 running / 0 infinite**, JS interactions work). Pixel-level visual judgement is still the owner's grade, not claimed here. | `board/reports/team-a-vm-end-to-end.md` §2/§7; `board/probes/team-a-vm-e2e/c1-computed-proof.json`, `settle-proof.json`, `p2-proof.json` |
+
+**Verification on the final set:** `node check-comps.mjs` -> PASS (all D1-D4 and C1-C5 assertions); `sha256sum -c FREEZE.sha256`
+-> all OK; `node build-tokens.mjs --check` -> CURRENT.
+
+### Current freeze — `FREEZE.sha256` (17 content files, 2,191 lines; the manifest excludes itself)
+
+| File | sha256 |
+|---|---|
+| `index.html` | `6ff011e5355b7b4d6358ec00025e5e743ef5e2f39815971827493f0d31e5ae39` |
+| `motion-storyboard.html` | `30440f4dccd27836561d6eb24908acb759b230998effd3189e66ad46eca1a086` |
+| `comps/01-mobile-chat.html` | `66c5edbe28dda5e6d95467a99c35564a3ea84af007a43ffabf1cda912b2c001c` |
+| `comps/02-mobile-triage-approvals.html` | `150b070a1b8281063af0564fac12c2ee41c16b4ee0f618c176b5f9aab0ce020b` |
+| `comps/03-mobile-tasks.html` | `2a7205ce40f37b8ea92edc519c4eb2b31e2e1167041a04d8ed029f03928f187c` |
+| `comps/04-mobile-make.html` | `9f0c0126dd889da5fb9bb46512c06176e47ca8d9357436540ad4d98a796535d7` |
+| `comps/05-desktop-workspace.html` | `6a9ad11d780ae1ef2122eafea5d8fd8ca154922ba9678e26a16f5d85526488d0` |
+| `comps/06-character-sheet.html` | `4256ac66d6610b63d24aaba510ccafad101f5af9d79648db6dd35fa1f39c5d4b` |
+| `comps/07-states.html` | `73c286cb3be54bfde2c05ada95cefb0c761e8364e4c855482b17d5b5f1f86797` |
+| `tokens.json` | `666a3707213c9bbe3fc4ada5d51470ff0b3a2d5a08cff95457fb1b53cc013766` |
+| `tokens.css` | `c71496d670832630066efad14b7136cc1314174d2d7686fb1da3c9c9649d719e` |
+| `build-tokens.mjs` | `14d09c792823d67af71ca2a2c8002d8ed5796d08a203197d8265e362782d8b06` |
+| `comp-kit.css` | `31fdef879c23c963d5492f095485a5a037ac4087fdc0420804e5896d7c9bc67b` |
+| `comp-motion.js` | `9bedd51a96d36248ae449e4dc544f8a5aff6319801075563617d9a903c3cef86` |
+| `check-comps.mjs` | `1b78ce90db6072b37279402590ee615528b85a3fa2f3b1131f8edfae4a25dc75` |
+| `README.md` | `ca6064c3c40eef884de3cc6cc793e06d917135b59af7225bffc4af915ab73808` |
+| `PACK-CHANGE-PROPOSAL.md` | `6d56a0e58bf212b92b9e100216b0cd203f90fdec989db525c6b108e75373befa` |
+
+Manifest digest: **`ea68e398063d6cb1007ae1935f552f6981d663999018be5b3e30f8b83fdbd6c3`** (`sha256sum FREEZE.sha256`). Verify:
+`cd board/probes/team-a-design-v2 && sha256sum -c FREEZE.sha256 && node check-comps.mjs`.
+
 ## 7. Checker handoff (Lead preps/spawns; maker never checker)
 
-- **Frozen set (re-frozen after the fix round):** `board/probes/team-a-design-v2/` - **17 content files, 2,159 lines**, plus the `FREEZE.sha256` manifest (18 files in the directory; the manifest excludes itself). Every hash is listed in section 6b and asserted by `check-comps.mjs`. Do not edit after this report; any change is a new freeze.
+- **Frozen set (re-frozen after checker r2's C1-C4 round):** `board/probes/team-a-design-v2/` - **17 content files, 2191 lines**, plus the `FREEZE.sha256` manifest (18 files in the directory; the manifest excludes itself; digest `ea68e398063d6cb1007ae1935f552f6981d663999018be5b3e30f8b83fdbd6c3`). Every hash is listed in section 6c and asserted by `check-comps.mjs`. Do not edit after this report; any change is a new freeze.
 - **Reproduce:** `cd board/probes/team-a-design-v2 && node build-tokens.mjs --check && node check-comps.mjs`; open
   `index.html` and the seven comps from the folder (file:// is enough; no network, no server).
 - **Judge:** pack-conformance (tokens discipline, floors, anatomy, versioning per PACK-CHANGE-PROPOSAL §3/§4/§8) and

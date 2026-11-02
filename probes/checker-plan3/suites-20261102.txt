@@ -1,0 +1,15 @@
+=== Plan 3 suites re-run from fresh copy 2026-11-02T01:32:34Z ===
+--- runner: test_vinegar_run.py ---
+Ran 83 tests in 11.076s
+OK
+--- traffic acceptance ---
+Ran 7 tests in 0.079s
+OK
+--- place lighting ---
+Ran 6 tests in 0.016s
+OK
+--- full tests/tools ---
+Ran 311 tests in 49.528s
+OK
+--- full Lune (see lune-unit-fresh.log) ---
+unit: 919 passed, 0 failed (126 specs)

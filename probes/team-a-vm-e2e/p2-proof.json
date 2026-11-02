@@ -1,0 +1,15 @@
+{
+ "target": {
+  "title": "02 \u00b7 Mobile Triage + Approvals \u2014 Ergon Lumen v2 design comp",
+  "url": "http://10.0.2.2:8765/comps/02-mobile-triage-approvals.html?p2=2"
+ },
+ "result": {
+  "id": 1,
+  "result": {
+   "result": {
+    "type": "string",
+    "value": "{\"url\":\"http://10.0.2.2:8765/comps/02-mobile-triage-approvals.html?p2=2\",\"fieldBoundary\":{\"borderToken\":null,\"contrast\":null,\"floor\":3},\"sheet\":{\"open\":\"true\",\"rememberText\":\"Remember for Oakridge move for sending estimates to Marcus \u2014 one subject, one action. Revocable; the grant appears in the approvals record.\"},\"checkbox\":{\"outlineWidth\":\"1.90476px\",\"outlineColor\":\"rgb(141, 180, 255)\",\"accentColor\":\"rgb(141, 180, 255)\",\"focusVisible\":true},\"labelPresent\":true}"
+   }
+  }
+ }
+}

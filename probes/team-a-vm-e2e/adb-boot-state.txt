@@ -1,0 +1,15 @@
+=== timestamp: 2026-11-02T01:27:11Z
+=== adb devices:
+List of devices attached
+emulator-5554          device product:sdk_gphone64_x86_64 model:sdk_gphone64_x86_64 device:emu64xa transport_id:4
+
+=== boot_completed:
+1
+=== release/sdk:
+15
+35
+=== wm size:
+Physical size: 1080x2400
+=== avd:
+rig-phone
+OK

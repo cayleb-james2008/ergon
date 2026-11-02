@@ -1,0 +1,12 @@
+=== 3a contract probe (fresh copy /tmp/checker-plan3/repo ) ===
+GENERATION_MAX_EVENTS: 20 | EXPECTED_HELPERS: 4
+helpers: ['HandlingServer', 'ExactReportTransport', 'GenerationGuard']
+baseline validate_report accepted: True
+pass-with-instability rejected: generation instability recorded on a passing run
+21 events rejected: generationEvents exceeds the bounded 20
+failed runtime diagnostic shape: PASS
+failed runtime rejected: traffic runtime did not finish | events kept: 1
+Server.luau: guard require: True
+Server.luau: observe+error(violation): True
+Server.luau: bare assert gone: True
+GenerationGuard: MAX_EVENTS = 20: True | fail-closed message: True

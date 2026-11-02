@@ -1,0 +1,36 @@
+=== Plan 3 provenance (checker-trading fresh-context, 2026-11-02T01:31:35Z) ===
+repo: /home/cayleb/Work/projects/untitled-street-game
+HEAD: 90ac9326dfb0037d5af7505d64bd230d1213fb88
+commit: 90ac9326dfb0037d5af7505d64bd230d1213fb88
+tree: 8a488c490ab8a82622b68ec6323d754714f7a472
+parent: 29a626b2b8a13556ac5ee07db6fdb60401ecc6e8
+branch tip: 90ac9326dfb0037d5af7505d64bd230d1213fb88
+branches containing: * prep/b1-capture-format-20261101 
+tracked non-untracked status lines: 0
+untracked lines: 792
+remotes: 0 lines
+--- diffstat 29a626b..90ac932 ---
+ docs/art/SIDECAR.md                           |  16 +++-
+ docs/verify/2026-10-19/VINEGAR_RUNBOOK.md     |   2 +-
+ tests/diagnostics/GenerationGuard.luau        |  98 ++++++++++++++++++++++
+ tests/tools/test_collector_chunks.py          |   2 +-
+ tests/tools/test_look_metrics.py              | 108 ++++++++++++++++++------
+ tests/tools/test_place_lighting.py            | 105 +++++++++++++++++++++++
+ tests/tools/test_traffic_acceptance.py        |  53 +++++++++++-
+ tests/tools/test_vinegar_run.py               |  82 +++++++++++++-----
+ tests/traffic/Server.luau                     |  17 +++-
+ tests/unit/traffic-generation-guard.spec.luau |  71 ++++++++++++++++
+ tests/unit/traffic-runtime.spec.luau          |   4 +-
+ tests/unit/traffic-timing.spec.luau           |   3 +-
+ tools/look_metrics.py                         |  94 +++++++++++++++++----
+ tools/traffic_acceptance.py                   |  41 ++++++++-
+ tools/vinegar_lib/frames.py                   |  43 +++++++---
+ tools/vinegar_lib/place_lighting.py           | 115 ++++++++++++++++++++++++++
+ tools/vinegar_run.py                          |  15 +++-
+ 17 files changed, 779 insertions(+), 90 deletions(-)
+--- name-only scope purity (src/assets/deploy/build should be empty) ---
+(none)
+--- fresh copy ---
+method: git archive 90ac932 | tar -x -C /tmp/checker-plan3/repo
+tracked entries in commit: 1442; blob-for-blob match: 0 missing / 0 mismatch (1 symlink CLAUDE.md->AGENTS.md handled)
+build/ not tracked: 0 entries

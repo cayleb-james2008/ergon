@@ -1,0 +1,25 @@
+127.0.0.1 - - [01/Nov/2026 20:27:28] "GET /comps/01-mobile-chat.html HTTP/1.1" 200 -
+127.0.0.1 - - [01/Nov/2026 20:27:57] "GET /comps/01-mobile-chat.html HTTP/1.1" 200 -
+127.0.0.1 - - [01/Nov/2026 20:27:57] "GET /tokens.css HTTP/1.1" 200 -
+127.0.0.1 - - [01/Nov/2026 20:27:57] "GET /comp-kit.css HTTP/1.1" 200 -
+127.0.0.1 - - [01/Nov/2026 20:27:57] "GET /comp-motion.js HTTP/1.1" 200 -
+127.0.0.1 - - [01/Nov/2026 20:27:57] code 404, message File not found
+127.0.0.1 - - [01/Nov/2026 20:27:57] "GET /favicon.ico HTTP/1.1" 404 -
+127.0.0.1 - - [01/Nov/2026 20:30:39] "GET /comps/01-mobile-chat.html HTTP/1.1" 304 -
+127.0.0.1 - - [01/Nov/2026 20:30:39] "GET /comp-kit.css HTTP/1.1" 304 -
+127.0.0.1 - - [01/Nov/2026 20:30:39] "GET /tokens.css HTTP/1.1" 304 -
+127.0.0.1 - - [01/Nov/2026 20:30:39] "GET /comp-motion.js HTTP/1.1" 304 -
+127.0.0.1 - - [01/Nov/2026 20:32:23] "GET /comps/01-mobile-chat.html?c1c4=1 HTTP/1.1" 200 -
+127.0.0.1 - - [01/Nov/2026 20:32:23] "GET /tokens.css HTTP/1.1" 304 -
+127.0.0.1 - - [01/Nov/2026 20:32:23] "GET /comp-kit.css HTTP/1.1" 200 -
+127.0.0.1 - - [01/Nov/2026 20:32:23] "GET /comp-motion.js HTTP/1.1" 304 -
+127.0.0.1 - - [01/Nov/2026 20:32:35] "GET /comps/01-mobile-chat.html?c1c4=2 HTTP/1.1" 200 -
+127.0.0.1 - - [01/Nov/2026 20:32:35] "GET /comp-kit.css HTTP/1.1" 304 -
+127.0.0.1 - - [01/Nov/2026 20:32:57] "GET /comps/01-mobile-chat.html?settle=1 HTTP/1.1" 200 -
+127.0.0.1 - - [01/Nov/2026 20:32:57] "GET /comp-kit.css HTTP/1.1" 304 -
+127.0.0.1 - - [01/Nov/2026 20:33:02] "GET /comps/02-mobile-triage-approvals.html?p2=1 HTTP/1.1" 200 -
+127.0.0.1 - - [01/Nov/2026 20:33:06] "GET /comps/07-states.html?p3=1 HTTP/1.1" 200 -
+127.0.0.1 - - [01/Nov/2026 20:33:07] "GET /comp-kit.css HTTP/1.1" 304 -
+127.0.0.1 - - [01/Nov/2026 20:33:21] "GET /comps/02-mobile-triage-approvals.html?p2=2 HTTP/1.1" 200 -
+127.0.0.1 - - [01/Nov/2026 20:33:21] "GET /comp-kit.css HTTP/1.1" 304 -
+127.0.0.1 - - [01/Nov/2026 20:33:25] "GET /comps/07-states.html?p3=2 HTTP/1.1" 200 -

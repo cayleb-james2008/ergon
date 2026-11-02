@@ -105,6 +105,8 @@ input[type="text"], input[type="search"] {
 }
 input:focus-visible { outline: var(--focus-ring) solid var(--accent); outline-offset: var(--focus-gap); border-color: var(--accent); }
 input::placeholder { color: var(--subtle); }
+input[type="checkbox"] { accent-color: var(--accent); }
+input[type="checkbox"]:focus-visible { outline: var(--focus-ring) solid var(--accent); outline-offset: var(--focus-gap); }
 
 .pill {
   display: inline-flex; align-items: center; gap: 7px; min-height: 24px; padding: 0 var(--space-2);
@@ -116,7 +118,6 @@ input::placeholder { color: var(--subtle); }
 .pill.ok { background: var(--wash-ok); color: var(--ok); border-color: var(--edge-ok); }
 .pill.warn { background: var(--wash-warn); color: var(--warn); border-color: var(--edge-warn); }
 .pill.danger { background: var(--wash-danger); color: var(--danger); border-color: var(--edge-danger); }
-.pill.accent { background: var(--wash-accent); color: var(--accent); border-color: var(--accent); }
 
 /* ---------- the character: a little neural network (node-and-connection mark) ---------- */
 .nn { width: 34px; height: 34px; flex: none; display: block; }
@@ -147,7 +148,7 @@ input::placeholder { color: var(--subtle); }
 .phone .status { display: flex; justify-content: space-between; padding: 10px var(--space-3) 4px; color: var(--subtle); font-size: 11px; }
 .phone .appbar { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-2) var(--space-3); border-bottom: 1px solid var(--line); }
 .phone .content { flex: 1; overflow: hidden; padding: var(--space-3); display: flex; flex-direction: column; gap: var(--space-3); }
-.phone .composer { margin: 0 var(--space-3) var(--space-2); display: flex; gap: var(--space-1); align-items: center; padding: 6px; border: 1px solid var(--line); border-radius: var(--radius-card); background: var(--surface-2); backdrop-filter: blur(var(--blur-card)); }
+.phone .composer { margin: 0 var(--space-3) var(--space-2); display: flex; gap: var(--space-1); align-items: center; padding: 6px; border: 1px solid var(--field-line); border-radius: var(--radius-card); background: var(--surface-2); backdrop-filter: blur(var(--blur-card)); }
 .phone .composer input { border-color: transparent; background: transparent; }
 .phone .tabbar { display: grid; grid-template-columns: repeat(3, 1fr); border-top: 1px solid var(--line); background: var(--surface-2); backdrop-filter: blur(var(--blur-card)); }
 .phone .tabbar button { border: 0; border-radius: 0; background: transparent; color: var(--muted); min-height: 58px; font-size: var(--caption); display: grid; place-items: center; position: relative; }

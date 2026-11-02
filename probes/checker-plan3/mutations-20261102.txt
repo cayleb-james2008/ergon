@@ -1,0 +1,21 @@
+=== Plan 3 mutation proofs — checker reproduction (fresh copy /tmp/checker-plan3/repo -> throwaway /tmp/checker-plan3/mut; files restored after each) ===
+Baseline in mut: test_traffic_acceptance 7 OK; lune guard spec 5 passed / 0 failed.
+
+A. remove `validate_diagnostic(report)` call from tools/traffic_acceptance.py:validate_report
+   -> python3 -m unittest discover -s tests/tools -p test_traffic_acceptance.py
+   -> Ran 7 tests | FAILED (failures=3)   [claim 3]  MATCH
+B. remove the <=20 bound check (`need(len(events)<=GENERATION_MAX_EVENTS,...)`)
+   -> Ran 7 tests | FAILED (failures=1)   [claim 1]  MATCH
+C. remove the pass-with-instability check (`need(diagnostic.get("generationStable") is True ... finalGeneration==fixture...`)
+   -> Ran 7 tests | FAILED (failures=3)   [claim 3]  MATCH
+D. remove `error(violation)` from tests/traffic/Server.luau
+   -> Ran 7 tests | FAILED (failures=1)   [claim 1]  MATCH
+E. remove the look_metrics --build hash-binding block from technology_problems
+   -> python3 -m unittest discover -s tests/tools -p test_look_metrics.py
+   -> Ran 22 tests | FAILED (failures=2)   [claim 2]  MATCH
+F. remove the recorder bound in tests/diagnostics/GenerationGuard.luau (always insert, no truncated)
+   -> ./.tools/bin/lune run tests/unit/run.luau traffic-generation-guard
+   -> unit: 4 passed, 1 failed (1 specs)  [claim 1]  MATCH
+      FAIL the event list is bounded at 20 and truncation is recorded: value expected 20, got 21
+Restore: each file copied back from the pristine archive copy; `cmp` identical; filtered guard spec back to 5 passed/0 failed;
+mut tree diff vs fresh copy = only __pycache__ .pyc files (no source residue).
