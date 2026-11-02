@@ -1,0 +1,63 @@
+== layer-6 allowlist fix provenance/scope, 2026-11-02T00:59:25-05:00 ==
+HEAD=8bda598f7cf023a9eb58aab1a76c93dfce3d5ba3
+parent=d83efa88348ef055ece2602843b5986482677c55
+tree=7face17b2215a45153eb1d59b9d94fddd98b15ac
+branch=prep/b1-capture-format-20261101
+tracked_mods=0 untracked=811
+--- delta d83efa8..8bda598 numstat ---
+1	1	tests/atlas/Server.luau
+14	0	tests/tools/test_atlas_acceptance.py
+13	0	tests/tools/test_map_atlas.py
+--- sum ---
+insertions=28 deletions=1
+--- changed paths ---
+tests/atlas/Server.luau
+tests/tools/test_atlas_acceptance.py
+tests/tools/test_map_atlas.py
+--- game/asset/sealed touched ---
+(empty=untouched)
+--- earlier layers / plan+validator untouched ---
+(empty=untouched)
+160:ATLAS_FIRST_VIEW_TIMEOUT = 45  # Plan 4: bounded wait for view-001; a named-seed hang is caught in tens of seconds
+617:    capture_attempts_max = 3  # one capture + at most 2 bounded retries when bytes duplicate an earlier view
+622:    overhead_settle = 1.0
+--- sealed hashes ---
+84324d4342667dd163ab8e64adacbf8ef44ab786aeda5c7ab1403e76d52ef6ce  build/release.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  build/test.rbxlx
+
+--- claim 1: bounds (server mirrors client 32; no stale <=24) ---
+tests/atlas/Server.luau:56: assert(manifest.candidate==cfg.candidate and #manifest.views<=32,"candidate/allowlist mismatch")
+tests/atlas/Client.luau:77: local plan=Http:JSONDecode(planValue.Value);assert(plan.nonce==nonce and #plan.views>0 and #plan.views<=32,"native allowlist invalid")
+no views<=24 in atlas sources
+
+--- claim 2: agreement + >32 rejection test ---
+
+ def test_server_and_client_agree_on_the_widened_view_bound(self):
+  """Nox run-7 layer-6 fix: the server allowlist bound mirrors the client (32), and a >32 plan is rejected by the
+  pinned contract. Scout is 27 views; the old 24 cap was the stale side."""
+  server=(A.ROOT/'tests/atlas/Server.luau').read_text()
+  client=(A.ROOT/'tests/atlas/Client.luau').read_text()
+  self.assertIn('#manifest.views<=32,"candidate/allowlist mismatch"',server)
+  self.assertIn('#plan.views<=32,"native allowlist invalid"',client)
+  self.assertNotIn('views<=24',server)  # the stale layer-6 cap is gone
+  self.assertNotIn('views<=24',client)
+  self.assertEqual(len(self.data['views']),27)
+  bound=lambda views:0<len(views)<=32
+  self.assertTrue(bound(self.data['views']))
+  self.assertFalse(bound(self.data['views']+[{}]*6))  # 33 views is rejected
+
+--- claim 3: full planned-list assertion ---
+ def test_full_planned_list_contains_no_whole_highway_overhead_and_exactly_the_zone_views(self):
+  """Checker R3: the scout pin alone would stay green if an unused whole-highway view lingered in the full list; pin
+  the full planned list itself (no highway-overhead anywhere, exactly the four zone overheads, distinct zone paths)."""
+  views,_=atlas.planned_views(self.graph)
+  self.assertNotIn('highway-overhead',{v['id'] for v in views})
+  zone=[v for v in views if v.get('zonePath')]
+  self.assertEqual([v['id'] for v in zone],['highway-zone-%d-overhead'%i for i in (1,2,3,4)])
+  self.assertEqual(len({v['zonePath'] for v in zone}),4)
+  self.assertTrue(all(v['zonePath'].startswith('Highway/Roads/Road_') for v in zone))
+  self.assertTrue(all(v['kind']=='overhead' and v['zone']=='highway' for v in zone))
+  overhead={v['id'] for v in views if v['kind']=='overhead'}
+  self.assertEqual(overhead,{'city-overhead','world-overhead'}|{v['id'] for v in zone})
+
+ def test_scout_covers_distinct_highway_grade_perimeter_and_garage(self):

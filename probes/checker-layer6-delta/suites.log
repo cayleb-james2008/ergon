@@ -1,0 +1,10 @@
+== suites on 8bda598 (fresh clone), 2026-11-02T00:59:25-05:00 ==
+runner:          Ran 91 tests in 12.493s OK 
+atlas acc:       Ran 23 tests in 0.733s OK 
+map atlas:       Ran 6 tests in 0.360s OK 
+full python:     4:Ran 329 tests in 47.527s 6:OK 
+Lune atlas:      unit: 10 passed, 0 failed (4 specs)
+atlas-paths:     unit: 1 passed, 0 failed (1 specs)
+
+== maker report ==
+team-d-layer6-allowlist-fix-20261102.md ABSENT (verified from the commit)

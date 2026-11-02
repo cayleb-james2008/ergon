@@ -1,0 +1,20 @@
+{
+ "full_planned_list_length": 1895,
+ "scout_length": 27,
+ "zone_views": [
+  "highway-zone-1-overhead",
+  "highway-zone-2-overhead",
+  "highway-zone-3-overhead",
+  "highway-zone-4-overhead"
+ ],
+ "overhead_views": [
+  "city-overhead",
+  "world-overhead",
+  "highway-zone-1-overhead",
+  "highway-zone-2-overhead",
+  "highway-zone-3-overhead",
+  "highway-zone-4-overhead"
+ ],
+ "highway_overhead_anywhere": false,
+ "full_list_has_27_views": false
+}
