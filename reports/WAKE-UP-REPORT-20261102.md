@@ -77,6 +77,12 @@ Fences held overnight: no spend, no publication, no credential values in chat/bo
   the fog fix is approved offline and the next atlas Play follows its checker delta.
 - Studio: pid 759088 (fresh opening after `studiocycle`), sealed place/build unchanged (`c6651793…`/`84324d43…`), 2/3 Plays used
   in the current opening (third reserved); no publication, no build.
+- **Diagnostic Play 5 (fresh opening, 1/3) — the cell now captures real evidence:** **20/24 views captured (20 distinct sha256, all
+  accepted/stationary, viewport 1837×744)** and **`viewportMatchesPng:true` observed on every view — the first observation of that
+  outstanding datum**; the guarded fog layer is clean in Play (legacy absence recorded, no false claim); `fastPathApplied=true` again.
+  The run then fail-closed honestly at view-021 on a **stale duplicate capture**, which the guard correctly refused to keep — the
+  capture-path layer is named and a bounded fresh-capture retry (max 2 attempts, stale rule stays final) is approved and being frozen.
+  Sealed place/release unchanged; no cell "pass" is claimed (views 21–24 + runtime/validator still absent).
 - **Next (ruled):** the client `FogEnabled` legacy-API fix is approved and being implemented (guarded capability accessors that
   record availability instead of raising) → freeze → checker delta → fresh 3-Play opening → one atlas Play; then the
   **abort-contact fixture geometry fix ruled A+C** (closed-loop pursuit with clamped closing speed + two named fail-fast guards;
