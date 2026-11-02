@@ -1,0 +1,41 @@
+[
+ {
+  "case": "early_retry_then_later_failure",
+  "exit": 1,
+  "error": "FixtureFailed: view-020: screen_capture returned the same bytes as an earlier view on all 3 attempts (stale capture; kin",
+  "result_entries": 20,
+  "result_last_phase": "view-020",
+  "audit_present": true,
+  "audit_entries": 20,
+  "audit_last_phase": "view-020",
+  "equal": true,
+  "length_equal": true,
+  "content_equal": true
+ },
+ {
+  "case": "success_with_retry",
+  "exit": 0,
+  "error": "",
+  "result_entries": 24,
+  "result_last_phase": "view-024",
+  "audit_present": true,
+  "audit_entries": 24,
+  "audit_last_phase": "view-024",
+  "equal": true,
+  "length_equal": true,
+  "content_equal": true
+ },
+ {
+  "case": "no_retry_success",
+  "exit": 0,
+  "error": "",
+  "result_entries": 24,
+  "result_last_phase": "view-024",
+  "audit_present": true,
+  "audit_entries": 24,
+  "audit_last_phase": "view-024",
+  "equal": true,
+  "length_equal": true,
+  "content_equal": true
+ }
+]

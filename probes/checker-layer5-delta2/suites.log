@@ -1,0 +1,6 @@
+== suites on fc546e5 (fresh clone), 2026-11-01T23:51:09-05:00 ==
+runner:        Ran 91 tests in 12.444s OK 
+atlas acc:     Ran 20 tests in 0.743s OK 
+full python:   4:Ran 325 tests in 48.166s 6:OK 
+atlas-paths:   unit: 1 passed, 0 failed (1 specs)
+full Lune:     NOT re-run (delta touches only Python: tools/vinegar_run.py + tests/tools/test_vinegar_run.py; no Lune-read file changed) - relied on accepted 920/0 (126 specs) at a231e3f; atlas-paths re-run 1/0

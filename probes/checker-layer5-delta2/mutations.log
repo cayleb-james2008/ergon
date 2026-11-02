@@ -1,0 +1,9 @@
+== layer-5 delta-fix mutation proof (throwaway clone), 2026-11-01T23:51:09-05:00 ==
+M13 restore exclusive-create write + swallow FileExistsError in flush_capture_attempts
+   -> runner suite: Ran 91 tests, FAILED (failures=5)
+      FAIL: test_atlas_always_duplicate_capture_fails_closed_after_max_retries
+      FAIL: test_atlas_audit_file_equals_result_after_an_early_retry_then_a_later_failure
+      FAIL: test_atlas_duplicate_capture_retries_once_and_keeps_the_attempts
+      FAIL: test_atlas_overhead_views_take_a_bounded_render_settle
+      FAIL: test_atlas_still_frozen_overhead_fails_closed_with_kind_and_settle_evidence
+restored: git status clean; tools/vinegar_run.py sha256 cae90e62d7dc0b65173111453dc6738e8c99631934a32ef3529d88597eafb3b3 (frozen)

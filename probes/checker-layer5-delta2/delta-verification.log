@@ -1,0 +1,68 @@
+== layer-5 delta-fix provenance/scope, 2026-11-01T23:51:09-05:00 ==
+HEAD=fc546e582bc4e9729875b612e74b8302c8ad9704
+parent=ed9b797ffe553ec7cc09bae02012ea2e2be153c9
+tree=858225ecfa0563a21bc9e02bab1a691bec419b96
+branch=prep/b1-capture-format-20261101
+tracked_mods=0 untracked=805
+--- delta ed9b797..fc546e5 numstat ---
+29	2	tests/tools/test_vinegar_run.py
+9	8	tools/vinegar_run.py
+--- sum ---
+insertions=38 deletions=10
+--- changed paths ---
+tests/tools/test_vinegar_run.py
+tools/vinegar_run.py
+--- game/asset/sealed touched ---
+(empty=untouched)
+--- invariants (files untouched) ---
+(empty=untouched)
+160:ATLAS_FIRST_VIEW_TIMEOUT = 45  # Plan 4: bounded wait for view-001; a named-seed hang is caught in tens of seconds
+617:    capture_attempts_max = 3  # one capture + at most 2 bounded retries when bytes duplicate an earlier view
+622:    overhead_settle = 1.0
+623:    overhead_retry_wait = 1.0
+--- sealed hashes ---
+84324d4342667dd163ab8e64adacbf8ef44ab786aeda5c7ab1403e76d52ef6ce  build/release.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  build/test.rbxlx
+
+--- claim 1: flush now overwrites (no exclusive-create, no swallow) ---
+    def flush_capture_attempts(self, out):
+        """Write the capture-attempt audit with the CURRENT COMPLETE list (overwritten by design).
+
+        This is a DERIVED mirror of result.json.captureAttempts: an exclusive-create would let an earlier retry leave a
+        stale snapshot that a later failure's flush silently skips (checker layer-5 delta). A real write error is raised,
+        never swallowed."""
+        if not self.capture_attempts:
+            return
+        (out / "capture-attempts.json").write_text(json.dumps(self.capture_attempts, indent=2) + "\n")
+
+--- flush call sites (after every view + failure paths) ---
+728:                    self.flush_capture_attempts(out)
+735:                    self.flush_capture_attempts(out)
+741:            self.flush_capture_attempts(out)  # the audit always mirrors the complete list (overwritten by design)
+--- camera-moved message names kind+settle ---
+729:                    raise FixtureFailed(f"{phase}: camera moved during the capture retry ({delta:.4g} > "
+730-                                        f"{frames.CAMERA_TOLERANCE}; kind={kind} settle={settled:.1f}s); "
+731-                                        f"no capture accepted")
+
+--- claim 2: regression test present ---
+1779:    def test_atlas_audit_file_equals_result_after_an_early_retry_then_a_later_failure(self):
+1780-        """Checker layer-5 delta: an earlier retry must never leave a stale audit snapshot when a LATER view fails."""
+1781-        fake, ctx = self.atlas()
+1782-        def script(f):
+1783-            if f.captures == 2:
+1784-                return 1  # view-002 first attempt duplicates view-001 -> retired once
+1785-            if f.captures in (21, 22, 23):
+1786-                return 20  # view-020 (overhead) stays frozen on view-019's bytes: three duplicates -> fail closed
+1787-            return f.captures
+1788-        fake.capture_script = script
+1789-        code, result = self.run_fixture(ctx, "atlas:scout")
+1790-        self.assertEqual(code, V.EXIT_FAIL)
+1791-        self.assertIn("view-020", result["error"])
+1792-        self.assertEqual(result["captureAttempts"][1]["phase"], "view-002")
+1793-        self.assertEqual([a["duplicate"] for a in result["captureAttempts"][1]["attempts"]], [True, False])
+1794-        self.assertEqual(len(result["captureAttempts"]), 20)  # views 1..20, the failing one included
+1795-        audit = json.loads((Path(result["runDir"]) / "capture-attempts.json").read_text())
+1796-        self.assertEqual(audit, result["captureAttempts"])  # length AND content match, not a stale 2-entry snapshot
+1797-        self.assertEqual(audit[-1]["phase"], "view-020")
+1798-
+1799-    def test_atlas_stale_identical_capture_is_rejected(self):
