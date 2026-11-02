@@ -1,0 +1,44 @@
+=== ATLAS FOG GUARD FIX (Lead-approved ①②③④) 2026-11-02 ===
+commit a231e3ffc36218822c285b3c25cdd60fed4216b3  tree 765a3b085a9c51c1da14b9d8eea15e012b3395c4  parent 35caa02
+time 2026-11-02T03:36:07Z
+
+--- what Play 4 unmasked before the fix ---
+repeat Play A recorded clean fastPathApplied=true (actual==expected 2134783819/2, rebuild=false, starter applied before rootFoundAt, build 4.249 s) then failed client-side: FogEnabled is not a valid member of Lighting at AtlasClient:16 readLighting <- AtlasClient:63 start. Same property written unconditionally at Server.luau:95 (tiles-fogoff).
+
+--- fix ---
+client: capability() (pcall+nil-is-absent) + readFog() records available{} + values only when present + legacy=true when FogEnabled absent + fogOffApplied from the server attribute; no direct Fog* member access, never raises.
+server (fog-off): FogEnabled written only if pcall succeeds; atmosphere density/haze always off; inventory.fogOffDetail={applied,fogEnabledAvailable,atmosphere,method}; AtlasFogOff attribute published.
+validator: capability-aware honest contract (legacy absence recorded, fog-off requires server record + availability agreement + atmosphere-only method on legacy builds; never a fog-enabled claim; non-fog-off forbids enabled=false).
+tests: fog capability + fog-off honesty (4 dishonest variants), source-shape (no direct Fog* access; guarded write+record), Lune execution of the REAL readFog against modern/legacy/sparse Lighting. R4 wording + R2 cosmetic folded.
+
+--- suites on the fix commit ---
+Ran 85 tests in 11.193s
+
+OK
+Ran 20 tests in 0.815s
+
+OK
+Ran 319 tests in 48.913s
+OK
+unit: 1 passed, 0 failed (1 specs)
+
+--- sealed ---
+84324d4342667dd163ab8e64adacbf8ef44ab786aeda5c7ab1403e76d52ef6ce  build/release.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  build/test.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  /home/cayleb/.var/app/org.vinegarhq.Vinegar/data/usg/usg-desktop.rbxlx
+
+--- full Lune unit suite (fix tree) ---
+unit: 920 passed, 0 failed (126 specs)  lune_rc=0
+
+--- mutation proofs ---
+M4 unguard client fog read             -> atlas acceptance FAILED
+M5 unguard server fog-off write        -> atlas acceptance FAILED
+M6 legacy write-claim check removed    -> atlas acceptance FAILED
+restored; atlas acceptance 20 OK, tracked tree clean
+
+--- final state 2026-11-02T03:47:47Z ---
+HEAD a231e3ffc36218822c285b3c25cdd60fed4216b3
+tree 765a3b085a9c51c1da14b9d8eea15e012b3395c4
+tracked modified: 0
+sealed unchanged: 84324d43.../c6651793...
+Studio: pid 759088 alive; opening 2/3 plays; place==build c6651793
