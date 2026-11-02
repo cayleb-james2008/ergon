@@ -1,0 +1,6 @@
+N1 — PASS (corrected in the report body)
+§6d lines 207-208 now: "applied to the nine raised planes (glass-1/2/3, card, sheet, phone, desktop, composer,
+light-pool): each carries lift + top rim + bottom shade. The tab bar and banner carry the rim only; the sidebar
+is a bordered full-height plane with no shadow by design (corrected per checker N1)"; depth-consistency row
+names composer/tabbar/banner/sheet/sidebar correctly, "no invented shadow". Matches artifact: --depth-shade uses
+9; .sidebar has no box-shadow (kit:175); tabbar/banner box-shadow var(--depth-rim) only.

@@ -1,0 +1,12 @@
+DELTA SINCE 7799a87 (note-fix freeze -> r3) — hash-compare of all 18 entries
+CHANGED (2): FREEZE.sha256 (manifest, expected) ; check-comps.mjs (assertion scope)
+SAME (16): PACK-CHANGE-PROPOSAL.md README.md build-tokens.mjs comp-kit.css comp-motion.js comps/01..comps/07
+           index.html motion-storyboard.html tokens.css tokens.json
+=> no frozen content file other than check-comps.mjs changed; no assertion removed or relaxed.
+check-comps.mjs diff: + balancedBlock(text, needle) brace-balanced extractor; fcBlock = balancedBlock(kit,
+  '@media (forced-colors: active)') (was slice … to EOF); hcBlock = slice(indexOf('[data-contrast="high"]
+  .glass'), indexOf('[data-contrast="high"] body')); hc2=hcBlock, fc2=fcBlock; +2 isolation assertions
+  (!fc2.includes('data-contrast') ; !hc2.includes('@media (forced-colors')). Removed check() lines: 0.
+check( occurrences: 94 (was 92; +2 scope assertions). check-comps PASS with the new scope.
+Kit tail check: the only rule after [data-contrast="high"] body is that body rule itself -> truncation drops
+no asserted rule.

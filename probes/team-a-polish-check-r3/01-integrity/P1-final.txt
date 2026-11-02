@@ -1,0 +1,10 @@
+FINAL RE-FREEZE (r3) INTEGRITY — checker, fresh copy /tmp/polish-check-r3/fresh
+sha256sum -c FREEZE.sha256 -> 17/17 OK
+sha256sum FREEZE.sha256   -> 2a8cc21bd5f516198ea82a97efc40d3ddff1f7820309fd33b2175ae946670dbe  (== subject)
+node build-tokens.mjs --check -> TOKENS: CURRENT — tokens.css matches tokens.json
+node check-comps.mjs -> V2 COMPS CHECK: PASS (9 pages; 0 colour literals outside token files; 74 props / 0
+  unresolved; floors line; freeze manifest present+matching; exact directory set)
+17 content files / 2,290 lines == report §6e/§7 claim
+report §6e "Current freeze (recheck round)" table vs FREEZE.sha256: 17 rows / 0 mismatches / same set
+digest pins: report §6e+§7, token contract §7, admission skeleton, pack-change gate checklist, grading intake
+  all == 2a8cc21b… (report has 2 mentions: §6e manifest line + §7 handoff; others 1 each)

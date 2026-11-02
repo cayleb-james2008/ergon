@@ -1,0 +1,44 @@
+--- /tmp/polish-check-r2/fresh/check-comps.mjs	2026-11-02 09:27:06.042799055 -0500
++++ /tmp/polish-check-r3/fresh/check-comps.mjs	2026-11-02 09:52:54.207690787 -0500
+@@ -55,6 +55,20 @@
+ const usedProps = (texts) => new Set(texts.flatMap((t) => [...t.matchAll(/var\(\s*(--[a-z0-9-]+)/g)].map((m) => m[1])));
+ const unresolved = (used, defined) => [...used].filter((p) => !defined.has(p));
+ 
++// Brace-balanced extractor: an assertion scoped to a media block must not read past that block's closing brace.
++const balancedBlock = (text, needle) => {
++  const start = text.indexOf(needle);
++  if (start === -1) return '';
++  const open = text.indexOf('{', start);
++  if (open === -1) return '';
++  let depth = 0;
++  for (let i = open; i < text.length; i += 1) {
++    if (text[i] === '{') depth += 1;
++    else if (text[i] === '}') { depth -= 1; if (depth === 0) return text.slice(open, i + 1); }
++  }
++  return '';
++};
++
+ /* ---------- 1. labels ---------- */
+ for (const page of PAGES) check(/DESIGN COMP — NOT A BUILT SURFACE/.test(read(page)), `${page}: missing the "DESIGN COMP — NOT A BUILT SURFACE" label`);
+ 
+@@ -171,13 +185,16 @@
+ const states07 = read('comps/07-states.html');
+ check(/<input[^>]*disabled/.test(states07), 'comps/07: the disabled field state must be demonstrated, not dormant CSS');
+ check(/<input[^>]*readonly/.test(states07), 'comps/07: the read-only field state must be demonstrated, not dormant CSS');
+-const fcBlock = kit.slice(kit.indexOf('@media (forced-colors: active)'));
++const fcBlock = balancedBlock(kit, '@media (forced-colors: active)');
+ check(/\.phone \.composer/.test(fcBlock) && /\.phone \.tabbar/.test(fcBlock) && /\.banner/.test(fcBlock) && /\.sidebar/.test(fcBlock), 'comp-kit.css: forced-colours reset must cover composer/tabbar/banner/sidebar');
+-const hcBlock = kit.slice(kit.indexOf('[data-contrast="high"] .glass'));
++const hcEnd = kit.indexOf('[data-contrast="high"] body');
++const hcBlock = kit.slice(kit.indexOf('[data-contrast="high"] .glass'), hcEnd === -1 ? undefined : hcEnd);
+ check(/\[data-contrast="high"\] \.phone \.composer/.test(hcBlock) && /\[data-contrast="high"\] \.phone \.tabbar/.test(hcBlock) && /\[data-contrast="high"\] \.banner/.test(hcBlock) && /\[data-contrast="high"\] \.sidebar/.test(hcBlock), 'comp-kit.css: HC preview reset must cover composer/tabbar/banner/sidebar');
+ 
+-const hc2 = kit.slice(kit.indexOf('[data-contrast="high"] .glass'));
+-const fc2 = kit.slice(kit.indexOf('@media (forced-colors: active)'));
++const hc2 = hcBlock;
++const fc2 = fcBlock;
++check(!fc2.includes('data-contrast'), 'check scope: the forced-colours block assertion must not read the HC-preview rules (isolated block)');
++check(!hc2.includes('@media (forced-colors'), 'check scope: the HC-preview block assertion must not read the forced-colours block');
+ check(/\[data-contrast="high"\] \.sidebar nav button\[aria-current="page"\]/.test(hc2), 'comp-kit.css: HC preview must reset the selected sidebar row to system Highlight');
+ check(/\[data-contrast="high"\] \.phone \.tabbar button/.test(hc2), 'comp-kit.css: HC preview must reset tab-bar buttons to system colours');
+ check(/\[data-contrast="high"\] input \{[^}]*border-color: FieldText/.test(hc2), 'comp-kit.css: HC preview must reset field boundaries to FieldText');

@@ -1,0 +1,3 @@
+=== delta r2(7799a87) -> r3(2a8cc21b) ===
+CHANGED (2): ['FREEZE.sha256', 'check-comps.mjs']
+SAME (16): ['PACK-CHANGE-PROPOSAL.md', 'README.md', 'build-tokens.mjs', 'comp-kit.css', 'comp-motion.js', 'comps/01-mobile-chat.html', 'comps/02-mobile-triage-approvals.html', 'comps/03-mobile-tasks.html', 'comps/04-mobile-make.html', 'comps/05-desktop-workspace.html', 'comps/06-character-sheet.html', 'comps/07-states.html', 'index.html', 'motion-storyboard.html', 'tokens.css', 'tokens.json']

@@ -1,0 +1,11 @@
+LIVE EVIDENCE (r3, no images)
+- Files: real-05/07/01-settled.json (value objects: target.url + normal + dataContrastPath_settled +
+  forcedColorsPath_settled), real-05.js/real-07.js (base probes), real-05/07-proof.json (immediate-read pairs
+  that exposed the transition artifact), probe3.py/probe4.py (cache-disabled reload + Page.bringToFront +
+  600 ms settle + CDP forced-colors emulation), httpd-r3.log, emulator-r3.log, teardown-r3.txt.
+- httpd-r3.log: 82 GETs (67x200, 15x404 favicon), no 304 (cache disabled); for each ?real= page the page +
+  tokens.css + comp-kit.css + comp-motion.js are all 200 (09:51:34, 09:52:15, 09:52:32).
+- teardown-r3.txt: 2026-11-02T14:52:43Z; emulator stopped, http 8792 closed, port 8791 live desk 1 listener
+  untouched. emulator-r3.log shows Android emulator 37.2.13 + Chromium VkInstance.
+- Servability: probes hit the frozen dir names (serve --directory board/probes/team-a-design-v2); kit/motion/
+  pages are byte-identical to the note-fix freeze (hash-compared), so the re-probe reflects the frozen set.

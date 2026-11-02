@@ -1,0 +1,8 @@
+PRESENTED COPY / FINAL-SET DIFFERENCE
+- Shared/presentation repo copy (`~/Work/shared-workflows/lanes/board/probes/team-a-design-v2/FREEZE.sha256`)
+  still digests 222364fd85e34079f4f874c11111e253508442670633834863d350433b5323de = the POLISH freeze the owner
+  is grading — unchanged, not touched by this check; report §6e "Presented-copy ordering" records this as an
+  intentional Lead decision (present final set after the grade).
+- Final r3 set vs presented polish freeze: 6 entries differ (comps/05, comps/07, comp-kit.css, comp-motion.js,
+  check-comps.mjs, FREEZE.sha256) = the N2 state demonstrations + N3 HC reset + assertion scope; 12 files
+  byte-identical incl tokens, index, storyboard, comps 01-04/06 -> direction identical.

@@ -1,0 +1,9 @@
+N4 — PASS (attribution corrected)
+httpd-r2.log: 64 GETs, 43x200, 14x304, 7x404 (favicon only); serve argv recorded with
+--directory board/probes/team-a-design-v2. httpd-access-r2.log = 22-line filtered extract (16x200). Report
+§6e N4 row now names httpd-r2.log for the 64 GETs and the access file as the 22-line extract.
+N5 — PASS
+Contract header: "polish round is applied and the fresh-checker notes N1-N6 are closed"; timestamp
+2026-11-02T14:55Z (true UTC; file mtime 09:53:54 ET = 14:53:54Z); §7 stale "polish round is in progress"
+sentence replaced by "This contract is final for this cycle"; --depth-shade present in plane mapping
+(line 20; raised planes lift+rim+shade; tab bar/banner rim only; sidebar border only); pin = new digest.

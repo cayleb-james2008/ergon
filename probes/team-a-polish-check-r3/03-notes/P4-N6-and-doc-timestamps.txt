@@ -1,0 +1,9 @@
+N6 / check count — artifact PASS, one report-number staleness
+- check-comps.mjs: 94 check(...) occurrences (92 note-fix freeze + 2 r3 scope assertions, all additive; 0
+  removed). §6e recheck paragraph states "brace-balanced forced-colours block + 2 scope assertions".
+- STALE NUMBER (report): §6e N6 proof cell still says "check-comps.mjs (92 check(...) calls total)" — the
+  final r3 set is 94. The only statement of the r3 delta is "2 scope assertions" (92+2 derivable). Doc-only.
+Doc timestamps (minor, same class):
+- skeleton / gate-checklist / intake say "re-verified 2026-11-02T06:39:45Z" though their files were written
+  09:53 ET (14:53Z) and the digest they pin did not exist at 06:39Z — carried-over timestamp; should be the
+  true UTC of this verification (contract uses 14:55Z).

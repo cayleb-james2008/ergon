@@ -1,0 +1,16 @@
+N3 — PASS (set-level + live re-derivation + scope)
+Artifact: both HC paths (forced-colors media + [data-contrast=high]) reset .sidebar/.phone .composer/.phone
+.tabbar/.banner and children (sidebar rows Highlight, tab buttons CanvasText/Highlight, inputs incl :disabled/
+[readonly] Field/FieldText) — unchanged from r2 (kit byte-identical); scope assertions now brace-balanced and
+isolated (2 new checks, 94 total, PASS).
+Measurement-artifact explanation documented (report §6e N3 row): earlier immediate reads caught the 120 ms
+theme-transition start value on a paused background tab; kit transitions background/border at 120 ms
+(kit:57/87/107).
+Real-element re-probe (probe4.py: Page.bringToFront, cache-disabled reload, 0.6 s settle, data-contrast path
++ CDP Emulation.setEmulatedMedia forced-colors path) -> real-05-settled / real-07-settled / real-01-settled:
+- comp05 selected sidebar row: normal surface-3/line-strong -> BOTH paths Highlight bg+border rgba(85,163,254,0.6),
+  HighlightText rgb(59,59,59).
+- comp07 disabled "Locked by IT" + readonly "Frozen quote": normal surface-1/line -> BOTH paths Field bg
+  rgb(59,59,59), FieldText colour white and FieldText border white.
+- comp01 composer/tabbar/banner/phone: normal shadows+blur -> BOTH paths shadow none, blur none, bg Canvas
+  rgb(18,18,18).
