@@ -1,0 +1,19 @@
+=== FIXTURE B (contact-leg drive assist) delta provenance — checker fresh copy 2026-11-02T21:43:24Z ===
+commit: b73f6cdeb4eefa95782d996df2ee3264d09743c2  tree: 259373070458d265f2097125cd5d2066fdcac2e2  parent: e475d4688f3243932105cf4a0fef0561564e2811
+branch tip: b73f6cdeb4eefa95782d996df2ee3264d09743c2  tracked mods: 0  untracked: 837
+fresh copy: git archive b73f6cde -> /tmp/checker-fixb; 1443 tracked entries blob-for-blob (0 missing/0 mismatch)
+--- delta e475d46..b73f6cde ---
+9	0	docs/verify/2026-10-19/VINEGAR_RUNBOOK.md
+38	1	tests/tools/test_traffic_acceptance.py
+24	3	tests/traffic/Server.luau
+ 3 files changed, 71 insertions(+), 4 deletions(-)
+--- every changed file ---
+docs/verify/2026-10-19/VINEGAR_RUNBOOK.md
+tests/tools/test_traffic_acceptance.py
+tests/traffic/Server.luau
+--- plan/validator/runner/atlas/fixture-B-drop/src/build in delta (must be none) ---
+(none: only the 3 disclosed files)
+--- sealed ---
+84324d4342667dd163ab8e64adacbf8ef44ab786aeda5c7ab1403e76d52ef6ce  build/release.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  build/test.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  /home/cayleb/.var/app/org.vinegarhq.Vinegar/data/usg/usg-desktop.rbxlx

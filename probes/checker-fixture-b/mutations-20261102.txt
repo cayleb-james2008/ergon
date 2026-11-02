@@ -1,0 +1,8 @@
+=== fixture-B mutation proof — checker reproduction (throwaway /tmp/checker-fixb-mut; restored) ===
+MT (assist removed, force-only drive restored: assist block deleted + report line reverted + force.Force=acc*AssemblyMass):
+  traffic acceptance -> Ran 12 tests | FAILED (failures=2)
+  failing tests: test_abort_contact_contact_leg_uses_the_bounded_drive_assist
+                 test_abort_contact_uses_closed_loop_pursuit_and_both_named_guards (extended report.contactLeg pin)
+  -> mutation caught. (Maker report says "FAILED (1)"; my faithful removal fails 2 — the maker's mutation shape was narrower;
+     the requirement "must FAIL" holds.)
+Restore: file copied back from the pristine copy; cmp identical.

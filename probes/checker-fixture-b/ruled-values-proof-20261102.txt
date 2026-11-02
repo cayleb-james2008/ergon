@@ -1,0 +1,21 @@
+=== ruled-values untouched proof (parent e475d46 -> b73f6cde) ===
+function-block shas (byte-identical):
+  Server.obstacleAcceleration  3807dd8d612a57f0 -> 3807dd8d612a57f0  UNCHANGED
+  Server.pursuitAcceleration   872e4c4a00224dcb -> 872e4c4a00224dcb  UNCHANGED
+  Server.contactLegGuard       72c14254e50caeae -> 72c14254e50caeae  UNCHANGED  (radius >700/800 + "within 12 s" window)
+ruled values present and unchanged in both commits:
+  local closing=math.clamp(proxySpeed+8,12,60)
+  Server.contactLegGuard(distance,#report.touches,age-contactAt)
+  "observation radius (>700 of 800 studs)" / "within 12 s of contactDriveAt"
+  reached-contact exemption: if cfg.mode=="abort-contact" and abortAt and report.contactObservedAt and #report.touches>0 ...
+  force caps: if acc.Magnitude>40 then acc=acc.Unit*40 end (both helpers)
+assist (physics setup, only in the contact-leg branch):
+  contactLegAssist=Instance.new("LinearVelocity"); VelocityConstraintMode=Line; LineDirection=forward (pursuit lane);
+  LineVelocity=closing (the ruled clamp); MaxForce=40*ego.AssemblyMass
+  force.Force=if contactAt then Vector3.zero else acc*ego.AssemblyMass   (normal drive zeroed -> total authority <= ruled 40)
+  contactLegAssist:Destroy() + report.cleanup.contactLegAssistReleased=  (cleanup)
+  no CFrame=/Position=/AssemblyLinearVelocity=/PivotTo( writes inside the assist block (no absolute teleport/position write)
+  maneuverPoseWrites / maneuverVelocityWrites fields unchanged (no new maneuver write increments)
+no-cheat: direction = the pursuit law's lane forward; speed = the ruled closing clamp; force = mass x 40 (accel cap 40);
+  the assist exists only after abortObservedAt in the contact branch; contact/touch records still come from the real
+  collision events (unchanged) -> the assist cannot fabricate contact.

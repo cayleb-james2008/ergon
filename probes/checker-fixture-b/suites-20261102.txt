@@ -1,0 +1,8 @@
+=== fixture-B suites — re-run from fresh copy /tmp/checker-fixb (b73f6cde) ===
+traffic acceptance:                  Ran 12 tests in 0.093s | OK
+runner (test_vinegar_run.py):        Ran 91 tests in 12.995s | OK
+full Python tests/tools:             Ran 336 tests in 48.162s | OK
+Lune traffic filter:                 unit: 94 passed, 0 failed (18 specs)
+full Lune:                           unit: 925 passed, 0 failed (127 specs)   [re-ran at the tip, ~12 min]
+sealed after runs:                   84324d43… release, c6651793… test, Studio place c6651793… — unchanged
+kinematic pin:                       contact(accel 40) = 9.23 s (<12), contact(accel 8.5) = 14.44 s (>12)  — matches the test
