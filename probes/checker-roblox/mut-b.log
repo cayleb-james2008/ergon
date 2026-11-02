@@ -1,0 +1,15 @@
+.............................F...................................................
+======================================================================
+FAIL: test_world_ready_gate_keeps_requiring_the_readable_lighting_contract (test_vinegar_run.FixtureTests.test_world_ready_gate_keeps_requiring_the_readable_lighting_contract) (label='no sky/atmosphere')
+ready/seed/layout alone are not enough: the CityBuilder Sky/Atmosphere are part of the capture contract too.
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/checker-roblox-plan2/mut/tests/tools/test_vinegar_run.py", line 1745, in test_world_ready_gate_keeps_requiring_the_readable_lighting_contract
+    self.assertEqual(code, V.EXIT_FAIL)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^
+AssertionError: 0 != 1
+
+----------------------------------------------------------------------
+Ran 81 tests in 10.499s
+
+FAILED (failures=1)

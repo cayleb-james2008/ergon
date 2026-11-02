@@ -1,0 +1,13 @@
+test_world_ready_gate_reads_before_the_first_capture_and_records_its_trace (test_vinegar_run.FixtureTests.test_world_ready_gate_reads_before_the_first_capture_and_records_its_trace) ... ok
+test_world_ready_gate_waits_through_not_ready_reads_then_proceeds (test_vinegar_run.FixtureTests.test_world_ready_gate_waits_through_not_ready_reads_then_proceeds) ... ok
+test_first_fare_takes_the_same_bounded_world_ready_gate (test_vinegar_run.FixtureTests.test_first_fare_takes_the_same_bounded_world_ready_gate) ... ok
+test_world_ready_gate_fails_closed_with_the_named_message_and_no_capture (test_vinegar_run.FixtureTests.test_world_ready_gate_fails_closed_with_the_named_message_and_no_capture) ... ok
+test_world_ready_gate_keeps_requiring_the_readable_lighting_contract (test_vinegar_run.FixtureTests.test_world_ready_gate_keeps_requiring_the_readable_lighting_contract)
+ready/seed/layout alone are not enough: the CityBuilder Sky/Atmosphere are part of the capture contract too. ... ok
+test_world_ready_luau_reports_the_gate_contract_against_a_mock_server (test_vinegar_run.FrameTests.test_world_ready_luau_reports_the_gate_contract_against_a_mock_server)
+Runs the real WORLD_READY under Lune against mock Server globals: it must report the world/layout identity, ... ok
+
+----------------------------------------------------------------------
+Ran 6 tests in 0.253s
+
+OK

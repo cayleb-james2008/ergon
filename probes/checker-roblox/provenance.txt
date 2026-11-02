@@ -1,0 +1,15 @@
+FRESH COPY: /tmp/checker-roblox-plan2/repo
+  git clone --no-hardlinks --branch prep/b1-capture-format-20261101 <maker repo> (2026-11-01T19:30:05-05:00, rc 0)
+  HEAD=29a626b2b8a13556ac5ee07db6fdb60401ecc6e8  tree=9dba457b070564c042df82dae41092e75cec610e  git status --porcelain = 0 lines
+  build/ is gitignored and not in the commit: copied read-only from the maker repo; hashes before/after all runs:
+    release.rbxlx 84324d4342667dd163ab8e64adacbf8ef44ab786aeda5c7ab1403e76d52ef6ce (1990548 B)
+    test.rbxlx    c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98 (2403691 B)
+  maker working-tree files hash-identical to the fresh copy for the 3 changed paths:
+    tools/vinegar_run.py 171cf689efb160f7c807f71cc3497a7bafc6bb2a53302c05e32eed3971376478
+    tests/tools/test_vinegar_run.py 77a3464b8cc465a67d3e5a78201ac99cb21819933130cb76e2fb13e816986c1f
+    docs/verify/2026-10-19/VINEGAR_RUNBOOK.md 9c4cf1d86e6ee65d8adf40629763072980268b0e49bd955a5527ade0608f3959
+MAKER REPO (read-only): ~/Work/projects/untitled-street-game, branch prep/b1-capture-format-20261101
+  HEAD 29a626b (tip), parent a6ac63a, a6ac63a^ d2a94db; tracked mods 0; 792 pre-existing untracked evidence lines.
+  No remotes configured (git remote -v empty): verification is local-object based.
+PARENT BASELINE COPY: /tmp/checker-roblox-plan2/parent, HEAD a6ac63a, tree a316f71e7c74c5e4e53d85de24b441b5328b1042, status 0.
+MUTATION COPY: /tmp/checker-roblox-plan2/mut (clone of 29a626b); tools/vinegar_run.py restored to 171cf689... after each mutation; final runner suite 81 OK.

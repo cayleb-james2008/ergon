@@ -1,0 +1,63 @@
+......................E.....FFFEE.................................................
+======================================================================
+ERROR: test_first_fare_takes_the_same_bounded_world_ready_gate (test_vinegar_run.FixtureTests.test_first_fare_takes_the_same_bounded_world_ready_gate)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/checker-roblox-plan2/mut/tests/tools/test_vinegar_run.py", line 1713, in test_first_fare_takes_the_same_bounded_world_ready_gate
+    self.assertEqual((result["worldReady"]["polls"], result["worldReady"]["seed"]), (3, 2134783819))
+                      ~~~~~~^^^^^^^^^^^^^^
+KeyError: 'worldReady'
+
+======================================================================
+ERROR: test_world_ready_gate_reads_before_the_first_capture_and_records_its_trace (test_vinegar_run.FixtureTests.test_world_ready_gate_reads_before_the_first_capture_and_records_its_trace)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/checker-roblox-plan2/mut/tests/tools/test_vinegar_run.py", line 1692, in test_world_ready_gate_reads_before_the_first_capture_and_records_its_trace
+    trace = result["worldReady"]
+            ~~~~~~^^^^^^^^^^^^^^
+KeyError: 'worldReady'
+
+======================================================================
+ERROR: test_world_ready_gate_waits_through_not_ready_reads_then_proceeds (test_vinegar_run.FixtureTests.test_world_ready_gate_waits_through_not_ready_reads_then_proceeds)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/checker-roblox-plan2/mut/tests/tools/test_vinegar_run.py", line 1704, in test_world_ready_gate_waits_through_not_ready_reads_then_proceeds
+    self.assertEqual((result["worldReady"]["polls"], fake.scenario.ready_calls), (4, 4))
+                      ~~~~~~^^^^^^^^^^^^^^
+KeyError: 'worldReady'
+
+======================================================================
+FAIL: test_world_ready_gate_fails_closed_with_the_named_message_and_no_capture (test_vinegar_run.FixtureTests.test_world_ready_gate_fails_closed_with_the_named_message_and_no_capture)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/usr/lib/python3.14/unittest/mock.py", line 1439, in patched
+    return func(*newargs, **newkeywargs)
+  File "/tmp/checker-roblox-plan2/mut/tests/tools/test_vinegar_run.py", line 1722, in test_world_ready_gate_fails_closed_with_the_named_message_and_no_capture
+    self.assertEqual(code, V.EXIT_FAIL)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^
+AssertionError: 0 != 1
+
+======================================================================
+FAIL: test_world_ready_gate_keeps_requiring_the_readable_lighting_contract (test_vinegar_run.FixtureTests.test_world_ready_gate_keeps_requiring_the_readable_lighting_contract) (label='no sky/atmosphere')
+ready/seed/layout alone are not enough: the CityBuilder Sky/Atmosphere are part of the capture contract too.
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/checker-roblox-plan2/mut/tests/tools/test_vinegar_run.py", line 1745, in test_world_ready_gate_keeps_requiring_the_readable_lighting_contract
+    self.assertEqual(code, V.EXIT_FAIL)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^
+AssertionError: 0 != 1
+
+======================================================================
+FAIL: test_world_ready_gate_keeps_requiring_the_readable_lighting_contract (test_vinegar_run.FixtureTests.test_world_ready_gate_keeps_requiring_the_readable_lighting_contract) (label='no seed')
+ready/seed/layout alone are not enough: the CityBuilder Sky/Atmosphere are part of the capture contract too.
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/checker-roblox-plan2/mut/tests/tools/test_vinegar_run.py", line 1745, in test_world_ready_gate_keeps_requiring_the_readable_lighting_contract
+    self.assertEqual(code, V.EXIT_FAIL)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^
+AssertionError: 0 != 1
+
+----------------------------------------------------------------------
+Ran 81 tests in 10.466s
+
+FAILED (failures=3, errors=3)
