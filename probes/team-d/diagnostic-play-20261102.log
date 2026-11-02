@@ -1,0 +1,90 @@
+=== TEAM D DIAGNOSTIC PLAY — traffic:abort-contact (single Play, Lead GO 2026-11-02T01:27Z) ===
+time 2026-11-02T02:28:13Z
+repo 659779ce89fa18c8ab2dc13a29906f7ab05e1499  branch prep/b1-capture-format-20261101
+tracked modified: 0
+
+--- 1. Studio state BEFORE (read-only) ---
+ 388820   19355 /home/cayleb/.var/app/org.vinegarhq.Vinegar/data/vinegar/versions/version-7062aec9dbe74b14/RobloxStudioB
+{"address": "0x558c7f6b0160", "class": "steam_proton", "title": "Z:\\home\\cayleb\\.var\\app\\org.vinegarhq.Vinegar\\data\\usg\\usg-desktop.rbxlx - Roblox Studio", "at": [621, 233], "size": [2200, 1000], "floating": true, "fullscreen": 0, "pid": 388820}
+plays record: {  "pid": 382409,  "start": 34983040,  "plays": 2,  "at": 1793566410.2726114}
+
+--- host load ---
+8.06 6.31 5.89 7/2615 726752
+
+--- sealed BEFORE ---
+84324d4342667dd163ab8e64adacbf8ef44ab786aeda5c7ab1403e76d52ef6ce  build/release.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  build/test.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  /home/cayleb/.var/app/org.vinegarhq.Vinegar/data/usg/usg-desktop.rbxlx
+
+--- preflight ---
+preflight_rc=2
+
+--- preflight RETRY 2026-11-02T02:29:28Z (first attempt refused: host memory full avg10 2.24 > 2.0; nothing touched) ---
+full avg10=0.14 avg60=0.39 avg300=0.50 total=787694302
+preflight_rc=0
+{
+ "refusals": [],
+ "edit": true,
+ "plays": 0,
+ "place": {
+  "placeSha256": "c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98",
+  "buildSha256": "c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98",
+  "matchesBuild": true
+ },
+ "host": {
+  "quiet": true,
+  "reasons": []
+ },
+ "mcp": "cdefa06f-afc8-45ac-b3d5-3977cdb25ce6"
+}
+--- 2. THE ONE PLAY: run traffic:abort-contact start 2026-11-02T02:29:40Z ---
+run_rc=1
+
+--- 3. post-Play state 2026-11-02T02:30:32Z ---
+run stdout:
+{"fixture": "traffic:abort-contact", "exit": 1, "runDir": "/home/cayleb/Work/projects/untitled-street-game/docs/verify/2026-10-19/vinegar/20261102T022940Z-traffic-abort-contact", "error": "FixtureFailed: runtime reported failure: {\"sourceHashes\": {\"src/server/Services/Progress.luau\": \"a1b30f44ec9047ad7ab9427918fe3e87a1efb9a95b7c4ad606c277fb2be10e95\", \"src/shared/TrafficSim.luau\": \"a72f19d620a9a17fe03371674b4637fb9598e13af1bc97bec2473ddb531261a0\", \"src/server/HighwayBuilder.luau\": \"cfedbd7c7526d6dae00b3600dbef6e97d8596f0a31893d5f5ebb843422e5ff9b\", \"tests/studio/TestCourse.luau\": \"585e12e952546a738ae3c46220c07f710d6f836056a450701d3dd5837e0e1e87\", \"src/client/Visual.client.luau\": \"1161457b01310802a41a1cd88be7b0a9bd8338eb43dc0fd7dee20b081cec14b0\", \"tests/studio/driving.spec.luau\": \"a04a509ce1a443b8a7ecffc43183e9e910e43046e5e9623c89be3b6765b80322\", \"tests/diagnostics/GenerationGuard.luau\": \"e9e32d0060c81c0ec3e5d2584684ccd8f5243e9cca68334996df5a52f4b7c955\", \"src/client/Screens/Hud.luau\": \"d88640592a24a09a173bb9782383fb75", "summary": null}
+run stderr:
+{"mcpClose": {"owned": [{"pid": 727503, "start": 37025390, "ppid": 727498, "ageSeconds": 37.7}], "foreignNew": [], "signals": [{"pid": 727503, "start": 37025390, "signal": "SIGTERM"}], "survivors": []}}
+
+--- Studio after Play ---
+ 388820   19494 /home/cayleb/.var/app/org.vinegarhq.Vinegar/data/vinegar/versions/version-7062aec9db
+plays record: {  "pid": 388820,  "start": 35081170,  "plays": 1,  "at": 1793586585.6508784}
+
+--- verify-clean ---
+    },
+    "sources": 101
+  },
+  "clean": true
+}
+verify_rc=0
+
+--- sealed AFTER ---
+84324d4342667dd163ab8e64adacbf8ef44ab786aeda5c7ab1403e76d52ef6ce  build/release.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  build/test.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  /home/cayleb/.var/app/org.vinegarhq.Vinegar/data/usg/usg-desktop.rbxlx
+
+--- run dir files ---
+total 2524
+drwxr-xr-x 1 cayleb cayleb     246 Nov  1 21:30 .
+drwxr-xr-x 1 cayleb cayleb    2370 Nov  1 21:30 ..
+-rw-r--r-- 1 cayleb cayleb   42814 Nov  1 21:29 cleanup.luau
+-rw-r--r-- 1 cayleb cayleb     110 Nov  1 21:30 hostcheck.jsonl
+-rw-r--r-- 1 cayleb cayleb   29733 Nov  1 21:29 manifest.json
+-rw-r--r-- 1 cayleb cayleb    1328 Nov  1 21:29 preflight.json
+-rw-r--r-- 1 cayleb cayleb   43437 Nov  1 21:29 prepare.luau
+-rw-r--r-- 1 cayleb cayleb 2437349 Nov  1 21:30 report.json
+-rw-r--r-- 1 cayleb cayleb    3216 Nov  1 21:30 result.json
+-rw-r--r-- 1 cayleb cayleb      63 Nov  1 21:29 runtime-http.json
+-rw-r--r-- 1 cayleb cayleb     312 Nov  1 21:29 verify-before.json
+
+=== RESULT SUMMARY 2026-11-02T02:32:31Z ===
+run dir: docs/verify/2026-10-19/vinegar/20261102T022940Z-traffic-abort-contact
+exit=1 (cell FAIL, fail-closed); state=failed; elapsed=23.233 s; samples=177; contacts=0; touches=0; contactObservedAt=null
+reason: HandlingServer:178 physical generation retired/replaced at step 1386: 2->3
+diagnostic: 1 event, generationStable=false, bodyReplaced=true, bodyToken=nil, bodiesCount=0, hasChange=false
+distance: 75.8 (t0.12) -> 45.8 (abort 4.98) -> 23.9 (contactDrive 9.00) -> >800 at t=22.283 -> retired t=23.233 (0.95 s later; RETIRE_RADIUS=800, unobserved>1 s rule)
+chunks: 6 parts, bytes 1,477,237, sha256 f66e1b6d079076bd9abe8b68c6ff30692d26b43b6c4f4a877d8f1dce7f5c4c3e; report.json 2,437,349 B sha 8c0ebac41d727823
+prepared: helpers=4 verifiedSources=101; cleanup cleaned=true helpersAbsent=true httpRestored=true; collector phases prepared/runtime/cleanup rejections=[]
+hostcheck clean (0 stalls); no new crash dumps; verify-clean rc=0 clean=true
+plays 1/3 (pid 388820); Studio alive; sealed unchanged 84324d43.../c6651793...
+judgement: retirement is the controller's documented unobserved rule (not contact-correlated, not a product defect); cell defect = fixture geometry (proxy outran the ego, contact leg never reached). Report board/reports/team-d-diagnostic-play.md
