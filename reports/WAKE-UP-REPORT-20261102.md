@@ -86,12 +86,12 @@ is with Nox (window vs fixture/physics vs scenario). No cell pass is claimed for
   the same fences. Abort-contact: Nox ruled **B** — give the ego physics-consistent authority for the contact leg (vehicle setup /
   drive assist and/or start geometry; all ruled values untouched), measuring success on achieved acceleration and gap direction
   first; C stays in place, scenario reconsideration held as the honest fallback. The evidence note records the probe entering the
-  leg with velocity opposite its heading (v·LookVector −33.17) — a realignment/braking phase, not a clean chase. **Play 17 update:** 30/30 views captured again and the camera-restore diagnostics are decisive — `savedType:"Custom"`,
-`beforeType:"Scriptable"`, `afterType`/`afterFrameType` both `"Scriptable"` — so wrong-target and late-read-back are ruled out and
-the `CameraType = saved.type` write simply **does not take effect**; a second diagnostics-only round (subject identity, pcall +
-immediate in-write read-back, one deferred re-assert) is being frozen to discriminate "write rejected" vs "same-tick reassert".
-Play 17's Studio crash during cleanup (4th intermittent Wine shutdown dump) meant no validator verdict — recorded as a crash class,
-not a cell failure; sealed artifacts unchanged through every crash.
+  leg with velocity opposite its heading (v·LookVector −33.17) — a realignment/braking phase, not a clean chase. **Play 18 update (clean run, no crash):** 30/30 views captured and the validator reached its verdict; the extended diagnostics
+name the mechanism — the `CameraType=Custom` write **lands and holds through the restore**, but within ~1–2 frames something
+reasserts `Scriptable` before the delayed check (a frame actor, same camera, valid Humanoid subjects). The deferred re-assert never
+ran (its condition was false); a diagnostics round 3 (re-assert trigger + 5-frame series + pin residual) is being frozen → checker
+delta → Play 19, and if the reverter is one-shot the pre-authorised one-line verdict recompute follows → Play 20 — the atlas cell's
+pass gate (`cameraTypeRestored:true` with every other field true).
 
 ## ROBLOX (Team D) — instrumented diagnostic block COMPLETE; two diagnostic Plays ran honestly
 - Plans 2/3/4 + the C1 fix round all fresh-checker ACCEPTED (suites and mutation proofs reproduced from clean copies; sealed place
