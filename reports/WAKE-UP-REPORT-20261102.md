@@ -1,4 +1,4 @@
-# WAKE-UP REPORT — 2026-11-02 (refreshed 03:45Z / 22:45 ET; owner asleep)
+# WAKE-UP REPORT — 2026-11-02 (refreshed 03:55Z / 22:55 ET; owner asleep) — refresh #2 per Nox run 6
 Consolidated for the owner's morning. Everything below is on the board with checker evidence; nothing is smoothed.
 Fences held overnight: no spend, no publication, no credential values in chat/board/logs, no image reads in the app, desks untouched.
 
@@ -36,10 +36,14 @@ Fences held overnight: no spend, no publication, no credential values in chat/bo
 - **Phone VM — PROVEN REAL** (checker ACCEPT, independently re-run): headless Android 15/API 35 `rig-phone` boot; scripted native tap
   through Settings → "Network & internet"; the frozen v2 mobile comp rendered in the phone's Chrome over the guest→host transport
   (tokens, `blur(14px)`, animations settling to 0 running/infinite, approve→pill, tab swap, scoped remember wording verified).
-- **Windows VM — INSTALLED, OOBE FIRST LOGON REACHED, RDP LIVE (the overnight blocker is RESOLVED):** deterministic install to a
+- **Windows VM — INSTALLED, OOBE FIRST LOGON REACHED, RDP PROVEN AT PROTOCOL LEVEL (the overnight blocker is RESOLVED; probe-settling caveat):** deterministic install to a
   fresh qcow2 completed in ≈6 min 17 s; the guest boots its own UEFI "Windows Boot Manager" from disk0; the answer file's
   FirstLogonCommands ran to completion — text proof: host marker `?step=start` at 03:08:35Z and `?step=done` at 03:26:46Z — and
-  **RDP answers at protocol level** (TPKT + X.224 Connection Confirm through 127.0.0.1:3389). The two rig root causes were found and
+  **RDP answered at protocol level** (TPKT + X.224 Connection Confirm through 127.0.0.1:3389; reproduced by two seats).
+  **Caveat held, not smoothed:** live probes after the `?step=done` marker are not currently answering — SSH gives no banner, and a
+  later RDP attempt returned no bytes (it answered earlier). The claim rests on the completed FirstLogon marker sequence + the earlier
+  protocol-level handshake; a settled probe re-confirmation (RDP re-confirm and/or SSH banner + key round-trip) is required before the
+  morning wording upgrades from "installed + OOBE + RDP proven" to anything stronger. The two rig root causes were found and
   fixed with evidence: (1) stale/foreign OVMF vars + missed El-Torito "press any key"; (2) an answer medium Windows could never see
   (8.3-only FAT16 name + `usb-storage removable=off`) → vvfat over `win/unattend/` + `removable=true`. Launcher patch filed
   (`run-win11.sh.patched` + diff; finalize-timing lesson recorded) — the rig launcher must adopt it. A fresh checker re-verified the
@@ -52,7 +56,7 @@ Fences held overnight: no spend, no publication, no credential values in chat/bo
 - **S8 pendings dispositioned:** R4 phone surface = fixture-proven on the phone VM + product surface package-pending; R3 real
   shareable URL = carried (host + package absent); R6 voice = carried (package absent); R2 model-quality = proof pre-written, runs the
   moment roster activation lands; Windows companions = package-pending on an installed+bootable guest. The upgraded FL2 verdict will
-  be re-filed and checker spot-verified after the driveable-channel attempt.
+  checker spot-verified (ACCEPT with two corrections, now applied as r3) and a settled probe re-confirmation is pending before any wording upgrade.
 
 ## ROBLOX (Team D) — instrumented diagnostic block COMPLETE; two diagnostic Plays ran honestly
 - Plans 2/3/4 + the C1 fix round all fresh-checker ACCEPTED (suites and mutation proofs reproduced from clean copies; sealed place
@@ -72,6 +76,10 @@ Fences held overnight: no spend, no publication, no credential values in chat/bo
   the fog fix is approved offline and the next atlas Play follows its checker delta.
 - Studio: pid 759088 (fresh opening after `studiocycle`), sealed place/build unchanged (`c6651793…`/`84324d43…`), 2/3 Plays used
   in the current opening (third reserved); no publication, no build.
+- **Next (ruled):** the client `FogEnabled` legacy-API fix is approved and being implemented (guarded capability accessors that
+  record availability instead of raising) → freeze → checker delta → fresh 3-Play opening → one atlas Play; then the
+  **abort-contact fixture geometry fix ruled A+C** (closed-loop pursuit with clamped closing speed + two named fail-fast guards;
+  fixture/test files only) → freeze → checker delta → Play B in a fresh opening; third Play reserved.
 
 ## MONDAY DESK (Team C) — observation day, locked
 - Runbook v7 (sha `512752e4…`) **P0.1 SIGNED** by a fresh Tier-S checker; ORB15 **HOLD** ruled → Monday claims 0 fills, honestly:
@@ -86,7 +94,7 @@ Fences held overnight: no spend, no publication, no credential values in chat/bo
   decision pack is moot by his own acts. Monday 07:45 sweep armed.
 
 ## NAMED RESIDUALS / OPEN RULINGS (for the morning conversation, not action items)
-facade model-mode defect (0.3.2 candidate) · Windows OOBE/desktop + driveable channel (attempt running) · Ergon Windows companion
+facade model-mode defect (0.3.2 candidate) · Windows OOBE desktop not claimed + SSH channel pending + settled probe re-confirmation · Ergon Windows companion
 package (G1 whole) · R3/R6 blockers · abort-contact fixture-geometry change (needs a ruling before that cell can pass) · T7 stale
 battery expectation · conservative roundtrip `real_lane` label (doc/code mismatch) · `dshVersion` null · the Ergon v2 rendered look
 is his grade (the only visual judgement we cannot make for him).
