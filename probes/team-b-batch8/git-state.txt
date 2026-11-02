@@ -1,0 +1,6 @@
+batch8 evidence 2026-11-02T00:22:23Z
+branch tip: 70ee7480a89027078fb054147190c78b2d51ed0e
+70ee748 0.3.1 patch set (for strike to own the release line): doctrine roster table, OpenCode Go route, rate row, subagent headroom, manifest regen.
+e98f87a roster: fix round for the Stage-4 review (F1 CRITICAL, F2/F3/F4 HIGH) with regression tests.
+695644f roster: rebase adaptation onto the merged 0.3.0 tree (reservedKind replaces RESERVED_PRINCIPAL; ignore TMPDIR scratch)
+0653f82 Stage 4 roster + Stage 5 fleet-bus + check contracts (builders done, reviews pending fixes): checkpoint 13:50 ET
