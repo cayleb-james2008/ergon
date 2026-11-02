@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>01 · Mobile Chat — Ergon Lumen v2 design comp</title>
+<link rel="stylesheet" href="../tokens.css">
+<link rel="stylesheet" href="../comp-kit.css">
+<script src="../comp-motion.js" defer></script>
+</head>
+<body>
+<div class="banner"><b>DESIGN COMP — NOT A BUILT SURFACE.</b> v2 direction pass · Ergon Lumen (proposal) · owner grade pending · builds stay behind G1 / C1–C6 / W1.</div>
+<div class="wrap">
+  <div>
+    <div class="phone">
+      <div class="status"><span>9:41</span><span>Ergon · one agent</span></div>
+      <div class="appbar">
+        <span class="nn" data-name="Marlow" data-density="10" data-state="needs-you" data-reveal="chrome" aria-hidden="true"></span>
+        <div class="grow">
+          <h3 style="font-size: var(--emp-body);">Marlow</h3>
+          <span class="caption">Your personal agent</span>
+        </div>
+        <span class="pill warn" data-reveal="chrome">Needs you</span>
+      </div>
+
+      <div class="content">
+        <section class="card raise brief stack" data-reveal="content" aria-label="Morning brief">
+          <div class="row" style="justify-content: space-between; align-items: flex-start;">
+            <div class="stack" style="gap: 2px;">
+              <span class="label">tuesday brief</span>
+              <h3 style="font-size: var(--emp-body);">Two jobs before the Oakridge move.</h3>
+            </div>
+            <span class="pill warn">3 needs you</span>
+          </div>
+          <p class="caption">The November rate card replaced October's mid-job. Marcus's estimate uses the old card — Marlow flagged it for you to see before it goes out.</p>
+        </section>
+
+        <div class="stack" id="thread" aria-label="Conversation">
+          <div class="msg agent" data-reveal="content">Morning. Oakridge is booked for Thursday 07:00, crew of six. I've held Marcus's estimate until you pick the rate card.</div>
+          <div class="msg agent" data-reveal="content">The van keys are in the yard — Priya signed them out.</div>
+          <div class="msg me" data-reveal="content">Use the November card and tell Marcus why.</div>
+          <div class="msg agent" data-reveal="content">Done — Marcus has the reason and the new estimate is ready to send.</div>
+        </div>
+
+        <section class="card stack" data-approval data-reveal="content" aria-label="Pinned approval" style="border-color: var(--line-bright);">
+          <div class="row" style="justify-content: space-between;">
+            <span class="pill warn">Approval needed</span>
+            <span class="caption">Tier B · one purchase</span>
+          </div>
+          <h4>Order 2 boxes of A4 for the main desk</h4>
+          <p class="caption">Vendor: the usual stationer. Grant: one purchase, this vendor, no standing permission.</p>
+          <div class="row">
+            <button class="primary employee" data-approve>Review approval</button>
+            <button class="secondary employee">Later</button>
+          </div>
+        </section>
+      </div>
+
+      <form class="composer" data-send data-thread="#thread" aria-label="Message Marlow">
+        <input type="text" placeholder="Ask Marlow anything" aria-label="Message Marlow">
+        <button class="secondary employee icon" type="submit" aria-label="Send">↑</button>
+      </form>
+      <nav class="tabbar" data-tabs aria-label="Sections">
+        <button type="button" role="tab" aria-selected="true" aria-controls="panel-chat">Chat</button>
+        <button type="button" role="tab" aria-selected="false" aria-controls="panel-tasks">Tasks</button>
+        <button type="button" role="tab" aria-selected="false" aria-controls="panel-make">Make</button>
+      </nav>
+    </div>
+    <p class="frame-note">Mobile · 390 × 844 comp frame · Ergon Lumen: translucent surfaces, fine borders, live motion.</p>
+  </div>
+
+  <div class="grow stack" style="max-width: 430px;">
+    <div class="glass-2 stack" data-reveal="panel" style="padding: var(--space-3);">
+      <h2 style="font-size: var(--body);">What v2 changed here (finish only)</h2>
+      <ul class="stack" style="margin:0; padding-left:18px; color: var(--muted); font-size: var(--caption);">
+        <li><b>Surfaces:</b> the phone, cards and composer are translucent layers (blur + fine borders + rim light), not flat fills — depth comes from the stack, not shadows alone.</li>
+        <li><b>Character:</b> a little neural network (nodes + connections), state read as core colour + word; tap it to see a one-shot signal along the edges.</li>
+        <li><b>Motion, running:</b> content reveals on load (enter 250 ms), tab swap (200 ms), send adds a message that arrives (enter 250 ms), approval resolves (swap 200 ms). No loops.</li>
+        <li><b>Unchanged:</b> brief on top, one conversation, docked composer, one accent forward action (the waiting Tier B approval; Send is secondary while waiting).</li>
+      </ul>
+    </div>
+    <div class="glass-2 stack" data-reveal="panel" style="padding: var(--space-3);">
+      <h3 style="font-size: var(--body);">Grading notes</h3>
+      <p class="caption">Accepted v1 model kept. Try: send a message · tap the character · switch tabs · press Review approval. Floors: every target ≥ 44 DIP,
+      focus ring visible on keyboard, reduced-motion/High Contrast from the index preview. <span class="muted">Design comp — not a built surface.</span></p>
+    </div>
+    <div class="glass-1 stack" data-reveal="panel" id="panel-tasks" hidden style="padding: var(--space-3);">
+      <h3 style="font-size: var(--body);">Tasks (tab swap demo)</h3>
+      <p class="caption">Swapped in at 200 ms — the full task surface is comp 03.</p>
+    </div>
+    <div class="glass-1 stack" data-reveal="panel" id="panel-make" hidden style="padding: var(--space-3);">
+      <h3 style="font-size: var(--body);">Make (tab swap demo)</h3>
+      <p class="caption">Swapped in at 200 ms — the full artefact surface is comp 04.</p>
+    </div>
+    <div class="glass-1 stack" id="panel-chat" hidden style="padding: var(--space-3);">
+      <p class="caption">Chat panel (already visible above).</p>
+    </div>
+  </div>
+</div>
+</body>
+</html>

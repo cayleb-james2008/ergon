@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Motion storyboard — Ergon Lumen v2 design comp</title>
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="comp-kit.css">
+<script src="comp-motion.js" defer></script>
+<style>
+  .demo-stage { min-height: 126px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: var(--radius-card); background: var(--surface-1); overflow: hidden; position: relative; }
+  .demo-box { width: 190px; padding: var(--space-2); border: 1px solid var(--line-bright); border-radius: var(--radius-control); background: var(--surface-2); text-align: center; }
+  .demo-mini-sheet { position: absolute; left: 0; right: 0; bottom: 0; padding: var(--space-3); border-top: 1px solid var(--line-bright); background: var(--surface-3); backdrop-filter: blur(var(--blur-sheet)); border-radius: var(--radius-panel) var(--radius-panel) 0 0; }
+  .budget { font-family: var(--mono); color: var(--accent); }
+  .curve { font-family: var(--mono); font-size: var(--caption); color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="banner"><b>DESIGN COMP — NOT A BUILT SURFACE.</b> v2 direction pass · live motion storyboard · Ergon Lumen (proposal) · builds stay behind G1 / C1–C6 / W1.</div>
+<div class="stack-3" style="max-width: 1120px; margin: 0 auto;">
+  <header class="glass-1 stack" data-reveal="head" style="padding: var(--space-4);">
+    <span class="label">motion · one curve, four budgets</span>
+    <h1 class="display">The micro-animation, running.</h1>
+    <p class="muted" style="max-width: 78ch;">Every figure below is live: press a budget and watch it run. The product motion is the same set —
+    tap 120 · swap 200 · enter 250 · sheet 350 ms, one ease-out curve (<span class="curve" data-curve>—</span>). Purpose only: state, continuity, hierarchy.
+    No loops, no pulse, no glow. Reduced motion removes the travel; High Contrast removes the translucency.</p>
+    <div class="row-wrap">
+      <button class="primary" data-sequence>Replay the sequence</button>
+      <button class="secondary" data-floors aria-pressed="false">Floors preview</button>
+      <label class="row caption" style="gap:6px;"><input type="checkbox" data-slow> slow motion ×0.25 (grading aid)</label>
+      <span class="caption" data-floors-label>Floors preview OFF</span>
+    </div>
+  </header>
+
+  <section class="grid-2">
+    <article class="glass-2 stack" data-reveal="cards" style="padding: var(--space-3);">
+      <div class="row" style="justify-content: space-between;"><b>Tap</b><span class="budget">120 ms</span></div>
+      <p class="caption">Button press, list selection, tab feedback. The smallest acknowledgement.</p>
+      <div class="demo-stage"><button class="demo-box" data-play="tap">Approve once</button></div>
+    </article>
+
+    <article class="glass-2 stack" data-reveal="cards" style="padding: var(--space-3);">
+      <div class="row" style="justify-content: space-between;"><b>Swap</b><span class="budget">200 ms</span></div>
+      <p class="caption">Tab / view replacement. Old plane out, new plane in — same depth, no bounce.</p>
+      <div class="demo-stage">
+        <div class="demo-box" data-swap-a>Chat</div>
+        <div class="demo-box" data-swap-b hidden>Tasks</div>
+      </div>
+    </article>
+
+    <article class="glass-2 stack" data-reveal="cards" style="padding: var(--space-3);">
+      <div class="row" style="justify-content: space-between;"><b>Enter</b><span class="budget">250 ms</span></div>
+      <p class="caption">Content arriving: a message, a card, the brief. One direction, no overshoot.</p>
+      <div class="demo-stage"><div class="demo-box" data-enter>Morning brief</div></div>
+    </article>
+
+    <article class="glass-2 stack" data-reveal="cards" style="padding: var(--space-3);">
+      <div class="row" style="justify-content: space-between;"><b>Sheet</b><span class="budget">350 ms</span></div>
+      <p class="caption">The approvals sheet entering/leaving; the scrim settles with it.</p>
+      <div class="demo-stage">
+        <button class="demo-box" data-play="sheet">Review approval</button>
+        <div class="demo-mini-sheet" data-sheet hidden><b>Approvals sheet</b><p class="caption">One bounded action.</p></div>
+      </div>
+    </article>
+  </section>
+
+  <section class="glass-1 stack" data-reveal="floors" style="padding: var(--space-4);">
+    <h2>Floors this motion keeps</h2>
+    <div class="grid-3">
+      <div class="stack"><span class="label">reduced motion</span><p class="caption">All travel and stagger are removed; state changes are instant. Toggle the floors preview to see it.</p></div>
+      <div class="stack"><span class="label">high contrast</span><p class="caption">Translucency, blur and soft depth are replaced by system colours and 1 px borders; focus ring stays.</p></div>
+      <div class="stack"><span class="label">keyboard focus</span><p class="caption">Every control keeps the 2 px accent ring with a 2 px gap; movement never replaces the ring.</p></div>
+    </div>
+    <p class="caption muted">Design comp — not a built surface. Durations are read from <code>tokens.css</code>; nothing here is a runtime claim for the product.</p>
+  </section>
+</div>
+<script>
+  (() => {
+    const cssVar = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+    const ms = (t) => String(t).endsWith('ms') ? parseFloat(t) : parseFloat(t) * 1000;
+    const slow = () => document.querySelector('[data-slow]')?.checked ? 0.25 : 1;
+    const dur = (token) => ms(cssVar(token)) / slow();
+    const ease = () => cssVar('--ease');
+    const reduced = () => document.documentElement.dataset.motion === 'reduced' || matchMedia('(prefers-reduced-motion: reduce)').matches;
+    document.querySelector('[data-curve]').textContent = ease();
+    const anim = (el, frames, token) => {
+      if (!el) return;
+      if (reduced()) { el.hidden = false; el.style.opacity = ''; el.style.transform = ''; return; }
+      el.animate(frames, { duration: dur(token), easing: ease(), fill: 'both' });
+    };
+    const playTap = () => {
+      const b = document.querySelector('[data-play="tap"]');
+      anim(b, [{ transform: 'scale(1)' }, { transform: 'scale(0.965)' }, { transform: 'scale(1)' }], '--motion-tap');
+    };
+    const playSwap = () => {
+      const a = document.querySelector('[data-swap-a]'), b = document.querySelector('[data-swap-b]');
+      if (!a || !b) return;
+      a.hidden = false; b.hidden = true;
+      anim(a, [{ opacity: 1 }, { opacity: 0 }], '--motion-swap');
+      setTimeout(() => { a.hidden = true; b.hidden = false; anim(b, [{ opacity: 0, transform: 'translateY(4px)' }, { opacity: 1, transform: 'translateY(0)' }], '--motion-swap'); }, reduced() ? 0 : dur('--motion-swap'));
+    };
+    const playEnter = () => {
+      const el = document.querySelector('[data-enter]');
+      el.hidden = false;
+      anim(el, [{ opacity: 0, transform: 'translateY(10px)' }, { opacity: 1, transform: 'translateY(0)' }], '--motion-enter');
+    };
+    const playSheet = () => {
+      const sheet = document.querySelector('[data-sheet]');
+      sheet.hidden = false;
+      anim(sheet, [{ transform: 'translateY(100%)' }, { transform: 'translateY(0)' }], '--motion-sheet');
+      setTimeout(() => { anim(sheet, [{ transform: 'translateY(0)' }, { transform: 'translateY(100%)' }], '--motion-sheet'); setTimeout(() => { sheet.hidden = true; }, reduced() ? 0 : dur('--motion-sheet')); }, reduced() ? 0 : dur('--motion-sheet') + 500);
+    };
+    document.querySelectorAll('[data-play]').forEach((b) => b.addEventListener('click', () => {
+      const k = b.dataset.play;
+      if (k === 'tap') playTap(); else if (k === 'sheet') playSheet();
+    }));
+    document.querySelectorAll('[data-swap-a]').forEach((b) => b.addEventListener('click', playSwap));
+    document.querySelector('[data-sequence]').addEventListener('click', () => {
+      playTap();
+      setTimeout(playSwap, reduced() ? 0 : dur('--motion-tap') + 80);
+      setTimeout(playEnter, reduced() ? 0 : dur('--motion-tap') + dur('--motion-swap') + 160);
+      setTimeout(playSheet, reduced() ? 0 : dur('--motion-tap') + dur('--motion-swap') + dur('--motion-enter') + 240);
+    });
+  })();
+</script>
+</body>
+</html>

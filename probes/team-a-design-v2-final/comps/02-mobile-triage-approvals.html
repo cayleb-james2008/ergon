@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>02 · Mobile Triage + Approvals — Ergon Lumen v2 design comp</title>
+<link rel="stylesheet" href="../tokens.css">
+<link rel="stylesheet" href="../comp-kit.css">
+<script src="../comp-motion.js" defer></script>
+</head>
+<body>
+<div class="banner"><b>DESIGN COMP — NOT A BUILT SURFACE.</b> v2 direction pass · Ergon Lumen (proposal) · owner grade pending · builds stay behind G1 / C1–C6 / W1.</div>
+<div class="wrap">
+  <div>
+    <div class="phone">
+      <div class="status"><span>9:41</span><span>Ergon · triage</span></div>
+      <div class="appbar">
+        <span class="nn" data-name="Marlow" data-density="10" data-state="needs-you" data-reveal="chrome" aria-hidden="true"></span>
+        <div class="grow"><h3 style="font-size: var(--emp-body);">Needs you</h3><span class="caption">3 items · 4 can wait</span></div>
+        <span class="pill warn" data-reveal="chrome">Needs you</span>
+      </div>
+
+      <div class="content">
+        <section class="stack" data-reveal="content" aria-label="Needs you">
+          <span class="label">needs you</span>
+          <div class="card raise stack" data-reveal="content">
+            <div class="row" style="justify-content: space-between;"><b>Marcus's estimate</b><span class="pill warn">approval</span></div>
+            <p class="caption">Old rate card vs November card. One estimate, one rate card, before it goes out.</p>
+            <button class="primary employee" data-sheet-open="#approval-sheet">Review</button>
+          </div>
+          <div class="card stack" data-reveal="content">
+            <div class="row" style="justify-content: space-between;"><b>Van booking Thursday</b><span class="pill danger">needs a decision</span></div>
+            <p class="caption">Two crews, one van. Choose who takes it.</p>
+            <button class="secondary employee">Decide</button>
+          </div>
+        </section>
+
+        <section class="stack" data-reveal="content" aria-label="Can wait">
+          <span class="label">can wait</span>
+          <div class="card stack" data-reveal="content">
+            <div class="row" style="justify-content: space-between;"><b>October invoices</b><span class="pill ok">done</span></div>
+            <p class="caption">Filed and sent; nothing needed from you.</p>
+          </div>
+          <div class="card stack" data-reveal="content" style="opacity: .9;">
+            <div class="row" style="justify-content: space-between;"><b>Warehouse shelf labels</b><span class="pill">working</span></div>
+            <p class="caption">Marlow is reprinting the aisle signs; the two contested labels come back to you later.</p>
+          </div>
+        </section>
+      </div>
+
+      <nav class="tabbar" data-tabs aria-label="Sections">
+        <button type="button" role="tab" aria-selected="true">Chat</button>
+        <button type="button" role="tab" aria-selected="false">Tasks</button>
+        <button type="button" role="tab" aria-selected="false">Make</button>
+      </nav>
+
+      <div class="sheet-wrap" id="approval-sheet" hidden data-open="false">
+        <div class="scrim" data-sheet-close aria-hidden="true"></div>
+        <div class="sheet" role="dialog" aria-modal="true" aria-label="Approval — Marcus's estimate" data-approval>
+          <span class="handle" aria-hidden="true"></span>
+          <div class="row" style="justify-content: space-between;">
+            <span class="label">approval · tier a</span>
+            <span class="caption">one bounded action</span>
+          </div>
+          <h3>Send Marcus's estimate with the November card</h3>
+          <p class="caption">What will happen: one estimate to Marcus Vale, using the November rate card. Nothing else changes.</p>
+          <div class="inset stack" style="padding: var(--space-2);">
+            <span class="label">bounded action</span>
+            <span class="caption">Send · one document · Marcus Vale · this estimate only</span>
+          </div>
+          <label class="row caption" style="gap: var(--space-2); align-items: flex-start;">
+            <input type="checkbox" style="margin-top:3px;">
+            <span>Remember for <b>Oakridge move</b> for <b>sending estimates to Marcus</b> — one subject, one action. Revocable; the grant appears in the approvals record.</span>
+          </label>
+          <p class="caption">Tier B approvals never offer remembering. Here: one purchase, this vendor, no standing permission.</p>
+          <div class="row" style="justify-content: flex-end;">
+            <button class="secondary employee" data-sheet-close>Later</button>
+            <button class="primary employee" data-approve>Approve once</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="frame-note">Mobile · triage groups + approvals sheet (sheet enters at 350 ms).</p>
+  </div>
+
+  <div class="grow stack" style="max-width: 430px;">
+    <div class="glass-2 stack" data-reveal="panel" style="padding: var(--space-3);">
+      <h2 style="font-size: var(--body);">What v2 changed here</h2>
+      <ul class="stack" style="margin:0; padding-left:18px; color: var(--muted); font-size: var(--caption);">
+        <li><b>The sheet is the depth showpiece:</b> brightest translucent layer (24 px blur, strong rim, higher surface alpha) over a dimmed scrim — at 350 ms, one curve.</li>
+        <li><b>Approvals stay bounded:</b> Tier A shows the exact action; Tier B never offers remembering.</li>
+        <li><b>Scoped remember wording:</b> "Remember for Oakridge move for sending estimates to Marcus" — one named subject and one named action, both on the surface; revocable and recorded. No wider form.</li>
+        <li><b>Unchanged:</b> needs-you vs can-wait grouping, counts, one accent forward action.</li>
+      </ul>
+    </div>
+    <div class="glass-2 stack" data-reveal="panel" style="padding: var(--space-3);">
+      <h3 style="font-size: var(--body);">Grading notes</h3>
+      <p class="caption">Try: <b>Review</b> (sheet opens), Escape or <b>Later</b> (closes), <b>Approve once</b> (bounded action resolves).
+      The remember row is a <b>Tier A only</b> affordance in the narrowly scoped form; any wider form is not shown and returns to Nox by ruling.
+      <span class="muted">Design comp — not a built surface.</span></p>
+    </div>
+  </div>
+</div>
+</body>
+</html>

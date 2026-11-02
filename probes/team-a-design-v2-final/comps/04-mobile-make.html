@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>04 · Mobile Make — Ergon Lumen v2 design comp</title>
+<link rel="stylesheet" href="../tokens.css">
+<link rel="stylesheet" href="../comp-kit.css">
+<script src="../comp-motion.js" defer></script>
+</head>
+<body>
+<div class="banner"><b>DESIGN COMP — NOT A BUILT SURFACE.</b> v2 direction pass · Ergon Lumen (proposal) · owner grade pending · builds stay behind G1 / C1–C6 / W1.</div>
+<div class="wrap">
+  <div>
+    <div class="phone">
+      <div class="status"><span>9:41</span><span>Ergon · make</span></div>
+      <div class="appbar">
+        <span class="nn" data-name="Marlow" data-density="10" data-state="idle" data-reveal="chrome" aria-hidden="true"></span>
+        <div class="grow"><h3 style="font-size: var(--emp-body);">Make</h3><span class="caption">Artefacts the agent produced</span></div>
+      </div>
+
+      <div class="content">
+        <section class="stack" data-reveal="content" aria-label="Artefacts">
+          <div class="card raise stack" data-reveal="content">
+            <div class="row" style="justify-content: space-between;">
+              <div class="stack" style="gap:2px;">
+                <span class="label">document · approved</span>
+                <b>Oakridge move brief</b>
+              </div>
+              <span class="pill ok">ready</span>
+            </div>
+            <p class="caption">Two pages. Crew, access, parking, the two rate-card lines. Written from the job record, not invented.</p>
+            <div class="row"><button class="primary employee">Open</button><button class="secondary employee">Request a change</button></div>
+          </div>
+
+          <div class="card stack" data-reveal="content">
+            <div class="row" style="justify-content: space-between;">
+              <div class="stack" style="gap:2px;">
+                <span class="label">sheet · draft</span>
+                <b>Thursday crew sheet</b>
+              </div>
+              <span class="pill warn">needs your read</span>
+            </div>
+            <p class="caption">Names, phones and start times. One cell is empty — Marcus's number is missing.</p>
+            <div class="row"><button class="secondary employee">Open</button></div>
+          </div>
+
+          <div class="card stack" data-reveal="content" style="opacity:.92;">
+            <div class="row" style="justify-content: space-between;">
+              <div class="stack" style="gap:2px;">
+                <span class="label">site page · sent</span>
+                <b>Shelf-label page</b>
+              </div>
+              <span class="pill ok">done</span>
+            </div>
+            <p class="caption">Printed and filed under the warehouse shelf run.</p>
+          </div>
+        </section>
+
+        <div class="inset stack" data-reveal="content" style="padding: var(--space-2);">
+          <span class="label">request a change</span>
+          <input type="text" placeholder="What should be different?" aria-label="Request a change">
+          <button class="secondary employee" style="justify-self:start;">Ask Marlow</button>
+        </div>
+      </div>
+
+      <nav class="tabbar" aria-label="Sections"><button type="button">Chat</button><button type="button">Tasks</button><button type="button" aria-current="page">Make</button></nav>
+    </div>
+    <p class="frame-note">Mobile · artefact list (no autoplay, no carousel dots — a restrained list with depth).</p>
+  </div>
+
+  <div class="grow stack" style="max-width: 430px;">
+    <div class="glass-2 stack" data-reveal="panel" style="padding: var(--space-3);">
+      <h2 style="font-size: var(--body);">What v2 changed here</h2>
+      <ul class="stack" style="margin:0; padding-left:18px; color: var(--muted); font-size: var(--caption);">
+        <li><b>No spectacle gallery:</b> the "carousel" idea from the parts bin became a stacked artefact list — each artefact is a translucent plane that opens in place. No autoplay, no loop, no dots.</li>
+        <li><b>Depth tells the truth:</b> a ready artefact sits brighter than a draft; quiet states are lower-contrast layers, not disabled-looking.</li>
+        <li><b>Motion:</b> staggered reveal (enter 250 ms); press feedback (tap 120 ms). Nothing moves on its own.</li>
+        <li><b>Unchanged:</b> the Make tab, artefact classes, open + request-a-change as the two actions.</li>
+      </ul>
+    </div>
+    <div class="glass-2 stack" data-reveal="panel" style="padding: var(--space-3);">
+      <h3 style="font-size: var(--body);">Grading notes</h3>
+      <p class="caption">Judge the finish: are the artefact planes visibly layered, is the light consistent, does the type sit cleanly on the glass?
+      <span class="muted">Design comp — not a built surface.</span></p>
+    </div>
+  </div>
+</div>
+</body>
+</html>
