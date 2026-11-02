@@ -1,4 +1,4 @@
-# WAKE-UP REPORT — 2026-11-02 (refreshed 01:10 ET; owner asleep) — refresh #5 (B+A zones/layer-6, Play 9/10, two rulings with Nox, Windows final)
+# WAKE-UP REPORT — 2026-11-02 (refreshed 02:55 ET; owner asleep) — refresh #6 (B-bounded retired; abort-contact option-B start + C ramp; atlas B2 in checker reject-fix; Windows final)
 Consolidated for the owner's morning. Everything below is on the board with checker evidence; nothing is smoothed.
 Fences held overnight: no spend, no publication, no credential values in chat/board/logs, no image reads in the app, desks untouched.
 
@@ -69,12 +69,14 @@ truncated upload channels (closed), starter/require and Instance-root legacy API
 (fixed), and now the **renderer/Wine limitation is isolated to whole-map overhead framings** (whole-highway, whole-world) while
 `city-overhead` and 20 ordinary views capture fresh with `viewportMatchesPng:true`. The authorised **B substitution** (per-zone
 functional overhead views) is implemented, checker-verified and partly exercised; the **A limitation** is recorded with the exact
-build, fail-closed verdict and one-retest-per-new-build rule. **Both rulings have landed:** abort-contact = **B-bounded** (fixture
-  gap-trigger ≤25 studs + named bounded pre-leg; ruled 12 s window and every ruled value untouched; pursuit-ramp option C held
-  pre-approved as the next step only on missing-contact evidence); atlas = **B2+A2 with zone-first ordering** (per-region world overhead
-  views replacing world-overhead + the whole-map limitation class). Both implement offline with checker deltas before their Plays. **No cell pass is claimed** — the cell remains blocked on those two
-rulings; every step is on disk with the checker evidence. Plays are budgeted and reserved; the sealed place/release has been unchanged
-through every Play, crash and recovery.
+build, fail-closed verdict and one-retest-per-new-build rule. **Current chain state (Nox runs 9–10):** abort-contact = **option-B leg start + C ramp** (forward clamp 10→40 inside the
+unchanged 40 studs/s² cap; no ruled value changes) after the B-bounded experiment was **retired as tested-and-rejected** on a
+3-run fair sample (0/3 convergence, abort gap ~73.5 stable, monotone growth, ≤25 trigger structurally unreachable, pre-leg
+timeout failed closed as designed); the 12 s window stays and option A stays rejected with its narrow evidence path back.
+Atlas = **B2+A2 + zone-first ordering implemented and checker-reviewed**: the reviewer passed the substitution, ordering,
+limitation note and all suites, and rejected only one missing test pin (the `zonePath`-first fit-bounds order) — the one-line
+fix + residual fold are being re-frozen and re-checked. Both chains are offline right now; a Play consumes no freeze; the
+recovered opening holds 2 reserved Plays and the sealed place/release has never changed.
 
 ## ROBLOX (Team D) — instrumented diagnostic block COMPLETE; two diagnostic Plays ran honestly
 - Plans 2/3/4 + the C1 fix round all fresh-checker ACCEPTED (suites and mutation proofs reproduced from clean copies; sealed place
