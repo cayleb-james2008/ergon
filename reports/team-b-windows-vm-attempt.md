@@ -83,7 +83,9 @@ qemu-system-x86_64 -machine pc,accel=kvm -boot order=c,menu=off -cpu host -smp 8
 | 02:30–03:30 | Live: `info status running`, disk rate slowed (OOBE); `ss` shows 5902/3389/2222 listening; no QEMU crash |
 
 The answer file is the rig's own (`cayleb` local admin, AutoLogon ×2, `DSH-RIG-WIN`, Enterprise Eval index 1). Its
-values stay in the rig file and are not reproduced here.
+local placeholder password was **reproduced in the board copy of the v2 answer file** (`probes/team-b-windows-vm/autounattend-v2.xml`),
+was flagged by the FL2-r2 fresh checker, and the Lead redacted both board copies; no real credential value is involved
+(throwaway rig guest) and the board copies now carry no password.
 
 ## 4. The Lead's IDE red flag — read, explained, not the cause
 

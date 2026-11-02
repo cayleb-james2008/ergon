@@ -183,8 +183,14 @@ printf '\x03\x00\x00\x13\x0e\xe0\x00\x00\x00\x00\x00\x01\x00\x08\x00\x03\x00\x00
 socat - TCP:127.0.0.1:2222                          # expect SSH-2.0-OpenSSH_for_Windows_* once the capability lands
 ssh -p 2222 -i win/agent_key -o StrictHostKeyChecking=no cayleb@127.0.0.1 'hostname & ver & $PSVersionTable.PSVersion.ToString()'
 ```
-The admin user is **`cayleb`** (answer file's local Administrator account; rig-local password in the answer file, not
-reproduced here). The rig's public key is installed by command #4; private key `rig/win/agent_key` never leaves the rig.
+The admin user is **`cayleb`** (the answer file's local Administrator account). **FENCE CORRECTION (checker finding):**
+this answer file holds a **rig-local placeholder password**, and that placeholder **was present in the board copy**
+(`board/probes/team-b-windows-vm/autounattend-v2.xml`); the fresh FL2-r2 checker flagged it, and the Lead has since
+redacted both board copies (local board + shared repo); no other copies were found. **The password was reproduced in
+a board artefact before redaction — that is not claimed otherwise.** No real credential value exists anywhere in this
+work: the value is a locally generated placeholder for a throwaway rig guest, and the board copies now carry no
+password. The rig's public key is installed as the admin `authorized_keys`; private key `rig/win/agent_key` never
+leaves the rig.
 
 ## Finalize-timing lesson (launcher doc)
 
