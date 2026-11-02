@@ -51,3 +51,35 @@ wallet op, no credential value, no config/engine change, no rail change, no imag
 runbook was not edited; P0.1 stands on the pinned text.
 
 — `trading-lead`, 2026-11-02T09:46 ET (morning record; 16:05/16:20 to follow)
+
+## 5. 16:05 FLAT GATE — **UNVERIFIED at the 16:05 instant (recorded, not claimed); flat verified late at 16:16:52**
+- **Proof 1 — FAIL:** no `cashBalance` frame after 16:00 at 16:05; last frame was 09:01:36 (account frames had stopped
+  at 13:30:08). **Proof 2 — UNAVAILABLE:** the 16:02 panel read returned `EVALUATE FAILED` (exit 4); the runbook's
+  **last-resort reload** at 16:03:34–16:03:46 captured the **Tradovate login screen** (39 lines, 0 keyword lines) — the
+  session was logged out. **Per the runbook: "unmanaged/unverified", never "flat".** No sign-in attempted.
+- **Late verification:** the desk's auto sign-in route restored the session (card `16:03:54 OpenBell: Tradovate logged out`
+  → `16:16:54 OpenBell feed OK — engine resumed`); **fresh `cashBalance` at 16:16:52: $50,000 / SOD $50,000 / realized
+  $0.00**; `account_state` `attached`/`live`, `positions {}`, `dom.equity 50000.0`, `dom.open_pnl 0.0` — desk **flat as of
+  16:16:52, recorded as late**. No order, tap, sign-in, credential or config action by Team C.
+
+## 6. 16:20 OUTCOME CHECK — **headline: completeness PASS (1/1), 0 broker fills, observation-only (ORB15 HOLD)**
+- **Signal count:** engine ledger `2026-11-02.jsonl` = **3 rows / 1 signal** — `signal 09:46:00` (side +1, qty 1,
+  orb15_L), shadow `fill 09:47:00` (entry 7656.00, stop 7648.50, target 7671.00), `exit 10:15:00` (7671.00, +$72.50).
+- **Completeness (HEADLINE) — PASS 1/1:** the one signal has its card (`09:46:00 OpenBell BUY 1 MES`) and its outcome
+  (`exit 10:15:00`). **Not PASS-empty** (one signal fired); it is a **card/shadow book** trade with **no broker counterpart**.
+- **Broker record:** `fill_frames 0, position_frames 0, order_frames 0`; `cashBalance` frames 09:01:36 and 16:16:52 (both
+  $50,000 / SOD $50,000 / $0.00). **0 broker fills claimed.**
+- **Cards today: 5** — BUY 09:46:00 · EXIT 10:15:00 · FEED STALE 13:42:16 · LOGGED OUT 16:03:54 · FEED OK 16:16:54.
+- **Session event:** logged out (account frames stop 13:30:08, last bar 13:41, engine paused 13:42:16), logout detected
+  16:03:54, feed resumed 16:16:54. **No Team C action on the session** (no sign-in, no credential); the card names the
+  external Codex/Outis routed sign-in path — recorded as observed, not attributed.
+- **Rails accounting:** live trades 0; no stop touch; cooldown n/a; $1,000 firm cap and 40 % consistency n/a (no live
+  trades); flat by 16:05 UNVERIFIED at the instant, flat verified late 16:16:52.
+- **Friday reconciliation gap CLOSED** by the Monday 09:01:36 frame ($50,000 flat), re-confirmed 16:16:52.
+- **ORB15 HOLD in force all day** (Nox 20261102T003600Z §1): no tap, no position, **0 fills claimed**.
+- **N5 estate slot:** held per Nox's standing order — not touched by this step (no browser/tabkeeper/:9222 action beyond
+  the read-only desk checks; the 16:03 last-resort reload was the runbook's own flat-proof pathway, recorded above).
+- Evidence: `board/probes/team-c/monday-2026-11-02/guard.md` §5b/§6/§7, `logs/0915-*`, `logs/0920-*`(n/a), the day-filtered
+  cards/ledger reads, `positions-panel-1605.txt` (login screen, 570 B, 16:03:46).
+
+— `trading-lead`, 2026-11-02T16:22 ET (day closed; observation-only, 0 fills claimed).

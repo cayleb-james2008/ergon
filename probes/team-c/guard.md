@@ -241,3 +241,62 @@ evidence of the underlying fact, not as a substitute pass.**
   last_bar_et 09:44 pos None trades 0 day_pnl 0.0`; **`cards_today= 0`**.
 - **No card is tapped, no position is opened, no order is placed — by anyone.** Cards are logged as observations only; the
   day claims **0 fills**. Any card that appears is recorded in `cards.md` and the 16:20 outcome (completeness headline).
+
+## §5b MID-DAY FEED OUTAGE — recorded as observed (no smoothing, no fix attempted)
+- **Last good bar 13:41:00 ET** (`bars/2026-11-02.jsonl` last row `ts=1793644860`, file mtime 13:42:01; the engine's feed
+  is the Tradovate page DOM over CDP).
+- **13:42:16 ET** — engine logged `WARNING feed stale 61s, pausing entries` and sent the card
+  `OpenBell FEED STALE — engine paused` (13:42:17). Designed behaviour: entries pause, nothing is placed.
+- **Since then (checked 15:30–15:33 ET):** `heartbeat.feed="ws"` but `feed_age_s≈6535 s`, `last_bar_et=13:41`,
+  `paused=True`, `pos=None`; the account watcher's frames stopped at **13:30:08** (`frame_t` stale ~6537 s; account ledger
+  last row 13:30:08); `tabkeeper.json` shows `tradovate:"ok"`, `lane_feed:true` (blind-feed flag), `alerted:false`; the
+  Tradovate tab is still present on :9222; all three services `active`, `NRestarts=0`. **No recovery observed.**
+- **Root cause NOT established from the record** (the engine logs the stale condition, not the page's reason; no page
+  content is read except the read-only panel capture used for the flat proof). No sign-in, no reload, no restart, no config
+  change was attempted — the day is observation-only and the runbook does not authorise desk intervention.
+- **Consequence for the flat gate:** proof 1 (fresh `cashBalance` frame after 16:00) cannot be produced (last frame
+  09:01:36); the 16:05 flat proof therefore rests on proof 2 (read-only positions-panel capture at ~16:02, file written
+  ≥16:00, positive flat statement) and the page-staleness qualification is stated in the day record.
+
+## §6 16:05 FLAT GATE — **UNVERIFIED (recorded "unmanaged/unverified", NOT claimed flat)**
+- **Proof 1 (fresh `cashBalance` frame after 16:00) — FAIL.** Last `cashBalance` frame is **09:01:36 ET**
+  ($50,000 / SOD $50,000 / realized $0.00); `FRESH: FAIL — frame before 16:00`. The account watcher's frames stopped at
+  **13:30:08 ET** (`frame_t` stale 6,537 s at 15:30; heartbeat `feed_age_s 8,627.8 s` at 16:05:08).
+- **Proof 2 (read-only positions-panel capture ≥16:00, positive flat statement) — UNAVAILABLE.**
+  - 16:01:50–16:02 ET panel read → **`EVALUATE FAILED` (empty error), exit 4, no file** — the page no longer answers.
+  - 16:03:34–16:03:46 ET **last-resort `--reload`** (the runbook's documented last resort when the panel cannot be read
+    because the page is stale; no position open by the engine's book; entries already paused) → **read after reload
+    captured the Tradovate LOGIN SCREEN** (39 lines, 0 keyword lines; page text includes "Don't have an account? Try a free
+    trial / Install App"). File: `positions-panel-1605.txt` (570 B, written 16:03:46). **No positive flat statement.**
+  - **=> the session is logged out. The panel proof cannot exist.** Per the runbook: neither proof → record
+    "unmanaged/unverified", never "flat".
+- **STOP-FOR-CAYLEB condition:** the only verified sign-in route is Cayleb's desktop session. **No sign-in, no credential
+  entry, no improvisation was attempted.** The desk remains logged out with entries paused; the day's observation continues
+  as recorded only.
+- Engine state at 16:05:08: `age_s=4.0 status=running mode=cards feed=ws feed_age_s=8627.8 last_bar_et=13:41 pos=None
+  trades=1 day_pnl=72.5 paused=True`. The engine's own book is flat (`pos=None`), but **engine state is not account
+  evidence** and the broker state after 13:30 is UNVERIFIED.
+
+## §7 16:20 OUTCOME CHECK — **completeness PASS (1/1); 0 broker fills; observation-only; flat VERIFIED late (16:16:52)**
+- **Signals (day-filtered engine ledger):** `live/ledger/2026-11-02.jsonl` **3 rows** — `signal 09:46:00` (side +1, qty 1,
+  tag orb15_L), `fill 09:47:00` (shadow entry 7656.00, stop 7648.50, target 7671.00), `exit 10:15:00` (exit 7671.00,
+  `usd_total 72.5`) → **1 signal**. (The runner's kind-based structural counter reads 0 because this engine ledger's rows
+  carry no `kind` field — the operator/checker judges from the rows above; recorded as a known runner limitation, not a gap.)
+- **Completeness (HEADLINE) — PASS 1/1:** the one signal has (i) its day-filtered card (`09:46:00 OpenBell BUY 1 MES`) and
+  (ii) its outcome in the ledger (`exit 10:15:00`). **This is NOT a PASS-empty day** — one signal fired. It is a
+  **card/shadow book only** trade: `trades=1`, `day_pnl +72.5`, **no broker counterpart**.
+- **Broker record:** `fill_frames=0, position_frames=0, order_frames=0`; **2 `cashBalance` frames** — 09:01:36 and
+  **16:16:52** (both `amount 50000.0`, `SOD 50000.0`, `realizedPnL 0.0`). **0 broker fills claimed.**
+- **Flat:** 16:05 was UNVERIFIED (§6). **The desk is flat by 16:20 — verified late at 16:16:52:** fresh `cashBalance`
+  $50,000 / SOD $50,000 / realized $0.00; `account_state` `attached`/`live`, `positions {}`, `dom.equity 50000.0`,
+  `dom.open_pnl 0.0`, `frame_t` age 0.8 s. Recorded as **late** (the 16:05 instant had no proof).
+- **Session outage/recovery (observed, not caused by Team C):** account frames stopped 13:30:08; last bar 13:41; engine
+  paused 13:42:16; **logout detected 16:03:54** (card `OpenBell: Tradovate logged out` — the 16:03 last-resort reload made
+  the logged-out page visible; the logout itself predates it); **feed OK 16:16:54 / engine resumed**, fresh account frames
+  from 16:16:52. No sign-in, credential or config action was taken by Team C (the card's text names the Codex/Outis routed
+  sign-in click — an external lane; recorded as observed, not attributed).
+- **Cards today: 5** (BUY 09:46:00, EXIT 10:15:00, FEED STALE 13:42:16, LOGGED OUT 16:03:54, FEED OK 16:16:54).
+- **Rails accounting:** live trades **0** (≤2 ✓ trivially); no −$400/+$900 touch; cooldown n/a; "$1,000 firm cap / 40 %
+  consistency" n/a (checked, not enforced; no live trades); **flat by 16:05: UNVERIFIED at the instant, verified late**.
+- **Friday reconciliation gap CLOSED by the Monday 09:01:36 frame** ($50,000 flat) — and re-confirmed by 16:16:52.
+- **ORB15 HOLD branch in force all day** (Nox 20261102T003600Z §1): no tap, no position opened by anyone, 0 fills claimed.

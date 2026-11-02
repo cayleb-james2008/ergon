@@ -1,0 +1,9 @@
+----------------------------------------------------------------------
+STEP flat — 16:05 ET flat proof (2026-11-02T16:05:08-0500)
+EXPECT: proof 1: cashBalance frame t after 16:00; else proof 2: panel file written >=16:00 with a positive flat statement
+last cashBalance t= 2026-11-02T09:01:36.018187-05:00 amount= 50000.0 realizedPnL= 0.0
+FRESH: FAIL — frame before 16:00, flat UNVERIFIED
+engine_pos= None
+PROOF 2 (only if proof 1 unavailable): run the read-only panel read now and require a positive flat statement:
+  python3 -I /home/cayleb/Documents/deepseek-harness/default-workspace/board/probes/team-c/monday-2026-11-02/../dom_read_positions.py --out /home/cayleb/Documents/deepseek-harness/default-workspace/board/probes/team-c/monday-2026-11-02/positions-panel-1605.txt
+  Do NOT use --reload while a position is open; a reload can emit a FEED STALE card (entries pause, nothing placed).
