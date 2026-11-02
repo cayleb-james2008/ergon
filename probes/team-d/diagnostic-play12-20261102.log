@@ -1,0 +1,48 @@
+=== TEAM D DIAGNOSTIC PLAY 12 — traffic:abort-contact on B-bounded (Lead GO 2026-11-02T06:52Z) ===
+time 2026-11-02T06:52:42Z
+repo e6ae1344fd945ff9f9e7ee1d371ad1fc346919ed tracked_modified=0
+
+--- 1a. state BEFORE the cycle ---
+ 905535    1552 /home/cayleb/.var/app/org.vinegarhq.Vinegar/data/vinegar/versions/version-
+plays record: {  "pid": 905535,  "start": 38448435,  "plays": 1,  "at": 1793600829.3724024}
+host: full avg10=1.08 avg60=0.29 avg300=0.24 total=846654952 | 2.99 3.52 3.64 1/2592 922996
+
+--- sealed BEFORE ---
+84324d4342667dd163ab8e64adacbf8ef44ab786aeda5c7ab1403e76d52ef6ce  build/release.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  build/test.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  /home/cayleb/.var/app/org.vinegarhq.Vinegar/data/usg/usg-desktop.rbxlx
+
+--- 1b. studiocycle cycle 2026-11-02T06:52:42Z ---
+{"action": "close", "result": "ok", "method": "killed-after-dialog", "dialog_seen": true, "discarded_autosaves": ["20261102T065247Z-usg-desktop_AutoRecovery_0.rbxl"], "place_sha256": "c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98", "sealed_unchanged": true}
+{"action": "open", "result": "ok", "place_sha256_before": "c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98", "place_sha256_after": "c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98", "fit": "ok", "window": {"address": "0x558c7f831f20", "class": "steam_proton", "title": "Z:\\home\\cayleb\\.var\\app\\org.vinegarhq.Vinegar\\data\\usg\\usg-desktop.rbxlx - Roblox Studio", "at": [1475, 234], "size": [2200, 1000], "floating": true, "fullscreen": 0, "pid": 923305}}
+cycle_rc=0
+
+--- 1c. fresh opening verification 2026-11-02T06:52:56Z ---
+ 923305       7 /home/cayleb/.var/app/org.vinegarhq.Vinegar/data/vinegar/versions/version-
+{"address": "0x558c7f831f20", "class": "steam_proton", "title": "Z:\\home\\cayleb\\.var\\app\\org.vinegarhq.Vinegar\\data\\usg\\usg-desktop.rbxlx - Roblox Studio", "at": [1475, 234], "size": [2200, 1000], "floating": true, "fullscreen": 0, "pid": 923305}
+plays record (old opening): {  "pid": 905535,  "start": 38448435,  "plays": 1,  "at": 1793600829.3724024}
+
+--- sealed AFTER cycle ---
+84324d4342667dd163ab8e64adacbf8ef44ab786aeda5c7ab1403e76d52ef6ce  build/release.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  build/test.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  /home/cayleb/.var/app/org.vinegarhq.Vinegar/data/usg/usg-desktop.rbxlx
+
+--- preflight ---
+preflight_rc=0
+--- 2. THE ONE PLAY: run traffic:abort-contact start 2026-11-02T06:53:10Z ---
+run_rc=1
+
+--- 3. post-Play state 2026-11-02T06:53:36Z ---
+Studio:  923305      48 /home/cayleb/.var/app/org.vinegarhq.Vinegar/
+plays record: {  "pid": 923305,  "start": 38604182,  "plays": 1,  "at": 1793602395.0865893}
+
+--- verify-clean ---
+  },
+  "clean": true
+}
+verify_rc=0
+
+--- sealed AFTER ---
+84324d4342667dd163ab8e64adacbf8ef44ab786aeda5c7ab1403e76d52ef6ce  build/release.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  build/test.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  /home/cayleb/.var/app/org.vinegarhq.Vinegar/data/usg/usg-desktop.rbxlx
