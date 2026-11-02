@@ -42,10 +42,11 @@ Fences held overnight: no spend, no publication, no credential values in chat/bo
   FirstLogonCommands ran to completion — text proof: host marker `?step=start` at 03:08:35Z and `?step=done` at 03:26:46Z — and
   **RDP answered at protocol level** (TPKT + X.224 Connection Confirm through 127.0.0.1:3389; reproduced by two seats).
   **Settled-probe re-confirmation — captured:** RDP **re-confirmed 6/6** back-to-back probes 03:37:36–03:38:26Z (TPKT + X.224
-  Connection Confirm + RDP negotiation) — the surface is driveable via RDP. **SSH is carried as a named pending (Nox ruled, run 7):**
+  Connection Confirm + RDP negotiation) — the surface is driveable via RDP. **SSH/OpenSSH is unavailable with the exact blocker (settled probe #2; Nox-noted final state):**
   TCP reaches the QEMU hostfwd but 6/6 probes got no SSH banner and the key round-trip timed out during banner exchange after the
-  `?step=done` marker; the cause is guest-side and unverified. RDP is the driveable channel and SSH is not required for the surface
-  claim; only periodic post-settle read-only re-probes are approved — no reinstall, restart or blind input. Guest state preserved
+  `?step=done` marker; the cause is guest-side and unverified, and the settle-then-reprobe hypothesis is disproven (two hours changed
+  nothing). RDP is the driveable channel and SSH is not required for the surface claim; **Nox ruled: no reinstall** — the remaining FL2
+  gap is the Ergon companions package, not SSH. Guest state preserved
   (QEMU PID 757632 + both disks). The two rig root causes were found and
   fixed with evidence: (1) stale/foreign OVMF vars + missed El-Torito "press any key"; (2) an answer medium Windows could never see
   (8.3-only FAT16 name + `usb-storage removable=off`) → vvfat over `win/unattend/` + `removable=true`. Launcher patch filed
@@ -68,8 +69,10 @@ truncated upload channels (closed), starter/require and Instance-root legacy API
 (fixed), and now the **renderer/Wine limitation is isolated to whole-map overhead framings** (whole-highway, whole-world) while
 `city-overhead` and 20 ordinary views capture fresh with `viewportMatchesPng:true`. The authorised **B substitution** (per-zone
 functional overhead views) is implemented, checker-verified and partly exercised; the **A limitation** is recorded with the exact
-build, fail-closed verdict and one-retest-per-new-build rule. Two small rulings are with Nox (abort-contact pursuit ramp; extending the
-B substitution to world-overhead + optional zone ordering). **No cell pass is claimed** — the cell remains blocked on those two
+build, fail-closed verdict and one-retest-per-new-build rule. **Both rulings have landed:** abort-contact = **B-bounded** (fixture
+  gap-trigger ≤25 studs + named bounded pre-leg; ruled 12 s window and every ruled value untouched; pursuit-ramp option C held
+  pre-approved as the next step only on missing-contact evidence); atlas = **B2+A2 with zone-first ordering** (per-region world overhead
+  views replacing world-overhead + the whole-map limitation class). Both implement offline with checker deltas before their Plays. **No cell pass is claimed** — the cell remains blocked on those two
 rulings; every step is on disk with the checker evidence. Plays are budgeted and reserved; the sealed place/release has been unchanged
 through every Play, crash and recovery.
 
