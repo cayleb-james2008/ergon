@@ -1,0 +1,19 @@
+=== Plan B2+A2 delta provenance (checker fresh copy, 2026-11-02T07:43:05Z) ===
+repo: /home/cayleb/Work/projects/untitled-street-game
+HEAD: 746a99ed16b46a6ab6f1c45b71394b01a782bdf1
+commit: 746a99ed16b46a6ab6f1c45b71394b01a782bdf1
+tree: c70c1d0b5005e0a38e26e47139eca716057acbd0
+parent: e6ae1344fd945ff9f9e7ee1d371ad1fc346919ed
+branch tip: 746a99ed16b46a6ab6f1c45b71394b01a782bdf1
+tracked mods: 0
+untracked lines: 823
+fresh copy: git archive 746a99e -> /tmp/checker-b2/repo; 1443 tracked entries blob-for-blob matched (0 missing / 0 mismatch; symlink CLAUDE.md->AGENTS.md handled)
+build/ untracked in commit: 0 entries; sealed copied: c6651793 (test) 84324d43 (release)
+--- delta numstat e6ae134..746a99e ---
+21	0	docs/verify/2026-10-19/VINEGAR_RUNBOOK.md
+4	1	tests/atlas/Server.luau
+22	35	tests/tools/test_atlas_acceptance.py
+17	11	tests/tools/test_map_atlas.py
+13	13	tests/tools/test_vinegar_run.py
+19	7	tools/atlas_acceptance.py
+24	5	tools/map_atlas.py

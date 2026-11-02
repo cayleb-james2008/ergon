@@ -1,0 +1,24 @@
+=== B2 mutation proofs — checker reproduction (fresh copy /tmp/checker-b2/repo -> throwaway /tmp/checker-b2/mut; restored after each) ===
+Baseline in mut: map_atlas 6 OK; atlas acceptance 22 OK; Lune atlas 10 passed/0 failed (4 specs).
+
+M23 delete a world region (remove world-region-4 def from tools/map_atlas.py):
+  test_map_atlas.py        -> Ran 6 tests | FAILED (failures=2)          [caught]
+  test_atlas_acceptance.py -> Ran 22 tests | FAILED (failures=1, errors=4) [caught]
+
+M24 revert server fit order (tests/atlas/Server.luau: `if view.zonePath then actual.fitBounds=actualBounds(anchor) elseif view.zone=="world" then`
+     -> `if view.zone=="world" then`, i.e. the pre-B2 world-first order):
+  test_atlas_acceptance.py -> Ran 22 tests | OK          [NOT caught]
+  test_vinegar_run.py      -> Ran 91 tests | OK          [NOT caught]
+  test_map_atlas.py        -> Ran 6 tests  | OK          [NOT caught]
+  Lune atlas filter        -> unit: 10 passed, 0 failed (4 specs)  [NOT caught]
+  (full Lune cannot catch it either: the only spec that reads tests/atlas/Server.luau is atlas-paths, which asserts the
+   unrelated string 'Paths.emit(anchor)'; no test/spec pins the fitBounds order. -> the note's M24 "source-shape test" does
+   not exist in the frozen commit.)
+
+M25 re-add world-overhead to the FULL list only (not the scout pick):
+  test_map_atlas.py        -> Ran 6 tests | FAILED (failures=1)          [caught: full-list pin]
+Restore: each file copied back from the pristine archive copy; mut-tree diff vs fresh copy = only __pycache__ .pyc files.
+
+Additional M24 confirmation: full Python suite (tests/tools, 330 tests) under the reverted world-first fit order -> Ran 330 tests | OK.
+So M24 is uncaught by: test_atlas_acceptance (22), test_vinegar_run (91), test_map_atlas (6), atlas Lune (10/4), full Python (330).
+Full Lune cannot catch it either (the only spec that reads tests/atlas/Server.luau is atlas-paths, which asserts 'Paths.emit(anchor)', unrelated to the fit block).

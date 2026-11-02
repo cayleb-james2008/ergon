@@ -1,0 +1,16 @@
+=== suites re-run from fresh copy 2026-11-02T07:43:05Z ===
+--- runner (test_vinegar_run.py) ---
+Ran 91 tests in 12.315s | OK
+--- map_atlas ---
+Ran 6 tests in 0.357s | OK
+--- atlas_acceptance ---
+Ran 22 tests in 0.775s | OK
+--- full tests/tools ---
+Ran 330 tests in 47.125s | OK
+--- Lune atlas filter ---
+unit: 10 passed, 0 failed (4 specs)
+--- full Lune ---
+unit: 923 passed, 0 failed (127 specs)
+--- sealed after runs ---
+84324d4342667dd163ab8e64adacbf8ef44ab786aeda5c7ab1403e76d52ef6ce  /home/cayleb/Work/projects/untitled-street-game/build/release.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  /home/cayleb/Work/projects/untitled-street-game/build/test.rbxlx

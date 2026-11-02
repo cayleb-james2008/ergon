@@ -1,0 +1,61 @@
+=== B2 plan probe (fresh copy /tmp/checker-b2/repo ) ===
+seed: 2134783819 | full planned views: 1898 | scout: 30
+world-overhead in full list: False | highway-overhead in full list: False
+overhead ids: ['city-overhead', 'highway-zone-1-overhead', 'highway-zone-2-overhead', 'highway-zone-3-overhead', 'highway-zone-4-overhead', 'world-region-1-overhead', 'world-region-2-overhead', 'world-region-3-overhead', 'world-region-4-overhead']
+scout order (ordinal: id):
+  01 city-road-n_3_2__n_4_2-forward
+  02 city-junction-n_4_2
+  03 cell-3-2-front
+  04 cell-8-3-back
+  05 city-road-n_6_5__n_6_6-forward
+  06 city-junction-n_7_6
+  07 cell-5-6-front
+  08 cell-9-5-left
+  09 city-road-n_8_10__n_9_10-forward
+  10 city-junction-n_10_10
+  11 cell-7-9-front
+  12 cell-3-10-right
+  13 highway-road-h_top_05__h_top_06-forward
+  14 highway-road-h_east_03__h_east_04-forward
+  15 highway-road-h_access_030__h_access_031-forward
+  16 highway-road-h_access_062__h_bottom_09-forward
+  17 planned-city-expressway-gate
+  18 planned-highway-city-gate
+  19 city-garage
+  20 city-overhead
+  21 highway-zone-1-overhead
+  22 highway-zone-2-overhead
+  23 highway-zone-3-overhead
+  24 highway-zone-4-overhead
+  25 city-junction-n_12_12
+  26 city-road-n_6_7__n_6_8-forward
+  27 world-region-1-overhead
+  28 world-region-2-overhead
+  29 world-region-3-overhead
+  30 world-region-4-overhead
+--- role groups ---
+highway-zone ids: ['highway-zone-1-overhead', 'highway-zone-2-overhead', 'highway-zone-3-overhead', 'highway-zone-4-overhead']
+world-region ids: ['world-region-1-overhead', 'world-region-2-overhead', 'world-region-3-overhead', 'world-region-4-overhead']
+highway anchors: ['Highway/Roads/Road_h_top_05__h_top_06', 'Highway/Roads/Road_h_east_03__h_east_04', 'Highway/Roads/Road_h_access_030__h_access_031', 'Highway/Roads/Road_h_access_062__h_bottom_09']
+world anchors: ['City/Junctions/JunctionPad_n_3_2', 'City/Junctions/JunctionPad_n_10_10', 'City/Junctions/JunctionPad_n_6_12', 'City/Junctions/JunctionPad_n_12_6']
+distinct anchors across the 8: 8
+world coverageIds: {'world-region-1-overhead': ['world:overview'], 'world-region-2-overhead': ['world:overview'], 'world-region-3-overhead': ['world:overview'], 'world-region-4-overhead': ['world:overview']}
+zone coverageIds: {'highway-zone-1-overhead': ['highway:zone:h_top_05__h_top_06'], 'highway-zone-2-overhead': ['highway:zone:h_east_03__h_east_04'], 'highway-zone-3-overhead': ['highway:zone:h_access_030__h_access_031'], 'highway-zone-4-overhead': ['highway:zone:h_access_062__h_bottom_09']}
+world (zone,kind,regionRole): {('world', 'overhead', 'world-region')}
+zone (zone,kind,zoneRole): {('highway', 'overhead', 'highway-zone')}
+--- ordering fold ---
+world-region scout ordinals: [27, 28, 29, 30]
+highway-zone scout ordinals: [21, 22, 23, 24]
+scout[-4:] == world ids: True
+max zone ordinal < min world ordinal: True
+perimeter/grade ordinals: []
+--- cap ---
+client cap 32: True | server cap 32: True | scout 30 <= 32: True
+Client.luau in delta: False
+--- validator checks present ---
+  bounded-framing proof: True
+  no whole-map ids: True
+  role groups: True
+  ordering fold: True
+  zone-before-region: True
+  8 distinct anchors: True

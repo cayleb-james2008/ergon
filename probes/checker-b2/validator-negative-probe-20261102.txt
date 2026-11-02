@@ -1,0 +1,8 @@
+=== validator negative probe, isolated checks (fresh copy) ===
+scout views: 30 | highway-zone: 4 | world-region: 4
+baseline substituted scout plan: accepted (expected)
+one world-region span == support (camera fit consistent): rejected (expected) -> world-region framing must be strictly smaller than the world support
+world-overhead re-added to scout plan (phases consistent): rejected (expected) -> zone/world-region views missing
+one world region dropped: rejected (expected) -> zone/world-region views missing
+duplicated world-region anchor: rejected (expected) -> zone/world-region anchors duplicated
+highway zone anchored outside Highway/Roads: rejected (expected) -> highway zone scope changed
