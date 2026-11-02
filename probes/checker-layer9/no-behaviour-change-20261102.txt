@@ -1,0 +1,10 @@
+=== no-behaviour-change proof (parent e8d18f4 vs 7c7c1e7) ===
+delta = exactly 2 files: tests/atlas/Client.luau (+16/-2), tests/tools/test_atlas_acceptance.py (+13/-0).
+- checkAll() function block sha256 unchanged (cc421512f66a3873 -> cc421512f66a3873).
+- verdict expression `restored=checkAll(details)` unchanged (byte-identical); payload `cleanup=details` unchanged.
+- the extra `Run.RenderStepped:Wait()` is AFTER `local details=State.check(...)`; diagnostics are built from details/recheck;
+  `cameraTypeDiagnostics` is never referenced by tools/atlas_acceptance.py (grep: 0 matches) -> verdict path untouched.
+- plan (tools/map_atlas.py) and validator (tools/atlas_acceptance.py) are NOT in the delta (byte-identical).
+- client checks: the details.* assignments after the diagnostics block are unchanged lines; the validator-tolerance test
+  proves an extra `cameraTypeDiagnostics` key on the client report does not affect validate_report (passes).
+- only behavioural delta: one extra rendered-frame wait inside cleanup() for the diagnostic re-check (no verdict input).

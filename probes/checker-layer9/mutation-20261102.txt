@@ -1,0 +1,9 @@
+=== M30 mutation — checker reproduction (throwaway /tmp/checker-l9-mut; restored) ===
+M30 remove the diagnostics payload key `cameraTypeDiagnostics=diagnostics,` from tests/atlas/Client.luau:
+  tests/tests atlas acceptance -> Ran 25 tests | FAILED (failures=1)   [caught: test_client_records_camera_type_restore_diagnostics]
+  failing assertion: 'cameraTypeDiagnostics=diagnostics' not found in Client.luau
+Restore: file copied back from the pristine copy; cmp identical.
+Residual (named): the source-shape needle list pins savedType/beforeType/afterType/afterFrameType/
+cameraTypeRestoredAfterFrame/return/payload key, but NOT the three secondary diagnostics table entries
+`cameraTypeRestored=details.cameraTypeRestored`, `sameCamera=details.sameCamera`, `frameSameCamera=recheck.sameCamera`
+(report's "every recorded field" is slightly overstated); fold into the pre-authorised next freeze.

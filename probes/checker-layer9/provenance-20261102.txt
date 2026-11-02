@@ -1,0 +1,17 @@
+=== LAYER-9 instrumentation delta provenance — checker fresh copy 2026-11-02T08:58:34Z ===
+commit: 7c7c1e777507001d88e91b8342cc6cc57128704e  tree: d781041d88b76d5801922b5a44951f182b316eee  parent: e8d18f407d3f9d576737b198cac94978999697cf
+branch tip: 7c7c1e777507001d88e91b8342cc6cc57128704e  tracked mods: 0  untracked: 828
+fresh copy: git archive 7c7c1e7 -> /tmp/checker-l9; 1443 tracked entries blob-for-blob (0 missing/0 mismatch)
+--- delta e8d18f4..7c7c1e7 numstat ---
+16	2	tests/atlas/Client.luau
+13	0	tests/tools/test_atlas_acceptance.py
+--- full file list (must be exactly 2) ---
+tests/atlas/Client.luau
+tests/tools/test_atlas_acceptance.py
+--- plan/validator/runner/traffic/fixture files in delta (must be none) ---
+(none)
+--- sealed ---
+84324d4342667dd163ab8e64adacbf8ef44ab786aeda5c7ab1403e76d52ef6ce  build/release.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  build/test.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  /home/cayleb/.var/app/org.vinegarhq.Vinegar/data/usg/usg-desktop.rbxlx
+build/ tracked: 0 entries
