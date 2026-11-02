@@ -1,0 +1,59 @@
+=== TEAM D DIAGNOSTIC PLAY 4 — repeat Play A: atlas:scout --seed 2134783819 (Lead GO 2026-11-02T03:30Z) ===
+time 2026-11-02T03:30:28Z
+repo 35caa0221eafe757ea2c16b635f72061ad72cf74 tracked_modified=0
+
+--- 1. state BEFORE (read-only) ---
+ 759088    1606 /home/cayleb/.var/app/org.vinegarhq.Vinegar/data/vinegar/versions/version-7062aec9db
+{"address": "0x558c7fa45500", "class": "steam_proton", "title": "Z:\\home\\cayleb\\.var\\app\\org.vinegarhq.Vinegar\\data\\usg\\usg-desktop.rbxlx - Roblox Studio", "at": [1475, 234], "size": [2200, 1000], "floating": true, "fullscreen": 0, "pid": 759088}
+plays record: {  "pid": 759088,  "start": 37229606,  "plays": 1,  "at": 1793588648.5660944}
+host: full avg10=0.01 avg60=0.16 avg300=0.16 total=802712173 | 4.28 7.42 7.96 3/2621 776804
+
+--- sealed BEFORE ---
+84324d4342667dd163ab8e64adacbf8ef44ab786aeda5c7ab1403e76d52ef6ce  build/release.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  build/test.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  /home/cayleb/.var/app/org.vinegarhq.Vinegar/data/usg/usg-desktop.rbxlx
+
+--- preflight ---
+preflight_rc=0
+--- 2. THE ONE PLAY: run atlas:scout --seed 2134783819 start 2026-11-02T03:30:42Z ---
+run_rc=1
+
+--- 3. post-Play state 2026-11-02T03:31:17Z ---
+Studio:  759088    1655 /home/cayleb/.var/app/org.vinegarhq.Vinegar/
+plays record: {  "pid": 759088,  "start": 37229606,  "plays": 2,  "at": 1793590246.910792}
+
+--- verify-clean ---
+  },
+  "clean": true
+}
+verify_rc=0
+
+--- sealed AFTER ---
+84324d4342667dd163ab8e64adacbf8ef44ab786aeda5c7ab1403e76d52ef6ce  build/release.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  build/test.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  /home/cayleb/.var/app/org.vinegarhq.Vinegar/data/usg/usg-desktop.rbxlx
+
+--- run dir ---
+total 72
+drwxr-xr-x 1 cayleb cayleb   244 Nov  1 22:30 .
+drwxr-xr-x 1 cayleb cayleb  2712 Nov  1 22:31 ..
+-rw-r--r-- 1 cayleb cayleb  5768 Nov  1 22:30 cleanup.luau
+-rw-r--r-- 1 cayleb cayleb   111 Nov  1 22:30 hostcheck.jsonl
+-rw-r--r-- 1 cayleb cayleb 32057 Nov  1 22:30 manifest.json
+-rw-r--r-- 1 cayleb cayleb  1325 Nov  1 22:30 preflight.json
+-rw-r--r-- 1 cayleb cayleb  5358 Nov  1 22:30 prepare.luau
+-rw-r--r-- 1 cayleb cayleb  1520 Nov  1 22:30 report.json
+-rw-r--r-- 1 cayleb cayleb  3314 Nov  1 22:30 result.json
+-rw-r--r-- 1 cayleb cayleb   312 Nov  1 22:30 verify-before.json
+-rw-r--r-- 1 cayleb cayleb   340 Nov  1 22:30 world-trace.json
+
+=== RESULT SUMMARY 2026-11-02T03:32:03Z ===
+repeat Play A: run atlas:scout --seed 2134783819, 03:30:42Z->03:30:58Z (16 s), exit=1 fail-closed
+CLEAN fastPathApplied=TRUE: actualSeed=2134783819 actualLayout=2 == expected; rebuild=false; starter.applied=2134783819 at t0=1623.243 < rootFoundAt=1623.285; worldReadyAt=1627.534 (build 4.249 s)
+trace: result.json.worldTrace == world-trace.json (340 B); published before check and retained on the fail-fast path
+45 s bound not hit (early-stop in 16 s)
+NEW failure (unrelated, client-side legacy API): FogEnabled is not a valid member of Lighting at AtlasClient:16 readLighting <- AtlasClient:63 start <- AtlasStarter:1; same property written at Server.luau:95 (tiles-fogoff)
+collector phases prepared,runtime,cleanup rejections []; chunks null; prepared namedSeed=2134783819 101 sources; hostcheck clean; no crash dumps
+sealed AFTER: 84324d43.../c6651793... unchanged; plays 2/3 (pid 759088); verify-clean rc0 clean=true; Studio alive
+JUDGEMENT: assert-and-skip SUFFICES (fastPathApplied=true) -> named-seed blocker resolved; no fallback (a); atlas cell still FAIL on a distinct client API bug
+proposed next (needs go): guarded fog reads/writes in tests/atlas Client+Server + Lune/source tests + fold R4 wording + R2 cosmetic; then repeat atlas Play (3rd reserved); Play B abort-contact still gated; report board/reports/team-d-diagnostic-play4.md
