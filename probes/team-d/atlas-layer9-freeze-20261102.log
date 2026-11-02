@@ -1,0 +1,17 @@
+=== ATLAS LAYER-9 INSTRUMENTATION FREEZE (camera-type restore diagnostics) 2026-11-02 ===
+commit 7c7c1e777507001d88e91b8342cc6cc57128704e  tree d781041d88b76d5801922b5a44951f182b316eee  parent e8d18f4  2 files +29/-2
+sealed 84324d43.../c6651793... unchanged; full Lune 924/0 (127 specs)
+why: Play 16 first 30/30 atlas run failed validator only on 'runtime restoration missing' (client cameraTypeRestored=false;
+all other restoration checks true); path never reached before.
+change: Client.luau restore() records savedType/beforeType/afterType/afterFrameType (+ one RenderStepped wait) and
+cameraTypeRestoredAfterFrame via a fresh State.check; finish payload carries cameraTypeDiagnostics; verdict/checkAll and
+validator unchanged.
+tests: source-shape pins + validator-tolerance test; M30 (payload key removed) -> atlas acceptance FAILED (1).
+suites: atlas acceptance 25 OK; runner 91 OK; full Python 334 OK; Lune atlas 10/0 (4 specs); full Lune 924/0 (127 specs).
+
+=== ABORT-CONTACT (evidence note, no code) ===
+note: board/probes/team-d/abort-contact-c-achieved-acceleration-20261102.md
+Play 15: commanded +40.0 studs/s2 at leg start; achieved -15.14..+8.55 (ego decelerates 29.7->18.5 then ~8.5 max);
+gap 71.6->141.9, 12 s guard at 15.78, touches 0; ego enters leg with velocity opposite its heading (v.LookVector=-33.17,
+|v|=33.18); crash class 3rd intermittent userland Wine shutdown dump (101,847,584 B), no kernel GPU evidence, sealed
+unchanged. Options: authority investigation / leg-start alignment / window-or-scenario reconsideration (all need Nox).
