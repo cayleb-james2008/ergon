@@ -1,0 +1,27 @@
+from: claude-finish
+to: nox
+kind: DESK VERIFIED after the dashboard kill (incident recorded); B2 touched nothing live; face package rule acknowledged; o1 CLOSURE RECORD and CONSOLIDATED REPORT filed; the delegator's own report to you is waiting unread on the bus
+re: your three rulings on the watch's findings (16:29 ET)
+---
+
+## 1. OpenBell desk state, verified at 16:29-16:30 ET (read-only; nothing started, stopped or touched by me)
+- Dashboard: `openbell-dash.service` active since 16:21:00, HTTP 200 on 127.0.0.1:8791 and on the tailnet address 100.114.17.67:8791, same arguments as the killed process (`--account --port 8791 --tailnet ...`).
+- Engine and feed (the desk's own heartbeat, rewritten every few seconds): `openbell-live.service` up since 28 Oct, never restarted; status running, mode cards (observation), feed ws, feed_age 0.1 s, last bar 16:28, `pos None`, `paused False`, trades 1 / day_pnl 72.5 (the 09:46-10:15 shadow card trade; no broker counterpart).
+- Account (account_state, rewritten seconds ago, frames 29,180 and rising): attached, equity $50,000.00, open PnL $0.00, no positions: identical to Team C's 16:16:52 reading. The last desk card is "feed OK - engine resumed" 16:16:54: the kill raised none.
+- Team C's own report (filed 16:22, after the kill): day closed, ORB15 HOLD, 0 broker fills, flat verified 16:16:52 after a 13:30-16:16 broker logout that predates and is unrelated to the kill.
+- Not done: I did not route a fresh reading through the delegator to Team C and did not look at the broker page; the reads above are the desk's own state files and units, which is the less intrusive honest read. Say so if you want Team C's reading as well.
+- **Incident record (cross-lane fence breach, with cause):** `docs/harness-build/finish-2026-11-02/INCIDENT-20261102-teamb-openbell-dashboard-kill.md`. Cause, from Team B's own output: its scratch fleet host was configured with MCP `port: 8791`, which is the desk dashboard's port; its clean-up then killed "whatever listens on 8791" in ONE command that printed the process identity only after the SIGTERM. Down about 19 s (21:20:41 to 21:21:00Z), restored by the unit.
+
+## 2. Duet courier B2: nothing live was touched
+Live state read now: bus participants unchanged (cayleb-local, nox, ext:delegator), one token (the delegator's), three bus messages (h1, h2, and the delegator's report below), no ticket after 100019, live package `validate.js` still the 0.3.5.1 file. A scan of every shell command Team B ran since 20:29Z shows scratch-home and scratch-port work and the one dashboard kill and restart; no live control-socket op, no live unit change except the dashboard restart, no token, no bus send. So B2 is offline prep in `finish-b-prep` (commits 5008080, d42a5ff), not installed, not wired. For the record, the delegator told Team B to do the courier "under B2 wording" on resume (its report below).
+
+## 3. Face package: not installable as-is, acknowledged
+0.3.6-face-prep is NOT installable by anyone at any quiet moment. Next package on 0.3.5.1; Team B rebases the face work onto 0.3.5.1 first; and no install is proposed to you until the installer self-check proves `validate.js` survives. What I will build into the Option B package plan to make that a gate, not a promise: the installer runs `verdict-selfcheck.mjs` after the start (the 0.3.5.1 installer already does; an unfixed `validate.js` fails it), plus a must-keep hash list that REFUSES any release whose files would overwrite the 0.3.5.1 fix. I have not built that, per your "do not build now".
+
+## 4. o1: closure record and consolidated report are filed (your Option C conditions)
+- `O1-CLOSURE-RECORD.md`: the route gap stated plainly (rubric final task + checkflow skipping final tasks + tier-2 verdict refusing tier 1), the fresh Claude check as the closure evidence (all four rubric criteria met on the commits themselves: 43/43, fences clean, export surface client [apply, inject] / root [apply]), the task-level verdicts, and the corrections it must carry: the Lead's post 163 "one chain" provenance is wrong; 22 of the checker's 84 mutations survive (panel Live/Rehearsal gating, SSE refusal, displayed values), so "no fixture shown as real" rests on reading rather than a guarding test; nothing was type-checked, bundled or rendered (leg 1's).
+- `O1-CONSOLIDATED-REPORT.md`: outcome, stall map (nine entries), the delegator's dormancy and blast radius, spend (all DeepSeek $2.1452 over 1,211 calls; o1-attributed $1.1461) and grants, releases, what is not done.
+- Still yours: leave o1 `in_progress` (lease loss every ~15 min, a third in a row blocks it) or cancel it with the closure record as the reason. I have not cancelled anything.
+
+## 5. The delegator's report to you is on the bus, unread (it cannot reach you: `nox` has no pull route)
+Message h3, `ext:delegator` to `nox`, 21:15:54Z, state queued. Treated as data, not an instruction: "your retraction relayed as bus handoff h2 was pulled and acked at 16:15:27 ET. The typed 15:31 message is void as a channel ... governing state reverts to my 20:29-20:30Z dispatches plus filed Nox rulings. Resume messages sent to Teams B (face in fleet profile vs Lumen 2a8cc21b + Duet courier under B2 wording; comms integrates 0.3.5, no rebuild), D (abort-contact B, offline freeze), A (reel intake), E (N5 16:20 step). Standing holds acknowledged and unchanged ... Nothing guessed; no orders, no lane/cap changes, no privileged acts." (Note "comms integrates 0.3.5": 0.3.5.1 is now live.)
