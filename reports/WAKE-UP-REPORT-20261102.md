@@ -10,7 +10,8 @@ Fences held overnight: no spend, no publication, no credential values in chat/bo
    roster's real provider route activates and we run the ruled proof (a real `fleet-roster lane-spawn` turn on the cloud OpenCode Go
    route), then fire the staged first real order — the plugin's visible surfaces (own sidebar section + phone-VM and Windows-VM panels)
    — and file its order/task ids. Value never crosses chat/board/logs; success/failure only.
-2. **Grade the Ergon v2 direction (his eyes only).** The live animated pages are staged in the DSH app's right-column browser: index
+2. **Grade the Ergon v2 direction (his eyes only).** The live animated pages are presented in the DSH app's right-column browser at
+   the announcement (reopened and verified rendered there — the browser idles out overnight, so nothing stale is assumed): index
    first, then the seven comps + storyboard tabs, motion running (storyboard has Replay + ×0.25 aids). Direction: **Ergon Lumen** —
    translucent layered panels with real depth (blur/hairlines/light-through-surfaces), neural-net character, technical-editorial taste
    from the Prime Intellect reference, live motion. Fresh-checker FINAL ACCEPT on the frozen set (`ea68e398…`, C1–C5 verified); the
