@@ -1,4 +1,4 @@
-# WAKE-UP REPORT — 2026-11-02 (refreshed 03:33 ET; owner asleep) — refresh #7 (ATLAS: 30/30 views captured incl substituted overhead framings, one camera-restore layer from a cell pass; abort-contact: pursuit ramp ineffective in live physics, ruling with Nox)
+# WAKE-UP REPORT — 2026-11-02 (refreshed 03:45 ET; owner asleep) — refresh #8 (ATLAS: layer-9 camera-restore diagnostics in checker; one Play names the cause; abort-contact: B fixture/physics authority ruled)
 Consolidated for the owner's morning. Everything below is on the board with checker evidence; nothing is smoothed.
 Fences held overnight: no spend, no publication, no credential values in chat/board/logs, no image reads in the app, desks untouched.
 
@@ -78,6 +78,12 @@ freeze is being checker-gated, then one Play names the cause before the real fix
 checker-accepted but **C proved ineffective in live physics** — the ego achieved ~5 studs/s² against the ruled 40 command and the
 gap grew (12 s guard honest, no contact); the limiter is traction/steering authority, not the pursuit command, and a new ruling
 is with Nox (window vs fixture/physics vs scenario). No cell pass is claimed for abort-contact.
+- **Chain state at refresh #8:** the layer-9 camera-restore diagnostics are frozen (`7c7c1e7`, diagnostics only, checker delta
+  running) and the next Play reads them to name the cause; Nox pre-authorised the one-line-fix → delta → next-Play chain inside
+  the same fences. Abort-contact: Nox ruled **B** — give the ego physics-consistent authority for the contact leg (vehicle setup /
+  drive assist and/or start geometry; all ruled values untouched), measuring success on achieved acceleration and gap direction
+  first; C stays in place, scenario reconsideration held as the honest fallback. The evidence note records the probe entering the
+  leg with velocity opposite its heading (v·LookVector −33.17) — a realignment/braking phase, not a clean chase.
 
 ## ROBLOX (Team D) — instrumented diagnostic block COMPLETE; two diagnostic Plays ran honestly
 - Plans 2/3/4 + the C1 fix round all fresh-checker ACCEPTED (suites and mutation proofs reproduced from clean copies; sealed place
@@ -126,6 +132,11 @@ is with Nox (window vs fixture/physics vs scenario). No cell pass is claimed for
   09:05 guard, five 09:15 attestations individually, (c2) binding after 09:30, 09:45 observation window, 16:05 flat, 16:20 outcome
   with decision-log completeness as the headline. Nightly tick proof from the 18:00 ET Globex open PASSED.
 - Kalshi shadow-only: both owed readiness self-checks 9 PASS/0 FAIL; two-scorer AGREE 6853/0; no live order, no gate movement.
+
+- **Monday booking risk (named, per Nox run-11):** the live schedule store was lost during the session pause; the Lead
+  re-armed the three bookings in this session (07:45 sweep, 09:00 desk-day start, 16:15 outcome + N5 slot) and they are verified
+  active. If a slot does not fire, the manual fallback IS the plan: the Lead runs the 07:45 sweep and the 09:05 guard chain itself
+  and files "booking lost; manual fallback used" with the output — a missed slot is reported as missed, never silent.
 
 ## ESTATE / UPKEEP (Team E)
 - Nox's N1/N3/N4 executed with before/after evidence (outis-pilot stopped+disabled, data kept; two dead Talos units archived;
