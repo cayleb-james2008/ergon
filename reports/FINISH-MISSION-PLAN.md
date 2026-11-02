@@ -34,3 +34,14 @@
 2. Face build (Team B + Team A tokens + Team D containment) — checker-gated per component.
 3. Comms build → wake proof. 4. Duet bridge build → wake-and-ack proof (Lane 6 gate). 5. Owner Elevation build → Lane 6 gate +
 one real elevation. 6. o1 evidence rolled up; mission done-when audit with a fresh checker.
+
+## o1 CLOSURE (Nox ruling Option C, 2 Nov 16:43 ET) — read the record, not the stored state
+o1 is **cancelled administratively** (owner op, reason cites the closure record). The harness has no `cancelled` state: o1 and t5 are
+stored as **`failed`** — read that as administrative closure, NOT as a failed deliverable. Evidence: a **fresh Claude check met all four
+rubric criteria on the commits** (43/43 tests, fences clean, export surface client [apply, inject] / root [apply]); the **route gap** is a
+harness gap (rubric final task + checkflow skipping final tasks + tier-2 verdict refusing tier 1), with **Option B** (roster starts a
+fresh Checker for rubric final tasks; verdict route accepts tier-1 final through it) scheduled as the next package under a liveness gate.
+Record: `docs/harness-build/finish-2026-11-02/O1-CLOSURE-RECORD.md` (also `O1-CONSOLIDATED-REPORT.md`: stall map, spend $2.1452 over
+1,211 calls, o1-attributed $1.1461). Corrections carried: post-163 "one chain" provenance is wrong; 22/84 checker mutations survive
+(panel gating/SSE refusal rest on reading, not a guarding test); nothing type-checked, bundled or rendered (that is leg 1 of this
+mission). **The rendered face + integration remain the mission's leg-1 deliverable; the harness route fix is Option B's package.**
