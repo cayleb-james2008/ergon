@@ -1,0 +1,67 @@
+=== TEAM D DIAGNOSTIC PLAY 16 — atlas B2+A2 (30 views, zone+world regions) — Lead GO 2026-11-02T08:24Z ===
+time 2026-11-02T08:26:23Z
+repo e8d18f407d3f9d576737b198cac94978999697cf tracked_modified=0
+
+--- 1a. state: Studio dead after Play 15 crash -> recover with studiocycle open (cycle's close cannot run) ---
+{"action": "open", "result": "ok", "place_sha256_before": "c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98", "place_sha256_after": "c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98", "fit": "ok", "window": {"address": "0x558c7f6b6150", "class": "steam_proton", "title": "Z:\\home\\cayleb\\.var\\app\\org.vinegarhq.Vinegar\\data\\usg\\usg-desktop.rbxlx - Roblox Studio", "at": [1475, 234], "size": [2200, 1000], "floating": true, "fullscreen": 0, "pid": 973232}}
+open_rc=0
+
+--- clear the crash latch on the recovered sealed place ---
+  },
+  "clean": true,
+  "latchCleared": true
+}
+verify_rc=0
+
+--- sealed BEFORE ---
+84324d4342667dd163ab8e64adacbf8ef44ab786aeda5c7ab1403e76d52ef6ce  build/release.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  build/test.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  /home/cayleb/.var/app/org.vinegarhq.Vinegar/data/usg/usg-desktop.rbxlx
+
+--- 1b. fresh opening verification 2026-11-02T08:26:41Z ---
+ 973232      17 /home/cayleb/.var/app/org.vinegarhq.Vinegar/data/vinegar/versions/version-
+{"address": "0x558c7f6b6150", "class": "steam_proton", "title": "Z:\\home\\cayleb\\.var\\app\\org.vinegarhq.Vinegar\\data\\usg\\usg-desktop.rbxlx - Roblox Studio", "at": [1475, 234], "size": [2200, 1000], "floating": true, "fullscreen": 0, "pid": 973232}
+plays record (dead opening): {  "pid": 933721,  "start": 38717121,  "plays": 2,  "at": 1793607868.8576403}
+
+--- preflight ---
+preflight_rc=0
+--- 2. THE ONE PLAY: run atlas:scout --seed 2134783819 start 2026-11-02T08:26:50Z ---
+run_rc=1
+
+--- 3. post-Play state 2026-11-02T08:27:43Z ---
+Studio:  973232      78 /home/cayleb/.var/app/org.vinegarhq.Vinegar/data/vineg
+plays record: {  "pid": 973232,  "start": 39165807,  "plays": 1,  "at": 1793608014.290193}
+
+--- verify-clean ---
+    "sources": 101
+  },
+  "clean": true
+}
+verify_rc=0
+
+--- sealed AFTER ---
+84324d4342667dd163ab8e64adacbf8ef44ab786aeda5c7ab1403e76d52ef6ce  build/release.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  build/test.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  /home/cayleb/.var/app/org.vinegarhq.Vinegar/data/usg/usg-desktop.rbxlx
+
+--- run dir ---
+capture-attempts.json
+cleanup.luau
+hostcheck.jsonl
+manifest.json
+preflight.json
+prepare.luau
+report.json
+result.json
+verify-after.json
+verify-before.json
+views
+world-trace.json
+views json:
+30
+
+=== PLAY 16 RESULT SUMMARY 2026-11-02T08:29:18Z ===
+atlas:scout 08:26:50Z->08:27:34Z, exit=1 BUT the cell captured EVERYTHING: 30/30 views (30 distinct sha256, viewportMatchesPng=true all, accepted stationary), captureAttempts 30 == capture-attempts.json 30, 9 overhead views each settle 1.0 s with 1 attempt (views 20,21,22,23,24,27,28,29,30 -- highway-zone AND world-region views all captured FRESH, zero retries), worldTrace fastPathApplied=true, runtime ok=true, collector phases 30 views + runtime + cleanup, no crash
+ONLY failure: validator 'runtime restoration missing' -> client cleanup cameraTypeRestored=false (restored=false); every other cleanup check true (sameCamera, subject, fov, pose, attributes, ui, menuGrade, effects, noDriver, bindings/monitor/focus disconnected)
+=> NEW LAYER: client-side camera-type restoration check on the first COMPLETE atlas run (previously never reached because captures failed); needs diagnosis/instrumentation offline (record saved.type + post-restore CameraType), then a Play
+sealed AFTER: 84324d43.../c6651793... unchanged; plays 1/3 in the recovered opening (2 reserved); Studio alive pid 973232; verify-after recorded

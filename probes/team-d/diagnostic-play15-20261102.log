@@ -1,0 +1,43 @@
+=== TEAM D DIAGNOSTIC PLAY 15 — abort-contact (i) option-B start + fix C (Lead GO 2026-11-02T08:24Z) ===
+time 2026-11-02T08:24:13Z
+repo e8d18f407d3f9d576737b198cac94978999697cf tracked_modified=0
+
+--- 1. state BEFORE (read-only) ---
+ 933721    4355 /home/cayleb/.var/app/org.vinegarhq.Vinegar/data/vinegar/versions/version-
+{"address": "0x558c7fa15fe0", "class": "steam_proton", "title": "Z:\\home\\cayleb\\.var\\app\\org.vinegarhq.Vinegar\\data\\usg\\usg-desktop.rbxlx - Roblox Studio", "at": [1475, 234], "size": [2200, 1000], "floating": true, "fullscreen": 0, "pid": 933721}
+plays record: {  "pid": 933721,  "start": 38717121,  "plays": 1,  "at": 1793603532.6326897}
+host: full avg10=0.02 avg60=0.09 avg300=0.12 total=862907011 | 5.07 3.70 3.82 2/2605 971865
+
+--- sealed BEFORE ---
+84324d4342667dd163ab8e64adacbf8ef44ab786aeda5c7ab1403e76d52ef6ce  build/release.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  build/test.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  /home/cayleb/.var/app/org.vinegarhq.Vinegar/data/usg/usg-desktop.rbxlx
+
+--- preflight ---
+preflight_rc=0
+--- 2. THE ONE PLAY: run traffic:abort-contact start 2026-11-02T08:24:24Z ---
+run_rc=5
+
+--- 3. post-Play state 2026-11-02T08:25:54Z ---
+Studio: 
+plays record: {  "pid": 933721,  "start": 38717121,  "plays": 2,  "at": 1793607868.8576403}
+
+--- verify-clean ---
+  "at": "2026-11-02T08:25:54+00:00",
+  "clean": false,
+  "error": "no Studio running: no RobloxStudioBeta process (the owner opens Studio; the runner never launches it)"
+}
+verify_rc=0
+
+--- sealed AFTER ---
+84324d4342667dd163ab8e64adacbf8ef44ab786aeda5c7ab1403e76d52ef6ce  build/release.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  build/test.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  /home/cayleb/.var/app/org.vinegarhq.Vinegar/data/usg/usg-desktop.rbxlx
+
+=== PLAY 15 RESULT SUMMARY 2026-11-02T08:26:19Z ===
+traffic:abort-contact on 1eed7e7 (option-B start + fix C) 08:24:24Z->08:25:47Z, exit=5; runtime FAILED with 12 s guard 'HandlingServer:221: contact leg never reached within 12 s of contactDriveAt' (leg started at abortObservedAt=3.7789, timer t=15.778)
+NO CONTACT: touches=0 contacts=0; contactLeg latched {t:15.778,distance:142.36,proxySpeed:52.14,speed:60,lead:0.15}
+SERIES: leg start gap 71.64, ego 29.66, proxy 27.37 -> ego DECELERATES to 19.76 by t=4.73 (achieved accel ~5 studs/s2, NOT the commanded 40), then crawls 25->33->48->58.6 by t=11.8; gap 71.6 -> 141.9 at window end; closing never occurred
+FIX C EVIDENCE: commanded pursuit forward clamp 40 did not translate into ego acceleration (achieved ~5 studs/s2; ego even decelerated at leg start) -> C does not close in live physics; this is new evidence for the ruling (not a code defect: the ruled cap is unchanged, the traction/steering authority is the limit)
+CRASH: new userland minidump 023c0d5b-... 101,847,584 B @08:24:48Z (3rd intermittent Wine shutdown crash); abort stop/cleanup/verifyClean Disconnected(60 s); newCrashDumps 1; Studio dead; opening consumed 2/3
+sealed AFTER: 84324d43.../c6651793... unchanged; plays 2/3 (dead opening); Studio now dead -> recover for Play 16
