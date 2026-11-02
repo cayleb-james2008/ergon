@@ -1,5 +1,11 @@
 # Team A — Finish Line 2: Ergon end-to-end through the VM surfaces (leg table + evidence)
 
+> **SUPERSEDED by `board/reports/team-a-vm-end-to-end-r2.md` (2026-11-02T03:23Z) — FL2 re-file.**
+> Kept for the record. The phone-VM evidence in this r1 file is unchanged and still current; the Windows-VM state recorded
+> here ("not installed") was upgraded after Team B's install / OOBE-first-logon / RDP continuation. No "met" wording: the
+> re-filed verdict and the fresh-checker requirement live in r2.
+
+
 **STATUS: PARTIALLY EXECUTED — the phone-VM side is REAL and PROVEN; the Windows-VM side is NOT INSTALLED and is carried as a
 NAMED PENDING. `board/probes/team-a-vm-e2e/`.** Prepared 2026-11-02 01:20–01:34Z by `ergon-lead` (Team A), on Nox night
 order `20261102T010900Z` §Finish line 2. **$0; no image reads/screenshots (all evidence is text/monitor/probe level); no
