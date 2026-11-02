@@ -1,4 +1,4 @@
-# WAKE-UP REPORT — 2026-11-02 (refreshed 02:55 ET; owner asleep) — refresh #6 (B-bounded retired; abort-contact option-B start + C ramp; atlas B2 in checker reject-fix; Windows final)
+# WAKE-UP REPORT — 2026-11-02 (refreshed 03:33 ET; owner asleep) — refresh #7 (ATLAS: 30/30 views captured incl substituted overhead framings, one camera-restore layer from a cell pass; abort-contact: pursuit ramp ineffective in live physics, ruling with Nox)
 Consolidated for the owner's morning. Everything below is on the board with checker evidence; nothing is smoothed.
 Fences held overnight: no spend, no publication, no credential values in chat/board/logs, no image reads in the app, desks untouched.
 
@@ -69,14 +69,15 @@ truncated upload channels (closed), starter/require and Instance-root legacy API
 (fixed), and now the **renderer/Wine limitation is isolated to whole-map overhead framings** (whole-highway, whole-world) while
 `city-overhead` and 20 ordinary views capture fresh with `viewportMatchesPng:true`. The authorised **B substitution** (per-zone
 functional overhead views) is implemented, checker-verified and partly exercised; the **A limitation** is recorded with the exact
-build, fail-closed verdict and one-retest-per-new-build rule. **Current chain state (Nox runs 9–10):** abort-contact = **option-B leg start + C ramp** (forward clamp 10→40 inside the
-unchanged 40 studs/s² cap; no ruled value changes) after the B-bounded experiment was **retired as tested-and-rejected** on a
-3-run fair sample (0/3 convergence, abort gap ~73.5 stable, monotone growth, ≤25 trigger structurally unreachable, pre-leg
-timeout failed closed as designed); the 12 s window stays and option A stays rejected with its narrow evidence path back.
-Atlas = **B2+A2 + zone-first ordering implemented and checker-reviewed**: the reviewer passed the substitution, ordering,
-limitation note and all suites, and rejected only one missing test pin (the `zonePath`-first fit-bounds order) — the one-line
-fix + residual fold are being re-frozen and re-checked. Both chains are offline right now; a Play consumes no freeze; the
-recovered opening holds 2 reserved Plays and the sealed place/release has never changed.
+build, fail-closed verdict and one-retest-per-new-build rule. **Current chain state (Nox runs 9–10 + Plays 15–16):** atlas = **B2+A2 + zone-first ordering is live-proven**: the
+substituted plan captured **30/30 views (30 distinct sha256, viewportMatchesPng on all, audited 30==30, fast path stable,
+runtime ok, no crash)** — including the four highway-zone and four world-region overhead views whose whole-map framings used to
+freeze, retiring the named limitation by evidence for those framings. **The cell is now one layer from a pass**: the only failure
+is `cameraTypeRestored:false` in the client cleanup (layer 9, the first live exercise of that path); an instrumentation-only
+freeze is being checker-gated, then one Play names the cause before the real fix. Abort-contact: the option (i) build was
+checker-accepted but **C proved ineffective in live physics** — the ego achieved ~5 studs/s² against the ruled 40 command and the
+gap grew (12 s guard honest, no contact); the limiter is traction/steering authority, not the pursuit command, and a new ruling
+is with Nox (window vs fixture/physics vs scenario). No cell pass is claimed for abort-contact.
 
 ## ROBLOX (Team D) — instrumented diagnostic block COMPLETE; two diagnostic Plays ran honestly
 - Plans 2/3/4 + the C1 fix round all fresh-checker ACCEPTED (suites and mutation proofs reproduced from clean copies; sealed place
