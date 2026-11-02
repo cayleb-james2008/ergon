@@ -1,0 +1,6 @@
+candidate 0.3.1-r2 evidence 2026-11-02T01:07:21Z
+branch: candidate/0.3.1
+tip: 741db66747672f5549204749a9ae1eea239cfef7
+741db66 candidate 0.3.1-r2: checker-031 fixes — fixture orders exempt from the roster N4 verdict gate (D1), MCP server version 0.3.1-mcp (D2), MCP-FACADE doc truth for the roster-mounted stage_real (O2).
+aa7415e candidate 0.3.1: Stage-4 roster touchpoints (core lane roots, orders verdict gate/invalid-check/harness posts/claim release, ledger priceProvider + day split) + fleet-roster bundle row.
+6dc1348 candidate: keep Stage-5 src/bus out of the 0.3.1 release path (roster-only release; bus keeps its own wiring round)

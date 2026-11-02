@@ -1,0 +1,11 @@
+5ede748489e448c525b1b201cddb8ea5b5a4b9305e231328b49fd49a5653aef4  /home/cayleb/workspace/harness-build/candidate-031/dist/cayleb-dsh-fleet-0.3.1.tgz
+members: 123
+    120 -rw-r--r--
+      3 -rwxr-xr-x
+741db66 candidate 0.3.1-r2: checker-031 fixes — fixture orders exempt from the roster N4 verdict gate (D1), MCP server version 0.3.1-mcp (D2), MCP-FACADE doc truth for the roster-mounted stage_real (O2).
+ docs/MCP-FACADE.md                    | 18 ++++++++-------
+ package/src/mcp/server.js             |  2 +-
+ package/src/mcp/tools.js              |  2 +-
+ package/src/roster/index.js           | 20 ++++++++++++++++-
+ package/src/roster/test/gate.test.mjs | 42 +++++++++++++++++++++++++++++++++++
+ 5 files changed, 73 insertions(+), 11 deletions(-)
