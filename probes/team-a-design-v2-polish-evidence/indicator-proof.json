@@ -1,0 +1,15 @@
+{
+ "target": {
+  "title": "01 \u00b7 Mobile Chat \u2014 Ergon Lumen v2 design comp",
+  "url": "http://10.0.2.2:8792/comps/01-mobile-chat.html?polish=2"
+ },
+ "result": {
+  "id": 1,
+  "result": {
+   "result": {
+    "type": "string",
+    "value": "{\"selected\":{\"content\":\"\\\"\\\"\",\"opacity\":\"1\",\"background\":\"rgb(141, 180, 255)\",\"transition\":\"opacity / 0.2s\"},\"unselected\":{\"content\":\"\\\"\\\"\",\"opacity\":\"0\",\"background\":\"rgb(141, 180, 255)\",\"transition\":\"opacity / 0.2s\"}}"
+   }
+  }
+ }
+}

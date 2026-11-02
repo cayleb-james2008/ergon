@@ -1,0 +1,15 @@
+{
+ "target": {
+  "title": "01 \u00b7 Mobile Chat \u2014 Ergon Lumen v2 design comp",
+  "url": "http://10.0.2.2:8792/comps/01-mobile-chat.html?polish=1"
+ },
+ "result": {
+  "id": 1,
+  "result": {
+   "result": {
+    "type": "string",
+    "value": "{\"url\":\"http://10.0.2.2:8792/comps/01-mobile-chat.html?polish=1\",\"polishTokens\":{\"depthShade\":\"inset 0 -1px 0 rgba(2, 3, 5, 0.42)\",\"depthLift\":\"0 10px 30px rgba(2, 3, 5, 0.50)\"},\"surfaces\":{\"cardsWithInsetRim\":8,\"cardsChecked\":8,\"phoneBg\":\"rgba(198, 222, 255, 0.04)\",\"phoneBlur\":\"blur(14px)\",\"cardShadow\":\"rgba(2, 3, 5, 0.5) 0px 10px 30px 0px, rgba(255, 255, 255, 0.07) 0px 1px 0px 0px inset, rgba(2, 3, 5, 0.42) 0px -1px 0px 0px inset\",\"composerBorder\":\"rgba(206, 228, 255, 0.46)\"},\"composerBoundaryContrast\":{\"contrast\":3.46,\"floor\":3,\"pass\":true},\"tabIndicator\":{\"selectedBefore\":\"\",\"unselectedBefore\":\"\",\"tabsSwap\":{\"before\":[\"true\",\"false\",\"false\"],\"after\":[\"false\",\"true\",\"false\"]}},\"character\":{\"role\":\"button\",\"tabIndex\":0,\"label\":\"Marlow \u2014 agent character; activate to signal\",\"outlineColor\":\"rgb(141, 180, 255)\",\"outlineWidth\":\"1.90476px\"},\"typography\":{\"kvTabular\":null},\"approval\":{\"pillBefore\":\"Approval needed\",\"pillAfter\":\"Approved \u2014 one action, recorded\"},\"motionSettled\":{\"animations\":18,\"running\":0,\"infinite\":0},\"labelPresent\":true,\"textSample\":\"DESIGN COMP \u2014 NOT A BUILT SURFACE. v2 direction pass \u00b7 Ergon Lumen (proposal) \u00b7 owner grade pending \u00b7 builds stay behind G1 / C1\u2013C6 / W1. 9:\"}"
+   }
+  }
+ }
+}

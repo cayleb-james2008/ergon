@@ -1,0 +1,13 @@
+----------------------------------------------------------------------
+STEP hash — P0.1 pinned-text check — RE-RUN BY LEAD FROM THE RUNNER'S OWN DIRECTORY (2026-11-02T09:03:31-0500)
+EXPECT: sha256 512752e418a7950d2e43bed938f5716147494d74162dcbfbfba2a68389a2c86a and 407 lines.
+runbook_sha256=512752e418a7950d2e43bed938f5716147494d74162dcbfbfba2a68389a2c86a
+runbook_lines=407
+HASH: PASS — P0.1 text is the signed text
+----------------------------------------------------------------------
+# Named defect (not a runbook change): the 09:00:35 invocation reported "board/reports/monday-futures-runbook.md not
+# found" — a runner path-resolution/working-directory defect. Independent verification: the artifact exists and matches
+# P0.1 exactly (37,271 B, 407 lines, sha 512752e4…c86a; Team E verified independently at 09:06 ET; Lead re-ran the
+# runner's own hash step from board/probes/team-c/monday-2026-11-02 at 09:03:31 ET → PASS). Guard may proceed on this
+# evidence; the defect is recorded here and in the runner's step log, not absorbed silently.
+# Invocation that works: cd board/probes/team-c/monday-2026-11-02 && bash runner.sh hash

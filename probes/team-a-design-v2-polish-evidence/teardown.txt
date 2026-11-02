@@ -1,0 +1,6 @@
+=== teardown complete 2026-11-02T14:06:57Z
+android emulator: stopped (0 headless qemu processes)
+http server 8792: closed
+port 8791 (live desk): 1 listener — not touched
+adb devices:
+

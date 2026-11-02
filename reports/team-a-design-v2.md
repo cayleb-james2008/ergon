@@ -1,7 +1,6 @@
-# Team A — Ergon design v2: owner-directed translucent pass (comps built, frozen for the checker)
+# Team A — Ergon design v2: owner-APPROVED Lumen direction — polish round applied, re-frozen
 
-**STATUS: v2 DIRECTION PASS — checker r1 REJECT fixed (D1-D4); checker r2 **ACCEPT-WITH-NAMED-CONCERNS**, C1-C4 fixed and RE-FROZEN again for the final checker re-run. Presentation to the owner is held for the wake-up report.** NOT A FINISHED FRONT END, NOT A
-BUILT SURFACE, NOT A PACK RELEASE.** The comps are live, self-contained pages under
+**STATUS: v2 DIRECTION APPROVED BY THE OWNER** (2026-11-02 04:55 ET: "Overall pretty impressed by the content… another additional polish round… other than that it's really not bad at all.") — **direction LOCKED; polish round applied and RE-FROZEN** (digest below) for the final grade presentation as live animated pages.** The comps are live, self-contained pages under
 `board/probes/team-a-design-v2/` (grader index: `index.html`), with the pack-change proposal filed alongside them as
 `PACK-CHANGE-PROPOSAL.md` and summarised here. Nothing was presented to the owner by this lane — the standing rule is
 checker first, then the owner sees it rendered in his browser. **Spend $0**; no purchases; no image reads/screenshots; no
@@ -167,7 +166,7 @@ grade. No image reads; the C1 proof is a **real-Chromium computed-style probe** 
 **Verification on the final set:** `node check-comps.mjs` -> PASS (all D1-D4 and C1-C5 assertions); `sha256sum -c FREEZE.sha256`
 -> all OK; `node build-tokens.mjs --check` -> CURRENT.
 
-### Current freeze — `FREEZE.sha256` (17 content files, 2,191 lines; the manifest excludes itself)
+### Freeze after the C1-C4 round — `FREEZE.sha256` (17 content files, 2,191 lines; the manifest excludes itself) — **superseded by section 6d**
 
 | File | sha256 |
 |---|---|
@@ -192,10 +191,68 @@ grade. No image reads; the C1 proof is a **real-Chromium computed-style probe** 
 Manifest digest: **`ea68e398063d6cb1007ae1935f552f6981d663999018be5b3e30f8b83fdbd6c3`** (`sha256sum FREEZE.sha256`). Verify:
 `cd board/probes/team-a-design-v2 && sha256sum -c FREEZE.sha256 && node check-comps.mjs`.
 
+
+## 6d. Owner grade + polish round (2026-11-02 04:55 ET) — direction LOCKED, finish pass applied
+
+**Owner grade (verbatim):** "Overall pretty impressed by the content. I think it can use another additional polish round.
+With everything I've said in mind. But other than that it's really not bad at all." → **PASS on direction and content;
+one polish round ordered.** Direction locked: translucent Lumen vein, technical-editorial restraint, neural-net characters —
+no further design-direction gate. Outcome: this is a **finish pass, not a redesign**; the same accepted screens, structure
+and model.
+
+### What the polish pass changed (finish-only)
+
+| Area | Change | Proof |
+|---|---|---|
+| **Finished edges** | new token **`--depth-shade`** (`inset 0 -1px 0 rgba(2,3,5,0.42)`) added to the plane system: every translucent plane now carries lift + top rim + bottom shade | real-Chromium probe: **8/8 checked surfaces carry an inset rim**; computed card shadow = `0 10px 30px rgba(2,3,5,.5), inset 0 1px 0 rgba(255,255,255,.07), inset 0 -1px 0 rgba(2,3,5,.42)` |
+| **Depth consistency** | composer, tab bar, banner, sidebar and sheet now carry their own depth/rim (no flat chrome among layers); selected sidebar row steps to `surface-3` + `line-strong` | computed styles above; kit depth uses **9** (`--depth-shade`) across the plane system |
+| **Motion polish** | tab indicator now cross-fades over **200 ms** (`--motion-swap`) instead of hard-swapping; character signal transitions; approval-resolve state styled (`[data-resolved]`, ok edge); all still one-shot, no loops | probe: selected tab ::before = opacity **1**, unselected **0**, transition `opacity / 0.2s`; after settle **0 running / 0 infinite** |
+| **Interaction completeness** | focusable, labelled character control (`role=button`, `tabindex=0`, Enter/Space activates, visible focus ring); sidebar row hover; link focus ring; disabled/read-only field states; focus ring kept visible at the phone frame edge | uiautomator/a11y text now exposes "Marlow — agent character; activate to signal"; computed outline accent; no removed outlines (asserted) |
+| **Detail finish** | tabular numerals for numeric readouts; display leading; nowrap pills; token-driven selection colour and thin scrollbars | probe: `font-variant-numeric: tabular-nums` on `.kv`; selection/scrollbar rules asserted |
+| **Self-check hardening** | 13 polish assertions added (depth-shade coverage, composer depth, tabbar rim, selection/scrollbars, character focusability, disabled/read-only fields, sidebar hover, tabular numerals, resolved state, no `outline:none`) | `check-comps.mjs` PASS with all assertions |
+
+**Floors unchanged and re-measured (both ambient washes):** ink **9.21:1** · muted **5.62:1** · subtle **6.14:1** · accent
+**5.01:1** · status **4.66/4.93/4.77:1** · focus **6.47:1** · control boundary **3.28:1** · field boundary **3.30:1**;
+composer boundary re-proved in real Chromium at **3.46:1**; reduced-motion / forced-colors / HC preview and 44/56 targets
+intact. Unslop: clean (no gradient text/buttons, glows, shadows, emoji icons, 700+ weights, uppercase tracked labels,
+`transition-all`, loops).
+
+**Live-page evidence (no images):** the final set was served read-only and rendered in the **phone-VM Chrome (real
+Chromium)**, then probed at text/computed-style level: page rendered (`DESIGN COMP — NOT A BUILT SURFACE` present), tokens
+resolve (`--depth-shade` etc.), translucent planes + `blur(14px)`, tab swap works, approval resolves
+("Approval needed" → "Approved — one action, recorded"), motion settles to **0 running / 0 infinite**. Evidence:
+`board/probes/team-a-design-v2-polish-evidence/` (`polish-proof.json`, `polish-proof-05.json`, `indicator-proof.json`,
+`teardown.txt`). The set is ready for **rendered presentation in the owner's browser**; the fresh checker re-runs the same
+battery on the final freeze before/with presentation.
+
+### Current freeze (polish round) — `FREEZE.sha256` (17 content files, 2,235 lines)
+
+| File | sha256 |
+|---|---|
+| `index.html` | `0b7a26c6fe99eaeaa9e8c3e6655ebbdd8acdb4675add2af04f35b4e652edef83` |
+| `motion-storyboard.html` | `30440f4dccd27836561d6eb24908acb759b230998effd3189e66ad46eca1a086` |
+| `comps/01-mobile-chat.html` | `66c5edbe28dda5e6d95467a99c35564a3ea84af007a43ffabf1cda912b2c001c` |
+| `comps/02-mobile-triage-approvals.html` | `150b070a1b8281063af0564fac12c2ee41c16b4ee0f618c176b5f9aab0ce020b` |
+| `comps/03-mobile-tasks.html` | `2a7205ce40f37b8ea92edc519c4eb2b31e2e1167041a04d8ed029f03928f187c` |
+| `comps/04-mobile-make.html` | `9f0c0126dd889da5fb9bb46512c06176e47ca8d9357436540ad4d98a796535d7` |
+| `comps/05-desktop-workspace.html` | `6a9ad11d780ae1ef2122eafea5d8fd8ca154922ba9678e26a16f5d85526488d0` |
+| `comps/06-character-sheet.html` | `4256ac66d6610b63d24aaba510ccafad101f5af9d79648db6dd35fa1f39c5d4b` |
+| `comps/07-states.html` | `73c286cb3be54bfde2c05ada95cefb0c761e8364e4c855482b17d5b5f1f86797` |
+| `tokens.json` | `23be162b1282c34f95cca927aa3a7a43fe31aa22c3c1c353ddd487a1eea90616` |
+| `tokens.css` | `19af9c3cb51f5cd00315c356139e785a9a082c3449ab9c392021252b9e9873f6` |
+| `build-tokens.mjs` | `14d09c792823d67af71ca2a2c8002d8ed5796d08a203197d8265e362782d8b06` |
+| `comp-kit.css` | `74081b24faec166b51633b1dbd71f8859de09b21f18ec2fe47db67dc50eb752a` |
+| `comp-motion.js` | `280b0490e11e5363a23f27ba78c18fa57ddbf2ec03f3bec66cfd78162fff4864` |
+| `check-comps.mjs` | `47234b4b3896ad8923790ac9fc365df6f8e995b8e22fc5809c44bd3496f35321` |
+| `README.md` | `ca6064c3c40eef884de3cc6cc793e06d917135b59af7225bffc4af915ab73808` |
+| `PACK-CHANGE-PROPOSAL.md` | `6d56a0e58bf212b92b9e100216b0cd203f90fdec989db525c6b108e75373befa` |
+
+**Manifest digest: `222364fd85e34079f4f874c11111e253508442670633834863d350433b5323de`** (`sha256sum FREEZE.sha256`). Verify:
+`cd board/probes/team-a-design-v2 && sha256sum -c FREEZE.sha256 && node check-comps.mjs`.
+
 ## 7. Checker handoff (Lead preps/spawns; maker never checker)
 
-- **Frozen set (re-frozen after checker r2's C1-C4 round):** `board/probes/team-a-design-v2/` - **17 content files, 2191 lines**, plus the `FREEZE.sha256` manifest (18 files in the directory; the manifest excludes itself; digest `ea68e398063d6cb1007ae1935f552f6981d663999018be5b3e30f8b83fdbd6c3`). Every hash is listed in section 6c and asserted by `check-comps.mjs`. Do not edit after this report; any change is a new freeze.
-- **Reproduce:** `cd board/probes/team-a-design-v2 && node build-tokens.mjs --check && node check-comps.mjs`; open
+- **Frozen set (polish round, post-owner-grade):** `board/probes/team-a-design-v2/` — **17 content files, 2,235 lines**, plus `FREEZE.sha256` (18 files in the directory; manifest excludes itself; digest **`222364fd85e34079f4f874c11111e253508442670633834863d350433b5323de`**). Every hash is listed in section 6d and asserted by `check-comps.mjs`. Do not edit after this report; any change is a new freeze.
   `index.html` and the seven comps from the folder (file:// is enough; no network, no server).
 - **Judge:** pack-conformance (tokens discipline, floors, anatomy, versioning per PACK-CHANGE-PROPOSAL §3/§4/§8) and
   **unslop** (no gradient text, glows, uppercase tracked labels, 800 weights, emoji icons, sparkle badges, `transition-all`,

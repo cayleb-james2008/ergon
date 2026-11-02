@@ -1,0 +1,15 @@
+{
+ "target": {
+  "title": "05 \u00b7 Desktop Workspace \u2014 Ergon Lumen v2 design comp",
+  "url": "http://10.0.2.2:8792/comps/05-desktop-workspace.html?polish=1"
+ },
+ "result": {
+  "id": 1,
+  "result": {
+   "result": {
+    "type": "string",
+    "value": "{\"url\":\"http://10.0.2.2:8792/comps/05-desktop-workspace.html?polish=1\",\"desktop\":{\"insetSurfaces\":{\"cards\":9,\"glass\":2,\"frames\":1,\"sidebars\":0},\"selectedRowBg\":null,\"selectedRowBorder\":null,\"kvTabular\":\"tabular-nums\",\"sidebarHoverRuleExists\":2,\"phoneComposer\":null},\"labelPresent\":true}"
+   }
+  }
+ }
+}
