@@ -1,0 +1,43 @@
+=== TEAM D DIAGNOSTIC PLAY 18 — extended camera-type diagnostics Play (Lead GO 2026-11-02T09:45Z) ===
+time 2026-11-02T09:45:36Z
+repo 618bb4a4473bc5d46eb15a4611cb1fa55f53cdbb tracked_modified=0
+
+--- 1. state BEFORE (read-only) ---
+ 995852    2261 /home/cayleb/.var/app/org.vinegarhq.Vinegar/data/vinegar/versions/version-
+{"address": "0x558c7fa45500", "class": "steam_proton", "title": "Z:\\home\\cayleb\\.var\\app\\org.vinegarhq.Vinegar\\data\\usg\\usg-desktop.rbxlx - Roblox Studio", "at": [1475, 234], "size": [2200, 1000], "floating": true, "fullscreen": 0, "pid": 995852}
+plays record: {  "pid": 973232,  "start": 39165807,  "plays": 2,  "at": 1793610188.8106873}
+host: full avg10=0.00 avg60=0.13 avg300=0.14 total=873392244 | 2.68 2.96 3.27 2/2547 1017060
+
+--- sealed BEFORE ---
+84324d4342667dd163ab8e64adacbf8ef44ab786aeda5c7ab1403e76d52ef6ce  build/release.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  build/test.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  /home/cayleb/.var/app/org.vinegarhq.Vinegar/data/usg/usg-desktop.rbxlx
+
+--- preflight ---
+preflight_rc=0
+--- 2. THE ONE PLAY: run atlas:scout --seed 2134783819 start 2026-11-02T09:45:47Z ---
+run_rc=1
+
+--- 3. post-Play state 2026-11-02T09:46:39Z ---
+Studio:  995852    2323 /home/cayleb/.var/app/org.vinegarhq.Vinegar/data/vineg
+plays record: {  "pid": 995852,  "start": 39414898,  "plays": 1,  "at": 1793612751.4917278}
+
+--- verify-clean ---
+  },
+  "clean": true
+}
+verify_rc=0
+
+--- sealed AFTER ---
+84324d4342667dd163ab8e64adacbf8ef44ab786aeda5c7ab1403e76d52ef6ce  build/release.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  build/test.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  /home/cayleb/.var/app/org.vinegarhq.Vinegar/data/usg/usg-desktop.rbxlx
+
+views: 30
+
+=== PLAY 18 RESULT SUMMARY 2026-11-02T09:47:24Z ===
+atlas:scout 09:45:47Z->09:46:32Z, exit=1 (VALIDATOR ONLY; no crash, abort null, newCrashDumps null; states RAN->STOPPED->CLEANED->VALIDATED)
+30/30 views captured again; captureAttempts 30; runtime ok; cleanup phase present; plays 1/3; sealed unchanged; Studio alive pid 995852
+validator: 'runtime restoration missing' -> client restored=false, cameraTypeRestored=false (all other cleanup fields true)
+EXTENDED DIAGNOSTICS (decisive): typeWriteOk=true, typeAfterWrite=Custom, typeAfterFullRestore=Custom (write LANDS and holds through State.restore) BUT afterType/afterFrameType=Scriptable -> value is Scriptable again by the check ~2 frames later; sameCamera/frameSameCamera=true; savedSubject/currentSubject=Humanoid; reassertAttempted=false (the conditional re-assert never ran because it only fires when typeAfterWrite~=savedType, and both are Custom); afterReassertType shows the untouched afterFrameType value
+=> mechanism category (b): the CameraType write lands, then something (frame-based) reasserts Scriptable before the delayed check; the deferred re-assert diagnostic was skipped by its conditioning bug, so the next step is a one-line instrumentation change (unconditional re-assert when details.cameraTypeRestored==false + 5-frame CameraType series) before any fix
