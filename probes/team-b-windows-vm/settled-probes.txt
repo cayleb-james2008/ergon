@@ -1,0 +1,5 @@
+settled-probe evidence 2026-11-02T03:39:03Z
+RDP 6/6 CC at 03:37:36-03:38:26Z, 19B 030000130ed00000123400022f080002000000
+SSH 6/6 connect, 0B banner; ssh round-trip 03:38:40Z timed out during banner exchange
+PID 757632 cpu=301% rss=10302MiB; qcow2 20948844544; qcow1 17083138048 untouched
+markers: start 03:08:35Z done 03:26:46Z

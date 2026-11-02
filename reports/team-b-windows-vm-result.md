@@ -205,3 +205,61 @@ The Windows leg upgrades from "surface installed/not driveable" to **installed +
 the SSH channel pending only on the OpenSSH capability install. The Ergon Windows companion surfaces still need the
 companion artefacts themselves and a desktop automation seat (RDP now available; UIA/WinAppDriver or SSH/PowerShell
 for text evidence). Fresh checker spot-verifies the commands above before any FL2 "met" wording.
+
+---
+
+# SETTLED-PROBE RE-CONFIRMATION (2026-11-02 03:36–03:39Z) + report corrections (Nox run-6 §4)
+
+Compliance with the run-6 direction: **no reinstall, no restart, no further blind input** (the one blind-input sender
+already in flight when the direction arrived was stopped at 03:37:26Z and not repeated; it produced no guest-visible
+effect — no `/d?` request reached the marker listener). **QEMU PID 757632 preserved; both disks preserved** (qcow2 in
+use 20,948,844,544 B; qcow1 fallback 17,083,138,048 B untouched).
+
+## RDP — RE-CONFIRMED (clean timestamped sequence, 6/6)
+
+Command: send the standard X.224 connection request to `127.0.0.1:3389` (QEMU hostfwd → guest) and read the reply.
+```
+X224-CR = 03 00 00 13 0e e0 00 00 00 00 00 01 00 08 00 03 00 00 00
+03:37:36Z RDP 19B 030000130ed00000123400022f080002000000
+03:37:46Z RDP 19B 030000130ed00000123400022f080002000000
+03:37:56Z RDP 19B 030000130ed00000123400022f080002000000
+03:38:06Z RDP 19B 030000130ed00000123400022f080002000000
+03:38:16Z RDP 19B 030000130ed00000123400022f080002000000
+03:38:26Z RDP 19B 030000130ed00000123400022f080002000000
+```
+19-byte reply = TPKT + **X.224 Connection Confirm (0xd0)** + RDP negotiation response: **the RDP listener is live and
+stable**, not a one-off. Morning wording may say **"driveable (RDP re-confirmed)"**; no "Ergon end-to-end through both
+VM surfaces met" claim (companions package-blocked).
+
+## SSH — STILL SILENT; exact unresolved state
+
+- TCP connect to `127.0.0.1:2222` succeeds (QEMU hostfwd → guest accepts), but **0 bytes of SSH identification string
+  in 6/6 probes** (03:37:36–03:38:26Z), and a key-auth round-trip fails: `ssh -p 2222 -i win/agent_key … cayleb@127.0.0.1
+  'hostname; ver'` at **03:38:40Z** → `Connection timed out during banner exchange`.
+- FirstLogon `?step=done` fired at **03:26:46Z**, so all five FirstLogonCommands had returned (including
+  `Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0; Set-Service sshd -StartupType Automatic;
+  Start-Service sshd`). The capability command returning success therefore did **not** produce a serving sshd.
+- **Unverified guest-side causes (no text channel exists):** whether the capability actually installed (servicing can
+  report success without a usable sshd), whether `sshd` is running/auto-start, whether the OpenSSH firewall rule is
+  enabled, and whether the admin key path (`C:\ProgramData\ssh\administrators_authorized_keys` ACLs) is accepted.
+  The guest was still in post-FirstLogon servicing at probe time (CPU ≈300 %, qcow2 growing to 20.9 GB), so "settle
+  then re-probe" is the working hypothesis — but it is a hypothesis, not a pass.
+- **Next evidence step (deterministic, no blind input):** re-run the same banner probe after the guest settles; if it
+  is still silent, the guest-side diagnosis needs a seat — (a) an RDP client seat (RDP is live) to read
+  `Get-Service sshd`, `Get-WindowsCapability -Online -Name OpenSSH.Server*`, and the firewall rule, or (b) a future
+  answer file whose FirstLogonCommands report those statuses to the host marker URL (the marker channel is proven).
+  Alternative for text-level shell without SSH: none currently.
+
+## Report corrections filed (checker findings)
+
+- **Fence/redaction:** the v2 answer file holds a **rig-local placeholder password**; that placeholder **was present in
+  the board copy** `board/probes/team-b-windows-vm/autounattend-v2.xml`, the FL2-r2 fresh checker flagged it, and the
+  Lead redacted both board copies (local board + shared repo). **The password was reproduced in a board artefact
+  before redaction** — not claimed otherwise; no real credential value exists anywhere (throwaway rig guest). The rig
+  answer files now carry a newly generated, unnamed placeholder (value not reported).
+- **Companion wording:** this report makes no "met" claim; the Windows companion surfaces remain package-blocked
+  (no Ergon Windows artefacts yet) and the SSH text channel is unresolved; only "installed + OOBE first logon + RDP
+  re-confirmed" is claimed.
+- **Guest state at filing:** QEMU **PID 757632**, CPU ≈301 %, RSS 10,302 MiB; listeners 5902 (VNC), 3389 (RDP
+  answering), 2222 (hostfwd, no SSH banner), 8765 (marker listener, log `rig/logs/marker-8765.log`); marker step hits
+  03:08:35Z (`start`) and 03:26:46Z (`done`); qcow2 20,948,844,544 B; qcow1 17,083,138,048 B untouched.
