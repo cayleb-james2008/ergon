@@ -1,0 +1,31 @@
+=== node counts ===
+home.xml 32
+settings-before.xml 65
+settings-after.xml 65
+page-before.xml 95
+page-after-approval.xml 29
+page-after-tab.xml 29
+chrome.xml 21
+chrome2.xml 12
+chrome3.xml 12
+u.xml 65
+
+=== settings-before: Network & internet row ===
+text= Network & internet clickable= false bounds= (189, 824, 625, 895)
+
+=== is tap (407,859) inside a clickable node in settings-before? ===
+clickable containing (407,859): ((0, 770, 1080, 1001), ['Network & internet', 'Mobile, Wi‑Fi, hotspot'])
+
+=== settings-after screen texts (non-empty) ===
+['Internet', 'AndroidWifi', 'SIMs', 'T-Mobile', 'Airplane mode', 'Hotspot & tethering', 'Off', 'Data Saver', 'Off', 'VPN', 'None', 'Private DNS', 'Automatic', 'Adaptive connectivity', 'On', 'Mobile network security', 'Network type, encryption, notification controls']
+
+=== page-before title/label assertions ===
+title present: True
+label present: True
+url bar 10.0.2.2:8765 present: True
+marlow present: True
+chat/tasks tabs present: ['Chat', 'Tasks', 'Make']
+
+=== page-after-approval / page-after-tab distinguishing texts ===
+page-after-approval.xml -> []
+page-after-tab.xml -> []

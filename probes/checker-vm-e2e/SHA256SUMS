@@ -1,0 +1,15 @@
+7b987396eca08a2b256ba02a5ac62a64f4e89526a347538430052ce569dffd52  ./00-rig/P1-windows-recheck.txt
+b626730542ef35062d334dba4c154f5b19edbdc743f9d8bb540a01263ba4f155  ./00-rig/P2-android-rig.txt
+2bd9e1a846666115e01d6bb6f43c8f1949d2dc7fb5127d9b80e4bd3a0f3a633c  ./00-rig/P3-final-disk.txt
+517a38584b6b432c5ca20b36b124835c1e8fc2df53763ff242431cae39399d40  ./00-rig/P4-concurrent-windows-attempt.txt
+1754c71fbd7a80297da6dea964bc58d657a5250418875aba3305ada7e1ecd0df  ./01-phone/c-after.xml
+676fe4f11757cfe28c02ab9d2f2475370374047d540b90b76415452e91369f8a  ./01-phone/c-before.xml
+d27147acb731a45a4909d3635da2f231a663b5c5d159ded292d92045643cadd4  ./01-phone/emulator-recheck.log
+f7523b4e83d77aa13b8c82382fd180d900a0b7d288366a5de55ba590d4c31219  ./01-phone/P1-xml-assertions.txt
+ed165235e6f9a7f302a3659bc737647c1e21ac535dc5af19874c6811d917352f  ./01-phone/P2-avd-recheck.txt
+d1d824d8912694d9889bd6b2ea4cb5a3607088eaa4fe1a22b5b72a6ca58cfd8e  ./02-fixture/P1-comp-file.txt
+b7b3fbf67851689a0bcc2c3c5f048b8282f349a2ed05ce211778e7bf27c1791d  ./02-fixture/P2-freeze-consistency.txt
+556cbcee98872c20bb2f5b546f43420a98bafaa4306858a73dc7f3163ac7cbfa  ./02-fixture/P3-css-vs-probe.txt
+478756c0bfd8f1d19dc3f2a940e27f71205871520dbf2c7f750eb2ccf66853f6  ./03-containment/P1-containment-now.txt
+ebc6264161f650c8f9ba744c5917e3aab9ab2a5813312c4bcedd0c227dd723aa  ./03-containment/P2-fences.txt
+83804572674e1ae578882010688d5d848e119a4a6598dee9266377e7947d944e  ./03-containment/P3-final.txt

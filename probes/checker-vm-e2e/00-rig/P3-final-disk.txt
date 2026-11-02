@@ -1,0 +1,2 @@
+=== windows disk final read ===
+/home/cayleb/workspace/harness-build/scratch-tb-l4/rig/disks/win11-eval.qcow2 size=393216 mtime=2026-11-01 11:52:59.451108133 -0500

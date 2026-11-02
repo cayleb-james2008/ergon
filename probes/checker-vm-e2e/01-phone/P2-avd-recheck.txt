@@ -1,0 +1,25 @@
+=== independent AVD boot re-run 2026-11-02T01:40:22Z ===
+emulator_pid=693760
+wait_for_device_rc=0
+boot_completed=1
+--- adb devices ---
+List of devices attached
+emulator-5554	device
+
+--- props ---
+15
+35
+Physical size: 1080x2400
+rig-phone
+OK
+=== scripted tap: Settings -> Network & internet at (407,859) ===
+clickable row containing (407,859): [('', (0, 770, 1080, 1001))]
+after-tap screen texts: ['Internet', 'AndroidWifi', 'SIMs', 'T-Mobile', 'Airplane mode', 'Hotspot & tethering', 'Off', 'Data Saver', 'Off', 'VPN', 'None', 'Private DNS', 'Automatic', 'Adaptive connectivity', 'On', 'Mobile network security', 'Network type, encryption, notification controls']
+expected screen texts present: {'Internet': True, 'SIMs': True, 'Airplane mode': True}
+=== teardown ===
+OK: killing emulator, bye bye
+OK
+(no rig-phone qemu left)
+List of devices attached
+
+LISTEN 0      10                                  127.0.0.1:9222       0.0.0.0:*    users:(("chromium",pid=2960519,fd=96))

@@ -1,0 +1,19 @@
+=== section 6c re-freeze vs FREEZE.sha256 (current) ===
+127:### First re-freeze - `FREEZE.sha256` (17 content files; the manifest excludes itself) — **superseded by section 6c**
+133:| `comps/01-mobile-chat.html` | `66c5edbe28dda5e6d95467a99c35564a3ea84af007a43ffabf1cda912b2c001c` |
+137:| `comps/05-desktop-workspace.html` | `9dd46025443c4c9ec9af4d0eb6caeafa0cbfcad51e1dbd7141dd9d6e7599ed3a` |
+139:| `comps/07-states.html` | `73c286cb3be54bfde2c05ada95cefb0c761e8364e4c855482b17d5b5f1f86797` |
+141:| `tokens.css` | `c71496d670832630066efad14b7136cc1314174d2d7686fb1da3c9c9649d719e` |
+--- current FREEZE.sha256 head ---
+# Ergon Lumen v2 direction set — FREEZE manifest (frozen after the checker fix round D1–D4 and the r2 C1–C4 round).
+# DESIGN COMP — NOT A BUILT SURFACE. This manifest lists the 17 frozen content files; it excludes itself.
+# Verify: node check-comps.mjs (asserts existence, every hash, and that the directory is exactly this set) or: sha256sum -c FREEZE.sha256
+6ff011e5355b7b4d6358ec00025e5e743ef5e2f39815971827493f0d31e5ae39  index.html
+30440f4dccd27836561d6eb24908acb759b230998effd3189e66ad46eca1a086  motion-storyboard.html
+66c5edbe28dda5e6d95467a99c35564a3ea84af007a43ffabf1cda912b2c001c  comps/01-mobile-chat.html
+--- verify all files in FREEZE.sha256 ---
+comp-kit.css: OK
+comp-motion.js: OK
+check-comps.mjs: OK
+README.md: OK
+PACK-CHANGE-PROPOSAL.md: OK

@@ -1,0 +1,27 @@
+=== Windows VM read-only re-check 2026-11-02T01:37:50Z ===
+/home/cayleb/workspace/harness-build/scratch-tb-l4/rig/disks/win11-eval.qcow2 size=393216 bytes mtime=2026-11-01 11:52:59.451108133 -0500
+image: /home/cayleb/workspace/harness-build/scratch-tb-l4/rig/disks/win11-eval.qcow2
+file format: qcow2
+virtual size: 80 GiB (85899345920 bytes)
+disk size: 324 KiB
+cluster_size: 65536
+Format specific information:
+    compat: 1.1
+    compression type: zlib
+--- qemu processes (now) ---
+(none)
+--- swtpm ---
+--- monitor socket / VNC/RDP/SSH ports ---
+ls: cannot access '/home/cayleb/workspace/harness-build/scratch-tb-l4/rig/win/monitor.sock': No such file or directory
+(no monitor/VNC/RDP/SSH listener)
+--- install media ---
+-rw-r--r-- 1 cayleb cayleb  877373440 Nov  1 10:58 /home/cayleb/workspace/harness-build/scratch-tb-l4/rig/iso/virtio-win.iso
+-rw-r--r-- 1 cayleb cayleb 8225329152 Nov  1 10:34 /home/cayleb/workspace/harness-build/scratch-tb-l4/rig/iso/Win11_Enterprise_Eval_26H2_x64_en-us.iso
+--- install log tails (evidence copy vs live) ---
+[win11-install7.log]
+qemu-system-x86_64: terminating on signal 15 from pid 256367 (python3)
+[win11-install8.log]
+qemu-system-x86_64: -device usb-storage,drive=ans: No 'usb-bus' bus found for device 'usb-storage'
+[win11-install9.log]
+qemu-system-x86_64: terminating on signal 15 from pid 1387 (/usr/lib/systemd/systemd)
+qemu-system-x86_64: tpm-emulator: Could not cleanly shutdown the TPM

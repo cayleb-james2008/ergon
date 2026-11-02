@@ -1,0 +1,14 @@
+=== CURRENT-STATE CAVEAT: concurrent Windows install attempt (found at 01:44Z) 2026-11-02T01:44:34Z ===
+    PID    PPID                  STARTED     ELAPSED CMD
+ 698517  698514 Sun Nov  1 20:43:14 2026       01:19 /usr/bin/qemu-system-x86_64 -machine pc,accel=kvm -boot order=d,menu=off -cpu host -smp 8 -m 10240 -drive if=pflash,format=raw,readonly=on,file=/usr/share/edk2/x64/OVMF_CODE.4m.fd -drive if=pflash,format=raw,file=/home/cayleb/workspace/harness-build/scratch-tb-l4/rig/win/OVMF_VARS.fd -chardev socket,id=chrtpm,path=/home/cayleb/workspace/harness-build/scratch-tb-l4/rig/win/tpm/swtpm.sock -tpmdev emulator,id=tpm0,chardev=chrtpm -device tpm-tis,tpmdev=tpm0 -vnc 127.0.0.1:2 -monitor unix:/home/cayleb/workspace/harness-build/scratch-tb-l4/rig/win/monitor.sock,server,nowait -nic user,model=e1000 -rtc base=localtime -display none -no-reboot -serial file:/home/cayleb/workspace/harness-build/scratch-tb-l4/rig/logs/win11-serial-attempt.log -drive id=disk0,if=ide,format=qcow2,file=/home/cayleb/workspace/harness-build/scratch-tb-l4/rig/disks/win11-eval.qcow2 -drive id=cd0,if=ide,media=cdrom,readonly=on,file=/home/cayleb/workspace/harness-build/scratch-tb-l4/rig/iso/Win11_Enterprise_Eval_26H2_x64_en-us.iso -drive id=cd1,if=ide,media=cdrom,readonly=on,file=/home/cayleb/workspace/harness-build/scratch-tb-l4/rig/iso/virtio-win.iso -device qemu-xhci -drive id=ans,if=none,format=raw,file=/home/cayleb/workspace/harness-build/scratch-tb-l4/rig/win/answer.img -device usb-storage,drive=ans
+--- swtpm now ---
+698500 /usr/bin/swtpm socket --tpm2 --tpmstate dir=/home/cayleb/workspace/harness-build/scratch-tb-l4/rig/win/tpm --ctrl type=unixio,path=/home/cayleb/workspace/harness-build/scratch-tb-l4/rig/win/tpm/swtpm.sock --daemon
+--- monitor socket / VNC now ---
+srwxr-xr-x 1 cayleb cayleb 0 Nov  1 20:43 /home/cayleb/workspace/harness-build/scratch-tb-l4/rig/win/monitor.sock
+LISTEN 0      1                                   127.0.0.1:5902       0.0.0.0:*    users:(("qemu-system-x86",pid=698517,fd=100))
+--- qcow2 still uninstalled? ---
+/home/cayleb/workspace/harness-build/scratch-tb-l4/rig/disks/win11-eval.qcow2 size=393216 mtime=2026-11-01 11:52:59.451108133 -0500
+--- win serial log tail (current attempt) ---
+[2J[001;001H[=3h[2J[001;001H[2J[001;001H[8;056;240t[2J[001;001H[2J[001;001H[=3h[2J[001;001H[2J[001;001H[8;042;160t[2J[001;001HBdsDxe: loading Boot0002 "UEFI QEMU DVD-ROM QM00002 " from PciRoot(0x0)/Pci(0x1,0x1)/Ata(Primary,Slave,0x0)
+BdsDxe: starting Boot0002 "UEFI QEMU DVD-ROM QM00002 " from PciRoot(0x0)/Pci(0x1,0x1)/Ata(Primary,Slave,0x0)
+--- qemu parent chain ---

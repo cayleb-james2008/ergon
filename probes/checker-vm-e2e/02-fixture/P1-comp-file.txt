@@ -1,0 +1,21 @@
+=== frozen v2 comp set (read-only) ===
+total 120
+drwxr-xr-x 1 cayleb cayleb   320 Nov  1 20:17 .
+drwxr-xr-x 1 cayleb cayleb  2584 Nov  1 20:37 ..
+-rw------- 1 cayleb cayleb  3425 Nov  1 20:15 build-tokens.mjs
+-rw------- 1 cayleb cayleb 19461 Nov  1 20:31 check-comps.mjs
+-rw------- 1 cayleb cayleb 17225 Nov  1 20:31 comp-kit.css
+-rw------- 1 cayleb cayleb 13482 Nov  1 20:15 comp-motion.js
+drwxr-xr-x 1 cayleb cayleb   302 Nov  1 19:53 comps
+file=/home/cayleb/Documents/deepseek-harness/default-workspace/board/probes/team-a-design-v2/comps/01-mobile-chat.html size=6261
+66c5edbe28dda5e6d95467a99c35564a3ea84af007a43ffabf1cda912b2c001c  /home/cayleb/Documents/deepseek-harness/default-workspace/board/probes/team-a-design-v2/comps/01-mobile-chat.html
+label_occurrences=1
+title_occurrences=1
+blur14_occurrences=0
+--- FREEZE manifest check for this file ---
+66c5edbe28dda5e6d95467a99c35564a3ea84af007a43ffabf1cda912b2c001c  comps/01-mobile-chat.html
+--- served assets present ---
+-rw------- 1 cayleb cayleb 17225 Nov  1 20:31 /home/cayleb/Documents/deepseek-harness/default-workspace/board/probes/team-a-design-v2/comp-kit.css
+-rw------- 1 cayleb cayleb 13482 Nov  1 20:15 /home/cayleb/Documents/deepseek-harness/default-workspace/board/probes/team-a-design-v2/comp-motion.js
+-rw-r--r-- 1 cayleb cayleb  2403 Nov  1 20:15 /home/cayleb/Documents/deepseek-harness/default-workspace/board/probes/team-a-design-v2/tokens.css
+9bedd51a96d36248ae449e4dc544f8a5aff6319801075563617d9a903c3cef86  /home/cayleb/Documents/deepseek-harness/default-workspace/board/probes/team-a-design-v2/comp-motion.js

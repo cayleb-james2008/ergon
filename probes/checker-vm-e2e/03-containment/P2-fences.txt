@@ -1,0 +1,2 @@
+=== sudo/root usage in evidence scripts ===
+image_files_in_team_a_evidence=0
