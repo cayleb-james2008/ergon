@@ -1,4 +1,4 @@
-# WAKE-UP REPORT — 2026-11-02 (refreshed 22:43 ET; owner asleep) — refresh #3 (settled RDP re-confirmation; SSH pending)
+# WAKE-UP REPORT — 2026-11-02 (refreshed 23:40 ET; owner asleep) — refresh #4 per Nox run 7 (Windows wording final, layer-5 status, fence closed)
 Consolidated for the owner's morning. Everything below is on the board with checker evidence; nothing is smoothed.
 Fences held overnight: no spend, no publication, no credential values in chat/board/logs, no image reads in the app, desks untouched.
 
@@ -36,7 +36,7 @@ Fences held overnight: no spend, no publication, no credential values in chat/bo
 - **Phone VM — PROVEN REAL** (checker ACCEPT, independently re-run): headless Android 15/API 35 `rig-phone` boot; scripted native tap
   through Settings → "Network & internet"; the frozen v2 mobile comp rendered in the phone's Chrome over the guest→host transport
   (tokens, `blur(14px)`, animations settling to 0 running/infinite, approve→pill, tab swap, scoped remember wording verified).
-- **Windows VM — INSTALLED, OOBE FIRST LOGON REACHED, RDP RE-CONFIRMED (driveable via RDP) — SSH still pending:** deterministic install to a
+- **Windows VM — installed + OOBE first logon + RDP re-confirmed — driveable via RDP.** Deterministic install to a
   fresh qcow2 completed in ≈6 min 17 s; the guest boots its own UEFI "Windows Boot Manager" from disk0; the answer file's
   FirstLogonCommands ran to completion — text proof: host marker `?step=start` at 03:08:35Z and `?step=done` at 03:26:46Z — and
   **RDP answered at protocol level** (TPKT + X.224 Connection Confirm through 127.0.0.1:3389; reproduced by two seats).
@@ -80,8 +80,9 @@ Fences held overnight: no spend, no publication, no credential values in chat/bo
 - **Diagnostic Play 6 — retry net proven, defect attributed:** 3 retries at view-021 all returned byte-identical to view-020 → the
   duplicate is a **persistent overhead-frame render/capture stall, not retry logic** (the guard correctly refused dishonest evidence).
   Studio crashed on the fail-closed Play shutdown (106 MB userland minidump, no kernel GPU evidence) and recovered cleanly with
-  `studiocycle` (sealed place/release unchanged through crash + recovery; fresh 0/3 opening). A bounded overhead-settle fix is approved
-  and being frozen; if frames still freeze after it, an honest renderer/Wine-limitation note with plan options goes for a ruling.
+  `studiocycle` (sealed place/release unchanged through crash + recovery; fresh 0/3 opening). A bounded overhead-settle fix (1.0 s settle + re-probe for overhead kinds, failure-path audit) is **ratified and frozen**; if frames
+  still freeze after it, an honest renderer/Wine-limitation note with plan options goes for a Nox ruling — no plan/validator change,
+  view replacement or drop without it. Plays: 1/3 in the recovered opening (one reserved).
 - **Diagnostic Play 5 (fresh opening, 1/3) — the cell now captures real evidence:** **20/24 views captured (20 distinct sha256, all
   accepted/stationary, viewport 1837×744)** and **`viewportMatchesPng:true` observed on every view — the first observation of that
   outstanding datum**; the guarded fog layer is clean in Play (legacy absence recorded, no false claim); `fastPathApplied=true` again.
