@@ -1,0 +1,58 @@
+=== TEAM D DIAGNOSTIC PLAY 2 — atlas:scout --seed 2134783819 (single Play, Lead GO 2026-11-02T02:35Z) ===
+time 2026-11-02T02:33:08Z
+repo 659779ce89fa18c8ab2dc13a29906f7ab05e1499 branch prep/b1-capture-format-20261101 tracked_modified=0
+
+--- 1. Studio state BEFORE (read-only) ---
+ 388820   19650 /home/cayleb/.var/app/org.vinegarhq.Vinegar/data/vinegar/versions/version-7062aec9dbe74b14/Rob
+{"address": "0x558c7f6b0160", "class": "steam_proton", "title": "Z:\\home\\cayleb\\.var\\app\\org.vinegarhq.Vinegar\\data\\usg\\usg-desktop.rbxlx - Roblox Studio", "at": [621, 233], "size": [2200, 1000], "floating": true, "fullscreen": 0, "pid": 388820}
+plays record: {  "pid": 388820,  "start": 35081170,  "plays": 1,  "at": 1793586585.6508784}
+host pressure: full avg10=0.10 avg60=0.16 avg300=0.32 total=788392740 | load: 3.27 4.68 5.36 2/2617 729514
+
+--- sealed BEFORE ---
+84324d4342667dd163ab8e64adacbf8ef44ab786aeda5c7ab1403e76d52ef6ce  build/release.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  build/test.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  /home/cayleb/.var/app/org.vinegarhq.Vinegar/data/usg/usg-desktop.rbxlx
+--- 2. THE ONE PLAY: run atlas:scout --seed 2134783819 start 2026-11-02T02:33:21Z ---
+run_rc=1
+
+--- 3. post-Play state 2026-11-02T02:34:39Z ---
+run_rc=1 (TimeoutError view-001 within 45s)
+Studio:  388820   19741 /home/cayleb/.var/app/org.vinegarhq.Vinegar/
+plays record: {  "pid": 388820,  "start": 35081170,  "plays": 2,  "at": 1793586806.9531205}
+
+--- verify-clean ---
+  },
+  "clean": true
+}
+verify_rc=0
+
+--- sealed AFTER ---
+84324d4342667dd163ab8e64adacbf8ef44ab786aeda5c7ab1403e76d52ef6ce  build/release.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  build/test.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  /home/cayleb/.var/app/org.vinegarhq.Vinegar/data/usg/usg-desktop.rbxlx
+
+--- run dir ---
+total 68
+drwxr-xr-x 1 cayleb cayleb   212 Nov  1 21:34 .
+drwxr-xr-x 1 cayleb cayleb  2484 Nov  1 21:34 ..
+-rw-r--r-- 1 cayleb cayleb  5654 Nov  1 21:33 cleanup.luau
+-rw-r--r-- 1 cayleb cayleb   111 Nov  1 21:34 hostcheck.jsonl
+-rw-r--r-- 1 cayleb cayleb 32057 Nov  1 21:33 manifest.json
+-rw-r--r-- 1 cayleb cayleb  1326 Nov  1 21:33 preflight.json
+-rw-r--r-- 1 cayleb cayleb  5244 Nov  1 21:33 prepare.luau
+-rw-r--r-- 1 cayleb cayleb   988 Nov  1 21:34 report.json
+-rw-r--r-- 1 cayleb cayleb  2236 Nov  1 21:34 result.json
+-rw-r--r-- 1 cayleb cayleb   312 Nov  1 21:33 verify-before.json
+
+=== RESULT SUMMARY 2026-11-02T02:37:49Z ===
+run dir: docs/verify/2026-10-19/vinegar/20261102T023321Z-atlas-scout
+exit=1; error=TimeoutError collector did not receive view-001 within 45s (45 s bound fired; previous class waited 600 s)
+states: STAGED 3.134 / PREPARED 3.245 / PLAYING 5.134 / RAN 7.951; collector phases prepared,cleanup (no runtime/views); rejections []
+worldTrace: null (no world-trace.json); report.json 988 B prepared+cleanup only; prepared namedSeed=2134783819 verifiedSources=101
+ROOT CAUSE (Studio console, read-only MCP): 'apply is not a valid member of ModuleScript ServerScriptService.Nightshift.AtlasWorldSeed' at AtlasServerStarter line 1 -> SEED_PATCH calls S.apply(W,seed) where S is the ModuleScript Instance (no require); error is outside the xpcall so no runtime error is posted and the server never starts
+same bug in pre-Plan-4 SEED_PATCH (git show 9022c53^) => the 2026-11-01 'in-Play rebuild hang' reading is superseded (rebuild never ran)
+fastPathApplied NOT observable (no trace, server never started); fallback (a) not indicated
+sealed AFTER: 84324d43.../c6651793... unchanged; verify-clean rc=0 clean=true sources=101; plays 2/3 (pid 388820); Studio alive; no crash dumps; hostcheck clean
+console capture: board/probes/team-d/console-after-atlas-play-20261102.json
+proposal (not implemented): SEED_PATCH require + starter-wide xpcall error post + Lune/Python tests -> board/reports/team-d-diagnostic-play2.md §4
+abort-contact fixture geometry proposal (offline): board/probes/team-d/abort-contact-fixture-geometry-fix-20261102.md

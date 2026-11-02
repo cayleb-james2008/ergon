@@ -1,0 +1,32 @@
+{
+ "ts": "2026-11-02T02:35:51Z",
+ "studio": {
+  "id": "cdefa06f-afc8-45ac-b3d5-3977cdb25ce6",
+  "name": "usg-desktop.rbxlx"
+ },
+ "console_default": {
+  "isError": false,
+  "text": "apply is not a valid member of ModuleScript \"ServerScriptService.Nightshift.AtlasWorldSeed\"\nStack Begin\nScript 'ServerScriptService.Nightshift.AtlasServerStarter', Line 1\nStack End\nCREATIVE_TOOLKIT_STUDIO_CONTROL {\"atUtc\":\"2026-11-02T02:33:27Z\",\"mode\":\"edit\",\"version\":\"creative-toolkit-studio-test/1.0.0\",\"event\":\"ready\"}\nCREATIVE_TOOLKIT_STUDIO_CONTROL {\"atUtc\":\"2026-11-02T02:33:28Z\",\"mode\":\"edit\",\"version\":\"creative-toolkit-studio-test/1.0.0\",\"event\":\"ready\"}\nNightshift art: 24 model(s) loaded\nMode: rotate\nMode: rotate\n[Leaderboard] Studio preview: daily boards are in memory (Workspace.UseLiveDataStore opts in)\n[Badges] Studio preview: FirstFare (557278591644985) not awarded to 1170918805\nAnalyticsService: LogOnboardingFunnelStepEvent event fired.\n[Roblox][CorePackages.Packages._Index.Promise.Promise] Unhandled Promise rejection:\n\nnil\n\nCoreGui.RobloxGui.Modules.AvatarEditorPrompts.Thunks.OpenSetFavoritePrompt:14\nCorePackages.Packages._Index.Rodux.Rodux.makeThunkMiddleware:18\nCorePackages.Packages._Index.Rodux.Rodux.makeThunkMiddleware:17\nCorePackages.Packages._Index.Rodux.Rodux.Store:116\nCoreGui.RobloxGui.Modules.AvatarEditorPrompts.ConnectAvatarEditorServiceEvents:54\n"
+ },
+ "close": {
+  "owned": [
+   {
+    "pid": 731177,
+    "start": 37062539,
+    "ppid": 731171,
+    "ageSeconds": 2.8
+   }
+  ],
+  "foreignNew": [],
+  "signals": [
+   {
+    "pid": 731177,
+    "start": 37062539,
+    "signal": "SIGTERM"
+   }
+  ],
+  "survivors": []
+ },
+ "note": "Read-only MCP get_console_output after the atlas diagnostic Play 20261102T023321Z-atlas-scout (no Play, no input).",
+ "root_cause": "SEED_PATCH calls S.apply(W,seed) where S is the AtlasWorldSeed ModuleScript Instance (not require(S)): 'apply is not a valid member of ModuleScript ...'; the error is outside the starter's xpcall, so no runtime phase is posted and the server never starts -> view-001 timeout (45 s bound)."
+}
