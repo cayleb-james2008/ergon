@@ -1,0 +1,7 @@
+=== DIAG2 suites — re-run from fresh copy /tmp/checker-diag2 (618bb4a) ===
+atlas acceptance:                    Ran 25 tests in 0.700s | OK
+runner (test_vinegar_run.py):        Ran 91 tests in 12.148s | OK
+full Python tests/tools:             Ran 334 tests in 45.093s | OK
+Lune atlas filter (incl. atlas-paths): unit: 11 passed, 0 failed (4 specs)
+full Lune:                           unit: 925 passed, 0 failed (127 specs)   [re-ran at the tip, ~12 min]
+sealed after runs:                   84324d43… release, c6651793… test, Studio place c6651793… — unchanged

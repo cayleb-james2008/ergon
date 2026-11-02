@@ -1,0 +1,15 @@
+=== no-behaviour-change proof (parent 7c7c1e7 vs 618bb4a) ===
+delta files: tests/atlas/CameraState.luau, tests/atlas/Client.luau, tests/tools/test_atlas_acceptance.py,
+  tests/unit/atlas-camera-state.spec.luau (4 files +49/-6). Validator/plan/runner are NOT in the delta.
+- Client checkAll exact block: sha256 ad361c16af283f97 -> ad361c16af283f97 UNCHANGED (byte-identical).
+- payload lines `restored=checkAll(details)` and `cleanup=details`: unchanged.
+- CameraState.luau: State.check 78bbf70cc8de3af4 -> 78bbf70cc8de3af4 UNCHANGED; State.capture/present/sameValue
+  blocks UNCHANGED; State.restore changed BY DESIGN (the write site is there): write is pcall-wrapped + immediate
+  read-back recorded, and restore returns (State.check(...), diagnostics) - the first return value is the same
+  State.check(...) expression. The write sequence (CameraSubject/FieldOfView/CFrame/Focus) is unchanged.
+- new fields never feed the verdict: details=State.check(...) is computed before the diagnostics/re-assert; the
+  re-assert happens after details/recheck; payload restored/cleanup are pre-re-assert; `cameraTypeDiagnostics` is
+  ignored by the validator (tolerance test passes).
+- only error-path behaviour delta: a CameraType write error is now swallowed+recorded (pcall) instead of propagating
+  (this is the Lead-authorised `pcall` instrumentation); the deferred re-assert is a conditional second write after
+  the verdict is computed (recorded; not used to recompute `restored`/`cleanup`) -> no fix reaches the acceptance.

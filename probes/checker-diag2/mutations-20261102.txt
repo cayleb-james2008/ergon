@@ -1,0 +1,16 @@
+=== DIAG2 mutation proofs — checker reproduction (throwaway /tmp/checker-diag2-mut; restored after each) ===
+Required "remove one new field/payload key must FAIL":
+  remove pinned new field `reassertAttempted=`      -> atlas acceptance FAILED (1)   [caught]
+  remove UNPINNED new field `reassertOk=`            -> atlas acceptance OK           [NOT caught]
+  remove UNPINNED new field `currentSubjectName=`    -> atlas acceptance OK; Lune atlas-camera-state 4/0  [NOT caught]
+  remove UNPINNED new field `typeWriteError=`        -> atlas acceptance OK; Lune atlas-camera-state 4/0  [NOT caught]
+  remove `typeWriteOk` recording                     -> atlas acceptance OK BUT Lune atlas-camera-state 3p/1f [caught by Lune]
+  remove the `afterReassertType=` TABLE ENTRY        -> atlas acceptance OK           [NOT caught: the needle
+      `afterReassertType=` also matches the local declaration `local reassertOk,reassertErr,afterReassertType=nil,...`,
+      so this pin does not actually pin the recorded field]
+Maker's claimed mutations:
+  M31 write-site pcall diagnostics removed -> atlas acceptance FAILED (1)   [reproduced]
+  M32 whole deferred re-assert feature removed (attempt block + its table keys) -> atlas acceptance FAILED (1) [reproduced]
+  (note: removing only the attempt block but leaving its table keys passes the Python pins - it produces undefined
+   locals, i.e. broken client code only caught in a Play; not a valid pin test)
+Restore: files copied back from the pristine copy; mut-tree diff vs fresh copy = only __pycache__ .pyc files.

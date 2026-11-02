@@ -1,0 +1,21 @@
+=== DIAG2 (layer-10) delta provenance — checker fresh copy 2026-11-02T09:38:33Z ===
+commit: 618bb4a4473bc5d46eb15a4611cb1fa55f53cdbb  tree: 59f953257ee82b753f4bc93fd2a86e8ee54b337d  parent: 7c7c1e777507001d88e91b8342cc6cc57128704e
+branch tip: 618bb4a4473bc5d46eb15a4611cb1fa55f53cdbb  tracked mods: 0  untracked: 831
+fresh copy: git archive 618bb4a -> /tmp/checker-diag2; 1443 tracked entries blob-for-blob (0 missing/0 mismatch)
+--- delta 7c7c1e7..618bb4a numstat ---
+13	2	tests/atlas/CameraState.luau
+14	2	tests/atlas/Client.luau
+10	2	tests/tools/test_atlas_acceptance.py
+12	0	tests/unit/atlas-camera-state.spec.luau
+--- every changed file ---
+tests/atlas/CameraState.luau
+tests/atlas/Client.luau
+tests/tools/test_atlas_acceptance.py
+tests/unit/atlas-camera-state.spec.luau
+--- plan/validator/runner/traffic/fixture/src/build files in delta (must be none) ---
+(none)
+--- sealed ---
+84324d4342667dd163ab8e64adacbf8ef44ab786aeda5c7ab1403e76d52ef6ce  build/release.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  build/test.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  /home/cayleb/.var/app/org.vinegarhq.Vinegar/data/usg/usg-desktop.rbxlx
+build/ tracked: 0 entries
