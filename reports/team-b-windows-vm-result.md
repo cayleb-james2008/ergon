@@ -72,3 +72,65 @@ drops `-no-reboot`. Lane 4 owns adoption; strike-release untouched.
   `win11-attempt12/13`, `win11-serial-attempt12/13`, `win11-run1/2`, `win11-serial-run1/2`; `/tmp` helper scripts;
   host marker HTTP server on `127.0.0.1:8765` (temporary, can be stopped). `win/run-win11.sh` left untouched.
 - No image reads/screenshots were used; no root; no host changes outside the rig; $0.
+
+---
+
+# ADDENDUM — deterministic second-install pass (2026-11-02 02:13–02:38Z): NOT DRIVEABLE IN THIS PASS (named blocker)
+
+Bounded pass per Nox/Lead order (fresh second disk + enriched answer file + patched launcher mechanics). **Result:
+the install was launched and consumed the enriched answer, but did not reach OOBE/FirstLogonCommands inside the
+time-box, so no marker/SSH/RDP evidence exists yet.** The previous installed guest (qcow1) is preserved untouched as
+the fallback evidence. No image reads, no root, no host changes outside the rig, $0.
+
+## What was built (ready for the next run)
+
+- **Second disk:** `rig/disks/win11-eval-2.qcow2` (80 GiB sparse; qcow1 untouched at `rig/disks/win11-eval.qcow2`,
+  17,083,138,048 B).
+- **Answer v2:** `rig/win/unattend-v2/autounattend.xml` (copy filed at
+  `board/probes/team-b-windows-vm/autounattend-v2.xml`): same unattended install as v1 **plus** five
+  `FirstLogonCommands` — (1) host marker `http://10.0.2.2:8765/marker?step=start`, (2) enable RDP
+  (`fDenyTSConnections=0`, TermService auto, Remote Desktop firewall group), (3) enable OpenSSH Server
+  (`Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0; Start-Service sshd`), (4) install the rig's SSH
+  public key as the admin `authorized_keys` (`C:\ProgramData\ssh\administrators_authorized_keys`, ACLs restricted),
+  (5) marker `?step=done`. AutoLogon/account/OOBE settings unchanged from v1 (so OOBE should land on a desktop).
+- **Rig SSH key:** `rig/win/agent_key` (private, never leaves the rig) + `agent_key.pub` (filed in the probe dir);
+  intended verification was `ssh -p 2222 -i rig/win/agent_key -o StrictHostKeyChecking=no cayleb@127.0.0.1 ver`.
+- **Launch mechanics:** patched-launcher sequence (fresh OVMF vars, continuous `sendkey ret`, vvfat answer over
+  `win/unattend-v2/` + `usb-storage,removable=true`, `-boot order=d`, monitor+serial+VNC). A tiny host marker
+  listener on `0.0.0.0:8765` ran throughout.
+
+## What happened (evidence)
+
+- WinPE booted (serial `BdsDxe: starting Boot0002 "UEFI QEMU DVD-ROM"`), answer consumed: **answer reads
+  188,928 B**, **disk0 writes 12,648,665,088 B**, **ISO reads 8,593,821,696 B**, qcow2 0 → **12,477,792,256 B
+  (11.9 GiB)**.
+- Then the guest stayed in WinPE's CPU-bound finalize phase: qcow2 flat for **>8 min**, QEMU 148–250 % CPU,
+  `info blockstats` idle on disk0/cd0/ans, **no reboot/exit**, serial unchanged (only the one Boot0002 start), so
+  OOBE/FirstLogonCommands never ran: **marker hits = 1 (host's own curl only), no RDP X.224 answer on 3389, no SSH
+  banner on 2222**.
+- **Honest note:** an earlier run of this same install was stopped by me during this CPU-bound phase (monitor
+  `quit`); booting that disk then gave `BdsDxe: failed to load Boot0001 "UEFI QEMU HARDDISK" … Not Found` — proof
+  that the finalize phase must be allowed to complete before the disk is bootable. Do not stop it early.
+- **Left running:** install #2b QEMU **PID 724993** (~9.7 GiB RSS) is still in that finalize phase, so a later seat
+  can let it finish; the marker listener on `127.0.0.1/0.0.0.0:8765` is still up for the FirstLogon hits. The v2
+  disk is not bootable yet; qcow1 remains the working installed guest.
+
+## Exact next step (deterministic, unblocked)
+
+1. Let PID 724993 finish (it should reboot → QEMU `-no-reboot` exits). If it does not within ~5 more minutes, quit
+   it and re-run the install stage; do not boot a half-finalized disk.
+2. Boot the installed disk: run stage (`-boot order=c`, no `-no-reboot`, hostfwd 3389/2222) and wait for
+   OOBE/AutoLogon; the FirstLogonCommands then fire in order.
+3. Verify text-level: `grep 'GET /marker?step=' /tmp/marker2.log` (expect `step=start` then `step=done`), RDP X.224
+   answer on `127.0.0.1:3389`, and the SSH round-trip
+   `ssh -p 2222 -i rig/win/agent_key -o StrictHostKeyChecking=no cayleb@127.0.0.1 'ver'` → Banner/Windows version.
+4. If any FirstLogonCommand needs elevation it may fail silently (UAC); the marker steps tell us where it stopped.
+   The fallback is the same enable commands run from the guest console (visual seat) — the deterministic route is
+   still strictly better than blind input.
+
+## Blocker named
+
+**Bounded pass exhausted: Windows Setup's WinPE finalize phase on disk2 did not complete within the time-box (flat
+disk, CPU-bound, no reboot), so OOBE/FirstLogon never ran and the guest is not driveable yet.** No blocker in the
+rig mechanics: answer consumption, partition/format/apply and the launcher fixes are all proven in this pass; what
+remains is simply the finalize duration. qcow1 (installed, booting) is preserved as the working fallback.

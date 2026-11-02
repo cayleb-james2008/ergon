@@ -1,0 +1,5 @@
+deterministic install#2b final state 2026-11-02T02:38:19Z
+qemu pid 724993 cpu= 145 rss=9666MiB
+disk2 qcow2 12477792256 bytes
+answer read 188928 B; disk0 writes 12648665088 B; cd0 reads 8593821696 B; serial: Boot0002 DVD start; no reboot within pass
+marker server 8765 listener: 1
