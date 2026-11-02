@@ -1,4 +1,4 @@
-# WAKE-UP REPORT — 2026-11-02 (refreshed 02:42Z / 21:42 ET; owner asleep)
+# WAKE-UP REPORT — 2026-11-02 (refreshed 03:45Z / 22:45 ET; owner asleep)
 Consolidated for the owner's morning. Everything below is on the board with checker evidence; nothing is smoothed.
 Fences held overnight: no spend, no publication, no credential values in chat/board/logs, no image reads in the app, desks untouched.
 
@@ -36,16 +36,19 @@ Fences held overnight: no spend, no publication, no credential values in chat/bo
 - **Phone VM — PROVEN REAL** (checker ACCEPT, independently re-run): headless Android 15/API 35 `rig-phone` boot; scripted native tap
   through Settings → "Network & internet"; the frozen v2 mobile comp rendered in the phone's Chrome over the guest→host transport
   (tokens, `blur(14px)`, animations settling to 0 running/infinite, approve→pill, tab swap, scoped remember wording verified).
-- **Windows VM — INSTALLED AND BOOTING (the overnight blocker is RESOLVED):** Windows 11 Enterprise Eval installed end-to-end
-  (qcow2 393 KB → ~15.9 GiB), boots its own UEFI "Windows Boot Manager" from disk0, two OOBE reboots rode through. Two rig root causes
-  found and fixed with evidence: (1) stale/foreign OVMF vars + missed El-Torito "press any key" (fresh vars + continuous sendkey);
-  (2) answer medium Windows could never see — 8.3-only FAT16 `AUTOUNAT.XML` + `usb-storage removable=off` → vvfat over
-  `win/unattend/` + `removable=true` (answer reads 8.7 KB → 187–195 KB, then unattended DiskConfiguration ran). Launcher patch
-  produced (`run-win11.sh.patched` + diff) — the rig launcher must adopt it.
-- **Windows residuals (named, not blockers):** OOBE-to-desktop is NOT claimed (no text channel into the guest yet — no agent, no
-  serial, VNC is video-only); a bounded deterministic re-install (new qcow2, AutoLogon + FirstLogonCommands enabling RDP/OpenSSH +
-  host marker) is running now to make the surface DRIVEABLE and text-verifiable; the Ergon Windows companion surfaces remain
-  package-pending (the Ergon Windows package does not exist; G1 whole).
+- **Windows VM — INSTALLED, OOBE FIRST LOGON REACHED, RDP LIVE (the overnight blocker is RESOLVED):** deterministic install to a
+  fresh qcow2 completed in ≈6 min 17 s; the guest boots its own UEFI "Windows Boot Manager" from disk0; the answer file's
+  FirstLogonCommands ran to completion — text proof: host marker `?step=start` at 03:08:35Z and `?step=done` at 03:26:46Z — and
+  **RDP answers at protocol level** (TPKT + X.224 Connection Confirm through 127.0.0.1:3389). The two rig root causes were found and
+  fixed with evidence: (1) stale/foreign OVMF vars + missed El-Torito "press any key"; (2) an answer medium Windows could never see
+  (8.3-only FAT16 name + `usb-storage removable=off`) → vvfat over `win/unattend/` + `removable=true`. Launcher patch filed
+  (`run-win11.sh.patched` + diff; finalize-timing lesson recorded) — the rig launcher must adopt it. A fresh checker re-verified the
+  upgraded filing (ACCEPT, honest) with two corrections being applied (companion-artefact wording; a rig-local placeholder password in
+  the board copy of the answer file — redacted from both board copies within minutes, no real credential involved).
+- **Windows residuals (named, not blockers):** SSH/OpenSSH still not answering (capability install finished, sshd not up — being
+  diagnosed); the OOBE desktop itself is not claimed (no image reads — the marker sequence and RDP handshake are the text/protocol
+  proofs); the Ergon Windows companion surfaces remain package-blocked — companion SOURCES exist in the OpenClaw baseline repo but
+  there is **no compiled/packaged companion artefact and no DSH-era Ergon package** (G1 whole).
 - **S8 pendings dispositioned:** R4 phone surface = fixture-proven on the phone VM + product surface package-pending; R3 real
   shareable URL = carried (host + package absent); R6 voice = carried (package absent); R2 model-quality = proof pre-written, runs the
   moment roster activation lands; Windows companions = package-pending on an installed+bootable guest. The upgraded FL2 verdict will
@@ -58,13 +61,17 @@ Fences held overnight: no spend, no publication, no credential values in chat/bo
   outran the ego, crossed `RETIRE_RADIUS=800` at t=22.283 s and the controller's DOCUMENTED `unobservedSince > 1` rule retired the body
   0.95 s later. **Not a product defect**; the remaining cell defect is fixture geometry (contact leg unreachable). A scenario-change
   design note is filed and awaits a ruling (offline, no Play).
-- **Diagnostic Play 2** (`atlas:scout --seed 2134783819`, 2 of 3): fail-closed timeout with the 45 s bound firing correctly — and the
-  studio console revealed the real root cause: the seed patch called `apply` on an un-`require`d ModuleScript
+- **Diagnostic Play 2** (`atlas:scout --seed 2134783819`): fail-closed timeout with the 45 s bound firing correctly — and the studio
+  console revealed the real root cause: the seed patch called `apply` on an un-`require`d ModuleScript
   (`S.apply is not a valid member of …AtlasWorldSeed`), the starter crashed silently (outside its xpcall) so no runtime error/trace was
-  written. **This SUPERSEDES the old "in-Play City+Highway rebuild hang" reading — the rebuild never ran.** The fix (require the
-  modules; wrap the whole seed patch in the error-reporting xpcall; offline Lune/Python tests) is approved and being implemented; one
-  Play after it tells us `fastPathApplied`. Plays used: 2/3 — Studio will be cycled to a fresh opening for the next run.
-- Studio: pid 388820, sealed place/build unchanged, 2/3 Plays used in the current opening; no publication, no build.
+  written. **This SUPERSEDES the old "in-Play City+Highway rebuild hang" reading — the rebuild never ran.** Fixed (require the modules;
+  wrap the whole seed patch in the error-reporting xpcall; offline Lune/Python tests), then a fresh 3-Play opening and further Plays
+  closed the question: the repeat Play recorded a clean **`fastPathApplied=true`** (seed 2134783819 / layout 2, actual==expected,
+  `rebuild=false`, starter applied before the world build, 4.25 s build) — **assert-and-skip suffices; no fallback needed; the
+  named-seed blocker is resolved.** Each fix unmasked the next legacy-API layer (starter require → root check → client `FogEnabled`);
+  the fog fix is approved offline and the next atlas Play follows its checker delta.
+- Studio: pid 759088 (fresh opening after `studiocycle`), sealed place/build unchanged (`c6651793…`/`84324d43…`), 2/3 Plays used
+  in the current opening (third reserved); no publication, no build.
 
 ## MONDAY DESK (Team C) — observation day, locked
 - Runbook v7 (sha `512752e4…`) **P0.1 SIGNED** by a fresh Tier-S checker; ORB15 **HOLD** ruled → Monday claims 0 fills, honestly:
