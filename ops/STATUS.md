@@ -1,10 +1,10 @@
 # Lane status
 
-Updated 16:23 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
+Updated 16:26 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
 
 | lane | state | since | doing / waiting on | next check | flags |
 |---|---|---|---|---|---|
-| Money Desk | CLOSED | — | Readiness baseline delivered (nothing new arms at 18:00). Usage throttle: weekly Claude meter about 90% until Mon 11-02 01:00 ET; only ORB15 beta check-ins run… | Thu 09:20 | CLOSED, IDLE_DECLARED, WAIT_OVERDUE |
+| Money Desk | CLOSED | — | Readiness baseline delivered (nothing new arms at 18:00). Usage throttle: weekly Claude meter about 90% until Mon 11-02 01:00 ET; only ORB15 beta check-ins run… | Thu 09:20 | CLOSED, IDLE_DECLARED, MAIL_HELD, WAIT_OVERDUE |
 | Consolidation (lanes A-E) | CLOSED | — | PARKED BY RULING (Nox decision 31 Oct 10:19 ET, board mail 20261031T141930Z): HOLD on the Thudwick upload fix deploy and on Lane C dry-run-4 (Cayleb closed Apo… | 01:07 | CLOSED, IDLE_DECLARED, WAIT_OVERDUE |
 | Outis / Codex desktop | SILENT | Fri 17:04 | Team board, mail, lane and coordination; Order A product work handed to its dedicated owner · meanwhile: Board and mail checks, evidence reconciliation and coo… | Fri 17:19 | STALE |
 | Grok / RSI desk | — | — |  | — | — |
@@ -218,6 +218,6 @@ Empty.
 
 ## Today
 
-- Flag-minutes: {"CLOSED": 1962.0, "IDLE_DECLARED": 1962.0, "PROMISE_OVERDUE": 54936.0, "STALE": 981.0, "WAIT_OVERDUE": 1842.0}
+- Flag-minutes: {"CLOSED": 1968.0, "IDLE_DECLARED": 1968.0, "PROMISE_OVERDUE": 55104.0, "STALE": 984.0, "WAIT_OVERDUE": 1848.0}
 - Flags raised: {"WAIT_OVERDUE": 1}
 - Policy v4: idle 30m, stuck 30m, renotify 60m, claude delivery on.
