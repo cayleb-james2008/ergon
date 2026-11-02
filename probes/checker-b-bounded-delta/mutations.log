@@ -1,0 +1,8 @@
+== B-bounded mutation proofs (throwaway clone), 2026-11-02T01:46:09-05:00 ==
+M26 initial ego offset back to 80 -> traffic acceptance: Ran 9 tests, FAILED (failures=1)
+   FAIL: test_b_bounded_leg_starts_on_the_gap_trigger_with_a_named_bounded_pre_leg
+M27 named pre-leg timeout removed -> traffic acceptance: Ran 9 tests, FAILED (failures=1)
+   FAIL: test_b_bounded_leg_starts_on_the_gap_trigger_with_a_named_bounded_pre_leg
+M28 gap trigger made unconditional -> traffic acceptance: Ran 9 tests, FAILED (failures=1)
+   FAIL: test_b_bounded_leg_starts_on_the_gap_trigger_with_a_named_bounded_pre_leg
+restored: git status clean; tests/traffic/Server.luau sha256 e7839c73721412d15121f62b610d522e33d7309e9c2e73c0bfb5f45bb53b5c9f (frozen)

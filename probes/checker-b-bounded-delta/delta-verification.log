@@ -1,0 +1,85 @@
+== B-bounded delta provenance/scope, 2026-11-02T01:46:09-05:00 ==
+HEAD=e6ae1344fd945ff9f9e7ee1d371ad1fc346919ed
+parent=68c020b71c4dc13288e510da9001b3f5c216c248
+tree=1c0bb6b8505e374f9e222ab7bb0a035bf09554c7
+branch=prep/b1-capture-format-20261101
+tracked_mods=0 untracked=815
+--- delta 68c020b..e6ae134 numstat ---
+8	7	docs/verify/2026-10-19/VINEGAR_RUNBOOK.md
+61	51	tests/tools/test_traffic_acceptance.py
+16	3	tests/traffic/Server.luau
+--- sum ---
+insertions=85 deletions=61
+--- changed paths ---
+docs/verify/2026-10-19/VINEGAR_RUNBOOK.md
+tests/tools/test_traffic_acceptance.py
+tests/traffic/Server.luau
+--- game/asset/sealed touched ---
+(empty=untouched)
+--- atlas/B2 not mixed / settle-retry-audit-45s untouched ---
+(empty=untouched)
+--- sealed hashes ---
+84324d4342667dd163ab8e64adacbf8ef44ab786aeda5c7ab1403e76d52ef6ce  build/release.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  build/test.rbxlx
+
+--- ruled law/guards byte-unchanged (function-block sha at parent vs tip) ---
+--- 68c020b
+627e580d95c5ed62be0eb815460b1c479eb2153ba97f1cb1335e4588d6b97c95  -
+d372efb9229063f7a24c8d28e2e115712b4124b7a37f52f123538d5b886c7100  -
+--- e6ae134
+627e580d95c5ed62be0eb815460b1c479eb2153ba97f1cb1335e4588d6b97c95  -
+d372efb9229063f7a24c8d28e2e115712b4124b7a37f52f123538d5b886c7100  -
+
+--- ruled values present/unchanged ---
+47: if acc.Magnitude>40 then acc=acc.Unit*40 end
+57: if acc.Magnitude>40 then acc=acc.Unit*40 end
+63: if touches<=0 and distance>700 then return "probe left the controller's observation radius (>700 of 800 studs): contact leg unreachable" end
+64: if touches<=0 and sinceContactDrive>=12 then return "contact leg never reached within 12 s of contactDriveAt" end
+227:      local closing=math.clamp(proxySpeed+8,12,60)
+
+--- B-bounded implementation ---
+local Server={}
+local function vec(v) return {v.X,v.Y,v.Z} end
+local CONTACT_GAP=25  -- Nox run-9 B-bounded: the contact leg starts only when the proxy is this close (fixture-only)
+local PRELEG_TIMEOUT=4  -- bounded pre-leg after abortObservedAt; a phase that never converges fails closed, named
+local function frame(cf) return {cf:GetComponents()} end
+ assert(not Server.active,"one probe attempt per Play required");Server.active=true
+ local report={schema=1,kind="native-shared-traffic",stage="runtime",state="running",mode=cfg.mode,candidate=cfg.candidate,nonce=nonce,sourceHashes=cfg.sourceHashes,
+  engine={studio=true,running=true,gameId=game.GameId,placeId=game.PlaceId,preview=true},
+  fixture={autonomousObstacle=true,physicalKeyboard=false,twoClient=false,profileService=false,rewardService=false,identityOnly=true,stockId="neon_hatch",initialBodyPlacements=0,initialVelocityWrites=0,maneuverPoseWrites=0,maneuverVelocityWrites=0,preLegSpeed=30,contactGapTrigger=25,preLegTimeout=4,initialEgoOffset=70},
+  timing={schema=1,limit=4096,rows={},stats={},truncated=false},
+   ego=Instance.new("Part");ego.Name="Chassis";ego.Size=Vector3.new(6,4,14)
+   ego.Anchored=false;ego.CanCollide=true;ego.CanTouch=true;ego.CanQuery=false
+   ego.CustomPhysicalProperties=PhysicalProperties.new(1450/Chassis.KG_PER_ROBLOX_MASS_UNIT/(6*4*14),0.05,0.05,100,1)
+   ego.CFrame=Sim.frame(source.poly,chosen+70)*Sim.contactOffset(ego.Size);ego.Parent=model;ego:SetNetworkOwner(nil)
+   ego.AssemblyLinearVelocity=ego.CFrame.LookVector*10
+   report.fixture.initialBodyPlacements+=1;report.fixture.initialVelocityWrites+=1
+      if cfg.mode=="abort-contact" and not cutAt and car.change.progress>=0.1 then cutAt=age;wantedLoop=target;report.cutInAt=age end
+      if cutAt and (car.change.hold or car.change.returning) then abortAt=abortAt or age;report.abortObservedAt=abortAt end
+     elseif car.loop~=source then report.completedAt=report.completedAt or age end
+     if cfg.mode=="abort-contact" and abortAt and not contactAt then
+      -- Nox run-9 B-bounded: the contact leg starts only when the proxy is within CONTACT_GAP studs of the probe; the
+      -- pre-leg is bounded by PRELEG_TIMEOUT after abortObservedAt and fails closed with a named phase message.
+      local probeGap=(ego.Position-proxy.body.Position).Magnitude
+      report.preLeg={t=age,gap=probeGap,contactGap=CONTACT_GAP,timeout=PRELEG_TIMEOUT}
+      if probeGap<=CONTACT_GAP then
+       contactAt=age;wantedLoop=source;report.contactDriveAt=contactAt;report.contactLegTrigger={t=age,gap=probeGap}
+      elseif age-abortAt>=PRELEG_TIMEOUT then
+       error(string.format("contact leg phase never converged: proxy stayed %.1f studs from the probe (needs <=%d) for %.1f s after abortObservedAt",
+        probeGap,CONTACT_GAP,PRELEG_TIMEOUT))
+      end
+     end
+     local acc,lane
+
+--- trigger/timeout numbers (independent, see trigger-numbers.txt) ---
+gap at abort (studs): 66.62  (must be >25)
+trigger time after abort (s): 2.60  (must be <=4)
+gap at trigger (studs): 24.87  (Nox 12-25 target)
+ego speed at trigger (studs/s): 30.0
+contact from trigger (steady 52 proxy): 7.63s  (must be <12)
+contact from same trigger at old 10 studs/s: 17.65s  (must be >12)
+Play-9 phase gap at its abort (studs): 18.67  (phase sensitivity |diff| >15 required)
+phase difference vs Play-11: 47.94
+
+--- maker report ---
+team-d-b-bounded-freeze-20261102.md ABSENT (verified from the commit)

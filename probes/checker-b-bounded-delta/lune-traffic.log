@@ -1,0 +1,14 @@
+nht caps: 54 logical highway candidates (cap 60), 30 highway packet rows (cap 30), 8 city rows (cap 8)
+nht platoon: steady minimum time gap 1.80 s, transient minimum 1.80 s
+nht seed 52391: 57 following samples, minimum time gap 2.99 s
+nht seed 204817: 58 following samples, minimum time gap 3.02 s
+nht seed 7: 0 following samples, minimum time gap inf s
+nht lane change: signal 1.70 s ahead of motion, 4.95 s signal to lane capture, peak lateral speed 6.4 studs/s
+nht seed 52391: 75 cars drawn in, nearest first draw 632 studs, pop-in 0, pop-out 0
+nht seed 204817: 76 cars drawn in, nearest first draw 632 studs, pop-in 0, pop-out 0
+nht seed 7: 80 cars drawn in, nearest first draw 630 studs, pop-in 0, pop-out 0
+nht lane sway: max |offset| 0.950 studs, max rate 0.500 studs/s, 112748 samples off the centre
+nht sway target: max |target| 0.949 studs, max rate 0.427 studs/s
+nht keep right: passed at 5.95 s, signalled at 14.45 s, captured at 19.40 s, signal lead 1.25 s
+nht preparing driver: prepared at 0.05 s with a 0.775 stud drift, committed at 1.60 s
+unit: 93 passed, 0 failed (18 specs)

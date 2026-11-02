@@ -1,0 +1,8 @@
+gap at abort (studs): 66.62  (must be >25)
+trigger time after abort (s): 2.60  (must be <=4)
+gap at trigger (studs): 24.87  (Nox 12-25 target)
+ego speed at trigger (studs/s): 30.0
+contact from trigger (steady 52 proxy): 7.63s  (must be <12)
+contact from same trigger at old 10 studs/s: 17.65s  (must be >12)
+Play-9 phase gap at its abort (studs): 18.67  (phase sensitivity |diff| >15 required)
+phase difference vs Play-11: 47.94
