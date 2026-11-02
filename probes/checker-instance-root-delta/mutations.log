@@ -1,0 +1,6 @@
+== delta mutation proofs (throwaway clone), 2026-11-01T22:28:54-05:00 ==
+M1 revert the root check to type(root)=="table" -> world-seed spec: 10 passed, 1 failed (2 specs)
+   FAIL: requireApplied: accepts a real Roblox Instance root and fails closed on nil/wrong objects (AtlasWorldSeed:68: the world root is required)
+M2 move the pre-check AtlasWorldTrace publication below the check (ordering regressed) -> atlas acceptance: Ran 16 tests, FAILED (failures=1)
+   FAIL: test_seeded_starter_requires_the_modules_and_reports_every_crash (restored R1 assertion assertLess(index) catches it)
+restored: git status clean; WorldSeed.luau sha256 bab38731fe57…; Server.luau sha256 90193193ba68…

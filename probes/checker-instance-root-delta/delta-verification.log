@@ -1,0 +1,57 @@
+== instance-root fix provenance/delta, 2026-11-01T22:18:32-05:00 ==
+HEAD=35caa0221eafe757ea2c16b635f72061ad72cf74
+parent=e2165f530be1350c0a402faa62c90fde3f126c91
+tree=b56ecea6555389b406f86f28f069423de74c91c9
+branch=prep/b1-capture-format-20261101
+tracked_mods=0 untracked=798
+--- delta e2165f5..35caa02 numstat ---
+5	1	tests/atlas/WorldSeed.luau
+3	0	tests/tools/test_atlas_acceptance.py
+27	0	tests/unit/world-seed-override.spec.luau
+--- sum ---
+insertions=35 deletions=1
+--- changed paths ---
+tests/atlas/WorldSeed.luau
+tests/tools/test_atlas_acceptance.py
+tests/unit/world-seed-override.spec.luau
+--- game/asset/sealed touched ---
+(empty=untouched)
+--- 45s/assert-and-skip/Server untouched ---
+(empty=untouched)
+--- sealed hashes ---
+84324d4342667dd163ab8e64adacbf8ef44ab786aeda5c7ab1403e76d52ef6ce  build/release.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  build/test.rbxlx
+
+--- claim 1: root check accepts userdata/table, named messages unchanged ---
+function WorldSeed.requireApplied(root, expectedSeed, expectedLayout)
+	local value = WorldSeed.parse(expectedSeed)
+	assert(value ~= nil, "a named seed is required")
+	-- The world root is a Folder INSTANCE (type == "userdata"); accept an Instance or a test table, keep the named
+	-- fail-fast text, and never index a value that cannot be one (the old type(root)=="table" check was the bug).
+	local kind = type(root)
+	assert(root ~= nil and (kind == "userdata" or kind == "table") and type(root.GetAttribute) == "function",
+		"the world root is required")
+	local actualSeed, actualLayout = root:GetAttribute("WorldSeed"), root:GetAttribute("WorldLayoutVersion")
+	if actualSeed == value and actualLayout == expectedLayout then
+		return { seed = value, worldSeed = actualSeed, layoutVersion = actualLayout, fastPath = true, rebuilt = false }
+	end
+	error(string.format("named seed not applied before Play: world reports seed %s layout %s, expected %s/%s; "
+		.. "refusing in-Play rebuild", tostring(actualSeed), tostring(actualLayout), tostring(value), tostring(expectedLayout)))
+end
+
+return WorldSeed
+--- named fail-fast text unchanged (git diff shows only the assert line) ---
+-	assert(type(root) == "table" and type(root.GetAttribute) == "function", "the world root is required")
++	-- The world root is a Folder INSTANCE (type == "userdata"); accept an Instance or a test table, keep the named
++	-- fail-fast text, and never index a value that cannot be one (the old type(root)=="table" check was the bug).
++	local kind = type(root)
++	assert(root ~= nil and (kind == "userdata" or kind == "table") and type(root.GetAttribute) == "function",
++		"the world root is required")
+
+--- claim 3: R1 assertions restored ---
+231:  self.assertLess(server.index('workspace:SetAttribute("AtlasWorldTrace"'),server.index('WorldSeed.requireApplied'))
+232:  self.assertEqual(server.count('workspace:SetAttribute("AtlasWorldTrace"'),2)
+--- claim 2: real @lune/roblox spec present ---
+7:local RB = require('@lune/roblox')
+86:	H.test('requireApplied: accepts a real Roblox Instance root and fails closed on nil/wrong objects', function()
+89:		local folder = RB.Instance.new('Folder')
