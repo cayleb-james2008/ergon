@@ -1,0 +1,9 @@
+=== round-3 verdict-path-unchanged proof (parent 618bb4a vs 0ec48d6) ===
+- Client checkAll exact block sha256: ad361c16af283f97 -> ad361c16af283f97  UNCHANGED.
+- payload verdict expression `restored=checkAll(details)` unchanged (byte-identical); payload `cleanup=details` unchanged.
+- `local details=State.check(...)` is computed BEFORE the round-3 re-assert block (verified by source index order).
+- the finish payload never references frameSeries / reassert fields (grep: False); `cameraTypeDiagnostics` is the only carrier
+  and is ignored by the validator (tolerance test passes).
+- round-3 re-assert condition is `details.cameraTypeRestored~=true` (details = the pre-existing check), pcall-wrapped,
+  recorded (reassertOk/reassertError); 5-frame series recorded as frameSeries[{frame,type}] + afterReassertType/reassertFinalType.
+- CameraState.luau / validator / plan / runner are NOT in this delta (byte-identical) -> no fix path changed.

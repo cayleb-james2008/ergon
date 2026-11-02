@@ -1,0 +1,7 @@
+=== round-3 suites — re-run from fresh copy /tmp/checker-r3 (0ec48d6) ===
+atlas acceptance:                    Ran 25 tests in 0.717s | OK
+runner (test_vinegar_run.py):        Ran 91 tests in 12.269s | OK
+full Python tests/tools:             Ran 334 tests in 44.877s | OK
+Lune atlas filter (incl. atlas-paths): unit: 11 passed, 0 failed (4 specs)
+full Lune:                           unit: 925 passed, 0 failed (127 specs)   [re-ran at the tip, ~12 min]
+sealed after runs:                   84324d43… release, c6651793… test, Studio place c6651793… — unchanged

@@ -1,0 +1,17 @@
+=== ROUND-3 diagnostics delta provenance — checker fresh copy 2026-11-02T15:01:52Z ===
+commit: 0ec48d6768224721dbd5987dfb058a2e2b6b4c52  tree: 31ad4db899ddaee78c08cb3c4916abab8f426c22  parent: 618bb4a4473bc5d46eb15a4611cb1fa55f53cdbb
+branch tip: 0ec48d6768224721dbd5987dfb058a2e2b6b4c52  tracked mods: 0  untracked: 833
+fresh copy: git archive 0ec48d6 -> /tmp/checker-r3; 1443 tracked entries blob-for-blob (0 missing/0 mismatch)
+--- delta 618bb4a..0ec48d6 ---
+15	7	tests/atlas/Client.luau
+7	3	tests/tools/test_atlas_acceptance.py
+ 2 files changed, 22 insertions(+), 10 deletions(-)
+--- every changed file ---
+tests/atlas/Client.luau
+tests/tools/test_atlas_acceptance.py
+--- plan/validator/runner/traffic/fixture/src/build in delta (must be none) ---
+(none)
+--- sealed ---
+84324d4342667dd163ab8e64adacbf8ef44ab786aeda5c7ab1403e76d52ef6ce  build/release.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  build/test.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  /home/cayleb/.var/app/org.vinegarhq.Vinegar/data/usg/usg-desktop.rbxlx

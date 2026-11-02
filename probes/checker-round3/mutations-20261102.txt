@@ -1,0 +1,15 @@
+=== round-3 mutation proofs — checker reproduction (throwaway /tmp/checker-r3-mut; restored after each) ===
+M33 conditional re-assert restored to the old condition (details.cameraTypeRestored~=true -> writeDiagnostics.typeAfterWrite~=savedType):
+  atlas acceptance -> Ran 25 tests | FAILED (failures=1)   [caught by the round-3 condition pin]
+M34 5-frame series removed (for frame=1,5 block deleted):
+  atlas acceptance -> Ran 25 tests | FAILED (failures=1)   [caught by the series pins]
+Residual-needle closure re-checked (pin removal -> suite must fail):
+  remove typeWriteError recording    -> FAILED (1)  [closed]
+  remove currentSubjectName recording-> FAILED (1)  [closed]
+  remove reassertOk table entry      -> FAILED (1)  [closed]
+  remove reassertError table entry   -> FAILED (1)  [closed]
+  remove afterReassertType TABLE ENTRY -> atlas acceptance OK  [NOT caught: the needle `afterReassertType=` also matches
+      the assignment line `afterReassertType=if frameSeries[1] ...`, so the recorded field is not actually pinned]
+  typeWriteOk= source needle: absent (0 occurrences); its removal IS caught behaviourally by the Lune atlas-camera-state
+      spec (asserts diag.typeWriteOk).
+Restore: files copied back from the pristine copy; mut-tree diff vs fresh copy = only __pycache__ .pyc files.
