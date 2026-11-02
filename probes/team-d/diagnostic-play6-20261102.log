@@ -1,0 +1,109 @@
+=== TEAM D DIAGNOSTIC PLAY 6 — atlas:scout --seed 2134783819 on the capture-retry fix (Lead GO 2026-11-02T04:22Z) ===
+time 2026-11-02T04:22:13Z
+repo 74cb299d6a6fbbb1020629a73af1bb53173af970 tracked_modified=0
+
+--- 1. state BEFORE (read-only; current opening, no cycle) ---
+ 797879    1103 /home/cayleb/.var/app/org.vinegarhq.Vinegar/data/vinegar/versions/version-
+{"address": "0x558c7fa15fe0", "class": "steam_proton", "title": "Z:\\home\\cayleb\\.var\\app\\org.vinegarhq.Vinegar\\data\\usg\\usg-desktop.rbxlx - Roblox Studio", "at": [1475, 234], "size": [2200, 1000], "floating": true, "fullscreen": 0, "pid": 797879}
+plays record: {  "pid": 797879,  "start": 37590410,  "plays": 1,  "at": 1793592258.1870365}
+host: full avg10=0.03 avg60=0.12 avg300=0.26 total=816297808 | 4.55 4.35 4.38 1/2610 812970
+
+--- sealed BEFORE ---
+84324d4342667dd163ab8e64adacbf8ef44ab786aeda5c7ab1403e76d52ef6ce  build/release.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  build/test.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  /home/cayleb/.var/app/org.vinegarhq.Vinegar/data/usg/usg-desktop.rbxlx
+
+--- preflight ---
+preflight_rc=0
+--- 2. THE ONE PLAY: run atlas:scout --seed 2134783819 start 2026-11-02T04:22:25Z ---
+run_rc=5
+
+--- 3. post-Play state 2026-11-02T04:26:02Z ---
+Studio process: 
+plays record: {  "pid": 797879,  "start": 37590410,  "plays": 2,  "at": 1793593349.6481755}
+
+--- verify-clean ---
+  "at": "2026-11-02T04:26:02+00:00",
+  "clean": false,
+  "error": "no Studio running: no RobloxStudioBeta process (the owner opens Studio; the runner never launches it)"
+}
+verify_rc=0
+
+--- sealed AFTER ---
+84324d4342667dd163ab8e64adacbf8ef44ab786aeda5c7ab1403e76d52ef6ce  build/release.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  build/test.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  /home/cayleb/.var/app/org.vinegarhq.Vinegar/data/usg/usg-desktop.rbxlx
+
+--- run dir ---
+cleanup.luau
+hostcheck.jsonl
+manifest.json
+preflight.json
+prepare.luau
+report.json
+result.json
+verify-before.json
+views
+world-trace.json
+view json count: 20
+capture-attempts.json: 0
+
+--- 4. Studio recovery (crash class: Studio process died after the fail-closed stop) 2026-11-02T04:27:01Z ---
+crash dump (new): 2742f914-5057-4949-8115-e1c5c1074fd4.dmp 106,116,768 B at 2026-11-02T04:22:48Z (dir: .../AppData/Local/Roblox/logs/crashes/reports)
+Studio log tail (04:22:46.7Z) shows the Play shutdown starting (StopPlaySoloShutdownDataModels) then the log ends at 04:22:47.58Z; dump at 04:22:48.58Z
+gpuJournal null; host journal grep (amdgpu|MES|ring|GPU reset|drm) since 04:22: - none
+
+--- studiocycle open ---
+{"action": "open", "result": "ok", "place_sha256_before": "c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98", "place_sha256_after": "c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98", "fit": "ok", "window": {"address": "0x558c7f831f20", "class": "steam_proton", "title": "Z:\\home\\cayleb\\.var\\app\\org.vinegarhq.Vinegar\\data\\usg\\usg-desktop.rbxlx - Roblox Studio", "at": [1475, 234], "size": [2200, 1000], "floating": true, "fullscreen": 0, "pid": 814951}}
+open_rc=0
+
+--- 5. recovered Studio verification 2026-11-02T04:27:11Z ---
+ 814951       9 /home/cayleb/.var/app/org.vinegarhq.Vinegar/data/vinegar/versions/version-
+{"address": "0x558c7f831f20", "class": "steam_proton", "title": "Z:\\home\\cayleb\\.var\\app\\org.vinegarhq.Vinegar\\data\\usg\\usg-desktop.rbxlx - Roblox Studio", "at": [1475, 234], "size": [2200, 1000], "floating": true, "fullscreen": 0, "pid": 814951}
+plays record (old opening): {  "pid": 797879,  "start": 37590410,  "plays": 2,  "at": 1793593349.6481755}
+
+--- preflight on the recovered Studio ---
+preflight_rc=3
+
+--- 6. latch from the crashed run: verify-clean --clear-latch on the freshly reopened sealed place 2026-11-02T04:27:17Z ---
+    },
+    "sources": 101
+  },
+  "clean": true,
+  "latchCleared": true
+}
+verify_clear_rc=0
+
+--- preflight retry ---
+preflight_rc=0
+ript_grep",
+      "wait_job_finished",
+      "generate_procedural_model",
+      "segment_mesh",
+      "generate_texture",
+      "create_skill",
+      "generate_avatar",
+      "generate_mesh",
+      "generate_material",
+      "inspect_instance",
+      "list_skills",
+      "search_asset",
+      "edit_skill",
+      "insert_asset",
+      "list_roblox_studios"
+    ]
+  },
+  "edit": true,
+  "plays": 0
+}
+
+=== RESULT SUMMARY 2026-11-02T04:28:09Z ===
+Play 6: run atlas:scout --seed 2134783819 04:22:25Z->04:25:54Z, exit=5 (crash class)
+20/24 views captured again (20 distinct sha256, viewportMatchesPng=true all); captureAttempts audit in result.json (21 entries)
+RETRY PROVED THE DUPLICATE IS PERSISTENT: view-021 highway-overhead 3 attempts (0.3 s apart) ALL byte-identical to view-020 city-overhead (sha 0ac9595d3372a880...), duplicate:true; fail-closed named 'on all 3 attempts (stale capture; attempts recorded)'
+fastPathApplied=true again (actual==expected 2134783819/2, rebuild=false, starter applied before rootFoundAt)
+Studio crash: new 106,116,768 B minidump 2742f914-...dmp @04:22:48.583Z; abort stop ok, cleanup/verifyClean disconnected; newCrashDumps 1; gpuJournal null; no kernel amdgpu/MES lines; hostcheck clean
+layer 5 = overhead-view render/capture stall (previous frame persists) + Wine Studio crash on Play shutdown; not a retry-logic defect
+sealed unchanged through the crash: 84324d43.../c6651793...; Studio recovered with studiocycle open (sealed hash guarded, before==after): pid 814951 window 0x558c7f831f20 2200x1000; verify-clean --clear-latch passed; preflight rc0 Edit plays 0/3 (fresh opening)
+residual nit: capture-attempts.json not written on the failure path (audit in result.json) -> fold into next offline change
+proposed next (needs ruling): overhead-specific bounded render settle (1.0 s + re-probe before first capture, 1.0 s retry wait for overhead kinds, max 2, kind+settledSeconds recorded) + failure-path audit file + offline tests -> freeze -> delta -> next atlas Play (recovered opening 0/3); Play B gated; third Play reserved; report board/reports/team-d-diagnostic-play6.md
