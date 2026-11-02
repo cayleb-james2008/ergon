@@ -1,0 +1,17 @@
+=== ATLAS PLAY-19 FIX FREEZE (verdict recompute after deferred re-assert) 2026-11-02 ===
+commit e475d4688f3243932105cf4a0fef0561564e2811  tree a36ed97a517173aed279219425b45f659c1dbbb7  parent 0ec48d6  2 files +29/-2
+sealed 84324d43.../c6651793... unchanged
+why: Play 19 (round-3 diagnostics, clean run, 30/30 captured) named the cadence = ONE-SHOT reverter:
+  initial write lands (typeWriteOk true, typeAfterWrite/typeAfterFullRestore Custom) but is Scriptable again by the
+  delayed check; deferred re-assert (reassertAttempted/Ok true) holds Custom across all 5 frames
+  (afterReassertType/reassertFinalType Custom, frameSeries all Custom) -> one-shot, not per-frame.
+change (client cleanup only): after the re-assert + 5-frame series, when the attempt succeeded, all frames hold the saved
+  type and a fresh State.check passes -> details replaced by the fresh check (menuGrade/effects/noDriver/bindings/monitor/
+  focus recomputed); otherwise original failed details kept -> fail closed on genuine mismatch. diagnostics gains
+  verdictRecomputed; payload/validator unchanged.
+tests: fix + residual pins (afterReassertType= recorded entry, typeWriteOk=); M35 (recompute reverted) -> atlas acceptance
+  FAILED (1). restored, tracked clean.
+suites: atlas acceptance 25 OK; runner 91 OK; full Python 334 OK; Lune atlas 11/0 (4 specs); full Lune 925/0 (127 specs).
+state: Studio pid 995852 alive, Edit, opening 2/3 used (1 reserved), place==build c6651793, sealed unchanged.
+next: fresh-checker delta on e475d46 -> Play 20 pass gate (cameraTypeRestored true + every other field true); Play-20
+  budget: one Play left in this opening (Lead decides Play-20 vs fresh opening).
