@@ -1,0 +1,11 @@
+=== DELTA 2 residuals from checker-b2-delta (REJECT) — folded? ===
+1. missing log board/probes/team-d/atlas-b2-freeze-20261102.log -> PRESENT (2801 B, 02:55; includes the delta round).
+2. stale runbook run-7 "27 views" paragraph -> REMOVED by e8d18f4 (docs diff -8 lines; grep for "27** views"/"run-7, 2026-11-02" = absent).
+3. anchors deviation (design note region-3/4 highway anchors duplicated highway-zone anchors; four distinct city pads used) ->
+   JUSTIFIED in the updated report §1 and in the freeze log; commit note records the delta fix.
+4. server/client cap test -> RESTORED: test_server_and_client_agree_on_the_widened_view_bound (server #manifest.views<=32,
+   client #plan.views<=32, no <=24, 30-view scout fits, 33 rejected).
+5. bounded-span negative -> UNIT-TESTED: test_world_region_bounded_framing_is_enforced (support smaller than a region fit ->
+   ValueError 'strictly smaller than the world support'); M25b (rule removed) FAILED (1).
+6. counts -> report untracked count corrected 792 -> 823 (checked in the updated report §2b/§3).
+7. M24 pin -> wiring test now asserts the exact zonePath-first order AND the absence of the old world-first form; M24 FAILED (1).

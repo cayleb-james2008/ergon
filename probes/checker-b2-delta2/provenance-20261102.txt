@@ -1,0 +1,13 @@
+=== DELTA 2 (B2 delta fix) provenance — checker fresh copy 2026-11-02T08:19:57Z ===
+commit: e8d18f407d3f9d576737b198cac94978999697cf  tree: 93019c4350c717aa08f8e916b745c1974bf4c07f  parent: 1eed7e776d6d2484371b72e6632eb7129cdbee7d
+branch tip: e8d18f407d3f9d576737b198cac94978999697cf  tracked mods: 0  untracked: 823
+fresh copy: git archive e8d18f4 -> /tmp/checker-d2; 1443 tracked entries blob-for-blob (0 missing/0 mismatch)
+--- delta 1eed7e7..e8d18f4 numstat ---
+0	8	docs/verify/2026-10-19/VINEGAR_RUNBOOK.md
+25	0	tests/tools/test_atlas_acceptance.py
+--- scope purity ---
+(none)
+--- sealed ---
+84324d4342667dd163ab8e64adacbf8ef44ab786aeda5c7ab1403e76d52ef6ce  build/release.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  build/test.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  /home/cayleb/.var/app/org.vinegarhq.Vinegar/data/usg/usg-desktop.rbxlx

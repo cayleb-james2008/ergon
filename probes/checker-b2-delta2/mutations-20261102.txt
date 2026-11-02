@@ -1,0 +1,10 @@
+=== DELTA 2 mutation proofs — checker reproduction (throwaway /tmp/checker-d2/mut; restored after each) ===
+M24 revert the server fit order (tests/atlas/Server.luau: zonePath-first -> world-first):
+  test_atlas_acceptance.py -> Ran 24 tests | FAILED (failures=1)
+  failing test: test_zone_overhead_wiring_is_present_in_plan_server_client_and_validator
+  AssertionError: 'if view.zonePath then actual.fitBounds=actualBounds(anchor)\n   elseif view.zone=="world" then' not found
+  -> the previously-uncaught M24 is now caught by the frozen suite.
+M25b remove the bounded-framing rule from tools/atlas_acceptance.py:
+  test_atlas_acceptance.py -> Ran 24 tests | FAILED (failures=1)
+  failing test: test_world_region_bounded_framing_is_enforced
+Restore: files copied back from the pristine copy; mut-tree diff vs fresh copy = only __pycache__ .pyc files.

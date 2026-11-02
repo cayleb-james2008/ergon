@@ -1,0 +1,8 @@
+=== DELTA 2 suites — re-run from fresh copy /tmp/checker-d2 (e8d18f4) ===
+runner (test_vinegar_run.py):        Ran 91 tests in 14.715s | OK
+map atlas:                           Ran 6 tests in 0.477s | OK
+atlas acceptance:                    Ran 24 tests in 1.263s | OK   (22 -> 24: restored cap test + bounded-span negative)
+full Python tests/tools:             Ran 333 tests in 47.062s | OK
+Lune atlas filter (incl. atlas-paths): unit: 10 passed, 0 failed (4 specs)
+full Lune:                           unit: 924 passed, 0 failed (127 specs)  [re-ran at the tip]
+sealed after runs:                   84324d43… release, c6651793… test, Studio place c6651793… — unchanged
