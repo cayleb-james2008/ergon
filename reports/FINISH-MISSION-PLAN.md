@@ -45,3 +45,18 @@ Record: `docs/harness-build/finish-2026-11-02/O1-CLOSURE-RECORD.md` (also `O1-CO
 1,211 calls, o1-attributed $1.1461). Corrections carried: post-163 "one chain" provenance is wrong; 22/84 checker mutations survive
 (panel gating/SSE refusal rest on reading, not a guarding test); nothing type-checked, bundled or rendered (that is leg 1 of this
 mission). **The rendered face + integration remain the mission's leg-1 deliverable; the harness route fix is Option B's package.**
+
+## Round-4 state (2 Nov 16:50 ET) — where each scope item stands
+| # | Scope | State now | Next gate |
+|---|---|---|---|
+| 1 | Visible face (fleet profile :3092) | Team B: artifact `0.3.5.1-face-prep` rebased onto 0.3.5.1 (tarball `7a125df2…`, manifest `d8226990…`, carries validate.js fix `b68ce88c…`, refuses a source without it); scratch-proven (dump 62,603 B, fleet-face row once, 33/33 tests); **not installed** | installer self-check + must-keep hash list + Nox's go (executing session gates it) |
+| 2 | Comms layer | installed 0.3.5 bus (six bus.* tools, seeded participants); `ext:delegator` connected by **pull** (h1/h2 pulled+acked; h3 queued to nox, no pull route for nox) | native wake for the delegator waits on the relocation ruling (Part B) |
+| 3 | Duet route + hookup | **CRITICAL PATH** per the owner's end-state (once Duet's connection is proven, the Claude desktop app shuts down and DSH is the only harness). Leg-3 design Part A/B filed for Nox's ruling + Lane 6 review; Team B's courier built offline (delivery/pickup/ack, wake_claimed:false) | Nox's leg-3 ruling + Lane 6 review (Team E review in progress) + owner Google consent/folder for the Drive mailbox |
+| 4 | Owner Elevation | A+ spec + Lane 6 brief filed; helper build by a Claude lane; install/first-run = owner's home sitting | Lane 6 gate (in review now) + owner sitting |
+| 5 | First real order | **o1 closed administratively (Option C)**: fresh Claude check met all four rubric criteria on the commits; harness route gap (rubric final task vs finisher/check-flow/tier-2) named; stored `failed` = closure, not failure; Option B (route) is next package | Option B package (rubric-final route) — not this round |
+| — | Roblox abort-contact cell | B authority **proven live** (assistMaxForce 40×mass, force drive zeroed, probe held 60, clean release) but closing impossible: chase target sits behind the probe (lane-position sign vs travel direction); **stopped, no code change, no faked contact**; 2 reserved Plays | Nox's ruling on fallback option 1 (fixture geometry so the target is ahead — recommended) or option 2 (named scenario limit) |
+| — | Roblox B1 atlas cell | **PASS** (Play 20, first live cell pass; full evidence chain; sealed unchanged) | closed |
+| — | Monday desk | closed: completeness PASS 1/1 (one shadow-book signal +$72.50, 0 broker fills, ORB15 HOLD); flat verified late 16:16:52; logout event recorded observed | 16:20 outcome filed; re-open tomorrow per programme |
+| — | Estate N5 | closed (extension-host stopped 16:20:04, manifests retired, desk Chromium same PID, no respawn) | closed |
+| — | Incident | openbell-dash killed by Team B's wrong-PID scratch cleanup; restored 16:21:00; independently verified (NRestarts 0, 8791 local+tailnet); port-safety rules now encoded (`prep/PORT-SAFETY.md`) | record closed; rules applied |
+| — | Lumen design | closed on our side: final freeze `2a8cc21b…` (17/17, 94 checks, all six checker notes closed); presented copy unchanged | **owner's grade** |
