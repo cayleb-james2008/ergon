@@ -93,7 +93,7 @@ Coverage: **61/61 repos** resolved (same 61 as 31 Oct; 0 added/removed). Core ra
 | **New PRs** | 6, all in `ergon` (#8-#13), all **MERGED** (Team A work on 1 Nov: archive import, exit-codes, rehearsal package, fold-in, design pack, known limits). |
 | **Repos archived** | 4 on 1 Nov (archived flags false→true): `openbell-meme-desk` 00:20:15Z, `kairos` 02:37:50Z, `meme-hedge-fund` 02:37:51Z, `ergon-lite` 03:00:24Z. The API does not expose the archive actor; account-level change, recorded as fact. These are the consolidation candidates Cayleb already had on the table. |
 | **Pushes since 31 Oct** | `dsh-fleet` 2026-10-31T23:49:29Z; `openbell` 2026-11-01T02:50:20Z; `kalshi-shadow-data` 2026-11-01T04:00:23Z; `ergon` 2026-11-01T23:37:41Z (last commit 20:22:40Z). |
-| **Branch counts** | `ergon` 93→102 (+9); `dsh-fleet` 3→4 (+1); `openbell` 1→2 (+1); all other repos unchanged (338→? no other deltas observed). |
+| **Branch counts** | estate total 338→349: `ergon` 93→102 (+9); `dsh-fleet` 3→4 (+1); `openbell` 1→2 (+1); all other repos unchanged. |
 | **Decisions** | **None taken by Team E.** The decision pack's PR items are moot (owner closed them himself); the consolidation proposals are moot (owner archived the four repos himself). No ESTATE action remains for this pack as written — **Lead should confirm/void the pack** and note the archive naming was the owner's own act, not ours. |
 
 ---
@@ -107,3 +107,18 @@ Coverage: **61/61 repos** resolved (same 61 as 31 Oct; 0 added/removed). Core ra
 5. One shared-repo rule applies: this file is only "posted" once the Lead lands it in origin/team.
 
 — `upkeep-lead`, Team E (Jobs 18-19), 2026-11-01T23:55Z
+
+---
+
+## 10. ADDENDUM — 2026-11-02T00:45Z (19:45 ET): Job-18 estate rows CLOSED by the owner's own acts — VOID-FOR-RECORD, not pending
+
+**Authority for the wording:** Nox run-2 filing **20261102T003600Z**, relayed by the Lead: "Record the Job-18 rows exactly that way: seven PRs closed by the owner, four repos archived by the owner, 1 Nov; no lane estate action taken or needed." This is an **addendum only** — nothing above is rewritten.
+
+**Record (Job-18 estate rows — VOID-FOR-RECORD, not pending; no owner pick owed, do not re-raise):**
+- **Seven held PRs — closed 1 Nov 2026 by `cayleb-james2008` (closed, NOT merged; no Team E action):** kairos-cloud **#35** closed 2026-11-01T00:18:24Z · **#10** 00:18:29Z · **#7** 00:18:33Z · **#6** 00:18:38Z; talos-workspace **#23** 00:18:44Z; daedalus **#1** 00:18:49Z; sophos **#11** 00:18:53Z. Evidence: `board/probes/team-e-e5/sweep-20261101T2338Z/held-prs-current.tsv` (REST state + `closed_at`; timeline actor read for kairos-cloud #35, talos-workspace #23, sophos #11; all `merged=false`, draft flags unchanged).
+- **Four repos — archived 1 Nov 2026 by the owner (account-level change; the API exposes no archive actor; no Team E action):** openbell-meme-desk **2026-11-01T00:20:15Z** · kairos **02:37:50Z** · meme-hedge-fund **02:37:51Z** · ergon-lite **03:00:24Z**. Evidence: `archived-repos.tsv` (GraphQL `isArchived`/`archivedAt`) + archived-flag delta vs the 31 Oct `repos.tsv`.
+- **No lane estate action taken or needed.** The decision-pack rows are **void-for-record**, not waiting on a pick: `board/reports/team-e-decision-pack.md` (31 Oct) is closed by these owner acts for its PR and consolidation items.
+
+**Unchanged and still live from this digest:** Monday **07:45 ET** loose-ends sweep per `board/reports/team-e-monday-sweep-runbook.md` (GitHub cadence **Tue 3 Nov 09:00 ET**); **N5** in the **post-16:20 ET** slot with evidence file `board/reports/team-e-n5-result-20261102.md`; **N2+N6 relay HELD** (never overnight-sent). All §9 limits stand.
+
+— `upkeep-lead`, Team E (Jobs 18-19), 2026-11-02T00:45Z
