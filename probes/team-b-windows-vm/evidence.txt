@@ -1,0 +1,20 @@
+windows-vm attempt evidence 2026-11-02T02:01:27Z
+--- qcow2
+14968619008 bytes (2026-11-01 21:01:16.402480169 -0500)
+--- qemu pid/listeners
+--- serial (install attempt13, head)
+[2J[001;001H[=3h[2J[001;001H[2J[001;001H[8;056;240t[2J[001;001H[2J[001;001H[=3h[2J[001;001H[2J[001;001H[8;042;160t[2J[001;001HBdsDxe: loading Boot0002 "UEFI QEMU DVD-ROM QM00002 " from PciRoot(0x0)/Pci(0x1,0x1)/Ata(Primary,Slave,0x0)
+BdsDxe: starting Boot0002 "UEFI QEMU DVD-ROM QM00002 " from PciRoot(0x0)/Pci(0x1,0x1)/Ata(Primary,Slave,0x0)
+
+--- serial (run1, boot manager)
+[2J[001;001H[=3h[2J[001;001H[2J[001;001H[8;056;240t[2J[001;001H[2J[001;001H[=3h[2J[001;001H[2J[001;001H[8;042;160t[2J[001;001HBdsDxe: loading Boot000B "Windows Boot Manager" from HD(1,GPT,44C45CA7-14C4-4967-8BDC-D8D586A48CB6,0x800,0x96000)/\EFI\Microsoft\Boot\bootmgfw.efi
+BdsDxe: starting Boot000B "Windows Boot Manager" from HD(1,GPT,44C45CA7-14C4-4967-8BDC-D8D586A48CB6,0x800,0x96000)/\EFI\Microsoft\Boot\bootmgfw.efi
+
+--- answer dir (vvfat source)
+total 8
+drwxr-xr-x 1 cayleb cayleb   32 Nov  1 10:59 .
+drwxr-xr-x 1 cayleb cayleb  166 Nov  1 21:01 ..
+-rw-r--r-- 1 cayleb cayleb 5269 Nov  1 11:58 autounattend.xml
+--- vars backup
+-rw-r--r-- 1 cayleb cayleb 540672 Nov  1 20:59 /home/cayleb/workspace/harness-build/scratch-tb-l4/rig/win/OVMF_VARS.fd
+-rw-r--r-- 1 cayleb cayleb 540672 Nov  1 20:38 /home/cayleb/workspace/harness-build/scratch-tb-l4/rig/win/OVMF_VARS.fd.pre-attempt10
