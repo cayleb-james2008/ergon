@@ -1,0 +1,4 @@
+=== teardown r3 2026-11-02T14:52:43Z
+emulator: stopped
+http 8792: closed
+port 8791 live desk: 1 listener (untouched)

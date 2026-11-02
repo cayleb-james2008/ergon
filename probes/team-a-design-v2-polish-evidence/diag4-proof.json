@@ -1,0 +1,15 @@
+{
+ "target": {
+  "title": "07 \u00b7 States + Depth \u2014 Ergon Lumen v2 design comp",
+  "url": "http://10.0.2.2:8792/comps/07-states.html?notefix=1"
+ },
+ "result": {
+  "id": 1,
+  "result": {
+   "result": {
+    "type": "string",
+    "value": "{\"sheetRules\":164,\"nested\":[{\"sel\":\"*, ::before, ::after\"},{\"sel\":\".glass, .glass-1, .glass-2, .glass-3, .card, .sheet, .phone, .desktop, .sidebar, .phone .composer, .phone .tabbar, .banner\"},{\"sel\":\"button\"},{\"sel\":\"button.primary\"},{\"sel\":\".pill\"},{\"sel\":\"a\"}],\"hcRules\":[{\"sel\":\"[data-contrast=\\\"high\\\"] .glass, [data-contrast=\\\"high\\\"] .glass-1, [data-contrast=\\\"high\\\"] .glass-2, [data-contrast=\\\"high\\\"] .glass-3, [data-contrast=\\\"high\\\"] .card, [data-contrast=\\\"high\\\"] .sheet, [data-contrast=\\\"high\\\"] .phone, [data-contrast=\\\"high\\\"] .desktop, [data-contrast=\\\"high\\\"] .sidebar, [data-contrast=\\\"high\\\"] .phone .composer, [data-contrast=\\\"high\\\"] .phone .tabbar, [data-contrast=\\\"high\\\"] .banner\",\"parent\":null},{\"sel\":\"[data-contrast=\\\"high\\\"] button\",\"parent\":null},{\"sel\":\"[data-contrast=\\\"high\\\"] button.primary\",\"parent\":null},{\"sel\":\"[data-contrast=\\\"high\\\"] .pill\",\"parent\":null},{\"sel\":\"[data-contrast=\\\"high\\\"] input\",\"parent\":null},{\"sel\":\"[data-contrast=\\\"high\\\"] a\",\"parent\":null},{\"sel\":\"[data-contrast=\\\"high\\\"] .msg\",\"parent\":null},{\"sel\":\"[data-contrast=\\\"high\\\"] .nn .node\",\"parent\":null},{\"sel\":\"[data-contrast=\\\"high\\\"] .nn .edge\",\"parent\":null},{\"sel\":\"[data-contrast=\\\"high\\\"] .state-dot\",\"parent\":null},{\"sel\":\"[data-contrast=\\\"high\\\"] .empty\",\"parent\":null},{\"sel\":\"[data-contrast=\\\"high\\\"] .light-pool\",\"parent\":null},{\"sel\":\"[data-contrast=\\\"high\\\"] body\",\"parent\":null}],\"matchesSimple\":true,\"matchesHc\":true,\"bg\":\"rgba(198, 222, 255, 0.1)\"}"
+   }
+  }
+ }
+}

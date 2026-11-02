@@ -1,0 +1,71 @@
+{
+ "target": {
+  "url": "http://10.0.2.2:8792/comps/01-mobile-chat.html?real=01"
+ },
+ "normal": {
+  "composer": {
+   "shadow": "rgba(2, 3, 5, 0.5) 0px 10px 30px 0px, rgba(255, 255, 255, 0.07) 0px 1px 0px 0px inset, rgba(2, 3, 5, 0.42) 0px -1px 0px 0px inset",
+   "blur": "blur(18px)",
+   "bg": "rgba(198, 222, 255, 0.07)"
+  },
+  "tabbar": {
+   "shadow": "rgba(255, 255, 255, 0.07) 0px 1px 0px 0px inset",
+   "blur": "blur(18px)",
+   "bg": "rgba(198, 222, 255, 0.07)"
+  },
+  "banner": {
+   "shadow": "rgba(255, 255, 255, 0.07) 0px 1px 0px 0px inset",
+   "blur": "blur(14px)",
+   "bg": "rgba(198, 222, 255, 0.07)"
+  },
+  "phone": {
+   "shadow": "rgba(2, 3, 5, 0.6) 0px 18px 48px 0px, rgba(255, 255, 255, 0.07) 0px 1px 0px 0px inset, rgba(2, 3, 5, 0.42) 0px -1px 0px 0px inset",
+   "blur": "blur(14px)",
+   "bg": "rgba(198, 222, 255, 0.04)"
+  }
+ },
+ "dataContrastPath_settled": {
+  "composer": {
+   "shadow": "none",
+   "blur": "none",
+   "bg": "rgb(18, 18, 18)"
+  },
+  "tabbar": {
+   "shadow": "none",
+   "blur": "none",
+   "bg": "rgb(18, 18, 18)"
+  },
+  "banner": {
+   "shadow": "none",
+   "blur": "none",
+   "bg": "rgb(18, 18, 18)"
+  },
+  "phone": {
+   "shadow": "none",
+   "blur": "none",
+   "bg": "rgb(18, 18, 18)"
+  }
+ },
+ "forcedColorsPath_settled": {
+  "composer": {
+   "shadow": "none",
+   "blur": "none",
+   "bg": "rgb(18, 18, 18)"
+  },
+  "tabbar": {
+   "shadow": "none",
+   "blur": "none",
+   "bg": "rgb(18, 18, 18)"
+  },
+  "banner": {
+   "shadow": "none",
+   "blur": "none",
+   "bg": "rgb(18, 18, 18)"
+  },
+  "phone": {
+   "shadow": "none",
+   "blur": "none",
+   "bg": "rgb(18, 18, 18)"
+  }
+ }
+}

@@ -1,0 +1,15 @@
+{
+ "target": {
+  "title": "07 \u00b7 States + Depth \u2014 Ergon Lumen v2 design comp",
+  "url": "http://10.0.2.2:8792/comps/07-states.html?notefix=1"
+ },
+ "result": {
+  "id": 1,
+  "result": {
+   "result": {
+    "type": "string",
+    "value": "{\"selectedRow\":{\"bg\":\"rgba(198, 222, 255, 0.1)\",\"border\":\"rgba(206, 228, 255, 0.24)\",\"color\":\"rgb(234, 242, 250)\",\"matches\":true},\"unselectedRow\":{\"bg\":\"rgba(0, 0, 0, 0)\",\"border\":\"rgba(0, 0, 0, 0)\"},\"disabledInput\":{\"border\":\"rgb(255, 255, 255)\",\"bg\":\"rgb(59, 59, 59)\",\"color\":\"rgb(255, 255, 255)\"},\"readonlyInput\":{\"border\":\"rgb(255, 255, 255)\",\"bg\":\"rgb(59, 59, 59)\"}}"
+   }
+  }
+ }
+}

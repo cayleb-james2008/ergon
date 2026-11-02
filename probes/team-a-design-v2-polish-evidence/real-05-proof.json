@@ -1,0 +1,35 @@
+{
+ "target": {
+  "url": "http://10.0.2.2:8792/comps/05-desktop-workspace.html?real=1"
+ },
+ "dataContrastPath": {
+  "url": "http://10.0.2.2:8792/comps/05-desktop-workspace.html?real=1",
+  "normal": {
+   "text": "Chat",
+   "bg": "rgba(198, 222, 255, 0.1)",
+   "border": "rgba(206, 228, 255, 0.24)",
+   "color": "rgb(234, 242, 250)"
+  },
+  "withDataContrast": {
+   "text": "Chat",
+   "bg": "rgba(198, 222, 255, 0.1)",
+   "border": "rgba(206, 228, 255, 0.24)",
+   "color": "rgb(59, 59, 59)"
+  }
+ },
+ "forcedColorsPath": {
+  "url": "http://10.0.2.2:8792/comps/05-desktop-workspace.html?real=1",
+  "normal": {
+   "text": "Chat",
+   "bg": "rgba(198, 222, 255, 0.1)",
+   "border": "rgba(206, 228, 255, 0.24)",
+   "color": "rgb(59, 59, 59)"
+  },
+  "withDataContrast": {
+   "text": "Chat",
+   "bg": "rgba(198, 222, 255, 0.1)",
+   "border": "rgba(206, 228, 255, 0.24)",
+   "color": "rgb(59, 59, 59)"
+  }
+ }
+}

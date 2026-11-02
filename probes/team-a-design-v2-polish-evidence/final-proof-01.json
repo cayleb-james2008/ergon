@@ -1,0 +1,15 @@
+{
+ "target": {
+  "title": "01 \u00b7 Mobile Chat \u2014 Ergon Lumen v2 design comp",
+  "url": "http://10.0.2.2:8792/comps/01-mobile-chat.html?notefix=2"
+ },
+ "result": {
+  "id": 4,
+  "result": {
+   "result": {
+    "type": "string",
+    "value": "{\"url\":\"http://10.0.2.2:8792/comps/01-mobile-chat.html?notefix=2\",\"beforeHighContrast\":{\"composerShadow\":\"rgba(2, 3, 5, 0.5) 0px 10px 30px 0px, rgba(255, 255, 255, 0.07) 0px 1px 0px 0px inset, rgba(2, 3, 5, 0.42) 0px -1px 0px 0px inset\",\"composerBlur\":\"blur(18px)\",\"composerBg\":\"rgba(198, 222, 255, 0.07)\",\"tabbarShadow\":\"rgba(255, 255, 255, 0.07) 0px 1px 0px 0px inset\",\"tabbarBlur\":\"blur(18px)\",\"bannerShadow\":\"rgba(255, 255, 255, 0.07) 0px 1px 0px 0px inset\",\"bannerBlur\":\"blur(14px)\",\"phoneBg\":\"rgba(198, 222, 255, 0.04)\",\"phoneBlur\":\"blur(14px)\"},\"afterHighContrast\":{\"composerShadow\":\"none\",\"composerBlur\":\"none\",\"composerBg\":\"rgb(18, 18, 18)\",\"tabbarShadow\":\"none\",\"tabbarBlur\":\"none\",\"bannerShadow\":\"none\",\"bannerBlur\":\"none\",\"phoneBg\":\"rgb(18, 18, 18)\",\"phoneBlur\":\"none\"},\"labelPresent\":true}"
+   }
+  }
+ }
+}

@@ -1,0 +1,5 @@
+=== teardown complete 2026-11-02T14:31:37Z
+android emulator: stopped
+http 8792: closed
+port 8791 live desk: 1 listener (untouched)
+n4 transport log: httpd-r2.log (64 GET requests, server argv recorded)

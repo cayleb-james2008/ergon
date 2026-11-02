@@ -1,0 +1,15 @@
+{
+ "target": {
+  "title": "05 \u00b7 Desktop Workspace \u2014 Ergon Lumen v2 design comp",
+  "url": "http://10.0.2.2:8792/comps/05-desktop-workspace.html?fresh=1793629817"
+ },
+ "result": {
+  "id": 1,
+  "result": {
+   "result": {
+    "type": "string",
+    "value": "{\"servedBytes\":20083,\"hasChildRule\":true,\"hasDisabledRule\":true,\"matches\":true,\"bg\":\"rgba(85, 163, 254, 0.6)\",\"border\":\"rgba(85, 163, 254, 0.6)\",\"color\":\"rgb(59, 59, 59)\"}"
+   }
+  }
+ }
+}

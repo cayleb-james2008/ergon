@@ -1,0 +1,15 @@
+{
+ "target": {
+  "title": "07 \u00b7 States + Depth \u2014 Ergon Lumen v2 design comp",
+  "url": "http://10.0.2.2:8792/comps/07-states.html?notefix=2"
+ },
+ "result": {
+  "id": 4,
+  "result": {
+   "result": {
+    "type": "string",
+    "value": "{\"url\":\"http://10.0.2.2:8792/comps/07-states.html?notefix=2\",\"beforeHighContrast\":{\"disabled\":{\"value\":\"Locked by IT\",\"color\":\"rgb(149, 162, 177)\",\"bg\":\"rgba(198, 222, 255, 0.04)\",\"border\":\"rgba(206, 228, 255, 0.16)\",\"borderStyle\":\"solid\"},\"readonly\":{\"value\":\"Frozen quote\",\"color\":\"rgb(234, 242, 250)\",\"bg\":\"rgba(198, 222, 255, 0.04)\",\"border\":\"rgba(206, 228, 255, 0.16)\",\"borderStyle\":\"solid\"}},\"afterHighContrast\":{\"disabled\":{\"value\":\"Locked by IT\",\"color\":\"rgb(255, 255, 255)\",\"bg\":\"rgb(59, 59, 59)\",\"border\":\"rgba(206, 228, 255, 0.16)\",\"borderStyle\":\"solid\"},\"readonly\":{\"value\":\"Frozen quote\",\"color\":\"rgb(255, 255, 255)\",\"bg\":\"rgb(59, 59, 59)\",\"border\":\"rgba(206, 228, 255, 0.16)\",\"borderStyle\":\"solid\"}},\"emptyState\":true,\"labelPresent\":true}"
+   }
+  }
+ }
+}

@@ -1,0 +1,15 @@
+{
+ "target": {
+  "title": "05 \u00b7 Desktop Workspace \u2014 Ergon Lumen v2 design comp",
+  "url": "http://10.0.2.2:8792/comps/05-desktop-workspace.html?notefix=2"
+ },
+ "result": {
+  "id": 1,
+  "result": {
+   "result": {
+    "type": "string",
+    "value": "{\"cssomHcRules\":[\"[data-contrast=\\\"high\\\"] .glass, [data-contrast=\\\"high\\\"] .glass-1, [data-contrast=\\\"high\\\"] .glass-2, [data-contrast=\\\"high\\\"] .glass-3, [data-contrast=\\\"high\\\"] .card, [data-contrast=\\\"high\\\"] .sheet, [data-contrast=\\\"high\\\"] .phone, [data-contrast=\\\"high\\\"] .desktop, [data-contrast=\\\"high\\\"] .sidebar, [data-contrast=\\\"high\\\"] .phone .composer, [data-contrast=\\\"high\\\"] .phone .tabbar, [data-contrast=\\\"high\\\"] .banner\",\"[data-contrast=\\\"high\\\"] input\",\"[data-contrast=\\\"high\\\"] .sidebar nav button\",\"[data-contrast=\\\"high\\\"] .sidebar nav button[aria-current=\\\"page\\\"]\",\"[data-contrast=\\\"high\\\"] .phone .tabbar button\",\"[data-contrast=\\\"high\\\"] .phone .tabbar button[aria-selected=\\\"true\\\"]\",\"[data-contrast=\\\"high\\\"] .phone .tabbar button::before\"],\"fetchedCssHasChildRule\":true,\"servedBytes\":19839,\"rowAfterHighContrast\":{\"bg\":\"rgba(0, 0, 0, 0)\",\"border\":\"rgba(0, 0, 0, 0)\"},\"hrefCss\":[\"http://10.0.2.2:8792/tokens.css\",\"http://10.0.2.2:8792/comp-kit.css\"]}"
+   }
+  }
+ }
+}

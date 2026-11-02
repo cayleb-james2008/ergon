@@ -1,0 +1,73 @@
+=== server with access logging (N4):
+serve argv: python3 -m http.server 8792 --bind 127.0.0.1 --directory /home/cayleb/Documents/deepseek-harness/default-workspace/board/probes/team-a-design-v2
+127.0.0.1 - - [02/Nov/2026 09:25:32] "GET /comps/01-mobile-chat.html HTTP/1.1" 200 -
+127.0.0.1 - - [02/Nov/2026 09:25:47] "GET /comps/01-mobile-chat.html?notefix=1 HTTP/1.1" 200 -
+127.0.0.1 - - [02/Nov/2026 09:25:47] "GET /tokens.css HTTP/1.1" 200 -
+127.0.0.1 - - [02/Nov/2026 09:25:47] "GET /comp-kit.css HTTP/1.1" 200 -
+127.0.0.1 - - [02/Nov/2026 09:25:47] "GET /comp-motion.js HTTP/1.1" 200 -
+127.0.0.1 - - [02/Nov/2026 09:25:47] code 404, message File not found
+127.0.0.1 - - [02/Nov/2026 09:25:47] "GET /favicon.ico HTTP/1.1" 404 -
+127.0.0.1 - - [02/Nov/2026 09:25:58] "GET /comp-kit.css HTTP/1.1" 304 -
+127.0.0.1 - - [02/Nov/2026 09:25:58] "GET /comp-motion.js HTTP/1.1" 304 -
+127.0.0.1 - - [02/Nov/2026 09:26:04] "GET /comp-kit.css HTTP/1.1" 304 -
+127.0.0.1 - - [02/Nov/2026 09:26:04] "GET /comp-motion.js HTTP/1.1" 304 -
+127.0.0.1 - - [02/Nov/2026 09:26:23] "GET /comps/05-desktop-workspace.html?notefix=1 HTTP/1.1" 200 -
+127.0.0.1 - - [02/Nov/2026 09:26:23] "GET /comp-kit.css HTTP/1.1" 304 -
+127.0.0.1 - - [02/Nov/2026 09:26:23] "GET /comp-motion.js HTTP/1.1" 304 -
+127.0.0.1 - - [02/Nov/2026 09:26:27] "GET /comps/07-states.html?notefix=1 HTTP/1.1" 200 -
+127.0.0.1 - - [02/Nov/2026 09:27:22] "GET /comps/01-mobile-chat.html?notefix=2 HTTP/1.1" 200 -
+127.0.0.1 - - [02/Nov/2026 09:27:22] "GET /comp-kit.css HTTP/1.1" 200 -
+127.0.0.1 - - [02/Nov/2026 09:27:22] "GET /comp-motion.js HTTP/1.1" 304 -
+127.0.0.1 - - [02/Nov/2026 09:27:25] "GET /comps/05-desktop-workspace.html?notefix=2 HTTP/1.1" 200 -
+127.0.0.1 - - [02/Nov/2026 09:27:25] "GET /comp-kit.css HTTP/1.1" 304 -
+127.0.0.1 - - [02/Nov/2026 09:27:28] "GET /comps/07-states.html?notefix=2 HTTP/1.1" 200 -
+127.0.0.1 - - [02/Nov/2026 09:27:28] "GET /comp-kit.css HTTP/1.1" 304 -
+127.0.0.1 - - [02/Nov/2026 09:27:48] "GET /comps/01-mobile-chat.html?notefix=2 HTTP/1.1" 200 -
+127.0.0.1 - - [02/Nov/2026 09:27:48] "GET /tokens.css HTTP/1.1" 200 -
+127.0.0.1 - - [02/Nov/2026 09:27:48] "GET /comp-kit.css HTTP/1.1" 200 -
+127.0.0.1 - - [02/Nov/2026 09:27:48] "GET /comp-motion.js HTTP/1.1" 200 -
+127.0.0.1 - - [02/Nov/2026 09:27:48] code 404, message File not found
+127.0.0.1 - - [02/Nov/2026 09:27:48] "GET /favicon.ico HTTP/1.1" 404 -
+127.0.0.1 - - [02/Nov/2026 09:27:51] "GET /comps/05-desktop-workspace.html?notefix=2 HTTP/1.1" 200 -
+127.0.0.1 - - [02/Nov/2026 09:27:51] "GET /tokens.css HTTP/1.1" 200 -
+127.0.0.1 - - [02/Nov/2026 09:27:51] "GET /comp-kit.css HTTP/1.1" 200 -
+127.0.0.1 - - [02/Nov/2026 09:27:51] "GET /comp-motion.js HTTP/1.1" 200 -
+127.0.0.1 - - [02/Nov/2026 09:27:52] code 404, message File not found
+127.0.0.1 - - [02/Nov/2026 09:27:52] "GET /favicon.ico HTTP/1.1" 404 -
+127.0.0.1 - - [02/Nov/2026 09:27:54] "GET /comps/07-states.html?notefix=2 HTTP/1.1" 200 -
+127.0.0.1 - - [02/Nov/2026 09:27:54] "GET /tokens.css HTTP/1.1" 200 -
+127.0.0.1 - - [02/Nov/2026 09:27:54] "GET /comp-kit.css HTTP/1.1" 200 -
+127.0.0.1 - - [02/Nov/2026 09:27:54] "GET /comp-motion.js HTTP/1.1" 200 -
+127.0.0.1 - - [02/Nov/2026 09:27:55] code 404, message File not found
+127.0.0.1 - - [02/Nov/2026 09:27:55] "GET /favicon.ico HTTP/1.1" 404 -
+127.0.0.1 - - [02/Nov/2026 09:28:20] "GET /comp-kit.css HTTP/1.1" 200 -
+127.0.0.1 - - [02/Nov/2026 09:29:13] "GET /comps/05-desktop-workspace.html?final=1 HTTP/1.1" 200 -
+127.0.0.1 - - [02/Nov/2026 09:29:13] "GET /comp-kit.css HTTP/1.1" 200 -
+127.0.0.1 - - [02/Nov/2026 09:29:13] "GET /comp-motion.js HTTP/1.1" 304 -
+127.0.0.1 - - [02/Nov/2026 09:29:16] "GET /comps/07-states.html?final=1 HTTP/1.1" 200 -
+127.0.0.1 - - [02/Nov/2026 09:29:16] "GET /comp-kit.css HTTP/1.1" 304 -
+127.0.0.1 - - [02/Nov/2026 09:29:19] "GET /comps/01-mobile-chat.html?final=1 HTTP/1.1" 200 -
+127.0.0.1 - - [02/Nov/2026 09:29:19] "GET /comp-kit.css HTTP/1.1" 304 -
+127.0.0.1 - - [02/Nov/2026 09:29:22] "GET /comps/05-desktop-workspace.html?final=1 HTTP/1.1" 200 -
+127.0.0.1 - - [02/Nov/2026 09:29:22] "GET /tokens.css HTTP/1.1" 200 -
+127.0.0.1 - - [02/Nov/2026 09:29:22] "GET /comp-kit.css HTTP/1.1" 200 -
+127.0.0.1 - - [02/Nov/2026 09:29:22] "GET /comp-motion.js HTTP/1.1" 200 -
+127.0.0.1 - - [02/Nov/2026 09:29:22] code 404, message File not found
+127.0.0.1 - - [02/Nov/2026 09:29:22] "GET /favicon.ico HTTP/1.1" 404 -
+127.0.0.1 - - [02/Nov/2026 09:29:25] "GET /comps/07-states.html?final=1 HTTP/1.1" 200 -
+127.0.0.1 - - [02/Nov/2026 09:29:25] "GET /tokens.css HTTP/1.1" 200 -
+127.0.0.1 - - [02/Nov/2026 09:29:25] "GET /comp-kit.css HTTP/1.1" 200 -
+127.0.0.1 - - [02/Nov/2026 09:29:25] "GET /comp-motion.js HTTP/1.1" 200 -
+127.0.0.1 - - [02/Nov/2026 09:29:26] code 404, message File not found
+127.0.0.1 - - [02/Nov/2026 09:29:26] "GET /favicon.ico HTTP/1.1" 404 -
+127.0.0.1 - - [02/Nov/2026 09:29:29] "GET /comps/01-mobile-chat.html?final=1 HTTP/1.1" 200 -
+127.0.0.1 - - [02/Nov/2026 09:29:29] "GET /tokens.css HTTP/1.1" 200 -
+127.0.0.1 - - [02/Nov/2026 09:29:29] "GET /comp-kit.css HTTP/1.1" 200 -
+127.0.0.1 - - [02/Nov/2026 09:29:29] "GET /comp-motion.js HTTP/1.1" 200 -
+127.0.0.1 - - [02/Nov/2026 09:29:29] code 404, message File not found
+127.0.0.1 - - [02/Nov/2026 09:29:29] "GET /favicon.ico HTTP/1.1" 404 -
+127.0.0.1 - - [02/Nov/2026 09:30:17] "GET /comps/05-desktop-workspace.html?fresh=1793629817 HTTP/1.1" 200 -
+127.0.0.1 - - [02/Nov/2026 09:30:17] "GET /comp-kit.css HTTP/1.1" 304 -
+127.0.0.1 - - [02/Nov/2026 09:30:17] "GET /comp-motion.js HTTP/1.1" 304 -
+127.0.0.1 - - [02/Nov/2026 09:30:22] "GET /comps/07-states.html?fresh=1793629817 HTTP/1.1" 200 -
+127.0.0.1 - - [02/Nov/2026 09:30:52] "GET /comp-kit.css HTTP/1.1" 200 -
