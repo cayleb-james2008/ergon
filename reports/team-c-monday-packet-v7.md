@@ -35,7 +35,7 @@ the signed runbook, or any attestation rule. **Any attestation FAIL or UNVERIFIE
 | Futures feed | `feed="retrying (RuntimeError)"`, `feed_age_s=146367.1` (dead since Friday close), `market_open=False`, `last_bar_et=16:59`, last bars file `2026-10-30` — **expected on a weekend** |
 | Futures config↔process | `CONFIG_OLDER_THAN_PROCESS: PASS` (`config_mtime 2026-10-27T22:43:34Z` < `start 2026-10-28T19:40:09Z`) |
 | Tab route | Chromium listening on `127.0.0.1:9222`; `tabkeeper.json` `"tradovate": "missing"` (expected Sunday) — **Monday must turn this into a positive tab + fresh bar proof at 09:35–09:44** |
-| Runbook | v6 sha256 `027ca4e4cc1427e3300e2d36e0eda4380bfb3d8410c32ba8847533347adb4eff` = the P0.1 signed hash (not void) |
+| Runbook | v7 sha256 `512752e418a7950d2e43bed938f5716147494d74162dcbfbfba2a68389a2c86a` = the P0.1 signed hash (v7, checker-trading) |
 
 ## 01:00 ET — Claude usage reset + Kalshi resume + laptop lane  [owner trading-lead; backup lead]
 - Read state first: `research/kalshi15/RESUME.md`, `DECISIONS.md`, this packet, `team-c-sunday-groundtruth-20261101.md`.
@@ -62,14 +62,14 @@ the signed runbook, or any attestation rule. **Any attestation FAIL or UNVERIFIE
   instant is unrecoverable** (the adjudication is independently signed **PASS** by the Tier S checker:
   `board/reports/team-c-dst-checker-verdict.md`, 14:20Z); never reconstruct a missing instant after the fact.
 - Trading pre-checks: Kalshi units still enabled+active + capture fresh; futures units active; engine heartbeat age < 60 s;
-  `tabkeeper.json` tradovate state; runbook v6 sha256 still `027ca4e4…`; `systemctl --user show openbell-live -p
+  `tabkeeper.json` tradovate state; runbook v7 sha256 still `512752e4…`; `systemctl --user show openbell-live -p
   ExecMainStartTimestamp` still 28 Oct (a restart changes the evidence frame).
 - Feed: expected-weekend "no trader.tradovate.com tab" must become a **proof** at 09:05/09:35–09:44 (tab present + fresh
   bar after the 09:30 open) — not an eyeball, the runbook's computed (c2) block.
 
 ## P0 — before 09:05 (all four; any FAIL = do not start)  [owner trading-lead; backup lead]
-- **P0.1** checker veto signature on runbook v6 exists, timestamped before 09:05, and the file's sha256 still equals
-  `027ca4e4cc1427e3300e2d36e0eda4380bfb3d8410c32ba8847533347adb4eff` (verified Sunday 13:33Z; re-check at 09:05).
+- **P0.1** checker veto signature on runbook v7 exists, timestamped before 09:05, and the file's sha256 still equals
+  `512752e418a7950d2e43bed938f5716147494d74162dcbfbfba2a68389a2c86a` (verified Sunday 13:33Z; re-check at 09:05).
 - **P0.2** Chromium listener on `127.0.0.1:9222` **and** `tabkeeper.json` tradovate ≠ "missing".
 - **P0.3** `systemctl --user is-active openbell-live openbell-dash openbell-tabkeeper` → three `active`.
 - **P0.4** no carry-over: heartbeat `pos= None paused= False` (`card_valid_min = 2` expires any old card by construction).
@@ -88,7 +88,7 @@ Append every line + output to `board/probes/team-c/monday-2026-11-02/guard.md`.
    tab not signed in → (a)/(c1) will fail; record and stop.
 6. **R11 CME-limit record** — autonomous-path prerequisite (Lead ruling 2026-11-01: trading-lead owns it; produced **before**
    the 09:15 attestations). This is an **additional evidence artefact**, not one of the five attestations and not a change to
-   runbook v6 / P0.1. Run:
+   runbook v7 / P0.1. Run:
    `bash board/probes/team-c/cme-limit-record/fetch-cme-limits.sh --day 2026-11-02 --out board/probes/team-c/monday-2026-11-02/cme-limit-record.md`
    (provenance = exchange pages: CME Price Limits U.S. equity-index rule + CME Fixing Prices ES Dec 2026; validated Sunday
    2026-11-01 14:18Z, status SET). Exit 0 = SET (record + `cme_limits-2026-11-02.json`); exit 2 = **UNSET → quote the reason
@@ -185,3 +185,10 @@ Neither proof → record "unmanaged/unverified". The firm's 16:10 auto-close is 
 - Completeness is internal consistency only (a signal never logged cannot be detected).
 - It cannot prove flat without a positive position surface — which is why (a2) can block the day.
 - It cannot prove a Tradovate session before the tab loads; (a)'s `status=="attached"` + fresh `acct_t` is the bar.
+
+> **v7 UPDATE (2026-11-02T00:10Z, Lead):** the runbook is **v7**, 407 lines, sha256 `512752e418a7950d2e43bed938f5716147494d74162dcbfbfba2a68389a2c86a`; the P0.1 signer is
+> `checker-trading` (fresh Tier S) and its signoff is `board/reports/monday-runbook-v7-checker-signoff.md`, copied to
+> `board/probes/team-c/monday-2026-11-02-precheck-signoff.md` (the void v6 signature is preserved as
+> `…-precheck-signoff-v6-VOID.md`). **Operational precondition:** reload the Tradovate page once (F5 only, no sign-in)
+> after 09:00 ET so attestation (a)/09:05 item 3 read a fresh page load; otherwise those legs are UNVERIFIED and the
+> gate stops the day (safe).

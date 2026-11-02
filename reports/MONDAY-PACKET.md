@@ -26,7 +26,7 @@ This map keeps the non-trading legs and the standing owner acts. Nothing here ch
   session; alert if absent at T−5 min, assert artefacts at T+2 min. (The 07:15Z DST leg died exactly because it was a session child.)
 
 ## 09:05 ET — Futures session guard  [trading-lead; backup lead]
-- Follow board/reports/monday-futures-runbook.md **v6** EXACTLY — sha256 027ca4e4cc1427e3300e2d36e0eda4380bfb3d8410c32ba8847533347adb4eff
+- Follow board/reports/monday-futures-runbook.md **v7** EXACTLY — sha256 512752e418a7950d2e43bed938f5716147494d74162dcbfbfba2a68389a2c86a
   is pinned by the P0.1 signoff (board/probes/team-c/monday-2026-11-02-precheck-signoff.md). ANY edit voids the signature.
 - 09:05 guard → 09:15 five attestations stated individually (a-e), with (e) honest "mode=cards — NOT automated"; (c) split:
   provisional 09:15 tab/feed proof + BINDING post-09:30 bar at 09:35-09:44; decision log ARMED/PROVEN; rails asserted from
@@ -53,3 +53,10 @@ This map keeps the non-trading legs and the standing owner acts. Nothing here ch
 ## Scheduling note (Lead, 1 Nov 08:52 ET)
 The previous session's armed timed deliveries died with its DSH app instance. Re-armed **in this session** as scheduled bookings:
 01:00, 07:45, 09:05, 16:00 ET on 2 Nov. If this session is replaced before Monday, a successor must re-arm from this section.
+
+> **v7 UPDATE (2026-11-02T00:10Z, Lead):** the runbook is **v7**, 407 lines, sha256 `512752e418a7950d2e43bed938f5716147494d74162dcbfbfba2a68389a2c86a`; the P0.1 signer is
+> `checker-trading` (fresh Tier S) and its signoff is `board/reports/monday-runbook-v7-checker-signoff.md`, copied to
+> `board/probes/team-c/monday-2026-11-02-precheck-signoff.md` (the void v6 signature is preserved as
+> `…-precheck-signoff-v6-VOID.md`). **Operational precondition:** reload the Tradovate page once (F5 only, no sign-in)
+> after 09:00 ET so attestation (a)/09:05 item 3 read a fresh page load; otherwise those legs are UNVERIFIED and the
+> gate stops the day (safe).
