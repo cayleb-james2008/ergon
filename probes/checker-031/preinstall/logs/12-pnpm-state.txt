@@ -1,0 +1,5 @@
+installed_files=123 archive_members=123
+installed mode distribution: {'0o640': 120, '0o751': 2, '0o750': 1}
+installed nlink distribution: {1: 123}
+pre-normalise files already at archive mode: 0/123
+pre-normalise nlink>1 files: 0

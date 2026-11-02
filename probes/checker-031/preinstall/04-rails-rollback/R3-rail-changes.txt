@@ -1,0 +1,100 @@
+--- src/core/core.js ---
+@@ -90,6 +90,7 @@
++    this.laneRoots = null // Stage 4 touchpoint 1: one provider slot, installed by fleet-roster
+@@ -379,8 +380,23 @@
+-    if (row?.selftest !== true || !SELFTEST_PRINCIPAL.test(row.principal)) return []
+-    return [selftestCwd(this.config.workRoot, row, row.principal !== `${row.role}:selftest`)]
++    const roots = []
++    if (row?.selftest === true && SELFTEST_PRINCIPAL.test(row.principal)) roots.push(selftestCwd(this.config.workRoot, row, row.principal !== `${row.role}:selftest`))
++    // Stage 4 (touchpoint 1): the roster names a real lane's own workspace; the resolver's answer is carved by fleet-fsguard under
++    // the same DenyPolicy as any other carve-out (real directory, under carveParents).
++    if (typeof this.laneRoots === 'function') roots.push(...(this.laneRoots(agent) ?? []))
++    return roots
++  }
++  /**
++   * Stage 4 (touchpoint 1): install the lane-roots provider (`fn(agent) -> string[]`) for real lanes. One slot; the returned
++   * disposer clears it only while it still holds the slot. fleet-fsguard's `agentRoots` hook reads this through `agentRoots`.
++   */
++  setLaneRoots(fn) {
++    if (fn !== null && typeof fn !== 'function') throw new TypeError('fleet-core: setLaneRoots takes a function or null')
++    if (this.laneRoots !== null) throw new TypeError('fleet-core: lane roots are already set')
++    this.laneRoots = fn
++    return () => { if (this.laneRoots === fn) this.laneRoots = null }
+--- src/core/index.js ---
+@@ -58,6 +58,7 @@
++    this.setLaneRoots = fn => core.setLaneRoots(fn)
+--- src/orders/tasks.js ---
+@@ -11,7 +11,7 @@
+-const HARNESS_POST_KINDS = Object.freeze(['budget-alert'])
++const HARNESS_POST_KINDS = Object.freeze(['budget-alert', 'stall', 'invalid-check'])
+@@ -25,6 +25,8 @@
++  /** Stage 4 touchpoint 2a: one verdict-gate slot, installed by fleet-roster (setVerdictGate below). */
++  let verdictGate = null
+@@ -521,6 +523,18 @@
++   * Stage 4 (touchpoint 2a): install the verdict gate (`fn(verdict) -> reason | null`) that fleet-roster holds a verdict to the
++   * run record of this Checker, task and round. One slot; the disposer clears it only while it holds the slot. A verdict the gate
++   * refuses is not recorded, no round is spent, and the refusal code is the gate's (no-check-run, exit-mismatch, ...).
++   */
++  function setVerdictGate(fn) {
++    if (fn !== null && typeof fn !== 'function') fail('bad-request', 'setVerdictGate takes a function or null')
++    if (verdictGate !== null) fail('verdict-gate-taken', 'a verdict gate is already installed')
++    verdictGate = fn
++    return () => { if (verdictGate === fn) verdictGate = null }
++  }
++  /**
+@@ -540,6 +554,10 @@
++        if (verdictGate !== null) {
++          const why = verdictGate({ task: taskRef(id), checker: actor.principal, round: row.rounds, result: v.value.result, exit_code: v.value.exit_code ?? null, artefact_hashes: v.value.artefact_hashes ?? [] })
++          if (typeof why === 'string' && why !== '') fail(why, `the verdict is refused by the run record: ${why}`)
++        }
+@@ -850,6 +868,45 @@
++  /**
++   * Stage 4 (touchpoint 2b, N6/4.4): the harness rejects the done-when itself before a Checker exists. A `built` task goes back to
++   * `open` with NO beginCheck, the round unchanged, `rounds_allowed + 1`, one harness verdict row `invalid-check` and one post of the
++   * same kind; the order is NOT blocked (the ordering principal amends the done-when, as checks/stage4-check.sh requires).
++   */
++  function invalidCheck(actor, ref, { reason = 'invalid-check', notes = null } = {}) {
++    assertRole(actor, 'harness')
++    const id = K.idOf('task', ref)
++    return K.run(() => {
++      const row = taskRow(id)
++      if (row.state !== 'built') fail('not-built', `task ${taskRef(id)} is ${row.state}; only a built task is sent back for an invalid check`)
++      const next = K.transition('task', row, 'open', {
++        actor: HARNESS_ACTOR.principal, reason,
++        patch: { claimant: null, claim_token: null, lease_until: null, waiting_on: null, rounds_allowed: row.rounds_allowed + 1 },
++      })
++      // The verdicts CHECK at this schema version allows ('checker','external'); the harness author is carried in the principal
+--- src/ledger/index.js ---
+@@ -138,6 +138,14 @@
++      // Stage 4 touchpoint 3c (P2): the day's spend split, so an operator (and the roster's engine gate) can read the cap state.
++      'spend-get': () => {
++        const events = ledger.forDay ? ledger.forDay() : null
++        const cap = ctx.fleetCore.policy.get('ledger.day_cap_usd')
++        const real = ledger.daySpent()
++        if (events !== null) return { real_usd: real, synthetic_usd: events.synthetic, engine_usd: events.engine, cap_usd: cap, remaining_usd: Math.max(0, cap - real) }
++        return { real_usd: real, synthetic_usd: null, engine_usd: null, cap_usd: cap, remaining_usd: Math.max(0, cap - real) }
++      },
+--- src/ledger/ledger.js ---
+@@ -49,6 +49,8 @@
++      // 0.3.1 (batch 8): the doctrine working engine, priced from the pi-ai opencode-go catalog (cost 0.15/0.6, cacheRead 0.003, cacheWrite 0).
++      'opencode-go/deepseek-v4.1-flash': { input_per_mtok: 0.15, output_per_mtok: 0.6, cache_read_per_mtok: 0.003, cache_write_per_mtok: 0 },
+@@ -69,6 +71,7 @@
++  source: r.source, session: r.session,
+@@ -92,17 +95,25 @@
+-  const daySpent = () => q('SELECT COALESCE(SUM(cost_usd), 0) AS s FROM ledger_events WHERE synthetic = 0 AND ts >= ?').get(Math.floor(now() / DAY_MS) * DAY_MS).s
++  const dayStart = () => Math.floor(now() / DAY_MS) * DAY_MS
++  const daySpent = () => q('SELECT COALESCE(SUM(cost_usd), 0) AS s FROM ledger_events WHERE synthetic = 0 AND ts >= ?').get(dayStart()).s
++  /** Stage 4 touchpoint 3c (P2): today's spend split real / synthetic / engine (synthetic stub and fake rows are not billed). */
++  const forDay = () => {
++    const r = q("SELECT COALESCE(SUM(CASE WHEN synthetic = 1 THEN cost_usd ELSE 0 END), 0) AS synthetic, COALESCE(SUM(CASE WHEN source = 'engine' THEN cost_usd ELSE 0 END), 0) AS engine FROM ledger_events WHERE ts >= ?").get(dayStart())
++    return { synthetic: r.synthetic, engine: r.engine }
++  }
+-  function record({ principal = null, session = null, provider, model, usage, synthetic = false, source, sourceSeq = null, purpose = null, ts }) {
++  function record({ principal = null, session = null, provider, priceProvider = null, model, usage, synthetic = false, source, sourceSeq = null, purpose = null, ts }) {
+-    const key = priceKeyOf(provider, model)
++    // Stage 4 touchpoint 3a: an engine run stores the engine as its provider and prices under the vendor it bills (claude-code ->
++    // anthropic, codex -> openai), so the rate row belongs to the vendor's model catalog, not to the engine id.
++    const key = priceKeyOf(priceProvider ?? provider, model)
+@@ -200,5 +211,5 @@
+-  return { record, gate, settleOrder, settleAll, priceKeyOf, spentOf, daySpent, forTask, forOrder, forAgent }
++  return { record, gate, settleOrder, settleAll, priceKeyOf, spentOf, daySpent, forDay, forTask, forOrder, forAgent }

@@ -1,0 +1,6 @@
+mcp-selftest: http://127.0.0.1:40409/mcp (token from admin socket /tmp/checker-031-pre.ohS0RG/ctl/mcp-admin.sock; the token is never printed)
+PASS  initialize  20ms  protocol 2025-03-26, server fleet-mcp 0.3.0-mcp, session issued
+PASS  order.stage_real  6ms  ok (ok, mode, real_lane, order, stage_path, payload_sha256)
+FAIL  order.drive_roundtrip  4ms  refused integrity-failed: roundtrip step order_claim failed: order_claim: rows fleet-mcp: config changed
+
+mcp-selftest: FAIL — 1 failed, 2 passed, 0 skipped

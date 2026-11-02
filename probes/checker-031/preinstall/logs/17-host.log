@@ -1,0 +1,3 @@
+fleet-core: INTEGRITY CHECK FAILED, LANES REFUSED: rows fleet-mcp: config changed; guard: fleet-policy is not mounted, so tool calls would run unguarded and unlogged; guard: fleet-ledger is not mounted, so model calls would run unpriced and ungated
+dsh web: http://127.0.0.1:40045/?token=<redacted-scratch-web-token>
+fleet-core: INTEGRITY CHECK FAILED, LANES REFUSED: rows fleet-mcp: config changed

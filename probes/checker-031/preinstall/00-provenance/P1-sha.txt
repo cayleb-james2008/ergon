@@ -1,0 +1,3 @@
+b2ae2185d7fb43e7a7a6687d62966faafb2d003260c199e6da0bea5f36c1d891  dist/cayleb-dsh-fleet-0.3.1.tgz
+ffba0d061848ef7fde3550cc2318b6eb3d406db052e4c20dce3acec3d71d78dd  dist/cayleb-dsh-fleet-0.3.1.tgz.sha256
+ffba0d061848ef7fde3550cc2318b6eb3d406db052e4c20dce3acec3d71d78dd  dist/SHA256SUMS.candidate

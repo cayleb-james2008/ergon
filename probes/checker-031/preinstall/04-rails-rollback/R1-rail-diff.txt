@@ -1,0 +1,16 @@
+DIFF      src/core
+Files /tmp/checker031-old/package/src/core/core.js and /tmp/checker031-new/package/src/core/core.js differ
+Files /tmp/checker031-old/package/src/core/index.js and /tmp/checker031-new/package/src/core/index.js differ
+DIFF      src/orders
+Files /tmp/checker031-old/package/src/orders/tasks.js and /tmp/checker031-new/package/src/orders/tasks.js differ
+IDENTICAL src/policy
+DIFF      src/ledger
+Files /tmp/checker031-old/package/src/ledger/index.js and /tmp/checker031-new/package/src/ledger/index.js differ
+Files /tmp/checker031-old/package/src/ledger/ledger.js and /tmp/checker031-new/package/src/ledger/ledger.js differ
+IDENTICAL src/lessons
+IDENTICAL src/sandbox
+IDENTICAL src/egress
+IDENTICAL src/fsguard
+IDENTICAL src/housekeeper
+IDENTICAL src/client
+IDENTICAL presets

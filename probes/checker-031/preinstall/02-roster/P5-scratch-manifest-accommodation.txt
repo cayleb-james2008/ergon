@@ -1,0 +1,6 @@
+overlay_fleet_mcp_config_digest = dea9b42713a24420128bbdb37d39ce2d1be7e6b2338ae363b9162f856b6af114
+config keys: ['adminSocket', 'bindHosts', 'bindSourceAllow', 'controlTimeoutMs', 'fleetRoot', 'koffiPath', 'logPath', 'maxBodyBytes', 'maxSessions', 'peerUid', 'pollMs', 'port', 'presetPrefix', 'protocolVersions', 'requestsPerMinute', 'roundtripWaitMs', 'selftestAllowTools', 'serverName', 'statePath', 'stubModel', 'stubProvider', 'toolTimeoutMs', 'turnTimeoutMs']
+shipped_manifest_sha256 = 1970f9954b7131c58191327bb0e60b9d31a704bc309d083cd53971bc9271edba
+old_config_digest = c100a90c98cc302a4003077589ac4ed7e9d18dc71bcf53a42f4596bc104e78ad
+scratch_manifest_sha256 = e1849887dae9fc2a96882f0ac4f68eeb261af2ba2e3e0096625e293ad369bfa6
+accommodation: scratch-only rows.manifest.json fleet-mcp config digest rewritten to the overlay-redirected value

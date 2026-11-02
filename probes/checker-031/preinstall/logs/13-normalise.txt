@@ -1,0 +1,4 @@
+normalise_rc=0
+stdout: normalise-archive: @cayleb/dsh-fleet 0.3.1 123 regular members
+normalise: 123 files single-link with archive modes; package dirs 0750
+stderr: 

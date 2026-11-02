@@ -1,0 +1,80 @@
+{
+  "version": 1,
+  "pinned": [
+    {
+      "id": "fleet-ledger",
+      "kind": "mount",
+      "fields": {
+        "name": "717f305d9bf445c5c4ecbf56b32d611bbc19ad8f1009608ddc04195b0f4dfab0"
+      }
+    },
+    {
+      "id": "fleet-mcp",
+      "kind": "insert",
+      "fields": {
+        "name": "1765ad509842d9c0f73751111aa1c44ab3c98d04d32c9f80fc324b42b21d3eea",
+        "config": "c100a90c98cc302a4003077589ac4ed7e9d18dc71bcf53a42f4596bc104e78ad"
+      }
+    },
+    {
+      "id": "fleet-policy",
+      "kind": "mount",
+      "fields": {
+        "name": "abd0b32d8feff212449d11ec7f249e52408bf9d681d71009731354d4b84ddeb5"
+      }
+    },
+    {
+      "id": "permission",
+      "kind": "override",
+      "fields": {
+        "config": "dcf10d3a3edd5a6cc422e1ab323787b917107327f6adf3dc36f3e676c4f7fd00"
+      }
+    },
+    {
+      "id": "preset-fleet-builder",
+      "kind": "insert",
+      "fields": {
+        "name": "c6af4792ec1a646cbcf571f17aee2f38d1a3ac3546c2c0a21b358329e5749d3b",
+        "config": "2aa4a5a0a5cc1614e79509eb899397a08a16747192fbd8f4f12ae7844eead147"
+      }
+    },
+    {
+      "id": "preset-fleet-checker",
+      "kind": "insert",
+      "fields": {
+        "name": "c6af4792ec1a646cbcf571f17aee2f38d1a3ac3546c2c0a21b358329e5749d3b",
+        "config": "3fbeacb1bb84183ed12bceb5c3c22854ac7c4c84de5a1faefeea70c80cce7fef"
+      }
+    },
+    {
+      "id": "preset-fleet-lead",
+      "kind": "insert",
+      "fields": {
+        "name": "c6af4792ec1a646cbcf571f17aee2f38d1a3ac3546c2c0a21b358329e5749d3b",
+        "config": "745d46a9a90f33074cf49bdf2388027479dfd0c36a184228c5f940720c039d08"
+      }
+    },
+    {
+      "id": "preset-fleet-researcher",
+      "kind": "insert",
+      "fields": {
+        "name": "c6af4792ec1a646cbcf571f17aee2f38d1a3ac3546c2c0a21b358329e5749d3b",
+        "config": "fe169c1fb7cd8e02c37ad8717d7e23ce9ff29ec5ea415fe7ae132d5e95374ec3"
+      }
+    }
+  ],
+  "disabled": [
+    "desktop-product-telemetry",
+    "fs-sandbox",
+    "preset-cordis",
+    "preset-minimal",
+    "preset-ptc",
+    "preset-standard",
+    "product-analytics",
+    "sandbox",
+    "session-telemetry-otel",
+    "session-title-llm",
+    "ui-deliverables",
+    "workspace-changes"
+  ]
+}

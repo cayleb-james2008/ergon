@@ -1,0 +1,61 @@
+=== D1 evidence: roster verdict gate refuses fixture-order command-mode verdicts ===
+--- gate: src/roster/runcheck.js verdictGate (lines 61-68) ---
+   * @param {{task: string, checker: string, round: number, result: string, exit_code?: number, artefact_hashes?: string[], doneWhenMode: string, briefHashes: string[]}} v
+   */
+  function verdictGate(v) {
+    if (v.doneWhenMode !== 'command' || v.result === 'invalid-check') return null
+    const last = store.runsOf(v.task, v.checker, v.round).at(-1)
+    if (last === undefined) return 'no-check-run'
+    if (v.exit_code !== last.exit_code) return 'exit-mismatch'
+    const allowed = new Set(v.briefHashes.map(hexOf))
+    if ((v.artefact_hashes ?? []).some(h => !allowed.has(hexOf(h)))) return 'hash-mismatch'
+    if (v.result === 'pass' && last.exit_code !== 0) return 'pass-with-nonzero'
+    return null
+  }
+
+--- gate installed globally by roster: src/roster/index.js lines 145-148 ---
+  // A verdict is held to the run on record (N4). Without the gate a Checker's free-text "pass" would count, so lanes are refused too.
+  const hasGate = typeof orders.setVerdictGate === 'function'
+  if (hasGate) ctx.effect(() => orders.setVerdictGate(v => { const t = orders.getTask(v.task); return rc.verdictGate({ ...v, doneWhenMode: t?.done_when?.mode, briefHashes: t?.built?.artefact_hashes ?? [] }) }), 'fleet-roster.verdict-gate')
+  else log.error('fleet-roster: fleet-orders has no setVerdictGate (NOTES.md touchpoint 2): lane-spawn is refused, a verdict could not be held to its run record')
+
+--- orders calls the gate on every verdict: src/orders/tasks.js lines 556-561 ---
+        const built = unjson(row.built)
+        const v = validateVerdict(input, { mode: check.mode, criteria: check.criteria ?? [], builtHashes: built.artefact_hashes })
+        if (!v.ok) fail('verdict-invalid', `the verdict is not evidence: ${v.problems.map(p => `${p.field}: ${p.code}`).join('; ')}`, { problems: v.problems })
+        if (verdictGate !== null) {
+          const why = verdictGate({ task: taskRef(id), checker: actor.principal, round: row.rounds, result: v.value.result, exit_code: v.value.exit_code ?? null, artefact_hashes: v.value.artefact_hashes ?? [] })
+          if (typeof why === 'string' && why !== '') fail(why, `the verdict is refused by the run record: ${why}`)
+        }
+        const evidence = S.evidenceRefs(row.order_id, cited, { optional: true })
+
+--- MCP roundtrip creates a fixture order with command-mode done_when and gives a verdict without a run_check: src/mcp/board.js ---
+      const order = await step('order-create', () => control('order-create', {
+        idempotency_key: `mcp-${rid}-create`,
+        fixture: true,
+        order: {
+          title,
+          goal: title,
+          context: `model-free work order driven end to end through the fleet MCP facade (request ${rid}); fixture-scoped so no model provider is involved`,
+      const check = await step('check-start', () => control('check-start', { task: ids.task }))
+      const checker = check.checker
+      ids.agents.checker = checker ?? null
+      if (typeof checker !== 'string') throw new ToolError('roundtrip-step-failed', 'check-start returned no checker')
+      ids.check_round = check.round ?? null
+
+      const pass = doneWhen.mode === 'rubric'
+        ? await step('verdict', () => tool({
+          tool: 'verdict', role: 'checker', agent: checker,
+          args: { task: ids.task, result: 'pass', criteria: doneWhen.criteria.map(criterion => ({ criterion, met: true, quote: `fixture quote covering: ${criterion}` })), evidence: postId === null ? [] : [postId], idempotency_key: `mcp-${rid}-verdict` },
+        }))
+        : await step('verdict', () => tool({
+          tool: 'verdict', role: 'checker', agent: checker,
+          args: { task: ids.task, result: 'pass', exit_code: 0, artefact_hashes: [artefactHash], evidence: postId === null ? [] : [postId], idempotency_key: `mcp-${rid}-verdict` },
+        }))
+
+--- required unmodified acceptance check drives the same fixture command-mode verdict path: checks/stage2-check.sh ---
+690:  done_when:{mode:"command",command:"true",text:"fixture check exits 0"},
+710:TASK_JQ='{key:("t"+tostring), goal:("fixture task "+tostring), done_when:{mode:"command",command:"true",text:"exits 0"}, est_minutes:15,
+216:#   checker  verdict {task,result:"pass"|"fail",exit_code,artefact_hashes:[S],evidence:[ID],idempotency_key}
+
+=> same refusal code path as MCP roundtrip: no-check-run; stage2 acceptance is expected to FAIL on a roster-mounted 0.3.1 host

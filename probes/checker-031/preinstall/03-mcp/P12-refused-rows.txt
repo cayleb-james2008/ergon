@@ -1,0 +1,5 @@
+rows 48
+{"seq": 1, "outcome": "refused", "tool": "auth-invalid", "principal": null}
+{"seq": 22, "outcome": "refused", "tool": "auth-invalid", "principal": null}
+--- sample row keys --- ['code', 'hash', 'kind', 'op', 'outcome', 'prev', 'principal', 'seq', 'tool', 'ts']
+--- first row --- {"kind": "refused", "principal": null, "tool": "auth-invalid", "op": "", "outcome": "refused", "code": "invalid-token", "seq": 1, "ts": 1793581119913, "prev": "0000000000000000000000000000000000000000000000000000000000000000", "hash": "e8fa632d71368527141740868f0186f0c4c2bf008636312c79ca7adcb6b933b8"}

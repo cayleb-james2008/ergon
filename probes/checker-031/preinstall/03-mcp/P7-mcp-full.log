@@ -1,0 +1,17 @@
+mcp-selftest: http://127.0.0.1:40409/mcp (token from admin socket /tmp/checker-031-pre.ohS0RG/ctl/mcp-admin.sock; the token is never printed)
+PASS  initialize  23ms  protocol 2025-03-26, server fleet-mcp 0.3.0-mcp, session issued
+PASS  notifications/initialized  2ms  HTTP 202
+PASS  tools/list  1ms  9 tools: fleet.status, session.create, session.prompt, session.status, board.op, order.drive_roundtrip, order.stage_real, fleet.selftest, actions.status
+PASS  auth.refuse  3ms  HTTP 401 with a wrong bearer token
+PASS  fleet.status  2ms  ok (ok, mcp, fleet)
+PASS  actions.status  2ms  ok (ok, log, rows)
+PASS  session.create  39ms  ok (ok, sessionId, status, mode, model, provider)
+PASS  session.prompt  13ms  ok (ok, sessionId, status, model, transport, turn_agent)
+PASS  session.status  1ms  ok (ok, sessionId, found, source, mode, model)
+PASS  board.op order-list  2ms  ok (ok, op, resolved, transport, result)
+PASS  board.op task-cancel refused  1ms  refused not-supported: task-cancel: the board has no task cancel. A maker ends its own claim with task_fail (before building) or task_block; the ordering principal uses unblock or order-cancel.
+PASS  fleet.selftest board_read  13ms  ok (ok, role, tool, result, call_id, session)
+PASS  order.stage_real stages cleanly  4ms  ok (ok, mode, real_lane, order, stage_path, payload_sha256)
+FAIL  order.drive_roundtrip  44ms  refused no-check-run: roundtrip step verdict failed: verdict: the verdict is refused by the run record: no-check-run
+
+mcp-selftest: FAIL — 1 failed, 13 passed, 0 skipped

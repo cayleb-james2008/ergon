@@ -1,0 +1,1 @@
+{"ok":true,"result":{"key":"roster.models","value":{"lead":{"provider":"anthropic","model":"claude-sonnet-5-5"},"builder":{"provider":"opencode-go","model":"deepseek-v4.1-flash"},"checker":{"provider":"anthropic","model":"claude-haiku-5-5"},"researcher":{"provider":"opencode-go","model":"deepseek-v4.1-flash"}},"source":"default"}}

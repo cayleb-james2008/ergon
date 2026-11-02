@@ -1,0 +1,9 @@
+date_utc=2026-11-02T01:03:17Z
+user=cayleb uid=1000
+node=v26.7.0
+dsh=/home/cayleb/.local/opt/deepseek-harness-official/apps/cli/lib/bin.js
+pnpm=11.28.5
+umask=0022
+scratch_root=/tmp/checker-031-pre.ohS0RG
+tarball_sha=b2ae2185d7fb43e7a7a6687d62966faafb2d003260c199e6da0bea5f36c1d891
+fences: no live install, no fleet-dsh restart, no fleet-profile write, no credential values, no image reads

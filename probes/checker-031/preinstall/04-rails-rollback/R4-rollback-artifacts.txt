@@ -1,0 +1,16 @@
+75ab346e8b314c25b1da630c78ded154efa5669aff62c474afa7da2d53c01209  /usr/local/bin/dsh-fleet-admin
+8173d13ebee542b328ffe0b4a3476e27ffa561e46172949d54f9757ddd4e1070  /var/lib/fleet-drop/cayleb-dsh-fleet-0.3.0.tgz
+8173d13ebee542b328ffe0b4a3476e27ffa561e46172949d54f9757ddd4e1070  cayleb-dsh-fleet-0.3.0.tgz
+-rwxr-xr-x 1 root root 17569 Nov  1 18:06 /usr/local/bin/dsh-fleet-admin.pre-0.3.0-20261101
+5:# DRY_RUN=1 proves the guards and prints the plan without touching the service.
+11:OLD_TGZ=/var/lib/fleet-drop/cayleb-dsh-fleet-0.3.0.tgz
+12:OLD_SHA=8173d13ebee542b328ffe0b4a3476e27ffa561e46172949d54f9757ddd4e1070
+16:DRY_RUN=${DRY_RUN:-0}
+21:rollback() {
+23:  sudo -n -u fleet /usr/local/bin/dsh-fleet-admin plugin-add "$OLD_SHA" "$OLD_NAME" 2>&1 | tee -a "$LOG"
+26:  status_ok && say "ROLLBACK-0.3.0: unit back, status ok" || say "ROLLBACK-0.3.0: UNIT NOT CONFIRMED — escalate to the owner/Nox immediately"
+36:[ -f "$OLD_TGZ" ] || die "rollback tarball missing: $OLD_TGZ"
+37:o=$(/usr/bin/sha256sum "$OLD_TGZ" | cut -d' ' -f1)
+38:[ "$o" = "$OLD_SHA" ] || die "rollback tarball hash mismatch: $o"
+41:if [ "$DRY_RUN" = "1" ]; then
+42:  say "DRY-RUN: would stop fleet-dsh; plugin-add $WANT_TGZ $NEW_NAME; start; readback version 0.3.1 / 123 files; listeners 8789; rollback target 0.3.0 $OLD_SHA"

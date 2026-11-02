@@ -1,0 +1,168 @@
+{
+ "stat": {
+  "ok": true,
+  "result": {
+   "name": "fleet-mcp",
+   "version": "0.3.0-mcp",
+   "pid": 648386,
+   "uptime_s": 2,
+   "ok": true,
+   "degraded": [],
+   "transport": "streamable-http",
+   "protocol_versions": [
+    "2025-03-26",
+    "2024-11-05"
+   ],
+   "bind": [
+    {
+     "host": "127.0.0.1",
+     "port": 40409,
+     "family": "IPv4"
+    }
+   ],
+   "sources": {
+    "sources": [
+     "loopback",
+     "tailnet"
+    ],
+    "v4": [
+     "127.0.0.0/8",
+     "100.64.0.0/10"
+    ],
+    "v6": [
+     "::1"
+    ]
+   },
+   "admin": {
+    "path": "/tmp/checker-031-pre.ohS0RG/ctl/mcp-admin.sock",
+    "listening": true,
+    "stats": {
+     "accepted": 2,
+     "refused": 0
+    }
+   },
+   "token": {
+    "path": "/tmp/checker-031-pre.ohS0RG/fleet/state/mcp/token",
+    "exists": true,
+    "mode": "600",
+    "size": 65,
+    "fingerprint": "<redacted-fingerprint>"
+   },
+   "log": {
+    "path": "/tmp/checker-031-pre.ohS0RG/fleet/log/mcp-actions.jsonl",
+    "seq": 48,
+    "head": "1f4a2a41cfb03240a2e4cb79a134775cfc519d102b65eca92498547b235da098",
+    "open": true,
+    "broken": null,
+    "mode": "jsonl-hash-chain"
+   },
+   "sessions": {
+    "held": 0,
+    "max": 8,
+    "sessions": []
+   },
+   "requests": {
+    "requests": 2,
+    "accepted": 2,
+    "refused": 0,
+    "toolCalls": 1,
+    "byTool": {
+     "actions.status": 1
+    },
+    "byRefusal": {},
+    "sessionsOpened": 1,
+    "sessionsClosed": 0
+   },
+   "model_route": "deterministic-stub (fleet-selftest-stub)",
+   "real_lane": "fleetRoster mounted"
+  }
+ },
+ "log_tail": {
+  "ok": true,
+  "result": {
+   "rows": [
+    {
+     "kind": "outcome",
+     "ref_seq": 43,
+     "principal": "mcp:bearer",
+     "tool": "order.drive_roundtrip",
+     "op": "order.drive_roundtrip",
+     "outcome": "error",
+     "code": "no-check-run",
+     "detail": "order.drive_roundtrip:no-check-run",
+     "ms": 28,
+     "seq": 44,
+     "ts": 1793581254870,
+     "prev": "9e7f971059654d6f03f7fbe648784c6801abd318ccec516747da814f1721c67a",
+     "hash": "bbdd4032203a7a01a94a297bcffbaf6ea6286bf9c3f1695eb9467534044809ac"
+    },
+    {
+     "kind": "intent",
+     "principal": "mcp:bearer",
+     "tool": "order.drive_roundtrip",
+     "op": "order.drive_roundtrip",
+     "outcome": "pending",
+     "args_sha256": "0e05bdeffb86f312b6320338c276e46aeda3dd782d8d6126dd55ee7387f28b3a",
+     "args_keys": [
+      "done_when",
+      "est_minutes",
+      "example",
+      "title"
+     ],
+     "args_bytes": 148,
+     "seq": 45,
+     "ts": 1793581271059,
+     "prev": "bbdd4032203a7a01a94a297bcffbaf6ea6286bf9c3f1695eb9467534044809ac",
+     "hash": "f04423386ea098f201a101280853fe2a1d10c0aaffa3872216f8ed6f149f1734"
+    },
+    {
+     "kind": "outcome",
+     "ref_seq": 45,
+     "principal": "mcp:bearer",
+     "tool": "order.drive_roundtrip",
+     "op": "order.drive_roundtrip",
+     "outcome": "ok",
+     "detail": "order.drive_roundtrip",
+     "ms": 561,
+     "seq": 46,
+     "ts": 1793581271620,
+     "prev": "f04423386ea098f201a101280853fe2a1d10c0aaffa3872216f8ed6f149f1734",
+     "hash": "9f35ee19b4fe9667a01842f76ad8dd3b48eb93f0993c724979dfa72a1add4041"
+    },
+    {
+     "kind": "intent",
+     "principal": "mcp:bearer",
+     "tool": "actions.status",
+     "op": "actions.status",
+     "outcome": "pending",
+     "args_sha256": "3ff6698e101869f36e088516c6c0ca6495c40c0abdae72f6e4d124610dace7b0",
+     "args_keys": [
+      "n"
+     ],
+     "args_bytes": 8,
+     "seq": 47,
+     "ts": 1793581298974,
+     "prev": "9f35ee19b4fe9667a01842f76ad8dd3b48eb93f0993c724979dfa72a1add4041",
+     "hash": "e2bdf4eebf560a7d075854caaf870741e545104f78dd994b3d600e1a100ceff8"
+    },
+    {
+     "kind": "outcome",
+     "ref_seq": 47,
+     "principal": "mcp:bearer",
+     "tool": "actions.status",
+     "op": "actions.status",
+     "outcome": "ok",
+     "detail": "actions.status",
+     "ms": 1,
+     "seq": 48,
+     "ts": 1793581298975,
+     "prev": "e2bdf4eebf560a7d075854caaf870741e545104f78dd994b3d600e1a100ceff8",
+     "hash": "1f4a2a41cfb03240a2e4cb79a134775cfc519d102b65eca92498547b235da098"
+    }
+   ],
+   "seq": 48,
+   "head": "1f4a2a41cfb03240a2e4cb79a134775cfc519d102b65eca92498547b235da098",
+   "path": "/tmp/checker-031-pre.ohS0RG/fleet/log/mcp-actions.jsonl"
+  }
+ }
+}

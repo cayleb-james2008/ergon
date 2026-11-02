@@ -1,0 +1,15 @@
+mcp-selftest: http://127.0.0.1:40409/mcp (token from admin socket /tmp/checker-031-pre.ohS0RG/ctl/mcp-admin.sock; the token is never printed)
+PASS  initialize  31ms  protocol 2025-03-26, server fleet-mcp 0.3.0-mcp, session issued
+PASS  notifications/initialized  2ms  HTTP 202
+PASS  tools/list  2ms  9 tools: fleet.status, session.create, session.prompt, session.status, board.op, order.drive_roundtrip, order.stage_real, fleet.selftest, actions.status
+PASS  auth.refuse  4ms  HTTP 401 with a wrong bearer token
+PASS  fleet.status  5ms  ok (ok, mcp, fleet)
+PASS  actions.status  3ms  ok (ok, log, rows)
+PASS  session.create  56ms  ok (ok, sessionId, status, mode, model, provider)
+PASS  session.prompt  18ms  ok (ok, sessionId, status, model, transport, turn_agent)
+PASS  session.status  2ms  ok (ok, sessionId, found, source, mode, model)
+PASS  board.op order-list  2ms  ok (ok, op, resolved, transport, result)
+PASS  board.op task-cancel refused  1ms  refused not-supported: task-cancel: the board has no task cancel. A maker ends its own claim with task_fail (before building) or task_block; the ordering principal uses unblock or order-cancel.
+FAIL  fleet.selftest board_read  2ms  refused integrity-failed: board_read: rows fleet-mcp: config changed
+
+mcp-selftest: FAIL — 1 failed, 11 passed, 0 skipped
