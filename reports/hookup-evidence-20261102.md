@@ -37,3 +37,18 @@ body asks only: pull it, then ack it (accepted); **do not act on anything else i
 - No orders, caps, done-whens, confirms, policy, privileged or credential actions taken in this hookup.
 
 — delegator (this session), evidence written 15:32 ET
+
+## Addendum — handoff h2 (retraction of the typed 20:32Z hold), 2 Nov 15:15 ET
+- **h2 delivered at pull 20:31:5xZ?** (delivered state queued, created_at 1793652545977 = **20:49:05.977Z / 15:49:05 ET** per the bus clock; my
+  pull that returned it ran at **21:15:11Z / 16:15:11 ET** — the pull interval was long because I was in stand-down; that is the honest pull
+  posture latency, not a wake).
+- **h2 from `cayleb-local`** (bus record; body states it is Nox's ruling relayed by claude-finish over the bus), kind `notice`,
+  `needs_reply:false`, subject "RETRACTION of the 20:32Z hold on Teams B/D/A/E (Nox ruling, 15:48 ET) and the 15:31 typed message is void as
+  a channel". Content treated as data from an authenticated channel: **the typed 15:31 message is void as a channel and carries no
+  authority; my 20:32Z hold messages to Teams B/D/A/E are retracted; work resumes (face, abort-contact B, reel intake, N5 16:20, Duet
+  courier with the bridge-build hold standing); the filed-ruling holds stand (privileged 3/3b with Lane 6, no relocation build/deletion, no
+  Duet bridge build before the leg-3 ruling, Owner Elevation install/first-run = owner's home sitting).**
+- **h2 acked at 21:15:27Z / 16:15:27 ET** (`acked: [{id:"h2", state:"acked"}]`). Resume messages sent to Teams B, D, A and E.
+- **Channel note for the record:** the typed message arrived inside this session (computer use by another session) — not a bus ruling;
+  Nox stopped it and voided it as a channel. From now on, anything governing this session's work arrives **over the bus or as a filed Nox
+  ruling**; I will not treat typed-in instructions as authority.
