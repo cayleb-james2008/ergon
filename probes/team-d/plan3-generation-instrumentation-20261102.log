@@ -1,0 +1,83 @@
+=== Plan 3 — traffic generation instrumentation + offline lighting technology (2026-11-02) ===
+branch prep/b1-capture-format-20261101
+commit 90ac9326dfb0037d5af7505d64bd230d1213fb88  tree 8a488c490ab8a82622b68ec6323d754714f7a472
+parents 90ac9326dfb0037d5af7505d64bd230d1213fb88 29a626b2b8a13556ac5ee07db6fdb60401ecc6e8
+time 2026-11-02T01:06:34Z
+
+--- commit stat ---
+90ac932 traffic: Plan 3 — bounded generation instrumentation + offline lighting technology (confirmed ruling)
+ docs/art/SIDECAR.md                           |  16 +++-
+ docs/verify/2026-10-19/VINEGAR_RUNBOOK.md     |   2 +-
+ tests/diagnostics/GenerationGuard.luau        |  98 ++++++++++++++++++++++
+ tests/tools/test_collector_chunks.py          |   2 +-
+ tests/tools/test_look_metrics.py              | 108 ++++++++++++++++++------
+ tests/tools/test_place_lighting.py            | 105 +++++++++++++++++++++++
+ tests/tools/test_traffic_acceptance.py        |  53 +++++++++++-
+ tests/tools/test_vinegar_run.py               |  82 +++++++++++++-----
+ tests/traffic/Server.luau                     |  17 +++-
+ tests/unit/traffic-generation-guard.spec.luau |  71 ++++++++++++++++
+ tests/unit/traffic-runtime.spec.luau          |   4 +-
+ tests/unit/traffic-timing.spec.luau           |   3 +-
+ tools/look_metrics.py                         |  94 +++++++++++++++++----
+ tools/traffic_acceptance.py                   |  41 ++++++++-
+ tools/vinegar_lib/frames.py                   |  43 +++++++---
+ tools/vinegar_lib/place_lighting.py           | 115 ++++++++++++++++++++++++++
+ tools/vinegar_run.py                          |  15 +++-
+ 17 files changed, 779 insertions(+), 90 deletions(-)
+
+--- tracked tree ---
+0
+untracked lines 792
+
+--- sealed BEFORE ---
+84324d4342667dd163ab8e64adacbf8ef44ab786aeda5c7ab1403e76d52ef6ce  build/release.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  build/test.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  /home/cayleb/.var/app/org.vinegarhq.Vinegar/data/usg/usg-desktop.rbxlx
+
+--- runner suite ---
+Ran 83 tests in 11.194s
+
+OK
+
+--- full Python suite ---
+Ran 311 tests in 43.759s
+OK
+
+--- traffic acceptance + place lighting suites ---
+Ran 7 tests in 0.078s
+
+OK
+Ran 6 tests in 0.017s
+
+OK
+
+--- full Lune unit suite (final tree) ---
+unit: 919 passed, 0 failed (126 specs)
+lune_rc=0
+
+=== MUTATION PROOFS (maker self-check, 2026-11-02 ~01:20Z) ===
+A. validate_diagnostic call removed            -> FAILED (failures=3)
+B. generationEvents bound check removed        -> FAILED (failures=1)
+C. pass-with-instability check removed         -> FAILED (failures=3)
+D. fail-closed error removed from the probe    -> FAILED (failures=1)
+E. look_metrics hash binding removed           -> FAILED (failures=2)
+F. recorder bound removed (Lune guard spec)    -> 4 passed, 1 failed (1 spec)
+All files restored; tracked tree clean; suites green after restore.
+
+--- sealed AFTER ---
+84324d4342667dd163ab8e64adacbf8ef44ab786aeda5c7ab1403e76d52ef6ce  build/release.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  build/test.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  /home/cayleb/.var/app/org.vinegarhq.Vinegar/data/usg/usg-desktop.rbxlx
+
+--- final state 2026-11-02T01:18:28Z ---
+HEAD 90ac9326dfb0037d5af7505d64bd230d1213fb88
+tree 8a488c490ab8a82622b68ec6323d754714f7a472
+tracked modified: 0
+untracked evidence lines: 792
+
+--- final suite re-run on committed tree ---
+Ran 83 tests in 10.697s
+
+OK
+Ran 311 tests in 42.959s
+OK
