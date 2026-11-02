@@ -1,0 +1,70 @@
+#!/usr/bin/bash
+# Lane-4 Windows 11 Enterprise Eval rig launcher — PATCHED by Team B (2026-11-02) after the Windows-VM attempt.
+# Fixes proven by the attempt (see board/reports/team-b-windows-vm-attempt.md):
+#   F1 boot path: refresh OVMF vars + continuous `sendkey ret` at the El-Torito prompt (`-display none` hides it).
+#   F2 answer media: QEMU vvfat over the answer directory (correct VFAT long filenames; the old FAT16 answer.img
+#      exposed only the 8.3 name AUTOUNAT.XML, which Setup does not match) + usb-storage,removable=true
+#      (Setup only searches REMOVABLE media for Autounattend.xml; usb-storage defaults to a fixed disk).
+# Scratch only; no host changes. Stage 'install': ISO + unattended apply. Stage 'run': installed disk.
+set -euo pipefail
+R=/home/cayleb/workspace/harness-build/scratch-tb-l4/rig
+STAGE=${1:-install}
+QEMU=/usr/bin/qemu-system-x86_64
+DISK="$R/disks/win11-eval.qcow2"
+VARS="$R/win/OVMF_VARS.fd"
+TPM="$R/win/tpm"; mkdir -p "$TPM"
+MON="$R/win/monitor.sock"
+
+# F1a: refresh the firmware variable store when asked (a stale/foreign VARS was one of the two blockers).
+if [ "${2:-}" = "--refresh-vars" ] && [ "$STAGE" = install ]; then
+  [ -f "$VARS.pre-refresh" ] || cp -p "$VARS" "$VARS.pre-refresh"
+  cp /usr/share/edk2/x64/OVMF_VARS.4m.fd "$VARS"
+  echo "OVMF vars refreshed from the distro template (backup: $VARS.pre-refresh)"
+fi
+
+# F1b: send a key every ~0.5 s for ~120 s while the install media shows its boot prompt.
+keypress_loop() {
+  python3 - "$MON" <<'PY' &
+import socket, sys, time
+mon = sys.argv[1]
+for _ in range(240):
+    try:
+        s = socket.socket(socket.AF_UNIX); s.settimeout(0.5); s.connect(mon)
+        try: s.recv(4096)
+        except Exception: pass
+        s.sendall(b'sendkey ret\n'); s.close()
+    except Exception: pass
+    time.sleep(0.5)
+PY
+  echo "keypress loop: pid $!"
+}
+
+COMMON=(-machine pc,accel=kvm -boot order=d,menu=off -cpu host -smp 8 -m 10240
+  -drive if=pflash,format=raw,readonly=on,file=/usr/share/edk2/x64/OVMF_CODE.4m.fd
+  -drive if=pflash,format=raw,file="$VARS"
+  -chardev socket,id=chrtpm,path="$TPM/swtpm.sock" -tpmdev emulator,id=tpm0,chardev=chrtpm
+  -device tpm-tis,tpmdev=tpm0
+  -vnc 127.0.0.1:2 -monitor unix:"$MON",server,nowait
+  -rtc base=localtime -display none
+  -serial file:"$R/logs/win11-serial-$(date -u +%Y%m%dT%H%M%SZ).log")
+case "$STAGE" in
+  install)
+    [ -S "$TPM/swtpm.sock" ] || { echo "start swtpm first: swtpm socket --tpm2 --tpmstate dir=$TPM --ctrl type=unixio,path=$TPM/swtpm.sock --daemon"; exit 2; }
+    rm -f "$MON"; keypress_loop
+    exec "$QEMU" "${COMMON[@]}" \
+      -nic user,model=e1000 \
+      -drive id=disk0,if=ide,format=qcow2,file="$DISK" \
+      -drive id=cd0,if=ide,media=cdrom,readonly=on,file="$R/iso/Win11_Enterprise_Eval_26H2_x64_en-us.iso" \
+      -drive id=cd1,if=ide,media=cdrom,readonly=on,file="$R/iso/virtio-win.iso" \
+      -device qemu-xhci \
+      -drive id=ans,if=none,format=raw,file=fat:rw:"$R/win/unattend" \
+      -device usb-storage,drive=ans,removable=true
+    ;;
+  run)
+    [ -S "$TPM/swtpm.sock" ] || { echo "start swtpm first"; exit 2; }
+    exec "$QEMU" "${COMMON[@]}" \
+      -nic user,model=e1000,hostfwd=tcp:127.0.0.1:3389-:3389,hostfwd=tcp:127.0.0.1:2222-:22 \
+      -drive id=disk0,if=ide,format=qcow2,file="$DISK"
+    ;;
+  *) echo "usage: $0 install [--refresh-vars] | run"; exit 2 ;;
+esac

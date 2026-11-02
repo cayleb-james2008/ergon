@@ -1,0 +1,78 @@
+== claims in bytes, 2026-11-01T21:06:24-05:00 ==
+--- claim 1: requireApplied present, ensure/generateSafe call absent ---
+63:function WorldSeed.requireApplied(root, expectedSeed, expectedLayout)
+--- claim 2: trace fields + publication + inventory ---
+ -- Instrumentation trace (Plan 4): the times and the world identity the named-seed decision is made from. It is
+ -- published as a Workspace attribute before any capture, so a fail-fast or a hang leaves the trace as evidence.
+ local trace={t0=os.clock(),rootFoundAt=nil,worldReadyAt=nil,actualSeed=nil,actualLayout=nil,
+  expectedSeed=manifest.namedSeed or manifest.seed,expectedLayout=manifest.layoutVersion,
+  fastPathApplied=false,rebuild=false,starter=workspace:GetAttribute("AtlasStarterTrace")}
+ local root=workspace:WaitForChild("Nightshift",120);assert(root,"world root missing")
+ trace.rootFoundAt=os.clock()
+ local deadline=os.clock()+120
+ repeat task.wait(.05) until root:GetAttribute("WorldReady")==true or os.clock()>deadline
+ assert(root:GetAttribute("WorldReady")==true,"actual world incomplete")
+ trace.worldReadyAt=os.clock()
+ local seed,layout=root:GetAttribute("WorldSeed"),root:GetAttribute("WorldLayoutVersion")
+ trace.actualSeed,trace.actualLayout=seed,layout
+ if manifest.namedSeed then
+  -- Assert-and-skip: the starter's SEED_PATCH patched World.dailySeed before Bootstrap built this world. If that fast
+  -- path lost the ordering race the world reports another day and we FAIL FAST with the observed identity — never
+  -- rebuild City+Highway inside a running Play (the 2026-11-01 seeded hang: World.generateSafe on a populated world).
+  local WorldSeed=require(assert(script.Parent:WaitForChild("AtlasWorldSeed",20)))
+  local applied=WorldSeed.requireApplied(root,manifest.namedSeed,manifest.layoutVersion)
+  trace.fastPathApplied,trace.rebuild=applied.fastPath,applied.rebuilt
+  seed,layout=root:GetAttribute("WorldSeed"),root:GetAttribute("WorldLayoutVersion")  -- re-read: the check is a no-op
+  trace.actualSeed,trace.actualLayout=seed,layout
+ end
+ trace.fastPathApplied=trace.fastPathApplied or (seed==manifest.seed and layout==manifest.layoutVersion)
+ workspace:SetAttribute("AtlasWorldTrace",Http:JSONEncode(trace))  -- evidence before any view is captured
+ assert(seed==manifest.seed and layout==manifest.layoutVersion,"actual seed/layout differ; regenerate plan, never infer")
+ local city=assert(root:FindFirstChild("City"));local highway=assert(root:FindFirstChild("Highway"))
+ local highwayVersion=highway:GetAttribute("HighwayGeometryVersion") or 1
+ assert(highwayVersion==manifest.highwayGeometryVersion,"actual highway geometry version differs")
+ local roads=assert(city:FindFirstChild("Roads"));local junctions=assert(city:FindFirstChild("Junctions"));local districts=assert(city:FindFirstChild("Districts"))
+ local inventory={seed=seed,layoutVersion=layout,highwayGeometryVersion=highwayVersion,candidate=cfg.candidate,worldReady=true,roads={},highwayRoads={},junctions={},cells={},authored={},gates={},streaming={},nativeInstanceInventory=true,tiles={},worldTrace=trace}
+--- claim 2: publication line number vs view loop ---
+tests/atlas/Server.luau:85: workspace:SetAttribute("AtlasWorldTrace",Http:JSONEncode(trace))  -- evidence before any view is captured
+tools/vinegar_run.py:159:return H:JSONEncode({trace=workspace:GetAttribute("AtlasWorldTrace")})'''
+tools/vinegar_run.py:665:        for index, view in enumerate(views, 1):
+--- claim 3: SEED_PATCH records AtlasStarterTrace before require(...).start ---
+40:STARTER_SOURCE=('local n=assert(workspace:GetAttribute("AtlasNonce")); '
+45:SEED_PATCH=('local seed=workspace:GetAttribute("USGWorldSeed"); '
+58: 'AtlasServerStarter':('ServerScriptService/Nightshift','Script',STARTER_SOURCE),
+69:        patched['AtlasServerStarter'] = (parent, cls, SEED_PATCH + source)
+--- claim 4: 45 s bound + world-trace.json + result trace ---
+160:ATLAS_FIRST_VIEW_TIMEOUT = 45  # Plan 4: bounded wait for view-001; a named-seed hang is caught in tens of seconds
+497:    def result_trace(self):
+616:    first_view_timeout = ATLAS_FIRST_VIEW_TIMEOUT  # Plan 4: bounded bind of view-001 (named-seed hang detector)
+625:        """Keep the server's Plan 4 trace as evidence (written to world-trace.json; also merged into result.json)."""
+635:            write(out / "world-trace.json", value)
+648:    def result_trace(self):
+649:        return {"worldTrace": self.world_trace} if self.world_trace is not None else {}
+664:        first_deadline = time.monotonic() + max(0.05, min(self.first_view_timeout, ctx.remaining(self.first_view_timeout)))
+676:                raise FixtureFailed(f"{phase}: {exc}; worldTrace: " + json.dumps(trace)[:800]) from None
+705:            self.record_world_trace(out, report.get("worldTrace"))
+800:    def result_trace(self):
+1057:    for key, value in (fx.result_trace() or {}).items():  # structured traces beside the summary; never overwrite a result field
+--- runbook seed/layout/assert-and-skip ---
+65:atlas:scout --seed 2134783819              # the frozen named plan seed / layoutVersion 2
+66:atlas:highway-extension --seed 2134783819
+71:- Queue lines may carry `run`'s own options (`atlas:scout --seed 2134783819`, `atlas:highway-extension --seed 2134783819`, `moving --timeout 240`); they are `shlex.split` and validated exactly like `run`. A `smoke` line takes no options.
+76:**Atlas named seed (Plan 4, 2026-11-02):** the frozen plan seed is **2134783819** with **layoutVersion 2**. A seeded
+79:(`named seed not applied before Play: world reports seed X layout Y, expected 2134783819/2; refusing in-Play rebuild`)
+81:that rebuild). The wait for `view-001` is bounded to **45 s** so such a hang surfaces in tens of seconds; the server
+84:attribute `AtlasWorldTrace` before any capture, and the runner keeps it as `world-trace.json` + `result.json.worldTrace`
+--- SIDECAR.md table-header fix ---
+diff --git a/docs/art/SIDECAR.md b/docs/art/SIDECAR.md
+index a6980b0..964669c 100644
+--- a/docs/art/SIDECAR.md
++++ b/docs/art/SIDECAR.md
+@@ -48,7 +48,9 @@ Every sidecar has `"ok": true` and a `report` object holding:
+ > (`technologySource: "sealed-place-xml"`) and never claims an engine read happened. The field stays required; only the
+ > read path changed.
+ 
+-Atlas views also carry the native acknowledgement from `tests/atlas`, merged under the probe's fields: the acknowledgement's own `lighting` detail stays next to the probe's `technology`, `sky` and `atmosphere`. look_metrics needs these acknowledgement fields:| Field | Accepts |
++Atlas views also carry the native acknowledgement from `tests/atlas`, merged under the probe's fields: the acknowledgement's own `lighting` detail stays next to the probe's `technology`, `sky` and `atmosphere`. look_metrics needs these acknowledgement fields:
++
++| Field | Accepts |

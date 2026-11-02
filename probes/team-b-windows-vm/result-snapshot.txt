@@ -1,0 +1,10 @@
+windows-vm result snapshot 2026-11-02T02:11:59Z
+qcow2: 17082351616 bytes
+qemu pid/rss: 708641 / 10312MiB
+boots: 2
+LISTEN 0      1                                   127.0.0.1:5902       0.0.0.0:*
+LISTEN 0      1                                   127.0.0.1:3389       0.0.0.0:*
+LISTEN 0      1                                   127.0.0.1:2222       0.0.0.0:*
+serial tail:
+967-8BDC-D8D586A48CB6,0x800,0x96000)/\EFI\Microsoft\Boot\bootmgfw.efi
+BdsDxe: starting Boot000B "Windows Boot Manager" from HD(1,GPT,44C45CA7-14C4-4967-8BDC-D8D586A48CB6,0x800,0x96000)/\EFI\Microsoft\Boot\bootmgfw.efi

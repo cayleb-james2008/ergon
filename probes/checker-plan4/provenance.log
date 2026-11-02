@@ -1,0 +1,35 @@
+== Plan 4 provenance, 2026-11-01T21:06:24-05:00 ==
+HEAD=9022c538966e84b014607e565ccfb61845458c60
+parent=90ac9326dfb0037d5af7505d64bd230d1213fb88
+tree=53fbc06109aef23a5bd49d24049f05afc4c03e4c
+branch=prep/b1-capture-format-20261101
+tracked_mods=0 untracked=792
+--- numstat (actual) ---
+3	1	docs/art/SIDECAR.md
+11	0	docs/verify/2026-10-19/VINEGAR_RUNBOOK.md
+18	6	tests/atlas/Server.luau
+15	21	tests/atlas/WorldSeed.luau
+22	0	tests/tools/test_atlas_acceptance.py
+28	0	tests/tools/test_vinegar_run.py
+34	39	tests/unit/world-seed-override.spec.luau
+6	3	tools/atlas_acceptance.py
+48	1	tools/vinegar_run.py
+--- sum ---
+insertions=185 deletions=71
+--- shortstat ---
+ 9 files changed, 185 insertions(+), 71 deletions(-)
+--- changed paths ---
+docs/art/SIDECAR.md
+docs/verify/2026-10-19/VINEGAR_RUNBOOK.md
+tests/atlas/Server.luau
+tests/atlas/WorldSeed.luau
+tests/tools/test_atlas_acceptance.py
+tests/tools/test_vinegar_run.py
+tests/unit/world-seed-override.spec.luau
+tools/atlas_acceptance.py
+tools/vinegar_run.py
+--- game/asset/sealed paths touched ---
+(empty above = untouched)
+--- sealed hashes ---
+84324d4342667dd163ab8e64adacbf8ef44ab786aeda5c7ab1403e76d52ef6ce  build/release.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  build/test.rbxlx

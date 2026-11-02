@@ -1,0 +1,15 @@
+== trace publication vs fail-fast ordering (claim 2 caveat), 2026-11-01T21:10:34-05:00 ==
+73: trace.actualSeed,trace.actualLayout=seed,layout
+74: if manifest.namedSeed then
+79:  local applied=WorldSeed.requireApplied(root,manifest.namedSeed,manifest.layoutVersion)
+82:  trace.actualSeed,trace.actualLayout=seed,layout
+85: workspace:SetAttribute("AtlasWorldTrace",Http:JSONEncode(trace))  -- evidence before any view is captured
+86: assert(seed==manifest.seed and layout==manifest.layoutVersion,"actual seed/layout differ; regenerate plan, never infer")
+
+Consequence: requireApplied raises BEFORE the AtlasWorldTrace publication line, so on the mismatch
+fail-fast the Workspace attribute is never set; the starter error post then carries worldTrace=nil.
+Evidence kept on that path: the named error text (observed+expected identity) inside the runtime error post,
+plus the separately published AtlasStarterTrace attribute (SEED_PATCH, set before require(h).start).
+
+Early-stop path: collector.wait raises ValueError('runtime arrived before view-001') when the starter error post
+arrives first; Atlas.run catches only (TimeoutError, FixtureFailed), so the trace is not read/written on that path.

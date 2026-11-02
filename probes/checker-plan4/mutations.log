@@ -1,0 +1,8 @@
+== mutation proofs on throwaway copy /tmp/checker-plan4/mut, 2026-11-01T21:10:34-05:00 ==
+A mismatch returns instead of fail-fast -> world-seed spec: 9 passed, 1 failed (2 specs) [verified]
+B layout leg dropped -> world-seed spec: 9 passed, 1 failed (2 specs) [verified]
+C 45s bound removed -> runner suite hang, killed by bounded timeout rc=124, no completion summary, no leftover procs [verified]
+D trace dropped from failure -> runner suite: Ran 84 tests, FAILED (failures=1) [verified]
+E AtlasWorldTrace publication removed -> atlas acceptance: Ran 15 tests, FAILED (failures=1) [verified]
+F starter applied/rootSeed removed -> atlas acceptance: Ran 15 tests, FAILED (failures=1) [verified]
+restored sha256: WorldSeed 1174e74a8cce… Server 2e08129a7cc3… atlas_acceptance e75a395f2d39… vinegar_run b7d33f177f2e…

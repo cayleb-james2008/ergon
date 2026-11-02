@@ -1,0 +1,34 @@
+#!/usr/bin/bash
+# Lane-4 Windows 11 Enterprise Eval rig launcher (scratch only; no host changes).
+# Stage 'install': boots the ISO with autounattend from a vvfat drive, VNC on loopback.
+# Stage 'run':     boots the installed disk.
+set -euo pipefail
+R=/home/cayleb/workspace/harness-build/scratch-tb-l4/rig
+STAGE=${1:-install}
+QEMU=/usr/bin/qemu-system-x86_64
+DISK="$R/disks/win11-eval.qcow2"
+VARS="$R/win/OVMF_VARS.fd"
+TPM="$R/win/tpm"; mkdir -p "$TPM"
+COMMON=(-machine pc,accel=kvm -boot order=d,menu=off -cpu host -smp 8 -m 10240
+  -drive if=pflash,format=raw,readonly=on,file=/usr/share/edk2/x64/OVMF_CODE.4m.fd
+  -drive if=pflash,format=raw,file="$VARS"
+  -chardev socket,id=chrtpm,path="$TPM/swtpm.sock" -tpmdev emulator,id=tpm0,chardev=chrtpm
+  -device tpm-tis,tpmdev=tpm0
+  -vnc 127.0.0.1:2 -monitor unix:"$R/win/monitor.sock",server,nowait
+  -nic user,model=e1000 -rtc base=localtime
+  -display none -no-reboot)
+case "$STAGE" in
+  install)
+    [ -S "$TPM/swtpm.sock" ] || { echo "start swtpm first: swtpm socket --tpm2 --tpmstate dir=$TPM --ctrl type=unixio,path=$TPM/swtpm.sock --daemon"; exit 2; }
+    exec "$QEMU" "${COMMON[@]}" \
+      -drive id=disk0,if=ide,format=qcow2,file="$DISK" \
+      -drive id=cd0,if=ide,media=cdrom,readonly=on,file="$R/iso/Win11_Enterprise_Eval_26H2_x64_en-us.iso" \
+      -drive id=cd1,if=ide,media=cdrom,readonly=on,file="$R/iso/virtio-win.iso" \
+      -drive id=ans,if=none,format=raw,file="$R/win/answer.img" -device qemu-xhci -device usb-storage,drive=ans
+    ;;
+  run)
+    [ -S "$TPM/swtpm.sock" ] || { echo "start swtpm first"; exit 2; }
+    exec "$QEMU" "${COMMON[@]}" -drive id=disk0,if=ide,format=qcow2,file="$DISK"
+    ;;
+  *) echo "usage: $0 install|run"; exit 2 ;;
+esac
