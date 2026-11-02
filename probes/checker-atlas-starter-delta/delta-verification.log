@@ -1,0 +1,50 @@
+== atlas-starter fix provenance/delta, 2026-11-01T22:01:41-05:00 ==
+HEAD=e2165f530be1350c0a402faa62c90fde3f126c91
+parent=659779ce89fa18c8ab2dc13a29906f7ab05e1499
+tree=0e4c907ab6bc225fb111bc527f2e772d4917eaae
+branch=prep/b1-capture-format-20261101
+tracked_mods=0 untracked=796
+--- delta 659779c..e2165f5 numstat ---
+4	1	docs/verify/2026-10-19/VINEGAR_RUNBOOK.md
+91	12	tests/tools/test_atlas_acceptance.py
+18	4	tests/tools/test_vinegar_run.py
+30	12	tools/atlas_acceptance.py
+--- sum ---
+insertions=143 deletions=29
+--- changed paths ---
+docs/verify/2026-10-19/VINEGAR_RUNBOOK.md
+tests/tools/test_atlas_acceptance.py
+tests/tools/test_vinegar_run.py
+tools/atlas_acceptance.py
+--- game/asset/sealed touched ---
+(empty=untouched)
+--- sealed hashes ---
+84324d4342667dd163ab8e64adacbf8ef44ab786aeda5c7ab1403e76d52ef6ce  build/release.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  build/test.rbxlx
+
+--- claim 1/2: generated seeded starter structure (from tools/atlas_acceptance.py) ---
+  require World: True
+  require AtlasWorldSeed: True
+  apply on required table: True
+  applied on required table: True
+  no S.apply(W,seed): True
+  no S.applied(W): True
+  seed patch inside xpcall: True
+  server start inside xpcall: True
+  error post runtime ok=false: True
+  error post worldTrace: True
+  error post starter trace: True
+  unseeded == STARTER_SOURCE: True
+  unseeded has no seed patch: True
+  unseeded error post has trace attrs: True
+
+--- invariants untouched by delta (files not changed) ---
+160:ATLAS_FIRST_VIEW_TIMEOUT = 45  # Plan 4: bounded wait for view-001; a named-seed hang is caught in tens of seconds
+672:            except (TimeoutError, FixtureFailed, ValueError) as exc:
+74: workspace:SetAttribute("AtlasWorldTrace",Http:JSONEncode(trace))  -- publish BEFORE the check: a fail-fast keeps it
+80:  local applied=WorldSeed.requireApplied(root,manifest.namedSeed,manifest.layoutVersion)
+86: workspace:SetAttribute("AtlasWorldTrace",Http:JSONEncode(trace))  -- refresh with the decision, before any view
+63:function WorldSeed.requireApplied(root, expectedSeed, expectedLayout)
+
+--- C1 ordering regression test removed in this delta? ---
+  NOT PRESENT (removed when test was rewritten; Server.luau behaviour untouched)

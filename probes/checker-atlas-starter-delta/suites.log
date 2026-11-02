@@ -1,0 +1,8 @@
+== suites on e2165f5 fresh clone, 2026-11-01T22:01:41-05:00 ==
+runner:        Ran 85 tests in 11.707s OK 
+atlas acc:     Ran 16 tests in 0.614s OK 
+full python:   4:Ran 315 tests in 51.835s 6:OK 
+world-seed:    unit: 10 passed, 0 failed (2 specs)
+atlas-paths:   unit: 1 passed, 0 failed (1 specs)
+new Lune SEED_PATCH test: executed verbosely -> Ran 1 test ... OK
+Lune full:     NOT re-run (12 min); delta touches no Lune-read file; prior accepted 919/0 (126 specs) at 9022c53/659779c; the two Lune specs that read atlas sources re-run above

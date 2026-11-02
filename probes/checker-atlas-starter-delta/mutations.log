@@ -1,0 +1,8 @@
+== atlas-starter fix mutation proofs (throwaway clone), 2026-11-01T22:01:41-05:00 ==
+M1 revert to WaitForChild Instance (no require) -> atlas acceptance: Ran 16 tests, FAILED (failures=2)
+   FAIL: test_real_seeded_starter_runs_under_lune_and_its_crash_class_posts_the_trace
+   FAIL: test_seeded_starter_requires_the_modules_and_reports_every_crash
+M2 move the seed patch outside the xpcall -> atlas acceptance: Ran 16 tests, FAILED (failures=2)
+   FAIL: test_real_seeded_starter_runs_under_lune_and_its_crash_class_posts_the_trace
+   FAIL: test_seeded_starter_requires_the_modules_and_reports_every_crash
+restored: git status clean; tools/atlas_acceptance.py sha256 0f33184db77131b88e87054431dba3844519a106c264aa87c843b4339a885fc5 (== frozen)
