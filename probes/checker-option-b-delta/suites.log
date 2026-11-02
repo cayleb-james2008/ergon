@@ -1,0 +1,9 @@
+== suites on 68c020b (fresh clone), 2026-11-02T01:20:59-05:00 ==
+runner:            Ran 91 tests in 12.646s OK 
+traffic acc:       Ran 9 tests in 0.082s OK 
+full python:       4:Ran 331 tests in 44.885s 6:OK 
+Lune traffic:      unit: 93 passed, 0 failed (18 specs)
+full Lune:         NOT re-run (12 min); delta touches tests/traffic/Server.luau, which is read by 3 Lune specs
+                   (traffic-contact-pursuit, traffic-runtime, traffic-timing) - all covered by the traffic filter 93/0;
+                   relied on the accepted full-Lune 923/0 (127 specs) at the parent commit
+changed-file readers: traffic-contact-pursuit.spec.luau traffic-runtime.spec.luau traffic-timing.spec.luau 

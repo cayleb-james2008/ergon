@@ -1,0 +1,5 @@
+leg-start gap (studs): 24.31  (target 12-25)
+ego rolling speed at leg start (studs/s): 30.0  (target 28-36)
+min pre-leg gap (studs): 24.68  (no-contact threshold ~17)
+contact time from new start (steady proxy 52): 7.56s  (must be <12)
+contact time from old 10 studs/s start: 17.57999999999995  (must be >12)

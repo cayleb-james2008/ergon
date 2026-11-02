@@ -1,0 +1,8 @@
+== option-B mutation proofs (throwaway clone), 2026-11-02T01:20:59-05:00 ==
+M23 old start restored (pre-leg 10 + 4 s abort wait) -> traffic acceptance: Ran 9 tests, FAILED (failures=1)
+   FAIL: test_abort_contact_starts_the_leg_at_abort_observed_at_with_rolling_speed
+M24 only the 4 s abort wait restored -> traffic acceptance: Ran 9 tests, FAILED (failures=1)
+   FAIL: test_abort_contact_starts_the_leg_at_abort_observed_at_with_rolling_speed
+M25 only the rolling pre-leg speed reverted to 10 -> traffic acceptance: Ran 9 tests, FAILED (failures=1)
+   FAIL: test_abort_contact_starts_the_leg_at_abort_observed_at_with_rolling_speed
+restored: git status clean; tests/traffic/Server.luau sha256 9e72bb19aac2f1d66e784d293303341a42757368b20541d6d06149cdffb4ff5b (frozen)

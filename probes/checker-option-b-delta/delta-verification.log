@@ -1,0 +1,56 @@
+== option-B fixture delta provenance/scope, 2026-11-02T01:20:59-05:00 ==
+HEAD=68c020b71c4dc13288e510da9001b3f5c216c248
+parent=8bda598f7cf023a9eb58aab1a76c93dfce3d5ba3
+tree=bebf72b0e522431fda4d7129e937dfdf642ae94a
+branch=prep/b1-capture-format-20261101
+tracked_mods=0 untracked=813
+--- delta 8bda598..68c020b numstat ---
+8	0	docs/verify/2026-10-19/VINEGAR_RUNBOOK.md
+78	0	tests/tools/test_traffic_acceptance.py
+6	3	tests/traffic/Server.luau
+--- sum ---
+insertions=92 deletions=3
+--- changed paths ---
+docs/verify/2026-10-19/VINEGAR_RUNBOOK.md
+tests/tools/test_traffic_acceptance.py
+tests/traffic/Server.luau
+--- game/asset/sealed touched ---
+(empty=untouched)
+--- atlas/settle/retry/45s untouched ---
+(empty=untouched)
+--- sealed hashes ---
+84324d4342667dd163ab8e64adacbf8ef44ab786aeda5c7ab1403e76d52ef6ce  build/release.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  build/test.rbxlx
+
+--- ruled law/guards/exemption byte-unchanged (function-block sha256 at parent vs tip) ---
+--- 8bda598
+627e580d95c5ed62be0eb815460b1c479eb2153ba97f1cb1335e4588d6b97c95  -
+d372efb9229063f7a24c8d28e2e115712b4124b7a37f52f123538d5b886c7100  -
+--- 68c020b
+627e580d95c5ed62be0eb815460b1c479eb2153ba97f1cb1335e4588d6b97c95  -
+d372efb9229063f7a24c8d28e2e115712b4124b7a37f52f123538d5b886c7100  -
+
+--- B implementation hunks ---
+-  fixture={autonomousObstacle=true,physicalKeyboard=false,twoClient=false,profileService=false,rewardService=false,identityOnly=true,stockId="neon_hatch",initialBodyPlacements=0,initialVelocityWrites=0,maneuverPoseWrites=0,maneuverVelocityWrites=0},
++  fixture={autonomousObstacle=true,physicalKeyboard=false,twoClient=false,profileService=false,rewardService=false,identityOnly=true,stockId="neon_hatch",initialBodyPlacements=0,initialVelocityWrites=0,maneuverPoseWrites=0,maneuverVelocityWrites=0,preLegSpeed=30},
+-   began=os.clock();lastSample=began;local maximum=0;local wantedLoop=source;local wantedSpeed=10
++   began=os.clock();lastSample=began;local maximum=0;local wantedLoop=source
++   -- Nox run-8 option B (fixture start geometry): the abort-contact probe rolls into the contact leg instead of creeping
++   -- at 10 studs/s; the ruled pursuit law/guards are untouched. Pass mode keeps its historic 10.
++   local wantedSpeed=if cfg.mode=="abort-contact" then 30 else 10
+-     if cfg.mode=="abort-contact" and abortAt and age-abortAt>=4 then contactAt=contactAt or age;wantedLoop=source;report.contactDriveAt=contactAt end
++     if cfg.mode=="abort-contact" and abortAt then contactAt=contactAt or age;wantedLoop=source;report.contactDriveAt=contactAt end
+
+--- -18 absent / preLegSpeed recorded ---
+74:  fixture={autonomousObstacle=true,physicalKeyboard=false,twoClient=false,profileService=false,rewardService=false,identityOnly=true,stockId="neon_hatch",initialBodyPlacements=0,initialVelocityWrites=0,maneuverPoseWrites=0,maneuverVelocityWrites=0,preLegSpeed=30},
+161:   local wantedSpeed=if cfg.mode=="abort-contact" then 30 else 10
+
+--- start numbers (independent computation, see start-numbers.txt) ---
+leg-start gap (studs): 24.31  (target 12-25)
+ego rolling speed at leg start (studs/s): 30.0  (target 28-36)
+min pre-leg gap (studs): 24.68  (no-contact threshold ~17)
+contact time from new start (steady proxy 52): 7.56s  (must be <12)
+contact time from old 10 studs/s start: 17.57999999999995  (must be >12)
+
+--- maker report ---
+team-d-option-b-freeze-20261102.md ABSENT (verified from the commit)
