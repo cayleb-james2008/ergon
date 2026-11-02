@@ -1,0 +1,67 @@
+=== TEAM D DIAGNOSTIC PLAY 17 — atlas layer-9 diagnostics Play (Lead GO 2026-11-02T09:02Z) ===
+time 2026-11-02T09:02:53Z
+repo 7c7c1e777507001d88e91b8342cc6cc57128704e tracked_modified=0
+
+--- 1. state BEFORE (read-only) ---
+ 973232    2189 /home/cayleb/.var/app/org.vinegarhq.Vinegar/data/vinegar/versions/version-
+{"address": "0x558c7f6b6150", "class": "steam_proton", "title": "Z:\\home\\cayleb\\.var\\app\\org.vinegarhq.Vinegar\\data\\usg\\usg-desktop.rbxlx - Roblox Studio", "at": [1475, 234], "size": [2200, 1000], "floating": true, "fullscreen": 0, "pid": 973232}
+plays record: {  "pid": 973232,  "start": 39165807,  "plays": 1,  "at": 1793608014.290193}
+host: full avg10=0.33 avg60=0.20 avg300=0.14 total=868329423 | 3.48 3.46 3.56 1/2628 993292
+
+--- sealed BEFORE ---
+84324d4342667dd163ab8e64adacbf8ef44ab786aeda5c7ab1403e76d52ef6ce  build/release.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  build/test.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  /home/cayleb/.var/app/org.vinegarhq.Vinegar/data/usg/usg-desktop.rbxlx
+
+--- preflight ---
+preflight_rc=0
+--- 2. THE ONE PLAY: run atlas:scout --seed 2134783819 start 2026-11-02T09:03:04Z ---
+run_rc=5
+
+--- 3. post-Play state 2026-11-02T09:06:55Z ---
+Studio: 
+plays record: {  "pid": 973232,  "start": 39165807,  "plays": 2,  "at": 1793610188.8106873}
+
+--- verify-clean ---
+  "at": "2026-11-02T09:06:55+00:00",
+  "clean": false,
+  "error": "no Studio running: no RobloxStudioBeta process (the owner opens Studio; the runner never launches it)"
+}
+verify_rc=0
+
+--- sealed AFTER ---
+84324d4342667dd163ab8e64adacbf8ef44ab786aeda5c7ab1403e76d52ef6ce  build/release.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  build/test.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  /home/cayleb/.var/app/org.vinegarhq.Vinegar/data/usg/usg-desktop.rbxlx
+
+--- run dir ---
+capture-attempts.json
+cleanup.luau
+hostcheck.jsonl
+manifest.json
+preflight.json
+prepare.luau
+report.json
+result.json
+verify-before.json
+views
+world-trace.json
+view json count: 30
+
+--- 4. Studio recovery after crash 2026-11-02T09:07:54Z ---
+{"action": "open", "result": "ok", "place_sha256_before": "c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98", "place_sha256_after": "c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98", "fit": "ok", "window": {"address": "0x558c7fa45500", "class": "steam_proton", "title": "Z:\\home\\cayleb\\.var\\app\\org.vinegarhq.Vinegar\\data\\usg\\usg-desktop.rbxlx - Roblox Studio", "at": [1475, 234], "size": [2200, 1000], "floating": true, "fullscreen": 0, "pid": 995852}}
+open_rc=0
+  "clean": true,
+  "latchCleared": true
+}
+clear_rc=0
+
+--- recovered preflight ---
+      "edit_skill",
+      "insert_asset",
+      "list_roblox_studios"
+    ]
+  },
+  "edit": true,
+  "plays": 0
+}

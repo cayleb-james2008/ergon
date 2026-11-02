@@ -1,0 +1,4 @@
+fleet-mcp: DEGRADED — token-file-unavailable: EACCES: permission denied, mkdir '/var/lib/fleet/state/mcp'
+fleet-mcp: DEGRADED — action-log-unavailable: EACCES: permission denied, mkdir '/var/lib/fleet/log'
+fleet-mcp: not listening — the token file and the action log are required before any call can be authorised
+dsh web: http://127.0.0.1:8792/?token=bi1XQdgZgHOooBTt47PJfTx3P5YtcrB3OOoF9gUAIZ0

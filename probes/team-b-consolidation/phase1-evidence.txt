@@ -1,0 +1,6 @@
+phase1 proof 2026-11-02T09:05:23Z
+copy home: /home/cayleb/workspace/harness-build/scratch-tb-consolidation/home (no live writes; desktop profile untouched)
+package identity: installed tree diff vs tarball rc=0; manifest sha 1970f995…; package.json sha 631eaeb1…; 123 files
+integrity in copy: ok rows 8/12 lanes_allowed true (after removing pinned fleet-mcp override)
+fleet-mcp shipped row pinned -> override => 'rows fleet-mcp: config changed'; shipped config => MCP DEGRADED EACCES /var/lib/fleet
+doctrine/rates/providers/first-run proofs captured (see report)

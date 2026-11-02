@@ -1,0 +1,57 @@
+# Consolidation profile overlay (Phase 2 writes this to <desktop-home>/profiles/fleet/cordis.patch.yml).
+# NON-PINNED rows only: fleet-mcp is integrity-pinned in rows.manifest.json and MUST NOT be overridden here
+# (a patched fleet-mcp config makes the rows check fail: 'rows fleet-mcp: config changed'). The MCP row needs a
+# consolidated build variant (mcp.row.yml re-rooted + rows.manifest regenerated) or an explicit ruling to keep the
+# systemd unit as the MCP/acceptance host. Tokens: __FLEET_ROOT__, __RUNDIR__, __DESKTOP_HOME__, __RECOVERY_PUB__.
+- id: fleet-core
+  config:
+    fleetRoot: __FLEET_ROOT__
+    dbPath: __FLEET_ROOT__/state/fleet.db
+    logDir: __FLEET_ROOT__/log
+    workRoot: __FLEET_ROOT__/work
+    controlSocket: __RUNDIR__/control.sock
+    sandboxProviderId: fleet-sandbox
+    peerUid: 1000
+    denyCgroupUnits: []
+- id: fleet-sandbox
+  config:
+    bwrapPath: /usr/bin/bwrap
+    nodePath: /usr/bin/node
+    maskRoots: [__FLEET_ROOT__/dsh, __FLEET_ROOT__/state, __FLEET_ROOT__/log, __FLEET_ROOT__/work, __FLEET_ROOT__/backups, __FLEET_ROOT__/checks]
+    egressSocket: __RUNDIR__/egress.sock
+    tmpSizeMiB: 512
+- id: fleet-egress
+  config:
+    socketPath: __RUNDIR__/egress.sock
+    logPath: __FLEET_ROOT__/log/egress.jsonl
+    allow: [registry.npmjs.org]
+    allowPorts: [80, 443]
+    connectTimeoutMs: 10000
+    idleTimeoutMs: 300000
+    guardInProcess: true
+- id: fleet-lessons
+  config:
+    skillDir: __FLEET_ROOT__/skills
+- id: fleet-housekeeper
+  config:
+    fleetRoot: __FLEET_ROOT__
+    recoveryFile: __RECOVERY_PUB__
+    agePath: /usr/bin/age
+    ageKeygenPath: /usr/bin/age-keygen
+- id: session-query-sqlite
+  config:
+    path: __FLEET_ROOT__/state/session-query.sqlite
+    openAt: first-search
+- id: fleet-policy
+  config:
+    logFile: __FLEET_ROOT__/log/actions.jsonl
+    confirmDir: __FLEET_ROOT__/state/confirms
+    peerUid: 1000
+- id: fleet-roster
+  config:
+    checksRoot: __FLEET_ROOT__/checks
+    gitRoot: __FLEET_ROOT__/gitwork
+    engineRoot: __FLEET_ROOT__/engines
+    credentialStore: __DESKTOP_HOME__/.credentials.yaml
+    sessionRoots: [__DESKTOP_HOME__/sessions]
+    engineSearchRoots: []
