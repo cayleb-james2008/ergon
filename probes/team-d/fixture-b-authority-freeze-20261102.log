@@ -1,0 +1,16 @@
+=== ABORT-CONTACT B FREEZE (bounded contact-leg drive assist) 2026-11-02 ===
+commit b73f6cdeb4eefa95782d996df2ee3264d09743c2  tree 259373070458d265f2097125cd5d2066fdcac2e2  parent e475d46  3 files +71/-4
+sealed 84324d43.../c6651793... unchanged
+why: Play 15 commanded +40 studs/s2 but achieved -15..+8.5 (ego decelerated at leg start, gap 71.6->141.9, 12 s guard);
+evidence note: board/probes/team-d/abort-contact-c-achieved-acceleration-20261102.md (v.LookVector=-33.17 entry, realignment
+phase). Nox B: give authority consistent with physics; keep 12 s window/40 cap/closing clamp/guards untouched.
+change (fixture only): at contact-leg start add a bounded LinearVelocity assist (Line mode, LineDirection=pursuit lane
+forward, LineVelocity=clamp(proxy+8,12,60), MaxForce=40*AssemblyMass), zero the VectorForce drive during the leg so total
+authority stays at the ruled cap; destroy in cleanup; contactLeg records commandAccel/achievedAccel/assistMaxForce/
+assistVelocity; fixture.contactLegAssist=true, contactLegMaxAccel=40 (physics setup, no maneuver writes).
+tests: source pins + force-zero invariant + kinematic (gap 71.4/ego 30: 40 closes <12 s, 8.5 does not); MT (assist removed)
+-> traffic acceptance FAILED (1).
+suites: traffic acceptance 12 OK; runner 91 OK; full Python 336 OK; Lune traffic 94/0 (18 specs); full Lune 925/0 (127).
+next: fresh-checker delta on b73f6cd -> studiocycle fresh opening -> one traffic:abort-contact Play; judge achievedAccel/gap
+direction first, contact second; close-but-timeout = progress evidence; B still miss -> held scenario-reconsideration
+fallback with the physics-authority finding. B1 Play-20 record intact.
