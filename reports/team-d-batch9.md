@@ -6,14 +6,15 @@ logged or committed. Maker never checker: **nothing here is a DONE**; the fresh 
 Batch window: **2026-11-02 01:20Z – 02:00Z** (20:20–21:00 ET). Plan 3 verdict observed: **ACCEPT** (`checker-trading`).
 
 Repo: `~/Work/projects/untitled-street-game`, branch `prep/b1-capture-format-20261101`.
-**Plan 4 frozen commit: `9022c538966e84b014607e565ccfb61845458c60`** (`9022c53`; parent `90ac932` =
-accepted Plan 3; branch tip; tree `53fbc06109aef23a5bd49d24049f05afc4c03e4c`; tracked tree clean; 792 untracked
-evidence-dir lines, pre-existing). 9 files, +186/−71. Includes the checker's docs nit: `docs/art/SIDECAR.md` header/table
-newline fixed (the atlas-ack table header was glued onto the paragraph).
+**Plan 4 frozen commit (after the checker fix round): `659779ce89fa18c8ab2dc13a29906f7ab05e1499`** (`659779c`; parent
+`9022c53` = first Plan 4 freeze; branch tip; tree `844523c3fcbd97dcca0caf2db8fbb25d9217a34c`; tracked tree clean; 792
+untracked evidence-dir lines, pre-existing). Fix round = 4 files, +33/−2 (C1/C2 + regression tests). The original Plan 4
+commit `9022c53` is 9 files, **+185/−71** — the batch-9 first report said +186/−71; **C3 corrects it here**. Includes the
+checker's docs nit: `docs/art/SIDECAR.md` header/table newline fixed.
 
 ## 0 · Verdict in one paragraph
 
-Plan 4 is implemented, tested, mutation-checked and **frozen at `9022c53`**. The seeded atlas fixture now **asserts**
+Plan 4 is implemented, tested, mutation-checked and **frozen at `659779c`** (fix round over `9022c53`). The seeded atlas fixture now **asserts**
 the already-built world instead of rebuilding it inside a Play: matching seed+layout → `rebuild=false` and the run
 proceeds; mismatch → **named fail-fast** (`named seed not applied before Play: world reports seed X layout Y, expected
 2134783819/2; refusing in-Play rebuild`). **No in-Play City+Highway rebuild path exists any more** (`WorldSeed.ensure`
@@ -57,25 +58,44 @@ on purpose: it is conditional on the diagnostic Play's evidence. If `fastPathApp
 `World.dailySeed` after Bootstrap already built the day), the cell now fails fast in ≤45 s with the trace, and fallback
 (a) is the ruled next step. If `fastPathApplied=true`, assert-and-skip is sufficient and the atlas cells proceed.
 
+## 1b · Checker fix round (C1/C2/C3) — commit `659779c`
+
+- **C1 (functional, fixed):** `AtlasWorldTrace` was published only **after** `WorldSeed.requireApplied`, so the mismatch
+  fail-fast — the exact case the diagnostic Play exists for — left the trace nil. `tests/atlas/Server.luau` now publishes
+  the trace **before** the named-seed check (`actualSeed`, `actualLayout`, `expectedSeed`, `expectedLayout` already in it)
+  and **refreshes** it with the decision (`fastPathApplied`, `rebuild`) after the check, still before any view. So a
+  fail-fast keeps the trace the Play needs.
+- **C2 (same path, fixed):** the runner's first-view handler caught `TimeoutError`/`FixtureFailed` but not
+  `collector.wait`'s **early-stop `ValueError`** (a fail-fast runtime arriving before `view-001` — the fail-fast path).
+  `tools/vinegar_run.py` now catches `ValueError` too, reads `AtlasWorldTrace`, and raises the named failure with the trace
+  attached (`world-trace.json` + `result.json.worldTrace` kept).
+- **C3 (bookkeeping, fixed):** `9022c53` is **+185/−71** (the first report said +186/−71); corrected above.
+- Regression tests: atlas acceptance asserts the first publication **precedes** `WorldSeed.requireApplied` and that the
+  trace is published twice (before the check + refreshed); the runner gains the **early-stop fail-fast test** (`ok=false`
+  runtime before `view-001` → exit 1 with `worldTrace` in the error, `world-trace.json` on disk, 0 captures, clean abort).
+- Fix-round mutation proofs (both caught, restored): publication moved back after the check → atlas acceptance FAILED (1);
+  `ValueError` branch removed → runner suite FAILED (1).
+
 ## 2 · Freeze evidence (commands + results; full log `board/probes/team-d/plan4-atlas-named-seed-20261102.log`)
 
 | # | Command (fresh checkout of `9022c53`) | Result |
 |---|---|---|
-| 1 | `git rev-parse HEAD; git status --short` | `9022c538…`; tracked tree clean (792 untracked evidence-dir lines) |
-| 2 | `python3 -m unittest discover -s tests/tools -p 'test_vinegar_run.py'` | **Ran 84 tests … OK** |
-| 3 | `python3 -m unittest discover -s tests/tools` | **Ran 313 tests … OK** rc 0 |
-| 4 | `./.tools/bin/lune run tests/unit/run.luau` | **unit: 919 passed, 0 failed (126 specs)** rc 0 (~12 min); log `board/probes/team-d/lune-unit-plan4-20261102.log` |
+| 1 | `git rev-parse HEAD; git status --short` | `659779ce…` (fix-round tip; original freeze `9022c53`); tracked tree clean (792 untracked evidence-dir lines) |
+| 2 | `python3 -m unittest discover -s tests/tools -p 'test_vinegar_run.py'` | **Ran 85 tests … OK** |
+| 3 | `python3 -m unittest discover -s tests/tools` | **Ran 314 tests … OK** rc 0 |
+| 4 | `./.tools/bin/lune run tests/unit/run.luau` | **unit: 919 passed, 0 failed (126 specs)** rc 0 (~12 min; green at `9022c53`; the fix round touches no Lune-read file, re-run on the fix commit in the same green state — log `board/probes/team-d/lune-unit-plan4-20261102.log`) |
 | 5 | `python3 -m unittest discover -s tests/tools -p 'test_atlas_acceptance.py'` / `./.tools/bin/lune run tests/unit/run.luau world-seed` | 15 OK / 10 passed, 0 failed (2 specs) |
 | 6 | `sha256sum build/release.rbxlx build/test.rbxlx ~/.var/app/org.vinegarhq.Vinegar/data/usg/usg-desktop.rbxlx` | `84324d43…`, `c6651793…`, `c6651793…` — unchanged before/after |
-| 7 | `git show --stat 9022c53` | 9 files, +186/−71 (see §1) |
+| 7 | `git show --stat 9022c53; git show --stat 659779c` | 9 files +185/−71 (corrected per C3) + fix round 4 files +33/−2 |
 
 **Mutation proofs (maker self-check, each caught, files restored, tree clean):** (A) mismatch returns instead of
 failing fast → world-seed spec 9 passed/1 failed; (B) layout leg dropped (seed-only check) → 9/1; (C) 45 s first-view
 bound removed → the bounded-first-view test does not terminate (killed at 60 s = the old hang caught); (D) trace dropped
 from the timeout failure → runner suite FAILED (1); (E) `AtlasWorldTrace` publication removed → atlas acceptance FAILED
-(1); (F) starter `applied`/`rootSeed` evidence removed → atlas acceptance FAILED (1).
+(1); (F) starter `applied`/`rootSeed` evidence removed → atlas acceptance FAILED (1); fix round: (G) publication moved
+back after the check → atlas acceptance FAILED (1), (H) `ValueError` early-stop branch removed → runner FAILED (1).
 
-**Exact checker reproduction:** `git checkout 9022c538966e84b014607e565ccfb61845458c60` in a fresh worktree → `git
+**Exact checker reproduction (delta):** `git checkout 659779ce89fa18c8ab2dc13a29906f7ab05e1499` in a fresh worktree → `git
 status` empty; run rows 2–5 (Lune ~12 min; no Play or Studio needed for any of them); sealed hashes row 6. Contract spot
 checks: `WorldSeed.requireApplied` exists and `WorldSeed.ensure`/`generateSafe(` are absent from `tests/atlas/WorldSeed
 .luau`; `Server.luau` publishes `AtlasWorldTrace` before the view loop, has `worldTrace=trace` in the inventory, and
@@ -92,7 +112,7 @@ credential value, no image reads. $0 of $0.
 
 ## 4 · Next step + successor
 
-**Plan 4 is frozen and ready for the fresh checker** (`9022c538966e84b014607e565ccfb61845458c60`; reproduce block §2).
+**Plan 4 fix round is frozen and ready for the checker's delta re-verify** (`659779ce89fa18c8ab2dc13a29906f7ab05e1499`; reproduce block §2; delta over the accepted `9022c53`).
 On ACCEPT the instrumented diagnostic block is complete (Plans 2+3+4 frozen and accepted) and the single diagnostic
 Play runs **only on the Lead's explicit go** — the staged sequence is batch 7 §6 (`preflight` → one
 `run traffic:abort-contact` → `verify-clean`), which after Plan 3 adds bounded `generationEvents`/`diagnostic` to the
