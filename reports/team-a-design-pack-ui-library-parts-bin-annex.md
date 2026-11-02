@@ -158,3 +158,57 @@ evidence: active commits 2026-10-27).
 
 No purchases (Forge UI Pro and Uilora plans unmade); no code vendored into any repo or pack; no pack admission; no
 generation service used; $0 spend. This annex is documentation and proposals only.
+
+## 10. Reel intake 2026-11-02 — Kinetics · OriginKit · React Bits (Nox 103100Z)
+
+**STATUS: VETTED, NOT ADMITTED. REFERENCE NOTES ONLY. NOTHING INSTALLED OR VENDORED.** Primary-source licence/provenance
+check of the three libraries in the owner's reel "Component libraries to avoid AI slop". Full intake:
+`board/reports/team-a-reel-intake-20261102.md`. Same fences as the rest of this annex.
+
+### 10.1 Licence rulings (headline)
+
+| # | Library / source | Licence line of record (evidence) | Usable for | NOT usable for |
+|---|---|---|---|---|
+| **L6** | **Kinetics** — kinetics.colorion.co; github.com/ckissi/kinetics | **NO LICENCE — all rights reserved by default.** No LICENSE/COPYING in repo (raw ×5 = 404), GitHub API licence `null`, `package.json` `"private": true`, no `/terms` or `/license` route on the site. Author: Csaba Kissi / Elerion ltd. | **Reference/study only** (concept-level: spring motion, effect categories) | Any code reuse, snippets, vendoring, install, redistribution |
+| **L7** | **React Bits** — reactbits.dev; github.com/DavidHDev/react-bits | **MIT + Commons Clause v1.0** ("Copyright (c) 2026 David Haz"); use as part of an application/website/product; **no sell/sublicense/redistribute the components — alone, in a bundle, or as a ported version** | **In-app only** (inside Ergon app / per-company tenant source, notice retained) | Distributed design/component pack; ported-version redistribution; Pro purchase (barred) |
+| **L8** | **OriginKit** — originkit.dev (Framer/React/MCP) | **Bespoke usage licence, not open source** (`/docs/licensing`, `/docs/terms`, fetched 2026-11-02): commercial use in your own projects/apps/"products you sell", modify freely, no attribution; **prohibited:** templates/themes/starter kits, design assets/UI kits/Figma, redistribute the library, resell components, mirror/cache the catalog for redistribution, expose via own API/product/agent, train a competing library | **In-app only in the built product**; reference notes | **Design packs, templates, starter kits, design assets** (explicitly barred); catalogue mirroring/caching; paid plans (barred) |
+
+**MCP tooling note:** the OriginKit **MCP plugin** (`github.com/vellum-ai/originkit`) is **MIT** (Vellum, Inc.) — it is
+browser/fetch tooling, and does not change the library licence. React Bits exposes a shadcn-style MCP registry
+(`@react-bits`) — workflow reference only.
+
+### 10.2 Provenance / pinning (record only)
+
+| Library | Pin | Distribution route |
+|---|---|---|
+| Kinetics | commit `c20739e345bed373ad29d7a3bc2203c470aa9650` (2026-10-30T17:08:45Z); **no licence file to pin** | gallery + "copy code" snippets + Pro waitlist |
+| React Bits | commit `4dc7b5b7772e1217c8fb8d2a7aa074302180e5b4` (2026-10-31); `LICENSE.md` sha256 `4bdd1fa59a6b7d5954bc3b213dbc34e455c635a94bbcecf9293553797d0fad02` | shadcn/jsrepo registry (`@react-bits/...`) + MCP registry; ⚠️ npm `react-bits@1.0.5` is an unrelated 2022 package |
+| OriginKit | library has no published version — pin = licence/terms retrieval 2026-11-02; MCP plugin commit `d27526a2e2e728fd2c0c13b28021ade6908211a7`, MIT licence sha256 `2418c77f…` | Framer/React copies + MCP server (free API key, 10 fetches/day) |
+
+### 10.3 Annex additions — reference notes (NOT admission rows)
+
+No S-row is added: none of the three can enter a distributed pack (L6 no licence; L7/L8 in-app only). The following are
+**reference notes** for the design/component lanes, tracked like the pattern-only rows R3/R4:
+
+| Ref | Note | Applied against |
+|---|---|---|
+| **P1** | Spring-physics motion is a *different curve family*; Lumen keeps one ease-out + 120/200/250/350. Any spring proposal = a named motion-token proposal, not a silent adoption. | `--ease`, `--motion-*` |
+| **P2** | Best-in-class libraries cluster press ≈120 ms, hover/selection ≈200 ms, arrival ≈250 ms, sheet ≈350 ms — confirms our budget; longer effects are suspect. | motion tokens |
+| **P3** | All-states matrix completeness (default/hover/focus/pressed/disabled/loading/error/empty + reduced-motion + HC) as a review checklist for every S-row. | S1–S8 gates |
+| **P4** | Keyboard + focus-visible + reduced-motion check before any adaptation (Kinetics' own caveat) — evidence required. | C-A11Y |
+| **P5** | Text reveals one-shot and budgeted; no looping typewriter/scramble, no gradient text. | unslop + C-MOTION |
+| **P6** | MCP-fetchable vetted registries are a legitimate *workflow* (agent browses a registry) — but never mirror/cache a third-party catalogue. | tooling/fleet-face note |
+| **P7** | Framer/React (two-engine) parity is a useful completeness idea for Ergon's two faces — reference only. | design-pack anatomy |
+| **P8** | Per-library licence fences differ; no snippet may be copied from a library without a clean licence line. | this annex |
+
+### 10.4 Net rule (updated)
+
+Vendor only **Vengeance UI (L1) and Uiverse (L3, with provenance)**; **Animate UI (L2) and React Bits (L7) in-app only**;
+**OriginKit (L8) in-app only and never in a design pack/pack artefact**; **Forge UI (L4), Uilora (L5) and Kinetics (L6)
+reference/pattern study only**. Nothing in this section is an admission; the pack gate in §5 still governs any future move.
+
+### 10.5 Fences held
+
+No purchases (React Bits Pro, OriginKit Pro/Ultimate unmade); no code copied or vendored; no installs; no pack admission; no
+live build touched; no image reads; **$0**. Filed 2026-11-02 by `ergon-lead` (Team A); full report
+`board/reports/team-a-reel-intake-20261102.md`.
