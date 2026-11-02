@@ -7,7 +7,7 @@ supersession must pass before **Midnight Slate stops being Ergon's front-end the
 presentation, no owner contact, no image reads, $0.
 
 **Set under this gate:** `board/probes/team-a-design-v2/` — 17 content files; freeze digest
-**`ea68e398063d6cb1007ae1935f552f6981d663999018be5b3e30f8b83fdbd6c3`**; re-verified 2026-11-02T06:39:45Z
+**`2a8cc21bd5f516198ea82a97efc40d3ddff1f7820309fd33b2175ae946670dbe`**; re-verified 2026-11-02T14:58Z
 (`sha256sum -c` 17/17 OK · `build-tokens --check` CURRENT · `check-comps` PASS).
 
 **The supersession rule (binding, one sentence):** *Midnight Slate v1.0.0 remains the shipped Ergon front-end theme until
@@ -33,7 +33,7 @@ no owner-facing action from this lane.
 ## 2. Accessibility floors — LOCKED (translucency does not buy its way out)
 
 These floors are **not negotiable at any gate step** and are measured on the **full composited stack (both ambient washes)**.
-Current measured values from the frozen set (`check-comps.mjs` at 2026-11-02T06:39:45Z):
+Current measured values from the frozen set (`check-comps.mjs` at 2026-11-02T14:58Z):
 
 | Floor | Requirement | Current measured | Locked? |
 |---|---|---|---|

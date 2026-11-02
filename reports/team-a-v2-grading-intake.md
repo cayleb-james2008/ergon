@@ -6,8 +6,8 @@ and **graded deltas only** (nothing wider). Prepared 2026-11-02T06:40Z by `ergon
 owner contact, no image reads, $0.**
 
 **Set under grade:** `board/probes/team-a-design-v2/` — frozen **17 content files**; freeze manifest `FREEZE.sha256`,
-**freeze digest `ea68e398063d6cb1007ae1935f552f6981d663999018be5b3e30f8b83fdbd6c3`**. Re-verified at
-2026-11-02T06:39:45Z: `sha256sum -c FREEZE.sha256` → **17/17 OK**; `node build-tokens.mjs --check` → **CURRENT**;
+**freeze digest `2a8cc21bd5f516198ea82a97efc40d3ddff1f7820309fd33b2175ae946670dbe`**. Re-verified at
+2026-11-02T14:58Z: `sha256sum -c FREEZE.sha256` → **17/17 OK**; `node build-tokens.mjs --check` → **CURRENT**;
 `node check-comps.mjs` → **PASS** (labels, self-containment, tokens, contrast floors, floors, motion tells, freeze match).
 
 **Presentation order the fresh checker recommends (use it for the intake):** `index.html` → `motion-storyboard.html`
@@ -32,6 +32,22 @@ owner contact, no image reads, $0.**
 
 **Verdict vocabulary** (record which one he uses, do not translate it): *accepted* · *rejected* · *"use a ton of work"* ·
 *"looks unfinished"* · *"this is it"* · any other words he actually says. **The exact wording wins over our vocabulary.**
+
+
+## GRADE ROUND 1 RECORDED (direction + content) — 2026-11-02 04:55 ET
+
+**Owner verdict (verbatim):** "Overall pretty impressed by the content. I think it can use another additional polish round.
+With everything I've said in mind. But other than that it's really not bad at all."
+
+- **Class:** direction-level PASS + **one polish round ordered** (not per-screen deltas).
+- **Direction:** LOCKED — translucent Lumen vein, Prime Intellect restraint, neural-net agent characters (no further
+  design-direction gate).
+- **Order:** finish pass only (no redesign): components look finished (no unfinished edges), panels keep real depth, motion
+  present and purposeful, finish never reads as AI slop — per his accumulated direction from both grades.
+- **Grid:** the table above is kept for the **polish-round** deltas (if his final grade adds any); the polish round applied
+  the finish pass without inventing deltas beyond his instruction.
+- **Presentation:** re-present as **LIVE animated pages in his browser** (rendered visuals rule; static stills were the named
+  failure). Presentation is the Lead's; this lane does not contact the owner.
 
 ## Delta classification (do this before touching anything)
 

@@ -7,7 +7,7 @@ from graded deltas. Prepared 2026-11-02T06:41Z by `ergon-lead` (Team A). No pres
 reads, $0.
 
 **Frozen set this sits behind:** `board/probes/team-a-design-v2/` — 17 content files; freeze digest
-**`ea68e398063d6cb1007ae1935f552f6981d663999018be5b3e30f8b83fdbd6c3`**; re-verified 2026-11-02T06:39:45Z
+**`2a8cc21bd5f516198ea82a97efc40d3ddff1f7820309fd33b2175ae946670dbe`**; re-verified 2026-11-02T14:58Z
 (`sha256sum -c` 17/17 OK · `build-tokens --check` CURRENT · `check-comps` PASS).
 
 **Entry conditions (all must be true before a row can be filled):**
