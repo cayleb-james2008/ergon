@@ -1,0 +1,19 @@
+................................fatal: Needed a single revision
+.......................................................................................................................................................................................................................................................................................................
+----------------------------------------------------------------------
+Ran 327 tests in 51.517s
+
+OK
+seed 2134783819: worst 400-stud window holds 13 copies of image/inkcity/facade_1 (bound 14), window [-218.2, 211.25, 181.8, 611.25]
+seed 204817: worst 400-stud window holds 14 copies of image/inkcity/facade_1 (bound 15), window [-21.84, -753.95, 378.16, -353.95]
+seed 2134783819: image/city/storefront_1 is on 68 buildings (bound 15)
+seed 2134783819: image/city/storefront_2 is on 69 buildings (bound 15)
+seed 2134783819: image/city/storefront_3 is on 68 buildings (bound 15)
+seed 2134783819: image/city/windows_1_color is on 228 buildings (bound 15)
+seed 204817: image/city/storefront_1 is on 68 buildings (bound 15)
+seed 204817: image/city/storefront_2 is on 69 buildings (bound 15)
+seed 204817: image/city/storefront_3 is on 68 buildings (bound 15)
+seed 204817: image/city/windows_1_color is on 220 buildings (bound 15)
+seed 2134783819: 24 distinct designs in use (bound 23)
+seed 204817: 23 distinct designs in use (bound 23)
+city maximum-schema envelope bytes 9644950 limit 12582912

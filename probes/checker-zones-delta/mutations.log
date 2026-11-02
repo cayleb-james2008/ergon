@@ -1,0 +1,7 @@
+== zones delta mutation proofs (throwaway clone), 2026-11-02T00:35:03-05:00 ==
+M21 drop the highway-merge zone (4 -> 3 zone overheads):
+   test_map_atlas: Ran 5 tests, FAILED (failures=4)
+   atlas acceptance: Ran 0 tests, FAILED (errors=1) (module-level plan/setup failure)
+M20 (informational) re-add an unused whole-highway view WITHOUT restoring the scout pick: tests stay green because
+   the fixture's scout plan excludes it (data['views'] = scout ids); the scout-plan pins are what matter.
+restored: git status clean; tools/map_atlas.py sha256 012d0c7738f3c622231b8d4b366fd04224f1b27937a35db00ccfdbe660a47703 (frozen)

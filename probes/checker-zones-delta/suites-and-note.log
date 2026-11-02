@@ -1,0 +1,25 @@
+== suites on d83efa8 (fresh clone), 2026-11-02T00:35:03-05:00 ==
+runner:          Ran 91 tests in 13.024s OK 
+atlas acc:       Ran 22 tests in 1.063s OK 
+full python:     4:Ran 327 tests in 51.517s 6:OK 
+Lune atlas:      unit: 10 passed, 0 failed (4 specs)
+atlas-paths:     unit: 1 passed, 0 failed (1 specs)
+full Lune:       pending/see lune.log
+
+== A note (board file) ==
+7:whole highway model) **fails closed on this build: Studio `0.745.0.7451137` / Wine 11.0 (Vinegar 1.9.4, proton prefix
+9:overhead render settle**, **three captures 1.0 s apart returned byte-identical frames** (`sha 74d4f7e9934dd49d…`, the
+10:view-020 `city-overhead` image) with **`cameraDelta:0`**; the client had acknowledged view 021; `capture-attempts`
+11:audit **21/21 consistent** (`result.json.captureAttempts` == `capture-attempts.json`). Verdict for that one framing:
+12:**fail closed (named), never a pass claim.** Supporting/adjacent evidence: Play 6's intermittent **userland** Studio
+16:**Retirement rule:** one retest of the whole-highway framing per **new Studio build** is authorised; if it captures a
+31:(`sha 74d4f7e9934dd49d…`, cameraDelta 0, attempts recorded; audit == result list, 21/21), and the client had acknowledged
+
+== Play-7 report evidence ==
+13:**all three returned view-020 `city-overhead`'s exact bytes** (`sha 74d4f7e9934dd49d…`, `cameraDelta:0`) while the client
+16:**consistent** (`result.json.captureAttempts` == `capture-attempts.json`, 21/21 entries — the delta fix holds on this
+31:| `captureAttempts` (result.json, 21 entries) | views 001–020 one attempt each; **view-020 `overhead` settle 1.0 s, 1 attempt (fresh)**; **view-021 `overhead` settle 1.0 s, 3 attempts — all `sha256 74d4f7e9934dd49d…` == view-020 `city-overhead`'s sha, `duplicate:true`, `cameraDelta:0`** |
+32:| Audit consistency | `result.json.captureAttempts` == `capture-attempts.json` → **21/21 entries equal** (the layer-5 delta fix holds on the failure path) |
+
+== maker report absent? ==
+team-d-atlas-zones-freeze-20261102.md ABSENT (verified from commits)

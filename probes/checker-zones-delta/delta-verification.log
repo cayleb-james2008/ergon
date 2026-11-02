@@ -1,0 +1,126 @@
+== B+A zones delta provenance/scope, 2026-11-02T00:35:03-05:00 ==
+HEAD=d83efa88348ef055ece2602843b5986482677c55
+parent=701f70c331fc0f38423f4f2284b380bba78bc99b
+grandparent=1e8b5b774832bbaac2de9bbb0487fbd3baba5ae7
+tree=d93b9970b0760cd084d69c1d148c95cfe369c45a
+branch=prep/b1-capture-format-20261101
+tracked_mods=0 untracked=807
+--- delta 1e8b5b7..HEAD numstat ---
+8	0	docs/verify/2026-10-19/VINEGAR_RUNBOOK.md
+1	1	tests/atlas/Client.luau
+8	1	tests/atlas/Server.luau
+39	1	tests/tools/test_atlas_acceptance.py
+1	1	tests/tools/test_atlas_capture_index.py
+5	1	tests/tools/test_map_atlas.py
+14	13	tests/tools/test_vinegar_run.py
+11	0	tools/atlas_acceptance.py
+20	6	tools/map_atlas.py
+--- sum ---
+insertions=107 deletions=24
+--- changed paths ---
+docs/verify/2026-10-19/VINEGAR_RUNBOOK.md
+tests/atlas/Client.luau
+tests/atlas/Server.luau
+tests/tools/test_atlas_acceptance.py
+tests/tools/test_atlas_capture_index.py
+tests/tools/test_map_atlas.py
+tests/tools/test_vinegar_run.py
+tools/atlas_acceptance.py
+tools/map_atlas.py
+--- game/asset/sealed touched ---
+(empty=untouched)
+--- earlier layers intact (files untouched) ---
+(empty=untouched)
+160:ATLAS_FIRST_VIEW_TIMEOUT = 45  # Plan 4: bounded wait for view-001; a named-seed hang is caught in tens of seconds
+617:    capture_attempts_max = 3  # one capture + at most 2 bounded retries when bytes duplicate an earlier view
+622:    overhead_settle = 1.0
+--- sealed hashes ---
+84324d4342667dd163ab8e64adacbf8ef44ab786aeda5c7ab1403e76d52ef6ce  build/release.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  build/test.rbxlx
+
+--- B: zone views in plan ---
+            'actual source expressway spur '+suffix,'commercial')
+    for gate in graph['gates']:
+        add(gate['id'],'transition','city' if 'expressway' in gate['id'] else 'highway',gate['position'],[0,0,1],[gate['id']],gate['id'])
+    add('city-overhead','overhead','city',center([n['position'] for n in graph['city']['nodes']]),[0,0,-1],['city:overview'],'city source overview')
+    add('world-overhead','overhead','world',[0,0,1000],[0,0,-1],['world:overview'],'whole world source overview')
+    # Nox run-7 substitution (B): the single whole-highway overhead framing is replaced by bounded per-zone functional
+    # overheads, each anchored on ONE native highway road model (never the whole highway). Deterministic zone list.
+    highway_edges={e['id']:e for e in graph['highway']['edges']}
+    highway_nodes={n['id']:n for n in graph['highway']['nodes']}
+    highway_contexts=[('h_top_05','h_top_06','highway-mainline'),('h_east_03','h_east_04','highway-turn'),
+                      ('h_access_030','h_access_031','highway-access'),(graph['highway']['highway']['accessRouteIds'][-2],graph['highway']['highway']['joinNodeId'],'highway-merge')]
+    for index,(a,b,label) in enumerate(highway_contexts,1):
+        edge=next(e for e in highway_edges.values() if e['from']==a and e['to']==b)
+        at=center([highway_nodes[a]['position'],highway_nodes[b]['position']])
+        view={'id':'highway-zone-%d-overhead'%index,'kind':'overhead','zone':'highway','district':None,
+              'label':'highway zone %d overhead (%s, anchored on %s)'%(index,label,edge['id']),
+              'coverageIds':['highway:zone:'+edge['id']],'ground':at,
+              'cameraPlanned':[at[0],at[1]+2200,at[2]+.01],'lookAtPlanned':at[:],'fovPlanned':70,
+              'status':'planned-unseen','nativeAnchorsVerified':False,'capture':None,
+              'zonePath':'Highway/Roads/Road_'+edge['id'],'zoneLabel':label}
+        views.append(view)
+--- B: scout picks + count assert ---
+        pick(by_id['highway-road-'+edge['id']+'-forward'],reason)
+    for gate in graph['gates']:pick(by_id[gate['id']],gate['id'])
+    pick(by_id['city-garage'],'city-garage')
+    pick(by_id['city-overhead'],'city:overview');pick(by_id['world-overhead'],'world:overview')
+    for index in range(1,len(highway_contexts)+1):pick(by_id['highway-zone-%d-overhead'%index],'highway:zone-overview')
+    pick(by_id['city-junction-n_12_12'],'city-perimeter')
+    grade=min((v for v in views if v['kind']=='road' and v['zone']=='city' and v['id'].endswith('-forward')
+               and any(e['id'] in v['id'] and abs(e['samples'][0][1]-e['samples'][-1][1])>1 for e in graph['city']['edges'])),
+              key=lambda v:distance(v['ground'],nodes['n_6_7']['position']))
+    pick(grade,'city-grade')
+    assert len(scout)==24-1+len(highway_contexts) and len(set(v['id'] for v in views))==len(views)
+    for v in views:v['scout']=v['id'] in scout
+--- B: validator zone checks ---
+   edge=reports.get('edge',{})
+   require(edge.get('ok') is True,'the edge drive-in did not report')
+   validate_edge_runs(edge.get('report',{}),data)
+  # Nox run-7 substitution (B): in the scout plan, bounded per-zone functional overheads replace the single
+  # whole-highway overhead framing (the other batches never included that framing).
+  if data.get('batch')=='scout':
+   zone_views=[v for v in data['views'] if v.get('zonePath')]
+   require(len(zone_views)>=2 and len({v['zonePath'] for v in zone_views})==len(zone_views),'zone overhead views missing or duplicated')
+   require(all(isinstance(v['zonePath'],str) and v['zonePath'].startswith('Highway/Roads/Road_') for v in zone_views),'zone overhead must anchor on one native highway road')
+   require(all(v.get('zone')=='highway' and v.get('kind')=='overhead' for v in zone_views),'zone overhead scope changed')
+   require(not any(v['id']=='highway-overhead' for v in data['views']),'the whole-highway overhead framing must be substituted')
+  expected_phases={'prepared','runtime','cleanup'}|{'view-%03d'%i for i in range(1,len(data['views'])+1)}
+  if data['batch']=='edge':expected_phases=expected_phases|{'edge'}
+  require(set(reports)==expected_phases,'unexpected/missing phases')
+--- B: server zonePath wiring ---
+   local id=view.id:match("^city%-junction%-(.+)$");anchor=if id then geometry("City/Junctions/JunctionPad_"..id) else highway
+  elseif view.kind=="transition" then anchor=geometry("Gates/"..(if view.id:find("expressway") then "ExpresswayGate" else "CityGate"))
+  elseif view.kind=="garage" then anchor=if view.zone=="city" then root:FindFirstChild("Hub") else highway
+  elseif view.kind=="overhead" then
+   -- Nox run-7 (B): per-zone functional overheads anchor on ONE native highway road model; city/world keep their
+   -- original anchors. The whole-highway framing was substituted out of the plan.
+   if view.zonePath then
+    anchor=geometry(view.zonePath);actual.zonePath=view.zonePath;actual.zoneLabel=view.zoneLabel
+   elseif view.zone=="city" then anchor=city
+   elseif view.zone=="highway" then anchor=highway
+   else anchor=backdrop end
+--- B: client view cap ---
+77: local plan=Http:JSONDecode(planValue.Value);assert(plan.nonce==nonce and #plan.views>0 and #plan.views<=32,"native allowlist invalid")
+
+--- A: limitation note header + key evidence ---
+# ATLAS OVERHEAD FRAMING — NAMED RENDERER/WINE LIMITATION (adopted per Nox run-7, 2026-11-02)
+
+**Ruling:** Nox 20261102T051200Z adopted **B + A**; **C** rejected for now (settings/draw-distance experiments change
+what the cell tests; revisit only if per-zone views hit the same freeze); **D** rejected.
+
+**A — the limitation, named.** The single **whole-highway overhead framing** (`highway-overhead`, camera fitted to the
+whole highway model) **fails closed on this build: Studio `0.745.0.7451137` / Wine 11.0 (Vinegar 1.9.4, proton prefix
+`studio`)**. Evidence (Play 7, run `20261102T045824Z-atlas-scout`, 2026-11-02T04:58:24Z): after the bounded **1.0 s
+overhead render settle**, **three captures 1.0 s apart returned byte-identical frames** (`sha 74d4f7e9934dd49d…`, the
+view-020 `city-overhead` image) with **`cameraDelta:0`**; the client had acknowledged view 021; `capture-attempts`
+audit **21/21 consistent** (`result.json.captureAttempts` == `capture-attempts.json`). Verdict for that one framing:
+**fail closed (named), never a pass claim.** Supporting/adjacent evidence: Play 6's intermittent **userland** Studio
+minidump (106,116,768 B at Play shutdown after `StopPlaySoloShutdownDataModels`) did **not** repeat in Play 7 (clean
+abort); `gpuJournal:null`; no kernel `amdgpu|MES|ring|GPU reset` lines. The stall/crash mechanism is **not** established
+beyond the persistent-previous-frame fact; no kernel GPU fault is observed.
+**Retirement rule:** one retest of the whole-highway framing per **new Studio build** is authorised; if it captures a
+fresh frame, the limitation closes (record the build id + capture evidence).
+
+**B — adopted substitution (implemented).** The single whole-highway overhead is replaced in the scout plan by **four
+bounded per-zone functional overheads** (zone views `highway-zone-1..4-overhead`, each anchored on ONE native highway
