@@ -49,15 +49,20 @@ stands untouched. **$0, no purchases, no image reads, no build.**
 `check-comps.mjs` composites the translucent stack (base + ambient + surface-1/2/3) and asserts the floors against the
 **brightest text-bearing plane**, so translucency cannot quietly erode contrast:
 
-| Floor | Assertion | Measured on the v2 tokens |
+| Floor | Assertion | Measured on the v2 tokens (both ambient washes composited) |
 |---|---|---|
-| Body text | `ink` ≥ **7:1** on the brightest text plane | **10.03:1** |
-| Secondary text | `muted` ≥ **4.5:1** on the brightest text plane | **6.13:1** |
-| Quiet text | `subtle` ≥ **4.5:1** where it is allowed (base/panel only by rule) | **6.64:1** on surface-1 |
-| Accent text | `accent` ≥ **4.5:1** | **5.46:1** |
-| Status text on its wash | ok/warn/danger ≥ **4.5:1** | **5.08 / 5.37 / 5.11:1** |
-| Focus ring | ≥ **3:1** non-text against a card plane | **7.05:1** |
-| Control boundary | ≥ **3:1** non-text against adjacent plane | **3.08:1** |
+| Body text | `ink` ≥ **7:1** on the brightest text plane | **9.21:1** |
+| Secondary text | `muted` ≥ **4.5:1** on the brightest text plane | **5.62:1** |
+| Quiet text | `subtle` ≥ **4.5:1** where it is allowed (base/panel only by rule) | **6.14:1** on surface-1 |
+| Accent text | `accent` ≥ **4.5:1** | **5.01:1** |
+| Status text on its wash | ok/warn/danger ≥ **4.5:1** | **4.66 / 4.93 / 4.77:1** |
+| Focus ring | ≥ **3:1** non-text against a card plane | **6.47:1** |
+| Control boundary | ≥ **3:1** non-text against adjacent plane — **with the page's second ambient wash counted** | **3.28:1** (`lineBright` retuned to alpha 0.44 in the fix round) |
+| Field boundary | ≥ **3:1** non-text (pack `fieldLine` rule) — field fill vs border | **3.30:1** (new `fieldLine` token, alpha 0.46) |
+
+The fix round after the checker's REJECT corrected the composite model (both ambient washes) and these two boundaries; the
+earlier figures in this table (border 3.08, no field row) were computed on one wash and are superseded. The remaining
+gate: a rendered visual check by an image-permitted seat (the DSH app cannot read images — crash class).
 
 Kept by construction: 2 px accent focus ring with 2 px gap on every control; `prefers-reduced-motion` floor (travel and
 stagger removed, state changes instant); `forced-colors: active` High Contrast path (translucency, blur and soft depth

@@ -23,6 +23,7 @@ It links the seven comps and the live motion storyboard, and carries the grading
 | `motion-storyboard.html` | The four budgets live (tap 120 · swap 200 · enter 250 · sheet 350), one curve, replay + slow-motion grading aid. |
 | `check-comps.mjs` | Self-check: labels, self-containment, token discipline, tokens-current, contrast floors, floors present, motion tells. |
 | `PACK-CHANGE-PROPOSAL.md` | The pack-change proposal filed **with** the comps (Midnight Slate → Ergon Lumen direction). |
+| `FREEZE.sha256` | Freeze manifest of the 17 frozen content files (excludes itself); asserted by `check-comps.mjs`. |
 
 ## What v2 is (direction)
 
@@ -46,8 +47,10 @@ node build-tokens.mjs --check   # prove tokens.css is current
 node check-comps.mjs            # labels, self-containment, tokens, contrast, floors, motion tells
 ```
 
-The maker's run of `check-comps.mjs` passes; a fresh-context **pack-conformance + unslop checker** is the Lead's to spawn
-before anything is presented as done. Maker never checker.
+The maker's run of `check-comps.mjs` passes. This set was **re-frozen after the fresh checker's fix round D1–D4** (token
+kebab fix, field/control boundary floors, 44/56 targets, empty state, dead-control wiring, hardened self-check); the new
+freeze is `FREEZE.sha256` (17 content files). A fresh-context **pack-conformance + unslop checker** re-runs the same
+battery before anything is presented as done. Maker never checker.
 
 ## Provenance / honesty
 

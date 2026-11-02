@@ -147,8 +147,15 @@
         play(card, [{ opacity: 1, transform: 'scale(1)' }, { opacity: 0.6, transform: 'scale(0.995)' }], budget().swap);
         card.dataset.resolved = 'true';
         const pill = card.querySelector('.pill');
-        if (pill) { pill.className = 'pill ok'; pill.textContent = 'Approved — one action, recorded'; }
-        btn.closest('.row')?.querySelectorAll('button').forEach((b) => { b.disabled = true; });
+        if (pill) {
+          pill.className = 'pill ok';
+          pill.textContent = 'Approved — one action, recorded';
+        } else {
+          // Sheet approvals have no status pill: the primary control itself becomes the receipt.
+          const primary = card.querySelector('[data-approve]');
+          if (primary) primary.textContent = 'Approved once — recorded';
+        }
+        card.querySelectorAll('button').forEach((b) => { b.disabled = true; });
         play(card, [{ opacity: 0.6, transform: 'scale(0.995)' }, { opacity: 1, transform: 'scale(1)' }], budget().swap, { delay: 60 });
       });
     });

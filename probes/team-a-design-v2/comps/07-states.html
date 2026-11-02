@@ -83,6 +83,26 @@
       <div class="stack"><span class="label">floors (unchanged, non-negotiable)</span><div class="kv"><b>ink</b><span>≥ 7:1 on the brightest text plane</span><b>muted / status</b><span>≥ 4.5:1</span><b>focus</b><span>2 px accent ring + 2 px gap, always visible</span><b>motion</b><span>reduced-motion path; no loops</span><b>high contrast</b><span>translucency removed, system colours</span></div></div>
     </div>
     <div class="row"><button class="ghost" data-floors aria-pressed="false">Floors preview</button><span class="caption" data-floors-label>Floors preview OFF</span></div>
+    <div class="stack">
+      <span class="label">light pool · light-1 plane · blur 32 (decorative, carries no text)</span>
+      <div class="light-pool" role="presentation" aria-hidden="true"></div>
+      <span class="caption">The brightest plane is decorative only: the floors do not allow text on it (muted 4.03:1, accent 3.59:1 — below the 4.5 text floor), so nothing is written there.</span>
+    </div>
+  </section>
+
+  <section class="glass-2 stack" data-reveal="empty" style="padding: var(--space-4);">
+    <h2>Empty state — restored from v1's states page</h2>
+    <div class="empty" role="status">
+      <b>No tasks yet.</b>
+      <p class="caption">Marlow has nothing in the queue. Ask for a task, or wait for the morning brief.</p>
+      <button class="primary employee">New task</button>
+    </div>
+    <div class="states" style="grid-template-columns: 190px 1fr;">
+      <span class="h">floors row</span><span class="h">what this specimen shows</span>
+      <span>empty</span><span>nothing true is hidden: one line of state + one next step (never a dead end)</span>
+      <span>reduced motion</span><span>state changes are instant; travel and stagger are removed (Floors preview toggle)</span>
+      <span>High Contrast</span><span>system colours and 1 px borders replace translucency, blur and soft depth (Floors preview toggle)</span>
+    </div>
   </section>
 
   <p class="caption muted" style="text-align:center;">Design comp — not a built surface. Contrast ratios are asserted by <code>check-comps.mjs</code> from tokens.json.</p>

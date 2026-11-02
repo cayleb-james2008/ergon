@@ -1,6 +1,6 @@
 # Team A — Ergon design v2: owner-directed translucent pass (comps built, frozen for the checker)
 
-**STATUS: v2 DIRECTION PASS BUILT AND FROZEN FOR THE PACK-CONFORMANCE + UNSLOP CHECKER. NOT A FINISHED FRONT END, NOT A
+**STATUS: v2 DIRECTION PASS BUILT, CHECKER-REJECTED ONCE, FIXED (D1-D4), AND RE-FROZEN FOR THE CHECKER'S RE-RUN.** NOT A FINISHED FRONT END, NOT A
 BUILT SURFACE, NOT A PACK RELEASE.** The comps are live, self-contained pages under
 `board/probes/team-a-design-v2/` (grader index: `index.html`), with the pack-change proposal filed alongside them as
 `PACK-CHANGE-PROPOSAL.md` and summarised here. Nothing was presented to the owner by this lane — the standing rule is
@@ -64,7 +64,7 @@ owner's direction**; the proposal is the pack-level change request, not a pack c
 
 - **Kept:** one accent forward action per view; tokens-only; 44/56 targets; 2 px focus ring + 2 px gap; type scale; pills carry words; plain-language rules; unslop gate; reduced-motion + High Contrast; contrast floors; pack anatomy.
 - **New:** translucent surface planes + `blur` tokens (14/18/24/32), `depth` tokens (lift/rim/well), a three-weight border ladder, an ambient light field, **motion tokens promoted into the pack** (120/200/250/350 + one curve), neural-character tokens (density, hue).
-- **Floors are measured, not asserted** (composited translucent stack, worst case = brightest text plane): ink **10.03:1** (floor 7), muted **6.13:1** (4.5), subtle **6.64:1** on panel (4.5; base/panel only by rule), accent **5.46:1**, status on washes **5.08 / 5.37 / 5.11:1**, focus ring **7.05:1**, control boundary **3.08:1** (non-text floor 3).
+- **Floors are measured, not asserted** (both ambient washes composited, worst case = brightest text plane; retuned in the fix round): ink **9.21:1** (floor 7), muted **5.62:1** (4.5), subtle **6.14:1** on panel (4.5; base/panel only by rule), accent **5.01:1**, status on washes **4.66 / 4.93 / 4.77:1**, focus ring **6.47:1**, control boundary **3.28:1** (`lineBright` alpha 0.44; non-text floor 3), field boundary **3.30:1** (new `fieldLine` token alpha 0.46 - pack fieldLine rule).
 - **Versioning:** `2.0.0-draft-1` direction proposal; **Midnight Slate v1.0.0 stays the shipped pack** until the owner's grade and the pack gate; shipped surfaces keep v1 until each is rebuilt (no mixed-theme claim); rollback is a token-set revert.
 - **Risk register** for the checker: translucency legibility/glass tell, ambient field read as gradient, depth shadows vs the old "no drop shadows" rule (superseded explicitly), motion perf, contrast on the brightest plane, character as decoration, token-literal drift — each with its mitigation.
 
@@ -75,13 +75,17 @@ $ node build-tokens.mjs --check
 TOKENS: CURRENT — tokens.css matches tokens.json
 
 $ node check-comps.mjs            # exit 0
-V2 COMPS CHECK: PASS
+V2 COMPS CHECK: PASS (hardened after checker D1-D4)
   pages: 9 labelled comp pages (7 comps + index + motion storyboard)
-  self-containment: 0 external refs, 0 remote assets, 0 webfonts, 0 images
-  tokens: tokens.css generated-current from tokens.json; 0 colour literals outside the token files
-  contrast: ink 10.03:1 · muted 6.13:1 · subtle(panel) 6.64:1 · accent 5.46:1 · ok/warn/danger wash 5.08/5.37/5.11:1 · focus 7.05:1 · border 3.08:1
-  floors: reduced-motion + forced-colors + High Contrast preview present; 2px accent focus ring with 2px gap
+  self-containment: 0 external refs, 0 remote assets, 0 webfonts, 0 images; every local href/src resolves
+  tokens: tokens.css generated-current; 0 colour literals / raw colour keywords outside the token files
+  custom properties: 73 defined, 0 unresolved; required surface/light/field/border/blur tokens emitted
+  structure: tag balance clean on all 9 pages; 7-step space scale tokenised
+  contrast (both ambient washes composited): ink 9.21:1 · muted 5.62:1 · subtle(panel) 6.14:1 · accent 5.01:1
+  contrast: ok/warn/danger wash 4.66/4.93/4.77:1 · focus 6.47:1 · control boundary 3.28:1 · field boundary 3.30:1
+  floors: reduced-motion + forced-colors + HC preview (inputs/messages/links/character included) · 2px accent focus ring · 44/56 targets enforced · empty state present
   motion: 120/200/250/350 ms, one ease-out curve; no transition-all, no loops/pulse, no uppercase tracking, no gradient text
+  freeze: FREEZE.sha256 present and matching
 ```
 
 - **Structure:** `div` balance and `aria-controls`/sheet-target ids checked on all 9 pages (no mismatches, no missing ids); every page carries the banner **"DESIGN COMP — NOT A BUILT SURFACE"** and the "DESIGN COMPS FOR GRADING, NOT BUILT SURFACES" kit header.
@@ -95,9 +99,58 @@ V2 COMPS CHECK: PASS
   checker's and the owner's; my evidence is structural, numeric and syntax-level. Motion is JS-driven and was validated for
   syntax/consumption of tokens, not visually.
 
+
+## 6b. Fix round after the fresh checker's REJECT - D1-D4 (this is the re-freeze)
+
+The checker (`board/reports/checker-design-v2.md`, evidence `board/probes/checker-design-v2/`) returned **REJECT** on the
+first freeze: the set did not render its central claim. All named fixes are in, the self-check is hardened, and the set is
+**re-frozen** for a RE-RUN of the same battery. No image reads, no browser, $0.
+
+| Defect | What was wrong | Fix applied | Proof / new value |
+|---|---|---|---|
+| **D1 (blocker)** | `var(--surface-1/2/3)` used **35x**; `kebab()` did not split letter-to-digit, so the generator emitted `--surface1/2/3` and every translucent plane background was invalid/transparent - the owner's "panels are flat" failure mode | `kebab()` now splits letters-to-digits (`...replace(/([a-z])([0-9])/g,'$1-$2')...`) and `tokens.css` regenerated | `tokens.css` emits `--surface-1`, `--surface-2`, `--surface-3`, `--light-1`; **73 custom properties defined / 0 unresolved** (asserted); required-token assertion added |
+| **D2a** | Control boundary recomputed with the page's **second** ambient wash = **2.97:1** < 3.0 | `lineBright` retuned from alpha 0.40 to **0.44**; the checker now composites **both** ambient washes | control boundary **3.28:1** (floor 3) |
+| **D2b** | Input field border used `--line` = **1.55:1** vs the pack's `fieldLine` 3:1 rule | new **`fieldLine`** token (alpha 0.46); inputs use it; focus switches the border to accent | field boundary **3.30:1** (floor 3) |
+| **D2c** | **7 controls at 36 px** (comp 05 x1, comp 06 x6) below the 44 DIP minimum | all inline 36 px overrides removed; buttons fall back to `var(--target)` = 44 | `min-height:36px` occurrences **0**; checker asserts any inline `min-height` is at least 44 |
+| **D2d** | **no `class="employee"`** anywhere - the 56 DIP employee target was lost | `employee` restored on the employee surfaces: 01 (3), 02 (4), 03 (3), 04 (4), 06 (6), 07 (1 specimen) | 56 DIP via `button.employee` rule; per-comp assertion added |
+| **D2e** | empty state missing (v1's 07 had one) | comp 07 gains an **empty state** specimen ("No tasks yet." + one next step) and labelled **reduced-motion / High Contrast floors rows** | asserted in `check-comps.mjs` |
+| **D2f** | comp 02's "Approve once" was dead though its note says it resolves | the sheet is now the `data-approval` target; `wireApprovals` turns the primary control into the receipt when there is no pill | sheet primary becomes **"Approved once - recorded"**, all sheet actions disabled; `data-approval` + `data-approve` asserted |
+| **D3** | self-check vacuous on: broken `</div>`, missing local script, `color: white`, `animation: ... infinite`, and never resolved custom properties | assertions added: **custom-property resolution**, **tag balance**, **local href/src resolution**, **raw colour keywords**, **infinite animations**, **target sizes + employee target**, **empty state**, **both-wash contrast + field boundary**, **freeze-manifest integrity**, and **non-vacuity self-tests** for the detectors | mutations proven to fail: broken `</div>` rc 1; missing script rc 1; `color: white` rc 1; `animation: float 2s infinite` rc 1; `var(--surface-9)` rc 1; stale `tokens.css` rc 1 (baseline PASS after restore) |
+| **D4** | report said "16 files, 2,030 lines"; actual set is 17 files | counts corrected here and in the handoff: **17 content files, 2,159 lines + FREEZE.sha256 manifest** | this section |
+| (checker nits) | floor table omitted field boundary / second wash; `blur.deep` and `light1` unused | floor table updated in `PACK-CHANGE-PROPOSAL.md`; `light-1` + `blur-deep` now used by a labelled decorative **light pool** in comp 07 (no text on it - the floors do not allow text there: muted 4.03 / accent 3.59) | visible in 07 |
+
+**Rendered-look limit (named, not smoothed):** the checker's headless computed-style probe hung and was killed; this lane
+cannot run a browser either (no image reads in DSH). D1 was a **static certainty** (now fixed and asserted); the page's
+rendered appearance still needs an **image-permitted visual seat** before the owner sees it - that is a separate step and is
+not claimed here.
+
+### New freeze - `FREEZE.sha256` (17 content files; the manifest excludes itself)
+
+| File | sha256 |
+|---|---|
+| `index.html` | `6ff011e5355b7b4d6358ec00025e5e743ef5e2f39815971827493f0d31e5ae39` |
+| `motion-storyboard.html` | `30440f4dccd27836561d6eb24908acb759b230998effd3189e66ad46eca1a086` |
+| `comps/01-mobile-chat.html` | `66c5edbe28dda5e6d95467a99c35564a3ea84af007a43ffabf1cda912b2c001c` |
+| `comps/02-mobile-triage-approvals.html` | `150b070a1b8281063af0564fac12c2ee41c16b4ee0f618c176b5f9aab0ce020b` |
+| `comps/03-mobile-tasks.html` | `2a7205ce40f37b8ea92edc519c4eb2b31e2e1167041a04d8ed029f03928f187c` |
+| `comps/04-mobile-make.html` | `9f0c0126dd889da5fb9bb46512c06176e47ca8d9357436540ad4d98a796535d7` |
+| `comps/05-desktop-workspace.html` | `9dd46025443c4c9ec9af4d0eb6caeafa0cbfcad51e1dbd7141dd9d6e7599ed3a` |
+| `comps/06-character-sheet.html` | `4256ac66d6610b63d24aaba510ccafad101f5af9d79648db6dd35fa1f39c5d4b` |
+| `comps/07-states.html` | `73c286cb3be54bfde2c05ada95cefb0c761e8364e4c855482b17d5b5f1f86797` |
+| `tokens.json` | `666a3707213c9bbe3fc4ada5d51470ff0b3a2d5a08cff95457fb1b53cc013766` |
+| `tokens.css` | `c71496d670832630066efad14b7136cc1314174d2d7686fb1da3c9c9649d719e` |
+| `build-tokens.mjs` | `14d09c792823d67af71ca2a2c8002d8ed5796d08a203197d8265e362782d8b06` |
+| `comp-kit.css` | `bfc353972c21150d8913defbb123a2f0fa0da652cca0952746320fffc41f72a1` |
+| `comp-motion.js` | `9bedd51a96d36248ae449e4dc544f8a5aff6319801075563617d9a903c3cef86` |
+| `check-comps.mjs` | `97f79df2337a19896f08afaaccb654b0e5d15aaaa3eb6a669e9b94e2bfb67510` |
+| `README.md` | `ca6064c3c40eef884de3cc6cc793e06d917135b59af7225bffc4af915ab73808` |
+| `PACK-CHANGE-PROPOSAL.md` | `6d56a0e58bf212b92b9e100216b0cd203f90fdec989db525c6b108e75373befa` |
+
+Verify: `cd board/probes/team-a-design-v2 && sha256sum -c FREEZE.sha256 && node check-comps.mjs`.
+
 ## 7. Checker handoff (Lead preps/spawns; maker never checker)
 
-- **Frozen set:** `board/probes/team-a-design-v2/` (16 files, 2,030 lines) — do not edit after this report; any change is a new freeze.
+- **Frozen set (re-frozen after the fix round):** `board/probes/team-a-design-v2/` - **17 content files, 2,159 lines**, plus the `FREEZE.sha256` manifest (18 files in the directory; the manifest excludes itself). Every hash is listed in section 6b and asserted by `check-comps.mjs`. Do not edit after this report; any change is a new freeze.
 - **Reproduce:** `cd board/probes/team-a-design-v2 && node build-tokens.mjs --check && node check-comps.mjs`; open
   `index.html` and the seven comps from the folder (file:// is enough; no network, no server).
 - **Judge:** pack-conformance (tokens discipline, floors, anatomy, versioning per PACK-CHANGE-PROPOSAL §3/§4/§8) and
@@ -144,3 +197,4 @@ labelled **DESIGN COMP — NOT A BUILT SURFACE** on every page and in the kit/ge
 | `board/probes/team-a-design-v2/comp-kit.css` + `comp-motion.js` | material kit + all live motion |
 | `board/probes/team-a-design-v2/check-comps.mjs` | self-check (labels, self-containment, tokens, contrast, floors, motion tells, approvals wording) |
 | `board/probes/team-a-design-v2/PACK-CHANGE-PROPOSAL.md` | the pack-change proposal (Midnight Slate supersession, new tokens, floors, risks, approval path) |
+| `board/probes/team-a-design-v2/FREEZE.sha256` | re-freeze manifest of the 17 content files (asserted by the self-check) |

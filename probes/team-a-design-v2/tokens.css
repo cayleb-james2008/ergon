@@ -6,10 +6,10 @@
   --base-deep: #030406;
   --ambient-accent: rgba(141, 180, 255, 0.07);
   --ambient-cool: rgba(120, 226, 210, 0.035);
-  --surface1: rgba(198, 222, 255, 0.04);
-  --surface2: rgba(198, 222, 255, 0.07);
-  --surface3: rgba(198, 222, 255, 0.10);
-  --light1: rgba(198, 222, 255, 0.14);
+  --surface-1: rgba(198, 222, 255, 0.04);
+  --surface-2: rgba(198, 222, 255, 0.07);
+  --surface-3: rgba(198, 222, 255, 0.10);
+  --light-1: rgba(198, 222, 255, 0.14);
   --ink: #EAF2FA;
   --muted: #B3C0CE;
   --subtle: #95A2B1;
@@ -22,9 +22,10 @@
   --danger: #FBA6A6;
   --line: rgba(206, 228, 255, 0.16);
   --line-strong: rgba(206, 228, 255, 0.24);
-  --line-bright: rgba(206, 228, 255, 0.40);
+  --line-bright: rgba(206, 228, 255, 0.44);
   --rim: rgba(255, 255, 255, 0.07);
   --rim-strong: rgba(255, 255, 255, 0.12);
+  --field-line: rgba(206, 228, 255, 0.46);
   --scrim: rgba(3, 4, 6, 0.66);
   --wash-accent: rgba(141, 180, 255, 0.10);
   --wash-ok: rgba(111, 211, 160, 0.10);
