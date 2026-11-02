@@ -1,0 +1,117 @@
+=== Plan 2 — bounded world-ready gate (moving/first-fare) 2026-11-01 ===
+branch prep/b1-capture-format-20261101  head d2a94db
+time 2026-11-01T23:57:15Z
+
+--- diff stat (working tree) ---
+ tests/tools/test_vinegar_run.py | 122 +++++++++++++++++++++++++++++++++++++++-
+ tools/vinegar_run.py            |  81 ++++++++++++++++++++++++++
+ 2 files changed, 201 insertions(+), 2 deletions(-)
+
+--- sealed BEFORE ---
+84324d4342667dd163ab8e64adacbf8ef44ab786aeda5c7ab1403e76d52ef6ce  build/release.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  build/test.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  /home/cayleb/.var/app/org.vinegarhq.Vinegar/data/usg/usg-desktop.rbxlx
+
+--- runner suite (unittest) ---
+----------------------------------------------------------------------
+Ran 81 tests in 10.625s
+
+OK
+
+--- full Python suite tests/tools ---
+seed 204817: image/city/windows_1_color is on 220 buildings (bound 15)
+seed 2134783819: 24 distinct designs in use (bound 23)
+seed 204817: 23 distinct designs in use (bound 23)
+city maximum-schema envelope bytes 9644950 limit 12582912
+python_rc=0
+
+--- Lune unit suite ---
+nht sway target: max |target| 0.949 studs, max rate 0.427 studs/s
+nht keep right: passed at 5.95 s, signalled at 14.45 s, captured at 19.40 s, signal lead 1.25 s
+nht preparing driver: prepared at 0.05 s with a 0.775 stud drift, committed at 1.60 s
+
+--- sealed AFTER ---
+84324d4342667dd163ab8e64adacbf8ef44ab786aeda5c7ab1403e76d52ef6ce  build/release.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  build/test.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  /home/cayleb/.var/app/org.vinegarhq.Vinegar/data/usg/usg-desktop.rbxlx
+
+=== POST-FREEZE VERIFICATION 2026-11-02T00:21:49Z ===
+frozen commit 37f2d7fe59b37595041a1e5c5b873acb650bc755
+tree 9dba457b070564c042df82dae41092e75cec610e
+parents 37f2d7fe59b37595041a1e5c5b873acb650bc755 d9cf6b9d23b70dfbcb1d134626e0242f9334e60f
+tracked tree: 0 modified lines
+
+--- runner suite ---
+Ran 81 tests in 10.571s
+
+OK
+
+--- full Python ---
+Ran 298 tests in 41.238s
+OK
+
+--- lune (recorded from /tmp/lune_plan2.log) ---
+receipts: all checks passed
+unit: 914 passed, 0 failed (125 specs)
+lune_rc=0
+
+--- sealed AT FREEZE ---
+84324d4342667dd163ab8e64adacbf8ef44ab786aeda5c7ab1403e76d52ef6ce  build/release.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  build/test.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  /home/cayleb/.var/app/org.vinegarhq.Vinegar/data/usg/usg-desktop.rbxlx
+
+--- doc commits ---
+37f2d7f moving/first-fare: bounded world-ready gate before the first capture
+d9cf6b9 docs: VINEGAR_RUNBOOK queue rules match the accepted retry semantics
+d2a94db runner: prove --rerun-without---resume and the exactly-once failed-rerun bound; fix queue help text
+
+=== MUTATION PROOFS (maker self-check, run 2026-11-01 ~23:52-23:57Z on the tested tree) ===
+A. gate call removed from FirstFare.run   -> Ran 81 tests: FAILED (failures=3, errors=3); restored -> OK
+B. _world_ready drops Sky/Atmosphere req    -> Ran 81 tests: FAILED (failures=1); restored -> OK
+C. timeout returns as if ready (no raise)   -> Ran 81 tests: FAILED (failures=3); restored -> OK
+C2. timeout raise deleted (gate loops)      -> suite does not terminate (caught by watchful bound); restored -> OK
+=== STUDIO STATE (D4) 2026-11-02T00:22:53Z ===
+{"address": "0x558c7f6b0160", "class": "steam_proton", "title": "Z:\\home\\cayleb\\.var\\app\\org.vinegarhq.Vinegar\\data\\usg\\usg-desktop.rbxlx - Roblox Studio", "at": [621, 233], "size": [2200, 1000], "floating": true, "fullscreen": 0, "pid": 388820}
+preflight_rc=0
+{"action": "snapshot", "place": "/home/cayleb/.var/app/org.vinegarhq.Vinegar/data/usg/usg-desktop.rbxlx", "sha256": "c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98"}
+{
+ "studio_pid": 388820,
+ "edit": true,
+ "plays": 0,
+ "refusals": [],
+ "place": {
+  "place": "/home/cayleb/.var/app/org.vinegarhq.Vinegar/data/usg/usg-desktop.rbxlx",
+  "placeSha256": "c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98",
+  "build": "/home/cayleb/Work/projects/untitled-street-game/build/test.rbxlx",
+  "buildSha256": "c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98",
+  "matchesBuild": true
+ }
+}
+
+=== COMMIT-STRUCTURE CORRECTION + FINAL FREEZE 2026-11-02T00:26:50Z ===
+The hashes printed above (37f2d7f / d9cf6b9) were a local commit-layout attempt that put code+tests into the doc commit;
+it was rebuilt from the same tested worktree. Correct layout:
+  d2a94db -> a6ac63a (D3, doc-only, 1 file +6/-6) -> 29a626b (Plan 2, FROZEN, 3 files +203/-2, branch tip)
+  frozen commit 29a626b2b8a13556ac5ee07db6fdb60401ecc6e8
+  tree 9dba457b070564c042df82dae41092e75cec610e  (== the tree all suites below were run on: 9dba457b070564c042df82dae41092e75cec610e)
+  tracked tree: 0 modified; untracked 792 evidence-dir lines
+
+--- final runner suite on the frozen tree ---
+Ran 81 tests in 10.521s
+
+OK
+
+--- sealed at final freeze ---
+84324d4342667dd163ab8e64adacbf8ef44ab786aeda5c7ab1403e76d52ef6ce  build/release.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  build/test.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  /home/cayleb/.var/app/org.vinegarhq.Vinegar/data/usg/usg-desktop.rbxlx
+
+--- commit stats ---
+29a626b moving/first-fare: bounded world-ready gate before the first capture
+ docs/verify/2026-10-19/VINEGAR_RUNBOOK.md |   2 +
+ tests/tools/test_vinegar_run.py           | 122 +++++++++++++++++++++++++++++-
+ tools/vinegar_run.py                      |  81 ++++++++++++++++++++
+ 3 files changed, 203 insertions(+), 2 deletions(-)
+a6ac63a docs: VINEGAR_RUNBOOK queue rules match the accepted retry semantics
+ docs/verify/2026-10-19/VINEGAR_RUNBOOK.md | 12 ++++++------
+ 1 file changed, 6 insertions(+), 6 deletions(-)

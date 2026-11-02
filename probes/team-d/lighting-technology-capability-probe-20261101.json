@@ -1,0 +1,26 @@
+{
+  "probe": "read-only Studio MCP execute_luau, Edit mode: is Lighting.Technology readable?",
+  "agent": "roblox-lead (Team D), batch 7",
+  "script": "board/probes/team-d/technology-capability-probe-20261101.py",
+  "command": "cd ~/Work/projects/untitled-street-game && timeout 180 python3 /tmp/tech_probe.py",
+  "startedAt": "2026-11-01T23:45:08Z",
+  "studio": {"id": "cdefa06f-afc8-45ac-b3d5-3977cdb25ce6", "name": "usg-desktop.rbxlx"},
+  "execute": {
+    "isError": false,
+    "text": "{\"directOk\":false,\"nameError\":\"The current thread cannot read 'Technology' (lacking capability RobloxScript)\",\"typeOk\":false,\"directError\":\"The current thread cannot read 'Technology' (lacking capability RobloxScript)\",\"nameOk\":false,\"studioMode\":true}"
+  },
+  "mcpClose": {"owned": [{"pid": 555510, "start": 36038251, "ppid": 555505, "ageSeconds": 3.4}], "foreignNew": [], "signals": [{"pid": 555510, "start": 36038251, "signal": "SIGTERM"}], "survivors": []},
+  "readings": {
+    "directOk": false,
+    "nameOk": false,
+    "typeOk": false,
+    "error": "The current thread cannot read 'Technology' (lacking capability RobloxScript)",
+    "studioMode": true
+  },
+  "corroborating_evidence": [
+    "2026-11-01 20:46Z moving Play: sidecar failed with 'probe reply lacks sidecar field(s) seed, lighting.technology' (board/probes/team-d/b1-opening3-atlas-moving-findings-20261101.md:46-50) - the same probe, run in Play, also had no technology.",
+    "tests/tools/test_vinegar_run.py:1618-1628 already models 'Lighting.Technology unreadable from the Client exec' and asserts the capture fails closed on it.",
+    "build/test.rbxlx (sealed c6651793...) has the Lighting XML property Technology=4 (= Enum.Technology.Future, the value docs/art/SIDECAR.md expects), so the value is knowable offline from the sealed place, just not via execute_luau."
+  ],
+  "consequence": "docs/art/SIDECAR.md report.lighting.technology ('Lighting.Technology.Name', expects 'Future') is not producible by any execute_luau probe, Edit or Play. It blocks every capture sidecar: moving frames and atlas:* views (both use tools/vinegar_lib/frames.py look_report). Needs a Lead ruling (three options recorded in board/reports/team-d-batch7.md)."
+}
