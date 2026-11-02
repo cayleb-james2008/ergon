@@ -1,0 +1,72 @@
+=== TEAM D DIAGNOSTIC PLAY 11 — traffic:abort-contact on option-B fix (Lead GO 2026-11-02T06:26Z) ===
+time 2026-11-02T06:26:45Z
+repo 68c020b71c4dc13288e510da9001b3f5c216c248 tracked_modified=0
+
+--- 1a. state BEFORE the cycle ---
+ 881911    2335 /home/cayleb/.var/app/org.vinegarhq.Vinegar/data/vinegar/versions/version-
+plays record: {  "pid": 881911,  "start": 38214322,  "plays": 2,  "at": 1793599418.5844924}
+host: full avg10=0.99 avg60=0.26 avg300=0.16 total=841244798 | 3.74 3.98 4.04 3/2595 905276
+
+--- sealed BEFORE ---
+84324d4342667dd163ab8e64adacbf8ef44ab786aeda5c7ab1403e76d52ef6ce  build/release.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  build/test.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  /home/cayleb/.var/app/org.vinegarhq.Vinegar/data/usg/usg-desktop.rbxlx
+
+--- 1b. studiocycle cycle 2026-11-02T06:26:45Z ---
+{"action": "close", "result": "ok", "method": "killed-after-dialog", "dialog_seen": true, "discarded_autosaves": ["20261102T062649Z-usg-desktop_AutoRecovery_0.rbxl"], "place_sha256": "c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98", "sealed_unchanged": true}
+{"action": "open", "result": "ok", "place_sha256_before": "c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98", "place_sha256_after": "c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98", "fit": "ok", "window": {"address": "0x558c7f831f20", "class": "steam_proton", "title": "Z:\\home\\cayleb\\.var\\app\\org.vinegarhq.Vinegar\\data\\usg\\usg-desktop.rbxlx - Roblox Studio", "at": [1475, 234], "size": [2200, 1000], "floating": true, "fullscreen": 0, "pid": 905535}}
+cycle_rc=0
+
+--- 1c. fresh opening verification 2026-11-02T06:26:58Z ---
+ 905535       7 /home/cayleb/.var/app/org.vinegarhq.Vinegar/data/vinegar/versions/version-
+{"address": "0x558c7f831f20", "class": "steam_proton", "title": "Z:\\home\\cayleb\\.var\\app\\org.vinegarhq.Vinegar\\data\\usg\\usg-desktop.rbxlx - Roblox Studio", "at": [1475, 234], "size": [2200, 1000], "floating": true, "fullscreen": 0, "pid": 905535}
+plays record (old opening): {  "pid": 881911,  "start": 38214322,  "plays": 2,  "at": 1793599418.5844924}
+
+--- sealed AFTER cycle ---
+84324d4342667dd163ab8e64adacbf8ef44ab786aeda5c7ab1403e76d52ef6ce  build/release.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  build/test.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  /home/cayleb/.var/app/org.vinegarhq.Vinegar/data/usg/usg-desktop.rbxlx
+
+--- preflight ---
+preflight_rc=0
+--- 2. THE ONE PLAY: run traffic:abort-contact start 2026-11-02T06:27:04Z ---
+run_rc=1
+
+--- 3. post-Play state 2026-11-02T06:27:44Z ---
+Studio:  905535      53 /home/cayleb/.var/app/org.vinegarhq.Vinegar/
+plays record: {  "pid": 905535,  "start": 38448435,  "plays": 1,  "at": 1793600829.3724024}
+
+--- verify-clean ---
+  },
+  "clean": true
+}
+verify_rc=0
+
+--- sealed AFTER ---
+84324d4342667dd163ab8e64adacbf8ef44ab786aeda5c7ab1403e76d52ef6ce  build/release.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  build/test.rbxlx
+84324d4342667dd163ab8e64adacbf8ef44ab786aeda5c7ab1403e76d52ef6ce  build/release.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  build/test.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  /home/cayleb/.var/app/org.vinegarhq.Vinegar/data/usg/usg-desktop.rbxlx
+
+--- run dir ---
+cleanup.luau
+hostcheck.jsonl
+manifest.json
+preflight.json
+prepare.luau
+report.json
+result.json
+runtime-http.json
+verify-before.json
+
+=== PLAY 11 RESULT SUMMARY 2026-11-02T06:28:37Z ===
+traffic:abort-contact on 68c020b 06:27:04Z->06:27:38Z, exit=1 fail-closed; no crash; abort stop/cleanup/verifyClean ok; sealed unchanged
+runtime state=failed reason='HandlingServer:218: contact leg never reached within 12 s of contactDriveAt' (guard fired at t=15.77; leg started at contactDriveAt=3.7826 = abortObservedAt+0 as wired)
+fixture.preLegSpeed=30 recorded; contacts=0 touches=0; maximumProgress 0.9938; chunks=null; generation stable 2->2, 0 events, 939 steps
+LEG-START GEOMETRY IN THE REAL RUN: gap 71.4 studs, ego 30.0 studs/s (my offline model predicted 24.3/30 using Play-9's proxy profile; the proxy phase differed — abort at 3.78 s vs 4.98 s, proxy 27 vs 11 studs/s there -> gap 71 not 24)
+pursuit still worked: ego ramps 30->59, distance 71->~104 then ~142 at window end (closing not enough inside 12 s); GUARDS: 12 s timer tripped exactly as designed; radius guard NOT tripped (max 142 << 700)
+sealed AFTER: 84324d43.../c6651793... unchanged; plays 1/3 in the fresh opening; verify-clean clean=true; Studio alive pid 905535
+
+--- 4. contactLeg series (report latched row + samples summary) ---
+latched: {t=15.765,distance=142.44,proxyS=3216.12,targetS=3223.95,proxySpeed=52.17,speed=60,lead=0.15}
