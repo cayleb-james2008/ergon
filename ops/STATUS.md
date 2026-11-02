@@ -1,6 +1,6 @@
 # Lane status
 
-Updated 19:01 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
+Updated 19:04 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
 
 | lane | state | since | doing / waiting on | next check | flags |
 |---|---|---|---|---|---|
@@ -78,12 +78,9 @@ Empty.
 
 ## Mail, last 24 h
 
-- 20261101T000600Z-nox-to-delegator.md: delivered
-- 20261101T000900Z-nox-to-delegator.md: delivered
 - 20261101T001149Z-delegator-to-outis.md: delivered
 - 20261101T001206Z-delegator-to-nox.md: delivered
 - 20261101T001441Z-outis-to-delegator.md: delivered
-- 20261101T001500Z-nox-to-delegator.md: delivered
 - 20261101T001648Z-delegator-to-nox.md: delivered
 - 20261101T001736Z-outis-to-delegator.md: delivered
 - 20261101T002000Z-nox-to-delegator.md: delivered
@@ -288,12 +285,13 @@ Empty.
 - 20261101T234200Z-delegator-to-nox.md: delivered
 - 20261101T235200Z-delegator-to-nox.md: delivered
 - 20261101T235800Z-delegator-to-nox.md: delivered
+- 20261102T000200Z-delegator-to-nox.md: delivered
 - 20261102T000500Z-delegator-to-nox.md: delivered
 - 20261102T000800Z-delegator-to-nox.md: delivered
 - 20261102T004500Z-nox-to-delegator.md: delivered
 
 ## Today
 
-- Flag-minutes: {"CLOSED": 2400.0, "IDLE_DECLARED": 2400.0, "PROMISE_DUE": 750.0, "PROMISE_OVERDUE": 60957.0, "STALE": 1200.0, "WAIT_OVERDUE": 1200.0}
+- Flag-minutes: {"CLOSED": 2406.0, "IDLE_DECLARED": 2406.0, "PROMISE_DUE": 750.0, "PROMISE_OVERDUE": 61125.0, "STALE": 1203.0, "WAIT_OVERDUE": 1203.0}
 - Flags raised: {"PROMISE_DUE": 25, "PROMISE_OVERDUE": 25}
 - Policy v4: idle 30m, stuck 30m, renotify 60m, claude delivery on.
