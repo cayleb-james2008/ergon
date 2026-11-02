@@ -1,0 +1,10 @@
+N4 CHECK — substantive PASS, one attribution error
+- httpd-r2.log: recorded serve argv `python3 -m http.server 8792 --bind 127.0.0.1 --directory
+  /home/cayleb/.../board/probes/team-a-design-v2`, then transport log = 64 GET lines
+  (43 x 200, 14 x 304, 7 x 404 [favicon only]).
+- Final probed pages (?final=1) at 09:29:22 / 09:29:25 / 09:29:29: page + tokens.css + comp-kit.css +
+  comp-motion.js ALL 200.
+- teardown-r2.txt: 2026-11-02T14:31:37Z, emulator stopped, http 8792 closed, port 8791 live desk 1
+  listener untouched, transport log recorded.
+DEFECT: §6e N4 row says `httpd-access-r2.log` has 64 GET requests; that file has 22 lines (a filtered
+extract). The 64-GET transport log is `httpd-r2.log`. Doc attribution/count fix needed.

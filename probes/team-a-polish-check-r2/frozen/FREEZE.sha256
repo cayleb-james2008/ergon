@@ -1,0 +1,20 @@
+# Ergon Lumen v2 direction set — FREEZE manifest (checker notes N1–N6 fix round, final for this cycle).
+# DESIGN COMP — NOT A BUILT SURFACE. This manifest lists the 17 frozen content files; it excludes itself.
+# Verify: node check-comps.mjs (asserts existence, every hash, and that the directory is exactly this set) or: sha256sum -c FREEZE.sha256
+0b7a26c6fe99eaeaa9e8c3e6655ebbdd8acdb4675add2af04f35b4e652edef83  index.html
+30440f4dccd27836561d6eb24908acb759b230998effd3189e66ad46eca1a086  motion-storyboard.html
+66c5edbe28dda5e6d95467a99c35564a3ea84af007a43ffabf1cda912b2c001c  comps/01-mobile-chat.html
+150b070a1b8281063af0564fac12c2ee41c16b4ee0f618c176b5f9aab0ce020b  comps/02-mobile-triage-approvals.html
+2a7205ce40f37b8ea92edc519c4eb2b31e2e1167041a04d8ed029f03928f187c  comps/03-mobile-tasks.html
+9f0c0126dd889da5fb9bb46512c06176e47ca8d9357436540ad4d98a796535d7  comps/04-mobile-make.html
+b4e19303eeded11308b65e54b2e9c26c8ab227b97d42171ba5cdaec8799192e2  comps/05-desktop-workspace.html
+4256ac66d6610b63d24aaba510ccafad101f5af9d79648db6dd35fa1f39c5d4b  comps/06-character-sheet.html
+d2331904652a9293d6dfab61672b7d2268c81180ad41c45f7ea0224effbd7f98  comps/07-states.html
+23be162b1282c34f95cca927aa3a7a43fe31aa22c3c1c353ddd487a1eea90616  tokens.json
+19af9c3cb51f5cd00315c356139e785a9a082c3449ab9c392021252b9e9873f6  tokens.css
+14d09c792823d67af71ca2a2c8002d8ed5796d08a203197d8265e362782d8b06  build-tokens.mjs
+fb57ba12a13f99c4b6fea83f367e23d5a688e4a2e7dca8413929c40af461b715  comp-kit.css
+6eddb369d6f5d8ce3edb55e9b4a7a6a2132dc57eb53dd3aee7e8cd89141906f2  comp-motion.js
+8ec87c918566d457f87d93429bff67bca68d01ef615ed022fdf488231653431a  check-comps.mjs
+ca6064c3c40eef884de3cc6cc793e06d917135b59af7225bffc4af915ab73808  README.md
+6d56a0e58bf212b92b9e100216b0cd203f90fdec989db525c6b108e75373befa  PACK-CHANGE-PROPOSAL.md

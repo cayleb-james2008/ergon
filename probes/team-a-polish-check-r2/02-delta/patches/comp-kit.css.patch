@@ -1,0 +1,39 @@
+--- /tmp/polish-check/fresh/comp-kit.css	2026-11-02 09:04:19.262471000 -0500
++++ /tmp/polish-check-r2/fresh/comp-kit.css	2026-11-02 09:29:01.735925203 -0500
+@@ -227,20 +227,34 @@
+   animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important;
+ }
+ @media (forced-colors: active) {
+-  .glass, .glass-1, .glass-2, .glass-3, .card, .sheet, .phone, .desktop { background: Canvas; border-color: ButtonText; box-shadow: none; backdrop-filter: none; }
++  .glass, .glass-1, .glass-2, .glass-3, .card, .sheet, .phone, .desktop, .sidebar, .phone .composer, .phone .tabbar, .banner { background: Canvas; border-color: ButtonText; box-shadow: none; backdrop-filter: none; }
+   button { background: ButtonFace; color: ButtonText; border-color: ButtonText; }
+   button.primary { background: Highlight; color: HighlightText; border-color: Highlight; }
+   .pill { border-color: CanvasText; color: CanvasText; }
++  input { background: Field; color: FieldText; border-color: FieldText; }
++  input:disabled, input[readonly] { background: Field; color: FieldText; border-color: FieldText; }
++  .sidebar nav button { background: Canvas; color: ButtonText; border-color: Canvas; }
++  .sidebar nav button[aria-current="page"] { background: Highlight; color: HighlightText; border-color: Highlight; }
++  .phone .tabbar button { background: Canvas; color: ButtonText; }
++  .phone .tabbar button[aria-selected="true"] { color: CanvasText; }
++  .phone .tabbar button::before { background: Highlight; }
+   a { color: LinkText; }
+ }
+ [data-contrast="high"] .glass, [data-contrast="high"] .glass-1, [data-contrast="high"] .glass-2, [data-contrast="high"] .glass-3,
+-[data-contrast="high"] .card, [data-contrast="high"] .sheet, [data-contrast="high"] .phone, [data-contrast="high"] .desktop {
++[data-contrast="high"] .card, [data-contrast="high"] .sheet, [data-contrast="high"] .phone, [data-contrast="high"] .desktop,
++[data-contrast="high"] .sidebar, [data-contrast="high"] .phone .composer, [data-contrast="high"] .phone .tabbar, [data-contrast="high"] .banner {
+   background: Canvas; border-color: ButtonText; box-shadow: none; backdrop-filter: none;
+ }
+ [data-contrast="high"] button { background: ButtonFace; color: ButtonText; border-color: ButtonText; }
+ [data-contrast="high"] button.primary { background: Highlight; color: HighlightText; border-color: Highlight; }
+ [data-contrast="high"] .pill { border-color: CanvasText; color: CanvasText; }
+ [data-contrast="high"] input { background: Field; color: FieldText; border-color: FieldText; }
++[data-contrast="high"] input:disabled, [data-contrast="high"] input[readonly] { background: Field; color: FieldText; border-color: FieldText; }
++[data-contrast="high"] .sidebar nav button { background: Canvas; color: ButtonText; border-color: Canvas; }
++[data-contrast="high"] .sidebar nav button[aria-current="page"] { background: Highlight; color: HighlightText; border-color: Highlight; }
++[data-contrast="high"] .phone .tabbar button { background: Canvas; color: ButtonText; }
++[data-contrast="high"] .phone .tabbar button[aria-selected="true"] { color: CanvasText; }
++[data-contrast="high"] .phone .tabbar button::before { background: Highlight; }
+ [data-contrast="high"] a { color: LinkText; }
+ [data-contrast="high"] .msg { background: Canvas; border-color: CanvasText; color: CanvasText; }
+ [data-contrast="high"] .nn .node { fill: CanvasText; }

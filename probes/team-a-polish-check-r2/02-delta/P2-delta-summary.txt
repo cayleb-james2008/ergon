@@ -1,0 +1,10 @@
+DELTA vs previous freeze 222364fd (checker hash-compare of all 18 entries)
+CHANGED (6): FREEZE.sha256 (manifest, expected) ; comps/05-desktop-workspace.html ; comps/07-states.html ;
+             comp-kit.css ; comp-motion.js ; check-comps.mjs
+SAME (12): PACK-CHANGE-PROPOSAL.md README.md build-tokens.mjs comps/01 comps/02 comps/03 comps/04 comps/06
+           index.html motion-storyboard.html tokens.css tokens.json
+=> content delta exactly the 5 files §6e names; direction files (comps 01-04/06, index, storyboard, tokens) untouched.
+Per-file note: comp05 +1 attribute (aria-current="page" on active sidebar row);
+comp07 +3 lines (disabled "Locked by IT" + read-only "Frozen quote" inputs + caption);
+comp-kit +14 lines (HC forced-colors + HC preview resets/children); comp-motion +2 lines (maintain aria-current);
+check-comps +11 check(...) lines (additive only; no removed/relaxed assertion).

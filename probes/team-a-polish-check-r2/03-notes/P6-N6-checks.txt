@@ -1,0 +1,6 @@
+N6 CHECK — PASS
+- check-comps.mjs `check(` call occurrences: 92 now vs 81 in the polish freeze (+11, all additive; diff has
+  no removed or relaxed assertion — all hunks are + lines).
+- Polish round itself added 14 (previously verified); 14 + 11 = 25 since pre-polish; §6d count corrected to 14,
+  §6e says "14 additive + 11 more".
+- ✓ matches §6e claim "92 check(...) calls total; nothing relaxed".

@@ -1,0 +1,9 @@
+RE-FREEZE GATES (checker, fresh copy /tmp/polish-check-r2/fresh, taken from board/probes/team-a-design-v2)
+sha256sum -c FREEZE.sha256 -> 17/17 OK
+sha256sum FREEZE.sha256   -> 7799a87fab21514576468405f06486b0b642a20461e6e9d63bf83500ce8b8d12
+node build-tokens.mjs --check -> TOKENS: CURRENT — tokens.css matches tokens.json
+node check-comps.mjs -> V2 COMPS CHECK: PASS (9 pages, 0 colour literals outside token files,
+  74 custom props / 0 unresolved, floors line ink 9.21 … field 3.30, freeze manifest present+matching)
+report §6e hash table vs FREEZE: 17 rows, 0 mismatches; 17 content files / 2,273 lines == §6e/§7 claim
+digest pins: §6e, §7 handoff, token contract §7, admission skeleton, gate-checklist, grading intake
+  all carry 7799a87…; old digest 222364fd… appears only in supersede/history contexts.

@@ -1,0 +1,28 @@
+--- /tmp/polish-check/fresh/check-comps.mjs	2026-11-02 09:04:08.322821843 -0500
++++ /tmp/polish-check-r2/fresh/check-comps.mjs	2026-11-02 09:27:06.042799055 -0500
+@@ -165,6 +165,25 @@
+ check(/aria-label', `\$\{el\.dataset\.name/.test(js), 'comp-motion.js: the character control needs an accessible name');
+ check(/keydown/.test(js), 'comp-motion.js: the character must activate from the keyboard');
+ 
++/* ---------- 8d. note-fix round (checker N2/N3): states are rendered, HC covers the polished layers ---------- */
++check(/<button[^>]*aria-current="page"[^>]*aria-controls="view-thread"/.test(read('comps/05-desktop-workspace.html')), 'comps/05: the selected-sidebar-row state must be rendered (aria-current on the active sidebar row)');
++check(/aria-current/.test(read('comp-motion.js')), 'comp-motion.js: sidebar selection must maintain aria-current, not only aria-selected');
++const states07 = read('comps/07-states.html');
++check(/<input[^>]*disabled/.test(states07), 'comps/07: the disabled field state must be demonstrated, not dormant CSS');
++check(/<input[^>]*readonly/.test(states07), 'comps/07: the read-only field state must be demonstrated, not dormant CSS');
++const fcBlock = kit.slice(kit.indexOf('@media (forced-colors: active)'));
++check(/\.phone \.composer/.test(fcBlock) && /\.phone \.tabbar/.test(fcBlock) && /\.banner/.test(fcBlock) && /\.sidebar/.test(fcBlock), 'comp-kit.css: forced-colours reset must cover composer/tabbar/banner/sidebar');
++const hcBlock = kit.slice(kit.indexOf('[data-contrast="high"] .glass'));
++check(/\[data-contrast="high"\] \.phone \.composer/.test(hcBlock) && /\[data-contrast="high"\] \.phone \.tabbar/.test(hcBlock) && /\[data-contrast="high"\] \.banner/.test(hcBlock) && /\[data-contrast="high"\] \.sidebar/.test(hcBlock), 'comp-kit.css: HC preview reset must cover composer/tabbar/banner/sidebar');
++
++const hc2 = kit.slice(kit.indexOf('[data-contrast="high"] .glass'));
++const fc2 = kit.slice(kit.indexOf('@media (forced-colors: active)'));
++check(/\[data-contrast="high"\] \.sidebar nav button\[aria-current="page"\]/.test(hc2), 'comp-kit.css: HC preview must reset the selected sidebar row to system Highlight');
++check(/\[data-contrast="high"\] \.phone \.tabbar button/.test(hc2), 'comp-kit.css: HC preview must reset tab-bar buttons to system colours');
++check(/\[data-contrast="high"\] input \{[^}]*border-color: FieldText/.test(hc2), 'comp-kit.css: HC preview must reset field boundaries to FieldText');
++check(/\.sidebar nav button\[aria-current="page"\] \{ background: Highlight/.test(fc2), 'comp-kit.css: forced-colours path must reset the selected sidebar row');
++check(/\.phone \.tabbar button \{ background: Canvas/.test(fc2), 'comp-kit.css: forced-colours path must reset tab-bar buttons');
++
+ /* ---------- 9. approvals wording (scoped remember only, no standing-permission wording) ---------- */
+ for (const page of PAGES) {
+   check(!/always\s+allow/i.test(read(page)), `${page}: contains banned "always allow" wording`);

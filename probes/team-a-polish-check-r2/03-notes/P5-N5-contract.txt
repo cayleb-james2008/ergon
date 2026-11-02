@@ -1,0 +1,9 @@
+N5 CHECK — mostly closed, two residuals
+PASS: header now says polish round applied and N1-N6 notes closed; --depth-shade added to plane mapping
+  (contract line 20: raised planes lift+rim+shade; tab bar/banner rim only; sidebar border-right no shadow);
+  pin = 7799a87… (17 content files; supersedes 222364fd / ea68e398); floors/motion/no-hand-typed-hex rule
+  unchanged and matching the frozen tokens.
+RESIDUAL 1: §7 still contains stale sentence "The polish round is in progress; when it re-freezes, this
+  contract is re-issued with the new digest and any token delta" — contradicts the header/§7 pin.
+RESIDUAL 2 (minor): header timestamp 2026-11-02T09:31Z vs file mtime 09:32:04 ET; teardown uses true UTC
+  14:31:37Z, so the header still writes local wall time with a Z suffix (same class as previous note).

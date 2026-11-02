@@ -1,0 +1,26 @@
+N3 CHECK — set-level PASS, live re-derivation PARTIAL
+CSS (comp-kit.css, verified in both paths):
+- @media (forced-colors: active): adds .sidebar .phone .composer .phone .tabbar .banner to reset
+  (bg Canvas/ButtonText border, box-shadow none, backdrop-filter none); children: input + input:disabled/
+  input[readonly] -> Field/FieldText; .sidebar nav button -> Canvas/ButtonText, [aria-current=page] ->
+  Highlight/HighlightText; .phone .tabbar button -> Canvas/ButtonText, [aria-selected=true] -> CanvasText,
+  ::before -> Highlight.
+- [data-contrast="high"]: same selector set as above.
+Assertions: 11 new check(...) lines (2 state-rendered, 2 HC layer coverage, 3 HC child rules, 2 FC child rules,
+  2 motion/aria). CAVEAT: fcBlock = kit.slice(indexOf('@media (forced-colors: active)')) runs to EOF and thus
+  contains the [data-contrast] block too — the FC coverage assertions can pass from HC text alone (not isolated;
+  artifact does contain both paths, so this is an assertion-quality note, not an artifact regression).
+Live re-derivation (real Chromium proofs, served set):
+- PASS composer/tabbar/banner: final-01-proof.json after HC -> composer/tabbar/banner shadow "none", blur
+  "none", bg rgb(18,18,18) == Canvas (dark scheme; diag2-proof canvas rgb(18,18,18)).
+- PASS sidebar: notefix-proof-05 sidebarAfterHighContrast shadow none blur none.
+- PARTIAL inputs: final-07-proof.json after HC -> disabled/readonly bg rgb(59,59,59) == Field, color
+  rgb(255,255,255) == FieldText, BUT border stays author --line rgba(206,228,255,0.16) (claim says FieldText
+  border). Synthetic synth-proof shows FieldText border only on synthetic inputs; that page was captured
+  against pre-fix CSS (its selected row did not reset) so it is not final-CSS evidence.
+- NOT reproduced selected row: real-page notefix/final/fresh-05 rowAfterHighContrast stays surface-3
+  rgba(198,222,255,0.1)/line-strong, not Highlight; only synthetic def-proof.json (fresh no-store CSS)
+  resolves Highlight rgba(85,163,254,0.6) on a synthetic .sidebar row.
+Conclusion: both HC paths are present and correct in the frozen CSS (claim at set level TRUE); the
+"live-confirmed selected row Highlight / FieldText border" wording is not reproduced on the real elements by
+the shipped evidence — re-probe needed before quoting live-confirmation.

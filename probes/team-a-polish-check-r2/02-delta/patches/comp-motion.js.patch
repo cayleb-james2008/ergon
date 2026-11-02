@@ -1,0 +1,11 @@
+--- /tmp/polish-check/fresh/comp-motion.js	2026-11-02 09:04:08.322059221 -0500
++++ /tmp/polish-check-r2/fresh/comp-motion.js	2026-11-02 09:25:08.618466700 -0500
+@@ -67,6 +67,8 @@
+         .filter(Boolean);
+       const select = (button) => {
+         buttons.forEach((b) => b.setAttribute('aria-selected', String(b === button)));
++        // sidebar rows also carry aria-current so the selected-row finish is a rendered state, not dormant CSS
++        if (bar.closest('.sidebar')) buttons.forEach((b) => { if (b === button) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current'); });
+         panels.forEach((p) => {
+           const show = p.id === button.getAttribute('aria-controls');
+           if (show) {

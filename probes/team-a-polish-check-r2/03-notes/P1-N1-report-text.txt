@@ -1,0 +1,8 @@
+N1 CHECK — §6e N1 row states the corrected wording; §6d BODY still carries the old over-claim.
+- §6e N1 fix text: "nine raised planes ... glass-1/2/3, card, sheet, phone, desktop, composer, light-pool;
+  tab bar and banner rim only; sidebar border-right no shadow; no new shadow invented" — matches artifact:
+  --depth-shade uses = 9 (kit), .sidebar rule has no box-shadow (comp-kit.css:175), tabbar/banner carry
+  box-shadow: var(--depth-rim) only.
+- BUT report §6d lines 207-208 are UNCHANGED: "every translucent plane now carries lift + top rim + bottom
+  shade" and "composer, tab bar, banner, sidebar and sheet now carry their own depth/rim (no flat chrome)".
+  -> correction was placed only in §6e; the claim it corrects is still in the report body. N1 open (doc).

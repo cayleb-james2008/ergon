@@ -1,0 +1,10 @@
+N2 CHECK — PASS (both dormant states now rendered + live)
+comp05: active sidebar row now carries aria-current="page" (comps/05:21); comp-motion.js select() maintains
+  aria-current for .sidebar tab bars (diff +2 lines).
+comp07: <input type="text" value="Locked by IT" disabled aria-label="Disabled field"> and
+  <input type="text" value="Frozen quote" readonly aria-label="Read-only field"> + caption (comps/07:55-57).
+Live (notefix-proof-05.json / final-proof-05.json): selected row bg rgba(198,222,255,0.1) == --surface-3,
+  border rgba(206,228,255,0.24) == --line-strong, ariaCurrent "page"; after tab click
+  ariaCurrentAfterTabClick [null,"page",null,null].
+Live (final-07-proof.json before HC): disabled = subtle #95A2B1 text / surface-1 fill / --line border;
+  readonly = ink #EAF2FA text / --line border -> token-mapped and visibly distinct.

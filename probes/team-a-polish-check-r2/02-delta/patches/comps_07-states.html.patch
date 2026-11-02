@@ -1,0 +1,12 @@
+--- /tmp/polish-check/fresh/comps/07-states.html	2026-11-01 20:15:41.986889050 -0500
++++ /tmp/polish-check-r2/fresh/comps/07-states.html	2026-11-02 09:25:08.618704581 -0500
+@@ -52,6 +52,9 @@
+         <input type="text" class="sim-focus" value="Oakridge" aria-label="Focused field">
+         <input type="text" class="sim-error" value="07:00 Thu" aria-label="Error field">
+         <span class="caption" style="color: var(--danger);">That date is in the past. Use a date after today.</span>
++        <input type="text" value="Locked by IT" disabled aria-label="Disabled field">
++        <input type="text" value="Frozen quote" readonly aria-label="Read-only field">
++        <span class="caption">disabled (Locked by IT, set by IT) and read-only (Frozen quote) states — both token-driven, both visibly distinct.</span>
+       </div>
+       <div class="stack">
+         <span class="label">pills · always a word</span>

@@ -1,0 +1,5 @@
+=== §6e hash table vs FREEZE ===
+freeze entries: 17 report rows: 17
+mismatch: none
+set equal: True
+content files: 17 lines: 2273

@@ -1,0 +1,14 @@
+LIVE PROOF PARSE (checker; text/computed-only, no images)
+- final-01-proof.json (real page ?final=1, fresh kit 200): HC -> composerShadow none, composerBlur none,
+  composerBg rgb(18,18,18); tabbar/banner shadow none, blur none; phoneBg rgb(18,18,18). = Canvas/cleared.
+- final-07-proof.json (?final=1): HC -> disabled/readonly: color rgb(255,255,255) FieldText, bg
+  rgb(59,59,59) Field, border rgba(206,228,255,0.16) author --line (NOT reset).
+- final-proof-05.json / notefix-proof-05.json: selected row bg rgba(198,222,255,0.1) surface-3, border
+  rgba(206,228,255,0.24) line-strong, ariaCurrent page; after tab click [null,"page",null,null];
+  notefix sidebarAfterHighContrast shadow none, blur none.
+- def-proof.json (synthetic .sidebar row, fetch /comp-kit.css no-store: contains child rules): bg/border
+  rgba(85,163,254,0.6) == Highlight.
+- synth-proof.json (synthetic inputs; page captured against pre-fix CSS): FieldText border on synthetic
+  inputs; selected synthetic row NOT Highlight -> cannot serve as final-CSS evidence.
+- emulator-r2.log: Android emulator session (Google APIs x86_64, SwiftShader/VkInstance); teardown recorded.
+- Evidence dir: 44 files, all text/JSON/JS/PY/XML/log — no images.
