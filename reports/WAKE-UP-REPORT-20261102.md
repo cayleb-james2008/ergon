@@ -41,15 +41,17 @@ Fences held overnight: no spend, no publication, no credential values in chat/bo
   FirstLogonCommands ran to completion — text proof: host marker `?step=start` at 03:08:35Z and `?step=done` at 03:26:46Z — and
   **RDP answered at protocol level** (TPKT + X.224 Connection Confirm through 127.0.0.1:3389; reproduced by two seats).
   **Settled-probe re-confirmation — captured:** RDP **re-confirmed 6/6** back-to-back probes 03:37:36–03:38:26Z (TPKT + X.224
-  Connection Confirm + RDP negotiation) — the surface is driveable via RDP. **SSH is still pending:** TCP reaches the QEMU hostfwd but
-  6/6 probes got no SSH banner and the key round-trip timed out; the cause is guest-side and unverified (no text channel; the guest was
-  still servicing, CPU ≈300 %, disk growing) — next evidence step is a post-settle re-probe or a guest-status seat. Guest state
-  preserved throughout (no reinstall, no restart; both disks kept). The two rig root causes were found and
+  Connection Confirm + RDP negotiation) — the surface is driveable via RDP. **SSH is carried as a named pending (Nox ruled, run 7):**
+  TCP reaches the QEMU hostfwd but 6/6 probes got no SSH banner and the key round-trip timed out during banner exchange after the
+  `?step=done` marker; the cause is guest-side and unverified. RDP is the driveable channel and SSH is not required for the surface
+  claim; only periodic post-settle read-only re-probes are approved — no reinstall, restart or blind input. Guest state preserved
+  (QEMU PID 757632 + both disks). The two rig root causes were found and
   fixed with evidence: (1) stale/foreign OVMF vars + missed El-Torito "press any key"; (2) an answer medium Windows could never see
   (8.3-only FAT16 name + `usb-storage removable=off`) → vvfat over `win/unattend/` + `removable=true`. Launcher patch filed
   (`run-win11.sh.patched` + diff; finalize-timing lesson recorded) — the rig launcher must adopt it. A fresh checker re-verified the
   upgraded filing (ACCEPT, honest) with two corrections being applied (companion-artefact wording; a rig-local placeholder password in
-  the board copy of the answer file — redacted from both board copies within minutes, no real credential involved).
+  the board copy of the answer file — redacted from both board copies within minutes, no real credential involved; Nox ruled the
+  placeholder history is NOT scrubbed — fence item closed).
 - **Windows residuals (named, not blockers):** SSH/OpenSSH still not answering (capability install finished, sshd not up — being
   diagnosed — the exact blocker is filed: no serving sshd while RDP is live); the OOBE desktop itself is not claimed (no image reads — the marker sequence and RDP handshake are the text/protocol
   proofs); the Ergon Windows companion surfaces remain package-blocked — companion SOURCES exist in the OpenClaw baseline repo but
