@@ -1,37 +1,29 @@
-# WAKE-UP REPORT — 2026-11-02 (refreshed 03:45 ET; owner asleep) — refresh #8 (ATLAS: layer-9 camera-restore diagnostics in checker; one Play names the cause; abort-contact: B fixture/physics authority ruled)
+# WAKE-UP REPORT — 2026-11-02 (refreshed 04:00 ET; owner asleep) — refresh #9 (OWNER DIRECTION: one DSH setup, fleet plugin consolidates into it, duplicate key entry CANCELLED; atlas one camera-restore layer from a pass; Windows final)
 Consolidated for the owner's morning. Everything below is on the board with checker evidence; nothing is smoothed.
 Fences held overnight: no spend, no publication, no credential values in chat/board/logs, no image reads in the app, desks untouched.
 
-## THE TWO THINGS THAT NEED THE OWNER (nothing else)
-1. **Key entry for the fleet roster (one act).** Run in a terminal as yourself:
-   `node /home/cayleb/workspace/harness-build/candidate-031/package/bin/dsh-fleet.mjs first-run --credentials`
-   Field he will see: `OPENCODE_GO_API_KEY (opencode-go) [Enter to skip]:` — echo off; the value goes to the fleet credential
-   store (0600) via the uid-1000 control op and is never printed, logged or sent anywhere. On success (we verify automatically) the
-   roster's real provider route activates and we run the ruled proof (a real `fleet-roster lane-spawn` turn on the cloud OpenCode Go
-   route), then fire the staged first real order — the plugin's visible surfaces (own sidebar section + phone-VM and Windows-VM panels)
-   — and file its order/task ids. Value never crosses chat/board/logs; success/failure only.
-2. **Grade the Ergon v2 direction (his eyes only).** The live animated pages are presented in the DSH app's right-column browser at
-   the announcement (reopened and verified rendered there — the browser idles out overnight, so nothing stale is assumed): index
-   first, then the seven comps + storyboard tabs, motion running (storyboard has Replay + ×0.25 aids). Direction: **Ergon Lumen** —
-   translucent layered panels with real depth (blur/hairlines/light-through-surfaces), neural-net character, technical-editorial taste
-   from the Prime Intellect reference, live motion. Fresh-checker FINAL ACCEPT on the frozen set (`ea68e398…`, C1–C5 verified); the
-   rendered look is his grade. Suggested order: index → storyboard (Replay, then ×0.25) → 07-states → 02 Review + Approve once →
-   01 send/character tap → 05 tab swap → 06 → 03 → 04.
+## WHAT NEEDS THE OWNER (after the 03:48 ET direction)
+1. **Grade the Ergon v2 direction (his eyes only).** The live animated pages are presented in the DSH app's right-column browser at the
+   announcement (reopened and verified rendered there — the browser idles out overnight, so nothing stale is assumed): index first, then
+   the seven comps + storyboard tabs, motion running (storyboard has Replay + ×0.25 aids). This is the only visual judgement we cannot
+   make for him.
+2. **Nothing else.** The fleet-plugin key entry is **cancelled** by his own direction: the plugin consolidates into his one DSH setup and
+   uses the OpenCode Go credential already present there — no second entry, no separate fleet store. The consolidation is ours to run and
+   is being scoped/executed now; if it ever needs a genuine owner act it will be named explicitly with evidence, not assumed.
 
-## FINISH LINE 1 — FLEET PLUGIN: INSTALL PROOF COMPLETE (checker-verified)
-- **Installed 0.3.1** (tarball `5ede7484…`, 123 members) through the reviewed wrapper via the guard-tested install script;
-  `INSTALL-0.3.1: PASS`. `fleet-dsh` active; identity readback 123/123, version 0.3.1.
-- **Installed-output acceptance:** the plugin's own UNMODIFIED `stage2-check.sh` on the installed host →
-  **`pass=60 fail=0`, `STAGE 2: PASS`** (fresh checker, 130-file evidence). Rows 8 pinned / 12 disabled; MCP nine tools on
-  `fleet-mcp 0.3.1-mcp`; listeners loopback + tailnet only.
-- **Roster machinery mounted:** `fleet-roster` row, doctrine table (DeepSeek V4.1 Flash lanes via opencode-go; Claude lead/checker
-  seats), `rates` row, `opencode-go` route (apiKeyEnv only; credential absent until the owner act), **sub-agent ceiling 32** shipped.
-- **Activation is the only remaining step and it is gated solely on the key entry** — no real-provider turn has run yet and no
-  activation is claimed. The first real order is staged and fires on activation.
-- **Named residuals:** facade `session.create {mode:"model"}` is an unconditional refusal → the activation proof is the roster
-  lane-spawn turn (Nox ruled Option A); the facade gap is a named defect queued for a 0.3.2 candidate; one stale unchanged-battery
-  expectation (T7); roundtrip `real_lane` label prints a conservative value (doc/code mismatch); `dshVersion` null; rollback armed
-  (0.3.0 `8173d13e…` in the drop) but not executed.
+## FINISH LINE 1 — FLEET PLUGIN: ONE-SETUP CONSOLIDATION (owner direction 03:48 ET; scaffold proofs complete)
+- **Owner direction:** one DSH setup only; the fleet plugin consolidates into it; the duplicate key entry is cancelled (the plugin uses
+  the OpenCode Go credential already present in his setup — entered once by him). The 0.3.1 install/acceptance proofs on the fleet
+  scaffold stay on the record as build evidence; **the finish line closes on the consolidated setup.**
+- **Consolidation in progress (Team B, scoping first):** what the single setup is, where the plugin installs, how the roster/doctrine/
+  rates/opencode-go route mount there with the credential **referenced** (never copied/re-entered), what happens to the fleet data/state,
+  single-writer discipline + care fence (no disruption to his live sessions/apps), and the re-proof chain on that setup: installed
+  acceptance → roster lane-spawn real-provider proof (Option A) → the staged first real order (plugin sidebar section + phone-VM and
+  Windows-VM panels) driven in the one setup. Any part that genuinely cannot run in one setup will be filed as a named blocker with
+  evidence — the two-setup shape will not be quietly kept.
+- **Scaffold facts carried (not lost):** 0.3.1 installed on the fleet scaffold with unmodified `stage2-check` `pass=60 fail=0`
+  (STAGE 2 PASS), identity 123/123, rows 8/12, MCP nine tools `0.3.1-mcp`, roster machinery mounted (doctrine, rates, opencode-go route,
+  sub-agent ceiling 32), first real order staged, corrected door note. These are the build evidence the consolidated setup must re-prove.
 
 ## FINISH LINE 2 — ERGON END-TO-END WITH THE VM SURFACES: PARTIALLY MET (honest; re-file pending)
 - **Phone VM — PROVEN REAL** (checker ACCEPT, independently re-run): headless Android 15/API 35 `rig-phone` boot; scripted native tap
