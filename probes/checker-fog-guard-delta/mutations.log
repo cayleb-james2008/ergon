@@ -1,0 +1,12 @@
+== fog-guard delta mutation proofs (throwaway clone), 2026-11-01T22:53:21-05:00 ==
+M4 unguard the client fog read (direct Lighting.FogStart/FogEnd/FogColor/FogEnabled, no capability())
+   -> atlas acceptance: Ran 20 tests, FAILED (failures=2)
+      FAIL: test_fog_reads_and_writes_are_guarded_in_the_real_sources
+      FAIL: test_real_read_fog_runs_under_lune_for_modern_legacy_and_sparse_lighting
+M5 unguard the server write (unconditional Lighting.FogEnabled=false)
+   -> atlas acceptance: Ran 20 tests, FAILED (failures=1)
+      FAIL: test_fog_reads_and_writes_are_guarded_in_the_real_sources
+M6 remove the legacy fog-off write-claim check (require method=='atmosphere')
+   -> atlas acceptance: Ran 20 tests, FAILED (failures=1)
+      FAIL: test_fog_off_batch_requires_an_honest_application_record (label='method claims a fog write')
+restored: git status clean; Client.luau sha256 e70554325dc7…; Server.luau 3ed6d3cd89a9…; atlas_acceptance.py 4dddd7d85ae2…

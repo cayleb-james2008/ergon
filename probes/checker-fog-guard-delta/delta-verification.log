@@ -1,0 +1,85 @@
+== fog-guard delta provenance/scope, 2026-11-01T22:53:06-05:00 ==
+HEAD=a231e3ffc36218822c285b3c25cdd60fed4216b3
+parent=35caa0221eafe757ea2c16b635f72061ad72cf74
+tree=765a3b085a9c51c1da14b9d8eea15e012b3395c4
+branch=prep/b1-capture-format-20261101
+tracked_mods=0 untracked=800
+--- delta 35caa02..a231e3f numstat ---
+25	1	tests/atlas/Client.luau
+8	2	tests/atlas/Server.luau
+127	1	tests/tools/test_atlas_acceptance.py
+22	2	tools/atlas_acceptance.py
+--- sum ---
+insertions=182 deletions=6
+--- changed paths ---
+tests/atlas/Client.luau
+tests/atlas/Server.luau
+tests/tools/test_atlas_acceptance.py
+tools/atlas_acceptance.py
+--- game/asset/sealed touched ---
+(empty=untouched)
+--- 45s/assert-and-skip/rebuild intact (files untouched) ---
+(empty=untouched)
+160:ATLAS_FIRST_VIEW_TIMEOUT = 45  # Plan 4: bounded wait for view-001; a named-seed hang is caught in tens of seconds
+no generateSafe call
+--- sealed hashes ---
+84324d4342667dd163ab8e64adacbf8ef44ab786aeda5c7ab1403e76d52ef6ce  build/release.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  build/test.rbxlx
+
+--- claim 1: Client.luau guarded fog reads (non-comment code) ---
+15:-- Roblox removes legacy lighting members over time (2026-11-02: Lighting.FogEnabled is gone on Studio 0.745 while the
+23:local function readFog(): any
+25: local hasStart,start=capability(Lighting,"FogStart")
+26: local hasFinish,finish=capability(Lighting,"FogEnd")
+27: local hasColor,color=capability(Lighting,"FogColor")
+28: local hasEnabled,enabled=capability(Lighting,"FogEnabled")
+29: fog.available={start=hasStart,finish=hasFinish,color=hasColor,enabled=hasEnabled}
+33: if hasEnabled then fog.enabled=enabled else fog.legacy=true end
+36: if type(record)=="string" and record~="" then fog.fogOffApplied=record end
+40: local result={exposure=Lighting.ExposureCompensation,clockTime=Lighting.ClockTime,ambient={Lighting.Ambient.R,Lighting.Ambient.G,Lighting.Ambient.B},outdoorAmbient={Lighting.OutdoorAmbient.R,Lighting.OutdoorAmbient.G,Lighting.OutdoorAmbient.B},diffuse=Lighting.EnvironmentDiffuseScale,fog=readFog(),effects={}}
+
+--- claim 2: Server.luau guarded fog write + honest record ---
+ if manifest.fogOff then
+  -- The fog-off batch: the world is captured without fog or haze (the top-down tiles are functional views).
+  -- Lighting.FogEnabled is a legacy member (absent on Studio 0.745): write it only when the engine still offers it, and
+  -- always apply the atmosphere fog-off. The record says exactly which path was taken — never a write it did not make.
+  local method={}
+  local fogEnabledAvailable=pcall(function() return Lighting.FogEnabled end)
+  if fogEnabledAvailable then Lighting.FogEnabled=false;table.insert(method,"fog-enabled") end
+  local atmosphere=Lighting:FindFirstChildOfClass("Atmosphere")
+  if atmosphere then atmosphere.Density=0;atmosphere.Haze=0;table.insert(method,"atmosphere") end
+  inventory.fogOff=true
+  inventory.fogOffDetail={applied=#method>0,fogEnabledAvailable=fogEnabledAvailable,atmosphere=atmosphere~=nil,method=table.concat(method,"+")}
+  Lighting:SetAttribute("AtlasFogOff",Http:JSONEncode(inventory.fogOffDetail))
+ end
+
+--- claim 3: capability-aware contract ---
+   fog=lighting.get('fog',{})
+   require(isinstance(fog,dict),'fog capability record missing')
+   available=fog.get('available')
+   require(isinstance(available,dict) and all(type(available.get(k)) is bool for k in ('start','finish','color','enabled')),'fog capability record incomplete')
+   if available['start']:require(_finite(fog.get('start')),'actual fog start readback missing')
+   if available['finish']:require(_finite(fog.get('finish')) and _finite(fog.get('start')) and fog['finish']>=fog['start'],'actual fog finish readback missing')
+   if available['color']:require(_vector(fog.get('color'),3),'actual fog color readback missing')
+   if available['enabled']:
+    require(type(fog.get('enabled')) is bool,'fog enabled readback missing')
+   else:
+    require(fog.get('enabled') is None and fog.get('legacy') is True,'absent FogEnabled was not recorded as legacy')
+   if data.get('fogOff'):
+    require(lighting.get('atmosphere',{}).get('density')==0,'the fog-off batch ran with an atmosphere density')
+    require(server.get('fogOff') is True,'the server did not report the fog-off state')
+    detail=server.get('fogOffDetail',{})
+    require(detail.get('applied') is True and isinstance(detail.get('method'),str) and detail['method'],'the server did not record how the fog-off was applied')
+    require(detail.get('fogEnabledAvailable') is available['enabled'],'client/server disagree on FogEnabled availability')
+    if available['enabled']:
+     require('fog-enabled' in detail['method'],'the fog-off batch ran with the fog on')
+     require(fog.get('enabled') is False,'the fog-off batch read the fog as on')
+    else:
+     require(detail['method']=='atmosphere','legacy fog-off claims a write it did not make')
+     require('atmosphere' in detail['method'] and isinstance(fog.get('fogOffApplied'),str),'legacy fog-off is not attributed to the atmosphere')
+    for tile in server.get('tiles',[]):
+     require(tile.get('streamingRequested') is True,'a tile was not streamed around')
+    require(r.get('qualifiedCoverage') is True,'a fog-off tile did not qualify')
+   else:
+    require(fog.get('enabled') is not False,'the fog was switched off outside the fog-off batch')
+   for name in ('NightshiftPlayerGrade','NightshiftPlayerBloom'):
