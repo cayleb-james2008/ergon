@@ -35,5 +35,10 @@ Lesson filed: `harness-squared/library/coordination/entries/2026-11-02-a-route-t
 ## 4. Not verified (stated by the checker, carried here)
 No type-check, no tsdown bundle build, no React render of any panel, no `apply()` against a real slot, no check of `--dsw-*` names against the real design pack, and no behaviour under a real SSE facade, AVD or Windows VM. The **rendered result and the integration into the plugin client bundle are out of this rubric** (graded under leg 1 of the plugin finish mission).
 
-## 5. Decision still open
-Whether the order is left `in_progress` (it keeps losing its lease about every 15 minutes, which the Lead survives by reclaiming, and a third loss in a row blocks it until the owner unblocks it) or is cancelled with this record as the reason. Cancelling is an order-identity change and is Nox's call.
+## 5. Closure executed (2 Nov 2026, 16:35 ET, Nox's ruling)
+The order was **cancelled by the owner op `order-cancel` with this record as the reason**, under Nox's ruling "cancel it citing the closure record; Option C is then fully discharged" (events 1862 and 1863, board post 202). **The harness has no `cancelled` state: a cancelled order is stored as `failed`.** Read the stored `failed` on o1 and on its final task t5 as an administrative closure, NOT as a failed deliverable: the recorded `fail_reason` is "cancelled by cayleb-local: Closed administratively under Nox ruling Option C ... See O1-CLOSURE-RECORD.md", and the fresh check met all four rubric criteria. The Lead and the builder lane are idle (not stopped).
+
+## 6. Next-package scope (rulings of 2 Nov: Option B and the provenance item)
+- **Option B:** the roster starts a fresh Checker for a rubric final task, and the verdict route accepts tier-1 final tasks through that Checker; shipped under the liveness gate (a live drive of a rubric-final order end to end, no fakes).
+- **Provenance and coverage must be test-backed (Nox):** fixture provenance and "no fixture shown as real" are proven by a mutation or provenance check the Checker RUNS, never by a maker's claim that a checker repeats. This closes the weak leg named in section 3 (the "one chain" claim, the surviving Live/Rehearsal-gate mutations).
+- The package is built on release/0.3.5.1, and its installer self-check must prove `validate.js` survives before any install is proposed.
