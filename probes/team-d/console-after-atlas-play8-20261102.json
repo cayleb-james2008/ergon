@@ -1,0 +1,32 @@
+{
+ "ts": "2026-11-02T05:46:59Z",
+ "studio": {
+  "id": "ad903909-a8af-4828-b091-f12b67801dba",
+  "name": "usg-desktop.rbxlx"
+ },
+ "console_default": {
+  "isError": false,
+  "text": "ServerScriptService.Nightshift.AtlasServerStarter:1: ServerScriptService.Nightshift.AtlasServer:56: candidate/allowlist mismatch\nServerScriptService.Nightshift.AtlasServer:56 function start\nServerScriptService.Nightshift.AtlasServerStarter:1\nServerScriptService.Nightshift.AtlasServerStarter:1\n\nStack Begin\nScript 'ServerScriptService.Nightshift.AtlasServerStarter', Line 1\nStack End\nCREATIVE_TOOLKIT_STUDIO_CONTROL {\"atUtc\":\"2026-11-02T05:46:17Z\",\"mode\":\"edit\",\"version\":\"creative-toolkit-studio-test/1.0.0\",\"event\":\"ready\"}\nCREATIVE_TOOLKIT_STUDIO_CONTROL {\"atUtc\":\"2026-11-02T05:46:18Z\",\"mode\":\"edit\",\"version\":\"creative-toolkit-studio-test/1.0.0\",\"event\":\"ready\"}\nMode: rotate\nNightshift art: 24 model(s) loaded\nMode: rotate"
+ },
+ "close": {
+  "owned": [
+   {
+    "pid": 881401,
+    "start": 38209315,
+    "ppid": 881396,
+    "ageSeconds": 1.7
+   }
+  ],
+  "foreignNew": [],
+  "signals": [
+   {
+    "pid": 881401,
+    "start": 38209315,
+    "signal": "SIGTERM"
+   }
+  ],
+  "survivors": []
+ },
+ "note": "Read-only MCP get_console_output after atlas Play 20261102T054613Z-atlas-scout (no Play, no input).",
+ "finding": "ServerScriptService.Nightshift.AtlasServer:56: candidate/allowlist mismatch -> the server-side #manifest.views<=24 bound rejects the 27-view zone plan before view-001 (0 captures; no crash)."
+}
