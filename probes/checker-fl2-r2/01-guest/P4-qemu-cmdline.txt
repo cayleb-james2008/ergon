@@ -1,0 +1,14 @@
+=== guest qemu cmdline (read-only) ===
+-boot
+-drive
+-drive
+socket,id=chrtpm,path=/home/cayleb/workspace/harness-build/scratch-tb-l4/rig/win/tpm4/swtpm.sock
+-tpmdev
+emulator,id=tpm0,chardev=chrtpm
+tpm-tis,tpmdev=tpm0
+-vnc
+-monitor
+unix:/home/cayleb/workspace/harness-build/scratch-tb-l4/rig/win/monitor.sock,server,nowait
+user,model=e1000,hostfwd=tcp:127.0.0.1:3389-:3389,hostfwd=tcp:127.0.0.1:2222-:22
+-drive
+file=/home/cayleb/workspace/harness-build/scratch-tb-l4/rig/disks/win11-eval-2.qcow2

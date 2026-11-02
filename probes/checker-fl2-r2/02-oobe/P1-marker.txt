@@ -1,0 +1,17 @@
+=== OOBE marker proof 2026-11-02T03:25:26Z ===
+-rw-r--r-- 1 cayleb cayleb 1128 Nov  1 22:08 /home/cayleb/workspace/harness-build/scratch-tb-l4/rig/logs/marker-8765.log
+--- grep 'GET /marker?step=' ---
+127.0.0.1 - - [01/Nov/2026 22:08:35] "GET /marker?step=start HTTP/1.1" 200 -
+step_start_count=1 step_done_count=0
+--- all GET lines ---
+[01/Nov/2026 21:47:42] "GET /marker HTTP/1.1" 200 -
+[01/Nov/2026 22:08:35] "GET /marker?step=start HTTP/1.1" 200 -
+[Errno 98] Address already in use
+--- attributable marker listener (PID 748996?) ---
+    PID    PPID                  STARTED     ELAPSED CMD
+ 748996    1387 Sun Nov  1 21:47:34 2026       37:51 python3 -m http.server 8765 --bind 0.0.0.0 --directory /tmp/wwwmarker
+748996 python3 -m http.server 8765 --bind 0.0.0.0 --directory /tmp/wwwmarker
+total 4
+drwxr-xr-x     2 cayleb cayleb     60 Nov  1 21:09 .
+drwxrwxrwt 11492 root   root   389580 Nov  1 22:25 ..
+-rw-r--r--     1 cayleb cayleb      3 Nov  1 21:09 marker

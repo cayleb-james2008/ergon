@@ -1,0 +1,7 @@
+=== serial install log content ===
+[=3h[=3hBdsDxe: loading Boot0002 "UEFI QEMU DVD-ROM QM00002 " from PciRoot(0x0)/Pci(0x1,0x1)/Ata(Primary,Slave,0x0)
+BdsDxe: starting Boot0002 "UEFI QEMU DVD-ROM QM00002 " from PciRoot(0x0)/Pci(0x1,0x1)/Ata(Primary,Slave,0x0)
+--- timestamps: install log / run log / marker ---
+/home/cayleb/workspace/harness-build/scratch-tb-l4/rig/logs/win2d-serial-install.log mtime=2026-11-01 21:54:19.648408509 -0500
+/home/cayleb/workspace/harness-build/scratch-tb-l4/rig/logs/win2d-serial-run.log mtime=2026-11-01 22:07:41.958241673 -0500
+/home/cayleb/workspace/harness-build/scratch-tb-l4/rig/logs/marker-8765.log mtime=2026-11-01 22:26:46.283254967 -0500

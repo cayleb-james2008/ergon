@@ -1,0 +1,6 @@
+=== phone proofs spot values (correct key path) ===
+c1-computed-proof.json -> {"url":"http://10.0.2.2:8765/comps/01-mobile-chat.html?c1c4=2","tokensResolved":{"--base":"#05070A","--ambient-cool":"rgba(120, 226, 210, 0.035)","--ambient-acc
+settle-proof.json -> {"animationsAfter2_5s":18,"running":0,"infiniteIterations":0}
+p2-proof.json -> {"url":"http://10.0.2.2:8765/comps/02-mobile-triage-approvals.html?p2=2","fieldBoundary":{"borderToken":null,"contrast":null,"floor":3},"sheet":{"open":"true","
+p3-proof.json -> {"url":"http://10.0.2.2:8765/comps/07-states.html?p3=2","fieldBoundary":{"token":"rgba(206, 228, 255, 0.46)","contrast":3.3,"floor":3,"pass":true},"emptyState":
+devtools-probe-pre-fix.json -> {"title":"01 · Mobile Chat — Ergon Lumen v2 design comp","url":"http://10.0.2.2:8765/comps/01-mobile-chat.html","tokens":{"surface1":"rgba(198, 222, 255, 0.04)"

@@ -1,0 +1,22 @@
+=== intermediate install-size claim check ===
+(no log line records the intermediate 13,391,560,704 B size)
+total 264
+drwxr-xr-x 1 cayleb cayleb   1602 Nov  1 22:01 .
+drwxr-xr-x 1 cayleb cayleb    174 Nov  1 11:56 ..
+-rw-r--r-- 1 cayleb cayleb   1652 Nov  1 10:32 android-install-20261101T153203Z.log
+-rw-r--r-- 1 cayleb cayleb 137241 Nov  1 10:32 android-licences-accepted.log
+-rw-r--r-- 1 cayleb cayleb      1 Nov  1 10:32 android-packages.log
+-rw-r--r-- 1 cayleb cayleb   8595 Nov  1 10:59 emulator-first.log
+-rw-r--r-- 1 cayleb cayleb  10257 Nov  1 12:40 emulator-soak.log
+-rw-r--r-- 1 cayleb cayleb   1128 Nov  1 22:08 marker-8765.log
+-rw------- 1 cayleb cayleb   1385 Nov  1 11:41 swtpm-diag.log
+-rw------- 1 cayleb cayleb      0 Nov  1 11:02 swtpm-fg.log
+-rw------- 1 cayleb cayleb     56 Nov  1 11:00 swtpm.log
+-rw-r--r-- 1 cayleb cayleb      0 Nov  1 20:38 win11-attempt10.log
+-rw-r--r-- 1 cayleb cayleb      0 Nov  1 20:43 win11-attempt11.log
+-rw-r--r-- 1 cayleb cayleb      0 Nov  1 20:47 win11-attempt12.log
+-rw-r--r-- 1 cayleb cayleb      0 Nov  1 20:50 win11-attempt13.log
+-rw-r--r-- 1 cayleb cayleb    224 Nov  1 11:50 win11-install2.log
+-rw-r--r-- 1 cayleb cayleb     71 Nov  1 11:58 win11-install3.log
+-rw-r--r-- 1 cayleb cayleb    224 Nov  1 11:58 win11-install4.log
+-rw-r--r-- 1 cayleb cayleb     71 Nov  1 12:05 win11-install5.log

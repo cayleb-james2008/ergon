@@ -1,0 +1,7 @@
+=== RDP protocol handshake reproduction 2026-11-02T03:26:36Z ===
+ 03 00 00 13 0e d0 00 00 12 34 00 02 2f 08 00 02
+ 00 00 00
+rdp_pipeline_rc=0
+--- decode: TPKT version/len + X.224 CC 0xd0 ---
+ 03 00 00 13 0e d0 00 00 12 34 00 02 2f 08 00 02
+ 00 00 00

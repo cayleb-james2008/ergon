@@ -1,0 +1,15 @@
+=== SSH probes 2026-11-02T03:26:36Z ===
+--- key presence/mode (no content) ---
+-rw------- 1 cayleb cayleb 411 Nov  1 21:13 /home/cayleb/workspace/harness-build/scratch-tb-l4/rig/win/agent_key
+--- socat banner probe (3s) ---
+socat_rc=0
+banner_bytes=0
+banner_content=
+--- ssh client probe (5s connect timeout, batch mode) ---
+ssh_rc=255
+--- ssh stdout ---
+--- ssh stderr (last 5) ---
+Connection timed out during banner exchange
+Connection to 127.0.0.1 port 2222 timed out
+--- port 2222 listening (qemu hostfwd) ---
+LISTEN 0      1                                   127.0.0.1:2222       0.0.0.0:*    users:(("qemu-system-x86",pid=757632,fd=17))

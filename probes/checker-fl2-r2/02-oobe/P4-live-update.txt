@@ -1,0 +1,8 @@
+=== live-update evidence: step=done + SSH state ===
+127.0.0.1 - - [01/Nov/2026 22:08:35] "GET /marker?step=start HTTP/1.1" 200 -
+127.0.0.1 - - [01/Nov/2026 22:26:46] "GET /marker?step=done HTTP/1.1" 200 -
+first_marker_read_03:25:26Z: step_done_count=0 ; second_read_03:30:15Z: step_done_count=1
+ssh_banner_bytes=0 ssh_rc_timeout (channel still not up despite step=done)
+=== board copy of marker log vs rig (Team B snapshot 22:20) ===
+127.0.0.1 - - [01/Nov/2026 22:08:35] "GET /marker?step=start HTTP/1.1" 200 -
+/home/cayleb/Documents/deepseek-harness/default-workspace/board/probes/team-b-windows-vm/marker-8765.log mtime=2026-11-01 22:20:40.442846074 -0500

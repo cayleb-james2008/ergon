@@ -1,0 +1,3 @@
+=== guest process 757632 ===
+    PID    PPID                  STARTED     ELAPSED   RSS %CPU CMD
+ 757632  757629 Sun Nov  1 22:01:24 2026       24:01 10555116 399 /usr/bin/qemu-system-x86_64 -machine pc,accel=kvm -boot order=c,menu=off -cpu host -smp 8 -m 10240 -drive if=pflash,format=raw,readonl

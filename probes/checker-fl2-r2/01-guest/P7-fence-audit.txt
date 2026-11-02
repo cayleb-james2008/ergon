@@ -1,0 +1,9 @@
+=== credential/fence audit of Team B evidence ===
+--- password fields in board copy of autounattend-v2.xml (values not printed) ---
+password_element_count=2
+--- rig answer file (not board) ---
+--- private key in board evidence? ---
+-rw-r--r-- 1 cayleb cayleb  102 Nov  1 21:38 agent_key.pub
+--- image files in Team B evidence ---
+image_files=0
+--- sudo/root in Team B evidence ---

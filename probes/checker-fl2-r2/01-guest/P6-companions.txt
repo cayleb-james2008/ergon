@@ -1,0 +1,28 @@
+=== Windows companion artefacts / PACKAGE §5 absence check ===
+--- PACKAGE.md paths searched ---
+ls: cannot access '/home/cayleb/Documents/Codex/2026-10-23/task/ergon-phase0/repo/docs/acceptance/demo-company/PACKAGE.md': No such file or directory
+ls: cannot access '/home/cayleb/Documents/deepseek-harness/default-workspace/docs/acceptance/demo-company/PACKAGE.md': No such file or directory
+--- find PACKAGE.md under docs/acceptance ---
+/home/cayleb/workspace/harness-build/a-l5-seat/docs/acceptance/demo-company/PACKAGE.md
+/home/cayleb/workspace/harness-build/a-l5-foldin/docs/acceptance/demo-company/PACKAGE.md
+/home/cayleb/workspace/harness-build/a-l5-pack/docs/acceptance/demo-company/PACKAGE.md
+/home/cayleb/workspace/harness-build/a-l5-limits/docs/acceptance/demo-company/PACKAGE.md
+/home/cayleb/workspace/harness-build/ergon-strike/docs/acceptance/demo-company/PACKAGE.md
+--- companion artefact search (Get Help / ReviewDesk / WPF setup) ---
+/home/cayleb/Documents/Codex/2026-10-23/task/ergon-phase0/repo/BUILD-SCOPE.md
+/home/cayleb/Documents/Codex/2026-10-23/task/ergon-phase0/repo/CLAUDE-HANDOFF.md
+/home/cayleb/Documents/Codex/2026-10-23/task/ergon-phase0/repo/DESIGN.md
+/home/cayleb/Documents/Codex/2026-10-23/task/ergon-phase0/repo/README.md
+/home/cayleb/Documents/Codex/2026-10-23/task/ergon-phase0/repo/START_HERE.md
+/home/cayleb/Documents/Codex/2026-10-23/task/ergon-phase0/repo/SUITE-TEMPLATE.md
+/home/cayleb/Documents/Codex/2026-10-23/task/ergon-phase0/repo/docs/DEVELOPMENT-AND-TESTING.md
+/home/cayleb/Documents/Codex/2026-10-23/task/ergon-phase0/repo/docs/DOCUMENTS.md
+/home/cayleb/Documents/Codex/2026-10-23/task/ergon-phase0/repo/scripts/compile-gethelp.mjs
+/home/cayleb/Documents/Codex/2026-10-23/task/ergon-phase0/repo/scripts/compile-reviewdesk.mjs
+/home/cayleb/Documents/Codex/2026-10-23/task/ergon-phase0/repo/support/app/GetHelp.cs
+/home/cayleb/Documents/Codex/2026-10-23/task/ergon-phase0/repo/support/app/ReviewDesk.cs
+/home/cayleb/Documents/Codex/2026-10-23/task/ergon-phase0/repo/support/app/ReviewDeskCollections.cs
+--- corroborating board records: companions package-blocked ---
+71:  (companions, stand-in/pending), phone/voice surface (PACKAGE-PENDING), warehouse board + Supabase wiring (work-PC
+79:| B2 | **C1–C6 freeze + client-shape arbitration** — recorded as PENDING; nothing may be built | Nox confirms the freeze set (C1 freeze alpha.2 + delta review; C2 pin alpha.2; C3 slots+locale, no plugin-manager; C5 Linux bundle + Windows companions; C6 private tarball) and rules ADD-only `main[key]` W1 view vs reshape. Until then Job 03 stays prep/assembly. |
+61:- Not-in-package boundary is named (8 rows): absent DSH-era package, C1–C6 pending, Windows companions, phone/voice PACKAGE-PENDING, warehouse board/Supabase on the work-PC window, seven done-bar lines HOLD. `package.json` check confirms the OpenClaw baseline.

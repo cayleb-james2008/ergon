@@ -1,0 +1,49 @@
+=== phone evidence unchanged since r1 (mtimes + key content) ===
+2026-11-01 20:27:11.4928562830 adb-boot-state.txt
+2026-11-01 20:27:16.9737122050 browsers.txt
+2026-11-01 20:27:19.2656519560 home.xml
+2026-11-01 20:27:48.6918784390 chrome.xml
+2026-11-01 20:28:03.5120115000 chrome2.xml
+2026-11-01 20:28:13.5298057340 chrome3.xml
+2026-11-01 20:29:07.2299378730 page-before.xml
+2026-11-01 20:29:11.2097094880 page-after-approval.xml
+2026-11-01 20:29:15.1896048840 page-after-tab.xml
+2026-11-01 20:30:03.2792242300 probe-expr.js
+2026-11-01 20:30:06.4424102300 probe.py
+2026-11-01 20:30:06.5042562140 devtools-probe-pre-fix.json
+2026-11-01 20:30:56.8739186500 settings-before.xml
+2026-11-01 20:31:01.8667825510 u.xml
+2026-11-01 20:31:01.8677825230 settings-after.xml
+2026-11-01 20:31:12.3294974860 windows-absence.txt
+2026-11-01 20:32:35.0019871320 c1-proof-expr.js
+2026-11-01 20:32:39.0791406540 c1-computed-proof.json
+2026-11-01 20:32:57.1948766320 settle-expr.js
+2026-11-01 20:33:02.7844985520 settle-proof.json
+2026-11-01 20:33:21.1395608070 p2-expr.js
+2026-11-01 20:33:21.1397151610 p3-expr.js
+2026-11-01 20:33:25.2598904670 p2-proof.json
+2026-11-01 20:33:25.3498880330 httpd.log
+2026-11-01 20:33:29.3757791810 p3-proof.json
+2026-11-01 20:33:48.4292642880 emulator.log
+2026-11-01 20:33:59.1269753960 teardown.txt
+files_modified_after_2026-11-02T02:00Z=0
+--- spot content: adb-boot-state ---
+=== timestamp: 2026-11-02T01:27:11Z
+=== adb devices:
+List of devices attached
+emulator-5554          device product:sdk_gphone64_x86_64 model:sdk_gphone64_x86_64 device:emu64xa transport_id:4
+
+=== boot_completed:
+1
+=== release/sdk:
+15
+35
+=== wm size:
+Physical size: 1080x2400
+--- spot content: proof values ---
+--- sha256 of the 4 proofs + boot state ---
+f04acb9206cbde710d951011cff669ce311e3c5af9f56f868e9ea21a832cf9e4  /home/cayleb/Documents/deepseek-harness/default-workspace/board/probes/team-a-vm-e2e/adb-boot-state.txt
+f9209a67b09a5da245616885f2f78c8d67e0f1670607e2072ebf537ae1085c64  /home/cayleb/Documents/deepseek-harness/default-workspace/board/probes/team-a-vm-e2e/c1-computed-proof.json
+6fe13eceb9063ea0cece8c094812e4851ef8a541ad01c506780954740b97c53f  /home/cayleb/Documents/deepseek-harness/default-workspace/board/probes/team-a-vm-e2e/settle-proof.json
+3598b92312dc54629478ffca085d9b4c32f0740ba96fbd64d30a1408ceefd8ca  /home/cayleb/Documents/deepseek-harness/default-workspace/board/probes/team-a-vm-e2e/p2-proof.json
+98214c264eb9f7acdddb733013a7f4f62a5640e0d6e944ef40b5075622d2c001  /home/cayleb/Documents/deepseek-harness/default-workspace/board/probes/team-a-vm-e2e/p3-proof.json

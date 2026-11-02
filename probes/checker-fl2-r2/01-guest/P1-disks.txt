@@ -1,0 +1,6 @@
+=== disks 2026-11-02T03:25:26Z ===
+/home/cayleb/workspace/harness-build/scratch-tb-l4/rig/disks/win11-eval-2.qcow2 size=20153368576 mtime=2026-11-01 22:25:26.470349954 -0500
+/home/cayleb/workspace/harness-build/scratch-tb-l4/rig/disks/win11-eval.qcow2 size=17083138048 mtime=2026-11-01 21:13:13.105506039 -0500
+--- qemu-img info disk2 (read-only) ---
+qemu-img: Could not open '/home/cayleb/workspace/harness-build/scratch-tb-l4/rig/disks/win11-eval-2.qcow2': Failed to get shared "write" lock
+Is another process using the image [/home/cayleb/workspace/harness-build/scratch-tb-l4/rig/disks/win11-eval-2.qcow2]?

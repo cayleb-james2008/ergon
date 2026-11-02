@@ -1,0 +1,6 @@
+=== listeners 5902/3389/2222/8765 + monitor ===
+LISTEN 0      1                                   127.0.0.1:5902       0.0.0.0:*    users:(("qemu-system-x86",pid=757632,fd=98))
+LISTEN 0      1                                   127.0.0.1:3389       0.0.0.0:*    users:(("qemu-system-x86",pid=757632,fd=19))
+LISTEN 0      1                                   127.0.0.1:2222       0.0.0.0:*    users:(("qemu-system-x86",pid=757632,fd=17))
+LISTEN 0      5                                     0.0.0.0:8765       0.0.0.0:*    users:(("python3",pid=748996,fd=3))
+srwxr-xr-x 1 cayleb cayleb 0 Nov  1 22:01 /home/cayleb/workspace/harness-build/scratch-tb-l4/rig/win/monitor.sock

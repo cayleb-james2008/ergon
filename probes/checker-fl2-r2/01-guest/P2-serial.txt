@@ -1,0 +1,12 @@
+=== serial run log: boot-manager loads ===
+-rw-r--r-- 1 cayleb cayleb  365 Nov  1 21:54 /home/cayleb/workspace/harness-build/scratch-tb-l4/rig/logs/win2d-serial-install.log
+-rw-r--r-- 1 cayleb cayleb 1329 Nov  1 22:07 /home/cayleb/workspace/harness-build/scratch-tb-l4/rig/logs/win2d-serial-run.log
+loading_Boot000B_count=3
+starting_Boot000B_count=3
+--- boot lines ---
+BdsDxe: loading Boot000B "Windows Boot Manager" from HD(1,GPT,B84A8E18-1290-4A16-831E-447FB7E03C1E,0x800,0x96000)/\EFI\Microsoft\Boot\bootmgfw.efi
+BdsDxe: loading Boot000B "Windows Boot Manager" from HD(1,GPT,B84A8E18-1290-4A16-831E-447FB7E03C1E,0x800,0x96000)/\EFI\Microsoft\Boot\bootmgfw.efi
+BdsDxe: loading Boot000B "Windows Boot Manager" from HD(1,GPT,B84A8E18-1290-4A16-831E-447FB7E03C1E,0x800,0x96000)/\EFI\Microsoft\Boot\bootmgfw.efi
+BdsDxe: starting Boot000B "Windows Boot Manager" from HD(1,GPT,B84A8E18-1290-4A16-831E-447FB7E03C1E,0x800,0x96000)/\EFI\Microsoft\Boot\bootmgfw.efi
+BdsDxe: starting Boot000B "Windows Boot Manager" from HD(1,GPT,B84A8E18-1290-4A16-831E-447FB7E03C1E,0x800,0x96000)/\EFI\Microsoft\Boot\bootmgfw.efi
+BdsDxe: starting Boot000B "Windows Boot Manager" from HD(1,GPT,B84A8E18-1290-4A16-831E-447FB7E03C1E,0x800,0x96000)/\EFI\Microsoft\Boot\bootmgfw.efi

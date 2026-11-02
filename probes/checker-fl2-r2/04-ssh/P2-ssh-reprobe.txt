@@ -1,0 +1,5 @@
+=== SSH re-probe now ===
+socat_rc=0 banner_bytes=0
+ssh_rc=255
+Connection timed out during banner exchange
+Connection to 127.0.0.1 port 2222 timed out

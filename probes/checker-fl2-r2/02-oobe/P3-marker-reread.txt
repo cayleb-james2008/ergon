@@ -1,0 +1,11 @@
+=== marker log re-read (mtime changed during verification) 2026-11-02T03:30:15Z ===
+-rw-r--r-- 1 cayleb cayleb 1128 Nov  1 22:26 /home/cayleb/workspace/harness-build/scratch-tb-l4/rig/logs/marker-8765.log
+[01/Nov/2026 21:47:42] "GET /marker HTTP/1.1" 200 -
+[01/Nov/2026 22:08:35] "GET /marker?step=start HTTP/1.1" 200 -
+[01/Nov/2026 22:26:46] "GET /marker?step=done HTTP/1.1" 200 -
+[Errno 98] Address already in use
+step_start=1 step_done=1
+--- last 3 raw lines ---
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+OSError: [Errno 98] Address already in use

@@ -1,0 +1,8 @@
+=== current guest state after my probes (unchanged) ===
+    PID     ELAPSED   RSS %CPU
+ 757632       28:01 10548568 376
+/home/cayleb/workspace/harness-build/scratch-tb-l4/rig/disks/win11-eval-2.qcow2 size=20902903808 mtime=2026-11-01 22:29:23.834116495 -0500
+LISTEN 0      1                                   127.0.0.1:5902       0.0.0.0:*    users:(("qemu-system-x86",pid=757632,fd=98))
+LISTEN 0      1                                   127.0.0.1:3389       0.0.0.0:*    users:(("qemu-system-x86",pid=757632,fd=19))
+LISTEN 0      1                                   127.0.0.1:2222       0.0.0.0:*    users:(("qemu-system-x86",pid=757632,fd=17))
+LISTEN 0      5                                     0.0.0.0:8765       0.0.0.0:*    users:(("python3",pid=748996,fd=3))
