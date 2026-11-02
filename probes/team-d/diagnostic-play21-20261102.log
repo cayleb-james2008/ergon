@@ -1,0 +1,70 @@
+=== TEAM D DIAGNOSTIC PLAY 21 — abort-contact B drive-assist Play (Lead GO 2026-11-02T16:44Z) ===
+time 2026-11-02T21:44:33Z
+repo b73f6cdeb4eefa95782d996df2ee3264d09743c2 tracked_modified=0
+
+--- 1a. state BEFORE the cycle ---
+ 995852   45398 /home/cayleb/.var/app/org.vinegarhq.Vinegar/data/vinegar/versions/version-
+plays record: {  "pid": 995852,  "start": 39414898,  "plays": 3,  "at": 1793633830.4979243}
+host: full avg10=5.48 avg60=2.77 avg300=1.08 total=1067956783 | 15.06 7.84 6.56 6/5211 3951997
+
+--- sealed BEFORE ---
+84324d4342667dd163ab8e64adacbf8ef44ab786aeda5c7ab1403e76d52ef6ce  build/release.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  build/test.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  /home/cayleb/.var/app/org.vinegarhq.Vinegar/data/usg/usg-desktop.rbxlx
+
+--- 1b. studiocycle cycle 2026-11-02T21:44:33Z ---
+{"action": "close", "result": "ok", "method": "killed-after-dialog", "dialog_seen": true, "discarded_autosaves": [], "place_sha256": "c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98", "sealed_unchanged": true}
+{"action": "open", "result": "ok", "place_sha256_before": "c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98", "place_sha256_after": "c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98", "fit": "ok", "window": {"address": "0x558c7fa23f00", "class": "steam_proton", "title": "Z:\\home\\cayleb\\.var\\app\\org.vinegarhq.Vinegar\\data\\usg\\usg-desktop.rbxlx - Roblox Studio", "at": [193, 234], "size": [2200, 1000], "floating": true, "fullscreen": 0, "pid": 3953752}}
+cycle_rc=0
+
+--- 1c. fresh opening verification 2026-11-02T21:44:54Z ---
+3953752      10 /home/cayleb/.var/app/org.vinegarhq.Vinegar/data/vinegar/versions/version-
+{"address": "0x558c7fa23f00", "class": "steam_proton", "title": "Z:\\home\\cayleb\\.var\\app\\org.vinegarhq.Vinegar\\data\\usg\\usg-desktop.rbxlx - Roblox Studio", "at": [872, 38], "size": [841, 1390], "floating": true, "fullscreen": 0, "pid": 3953752}
+plays record (old opening): {  "pid": 995852,  "start": 39414898,  "plays": 3,  "at": 1793633830.4979243}
+
+--- sealed AFTER cycle ---
+84324d4342667dd163ab8e64adacbf8ef44ab786aeda5c7ab1403e76d52ef6ce  build/release.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  build/test.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  /home/cayleb/.var/app/org.vinegarhq.Vinegar/data/usg/usg-desktop.rbxlx
+
+--- preflight ---
+preflight_rc=2
+
+--- 2. preflight refused (rc=2): host not quiet (io full avg10 14.54 > 5.0); no Play until quiet ---
+host pressure now: /proc/pressure/io:some avg10=7.73 avg60=18.94 avg300=8.38 total=2058477364 /proc/pressure/io:full avg10=6.53 avg60=16.46 avg300=7.40 total=1863824672 /proc/pressure/memory:some avg10=0.84 avg60=2.26 avg300=1.14 total=1086156651 /proc/pressure/memory:full avg10=0.78 avg60=2.18 avg300=1.11 total=1068421195  | loadavg 13.91 8.34 6.77 4/5034 3955695
+top io processes (if readable):
+    PID COMMAND         COMMAND
+3953752 Main            /home/cayleb/.var/app/org.vinegarhq.Vinegar/data/vinegar/versions/version-7062aec9dbe74b14/Roblo
+3955679 bash            bash -c cd ~/Work/projects/untitled-street-game && LOG=/home/cayleb/Documents/deepseek-harness/d
+3895839 claude-desktop  /home/cayleb/.local/opt/claude-desktop/4.4212.0/claude-desktop --type=gpu-process --ozone-platfo
+ 839465 localsearch-3   /usr/lib/localsearch-3
+3480406 electron        /home/cayleb/.local/opt/deepseek-harness-official/node_modules/.pnpm/electron@44.7.0_supports-co
+
+--- refit window + sealed BEFORE ---
+84324d4342667dd163ab8e64adacbf8ef44ab786aeda5c7ab1403e76d52ef6ce  build/release.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  build/test.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  /home/cayleb/.var/app/org.vinegarhq.Vinegar/data/usg/usg-desktop.rbxlx
+--- 3. THE ONE PLAY: run traffic:abort-contact start 2026-11-02T21:46:02Z ---
+run_rc=1
+
+--- 4. post-Play state 2026-11-02T21:46:39Z ---
+Studio: 3953752     114 /home/cayleb/.var/app/org.vinegarhq.Vinegar/
+plays: {  "pid": 3953752,  "start": 43955855,  "plays": 1,  "at": 1793655966.2590375}
+
+--- verify-clean ---
+  },
+  "clean": true
+}
+
+--- sealed AFTER ---
+84324d4342667dd163ab8e64adacbf8ef44ab786aeda5c7ab1403e76d52ef6ce  build/release.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  build/test.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  /home/cayleb/.var/app/org.vinegarhq.Vinegar/data/usg/usg-desktop.rbxlx
+
+=== PLAY 21 RESULT SUMMARY 2026-11-02T21:48:22Z ===
+fresh opening: studiocycle cycle -> pid 3953752 window 0x558c7fa23f00 2200x1000; sealed place before==after c6651793; preflight first refused (host io full avg10 14.54 > 5.0, rc 2), quiet at 2.36, preflight rc0 Edit 0/3; refit 2200x1000
+Play: traffic:abort-contact 21:46:02Z->21:46:30Z, exit=1; reason 'contact leg never reached within 12 s' (leg at abortObservedAt=3.77995, guard t=15.780); touches=0 contacts=0; no crash; sealed unchanged; plays 1/3
+B AUTHORITY PROVEN LIVE: assistMaxForce 2642.128 = 40*66.053 mass; assistVelocity 60 = closing clamp; VectorForce zeroed during leg (egoForce 0.00); contactLegAssist true / maxAccel 40; contactLegAssistReleased true in cleanup; no CFrame/velocity writes
+BUT NO CLOSING: gap 72.1 -> 167.7 studs; ego 60.00 vs proxy 52.17; gap growth 7.9 studs/s == speed differential -> geometry/travel-direction problem (pursuit target is behind the probe in S convention), not authority; guards honest (12 s tripped, radius not)
+DECISION per ruling: STOP, honest fallback filed (board/probes/team-d/abort-contact-b-authority-result-20261102.md) - options need Nox ruling (leg-start/target-side geometry first; scenario reconsideration second; no window/clamp changes proposed); no code changed
+sealed AFTER: 84324d43.../c6651793... unchanged; B1 Play-20 record/hashes/diagnostics/Wine-dump chain intact; Studio alive pid 3953752 Edit 1/3 (2 reserved)
