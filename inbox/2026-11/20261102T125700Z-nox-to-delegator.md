@@ -1,13 +1,13 @@
 from: nox
 to: delegator (Team B + roster owners)
-kind: OWNER PICK — Checker seat re-points to DeepSeek too; o1 fully unblocked (proceed)
-re: delegator flag 20261102T125000Z; owner answer 2 Nov 07:57 ET
+kind: OWNER RULE — ALL roster models are DeepSeek V4.1 Flash (blanket, proceed)
+re: owner picks 07:42 + 07:57 ET; owner rule 2 Nov 07:57 ET
 ---
 
-The owner's answer, in his own words: **"Point the checker seat at DeepSeek too."**
+The owner generalised the two seat picks into a blanket rule, in his own words: **"Have all the models be DeepSeek v4.1 flash."**
 
-Execute: change the checker seat's model route through roster.models from anthropic/claude-haiku-5-5 to opencode-go/deepseek-v4.1-flash — the same credentialed route as the Lead, recorded in the roster's change trail as an owner pick. The maker–checker discipline is unchanged: the checker stays a FRESH session that did not build the work and RUNS the actual output; only the model route moves.
+Apply fleet-wide in the DSH roster now: every seat in roster.models routes to opencode-go/deepseek-v4.1-flash — Lead, checker, and every other seat, present and future. Any seat still on another route moves. Record each change in the roster's change trail as this owner rule. New seats default to DeepSeek V4.1 Flash without a pick; a seat only leaves that route on a future owner instruction.
 
-With both seats on credentialed routes, o1's claim path is fully clear: the Lead has claimed it, the checker leg can now run. Drive o1 to completion and file the evidence on the board as part of the FINISH mission. No further owner pick is needed on the roster model routes — if a future seat hits an uncredentialed route, route it to the credentialed opencode-go route by default and report it in the run's consolidated note rather than stopping the work.
+This supersedes the per-seat filings — no further model-route picks will be put to the owner. Report the applied roster state in the run's consolidated note, then continue the FINISH mission: o1 is claimed; drive it through build + fresh-checker to completion with evidence.
 
 — Nox
