@@ -1,0 +1,15 @@
+== v1 (board/probes/team-a-design-comps) vs v2 comparison, 2026-11-01T20:11:34-05:00 ==
+--- v1 56 DIP employee-target evidence (class=employee) ---
+probes/team-a-design-comps/comps/01-mobile-chat.html:40:          <div class="turn"><button class="secondary employee">Use November card</button></div>
+probes/team-a-design-comps/comps/06-character-sheet.html:85:      <div class="measure" style="width: 180px; height: 96px;"><button class="secondary employee" aria-label="56 DIP employee target">Chat with Marlow</button><span>56 DIP employee</span></div>
+--- v2 same grep (no matches) ---
+--- v1 input border token (fieldLine, 3.24:1) ---
+probes/team-a-design-comps/tokens.css:3::root{color-scheme:dark;--base:#0B0F14;--panel:#111821;--raise:#1A2330;--hover:#212C3B;--line:#243041;--line-strong:#2F3D52;--field-line:#5A6A80;--ink:#E6EDF3;--muted:#8B98A9;--subtle:#5E6B7C;--accent:#7C93FF;--accent-hover:#93A6FF;--accent-press:#6880F0;--on-accent:#0B0F14;--ok:#5BC98C;--warn:#E8B65C;--danger:#F07A7A;--close-hover:#C42B1C;--close-press:#A1241A;--accent-wash:rgba(124,147,255,0.12);--ok-wash:rgba(91,201,140,0.12);--warn-wash:rgba(232,182,92,0.12);--danger-wash:rgba(240,122,122,0.12);--body:14px;--heading:22px;--caption:12.5px;--ember-body:16px;--ember-heading:24px;--ember-caption:14px;--radius:8px;--radius-sm:6px;--radius-pill:999px;--target:44px;--target-employee:56px;--space-1:8px;--space-2:12px;--space-3:16px;--space-4:24px;--space-5:32px;--ui:"Segoe UI",system-ui,sans-serif;--mono:"Consolas",ui-monospace,monospace}
+probes/team-a-design-comps/comp-kit.css:32:input[type="text"] { font-family: var(--ui); font-size: var(--ember-body); color: var(--ink); background: var(--base); border: 1px solid var(--field-line); border-radius: var(--radius-sm); min-height: var(--target); padding: 0 var(--space-2); width: 100%; }
+probes/team-a-design-comps/comp-kit.css:46:.phone .composer { margin: 0 var(--space-3) var(--space-2); border: 1px solid var(--field-line); border-radius: var(--radius); background: var(--panel); padding: 8px; display: flex; gap: 8px; align-items: center; }
+--- v2 field-line (no matches) ---
+--- v1 states page (empty/loading/error/offline; has an EMPTY state) ---
+6:<title>07 · Empty / loading / error / offline — Ergon design comp</title>
+23:    <section class="card state-card" aria-label="Mobile empty state"><span class="face">MOBILE · EMPTY</span><div class="body"><h3>No tasks yet</h3><p class="caption">Ask Marlow for something — a sheet, a booking, a question about the day.</p></div><div><button class="primary">New task</button></div></section>
+--- v2 states page (no empty state) ---
+--- v2 empty-state search across all pages ---

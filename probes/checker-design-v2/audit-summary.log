@@ -1,0 +1,52 @@
+== independent audit summary (audit.py / audit.json) ==
+files: 17 | total lines: 2030
+
+-- structure/labels (all 9 pages) --
+comps/01-mobile-chat.html: label=True unclosed=[] errors=0 dup_ids=[] missing_aria_controls=[] buttons=6
+comps/02-mobile-triage-approvals.html: label=True unclosed=[] errors=0 dup_ids=[] missing_aria_controls=[] buttons=7
+comps/03-mobile-tasks.html: label=True unclosed=[] errors=0 dup_ids=[] missing_aria_controls=[] buttons=6
+comps/04-mobile-make.html: label=True unclosed=[] errors=0 dup_ids=[] missing_aria_controls=[] buttons=7
+comps/05-desktop-workspace.html: label=True unclosed=[] errors=0 dup_ids=[] missing_aria_controls=[] buttons=9
+comps/06-character-sheet.html: label=True unclosed=[] errors=0 dup_ids=[] missing_aria_controls=[] buttons=7
+comps/07-states.html: label=True unclosed=[] errors=0 dup_ids=[] missing_aria_controls=[] buttons=19
+index.html: label=True unclosed=[] errors=0 dup_ids=[] missing_aria_controls=[] buttons=2
+motion-storyboard.html: label=True unclosed=[] errors=0 dup_ids=[] missing_aria_controls=[] buttons=4
+
+-- local refs -- count 35 missing []
+
+-- target literals not using --target tokens --
+check-comps.mjs:75: min-height \s*var\(--target\)|min-height:\s*var\(--target-employee\)/.test(kit), 'comp-kit.css: target floor missing')
+comp-kit.css:9: min-height 100vh
+comp-kit.css:110: min-height 24px
+comp-kit.css:153: min-height 58px
+comps/05-desktop-workspace.html:80: min-height 36px
+comps/06-character-sheet.html:29: min-height 36px
+comps/06-character-sheet.html:29: min-height 36px
+comps/06-character-sheet.html:29: min-height 36px
+comps/06-character-sheet.html:39: min-height 36px
+comps/06-character-sheet.html:39: min-height 36px
+comps/06-character-sheet.html:39: min-height 36px
+motion-storyboard.html:11: min-height 126px
+
+-- employee class usage (class=...employee) --
+NONE in v2 (v1 used class=employee in comps 01 and 06)
+
+-- states coverage per page (regex presence) --
+comps/01-mobile-chat.html: {'hover': False, 'focus': True, 'active|pressed': False, 'disabled': False, 'busy|loading': False, 'error': False, 'empty': False}
+comps/02-mobile-triage-approvals.html: {'hover': False, 'focus': False, 'active|pressed': False, 'disabled': False, 'busy|loading': False, 'error': False, 'empty': False}
+comps/03-mobile-tasks.html: {'hover': True, 'focus': False, 'active|pressed': False, 'disabled': True, 'busy|loading': False, 'error': False, 'empty': False}
+comps/04-mobile-make.html: {'hover': False, 'focus': False, 'active|pressed': False, 'disabled': True, 'busy|loading': False, 'error': False, 'empty': True}
+comps/05-desktop-workspace.html: {'hover': False, 'focus': True, 'active|pressed': False, 'disabled': False, 'busy|loading': False, 'error': False, 'empty': False}
+comps/06-character-sheet.html: {'hover': False, 'focus': False, 'active|pressed': True, 'disabled': False, 'busy|loading': False, 'error': False, 'empty': False}
+comps/07-states.html: {'hover': True, 'focus': True, 'active|pressed': True, 'disabled': True, 'busy|loading': True, 'error': True, 'empty': False}
+index.html: {'hover': True, 'focus': True, 'active|pressed': True, 'disabled': True, 'busy|loading': True, 'error': True, 'empty': False}
+motion-storyboard.html: {'hover': False, 'focus': True, 'active|pressed': True, 'disabled': False, 'busy|loading': False, 'error': False, 'empty': False}
+
+-- colour literals outside tokens.json/tokens.css --
+PACK-CHANGE-PROPOSAL.md: [['white', 3], ['#050606', 1], ['#0a0a0a', 1], ['#0e0e0e', 1], ['#141415', 1], ['#191a1a', 1], ['#2c2d2e', 1], ['#ffffff0f', 1], ['#ffffff1a', 1]]
+check-comps.mjs: [['rgba(', 11]]
+comp-kit.css: [['transparent', 9], ['currentColor', 1]]
+
+-- external refs (raw hits; SVG XML namespace is the only page hit) --
+check-comps.mjs: ["text = read(file).replaceAll('http://www.w3.org/2000/svg', '');   c", 'with no network)`);   check(!/@import/i.test(text), `${file}: conta', 'est(text), `${file}: contains @import`);   check(!/url\\(\\s*[\'"]?(ht', 's a remote url()`);   check(!/<img\\b/i.test(text), `${file}: con', '(text), `${file}: contains an <img> asset (no image dependency)`', ';   check(!/fonts\\.googleapis|@font-face/i.test(text), `${file}: conta']
+comp-motion.js: ["      }     }     const ns = 'http://www.w3.org/2000/svg';     cons"]

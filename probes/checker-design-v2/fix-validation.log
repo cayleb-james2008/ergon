@@ -1,0 +1,17 @@
+== smallest-fix validation, 2026-11-01T20:11:13-05:00 ==
+Fix tested in a throwaway copy /tmp/checker-design-v2/fix (frozen set untouched):
+  build-tokens.mjs kebab(): add .replace(/([a-z])([0-9])/g, '$1-$2') so surface1 -> surface-1 / light1 -> light-1
+patched kebab()
+$ node build-tokens.mjs
+tokens.css written from tokens.json
+--- tokens.css surface lines ---
+9:  --surface-1: rgba(198, 222, 255, 0.04);
+10:  --surface-2: rgba(198, 222, 255, 0.07);
+11:  --surface-3: rgba(198, 222, 255, 0.10);
+12:  --light-1: rgba(198, 222, 255, 0.14);
+$ node check-comps.mjs
+V2 COMPS CHECK: PASS
+  pages: 9 labelled comp pages (7 comps + index + motion storyboard)
+  self-containment: 0 external refs, 0 remote assets, 0 webfonts, 0 images
+rc=0
+missing var() after fix: []

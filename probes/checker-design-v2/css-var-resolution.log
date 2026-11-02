@@ -1,0 +1,16 @@
+== CSS custom-property resolution, 2026-11-01T20:11:13-05:00 ==
+tokens.css is generated from tokens.json by build-tokens.mjs (kebab = camelCase -> kebab-case; digit is NOT split)
+defined in tokens.css: 71; locally defined: 72; var() uses: 61
+MISSING (var() with no definition anywhere -> declaration invalid at computed-value time):
+  --surface-1: used 3 files -> ['comp-kit.css', 'comps/07-states.html', 'motion-storyboard.html']
+  --surface-2: used 4 files -> ['comp-kit.css', 'comps/05-desktop-workspace.html', 'comps/07-states.html', 'motion-storyboard.html']
+  --surface-3: used 3 files -> ['comp-kit.css', 'comps/07-states.html', 'motion-storyboard.html']
+
+tokens.css emits these instead (unused): ['--light1', '--surface1', '--surface2', '--surface3']
+
+count of var(--surface-1/2/3) usages: 35
+
+Spec consequence: a var() referencing an unset custom property with no fallback makes the declaration invalid
+at computed-value time; the affected property computes to its initial value (for background: transparent).
+So every .glass/.card/button/.phone/.desktop/.sheet/.msg/.banner/.inset/... background is transparent;
+borders, box-shadows and backdrop-filter still render -> flat outline/ghost look, not the intended material.

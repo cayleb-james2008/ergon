@@ -1,0 +1,15 @@
+== tool re-run from read-only copy 2026-11-01T20:10:30-05:00 ==
+$ node build-tokens.mjs --check
+TOKENS: CURRENT — tokens.css matches tokens.json
+rc=0
+$ node check-comps.mjs
+V2 COMPS CHECK: PASS
+  pages: 9 labelled comp pages (7 comps + index + motion storyboard)
+  self-containment: 0 external refs, 0 remote assets, 0 webfonts, 0 images
+  tokens: tokens.css generated-current from tokens.json; 0 colour literals outside the token files
+  contrast: ink 10.03:1 · muted 6.13:1 · subtle(panel) 6.64:1 · accent 5.46:1 · ok/warn/danger wash 5.08/5.37/5.11:1 · focus 7.05:1 · border 3.08:1
+  floors: reduced-motion + forced-colors + High Contrast preview present; 2px accent focus ring with 2px gap
+  motion: 120/200/250/350 ms, one ease-out curve; no transition-all, no loops/pulse, no uppercase tracking, no gradient text
+rc=0
+$ node --check comp-motion.js
+rc=0

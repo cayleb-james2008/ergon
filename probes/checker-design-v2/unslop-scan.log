@@ -1,0 +1,43 @@
+== unslop / taste scan of the frozen set, 2026-11-01T20:11:34-05:00 ==
+--- gradient functions (all) ---
+./comp-kit.css:11:    radial-gradient(1100px 620px at 12% -8%, var(--ambient-accent), transparent 62%),
+./comp-kit.css:12:    radial-gradient(900px 520px at 92% 4%, var(--ambient-cool), transparent 58%),
+--- text-shadow / drop-shadow / filter ---
+./motion-storyboard.html:13:  .demo-mini-sheet { position: absolute; left: 0; right: 0; bottom: 0; padding: var(--space-3); border-top: 1px solid var(--line-bright); background: var(--surface-3); backdrop-filter: blur(var(--blur-sheet)); border-radius: var(--radius-panel) var(--radius-panel) 0 0; }
+./comp-kit.css:28:  backdrop-filter: blur(var(--blur-card)) saturate(115%);
+./comp-kit.css:29:  -webkit-backdrop-filter: blur(var(--blur-card)) saturate(115%);
+./comp-kit.css:36:  backdrop-filter: blur(var(--blur-panel)) saturate(112%);
+./comp-kit.css:37:  -webkit-backdrop-filter: blur(var(--blur-panel)) saturate(112%);
+./comp-kit.css:44:  backdrop-filter: blur(var(--blur-sheet)) saturate(118%);
+./comp-kit.css:45:  -webkit-backdrop-filter: blur(var(--blur-sheet)) saturate(118%);
+./comp-kit.css:82:  backdrop-filter: blur(var(--blur-panel));
+./comp-kit.css:83:  -webkit-backdrop-filter: blur(var(--blur-panel));
+./comp-kit.css:144:  backdrop-filter: blur(var(--blur-panel));
+--- text-transform ---
+--- font-weight values ---
+./comp-kit.css:113:font-weight: 600
+./comp-kit.css:182:font-weight: 600
+./comp-kit.css:59:font-weight: 600
+./comp-kit.css:79:font-weight: 600
+--- transition-all / infinite / pulse / ping / glow ---
+./motion-storyboard.html:26:    No loops, no pulse, no glow. Reduced motion removes the travel; High Contrast removes the translucency.</p>
+./comp-motion.js:4:   No colour literals: the character is styled by classes in comp-kit.css (tokens only). No loops, no pulse/ping. */
+./comps/06-character-sheet.html:63:      <span class="caption">A single directional signal per change — no pulse, no loop, no glow. Under reduced motion the state simply changes.</span>
+./comps/02-mobile-triage-approvals.html:93:        <li><b>Unchanged:</b> needs-you vs can-wait grouping, counts, one accent forward action.</li>
+--- emoji / sparkle / hype words ---
+--- box-shadow values (all) ---
+./comp-kit.css:27:  box-shadow: var(--depth-lift), var(--depth-rim);
+./comp-kit.css:35:  box-shadow: var(--depth-lift), var(--depth-rim);
+./comp-kit.css:43:  box-shadow: var(--depth-lift-high), var(--depth-rim-strong);
+./comp-kit.css:48:.inset { box-shadow: var(--depth-well); border-radius: var(--radius-inner); background: var(--surface-1); border: 1px solid var(--line); }
+./comp-kit.css:49:.rim-top { box-shadow: var(--depth-rim); }
+./comp-kit.css:54:.lumen { position: relative; transition: border-color var(--motion-swap) var(--ease), background-color var(--motion-swap) var(--ease), box-shadow var(--motion-swap) var(--ease); }
+./comp-kit.css:143:  box-shadow: var(--depth-lift-high), var(--depth-rim);
+./comp-kit.css:160:  background: var(--surface-1); box-shadow: var(--depth-lift-high), var(--depth-rim);
+./comp-kit.css:176:.card { border: 1px solid var(--line); border-radius: var(--radius-card); padding: var(--space-3); background: var(--surface-2); backdrop-filter: blur(var(--blur-card)); box-shadow: var(--depth-lift), var(--depth-rim); }
+./comp-kit.css:186:.sheet { position: relative; border-radius: var(--radius-panel) var(--radius-panel) 0 0; border: 1px solid var(--line-strong); border-bottom: 0; background: var(--surface-3); backdrop-filter: blur(var(--blur-sheet)) saturate(120%); box-shadow: var(--depth-lift-high), var(--depth-rim-strong); padding: var(--space-3); display: flex; flex-direction: column; gap: var(--space-3); max-height: 80%; }
+--- icon fonts / images / svg refs ---
+--- one cubic-bezier curve ---
+./comp-motion.js:14:cubic-bezier(0.2, 0.7, 0.2, 1)
+./tokens.css:73:cubic-bezier(0.2, 0.7, 0.2, 1)
+--- animation keyframes ---
