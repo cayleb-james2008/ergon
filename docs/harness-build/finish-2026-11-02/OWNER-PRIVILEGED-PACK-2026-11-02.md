@@ -8,7 +8,8 @@ For: Cayleb, home between 14:30 and 15:00 ET. Display-and-verify material only. 
 |---|---|---|---|---|
 | 1 | Tailscale SSH on | READY | no (you are the Tailscale operator) | one command, one read-back |
 | 2 | OpenSSH server | READY WITH A CHANGE (read below) | yes | hardened config first, then start; no remote login until you add a key |
-| 3 | sudoers rule for fleet-dsh | see section 3 | yes | see section 3 |
+| 3 | sudoers rule for fleet-dsh | HELD FOR SECURITY REVIEW (necessity question first) | yes | do not run; Lane 6 decides whether it is needed |
+| 3b | remove stale V3 drop-ins | HELD FOR SECURITY REVIEW | yes | named and verified; runs only after Lane 6 clears it |
 | 4 | Owner Elevation first real run | NOT ON TODAY'S LIST | n/a | leg 4 is unbuilt; nothing to run today |
 
 ## 1. `tailscale set --ssh` (READY, no sudo)
@@ -70,26 +71,46 @@ Two things this does NOT do, on purpose:
 
 Undo: `sudo systemctl disable --now sshd.service` and `sudo rm /etc/ssh/sshd_config.d/10-fleet-hardening.conf`.
 
-## 3. sudoers rule for fleet-dsh: NOT READY (do not run anything from this section)
+## 3. sudoers rule for fleet-dsh: HELD FOR SECURITY REVIEW (do not run anything from this section)
 
-**Reason: no Lane 6 security review of this rule is on record.** I searched the team board (origin/team at 684110bd), the delegator board, the plugin's `ops/` and the finish docs for `sudoers`, `NOPASSWD`, `fleet-dsh-control` and every Team E / Lane 6 file. The only reviews on record cover other things: the `dsh-fleet-admin` wrapper kit, a temporary one-run block, and the Owner Elevation helper. A Lane 6 review has been requested through the delegator (see the delivery note); until it lands, no sudoers line is shown to you to run.
+**The first question is whether the rule is needed at all.** Lane 6 settles that before any sudoers line exists. If polkit already gives you passwordless stop/start of `fleet-dsh`, this item closes as VERIFIED-NOT-NEEDED (Lane 6's word plus the live read-back at the sitting below). The sudoers line ships only if Lane 6 finds the polkit coverage insufficient.
 
-For Lane 6 (and Nox) to review, not for you to run. The candidate is a new file `/etc/sudoers.d/fleet-dsh-control` (root:root, mode 0440, no dot in the name) with exact arguments and no wildcard:
+What the record and the machine say about that (read-only, 2 Nov):
+- The unit `fleet-dsh.service` is `inactive` and disabled. It is the retired legacy host. The live fleet is the user unit `dsh-fleet-consolidated`, which you control without any privilege (`systemctl --user`). So day to day, nothing needs root control of `fleet-dsh`.
+- The design assumed a standing polkit rule, `50-dsh-fleet.rules`, grants you stop/start/restart of `fleet-dsh`. **That premise is doubtful.** On 1 Nov the Team B V3 note (its section E) recorded `pkcheck` answering `auth_admin_keep` for `manage-units`, meaning NOT authorised without a password. The V3 block then added its own temporary polkit rule, `49-dsh-identity-v3.rules`, and the passwordless stop on 2 Nov at 06:16:52 most likely came from that temporary rule, which is meant to be removed (item 3b). I cannot read `/etc/polkit-1/rules.d` from this account and `pkcheck` can't answer from my sandbox, so **this is unverified**; Lane 6 reads the directory as root.
+- If that reading is right, removing the temporary V3 rules (3b) also removes passwordless control of `fleet-dsh`, and the sudoers rule would be the only way to get it back. Given that `fleet-dsh` is retired, Lane 6 may well conclude nobody needs it.
+
+Lane 6, as root: `sudo ls -la /etc/polkit-1/rules.d/` and `sudo grep -l fleet /etc/polkit-1/rules.d/*` (which rule files exist, and does any of them grant `fleet-dsh` start/stop to cayleb).
+
+Live read-back at the sitting, only if Lane 6 asks for it (the unit is inactive, so a stop is a no-op; the answer is whether polkit permits it):
+
+    systemctl --no-ask-password stop fleet-dsh.service ; echo "rc=$?"      # rc=0: authorised without a password. A nonzero rc with "Interactive authentication required": not authorised.
+
+For review only, not for you to run: the candidate is a new file `/etc/sudoers.d/fleet-dsh-control` (root:root 0440, no dot in the name), exact arguments, no wildcard:
 
     cayleb ALL=(root) NOPASSWD: /usr/bin/systemctl stop fleet-dsh.service
     cayleb ALL=(root) NOPASSWD: /usr/bin/systemctl start fleet-dsh.service
 
-An independent security read by an agent on the build side (**not a Lane 6 review, do not cite it as one**) recommends changes to the originally proposed four lines: drop `status` (it needs no privilege, and under sudo it would run a pager as root) and drop `restart` (stop plus start already cover it), and use the literal `fleet-dsh.service` form (a bare `fleet-dsh` will not match). It validated the syntax offline (`visudo -c -f` on a scratch copy: parsed OK). Checked on this machine:
-- The unit is root-owned (`/etc/systemd/system/fleet-dsh.service`, 0644), runs as `User=fleet` with `NoNewPrivileges=yes`, has no `ExecStartPre/Post`, no drop-ins and no `EnvironmentFile`, and `/var/lib/fleet` is not traversable by uid 1000. As it stands, starting it cannot run code as root.
-- The unit is `inactive` and disabled. The live fleet is the user unit `dsh-fleet-consolidated`.
+An independent read (**not a Lane 6 review, do not cite it as one**) recommends dropping `status` (it needs no privilege and would run a pager as root under sudo) and `restart` (stop plus start covers it), using the literal `fleet-dsh.service` form (a bare `fleet-dsh` will not match), and found the unit itself cannot turn a start into root code (root-owned file, `User=fleet`, `NoNewPrivileges=yes`, no hooks or drop-ins, `/var/lib/fleet` not traversable by your uid). The offline syntax check (`visudo -c -f` on a scratch copy) parsed OK. What Lane 6 must still check: installed ownership and mode with a clean `visudo -c` over the whole tree; that nothing a lane can change feeds the code the unit runs (the existing `dsh-fleet-admin plugin-add`/`install-dsh` verbs can change `/var/lib/fleet/npm`, as the `fleet` user); that no root-run hook can be added; whether the legacy unit should be startable while the consolidated fleet is live (two hosts on one state).
 
-What the review should weigh first: **the rule may be unnecessary.** The record says a polkit rule (`50-dsh-fleet.rules`) already lets cayleb stop, start and restart `fleet-dsh.service` with no password, proven live on 2 Nov at 06:16:52 (`systemctl --no-ask-password stop fleet-dsh` returned 0 while `sudo -n` failed). I could not read the installed polkit rules from this account (`/etc/polkit-1/rules.d` is root-only) and `pkcheck` can't answer from this sandbox, so I cannot re-verify it today. The sudoers rule would add only a root-run path to the same effect, usable without a password by every fleet lane (all run as your user; finding F1, accepted).
+### 3b. Remove the stale Team B "V3 identity" drop-ins: HELD FOR SECURITY REVIEW (Nox ruling, Case 3 in the security settlements registry)
 
-What Lane 6 must still check: install-time ownership and mode of the real file and a clean `visudo -c` over the whole tree; that nothing a lane can change feeds the code the unit runs (the existing `dsh-fleet-admin plugin-add` and `install-dsh` verbs can change `/var/lib/fleet/npm`, which is where `ExecStart` lives, but as the `fleet` user); that no root-run hook can ever be added to the unit; whether the legacy unit should be startable at all while the consolidated fleet is live (two hosts on one state); and whether polkit already makes the rule redundant.
+What is wrong: the V3 block's sudoers drop-in is still installed although the board records it as removed on 1 Nov (message 20261101T162153Z). Verified read-only on 2 Nov at 13:53 ET: `sudo -n -l` lists, for cayleb, `(root) NOPASSWD:` `/usr/bin/mkdir -m 0700 -- /run/dsh-fleet-id-cf93107` and `/usr/bin/dd of=/run/dsh-fleet-id-cf93107/{caller.py,identity_snapshot_core.py,manifest.txt} conv=excl status=none`, `chmod`, `stat` and `sha256sum` of those files, and `(fleet) NOPASSWD:` a `python3 -I -S -B /run/dsh-fleet-id-cf93107/caller.py` run. Today `conv=excl` stops overwriting the three existing files; after a reboot clears `/run`, any process running as your user could write a file there as root and run it as the `fleet` user. The stage directory `/run/dsh-fleet-id-cf93107` still exists (root:root, 3 read-only files). The V3 note's own polkit rule `49-dsh-identity-v3.rules` was installed by the same block and may also still be present (not readable from this account).
 
-### Separate finding for Nox, NOT part of today's list: a stale privileged drop-in is still installed
+The exact removal, taken from the V3 block's own removal section (D) and unchanged (file paths are the V3 block's own: `/etc/sudoers.d/dsh-identity-v3` and `/etc/polkit-1/rules.d/49-dsh-identity-v3.rules`). Run only after Lane 6 has cleared it:
 
-`sudo -n -l` today (read-only) lists, for cayleb: `(root) NOPASSWD: /usr/bin/mkdir -m 0700 -- /run/dsh-fleet-id-cf93107` and `/usr/bin/dd of=/run/dsh-fleet-id-cf93107/caller.py conv=excl status=none` (and the same for `identity_snapshot_core.py`), plus `(fleet) NOPASSWD: /usr/bin/env -i … /usr/bin/python3 -I -S -B /run/dsh-fleet-id-cf93107/caller.py`. The board records the Team B "V3 identity" block as removed on 1 Nov (message 20261101T162153Z), but it is live. These entries let any process running as your user write a file into that directory as root and run it as the `fleet` user (today the files already exist, so `conv=excl` blocks overwriting; after a reboot clears `/run` the path is open again). I cannot read `/etc/sudoers.d` to see the file name; the V3 block's own notes call it `/etc/sudoers.d/dsh-identity-v3`. It is not on your list and nothing should be removed until Nox decides. If Nox adds it, the removal read-back is `sudo -n -l | grep -c dsh-fleet-id` returning `0`.
+    sudo /usr/bin/rm -f /etc/sudoers.d/dsh-identity-v3 /etc/polkit-1/rules.d/49-dsh-identity-v3.rules
+    sudo /usr/bin/visudo -c
+    test ! -e /etc/sudoers.d/dsh-identity-v3 && echo SUDOERS-GONE
+    test ! -e /etc/polkit-1/rules.d/49-dsh-identity-v3.rules && echo POLKIT-GONE
+
+Post-removal read-back (no password needed for the listing). **Baseline before removal: 2 matching lines. Expected after: 0.**
+
+    sudo -n -l | grep -c 'dsh-fleet-id-cf93107'
+
+The stage directory itself is NOT removed by this item, and nobody `rm -rf`s an unconfirmed stage; its removal is a separate act once its contents are confirmed. Side effect to know: removing the V3 polkit rule takes away the temporary passwordless `fleet-dsh` stop/start, so stopping or starting that retired unit asks for your password again. Nothing running today depends on it.
+
+**If Lane 6 has cleared neither item 3 nor 3b before the window, both stay on the list named and HELD FOR SECURITY REVIEW; nothing is dropped.** Lane 6 owns 3b until the removal read-back lands.
 
 ## 4. Owner Elevation: not on today's list
 
