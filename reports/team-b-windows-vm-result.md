@@ -134,3 +134,68 @@ the fallback evidence. No image reads, no root, no host changes outside the rig,
 disk, CPU-bound, no reboot), so OOBE/FirstLogon never ran and the guest is not driveable yet.** No blocker in the
 rig mechanics: answer consumption, partition/format/apply and the launcher fixes are all proven in this pass; what
 remains is simply the finalize duration. qcow1 (installed, booting) is preserved as the working fallback.
+
+---
+
+# CONTINUATION (2026-11-02 02:49–03:20Z) — **DRIVEABLE: Windows guest installed, OOBE first logon reached, RDP live** (SSH capability still installing)
+
+Continued the deterministic route exactly as ordered: the stalled finalize was quit, the same install was re-run once
+on a **fresh** target disk (`win11-eval-2.qcow2` recreated; qcow1 untouched), and the run stage was booted. No image
+reads, no root, no host changes outside the rig, $0.
+
+## Install (fresh disk, unattended) — completed
+
+- Launch 02:54:16Z → WinPE boot, answer consumed, partition/format/apply 0 → 12.77 GiB → finalize → guest reboot at
+  **03:00:33Z** (QEMU `-no-reboot` exit). Total ≈ 6 min 17 s. qcow2 after install **13,391,560,704 B**.
+- Run stage on the installed disk: serial `BdsDxe: loading Boot000B "Windows Boot Manager" from
+  HD(1,GPT,B84A8E18-1290-4A16-831E-447FB7E03C1E,0x800,0x96000)/\EFI\Microsoft\Boot\bootmgfw.efi` → `starting`;
+  **3 boot-manager loads** (OOBE reboots), disk grew to **19.8 GB** during first-logon provisioning.
+- **OOBE reached first logon** — proven by the FirstLogonCommands themselves: the answer file's command #1 fired →
+  **`GET /marker?step=start` in `rig/logs/marker-8765.log` at 03:08:35Z** (attributable listener PID 748996, log
+  `rig/logs/marker-8765.log`). FirstLogonCommands only run after OOBE completes to an interactive logon.
+
+## Driveable evidence (text-level)
+
+**RDP is LIVE** — the answer's command #2 enabled it, and the guest answers the standard RDP handshake through the
+QEMU hostfwd. Exact command + output (2026-11-02T03:20:13Z):
+```
+$ printf '\x03\x00\x00\x13\x0e\xe0\x00\x00\x00\x00\x00\x01\x00\x08\x00\x03\x00\x00\x00' \
+    | socat - TCP:127.0.0.1:3389,connect-timeout=3 | od -An -tx1
+ 03 00 00 13 0e d0 00 00 12 34 00 02 2f 08 00 02
+ 00 00 00
+```
+= TPKT + X.224 **Connection Confirm (0xd0)** + RDP negotiation response: a real Windows RDP listener on the guest,
+reached over `127.0.0.1:3389` (QEMU user-net hostfwd). **SSH not yet up**: FirstLogonCommand #3
+(`Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0`) is still installing at report time (~13 min;
+guest CPU ~390 %, disk still growing, no `?step=done` marker, no SSH banner on 2222). Named, not smoothed.
+
+Transport inventory (live): VNC `127.0.0.1:5902`, RDP hostfwd `:3389` **answering**, SSH hostfwd `:2222` LISTEN but no
+banner, monitor `rig/win/monitor.sock`, marker listener `0.0.0.0:8765` (log `rig/logs/marker-8765.log`).
+Guest left RUNNING: QEMU **PID 757632**, ~10.3 GiB RSS; qcow1 (previous installed guest) untouched at
+**17,083,138,048 B** as fallback.
+
+## Exact verification for the checker / next seat (no image reads)
+
+```bash
+cd ~/workspace/harness-build/scratch-tb-l4/rig
+grep 'GET /marker?step=' logs/marker-8765.log      # expect step=start (03:08:35Z) and, after the SSH capability installs, step=done
+printf '\x03\x00\x00\x13\x0e\xe0\x00\x00\x00\x00\x00\x01\x00\x08\x00\x03\x00\x00\x00' | socat - TCP:127.0.0.1:3389 | od -An -tx1   # RDP CC
+socat - TCP:127.0.0.1:2222                          # expect SSH-2.0-OpenSSH_for_Windows_* once the capability lands
+ssh -p 2222 -i win/agent_key -o StrictHostKeyChecking=no cayleb@127.0.0.1 'hostname & ver & $PSVersionTable.PSVersion.ToString()'
+```
+The admin user is **`cayleb`** (answer file's local Administrator account; rig-local password in the answer file, not
+reproduced here). The rig's public key is installed by command #4; private key `rig/win/agent_key` never leaves the rig.
+
+## Finalize-timing lesson (launcher doc)
+
+Filed as `board/probes/team-b-windows-vm/FINALIZE-TIMING-NOTE.md`: fresh-disk install takes ~75 s to WinPE, ~3.5 min
+of apply, finalize ends within seconds of the last disk growth (≈6.3 min total); **a reused/half-written target disk
+can wedge WinPE for 20+ min** (flat disk, CPU-busy, no reboot) — always install to a fresh qcow2, never stop mid-
+finalize (it yields an unbootable disk), and allow ≥15 min before calling a stall.
+
+## FL2 implication (no "met" claim before the fresh checker)
+
+The Windows leg upgrades from "surface installed/not driveable" to **installed + OOBE first logon + RDP live**, with
+the SSH channel pending only on the OpenSSH capability install. The Ergon Windows companion surfaces still need the
+companion artefacts themselves and a desktop automation seat (RDP now available; UIA/WinAppDriver or SSH/PowerShell
+for text evidence). Fresh checker spot-verifies the commands above before any FL2 "met" wording.
