@@ -1,0 +1,64 @@
+=== Plan 4 — atlas named-seed assert-and-skip + bounded hang detection (2026-11-02) ===
+branch prep/b1-capture-format-20261101
+commit 9022c538966e84b014607e565ccfb61845458c60  tree 53fbc06109aef23a5bd49d24049f05afc4c03e4c
+parents 9022c538966e84b014607e565ccfb61845458c60 90ac9326dfb0037d5af7505d64bd230d1213fb88
+time 2026-11-02T01:41:54Z
+
+--- commit stat ---
+9022c53 atlas: Plan 4 — named-seed assert-and-skip + bounded hang detection (never rebuild in Play)
+ docs/art/SIDECAR.md                       |  4 +-
+ docs/verify/2026-10-19/VINEGAR_RUNBOOK.md | 11 +++++
+ tests/atlas/Server.luau                   | 24 +++++++---
+ tests/atlas/WorldSeed.luau                | 36 +++++++--------
+ tests/tools/test_atlas_acceptance.py      | 22 ++++++++++
+ tests/tools/test_vinegar_run.py           | 28 ++++++++++++
+ tests/unit/world-seed-override.spec.luau  | 73 ++++++++++++++-----------------
+ tools/atlas_acceptance.py                 |  9 ++--
+ tools/vinegar_run.py                      | 49 ++++++++++++++++++++-
+ 9 files changed, 185 insertions(+), 71 deletions(-)
+
+--- tracked tree: 0 modified; untracked 792 evidence lines ---
+
+--- sealed BEFORE ---
+84324d4342667dd163ab8e64adacbf8ef44ab786aeda5c7ab1403e76d52ef6ce  build/release.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  build/test.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  /home/cayleb/.var/app/org.vinegarhq.Vinegar/data/usg/usg-desktop.rbxlx
+
+--- runner suite ---
+Ran 84 tests in 11.419s
+
+OK
+
+--- full Python suite ---
+Ran 313 tests in 43.025s
+OK
+
+--- atlas acceptance + world-seed filtered Lune ---
+Ran 15 tests in 0.548s
+
+OK
+unit: 10 passed, 0 failed (2 specs)
+
+--- full Lune unit suite (final tree) ---
+unit: 919 passed, 0 failed (126 specs)
+lune_rc=0
+
+=== MUTATION PROOFS (maker self-check, 2026-11-02 ~02:00Z) ===
+A. mismatch returns instead of fail-fast          -> Lune world-seed 9 passed, 1 failed (2 specs)
+B. layout leg dropped from the check              -> Lune world-seed 9 passed, 1 failed (2 specs)
+C. 45 s first-view bound removed                 -> bounded-first-view test does not terminate (killed at 60 s = hang caught)
+D. trace dropped from the timeout failure         -> runner suite FAILED (1)
+E. AtlasWorldTrace publication removed            -> atlas acceptance FAILED (1)
+F. starter applied/rootSeed evidence removed      -> atlas acceptance FAILED (1)
+All restored; tracked tree clean; suites green after restore (runner OK, atlas acceptance OK, world-seed 10/0).
+
+--- sealed AFTER ---
+84324d4342667dd163ab8e64adacbf8ef44ab786aeda5c7ab1403e76d52ef6ce  build/release.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  build/test.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  /home/cayleb/.var/app/org.vinegarhq.Vinegar/data/usg/usg-desktop.rbxlx
+
+--- final state 2026-11-02T01:55:56Z ---
+HEAD 9022c538966e84b014607e565ccfb61845458c60
+tree 53fbc06109aef23a5bd49d24049f05afc4c03e4c
+tracked modified: 0
+untracked evidence lines: 792
