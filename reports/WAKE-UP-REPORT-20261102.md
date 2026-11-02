@@ -1,4 +1,4 @@
-# WAKE-UP REPORT — 2026-11-02 (refreshed 04:16 ET; owner asleep) — refresh #10 (consolidation ruled+Phase 1 proved, Phase 2 approved; atlas camera-restore cause narrowed, diagnostics round 2; Windows final; one owner item: v2 grade)
+# WAKE-UP REPORT — 2026-11-02 (refreshed 04:42 ET; owner asleep) — refresh #11 (consolidation variant ruled (a) for both pinned families; Phase 2 done; Phase 3 gates named; atlas diagnostics round 2 in delta; one owner item: v2 grade)
 Consolidated for the owner's morning. Everything below is on the board with checker evidence; nothing is smoothed.
 Fences held overnight: no spend, no publication, no credential values in chat/board/logs, no image reads in the app, desks untouched.
 
@@ -11,19 +11,30 @@ Fences held overnight: no spend, no publication, no credential values in chat/bo
    uses the OpenCode Go credential already present there — no second entry, no separate fleet store. The consolidation is ours to run and
    is being scoped/executed now; if it ever needs a genuine owner act it will be named explicitly with evidence, not assumed.
 
-## FINISH LINE 1 — FLEET PLUGIN: ONE-SETUP CONSOLIDATION (owner direction 03:48 ET; scaffold proofs complete)
-- **Owner direction:** one DSH setup only; the fleet plugin consolidates into it; the duplicate key entry is cancelled (the plugin uses
-  the OpenCode Go credential already present in his setup — entered once by him). The 0.3.1 install/acceptance proofs on the fleet
-  scaffold stay on the record as build evidence; **the finish line closes on the consolidated setup.**
-- **Rulings in (Nox 091500Z):** Option B (sibling `fleet` profile under the same desktop home) **is** the one setup — his credential ref is used in place, never copied or re-entered; installing into his live `desktop` profile was rejected. **Scoped consolidated acceptance adopted** (identity/rows readback, dump-config, Boolean-only credential presence, Option-A roster lane-spawn real-provider proof with a real priced ledger event, `order.stage_real`, MCP nine-tool battery; unit legs recorded N/A with reason; unit-grade containment recorded as build-evidence-only, consolidated containment = plugin sandbox + single-writer + care fence). **Phase 1 proved offline** (byte-identical install, 15-row compose, roster/subagent-32/opencode-go ref, scratch host integrity ok, 8/12 rows, state layout) and **Phase 2 (live profile create, no start, desktop untouched) is approved on Lead timing**; Phase 3 (unit stop/retire + consolidated start) is held pending the `fleet-mcp` pinned-integrity ruling and the Lead's app-idle approval. Consolidation in progress (Team B): what the single setup is, where the plugin installs, how the roster/doctrine/
-  rates/opencode-go route mount there with the credential **referenced** (never copied/re-entered), what happens to the fleet data/state,
-  single-writer discipline + care fence (no disruption to his live sessions/apps), and the re-proof chain on that setup: installed
-  acceptance → roster lane-spawn real-provider proof (Option A) → the staged first real order (plugin sidebar section + phone-VM and
-  Windows-VM panels) driven in the one setup. Any part that genuinely cannot run in one setup will be filed as a named blocker with
-  evidence — the two-setup shape will not be quietly kept.
-- **Scaffold facts carried (not lost):** 0.3.1 installed on the fleet scaffold with unmodified `stage2-check` `pass=60 fail=0`
-  (STAGE 2 PASS), identity 123/123, rows 8/12, MCP nine tools `0.3.1-mcp`, roster machinery mounted (doctrine, rates, opencode-go route,
-  sub-agent ceiling 32), first real order staged, corrected door note. These are the build evidence the consolidated setup must re-prove.
+## FINISH LINE 1 — FLEET PLUGIN: ONE-SETUP CONSOLIDATION (variant ruled, Phase 2 done, Phase 3 gated)
+- **Owner direction (03:48 ET, routed by Nox):** one DSH setup only; the fleet plugin consolidates into it; the duplicate key entry is
+  **cancelled** — the plugin uses the OpenCode Go credential already present in his setup (referenced in place, never copied, never
+  re-entered). The 0.3.1 scaffold proofs stand as build evidence only; **the finish line closes on the consolidated setup.**
+- **Nox rulings in:** (i) a sibling `fleet` profile under the one DSH home **is** the one setup (installing into his live `desktop`
+  profile was rejected — collisions/restart risk); (ii) **scoped consolidated acceptance** adopted (identity/rows readback, dump-config,
+  Boolean-only credential presence, roster lane-spawn Option-A **real-provider** proof with a real priced ledger event, `order.stage_real`
+  on the staged payload, MCP nine-tool battery; unit-specific legs recorded N/A with reason; unit-grade containment recorded as
+  build-evidence-only, consolidated containment = plugin sandbox/fsguard + single-writer + care fence); (iii) fresh board under the fleet
+  root; (iv) **option (a) consolidated variant ruled for BOTH pinned families** (`fleet-mcp` unit-path/port pins and the four
+  `preset-fleet-*` skill-dir pins) — one artifact, manifest regenerated by the package's own generator, version bump, fresh checker;
+  option (b) (keep the unit as MCP/acceptance host) rejected.
+- **Done:** Phase 1 offline proof (byte-identical 123-file install, 15-row compose with roster/subagent-32/opencode-go ref, scratch host
+  integrity ok/8-12 rows, state layout). Phase 1b variant proven in copy (0 degraded rows, MCP nine tools on a scratch port, integrity ok,
+  staged order, chain unbroken; F2 presets folded: zero `/var/lib/fleet` references, reproducible manifest, skills dir readable — honest
+  limit: skill discovery not exercised). **Phase 2 done:** live `fleet` profile created under the desktop home (overlay re-roots core
+  rows, recovery keypair, dump rc 0 with no credential values), **nothing started**, desktop profile byte-identical, credentials
+  stat-only, Electron PID unchanged, GUI alive, unit NRestarts 0, `/var/lib/fleet` untouched.
+- **Phase 3 (gated, one app-idle window with Lead approval):** finish the variant artifact + fresh checker → credentialled unit
+  stop/retire (single writer: never start while the unit writes) → consolidated start → health gates H1–H9 → scoped acceptance A1–A11 →
+  roster lane-spawn Option-A real-provider proof → staged first real order (sidebar section + phone/Windows VM panels) driven in the one
+  setup → one consolidated outcome report. Cutover + rollback runbook is filed and paste-ready; a storage/session coexistence issue (base
+  rows are home-scoped) is being resolved by re-rooting those roots into the fleet state (offline proof), with the app-closed window kept
+  as fallback — no owner act needed for it.
 
 ## FINISH LINE 2 — ERGON END-TO-END WITH THE VM SURFACES: PARTIALLY MET (honest; re-file pending)
 - **Phone VM — PROVEN REAL** (checker ACCEPT, independently re-run): headless Android 15/API 35 `rig-phone` boot; scripted native tap
