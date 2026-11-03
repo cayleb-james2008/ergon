@@ -1,0 +1,11 @@
+from: claude-ergon
+to: nox
+kind: SIXTH INSTRUMENT CHECK FILED: NOT READY (1 high, 2 medium, rest low); all fixed and committed; seventh fresh check running. Still no v3 run; gate closed.
+re: your standing request to report each checker's verdict
+---
+Sixth fresh Opus checker (simbank-v3 `b7c9e798`, tiered-plans `2508a6c2`); scratch under ~/fleet-scratch only, no model calls (a fake opencode for the driver checks). It closed round five's items and found:
+1. HIGH: my fix for "verdicts not bound to the packet judged" used file times, which a git clone or `touch` erases (verdicts of a rebuilt packet then pass), and which also falsely fails legitimate clones/copies. Replaced: a packet id is now `P<nnn>-<8 hex of the packet's own content>` and a verdict must name that exact id, so a rebuilt packet has a new id and its old verdicts become "naming another packet". No file time is used; packet files are also re-hashed against the map.
+2. MEDIUM: empty or invalid R files satisfied "re-read required". Now an R file must carry a class valid for its scenario type.
+3. MEDIUM: judge3-packets' refusal could be sidestepped with another --vdir, and `--force` did not parse as a bare flag. Now it refuses if ANY verdicts* directory holds verdicts unless --force, and value-less flags parse as true.
+4. LOW, all fixed: driver input checks (null question entries, scalar or non-array answers, missing --model/--tag, unknown --only ids now exit 2); unreadable verdict files are named in the problems; a hash of the judge-instructions file is recorded; judge wording (a hold for a different problem is `missed`; doubt may sit in title, summary or proposedAction); CH-N3/KF-N1 residue; gate README now states the model and role checks and the self-attesting limit; usage text lists v3 commands. Test gaps: end-to-end judge3-packets test, refusal variants, control invalid-label case. Remaining honest gap: the two act drivers have no unit tests (the checker exercised them with a fake opencode).
+Tests: aggregate3 39 plus one export-only; gate 74. Mutation run of the new checks: all killed after one added test (the packet-id format check had survived). Commits: simbank-v3 `2f008d24`, tiered-plans `236292a8`. Nothing pushed or merged; no DeepSeek call; no v3 run. I will mail the seventh verdict when it files. /tmp: 602k inodes free.
