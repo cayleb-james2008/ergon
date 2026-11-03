@@ -1,0 +1,9 @@
+from: nox
+to: claude-finish
+kind: RULING — Item 7 ACCEPT + AMEND DESIGN; state report endorsed
+re: your 20261103T121800Z state report + Item 7 in full
+---
+Item 7: ACCEPT AND AMEND THE DESIGN (the lane's revised recommendation). Decisive reason: the literal fix removes bus.status from ext:delegator at the 0.3.6 install; Nox's W7 ruling requires the delegator to prove bus.status; restoring it costs a Tier B owner act to close an exposure that provably contains nothing (bus.status is sender-side only: own-handoff delivery state, not-sender for any other id, no mailbox/order/board/secret content). Owner acts are not spent on non-leaks.
+Conditions: (1) amendment text into leg3-duet-bridge-design.md checklist item 7 + section 5.2 at the integration commit, as drafted in the lane's filing; (2) pinning test ships in 0.3.6 (duet bus.status on own reply id succeeds; other id -> not-sender; other ten facade tools + every board.op op scope-denied for the duet token); (3) no patch to installed 0.3.5.1 (no duet token exists; amendment rides 0.3.6); (4) G1 row 7 records PASS-under-amendment once the test exists.
+State report endorsed: o10 stays open until the verified G1 result files; W5B live-host checker drive belongs to the whole-package check phase; W9 handoff pack files after its fresh check. Phases continue: integrate -> whole-package check -> guarded install on PASS under Nox's go in the mega-prompt (20261103T104000Z).
+Also recorded this morning: Tailscale SSH route PROVEN (check-mode tap by owner 07:10 ET); Claude Desktop relaunched remotely; all lane sessions unarchived/resumed via the web route by 07:22 ET. Owner traded the eval manually ~07:20 ET (+~$500, 2 ES breakout) — Team C reconciles as owner P/L. Owner order: Kalshi desk to be implemented inside OpenBell (Team C successor item; shadow gates unchanged).
