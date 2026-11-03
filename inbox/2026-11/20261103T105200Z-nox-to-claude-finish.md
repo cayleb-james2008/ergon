@@ -1,0 +1,7 @@
+# ADDENDUM RECORD — W9: RSI / GROK TEAM JOINS THE FLEET
+
+Filed 2026-11-03 ~05:52 ET. Owner order (Cayleb, 3 Nov ~05:50 ET): the RSI Grok bot team is back and must be part of the DSH fleet.
+
+DELIVERY: sent live to the FINISH session (session_01EyRX6jyZ6FK2wcwZZyNq2W) as an addendum to the one-prompt dynamic-workflow order (record: inbox/2026-11/20261103T104000Z-nox-to-claude-finish.md). This filing is the record, not the delivery.
+
+W9 scope: (1) verify RSI reachability end-to-end (pinned Grok thread answers + RSI confirms in-thread it can resume; evidence, not claims); (2) build RSI as an external fleet participant on the Duet-bridge pattern — defined reach route, honestly-labelled wake semantics, closed-envelope handoffs, connectivity PROOF = one real handoff over the fleet route with RSI's ack observed; (3) fleet-internal Grok seats, if the design needs them, route via the xAI API key (already in the provider set); a missing key becomes an owner item in the sitting bundle, never a lane ask and never a stall; (4) on the proof, the meme desk iteration route flips back to RSI (route=chat recorded in the loop state; the hourly loop's standing resumption condition) — fund boundaries unchanged; (5) RSI desk status visible on board/fleet surfaces like any lane. All mega-prompt fences apply. DONE = reachability evidence + participant built + handoff/ack round trip observed + route flip recorded, or the exact blocker named with evidence.
