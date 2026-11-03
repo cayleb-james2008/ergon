@@ -32,3 +32,11 @@ Written before any action; missed is recorded as missed, never backfilled.
   automation armed".
 - The relocation/automation ownership item is now the reason this happened: **the relocated home must own the timers** (Nox's ruling) or this
   repeats every morning.
+
+## 5. RUNBOOK DISPOSITION — TODAY HAS NO SIGNED RUNBOOK (checked 09:36 ET)
+`reports/monday-futures-runbook.md` is **v7 — Monday 2 Nov's runbook, header "re-sign required"**; its P0.1 signature (checker-trading, 1 Nov
+19:08 ET) signs exactly that text **for the Monday day**. Tuesday 3 Nov needed its own fresh re-sign; **none exists** (no re-sign file for
+2026-11-03). Its timing structure (P0 by 09:05, session guard 09:05, preflight 09:15, binding 09:35–09:44, window 09:45) has also passed in
+part, and the desk is blind on the login page. **Therefore today's desk day cannot start under the signed runbook regardless of a sign-in** —
+a sign-in restores the feed for observation/logging only. Correct record: **BLOCKED-ON-MACHINE / NO-DESK-DAY; decision log empty; not
+"complete"**; escalate through the Lead (done, 09:35 ET) and to the owner.
