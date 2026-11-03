@@ -42,3 +42,13 @@ agent on your behalf.
 ## Order if you only have 5 minutes
 **1 (sign-in) → 3 (timers) → 2 (grade)** — then the rest when the integration lands.
 — Lead
+
+## Update 11:23 ET — two changes to this runbook
+1. **Item 1 (Tradovate sign-in) is DONE.** The desk resumed at **11:12:17 ET** (feed OK card); by 11:22 the engine shows bars 5,777, last bar 11:22,
+   feed age 0.0, not paused, no position, 0 trades. The remainder of today is **observation-only** (no signed Tuesday runbook) — no further sign-in
+   action is needed.
+2. **New item: Studio logins inside the two contained instances** (from W6BS, PASS 11:22 ET). The contained Studio spike has two real instances
+   (street game, card game) — each shows "Needs login". **Native embedding is not complete because it fails at Studio's login screen**, so the
+   face panels cannot show a real Studio until you log in inside each instance. That is an owner act (the instances are contained; the spike's
+   containment proof passed with your real Studio untouched). Say when you want to do it and the session will show you the two instances.
+3. The rest (Lumen grade, timers word, seven-question bundle, deletion, elevation install, console look) is unchanged.
