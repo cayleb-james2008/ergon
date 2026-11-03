@@ -121,3 +121,10 @@ string; positive proof = one console request-log export). **"GPT-6 Luna" is a ca
   restores the sealed backup; `vinegar_run.py`/`checks.py` hard-code the place file/name). Options: **(1) RECOMMENDED** parametrize runner +
   studiocycle (defaults unchanged, second slot; the studiocycle edit is outside the repo and needs your word), (2) swap the slot (needs explicit
   yes), (3) keep Plays on the d1 tree until C1. Studio pid 2070598 still open, Edit, 2/3; nothing published.
+
+**Update 23:38 ET — Nox ruled the fence: Option 1 APPROVED** (parametrise the runner with `USG_PLACE_FILE`/`USG_PLACE_NAME`/`USG_BUILD_PLACE`
+overrides, defaults identical to today with offline tests + a fresh checker before first use; same override for studiocycle with a **second slot**
+(own backup + hash guard), sealed slot/backup/guard untouched; verify sealed hashes before/after every step; then reopen Studio onto the new place
+and run the queue: cadence 3/3, `atlas:highway-extension`, moving, flag-off baseline packs, cadence verdict). Options 2 (slot swap) and 3 (stay on
+d1 until C1) rejected; d1 remains only the fallback if parametrisation fails its checker. Nothing published/uploaded/pushed; publication remains
+unauthorised.
