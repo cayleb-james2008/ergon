@@ -44,3 +44,46 @@
 
 ## 5. Standing (nothing else)
 No estate/digest/N5/tmp work will start. Read-only; no installs; no privileged acts; no fleet-host changes; no credential content; $0. The G40 observation record and the G1/G2 verdicts are the only outputs I will file.
+
+---
+
+## 6. G1 CONFIG-REVIEW ITEM — egress proxy destination policy (added 2026-11-03T00:27Z from the G40-NET ruling)
+**Why:** G40-NET showed the lane's net ns has exactly one listener, **`127.0.0.1:3128`** (designed egress forwarder). Its destination policy is a **config property, not a probe result**, so it is carried here as a Lane 6 G1 config-review item: *does the proxy refuse host-private destinations (host loopback services and the tailnet address)?* **Method: configuration + code read only — no probe, nothing run, nothing installed.**
+
+### 6.1 Where it lives (exact paths, all readable as this user)
+| Piece | Path |
+|---|---|
+| **Runtime policy config** | `$DH/profiles/fleet/cordis.patch.yml` — `fleet-egress` row (lines 27–35) and `fleet-sandbox` row (lines 20–26), where `DH=/home/cayleb/.local/opt/deepseek-harness-official/apps/desktop/.desktop-build/development/home` |
+| Proxy implementation | `$DH/profiles/fleet/node_modules/@cayleb/dsh-fleet/src/egress/{proxy.js,guard.js,address.js,dispatcher.js}` |
+| Sandbox wiring | `$DH/profiles/fleet/node_modules/@cayleb/dsh-fleet/src/sandbox/bwrap.mjs` |
+| Audit log | `$DH/fleet/log/egress.jsonl` (mode 0640 cayleb:cayleb; the pre-connect line is the guarantee) |
+| Socket | `/run/user/1000/fleet/egress.sock` (srw------- cayleb) — exposed inside the sandbox as `/run/fleet-egress.sock` |
+
+### 6.2 The rules, quoted verbatim
+**Runtime config (`cordis.patch.yml`, `fleet-egress`):** `socketPath: /run/user/1000/fleet/egress.sock` · `logPath: …/fleet/log/egress.jsonl` · **`allow: [registry.npmjs.org]`** · **`allowPorts: [80, 443]`** · `connectTimeoutMs: 10000` · `idleTimeoutMs: 300000` · `guardInProcess: true`.
+**Sandbox row (`fleet-sandbox`):** `egressSocket: /run/user/1000/fleet/egress.sock` · `tmpSizeMiB: 512` · `maskRoots: [fleet/dsh, fleet/state, fleet/log, fleet/work, fleet/backups, fleet/checks]`; `--unshare-net` with only loopback, and the forwarder is a **byte pipe** — `FORWARDER_SOURCE` in `bwrap.mjs:65-77` listens on `127.0.0.1:3128` and `net.connect({ path: sock })` to the unix socket, so "the egress proxy at the other end speaks the HTTP/CONNECT protocol"; `PROXY_ENV` sets `HTTP(S)_PROXY=http://127.0.0.1:3128` **and `NO_PROXY=''`** ("nothing bypasses the egress allowlist").
+**Proxy (`proxy.js`):** allowlist checked on the **requested host name** — `hostAllowed(patterns, host)` (exact, `*.sub`, or `*`; here only `registry.npmjs.org`), port must be in `allowPorts`; refusal is `HTTP 403` with `X-Fleet-Egress: allowlist|port`; the request is **logged before any outbound connection** and a log-write failure denies (503).
+**Guard (`guard.js`):** `checkLiteral()` **refuses IP-literal hosts before any socket exists** ("net.connect never calls lookup for those"); `makeLookup()` resolves **exactly once** and fails if **ANY** resolved address is forbidden ("a mixed answer is the signature of rebinding"); `connectGuarded()` checks the **connected remote address** again before any byte is written.
+**Address classes (`address.js`, `forbiddenReason`):** refuses **`127.0.0.0/8` (loopback)**, `0.0.0.0/8`, **`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16` (private)**, **`100.64.0.0/10` (reason string `cgnat-tailnet`)**, `169.254.0.0/16` (link-local), `224.0.0.0/4`, `240.0.0.0/4`; IPv6 `::/96` (unspecified/loopback), IPv4-mapped/NAT64/6to4 decided by the embedded IPv4, `fc00::/7` (unique-local), `fe80::/10` (link-local), `ff00::/8`; anything unparseable ⇒ `'unparseable'` (fail closed).
+**Host-side in-process path (`dispatcher.js`, `guardInProcess: true`):** the same literal/lookup/peer checks are installed on undici's global dispatcher, so in-process HTTP clients get the same guard.
+**Config integrity (relevant because this is a policy property):** the config and code sit under the DSH home; the G40 observation's own mount evidence shows the lane's namespace has **`/home` read-only** (and `maskRoots` cover fleet state/log/work), so a confined lane cannot rewrite this policy. Whether every other lane class has the same property is a separate question (not asserted here).
+
+### 6.3 Verdict per destination class (config/code read, no probe)
+| Destination class | Expected policy | Where the rule is | Verdict |
+|---|---|---|---|
+| **Host loopback services** (`127.0.0.1:8790/3092/8791/9333/8799`, `::1`, `localhost`) | unreachable | (a) host allowlist is only `registry.npmjs.org` ⇒ 403 `allowlist`; (b) even if named, `127.0.0.0/8` is `loopback` in `address.js`, and an IP literal is refused pre-socket by `checkLiteral` | **PASS — refused (two independent controls)** |
+| **Tailnet / CGNAT address** (`100.64.0.0/10`, e.g. the host's `100.114.17.67`) | unreachable | `address.js` `100.64/10 → 'cgnat-tailnet'` (fail closed at resolve **and** at connected-peer re-check); not in allowlist either | **PASS — refused** |
+| **Other private / link-local / ULA** (`10/8`, `172.16/12`, `192.168/16`, `169.254/16`, `fc00::/7`, `fe80::/10`) | unreachable | same `address.js` classes | **PASS — refused** |
+| **Public internet** | deny-by-default; one named exception | only `allow: [registry.npmjs.org]` + `allowPorts: [80,443]` pass the name/port gate; the resolved address must also be public (loopback/private answers to that name are refused) | **PASS for "refuses non-allowlisted public"; CONDITIONAL as a class** — egress is allowlist-only, not "off": widening `allow`/`allowPorts` in this config is the one knob that changes public reachability (today: one host, two ports) |
+| **IP-literal destinations (any class)** | refused before connect | `checkLiteral` | **PASS — refused** |
+| **Arbitrary TCP via the 3128 forwarder** | not a relay | forwarder is a byte pipe to the HTTP/CONNECT proxy's unix socket; the proxy parses/answers HTTP and destroys client errors — no arbitrary TCP path | **PASS (by construction)** |
+| **Audit of attempts** | pre-connect log line; write failure denies | `proxy.js` `admit()` (503 on log failure); `egress.jsonl` | **PASS (fail closed)** |
+
+### 6.4 Limits of this review (stated, not hidden)
+1. **Config/code read only — no probe**, per the ruling. Runtime behaviour is evidenced by the installed source + config, not observed here; the G40-NET observation (separate file) already showed the lane's *direct* reachability is closed.
+2. **Installed-vs-read:** this reads the installed fleet package under the live profile; it does not re-derive hashes against the release manifest (G1's manifest item covers that).
+3. **DNS path** is host-side resolution through the proxy's guarded lookup; the sandbox's resolver configuration is not reviewed here.
+4. **Config integrity depends on the sandbox/fsguard** (lane's `/home` is ro per the G40 observation); "no lane class can rewrite the policy" is not asserted for classes not probed.
+5. **The allowlist is the open knob** — correct for "no host-private destinations", but "no public egress" holds only while `allow: [registry.npmjs.org]` stands; changes to that config need their own review.
+
+**Disposition:** carried on **G1** as **PASS (host loopback / tailnet / other private classes refused; public deny-by-default with the single named allowlist exception, CONDITIONAL on the config knob)**; **no third probe required for the policy question** — it is a config property, and the config is quoted above. Nothing was run, installed or changed.
