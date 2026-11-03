@@ -34,6 +34,8 @@ sensor clone are fine; writes are not.
 | 13:46 | integrator `edd3af8`: NEVER PARK charter section (adopted Nox ruling), 0.3.6 release notes + VARIANT delta, protected ports 8791 9333 |
 | 13:48–13:52 | int2 package suite surfaced new-test failures (manifest-generator pin, bus pull/ack D2a/D2b, D3 mutation) — integrator fixed in `92de192` (reconcile branch tests: rsi/duet page stubs, item-19 limits, open-cap paging) |
 | 13:53 | int3 package+release suites running; fleet housekeeper backup event 2196 (normal); no owner events; desk flat; bus pull empty |
+| 13:46–14:21 | integration finished its build loop: commits `edd3af8`→`e36a553` 14:14:50 (installer derives the profile overlay / fleet-browser re-root, derivation keyed to the live tree) → integrator **STATE.md 14:21** (head `d6e2e4a`): 17 finish branches merged in order; w5b/w6c excluded (checker FAIL, no liveness gate); conflicts resolved without weakening tests; 11 pinned rows; lists 111 entries; host-rooted 0.3.6 artefacts; D1B ships disabled; hazard guard + protected ports; tests: package 1927 tests/1923 pass (4 fail = 3 pre-existing base + w4-closure since fixed), release+relocation 213/213 pass |
+| 14:21 | integrator hand-off state: **waiting on a fresh-context checker for the whole-package check**; then the guarded live install on Nox's go. Live fleet untouched throughout (read-only derivation) |
 
 ## Watch list (next)
 1. Whole-package check on `release/0.3.6` → then the **guarded 0.3.6 install** on checker PASS (host restart signal = fleet host pid change).
