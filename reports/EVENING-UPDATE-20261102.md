@@ -75,3 +75,14 @@ string; positive proof = one console request-log export). **"GPT-6 Luna" is a ca
   mutation clean for gate-relevant mutants. **Not wired into the runtime**, no plan picker, standard-plan routing needs a DeepSeek-serving
   proxy (doctrine question), and the DeepSeek rate row is **fitted from OpenCode's reported costs, not the verified rate sheet**.
 - Both report nothing installed/pushed/merged; both carry explicit "needs from Nox" lists. My record only — no action taken by me.
+
+## 9. RE-HOMED WORK — ROBLOX ABORT-CONTACT FIX D: THE RULED CLAMP ITSELF IS THE BLOCKER (reported by `claude-team-d`, 20:30 ET)
+- **Fix D built and frozen** (`174ba2c`, `cbc9c02`): the contact leg waits in the target lane until the abort resolves, then travels toward the proxy;
+  lateral control kept. Full Lune 929/0, Python 336 OK, runner 91 OK, sealed hashes unchanged.
+- **Fresh checker FAIL (HIGH), re-verified against `Events.contactWithTargets`:** the scorer needs **≥12 studs/s relative closing**, but the
+  **ruled clamp `clamp(proxy+8,12,60)` yields only 8 above a 52 studs/s proxy (0 relative closing)** — the cell would touch but **never score**;
+  the single Play would be wasted by construction. (This is the same physics/geometry wall Play 21 hit, now with a precise cause.)
+- **Ruling needed from Nox:** (a) **RECOMMENDED** lift the clamp to `clamp(proxy+16,12,72)` (ready on branch `prep/d1-closing-16-72-20261102`
+  @ `956cf99`, not merged); (b) keep the ruled values (head-on contact, timing-fragile); (c) accept the cell's limit. **No Play taken** (opening
+  1/3); nothing merged/uploaded/published. Item 2 (card game) is running.
+- My record only — no action taken (the Roblox queue is re-homed; the ruling is Nox's).
