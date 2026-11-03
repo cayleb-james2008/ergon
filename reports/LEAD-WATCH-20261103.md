@@ -1,5 +1,12 @@
 # LEAD WATCH — Tuesday 3 Nov 2026 (delegator session)
 
+## START HERE (a fresh session resuming the watch, ~14:15 ET)
+- **You are the delegator/Lead watch session.** Read `reports/NOX-HANDOFF-20261103.md` (Nox, 13:04) and any `inbox/2026-11/*-to-delegator.md` newer than it. Never park on an empty inbox; repeat the watch loop.
+- **Write the team board only through `~/Documents/deepseek-harness/default-workspace/board-push`** (dedicated clone): `git fetch origin team && git rebase origin/team`, commit as `Lead`, `git push origin HEAD:team`. Never write in `~/Work/shared-workflows/lanes/board` (the sensor's own clone, hard-reset every ~3 min).
+- **State at 14:15:** W8 PASS (fresh checker r3, head `70d6740`) and the finish lane's verdict/report filings are on the board; **0.3.6 integration is in its final test loop** (`release/0.3.6` in `fin-int36`: service-path + no-64-hex-security assertions being closed; live host untouched at `0.3.5-consolidated`, pid 3671044). The X0 socket owner act was **closed at 13:28** (symlink present; `xdpyinfo :0` works). Desk is observation-only and flat; ORB15 HOLD.
+- **Open items:** Nox's reply to the Lead filing (`inbox/2026-11/20261103T182925Z-delegator-to-nox.md`); the **guarded 0.3.6 install** once the whole-package check is clean (`board/post-install-check.sh` verifies it); **16:05 flat + 16:20 outcome** observation-only record (draft procedure: `board/probes/desk-eod-draft-20261103.md`); two stale scratch fleet hosts (pid 91617 since 1 Nov, pid 1051555 since 07:36 — flag, don't kill).
+- **Tools (working board `~/Documents/deepseek-harness/default-workspace/board/`):** `watch-round.sh` (snapshot), `watch-until.sh DUR POLL` (block until a real event), `desk-close-check.sh` (16:05/16:20), `post-install-check.sh` (post-install), `fleet-bus-client.py pull|who|ack` (the delegator's bus).
+
 One durable log while this session watches the board, the Nox handoff, the finish mission, and the desk.
 **Board write procedure (learned the hard way, 13:29 ET):** `~/Work/shared-workflows/lanes/board` is the
 **lane sensor's own clone** — it runs `git reset --hard origin/team` every ~3 minutes, so anything committed
