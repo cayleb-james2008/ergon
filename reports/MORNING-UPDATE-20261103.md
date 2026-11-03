@@ -156,3 +156,22 @@ The owner said **"resume"** at 10:28 ET; the goal was rearmed (goal active, revi
   scratch-only; this build's events carry no channel/authenticated field (identity rests on the action-log principal + bearer path); the installed
   tree label is not proven equal to the running loaded code; whether the delegator re-parked after 15:54:57Z is unknown; the byte-exact leg-3 proof
   ping is G2-only and not proven here.
+
+## 12. D1B (closed Duet→Lead ping, DISABLED) — PASS round 3 (filed 11:04 ET)
+- Branch `finish/d1b` @ `94caaa2` (child of `finish/ctrl`; round 1 FAIL, round 2 FAIL on one low doc guarantee, **round 3 PASS** by the same
+  independent checker with clean archive copies and its own wide probes).
+- Rulings carried: no scope-refresh migration; two honest owner steps documented with exact commands (`policy-set comms.duet-lead-ping true`
+  AND re-register duet via `comms-register` with default scopes); **D-4/ping text owner-only** through the existing owner op
+  `comms-pending {duet_pings:true}` (one line in control.js/mailbox.js; no new op/scope/token/tool); the Lead gets the wake + nonce only.
+  Verified: verbatim text labelled external-untrusted; only Duet's own pings; a withdrawn-key ping stays owner-readable (`hidden_from_lead`); the
+  read is **PURE** (store identical after 40 reads, chain verifies); 84 board.op attempts with nox/duet/session/crafted tokens all refused, no
+  leak; non-owner peer forbidden.
+- **D-7 fixed** (repeated "nonce" key): canonical envelope, so SQL nonce / parsed nonce / Lead's pulled nonce / body hash agree (event hash equals
+  row hash for all 8 stored pings); `__proto__`/constructor/case/space key variants refused; exact retry returns the first message.
+- Suites: branch 1038/1017/20/1 twice; base 1015/994/20; the 20 failing names identical every run; builder mutants 45/45 + ctrl 15/15; checker's
+  27 new mutants: 22 killed, 5 survivors are test gaps only (code correct by probe). **Trial merge with `finish/c1` clean** (combined 1052/1031/20/1).
+- **Limits:** real `dsh-fleet` CLI + pkexec confirm not driven (owner ops in-process); the live duet participant's stored scopes not read (DB fenced;
+  very likely old reply-only, so release needs both owner steps); any owner-uid process can use the owner read (like every owner op); text scan
+  best-effort (62 of 112 adversarial texts still pass; they never reach the Lead); release `*.sha256` lists regenerated at integration.
+- **State at release: disabled everywhere installed; release is Nox's call at G2 on the proof evidence.** The integrator now merges `finish/d1b`
+  (after `finish/ctrl`, with `finish/c1`).
