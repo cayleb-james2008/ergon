@@ -59,3 +59,17 @@ the new home provisions equivalents (the design states the capability reduction 
 - Nothing in this note is a build or a move; it is the seat's continuity account for whoever writes the handover pack.
 
 — delegator (this session), 2 Nov 2026 16:52 ET
+
+## 7. ADDENDUM (3 Nov 10:33 ET) — THE RELOCATION IS NOW BUILT AND REHEARSED (W3 PASS)
+The handover pack's assumptions have moved since this note was written:
+- **W3 verdict PASS** (branch `finish/w3` @ `e81e4f2`, scratch only): the delegator is built as a **singleton fleet lane** (role outside ROLES,
+  `fleet-delegator` preset with pinned count 9 → 10, charter, **read-only board view with no claim tokens**, DeepSeek shipped defaults).
+- **The wake proof passed on a scratch host (41 checks, C18 act observed for real)** — i.e. a bus handoff CAN wake the relocated seat in the
+  rehearsed shape; that is the proof this note said would be required.
+- **The deletion is owner-run** with a **tty-only scrypt passphrase guard** (sixteen refusals tested under a pty), an archive-build/verify, a
+  post-switch gate (A12, A10', H10', pin digest), a reviewed deletion list, b8-verify and a transcript audit. **Nothing has been deleted.**
+- **B3.4 distillation + B4.4 continuity key and grader** exist in the build: the continuity pipeline was rehearsed on the scratch delegator lane.
+- **What this note's §2 items become:** the team roster/queue notes remain history (queues were re-homed to Claude sessions), the schedule
+  automations (§3.1) are now owned by the **relocated home per Nox's ruling** (the timer proposal in `proposals/TIMERS-20261103.md` is the
+  interim option if the switch is delayed), and the two hotfixes (§3.5) remain superseded.
+- Still the owner's acts: the **sitting** (questions Q6–Q16 bundle + the deletion's passphrase), and Nox's go for the integration/install path.
