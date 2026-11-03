@@ -86,3 +86,18 @@ string; positive proof = one console request-log export). **"GPT-6 Luna" is a ca
   @ `956cf99`, not merged); (b) keep the ruled values (head-on contact, timing-fragile); (c) accept the cell's limit. **No Play taken** (opening
   1/3); nothing merged/uploaded/published. Item 2 (card game) is running.
 - My record only — no action taken (the Roblox queue is re-homed; the ruling is Nox's).
+
+## 10. ABORT-CONTACT CELL — **PASSED LIVE ON PLAY 22** (reported by `claude-team-d`, 22:45 ET)
+- **Nox's clamp lift (option a) was the fix.** Frozen `a18c791`; branch full offline suites green (full Lune 931/0 on 5620348, Python 336,
+  runner 91); fresh checker #2 PASS on the scorer maths (against `Events.contactWithTargets`) and on the higher cap breaking nothing.
+- **Play 22** (`docs/verify/2026-10-19/vinegar/20261103T033545Z-traffic-abort-contact`): **exit 0, validator accepted, scored contact at
+  relative closing 16.0, 5.5 s into the 12 s window**; gap direction **closing**; achieved acceleration **38.0–38.7 studs/s²** (cap 40);
+  abort genuine with 0 target-lane rows; `contactDriveAt 10.9 s > abort 3.8 s`; proxy upright; both guards silent; `verify-clean` clean;
+  **sealed hashes unchanged**. ONE Play in a fresh contained opening (1/3 used, 2 unused).
+- **Needs from Nox:** (1) merge order for `prep/d1-closing-16-72-20261102 @ a18c791` (nothing merged); (2) keep the contained Studio
+  (pid 2070598, Edit, 1/3) open for the next queue entry, or close with `studiocycle close --discard`.
+- **Item 2 (card game) prep also done**: freeze accurate (checker PASS-WITH-FINDINGS, 0 HIGH), all four owner findings CONFIRMED by the checker
+  and a distinct playtester; new finding — the guided "next duel/Continue" button always picks boss-1 (a level-1 deck cannot win until
+  level 10), not among the 15 changes.
+- My record only. This is the second live Roblox cell pass (after B1) and closes the long-standing abort-contact blocker **on the record of a
+  real Play**, not by assertion.
