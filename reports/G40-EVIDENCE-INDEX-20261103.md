@@ -49,3 +49,17 @@ harness finisher's, not this index's.
   network not probed (one more read-only line in a fresh throwaway order, if Nox wants that leg closed), and no live `/proc` capture
   (the scope was transient; the committed artifact is the evidence). Backend scope: `bash-sandbox` only.
 - `o8`'s final task/order closure remains the harness finisher's; the finish lane is watching it and will report if it does not close.
+
+## 7. NETWORK LEG (o9, G40-NET) — observed 19:19–19:22 ET; both throwaway orders closed administratively
+- **o9** created 00:19:22Z; builder:1 ran the connection-attempts-only script; built commit `47d0e913…71be` (parent `cbee8da`, clean tree);
+  fresh checker **PASS** 00:21:35Z (verdict 15); `t23` done, `t24` open → then **closed administratively by the owner op** (stored `failed`;
+  harness artefact, not a failed deliverable).
+- **Probe output:** `net:[4026533376]` (distinct from host `4026531833`); `/proc/net/dev` lists **only `lo`** with zero counters; one in-ns
+  listener `127.0.0.1:3128`; **all seven connects `exit=1`** — 127.0.0.1:8790/3092/8791/9333/8799/53 and 1.1.1.1:443; none `0`, none `124`.
+- **Observer (Team E, `team-e-g40n-observation-20261103.md`):** direct-reachability **C (confined)** — isolated net ns, loopback-only, no host
+  service or public internet reachable; **host-side contrast** (host listeners exist on :8790/:3092/:8791/:9333 yet failed from the lane;
+  :8799 and :53 have no host listener, so their failures are not isolation evidence). **Not overclaimed:** the in-ns `:3128` egress proxy
+  exists and was **not probed** → record the leg as **"isolated net ns, no direct TCP reachability"**; egress policy untested.
+- **Banking-gap instance two** (both o8 and o9): `done` + checker-passed but unbanked; only the maker may bank; nothing dispatches a banker
+  when no open task remains. Both closed administratively; the **Option B package must cover both shapes** (o1 t5 rubric-final; o8/o9
+  done-but-unbanked).
