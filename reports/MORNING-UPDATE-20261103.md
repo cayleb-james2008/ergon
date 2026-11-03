@@ -31,3 +31,20 @@ The owner said **"resume"** at 10:28 ET; the goal was rearmed (goal active, revi
 1. **Sign in to Tradovate** (observation) — or confirm **NO-DESK-DAY** for today.
 2. **Automation ownership** word (relocated home / systemd timers) so mornings stop depending on this session waking at the right minute.
 3. Optional: the **console look** that closes the small-model verification; the **Lumen grade** (pages were still open; mirror needs one refresh).
+
+## 5. TEAM D (RE-HOMED) — QUEUE PROGRESS, AND `atlas:edge` IS NOT READY (filed 10:29 ET; artifacts landed by me)
+- **`moving` fixture — LIVE PASS under a fresh checker** (runs `20261103T142804Z` / `20261103T142954Z`, new test place, Plays 30/31); branch
+  `prep/moving-association-20261103` @ `18d01a2` (bounded capture-time association; runbook assumption 16 amended). **Not merged — needs Nox's order.**
+- **Flag-off baselines:** `atlas:scout` ✓ and `moving` ✓ captured; **`atlas:edge` NOT captured** — see below.
+- **Card-game balance pass done, code+spec only, nothing uploaded:** starter deck clean sweep **12/12 → 11/12** (only `w3-enc-1` moves, 100% → 0%
+  with a numbers-only change); spec §8 + Appendices C3/D on `prep/card-game-design-spec` @ `e4e4746`; code `prep/balance-pass-20261103` @
+  `956b4bc`. Open for Nox: the Δ2 interaction (re-lock at enemy level 10 if Δ2 approved) and proposed Δ16 (guided continue skips the unwinnable boss-1).
+- **`atlas:edge` is NOT READY — a fresh checker found 5 HIGH**: (1) nothing starts the client half (`AtlasEdgeBotClient`), so "start" is never sent;
+  (2) the car is named `AtlasEdgeCar` but production `Driving.client` attaches only to `Player_<UserId>`; (3) `place()` indexes `direction[1]/[2]`
+  while `EdgePlan` returns `{x,y,z}` — every run would face north; (4) payload likely exceeds the 512 KiB direct-post limit and edge phases cannot
+  be chunked; (5) 7 starts × 8 headings × up to 20 s cannot fit the runner's 588 s window (~950 s modelled). Root cause of the timeout found and
+  fixed (`EdgeBot.luau:18` waited forever on the wrong `GameService` path; `818dc22`, pinned by a test) — but the bot had **never run past line 18**
+  before today. Studio opening **3/3 used** (Plays 30–32); the contained Studio stays open on the new place.
+- Self-reported mistake, fixed: a `git add -A` swept ~1,900 untracked evidence files into the moving commit; remade with explicit paths (`18d01a2`);
+  nothing pushed.
+- All artifacts landed by me to the shared board (`probes/team-d/…`, commit `43628a18`).
