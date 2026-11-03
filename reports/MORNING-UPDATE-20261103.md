@@ -64,3 +64,12 @@ The owner said **"resume"** at 10:28 ET; the goal was rearmed (goal active, revi
 - **Mutation:** 156 applied by a fresh tester → 45 killed, 111 survived; fix stage closed **108 of 111** (3 equivalent: S08, S15, L07); one real
   defect found and fixed (distill per-section byte budget, `133417d`).
 - **Everything ran on scratch hosts or synthetic data; the live host was not touched and nothing sent the proof text.** Nothing installed or merged.
+
+## 7. G1 REVIEW OF THE DUET COURIER — ALREADY RAN THIS MORNING (order `o10`); BANKING GAP INSTANCE FOUR
+- **Order `o10`** "G1 REVIEW (Team E re-hosted, throwaway): Lane 6 gate on the built Duet courier" — the review lane ran, the rubric **Checker
+  passed it at 06:42:55 ET**, and an independent fresh Claude verifier **re-verified the report: G1 CONDITIONAL, no courier code defect**. The order
+  was then **closed administratively** (task 25 done but **unbanked**, only its maker may bank, nothing dispatches a banker) — the **banking gap,
+  instance four**. The stored `failed` is a harness artefact, not a failed deliverable.
+- Consequence for me: the courier's G1 gate is **done (CONDITIONAL)**; my G1/G2 hosting now focuses on the **extension review** I asked Team E for
+  today — the **W3 relocation build** (`finish/w3` @ `e81e4f2`) and the **W6B face studios** (`finish/w6b` @ `700b648`), read-only, appended to the
+  G1/G2 evidence map. Nothing run against the live host.
