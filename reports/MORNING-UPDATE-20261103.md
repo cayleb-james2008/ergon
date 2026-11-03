@@ -236,3 +236,20 @@ The owner said **"resume"** at 10:28 ET; the goal was rearmed (goal active, revi
   on it) plus the card branches; (2) the margin below baseline for the fleck/cyan thresholds and a number for void fraction; (3) **Studio**: one
   contained instance is open (**2 Plays left**), and `studiocycle` cannot see the Wayland window so cannot close it — a decision/act is needed on
   when/how to close it (the same Wayland-class gap I flagged at 11:31 ET).
+
+## 17. W8 (CamoFox integration) — VERDICT **FAIL** (fresh checker, ~11:15–12:05 ET; two blocking defects)
+- **Branch `finish/w8` head `b862e64`**; the checker drove all four owner criteria itself on scratch hosts with its own scripts and its own loopback test
+  site (not the maker's proofs). **Two blocking defects (D1, D2).**
+- **Criterion 1 — NOT MET**: two client kinds do complete a real task through CamoFox and appear in the sidebar watch view… but at **390x844 the
+  panel does not scroll** — the live frame is **124 of 165 px visible** with 2 lanes, falls off-screen with more, and the **Activity feed is
+  unreachable** (D2). At 1440x900 it holds. (Proven: fleet-lane `builder` and `checker` through the host's real tool pipeline and an Ergon-style
+  MCP client all completed the task; the server saw **firefox** as the submitting browser; watch state lists all three lanes with real PNG frames.)
+- **Criterion 2 — MET on one engine, BROKEN across engines**: a pre-changeover login survives graceful restart, the owner restart op, a deleted host
+  home/package copy and SIGKILL, **but a login made on CamoFox is silently destroyed the next time the Chromium fallback checkpoints** (D1).
+- **Criterion 3 — MET**: a typed canary password completes the login and appears **nowhere** the agent can read — 0 of 31 readbacks, 0 OCR hits,
+  0 disk hits (with the guard disabled in a scratch copy the same drive leaks into 9 readbacks and 2 images, so the test can fail).
+- **Criterion 4 — MET with a caveat**: a protected site CamoFox cannot pass routes to Chromium, the task completes, the reason appears in the answer
+  and `browser-status` — but **not in any durable log** (D3).
+- **Read-only/isolation checks passed**: POST/PUT/DELETE/PATCH on the state route and POST on the frame route answered 404, unauthenticated GET 401,
+  clicking/typing on the live frame did not reach the page (site saw 0 hits), no horizontal overflow, no page error at either width.
+- **This is a FAIL, recorded as one.** The maker side will presumably fix D1/D2/D3 and re-check; nothing installed or merged.
