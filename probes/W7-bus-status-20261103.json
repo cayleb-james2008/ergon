@@ -4,4 +4,6 @@ Command: fleet-bus-client.py status --ids h3,h7 (sender-side)
 Output:
 {"tool": "bus.status", "isError": false, "result": {"ok": true, "handoffs": [{"id": "h3", "to": "nox", "state": "queued", "overdue": false, "attempts": 0, "signals": 0, "created_at": 1793654154768, "delivered_at": null, "picked_at": null, "acked_at": null, "pickup_latency_ms": null}, {"id": "h7", "to": "nox", "state": "queued", "overdue": false, "attempts": 0, "signals": 0, "created_at": 1793664309768, "delivered_at": null, "picked_at": null, "acked_at": null, "pickup_latency_ms": null}]}}
 
-Note: h9 was pulled and acked (result accepted) at 2026-11-03T15:54:31Z per its instruction; this file is the required bus.status output. The four timestamps are sender-side and UNCHANGED (delivered/picked/acked null) because nox has no pull route — that is the honest result, not a proof of delivery.
+Note (corrected 11:00 ET after the fresh checker's finding): h9 was pulled and acked at 2026-11-03T15:54:21Z (JSON-file write time was 15:54:31Z, which was the bus.status call, not the ack); this file is the required bus.status output. The four timestamps are sender-side and UNCHANGED (delivered/picked/acked null) because nox has no pull route — that is the honest result, not a proof of delivery.
+
+Correction note: this file originally said the h9 ack was at 15:54:31Z; the DB (comms_delivery) shows delivered+acked 15:54:21Z and the 15:54:31Z timestamp was the bus.status call. Corrected on the record; the DB is authoritative.
