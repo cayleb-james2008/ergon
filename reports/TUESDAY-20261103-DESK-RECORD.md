@@ -50,3 +50,16 @@ being awake at the right minute — and this morning it was not.
 - **Correction to my earlier framing:** "only the owner can sign in" should read **"the re-login is performed on Cayleb's desktop per the standing
   procedure (Nox's act, Secure Vault); no agent session enters credentials."** The owner's involvement is only if Nox is not available to run it.
 - Consequence unchanged: the day remains NO-DESK-DAY / BLOCKED-ON-MACHINE until the re-login happens; decision log empty; 0 fills; ORB15 HOLD.
+
+## RESUME — THE DESK IS BACK (recorded 11:16 ET)
+- **11:12:17 ET:** engine log `OpenBell feed OK — engine resumed` (card `NehBQx9UbI1r`). **11:13:00:** `session day 2026-11-03: pnl 0.00 trades 0`.
+- **11:15:45 ET:** tabkeeper `tradovate: ok`, `session: ok`. Heartbeat: `status running`, `mode automated`, **`paused False`**, `feed ws`,
+  **`feed_age_s 0.0`**, `pos None`. The re-login happened (per the standing procedure it is performed on Cayleb's desktop; no agent entered
+  credentials).
+- The moneydesk lane's `tradovate-feedstale-20261103` alert at 11:11:45 ET predates the resume by ~30 s and is the desk's own detection.
+- **What today is now:** the 09:30–11:12 window was **blind** and remains recorded as such (gates missed, no signed Tuesday runbook). From 11:12
+  the desk runs **passively as observation only** — the engine's own card/shadow logging, ORB15 HOLD, no tap/order/sign-in by any agent. **The day
+  is NOT retroactively a runbook day**; the honest label is "NO-DESK-DAY (no signed runbook) with a blind open and an observation-only remainder
+  from 11:12:17".
+- **16:05/16:20 can now be recorded from the desk's own data** (fresh frame, cards, outcome completeness as the engine logged it) — as an
+  **observation-only** record, decisions still empty unless the owner directs otherwise.
