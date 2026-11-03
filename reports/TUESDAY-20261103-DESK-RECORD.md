@@ -31,3 +31,12 @@ being awake at the right minute — and this morning it was not.
 1. Owner: sign in (observation only) or confirm NO-DESK-DAY; app Restart if the crash dialog is still up.
 2. Nox/the finish lane: the crashed-renderer cause and the multi-instance observation; the automation/relocation item.
 3. 16:05/16:20: will be recorded as **not run** unless the owner directs an observation-only day or a desk route is restored — no backfill.
+
+## Addendum 09:38 ET — desk state reconciliation (read-only)
+- **Only one Tradovate page exists** in the desk Chromium: `https://trader.tradovate.com/welcome` (welcome/login) — so there is **no live
+  session**, despite `account_state.json` reading `status: attached` with equity/PnL figures. That file is the desk's **last-known/cached state**
+  (`tab_path: /welcome`); it must not be read as "the desk is back".
+- **The engine was restarted at 09:28:59 ET** (not by this session); its feed attach failed on the welcome tab, it recovered warm-up bars
+  (last bar **09:18:59**), then at **09:31:00** logged `feed stale …, pausing entries` and sent the engine's own **FEED STALE card**. It is alive
+  and paused; entries are paused by design.
+- No cards today besides that engine alert; no decision log; no fills; **no sign-in by any agent**.
