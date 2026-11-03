@@ -107,3 +107,12 @@ being awake at the right minute — and this morning it was not.
    "Structural fix owed" paragraph's framing: the missing piece is the relocation/handover, not a new ruling, and this session's watch is re-armed.
 5. **W7:** the watcher's ping already fired and the delegator leg is **PASS** (h9 pull/ack 15:54:21Z; fresh checker attempt 3) — this record owes nothing
    to W7. Standing: no blocking on an empty inbox; idle-check each round, stay pull-ready.
+
+
+## END OF DAY (16:05 flat / 16:20 outcome ET) — observation-only, NOT a runbook day
+- **16:05 flat check (read 16:04:25 ET)** from the desk's own state: heartbeat `running / feed ws / feed_age 0.0 / paused False / pos None / trades 0 / day_pnl 0.00 / last_bar 16:03`; session watch `ok`; cached account `attached`, `netPos 0`, equity 50,445.28; tabkeeper `tradovate ok / session ok`. Capture: `probes/desk-1605-capture-20261103.txt`.
+- **16:20 outcome (read 16:19:19 ET)**: heartbeat `running / feed ws / feed_age 0.0 / paused False / pos None / trades 0 / day_pnl 0.00 / last_bar 16:18`; cached account `attached`, `netPos 0`, equity 50,445.28; tabkeeper `tradovate ok / session ok`. Capture: `probes/desk-1620-capture-20261103.txt`.
+- **The day as the desk's own data records it:** **0 signals after the 11:12:17 resume; 0 signal cards** (the 11 cards today are engine lifecycle only: tv-stuck 1, tv-login 2, fresh 3, start 2, stale 3); **0 fills, 0 trades, day_pnl 0.00**; decision log empty (no runbook day); ledger 15 rows = 3 decision cycles + provisional entries + the desk's own nightly record entries (`record`, `record_done`, `nightly`), **0 trade events**.
+- **Blind window 09:30–11:12** stands on the record; resume 11:12:17; the 16:20 gate was armed Nox-side.
+- **Status: NO-DESK-DAY (no signed Tuesday runbook) with a blind open and an observation-only remainder from 11:12:17.** Nothing backfilled; no fill claimed; no tap, order or sign-in by any agent; ORB15 HOLD.
+- Sources: the desk's own files only (heartbeat, cached account_state, cards.jsonl, ledger, session-state, tabkeeper, journal, the :9222 tab list); captures saved under `probes/`.
