@@ -195,3 +195,19 @@ The owner said **"resume"** at 10:28 ET; the goal was rearmed (goal active, revi
   identical failing names). Mutation: removing `--no-map-gw` makes the drive FAIL (decoy reached), so the namespace isolation check bites.
 - **The honest limit, stated by the lane:** **native embedding is NOT complete — it fails at Studio's login screen.** That is the owner's act
   (Studio login inside the instances) before the panels can show a real Studio; the containment proof itself passes.
+
+## 14. `atlas:edge` — PARTS 2/3 AND 3/3 PASS; PART 1 NEEDS A FRESH PLAY; TWO STUDIOS OWE A CLOSE (filed 11:50 ET)
+- **Branch `prep/atlas-edge-diag-20261103` @ `dae2abc`** (nothing merged). The flag-off baseline seed 2134783819 now runs live in **3 parts**
+  (56 runs cannot fit one 588 s window).
+- **Part 2/3 PASS** (run `20261103T161812Z-atlas-edge`, 16 runs, **0 reached the wall**). **Part 3/3 PASS** (`20261103T163557Z-atlas-edge`,
+  16 runs, **5 reached the wall**). **Part 1/3** (Play 33) drove and reported all 24 runs (4 reached the wall at 2–6 studs, all in bounds) but
+  **failed the lane's own over-strict validator**; the corrected validator (`dae2abc`) passes that saved data offline — **part 1 still needs a fresh
+  Play to count**, and that needs a new Studio opening.
+- Root causes fixed since the last report: wrong `GameService` path; client half never started; car name (production `Driving` attaches only to
+  `Player_<id>`); keyed heading; `MenuOpen` zeroing the throttle; report size; stale samples; time budget (3 parts, two checkers).
+- **My gate finding was used:** the gate fix ("argv[0]-anchored pgrep") is applied, and the Play 35 relaunch ran with it.
+- **HARD BLOCKER (owner act):** `studiocycle cycle` found Studio as a **native Wayland window** (`robloxstudiobeta.exe` class) its window finder
+  cannot see → close said `no-studio-window` and open launched a **second Studio**. Two Vinegar Studios are open on the new place —
+  **pids 4142639 and 270149** — and `flatpak kill org.vinegarhq.Vinegar` was **refused by the permission classifier** (no workaround attempted).
+  **Closing both is an owner act** (or Nox's route); then the lane runs part 1/3 in a fresh opening. Place file unchanged (new-place
+  `2df9cdb4…`; sealed `c6651793…`/`84324d43…` unchanged).
