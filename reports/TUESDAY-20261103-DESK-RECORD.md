@@ -1,0 +1,33 @@
+# TUESDAY 3 NOVEMBER 2026 — DESK RECORD (Lead, opened 09:37 ET)
+Status: **NO-DESK-DAY / BLOCKED-ON-MACHINE** (pending the owner's choice: observation-only remainder, or carry the no-day). Nothing
+backfilled; the decision log is **empty**, not "complete"; **0 fills claimed**; ORB15 **HOLD** remains in force (no tap, no order, no sign-in by
+any agent).
+
+## Why the day did not start
+1. **Gates missed:** 07:45 Team E estate sweep and 09:00 Team C desk chain **did not run**. The delegator session was blocked overnight and
+   resumed 09:33 ET; Tuesday's automations were never armed (Nox's ruling: the **relocated fleet home owns them**; the relocation has not landed);
+   nothing else owned the gates.
+2. **App renderer crash:** the DSH desktop app's renderer was killed at **08:51:59 ET** ("Desktop renderer exited: killed"; same signature as the
+   20:26 Tue-1 crash). No OOM evidence in user or kernel journal; cause **not established**; the app was restarted and the session resumed 09:33.
+3. **Desk blind and logged out:** the Tradovate tab that stalled at **20:26 Mon** finally **lapsed to its login page** overnight
+   (`tradovate: login`, `session: None`). At 09:37 ET the engine is `paused`, `feed_age None`, `last_bar None`, **no cards today**; the market is
+   open. **Only the owner's sign-in can restore the feed; no agent may sign in.**
+4. **No signed runbook for today:** `reports/monday-futures-runbook.md` is **v7 for Monday 2 Nov, "re-sign required"**; there is no re-sign for
+   3 Nov, and its timing gates (P0 by 09:05, guard 09:05, preflight 09:15, binding 09:35–09:44, window 09:45) have passed. Even with a
+   sign-in today's desk day could not start as a signed runbook day.
+
+## What is therefore recorded (and what is not)
+- Recorded: the four facts above; the desk's own state files; the crash logs; the missed-gate record (`MORNING-20261103-MISSED-GATES.md`).
+- NOT recorded as: a desk day, a traded day, a "complete" decision log, any fill, any tap, any sign-in, any config/rail change.
+- **Owner's optional choice:** if he signs in and asks for it, the remainder of the session can be logged as **observation-only** (the desk's own
+  cards/ledger with zero live actions, ORB15 HOLD) — that would be recorded as observation, never as a runbook day.
+
+## Structural fix owed (this is the third morning affected by it)
+The automation ownership: per Nox's ruling the **relocated fleet home must own Tuesday's timers** (07:45 sweep, 09:00 desk chain, 16:05/16:20),
+or an equivalent explicit owner (systemd timers) must be armed with the owner's word. Until that lands, every morning depends on this session
+being awake at the right minute — and this morning it was not.
+
+## Open
+1. Owner: sign in (observation only) or confirm NO-DESK-DAY; app Restart if the crash dialog is still up.
+2. Nox/the finish lane: the crashed-renderer cause and the multi-instance observation; the automation/relocation item.
+3. 16:05/16:20: will be recorded as **not run** unless the owner directs an observation-only day or a desk route is restored — no backfill.
