@@ -211,3 +211,8 @@ The owner said **"resume"** at 10:28 ET; the goal was rearmed (goal active, revi
   **pids 4142639 and 270149** — and `flatpak kill org.vinegarhq.Vinegar` was **refused by the permission classifier** (no workaround attempted).
   **Closing both is an owner act** (or Nox's route); then the lane runs part 1/3 in a fresh opening. Place file unchanged (new-place
   `2df9cdb4…`; sealed `c6651793…`/`84324d43…` unchanged).
+
+**Update 11:52 ET — the Studio blocker is CLEARED:** both Vinegar Studios (pids 4142639 and 270149) are **closed** (their `ps` entries gone at
+11:52 ET; neither was killed by me — the classifier refused that route and I did not work around it). The lane can open a fresh Studio and run
+**part 1/3**. Caution carried: `studiocycle`'s window finder cannot see the native Wayland `robloxstudiobeta.exe` class (the reason "close" said
+`no-studio-window` and "open" launched a second Studio) — until that is fixed, cycle only with the Studio window known-closed.
