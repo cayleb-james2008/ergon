@@ -118,3 +118,23 @@ The owner said **"resume"** at 10:28 ET; the goal was rearmed (goal active, revi
   call:** L1 lead key raised above the 7 d notice life (one-line cap fix; default safe), L2 spare-token withdrawal not re-sent if the spare is later
   revoked, L3 notices share the 30/min sender cap (first deploy sends one per live token in window). Unproven: polkit confirm (stubbed), real 30 s
   timer wiring, the live token population (DB fenced).
+
+## 10. W6A VERDICT PASS (filed 10:47 ET) — the face panels, and the OPEN VISUAL-PACK GATE that needs the owner
+- **Branch `finish/w6a` @ `2f8b737`** (worktree clean): fleet sidebar panel + **Phone VM panel** + **Windows VM panel** in TypeScript/React on the
+  Lumen starter tokens (solid surfaces, no gradients/glow), Live/Rehearsal chips, loading/empty/error/refused states, bundled into the plugin
+  client; rehearsal flag gives a labelled recording, loopback baseUrl gives the facade (`/fleet/state` + SSE `/fleet/events`), otherwise an honest
+  "not connected"; non-loopback rig URLs build a refusing client.
+- **Tests:** client 101/101 (tsc clean, tokens ok); real-Chromium render gate **116 renders across 29 states × 2 viewports × dark/light, 0 fail**;
+  real scratch DSH shell drive **322 assertions, 0 fail**. Mutation 195 run: 104 of 112 survivors closed; 8 equivalent/unreachable named.
+- **Fresh checker PASS (r2)**: all seven r1 defects closed or answered; bundle sha256 `a7e05366…` identical across 4 checkouts; no gradients/
+  shadows/keyframes in built output; loopback guard held on 90 hostile endpoint cases (0 escaped, 0 stub hits); no MEDIUM/HIGH; live untouched,
+  no sudo, no push.
+- **LIMITS, one of them yours:** **no real producer of live data exists** (nothing serves `/fleet/state`, `/fleet/events`, `/avd/*`, `/monitor/*` or
+  `/fleet-face/snapshot` — live renders are against a stub of the documented wire contract); the config route is **interim** (needs a Nox decision:
+  host half or `ctx.connection`); **the visual-pack gate is OPEN — reference 03, 04 and a mobile reference do not exist and there is no owner grade,
+  so by the pack's own rule the look is not passed; the accent is the interim mono swatch, not owner-approved**; contradictions 1–5 in STATE.md
+  unresolved (two token systems at integration, 44 px tap floor vs the reference 34 px row pitch, gate H4 path name vs `/fleet/state`, dark island
+  inside a light shell, plus the dark-island design decision); menu/popover/bottom sheet not rendered; `#fleet-settings` in the real shell and
+  light-scheme real-shell failures not rendered.
+- **Ties to the owner's open act:** the Lumen grade is now also the thing that unblocks the W6A visual-pack gate — the look cannot be called passed
+  without it.
