@@ -20,8 +20,13 @@ sensor clone are fine; writes are not.
 | 13:23 | Finish lane filed W8 verdict + workflow v4→v5 restart note to Nox (`inbox/2026-11/20261103T182303Z…`, `…182334Z…`) |
 | 13:25 | **0.3.6 integration under way** — `release/0.3.6` in `~/workspace/harness-build/fin-int36`; integrator merging pa9-comms, ctrl, d1b, c1, w9 … |
 | 13:27 | Integrator started a base sandbox check in `~/fleet-scratch/INT` (whole-package/integration stage) |
-| 13:29 | Owner act open: `/tmp/.X11-unix/X0` missing since ~09:21; new X11 clients on `:0` fail (Lead verified `xdpyinfo :0`); staged `ln -s X0_ /tmp/.X11-unix/X0` (unprivileged, reversible); already in the finish lane's Nox filing; **no agent ran it** |
+| 13:29 | Owner act open: `/tmp/.X11-unix/X0` missing since ~09:21; new X11 clients on `:0` fail (Lead verified `xdpyinfo :0`); staged `ln -s X0_ /tmp/.X11-unix/X0` (unprivileged, reversible); already in the finish lane's Nox filing; **no agent ran it** — **closed at 13:28, see below** |
 | 13:30 | Desk: running / ws / feed_age 0.0 / flat (netPos 0) / trades 0 / day_pnl 0.00 / 0 signal cards. Bus pull empty; `ext:delegator` fresh; fleet DB integrity ok |
+| 13:28 | **X0 socket REPAIRED** (owner/Nox act, before this row was written): `/tmp/.X11-unix/X0 -> X0_` symlink present, Lead verified `xdpyinfo :0` answers again — **owner act closed** |
+| 13:33–13:43 | integrator: `bceb97d` package.json files/exports (duet, ext/rsi), gen-lists walks bin and kit, host-rooted live-0.3.6 artefacts; `b369526` installer derives the host-rooted manifest + delegator preset from the target; **installer suite 21/21 PASS** on the integrated tree (`INT/out/inst.txt`); base vs int1 suite comparison |
+| 13:46 | integrator `edd3af8`: NEVER PARK charter section (adopted Nox ruling), 0.3.6 release notes + VARIANT delta, protected ports 8791 9333 |
+| 13:48–13:52 | int2 package suite surfaced new-test failures (manifest-generator pin, bus pull/ack D2a/D2b, D3 mutation) — integrator fixed in `92de192` (reconcile branch tests: rsi/duet page stubs, item-19 limits, open-cap paging) |
+| 13:53 | int3 package+release suites running; fleet housekeeper backup event 2196 (normal); no owner events; desk flat; bus pull empty |
 
 ## Watch list (next)
 1. Whole-package check on `release/0.3.6` → then the **guarded 0.3.6 install** on checker PASS (host restart signal = fleet host pid change).
