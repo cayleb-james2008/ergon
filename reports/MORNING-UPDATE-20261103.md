@@ -226,3 +226,13 @@ The owner said **"resume"** at 10:28 ET; the goal was rearmed (goal active, revi
   (new-place `2df9cdb4…`; sealed `c6651793…`/`84324d43…` unchanged).
 - What this closes: the cell that was "NOT READY — 5 HIGH" this morning now runs live in three parts on the fixed branch, with the Studio
   double-instance blocker cleared (both Vinegar Studios were closed at 11:52 ET; I did not kill them).
+
+## 16. ROBLOX B1 QUEUE COMPLETE — `atlas:edge` PASSED IN 3 PARTS (filed 12:25 ET)
+- **All three `atlas:edge` parts PASS under the corrected validator**: runs `20261103T165617Z` / `161812Z` / `163557Z` — **56 runs, 9 reached the
+  wall, none left bounds**. **Thresholds frozen** in `docs/art/thresholds.json` (`bfc28ab`); `verify-clean` clean; **sealed hashes unchanged**.
+- **With that, the B1 queue is complete** on the Roblox side: B1 cell PASS (Play 20), `moving` LIVE PASS, `atlas:edge` PASS in 3 parts, card-game
+  verification and balance prep — all on branches, nothing merged.
+- **Needs from Nox:** (1) merge orders for `prep/moving-association-20261103` (`18d01a2`) and `prep/atlas-edge-diag-20261103` (`bfc28ab`, stacked
+  on it) plus the card branches; (2) the margin below baseline for the fleck/cyan thresholds and a number for void fraction; (3) **Studio**: one
+  contained instance is open (**2 Plays left**), and `studiocycle` cannot see the Wayland window so cannot close it — a decision/act is needed on
+  when/how to close it (the same Wayland-class gap I flagged at 11:31 ET).
