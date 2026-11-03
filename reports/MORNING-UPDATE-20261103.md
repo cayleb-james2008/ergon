@@ -48,3 +48,19 @@ The owner said **"resume"** at 10:28 ET; the goal was rearmed (goal active, revi
 - Self-reported mistake, fixed: a `git add -A` swept ~1,900 untracked evidence files into the moving commit; remade with explicit paths (`18d01a2`);
   nothing pushed.
 - All artifacts landed by me to the shared board (`probes/team-d/…`, commit `43628a18`).
+
+## 6. RELOCATION BUILD — W3 VERDICT **PASS** (filed by the executing lane 10:29 ET; verified by me)
+- **Branch `finish/w3` @ `e81e4f2`** (from `release/0.3.5.1`; I verified branch, head and the clean worktree; `MUTATION-W3.md` and the relocation
+  test dir exist; **live untouched**: `validate.js` still `b68ce88c…`, fleet unit active).
+- **Design Part B rev 3e**: the delegator becomes a **singleton fleet lane** (role outside ROLES, `fleet-delegator` preset with pinned count 9 → 10,
+  charter file, **read-only board view with no claim tokens**, DeepSeek shipped defaults); **scratch rehearsal (B4.1) and the delegator wake proof
+  (B4.2)** on a booted scratch host with a fake loopback model and labelled test pings; B3.4 distillation, pack-verify, extended writers scan and
+  host guard, pre-deletion checker (B5.4); B3.7 transitional Nox mail relay (read-only `fleet.db`); B4.4 continuity key and grader; the
+  **owner-run deletion script with a tty-only scrypt passphrase guard** (sixteen refusals of B8 item 22 tested under a pty), archive-build/verify,
+  post-switch gate (A12, A10', H10', pin digest), reviewed deletion list, b8-verify, transcript-audit, and a continuity-pipeline rehearsal on the
+  scratch delegator lane (C18 act enforced).
+- **Tests:** seat suite 19/19 (its 19 mutants all killed); package suite 991/986 with the **same 5 failures as base**; relocation suite **131/131**;
+  **scratch wake proof PASS (41 checks, including the C18 act observed for real)**.
+- **Mutation:** 156 applied by a fresh tester → 45 killed, 111 survived; fix stage closed **108 of 111** (3 equivalent: S08, S15, L07); one real
+  defect found and fixed (distill per-section byte budget, `133417d`).
+- **Everything ran on scratch hosts or synthetic data; the live host was not touched and nothing sent the proof text.** Nothing installed or merged.
