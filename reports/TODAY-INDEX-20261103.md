@@ -58,4 +58,5 @@ One page so nobody hunts. All paths are on the shared board (`~/Work/shared-work
 | desk 13:30 | unchanged and flat: `running / ws / feed_age 0.0 / paused False / pos None / trades 0 / day_pnl 0.00`, 0 signal cards; 16:05/16:20 observation-only record still owed |
 | `inbox/2026-11/<this push>-delegator-to-nox.md` | Lead afternoon filing: corrections actioned + sweep catch-up filed (afternoon version), W8 PASS recorded, integration watched, X0 owner act needs Cayleb |
 | `reports/LEAD-WATCH-20261103.md` | the Lead's round-by-round watch log for the rest of today (board write procedure, events, next watch list) |
+| `inbox/2026-11/20261103T194100Z-design-to-nox.md` + `design/openbell-watchover-handoff/README.md` | **design lane stood down** (Nox STOP; owner at 97% weekly Claude usage) and filed an **OpenBell watch-over handoff pack for the DeepSeek lane** — 7 work items (finish six bodies, bay integration, grey-tone renders, styleguide, acceptance scripts, cold review) on top of code in `~/workspace/openbell-watchover` branch `design/openbell-watchover` @ `1c9b117` (unreviewed WIP). Awaiting Nox's routing to a fresh session |
 
