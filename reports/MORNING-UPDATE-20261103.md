@@ -95,3 +95,26 @@ The owner said **"resume"** at 10:28 ET; the goal was rearmed (goal active, revi
   and **mutation closure 191/191 is fixer-reported — the r2 checker did not re-run it**.
 - **Only remaining at integration:** W3 gen-lists/version/`--expect-pinned 10` carriers + live G2; W6B real-Studio liveness + wiring + derived
   policy + unnamed-studio hardening.
+
+## 9. MORE VERDICTS THIS MORNING (filed 10:34–10:35 ET) — W4 PASS with one disclosed incident; C1 PASS
+- **W4 (Owner Elevation completion, leg 4) — PASS**: rotate display sentence; mount-readiness (`./elevate` export, files entries, `fleet-elevate`
+  row INSERTed + pinned, regenerated rows manifest, `elevate-selfcheck`, scratch mount proof 4/4 incl. negatives); **item 6 GTK4 secure password
+  prompt** (fails closed with no secure display, shows ticket detail, checks the kit against MANIFEST, pinned env, Wayland display identity H11;
+  tested under Broadway); **item 12 D1 install kit** (MANIFEST, install/uninstall, verify.py, proof.sh; tested with fake sudo/logger/install/chown on
+  scratch); libwayland hand-over test; sitting-only nested-Hyprland demo staged. Python kit/elevate 43 → 180; Node elevate 70 (60), comms 53 (51),
+  core 107 (104), policy 72/72; failing names identical to the base branch. Mutation 176 applied over two runs; fix commits closed **141 of 148**
+  re-run survivors; not closed: E61 (must survive) + six judged equivalent. Fresh checker PASS (real entry program, real exe check on
+  `/usr/bin/timeout` + `/usr/bin/true`, real broker + `dsh-fleet confirm`, fake sudo/journal; same drive on base exits 3 with the ticket pending);
+  MANIFEST pins 8 files whole-kit hash `f364350f…`; password absence sampled 23,079 /proc cmdline+environ at 10 ms → 0 hits, byte scans of 631
+  files → only the 3 input files, output/journals → 0. **Limits:** NOT proven on real Wayland/Hyprland (headless Hyprland will not start; Broadway
+  only; nested demo untested); real install is owner-only; release number + regenerated FILES lists owed; root-mode owner check seam-only.
+  **INCIDENT (disclosed):** an early e2e run aimed `enter.py` at the **LIVE control socket** and made one `elevate-outcome` report (id e1,
+  manifest-mismatch, no secret). The live host has no `fleet-elevate` mount, so the expected effect is an unknown-op refusal — **not probed to
+  confirm**; fixed (every e2e scene now uses its own scratch socket and the spawn asserts it).
+- **C1 (token pre-expiry notice) — PASS**: one notice each to owner+Nox per participant/lapse kind at (lapse − lead) for the 90-day expiry and the
+  24 h first-use lapse; none before/after; untrue notices withdrawn and chained; idempotent over 100 days, restart and lead changes; no token/hash/
+  fingerprint in any notice row/key/event; the notice's command driven through the real CLI (exit 0). Suite base 1015/994/20/1 → branch 1029/1008/
+  20/1 twice with the same 20 names; builder mutation re-run 16/16; trial merge with `finish/d1b` clean (1046/1025/20/1). **Low items for Nox's
+  call:** L1 lead key raised above the 7 d notice life (one-line cap fix; default safe), L2 spare-token withdrawal not re-sent if the spare is later
+  revoked, L3 notices share the 30/min sender cap (first deploy sends one per live token in window). Unproven: polkit confirm (stubbed), real 30 s
+  timer wiring, the live token population (DB fenced).
