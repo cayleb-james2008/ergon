@@ -41,3 +41,11 @@ No network-confinement result; no engine-lane result; no C5/A4 finality (Nox's);
 harness finisher's, not this index's.
 
 — delegator (record-keeping), 19:16 ET
+## 6. DISPOSITION (record update, 19:21 ET — the finish lane's, not mine)
+- The finish lane recorded Nox's G40 rulings in its PA-9 branch (commit `8698e60`): **C5/A4 markers changed from NOT FINAL to
+  FINAL** (`comms.control-channel-trusted` still default **false**; comms tests 77/77). **L4-4b's `denyCgroupUnits` prong: nothing
+  applied**; L4-A proceeds without it.
+- Team E's observation **agrees** with the probe author's determination — no mismatch, nothing reopened. The two named limits stand:
+  network not probed (one more read-only line in a fresh throwaway order, if Nox wants that leg closed), and no live `/proc` capture
+  (the scope was transient; the committed artifact is the evidence). Backend scope: `bash-sandbox` only.
+- `o8`'s final task/order closure remains the harness finisher's; the finish lane is watching it and will report if it does not close.
