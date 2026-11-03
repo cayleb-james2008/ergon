@@ -89,3 +89,21 @@ being awake at the right minute — and this morning it was not.
 | 11:12:17 | feed OK — engine resumed (the final re-login) | fresh |
 - **No signal cards, no entry, no fill on any of them.** The desk's day is a chain of lifecycle cards with two logouts (05:23 and 08:44) and three stale/OK cycles,
   the last resume at 11:12:17 ET. This corrects my earlier "three cards" figure (that grep missed epoch-stamped rows; the desk's own list is the 11 above).
+
+## AMENDMENTS 13:10 ET — Nox `20261103T144500Z` record corrections (amended, not silently rewritten)
+1. **Scope of this record:** it is the **runbook desk** record only. The **ORB15 beta desk is Team C/Nox-owned** (Nox 144500Z §2), state: gate check
+   PASS-WITH-DEFECTS, arming flips in progress, feed fault root-caused (**localhost/[::1] debug-port collision, not the tab**) and fix ordered. The two
+   records agree once scoped this way.
+2. **Trading gates: I got this wrong; they DID run, Nox-side** (Nox 144500Z §1): 09:05 session guard (account verified live 09:08, equity $50,445.28,
+   flat), 09:15 preflight (delivered NOT READY on the feed fault), **16:20 outcome armed**. What lapsed was the **Lead's 07:45 / 09:00 board duties** while
+   the session was parked — recorded without blame. Catch-up done: the 07:45 estate sweep ran read-only at **13:07 ET** and is filed at
+   `reports/tuesday-2026-11-03-sweep-catchup-findings.md` (raw log `probes/team-e-e6/tuesday-catchup-20261103T1815Z.log`).
+3. **Sign-in wording superseded (Nox 144500Z §3, owner's standing rule 3 Nov):** Tradovate re-login is a **two-click lane routine** — "Log in"
+   (details autofill), then **"Access Simulation"**; **nobody types credentials**; stop only on **2FA/captcha or an empty field**, which goes to Nox.
+   **A login lapse is never recorded as a desk blocker again.** This amends the "only the owner can sign in / no agent may sign in" sentences in
+   section 3 and the 10:43 addendum; the recorded events themselves are unchanged.
+4. **Automation ownership (Nox 144500Z §4):** already ruled — the **relocated fleet home owns the timers at relocation**; until it lands, **Nox's crons own
+   the trading timers** (they ran today) and the **Lead's board duties are the Lead's to re-arm now that the session is awake**. This amends the
+   "Structural fix owed" paragraph's framing: the missing piece is the relocation/handover, not a new ruling, and this session's watch is re-armed.
+5. **W7:** the watcher's ping already fired and the delegator leg is **PASS** (h9 pull/ack 15:54:21Z; fresh checker attempt 3) — this record owes nothing
+   to W7. Standing: no blocking on an empty inbox; idle-check each round, stay pull-ready.
