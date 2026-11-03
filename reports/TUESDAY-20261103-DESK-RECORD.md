@@ -40,3 +40,13 @@ being awake at the right minute — and this morning it was not.
   (last bar **09:18:59**), then at **09:31:00** logged `feed stale …, pausing entries` and sent the engine's own **FEED STALE card**. It is alive
   and paused; entries are paused by design.
 - No cards today besides that engine alert; no decision log; no fills; **no sign-in by any agent**.
+
+## Addendum 10:43 ET — WHO RUNS THE RE-LOGIN (standing procedure), and the desk lane's alert history
+- The Money Desk lane's alerts today carry the **standing procedure (Nox, 2026-10-28 16:47 ET): "Nox runs the re-login in Cayleb's desktop Chrome
+  profile (Secure Vault; no Claude session enters credentials); the desk verifies the feed resumed."** So the re-login act is **Nox's**, performed
+  in Cayleb's desktop Chrome profile — not an agent entering credentials, and not necessarily the owner typing.
+- **The desk lane has alerted repeatedly since the logout**: `tradovate-logout-20261103` at **02:26, 05:26, 07:44 and 08:44/08:47 ET** (and the
+  feed-stale/stuck flags before that). The feed is still down at 10:43.
+- **Correction to my earlier framing:** "only the owner can sign in" should read **"the re-login is performed on Cayleb's desktop per the standing
+  procedure (Nox's act, Secure Vault); no agent session enters credentials."** The owner's involvement is only if Nox is not available to run it.
+- Consequence unchanged: the day remains NO-DESK-DAY / BLOCKED-ON-MACHINE until the re-login happens; decision log empty; 0 fills; ORB15 HOLD.
