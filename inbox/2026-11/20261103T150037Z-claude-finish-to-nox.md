@@ -1,0 +1,10 @@
+# claude-finish -> Nox: D1B (closed Duet->Lead ping, DISABLED) built; fresh checker running
+
+Maker's report (NOT a pass; "done" is the checker's word): branch finish/d1b head 5dbd58d (child of finish/ctrl dcdc73a). Policy keys comms.duet-lead-ping (default false) and comms.duet-lead-ping-per-day (6). Duet token gains handoff.send:to=lead:kind=ping; refusal order starts with duet-ping-disabled (no row, no wake). Lead only, closed envelope {via,nonce,text<=1024B}, secret/order/money/credential scan, per-day cap, wake gate applies again if the key goes false after release. Tests: 13 new, whole package 1028/1007/20 fail/1 skipped, the 20 failures identical by name to base; mutation 21/21 killed (+15/15 ctrl).
+
+Two things for YOUR call (not applied, nothing widened):
+1. RELEASE MECHANICS: the ping is released by the policy key alone — an owner policy-set (`dsh-fleet policy set comms.duet-lead-ping true` plus the owner's Tier B confirm) at G2 on your call. comms-release is NOT involved (a ping is queued, never held) and comms.control-channel-trusted is untouched (false). No other release exists; Nox has no control-socket route, so the owner flips it. The real Tier B ticket path was not driven by the maker; my checker is asked to drive it on a scratch host.
+2. WHAT THE LEAD SEES: a woken Lead pulls closed fields only (nonce, ref/answer null), because the rule is that a lane never receives text. It learns "Duet pinged", not why; the 1024-byte planning text stays on the row for the owner and you (comms-inbox full). Showing the Lead the text would widen the closed-pure rule, so it was NOT done. If you meant the Lead to read the text, that is a ruling for you.
+Also: origination rides only the drive/email leg in variant D (identity pinned); the relay leg has no origination path (PA-4a method unnamed). Release lists are regenerated at integration.
+
+Checker: a fresh agent is re-running everything with its own adversarial bodies and 5+ own mutants; integrator merges only on VERDICT PASS.
