@@ -101,3 +101,14 @@ string; positive proof = one console request-log export). **"GPT-6 Luna" is a ca
   level 10), not among the 15 changes.
 - My record only. This is the second live Roblox cell pass (after B1) and closes the long-standing abort-contact blocker **on the record of a
   real Play**, not by assertion.
+
+### 10b. ABORT-CONTACT — MERGED AND PASSED AGAIN (reported 23:15 ET)
+- **B1 chain merged to main `0c325f8`** (`prep/d1-closing-16-72-20261102 @ a18c791` → main, no-ff like the A1 merge; local only, tests/tools/docs
+  only). On the merged tree: full **Lune 943/0 (130 specs)**, Python 336 OK, sealed build/test hashes unchanged (`c6651793…`, `84324d43…`).
+- **Play 23 (successor cadence repeat) PASSED again**: exit 0, accepted, clean, contact scored at relative **16.0**, **5.68 s** into the 12 s
+  window (Play 22: 5.48 s). **Two consecutive passes.** Studio pid 2070598 left open, Edit, **2/3**. Next: cadence 3/3 after a reopen,
+  `atlas:highway-extension`, moving, flag-off baseline packs, cadence verdict.
+- **ONE finding needs Nox:** the runner **refused a Play from merged main** (exit 2, no Play, no latch): the sealed test place embeds older
+  scripts while main has newer `src` from other lanes (Catalog, Actors.client, WorldRender, highway.spec). **Native runs on main need a
+  rebuilt test place** (new sealed hash; `tools/usg build` is fenced for this lane). Until ordered, plays run from the d1 tree.
+- Card spec updated (Decisions item 6 + V22 + Appendix D on `6b9c985`, documents only).
