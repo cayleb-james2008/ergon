@@ -73,3 +73,25 @@ The owner said **"resume"** at 10:28 ET; the goal was rearmed (goal active, revi
 - Consequence for me: the courier's G1 gate is **done (CONDITIONAL)**; my G1/G2 hosting now focuses on the **extension review** I asked Team E for
   today — the **W3 relocation build** (`finish/w3` @ `e81e4f2`) and the **W6B face studios** (`finish/w6b` @ `700b648`), read-only, appended to the
   G1/G2 evidence map. Nothing run against the live host.
+
+## 8. G1 EXTENSION REVIEW — W3 RELOCATION + W6B FACE STUDIOS: **PASS with named conditions, NO FAIL** (Team E/Lane 6, 10:39 ET)
+- **W3 — PASS on every Lane 6 boundary:** deletion guard (`old-profile-delete.sh:17-21` root/sudo+tty refusal → `delete_guard.py` scrypt n=2^14,
+  passphrase only from `/dev/tty`, guard 0600/0700, owner-typed **fingerprint from the off-machine note**, 12 preconditions then typed phrase,
+  per-path re-inventory; **pty-driven refusals** tested incl. no-tty / wrong fingerprint / wrong passphrase / missing **and replaced** guard /
+  broken condition / wrong phrase / per-path drift; protected paths kept). **No-claim-token board view** verified with real tokens + positive
+  controls (token key/value absent at any depth). **Read-only Nox relay** (`openRo`, TRANSITIONAL files, line-redaction; seat cannot write
+  board/inbox). **Continuity key/grader** (sources+anchors, never self-certifies; C18 refuses without observed effect). **Singleton/preset pin**
+  (`lanes.js:53`; preset has no bash/web/delegation/schedule/order-write; manifest **10 pinned** incl. the row; tamper ⇒ integrity fail; D3 all
+  DeepSeek). Post-switch gate A12/integrity/pinned/single-writer. Archive excludes key-named files **by name before any read**. **Tests' honesty
+  verified**: checker ran on a real scratch host/roster, real board API + tokens, inotify credential watcher with positive control, **base-failure
+  proof**; mutation 156 → 111 survivors → fixer closed **108** with named witness tests (3 equivalent, argued); C18 write act real.
+  **CONDITIONAL only on:** live G2 owner-run archive+deletion; real-model behaviour (drives fake; 0/0 API calls); integrator `gen-lists` (stale
+  `FILES-0.3.5.sha256` = the 4 extra `release/test` failures).
+- **W6B — PASS within the fake-backed model:** binding rules (`RESERVED_PORTS` incl. **13469**; owner account/place by path+name/prefix/display/
+  loopback-only/reserved port/secret-field), fail-closed registry **load + re-check at start/connect** (r2 MEDIUM closed), `guardSignal` exact
+  unit+instance+cgroup, **owner-session refusal 0 connections/0 calls**, redaction + canaries absent, crash/stop isolation (only that instance's
+  unit signalled; others byte-identical). **Limits named:** **real-Studio path NOT proven** (fakes are unit evidence, not liveness; G0/tool list/
+  Wine/logins unobserved), feature **un-wired from the tarball**, owner policy values to derive, LOW tripwire edge (unnamed studio not foreign),
+  and **mutation closure 191/191 is fixer-reported — the r2 checker did not re-run it**.
+- **Only remaining at integration:** W3 gen-lists/version/`--expect-pinned 10` carriers + live G2; W6B real-Studio liveness + wiring + derived
+  policy + unnamed-studio hardening.
