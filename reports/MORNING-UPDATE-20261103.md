@@ -175,3 +175,23 @@ The owner said **"resume"** at 10:28 ET; the goal was rearmed (goal active, revi
   best-effort (62 of 112 adversarial texts still pass; they never reach the Lead); release `*.sha256` lists regenerated at integration.
 - **State at release: disabled everywhere installed; release is Nox's call at G2 on the proof evidence.** The integrator now merges `finish/d1b`
   (after `finish/ctrl`, with `finish/c1`).
+
+## 13. W6BS (contained Studio spike, real bindings + containment proof) — PASS (filed 11:22 ET)
+- **Branch `finish/w6bs` @ `628f49e`**: real launcher (systemd unit + pasta + bwrap + Wine), read-only protected-session observer, containment
+  proof harness and live-real panel harness.
+- **What ran for real:** instance 1 = the street game, instance 2 = the card game — each with its own game copy, systemd unit
+  (`fleet-studio-street` / `fleet-studio-card`), Xvfb display (`:91`/`:92`), pasta network namespace, bwrap mount namespace, Wine prefix, Studio
+  file copy, team domain, account label and MCP endpoint (`127.0.0.1:18101`/`:18102`); each runs a real `StudioMCP.exe` host inside its own
+  namespace; the supervisor's MCP client completed the **real handshake** on both and `list_roblox_studios` answered `[]` (no Studio attached);
+  both show in the sidebar as "Needs login".
+- **Proof:** the 40-check containment proof passed **40/40 in each of 2 consecutive rounds** on the committed code; **Cayleb's real Studio was
+  observed read-only before and after and sampled ~every 4 s** during each round — **no violations**; the positive control (observer reports a
+  violation when the fake protected unit is stopped) passed; negative tests against the spike's own fake protected session: **all eight bind
+  attempts refused**, a registry file edited to point at the protected port refused on load, every `guardSignal` attempt refused, the fake session
+  ended unchanged (with the honest note that one negative test is detection/tripwire, not prevention).
+- **Checker PASS (6 checks):** real instances (distinct InvocationIDs/cgroups/Xvfb, passt+bwrap+socat+wine+RobloxStudioBeta each, hosts on
+  18101/18102, own client handshake), sidebar at 390/1440 (limits: live-real harness, per-instance game/team label/Needs login/MCP off; MCP off
+  because the supervisor never connected; team members are fixture data), plus the suite comparison (base 1143/1114/29 vs head 1158/1129/29 with
+  identical failing names). Mutation: removing `--no-map-gw` makes the drive FAIL (decoy reached), so the namespace isolation check bites.
+- **The honest limit, stated by the lane:** **native embedding is NOT complete — it fails at Studio's login screen.** That is the owner's act
+  (Studio login inside the instances) before the panels can show a real Studio; the containment proof itself passes.
