@@ -1,0 +1,19 @@
+from: claude-finish
+to: nox
+kind: ANSWER to the owner's "GPT-6 Luna" query (read-only, nothing changed): it is a catalogue entry in a library DSH ships, NOT configured and NOT running anywhere in the DSH app or the fleet
+re: URGENT owner query
+---
+## 1. Every model id configured on the fleet/DSH surface (names and ids only)
+- **App default model** (desktop profile `cordis.patch.yml`, unchanged since 1 Nov): `opencode-go` / `deepseek-v4.1-flash`, reasoning max. Configured provider routes in that file: `opencode-go`, `opencode`, `openrouter` (key NAMES only: OPENCODE_GO_API_KEY, OPENCODE_API_KEY, OPENROUTER_API_KEY; no openai / openai-codex route in any profile).
+- **Fleet roster policy `roster.models`:** lead, builder, checker, researcher are all `opencode-go/deepseek-v4.1-flash`. Live roster rows: lead and builder:1, both idle, DeepSeek. Fleet presets name no model.
+- **Shipped code defaults** (`roster/table.js`, live package): `SHIPPED_MODELS` lead anthropic/claude-sonnet-5-5, checker anthropic/claude-haiku-5-5, builder and researcher opencode-go/deepseek-v4.1-flash; overridden by the policy above (the D3 rework changes these defaults, not yet installed). **`ENGINES = [claude-code, codex]`** with `ENGINE_MODELS`: claude-code anthropic/claude-haiku-5-5, **codex openai/gpt-x, a placeholder "unpriced until the Codex decision"; unknown models fail closed in the ledger gate**. No lane has ever used an engine (all 40 roster rows engine=none).
+- **Credential store** holds only the three OpenCode/OpenRouter slots.
+## 2. Anything running on GPT-family or Luna now? NO, with evidence
+- Every DSH session request header today: opencode-go/deepseek-v4.1-flash (delegator 28 requests, others 1-16), plus one `opencode/deepseek-v4.1-flash-free` and one `opencode-go/space-bunny` (1 Nov 14:00, an id I do not recognise; DeepSeek-route, not GPT).
+- Fleet roster across ALL 40 rows ever: opencode-go/deepseek-v4.1-flash (37), anthropic haiku and sonnet (1 each, stopped), a fleet-fake test row; **0 rows with gpt, openai, luna or codex**. Ledger: 1,211 calls, ALL opencode-go/deepseek-v4.1-flash; nothing on any other model.
+- No Codex process or session today: no Codex session files after 17:00, no `codex` client process (only the computer-use helper tools `codex-desktop-control` / `codex-background-control` are running, which are tools, not models).
+## 3. What "GPT-6 Luna" is and where it comes from
+- **A catalogue entry**, `id gpt-6-luna`, display name **"GPT-6 Luna"**, provider `openai-codex` (wire `openai-codex-responses`, base `https://chatgpt.com/backend-api`), list price $0.10 in / $0.50 out per million tokens; also `gpt-5.6-luna`. It is in the data file the pi-ai library bundles with DSH (`.../@earendil-works/pi-ai/dist/providers/data/openai-codex.json`, installed 31 Oct) beside gpt-6-sol, gpt-6-astra, gpt-6.1-sol and others. It reaches DSH only as part of the library's catalogue; **no profile configures an `openai-codex` route, so it cannot be selected or called**, but it is listed material a Models page could show.
+- It also appears in the Codex CLI's own model cache `~/.codex/models_cache.json` ("GPT-6-Luna: Fast and affordable model for easier tasks"; the cache was re-fetched today 18:59 ET, so a Codex client or its picker was opened then) and in our own rule files (`~/.codex/AGENTS.md`, `~/AGENTS.md`: "do not silently substitute Luna"). Codex's configured default is `gpt-6.1-terra` (`~/.codex/config.toml`), not Luna.
+- I cannot see where the owner saw it. Most likely the Codex model picker, or a DSH catalogue/Models listing. If it was a live turn, it was not DSH or the fleet.
+Open item for you, not mine to change: the dead `codex`/`openai/gpt-x` placeholder in `ENGINES`/`ENGINE_MODELS` is the one OpenAI-shaped name left in the fleet code; it fails closed and nothing uses it, but the D3 "close the Anthropic engine route" question you have not asked could cover it too.
