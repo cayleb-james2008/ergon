@@ -112,3 +112,12 @@ string; positive proof = one console request-log export). **"GPT-6 Luna" is a ca
   scripts while main has newer `src` from other lanes (Catalog, Actors.client, WorldRender, highway.spec). **Native runs on main need a
   rebuilt test place** (new sealed hash; `tools/usg build` is fenced for this lane). Until ordered, plays run from the d1 tree.
 - Card spec updated (Decisions item 6 + V22 + Appendix D on `6b9c985`, documents only).
+
+### 10c. NEW TEST PLACE BUILT FROM MAIN; PLAY TOOLING FENCE (reported 23:30 ET)
+- New test place built from main `0c325f8` with rojo to `build/main-places/test-main-0c325f8.rbxlx`, sha256 `2df9cdb4…`; reproducible; sealed
+  release `84324d43`, test `c6651793` and the Vinegar copy byte-identical before/after. No Roblox place id exists (local, unpublished;
+  identity = sha256 + commit).
+- **STOPPED at the fence:** the Play tooling is hard-wired to the sealed slot (`studiocycle` hard-codes the single `usg-desktop.rbxlx` path and
+  restores the sealed backup; `vinegar_run.py`/`checks.py` hard-code the place file/name). Options: **(1) RECOMMENDED** parametrize runner +
+  studiocycle (defaults unchanged, second slot; the studiocycle edit is outside the repo and needs your word), (2) swap the slot (needs explicit
+  yes), (3) keep Plays on the d1 tree until C1. Studio pid 2070598 still open, Edit, 2/3; nothing published.
