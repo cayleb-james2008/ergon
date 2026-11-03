@@ -1,0 +1,17 @@
+=== PLAY 26 (claude-team-d) moving on the NEW place (3rd and last Play of this opening) ===
+2026-11-03T12:53:34Z
+  "refusals": [],
+  "edit": true,
+  "plays": 2
+--- run 12:53:41
+{"mcpClose": {"owned": [{"pid": 1651179, "start": 49409528, "ppid": 1651136, "ageSeconds": 58.3}], "foreignNew": [], "signals": [{"pid": 1651179, "start": 49409528, "signal": "SIGTERM"}], "survivors": []}}
+{"fixture": "moving", "exit": 1, "runDir": "/home/cayleb/Work/projects/untitled-street-game/docs/verify/2026-10-19/vinegar/20261103T125341Z-moving", "error": "FixtureFailed: no frame held its camera to 1e-3 between probes (see frames/*.json)", "summary": null}
+run_rc=1
+--- verify-clean
+  "clean": true
+  "latch": null,
+    "plays": 3
+84324d4342667dd163ab
+c6651793ace089a093f5
+c6651793ace089a093f5
+2df9cdb49bbf4970c10c

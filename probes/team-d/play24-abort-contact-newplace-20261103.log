@@ -1,0 +1,23 @@
+=== PLAY 24 (claude-team-d) traffic:abort-contact on the NEW place (main 0c325f8 build 2df9cdb4) via runner override, branch prep/place-override-20261103 42f3c1b ===
+2026-11-03T12:51:23Z
+--- sealed BEFORE
+84324d4342667dd163ab8e64adacbf8ef44ab786aeda5c7ab1403e76d52ef6ce
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98
+2df9cdb49bbf4970c10c86edd3943a51d4d00b659e7f9ada51e0f9bbd4c31946
+  "refusals": [],
+  "edit": true,
+  "plays": 0
+--- run 12:51:31
+{"mcpClose": {"owned": [{"pid": 1591344, "start": 49396575, "ppid": 1591339, "ageSeconds": 26.5}], "foreignNew": [], "signals": [{"pid": 1591344, "start": 49396575, "signal": "SIGTERM"}], "survivors": []}}
+{"fixture": "traffic:abort-contact", "exit": 0, "runDir": "/home/cayleb/Work/projects/untitled-street-game/docs/verify/2026-10-19/vinegar/20261103T125131Z-traffic-abort-contact", "error": null, "summary": {"accepted": true, "mode": "abort-contact", "samples": 104, "travelStuds": 406.75119373981073, "controllerSeconds": {"p50": 0.00018360000103712082, "p95": 0.00042830000165849924, "max": 0.0007475999882444739}, "scop
+run_rc=0
+--- verify-clean
+  "clean": true
+  "latch": null,
+    "plays": 1
+--- sealed AFTER
+84324d4342667dd163ab8e64adacbf8ef44ab786aeda5c7ab1403e76d52ef6ce
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98
+2df9cdb49bbf4970c10c86edd3943a51d4d00b659e7f9ada51e0f9bbd4c31946

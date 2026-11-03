@@ -1,0 +1,15 @@
+=== PLAY 32 (claude-team-d) atlas:edge flag-off baseline WITH console dump on timeout, NEW place, opening 3/3 (commit c2617d6) ===
+2026-11-03T14:41:23Z
+  "refusals": [],
+  "edit": true,
+  "plays": 2
+{"mcpClose": {"owned": [{"pid": 2997045, "start": 50056463, "ppid": 2997040, "ageSeconds": 618.8}], "foreignNew": [], "signals": [], "survivors": []}}
+{"fixture": "atlas:edge", "exit": 1, "runDir": "/home/cayleb/Work/projects/untitled-street-game/docs/verify/2026-10-19/vinegar/20261103T144130Z-atlas-edge", "error": "TimeoutError: collector did not receive edge within 588s", "summary": null}
+run_rc=1
+end 14:51:50
+  "clean": true
+  "latch": null,
+    "plays": 3
+84324d4342667dd163ab
+c6651793ace089a093f5
+c6651793ace089a093f5

@@ -1,0 +1,35 @@
+{
+ "recorded_at": "2026-11-03T04:19:27Z",
+ "what": "new test place built from main, never over the sealed place",
+ "main_commit": "0c325f83222986d235f53ca916afd8fd60ce8598",
+ "main_subject": "Merge the B1 chain: abort-contact fix D + closing clamp(proxy+16,12,72) (Play 22 live pass, fresh checker PASS, freeze a18c791)",
+ "place_file": "/home/cayleb/Work/projects/untitled-street-game/build/main-places/test-main-0c325f8.rbxlx",
+ "place_sha256": "2df9cdb49bbf4970c10c86edd3943a51d4d00b659e7f9ada51e0f9bbd4c31946",
+ "bytes": 2408111,
+ "place_id_note": "No Roblox place id exists or was created: the place is a local .rbxlx, unpublished; its identity is the sha256 and the main commit.",
+ "build_command": ".tools/bin/rojo build test.project.json -o build/main-places/test-main-0c325f8.rbxlx  (run directly; tools/usg was NOT run)",
+ "reproducible": "a second build to a scratch path gave the identical sha256",
+ "sealed_before": [
+  "84324d4342667dd163ab8e64adacbf8ef44ab786aeda5c7ab1403e76d52ef6ce",
+  "c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98",
+  "c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98"
+ ],
+ "sealed_after": [
+  "84324d4342667dd163ab8e64adacbf8ef44ab786aeda5c7ab1403e76d52ef6ce",
+  "c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98",
+  "c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98"
+ ],
+ "sealed_unchanged": true,
+ "sealed_names": [
+  "build/release.rbxlx",
+  "build/test.rbxlx",
+  "~/.var/app/org.vinegarhq.Vinegar/data/usg/usg-desktop.rbxlx"
+ ],
+ "differs_from_sealed_in": [
+  "src/shared/Catalog.luau",
+  "src/client/Actors.client.luau",
+  "src/client/WorldRender.luau",
+  "tests/studio/highway.spec.luau (+ the B1 chain tests/tools/diagnostics already in the d1 tree)"
+ ],
+ "native_plays_from_this_place": "NOT YET: the Play tooling is hard-wired to the sealed slot (see board/reports/claude-team-d-new-test-place-20261103.md)"
+}

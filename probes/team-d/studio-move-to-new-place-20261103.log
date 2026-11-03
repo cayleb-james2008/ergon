@@ -1,0 +1,42 @@
+=== Studio move to the new place 2026-11-03T12:47:02Z (commit 42f3c1b, branch prep/place-override-20261103) ===
+--- sealed BEFORE
+84324d4342667dd163ab8e64adacbf8ef44ab786aeda5c7ab1403e76d52ef6ce
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98
+--- close (default slot guard) 12:47:02
+{"action": "close", "result": "ok", "method": "killed-after-dialog", "dialog_seen": true, "discarded_autosaves": [], "place_sha256": "c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98", "sealed_unchanged": true}
+close_rc=0
+--- sealed AFTER close
+84324d4342667dd163ab8e64adacbf8ef44ab786aeda5c7ab1403e76d52ef6ce
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98
+--- Studio procs
+(none above = closed)
+--- snapshot new slot
+{"action": "snapshot", "place": "/home/cayleb/.var/app/org.vinegarhq.Vinegar/data/usg-main/usg-desktop.rbxlx", "sha256": "2df9cdb49bbf4970c10c86edd3943a51d4d00b659e7f9ada51e0f9bbd4c31946"}
+usg-desktop.rbxlx.sealed.bak
+usg-main-9dcf1e1b--usg-desktop.rbxlx.sealed.bak
+--- open new slot 12:47:15
+{"action": "open", "result": "ok", "place_sha256_before": "2df9cdb49bbf4970c10c86edd3943a51d4d00b659e7f9ada51e0f9bbd4c31946", "place_sha256_after": "2df9cdb49bbf4970c10c86edd3943a51d4d00b659e7f9ada51e0f9bbd4c31946", "fit": "ok", "window": {"address": "0x558c7fa5d620", "class": "steam_proton", "title": "Z:\\home\\cayleb\\.var\\app\\org.vinegarhq.Vinegar\\data\\usg-main\\usg-desktop.rbxlx - Roblox Studio", "at": [-458, 493], "size": [2200, 1000], "floating": true, "fullscreen": 0, "pid": 1514317}}
+--- sealed slot untouched?
+84324d4342667dd163ab8e64adacbf8ef44ab786aeda5c7ab1403e76d52ef6ce
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98
+2df9cdb49bbf4970c10c86edd3943a51d4d00b659e7f9ada51e0f9bbd4c31946
+1514317 /home/cayleb/.var/app/org.vinegarhq.Vinegar/data/vinegar/versions/version-7062aec9dbe74b14/RobloxStudioBeta.exe 
+--- reopen (cycle) for the baseline packs 12:57:25
+{"action": "close", "result": "ok", "method": "killed-after-dialog", "dialog_seen": true, "discarded_autosaves": ["20261103T125729Z-usg-desktop_AutoRecovery_0.rbxl"], "place_sha256": "2df9cdb49bbf4970c10c86edd3943a51d4d00b659e7f9ada51e0f9bbd4c31946", "sealed_unchanged": true}
+{"action": "open", "result": "ok", "place_sha256_before": "2df9cdb49bbf4970c10c86edd3943a51d4d00b659e7f9ada51e0f9bbd4c31946", "place_sha256_after": "2df9cdb49bbf4970c10c86edd3943a51d4d00b659e7f9ada51e0f9bbd4c31946", "fit": "ok", "window": {"address": "0x558c7f97f6b0", "class": "steam_proton", "title": "Z:\\home\\cayleb\\.var\\app\\org.vinegarhq.Vinegar\\data\\usg-main\\usg-desktop.rbxlx - Roblox Studio", "at": [-458,
+--- sealed + new slot
+84324d4342667dd163ab
+c6651793ace089a093f5
+c6651793ace089a093f5
+2df9cdb49bbf4970c10c
+1727080       00:05 /home/cayleb/.var/app/org.vine
+--- reopen (cycle) for the moving re-run 14:09:21
+{"action": "close", "result": "ok", "method": "killed-after-dialog", "dialog_seen": true, "discarded_autosaves": ["20261103T140926Z-usg-desktop_AutoRecovery_0.rbxl"], "place_sha256": "2df9cdb49bbf4970c10c86edd3943a51d4d00b659e7f9ada51e0f9bbd4c31946", "sealed_unchanged": true}
+{"action": "open", "result": "ok", "place_sha256_before": "2df9cdb49bbf4970c10c86edd3943a51d4d00b659e7f9ada51e0f9bbd4c31946", "place_sha256_after": "2df9cdb49bbf4970c10c86edd3943a51d4d00b659e7f9ada51e0f9bbd4c31946", "fit": "ok", "window": {"address": "0x558c7f97f6b0", "class": "steam_proton", "title
+84324d4342667dd163ab
+c6651793ace089a093f5
+c6651793ace089a093f5
+2df9cdb49bbf4970c10c

@@ -1,0 +1,39 @@
+=== PLAY 23 (claude-team-d) B1 queue: traffic:abort-contact cadence repeat 2/3, on merged main 0c325f8 ===
+2026-11-03T04:04:02Z
+repo 0c325f83222986d235f53ca916afd8fd60ce8598 branch main tracked_modified=0
+84324d4342667dd163ab8e64adacbf8ef44ab786aeda5c7ab1403e76d52ef6ce  build/release.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  build/test.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  /home/cayleb/.var/app/org.vinegarhq.Vinegar/data/usg/usg-desktop.rbxlx
+  "refusals": [],
+  "edit": true,
+  "plays": 1
+preflight_rc=0
+--- PLAY: run traffic:abort-contact start 2026-11-03T04:04:19Z ---
+{"mcpClose": {"owned": [{"pid": 2088744, "start": 46233298, "ppid": 2088739, "ageSeconds": 2.3}], "foreignNew": [], "signals": [{"pid": 2088744, "start": 46233298, "signal": "SIGTERM"}], "survivors": []}}
+{"fixture": "traffic:abort-contact", "exit": 2, "runDir": "/home/cayleb/Work/projects/untitled-street-game/docs/verify/2026-10-19/vinegar/20261103T040419Z-traffic-abort-contact", "error": "place not clean before prepare (Play running: `vinegar_run.py cleanup`; residue: reopen a fresh usg-desktop.rbxlx): verify-clean failed: Source differs from the checkout: src/shared/Catalog.luau; Source differs 
+run_rc=2
+--- verify-clean ---
+  "clean": false,
+  "latch": null,
+    "plays": 1
+84324d4342667dd163ab8e64adacbf8ef44ab786aeda5c7ab1403e76d52ef6ce  build/release.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  build/test.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  /home/cayleb/.var/app/org.vinegarhq.Vinegar/data/usg/usg-desktop.rbxlx
+--- main refused (exit 2, no Play): sources differ from sealed place: Catalog.luau, Actors.client.luau, WorldRender.luau, tests/studio/highway.spec.luau. Re-running from the d1 tree a18c791 (= Play 22 code) ---
+repo a18c791bfba283f067f95aadc046a25fd1f4337e tracked_modified=0
+  "clean": true
+  "refusals": [],
+  "edit": true,
+  "plays": 1
+{"ts": 1793678702.6319551, "cores": 32, "load1": 2.39, "load_per_core": 0.075, "cpu_some10": 0.0, "mem_full10": 0.23, "io_full10": 0.0, "quiet": true, "reasons": []}
+--- PLAY 23: run traffic:abort-contact (d1 tree a18c791) start 2026-11-03T04:05:10Z ---
+{"mcpClose": {"owned": [{"pid": 2089546, "start": 46238424, "ppid": 2089541, "ageSeconds": 30.4}], "foreignNew": [], "signals": [{"pid": 2089546, "start": 46238424, "signal": "SIGTERM"}], "survivors": []}}
+{"fixture": "traffic:abort-contact", "exit": 0, "runDir": "/home/cayleb/Work/projects/untitled-street-game/docs/verify/2026-10-19/vinegar/20261103T040510Z-traffic-abort-contact", "error": null, "summary": {"accepted": true, "mode": "abort-contact", "samples": 134, "travelStuds": 618.5296122222657, "controllerSeconds": {"p50": 0.0001200000406242907, "p95": 0.0002997000119648874, "max": 0.0005278000026009977}, "scope":
+run_rc=0
+--- verify-clean ---
+  "clean": true
+  "latch": null,
+    "plays": 2
+84324d4342667dd163ab
+c6651793ace089a093f5
+c6651793ace089a093f5

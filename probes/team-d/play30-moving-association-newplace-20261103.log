@@ -1,0 +1,14 @@
+=== PLAY 30 (claude-team-d) moving with the bounded capture-time association (commit 3722335), NEW place, fresh opening 1/3 ===
+2026-11-03T14:27:54Z
+  "refusals": [],
+  "edit": true,
+  "plays": 0
+{"mcpClose": {"owned": [{"pid": 2358965, "start": 49975825, "ppid": 2358784, "ageSeconds": 59.0}], "foreignNew": [], "signals": [], "survivors": []}}
+{"fixture": "moving", "exit": 0, "runDir": "/home/cayleb/Work/projects/untitled-street-game/docs/verify/2026-10-19/vinegar/20261103T142804Z-moving", "error": null, "summary": {"candidate": "ce4e12501beac4c57e31d573f6a253c49e7b9caeaf84119fbd85b1ea2d2a0ffd", "reward": 2472, "visualFlags": "", "frames": 9, "accepted": 6, "moving": 6, "exactPose": 0, "associatedPose": 6}}
+run_rc=0
+  "clean": true
+  "latch": null,
+    "plays": 1
+84324d4342667dd163ab
+c6651793ace089a093f5
+c6651793ace089a093f5

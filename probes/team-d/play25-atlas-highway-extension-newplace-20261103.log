@@ -1,0 +1,17 @@
+=== PLAY 25 (claude-team-d) atlas:highway-extension --seed 2134783819 on the NEW place ===
+2026-11-03T12:52:41Z
+  "refusals": [],
+  "edit": true,
+  "plays": 1
+--- run 12:52:48
+{"mcpClose": {"owned": [{"pid": 1628701, "start": 49404209, "ppid": 1628609, "ageSeconds": 22.6}], "foreignNew": [], "signals": [], "survivors": []}}
+{"fixture": "atlas:highway-extension", "exit": 0, "runDir": "/home/cayleb/Work/projects/untitled-street-game/docs/verify/2026-10-19/vinegar/20261103T125248Z-atlas-highway-extension", "error": null, "summary": {"candidate": "736c24df2393b08058d89a7c1453c16ac0fb34e18ebfa8b52fafa57b15274993", "buildSha256": "2df9cdb49bbf4970c10c86edd3943a51d4d00b659e7f9ada51e0f9bbd4c31946", "staticCameraImages": 12, "qualifiedAnchorImages": 12, "qualifiedStaticImages": 12, "visualAcceptance": false, "visualFlags": ""}}
+run_rc=0
+--- verify-clean
+  "clean": true
+  "latch": null,
+    "plays": 2
+84324d4342667dd163ab
+c6651793ace089a093f5
+c6651793ace089a093f5
+2df9cdb49bbf4970c10c

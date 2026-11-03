@@ -1,0 +1,67 @@
+=== PLAY 22 (claude-team-d) abort-contact fix D + Nox ruling (a) clamp(proxy+16,12,72) ===
+2026-11-03T03:35:06Z
+repo a18c791bfba283f067f95aadc046a25fd1f4337e branch prep/d1-closing-16-72-20261102 tracked_modified=0
+--- sealed BEFORE ---
+84324d4342667dd163ab8e64adacbf8ef44ab786aeda5c7ab1403e76d52ef6ce  build/release.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  build/test.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  /home/cayleb/.var/app/org.vinegarhq.Vinegar/data/usg/usg-desktop.rbxlx
+--- Studio processes ---
+(none above = no Studio)
+  "latch": null,
+  "studio": "no Studio running: no RobloxStudioBeta process (the owner opens Studio; the runner never launches it)",
+{"ts": 1793676906.2695262, "cores": 32, "load1": 2.11, "load_per_core": 0.066, "cpu_some10": 0.0, "mem_full10": 0.14, "io_full10": 0.0, "quiet": true, "reasons": []}
+
+--- studiocycle open 2026-11-03T03:35:12Z ---
+{"action": "open", "result": "ok", "place_sha256_before": "c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98", "place_sha256_after": "c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98", "fit": "ok", "window": {"address": "0x558c7f8a6cf0", "class": "steam_proton", "title": "Z:\\home\\cayleb\\.var\\app\\org.vinegarhq.Vinegar\\data\\usg\\usg-desktop.rbxlx - Roblox Studio", "at": [193, 234], "size": [2200, 1000], "floating": true, "fullscreen": 0, "pid": 2070598}}
+open_rc=0
+--- preflight 2026-11-03T03:35:30Z ---
+{"ts": 1793676930.1194544, "cores": 32, "load1": 4.0, "load_per_core": 0.125, "cpu_some10": 0.09, "mem_full10": 0.06, "io_full10": 0.0, "quiet": true, "reasons": []}
+      "screen_capture",
+      "get_studio_state",
+      "start_stop_play",
+      "generate_scene",
+      "user_keyboard_input",
+      "script_grep",
+      "wait_job_finished",
+      "generate_procedural_model",
+      "segment_mesh",
+      "generate_texture",
+      "create_skill",
+      "generate_avatar",
+      "generate_mesh",
+      "generate_material",
+      "inspect_instance",
+      "list_skills",
+      "search_asset",
+      "edit_skill",
+      "insert_asset",
+      "list_roblox_studios"
+    ]
+  },
+  "edit": true,
+  "plays": 0
+}
+preflight_rc=0
+--- THE ONE PLAY: run traffic:abort-contact start 2026-11-03T03:35:45Z ---
+{"mcpClose": {"owned": [{"pid": 2072135, "start": 46061948, "ppid": 2072130, "ageSeconds": 30.2}], "foreignNew": [], "signals": [{"pid": 2072135, "start": 46061948, "signal": "SIGTERM"}], "survivors": []}}
+{"fixture": "traffic:abort-contact", "exit": 0, "runDir": "/home/cayleb/Work/projects/untitled-street-game/docs/verify/2026-10-19/vinegar/20261103T033545Z-traffic-abort-contact", "error": null, "summary": {"accepted": true, "mode": "abort-contact", "samples": 130, "travelStuds": 604.2112516796267, "
+run_rc=0
+end 2026-11-03T03:36:21Z
+--- verify-clean 2026-11-03T03:36:33Z ---
+      "StudioStartLevel": {
+        "present": false
+      }
+    },
+    "sources": 101
+  },
+  "clean": true
+}
+--- status ---
+  "latch": null,
+  "studio": {
+    "plays": 1
+--- sealed AFTER ---
+84324d4342667dd163ab8e64adacbf8ef44ab786aeda5c7ab1403e76d52ef6ce  build/release.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  build/test.rbxlx
+c6651793ace089a093f50f51cc2a649d0a1e3cc9e790660baa8445ccf418fe98  /home/cayleb/.var/app/org.vinegarhq.Vinegar/data/usg/usg-desktop.rbxlx
+tracked-clean-check done

@@ -1,0 +1,15 @@
+=== PLAY 29 (claude-team-d) atlas:edge flag-off baseline, RETRY of Play 28 (28 was killed by my own 600 s outer timeout, rc 124; no game finding), NEW place, opening 3/3 ===
+2026-11-03T13:13:11Z
+  "refusals": [],
+  "edit": true,
+  "plays": 2
+{"mcpClose": {"owned": [{"pid": 2049833, "start": 49527157, "ppid": 2049828, "ageSeconds": 615.2}], "foreignNew": [], "signals": [], "survivors": []}}
+{"fixture": "atlas:edge", "exit": 1, "runDir": "/home/cayleb/Work/projects/untitled-street-game/docs/verify/2026-10-19/vinegar/20261103T131317Z-atlas-edge", "error": "TimeoutError: collector did not receive edge within 588s", "summary": null}
+run_rc=1
+end 13:23:33
+  "clean": true
+  "latch": null,
+    "plays": 3
+84324d4342667dd163ab
+c6651793ace089a093f5
+c6651793ace089a093f5

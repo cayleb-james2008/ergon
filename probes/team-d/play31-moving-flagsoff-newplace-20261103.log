@@ -1,0 +1,14 @@
+=== PLAY 31 (claude-team-d) B1 baseline pack: moving --visual-flags all-off, NEW place, opening 2/3 (commit 3722335) ===
+2026-11-03T14:29:52Z
+  "refusals": [],
+  "edit": true,
+  "plays": 1
+{"mcpClose": {"owned": [{"pid": 2452589, "start": 49986808, "ppid": 2452584, "ageSeconds": 56.3}], "foreignNew": [], "signals": [{"pid": 2452589, "start": 49986808, "signal": "SIGTERM"}], "survivors": []}}
+{"fixture": "moving", "exit": 0, "runDir": "/home/cayleb/Work/projects/untitled-street-game/docs/verify/2026-10-19/vinegar/20261103T142954Z-moving", "error": null, "summary": {"candidate": "ce4e12501beac4c57e31d573f6a253c49e7b9caeaf84119fbd85b1ea2d2a0ffd", "reward": 2472, "visualFlags": "lightingKit=0,roadMaterial=0,wetNight=0,horizonEdge=0,buildingDetail=0,landmarks=0", "frames": 9, "accepted": 7, "moving": 7, "exactPose": 0, "associatedPose": 7}}
+run_rc=0
+  "clean": true
+  "latch": null,
+    "plays": 2
+84324d4342667dd163ab
+c6651793ace089a093f5
+c6651793ace089a093f5

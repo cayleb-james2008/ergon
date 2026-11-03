@@ -1,0 +1,14 @@
+=== PLAY 28 (claude-team-d) B1 baseline pack: atlas:edge --seed 2134783819 --visual-flags all-off, NEW place, opening 2/3 ===
+2026-11-03T12:59:36Z
+  "refusals": [],
+  "edit": true,
+  "plays": 1
+{"mcpClose": {"owned": [{"pid": 1773199, "start": 49446051, "ppid": 1773176, "ageSeconds": 606.8}], "foreignNew": [], "signals": [{"pid": 1773199, "start": 49446051, "signal": "SIGTERM"}], "survivors": []}}
+{"fixture": "atlas:edge", "exit": 1, "runDir": "/home/cayleb/Work/projects/untitled-street-game/docs/verify/2026-10-19/vinegar/20261103T125946Z-atlas-edge", "error": "KeyboardInterrupt: signal 15", "summary": null}
+run_rc=124
+  "clean": true
+  "latch": null,
+    "plays": 2
+84324d4342667dd163ab
+c6651793ace089a093f5
+c6651793ace089a093f5

@@ -1,0 +1,43 @@
+41,44c41,73
+< PLACE = Path(
+<     "/home/cayleb/.var/app/org.vinegarhq.Vinegar/data/usg/usg-desktop.rbxlx"
+< )
+< PLACE_WIN = r"Z:\home\cayleb\.var\app\org.vinegarhq.Vinegar\data\usg\usg-desktop.rbxlx"
+---
+> VINEGAR_DATA = Path("/home/cayleb/.var/app/org.vinegarhq.Vinegar/data")
+> DEFAULT_PLACE = VINEGAR_DATA / "usg" / "usg-desktop.rbxlx"
+> 
+> 
+> def resolve_place(environ=None) -> Path:
+>     """The place this tool guards. Default: the sealed slot. STUDIOCYCLE_PLACE selects another slot (2026-11-03).
+> 
+>     The override is validated so it can only name a *.rbxlx under the Vinegar data dir; each slot keeps its own
+>     sealed-bytes backup (see backup_for), so using one slot never rewrites another slot's backup.
+>     """
+>     environ = os.environ if environ is None else environ
+>     raw = environ.get("STUDIOCYCLE_PLACE")
+>     if not raw:
+>         return DEFAULT_PLACE
+>     path = Path(raw)
+>     if not path.is_absolute() or path.suffix != ".rbxlx" or ".." in path.parts or VINEGAR_DATA not in path.parents:
+>         raise SystemExit(f"studiocycle: STUDIOCYCLE_PLACE must be an absolute *.rbxlx under {VINEGAR_DATA}: {raw}")
+>     real = path.resolve()  # symlinks are followed: a slot may never lead outside the data dir or onto the sealed slot
+>     same = real.exists() and DEFAULT_PLACE.exists() and os.path.samefile(real, DEFAULT_PLACE)  # hardlinks too
+>     if VINEGAR_DATA.resolve() not in real.parents or real == DEFAULT_PLACE.resolve() or same:
+>         raise SystemExit(f"studiocycle: STUDIOCYCLE_PLACE resolves outside the data dir or onto the sealed slot: {raw} -> {real}")
+>     return path
+> 
+> 
+> def backup_for(place: Path, sealed_dir: Path) -> Path:
+>     if place == DEFAULT_PLACE:
+>         return sealed_dir / "usg-desktop.rbxlx.sealed.bak"
+>     tag = hashlib.sha256(str(place.parent).encode()).hexdigest()[:8]  # distinct directories never share a backup
+>     return sealed_dir / f"{place.parent.name}-{tag}--{place.name}.sealed.bak"
+> 
+> 
+> PLACE = resolve_place()
+> PLACE_WIN = "Z:" + str(PLACE).replace("/", "\\")
+51c80
+< BACKUP = SEALED_DIR / "usg-desktop.rbxlx.sealed.bak"
+---
+> BACKUP = backup_for(PLACE, SEALED_DIR)
