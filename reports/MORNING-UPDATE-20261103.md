@@ -138,3 +138,21 @@ The owner said **"resume"** at 10:28 ET; the goal was rearmed (goal active, revi
   light-scheme real-shell failures not rendered.
 - **Ties to the owner's open act:** the Lumen grade is now also the thing that unblocks the W6A visual-pack gate — the look cannot be called passed
   without it.
+
+## 11. W7 — DELEGATOR LEG PASS (fresh checker attempt 3), and my correction on the record
+- **Verdict: "W7 DELEGATOR LEG: PASS"** (`finish-docs/CHECK-0.3.5-live-attempt3.md`, fresh read-only agent, fleet DB mode=ro, no socket/GUI/send,
+  no token values). Proven: (1) h9 exists as a ping row (seq 9) and **the proof text was NOT sent** (sha8 differs); (2) h9 delivered+acked
+  15:54:21Z **by the delegator's own calls** (events 2192/2193; action log `bus.pull` 15:54:21.668Z + `bus.ack` 15:54:21.740Z as principal
+  `ext:delegator` — an owner-op cannot ack as ext:delegator); (3) the whole events chain recomputed read-only with the fleet's `verifyChain`
+  (2193 events, no gap/break) and the facade action log re-verified (371 rows); (4) my filed `probes/W7-bus-status-20261103.json` matches the DB
+  for h3/h7 exactly; (5) `bus.status` on my own handoffs verified in the chain-verified action log (ids [h3,h7], ok; the earlier h1..h7 call
+  correctly refused `not-sender`); (6) after waking I did only bus.pull ×3, bus.status ×3, bus.ack ×1 — no bus.send, no fleet-DB writes, exactly
+  what h9 asked.
+- **One prose slip of mine, corrected on the record** (commit `1767fe15`): my status file said the h9 ack was at 15:54:31Z; the DB says
+  **15:54:21Z** and 15:54:31Z was the `bus.status` call. The file now carries the correction and states the DB is authoritative — the record was
+  amended, not silently rewritten.
+- **W7 overall:** lane leg PASS-WITH-LIMITS (attempt 2) + delegator leg PASS (attempt 3) — **Nox's call whether W7 counts as closed**; the
+  checker will carry it as PASS with named limits unless he rules otherwise. Named limits (none blocking this leg): live `bus.hello` stays
+  scratch-only; this build's events carry no channel/authenticated field (identity rests on the action-log principal + bearer path); the installed
+  tree label is not proven equal to the running loaded code; whether the delegator re-parked after 15:54:57Z is unknown; the byte-exact leg-3 proof
+  ping is G2-only and not proven here.
