@@ -72,3 +72,20 @@ being awake at the right minute — and this morning it was not.
 - **16:05 / 16:20** will therefore be recorded as: flat check from the desk's own state at 16:05 (expected flat, no position), and the outcome entry
   as **observation-only: 0 signals after resume, 0 cards beyond the three engine cards, 0 fills, decision log empty (no runbook day)** — with the
   blind window 09:30–11:12 and the resume time on the record. This is not a runbook day and never will be retroactively.
+
+## CARD TIMELINE — the desk's own 11 cards today (all engine lifecycle, NO signal cards)
+| ET | card | key |
+|---|---|---|
+| 02:26:07 | Tradovate page stuck — "Still stuck after 6 h" (6-hour re-alert of the 20:26 stall) | tv-stuck |
+| 05:23:39 | Tradovate logged out — "Nox re-logs in through the Secure Vault in Cayleb's desktop Chrome" | tv-login |
+| 05:24:49 | feed OK — engine resumed | fresh |
+| 07:40:53 | engine started (mode automated, ORB last_entry 12:00) | start |
+| 07:42:53 | FEED STALE — engine paused | stale |
+| 07:45:54 | feed OK — engine resumed | fresh |
+| 08:44:27 | FEED STALE — engine paused (61 s) | stale |
+| 08:44:43 | Tradovate logged out | tv-login |
+| 09:29:00 | engine started (after restart) | start |
+| 09:31:00 | FEED STALE — engine paused | stale |
+| 11:12:17 | feed OK — engine resumed (the final re-login) | fresh |
+- **No signal cards, no entry, no fill on any of them.** The desk's day is a chain of lifecycle cards with two logouts (05:23 and 08:44) and three stale/OK cycles,
+  the last resume at 11:12:17 ET. This corrects my earlier "three cards" figure (that grep missed epoch-stamped rows; the desk's own list is the 11 above).
