@@ -40,3 +40,15 @@ Written before any action; missed is recorded as missed, never backfilled.
 part, and the desk is blind on the login page. **Therefore today's desk day cannot start under the signed runbook regardless of a sign-in** —
 a sign-in restores the feed for observation/logging only. Correct record: **BLOCKED-ON-MACHINE / NO-DESK-DAY; decision log empty; not
 "complete"**; escalate through the Lead (done, 09:35 ET) and to the owner.
+
+## 6. CRASH ADDENDUM (read-only investigation, 09:36 ET)
+- The two renderer crash logs (Mon 20:26, Tue 08:51) are **the same signature**: `source: renderer`, `phase: running`, error
+  **"Desktop renderer exited: killed"** at `main.js:20944` (the `render-process-gone` handler). The only console noise is repeated
+  "Unable to preventDefault inside passive event listener invocation" — no stack, no OOM wording.
+- **No OOM evidence:** nothing in the user journal, nothing in the kernel journal (`journalctl -k` OOM grep empty), memory now 62 GB total /
+  31 GB used / 31 GB available, load ~21 with 5,755 threads. So the renderer was **signal-killed by something outside the app**, and the
+  reporter cannot say what.
+- **Multiple app instances are running**: active scopes include `app-…dsh-desktop-2024503` (the crashed shell, still alive), `-2525583`,
+  `-266214`, `-3926702`. That is worth the owner's/finish lane's attention — the crash dialog referred to one instance while others existed.
+- **Cause remains NOT established** (consistent with the finish lane's honest report). The operational consequence is the recorded one: the
+  session goes blind when the renderer dies, and the morning gates were missed because nothing else owns them.
