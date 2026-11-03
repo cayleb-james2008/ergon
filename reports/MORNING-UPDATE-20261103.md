@@ -216,3 +216,13 @@ The owner said **"resume"** at 10:28 ET; the goal was rearmed (goal active, revi
 11:52 ET; neither was killed by me — the classifier refused that route and I did not work around it). The lane can open a fresh Studio and run
 **part 1/3**. Caution carried: `studiocycle`'s window finder cannot see the native Wayland `robloxstudiobeta.exe` class (the reason "close" said
 `no-studio-window` and "open" launched a second Studio) — until that is fixed, cycle only with the Studio window known-closed.
+
+## 15. `atlas:edge` — ALL THREE PARTS NOW RUN (part 1/3 play36 exit 0)
+- **Play 36 (`atlas:edge` part 1/3)** ran at 16:56:17Z on `dae2abc` and **exited 0** (`rc1=0`), run dir
+  `docs/verify/2026-10-19/vinegar/20261103T165617Z-atlas-edge` (manifest 33 KB, views 001–007, `runtime.ok: true`; clean MCP close: one owned pid,
+  SIGTERM, **0 survivors**). **The gate passed immediately with `gate-1`** — the argv[0]-anchored fix works live.
+- With **part 2/3 PASS** (play34, 16 runs, 0 wall reaches) and **part 3/3 PASS** (play35, 16 runs, 5 wall reaches), all three parts of the flag-off
+  baseline for `atlas:edge` have now run. The lane will run its validator and file the consolidated result to Nox; the place file is unchanged
+  (new-place `2df9cdb4…`; sealed `c6651793…`/`84324d43…` unchanged).
+- What this closes: the cell that was "NOT READY — 5 HIGH" this morning now runs live in three parts on the fixed branch, with the Studio
+  double-instance blocker cleared (both Vinegar Studios were closed at 11:52 ET; I did not kill them).
