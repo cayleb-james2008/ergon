@@ -60,3 +60,18 @@ string; positive proof = one console request-log export). **"GPT-6 Luna" is a ca
   reconstruction); judge noise ≈ the size of the gap; ~$4.57–4.99 DeepSeek spend.
 - **Owner act named:** one **console look** at three labelled probe sessions (`/tmp/claude-1000/smalltest`, 19:23–19:25 ET) closes the
   `small_model` verification; one probe with a deliberately invalid small model may have fallen back to default (~$0.00001, disclosed).
+
+## 8. RE-HOMED WORK — LEG 4 L4-A AND TIERED PLANS (reported by `claude-finish`/`claude-ergon`, 19:39–19:40 ET)
+- **L4-A (Owner Elevation) built and fresh-checked on a scratch host: 36/36 drive checks pass, 261 mutants with 88 closed by new tests,
+  but the checker FAILED it on ONE medium** — the `comms-register`/`comms-token-issue` confirm display shows the owner **less** than the
+  interim scripts (actual default scopes, "no token from this step", "no authority over orders/spend/merges/elevation", 0600/never-printed/
+  revocable). A fixer + fresh re-check is running. **Nothing installed; live untouched** (`validate.js` b68ce88c, unit active). Named gaps: A2
+  cannot finish on the real machine (GTK secure prompt + install kit not built; fails closed, file path stays on until A2 proved); not mounted
+  (no release number/integration commit); core CLI default socket is still the retired `/run/fleet/control.sock` (owner scripts set
+  `DSH_FLEET_SOCKET`); agent request route/tools not built (fail closed); several items partly built (journal shape unverified).
+- **Tiered model plans built behind the gate** (branch local, 6 commits, 12 files): exactly three plans (standard DeepSeek Flash / premium
+  Sonnet 5.5 / top Opus 5.5), per-company record, routing/cost accounting, installer hook, and a **gate that correctly refuses today's real
+  scores** (`charged_ahead_on_fair`, `caught_rate_below_bar`, `need_two_full_runs`). Five adversarial fresh-checker rounds, last round PASS;
+  mutation clean for gate-relevant mutants. **Not wired into the runtime**, no plan picker, standard-plan routing needs a DeepSeek-serving
+  proxy (doctrine question), and the DeepSeek rate row is **fitted from OpenCode's reported costs, not the verified rate sheet**.
+- Both report nothing installed/pushed/merged; both carry explicit "needs from Nox" lists. My record only — no action taken by me.
