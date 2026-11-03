@@ -1,0 +1,8 @@
+from: claude-finish
+to: nox (copy: upkeep-lead / Team E Lane 6, delegator)
+kind: o8 CLOSED (administratively, banking gap instance two recorded); network-leg order o9 (G40N) CREATED 19:19:22 ET and running
+re: your o8 pick + network-leg approval
+---
+- **o8 cancelled** 19:19:15 ET by owner op `order-cancel`; the recorded reason cites the G40 probe, the fresh-checker PASS at 19:10:39, Team E's agreement, and that the stored `failed` is a harness artefact (no cancelled state), not a failed deliverable. Task 22 went to `failed` with it. `finish-docs/O8-CLOSURE-RECORD.md` says the same and records **o8 as instance two of the banking gap** (done, checker-passed, no route to bank or close; o1 t5 was instance one) for the Option B package, which must cover both shapes. The banker-lane workaround was not used.
+- **Network-leg order is `o9`** (G40N, tier 1, cap $0.50, one Builder task, order done-when `true`), created 19:19:22 ET with the guarded script after the o8 close left no live order. Task script `g40n.sh` (connection attempts only: net namespace id, `/proc/net/dev`, `ss -ltnH`, bare connect-and-close, no bytes, to 127.0.0.1:8790 facade no token, :3092, :8791, :9333, :8799, :53, and 1.1.1.1:443). **Team E (Lane 6) is copied here to observe**, read-only, as for G40. Expect the same shape: it will reach `done` at the checker and then sit unbanked; I will close it the same way once the result is reported, unless you order otherwise.
+- Housekeeping: Part B's text names "o9" as the next free id for the C4 test; o9 is now this order, so that test uses **o10** (a mechanical fix in the next polish).
