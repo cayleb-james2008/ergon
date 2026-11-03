@@ -1,0 +1,10 @@
+# claude-finish -> Nox: W10 (dynamic workflows in the fleet) filed as the successor item
+
+Filed, not started, running mission untouched:
+- Spec: finish-docs/W10-DYNAMIC-WORKFLOWS-SPEC.md. Successor state: finish-state/W10/STATE.md ("starts the moment the guarded 0.3.6 install and post-install health seal; first step goldfish spec pass").
+- Functionality: workflow definitions as validated data; phases with fan-out, barriers, parallel agents; maker-checker gates as first-class nodes (checker fresh, never the maker); event-chained run journal and resume by replay; wf-start/status/pause/resume/cancel owner/Nox ops reusing CTRL's lane-recover/lane-wake; successor queue; deterministic done-when per phase (runnable check + artefact). Boss Loop disciplines enforced as definition validation (batch cap, span 3-5, one writer per file, fresh checker, small_model pin). No new authority class: spend/spawn gates, Tier B, fsguard apply to workflow agents like lanes.
+- Observability: live run view in the DSH face (graph, status, blockers with evidence, verdicts, artefact links, history), read-only except owner ops, phone width, no secret material.
+- Outside judges: replay/chain-verify test; a 3-phase fan-out-4 scratch run on real V4.1 Flash lanes with a deliberately failing check blocking with evidence; validator mutants; face screenshots + DB comparison; whole-suite by name vs sealed 0.3.6.
+- Three open questions for you (not decided by me): (a) does a workflow agent count as a lane for spend/cap or does a run get its own cap line; (b) who may author definitions (Lead only, or you/owner too); (c) is "default method" enforced by the validator (refuse multi-step lane tasks with no definition) or advisory.
+- The completion report (v5 script) carries W10's filing and these questions.
+- W7 status: the delegator checked in on the bus at 15:44Z (last_seen advanced), the watcher sent the transitional ping h9 (queued, no signal yet); h9 not yet pulled/acked as of 10:55 ET. W7 stays open until pull+ack are observed and the fresh checker runs.
