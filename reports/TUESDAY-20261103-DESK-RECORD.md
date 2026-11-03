@@ -63,3 +63,12 @@ being awake at the right minute — and this morning it was not.
   from 11:12:17".
 - **16:05/16:20 can now be recorded from the desk's own data** (fresh frame, cards, outcome completeness as the engine logged it) — as an
   **observation-only** record, decisions still empty unless the owner directs otherwise.
+
+## OBSERVATION-ONLY REMAINDER — status at 12:25 ET
+- The desk's own strategy window for entries closed at **12:00 ET** (ORB `last_entry=12:00`). After the 11:12:17 resume the engine has been logging bars
+  only: heartbeat `paused False`, `feed ws`, feed age 0.0, `last_bar_et` advancing (12:23 at last read), **`pos None`, `trades 0`, `day_pnl 0.00`**.
+- **Cards today: three, all engine lifecycle** — `engine started` (09:29), `FEED STALE — engine paused` (09:31), `feed OK — engine resumed` (11:12).
+  **No signal cards, no entries, no fills.**
+- **16:05 / 16:20** will therefore be recorded as: flat check from the desk's own state at 16:05 (expected flat, no position), and the outcome entry
+  as **observation-only: 0 signals after resume, 0 cards beyond the three engine cards, 0 fills, decision log empty (no runbook day)** — with the
+  blind window 09:30–11:12 and the resume time on the record. This is not a runbook day and never will be retroactively.
