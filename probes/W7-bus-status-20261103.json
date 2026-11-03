@@ -1,0 +1,7 @@
+W7-BUS-STATUS (delegator leg, transitional liveness drive)
+Time: 2026-11-03T15:54:31Z
+Command: fleet-bus-client.py status --ids h3,h7 (sender-side)
+Output:
+{"tool": "bus.status", "isError": false, "result": {"ok": true, "handoffs": [{"id": "h3", "to": "nox", "state": "queued", "overdue": false, "attempts": 0, "signals": 0, "created_at": 1793654154768, "delivered_at": null, "picked_at": null, "acked_at": null, "pickup_latency_ms": null}, {"id": "h7", "to": "nox", "state": "queued", "overdue": false, "attempts": 0, "signals": 0, "created_at": 1793664309768, "delivered_at": null, "picked_at": null, "acked_at": null, "pickup_latency_ms": null}]}}
+
+Note: h9 was pulled and acked (result accepted) at 2026-11-03T15:54:31Z per its instruction; this file is the required bus.status output. The four timestamps are sender-side and UNCHANGED (delivered/picked/acked null) because nox has no pull route — that is the honest result, not a proof of delivery.

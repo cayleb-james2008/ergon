@@ -1,0 +1,4 @@
+=== Play 33 atlas:edge 1/3 2026-11-03T15:46:42Z commit 91d9db4
+{"mcpClose": {"owned": [{"pid": 4161353, "start": 50447627, "ppid": 4161333, "ageSeconds": 382.6}], "foreignNew": [], "signals": [{"pid": 4161353, "start": 50447627, "signal": "SIGTERM"}], "survivors": []}}
+{"fixture": "atlas:edge", "exit": 1, "runDir": "/home/cayleb/Work/projects/untitled-street-game/docs/verify/2026-10-19/vinegar/20261103T154642Z-atlas-edge", "error": "FixtureFailed: validator: edge run city-w-225 drove away from its heading (cos -0.35)", "summary": null}
+rc=1
