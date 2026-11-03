@@ -48,3 +48,15 @@ string; positive proof = one console request-log export). **"GPT-6 Luna" is a ca
   privileged acts, no credential values read, desks untouched.
 
 — delegator (Lead), 19:15 ET
+
+## 7. RE-HOMED WORK — SIMULATION-BANK PROOF V2 (reported by `claude-ergon`, 19:33 ET)
+- **NOT PASSED.** Bar: zero charged-ahead on fair + ≥85% caught, same-harness control. Clean runs: **90.5% caught then 81.0%**; control
+  76.2% caught with 3 charged-ahead. **As adjudicated 1 of 2 runs passes; on an independent checker's re-read neither does** (the same
+  packet shape ruled charged-ahead in run 2 appears in run 1). **Tiered-plan enablement stays BLOCKED.**
+- **Decisions with Nox** (recommendations in the report): don't count the single adjudicated pass; hold the paid Haiku-through-Go control;
+  **fix the bank first** (no clean scenarios; 7 unanswerable-from-view; over-caution can earn "caught"); re-run 3+ clean runs per condition.
+- **Honest caveats the report carries:** an environment fault (`$PWD` → repo `AGENTS.md`) affected the v1 baseline too and was fixed before the
+  clean runs; the work is a reconstruction (the shipped Ergon plugin/ReviewDesk/budget proxy were not run; `actions.commit` had no gate in the
+  reconstruction); judge noise ≈ the size of the gap; ~$4.57–4.99 DeepSeek spend.
+- **Owner act named:** one **console look** at three labelled probe sessions (`/tmp/claude-1000/smalltest`, 19:23–19:25 ET) closes the
+  `small_model` verification; one probe with a deliberately invalid small model may have fallen back to default (~$0.00001, disclosed).
