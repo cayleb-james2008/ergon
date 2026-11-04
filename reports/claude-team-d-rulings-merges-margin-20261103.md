@@ -1,0 +1,31 @@
+# TEAM D (Claude) — reply to Nox's 3 Nov ~12:57 rulings: merges, margin + void fraction, Studio (one batched reply)
+
+## 1 · Merges
+**Street game — DONE, both, on `main`** (conditions met: Python tool suite green on each merged tree [353 then 369 tests], Lune `edge` spec 10/0, sealed hashes unchanged `c6651793…` / `84324d43…` / Vinegar copy `c6651793…`, new-place file `2df9cdb4…`, `git diff --stat 536e3c8 HEAD -- src` empty = no production src):
+- `536e3c8` = prep/moving-association-20261103 (18d01a2).
+- `300b632` = prep/atlas-edge-diag-20261103 (bfc28ab).
+Local only, not pushed.
+
+**Card game — NOT merged, stopped and back to you (scope, not a test failure).** There is no card `main`; the only trunk is `master` @ `04031c0` (26 Sep). `prep/card-game-design-spec` (e4e4746) is built on the prep stack `preserve/candidate-55cef5d3` → audio-upload → bind-art → checker-HOLD fix (cd91a88): `git diff --stat master prep/card-game-design-spec` = **840 files, +39,800 lines**, including the preserved candidate source state, the Open Cloud audio-upload tool and the bind-art companion, none of which you approved. Merging "the spec" into master would promote that whole stack. I tested the alternatives in a scratch worktree (removed):
+- the 4 docs commits (84c4018, 6b9c985, 448cec3, e4e4746) cherry-pick cleanly onto master (docs only);
+- the balance code (3d21456, 956b4bc) does NOT: `tests/integration/test_free_reachability.luau` does not exist on master (conflict DU), because the balance pass is built on the candidate stack.
+Options: (A) merge the whole stack to master (needs your approval of the candidate/art/audio prep as well); (B) cherry-pick only the 4 docs commits onto master (new hashes, clean, docs-only), leave the balance code on its branch; (C) leave all card branches unmerged until the owner decides the candidate stack. I recommend (B) now if you want the spec on master, otherwise (C). Δ2 and Δ16 stay open in every case.
+
+## 2 · Fleck/cyan margin and void fraction
+**First, a defect in my own freeze (3 Nov, bfc28ab, now on main).** `docs/art/thresholds.json` took its baseline from four packs; I did not check their viewports. Scout and moving were captured at **1837×744**; the three atlas:edge parts at **296×398** (Play 33, 34, 35: opening A) and **282×100** (Play 36: opening B). Reason: this Studio now launches as a native Wayland window that studiocycle cannot see, so its window-fit step never ran and the viewport is whatever the window opened at. The look_metrics validity rules have no minimum or consistency check on viewport, so all 18 edge views passed as "valid". Consequences: (1) the edge captures are tiny and not comparable to scout; (2) the fleck max I froze (8253) is an outlier from a 282×100 image; (3) the same views differ wildly between openings (edge-city-N fleck 80 vs 24, void 0.02 vs 0.14; Plays 33/34/35 in one opening agree to 3-4 digits, so the render is deterministic given the same window). **The atlas:edge PASS stands for what it tests (the wall containment drive-in, which does not depend on image size), but the edge IMAGES are not a usable look baseline and the committed thresholds are provisional.** Fix needed before any freeze: window fit (your successor item) and a validity rule (all captures in a pack share one viewport, minimum about 1600×700); then re-capture the edge views.
+
+**Baseline I would freeze from (scout, 1837×744, 18 valid street views, deterministic):**
+- fleck energy (road, `all`): max 336.9 (`city-garage`), p90 199, median 75.
+- cyan fraction (road, `all`): max 0.785 (one view, `city-road-n_3_2__n_4_2-forward`), p90 0.107, median 0.006 — one outlier carries the max.
+- road luminance mid/near: 7 of 18 views under the 0.6 target (worst 0.35). Facade repetition worst window: 13.
+- void fraction, street views: 0.028–0.902, median 0.21 (not an edge-view number).
+
+**What the margin protects against:** declaring a pass because a metric moved by less than the measurement can resolve, or by a change in how the shot was taken (window size, opening), rather than by the art. The tool is deterministic given the same window (identical to 3-4 digits across three Plays), so the margin does not need to cover random noise; it needs to demand a visible improvement and stop a no-op or a viewport change from looking like a gain. A bound at the baseline worst view (margin 0) is passed by the unchanged baseline, so it protects nothing.
+**Recommended margin: 20% below the baseline's worst valid view:** fleck `all` max **270** (338 → 270; fails only city-garage now, passes everything else, must come down), cyan `all` max **0.63** (0.785 → 0.63; the outlier road view must lose its cyan wash). Rejected: 0% (no protection), 50% (would fail 5 of 18 fleck views at baseline and set a bar before anyone knows what the road material can do).
+**Recommended void fraction: max 0.05 at every `edge-*` view**, basis: a view with 5% of its below-horizon pixels near-black and flat shows a visible hole at the world edge; ART_DIRECTION says "near zero". **No valid-viewport baseline exists for it**, so this is provisional until the edge views are re-captured at 1837×744; the invalid-viewport edge numbers run 0.03–1.0 (access-w-bend 0.999), consistent with the horizon-edge work still to be done. The tool's thresholds are flat (applied to every view); a void bound must be scoped to edge views (a small `views` pattern in the threshold schema), otherwise it would fail every street view (baseline 0.03–0.9). I would add that scoping with the refreeze.
+
+I will not touch `docs/art/thresholds.json` again until you rule; with your yes I do: viewport guard + scoped void bound + refreeze from comparable captures on a branch (not merged), tests, fresh checker.
+
+## 3 · Studio
+- The open instance (opening B, viewport 282×100) is useless for any viewport-sensitive capture; its 2 remaining Plays would only repeat the wall drive-in. **I recommend closing it now** rather than spending them: please close it via your SSH route (I will not use `flatpak kill` or `studiocycle`).
+- Successor item accepted: studiocycle Wayland window-finder gap (fit and close both depend on it). It needs Studio closed to test; queued behind the close. Until it lands: no `studiocycle cycle`, only an open from a known-closed Studio, and the viewport recorded in every filing.
