@@ -1,0 +1,75 @@
+# KEEP-ALIVE READS - raw, 4 Nov 2026 window [09:00Z,10:00Z)
+# Written by the ERGON lead as each read happened. Channel B is recorded from the query's own HTTP response
+# (api.supabase.com/platform/projects/yhpjpjeedpuvcgnvfpka/analytics/endpoints/logs.all.otel), not from the rendered table.
+
+## artefact keepalive-first-run.txt (written 09:17:00Z by watcher v6.3)
+mtime: 2026-11-04 04:17:01.130491471 -0500
+lines: 108  end-marker: 1
+DISCOUNT RULE (v6.3) present: 2
+
+## section 1 (registration) and section 2 (path proof + every call), verbatim
+## 1. registration at 2026-11-04T04:17:00-05:00 (read-only CLI, JSON)
+Retrieving project…
+Fetching cron jobs for caylebjamesportfolio/rhl-warehouse-board
+{
+  "crons": [
+    {
+      "path": "/api/keepalive",
+      "schedule": "17 9 * * *",
+      "host": "rhl-warehouse-board-2ttt1y84e-caylebjamesportfolio.vercel.app"
+    }
+  ],
+  "undeployed": [],
+  "modified": [],
+  "enabled": true
+}
+
+## 2. the function answered end to end (measured BEFORE the window)
+GET /api/keepalive -> http_code=200 total=1.265578s at 2026-11-04T08:57:01Z; body: {"ok":true,"status":200}  (this call is logged below as a 'call' line, at this exact second)
+EVERY CALL THIS WATCHER HAS MADE (each 'call' line is a call, at that exact second; a HEAD row or a
+/api/keepalive row within 30 s of one of them is OURS to discount, wherever it lands):
+launch 2026-11-04T07:55:47Z pid=397892 planned_probe=08:57:00Z
+launch 2026-11-04T07:59:06Z pid=492590 planned_probe=08:57:00Z
+launch 2026-11-04T08:02:05Z pid=498599 planned_probe=08:57:00Z
+launch 2026-11-04T08:03:29Z pid=500822 planned_probe=08:57:00Z
+launch 2026-11-04T08:06:45Z pid=508398 planned_probe=08:57:00Z
+launch 2026-11-04T08:17:00Z pid=521369 planned_probe=08:57:00Z
+call 2026-11-04T08:57:01Z probe
+(A 'launch' line with no following 'call' line means that instance died before calling - it made no request.)
+
+## host binding (checked 09:24Z, read-only CLI)
+crons list --json: host rhl-warehouse-board-2ttt1y84e-caylebjamesportfolio.vercel.app
+vercel inspect of that host -> id dpl_busDKSQZ6wZKggot9EvwyWBemjpR, name rhl-warehouse-board, target production, status Ready,
+  created Tue Nov 03 2026 08:02:18 -0500 (20h before the window).
+=> the cron is registered against the deployment that production serves.
+
+## THE FIRE — channel A row detail (Vercel Request Logs), read 10:02Z
+NOV 04 04:50:42.07 GMT-5 = 2026-11-04T09:50:42.07Z
+GET 200  rhl-warehouse-board-2ttt1y84e-caylebjamesportfolio.vercel.app  /api/keepalive
+Request ID: 8l7rn-1793785842074-582ac4002ec5
+Path: /api/keepalive   Host: rhl-warehouse-board-2ttt1y84e-caylebjamesportfolio.vercel.app
+User Agent: vercel-cron/1.0          <-- the documented cron signature
+Search Params: (none)               <-- our own calls always carry before-window= or lead-control=
+Received in Washington, D.C., USA (iad1); Firewall: Allowed
+Function Invocation: Route /api/keepalive, Execution Duration 916ms, Response finished in 1.2s
+External APIs: HEAD yhpjpjeedpuvcgnvfpka.supabase.co/rest/v1/lines
+Deployment ID: dpl_busDKSQZ6wZKggot9EvwyWBemjpR   Environment: production
+
+## channel B — the query's own response (10:01:12.741Z, HTTP 200, 1116 ms)
+{"result":[
+ {"event_message":"HEAD | 200 | https://yhpjpjeedpuvcgnvfpka.supabase.co/rest/v1/lines?select=id | node","timestamp":"2026-11-04T08:57:00.758000"},
+ {"event_message":"HEAD | 200 | https://yhpjpjeedpuvcgnvfpka.supabase.co/rest/v1/lines?select=id | node","timestamp":"2026-11-04T09:50:42.693000"}]}
+-- one control (08:57:00.758, our pre-window probe) and one scheduler row (09:50:42.693), 623 ms after the Vercel request started.
+
+## channel C — Data API report, read 10:02Z, window 09:01-10:01Z (Nov 4 4:01am-5:01am ET)
+Total Requests: 1   HEAD 200 /rest/v1/lines ?select=id   at 09:50   avg 559 ms   Response Errors: none
+
+## ingestion-lag measurement (the reason the first 10:01 read was empty)
+10:01:04Z refresh  refreshedAt=1793786464005  axis 09:32-10:02Z  "No Request Logs Match Your Filters"  (0 rows)
+10:01:17Z refresh  refreshedAt=1793786477891  axis 09:32-10:02Z  1 row: 04:50:42.07
+=> the row for a 09:50:42 request arrived ~10.4 minutes after the request. Channel B showed it 623 ms after the call.
+
+## slot 4 (tail check) — 10:24Z
+A 10:24:19Z refreshedAt=1793787859625 axis 09:55-10:25Z -> "No Request Logs Match Your Filters" (0 rows; 09:50:42 is outside this window)
+B 10:24:32.543Z HTTP 200 737 ms range 08:45-10:30Z -> exactly 2 rows: 08:57:00.758 (control), 09:50:42.693 (fire). No third row.
+C 10:24:55Z window 09:24-10:24Z -> Total Requests 1, HEAD 200 /rest/v1/lines?select=id at 09:50, 0 errors.
