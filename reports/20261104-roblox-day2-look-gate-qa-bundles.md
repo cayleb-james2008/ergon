@@ -90,6 +90,13 @@ The first measurement of the **production** look (visual flags in their shipped 
 | cyan ≤ 0.63 | **1 over** (`city-road-n_3_2__n_4_2-forward` 0.802) | 1 over (the same view, 0.7846) |
 | facade repetition ≤ 1 | 13 | 13 |
 
+**After the lane's polish** (the wet-night reflections rebuilt as narrow, dim, mostly transparent streaks - commit
+`e2eb15e`; pack `20261104T165505Z-atlas-scout`, same seed and camera, place `32406439…`): the fleck bound now
+**passes on every view** (the two outliers 510.7 and 382.9 are 6.9 and 2.8 - the hard slab edges were the fleck),
+road-luminance failures drop from **4 to 2** (`cell-9-5-left` 0.011 -> 0.694), and the cyan view gets slightly worse
+(0.802 -> 0.855), which says the cyan is the scene's own blue cast over the asphalt, not the decorations. The
+candidate to grade is `build/rc/rc-e2eb15e.rbxlx` (`32406439…`).
+
 Two findings the owner needs:
 
 1. **The ruled bounds were derived on the flag-off baseline, and the shipped look is what they must bound.** The
@@ -124,6 +131,20 @@ as the same faces over and over.
 - **Cheapest useful batch: 6 new window sheets + 6 new back facades** → the worst count falls from 13 to about 6.
 - The threshold stays **max 1**. It was not moved to make a number pass.
 
+## 6b · The fresh checker (3 rounds, the cap)
+
+A fresh checker (new session, read-only, it RAN the checks) verified the publish-ready claims:
+
+- **Round 1: 12 PASS / 1 FAIL.** The failure was mine: the bundles named the pre-polish RC and the pre-polish
+  numbers while the renders were of the polished build.
+- **Round 2: 19 PASS / 2 FAIL.** The fix had not reached sections 2-3 of the playtest bundle (pack reference,
+  numbers, render labels).
+- **Round 3: 33 PASS / 0 FAIL / 1 NOT RUN** (the NOT RUN is the card lane's 22-step verify, outside that brief;
+  round 1 ran it green). Every bundle claim reproduces; the checker's own re-measurement gives 18 valid street
+  views, 2 luminance fails, 0 fleck, 1 cyan, facade 13. Its fence check: nothing uploaded or published, sealed
+  places byte-identical, no Studio process, no tracked modification in either repo.
+- Verdicts: `~/fleet-scratch/overnight/roblox2-CHECKER-VERDICT{,-ROUND2,-ROUND3}.md`.
+
 ## 7 · The owner gates, packaged (one look each)
 
 `docs/bundles/2026-11-04/` in the street repo (README + 4 bundles + the renders and a contact sheet):
@@ -147,7 +168,8 @@ the reply form). The card bundle points at the card repo's own one-page answer s
 ## 9 · Files
 
 Street repo `main`: `f640881` (look gate), `f82c779` (Slice D), `1a8c322` (window-finder tests), `f815f72`
-(bundles + look-gate record), plus the `addWetNight` softening. Card repo `master`: `7ebbb9a` (unchanged here).
+(bundles + look-gate record), `e2eb15e` (the wet-night polish), `b5e2eb0` / `adfa098` / `e2a6e7c` (the three
+checker rounds). Candidate: `build/rc/rc-e2eb15e.rbxlx` (`32406439…`). Card repo `master`: `7ebbb9a` (unchanged here).
 Window finder: `~/Work/tools/winctl/{winctl.py,studiocycle.py}` + `tests/test_winctl.py`.
 Evidence: `docs/verify/2026-10-19/vinegar/20261104T163738Z-atlas-scout`, `docs/verify/2026-11-04/`,
 `docs/art/`, `docs/bundles/2026-11-04/`, `~/fleet-scratch/overnight/roblox2-progress.md`.
