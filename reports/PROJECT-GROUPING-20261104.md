@@ -1,6 +1,6 @@
 # Board, workspaces and queues grouped by project
 
-Computed 2026-11-04 13:34:11 by the o15 builder lane (order o15, task t39) from the live machine. Nothing moved, nothing
+Computed 2026-11-04 14:02:08 by the o15 builder lane (order o15, task t39) from the live machine. Nothing moved, nothing
 deleted, nothing re-owned: Nox owns `ops/QUEUE.json`, `ops/LANES.json` and `ops/promises.json` and those files
 are read here, not rewritten.
 
@@ -99,7 +99,7 @@ does not claim.
 | `openbell-game` | git | `/home/cayleb/workspace/openbell-game` |
 | `openbell-watchover` | git | `/home/cayleb/workspace/openbell-watchover` |
 
-**Total workspaces: 56** (56 in tonight's six groups).
+**Total workspaces: 56** (42 in tonight's six groups; the other 14 are named, not claimed).
 
 ## 2. Board rows, by project
 
@@ -113,7 +113,7 @@ does not claim.
 | t38 | `roblox` | roblox |
 | t39 | `hygiene-org` | hygiene / organisation |
 
-### 2.2 The team board lanes (`ops/status.json`, generated_at 2026-11-04T18:33:08Z)
+### 2.2 The team board lanes (`ops/status.json`, generated_at 2026-11-04T19:00:09Z)
 
 | lane | project group | live row (truncated) |
 |---|---|---|
@@ -124,7 +124,7 @@ does not claim.
 | `nox` | all groups (the coordinator: rules on escalations) | `{"state": "\u2014", "since": null, "flags": [], "doing": null, "waiting_on": null, "expected_by": null, "next_check_at": null, "last_deliverable_at": null, "mea` |
 | `delegator` | plugin (dsh-fleet) — the fleet master session | `{"state": "\u2014", "since": null, "flags": [], "doing": null, "waiting_on": null, "expected_by": null, "next_check_at": null, "last_deliverable_at": null, "mea` |
 
-### 2.3 Promises on the team board (`ops/promises.json`)
+### 2.3 Promises on the team board (read from `ops/status.json`, which carries its own promise list)
 
 | group | promises |
 |---|---|
