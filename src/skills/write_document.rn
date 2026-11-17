@@ -1,0 +1,19 @@
+//! Ergon skill: write_document (Rune)
+//!
+//! Takes a title and a list of section strings, formats them into a
+//! finished markdown document, and writes it into the workspace through
+//! the host function `host_workspace_write`. Returns the file name.
+
+pub fn main(title, sections) {
+    let body = "";
+    for section in sections {
+        body = `${body}${section}\n\n`;
+    }
+    let content = `# ${title}\n\n${body}`;
+    let filename = `${title}.md`;
+    let result = host_workspace_write(filename, content);
+    if result != "ok" {
+        return result;
+    }
+    filename
+}
