@@ -1,0 +1,16 @@
+//! Ergon skill: update_memory (Rune)
+//!
+//! Takes a learned note, formats it as a bullet, appends it to the
+//! person's memory file through the host functions `host_memory_read`
+//! and `host_memory_write`, and returns the formatted entry.
+
+pub fn main(note) {
+    let existing = host_memory_read();
+    let entry = `- ${note}`;
+    let updated = `${existing}${entry}\n`;
+    let result = host_memory_write(updated);
+    if result != "ok" {
+        return result;
+    }
+    entry
+}
