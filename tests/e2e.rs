@@ -1379,3 +1379,158 @@ fn identity_bullets_are_excluded_in_any_casing() {
         vec!["Likes tea".to_string()]
     );
 }
+
+// ---------------------------------------------------------------------------
+// Regression tests from thermonuclear review ROUND 3.
+// ---------------------------------------------------------------------------
+
+/// Round-3 F3: the gate now checks the summary's named files against
+/// WHICH files this run wrote. A pre-existing file claimed as the
+/// deliverable gets a factual ledger line; a colon after a filename
+/// no longer hides it; a URL is not a workspace file.
+#[test]
+fn done_gate_checks_named_files_against_the_write_ledger() {
+    let root = test_root("gate3");
+    // Pre-existing Report.md the run never touches.
+    let stub = start_stub_model(vec![
+        "{\"done\": true, \"summary\": \"Delivered Report.md, all compiled.\"}".to_string(),
+        "{\"done\": true, \"summary\": \"Done — Report.md: it is ready.\"}".to_string(),
+        "{\"done\": true, \"summary\": \"Per the upstream guide at https://example.com/guide.md — revenue rose.\"}".to_string(),
+    ]);
+    let cfg = test_config(&root, Some("k"), format!("http://127.0.0.1:{}/v1", stub.port));
+    std::fs::write(cfg.workspace_dir.join("Report.md"), "old content").unwrap();
+    let port = start_app(cfg);
+    let chat = |port: u16, msg: &str| -> String {
+        let (status, body) = http(
+            port,
+            "POST",
+            "/api/chat",
+            Some(&format!("{{\"message\": \"{msg}\"}}")),
+        );
+        assert_eq!(status, 200);
+        let v: Value = serde_json::from_str(&body).unwrap();
+        v["messages"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|m| m["content"].as_str().unwrap_or(""))
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    let t1 = chat(port, "deliver the report");
+    assert!(
+        t1.contains("this run wrote no files") && t1.contains("did not write"),
+        "a pre-existing file claimed as delivered is exposed by the ledger line: {t1}"
+    );
+    let t2 = chat(port, "deliver it again");
+    assert!(
+        t2.contains("did not write"),
+        "a trailing colon must not hide the named file: {t2}"
+    );
+    let t3 = chat(port, "summarise the guide");
+    assert!(
+        !t3.contains("did not write") && !t3.contains("treat the summary above with caution"),
+        "a URL in an honest summary is not a workspace file claim: {t3}"
+    );
+}
+
+/// Round-3 F5 residual: people.json corruption in ANY shape (bare
+/// array, empty object, number) is backed up, exactly like threads.
+#[test]
+fn people_json_corruption_in_any_shape_is_backed_up() {
+    for (i, bad) in ["[]", "{}", "42", "{\"people\": [{\"id\": \"../evil\"}]}"].iter().enumerate() {
+        let root = test_root(&format!("peoplebad{i}"));
+        let cfg = test_config(&root, None, "http://127.0.0.1:9/v1".to_string());
+        let path = cfg.data_dir.join("people.json");
+        std::fs::write(&path, bad).unwrap();
+        let _ = ergon_rs::PeopleState::load(&cfg);
+        let bak = cfg.data_dir.join("people.json.bak");
+        assert!(bak.exists(), "shape {bad} must be backed up, not silently dropped");
+        assert_eq!(std::fs::read_to_string(&bak).unwrap(), *bad);
+    }
+}
+
+/// Round-3 F8: a dangling symlink can be moved (the link itself is the
+/// thing), and moving onto a dangling link's name refuses rather than
+/// landing the file at the link's target.
+#[cfg(unix)]
+#[test]
+fn move_file_handles_dangling_links_symmetrically() {
+    let root = test_root("movedangle");
+    let cfg = test_config(&root, Some("k"), "http://127.0.0.1:9/v1".to_string());
+    std::os::unix::fs::symlink("ghost.txt", cfg.workspace_dir.join("dang.txt")).unwrap();
+    let out = ergon_rs::execute_tool(
+        &cfg,
+        "move_file",
+        &json!({"from": "dang.txt", "to": "moved-link.txt"}),
+    )
+    .unwrap();
+    assert!(out.contains("moved dang.txt"), "got: {out}");
+    let md = std::fs::symlink_metadata(cfg.workspace_dir.join("moved-link.txt")).unwrap();
+    assert!(md.file_type().is_symlink(), "the link itself moved");
+    // Onto a dangling link's name: refused as an existing destination.
+    std::fs::write(cfg.workspace_dir.join("real.txt"), "data").unwrap();
+    std::os::unix::fs::symlink("ghost2.txt", cfg.workspace_dir.join("dstlink")).unwrap();
+    let res = ergon_rs::execute_tool(
+        &cfg,
+        "move_file",
+        &json!({"from": "real.txt", "to": "dstlink"}),
+    );
+    assert!(res.is_err(), "moving onto a link's name must refuse: {res:?}");
+    assert!(!cfg.workspace_dir.join("ghost2.txt").exists(), "nothing landed at the target");
+    assert_eq!(
+        std::fs::read_to_string(cfg.workspace_dir.join("real.txt")).unwrap(),
+        "data",
+        "the source survives the refused move"
+    );
+}
+
+/// Round-3 F4: a 413 reaches a client that actually sends its body —
+/// the server drains the in-flight body before answering.
+#[test]
+fn oversized_upload_with_body_in_flight_still_gets_its_413() {
+    let root = test_root("toobig2");
+    let cfg = test_config(&root, None, "http://127.0.0.1:9/v1".to_string());
+    let port = start_app(cfg);
+    let mut stream = TcpStream::connect(("127.0.0.1", port)).unwrap();
+    let body = "x".repeat(1_048_577);
+    let req = format!(
+        "POST /api/chat HTTP/1.1\r\nHost: x\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+        body.len(),
+        body
+    );
+    stream.write_all(req.as_bytes()).unwrap();
+    let mut raw = String::new();
+    stream.read_to_string(&mut raw).unwrap();
+    assert!(raw.starts_with("HTTP/1.1 413"), "the 413 must survive a real upload: {}", &raw[..80.min(raw.len())]);
+}
+
+/// Round-3 F6: searching a named unreadable (binary) file discloses
+/// the skip instead of a bare "(no matches)".
+#[test]
+fn single_file_search_discloses_unreadable_files() {
+    let root = test_root("searchbin");
+    let cfg = test_config(&root, Some("k"), "http://127.0.0.1:9/v1".to_string());
+    std::fs::write(cfg.workspace_dir.join("blob.bin"), [0xffu8, 0xfe, 0x00, 0x01]).unwrap();
+    let out = ergon_rs::execute_tool(
+        &cfg,
+        "search_files",
+        &json!({"query": "needle", "path": "blob.bin"}),
+    )
+    .unwrap();
+    assert!(
+        out.contains("were not searched"),
+        "an unreadable named file is disclosed as skipped: {out}"
+    );
+}
+
+/// Round-3 F7: a fullwidth colon does not smuggle an identity line
+/// into the preferences.
+#[test]
+fn identity_bullets_with_fullwidth_colons_are_excluded() {
+    let memory = "# Memory\n\n- Name：Forged Admin\n- Likes tea\n";
+    assert_eq!(
+        ergon_rs::standing_preferences(memory),
+        vec!["Likes tea".to_string()]
+    );
+}

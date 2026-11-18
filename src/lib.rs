@@ -223,19 +223,23 @@ pub fn sandbox_path_resolving(
 /// artefacts against the workspace that supposedly holds them.
 pub fn named_files(text: &str) -> Vec<String> {
     const EXTS: [&str; 8] = ["md", "csv", "txt", "json", "html", "pdf", "docx", "xlsx"];
-    text.split(|c: char| {
-        c.is_whitespace() || matches!(c, '"' | '\'' | '`' | '(' | ')' | ',' | ';')
-    })
-    .filter_map(|tok| {
-        let tok = tok.trim_end_matches('.');
-        let (_, ext) = tok.rsplit_once('.')?;
-        if !tok.starts_with('.') && EXTS.contains(&ext.to_lowercase().as_str()) {
-            Some(tok.to_string())
-        } else {
-            None
-        }
-    })
-    .collect()
+    // Tokens are runs of filename characters — every other character
+    // (whitespace, quotes, ':', '!', '?', brackets…) separates, so a
+    // trailing colon or exclamation mark cannot hide a named file.
+    text.split(|c: char| !(c.is_alphanumeric() || matches!(c, '.' | '_' | '-' | '/')))
+        .filter_map(|tok| {
+            let tok = tok.trim_end_matches('.');
+            if tok.contains("://") || tok.starts_with("//") || tok.is_empty() {
+                return None; // a URL is not a workspace file
+            }
+            let (_, ext) = tok.rsplit_once('.')?;
+            if !tok.starts_with('.') && EXTS.contains(&ext.to_lowercase().as_str()) {
+                Some(tok.to_string())
+            } else {
+                None
+            }
+        })
+        .collect()
 }
 
 pub fn truncate(s: &str, max_chars: usize) -> String {
@@ -410,18 +414,21 @@ impl PeopleState {
         let path = root.data_dir.join("people.json");
         if let Ok(text) = std::fs::read_to_string(&path) {
             let parsed = serde_json::from_str::<Value>(&text);
+            // Valid means exactly the shape this app writes: a JSON
+            // object whose "people" is an array. Anything else —
+            // unparseable, a bare array/number, a missing or mistyped
+            // key — is corruption: keep the bytes as a backup rather
+            // than letting the next save destroy them silently. (An
+            // earlier check treated a MISSING key as fine, which let
+            // `[]`, `{}` and `42` be silently overwritten.)
             let shape_ok = parsed
                 .as_ref()
                 .map(|v| {
-                    v.get("people")
-                        .map(|p| p.is_array())
-                        .unwrap_or(true)
+                    v.is_object()
+                        && v.get("people").map(|p| p.is_array()).unwrap_or(false)
                 })
                 .unwrap_or(false);
             if !shape_ok {
-                // Unparseable, or valid JSON of the wrong shape: keep
-                // the bytes as a backup rather than letting the next
-                // save destroy them silently.
                 let _ = backup_corrupt(&path);
                 return PeopleState::default();
             }
@@ -437,6 +444,13 @@ impl PeopleState {
                         .filter_map(Person::from_json)
                         .filter(|p| valid_person_id(&p.id))
                         .collect();
+                    if !items.is_empty() && parsed.is_empty() {
+                        // Every entry was unusable — that is corruption
+                        // wearing a valid shape; back it up like any
+                        // other corrupt file instead of overwriting it.
+                        let _ = backup_corrupt(&path);
+                        return PeopleState::default();
+                    }
                     if !parsed.is_empty() {
                         state.people = parsed;
                     }
@@ -874,21 +888,28 @@ pub fn execute_tool(cfg: &Config, name: &str, args: &Value) -> Result<String, St
             let mut stats = SearchStats::default();
             if base.is_file() {
                 // A path naming one file searches that file (walking
-                // it as a directory used to silently find nothing).
-                if let Ok(content) = std::fs::read_to_string(&base) {
-                    for (i, line) in content.lines().enumerate() {
-                        if line.to_lowercase().contains(&query) {
-                            if matches.len() >= 50 {
-                                stats.capped = true;
-                                break;
+                // it as a directory used to silently find nothing). An
+                // unreadable file is disclosed as skipped, like the
+                // walk path — never a plain "(no matches)".
+                match std::fs::read_to_string(&base) {
+                    Ok(content) => {
+                        for (i, line) in content.lines().enumerate() {
+                            if line.to_lowercase().contains(&query) {
+                                if matches.len() >= 50 {
+                                    stats.capped = true;
+                                    break;
+                                }
+                                matches.push(format!(
+                                    "{}:{}: {}",
+                                    rel,
+                                    i + 1,
+                                    truncate(line.trim(), 120)
+                                ));
                             }
-                            matches.push(format!(
-                                "{}:{}: {}",
-                                rel,
-                                i + 1,
-                                truncate(line.trim(), 120)
-                            ));
                         }
+                    }
+                    Err(_) => {
+                        stats.skipped += 1;
                     }
                 }
             } else {
@@ -922,11 +943,16 @@ pub fn execute_tool(cfg: &Config, name: &str, args: &Value) -> Result<String, St
         "move_file" => {
             let from = args["from"].as_str().ok_or("move_file needs args.from")?;
             let to = args["to"].as_str().ok_or("move_file needs args.to")?;
-            // The source's final component is NOT resolved: moving a
-            // symlink moves the link itself, not its target.
+            // NEITHER side's final component is resolved: moving a
+            // symlink moves the link itself, and moving onto a link's
+            // name replaces the link, not its target. (Resolving the
+            // destination used to land the file at the link's target
+            // while reporting the link's name.) Existence is checked
+            // with symlink_metadata for the same reason — exists()
+            // follows links and calls a dangling link "not there".
             let src = sandbox_path_resolving(&cfg.workspace_dir, from, false)?;
-            let dst = sandbox_path(&cfg.workspace_dir, to)?;
-            if !src.exists() {
+            let dst = sandbox_path_resolving(&cfg.workspace_dir, to, false)?;
+            if src.symlink_metadata().is_err() {
                 return Err(format!("move_file: no such file: {from}"));
             }
             // Never silently overwrite: rename would destroy the
@@ -1117,7 +1143,9 @@ pub fn standing_preferences(memory: &str) -> Vec<String> {
 /// because the boundary it guards (identity vs learned facts) must not
 /// depend on exact capitalisation.
 fn is_identity_bullet(bullet: &str) -> bool {
-    let lower = bullet.to_lowercase();
+    // Normalise the fullwidth colon too — the boundary must not depend
+    // on which colon character a note happened to use.
+    let lower = bullet.to_lowercase().replace('\u{ff1a}', ":");
     for key in ["name", "role"] {
         if let Some(rest) = lower.strip_prefix(key) {
             if rest.trim_start().starts_with(':') {
@@ -1187,18 +1215,11 @@ pub fn run_agent(
     messages.extend(history.iter().cloned());
     messages.push(json!({"role": "user", "content": task}));
     let mut steps: Vec<String> = Vec::new();
-    // Successful work steps this run (writes, memory updates, moves) —
-    // the evidence a "done" summary is checked against before it is
-    // presented as finished.
-    let mut work_steps = 0usize;
-    const WORK_TOOLS: [&str; 6] = [
-        "write_file",
-        "write_document",
-        "make_spreadsheet",
-        "research",
-        "update_memory",
-        "move_file",
-    ];
+    // The files this run actually wrote — the evidence a "done"
+    // summary's named files are checked against. Not a count: WHICH
+    // files, so a summary claiming a file this run never touched is
+    // visible as exactly that.
+    let mut written_files: Vec<String> = Vec::new();
 
     for _ in 0..STEP_CAP {
         let reply = call_model(cfg, &session, &messages)?;
@@ -1211,27 +1232,32 @@ pub fn run_agent(
                 .lock()
                 .unwrap()
                 .push(thread_id, "assistant", &summary);
-            // Honesty gate, checked against the ledger rather than
-            // the summary's verbs (a verb list flagged honest inline
-            // answers and real memory/move work, and missed lies told
-            // in other words):
-            //  1. a file the summary NAMES must actually exist in the
-            //     workspace;
-            //  2. a summary claiming an artefact (workspace / document
-            //     / spreadsheet / file) needs at least one successful
-            //     work step behind it.
-            let missing_named: Vec<String> = named_files(&summary)
-                .into_iter()
+            // Honesty gate, checked against the run's own write
+            // ledger — WHICH files this run wrote, never the summary's
+            // verbs or nouns (verb/noun lists flagged honest inline
+            // answers and waved through claims about files the run
+            // never touched):
+            //  1. a named file that does not exist at all is a hard
+            //     discrepancy — caution, in the open;
+            //  2. a named file that exists but this run did not write
+            //     gets a factual ledger line (what the run DID write),
+            //     so a pre-existing file claimed as the deliverable is
+            //     visible without accusing an honest input reference.
+            let named = named_files(&summary);
+            let missing_named: Vec<String> = named
+                .iter()
                 .filter(|f| {
                     sandbox_path(&cfg.workspace_dir, f)
                         .map(|p| !p.exists())
                         .unwrap_or(true)
                 })
+                .cloned()
                 .collect();
-            let lower = summary.to_lowercase();
-            let claims_artefact = ["workspace", "document", "spreadsheet", "file"]
+            let unwritten_named: Vec<String> = named
                 .iter()
-                .any(|w| lower.contains(w));
+                .filter(|f| !missing_named.contains(f) && !written_files.contains(f))
+                .cloned()
+                .collect();
             if !missing_named.is_empty() {
                 store.lock().unwrap().push(
                     thread_id,
@@ -1241,11 +1267,19 @@ pub fn run_agent(
                         missing_named.join(", ")
                     ),
                 );
-            } else if claims_artefact && work_steps == 0 {
+            } else if !unwritten_named.is_empty() {
+                let wrote = if written_files.is_empty() {
+                    "no files".to_string()
+                } else {
+                    written_files.join(", ")
+                };
                 store.lock().unwrap().push(
                     thread_id,
                     "step",
-                    "Note: the agent reported finished work, but no file was written or changed during this run — treat the summary above with caution.",
+                    &format!(
+                        "Note: this run wrote {wrote}; the summary also names {}, which this run did not write.",
+                        unwritten_named.join(", ")
+                    ),
                 );
             }
             return Ok(AgentOutcome { summary, steps });
@@ -1260,8 +1294,25 @@ pub fn run_agent(
             Ok(r) => (r, true),
             Err(e) => (format!("error: {e}"), false),
         };
-        if ok && WORK_TOOLS.contains(&tool.as_str()) {
-            work_steps += 1;
+        if ok {
+            match tool.as_str() {
+                "write_file" => {
+                    if let Some(p) = args["path"].as_str() {
+                        written_files.push(p.to_string());
+                    }
+                }
+                "move_file" => {
+                    if let Some(p) = args["to"].as_str() {
+                        written_files.push(p.to_string());
+                    }
+                }
+                // The Rune skills name the file they produced in
+                // their result text.
+                "write_document" | "make_spreadsheet" | "research" => {
+                    written_files.extend(named_files(&result_text));
+                }
+                _ => {}
+            }
         }
         let step_line = format!("Tool: {tool}");
         steps.push(step_line.clone());
@@ -1355,6 +1406,17 @@ fn new_session_id() -> String {
 /// Whether this session id is one the server actually issued. A
 /// client-chosen id is never honoured (session fixation): unknown ids
 /// are treated as "no session" and replaced with a fresh server id.
+/// Insert a session, bounding the map: sessions are memory-only and
+/// re-issued transparently, so past a generous cap the map is simply
+/// cleared rather than growing for the life of the process.
+fn insert_session(state: &AppState, sid: String, person_id: String) {
+    let mut sessions = state.sessions.lock().unwrap();
+    if sessions.len() > 10_000 {
+        sessions.clear();
+    }
+    sessions.insert(sid, person_id);
+}
+
 fn session_known(state: &AppState, session: &Option<String>) -> bool {
     match session {
         Some(sid) => state.sessions.lock().unwrap().contains_key(sid),
@@ -1423,7 +1485,18 @@ const MAX_BODY_BYTES: usize = 1_048_576;
 const MAX_HEAD_BYTES: usize = 32_768;
 
 fn read_request(stream: &mut std::net::TcpStream) -> Option<Request> {
+    // A TOTAL deadline for the whole request, not a per-read timeout:
+    // a per-read clock lets a slow-loris drip headers forever, one
+    // gap at a time. Before each read the socket timeout is re-armed
+    // with whatever of the 30 seconds remains.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+    let arm = |stream: &std::net::TcpStream| -> Option<()> {
+        let remain = deadline.checked_duration_since(std::time::Instant::now())?;
+        stream.set_read_timeout(Some(remain)).ok()?;
+        Some(())
+    };
     let mut reader = BufReader::new(stream.try_clone().ok()?);
+    arm(stream)?;
     let mut request_line = String::new();
     if reader.read_line(&mut request_line).ok()? == 0 {
         return None;
@@ -1436,6 +1509,7 @@ fn read_request(stream: &mut std::net::TcpStream) -> Option<Request> {
     let mut session: Option<String> = None;
     let mut head_bytes = request_line.len();
     loop {
+        arm(stream)?;
         let mut line = String::new();
         let n = reader.read_line(&mut line).ok()?;
         if n == 0 || line == "\r\n" || line == "\n" {
@@ -1463,7 +1537,23 @@ fn read_request(stream: &mut std::net::TcpStream) -> Option<Request> {
     }
     if content_length > MAX_BODY_BYTES {
         // A real 413, not a silent drop: the caller learns the limit
-        // instead of staring at a dead connection.
+        // instead of staring at a dead connection. The in-flight body
+        // is drained first (bounded — a few MB, within the deadline):
+        // answering while the client's body is still queued gets the
+        // response reset away before the client can read it.
+        let mut to_drain = content_length.min(4 * 1024 * 1024);
+        let mut sink = [0u8; 8192];
+        while to_drain > 0 {
+            if arm(stream).is_none() {
+                break;
+            }
+            let want = to_drain.min(sink.len());
+            match reader.read(&mut sink[..want]) {
+                Ok(0) => break,
+                Ok(n) => to_drain -= n,
+                Err(_) => break,
+            }
+        }
         let body = format!(
             "{{\"error\": \"request body too large: the limit is {MAX_BODY_BYTES} bytes\"}}"
         );
@@ -1475,6 +1565,7 @@ fn read_request(stream: &mut std::net::TcpStream) -> Option<Request> {
         let _ = stream.flush();
         return None;
     }
+    arm(stream)?;
     let mut body = vec![0u8; content_length];
     if content_length > 0 {
         reader.read_exact(&mut body).ok()?;
@@ -1551,11 +1642,7 @@ fn handle_connection(mut stream: std::net::TcpStream, state: &AppState) -> std::
             // if another client switches the global one.
             if !session_known(state, &req.session) {
                 let sid = new_session_id();
-                state
-                    .sessions
-                    .lock()
-                    .unwrap()
-                    .insert(sid.clone(), person.id.clone());
+                insert_session(state, sid.clone(), person.id.clone());
                 return respond_h(
                     &mut stream,
                     200,
@@ -1629,7 +1716,7 @@ fn handle_connection(mut stream: std::net::TcpStream, state: &AppState) -> std::
             let mut set_cookie: Option<String> = None;
             if session_known(state, &req.session) {
                 let sid = req.session.clone().unwrap();
-                state.sessions.lock().unwrap().insert(sid, id.clone());
+                insert_session(state, sid, id.clone());
             } else {
                 {
                     let mut people = state.people.lock().unwrap();
@@ -1637,7 +1724,7 @@ fn handle_connection(mut stream: std::net::TcpStream, state: &AppState) -> std::
                     people.save(root_cfg);
                 }
                 let sid = new_session_id();
-                state.sessions.lock().unwrap().insert(sid.clone(), id.clone());
+                insert_session(state, sid.clone(), id.clone());
                 set_cookie = Some(format!(
                     "ergon_session={sid}; Path=/; HttpOnly; SameSite=Lax"
                 ));
