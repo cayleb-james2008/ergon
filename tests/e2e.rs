@@ -2904,3 +2904,21 @@ fn empty_summary_is_stored_as_task_complete() {
         assert_eq!(answers.last().map(String::as_str), Some("Task complete."), "got {answers:?}");
     }
 }
+
+/// E4: an unparseable chat body says so; a missing or empty message still
+/// says the message is required.
+#[test]
+fn invalid_json_chat_body_is_named_as_such() {
+    let root = test_root("badjson");
+    let cfg = test_config(&root, None, "http://127.0.0.1:9/v1".to_string());
+    let port = start_app(cfg);
+    let (status, body) = http(port, "POST", "/api/chat", Some("{not json"));
+    assert_eq!(status, 400);
+    assert!(body.contains("request body is not valid JSON"), "got {body}");
+    let (status, body) = http(port, "POST", "/api/chat", Some("{}"));
+    assert_eq!(status, 400);
+    assert!(body.contains("message is required"), "got {body}");
+    let (status, body) = http(port, "POST", "/api/chat", None);
+    assert_eq!(status, 400);
+    assert!(body.contains("message is required"), "an empty body is a missing message: {body}");
+}
