@@ -52,19 +52,17 @@ chat-completions endpoint; the default is OpenCode Go with
 
 ## How it works
 
-- **Shell** — embedded HTML/CSS/JS, three switchable faces over one
-  core: the **Work Graph** (people → suite items → finished work →
-  files, drawn from the real stores; it re-lays itself out compactly
-  on narrow screens), the **Conversation Spine** (the familiar chat
-  shell: sidebar with the person switcher and thread list, one
-  scrolling thread, composer pinned at the bottom) and the **Today
-  River** (the morning brief, the decisions inbox, offers and the
-  day's stream). Agent steps appear in the thread as a plain ledger of
-  what was actually done; the finished result is the final message.
-  A pre-packaged **phone app** (`/phone`) puts the same core in a
-  pocket face — brief, chat, decisions and suite behind a bottom tab
-  bar, same session discipline. Light and dark themes, toggle under
-  Settings → Appearance, dark by default.
+- **Shell** — two embedded pages in `assets/` (`index.html`, `phone.html`),
+  each one file of HTML, CSS and JS. The desktop face opens on **Chat**: a
+  sidebar with the person switcher, New chat, the conversation list and
+  Settings (appearance, what the agent has learned, the suite and library,
+  add a person). The top bar switches to **Today** (the morning brief,
+  what is waiting on you with approve or decline, what the agent learned,
+  offers, today's stream) and the **Work graph** (a plain list under 768px).
+  Agent steps appear in the thread as a ledger of what was actually done;
+  the finished result is the final message. The phone face (`/phone`) has a
+  bottom tab bar (Brief, Chat, Decisions, Suite) with the composer above it.
+  Dark is the default; the light theme is under Settings, Appearance.
 - **People** — every employee gets their own workspace, memory and
   threads (`people.json` + one data directory per person). People can be
   created in the UI; a new person's agent starts from a seeded memory.
@@ -162,15 +160,7 @@ cross-person skill publishing, delegation, the delete gate, offers,
 brief/today/graph truth, app runs, faces and phone, the hosting gate,
 installer) passes **31/31** against the unmodified binary.
 
-The completion build additionally survived a fresh-context
-thermonuclear review whose reproduced findings (a symlink-delete
-that hit the wrong file, unsynchronised record stores, prompt-only
-subagent restrictions, a library lock held across skill runs) were
-each fixed and pinned by a regression test, and a Hallmark-Rune
-front-end elevation graded by fresh-eyes checkers at eight widths in
-both themes (rendered lint: phone face zero findings; desktop zero
-findings except one scanner false positive on `#face-*` ID selectors,
-hand-verified).
+The completion build additionally survived a fresh-context thermonuclear review whose reproduced findings (a symlink-delete that hit the wrong file, unsynchronised record stores, prompt-only subagent restrictions, a library lock held across skill runs) were each fixed and pinned by a regression test.
 
 The live-model path is real code, exercised here against the stub
 because no model key is available in the build environment; point
