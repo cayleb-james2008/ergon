@@ -13,7 +13,10 @@ pub fn main(title, sections) {
     let filename = `${title}.md`;
     // The label is interpolated BEFORE the write: passing `filename` to
     // the host function moves it, and reading it afterwards is an error.
-    let label = `${filename}`;
+    // Success returns are prefixed "file:" so the Rust side can tell a
+    // file name from a host error unambiguously — even when the title
+    // itself starts with "error:".
+    let label = `file:${filename}`;
     let result = host_workspace_write(filename, content);
     if result != "ok" {
         return result;

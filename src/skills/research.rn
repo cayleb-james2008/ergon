@@ -28,7 +28,8 @@ pub fn main(topic, filename, urls) {
     // count that was merely attempted.
     let content = `# Research: ${topic}\n\nFetched ${fetched} of ${total} sources.\n\n` + sections;
     // Label first: passing `filename` to the host function moves it.
-    let label = `${filename}`;
+    // "file:" prefix = success (see write_document.rn).
+    let label = `file:${filename}`;
     let result = host_workspace_write(filename, content);
     if result != "ok" {
         return result;
