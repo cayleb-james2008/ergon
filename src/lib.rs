@@ -1753,6 +1753,7 @@ fn run_loop(
         if reply["done"].as_bool() == Some(true) {
             let summary = reply["summary"]
                 .as_str()
+                .filter(|s| !s.trim().is_empty())
                 .unwrap_or("Task complete.")
                 .to_string();
             return Ok((summary, steps));

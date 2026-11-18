@@ -2878,3 +2878,29 @@ fn over_long_header_line_is_refused_and_server_survives() {
     let (status, _) = http(port, "GET", "/api/status", None);
     assert_eq!(status, 200, "the server still answers afterwards");
 }
+
+/// E3: an empty or whitespace-only summary is treated like a missing one
+/// ("Task complete."), never stored as an empty assistant answer.
+#[test]
+fn empty_summary_is_stored_as_task_complete() {
+    let root = test_root("emptysummary");
+    let stub = start_stub_model(vec![
+        "{\"done\": true, \"summary\": \"\"}".to_string(),
+        "{\"done\": true, \"summary\": \"   \"}".to_string(),
+    ]);
+    let cfg = test_config(&root, Some("test-key"), format!("http://127.0.0.1:{}/v1", stub.port));
+    let port = start_app(cfg);
+    for _ in 0..2 {
+        let (status, body) = chat(port, "say something");
+        assert_eq!(status, 200, "chat should succeed: {body}");
+        let v: Value = serde_json::from_str(&body).unwrap();
+        let answers: Vec<String> = v["messages"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|m| m["role"] == "assistant")
+            .map(|m| m["content"].as_str().unwrap_or("").to_string())
+            .collect();
+        assert_eq!(answers.last().map(String::as_str), Some("Task complete."), "got {answers:?}");
+    }
+}
