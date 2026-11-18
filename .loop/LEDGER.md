@@ -51,3 +51,10 @@
 - F4 LOW: subpath writes named by basename cautioned. FIXED by the basename fallback in check_mentions.
 - F5 LOW: caution suppressed the ledger line (else-if). FIXED: both lines emit when both apply. Pinned.
 - Verify fix-round-5b: 44/44 green. Gate battery now covers spaced titles end-to-end (document, research, memory, move) plus direct matcher pins.
+
+## Sealed exam (independent examiner + runner) — 19/19 PASS
+- Exam at ~/workspace/restart-20261117/exams/ergon/ (exam.sh, checks.py, stub_model.py; 19 checks E1–E19: shell, themes, no-key honesty, people isolation, forged cookies, stub-driven E2E into a created person's workspace, learning reaching the prompt, persistence, sandbox escapes, done-gate both directions incl. spaced names, 413 with body, corrupt threads.json backup).
+- Run 1 (manifest exam.sh 4529c0f5…, checks.py bf8be221…, stub 47c455bd…): 11/19 — E8, E11–E17 all failed at "phase B setup: task 1 chat failed st=500"; non-stub checks passed.
+- Root cause (examiner-side debug, wire evidence): EXAM bug, app innocent. The stub's do_POST required the path to start with /chat/completions and 404'd /v1/chat/completions (the app's legitimate POST target) before recording or serving. App's raw request captured and verified correct (auth header, x-opencode-session, UA, OpenAI-style body); with a path-accepting capture server the same flow returned 200.
+- Patch (harness wiring only; checks.py byte-identical): stub accepts any path ending /chat/completions; exam.sh extraction tar gained --no-same-owner. New manifest: exam.sh 3558cb2a…, checks.py bf8be221… (unchanged), stub_model.py b9a05004….
+- Run 2 (independent runner, hashes verified, run dir ~/workspace/exam-runs/ergon-20261118-015111-15140): PASS E1–E19, EXAM RESULT 19/19, exit 0. App tree unmodified throughout (git status clean).
