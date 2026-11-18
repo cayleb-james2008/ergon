@@ -4,10 +4,10 @@
 |---|---|---|---|---|
 | B1 | Threads live in server memory only; a restart loses all task history (breaks C2) | start app, create thread, restart app on same data dir, thread list is empty | high | kept |
 | B2 | One global person only: single memory.md, workspace and thread list shared by everyone (breaks C3) | inspect src/lib.rs: Config has one memory_path/workspace_dir; no people anywhere | high | kept |
-| B3 | No spreadsheet tool: the agent cannot produce a spreadsheet file (breaks C4a) | execute_tool has no spreadsheet arm; tool list in system_prompt | medium | open |
-| B4 | No file search tool (breaks C4b) | execute_tool has no search arm | medium | open |
-| B5 | No move/rename tool (breaks C4c) | execute_tool has no move arm | medium | open |
-| B6 | No research skill: cannot compile a notes document from several fetched pages (breaks C4d) | skills.rs has only write_document and update_memory | medium | open |
+| B3 | No spreadsheet tool: the agent cannot produce a spreadsheet file (breaks C4a) | execute_tool has no spreadsheet arm; tool list in system_prompt | medium | kept |
+| B4 | No file search tool (breaks C4b) | execute_tool has no search arm | medium | kept |
+| B5 | No move/rename tool (breaks C4c) | execute_tool has no move arm | medium | kept |
+| B6 | No research skill: cannot compile a notes document from several fetched pages (breaks C4d) | skills.rs has only write_document and update_memory | medium | kept |
 | B7 | Learning does not visibly shape behaviour: memory is dumped wholesale into the prompt, there is no standing-preferences surfacing and no memory view in the UI (breaks C5, C11) | read system_prompt in lib.rs and ui.rs (no memory view) | medium | open |
 | B8 | No light/dark themes and no settings: the UI is light-only with hard-coded colours (breaks C8, C11) | read ui.rs: single palette, no data-theme, no settings element | medium | open |
 | B9 | UI craft gaps (impeccable floor): no :focus-visible styling, composer input has no label, several off-grid spacing values, send button state only partially handled, no reduced-motion respect needed but no loading text swap | read ui.rs | low | open |
