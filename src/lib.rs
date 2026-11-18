@@ -524,6 +524,8 @@ pub fn slugify(name: &str) -> String {
 pub struct PeopleState {
     pub people: Vec<Person>,
     pub active: String,
+    /// Store files backed up at load (named in GET /api/status).
+    pub recovered: Vec<String>,
 }
 
 impl Default for PeopleState {
@@ -535,6 +537,7 @@ impl Default for PeopleState {
                 role: String::new(),
             }],
             active: "default".to_string(),
+            recovered: Vec::new(),
         }
     }
 }
@@ -559,6 +562,13 @@ pub fn backup_corrupt(path: &Path) -> Option<PathBuf> {
     Some(candidate)
 }
 
+/// Backs up a corrupt store and returns its file name, for the
+/// "earlier conversations were moved" notice (GET /api/status).
+pub fn backed_up_name(path: &Path) -> Option<String> {
+    backup_corrupt(path)?;
+    path.file_name().map(|n| n.to_string_lossy().into_owned())
+}
+
 impl PeopleState {
     pub fn load(root: &Config) -> PeopleState {
         let path = root.data_dir.join("people.json");
@@ -579,8 +589,10 @@ impl PeopleState {
                 })
                 .unwrap_or(false);
             if !shape_ok {
-                let _ = backup_corrupt(&path);
-                return PeopleState::default();
+                return PeopleState {
+                    recovered: backed_up_name(&path).into_iter().collect(),
+                    ..PeopleState::default()
+                };
             }
             if let Ok(v) = parsed {
                 let mut state = PeopleState::default();
@@ -598,8 +610,10 @@ impl PeopleState {
                         // Every entry was unusable — that is corruption
                         // wearing a valid shape; back it up like any
                         // other corrupt file instead of overwriting it.
-                        let _ = backup_corrupt(&path);
-                        return PeopleState::default();
+                        return PeopleState {
+                            recovered: backed_up_name(&path).into_iter().collect(),
+                            ..PeopleState::default()
+                        };
                     }
                     if !parsed.is_empty() {
                         state.people = parsed;
@@ -751,6 +765,8 @@ pub fn thread_from_json(v: &Value) -> Option<Thread> {
 #[derive(Default)]
 pub struct Store {
     pub threads: Vec<Thread>,
+    /// The backed-up file name when this store started fresh (E5).
+    pub recovered: Option<String>,
     /// Where this store persists (threads.json); set by `Store::load`.
     pub save_path: Option<PathBuf>,
 }
@@ -763,6 +779,7 @@ impl Store {
         let mut store = Store {
             threads: Vec::new(),
             save_path: Some(path.to_path_buf()),
+            recovered: None,
         };
         if let Ok(text) = std::fs::read_to_string(path) {
             match serde_json::from_str::<Value>(&text) {
@@ -778,11 +795,11 @@ impl Store {
                     // just as corrupt as a syntax error — the next
                     // save must not destroy these bytes unrecorded.
                     None => {
-                        let _ = backup_corrupt(path);
+                        store.recovered = backed_up_name(path);
                     }
                 },
                 Err(_) => {
-                    let _ = backup_corrupt(path);
+                    store.recovered = backed_up_name(path);
                 }
             }
         }
@@ -2546,16 +2563,26 @@ fn handle_connection(mut stream: std::net::TcpStream, state: &AppState) -> std::
             }
             respond(&mut stream, 200, "text/html; charset=utf-8", ui::INDEX_HTML)
         }
-        ("GET", "/api/status") => respond_json(
-            &mut stream,
-            200,
-            &json!({
-                "model_configured": root_cfg.api_key.is_some(),
-                "model": root_cfg.model_id,
-                "model_base_url": root_cfg.model_base_url,
-                "person": person.to_json(),
-            }),
-        ),
+        ("GET", "/api/status") => {
+            let mut recovered: Vec<String> = state.people.lock().unwrap().recovered.clone();
+            recovered.extend(state.library.lock().unwrap().recovered.clone());
+            for rt in state.runtimes.lock().unwrap().values() {
+                recovered.extend(rt.store.lock().unwrap().recovered.clone());
+            }
+            recovered.sort();
+            recovered.dedup();
+            respond_json(
+                &mut stream,
+                200,
+                &json!({
+                    "model_configured": root_cfg.api_key.is_some(),
+                    "model": root_cfg.model_id,
+                    "model_base_url": root_cfg.model_base_url,
+                    "person": person.to_json(),
+                    "store_recovered": recovered,
+                }),
+            )
+        }
         ("GET", "/api/people") => {
             let people = state.people.lock().unwrap();
             let mut v = people.to_json();
