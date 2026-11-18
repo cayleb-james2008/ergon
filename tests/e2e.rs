@@ -1932,6 +1932,33 @@ fn delegate_runs_a_suite_subagent_and_refuses_others() {
 }
 
 #[test]
+fn a_dishonest_delete_claim_is_flagged_while_the_deletion_is_only_parked() {
+    let root = test_root("parked_claim");
+    let replies = vec![
+        json!({"tool": "delete_file", "args": {"path": "old.txt"}}).to_string(),
+        json!({"done": true, "summary": "Deleted old.txt."}).to_string(),
+    ];
+    let stub = start_stub_model(replies);
+    let cfg = test_config(
+        &root,
+        Some("test-key"),
+        format!("http://127.0.0.1:{}/v1", stub.port),
+    );
+    let ws = cfg.workspace_dir.clone();
+    std::fs::write(ws.join("old.txt"), "old").unwrap();
+    let port = start_app(cfg);
+
+    let (status, body) = chat(port, "Delete old.txt");
+    assert_eq!(status, 200, "{body}");
+    assert!(ws.join("old.txt").exists(), "a parked deletion must NOT delete");
+    assert!(
+        body.contains("Note: old.txt has NOT been deleted yet")
+            && body.contains("waiting for your approval"),
+        "a summary claiming a deletion that is only parked gets a factual ledger line: {body}"
+    );
+}
+
+#[test]
 fn delete_parks_a_decision_and_only_approval_deletes() {
     let root = test_root("decisions");
     let replies = vec![
