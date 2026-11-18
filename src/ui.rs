@@ -28,7 +28,7 @@ pub const INDEX_HTML: &str = r##"<!DOCTYPE html>
   [data-theme="light"] {
     color-scheme: light;
     --bg: #f7f6f2; --panel: #ffffff; --sidebar: #edeae3; --ink: #201d18;
-    --muted: #6d675c; --faint: #8a8474; --rule: #ddd8ce;
+    --muted: #6d675c; --faint: #6e6759; --rule: #ddd8ce;
     --accent: #a34a28; --accent-bg: #a34a28; --accent-bg-hover: #8d3f21;
     --user-bubble: #e9e5db; --warn-bg: #fdf3e3; --warn-ink: #7a4b12; --warn-rule: #ecd9ae;
     --err-bg: #fdecec; --err-ink: #8c1d1d; --field: #ffffff;
@@ -58,10 +58,16 @@ pub const INDEX_HTML: &str = r##"<!DOCTYPE html>
   #new-chat-btn:hover { background: var(--accent-bg-hover); }
   #new-chat-btn svg { width: 14px; height: 14px; flex: none; }
   #thread-list { list-style: none; margin: 0; padding: 0; overflow-y: auto; flex: 1; min-height: 48px; }
-  #thread-list li { padding: 8px 10px; border-radius: 8px; font-size: 14px; cursor: pointer;
-                    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--muted); }
-  #thread-list li.active { background: var(--user-bubble); color: var(--ink); }
-  #thread-list li:hover { color: var(--ink); }
+  #thread-list li { margin: 0; }
+  .thread-btn { display: block; width: 100%; text-align: left; background: none; border: 0;
+                padding: 8px 10px; border-radius: 8px; font-size: 14px; cursor: pointer;
+                color: var(--muted); }
+  .thread-btn .t-title { display: block; white-space: nowrap; overflow: hidden;
+                         text-overflow: ellipsis; }
+  .thread-btn .t-sub { display: block; font-size: 12px; color: var(--faint); margin-top: 2px; }
+  .thread-btn.active { background: var(--user-bubble); color: var(--ink); }
+  .thread-btn:hover { color: var(--ink); }
+  #side-error { display: none; color: var(--err-ink); font-size: 12px; margin: 0 8px; }
 
   #settings { border-top: 1px solid var(--rule); padding-top: 12px; display: flex;
               flex-direction: column; gap: 12px; }
@@ -78,7 +84,7 @@ pub const INDEX_HTML: &str = r##"<!DOCTYPE html>
   .side-btn:hover { border-color: var(--muted); }
   #memory-panel { display: none; margin: 0 8px; background: var(--field);
                   border: 1px solid var(--rule); border-radius: 8px; padding: 8px 10px;
-                  font-size: 12px; line-height: 1.5; max-height: 220px; overflow-y: auto;
+                  font-size: 12px; line-height: 1.5; max-height: 320px; overflow-y: auto;
                   white-space: pre-wrap; word-wrap: break-word; color: var(--muted); }
   #memory-panel.open { display: block; }
   #person-form { display: none; flex-direction: column; gap: 8px; padding: 0 8px; }
@@ -114,7 +120,7 @@ pub const INDEX_HTML: &str = r##"<!DOCTYPE html>
 
   @media (max-width: 760px) {
     body { flex-direction: column; }
-    #sidebar { width: 100%; flex: none; max-height: 44vh; border-right: 0;
+    #sidebar { width: 100%; flex: none; max-height: 44vh; overflow-y: auto; border-right: 0;
                border-bottom: 1px solid var(--rule); }
   }
   @media (prefers-reduced-motion: reduce) {
@@ -132,6 +138,7 @@ pub const INDEX_HTML: &str = r##"<!DOCTYPE html>
     </div>
     <button id="new-chat-btn" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.4" fill="none" stroke-linecap="round"/></svg>New chat</button>
     <ul id="thread-list"></ul>
+    <p id="side-error" role="alert"></p>
     <div id="settings">
       <h2>Settings</h2>
       <div class="set-row">
@@ -144,18 +151,19 @@ pub const INDEX_HTML: &str = r##"<!DOCTYPE html>
       <button class="side-btn" id="add-person-btn" type="button" aria-expanded="false">Add a person</button>
       <form id="person-form">
         <label class="sr-only" for="person-name">Name</label>
-        <input id="person-name" type="text" placeholder="Name" autocomplete="off">
+        <input id="person-name" type="text" placeholder="Name" autocomplete="off" maxlength="80">
         <label class="sr-only" for="person-role">Role</label>
-        <input id="person-role" type="text" placeholder="Role (optional)" autocomplete="off">
+        <input id="person-role" type="text" placeholder="Role (optional)" autocomplete="off" maxlength="120">
+        <p id="person-error" role="alert" style="display:none; color: var(--err-ink); font-size: 12px; margin: 0;"></p>
         <button type="submit">Add person</button>
       </form>
     </div>
   </aside>
   <main>
-    <div id="no-key-banner">No model key configured — set ERGON_MODEL_API_KEY to let the agent work. Nothing here is simulated: without a key, Ergon will not invent answers.</div>
-    <div id="thread">
+    <div id="no-key-banner">Ergon is not connected to a model yet, so the agent cannot run. The person who set Ergon up needs to add the model key (ERGON_MODEL_API_KEY) on the server. Nothing here is simulated: without a key, Ergon will not invent answers — and anything you type is kept in the thread, not lost.</div>
+    <div id="thread" aria-live="polite">
       <div id="messages">
-        <div class="empty">What should your agent finish for you?<br>Give it a task in plain words — it works step by step, right here, until the job is done.</div>
+        <div class="empty">What should your agent finish for you?<br><span id="empty-sub">Give it a task in plain words — it works step by step, right here, until the job is done.</span></div>
       </div>
     </div>
     <form id="composer">
@@ -168,6 +176,8 @@ pub const INDEX_HTML: &str = r##"<!DOCTYPE html>
   </main>
 <script>
   let currentThread = null;
+  let busy = false;
+  let modelConfigured = true;
   const root = document.documentElement;
   const messagesEl = document.getElementById('messages');
   const listEl = document.getElementById('thread-list');
@@ -200,24 +210,53 @@ pub const INDEX_HTML: &str = r##"<!DOCTYPE html>
   }));
   syncThemeBtns();
 
+  /* One empty state, worded once, used by every path that shows it.
+     In the no-key state it must not promise work that cannot run. */
+  function emptyHtml() {
+    const sub = modelConfigured
+      ? 'Give it a task in plain words — it works step by step, right here, until the job is done.'
+      : 'Ergon is not connected to a model yet (see the note above). Anything you type is kept in the thread.';
+    return '<div class="empty">What should your agent finish for you?<br>' + sub + '</div>';
+  }
+
+  function sideError(msg) {
+    const el = document.getElementById('side-error');
+    el.textContent = msg || '';
+    el.style.display = msg ? 'block' : 'none';
+  }
+
   async function loadStatus() {
     try {
       const r = await fetch('/api/status');
       const s = await r.json();
-      if (!s.model_configured) document.getElementById('no-key-banner').style.display = 'block';
+      modelConfigured = !!s.model_configured;
+      if (!modelConfigured) {
+        document.getElementById('no-key-banner').style.display = 'block';
+        const sub = document.getElementById('empty-sub');
+        if (sub) sub.textContent = 'Ergon is not connected to a model yet (see the note above). Anything you type is kept in the thread.';
+      }
+      if (s.person && s.person.name) {
+        document.getElementById('person-label').textContent = 'Working for — ' + s.person.name;
+      }
     } catch (e) { /* status is best-effort */ }
   }
 
   async function loadPeople() {
-    const r = await fetch('/api/people');
-    const data = await r.json();
-    personSelect.innerHTML = '';
-    for (const p of data.people) {
-      const opt = document.createElement('option');
-      opt.value = p.id;
-      opt.textContent = p.role ? p.name + ' — ' + p.role : p.name;
-      if (p.id === data.active) opt.selected = true;
-      personSelect.appendChild(opt);
+    try {
+      const r = await fetch('/api/people');
+      if (!r.ok) throw new Error('people');
+      const data = await r.json();
+      personSelect.innerHTML = '';
+      for (const p of data.people) {
+        const opt = document.createElement('option');
+        opt.value = p.id;
+        opt.textContent = p.role ? p.name + ' — ' + p.role : p.name;
+        if (p.id === data.active) opt.selected = true;
+        personSelect.appendChild(opt);
+      }
+      sideError('');
+    } catch (e) {
+      sideError('Could not load the people list — is the Ergon server running?');
     }
   }
 
@@ -227,9 +266,15 @@ pub const INDEX_HTML: &str = r##"<!DOCTYPE html>
       body: JSON.stringify({ id: personSelect.value })
     });
     currentThread = null;
-    messagesEl.innerHTML = '<div class="empty">What should your agent finish for you?</div>';
-    document.getElementById('memory-panel').classList.remove('open');
+    messagesEl.innerHTML = emptyHtml();
+    /* Close the memory panel fully: class, ARIA state and the previous
+       person's text all reset, so nothing stale is announced or shown. */
+    const panel = document.getElementById('memory-panel');
+    panel.classList.remove('open');
+    panel.textContent = '';
+    document.getElementById('memory-btn').setAttribute('aria-expanded', 'false');
     await loadThreads();
+    await loadStatus();
   });
 
   document.getElementById('add-person-btn').addEventListener('click', (ev) => {
@@ -241,15 +286,24 @@ pub const INDEX_HTML: &str = r##"<!DOCTYPE html>
 
   document.getElementById('person-form').addEventListener('submit', async (ev) => {
     ev.preventDefault();
+    const errEl = document.getElementById('person-error');
+    const showErr = (msg) => { errEl.textContent = msg; errEl.style.display = msg ? 'block' : 'none'; };
     const name = document.getElementById('person-name').value.trim();
     const role = document.getElementById('person-role').value.trim();
-    if (!name) return;
-    const r = await fetch('/api/people', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: name, role: role })
-    });
-    const person = await r.json();
-    if (!r.ok) return;
+    if (!name) { showErr('Give the person a name first.'); return; }
+    let person;
+    try {
+      const r = await fetch('/api/people', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: name, role: role })
+      });
+      person = await r.json();
+      if (!r.ok) { showErr(person.error || 'That person could not be added.'); return; }
+    } catch (e) {
+      showErr('Could not reach the Ergon server.');
+      return;
+    }
+    showErr('');
     await fetch('/api/active-person', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id: person.id })
@@ -257,10 +311,12 @@ pub const INDEX_HTML: &str = r##"<!DOCTYPE html>
     document.getElementById('person-name').value = '';
     document.getElementById('person-role').value = '';
     document.getElementById('person-form').classList.remove('open');
+    document.getElementById('add-person-btn').setAttribute('aria-expanded', 'false');
     currentThread = null;
-    messagesEl.innerHTML = '<div class="empty">What should your agent finish for you?</div>';
+    messagesEl.innerHTML = emptyHtml();
     await loadPeople();
     await loadThreads();
+    await loadStatus();
   });
 
   document.getElementById('memory-btn').addEventListener('click', async (ev) => {
@@ -270,23 +326,63 @@ pub const INDEX_HTML: &str = r##"<!DOCTYPE html>
       ev.currentTarget.setAttribute('aria-expanded', 'false');
       return;
     }
-    const r = await fetch('/api/memory');
-    const data = await r.json();
-    panel.textContent = data.content || '';
+    let data;
+    try {
+      const r = await fetch('/api/memory');
+      if (!r.ok) throw new Error('memory');
+      data = await r.json();
+    } catch (e) {
+      panel.textContent = 'Memory could not be loaded — is the Ergon server running?';
+      panel.classList.add('open');
+      ev.currentTarget.setAttribute('aria-expanded', 'true');
+      return;
+    }
+    const content = (data.content || '').trim();
+    /* The scaffold alone ("# Memory", or About with nothing learned
+       yet) reads as a raw file dump; say plainly that there is
+       nothing learned yet. Otherwise the actual file is shown. */
+    const learned = content.split('\n').some((line) => {
+      const t = line.trim();
+      return t.startsWith('- ') && !t.startsWith('- Name:') && !t.startsWith('- Role:');
+    });
+    panel.textContent = learned
+      ? data.content
+      : 'Nothing learned yet. Preferences and facts your agent picks up as it works will appear here.';
     panel.classList.add('open');
     ev.currentTarget.setAttribute('aria-expanded', 'true');
   });
 
   async function loadThreads() {
-    const r = await fetch('/api/threads');
-    const data = await r.json();
-    listEl.innerHTML = '';
-    for (const t of data.threads) {
-      const li = document.createElement('li');
-      li.textContent = t.title || 'Untitled task';
-      if (currentThread && t.id === currentThread) li.className = 'active';
-      li.onclick = () => openThread(t.id);
-      listEl.appendChild(li);
+    try {
+      const r = await fetch('/api/threads');
+      if (!r.ok) throw new Error('threads');
+      const data = await r.json();
+      listEl.innerHTML = '';
+      for (const t of data.threads) {
+        const li = document.createElement('li');
+        /* A real <button>: keyboard-reachable and focusable, unlike a
+           clickable <li>. The sub-line (message count) tells threads
+           with the same title apart. */
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'thread-btn' + (currentThread && t.id === currentThread ? ' active' : '');
+        const title = document.createElement('span');
+        title.className = 't-title';
+        title.textContent = t.title || 'Untitled task';
+        btn.appendChild(title);
+        if (typeof t.messages === 'number') {
+          const sub = document.createElement('span');
+          sub.className = 't-sub';
+          sub.textContent = t.messages === 1 ? '1 message' : t.messages + ' messages';
+          btn.appendChild(sub);
+        }
+        btn.addEventListener('click', () => openThread(t.id));
+        li.appendChild(btn);
+        listEl.appendChild(li);
+      }
+      sideError('');
+    } catch (e) {
+      sideError('Could not load the conversation list — is the Ergon server running?');
     }
   }
 
@@ -294,18 +390,27 @@ pub const INDEX_HTML: &str = r##"<!DOCTYPE html>
     const r = await fetch('/api/threads', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
     const t = await r.json();
     currentThread = t.id;
-    messagesEl.innerHTML = '<div class="empty">New task — describe the work and your agent will finish it.</div>';
+    messagesEl.innerHTML = emptyHtml();
     await loadThreads();
     inputEl.focus();
   }
 
   async function openThread(id) {
+    let t;
+    try {
+      const r = await fetch('/api/threads/' + encodeURIComponent(id));
+      if (!r.ok) throw new Error('open');
+      t = await r.json();
+    } catch (e) {
+      /* A stale id must not be dressed up as an empty thread. */
+      messagesEl.innerHTML = '';
+      addMsg('error', 'That conversation could not be opened — it may have been removed.');
+      return;
+    }
     currentThread = id;
-    const r = await fetch('/api/threads/' + encodeURIComponent(id));
-    const t = await r.json();
     messagesEl.innerHTML = '';
     for (const m of (t.messages || [])) addMsg(m.role, m.content);
-    if (!messagesEl.children.length) messagesEl.innerHTML = '<div class="empty">Empty thread.</div>';
+    if (!messagesEl.children.length) messagesEl.innerHTML = emptyHtml();
     await loadThreads();
   }
 
@@ -313,12 +418,18 @@ pub const INDEX_HTML: &str = r##"<!DOCTYPE html>
 
   document.getElementById('composer').addEventListener('submit', async (ev) => {
     ev.preventDefault();
+    /* Busy guard: while a run is in flight, further submits (Enter
+       included — the disabled Send button alone does not stop the
+       keyboard path) are ignored, so runs never overlap on a thread. */
+    if (busy) return;
     const text = inputEl.value.trim();
     if (!text) return;
+    busy = true;
     if (!currentThread) await newThread();
     inputEl.value = '';
     addMsg('user', text);
     sendBtn.disabled = true;
+    inputEl.disabled = true;
     sendBtn.textContent = 'Working…';
     const working = addMsg('step', 'Agent is working…');
     try {
@@ -338,7 +449,9 @@ pub const INDEX_HTML: &str = r##"<!DOCTYPE html>
       working.remove();
       addMsg('error', 'Could not reach the Ergon server.');
     }
+    busy = false;
     sendBtn.disabled = false;
+    inputEl.disabled = false;
     sendBtn.textContent = 'Send';
     await loadThreads();
     inputEl.focus();

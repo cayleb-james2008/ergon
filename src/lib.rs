@@ -12,7 +12,7 @@ pub mod skills;
 pub mod ui;
 
 use serde_json::{json, Value};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpListener;
 use std::path::{Component, Path, PathBuf};
@@ -85,8 +85,33 @@ impl Config {
 // Sandboxed workspace paths + small helpers
 // ---------------------------------------------------------------------------
 
-/// Resolve `rel` inside `root`, rejecting absolute paths and any `..`
-/// escape. Every file tool goes through here.
+/// Lexically normalise an absolute path: drop `.` components and
+/// resolve `..` by popping (never above the filesystem root).
+fn normalize_absolute(p: &Path) -> PathBuf {
+    let mut out = PathBuf::new();
+    for comp in p.components() {
+        match comp {
+            Component::RootDir => out.push("/"),
+            Component::Normal(part) => out.push(part),
+            Component::CurDir => {}
+            Component::ParentDir => {
+                out.pop();
+            }
+            Component::Prefix(_) => {}
+        }
+    }
+    out
+}
+
+/// Resolve `rel` inside `root`, rejecting absolute paths and any escape
+/// — including through symlinks. Every file tool goes through here.
+///
+/// The walk is component by component over the canonicalised root:
+/// whenever the component just added is a symlink (checked with
+/// `symlink_metadata`, which sees DANGLING links too — `exists()` does
+/// not, and that blindness was a proven escape), the link is resolved
+/// and the resolved path must still be inside the root. A link that
+/// points outside, or a chain longer than 16 hops, is refused.
 pub fn sandbox_path(root: &Path, rel: &str) -> Result<PathBuf, String> {
     let rel = rel.trim();
     if rel.is_empty() {
@@ -96,33 +121,48 @@ pub fn sandbox_path(root: &Path, rel: &str) -> Result<PathBuf, String> {
     if p.is_absolute() {
         return Err(format!("absolute paths are not allowed: {rel}"));
     }
-    let mut out = root.to_path_buf();
+    let canon_root = root
+        .canonicalize()
+        .unwrap_or_else(|_| normalize_absolute(&root.to_path_buf()));
+    let mut cur = canon_root.clone();
     for comp in p.components() {
         match comp {
-            Component::Normal(part) => out.push(part),
+            Component::Normal(part) => {
+                cur.push(part);
+                let mut hops = 0;
+                while let Ok(md) = cur.symlink_metadata() {
+                    if !md.file_type().is_symlink() {
+                        break;
+                    }
+                    hops += 1;
+                    if hops > 16 {
+                        return Err(format!("path escapes the workspace: {rel}"));
+                    }
+                    let target = std::fs::read_link(&cur)
+                        .map_err(|e| format!("cannot resolve a link in path {rel}: {e}"))?;
+                    let resolved = if target.is_absolute() {
+                        normalize_absolute(&target)
+                    } else {
+                        let base = cur
+                            .parent()
+                            .map(|parent| parent.join(&target))
+                            .unwrap_or(target);
+                        normalize_absolute(&base)
+                    };
+                    if !resolved.starts_with(&canon_root) {
+                        return Err(format!("path escapes the workspace: {rel}"));
+                    }
+                    cur = resolved;
+                }
+            }
             Component::CurDir => {}
             _ => return Err(format!("path escapes the workspace: {rel}")),
         }
     }
-    // Symlink defence: the lexical path can still escape if a component is
-    // a symlink pointing outside. Canonicalise the deepest existing
-    // ancestor of the target and require it to stay inside the
-    // canonicalised root. (A not-yet-existing file is judged by its
-    // nearest existing parent.)
-    if let Ok(canon_root) = root.canonicalize() {
-        let mut probe = out.clone();
-        while !probe.exists() {
-            if !probe.pop() {
-                break;
-            }
-        }
-        if let Ok(canon_probe) = probe.canonicalize() {
-            if !canon_probe.starts_with(&canon_root) {
-                return Err(format!("path escapes the workspace: {rel}"));
-            }
-        }
+    if !cur.starts_with(&canon_root) {
+        return Err(format!("path escapes the workspace: {rel}"));
     }
-    Ok(out)
+    Ok(cur)
 }
 
 pub fn truncate(s: &str, max_chars: usize) -> String {
@@ -218,6 +258,19 @@ impl Person {
     }
 }
 
+/// A person id is safe to use as a directory name: lowercase slug
+/// characters only, bounded length. Ids minted by `slugify` always
+/// qualify; ids loaded from disk must prove it.
+pub fn valid_person_id(id: &str) -> bool {
+    !id.is_empty()
+        && id.len() <= 64
+        && id
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+        && !id.starts_with('-')
+        && !id.ends_with('-')
+}
+
 pub fn slugify(name: &str) -> String {
     let mut out = String::new();
     let mut last_dash = true; // trims leading dashes
@@ -266,10 +319,28 @@ impl PeopleState {
             if let Ok(v) = serde_json::from_str::<Value>(&text) {
                 let mut state = PeopleState::default();
                 if let Some(items) = v["people"].as_array() {
-                    let parsed: Vec<Person> = items.iter().filter_map(Person::from_json).collect();
+                    // Ids from disk are validated, not trusted: an id is
+                    // a directory name under data_dir, so a crafted
+                    // people.json must not be able to aim a person's
+                    // workspace outside it (e.g. id "../../elsewhere").
+                    let parsed: Vec<Person> = items
+                        .iter()
+                        .filter_map(Person::from_json)
+                        .filter(|p| valid_person_id(&p.id))
+                        .collect();
                     if !parsed.is_empty() {
                         state.people = parsed;
                     }
+                }
+                if !state.people.iter().any(|p| p.id == "default") {
+                    state.people.insert(
+                        0,
+                        Person {
+                            id: "default".to_string(),
+                            name: "You".to_string(),
+                            role: String::new(),
+                        },
+                    );
                 }
                 if let Some(active) = v["active"].as_str() {
                     if state.people.iter().any(|p| p.id == active) {
@@ -304,7 +375,21 @@ impl PeopleState {
     }
 
     pub fn add(&mut self, name: &str, role: &str) -> Person {
-        let base = slugify(name);
+        // Names and roles are interpolated into the seeded memory file,
+        // so they are flattened to single lines and length-capped here:
+        // a name carrying newlines could otherwise forge sections and
+        // bullets in memory.md (structure injection).
+        let clean = |s: &str, cap: usize| -> String {
+            let flat: String = s
+                .replace(['\n', '\r'], " ")
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ");
+            flat.chars().take(cap).collect()
+        };
+        let name = clean(name, 80);
+        let role = clean(role, 120);
+        let base = slugify(&name);
         let mut id = base.clone();
         let mut n = 2;
         while self.people.iter().any(|p| p.id == id) {
@@ -313,8 +398,8 @@ impl PeopleState {
         }
         let person = Person {
             id,
-            name: name.to_string(),
-            role: role.to_string(),
+            name,
+            role,
         };
         self.people.push(person.clone());
         person
@@ -407,13 +492,27 @@ impl Store {
             save_path: Some(path.to_path_buf()),
         };
         if let Ok(text) = std::fs::read_to_string(path) {
-            if let Ok(v) = serde_json::from_str::<Value>(&text) {
-                if let Some(items) = v["threads"].as_array() {
-                    for item in items {
-                        if let Some(t) = thread_from_json(item) {
-                            store.threads.push(t);
+            match serde_json::from_str::<Value>(&text) {
+                Ok(v) => {
+                    if let Some(items) = v["threads"].as_array() {
+                        for item in items {
+                            if let Some(t) = thread_from_json(item) {
+                                store.threads.push(t);
+                            }
                         }
                     }
+                }
+                Err(_) => {
+                    // A corrupt threads.json must not silently become
+                    // an empty store that the next save overwrites —
+                    // keep the original bytes beside it as a backup.
+                    let bak = path.with_extension("json.bak");
+                    let _ = std::fs::rename(path, &bak);
+                    eprintln!(
+                        "ergon: {} was not valid JSON; backed up to {} and starting with an empty history",
+                        path.display(),
+                        bak.display()
+                    );
                 }
             }
         }
@@ -488,9 +587,35 @@ impl Store {
         self.threads.iter().find(|t| t.id == id).map(thread_to_json)
     }
 
+    /// The conversation so far, as model messages: the last 12
+    /// user/assistant turns (step and error lines are the ledger, not
+    /// conversation), each truncated. Without this the agent saw only
+    /// the current task — a thread was a log, not a conversation, and
+    /// "now change it" had nothing to refer to.
+    pub fn history_json(&self, thread_id: &str) -> Vec<Value> {
+        let Some(t) = self.threads.iter().find(|t| t.id == thread_id) else {
+            return Vec::new();
+        };
+        let turns: Vec<&ChatMessage> = t
+            .messages
+            .iter()
+            .filter(|m| m.role == "user" || m.role == "assistant")
+            .collect();
+        turns
+            .iter()
+            .skip(turns.len().saturating_sub(12))
+            .map(|m| {
+                json!({
+                    "role": if m.role == "user" { "user" } else { "assistant" },
+                    "content": truncate(&m.content, 1500),
+                })
+            })
+            .collect()
+    }
+
     pub fn list_json(&self) -> Value {
         json!({
-            "threads": self.threads.iter().rev().map(|t| json!({"id": t.id, "title": t.title})).collect::<Vec<_>>(),
+            "threads": self.threads.iter().rev().map(|t| json!({"id": t.id, "title": t.title, "messages": t.messages.len()})).collect::<Vec<_>>(),
         })
     }
 }
@@ -640,11 +765,31 @@ pub fn execute_tool(cfg: &Config, name: &str, args: &Value) -> Result<String, St
             let rel = args["path"].as_str().unwrap_or(".");
             let base = sandbox_path(&cfg.workspace_dir, rel)?;
             let mut matches: Vec<String> = Vec::new();
-            search_walk(&cfg.workspace_dir, &base, &query, &mut matches, 0);
+            let mut stats = SearchStats::default();
+            search_walk(&cfg.workspace_dir, &base, &query, &mut matches, 0, &mut stats);
+            // The result must say what it did NOT search: hidden files,
+            // files over 512 KB and folders deeper than 6 levels are
+            // skipped, and results stop at 50 matches. Presenting a
+            // partial search as complete would mislead the agent.
+            let skip_note = format!(
+                "({} file(s) were not searched: hidden, over 512 KB, unreadable, or deeper than 6 levels)",
+                stats.skipped
+            );
             if matches.is_empty() {
-                Ok("(no matches)".to_string())
+                if stats.skipped > 0 {
+                    Ok(format!("(no matches in the files searched) {skip_note}"))
+                } else {
+                    Ok("(no matches)".to_string())
+                }
             } else {
-                Ok(matches.join("\n"))
+                let mut out = matches.join("\n");
+                if stats.capped {
+                    out.push_str("\n(stopped at 50 matches — there may be more)");
+                }
+                if stats.skipped > 0 {
+                    out.push_str(&format!("\n{skip_note}"));
+                }
+                Ok(out)
             }
         }
         "move_file" => {
@@ -654,6 +799,14 @@ pub fn execute_tool(cfg: &Config, name: &str, args: &Value) -> Result<String, St
             let dst = sandbox_path(&cfg.workspace_dir, to)?;
             if !src.exists() {
                 return Err(format!("move_file: no such file: {from}"));
+            }
+            // Never silently overwrite: rename would destroy the
+            // destination's content without a word. (symlink_metadata
+            // so a dangling link at the destination also counts.)
+            if dst.symlink_metadata().is_ok() {
+                return Err(format!(
+                    "move_file: destination already exists: {to} — pick another name, or move/delete the existing file first"
+                ));
             }
             if let Some(parent) = dst.parent() {
                 std::fs::create_dir_all(parent)
@@ -707,8 +860,28 @@ fn string_rows(v: &Value) -> Vec<Vec<String>> {
 /// Recursive text search under `base` (already sandbox-checked). Skips
 /// dotfiles, symlinks (never follows them out of the workspace), files
 /// over 512 KB, and caps depth and match count so a big tree stays fast.
-fn search_walk(root: &Path, base: &Path, query: &str, out: &mut Vec<String>, depth: usize) {
-    if depth > 6 || out.len() >= 50 {
+/// What a search did not cover — reported back to the agent with the
+/// results, so partial coverage is never presented as complete.
+#[derive(Default)]
+struct SearchStats {
+    skipped: usize,
+    capped: bool,
+}
+
+fn search_walk(
+    root: &Path,
+    base: &Path,
+    query: &str,
+    out: &mut Vec<String>,
+    depth: usize,
+    stats: &mut SearchStats,
+) {
+    if depth > 6 {
+        stats.skipped += 1;
+        return;
+    }
+    if out.len() >= 50 {
+        stats.capped = true;
         return;
     }
     let Ok(rd) = std::fs::read_dir(base) else { return };
@@ -716,25 +889,30 @@ fn search_walk(root: &Path, base: &Path, query: &str, out: &mut Vec<String>, dep
     entries.sort_by_key(|e| e.file_name());
     for entry in entries {
         if out.len() >= 50 {
+            stats.capped = true;
             return;
         }
         let name = entry.file_name().to_string_lossy().into_owned();
         if name.starts_with('.') {
+            stats.skipped += 1;
             continue;
         }
         let Ok(ft) = entry.file_type() else { continue };
         if ft.is_symlink() {
+            stats.skipped += 1;
             continue;
         }
         let path = entry.path();
         if ft.is_dir() {
-            search_walk(root, &path, query, out, depth + 1);
+            search_walk(root, &path, query, out, depth + 1, stats);
             continue;
         }
         if entry.metadata().map(|m| m.len()).unwrap_or(0) > 512_000 {
+            stats.skipped += 1;
             continue;
         }
         let Ok(content) = std::fs::read_to_string(&path) else {
+            stats.skipped += 1;
             continue;
         };
         let rel = path
@@ -746,6 +924,7 @@ fn search_walk(root: &Path, base: &Path, query: &str, out: &mut Vec<String>, dep
             if line.to_lowercase().contains(query) {
                 out.push(format!("{rel}:{}: {}", i + 1, truncate(line.trim(), 120)));
                 if out.len() >= 50 {
+                    stats.capped = true;
                     return;
                 }
             }
@@ -781,25 +960,27 @@ fn normalize_sections(v: &Value) -> Vec<String> {
 // ---------------------------------------------------------------------------
 
 /// The learned facts and preferences in a memory file: every bullet
-/// outside the "## About" section (About holds the person's identity,
-/// seeded when the person is created — everything else there is what
-/// the agent learned by working with them).
+/// that is not an identity line. Identity is exactly the two seeded
+/// lines (`- Name: …`, `- Role: …`); everything else in the file is
+/// something the agent learned by working with this person.
+///
+/// (An earlier version excluded the whole "## About" section — but
+/// learned notes are appended at the end of the file, which for a
+/// seeded person is still inside About, so learning silently never
+/// reached the prompt for anyone created through the people feature.)
 pub fn standing_preferences(memory: &str) -> Vec<String> {
     let mut prefs = Vec::new();
-    let mut in_about = false;
     for line in memory.lines() {
         let t = line.trim();
-        if t.starts_with('#') {
-            in_about = t.trim_start_matches('#').trim().eq_ignore_ascii_case("about");
-            continue;
-        }
-        if !in_about {
-            if let Some(bullet) = t.strip_prefix("- ") {
-                let bullet = bullet.trim();
-                if !bullet.is_empty() {
-                    prefs.push(bullet.to_string());
-                }
+        if let Some(bullet) = t.strip_prefix("- ") {
+            let bullet = bullet.trim();
+            if bullet.is_empty()
+                || bullet.starts_with("Name:")
+                || bullet.starts_with("Role:")
+            {
+                continue;
             }
+            prefs.push(bullet.to_string());
         }
     }
     prefs
@@ -854,17 +1035,20 @@ pub fn run_agent(
     store: &SharedStore,
     thread_id: &str,
     task: &str,
+    history: &[Value],
 ) -> Result<AgentOutcome, String> {
     if cfg.api_key.is_none() {
         return Err(NO_KEY_ERROR.to_string());
     }
     let session = format!("ergon-{thread_id}");
-    let mut messages: Vec<Value> = vec![
-        json!({"role": "system", "content": system_prompt(cfg)}),
-        json!({"role": "user", "content": task}),
-    ];
+    let mut messages: Vec<Value> = vec![json!({"role": "system", "content": system_prompt(cfg)})];
+    messages.extend(history.iter().cloned());
+    messages.push(json!({"role": "user", "content": task}));
     let mut steps: Vec<String> = Vec::new();
-    let mut seen_tools: HashSet<String> = HashSet::new();
+    // Successful file-writing steps this run — the evidence a "done"
+    // summary is checked against before it is presented as finished.
+    let mut successful_writes = 0usize;
+    const WRITE_TOOLS: [&str; 4] = ["write_file", "write_document", "make_spreadsheet", "research"];
 
     for _ in 0..STEP_CAP {
         let reply = call_model(cfg, &session, &messages)?;
@@ -877,6 +1061,21 @@ pub fn run_agent(
                 .lock()
                 .unwrap()
                 .push(thread_id, "assistant", &summary);
+            // Honesty gate: a summary that claims file work with zero
+            // successful writes behind it is flagged in the ledger,
+            // in the open — the summary is the model's words, the
+            // ledger is what actually happened.
+            let lower = summary.to_lowercase();
+            let claims_work = ["wrote", "written", "created", "saved", "generated", "produced"]
+                .iter()
+                .any(|w| lower.contains(w));
+            if claims_work && successful_writes == 0 {
+                store.lock().unwrap().push(
+                    thread_id,
+                    "step",
+                    "Note: the agent reported finished work, but no file was written during this run — treat the summary above with caution.",
+                );
+            }
             return Ok(AgentOutcome { summary, steps });
         }
         let tool = reply["tool"]
@@ -884,12 +1083,14 @@ pub fn run_agent(
             .ok_or_else(|| format!("model reply was neither a tool call nor done: {}", truncate(&reply.to_string(), 300)))?
             .to_string();
         let args = reply["args"].clone();
-        seen_tools.insert(tool.clone());
 
         let (result_text, ok) = match execute_tool(cfg, &tool, &args) {
             Ok(r) => (r, true),
             Err(e) => (format!("error: {e}"), false),
         };
+        if ok && WRITE_TOOLS.contains(&tool.as_str()) {
+            successful_writes += 1;
+        }
         let step_line = format!("Tool: {tool}");
         steps.push(step_line.clone());
         store.lock().unwrap().push(
@@ -897,14 +1098,12 @@ pub fn run_agent(
             "step",
             &format!("{step_line}\n{}", truncate(&result_text, 500)),
         );
-        let _ = ok;
         messages.push(json!({"role": "assistant", "content": reply.to_string()}));
         messages.push(json!({
             "role": "user",
             "content": format!("Tool result for {tool}: {}", truncate(&result_text, 6000)),
         }));
     }
-    let _ = seen_tools;
     Err(format!(
         "agent stopped after {STEP_CAP} steps without finishing — the task may be blocked or too large for one run."
     ))
@@ -931,6 +1130,7 @@ fn load_runtime(root: &Config, person: &Person) -> PersonRuntime {
         if !person.role.is_empty() {
             seed.push_str(&format!("\n- Role: {}", person.role));
         }
+        seed.push_str("\n\n## Learned\n");
         seed.push('\n');
         let _ = std::fs::write(&cfg.memory_path, seed);
     }
@@ -946,6 +1146,37 @@ pub struct AppState {
     pub cfg: Config,
     pub people: Arc<Mutex<PeopleState>>,
     pub runtimes: Arc<Mutex<HashMap<String, Arc<PersonRuntime>>>>,
+    /// Browser sessions (cookie id → person id). "Active person" used
+    /// to be one global pointer: any client could switch it for every
+    /// other client mid-task. A session pins the person per browser;
+    /// cookie-less API clients keep the global-pointer behaviour.
+    pub sessions: Arc<Mutex<HashMap<String, String>>>,
+}
+
+static SESSION_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+fn new_session_id() -> String {
+    let n = SESSION_COUNTER.fetch_add(1, Ordering::SeqCst);
+    let millis = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    format!("s{millis}-{n}")
+}
+
+/// The person this request acts for: the session's person when the
+/// caller presented a known session cookie, else the global active.
+fn effective_person(state: &AppState, session: &Option<String>) -> Person {
+    if let Some(sid) = session {
+        let mapped = state.sessions.lock().unwrap().get(sid).cloned();
+        if let Some(pid) = mapped {
+            let people = state.people.lock().unwrap();
+            if let Some(p) = people.people.iter().find(|p| p.id == pid) {
+                return p.clone();
+            }
+        }
+    }
+    state.people.lock().unwrap().active_person()
 }
 
 fn runtime_for(state: &AppState, person: &Person) -> Arc<PersonRuntime> {
@@ -955,11 +1186,6 @@ fn runtime_for(state: &AppState, person: &Person) -> Arc<PersonRuntime> {
         .clone()
 }
 
-fn active_runtime(state: &AppState) -> Arc<PersonRuntime> {
-    let person = state.people.lock().unwrap().active_person();
-    runtime_for(state, &person)
-}
-
 pub fn serve(listener: TcpListener, cfg: Config) -> std::io::Result<()> {
     cfg.ensure_dirs()?;
     let people = PeopleState::load(&cfg);
@@ -967,6 +1193,7 @@ pub fn serve(listener: TcpListener, cfg: Config) -> std::io::Result<()> {
         cfg,
         people: Arc::new(Mutex::new(people)),
         runtimes: Arc::new(Mutex::new(HashMap::new())),
+        sessions: Arc::new(Mutex::new(HashMap::new())),
     });
     for stream in listener.incoming() {
         match stream {
@@ -986,7 +1213,16 @@ struct Request {
     method: String,
     path: String,
     body: Vec<u8>,
+    /// The caller's `ergon_session` cookie, if they presented one.
+    session: Option<String>,
 }
+
+/// Bodies are small JSON. A request claiming a larger one is dropped
+/// before any allocation: an unbounded `vec![0u8; content_length]`
+/// here once let a single header (Content-Length: 2^40, no body)
+/// abort the whole server process.
+const MAX_BODY_BYTES: usize = 1_048_576;
+const MAX_HEAD_BYTES: usize = 32_768;
 
 fn read_request(stream: &mut std::net::TcpStream) -> Option<Request> {
     let mut reader = BufReader::new(stream.try_clone().ok()?);
@@ -999,22 +1235,47 @@ fn read_request(stream: &mut std::net::TcpStream) -> Option<Request> {
     let raw_path = parts.next()?.to_string();
     let path = raw_path.split('?').next().unwrap_or("/").to_string();
     let mut content_length: usize = 0;
+    let mut session: Option<String> = None;
+    let mut head_bytes = request_line.len();
     loop {
         let mut line = String::new();
         let n = reader.read_line(&mut line).ok()?;
         if n == 0 || line == "\r\n" || line == "\n" {
             break;
         }
+        head_bytes += n;
+        if head_bytes > MAX_HEAD_BYTES {
+            return None;
+        }
         let lower = line.to_lowercase();
         if let Some(v) = lower.strip_prefix("content-length:") {
             content_length = v.trim().parse().unwrap_or(0);
         }
+        if let Some(v) = lower.strip_prefix("cookie:") {
+            for pair in v.split(';') {
+                let pair = pair.trim();
+                if let Some(id) = pair.strip_prefix("ergon_session=") {
+                    let id = id.trim().to_string();
+                    if !id.is_empty() {
+                        session = Some(id);
+                    }
+                }
+            }
+        }
+    }
+    if content_length > MAX_BODY_BYTES {
+        return None;
     }
     let mut body = vec![0u8; content_length];
     if content_length > 0 {
         reader.read_exact(&mut body).ok()?;
     }
-    Some(Request { method, path, body })
+    Some(Request {
+        method,
+        path,
+        body,
+        session,
+    })
 }
 
 fn respond(
@@ -1023,20 +1284,35 @@ fn respond(
     content_type: &str,
     body: &str,
 ) -> std::io::Result<()> {
+    respond_h(stream, status, content_type, body, &[])
+}
+
+fn respond_h(
+    stream: &mut std::net::TcpStream,
+    status: u16,
+    content_type: &str,
+    body: &str,
+    extra_headers: &[(&str, String)],
+) -> std::io::Result<()> {
     let reason = match status {
         200 => "OK",
         201 => "Created",
         400 => "Bad Request",
         404 => "Not Found",
         405 => "Method Not Allowed",
+        413 => "Content Too Large",
         500 => "Internal Server Error",
         503 => "Service Unavailable",
         _ => "OK",
     };
-    let head = format!(
-        "HTTP/1.1 {status} {reason}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+    let mut head = format!(
+        "HTTP/1.1 {status} {reason}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nConnection: close\r\n",
         body.len()
     );
+    for (name, value) in extra_headers {
+        head.push_str(&format!("{name}: {value}\r\n"));
+    }
+    head.push_str("\r\n");
     stream.write_all(head.as_bytes())?;
     stream.write_all(body.as_bytes())?;
     stream.flush()
@@ -1052,24 +1328,50 @@ fn handle_connection(mut stream: std::net::TcpStream, state: &AppState) -> std::
         None => return Ok(()),
     };
     let root_cfg = &state.cfg;
+    // The person this request acts for (session-pinned when the caller
+    // has a session cookie, else the global active person).
+    let person = effective_person(state, &req.session);
+    let runtime = runtime_for(state, &person);
     match (req.method.as_str(), req.path.as_str()) {
-        ("GET", "/") => respond(&mut stream, 200, "text/html; charset=utf-8", ui::INDEX_HTML),
-        ("GET", "/api/status") => {
-            let person = state.people.lock().unwrap().active_person();
-            respond_json(
-                &mut stream,
-                200,
-                &json!({
-                    "model_configured": root_cfg.api_key.is_some(),
-                    "model": root_cfg.model_id,
-                    "model_base_url": root_cfg.model_base_url,
-                    "person": person.to_json(),
-                }),
-            )
+        ("GET", "/") => {
+            // First visit: issue a session cookie pinned to the current
+            // active person, so this browser keeps its own person even
+            // if another client switches the global one.
+            if req.session.is_none() {
+                let sid = new_session_id();
+                state
+                    .sessions
+                    .lock()
+                    .unwrap()
+                    .insert(sid.clone(), person.id.clone());
+                return respond_h(
+                    &mut stream,
+                    200,
+                    "text/html; charset=utf-8",
+                    ui::INDEX_HTML,
+                    &[(
+                        "Set-Cookie",
+                        format!("ergon_session={sid}; Path=/; HttpOnly; SameSite=Lax"),
+                    )],
+                );
+            }
+            respond(&mut stream, 200, "text/html; charset=utf-8", ui::INDEX_HTML)
         }
+        ("GET", "/api/status") => respond_json(
+            &mut stream,
+            200,
+            &json!({
+                "model_configured": root_cfg.api_key.is_some(),
+                "model": root_cfg.model_id,
+                "model_base_url": root_cfg.model_base_url,
+                "person": person.to_json(),
+            }),
+        ),
         ("GET", "/api/people") => {
             let people = state.people.lock().unwrap();
-            respond_json(&mut stream, 200, &people.to_json())
+            let mut v = people.to_json();
+            v["active"] = json!(person.id);
+            respond_json(&mut stream, 200, &v)
         }
         ("POST", "/api/people") => {
             let parsed: Value = serde_json::from_slice(&req.body).unwrap_or(Value::Null);
@@ -1096,34 +1398,56 @@ fn handle_connection(mut stream: std::net::TcpStream, state: &AppState) -> std::
         ("POST", "/api/active-person") => {
             let parsed: Value = serde_json::from_slice(&req.body).unwrap_or(Value::Null);
             let id = parsed["id"].as_str().unwrap_or("").to_string();
-            let mut people = state.people.lock().unwrap();
-            if !people.people.iter().any(|p| p.id == id) {
-                return respond_json(
-                    &mut stream,
-                    404,
-                    &json!({"error": "person not found"}),
-                );
+            {
+                let mut people = state.people.lock().unwrap();
+                if !people.people.iter().any(|p| p.id == id) {
+                    return respond_json(
+                        &mut stream,
+                        404,
+                        &json!({"error": "person not found"}),
+                    );
+                }
+                people.active = id.clone();
+                people.save(root_cfg);
             }
-            people.active = id;
-            people.save(root_cfg);
-            respond_json(&mut stream, 200, &people.to_json())
+            // Pin the caller's session (issuing one if needed) so the
+            // switch applies to this browser, not to every client.
+            let mut set_cookie: Option<String> = None;
+            let sid = match &req.session {
+                Some(s) => s.clone(),
+                None => {
+                    let s = new_session_id();
+                    set_cookie = Some(format!(
+                        "ergon_session={s}; Path=/; HttpOnly; SameSite=Lax"
+                    ));
+                    s
+                }
+            };
+            state.sessions.lock().unwrap().insert(sid, id.clone());
+            let people = state.people.lock().unwrap();
+            let mut v = people.to_json();
+            v["active"] = json!(id);
+            match set_cookie {
+                Some(cookie) => respond_h(
+                    &mut stream,
+                    200,
+                    "application/json",
+                    &v.to_string(),
+                    &[("Set-Cookie", cookie)],
+                ),
+                None => respond_json(&mut stream, 200, &v),
+            }
         }
-        ("GET", "/api/memory") => {
-            let runtime = active_runtime(state);
-            let person = state.people.lock().unwrap().active_person();
-            respond_json(
-                &mut stream,
-                200,
-                &json!({"person_id": person.id, "content": runtime.cfg.read_memory()}),
-            )
-        }
+        ("GET", "/api/memory") => respond_json(
+            &mut stream,
+            200,
+            &json!({"person_id": person.id, "content": runtime.cfg.read_memory()}),
+        ),
         ("GET", "/api/threads") => {
-            let runtime = active_runtime(state);
             let store = runtime.store.lock().unwrap();
             respond_json(&mut stream, 200, &store.list_json())
         }
         ("POST", "/api/threads") => {
-            let runtime = active_runtime(state);
             let mut store = runtime.store.lock().unwrap();
             let id = store.create_thread();
             let v = store.thread_json(&id).unwrap_or_else(|| json!({"id": id}));
@@ -1139,22 +1463,31 @@ fn handle_connection(mut stream: std::net::TcpStream, state: &AppState) -> std::
                     &json!({"error": "message is required"}),
                 );
             }
-            let runtime = active_runtime(state);
             let cfg = &runtime.cfg;
+            // The user's words are recorded FIRST, before any failure
+            // path: a refused or failed run must never silently lose
+            // the task the person typed (the no-key path used to drop
+            // it, so the message vanished on reload).
+            let (thread_id, history) = {
+                let mut store = runtime.store.lock().unwrap();
+                let tid = store.ensure_thread(parsed["thread_id"].as_str().unwrap_or(""));
+                let history = store.history_json(&tid);
+                store.push(&tid, "user", &message);
+                (tid, history)
+            };
             if cfg.api_key.is_none() {
+                runtime
+                    .store
+                    .lock()
+                    .unwrap()
+                    .push(&thread_id, "error", NO_KEY_ERROR);
                 return respond_json(
                     &mut stream,
                     503,
-                    &json!({"error": NO_KEY_ERROR}),
+                    &json!({"error": NO_KEY_ERROR, "thread_id": thread_id}),
                 );
             }
-            let thread_id = {
-                let mut store = runtime.store.lock().unwrap();
-                let tid = store.ensure_thread(parsed["thread_id"].as_str().unwrap_or(""));
-                store.push(&tid, "user", &message);
-                tid
-            };
-            match run_agent(cfg, &runtime.store, &thread_id, &message) {
+            match run_agent(cfg, &runtime.store, &thread_id, &message, &history) {
                 Ok(_outcome) => {
                     let store = runtime.store.lock().unwrap();
                     let v = store
@@ -1170,7 +1503,6 @@ fn handle_connection(mut stream: std::net::TcpStream, state: &AppState) -> std::
         }
         ("GET", path) if path.starts_with("/api/threads/") => {
             let id = path.trim_start_matches("/api/threads/");
-            let runtime = active_runtime(state);
             let store = runtime.store.lock().unwrap();
             match store.thread_json(id) {
                 Some(v) => respond_json(&mut stream, 200, &v),

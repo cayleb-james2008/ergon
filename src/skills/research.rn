@@ -11,17 +11,27 @@
 //! error in Rune.
 
 pub fn main(topic, filename, urls) {
-    let content = `# Research: ${topic}\n\n`;
+    let total = urls.len();
+    let fetched = 0;
+    let sections = "";
     let n = 0;
     for url in urls {
         n = n + 1;
         let heading = `## Source ${n}: ${url}\n\n`;
         let text = host_fetch_url(url);
-        content = content + heading + text + "\n\n";
+        if !text.starts_with("error:") {
+            fetched = fetched + 1;
+        }
+        sections = sections + heading + text + "\n\n";
     }
+    // The header states how many sources actually loaded — never the
+    // count that was merely attempted.
+    let content = `# Research: ${topic}\n\nFetched ${fetched} of ${total} sources.\n\n` + sections;
+    // Label first: passing `filename` to the host function moves it.
+    let label = `${filename}`;
     let result = host_workspace_write(filename, content);
     if result != "ok" {
         return result;
     }
-    filename
+    label
 }
