@@ -327,9 +327,18 @@ impl Library {
             if !shape_ok {
                 let _ = backup_corrupt(&path);
             } else if let Ok(v) = parsed {
+                // Ids from disk are validated, not trusted — the same
+                // discipline as person ids: an item id is a slug, and
+                // a crafted library.json must not smuggle in an id
+                // shaped like a path.
                 let items: Vec<LibraryItem> = v["items"]
                     .as_array()
-                    .map(|arr| arr.iter().filter_map(LibraryItem::from_json).collect())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(LibraryItem::from_json)
+                            .filter(|i| crate::valid_person_id(&i.id))
+                            .collect()
+                    })
                     .unwrap_or_default();
                 if !items.is_empty() {
                     return Library { items };
@@ -381,8 +390,13 @@ impl Library {
 
     /// Publish a skill into the library — how agents maintain it.
     /// A new name creates version 1; re-publishing the same name by
-    /// the same author updates it in place with a version bump.
-    /// Built-in items can never be overwritten.
+    /// the SAME author updates it in place with a version bump.
+    /// Built-in items can never be overwritten, and neither can
+    /// another author's item (the seeded items belong to "ergon"):
+    /// the library is company-wide, so an in-place overwrite by a
+    /// different author would silently redefine a working skill for
+    /// every person who carries it. Improvements to someone else's
+    /// skill are published under a new name, in the open.
     pub fn publish_skill(
         &mut self,
         name: &str,
@@ -403,7 +417,11 @@ impl Library {
         if name.is_empty() {
             return Err("publish_skill needs a name".to_string());
         }
-        let id = slugify(&name);
+        // Cap the id at the loader's validity bound (64 chars), so a
+        // long-named skill is never published in a shape the loader
+        // would drop on the next boot.
+        let id: String = slugify(&name).chars().take(64).collect();
+        let id = id.trim_end_matches('-').to_string();
         if let Some(existing) = self.items.iter_mut().find(|i| i.id == id) {
             if existing.builtin {
                 return Err(format!(
@@ -414,6 +432,12 @@ impl Library {
                 return Err(format!(
                     "'{name}' already exists in the library as a {} — pick another name",
                     existing.kind
+                ));
+            }
+            if existing.author != author {
+                return Err(format!(
+                    "'{name}' is {}'s skill (v{}) — you cannot overwrite another person's library item. Publish your version under a different name",
+                    existing.author, existing.version
                 ));
             }
             existing.description = clean(description, 300);

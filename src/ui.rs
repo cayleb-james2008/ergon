@@ -539,8 +539,8 @@ pub const INDEX_HTML: &str = r##"<!DOCTYPE html>
   <main>
     <div id="face-bar" role="tablist" aria-label="Views">
       <button class="face-btn" type="button" role="tab" data-face="graph" aria-selected="true"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="2.4" fill="currentColor"/><circle cx="19" cy="5.5" r="2.4" fill="currentColor"/><circle cx="19" cy="18.5" r="2.4" fill="currentColor"/><path d="M7.2 10.8 16.8 6.6M7.2 13.2l9.6 4.2" stroke="currentColor" stroke-width="1.8"/></svg>Work Graph</button>
-      <button class="face-btn" type="button" role="tab" data-face="chat" aria-selected="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h9" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>Conversation</button>
-      <button class="face-btn" type="button" role="tab" data-face="today" aria-selected="false"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 7.5V12l3 2" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/></svg>Today<span class="face-badge" id="badge-today"></span></button>
+      <button class="face-btn" type="button" role="tab" data-face="chat" aria-selected="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h9" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>Conversation Spine</button>
+      <button class="face-btn" type="button" role="tab" data-face="today" aria-selected="false"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 7.5V12l3 2" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/></svg>Today River<span class="face-badge" id="badge-today"></span></button>
     </div>
 
     <section id="face-graph" class="face on" aria-label="Work graph">
