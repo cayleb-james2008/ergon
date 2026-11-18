@@ -1,6 +1,6 @@
 # Lane status
 
-Updated 01:59 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
+Updated 02:02 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
 
 | lane | state | since | doing / waiting on | next check | flags |
 |---|---|---|---|---|---|
@@ -10,10 +10,6 @@ Updated 01:59 ET by the lane sensor (every 3 min). If that time is more than 15 
 | Grok / RSI desk | — | — |  | — | — |
 | Nox | — | — |  | — | — |
 | Delegator (Cayleb's DSH master session) | — | — |  | — | — |
-
-## Other flags
-
-- sensor BOARD_UNREACHABLE: git fetch failed
 
 ## Promises
 
@@ -86,6 +82,6 @@ None.
 
 ## Today
 
-- Flag-minutes: {"CLOSED": 234.0, "IDLE_DECLARED": 234.0, "MAIL_HELD": 234.0, "PROMISE_OVERDUE": 6552.0, "STALE": 117.0, "WAIT_OVERDUE": 234.0}
-- Flags raised: {}
+- Flag-minutes: {"BOARD_UNREACHABLE": 3.0, "CLOSED": 240.0, "IDLE_DECLARED": 240.0, "MAIL_HELD": 240.0, "PROMISE_OVERDUE": 6720.0, "STALE": 120.0, "WAIT_OVERDUE": 240.0}
+- Flags raised: {"BOARD_UNREACHABLE": 1}
 - Policy v4: idle 30m, stuck 30m, renotify 60m, claude delivery on.
