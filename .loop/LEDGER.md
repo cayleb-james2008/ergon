@@ -16,3 +16,5 @@
 
 - Review round 1 (thermonuclear + interface lens, fresh context, frozen copy): 16 thermonuclear findings + 13 lens findings, all reproduced. Fixed and regression-tested (25/25): Rune moved-value tool errors, About-section learning exclusion, dangling-symlink escape, Content-Length DoS, move overwrite, search partial-coverage disclosure, global-person pointer (session cookies), no-key message loss, thread history to the model, unverified done claims flagged, corrupt-store backup, id validation, memory-structure injection, keyboard/aria-live/busy-guard/contrast/empty-state UI batch. Verify fix-round-1 green 25/25.
 - Dispositions: C12 staging = B11 (still to do, not a code defect). README staleness = fixed by the B11 replacement README. status.person now consumed by the UI (Working-for label).
+
+- Checks-finder report (ran on the pre-fix frozen copy): dangling-symlink + move-overwrite findings duplicated round 1 (already fixed); NEW: 'error:'-titled document misreported — fixed via 'file:'-prefixed skill returns + regression test; theme-persistence and preference-parser test pins added. Verify fix-round-2 green 28/28.
