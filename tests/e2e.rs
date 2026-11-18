@@ -2390,3 +2390,47 @@ fn installer_installs_and_the_installed_binary_boots() {
     assert!(ok, "the installed binary serves the app");
     assert!(library_seeded, "first boot seeds the company library");
 }
+
+/// Checker round 1 (completion) found the hole: publish_skill's own
+/// doc promised same-author updates, but the code never checked the
+/// author — any person's agent could silently overwrite another's
+/// (or a seeded) skill company-wide. Pin the ownership gate.
+#[test]
+fn publish_skill_cannot_overwrite_another_authors_item() {
+    let root = test_root("ownership");
+    let cfg = test_config(&root, Some("k"), "http://127.0.0.1:9/v1".to_string());
+    cfg.ensure_dirs().unwrap();
+    let mut lib = ergon_rs::library::Library::load(&cfg.data_dir);
+    let src_a = "pub fn main() { \"a\" }";
+    let src_b = "pub fn main() { \"b\" }";
+
+    let v1 = lib
+        .publish_skill("Shared Tool", "alice's", vec![], src_a.to_string(), "alice")
+        .unwrap();
+    assert_eq!(v1.version, 1);
+    assert_eq!(v1.author, "alice");
+
+    // Another author, same name: refused, and the item is untouched.
+    let err = lib
+        .publish_skill("Shared Tool", "bob's takeover", vec![], src_b.to_string(), "bob")
+        .unwrap_err();
+    assert!(err.contains("cannot overwrite another person's"), "{err}");
+    let item = lib.get("shared-tool").unwrap();
+    assert_eq!(item.version, 1);
+    assert_eq!(item.author, "alice");
+    assert_eq!(item.source, src_a);
+
+    // The same author CAN update their own skill (version bump).
+    let v2 = lib
+        .publish_skill("Shared Tool", "alice's, improved", vec![], src_b.to_string(), "alice")
+        .unwrap();
+    assert_eq!(v2.version, 2);
+    assert_eq!(v2.source, src_b);
+
+    // Seeded skills belong to "ergon": a person cannot redefine one.
+    let err = lib
+        .publish_skill("Daily log", "takeover", vec!["entry".into()], src_b.to_string(), "alice")
+        .unwrap_err();
+    assert!(err.contains("cannot overwrite another person's"), "{err}");
+    assert_eq!(lib.get("daily-log").unwrap().author, "ergon");
+}
