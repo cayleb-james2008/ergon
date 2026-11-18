@@ -58,3 +58,19 @@
 - Root cause (examiner-side debug, wire evidence): EXAM bug, app innocent. The stub's do_POST required the path to start with /chat/completions and 404'd /v1/chat/completions (the app's legitimate POST target) before recording or serving. App's raw request captured and verified correct (auth header, x-opencode-session, UA, OpenAI-style body); with a path-accepting capture server the same flow returned 200.
 - Patch (harness wiring only; checks.py byte-identical): stub accepts any path ending /chat/completions; exam.sh extraction tar gained --no-same-owner. New manifest: exam.sh 3558cb2a…, checks.py bf8be221… (unchanged), stub_model.py b9a05004….
 - Run 2 (independent runner, hashes verified, run dir ~/workspace/exam-runs/ergon-20261118-015111-15140): PASS E1–E19, EXAM RESULT 19/19, exit 0. App tree unmodified throughout (git status clean).
+
+## Completion programme (18 Nov 2026) — Cayleb's order: full objective functionality
+- Gap list: .loop/COMPLETION.md (G1–G12 against the canonical objective).
+- Commit 38bc3c3: company library (seeded, agents publish via compile-gated
+  publish_skill; cross-person install+run proven), per-person suites
+  (role-shaped starters; installed skills are real tools; apps run from
+  fields), subagent delegation (suite profiles, shared honesty ledger),
+  decisions inbox (delete_file parks; approval deletes for real),
+  work log, deterministic offers engine, morning brief, Work Graph /
+  Conversation Spine / Today River faces, phone face at /phone,
+  ERGON_GATE_TOKEN hosting gate, install.sh (smoke-proven end to end).
+- Tests: 56/56 (44 base preserved + 12 new). One real bug found by the
+  new suite and fixed: app-run field validation ran after substitution,
+  so an empty field silently produced a holed task — now validated first.
+- Sealed exam extended E20–E31 (phase D) — run pending at time of writing.
+- Checker round 1 (fresh context) dispatched — verdict pending.
