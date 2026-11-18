@@ -2090,7 +2090,7 @@ fn offers_appear_after_repeated_work_and_acceptance_builds_the_app() {
         .as_array()
         .unwrap()
         .iter()
-        .find(|o| o["key"] == json!("file expense receipts") && o["status"] == json!("pending"))
+        .find(|o| o["key"] == json!("file expense") && o["status"] == json!("pending"))
         .expect("the second pattern earns its own offer")
         .clone();
     let offer2_id = offer2["id"].as_str().unwrap().to_string();
@@ -2108,7 +2108,7 @@ fn offers_appear_after_repeated_work_and_acceptance_builds_the_app() {
         .as_array()
         .unwrap()
         .iter()
-        .filter(|o| o["key"] == json!("file expense receipts"))
+        .filter(|o| o["key"] == json!("file expense"))
         .collect();
     assert_eq!(same_key.len(), 1, "a dismissed pattern is not re-offered: {body}");
     assert_eq!(same_key[0]["status"], json!("dismissed"));
@@ -2343,8 +2343,15 @@ fn installer_installs_and_the_installed_binary_boots() {
         pkg.join("install.sh"),
     )
     .unwrap();
+    // Install into a prefix WITH A SPACE in it: the thermonuclear
+    // review showed an unquoted ExecStart and raw path interpolation
+    // broke (or worse, executed) such legal paths. The unit must
+    // quote the path and the launcher must carry it single-quoted.
+    let prefix = home.join("my prefix");
     let out = std::process::Command::new("bash")
         .arg(pkg.join("install.sh"))
+        .arg("--prefix")
+        .arg(&prefix)
         .env("HOME", &home)
         .output()
         .unwrap();
@@ -2353,14 +2360,61 @@ fn installer_installs_and_the_installed_binary_boots() {
         "installer failed: {}",
         String::from_utf8_lossy(&out.stderr)
     );
-    let bin = home.join(".local/bin/ergon");
-    let launcher = home.join(".local/bin/ergon-serve");
+    let bin = prefix.join("bin/ergon");
+    let launcher = prefix.join("bin/ergon-serve");
     assert!(bin.exists(), "binary installed");
     assert!(launcher.exists(), "launcher written");
+    let unit_path = home.join(".config/systemd/user/ergon.service");
+    assert!(unit_path.exists(), "systemd user unit written");
+    let unit = std::fs::read_to_string(&unit_path).unwrap();
     assert!(
-        home.join(".config/systemd/user/ergon.service").exists(),
-        "systemd user unit written"
+        unit.contains(&format!("ExecStart=\"{}\"", launcher.display())),
+        "unit quotes the spaced ExecStart path: {unit}"
     );
+    // A data path containing $(...) must be inert data in the
+    // launcher, never code: running the launcher must not create
+    // the proof file the substitution names.
+    let proof = root.join("pwned");
+    let evil_data = format!("{}/data $(touch {})", home.display(), proof.display());
+    let out2 = std::process::Command::new("bash")
+        .arg(pkg.join("install.sh"))
+        .arg("--prefix")
+        .arg(&prefix)
+        .arg("--data")
+        .arg(&evil_data)
+        .arg("--no-service")
+        .env("HOME", &home)
+        .output()
+        .unwrap();
+    assert!(out2.status.success(), "evil-data install failed");
+    // Run the poisoned launcher itself, briefly: if the path were
+    // interpolated as code, this is where it would fire.
+    let probe2 = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port2 = probe2.local_addr().unwrap().port();
+    drop(probe2);
+    let mut evil_child = std::process::Command::new("bash")
+        .arg(&launcher)
+        .env("ERGON_PORT", port2.to_string())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(1200));
+    let _ = evil_child.kill();
+    let _ = evil_child.wait();
+    assert!(
+        !proof.exists(),
+        "the $(...) in the data path executed when the launcher ran"
+    );
+    // Restore the sane data dir for the boot below.
+    let out3 = std::process::Command::new("bash")
+        .arg(pkg.join("install.sh"))
+        .arg("--prefix")
+        .arg(&prefix)
+        .env("HOME", &home)
+        .output()
+        .unwrap();
+    assert!(out3.status.success());
 
     // Boot the installed launcher on a free port and talk to it.
     let probe = TcpListener::bind("127.0.0.1:0").unwrap();
@@ -2433,4 +2487,292 @@ fn publish_skill_cannot_overwrite_another_authors_item() {
         .unwrap_err();
     assert!(err.contains("cannot overwrite another person's"), "{err}");
     assert_eq!(lib.get("daily-log").unwrap().author, "ergon");
+}
+
+// ---------------------------------------------------------------------------
+// Thermonuclear-review regressions (completion round). Each test pins
+// one reproduced defect so it cannot come back silently.
+// ---------------------------------------------------------------------------
+
+/// F1: an approved delete of a symlink deleted the file it POINTED
+/// AT and reported the link's name. The gate must delete exactly
+/// what the person approved: the link.
+#[test]
+fn approved_delete_of_a_symlink_deletes_the_link_not_the_target() {
+    let root = test_root("symlink-delete");
+    let replies = vec![
+        json!({"tool": "delete_file", "args": {"path": "link.txt"}}).to_string(),
+        json!({"done": true, "summary": "Deleting link.txt is parked in your decisions inbox."})
+            .to_string(),
+    ];
+    let stub = start_stub_model(replies);
+    let cfg = test_config(
+        &root,
+        Some("test-key"),
+        format!("http://127.0.0.1:{}/v1", stub.port),
+    );
+    let ws = cfg.workspace_dir.clone();
+    std::fs::write(ws.join("real.txt"), "the real file").unwrap();
+    std::os::unix::fs::symlink(ws.join("real.txt"), ws.join("link.txt")).unwrap();
+    let port = start_app(cfg);
+
+    let (status, _) = chat(port, "Delete link.txt");
+    assert_eq!(status, 200);
+    let (_, body) = http(port, "GET", "/api/decisions", None);
+    let v: Value = serde_json::from_str(&body).unwrap();
+    let id = v["decisions"][0]["id"].as_str().unwrap().to_string();
+    let (status, body) = http(
+        port,
+        "POST",
+        &format!("/api/decisions/{id}/approve"),
+        Some("{}"),
+    );
+    assert_eq!(status, 200, "{body}");
+    let outcome: Value = serde_json::from_str(&body).unwrap();
+    assert!(
+        outcome["outcome"].as_str().unwrap().contains("link.txt was deleted"),
+        "{body}"
+    );
+    assert!(
+        ws.join("real.txt").exists(),
+        "the symlink TARGET must survive — only the link was approved"
+    );
+    assert!(
+        ws.join("link.txt").symlink_metadata().is_err(),
+        "the link itself is what got deleted"
+    );
+}
+
+/// F2: records stores were unsynchronised read-modify-write — 24
+/// concurrent writers stored 8 decisions with 13 unique ids. All
+/// writers must land, with distinct ids.
+#[test]
+fn records_survive_concurrent_writers() {
+    let root = test_root("concurrent-records");
+    let cfg = test_config(&root, Some("k"), "http://127.0.0.1:9/v1".to_string());
+    cfg.ensure_dirs().unwrap();
+    let barrier = std::sync::Arc::new(std::sync::Barrier::new(24));
+    let mut handles = Vec::new();
+    for i in 0..24 {
+        let c = cfg.clone();
+        let b = barrier.clone();
+        handles.push(std::thread::spawn(move || {
+            b.wait();
+            ergon_rs::records::add_decision(
+                &c.data_dir,
+                "question",
+                &format!("Question {i}?"),
+                None,
+                "t",
+            );
+            ergon_rs::records::append_work(&c, &format!("Task {i}"), "done", &[], "t", true);
+        }));
+    }
+    for h in handles {
+        h.join().unwrap();
+    }
+    let decisions = ergon_rs::records::load_decisions(&cfg.data_dir);
+    assert_eq!(decisions.len(), 24, "every decision stored");
+    let mut ids: Vec<&str> = decisions.iter().filter_map(|d| d["id"].as_str()).collect();
+    ids.sort();
+    ids.dedup();
+    assert_eq!(ids.len(), 24, "every decision id unique");
+    let work = ergon_rs::records::load_work(&cfg.data_dir);
+    assert_eq!(work.len(), 24, "every work entry stored");
+}
+
+/// F3: subagent tool restrictions were prompt-only — a subagent
+/// could publish to the company library and park decisions. The
+/// loop must refuse those tools outright.
+#[test]
+fn subagent_cannot_publish_or_park_decisions() {
+    let root = test_root("subagent-restrictions");
+    let replies = vec![
+        json!({"tool": "delegate", "args": {"subagent": "researcher", "task": "Do the sub-task"}})
+            .to_string(),
+        json!({"tool": "publish_skill", "args": {"name": "Sneaky Skill", "description": "x", "source": "pub fn main() { \"x\" }", "params": []}})
+            .to_string(),
+        json!({"tool": "delete_file", "args": {"path": "victim.txt"}}).to_string(),
+        json!({"tool": "flag_decision", "args": {"summary": "Should I?"}}).to_string(),
+        json!({"done": true, "summary": "Sub-task complete."}).to_string(),
+        json!({"done": true, "summary": "All done."}).to_string(),
+    ];
+    let stub = start_stub_model(replies);
+    let cfg = test_config(
+        &root,
+        Some("test-key"),
+        format!("http://127.0.0.1:{}/v1", stub.port),
+    );
+    let data_dir = cfg.data_dir.clone();
+    std::fs::write(cfg.workspace_dir.join("victim.txt"), "precious").unwrap();
+    let port = start_app(cfg);
+
+    let (status, chat_body) = chat(port, "Research this and tidy up");
+    assert_eq!(status, 200, "{chat_body}");
+    let lib_text = std::fs::read_to_string(data_dir.join("library.json")).unwrap();
+    assert!(
+        !lib_text.contains("Sneaky Skill") && !lib_text.contains("sneaky-skill"),
+        "a subagent must not publish to the company library"
+    );
+    let (_, body) = http(port, "GET", "/api/decisions", None);
+    let v: Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(
+        v["decisions"].as_array().unwrap().len(),
+        0,
+        "a subagent must not park decisions"
+    );
+    assert!(data_dir.join("workspace/victim.txt").exists());
+    assert!(
+        chat_body.contains("subagents cannot use publish_skill"),
+        "the refusal is visible in the thread: {chat_body}"
+    );
+}
+
+/// F4 (skill half): a runaway library skill must be stopped by the
+/// instruction budget, not freeze the server forever.
+#[test]
+fn runaway_library_skill_is_stopped_by_the_budget() {
+    let root = test_root("runaway-skill");
+    let cfg = test_config(&root, Some("k"), "http://127.0.0.1:9/v1".to_string());
+    cfg.ensure_dirs().unwrap();
+    let started = std::time::Instant::now();
+    let result = ergon_rs::skills::run_library_skill(
+        &cfg,
+        "pub fn main() { loop {} }",
+        &[],
+    );
+    assert!(result.is_err(), "an infinite loop must fail, got: {result:?}");
+    assert!(
+        started.elapsed() < std::time::Duration::from_secs(30),
+        "the budget stops it quickly (took {:?})",
+        started.elapsed()
+    );
+}
+
+/// F5: delegation multiplied the step cap (a delegate cost 1 step
+/// and bought 12 more). One shared budget: a whole run, subagents
+/// included, never exceeds STEP_CAP model calls.
+#[test]
+fn delegation_draws_from_one_shared_step_budget() {
+    let root = test_root("shared-budget");
+    let mut replies: Vec<String> = Vec::new();
+    replies.push(
+        json!({"tool": "delegate", "args": {"subagent": "researcher", "task": "First sub-task"}})
+            .to_string(),
+    );
+    for _ in 0..11 {
+        replies.push(json!({"tool": "read_file", "args": {"path": "notes.txt"}}).to_string());
+    }
+    replies.push(json!({"done": true, "summary": "First sub-task done."}).to_string());
+    replies.push(
+        json!({"tool": "delegate", "args": {"subagent": "researcher", "task": "Second sub-task"}})
+            .to_string(),
+    );
+    for _ in 0..40 {
+        replies.push(json!({"tool": "read_file", "args": {"path": "notes.txt"}}).to_string());
+    }
+    replies.push(json!({"done": true, "summary": "Second sub-task done."}).to_string());
+    replies.push(json!({"done": true, "summary": "All done."}).to_string());
+    let stub = start_stub_model(replies);
+    let cfg = test_config(
+        &root,
+        Some("test-key"),
+        format!("http://127.0.0.1:{}/v1", stub.port),
+    );
+    let port = start_app(cfg);
+    let (status, body) = chat(port, "Delegate a lot of reading");
+    assert_eq!(status, 500, "the run stops at the budget: {body}");
+    assert!(body.contains("total budget"), "{body}");
+    let requests = stub.raw_requests.lock().unwrap();
+    assert_eq!(
+        requests.len(),
+        24,
+        "exactly the shared STEP_CAP of model calls happened, no multiplication"
+    );
+}
+
+/// F6: publish_app returned an existing item of ANY kind — accepting
+/// an offer could "create" an app that was really a skill. Kind and
+/// author are checked; a same-author app is updated instead.
+#[test]
+fn publish_app_never_returns_a_skill() {
+    let root = test_root("publish-app-kinds");
+    let cfg = test_config(&root, Some("k"), "http://127.0.0.1:9/v1".to_string());
+    cfg.ensure_dirs().unwrap();
+    let mut lib = ergon_rs::library::Library::load(&cfg.data_dir);
+    // "Daily log" is a seeded SKILL: an app of that name is refused.
+    let err = lib
+        .publish_app("Daily log", "x", "Do the thing".to_string(), vec![], "alice")
+        .unwrap_err();
+    assert!(err.contains("already exists"), "{err}");
+    assert_eq!(lib.get("daily-log").unwrap().kind, "skill");
+    // A fresh app, then a same-author re-publish: an update.
+    let a1 = lib
+        .publish_app("Weekly Recap", "v1", "Recap v1".to_string(), vec![], "alice")
+        .unwrap();
+    assert_eq!(a1.version, 1);
+    let a2 = lib
+        .publish_app("Weekly Recap", "v2", "Recap v2".to_string(), vec![], "alice")
+        .unwrap();
+    assert_eq!(a2.version, 2);
+    assert_eq!(a2.template, "Recap v2");
+    // Another author's app of the same name: refused.
+    let err = lib
+        .publish_app("Weekly Recap", "x", "Hijack".to_string(), vec![], "bob")
+        .unwrap_err();
+    assert!(err.contains("already exists"), "{err}");
+}
+
+/// F7: install-then-call in one run worked in the dispatcher but the
+/// honesty gate disowned the writes (its skill snapshot was taken at
+/// run start). The gate must credit a skill installed mid-run.
+#[test]
+fn install_then_call_in_one_run_is_credited() {
+    let root = test_root("install-then-call");
+    let replies = vec![
+        json!({"tool": "install_item", "args": {"item_id": "daily-log"}}).to_string(),
+        json!({"tool": "daily-log", "args": {"entry": "Shipped the fix."}}).to_string(),
+        json!({"done": true, "summary": "Logged it in Daily Log.md for you."}).to_string(),
+    ];
+    let stub = start_stub_model(replies);
+    let cfg = test_config(
+        &root,
+        Some("test-key"),
+        format!("http://127.0.0.1:{}/v1", stub.port),
+    );
+    let ws = cfg.workspace_dir.clone();
+    let port = start_app(cfg);
+    let (status, body) = chat(port, "Log that I shipped the fix");
+    assert_eq!(status, 200, "{body}");
+    assert!(ws.join("Daily Log.md").exists(), "the skill really wrote it");
+    let v: Value = serde_json::from_str(&body).unwrap();
+    let text = v.to_string();
+    assert!(
+        !text.contains("did not write"),
+        "no false ledger note on an honest run: {text}"
+    );
+}
+
+/// F11: "today" is the person's local day, read from the host's zone
+/// file — New York flips between EST and EDT across the year.
+#[test]
+fn tz_offsets_come_from_the_zone_file() {
+    let ny = PathBuf::from("/usr/share/zoneinfo/America/New_York");
+    if !ny.exists() {
+        return; // no zoneinfo on this host; the parser falls back to UTC
+    }
+    // 2026-11-18T12:00Z (EST) and 2026-07-01T12:00Z (EDT).
+    assert_eq!(
+        ergon_rs::records::tz_offset_minutes_at(&ny, 1_795_003_200),
+        Some(-300)
+    );
+    assert_eq!(
+        ergon_rs::records::tz_offset_minutes_at(&ny, 1_782_907_200),
+        Some(-240)
+    );
+    let tokyo = PathBuf::from("/usr/share/zoneinfo/Asia/Tokyo");
+    assert_eq!(
+        ergon_rs::records::tz_offset_minutes_at(&tokyo, 1_795_003_200),
+        Some(540)
+    );
 }

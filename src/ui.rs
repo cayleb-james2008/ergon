@@ -738,9 +738,22 @@ pub const INDEX_HTML: &str = r##"<!DOCTYPE html>
     document.getElementById('add-person-btn').setAttribute('aria-expanded', 'false');
     currentThread = null;
     messagesEl.innerHTML = emptyHtml();
+    /* Same full reset as the person-select handler: switching the
+       active person must not leave the previous person's memory,
+       suite or badges on screen. */
+    const panel = document.getElementById('memory-panel');
+    panel.classList.remove('open');
+    panel.textContent = '';
+    document.getElementById('memory-btn').setAttribute('aria-expanded', 'false');
+    updateTodayBadge.dec = 0;
+    updateTodayBadge.off = 0;
+    updateTodayBadge(null, null);
     await loadPeople();
     await loadThreads();
     await loadStatus();
+    await loadSuite();
+    if (currentFace === 'graph') loadGraph();
+    if (currentFace === 'today') loadToday();
   });
 
   document.getElementById('memory-btn').addEventListener('click', async (ev) => {
@@ -912,6 +925,12 @@ pub const INDEX_HTML: &str = r##"<!DOCTYPE html>
     const d = document.createElement('div');
     d.textContent = s == null ? '' : String(s);
     return d.innerHTML;
+  }
+  /* esc() escapes for element content; attribute values also need
+     the quote escaped, or a crafted field name from the library
+     breaks out of the attribute. */
+  function escAttr(s) {
+    return esc(s).replace(/"/g, '&quot;');
   }
 
   /* ---------------- work graph ------------------------------------ */
@@ -1149,7 +1168,7 @@ pub const INDEX_HTML: &str = r##"<!DOCTYPE html>
       if (item.kind === 'app') {
         for (const f of (item.fields || [])) {
           html += '<label class="sr-only" for="appfield-' + esc(item.id) + '-' + esc(f) + '">' + esc(f) + '</label>' +
-                  '<input id="appfield-' + esc(item.id) + '-' + esc(f) + '" data-app-field="' + esc(f) + '" type="text" placeholder="' + esc(f) + '">';
+                  '<input id="appfield-' + escAttr(item.id) + '-' + escAttr(f) + '" data-app-field="' + escAttr(f) + '" type="text" placeholder="' + escAttr(f) + '">';
         }
         html += '<div class="row-actions"><button class="act-btn primary" data-run-app="' + esc(item.id) + '">Run</button>' +
                 '<button class="act-btn" data-remove="' + esc(item.id) + '">Remove</button></div>';

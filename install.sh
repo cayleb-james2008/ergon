@@ -15,12 +15,32 @@ DATA_DIR="${HOME}/.local/share/ergon"
 SERVICE=1
 while [ $# -gt 0 ]; do
   case "$1" in
-    --prefix) PREFIX="$2"; shift 2 ;;
-    --data) DATA_DIR="$2"; shift 2 ;;
+    --prefix)
+      [ $# -ge 2 ] || { echo "error: --prefix needs a value" >&2; exit 2; }
+      PREFIX="$2"; shift 2 ;;
+    --data)
+      [ $# -ge 2 ] || { echo "error: --data needs a value" >&2; exit 2; }
+      DATA_DIR="$2"; shift 2 ;;
     --no-service) SERVICE=0; shift ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
 done
+
+# Paths are made ABSOLUTE before anything is generated from them: a
+# relative prefix produced a systemd unit systemd could never start
+# (ExecStart must be absolute) and a launcher whose data dir moved
+# with the caller's cwd.
+mkdir -p "$PREFIX" "$DATA_DIR"
+PREFIX="$(cd "$PREFIX" && pwd)"
+DATA_DIR="$(cd "$DATA_DIR" && pwd)"
+
+# Single-quote a value for safe embedding in the generated launcher
+# script. Paths are data, never code: a value containing $(...) or
+# backticks must be written literally, not executed when the
+# launcher runs.
+shq() {
+  printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"
+}
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 BIN_SRC=""
@@ -54,20 +74,23 @@ echo "Installed: $PREFIX/bin/ergon"
 echo "Data dir:  $DATA_DIR (people, library, suites and work records live here)"
 
 # A launcher that carries the configuration in one obvious place.
-cat > "$PREFIX/bin/ergon-serve" <<EOF
-#!/usr/bin/env bash
-# Ergon launcher — set the model key here (or in the service unit).
-# The key is never stored by Ergon itself; it is read from the
-# environment at start.
-export ERGON_DATA_DIR="${DATA_DIR}"
-export ERGON_PORT="\${ERGON_PORT:-8787}"
-# export ERGON_MODEL_API_KEY=""        # DeepSeek V4.1 Flash via OpenCode Go
-# export ERGON_GATE_TOKEN=""           # optional hosting-layer gate token
-exec "$PREFIX/bin/ergon"
-EOF
+# Values are embedded single-quoted (see shq) — never interpolated
+# raw into the script.
+{
+  printf '%s\n' '#!/usr/bin/env bash'
+  printf '%s\n' '# Ergon launcher — set the model key here (or in the service unit).'
+  printf '%s\n' '# The key is never stored by Ergon itself; it is read from the'
+  printf '%s\n' '# environment at start.'
+  printf 'export ERGON_DATA_DIR=%s\n' "$(shq "$DATA_DIR")"
+  printf '%s\n' 'export ERGON_PORT="${ERGON_PORT:-8787}"'
+  printf '%s\n' '# export ERGON_MODEL_API_KEY=""        # DeepSeek V4.1 Flash via OpenCode Go'
+  printf '%s\n' '# export ERGON_GATE_TOKEN=""           # optional hosting-layer gate token'
+  printf 'exec %s\n' "$(shq "$PREFIX/bin/ergon")"
+} > "$PREFIX/bin/ergon-serve"
 chmod 0755 "$PREFIX/bin/ergon-serve"
 echo "Launcher:  $PREFIX/bin/ergon-serve"
 
+SERVICE_READY=0
 if [ "$SERVICE" = "1" ] && command -v systemctl >/dev/null 2>&1; then
   UNIT_DIR="${HOME}/.config/systemd/user"
   mkdir -p "$UNIT_DIR"
@@ -77,7 +100,7 @@ Description=Ergon — an AI agent for every employee
 After=network.target
 
 [Service]
-ExecStart=$PREFIX/bin/ergon-serve
+ExecStart="$PREFIX/bin/ergon-serve"
 Restart=on-failure
 # Environment=ERGON_MODEL_API_KEY=
 # Environment=ERGON_GATE_TOKEN=
@@ -85,7 +108,17 @@ Restart=on-failure
 [Install]
 WantedBy=default.target
 EOF
-  echo "Service:   $UNIT_DIR/ergon.service (systemctl --user enable --now ergon)"
+  echo "Service:   $UNIT_DIR/ergon.service (unit written)"
+  # The unit being written is not the service being ready: only
+  # claim readiness when a user bus actually answers and reloads.
+  if systemctl --user daemon-reload 2>/dev/null; then
+    SERVICE_READY=1
+    echo "           user bus reachable — daemon reloaded; enable with: systemctl --user enable --now ergon"
+  else
+    echo "           NOTE: no systemd user bus answered from this shell, so the service is NOT"
+    echo "           verified ready. From a logged-in session run: systemctl --user enable --now ergon"
+    echo "           — or just start Ergon directly with ergon-serve."
+  fi
 fi
 
 cat <<EOF
@@ -99,3 +132,6 @@ Next steps:
      Today). The phone app is the same server at http://127.0.0.1:8787/phone —
      bookmark it on each phone; there are no Ergon passwords to manage.
 EOF
+if [ "$SERVICE" = "1" ] && [ "$SERVICE_READY" = "0" ]; then
+  echo "  (Reminder: the systemd service above was written but not verified against a live user bus.)"
+fi
