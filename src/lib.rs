@@ -104,6 +104,24 @@ pub fn sandbox_path(root: &Path, rel: &str) -> Result<PathBuf, String> {
             _ => return Err(format!("path escapes the workspace: {rel}")),
         }
     }
+    // Symlink defence: the lexical path can still escape if a component is
+    // a symlink pointing outside. Canonicalise the deepest existing
+    // ancestor of the target and require it to stay inside the
+    // canonicalised root. (A not-yet-existing file is judged by its
+    // nearest existing parent.)
+    if let Ok(canon_root) = root.canonicalize() {
+        let mut probe = out.clone();
+        while !probe.exists() {
+            if !probe.pop() {
+                break;
+            }
+        }
+        if let Ok(canon_probe) = probe.canonicalize() {
+            if !canon_probe.starts_with(&canon_root) {
+                return Err(format!("path escapes the workspace: {rel}"));
+            }
+        }
+    }
     Ok(out)
 }
 
