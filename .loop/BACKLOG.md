@@ -9,8 +9,8 @@
 | B5 | No move/rename tool (breaks C4c) | execute_tool has no move arm | medium | kept |
 | B6 | No research skill: cannot compile a notes document from several fetched pages (breaks C4d) | skills.rs has only write_document and update_memory | medium | kept |
 | B7 | Learning does not visibly shape behaviour: memory is dumped wholesale into the prompt, there is no standing-preferences surfacing and no memory view in the UI (breaks C5, C11) | read system_prompt in lib.rs and ui.rs (no memory view) | medium | kept |
-| B8 | No light/dark themes and no settings: the UI is light-only with hard-coded colours (breaks C8, C11) | read ui.rs: single palette, no data-theme, no settings element | medium | open |
-| B9 | UI craft gaps (impeccable floor): no :focus-visible styling, composer input has no label, several off-grid spacing values, send button state only partially handled, no reduced-motion respect needed but no loading text swap | read ui.rs | low | open |
+| B8 | No light/dark themes and no settings: the UI is light-only with hard-coded colours (breaks C8, C11) | read ui.rs: single palette, no data-theme, no settings element | medium | kept |
+| B9 | UI craft gaps (impeccable floor): no :focus-visible styling, composer input has no label, several off-grid spacing values, send button state only partially handled, no reduced-motion respect needed but no loading text swap | read ui.rs | low | kept |
 | B10 | Sandbox is lexical only: a symlink planted inside the workspace pointing outside is followed by read_file/write_file and the Rune host functions (breaks C7) | plant symlink ws/escape -> /tmp/outside, read_file "escape/secret.txt" succeeds | medium | kept |
 | B11 | Replacement staging does not exist (breaks C12) | ls ~/workspace/restart-20261117/replacement/ergon/ fails | medium | open |
 
