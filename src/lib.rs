@@ -2231,6 +2231,11 @@ struct Request {
     session: Option<String>,
     /// The hosting layer's gate header, if presented.
     gate: Option<String>,
+    /// Browser-set headers the cross-site checks read (lowercased).
+    content_type: String,
+    origin: Option<String>,
+    host: Option<String>,
+    sec_fetch_site: Option<String>,
 }
 
 /// Bodies are small JSON. A request claiming a larger one is dropped
@@ -2264,6 +2269,10 @@ fn read_request(stream: &mut std::net::TcpStream) -> Option<Request> {
     let mut content_length: usize = 0;
     let mut session: Option<String> = None;
     let mut gate: Option<String> = None;
+    let mut content_type = String::new();
+    let mut origin: Option<String> = None;
+    let mut host: Option<String> = None;
+    let mut sec_fetch_site: Option<String> = None;
     let mut head_bytes = request_line.len();
     loop {
         arm(stream)?;
@@ -2279,6 +2288,18 @@ fn read_request(stream: &mut std::net::TcpStream) -> Option<Request> {
         let lower = line.to_lowercase();
         if let Some(v) = lower.strip_prefix("content-length:") {
             content_length = v.trim().parse().unwrap_or(0);
+        }
+        if let Some(v) = lower.strip_prefix("content-type:") {
+            content_type = v.trim().to_string();
+        }
+        if let Some(v) = lower.strip_prefix("origin:") {
+            origin = Some(v.trim().to_string());
+        }
+        if let Some(v) = lower.strip_prefix("host:") {
+            host = Some(v.trim().to_string());
+        }
+        if let Some(v) = lower.strip_prefix("sec-fetch-site:") {
+            sec_fetch_site = Some(v.trim().to_string());
         }
         if let Some(v) = lower.strip_prefix("cookie:") {
             for pair in v.split(';') {
@@ -2343,7 +2364,47 @@ fn read_request(stream: &mut std::net::TcpStream) -> Option<Request> {
         body,
         session,
         gate,
+        content_type,
+        origin,
+        host,
+        sec_fetch_site,
     })
+}
+
+/// Whether a Host header names this machine (DNS-rebinding guard).
+fn local_host(host: &str) -> bool {
+    let name = match host.strip_prefix('[') {
+        Some(rest) => format!("[{}]", rest.split(']').next().unwrap_or("")),
+        None => host.split(':').next().unwrap_or("").to_string(),
+    };
+    matches!(name.as_str(), "localhost" | "127.0.0.1" | "[::1]")
+}
+
+/// Refuses a request a page on another site could have sent (E1), with
+/// the same observable rules as the Fleet app: a foreign Host (unless
+/// the hosting gate is set), a state-changing request with a body that
+/// is not JSON (a text/plain POST has no preflight), cross-site fetch
+/// metadata, and an Origin whose authority is not the request's Host.
+fn refusal(req: &Request, gated: bool) -> Option<(u16, &'static str)> {
+    if !gated && !local_host(req.host.as_deref().unwrap_or("")) {
+        return Some((403, "requests must address this machine as localhost, 127.0.0.1 or [::1]"));
+    }
+    if !matches!(req.method.as_str(), "POST" | "PUT" | "PATCH" | "DELETE") {
+        return None;
+    }
+    if !req.body.is_empty() && !req.content_type.starts_with("application/json") {
+        return Some((415, "POST requires Content-Type: application/json"));
+    }
+    if req.sec_fetch_site.as_deref() == Some("cross-site") {
+        return Some((403, "cross-site requests are refused"));
+    }
+    if let Some(origin) = &req.origin {
+        let authority = origin.split("://").nth(1).unwrap_or("").split('/').next().unwrap_or("");
+        if req.host.as_deref() != Some(authority) {
+            return Some((403, "cross-origin requests are refused"));
+        }
+    }
+    None
 }
 
 fn respond(
@@ -2367,9 +2428,11 @@ fn respond_h(
         201 => "Created",
         400 => "Bad Request",
         401 => "Unauthorized",
+        403 => "Forbidden",
         404 => "Not Found",
         405 => "Method Not Allowed",
         413 => "Content Too Large",
+        415 => "Unsupported Media Type",
         500 => "Internal Server Error",
         503 => "Service Unavailable",
         _ => "OK",
@@ -2411,6 +2474,9 @@ fn handle_connection(mut stream: std::net::TcpStream, state: &AppState) -> std::
                 &json!({"error": "this Ergon is gated by its hosting layer — the gate header is missing or wrong"}),
             );
         }
+    }
+    if let Some((status, message)) = refusal(&req, state.gate_token.is_some()) {
+        return respond_json(&mut stream, status, &json!({"error": message}));
     }
     // The person this request acts for (session-pinned when the caller
     // has a session cookie, else the global active person).

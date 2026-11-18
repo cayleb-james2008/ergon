@@ -2803,3 +2803,57 @@ fn tz_offsets_come_from_the_zone_file() {
         Some(540)
     );
 }
+
+/// Sends a raw request with the given header lines (each ending in
+/// CRLF) and returns the status and body.
+fn raw_http(port: u16, head: &str, body: &str) -> (u16, String) {
+    let mut stream = TcpStream::connect(("127.0.0.1", port)).unwrap();
+    let req = format!("{head}Content-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len());
+    let _ = stream.write_all(req.as_bytes());
+    let _ = stream.shutdown(std::net::Shutdown::Write);
+    let mut raw = String::new();
+    let _ = stream.read_to_string(&mut raw);
+    let status: u16 = raw.split_whitespace().nth(1).and_then(|s| s.parse().ok()).unwrap_or(0);
+    let body_start = raw.find("\r\n\r\n").map(|i| i + 4).unwrap_or(raw.len());
+    (status, raw[body_start..].to_string())
+}
+
+/// E1: a page on another origin cannot drive a local Ergon. Browsers
+/// send Origin / Sec-Fetch-Site on cross-site requests, a foreign Host
+/// means DNS rebinding, and a "simple" text/plain POST has no preflight.
+#[test]
+fn cross_site_requests_are_refused_and_change_nothing() {
+    let root = test_root("csrf");
+    let cfg = test_config(&root, None, "http://127.0.0.1:9/v1".to_string());
+    let port = start_app(cfg);
+    let local = format!("Host: 127.0.0.1:{port}\r\n");
+    let json_ct = "Content-Type: application/json\r\n";
+    let body = "{\"name\": \"Mallory\"}";
+
+    let plain = format!("POST /api/people HTTP/1.1\r\n{local}Content-Type: text/plain\r\nOrigin: http://evil.example\r\n");
+    let (status, _) = raw_http(port, &plain, body);
+    assert_eq!(status, 415, "a text/plain POST is refused");
+
+    let foreign_origin = format!("POST /api/people HTTP/1.1\r\n{local}{json_ct}Origin: http://evil.example\r\n");
+    let (status, _) = raw_http(port, &foreign_origin, body);
+    assert_eq!(status, 403, "a foreign Origin is refused");
+
+    let cross_site = format!("POST /api/people HTTP/1.1\r\n{local}{json_ct}Sec-Fetch-Site: cross-site\r\n");
+    let (status, _) = raw_http(port, &cross_site, body);
+    assert_eq!(status, 403, "Sec-Fetch-Site: cross-site is refused");
+
+    let rebound = format!("POST /api/people HTTP/1.1\r\nHost: evil.example:{port}\r\n{json_ct}");
+    let (status, _) = raw_http(port, &rebound, body);
+    assert_eq!(status, 403, "a foreign Host is refused");
+    let (status, _) = raw_http(port, &format!("GET /api/status HTTP/1.1\r\nHost: evil.example\r\n"), "");
+    assert_eq!(status, 403, "a foreign Host is refused for reads too");
+
+    let (_, people) = http(port, "GET", "/api/people", None);
+    assert!(!people.contains("Mallory"), "no refused request may create a person: {people}");
+
+    let same_origin = format!("POST /api/people HTTP/1.1\r\n{local}{json_ct}Origin: http://127.0.0.1:{port}\r\n");
+    let (status, _) = raw_http(port, &same_origin, "{\"name\": \"Ada\"}");
+    assert_eq!(status, 201, "a same-origin JSON POST is accepted");
+    let (status, _) = http(port, "GET", "/api/status", None);
+    assert_eq!(status, 200, "the page's own read API stays open");
+}
