@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Ergon — your agent</title>
+<script>
+  try {
+    var t = localStorage.getItem('ergon-theme');
+    if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t);
+  } catch (e) { /* dark stays the default */ }
+</script>
+<style>
+  /* hallmark-rune · app: ergon (phone face) · vernacular: chief-of-staff's desk, paper-warm neutrals, terracotta anchor · nav: bottom tab bar · signature: work ledger · tokens: hr-template v1 · critique: weakest State coverage (per-region error text kept; no skeleton theatre added) */
+  :root, [data-theme="dark"] {
+    color-scheme: dark;
+    --bg: #171512; --panel: #201d18; --panel-2: #2a2620; --field: #1b1915;
+    --ink: #f0ede6; --muted: #a8a294; --faint: #8a8474; --rule: #35312a;
+    --accent: #e08a67; --accent-fill: #b1572f; --accent-fill-hover: #9d4c27; --accent-ink: #ffffff;
+    --user-bubble: #2b2926;
+    --warn: #eec27f; --warn-bg: #2e2410; --warn-rule: #57431c;
+    --err: #f0a3a3; --err-bg: #331a1a;
+    --font-body: "Source Sans 3", "Segoe UI", "Trebuchet MS", "Helvetica Neue", Arial, sans-serif;
+    --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    --text-meta: 11px; --text-label: 12px; --text-small: 13px; --text-dense: 14px;
+    --text-body: 15px; --text-title: 18px; --text-screen: 20px; --text-display: 24px;
+    --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px; --sp-5: 24px; --sp-6: 32px; --sp-7: 48px;
+    --r-control: 6px; --r-card: 8px; --r-panel: 12px; --r-chip: 999px;
+    --dur-micro: 120ms; --dur-short: 200ms; --dur-panel: 280ms;
+    --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  }
+  [data-theme="light"] {
+    color-scheme: light;
+    --bg: #f7f6f2; --panel: #ffffff; --panel-2: #efe9df; --field: #ffffff;
+    --ink: #201d18; --muted: #6d675c; --faint: #6e6759; --rule: #ddd8ce;
+    --accent: #a34a28; --accent-fill: #a34a28; --accent-fill-hover: #8d3f21; --accent-ink: #ffffff;
+    --user-bubble: #e9e5db;
+    --warn: #7a4b12; --warn-bg: #fdf3e3; --warn-rule: #ecd9ae;
+    --err: #8c1d1d; --err-bg: #fdecec;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; overflow-x: clip; }
+  body { font-family: var(--font-body);
+         background: var(--bg); color: var(--ink); font-size: var(--text-body); line-height: 1.55;
+         display: flex; flex-direction: column; }
+  ::selection { background: var(--accent-fill); color: var(--accent-ink); }
+  html { scrollbar-color: var(--rule) transparent; caret-color: var(--accent); }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  button { font: inherit; }
+  header { padding: var(--sp-4) var(--sp-4) var(--sp-3); border-bottom: 1px solid var(--rule); }
+  header h1 { font-size: var(--text-title); margin: 0; font-weight: 600; line-height: 1.2; }
+  header p { margin: 2px 0 0; font-size: var(--text-label); color: var(--muted); }
+  #no-key-banner { display: none; background: var(--warn-bg); color: var(--warn);
+                   border-bottom: 1px solid var(--warn-rule); padding: var(--sp-3) var(--sp-4); font-size: var(--text-small); }
+  main { flex: 1; overflow-y: auto; padding: var(--sp-4) var(--sp-4) 84px; }
+  .tab { display: none; flex-direction: column; gap: var(--sp-4); }
+  .tab.on { display: flex; }
+  .card { background: var(--panel); border: 1px solid var(--rule); border-radius: var(--r-panel); padding: var(--sp-4); }
+  .card h3 { margin: 0 0 var(--sp-2); font-size: var(--text-body); font-weight: 600; }
+  .card h4 { margin: 0 0 var(--sp-2); font-size: var(--text-label); font-weight: 600; color: var(--faint); }
+  .card p { margin: var(--sp-1) 0; line-height: 1.55; }
+  .card ul { margin: var(--sp-2) 0; padding-left: var(--sp-4); line-height: 1.6; }
+  .quiet { color: var(--muted); font-size: var(--text-dense); }
+  .settled { color: var(--faint); font-size: var(--text-small); }
+  .row-actions { display: flex; gap: var(--sp-2); margin-top: var(--sp-3); }
+  .act-btn { border-radius: var(--r-card); padding: var(--sp-3) var(--sp-4); font-size: var(--text-small); font-weight: 600; cursor: pointer;
+             border: 1px solid var(--rule); background: none; color: var(--ink); min-height: 44px; }
+  .act-btn.primary { background: var(--accent-fill); border-color: var(--accent-fill); color: var(--accent-ink); }
+  .act-btn.primary:hover { background: var(--accent-fill-hover); }
+  .item { background: var(--field); border: 1px solid var(--rule); border-radius: var(--r-card); padding: var(--sp-3); margin-top: var(--sp-2); }
+  .item .i-kind { font-size: var(--text-meta); color: var(--muted); font-weight: 600; }
+  .item .i-name { font-size: var(--text-dense); font-weight: 600; margin-top: 1px; }
+  .item .i-desc { font-size: var(--text-small); color: var(--muted); line-height: 1.45; margin-top: 2px; }
+  #messages { display: flex; flex-direction: column; gap: var(--sp-3); }
+  .msg { border-radius: var(--r-panel); padding: var(--sp-3); font-size: var(--text-body); line-height: 1.55;
+         white-space: pre-wrap; word-wrap: break-word; }
+  .msg.user { background: var(--user-bubble); align-self: flex-end; max-width: 88%; }
+  .msg.assistant { background: var(--panel); border: 1px solid var(--rule); align-self: flex-start; max-width: 94%; }
+  /* The signature, same as the desktop face: step rows are the work
+     ledger — mono, on a rail, on the record. */
+  .msg.step { background: transparent; color: var(--muted); font-size: var(--text-label);
+              font-family: var(--font-mono); align-self: flex-start; padding: 0 var(--sp-1) 0 var(--sp-3);
+              border-left: 2px solid var(--rule); border-radius: 0; }
+  .msg.error { background: var(--err-bg); color: var(--err); align-self: flex-start; }
+  .empty { color: var(--faint); text-align: center; margin-top: 8vh; line-height: 1.6; }
+  #composer { display: flex; gap: var(--sp-2); margin-top: var(--sp-3); }
+  #composer-input { flex: 1; resize: none; border: 1px solid var(--rule); border-radius: var(--r-panel);
+                    padding: var(--sp-3); font-size: var(--text-body); font-family: inherit; min-height: 44px;
+                    background: var(--field); color: var(--ink); }
+  #send-btn { background: var(--ink); color: var(--bg); border: 0; border-radius: var(--r-card);
+              padding: var(--sp-3) var(--sp-4); font-size: var(--text-dense); font-weight: 600; cursor: pointer; min-height: 44px; }
+  #send-btn:disabled { opacity: 0.45; cursor: default; }
+  nav { position: fixed; left: 0; right: 0; bottom: 0; display: flex; background: var(--panel);
+        border-top: 1px solid var(--rule); padding-bottom: env(safe-area-inset-bottom); }
+  .tab-btn { flex: 1; background: none; border: 0; color: var(--muted); padding: var(--sp-2) 2px var(--sp-2);
+             font-size: var(--text-meta); font-weight: 600; cursor: pointer; display: flex; flex-direction: column;
+             align-items: center; gap: 3px; position: relative; min-height: 48px; }
+  .tab-btn svg { width: 20px; height: 20px; }
+  .tab-btn[aria-selected="true"] { color: var(--accent); }
+  .tab-badge { position: absolute; top: 4px; right: calc(50% - 20px); background: var(--accent-fill);
+               color: var(--accent-ink); border-radius: var(--r-chip); font-size: var(--text-meta); padding: 0 var(--sp-2); font-weight: 600; display: none; font-variant-numeric: tabular-nums; }
+  .tab-badge.on { display: block; }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
+  }
+</style>
+</head>
+<body>
+  <header>
+    <h1>Ergon</h1>
+    <p id="who">Your agent that finishes the work</p>
+  </header>
+  <div id="no-key-banner">Ergon is not connected to a model yet, so the agent cannot run. Nothing here is simulated: without a key, Ergon will not invent answers.</div>
+  <main>
+    <section class="tab" id="tab-brief" aria-label="Brief">
+      <div class="card">
+        <h4>Morning brief</h4>
+        <h3 id="brief-headline">Loading…</h3>
+        <div id="brief-body"></div>
+      </div>
+      <div class="card">
+        <h4>Offers from your agent</h4>
+        <div id="offers-list"><p class="quiet">Loading…</p></div>
+      </div>
+    </section>
+    <section class="tab on" id="tab-chat" aria-label="Chat">
+      <div id="messages" aria-live="polite">
+        <div class="empty">What should your agent finish for you?</div>
+      </div>
+      <form id="composer">
+        <label class="sr-only" for="composer-input" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)">Describe a task for your agent</label>
+        <textarea id="composer-input" rows="1" placeholder="Describe a task…"></textarea>
+        <button id="send-btn" type="submit">Send</button>
+      </form>
+    </section>
+    <section class="tab" id="tab-decisions" aria-label="Decisions">
+      <div class="card">
+        <h4>Decisions waiting on you</h4>
+        <div id="decisions-list"><p class="quiet">Loading…</p></div>
+      </div>
+    </section>
+    <section class="tab" id="tab-suite" aria-label="Suite">
+      <div class="card">
+        <h4>My suite</h4>
+        <div id="suite-list"><p class="quiet">Loading…</p></div>
+      </div>
+    </section>
+  </main>
+  <nav aria-label="Phone views">
+    <button class="tab-btn" type="button" data-tab="brief" aria-selected="false"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 7.5V12l3 2" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/></svg>Brief</button>
+    <button class="tab-btn" type="button" data-tab="chat" aria-selected="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h9" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>Chat</button>
+    <button class="tab-btn" type="button" data-tab="decisions" aria-selected="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v6M12 10l7 4M12 10l-7 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/><circle cx="12" cy="12" r="2.2" fill="currentColor"/></svg>Decisions<span class="tab-badge" id="dec-badge"></span></button>
+    <button class="tab-btn" type="button" data-tab="suite" aria-selected="false"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="7" height="7" rx="1.6" fill="currentColor"/><rect x="13" y="4" width="7" height="7" rx="1.6" fill="currentColor"/><rect x="4" y="13" width="7" height="7" rx="1.6" fill="currentColor"/><rect x="13" y="13" width="7" height="7" rx="1.6" fill="currentColor"/></svg>Suite</button>
+  </nav>
+<script>
+  let currentThread = null;
+  let busy = false;
+  const messagesEl = document.getElementById('messages');
+
+  function esc(s) {
+    const d = document.createElement('div');
+    d.textContent = s == null ? '' : String(s);
+    return d.innerHTML;
+  }
+
+  function addMsg(role, content) {
+    const empty = messagesEl.querySelector('.empty');
+    if (empty) empty.remove();
+    const div = document.createElement('div');
+    div.className = 'msg ' + role;
+    div.textContent = content;
+    messagesEl.appendChild(div);
+    return div;
+  }
+
+  const tabBtns = document.querySelectorAll('.tab-btn');
+  function showTab(name) {
+    tabBtns.forEach((b) => b.setAttribute('aria-selected', b.getAttribute('data-tab') === name ? 'true' : 'false'));
+    for (const t of ['brief', 'chat', 'decisions', 'suite']) {
+      document.getElementById('tab-' + t).classList.toggle('on', t === name);
+    }
+    if (name === 'brief') { loadBrief(); loadOffers(); }
+    if (name === 'decisions') loadDecisions();
+    if (name === 'suite') loadSuite();
+  }
+  tabBtns.forEach((b) => b.addEventListener('click', () => showTab(b.getAttribute('data-tab'))));
+
+  async function loadStatus() {
+    try {
+      const r = await fetch('/api/status');
+      const s = await r.json();
+      if (!s.model_configured) document.getElementById('no-key-banner').style.display = 'block';
+      if (s.person && s.person.name) document.getElementById('who').textContent = 'Working for ' + s.person.name + (s.person.role ? ' — ' + s.person.role : '');
+    } catch (e) { /* best effort */ }
+  }
+
+  async function loadBrief() {
+    const head = document.getElementById('brief-headline');
+    const bodyEl = document.getElementById('brief-body');
+    try {
+      const r = await fetch('/api/brief');
+      const b = await r.json();
+      head.textContent = b.headline || '';
+      let html = '';
+      if ((b.finished || []).length) {
+        html += '<h4>Finished recently</h4><ul>' + b.finished.map((f) => '<li>' + esc(f.task) + ' <span class="settled">(' + esc(f.date) + ')</span></li>').join('') + '</ul>';
+      }
+      if ((b.learned_recently || []).length) {
+        html += '<h4>Learned recently</h4><ul>' + b.learned_recently.map((l) => '<li>' + esc(l) + '</li>').join('') + '</ul>';
+      }
+      bodyEl.innerHTML = html || '<p class="quiet">Nothing to report yet.</p>';
+    } catch (e) {
+      head.textContent = 'The brief could not be loaded.';
+    }
+  }
+
+  async function loadOffers() {
+    const el = document.getElementById('offers-list');
+    try {
+      const r = await fetch('/api/offers');
+      const data = await r.json();
+      const list = (data.offers || []).filter((o) => o.status === 'pending').reverse();
+      if (!list.length) { el.innerHTML = '<p class="quiet">No offers right now.</p>'; return; }
+      el.innerHTML = '';
+      for (const o of list) {
+        const div = document.createElement('div');
+        div.className = 'item';
+        div.innerHTML = '<div class="i-name">' + esc(o.title) + '</div><div class="i-desc">' + esc(o.detail) + '</div>' +
+          '<div class="row-actions"><button class="act-btn primary" data-offer="' + esc(o.id) + '" data-how="accept">Yes, do it</button>' +
+          '<button class="act-btn" data-offer="' + esc(o.id) + '" data-how="dismiss">No thanks</button></div>';
+        el.appendChild(div);
+      }
+      el.querySelectorAll('[data-offer]').forEach((btn) => btn.addEventListener('click', async () => {
+        btn.disabled = true;
+        await fetch('/api/offers/' + encodeURIComponent(btn.getAttribute('data-offer')) + '/' + btn.getAttribute('data-how'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+        loadOffers();
+      }));
+    } catch (e) {
+      el.innerHTML = '<p class="quiet">Offers could not be loaded.</p>';
+    }
+  }
+
+  async function loadDecisions() {
+    const el = document.getElementById('decisions-list');
+    try {
+      const r = await fetch('/api/decisions');
+      const data = await r.json();
+      const list = (data.decisions || []).slice().reverse();
+      const pending = list.filter((d) => d.status === 'pending').length;
+      const badge = document.getElementById('dec-badge');
+      badge.textContent = pending;
+      badge.classList.toggle('on', pending > 0);
+      if (!list.length) { el.innerHTML = '<p class="quiet">Nothing waiting. Consequential actions land here for a quick yes or no.</p>'; return; }
+      el.innerHTML = '';
+      for (const d of list) {
+        const div = document.createElement('div');
+        div.className = 'item';
+        let inner = '<div class="i-kind">' + esc(d.kind) + '</div><div class="i-name">' + esc(d.summary) + '</div>';
+        if (d.status === 'pending') {
+          inner += '<div class="row-actions"><button class="act-btn primary" data-decide="' + esc(d.id) + '" data-how="approve">Approve</button>' +
+                   '<button class="act-btn" data-decide="' + esc(d.id) + '" data-how="deny">Deny</button></div>';
+        } else {
+          inner += '<div class="settled">' + esc(d.status) + (d.outcome ? ' — ' + esc(d.outcome) : '') + '</div>';
+        }
+        div.innerHTML = inner;
+        el.appendChild(div);
+      }
+      el.querySelectorAll('[data-decide]').forEach((btn) => btn.addEventListener('click', async () => {
+        btn.disabled = true;
+        await fetch('/api/decisions/' + encodeURIComponent(btn.getAttribute('data-decide')) + '/' + btn.getAttribute('data-how'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+        loadDecisions();
+      }));
+    } catch (e) {
+      el.innerHTML = '<p class="quiet">Decisions could not be loaded.</p>';
+    }
+  }
+
+  async function loadSuite() {
+    const el = document.getElementById('suite-list');
+    try {
+      const r = await fetch('/api/suite');
+      const data = await r.json();
+      const installed = data.installed || [];
+      if (!installed.length) { el.innerHTML = '<p class="quiet">Nothing in the suite yet.</p>'; return; }
+      el.innerHTML = installed.map((i) =>
+        '<div class="item"><div class="i-kind">' + esc(i.kind) + '</div><div class="i-name">' + esc(i.name) + '</div><div class="i-desc">' + esc(i.description) + '</div></div>'
+      ).join('');
+    } catch (e) {
+      el.innerHTML = '<p class="quiet">The suite could not be loaded.</p>';
+    }
+  }
+
+  document.getElementById('composer').addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    if (busy) return;
+    const input = document.getElementById('composer-input');
+    const sendBtn = document.getElementById('send-btn');
+    const text = input.value.trim();
+    if (!text) return;
+    busy = true;
+    if (!currentThread) {
+      const r = await fetch('/api/threads', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+      const t = await r.json();
+      currentThread = t.id;
+    }
+    input.value = '';
+    addMsg('user', text);
+    sendBtn.disabled = true;
+    input.disabled = true;
+    sendBtn.textContent = 'Working…';
+    const working = addMsg('step', 'Agent is working…');
+    try {
+      const r = await fetch('/api/chat', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ thread_id: currentThread, message: text })
+      });
+      const data = await r.json();
+      working.remove();
+      if (!r.ok) {
+        addMsg('error', data.error || 'The agent could not run.');
+      } else {
+        messagesEl.innerHTML = '';
+        for (const m of data.messages) addMsg(m.role, m.content);
+      }
+    } catch (e) {
+      working.remove();
+      addMsg('error', 'Could not reach the Ergon server.');
+    }
+    busy = false;
+    sendBtn.disabled = false;
+    input.disabled = false;
+    sendBtn.textContent = 'Send';
+  });
+
+  loadStatus();
+  loadDecisions();
+</script>
+</body>
+</html>
