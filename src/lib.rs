@@ -2982,7 +2982,20 @@ fn handle_connection(mut stream: std::net::TcpStream, state: &AppState) -> std::
             respond_json(&mut stream, 201, &v)
         }
         ("POST", "/api/chat") => {
-            let parsed: Value = serde_json::from_slice(&req.body).unwrap_or(Value::Null);
+            let parsed: Value = if req.body.iter().all(u8::is_ascii_whitespace) {
+                Value::Null
+            } else {
+                match serde_json::from_slice(&req.body) {
+                    Ok(v) => v,
+                    Err(_) => {
+                        return respond_json(
+                            &mut stream,
+                            400,
+                            &json!({"error": "request body is not valid JSON"}),
+                        )
+                    }
+                }
+            };
             let message = parsed["message"].as_str().unwrap_or("").trim().to_string();
             if message.is_empty() {
                 return respond_json(
