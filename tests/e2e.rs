@@ -1072,3 +1072,63 @@ fn shell_accessibility_and_contrast_pins() {
     assert!(body.contains("if (busy) return;"), "the composer must refuse overlapping runs");
     assert!(body.contains("inputEl.disabled = true"), "the textarea is disabled while working");
 }
+
+/// Checks-finder round: a document whose title starts with "error:"
+/// was reported as a failure while its file was written correctly —
+/// the skill return protocol sniffed the bare "error:" prefix.
+#[test]
+fn document_titled_error_still_reports_success() {
+    let root = test_root("errtitle");
+    let cfg = test_config(&root, Some("k"), "http://127.0.0.1:9/v1".to_string());
+    let res = ergon_rs::execute_tool(
+        &cfg,
+        "write_document",
+        &json!({"title": "error: Weekly Report", "sections": ["body text"]}),
+    );
+    assert!(
+        res.is_ok(),
+        "a title starting with 'error:' must not be read as a failure: {res:?}"
+    );
+    let f = cfg.workspace_dir.join("error: Weekly Report.md");
+    assert!(f.exists(), "the document is written");
+    assert!(std::fs::read_to_string(&f).unwrap().contains("body text"));
+}
+
+/// Checks-finder mutation: deleting the localStorage.setItem line left
+/// the old theme test green (it only grepped the shared key string).
+/// Pin the write and the read separately, with the same key.
+#[test]
+fn theme_choice_is_saved_and_read_with_the_same_key() {
+    let root = test_root("themepin");
+    let cfg = test_config(&root, None, "http://127.0.0.1:9/v1".to_string());
+    let port = start_app(cfg);
+    let (status, body) = http(port, "GET", "/", None);
+    assert_eq!(status, 200);
+    assert!(
+        body.contains("localStorage.setItem('ergon-theme'"),
+        "the toggle must SAVE the choice"
+    );
+    assert!(
+        body.contains("localStorage.getItem('ergon-theme')"),
+        "the page must READ the saved choice back"
+    );
+}
+
+/// Direct pin of the preference parser: identity lines never become
+/// preferences; learned bullets always do, whatever section they are in.
+#[test]
+fn standing_preferences_excludes_only_identity_lines() {
+    let memory = "# Memory\n\n## About\n- Name: Ada\n- Role: Ops\n\n## Learned\n- Likes tea\n- Works nights\n";
+    assert_eq!(
+        ergon_rs::standing_preferences(memory),
+        vec!["Likes tea".to_string(), "Works nights".to_string()]
+    );
+    // Notes appended at the end of a seeded file (still under About in
+    // older files) are learned facts, not identity.
+    let legacy = "# Memory\n\n## About\n- Name: Ada\n- Role: Ops\n- Prefers oat milk\n";
+    assert_eq!(
+        ergon_rs::standing_preferences(legacy),
+        vec!["Prefers oat milk".to_string()]
+    );
+    assert!(ergon_rs::standing_preferences("# Memory\n\n").is_empty());
+}

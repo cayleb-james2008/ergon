@@ -144,13 +144,26 @@ where
     rune::from_value::<String>(value).map_err(|e| format!("rune skill returned non-string: {e}"))
 }
 
+/// Interpret a file-writing skill's return value. Success is prefixed
+/// "file:" by the skills themselves, so a file whose name legitimately
+/// starts with "error:" (a document titled "error: Weekly Report") is
+/// never mistaken for a host error — the old protocol sniffed the bare
+/// "error:" prefix and reported success as failure.
+fn skill_filename(returned: &str) -> Result<String, String> {
+    if let Some(name) = returned.strip_prefix("file:") {
+        return Ok(name.to_string());
+    }
+    if let Some(err) = returned.strip_prefix("error:") {
+        return Err(err.trim().to_string());
+    }
+    Ok(returned.to_string())
+}
+
 /// Rune skill: format title + sections into a finished markdown document
 /// in the workspace. Returns a human-readable tool result.
 pub fn write_document(cfg: &Config, title: &str, sections: Vec<String>) -> Result<String, String> {
-    let filename = run_script(cfg, WRITE_DOCUMENT_SCRIPT, (title.to_string(), sections))?;
-    if let Some(err) = filename.strip_prefix("error:") {
-        return Err(err.trim().to_string());
-    }
+    let returned = run_script(cfg, WRITE_DOCUMENT_SCRIPT, (title.to_string(), sections))?;
+    let filename = skill_filename(&returned)?;
     let full = sandbox_path(&cfg.workspace_dir, &filename)?;
     let len = std::fs::metadata(&full).map(|m| m.len()).unwrap_or(0);
     Ok(format!("wrote document {filename} ({len} bytes)"))
@@ -165,10 +178,8 @@ pub fn make_spreadsheet(
     rows: Vec<Vec<String>>,
 ) -> Result<String, String> {
     let n_rows = rows.len();
-    let filename = run_script(cfg, MAKE_SPREADSHEET_SCRIPT, (title.to_string(), columns, rows))?;
-    if let Some(err) = filename.strip_prefix("error:") {
-        return Err(err.trim().to_string());
-    }
+    let returned = run_script(cfg, MAKE_SPREADSHEET_SCRIPT, (title.to_string(), columns, rows))?;
+    let filename = skill_filename(&returned)?;
     let full = sandbox_path(&cfg.workspace_dir, &filename)?;
     let len = std::fs::metadata(&full).map(|m| m.len()).unwrap_or(0);
     Ok(format!(
@@ -180,14 +191,12 @@ pub fn make_spreadsheet(
 /// notes document in the workspace. Returns a human-readable tool result.
 pub fn research(cfg: &Config, topic: &str, urls: Vec<String>) -> Result<String, String> {
     let filename = format!("Research - {topic}.md");
-    let written = run_script(
+    let returned = run_script(
         cfg,
         RESEARCH_SCRIPT,
         (topic.to_string(), filename.clone(), urls),
     )?;
-    if let Some(err) = written.strip_prefix("error:") {
-        return Err(err.trim().to_string());
-    }
+    let written = skill_filename(&returned)?;
     let full = sandbox_path(&cfg.workspace_dir, &written)?;
     let len = std::fs::metadata(&full).map(|m| m.len()).unwrap_or(0);
     // No source count here: the notes document itself states how many
