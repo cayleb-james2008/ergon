@@ -18,3 +18,16 @@
 - Dispositions: C12 staging = B11 (still to do, not a code defect). README staleness = fixed by the B11 replacement README. status.person now consumed by the UI (Working-for label).
 
 - Checks-finder report (ran on the pre-fix frozen copy): dangling-symlink + move-overwrite findings duplicated round 1 (already fixed); NEW: 'error:'-titled document misreported — fixed via 'file:'-prefixed skill returns + regression test; theme-persistence and preference-parser test pins added. Verify fix-round-2 green 28/28.
+
+## Review round 2 (thermonuclear, fresh context) — verdict: NOT DONE
+- F1 CRITICAL: symlink resolver escaped via a link whose target contains another symlink (lexical substitution). FIXED: resolver rewritten as a component queue — every resolution re-enters the walk; containment checked per step; 16-hop cap kept. Pinned by symlink_target_containing_a_symlink_is_rewalked (read+write) + legit-link direction.
+- F2 HIGH: session ids predictable (ms+counter), client-chosen ids pinned (fixation), browser switch still moved the global pointer. FIXED: ids are 16 random bytes hex; unknown/forged ids are never adopted (server issues its own, incl. stale-cookie re-issue on GET /); a known-session switch moves only that session, cookie-less API clients keep global semantics. Pinned by forged_cookies_are_replaced_and_sessions_do_not_leak_globally.
+- F3 HIGH: done-gate failed both directions (verb list flagged inline answers + update_memory/move work; missed synonym lies). FIXED: gate now checks files NAMED in the summary against the workspace + artefact claims against the work ledger (writes, memory, moves). Pinned both directions (done_claim_without_writes…, honest_done_summaries_are_not_flagged).
+- F4 MED: over-limit request silently dropped. FIXED: real 413 with the limit stated; 30s read timeout per connection. Pinned.
+- F5 MED: repeated corruption overwrote .bak; semantic corruption (valid JSON, wrong shape) got no backup; people.json had none. FIXED: first-free-suffix backups (.bak/.bak2/…), shape validation on both stores, people.json included. Pinned.
+- F6 MED: search cap note false at exactly 50; hidden dir counted as 1 skip; single-file path silently empty. FIXED: cap flag set only by a real 51st match; skip note reworded to entries (files or folders); single-file paths searched directly. Pinned.
+- F7 LOW: identity exclusion exact-case only. FIXED: case/space-tolerant identity check. Pinned.
+- F8 LOW: move_file moved a symlink's target. FIXED: source resolved with resolve_final=false — the link itself moves. Pinned.
+- F10: parser mutation gap — already closed by the direct parser pin added in the checks-finder round (standing_preferences_excludes_only_identity_lines) plus the casing pin.
+- Credits held: history_json hygiene, no-key flow, legit symlinks, restart persistence.
+- Verify fix-round-3b: 36/36 green.
