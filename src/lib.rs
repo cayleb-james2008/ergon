@@ -218,28 +218,176 @@ pub fn sandbox_path_resolving(
     Ok(cur)
 }
 
-/// File names mentioned in a piece of text (tokens ending in a known
-/// document extension) — used to check a "done" summary's named
-/// artefacts against the workspace that supposedly holds them.
-pub fn named_files(text: &str) -> Vec<String> {
+/// Candidate file names around every document-extension occurrence
+/// in a piece of text, longest first. Filenames in this product
+/// routinely contain SPACES ("Weekly Report.md", every research file
+/// is "Research - <topic>.md"), so a whitespace tokenizer cannot
+/// represent them — instead each extension occurrence expands
+/// leftwards over filename characters (letters, digits, spaces, and
+/// `. _ - /`), and every word-boundary suffix is a candidate, longest
+/// first: "wrote Weekly Report.md" yields ["wrote Weekly Report.md",
+/// "Weekly Report.md", "Report.md"]. Callers resolve candidates
+/// against the files that actually exist / were written; the longest
+/// match wins. URLs are excluded.
+pub fn mention_candidates(text: &str) -> Vec<Vec<String>> {
     const EXTS: [&str; 8] = ["md", "csv", "txt", "json", "html", "pdf", "docx", "xlsx"];
-    // Tokens are runs of filename characters — every other character
-    // (whitespace, quotes, ':', '!', '?', brackets…) separates, so a
-    // trailing colon or exclamation mark cannot hide a named file.
-    text.split(|c: char| !(c.is_alphanumeric() || matches!(c, '.' | '_' | '-' | '/')))
-        .filter_map(|tok| {
-            let tok = tok.trim_end_matches('.');
-            if tok.contains("://") || tok.starts_with("//") || tok.is_empty() {
-                return None; // a URL is not a workspace file
+    let chars: Vec<char> = text.chars().collect();
+    let mut out: Vec<Vec<String>> = Vec::new();
+    let mut i = 0usize;
+    while i < chars.len() {
+        if chars[i] == '.' {
+            // Does an extension start here, ending on a word boundary?
+            let rest: String = chars[i + 1..].iter().take(4).collect();
+            let ext = EXTS.iter().find(|e| {
+                rest.to_lowercase().starts_with(**e)
+                    && chars
+                        .get(i + 1 + e.len())
+                        .map(|c| !c.is_alphanumeric())
+                        .unwrap_or(true)
+            });
+            if let Some(ext) = ext {
+                let end = i + 1 + ext.len(); // exclusive char index just past the extension
+                // Expand left over filename characters.
+                let mut start = i;
+                while start > 0 {
+                    let c = chars[start - 1];
+                    if c.is_alphanumeric() || matches!(c, ' ' | '.' | '_' | '-' | '/') {
+                        start -= 1;
+                    } else {
+                        break;
+                    }
+                }
+                let raw_full: String = chars[start..end].iter().collect();
+                // A URL is not a workspace file: the expansion abuts
+                // a scheme colon ("https://…") or begins with "//".
+                let is_url = raw_full.starts_with("//")
+                    || raw_full.contains("://")
+                    || (start > 0 && chars[start - 1] == ':');
+                let raw = raw_full.trim().trim_start_matches(['.', '/']).to_string();
+                if !raw.is_empty() && !is_url {
+                    let mut cands = vec![raw.clone()];
+                    for (j, ch) in raw.char_indices() {
+                        if ch == ' ' {
+                            let suffix = raw[j + 1..].trim_start().to_string();
+                            if !suffix.is_empty() {
+                                cands.push(suffix);
+                            }
+                        }
+                    }
+                    out.push(cands);
+                }
+                i = end;
+                continue;
             }
-            let (_, ext) = tok.rsplit_once('.')?;
-            if !tok.starts_with('.') && EXTS.contains(&ext.to_lowercase().as_str()) {
-                Some(tok.to_string())
-            } else {
-                None
+        }
+        i += 1;
+    }
+    out
+}
+
+/// The files a skill result says it produced: for each extension
+/// occurrence, the longest candidate that actually exists in the
+/// workspace (falling back to the longest candidate — the skill's own
+/// claim, checked again by the gate if wrong).
+pub fn extract_written(result_text: &str, workspace: &Path) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for cands in mention_candidates(result_text) {
+        let found = cands
+            .iter()
+            .find(|c| sandbox_path(workspace, c).map(|p| p.exists()).unwrap_or(false))
+            .cloned()
+            .or_else(|| cands.first().cloned());
+        if let Some(f) = found {
+            if !out.contains(&f) {
+                out.push(f);
             }
-        })
-        .collect()
+        }
+    }
+    out
+}
+
+/// Check a "done" summary's file mentions against reality. Returns
+/// (missing, present_but_unwritten): a mention resolves as written
+/// when it (or its basename) matches a file this run wrote; as
+/// present when it exists in the workspace; as explained when it
+/// names a file this run moved away (the honest "renamed a.txt to
+/// b.txt" phrasing); otherwise it is missing.
+pub fn check_mentions(
+    summary: &str,
+    workspace: &Path,
+    written: &[String],
+    consumed: &[String],
+) -> (Vec<String>, Vec<String>) {
+    let basename = |p: &str| {
+        p.rsplit('/')
+            .next()
+            .unwrap_or(p)
+            .to_string()
+    };
+    let written_bases: Vec<String> = written.iter().map(|w| basename(w)).collect();
+    let mut missing: Vec<String> = Vec::new();
+    let mut unwritten: Vec<String> = Vec::new();
+    for cands in mention_candidates(summary) {
+        let shortest = cands.last().cloned().unwrap_or_default();
+        let is_written = cands
+            .iter()
+            .any(|c| written.contains(c) || written_bases.contains(&basename(c)));
+        if is_written {
+            continue;
+        }
+        let present = cands.iter().find(|c| {
+            sandbox_path(workspace, c)
+                .map(|p| p.exists())
+                .unwrap_or(false)
+        });
+        if let Some(found) = present {
+            if !unwritten.contains(found) {
+                unwritten.push(found.clone());
+            }
+            continue;
+        }
+        // Basename presence anywhere in the workspace also counts as
+        // present (a summary naming "Report.md" for docs/Report.md).
+        let base_present = workspace_has_basename(workspace, &basename(&shortest), 0);
+        if base_present {
+            if !unwritten.contains(&shortest) {
+                unwritten.push(shortest);
+            }
+            continue;
+        }
+        let explained = cands
+            .iter()
+            .any(|c| consumed.contains(c))
+            || consumed.iter().any(|c| basename(c) == basename(&shortest));
+        if explained {
+            continue;
+        }
+        if !missing.contains(&shortest) {
+            missing.push(shortest);
+        }
+    }
+    (missing, unwritten)
+}
+
+fn workspace_has_basename(dir: &Path, base: &str, depth: usize) -> bool {
+    if depth > 4 {
+        return false;
+    }
+    let Ok(rd) = std::fs::read_dir(dir) else {
+        return false;
+    };
+    for entry in rd.filter_map(|e| e.ok()) {
+        let name = entry.file_name().to_string_lossy().to_string();
+        if name == base {
+            return true;
+        }
+        if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) && !name.starts_with('.') {
+            if workspace_has_basename(&entry.path(), base, depth + 1) {
+                return true;
+            }
+        }
+    }
+    false
 }
 
 pub fn truncate(s: &str, max_chars: usize) -> String {
@@ -1218,8 +1366,10 @@ pub fn run_agent(
     // The files this run actually wrote — the evidence a "done"
     // summary's named files are checked against. Not a count: WHICH
     // files, so a summary claiming a file this run never touched is
-    // visible as exactly that.
+    // visible as exactly that. `consumed_files` are the move sources:
+    // files this run legitimately made disappear.
     let mut written_files: Vec<String> = Vec::new();
+    let mut consumed_files: Vec<String> = Vec::new();
 
     for _ in 0..STEP_CAP {
         let reply = call_model(cfg, &session, &messages)?;
@@ -1236,28 +1386,21 @@ pub fn run_agent(
             // ledger — WHICH files this run wrote, never the summary's
             // verbs or nouns (verb/noun lists flagged honest inline
             // answers and waved through claims about files the run
-            // never touched):
+            // never touched). Mentions are matched against known
+            // files with spaced-name-aware candidates:
             //  1. a named file that does not exist at all is a hard
             //     discrepancy — caution, in the open;
             //  2. a named file that exists but this run did not write
             //     gets a factual ledger line (what the run DID write),
             //     so a pre-existing file claimed as the deliverable is
             //     visible without accusing an honest input reference.
-            let named = named_files(&summary);
-            let missing_named: Vec<String> = named
-                .iter()
-                .filter(|f| {
-                    sandbox_path(&cfg.workspace_dir, f)
-                        .map(|p| !p.exists())
-                        .unwrap_or(true)
-                })
-                .cloned()
-                .collect();
-            let unwritten_named: Vec<String> = named
-                .iter()
-                .filter(|f| !missing_named.contains(f) && !written_files.contains(f))
-                .cloned()
-                .collect();
+            // Both lines are emitted when both apply.
+            let (missing_named, unwritten_named) = check_mentions(
+                &summary,
+                &cfg.workspace_dir,
+                &written_files,
+                &consumed_files,
+            );
             if !missing_named.is_empty() {
                 store.lock().unwrap().push(
                     thread_id,
@@ -1267,7 +1410,8 @@ pub fn run_agent(
                         missing_named.join(", ")
                     ),
                 );
-            } else if !unwritten_named.is_empty() {
+            }
+            if !unwritten_named.is_empty() {
                 let wrote = if written_files.is_empty() {
                     "no files".to_string()
                 } else {
@@ -1305,11 +1449,20 @@ pub fn run_agent(
                     if let Some(p) = args["to"].as_str() {
                         written_files.push(p.to_string());
                     }
+                    if let Some(p) = args["from"].as_str() {
+                        consumed_files.push(p.to_string());
+                    }
+                }
+                // A memory update is real work product too: the
+                // summary may honestly name memory.md (it lives in the
+                // data dir, not the workspace).
+                "update_memory" => {
+                    written_files.push("memory.md".to_string());
                 }
                 // The Rune skills name the file they produced in
                 // their result text.
                 "write_document" | "make_spreadsheet" | "research" => {
-                    written_files.extend(named_files(&result_text));
+                    written_files.extend(extract_written(&result_text, &cfg.workspace_dir));
                 }
                 _ => {}
             }

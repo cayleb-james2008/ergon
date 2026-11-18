@@ -1534,3 +1534,105 @@ fn identity_bullets_with_fullwidth_colons_are_excluded() {
         vec!["Likes tea".to_string()]
     );
 }
+
+// ---------------------------------------------------------------------------
+// Regression tests from thermonuclear review ROUND 4 — the gate's
+// filename model. Spaced names are this product's DEFAULT artefacts
+// (every research file, any human-titled document), and the old
+// whitespace tokenizer truncated them to their last word.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn done_gate_handles_spaced_filenames_and_full_ledger() {
+    let root = test_root("gate4");
+    let p1 = start_page_server("<html><body><p>FACT</p></body></html>");
+    let u1 = format!("http://127.0.0.1:{p1}/a");
+    let stub = start_stub_model(vec![
+        // 1: a document with a spaced title, honestly named.
+        json!({"tool": "write_document", "args": {"title": "Weekly Report", "sections": ["All good."]}}).to_string(),
+        json!({"done": true, "summary": "Done — wrote Weekly Report.md for you."}).to_string(),
+        // 2: research — its filename always contains spaces.
+        json!({"tool": "research", "args": {"topic": "Local Prices", "urls": [u1]}}).to_string(),
+        json!({"done": true, "summary": "Compiled Research - Local Prices.md from 1 source."}).to_string(),
+        // 3: a memory save honestly named.
+        json!({"tool": "update_memory", "args": {"note": "Likes tea"}}).to_string(),
+        json!({"done": true, "summary": "Saved that to memory.md for you."}).to_string(),
+        // 4: a move honestly named by both ends.
+        json!({"tool": "move_file", "args": {"from": "Weekly Report.md", "to": "Archive Report.md"}}).to_string(),
+        json!({"done": true, "summary": "Renamed Weekly Report.md to Archive Report.md."}).to_string(),
+        // 5: one run, three claims — written, pre-existing, invented.
+        json!({"tool": "write_file", "args": {"path": "A.md", "content": "real"}}).to_string(),
+        json!({"done": true, "summary": "Wrote A.md, B.md and Ghost.md."}).to_string(),
+    ]);
+    let cfg = test_config(&root, Some("k"), format!("http://127.0.0.1:{}/v1", stub.port));
+    std::fs::write(cfg.workspace_dir.join("B.md"), "pre-existing").unwrap();
+    let port = start_app(cfg);
+    let chat = |msg: &str| -> String {
+        let (status, body) = http(
+            port,
+            "POST",
+            "/api/chat",
+            Some(&format!("{{\"message\": \"{msg}\"}}")),
+        );
+        assert_eq!(status, 200, "{body}");
+        let v: Value = serde_json::from_str(&body).unwrap();
+        v["messages"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|m| m["content"].as_str().unwrap_or(""))
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    for (i, msg) in ["write the weekly report", "research prices", "remember tea", "rename it"]
+        .iter()
+        .enumerate()
+    {
+        let t = chat(msg);
+        assert!(
+            !t.contains("treat the summary above with caution") && !t.contains("did not write"),
+            "honest spaced-name summary #{} must be silent: {t}",
+            i + 1
+        );
+    }
+    let t5 = chat("write the trio");
+    assert!(
+        t5.contains("Ghost.md") && t5.contains("not in the workspace"),
+        "the invented file is cautioned: {t5}"
+    );
+    assert!(
+        t5.contains("B.md") && t5.contains("did not write"),
+        "the pre-existing claim gets its ledger line in the SAME run (not suppressed by the caution): {t5}"
+    );
+}
+
+/// Direct pins for the mention matcher: subpath writes named by
+/// basename resolve as written; URLs never become mentions.
+#[test]
+fn mention_matching_edges() {
+    let root = test_root("mentions");
+    let cfg = test_config(&root, Some("k"), "http://127.0.0.1:9/v1".to_string());
+    std::fs::create_dir_all(cfg.workspace_dir.join("docs")).unwrap();
+    std::fs::write(cfg.workspace_dir.join("docs/Report2.md"), "x").unwrap();
+    let (missing, unwritten) = ergon_rs::check_mentions(
+        "Wrote Report2.md in docs",
+        &cfg.workspace_dir,
+        &["docs/Report2.md".to_string()],
+        &[],
+    );
+    assert!(missing.is_empty() && unwritten.is_empty(), "basename of a written subpath resolves: {missing:?} {unwritten:?}");
+    let (missing, unwritten) = ergon_rs::check_mentions(
+        "Per the guide at https://example.com/guide.md — revenue rose.",
+        &cfg.workspace_dir,
+        &[],
+        &[],
+    );
+    assert!(missing.is_empty() && unwritten.is_empty(), "a URL is not a mention: {missing:?} {unwritten:?}");
+    let (missing, _) = ergon_rs::check_mentions(
+        "Done — Report.md: it is ready.",
+        &cfg.workspace_dir,
+        &[],
+        &[],
+    );
+    assert_eq!(missing, vec!["Report.md".to_string()], "a trailing colon cannot hide a name");
+}
