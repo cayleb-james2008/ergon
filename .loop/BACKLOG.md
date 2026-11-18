@@ -2,8 +2,8 @@
 
 | id | what is wrong | how to reproduce | severity | status |
 |---|---|---|---|---|
-| B1 | Threads live in server memory only; a restart loses all task history (breaks C2) | start app, create thread, restart app on same data dir, thread list is empty | high | open |
-| B2 | One global person only: single memory.md, workspace and thread list shared by everyone (breaks C3) | inspect src/lib.rs: Config has one memory_path/workspace_dir; no people anywhere | high | open |
+| B1 | Threads live in server memory only; a restart loses all task history (breaks C2) | start app, create thread, restart app on same data dir, thread list is empty | high | kept |
+| B2 | One global person only: single memory.md, workspace and thread list shared by everyone (breaks C3) | inspect src/lib.rs: Config has one memory_path/workspace_dir; no people anywhere | high | kept |
 | B3 | No spreadsheet tool: the agent cannot produce a spreadsheet file (breaks C4a) | execute_tool has no spreadsheet arm; tool list in system_prompt | medium | open |
 | B4 | No file search tool (breaks C4b) | execute_tool has no search arm | medium | open |
 | B5 | No move/rename tool (breaks C4c) | execute_tool has no move arm | medium | open |
