@@ -47,9 +47,11 @@ pub fn main(title, columns, rows) {
         content = `${content}${join_row(row)}\n`;
     }
     let filename = `${title}.csv`;
+    // Label first: passing `filename` to the host function moves it.
+    let label = `${filename}`;
     let result = host_workspace_write(filename, content);
     if result != "ok" {
         return result;
     }
-    filename
+    label
 }

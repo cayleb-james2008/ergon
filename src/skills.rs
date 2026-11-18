@@ -180,7 +180,6 @@ pub fn make_spreadsheet(
 /// notes document in the workspace. Returns a human-readable tool result.
 pub fn research(cfg: &Config, topic: &str, urls: Vec<String>) -> Result<String, String> {
     let filename = format!("Research - {topic}.md");
-    let n = urls.len();
     let written = run_script(
         cfg,
         RESEARCH_SCRIPT,
@@ -191,14 +190,25 @@ pub fn research(cfg: &Config, topic: &str, urls: Vec<String>) -> Result<String, 
     }
     let full = sandbox_path(&cfg.workspace_dir, &written)?;
     let len = std::fs::metadata(&full).map(|m| m.len()).unwrap_or(0);
-    Ok(format!(
-        "wrote research notes {written} from {n} sources ({len} bytes)"
-    ))
+    // No source count here: the notes document itself states how many
+    // sources actually loaded (counted inside the skill, where the
+    // fetch results are known). A count of attempted URLs would read
+    // as a count of fetched pages.
+    Ok(format!("wrote research notes {written} ({len} bytes)"))
 }
 
 /// Rune skill: append a formatted learned note to memory.md.
 /// Returns a human-readable tool result.
 pub fn update_memory(cfg: &Config, note: &str) -> Result<String, String> {
+    // A learned note becomes ONE bullet in memory.md. Newlines in the
+    // note would let it forge section headings or extra bullets in the
+    // file (structure injection into every future system prompt), so
+    // the note is flattened to a single line before the skill sees it.
+    let note = note.replace(['\n', '\r'], " ");
+    let note = note.trim();
+    if note.is_empty() {
+        return Err("update_memory needs a non-empty note".to_string());
+    }
     let entry = run_script(cfg, UPDATE_MEMORY_SCRIPT, (note.to_string(),))?;
     if let Some(err) = entry.strip_prefix("error:") {
         return Err(err.trim().to_string());

@@ -11,9 +11,12 @@ pub fn main(title, sections) {
     }
     let content = `# ${title}\n\n${body}`;
     let filename = `${title}.md`;
+    // The label is interpolated BEFORE the write: passing `filename` to
+    // the host function moves it, and reading it afterwards is an error.
+    let label = `${filename}`;
     let result = host_workspace_write(filename, content);
     if result != "ok" {
         return result;
     }
-    filename
+    label
 }
