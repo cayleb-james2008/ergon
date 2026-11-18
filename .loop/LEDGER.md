@@ -10,3 +10,4 @@
 | B4 | new test search_and_move_tools_work FAILED (unknown tool) | (same commit) | kept | search_files: recursive, case-insensitive, symlink-safe, capped |
 | B5 | (same test) | (same commit) | kept | move_file with both ends sandbox-checked |
 | B6 | new test research_skill_compiles_notes_from_pages FAILED, then Err("Cannot read, value is M-000000") | (same commit) | kept | research Rune skill; root cause: passing `url` to a host fn moves it in Rune — heading is now built before the fetch (bisected V1–V6 in a scratch harness) |
+| B7 | new test learned_preferences_shape_the_next_task FAILED (no preferences section in prompt) | (B7 commit) | kept | standing_preferences() extracts learned bullets (outside ## About); system prompt carries them as binding instructions; /api/memory shows the person what was learned |
