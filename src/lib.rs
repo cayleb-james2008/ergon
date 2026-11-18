@@ -2258,10 +2258,12 @@ fn read_request(stream: &mut std::net::TcpStream) -> Option<Request> {
     };
     let mut reader = BufReader::new(stream.try_clone().ok()?);
     arm(stream)?;
-    let mut request_line = String::new();
-    if reader.read_line(&mut request_line).ok()? == 0 {
-        return None;
-    }
+    let request_line = match head_line(&mut reader, MAX_HEAD_BYTES) {
+        Ok(Some((0, _))) => return None,
+        Ok(Some((_, line))) => line,
+        Ok(None) => return refuse_head(stream, &mut reader),
+        Err(_) => return None,
+    };
     let mut parts = request_line.split_whitespace();
     let method = parts.next()?.to_string();
     let raw_path = parts.next()?.to_string();
@@ -2276,15 +2278,16 @@ fn read_request(stream: &mut std::net::TcpStream) -> Option<Request> {
     let mut head_bytes = request_line.len();
     loop {
         arm(stream)?;
-        let mut line = String::new();
-        let n = reader.read_line(&mut line).ok()?;
+        let room = MAX_HEAD_BYTES - head_bytes;
+        let (n, line) = match head_line(&mut reader, room) {
+            Ok(Some(read)) => read,
+            Ok(None) => return refuse_head(stream, &mut reader),
+            Err(_) => return None,
+        };
         if n == 0 || line == "\r\n" || line == "\n" {
             break;
         }
         head_bytes += n;
-        if head_bytes > MAX_HEAD_BYTES {
-            return None;
-        }
         let lower = line.to_lowercase();
         if let Some(v) = lower.strip_prefix("content-length:") {
             content_length = v.trim().parse().unwrap_or(0);
@@ -2371,6 +2374,37 @@ fn read_request(stream: &mut std::net::TcpStream) -> Option<Request> {
     })
 }
 
+/// Reads one request-head line of at most `room` bytes, returning its
+/// length and text. `Ok(None)` means the line is longer than `room`:
+/// it is never buffered past the cap (E2).
+fn head_line(reader: &mut BufReader<std::net::TcpStream>, room: usize) -> std::io::Result<Option<(usize, String)>> {
+    let mut buf = Vec::new();
+    let n = (&mut *reader).take(room as u64 + 1).read_until(b'\n', &mut buf)?;
+    if n > room {
+        return Ok(None);
+    }
+    Ok(Some((n, String::from_utf8_lossy(&buf).into_owned())))
+}
+
+/// Answers an over-long request head with 431 at once, then reads and
+/// discards what the client still sends until it closes (or the read
+/// deadline passes) so the answer is not reset by the socket (E2).
+fn refuse_head(stream: &mut std::net::TcpStream, reader: &mut BufReader<std::net::TcpStream>) -> Option<Request> {
+    let body = format!(
+        "{{\"error\": \"request head too large: the limit is {MAX_HEAD_BYTES} bytes\"}}"
+    );
+    let response = format!(
+        "HTTP/1.1 431 Request Header Fields Too Large\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+        body.len()
+    );
+    let _ = stream.write_all(response.as_bytes());
+    let _ = stream.flush();
+    let _ = stream.shutdown(std::net::Shutdown::Write);
+    let mut sink = [0u8; 8192];
+    while matches!(reader.read(&mut sink), Ok(n) if n > 0) {}
+    None
+}
+
 /// Whether a Host header names this machine (DNS-rebinding guard).
 fn local_host(host: &str) -> bool {
     let name = match host.strip_prefix('[') {
@@ -2433,6 +2467,7 @@ fn respond_h(
         405 => "Method Not Allowed",
         413 => "Content Too Large",
         415 => "Unsupported Media Type",
+        431 => "Request Header Fields Too Large",
         500 => "Internal Server Error",
         503 => "Service Unavailable",
         _ => "OK",
