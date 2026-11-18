@@ -597,3 +597,24 @@ fn learned_preferences_shape_the_next_task() {
     assert_eq!(s, 200);
     assert!(b.contains("Prefers summaries with a Key points section first"), "memory view: {b}");
 }
+
+#[test]
+fn shell_has_themes_settings_people_and_memory_view() {
+    let root = test_root("shell2");
+    let cfg = test_config(&root, None, "http://127.0.0.1:9/v1".to_string());
+    let port = start_app(cfg);
+    let (status, body) = http(port, "GET", "/", None);
+    assert_eq!(status, 200);
+    assert!(body.contains("data-theme=\"dark\""), "dark is the default theme: page must open dark");
+    assert!(body.contains("[data-theme=\"light\"]"), "a light theme must be defined");
+    assert!(body.contains("id=\"settings\""), "settings area missing");
+    assert!(body.contains("Appearance"), "appearance toggle missing from settings");
+    assert!(body.contains("ergon-theme"), "theme choice must persist via localStorage");
+    assert!(body.contains("id=\"person-select\""), "person switcher missing");
+    assert!(body.contains("id=\"memory-btn\""), "memory view control missing");
+    assert!(body.contains("id=\"memory-panel\""), "memory panel missing");
+    assert!(body.contains(":focus-visible"), "keyboard focus must be visible");
+    assert!(body.contains("for=\"composer-input\""), "composer input must be labelled");
+    assert!(body.contains("prefers-reduced-motion"), "reduced motion must be respected");
+    assert!(!body.contains("linear-gradient"), "no hue gradients (unslop gate)");
+}
