@@ -106,13 +106,31 @@ fn normalize_absolute(p: &Path) -> PathBuf {
 /// Resolve `rel` inside `root`, rejecting absolute paths and any escape
 /// — including through symlinks. Every file tool goes through here.
 ///
-/// The walk is component by component over the canonicalised root:
-/// whenever the component just added is a symlink (checked with
+/// The walk is a queue of components over the canonicalised root.
+/// Whenever the component just added is a symlink (checked with
 /// `symlink_metadata`, which sees DANGLING links too — `exists()` does
-/// not, and that blindness was a proven escape), the link is resolved
-/// and the resolved path must still be inside the root. A link that
-/// points outside, or a chain longer than 16 hops, is refused.
+/// not, and that blindness was a proven escape), the link's target
+/// components are pushed back onto the FRONT of the queue and walked
+/// like any other components — so a target that itself contains links
+/// or `..` steps is fully re-resolved, never trusted lexically. (A
+/// previous version substituted the target lexically and only checked
+/// the final path; a link to `y/secret` with `y` itself a link outside
+/// walked straight through it.) At every step the current path must be
+/// inside the root or an ancestor of it (the walk may pass through `/`
+/// while resolving an absolute target); the finished path must be
+/// inside the root. Chains are capped at 16 resolutions.
 pub fn sandbox_path(root: &Path, rel: &str) -> Result<PathBuf, String> {
+    sandbox_path_resolving(root, rel, true)
+}
+
+/// Like `sandbox_path`, but the FINAL component is not resolved when
+/// `resolve_final` is false — used by move_file's source, where the
+/// thing being moved is the link itself, not its target.
+pub fn sandbox_path_resolving(
+    root: &Path,
+    rel: &str,
+    resolve_final: bool,
+) -> Result<PathBuf, String> {
     let rel = rel.trim();
     if rel.is_empty() {
         return Ok(root.to_path_buf());
@@ -121,48 +139,103 @@ pub fn sandbox_path(root: &Path, rel: &str) -> Result<PathBuf, String> {
     if p.is_absolute() {
         return Err(format!("absolute paths are not allowed: {rel}"));
     }
+    enum Step {
+        Push(std::ffi::OsString),
+        Pop,
+    }
+    let mut queue: std::collections::VecDeque<Step> = std::collections::VecDeque::new();
+    for comp in p.components() {
+        match comp {
+            Component::Normal(part) => queue.push_back(Step::Push(part.to_os_string())),
+            Component::CurDir => {}
+            _ => return Err(format!("path escapes the workspace: {rel}")),
+        }
+    }
     let canon_root = root
         .canonicalize()
         .unwrap_or_else(|_| normalize_absolute(&root.to_path_buf()));
     let mut cur = canon_root.clone();
-    for comp in p.components() {
-        match comp {
-            Component::Normal(part) => {
-                cur.push(part);
-                let mut hops = 0;
-                while let Ok(md) = cur.symlink_metadata() {
-                    if !md.file_type().is_symlink() {
-                        break;
+    let mut hops = 0usize;
+    while let Some(step) = queue.pop_front() {
+        match step {
+            Step::Pop => {
+                cur.pop();
+            }
+            Step::Push(part) => {
+                cur.push(&part);
+                let is_final = queue.is_empty();
+                if !(is_final && !resolve_final) {
+                    if let Ok(md) = cur.symlink_metadata() {
+                        if md.file_type().is_symlink() {
+                            hops += 1;
+                            if hops > 16 {
+                                return Err(format!("path escapes the workspace: {rel}"));
+                            }
+                            let target = std::fs::read_link(&cur).map_err(|e| {
+                                format!("cannot resolve a link in path {rel}: {e}")
+                            })?;
+                            cur.pop(); // back to the link's parent directory
+                            if target.is_absolute() {
+                                cur = PathBuf::from("/");
+                            }
+                            // The target's components go back on the
+                            // front of the queue, in order, and are
+                            // walked (and re-resolved) like any others.
+                            let mut target_steps: Vec<Step> = Vec::new();
+                            for comp in target.components() {
+                                match comp {
+                                    Component::Normal(part) => {
+                                        target_steps
+                                            .push(Step::Push(part.to_os_string()))
+                                    }
+                                    Component::ParentDir => target_steps.push(Step::Pop),
+                                    Component::CurDir | Component::RootDir => {}
+                                    Component::Prefix(_) => {
+                                        return Err(format!(
+                                            "path escapes the workspace: {rel}"
+                                        ))
+                                    }
+                                }
+                            }
+                            for s in target_steps.into_iter().rev() {
+                                queue.push_front(s);
+                            }
+                        }
                     }
-                    hops += 1;
-                    if hops > 16 {
-                        return Err(format!("path escapes the workspace: {rel}"));
-                    }
-                    let target = std::fs::read_link(&cur)
-                        .map_err(|e| format!("cannot resolve a link in path {rel}: {e}"))?;
-                    let resolved = if target.is_absolute() {
-                        normalize_absolute(&target)
-                    } else {
-                        let base = cur
-                            .parent()
-                            .map(|parent| parent.join(&target))
-                            .unwrap_or(target);
-                        normalize_absolute(&base)
-                    };
-                    if !resolved.starts_with(&canon_root) {
-                        return Err(format!("path escapes the workspace: {rel}"));
-                    }
-                    cur = resolved;
                 }
             }
-            Component::CurDir => {}
-            _ => return Err(format!("path escapes the workspace: {rel}")),
+        }
+        // Containment at every step: inside the root, or an ancestor
+        // of it (legitimate only while an absolute target is being
+        // walked from `/` toward the root).
+        if !cur.starts_with(&canon_root) && !canon_root.starts_with(&cur) {
+            return Err(format!("path escapes the workspace: {rel}"));
         }
     }
     if !cur.starts_with(&canon_root) {
         return Err(format!("path escapes the workspace: {rel}"));
     }
     Ok(cur)
+}
+
+/// File names mentioned in a piece of text (tokens ending in a known
+/// document extension) — used to check a "done" summary's named
+/// artefacts against the workspace that supposedly holds them.
+pub fn named_files(text: &str) -> Vec<String> {
+    const EXTS: [&str; 8] = ["md", "csv", "txt", "json", "html", "pdf", "docx", "xlsx"];
+    text.split(|c: char| {
+        c.is_whitespace() || matches!(c, '"' | '\'' | '`' | '(' | ')' | ',' | ';')
+    })
+    .filter_map(|tok| {
+        let tok = tok.trim_end_matches('.');
+        let (_, ext) = tok.rsplit_once('.')?;
+        if !tok.starts_with('.') && EXTS.contains(&ext.to_lowercase().as_str()) {
+            Some(tok.to_string())
+        } else {
+            None
+        }
+    })
+    .collect()
 }
 
 pub fn truncate(s: &str, max_chars: usize) -> String {
@@ -312,11 +385,47 @@ impl Default for PeopleState {
     }
 }
 
+/// Move a corrupt state file aside to the first free backup name
+/// (`<file>.bak`, then `.bak2`, `.bak3`, …) so its bytes survive for
+/// inspection instead of being overwritten by the next save — or by
+/// the previous backup.
+pub fn backup_corrupt(path: &Path) -> Option<PathBuf> {
+    let mut candidate = path.with_extension("json.bak");
+    let mut n = 2;
+    while candidate.exists() {
+        candidate = path.with_extension(format!("json.bak{n}"));
+        n += 1;
+    }
+    std::fs::rename(path, &candidate).ok()?;
+    eprintln!(
+        "ergon: {} was corrupt; backed up to {} and starting fresh",
+        path.display(),
+        candidate.display()
+    );
+    Some(candidate)
+}
+
 impl PeopleState {
     pub fn load(root: &Config) -> PeopleState {
         let path = root.data_dir.join("people.json");
         if let Ok(text) = std::fs::read_to_string(&path) {
-            if let Ok(v) = serde_json::from_str::<Value>(&text) {
+            let parsed = serde_json::from_str::<Value>(&text);
+            let shape_ok = parsed
+                .as_ref()
+                .map(|v| {
+                    v.get("people")
+                        .map(|p| p.is_array())
+                        .unwrap_or(true)
+                })
+                .unwrap_or(false);
+            if !shape_ok {
+                // Unparseable, or valid JSON of the wrong shape: keep
+                // the bytes as a backup rather than letting the next
+                // save destroy them silently.
+                let _ = backup_corrupt(&path);
+                return PeopleState::default();
+            }
+            if let Ok(v) = parsed {
                 let mut state = PeopleState::default();
                 if let Some(items) = v["people"].as_array() {
                     // Ids from disk are validated, not trusted: an id is
@@ -493,26 +602,23 @@ impl Store {
         };
         if let Ok(text) = std::fs::read_to_string(path) {
             match serde_json::from_str::<Value>(&text) {
-                Ok(v) => {
-                    if let Some(items) = v["threads"].as_array() {
+                Ok(v) => match v["threads"].as_array() {
+                    Some(items) => {
                         for item in items {
                             if let Some(t) = thread_from_json(item) {
                                 store.threads.push(t);
                             }
                         }
                     }
-                }
+                    // Valid JSON, wrong shape (e.g. {"threads": 42}):
+                    // just as corrupt as a syntax error — the next
+                    // save must not destroy these bytes unrecorded.
+                    None => {
+                        let _ = backup_corrupt(path);
+                    }
+                },
                 Err(_) => {
-                    // A corrupt threads.json must not silently become
-                    // an empty store that the next save overwrites —
-                    // keep the original bytes beside it as a backup.
-                    let bak = path.with_extension("json.bak");
-                    let _ = std::fs::rename(path, &bak);
-                    eprintln!(
-                        "ergon: {} was not valid JSON; backed up to {} and starting with an empty history",
-                        path.display(),
-                        bak.display()
-                    );
+                    let _ = backup_corrupt(path);
                 }
             }
         }
@@ -766,13 +872,34 @@ pub fn execute_tool(cfg: &Config, name: &str, args: &Value) -> Result<String, St
             let base = sandbox_path(&cfg.workspace_dir, rel)?;
             let mut matches: Vec<String> = Vec::new();
             let mut stats = SearchStats::default();
-            search_walk(&cfg.workspace_dir, &base, &query, &mut matches, 0, &mut stats);
+            if base.is_file() {
+                // A path naming one file searches that file (walking
+                // it as a directory used to silently find nothing).
+                if let Ok(content) = std::fs::read_to_string(&base) {
+                    for (i, line) in content.lines().enumerate() {
+                        if line.to_lowercase().contains(&query) {
+                            if matches.len() >= 50 {
+                                stats.capped = true;
+                                break;
+                            }
+                            matches.push(format!(
+                                "{}:{}: {}",
+                                rel,
+                                i + 1,
+                                truncate(line.trim(), 120)
+                            ));
+                        }
+                    }
+                }
+            } else {
+                search_walk(&cfg.workspace_dir, &base, &query, &mut matches, 0, &mut stats);
+            }
             // The result must say what it did NOT search: hidden files,
             // files over 512 KB and folders deeper than 6 levels are
             // skipped, and results stop at 50 matches. Presenting a
             // partial search as complete would mislead the agent.
             let skip_note = format!(
-                "({} file(s) were not searched: hidden, over 512 KB, unreadable, or deeper than 6 levels)",
+                "({} entries (files or folders) were not searched: hidden, over 512 KB, unreadable, or deeper than 6 levels)",
                 stats.skipped
             );
             if matches.is_empty() {
@@ -795,7 +922,9 @@ pub fn execute_tool(cfg: &Config, name: &str, args: &Value) -> Result<String, St
         "move_file" => {
             let from = args["from"].as_str().ok_or("move_file needs args.from")?;
             let to = args["to"].as_str().ok_or("move_file needs args.to")?;
-            let src = sandbox_path(&cfg.workspace_dir, from)?;
+            // The source's final component is NOT resolved: moving a
+            // symlink moves the link itself, not its target.
+            let src = sandbox_path_resolving(&cfg.workspace_dir, from, false)?;
             let dst = sandbox_path(&cfg.workspace_dir, to)?;
             if !src.exists() {
                 return Err(format!("move_file: no such file: {from}"));
@@ -880,16 +1009,14 @@ fn search_walk(
         stats.skipped += 1;
         return;
     }
-    if out.len() >= 50 {
-        stats.capped = true;
+    if stats.capped {
         return;
     }
     let Ok(rd) = std::fs::read_dir(base) else { return };
     let mut entries: Vec<_> = rd.filter_map(|e| e.ok()).collect();
     entries.sort_by_key(|e| e.file_name());
     for entry in entries {
-        if out.len() >= 50 {
-            stats.capped = true;
+        if stats.capped {
             return;
         }
         let name = entry.file_name().to_string_lossy().into_owned();
@@ -922,11 +1049,13 @@ fn search_walk(
             .replace('\\', "/");
         for (i, line) in content.lines().enumerate() {
             if line.to_lowercase().contains(query) {
-                out.push(format!("{rel}:{}: {}", i + 1, truncate(line.trim(), 120)));
+                // The cap flag is set only when a 51st match actually
+                // exists — "there may be more" must be true when said.
                 if out.len() >= 50 {
                     stats.capped = true;
                     return;
                 }
+                out.push(format!("{rel}:{}: {}", i + 1, truncate(line.trim(), 120)));
             }
         }
     }
@@ -974,16 +1103,29 @@ pub fn standing_preferences(memory: &str) -> Vec<String> {
         let t = line.trim();
         if let Some(bullet) = t.strip_prefix("- ") {
             let bullet = bullet.trim();
-            if bullet.is_empty()
-                || bullet.starts_with("Name:")
-                || bullet.starts_with("Role:")
-            {
+            if bullet.is_empty() || is_identity_bullet(bullet) {
                 continue;
             }
             prefs.push(bullet.to_string());
         }
     }
     prefs
+}
+
+/// An identity bullet is `Name: …` or `Role: …` in any casing, with
+/// optional space before the colon. The check is spelling-tolerant
+/// because the boundary it guards (identity vs learned facts) must not
+/// depend on exact capitalisation.
+fn is_identity_bullet(bullet: &str) -> bool {
+    let lower = bullet.to_lowercase();
+    for key in ["name", "role"] {
+        if let Some(rest) = lower.strip_prefix(key) {
+            if rest.trim_start().starts_with(':') {
+                return true;
+            }
+        }
+    }
+    false
 }
 
 fn system_prompt(cfg: &Config) -> String {
@@ -1045,10 +1187,18 @@ pub fn run_agent(
     messages.extend(history.iter().cloned());
     messages.push(json!({"role": "user", "content": task}));
     let mut steps: Vec<String> = Vec::new();
-    // Successful file-writing steps this run — the evidence a "done"
-    // summary is checked against before it is presented as finished.
-    let mut successful_writes = 0usize;
-    const WRITE_TOOLS: [&str; 4] = ["write_file", "write_document", "make_spreadsheet", "research"];
+    // Successful work steps this run (writes, memory updates, moves) —
+    // the evidence a "done" summary is checked against before it is
+    // presented as finished.
+    let mut work_steps = 0usize;
+    const WORK_TOOLS: [&str; 6] = [
+        "write_file",
+        "write_document",
+        "make_spreadsheet",
+        "research",
+        "update_memory",
+        "move_file",
+    ];
 
     for _ in 0..STEP_CAP {
         let reply = call_model(cfg, &session, &messages)?;
@@ -1061,19 +1211,41 @@ pub fn run_agent(
                 .lock()
                 .unwrap()
                 .push(thread_id, "assistant", &summary);
-            // Honesty gate: a summary that claims file work with zero
-            // successful writes behind it is flagged in the ledger,
-            // in the open — the summary is the model's words, the
-            // ledger is what actually happened.
+            // Honesty gate, checked against the ledger rather than
+            // the summary's verbs (a verb list flagged honest inline
+            // answers and real memory/move work, and missed lies told
+            // in other words):
+            //  1. a file the summary NAMES must actually exist in the
+            //     workspace;
+            //  2. a summary claiming an artefact (workspace / document
+            //     / spreadsheet / file) needs at least one successful
+            //     work step behind it.
+            let missing_named: Vec<String> = named_files(&summary)
+                .into_iter()
+                .filter(|f| {
+                    sandbox_path(&cfg.workspace_dir, f)
+                        .map(|p| !p.exists())
+                        .unwrap_or(true)
+                })
+                .collect();
             let lower = summary.to_lowercase();
-            let claims_work = ["wrote", "written", "created", "saved", "generated", "produced"]
+            let claims_artefact = ["workspace", "document", "spreadsheet", "file"]
                 .iter()
                 .any(|w| lower.contains(w));
-            if claims_work && successful_writes == 0 {
+            if !missing_named.is_empty() {
                 store.lock().unwrap().push(
                     thread_id,
                     "step",
-                    "Note: the agent reported finished work, but no file was written during this run — treat the summary above with caution.",
+                    &format!(
+                        "Note: the summary names {}, which is not in the workspace — treat the summary above with caution.",
+                        missing_named.join(", ")
+                    ),
+                );
+            } else if claims_artefact && work_steps == 0 {
+                store.lock().unwrap().push(
+                    thread_id,
+                    "step",
+                    "Note: the agent reported finished work, but no file was written or changed during this run — treat the summary above with caution.",
                 );
             }
             return Ok(AgentOutcome { summary, steps });
@@ -1088,8 +1260,8 @@ pub fn run_agent(
             Ok(r) => (r, true),
             Err(e) => (format!("error: {e}"), false),
         };
-        if ok && WRITE_TOOLS.contains(&tool.as_str()) {
-            successful_writes += 1;
+        if ok && WORK_TOOLS.contains(&tool.as_str()) {
+            work_steps += 1;
         }
         let step_line = format!("Tool: {tool}");
         steps.push(step_line.clone());
@@ -1155,13 +1327,39 @@ pub struct AppState {
 
 static SESSION_COUNTER: AtomicU64 = AtomicU64::new(0);
 
+/// Session ids are the only credential a browser presents, so they
+/// must be unguessable: random bytes from the OS, not a timestamp and
+/// a counter (an early version's ids were predictable to within a few
+/// guesses of a victim's visit time).
 fn new_session_id() -> String {
     let n = SESSION_COUNTER.fetch_add(1, Ordering::SeqCst);
-    let millis = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis())
-        .unwrap_or(0);
-    format!("s{millis}-{n}")
+    let mut bytes = [0u8; 16];
+    let filled = std::fs::File::open("/dev/urandom")
+        .and_then(|mut f| std::io::Read::read_exact(&mut f, &mut bytes))
+        .is_ok();
+    if filled {
+        let hex: String = bytes.iter().map(|b| format!("{b:02x}")).collect();
+        format!("s{hex}-{n}")
+    } else {
+        // No OS randomness available: fall back to a wide mix of
+        // time, pid and counter — still far harder to bracket than a
+        // bare millisecond timestamp.
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        format!("s{:x}-{:x}-{n}", nanos, std::process::id())
+    }
+}
+
+/// Whether this session id is one the server actually issued. A
+/// client-chosen id is never honoured (session fixation): unknown ids
+/// are treated as "no session" and replaced with a fresh server id.
+fn session_known(state: &AppState, session: &Option<String>) -> bool {
+    match session {
+        Some(sid) => state.sessions.lock().unwrap().contains_key(sid),
+        None => false,
+    }
 }
 
 /// The person this request acts for: the session's person when the
@@ -1264,6 +1462,17 @@ fn read_request(stream: &mut std::net::TcpStream) -> Option<Request> {
         }
     }
     if content_length > MAX_BODY_BYTES {
+        // A real 413, not a silent drop: the caller learns the limit
+        // instead of staring at a dead connection.
+        let body = format!(
+            "{{\"error\": \"request body too large: the limit is {MAX_BODY_BYTES} bytes\"}}"
+        );
+        let response = format!(
+            "HTTP/1.1 413 Content Too Large\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+            body.len()
+        );
+        let _ = stream.write_all(response.as_bytes());
+        let _ = stream.flush();
         return None;
     }
     let mut body = vec![0u8; content_length];
@@ -1323,6 +1532,8 @@ fn respond_json(stream: &mut std::net::TcpStream, status: u16, v: &Value) -> std
 }
 
 fn handle_connection(mut stream: std::net::TcpStream, state: &AppState) -> std::io::Result<()> {
+    // A stalled client must not hold its connection thread forever.
+    let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(30)));
     let req = match read_request(&mut stream) {
         Some(r) => r,
         None => return Ok(()),
@@ -1334,10 +1545,11 @@ fn handle_connection(mut stream: std::net::TcpStream, state: &AppState) -> std::
     let runtime = runtime_for(state, &person);
     match (req.method.as_str(), req.path.as_str()) {
         ("GET", "/") => {
-            // First visit: issue a session cookie pinned to the current
+            // First visit (or an unknown/forged/stale cookie): issue a
+            // fresh server-generated session pinned to the current
             // active person, so this browser keeps its own person even
             // if another client switches the global one.
-            if req.session.is_none() {
+            if !session_known(state, &req.session) {
                 let sid = new_session_id();
                 state
                     .sessions
@@ -1399,7 +1611,7 @@ fn handle_connection(mut stream: std::net::TcpStream, state: &AppState) -> std::
             let parsed: Value = serde_json::from_slice(&req.body).unwrap_or(Value::Null);
             let id = parsed["id"].as_str().unwrap_or("").to_string();
             {
-                let mut people = state.people.lock().unwrap();
+                let people = state.people.lock().unwrap();
                 if !people.people.iter().any(|p| p.id == id) {
                     return respond_json(
                         &mut stream,
@@ -1407,23 +1619,29 @@ fn handle_connection(mut stream: std::net::TcpStream, state: &AppState) -> std::
                         &json!({"error": "person not found"}),
                     );
                 }
-                people.active = id.clone();
-                people.save(root_cfg);
             }
-            // Pin the caller's session (issuing one if needed) so the
-            // switch applies to this browser, not to every client.
+            // Who does this switch move? A browser with a known session
+            // moves ONLY its own session — never the global pointer
+            // every other client inherits. A cookie-less API client
+            // moves the global default (and is issued a session pinned
+            // to it). A forged/unknown cookie is treated as no cookie:
+            // the server issues its own id, never the client's.
             let mut set_cookie: Option<String> = None;
-            let sid = match &req.session {
-                Some(s) => s.clone(),
-                None => {
-                    let s = new_session_id();
-                    set_cookie = Some(format!(
-                        "ergon_session={s}; Path=/; HttpOnly; SameSite=Lax"
-                    ));
-                    s
+            if session_known(state, &req.session) {
+                let sid = req.session.clone().unwrap();
+                state.sessions.lock().unwrap().insert(sid, id.clone());
+            } else {
+                {
+                    let mut people = state.people.lock().unwrap();
+                    people.active = id.clone();
+                    people.save(root_cfg);
                 }
-            };
-            state.sessions.lock().unwrap().insert(sid, id.clone());
+                let sid = new_session_id();
+                state.sessions.lock().unwrap().insert(sid.clone(), id.clone());
+                set_cookie = Some(format!(
+                    "ergon_session={sid}; Path=/; HttpOnly; SameSite=Lax"
+                ));
+            }
             let people = state.people.lock().unwrap();
             let mut v = people.to_json();
             v["active"] = json!(id);

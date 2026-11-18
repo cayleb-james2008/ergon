@@ -956,11 +956,13 @@ fn thread_history_reaches_the_model() {
 
 /// Defect: a "done" summary was accepted with zero verification — a
 /// model claiming file work it never did was presented as finished.
+/// The gate checks the summary's NAMED files against the workspace
+/// (and artefact claims against the work ledger), not its verbs.
 #[test]
 fn done_claim_without_writes_is_flagged_in_the_ledger() {
     let root = test_root("gate");
     let stub = start_stub_model(vec![
-        "{\"done\": true, \"summary\": \"I wrote the report and saved it for you.\"}".to_string(),
+        "{\"done\": true, \"summary\": \"The report is ready in your workspace as Report.md — all compiled and delivered.\"}".to_string(),
     ]);
     let cfg = test_config(&root, Some("k"), format!("http://127.0.0.1:{}/v1", stub.port));
     let port = start_app(cfg);
@@ -975,9 +977,45 @@ fn done_claim_without_writes_is_flagged_in_the_ledger() {
         .collect::<Vec<_>>()
         .join("\n");
     assert!(
-        all.contains("no file was written during this run"),
-        "an unverified work claim must be flagged in the open: {all}"
+        all.contains("Report.md") && all.contains("not in the workspace"),
+        "a named-but-missing file must be flagged in the open: {all}"
     );
+}
+
+/// Round-2 F3, the other direction: honest inline answers and real
+/// memory work must NOT be flagged (the old verb-list gate flagged
+/// both).
+#[test]
+fn honest_done_summaries_are_not_flagged() {
+    let root = test_root("gate2");
+    let stub = start_stub_model(vec![
+        "{\"done\": true, \"summary\": \"I created a summary of your notes: revenue rose 10 percent last quarter.\"}".to_string(),
+        "{\"tool\": \"update_memory\", \"args\": {\"note\": \"Likes tea\"}}".to_string(),
+        "{\"done\": true, \"summary\": \"I saved your preference for tea.\"}".to_string(),
+    ]);
+    let cfg = test_config(&root, Some("k"), format!("http://127.0.0.1:{}/v1", stub.port));
+    let port = start_app(cfg);
+    for msg in ["summarise my notes", "remember the tea"] {
+        let (status, body) = http(
+            port,
+            "POST",
+            "/api/chat",
+            Some(&format!("{{\"message\": \"{msg}\"}}")),
+        );
+        assert_eq!(status, 200);
+        let v: Value = serde_json::from_str(&body).unwrap();
+        let all: String = v["messages"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|m| m["content"].as_str().unwrap_or(""))
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            !all.contains("treat the summary above with caution"),
+            "honest summaries must not be flagged: {all}"
+        );
+    }
 }
 
 /// Defect: a corrupt threads.json silently became an empty store and
@@ -1131,4 +1169,213 @@ fn standing_preferences_excludes_only_identity_lines() {
         vec!["Prefers oat milk".to_string()]
     );
     assert!(ergon_rs::standing_preferences("# Memory\n\n").is_empty());
+}
+
+// ---------------------------------------------------------------------------
+// Regression tests from thermonuclear review ROUND 2.
+// ---------------------------------------------------------------------------
+
+/// Round-2 F1 (CRITICAL): the round-1 resolver substituted a symlink's
+/// target lexically — a link whose target itself contained a symlink
+/// component escaped. The resolver now re-walks every resolution.
+#[cfg(unix)]
+#[test]
+fn symlink_target_containing_a_symlink_is_rewalked() {
+    let root = test_root("nestedlink");
+    let cfg = test_config(&root, Some("k"), "http://127.0.0.1:9/v1".to_string());
+    let outside = root.join("outside");
+    std::fs::create_dir_all(&outside).unwrap();
+    std::fs::write(outside.join("secret.txt"), "OUTSIDE-SECRET").unwrap();
+    std::os::unix::fs::symlink(&outside, cfg.workspace_dir.join("y")).unwrap();
+    std::os::unix::fs::symlink("y/secret.txt", cfg.workspace_dir.join("x")).unwrap();
+    let read = ergon_rs::execute_tool(&cfg, "read_file", &json!({"path": "x"}));
+    assert!(read.is_err(), "escape via nested link read must be refused: {read:?}");
+    std::os::unix::fs::symlink("y/pwned.txt", cfg.workspace_dir.join("w")).unwrap();
+    let write = ergon_rs::execute_tool(
+        &cfg,
+        "write_file",
+        &json!({"path": "w", "content": "PWNED"}),
+    );
+    assert!(write.is_err(), "escape via nested link write must be refused: {write:?}");
+    assert!(!outside.join("pwned.txt").exists());
+    // And legitimate in-workspace links keep working both directions.
+    std::fs::write(cfg.workspace_dir.join("real.txt"), "inside").unwrap();
+    std::os::unix::fs::symlink("real.txt", cfg.workspace_dir.join("alias.txt")).unwrap();
+    let ok = ergon_rs::execute_tool(&cfg, "read_file", &json!({"path": "alias.txt"})).unwrap();
+    assert!(ok.contains("inside"), "legit links still resolve: {ok}");
+}
+
+/// Round-2 F8: moving a symlink moved its TARGET (the resolver
+/// resolved the source). The link itself must move.
+#[cfg(unix)]
+#[test]
+fn move_file_moves_the_symlink_not_its_target() {
+    let root = test_root("movelink");
+    let cfg = test_config(&root, Some("k"), "http://127.0.0.1:9/v1".to_string());
+    std::fs::write(cfg.workspace_dir.join("real.txt"), "the real file").unwrap();
+    std::os::unix::fs::symlink("real.txt", cfg.workspace_dir.join("link.txt")).unwrap();
+    let out = ergon_rs::execute_tool(
+        &cfg,
+        "move_file",
+        &json!({"from": "link.txt", "to": "moved.txt"}),
+    )
+    .unwrap();
+    assert!(out.contains("moved link.txt to moved.txt"), "got: {out}");
+    assert!(cfg.workspace_dir.join("real.txt").exists(), "the target must survive");
+    let md = std::fs::symlink_metadata(cfg.workspace_dir.join("moved.txt")).unwrap();
+    assert!(md.file_type().is_symlink(), "the moved thing is the link itself");
+}
+
+/// Round-2 F2: session ids were predictable and client-chosen ids
+/// were pinned (fixation); a browser's switch also still moved the
+/// global pointer cookie-less clients read.
+#[test]
+fn forged_cookies_are_replaced_and_sessions_do_not_leak_globally() {
+    let root = test_root("forge");
+    let cfg = test_config(&root, None, "http://127.0.0.1:9/v1".to_string());
+    let port = start_app(cfg);
+    let (status, body) = http(port, "POST", "/api/people", Some("{\"name\": \"Ada\", \"role\": \"Ops\"}"));
+    assert_eq!(status, 201);
+    let ada: Value = serde_json::from_str(&body).unwrap();
+    let ada_id = ada["id"].as_str().unwrap().to_string();
+    let (status, body) = http(port, "POST", "/api/people", Some("{\"name\": \"Grace\", \"role\": \"Eng\"}"));
+    assert_eq!(status, 201);
+    let grace: Value = serde_json::from_str(&body).unwrap();
+    let grace_id = grace["id"].as_str().unwrap().to_string();
+    // Forged cookie on the switch: the server must not adopt the id.
+    let (_, raw, _) = http_cookie(
+        port,
+        "POST",
+        "/api/active-person",
+        Some(&format!("{{\"id\": \"{ada_id}\"}}")),
+        Some("ergon_session=attacker-chosen-12345"),
+    );
+    let issued = session_cookie(&raw);
+    assert!(
+        !issued.contains("attacker-chosen-12345"),
+        "the server must issue its own id, not adopt the forgery: {issued}"
+    );
+    assert!(
+        issued.len() >= 40,
+        "session ids must be long random values, got: {issued}"
+    );
+    // The forged-cookie call was cookie-less-equivalent: it set the
+    // global default to Ada. Now a real browser session switches to
+    // Grace — the global must NOT move.
+    let (_, raw_a, _) = http_cookie(port, "GET", "/", None, None);
+    let cookie_a = session_cookie(&raw_a);
+    let (status, _, _) = http_cookie(
+        port,
+        "POST",
+        "/api/active-person",
+        Some(&format!("{{\"id\": \"{grace_id}\"}}")),
+        Some(&cookie_a),
+    );
+    assert_eq!(status, 200);
+    let (_, _, body_b) = http_cookie(port, "GET", "/api/people", None, Some(&cookie_a));
+    let vb: Value = serde_json::from_str(&body_b).unwrap();
+    assert_eq!(vb["active"], grace_id, "the browser itself is on Grace");
+    let (_, body) = http(port, "GET", "/api/people", None);
+    let v: Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(
+        v["active"], ada_id,
+        "cookie-less clients must still see the global default (Ada), not the browser's switch"
+    );
+    // An unknown cookie on GET / is replaced with a fresh server id.
+    let (_, raw2, _) = http_cookie(port, "GET", "/", None, Some("ergon_session=stale-id"));
+    let reissued = session_cookie(&raw2);
+    assert!(!reissued.contains("stale-id"), "stale cookies are re-issued: {reissued}");
+}
+
+/// Round-2 F4: an over-limit request got a silent connection drop.
+/// It now gets a real 413 with the limit stated.
+#[test]
+fn oversized_request_gets_a_413_response() {
+    let root = test_root("toobig");
+    let cfg = test_config(&root, None, "http://127.0.0.1:9/v1".to_string());
+    let port = start_app(cfg);
+    let mut stream = TcpStream::connect(("127.0.0.1", port)).unwrap();
+    stream
+        .write_all(b"POST /api/chat HTTP/1.1\r\nHost: x\r\nContent-Length: 2097152\r\n\r\n")
+        .unwrap();
+    let mut raw = String::new();
+    stream.read_to_string(&mut raw).unwrap();
+    assert!(raw.starts_with("HTTP/1.1 413"), "expected a real 413, got: {raw}");
+    assert!(raw.contains("too large"), "the 413 explains the limit: {raw}");
+}
+
+/// Round-2 F5: a second corruption overwrote the first backup, and
+/// semantic corruption (valid JSON, wrong shape) got no backup at all.
+#[test]
+fn repeated_and_semantic_corruption_keep_every_backup() {
+    let root = test_root("corrupt2");
+    let cfg = test_config(&root, None, "http://127.0.0.1:9/v1".to_string());
+    let data_dir = cfg.data_dir.clone();
+    let threads_path = data_dir.join("threads.json");
+    std::fs::write(&threads_path, "GARBAGE-ONE").unwrap();
+    let port = start_app(cfg);
+    let (status, _) = http(port, "GET", "/api/threads", None);
+    assert_eq!(status, 200);
+    // Second corruption (fresh load via a new server instance is not
+    // needed: Store::load runs at startup; simulate by direct call).
+    std::fs::write(&threads_path, "GARBAGE-TWO").unwrap();
+    let _ = ergon_rs::Store::load(&threads_path);
+    assert_eq!(
+        std::fs::read_to_string(data_dir.join("threads.json.bak")).unwrap(),
+        "GARBAGE-ONE",
+        "the first backup must survive"
+    );
+    assert_eq!(
+        std::fs::read_to_string(data_dir.join("threads.json.bak2")).unwrap(),
+        "GARBAGE-TWO",
+        "the second corruption gets its own backup"
+    );
+    std::fs::write(&threads_path, "{\"threads\": 42}").unwrap();
+    let _ = ergon_rs::Store::load(&threads_path);
+    assert_eq!(
+        std::fs::read_to_string(data_dir.join("threads.json.bak3")).unwrap(),
+        "{\"threads\": 42}",
+        "semantic corruption is backed up too"
+    );
+}
+
+/// Round-2 F6: "(stopped at 50 — there may be more)" printed when
+/// there were EXACTLY 50 matches; and a search path naming a single
+/// file silently found nothing.
+#[test]
+fn search_cap_note_is_exact_and_single_files_search() {
+    let root = test_root("searchexact");
+    let cfg = test_config(&root, Some("k"), "http://127.0.0.1:9/v1".to_string());
+    for i in 0..50 {
+        std::fs::write(cfg.workspace_dir.join(format!("f{i:02}.txt")), "needle here").unwrap();
+    }
+    let out = ergon_rs::execute_tool(&cfg, "search_files", &json!({"query": "needle"})).unwrap();
+    assert!(
+        !out.contains("stopped at 50"),
+        "exactly 50 matches must not claim there may be more:\n{out}"
+    );
+    std::fs::write(cfg.workspace_dir.join("f50.txt"), "needle here").unwrap();
+    let out = ergon_rs::execute_tool(&cfg, "search_files", &json!({"query": "needle"})).unwrap();
+    assert!(
+        out.contains("stopped at 50 matches"),
+        "a 51st match must trip the note:\n{out}"
+    );
+    let one = ergon_rs::execute_tool(
+        &cfg,
+        "search_files",
+        &json!({"query": "needle", "path": "f50.txt"}),
+    )
+    .unwrap();
+    assert!(one.contains("f50.txt:1"), "a single-file path is searched directly:\n{one}");
+}
+
+/// Round-2 F7: the identity/preference boundary was exact-case —
+/// "- NAME: …" became a "preference" in the prompt.
+#[test]
+fn identity_bullets_are_excluded_in_any_casing() {
+    let memory = "# Memory\n\n- NAME: Forged Admin\n- Role : Boss\n- name: Also Forged\n- Likes tea\n";
+    assert_eq!(
+        ergon_rs::standing_preferences(memory),
+        vec!["Likes tea".to_string()]
+    );
 }
