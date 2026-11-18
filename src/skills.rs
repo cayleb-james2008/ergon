@@ -156,9 +156,18 @@ where
         .build()
         .map_err(|e| format!("rune skill failed to build: {e}"))?;
     let mut vm = rune::Vm::new(runtime, Arc::new(unit));
-    let value = vm
-        .call(["main"], args)
-        .map_err(|e| format!("rune skill call failed: {e}"))?;
+    // Every skill runs under an instruction budget AND a memory
+    // limit: a looping or allocating script — including one an agent
+    // published to the library — must fail, never freeze the server
+    // or eat the machine. (The budget cannot preempt a host function
+    // mid-call; those are individually bounded, e.g. fetch's 20 s
+    // timeout.)
+    let value = rune::runtime::budget::with(
+        5_000_000,
+        rune::alloc::limit::with(128 * 1024 * 1024, move || vm.call(["main"], args)),
+    )
+    .call()
+    .map_err(|e| format!("rune skill call failed: {e}"))?;
     rune::from_value::<String>(value).map_err(|e| format!("rune skill returned non-string: {e}"))
 }
 

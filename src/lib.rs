@@ -1207,11 +1207,17 @@ pub fn execute_tool_full(
                     item.name
                 ));
             }
-            let mut suite = library::load_suite(&cfg.data_dir);
-            if suite.install(id) {
-                library::save_suite(&cfg.data_dir, &suite);
+            let installed_now = library::with_suite_lock(|| {
+                let mut suite = library::load_suite(&cfg.data_dir);
+                let changed = suite.install(id);
+                if changed {
+                    library::save_suite(&cfg.data_dir, &suite);
+                }
+                changed
+            });
+            if installed_now {
                 Ok(format!(
-                    "installed '{}' ({}) into your suite — it is available from your next task on",
+                    "installed '{}' ({}) into your suite — you can call it in this task too, and it stays in your suite for future tasks",
                     item.name, item.kind
                 ))
             } else {
@@ -1257,7 +1263,10 @@ pub fn execute_tool_full(
             // it for real. The agent is told plainly that it is
             // parked, so its summary cannot claim a deletion that has
             // not happened.
-            let full = sandbox_path(&cfg.workspace_dir, rel)?;
+            // The final component is not resolved: a symlink to a
+            // file is itself a file that exists and can be parked
+            // for deletion (of the link, never its target).
+            let full = sandbox_path_resolving(&cfg.workspace_dir, rel, false)?;
             if full.symlink_metadata().is_err() {
                 return Err(format!("delete_file: no such file: {rel}"));
             }
@@ -1287,21 +1296,33 @@ pub fn execute_tool_full(
             // An installed library skill, called by its item id.
             let suite = library::load_suite(&cfg.data_dir);
             if suite.installed.iter().any(|i| i == name) {
-                let lib = ctx.library.lock().unwrap();
-                if let Some(item) = lib.get(name) {
-                    if item.kind == "skill" && !item.builtin {
-                        let values: Vec<String> = item
-                            .params
-                            .iter()
-                            .map(|p| {
-                                args[p.as_str()]
-                                    .as_str()
-                                    .map(|s| s.to_string())
-                                    .unwrap_or_default()
-                            })
-                            .collect();
-                        return skills::run_library_skill(cfg, &item.source, &values);
-                    }
+                // Clone what the run needs and DROP the library lock
+                // before executing: a skill can run for seconds (and
+                // fetch over the network), and holding the
+                // company-wide mutex across it froze every
+                // library-dependent surface for its whole duration.
+                let runnable = {
+                    let lib = ctx.library.lock().unwrap();
+                    lib.get(name).and_then(|item| {
+                        if item.kind == "skill" && !item.builtin {
+                            let values: Vec<String> = item
+                                .params
+                                .iter()
+                                .map(|p| {
+                                    args[p.as_str()]
+                                        .as_str()
+                                        .map(|s| s.to_string())
+                                        .unwrap_or_default()
+                                })
+                                .collect();
+                            Some((item.source.clone(), values))
+                        } else {
+                            None
+                        }
+                    })
+                };
+                if let Some((source, values)) = runnable {
+                    return skills::run_library_skill(cfg, &source, &values);
                 }
             }
             execute_tool(cfg, name, args)
@@ -1697,16 +1718,37 @@ fn run_loop(
     step_cap: usize,
     label: Option<&str>,
     ledger: &mut WriteLedger,
-    dynamic_skills: &std::collections::HashSet<String>,
+    dynamic_skills: &mut std::collections::HashSet<String>,
     suite_items: &[library::LibraryItem],
+    budget: &mut usize,
+    session_tag: &str,
 ) -> Result<(String, Vec<String>), String> {
-    let session = format!("ergon-{thread_id}");
+    // Subagent runs get their own provider session: if the provider
+    // keys conversation state on the session header, the two
+    // personas must not interleave in one server-side conversation.
+    let session = if session_tag.is_empty() {
+        format!("ergon-{thread_id}")
+    } else {
+        format!("ergon-{thread_id}-{session_tag}")
+    };
     let mut messages: Vec<Value> = vec![json!({"role": "system", "content": system})];
     messages.extend(history.iter().cloned());
     messages.push(json!({"role": "user", "content": task}));
     let mut steps: Vec<String> = Vec::new();
 
-    for _ in 0..step_cap {
+    // Two caps, both enforced: this loop's own step cap, and the
+    // whole run's shared model-call budget. A delegate call used to
+    // cost the parent 1 step and buy a fresh 12 — delegation
+    // multiplied the cap (24 delegations ≈ 312 model calls in one
+    // task). Now every call, parent or subagent, draws from the
+    // same budget of STEP_CAP.
+    let mut local_steps = 0usize;
+    loop {
+        if local_steps >= step_cap || *budget >= STEP_CAP {
+            break;
+        }
+        local_steps += 1;
+        *budget += 1;
         let reply = call_model(cfg, &session, &messages)?;
         if reply["done"].as_bool() == Some(true) {
             let summary = reply["summary"]
@@ -1730,8 +1772,28 @@ fn run_loop(
             } else {
                 run_delegation(
                     cfg, ctx, store, thread_id, &args, ledger, dynamic_skills, suite_items,
+                    budget,
                 )
             }
+        } else if !allow_delegate
+            && matches!(
+                tool.as_str(),
+                "publish_skill" | "install_item" | "delete_file" | "flag_decision"
+                    | "browse_library"
+            )
+        {
+            // The subagent toolset restriction is enforced HERE, not
+            // just written in its prompt: a subagent must not publish
+            // to the company library, change the suite, or park
+            // decisions in the person's inbox under the main agent's
+            // authorship. (Deletion itself was never reachable from
+            // any loop — it only executes on human approval.)
+            (
+                format!(
+                    "error: subagents cannot use {tool} — that belongs to the main agent. Do this part with your own tools, or say in your summary that the main agent should do it."
+                ),
+                false,
+            )
         } else {
             // Consequential tools carry the originating thread, so a
             // settled decision can report back into it.
@@ -1745,6 +1807,15 @@ fn run_loop(
         };
         if ok {
             credit_writes(ledger, cfg, &tool, &args, &result_text, dynamic_skills);
+            // A skill installed mid-run is callable from the very
+            // next step (the dispatcher re-reads the suite) — so the
+            // honesty gate must credit it too, or an honest run gets
+            // a false "this run did not write" note.
+            if tool == "install_item" {
+                if let Some(id) = args["item_id"].as_str() {
+                    dynamic_skills.insert(id.to_string());
+                }
+            }
         }
         let step_line = match label {
             Some(l) => format!("Tool: {tool} (via {l})"),
@@ -1762,9 +1833,15 @@ fn run_loop(
             "content": format!("Tool result for {tool}: {}", truncate(&result_text, 6000)),
         }));
     }
-    Err(format!(
-        "agent stopped after {step_cap} steps without finishing — the task may be blocked or too large for one run."
-    ))
+    Err(if *budget >= STEP_CAP {
+        format!(
+            "agent stopped after {STEP_CAP} steps (the run's total budget, shared with its subagents) without finishing — the task may be blocked or too large for one run."
+        )
+    } else {
+        format!(
+            "agent stopped after {step_cap} steps without finishing — the task may be blocked or too large for one run."
+        )
+    })
 }
 
 /// The delegate tool: run one suite subagent on a focused sub-task.
@@ -1779,8 +1856,9 @@ fn run_delegation(
     thread_id: &str,
     args: &Value,
     ledger: &mut WriteLedger,
-    dynamic_skills: &std::collections::HashSet<String>,
+    dynamic_skills: &mut std::collections::HashSet<String>,
     suite_items: &[library::LibraryItem],
+    budget: &mut usize,
 ) -> (String, bool) {
     let sub_id = args["subagent"].as_str().unwrap_or("");
     let task = args["task"].as_str().unwrap_or("");
@@ -1822,6 +1900,8 @@ fn run_delegation(
         ledger,
         dynamic_skills,
         suite_items,
+        budget,
+        &profile.id,
     ) {
         Ok((summary, _)) => (format!("{} reports: {}", profile.name, summary), true),
         Err(e) => (format!("error: subagent {} failed: {e}", profile.name), false),
@@ -1848,14 +1928,15 @@ pub fn run_agent(
         let lib = ctx.library.lock().unwrap();
         suite.resolved(&lib)
     };
-    let dynamic_skills: std::collections::HashSet<String> = suite_items
+    let mut dynamic_skills: std::collections::HashSet<String> = suite_items
         .iter()
         .filter(|i| i.kind == "skill" && !i.builtin)
         .map(|i| i.id.clone())
         .collect();
     let system = system_prompt(cfg, &suite_items);
     let mut ledger = WriteLedger::default();
-    let (summary, steps) = run_loop(
+    let mut budget = 0usize;
+    let (summary, steps) = match run_loop(
         cfg,
         ctx,
         store,
@@ -1867,9 +1948,28 @@ pub fn run_agent(
         STEP_CAP,
         None,
         &mut ledger,
-        &dynamic_skills,
+        &mut dynamic_skills,
         &suite_items,
-    )?;
+        &mut budget,
+        "",
+    ) {
+        Ok(v) => v,
+        Err(e) => {
+            // A run that stopped early still did visible things
+            // (files written before the cap). Record it as
+            // unfinished work — Today shows it; the brief and the
+            // offers engine count only finished work.
+            records::append_work(
+                cfg,
+                task,
+                &format!("Did not finish — {e}"),
+                &ledger.written,
+                thread_id,
+                false,
+            );
+            return Err(e);
+        }
+    };
     store
         .lock()
         .unwrap()
@@ -1919,7 +2019,7 @@ pub fn run_agent(
     }
     // The work log + offers scan: the records the rest of the
     // product (brief, graph, today, offers) is built from.
-    records::append_work(cfg, task, &summary, &ledger.written, thread_id);
+    records::append_work(cfg, task, &summary, &ledger.written, thread_id, true);
     {
         let lib = ctx.library.lock().unwrap();
         let suite_now = library::load_suite(&cfg.data_dir);
@@ -2466,9 +2566,11 @@ fn handle_connection(mut stream: std::net::TcpStream, state: &AppState) -> std::
                     &json!({"error": "that item is built into every agent already"}),
                 ),
                 Some(item) => {
-                    let mut suite = library::load_suite(&runtime.cfg.data_dir);
-                    suite.install(&item.id);
-                    library::save_suite(&runtime.cfg.data_dir, &suite);
+                    library::with_suite_lock(|| {
+                        let mut suite = library::load_suite(&runtime.cfg.data_dir);
+                        suite.install(&item.id);
+                        library::save_suite(&runtime.cfg.data_dir, &suite);
+                    });
                     respond_json(&mut stream, 200, &json!({"installed": item.id}))
                 }
             }
@@ -2476,9 +2578,11 @@ fn handle_connection(mut stream: std::net::TcpStream, state: &AppState) -> std::
         ("POST", "/api/suite/remove") => {
             let parsed: Value = serde_json::from_slice(&req.body).unwrap_or(Value::Null);
             let id = parsed["item_id"].as_str().unwrap_or("");
-            let mut suite = library::load_suite(&runtime.cfg.data_dir);
-            suite.installed.retain(|i| i != id);
-            library::save_suite(&runtime.cfg.data_dir, &suite);
+            library::with_suite_lock(|| {
+                let mut suite = library::load_suite(&runtime.cfg.data_dir);
+                suite.installed.retain(|i| i != id);
+                library::save_suite(&runtime.cfg.data_dir, &suite);
+            });
             respond_json(&mut stream, 200, &json!({"removed": id}))
         }
         ("GET", "/api/decisions") => {
@@ -2487,21 +2591,19 @@ fn handle_connection(mut stream: std::net::TcpStream, state: &AppState) -> std::
         }
         ("GET", "/api/offers") => {
             // Refresh first, so the inbox shows what the work log has
-            // newly earned since the last look.
-            let offers = {
-                let lib = state.library.lock().unwrap();
-                let suite = library::load_suite(&runtime.cfg.data_dir);
-                records::refresh_offers(&runtime.cfg, &suite, &lib)
-            };
+            // newly earned since the last look. The library is cloned
+            // and the lock dropped before the scan does file I/O —
+            // the mutex guards the in-memory items, nothing slower.
+            let lib = state.library.lock().unwrap().clone();
+            let suite = library::load_suite(&runtime.cfg.data_dir);
+            let offers = records::refresh_offers(&runtime.cfg, &suite, &lib);
             respond_json(&mut stream, 200, &json!({"offers": offers}))
         }
         ("GET", "/api/brief") => {
-            let brief = {
-                let lib = state.library.lock().unwrap();
-                let suite = library::load_suite(&runtime.cfg.data_dir);
-                records::refresh_offers(&runtime.cfg, &suite, &lib);
-                records::build_brief(&runtime.cfg, &person.name, &suite, &lib)
-            };
+            let lib = state.library.lock().unwrap().clone();
+            let suite = library::load_suite(&runtime.cfg.data_dir);
+            records::refresh_offers(&runtime.cfg, &suite, &lib);
+            let brief = records::build_brief(&runtime.cfg, &person.name, &suite, &lib);
             respond_json(&mut stream, 200, &brief)
         }
         ("GET", "/api/today") => respond_json(
@@ -2510,12 +2612,15 @@ fn handle_connection(mut stream: std::net::TcpStream, state: &AppState) -> std::
             &records::build_today(&runtime.cfg),
         ),
         ("GET", "/api/graph") => {
-            let people = state.people.lock().unwrap();
-            let lib = state.library.lock().unwrap();
+            // Cloned snapshots, locks dropped: build_graph reads
+            // every person's files from disk and must not hold the
+            // people/library locks across that I/O.
+            let people_snapshot = state.people.lock().unwrap().people.clone();
+            let lib = state.library.lock().unwrap().clone();
             respond_json(
                 &mut stream,
                 200,
-                &records::build_graph(&people.people, root_cfg, &lib),
+                &records::build_graph(&people_snapshot, root_cfg, &lib),
             )
         }
         ("POST", path) if path.starts_with("/api/decisions/") => {
@@ -2596,10 +2701,12 @@ fn handle_connection(mut stream: std::net::TcpStream, state: &AppState) -> std::
                     let mut made: Option<Value> = None;
                     if kind == "install_app" {
                         let item_id = offer["item_id"].as_str().unwrap_or("");
-                        let mut suite = library::load_suite(&runtime.cfg.data_dir);
-                        if suite.install(item_id) {
-                            library::save_suite(&runtime.cfg.data_dir, &suite);
-                        }
+                        library::with_suite_lock(|| {
+                            let mut suite = library::load_suite(&runtime.cfg.data_dir);
+                            if suite.install(item_id) {
+                                library::save_suite(&runtime.cfg.data_dir, &suite);
+                            }
+                        });
                         made = Some(json!({"installed": item_id}));
                     } else if kind == "repeat_task" {
                         let template = offer["template"].as_str().unwrap_or("");
@@ -2615,9 +2722,12 @@ fn handle_connection(mut stream: std::net::TcpStream, state: &AppState) -> std::
                         ) {
                             Ok(item) => {
                                 lib.save(&root_cfg.data_dir);
-                                let mut suite = library::load_suite(&runtime.cfg.data_dir);
-                                suite.install(&item.id);
-                                library::save_suite(&runtime.cfg.data_dir, &suite);
+                                library::with_suite_lock(|| {
+                                    let mut suite =
+                                        library::load_suite(&runtime.cfg.data_dir);
+                                    suite.install(&item.id);
+                                    library::save_suite(&runtime.cfg.data_dir, &suite);
+                                });
                                 made = Some(item.to_json());
                             }
                             Err(e) => {
@@ -2638,9 +2748,13 @@ fn handle_connection(mut stream: std::net::TcpStream, state: &AppState) -> std::
             }
         }
         ("POST", path) if path.starts_with("/api/apps/") && path.ends_with("/run") => {
+            // Single strip, not trim_*_matches (which strips
+            // repeatedly and would resolve "/api/apps/foo/run/run"
+            // to the app "foo").
             let id = path
-                .trim_start_matches("/api/apps/")
-                .trim_end_matches("/run")
+                .strip_prefix("/api/apps/")
+                .and_then(|rest| rest.strip_suffix("/run"))
+                .unwrap_or("")
                 .to_string();
             let item = {
                 let lib = state.library.lock().unwrap();

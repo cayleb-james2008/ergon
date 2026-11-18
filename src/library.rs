@@ -334,9 +334,21 @@ impl Library {
                 let items: Vec<LibraryItem> = v["items"]
                     .as_array()
                     .map(|arr| {
+                        // First occurrence wins: a duplicated id in
+                        // the file must not shadow-list a second
+                        // item that `get` can never reach.
+                        let mut seen: Vec<String> = Vec::new();
                         arr.iter()
                             .filter_map(LibraryItem::from_json)
                             .filter(|i| crate::valid_person_id(&i.id))
+                            .filter(|i| {
+                                if seen.contains(&i.id) {
+                                    false
+                                } else {
+                                    seen.push(i.id.clone());
+                                    true
+                                }
+                            })
                             .collect()
                     })
                     .unwrap_or_default();
@@ -465,10 +477,30 @@ impl Library {
         author: &str,
     ) -> Result<LibraryItem, String> {
         let id = slugify(name);
-        if self.items.iter().any(|i| i.id == id) {
-            // Already there (e.g. the offer fired twice): return the
-            // existing item rather than erroring the acceptance.
-            return Ok(self.get(&id).unwrap());
+        if let Some(existing) = self.items.iter_mut().find(|i| i.id == id) {
+            // A collision is only benign when it is the SAME app by
+            // the SAME author (an offer accepted twice): then it is
+            // an update. Returning a skill that happens to share the
+            // slug handed the suite a "one-tap app" with no Run
+            // button, and overwriting someone else's item is the
+            // cross-author hole publish_skill already closed.
+            if existing.kind != "app" {
+                return Err(format!(
+                    "an item named \"{name}\" already exists in the library as a {} — the app needs a different name",
+                    existing.kind
+                ));
+            }
+            if existing.author != author {
+                return Err(format!(
+                    "an app named \"{name}\" already exists in the library (published by {}) — the app needs a different name",
+                    existing.author
+                ));
+            }
+            existing.template = template;
+            existing.fields = fields;
+            existing.description = description.to_string();
+            existing.version += 1;
+            return Ok(existing.clone());
         }
         let mut it = item(&id, "app", name, description, author);
         it.template = template;
@@ -489,6 +521,19 @@ pub struct Suite {
 
 pub fn suite_path(person_data_dir: &Path) -> std::path::PathBuf {
     person_data_dir.join("suite.json")
+}
+
+/// Suites are load → mutate → save files too, and the same person
+/// can install from desktop, phone and an agent run at once. This
+/// lock serialises those sequences so concurrent installs don't
+/// silently drop each other. Callers wrap ONLY the outermost
+/// sequence; load_suite/save_suite themselves never lock (the lock
+/// is not reentrant).
+static SUITE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+pub fn with_suite_lock<T>(f: impl FnOnce() -> T) -> T {
+    let _guard = SUITE_LOCK.lock().unwrap();
+    f()
 }
 
 pub fn load_suite(person_data_dir: &Path) -> Suite {
