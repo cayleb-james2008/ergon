@@ -42,3 +42,12 @@
 - F7 LOW: fullwidth colon smuggled identity lines. FIXED: normalised in the identity check. Pinned. (A learned bullet literally starting "Name:" remains indistinguishable from identity — accepted; the full memory file is in the prompt regardless.)
 - Sessions map bounded (cleared past 10k entries; sessions re-issue transparently).
 - Verify fix-round-4: 42/42 green.
+
+## Review round 4 (confirmation, fresh context) — residuals all pass; gate filename model rebuilt
+- All round-3 residual fixes PASS under probe (people.json backups in 6 shapes, dangling-link move symmetry, 413 received at 6 MB in flight, total-deadline both directions, binary single-file search disclosure, fullwidth colon).
+- F1 HIGH: named_files split on spaces — every spaced filename (the product's DEFAULT: "Research - <topic>.md", human-titled documents) was truncated to its last word and falsely cautioned even when the run wrote it. REBUILT: mention_candidates expands leftwards from each extension occurrence over filename characters incl. spaces; candidates resolve longest-first against the run's written files, then the workspace, with basename fallback. Skill-written files are extracted from result text by the same matcher against the workspace (extract_written).
+- F2 MED: update_memory-only runs naming memory.md were cautioned (the v3 ledger credited no memory work). FIXED: update_memory counts in the write ledger as memory.md.
+- F3 LOW/MED: the canonical move summary ("Renamed a.txt to b.txt") cautioned on the source. FIXED: move sources are recorded as consumed — naming them is explained, silent.
+- F4 LOW: subpath writes named by basename cautioned. FIXED by the basename fallback in check_mentions.
+- F5 LOW: caution suppressed the ledger line (else-if). FIXED: both lines emit when both apply. Pinned.
+- Verify fix-round-5b: 44/44 green. Gate battery now covers spaced titles end-to-end (document, research, memory, move) plus direct matcher pins.
