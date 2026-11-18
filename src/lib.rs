@@ -8,6 +8,8 @@
 //! sandboxed workspace folder, and uses Rune scripts (see `skills`) for
 //! the document-writing and memory-update skills.
 
+pub mod library;
+pub mod records;
 pub mod skills;
 pub mod ui;
 
@@ -1139,6 +1141,174 @@ pub fn execute_tool(cfg: &Config, name: &str, args: &Value) -> Result<String, St
     }
 }
 
+/// The wider context the completion-era tools need: the company
+/// library (shared, mutable — agents publish into it), the root data
+/// dir (where the library persists) and the person whose agent is
+/// acting (the author of anything it publishes).
+#[derive(Clone)]
+pub struct ToolCtx {
+    pub library: Arc<Mutex<library::Library>>,
+    pub root_data_dir: PathBuf,
+    pub person_id: String,
+}
+
+/// The full tool dispatcher the agent loop uses: the library/suite/
+/// decision tools first, then the base tools (`execute_tool`, whose
+/// signature the test suite pins), then the person's installed
+/// library skills by item id.
+pub fn execute_tool_full(
+    cfg: &Config,
+    ctx: &ToolCtx,
+    name: &str,
+    args: &Value,
+) -> Result<String, String> {
+    match name {
+        "browse_library" => {
+            let query = args["query"].as_str().unwrap_or("");
+            let lib = ctx.library.lock().unwrap();
+            let suite = library::load_suite(&cfg.data_dir);
+            let items = lib.search(query);
+            if items.is_empty() {
+                return Ok("(no library items match)".to_string());
+            }
+            let lines: Vec<String> = items
+                .iter()
+                .map(|i| {
+                    let state = if i.builtin {
+                        "built-in".to_string()
+                    } else if suite.installed.contains(&i.id) {
+                        "in your suite".to_string()
+                    } else {
+                        "available".to_string()
+                    };
+                    format!(
+                        "- {} [{}] {} — {} (by {}, v{}, {})",
+                        i.id, i.kind, i.name, i.description, i.author, i.version, state
+                    )
+                })
+                .collect();
+            Ok(format!(
+                "The company library ({} items):\n{}",
+                items.len(),
+                lines.join("\n")
+            ))
+        }
+        "install_item" => {
+            let id = args["item_id"]
+                .as_str()
+                .ok_or("install_item needs args.item_id")?;
+            let lib = ctx.library.lock().unwrap();
+            let item = lib
+                .get(id)
+                .ok_or_else(|| format!("no library item with id '{id}'"))?;
+            if item.builtin {
+                return Ok(format!(
+                    "'{}' is built into every agent already — nothing to install.",
+                    item.name
+                ));
+            }
+            let mut suite = library::load_suite(&cfg.data_dir);
+            if suite.install(id) {
+                library::save_suite(&cfg.data_dir, &suite);
+                Ok(format!(
+                    "installed '{}' ({}) into your suite — it is available from your next task on",
+                    item.name, item.kind
+                ))
+            } else {
+                Ok(format!("'{}' is already in your suite.", item.name))
+            }
+        }
+        "publish_skill" => {
+            let name = args["name"]
+                .as_str()
+                .ok_or("publish_skill needs args.name")?;
+            let description = args["description"].as_str().unwrap_or("");
+            let source = args["source"]
+                .as_str()
+                .ok_or("publish_skill needs args.source (the Rune script)")?;
+            let params = string_list(&args["params"]);
+            if params.len() > 5 {
+                return Err("library skills take at most 5 parameters".to_string());
+            }
+            // The compile gate: a script that does not build against
+            // the real host context is refused, never stored — the
+            // library must not fill up with skills that cannot run.
+            skills::check_script(cfg, source)?;
+            let mut lib = ctx.library.lock().unwrap();
+            let item = lib.publish_skill(
+                name,
+                description,
+                params,
+                source.to_string(),
+                &ctx.person_id,
+            )?;
+            lib.save(&ctx.root_data_dir);
+            Ok(format!(
+                "published skill '{}' (id {}, v{}) to the company library — every person's agent can now install it",
+                item.name, item.id, item.version
+            ))
+        }
+        "delete_file" => {
+            let rel = args["path"]
+                .as_str()
+                .ok_or("delete_file needs args.path")?;
+            // Consequential: the file is NOT deleted here. The action
+            // parks as a decision for the person; approval executes
+            // it for real. The agent is told plainly that it is
+            // parked, so its summary cannot claim a deletion that has
+            // not happened.
+            let full = sandbox_path(&cfg.workspace_dir, rel)?;
+            if full.symlink_metadata().is_err() {
+                return Err(format!("delete_file: no such file: {rel}"));
+            }
+            let thread_id = args["_thread"].as_str().unwrap_or("");
+            let id = records::add_decision(
+                &cfg.data_dir,
+                "delete",
+                &format!("Delete {rel}"),
+                Some(rel),
+                thread_id,
+            );
+            Ok(format!(
+                "parked for your person's approval (decision {id}): deleting is a consequential action, so {rel} has NOT been deleted yet. It will be deleted only if they approve it in their decisions inbox. Continue with the rest of the task and note in your summary that the deletion is awaiting their decision."
+            ))
+        }
+        "flag_decision" => {
+            let summary = args["summary"]
+                .as_str()
+                .ok_or("flag_decision needs args.summary")?;
+            let thread_id = args["_thread"].as_str().unwrap_or("");
+            let id = records::add_decision(&cfg.data_dir, "question", summary, None, thread_id);
+            Ok(format!(
+                "raised as decision {id} in your person's decisions inbox — they will see it and settle it there. Continue with the rest of the task."
+            ))
+        }
+        _ => {
+            // An installed library skill, called by its item id.
+            let suite = library::load_suite(&cfg.data_dir);
+            if suite.installed.iter().any(|i| i == name) {
+                let lib = ctx.library.lock().unwrap();
+                if let Some(item) = lib.get(name) {
+                    if item.kind == "skill" && !item.builtin {
+                        let values: Vec<String> = item
+                            .params
+                            .iter()
+                            .map(|p| {
+                                args[p.as_str()]
+                                    .as_str()
+                                    .map(|s| s.to_string())
+                                    .unwrap_or_default()
+                            })
+                            .collect();
+                        return skills::run_library_skill(cfg, &item.source, &values);
+                    }
+                }
+            }
+            execute_tool(cfg, name, args)
+        }
+    }
+}
+
 fn string_list(v: &Value) -> Vec<String> {
     match v {
         Value::Array(items) => items
@@ -1304,7 +1474,7 @@ fn is_identity_bullet(bullet: &str) -> bool {
     false
 }
 
-fn system_prompt(cfg: &Config) -> String {
+fn system_prompt(cfg: &Config, suite_items: &[library::LibraryItem]) -> String {
     let memory = cfg.read_memory();
     let prefs = standing_preferences(&memory);
     let prefs_block = if prefs.is_empty() {
@@ -1316,6 +1486,40 @@ fn system_prompt(cfg: &Config) -> String {
             .collect::<Vec<_>>()
             .join("\n")
     };
+    // The person's suite: installed library skills are callable tools
+    // (by item id, with their declared parameters); installed
+    // subagents are delegable by id. Apps are run by the person from
+    // their suite panel, not called as tools.
+    let mut suite_block = String::new();
+    let skills: Vec<&library::LibraryItem> = suite_items
+        .iter()
+        .filter(|i| i.kind == "skill" && !i.builtin)
+        .collect();
+    if !skills.is_empty() {
+        suite_block.push_str("\n         LIBRARY SKILLS IN THIS PERSON'S SUITE (call like any tool, by id):\n");
+        for s in skills {
+            let params = s
+                .params
+                .iter()
+                .map(|p| format!("\"{p}\": \"...\""))
+                .collect::<Vec<_>>()
+                .join(", ");
+            suite_block.push_str(&format!(
+                "         - {} {{{}}} — {}\n",
+                s.id, params, s.description
+            ));
+        }
+    }
+    let subagents: Vec<&library::LibraryItem> = suite_items
+        .iter()
+        .filter(|i| i.kind == "subagent")
+        .collect();
+    if !subagents.is_empty() {
+        suite_block.push_str("\n         SUBAGENTS YOU CAN DELEGATE TO (via the delegate tool):\n");
+        for s in subagents {
+            suite_block.push_str(&format!("         - {} — {}\n", s.id, s.description));
+        }
+    }
     format!(
         "You are Ergon, a personal AI agent for one employee. Your job is to FINISH their digital work autonomously, end to end — not to prepare drafts for approval, not to ask for confirmation. You act through tools and you keep going until the work is done.\n\n\
          PROTOCOL: Reply with exactly ONE JSON object per message, nothing else.\n\
@@ -1331,12 +1535,19 @@ fn system_prompt(cfg: &Config) -> String {
          - research {{\"topic\": \"Local Prices\", \"urls\": [\"https://...\", \"https://...\"]}} — fetch several pages and compile them into one research notes document in the workspace (a Rune skill).\n\
          - search_files {{\"query\": \"quarterly\", \"path\": \".\"}} — search the workspace's text files for a phrase; returns matching lines with file and line number.\n\
          - move_file {{\"from\": \"a.txt\", \"to\": \"archive/a.txt\"}} — move or rename a workspace file.\n\
-         - update_memory {{\"note\": \"...\"}} — record something you learned about this person (a preference or fact) into their long-term memory (a Rune skill).\n\n\
-         RULES: Use tools to do the real work; never claim work you did not do through a tool. When you learn a durable preference or fact about this person, record it with update_memory before finishing. Finish with done only when the task is actually complete.\n\n\
+         - update_memory {{\"note\": \"...\"}} — record something you learned about this person (a preference or fact) into their long-term memory (a Rune skill).\n\
+         - browse_library {{\"query\": \"spreadsheet\"}} — search the company-wide library of skills, subagents and apps shared by every person's agent.\n\
+         - install_item {{\"item_id\": \"daily-log\"}} — add a library item to this person's suite, so it is yours to use from the next task on.\n\
+         - publish_skill {{\"name\": \"...\", \"description\": \"...\", \"params\": [\"entry\"], \"source\": \"<Rune script>\"}} — contribute a reusable skill you wrote to the company library, so every person's agent can use it. Library skills are Rune scripts whose main takes the declared params as strings in order and returns a string (or \"file:<name>\" after writing a file through host_workspace_write). A script that does not compile is refused.\n\
+         - delegate {{\"subagent\": \"researcher\", \"task\": \"...\"}} — hand a focused sub-task to a specialist subagent from the suite; it works with the same tools and returns its result to you.\n\
+         - delete_file {{\"path\": \"old.txt\"}} — CONSEQUENTIAL: deleting is permanent, so this does not delete immediately — it parks the deletion as a decision for your person to approve. Never claim a file was deleted when it was only parked.\n\
+         - flag_decision {{\"summary\": \"...\"}} — raise a question as a decision in your person's inbox when a choice is genuinely theirs to make.{suite}\n\n\
+         RULES: Use tools to do the real work; never claim work you did not do through a tool. When you learn a durable preference or fact about this person, record it with update_memory before finishing. When you build something reusable, publish it to the library so the whole company benefits. Finish with done only when the task is actually complete.\n\n\
          PREFERENCES AND FACTS THIS PERSON HAS TAUGHT YOU — apply them in every task:\n{prefs}\n\n\
          WHAT YOU KNOW ABOUT THIS PERSON (their memory file — treat it as true and use it):\n{memory}",
         prefs = prefs_block,
-        memory = memory
+        memory = memory,
+        suite = suite_block
     )
 }
 
@@ -1345,129 +1556,200 @@ pub struct AgentOutcome {
     pub steps: Vec<String>,
 }
 
-/// Run one task to completion: model → tool → model → … until done,
-/// the step cap, or a genuine block. Steps are pushed into the thread as
-/// they happen; the finished summary lands as the final message.
-pub fn run_agent(
+/// The files one run actually wrote — the evidence a "done" summary's
+/// named files are checked against. Not a count: WHICH files, so a
+/// summary claiming a file this run never touched is visible as
+/// exactly that. `consumed` are the move sources: files this run
+/// legitimately made disappear. Shared with subagent runs, whose
+/// writes are the parent run's work product too.
+#[derive(Default)]
+pub struct WriteLedger {
+    pub written: Vec<String>,
+    pub consumed: Vec<String>,
+}
+
+fn credit_writes(
+    ledger: &mut WriteLedger,
     cfg: &Config,
+    tool: &str,
+    args: &Value,
+    result_text: &str,
+    dynamic_skills: &std::collections::HashSet<String>,
+) {
+    match tool {
+        "write_file" => {
+            if let Some(p) = args["path"].as_str() {
+                ledger.written.push(p.to_string());
+            }
+        }
+        "move_file" => {
+            if let Some(p) = args["to"].as_str() {
+                ledger.written.push(p.to_string());
+            }
+            if let Some(p) = args["from"].as_str() {
+                ledger.consumed.push(p.to_string());
+            }
+        }
+        // A memory update is real work product too: the summary may
+        // honestly name memory.md (it lives in the data dir, not the
+        // workspace).
+        "update_memory" => {
+            ledger.written.push("memory.md".to_string());
+        }
+        // The Rune skills name the file they produced in their
+        // result text.
+        "write_document" | "make_spreadsheet" | "research" => {
+            ledger
+                .written
+                .extend(extract_written(result_text, &cfg.workspace_dir));
+        }
+        // A library skill from the person's suite: credit only files
+        // its result names that actually exist (its result text is a
+        // claim, checked like any other).
+        other if dynamic_skills.contains(other) => {
+            for cands in mention_candidates(result_text) {
+                if let Some(found) = cands.iter().find(|c| {
+                    sandbox_path(&cfg.workspace_dir, c)
+                        .map(|p| p.exists())
+                        .unwrap_or(false)
+                }) {
+                    if !ledger.written.contains(found) {
+                        ledger.written.push(found.clone());
+                    }
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+/// The system prompt for a subagent run: the profile's own
+/// instructions, the same JSON tool protocol, the person's standing
+/// preferences, and the working toolset — minus the tools that belong
+/// to the main agent alone (delegating further, publishing, and the
+/// consequential pair).
+fn subagent_system_prompt(
+    cfg: &Config,
+    profile: &library::LibraryItem,
+    suite_items: &[library::LibraryItem],
+) -> String {
+    let memory = cfg.read_memory();
+    let prefs = standing_preferences(&memory);
+    let prefs_block = if prefs.is_empty() {
+        "(none yet)".to_string()
+    } else {
+        prefs
+            .iter()
+            .map(|p| format!("- {p}"))
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    let mut skills_block = String::new();
+    for s in suite_items.iter().filter(|i| i.kind == "skill" && !i.builtin) {
+        let params = s
+            .params
+            .iter()
+            .map(|p| format!("\"{p}\": \"...\""))
+            .collect::<Vec<_>>()
+            .join(", ");
+        skills_block.push_str(&format!(
+            "\n         - {} {{{}}} — {}",
+            s.id, params, s.description
+        ));
+    }
+    format!(
+        "You are {}, a specialist subagent working for a person's main Ergon agent. {}\n\n\
+         PROTOCOL: Reply with exactly ONE JSON object per message, nothing else.\n\
+         - To use a tool: {{\"tool\": \"<name>\", \"args\": {{...}}}}\n\
+         - When your sub-task is complete: {{\"done\": true, \"summary\": \"<what you did and found>\"}}\n\n\
+         TOOLS:\n\
+         - list_dir {{\"path\": \".\"}} — list files in the workspace.\n\
+         - read_file {{\"path\": \"notes.txt\"}} — read a workspace file.\n\
+         - write_file {{\"path\": \"out.txt\", \"content\": \"...\"}} — write a workspace file.\n\
+         - fetch_url {{\"url\": \"https://...\"}} — fetch a URL and read its text.\n\
+         - write_document {{\"title\": \"Summary\", \"sections\": [\"...\"]}} — produce a finished markdown document.\n\
+         - make_spreadsheet {{\"title\": \"Budget\", \"columns\": [\"Item\", \"Cost\"], \"rows\": [[\"Coffee\", \"4.50\"]]}} — produce a finished CSV spreadsheet.\n\
+         - research {{\"topic\": \"...\", \"urls\": [\"https://...\"]}} — compile research notes from several pages.\n\
+         - search_files {{\"query\": \"...\", \"path\": \".\"}} — search workspace text files.\n\
+         - move_file {{\"from\": \"a.txt\", \"to\": \"archive/a.txt\"}} — move or rename a workspace file.\n\
+         - update_memory {{\"note\": \"...\"}} — record something learned about this person.{skills}\n\n\
+         RULES: Use tools to do the real work; never claim work you did not do through a tool. Your summary goes back to the main agent, so state plainly what you produced and where.\n\n\
+         PREFERENCES AND FACTS THIS PERSON HAS TAUGHT THEIR AGENT:\n{prefs}",
+        profile.name, profile.instructions, prefs = prefs_block, skills = skills_block
+    )
+}
+
+/// One agent loop: model → tool → model → … until done or the step
+/// cap. Steps are pushed into the thread as they happen (subagent
+/// steps are labelled with the subagent's name). Returns the done
+/// summary. The honesty gate and the work log belong to the top-level
+/// run (`run_agent`), not to subagent runs.
+#[allow(clippy::too_many_arguments)]
+fn run_loop(
+    cfg: &Config,
+    ctx: &ToolCtx,
     store: &SharedStore,
     thread_id: &str,
+    system: &str,
     task: &str,
     history: &[Value],
-) -> Result<AgentOutcome, String> {
-    if cfg.api_key.is_none() {
-        return Err(NO_KEY_ERROR.to_string());
-    }
+    allow_delegate: bool,
+    step_cap: usize,
+    label: Option<&str>,
+    ledger: &mut WriteLedger,
+    dynamic_skills: &std::collections::HashSet<String>,
+    suite_items: &[library::LibraryItem],
+) -> Result<(String, Vec<String>), String> {
     let session = format!("ergon-{thread_id}");
-    let mut messages: Vec<Value> = vec![json!({"role": "system", "content": system_prompt(cfg)})];
+    let mut messages: Vec<Value> = vec![json!({"role": "system", "content": system})];
     messages.extend(history.iter().cloned());
     messages.push(json!({"role": "user", "content": task}));
     let mut steps: Vec<String> = Vec::new();
-    // The files this run actually wrote — the evidence a "done"
-    // summary's named files are checked against. Not a count: WHICH
-    // files, so a summary claiming a file this run never touched is
-    // visible as exactly that. `consumed_files` are the move sources:
-    // files this run legitimately made disappear.
-    let mut written_files: Vec<String> = Vec::new();
-    let mut consumed_files: Vec<String> = Vec::new();
 
-    for _ in 0..STEP_CAP {
+    for _ in 0..step_cap {
         let reply = call_model(cfg, &session, &messages)?;
         if reply["done"].as_bool() == Some(true) {
             let summary = reply["summary"]
                 .as_str()
                 .unwrap_or("Task complete.")
                 .to_string();
-            store
-                .lock()
-                .unwrap()
-                .push(thread_id, "assistant", &summary);
-            // Honesty gate, checked against the run's own write
-            // ledger — WHICH files this run wrote, never the summary's
-            // verbs or nouns (verb/noun lists flagged honest inline
-            // answers and waved through claims about files the run
-            // never touched). Mentions are matched against known
-            // files with spaced-name-aware candidates:
-            //  1. a named file that does not exist at all is a hard
-            //     discrepancy — caution, in the open;
-            //  2. a named file that exists but this run did not write
-            //     gets a factual ledger line (what the run DID write),
-            //     so a pre-existing file claimed as the deliverable is
-            //     visible without accusing an honest input reference.
-            // Both lines are emitted when both apply.
-            let (missing_named, unwritten_named) = check_mentions(
-                &summary,
-                &cfg.workspace_dir,
-                &written_files,
-                &consumed_files,
-            );
-            if !missing_named.is_empty() {
-                store.lock().unwrap().push(
-                    thread_id,
-                    "step",
-                    &format!(
-                        "Note: the summary names {}, which is not in the workspace — treat the summary above with caution.",
-                        missing_named.join(", ")
-                    ),
-                );
-            }
-            if !unwritten_named.is_empty() {
-                let wrote = if written_files.is_empty() {
-                    "no files".to_string()
-                } else {
-                    written_files.join(", ")
-                };
-                store.lock().unwrap().push(
-                    thread_id,
-                    "step",
-                    &format!(
-                        "Note: this run wrote {wrote}; the summary also names {}, which this run did not write.",
-                        unwritten_named.join(", ")
-                    ),
-                );
-            }
-            return Ok(AgentOutcome { summary, steps });
+            return Ok((summary, steps));
         }
         let tool = reply["tool"]
             .as_str()
             .ok_or_else(|| format!("model reply was neither a tool call nor done: {}", truncate(&reply.to_string(), 300)))?
             .to_string();
-        let args = reply["args"].clone();
+        let mut args = reply["args"].clone();
 
-        let (result_text, ok) = match execute_tool(cfg, &tool, &args) {
-            Ok(r) => (r, true),
-            Err(e) => (format!("error: {e}"), false),
+        let (result_text, ok) = if tool == "delegate" {
+            if !allow_delegate {
+                (
+                    "error: subagents cannot delegate further — do this part yourself".to_string(),
+                    false,
+                )
+            } else {
+                run_delegation(
+                    cfg, ctx, store, thread_id, &args, ledger, dynamic_skills, suite_items,
+                )
+            }
+        } else {
+            // Consequential tools carry the originating thread, so a
+            // settled decision can report back into it.
+            if matches!(tool.as_str(), "delete_file" | "flag_decision") {
+                args["_thread"] = json!(thread_id);
+            }
+            match execute_tool_full(cfg, ctx, &tool, &args) {
+                Ok(r) => (r, true),
+                Err(e) => (format!("error: {e}"), false),
+            }
         };
         if ok {
-            match tool.as_str() {
-                "write_file" => {
-                    if let Some(p) = args["path"].as_str() {
-                        written_files.push(p.to_string());
-                    }
-                }
-                "move_file" => {
-                    if let Some(p) = args["to"].as_str() {
-                        written_files.push(p.to_string());
-                    }
-                    if let Some(p) = args["from"].as_str() {
-                        consumed_files.push(p.to_string());
-                    }
-                }
-                // A memory update is real work product too: the
-                // summary may honestly name memory.md (it lives in the
-                // data dir, not the workspace).
-                "update_memory" => {
-                    written_files.push("memory.md".to_string());
-                }
-                // The Rune skills name the file they produced in
-                // their result text.
-                "write_document" | "make_spreadsheet" | "research" => {
-                    written_files.extend(extract_written(&result_text, &cfg.workspace_dir));
-                }
-                _ => {}
-            }
+            credit_writes(ledger, cfg, &tool, &args, &result_text, dynamic_skills);
         }
-        let step_line = format!("Tool: {tool}");
+        let step_line = match label {
+            Some(l) => format!("Tool: {tool} (via {l})"),
+            None => format!("Tool: {tool}"),
+        };
         steps.push(step_line.clone());
         store.lock().unwrap().push(
             thread_id,
@@ -1481,8 +1763,169 @@ pub fn run_agent(
         }));
     }
     Err(format!(
-        "agent stopped after {STEP_CAP} steps without finishing — the task may be blocked or too large for one run."
+        "agent stopped after {step_cap} steps without finishing — the task may be blocked or too large for one run."
     ))
+}
+
+/// The delegate tool: run one suite subagent on a focused sub-task.
+/// Its steps land in the same thread (labelled), its writes credit
+/// the parent run's ledger, and its summary returns as the tool
+/// result the main agent continues from.
+#[allow(clippy::too_many_arguments)]
+fn run_delegation(
+    cfg: &Config,
+    ctx: &ToolCtx,
+    store: &SharedStore,
+    thread_id: &str,
+    args: &Value,
+    ledger: &mut WriteLedger,
+    dynamic_skills: &std::collections::HashSet<String>,
+    suite_items: &[library::LibraryItem],
+) -> (String, bool) {
+    let sub_id = args["subagent"].as_str().unwrap_or("");
+    let task = args["task"].as_str().unwrap_or("");
+    if sub_id.is_empty() || task.is_empty() {
+        return (
+            "error: delegate needs args.subagent and args.task".to_string(),
+            false,
+        );
+    }
+    let Some(profile) = suite_items
+        .iter()
+        .find(|i| i.id == sub_id && i.kind == "subagent")
+        .cloned()
+    else {
+        return (
+            format!(
+                "error: no subagent '{sub_id}' in this person's suite — delegate only to a subagent the suite carries"
+            ),
+            false,
+        );
+    };
+    store.lock().unwrap().push(
+        thread_id,
+        "step",
+        &format!("Delegated to {}: {}", profile.name, truncate(task, 300)),
+    );
+    let system = subagent_system_prompt(cfg, &profile, suite_items);
+    match run_loop(
+        cfg,
+        ctx,
+        store,
+        thread_id,
+        &system,
+        task,
+        &[],
+        false,
+        12,
+        Some(&profile.name),
+        ledger,
+        dynamic_skills,
+        suite_items,
+    ) {
+        Ok((summary, _)) => (format!("{} reports: {}", profile.name, summary), true),
+        Err(e) => (format!("error: subagent {} failed: {e}", profile.name), false),
+    }
+}
+
+/// Run one task to completion for the effective person: the loop,
+/// then the honesty gate on its summary, the work log entry, and an
+/// offers scan — the records the brief, the graph and the offers
+/// engine are built from.
+pub fn run_agent(
+    cfg: &Config,
+    ctx: &ToolCtx,
+    store: &SharedStore,
+    thread_id: &str,
+    task: &str,
+    history: &[Value],
+) -> Result<AgentOutcome, String> {
+    if cfg.api_key.is_none() {
+        return Err(NO_KEY_ERROR.to_string());
+    }
+    let suite = library::load_suite(&cfg.data_dir);
+    let suite_items = {
+        let lib = ctx.library.lock().unwrap();
+        suite.resolved(&lib)
+    };
+    let dynamic_skills: std::collections::HashSet<String> = suite_items
+        .iter()
+        .filter(|i| i.kind == "skill" && !i.builtin)
+        .map(|i| i.id.clone())
+        .collect();
+    let system = system_prompt(cfg, &suite_items);
+    let mut ledger = WriteLedger::default();
+    let (summary, steps) = run_loop(
+        cfg,
+        ctx,
+        store,
+        thread_id,
+        &system,
+        task,
+        history,
+        true,
+        STEP_CAP,
+        None,
+        &mut ledger,
+        &dynamic_skills,
+        &suite_items,
+    )?;
+    store
+        .lock()
+        .unwrap()
+        .push(thread_id, "assistant", &summary);
+    // Honesty gate, checked against the run's own write ledger —
+    // WHICH files this run wrote, never the summary's verbs or nouns
+    // (verb/noun lists flagged honest inline answers and waved
+    // through claims about files the run never touched). Mentions are
+    // matched against known files with spaced-name-aware candidates:
+    //  1. a named file that does not exist at all is a hard
+    //     discrepancy — caution, in the open;
+    //  2. a named file that exists but this run did not write
+    //     gets a factual ledger line (what the run DID write),
+    //     so a pre-existing file claimed as the deliverable is
+    //     visible without accusing an honest input reference.
+    // Both lines are emitted when both apply.
+    let (missing_named, unwritten_named) = check_mentions(
+        &summary,
+        &cfg.workspace_dir,
+        &ledger.written,
+        &ledger.consumed,
+    );
+    if !missing_named.is_empty() {
+        store.lock().unwrap().push(
+            thread_id,
+            "step",
+            &format!(
+                "Note: the summary names {}, which is not in the workspace — treat the summary above with caution.",
+                missing_named.join(", ")
+            ),
+        );
+    }
+    if !unwritten_named.is_empty() {
+        let wrote = if ledger.written.is_empty() {
+            "no files".to_string()
+        } else {
+            ledger.written.join(", ")
+        };
+        store.lock().unwrap().push(
+            thread_id,
+            "step",
+            &format!(
+                "Note: this run wrote {wrote}; the summary also names {}, which this run did not write.",
+                unwritten_named.join(", ")
+            ),
+        );
+    }
+    // The work log + offers scan: the records the rest of the
+    // product (brief, graph, today, offers) is built from.
+    records::append_work(cfg, task, &summary, &ledger.written, thread_id);
+    {
+        let lib = ctx.library.lock().unwrap();
+        let suite_now = library::load_suite(&cfg.data_dir);
+        records::refresh_offers(cfg, &suite_now, &lib);
+    }
+    Ok(AgentOutcome { summary, steps })
 }
 
 // ---------------------------------------------------------------------------
@@ -1495,10 +1938,13 @@ pub struct PersonRuntime {
     pub store: SharedStore,
 }
 
-fn load_runtime(root: &Config, person: &Person) -> PersonRuntime {
+fn load_runtime(root: &Config, person: &Person, library: &library::Library) -> PersonRuntime {
     let cfg = root.person_config(person);
     let fresh_memory = !cfg.memory_path.exists();
     let _ = cfg.ensure_dirs();
+    // Their suite exists from the first moment too: drawn from the
+    // company library, shaped by their role.
+    library::ensure_suite(&cfg.data_dir, person, library);
     if fresh_memory && person.id != "default" {
         // Seed a new person's memory with who they are, so the agent
         // starts out knowing its person.
@@ -1520,6 +1966,14 @@ fn load_runtime(root: &Config, person: &Person) -> PersonRuntime {
 pub struct AppState {
     /// Root config (model route + root data dir).
     pub cfg: Config,
+    /// The company library — one shared store of skills, subagents
+    /// and apps that the agents themselves maintain.
+    pub library: Arc<Mutex<library::Library>>,
+    /// The hosting-layer gate token (ERGON_GATE_TOKEN), when set:
+    /// every request must carry it as the `X-Ergon-Gate` header. The
+    /// hosting layer authenticates people; Ergon itself has no
+    /// accounts and no passwords.
+    pub gate_token: Option<String>,
     pub people: Arc<Mutex<PeopleState>>,
     pub runtimes: Arc<Mutex<HashMap<String, Arc<PersonRuntime>>>>,
     /// Browser sessions (cookie id → person id). "Active person" used
@@ -1594,16 +2048,35 @@ fn effective_person(state: &AppState, session: &Option<String>) -> Person {
 
 fn runtime_for(state: &AppState, person: &Person) -> Arc<PersonRuntime> {
     let mut map = state.runtimes.lock().unwrap();
-    map.entry(person.id.clone())
-        .or_insert_with(|| Arc::new(load_runtime(&state.cfg, person)))
-        .clone()
+    if let Some(rt) = map.get(&person.id) {
+        return rt.clone();
+    }
+    let lib = state.library.lock().unwrap().clone();
+    let rt = Arc::new(load_runtime(&state.cfg, person, &lib));
+    map.insert(person.id.clone(), rt.clone());
+    rt
 }
 
 pub fn serve(listener: TcpListener, cfg: Config) -> std::io::Result<()> {
+    let gate = std::env::var("ERGON_GATE_TOKEN")
+        .ok()
+        .map(|t| t.trim().to_string())
+        .filter(|t| !t.is_empty());
+    serve_with_gate(listener, cfg, gate)
+}
+
+pub fn serve_with_gate(
+    listener: TcpListener,
+    cfg: Config,
+    gate_token: Option<String>,
+) -> std::io::Result<()> {
     cfg.ensure_dirs()?;
     let people = PeopleState::load(&cfg);
+    let library = library::Library::load(&cfg.data_dir);
     let state = Arc::new(AppState {
         cfg,
+        library: Arc::new(Mutex::new(library)),
+        gate_token,
         people: Arc::new(Mutex::new(people)),
         runtimes: Arc::new(Mutex::new(HashMap::new())),
         sessions: Arc::new(Mutex::new(HashMap::new())),
@@ -1628,6 +2101,8 @@ struct Request {
     body: Vec<u8>,
     /// The caller's `ergon_session` cookie, if they presented one.
     session: Option<String>,
+    /// The hosting layer's gate header, if presented.
+    gate: Option<String>,
 }
 
 /// Bodies are small JSON. A request claiming a larger one is dropped
@@ -1660,6 +2135,7 @@ fn read_request(stream: &mut std::net::TcpStream) -> Option<Request> {
     let path = raw_path.split('?').next().unwrap_or("/").to_string();
     let mut content_length: usize = 0;
     let mut session: Option<String> = None;
+    let mut gate: Option<String> = None;
     let mut head_bytes = request_line.len();
     loop {
         arm(stream)?;
@@ -1684,6 +2160,16 @@ fn read_request(stream: &mut std::net::TcpStream) -> Option<Request> {
                     if !id.is_empty() {
                         session = Some(id);
                     }
+                }
+            }
+        }
+        if lower.starts_with("x-ergon-gate:") {
+            // The value is a secret: take it from the ORIGINAL line,
+            // not the lowercased copy used for header-name matching.
+            if let Some((_, v)) = line.split_once(':') {
+                let v = v.trim().to_string();
+                if !v.is_empty() {
+                    gate = Some(v);
                 }
             }
         }
@@ -1728,6 +2214,7 @@ fn read_request(stream: &mut std::net::TcpStream) -> Option<Request> {
         path,
         body,
         session,
+        gate,
     })
 }
 
@@ -1751,6 +2238,7 @@ fn respond_h(
         200 => "OK",
         201 => "Created",
         400 => "Bad Request",
+        401 => "Unauthorized",
         404 => "Not Found",
         405 => "Method Not Allowed",
         413 => "Content Too Large",
@@ -1783,10 +2271,29 @@ fn handle_connection(mut stream: std::net::TcpStream, state: &AppState) -> std::
         None => return Ok(()),
     };
     let root_cfg = &state.cfg;
+    // Hosting-layer gate: when a gate token is configured, the
+    // hosting layer (which authenticates people its own way) must
+    // present it on every request. Ergon itself keeps no accounts
+    // and no passwords — this is a deployment gate, not a login.
+    if let Some(expected) = &state.gate_token {
+        if req.gate.as_deref() != Some(expected.as_str()) {
+            return respond_json(
+                &mut stream,
+                401,
+                &json!({"error": "this Ergon is gated by its hosting layer — the gate header is missing or wrong"}),
+            );
+        }
+    }
     // The person this request acts for (session-pinned when the caller
     // has a session cookie, else the global active person).
     let person = effective_person(state, &req.session);
     let runtime = runtime_for(state, &person);
+    // The tool context for agent runs on behalf of this person.
+    let ctx = ToolCtx {
+        library: state.library.clone(),
+        root_data_dir: root_cfg.data_dir.clone(),
+        person_id: person.id.clone(),
+    };
     match (req.method.as_str(), req.path.as_str()) {
         ("GET", "/") => {
             // First visit (or an unknown/forged/stale cookie): issue a
@@ -1901,6 +2408,325 @@ fn handle_connection(mut stream: std::net::TcpStream, state: &AppState) -> std::
             200,
             &json!({"person_id": person.id, "content": runtime.cfg.read_memory()}),
         ),
+        ("GET", "/phone") => {
+            // The phone face: same core, same session discipline.
+            if !session_known(state, &req.session) {
+                let sid = new_session_id();
+                insert_session(state, sid.clone(), person.id.clone());
+                return respond_h(
+                    &mut stream,
+                    200,
+                    "text/html; charset=utf-8",
+                    ui::PHONE_HTML,
+                    &[(
+                        "Set-Cookie",
+                        format!("ergon_session={sid}; Path=/; HttpOnly; SameSite=Lax"),
+                    )],
+                );
+            }
+            respond(&mut stream, 200, "text/html; charset=utf-8", ui::PHONE_HTML)
+        }
+        ("GET", "/api/library") => {
+            let lib = state.library.lock().unwrap();
+            respond_json(
+                &mut stream,
+                200,
+                &json!({
+                    "items": lib.items.iter().map(|i| i.to_json()).collect::<Vec<_>>(),
+                }),
+            )
+        }
+        ("GET", "/api/suite") => {
+            let lib = state.library.lock().unwrap();
+            let suite = library::load_suite(&runtime.cfg.data_dir);
+            let installed: Vec<Value> = suite
+                .resolved(&lib)
+                .iter()
+                .map(|i| i.to_json())
+                .collect();
+            respond_json(
+                &mut stream,
+                200,
+                &json!({"person_id": person.id, "installed": installed}),
+            )
+        }
+        ("POST", "/api/suite/install") => {
+            let parsed: Value = serde_json::from_slice(&req.body).unwrap_or(Value::Null);
+            let id = parsed["item_id"].as_str().unwrap_or("");
+            let lib = state.library.lock().unwrap();
+            match lib.get(id) {
+                None => respond_json(
+                    &mut stream,
+                    404,
+                    &json!({"error": "library item not found"}),
+                ),
+                Some(item) if item.builtin => respond_json(
+                    &mut stream,
+                    400,
+                    &json!({"error": "that item is built into every agent already"}),
+                ),
+                Some(item) => {
+                    let mut suite = library::load_suite(&runtime.cfg.data_dir);
+                    suite.install(&item.id);
+                    library::save_suite(&runtime.cfg.data_dir, &suite);
+                    respond_json(&mut stream, 200, &json!({"installed": item.id}))
+                }
+            }
+        }
+        ("POST", "/api/suite/remove") => {
+            let parsed: Value = serde_json::from_slice(&req.body).unwrap_or(Value::Null);
+            let id = parsed["item_id"].as_str().unwrap_or("");
+            let mut suite = library::load_suite(&runtime.cfg.data_dir);
+            suite.installed.retain(|i| i != id);
+            library::save_suite(&runtime.cfg.data_dir, &suite);
+            respond_json(&mut stream, 200, &json!({"removed": id}))
+        }
+        ("GET", "/api/decisions") => {
+            let decisions = records::load_decisions(&runtime.cfg.data_dir);
+            respond_json(&mut stream, 200, &json!({"decisions": decisions}))
+        }
+        ("GET", "/api/offers") => {
+            // Refresh first, so the inbox shows what the work log has
+            // newly earned since the last look.
+            let offers = {
+                let lib = state.library.lock().unwrap();
+                let suite = library::load_suite(&runtime.cfg.data_dir);
+                records::refresh_offers(&runtime.cfg, &suite, &lib)
+            };
+            respond_json(&mut stream, 200, &json!({"offers": offers}))
+        }
+        ("GET", "/api/brief") => {
+            let brief = {
+                let lib = state.library.lock().unwrap();
+                let suite = library::load_suite(&runtime.cfg.data_dir);
+                records::refresh_offers(&runtime.cfg, &suite, &lib);
+                records::build_brief(&runtime.cfg, &person.name, &suite, &lib)
+            };
+            respond_json(&mut stream, 200, &brief)
+        }
+        ("GET", "/api/today") => respond_json(
+            &mut stream,
+            200,
+            &records::build_today(&runtime.cfg),
+        ),
+        ("GET", "/api/graph") => {
+            let people = state.people.lock().unwrap();
+            let lib = state.library.lock().unwrap();
+            respond_json(
+                &mut stream,
+                200,
+                &records::build_graph(&people.people, root_cfg, &lib),
+            )
+        }
+        ("POST", path) if path.starts_with("/api/decisions/") => {
+            let rest = path.trim_start_matches("/api/decisions/");
+            let (id, action) = match rest.rsplit_once('/') {
+                Some((i, a)) => (i.to_string(), a.to_string()),
+                None => {
+                    return respond_json(
+                        &mut stream,
+                        404,
+                        &json!({"error": "not found"}),
+                    )
+                }
+            };
+            if action != "approve" && action != "deny" {
+                return respond_json(&mut stream, 404, &json!({"error": "not found"}));
+            }
+            match records::resolve_decision(&runtime.cfg, &id, action == "approve") {
+                Ok((decision, outcome)) => {
+                    // The outcome reports back into the thread the
+                    // decision came from, so the record is complete
+                    // where the work happened.
+                    let tid = decision["thread_id"].as_str().unwrap_or("");
+                    if !tid.is_empty() {
+                        runtime.store.lock().unwrap().push(
+                            tid,
+                            "step",
+                            &format!(
+                                "Decision settled — {}: {}",
+                                decision["summary"].as_str().unwrap_or(""),
+                                outcome
+                            ),
+                        );
+                    }
+                    respond_json(
+                        &mut stream,
+                        200,
+                        &json!({"decision": decision, "outcome": outcome}),
+                    )
+                }
+                Err(e) => respond_json(&mut stream, 400, &json!({"error": e})),
+            }
+        }
+        ("POST", path) if path.starts_with("/api/offers/") => {
+            let rest = path.trim_start_matches("/api/offers/");
+            let (id, action) = match rest.rsplit_once('/') {
+                Some((i, a)) => (i.to_string(), a.to_string()),
+                None => {
+                    return respond_json(
+                        &mut stream,
+                        404,
+                        &json!({"error": "not found"}),
+                    )
+                }
+            };
+            match action.as_str() {
+                "dismiss" => match records::set_offer_status(&runtime.cfg.data_dir, &id, "dismissed") {
+                    Ok(offer) => respond_json(&mut stream, 200, &json!({"offer": offer})),
+                    Err(e) => respond_json(&mut stream, 400, &json!({"error": e})),
+                },
+                "accept" => {
+                    // Look the offer up first; acceptance DOES the
+                    // thing offered (install the app / create the
+                    // one-tap app from the repeated task), then marks
+                    // the offer settled.
+                    let offers = records::load_offers(&runtime.cfg.data_dir);
+                    let Some(offer) = offers.iter().find(|o| o["id"].as_str() == Some(id.as_str())).cloned() else {
+                        return respond_json(&mut stream, 404, &json!({"error": "offer not found"}));
+                    };
+                    if offer["status"].as_str() != Some("pending") {
+                        return respond_json(
+                            &mut stream,
+                            400,
+                            &json!({"error": "that offer was already settled"}),
+                        );
+                    }
+                    let kind = offer["kind"].as_str().unwrap_or("");
+                    let mut made: Option<Value> = None;
+                    if kind == "install_app" {
+                        let item_id = offer["item_id"].as_str().unwrap_or("");
+                        let mut suite = library::load_suite(&runtime.cfg.data_dir);
+                        if suite.install(item_id) {
+                            library::save_suite(&runtime.cfg.data_dir, &suite);
+                        }
+                        made = Some(json!({"installed": item_id}));
+                    } else if kind == "repeat_task" {
+                        let template = offer["template"].as_str().unwrap_or("");
+                        let short: String = template.chars().take(48).collect();
+                        let name = format!("One-tap: {short}");
+                        let mut lib = state.library.lock().unwrap();
+                        match lib.publish_app(
+                            &name,
+                            "Created from an offer: work this person kept asking for, as a one-tap app.",
+                            template.to_string(),
+                            Vec::new(),
+                            &person.id,
+                        ) {
+                            Ok(item) => {
+                                lib.save(&root_cfg.data_dir);
+                                let mut suite = library::load_suite(&runtime.cfg.data_dir);
+                                suite.install(&item.id);
+                                library::save_suite(&runtime.cfg.data_dir, &suite);
+                                made = Some(item.to_json());
+                            }
+                            Err(e) => {
+                                return respond_json(&mut stream, 400, &json!({"error": e}))
+                            }
+                        }
+                    }
+                    match records::set_offer_status(&runtime.cfg.data_dir, &id, "accepted") {
+                        Ok(offer) => respond_json(
+                            &mut stream,
+                            200,
+                            &json!({"offer": offer, "made": made}),
+                        ),
+                        Err(e) => respond_json(&mut stream, 400, &json!({"error": e})),
+                    }
+                }
+                _ => respond_json(&mut stream, 404, &json!({"error": "not found"})),
+            }
+        }
+        ("POST", path) if path.starts_with("/api/apps/") && path.ends_with("/run") => {
+            let id = path
+                .trim_start_matches("/api/apps/")
+                .trim_end_matches("/run")
+                .to_string();
+            let item = {
+                let lib = state.library.lock().unwrap();
+                lib.get(&id)
+            };
+            let Some(item) = item else {
+                return respond_json(&mut stream, 404, &json!({"error": "app not found"}));
+            };
+            if item.kind != "app" {
+                return respond_json(
+                    &mut stream,
+                    400,
+                    &json!({"error": "that library item is not an app"}),
+                );
+            }
+            let suite = library::load_suite(&runtime.cfg.data_dir);
+            if !suite.installed.iter().any(|i| *i == item.id) {
+                return respond_json(
+                    &mut stream,
+                    400,
+                    &json!({"error": "that app is not in this person's suite"}),
+                );
+            }
+            let parsed: Value = serde_json::from_slice(&req.body).unwrap_or(Value::Null);
+            // Every field the template actually uses must be filled
+            // BEFORE substitution — checking afterwards cannot work:
+            // substitution erases the evidence of an empty field and
+            // the run would start with a hole in its instructions.
+            for field in &item.fields {
+                if item.template.contains(&format!("{{{field}}}")) {
+                    let value = parsed["fields"][field.as_str()]
+                        .as_str()
+                        .unwrap_or("")
+                        .trim();
+                    if value.is_empty() {
+                        return respond_json(
+                            &mut stream,
+                            400,
+                            &json!({"error": "fill in every field before running the app"}),
+                        );
+                    }
+                }
+            }
+            // Fill the template's {field} slots from the run's inputs.
+            let mut task = item.template.clone();
+            for field in &item.fields {
+                let value = parsed["fields"][field.as_str()]
+                    .as_str()
+                    .unwrap_or("")
+                    .trim()
+                    .to_string();
+                task = task.replace(&format!("{{{field}}}"), &value);
+            }
+            let cfg = &runtime.cfg;
+            let thread_id = {
+                let mut store = runtime.store.lock().unwrap();
+                let tid = store.create_thread();
+                store.push(&tid, "user", &format!("{} — {}", item.name, task));
+                tid
+            };
+            if cfg.api_key.is_none() {
+                runtime
+                    .store
+                    .lock()
+                    .unwrap()
+                    .push(&thread_id, "error", NO_KEY_ERROR);
+                return respond_json(
+                    &mut stream,
+                    503,
+                    &json!({"error": NO_KEY_ERROR, "thread_id": thread_id}),
+                );
+            }
+            match run_agent(cfg, &ctx, &runtime.store, &thread_id, &task, &[]) {
+                Ok(_outcome) => {
+                    let store = runtime.store.lock().unwrap();
+                    let v = store
+                        .thread_json(&thread_id)
+                        .unwrap_or_else(|| json!({"thread_id": thread_id}));
+                    respond_json(&mut stream, 200, &v)
+                }
+                Err(e) => {
+                    runtime.store.lock().unwrap().push(&thread_id, "error", &e);
+                    respond_json(&mut stream, 500, &json!({"error": e, "thread_id": thread_id}))
+                }
+            }
+        }
         ("GET", "/api/threads") => {
             let store = runtime.store.lock().unwrap();
             respond_json(&mut stream, 200, &store.list_json())
@@ -1945,7 +2771,7 @@ fn handle_connection(mut stream: std::net::TcpStream, state: &AppState) -> std::
                     &json!({"error": NO_KEY_ERROR, "thread_id": thread_id}),
                 );
             }
-            match run_agent(cfg, &runtime.store, &thread_id, &message, &history) {
+            match run_agent(cfg, &ctx, &runtime.store, &thread_id, &message, &history) {
                 Ok(_outcome) => {
                     let store = runtime.store.lock().unwrap();
                     let v = store

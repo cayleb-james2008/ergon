@@ -121,6 +121,24 @@ fn build_context(cfg: &Config) -> Result<rune::Context, String> {
     Ok(context)
 }
 
+/// Compile a script against the host context without running it.
+/// Publishing a skill into the company library goes through this
+/// first: a script that does not build is refused, never stored.
+pub fn check_script(cfg: &Config, script: &str) -> Result<(), String> {
+    let context = build_context(cfg)?;
+    let mut sources = rune::Sources::new();
+    sources
+        .insert(rune::Source::memory(script).map_err(|e| format!("rune source: {e}"))?)
+        .map_err(|e| format!("rune sources: {e}"))?;
+    let mut diagnostics = rune::Diagnostics::new();
+    rune::prepare(&mut sources)
+        .with_context(&context)
+        .with_diagnostics(&mut diagnostics)
+        .build()
+        .map_err(|e| format!("rune skill failed to build: {e}"))?;
+    Ok(())
+}
+
 fn run_script<A>(cfg: &Config, script: &str, args: A) -> Result<String, String>
 where
     A: rune::runtime::Args + rune::runtime::GuardedArgs,
@@ -204,6 +222,34 @@ pub fn research(cfg: &Config, topic: &str, urls: Vec<String>) -> Result<String, 
     // fetch results are known). A count of attempted URLs would read
     // as a count of fetched pages.
     Ok(format!("wrote research notes {written} ({len} bytes)"))
+}
+
+/// Run a LIBRARY skill: a Rune script from the company library,
+/// following the library convention — `main` takes the item's
+/// declared parameters as strings, in order (at most 5), and returns
+/// a string: plain result text, `file:<name>` when it wrote a
+/// workspace file, or `error:...` on failure. The return is shaped
+/// into the same kind of tool result the built-in skills produce.
+pub fn run_library_skill(cfg: &Config, source: &str, values: &[String]) -> Result<String, String> {
+    let v = |i: usize| values.get(i).cloned().unwrap_or_default();
+    let returned = match values.len() {
+        0 => run_script(cfg, source, ())?,
+        1 => run_script(cfg, source, (v(0),))?,
+        2 => run_script(cfg, source, (v(0), v(1)))?,
+        3 => run_script(cfg, source, (v(0), v(1), v(2)))?,
+        4 => run_script(cfg, source, (v(0), v(1), v(2), v(3)))?,
+        5 => run_script(cfg, source, (v(0), v(1), v(2), v(3), v(4)))?,
+        _ => return Err("library skills take at most 5 parameters".to_string()),
+    };
+    if let Some(err) = returned.strip_prefix("error:") {
+        return Err(err.trim().to_string());
+    }
+    if let Some(name) = returned.strip_prefix("file:") {
+        let full = sandbox_path(&cfg.workspace_dir, name)?;
+        let len = std::fs::metadata(&full).map(|m| m.len()).unwrap_or(0);
+        return Ok(format!("wrote {name} ({len} bytes)"));
+    }
+    Ok(returned)
 }
 
 /// Rune skill: append a formatted learned note to memory.md.

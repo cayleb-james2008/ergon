@@ -1636,3 +1636,757 @@ fn mention_matching_edges() {
     );
     assert_eq!(missing, vec!["Report.md".to_string()], "a trailing colon cannot hide a name");
 }
+
+// ---------------------------------------------------------------------------
+// Completion tests — library, suites, subagents, decisions, offers,
+// brief/graph/today, faces, phone, gate, installer.
+// ---------------------------------------------------------------------------
+
+/// Raw HTTP with an optional X-Ergon-Gate header.
+fn http_gate(
+    port: u16,
+    method: &str,
+    path: &str,
+    body: Option<&str>,
+    gate: Option<&str>,
+) -> (u16, String) {
+    let mut stream = TcpStream::connect(("127.0.0.1", port)).unwrap();
+    let body = body.unwrap_or("");
+    let gate_line = gate
+        .map(|g| format!("X-Ergon-Gate: {g}\r\n"))
+        .unwrap_or_default();
+    let req = format!(
+        "{method} {path} HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Type: application/json\r\n{gate_line}Content-Length: {}\r\nConnection: close\r\n\r\n{body}",
+        body.len()
+    );
+    stream.write_all(req.as_bytes()).unwrap();
+    let mut raw = String::new();
+    stream.read_to_string(&mut raw).unwrap();
+    let status: u16 = raw
+        .split_whitespace()
+        .nth(1)
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0);
+    let body_start = raw.find("\r\n\r\n").map(|i| i + 4).unwrap_or(raw.len());
+    (status, raw[body_start..].to_string())
+}
+
+fn chat(port: u16, message: &str) -> (u16, String) {
+    http(
+        port,
+        "POST",
+        "/api/chat",
+        Some(&json!({"message": message}).to_string()),
+    )
+}
+
+#[test]
+fn library_is_seeded_and_suites_are_role_shaped() {
+    let root = test_root("libseed");
+    let cfg = test_config(&root, None, "http://127.0.0.1:9/v1".to_string());
+    let port = start_app(cfg.clone());
+
+    let (status, body) = http(port, "GET", "/api/library", None);
+    assert_eq!(status, 200);
+    let lib: Value = serde_json::from_str(&body).unwrap();
+    let ids: Vec<&str> = lib["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|i| i["id"].as_str())
+        .collect();
+    for expected in [
+        "write-document",
+        "make-spreadsheet",
+        "research",
+        "update-memory",
+        "daily-log",
+        "reading-list",
+        "researcher",
+        "editor",
+        "bookkeeper",
+        "meeting-actions",
+        "expense-sheet",
+        "weekly-summary",
+    ] {
+        assert!(ids.contains(&expected), "seed library must contain {expected}: {ids:?}");
+    }
+    let wd = lib["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|i| i["id"] == json!("write-document"))
+        .unwrap();
+    assert_eq!(wd["builtin"], json!(true), "built-ins are marked as built-in");
+
+    // Default person's starter suite: researcher + meeting-actions.
+    let (status, body) = http(port, "GET", "/api/suite", None);
+    assert_eq!(status, 200);
+    let suite: Value = serde_json::from_str(&body).unwrap();
+    let installed: Vec<&str> = suite["installed"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|i| i["id"].as_str())
+        .collect();
+    assert!(installed.contains(&"researcher"), "{installed:?}");
+    assert!(installed.contains(&"meeting-actions"), "{installed:?}");
+    assert!(!installed.contains(&"bookkeeper"), "no role, no bookkeeper: {installed:?}");
+
+    // A finance-shaped person gets a finance-shaped suite.
+    let (status, body) = http(
+        port,
+        "POST",
+        "/api/people",
+        Some(&json!({"name": "Faye", "role": "Finance manager"}).to_string()),
+    );
+    assert_eq!(status, 201, "{body}");
+    let faye: Value = serde_json::from_str(&body).unwrap();
+    let (status, _) = http(
+        port,
+        "POST",
+        "/api/active-person",
+        Some(&json!({"id": faye["id"]}).to_string()),
+    );
+    assert_eq!(status, 200);
+    let (_, body) = http(port, "GET", "/api/suite", None);
+    let suite: Value = serde_json::from_str(&body).unwrap();
+    let installed: Vec<&str> = suite["installed"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|i| i["id"].as_str())
+        .collect();
+    assert!(installed.contains(&"bookkeeper"), "finance role gets the bookkeeper: {installed:?}");
+    assert!(installed.contains(&"expense-sheet"), "finance role gets the expense app: {installed:?}");
+}
+
+#[test]
+fn installed_library_skill_runs_end_to_end() {
+    let root = test_root("libskill");
+    let replies = vec![
+        json!({"tool": "daily-log", "args": {"entry": "Sent the invoice to Acme"}}).to_string(),
+        json!({"done": true, "summary": "Logged it in Daily Log.md."}).to_string(),
+        json!({"tool": "daily-log", "args": {"entry": "Booked the venue"}}).to_string(),
+        json!({"done": true, "summary": "Added it to Daily Log.md."}).to_string(),
+    ];
+    let stub = start_stub_model(replies);
+    let cfg = test_config(
+        &root,
+        Some("test-key"),
+        format!("http://127.0.0.1:{}/v1", stub.port),
+    );
+    let ws = cfg.workspace_dir.clone();
+    let port = start_app(cfg);
+
+    // Not in the starter suite: install it through the API first.
+    let (status, body) = http(
+        port,
+        "POST",
+        "/api/suite/install",
+        Some(&json!({"item_id": "daily-log"}).to_string()),
+    );
+    assert_eq!(status, 200, "{body}");
+
+    let (status, body) = chat(port, "Log that I sent the invoice to Acme");
+    assert_eq!(status, 200, "{body}");
+    let log = ws.join("Daily Log.md");
+    assert!(log.exists(), "the library skill wrote its file");
+    let content = std::fs::read_to_string(&log).unwrap();
+    assert!(content.contains("Sent the invoice to Acme"), "{content}");
+    // The honesty gate must not flag the summary: the library skill's
+    // write is credited to the run.
+    assert!(
+        !body.contains("treat the summary above with caution"),
+        "gate must not flag a library skill's real write: {body}"
+    );
+    // The suite skill was offered to the model in its system prompt.
+    let requests = stub.raw_requests.lock().unwrap();
+    assert!(
+        requests[0].contains("daily-log"),
+        "system prompt must list the installed library skill"
+    );
+    drop(requests);
+
+    // A second run appends rather than overwriting.
+    let (status, _) = chat(port, "Log that I booked the venue");
+    assert_eq!(status, 200);
+    let content = std::fs::read_to_string(&log).unwrap();
+    assert!(content.contains("Sent the invoice to Acme"), "{content}");
+    assert!(content.contains("Booked the venue"), "{content}");
+}
+
+#[test]
+fn agent_publishes_a_skill_and_another_persons_agent_runs_it() {
+    let root = test_root("publish");
+    let broken = "pub fn main(entry) { let x = ; }";
+    let good = "pub fn main(entry) {\n    let label = `file:Shout Log.md`;\n    let result = host_workspace_write(\"Shout Log.md\", entry);\n    if result != \"ok\" { return result; }\n    label\n}";
+    let replies = vec![
+        // Person A: first a broken script (must be refused), then a good one.
+        json!({"tool": "publish_skill", "args": {"name": "Shout log", "description": "Writes an entry into Shout Log", "params": ["entry"], "source": broken}}).to_string(),
+        json!({"tool": "publish_skill", "args": {"name": "Shout log", "description": "Writes an entry into Shout Log", "params": ["entry"], "source": good}}).to_string(),
+        json!({"done": true, "summary": "Published the Shout log skill to the company library."}).to_string(),
+        // Person B: install it, then (next task) run it.
+        json!({"tool": "install_item", "args": {"item_id": "shout-log"}}).to_string(),
+        json!({"done": true, "summary": "Installed Shout log into my suite."}).to_string(),
+        json!({"tool": "shout-log", "args": {"entry": "hello from B"}}).to_string(),
+        json!({"done": true, "summary": "Wrote Shout Log.md with your entry."}).to_string(),
+    ];
+    let stub = start_stub_model(replies);
+    let cfg = test_config(
+        &root,
+        Some("test-key"),
+        format!("http://127.0.0.1:{}/v1", stub.port),
+    );
+    let a_ws = cfg.workspace_dir.clone();
+    let data_dir = cfg.data_dir.clone();
+    let port = start_app(cfg);
+
+    let (status, body) = chat(port, "Make me a skill that writes entries into a shout log");
+    assert_eq!(status, 200, "{body}");
+    let thread: Value = serde_json::from_str(&body).unwrap();
+    let text = thread.to_string();
+    assert!(
+        text.contains("failed to build") || text.contains("error:"),
+        "the broken script must be refused in the open: {text}"
+    );
+    assert!(
+        text.contains("published skill 'Shout log'"),
+        "the good script must be published: {text}"
+    );
+
+    // It is in the shared library, authored by person A ("default").
+    let (_, body) = http(port, "GET", "/api/library", None);
+    let lib: Value = serde_json::from_str(&body).unwrap();
+    let item = lib["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|i| i["id"] == json!("shout-log"))
+        .expect("published skill is in the library");
+    assert_eq!(item["author"], json!("default"));
+    assert_eq!(item["kind"], json!("skill"));
+
+    // Person B installs and runs it — in B's own workspace only.
+    let (status, body) = http(
+        port,
+        "POST",
+        "/api/people",
+        Some(&json!({"name": "Bee", "role": ""}).to_string()),
+    );
+    assert_eq!(status, 201, "{body}");
+    let bee: Value = serde_json::from_str(&body).unwrap();
+    http(
+        port,
+        "POST",
+        "/api/active-person",
+        Some(&json!({"id": bee["id"]}).to_string()),
+    );
+    let (status, _) = chat(port, "Add the shout log skill to my suite");
+    assert_eq!(status, 200);
+    let (status, body) = chat(port, "Shout: hello from B");
+    assert_eq!(status, 200, "{body}");
+    let b_ws = data_dir.join("people").join("bee").join("workspace");
+    let shout = b_ws.join("Shout Log.md");
+    assert!(shout.exists(), "B's agent ran A's published skill in B's workspace");
+    assert!(std::fs::read_to_string(&shout).unwrap().contains("hello from B"));
+    assert!(
+        !a_ws.join("Shout Log.md").exists(),
+        "the skill ran in B's workspace, not A's"
+    );
+}
+
+#[test]
+fn delegate_runs_a_suite_subagent_and_refuses_others() {
+    let root = test_root("delegate");
+    let replies = vec![
+        json!({"tool": "delegate", "args": {"subagent": "researcher", "task": "Find the launch date in the notes"}}).to_string(),
+        json!({"tool": "read_file", "args": {"path": "notes.txt"}}).to_string(),
+        json!({"done": true, "summary": "The launch date is March 3."}).to_string(),
+        json!({"done": true, "summary": "The Researcher found it: the launch date is March 3."}).to_string(),
+        // Second task: delegate to a subagent NOT in the suite.
+        json!({"tool": "delegate", "args": {"subagent": "editor", "task": "Polish this"}}).to_string(),
+        json!({"done": true, "summary": "I could not delegate that; the Editor is not in my suite."}).to_string(),
+    ];
+    let stub = start_stub_model(replies);
+    let cfg = test_config(
+        &root,
+        Some("test-key"),
+        format!("http://127.0.0.1:{}/v1", stub.port),
+    );
+    std::fs::write(cfg.workspace_dir.join("notes.txt"), "Launch date is March 3.\n").unwrap();
+    let port = start_app(cfg);
+
+    let (status, body) = chat(port, "When is the launch?");
+    assert_eq!(status, 200, "{body}");
+    assert!(body.contains("Delegated to Researcher"), "delegation is on the record: {body}");
+    assert!(body.contains("(via Researcher)"), "subagent steps are labelled: {body}");
+    assert!(body.contains("The launch date is March 3."), "{body}");
+
+    let (status, body) = chat(port, "Get the Editor to polish this");
+    assert_eq!(status, 200, "{body}");
+    assert!(
+        body.contains("no subagent 'editor' in this person's suite"),
+        "delegating outside the suite is refused in the open: {body}"
+    );
+}
+
+#[test]
+fn delete_parks_a_decision_and_only_approval_deletes() {
+    let root = test_root("decisions");
+    let replies = vec![
+        json!({"tool": "delete_file", "args": {"path": "old.txt"}}).to_string(),
+        json!({"done": true, "summary": "Deleting old.txt is parked in your decisions inbox for approval."}).to_string(),
+        json!({"tool": "delete_file", "args": {"path": "keep.txt"}}).to_string(),
+        json!({"done": true, "summary": "Deleting keep.txt is parked in your decisions inbox for approval."}).to_string(),
+        json!({"tool": "flag_decision", "args": {"summary": "Send the draft contract to Acme?"}}).to_string(),
+        json!({"done": true, "summary": "Raised the contract question in your decisions inbox."}).to_string(),
+    ];
+    let stub = start_stub_model(replies);
+    let cfg = test_config(
+        &root,
+        Some("test-key"),
+        format!("http://127.0.0.1:{}/v1", stub.port),
+    );
+    let ws = cfg.workspace_dir.clone();
+    std::fs::write(ws.join("old.txt"), "old").unwrap();
+    std::fs::write(ws.join("keep.txt"), "keep").unwrap();
+    let port = start_app(cfg);
+
+    let (status, _) = chat(port, "Delete old.txt");
+    assert_eq!(status, 200);
+    assert!(ws.join("old.txt").exists(), "a parked deletion must NOT delete");
+
+    let (_, body) = http(port, "GET", "/api/decisions", None);
+    let v: Value = serde_json::from_str(&body).unwrap();
+    let decisions = v["decisions"].as_array().unwrap();
+    assert_eq!(decisions.len(), 1);
+    assert_eq!(decisions[0]["status"], json!("pending"));
+    assert_eq!(decisions[0]["kind"], json!("delete"));
+    let id = decisions[0]["id"].as_str().unwrap().to_string();
+
+    let (status, body) = http(
+        port,
+        "POST",
+        &format!("/api/decisions/{id}/approve"),
+        Some("{}"),
+    );
+    assert_eq!(status, 200, "{body}");
+    assert!(!ws.join("old.txt").exists(), "approval deletes for real");
+    let outcome: Value = serde_json::from_str(&body).unwrap();
+    assert!(outcome["outcome"].as_str().unwrap().contains("was deleted"));
+
+    // Settling twice is refused.
+    let (status, _) = http(
+        port,
+        "POST",
+        &format!("/api/decisions/{id}/approve"),
+        Some("{}"),
+    );
+    assert_eq!(status, 400);
+
+    // Denial leaves the file exactly where it was.
+    let (status, _) = chat(port, "Delete keep.txt");
+    assert_eq!(status, 200);
+    let (_, body) = http(port, "GET", "/api/decisions", None);
+    let v: Value = serde_json::from_str(&body).unwrap();
+    let pending = v["decisions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|d| d["status"] == json!("pending"))
+        .unwrap();
+    let id2 = pending["id"].as_str().unwrap().to_string();
+    let (status, _) = http(
+        port,
+        "POST",
+        &format!("/api/decisions/{id2}/deny"),
+        Some("{}"),
+    );
+    assert_eq!(status, 200);
+    assert!(ws.join("keep.txt").exists(), "denial deletes nothing");
+
+    // An agent-raised question lands in the same inbox.
+    let (status, _) = chat(port, "Should we send the draft contract to Acme?");
+    assert_eq!(status, 200);
+    let (_, body) = http(port, "GET", "/api/decisions", None);
+    let v: Value = serde_json::from_str(&body).unwrap();
+    assert!(
+        v["decisions"].as_array().unwrap().iter().any(|d| {
+            d["kind"] == json!("question")
+                && d["summary"].as_str().unwrap_or("").contains("draft contract")
+                && d["status"] == json!("pending")
+        }),
+        "flag_decision lands in the inbox: {body}"
+    );
+}
+
+#[test]
+fn offers_appear_after_repeated_work_and_acceptance_builds_the_app() {
+    let root = test_root("offers");
+    let mut replies: Vec<String> = Vec::new();
+    for _ in 0..3 {
+        replies.push(json!({"done": true, "summary": "Done."}).to_string());
+    }
+    for _ in 0..4 {
+        replies.push(json!({"done": true, "summary": "Filed."}).to_string());
+    }
+    let stub = start_stub_model(replies);
+    let cfg = test_config(
+        &root,
+        Some("test-key"),
+        format!("http://127.0.0.1:{}/v1", stub.port),
+    );
+    let port = start_app(cfg);
+
+    for _ in 0..3 {
+        let (status, _) = chat(port, "Summarise the weekly notes into a document");
+        assert_eq!(status, 200);
+    }
+    let (_, body) = http(port, "GET", "/api/offers", None);
+    let v: Value = serde_json::from_str(&body).unwrap();
+    let offer = v["offers"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|o| o["kind"] == json!("repeat_task") && o["status"] == json!("pending"))
+        .expect("three similar finished tasks earn an offer")
+        .clone();
+    let offer_id = offer["id"].as_str().unwrap().to_string();
+
+    // Accepting builds the one-tap app and installs it in the suite.
+    let (status, body) = http(
+        port,
+        "POST",
+        &format!("/api/offers/{offer_id}/accept"),
+        Some("{}"),
+    );
+    assert_eq!(status, 200, "{body}");
+    let accepted: Value = serde_json::from_str(&body).unwrap();
+    let app_id = accepted["made"]["id"].as_str().unwrap().to_string();
+    assert!(app_id.starts_with("one-tap-"), "{app_id}");
+    let (_, body) = http(port, "GET", "/api/suite", None);
+    let suite: Value = serde_json::from_str(&body).unwrap();
+    assert!(
+        suite["installed"].as_array().unwrap().iter().any(|i| i["id"] == json!(app_id)),
+        "the accepted offer's app is in the suite: {body}"
+    );
+    // Settling twice is refused.
+    let (status, _) = http(
+        port,
+        "POST",
+        &format!("/api/offers/{offer_id}/accept"),
+        Some("{}"),
+    );
+    assert_eq!(status, 400);
+
+    // A dismissed pattern is never re-offered.
+    for _ in 0..3 {
+        chat(port, "File the expense receipts properly");
+    }
+    let (_, body) = http(port, "GET", "/api/offers", None);
+    let v: Value = serde_json::from_str(&body).unwrap();
+    let offer2 = v["offers"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|o| o["key"] == json!("file expense receipts") && o["status"] == json!("pending"))
+        .expect("the second pattern earns its own offer")
+        .clone();
+    let offer2_id = offer2["id"].as_str().unwrap().to_string();
+    let (status, _) = http(
+        port,
+        "POST",
+        &format!("/api/offers/{offer2_id}/dismiss"),
+        Some("{}"),
+    );
+    assert_eq!(status, 200);
+    chat(port, "File the expense receipts properly");
+    let (_, body) = http(port, "GET", "/api/offers", None);
+    let v: Value = serde_json::from_str(&body).unwrap();
+    let same_key: Vec<&Value> = v["offers"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|o| o["key"] == json!("file expense receipts"))
+        .collect();
+    assert_eq!(same_key.len(), 1, "a dismissed pattern is not re-offered: {body}");
+    assert_eq!(same_key[0]["status"], json!("dismissed"));
+}
+
+#[test]
+fn brief_today_and_graph_reflect_real_work() {
+    let root = test_root("brief");
+    let replies = vec![
+        json!({"tool": "write_document", "args": {"title": "Summary", "sections": ["All the points."]}}).to_string(),
+        json!({"done": true, "summary": "Wrote Summary.md."}).to_string(),
+    ];
+    let stub = start_stub_model(replies);
+    let cfg = test_config(
+        &root,
+        Some("test-key"),
+        format!("http://127.0.0.1:{}/v1", stub.port),
+    );
+    let data_dir = cfg.data_dir.clone();
+    let port = start_app(cfg);
+    let (status, _) = chat(port, "Summarise everything into a document");
+    assert_eq!(status, 200);
+
+    // The work log recorded the finished run (written by the loop).
+    let work: Value =
+        serde_json::from_str(&std::fs::read_to_string(data_dir.join("work.json")).unwrap())
+            .unwrap();
+    let entries = work["entries"].as_array().unwrap();
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0]["task"], json!("Summarise everything into a document"));
+    assert!(
+        entries[0]["files"].as_array().unwrap().iter().any(|f| f == &json!("Summary.md")),
+        "the work log names the file the run wrote: {entries:?}"
+    );
+
+    let (status, body) = http(port, "GET", "/api/brief", None);
+    assert_eq!(status, 200);
+    let brief: Value = serde_json::from_str(&body).unwrap();
+    assert!(brief["headline"].as_str().unwrap().contains("1 job"), "{body}");
+    assert_eq!(brief["finished"][0]["task"], json!("Summarise everything into a document"));
+    assert!(brief["suite_size"].as_u64().unwrap() >= 2);
+    assert!(brief["library_size"].as_u64().unwrap() >= 12);
+
+    let (status, body) = http(port, "GET", "/api/today", None);
+    assert_eq!(status, 200);
+    let today: Value = serde_json::from_str(&body).unwrap();
+    assert!(
+        today["events"].as_array().unwrap().iter().any(|e| e["kind"] == json!("work")),
+        "today's stream carries the finished work: {body}"
+    );
+
+    let (status, body) = http(port, "GET", "/api/graph", None);
+    assert_eq!(status, 200);
+    let graph: Value = serde_json::from_str(&body).unwrap();
+    let kinds: Vec<&str> = graph["nodes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|n| n["kind"].as_str())
+        .collect();
+    assert!(kinds.contains(&"person"), "{kinds:?}");
+    assert!(kinds.contains(&"work"), "{kinds:?}");
+    assert!(kinds.contains(&"item"), "{kinds:?}");
+    assert!(
+        graph["nodes"].as_array().unwrap().iter().any(|n| n["label"] == json!("Summary.md")),
+        "the graph names the produced file: {body}"
+    );
+}
+
+#[test]
+fn suite_apps_run_from_their_fields() {
+    let root = test_root("apprun");
+    let replies = vec![
+        json!({"tool": "make_spreadsheet", "args": {"title": "Expenses", "columns": ["Item", "Cost"], "rows": [["Coffee", "4.50"]]}}).to_string(),
+        json!({"done": true, "summary": "Made Expenses.csv."}).to_string(),
+    ];
+    let stub = start_stub_model(replies);
+    let cfg = test_config(
+        &root,
+        Some("test-key"),
+        format!("http://127.0.0.1:{}/v1", stub.port),
+    );
+    let ws = cfg.workspace_dir.clone();
+    std::fs::write(ws.join("expenses.txt"), "Coffee 4.50\n").unwrap();
+    let port = start_app(cfg);
+
+    // An app outside the suite cannot run.
+    let (status, body) = http(
+        port,
+        "POST",
+        "/api/apps/expense-sheet/run",
+        Some(&json!({"fields": {"source_file": "expenses.txt"}}).to_string()),
+    );
+    assert_eq!(status, 400, "{body}");
+    assert!(body.contains("not in this person's suite"), "{body}");
+
+    // Install it, then run it with its field filled.
+    let (status, _) = http(
+        port,
+        "POST",
+        "/api/suite/install",
+        Some(&json!({"item_id": "expense-sheet"}).to_string()),
+    );
+    assert_eq!(status, 200);
+    let (status, body) = http(
+        port,
+        "POST",
+        "/api/apps/expense-sheet/run",
+        Some(&json!({"fields": {"source_file": "expenses.txt"}}).to_string()),
+    );
+    assert_eq!(status, 200, "{body}");
+    assert!(ws.join("Expenses.csv").exists(), "the app run produced the spreadsheet");
+    let thread: Value = serde_json::from_str(&body).unwrap();
+    let text = thread.to_string();
+    assert!(text.contains("Expense sheet"), "the run is on the thread record: {text}");
+    assert!(text.contains("expenses.txt"), "the filled field reached the task: {text}");
+
+    // A missing field is a clear refusal, not a run with a hole.
+    http(
+        port,
+        "POST",
+        "/api/suite/install",
+        Some(&json!({"item_id": "meeting-actions"}).to_string()),
+    );
+    let (status, body) = http(
+        port,
+        "POST",
+        "/api/apps/meeting-actions/run",
+        Some(&json!({"fields": {}}).to_string()),
+    );
+    assert_eq!(status, 400, "{body}");
+    assert!(body.contains("fill in every field"), "{body}");
+}
+
+#[test]
+fn faces_and_phone_are_served() {
+    let root = test_root("faces");
+    let cfg = test_config(&root, None, "http://127.0.0.1:9/v1".to_string());
+    let port = start_app(cfg);
+    let (status, body) = http(port, "GET", "/", None);
+    assert_eq!(status, 200);
+    for marker in [
+        "id=\"face-bar\"",
+        "data-face=\"graph\"",
+        "data-face=\"chat\"",
+        "data-face=\"today\"",
+        "id=\"face-graph\"",
+        "id=\"face-chat\"",
+        "id=\"face-today\"",
+        "id=\"graph-svg\"",
+        "id=\"brief-headline\"",
+        "id=\"decisions-list\"",
+        "id=\"offers-list\"",
+        "id=\"suite-panel\"",
+        "Work Graph",
+        "Today",
+    ] {
+        assert!(body.contains(marker), "desktop faces marker missing: {marker}");
+    }
+    // The chat face keeps the proven shell.
+    assert!(body.contains("id=\"composer-input\""));
+    assert!(body.contains("id=\"thread-list\""));
+
+    let (status, body) = http(port, "GET", "/phone", None);
+    assert_eq!(status, 200);
+    for marker in [
+        "data-tab=\"brief\"",
+        "data-tab=\"chat\"",
+        "data-tab=\"decisions\"",
+        "data-tab=\"suite\"",
+        "id=\"brief-headline\"",
+        "id=\"decisions-list\"",
+        "viewport-fit=cover",
+    ] {
+        assert!(body.contains(marker), "phone face marker missing: {marker}");
+    }
+}
+
+#[test]
+fn gate_token_blocks_without_and_allows_with() {
+    let root = test_root("gate");
+    let cfg = test_config(&root, None, "http://127.0.0.1:9/v1".to_string());
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    std::thread::spawn(move || {
+        let _ = ergon_rs::serve_with_gate(listener, cfg, Some("Gate-Token-42".to_string()));
+    });
+
+    let (status, _) = http_gate(port, "GET", "/api/status", None, None);
+    assert_eq!(status, 401, "no gate header is refused");
+    let (status, _) = http_gate(port, "GET", "/", None, None);
+    assert_eq!(status, 401, "the page itself is gated");
+    let (status, _) = http_gate(port, "GET", "/api/status", None, Some("wrong"));
+    assert_eq!(status, 401, "a wrong token is refused");
+    let (status, _) = http_gate(port, "GET", "/api/status", None, Some("Gate-Token-42"));
+    assert_eq!(status, 200, "the hosting layer's token is honoured, case intact");
+}
+
+#[test]
+fn library_skill_runner_and_compile_gate_directly() {
+    let root = test_root("skilldirect");
+    let cfg = test_config(&root, Some("k"), "http://127.0.0.1:9/v1".to_string());
+    cfg.ensure_dirs().unwrap();
+
+    // The compile gate refuses a script that does not build.
+    assert!(ergon_rs::skills::check_script(&cfg, "pub fn main( {").is_err());
+    // The seeded daily-log script builds and runs.
+    let lib = ergon_rs::library::Library::load(&cfg.data_dir);
+    let daily = lib.get("daily-log").unwrap();
+    let out = ergon_rs::skills::run_library_skill(&cfg, &daily.source, &["First entry".to_string()])
+        .unwrap();
+    assert!(out.contains("Daily Log.md"), "{out}");
+    let content = std::fs::read_to_string(cfg.workspace_dir.join("Daily Log.md")).unwrap();
+    assert!(content.contains("First entry"), "{content}");
+    // A script whose host call fails surfaces as an error, not a panic.
+    let bad = "pub fn main() { host_workspace_write(\"../escape.txt\", \"x\") }";
+    let res = ergon_rs::skills::run_library_skill(&cfg, bad, &[]);
+    assert!(res.is_err(), "sandboxed host functions refuse escapes from library skills too: {res:?}");
+}
+
+#[test]
+fn installer_installs_and_the_installed_binary_boots() {
+    let root = test_root("installer");
+    let pkg = root.join("pkg");
+    let home = root.join("home");
+    std::fs::create_dir_all(&pkg).unwrap();
+    std::fs::create_dir_all(&home).unwrap();
+    // Stage the "release package": the built binary + install.sh.
+    std::fs::copy(env!("CARGO_BIN_EXE_ergon"), pkg.join("ergon")).unwrap();
+    std::fs::copy(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("install.sh"),
+        pkg.join("install.sh"),
+    )
+    .unwrap();
+    let out = std::process::Command::new("bash")
+        .arg(pkg.join("install.sh"))
+        .env("HOME", &home)
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "installer failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let bin = home.join(".local/bin/ergon");
+    let launcher = home.join(".local/bin/ergon-serve");
+    assert!(bin.exists(), "binary installed");
+    assert!(launcher.exists(), "launcher written");
+    assert!(
+        home.join(".config/systemd/user/ergon.service").exists(),
+        "systemd user unit written"
+    );
+
+    // Boot the installed launcher on a free port and talk to it.
+    let probe = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = probe.local_addr().unwrap().port();
+    drop(probe);
+    let mut child = std::process::Command::new("bash")
+        .arg(&launcher)
+        .env("ERGON_PORT", port.to_string())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .unwrap();
+    let mut ok = false;
+    for _ in 0..50 {
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        if let Ok((status, _)) = std::panic::catch_unwind(|| http(port, "GET", "/", None)) {
+            if status == 200 {
+                ok = true;
+                break;
+            }
+        }
+    }
+    let data = home.join(".local/share/ergon");
+    let library_seeded = data.join("library.json").exists();
+    let _ = child.kill();
+    let _ = child.wait();
+    assert!(ok, "the installed binary serves the app");
+    assert!(library_seeded, "first boot seeds the company library");
+}
