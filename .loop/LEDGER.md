@@ -31,3 +31,14 @@
 - F10: parser mutation gap — already closed by the direct parser pin added in the checks-finder round (standing_preferences_excludes_only_identity_lines) plus the casing pin.
 - Credits held: history_json hygiene, no-key flow, legit symlinks, restart persistence.
 - Verify fix-round-3b: 36/36 green.
+
+## Review round 3 (thermonuclear, fresh context) — F1/F2 hold; F3 gate rebuilt
+- F1 (symlink resolver) and F2 (sessions): FULL battery passed, unbroken — mixed chains, sibling-person escape, 16/17-hop boundary, 75 concurrent session cycles, chat honours the session's person. C7 PASS.
+- F3 HIGH (third round on this gate): verb/noun heuristics still failed both directions. REBUILT: the gate now tracks WHICH files the run actually wrote (write_file/move_file args; skill results' named files). A named file that does not exist = caution; a named file that exists but this run did not write = a factual ledger line ("this run wrote X; the summary also names Y, which this run did not write") — the pre-existing-file lie is exposed without accusing honest input references. named_files tokenisation hardened (every non-filename char separates — colon/exclamation evasions closed; URLs excluded). Pinned: done_gate_checks_named_files_against_the_write_ledger + the two earlier gate tests still pass.
+- F5 MED residual: people.json shapes [], {}, 42 and all-invalid-ids loaded with NO backup (missing key treated as fine). FIXED: valid = object with people array; all-invalid entries also back up. Pinned for all four shapes.
+- F8 MED/LOW: dangling link could not be moved (exists() follows links); moving onto a dangling link landed at its target while reporting the link's name. FIXED: both sides resolve_final=false + symlink_metadata existence; onto-a-link refuses as an existing destination. Pinned.
+- F4 LOW residuals: 413 could be reset away when the body was in flight — now the server drains (bounded, in-deadline) before answering; per-read timeout replaced by a TOTAL 30s request deadline (slow-loris drips die at the wall). Pinned (413 with body in flight).
+- F6 LOW: single-file search of an unreadable file said a bare "(no matches)". FIXED: counted as skipped and disclosed. Pinned.
+- F7 LOW: fullwidth colon smuggled identity lines. FIXED: normalised in the identity check. Pinned. (A learned bullet literally starting "Name:" remains indistinguishable from identity — accepted; the full memory file is in the prompt regardless.)
+- Sessions map bounded (cleared past 10k entries; sessions re-issue transparently).
+- Verify fix-round-4: 42/42 green.
