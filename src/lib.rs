@@ -780,7 +780,43 @@ fn normalize_sections(v: &Value) -> Vec<String> {
 // Agent loop
 // ---------------------------------------------------------------------------
 
+/// The learned facts and preferences in a memory file: every bullet
+/// outside the "## About" section (About holds the person's identity,
+/// seeded when the person is created — everything else there is what
+/// the agent learned by working with them).
+pub fn standing_preferences(memory: &str) -> Vec<String> {
+    let mut prefs = Vec::new();
+    let mut in_about = false;
+    for line in memory.lines() {
+        let t = line.trim();
+        if t.starts_with('#') {
+            in_about = t.trim_start_matches('#').trim().eq_ignore_ascii_case("about");
+            continue;
+        }
+        if !in_about {
+            if let Some(bullet) = t.strip_prefix("- ") {
+                let bullet = bullet.trim();
+                if !bullet.is_empty() {
+                    prefs.push(bullet.to_string());
+                }
+            }
+        }
+    }
+    prefs
+}
+
 fn system_prompt(cfg: &Config) -> String {
+    let memory = cfg.read_memory();
+    let prefs = standing_preferences(&memory);
+    let prefs_block = if prefs.is_empty() {
+        "(none yet — learn how this person works as you go, and record it with update_memory)".to_string()
+    } else {
+        prefs
+            .iter()
+            .map(|p| format!("- {p}"))
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
     format!(
         "You are Ergon, a personal AI agent for one employee. Your job is to FINISH their digital work autonomously, end to end — not to prepare drafts for approval, not to ask for confirmation. You act through tools and you keep going until the work is done.\n\n\
          PROTOCOL: Reply with exactly ONE JSON object per message, nothing else.\n\
@@ -798,8 +834,10 @@ fn system_prompt(cfg: &Config) -> String {
          - move_file {{\"from\": \"a.txt\", \"to\": \"archive/a.txt\"}} — move or rename a workspace file.\n\
          - update_memory {{\"note\": \"...\"}} — record something you learned about this person (a preference or fact) into their long-term memory (a Rune skill).\n\n\
          RULES: Use tools to do the real work; never claim work you did not do through a tool. When you learn a durable preference or fact about this person, record it with update_memory before finishing. Finish with done only when the task is actually complete.\n\n\
+         PREFERENCES AND FACTS THIS PERSON HAS TAUGHT YOU — apply them in every task:\n{prefs}\n\n\
          WHAT YOU KNOW ABOUT THIS PERSON (their memory file — treat it as true and use it):\n{memory}",
-        memory = cfg.read_memory()
+        prefs = prefs_block,
+        memory = memory
     )
 }
 
