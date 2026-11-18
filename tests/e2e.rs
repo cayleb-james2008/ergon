@@ -352,3 +352,25 @@ fn fetch_url_extracts_text_and_workspace_is_sandboxed() {
     let err = ergon_rs::execute_tool(&cfg, "read_file", &json!({"path": "/etc/passwd"}));
     assert!(err.is_err(), "absolute path must be refused, got: {err:?}");
 }
+
+#[test]
+fn sandbox_refuses_symlink_escape() {
+    let root = test_root("symlink");
+    let cfg = test_config(&root, Some("k"), "http://127.0.0.1:9/v1".to_string());
+    // A secret OUTSIDE the workspace, and a symlink inside pointing to it.
+    let outside = root.join("outside");
+    std::fs::create_dir_all(&outside).unwrap();
+    std::fs::write(outside.join("secret.txt"), "outside secret").unwrap();
+    std::os::unix::fs::symlink(&outside, cfg.workspace_dir.join("escape")).unwrap();
+
+    let err = ergon_rs::execute_tool(&cfg, "read_file", &json!({"path": "escape/secret.txt"}));
+    assert!(err.is_err(), "read through a symlink out of the workspace must be refused, got: {err:?}");
+
+    let err = ergon_rs::execute_tool(
+        &cfg,
+        "write_file",
+        &json!({"path": "escape/pwned.txt", "content": "x"}),
+    );
+    assert!(err.is_err(), "write through a symlink out of the workspace must be refused, got: {err:?}");
+    assert!(!outside.join("pwned.txt").exists(), "nothing may be written outside");
+}
