@@ -10,6 +10,19 @@ A single Rust binary serves the whole product: the web shell, the agent
 loop, the tool layer, the per-person memory, and the Rune skill runtime.
 No framework, no build step, no database server.
 
+## Install
+
+```sh
+./install.sh [--prefix DIR] [--data DIR] [--no-service]
+```
+
+Installs the binary (building it with cargo if no prebuilt binary is
+present), writes a launcher (`ergon-serve`) that carries the model key
+and data dir, and registers a systemd user service where one is
+available. Paths are made absolute and embedded safely — a prefix
+with spaces, or a data path containing shell metacharacters, installs
+and runs correctly.
+
 ## Run
 
 ```sh
@@ -34,14 +47,24 @@ chat-completions endpoint; the default is OpenCode Go with
 | `ERGON_MODEL_BASE_URL` | `https://opencode.ai/zen/go/v1` |
 | `ERGON_MODEL_ID` | `deepseek-v4.1-flash` |
 | `ERGON_MODEL_API_KEY` | — (bearer key; every model call also sends `x-opencode-session` + a browser User-Agent) |
+| `ERGON_GATE_TOKEN` | — (when set, every request must carry the matching `X-Ergon-Gate` header; this is the hosting layer's gate — Ergon itself has no accounts or passwords) |
+| `ERGON_GATE_TOKEN` | — (when set, every request must carry the matching `X-Ergon-Gate` header; this is the hosting layer's gate — Ergon itself has no accounts or passwords) |
 
 ## How it works
 
-- **Shell** — embedded HTML/CSS/JS: left sidebar with the person
-  switcher and thread list, one scrolling thread, composer pinned at
-  the bottom. Agent steps appear in the thread as a plain ledger of what
-  was actually done; the finished result is the final message. Light and
-  dark themes, toggle under Settings → Appearance, dark by default.
+- **Shell** — embedded HTML/CSS/JS, three switchable faces over one
+  core: the **Work Graph** (people → suite items → finished work →
+  files, drawn from the real stores; it re-lays itself out compactly
+  on narrow screens), the **Conversation Spine** (the familiar chat
+  shell: sidebar with the person switcher and thread list, one
+  scrolling thread, composer pinned at the bottom) and the **Today
+  River** (the morning brief, the decisions inbox, offers and the
+  day's stream). Agent steps appear in the thread as a plain ledger of
+  what was actually done; the finished result is the final message.
+  A pre-packaged **phone app** (`/phone`) puts the same core in a
+  pocket face — brief, chat, decisions and suite behind a bottom tab
+  bar, same session discipline. Light and dark themes, toggle under
+  Settings → Appearance, dark by default.
 - **People** — every employee gets their own workspace, memory and
   threads (`people.json` + one data directory per person). People can be
   created in the UI; a new person's agent starts from a seeded memory.
@@ -56,7 +79,11 @@ chat-completions endpoint; the default is OpenCode Go with
 - **Tools** — `list_dir`, `read_file`, `write_file`, `search_files`,
   `move_file` (all sandboxed to the person's workspace), `fetch_url`
   (HTML→text), and four Rune skills: `write_document`,
-  `make_spreadsheet`, `research`, `update_memory`.
+  `make_spreadsheet`, `research`, `update_memory`. On top of those,
+  the completion build adds the library tools below, `delegate`,
+  `delete_file` (which never deletes directly — see Decisions) and
+  `flag_decision`. One run — the main agent plus everything it
+  delegates — draws from a single shared budget of 24 model calls.
 - **Sandbox** — every path is resolved through a component-walking
   resolver that re-checks containment at each step, follows at most 16
   symlink hops, and treats a symlink as an object in its own right
@@ -68,6 +95,37 @@ chat-completions endpoint; the default is OpenCode Go with
   of every task, and the agent updates it through `update_memory` when
   it learns a fact or preference — including for people created minutes
   earlier. What it learned is visible in the UI's memory panel.
+- **Company library & personal suites** — one shared library of
+  skills, subagents and apps (`library.json` at the root data dir;
+  seeded with twelve items, not a clean slate). Each person's agent
+  carries a **suite** drawn from it, shaped by their role. Agents
+  maintain the library themselves: `browse_library`, `install_item`
+  and `publish_skill` (compile-gated, and ownership-checked — an agent
+  can update its own person's skills, never silently overwrite
+  another's). Installed library skills run through the same sandboxed
+  Rune host layer, under an instruction budget and memory limit.
+- **Subagents** — the main agent can `delegate` a focused sub-task to
+  a specialist in the person's suite (Researcher, Editor, Bookkeeper
+  seeds). The subagent's steps land in the same thread, labelled; its
+  writes credit the run's ledger; its toolset restriction is enforced
+  in the loop, not just written in its prompt — a subagent cannot
+  publish, install, or park decisions.
+- **Decisions** — work arrives as decisions only at consequential
+  moments. `delete_file` parks a decision instead of deleting; the
+  file is deleted (the exact path approved — a symlink approval
+  deletes the link, never its target) only when the person approves
+  in the inbox, and the outcome reports back into the thread it came
+  from. Everything else finishes autonomously.
+- **Proactive offers** — the agent watches its own work log: the same
+  kind of finished task three times earns an offer to turn it into a
+  one-tap app in the suite (accepting builds and installs it);
+  spreadsheets produced by hand three times earn an offer of the
+  expense-sheet app. A dismissed offer is never re-offered, unfinished
+  runs earn nothing, and re-running an existing app doesn't count.
+- **Morning brief** — yesterday's finished work, what's waiting on
+  the person, and what the agent learned recently, assembled from the
+  real stores on the Today River and the phone's Brief tab. "Today"
+  is the host's local day, read from its zone file.
 - **Honesty machinery** — a run's summary is checked against the files
   the run actually wrote: naming a file the run didn't write produces a
   factual ledger line in the thread, never a silent pass. Requests over
@@ -83,7 +141,7 @@ chat-completions endpoint; the default is OpenCode Go with
 ## Proof
 
 ```sh
-CARGO_BUILD_JOBS=2 cargo test   # 44 tests, all passing
+CARGO_BUILD_JOBS=2 cargo test   # 65 tests, all passing
 ```
 
 `tests/e2e.rs` runs a stub model server (test fixture only) speaking
@@ -96,10 +154,23 @@ the done-gate in both directions (including filenames with spaces),
 persistence across restarts, and the no-key honesty path.
 
 Beyond the suite, an independently written sealed acceptance exam
-(19 black-box checks — people isolation, forged cookies, sandbox
-escapes, learning reaching the prompt, the done-gate both ways, 413
-with a body in flight, corrupt-store backups) passes **19/19** against
-the unmodified binary.
+(31 black-box checks — the original 19: people isolation, forged
+cookies, sandbox escapes, learning reaching the prompt, the done-gate
+both ways, 413 with a body in flight, corrupt-store backups; plus 12
+for the completion build: library seeding and role-shaped suites,
+cross-person skill publishing, delegation, the delete gate, offers,
+brief/today/graph truth, app runs, faces and phone, the hosting gate,
+installer) passes **31/31** against the unmodified binary.
+
+The completion build additionally survived a fresh-context
+thermonuclear review whose reproduced findings (a symlink-delete
+that hit the wrong file, unsynchronised record stores, prompt-only
+subagent restrictions, a library lock held across skill runs) were
+each fixed and pinned by a regression test, and a Hallmark-Rune
+front-end elevation graded by fresh-eyes checkers at eight widths in
+both themes (rendered lint: phone face zero findings; desktop zero
+findings except one scanner false positive on `#face-*` ID selectors,
+hand-verified).
 
 The live-model path is real code, exercised here against the stub
 because no model key is available in the build environment; point
