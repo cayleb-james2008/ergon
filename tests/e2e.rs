@@ -2922,3 +2922,30 @@ fn invalid_json_chat_body_is_named_as_such() {
     assert_eq!(status, 400);
     assert!(body.contains("message is required"), "an empty body is a missing message: {body}");
 }
+
+/// E5: a corrupt store is backed up and named by GET /api/status, which
+/// is empty when nothing was recovered.
+#[test]
+fn recovered_stores_are_named_in_status() {
+    let status_of = |port: u16| -> Value {
+        let (status, body) = http(port, "GET", "/api/status", None);
+        assert_eq!(status, 200, "{body}");
+        serde_json::from_str(&body).unwrap()
+    };
+    let clean = test_config(&test_root("clean"), None, "http://127.0.0.1:9/v1".to_string());
+    assert_eq!(status_of(start_app(clean))["store_recovered"], json!([]));
+
+    let root = test_root("recovered");
+    let cfg = test_config(&root, None, "http://127.0.0.1:9/v1".to_string());
+    std::fs::write(cfg.data_dir.join("threads.json"), "GARBAGE").unwrap();
+    std::fs::write(cfg.data_dir.join("people.json"), "GARBAGE").unwrap();
+    let v = status_of(start_app(cfg));
+    let mut names: Vec<String> = v["store_recovered"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|n| n.as_str().unwrap().to_string())
+        .collect();
+    names.sort();
+    assert_eq!(names, vec!["people.json".to_string(), "threads.json".to_string()], "got {v}");
+}

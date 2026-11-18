@@ -154,6 +154,9 @@
   #no-key-banner { display: none; background: var(--wait-bg); color: var(--ink); border-bottom: 1px solid var(--rule);
                    padding: 12px 24px; font-size: var(--text-sm); }
   #no-key-banner .operator { display: block; color: var(--muted); font-size: var(--text-xs); margin-top: 4px; }
+  #recovered-banner { display: none; align-items: center; gap: 16px; background: var(--wait-bg); color: var(--ink); border-bottom: 1px solid var(--rule);
+                      padding: 12px 24px; font-size: var(--text-sm); }
+  #recovered-banner span { flex: 1; min-width: 0; }
   #thread { flex: 1; min-height: 0; overflow-y: auto; padding: 28px 24px 16px; }
   #messages { max-width: 720px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; }
   .empty { margin: 8vh auto 0; max-width: 560px; text-align: left; }
@@ -277,6 +280,7 @@
     .ready { font-size: var(--text-xs); padding: 4px 8px; flex: none; }
     .ready #ready-text { display: none; }
     #no-key-banner { padding: 12px 16px; flex: none; }
+    #recovered-banner { padding: 12px 16px; flex: none; }
     #face-chat { flex: 1; min-height: 0; }
     #thread { flex: 1; min-height: 0; overflow-y: auto; padding: 16px 16px 12px; }
     #composer { flex: none; padding: 8px 12px 12px; }
@@ -364,6 +368,10 @@
     </div>
 
     <section id="face-chat" class="face on" aria-label="Chat">
+      <div id="recovered-banner" role="status">
+        <span id="recovered-text"></span>
+        <button class="act-btn" type="button" id="recovered-dismiss">Dismiss</button>
+      </div>
       <div id="thread" aria-live="polite">
         <div id="messages"></div>
       </div>
@@ -533,12 +541,23 @@
       : 'The agent cannot run until Ergon is connected to a model. Ask whoever runs Ergon to connect it. Nothing is simulated, and Ergon will not invent answers.';
   }
 
+  let recoveredDismissed = false;
+  function showRecovered(names) {
+    const list = Array.isArray(names) ? names : [];
+    const banner = document.getElementById('recovered-banner');
+    if (!list.length || recoveredDismissed) { banner.style.display = 'none'; return; }
+    document.getElementById('recovered-text').textContent = 'Earlier conversations were moved to a backup file (' + list.join(', ') + ') and Ergon started fresh. Nothing was deleted.';
+    banner.style.display = 'flex';
+  }
+  document.getElementById('recovered-dismiss').onclick = () => { recoveredDismissed = true; showRecovered([]); };
+
   async function loadStatus() {
     try {
       const r = await fetch('/api/status');
       const s = await r.json();
       modelConfigured = !!s.model_configured;
       document.getElementById('no-key-banner').style.display = modelConfigured ? 'none' : 'block';
+      showRecovered(s.store_recovered);
       personRole = (s.person && s.person.role) || '';
       setReady(modelConfigured, s.person);
       if (s.person && s.person.name) {
