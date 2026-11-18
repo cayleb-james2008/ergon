@@ -1,0 +1,55 @@
+//! Ergon skill: make_spreadsheet (Rune)
+//!
+//! Takes a title, column headers and rows of cells; formats them as a
+//! CSV spreadsheet with RFC 4180 quoting, and writes `<title>.csv` into
+//! the workspace through the host function `host_workspace_write`.
+//! Returns the file name (or an "error: ..." string from the host).
+
+fn esc(cell) {
+    let needs = false;
+    let out = "";
+    for c in cell.chars() {
+        if c == ',' || c == '"' || c == '\n' || c == '\r' {
+            needs = true;
+        }
+        if c == '"' {
+            out = `${out}""`;
+        } else {
+            out = `${out}${c}`;
+        }
+    }
+    if needs {
+        `"${out}"`
+    } else {
+        out
+    }
+}
+
+fn join_row(cells) {
+    let line = "";
+    let first = true;
+    for cell in cells {
+        if !first {
+            line = `${line},`;
+        }
+        line = `${line}${esc(cell)}`;
+        first = false;
+    }
+    line
+}
+
+pub fn main(title, columns, rows) {
+    let content = "";
+    if !columns.is_empty() {
+        content = `${content}${join_row(columns)}\n`;
+    }
+    for row in rows {
+        content = `${content}${join_row(row)}\n`;
+    }
+    let filename = `${title}.csv`;
+    let result = host_workspace_write(filename, content);
+    if result != "ok" {
+        return result;
+    }
+    filename
+}
