@@ -12,7 +12,7 @@ pub mod skills;
 pub mod ui;
 
 use serde_json::{json, Value};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpListener;
 use std::path::{Component, Path, PathBuf};
@@ -192,6 +192,163 @@ pub fn fetch_url_text(url: &str) -> Result<String, String> {
 }
 
 // ---------------------------------------------------------------------------
+// People — one agent per employee. Each person has their own memory file,
+// workspace and thread store. The "default" person uses the root config's
+// own workspace/memory (the original single-person layout); every other
+// person lives under data_dir/people/<id>/.
+// ---------------------------------------------------------------------------
+
+#[derive(Clone, Debug)]
+pub struct Person {
+    pub id: String,
+    pub name: String,
+    pub role: String,
+}
+
+impl Person {
+    pub fn to_json(&self) -> Value {
+        json!({"id": self.id, "name": self.name, "role": self.role})
+    }
+    pub fn from_json(v: &Value) -> Option<Person> {
+        Some(Person {
+            id: v["id"].as_str()?.to_string(),
+            name: v["name"].as_str().unwrap_or("").to_string(),
+            role: v["role"].as_str().unwrap_or("").to_string(),
+        })
+    }
+}
+
+pub fn slugify(name: &str) -> String {
+    let mut out = String::new();
+    let mut last_dash = true; // trims leading dashes
+    for c in name.chars() {
+        if c.is_ascii_alphanumeric() {
+            out.push(c.to_ascii_lowercase());
+            last_dash = false;
+        } else if !last_dash {
+            out.push('-');
+            last_dash = true;
+        }
+    }
+    while out.ends_with('-') {
+        out.pop();
+    }
+    if out.is_empty() {
+        "person".to_string()
+    } else {
+        out
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct PeopleState {
+    pub people: Vec<Person>,
+    pub active: String,
+}
+
+impl Default for PeopleState {
+    fn default() -> Self {
+        PeopleState {
+            people: vec![Person {
+                id: "default".to_string(),
+                name: "You".to_string(),
+                role: String::new(),
+            }],
+            active: "default".to_string(),
+        }
+    }
+}
+
+impl PeopleState {
+    pub fn load(root: &Config) -> PeopleState {
+        let path = root.data_dir.join("people.json");
+        if let Ok(text) = std::fs::read_to_string(&path) {
+            if let Ok(v) = serde_json::from_str::<Value>(&text) {
+                let mut state = PeopleState::default();
+                if let Some(items) = v["people"].as_array() {
+                    let parsed: Vec<Person> = items.iter().filter_map(Person::from_json).collect();
+                    if !parsed.is_empty() {
+                        state.people = parsed;
+                    }
+                }
+                if let Some(active) = v["active"].as_str() {
+                    if state.people.iter().any(|p| p.id == active) {
+                        state.active = active.to_string();
+                    }
+                }
+                return state;
+            }
+        }
+        PeopleState::default()
+    }
+
+    pub fn save(&self, root: &Config) {
+        let _ = std::fs::create_dir_all(&root.data_dir);
+        let v = json!({
+            "people": self.people.iter().map(|p| p.to_json()).collect::<Vec<_>>(),
+            "active": self.active,
+        });
+        let path = root.data_dir.join("people.json");
+        let tmp = path.with_extension("json.tmp");
+        if std::fs::write(&tmp, v.to_string()).is_ok() {
+            let _ = std::fs::rename(&tmp, &path);
+        }
+    }
+
+    pub fn active_person(&self) -> Person {
+        self.people
+            .iter()
+            .find(|p| p.id == self.active)
+            .cloned()
+            .unwrap_or_else(|| self.people[0].clone())
+    }
+
+    pub fn add(&mut self, name: &str, role: &str) -> Person {
+        let base = slugify(name);
+        let mut id = base.clone();
+        let mut n = 2;
+        while self.people.iter().any(|p| p.id == id) {
+            id = format!("{base}-{n}");
+            n += 1;
+        }
+        let person = Person {
+            id,
+            name: name.to_string(),
+            role: role.to_string(),
+        };
+        self.people.push(person.clone());
+        person
+    }
+
+    pub fn to_json(&self) -> Value {
+        json!({
+            "people": self.people.iter().map(|p| p.to_json()).collect::<Vec<_>>(),
+            "active": self.active,
+        })
+    }
+}
+
+impl Config {
+    /// The config scoped to one person: their own data dir (threads.json
+    /// lives there), workspace and memory file. The default person keeps
+    /// the root layout.
+    pub fn person_config(&self, person: &Person) -> Config {
+        if person.id == "default" {
+            return self.clone();
+        }
+        let dir = self.data_dir.join("people").join(&person.id);
+        Config {
+            data_dir: dir.clone(),
+            workspace_dir: dir.join("workspace"),
+            memory_path: dir.join("memory.md"),
+            model_base_url: self.model_base_url.clone(),
+            model_id: self.model_id.clone(),
+            api_key: self.api_key.clone(),
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Thread store
 // ---------------------------------------------------------------------------
 
@@ -208,9 +365,74 @@ pub struct Thread {
     pub messages: Vec<ChatMessage>,
 }
 
+pub fn thread_to_json(t: &Thread) -> Value {
+    json!({
+        "id": t.id,
+        "title": t.title,
+        "messages": t.messages.iter().map(|m| json!({"role": m.role, "content": m.content})).collect::<Vec<_>>(),
+    })
+}
+
+pub fn thread_from_json(v: &Value) -> Option<Thread> {
+    let id = v["id"].as_str()?.to_string();
+    let title = v["title"].as_str().unwrap_or("New chat").to_string();
+    let mut messages = Vec::new();
+    if let Some(items) = v["messages"].as_array() {
+        for m in items {
+            if let (Some(role), Some(content)) = (m["role"].as_str(), m["content"].as_str()) {
+                messages.push(ChatMessage {
+                    role: role.to_string(),
+                    content: content.to_string(),
+                });
+            }
+        }
+    }
+    Some(Thread { id, title, messages })
+}
+
 #[derive(Default)]
 pub struct Store {
     pub threads: Vec<Thread>,
+    /// Where this store persists (threads.json); set by `Store::load`.
+    pub save_path: Option<PathBuf>,
+}
+
+impl Store {
+    /// Load a store from its threads.json (missing/corrupt file = empty
+    /// store). The store saves itself back to the same path on every
+    /// mutation, atomically (tmp file + rename).
+    pub fn load(path: &Path) -> Store {
+        let mut store = Store {
+            threads: Vec::new(),
+            save_path: Some(path.to_path_buf()),
+        };
+        if let Ok(text) = std::fs::read_to_string(path) {
+            if let Ok(v) = serde_json::from_str::<Value>(&text) {
+                if let Some(items) = v["threads"].as_array() {
+                    for item in items {
+                        if let Some(t) = thread_from_json(item) {
+                            store.threads.push(t);
+                        }
+                    }
+                }
+            }
+        }
+        store
+    }
+
+    pub fn save(&self) {
+        let Some(path) = &self.save_path else { return };
+        let v = json!({
+            "threads": self.threads.iter().map(thread_to_json).collect::<Vec<_>>(),
+        });
+        if let Some(parent) = path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        let tmp = path.with_extension("json.tmp");
+        if std::fs::write(&tmp, v.to_string()).is_ok() {
+            let _ = std::fs::rename(&tmp, path);
+        }
+    }
 }
 
 pub type SharedStore = Arc<Mutex<Store>>;
@@ -234,6 +456,7 @@ impl Store {
             title: "New chat".to_string(),
             messages: Vec::new(),
         });
+        self.save();
         id
     }
 
@@ -245,6 +468,7 @@ impl Store {
     }
 
     pub fn push(&mut self, thread_id: &str, role: &str, content: &str) {
+        let mut changed = false;
         if let Some(t) = self.threads.iter_mut().find(|t| t.id == thread_id) {
             if role == "user" && t.messages.is_empty() {
                 t.title = truncate(&content.chars().take(60).collect::<String>(), 60);
@@ -253,17 +477,15 @@ impl Store {
                 role: role.to_string(),
                 content: content.to_string(),
             });
+            changed = true;
+        }
+        if changed {
+            self.save();
         }
     }
 
     pub fn thread_json(&self, id: &str) -> Option<Value> {
-        self.threads.iter().find(|t| t.id == id).map(|t| {
-            json!({
-                "id": t.id,
-                "title": t.title,
-                "messages": t.messages.iter().map(|m| json!({"role": m.role, "content": m.content})).collect::<Vec<_>>(),
-            })
-        })
+        self.threads.iter().find(|t| t.id == id).map(thread_to_json)
     }
 
     pub fn list_json(&self) -> Value {
@@ -527,16 +749,59 @@ pub fn run_agent(
 // HTTP server (hand-rolled, std TcpListener)
 // ---------------------------------------------------------------------------
 
-pub struct AppState {
+/// One person's live state: their scoped config + their thread store.
+pub struct PersonRuntime {
     pub cfg: Config,
     pub store: SharedStore,
 }
 
+fn load_runtime(root: &Config, person: &Person) -> PersonRuntime {
+    let cfg = root.person_config(person);
+    let fresh_memory = !cfg.memory_path.exists();
+    let _ = cfg.ensure_dirs();
+    if fresh_memory && person.id != "default" {
+        // Seed a new person's memory with who they are, so the agent
+        // starts out knowing its person.
+        let mut seed = format!("# Memory\n\n## About\n- Name: {}", person.name);
+        if !person.role.is_empty() {
+            seed.push_str(&format!("\n- Role: {}", person.role));
+        }
+        seed.push('\n');
+        let _ = std::fs::write(&cfg.memory_path, seed);
+    }
+    let threads_path = cfg.data_dir.join("threads.json");
+    PersonRuntime {
+        cfg,
+        store: Arc::new(Mutex::new(Store::load(&threads_path))),
+    }
+}
+
+pub struct AppState {
+    /// Root config (model route + root data dir).
+    pub cfg: Config,
+    pub people: Arc<Mutex<PeopleState>>,
+    pub runtimes: Arc<Mutex<HashMap<String, Arc<PersonRuntime>>>>,
+}
+
+fn runtime_for(state: &AppState, person: &Person) -> Arc<PersonRuntime> {
+    let mut map = state.runtimes.lock().unwrap();
+    map.entry(person.id.clone())
+        .or_insert_with(|| Arc::new(load_runtime(&state.cfg, person)))
+        .clone()
+}
+
+fn active_runtime(state: &AppState) -> Arc<PersonRuntime> {
+    let person = state.people.lock().unwrap().active_person();
+    runtime_for(state, &person)
+}
+
 pub fn serve(listener: TcpListener, cfg: Config) -> std::io::Result<()> {
     cfg.ensure_dirs()?;
+    let people = PeopleState::load(&cfg);
     let state = Arc::new(AppState {
         cfg,
-        store: Arc::new(Mutex::new(Store::default())),
+        people: Arc::new(Mutex::new(people)),
+        runtimes: Arc::new(Mutex::new(HashMap::new())),
     });
     for stream in listener.incoming() {
         match stream {
@@ -621,24 +886,80 @@ fn handle_connection(mut stream: std::net::TcpStream, state: &AppState) -> std::
         Some(r) => r,
         None => return Ok(()),
     };
-    let cfg = &state.cfg;
+    let root_cfg = &state.cfg;
     match (req.method.as_str(), req.path.as_str()) {
         ("GET", "/") => respond(&mut stream, 200, "text/html; charset=utf-8", ui::INDEX_HTML),
-        ("GET", "/api/status") => respond_json(
-            &mut stream,
-            200,
-            &json!({
-                "model_configured": cfg.api_key.is_some(),
-                "model": cfg.model_id,
-                "model_base_url": cfg.model_base_url,
-            }),
-        ),
+        ("GET", "/api/status") => {
+            let person = state.people.lock().unwrap().active_person();
+            respond_json(
+                &mut stream,
+                200,
+                &json!({
+                    "model_configured": root_cfg.api_key.is_some(),
+                    "model": root_cfg.model_id,
+                    "model_base_url": root_cfg.model_base_url,
+                    "person": person.to_json(),
+                }),
+            )
+        }
+        ("GET", "/api/people") => {
+            let people = state.people.lock().unwrap();
+            respond_json(&mut stream, 200, &people.to_json())
+        }
+        ("POST", "/api/people") => {
+            let parsed: Value = serde_json::from_slice(&req.body).unwrap_or(Value::Null);
+            let name = parsed["name"].as_str().unwrap_or("").trim().to_string();
+            if name.is_empty() {
+                return respond_json(
+                    &mut stream,
+                    400,
+                    &json!({"error": "name is required"}),
+                );
+            }
+            let role = parsed["role"].as_str().unwrap_or("").trim().to_string();
+            let person = {
+                let mut people = state.people.lock().unwrap();
+                let p = people.add(&name, &role);
+                people.save(root_cfg);
+                p
+            };
+            // Create their dirs + seeded memory now, so the person is
+            // real on disk from this moment.
+            let _ = runtime_for(state, &person);
+            respond_json(&mut stream, 201, &person.to_json())
+        }
+        ("POST", "/api/active-person") => {
+            let parsed: Value = serde_json::from_slice(&req.body).unwrap_or(Value::Null);
+            let id = parsed["id"].as_str().unwrap_or("").to_string();
+            let mut people = state.people.lock().unwrap();
+            if !people.people.iter().any(|p| p.id == id) {
+                return respond_json(
+                    &mut stream,
+                    404,
+                    &json!({"error": "person not found"}),
+                );
+            }
+            people.active = id;
+            people.save(root_cfg);
+            respond_json(&mut stream, 200, &people.to_json())
+        }
+        ("GET", "/api/memory") => {
+            let runtime = active_runtime(state);
+            let person = state.people.lock().unwrap().active_person();
+            respond_json(
+                &mut stream,
+                200,
+                &json!({"person_id": person.id, "content": runtime.cfg.read_memory()}),
+            )
+        }
         ("GET", "/api/threads") => {
-            let store = state.store.lock().unwrap();
+            let runtime = active_runtime(state);
+            let store = runtime.store.lock().unwrap();
             respond_json(&mut stream, 200, &store.list_json())
         }
         ("POST", "/api/threads") => {
-            let mut store = state.store.lock().unwrap();
+            let runtime = active_runtime(state);
+            let mut store = runtime.store.lock().unwrap();
             let id = store.create_thread();
             let v = store.thread_json(&id).unwrap_or_else(|| json!({"id": id}));
             respond_json(&mut stream, 201, &v)
@@ -653,6 +974,8 @@ fn handle_connection(mut stream: std::net::TcpStream, state: &AppState) -> std::
                     &json!({"error": "message is required"}),
                 );
             }
+            let runtime = active_runtime(state);
+            let cfg = &runtime.cfg;
             if cfg.api_key.is_none() {
                 return respond_json(
                     &mut stream,
@@ -661,28 +984,29 @@ fn handle_connection(mut stream: std::net::TcpStream, state: &AppState) -> std::
                 );
             }
             let thread_id = {
-                let mut store = state.store.lock().unwrap();
+                let mut store = runtime.store.lock().unwrap();
                 let tid = store.ensure_thread(parsed["thread_id"].as_str().unwrap_or(""));
                 store.push(&tid, "user", &message);
                 tid
             };
-            match run_agent(cfg, &state.store, &thread_id, &message) {
+            match run_agent(cfg, &runtime.store, &thread_id, &message) {
                 Ok(_outcome) => {
-                    let store = state.store.lock().unwrap();
+                    let store = runtime.store.lock().unwrap();
                     let v = store
                         .thread_json(&thread_id)
                         .unwrap_or_else(|| json!({"thread_id": thread_id}));
                     respond_json(&mut stream, 200, &v)
                 }
                 Err(e) => {
-                    state.store.lock().unwrap().push(&thread_id, "error", &e);
+                    runtime.store.lock().unwrap().push(&thread_id, "error", &e);
                     respond_json(&mut stream, 500, &json!({"error": e, "thread_id": thread_id}))
                 }
             }
         }
         ("GET", path) if path.starts_with("/api/threads/") => {
             let id = path.trim_start_matches("/api/threads/");
-            let store = state.store.lock().unwrap();
+            let runtime = active_runtime(state);
+            let store = runtime.store.lock().unwrap();
             match store.thread_json(id) {
                 Some(v) => respond_json(&mut stream, 200, &v),
                 None => respond_json(&mut stream, 404, &json!({"error": "thread not found"})),

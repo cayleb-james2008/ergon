@@ -374,3 +374,79 @@ fn sandbox_refuses_symlink_escape() {
     assert!(err.is_err(), "write through a symlink out of the workspace must be refused, got: {err:?}");
     assert!(!outside.join("pwned.txt").exists(), "nothing may be written outside");
 }
+
+#[test]
+fn threads_survive_restart() {
+    let root = test_root("persist");
+    let stub = start_stub_model(vec![
+        json!({"done": true, "summary": "Finished the thing."}).to_string(),
+    ]);
+    let cfg = test_config(&root, Some("k"), format!("http://127.0.0.1:{}/v1", stub.port));
+    let port1 = start_app(cfg.clone());
+    let (s, b) = http(port1, "POST", "/api/threads", Some("{}"));
+    assert_eq!(s, 201, "{b}");
+    let tid = serde_json::from_str::<Value>(&b).unwrap()["id"].as_str().unwrap().to_string();
+    let (s, b) = http(
+        port1,
+        "POST",
+        "/api/chat",
+        Some(&json!({"thread_id": tid, "message": "do the thing"}).to_string()),
+    );
+    assert_eq!(s, 200, "{b}");
+
+    // "Restart": a fresh server instance over the same data dir.
+    let port2 = start_app(cfg.clone());
+    let (s, b) = http(port2, "GET", "/api/threads", None);
+    assert_eq!(s, 200);
+    assert!(b.contains(&tid), "thread list after restart must include the thread: {b}");
+    let (s, b) = http(port2, "GET", &format!("/api/threads/{tid}"), None);
+    assert_eq!(s, 200);
+    assert!(b.contains("do the thing"), "user message persisted: {b}");
+    assert!(b.contains("Finished the thing."), "assistant summary persisted: {b}");
+}
+
+#[test]
+fn people_are_isolated() {
+    let root = test_root("people");
+    let replies = vec![
+        json!({"tool": "update_memory", "args": {"note": "BEE-NOTE: takes tea with oat milk"}}).to_string(),
+        json!({"done": true, "summary": "Noted."}).to_string(),
+        json!({"done": true, "summary": "Hello A."}).to_string(),
+    ];
+    let stub = start_stub_model(replies);
+    let cfg = test_config(&root, Some("k"), format!("http://127.0.0.1:{}/v1", stub.port));
+    let port = start_app(cfg.clone());
+
+    let (s, b) = http(port, "POST", "/api/people", Some(&json!({"name": "Bea", "role": "Designer"}).to_string()));
+    assert_eq!(s, 201, "create person: {b}");
+    let bea_id = serde_json::from_str::<Value>(&b).unwrap()["id"].as_str().unwrap().to_string();
+
+    let (s, _) = http(port, "POST", "/api/active-person", Some(&json!({"id": bea_id}).to_string()));
+    assert_eq!(s, 200);
+    let (s, b) = http(port, "POST", "/api/chat", Some(&json!({"thread_id": "", "message": "remember my tea"}).to_string()));
+    assert_eq!(s, 200, "Bea chat: {b}");
+
+    let (s, b) = http(port, "GET", "/api/memory", None);
+    assert_eq!(s, 200);
+    assert!(b.contains("BEE-NOTE"), "Bea's memory view holds her note: {b}");
+    let (_, bea_threads) = http(port, "GET", "/api/threads", None);
+    assert!(bea_threads.contains("remember my tea"), "Bea's threads: {bea_threads}");
+
+    let (s, _) = http(port, "POST", "/api/active-person", Some(&json!({"id": "default"}).to_string()));
+    assert_eq!(s, 200);
+    let (_, b) = http(port, "GET", "/api/memory", None);
+    assert!(!b.contains("BEE-NOTE"), "default memory must not contain Bea's note: {b}");
+    let (_, a_threads) = http(port, "GET", "/api/threads", None);
+    assert!(!a_threads.contains("remember my tea"), "default threads must not contain Bea's: {a_threads}");
+
+    let (s, b) = http(port, "POST", "/api/chat", Some(&json!({"thread_id": "", "message": "hi from A"}).to_string()));
+    assert_eq!(s, 200, "A chat: {b}");
+    let recorded = stub.raw_requests.lock().unwrap();
+    assert_eq!(recorded.len(), 3, "expected 3 model calls: {}", recorded.len());
+    assert!(!recorded[2].contains("BEE-NOTE"), "A's model context leaked Bea's memory: {}", recorded[2]);
+
+    let bea_mem = std::fs::read_to_string(cfg.data_dir.join("people").join(&bea_id).join("memory.md")).unwrap();
+    assert!(bea_mem.contains("BEE-NOTE"), "Bea's memory file: {bea_mem}");
+    let a_mem = std::fs::read_to_string(&cfg.memory_path).unwrap();
+    assert!(!a_mem.contains("BEE-NOTE"), "default memory file must stay clean: {a_mem}");
+}
