@@ -60,3 +60,6 @@ D. Faces + phone + gate + installer (G9–G12) → checker.
 E. Tests + sealed exam extended; thermonuclear review; Hallmark-Rune
    elevation pass; public surfaces (repo + site page) updated to proven
    facts only.
+
+## Close-out (18 Nov 2026)
+All twelve gaps built and checker-proven. Functionality: checker round 1 PASS-WITH-NOTES (one cross-author publish hole, fixed + pinned). Thermonuclear round: 13 findings, all fixed + regression-pinned (65/65 tests). Sealed exam extended E20–E31: 31/31. Elevation: Hallmark-Rune pass, lint-clean bar one hand-verified scanner false positive; fresh-eyes FAIL→fix→PASS. Remaining honest limits: live-model behaviour stub-proven only (no exportable key on this VM); real external send/spend transports don't exist as products here — the consequential mechanism is proven on delete + agent-raised decisions; the look is Cayleb's grade (BAR C10), never the loop's.
