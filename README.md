@@ -48,7 +48,6 @@ chat-completions endpoint; the default is OpenCode Go with
 | `ERGON_MODEL_ID` | `deepseek-v4.1-flash` |
 | `ERGON_MODEL_API_KEY` | — (bearer key; every model call also sends `x-opencode-session` + a browser User-Agent) |
 | `ERGON_GATE_TOKEN` | — (when set, every request must carry the matching `X-Ergon-Gate` header; this is the hosting layer's gate — Ergon itself has no accounts or passwords) |
-| `ERGON_GATE_TOKEN` | — (when set, every request must carry the matching `X-Ergon-Gate` header; this is the hosting layer's gate — Ergon itself has no accounts or passwords) |
 
 ## How it works
 
