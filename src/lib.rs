@@ -610,6 +610,59 @@ pub fn execute_tool(cfg: &Config, name: &str, args: &Value) -> Result<String, St
             let url = args["url"].as_str().ok_or("fetch_url needs args.url")?;
             fetch_url_text(url)
         }
+        "make_spreadsheet" => {
+            let title = args["title"]
+                .as_str()
+                .ok_or("make_spreadsheet needs args.title")?;
+            let columns = string_list(&args["columns"]);
+            let rows = string_rows(&args["rows"]);
+            if columns.is_empty() && rows.is_empty() {
+                return Err("make_spreadsheet needs args.columns or args.rows".to_string());
+            }
+            skills::make_spreadsheet(cfg, title, columns, rows)
+        }
+        "research" => {
+            let topic = args["topic"].as_str().ok_or("research needs args.topic")?;
+            let urls = string_list(&args["urls"]);
+            if urls.is_empty() {
+                return Err("research needs args.urls (a list of page URLs)".to_string());
+            }
+            skills::research(cfg, topic, urls)
+        }
+        "search_files" => {
+            let query = args["query"]
+                .as_str()
+                .ok_or("search_files needs args.query")?
+                .to_lowercase();
+            if query.is_empty() {
+                return Err("search_files needs a non-empty args.query".to_string());
+            }
+            let rel = args["path"].as_str().unwrap_or(".");
+            let base = sandbox_path(&cfg.workspace_dir, rel)?;
+            let mut matches: Vec<String> = Vec::new();
+            search_walk(&cfg.workspace_dir, &base, &query, &mut matches, 0);
+            if matches.is_empty() {
+                Ok("(no matches)".to_string())
+            } else {
+                Ok(matches.join("\n"))
+            }
+        }
+        "move_file" => {
+            let from = args["from"].as_str().ok_or("move_file needs args.from")?;
+            let to = args["to"].as_str().ok_or("move_file needs args.to")?;
+            let src = sandbox_path(&cfg.workspace_dir, from)?;
+            let dst = sandbox_path(&cfg.workspace_dir, to)?;
+            if !src.exists() {
+                return Err(format!("move_file: no such file: {from}"));
+            }
+            if let Some(parent) = dst.parent() {
+                std::fs::create_dir_all(parent)
+                    .map_err(|e| format!("move_file mkdir: {e}"))?;
+            }
+            std::fs::rename(&src, &dst)
+                .map_err(|e| format!("move_file {from} -> {to}: {e}"))?;
+            Ok(format!("moved {from} to {to}"))
+        }
         "write_document" => {
             let title = args["title"].as_str().ok_or("write_document needs args.title")?;
             let sections = normalize_sections(&args["sections"]);
@@ -627,6 +680,76 @@ pub fn execute_tool(cfg: &Config, name: &str, args: &Value) -> Result<String, St
             skills::update_memory(cfg, note)
         }
         other => Err(format!("unknown tool: {other}")),
+    }
+}
+
+fn string_list(v: &Value) -> Vec<String> {
+    match v {
+        Value::Array(items) => items
+            .iter()
+            .map(|item| match item {
+                Value::String(s) => s.clone(),
+                other => other.to_string(),
+            })
+            .collect(),
+        Value::String(s) => vec![s.clone()],
+        _ => Vec::new(),
+    }
+}
+
+fn string_rows(v: &Value) -> Vec<Vec<String>> {
+    match v {
+        Value::Array(rows) => rows.iter().map(string_list).collect(),
+        _ => Vec::new(),
+    }
+}
+
+/// Recursive text search under `base` (already sandbox-checked). Skips
+/// dotfiles, symlinks (never follows them out of the workspace), files
+/// over 512 KB, and caps depth and match count so a big tree stays fast.
+fn search_walk(root: &Path, base: &Path, query: &str, out: &mut Vec<String>, depth: usize) {
+    if depth > 6 || out.len() >= 50 {
+        return;
+    }
+    let Ok(rd) = std::fs::read_dir(base) else { return };
+    let mut entries: Vec<_> = rd.filter_map(|e| e.ok()).collect();
+    entries.sort_by_key(|e| e.file_name());
+    for entry in entries {
+        if out.len() >= 50 {
+            return;
+        }
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if name.starts_with('.') {
+            continue;
+        }
+        let Ok(ft) = entry.file_type() else { continue };
+        if ft.is_symlink() {
+            continue;
+        }
+        let path = entry.path();
+        if ft.is_dir() {
+            search_walk(root, &path, query, out, depth + 1);
+            continue;
+        }
+        if entry.metadata().map(|m| m.len()).unwrap_or(0) > 512_000 {
+            continue;
+        }
+        let Ok(content) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        let rel = path
+            .strip_prefix(root)
+            .unwrap_or(&path)
+            .to_string_lossy()
+            .replace('\\', "/");
+        for (i, line) in content.lines().enumerate() {
+            if line.to_lowercase().contains(query) {
+                out.push(format!("{rel}:{}: {}", i + 1, truncate(line.trim(), 120)));
+                if out.len() >= 50 {
+                    return;
+                }
+            }
+        }
     }
 }
 
@@ -669,6 +792,10 @@ fn system_prompt(cfg: &Config) -> String {
          - write_file {{\"path\": \"out.txt\", \"content\": \"...\"}} — write a workspace file.\n\
          - fetch_url {{\"url\": \"https://...\"}} — fetch a URL and read its text.\n\
          - write_document {{\"title\": \"Summary\", \"sections\": [\"section text\", ...]}} — produce a finished markdown document in the workspace (a Rune skill formats and writes it).\n\
+         - make_spreadsheet {{\"title\": \"Budget\", \"columns\": [\"Item\", \"Cost\"], \"rows\": [[\"Coffee\", \"4.50\"]]}} — produce a finished CSV spreadsheet in the workspace (a Rune skill formats and writes it).\n\
+         - research {{\"topic\": \"Local Prices\", \"urls\": [\"https://...\", \"https://...\"]}} — fetch several pages and compile them into one research notes document in the workspace (a Rune skill).\n\
+         - search_files {{\"query\": \"quarterly\", \"path\": \".\"}} — search the workspace's text files for a phrase; returns matching lines with file and line number.\n\
+         - move_file {{\"from\": \"a.txt\", \"to\": \"archive/a.txt\"}} — move or rename a workspace file.\n\
          - update_memory {{\"note\": \"...\"}} — record something you learned about this person (a preference or fact) into their long-term memory (a Rune skill).\n\n\
          RULES: Use tools to do the real work; never claim work you did not do through a tool. When you learn a durable preference or fact about this person, record it with update_memory before finishing. Finish with done only when the task is actually complete.\n\n\
          WHAT YOU KNOW ABOUT THIS PERSON (their memory file — treat it as true and use it):\n{memory}",

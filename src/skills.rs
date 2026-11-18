@@ -12,6 +12,8 @@ use std::sync::Arc;
 
 pub const WRITE_DOCUMENT_SCRIPT: &str = include_str!("skills/write_document.rn");
 pub const UPDATE_MEMORY_SCRIPT: &str = include_str!("skills/update_memory.rn");
+pub const MAKE_SPREADSHEET_SCRIPT: &str = include_str!("skills/make_spreadsheet.rn");
+pub const RESEARCH_SCRIPT: &str = include_str!("skills/research.rn");
 
 fn build_context(cfg: &Config) -> Result<rune::Context, String> {
     let mut context =
@@ -152,6 +154,46 @@ pub fn write_document(cfg: &Config, title: &str, sections: Vec<String>) -> Resul
     let full = sandbox_path(&cfg.workspace_dir, &filename)?;
     let len = std::fs::metadata(&full).map(|m| m.len()).unwrap_or(0);
     Ok(format!("wrote document {filename} ({len} bytes)"))
+}
+
+/// Rune skill: format columns + rows into a CSV spreadsheet file in the
+/// workspace. Returns a human-readable tool result.
+pub fn make_spreadsheet(
+    cfg: &Config,
+    title: &str,
+    columns: Vec<String>,
+    rows: Vec<Vec<String>>,
+) -> Result<String, String> {
+    let n_rows = rows.len();
+    let filename = run_script(cfg, MAKE_SPREADSHEET_SCRIPT, (title.to_string(), columns, rows))?;
+    if let Some(err) = filename.strip_prefix("error:") {
+        return Err(err.trim().to_string());
+    }
+    let full = sandbox_path(&cfg.workspace_dir, &filename)?;
+    let len = std::fs::metadata(&full).map(|m| m.len()).unwrap_or(0);
+    Ok(format!(
+        "wrote spreadsheet {filename} ({n_rows} data rows, {len} bytes)"
+    ))
+}
+
+/// Rune skill: fetch several pages and compile them into one research
+/// notes document in the workspace. Returns a human-readable tool result.
+pub fn research(cfg: &Config, topic: &str, urls: Vec<String>) -> Result<String, String> {
+    let filename = format!("Research - {topic}.md");
+    let n = urls.len();
+    let written = run_script(
+        cfg,
+        RESEARCH_SCRIPT,
+        (topic.to_string(), filename.clone(), urls),
+    )?;
+    if let Some(err) = written.strip_prefix("error:") {
+        return Err(err.trim().to_string());
+    }
+    let full = sandbox_path(&cfg.workspace_dir, &written)?;
+    let len = std::fs::metadata(&full).map(|m| m.len()).unwrap_or(0);
+    Ok(format!(
+        "wrote research notes {written} from {n} sources ({len} bytes)"
+    ))
 }
 
 /// Rune skill: append a formatted learned note to memory.md.

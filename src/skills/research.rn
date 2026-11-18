@@ -1,0 +1,27 @@
+//! Ergon skill: research (Rune)
+//!
+//! Takes a topic, a target file name and a list of URLs; fetches each
+//! page through the host function `host_fetch_url` and compiles one
+//! research notes document — a section per source, in the order given.
+//! A source that fails to load is recorded as an error line in its
+//! section, never silently dropped. Returns the file name.
+//!
+//! Note: the section heading is built BEFORE the fetch, because passing
+//! `url` to the host function moves it — reading it afterwards is an
+//! error in Rune.
+
+pub fn main(topic, filename, urls) {
+    let content = `# Research: ${topic}\n\n`;
+    let n = 0;
+    for url in urls {
+        n = n + 1;
+        let heading = `## Source ${n}: ${url}\n\n`;
+        let text = host_fetch_url(url);
+        content = content + heading + text + "\n\n";
+    }
+    let result = host_workspace_write(filename, content);
+    if result != "ok" {
+        return result;
+    }
+    filename
+}

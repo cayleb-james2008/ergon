@@ -450,3 +450,109 @@ fn people_are_isolated() {
     let a_mem = std::fs::read_to_string(&cfg.memory_path).unwrap();
     assert!(!a_mem.contains("BEE-NOTE"), "default memory file must stay clean: {a_mem}");
 }
+
+fn start_page_server(html: &'static str) -> u16 {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    std::thread::spawn(move || {
+        for stream in listener.incoming() {
+            let Ok(mut stream) = stream else { continue };
+            let _ = read_http_request(&stream);
+            let resp = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{html}",
+                html.len()
+            );
+            let _ = stream.write_all(resp.as_bytes());
+            let _ = stream.flush();
+        }
+    });
+    port
+}
+
+#[test]
+fn spreadsheet_skill_writes_real_csv() {
+    let root = test_root("sheet");
+    let replies = vec![
+        json!({
+            "tool": "make_spreadsheet",
+            "args": {
+                "title": "Budget",
+                "columns": ["Item", "Cost"],
+                "rows": [["Coffee, large", "4.50"], ["He said \"hi\"", "2"], ["Plain", "10"]]
+            }
+        })
+        .to_string(),
+        json!({"done": true, "summary": "Budget.csv is ready."}).to_string(),
+    ];
+    let stub = start_stub_model(replies);
+    let cfg = test_config(&root, Some("k"), format!("http://127.0.0.1:{}/v1", stub.port));
+    let port = start_app(cfg.clone());
+    let (s, b) = http(
+        port,
+        "POST",
+        "/api/chat",
+        Some(&json!({"thread_id": "", "message": "make a budget spreadsheet"}).to_string()),
+    );
+    assert_eq!(s, 200, "{b}");
+    let csv_path = cfg.workspace_dir.join("Budget.csv");
+    assert!(csv_path.exists(), "Budget.csv must exist");
+    let csv = std::fs::read_to_string(&csv_path).unwrap();
+    assert_eq!(
+        csv,
+        "Item,Cost\n\"Coffee, large\",4.50\n\"He said \"\"hi\"\"\",2\nPlain,10\n",
+        "CSV must be RFC-4180 quoted: {csv:?}"
+    );
+}
+
+#[test]
+fn research_skill_compiles_notes_from_pages() {
+    let root = test_root("research");
+    let p1 = start_page_server("<html><body><p>ALPHA FACT about pricing</p></body></html>");
+    let p2 = start_page_server("<html><body><p>BETA FACT about pricing</p></body></html>");
+    let u1 = format!("http://127.0.0.1:{p1}/a");
+    let u2 = format!("http://127.0.0.1:{p2}/b");
+    let replies = vec![
+        json!({"tool": "research", "args": {"topic": "Local Prices", "urls": [u1, u2]}}).to_string(),
+        json!({"done": true, "summary": "Research compiled."}).to_string(),
+    ];
+    let stub = start_stub_model(replies);
+    let cfg = test_config(&root, Some("k"), format!("http://127.0.0.1:{}/v1", stub.port));
+    let port = start_app(cfg.clone());
+    let (s, b) = http(
+        port,
+        "POST",
+        "/api/chat",
+        Some(&json!({"thread_id": "", "message": "research local prices"}).to_string()),
+    );
+    assert_eq!(s, 200, "{b}");
+    let doc_path = cfg.workspace_dir.join("Research - Local Prices.md");
+    assert!(doc_path.exists(), "research doc must exist");
+    let doc = std::fs::read_to_string(&doc_path).unwrap();
+    assert!(doc.contains("# Research: Local Prices"), "doc title: {doc}");
+    assert!(doc.contains("ALPHA FACT"), "first source compiled: {doc}");
+    assert!(doc.contains("BETA FACT"), "second source compiled: {doc}");
+}
+
+#[test]
+fn search_and_move_tools_work() {
+    let root = test_root("tools");
+    let cfg = test_config(&root, Some("k"), "http://127.0.0.1:9/v1".to_string());
+    std::fs::write(cfg.workspace_dir.join("a.txt"), "first line\nThe Quarterly Report lives here\n").unwrap();
+    std::fs::write(cfg.workspace_dir.join("b.txt"), "nothing relevant\n").unwrap();
+
+    let out = ergon_rs::execute_tool(&cfg, "search_files", &json!({"query": "quarterly"})).unwrap();
+    assert!(out.contains("a.txt:2"), "match carries path and line: {out}");
+    assert!(out.contains("Quarterly Report"), "match carries the line: {out}");
+    assert!(!out.contains("b.txt"), "non-matching file excluded: {out}");
+
+    let out = ergon_rs::execute_tool(&cfg, "search_files", &json!({"query": "zzz-absent"})).unwrap();
+    assert!(out.contains("no matches"), "absent query is honest: {out}");
+
+    let out = ergon_rs::execute_tool(&cfg, "move_file", &json!({"from": "a.txt", "to": "archive/a.txt"})).unwrap();
+    assert!(out.contains("moved"), "{out}");
+    assert!(!cfg.workspace_dir.join("a.txt").exists(), "source gone after move");
+    assert!(cfg.workspace_dir.join("archive/a.txt").exists(), "destination exists after move");
+
+    let err = ergon_rs::execute_tool(&cfg, "move_file", &json!({"from": "archive/a.txt", "to": "../evil.txt"}));
+    assert!(err.is_err(), "move out of the workspace must be refused: {err:?}");
+}
