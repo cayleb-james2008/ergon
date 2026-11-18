@@ -2017,6 +2017,34 @@ pub fn run_agent(
             ),
         );
     }
+    // A deletion is only ever parked for approval. A summary that names
+    // a file with a still-pending delete decision but never says it is
+    // waiting reads as "deleted": say plainly, in the thread, that it
+    // has not been.
+    let lowered = summary.to_lowercase();
+    let says_waiting = ["approv", "await", "pending", "parked", "not been deleted", "not deleted"]
+        .iter()
+        .any(|w| lowered.contains(w));
+    if !says_waiting {
+        for d in records::load_decisions(&cfg.data_dir) {
+            let still_pending = d["status"] == "pending"
+                && d["kind"] == "delete"
+                && d["thread_id"].as_str() == Some(thread_id);
+            let Some(path) = d["path"].as_str().filter(|_| still_pending) else {
+                continue;
+            };
+            let base = path.rsplit('/').next().unwrap_or(path);
+            if summary.contains(path) || summary.contains(base) {
+                store.lock().unwrap().push(
+                    thread_id,
+                    "step",
+                    &format!(
+                        "Note: {path} has NOT been deleted yet; the deletion is waiting for your approval in Decisions."
+                    ),
+                );
+            }
+        }
+    }
     // The work log + offers scan: the records the rest of the
     // product (brief, graph, today, offers) is built from.
     records::append_work(cfg, task, &summary, &ledger.written, thread_id, true);
