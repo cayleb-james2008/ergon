@@ -17,7 +17,7 @@
   /* Same tokens as the desktop face: one instrument, two grounds. */
   :root, [data-theme="dark"] {
     color-scheme: dark;
-    --bg: #0f0e0c; --panel: #171512; --panel-2: #201d19; --field: #14130f;
+    --bg: #0f0e0c; --panel: #171512; --panel-2: #201d19; --field: #14130f; --field-edge: #6e685c;
     --track: #1d1b17; --raised: #2c2924; --rule: #2b2823; --rule-strong: #3a362f;
     --ink: #ece9e2; --muted: #a6a094; --faint: #8a8474;
     --primary: #ece9e2; --primary-ink: #14130f; --primary-hover: #ffffff;
@@ -33,7 +33,7 @@
   }
   [data-theme="light"] {
     color-scheme: light;
-    --bg: #f6f5f1; --panel: #ffffff; --panel-2: #f3f1ec; --field: #ffffff;
+    --bg: #f6f5f1; --panel: #ffffff; --panel-2: #f3f1ec; --field: #ffffff; --field-edge: #8a8374;
     --track: #ebe8e0; --raised: #ffffff; --rule: #dedad0; --rule-strong: #cfcabd;
     --ink: #1c1a16; --muted: #5f5a4f; --faint: #6e6759;
     --primary: #1c1a16; --primary-ink: #ffffff; --primary-hover: #2b2620;
@@ -115,7 +115,7 @@
   .empty .sub { color: var(--muted); margin: 0; font-size: var(--text-sm); }
   .starters { display: flex; flex-direction: column; gap: 8px; margin-top: 16px; }
   .starter { text-align: left; background: var(--panel); border: 1px solid var(--rule); color: var(--ink); border-radius: var(--r-3);
-             padding: 12px 16px; font-size: var(--text-sm); line-height: 1.4; min-height: 48px; }
+             padding: 12px 16px; font-size: var(--text-sm); line-height: 1.25; min-height: 44px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .starter:active:not(:disabled) { background: var(--panel-2); }
   .msg { font-size: var(--text-base); line-height: 1.55; overflow-wrap: anywhere; white-space: pre-wrap; }
   .msg.user { align-self: flex-end; max-width: 84%; background: var(--raised); border-radius: var(--r-4); padding: 12px 16px; }
@@ -136,7 +136,7 @@
   .msg.result, .msg.step, .msg.user, .msg.error { animation: rise var(--dur-short) var(--ease); }
   #composer { position: sticky; bottom: 0; background: var(--bg); padding: 12px 0 4px; display: flex; gap: 8px; align-items: flex-end;
               border-top: 1px solid var(--rule); margin: 0 -16px; padding-left: 16px; padding-right: 16px; }
-  #composer-input { flex: 1; resize: none; border: 1px solid var(--rule-strong); border-radius: var(--r-4); padding: 12px 12px;
+  #composer-input { flex: 1; resize: none; border: 1px solid var(--field-edge); border-radius: var(--r-4); padding: 12px 16px;
                     font-size: var(--text-base); line-height: 1.45; min-height: 48px; max-height: 140px; background: var(--field); outline: none; }
   #composer-input:focus { border-color: var(--ink); }
   #send-btn { background: var(--primary); color: var(--primary-ink); border: 0; border-radius: var(--r-3); padding: 0 16px;
@@ -330,10 +330,10 @@
   }
 
   function starterPrompts(installed) {
-    const out = ['Organise my notes into a clean summary document'];
-    for (const item of installed.slice(0, 2)) out.push('Ask my ' + item.name + ' to handle a task for me');
-    if (personRole) out.push('Draft this week’s update for my work as ' + personRole);
-    out.push('Research a topic and write up what you find');
+    const out = ['Tidy my notes into a summary'];
+    for (const item of installed.slice(0, 2)) out.push('Ask my ' + item.name + ' for help');
+    if (personRole) out.push('Draft my weekly update');
+    out.push('Research a topic for me');
     return out.slice(0, 4);
   }
 
@@ -357,6 +357,7 @@
       b.type = 'button';
       b.className = 'starter';
       b.textContent = text;
+      b.title = text;
       b.addEventListener('click', () => {
         inputEl.value = text;
         resizeComposer();
