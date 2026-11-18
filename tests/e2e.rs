@@ -2857,3 +2857,24 @@ fn cross_site_requests_are_refused_and_change_nothing() {
     let (status, _) = http(port, "GET", "/api/status", None);
     assert_eq!(status, 200, "the page's own read API stays open");
 }
+
+/// E2: an over-long request line or header is refused early (431) and
+/// the server keeps answering. Before the fix the line was read without
+/// a limit, so 200 MiB with no newline grew the server's memory.
+#[test]
+fn over_long_header_line_is_refused_and_server_survives() {
+    let root = test_root("longline");
+    let cfg = test_config(&root, None, "http://127.0.0.1:9/v1".to_string());
+    let port = start_app(cfg);
+    let mut req = b"GET /api/status HTTP/1.1\r\nHost: 127.0.0.1\r\nX-Pad: ".to_vec();
+    req.extend(std::iter::repeat(b'a').take(200 * 1024));
+    let mut stream = TcpStream::connect(("127.0.0.1", port)).unwrap();
+    let _ = stream.write_all(&req);
+    let _ = stream.shutdown(std::net::Shutdown::Write);
+    let mut raw = String::new();
+    let _ = stream.read_to_string(&mut raw);
+    assert!(raw.starts_with("HTTP/1.1 431"), "an over-long header line is refused: {}", &raw[..60.min(raw.len())]);
+    assert!(raw.contains("too large"), "the refusal explains itself: {raw}");
+    let (status, _) = http(port, "GET", "/api/status", None);
+    assert_eq!(status, 200, "the server still answers afterwards");
+}
