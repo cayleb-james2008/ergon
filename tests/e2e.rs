@@ -556,3 +556,44 @@ fn search_and_move_tools_work() {
     let err = ergon_rs::execute_tool(&cfg, "move_file", &json!({"from": "archive/a.txt", "to": "../evil.txt"}));
     assert!(err.is_err(), "move out of the workspace must be refused: {err:?}");
 }
+
+#[test]
+fn learned_preferences_shape_the_next_task() {
+    let root = test_root("prefs");
+    let replies = vec![
+        json!({"tool": "update_memory", "args": {"note": "Prefers summaries with a Key points section first"}}).to_string(),
+        json!({"done": true, "summary": "Noted."}).to_string(),
+        json!({"done": true, "summary": "Done, in your format."}).to_string(),
+    ];
+    let stub = start_stub_model(replies);
+    let cfg = test_config(&root, Some("k"), format!("http://127.0.0.1:{}/v1", stub.port));
+    let port = start_app(cfg.clone());
+
+    let (s, b) = http(port, "POST", "/api/chat", Some(&json!({"thread_id": "", "message": "remember how I like summaries"}).to_string()));
+    assert_eq!(s, 200, "{b}");
+    let (s, b) = http(port, "POST", "/api/chat", Some(&json!({"thread_id": "", "message": "summarise the week"}).to_string()));
+    assert_eq!(s, 200, "{b}");
+
+    let recorded = stub.raw_requests.lock().unwrap();
+    assert_eq!(recorded.len(), 3, "expected 3 model calls: {}", recorded.len());
+    assert!(
+        !recorded[0].contains("Prefers summaries with a Key points section first"),
+        "the preference cannot be in the context before it is learned: {}",
+        recorded[0]
+    );
+    assert!(
+        recorded[2].contains("PREFERENCES AND FACTS THIS PERSON HAS TAUGHT YOU"),
+        "the next task's prompt carries the standing-preferences section: {}",
+        recorded[2]
+    );
+    assert!(
+        recorded[2].contains("Prefers summaries with a Key points section first"),
+        "the learned preference is in the next task's context: {}",
+        recorded[2]
+    );
+
+    // And the person can see what the agent has learned about them.
+    let (s, b) = http(port, "GET", "/api/memory", None);
+    assert_eq!(s, 200);
+    assert!(b.contains("Prefers summaries with a Key points section first"), "memory view: {b}");
+}
