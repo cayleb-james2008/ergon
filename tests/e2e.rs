@@ -3032,3 +3032,31 @@ fn a_delete_parked_in_an_earlier_run_gets_no_new_note() {
     assert_eq!(status, 200, "{second}");
     assert_eq!(parked_notes(&second, "old.txt"), 1, "the earlier park keeps its one note and gets no new one: {second}");
 }
+
+/// EB3: a chat that names a thread which does not exist is refused, not
+/// silently moved into a new thread. An empty thread_id still starts one.
+#[test]
+fn chat_with_an_unknown_thread_id_is_refused() {
+    let root = test_root("eb3_thread");
+    let cfg = test_config(&root, None, "http://127.0.0.1:9/v1".to_string());
+    let port = start_app(cfg);
+    let (status, body) = http(
+        port,
+        "POST",
+        "/api/chat",
+        Some(&json!({"message": "hello", "thread_id": "t-does-not-exist"}).to_string()),
+    );
+    assert_eq!(status, 404, "{body}");
+    assert!(body.contains("no such thread"), "{body}");
+    let (_, threads) = http(port, "GET", "/api/threads", None);
+    let v: Value = serde_json::from_str(&threads).unwrap();
+    assert!(v["threads"].as_array().unwrap().is_empty(), "a refused chat creates no thread: {threads}");
+    let (status, body) = http(
+        port,
+        "POST",
+        "/api/chat",
+        Some(&json!({"message": "hello", "thread_id": ""}).to_string()),
+    );
+    assert_ne!(status, 404, "an empty thread_id still starts a new thread: {body}");
+    assert!(body.contains("thread_id"), "{body}");
+}

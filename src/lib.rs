@@ -3030,7 +3030,13 @@ fn handle_connection(mut stream: std::net::TcpStream, state: &AppState) -> std::
             // it, so the message vanished on reload).
             let (thread_id, history) = {
                 let mut store = runtime.store.lock().unwrap();
-                let tid = store.ensure_thread(parsed["thread_id"].as_str().unwrap_or(""));
+                let requested = parsed["thread_id"].as_str().unwrap_or("");
+                // A named thread must exist: opening a new one silently
+                // would put the message somewhere the person never asked (EB3).
+                if !requested.is_empty() && store.thread_json(requested).is_none() {
+                    return respond_json(&mut stream, 404, &json!({"error": "no such thread"}));
+                }
+                let tid = store.ensure_thread(requested);
                 let history = store.history_json(&tid);
                 store.push(&tid, "user", &message);
                 (tid, history)
