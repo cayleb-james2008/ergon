@@ -187,6 +187,22 @@
   .msg.error { align-self: stretch; background: var(--need-bg); border-radius: var(--r-3); padding: 12px 16px; font-size: var(--text-sm); color: var(--ink); animation: rise var(--dur-short) var(--ease); }
   .msg.error .err-title { color: var(--need); font-weight: 600; display: block; margin-bottom: 4px; }
   .msg.error .err-next { color: var(--muted); display: block; margin-top: 4px; }
+  .msg.reply { align-self: stretch; font-size: var(--text-base); line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .l-label { display: block; min-width: 0; overflow-wrap: anywhere; }
+  .l-details { margin-top: 2px; font-size: var(--text-xs); color: var(--faint); }
+  .l-details summary { cursor: pointer; display: inline-flex; align-items: center; min-height: 24px; }
+  .l-details pre { white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--font-mono); font-size: var(--text-xs); color: var(--muted); margin: 4px 0 0; }
+  .msg.error .l-details { color: var(--muted); margin-top: 8px; }
+  .check { margin-top: 12px; border: 1px solid var(--wait); background: var(--wait-bg); border-radius: var(--r-2); padding: 8px 12px; font-size: var(--text-sm); color: var(--ink); white-space: pre-wrap; overflow-wrap: anywhere; }
+  .check-label { display: block; color: var(--wait); font-weight: 600; margin-bottom: 2px; }
+  .list-error { font-size: var(--text-sm); color: var(--muted); display: flex; flex-direction: column; gap: 8px; padding: 8px 12px; }
+  .list-error .act-btn { align-self: flex-start; }
+  @media (forced-colors: active) {
+    /* Selection must show without colour: an outline the system draws. */
+    .seg-btn[aria-selected="true"], .seg-btn[aria-pressed="true"], .thread-btn.active { outline: 3px solid Highlight; outline-offset: -3px; }
+    .card, .starter, .msg.result, .check, .msg.error, #composer-input, #person-select { border: 1px solid CanvasText; }
+    .act-btn.primary, #send-btn, #new-chat-btn { border: 1px solid ButtonText; }
+  }
 
   #composer { border-top: 1px solid var(--rule); background: var(--bg); padding: 12px 24px 16px; }
   #composer-inner { max-width: 720px; margin: 0 auto; display: flex; gap: 8px; align-items: flex-end; }
@@ -279,7 +295,6 @@
     #face-bar .face-btn { min-width: 0; white-space: nowrap; }
     #face-bar .face-btn svg.i { display: none; }
     .ready { font-size: var(--text-xs); padding: 4px 8px; flex: none; }
-    .ready #ready-text { display: none; }
     #no-key-banner { padding: 12px 16px; flex: none; }
     #recovered-banner { padding: 12px 16px; flex: none; }
     #face-chat { flex: 1; min-height: 0; }
@@ -388,6 +403,7 @@
         <div class="card" id="status-card">
           <div class="status-row" id="status-row"><span class="dot" aria-hidden="true"></span><h2 class="lead" id="status-title">Checking the agent</h2></div>
           <p class="quiet" id="status-body" style="margin-top:8px">Ergon is reading its connection.</p>
+          <button class="act-btn" type="button" id="status-retry" hidden style="margin-top:12px">Retry</button>
         </div>
         <div class="cards">
           <div class="card" id="brief-card">
@@ -451,8 +467,8 @@
     if (role === 'step') {
       /* A ledger row: the icon and the real result of one step. */
       div.className = 'msg step';
-      div.innerHTML = '<span class="l-icon">' + ICON_CHECK + '</span><span class="l-text"></span>';
-      div.querySelector('.l-text').textContent = content;
+      div.innerHTML = '<span class="l-icon">' + ICON_CHECK + '</span><div class="l-text"></div>';
+      fillStep(div.querySelector('.l-text'), content);
     } else if (role === 'working') {
       div.className = 'msg step working';
       div.innerHTML = '<span class="pulse" aria-hidden="true"></span><span class="l-text"></span>';
@@ -462,12 +478,13 @@
       div.className = 'msg result';
       div.innerHTML = '<div class="result-head">' + ICON_CHECK + 'Finished</div><div class="result-body"></div>';
       div.querySelector('.result-body').textContent = content;
+    } else if (role === 'reply') {
+      div.className = 'msg reply';
+      div.textContent = content;
     } else if (role === 'error') {
       div.className = 'msg error';
       div.setAttribute('role', 'alert');
-      div.innerHTML = '<span class="err-title">The agent did not finish this.</span><span class="err-body"></span>' +
-        '<span class="err-next">Nothing was simulated. Send it again once Ergon is connected to a model, or ask whoever runs Ergon to check the connection.</span>';
-      div.querySelector('.err-body').textContent = content;
+      div.innerHTML = failureHtml(content);
     } else {
       div.className = 'msg ' + role;
       div.textContent = content;
@@ -477,6 +494,145 @@
     return div;
   }
   const threadEl = document.getElementById('thread');
+
+  /* Plain words for the tools the agent uses. The raw step text stays one tap away. */
+  function toolLabel(tool, via, body) {
+    const pick = (re) => { const m = re.exec(body); return m ? m[1] : ''; };
+    let label = null;
+    switch (tool) {
+      case 'list_dir': label = 'Looked through your files'; break;
+      case 'read_file': label = 'Read a file'; break;
+      case 'write_file': { const n = pick(/^wrote (.+?) \(\d+ bytes\)/); label = n ? 'Saved ' + n : 'Saved a file'; break; }
+      case 'write_document': { const n = pick(/^wrote document (.+?) \(/); label = n ? 'Saved ' + n : 'Saved a document'; break; }
+      case 'make_spreadsheet': { const n = pick(/^wrote spreadsheet (.+?) \(/); label = n ? 'Saved spreadsheet ' + n : 'Saved a spreadsheet'; break; }
+      case 'move_file': label = 'Moved a file'; break;
+      case 'search_files': label = 'Searched your files'; break;
+      case 'fetch_url': label = 'Read a web page'; break;
+      case 'research': label = 'Researched a topic'; break;
+      case 'update_memory': label = 'Remembered something about you'; break;
+      case 'browse_library': label = 'Looked through the company library'; break;
+      case 'install_item': label = 'Added an item to your suite'; break;
+      case 'publish_skill': label = 'Published a skill'; break;
+      case 'delete_file': { const n = pick(/(\S+) has NOT been deleted/); label = 'Asked your approval to delete ' + (n || 'a file'); break; }
+      case 'flag_decision': label = 'Asked you to decide something'; break;
+      case 'delegate': label = via ? 'Handed work to ' + via : 'Handed work to a specialist'; break;
+      default: return null;
+    }
+    if (via && tool !== 'delegate') label += ' (for ' + via + ')';
+    return label;
+  }
+
+  /* One ledger row: a plain label, and the raw step text behind Details. */
+  function fillStep(el, content) {
+    const nl = content.indexOf('\n');
+    const head = nl < 0 ? content : content.slice(0, nl);
+    const body = nl < 0 ? '' : content.slice(nl + 1);
+    const m = /^Tool: (\S+)(?: \(via ([^)]+)\))?$/.exec(head);
+    const label = (m && toolLabel(m[1], m[2], body)) || head;
+    const row = document.createElement('span');
+    row.className = 'l-label';
+    row.textContent = label;
+    el.appendChild(row);
+    const det = document.createElement('details');
+    det.className = 'l-details';
+    det.innerHTML = '<summary>Details</summary><pre></pre>';
+    det.querySelector('pre').textContent = content;
+    el.appendChild(det);
+  }
+
+  /* A failure: one plain sentence; the server's own words behind Details. */
+  const FAILURE_RE = /not a JSON object|no model key|model endpoint returned HTTP|without finishing|could not reach|could not run|did not finish/i;
+  function failureHtml(raw) {
+    return '<span class="err-title">The agent could not finish this.</span>' +
+      '<span class="err-next">Try again, or ask whoever runs Ergon to check the connection.</span>' +
+      '<details class="l-details"><summary>Details</summary><pre>' + esc(raw) + '</pre></details>';
+  }
+
+  /* A contradiction note joins the card it qualifies, labelled 'Check this'. */
+  function attachNote(card, text) {
+    const box = document.createElement('div');
+    box.className = 'check';
+    box.innerHTML = '<span class="check-label">Check this</span><span class="check-text"></span>';
+    box.querySelector('.check-text').textContent = text.replace(/^Note:\s*/, '');
+    card.appendChild(box);
+  }
+
+  /* A saved thread, in order. Finished only after a real step; notes join their card. */
+  function renderRun(messages) {
+    messagesEl.innerHTML = '';
+    let runHasStep = false;
+    let card = null;
+    for (const m of messages) {
+      if (m.role === 'user') {
+        runHasStep = false; card = null;
+        addMsg('user', m.content);
+      } else if (m.role === 'step' && /^Note:/.test(m.content) && card) {
+        attachNote(card, m.content);
+      } else if (m.role === 'step') {
+        runHasStep = true; card = null;
+        addMsg('step', m.content);
+      } else if (m.role === 'assistant') {
+        card = addMsg(runHasStep ? 'assistant' : 'reply', m.content);
+      } else {
+        card = null;
+        addMsg(m.role, m.content);
+      }
+    }
+  }
+
+  /* The sidebar's relative time, from the thread id's creation millis (t<millis>-n). */
+  function relTime(ms) {
+    const now = new Date(); const then = new Date(ms);
+    const mins = Math.round((now - then) / 60000);
+    if (mins < 1) return 'just now';
+    if (mins < 60) return mins + ' min ago';
+    const dayNow = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const dayThen = new Date(then.getFullYear(), then.getMonth(), then.getDate());
+    const days = Math.round((dayNow - dayThen) / 86400000);
+    if (days === 0) return Math.round(mins / 60) + ' h ago';
+    if (days === 1) return 'Yesterday';
+    return then.toLocaleDateString([], { month: 'short', day: 'numeric' });
+  }
+  function threadMs(id) {
+    const m = /^t(\d{13})/.exec(String(id || ''));
+    return m ? Number(m[1]) : null;
+  }
+
+  /* The chip's words: the full line on wide screens, a short one on phones. */
+  const narrowQuery = window.matchMedia('(max-width: 767px)');
+  let chipState = { cls: 'ready', long: '', short: '' };
+  function paintChip() {
+    document.getElementById('ready-chip').className = 'ready ' + chipState.cls;
+    document.getElementById('ready-text').textContent = narrowQuery.matches ? chipState.short : chipState.long;
+  }
+  function setChip(cls, long, short) { chipState = { cls: cls, long: long, short: short || long }; paintChip(); }
+  narrowQuery.addEventListener('change', paintChip);
+
+  /* Unsent drafts, per conversation (or per new chat), for this browser tab only. */
+  const DRAFT_PREFIX = 'ergon-draft:';
+  const THREAD_KEY = 'ergon-thread';
+  function draftKey() { return DRAFT_PREFIX + (currentThread || 'new'); }
+  function loadDraft() {
+    try { inputEl.value = sessionStorage.getItem(draftKey()) || ''; } catch (e) { inputEl.value = ''; }
+    resizeComposer();
+  }
+  function saveDraft() {
+    try {
+      if (inputEl.value) sessionStorage.setItem(draftKey(), inputEl.value);
+      else sessionStorage.removeItem(draftKey());
+    } catch (e) { /* a draft is a convenience */ }
+  }
+  function clearDraft() { try { sessionStorage.removeItem(draftKey()); } catch (e) {} }
+  function rememberThread(id) { try { sessionStorage.setItem(THREAD_KEY, id); } catch (e) {} }
+  function forgetThread() { try { sessionStorage.removeItem(THREAD_KEY); } catch (e) {} }
+  function restoredThread() { try { return sessionStorage.getItem(THREAD_KEY) || ''; } catch (e) { return ''; } }
+
+  /* The composer's placeholder: short enough to show whole at 320px. */
+  const placeholderFull = 'Describe a task in plain words';
+  const placeholderShort = 'Describe a task';
+  function syncPlaceholder() { inputEl.placeholder = window.matchMedia('(max-width: 400px)').matches ? placeholderShort : placeholderFull; }
+  window.matchMedia('(max-width: 400px)').addEventListener('change', syncPlaceholder);
+  syncPlaceholder();
 
   /* appearance: the settings toggle; the choice persists on this device */
   const themeBtns = document.querySelectorAll('.theme-btn');
@@ -513,22 +669,14 @@
   /* A failed run: say so in the top bar, and put the text back so it can be sent again. */
   function failRun(message, text) {
     addMsg('error', message);
-    if (!inputEl.value) { inputEl.value = text; resizeComposer(); }
-    const chip = document.getElementById('ready-chip');
-    chip.className = 'ready wait';
-    document.getElementById('ready-text').textContent = 'Last run did not finish';
-  }
-  function setReadyChip(configured) {
-    const chip = document.getElementById('ready-chip');
-    chip.className = 'ready ' + (configured ? 'ok' : 'wait');
-    document.getElementById('ready-text').textContent = configured ? 'Agent ready' : 'Not connected to a model yet';
+    if (!inputEl.value) { inputEl.value = text; resizeComposer(); saveDraft(); }
+    setChip('wait', 'Last run did not finish', 'Run failed');
   }
 
   /* Readiness: one calm line in the top bar, one card on Today. */
   function setReady(configured, person) {
-    const chip = document.getElementById('ready-chip');
-    chip.className = 'ready ' + (configured ? 'ok' : 'wait');
-    document.getElementById('ready-text').textContent = configured ? 'Agent ready' : 'Not connected to a model yet';
+    setChip(configured ? 'ok' : 'wait', configured ? 'Agent ready' : 'Not connected to a model yet', configured ? 'Ready' : 'Check agent');
+    document.getElementById('status-retry').hidden = true;
     const row = document.getElementById('status-row');
     row.className = 'status-row ' + (configured ? 'ok' : 'wait');
     document.getElementById('status-title').textContent = configured
@@ -539,21 +687,29 @@
       : 'The agent cannot run until Ergon is connected to a model. Ask whoever runs Ergon to connect it. Nothing is simulated, and Ergon will not invent answers.';
   }
 
-  let recoveredDismissed = false;
+  const RECOVERED_KEY = 'ergon-recovered-dismissed';
+  let recoveredList = [];
   function showRecovered(names) {
     const list = Array.isArray(names) ? names : [];
+    recoveredList = list;
     const banner = document.getElementById('recovered-banner');
-    if (!list.length || recoveredDismissed) { banner.style.display = 'none'; return; }
+    let dismissed = false;
+    try { dismissed = list.length > 0 && localStorage.getItem(RECOVERED_KEY) === list.join('|'); } catch (e) {}
+    if (!list.length || dismissed) { banner.style.display = 'none'; return; }
     document.getElementById('recovered-text').textContent = 'Earlier conversations were moved to a backup file (' + list.join(', ') + ') and Ergon started fresh. Nothing was deleted.';
     banner.style.display = 'flex';
   }
-  document.getElementById('recovered-dismiss').onclick = () => { recoveredDismissed = true; showRecovered([]); };
+  document.getElementById('recovered-dismiss').onclick = () => {
+    try { localStorage.setItem(RECOVERED_KEY, recoveredList.join('|')); } catch (e) {}
+    showRecovered(recoveredList);
+  };
 
   async function loadStatus() {
     try {
       const r = await fetch('/api/status');
       const s = await r.json();
-      modelConfigured = !!s.model_configured;
+      if (!r.ok || typeof s.model_configured !== 'boolean') throw new Error('status');
+      modelConfigured = s.model_configured;
       document.getElementById('no-key-banner').style.display = modelConfigured ? 'none' : 'block';
       showRecovered(s.store_recovered);
       personRole = (s.person && s.person.role) || '';
@@ -562,11 +718,17 @@
         document.getElementById('person-label').textContent = 'Working for ' + s.person.name;
       }
     } catch (e) {
-      document.getElementById('ready-text').textContent = 'Could not check the agent';
+      /* No answer, or a failed answer: say we could not check, never that the model is missing. */
+      modelConfigured = null;
+      document.getElementById('no-key-banner').style.display = 'none';
+      setChip('', 'Could not check the agent', 'Check failed');
+      document.getElementById('status-row').className = 'status-row';
       document.getElementById('status-title').textContent = 'Could not check the agent';
-      document.getElementById('status-body').textContent = 'Ergon did not answer. Check that it is running, then reload this page.';
+      document.getElementById('status-body').textContent = 'Ergon did not answer. Check that it is running, then retry.';
+      document.getElementById('status-retry').hidden = false;
     }
   }
+  document.getElementById('status-retry').onclick = () => loadStatus();
 
   /* Starter prompts: built from the person's own role and suite. */
   function starterPrompts(installed) {
@@ -580,7 +742,7 @@
   }
 
   async function showEmpty() {
-    const sub = modelConfigured
+    const sub = modelConfigured !== false
       ? 'It works step by step, right here, until the job is done.'
       : 'Ergon is not connected to a model yet (see the note above). Anything you type is kept in the thread.';
     messagesEl.innerHTML = '';
@@ -613,7 +775,7 @@
     inputEl.style.height = 'auto';
     inputEl.style.height = Math.min(inputEl.scrollHeight, 200) + 'px';
   }
-  inputEl.addEventListener('input', resizeComposer);
+  inputEl.addEventListener('input', () => { resizeComposer(); saveDraft(); });
 
   async function loadPeople() {
     try {
@@ -636,6 +798,8 @@
 
   function resetPersonView() {
     currentThread = null;
+    forgetThread();
+    loadDraft();
     showEmpty();
     /* Close the memory panel fully: class, ARIA state and the previous
        person's text all reset, so nothing stale is announced or shown. */
@@ -770,9 +934,10 @@
       if (!data.threads.length) {
         const none = document.createElement('p');
         none.className = 'thread-empty';
-        none.textContent = 'No conversations yet. Start one with New chat.';
+        none.textContent = 'No conversations yet';
         listEl.appendChild(none);
       }
+      const seen = {};
       for (const t of data.threads) {
         const li = document.createElement('li');
         /* A real <button>: keyboard-reachable and focusable, unlike a
@@ -783,12 +948,15 @@
         btn.className = 'thread-btn' + (currentThread && t.id === currentThread ? ' active' : '');
         const title = document.createElement('span');
         title.className = 't-title';
-        title.textContent = t.title || 'Untitled task';
+        const base = t.title || 'Untitled task';
+        seen[base] = (seen[base] || 0) + 1;
+        title.textContent = seen[base] > 1 ? base + ' (' + seen[base] + ')' : base;
         btn.appendChild(title);
         if (typeof t.messages === 'number') {
           const sub = document.createElement('span');
           sub.className = 't-sub';
-          sub.textContent = t.messages === 1 ? '1 message' : t.messages + ' messages';
+          const ms = threadMs(t.id);
+          sub.textContent = (t.messages === 1 ? '1 message' : t.messages + ' messages') + (ms ? ', ' + relTime(ms) : '');
           btn.appendChild(sub);
         }
         btn.addEventListener('click', () => openThread(t.id));
@@ -797,7 +965,8 @@
       }
       sideError('');
     } catch (e) {
-      sideError('Could not load the conversation list. Is the Ergon server running?');
+      listEl.innerHTML = '<li><div class="list-error"><span>Could not load your conversations. Check that Ergon is running.</span><button class="act-btn" type="button" id="threads-retry">Retry</button></div></li>';
+      document.getElementById('threads-retry').onclick = () => loadThreads();
     }
   }
 
@@ -812,6 +981,8 @@
   async function newThread() {
     setSheet(false);
     try { await createThread(); } catch (e) { sideError('Could not start a conversation. Is the Ergon server running?'); return; }
+    rememberThread(currentThread);
+    loadDraft();
     showEmpty();
     await loadThreads();
     inputEl.focus();
@@ -827,13 +998,15 @@
       t = await r.json();
     } catch (e) {
       /* A stale id must not be dressed up as an empty thread. */
+      forgetThread();
       messagesEl.innerHTML = '';
       addMsg('error', 'That conversation could not be opened. It may have been removed.');
       return;
     }
     currentThread = id;
-    messagesEl.innerHTML = '';
-    for (const m of (t.messages || [])) addMsg(m.role, m.content);
+    rememberThread(id);
+    loadDraft();
+    renderRun(t.messages || []);
     if (!messagesEl.children.length) showEmpty();
     await loadThreads();
   }
@@ -849,6 +1022,7 @@
     const text = inputEl.value.trim();
     if (!text) return;
     busy = true;
+    clearDraft();
     inputEl.value = '';
     resizeComposer();
     addMsg('user', text);
@@ -867,9 +1041,8 @@
       if (!r.ok) {
         failRun(data.error || 'The agent could not run.', text);
       } else {
-        setReadyChip(true);
-        messagesEl.innerHTML = '';
-        for (const m of data.messages) addMsg(m.role, m.content);
+        setChip('ok', 'Agent ready', 'Ready');
+        renderRun(data.messages);
       }
     } catch (e) {
       working.remove();
@@ -934,7 +1107,7 @@
   const faceBtns = document.querySelectorAll('.face-btn');
   function showFace(name) {
     currentFace = name;
-    faceBtns.forEach((b) => b.setAttribute('aria-selected', b.getAttribute('data-face') === name ? 'true' : 'false'));
+    faceBtns.forEach((b) => { const on = b.getAttribute('data-face') === name; b.setAttribute('aria-selected', on ? 'true' : 'false'); b.tabIndex = on ? 0 : -1; });
     for (const f of ['chat', 'today', 'graph']) {
       document.getElementById('face-' + f).classList.toggle('on', f === name);
     }
@@ -942,6 +1115,18 @@
     if (name === 'today') loadToday();
   }
   faceBtns.forEach((b) => b.addEventListener('click', () => showFace(b.getAttribute('data-face'))));
+  /* Roving tabindex: one stop for the switcher; arrows, Home and End move between faces. */
+  faceBtns.forEach((b, i) => b.addEventListener('keydown', (ev) => {
+    let j = null;
+    if (ev.key === 'ArrowRight') j = (i + 1) % faceBtns.length;
+    else if (ev.key === 'ArrowLeft') j = (i - 1 + faceBtns.length) % faceBtns.length;
+    else if (ev.key === 'Home') j = 0;
+    else if (ev.key === 'End') j = faceBtns.length - 1;
+    if (j === null) return;
+    ev.preventDefault();
+    faceBtns[j].focus();
+    showFace(faceBtns[j].getAttribute('data-face'));
+  }));
 
   /* ---------------- work graph ------------------------------------ */
   const KIND_ORDER = ['person', 'item', 'work', 'file'];
@@ -1171,10 +1356,15 @@
       if (!events.length) { el.innerHTML = '<p class="empty-note">Nothing yet today.</p>'; return; }
       el.innerHTML = events.map((e) => {
         const when = e.ts ? new Date(e.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+        const failed = e.kind === 'work' && FAILURE_RE.test(String(e.detail || ''));
+        const detail = failed
+          ? '<div class="s-detail">The agent did not finish this. Try again, or ask whoever runs Ergon to check the connection.</div>' +
+            '<details class="l-details"><summary>Details</summary><pre>' + esc(e.detail) + '</pre></details>'
+          : (e.detail ? '<div class="s-detail">' + esc(e.detail) + '</div>' : '');
         return '<div class="stream-item"><div class="s-time mono">' + esc(when) + '</div><div>' +
           '<div class="s-title">' + esc(e.title) + '</div>' +
-          '<div class="tag" style="margin-top:4px">' + esc(String(e.kind || '').replace('_', ' ')) + '</div>' +
-          (e.detail ? '<div class="s-detail">' + esc(e.detail) + '</div>' : '') + '</div></div>';
+          '<div class="tag" style="margin-top:4px">' + esc(failed ? 'did not finish' : String(e.kind || '').replace('_', ' ')) + '</div>' +
+          detail + '</div></div>';
       }).join('');
     } catch (e) {
       el.innerHTML = '<p class="quiet">The stream could not be loaded. Check that Ergon is running.</p>';
@@ -1261,7 +1451,7 @@
         currentThread = data.id;
         showFace('chat');
         messagesEl.innerHTML = '';
-        for (const m of (data.messages || [])) addMsg(m.role, m.content);
+        renderRun(data.messages || []);
         await loadThreads();
       } catch (e) {
         sideError('Could not reach the Ergon server.');
@@ -1274,7 +1464,8 @@
   loadStatus();
   loadPeople();
   loadThreads();
-  showEmpty();
+  const reopen = restoredThread();
+  if (reopen) { openThread(reopen); } else { loadDraft(); showEmpty(); }
   showFace('chat');
 </script>
 </body>
