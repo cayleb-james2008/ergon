@@ -2053,9 +2053,13 @@ fn offers_appear_after_repeated_work_and_acceptance_builds_the_app() {
     let root = test_root("offers");
     let mut replies: Vec<String> = Vec::new();
     for _ in 0..3 {
+        // A finished task is one that did real work: a plain answer with no
+        // tool step is not counted (EB2), so each run lists the folder first.
+        replies.push(json!({"tool": "list_dir", "args": {"path": "."}}).to_string());
         replies.push(json!({"done": true, "summary": "Done."}).to_string());
     }
     for _ in 0..4 {
+        replies.push(json!({"tool": "list_dir", "args": {"path": "."}}).to_string());
         replies.push(json!({"done": true, "summary": "Filed."}).to_string());
     }
     let stub = start_stub_model(replies);
@@ -3059,4 +3063,41 @@ fn chat_with_an_unknown_thread_id_is_refused() {
     );
     assert_ne!(status, 404, "an empty thread_id still starts a new thread: {body}");
     assert!(body.contains("thread_id"), "{body}");
+}
+
+
+/// EB2: a run that made no tool call and wrote no file is an answer, not
+/// finished work: the brief, the graph's work nodes and the offers scan
+/// ignore it. A run that wrote a file stays finished work.
+#[test]
+fn plain_answers_are_not_counted_as_finished_work() {
+    let root = test_root("eb2_answer");
+    let stub = start_stub_model(vec![
+        json!({"done": true, "summary": "Here is a plain answer."}).to_string(),
+        json!({"tool": "write_document", "args": {"title": "Summary", "sections": ["All good."]}}).to_string(),
+        json!({"done": true, "summary": "The summary document is written."}).to_string(),
+    ]);
+    let cfg = test_config(&root, Some("test-key"), format!("http://127.0.0.1:{}/v1", stub.port));
+    let port = start_app(cfg);
+    let (status, body) = chat(port, "What is 2+2?");
+    assert_eq!(status, 200, "{body}");
+
+    let (_, brief) = http(port, "GET", "/api/brief", None);
+    let v: Value = serde_json::from_str(&brief).unwrap();
+    assert_eq!(v["finished"], json!([]), "a plain answer is not finished work: {brief}");
+    assert!(v["headline"].as_str().unwrap().starts_with("Nothing finished"), "{brief}");
+    let (_, graph) = http(port, "GET", "/api/graph", None);
+    let g: Value = serde_json::from_str(&graph).unwrap();
+    let works = |g: &Value| g["nodes"].as_array().unwrap().iter().filter(|n| n["kind"] == "work").count();
+    assert_eq!(works(&g), 0, "the graph counts no answer as a job: {graph}");
+
+    let (status, body) = chat(port, "Write the summary document");
+    assert_eq!(status, 200, "{body}");
+    let (_, brief) = http(port, "GET", "/api/brief", None);
+    let v: Value = serde_json::from_str(&brief).unwrap();
+    assert_eq!(v["finished"].as_array().unwrap().len(), 1, "a run that wrote a file stays finished: {brief}");
+    assert_eq!(v["headline"], json!("1 job finished in the last two days."), "{brief}");
+    let (_, graph) = http(port, "GET", "/api/graph", None);
+    let g: Value = serde_json::from_str(&graph).unwrap();
+    assert_eq!(works(&g), 1, "{graph}");
 }

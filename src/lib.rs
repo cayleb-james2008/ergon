@@ -2057,7 +2057,11 @@ pub fn run_agent(
     }
     // The work log + offers scan: the records the rest of the
     // product (brief, graph, today, offers) is built from.
-    records::append_work(cfg, task, &summary, &ledger.written, thread_id, true);
+    if steps.is_empty() && ledger.written.is_empty() {
+        records::append_answer(cfg, task, &summary, thread_id);
+    } else {
+        records::append_work(cfg, task, &summary, &ledger.written, thread_id, true);
+    }
     {
         let lib = ctx.library.lock().unwrap();
         let suite_now = library::load_suite(&cfg.data_dir);
