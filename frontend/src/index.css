@@ -47,6 +47,7 @@ h1, h2, h3 { text-wrap: balance; }
 @layer base { *, ::before, ::after, ::backdrop { --tw-ring-offset-color: var(--surface); } }
 .contour-field { color: var(--hairline); }
 .status-finished, .status-waiting { border-radius: 9999px; }
+.status-waiting { background: var(--pill-warn-bg); color: var(--pill-warn-fg); }
 
 html, body { overflow-x: clip; }
 
@@ -62,7 +63,6 @@ html, body { overflow-x: clip; }
 @media (prefers-reduced-motion: reduce) { .mould { transition: none; } .mould:active:not(:disabled) { transform: none; } }
 /* The finished status is green in light and the accent in dark. */
 .status-finished { background: var(--pill-active-bg); color: var(--pill-active-fg); }
-:root[data-theme="dark"] .status-finished { background: var(--blue); color: var(--blue-fg); }
 
 /* Field-book grid lines: ink in light, the hairline in dark (one class, no dark-variant background). */
 .entry-rule { background-color: var(--entry-rule); }

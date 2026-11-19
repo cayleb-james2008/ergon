@@ -48,7 +48,7 @@ export function FinishedPill() {
 }
 
 export function WaitingPill() {
-  return <Pill className="status-waiting border-0 bg-blue px-2.5 py-1 text-xs font-medium text-blue-fg"><Hourglass className="size-3.5" strokeWidth={2} aria-hidden />Waiting on you</Pill>;
+  return <Pill className="status-waiting border-0 px-2.5 py-1 text-xs font-medium"><Hourglass className="size-3.5" strokeWidth={2} aria-hidden />Waiting on you</Pill>;
 }
 
 /** The ruled grid: 1px ink lines between every cell, all four sides. */
@@ -148,7 +148,7 @@ export function Reply({ text }: { text: string }) {
 export function Failure({ raw }: { raw: string }) {
   return (
     <div role="alert" className="rounded-entry border border-hairline bg-surface px-4 py-3">
-      <p className="text-sm font-medium text-ink">The agent could not finish this.</p>
+      <p className="text-sm font-medium text-destructive-foreground">The agent could not finish this.</p>
       <p className="mt-1 text-sm text-ink-2">Try again, or ask whoever runs Ergon to check the connection.</p>
       <div className="mt-3"><Details label="Details"><pre className="whitespace-pre-wrap break-words font-mono text-xs text-ink-3">{raw}</pre></Details></div>
     </div>

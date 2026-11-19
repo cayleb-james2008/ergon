@@ -85,7 +85,7 @@ export function App() {
   const earlier = threadRows.filter((t) => !todays.includes(t));
 
   const stateIcon = (s: TState | undefined) => s === "waiting"
-    ? <Hourglass className="size-3.5 text-blue" strokeWidth={2} aria-label="Waiting on you" />
+    ? <Hourglass className="size-3.5 text-dot-amber" strokeWidth={2} aria-label="Waiting on you" />
     : s === "finished" ? <Check className="size-3.5 text-dot-green" strokeWidth={2} aria-label="Finished" /> : null;
 
   const row = (t: { id: string; title?: string; messages?: number }) => {
@@ -192,7 +192,7 @@ export function App() {
                     aria-label={t.id === "today" ? (t.count ? `Today, ${t.count} waiting` : "Today") : undefined}
                     className={cn("focus-ring relative z-10 flex min-h-9 items-center gap-2 whitespace-nowrap rounded-sm px-3 text-sm font-medium outline-none", on ? "text-ink" : "text-ink-2 hover:text-ink")}>
                     {t.label}
-                    {t.count > 0 && <span aria-hidden className="rounded-full bg-blue px-1.5 font-mono text-xs tabular-nums text-blue-fg">{t.count}</span>}
+                    {t.count > 0 && <span aria-hidden className="rounded-full bg-pill-warn-bg px-1.5 font-mono text-xs tabular-nums text-pill-warn-fg">{t.count}</span>}
                   </button>
                 );
               })}

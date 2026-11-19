@@ -1,79 +1,66 @@
-/* Furrow for ergon. Hand-owned since 2026-11-19: _fe/gen-theme.py was only the bootstrap; edit this file. Rings are ink (>= 3:1 on every surface). */
+/* Ergon colour scheme (Anthropic-warm, calm): the shared palette in _fe/palette-claude.css, applied by hand.
+ * Clay is the accent: primary key, current selection, focus. Sage, amber and red are state only. No pure black or white.
+ * Light is the default theme (all four apps); dark is a full second theme. Hand-owned: edit this file. */
 :root[data-theme="light"] {
   color-scheme: light;
-  --ring: #14110f;
-  /* Field-book head: the ink strip. Contour and moulding tints for the empty state and the keys. */
-  --entry-head: #14110f; --entry-head-ink: #fffdfa; --entry-rule: #14110f; --contour: #b9b1a4; --mould-hi: rgb(255 255 255 / 0.85); --mould-lo: rgb(20 17 15 / 0.12);
-  --canvas: #f5f1ea;
-  --board: #e9e4d9;
-  --surface: #fffdfa;
-  --hairline: #dbd7ce;
-  --track: oklch(92% 0.016 85);
-  --raised: oklch(99.5% 0.005 85);
-  --ink: #14110f;
-  --ink-2: #312d2a;
-  --ink-3: #58514c;
-  --icon: oklch(52% 0.012 60);
-  --disabled: oklch(74% 0.01 80);
-  --blue: oklch(70% 0.19 40); --blue-fg: oklch(18% 0.006 60); --blue-hover: oklch(64% 0.19 40); --blue-soft: oklch(91% 0.05 50);
-  --ink-button: oklch(18% 0.006 60); --ink-button-fg: oklch(98% 0.005 85);
-  --dot-green: oklch(58% 0.13 150); --dot-blue: oklch(60% 0.05 232); --dot-red: oklch(56% 0.2 28); --dot-clay: oklch(62% 0.07 58); --dot-amber: oklch(78% 0.15 75); --dot-online: oklch(58% 0.13 150); --unread: oklch(56% 0.2 28);
-  --tag-plan-bg: oklch(94% 0.06 50); --tag-plan-fg: oklch(36% 0.12 50);
-  --tag-ops-bg: oklch(94% 0.04 232); --tag-ops-fg: oklch(36% 0.12 232);
-  --tag-design-bg: oklch(94% 0.05 8); --tag-design-fg: oklch(36% 0.12 8);
-  --tag-research-bg: oklch(94% 0.04 300); --tag-research-fg: oklch(36% 0.12 300);
-  --tag-mint-bg: oklch(94% 0.05 150); --tag-mint-fg: oklch(36% 0.12 150);
-  --tag-dev-bg: oklch(94% 0.05 58); --tag-dev-fg: oklch(36% 0.12 58);
-  --tag-neutral-bg: oklch(94% 0.01 85); --tag-neutral-fg: oklch(36% 0.12 85);
-  --tag-sky-bg: oklch(94% 0.04 232); --tag-sky-fg: oklch(36% 0.12 232);
-  --pill-active-bg: oklch(94% 0.06 150); --pill-active-fg: oklch(36% 0.12 150);
-  --pill-pro-bg: oklch(94% 0.06 40); --pill-pro-fg: oklch(36% 0.12 40);
-  --pill-warn-bg: oklch(94% 0.06 80); --pill-warn-fg: oklch(36% 0.12 80);
-  --pill-inactive-bg: oklch(92% 0.016 85); --pill-inactive-fg: oklch(30% 0.008 60);
-  --av-rose-bg: oklch(94% 0.06 8); --av-rose-fg: oklch(36% 0.12 8);
-  --av-violet-bg: oklch(94% 0.06 300); --av-violet-fg: oklch(36% 0.12 300);
-  --av-sky-bg: oklch(94% 0.06 232); --av-sky-fg: oklch(36% 0.12 232);
-  --av-grey-bg: oklch(94% 0.06 85); --av-grey-fg: oklch(36% 0.12 85);
-  --elev-shell: 0 40px 100px oklch(18% 0.006 60 / 0.06); --elev-card: 0 1px 2px oklch(18% 0.006 60 / 0.06); --elev-raised: 0 1px 2px oklch(18% 0.006 60 / 0.1); --elev-lift: 0 9px 24px oklch(18% 0.006 60 / 0.1); --elev-primary: inset 0 1px 0 oklch(100% 0 0 / 0.35), 0 1px 2px oklch(60% 0.19 40 / 0.4), 0 6px 14px -8px oklch(60% 0.19 40 / 0.55);
-  --destructive-foreground: oklch(44% 0.17 28); --info-foreground: oklch(42% 0.08 232); --success-foreground: oklch(40% 0.1 150); --warning-foreground: oklch(40% 0.1 75);
+  --ring: #141413;
+  /* Field-book head: the ink strip. Contour and moulding tints. Palette: Anthropic ivory and ink (colour rules in DESIGN.md). */
+  --entry-head: #141413; --entry-head-ink: #fdfcfa; --entry-rule: #141413; --contour: #e3e1d6; --mould-hi: rgb(253 252 250 / 0.85); --mould-lo: rgb(20 20 19 / 0.12);
+  --canvas: #f5f4ee; --board: #eeede5; --surface: #fdfcfa; --hairline: #e3e1d6; --track: #ebe9df; --raised: #fefefc;
+  --input: #66655e; --ink: #141413; --ink-2: #4d4c47; --ink-3: #66655e; --icon: #7d7c75; --disabled: #b0aea5;
+  /* ACCENT (clay): the one primary key, the current selection and focus. Nothing else is clay. */
+  --blue: #d97757; --blue-fg: #141413; --blue-hover: #cc6a49; --blue-soft: #f6e3d9;
+  --ink-button: #141413; --ink-button-fg: #faf9f5;
+  --dot-green: #788c5d; --dot-blue: #6a9bcc; --dot-red: #c4483a; --dot-clay: #d97757; --dot-amber: #c99a3e; --dot-online: #788c5d; --unread: #c4483a;
+  --success-foreground: #4f6038; --info-foreground: #9c4326; --destructive-foreground: #9a2f24; --warning-foreground: #7a5a14;
+  --elev-shell: 0 40px 100px rgb(20 20 19 / 0.10); --elev-card: 0 1px 2px rgb(20 20 19 / 0.05); --elev-raised: 0 1px 2px rgb(20 20 19 / 0.08); --elev-lift: 0 10px 28px rgb(20 20 19 / 0.12); --elev-primary: inset 0 1px 0 rgb(253 252 250 / 0.35), 0 1px 2px rgb(217 119 87 / 0.35);
+  /* Tags, pills and avatars: fill and same-hue text, calm chroma (see DESIGN.md colour scheme). */
+  --tag-plan-bg: oklch(94% 0.04 40); --tag-plan-fg: oklch(36% 0.1 40);
+  --tag-ops-bg: oklch(94% 0.04 250); --tag-ops-fg: oklch(36% 0.1 250);
+  --tag-design-bg: oklch(94% 0.04 10); --tag-design-fg: oklch(36% 0.1 10);
+  --tag-research-bg: oklch(94% 0.04 300); --tag-research-fg: oklch(36% 0.1 300);
+  --tag-mint-bg: oklch(94% 0.04 130); --tag-mint-fg: oklch(36% 0.1 130);
+  --tag-dev-bg: oklch(94% 0.04 85); --tag-dev-fg: oklch(36% 0.1 85);
+  --tag-neutral-bg: oklch(94% 0.04 90); --tag-neutral-fg: oklch(36% 0.1 90);
+  --tag-sky-bg: oklch(94% 0.04 250); --tag-sky-fg: oklch(36% 0.1 250);
+  --pill-active-bg: oklch(94% 0.05 130); --pill-active-fg: oklch(36% 0.1 130);
+  --pill-warn-bg: oklch(94% 0.05 80); --pill-warn-fg: oklch(36% 0.1 80);
+  --pill-pro-bg: oklch(94% 0.05 25); --pill-pro-fg: oklch(36% 0.1 25);
+  --pill-inactive-bg: oklch(94% 0.01 90); --pill-inactive-fg: oklch(36% 0.1 90);
+  --av-rose-bg: oklch(94% 0.04 10); --av-rose-fg: oklch(36% 0.1 10);
+  --av-violet-bg: oklch(94% 0.04 300); --av-violet-fg: oklch(36% 0.1 300);
+  --av-sky-bg: oklch(94% 0.04 250); --av-sky-fg: oklch(36% 0.1 250);
+  --av-grey-bg: oklch(94% 0.04 90); --av-grey-fg: oklch(36% 0.1 90);
 }
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --ring: #f1eee9;
-  /* Dark head: the deepest step with a hairline; the status pill takes the accent. */
-  --entry-head: #090605; --entry-head-ink: #f1eee9; --entry-rule: #322d29; --contour: #3a342f; --mould-hi: rgb(255 255 255 / 0.06); --mould-lo: rgb(0 0 0 / 0.5);
-  --canvas: #0d0907;
-  --board: #15110e;
-  --surface: #191512;
-  --hairline: #322d29;
-  --track: oklch(25% 0.01 60);
-  --raised: oklch(27% 0.01 60);
-  --ink: #f1eee9;
-  --ink-2: #cdcac3;
-  --ink-3: #a29e96;
-  --icon: oklch(66% 0.012 85);
-  --disabled: oklch(44% 0.01 70);
-  --blue: oklch(72% 0.19 42); --blue-fg: oklch(18% 0.006 60); --blue-hover: oklch(77% 0.18 44); --blue-soft: oklch(28% 0.06 45);
-  --ink-button: oklch(95% 0.008 85); --ink-button-fg: oklch(18% 0.006 60);
-  --dot-green: oklch(72% 0.14 150); --dot-blue: oklch(72% 0.06 232); --dot-red: oklch(68% 0.18 28); --dot-clay: oklch(70% 0.07 58); --dot-amber: oklch(80% 0.15 78); --dot-online: oklch(72% 0.14 150); --unread: oklch(68% 0.18 28);
-  --tag-plan-bg: oklch(28% 0.06 50); --tag-plan-fg: oklch(84% 0.11 50);
-  --tag-ops-bg: oklch(28% 0.04 232); --tag-ops-fg: oklch(84% 0.11 232);
-  --tag-design-bg: oklch(28% 0.05 8); --tag-design-fg: oklch(84% 0.11 8);
-  --tag-research-bg: oklch(28% 0.04 300); --tag-research-fg: oklch(84% 0.11 300);
-  --tag-mint-bg: oklch(28% 0.05 150); --tag-mint-fg: oklch(84% 0.11 150);
-  --tag-dev-bg: oklch(28% 0.05 58); --tag-dev-fg: oklch(84% 0.11 58);
-  --tag-neutral-bg: oklch(28% 0.01 85); --tag-neutral-fg: oklch(84% 0.11 85);
-  --tag-sky-bg: oklch(28% 0.04 232); --tag-sky-fg: oklch(84% 0.11 232);
-  --pill-active-bg: oklch(28% 0.06 150); --pill-active-fg: oklch(84% 0.11 150);
-  --pill-pro-bg: oklch(28% 0.06 40); --pill-pro-fg: oklch(84% 0.11 40);
-  --pill-warn-bg: oklch(28% 0.06 80); --pill-warn-fg: oklch(84% 0.11 80);
-  --pill-inactive-bg: oklch(25% 0.01 60); --pill-inactive-fg: oklch(84% 0.01 85);
-  --av-rose-bg: oklch(28% 0.06 8); --av-rose-fg: oklch(84% 0.11 8);
-  --av-violet-bg: oklch(28% 0.06 300); --av-violet-fg: oklch(84% 0.11 300);
-  --av-sky-bg: oklch(28% 0.06 232); --av-sky-fg: oklch(84% 0.11 232);
-  --av-grey-bg: oklch(28% 0.06 85); --av-grey-fg: oklch(84% 0.11 85);
-  --elev-shell: 0 40px 100px oklch(0% 0 0 / 0.5); --elev-card: 0 1px 2px oklch(0% 0 0 / 0.4); --elev-raised: 0 1px 2px oklch(0% 0 0 / 0.5); --elev-lift: 0 12px 28px oklch(0% 0 0 / 0.55); --elev-primary: inset 0 1px 0 oklch(100% 0 0 / 0.25), 0 1px 2px oklch(0% 0 0 / 0.5);
-  --destructive-foreground: oklch(80% 0.12 28); --info-foreground: oklch(82% 0.07 232); --success-foreground: oklch(82% 0.1 150); --warning-foreground: oklch(84% 0.1 78);
+  --ring: #faf9f5;
+  /* Dark head: the deepest step with a hairline; the status pill takes the sage state. */
+  --entry-head: #0f0f0e; --entry-head-ink: #faf9f5; --entry-rule: #33322f; --contour: #33322f; --mould-hi: rgb(250 249 245 / 0.06); --mould-lo: rgb(10 10 9 / 0.5);
+  --canvas: #141413; --board: #1c1c1a; --surface: #1f1e1c; --hairline: #33322f; --track: #262523; --raised: #2a2926;
+  --input: #9d9c92; --ink: #faf9f5; --ink-2: #c8c7bd; --ink-3: #9d9c92; --icon: #8c8b82; --disabled: #5b5a55;
+  --blue: #d97757; --blue-fg: #141413; --blue-hover: #e08a6d; --blue-soft: #3a2a22;
+  --ink-button: #faf9f5; --ink-button-fg: #141413;
+  --dot-green: #8fa86d; --dot-blue: #7fb0e0; --dot-red: #e0675a; --dot-clay: #d97757; --dot-amber: #d9a84a; --dot-online: #8fa86d; --unread: #e0675a;
+  --success-foreground: #a9c188; --info-foreground: #e6a387; --destructive-foreground: #f0988e; --warning-foreground: #e7c277;
+  --elev-shell: 0 40px 100px rgb(10 10 9 / 0.5); --elev-card: 0 1px 2px rgb(10 10 9 / 0.4); --elev-raised: 0 1px 2px rgb(10 10 9 / 0.5); --elev-lift: 0 12px 28px rgb(10 10 9 / 0.55); --elev-primary: inset 0 1px 0 rgb(250 249 245 / 0.2), 0 1px 2px rgb(10 10 9 / 0.5);
+  /* Tags, pills and avatars: the same hues, lifted for dark. */
+  --tag-plan-bg: oklch(28% 0.05 40); --tag-plan-fg: oklch(84% 0.1 40);
+  --tag-ops-bg: oklch(28% 0.05 250); --tag-ops-fg: oklch(84% 0.1 250);
+  --tag-design-bg: oklch(28% 0.05 10); --tag-design-fg: oklch(84% 0.1 10);
+  --tag-research-bg: oklch(28% 0.05 300); --tag-research-fg: oklch(84% 0.1 300);
+  --tag-mint-bg: oklch(28% 0.05 130); --tag-mint-fg: oklch(84% 0.1 130);
+  --tag-dev-bg: oklch(28% 0.05 85); --tag-dev-fg: oklch(84% 0.1 85);
+  --tag-neutral-bg: oklch(28% 0.05 90); --tag-neutral-fg: oklch(84% 0.1 90);
+  --tag-sky-bg: oklch(28% 0.05 250); --tag-sky-fg: oklch(84% 0.1 250);
+  --pill-active-bg: oklch(28% 0.05 130); --pill-active-fg: oklch(84% 0.1 130);
+  --pill-warn-bg: oklch(28% 0.05 80); --pill-warn-fg: oklch(84% 0.1 80);
+  --pill-pro-bg: oklch(28% 0.05 25); --pill-pro-fg: oklch(84% 0.1 25);
+  --pill-inactive-bg: oklch(28% 0.05 90); --pill-inactive-fg: oklch(84% 0.1 90);
+  --av-rose-bg: oklch(28% 0.05 10); --av-rose-fg: oklch(84% 0.1 10);
+  --av-violet-bg: oklch(28% 0.05 300); --av-violet-fg: oklch(84% 0.1 300);
+  --av-sky-bg: oklch(28% 0.05 250); --av-sky-fg: oklch(84% 0.1 250);
+  --av-grey-bg: oklch(28% 0.05 90); --av-grey-fg: oklch(84% 0.1 90);
 }
 :root {
   /* Furrow: type voice, radii and the heading recipe (Hallmark theme values) */
