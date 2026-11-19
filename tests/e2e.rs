@@ -1176,11 +1176,12 @@ fn theme_choice_is_saved_and_read_with_the_same_key() {
     let (status, body) = http(port, "GET", "/", None);
     assert_eq!(status, 200);
     assert!(
-        body.contains("localStorage.setItem('ergon-theme'"),
+        // The minifier writes the key with backticks; both quote styles are the same call.
+        body.contains("localStorage.setItem(`ergon-theme`") || body.contains("localStorage.setItem(\"ergon-theme\""),
         "the toggle must SAVE the choice"
     );
     assert!(
-        body.contains("localStorage.getItem('ergon-theme')"),
+        body.contains("localStorage.getItem(\"ergon-theme\")"),
         "the page must READ the saved choice back"
     );
 }
