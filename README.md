@@ -1,5 +1,8 @@
 # Ergon
 
+[![latest release](https://img.shields.io/github/v/release/cayleb-james2008/ergon)](https://github.com/cayleb-james2008/ergon/releases)
+
+
 An AI agent for every employee — personal to each person, it learns how
 they work and **finishes their digital work autonomously, end to end**.
 The person states a task in plain words; the agent works it through real
@@ -183,3 +186,18 @@ OpenAI-compatible endpoint to run it live.
 
 Working software, verified as above. Not yet installed at a real
 company; no claim on this page goes past what the test record shows.
+
+## Versions and updates
+
+**Releasing:** bump `version` in `Cargo.toml`, add a `## X.Y.Z - date` entry to `CHANGELOG.md`, and merge to `main`. `.github/workflows/release.yml` sees the new version, builds every platform and publishes the GitHub Release `vX.Y.Z` with the binaries and `SHA256SUMS`; a push that does not change the version publishes nothing, and a new version without a changelog entry fails the workflow. Pushing a `vX.Y.Z` tag by hand does the same.
+
+The running version is shown in the page footer, in `GET /api/version` and `GET /api/status`, and by `ergon --version`. Every release is tagged `vX.Y.Z` on GitHub, with a changelog entry in `CHANGELOG.md`, binaries for each platform and a `SHA256SUMS` file; merging a new version to `main` (or pushing a tag) runs `.github/workflows/release.yml`, which refuses a tag that does not match the version in `Cargo.toml`.
+
+Self-update (`src/update.rs`): the app asks the newest GitHub release of its own repository whether a newer version exists (shortly after start and every 6 hours), and the page offers it. **Update now** downloads the binary for this platform, checks its SHA-256 against the release's `SHA256SUMS`, runs it with `--version` to confirm it is the build it claims to be, and only then swaps it in; **Restart** then starts the new build. Any failed step leaves the installed program untouched. Updating is refused for a cargo-built binary, through a shared (gated) address, from a non-local Host name, and while a task is running.
+
+| Var | Default |
+| --- | --- |
+| `ERGON_UPDATE_MODE` | `notify` (check and tell); `auto` also downloads and installs (a restart is still yours to press); `off` never contacts GitHub |
+| `ERGON_UPDATE_REPO` | `cayleb-james2008/ergon` |
+| `ERGON_UPDATE_API` | `https://api.github.com` (plain http only for a loopback address) |
+

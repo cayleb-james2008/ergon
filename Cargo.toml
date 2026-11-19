@@ -1,6 +1,6 @@
 [package]
 name = "ergon-rs"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 
 [[bin]]
@@ -11,3 +11,4 @@ path = "src/main.rs"
 serde_json = "1"
 ureq = { version = "2", features = ["json", "tls"] }
 rune = "0.14"
+sha2 = "0.11"

@@ -6,6 +6,10 @@
 use std::net::TcpListener;
 
 fn main() {
+    if std::env::args().nth(1).as_deref().is_some_and(|a| a == "--version" || a == "-V") {
+        println!("ergon {}", env!("CARGO_PKG_VERSION"));
+        return;
+    }
     let cfg = ergon_rs::Config::from_env();
     let host = std::env::var("ERGON_HOST").unwrap_or_else(|_| "127.0.0.1".to_string());
     let port: u16 = std::env::var("ERGON_PORT")
@@ -26,7 +30,7 @@ fn main() {
         cfg.model_base_url,
         if cfg.api_key.is_some() { "configured" } else { "NOT configured" }
     );
-    if let Err(e) = ergon_rs::serve(listener, cfg) {
+    if let Err(e) = ergon_rs::serve_with_updates(listener, cfg) {
         eprintln!("ergon: server error: {e}");
         std::process::exit(1);
     }
