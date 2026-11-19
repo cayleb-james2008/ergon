@@ -2133,6 +2133,8 @@ pub struct AppState {
     /// hosting layer authenticates people; Ergon itself has no
     /// accounts and no passwords.
     pub gate_token: Option<String>,
+    /// Extra Host names accepted without a gate token (ERGON_ALLOWED_HOSTS).
+    pub allowed_hosts: Vec<String>,
     pub people: Arc<Mutex<PeopleState>>,
     pub runtimes: Arc<Mutex<HashMap<String, Arc<PersonRuntime>>>>,
     /// Browser sessions (cookie id → person id). "Active person" used
@@ -2221,13 +2223,34 @@ pub fn serve(listener: TcpListener, cfg: Config) -> std::io::Result<()> {
         .ok()
         .map(|t| t.trim().to_string())
         .filter(|t| !t.is_empty());
-    serve_with_gate(listener, cfg, gate)
+    let hosts = allowed_hosts_from(&std::env::var("ERGON_ALLOWED_HOSTS").unwrap_or_default());
+    serve_with_hosts(listener, cfg, gate, hosts)
+}
+
+/// Parses ERGON_ALLOWED_HOSTS: comma-separated host names, with or without
+/// ports, case-insensitive. Each entry is kept as its bare host name.
+pub fn allowed_hosts_from(value: &str) -> Vec<String> {
+    value
+        .split(',')
+        .map(|h| host_name(&h.trim().to_ascii_lowercase()))
+        .filter(|h| !h.is_empty())
+        .collect()
 }
 
 pub fn serve_with_gate(
     listener: TcpListener,
     cfg: Config,
     gate_token: Option<String>,
+) -> std::io::Result<()> {
+    serve_with_hosts(listener, cfg, gate_token, Vec::new())
+}
+
+/// Serves with explicit gate token and extra allowed Host names.
+pub fn serve_with_hosts(
+    listener: TcpListener,
+    cfg: Config,
+    gate_token: Option<String>,
+    allowed_hosts: Vec<String>,
 ) -> std::io::Result<()> {
     cfg.ensure_dirs()?;
     let people = PeopleState::load(&cfg);
@@ -2236,6 +2259,7 @@ pub fn serve_with_gate(
         cfg,
         library: Arc::new(Mutex::new(library)),
         gate_token,
+        allowed_hosts,
         people: Arc::new(Mutex::new(people)),
         runtimes: Arc::new(Mutex::new(HashMap::new())),
         sessions: Arc::new(Mutex::new(HashMap::new())),
@@ -2442,12 +2466,17 @@ pub fn parked_note(path: &str) -> String {
 }
 
 /// Whether a Host header names this machine (DNS-rebinding guard).
-fn local_host(host: &str) -> bool {
-    let name = match host.strip_prefix('[') {
+fn host_name(host: &str) -> String {
+    match host.strip_prefix('[') {
         Some(rest) => format!("[{}]", rest.split(']').next().unwrap_or("")),
         None => host.split(':').next().unwrap_or("").to_string(),
-    };
-    matches!(name.as_str(), "localhost" | "127.0.0.1" | "[::1]")
+    }
+}
+
+/// Whether a Host names this machine or one the operator allowed (EH1).
+fn host_allowed(host: &str, allowed: &[String]) -> bool {
+    let name = host_name(host);
+    matches!(name.as_str(), "localhost" | "127.0.0.1" | "[::1]") || allowed.contains(&name)
 }
 
 /// Refuses a request a page on another site could have sent (E1), with
@@ -2455,9 +2484,9 @@ fn local_host(host: &str) -> bool {
 /// the hosting gate is set), a state-changing request with a body that
 /// is not JSON (a text/plain POST has no preflight), cross-site fetch
 /// metadata, and an Origin whose authority is not the request's Host.
-fn refusal(req: &Request, gated: bool) -> Option<(u16, &'static str)> {
-    if !gated && !local_host(req.host.as_deref().unwrap_or("")) {
-        return Some((403, "requests must address this machine as localhost, 127.0.0.1 or [::1]"));
+fn refusal(req: &Request, gated: bool, allowed: &[String]) -> Option<(u16, &'static str)> {
+    if !gated && !host_allowed(req.host.as_deref().unwrap_or(""), allowed) {
+        return Some((403, "requests must address this machine as localhost, 127.0.0.1 or [::1], or a host listed in ERGON_ALLOWED_HOSTS"));
     }
     if !matches!(req.method.as_str(), "POST" | "PUT" | "PATCH" | "DELETE") {
         return None;
@@ -2546,7 +2575,7 @@ fn handle_connection(mut stream: std::net::TcpStream, state: &AppState) -> std::
             );
         }
     }
-    if let Some((status, message)) = refusal(&req, state.gate_token.is_some()) {
+    if let Some((status, message)) = refusal(&req, state.gate_token.is_some(), &state.allowed_hosts) {
         return respond_json(&mut stream, status, &json!({"error": message}));
     }
     // The person this request acts for (session-pinned when the caller

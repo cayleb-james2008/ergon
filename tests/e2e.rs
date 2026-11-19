@@ -3224,3 +3224,43 @@ fn a_run_whose_tool_steps_all_failed_is_not_finished_work() {
     let v: Value = serde_json::from_str(&brief).unwrap();
     assert_eq!(v["finished"].as_array().unwrap().len(), 1, "a successful tool step stays finished: {brief}");
 }
+
+/// Starts a server with an explicit gate token and extra allowed Host names
+/// (the env-driven `serve` passes these through `ERGON_ALLOWED_HOSTS`).
+fn start_app_hosts(cfg: Config, gate: Option<&str>, hosts: Vec<String>) -> u16 {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let gate = gate.map(str::to_string);
+    std::thread::spawn(move || {
+        let _ = ergon_rs::serve_with_hosts(listener, cfg, gate, hosts);
+    });
+    port
+}
+
+/// EH1: a LAN Host is refused unless ERGON_ALLOWED_HOSTS names it; loopback
+/// names are always accepted; a gate token skips the Host rule.
+#[test]
+fn lan_host_needs_allowed_hosts_and_gate_skips_the_rule() {
+    let lan = |port: u16| format!("GET /api/status HTTP/1.1\r\nHost: 192.168.1.20:{port}\r\n");
+    let local = |port: u16| format!("GET /api/status HTTP/1.1\r\nHost: localhost:{port}\r\n");
+
+    let cfg = test_config(&test_root("eh1_refused"), None, "http://127.0.0.1:9/v1".to_string());
+    let port = start_app_hosts(cfg, None, Vec::new());
+    assert_eq!(raw_http(port, &lan(port), "").0, 403, "a LAN Host is refused by default");
+    assert_eq!(raw_http(port, &local(port), "").0, 200, "loopback is always accepted");
+
+    let cfg = test_config(&test_root("eh1_allowed"), None, "http://127.0.0.1:9/v1".to_string());
+    let hosts = ergon_rs::allowed_hosts_from(" LAN-Desk.local:8787 , 192.168.1.20 ,");
+    let port = start_app_hosts(cfg, None, hosts);
+    assert_eq!(raw_http(port, &lan(port), "").0, 200, "an allowed LAN Host is accepted");
+    assert_eq!(raw_http(port, &local(port), "").0, 200, "loopback still accepted");
+    let other = format!("GET /api/status HTTP/1.1\r\nHost: 192.168.1.99:{port}\r\n");
+    assert_eq!(raw_http(port, &other, "").0, 403, "an unlisted LAN Host is still refused");
+    let named = format!("GET /api/status HTTP/1.1\r\nHost: lan-desk.LOCAL:{port}\r\n");
+    assert_eq!(raw_http(port, &named, "").0, 200, "names match case-insensitively, ports ignored");
+
+    let cfg = test_config(&test_root("eh1_gate"), None, "http://127.0.0.1:9/v1".to_string());
+    let port = start_app_hosts(cfg, Some("G"), Vec::new());
+    let gated = format!("GET /api/status HTTP/1.1\r\nHost: 192.168.1.20:{port}\r\nX-Ergon-Gate: G\r\n");
+    assert_eq!(raw_http(port, &gated, "").0, 200, "with the gate token the Host rule does not apply");
+}
