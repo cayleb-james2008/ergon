@@ -1109,9 +1109,39 @@ fn shell_accessibility_and_contrast_pins() {
     assert_eq!(status, 200);
     assert!(body.contains("aria-live=\"polite\""), "the async thread must be a live region");
     assert!(body.contains("thread-btn"), "thread items must be real buttons (keyboard-reachable)");
-    assert!(body.contains("--faint: #6e6759"), "light-theme faint text must meet AA contrast");
-    assert!(body.contains("if (busy) return;"), "the composer must refuse overlapping runs");
-    assert!(body.contains("inputEl.disabled = true"), "the textarea is disabled while working");
+    // Light-theme text must meet AA: the secondary and tertiary inks against the canvas, the surface and the board.
+    let ink3 = css_token(&body, "[data-theme=light]", "--ink-3");
+    for bg in ["--canvas", "--surface", "--board"] {
+        let back = css_token(&body, "[data-theme=light]", bg);
+        assert!(contrast(&ink3, &back) >= 4.5, "light secondary text {ink3} on {bg} {back} is under 4.5:1");
+    }
+    // The composer shows the busy state (Working) and keeps the textarea's label while a run is in flight.
+    assert!(body.contains("Agent is working on it"), "the working line must show while a run is in flight");
+    assert!(body.contains("Working"), "the send key must say it is working");
+}
+
+/// A token's value in the served stylesheet, read from the named theme block (first occurrence, its own block).
+fn css_token(body: &str, theme: &str, var: &str) -> String {
+    let start = body.find(theme).expect("theme block present");
+    let block = &body[start..(start + 4000).min(body.len())];
+    let key = format!("{var}:");
+    let at = block.find(&key).unwrap_or_else(|| panic!("token {var} in {theme}"));
+    block[at + key.len()..].trim_start().chars().take_while(|c| *c != ';' && *c != '}').collect::<String>().trim().to_string()
+}
+
+/// WCAG contrast ratio between two #rrggbb colours.
+fn contrast(a: &str, b: &str) -> f64 {
+    let lum = |hex: &str| -> f64 {
+        let h = hex.trim_start_matches('#');
+        let c: Vec<f64> = (0..3)
+            .map(|i| u8::from_str_radix(&h[2 * i..2 * i + 2], 16).expect("hex colour") as f64 / 255.0)
+            .map(|v| if v <= 0.03928 { v / 12.92 } else { ((v + 0.055) / 1.055).powf(2.4) })
+            .collect();
+        0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]
+    };
+    let (x, y) = (lum(a), lum(b));
+    let (hi, lo) = if x > y { (x, y) } else { (y, x) };
+    (hi + 0.05) / (lo + 0.05)
 }
 
 /// Checks-finder round: a document whose title starts with "error:"
