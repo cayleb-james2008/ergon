@@ -16,7 +16,7 @@ const W = 1000;
 /** One pin: the shape is the kind (disc, diamond, triangle, square). */
 export function Pin({ kind, x, y, hot }: { kind: string; x: number; y: number; hot: boolean }) {
   const work = kind === "work";
-  const style = { fill: work ? "var(--blue)" : "var(--surface)", stroke: work ? "var(--blue)" : kind === "file" ? "var(--ink-3)" : "var(--ink)" };
+  const style = { fill: work ? "var(--ink)" : "var(--surface)", stroke: kind === "file" ? "var(--ink-3)" : "var(--ink)" };
   const sw = hot ? 2.5 : 1.5;
   if (kind === "person") return <circle cx={x} cy={y} r={7} style={style} strokeWidth={sw} />;
   if (kind === "item") return <polygon points={`${x},${y - 8} ${x + 8},${y} ${x},${y + 8} ${x - 8},${y}`} style={style} strokeWidth={sw} />;

@@ -166,3 +166,26 @@ Tests: `cargo test`: 17 + 83 passed.
 Pictures (`_final/be/`, fixture data unless labelled real): `ergon-{empty,finished,today,graph-real,graph3,graph8,graph25,drawer}-{1440x900,768x1024,390x844,320x640}-{light,dark}.png` (the drawer only at 390 light) and `ergon-phone-{390x844,320x640}-{light,dark}.png` (the /phone route). The 768 and 320 sets were written too; they were checked at 390 and 320 for the header wrap and the phone layout.
 
 Not done: the 44 px tap-target rule on desktop controls; the stamp check (fixed); the slot-width warning; a second look at the 768 layout.
+
+## Colour scheme (2026-11-19): the Anthropic / owner palette
+
+Source: `_fe/palette-claude.css` (Anthropic ivory and ink, clay accent, sage, amber and red as state only, owner rules: neutral ramps, hairlines lighter than the ground, flat colour, no pure black or white). Applied by hand in `frontend/src/theme.css`, which is the only colour file now.
+
+Roles (names kept so the library parts keep working):
+- `--blue` = THE accent, clay `#d97757`. Only on the one primary key per screen (New chat, Send, Approve), the current thread and tab selection (a clay-soft fill with a clay edge), and the focus ring's family. Never clay text on the light ground (2.8:1).
+- `--ring` = ink (focus rings), `--input` = ink-3 (input and outline-button edges).
+- State only: finished = sage (`--pill-active`, the Finished pill and the green check), waiting = amber (`--pill-warn`, the Waiting pill, the Today count chip, the rail hourglass), failure = red (`--destructive-foreground` on the failure title).
+- Neutrals: `--canvas` ivory `#f5f4ee` (light) and `#141413` (dark); `--surface` `#fdfcfa` / `#1f1e1c`; `--hairline` `#e3e1d6` / `#33322f`; the field-book head is ink in light and the deepest step in dark.
+- Tags, pills and avatars: fill and same-hue text with calm chroma (plan clay h40, ops and sky blue h250, design rose h10, research lilac h300, mint sage h130, dev ochre h85, neutral warm grey h90), fill L94 C.04 and text L36 C.10 in light, fill L28 and text L84 in dark.
+- Contours (`--contour`) and the graph's survey lines are `--hairline`; the selection tint is `--blue-soft`.
+
+Contrast (WCAG, computed from the values above; the browser pass measured every text node on the page):
+- Light: ink on canvas 16.7:1; ink-2 on surface 8.4:1; ink-3 on surface 5.7:1; ink on clay (the primary key text) 5.9:1; info text 6.3:1; sage text 6.7:1; amber text 6.2:1; red text 7.3:1; input edge ink-3 on surface 5.7:1; ring ink 16.7:1.
+- Dark: ink on canvas 17.5:1; ink-2 9.8:1; ink-3 6.0:1; ink on clay 5.9:1; clay text 5.9:1; info text 7.9:1; sage text 8.5:1; amber text 9.8:1; red text 7.6:1; input edge 6.0:1; entry head text 18.2:1.
+- Browser pass (`final.mjs`, every size, both themes, the last page of each run): text nodes checked 123 at desktop and 94 at phone widths; under 4.5:1: 0; under 3:1: 0. Overflow: 0 px at 1440, 768, 390 and 320 in both themes.
+- Edges (`edges.mjs`, empty state): inputs and outline buttons 5.7:1 light and 6.0:1 dark. Lower values belong to transparent borders (segmented items, tabs), which have no visible edge.
+
+Default: light for all four apps (`index.html` opens light; the inline script only restores a saved choice). Dark is the full second theme and is measured above.
+
+Lint after the colour change: `sloplint --scope app --render`: 0 FAIL, 1 REFLEX (the font list of a library's fallback), 3 WARN (the head's ink on a variable, two slot buttons).
+Tests: `cargo test` 17 + 83 passed.
