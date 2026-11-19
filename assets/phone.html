@@ -177,6 +177,14 @@
 
   @keyframes rise { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
   @keyframes pulse { 0%, 100% { opacity: 0.3; } 50% { opacity: 1; } }
+  /* Round 4: settled decisions, starter caption, ledger file path. */
+  #settled-wrap { margin-top: 16px; }
+  .settled-block { border-top: 1px solid var(--rule); padding-top: 12px; }
+  .settled-block > summary { cursor: pointer; color: var(--muted); font-size: var(--text-sm); min-height: 44px; display: flex; align-items: center; }
+  .settled-head { font-size: var(--text-xs); color: var(--faint); margin: 0 0 4px; }
+  .starter-hint { font-size: var(--text-sm); color: var(--faint); margin: 12px 0 0; }
+  .l-file { font-size: var(--text-sm); color: var(--ink); margin: 4px 0; overflow-wrap: anywhere; user-select: text; }
+  .l-hint { font-size: var(--text-xs); color: var(--faint); margin: 0 0 4px; }
   @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important;
                             transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
@@ -231,6 +239,7 @@
       <div class="card">
         <div class="card-head"><h3>Waiting on you</h3></div>
         <div id="decisions-list"><p class="quiet">Loading…</p></div>
+            <div id="settled-wrap"></div>
       </div>
     </section>
 
@@ -333,6 +342,14 @@
     if (via && tool !== 'delegate') label += ' (for ' + via + ')';
     return label;
   }
+  /* The workspace-relative file a save step wrote, for the Details line. */
+  function filePathOf(tool, body) {
+    const re = tool === 'write_document' ? /^wrote document (.+?) \(/
+      : tool === 'make_spreadsheet' ? /^wrote spreadsheet (.+?) \(/
+      : tool === 'write_file' ? /^wrote (.+?) \(\d+ bytes\)/ : null;
+    const m = re && re.exec(body);
+    return m ? m[1] : '';
+  }
   function fillStep(el, content) {
     const nl = content.indexOf('\n');
     const head = nl < 0 ? content : content.slice(0, nl);
@@ -347,6 +364,18 @@
     det.className = 'l-details';
     det.innerHTML = '<summary>Details</summary><pre></pre>';
     det.querySelector('pre').textContent = content;
+    const file = filePathOf(m ? m[1] : '', body);
+    if (file) {
+      const pre = det.querySelector('pre');
+      const fp = document.createElement('p');
+      fp.className = 'l-file';
+      fp.textContent = 'File: ' + file;
+      det.insertBefore(fp, pre);
+      const hint = document.createElement('p');
+      hint.className = 'l-hint';
+      hint.textContent = 'Files are in your Ergon workspace folder.';
+      det.insertBefore(hint, pre);
+    }
     el.appendChild(det);
   }
   function failureHtml(raw) {
@@ -503,7 +532,7 @@
     const sub = configured
       ? 'It works step by step, right here, until the job is done.'
       : 'Not connected to a model yet. Anything you type is kept in the thread.';
-    box.innerHTML = '<h2>What should your agent finish for you?</h2><p class="sub">' + esc(sub) + '</p><div class="starters"></div>';
+    box.innerHTML = '<h2>What should your agent finish for you?</h2><p class="sub">' + esc(sub) + '</p><div class="starters"></div><p class="starter-hint">Tap one to fill the box, then press Send.</p>';
     messagesEl.appendChild(box);
     let installed = [];
     try {
@@ -582,42 +611,58 @@
     }
   }
 
+  /* One decision. Pending ones carry the two buttons; settled ones say how they ended. */
+  function decisionItem(d, settled) {
+    const div = document.createElement('div');
+    div.className = 'item';
+    let inner = '<span class="tag ' + (settled ? '' : 'need') + '">' + esc(d.kind) + '</span>' +
+                '<div class="i-name">' + esc(d.summary) + '</div>';
+    if (!settled) {
+      inner += '<div class="i-why">' + esc(consequence(d.kind)) + '</div>' +
+               '<div class="row-actions"><button class="act-btn primary" data-decide="' + escAttr(d.id) + '" data-how="approve">Approve</button>' +
+               '<button class="act-btn" data-decide="' + escAttr(d.id) + '" data-how="deny">Decline</button></div>';
+    } else {
+      inner += '<div class="settled">' + esc(d.status) + (d.outcome ? ': ' + esc(d.outcome) : '') + '</div>';
+    }
+    div.innerHTML = inner;
+    return div;
+  }
+
+  /* Waiting on you lists only what is pending; settled decisions sit in a quieter block below. */
   async function loadDecisions() {
     const el = document.getElementById('decisions-list');
+    const settledEl = document.getElementById('settled-wrap');
     try {
       const r = await fetch('/api/decisions');
       if (!r.ok) throw new Error('decisions');
       const data = await r.json();
       const list = (data.decisions || []).slice().reverse();
-      const pending = list.filter((d) => d.status === 'pending').length;
+      const pending = list.filter((d) => d.status === 'pending');
+      const settled = list.filter((d) => d.status !== 'pending');
       const badge = document.getElementById('dec-badge');
-      badge.textContent = pending;
-      badge.classList.toggle('on', pending > 0);
-      badge.setAttribute('aria-label', pending + ' waiting on you');
-      if (!list.length) { el.innerHTML = '<p class="empty-note">Nothing is waiting on you. Your agent only asks when an action cannot be undone. Everything else it finishes on its own.</p>'; return; }
-      el.innerHTML = '';
-      for (const d of list) {
-        const div = document.createElement('div');
-        div.className = 'item';
-        let inner = '<span class="tag ' + (d.status === 'pending' ? 'need' : '') + '">' + esc(d.kind) + '</span>' +
-                    '<div class="i-name">' + esc(d.summary) + '</div>';
-        if (d.status === 'pending') {
-          inner += '<div class="i-why">' + esc(consequence(d.kind)) + '</div>' +
-                   '<div class="row-actions"><button class="act-btn primary" data-decide="' + escAttr(d.id) + '" data-how="approve">Approve</button>' +
-                   '<button class="act-btn" data-decide="' + escAttr(d.id) + '" data-how="deny">Decline</button></div>';
-        } else {
-          inner += '<div class="settled">' + esc(d.status) + (d.outcome ? ': ' + esc(d.outcome) : '') + '</div>';
-        }
-        div.innerHTML = inner;
-        el.appendChild(div);
+      badge.textContent = pending.length;
+      badge.classList.toggle('on', pending.length > 0);
+      badge.setAttribute('aria-label', pending.length + ' waiting on you');
+      el.innerHTML = pending.length ? '' : '<p class="empty-note">Nothing is waiting on you.</p>';
+      for (const d of pending) el.appendChild(decisionItem(d, false));
+      settledEl.innerHTML = '';
+      if (settled.length) {
+        const box = document.createElement(settled.length > 3 ? 'details' : 'div');
+        box.className = 'settled-block';
+        box.innerHTML = settled.length > 3
+          ? '<summary>Recently settled (' + settled.length + ')</summary>'
+          : '<p class="settled-head">Recently settled</p>';
+        for (const d of settled) box.appendChild(decisionItem(d, true));
+        settledEl.appendChild(box);
       }
-      el.querySelectorAll('[data-decide]').forEach((btn) => btn.addEventListener('click', async () => {
+      el.closest('.card').querySelectorAll('[data-decide]').forEach((btn) => btn.addEventListener('click', async () => {
         btn.disabled = true;
         await fetch('/api/decisions/' + encodeURIComponent(btn.getAttribute('data-decide')) + '/' + btn.getAttribute('data-how'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
         loadDecisions();
       }));
     } catch (e) {
       el.innerHTML = '<p class="quiet">Decisions could not be loaded. Check that Ergon is running.</p>';
+      settledEl.innerHTML = '';
     }
   }
 
