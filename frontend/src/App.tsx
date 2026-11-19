@@ -185,13 +185,13 @@ export function App() {
               </Button>
             )}
             <AnimatedBackground defaultValue={face} onValueChange={(id) => { if (id) setFace(id as Face); }}
-              className="flex rounded-sm bg-track p-1" transition={{ type: "spring", bounce: 0.1, duration: 0.35 }}>
+              className="flex min-w-0 overflow-x-auto rounded-sm bg-track p-1" transition={{ type: "spring", bounce: 0.1, duration: 0.35 }}>
               {tabs.map((t) => {
                 const on = face === t.id;
                 return (
                   <button key={t.id} type="button" data-id={t.id} role="tab" aria-selected={on} data-checked={on ? "" : undefined}
                     aria-label={t.id === "today" ? (t.count ? `Today, ${t.count} waiting` : "Today") : undefined}
-                    className={cn("focus-ring relative z-10 flex min-h-9 items-center gap-2 rounded-sm px-3 text-sm font-medium outline-none", on ? "text-ink" : "text-ink-2 hover:text-ink")}>
+                    className={cn("focus-ring relative z-10 flex min-h-9 items-center gap-2 whitespace-nowrap rounded-sm px-3 text-sm font-medium outline-none", on ? "text-ink" : "text-ink-2 hover:text-ink")}>
                     {t.label}
                     {t.count > 0 && <span aria-hidden className="rounded-full bg-blue px-1.5 font-mono text-xs tabular-nums text-blue-fg">{t.count}</span>}
                   </button>
