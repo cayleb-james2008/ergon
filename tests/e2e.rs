@@ -159,13 +159,13 @@ fn shell_has_sidebar_thread_and_composer() {
     let port = start_app(cfg);
     let (status, body) = http(port, "GET", "/", None);
     assert_eq!(status, 200);
-    assert!(body.contains("id=\"sidebar\""), "sidebar marker missing");
-    assert!(body.contains("id=\"thread-list\""), "thread list missing");
+    // The shell is a React bundle now (2026-11-19): the served page carries static markers
+    // (data-app, the live region) and the text the app ships. Nothing else is pinned as markup.
+    assert!(body.contains("data-app=\"ergon\""), "app marker missing");
+    assert!(body.contains("id=\"announcer\""), "live region missing");
     assert!(body.contains("New chat"), "new chat button missing");
-    assert!(body.contains("id=\"thread\""), "thread marker missing");
-    assert!(body.contains("id=\"composer\""), "composer marker missing");
-    assert!(body.contains("id=\"composer-input\""), "composer input missing");
-    assert!(body.contains("id=\"no-key-banner\""), "no-key banner missing");
+    assert!(body.contains("composer-input"), "composer input missing");
+    assert!(body.contains("Describe a task for your agent"), "composer input must be labelled");
     assert!(body.contains("not connected to a model yet"), "no-key banner text missing");
     assert!(body.contains("ERGON_MODEL_API_KEY"), "banner must name the fix for the operator");
 }
