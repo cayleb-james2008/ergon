@@ -3264,3 +3264,41 @@ fn lan_host_needs_allowed_hosts_and_gate_skips_the_rule() {
     let gated = format!("GET /api/status HTTP/1.1\r\nHost: 192.168.1.20:{port}\r\nX-Ergon-Gate: G\r\n");
     assert_eq!(raw_http(port, &gated, "").0, 200, "with the gate token the Host rule does not apply");
 }
+
+#[test]
+fn version_endpoints_report_the_running_build_and_updating_is_local_only() {
+    let root = test_root("versions");
+    let cfg = test_config(&root, None, "http://127.0.0.1:9/v1".to_string());
+    let port = start_app(cfg);
+    let (status, body) = http(port, "GET", "/api/version", None);
+    assert_eq!(status, 200, "{body}");
+    let v: Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(v["name"], json!("ergon"));
+    assert_eq!(v["version"], json!(env!("CARGO_PKG_VERSION")));
+    let (_, body) = http(port, "GET", "/api/status", None);
+    let s: Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(s["version"], json!(env!("CARGO_PKG_VERSION")));
+    let (status, body) = http(port, "GET", "/api/update", None);
+    assert_eq!(status, 200, "{body}");
+    let u: Value = serde_json::from_str(&body).unwrap();
+    assert_eq!((u["current"].clone(), u["mode"].clone(), u["available"].clone()), (json!(env!("CARGO_PKG_VERSION")), json!("notify"), json!(false)));
+    assert!(u["checked_at"].is_null(), "nothing is fetched until a check is asked for: {u}");
+
+    // A shared (gated) install and a LAN host name may look, never apply or restart.
+    let root2 = test_root("versions_gated");
+    let cfg2 = test_config(&root2, None, "http://127.0.0.1:9/v1".to_string());
+    let gated = start_app_hosts(cfg2, Some("G"), vec!["lan-desk.local".to_string()]);
+    for path in ["/api/update/apply", "/api/update/restart"] {
+        let head = format!("POST {path} HTTP/1.1\r\nHost: 127.0.0.1:{gated}\r\nX-Ergon-Gate: G\r\nContent-Type: application/json\r\n");
+        assert_eq!(raw_http(gated, &head, "{}").0, 403, "{path} through the gate");
+    }
+    let root3 = test_root("versions_lan");
+    let cfg3 = test_config(&root3, None, "http://127.0.0.1:9/v1".to_string());
+    let lan = start_app_hosts(cfg3, None, vec!["lan-desk.local".to_string()]);
+    let head = format!("POST /api/update/apply HTTP/1.1\r\nHost: lan-desk.local:{lan}\r\nContent-Type: application/json\r\n");
+    assert_eq!(raw_http(lan, &head, "{}").0, 403, "apply through a LAN host name");
+    // Nothing waiting: restart from this machine is a plain refusal, not a restart.
+    let (status, body) = http(port, "POST", "/api/update/restart", Some("{}"));
+    assert_eq!(status, 409, "{body}");
+}
+
