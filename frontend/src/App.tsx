@@ -27,7 +27,7 @@ function useTheme(): [Theme, (t: Theme) => void] {
   const set = (next: Theme) => {
     setT(next);
     document.documentElement.setAttribute("data-theme", next);
-    try { localStorage.setItem(THEME_KEY, next); } catch { /* the choice still holds for this page */ }
+    try { localStorage.setItem("ergon-theme", next); } catch { /* the choice still holds for this page */ }
   };
   return [t, set];
 }
