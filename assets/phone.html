@@ -185,6 +185,24 @@
   .starter-hint { font-size: var(--text-sm); color: var(--faint); margin: 12px 0 0; }
   .l-file { font-size: var(--text-sm); color: var(--ink); margin: 4px 0; overflow-wrap: anywhere; user-select: text; }
   .l-hint { font-size: var(--text-xs); color: var(--faint); margin: 0 0 4px; }
+  /* Version and updates: plain, quiet, one line each; the banner sits above the work. */
+  #update-banner { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 12px; padding: 12px 24px;
+                   background: var(--panel-2); border-bottom: 1px solid var(--rule); font-size: var(--text-sm); }
+  #update-banner[hidden] { display: none; }
+  .upd-main { flex: 1 1 240px; min-width: 0; }
+  .upd-title { margin: 0; font-weight: 600; color: var(--ink); overflow-wrap: anywhere; }
+  .upd-notes, .upd-hint { margin: 4px 0 0; color: var(--muted); overflow-wrap: anywhere; }
+  .upd-live { margin: 4px 0 0; color: var(--ink); overflow-wrap: anywhere; }
+  .upd-live:empty { display: none; }
+  .upd-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .upd-actions .act-btn, .upd-actions a.act-btn { min-height: 44px; display: inline-flex; align-items: center; text-decoration: none;  white-space: nowrap; }
+  .version-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; font-size: var(--text-xs); color: var(--faint); }
+  .version-row[hidden] { display: none; }
+  #version-link { color: var(--muted); min-height: 44px; display: inline-flex; align-items: center; }
+  .version-row .act-btn { min-height: 44px; font-size: var(--text-xs); padding: 0 12px; }
+  .check-result { flex: 1 1 100%; margin: 0; color: var(--muted); overflow-wrap: anywhere; }
+  .check-result:empty { display: none; }
+  .phone-foot { padding: 4px 16px 8px; background: var(--bg); }
   @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important;
                             transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
@@ -251,6 +269,21 @@
     </section>
   </main>
 
+  <section id="update-banner" role="region" aria-label="Ergon update" hidden>
+      <div class="upd-main">
+        <p class="upd-title" id="upd-title"></p>
+        <p class="upd-notes" id="upd-notes" hidden></p>
+        <p class="upd-hint" id="upd-hint" hidden></p>
+        <p class="upd-live" id="upd-live" role="status" aria-live="polite"></p>
+      </div>
+      <div class="upd-actions" id="upd-actions"></div>
+    </section>
+  <div class="phone-foot"><div class="version-row" id="version-row" hidden>
+      <a id="version-link" href="https://github.com/cayleb-james2008/ergon/releases" target="_blank" rel="noopener">Ergon</a>
+      <button class="act-btn" type="button" id="check-updates">Check for updates</button>
+      <p class="check-result" id="check-result" role="status"></p>
+    </div></div>
+
   <nav aria-label="Phone views">
     <button class="tab-btn" type="button" data-tab="brief" aria-selected="false"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg>Brief<span class="ind" aria-hidden="true"></span></button>
     <button class="tab-btn" type="button" data-tab="chat" aria-selected="true"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 6.5A2.5 2.5 0 0 1 7.5 4h9A2.5 2.5 0 0 1 19 6.5v7a2.5 2.5 0 0 1-2.5 2.5H10l-4 3v-3.2A2.5 2.5 0 0 1 5 13.5z"/></svg>Chat<span class="ind" aria-hidden="true"></span></button>
@@ -259,6 +292,199 @@
   </nav>
 
 <script>
+  /* ---------------- version and updates ---------------------------- */
+  /* The server checks GitHub in the background; this page only asks it what it knows. */
+  const RELEASES_URL = 'https://github.com/cayleb-james2008/ergon/releases/tag/v';
+  const DISMISS_KEY = 'ergon-update-dismissed';
+  const CHECK_EVERY_MS = 30 * 60 * 1000;
+  const updBanner = document.getElementById('update-banner');
+  const updTitle = document.getElementById('upd-title');
+  const updNotes = document.getElementById('upd-notes');
+  const updHint = document.getElementById('upd-hint');
+  const updLive = document.getElementById('upd-live');
+  const updActions = document.getElementById('upd-actions');
+  const checkBtn = document.getElementById('check-updates');
+  const checkResult = document.getElementById('check-result');
+  let updateSnap = null;
+  let justInstalled = '';
+
+  function plainError(e) {
+    if (e && e.name === 'TypeError') return 'Could not reach Ergon. Is it running?';
+    return (e && e.message) || 'Something went wrong. Try again.';
+  }
+  function firstLine(text) {
+    return String(text || '').split('\n').map((l) => l.trim()).find((l) => l) || '';
+  }
+  function dismissedFor() { try { return localStorage.getItem(DISMISS_KEY) || ''; } catch (e) { return ''; } }
+  function rememberDismiss(v) { try { localStorage.setItem(DISMISS_KEY, v); } catch (e) {} }
+  function checkedWords(secs) {
+    if (!secs) return 'not yet';
+    const mins = Math.round((Date.now() - secs * 1000) / 60000);
+    if (mins < 1) return 'just now';
+    if (mins < 60) return mins + ' min ago';
+    return Math.round(mins / 60) + ' h ago';
+  }
+  function announce(text) { updLive.textContent = text; }
+  function actionButton(label, cls, onClick) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'act-btn' + (cls ? ' ' + cls : '');
+    b.textContent = label;
+    b.addEventListener('click', () => onClick(b));
+    return b;
+  }
+  function actionLink(label, href) {
+    const a = document.createElement('a');
+    a.className = 'act-btn';
+    a.href = href;
+    a.target = '_blank';
+    a.rel = 'noopener';
+    a.textContent = label;
+    const hidden = document.createElement('span');
+    hidden.className = 'sr-only';
+    hidden.textContent = ' (opens in a new tab)';
+    a.appendChild(hidden);
+    return a;
+  }
+  function resultLine(s) {
+    if (s.mode === 'off') return 'Update checks are turned off on this Ergon.';
+    if (s.error) return s.error;
+    if (s.staged) return 'Version ' + s.staged + ' is installed. Restart to use it.';
+    if (s.available) return 'Version ' + s.latest + ' is available';
+    if (!s.checked_at) return 'Not checked yet.';
+    return 'You are on the newest version (checked ' + checkedWords(s.checked_at) + ')';
+  }
+
+  function renderBanner() {
+    const s = updateSnap;
+    updActions.innerHTML = '';
+    updNotes.hidden = true; updNotes.textContent = '';
+    updHint.hidden = true; updHint.textContent = '';
+    let show = false;
+    if (s && s.staged) {
+      show = true;
+      updTitle.textContent = justInstalled || ('Version ' + s.staged + ' is installed. Restart to use it.');
+      updActions.appendChild(actionButton('Restart now', 'primary', restartNow));
+    } else if (s && s.available && s.latest && dismissedFor() !== s.latest) {
+      show = true;
+      updTitle.textContent = 'Version ' + s.latest + ' is available';
+      if (s.notes) { updNotes.textContent = firstLine(s.notes); updNotes.hidden = false; }
+      if (s.can_apply) {
+        updActions.appendChild(actionButton('Update now', 'primary', applyNow));
+      } else {
+        updHint.textContent = s.dev_build ? 'Update from the terminal.' : 'Ask whoever runs Ergon to update it.';
+        updHint.hidden = false;
+      }
+      updActions.appendChild(actionLink("What's new", s.release_url || (RELEASES_URL + s.latest)));
+      updActions.appendChild(actionButton('Dismiss', '', () => { rememberDismiss(s.latest); renderBanner(); }));
+    }
+    updBanner.hidden = !show;
+  }
+
+  function renderState(s) {
+    updateSnap = s;
+    if (!s.staged) justInstalled = '';
+    renderBanner();
+    checkBtn.hidden = s.mode === 'off';
+    checkResult.textContent = resultLine(s);
+  }
+
+  async function loadVersion() {
+    try {
+      const r = await fetch('/api/version', { cache: 'no-store' });
+      if (!r.ok) return;
+      const v = await r.json();
+      const link = document.getElementById('version-link');
+      link.textContent = 'Ergon ' + v.version;
+      link.href = RELEASES_URL + v.version;
+      document.getElementById('version-row').hidden = false;
+    } catch (e) { /* no version line when the server does not answer */ }
+  }
+
+  async function loadUpdate() {
+    try {
+      const r = await fetch('/api/update', { cache: 'no-store' });
+      if (!r.ok) return;
+      renderState(await r.json());
+    } catch (e) { /* best effort: the page says nothing it cannot verify */ }
+  }
+
+  async function checkNow() {
+    checkBtn.disabled = true;
+    checkResult.textContent = 'Checking…';
+    try {
+      const r = await fetch('/api/update/check', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+      const s = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(s.error || 'The check did not finish. Try again later.');
+      renderState(s);
+    } catch (e) {
+      checkResult.textContent = plainError(e);
+    }
+    checkBtn.disabled = false;
+  }
+  checkBtn.addEventListener('click', checkNow);
+
+  async function applyNow(btn) {
+    const latest = updateSnap ? updateSnap.latest : '';
+    btn.disabled = true;
+    btn.textContent = 'Downloading and checking...';
+    announce('Downloading and checking...');
+    try {
+      const r = await fetch('/api/update/apply', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(data.error || 'The update did not install. Try again later.');
+      justInstalled = 'Installed ' + latest + '. Restart to use it.';
+      renderState(Object.assign({}, data, { staged: data.staged || latest }));
+      announce(justInstalled);
+    } catch (e) {
+      btn.disabled = false;
+      btn.textContent = 'Update now';
+      announce(plainError(e));
+    }
+  }
+
+  async function restartNow(btn) {
+    btn.disabled = true;
+    btn.textContent = 'Restarting…';
+    announce('Restarting…');
+    try {
+      const r = await fetch('/api/update/restart', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(data.error || 'Ergon could not restart.');
+    } catch (e) {
+      /* the server may already be going down: a dropped connection is the restart itself */
+      if (!(e && e.name === 'TypeError')) {
+        btn.disabled = false;
+        btn.textContent = 'Restart now';
+        announce(plainError(e));
+        return;
+      }
+    }
+    waitForReturn();
+  }
+
+  /* Poll the version every second for up to a minute, then reload on the new process. */
+  function waitForReturn() {
+    const started = Date.now();
+    announce('Restarting…');
+    const tick = async () => {
+      if (Date.now() - started > 60000) {
+        announce('Ergon did not come back within a minute. Start Ergon again: run ergon, or restart its service. Then reload this page.');
+        return;
+      }
+      try {
+        const r = await fetch('/api/version', { cache: 'no-store' });
+        if (r.ok) { location.reload(); return; }
+      } catch (e) { /* still restarting */ }
+      setTimeout(tick, 1000);
+    };
+    setTimeout(tick, 1000);
+  }
+
+  loadVersion();
+  loadUpdate();
+  setInterval(loadUpdate, CHECK_EVERY_MS);
+
   let currentThread = null;
   let busy = false;
   let personRole = '';
