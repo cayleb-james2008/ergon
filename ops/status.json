@@ -1,5 +1,5 @@
 {
- "generated_at": "2026-11-19T06:45:13Z",
+ "generated_at": "2026-11-19T06:54:13Z",
  "policy_version": 4.0,
  "lanes": {
   "moneydesk": {
@@ -93,7 +93,7 @@
   "consolidation:IDLE_DECLARED": "says it has nothing to do: PARKED BY RULING (Nox decision 31 Oct 10:19 ET, board mail 20261031T141930Z): HOLD on the Thudwick upload fix deploy and on Lane C dry-run-4 (Cayleb closed Apotheka and Pum\u2026",
   "consolidation:CLOSED": "its session is not running",
   "consolidation:WAIT_OVERDUE": "waits on Mon 2 Nov 01:00 ET weekly reset and the Monday ruling on who reviews R07 (package B60 ready), expected by Mon 02:00",
-  "outis:STALE": "says WORKING but no heartbeat or file write for 465h41m (3x cadence: reassign?)",
+  "outis:STALE": "says WORKING but no heartbeat or file write for 465h50m (3x cadence: reassign?)",
   "20261028T144206Z-consolidation-to-nox.md:PROMISE_OVERDUE": "nox owes consolidation: STREET-UNBLOCK, steps 0-2 done, the last link of step 2 BLOCKED (10:41 ET). The Street Studio is NO\u2026 (due Wed 12:00)",
   "20261028T200455Z-consolidation-to-nox.md:PROMISE_OVERDUE": "nox owes consolidation: EP26 FINAL: your ruling needed on ONE choice (16:05 ET). The independent final reviewer (B39, never\u2026 (due Wed 17:00)",
   "20261028T202855Z-consolidation-to-nox.md:PROMISE_OVERDUE": "nox owes consolidation: EP27 STATUS 16:27 ET + ONE JUDGEMENT NEEDED (R07). Clicks so far (Seedance 2.5, Cinema Studio 4.0, \u2026 (due Wed 16:55)",
