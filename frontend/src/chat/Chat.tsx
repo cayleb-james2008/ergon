@@ -8,6 +8,7 @@ import { Kbd } from "@/components/ui/kbd";
 import { Cell, Cells, EntryShell, FinishedPill, Failure, FinishedEntry, Item, LedgerRow, Reply, UserLine, WaitingEntry, buildItems } from "./Entry";
 import type { Msg } from "@/lib/api";
 import { relTime, threadMs } from "@/lib/words";
+import { cn } from "@/lib/utils";
 
 export function greeting(name: string, hour: number): string {
   const part = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
@@ -72,6 +73,15 @@ function contours(): string[] {
 }
 const CONTOURS = contours();
 
+/** Full-bleed survey contours behind a region: static, drawn from --hairline, no gradient, parent must be relative. */
+export function ContourField() {
+  return (
+    <svg aria-hidden viewBox="0 0 1000 560" preserveAspectRatio="xMidYMid slice" className="contour-field pointer-events-none absolute inset-0 -z-10 h-full w-full opacity-[0.35]">
+      {CONTOURS.map((d, i) => <path key={i} d={d} fill="none" stroke="currentColor" strokeWidth={i % 4 === 0 ? 1.4 : 0.9} />)}
+    </svg>
+  );
+}
+
 function Empty({ status, starters, onStarter, name, recent }: {
   status: "ok" | "wait"; starters: string[]; onStarter: (t: string) => void; name: string; recent: Recent[];
 }) {
@@ -80,10 +90,7 @@ function Empty({ status, starters, onStarter, name, recent }: {
     : "Ergon is not connected to a model yet. Anything you type is kept in the thread.";
   return (
     <section aria-label="Start a task" className="mx-auto flex w-full max-w-[680px] flex-col gap-8 pt-4">
-      <div className="relative isolate overflow-hidden rounded-entry pb-2">
-        <svg aria-hidden viewBox="0 0 1000 480" preserveAspectRatio="xMidYMid slice" className="pointer-events-none absolute inset-0 -z-10 h-full w-full opacity-60" style={{ color: "var(--contour)" }}>
-          {CONTOURS.map((d, i) => <path key={i} d={d} fill="none" stroke="currentColor" strokeWidth={i % 4 === 0 ? 1.4 : 0.9} />)}
-        </svg>
+      <div className="relative pb-2">
         <h2 className="text-[40px] leading-[1.05] font-semibold tracking-[-0.035em] text-ink">{greeting(name, new Date().getHours())}</h2>
         <p className="mt-3 text-ui text-ink-2">What should your agent finish for you? {sub}</p>
       </div>
@@ -119,6 +126,7 @@ export function Composer({ value, onChange, onSend, busy, disabled }: {
   value: string; onChange: (v: string) => void; onSend: () => void; busy: boolean; disabled: boolean;
 }) {
   const ref = useRef<HTMLTextAreaElement>(null);
+  const canSend = !disabled && !!value.trim();
   useEffect(() => {
     const el = ref.current; if (!el) return;
     el.style.height = "auto";
@@ -135,7 +143,8 @@ export function Composer({ value, onChange, onSend, busy, disabled }: {
           onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); onSend(); } }}
         />
         <InputGroupAddon align="inline-end" className="pb-2 pr-2">
-          <Button type="submit" size="lg" disabled={disabled || !value.trim()} className="shadow-primary">
+          <Button type="submit" size="lg" variant={canSend ? "default" : "outline"} disabled={!canSend}
+            className={cn(canSend ? "shadow-primary" : "shadow-none disabled:bg-transparent disabled:text-ink-3 disabled:border-ink-3")}>
             <Send className="size-4" strokeWidth={1.75} aria-hidden />{busy ? "Working…" : "Send"}
           </Button>
         </InputGroupAddon>

@@ -15,6 +15,8 @@ import { AddPersonPanel, LearnedPanel, SuitePanel } from "@/shell/Panels";
 import { TodayFace } from "@/views/Today";
 import { GraphFace } from "@/views/Graph";
 import { cn } from "@/lib/utils";
+import { PersonSelect } from "@/shell/PersonSelect";
+import { ContourField } from "@/chat/Chat";
 import { relTime, threadMs } from "@/lib/words";
 
 type Face = "chat" | "today" | "graph";
@@ -114,11 +116,7 @@ export function App() {
       <div id="sidebar" className="flex min-h-0 flex-1 flex-col">
         <div className="px-4">
           <label id="person-label" htmlFor="person-select" className="text-xs text-ink-2">Working for</label>
-          <select id="person-select" aria-labelledby="person-label" value={e.people?.active ?? ""} disabled={!e.people}
-            onChange={(ev) => e.switchPerson(ev.target.value)}
-            className="focus-ring mt-1 h-10 w-full rounded-sm border border-ink-3 bg-surface px-2.5 text-sm text-ink outline-none">
-            {(e.people?.people ?? []).map((p) => <option key={p.id} value={p.id}>{p.role ? p.name + ", " + p.role : p.name}</option>)}
-          </select>
+          <PersonSelect people={e.people?.people ?? []} active={e.people?.active ?? ""} disabled={!e.people} onChange={(id) => e.switchPerson(id)} />
         </div>
         <div className="px-4 pt-3">
           <Button ref={newChatRef} className="w-full shadow-primary" onClick={() => { setFace("chat"); setMenuOpen(false); e.newThread(); }}><Plus className="size-4" strokeWidth={1.75} aria-hidden />New chat</Button>
@@ -176,9 +174,10 @@ export function App() {
         </Drawer.Root>
       )}
 
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div className="relative isolate flex min-w-0 flex-1 flex-col overflow-hidden bg-canvas">
+        <ContourField />
         <header className="flex flex-wrap items-center justify-between gap-3 px-6 pt-4">
-          <div className="flex min-w-0 items-center gap-3">
+          <div className="flex min-w-0 flex-wrap items-center gap-3">
             {narrow && (
               <Button ref={menuRef} variant="outline" size="sm" aria-label="Open menu" aria-expanded={menuOpen} onClick={() => setMenuOpen(true)}>
                 <Menu className="size-4" strokeWidth={1.75} aria-hidden />Menu
