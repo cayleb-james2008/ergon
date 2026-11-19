@@ -12,6 +12,7 @@ pub mod library;
 pub mod records;
 pub mod skills;
 pub mod ui;
+pub mod update;
 
 use serde_json::{json, Value};
 use std::collections::HashMap;
@@ -1951,6 +1952,24 @@ fn run_delegation(
 /// then the honesty gate on its summary, the work log entry, and an
 /// offers scan — the records the brief, the graph and the offers
 /// engine are built from.
+/// Agent runs in progress, so an update never restarts the server under one.
+static RUNS_IN_FLIGHT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+struct RunGuard;
+
+impl RunGuard {
+    fn new() -> RunGuard {
+        RUNS_IN_FLIGHT.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        RunGuard
+    }
+}
+
+impl Drop for RunGuard {
+    fn drop(&mut self) {
+        RUNS_IN_FLIGHT.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
 pub fn run_agent(
     cfg: &Config,
     ctx: &ToolCtx,
@@ -1962,6 +1981,7 @@ pub fn run_agent(
     if cfg.api_key.is_none() {
         return Err(NO_KEY_ERROR.to_string());
     }
+    let _in_flight = RunGuard::new();
     // Deletes parked after this instant belong to this run (EB1).
     let run_started = records::now_millis();
     let suite = library::load_suite(&cfg.data_dir);
@@ -2142,6 +2162,8 @@ pub struct AppState {
     /// other client mid-task. A session pins the person per browser;
     /// cookie-less API clients keep the global-pointer behaviour.
     pub sessions: Arc<Mutex<HashMap<String, String>>>,
+    /// Checks GitHub for newer releases and installs them on request.
+    pub updater: Arc<update::Updater>,
 }
 
 static SESSION_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -2219,12 +2241,22 @@ fn runtime_for(state: &AppState, person: &Person) -> Arc<PersonRuntime> {
 }
 
 pub fn serve(listener: TcpListener, cfg: Config) -> std::io::Result<()> {
+    serve_env(listener, cfg, false)
+}
+
+/// What the `ergon` binary runs: `serve` plus the periodic check for a newer
+/// GitHub release (see `update`). Tests use `serve`, which never calls out.
+pub fn serve_with_updates(listener: TcpListener, cfg: Config) -> std::io::Result<()> {
+    serve_env(listener, cfg, true)
+}
+
+fn serve_env(listener: TcpListener, cfg: Config, background_updates: bool) -> std::io::Result<()> {
     let gate = std::env::var("ERGON_GATE_TOKEN")
         .ok()
         .map(|t| t.trim().to_string())
         .filter(|t| !t.is_empty());
     let hosts = allowed_hosts_from(&std::env::var("ERGON_ALLOWED_HOSTS").unwrap_or_default());
-    serve_with_hosts(listener, cfg, gate, hosts)
+    serve_inner(listener, cfg, gate, hosts, background_updates)
 }
 
 /// Parses ERGON_ALLOWED_HOSTS: comma-separated host names, with or without
@@ -2252,7 +2284,20 @@ pub fn serve_with_hosts(
     gate_token: Option<String>,
     allowed_hosts: Vec<String>,
 ) -> std::io::Result<()> {
+    serve_inner(listener, cfg, gate_token, allowed_hosts, false)
+}
+
+/// `background_updates` starts the periodic release check; only the real
+/// binary does (tests must not call out to GitHub).
+fn serve_inner(
+    listener: TcpListener,
+    cfg: Config,
+    gate_token: Option<String>,
+    allowed_hosts: Vec<String>,
+    background_updates: bool,
+) -> std::io::Result<()> {
     cfg.ensure_dirs()?;
+    let gate_token_is_none = gate_token.is_none();
     let people = PeopleState::load(&cfg);
     let library = library::Library::load(&cfg.data_dir);
     let state = Arc::new(AppState {
@@ -2263,7 +2308,11 @@ pub fn serve_with_hosts(
         people: Arc::new(Mutex::new(people)),
         runtimes: Arc::new(Mutex::new(HashMap::new())),
         sessions: Arc::new(Mutex::new(HashMap::new())),
+        updater: update::Updater::from_env("ERGON", "ergon", env!("CARGO_PKG_VERSION"), "cayleb-james2008/ergon", gate_token_is_none),
     });
+    if background_updates {
+        state.updater.start_background();
+    }
     for stream in listener.incoming() {
         match stream {
             Ok(stream) => {
@@ -2610,6 +2659,48 @@ fn handle_connection(mut stream: std::net::TcpStream, state: &AppState) -> std::
             }
             respond(&mut stream, 200, "text/html; charset=utf-8", ui::INDEX_HTML)
         }
+        ("GET", "/api/version") => respond_json(
+            &mut stream,
+            200,
+            &json!({"name": "ergon", "version": env!("CARGO_PKG_VERSION")}),
+        ),
+        ("GET", "/api/update") => respond_json(&mut stream, 200, &state.updater.snapshot()),
+        ("POST", "/api/update/check") => respond_json(&mut stream, 200, &state.updater.check_now()),
+        ("POST", "/api/update/apply") | ("POST", "/api/update/restart") => {
+            // Replacing the program is for whoever sits at this machine: not
+            // through a LAN host name, not through the shared gate.
+            if state.gate_token.is_some() || !host_allowed(req.host.as_deref().unwrap_or(""), &[]) {
+                return respond_json(
+                    &mut stream,
+                    403,
+                    &json!({"error": "updating is only allowed from this machine, not through a shared address"}),
+                );
+            }
+            if req.path == "/api/update/apply" {
+                match state.updater.apply() {
+                    Ok(v) => {
+                        let mut snap = state.updater.snapshot();
+                        snap["applied"] = json!(v);
+                        respond_json(&mut stream, 200, &snap)
+                    }
+                    Err(e) => respond_json(&mut stream, 409, &json!({"error": e})),
+                }
+            } else if let Err(e) = state.updater.snapshot()["staged"].as_str().map(|_| ()).ok_or("no update is waiting for a restart") {
+                respond_json(&mut stream, 409, &json!({"error": e}))
+            } else if RUNS_IN_FLIGHT.load(std::sync::atomic::Ordering::SeqCst) > 0 {
+                respond_json(&mut stream, 409, &json!({"error": "a task is still running; restart when it has finished"}))
+            } else {
+                let _ = respond_json(&mut stream, 200, &json!({"restarting": true}));
+                let up = state.updater.clone();
+                std::thread::spawn(move || {
+                    std::thread::sleep(std::time::Duration::from_millis(400));
+                    if let Err(e) = up.restart() {
+                        eprintln!("ergon: restart failed: {e}");
+                    }
+                });
+                Ok(())
+            }
+        }
         ("GET", "/api/status") => {
             let mut recovered: Vec<String> = state.people.lock().unwrap().recovered.clone();
             recovered.extend(state.library.lock().unwrap().recovered.clone());
@@ -2622,6 +2713,7 @@ fn handle_connection(mut stream: std::net::TcpStream, state: &AppState) -> std::
                 &mut stream,
                 200,
                 &json!({
+                    "version": env!("CARGO_PKG_VERSION"),
                     "model_configured": root_cfg.api_key.is_some(),
                     "model": root_cfg.model_id,
                     "model_base_url": root_cfg.model_base_url,
