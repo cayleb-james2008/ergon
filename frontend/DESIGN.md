@@ -122,3 +122,17 @@ Ids and attributes the round-1 app keeps (rendered by React): id="composer-input
 - Pictures (fixture data, stub model replies): `_final/be/ergon-{empty,finished}-{1440x900,390x844}-{light,dark}.png`. Every picture was viewed.
 - Self-critique: the thread and rail read as one calm frame and the field-book entry is recognisable, but it is not yet Furrow. Missing: the ruled notebook grid (the grid texture needs a gradient the ergon page check forbids; ruled rows are used instead), moulded keys (only a raised shadow, no lit inset edge), and the signature head is ink in both themes, so the dark head is a light bar. Details is a plain text link, not a key. The rail is dense with repeated fixture titles. The empty state is a list of boxes: it needs a stronger composition.
 - Not built in round 1: Today, Work Graph (reachable, stub text), Vaul-based phone face is wired but /phone still serves the old assets/phone.html, Kibo/Motion for the survey map, the Today parity, the Work Graph parity, the add-person and suite flows are wired but not exercised in a browser.
+
+## Round 2 results (2026-11-19)
+
+Pictures: `_final/be/ergon-{empty,finished,today,graph,drawer}-{1440x900,390x844}-{light,dark}.png` and `ergon-phone-390x844-{light,dark}.png` (served from /phone). Fixture data and stub replies; the flow ran end to end in a real browser.
+
+Browser flow (flow script, Playwright, 1440 and 390): add a person (inline form; the library dialog's close did not reach its own state, so the form is inline), add a suite item, a parked deletion becomes a Waiting on you card, Today shows "Today, 2 waiting" then "Today, 1 waiting" after Approve, Work Graph draws the map, New chat, finished card, drawer focus (opens on New chat, closes back to Menu), no page errors.
+
+Tests: `cargo test` 17 + 83 passed. Five pins rewritten, one commit each (tests: ...). Accessibility pin now checks real WCAG ratios of the served light tokens.
+
+Hallmark `sloplint --scope app --render`: 41 FAIL at round 1 start, 11 FAIL now. Left: the stamp on the first CSS line (the built CSS is minified, so the stamp is not the first line), focus rings in the segmented control and the tabs (2.6 to 2.8:1 on the track; the ring is ink now), the send key while disabled (1.8:1), a Tailwind ring-offset literal, the pill mask literal (white), COSS `has-*` focus and disabled rules, one dialog width. Parts' transitions and disabled channels were fixed in rune/used (see LOCAL-EDITS.md).
+
+Local edits to parts: listed in `rune/used/LOCAL-EDITS.md`; `sync-used` skips them.
+
+Known gaps: the Vaul drawer focus return is manual (Menu key); Work Graph list and canvas are both drawn from the API (no invented nodes); Today's decisions have no timestamps, so the head shows today's date; the dark finished head is the deepest step with a hairline.
