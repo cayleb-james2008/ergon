@@ -853,6 +853,24 @@ impl Store {
         id.to_string()
     }
 
+    /// Rewrites the first step message in a thread whose text is exactly
+    /// `old` (a parked-delete note) to `new`, and persists it (ER1).
+    pub fn settle_note(&mut self, thread_id: &str, old: &str, new: &str) -> bool {
+        let Some(t) = self.threads.iter_mut().find(|t| t.id == thread_id) else {
+            return false;
+        };
+        let Some(m) = t
+            .messages
+            .iter_mut()
+            .find(|m| m.role == "step" && m.content == old)
+        else {
+            return false;
+        };
+        m.content = new.to_string();
+        self.save();
+        true
+    }
+
     pub fn push(&mut self, thread_id: &str, role: &str, content: &str) {
         let mut changed = false;
         if let Some(t) = self.threads.iter_mut().find(|t| t.id == thread_id) {
@@ -2046,13 +2064,7 @@ pub fn run_agent(
             && d["thread_id"].as_str() == Some(thread_id)
             && d["ts"].as_u64().unwrap_or(0) >= run_started;
         if let Some(path) = d["path"].as_str().filter(|_| parked_now) {
-            store.lock().unwrap().push(
-                thread_id,
-                "step",
-                &format!(
-                    "Note: {path} has NOT been deleted yet; the deletion is waiting for your approval in Decisions."
-                ),
-            );
+            store.lock().unwrap().push(thread_id, "step", &parked_note(path));
         }
     }
     // The work log + offers scan: the records the rest of the
@@ -2417,6 +2429,11 @@ fn refuse_head(stream: &mut std::net::TcpStream, reader: &mut BufReader<std::net
     let mut sink = [0u8; 8192];
     while matches!(reader.read(&mut sink), Ok(n) if n > 0) {}
     None
+}
+
+/// The note pushed into a thread when a delete is parked (EB1, ER1).
+pub fn parked_note(path: &str) -> String {
+    format!("Note: {path} has NOT been deleted yet; the deletion is waiting for your approval in Decisions.")
 }
 
 /// Whether a Host header names this machine (DNS-rebinding guard).
@@ -2798,7 +2815,8 @@ fn handle_connection(mut stream: std::net::TcpStream, state: &AppState) -> std::
                     // where the work happened.
                     let tid = decision["thread_id"].as_str().unwrap_or("");
                     if !tid.is_empty() {
-                        runtime.store.lock().unwrap().push(
+                        let mut store = runtime.store.lock().unwrap();
+                        store.push(
                             tid,
                             "step",
                             &format!(
@@ -2807,6 +2825,20 @@ fn handle_connection(mut stream: std::net::TcpStream, state: &AppState) -> std::
                                 outcome
                             ),
                         );
+                        // The parked-delete note says the file is still
+                        // there; once settled it must say what happened (ER1).
+                        if let Some(path) = decision["path"].as_str().filter(|_| decision["kind"] == "delete") {
+                            let settled = if action != "approve" {
+                                format!("Note: {path} was kept because you declined the deletion.")
+                            } else if outcome.starts_with("Approved and done") {
+                                format!("Note: {path} was deleted after you approved it.")
+                            } else if outcome.starts_with("Approved: ") {
+                                format!("Note: {path} was already gone when you approved it.")
+                            } else {
+                                format!("Note: {path} was not deleted; see the decision settled above.")
+                            };
+                            store.settle_note(tid, &parked_note(path), &settled);
+                        }
                     }
                     respond_json(
                         &mut stream,

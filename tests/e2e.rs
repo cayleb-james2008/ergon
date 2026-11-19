@@ -3101,3 +3101,96 @@ fn plain_answers_are_not_counted_as_finished_work() {
     let g: Value = serde_json::from_str(&graph).unwrap();
     assert_eq!(works(&g), 1, "{graph}");
 }
+
+/// ER1 helpers: park one delete in a chat and return the config (so a test
+/// can restart on the same data), the server port and the thread id.
+fn park_one_delete(name: &str) -> (Config, u16, String) {
+    let root = test_root(name);
+    let stub = start_stub_model(vec![
+        json!({"tool": "delete_file", "args": {"path": "old.txt"}}).to_string(),
+        json!({"done": true, "summary": "Deletion of old.txt is ready for your approval."}).to_string(),
+    ]);
+    let cfg = test_config(&root, Some("test-key"), format!("http://127.0.0.1:{}/v1", stub.port));
+    std::fs::write(cfg.workspace_dir.join("old.txt"), "old").unwrap();
+    let port = start_app(cfg.clone());
+    let (status, body) = chat(port, "Delete old.txt");
+    assert_eq!(status, 200, "{body}");
+    let tid = serde_json::from_str::<Value>(&body).unwrap()["id"].as_str().unwrap().to_string();
+    (cfg, port, tid)
+}
+
+fn pending_decision_id(port: u16) -> String {
+    let (_, body) = http(port, "GET", "/api/decisions", None);
+    let v: Value = serde_json::from_str(&body).unwrap();
+    v["decisions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|d| d["status"] == "pending")
+        .expect("a pending decision")["id"]
+        .as_str()
+        .unwrap()
+        .to_string()
+}
+
+fn thread_step_texts(port: u16, tid: &str) -> Vec<String> {
+    let (status, body) = http(port, "GET", &format!("/api/threads/{tid}"), None);
+    assert_eq!(status, 200, "{body}");
+    let v: Value = serde_json::from_str(&body).unwrap();
+    v["messages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|m| m["role"] == "step")
+        .map(|m| m["content"].as_str().unwrap().to_string())
+        .collect()
+}
+
+const ER1_PARKED: &str = "Note: old.txt has NOT been deleted yet; the deletion is waiting for your approval in Decisions.";
+
+/// ER1: once a parked delete is settled, its note in the thread is rewritten
+/// to the outcome, so the thread never says both 'not deleted' and 'deleted'.
+#[test]
+fn approved_delete_rewrites_its_parked_note() {
+    let (cfg, port, tid) = park_one_delete("er1_approve");
+    assert!(thread_step_texts(port, &tid).iter().any(|s| s == ER1_PARKED));
+    let id = pending_decision_id(port);
+    let (status, body) = http(port, "POST", &format!("/api/decisions/{id}/approve"), Some("{}"));
+    assert_eq!(status, 200, "{body}");
+    assert!(!cfg.workspace_dir.join("old.txt").exists(), "approval deletes the file");
+    let steps = thread_step_texts(port, &tid);
+    assert!(!steps.iter().any(|s| s == ER1_PARKED), "stale note remains: {steps:?}");
+    assert!(steps.iter().any(|s| s == "Note: old.txt was deleted after you approved it."), "{steps:?}");
+    assert!(steps.iter().any(|s| s.starts_with("Decision settled")), "{steps:?}");
+}
+
+#[test]
+fn denied_delete_rewrites_its_parked_note() {
+    let (cfg, port, tid) = park_one_delete("er1_deny");
+    let id = pending_decision_id(port);
+    let (status, body) = http(port, "POST", &format!("/api/decisions/{id}/deny"), Some("{}"));
+    assert_eq!(status, 200, "{body}");
+    assert!(cfg.workspace_dir.join("old.txt").exists(), "denial keeps the file");
+    let steps = thread_step_texts(port, &tid);
+    assert!(!steps.iter().any(|s| s == ER1_PARKED), "stale note remains: {steps:?}");
+    assert!(
+        steps.iter().any(|s| s == "Note: old.txt was kept because you declined the deletion."),
+        "{steps:?}"
+    );
+}
+
+#[test]
+fn parked_note_rewrite_survives_a_restart() {
+    let (cfg, port, tid) = park_one_delete("er1_restart");
+    let id = pending_decision_id(port);
+    // A fresh server on the same data dir stands in for a restart.
+    let port2 = start_app(cfg.clone());
+    let (status, body) = http(port2, "POST", &format!("/api/decisions/{id}/deny"), Some("{}"));
+    assert_eq!(status, 200, "{body}");
+    let steps = thread_step_texts(port2, &tid);
+    assert!(!steps.iter().any(|s| s == ER1_PARKED), "stale note after restart: {steps:?}");
+    assert!(
+        steps.iter().any(|s| s == "Note: old.txt was kept because you declined the deletion."),
+        "{steps:?}"
+    );
+}
