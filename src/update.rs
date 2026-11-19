@@ -210,7 +210,15 @@ pub fn parse_release(v: &Value, bin: &str) -> Result<Release, String> {
         .map(|d| d.to_ascii_lowercase());
     Ok(Release {
         version,
-        url: v["html_url"].as_str().unwrap_or("").to_string(),
+        // the page puts this in a link: only a web address may become one (never javascript:, data:, file:)
+        url: v["html_url"]
+            .as_str()
+            .filter(|u| {
+                let u = u.to_ascii_lowercase();
+                u.starts_with("https://") || u.starts_with("http://")
+            })
+            .unwrap_or("")
+            .to_string(),
         notes: v["body"].as_str().unwrap_or("").chars().take(4000).collect(),
         asset_name: want,
         asset_url,
@@ -614,6 +622,20 @@ mod tests {
         assert!(parse_release(&json!({"tag_name": "v0.3.0", "prerelease": true, "assets": []}), "ergon").is_err());
         assert!(parse_release(&json!({"tag_name": "v0.3.0", "assets": [{"name": "other"}]}), "ergon").unwrap_err().contains("no build for this platform"));
         assert!(parse_release(&json!({"tag_name": "weekly", "assets": []}), "ergon").is_err());
+    }
+
+    #[test]
+    fn the_release_page_link_is_only_ever_an_http_or_https_url() {
+        let name = asset_name("ergon");
+        let with = |u: Value| {
+            let v = json!({"tag_name": "v0.3.0", "html_url": u, "assets": [{"name": name, "browser_download_url": "https://x/a"}]});
+            parse_release(&v, "ergon").unwrap().url
+        };
+        assert_eq!(with(json!("https://github.com/o/r/releases/tag/v0.3.0")), "https://github.com/o/r/releases/tag/v0.3.0");
+        for bad in ["javascript:alert(1)", "JaVaScRiPt:alert(1)", "data:text/html,<b>x</b>", "file:///etc/passwd", "//evil.example/x", " https://x", "u"] {
+            assert_eq!(with(json!(bad)), "", "{bad} must not reach the page as a link");
+        }
+        assert_eq!(with(json!(7)), "");
     }
 
     // ---- a mock GitHub: releases/latest, SHA256SUMS and the binary asset
