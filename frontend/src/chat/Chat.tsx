@@ -1,25 +1,32 @@
-// The chat face: the thread (the run as items), the empty state with suggestion keys, and the composer.
+// The chat face: the thread, the empty state (greeting, moulded keys, contour texture, recent field-book entries), the composer.
 import { useEffect, useRef } from "react";
-import { ArrowRight, Send } from "lucide-react";
+import { ArrowRight, BookOpen, ListChecks, Search, Send, Bot, FileText } from "lucide-react";
 import { TextShimmer } from "@/components/ui/text-shimmer";
 import { Button } from "@/components/ui/button";
 import { InputGroup, InputGroupAddon, InputGroupTextarea } from "@/components/ui/input-group";
 import { Kbd } from "@/components/ui/kbd";
-import { Failure, FinishedEntry, Item, Reply, UserLine, WaitingEntry, LedgerRow, buildItems } from "./Entry";
+import { Cell, Cells, EntryShell, FinishedPill, Failure, FinishedEntry, Item, LedgerRow, Reply, UserLine, WaitingEntry, buildItems } from "./Entry";
 import type { Msg } from "@/lib/api";
-import { relTime, savedFile, threadMs } from "@/lib/words";
+import { relTime, threadMs } from "@/lib/words";
 
-export function Thread({ messages, busy, threadId, onReview, onStarter, starters, status, pendingNote }: {
+export function greeting(name: string, hour: number): string {
+  const part = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
+  return name ? `${part}, ${name}.` : `${part}.`;
+}
+
+export type Recent = { task: string; date: string };
+
+export function Thread({ messages, busy, threadId, onReview, onStarter, starters, status, pendingNote, name, recent }: {
   messages: Msg[]; busy: boolean; threadId: string | null; onReview: () => void;
-  onStarter: (text: string) => void; starters: string[]; status: "ok" | "wait" | "none";
-  pendingNote: boolean;
+  onStarter: (text: string) => void; starters: string[]; status: "ok" | "wait";
+  pendingNote: boolean; name: string; recent: Recent[];
 }) {
   const items = buildItems(messages);
   const ms = threadMs(threadId ?? "");
   const time = ms ? relTime(ms) : "";
   const endRef = useRef<HTMLDivElement>(null);
   useEffect(() => { endRef.current?.scrollIntoView({ block: "end" }); }, [messages.length, busy]);
-  if (!items.length && !busy) return <Empty status={status} starters={starters} onStarter={onStarter} />;
+  if (!items.length && !busy) return <Empty status={status} starters={starters} onStarter={onStarter} name={name} recent={recent} />;
   return (
     <div className="flex flex-col gap-5">
       {items.map((it, i) => <Row key={i} it={it} time={time} onReview={onReview} />)}
@@ -38,46 +45,72 @@ export function Thread({ messages, busy, threadId, onReview, onStarter, starters
 function Row({ it, time, onReview }: { it: Item; time: string; onReview: () => void }) {
   switch (it.k) {
     case "user": return <UserLine text={it.text} />;
-    case "step": return <ul className="rounded-card border border-hairline bg-surface px-3"><LedgerRow raw={it.text} /></ul>;
-    case "finished": return <FinishedEntry time={time} task={it.task} saved={savedOf(it.steps)} steps={it.steps} result={it.text} notes={it.notes} />;
+    case "step": return <ol className="rounded-card border border-hairline bg-surface px-3"><LedgerRow raw={it.text} /></ol>;
+    case "finished": return <FinishedEntry time={time} task={it.task} steps={it.steps} result={it.text} notes={it.notes} />;
     case "waiting": return <WaitingEntry time={time} name={it.name} result={it.text} onReview={onReview} />;
     case "error": return <Failure raw={it.text} />;
     default: return <Reply text={it.text} />;
   }
 }
 
-/** The file the run saved, from its own save step. */
-function savedOf(steps: string[]): string {
-  for (const s of steps) {
-    const nl = s.indexOf("\n");
-    const head = nl < 0 ? s : s.slice(0, nl);
-    const m = /^Tool: (\S+)/.exec(head);
-    const f = m ? savedFile(m[1], nl < 0 ? "" : s.slice(nl + 1)) : "";
-    if (f) return f;
-  }
-  return "";
-}
+const ICONS = [FileText, Bot, ListChecks, BookOpen];
 
-function Empty({ status, starters, onStarter }: { status: "ok" | "wait" | "none"; starters: string[]; onStarter: (t: string) => void }) {
-  const sub = status !== "wait"
+/** Contour lines of a survey sheet, drawn once from fixed numbers (no randomness). */
+function contours(): string[] {
+  const out: string[] = [];
+  for (let i = 1; i <= 9; i++) {
+    const R = 40 + i * 34;
+    let d = "";
+    for (let k = 0; k <= 72; k++) {
+      const t = (k / 72) * 2 * Math.PI;
+      const r = R * (1 + 0.09 * Math.sin(3 * t + i * 0.7) + 0.05 * Math.cos(5 * t - i));
+      d += (k ? "L" : "M") + (500 + r * Math.cos(t) * 1.6).toFixed(1) + " " + (240 + r * Math.sin(t) * 0.7).toFixed(1);
+    }
+    out.push(d + "Z");
+  }
+  return out;
+}
+const CONTOURS = contours();
+
+function Empty({ status, starters, onStarter, name, recent }: {
+  status: "ok" | "wait"; starters: string[]; onStarter: (t: string) => void; name: string; recent: Recent[];
+}) {
+  const sub = status === "ok"
     ? "It works step by step, right here, until the job is done."
-    : "Ergon is not connected to a model yet (see the note above). Anything you type is kept in the thread.";
+    : "Ergon is not connected to a model yet. Anything you type is kept in the thread.";
   return (
-    <section aria-label="Start a task" className="mx-auto flex max-w-[640px] flex-col gap-6 pt-[8vh]">
-      <div>
-        <h2 className="text-[30px] leading-tight text-ink">What should your agent finish for you?</h2>
-        <p className="mt-2 text-ui text-ink-2">{sub}</p>
+    <section aria-label="Start a task" className="mx-auto flex w-full max-w-[680px] flex-col gap-8 pt-4">
+      <div className="relative isolate overflow-hidden rounded-entry pb-2">
+        <svg aria-hidden viewBox="0 0 1000 480" preserveAspectRatio="xMidYMid slice" className="pointer-events-none absolute inset-0 -z-10 h-full w-full opacity-60" style={{ color: "var(--contour)" }}>
+          {CONTOURS.map((d, i) => <path key={i} d={d} fill="none" stroke="currentColor" strokeWidth={i % 4 === 0 ? 1.4 : 0.9} />)}
+        </svg>
+        <h2 className="text-[40px] leading-[1.05] font-semibold tracking-[-0.035em] text-ink">{greeting(name, new Date().getHours())}</h2>
+        <p className="mt-3 text-ui text-ink-2">What should your agent finish for you? {sub}</p>
       </div>
-      <div className="flex flex-col gap-2">
-        {starters.map((text) => (
-          <button key={text} type="button" onClick={() => onStarter(text)} title={text}
-            className="flex min-h-12 items-center justify-between gap-3 rounded-[6px] border border-hairline bg-surface px-4 text-left text-ui font-medium text-ink shadow-raised outline-none transition-[transform,background-color] duration-(--dur-press) ease-(--ease-house) hover:bg-board focus-visible:ring-2 focus-visible:ring-blue motion-safe:active:translate-y-px">
-            {text}
-            <ArrowRight className="size-4 shrink-0 text-icon" strokeWidth={1.75} aria-hidden />
-          </button>
-        ))}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        {starters.map((text, i) => {
+          const Icon = ICONS[i % ICONS.length];
+          return (
+            <button key={text} type="button" onClick={() => onStarter(text)} title={text}
+              className="mould focus-ring flex min-h-14 items-center gap-3 rounded-[6px] bg-surface px-3.5 text-left text-ui font-medium text-ink outline-none">
+              <span className="grid size-8 shrink-0 place-items-center rounded-sm bg-track text-ink-2"><Icon className="size-4" strokeWidth={1.75} aria-hidden /></span>
+              <span className="min-w-0 flex-1">{text}</span>
+              <ArrowRight className="size-4 shrink-0 text-icon" strokeWidth={1.75} aria-hidden />
+            </button>
+          );
+        })}
       </div>
       <p className="text-sm text-ink-2">Tap one to fill the box, then press Send.</p>
+      {recent.length > 0 && (
+        <div className="flex flex-col gap-3">
+          <p className="text-sm font-medium text-ink">Finished recently</p>
+          {recent.slice(0, 3).map((r, i) => (
+            <EntryShell key={i} label="Finished work" time={r.date} title={r.task} status={<FinishedPill />}>
+              <Cells><Cell label="Status">Finished</Cell><Cell label="Date">{r.date}</Cell></Cells>
+            </EntryShell>
+          ))}
+        </div>
+      )}
     </section>
   );
 }
@@ -93,21 +126,21 @@ export function Composer({ value, onChange, onSend, busy, disabled }: {
   }, [value]);
   return (
     <form aria-label="Send a task" className="mx-auto w-full max-w-[760px]" onSubmit={(e) => { e.preventDefault(); onSend(); }}>
-      <InputGroup className="items-end rounded-card border-hairline bg-surface shadow-raised">
+      <InputGroup className="min-h-14 items-end rounded-card border-ink-3 bg-surface shadow-raised">
         <label htmlFor="composer-input" className="sr-only">Describe a task for your agent</label>
         <InputGroupTextarea
           id="composer-input" ref={ref} rows={1} value={value} disabled={disabled}
-          placeholder="Describe a task in plain words" className="min-h-11 max-h-[200px] text-ui"
+          placeholder="Describe a task in plain words" className="min-h-14 max-h-[200px] py-4 text-ui"
           onChange={(e) => onChange(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); onSend(); } }}
         />
-        <InputGroupAddon align="inline-end" className="pb-1.5 pr-1.5">
-          <Button type="submit" disabled={disabled || !value.trim()} aria-label={busy ? "Working" : "Send"} className="shadow-primary">
+        <InputGroupAddon align="inline-end" className="pb-2 pr-2">
+          <Button type="submit" size="lg" disabled={disabled || !value.trim()} className="shadow-primary">
             <Send className="size-4" strokeWidth={1.75} aria-hidden />{busy ? "Working…" : "Send"}
           </Button>
         </InputGroupAddon>
       </InputGroup>
-      <p className="mt-2 flex items-center gap-1.5 text-xs text-ink-2"><Kbd>Enter</Kbd> sends. <Kbd>Shift</Kbd>+<Kbd>Enter</Kbd> starts a new line.</p>
+      <p className="mt-2 text-xs text-ink-2">Press <Kbd>Enter</Kbd> to send. <Kbd>Shift</Kbd> <Kbd>Enter</Kbd> starts a new line.</p>
     </form>
   );
 }

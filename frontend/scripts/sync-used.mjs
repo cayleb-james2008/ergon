@@ -32,7 +32,9 @@ while (queue.length) {
   seen.set(rel, new Set([by]));
   const dest = path.join(used, rel);
   fs.mkdirSync(path.dirname(dest), { recursive: true });
-  fs.copyFileSync(src, dest);
+  // Parts edited in place are listed in rune/used/LOCAL-EDITS.md; sync never overwrites them.
+  const local = fs.existsSync(path.join(used, "LOCAL-EDITS.md")) ? fs.readFileSync(path.join(used, "LOCAL-EDITS.md"), "utf8") : "";
+  if (!(fs.existsSync(dest) && local.includes("`" + rel + "`"))) fs.copyFileSync(src, dest);
   for (const sub of importsOf(src)) queue.push([sub, "rune/used/" + rel]);
 }
 // drop parts that are no longer imported

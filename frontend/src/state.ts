@@ -1,6 +1,8 @@
-// Ergon's client state: the old page's behaviour (threads, runs, drafts, pending sends, person switch) in one hook.
+// Ergon's client state: the old page's behaviour (threads, runs, drafts, pending sends, person switch, Today counts) in one hook.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { call, type Msg, type Person, type Status, type ThreadRow, type Thread, type SuiteItem } from "@/lib/api";
+import { threadState } from "@/chat/Entry";
+import type { Recent } from "@/chat/Chat";
 
 const DRAFT = "ergon-draft:";
 const THREAD_KEY = "ergon-thread";
@@ -10,13 +12,13 @@ const store = {
   set(k: string, v: string) { try { v ? sessionStorage.setItem(k, v) : sessionStorage.removeItem(k); } catch { /* a draft is a convenience */ } },
 };
 
-export const STARTER_FALLBACK = "Research a topic for me";
+export type TState = "waiting" | "finished" | "none";
 
 export function starterPrompts(installed: SuiteItem[], role: string): string[] {
   const out = ["Tidy my notes into a summary"];
   for (const item of installed.slice(0, 2)) out.push("Ask my " + item.name + " for help");
   if (role) out.push("Draft my weekly update");
-  out.push(STARTER_FALLBACK);
+  out.push("Research a topic for me");
   return out.slice(0, 4);
 }
 
@@ -26,6 +28,7 @@ export function useErgon() {
   const [people, setPeople] = useState<{ people: Person[]; active: string } | null>(null);
   const [threads, setThreads] = useState<ThreadRow[] | null>(null);
   const [threadsError, setThreadsError] = useState(false);
+  const [states, setStates] = useState<Record<string, TState>>({});
   const [threadId, setThreadIdState] = useState<string | null>(null);
   const threadRef = useRef<string | null>(null);
   const [messages, setMessages] = useState<Msg[]>([]);
@@ -36,6 +39,8 @@ export function useErgon() {
   const [sideError, setSideError] = useState("");
   const [starters, setStarters] = useState<string[]>([]);
   const [recovered, setRecovered] = useState<string[]>([]);
+  const [recent, setRecent] = useState<Recent[]>([]);
+  const [todayCount, setTodayCount] = useState(0);
 
   const setThread = (id: string | null) => { threadRef.current = id; setThreadIdState(id); };
   const draftKey = (id: string | null) => DRAFT + (id || "new");
@@ -61,14 +66,31 @@ export function useErgon() {
     if (!r.ok) { setThreadsError(true); return; }
     setThreadsError(false);
     setThreads(r.data.threads);
+    // The rail's state icons come from each thread's own messages (only what the server returns).
+    const found = await Promise.all(r.data.threads.slice(0, 40).map(async (t) => {
+      const th = await call<Thread>("/api/threads/" + encodeURIComponent(t.id));
+      return [t.id, th.ok ? threadState(th.data.messages ?? []) : "none"] as const;
+    }));
+    setStates(Object.fromEntries(found));
+  }, []);
+
+  const loadRecent = useCallback(async () => {
+    const r = await call<{ finished?: { task: string; date: string }[] }>("/api/brief");
+    setRecent(r.ok ? (r.data.finished ?? []).map((f) => ({ task: f.task, date: f.date })) : []);
+  }, []);
+
+  /** The Today tab's count: decisions waiting on the person plus pending offers. */
+  const refreshCounts = useCallback(async () => {
+    const [d, o] = await Promise.all([call<{ decisions: { status: string }[] }>("/api/decisions"), call<{ offers: { status: string }[] }>("/api/offers")]);
+    const dec = d.ok ? (d.data.decisions ?? []).filter((x) => x.status === "pending").length : 0;
+    const off = o.ok ? (o.data.offers ?? []).filter((x) => x.status === "pending").length : 0;
+    setTodayCount(dec + off);
   }, []);
 
   const loadStarters = useCallback(async (role: string) => {
     const r = await call<{ installed: SuiteItem[] }>("/api/suite");
     setStarters(starterPrompts(r.ok ? r.data.installed ?? [] : [], role));
   }, []);
-
-  const showEmpty = useCallback(() => { setMessages([]); }, []);
 
   const openThread = useCallback(async (id: string) => {
     const r = await call<Thread>("/api/threads/" + encodeURIComponent(id));
@@ -103,20 +125,15 @@ export function useErgon() {
     loadThreads();
   }, [loadThreads]);
 
-  /** Person switch or add: the view resets to that person's empty chat. */
-  const resetPersonView = useCallback(async () => {
+  /** Person switch or add: the view resets to that person's empty chat, and the lists reload for them. */
+  const refreshPerson = useCallback(async () => {
     setThread(null);
     store.set(THREAD_KEY, "");
     loadDraftFor(null);
     setMessages([]);
     setPendingNote(false);
-  }, []);
-
-  /** After a person is added or switched: the view resets, and the lists reload for that person. */
-  const refreshPerson = useCallback(async () => {
-    await resetPersonView();
-    await Promise.all([loadThreads(), loadStatus(), loadPeople()]);
-  }, [resetPersonView, loadThreads, loadStatus, loadPeople]);
+    await Promise.all([loadThreads(), loadStatus(), loadPeople(), loadRecent(), refreshCounts()]);
+  }, [loadThreads, loadStatus, loadPeople, loadRecent, refreshCounts]);
 
   const switchPerson = useCallback(async (id: string) => {
     await call("/api/active-person", { method: "POST", body: { id } });
@@ -151,20 +168,15 @@ export function useErgon() {
       else failRun(r.status === 0 ? "Could not reach the Ergon server." : r.error || "The agent could not run.");
     }
     busyRef.current = false; setBusy(false);
-    loadThreads();
-  }, [draft, loadThreads]);
+    loadThreads(); refreshCounts(); loadRecent();
+  }, [draft, loadThreads, refreshCounts, loadRecent]);
 
-  useEffect(() => {
-    if (status && status !== "error") loadStarters(status.person?.role ?? "");
-  }, [status, loadStarters]);
-
-  /** On load: reopen the conversation, then put back a send that never landed. */
   useEffect(() => {
     (async () => {
-      loadStatus(); loadPeople(); loadThreads();
+      loadStatus(); loadPeople(); loadThreads(); loadRecent(); refreshCounts();
       const pend = (() => { try { const v = JSON.parse(store.get(PENDING) || "null"); return v && typeof v.text === "string" ? v : null; } catch { return null; } })();
       const reopen = store.get(THREAD_KEY);
-      if (reopen) await openThread(reopen); else { loadDraftFor(null); showEmpty(); }
+      if (reopen) await openThread(reopen); else { loadDraftFor(null); setMessages([]); }
       if (!pend) return;
       store.set(PENDING, "");
       let landed = false;
@@ -179,10 +191,14 @@ export function useErgon() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  useEffect(() => {
+    if (status && status !== "error") loadStarters(status.person?.role ?? "");
+  }, [status, loadStarters]);
+
   return {
-    status, runFailed, people, threads, threadsError, threadId, messages, busy, draft, setDraft,
-    pendingNote, sideError, starters, recovered,
-    send, openThread, newThread, switchPerson, refreshPerson, showRun, loadStatus, loadPeople, loadThreads, loadStarters,
-    setSideError,
+    status, runFailed, people, threads, threadsError, states, threadId, messages, busy, draft, setDraft,
+    pendingNote, sideError, starters, recovered, recent, todayCount,
+    send, openThread, newThread, switchPerson, refreshPerson, showRun, loadThreads, loadStatus, loadPeople, refreshCounts, loadRecent,
+    setSideError, setRecovered,
   };
 }

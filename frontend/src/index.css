@@ -43,5 +43,20 @@
 }
 
 h1, h2, h3 { text-wrap: balance; }
+.status-finished, .status-waiting { border-radius: 9999px; }
 
 html, body { overflow-x: clip; }
+
+/* Moulded keys: a lit 1px top edge, a shaded bottom edge, a 1px press. Colours come from theme.css tokens. */
+.mould {
+  box-shadow: inset 0 1px 0 var(--mould-hi), 0 1px 0 var(--mould-lo), var(--elev-card);
+  transition: transform var(--dur-press) var(--ease-house), background-color var(--dur-press) var(--ease-house);
+}
+.mould:hover:not(:disabled) { background-color: var(--board); }
+.mould:active:not(:disabled) { transform: translateY(1px); box-shadow: inset 0 1px 0 var(--mould-hi), 0 0 0 var(--mould-lo); }
+.mould:disabled { background-color: var(--track); color: var(--disabled); cursor: not-allowed; box-shadow: none; }
+.mould:focus-visible, .focus-ring:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) { .mould { transition: none; } .mould:active:not(:disabled) { transform: none; } }
+/* The finished status is green in light and the accent in dark. */
+.status-finished { background: var(--pill-active-bg); color: var(--pill-active-fg); }
+:root[data-theme="dark"] .status-finished { background: var(--blue); color: var(--blue-fg); }
