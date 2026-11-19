@@ -2949,3 +2949,86 @@ fn recovered_stores_are_named_in_status() {
     names.sort();
     assert_eq!(names, vec!["people.json".to_string(), "threads.json".to_string()], "got {v}");
 }
+
+/// EB1: every delete parked in a run gets one factual note after the
+/// summary, whatever the summary says (no word list, no path match).
+fn parked_notes(body: &str, path: &str) -> usize {
+    body.matches(&format!("Note: {path} has NOT been deleted yet")).count()
+}
+
+#[test]
+fn parked_delete_note_does_not_depend_on_summary_wording() {
+    let root = test_root("eb1_wording");
+    let stub = start_stub_model(vec![
+        json!({"tool": "delete_file", "args": {"path": "old.txt"}}).to_string(),
+        json!({"done": true, "summary": "Removed the old draft; it is gone now."}).to_string(),
+    ]);
+    let cfg = test_config(&root, Some("test-key"), format!("http://127.0.0.1:{}/v1", stub.port));
+    let ws = cfg.workspace_dir.clone();
+    std::fs::write(ws.join("old.txt"), "old").unwrap();
+    let port = start_app(cfg);
+    let (status, body) = chat(port, "Delete old.txt");
+    assert_eq!(status, 200, "{body}");
+    assert!(ws.join("old.txt").exists(), "a parked deletion must NOT delete");
+    assert_eq!(parked_notes(&body, "old.txt"), 1, "one note whatever the summary says: {body}");
+}
+
+#[test]
+fn parked_delete_note_survives_an_unrelated_approval_word() {
+    let root = test_root("eb1_approval");
+    let stub = start_stub_model(vec![
+        json!({"tool": "delete_file", "args": {"path": "old.txt"}}).to_string(),
+        json!({"done": true, "summary": "Approval email drafted for the team."}).to_string(),
+    ]);
+    let cfg = test_config(&root, Some("test-key"), format!("http://127.0.0.1:{}/v1", stub.port));
+    let ws = cfg.workspace_dir.clone();
+    std::fs::write(ws.join("old.txt"), "old").unwrap();
+    let port = start_app(cfg);
+    let (status, body) = chat(port, "Delete old.txt and email the team");
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(parked_notes(&body, "old.txt"), 1, "an unrelated 'approval' word must not disable the note: {body}");
+}
+
+#[test]
+fn each_parked_delete_gets_exactly_one_note() {
+    let root = test_root("eb1_two");
+    let stub = start_stub_model(vec![
+        json!({"tool": "delete_file", "args": {"path": "a.txt"}}).to_string(),
+        json!({"tool": "delete_file", "args": {"path": "b.txt"}}).to_string(),
+        json!({"done": true, "summary": "Both deletions are waiting for your approval in Decisions."}).to_string(),
+    ]);
+    let cfg = test_config(&root, Some("test-key"), format!("http://127.0.0.1:{}/v1", stub.port));
+    let ws = cfg.workspace_dir.clone();
+    std::fs::write(ws.join("a.txt"), "a").unwrap();
+    std::fs::write(ws.join("b.txt"), "b").unwrap();
+    let port = start_app(cfg);
+    let (status, body) = chat(port, "Delete a.txt and b.txt");
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(parked_notes(&body, "a.txt"), 1, "{body}");
+    assert_eq!(parked_notes(&body, "b.txt"), 1, "{body}");
+}
+
+#[test]
+fn a_delete_parked_in_an_earlier_run_gets_no_new_note() {
+    let root = test_root("eb1_earlier");
+    let stub = start_stub_model(vec![
+        json!({"tool": "delete_file", "args": {"path": "old.txt"}}).to_string(),
+        json!({"done": true, "summary": "Waiting for your approval in Decisions."}).to_string(),
+        json!({"done": true, "summary": "Here is a plain answer."}).to_string(),
+    ]);
+    let cfg = test_config(&root, Some("test-key"), format!("http://127.0.0.1:{}/v1", stub.port));
+    let ws = cfg.workspace_dir.clone();
+    std::fs::write(ws.join("old.txt"), "old").unwrap();
+    let port = start_app(cfg);
+    let (status, first) = chat(port, "Delete old.txt");
+    assert_eq!(status, 200, "{first}");
+    let thread_id = serde_json::from_str::<Value>(&first).unwrap()["id"].as_str().unwrap().to_string();
+    let (status, second) = http(
+        port,
+        "POST",
+        "/api/chat",
+        Some(&json!({"message": "What is 2+2?", "thread_id": thread_id}).to_string()),
+    );
+    assert_eq!(status, 200, "{second}");
+    assert_eq!(parked_notes(&second, "old.txt"), 1, "the earlier park keeps its one note and gets no new one: {second}");
+}

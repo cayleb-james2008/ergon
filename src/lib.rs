@@ -1941,6 +1941,8 @@ pub fn run_agent(
     if cfg.api_key.is_none() {
         return Err(NO_KEY_ERROR.to_string());
     }
+    // Deletes parked after this instant belong to this run (EB1).
+    let run_started = records::now_millis();
     let suite = library::load_suite(&cfg.data_dir);
     let suite_items = {
         let lib = ctx.library.lock().unwrap();
@@ -2035,32 +2037,22 @@ pub fn run_agent(
             ),
         );
     }
-    // A deletion is only ever parked for approval. A summary that names
-    // a file with a still-pending delete decision but never says it is
-    // waiting reads as "deleted": say plainly, in the thread, that it
-    // has not been.
-    let lowered = summary.to_lowercase();
-    let says_waiting = ["approv", "await", "pending", "parked", "not been deleted", "not deleted"]
-        .iter()
-        .any(|w| lowered.contains(w));
-    if !says_waiting {
-        for d in records::load_decisions(&cfg.data_dir) {
-            let still_pending = d["status"] == "pending"
-                && d["kind"] == "delete"
-                && d["thread_id"].as_str() == Some(thread_id);
-            let Some(path) = d["path"].as_str().filter(|_| still_pending) else {
-                continue;
-            };
-            let base = path.rsplit('/').next().unwrap_or(path);
-            if summary.contains(path) || summary.contains(base) {
-                store.lock().unwrap().push(
-                    thread_id,
-                    "step",
-                    &format!(
-                        "Note: {path} has NOT been deleted yet; the deletion is waiting for your approval in Decisions."
-                    ),
-                );
-            }
+    // A deletion is only ever parked for approval. Every delete parked in
+    // THIS run gets one factual line after the summary, whatever the
+    // summary says: it has not been deleted and waits in Decisions.
+    for d in records::load_decisions(&cfg.data_dir) {
+        let parked_now = d["status"] == "pending"
+            && d["kind"] == "delete"
+            && d["thread_id"].as_str() == Some(thread_id)
+            && d["ts"].as_u64().unwrap_or(0) >= run_started;
+        if let Some(path) = d["path"].as_str().filter(|_| parked_now) {
+            store.lock().unwrap().push(
+                thread_id,
+                "step",
+                &format!(
+                    "Note: {path} has NOT been deleted yet; the deletion is waiting for your approval in Decisions."
+                ),
+            );
         }
     }
     // The work log + offers scan: the records the rest of the
