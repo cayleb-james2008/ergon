@@ -1622,6 +1622,8 @@ pub struct AgentOutcome {
 pub struct WriteLedger {
     pub written: Vec<String>,
     pub consumed: Vec<String>,
+    /// Tool steps that succeeded (a failed step is not work, EB2b).
+    pub ok_steps: usize,
 }
 
 fn credit_writes(
@@ -1842,6 +1844,7 @@ fn run_loop(
             }
         };
         if ok {
+            ledger.ok_steps += 1;
             credit_writes(ledger, cfg, &tool, &args, &result_text, dynamic_skills);
             // A skill installed mid-run is callable from the very
             // next step (the dispatcher re-reads the suite) — so the
@@ -2069,7 +2072,9 @@ pub fn run_agent(
     }
     // The work log + offers scan: the records the rest of the
     // product (brief, graph, today, offers) is built from.
-    if steps.is_empty() && ledger.written.is_empty() {
+    // Work means a tool step that succeeded or a written file; a run whose
+    // steps all failed is an answer, not finished work (EB2, EB2b).
+    if ledger.ok_steps == 0 && ledger.written.is_empty() {
         records::append_answer(cfg, task, &summary, thread_id);
     } else {
         records::append_work(cfg, task, &summary, &ledger.written, thread_id, true);
