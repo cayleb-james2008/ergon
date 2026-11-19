@@ -197,12 +197,12 @@
   .check-label { display: block; color: var(--wait); font-weight: 600; margin-bottom: 2px; }
   .list-error { font-size: var(--text-sm); color: var(--muted); display: flex; flex-direction: column; gap: 8px; padding: 8px 12px; }
   .list-error .act-btn { align-self: flex-start; }
-  @media (forced-colors: active) {
-    /* Selection must show without colour: an outline the system draws. */
-    .seg-btn[aria-selected="true"], .seg-btn[aria-pressed="true"], .thread-btn.active { outline: 3px solid Highlight; outline-offset: -3px; }
-    .card, .starter, .msg.result, .check, .msg.error, #composer-input, #person-select { border: 1px solid CanvasText; }
-    .act-btn.primary, #send-btn, #new-chat-btn { border: 1px solid ButtonText; }
-  }
+  .msg.result.waiting { border-color: var(--wait); }
+  .result-head.waiting-head { color: var(--wait); }
+  .waiting-title { font-size: var(--text-base); font-weight: 600; margin-bottom: 8px; line-height: 1.4; overflow-wrap: anywhere; }
+  .wait-go { margin-top: 12px; }
+  .pending-note { width: min(720px, calc(100% - 24px)); margin: 8px auto; font-size: var(--text-sm); color: var(--ink); background: var(--wait-bg);
+                  border: 1px solid var(--wait); border-radius: var(--r-2); padding: 8px 12px; }
 
   #composer { border-top: 1px solid var(--rule); background: var(--bg); padding: 12px 24px 16px; }
   #composer-inner { max-width: 720px; margin: 0 auto; display: flex; gap: 8px; align-items: flex-end; }
@@ -317,6 +317,25 @@
     body.sheet-open #scrim { display: block; position: fixed; inset: 0; z-index: 20; background: var(--scrim); }
     .thread-btn, .side-btn, .seg-btn, .act-btn, .starter, #person-select, #new-chat-btn, .menu-btn { min-height: 44px; }
   }
+  /* Narrow phones: the faces take their own full-width row, so the three names never collide. */
+  @media (max-width: 360px) {
+    .topbar { display: flex; flex-wrap: wrap; gap: 8px; }
+    .menu-btn { order: 1; }
+    .ready { order: 2; margin-left: auto; }
+    #face-bar { order: 3; flex-basis: 100%; width: 100%; }
+    #face-bar .seg-btn { font-size: var(--text-xs); padding: 8px 4px; }
+  }
+  @media (forced-colors: active) {
+    /* Filled controls keep a visible boundary. */
+    #send-btn, #new-chat-btn, .act-btn, .act-btn.primary, .menu-btn, .wait-go, #person-form button[type="submit"] {
+      border: 2px solid ButtonText;
+    }
+  }
+  @media (forced-colors: active) {
+    /* Selection must show without colour: an outline the system draws. */
+    .seg-btn[aria-selected="true"], .seg-btn[aria-pressed="true"], .thread-btn.active { outline: 3px solid Highlight; outline-offset: -3px; }
+    .card, .starter, .msg.result, .check, .msg.error, #composer-input, #person-select { border: 1px solid CanvasText; }
+  }
   @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important;
                             transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
@@ -370,7 +389,7 @@
       <button class="menu-btn" id="menu-btn" type="button" aria-label="Open menu" aria-expanded="false" aria-controls="sidebar"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span>Menu</span></button>
       <div id="face-bar" class="seg" role="tablist" aria-label="Views">
         <button class="seg-btn face-btn" type="button" role="tab" data-face="chat" aria-selected="true"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 6.5A2.5 2.5 0 0 1 7.5 4h9A2.5 2.5 0 0 1 19 6.5v7a2.5 2.5 0 0 1-2.5 2.5H10l-4 3v-3.2A2.5 2.5 0 0 1 5 13.5z"/></svg>Chat</button>
-        <button class="seg-btn face-btn" type="button" role="tab" data-face="today" aria-selected="false"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg>Today<span class="count-chip" id="badge-today" aria-label="Waiting on you"></span></button>
+        <button class="seg-btn face-btn" type="button" role="tab" data-face="today" aria-selected="false"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg>Today<span class="count-chip" id="badge-today" aria-hidden="true" aria-label="Waiting on you"></span></button>
         <button class="seg-btn face-btn" type="button" role="tab" data-face="graph" aria-selected="false"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="12" r="2.4"/><circle cx="18" cy="6" r="2.4"/><circle cx="18" cy="18" r="2.4"/><path d="M8.2 11 15.8 7M8.2 13l7.6 4"/></svg>Work Graph</button>
       </div>
       <p class="ready" id="ready-chip" role="status"><span class="dot" aria-hidden="true"></span><span id="ready-text">Checking the agent</span></p>
@@ -388,6 +407,7 @@
       <div id="thread" aria-live="polite">
         <div id="messages"></div>
       </div>
+      <p class="pending-note" id="pending-note" role="status" hidden>Your last message did not go through. It is back in the box.</p>
       <form id="composer">
         <div id="composer-inner">
           <label class="sr-only" for="composer-input">Describe a task for your agent</label>
@@ -400,6 +420,12 @@
 
     <section id="face-today" class="face" aria-label="Today">
       <div class="page">
+        <div class="card" id="today-error" role="alert" hidden>
+          <h2 class="lead">Today could not be loaded</h2>
+          <p class="quiet" style="margin-top:8px">Check that Ergon is running, then try again.</p>
+          <button class="act-btn" type="button" id="today-retry" style="margin-top:12px">Retry</button>
+        </div>
+        <div id="today-body">
         <div class="card" id="status-card">
           <div class="status-row" id="status-row"><span class="dot" aria-hidden="true"></span><h2 class="lead" id="status-title">Checking the agent</h2></div>
           <p class="quiet" id="status-body" style="margin-top:8px">Ergon is reading its connection.</p>
@@ -427,6 +453,7 @@
             <div class="card-head"><h3>Today so far</h3></div>
             <div id="today-stream"><p class="quiet">Loading…</p></div>
           </div>
+        </div>
         </div>
       </div>
     </section>
@@ -460,7 +487,7 @@
 
   const ICON_CHECK = '<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.2 4.2L19 7"/></svg>';
 
-  function addMsg(role, content) {
+  function addMsg(role, content, extra) {
     const empty = messagesEl.querySelector('.empty');
     if (empty) empty.remove();
     const div = document.createElement('div');
@@ -478,6 +505,15 @@
       div.className = 'msg result';
       div.innerHTML = '<div class="result-head">' + ICON_CHECK + 'Finished</div><div class="result-body"></div>';
       div.querySelector('.result-body').textContent = content;
+    } else if (role === 'waitcard') {
+      /* A parked deletion: waiting on the person, never Finished. */
+      div.className = 'msg result waiting';
+      div.innerHTML = '<div class="result-head waiting-head"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg>Waiting on you</div>' +
+        '<div class="waiting-title"></div><div class="result-body"></div>' +
+        '<button class="act-btn wait-go" type="button">Review in Today</button>';
+      div.querySelector('.waiting-title').textContent = 'Waiting for your approval to delete ' + (extra || 'a file');
+      div.querySelector('.result-body').textContent = content;
+      div.querySelector('.wait-go').addEventListener('click', () => showFace('today'));
     } else if (role === 'reply') {
       div.className = 'msg reply';
       div.textContent = content;
@@ -558,21 +594,38 @@
   }
 
   /* A saved thread, in order. Finished only after a real step; notes join their card. */
+  const PARKED_RE = /parked for your person|has NOT been deleted yet/;
+  const RESOLVED_RE = /was deleted after you approved it|was kept because you declined/;
+  /* Each run is one segment, from one user message to the next. */
   function renderRun(messages) {
     messagesEl.innerHTML = '';
-    let runHasStep = false;
-    let card = null;
+    let seg = [];
     for (const m of messages) {
-      if (m.role === 'user') {
-        runHasStep = false; card = null;
-        addMsg('user', m.content);
-      } else if (m.role === 'step' && /^Note:/.test(m.content) && card) {
-        attachNote(card, m.content);
+      if (m.role === 'user') { renderSegment(seg); seg = []; addMsg('user', m.content); }
+      else seg.push(m);
+    }
+    renderSegment(seg);
+  }
+  function renderSegment(seg) {
+    const hasStep = seg.some((m) => m.role === 'step' && !/^Note:/.test(m.content));
+    const parked = seg.some((m) => m.role === 'step' && PARKED_RE.test(m.content));
+    const resolved = seg.some((m) => m.role === 'step' && RESOLVED_RE.test(m.content));
+    const waiting = parked && !resolved;
+    let name = '';
+    for (const m of seg) {
+      const hit = m.role === 'step' && /(\S+) has NOT been deleted yet/.exec(m.content);
+      if (hit) { name = hit[1]; break; }
+    }
+    let card = null;
+    for (const m of seg) {
+      if (m.role === 'step' && /^Note:/.test(m.content) && card) {
+        /* The parked-deletion note is the headline of its card, not a second box. */
+        if (!(waiting && /has NOT been deleted yet/.test(m.content))) attachNote(card, m.content);
       } else if (m.role === 'step') {
-        runHasStep = true; card = null;
+        card = null;
         addMsg('step', m.content);
       } else if (m.role === 'assistant') {
-        card = addMsg(runHasStep ? 'assistant' : 'reply', m.content);
+        card = waiting ? addMsg('waitcard', m.content, name) : addMsg(hasStep ? 'assistant' : 'reply', m.content);
       } else {
         card = null;
         addMsg(m.role, m.content);
@@ -626,6 +679,37 @@
   function rememberThread(id) { try { sessionStorage.setItem(THREAD_KEY, id); } catch (e) {} }
   function forgetThread() { try { sessionStorage.removeItem(THREAD_KEY); } catch (e) {} }
   function restoredThread() { try { return sessionStorage.getItem(THREAD_KEY) || ''; } catch (e) { return ''; } }
+
+  /* A send in flight: kept until the answer arrives, so a reload cannot lose it. */
+  const PENDING_KEY = 'ergon-pending';
+  function setPending(thread, text) { try { sessionStorage.setItem(PENDING_KEY, JSON.stringify({ thread: thread || 'new', text: text })); } catch (e) {} }
+  function clearPending() { try { sessionStorage.removeItem(PENDING_KEY); } catch (e) {} }
+  function readPending() {
+    try { const v = JSON.parse(sessionStorage.getItem(PENDING_KEY) || 'null'); return v && typeof v.text === 'string' ? v : null; } catch (e) { return null; }
+  }
+  /* On load: reopen the conversation, then, if the last send never landed, put it back in the box. */
+  async function resumeAfterReload() {
+    const pend = readPending();
+    const reopen = restoredThread();
+    if (reopen) { await openThread(reopen); } else { loadDraft(); showEmpty(); }
+    if (!pend) return;
+    clearPending();
+    let landed = false;
+    if (pend.thread !== 'new') {
+      try {
+        const r = await fetch('/api/threads/' + encodeURIComponent(pend.thread));
+        if (r.ok) {
+          const t = await r.json();
+          landed = (t.messages || []).some((m) => m.role === 'user' && String(m.content).trim() === pend.text);
+        }
+      } catch (e) { /* unknown: treat as not landed, the text is kept */ }
+    }
+    if (landed) return;
+    inputEl.value = pend.text;
+    resizeComposer();
+    saveDraft();
+    document.getElementById('pending-note').hidden = false;
+  }
 
   /* The composer's placeholder: short enough to show whole at 320px. */
   const placeholderFull = 'Describe a task in plain words';
@@ -1023,6 +1107,8 @@
     if (!text) return;
     busy = true;
     clearDraft();
+    document.getElementById('pending-note').hidden = true;
+    setPending(currentThread, text);
     inputEl.value = '';
     resizeComposer();
     addMsg('user', text);
@@ -1032,10 +1118,12 @@
     const working = addMsg('working', 'Agent is working on it');
     try {
       if (!currentThread) await createThread();
+      setPending(currentThread, text);
       const r = await fetch('/api/chat', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ thread_id: currentThread, message: text })
       });
+      clearPending();
       const data = await r.json();
       working.remove();
       if (!r.ok) {
@@ -1045,6 +1133,7 @@
         renderRun(data.messages);
       }
     } catch (e) {
+      clearPending();
       working.remove();
       failRun('Could not reach the Ergon server.', text);
     }
@@ -1220,11 +1309,22 @@
 
   /* ---------------- today: brief, decisions, offers, stream ------- */
   async function loadToday() {
+    const body = document.getElementById('today-body');
+    const err = document.getElementById('today-error');
+    let ok = true;
+    try {
+      const rs = await Promise.all(['/api/brief', '/api/decisions', '/api/offers', '/api/today'].map((u) => fetch(u)));
+      ok = rs.every((r) => r.ok);
+    } catch (e) { ok = false; }
+    body.hidden = !ok;
+    err.hidden = ok;
+    if (!ok) return;
     loadBrief();
     loadDecisions();
     loadOffers();
     loadStream();
   }
+  document.getElementById('today-retry').onclick = () => loadToday();
 
   async function loadBrief() {
     const head = document.getElementById('brief-headline');
@@ -1309,7 +1409,7 @@
     const badge = document.getElementById('badge-today');
     badge.textContent = total;
     badge.classList.toggle('on', total > 0);
-    badge.setAttribute('aria-label', total + ' waiting on you');
+    document.querySelector('[data-face="today"]').setAttribute('aria-label', total ? 'Today, ' + total + ' waiting' : 'Today');
   }
 
   async function loadOffers() {
@@ -1464,8 +1564,8 @@
   loadStatus();
   loadPeople();
   loadThreads();
-  const reopen = restoredThread();
-  if (reopen) { openThread(reopen); } else { loadDraft(); showEmpty(); }
+  updateTodayBadge(0, 0);
+  resumeAfterReload();
   showFace('chat');
 </script>
 </body>
