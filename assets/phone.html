@@ -133,6 +133,19 @@
   .msg.error { align-self: stretch; background: var(--need-bg); border-radius: var(--r-3); padding: 12px 16px; font-size: var(--text-sm); }
   .msg.error .err-title { color: var(--need); font-weight: 600; display: block; margin-bottom: 4px; }
   .msg.error .err-next { color: var(--muted); display: block; margin-top: 4px; }
+  .msg.reply { align-self: stretch; font-size: var(--text-base); line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .l-label { display: block; min-width: 0; overflow-wrap: anywhere; }
+  .l-details { margin-top: 2px; font-size: var(--text-xs); color: var(--faint); }
+  .l-details summary { cursor: pointer; display: inline-flex; align-items: center; min-height: 24px; }
+  .l-details pre { white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--font-mono); font-size: var(--text-xs); color: var(--muted); margin: 4px 0 0; }
+  .msg.error .l-details { color: var(--muted); margin-top: 8px; }
+  .check { margin-top: 12px; border: 1px solid var(--wait); background: var(--wait-bg); border-radius: var(--r-2); padding: 8px 12px; font-size: var(--text-sm); color: var(--ink); white-space: pre-wrap; overflow-wrap: anywhere; }
+  .check-label { display: block; color: var(--wait); font-weight: 600; margin-bottom: 2px; }
+  @media (forced-colors: active) {
+    .card, .starter, .msg.result, .check, .msg.error, #composer-input { border: 1px solid CanvasText; }
+    .act-btn.primary, #send-btn { border: 1px solid ButtonText; }
+    .tab-btn[aria-selected="true"] { outline: 3px solid Highlight; outline-offset: -3px; }
+  }
   .msg.result, .msg.step, .msg.user, .msg.error { animation: rise var(--dur-short) var(--ease); }
   #composer { position: sticky; bottom: 0; background: var(--bg); padding: 12px 0 4px; display: flex; gap: 8px; align-items: flex-end;
               border-top: 1px solid var(--rule); margin: 0 -16px; padding-left: 16px; padding-right: 16px; }
@@ -175,12 +188,13 @@
   <div id="no-key-banner" role="status">Ergon is not connected to a model yet, so the agent cannot run. Nothing here is simulated, and Ergon will not invent answers.
     <span class="operator">For whoever runs Ergon: set ERGON_MODEL_API_KEY on the server.</span>
   </div>
-  <div id="recovered-line" role="status"></div>
+  <div id="recovered-line" role="status"><span id="recovered-text"></span> <button class="act-btn" type="button" id="recovered-dismiss">Dismiss</button></div>
 
   <main>
     <section class="tab" id="tab-brief" aria-label="Brief">
       <div class="card">
         <div class="status-row" id="status-row"><span class="dot" aria-hidden="true"></span><span class="quiet" id="status-text">Checking the agent</span></div>
+        <button class="act-btn" type="button" id="status-retry" hidden style="margin-top:12px">Retry</button>
       </div>
       <div class="card">
         <div class="card-head"><h3>Morning brief</h3></div>
@@ -251,8 +265,8 @@
     const div = document.createElement('div');
     if (role === 'step') {
       div.className = 'msg step';
-      div.innerHTML = '<span class="l-icon">' + ICON_CHECK + '</span><span class="l-text"></span>';
-      div.querySelector('.l-text').textContent = content;
+      div.innerHTML = '<span class="l-icon">' + ICON_CHECK + '</span><div class="l-text"></div>';
+      fillStep(div.querySelector('.l-text'), content);
     } else if (role === 'working') {
       div.className = 'msg step working';
       div.innerHTML = '<span class="pulse" aria-hidden="true"></span><span class="l-text"></span>';
@@ -261,12 +275,13 @@
       div.className = 'msg result';
       div.innerHTML = '<div class="result-head">' + ICON_CHECK + 'Finished</div><div class="result-body"></div>';
       div.querySelector('.result-body').textContent = content;
+    } else if (role === 'reply') {
+      div.className = 'msg reply';
+      div.textContent = content;
     } else if (role === 'error') {
       div.className = 'msg error';
       div.setAttribute('role', 'alert');
-      div.innerHTML = '<span class="err-title">The agent did not finish this.</span><span class="err-body"></span>' +
-        '<span class="err-next">Nothing was simulated. Send it again once Ergon is connected to a model.</span>';
-      div.querySelector('.err-body').textContent = content;
+      div.innerHTML = failureHtml(content);
     } else {
       div.className = 'msg ' + role;
       div.textContent = content;
@@ -276,6 +291,96 @@
     main.scrollTop = main.scrollHeight;
     return div;
   }
+
+  /* Plain words for the tools the agent uses. The raw step text stays one tap away. */
+  function toolLabel(tool, via, body) {
+    const pick = (re) => { const m = re.exec(body); return m ? m[1] : ''; };
+    let label = null;
+    switch (tool) {
+      case 'list_dir': label = 'Looked through your files'; break;
+      case 'read_file': label = 'Read a file'; break;
+      case 'write_file': { const n = pick(/^wrote (.+?) \(\d+ bytes\)/); label = n ? 'Saved ' + n : 'Saved a file'; break; }
+      case 'write_document': { const n = pick(/^wrote document (.+?) \(/); label = n ? 'Saved ' + n : 'Saved a document'; break; }
+      case 'make_spreadsheet': { const n = pick(/^wrote spreadsheet (.+?) \(/); label = n ? 'Saved spreadsheet ' + n : 'Saved a spreadsheet'; break; }
+      case 'move_file': label = 'Moved a file'; break;
+      case 'search_files': label = 'Searched your files'; break;
+      case 'fetch_url': label = 'Read a web page'; break;
+      case 'research': label = 'Researched a topic'; break;
+      case 'update_memory': label = 'Remembered something about you'; break;
+      case 'browse_library': label = 'Looked through the company library'; break;
+      case 'install_item': label = 'Added an item to your suite'; break;
+      case 'publish_skill': label = 'Published a skill'; break;
+      case 'delete_file': { const n = pick(/(\S+) has NOT been deleted/); label = 'Asked your approval to delete ' + (n || 'a file'); break; }
+      case 'flag_decision': label = 'Asked you to decide something'; break;
+      case 'delegate': label = via ? 'Handed work to ' + via : 'Handed work to a specialist'; break;
+      default: return null;
+    }
+    if (via && tool !== 'delegate') label += ' (for ' + via + ')';
+    return label;
+  }
+  function fillStep(el, content) {
+    const nl = content.indexOf('\n');
+    const head = nl < 0 ? content : content.slice(0, nl);
+    const body = nl < 0 ? '' : content.slice(nl + 1);
+    const m = /^Tool: (\S+)(?: \(via ([^)]+)\))?$/.exec(head);
+    const label = (m && toolLabel(m[1], m[2], body)) || head;
+    const row = document.createElement('span');
+    row.className = 'l-label';
+    row.textContent = label;
+    el.appendChild(row);
+    const det = document.createElement('details');
+    det.className = 'l-details';
+    det.innerHTML = '<summary>Details</summary><pre></pre>';
+    det.querySelector('pre').textContent = content;
+    el.appendChild(det);
+  }
+  function failureHtml(raw) {
+    return '<span class="err-title">The agent could not finish this.</span>' +
+      '<span class="err-next">Try again, or ask whoever runs Ergon to check the connection.</span>' +
+      '<details class="l-details"><summary>Details</summary><pre>' + esc(raw) + '</pre></details>';
+  }
+  function attachNote(card, text) {
+    const box = document.createElement('div');
+    box.className = 'check';
+    box.innerHTML = '<span class="check-label">Check this</span><span class="check-text"></span>';
+    box.querySelector('.check-text').textContent = text.replace(/^Note:\s*/, '');
+    card.appendChild(box);
+  }
+  /* A saved run, in order. Finished only after a real step; notes join their card. */
+  function renderRun(messages) {
+    messagesEl.innerHTML = '';
+    let runHasStep = false;
+    let card = null;
+    for (const m of messages) {
+      if (m.role === 'user') {
+        runHasStep = false; card = null;
+        addMsg('user', m.content);
+      } else if (m.role === 'step' && /^Note:/.test(m.content) && card) {
+        attachNote(card, m.content);
+      } else if (m.role === 'step') {
+        runHasStep = true; card = null;
+        addMsg('step', m.content);
+      } else if (m.role === 'assistant') {
+        card = addMsg(runHasStep ? 'assistant' : 'reply', m.content);
+      } else {
+        card = null;
+        addMsg(m.role, m.content);
+      }
+    }
+  }
+
+  /* The composer's placeholder: short enough to show whole at 320px. */
+  const placeholderFull = 'Describe a task in plain words';
+  const placeholderShort = 'Describe a task';
+  function syncPlaceholder() { inputEl.placeholder = window.matchMedia('(max-width: 400px)').matches ? placeholderShort : placeholderFull; }
+  window.matchMedia('(max-width: 400px)').addEventListener('change', syncPlaceholder);
+  syncPlaceholder();
+
+  /* The unsent draft, kept for this tab until it is sent. */
+  const DRAFT_KEY = 'ergon-draft:phone';
+  function loadDraft() { try { inputEl.value = sessionStorage.getItem(DRAFT_KEY) || ''; } catch (e) { inputEl.value = ''; } resizeComposer(); }
+  function saveDraft() { try { if (inputEl.value) sessionStorage.setItem(DRAFT_KEY, inputEl.value); else sessionStorage.removeItem(DRAFT_KEY); } catch (e) {} }
+  function clearDraft() { try { sessionStorage.removeItem(DRAFT_KEY); } catch (e) {} }
 
   function resizeComposer() {
     inputEl.style.height = 'auto';
@@ -309,12 +414,11 @@
     try {
       const r = await fetch('/api/status');
       const s = await r.json();
-      const ok = !!s.model_configured;
+      if (!r.ok || typeof s.model_configured !== 'boolean') throw new Error('status');
+      const ok = s.model_configured;
+      document.getElementById('status-retry').hidden = true;
       document.getElementById('no-key-banner').style.display = ok ? 'none' : 'block';
-      const recovered = Array.isArray(s.store_recovered) ? s.store_recovered : [];
-      const line = document.getElementById('recovered-line');
-      line.textContent = recovered.length ? 'Earlier conversations were moved to a backup file (' + recovered.join(', ') + ') and Ergon started fresh. Nothing was deleted.' : '';
-      line.style.display = recovered.length ? 'block' : 'none';
+      showRecovered(s.store_recovered);
       document.getElementById('status-row').className = 'status-row ' + (ok ? 'ok' : 'wait');
       document.getElementById('status-text').textContent = ok
         ? 'Your agent is ready. Describe the work in Chat.'
@@ -325,9 +429,33 @@
       }
       if (!messagesEl.children.length || messagesEl.querySelector('.empty')) showEmpty(ok);
     } catch (e) {
-      document.getElementById('status-text').textContent = 'Could not check the agent. Check that Ergon is running.';
+      /* No answer, or a failed answer: never claim the model is missing. */
+      document.getElementById('no-key-banner').style.display = 'none';
+      document.getElementById('status-row').className = 'status-row';
+      document.getElementById('status-text').textContent = 'Could not check the agent. Check that Ergon is running, then retry.';
+      document.getElementById('status-retry').hidden = false;
     }
   }
+
+  document.getElementById('status-retry').onclick = () => loadStatus();
+
+  /* The recovered notice: dismissed until the list of backed-up files changes. */
+  const RECOVERED_KEY = 'ergon-recovered-dismissed';
+  let recoveredList = [];
+  function showRecovered(names) {
+    const list = Array.isArray(names) ? names : [];
+    recoveredList = list;
+    let dismissed = false;
+    try { dismissed = list.length > 0 && localStorage.getItem(RECOVERED_KEY) === list.join('|'); } catch (e) {}
+    const line = document.getElementById('recovered-line');
+    if (!list.length || dismissed) { line.style.display = 'none'; return; }
+    document.getElementById('recovered-text').textContent = 'Earlier conversations were moved to a backup file (' + list.join(', ') + ') and Ergon started fresh. Nothing was deleted.';
+    line.style.display = 'block';
+  }
+  document.getElementById('recovered-dismiss').onclick = () => {
+    try { localStorage.setItem(RECOVERED_KEY, recoveredList.join('|')); } catch (e) {}
+    showRecovered(recoveredList);
+  };
 
   function starterPrompts(installed) {
     const out = ['Tidy my notes into a summary'];
@@ -478,12 +606,14 @@
     }
   }
 
+  inputEl.addEventListener('input', saveDraft);
   document.getElementById('composer').addEventListener('submit', async (ev) => {
     ev.preventDefault();
     if (busy) return;
     const text = inputEl.value.trim();
     if (!text) return;
     busy = true;
+    clearDraft();
     if (!currentThread) {
       const r = await fetch('/api/threads', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
       const t = await r.json();
@@ -505,13 +635,14 @@
       working.remove();
       if (!r.ok) {
         addMsg('error', data.error || 'The agent could not run.');
+        if (!inputEl.value) { inputEl.value = text; resizeComposer(); saveDraft(); }
       } else {
-        messagesEl.innerHTML = '';
-        for (const m of data.messages) addMsg(m.role, m.content);
+        renderRun(data.messages);
       }
     } catch (e) {
       working.remove();
       addMsg('error', 'Could not reach the Ergon server.');
+      if (!inputEl.value) { inputEl.value = text; resizeComposer(); saveDraft(); }
     }
     busy = false;
     sendBtn.disabled = false;
@@ -527,6 +658,7 @@
     }
   });
 
+  loadDraft();
   loadStatus();
   loadDecisions();
   showTab('chat');
