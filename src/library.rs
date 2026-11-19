@@ -21,7 +21,7 @@
 //! part of every agent already and are NOT run through the library
 //! runner (their signatures predate the library convention).
 
-use crate::{backup_corrupt, slugify, Person};
+use crate::{backed_up_name, slugify, Person};
 use serde_json::{json, Value};
 use std::path::Path;
 
@@ -303,6 +303,8 @@ pub fn main(title, url) {
 #[derive(Clone, Default)]
 pub struct Library {
     pub items: Vec<LibraryItem>,
+    /// The backed-up file name when the library started fresh (E5).
+    pub recovered: Option<String>,
 }
 
 impl Library {
@@ -315,6 +317,7 @@ impl Library {
     /// re-seeded — the same discipline as the other stores.
     pub fn load(root_data_dir: &Path) -> Library {
         let path = Self::path(root_data_dir);
+        let mut recovered: Option<String> = None;
         if let Ok(text) = std::fs::read_to_string(&path) {
             let parsed = serde_json::from_str::<Value>(&text);
             let shape_ok = parsed
@@ -325,7 +328,7 @@ impl Library {
                 })
                 .unwrap_or(false);
             if !shape_ok {
-                let _ = backup_corrupt(&path);
+                recovered = backed_up_name(&path);
             } else if let Ok(v) = parsed {
                 // Ids from disk are validated, not trusted — the same
                 // discipline as person ids: an item id is a slug, and
@@ -353,15 +356,16 @@ impl Library {
                     })
                     .unwrap_or_default();
                 if !items.is_empty() {
-                    return Library { items };
+                    return Library { items, recovered: None };
                 }
                 // A valid shape holding no usable items is corruption
                 // wearing a valid shape; keep the bytes.
-                let _ = backup_corrupt(&path);
+                recovered = backed_up_name(&path);
             }
         }
         let lib = Library {
             items: seed_items(),
+            recovered,
         };
         lib.save(root_data_dir);
         lib

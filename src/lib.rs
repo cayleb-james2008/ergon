@@ -524,6 +524,8 @@ pub fn slugify(name: &str) -> String {
 pub struct PeopleState {
     pub people: Vec<Person>,
     pub active: String,
+    /// Store files backed up at load (named in GET /api/status).
+    pub recovered: Vec<String>,
 }
 
 impl Default for PeopleState {
@@ -535,6 +537,7 @@ impl Default for PeopleState {
                 role: String::new(),
             }],
             active: "default".to_string(),
+            recovered: Vec::new(),
         }
     }
 }
@@ -559,6 +562,13 @@ pub fn backup_corrupt(path: &Path) -> Option<PathBuf> {
     Some(candidate)
 }
 
+/// Backs up a corrupt store and returns its file name, for the
+/// "earlier conversations were moved" notice (GET /api/status).
+pub fn backed_up_name(path: &Path) -> Option<String> {
+    backup_corrupt(path)?;
+    path.file_name().map(|n| n.to_string_lossy().into_owned())
+}
+
 impl PeopleState {
     pub fn load(root: &Config) -> PeopleState {
         let path = root.data_dir.join("people.json");
@@ -579,8 +589,10 @@ impl PeopleState {
                 })
                 .unwrap_or(false);
             if !shape_ok {
-                let _ = backup_corrupt(&path);
-                return PeopleState::default();
+                return PeopleState {
+                    recovered: backed_up_name(&path).into_iter().collect(),
+                    ..PeopleState::default()
+                };
             }
             if let Ok(v) = parsed {
                 let mut state = PeopleState::default();
@@ -598,8 +610,10 @@ impl PeopleState {
                         // Every entry was unusable — that is corruption
                         // wearing a valid shape; back it up like any
                         // other corrupt file instead of overwriting it.
-                        let _ = backup_corrupt(&path);
-                        return PeopleState::default();
+                        return PeopleState {
+                            recovered: backed_up_name(&path).into_iter().collect(),
+                            ..PeopleState::default()
+                        };
                     }
                     if !parsed.is_empty() {
                         state.people = parsed;
@@ -751,6 +765,8 @@ pub fn thread_from_json(v: &Value) -> Option<Thread> {
 #[derive(Default)]
 pub struct Store {
     pub threads: Vec<Thread>,
+    /// The backed-up file name when this store started fresh (E5).
+    pub recovered: Option<String>,
     /// Where this store persists (threads.json); set by `Store::load`.
     pub save_path: Option<PathBuf>,
 }
@@ -763,6 +779,7 @@ impl Store {
         let mut store = Store {
             threads: Vec::new(),
             save_path: Some(path.to_path_buf()),
+            recovered: None,
         };
         if let Ok(text) = std::fs::read_to_string(path) {
             match serde_json::from_str::<Value>(&text) {
@@ -778,11 +795,11 @@ impl Store {
                     // just as corrupt as a syntax error — the next
                     // save must not destroy these bytes unrecorded.
                     None => {
-                        let _ = backup_corrupt(path);
+                        store.recovered = backed_up_name(path);
                     }
                 },
                 Err(_) => {
-                    let _ = backup_corrupt(path);
+                    store.recovered = backed_up_name(path);
                 }
             }
         }
@@ -834,6 +851,24 @@ impl Store {
             return self.create_thread();
         }
         id.to_string()
+    }
+
+    /// Rewrites the first step message in a thread whose text is exactly
+    /// `old` (a parked-delete note) to `new`, and persists it (ER1).
+    pub fn settle_note(&mut self, thread_id: &str, old: &str, new: &str) -> bool {
+        let Some(t) = self.threads.iter_mut().find(|t| t.id == thread_id) else {
+            return false;
+        };
+        let Some(m) = t
+            .messages
+            .iter_mut()
+            .find(|m| m.role == "step" && m.content == old)
+        else {
+            return false;
+        };
+        m.content = new.to_string();
+        self.save();
+        true
     }
 
     pub fn push(&mut self, thread_id: &str, role: &str, content: &str) {
@@ -1587,6 +1622,8 @@ pub struct AgentOutcome {
 pub struct WriteLedger {
     pub written: Vec<String>,
     pub consumed: Vec<String>,
+    /// Tool steps that succeeded (a failed step is not work, EB2b).
+    pub ok_steps: usize,
 }
 
 fn credit_writes(
@@ -1753,6 +1790,7 @@ fn run_loop(
         if reply["done"].as_bool() == Some(true) {
             let summary = reply["summary"]
                 .as_str()
+                .filter(|s| !s.trim().is_empty())
                 .unwrap_or("Task complete.")
                 .to_string();
             return Ok((summary, steps));
@@ -1806,6 +1844,7 @@ fn run_loop(
             }
         };
         if ok {
+            ledger.ok_steps += 1;
             credit_writes(ledger, cfg, &tool, &args, &result_text, dynamic_skills);
             // A skill installed mid-run is callable from the very
             // next step (the dispatcher re-reads the suite) — so the
@@ -1923,6 +1962,8 @@ pub fn run_agent(
     if cfg.api_key.is_none() {
         return Err(NO_KEY_ERROR.to_string());
     }
+    // Deletes parked after this instant belong to this run (EB1).
+    let run_started = records::now_millis();
     let suite = library::load_suite(&cfg.data_dir);
     let suite_items = {
         let lib = ctx.library.lock().unwrap();
@@ -2017,9 +2058,27 @@ pub fn run_agent(
             ),
         );
     }
+    // A deletion is only ever parked for approval. Every delete parked in
+    // THIS run gets one factual line after the summary, whatever the
+    // summary says: it has not been deleted and waits in Decisions.
+    for d in records::load_decisions(&cfg.data_dir) {
+        let parked_now = d["status"] == "pending"
+            && d["kind"] == "delete"
+            && d["thread_id"].as_str() == Some(thread_id)
+            && d["ts"].as_u64().unwrap_or(0) >= run_started;
+        if let Some(path) = d["path"].as_str().filter(|_| parked_now) {
+            store.lock().unwrap().push(thread_id, "step", &parked_note(path));
+        }
+    }
     // The work log + offers scan: the records the rest of the
     // product (brief, graph, today, offers) is built from.
-    records::append_work(cfg, task, &summary, &ledger.written, thread_id, true);
+    // Work means a tool step that succeeded or a written file; a run whose
+    // steps all failed is an answer, not finished work (EB2, EB2b).
+    if ledger.ok_steps == 0 && ledger.written.is_empty() {
+        records::append_answer(cfg, task, &summary, thread_id);
+    } else {
+        records::append_work(cfg, task, &summary, &ledger.written, thread_id, true);
+    }
     {
         let lib = ctx.library.lock().unwrap();
         let suite_now = library::load_suite(&cfg.data_dir);
@@ -2074,6 +2133,8 @@ pub struct AppState {
     /// hosting layer authenticates people; Ergon itself has no
     /// accounts and no passwords.
     pub gate_token: Option<String>,
+    /// Extra Host names accepted without a gate token (ERGON_ALLOWED_HOSTS).
+    pub allowed_hosts: Vec<String>,
     pub people: Arc<Mutex<PeopleState>>,
     pub runtimes: Arc<Mutex<HashMap<String, Arc<PersonRuntime>>>>,
     /// Browser sessions (cookie id → person id). "Active person" used
@@ -2162,13 +2223,34 @@ pub fn serve(listener: TcpListener, cfg: Config) -> std::io::Result<()> {
         .ok()
         .map(|t| t.trim().to_string())
         .filter(|t| !t.is_empty());
-    serve_with_gate(listener, cfg, gate)
+    let hosts = allowed_hosts_from(&std::env::var("ERGON_ALLOWED_HOSTS").unwrap_or_default());
+    serve_with_hosts(listener, cfg, gate, hosts)
+}
+
+/// Parses ERGON_ALLOWED_HOSTS: comma-separated host names, with or without
+/// ports, case-insensitive. Each entry is kept as its bare host name.
+pub fn allowed_hosts_from(value: &str) -> Vec<String> {
+    value
+        .split(',')
+        .map(|h| host_name(&h.trim().to_ascii_lowercase()))
+        .filter(|h| !h.is_empty())
+        .collect()
 }
 
 pub fn serve_with_gate(
     listener: TcpListener,
     cfg: Config,
     gate_token: Option<String>,
+) -> std::io::Result<()> {
+    serve_with_hosts(listener, cfg, gate_token, Vec::new())
+}
+
+/// Serves with explicit gate token and extra allowed Host names.
+pub fn serve_with_hosts(
+    listener: TcpListener,
+    cfg: Config,
+    gate_token: Option<String>,
+    allowed_hosts: Vec<String>,
 ) -> std::io::Result<()> {
     cfg.ensure_dirs()?;
     let people = PeopleState::load(&cfg);
@@ -2177,6 +2259,7 @@ pub fn serve_with_gate(
         cfg,
         library: Arc::new(Mutex::new(library)),
         gate_token,
+        allowed_hosts,
         people: Arc::new(Mutex::new(people)),
         runtimes: Arc::new(Mutex::new(HashMap::new())),
         sessions: Arc::new(Mutex::new(HashMap::new())),
@@ -2203,6 +2286,11 @@ struct Request {
     session: Option<String>,
     /// The hosting layer's gate header, if presented.
     gate: Option<String>,
+    /// Browser-set headers the cross-site checks read (lowercased).
+    content_type: String,
+    origin: Option<String>,
+    host: Option<String>,
+    sec_fetch_site: Option<String>,
 }
 
 /// Bodies are small JSON. A request claiming a larger one is dropped
@@ -2225,10 +2313,12 @@ fn read_request(stream: &mut std::net::TcpStream) -> Option<Request> {
     };
     let mut reader = BufReader::new(stream.try_clone().ok()?);
     arm(stream)?;
-    let mut request_line = String::new();
-    if reader.read_line(&mut request_line).ok()? == 0 {
-        return None;
-    }
+    let request_line = match head_line(&mut reader, MAX_HEAD_BYTES) {
+        Ok(Some((0, _))) => return None,
+        Ok(Some((_, line))) => line,
+        Ok(None) => return refuse_head(stream, &mut reader),
+        Err(_) => return None,
+    };
     let mut parts = request_line.split_whitespace();
     let method = parts.next()?.to_string();
     let raw_path = parts.next()?.to_string();
@@ -2236,21 +2326,38 @@ fn read_request(stream: &mut std::net::TcpStream) -> Option<Request> {
     let mut content_length: usize = 0;
     let mut session: Option<String> = None;
     let mut gate: Option<String> = None;
+    let mut content_type = String::new();
+    let mut origin: Option<String> = None;
+    let mut host: Option<String> = None;
+    let mut sec_fetch_site: Option<String> = None;
     let mut head_bytes = request_line.len();
     loop {
         arm(stream)?;
-        let mut line = String::new();
-        let n = reader.read_line(&mut line).ok()?;
+        let room = MAX_HEAD_BYTES - head_bytes;
+        let (n, line) = match head_line(&mut reader, room) {
+            Ok(Some(read)) => read,
+            Ok(None) => return refuse_head(stream, &mut reader),
+            Err(_) => return None,
+        };
         if n == 0 || line == "\r\n" || line == "\n" {
             break;
         }
         head_bytes += n;
-        if head_bytes > MAX_HEAD_BYTES {
-            return None;
-        }
         let lower = line.to_lowercase();
         if let Some(v) = lower.strip_prefix("content-length:") {
             content_length = v.trim().parse().unwrap_or(0);
+        }
+        if let Some(v) = lower.strip_prefix("content-type:") {
+            content_type = v.trim().to_string();
+        }
+        if let Some(v) = lower.strip_prefix("origin:") {
+            origin = Some(v.trim().to_string());
+        }
+        if let Some(v) = lower.strip_prefix("host:") {
+            host = Some(v.trim().to_string());
+        }
+        if let Some(v) = lower.strip_prefix("sec-fetch-site:") {
+            sec_fetch_site = Some(v.trim().to_string());
         }
         if let Some(v) = lower.strip_prefix("cookie:") {
             for pair in v.split(';') {
@@ -2315,7 +2422,88 @@ fn read_request(stream: &mut std::net::TcpStream) -> Option<Request> {
         body,
         session,
         gate,
+        content_type,
+        origin,
+        host,
+        sec_fetch_site,
     })
+}
+
+/// Reads one request-head line of at most `room` bytes, returning its
+/// length and text. `Ok(None)` means the line is longer than `room`:
+/// it is never buffered past the cap (E2).
+fn head_line(reader: &mut BufReader<std::net::TcpStream>, room: usize) -> std::io::Result<Option<(usize, String)>> {
+    let mut buf = Vec::new();
+    let n = (&mut *reader).take(room as u64 + 1).read_until(b'\n', &mut buf)?;
+    if n > room {
+        return Ok(None);
+    }
+    Ok(Some((n, String::from_utf8_lossy(&buf).into_owned())))
+}
+
+/// Answers an over-long request head with 431 at once, then reads and
+/// discards what the client still sends until it closes (or the read
+/// deadline passes) so the answer is not reset by the socket (E2).
+fn refuse_head(stream: &mut std::net::TcpStream, reader: &mut BufReader<std::net::TcpStream>) -> Option<Request> {
+    let body = format!(
+        "{{\"error\": \"request head too large: the limit is {MAX_HEAD_BYTES} bytes\"}}"
+    );
+    let response = format!(
+        "HTTP/1.1 431 Request Header Fields Too Large\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+        body.len()
+    );
+    let _ = stream.write_all(response.as_bytes());
+    let _ = stream.flush();
+    let _ = stream.shutdown(std::net::Shutdown::Write);
+    let mut sink = [0u8; 8192];
+    while matches!(reader.read(&mut sink), Ok(n) if n > 0) {}
+    None
+}
+
+/// The note pushed into a thread when a delete is parked (EB1, ER1).
+pub fn parked_note(path: &str) -> String {
+    format!("Note: {path} has NOT been deleted yet; the deletion is waiting for your approval in Decisions.")
+}
+
+/// Whether a Host header names this machine (DNS-rebinding guard).
+fn host_name(host: &str) -> String {
+    match host.strip_prefix('[') {
+        Some(rest) => format!("[{}]", rest.split(']').next().unwrap_or("")),
+        None => host.split(':').next().unwrap_or("").to_string(),
+    }
+}
+
+/// Whether a Host names this machine or one the operator allowed (EH1).
+fn host_allowed(host: &str, allowed: &[String]) -> bool {
+    let name = host_name(host);
+    matches!(name.as_str(), "localhost" | "127.0.0.1" | "[::1]") || allowed.contains(&name)
+}
+
+/// Refuses a request a page on another site could have sent (E1), with
+/// the same observable rules as the Fleet app: a foreign Host (unless
+/// the hosting gate is set), a state-changing request with a body that
+/// is not JSON (a text/plain POST has no preflight), cross-site fetch
+/// metadata, and an Origin whose authority is not the request's Host.
+fn refusal(req: &Request, gated: bool, allowed: &[String]) -> Option<(u16, &'static str)> {
+    if !gated && !host_allowed(req.host.as_deref().unwrap_or(""), allowed) {
+        return Some((403, "requests must address this machine as localhost, 127.0.0.1 or [::1], or a host listed in ERGON_ALLOWED_HOSTS"));
+    }
+    if !matches!(req.method.as_str(), "POST" | "PUT" | "PATCH" | "DELETE") {
+        return None;
+    }
+    if !req.body.is_empty() && !req.content_type.starts_with("application/json") {
+        return Some((415, "POST requires Content-Type: application/json"));
+    }
+    if req.sec_fetch_site.as_deref() == Some("cross-site") {
+        return Some((403, "cross-site requests are refused"));
+    }
+    if let Some(origin) = &req.origin {
+        let authority = origin.split("://").nth(1).unwrap_or("").split('/').next().unwrap_or("");
+        if req.host.as_deref() != Some(authority) {
+            return Some((403, "cross-origin requests are refused"));
+        }
+    }
+    None
 }
 
 fn respond(
@@ -2339,9 +2527,12 @@ fn respond_h(
         201 => "Created",
         400 => "Bad Request",
         401 => "Unauthorized",
+        403 => "Forbidden",
         404 => "Not Found",
         405 => "Method Not Allowed",
         413 => "Content Too Large",
+        415 => "Unsupported Media Type",
+        431 => "Request Header Fields Too Large",
         500 => "Internal Server Error",
         503 => "Service Unavailable",
         _ => "OK",
@@ -2384,6 +2575,9 @@ fn handle_connection(mut stream: std::net::TcpStream, state: &AppState) -> std::
             );
         }
     }
+    if let Some((status, message)) = refusal(&req, state.gate_token.is_some(), &state.allowed_hosts) {
+        return respond_json(&mut stream, status, &json!({"error": message}));
+    }
     // The person this request acts for (session-pinned when the caller
     // has a session cookie, else the global active person).
     let person = effective_person(state, &req.session);
@@ -2416,16 +2610,26 @@ fn handle_connection(mut stream: std::net::TcpStream, state: &AppState) -> std::
             }
             respond(&mut stream, 200, "text/html; charset=utf-8", ui::INDEX_HTML)
         }
-        ("GET", "/api/status") => respond_json(
-            &mut stream,
-            200,
-            &json!({
-                "model_configured": root_cfg.api_key.is_some(),
-                "model": root_cfg.model_id,
-                "model_base_url": root_cfg.model_base_url,
-                "person": person.to_json(),
-            }),
-        ),
+        ("GET", "/api/status") => {
+            let mut recovered: Vec<String> = state.people.lock().unwrap().recovered.clone();
+            recovered.extend(state.library.lock().unwrap().recovered.clone());
+            for rt in state.runtimes.lock().unwrap().values() {
+                recovered.extend(rt.store.lock().unwrap().recovered.clone());
+            }
+            recovered.sort();
+            recovered.dedup();
+            respond_json(
+                &mut stream,
+                200,
+                &json!({
+                    "model_configured": root_cfg.api_key.is_some(),
+                    "model": root_cfg.model_id,
+                    "model_base_url": root_cfg.model_base_url,
+                    "person": person.to_json(),
+                    "store_recovered": recovered,
+                }),
+            )
+        }
         ("GET", "/api/people") => {
             let people = state.people.lock().unwrap();
             let mut v = people.to_json();
@@ -2645,7 +2849,8 @@ fn handle_connection(mut stream: std::net::TcpStream, state: &AppState) -> std::
                     // where the work happened.
                     let tid = decision["thread_id"].as_str().unwrap_or("");
                     if !tid.is_empty() {
-                        runtime.store.lock().unwrap().push(
+                        let mut store = runtime.store.lock().unwrap();
+                        store.push(
                             tid,
                             "step",
                             &format!(
@@ -2654,6 +2859,20 @@ fn handle_connection(mut stream: std::net::TcpStream, state: &AppState) -> std::
                                 outcome
                             ),
                         );
+                        // The parked-delete note says the file is still
+                        // there; once settled it must say what happened (ER1).
+                        if let Some(path) = decision["path"].as_str().filter(|_| decision["kind"] == "delete") {
+                            let settled = if action != "approve" {
+                                format!("Note: {path} was kept because you declined the deletion.")
+                            } else if outcome.starts_with("Approved and done") {
+                                format!("Note: {path} was deleted after you approved it.")
+                            } else if outcome.starts_with("Approved: ") {
+                                format!("Note: {path} was already gone when you approved it.")
+                            } else {
+                                format!("Note: {path} was not deleted; see the decision settled above.")
+                            };
+                            store.settle_note(tid, &parked_note(path), &settled);
+                        }
                     }
                     respond_json(
                         &mut stream,
@@ -2852,7 +3071,20 @@ fn handle_connection(mut stream: std::net::TcpStream, state: &AppState) -> std::
             respond_json(&mut stream, 201, &v)
         }
         ("POST", "/api/chat") => {
-            let parsed: Value = serde_json::from_slice(&req.body).unwrap_or(Value::Null);
+            let parsed: Value = if req.body.iter().all(u8::is_ascii_whitespace) {
+                Value::Null
+            } else {
+                match serde_json::from_slice(&req.body) {
+                    Ok(v) => v,
+                    Err(_) => {
+                        return respond_json(
+                            &mut stream,
+                            400,
+                            &json!({"error": "request body is not valid JSON"}),
+                        )
+                    }
+                }
+            };
             let message = parsed["message"].as_str().unwrap_or("").trim().to_string();
             if message.is_empty() {
                 return respond_json(
@@ -2868,7 +3100,13 @@ fn handle_connection(mut stream: std::net::TcpStream, state: &AppState) -> std::
             // it, so the message vanished on reload).
             let (thread_id, history) = {
                 let mut store = runtime.store.lock().unwrap();
-                let tid = store.ensure_thread(parsed["thread_id"].as_str().unwrap_or(""));
+                let requested = parsed["thread_id"].as_str().unwrap_or("");
+                // A named thread must exist: opening a new one silently
+                // would put the message somewhere the person never asked (EB3).
+                if !requested.is_empty() && store.thread_json(requested).is_none() {
+                    return respond_json(&mut stream, 404, &json!({"error": "no such thread"}));
+                }
+                let tid = store.ensure_thread(requested);
                 let history = store.history_json(&tid);
                 store.push(&tid, "user", &message);
                 (tid, history)
