@@ -143,10 +143,16 @@
   .check-label { display: block; color: var(--wait); font-weight: 600; margin-bottom: 2px; }
   @media (forced-colors: active) {
     .card, .starter, .msg.result, .check, .msg.error, #composer-input { border: 1px solid CanvasText; }
-    .act-btn.primary, #send-btn { border: 1px solid ButtonText; }
     .tab-btn[aria-selected="true"] { outline: 3px solid Highlight; outline-offset: -3px; }
   }
+  @media (forced-colors: active) {
+    #send-btn, .act-btn, .starter { border: 2px solid ButtonText; }
+  }
   .msg.result, .msg.step, .msg.user, .msg.error { animation: rise var(--dur-short) var(--ease); }
+  .msg.result.waiting { border-color: var(--wait); }
+  .result-head.waiting-head { color: var(--wait); }
+  .waiting-title { font-size: var(--text-base); font-weight: 600; margin-bottom: 8px; line-height: 1.4; overflow-wrap: anywhere; }
+  .wait-go { margin-top: 12px; }
   #composer { position: sticky; bottom: 0; background: var(--bg); padding: 12px 0 4px; display: flex; gap: 8px; align-items: flex-end;
               border-top: 1px solid var(--rule); margin: 0 -16px; padding-left: 16px; padding-right: 16px; }
   #composer-input { flex: 1; resize: none; border: 1px solid var(--field-edge); border-radius: var(--r-4); padding: 12px 16px;
@@ -259,7 +265,7 @@
   }
   function escAttr(s) { return esc(s).replace(/"/g, '&quot;'); }
 
-  function addMsg(role, content) {
+  function addMsg(role, content, extra) {
     const empty = messagesEl.querySelector('.empty');
     if (empty) empty.remove();
     const div = document.createElement('div');
@@ -275,6 +281,15 @@
       div.className = 'msg result';
       div.innerHTML = '<div class="result-head">' + ICON_CHECK + 'Finished</div><div class="result-body"></div>';
       div.querySelector('.result-body').textContent = content;
+    } else if (role === 'waitcard') {
+      /* A parked deletion: waiting on the person, never Finished. */
+      div.className = 'msg result waiting';
+      div.innerHTML = '<div class="result-head waiting-head"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg>Waiting on you</div>' +
+        '<div class="waiting-title"></div><div class="result-body"></div>' +
+        '<button class="act-btn wait-go" type="button">Review decisions</button>';
+      div.querySelector('.waiting-title').textContent = 'Waiting for your approval to delete ' + (extra || 'a file');
+      div.querySelector('.result-body').textContent = content;
+      div.querySelector('.wait-go').addEventListener('click', () => showTab('decisions'));
     } else if (role === 'reply') {
       div.className = 'msg reply';
       div.textContent = content;
@@ -347,21 +362,37 @@
     card.appendChild(box);
   }
   /* A saved run, in order. Finished only after a real step; notes join their card. */
+  const PARKED_RE = /parked for your person|has NOT been deleted yet/;
+  const RESOLVED_RE = /was deleted after you approved it|was kept because you declined/;
+  /* Each run is one segment, from one user message to the next. */
   function renderRun(messages) {
     messagesEl.innerHTML = '';
-    let runHasStep = false;
-    let card = null;
+    let seg = [];
     for (const m of messages) {
-      if (m.role === 'user') {
-        runHasStep = false; card = null;
-        addMsg('user', m.content);
-      } else if (m.role === 'step' && /^Note:/.test(m.content) && card) {
-        attachNote(card, m.content);
+      if (m.role === 'user') { renderSegment(seg); seg = []; addMsg('user', m.content); }
+      else seg.push(m);
+    }
+    renderSegment(seg);
+  }
+  function renderSegment(seg) {
+    const hasStep = seg.some((m) => m.role === 'step' && !/^Note:/.test(m.content));
+    const parked = seg.some((m) => m.role === 'step' && PARKED_RE.test(m.content));
+    const resolved = seg.some((m) => m.role === 'step' && RESOLVED_RE.test(m.content));
+    const waiting = parked && !resolved;
+    let name = '';
+    for (const m of seg) {
+      const hit = m.role === 'step' && /(\S+) has NOT been deleted yet/.exec(m.content);
+      if (hit) { name = hit[1]; break; }
+    }
+    let card = null;
+    for (const m of seg) {
+      if (m.role === 'step' && /^Note:/.test(m.content) && card) {
+        if (!(waiting && /has NOT been deleted yet/.test(m.content))) attachNote(card, m.content);
       } else if (m.role === 'step') {
-        runHasStep = true; card = null;
+        card = null;
         addMsg('step', m.content);
       } else if (m.role === 'assistant') {
-        card = addMsg(runHasStep ? 'assistant' : 'reply', m.content);
+        card = waiting ? addMsg('waitcard', m.content, name) : addMsg(hasStep ? 'assistant' : 'reply', m.content);
       } else {
         card = null;
         addMsg(m.role, m.content);
