@@ -2316,37 +2316,28 @@ fn faces_and_phone_are_served() {
     let (status, body) = http(port, "GET", "/", None);
     assert_eq!(status, 200);
     for marker in [
-        "id=\"face-bar\"",
-        "data-face=\"graph\"",
-        "data-face=\"chat\"",
-        "data-face=\"today\"",
-        "id=\"face-graph\"",
-        "id=\"face-chat\"",
-        "id=\"face-today\"",
-        "id=\"graph-svg\"",
-        "id=\"brief-headline\"",
-        "id=\"decisions-list\"",
-        "id=\"offers-list\"",
-        "id=\"suite-panel\"",
+        "data-app=\"ergon\"",
         "Work Graph",
         "Today",
+        "Chat",
+        "Work graph",
+        "Morning brief",
+        "Waiting on you",
+        "Describe a task in plain words",
+        "thread-list",
     ] {
         assert!(body.contains(marker), "desktop faces marker missing: {marker}");
     }
-    // The chat face keeps the proven shell.
-    assert!(body.contains("id=\"composer-input\""));
-    assert!(body.contains("id=\"thread-list\""));
 
     let (status, body) = http(port, "GET", "/phone", None);
     assert_eq!(status, 200);
     for marker in [
-        "data-tab=\"brief\"",
-        "data-tab=\"chat\"",
-        "data-tab=\"decisions\"",
-        "data-tab=\"suite\"",
-        "id=\"brief-headline\"",
-        "id=\"decisions-list\"",
+        "data-app=\"ergon\"",
         "viewport-fit=cover",
+        "Describe a task in plain words",
+        "Working for",
+        "Today",
+        "Work Graph",
     ] {
         assert!(body.contains(marker), "phone face marker missing: {marker}");
     }
