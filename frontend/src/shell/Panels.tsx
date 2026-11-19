@@ -19,7 +19,7 @@ function Panel({ id, label, title, children }: { id: string; label: string; titl
         <span>{label}</span>
       </MorphingDialogTrigger>
       <MorphingDialogContainer>
-        <MorphingDialogContent style={{ borderRadius: 18 }} className="relative flex max-h-[80vh] w-[min(520px,calc(100vw-32px))] flex-col gap-3 overflow-auto border border-hairline bg-surface p-5 text-ink shadow-lift">
+        <MorphingDialogContent style={{ borderRadius: 18 }} className="relative flex max-h-[80vh] w-[520px] max-w-full flex-col gap-3 overflow-auto border border-hairline bg-surface p-5 text-ink shadow-lift">
           <MorphingDialogClose className="absolute right-3 top-3 grid size-9 place-items-center rounded-sm text-icon outline-none hover:bg-board focus-visible:ring-2 focus-visible:ring-blue" aria-label="Close" />
           <MorphingDialogTitle className="pr-10 text-title font-semibold text-ink">{title}</MorphingDialogTitle>
           <MorphingDialogDescription disableLayoutAnimation className="text-sm text-ink-2">{children}</MorphingDialogDescription>
@@ -124,7 +124,9 @@ function SuiteRow({ item, onRemove, onRun }: { item: SuiteItem; onRemove: () => 
   );
 }
 
+/** Add a person: the old page's inline form, opened from the rail row (not a dialog: its close key did not reach the library dialog). */
 export function AddPersonPanel({ onAdded }: { onAdded: (p: Person) => void }) {
+  const [open, setOpen] = useState(false);
   const [name, setName] = useState(""); const [role, setRole] = useState(""); const [err, setErr] = useState("");
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -132,30 +134,24 @@ export function AddPersonPanel({ onAdded }: { onAdded: (p: Person) => void }) {
     const r = await call<Person>("/api/people", { method: "POST", body: { name: name.trim(), role: role.trim() } });
     if (!r.ok) { setErr(r.status === 0 ? "Could not reach the Ergon server." : r.error || "That person could not be added."); return; }
     await call("/api/active-person", { method: "POST", body: { id: r.data.id } });
-    setName(""); setRole(""); setErr("");
+    setName(""); setRole(""); setErr(""); setOpen(false);
     onAdded(r.data);
   };
   return (
-    <MorphingDialog transition={SPRING}>
-      <MorphingDialogTrigger thing="add-person" className={TRIGGER} style={{ borderRadius: 6 }}>
+    <div className="flex flex-col">
+      <button type="button" aria-expanded={open} aria-controls="person-form" onClick={() => setOpen(!open)} className={TRIGGER}>
         <span>Add a person</span><Plus className="size-4 text-icon" strokeWidth={1.75} aria-hidden />
-      </MorphingDialogTrigger>
-      <MorphingDialogContainer>
-        <MorphingDialogContent style={{ borderRadius: 18 }} className="relative w-[min(420px,calc(100vw-32px))] border border-hairline bg-surface p-5 text-ink shadow-lift">
-          <MorphingDialogClose className="absolute right-3 top-3 grid size-9 place-items-center rounded-sm text-icon outline-none hover:bg-board focus-visible:ring-2 focus-visible:ring-blue" aria-label="Close" />
-          <MorphingDialogTitle className="pr-10 text-title font-semibold text-ink">Add a person</MorphingDialogTitle>
-          <form onSubmit={submit} className="mt-4 flex flex-col gap-3">
-            <label className="flex flex-col gap-1 text-sm text-ink-2">Name
-              <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Name" autoComplete="off" maxLength={80} autoFocus />
-            </label>
-            <label className="flex flex-col gap-1 text-sm text-ink-2">Role (optional)
-              <Input value={role} onChange={(e) => setRole(e.target.value)} placeholder="Role (optional)" autoComplete="off" maxLength={120} />
-            </label>
-            {err && <p role="alert" className="text-sm text-ink">{err}</p>}
-            <div><Button type="submit">Add person</Button></div>
-          </form>
-        </MorphingDialogContent>
-      </MorphingDialogContainer>
-    </MorphingDialog>
+      </button>
+      {open && (
+        <form id="person-form" onSubmit={submit} className="mt-2 flex flex-col gap-2 px-2 pb-2">
+          <label className="sr-only" htmlFor="person-name">Name</label>
+          <Input id="person-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Name" autoComplete="off" maxLength={80} autoFocus />
+          <label className="sr-only" htmlFor="person-role">Role</label>
+          <Input id="person-role" value={role} onChange={(e) => setRole(e.target.value)} placeholder="Role (optional)" autoComplete="off" maxLength={120} />
+          {err && <p role="alert" className="text-sm text-ink">{err}</p>}
+          <div><Button size="sm" type="submit">Add person</Button></div>
+        </form>
+      )}
+    </div>
   );
 }
