@@ -3194,3 +3194,33 @@ fn parked_note_rewrite_survives_a_restart() {
         "{steps:?}"
     );
 }
+
+/// EB2b: a run whose only tool step errored (delete on a missing file) is an
+/// answer, not finished work. A run with a successful tool step stays finished.
+#[test]
+fn a_run_whose_tool_steps_all_failed_is_not_finished_work() {
+    let root = test_root("eb2b_errors");
+    let stub = start_stub_model(vec![
+        json!({"tool": "delete_file", "args": {"path": "ghost.txt"}}).to_string(),
+        json!({"done": true, "summary": "I could not find ghost.txt."}).to_string(),
+        json!({"tool": "list_dir", "args": {"path": "."}}).to_string(),
+        json!({"done": true, "summary": "Listed the folder."}).to_string(),
+    ]);
+    let cfg = test_config(&root, Some("test-key"), format!("http://127.0.0.1:{}/v1", stub.port));
+    let port = start_app(cfg);
+    let (status, body) = chat(port, "Delete ghost.txt");
+    assert_eq!(status, 200, "{body}");
+    let (_, brief) = http(port, "GET", "/api/brief", None);
+    let v: Value = serde_json::from_str(&brief).unwrap();
+    assert_eq!(v["finished"], json!([]), "a run whose only step failed is not finished work: {brief}");
+    assert!(v["headline"].as_str().unwrap().starts_with("Nothing finished"), "{brief}");
+    let (_, graph) = http(port, "GET", "/api/graph", None);
+    let g: Value = serde_json::from_str(&graph).unwrap();
+    assert_eq!(g["nodes"].as_array().unwrap().iter().filter(|n| n["kind"] == "work").count(), 0, "{graph}");
+
+    let (status, body) = chat(port, "List the folder");
+    assert_eq!(status, 200, "{body}");
+    let (_, brief) = http(port, "GET", "/api/brief", None);
+    let v: Value = serde_json::from_str(&brief).unwrap();
+    assert_eq!(v["finished"].as_array().unwrap().len(), 1, "a successful tool step stays finished: {brief}");
+}
