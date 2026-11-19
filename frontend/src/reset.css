@@ -1,0 +1,8 @@
+/* Only this product's colours, radii and shadows exist: Tailwind's default palette (pure black and white,
+   stock shadows) is removed, so every colour in the page resolves through a token in tokens.css or theme.css. */
+@theme {
+  --color-*: initial;
+  --shadow-*: initial;
+  --inset-shadow-*: initial;
+  --drop-shadow-*: initial;
+}
