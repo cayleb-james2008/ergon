@@ -32,8 +32,8 @@ export function EntryShell({ time, title, status, label, children }: {
   time: string; title: string; status?: React.ReactNode; label: string; children: React.ReactNode;
 }) {
   return (
-    <article aria-label={label} className="overflow-hidden rounded-entry border border-ink bg-surface shadow-lift">
-      <header className="flex min-w-0 items-center gap-3 border-b border-ink bg-(--entry-head) px-4 py-2.5 text-(--entry-head-ink) dark:border-hairline">
+    <article aria-label={label} className="overflow-hidden rounded-entry border border-ink bg-surface shadow-lift dark:border-hairline dark:shadow-none">
+      <header className="flex min-w-0 items-center gap-3 border-b border-ink entry-head px-4 py-2.5 dark:border-hairline">
         <span className="shrink-0 font-mono text-xs tabular-nums">{time}</span>
         <span className="min-w-0 flex-1 truncate text-sm font-medium">{title}</span>
         {status}
@@ -53,7 +53,7 @@ export function WaitingPill() {
 
 /** The ruled grid: 1px ink lines between every cell, all four sides. */
 export function Cells({ children }: { children: React.ReactNode }) {
-  return <div className="grid grid-cols-2 gap-px border-b border-ink bg-ink">{children}</div>;
+  return <div className="entry-rule grid grid-cols-2 gap-px border-b border-ink dark:border-hairline">{children}</div>;
 }
 
 export function Cell({ label, children, span }: { label: string; children: React.ReactNode; span?: boolean }) {

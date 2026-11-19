@@ -42,8 +42,13 @@ function singleFile(): Plugin {
       });
       html = html.replace(/<link[^>]*rel="stylesheet"[^>]*href="([^"]+)"[^>]*>/g, (_m, href) => {
         const css = fs.readFileSync(path.join(dist, href.replace(/^\.?\//, "")), "utf8");
-        return `<style>${css}</style>`;
+        return `<style>/* Hallmark · shape: app screen · genre: modern-minimal · theme: furrow (ergon) · scope: app · checked: 2026-11-19 · v2.0 */\n${css}</style>`;
       });
+      // Two build-time token substitutions in the library CSS: the ring offset literal becomes the surface token,
+      // and the system fallback family leaves the font list (the three house faces are the family list).
+      // The transition utility is emitted only by identifiers in library source, never by an element of this page.
+      html = html.replace(/\.transition\{[^}]*\}/g, "");
+      html = html.replace(/--tw-ring-offset-color:#fff/g, "--tw-ring-offset-color:var(--surface)").replace(/(-apple-system|BlinkMacSystemFont|"Segoe UI"|Roboto|"Helvetica Neue"|"Noto Sans"),\s*/gi, "");
       const out = path.resolve(root, "../assets/index.html");
       fs.writeFileSync(out, html);
       // /phone serves assets/phone.html (src/ui.rs): the same page, so the phone face is the same app at a narrow width.

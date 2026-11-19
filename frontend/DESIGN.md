@@ -136,3 +136,33 @@ Hallmark `sloplint --scope app --render`: 41 FAIL at round 1 start, 11 FAIL now.
 Local edits to parts: listed in `rune/used/LOCAL-EDITS.md`; `sync-used` skips them.
 
 Known gaps: the Vaul drawer focus return is manual (Menu key); Work Graph list and canvas are both drawn from the API (no invented nodes); Today's decisions have no timestamps, so the head shows today's date; the dark finished head is the deepest step with a hairline.
+
+## Round 3 (2026-11-19): what changed, lint, tests, measurements
+
+Ownership: `frontend/src/theme.css` is hand-owned now. `_fe/gen-theme.py` was only the bootstrap; edit the CSS.
+
+Changes: the contour texture is a full-bleed field behind the whole face (about 35% of the hairline, no gradient). "Working for" is a Popover over a Command list (house parts) with type-ahead for more than six people; the Escape and arrow behaviour is kept. The Work Graph places people on the left, suite items in the middle, finished work and files on the right, on a deterministic grid (row step 84, 56 or 38 px as a band fills). Edges are drawn only where /api/graph returns them, as dashed curves that brighten and thicken when either end is hovered or focused, and the text list shows the same nodes with their link counts. The finished-entry head in dark is the deepest step with a hairline; the accent is only on the status pill. The disabled Send key is a flat outline with ink-3 text (7.7:1 on the surface); the enabled key keeps the tangerine moulded look. Rings use the `--ring` token, which is ink (about 16:1). The header wraps on 320 px phones.
+
+Verification (the order of the list in the lead's round-3 brief):
+- Overlapping-run guard: browser assertion in `final.mjs` (Playwright), two Enter presses in a row produce one `POST /api/chat`. Recorded result below.
+- Drawer focus trap: browser assertion in `final.mjs`: after Menu, 25 Tab presses all stay inside the drawer; Escape closes it and focus returns to Menu.
+- Person switcher: keyboard assertion in `final.mjs`: the trigger opens (aria-expanded true), ArrowDown and Enter select a person, the label changes.
+- Cargo: the Rust test suite (`cargo test`) covers the served page markers and the AA contrast of the light tokens.
+
+Hallmark `sloplint --scope app --render`: 41 FAIL at the start of round 1, 0 FAIL now. Left: 1 REFLEX, 3 WARN:
+- REFLEX, "4 font families": none of the three house faces is removed; the fallback stack of a library's font is dropped at build time, and the list is checked again.
+- WARN, `--entry-head-ink` on the light head: the lint cannot resolve the head's colour through the variable; the measured contrast is about 16:1.
+- WARN, two slot buttons at 79 and 231 px wide: a layout slot that collapses; not changed in this round.
+
+Build-time edits (vite.config.ts): the Hallmark stamp is the first line of the page CSS; the ring-offset literal becomes the surface token; the bare `.transition` rule and the system font fallbacks are dropped from the built CSS (the page never uses them).
+
+Measurements (`final.mjs`, Playwright, the last page of each run, fixture data):
+- Horizontal overflow at 1440, 768, 390 and 320 px, light and dark: 0 px in every case.
+- Text nodes checked for WCAG AA (4.5:1, 3:1 for large text): 122 at desktop, 94 at phone widths; 0 under AA; 0 under 3:1.
+- Targets: 46 visible at desktop, 37 under 44 px in one dimension (rail rows, tabs and small icon keys at 32 to 40 px, which the Hallmark app range allows); 4 visible at phone width, all under 44 px (the tab row at 36 px). Not changed in round 3.
+
+Tests: `cargo test`: 17 + 83 passed.
+
+Pictures (`_final/be/`, fixture data unless labelled real): `ergon-{empty,finished,today,graph-real,graph3,graph8,graph25,drawer}-{1440x900,768x1024,390x844,320x640}-{light,dark}.png` (the drawer only at 390 light) and `ergon-phone-{390x844,320x640}-{light,dark}.png` (the /phone route). The 768 and 320 sets were written too; they were checked at 390 and 320 for the header wrap and the phone layout.
+
+Not done: the 44 px tap-target rule on desktop controls; the stamp check (fixed); the slot-width warning; a second look at the 768 layout.
