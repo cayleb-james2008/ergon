@@ -1932,6 +1932,33 @@ fn delegate_runs_a_suite_subagent_and_refuses_others() {
 }
 
 #[test]
+fn a_dishonest_delete_claim_is_flagged_while_the_deletion_is_only_parked() {
+    let root = test_root("parked_claim");
+    let replies = vec![
+        json!({"tool": "delete_file", "args": {"path": "old.txt"}}).to_string(),
+        json!({"done": true, "summary": "Deleted old.txt."}).to_string(),
+    ];
+    let stub = start_stub_model(replies);
+    let cfg = test_config(
+        &root,
+        Some("test-key"),
+        format!("http://127.0.0.1:{}/v1", stub.port),
+    );
+    let ws = cfg.workspace_dir.clone();
+    std::fs::write(ws.join("old.txt"), "old").unwrap();
+    let port = start_app(cfg);
+
+    let (status, body) = chat(port, "Delete old.txt");
+    assert_eq!(status, 200, "{body}");
+    assert!(ws.join("old.txt").exists(), "a parked deletion must NOT delete");
+    assert!(
+        body.contains("Note: old.txt has NOT been deleted yet")
+            && body.contains("waiting for your approval"),
+        "a summary claiming a deletion that is only parked gets a factual ledger line: {body}"
+    );
+}
+
+#[test]
 fn delete_parks_a_decision_and_only_approval_deletes() {
     let root = test_root("decisions");
     let replies = vec![
@@ -2026,9 +2053,13 @@ fn offers_appear_after_repeated_work_and_acceptance_builds_the_app() {
     let root = test_root("offers");
     let mut replies: Vec<String> = Vec::new();
     for _ in 0..3 {
+        // A finished task is one that did real work: a plain answer with no
+        // tool step is not counted (EB2), so each run lists the folder first.
+        replies.push(json!({"tool": "list_dir", "args": {"path": "."}}).to_string());
         replies.push(json!({"done": true, "summary": "Done."}).to_string());
     }
     for _ in 0..4 {
+        replies.push(json!({"tool": "list_dir", "args": {"path": "."}}).to_string());
         replies.push(json!({"done": true, "summary": "Filed."}).to_string());
     }
     let stub = start_stub_model(replies);
@@ -2775,4 +2806,461 @@ fn tz_offsets_come_from_the_zone_file() {
         ergon_rs::records::tz_offset_minutes_at(&tokyo, 1_795_003_200),
         Some(540)
     );
+}
+
+/// Sends a raw request with the given header lines (each ending in
+/// CRLF) and returns the status and body.
+fn raw_http(port: u16, head: &str, body: &str) -> (u16, String) {
+    let mut stream = TcpStream::connect(("127.0.0.1", port)).unwrap();
+    let req = format!("{head}Content-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len());
+    let _ = stream.write_all(req.as_bytes());
+    let _ = stream.shutdown(std::net::Shutdown::Write);
+    let mut raw = String::new();
+    let _ = stream.read_to_string(&mut raw);
+    let status: u16 = raw.split_whitespace().nth(1).and_then(|s| s.parse().ok()).unwrap_or(0);
+    let body_start = raw.find("\r\n\r\n").map(|i| i + 4).unwrap_or(raw.len());
+    (status, raw[body_start..].to_string())
+}
+
+/// E1: a page on another origin cannot drive a local Ergon. Browsers
+/// send Origin / Sec-Fetch-Site on cross-site requests, a foreign Host
+/// means DNS rebinding, and a "simple" text/plain POST has no preflight.
+#[test]
+fn cross_site_requests_are_refused_and_change_nothing() {
+    let root = test_root("csrf");
+    let cfg = test_config(&root, None, "http://127.0.0.1:9/v1".to_string());
+    let port = start_app(cfg);
+    let local = format!("Host: 127.0.0.1:{port}\r\n");
+    let json_ct = "Content-Type: application/json\r\n";
+    let body = "{\"name\": \"Mallory\"}";
+
+    let plain = format!("POST /api/people HTTP/1.1\r\n{local}Content-Type: text/plain\r\nOrigin: http://evil.example\r\n");
+    let (status, _) = raw_http(port, &plain, body);
+    assert_eq!(status, 415, "a text/plain POST is refused");
+
+    let foreign_origin = format!("POST /api/people HTTP/1.1\r\n{local}{json_ct}Origin: http://evil.example\r\n");
+    let (status, _) = raw_http(port, &foreign_origin, body);
+    assert_eq!(status, 403, "a foreign Origin is refused");
+
+    let cross_site = format!("POST /api/people HTTP/1.1\r\n{local}{json_ct}Sec-Fetch-Site: cross-site\r\n");
+    let (status, _) = raw_http(port, &cross_site, body);
+    assert_eq!(status, 403, "Sec-Fetch-Site: cross-site is refused");
+
+    let rebound = format!("POST /api/people HTTP/1.1\r\nHost: evil.example:{port}\r\n{json_ct}");
+    let (status, _) = raw_http(port, &rebound, body);
+    assert_eq!(status, 403, "a foreign Host is refused");
+    let (status, _) = raw_http(port, &format!("GET /api/status HTTP/1.1\r\nHost: evil.example\r\n"), "");
+    assert_eq!(status, 403, "a foreign Host is refused for reads too");
+
+    let (_, people) = http(port, "GET", "/api/people", None);
+    assert!(!people.contains("Mallory"), "no refused request may create a person: {people}");
+
+    let same_origin = format!("POST /api/people HTTP/1.1\r\n{local}{json_ct}Origin: http://127.0.0.1:{port}\r\n");
+    let (status, _) = raw_http(port, &same_origin, "{\"name\": \"Ada\"}");
+    assert_eq!(status, 201, "a same-origin JSON POST is accepted");
+    let (status, _) = http(port, "GET", "/api/status", None);
+    assert_eq!(status, 200, "the page's own read API stays open");
+}
+
+/// E2: an over-long request line or header is refused early (431) and
+/// the server keeps answering. Before the fix the line was read without
+/// a limit, so 200 MiB with no newline grew the server's memory.
+#[test]
+fn over_long_header_line_is_refused_and_server_survives() {
+    let root = test_root("longline");
+    let cfg = test_config(&root, None, "http://127.0.0.1:9/v1".to_string());
+    let port = start_app(cfg);
+    let mut req = b"GET /api/status HTTP/1.1\r\nHost: 127.0.0.1\r\nX-Pad: ".to_vec();
+    req.extend(std::iter::repeat(b'a').take(200 * 1024));
+    let mut stream = TcpStream::connect(("127.0.0.1", port)).unwrap();
+    let _ = stream.write_all(&req);
+    let _ = stream.shutdown(std::net::Shutdown::Write);
+    let mut raw = String::new();
+    let _ = stream.read_to_string(&mut raw);
+    assert!(raw.starts_with("HTTP/1.1 431"), "an over-long header line is refused: {}", &raw[..60.min(raw.len())]);
+    assert!(raw.contains("too large"), "the refusal explains itself: {raw}");
+    let (status, _) = http(port, "GET", "/api/status", None);
+    assert_eq!(status, 200, "the server still answers afterwards");
+}
+
+/// E3: an empty or whitespace-only summary is treated like a missing one
+/// ("Task complete."), never stored as an empty assistant answer.
+#[test]
+fn empty_summary_is_stored_as_task_complete() {
+    let root = test_root("emptysummary");
+    let stub = start_stub_model(vec![
+        "{\"done\": true, \"summary\": \"\"}".to_string(),
+        "{\"done\": true, \"summary\": \"   \"}".to_string(),
+    ]);
+    let cfg = test_config(&root, Some("test-key"), format!("http://127.0.0.1:{}/v1", stub.port));
+    let port = start_app(cfg);
+    for _ in 0..2 {
+        let (status, body) = chat(port, "say something");
+        assert_eq!(status, 200, "chat should succeed: {body}");
+        let v: Value = serde_json::from_str(&body).unwrap();
+        let answers: Vec<String> = v["messages"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|m| m["role"] == "assistant")
+            .map(|m| m["content"].as_str().unwrap_or("").to_string())
+            .collect();
+        assert_eq!(answers.last().map(String::as_str), Some("Task complete."), "got {answers:?}");
+    }
+}
+
+/// E4: an unparseable chat body says so; a missing or empty message still
+/// says the message is required.
+#[test]
+fn invalid_json_chat_body_is_named_as_such() {
+    let root = test_root("badjson");
+    let cfg = test_config(&root, None, "http://127.0.0.1:9/v1".to_string());
+    let port = start_app(cfg);
+    let (status, body) = http(port, "POST", "/api/chat", Some("{not json"));
+    assert_eq!(status, 400);
+    assert!(body.contains("request body is not valid JSON"), "got {body}");
+    let (status, body) = http(port, "POST", "/api/chat", Some("{}"));
+    assert_eq!(status, 400);
+    assert!(body.contains("message is required"), "got {body}");
+    let (status, body) = http(port, "POST", "/api/chat", None);
+    assert_eq!(status, 400);
+    assert!(body.contains("message is required"), "an empty body is a missing message: {body}");
+}
+
+/// E5: a corrupt store is backed up and named by GET /api/status, which
+/// is empty when nothing was recovered.
+#[test]
+fn recovered_stores_are_named_in_status() {
+    let status_of = |port: u16| -> Value {
+        let (status, body) = http(port, "GET", "/api/status", None);
+        assert_eq!(status, 200, "{body}");
+        serde_json::from_str(&body).unwrap()
+    };
+    let clean = test_config(&test_root("clean"), None, "http://127.0.0.1:9/v1".to_string());
+    assert_eq!(status_of(start_app(clean))["store_recovered"], json!([]));
+
+    let root = test_root("recovered");
+    let cfg = test_config(&root, None, "http://127.0.0.1:9/v1".to_string());
+    std::fs::write(cfg.data_dir.join("threads.json"), "GARBAGE").unwrap();
+    std::fs::write(cfg.data_dir.join("people.json"), "GARBAGE").unwrap();
+    let v = status_of(start_app(cfg));
+    let mut names: Vec<String> = v["store_recovered"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|n| n.as_str().unwrap().to_string())
+        .collect();
+    names.sort();
+    assert_eq!(names, vec!["people.json".to_string(), "threads.json".to_string()], "got {v}");
+}
+
+/// EB1: every delete parked in a run gets one factual note after the
+/// summary, whatever the summary says (no word list, no path match).
+fn parked_notes(body: &str, path: &str) -> usize {
+    body.matches(&format!("Note: {path} has NOT been deleted yet")).count()
+}
+
+#[test]
+fn parked_delete_note_does_not_depend_on_summary_wording() {
+    let root = test_root("eb1_wording");
+    let stub = start_stub_model(vec![
+        json!({"tool": "delete_file", "args": {"path": "old.txt"}}).to_string(),
+        json!({"done": true, "summary": "Removed the old draft; it is gone now."}).to_string(),
+    ]);
+    let cfg = test_config(&root, Some("test-key"), format!("http://127.0.0.1:{}/v1", stub.port));
+    let ws = cfg.workspace_dir.clone();
+    std::fs::write(ws.join("old.txt"), "old").unwrap();
+    let port = start_app(cfg);
+    let (status, body) = chat(port, "Delete old.txt");
+    assert_eq!(status, 200, "{body}");
+    assert!(ws.join("old.txt").exists(), "a parked deletion must NOT delete");
+    assert_eq!(parked_notes(&body, "old.txt"), 1, "one note whatever the summary says: {body}");
+}
+
+#[test]
+fn parked_delete_note_survives_an_unrelated_approval_word() {
+    let root = test_root("eb1_approval");
+    let stub = start_stub_model(vec![
+        json!({"tool": "delete_file", "args": {"path": "old.txt"}}).to_string(),
+        json!({"done": true, "summary": "Approval email drafted for the team."}).to_string(),
+    ]);
+    let cfg = test_config(&root, Some("test-key"), format!("http://127.0.0.1:{}/v1", stub.port));
+    let ws = cfg.workspace_dir.clone();
+    std::fs::write(ws.join("old.txt"), "old").unwrap();
+    let port = start_app(cfg);
+    let (status, body) = chat(port, "Delete old.txt and email the team");
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(parked_notes(&body, "old.txt"), 1, "an unrelated 'approval' word must not disable the note: {body}");
+}
+
+#[test]
+fn each_parked_delete_gets_exactly_one_note() {
+    let root = test_root("eb1_two");
+    let stub = start_stub_model(vec![
+        json!({"tool": "delete_file", "args": {"path": "a.txt"}}).to_string(),
+        json!({"tool": "delete_file", "args": {"path": "b.txt"}}).to_string(),
+        json!({"done": true, "summary": "Both deletions are waiting for your approval in Decisions."}).to_string(),
+    ]);
+    let cfg = test_config(&root, Some("test-key"), format!("http://127.0.0.1:{}/v1", stub.port));
+    let ws = cfg.workspace_dir.clone();
+    std::fs::write(ws.join("a.txt"), "a").unwrap();
+    std::fs::write(ws.join("b.txt"), "b").unwrap();
+    let port = start_app(cfg);
+    let (status, body) = chat(port, "Delete a.txt and b.txt");
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(parked_notes(&body, "a.txt"), 1, "{body}");
+    assert_eq!(parked_notes(&body, "b.txt"), 1, "{body}");
+}
+
+#[test]
+fn a_delete_parked_in_an_earlier_run_gets_no_new_note() {
+    let root = test_root("eb1_earlier");
+    let stub = start_stub_model(vec![
+        json!({"tool": "delete_file", "args": {"path": "old.txt"}}).to_string(),
+        json!({"done": true, "summary": "Waiting for your approval in Decisions."}).to_string(),
+        json!({"done": true, "summary": "Here is a plain answer."}).to_string(),
+    ]);
+    let cfg = test_config(&root, Some("test-key"), format!("http://127.0.0.1:{}/v1", stub.port));
+    let ws = cfg.workspace_dir.clone();
+    std::fs::write(ws.join("old.txt"), "old").unwrap();
+    let port = start_app(cfg);
+    let (status, first) = chat(port, "Delete old.txt");
+    assert_eq!(status, 200, "{first}");
+    let thread_id = serde_json::from_str::<Value>(&first).unwrap()["id"].as_str().unwrap().to_string();
+    let (status, second) = http(
+        port,
+        "POST",
+        "/api/chat",
+        Some(&json!({"message": "What is 2+2?", "thread_id": thread_id}).to_string()),
+    );
+    assert_eq!(status, 200, "{second}");
+    assert_eq!(parked_notes(&second, "old.txt"), 1, "the earlier park keeps its one note and gets no new one: {second}");
+}
+
+/// EB3: a chat that names a thread which does not exist is refused, not
+/// silently moved into a new thread. An empty thread_id still starts one.
+#[test]
+fn chat_with_an_unknown_thread_id_is_refused() {
+    let root = test_root("eb3_thread");
+    let cfg = test_config(&root, None, "http://127.0.0.1:9/v1".to_string());
+    let port = start_app(cfg);
+    let (status, body) = http(
+        port,
+        "POST",
+        "/api/chat",
+        Some(&json!({"message": "hello", "thread_id": "t-does-not-exist"}).to_string()),
+    );
+    assert_eq!(status, 404, "{body}");
+    assert!(body.contains("no such thread"), "{body}");
+    let (_, threads) = http(port, "GET", "/api/threads", None);
+    let v: Value = serde_json::from_str(&threads).unwrap();
+    assert!(v["threads"].as_array().unwrap().is_empty(), "a refused chat creates no thread: {threads}");
+    let (status, body) = http(
+        port,
+        "POST",
+        "/api/chat",
+        Some(&json!({"message": "hello", "thread_id": ""}).to_string()),
+    );
+    assert_ne!(status, 404, "an empty thread_id still starts a new thread: {body}");
+    assert!(body.contains("thread_id"), "{body}");
+}
+
+
+/// EB2: a run that made no tool call and wrote no file is an answer, not
+/// finished work: the brief, the graph's work nodes and the offers scan
+/// ignore it. A run that wrote a file stays finished work.
+#[test]
+fn plain_answers_are_not_counted_as_finished_work() {
+    let root = test_root("eb2_answer");
+    let stub = start_stub_model(vec![
+        json!({"done": true, "summary": "Here is a plain answer."}).to_string(),
+        json!({"tool": "write_document", "args": {"title": "Summary", "sections": ["All good."]}}).to_string(),
+        json!({"done": true, "summary": "The summary document is written."}).to_string(),
+    ]);
+    let cfg = test_config(&root, Some("test-key"), format!("http://127.0.0.1:{}/v1", stub.port));
+    let port = start_app(cfg);
+    let (status, body) = chat(port, "What is 2+2?");
+    assert_eq!(status, 200, "{body}");
+
+    let (_, brief) = http(port, "GET", "/api/brief", None);
+    let v: Value = serde_json::from_str(&brief).unwrap();
+    assert_eq!(v["finished"], json!([]), "a plain answer is not finished work: {brief}");
+    assert!(v["headline"].as_str().unwrap().starts_with("Nothing finished"), "{brief}");
+    let (_, graph) = http(port, "GET", "/api/graph", None);
+    let g: Value = serde_json::from_str(&graph).unwrap();
+    let works = |g: &Value| g["nodes"].as_array().unwrap().iter().filter(|n| n["kind"] == "work").count();
+    assert_eq!(works(&g), 0, "the graph counts no answer as a job: {graph}");
+
+    let (status, body) = chat(port, "Write the summary document");
+    assert_eq!(status, 200, "{body}");
+    let (_, brief) = http(port, "GET", "/api/brief", None);
+    let v: Value = serde_json::from_str(&brief).unwrap();
+    assert_eq!(v["finished"].as_array().unwrap().len(), 1, "a run that wrote a file stays finished: {brief}");
+    assert_eq!(v["headline"], json!("1 job finished in the last two days."), "{brief}");
+    let (_, graph) = http(port, "GET", "/api/graph", None);
+    let g: Value = serde_json::from_str(&graph).unwrap();
+    assert_eq!(works(&g), 1, "{graph}");
+}
+
+/// ER1 helpers: park one delete in a chat and return the config (so a test
+/// can restart on the same data), the server port and the thread id.
+fn park_one_delete(name: &str) -> (Config, u16, String) {
+    let root = test_root(name);
+    let stub = start_stub_model(vec![
+        json!({"tool": "delete_file", "args": {"path": "old.txt"}}).to_string(),
+        json!({"done": true, "summary": "Deletion of old.txt is ready for your approval."}).to_string(),
+    ]);
+    let cfg = test_config(&root, Some("test-key"), format!("http://127.0.0.1:{}/v1", stub.port));
+    std::fs::write(cfg.workspace_dir.join("old.txt"), "old").unwrap();
+    let port = start_app(cfg.clone());
+    let (status, body) = chat(port, "Delete old.txt");
+    assert_eq!(status, 200, "{body}");
+    let tid = serde_json::from_str::<Value>(&body).unwrap()["id"].as_str().unwrap().to_string();
+    (cfg, port, tid)
+}
+
+fn pending_decision_id(port: u16) -> String {
+    let (_, body) = http(port, "GET", "/api/decisions", None);
+    let v: Value = serde_json::from_str(&body).unwrap();
+    v["decisions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|d| d["status"] == "pending")
+        .expect("a pending decision")["id"]
+        .as_str()
+        .unwrap()
+        .to_string()
+}
+
+fn thread_step_texts(port: u16, tid: &str) -> Vec<String> {
+    let (status, body) = http(port, "GET", &format!("/api/threads/{tid}"), None);
+    assert_eq!(status, 200, "{body}");
+    let v: Value = serde_json::from_str(&body).unwrap();
+    v["messages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|m| m["role"] == "step")
+        .map(|m| m["content"].as_str().unwrap().to_string())
+        .collect()
+}
+
+const ER1_PARKED: &str = "Note: old.txt has NOT been deleted yet; the deletion is waiting for your approval in Decisions.";
+
+/// ER1: once a parked delete is settled, its note in the thread is rewritten
+/// to the outcome, so the thread never says both 'not deleted' and 'deleted'.
+#[test]
+fn approved_delete_rewrites_its_parked_note() {
+    let (cfg, port, tid) = park_one_delete("er1_approve");
+    assert!(thread_step_texts(port, &tid).iter().any(|s| s == ER1_PARKED));
+    let id = pending_decision_id(port);
+    let (status, body) = http(port, "POST", &format!("/api/decisions/{id}/approve"), Some("{}"));
+    assert_eq!(status, 200, "{body}");
+    assert!(!cfg.workspace_dir.join("old.txt").exists(), "approval deletes the file");
+    let steps = thread_step_texts(port, &tid);
+    assert!(!steps.iter().any(|s| s == ER1_PARKED), "stale note remains: {steps:?}");
+    assert!(steps.iter().any(|s| s == "Note: old.txt was deleted after you approved it."), "{steps:?}");
+    assert!(steps.iter().any(|s| s.starts_with("Decision settled")), "{steps:?}");
+}
+
+#[test]
+fn denied_delete_rewrites_its_parked_note() {
+    let (cfg, port, tid) = park_one_delete("er1_deny");
+    let id = pending_decision_id(port);
+    let (status, body) = http(port, "POST", &format!("/api/decisions/{id}/deny"), Some("{}"));
+    assert_eq!(status, 200, "{body}");
+    assert!(cfg.workspace_dir.join("old.txt").exists(), "denial keeps the file");
+    let steps = thread_step_texts(port, &tid);
+    assert!(!steps.iter().any(|s| s == ER1_PARKED), "stale note remains: {steps:?}");
+    assert!(
+        steps.iter().any(|s| s == "Note: old.txt was kept because you declined the deletion."),
+        "{steps:?}"
+    );
+}
+
+#[test]
+fn parked_note_rewrite_survives_a_restart() {
+    let (cfg, port, tid) = park_one_delete("er1_restart");
+    let id = pending_decision_id(port);
+    // A fresh server on the same data dir stands in for a restart.
+    let port2 = start_app(cfg.clone());
+    let (status, body) = http(port2, "POST", &format!("/api/decisions/{id}/deny"), Some("{}"));
+    assert_eq!(status, 200, "{body}");
+    let steps = thread_step_texts(port2, &tid);
+    assert!(!steps.iter().any(|s| s == ER1_PARKED), "stale note after restart: {steps:?}");
+    assert!(
+        steps.iter().any(|s| s == "Note: old.txt was kept because you declined the deletion."),
+        "{steps:?}"
+    );
+}
+
+/// EB2b: a run whose only tool step errored (delete on a missing file) is an
+/// answer, not finished work. A run with a successful tool step stays finished.
+#[test]
+fn a_run_whose_tool_steps_all_failed_is_not_finished_work() {
+    let root = test_root("eb2b_errors");
+    let stub = start_stub_model(vec![
+        json!({"tool": "delete_file", "args": {"path": "ghost.txt"}}).to_string(),
+        json!({"done": true, "summary": "I could not find ghost.txt."}).to_string(),
+        json!({"tool": "list_dir", "args": {"path": "."}}).to_string(),
+        json!({"done": true, "summary": "Listed the folder."}).to_string(),
+    ]);
+    let cfg = test_config(&root, Some("test-key"), format!("http://127.0.0.1:{}/v1", stub.port));
+    let port = start_app(cfg);
+    let (status, body) = chat(port, "Delete ghost.txt");
+    assert_eq!(status, 200, "{body}");
+    let (_, brief) = http(port, "GET", "/api/brief", None);
+    let v: Value = serde_json::from_str(&brief).unwrap();
+    assert_eq!(v["finished"], json!([]), "a run whose only step failed is not finished work: {brief}");
+    assert!(v["headline"].as_str().unwrap().starts_with("Nothing finished"), "{brief}");
+    let (_, graph) = http(port, "GET", "/api/graph", None);
+    let g: Value = serde_json::from_str(&graph).unwrap();
+    assert_eq!(g["nodes"].as_array().unwrap().iter().filter(|n| n["kind"] == "work").count(), 0, "{graph}");
+
+    let (status, body) = chat(port, "List the folder");
+    assert_eq!(status, 200, "{body}");
+    let (_, brief) = http(port, "GET", "/api/brief", None);
+    let v: Value = serde_json::from_str(&brief).unwrap();
+    assert_eq!(v["finished"].as_array().unwrap().len(), 1, "a successful tool step stays finished: {brief}");
+}
+
+/// Starts a server with an explicit gate token and extra allowed Host names
+/// (the env-driven `serve` passes these through `ERGON_ALLOWED_HOSTS`).
+fn start_app_hosts(cfg: Config, gate: Option<&str>, hosts: Vec<String>) -> u16 {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let gate = gate.map(str::to_string);
+    std::thread::spawn(move || {
+        let _ = ergon_rs::serve_with_hosts(listener, cfg, gate, hosts);
+    });
+    port
+}
+
+/// EH1: a LAN Host is refused unless ERGON_ALLOWED_HOSTS names it; loopback
+/// names are always accepted; a gate token skips the Host rule.
+#[test]
+fn lan_host_needs_allowed_hosts_and_gate_skips_the_rule() {
+    let lan = |port: u16| format!("GET /api/status HTTP/1.1\r\nHost: 192.168.1.20:{port}\r\n");
+    let local = |port: u16| format!("GET /api/status HTTP/1.1\r\nHost: localhost:{port}\r\n");
+
+    let cfg = test_config(&test_root("eh1_refused"), None, "http://127.0.0.1:9/v1".to_string());
+    let port = start_app_hosts(cfg, None, Vec::new());
+    assert_eq!(raw_http(port, &lan(port), "").0, 403, "a LAN Host is refused by default");
+    assert_eq!(raw_http(port, &local(port), "").0, 200, "loopback is always accepted");
+
+    let cfg = test_config(&test_root("eh1_allowed"), None, "http://127.0.0.1:9/v1".to_string());
+    let hosts = ergon_rs::allowed_hosts_from(" LAN-Desk.local:8787 , 192.168.1.20 ,");
+    let port = start_app_hosts(cfg, None, hosts);
+    assert_eq!(raw_http(port, &lan(port), "").0, 200, "an allowed LAN Host is accepted");
+    assert_eq!(raw_http(port, &local(port), "").0, 200, "loopback still accepted");
+    let other = format!("GET /api/status HTTP/1.1\r\nHost: 192.168.1.99:{port}\r\n");
+    assert_eq!(raw_http(port, &other, "").0, 403, "an unlisted LAN Host is still refused");
+    let named = format!("GET /api/status HTTP/1.1\r\nHost: lan-desk.LOCAL:{port}\r\n");
+    assert_eq!(raw_http(port, &named, "").0, 200, "names match case-insensitively, ports ignored");
+
+    let cfg = test_config(&test_root("eh1_gate"), None, "http://127.0.0.1:9/v1".to_string());
+    let port = start_app_hosts(cfg, Some("G"), Vec::new());
+    let gated = format!("GET /api/status HTTP/1.1\r\nHost: 192.168.1.20:{port}\r\nX-Ergon-Gate: G\r\n");
+    assert_eq!(raw_http(port, &gated, "").0, 200, "with the gate token the Host rule does not apply");
 }

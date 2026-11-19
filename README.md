@@ -42,29 +42,27 @@ chat-completions endpoint; the default is OpenCode Go with
 | Var | Default |
 | --- | --- |
 | `ERGON_HOST` / `ERGON_PORT` | `127.0.0.1` / `8787` |
+| `ERGON_ALLOWED_HOSTS` | — (comma-separated host names, with or without ports, case-insensitive; extra Host names accepted when no gate token is set, e.g. a LAN name for `/phone`. Loopback is always accepted) |
 | `ERGON_DATA_DIR` | `./data` (people, threads, per-person workspaces) |
 | `ERGON_WORKSPACE` | `<data>/workspace` — the default person's sandbox root |
 | `ERGON_MODEL_BASE_URL` | `https://opencode.ai/zen/go/v1` |
 | `ERGON_MODEL_ID` | `deepseek-v4.1-flash` |
 | `ERGON_MODEL_API_KEY` | — (bearer key; every model call also sends `x-opencode-session` + a browser User-Agent) |
 | `ERGON_GATE_TOKEN` | — (when set, every request must carry the matching `X-Ergon-Gate` header; this is the hosting layer's gate — Ergon itself has no accounts or passwords) |
-| `ERGON_GATE_TOKEN` | — (when set, every request must carry the matching `X-Ergon-Gate` header; this is the hosting layer's gate — Ergon itself has no accounts or passwords) |
 
 ## How it works
 
-- **Shell** — embedded HTML/CSS/JS, three switchable faces over one
-  core: the **Work Graph** (people → suite items → finished work →
-  files, drawn from the real stores; it re-lays itself out compactly
-  on narrow screens), the **Conversation Spine** (the familiar chat
-  shell: sidebar with the person switcher and thread list, one
-  scrolling thread, composer pinned at the bottom) and the **Today
-  River** (the morning brief, the decisions inbox, offers and the
-  day's stream). Agent steps appear in the thread as a plain ledger of
-  what was actually done; the finished result is the final message.
-  A pre-packaged **phone app** (`/phone`) puts the same core in a
-  pocket face — brief, chat, decisions and suite behind a bottom tab
-  bar, same session discipline. Light and dark themes, toggle under
-  Settings → Appearance, dark by default.
+- **Shell** — two embedded pages in `assets/` (`index.html`, `phone.html`),
+  each one file of HTML, CSS and JS. The desktop face opens on **Chat**: a
+  sidebar with the person switcher, New chat, the conversation list and
+  Settings (appearance, what the agent has learned, the suite and library,
+  add a person). The top bar switches to **Today** (the morning brief,
+  what is waiting on you with approve or decline, what the agent learned,
+  offers, today's stream) and **Work Graph** (a plain list under 768px).
+  Agent steps appear in the thread as a ledger of what was actually done;
+  the finished result is the final message. The phone face (`/phone`) has a
+  bottom tab bar (Brief, Chat, Decisions, Suite) with the composer above it.
+  Dark is the default; the light theme is under Settings, Appearance.
 - **People** — every employee gets their own workspace, memory and
   threads (`people.json` + one data directory per person). People can be
   created in the UI; a new person's agent starts from a seeded memory.
@@ -72,6 +70,8 @@ chat-completions endpoint; the default is OpenCode Go with
   session ids are 16 random bytes and a forged or unknown cookie is
   replaced, never adopted.
 - **Agent loop** (`src/lib.rs`) — `POST /api/chat {thread_id, message}`.
+  A non-empty `thread_id` that does not exist gets 404 `no such thread`
+  (an empty id starts a new thread).
   The model replies with one JSON object per turn —
   `{"tool": name, "args": {...}}` or `{"done": true, "summary": "..."}` —
   the loop executes the tool for real, feeds the result back, and
@@ -115,7 +115,9 @@ chat-completions endpoint; the default is OpenCode Go with
   file is deleted (the exact path approved — a symlink approval
   deletes the link, never its target) only when the person approves
   in the inbox, and the outcome reports back into the thread it came
-  from. Everything else finishes autonomously.
+  from; the thread's "has NOT been deleted yet" note for that file is
+  rewritten to say whether it was deleted or kept. Everything else
+  finishes autonomously.
 - **Proactive offers** — the agent watches its own work log: the same
   kind of finished task three times earns an offer to turn it into a
   one-tap app in the suite (accepting builds and installs it);
@@ -124,13 +126,21 @@ chat-completions endpoint; the default is OpenCode Go with
   runs earn nothing, and re-running an existing app doesn't count.
 - **Morning brief** — yesterday's finished work, what's waiting on
   the person, and what the agent learned recently, assembled from the
-  real stores on the Today River and the phone's Brief tab. "Today"
-  is the host's local day, read from its zone file.
+  real stores on the Today face and the phone's Brief tab. "Today"
+  is the host's local day, read from its zone file. A plain answer (no
+  successful tool step and no written file), or a run whose tool steps
+  all failed, is kept in the log but is not finished work: it is not in
+  the brief, the graph's work nodes or the offers scan.
 - **Honesty machinery** — a run's summary is checked against the files
   the run actually wrote: naming a file the run didn't write produces a
   factual ledger line in the thread, never a silent pass. Requests over
-  1 MB get a real HTTP 413; every request has a 30-second total
-  deadline. Thread and people stores save atomically, and a corrupt
+  1 MB get a real HTTP 413; request heads over 32 KiB get a 431; every
+  request has a 30-second total deadline. A request whose Host is not
+  localhost, 127.0.0.1, [::1] or `ERGON_ALLOWED_HOSTS` gets 403 (unless a
+  gate token is set), a POST that a browser sends cross-site or with a
+  foreign Origin gets 403, and a POST with a body that is not JSON gets
+  415. `GET /api/status` includes `store_recovered`: the file names moved
+  to a backup at load (empty when none), shown as a notice in the Chat face. Thread and people stores save atomically, and a corrupt
   store — invalid JSON *or* valid JSON of the wrong shape — is backed
   up (first free `.bak` suffix) instead of being silently overwritten.
 - **Rune skills** (`src/skills/*.rn`, host layer in `src/skills.rs`) —
@@ -141,7 +151,7 @@ chat-completions endpoint; the default is OpenCode Go with
 ## Proof
 
 ```sh
-CARGO_BUILD_JOBS=2 cargo test   # 65 tests, all passing
+CARGO_BUILD_JOBS=2 cargo test   # 82 tests, all passing
 ```
 
 `tests/e2e.rs` runs a stub model server (test fixture only) speaking
@@ -160,17 +170,9 @@ both ways, 413 with a body in flight, corrupt-store backups; plus 12
 for the completion build: library seeding and role-shaped suites,
 cross-person skill publishing, delegation, the delete gate, offers,
 brief/today/graph truth, app runs, faces and phone, the hosting gate,
-installer) passes **31/31** against the unmodified binary.
+installer) passed **31/31** against an earlier build of the binary; it was not re-run for this README.
 
-The completion build additionally survived a fresh-context
-thermonuclear review whose reproduced findings (a symlink-delete
-that hit the wrong file, unsynchronised record stores, prompt-only
-subagent restrictions, a library lock held across skill runs) were
-each fixed and pinned by a regression test, and a Hallmark-Rune
-front-end elevation graded by fresh-eyes checkers at eight widths in
-both themes (rendered lint: phone face zero findings; desktop zero
-findings except one scanner false positive on `#face-*` ID selectors,
-hand-verified).
+The completion build additionally survived a fresh-context thermonuclear review whose reproduced findings (a symlink-delete that hit the wrong file, unsynchronised record stores, prompt-only subagent restrictions, a library lock held across skill runs) were each fixed and pinned by a regression test.
 
 The live-model path is real code, exercised here against the stub
 because no model key is available in the build environment; point

@@ -234,6 +234,25 @@ pub fn append_work(
     thread_id: &str,
     finished: bool,
 ) {
+    append_entry(cfg, task, summary, files, thread_id, finished, false);
+}
+
+/// A run with no tool step and no written file: an answer, not work.
+/// It is kept in the log, marked `answered`, and left out of the brief,
+/// the graph's work nodes and the offers scan (EB2).
+pub fn append_answer(cfg: &Config, task: &str, summary: &str, thread_id: &str) {
+    append_entry(cfg, task, summary, &[], thread_id, true, true);
+}
+
+fn append_entry(
+    cfg: &Config,
+    task: &str,
+    summary: &str,
+    files: &[String],
+    thread_id: &str,
+    finished: bool,
+    answered: bool,
+) {
     with_records_lock(|| {
         let path = work_path(&cfg.data_dir);
         let mut items = load_array(&path, "entries");
@@ -244,6 +263,7 @@ pub fn append_work(
             "files": files,
             "thread_id": thread_id,
             "finished": finished,
+            "answered": answered,
         }));
         save_array(&path, "entries", &items);
     });
@@ -419,6 +439,7 @@ pub fn refresh_offers(cfg: &Config, suite: &Suite, library: &Library) -> Vec<Val
             .rev()
             .take(500)
             .filter(|e| e["finished"].as_bool() != Some(false))
+            .filter(|e| e["answered"].as_bool() != Some(true))
             .collect();
         let app_templates: Vec<&str> = library
             .items
@@ -545,6 +566,7 @@ pub fn build_brief(cfg: &Config, person_name: &str, suite: &Suite, library: &Lib
     let recent: Vec<&Value> = work
         .iter()
         .filter(|e| e["finished"].as_bool() != Some(false))
+        .filter(|e| e["answered"].as_bool() != Some(true))
         .filter(|e| now.saturating_sub(e["ts"].as_u64().unwrap_or(0)) <= 48 * 3_600_000)
         .collect();
     let finished: Vec<Value> = recent
@@ -673,7 +695,10 @@ pub fn build_graph(people: &[crate::Person], root: &Config, library: &Library) -
             }
             edges.push(json!({"from": pid, "to": iid, "kind": "carries"}));
         }
-        let work = load_work(&pcfg.data_dir);
+        let work: Vec<Value> = load_work(&pcfg.data_dir)
+            .into_iter()
+            .filter(|e| e["answered"].as_bool() != Some(true))
+            .collect();
         for (n, e) in work.iter().rev().take(12).enumerate() {
             let wid = format!("work:{}:{}", person.id, n);
             nodes.push(json!({

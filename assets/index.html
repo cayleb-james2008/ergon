@@ -1,0 +1,1617 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Ergon, an AI agent for every employee that finishes digital work end to end and says plainly what it did.">
+<title>Ergon: your agent that finishes the work</title>
+<script>
+  try {
+    var t = localStorage.getItem('ergon-theme');
+    if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t);
+  } catch (e) { /* dark stays the default */ }
+</script>
+<style>
+  /* Hallmark · shape: app screen · genre: modern-minimal · theme: ergon-instrument (hand-built tokens, dark default, paper light; Geist and Geist Mono) · checked: 2026-11-18 · built: the project · redesign: full · v2.0.0 */
+  /* Tokens. Dark is the default ground; light is the same instrument on paper. */
+  :root, [data-theme="dark"] {
+    color-scheme: dark;
+    --bg: #0f0e0c; --sidebar: #0b0a09; --panel: #171512; --panel-2: #201d19; --field: #14130f;
+    --track: #1d1b17; --raised: #2c2924; --rule: #2b2823; --rule-strong: #3a362f;
+    --ink: #ece9e2; --muted: #a6a094; --faint: #8a8474;
+    --primary: #ece9e2; --primary-ink: #14130f; --primary-hover: #ffffff;
+    --ok: #6fcf9f; --ok-bg: rgba(111, 207, 159, 0.12);
+    --wait: #e8b35c; --wait-bg: rgba(232, 179, 92, 0.12);
+    --need: #ef8a80; --need-bg: rgba(239, 138, 128, 0.12);
+    --elev-sheet: 0 0 40px rgba(0, 0, 0, 0.45);
+    --field-edge: #6e685c;
+    --scrim: rgba(0, 0, 0, 0.5); --elev-raised: 0 1px 2px rgba(0, 0, 0, 0.18);
+    --font-ui: "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --font-mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    --text-xs: 12px; --text-sm: 13px; --text-base: 15px; --text-md: 16px; --text-lg: 20px; --text-xl: 24px;
+    --r-1: 6px; --r-2: 8px; --r-3: 10px; --r-4: 14px; --r-pill: 999px;
+    --dur-micro: 120ms; --dur-short: 200ms;
+    --ease: cubic-bezier(0.23, 1, 0.32, 1);
+  }
+  [data-theme="light"] {
+    color-scheme: light;
+    --bg: #f6f5f1; --sidebar: #efede7; --panel: #ffffff; --panel-2: #f3f1ec; --field: #ffffff;
+    --track: #ebe8e0; --raised: #ffffff; --rule: #dedad0; --rule-strong: #cfcabd;
+    --ink: #1c1a16; --muted: #5f5a4f; --faint: #6e6759;
+    --primary: #1c1a16; --primary-ink: #ffffff; --primary-hover: #2b2620;
+    --ok: #1f7a52; --ok-bg: #e3f2e9;
+    --wait: #8a5a00; --wait-bg: #fbf0d8;
+    --need: #a8322a; --need-bg: #fbe6e3;
+    --elev-sheet: 0 0 40px rgba(28, 26, 22, 0.18);
+    --field-edge: #8a8374;
+    --scrim: rgba(28, 26, 22, 0.35); --elev-raised: 0 1px 2px rgba(28, 26, 22, 0.08);
+  }
+  * { box-sizing: border-box; }
+  h1, h2, h3 { text-wrap: balance; }
+  html, body { height: 100%; margin: 0; overflow-x: clip; }
+  body { font-family: var(--font-ui); font-size: var(--text-base); line-height: 1.5; font-weight: 400;
+         background: var(--bg); color: var(--ink); display: grid; grid-template-columns: 264px minmax(0, 1fr); }
+  ::selection { background: var(--raised); color: var(--ink); }
+  html { scrollbar-color: var(--rule-strong) transparent; }
+  :focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; border-radius: var(--r-1); }
+  button, select, textarea, input { font: inherit; color: inherit; }
+  button { cursor: pointer; transition: background-color var(--dur-micro) var(--ease), color var(--dur-micro) var(--ease),
+           border-color var(--dur-micro) var(--ease), transform var(--dur-micro) var(--ease); }
+  button:active:not(:disabled) { transform: scale(0.98); }
+  button:disabled { cursor: default; color: var(--faint); }
+  svg.i { width: 18px; height: 18px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.6;
+          stroke-linecap: round; stroke-linejoin: round; }
+  .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+  .quiet { color: var(--muted); font-size: var(--text-sm); margin: 0; }
+
+  /* ---------- sidebar ---------- */
+  #sidebar { background: var(--sidebar); border-right: 1px solid var(--rule); display: flex; flex-direction: column; overflow-y: auto;
+             gap: 16px; padding: 16px 12px; min-height: 0; height: 100%; }
+  .wordmark { display: flex; align-items: center; gap: 12px; padding: 4px 8px; font-size: var(--text-lg); font-weight: 600; letter-spacing: -0.01em; }
+  .wordmark svg { width: 22px; height: 22px; flex: none; }
+  .side-label { font-size: var(--text-xs); color: var(--faint); margin: 0 8px 4px; font-weight: 500; }
+  #person-select { width: 100%; background: var(--field); border: 1px solid var(--field-edge); border-radius: var(--r-2);
+                   padding: 8px 12px; font-size: var(--text-sm); min-height: 44px; }
+  #new-chat-btn { display: flex; align-items: center; justify-content: center; gap: 8px; background: var(--primary); color: var(--primary-ink);
+                  border: 0; border-radius: var(--r-2); padding: 12px 12px; font-size: var(--text-sm); font-weight: 600; min-height: 44px; }
+  #new-chat-btn:hover { background: var(--primary-hover); }
+  .conv { display: flex; flex-direction: column; flex: none; }
+  #thread-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+  #thread-list li { margin: 0; }
+  .thread-btn { display: block; width: 100%; text-align: left; background: none; border: 0; padding: 8px 12px; line-height: 1.25;
+                border-radius: var(--r-2); font-size: var(--text-sm); color: var(--muted); min-height: 44px; }
+  .thread-btn .t-title { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--ink); }
+  .thread-btn .t-sub { display: block; font-size: var(--text-xs); color: var(--faint); margin-top: 1px; font-variant-numeric: tabular-nums; }
+  .thread-btn:hover { background: var(--panel-2); }
+  .thread-btn.active { background: var(--raised); box-shadow: inset 0 0 0 1px var(--rule-strong); }
+  #side-error { display: none; color: var(--need); font-size: var(--text-sm); margin: 0 8px; }
+  .thread-empty { color: var(--faint); font-size: var(--text-sm); padding: 8px 12px; margin: 0; }
+
+  #settings { border-top: 1px solid var(--rule); padding-top: 12px; display: flex; flex-direction: column; gap: 8px;
+              flex: none; }
+  #settings > h2 { font-size: var(--text-xs); font-weight: 500; color: var(--faint); margin: 0 8px 4px; }
+  .set-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 8px; }
+  .set-name { font-size: var(--text-sm); color: var(--muted); }
+  .seg { display: inline-flex; background: var(--track); border-radius: var(--r-2); padding: 4px; gap: 4px; }
+  .seg-btn { background: none; border: 0; color: var(--muted); border-radius: var(--r-1); padding: 8px 12px; font-size: var(--text-sm);
+             font-weight: 500; min-height: 44px; display: inline-flex; align-items: center; gap: 8px; }
+  .seg-btn:hover { color: var(--ink); }
+  .seg-btn[aria-selected="true"], .seg-btn[aria-pressed="true"] { background: var(--raised); color: var(--ink);
+              box-shadow: var(--elev-raised); }
+  .side-btn { white-space: nowrap; display: flex; align-items: center; justify-content: space-between; gap: 8px; background: none; border: 0;
+              color: var(--ink); border-radius: var(--r-2); padding: 8px; font-size: var(--text-sm); text-align: left; min-height: 44px; width: 100%; }
+  .side-btn:hover { background: var(--panel-2); }
+  .side-btn[aria-expanded="true"] { background: var(--panel-2); }
+  .side-btn .chev { width: 14px; height: 14px; color: var(--faint); transition: transform var(--dur-short) var(--ease); }
+  .side-btn[aria-expanded="true"] .chev { transform: rotate(90deg); }
+  .panel-box { display: none; margin: 0 4px 8px; background: var(--panel); border: 1px solid var(--rule); border-radius: var(--r-2);
+               padding: 12px 12px; font-size: var(--text-sm); line-height: 1.5; color: var(--muted); max-height: 260px; overflow-y: auto; overflow-wrap: anywhere; }
+  .panel-box.open { display: block; }
+  .panel-box .mem-head { font-size: var(--text-sm); font-weight: 600; color: var(--ink); margin: 8px 0 4px; }
+  .panel-box .mem-head:first-child { margin-top: 0; }
+  .panel-box .mem-list { margin: 0; padding-left: 16px; }
+  .panel-box p { margin: 4px 0; }
+  .panel-box .mem-file { margin-top: 8px; border-top: 1px solid var(--rule); padding-top: 8px; }
+  .panel-box .mem-file summary { cursor: pointer; color: var(--faint); min-height: 32px; display: flex; align-items: center; }
+  .panel-box .mem-file pre { white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--font-mono); font-size: var(--text-xs); margin: 8px 0 0; color: var(--muted); }
+  .suite-item { background: var(--field); border: 1px solid var(--rule); border-radius: var(--r-2); padding: 12px 12px; margin-top: 8px; }
+  .suite-item .si-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .suite-item .si-name { font-size: var(--text-sm); font-weight: 600; }
+  .suite-item .si-desc { font-size: var(--text-xs); color: var(--muted); margin-top: 4px; line-height: 1.45; }
+  .suite-item .si-by { color: var(--faint); }
+  .suite-item input { background: var(--bg); color: var(--ink); border: 1px solid var(--rule); border-radius: var(--r-1);
+                      padding: 8px; font-size: var(--text-sm); width: 100%; margin-top: 8px; min-height: 40px; }
+  #person-form { display: none; flex-direction: column; gap: 8px; padding: 0 4px 8px; }
+  #person-form.open { display: flex; }
+  #person-form input { background: var(--field); border: 1px solid var(--rule); border-radius: var(--r-2); padding: 8px 12px; font-size: var(--text-sm); min-height: 40px; }
+  #person-form button[type="submit"] { background: var(--primary); color: var(--primary-ink); border: 0; border-radius: var(--r-2);
+                                       padding: 8px; font-size: var(--text-sm); font-weight: 600; min-height: 40px; }
+  #person-error { color: var(--need); font-size: var(--text-xs); margin: 0; display: none; }
+
+  /* ---------- main ---------- */
+  main { display: flex; flex-direction: column; min-width: 0; min-height: 0; height: 100%; }
+  .topbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 24px;
+            border-bottom: 1px solid var(--rule); flex-wrap: wrap; }
+  #face-bar { display: inline-flex; }
+  .face-btn { gap: 8px; padding: 8px 16px; min-height: 44px; font-size: var(--text-sm); }
+  .face-btn svg.i { width: 16px; height: 16px; }
+  .menu-btn { display: none; align-items: center; gap: 8px; background: var(--panel); border: 1px solid var(--rule); color: var(--ink);
+              border-radius: var(--r-2); padding: 0 12px; min-height: 44px; font-size: var(--text-sm); font-weight: 500; }
+  #scrim { display: none; }
+  .count-chip { display: none; min-width: 20px; height: 20px; padding: 0 8px; border-radius: var(--r-pill); background: var(--wait-bg);
+                color: var(--wait); font-size: var(--text-xs); font-weight: 600; align-items: center; justify-content: center;
+                font-variant-numeric: tabular-nums; }
+  .count-chip.on { display: inline-flex; }
+  .ready { display: inline-flex; align-items: center; gap: 8px; font-size: var(--text-sm); color: var(--muted); padding: 8px 12px;
+           border-radius: var(--r-pill); background: var(--panel); border: 1px solid var(--rule); min-height: 36px; }
+  .ready .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); flex: none; }
+  .ready.ok .dot { background: var(--ok); }
+  .ready.ok { color: var(--ink); }
+  .ready.wait .dot { background: var(--wait); }
+  .face { display: none; flex: 1; min-height: 0; flex-direction: column; }
+  .face.on { display: flex; }
+
+  /* chat */
+  #no-key-banner { display: none; background: var(--wait-bg); color: var(--ink); border-bottom: 1px solid var(--rule);
+                   padding: 12px 24px; font-size: var(--text-sm); }
+  #no-key-banner .operator { display: block; color: var(--muted); font-size: var(--text-xs); margin-top: 4px; }
+  #recovered-banner { display: none; align-items: center; gap: 16px; background: var(--wait-bg); color: var(--ink); border-bottom: 1px solid var(--rule);
+                      padding: 12px 24px; font-size: var(--text-sm); }
+  #recovered-banner span { flex: 1; min-width: 0; }
+  #thread { flex: 1; min-height: 0; overflow-y: auto; padding: 28px 24px 16px; }
+  #messages { max-width: 720px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; }
+  .empty { margin: 8vh auto 0; max-width: 560px; text-align: left; }
+  .empty h2 { font-size: var(--text-xl); font-weight: 600; margin: 0 0 8px; letter-spacing: -0.01em; }
+  .empty .sub { color: var(--muted); margin: 0; font-size: var(--text-sm); }
+  .starters { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 20px; }
+  .starter { text-align: left; background: var(--panel); border: 1px solid var(--rule); color: var(--ink); border-radius: var(--r-3);
+             padding: 12px 16px; font-size: var(--text-sm); line-height: 1.25; min-height: 44px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .starter:hover { border-color: var(--rule-strong); background: var(--panel-2); }
+  .msg { font-size: var(--text-base); line-height: 1.55; overflow-wrap: anywhere; white-space: pre-wrap; }
+  .msg.user { align-self: flex-end; max-width: 80%; background: var(--raised); border-radius: var(--r-4); padding: 12px 16px; }
+  .msg.result { align-self: stretch; background: var(--panel); border: 1px solid var(--rule); border-radius: var(--r-4); padding: 16px 16px;
+                animation: rise var(--dur-short) var(--ease); }
+  .result-head { display: flex; align-items: center; gap: 8px; color: var(--ok); font-size: var(--text-sm); font-weight: 600; margin-bottom: 8px; white-space: normal; }
+  .result-head svg.i { width: 16px; height: 16px; }
+  .result-body { white-space: pre-wrap; }
+  /* the work ledger: each step is a row with its icon and the result of that step */
+  .msg.step { display: flex; align-items: flex-start; gap: 12px; align-self: stretch; padding: 4px 0 4px 4px; color: var(--muted);
+              font-size: var(--text-sm); line-height: 1.45; white-space: pre-wrap; animation: rise var(--dur-short) var(--ease); }
+  .msg.step .l-icon { color: var(--ok); margin-top: 1px; display: inline-flex; }
+  .msg.step .l-icon svg.i { width: 16px; height: 16px; }
+  .msg.step .l-text { min-width: 0; overflow-wrap: anywhere; }
+  .msg.working { color: var(--muted); }
+  .msg.working .l-icon { color: var(--muted); }
+  .pulse { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); animation: pulse 1.2s ease-in-out infinite; margin: 4px 4px 0; flex: none; }
+  .msg.error { align-self: stretch; background: var(--need-bg); border-radius: var(--r-3); padding: 12px 16px; font-size: var(--text-sm); color: var(--ink); animation: rise var(--dur-short) var(--ease); }
+  .msg.error .err-title { color: var(--need); font-weight: 600; display: block; margin-bottom: 4px; }
+  .msg.error .err-next { color: var(--muted); display: block; margin-top: 4px; }
+  .msg.reply { align-self: stretch; font-size: var(--text-base); line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .l-label { display: block; min-width: 0; overflow-wrap: anywhere; }
+  .l-details { margin-top: 2px; font-size: var(--text-xs); color: var(--faint); }
+  .l-details summary { cursor: pointer; display: inline-flex; align-items: center; min-height: 24px; }
+  .l-details pre { white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--font-mono); font-size: var(--text-xs); color: var(--muted); margin: 4px 0 0; }
+  .msg.error .l-details { color: var(--muted); margin-top: 8px; }
+  .check { margin-top: 12px; border: 1px solid var(--wait); background: var(--wait-bg); border-radius: var(--r-2); padding: 8px 12px; font-size: var(--text-sm); color: var(--ink); white-space: pre-wrap; overflow-wrap: anywhere; }
+  .check-label { display: block; color: var(--wait); font-weight: 600; margin-bottom: 2px; }
+  .list-error { font-size: var(--text-sm); color: var(--muted); display: flex; flex-direction: column; gap: 8px; padding: 8px 12px; }
+  .list-error .act-btn { align-self: flex-start; }
+  .msg.result.waiting { border-color: var(--wait); }
+  .result-head.waiting-head { color: var(--wait); }
+  .waiting-title { font-size: var(--text-base); font-weight: 600; margin-bottom: 8px; line-height: 1.4; overflow-wrap: anywhere; }
+  .wait-go { margin-top: 12px; }
+  .pending-note { width: min(720px, calc(100% - 24px)); margin: 8px auto; font-size: var(--text-sm); color: var(--ink); background: var(--wait-bg);
+                  border: 1px solid var(--wait); border-radius: var(--r-2); padding: 8px 12px; }
+
+  #composer { border-top: 1px solid var(--rule); background: var(--bg); padding: 12px 24px 16px; }
+  #composer-inner { max-width: 720px; margin: 0 auto; display: flex; gap: 8px; align-items: flex-end; }
+  #composer-input { flex: 1; resize: none; background: var(--field); border: 1px solid var(--field-edge); border-radius: var(--r-4);
+                    padding: 12px 16px; font-size: var(--text-base); line-height: 1.5; min-height: 48px; max-height: 200px; }
+  #composer-input::placeholder { color: var(--faint); }
+  #composer-input:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; border-color: var(--ink); }
+  #send-btn { display: inline-flex; align-items: center; gap: 8px; background: var(--primary); color: var(--primary-ink); border: 0;
+              border-radius: var(--r-2); padding: 0 16px; font-size: var(--text-sm); font-weight: 600; min-height: 44px; flex: none; }
+  #send-btn:hover:not(:disabled) { background: var(--primary-hover); }
+  #send-btn:disabled { background: var(--track); color: var(--faint); }
+  .hint { max-width: 720px; margin: 8px auto 0; font-size: var(--text-xs); color: var(--faint); }
+
+  /* today */
+  #face-today, #face-graph { overflow-y: auto; padding: 24px; }
+  .face > .page { width: 100%; max-width: 1040px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; }
+  .cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: start; }
+  .cards .wide { grid-column: 1 / -1; }
+  .card { background: var(--panel); border: 1px solid var(--rule); border-radius: var(--r-4); padding: 16px 20px; min-width: 0; }
+  .card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+  .card-head h3 { margin: 0; font-size: var(--text-sm); font-weight: 600; color: var(--muted); }
+  .card h2.lead { margin: 0 0 4px; font-size: var(--text-lg); font-weight: 600; letter-spacing: -0.01em; line-height: 1.3; }
+  .card ul { margin: 8px 0 0; padding: 0; list-style: none; }
+  .card li { padding: 8px 0; border-top: 1px solid var(--rule); font-size: var(--text-sm); line-height: 1.45; }
+  .card li:first-child { border-top: 0; }
+  .card .row-meta { color: var(--faint); font-size: var(--text-xs); margin-top: 4px; font-variant-numeric: tabular-nums; }
+  .status-row { display: flex; align-items: center; gap: 12px; }
+  .status-row .dot { width: 9px; height: 9px; border-radius: 50%; flex: none; background: var(--faint); }
+  .status-row.ok .dot { background: var(--ok); }
+  .status-row.wait .dot { background: var(--wait); }
+  .stats { display: flex; gap: 24px; flex-wrap: wrap; margin-top: 12px; }
+  .stat .n { font-family: var(--font-mono); font-size: var(--text-lg); font-variant-numeric: tabular-nums; font-weight: 500; }
+  .stat .l { font-size: var(--text-xs); color: var(--muted); }
+  .item { padding: 12px 0; border-top: 1px solid var(--rule); }
+  .item:first-child { border-top: 0; padding-top: 0; }
+  .tag { display: inline-flex; align-items: center; gap: 8px; font-size: var(--text-xs); font-weight: 500; border-radius: var(--r-pill);
+         padding: 4px 8px; min-height: 22px; background: var(--track); color: var(--muted); }
+  .tag.wait { background: var(--wait-bg); color: var(--wait); }
+  .tag.need { background: var(--need-bg); color: var(--need); }
+  .tag.ok { background: var(--ok-bg); color: var(--ok); }
+  .item .i-name { font-size: var(--text-base); font-weight: 500; margin-top: 8px; line-height: 1.4; }
+  .item .i-why { font-size: var(--text-sm); color: var(--muted); margin-top: 4px; line-height: 1.45; }
+  .row-actions { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+  .act-btn { border-radius: var(--r-2); padding: 0 16px; font-size: var(--text-sm); font-weight: 600; background: var(--track); color: var(--ink);
+             border: 1px solid transparent; min-height: 44px; }
+  .act-btn:hover:not(:disabled) { border-color: var(--rule-strong); }
+  .act-btn:disabled { background: var(--track); color: var(--faint); }
+  .act-btn.primary { background: var(--primary); color: var(--primary-ink); }
+  .act-btn.primary:hover:not(:disabled) { background: var(--primary-hover); }
+  .settled { color: var(--faint); font-size: var(--text-xs); margin-top: 4px; }
+  .empty-note { color: var(--muted); font-size: var(--text-sm); padding: 4px 0; margin: 0; line-height: 1.5; }
+  .stream-item { display: grid; grid-template-columns: 74px minmax(0, 1fr); gap: 12px; padding: 12px 0; border-top: 1px solid var(--rule); }
+  .stream-item:first-child { border-top: 0; padding-top: 0; }
+  .stream-item .s-time { color: var(--faint); font-size: var(--text-xs); padding-top: 2px; }
+  .stream-item .s-title { font-size: var(--text-sm); line-height: 1.4; }
+  .stream-item .s-detail { font-size: var(--text-xs); color: var(--muted); margin-top: 4px; line-height: 1.45; white-space: pre-wrap; }
+
+  /* work graph */
+  .graph-card h2.lead { font-size: var(--text-lg); }
+  .facts { display: flex; flex-wrap: wrap; gap: 0; margin: 4px 0 16px; font-variant-numeric: tabular-nums; }
+  .facts .fact { padding: 0 16px; border-left: 1px solid var(--rule); font-size: var(--text-sm); color: var(--muted); white-space: nowrap; }
+  .facts .fact:first-child { padding-left: 0; border-left: 0; }
+  .facts .fact b { color: var(--ink); font-family: var(--font-mono); font-weight: 500; margin-right: 4px; }
+  #graph-svg { width: 100%; height: auto; display: block; }
+  .g-node rect { fill: var(--panel-2); stroke: var(--rule-strong); }
+  .g-node .g-kind { fill: var(--faint); font-size: 13px; }
+  .g-node .g-label { fill: var(--ink); font-size: 16px; }
+  .g-edge { stroke: var(--rule-strong); stroke-width: 1.4; }
+  #graph-list { display: none; list-style: none; margin: 0; padding: 0; }
+  #graph-list li { display: flex; align-items: baseline; gap: 12px; padding: 12px 0; border-top: 1px solid var(--rule); }
+  #graph-list li:first-child { border-top: 0; }
+  #graph-list .g-k { color: var(--faint); font-size: var(--text-xs); min-width: 56px; }
+  #graph-list .g-l { font-size: var(--text-sm); min-width: 0; overflow-wrap: anywhere; }
+  #graph-empty { display: none; }
+
+  @keyframes rise { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+  @keyframes pulse { 0%, 100% { opacity: 0.3; } 50% { opacity: 1; } }
+
+  /* narrow: the rail becomes a head block; the graph becomes a list; cards stack */
+  @media (max-width: 960px) {
+    .cards { grid-template-columns: minmax(0, 1fr); }
+  }
+  @media (max-width: 767px) {
+    body { display: flex; flex-direction: column; height: 100vh; height: 100dvh; }
+    main { flex: 1; min-height: 0; height: auto; }
+    .topbar { padding: 8px 12px; flex-wrap: nowrap; gap: 8px; }
+    .menu-btn { display: inline-flex; flex: none; }
+    #face-bar { flex: 1; min-width: 0; display: flex; }
+    #face-bar .seg-btn { flex: 1; justify-content: center; padding: 8px 4px; font-size: var(--text-xs); }
+    #face-bar .face-btn { min-width: 0; white-space: nowrap; }
+    #face-bar .face-btn svg.i { display: none; }
+    .ready { font-size: var(--text-xs); padding: 4px 8px; flex: none; }
+    #no-key-banner { padding: 12px 16px; flex: none; }
+    #recovered-banner { padding: 12px 16px; flex: none; }
+    #face-chat { flex: 1; min-height: 0; }
+    #thread { flex: 1; min-height: 0; overflow-y: auto; padding: 16px 16px 12px; }
+    #composer { flex: none; padding: 8px 12px 12px; }
+    #composer-inner { padding-left: 12px; }
+    .starters { grid-template-columns: minmax(0, 1fr); }
+    #face-today, #face-graph { flex: 1; min-height: 0; overflow-y: auto; padding: 16px; }
+    #graph-svg { display: none; }
+    #graph-list { display: block; }
+    #graph-list li { flex-direction: column; gap: 4px; }
+    #graph-list .g-k { min-width: 0; }
+    .stream-item { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+    .suite-item .si-top { flex-wrap: wrap; }
+    /* The rail is a sheet: closed it is off-screen and inert; open it covers the page. */
+    #sidebar { position: fixed; top: 0; bottom: 0; left: 0; z-index: 30; width: min(86vw, 320px); height: 100%;
+               max-height: none; border-right: 1px solid var(--rule); padding: 16px 12px;
+               display: none; }
+    body.sheet-open #sidebar { display: flex; box-shadow: var(--elev-sheet); }
+    body.sheet-open #scrim { display: block; position: fixed; inset: 0; z-index: 20; background: var(--scrim); }
+    .thread-btn, .side-btn, .seg-btn, .act-btn, .starter, #person-select, #new-chat-btn, .menu-btn { min-height: 44px; }
+  }
+  /* Narrow phones: the faces take their own full-width row, so the three names never collide. */
+  @media (max-width: 480px) {
+    .topbar { display: flex; flex-wrap: wrap; gap: 8px; }
+    .menu-btn { order: 1; }
+    .ready { order: 2; margin-left: auto; }
+    #face-bar { order: 3; flex-basis: 100%; width: 100%; }
+    #face-bar .seg-btn { font-size: var(--text-xs); padding: 8px 4px; }
+  }
+  @media (forced-colors: active) {
+    /* Filled controls keep a visible boundary. */
+    #send-btn, #new-chat-btn, .act-btn, .act-btn.primary, .menu-btn, .wait-go, #person-form button[type="submit"] {
+      border: 2px solid ButtonText;
+    }
+  }
+  @media (forced-colors: active) {
+    /* Selection must show without colour: an outline the system draws. */
+    .seg-btn[aria-selected="true"], .seg-btn[aria-pressed="true"], .thread-btn.active { outline: 3px solid Highlight; outline-offset: -3px; }
+    .card, .starter, .msg.result, .check, .msg.error, #composer-input, #person-select { border: 1px solid CanvasText; }
+  }
+  /* Round 4: settled decisions, starter caption, ledger file path. */
+  #settled-wrap { margin-top: 16px; }
+  .settled-block { border-top: 1px solid var(--rule); padding-top: 12px; }
+  .settled-block > summary { cursor: pointer; color: var(--muted); font-size: var(--text-sm); min-height: 44px; display: flex; align-items: center; }
+  .settled-head { font-size: var(--text-xs); color: var(--faint); margin: 0 0 4px; }
+  .starter-hint { font-size: var(--text-sm); color: var(--faint); margin: 12px 0 0; }
+  .l-file { font-size: var(--text-sm); color: var(--ink); margin: 4px 0; overflow-wrap: anywhere; user-select: text; }
+  .l-hint { font-size: var(--text-xs); color: var(--faint); margin: 0 0 4px; }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important;
+                            transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
+  }
+</style>
+</head>
+<body>
+  <aside id="sidebar" aria-label="Ergon navigation">
+    <div class="wordmark">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M8 12.5l2.6 2.6L16 9.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Ergon
+    </div>
+    <div>
+      <p class="side-label" id="person-label">Working for</p>
+      <select id="person-select" aria-labelledby="person-label"></select>
+    </div>
+    <button id="new-chat-btn" type="button"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>New chat</button>
+    <div class="conv">
+      <p class="side-label">Conversations</p>
+      <ul id="thread-list" aria-label="Conversations"></ul>
+    </div>
+    <p id="side-error" role="alert"></p>
+    <div id="settings">
+      <h2>Settings</h2>
+      <div class="set-row">
+        <span class="set-name">Appearance</span>
+        <div class="seg" role="group" aria-label="Appearance">
+          <button class="seg-btn theme-btn" type="button" data-set-theme="dark" aria-pressed="true">Dark</button>
+          <button class="seg-btn theme-btn" type="button" data-set-theme="light" aria-pressed="false">Light</button>
+        </div>
+      </div>
+      <button class="side-btn" id="memory-btn" type="button" aria-expanded="false" aria-controls="memory-panel">What my agent has learned<svg class="i chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></button>
+      <div id="memory-panel" class="panel-box" role="region" aria-label="Agent memory"></div>
+      <button class="side-btn" id="suite-btn" type="button" aria-expanded="false" aria-controls="suite-panel">My suite and the library<svg class="i chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></button>
+      <div id="suite-panel" class="panel-box" role="region" aria-label="Suite and library"></div>
+      <button class="side-btn" id="add-person-btn" type="button" aria-expanded="false" aria-controls="person-form">Add a person<svg class="i" viewBox="0 0 24 24" aria-hidden="true" style="width:16px;height:16px"><path d="M12 5v14M5 12h14"/></svg></button>
+      <form id="person-form">
+        <label class="sr-only" for="person-name">Name</label>
+        <input id="person-name" type="text" placeholder="Name" autocomplete="off" maxlength="80">
+        <label class="sr-only" for="person-role">Role</label>
+        <input id="person-role" type="text" placeholder="Role (optional)" autocomplete="off" maxlength="120">
+        <p id="person-error" role="alert"></p>
+        <button type="submit">Add person</button>
+      </form>
+    </div>
+  </aside>
+  <div id="scrim" aria-hidden="true"></div>
+
+  <main>
+    <div class="topbar">
+      <button class="menu-btn" id="menu-btn" type="button" aria-label="Open menu" aria-expanded="false" aria-controls="sidebar"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span>Menu</span></button>
+      <div id="face-bar" class="seg" role="tablist" aria-label="Views">
+        <button class="seg-btn face-btn" type="button" role="tab" data-face="chat" aria-selected="true"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 6.5A2.5 2.5 0 0 1 7.5 4h9A2.5 2.5 0 0 1 19 6.5v7a2.5 2.5 0 0 1-2.5 2.5H10l-4 3v-3.2A2.5 2.5 0 0 1 5 13.5z"/></svg>Chat</button>
+        <button class="seg-btn face-btn" type="button" role="tab" data-face="today" aria-selected="false"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg>Today<span class="count-chip" id="badge-today" aria-hidden="true" aria-label="Waiting on you"></span></button>
+        <button class="seg-btn face-btn" type="button" role="tab" data-face="graph" aria-selected="false"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="12" r="2.4"/><circle cx="18" cy="6" r="2.4"/><circle cx="18" cy="18" r="2.4"/><path d="M8.2 11 15.8 7M8.2 13l7.6 4"/></svg>Work Graph</button>
+      </div>
+      <p class="ready" id="ready-chip" role="status"><span class="dot" aria-hidden="true"></span><span id="ready-text">Checking the agent</span></p>
+    </div>
+
+    <div id="no-key-banner" role="status">Ergon is not connected to a model yet, so the agent cannot run. Nothing here is simulated, and Ergon will not invent answers. Anything you type is kept in the thread.
+      <span class="operator">For whoever runs Ergon: set ERGON_MODEL_API_KEY on the server.</span>
+    </div>
+
+    <section id="face-chat" class="face on" aria-label="Chat">
+      <div id="recovered-banner" role="status">
+        <span id="recovered-text"></span>
+        <button class="act-btn" type="button" id="recovered-dismiss">Dismiss</button>
+      </div>
+      <div id="thread" aria-live="polite">
+        <div id="messages"></div>
+      </div>
+      <p class="pending-note" id="pending-note" role="status" hidden>Your last message did not go through. It is back in the box.</p>
+      <form id="composer">
+        <div id="composer-inner">
+          <label class="sr-only" for="composer-input">Describe a task for your agent</label>
+          <textarea id="composer-input" rows="1" placeholder="Describe a task in plain words"></textarea>
+          <button id="send-btn" type="submit"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5M6 11l6-6 6 6"/></svg><span id="send-label">Send</span></button>
+        </div>
+        <p class="hint">Enter sends. Shift+Enter starts a new line.</p>
+      </form>
+    </section>
+
+    <section id="face-today" class="face" aria-label="Today">
+      <div class="page">
+        <div class="card" id="today-error" role="alert" hidden>
+          <h2 class="lead">Today could not be loaded</h2>
+          <p class="quiet" style="margin-top:8px">Check that Ergon is running, then try again.</p>
+          <button class="act-btn" type="button" id="today-retry" style="margin-top:12px">Retry</button>
+        </div>
+        <div id="today-body">
+        <div class="card" id="status-card">
+          <div class="status-row" id="status-row"><span class="dot" aria-hidden="true"></span><h2 class="lead" id="status-title">Checking the agent</h2></div>
+          <p class="quiet" id="status-body" style="margin-top:8px">Ergon is reading its connection.</p>
+          <button class="act-btn" type="button" id="status-retry" hidden style="margin-top:12px">Retry</button>
+        </div>
+        <div class="cards">
+          <div class="card" id="brief-card">
+            <div class="card-head"><h3>Morning brief</h3></div>
+            <h2 class="lead" id="brief-headline">Loading…</h2>
+            <div id="brief-body"><p class="quiet">Loading…</p></div>
+          </div>
+          <div class="card" id="decisions-card">
+            <div class="card-head"><h3>Waiting on you</h3></div>
+            <div id="decisions-list"><p class="quiet">Loading…</p></div>
+            <div id="settled-wrap"></div>
+          </div>
+          <div class="card" id="learned-card">
+            <div class="card-head"><h3>What your agent learned</h3></div>
+            <div id="learned-list"><p class="quiet">Loading…</p></div>
+          </div>
+          <div class="card" id="offers-card">
+            <div class="card-head"><h3>Offers from your agent</h3></div>
+            <div id="offers-list"><p class="quiet">Loading…</p></div>
+          </div>
+          <div class="card wide" id="stream-card">
+            <div class="card-head"><h3>Today so far</h3></div>
+            <div id="today-stream"><p class="quiet">Loading…</p></div>
+          </div>
+        </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="face-graph" class="face" aria-label="Work graph">
+      <div class="page">
+        <div class="card graph-card">
+          <div class="card-head"><h3>Work graph</h3></div>
+          <h2 class="lead">Who the work belongs to, and what it touched</h2>
+          <div class="facts" id="graph-summary"><span class="quiet">Loading…</span></div>
+          <svg id="graph-svg" role="img" aria-label="Graph of people, their finished work, the files it produced and the suite items they carry"></svg>
+          <ol id="graph-list" aria-label="Work graph as a list"></ol>
+          <p class="quiet" id="graph-empty">No finished work yet. The graph fills in as your agent finishes jobs.</p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+<script>
+  let currentThread = null;
+  let busy = false;
+  let modelConfigured = true;
+  let personRole = '';
+  let currentFace = 'chat';
+  const root = document.documentElement;
+  const messagesEl = document.getElementById('messages');
+  const listEl = document.getElementById('thread-list');
+  const inputEl = document.getElementById('composer-input');
+  const sendBtn = document.getElementById('send-btn');
+  const personSelect = document.getElementById('person-select');
+
+  const ICON_CHECK = '<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.2 4.2L19 7"/></svg>';
+
+  function addMsg(role, content, extra) {
+    const empty = messagesEl.querySelector('.empty');
+    if (empty) empty.remove();
+    const div = document.createElement('div');
+    if (role === 'step') {
+      /* A ledger row: the icon and the real result of one step. */
+      div.className = 'msg step';
+      div.innerHTML = '<span class="l-icon">' + ICON_CHECK + '</span><div class="l-text"></div>';
+      fillStep(div.querySelector('.l-text'), content);
+    } else if (role === 'working') {
+      div.className = 'msg step working';
+      div.innerHTML = '<span class="pulse" aria-hidden="true"></span><span class="l-text"></span>';
+      div.querySelector('.l-text').textContent = content;
+    } else if (role === 'assistant') {
+      /* The finished result: distinct from the ledger rows above it. */
+      div.className = 'msg result';
+      div.innerHTML = '<div class="result-head">' + ICON_CHECK + 'Finished</div><div class="result-body"></div>';
+      div.querySelector('.result-body').textContent = content;
+    } else if (role === 'waitcard') {
+      /* A parked deletion: waiting on the person, never Finished. */
+      div.className = 'msg result waiting';
+      div.innerHTML = '<div class="result-head waiting-head"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg>Waiting on you</div>' +
+        '<div class="waiting-title"></div><div class="result-body"></div>' +
+        '<button class="act-btn wait-go" type="button">Review in Today</button>';
+      div.querySelector('.waiting-title').textContent = 'Waiting for your approval to delete ' + (extra || 'a file');
+      div.querySelector('.result-body').textContent = content;
+      div.querySelector('.wait-go').addEventListener('click', () => showFace('today'));
+    } else if (role === 'reply') {
+      div.className = 'msg reply';
+      div.textContent = content;
+    } else if (role === 'error') {
+      div.className = 'msg error';
+      div.setAttribute('role', 'alert');
+      div.innerHTML = failureHtml(content);
+    } else {
+      div.className = 'msg ' + role;
+      div.textContent = content;
+    }
+    messagesEl.appendChild(div);
+    threadEl.scrollTop = 1e9;
+    return div;
+  }
+  const threadEl = document.getElementById('thread');
+
+  /* Plain words for the tools the agent uses. The raw step text stays one tap away. */
+  function toolLabel(tool, via, body) {
+    const pick = (re) => { const m = re.exec(body); return m ? m[1] : ''; };
+    let label = null;
+    switch (tool) {
+      case 'list_dir': label = 'Looked through your files'; break;
+      case 'read_file': label = 'Read a file'; break;
+      case 'write_file': { const n = pick(/^wrote (.+?) \(\d+ bytes\)/); label = n ? 'Saved ' + n : 'Saved a file'; break; }
+      case 'write_document': { const n = pick(/^wrote document (.+?) \(/); label = n ? 'Saved ' + n : 'Saved a document'; break; }
+      case 'make_spreadsheet': { const n = pick(/^wrote spreadsheet (.+?) \(/); label = n ? 'Saved spreadsheet ' + n : 'Saved a spreadsheet'; break; }
+      case 'move_file': label = 'Moved a file'; break;
+      case 'search_files': label = 'Searched your files'; break;
+      case 'fetch_url': label = 'Read a web page'; break;
+      case 'research': label = 'Researched a topic'; break;
+      case 'update_memory': label = 'Remembered something about you'; break;
+      case 'browse_library': label = 'Looked through the company library'; break;
+      case 'install_item': label = 'Added an item to your suite'; break;
+      case 'publish_skill': label = 'Published a skill'; break;
+      case 'delete_file': { const n = pick(/(\S+) has NOT been deleted/); label = 'Asked your approval to delete ' + (n || 'a file'); break; }
+      case 'flag_decision': label = 'Asked you to decide something'; break;
+      case 'delegate': label = via ? 'Handed work to ' + via : 'Handed work to a specialist'; break;
+      default: return null;
+    }
+    if (via && tool !== 'delegate') label += ' (for ' + via + ')';
+    return label;
+  }
+
+  /* One ledger row: a plain label, and the raw step text behind Details. */
+  /* The workspace-relative file a save step wrote, for the Details line. */
+  function filePathOf(tool, body) {
+    const re = tool === 'write_document' ? /^wrote document (.+?) \(/
+      : tool === 'make_spreadsheet' ? /^wrote spreadsheet (.+?) \(/
+      : tool === 'write_file' ? /^wrote (.+?) \(\d+ bytes\)/ : null;
+    const m = re && re.exec(body);
+    return m ? m[1] : '';
+  }
+  function fillStep(el, content) {
+    const nl = content.indexOf('\n');
+    const head = nl < 0 ? content : content.slice(0, nl);
+    const body = nl < 0 ? '' : content.slice(nl + 1);
+    const m = /^Tool: (\S+)(?: \(via ([^)]+)\))?$/.exec(head);
+    const label = (m && toolLabel(m[1], m[2], body)) || head;
+    const row = document.createElement('span');
+    row.className = 'l-label';
+    row.textContent = label;
+    el.appendChild(row);
+    const det = document.createElement('details');
+    det.className = 'l-details';
+    det.innerHTML = '<summary>Details</summary><pre></pre>';
+    det.querySelector('pre').textContent = content;
+    const file = filePathOf(m ? m[1] : '', body);
+    if (file) {
+      const pre = det.querySelector('pre');
+      const fp = document.createElement('p');
+      fp.className = 'l-file';
+      fp.textContent = 'File: ' + file;
+      det.insertBefore(fp, pre);
+      const hint = document.createElement('p');
+      hint.className = 'l-hint';
+      hint.textContent = 'Files are in your Ergon workspace folder.';
+      det.insertBefore(hint, pre);
+    }
+    el.appendChild(det);
+  }
+
+  /* A failure: one plain sentence; the server's own words behind Details. */
+  const FAILURE_RE = /not a JSON object|no model key|model endpoint returned HTTP|without finishing|could not reach|could not run|did not finish/i;
+  function failureHtml(raw) {
+    return '<span class="err-title">The agent could not finish this.</span>' +
+      '<span class="err-next">Try again, or ask whoever runs Ergon to check the connection.</span>' +
+      '<details class="l-details"><summary>Details</summary><pre>' + esc(raw) + '</pre></details>';
+  }
+
+  /* A contradiction note joins the card it qualifies, labelled 'Check this'. */
+  function attachNote(card, text) {
+    const box = document.createElement('div');
+    box.className = 'check';
+    box.innerHTML = '<span class="check-label">Check this</span><span class="check-text"></span>';
+    box.querySelector('.check-text').textContent = text.replace(/^Note:\s*/, '');
+    card.appendChild(box);
+  }
+
+  /* A saved thread, in order. Finished only after a real step; notes join their card. */
+  const PARKED_RE = /parked for your person|has NOT been deleted yet/;
+  const RESOLVED_RE = /was deleted after you approved it|was kept because you declined/;
+  /* Each run is one segment, from one user message to the next. */
+  function renderRun(messages) {
+    messagesEl.innerHTML = '';
+    let seg = [];
+    for (const m of messages) {
+      if (m.role === 'user') { renderSegment(seg); seg = []; addMsg('user', m.content); }
+      else seg.push(m);
+    }
+    renderSegment(seg);
+  }
+  function renderSegment(seg) {
+    const hasStep = seg.some((m) => m.role === 'step' && !/^Note:/.test(m.content));
+    const parked = seg.some((m) => m.role === 'step' && PARKED_RE.test(m.content));
+    const resolved = seg.some((m) => m.role === 'step' && RESOLVED_RE.test(m.content));
+    const waiting = parked && !resolved;
+    let name = '';
+    for (const m of seg) {
+      const hit = m.role === 'step' && /(\S+) has NOT been deleted yet/.exec(m.content);
+      if (hit) { name = hit[1]; break; }
+    }
+    let card = null;
+    for (const m of seg) {
+      if (m.role === 'step' && /^Note:/.test(m.content) && card) {
+        /* The parked-deletion note is the headline of its card, not a second box. */
+        if (!(waiting && /has NOT been deleted yet/.test(m.content))) attachNote(card, m.content);
+      } else if (m.role === 'step') {
+        card = null;
+        addMsg('step', m.content);
+      } else if (m.role === 'assistant') {
+        card = waiting ? addMsg('waitcard', m.content, name) : addMsg(hasStep ? 'assistant' : 'reply', m.content);
+      } else {
+        card = null;
+        addMsg(m.role, m.content);
+      }
+    }
+  }
+
+  /* The sidebar's relative time, from the thread id's creation millis (t<millis>-n). */
+  function relTime(ms) {
+    const now = new Date(); const then = new Date(ms);
+    const mins = Math.round((now - then) / 60000);
+    if (mins < 1) return 'just now';
+    if (mins < 60) return mins + ' min ago';
+    const dayNow = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const dayThen = new Date(then.getFullYear(), then.getMonth(), then.getDate());
+    const days = Math.round((dayNow - dayThen) / 86400000);
+    if (days === 0) return Math.round(mins / 60) + ' h ago';
+    if (days === 1) return 'Yesterday';
+    return then.toLocaleDateString([], { month: 'short', day: 'numeric' });
+  }
+  function threadMs(id) {
+    const m = /^t(\d{13})/.exec(String(id || ''));
+    return m ? Number(m[1]) : null;
+  }
+
+  /* The chip's words: the full line on wide screens, a short one on phones. */
+  const narrowQuery = window.matchMedia('(max-width: 767px)');
+  let chipState = { cls: 'ready', long: '', short: '' };
+  function paintChip() {
+    document.getElementById('ready-chip').className = 'ready ' + chipState.cls;
+    document.getElementById('ready-text').textContent = narrowQuery.matches ? chipState.short : chipState.long;
+  }
+  function setChip(cls, long, short) { chipState = { cls: cls, long: long, short: short || long }; paintChip(); }
+  narrowQuery.addEventListener('change', paintChip);
+
+  /* Unsent drafts, per conversation (or per new chat), for this browser tab only. */
+  const DRAFT_PREFIX = 'ergon-draft:';
+  const THREAD_KEY = 'ergon-thread';
+  function draftKey() { return DRAFT_PREFIX + (currentThread || 'new'); }
+  function loadDraft() {
+    try { inputEl.value = sessionStorage.getItem(draftKey()) || ''; } catch (e) { inputEl.value = ''; }
+    resizeComposer();
+  }
+  function saveDraft() {
+    try {
+      if (inputEl.value) sessionStorage.setItem(draftKey(), inputEl.value);
+      else sessionStorage.removeItem(draftKey());
+    } catch (e) { /* a draft is a convenience */ }
+  }
+  function clearDraft() { try { sessionStorage.removeItem(draftKey()); } catch (e) {} }
+  function rememberThread(id) { try { sessionStorage.setItem(THREAD_KEY, id); } catch (e) {} }
+  function forgetThread() { try { sessionStorage.removeItem(THREAD_KEY); } catch (e) {} }
+  function restoredThread() { try { return sessionStorage.getItem(THREAD_KEY) || ''; } catch (e) { return ''; } }
+
+  /* A send in flight: kept until the answer arrives, so a reload cannot lose it. */
+  const PENDING_KEY = 'ergon-pending';
+  function setPending(thread, text) { try { sessionStorage.setItem(PENDING_KEY, JSON.stringify({ thread: thread || 'new', text: text })); } catch (e) {} }
+  function clearPending() { try { sessionStorage.removeItem(PENDING_KEY); } catch (e) {} }
+  function readPending() {
+    try { const v = JSON.parse(sessionStorage.getItem(PENDING_KEY) || 'null'); return v && typeof v.text === 'string' ? v : null; } catch (e) { return null; }
+  }
+  /* On load: reopen the conversation, then, if the last send never landed, put it back in the box. */
+  async function resumeAfterReload() {
+    const pend = readPending();
+    const reopen = restoredThread();
+    if (reopen) { await openThread(reopen); } else { loadDraft(); showEmpty(); }
+    if (!pend) return;
+    clearPending();
+    let landed = false;
+    if (pend.thread !== 'new') {
+      try {
+        const r = await fetch('/api/threads/' + encodeURIComponent(pend.thread));
+        if (r.ok) {
+          const t = await r.json();
+          landed = (t.messages || []).some((m) => m.role === 'user' && String(m.content).trim() === pend.text);
+        }
+      } catch (e) { /* unknown: treat as not landed, the text is kept */ }
+    }
+    if (landed) return;
+    inputEl.value = pend.text;
+    resizeComposer();
+    saveDraft();
+    document.getElementById('pending-note').hidden = false;
+  }
+
+  /* The composer's placeholder: short enough to show whole at 320px. */
+  const placeholderFull = 'Describe a task in plain words';
+  const placeholderShort = 'Describe a task';
+  function syncPlaceholder() { inputEl.placeholder = window.matchMedia('(max-width: 400px)').matches ? placeholderShort : placeholderFull; }
+  window.matchMedia('(max-width: 400px)').addEventListener('change', syncPlaceholder);
+  syncPlaceholder();
+
+  /* appearance: the settings toggle; the choice persists on this device */
+  const themeBtns = document.querySelectorAll('.theme-btn');
+  function syncThemeBtns() {
+    const cur = root.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
+    themeBtns.forEach((b) => b.setAttribute('aria-pressed', b.getAttribute('data-set-theme') === cur ? 'true' : 'false'));
+  }
+  themeBtns.forEach((b) => b.addEventListener('click', () => {
+    const next = b.getAttribute('data-set-theme');
+    root.setAttribute('data-theme', next);
+    try { localStorage.setItem('ergon-theme', next); } catch (e) {}
+    syncThemeBtns();
+  }));
+  syncThemeBtns();
+
+  function sideError(msg) {
+    const el = document.getElementById('side-error');
+    el.textContent = msg || '';
+    el.style.display = msg ? 'block' : 'none';
+  }
+
+  function esc(s) {
+    const d = document.createElement('div');
+    d.textContent = s == null ? '' : String(s);
+    return d.innerHTML;
+  }
+  /* esc() escapes for element content; attribute values also need
+     the quote escaped, or a crafted field name from the library
+     breaks out of the attribute. */
+  function escAttr(s) {
+    return esc(s).replace(/"/g, '&quot;');
+  }
+
+  /* A failed run: say so in the top bar, and put the text back so it can be sent again. */
+  function failRun(message, text) {
+    addMsg('error', message);
+    if (!inputEl.value) { inputEl.value = text; resizeComposer(); saveDraft(); }
+    setChip('wait', 'Last run did not finish', 'Run failed');
+  }
+
+  /* Readiness: one calm line in the top bar, one card on Today. */
+  function setReady(configured, person) {
+    setChip(configured ? 'ok' : 'wait', configured ? 'Agent ready' : 'Not connected to a model yet', configured ? 'Ready' : 'Check agent');
+    document.getElementById('status-retry').hidden = true;
+    const row = document.getElementById('status-row');
+    row.className = 'status-row ' + (configured ? 'ok' : 'wait');
+    document.getElementById('status-title').textContent = configured
+      ? 'Your agent is ready'
+      : 'Your agent is not connected to a model yet';
+    document.getElementById('status-body').textContent = configured
+      ? 'Describe the work in Chat. It works step by step and tells you what it finished.'
+      : 'The agent cannot run until Ergon is connected to a model. Ask whoever runs Ergon to connect it. Nothing is simulated, and Ergon will not invent answers.';
+  }
+
+  const RECOVERED_KEY = 'ergon-recovered-dismissed';
+  let recoveredList = [];
+  function showRecovered(names) {
+    const list = Array.isArray(names) ? names : [];
+    recoveredList = list;
+    const banner = document.getElementById('recovered-banner');
+    let dismissed = false;
+    try { dismissed = list.length > 0 && localStorage.getItem(RECOVERED_KEY) === list.join('|'); } catch (e) {}
+    if (!list.length || dismissed) { banner.style.display = 'none'; return; }
+    document.getElementById('recovered-text').textContent = 'Earlier conversations were moved to a backup file (' + list.join(', ') + ') and Ergon started fresh. Nothing was deleted.';
+    banner.style.display = 'flex';
+  }
+  document.getElementById('recovered-dismiss').onclick = () => {
+    try { localStorage.setItem(RECOVERED_KEY, recoveredList.join('|')); } catch (e) {}
+    showRecovered(recoveredList);
+  };
+
+  async function loadStatus() {
+    try {
+      const r = await fetch('/api/status');
+      const s = await r.json();
+      if (!r.ok || typeof s.model_configured !== 'boolean') throw new Error('status');
+      modelConfigured = s.model_configured;
+      document.getElementById('no-key-banner').style.display = modelConfigured ? 'none' : 'block';
+      showRecovered(s.store_recovered);
+      personRole = (s.person && s.person.role) || '';
+      setReady(modelConfigured, s.person);
+      if (s.person && s.person.name) {
+        document.getElementById('person-label').textContent = 'Working for ' + s.person.name;
+      }
+    } catch (e) {
+      /* No answer, or a failed answer: say we could not check, never that the model is missing. */
+      modelConfigured = null;
+      document.getElementById('no-key-banner').style.display = 'none';
+      setChip('', 'Could not check the agent', 'Check failed');
+      document.getElementById('status-row').className = 'status-row';
+      document.getElementById('status-title').textContent = 'Could not check the agent';
+      document.getElementById('status-body').textContent = 'Ergon did not answer. Check that it is running, then retry.';
+      document.getElementById('status-retry').hidden = false;
+    }
+  }
+  document.getElementById('status-retry').onclick = () => loadStatus();
+
+  /* Starter prompts: built from the person's own role and suite. */
+  function starterPrompts(installed) {
+    const out = ['Tidy my notes into a summary'];
+    for (const item of installed.slice(0, 2)) {
+      out.push('Ask my ' + item.name + ' for help');
+    }
+    if (personRole) out.push('Draft my weekly update');
+    out.push('Research a topic for me');
+    return out.slice(0, 4);
+  }
+
+  async function showEmpty() {
+    const sub = modelConfigured !== false
+      ? 'It works step by step, right here, until the job is done.'
+      : 'Ergon is not connected to a model yet (see the note above). Anything you type is kept in the thread.';
+    messagesEl.innerHTML = '';
+    const box = document.createElement('div');
+    box.className = 'empty';
+    box.innerHTML = '<h2>What should your agent finish for you?</h2><p class="sub">' + esc(sub) + '</p><div class="starters"></div><p class="starter-hint">Tap one to fill the box, then press Send.</p>';
+    messagesEl.appendChild(box);
+    let installed = [];
+    try {
+      const r = await fetch('/api/suite');
+      if (r.ok) installed = ((await r.json()).installed) || [];
+    } catch (e) { /* starters are a convenience */ }
+    const wrap = box.querySelector('.starters');
+    for (const text of starterPrompts(installed)) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'starter';
+      b.textContent = text;
+      b.title = text;
+      b.addEventListener('click', () => {
+        inputEl.value = text;
+        resizeComposer();
+        inputEl.focus();
+      });
+      wrap.appendChild(b);
+    }
+  }
+
+  function resizeComposer() {
+    inputEl.style.height = 'auto';
+    inputEl.style.height = Math.min(inputEl.scrollHeight, 200) + 'px';
+  }
+  inputEl.addEventListener('input', () => { resizeComposer(); saveDraft(); });
+
+  async function loadPeople() {
+    try {
+      const r = await fetch('/api/people');
+      if (!r.ok) throw new Error('people');
+      const data = await r.json();
+      personSelect.innerHTML = '';
+      for (const p of data.people) {
+        const opt = document.createElement('option');
+        opt.value = p.id;
+        opt.textContent = p.role ? p.name + ', ' + p.role : p.name;
+        if (p.id === data.active) opt.selected = true;
+        personSelect.appendChild(opt);
+      }
+      sideError('');
+    } catch (e) {
+      sideError('Could not load the people list. Is the Ergon server running?');
+    }
+  }
+
+  function resetPersonView() {
+    currentThread = null;
+    forgetThread();
+    loadDraft();
+    showEmpty();
+    /* Close the memory panel fully: class, ARIA state and the previous
+       person's text all reset, so nothing stale is announced or shown. */
+    const panel = document.getElementById('memory-panel');
+    panel.classList.remove('open');
+    panel.textContent = '';
+    document.getElementById('memory-btn').setAttribute('aria-expanded', 'false');
+    updateTodayBadge.dec = 0;
+    updateTodayBadge.off = 0;
+    updateTodayBadge(null, null);
+  }
+
+  personSelect.addEventListener('change', async () => {
+    await fetch('/api/active-person', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: personSelect.value })
+    });
+    resetPersonView();
+    await loadThreads();
+    await loadStatus();
+    await loadSuite();
+    if (currentFace === 'graph') loadGraph();
+    if (currentFace === 'today') loadToday();
+  });
+
+  document.getElementById('add-person-btn').addEventListener('click', (ev) => {
+    const form = document.getElementById('person-form');
+    const open = form.classList.toggle('open');
+    ev.currentTarget.setAttribute('aria-expanded', open ? 'true' : 'false');
+    if (open) document.getElementById('person-name').focus();
+  });
+
+  document.getElementById('person-form').addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const errEl = document.getElementById('person-error');
+    const showErr = (msg) => { errEl.textContent = msg; errEl.style.display = msg ? 'block' : 'none'; };
+    const name = document.getElementById('person-name').value.trim();
+    const role = document.getElementById('person-role').value.trim();
+    if (!name) { showErr('Give the person a name first.'); return; }
+    let person;
+    try {
+      const r = await fetch('/api/people', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: name, role: role })
+      });
+      person = await r.json();
+      if (!r.ok) { showErr(person.error || 'That person could not be added.'); return; }
+    } catch (e) {
+      showErr('Could not reach the Ergon server.');
+      return;
+    }
+    showErr('');
+    await fetch('/api/active-person', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: person.id })
+    });
+    document.getElementById('person-name').value = '';
+    document.getElementById('person-role').value = '';
+    document.getElementById('person-form').classList.remove('open');
+    document.getElementById('add-person-btn').setAttribute('aria-expanded', 'false');
+    resetPersonView();
+    await loadPeople();
+    await loadThreads();
+    await loadStatus();
+    await loadSuite();
+    if (currentFace === 'graph') loadGraph();
+    if (currentFace === 'today') loadToday();
+  });
+
+  document.getElementById('memory-btn').addEventListener('click', async (ev) => {
+    /* Capture the button now: after an await, ev.currentTarget is
+       gone, and the aria state must still flip. */
+    const btn = ev.currentTarget;
+    const panel = document.getElementById('memory-panel');
+    if (panel.classList.contains('open')) {
+      panel.classList.remove('open');
+      btn.setAttribute('aria-expanded', 'false');
+      return;
+    }
+    let data;
+    try {
+      const r = await fetch('/api/memory');
+      if (!r.ok) throw new Error('memory');
+      data = await r.json();
+    } catch (e) {
+      panel.textContent = 'Memory could not be loaded. Is the Ergon server running?';
+      panel.classList.add('open');
+      btn.setAttribute('aria-expanded', 'true');
+      return;
+    }
+    const content = (data.content || '').trim();
+    /* The scaffold alone ("# Memory", or About with nothing learned
+       yet) reads as a raw file dump; say plainly that there is
+       nothing learned yet. Otherwise what the agent has learned is
+       drawn as grouped facts, with the verbatim file one tap away. */
+    const learned = content.split('\n').some((line) => {
+      const t = line.trim();
+      return t.startsWith('- ') && !t.startsWith('- Name:') && !t.startsWith('- Role:');
+    });
+    if (!learned) {
+      panel.textContent = 'Nothing learned yet. Preferences and facts your agent picks up as it works will appear here.';
+    } else {
+      let html = '';
+      let inList = false;
+      for (const raw of content.split('\n')) {
+        const line = raw.trim();
+        if (line.startsWith('## ')) {
+          if (inList) { html += '</ul>'; inList = false; }
+          html += '<div class="mem-head">' + esc(line.slice(3)) + '</div>';
+        } else if (line.startsWith('- ')) {
+          if (!inList) { html += '<ul class="mem-list">'; inList = true; }
+          html += '<li>' + esc(line.slice(2)) + '</li>';
+        } else if (line && !line.startsWith('# ')) {
+          if (inList) { html += '</ul>'; inList = false; }
+          html += '<p>' + esc(line) + '</p>';
+        }
+      }
+      if (inList) html += '</ul>';
+      html += '<details class="mem-file"><summary>The memory file itself</summary><pre>' + esc(content) + '</pre></details>';
+      panel.innerHTML = html;
+    }
+    panel.classList.add('open');
+    btn.setAttribute('aria-expanded', 'true');
+  });
+
+  async function loadThreads() {
+    try {
+      const r = await fetch('/api/threads');
+      if (!r.ok) throw new Error('threads');
+      const data = await r.json();
+      listEl.innerHTML = '';
+      if (!data.threads.length) {
+        const none = document.createElement('p');
+        none.className = 'thread-empty';
+        none.textContent = 'No conversations yet';
+        listEl.appendChild(none);
+      }
+      const seen = {};
+      for (const t of data.threads) {
+        const li = document.createElement('li');
+        /* A real <button>: keyboard-reachable and focusable, unlike a
+           clickable <li>. The sub-line (message count) tells threads
+           with the same title apart. */
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'thread-btn' + (currentThread && t.id === currentThread ? ' active' : '');
+        const title = document.createElement('span');
+        title.className = 't-title';
+        const base = t.title || 'Untitled task';
+        seen[base] = (seen[base] || 0) + 1;
+        title.textContent = seen[base] > 1 ? base + ' (' + seen[base] + ')' : base;
+        btn.appendChild(title);
+        if (typeof t.messages === 'number') {
+          const sub = document.createElement('span');
+          sub.className = 't-sub';
+          const ms = threadMs(t.id);
+          sub.textContent = (t.messages === 1 ? '1 message' : t.messages + ' messages') + (ms ? ', ' + relTime(ms) : '');
+          btn.appendChild(sub);
+        }
+        btn.addEventListener('click', () => openThread(t.id));
+        li.appendChild(btn);
+        listEl.appendChild(li);
+      }
+      sideError('');
+    } catch (e) {
+      listEl.innerHTML = '<li><div class="list-error"><span>Could not load your conversations. Check that Ergon is running.</span><button class="act-btn" type="button" id="threads-retry">Retry</button></div></li>';
+      document.getElementById('threads-retry').onclick = () => loadThreads();
+    }
+  }
+
+  async function createThread() {
+    const r = await fetch('/api/threads', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+    if (!r.ok) throw new Error('thread');
+    const t = await r.json();
+    currentThread = t.id;
+    return t.id;
+  }
+
+  async function newThread() {
+    setSheet(false);
+    try { await createThread(); } catch (e) { sideError('Could not start a conversation. Is the Ergon server running?'); return; }
+    rememberThread(currentThread);
+    loadDraft();
+    showEmpty();
+    await loadThreads();
+    inputEl.focus();
+  }
+
+  async function openThread(id) {
+    showFace('chat');
+    setSheet(false);
+    let t;
+    try {
+      const r = await fetch('/api/threads/' + encodeURIComponent(id));
+      if (!r.ok) throw new Error('open');
+      t = await r.json();
+    } catch (e) {
+      /* A stale id must not be dressed up as an empty thread. */
+      forgetThread();
+      messagesEl.innerHTML = '';
+      addMsg('error', 'That conversation could not be opened. It may have been removed.');
+      return;
+    }
+    currentThread = id;
+    rememberThread(id);
+    loadDraft();
+    renderRun(t.messages || []);
+    if (!messagesEl.children.length) showEmpty();
+    await loadThreads();
+  }
+
+  document.getElementById('new-chat-btn').onclick = newThread;
+
+  document.getElementById('composer').addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    /* Busy guard: while a run is in flight, further submits (Enter
+       included, because the disabled Send button alone does not stop the
+       keyboard path) are ignored, so runs never overlap on a thread. */
+    if (busy) return;
+    const text = inputEl.value.trim();
+    if (!text) return;
+    busy = true;
+    clearDraft();
+    document.getElementById('pending-note').hidden = true;
+    setPending(currentThread, text);
+    inputEl.value = '';
+    resizeComposer();
+    addMsg('user', text);
+    sendBtn.disabled = true;
+    inputEl.disabled = true;
+    document.getElementById('send-label').textContent = 'Working…';
+    const working = addMsg('working', 'Agent is working on it');
+    try {
+      if (!currentThread) await createThread();
+      setPending(currentThread, text);
+      const r = await fetch('/api/chat', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ thread_id: currentThread, message: text })
+      });
+      clearPending();
+      const data = await r.json();
+      working.remove();
+      if (!r.ok) {
+        failRun(data.error || 'The agent could not run.', text);
+      } else {
+        setChip('ok', 'Agent ready', 'Ready');
+        renderRun(data.messages);
+      }
+    } catch (e) {
+      clearPending();
+      working.remove();
+      failRun('Could not reach the Ergon server.', text);
+    }
+    busy = false;
+    sendBtn.disabled = false;
+    inputEl.disabled = false;
+    document.getElementById('send-label').textContent = 'Send';
+    await loadThreads();
+    inputEl.focus();
+  });
+
+  inputEl.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Enter' && !ev.shiftKey && !ev.isComposing) {
+      ev.preventDefault();
+      document.getElementById('composer').requestSubmit();
+    }
+  });
+
+  /* ---------------- the rail as a sheet on narrow screens --------- */
+  const mobileQuery = window.matchMedia('(max-width: 767px)');
+  const sidebarEl = document.getElementById('sidebar');
+  const menuBtn = document.getElementById('menu-btn');
+  const mainEl = document.querySelector('main');
+  let sheetOpen = false;
+  function setSheet(open) {
+    const was = sheetOpen;
+    sheetOpen = !!open && mobileQuery.matches;
+    document.body.classList.toggle('sheet-open', sheetOpen);
+    sidebarEl.inert = mobileQuery.matches && !sheetOpen;
+    mainEl.inert = sheetOpen;
+    menuBtn.setAttribute('aria-expanded', sheetOpen ? 'true' : 'false');
+    if (sheetOpen) {
+      document.getElementById('new-chat-btn').focus();
+    } else if (was && mobileQuery.matches) {
+      menuBtn.focus();
+    }
+  }
+  menuBtn.addEventListener('click', () => setSheet(!sheetOpen));
+  document.getElementById('scrim').addEventListener('click', () => setSheet(false));
+  mobileQuery.addEventListener('change', () => setSheet(false));
+  document.addEventListener('keydown', (ev) => {
+    if (!sheetOpen) return;
+    if (ev.key === 'Escape') { ev.preventDefault(); setSheet(false); return; }
+    if (ev.key !== 'Tab') return;
+    /* Focus stays inside the open sheet: Tab wraps at both ends. */
+    const items = [...sidebarEl.querySelectorAll('button:not([disabled]), select, input, textarea, summary')]
+      .filter((el) => el.offsetParent !== null);
+    if (!items.length) return;
+    const first = items[0], last = items[items.length - 1];
+    const inside = sidebarEl.contains(document.activeElement);
+    if (ev.shiftKey && (!inside || document.activeElement === first)) {
+      ev.preventDefault(); last.focus();
+    } else if (!ev.shiftKey && (!inside || document.activeElement === last)) {
+      ev.preventDefault(); first.focus();
+    }
+  });
+  setSheet(false);
+
+  /* ---------------- faces: three views over the same core -------- */
+  const faceBtns = document.querySelectorAll('.face-btn');
+  function showFace(name) {
+    currentFace = name;
+    faceBtns.forEach((b) => { const on = b.getAttribute('data-face') === name; b.setAttribute('aria-selected', on ? 'true' : 'false'); b.tabIndex = on ? 0 : -1; });
+    for (const f of ['chat', 'today', 'graph']) {
+      document.getElementById('face-' + f).classList.toggle('on', f === name);
+    }
+    if (name === 'graph') loadGraph();
+    if (name === 'today') loadToday();
+  }
+  faceBtns.forEach((b) => b.addEventListener('click', () => showFace(b.getAttribute('data-face'))));
+  /* Roving tabindex: one stop for the switcher; arrows, Home and End move between faces. */
+  faceBtns.forEach((b, i) => b.addEventListener('keydown', (ev) => {
+    let j = null;
+    if (ev.key === 'ArrowRight') j = (i + 1) % faceBtns.length;
+    else if (ev.key === 'ArrowLeft') j = (i - 1 + faceBtns.length) % faceBtns.length;
+    else if (ev.key === 'Home') j = 0;
+    else if (ev.key === 'End') j = faceBtns.length - 1;
+    if (j === null) return;
+    ev.preventDefault();
+    faceBtns[j].focus();
+    showFace(faceBtns[j].getAttribute('data-face'));
+  }));
+
+  /* ---------------- work graph ------------------------------------ */
+  const KIND_ORDER = ['person', 'item', 'work', 'file'];
+  const KIND_WORD = { person: 'Person', item: 'Suite item', work: 'Finished work', file: 'File' };
+  async function loadGraph() {
+    const svg = document.getElementById('graph-svg');
+    const summary = document.getElementById('graph-summary');
+    const empty = document.getElementById('graph-empty');
+    const list = document.getElementById('graph-list');
+    let data;
+    try {
+      const r = await fetch('/api/graph');
+      if (!r.ok) throw new Error('graph');
+      data = await r.json();
+    } catch (e) {
+      summary.innerHTML = '<span class="quiet">The graph could not be loaded. Is the Ergon server running?</span>';
+      return;
+    }
+    const nodes = data.nodes || [];
+    const edges = data.edges || [];
+    const count = (k) => nodes.filter((n) => n.kind === k).length;
+    summary.innerHTML = '';
+    const facts = [['people', count('person')], ['finished jobs', count('work')],
+                   ['files produced', count('file')], ['suite items in play', count('item')]];
+    for (const [label, n] of facts) {
+      const s = document.createElement('span');
+      s.className = 'fact';
+      s.innerHTML = '<b>' + n + '</b>' + esc(label);
+      summary.appendChild(s);
+    }
+    empty.style.display = count('work') ? 'none' : 'block';
+
+    /* The list is the narrow-screen view and the accessible text version. */
+    list.innerHTML = '';
+    const sorted = nodes.slice().sort((a, b) => KIND_ORDER.indexOf(a.kind) - KIND_ORDER.indexOf(b.kind));
+    for (const n of sorted) {
+      const li = document.createElement('li');
+      li.innerHTML = '<span class="g-k">' + esc(KIND_WORD[n.kind] || n.kind) + '</span><span class="g-l">' + esc(n.label || '') + '</span>';
+      list.appendChild(li);
+    }
+
+    /* Layout by kind: person, suite item, work, file. Node boxes are
+       200 by 54 in a 1000-unit canvas, so the label reads at full size. */
+    const colX = { person: 110, item: 370, work: 630, file: 890 };
+    const perCol = { person: 0, item: 0, work: 0, file: 0 };
+    const pos = {};
+    for (const n of nodes) {
+      const k = colX[n.kind] != null ? n.kind : 'work';
+      const row = perCol[k]++;
+      pos[n.id] = { x: colX[k], y: 40 + row * 72, node: n };
+    }
+    const rows = Math.max(1, ...Object.values(perCol));
+    const height = Math.max(160, 80 + rows * 72);
+    const NS = 'http://www.w3.org/2000/svg';
+    svg.setAttribute('viewBox', '0 0 1000 ' + height);
+    svg.innerHTML = '';
+    for (const e of edges) {
+      const a = pos[e.from], b = pos[e.to];
+      if (!a || !b) continue;
+      const line = document.createElementNS(NS, 'line');
+      line.setAttribute('x1', a.x + 100); line.setAttribute('y1', a.y);
+      line.setAttribute('x2', b.x - 100); line.setAttribute('y2', b.y);
+      line.setAttribute('class', 'g-edge');
+      svg.appendChild(line);
+    }
+    for (const id of Object.keys(pos)) {
+      const p = pos[id];
+      const g = document.createElementNS(NS, 'g');
+      g.setAttribute('class', 'g-node');
+      const rect = document.createElementNS(NS, 'rect');
+      rect.setAttribute('x', p.x - 100); rect.setAttribute('y', p.y - 27);
+      rect.setAttribute('width', 200); rect.setAttribute('height', 54); rect.setAttribute('rx', 10);
+      g.appendChild(rect);
+      const kind = document.createElementNS(NS, 'text');
+      kind.setAttribute('x', p.x - 88); kind.setAttribute('y', p.y - 8);
+      kind.setAttribute('class', 'g-kind');
+      kind.textContent = KIND_WORD[p.node.kind] || p.node.kind;
+      g.appendChild(kind);
+      const label = document.createElementNS(NS, 'text');
+      label.setAttribute('x', p.x - 88); label.setAttribute('y', p.y + 14);
+      label.setAttribute('class', 'g-label');
+      const raw = p.node.label || '';
+      label.textContent = raw.length > 24 ? raw.slice(0, 23) + '…' : raw;
+      const title = document.createElementNS(NS, 'title');
+      title.textContent = raw + (p.node.detail ? ': ' + p.node.detail : '');
+      g.appendChild(title);
+      g.appendChild(label);
+      svg.appendChild(g);
+    }
+  }
+
+  /* ---------------- today: brief, decisions, offers, stream ------- */
+  async function loadToday() {
+    const body = document.getElementById('today-body');
+    const err = document.getElementById('today-error');
+    let ok = true;
+    try {
+      const rs = await Promise.all(['/api/brief', '/api/decisions', '/api/offers', '/api/today'].map((u) => fetch(u)));
+      ok = rs.every((r) => r.ok);
+    } catch (e) { ok = false; }
+    body.hidden = !ok;
+    err.hidden = ok;
+    if (!ok) return;
+    loadBrief();
+    loadDecisions();
+    loadOffers();
+    loadStream();
+  }
+  document.getElementById('today-retry').onclick = () => loadToday();
+
+  async function loadBrief() {
+    const head = document.getElementById('brief-headline');
+    const bodyEl = document.getElementById('brief-body');
+    const learnedEl = document.getElementById('learned-list');
+    try {
+      const r = await fetch('/api/brief');
+      if (!r.ok) throw new Error('brief');
+      const b = await r.json();
+      head.textContent = b.headline || 'Nothing to report yet.';
+      let html = '';
+      if ((b.finished || []).length) {
+        html += '<p class="side-label" style="margin:0 0 4px">Finished in the last 48 hours</p><ul>' +
+          b.finished.map((f) => '<li>' + esc(f.task) + '<div class="row-meta">' + esc(f.date) + '</div></li>').join('') + '</ul>';
+      } else {
+        html += '<p class="empty-note">Nothing finished in the last 48 hours. Work your agent completes lands here.</p>';
+      }
+      html += '<div class="stats">' +
+        '<div class="stat"><div class="n">' + (b.suite_size || 0) + '</div><div class="l">items in your suite</div></div>' +
+        '<div class="stat"><div class="n">' + (b.library_size || 0) + '</div><div class="l">in the company library</div></div>' +
+        '</div>';
+      bodyEl.innerHTML = html;
+      const learned = b.learned_recently || [];
+      learnedEl.innerHTML = learned.length
+        ? '<ul>' + learned.map((l) => '<li>' + esc(l) + '</li>').join('') + '</ul>'
+        : '<p class="empty-note">Nothing learned recently. When your agent picks up a preference or a fact, it shows here.</p>';
+    } catch (e) {
+      head.textContent = 'The brief could not be loaded.';
+      bodyEl.innerHTML = '<p class="quiet">Check that Ergon is running, then reload this page.</p>';
+      learnedEl.innerHTML = '';
+    }
+  }
+
+  /* Plain consequences for each kind of decision. */
+  function consequence(kind) {
+    if (/delete/.test(String(kind))) return 'Approving deletes the file for good. Declining keeps it.';
+    return 'Approving lets your agent go ahead. Declining stops it, and the thread records what happened.';
+  }
+
+  /* One decision. Pending ones carry the two buttons; settled ones say how they ended. */
+  function decisionItem(d, settled) {
+    const div = document.createElement('div');
+    div.className = 'item';
+    let inner = '<span class="tag ' + (settled ? '' : 'need') + '">' + esc(d.kind) + '</span>' +
+                '<div class="i-name">' + esc(d.summary) + '</div>';
+    if (!settled) {
+      inner += '<div class="i-why">' + esc(consequence(d.kind)) + '</div>' +
+               '<div class="row-actions"><button class="act-btn primary" data-decide="' + escAttr(d.id) + '" data-how="approve">Approve</button>' +
+               '<button class="act-btn" data-decide="' + escAttr(d.id) + '" data-how="deny">Decline</button></div>';
+    } else {
+      inner += '<div class="settled">' + esc(d.status) + (d.outcome ? ': ' + esc(d.outcome) : '') + '</div>';
+    }
+    div.innerHTML = inner;
+    return div;
+  }
+
+  /* Waiting on you lists only what is pending; settled decisions sit in a quieter block below. */
+  async function loadDecisions() {
+    const el = document.getElementById('decisions-list');
+    const settledEl = document.getElementById('settled-wrap');
+    try {
+      const r = await fetch('/api/decisions');
+      if (!r.ok) throw new Error('decisions');
+      const data = await r.json();
+      const list = (data.decisions || []).slice().reverse();
+      const pending = list.filter((d) => d.status === 'pending');
+      const settled = list.filter((d) => d.status !== 'pending');
+      updateTodayBadge(pending.length, null);
+      el.innerHTML = pending.length ? '' : '<p class="empty-note">Nothing is waiting on you.</p>';
+      for (const d of pending) el.appendChild(decisionItem(d, false));
+      settledEl.innerHTML = '';
+      if (settled.length) {
+        const box = document.createElement(settled.length > 3 ? 'details' : 'div');
+        box.className = 'settled-block';
+        box.innerHTML = settled.length > 3
+          ? '<summary>Recently settled (' + settled.length + ')</summary>'
+          : '<p class="settled-head">Recently settled</p>';
+        for (const d of settled) box.appendChild(decisionItem(d, true));
+        settledEl.appendChild(box);
+      }
+      el.closest('.card').querySelectorAll('[data-decide]').forEach((btn) => btn.addEventListener('click', async () => {
+        btn.disabled = true;
+        await fetch('/api/decisions/' + encodeURIComponent(btn.getAttribute('data-decide')) + '/' + btn.getAttribute('data-how'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+        await loadDecisions();
+        await loadStream();
+        await loadThreads();
+      }));
+    } catch (e) {
+      el.innerHTML = '<p class="quiet">Decisions could not be loaded. Check that Ergon is running.</p>';
+      settledEl.innerHTML = '';
+    }
+  }
+
+  function updateTodayBadge(decisions, offers) {
+    if (decisions != null) updateTodayBadge.dec = decisions;
+    if (offers != null) updateTodayBadge.off = offers;
+    const total = (updateTodayBadge.dec || 0) + (updateTodayBadge.off || 0);
+    const badge = document.getElementById('badge-today');
+    badge.textContent = total;
+    badge.classList.toggle('on', total > 0);
+    document.querySelector('[data-face="today"]').setAttribute('aria-label', total ? 'Today, ' + total + ' waiting' : 'Today');
+  }
+
+  async function loadOffers() {
+    const el = document.getElementById('offers-list');
+    try {
+      const r = await fetch('/api/offers');
+      if (!r.ok) throw new Error('offers');
+      const data = await r.json();
+      const list = (data.offers || []).slice().reverse();
+      updateTodayBadge(null, list.filter((o) => o.status === 'pending').length);
+      if (!list.length) { el.innerHTML = '<p class="empty-note">No offers right now. When your agent notices work you keep asking for, it offers to take it over, here.</p>'; return; }
+      el.innerHTML = '';
+      for (const o of list) {
+        const div = document.createElement('div');
+        div.className = 'item';
+        let inner = '<div class="i-name">' + esc(o.title) + '</div><div class="i-why">' + esc(o.detail) + '</div>';
+        if (o.status === 'pending') {
+          inner += '<div class="row-actions"><button class="act-btn primary" data-offer="' + escAttr(o.id) + '" data-how="accept">Accept</button>' +
+                   '<button class="act-btn" data-offer="' + escAttr(o.id) + '" data-how="dismiss">Dismiss</button></div>';
+        } else {
+          inner += '<div class="settled">' + esc(o.status) + '</div>';
+        }
+        div.innerHTML = inner;
+        el.appendChild(div);
+      }
+      el.querySelectorAll('[data-offer]').forEach((btn) => btn.addEventListener('click', async () => {
+        btn.disabled = true;
+        await fetch('/api/offers/' + encodeURIComponent(btn.getAttribute('data-offer')) + '/' + btn.getAttribute('data-how'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+        await loadOffers();
+        await loadSuite();
+      }));
+    } catch (e) {
+      el.innerHTML = '<p class="quiet">Offers could not be loaded. Check that Ergon is running.</p>';
+    }
+  }
+
+  async function loadStream() {
+    const el = document.getElementById('today-stream');
+    try {
+      const r = await fetch('/api/today');
+      if (!r.ok) throw new Error('today');
+      const data = await r.json();
+      const events = data.events || [];
+      if (!events.length) { el.innerHTML = '<p class="empty-note">Nothing yet today.</p>'; return; }
+      el.innerHTML = events.map((e) => {
+        const when = e.ts ? new Date(e.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+        const failed = e.kind === 'work' && FAILURE_RE.test(String(e.detail || ''));
+        const detail = failed
+          ? '<div class="s-detail">The agent did not finish this. Try again, or ask whoever runs Ergon to check the connection.</div>' +
+            '<details class="l-details"><summary>Details</summary><pre>' + esc(e.detail) + '</pre></details>'
+          : (e.detail ? '<div class="s-detail">' + esc(e.detail) + '</div>' : '');
+        return '<div class="stream-item"><div class="s-time mono">' + esc(when) + '</div><div>' +
+          '<div class="s-title">' + esc(e.title) + '</div>' +
+          '<div class="tag" style="margin-top:4px">' + esc(failed ? 'did not finish' : String(e.kind || '').replace('_', ' ')) + '</div>' +
+          detail + '</div></div>';
+      }).join('');
+    } catch (e) {
+      el.innerHTML = '<p class="quiet">The stream could not be loaded. Check that Ergon is running.</p>';
+    }
+  }
+
+  /* ---------------- suite & library ------------------------------- */
+  document.getElementById('suite-btn').addEventListener('click', async (ev) => {
+    const btn = ev.currentTarget;
+    const panel = document.getElementById('suite-panel');
+    if (panel.classList.contains('open')) {
+      panel.classList.remove('open');
+      btn.setAttribute('aria-expanded', 'false');
+      return;
+    }
+    await loadSuite();
+    panel.classList.add('open');
+    btn.setAttribute('aria-expanded', 'true');
+  });
+
+  async function loadSuite() {
+    const panel = document.getElementById('suite-panel');
+    let suite, library;
+    try {
+      const [rs, rl] = await Promise.all([fetch('/api/suite'), fetch('/api/library')]);
+      suite = await rs.json();
+      library = await rl.json();
+    } catch (e) {
+      panel.innerHTML = '<p class="quiet">The suite could not be loaded. Check that Ergon is running.</p>';
+      return;
+    }
+    const installed = suite.installed || [];
+    const installedIds = installed.map((i) => i.id);
+    let html = '<p class="side-label" style="margin:0">In your suite</p>';
+    if (!installed.length) html += '<p class="quiet">Nothing yet. Add an item from the library below.</p>';
+    for (const item of installed) {
+      html += '<div class="suite-item"><div class="si-top"><span class="tag">' + esc(item.kind) + '</span></div>' +
+        '<div class="si-name">' + esc(item.name) + '</div><div class="si-desc">' + esc(item.description) + '</div>';
+      if (item.kind === 'app') {
+        for (const f of (item.fields || [])) {
+          html += '<label class="sr-only" for="appfield-' + escAttr(item.id) + '-' + escAttr(f) + '">' + esc(f) + '</label>' +
+                  '<input id="appfield-' + escAttr(item.id) + '-' + escAttr(f) + '" data-app-field="' + escAttr(f) + '" type="text" placeholder="' + escAttr(f) + '">';
+        }
+        html += '<div class="row-actions"><button class="act-btn primary" data-run-app="' + escAttr(item.id) + '">Run</button>' +
+                '<button class="act-btn" data-remove="' + escAttr(item.id) + '">Remove</button></div>';
+      } else {
+        html += '<div class="row-actions"><button class="act-btn" data-remove="' + escAttr(item.id) + '">Remove</button></div>';
+      }
+      html += '</div>';
+    }
+    const available = (library.items || []).filter((i) => !i.builtin && !installedIds.includes(i.id));
+    html += '<p class="side-label" style="margin:12px 0 0">From the company library</p>';
+    if (!available.length) html += '<p class="quiet">Everything in the library is already in your suite.</p>';
+    for (const item of available) {
+      html += '<div class="suite-item"><span class="tag">' + esc(item.kind) + '</span>' +
+        '<div class="si-name">' + esc(item.name) + '</div><div class="si-desc">' + esc(item.description) +
+        ' <span class="si-by">by ' + esc(item.author) + '</span></div>' +
+        '<div class="row-actions"><button class="act-btn" data-install="' + escAttr(item.id) + '">Add to my suite</button></div></div>';
+    }
+    panel.innerHTML = html;
+    panel.querySelectorAll('[data-install]').forEach((btn) => btn.addEventListener('click', async () => {
+      btn.disabled = true;
+      await fetch('/api/suite/install', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ item_id: btn.getAttribute('data-install') }) });
+      await loadSuite();
+    }));
+    panel.querySelectorAll('[data-remove]').forEach((btn) => btn.addEventListener('click', async () => {
+      btn.disabled = true;
+      await fetch('/api/suite/remove', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ item_id: btn.getAttribute('data-remove') }) });
+      await loadSuite();
+    }));
+    panel.querySelectorAll('[data-run-app]').forEach((btn) => btn.addEventListener('click', async () => {
+      const card = btn.closest('.suite-item');
+      const fields = {};
+      card.querySelectorAll('[data-app-field]').forEach((inp) => { fields[inp.getAttribute('data-app-field')] = inp.value; });
+      btn.disabled = true;
+      btn.textContent = 'Running…';
+      try {
+        const r = await fetch('/api/apps/' + encodeURIComponent(btn.getAttribute('data-run-app')) + '/run', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ fields: fields })
+        });
+        const data = await r.json();
+        if (!r.ok) { sideError(data.error || 'That app could not run.'); btn.disabled = false; btn.textContent = 'Run'; return; }
+        currentThread = data.id;
+        showFace('chat');
+        messagesEl.innerHTML = '';
+        renderRun(data.messages || []);
+        await loadThreads();
+      } catch (e) {
+        sideError('Could not reach the Ergon server.');
+        btn.disabled = false;
+        btn.textContent = 'Run';
+      }
+    }));
+  }
+
+  loadStatus();
+  loadPeople();
+  loadThreads();
+  updateTodayBadge(0, 0);
+  resumeAfterReload();
+  showFace('chat');
+</script>
+</body>
+</html>
