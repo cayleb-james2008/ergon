@@ -140,7 +140,7 @@ export function VersionRow({ u }: { u: U }) {
   const canCheck = s?.mode !== "off" && isLocal();
   return (
     <div className="flex min-w-0 items-center gap-2 px-2 py-1">
-      <a href={s?.release_url || RELEASES_URL + u.version} target="_blank" rel="noopener" className="focus-ring min-w-0 flex-1 truncate rounded-sm text-sm text-ink-2 outline-none hover:text-ink">
+      <a href={s?.release_url || RELEASES_URL + u.version} target="_blank" rel="noopener" className="focus-ring block min-w-0 flex-1 truncate rounded-sm py-3 text-sm md:py-0.5 text-ink-2 outline-none hover:text-ink">
         Ergon {u.version} · {state}
         <span className="sr-only"> (opens in a new tab)</span>
       </a>

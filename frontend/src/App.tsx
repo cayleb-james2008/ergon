@@ -12,14 +12,14 @@ import { Composer, Thread } from "@/chat/Chat";
 import { useErgon, type TState } from "./state";
 import { useUpdate, UpdateStrip, VersionRow } from "@/shell/Update";
 import { AddPersonPanel, LearnedPanel, SuitePanel } from "@/shell/Panels";
-import { TodayFace } from "@/views/Today";
+import { PaperFace, PaperSide, usePaper } from "@/views/Paper";
 import { GraphFace } from "@/views/Graph";
 import { cn } from "@/lib/utils";
 import { PersonSelect } from "@/shell/PersonSelect";
 import { ContourField } from "@/chat/Chat";
 import { relTime, threadMs } from "@/lib/words";
 
-type Face = "chat" | "today" | "graph";
+type Face = "paper" | "chat" | "graph";
 type Theme = "light" | "dark";
 const THEME_KEY = "ergon-theme";
 const RECOVERED_KEY = "ergon-recovered-dismissed";
@@ -56,7 +56,8 @@ export function App() {
   const u = useUpdate();
   const [theme, setTheme] = useTheme();
   const narrow = useNarrow();
-  const [face, setFace] = useState<Face>("chat");
+  const [face, setFace] = useState<Face>("paper");
+  const paper = usePaper(() => { e.refreshCounts(); e.loadRecent(); });
   const [menuOpen, setMenuOpen] = useState(false);
   const [recDismissed, setRecDismissed] = useState(false);
   const menuRef = useRef<HTMLButtonElement>(null);
@@ -96,7 +97,7 @@ export function App() {
       <li key={t.id}>
         <button type="button" aria-current={active ? "true" : undefined} onClick={() => { setMenuOpen(false); setFace("chat"); e.openThread(t.id); }}
           className={cn("thread-btn focus-ring flex w-full min-w-0 flex-col items-start gap-0.5 rounded-sm py-2 pl-3 pr-2 text-left outline-none",
-            active ? "bg-blue-soft shadow-[inset_2px_0_0_var(--blue)]" : "hover:bg-board")}>
+            active ? "bg-blue-soft" : "hover:bg-board")}>
           <span className="block w-full truncate text-sm font-medium text-ink">{t.title || "Untitled task"}</span>
           <span className="flex min-w-0 items-center gap-1.5 text-xs text-ink-2">
             {stateIcon(s)}
@@ -107,12 +108,36 @@ export function App() {
     );
   };
 
+  const appearance = (
+    <SegmentedControl aria-label="Appearance" size="sm">
+      {(["light", "dark"] as const).map((t) => (
+        <SegmentedControlItem key={t} data-id={t} aria-pressed={theme === t} data-checked={theme === t ? "" : undefined} onClick={() => setTheme(t)}>
+          {t === "light" ? <Sun className="size-3.5" strokeWidth={1.75} aria-hidden /> : <Moon className="size-3.5" strokeWidth={1.75} aria-hidden />}
+          {t === "light" ? "Light" : "Dark"}
+        </SegmentedControlItem>
+      ))}
+    </SegmentedControl>
+  );
+  const panels = (learned: boolean) => (
+    <>
+      {learned && <LearnedPanel />}
+      <SuitePanel onRun={(id, msgs) => { e.showRun(id, msgs); setFace("chat"); setMenuOpen(false); }} />
+      <AddPersonPanel onAdded={() => { e.refreshPerson(); paper.load(); setMenuOpen(false); }} />
+      <VersionRow u={u} />
+    </>
+  );
+  const wordmark = (
+    <span className="flex items-center gap-2 text-title font-semibold text-ink">
+      <svg viewBox="0 0 24 24" aria-hidden className="size-6 text-ink"><rect x="3" y="3" width="18" height="18" rx="5" fill="none" stroke="currentColor" strokeWidth="1.6" /><path d="M8 12.5l2.6 2.6L16 9.5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
+      Ergon
+    </span>
+  );
+  // The paper is a full-width page; the conversation rail belongs to Conversations and the Work graph.
+  const showRail = !narrow && face !== "paper";
+
   const rail = (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex items-center gap-2 px-4 pb-3 pt-4 text-title font-semibold text-ink">
-        <svg viewBox="0 0 24 24" aria-hidden className="size-6 text-ink"><rect x="3" y="3" width="18" height="18" rx="5" fill="none" stroke="currentColor" strokeWidth="1.6" /><path d="M8 12.5l2.6 2.6L16 9.5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
-        Ergon
-      </div>
+      <div className="px-4 pb-3 pt-4">{wordmark}</div>
       <div id="sidebar" className="flex min-h-0 flex-1 flex-col">
         <div className="px-4">
           <label id="person-label" htmlFor="person-select" className="text-xs text-ink-2">Working for</label>
@@ -132,36 +157,29 @@ export function App() {
           </ul>
         </div>
         {e.sideError && <p role="alert" className="px-4 pb-2 text-sm text-ink">{e.sideError}</p>}
-        <div id="settings" className="flex flex-col gap-1 border-t border-hairline px-2 py-3">
-          <div className="flex items-center justify-between gap-2 px-2 py-1">
-            <span className="text-sm text-ink-2">Appearance</span>
-            <SegmentedControl aria-label="Appearance" size="sm">
-              {(["light", "dark"] as const).map((t) => (
-                <SegmentedControlItem key={t} data-id={t} aria-pressed={theme === t} data-checked={theme === t ? "" : undefined} onClick={() => setTheme(t)}>
-                  {t === "light" ? <Sun className="size-3.5" strokeWidth={1.75} aria-hidden /> : <Moon className="size-3.5" strokeWidth={1.75} aria-hidden />}
-                  {t === "light" ? "Light" : "Dark"}
-                </SegmentedControlItem>
-              ))}
-            </SegmentedControl>
-          </div>
-          <LearnedPanel />
-          <SuitePanel onRun={(id, msgs) => { e.showRun(id, msgs); setFace("chat"); setMenuOpen(false); }} />
-          <AddPersonPanel onAdded={() => { e.refreshPerson(); setMenuOpen(false); }} />
-          <VersionRow u={u} />
-        </div>
+        <div id="settings" className="flex flex-col gap-1 border-t border-hairline px-2 py-3">{panels(true)}</div>
       </div>
     </div>
   );
 
   const tabs = [
-    { id: "chat", label: "Chat", count: 0 },
-    { id: "today", label: "Today", count: e.todayCount },
-    { id: "graph", label: "Work Graph", count: 0 },
+    // The badge counts what the headline counts: decisions waiting on the person (offers are optional).
+    { id: "paper", label: "Today's paper", count: paper.data ? paper.data.decisions.filter((d) => d.status === "pending").length : e.todayCount },
+    { id: "chat", label: "Conversations", count: 0 },
+    { id: "graph", label: "Work graph", count: 0 },
   ] as const;
+  const dateLabel = new Date().toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" });
+  const side = (
+    <PaperSide people={e.people?.people ?? null} active={e.people?.active ?? ""} onSwitch={async (id) => { await e.switchPerson(id); paper.load(); }}
+      offers={paper.data ? paper.data.offers.slice().reverse().filter((o) => o.status === "pending") : null}
+      learned={paper.data ? paper.data.brief.learned_recently ?? [] : null} failed={paper.failed} onAct={paper.act}
+      // The panel rows are shared-layout dialog triggers: mount them once the paper has settled so nothing slides on first load.
+      extra={paper.data || paper.failed ? <div className="grid gap-1 border-t border-hairline pt-4">{panels(false)}</div> : null} />
+  );
 
   return (
     <div className="flex h-dvh min-h-0 overflow-hidden bg-canvas text-ink">
-      {!narrow && <aside aria-label="Ergon navigation" className="flex w-[264px] shrink-0 flex-col border-r border-hairline bg-surface">{rail}</aside>}
+      {showRail && <aside aria-label="Ergon navigation" className="flex w-[264px] shrink-0 flex-col border-r border-hairline bg-surface">{rail}</aside>}
       {narrow && (
         <Drawer.Root open={menuOpen} onOpenChange={setMenuOpen} direction="left">
           <Drawer.Portal>
@@ -169,6 +187,7 @@ export function App() {
             <Drawer.Content aria-label="Ergon navigation" className="fixed inset-y-0 left-0 z-50 flex w-[300px] max-w-[86vw] flex-col border-r border-hairline bg-surface outline-none">
               <Drawer.Title className="sr-only">Ergon navigation</Drawer.Title>
               {rail}
+              <div className="flex items-center justify-between gap-2 border-t border-hairline px-4 py-3"><span className="text-sm text-ink-2">Appearance</span>{appearance}</div>
             </Drawer.Content>
           </Drawer.Portal>
         </Drawer.Root>
@@ -176,33 +195,39 @@ export function App() {
 
       <div className="relative isolate flex min-w-0 flex-1 flex-col overflow-hidden bg-canvas">
         <ContourField />
-        <header className="flex flex-wrap items-center justify-between gap-3 px-6 pt-4">
-          <div className="flex min-w-0 flex-wrap items-center gap-3">
+        <header className={cn("flex w-full flex-wrap items-center justify-between gap-3 px-6 pt-4", face === "paper" && "mx-auto max-w-[1200px]")}>
+          <div className="contents md:flex md:min-w-0 md:items-center md:gap-3">
+            {!narrow && !showRail && <span className="mr-3">{wordmark}</span>}
             {narrow && (
-              <Button ref={menuRef} variant="outline" size="sm" aria-label="Open menu" aria-expanded={menuOpen} onClick={() => setMenuOpen(true)}>
+              <Button ref={menuRef} variant="outline" size="sm" className="min-h-11" aria-label="Open menu" aria-expanded={menuOpen} onClick={() => setMenuOpen(true)}>
                 <Menu className="size-4" strokeWidth={1.75} aria-hidden />Menu
               </Button>
             )}
+            <div role="tablist" aria-label="Ergon faces" className="order-last flex w-full min-w-0 overflow-x-auto md:order-none md:w-auto">
             <AnimatedBackground defaultValue={face} onValueChange={(id) => { if (id) setFace(id as Face); }}
               className="flex min-w-0 overflow-x-auto rounded-sm bg-track p-1" transition={{ type: "spring", bounce: 0.1, duration: 0.35 }}>
               {tabs.map((t) => {
                 const on = face === t.id;
                 return (
                   <button key={t.id} type="button" data-id={t.id} role="tab" aria-selected={on} data-checked={on ? "" : undefined}
-                    aria-label={t.id === "today" ? (t.count ? `Today, ${t.count} waiting` : "Today") : undefined}
-                    className={cn("focus-ring relative z-10 flex min-h-9 items-center gap-2 whitespace-nowrap rounded-sm px-3 text-sm font-medium outline-none", on ? "text-ink" : "text-ink-2 hover:text-ink")}>
+                    aria-label={t.id === "paper" ? (t.count ? `Today's paper, ${t.count} waiting` : "Today's paper") : undefined}
+                    className={cn("focus-ring relative z-10 flex min-h-11 items-center md:min-h-9 gap-2 whitespace-nowrap rounded-sm px-3 text-sm font-medium outline-none", on ? "text-ink" : "text-ink-2 hover:text-ink")}>
                     {t.label}
                     {t.count > 0 && <span aria-hidden className="rounded-full bg-pill-warn-bg px-1.5 font-mono text-xs tabular-nums text-pill-warn-fg">{t.count}</span>}
                   </button>
                 );
               })}
             </AnimatedBackground>
+            </div>
           </div>
+          <div className="flex items-center gap-3">
+          {!narrow && appearance}
           <div role="status" id="ready-chip" className="flex items-center">
             <Pill variant="secondary" className={chip.cls === "ok" ? "bg-pill-active-bg text-pill-active-fg" : chip.cls === "wait" ? "bg-pill-warn-bg text-pill-warn-fg" : "text-ink-2"}>
               <span aria-hidden className={"size-2 rounded-full " + (chip.cls === "ok" ? "bg-dot-green" : chip.cls === "wait" ? "bg-dot-amber" : "bg-icon")} />
               <span id="ready-text">{chip.text}</span>
             </Pill>
+          </div>
           </div>
         </header>
 
@@ -224,7 +249,7 @@ export function App() {
         {face === "chat" && (
           <>
             <section id="thread" aria-live="polite" aria-label="Chat" className="min-h-0 flex-1 overflow-y-auto px-6 pb-6 pt-6">
-              <Thread messages={e.messages} busy={e.busy} threadId={e.threadId} onReview={() => setFace("today")}
+              <Thread messages={e.messages} busy={e.busy} threadId={e.threadId} onReview={() => setFace("paper")}
                 onStarter={(t) => e.setDraft(t)} starters={e.starters}
                 status={modelOff ? "wait" : "ok"} pendingNote={e.pendingNote} name={name} recent={e.recent} />
             </section>
@@ -233,7 +258,12 @@ export function App() {
             </div>
           </>
         )}
-        {face === "today" && <div className="min-h-0 flex-1 overflow-y-auto"><TodayFace onChanged={e.refreshCounts} /></div>}
+        {face === "paper" && (
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            <PaperFace paper={paper} personName={personName} dateLabel={dateLabel} side={side} onAsk={() => { setFace("chat"); e.newThread(); }} onOpen={(id) => { setFace("chat"); e.openThread(id); }} />
+            <div className="mx-auto w-full max-w-[1200px] px-6 pb-16 lg:hidden">{side}</div>
+          </div>
+        )}
         {face === "graph" && <div className="min-h-0 flex-1 overflow-y-auto"><GraphFace /></div>}
       </div>
       <Toaster position="bottom-right" />

@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Details } from "@/chat/Entry";
 import { call, type LibraryItem, type Msg, type Person, type SuiteItem } from "@/lib/api";
 
-const TRIGGER = "flex w-full min-h-10 items-center justify-between gap-2 rounded-sm px-2 text-left text-sm text-ink outline-none hover:bg-board focus-visible:ring-2 focus-visible:ring-blue";
+const TRIGGER = "flex w-full min-h-11 md:min-h-10 items-center justify-between gap-2 rounded-sm px-2 text-left text-sm text-ink outline-none hover:bg-board focus-visible:ring-2 focus-visible:ring-blue";
 const SPRING = { type: "spring" as const, bounce: 0.05, duration: 0.3 };
 
 function Panel({ id, label, title, children }: { id: string; label: string; title: string; children: React.ReactNode }) {
