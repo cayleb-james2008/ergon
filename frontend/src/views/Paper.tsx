@@ -91,7 +91,7 @@ export function usePaper(onChanged: () => void) {
       call<{ threads: ThreadRow[] }>("/api/threads"),
     ]);
     const shaped = (x: unknown, key: string) => !!x && typeof x === "object" && Array.isArray((x as Record<string, unknown>)[key]);
-    if (!b.ok || !d.ok || !o.ok || !t.ok || !b.data || typeof b.data !== "object" || !shaped(d.data, "decisions") || !shaped(o.data, "offers") || !shaped(t.data, "threads")) { setFailed(true); return; }
+    if (!b.ok || !d.ok || !o.ok || !t.ok || !shaped(b.data, "finished") || !shaped(d.data, "decisions") || !shaped(o.data, "offers") || !shaped(t.data, "threads")) { setFailed(true); return; }
     setFailed(false);
     setData({ brief: b.data, decisions: d.data.decisions ?? [], offers: o.data.offers ?? [], threads: t.data.threads ?? [] });
   }, []);
