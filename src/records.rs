@@ -579,8 +579,19 @@ pub fn build_brief(cfg: &Config, person_name: &str, suite: &Suite, library: &Lib
                 "task": e["task"],
                 "summary": e["summary"],
                 "files": e["files"],
+                "thread_id": e["thread_id"],
+                "ts": e["ts"],
             })
         })
+        .collect();
+    // Runs that stopped early in the same window: not celebrated as finished, but listed so the person can pick them up.
+    let stopped: Vec<Value> = work
+        .iter()
+        .filter(|e| e["finished"].as_bool() == Some(false))
+        .filter(|e| now.saturating_sub(e["ts"].as_u64().unwrap_or(0)) <= 48 * 3_600_000)
+        .rev()
+        .take(5)
+        .map(|e| json!({ "task": e["task"], "summary": e["summary"], "thread_id": e["thread_id"], "ts": e["ts"] }))
         .collect();
     let decisions = load_decisions(&cfg.data_dir);
     let pending_decisions: Vec<Value> = decisions
@@ -609,6 +620,7 @@ pub fn build_brief(cfg: &Config, person_name: &str, suite: &Suite, library: &Lib
             format!("{} job{} finished in the last two days.", recent.len(), if recent.len() == 1 { "" } else { "s" })
         },
         "finished": finished,
+        "stopped": stopped,
         "pending_decisions": pending_decisions,
         "pending_offers": pending_offers,
         "learned_recently": learned,
