@@ -561,12 +561,22 @@ pub fn build_brief(cfg: &Config, person_name: &str, suite: &Suite, library: &Lib
     let now = now_millis();
     let today = date_string_local(now);
     let work = load_work(&cfg.data_dir);
+    let decisions = load_decisions(&cfg.data_dir);
+    // A run that parked a decision ended, but its job waits on the
+    // person: not finished until the decision is settled. Same rule as
+    // the paper: any pending decision, matched by its thread.
+    let waiting: Vec<&str> = decisions
+        .iter()
+        .filter(|d| d["status"].as_str() == Some("pending"))
+        .filter_map(|d| d["thread_id"].as_str().filter(|t| !t.is_empty()))
+        .collect();
     // Only finished work counts as finished in the brief — a run
     // that stopped early is visible in Today, not celebrated here.
     let recent: Vec<&Value> = work
         .iter()
         .filter(|e| e["finished"].as_bool() != Some(false))
         .filter(|e| e["answered"].as_bool() != Some(true))
+        .filter(|e| !e["thread_id"].as_str().is_some_and(|t| waiting.contains(&t)))
         .filter(|e| now.saturating_sub(e["ts"].as_u64().unwrap_or(0)) <= 48 * 3_600_000)
         .collect();
     let finished: Vec<Value> = recent
@@ -579,10 +589,20 @@ pub fn build_brief(cfg: &Config, person_name: &str, suite: &Suite, library: &Lib
                 "task": e["task"],
                 "summary": e["summary"],
                 "files": e["files"],
+                "thread_id": e["thread_id"],
+                "ts": e["ts"],
             })
         })
         .collect();
-    let decisions = load_decisions(&cfg.data_dir);
+    // Runs that stopped early in the same window: not celebrated as finished, but listed so the person can pick them up.
+    let stopped: Vec<Value> = work
+        .iter()
+        .filter(|e| e["finished"].as_bool() == Some(false))
+        .filter(|e| now.saturating_sub(e["ts"].as_u64().unwrap_or(0)) <= 48 * 3_600_000)
+        .rev()
+        .take(5)
+        .map(|e| json!({ "task": e["task"], "summary": e["summary"], "thread_id": e["thread_id"], "ts": e["ts"] }))
+        .collect();
     let pending_decisions: Vec<Value> = decisions
         .iter()
         .filter(|d| d["status"].as_str() == Some("pending"))
@@ -609,6 +629,7 @@ pub fn build_brief(cfg: &Config, person_name: &str, suite: &Suite, library: &Lib
             format!("{} job{} finished in the last two days.", recent.len(), if recent.len() == 1 { "" } else { "s" })
         },
         "finished": finished,
+        "stopped": stopped,
         "pending_decisions": pending_decisions,
         "pending_offers": pending_offers,
         "learned_recently": learned,

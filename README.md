@@ -133,7 +133,9 @@ chat-completions endpoint; the default is OpenCode Go with
   is the host's local day, read from its zone file. A plain answer (no
   successful tool step and no written file), or a run whose tool steps
   all failed, is kept in the log but is not finished work: it is not in
-  the brief, the graph's work nodes or the offers scan.
+  the brief, the graph's work nodes or the offers scan. A run that
+  parked a decision is not finished in the brief until that decision
+  is settled.
 - **Honesty machinery** — a run's summary is checked against the files
   the run actually wrote: naming a file the run didn't write produces a
   factual ledger line in the thread, never a silent pass. Requests over

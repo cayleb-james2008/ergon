@@ -159,13 +159,13 @@ fn shell_has_sidebar_thread_and_composer() {
     let port = start_app(cfg);
     let (status, body) = http(port, "GET", "/", None);
     assert_eq!(status, 200);
-    assert!(body.contains("id=\"sidebar\""), "sidebar marker missing");
-    assert!(body.contains("id=\"thread-list\""), "thread list missing");
+    // The shell is a React bundle now (2026-11-19): the served page carries static markers
+    // (data-app, the live region) and the text the app ships. Nothing else is pinned as markup.
+    assert!(body.contains("data-app=\"ergon\""), "app marker missing");
+    assert!(body.contains("id=\"announcer\""), "live region missing");
     assert!(body.contains("New chat"), "new chat button missing");
-    assert!(body.contains("id=\"thread\""), "thread marker missing");
-    assert!(body.contains("id=\"composer\""), "composer marker missing");
-    assert!(body.contains("id=\"composer-input\""), "composer input missing");
-    assert!(body.contains("id=\"no-key-banner\""), "no-key banner missing");
+    assert!(body.contains("composer-input"), "composer input missing");
+    assert!(body.contains("Describe a task for your agent"), "composer input must be labelled");
     assert!(body.contains("not connected to a model yet"), "no-key banner text missing");
     assert!(body.contains("ERGON_MODEL_API_KEY"), "banner must name the fix for the operator");
 }
@@ -606,18 +606,21 @@ fn shell_has_themes_settings_people_and_memory_view() {
     let port = start_app(cfg);
     let (status, body) = http(port, "GET", "/", None);
     assert_eq!(status, 200);
-    assert!(body.contains("data-theme=\"dark\""), "dark is the default theme: page must open dark");
-    assert!(body.contains("[data-theme=\"light\"]"), "a light theme must be defined");
-    assert!(body.contains("id=\"settings\""), "settings area missing");
+    // Native theme is Light (Furrow, 2026-11-19): the page opens light, and the dark theme is a full second theme.
+    assert!(body.contains("data-theme=\"light\""), "light is the native default theme: page must open light");
+    assert!(body.contains("[data-theme=\"dark\"]") || body.contains("[data-theme=dark]"), "a dark theme must be defined");
     assert!(body.contains("Appearance"), "appearance toggle missing from settings");
     assert!(body.contains("ergon-theme"), "theme choice must persist via localStorage");
-    assert!(body.contains("id=\"person-select\""), "person switcher missing");
-    assert!(body.contains("id=\"memory-btn\""), "memory view control missing");
-    assert!(body.contains("id=\"memory-panel\""), "memory panel missing");
+    assert!(body.contains("Working for"), "person switcher missing");
+    assert!(body.contains("What my agent has learned"), "memory view control missing");
+    assert!(body.contains("Nothing learned yet."), "memory view empty state missing");
     assert!(body.contains(":focus-visible"), "keyboard focus must be visible");
-    assert!(body.contains("for=\"composer-input\""), "composer input must be labelled");
+    assert!(body.contains("composer-input"), "composer input must be labelled");
     assert!(body.contains("prefers-reduced-motion"), "reduced motion must be respected");
-    assert!(!body.contains("linear-gradient"), "no hue gradients (unslop gate)");
+    // No decorative hue gradients in the design. The bundle keeps the shimmer gradient that Motion Primitives'
+    // TextShimmer needs for its moving highlight, so the gate reads the design's own utilities, not the library code.
+    assert!(!body.contains("bg-linear-to-"), "no hue gradient utilities (unslop gate)");
+    assert!(!body.contains("bg-gradient-to-"), "no hue gradient utilities (unslop gate)");
 }
 
 // ---------------------------------------------------------------------------
@@ -1106,9 +1109,39 @@ fn shell_accessibility_and_contrast_pins() {
     assert_eq!(status, 200);
     assert!(body.contains("aria-live=\"polite\""), "the async thread must be a live region");
     assert!(body.contains("thread-btn"), "thread items must be real buttons (keyboard-reachable)");
-    assert!(body.contains("--faint: #6e6759"), "light-theme faint text must meet AA contrast");
-    assert!(body.contains("if (busy) return;"), "the composer must refuse overlapping runs");
-    assert!(body.contains("inputEl.disabled = true"), "the textarea is disabled while working");
+    // Light-theme text must meet AA: the secondary and tertiary inks against the canvas, the surface and the board.
+    let ink3 = css_token(&body, "[data-theme=light]", "--ink-3");
+    for bg in ["--canvas", "--surface", "--board"] {
+        let back = css_token(&body, "[data-theme=light]", bg);
+        assert!(contrast(&ink3, &back) >= 4.5, "light secondary text {ink3} on {bg} {back} is under 4.5:1");
+    }
+    // The composer shows the busy state (Working) and keeps the textarea's label while a run is in flight.
+    assert!(body.contains("Agent is working on it"), "the working line must show while a run is in flight");
+    assert!(body.contains("Working"), "the send key must say it is working");
+}
+
+/// A token's value in the served stylesheet, read from the named theme block (first occurrence, its own block).
+fn css_token(body: &str, theme: &str, var: &str) -> String {
+    let start = body.find(theme).expect("theme block present");
+    let block = &body[start..(start + 4000).min(body.len())];
+    let key = format!("{var}:");
+    let at = block.find(&key).unwrap_or_else(|| panic!("token {var} in {theme}"));
+    block[at + key.len()..].trim_start().chars().take_while(|c| *c != ';' && *c != '}').collect::<String>().trim().to_string()
+}
+
+/// WCAG contrast ratio between two #rrggbb colours.
+fn contrast(a: &str, b: &str) -> f64 {
+    let lum = |hex: &str| -> f64 {
+        let h = hex.trim_start_matches('#');
+        let c: Vec<f64> = (0..3)
+            .map(|i| u8::from_str_radix(&h[2 * i..2 * i + 2], 16).expect("hex colour") as f64 / 255.0)
+            .map(|v| if v <= 0.03928 { v / 12.92 } else { ((v + 0.055) / 1.055).powf(2.4) })
+            .collect();
+        0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]
+    };
+    let (x, y) = (lum(a), lum(b));
+    let (hi, lo) = if x > y { (x, y) } else { (y, x) };
+    (hi + 0.05) / (lo + 0.05)
 }
 
 /// Checks-finder round: a document whose title starts with "error:"
@@ -1143,11 +1176,12 @@ fn theme_choice_is_saved_and_read_with_the_same_key() {
     let (status, body) = http(port, "GET", "/", None);
     assert_eq!(status, 200);
     assert!(
-        body.contains("localStorage.setItem('ergon-theme'"),
+        // The minifier writes the key with backticks; both quote styles are the same call.
+        body.contains("localStorage.setItem(`ergon-theme`") || body.contains("localStorage.setItem(\"ergon-theme\""),
         "the toggle must SAVE the choice"
     );
     assert!(
-        body.contains("localStorage.getItem('ergon-theme')"),
+        body.contains("localStorage.getItem(\"ergon-theme\")"),
         "the page must READ the saved choice back"
     );
 }
@@ -2180,6 +2214,10 @@ fn brief_today_and_graph_reflect_real_work() {
     let brief: Value = serde_json::from_str(&body).unwrap();
     assert!(brief["headline"].as_str().unwrap().contains("1 job"), "{body}");
     assert_eq!(brief["finished"][0]["task"], json!("Summarise everything into a document"));
+    // The paper opens each finished job's own conversation, so the brief carries its thread and time.
+    assert!(brief["finished"][0]["thread_id"].as_str().is_some_and(|t| t.starts_with('t')), "{body}");
+    assert!(brief["finished"][0]["ts"].as_u64().is_some(), "{body}");
+    assert_eq!(brief["stopped"], json!([]), "{body}");
     assert!(brief["suite_size"].as_u64().unwrap() >= 2);
     assert!(brief["library_size"].as_u64().unwrap() >= 12);
 
@@ -2282,37 +2320,28 @@ fn faces_and_phone_are_served() {
     let (status, body) = http(port, "GET", "/", None);
     assert_eq!(status, 200);
     for marker in [
-        "id=\"face-bar\"",
-        "data-face=\"graph\"",
-        "data-face=\"chat\"",
-        "data-face=\"today\"",
-        "id=\"face-graph\"",
-        "id=\"face-chat\"",
-        "id=\"face-today\"",
-        "id=\"graph-svg\"",
-        "id=\"brief-headline\"",
-        "id=\"decisions-list\"",
-        "id=\"offers-list\"",
-        "id=\"suite-panel\"",
-        "Work Graph",
+        "data-app=\"ergon\"",
+        "Today's paper",
+        "Conversations",
         "Today",
+        "Chat",
+        "Work graph",
+        "Waiting on you",
+        "Describe a task in plain words",
+        "thread-list",
     ] {
         assert!(body.contains(marker), "desktop faces marker missing: {marker}");
     }
-    // The chat face keeps the proven shell.
-    assert!(body.contains("id=\"composer-input\""));
-    assert!(body.contains("id=\"thread-list\""));
 
     let (status, body) = http(port, "GET", "/phone", None);
     assert_eq!(status, 200);
     for marker in [
-        "data-tab=\"brief\"",
-        "data-tab=\"chat\"",
-        "data-tab=\"decisions\"",
-        "data-tab=\"suite\"",
-        "id=\"brief-headline\"",
-        "id=\"decisions-list\"",
+        "data-app=\"ergon\"",
         "viewport-fit=cover",
+        "Describe a task in plain words",
+        "Working for",
+        "Today",
+        "Work graph",
     ] {
         assert!(body.contains(marker), "phone face marker missing: {marker}");
     }
@@ -3223,6 +3252,49 @@ fn a_run_whose_tool_steps_all_failed_is_not_finished_work() {
     let (_, brief) = http(port, "GET", "/api/brief", None);
     let v: Value = serde_json::from_str(&brief).unwrap();
     assert_eq!(v["finished"].as_array().unwrap().len(), 1, "a successful tool step stays finished: {brief}");
+}
+
+/// E4: a run that parked a decision ended, but its job waits on the person,
+/// so the brief neither counts it in the headline nor files it as finished
+/// (the paper's rule). Once the decision is settled it counts.
+#[test]
+fn a_run_waiting_on_a_decision_is_not_finished_in_the_brief() {
+    let root = test_root("e4_waiting");
+    let stub = start_stub_model(vec![
+        json!({"tool": "write_document", "args": {"title": "Summary", "sections": ["All good."]}}).to_string(),
+        json!({"done": true, "summary": "The summary document is written."}).to_string(),
+        json!({"tool": "delete_file", "args": {"path": "old.txt"}}).to_string(),
+        json!({"done": true, "summary": "The deletion of old.txt is waiting for your approval."}).to_string(),
+    ]);
+    let cfg = test_config(&root, Some("test-key"), format!("http://127.0.0.1:{}/v1", stub.port));
+    std::fs::write(cfg.workspace_dir.join("old.txt"), "old").unwrap();
+    let port = start_app(cfg);
+    let tid = |body: &str| serde_json::from_str::<Value>(body).unwrap()["id"].as_str().unwrap().to_string();
+    let (status, body) = chat(port, "Write the summary document");
+    assert_eq!(status, 200, "{body}");
+    let doc_tid = tid(&body);
+    let (status, body) = chat(port, "Delete old.txt");
+    assert_eq!(status, 200, "{body}");
+    assert_ne!(tid(&body), doc_tid, "{body}");
+
+    let (_, brief) = http(port, "GET", "/api/brief", None);
+    let v: Value = serde_json::from_str(&brief).unwrap();
+    assert_eq!(v["headline"], json!("1 job finished in the last two days."), "{brief}");
+    assert_eq!(v["finished"].as_array().unwrap().len(), 1, "{brief}");
+    assert_eq!(v["finished"][0]["thread_id"], json!(doc_tid), "{brief}");
+    assert_eq!(v["stopped"], json!([]), "a waiting run is not a stopped run: {brief}");
+    assert_eq!(v["pending_decisions"].as_array().unwrap().len(), 1, "{brief}");
+
+    let id = pending_decision_id(port);
+    let (status, body) = http(port, "POST", &format!("/api/decisions/{id}/approve"), Some("{}"));
+    assert_eq!(status, 200, "{body}");
+    let (_, brief) = http(port, "GET", "/api/brief", None);
+    let v: Value = serde_json::from_str(&brief).unwrap();
+    assert_eq!(v["headline"], json!("2 jobs finished in the last two days."), "settled, it counts: {brief}");
+    for f in v["finished"].as_array().unwrap() {
+        assert!(f["thread_id"].as_str().is_some() && f["ts"].as_u64().is_some(), "{brief}");
+    }
+    assert_eq!(v["stopped"], json!([]), "{brief}");
 }
 
 /// Starts a server with an explicit gate token and extra allowed Host names

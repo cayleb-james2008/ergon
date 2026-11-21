@@ -1,0 +1,72 @@
+/* Hallmark · shape: app screen · genre: modern-minimal · theme: furrow (ergon) · scope: app · checked: 2026-11-19 · v2.0 */
+/* Critique: the field-book chat holds to Furrow; the library parts keep a few default transitions and rings (see DESIGN.md, sloplint). */
+@import "tailwindcss";
+@import "./reset.css";
+/* Tokens: the house roles (tokens.css), then this app's Hallmark theme values (theme.css), then its fonts. */
+@import "./tokens.css";
+@import "./theme.css";
+@import "./fonts.css";
+@source "../../rune/used";
+@source not "../../rune/used/components/ui/morphing-dialog.tsx";
+/* The UI checks in ../e2e quote class names in selectors and style overrides; they are not markup. */
+@source not "../e2e";
+
+/* Tremor Raw animation block (documented install step: paste its @theme into globals.css).
+   Only the hover-card/tooltip entries that Tracker uses are kept. */
+@theme {
+  --animate-slide-down-and-fade: slideDownAndFade 150ms cubic-bezier(0.16, 1, 0.3, 1);
+  --animate-slide-up-and-fade: slideUpAndFade 150ms cubic-bezier(0.16, 1, 0.3, 1);
+  --animate-slide-left-and-fade: slideLeftAndFade 150ms cubic-bezier(0.16, 1, 0.3, 1);
+  --animate-slide-right-and-fade: slideRightAndFade 150ms cubic-bezier(0.16, 1, 0.3, 1);
+
+  @keyframes slideDownAndFade {
+    from { opacity: 0; transform: translateY(-6px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes slideUpAndFade {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes slideLeftAndFade {
+    from { opacity: 0; transform: translateX(6px); }
+    to { opacity: 1; transform: translateX(0); }
+  }
+  @keyframes slideRightAndFade {
+    from { opacity: 0; transform: translateX(-6px); }
+    to { opacity: 1; transform: translateX(0); }
+  }
+}
+
+/* Vaul ignores prefers-reduced-motion: its sheet and overlay travel with CSS *animations* (slideFromBottom,
+   slideToBottom, fadeIn, fadeOut) and a transform transition. The earlier override here (until 2026-11-10)
+   matched [vaul-drawer], an attribute vaul 1.x does not set (it sets data-vaul-drawer), and cut only the
+   transition, so the 500 ms slide kept running. Both durations are cut on the real attributes. */
+@media (prefers-reduced-motion: reduce) {
+  [data-vaul-drawer], [data-vaul-overlay] { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}
+
+h1, h2, h3 { text-wrap: balance; }
+@layer base { *, ::before, ::after, ::backdrop { --tw-ring-offset-color: var(--surface); } }
+.contour-field { color: var(--hairline); }
+.status-finished, .status-waiting { border-radius: 9999px; }
+.status-waiting { background: var(--pill-warn-bg); color: var(--pill-warn-fg); }
+
+html, body { overflow-x: clip; }
+
+/* Moulded keys: a lit 1px top edge, a shaded bottom edge, a 1px press. Colours come from theme.css tokens. */
+.mould {
+  box-shadow: inset 0 1px 0 var(--mould-hi), 0 1px 0 var(--mould-lo), var(--elev-card);
+  transition: transform var(--dur-press) var(--ease-house), background-color var(--dur-press) var(--ease-house);
+}
+.mould:hover:not(:disabled) { background-color: var(--board); }
+.mould:active:not(:disabled) { transform: translateY(1px); box-shadow: inset 0 1px 0 var(--mould-hi), 0 0 0 var(--mould-lo); }
+.mould:disabled { background-color: var(--track); color: var(--ink-3); cursor: not-allowed; box-shadow: none; }
+.mould:focus-visible, .focus-ring:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) { .mould { transition: none; } .mould:active:not(:disabled) { transform: none; } }
+/* The finished status is green in light and the accent in dark. */
+.status-finished { background: var(--pill-active-bg); color: var(--pill-active-fg); }
+
+/* Field-book grid lines: ink in light, the hairline in dark (one class, no dark-variant background). */
+.entry-rule { background-color: var(--entry-rule); }
+
+.entry-head { background-color: var(--entry-head); color: var(--entry-head-ink); }
