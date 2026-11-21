@@ -4,7 +4,7 @@
 
 - `gate.mjs`: the Morning paper gate, 41 checks. It measures overflow, target size, accessible names, contrast and font size at 1440, 768, 390 and 320 px in light and dark. It then covers every interaction, the loading, empty and error states, console errors and reduced motion.
 - `probe-graph.mjs`: Work graph labels at 1440, 1100, 900 and 768 px, 5 checks.
-- `replay.mjs`: worst-case data fed in through `page.route` mocks, 8 checks.
+- `replay.mjs`: worst-case data fed in through `page.route` mocks, 16 checks.
 
 The seed's timestamps are moved up to the moment of the run, so the brief's 48-hour window always holds them. The check fails unless every check passes and each script ran its full count. It stops everything it started, also when interrupted.
 

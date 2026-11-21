@@ -7,7 +7,7 @@ import { AnimatePresence, MotionConfig, motion } from "motion/react";
 import NumberFlow from "@number-flow/react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { ArrowUpRight } from "lucide-react";
+import { ArrowUpRight, File, FileCode, FileImage, FileSpreadsheet, FileText } from "lucide-react";
 import { WaitingPill } from "@/chat/Entry";
 import { call, type Decision, type Offer, type Person, type ThreadRow } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -22,6 +22,14 @@ const tight = { "--number-flow-mask-height": "0em" } as React.CSSProperties;
 function consequence(kind: string): string {
   if (/delete/.test(kind)) return "Approving deletes the file for good. Keeping it leaves the file where it is. Your agent has not touched it yet.";
   return "Your agent raised this while it worked and carried on. Your answer is recorded here; to have it act on the answer, tell it in the conversation.";
+}
+
+// The glyph a saved file's extension earns; decorative, the name beside it carries the meaning.
+function FileGlyph({ name }: { name: string }) {
+  const ext = name.split(".").pop()?.toLowerCase() ?? "";
+  const Icon = /^(csv|xlsx?|tsv|ods)$/.test(ext) ? FileSpreadsheet : /^(png|jpe?g|gif|webp|svg)$/.test(ext) ? FileImage
+    : /^(json|html?|css|js|ts|py|rs|xml|ya?ml)$/.test(ext) ? FileCode : /^(md|txt|docx?|pdf|rtf|odt)$/.test(ext) ? FileText : File;
+  return <Icon className="size-3.5 shrink-0 text-ink-3" strokeWidth={1.75} aria-hidden />;
 }
 
 function initials(name: unknown): string {
@@ -190,7 +198,9 @@ export function PaperFace({ paper, personName, dateLabel, side, onAsk, onOpen }:
                             <span className="col-span-2 text-sm text-ink-2 md:col-span-1">{when(x)}</span>
                             <div className="min-w-0">
                               <p className="text-base font-medium leading-6 text-ink [overflow-wrap:anywhere]">{x.task}</p>
-                              <p className="mt-0.5 truncate text-sm text-ink-2">{x.files?.length ? <>Saved <span className="num text-ink">{x.files.join(", ")}</span></> : "Nothing saved to your workspace"}</p>
+                              <p className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-0.5 text-sm text-ink-2">
+                                {Array.isArray(x.files) && x.files.length ? <>Saved{x.files.map(String).map((f, k) => <span key={f + k} className="num inline-flex min-w-0 max-w-full items-center gap-1.5 text-ink"><FileGlyph name={f} /><span className="truncate">{f}</span></span>)}</> : "Nothing saved to your workspace"}
+                              </p>
                             </div>
                             {id && (
                               <Button size="sm" variant="ghost" className="min-h-11" aria-label={`Open the conversation: ${x.task}`} onClick={() => onOpen(id)}>
