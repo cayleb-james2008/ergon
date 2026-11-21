@@ -13,7 +13,8 @@ import { call, type Decision, type Offer, type Person, type ThreadRow } from "@/
 import { cn } from "@/lib/utils";
 import { relTime, threadMs } from "@/lib/words";
 
-type Brief = { headline?: string; finished?: { task: string; date: string; summary?: string; files?: string[] }[]; suite_size?: number; learned_recently?: string[] };
+type Job = { task: string; date?: string; summary?: string; files?: string[]; thread_id?: string; ts?: number };
+type Brief = { headline?: string; finished?: Job[]; stopped?: Job[]; suite_size?: number; learned_recently?: string[] };
 type Data = { brief: Brief; decisions: (Decision & { thread_id?: string })[]; offers: Offer[]; threads: ThreadRow[] };
 const ease = [0.23, 1, 0.32, 1] as const;
 const tight = { "--number-flow-mask-height": "0em" } as React.CSSProperties;
@@ -109,9 +110,12 @@ export function PaperFace({ paper, personName, dateLabel, side, onAsk, onOpen }:
   const { data, failed, load, act } = paper;
   const pending = data ? data.decisions.slice().reverse().filter((d) => d.status === "pending") : [];
   // A run that parked a decision ended, but its job is not done: it waits in the band above, not in Finished.
-  const threadOf = (task: string) => data?.threads.find((t) => t.title === task)?.id;
+  // Each job carries its own thread (older servers did not: then the thread with the same title stands in).
+  const threadOf = (x: Job) => x.thread_id ?? data?.threads.find((t) => t.title === x.task)?.id;
+  const when = (x: Job) => { const id = threadOf(x); const ms = x.ts ?? (id ? threadMs(id) : null); return ms ? relTime(ms) : x.date ?? ""; };
   const waitingThreads = new Set(pending.map((d) => d.thread_id).filter(Boolean));
-  const finished = (data?.brief.finished ?? []).filter((x) => { const id = threadOf(x.task); return !id || !waitingThreads.has(id); });
+  const finished = (data?.brief.finished ?? []).filter((x) => { const id = threadOf(x); return !id || !waitingThreads.has(id); });
+  const stopped = data?.brief.stopped ?? [];
   const lead = pending[0];
   const n = finished.length, w = pending.length;
   return (
@@ -144,7 +148,7 @@ export function PaperFace({ paper, personName, dateLabel, side, onAsk, onOpen }:
                     {lead ? `The decision below is the only thing that needs you${w > 1 ? " first" : " today"}. Everything else your agent finished in the last two days is filed underneath.`
                       : n ? "Your agent has nothing to ask. Everything it finished in the last two days is filed underneath." : "Ask your agent for something in plain words. When it finishes, the result is filed here, and anything it needs from you waits at the top."}
                   </p>
-                  {!n && !w && <div><Button className="min-h-11 px-5 sm:min-h-11" onClick={onAsk}>Ask your agent for something</Button></div>}
+                  {!n && <div><Button className="min-h-11 px-5 sm:min-h-11" variant={w ? "outline" : "default"} onClick={onAsk}>Ask your agent for something</Button></div>}
                 </header>
 
                 <AnimatePresence initial={false} mode="popLayout">
@@ -171,15 +175,18 @@ export function PaperFace({ paper, personName, dateLabel, side, onAsk, onOpen }:
                 </AnimatePresence>
 
                 {n > 0 && <section aria-labelledby="finished-h" className="grid gap-4">
-                  <h2 id="finished-h" className="text-[24px] font-semibold tracking-[-0.03em] text-ink">Finished</h2>
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <h2 id="finished-h" className="text-[24px] font-semibold tracking-[-0.03em] text-ink">Finished</h2>
+                    <Button variant="outline" className="min-h-11" onClick={onAsk}>Ask your agent for something</Button>
+                  </div>
                   {n > 0 && (
                     <motion.ol layout className="grid grid-cols-[minmax(0,1fr)] border-t-2 border-ink">
                       {finished.map((x, i) => {
-                        const id = threadOf(x.task);
+                        const id = threadOf(x);
                         return (
                           <motion.li key={x.task + x.date + i} layout initial={false} transition={{ duration: 0.28, ease }}
                             className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-1 border-b border-hairline py-4 md:grid-cols-[112px_minmax(0,1fr)_auto]">
-                            <span className="col-span-2 text-sm text-ink-2 md:col-span-1">{(() => { const ms = id ? threadMs(id) : null; return ms ? relTime(ms) : x.date; })()}</span>
+                            <span className="col-span-2 text-sm text-ink-2 md:col-span-1">{when(x)}</span>
                             <div className="min-w-0">
                               <p className="text-base font-medium leading-6 text-ink">{x.task}</p>
                               <p className="mt-0.5 truncate text-sm text-ink-2">{x.files?.length ? <>Saved <span className="num text-ink">{x.files.join(", ")}</span></> : "Nothing saved to your workspace"}</p>
@@ -195,6 +202,31 @@ export function PaperFace({ paper, personName, dateLabel, side, onAsk, onOpen }:
                     </motion.ol>
                   )}
                 </section>}
+
+                {stopped.length > 0 && (
+                  <section aria-labelledby="stopped-h" className="grid gap-4">
+                    <h2 id="stopped-h" className="text-[24px] font-semibold tracking-[-0.03em] text-ink">Did not finish</h2>
+                    <ol className="grid grid-cols-[minmax(0,1fr)] border-t-2 border-ink">
+                      {stopped.map((x, i) => {
+                        const id = threadOf(x);
+                        return (
+                          <li key={(x.thread_id ?? x.task) + i} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-1 border-b border-hairline py-4 md:grid-cols-[112px_minmax(0,1fr)_auto]">
+                            <span className="col-span-2 text-sm text-ink-2 md:col-span-1">{when(x)}</span>
+                            <div className="min-w-0">
+                              <p className="text-base font-medium leading-6 text-ink">{x.task}</p>
+                              {x.summary && <p className="mt-0.5 text-sm leading-6 text-ink-2">{x.summary}</p>}
+                            </div>
+                            {id && (
+                              <Button size="sm" variant="ghost" className="min-h-11" aria-label={`Open the conversation: ${x.task}`} onClick={() => onOpen(id)}>
+                                Open<ArrowUpRight className="size-4" strokeWidth={1.75} aria-hidden />
+                              </Button>
+                            )}
+                          </li>
+                        );
+                      })}
+                    </ol>
+                  </section>
+                )}
               </>
             )}
           </main>

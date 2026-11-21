@@ -58,6 +58,8 @@ export function App() {
   const narrow = useNarrow();
   const [face, setFace] = useState<Face>("paper");
   const paper = usePaper(() => { e.refreshCounts(); e.loadRecent(); });
+  // Coming back to the paper (after a run in Conversations, say) reprints it from the server.
+  useEffect(() => { if (face === "paper") paper.load(); }, [face]); // eslint-disable-line react-hooks/exhaustive-deps
   const [menuOpen, setMenuOpen] = useState(false);
   const [recDismissed, setRecDismissed] = useState(false);
   const menuRef = useRef<HTMLButtonElement>(null);

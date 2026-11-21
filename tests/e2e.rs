@@ -2214,6 +2214,10 @@ fn brief_today_and_graph_reflect_real_work() {
     let brief: Value = serde_json::from_str(&body).unwrap();
     assert!(brief["headline"].as_str().unwrap().contains("1 job"), "{body}");
     assert_eq!(brief["finished"][0]["task"], json!("Summarise everything into a document"));
+    // The paper opens each finished job's own conversation, so the brief carries its thread and time.
+    assert!(brief["finished"][0]["thread_id"].as_str().is_some_and(|t| t.starts_with('t')), "{body}");
+    assert!(brief["finished"][0]["ts"].as_u64().is_some(), "{body}");
+    assert_eq!(brief["stopped"], json!([]), "{body}");
     assert!(brief["suite_size"].as_u64().unwrap() >= 2);
     assert!(brief["library_size"].as_u64().unwrap() >= 12);
 
