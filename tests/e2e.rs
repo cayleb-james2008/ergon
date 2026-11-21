@@ -2321,11 +2321,11 @@ fn faces_and_phone_are_served() {
     assert_eq!(status, 200);
     for marker in [
         "data-app=\"ergon\"",
-        "Work Graph",
+        "Today's paper",
+        "Conversations",
         "Today",
         "Chat",
         "Work graph",
-        "Morning brief",
         "Waiting on you",
         "Describe a task in plain words",
         "thread-list",
@@ -2341,7 +2341,7 @@ fn faces_and_phone_are_served() {
         "Describe a task in plain words",
         "Working for",
         "Today",
-        "Work Graph",
+        "Work graph",
     ] {
         assert!(body.contains(marker), "phone face marker missing: {marker}");
     }
