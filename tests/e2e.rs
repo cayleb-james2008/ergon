@@ -3254,6 +3254,49 @@ fn a_run_whose_tool_steps_all_failed_is_not_finished_work() {
     assert_eq!(v["finished"].as_array().unwrap().len(), 1, "a successful tool step stays finished: {brief}");
 }
 
+/// E4: a run that parked a decision ended, but its job waits on the person,
+/// so the brief neither counts it in the headline nor files it as finished
+/// (the paper's rule). Once the decision is settled it counts.
+#[test]
+fn a_run_waiting_on_a_decision_is_not_finished_in_the_brief() {
+    let root = test_root("e4_waiting");
+    let stub = start_stub_model(vec![
+        json!({"tool": "write_document", "args": {"title": "Summary", "sections": ["All good."]}}).to_string(),
+        json!({"done": true, "summary": "The summary document is written."}).to_string(),
+        json!({"tool": "delete_file", "args": {"path": "old.txt"}}).to_string(),
+        json!({"done": true, "summary": "The deletion of old.txt is waiting for your approval."}).to_string(),
+    ]);
+    let cfg = test_config(&root, Some("test-key"), format!("http://127.0.0.1:{}/v1", stub.port));
+    std::fs::write(cfg.workspace_dir.join("old.txt"), "old").unwrap();
+    let port = start_app(cfg);
+    let tid = |body: &str| serde_json::from_str::<Value>(body).unwrap()["id"].as_str().unwrap().to_string();
+    let (status, body) = chat(port, "Write the summary document");
+    assert_eq!(status, 200, "{body}");
+    let doc_tid = tid(&body);
+    let (status, body) = chat(port, "Delete old.txt");
+    assert_eq!(status, 200, "{body}");
+    assert_ne!(tid(&body), doc_tid, "{body}");
+
+    let (_, brief) = http(port, "GET", "/api/brief", None);
+    let v: Value = serde_json::from_str(&brief).unwrap();
+    assert_eq!(v["headline"], json!("1 job finished in the last two days."), "{brief}");
+    assert_eq!(v["finished"].as_array().unwrap().len(), 1, "{brief}");
+    assert_eq!(v["finished"][0]["thread_id"], json!(doc_tid), "{brief}");
+    assert_eq!(v["stopped"], json!([]), "a waiting run is not a stopped run: {brief}");
+    assert_eq!(v["pending_decisions"].as_array().unwrap().len(), 1, "{brief}");
+
+    let id = pending_decision_id(port);
+    let (status, body) = http(port, "POST", &format!("/api/decisions/{id}/approve"), Some("{}"));
+    assert_eq!(status, 200, "{body}");
+    let (_, brief) = http(port, "GET", "/api/brief", None);
+    let v: Value = serde_json::from_str(&brief).unwrap();
+    assert_eq!(v["headline"], json!("2 jobs finished in the last two days."), "settled, it counts: {brief}");
+    for f in v["finished"].as_array().unwrap() {
+        assert!(f["thread_id"].as_str().is_some() && f["ts"].as_u64().is_some(), "{brief}");
+    }
+    assert_eq!(v["stopped"], json!([]), "{brief}");
+}
+
 /// Starts a server with an explicit gate token and extra allowed Host names
 /// (the env-driven `serve` passes these through `ERGON_ALLOWED_HOSTS`).
 fn start_app_hosts(cfg: Config, gate: Option<&str>, hosts: Vec<String>) -> u16 {
