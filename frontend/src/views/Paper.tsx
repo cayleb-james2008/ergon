@@ -21,11 +21,11 @@ const tight = { "--number-flow-mask-height": "0em" } as React.CSSProperties;
 
 function consequence(kind: string): string {
   if (/delete/.test(kind)) return "Approving deletes the file for good. Keeping it leaves the file where it is. Your agent has not touched it yet.";
-  return "Approving lets your agent go ahead. Keeping it stops the step, and the conversation records what happened.";
+  return "Your agent raised this while it worked and carried on. Your answer is recorded here; to have it act on the answer, tell it in the conversation.";
 }
 
-function initials(name: string): string {
-  return name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]?.toUpperCase() ?? "").join("") || "?";
+function initials(name: unknown): string {
+  return String(name ?? "").split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]?.toUpperCase() ?? "").join("") || "?";
 }
 
 export function PaperSide({ people, active, onSwitch, offers, learned, failed, onAct, extra }: {
@@ -46,7 +46,7 @@ export function PaperSide({ people, active, onSwitch, offers, learned, failed, o
                   className={cn("focus-ring flex min-h-11 w-full items-center gap-3 rounded-sm px-2 text-left text-sm outline-none transition-colors duration-150 ease-out",
                     p.id === active ? "bg-board" : "hover:bg-board")}>
                   <span aria-hidden className={cn("grid size-8 shrink-0 place-items-center rounded-full text-xs font-semibold", p.id === active ? "bg-ink text-canvas" : "bg-blue-soft text-ink")}>{initials(p.name)}</span>
-                  <span className="min-w-0 flex-1"><span className={cn("block truncate text-ink", p.id === active && "font-medium")}>{p.name}</span><span className="block truncate text-xs text-ink-2">{p.role || "No role set"}</span></span>
+                  <span className="min-w-0 flex-1"><span className={cn("block truncate text-ink", p.id === active && "font-medium")}>{p.name || "Unnamed"}</span><span className="block truncate text-xs text-ink-2">{p.role || "No role set"}</span></span>
                 </button>
               </li>
             ))}
@@ -64,7 +64,7 @@ export function PaperSide({ people, active, onSwitch, offers, learned, failed, o
               <p className="text-sm leading-6 text-ink-2">{o.detail}</p>
               <div className="flex flex-wrap gap-2">
                 <Button size="sm" className="max-md:min-h-11" onClick={() => onAct(`/api/offers/${encodeURIComponent(o.id)}/accept`, "Added to your suite as a one-tap app.")}>Make it one tap</Button>
-                <Button size="sm" variant="outline" className="max-md:min-h-11" onClick={() => onAct(`/api/offers/${encodeURIComponent(o.id)}/dismiss`, "Offer dismissed.")}>Not now</Button>
+                <Button size="sm" variant="outline" className="max-md:min-h-11" onClick={() => onAct(`/api/offers/${encodeURIComponent(o.id)}/dismiss`, "Offer dismissed.")}>No, thanks</Button>
               </div>
             </motion.div>
           ))}
@@ -90,15 +90,16 @@ export function usePaper(onChanged: () => void) {
       call<Brief>("/api/brief"), call<{ decisions: Data["decisions"] }>("/api/decisions"), call<{ offers: Offer[] }>("/api/offers"),
       call<{ threads: ThreadRow[] }>("/api/threads"),
     ]);
-    if (!b.ok || !d.ok || !o.ok || !t.ok) { setFailed(true); return; }
+    const shaped = (x: unknown, key: string) => !!x && typeof x === "object" && Array.isArray((x as Record<string, unknown>)[key]);
+    if (!b.ok || !d.ok || !o.ok || !t.ok || !b.data || typeof b.data !== "object" || !shaped(d.data, "decisions") || !shaped(o.data, "offers") || !shaped(t.data, "threads")) { setFailed(true); return; }
     setFailed(false);
     setData({ brief: b.data, decisions: d.data.decisions ?? [], offers: o.data.offers ?? [], threads: t.data.threads ?? [] });
   }, []);
   useEffect(() => { load(); }, [load]);
   const act = useCallback(async (path: string, done: string) => {
-    const r = await call(path, { method: "POST", body: {} });
-    if (!r.ok) { toast("That did not go through. Try again."); return; }
-    toast(done);
+    const r = await call<{ outcome?: string }>(path, { method: "POST", body: {} });
+    if (!r.ok) { toast(r.error ? "That did not go through: " + r.error : "That did not go through. Try again."); return; }
+    toast(r.data?.outcome || done);
     await load(); onChanged();
   }, [load, onChanged]);
   return { data, failed, load, act };
@@ -156,20 +157,20 @@ export function PaperFace({ paper, personName, dateLabel, side, onAsk, onOpen }:
                     <motion.section key={lead.id} layout initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.97 }} transition={{ duration: 0.28, ease }}
                       aria-labelledby="lead-h" className="grid gap-4 rounded-card bg-blue-soft p-5 md:p-7">
                       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-                        <h2 id="lead-h" className="text-[26px] leading-tight font-semibold tracking-[-0.03em] text-ink">{lead.summary}</h2>
+                        <h2 id="lead-h" className="min-w-0 text-[26px] leading-tight font-semibold tracking-[-0.03em] text-ink [overflow-wrap:anywhere]">{lead.summary}</h2>
                         <WaitingPill />
                       </div>
                       <p className="max-w-[58ch] text-base leading-7 text-ink-2">{consequence(lead.kind)}</p>
                       <div className="flex flex-wrap gap-2">
-                        <Button className="min-h-11 px-5 sm:min-h-11" onClick={() => act(`/api/decisions/${encodeURIComponent(lead.id)}/approve`, "Approved. Your agent went ahead.")}>Approve</Button>
-                        <Button className="min-h-11 px-5 sm:min-h-11" variant="outline" onClick={() => act(`/api/decisions/${encodeURIComponent(lead.id)}/deny`, "Kept. Nothing was changed.")}>Keep</Button>
+                        <Button className="min-h-11 px-5 sm:min-h-11" onClick={() => act(`/api/decisions/${encodeURIComponent(lead.id)}/approve`, "Approved.")}>Approve</Button>
+                        <Button className="min-h-11 px-5 sm:min-h-11" variant="outline" onClick={() => act(`/api/decisions/${encodeURIComponent(lead.id)}/deny`, "Nothing was done.")}>{/delete/.test(lead.kind) ? "Keep the file" : "Decline"}</Button>
                       </div>
                       {w > 1 && <p className="text-sm text-ink-2">{w - 1} more {w - 1 === 1 ? "decision waits" : "decisions wait"} after this one.</p>}
                     </motion.section>
                   ) : n > 0 && (
                     <motion.p key="quiet" layout initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
                       className="rounded-card border border-hairline p-4 text-sm leading-6 text-ink-2">
-                      Nothing waits on you. Your agent asks here before it deletes or changes anything.
+                      Nothing waits on you. Your agent asks here before it deletes anything.
                     </motion.p>
                   )}
                 </AnimatePresence>
@@ -188,7 +189,7 @@ export function PaperFace({ paper, personName, dateLabel, side, onAsk, onOpen }:
                             className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-1 border-b border-hairline py-4 md:grid-cols-[112px_minmax(0,1fr)_auto]">
                             <span className="col-span-2 text-sm text-ink-2 md:col-span-1">{when(x)}</span>
                             <div className="min-w-0">
-                              <p className="text-base font-medium leading-6 text-ink">{x.task}</p>
+                              <p className="text-base font-medium leading-6 text-ink [overflow-wrap:anywhere]">{x.task}</p>
                               <p className="mt-0.5 truncate text-sm text-ink-2">{x.files?.length ? <>Saved <span className="num text-ink">{x.files.join(", ")}</span></> : "Nothing saved to your workspace"}</p>
                             </div>
                             {id && (
@@ -213,8 +214,8 @@ export function PaperFace({ paper, personName, dateLabel, side, onAsk, onOpen }:
                           <li key={(x.thread_id ?? x.task) + i} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-1 border-b border-hairline py-4 md:grid-cols-[112px_minmax(0,1fr)_auto]">
                             <span className="col-span-2 text-sm text-ink-2 md:col-span-1">{when(x)}</span>
                             <div className="min-w-0">
-                              <p className="text-base font-medium leading-6 text-ink">{x.task}</p>
-                              {x.summary && <p className="mt-0.5 text-sm leading-6 text-ink-2">{x.summary}</p>}
+                              <p className="text-base font-medium leading-6 text-ink [overflow-wrap:anywhere]">{x.task}</p>
+                              {x.summary && <p className="mt-0.5 text-sm leading-6 text-ink-2 [overflow-wrap:anywhere]">{x.summary}</p>}
                             </div>
                             {id && (
                               <Button size="sm" variant="ghost" className="min-h-11" aria-label={`Open the conversation: ${x.task}`} onClick={() => onOpen(id)}>
