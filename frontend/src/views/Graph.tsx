@@ -1,7 +1,9 @@
 // Work Graph: the work, as a map. People on the left, suite items (the agents' tools) in the middle, finished work
 // and files on the right. Pins sit on a deterministic grid per band; an edge is drawn only where /api/graph returns it.
 // Hover or focus on a pin brightens its own routes. The text list is the accessible equivalent and shows the same data.
-import { useEffect, useMemo, useState } from "react";
+// The map is drawn at real pixel size (13px labels at any width): the columns share the measured width, each label is
+// cut to its own column, and where four readable columns do not fit, the list stands alone.
+import { useEffect, useMemo, useRef, useState } from "react";
 import { call } from "@/lib/api";
 
 type Node = { id: string; kind: string; label?: string; detail?: string };
@@ -10,8 +12,9 @@ type Graph = { nodes?: Node[]; edges?: { from: string; to: string }[] };
 export const KIND_WORD: Record<string, string> = { person: "Person", item: "Suite item", work: "Finished work", file: "File" };
 const KIND_ORDER = ["person", "item", "work", "file"];
 const BAND_TITLE: Record<string, string> = { person: "People", item: "Suite items", work: "Finished work", file: "Files" };
-const BAND_X: Record<string, number> = { person: 160, item: 400, work: 640, file: 870 };
-const W = 1000;
+/** Narrowest map that still gives each column an 18-character label. */
+const MIN_MAP = 720;
+const PAD = 20;
 
 /** One pin: the shape is the kind (disc, diamond, triangle, square). */
 export function Pin({ kind, x, y, hot }: { kind: string; x: number; y: number; hot: boolean }) {
@@ -24,8 +27,12 @@ export function Pin({ kind, x, y, hot }: { kind: string; x: number; y: number; h
   return <rect x={x - 6} y={y - 6} width={12} height={12} style={style} strokeWidth={sw} />;
 }
 
-/** Deterministic layout: nodes sorted by label within a band; the row step shrinks as a band fills. */
-export function layout(nodes: Node[]) {
+/** Deterministic layout across width W: four equal columns, nodes sorted by label within a band; the row step shrinks as a
+ *  band fills. `room` is the widest label backing that stays clear of the next column's pins. */
+export function layout(nodes: Node[], W: number) {
+  const gap = (W - 2 * PAD) / 4;
+  const bandX = Object.fromEntries(KIND_ORDER.map((k, i) => [k, Math.round(PAD + 8 + i * gap)]));
+  const room = gap - 34;
   const bands: Record<string, Node[]> = { person: [], item: [], work: [], file: [] };
   for (const n of nodes) (bands[bands[n.kind] ? n.kind : "work"]).push(n);
   for (const k of KIND_ORDER) bands[k].sort((a, b) => (a.label || "").localeCompare(b.label || "") || a.id.localeCompare(b.id));
@@ -34,23 +41,35 @@ export function layout(nodes: Node[]) {
   const top = 92;
   const height = top + rows * step + 40;
   const pos: Record<string, { x: number; y: number; n: Node; kind: string }> = {};
-  for (const k of KIND_ORDER) bands[k].forEach((n, i) => { pos[n.id] = { x: BAND_X[k], y: top + i * step + step / 2, n, kind: k }; });
-  return { pos, height, step, bands };
+  for (const k of KIND_ORDER) bands[k].forEach((n, i) => { pos[n.id] = { x: bandX[k], y: top + i * step + step / 2, n, kind: k }; });
+  return { pos, height, step, bands, bandX, room };
 }
 
 export function GraphFace() {
   const [graph, setGraph] = useState<Graph | null>(null);
   const [failed, setFailed] = useState(false);
   const [hot, setHot] = useState<string | null>(null);
+  const box = useRef<HTMLDivElement>(null);
+  const [width, setWidth] = useState(0);
   useEffect(() => {
     call<Graph>("/api/graph").then((r) => { if (r.ok) setGraph(r.data); else setFailed(true); });
   }, []);
+  useEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    const ro = new ResizeObserver(([e]) => setWidth(Math.floor(e.contentRect.width)));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [graph]);
   const nodes = graph?.nodes ?? [];
   const edges = graph?.edges ?? [];
-  const lay = useMemo(() => layout(nodes), [graph]); // eslint-disable-line react-hooks/exhaustive-deps
+  const W = width - 2; // inside the map's 1px border
+  const lay = useMemo(() => layout(nodes, W), [graph, W]); // eslint-disable-line react-hooks/exhaustive-deps
+  const map = width >= MIN_MAP;
+  const fit = (label = "") => { const max = Math.floor((lay.room - 20) / 7.2); return label.length > max ? label.slice(0, max - 1) + "…" : label; };
 
-  if (failed) return <section aria-label="Work graph" className="mx-auto w-full max-w-[1000px] px-6 pt-6"><p role="alert" className="text-sm text-ink-2">The graph could not be loaded. Is the Ergon server running?</p></section>;
-  if (!graph) return <section aria-label="Work graph" className="mx-auto w-full max-w-[1000px] px-6 pt-6"><p className="text-sm text-ink-2">Loading…</p></section>;
+  if (failed) return <section aria-label="Work graph" className="mx-auto w-full max-w-[1200px] px-6 pt-6"><p role="alert" className="text-sm text-ink-2">The graph could not be loaded. Is the Ergon server running?</p></section>;
+  if (!graph) return <section aria-label="Work graph" className="mx-auto w-full max-w-[1200px] px-6 pt-6"><p className="text-sm text-ink-2">Loading…</p></section>;
 
   const count = (k: string) => nodes.filter((n) => n.kind === k).length;
   const sorted = [...nodes].sort((a, b) => KIND_ORDER.indexOf(a.kind) - KIND_ORDER.indexOf(b.kind));
@@ -58,7 +77,7 @@ export function GraphFace() {
   const focusLabel = (id: string) => { const p = lay.pos[id]; return p ? `${KIND_WORD[p.kind] || p.kind}: ${p.n.label || ""}` : ""; };
 
   return (
-    <section aria-label="Work graph" className="mx-auto flex w-full max-w-[1000px] flex-col gap-5 px-6 pb-10 pt-6">
+    <section aria-label="Work graph" className="mx-auto flex w-full max-w-[1200px] flex-col gap-5 px-6 pb-10 pt-6">
       <div>
         <h2 className="text-[30px] leading-tight font-semibold tracking-[-0.035em] text-ink">Who the work belongs to, and what it touched</h2>
         <p className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-sm text-ink-2">
@@ -82,7 +101,8 @@ export function GraphFace() {
             ))}
             <li className="flex items-center gap-2"><svg aria-hidden viewBox="0 -4 24 8" className="h-2 w-6"><line x1="0" y1="4" x2="24" y2="-4" style={{ stroke: "var(--ink-3)" }} strokeDasharray="4 4" /></svg>Linked in the work</li>
           </ul>
-          <div className="relative hidden overflow-hidden rounded-entry border border-ink bg-surface dark:border-hairline md:block">
+          <div ref={box}>{map && (
+          <div className="relative overflow-hidden rounded-entry border border-ink bg-surface dark:border-hairline">
             <svg role="group" aria-label="Map of people, suite items, finished work and files. Hover or focus a pin to see its links."
               viewBox={`0 0 ${W} ${lay.height}`} className="block h-auto w-full" onMouseLeave={() => setHot(null)}>
               <defs>
@@ -92,7 +112,7 @@ export function GraphFace() {
               </defs>
               <rect x="0" y="0" width={W} height={lay.height} fill="url(#ergon-contours)" style={{ color: "var(--contour)" }} opacity="0.5" />
               {KIND_ORDER.map((k) => (
-                <text key={k} x={BAND_X[k] - 8} y={44} fontSize="12" style={{ fill: "var(--ink-3)" }}>{BAND_TITLE[k]}</text>
+                <text key={k} x={lay.bandX[k] - 8} y={44} fontSize="12" style={{ fill: "var(--ink-3)" }}>{BAND_TITLE[k]}</text>
               ))}
               {drawn.map((e, i) => {
                 const a = lay.pos[e.from], b = lay.pos[e.to];
@@ -106,14 +126,14 @@ export function GraphFace() {
               })}
               {Object.values(lay.pos).map(({ x, y, n, kind }) => {
                 const on = hot === n.id;
-                const text = (n.label || "").length > 26 ? (n.label || "").slice(0, 25) + "…" : n.label || "";
+                const text = fit(n.label);
                 return (
                   <g key={n.id} role="button" tabIndex={0} aria-label={focusLabel(n.id)}
                     onMouseEnter={() => setHot(n.id)} onFocus={() => setHot(n.id)} onBlur={() => setHot(null)}
                     className="focus:outline-none">
                     {on && <circle cx={x} cy={y} r={14} fill="none" style={{ stroke: "var(--ink)" }} strokeWidth={2} />}
                     <Pin kind={kind} x={x} y={y} hot={on} />
-                    <rect x={x + 12} y={y - 11} width={Math.min(230, 20 + text.length * 7.2)} height={22} rx={4} style={{ fill: "var(--surface)" }} opacity="0.92" />
+                    <rect x={x + 12} y={y - 11} width={Math.min(lay.room, 20 + text.length * 7.2)} height={22} rx={4} style={{ fill: "var(--surface)" }} />
                     <text x={x + 18} y={y + 4} fontSize="13" fontWeight={on ? 600 : 500} style={{ fill: "var(--ink)" }}>{text}</text>
                     <title>{focusLabel(n.id) + (n.detail ? ": " + n.detail : "")}</title>
                   </g>
@@ -121,10 +141,11 @@ export function GraphFace() {
               })}
             </svg>
           </div>
+          )}</div>
+          {width > 0 && !map && <p className="text-xs text-ink-3">The map is drawn on wider screens. The same work, as a list:</p>}
         </>
       )}
 
-      <p className="text-xs text-ink-3 md:hidden">The map is drawn on wider screens. The same work, as a list:</p>
       {nodes.length > 0 && (
         <ol aria-label="Work graph as a list" className="divide-y divide-hairline rounded-entry border border-hairline bg-surface">
           {sorted.map((n) => {
