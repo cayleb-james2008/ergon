@@ -8,6 +8,8 @@
 @import "./fonts.css";
 @source "../../rune/used";
 @source not "../../rune/used/components/ui/morphing-dialog.tsx";
+/* The UI checks in ../e2e quote class names in selectors and style overrides; they are not markup. */
+@source not "../e2e";
 
 /* Tremor Raw animation block (documented install step: paste its @theme into globals.css).
    Only the hover-card/tooltip entries that Tracker uses are kept. */
