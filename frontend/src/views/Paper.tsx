@@ -29,7 +29,7 @@ function FileGlyph({ name }: { name: string }) {
   const ext = name.split(".").pop()?.toLowerCase() ?? "";
   const Icon = /^(csv|xlsx?|tsv|ods)$/.test(ext) ? FileSpreadsheet : /^(png|jpe?g|gif|webp|svg)$/.test(ext) ? FileImage
     : /^(json|html?|css|js|ts|py|rs|xml|ya?ml)$/.test(ext) ? FileCode : /^(md|txt|docx?|pdf|rtf|odt)$/.test(ext) ? FileText : File;
-  return <Icon className="size-3.5 shrink-0 text-ink-3" strokeWidth={1.75} aria-hidden />;
+  return <Icon className="size-4 shrink-0 text-ink-2" strokeWidth={1.75} aria-hidden />;
 }
 
 function initials(name: unknown): string {
