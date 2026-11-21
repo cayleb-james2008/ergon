@@ -38,6 +38,11 @@ for (const w of [1440, 390]) {
   { const { ctx, p } = await page(w, BASE, [['**/api/people', r => r.request().method() === 'GET' ? json(r, '{"people": [tr') : r.continue()]])
     // The paper renders its side column twice (wide and phone layouts, one hidden): count the visible one.
     ok(`ergon ${w}: malformed people list shows its error on the paper`, !p.errs.length && await p.locator('#team-h ~ p[role=alert]:visible', { hasText: 'Could not load the people list' }).count() === 1, p.errs.join('|')); await ctx.close() }
+  // Saved-file glyphs read each file name in a Finished row: long unbroken names, many files, no extension and odd types must stay in the row.
+  { const { ctx, p } = await page(w, BASE, [['**/api/brief', patch(j => ({ ...j, finished: j.finished.map((f, i) => ({ ...f, files: i === 0 ? [LONG + '.csv', 'noext', 'a.PNG', 'b.json', 'c.pdf', 'd.unknown', 'e.xlsx', 'f.md'] : f.files })) }))]])
+    ok(`ergon ${w}: many long saved-file names stay in their boxes`, !p.errs.length && (await clipped(p)) === 0 && (await textOverflow(p, 'main ol p')) === 0 && await p.locator('main ol li svg[aria-hidden=true]').count() >= 8, p.errs.join('|')); await p.screenshot({ path: `${OUT}/ergon-files-${w}.png` }); await ctx.close() }
+  { const { ctx, p } = await page(w, BASE, [['**/api/brief', patch(j => ({ ...j, finished: j.finished.map((f, i) => ({ ...f, files: i === 0 ? 'oops.csv' : i === 1 ? null : [null, 42, 'ok.md'] })) }))]])
+    ok(`ergon ${w}: files that are not a list of names do not break the row`, !p.errs.length && await p.locator('main h1').count() === 1 && await p.locator('main ol li').count() >= 3, p.errs.join('|')); await ctx.close() }
 }
 await b.close()
 report('replay', res)
