@@ -172,7 +172,7 @@ export function App() {
   ] as const;
   const dateLabel = new Date().toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" });
   const side = (
-    <PaperSide people={e.people?.people ?? null} active={e.people?.active ?? ""} onSwitch={async (id) => { await e.switchPerson(id); paper.load(); }}
+    <PaperSide people={e.people?.people ?? null} teamError={e.people ? "" : e.sideError} active={e.people?.active ?? ""} onSwitch={async (id) => { await e.switchPerson(id); paper.load(); }}
       offers={paper.data ? paper.data.offers.slice().reverse().filter((o) => o.status === "pending") : null}
       learned={paper.data ? paper.data.brief.learned_recently ?? [] : null} failed={paper.failed} onAct={paper.act}
       // The panel rows are shared-layout dialog triggers: mount them once the paper has settled so nothing slides on first load.

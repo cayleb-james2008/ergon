@@ -28,15 +28,15 @@ function initials(name: unknown): string {
   return String(name ?? "").split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]?.toUpperCase() ?? "").join("") || "?";
 }
 
-export function PaperSide({ people, active, onSwitch, offers, learned, failed, onAct, extra }: {
-  people: Person[] | null; active: string; onSwitch: (id: string) => void; offers: Offer[] | null; learned: string[] | null;
+export function PaperSide({ people, teamError, active, onSwitch, offers, learned, failed, onAct, extra }: {
+  people: Person[] | null; teamError?: string; active: string; onSwitch: (id: string) => void; offers: Offer[] | null; learned: string[] | null;
   failed?: boolean; onAct: (path: string, done: string) => void; extra?: React.ReactNode;
 }) {
   return (
     <div className="grid gap-8">
       <section aria-labelledby="team-h" className="grid gap-3">
         <h2 id="team-h" className="text-title font-semibold tracking-[-0.02em] text-ink">Team</h2>
-        {!people && <p className="text-sm text-ink-2">Loading the team…</p>}
+        {!people && <p role={teamError ? "alert" : undefined} className="text-sm text-ink-2">{teamError || "Loading the team…"}</p>}
         {people && !people.length && <p className="text-sm text-ink-2">No people yet. Add someone below and their agent keeps its own memory.</p>}
         {people && people.length > 0 && (
           <ul className="grid gap-1">

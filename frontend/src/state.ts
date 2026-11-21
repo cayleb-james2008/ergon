@@ -56,14 +56,15 @@ export function useErgon() {
 
   const loadPeople = useCallback(async () => {
     const r = await call<{ people: Person[]; active: string }>("/api/people");
-    if (!r.ok) { setSideError("Could not load the people list. Is the Ergon server running?"); return; }
+    // call() turns an unreadable body into {}: a reply without the list is an error, not an empty team.
+    if (!r.ok || !Array.isArray(r.data.people)) { setSideError("Could not load the people list. Is the Ergon server running?"); return; }
     setPeople(r.data);
     setSideError("");
   }, []);
 
   const loadThreads = useCallback(async () => {
     const r = await call<{ threads: ThreadRow[] }>("/api/threads");
-    if (!r.ok) { setThreadsError(true); return; }
+    if (!r.ok || !Array.isArray(r.data.threads)) { setThreadsError(true); return; }
     setThreadsError(false);
     setThreads(r.data.threads);
     // The rail's state icons come from each thread's own messages (only what the server returns).

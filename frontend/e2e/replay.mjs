@@ -31,6 +31,13 @@ for (const w of [1440, 390]) {
   { const { ctx, p } = await page(w, BASE, [['**/api/decisions', patch(j => ({ decisions: j.decisions.map(d => ({ ...d, kind: 'question', summary: 'Use the new supplier list?' })) }))]])
     const band = await p.locator('section[aria-labelledby=lead-h]').innerText()
     ok(`ergon ${w}: a question decision says the answer is recorded; Decline`, /recorded/.test(band) && await p.getByRole('button', { name: 'Decline', exact: true }).count() === 1 && !/went ahead/.test(band)); await ctx.close() }
+  // A 200 the reader cannot parse turns into {} (call() in lib/api.ts): the list must fail into its own error, not crash the page.
+  { const { ctx, p } = await page(w, BASE, [['**/api/threads', r => r.request().method() === 'GET' ? json(r, '{"threads": [tr') : r.continue()]])
+    await p.getByRole('tab', { name: /Conversations/ }).click().catch(() => {}); await p.waitForTimeout(600)
+    ok(`ergon ${w}: malformed conversation list shows its error`, !p.errs.length && (w < 768 || await p.locator('text=Could not load your conversations').count() === 1), p.errs.join('|')); await ctx.close() }
+  { const { ctx, p } = await page(w, BASE, [['**/api/people', r => r.request().method() === 'GET' ? json(r, '{"people": [tr') : r.continue()]])
+    // The paper renders its side column twice (wide and phone layouts, one hidden): count the visible one.
+    ok(`ergon ${w}: malformed people list shows its error on the paper`, !p.errs.length && await p.locator('#team-h ~ p[role=alert]:visible', { hasText: 'Could not load the people list' }).count() === 1, p.errs.join('|')); await ctx.close() }
 }
 await b.close()
 report('replay', res)
