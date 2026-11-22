@@ -1,0 +1,367 @@
+//! Ergon skill: audit_contract (Rune)
+//!
+//! Deterministic contract & agreement review: verifies required clauses
+//! with synonym coverage, flags missing clauses, extracts renewal/term
+//! and notice dates, and produces a line-cited `[L##]` risk table with
+//! recommended redlines. Writes `<output_title>.md` into the workspace.
+
+fn md_esc(text) {
+    text.replace("|", "\\|").replace("\n", " ").replace("\r", "")
+}
+
+fn clip(text, max_len) {
+    let t = text.trim();
+    if t.len() <= max_len {
+        return t;
+    }
+    let out = String::new();
+    let count = 0;
+    for ch in t.chars() {
+        if count >= max_len {
+            break;
+        }
+        out.push(ch);
+        count = count + 1;
+    }
+    out.push_str("...");
+    out
+}
+
+fn clause_keywords(clause_name) {
+    let low = clause_name.trim().to_lowercase();
+    if low.contains("terminat") {
+        return ["termination", "terminate", "cancellation", "cancel for convenience"];
+    }
+    if low.contains("liabilit") {
+        return ["limitation of liability", "liability", "cap on damages", "consequential damages"];
+    }
+    if low.contains("confidential") || low == "nda" {
+        return ["confidential", "non-disclosure", "nda", "proprietary information"];
+    }
+    if low.contains("indemn") {
+        return ["indemnif", "hold harmless", "defend and indemnify"];
+    }
+    if low.contains("governing") || low.contains("jurisdiction") {
+        return ["governing law", "jurisdiction", "venue", "choice of law", "construed under"];
+    }
+    if low.contains("payment") || low.contains("fee") {
+        return ["payment", "fees", "invoice", "net 30", "net 45", "net 60", "billing"];
+    }
+    if low.contains("data") || low.contains("privacy") || low.contains("security") {
+        return ["data protection", "privacy", "gdpr", "dpa", "personal data", "security breach"];
+    }
+    if low.contains("renew") || low.contains("term") {
+        return ["renewal", "auto-renew", "automatic renewal", "initial term", "evergreen"];
+    }
+    if low.contains("intellectual") || low == "ip" {
+        return ["intellectual property", "ownership", "work made for hire", "license grant"];
+    }
+    return [low];
+}
+
+fn contains_any(lower, needles) {
+    for n in needles {
+        if !n.is_empty() && lower.contains(n) {
+            return true;
+        }
+    }
+    false
+}
+
+pub fn main(contract_file, required_clauses, output_title) {
+    let src = contract_file.trim();
+    if src.is_empty() {
+        return "error: audit_contract requires a contract_file path";
+    }
+    let raw = host_workspace_read(src.clone());
+    if raw.starts_with("error:") {
+        return raw;
+    }
+    let normalized = raw.replace("\r\n", "\n").replace("\r", "\n");
+    if normalized.trim().is_empty() {
+        let msg = `error: ${src} is empty`;
+        return msg;
+    }
+    let title = output_title.trim();
+    if title.is_empty() {
+        title = "Contract Audit";
+    }
+
+    let clauses = if required_clauses.is_empty() {
+        [
+            "termination",
+            "liability",
+            "confidentiality",
+            "indemnification",
+            "governing law",
+            "payment",
+            "data protection",
+            "renewal",
+        ]
+    } else {
+        required_clauses
+    };
+
+    let lines = [];
+    for l in normalized.split("\n") {
+        lines.push(l);
+    }
+
+    // 1. Required clause coverage
+    let clause_rows = [];
+    let present_count = 0;
+    let missing_clauses = [];
+
+    for clause in clauses {
+        let kw = clause_keywords(clause.clone());
+        let hits = [];
+        let idx = 0;
+        while idx < lines.len() {
+            let low = lines[idx].to_lowercase();
+            if contains_any(low, kw.clone()) {
+                if hits.len() < 5 {
+                    hits.push(`[L${idx + 1}]`);
+                }
+            }
+            idx = idx + 1;
+        }
+        if hits.is_empty() {
+            missing_clauses.push(clause.clone());
+            clause_rows.push([clause, "MISSING", "—"]);
+        } else {
+            present_count = present_count + 1;
+            let joined = String::new();
+            let first = true;
+            for h in hits {
+                if !first {
+                    joined.push_str(", ");
+                }
+                joined.push_str(h);
+                first = false;
+            }
+            clause_rows.push([clause, "PRESENT", joined]);
+        }
+    }
+
+    // 2. Renewal, term, payment & notice dates + line-cited risk table
+    let dates_found = [];
+    let risks = [];
+    let high_count = 0;
+    let med_count = 0;
+    let low_count = 0;
+
+    // Missing required clauses generate explicit HIGH risks
+    for mc in missing_clauses {
+        high_count = high_count + 1;
+        risks.push([
+            "HIGH",
+            "Missing Required Clause",
+            "—",
+            `No language matching "${mc}" found in ${src}`,
+            `Insert standard ${mc} provision before signature`,
+        ]);
+    }
+
+    let i = 0;
+    while i < lines.len() {
+        let line = lines[i].trim();
+        let line_no = i + 1;
+        i = i + 1;
+        if line.is_empty() {
+            continue;
+        }
+        let low = line.to_lowercase();
+        let cite = `[L${line_no}]`;
+        let excerpt = clip(line.clone(), 120);
+
+        // Date / term / renewal extraction
+        if contains_any(
+            low.clone(),
+            [
+                "effective date",
+                "initial term",
+                "renewal",
+                "auto-renew",
+                "evergreen",
+                "expir",
+                "days prior",
+                "days' notice",
+                "days notice",
+                "written notice",
+                "net 30",
+                "net 45",
+                "net 60",
+                "net 90",
+            ],
+        ) {
+            dates_found.push([cite.clone(), excerpt.clone()]);
+        }
+
+        // HIGH risks
+        if contains_any(low.clone(), ["unlimited liability", "without limit", "uncapped liability", "no cap on liability"]) {
+            high_count = high_count + 1;
+            risks.push([
+                "HIGH",
+                "Unlimited Liability",
+                cite.clone(),
+                excerpt.clone(),
+                "Cap aggregate liability at 12 months of fees paid",
+            ]);
+        }
+        if contains_any(low.clone(), ["sole discretion", "modify at any time", "amend without notice", "unilateral"]) {
+            high_count = high_count + 1;
+            risks.push([
+                "HIGH",
+                "Unilateral Amendment",
+                cite.clone(),
+                excerpt.clone(),
+                "Require mutual written amendment and 30 days' advance notice",
+            ]);
+        }
+        if contains_any(low.clone(), ["auto-renew", "automatically renew", "evergreen"]) {
+            high_count = high_count + 1;
+            risks.push([
+                "HIGH",
+                "Auto-Renewal Lock-In",
+                cite.clone(),
+                excerpt.clone(),
+                "Convert to explicit opt-in renewal or shorten notice window to 30 days",
+            ]);
+        }
+        if contains_any(low.clone(), ["non-compete", "exclusive right", "exclusivity"]) {
+            high_count = high_count + 1;
+            risks.push([
+                "HIGH",
+                "Exclusivity / Non-Compete",
+                cite.clone(),
+                excerpt.clone(),
+                "Strike exclusivity or narrow scope to specific named deliverables",
+            ]);
+        }
+        if contains_any(low.clone(), ["irrevocable", "perpetual", "work made for hire"]) {
+            high_count = high_count + 1;
+            risks.push([
+                "HIGH",
+                "Broad IP Assignment",
+                cite.clone(),
+                excerpt.clone(),
+                "Carve out pre-existing IP and background tools explicitly",
+            ]);
+        }
+
+        // MEDIUM risks
+        if contains_any(low.clone(), ["net 60", "net 90", "net 120"]) {
+            med_count = med_count + 1;
+            risks.push([
+                "MEDIUM",
+                "Extended Payment Terms",
+                cite.clone(),
+                excerpt.clone(),
+                "Negotiate payment cycle down to Net 30",
+            ]);
+        }
+        if contains_any(low.clone(), ["binding arbitration", "waive jury", "waives trial by jury", "class action waiver"]) {
+            med_count = med_count + 1;
+            risks.push([
+                "MEDIUM",
+                "Dispute / Arbitration Clause",
+                cite.clone(),
+                excerpt.clone(),
+                "Confirm neutral venue and fee-shifting terms with legal",
+            ]);
+        }
+        if contains_any(low.clone(), ["price increase", "increase fees", "cpi", "escalat"]) {
+            med_count = med_count + 1;
+            risks.push([
+                "MEDIUM",
+                "Fee Escalation",
+                cite.clone(),
+                excerpt.clone(),
+                "Cap annual renewal fee increases at <= 5% or CPI",
+            ]);
+        }
+        if contains_any(low.clone(), ["liquidated damages", "late fee", "late penalty", "interest at"]) {
+            med_count = med_count + 1;
+            risks.push([
+                "MEDIUM",
+                "Penalties / Late Interest",
+                cite.clone(),
+                excerpt.clone(),
+                "Add 10-business-day cure period before late interest accrues",
+            ]);
+        }
+
+        // LOW risks
+        if contains_any(low.clone(), ["change of control", "may not assign", "prior written consent"]) {
+            low_count = low_count + 1;
+            risks.push([
+                "LOW",
+                "Assignment Restriction",
+                cite.clone(),
+                excerpt.clone(),
+                "Add carve-out for affiliates and merger/acquisition assignments",
+            ]);
+        }
+        if contains_any(low, ["audit right", "right to audit", "inspect records"]) {
+            low_count = low_count + 1;
+            risks.push([
+                "LOW",
+                "Audit Rights",
+                cite,
+                excerpt,
+                "Limit audits to once per year with 30 days' notice during business hours",
+            ]);
+        }
+    }
+
+    let posture = if high_count > 0 {
+        "HIGH"
+    } else if med_count > 0 {
+        "MEDIUM"
+    } else {
+        "LOW"
+    };
+
+    let md = String::new();
+    md.push_str(`# ${title}\n\n`);
+    md.push_str("## Audit Summary\n\n");
+    md.push_str("| Metric | Value |\n|---|---|\n");
+    md.push_str(`| Source document | \`${src}\` (${lines.len()} lines) |\n`);
+    md.push_str(`| Overall risk posture | **${posture}** |\n`);
+    md.push_str(`| Required clause coverage | ${present_count} / ${clauses.len()} present (${missing_clauses.len()} missing) |\n`);
+    md.push_str(`| Risk findings | ${high_count} HIGH, ${med_count} MEDIUM, ${low_count} LOW |\n`);
+    md.push_str(`| Key term / renewal references | ${dates_found.len()} |\n`);
+
+    md.push_str("\n## Required Clause Checklist\n\n| Clause | Status | Citations |\n|---|---|---|\n");
+    for cr in clause_rows {
+        md.push_str(`| ${md_esc(cr[0])} | **${cr[1]}** | ${cr[2]} |\n`);
+    }
+
+    md.push_str("\n## Term, Renewal & Notice Dates\n\n");
+    if dates_found.is_empty() {
+        md.push_str("_No explicit term, renewal, or notice-window lines detected._\n");
+    } else {
+        md.push_str("| Line | Clause Excerpt |\n|---|---|\n");
+        for df in dates_found {
+            md.push_str(`| ${df[0]} | ${md_esc(df[1])} |\n`);
+        }
+    }
+
+    md.push_str("\n## Line-Cited Risk Table\n\n");
+    if risks.is_empty() {
+        md.push_str("_No elevated risk patterns detected._\n");
+    } else {
+        md.push_str("| Severity | Category | Line | Excerpt | Recommended Redline |\n|---|---|---|---|---|\n");
+        for rk in risks {
+            md.push_str(`| **${rk[0]}** | ${md_esc(rk[1])} | ${rk[2]} | ${md_esc(rk[3])} | ${md_esc(rk[4])} |\n`);
+        }
+    }
+
+    let filename = `${title}.md`;
+    let label = `file:${filename}`;
+    let res = host_workspace_write(filename, md);
+    if res != "ok" {
+        return res;
+    }
+    label
+}

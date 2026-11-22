@@ -6,45 +6,35 @@
 //! Returns the file name (or an "error: ..." string from the host).
 
 fn esc(cell) {
-    let needs = false;
-    let out = "";
-    for c in cell.chars() {
-        if c == ',' || c == '"' || c == '\n' || c == '\r' {
-            needs = true;
-        }
-        if c == '"' {
-            out = `${out}""`;
-        } else {
-            out = `${out}${c}`;
-        }
+    if !cell.contains(",") && !cell.contains("\"") && !cell.contains("\n") && !cell.contains("\r") {
+        return cell;
     }
-    if needs {
-        `"${out}"`
-    } else {
-        out
-    }
+    let doubled = cell.replace("\"", "\"\"");
+    `"${doubled}"`
 }
 
 fn join_row(cells) {
-    let line = "";
+    let line = String::new();
     let first = true;
     for cell in cells {
         if !first {
-            line = `${line},`;
+            line.push(',');
         }
-        line = `${line}${esc(cell)}`;
+        line.push_str(esc(cell));
         first = false;
     }
     line
 }
 
 pub fn main(title, columns, rows) {
-    let content = "";
+    let content = String::new();
     if !columns.is_empty() {
-        content = `${content}${join_row(columns)}\n`;
+        content.push_str(join_row(columns));
+        content.push('\n');
     }
     for row in rows {
-        content = `${content}${join_row(row)}\n`;
+        content.push_str(join_row(row));
+        content.push('\n');
     }
     let filename = `${title}.csv`;
     // Label first: passing `filename` to the host function moves it.

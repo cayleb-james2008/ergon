@@ -1,0 +1,329 @@
+//! Ergon skill: compare_documents (Rune)
+//!
+//! Computes a fast, linear-time line-by-line diff and executive change
+//! summary between two workspace files, reporting added/removed/changed
+//! line counts, similarity percentage, heading changes, and unified
+//! context hunks with `[L##]` / `[R##]` line numbers.
+
+use std::collections::HashMap;
+
+fn next_pos_in_window(map, key, min_idx, max_idx) {
+    match map.get(key) {
+        Some(positions) => {
+            for pos in positions {
+                if pos >= min_idx {
+                    if pos <= max_idx {
+                        return pos;
+                    }
+                    return -1;
+                }
+            }
+            return -1;
+        }
+        None => -1,
+    }
+}
+
+fn split_lines(raw) {
+    let norm = raw.replace("\r\n", "\n").replace("\r", "\n");
+    let lines = [];
+    for line in norm.split("\n") {
+        lines.push(line);
+    }
+    // Drop single trailing empty split element when file ends with newline.
+    if lines.len() > 1 && lines[lines.len() - 1].is_empty() {
+        lines.pop();
+    }
+    lines
+}
+
+pub fn main(left_file, right_file, output_title) {
+    let lf = left_file.trim();
+    let rf = right_file.trim();
+    if lf.is_empty() || rf.is_empty() {
+        return "error: compare_documents requires both left_file and right_file";
+    }
+    let left_raw = host_workspace_read(lf.clone());
+    if left_raw.starts_with("error:") {
+        return left_raw;
+    }
+    let right_raw = host_workspace_read(rf.clone());
+    if right_raw.starts_with("error:") {
+        return right_raw;
+    }
+
+    let title = output_title.trim();
+    if title.is_empty() {
+        title = "Document Comparison";
+    }
+
+    let left = split_lines(left_raw);
+    let right = split_lines(right_raw);
+
+    // Index line occurrences in both documents for O(N) anchor resync.
+    let right_pos = HashMap::new();
+    let r_i = 0;
+    while r_i < right.len() {
+        let key = right[r_i].clone();
+        match right_pos.get(key.clone()) {
+            Some(list) => {
+                if list.len() < 32 {
+                    list.push(r_i);
+                    right_pos.insert(key, list);
+                }
+            }
+            None => {
+                right_pos.insert(key, [r_i]);
+            }
+        }
+        r_i = r_i + 1;
+    }
+
+    let left_pos = HashMap::new();
+    let l_i = 0;
+    while l_i < left.len() {
+        let key = left[l_i].clone();
+        match left_pos.get(key.clone()) {
+            Some(list) => {
+                if list.len() < 32 {
+                    list.push(l_i);
+                    left_pos.insert(key, list);
+                }
+            }
+            None => {
+                left_pos.insert(key, [l_i]);
+            }
+        }
+        l_i = l_i + 1;
+    }
+
+    // ops entries: [kind, left_line_no, right_line_no, text]
+    // kind: 0 = EQ, 1 = DEL, 2 = ADD
+    let ops = [];
+    let unchanged = 0;
+    let removed = 0;
+    let added = 0;
+    let headings_removed = [];
+    let headings_added = [];
+
+    let i = 0;
+    let j = 0;
+    let window = 32;
+
+    while i < left.len() && j < right.len() {
+        if left[i] == right[j] {
+            ops.push([0, i + 1, j + 1, left[i].clone()]);
+            unchanged = unchanged + 1;
+            i = i + 1;
+            j = j + 1;
+            continue;
+        }
+
+        // Find minimum-cost resync anchor within lookahead window.
+        let best_cost = 999999;
+        let best_ni = -1;
+        let best_nj = -1;
+
+        let max_di = if i + window < left.len() { window } else { left.len() - i - 1 };
+        let di = 0;
+        while di <= max_di && di < best_cost {
+            let max_j = if j + window < right.len() { j + window } else { right.len() - 1 };
+            let nj = next_pos_in_window(right_pos, left[i + di].clone(), j, max_j);
+            if nj >= 0 {
+                let cost = di + (nj - j);
+                if cost < best_cost {
+                    best_cost = cost;
+                    best_ni = i + di;
+                    best_nj = nj;
+                }
+            }
+            di = di + 1;
+        }
+
+        let max_dj = if j + window < right.len() { window } else { right.len() - j - 1 };
+        let dj = 0;
+        while dj <= max_dj && dj < best_cost {
+            let max_i = if i + window < left.len() { i + window } else { left.len() - 1 };
+            let ni = next_pos_in_window(left_pos, right[j + dj].clone(), i, max_i);
+            if ni >= 0 {
+                let cost = (ni - i) + dj;
+                if cost < best_cost {
+                    best_cost = cost;
+                    best_ni = ni;
+                    best_nj = j + dj;
+                }
+            }
+            dj = dj + 1;
+        }
+
+        if best_ni >= 0 {
+            while i < best_ni {
+                let txt = left[i].clone();
+                if txt.trim().starts_with("#") {
+                    headings_removed.push(`[L${i + 1}] ${txt.trim()}`);
+                }
+                ops.push([1, i + 1, 0, txt]);
+                removed = removed + 1;
+                i = i + 1;
+            }
+            while j < best_nj {
+                let txt = right[j].clone();
+                if txt.trim().starts_with("#") {
+                    headings_added.push(`[R${j + 1}] ${txt.trim()}`);
+                }
+                ops.push([2, 0, j + 1, txt]);
+                added = added + 1;
+                j = j + 1;
+            }
+        } else {
+            // No anchor in window: emit one replacement pair and advance both.
+            let ltxt = left[i].clone();
+            if ltxt.trim().starts_with("#") {
+                headings_removed.push(`[L${i + 1}] ${ltxt.trim()}`);
+            }
+            ops.push([1, i + 1, 0, ltxt]);
+            removed = removed + 1;
+            i = i + 1;
+
+            let rtxt = right[j].clone();
+            if rtxt.trim().starts_with("#") {
+                headings_added.push(`[R${j + 1}] ${rtxt.trim()}`);
+            }
+            ops.push([2, 0, j + 1, rtxt]);
+            added = added + 1;
+            j = j + 1;
+        }
+    }
+
+    while i < left.len() {
+        let txt = left[i].clone();
+        if txt.trim().starts_with("#") {
+            headings_removed.push(`[L${i + 1}] ${txt.trim()}`);
+        }
+        ops.push([1, i + 1, 0, txt]);
+        removed = removed + 1;
+        i = i + 1;
+    }
+    while j < right.len() {
+        let txt = right[j].clone();
+        if txt.trim().starts_with("#") {
+            headings_added.push(`[R${j + 1}] ${txt.trim()}`);
+        }
+        ops.push([2, 0, j + 1, txt]);
+        added = added + 1;
+        j = j + 1;
+    }
+
+    // Group changes into hunks with 2 lines of context
+    let hunks = [];
+    let total_ops = ops.len();
+    let idx = 0;
+    let modified_hunks = 0;
+    while idx < total_ops {
+        if ops[idx][0] == 0 {
+            idx = idx + 1;
+            continue;
+        }
+        let start = if idx >= 2 { idx - 2 } else { 0 };
+        let end = idx;
+        let has_del = false;
+        let has_add = false;
+        while end < total_ops {
+            if ops[end][0] != 0 {
+                if ops[end][0] == 1 {
+                    has_del = true;
+                }
+                if ops[end][0] == 2 {
+                    has_add = true;
+                }
+                end = end + 1;
+            } else {
+                // Bridge tiny 1-3 line unchanged gaps into one hunk
+                let look = end;
+                let gap_eq = 0;
+                while look < total_ops && ops[look][0] == 0 && gap_eq < 4 {
+                    gap_eq = gap_eq + 1;
+                    look = look + 1;
+                }
+                if look < total_ops && gap_eq <= 3 {
+                    end = look;
+                } else {
+                    break;
+                }
+            }
+        }
+        if has_del && has_add {
+            modified_hunks = modified_hunks + 1;
+        }
+        let finish = if end + 2 < total_ops { end + 2 } else { total_ops };
+        hunks.push([start, finish]);
+        idx = finish;
+    }
+
+    let max_lines = if left.len() > right.len() { left.len() } else { right.len() };
+    let similarity_pct = if max_lines == 0 {
+        100
+    } else {
+        (unchanged * 100) / max_lines
+    };
+
+    let md = String::new();
+    md.push_str(`# ${title}\n\n`);
+    md.push_str("## Change Summary\n\n");
+    md.push_str("| Metric | Value |\n|---|---|\n");
+    md.push_str(`| Left (baseline) | \`${lf}\` (${left.len()} lines) |\n`);
+    md.push_str(`| Right (revised) | \`${rf}\` (${right.len()} lines) |\n`);
+    md.push_str(`| Unchanged lines | ${unchanged} |\n`);
+    md.push_str(`| Lines added (+) | ${added} |\n`);
+    md.push_str(`| Lines removed (-) | ${removed} |\n`);
+    md.push_str(`| Change hunks | ${hunks.len()} (${modified_hunks} with edits/replacements) |\n`);
+    md.push_str(`| Line similarity | ${similarity_pct}% |\n`);
+
+    if !headings_added.is_empty() || !headings_removed.is_empty() {
+        md.push_str("\n## Section Heading Changes\n\n");
+        for hr in headings_removed {
+            md.push_str(`- Removed: ${hr}\n`);
+        }
+        for ha in headings_added {
+            md.push_str(`- Added: ${ha}\n`);
+        }
+    }
+
+    md.push_str("\n## Line-by-Line Diff Hunks\n\n");
+    if hunks.is_empty() {
+        md.push_str("Files are byte-identical (no line differences found).\n");
+    } else {
+        let h_num = 0;
+        for hunk in hunks {
+            h_num = h_num + 1;
+            if h_num > 60 {
+                md.push_str(`\n_Showing first 60 of ${hunks.len()} diff hunks._\n`);
+                break;
+            }
+            let s_idx = hunk[0];
+            let e_idx = hunk[1];
+            md.push_str(`### Hunk ${h_num}\n\n\`\`\`diff\n`);
+            let k = s_idx;
+            while k < e_idx {
+                let op = ops[k];
+                if op[0] == 0 {
+                    md.push_str(`  [L${op[1]}/R${op[2]}] ${op[3]}\n`);
+                } else if op[0] == 1 {
+                    md.push_str(`- [L${op[1]}] ${op[3]}\n`);
+                } else {
+                    md.push_str(`+ [R${op[2]}] ${op[3]}\n`);
+                }
+                k = k + 1;
+            }
+            md.push_str("```\n\n");
+        }
+    }
+
+    let filename = `${title}.md`;
+    let label = `file:${filename}`;
+    let res = host_workspace_write(filename, md);
+    if res != "ok" {
+        return res;
+    }
+    label
+}
