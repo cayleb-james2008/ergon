@@ -140,7 +140,7 @@ function SkillsBody({
             id="skills-search-input"
             type="search"
             aria-label="Filter Rune skills"
-            placeholder="Search skills by name, file, or capability…"
+            placeholder="Filter Rune skills…"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             className="text-sm max-md:min-h-11"

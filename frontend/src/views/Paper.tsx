@@ -464,16 +464,36 @@ export function PaperFace({
       .filter((x) => { const id = threadOf(x); return !id || !waitingThreads.has(id); });
     const extra = data?.extraReceipts ?? [];
     if (!extra.length) return briefFin;
-    const seen = new Set(briefFin.map((x) => x.id || `${x.thread_id || ""}|${x.task}|${x.ts || 0}`));
-    const merged = [...briefFin];
+    const matchKey = (x: BriefJob) =>
+      x.thread_id
+        ? `t:${x.thread_id}|${x.task}`
+        : x.id
+          ? `id:${x.id}`
+          : `tk:${x.task}|${x.ts || 0}`;
+    const byKey = new Map<string, number>();
+    const merged = briefFin.map((x, idx) => {
+      byKey.set(matchKey(x), idx);
+      return { ...x };
+    });
+    const seenIds = new Set(merged.map((x) => x.id).filter(Boolean));
     for (const r of extra) {
-      const id = threadOf(r);
-      if (id && waitingThreads.has(id)) continue;
-      const key = r.id || `${r.thread_id || ""}|${r.task}|${r.ts || 0}`;
-      if (!seen.has(key)) {
-        seen.add(key);
-        merged.push(r);
+      const meta = r as BriefJob & { finished?: boolean; answered?: boolean };
+      if (meta.finished === false || meta.answered === true) continue;
+      const tid = threadOf(r);
+      if (tid && waitingThreads.has(tid)) continue;
+      const k = matchKey(r);
+      const existingIdx = byKey.get(k);
+      if (existingIdx !== undefined) {
+        if (!merged[existingIdx].id && r.id) merged[existingIdx].id = r.id;
+        if (!merged[existingIdx].ts && r.ts) merged[existingIdx].ts = r.ts;
+        if (!merged[existingIdx].sha256 && r.sha256) merged[existingIdx].sha256 = r.sha256;
+        if (r.id) seenIds.add(r.id);
+        continue;
       }
+      if (r.id && seenIds.has(r.id)) continue;
+      if (r.id) seenIds.add(r.id);
+      byKey.set(k, merged.length);
+      merged.push(r);
     }
     return merged;
   }, [data?.brief.finished, data?.extraReceipts, threadOf, waitingThreads]);
@@ -837,7 +857,7 @@ export function PaperFace({
                           id="finished-search"
                           type="search"
                           aria-label="Filter finished receipts"
-                          placeholder={`Filter ${n} finished receipts or files…`}
+                          placeholder="Filter receipts…"
                           value={receiptQuery}
                           onChange={(e) => setReceiptQuery(e.target.value)}
                           className="text-sm max-md:min-h-11"

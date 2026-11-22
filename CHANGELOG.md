@@ -4,6 +4,14 @@ Each release is tagged `vMAJOR.MINOR.PATCH` and published on GitHub Releases wit
 binaries and a `SHA256SUMS` file. The running app shows its version and can update
 itself from the newest release (see README, "Versions and updates").
 
+## 0.5.0 - 2026-11-22
+
+- Expanded built-in Rune skill library from 4 to 12 deterministic employee-grade skills (`reconcile_ledger`, `summarize_meeting`, `audit_contract`, `triage_inbox`, `clean_dataset`, `compare_documents`, `draft_brief`, `extract_tables`, plus all 4 original skills) with `src/skill_catalog.rs`, `GET /api/skills`, and sandboxed VM test harness `POST /api/skills/test`.
+- True Server-Sent Events live run stream (`GET /api/runs/stream`) emitting `run_started`, `step_start`, `step_done` (with elapsed ms), `file_written`, `approval_parked`, and `run_finished` frames plus active cancellation (`POST /api/runs/:id/cancel`).
+- High-scale indexed search & caching (`GET /api/search?q=...`, paginated `GET /api/receipts`, cached `GET /api/files`): per-person `RwLock` inverted index proven under 5,000 receipts + 500 workspace files with 30 concurrent HTTP clients + 5 SSE subscribers (`p95 < 150ms`).
+- Cryptographically chained SHA-256 Field-Book receipt export (`GET /api/receipts/:id/export?format=md|json`, `GET /api/receipts/verify`) with per-file SHA-256 workspace digests, plus atomic Standing Recurring Routines (`GET/POST/DELETE /api/routines`, `POST /api/routines/:id/run`).
+- Power-user Desk UX & Local-First Browser Edition: Global `Cmd+K` / `Ctrl+K` Command Palette, multi-file drag-and-drop upload, upgraded `FileViewerModal` (CSV numeric sort/filter/paging, Markdown section jump, JSON tree, SHA-256 export), 12-skill & Routines dialogs lifted cleanly outside mobile Vaul drawer (`390x844` & `320x568` verified), and hardened 32-vector file path fuzzing.
+
 ## 0.4.0 - 2026-11-21
 
 - Live local model connectivity out of the box: keyless loopback OpenAI-compatible endpoints (`127.0.0.1`, `localhost`, `[::1]`), automatic startup probing of running local gateways (`:8790`, `:8789`, `:11434`, opt-out via `ERGON_NO_AUTO_MODEL=1`), and persisted live model configuration (`GET/POST /api/config`, saved to `data/config.json` with `0600` permissions on Unix).

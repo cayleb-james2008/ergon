@@ -305,7 +305,7 @@ export function CommandPalette({
             aria-label="Search command palette"
             value={query}
             onValueChange={setQuery}
-            placeholder="Search files, receipts, 12 Rune skills, routines, or actions…"
+            placeholder="Search files, skills, receipts…"
             className="h-12 pr-12 text-sm text-ink placeholder:text-ink-3"
           />
           <CommandList className="max-h-[58vh] p-1.5">

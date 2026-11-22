@@ -92,13 +92,8 @@ Without a reachable local gateway or `ERGON_MODEL_API_KEY`, the UI shows an hone
   `{"tool": name, "args": {...}}` or `{"done": true, "summary": "..."}` —
   the loop executes the tool for real, feeds the result back, and
   repeats (cap 24 steps).
-- **Tools** — `list_dir`, `read_file`, `write_file`, `search_files`,
-  `move_file` (all sandboxed to the person's workspace), `fetch_url`
-  (HTML→text), and four Rune skills: `write_document`,
-  `make_spreadsheet`, `research`, `update_memory`, plus `browse_library`,
-  `install_item`, `publish_skill`, `delegate`, `delete_file` (which parks a
-  decision instead of deleting directly), and `flag_decision`. One run draws
-  from a single shared budget of 24 model calls.
+- **Tools & 12 Built-in Rune Skills** — `list_dir`, `read_file`, `write_file`, `search_files`, `move_file` (all sandboxed to the person's workspace), `fetch_url` (HTML→text), and twelve compiled Rune skills (`write_document`, `make_spreadsheet`, `research`, `update_memory`, `reconcile_ledger`, `summarize_meeting`, `audit_contract`, `triage_inbox`, `clean_dataset`, `compare_documents`, `draft_brief`, `extract_tables`, inspectable via `GET /api/skills` and testable in an ephemeral sandbox via `POST /api/skills/test`), plus `browse_library`, `install_item`, `publish_skill`, `delegate`, `delete_file` (which parks a decision instead of deleting directly), and `flag_decision`.
+- **Live SSE Streaming, Indexed Search, Routines & SHA-256 Receipts** — `GET /api/runs/stream` streams real-time tool steps, elapsed ms, file writes, and approvals with `POST /api/runs/:id/cancel`; `GET /api/search?q=...` and paginated `GET /api/receipts` / `GET /api/files` use a per-person `RwLock` inverted index tested at 5,000 receipts + 500 workspace files under 30 concurrent clients; `GET /api/receipts/:id/export?format=md|json` exports SHA-256 chained Field-Book provenance receipts; `GET/POST/DELETE /api/routines` + `POST /api/routines/:id/run` persist and execute standing recurring workflows.
 - **Sandbox** — every path is resolved through a component-walking
   resolver that re-checks containment at each step, follows at most 16
   symlink hops, and treats a symlink as an object in its own right
@@ -125,7 +120,7 @@ Without a reachable local gateway or `ERGON_MODEL_API_KEY`, the UI shows an hone
 ## Verification
 
 ```sh
-CARGO_BUILD_JOBS=2 cargo test          # 104 Rust unit + E2E tests
+CARGO_BUILD_JOBS=2 cargo test          # 128 Rust unit, E2E, scale & 12-skill Rune tests
 cd frontend && npm run check:ui        # Playwright E2E gate, graph probe, and worst-case replay
 ```
 
