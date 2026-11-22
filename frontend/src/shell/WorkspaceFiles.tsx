@@ -1,12 +1,12 @@
-// Real Workspace Files panel & upgraded Workspace File Viewer modal (v0.5.0):
+// Real Workspace Files panel & upgraded Workspace File Viewer modal (v0.7.0):
 // - Lists active person's workspace files (GET /api/files) with instant search filter,
 //   extension filter chips, multi-file drag-and-drop upload, and paginated rendering for 500+ files.
 // - Upgraded FileViewerModal (GET /api/files/content?path=...):
-//   * CSV column sort (numeric-aware), column/global filter search, and 100-row windowed paging
-//   * Markdown section jump TOC + pipe-table & inline formatting support
-//   * JSON interactive collapsible tree + Raw toggle
+//   * Preview tab: CSV column sort/filter/paging, Markdown section jump TOC, JSON collapsible tree
+//   * History & Diff tab (GET /api/files/history?path=..., POST /api/files/restore): revision timestamps,
+//     unified diff highlights (+added/-removed), revision-to-revision comparison, and Restore version
 //   * One-click SHA-256 Receipt Export download (.md / .json)
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowDown,
   ArrowUp,
@@ -19,7 +19,9 @@ import {
   FileDown,
   FilePlus2,
   FolderOpen,
+  History,
   MessageSquarePlus,
+  RotateCcw,
   Search,
   Upload,
   X,
@@ -53,9 +55,14 @@ import { FileGlyph } from "@/chat/Entry";
 import {
   call,
   downloadWorkspaceFile,
+  hasV070Api,
+  type FileDiffPayload,
+  type FileRevision,
+  type Status,
   type WorkspaceFile,
   type WorkspaceFileContent,
 } from "@/lib/api";
+import { computeLineDiff, normalizeServerDiff } from "@/lib/diff";
 import { exportReceiptDownload } from "@/lib/receiptExport";
 import { cn } from "@/lib/utils";
 import { relTime } from "@/lib/words";
@@ -674,43 +681,444 @@ function JsonViewer({ content }: { content: string }) {
   );
 }
 
+function normalizeRevision(raw: unknown, fallbackPath: string): FileRevision | null {
+  if (!raw || typeof raw !== "object") return null;
+  const o = raw as Record<string, unknown>;
+  const revId = String(o.rev_id ?? o.revision_id ?? o.id ?? "").trim();
+  if (!revId) return null;
+  const ts =
+    typeof o.ts === "number"
+      ? o.ts
+      : typeof o.timestamp_ms === "number"
+        ? o.timestamp_ms
+        : typeof o.recorded_ms === "number"
+          ? o.recorded_ms
+          : typeof o.created_ms === "number"
+            ? o.created_ms
+            : typeof o.mtime_ms === "number"
+              ? o.mtime_ms
+              : 0;
+  return {
+    rev_id: revId,
+    path: String(o.path ?? fallbackPath),
+    ts,
+    size:
+      typeof o.size_bytes === "number"
+        ? o.size_bytes
+        : typeof o.size === "number"
+          ? o.size
+          : typeof o.bytes === "number"
+            ? o.bytes
+            : 0,
+    sha256: typeof o.sha256 === "string" ? o.sha256 : typeof o.digest === "string" ? o.digest : undefined,
+    reason: typeof o.reason === "string" ? o.reason : typeof o.action === "string" ? o.action : typeof o.event === "string" ? o.event : undefined,
+    content: typeof o.content === "string" ? o.content : undefined,
+    preview: typeof o.preview === "string" ? o.preview : undefined,
+  };
+}
+
+function FileHistoryDiffView({
+  filePath,
+  currentContent,
+  status,
+  revisions,
+  loading,
+  err,
+  onReloadHistory,
+  onRestored,
+}: {
+  filePath: string;
+  currentContent: string;
+  status?: Status | null | "error";
+  revisions: FileRevision[];
+  loading: boolean;
+  err: string;
+  onReloadHistory: () => void;
+  onRestored: () => Promise<void>;
+}) {
+  const [selectedId, setSelectedId] = useState<string>("");
+  const [compareTarget, setCompareTarget] = useState<string>("current");
+  const [serverDiff, setServerDiff] = useState<FileDiffPayload | null>(null);
+  const [diffLoading, setDiffLoading] = useState(false);
+  const [restoring, setRestoring] = useState(false);
+
+  useEffect(() => {
+    if (!revisions.length) {
+      setSelectedId("");
+      setCompareTarget("current");
+      setServerDiff(null);
+      return;
+    }
+    setSelectedId((prev) => (revisions.some((r) => r.rev_id === prev) ? prev : revisions[0].rev_id));
+  }, [revisions]);
+
+  const selectedRev = useMemo(
+    () => revisions.find((r) => r.rev_id === selectedId) ?? revisions[0] ?? null,
+    [revisions, selectedId]
+  );
+
+  const compareRev = useMemo(
+    () => (compareTarget === "current" ? null : revisions.find((r) => r.rev_id === compareTarget) ?? null),
+    [revisions, compareTarget]
+  );
+
+  // Compute local diff immediately when revision content is present, or fetch server diff on demand.
+  const localDiff = useMemo<FileDiffPayload | null>(() => {
+    if (!selectedRev || typeof selectedRev.content !== "string") return null;
+    if (compareTarget === "current") {
+      return computeLineDiff(selectedRev.content, currentContent, {
+        path: filePath,
+        rev_a: selectedRev.rev_id,
+        rev_b: "current",
+      });
+    }
+    if (compareRev && typeof compareRev.content === "string") {
+      return computeLineDiff(selectedRev.content, compareRev.content, {
+        path: filePath,
+        rev_a: selectedRev.rev_id,
+        rev_b: compareRev.rev_id,
+      });
+    }
+    return null;
+  }, [selectedRev, compareTarget, compareRev, currentContent, filePath]);
+
+  useEffect(() => {
+    if (!selectedRev || localDiff || !hasV070Api(status, "file_history")) {
+      setServerDiff(null);
+      setDiffLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setDiffLoading(true);
+    const params = new URLSearchParams({ path: filePath, rev_a: selectedRev.rev_id });
+    if (compareTarget && compareTarget !== "current") params.set("rev_b", compareTarget);
+    else params.set("rev_b", "current");
+    call<Record<string, unknown>>("/api/files/history?" + params.toString()).then((r) => {
+      if (cancelled) return;
+      setDiffLoading(false);
+      if (!r.ok) {
+        setServerDiff(null);
+        return;
+      }
+      const normalized = normalizeServerDiff(r.data);
+      if (normalized) {
+        setServerDiff(normalized);
+        return;
+      }
+      if (typeof r.data.content === "string") {
+        setServerDiff(
+          computeLineDiff(r.data.content, compareTarget === "current" ? currentContent : (compareRev?.content ?? ""), {
+            path: filePath,
+            rev_a: selectedRev.rev_id,
+            rev_b: compareTarget,
+          })
+        );
+        return;
+      }
+      setServerDiff(null);
+    });
+    return () => { cancelled = true; };
+  }, [selectedRev, compareTarget, compareRev, localDiff, status, filePath, currentContent]);
+
+  const activeDiff = localDiff ?? serverDiff;
+
+  const handleRestore = async () => {
+    if (!selectedRev) return;
+    setRestoring(true);
+    const r = await call<Record<string, unknown>>("/api/files/restore", {
+      method: "POST",
+      body: {
+        path: filePath,
+        rev_id: selectedRev.rev_id,
+        revision_id: selectedRev.rev_id,
+        id: selectedRev.rev_id,
+      },
+    });
+    setRestoring(false);
+    if (!r.ok) {
+      toast.error(r.error || "Could not restore this file version.");
+      return;
+    }
+    toast.success(`Restored ${filePath} to version ${selectedRev.rev_id.slice(0, 14)}.`);
+    await onRestored();
+    onReloadHistory();
+  };
+
+  if (!hasV070Api(status, "file_history")) {
+    return (
+      <div id="file-history-panel" className="rounded-sm border border-hairline bg-board/40 p-4 text-sm text-ink-2">
+        Automatic file version snapshots and restore activate on Ergon v0.7.0+ servers (and in the standalone browser workspace).
+      </div>
+    );
+  }
+
+  if (loading) {
+    return (
+      <div id="file-history-panel" className="py-4 text-sm text-ink-2">
+        Loading revision history…
+      </div>
+    );
+  }
+
+  if (err) {
+    return (
+      <div id="file-history-panel" role="alert" className="rounded-sm border border-hairline bg-board p-3.5 text-sm text-ink">
+        {err}
+      </div>
+    );
+  }
+
+  if (!revisions.length) {
+    return (
+      <div id="file-history-panel" className="flex flex-col gap-2 rounded-sm border border-hairline bg-board/40 p-4 text-sm text-ink-2">
+        <p className="font-medium text-ink">No prior versions recorded yet</p>
+        <p>
+          Ergon automatically saves snapshots under <span className="mono">.history/</span> whenever this file is overwritten or deleted, so you can diff changes and restore any version in one click.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div id="file-history-panel" className="flex flex-col gap-3">
+      <div className="flex flex-col gap-1.5">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <span className="text-xs font-medium text-ink">
+            Recorded snapshots ({revisions.length})
+          </span>
+          {selectedRev && (
+            <div className="flex flex-wrap items-center gap-2">
+              <label htmlFor="diff-compare-select" className="text-xs text-ink-2">Compare against</label>
+              <select
+                id="diff-compare-select"
+                value={compareTarget}
+                onChange={(e) => setCompareTarget(e.target.value)}
+                className="focus-ring h-9 min-h-11 rounded-sm border border-input bg-surface px-2 text-xs text-ink outline-none md:min-h-8"
+              >
+                <option value="current">Current version</option>
+                {revisions
+                  .filter((r) => r.rev_id !== selectedRev.rev_id)
+                  .map((r) => (
+                    <option key={r.rev_id} value={r.rev_id}>
+                      {r.rev_id.slice(0, 14)} ({r.ts ? relTime(r.ts) : "snapshot"})
+                    </option>
+                  ))}
+              </select>
+            </div>
+          )}
+        </div>
+
+        <ul role="list" aria-label="File revisions" className="flex max-h-40 flex-col gap-1 overflow-y-auto rounded-sm border border-hairline bg-board/30 p-1.5">
+          {revisions.map((rev) => {
+            const active = selectedRev?.rev_id === rev.rev_id;
+            const iso = rev.ts > 0 ? new Date(rev.ts).toISOString().replace("T", " ").slice(0, 19) + " UTC" : "";
+            return (
+              <li key={rev.rev_id}>
+                <button
+                  type="button"
+                  data-rev-id={rev.rev_id}
+                  aria-pressed={active}
+                  onClick={() => setSelectedId(rev.rev_id)}
+                  className={cn(
+                    "focus-ring flex min-h-11 w-full cursor-pointer flex-wrap items-center justify-between gap-2 rounded-sm border px-2.5 py-1.5 text-left text-xs outline-none md:min-h-9",
+                    active
+                      ? "border-blue bg-blue-soft text-ink"
+                      : "border-transparent bg-surface text-ink hover:bg-board"
+                  )}
+                >
+                  <span className="flex min-w-0 flex-wrap items-center gap-1.5">
+                    <span className="mono font-medium text-ink">{rev.rev_id.slice(0, 16)}</span>
+                    {rev.reason && (
+                      <Badge variant="outline" size="sm" className="text-xs">
+                        {rev.reason}
+                      </Badge>
+                    )}
+                    {rev.ts > 0 && (
+                      <span className="text-ink-2" title={iso}>
+                        {relTime(rev.ts)}
+                      </span>
+                    )}
+                  </span>
+                  <span className="mono flex shrink-0 items-center gap-2 text-ink-2">
+                    <span>{formatBytes(rev.size)}</span>
+                    {rev.sha256 && <span>{rev.sha256.slice(0, 8)}</span>}
+                  </span>
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      </div>
+
+      {selectedRev && (
+        <div className="flex flex-col gap-2">
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-sm border border-hairline bg-board/50 px-3 py-2">
+            <div className="mono flex flex-wrap items-center gap-2 text-xs">
+              <span className="font-medium text-ink">
+                {selectedRev.rev_id.slice(0, 14)} → {compareTarget === "current" ? "Current" : compareTarget.slice(0, 14)}
+              </span>
+              {activeDiff && (
+                <>
+                  <span className="rounded-chip bg-pill-active-bg px-1.5 py-0.5 font-medium text-pill-active-fg">
+                    +{activeDiff.added}
+                  </span>
+                  <span className="rounded-chip bg-pill-pro-bg px-1.5 py-0.5 font-medium text-pill-pro-fg">
+                    -{activeDiff.removed}
+                  </span>
+                </>
+              )}
+            </div>
+            <Button
+              id="restore-version-btn"
+              type="button"
+              size="sm"
+              className="max-md:min-h-11"
+              disabled={restoring}
+              onClick={handleRestore}
+            >
+              <RotateCcw className="size-3.5" strokeWidth={1.5} aria-hidden />
+              {restoring ? "Restoring…" : "Restore version"}
+            </Button>
+          </div>
+
+          <div id="file-diff-view" className="max-h-[34vh] overflow-auto rounded-sm border border-hairline bg-surface font-mono text-xs leading-5">
+            {diffLoading ? (
+              <p className="p-3 text-ink-2">Computing diff…</p>
+            ) : !activeDiff ? (
+              <p className="p-3 text-ink-2">
+                Select Restore version above to revert this file to snapshot <span className="mono">{selectedRev.rev_id}</span>.
+              </p>
+            ) : activeDiff.hunks.length === 0 ? (
+              <p className="p-3 text-ink-2">No line differences between these two versions (identical content).</p>
+            ) : (
+              <div className="min-w-0">
+                {activeDiff.hunks.map((hunk, hi) => (
+                  <div key={hi}>
+                    {hunk.header && (
+                      <div className="border-y border-hairline bg-board px-3 py-1 text-ink-2">
+                        {hunk.header}
+                      </div>
+                    )}
+                    {hunk.lines.map((line, li) => {
+                      const cls =
+                        line.kind === "add"
+                          ? "bg-pill-active-bg text-pill-active-fg"
+                          : line.kind === "del"
+                            ? "bg-pill-pro-bg text-pill-pro-fg"
+                            : "bg-surface text-ink";
+                      const sign = line.kind === "add" ? "+" : line.kind === "del" ? "-" : " ";
+                      return (
+                        <div
+                          key={`${hi}-${li}`}
+                          data-diff-kind={line.kind}
+                          className={cn("grid grid-cols-[2.5rem_2.5rem_1.25rem_minmax(0,1fr)] gap-1 px-2 py-0.5", cls)}
+                        >
+                          <span className="select-none text-right opacity-75">
+                            {line.old_line ?? ""}
+                          </span>
+                          <span className="select-none text-right opacity-75">
+                            {line.new_line ?? ""}
+                          </span>
+                          <span className="select-none text-center font-semibold">{sign}</span>
+                          <span className="whitespace-pre-wrap break-all">{line.text || " "}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function FileViewerModal({
   filePath,
   personName,
+  status,
   onClose,
   onAskAbout,
+  onRestored,
 }: {
   filePath: string | null;
   personName?: string;
+  status?: Status | null | "error";
   onClose: () => void;
   onAskAbout?: (path: string) => void;
+  onRestored?: () => void;
 }) {
   const [data, setData] = useState<WorkspaceFileContent | null>(null);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
   const [exporting, setExporting] = useState(false);
+  const [tab, setTab] = useState<"preview" | "history">("preview");
+  const [revisions, setRevisions] = useState<FileRevision[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyErr, setHistoryErr] = useState("");
+
+  const loadContent = useCallback(async (path: string) => {
+    setLoading(true);
+    setErr("");
+    const r = await call<WorkspaceFileContent>("/api/files/content?path=" + encodeURIComponent(path));
+    setLoading(false);
+    if (!r.ok) {
+      setData(null);
+      setErr(r.status === 404 ? `"${path}" is no longer in this workspace (it may have been deleted or moved).` : r.error || "Could not open this file.");
+      return;
+    }
+    setData(r.data);
+  }, []);
+
+  const loadHistory = useCallback(async (path: string) => {
+    if (!hasV070Api(status, "file_history")) {
+      setRevisions([]);
+      setHistoryLoading(false);
+      setHistoryErr("");
+      return;
+    }
+    setHistoryLoading(true);
+    setHistoryErr("");
+    const r = await call<{
+      revisions?: unknown[];
+      history?: unknown[];
+      versions?: unknown[];
+    }>("/api/files/history?path=" + encodeURIComponent(path));
+    setHistoryLoading(false);
+    if (!r.ok) {
+      setRevisions([]);
+      if (r.status !== 404) setHistoryErr(r.error || "Could not load file version history.");
+      return;
+    }
+    const rawList = Array.isArray(r.data.revisions)
+      ? r.data.revisions
+      : Array.isArray(r.data.history)
+        ? r.data.history
+        : Array.isArray(r.data.versions)
+          ? r.data.versions
+          : [];
+    const norm = rawList
+      .map((item) => normalizeRevision(item, path))
+      .filter((x): x is FileRevision => x !== null)
+      .sort((a, b) => b.ts - a.ts);
+    setRevisions(norm);
+  }, [status]);
 
   useEffect(() => {
     if (!filePath) {
       setData(null);
       setErr("");
+      setTab("preview");
+      setRevisions([]);
+      setHistoryErr("");
       return;
     }
-    let cancelled = false;
-    setLoading(true);
-    setErr("");
-    call<WorkspaceFileContent>("/api/files/content?path=" + encodeURIComponent(filePath)).then((r) => {
-      if (cancelled) return;
-      setLoading(false);
-      if (!r.ok) {
-        setData(null);
-        setErr(r.status === 404 ? `"${filePath}" is no longer in this workspace (it may have been deleted or moved).` : r.error || "Could not open this file.");
-        return;
-      }
-      setData(r.data);
-    });
-    return () => { cancelled = true; };
-  }, [filePath]);
+    setTab("preview");
+    void loadContent(filePath);
+    void loadHistory(filePath);
+  }, [filePath, loadContent, loadHistory]);
 
   const ext = (data?.ext || filePath?.split(".").pop() || "").toLowerCase();
 
@@ -784,74 +1192,124 @@ export function FileViewerModal({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex flex-wrap items-center gap-2 border-y border-hairline py-2.5">
-          <Button size="sm" variant="outline" className="max-md:min-h-11" disabled={!filePath || !!err} onClick={handleDownload}>
-            <Download className="size-3.5" strokeWidth={1.5} aria-hidden />
-            Download
-          </Button>
-          {data && !data.is_binary && (
-            <Button size="sm" variant="outline" className="max-md:min-h-11" onClick={copyContent}>
-              <Copy className="size-3.5" strokeWidth={1.5} aria-hidden />
-              Copy text
-            </Button>
-          )}
-          {data && !err && (
-            <>
-              <Button
-                size="sm"
-                variant="outline"
-                className="max-md:min-h-11"
-                disabled={exporting}
-                onClick={() => handleReceiptExport("md")}
-              >
-                <FileDown className="size-3.5" strokeWidth={1.5} aria-hidden />
-                SHA-256 Receipt (.md)
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                className="max-md:min-h-11"
-                disabled={exporting}
-                onClick={() => handleReceiptExport("json")}
-              >
-                <FileDown className="size-3.5" strokeWidth={1.5} aria-hidden />
-                Receipt (.json)
-              </Button>
-            </>
-          )}
-          {filePath && onAskAbout && !err && (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="max-md:min-h-11"
+        <div className="flex flex-wrap items-center justify-between gap-2 border-y border-hairline py-2.5">
+          <SegmentedControl aria-label="File viewer mode">
+            <SegmentedControlItem
+              data-id="preview"
+              aria-pressed={tab === "preview"}
+              data-checked={tab === "preview" ? "" : undefined}
+              className="min-h-11 px-3 md:min-h-8"
+              onClick={() => setTab("preview")}
+            >
+              Preview
+            </SegmentedControlItem>
+            <SegmentedControlItem
+              data-id="history"
+              aria-pressed={tab === "history"}
+              data-checked={tab === "history" ? "" : undefined}
+              className="min-h-11 gap-1.5 px-3 md:min-h-8"
               onClick={() => {
-                onAskAbout(filePath);
-                onClose();
+                setTab("history");
+                if (filePath) void loadHistory(filePath);
               }}
             >
-              <MessageSquarePlus className="size-3.5" strokeWidth={1.5} aria-hidden />
-              Ask agent
+              <History className="size-3.5" strokeWidth={1.5} aria-hidden />
+              <span>History &amp; Diff</span>
+              {revisions.length > 0 && (
+                <span className="mono rounded-chip bg-track px-1.5 text-xs text-ink-2">
+                  {revisions.length}
+                </span>
+              )}
+            </SegmentedControlItem>
+          </SegmentedControl>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <Button size="sm" variant="outline" className="max-md:min-h-11" disabled={!filePath || !!err} onClick={handleDownload}>
+              <Download className="size-3.5" strokeWidth={1.5} aria-hidden />
+              Download
             </Button>
-          )}
+            {data && !data.is_binary && (
+              <Button size="sm" variant="outline" className="max-md:min-h-11" onClick={copyContent}>
+                <Copy className="size-3.5" strokeWidth={1.5} aria-hidden />
+                Copy text
+              </Button>
+            )}
+            {data && !err && (
+              <>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="max-md:min-h-11"
+                  disabled={exporting}
+                  onClick={() => handleReceiptExport("md")}
+                >
+                  <FileDown className="size-3.5" strokeWidth={1.5} aria-hidden />
+                  SHA-256 Receipt (.md)
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="max-md:min-h-11"
+                  disabled={exporting}
+                  onClick={() => handleReceiptExport("json")}
+                >
+                  <FileDown className="size-3.5" strokeWidth={1.5} aria-hidden />
+                  Receipt (.json)
+                </Button>
+              </>
+            )}
+            {filePath && onAskAbout && !err && (
+              <Button
+                size="sm"
+                variant="ghost"
+                className="max-md:min-h-11"
+                onClick={() => {
+                  onAskAbout(filePath);
+                  onClose();
+                }}
+              >
+                <MessageSquarePlus className="size-3.5" strokeWidth={1.5} aria-hidden />
+                Ask agent
+              </Button>
+            )}
+          </div>
         </div>
 
         <div id="file-viewer-body" className="max-h-[58vh] min-h-24 overflow-y-auto pr-1">
-          {loading && <p className="text-sm text-ink-2">Loading file…</p>}
-          {!loading && err && <p role="alert" className="rounded-sm border border-hairline bg-board p-3.5 text-sm text-ink">{err}</p>}
-          {!loading && !err && data && (
-            data.is_binary ? (
-              <p className="text-sm text-ink-2">Binary file ({formatBytes(data.size)}). Use Download above to save it to your computer.</p>
-            ) : ext === "csv" ? (
-              <CsvTableView content={data.content} />
-            ) : ext === "md" || ext === "markdown" ? (
-              <MarkdownView content={data.content} />
-            ) : ext === "json" ? (
-              <JsonViewer content={data.content} />
-            ) : (
-              <pre className="overflow-x-auto whitespace-pre-wrap break-words rounded-sm border border-hairline bg-board p-3.5 font-mono text-xs leading-5 text-ink">
-                {data.content || "(empty file)"}
-              </pre>
-            )
+          {tab === "history" && filePath ? (
+            <FileHistoryDiffView
+              filePath={filePath}
+              currentContent={data?.content ?? ""}
+              status={status}
+              revisions={revisions}
+              loading={historyLoading}
+              err={historyErr}
+              onReloadHistory={() => void loadHistory(filePath)}
+              onRestored={async () => {
+                await loadContent(filePath);
+                onRestored?.();
+              }}
+            />
+          ) : (
+            <>
+              {loading && <p className="text-sm text-ink-2">Loading file…</p>}
+              {!loading && err && <p role="alert" className="rounded-sm border border-hairline bg-board p-3.5 text-sm text-ink">{err}</p>}
+              {!loading && !err && data && (
+                data.is_binary ? (
+                  <p className="text-sm text-ink-2">Binary file ({formatBytes(data.size)}). Use Download above to save it to your computer.</p>
+                ) : ext === "csv" ? (
+                  <CsvTableView content={data.content} />
+                ) : ext === "md" || ext === "markdown" ? (
+                  <MarkdownView content={data.content} />
+                ) : ext === "json" ? (
+                  <JsonViewer content={data.content} />
+                ) : (
+                  <pre className="overflow-x-auto whitespace-pre-wrap break-words rounded-sm border border-hairline bg-board p-3.5 font-mono text-xs leading-5 text-ink">
+                    {data.content || "(empty file)"}
+                  </pre>
+                )
+              )}
+            </>
           )}
         </div>
       </DialogContent>

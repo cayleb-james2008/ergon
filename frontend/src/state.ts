@@ -1,16 +1,21 @@
-// Ergon v0.5.0 client state: conversations, live SSE (/api/runs/stream) + /api/runs/status fallback,
-// active run cancellation, multi-file upload, 12 built-in workflows catalog, recurring routines, drafts,
+// Ergon v0.7.0 client state: conversations, live SSE (/api/runs/stream + routine_fired),
+// /api/runs/status fallback, active run cancellation, multi-file upload, 12 built-in workflows,
+// scheduled routines (pause/resume, next_run_ms, run history), workspace switching, drafts,
 // pending recovery, person isolation, and live rail/tab counts.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   call,
+  estimateNextRunMs,
   hasV050Api,
+  hasV070Api,
   type LiveRunStatus,
   type LiveRunStep,
   type Msg,
   type Person,
   type Routine,
+  type RoutineRunRecord,
+  type SchedulerStatus,
   type Status,
   type SuiteItem,
   type Thread,
@@ -95,6 +100,37 @@ function normalizeStepItem(raw: string | LiveRunStep, idx: number, runStarted: n
   };
 }
 
+function normalizeRoutineRun(raw: unknown, fallbackRoutineId = ""): RoutineRunRecord | null {
+  if (!raw || typeof raw !== "object") return null;
+  const o = raw as Record<string, unknown>;
+  const runId = String(o.run_id ?? o.id ?? "").trim();
+  if (!runId) return null;
+  const started =
+    typeof o.started_ms === "number"
+      ? o.started_ms
+      : typeof o.started_at === "number"
+        ? o.started_at
+        : typeof o.ts === "number"
+          ? o.ts
+          : Date.now();
+  const finished =
+    typeof o.finished_ms === "number"
+      ? o.finished_ms
+      : typeof o.finished_at === "number"
+        ? o.finished_at
+        : null;
+  return {
+    run_id: runId,
+    routine_id: String(o.routine_id ?? fallbackRoutineId),
+    started_ms: started,
+    finished_ms: finished,
+    status: String(o.status ?? "finished"),
+    receipt_id: typeof o.receipt_id === "string" && o.receipt_id ? o.receipt_id : null,
+    thread_id: typeof o.thread_id === "string" && o.thread_id ? o.thread_id : null,
+    summary: typeof o.summary === "string" ? o.summary : typeof o.outcome === "string" ? o.outcome : undefined,
+  };
+}
+
 function normalizeRoutine(raw: unknown): Routine | null {
   if (!raw || typeof raw !== "object") return null;
   const o = raw as Record<string, unknown>;
@@ -102,17 +138,46 @@ function normalizeRoutine(raw: unknown): Routine | null {
   const name = String(o.name ?? o.title ?? "").trim();
   const prompt = String(o.prompt ?? "").trim();
   if (!id || !name || !prompt) return null;
+  const schedule = String(o.schedule ?? o.cadence ?? "daily 09:00").trim();
+  const enabled = typeof o.enabled === "boolean" ? o.enabled : true;
+  const intervalSecs = typeof o.interval_secs === "number" ? o.interval_secs : null;
+  const lastRunTs =
+    typeof o.last_run_ms === "number"
+      ? o.last_run_ms
+      : typeof o.last_run_ts === "number"
+        ? o.last_run_ts
+        : null;
+  const nextRunMs =
+    typeof o.next_run_ms === "number"
+      ? o.next_run_ms
+      : typeof o.next_due_ms === "number"
+        ? o.next_due_ms
+        : enabled
+          ? estimateNextRunMs(schedule, lastRunTs || Date.now(), intervalSecs)
+          : null;
+  const rawRuns = Array.isArray(o.recent_runs)
+    ? o.recent_runs
+    : Array.isArray(o.history)
+      ? o.history
+      : [];
+  const recentRuns = rawRuns
+    .map((item) => normalizeRoutineRun(item, id))
+    .filter((x): x is RoutineRunRecord => x !== null);
   return {
     id,
     name,
     prompt,
-    schedule: String(o.schedule ?? o.cadence ?? "Daily 09:00").trim(),
+    schedule,
+    cadence: typeof o.cadence === "string" ? o.cadence : schedule,
+    interval_secs: intervalSecs,
     skill_id: typeof o.skill_id === "string" && o.skill_id ? o.skill_id : undefined,
-    enabled: typeof o.enabled === "boolean" ? o.enabled : true,
-    last_run_ts: typeof o.last_run_ms === "number" ? o.last_run_ms : typeof o.last_run_ts === "number" ? o.last_run_ts : null,
+    enabled,
+    last_run_ts: lastRunTs,
+    next_run_ms: enabled ? nextRunMs : null,
     last_status: typeof o.last_status === "string" ? o.last_status : undefined,
     run_count: typeof o.run_count === "number" ? o.run_count : 0,
     created_ts: typeof o.created_ms === "number" ? o.created_ms : typeof o.created_ts === "number" ? o.created_ts : undefined,
+    recent_runs: recentRuns.length ? recentRuns : undefined,
   };
 }
 
@@ -150,6 +215,9 @@ export function useErgon() {
   const [files, setFiles] = useState<WorkspaceFile[]>([]);
   const [skills, setSkills] = useState<SkillMeta[]>(() => CANONICAL_SKILLS);
   const [routines, setRoutines] = useState<Routine[]>(() => loadLocalRoutines());
+  const [scheduler, setScheduler] = useState<SchedulerStatus | null>(null);
+  const [routineHistoryRev, setRoutineHistoryRev] = useState(0);
+  const onRoutineFiredRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     statusRef.current = status;
@@ -165,6 +233,9 @@ export function useErgon() {
     if (!r.ok || typeof r.data.model_configured !== "boolean") { setStatus("error"); return; }
     statusRef.current = r.data;
     setStatus(r.data);
+    if (r.data.scheduler && typeof r.data.scheduler === "object") {
+      setScheduler(r.data.scheduler);
+    }
     setRecovered(Array.isArray(r.data.store_recovered) ? r.data.store_recovered.map(String) : []);
   }, []);
 
@@ -207,13 +278,77 @@ export function useErgon() {
       setRoutines(loadLocalRoutines());
       return;
     }
-    const r = await call<{ routines?: unknown[] }>("/api/routines");
+    const r = await call<{ routines?: unknown[]; scheduler?: SchedulerStatus }>("/api/routines");
     if (r.ok && Array.isArray(r.data.routines)) {
       const clean = r.data.routines.map(normalizeRoutine).filter((x): x is Routine => x !== null);
       setRoutines(clean);
+      if (r.data.scheduler && typeof r.data.scheduler === "object") {
+        setScheduler(r.data.scheduler);
+      }
       return;
     }
     setRoutines(loadLocalRoutines());
+  }, []);
+
+  const toggleRoutine = useCallback(
+    async (id: string, enabled: boolean): Promise<boolean> => {
+      if (hasV070Api(statusRef.current)) {
+        const r = await call<{ routine?: unknown }>(`/api/routines/${encodeURIComponent(id)}`, {
+          method: "PATCH",
+          body: { enabled },
+        });
+        if (r.ok) {
+          toast.success(enabled ? "Routine resumed." : "Routine paused.");
+          await loadRoutines();
+          return true;
+        }
+        if (r.status !== 404 && r.status !== 405) {
+          toast.error(r.error || "Could not update routine status.");
+          return false;
+        }
+      }
+      const next = loadLocalRoutines().map((x) =>
+        x.id === id
+          ? { ...x, enabled, next_run_ms: enabled ? estimateNextRunMs(x.schedule, Date.now(), x.interval_secs) : null }
+          : x
+      );
+      saveLocalRoutines(next);
+      setRoutines((prev) =>
+        prev.map((x) =>
+          x.id === id
+            ? { ...x, enabled, next_run_ms: enabled ? estimateNextRunMs(x.schedule, Date.now(), x.interval_secs) : null }
+            : x
+        )
+      );
+      toast.success(enabled ? "Routine resumed." : "Routine paused.");
+      return true;
+    },
+    [loadRoutines]
+  );
+
+  const loadRoutineHistory = useCallback(async (id: string): Promise<RoutineRunRecord[]> => {
+    if (hasV070Api(statusRef.current)) {
+      const r = await call<{
+        runs?: unknown[];
+        history?: unknown[];
+        records?: unknown[];
+      }>(`/api/routines/${encodeURIComponent(id)}/history`);
+      if (r.ok) {
+        const arr = Array.isArray(r.data.runs)
+          ? r.data.runs
+          : Array.isArray(r.data.history)
+            ? r.data.history
+            : Array.isArray(r.data.records)
+              ? r.data.records
+              : [];
+        return arr
+          .map((item) => normalizeRoutineRun(item, id))
+          .filter((x): x is RoutineRunRecord => x !== null)
+          .sort((a, b) => b.started_ms - a.started_ms);
+      }
+    }
+    const local = loadLocalRoutines().find((x) => x.id === id);
+    return local?.recent_runs ?? [];
   }, []);
 
   const createRoutine = useCallback(
@@ -419,7 +554,12 @@ export function useErgon() {
 
   const switchPerson = useCallback(async (id: string) => {
     if (busyRef.current) return;
-    const r = await call("/api/active-person", { method: "POST", body: { id } });
+    let r = hasV070Api(statusRef.current)
+      ? await call("/api/people/switch", { method: "POST", body: { id, person_id: id } })
+      : await call("/api/active-person", { method: "POST", body: { id } });
+    if (!r.ok && (r.status === 404 || r.status === 405)) {
+      r = await call("/api/active-person", { method: "POST", body: { id } });
+    }
     if (!r.ok) {
       setSideError("Could not switch person. Check that Ergon is running.");
       return;
@@ -726,6 +866,48 @@ export function useErgon() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const setOnRoutineFired = useCallback((fn: (() => void) | null) => {
+    onRoutineFiredRef.current = fn;
+  }, []);
+
+  // Listen for background scheduler `routine_fired` SSE notifications on v0.7.0+ when idle.
+  useEffect(() => {
+    if (busy || !hasV070Api(status, "scheduler") || typeof EventSource === "undefined") return;
+    let closed = false;
+    let es: EventSource | null = null;
+    try {
+      es = new EventSource("/api/runs/stream");
+      const onFired = (ev: Event) => {
+        if (closed) return;
+        let label = "Scheduled routine";
+        try {
+          const parsed = JSON.parse((ev as MessageEvent).data || "{}") as Record<string, unknown>;
+          if (typeof parsed.name === "string" && parsed.name) label = parsed.name;
+          else if (typeof parsed.routine_name === "string" && parsed.routine_name) label = parsed.routine_name;
+        } catch { /* ignore */ }
+        toast.success(`Background routine "${label}" finished.`);
+        setRoutineHistoryRev((n) => n + 1);
+        loadRoutines();
+        loadFiles();
+        loadThreads();
+        loadRecent();
+        refreshCounts();
+        onRoutineFiredRef.current?.();
+      };
+      es.addEventListener("routine_fired", onFired);
+      es.onerror = () => {
+        if (es) {
+          es.close();
+          es = null;
+        }
+      };
+    } catch { /* ignore */ }
+    return () => {
+      closed = true;
+      if (es) es.close();
+    };
+  }, [busy, status, loadRoutines, loadFiles, loadThreads, loadRecent, refreshCounts]);
+
   useEffect(() => {
     if (status && status !== "error") {
       loadStarters(String(status.person?.role ?? ""));
@@ -738,10 +920,11 @@ export function useErgon() {
     status, runFailed, people, threads, threadsError, states, threadId, messages,
     busy, activeRunId, liveElapsedMs, streamMode, cancelling, liveSteps, liveTimeline,
     draft, setDraft, pendingNote, sideError, starters, recovered, recent,
-    todayCount, learnedCount, suiteCount, files, skills, routines,
+    todayCount, learnedCount, suiteCount, files, skills, routines, scheduler, routineHistoryRev,
     send, sendPrompt, cancelRun, openThread, newThread, switchPerson, refreshPerson, showRun,
     loadThreads, loadStatus, loadPeople, refreshCounts, loadRecent, loadStarters,
-    loadFiles, uploadFile, uploadFiles, loadSkills, loadRoutines, createRoutine, deleteRoutine, runRoutineNow,
+    loadFiles, uploadFile, uploadFiles, loadSkills, loadRoutines, createRoutine, deleteRoutine,
+    toggleRoutine, loadRoutineHistory, runRoutineNow, setOnRoutineFired,
     setSideError, setRecovered,
   };
 }

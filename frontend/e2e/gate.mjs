@@ -572,6 +572,21 @@ await reset();
 
   ok("phone side column under the paper", (await p.getByRole("heading", { name: "Team" }).count()) === 1);
 
+  // Mobile Menu -> Workspace Switcher (outside Vaul drawer) switches person cleanly via real pointer tap
+  await p.getByRole("button", { name: "Open menu" }).click();
+  await p.waitForSelector("#person-select", { timeout: 4000 });
+  await p.locator("#person-select").click();
+  await p.waitForSelector("#workspace-switcher-panel", { timeout: 4000 });
+  await p.locator('#workspace-switcher-panel [data-workspace-id="maya-chen"]').click();
+  await p.locator("#workspace-switcher-panel").waitFor({ state: "hidden", timeout: 4000 }).catch(() => {});
+  await p.waitForFunction(() => /Maya Chen/.test(document.querySelector("#dateline")?.textContent || ""), null, { timeout: 5000 }).catch(() => {});
+  const mobileSwitchOk = await p.evaluate(() => {
+    const dateline = document.querySelector("#dateline")?.textContent || "";
+    const drawerOpen = Boolean(document.querySelector('[data-vaul-drawer][data-state="open"]'));
+    return dateline.includes("Maya Chen") && !drawerOpen;
+  });
+  ok("phone Menu -> Workspace Switcher switches desk outside Vaul drawer without interception", mobileSwitchOk);
+
   await p.goto(BASE + "phone");
   await waitPaper(p);
   await p.waitForTimeout(500);
@@ -599,6 +614,289 @@ await reset();
     return theme === "dark" && overflow <= 0 && !drawerOpen;
   });
   ok("320x568 phone Menu -> Settings -> Dark toggles cleanly with 0px overflow", compactDarkOk);
+  // Also verify 320x568 Settings contains Workspace Switcher & Audit Bundle buttons cleanly
+  const compactWorkspaceAndAudit = await p.evaluate(() => {
+    const ws = Boolean(document.querySelector("#settings-workspace-section"));
+    const audit = Boolean(document.querySelector("#settings-export-audit-json"));
+    const ovf = document.documentElement.scrollWidth - document.documentElement.clientWidth;
+    return ws && audit && ovf <= 0;
+  });
+  ok("320x568 phone Settings renders Workspace Switcher and Audit Bundle export with 0px overflow", compactWorkspaceAndAudit);
+  await ctx.close();
+}
+
+// 6d. v0.7.0 Live API Wire-Contract Suite: File History & Diff + Restore, Routine Scheduler Pause/Resume + History,
+//     Full Audit Bundle Export, and POST /api/people/switch (aligned 1:1 with Rust release/0.7.0 structs)
+{
+  const { ctx, p } = await open(1440, 900);
+  let patchEnabledValues = [];
+  let restorePayload = null;
+  let auditBundleFetched = false;
+  let peopleSwitchCalled = false;
+  let currentCsv = "Vendor,Amount,Status\nAcme Cloud,420.50,verified\nCloudHost Backup,240.00,missing\n";
+  const prevCsv = "Vendor,Amount,Status\nAcme Cloud,420.50,verified\n";
+  let routineEnabled = true;
+
+  await p.route("**/api/status", async (r) => {
+    const res = await r.fetch();
+    const j = await res.json();
+    await r.fulfill({
+      response: res,
+      body: JSON.stringify({
+        ...j,
+        version: "0.7.0",
+        scheduler_enabled: true,
+        capabilities: {
+          sse: true,
+          skills: true,
+          routines: true,
+          search: true,
+          receipts_export: true,
+          cancel: true,
+          scheduler: true,
+          file_history: true,
+          audit_bundle: true,
+        },
+      }),
+    });
+  });
+  await p.route("**/api/runs/stream", (r) =>
+    r.fulfill({ status: 200, contentType: "text/event-stream", body: ": connected\n\n" })
+  );
+  await p.route("**/api/files/content**", async (r) => {
+    const url = new URL(r.request().url());
+    if (url.searchParams.get("path") === "ledger.csv") {
+      return r.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          path: "ledger.csv",
+          name: "ledger.csv",
+          size: currentCsv.length,
+          mtime_ms: Date.now(),
+          ext: "csv",
+          is_binary: false,
+          content: currentCsv,
+        }),
+      });
+    }
+    return r.continue();
+  });
+  await p.route("**/api/files", async (r) => {
+    const res = await r.fetch();
+    const j = await res.json();
+    const files = [
+      { path: "ledger.csv", name: "ledger.csv", size: currentCsv.length, mtime_ms: Date.now(), ext: "csv" },
+      ...(j.files || []),
+    ];
+    await r.fulfill({ response: res, body: JSON.stringify({ ...j, files }) });
+  });
+  await p.route("**/api/files/history**", (r) => {
+    const url = new URL(r.request().url());
+    const hasDiffQuery = Boolean(url.searchParams.get("rev_a"));
+    return r.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        path: "ledger.csv",
+        revisions: [
+          {
+            rev_id: "rev-20261122-001",
+            path: "ledger.csv",
+            timestamp_ms: Date.now() - 3600_000,
+            size_bytes: prevCsv.length,
+            sha256: "a1b2c3d4e5f60718293a4b5c6d7e8f901234567890abcdef1234567890abcdef",
+            reason: "overwrite",
+            is_text: true,
+            line_count: 2,
+          },
+        ],
+        ...(hasDiffQuery
+          ? {
+              diff: {
+                path: "ledger.csv",
+                rev_a: "rev-20261122-001",
+                rev_b: "current",
+                added: 1,
+                removed: 0,
+                unchanged: 2,
+                hunks: [
+                  {
+                    left_start: 1,
+                    left_count: 2,
+                    right_start: 1,
+                    right_count: 3,
+                    lines: [
+                      { kind: "context", left_line: 1, right_line: 1, text: "Vendor,Amount,Status" },
+                      { kind: "context", left_line: 2, right_line: 2, text: "Acme Cloud,420.50,verified" },
+                      { kind: "add", left_line: null, right_line: 3, text: "CloudHost Backup,240.00,missing" },
+                    ],
+                  },
+                ],
+              },
+            }
+          : {}),
+      }),
+    });
+  });
+  await p.route("**/api/files/restore", async (r) => {
+    restorePayload = JSON.parse(r.request().postData() || "{}");
+    currentCsv = prevCsv;
+    return r.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        path: "ledger.csv",
+        restored_rev_id: restorePayload.rev_id,
+        size_bytes: prevCsv.length,
+      }),
+    });
+  });
+  await p.route("**/api/routines", (r) =>
+    r.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        scheduler: { enabled: true, running: true, tick_secs: 15, active_routines: routineEnabled ? 1 : 0, paused_routines: routineEnabled ? 0 : 1 },
+        routines: [
+          {
+            id: "rt-sched-1",
+            name: "Scheduled Ledger Watch",
+            prompt: "Reconcile ledger.csv",
+            schedule: "every 15m",
+            enabled: routineEnabled,
+            next_run_ms: routineEnabled ? Date.now() + 14 * 60_000 : null,
+            last_run_ms: Date.now() - 60_000,
+            run_count: 2,
+          },
+        ],
+      }),
+    })
+  );
+  await p.route("**/api/routines/rt-sched-1", async (r) => {
+    if (r.request().method() === "PATCH") {
+      const b = JSON.parse(r.request().postData() || "{}");
+      routineEnabled = Boolean(b.enabled);
+      patchEnabledValues.push(routineEnabled);
+      return r.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          routine: {
+            id: "rt-sched-1",
+            name: "Scheduled Ledger Watch",
+            prompt: "Reconcile ledger.csv",
+            schedule: "every 15m",
+            enabled: routineEnabled,
+            next_run_ms: routineEnabled ? Date.now() + 15 * 60_000 : null,
+            run_count: 2,
+          },
+        }),
+      });
+    }
+    return r.continue();
+  });
+  await p.route("**/api/routines/rt-sched-1/history", (r) =>
+    r.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        routine_id: "rt-sched-1",
+        runs: [
+          {
+            run_id: "run-001",
+            routine_id: "rt-sched-1",
+            started_ms: Date.now() - 65_000,
+            finished_ms: Date.now() - 64_200,
+            duration_ms: 800,
+            status: "ok",
+            receipt_id: "rec-sched-99",
+            summary: "Verified 2 rows with 0 anomalies.",
+          },
+        ],
+      }),
+    })
+  );
+  await p.route("**/api/audit/bundle**", (r) => {
+    auditBundleFetched = true;
+    return r.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        schema: "ergon.fieldbook.audit_bundle.v1",
+        bundle_sha256: "deadbeef".repeat(8),
+        receipt_chain: { verified: true, count: 3, entries: [] },
+        workspace_files: { count: 1, entries: [] },
+      }),
+    });
+  });
+  await p.route("**/api/people/switch", async (r) => {
+    peopleSwitchCalled = true;
+    return r.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ active: "maya-chen", people: [{ id: "you", name: "You" }, { id: "maya-chen", name: "Maya Chen", role: "Operations lead" }] }),
+    });
+  });
+
+  await p.goto(BASE);
+  await waitPaper(p);
+
+  // 1. FileViewerModal History & Diff + Restore version
+  await p.getByRole("button", { name: "Open ledger.csv" }).first().click();
+  await p.waitForSelector("#file-viewer-dialog", { timeout: 4000 });
+  await p.locator('#file-viewer-dialog [data-id="history"]').click();
+  await p.waitForSelector("#file-diff-view", { timeout: 4000 });
+  const diffTxt = await p.locator("#file-diff-view").innerText();
+  const addLineCount = await p.locator('#file-diff-view [data-diff-kind="add"]').count();
+  await p.locator("#restore-version-btn").click();
+  await p.waitForSelector("text=Restored ledger.csv", { timeout: 4000 }).catch(() => {});
+  await p.keyboard.press("Escape");
+  await p.locator("#file-viewer-dialog").waitFor({ state: "hidden", timeout: 4000 }).catch(() => {});
+  ok(
+    "v0.7.0 FileViewerModal History & Diff renders unified highlights and restores revision",
+    diffTxt.includes("CloudHost Backup") && addLineCount === 1 && restorePayload?.rev_id === "rev-20261122-001",
+    `adds=${addLineCount} restore=${JSON.stringify(restorePayload)}`
+  );
+
+  // 2. RoutinesPanel: Scheduler pill, Next run countdown, Pause/Resume PATCH, Expandable Run History + receipt
+  await p.locator('[data-thing="routines-btn"]').click();
+  await p.waitForSelector("#routines-panel", { timeout: 4000 });
+  const schedTxt = await p.locator("#scheduler-status-pill").innerText();
+  const nextRunBefore = await p.locator('[data-next-run="rt-sched-1"]').innerText();
+  await p.locator('[data-routine-id="rt-sched-1"] [data-action="toggle-routine"]').click();
+  await p.waitForTimeout(250);
+  const nextRunPaused = await p.locator('[data-next-run="rt-sched-1"]').innerText();
+  await p.locator('[data-routine-id="rt-sched-1"] [data-action="toggle-routine"]').click();
+  await p.waitForTimeout(250);
+  await p.locator('[data-routine-id="rt-sched-1"] [data-action="routine-history"]').click();
+  await p.waitForSelector('[data-routine-history="rt-sched-1"] [data-run-id="run-001"]', { timeout: 4000 });
+  const histTxt = await p.locator('[data-routine-history="rt-sched-1"]').innerText();
+  await p.keyboard.press("Escape");
+  await p.locator("#routines-panel").waitFor({ state: "hidden", timeout: 4000 }).catch(() => {});
+  ok(
+    "v0.7.0 RoutinesPanel shows scheduler pill, Next run countdown, Pause/Resume PATCH, and Run History",
+    schedTxt.includes("Scheduler active") &&
+      nextRunBefore.includes("Next run") &&
+      nextRunPaused.includes("Paused") &&
+      patchEnabledValues.join(",") === "false,true" &&
+      histTxt.includes("Verified 2 rows") &&
+      histTxt.includes("rec-sched-99"),
+    `sched=${schedTxt} patch=${patchEnabledValues.join(",")} next=${nextRunBefore}->${nextRunPaused}`
+  );
+
+  // 3. Export Full Audit Bundle (GET /api/audit/bundle) + Workspace Switcher (POST /api/people/switch)
+  await p.locator("#export-audit-bundle-btn").click();
+  const auditToastOk = await p.waitForSelector("text=ergon-audit-bundle", { timeout: 4000 }).then(() => true, () => false);
+  await p.locator("#person-select").click();
+  await p.waitForSelector("#workspace-switcher-panel", { timeout: 4000 });
+  await p.locator('#workspace-switcher-panel [data-workspace-id="maya-chen"]').click();
+  await p.waitForTimeout(300);
+  ok(
+    "v0.7.0 Export Full Audit Bundle and Workspace Switcher hit GET /api/audit/bundle & POST /api/people/switch",
+    auditBundleFetched && auditToastOk && peopleSwitchCalled,
+    `audit=${auditBundleFetched} toast=${auditToastOk} switch=${peopleSwitchCalled}`
+  );
   await ctx.close();
 }
 
