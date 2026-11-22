@@ -1,7 +1,7 @@
 // Signature object: the Field-Book Work Entry.
 // Ink head strip (timestamp in Geist Mono, task title, semantic status pill), ruled metadata grid,
 // workspace saved-file rows with file-type glyphs, summary prose, and Cult UI Expandable raw tool-step inspector.
-import { Check, ChevronDown, Hourglass } from "lucide-react";
+import { ArrowUpRight, Check, ChevronDown, Hourglass } from "lucide-react";
 import { Expandable, ExpandableContent, ExpandableTrigger } from "@/components/ui/expandable";
 import { Button } from "@/components/ui/button";
 import { Pill } from "@/components/kibo-ui/pill";
@@ -91,16 +91,32 @@ export function Cell({ label, children, span }: { label: string; children: React
   );
 }
 
-export function FileRow({ files }: { files: string[] }) {
+export function FileRow({ files, onOpenFile }: { files: string[]; onOpenFile?: (path: string) => void }) {
   if (!files.length) return null;
   return (
     <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 border-b border-hairline bg-board/50 px-4 py-2.5">
       <div className="flex min-w-0 flex-wrap items-center gap-2">
         {files.map((name, idx) => (
-          <Pill key={name + idx} variant="secondary" className="max-w-full border border-hairline bg-surface px-2.5 py-1 text-xs font-normal text-ink">
-            <FileGlyph name={name} />
-            <span className="mono min-w-0 truncate">{name}</span>
-          </Pill>
+          onOpenFile ? (
+            <Button
+              key={name + idx}
+              size="sm"
+              variant="outline"
+              aria-label={`Open ${name}`}
+              onClick={() => onOpenFile(name)}
+              className="max-w-full gap-1.5 rounded-chip border-hairline bg-surface px-2.5 text-xs font-normal text-ink hover:bg-board max-md:min-h-11"
+            >
+              <FileGlyph name={name} />
+              <span className="mono min-w-0 truncate">{name}</span>
+              <span className="text-ink-2">Open</span>
+              <ArrowUpRight className="size-3.5 shrink-0 text-icon" strokeWidth={1.5} aria-hidden />
+            </Button>
+          ) : (
+            <Pill key={name + idx} variant="secondary" className="max-w-full border border-hairline bg-surface px-2.5 py-1 text-xs font-normal text-ink">
+              <FileGlyph name={name} />
+              <span className="mono min-w-0 truncate">{name}</span>
+            </Pill>
+          )
         ))}
       </div>
       <span className="text-xs text-ink-3">Saved in workspace</span>
@@ -146,12 +162,13 @@ export function StepList({ steps }: { steps: string[] }) {
   );
 }
 
-export function FinishedEntry({ time, task, steps, result, notes }: {
+export function FinishedEntry({ time, task, steps, result, notes, onOpenFile }: {
   time: string;
   task: string;
   steps: string[];
   result: string;
   notes: string[];
+  onOpenFile?: (path: string) => void;
 }) {
   const files = savedList(steps);
   const stepWord = steps.length === 1 ? "1 tool step" : `${steps.length} tool steps`;
@@ -161,7 +178,7 @@ export function FinishedEntry({ time, task, steps, result, notes }: {
         <Cell label="Execution"><span className="mono">{steps.length ? stepWord : "Direct completion"}</span></Cell>
         <Cell label="Workspace output"><span className="mono">{files.length ? (files.length === 1 ? "1 file saved" : `${files.length} files saved`) : "No new files"}</span></Cell>
       </Cells>
-      <FileRow files={files} />
+      <FileRow files={files} onOpenFile={onOpenFile} />
       <div className="flex flex-col gap-3 px-4 py-4">
         <p className="whitespace-pre-wrap break-words text-ui leading-6 text-ink">{result}</p>
         {notes.map((n, idx) => <Note key={idx} text={n} />)}

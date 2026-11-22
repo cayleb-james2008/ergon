@@ -30,14 +30,12 @@ and runs correctly.
 ```sh
 export PATH="$HOME/.local/rust/bin:$PATH"
 CARGO_BUILD_JOBS=2 cargo build
-ERGON_MODEL_API_KEY=... ./target/debug/ergon   # http://127.0.0.1:8787
+./target/debug/ergon   # http://127.0.0.1:8787 (auto-detects running local model gateways)
 ```
 
-Without `ERGON_MODEL_API_KEY` the UI shows an honest "not connected to a
-model yet" banner and `/api/chat` refuses (HTTP 503) — Ergon never
-fabricates an answer. The model route is any OpenAI-compatible
-chat-completions endpoint; the default is OpenCode Go with
-`deepseek-v4.1-flash`.
+On startup (unless `ERGON_NO_AUTO_MODEL=1` or an explicit `ERGON_MODEL_BASE_URL` / `ERGON_MODEL_API_KEY` / `data/config.json` is present), Ergon automatically probes running local OpenAI-compatible gateways on loopback (`127.0.0.1:8790/v1`, `127.0.0.1:8789/v1`, `127.0.0.1:11434/v1`) and connects with no API key required. You can switch providers or enter a remote OpenAI-compatible endpoint and API key live inside **Settings** (`GET/POST /api/config`, persisted in `data/config.json`).
+
+Without a reachable local gateway or `ERGON_MODEL_API_KEY`, the UI shows an honest "not connected to a model yet" banner and `/api/chat` refuses (HTTP 503) — Ergon never fabricates an answer.
 
 ## Config (env)
 
@@ -45,11 +43,12 @@ chat-completions endpoint; the default is OpenCode Go with
 | --- | --- |
 | `ERGON_HOST` / `ERGON_PORT` | `127.0.0.1` / `8787` |
 | `ERGON_ALLOWED_HOSTS` | — (comma-separated host names, with or without ports, case-insensitive; extra Host names accepted when no gate token is set, e.g. a LAN name for `/phone`. Loopback is always accepted) |
-| `ERGON_DATA_DIR` | `./data` (people, threads, per-person workspaces) |
+| `ERGON_DATA_DIR` | `./data` (people, threads, `config.json`, per-person workspaces) |
 | `ERGON_WORKSPACE` | `<data>/workspace` — the default person's sandbox root |
-| `ERGON_MODEL_BASE_URL` | `https://opencode.ai/zen/go/v1` |
-| `ERGON_MODEL_ID` | `deepseek-v4.1-flash` |
-| `ERGON_MODEL_API_KEY` | — (bearer key; every model call also sends `x-opencode-session` + a browser User-Agent) |
+| `ERGON_MODEL_BASE_URL` | auto-probed local gateway (`:8790` / `:8789` / `:11434`), else `https://opencode.ai/zen/go/v1` |
+| `ERGON_MODEL_ID` | auto-detected gateway default, else `deepseek-v4.1-flash` |
+| `ERGON_MODEL_API_KEY` | — (optional on loopback `127.0.0.1`/`localhost`/`[::1]`; required for remote endpoints) |
+| `ERGON_NO_AUTO_MODEL` | `0` (set to `1` to disable startup local gateway auto-probing) |
 | `ERGON_GATE_TOKEN` | — (when set, every request must carry the matching `X-Ergon-Gate` header; this is the hosting layer's gate — Ergon itself has no accounts or passwords) |
 
 ## How it works
@@ -59,16 +58,19 @@ chat-completions endpoint; the default is OpenCode Go with
   fonts, light-first House Frontend tokens, and full dark-mode parity. A
   256px left rail (a gesture-friendly Vaul drawer under 768px and on `/phone`)
   holds the active person desk, primary **New chat** action, `/` conversation
-  search filter, gliding conversation list, **What my agent has learned** and
-  **My suite and the library** dialogs with live counts, **Add a person**,
-  Light/Dark segmented switch, and version/update controls. The top command
-  bar switches across **Chat**, **Today** (with live pending-decision count),
-  and **Work Graph**, plus `Cmd/Ctrl+K` to jump straight to the task box.
+  search filter, gliding conversation list, **Workspace files** (upload,
+  create, inspect, and download real files), **What my agent has learned**,
+  **My suite and the library**, **Add a person**, and **Settings** (live Model
+  provider config, Light/Dark `SegmentedControl`, and Update controls). The top
+  command bar switches across **Chat**, **Today** (with live pending-decision
+  count), and **Work Graph**, plus `Cmd/Ctrl+K` to jump straight to the task box.
+- **Workspace File Viewer & Upload** — `GET /api/files`, `GET /api/files/content?path=...(&download=1)` (jailed through `sandbox_path_resolving` to block `..` traversal and symlink escapes), and `POST /api/files/upload`. Clicking any saved file pill or **Open** button across Chat, Today, Work Graph, or Workspace files renders real CSV tables, structured Markdown, formatted JSON, or plain text with one-click Download.
 - **Chat & Field-Book entries** — empty chats present role-tailored starter
-  task cards with skill/tool chips. Active runs display a live shimmering step
-  ledger; completed runs settle into ruled Field-Book Result Cards with
-  file-type glyphs, saved workspace file pills, `Geist Mono` step counts, and
-  an expandable raw tool-step inspector.
+  task cards with skill/tool chips, and the composer supports direct file
+  upload into the active workspace. Active runs stream live tool steps via
+  `GET /api/runs/status` inside a shimmering step card; completed runs settle
+  into ruled Field-Book Result Cards with clickable saved-file pills,
+  `Geist Mono` step counts, and an expandable raw tool-step inspector.
 - **Today's Desk** — combines the 48-hour Morning Brief, a 14-slot Tremor
   run-outcome `Tracker`, the **Waiting on you** consequential decision queue,
   proactive **Offers from your agent**, finished work with file-type glyphs,

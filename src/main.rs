@@ -25,10 +25,16 @@ fn main() {
     };
     println!("ergon listening on http://{host}:{port}");
     println!(
-        "model: {} @ {} (key {})",
+        "model: {} @ {} ({})",
         cfg.model_id,
         cfg.model_base_url,
-        if cfg.api_key.is_some() { "configured" } else { "NOT configured" }
+        if cfg.api_key.is_some() {
+            "key configured"
+        } else if cfg.model_configured() {
+            "local loopback ready"
+        } else {
+            "NOT configured"
+        }
     );
     if let Err(e) = ergon_rs::serve_with_updates(listener, cfg) {
         eprintln!("ergon: server error: {e}");

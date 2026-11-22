@@ -1,17 +1,18 @@
-// Ergon v0.3.0 — Personal Employee Agent Desk
+// Ergon v0.4.0 — Personal Employee Agent Desk
 // Unified shell:
 // - Persistent 256px Left Rail on >=768px (Vaul Drawer <768px): Ergon wordmark, active person desk,
 //   primary New chat action, `/` conversation filter with Kbd hint, AnimatedBackground conversation glide,
-//   Learned memory & Rune Suite/Library & Add-person MorphingDialogs with count chips, Light/Dark SegmentedControl, version row.
+//   Workspace files, Learned memory, Rune Suite/Library, Add person, and Settings (Model, Workspace & Appearance)
+//   MorphingDialogs — Light/Dark theme switch lives cleanly inside Settings (never cluttering main chrome).
 // - Top Navigation & Command Bar: COSS UI Tabs (Chat · Today [pending Pill] · Work Graph), Cmd/Ctrl+K task jump,
-//   fixture honesty Pill, Agent readiness Pill, and BANNER-FIX-BRIEF.md-compliant UpdateStrip.
+//   Agent readiness Pill, and BANNER-FIX-BRIEF.md-compliant UpdateStrip.
+// - Global Workspace File Viewer Dialog wired to every saved file pill and Open button across Chat, Today, and Work Graph.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MotionConfig } from "motion/react";
 import { Drawer } from "vaul";
-import { Check, Hourglass, Menu, Moon, Plus, Search, Sun, X } from "lucide-react";
+import { Check, Hourglass, Menu, Plus, Search, X } from "lucide-react";
 import { Toaster } from "sonner";
 import { AnimatedBackground } from "@/components/ui/animated-background";
-import { SegmentedControl, SegmentedControlItem } from "@/components/ui/segmented-control";
 import { Tabs, TabsList, TabsTab } from "@/components/ui/tabs";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
 import { Kbd } from "@/components/ui/kbd";
@@ -21,6 +22,8 @@ import { Composer, ContourField, Thread } from "@/chat/Chat";
 import { useErgon, type TState } from "./state";
 import { UpdateStrip, VersionRow, useUpdate } from "@/shell/Update";
 import { AddPersonPanel, LearnedPanel, SuitePanel } from "@/shell/Panels";
+import { FileViewerModal, WorkspaceFilesPanel } from "@/shell/WorkspaceFiles";
+import { SettingsPanel, type Theme } from "@/shell/SettingsPanel";
 import { PaperFace, usePaper } from "@/views/Paper";
 import { GraphFace } from "@/views/Graph";
 import { PersonSelect } from "@/shell/PersonSelect";
@@ -29,7 +32,6 @@ import { relTime, threadMs } from "@/lib/words";
 import { glide } from "@/motion";
 
 type Face = "chat" | "paper" | "graph";
-type Theme = "light" | "dark";
 const RECOVERED_KEY = "ergon-recovered-dismissed";
 
 function initialFace(): Face {
@@ -72,7 +74,8 @@ export function App() {
   const narrow = useNarrow();
   const [face, setFace] = useState<Face>(initialFace);
   const [chatQuery, setChatQuery] = useState("");
-  const paper = usePaper(() => { e.refreshCounts(); e.loadRecent(); });
+  const [openFilePath, setOpenFilePath] = useState<string | null>(null);
+  const paper = usePaper(() => { e.refreshCounts(); e.loadRecent(); e.loadFiles(); });
 
   useEffect(() => {
     if (face === "paper") paper.load();
@@ -167,43 +170,30 @@ export function App() {
       ? <Check className="size-3.5 shrink-0 text-dot-green" strokeWidth={1.75} aria-label="Finished" />
       : null;
 
-  const appearance = (
-    <SegmentedControl aria-label="Appearance">
-      {(["light", "dark"] as const).map((t) => (
-        <SegmentedControlItem
-          key={t}
-          data-id={t}
-          aria-pressed={theme === t}
-          data-checked={theme === t ? "" : undefined}
-          className="max-md:min-h-11"
-          onClick={() => setTheme(t)}
-        >
-          {t === "light" ? <Sun className="size-3.5" strokeWidth={1.5} aria-hidden /> : <Moon className="size-3.5" strokeWidth={1.5} aria-hidden />}
-          {t === "light" ? "Light" : "Dark"}
-        </SegmentedControlItem>
-      ))}
-    </SegmentedControl>
-  );
-
-  const wordmark = (
-    <span className="flex items-center gap-2 text-title font-medium tracking-[-0.03em] text-ink">
-      <svg viewBox="0 0 24 24" aria-hidden className="size-5 text-ink">
-        <rect x="3" y="3" width="18" height="18" rx="5" fill="none" stroke="currentColor" strokeWidth="1.6" />
-        <path d="M8 12.5l2.6 2.6L16 9.5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-      </svg>
-      Ergon
-    </span>
-  );
-
   const railContent = (
-    <div className="flex h-full min-h-0 flex-col">
-      <div className="flex items-center justify-between px-3.5 pb-2.5 pt-3.5">
-        {wordmark}
+    <div id="sidebar" className="flex h-full min-h-0 flex-col bg-surface text-ink">
+      <div className="flex items-center justify-between gap-2 px-3.5 pb-2 pt-3.5">
+        <a
+          href="#top"
+          onClick={(ev) => { ev.preventDefault(); setFace("paper"); setMenuOpen(false); }}
+          className="focus-ring flex items-center gap-2 rounded-sm px-0.5 py-0.5 text-base font-semibold tracking-[-0.025em] text-ink outline-none"
+        >
+          <svg aria-hidden width="17" height="17" viewBox="0 0 18 18" fill="none" className="shrink-0">
+            <rect x="1.2" y="1.2" width="15.6" height="15.6" rx="4" stroke="currentColor" strokeWidth="1.5" />
+            <path d="M5.2 9.2L7.8 11.8L12.8 6.4" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+          <span>Ergon</span>
+        </a>
+        {narrow && (
+          <Button size="icon-sm" variant="ghost" className="min-h-11 min-w-11" aria-label="Close menu" onClick={() => setMenuOpen(false)}>
+            <X className="size-4" strokeWidth={1.5} aria-hidden />
+          </Button>
+        )}
       </div>
 
-      <div id="sidebar" className="flex min-h-0 flex-1 flex-col">
-        <div className="px-3.5">
-          <label id="person-label" htmlFor="person-select" className="text-xs text-ink-3">Working for</label>
+      <div className="flex min-h-0 flex-1 flex-col">
+        <div className="px-3.5 pt-1">
+          <span id="person-label" className="block text-xs text-ink-3">Working for</span>
           <PersonSelect
             people={e.people?.people ?? []}
             active={e.people?.active ?? ""}
@@ -290,19 +280,19 @@ export function App() {
                 </div>
               </li>
             )}
-            {filteredThreads.length > 0 && (
+            {!e.threadsError && filteredThreads.length > 0 && (
               <AnimatedBackground
                 defaultValue={face === "chat" && e.threadId ? e.threadId : undefined}
-                transition={glide}
                 className="rounded-sm bg-blue-soft"
+                transition={glide}
               >
                 {filteredThreads.map((t) => {
-                  const ms = threadMs(t.id);
                   const active = face === "chat" && t.id === e.threadId;
                   const s = e.states[t.id];
+                  const ms = threadMs(t.id);
                   const title = String(t.title ?? "").trim() || "Untitled task";
                   return (
-                    <li key={t.id} data-id={t.id} className="flex w-full min-w-0">
+                    <li key={t.id} data-id={t.id} className="w-full min-w-0">
                       <Button
                         variant="ghost"
                         aria-current={active ? "true" : undefined}
@@ -336,6 +326,12 @@ export function App() {
         {e.sideError && <p role="alert" className="px-3.5 pb-2 text-xs text-destructive-foreground">{e.sideError}</p>}
 
         <div id="settings" className="flex flex-col gap-0.5 border-t border-hairline px-1.5 py-2.5">
+          <WorkspaceFilesPanel
+            files={e.files}
+            onRefresh={e.loadFiles}
+            onOpenFile={(p) => { setMenuOpen(false); setOpenFilePath(p); }}
+            onUpload={e.uploadFile}
+          />
           <LearnedPanel count={e.learnedCount} />
           <SuitePanel
             count={e.suiteCount}
@@ -353,10 +349,13 @@ export function App() {
               setMenuOpen(false);
             }}
           />
-          <div className="flex items-center justify-between gap-2 px-2.5 pt-1.5">
-            <span className="text-xs text-ink-2">Appearance</span>
-            {appearance}
-          </div>
+          <SettingsPanel
+            theme={theme}
+            onTheme={setTheme}
+            status={e.status}
+            onConfigSaved={() => { e.loadStatus(); paper.load(); }}
+            u={u}
+          />
           <VersionRow u={u} />
         </div>
       </div>
@@ -392,7 +391,7 @@ export function App() {
         <div className="relative isolate flex min-w-0 flex-1 flex-col overflow-hidden bg-canvas">
           <ContourField />
 
-          <header className="flex w-full flex-wrap items-center justify-between gap-2.5 border-b border-hairline bg-surface/90 px-4 py-2.5 md:px-6">
+          <header className="flex w-full flex-wrap items-center justify-between gap-2.5 border-b border-hairline bg-surface px-4 py-2.5 md:px-6">
             <div className="flex min-w-0 flex-wrap items-center gap-2.5">
               {narrow && (
                 <Button
@@ -451,12 +450,6 @@ export function App() {
                 <Kbd>⌘K</Kbd>
               </Button>
 
-              {e.isDemo && (
-                <Pill variant="secondary" className="border border-hairline bg-board px-2.5 py-0.5 text-xs font-normal text-ink-2">
-                  <span className="mono">fixture demo</span>
-                </Pill>
-              )}
-
               <div role="status" id="ready-chip" className="flex items-center">
                 <Pill
                   variant="secondary"
@@ -487,7 +480,7 @@ export function App() {
           {modelOff && (
             <div id="no-key-banner" className="mx-4 mt-3 rounded-card border border-hairline bg-board px-4 py-2.5 text-sm text-ink md:mx-6">
               Ergon is not connected to a model yet, so the agent cannot run. Nothing here is simulated, and Ergon will not invent answers. Anything you type is kept in the thread.
-              <span className="mt-1 block text-ink-2">For whoever runs Ergon: set <span className="mono">ERGON_MODEL_API_KEY</span> on the server.</span>
+              <span className="mt-1 block text-ink-2">Open Settings to pick a local model gateway or set <span className="mono">ERGON_MODEL_API_KEY</span> on the server.</span>
             </div>
           )}
 
@@ -504,9 +497,11 @@ export function App() {
                 <Thread
                   messages={e.messages}
                   busy={e.busy}
+                  liveSteps={e.liveSteps}
                   threadId={e.threadId}
                   onReview={() => setFace("paper")}
                   onStarter={(t) => e.setDraft(t)}
+                  onOpenFile={(p) => setOpenFilePath(p)}
                   starters={e.starters}
                   status={modelOff ? "wait" : "ok"}
                   pendingNote={e.pendingNote}
@@ -514,8 +509,17 @@ export function App() {
                   recent={e.recent}
                 />
               </section>
-              <div className="border-t border-hairline bg-surface/80 px-4 py-3.5 md:px-6">
-                <Composer value={e.draft} onChange={e.setDraft} onSend={e.send} busy={e.busy} disabled={e.busy} />
+              <div className="border-t border-hairline bg-surface px-4 py-3.5 md:px-6">
+                <Composer
+                  value={e.draft}
+                  onChange={e.setDraft}
+                  onSend={e.send}
+                  busy={e.busy}
+                  disabled={e.busy}
+                  files={e.files}
+                  onUpload={e.uploadFile}
+                  onOpenFile={(p) => setOpenFilePath(p)}
+                />
               </div>
             </>
           )}
@@ -538,16 +542,26 @@ export function App() {
                   setFace("chat");
                   e.openThread(id);
                 }}
+                onOpenFile={(p) => setOpenFilePath(p)}
               />
             </div>
           )}
 
           {face === "graph" && (
             <div className="min-h-0 flex-1 overflow-y-auto">
-              <GraphFace />
+              <GraphFace onOpenFile={(p) => setOpenFilePath(p)} />
             </div>
           )}
         </div>
+
+        <FileViewerModal
+          filePath={openFilePath}
+          onClose={() => setOpenFilePath(null)}
+          onAskAbout={(p) => {
+            e.setDraft(`Review ${p} and summarize the key numbers and action items into a workspace report.`);
+            jumpToComposer();
+          }}
+        />
         <Toaster position="bottom-right" />
       </div>
     </MotionConfig>

@@ -3377,3 +3377,166 @@ fn version_endpoints_report_the_running_build_and_updating_is_local_only() {
     assert_eq!(status, 409, "{body}");
 }
 
+#[test]
+fn keyless_loopback_model_works_and_config_api_persists() {
+    let root = test_root("loopback_cfg");
+    let stub = start_stub_model(vec![
+        json!({"tool": "write_file", "args": {"path": "loopback-proof.md", "content": "# Loopback OK\n"}}).to_string(),
+        json!({"done": true, "summary": "Wrote loopback-proof.md via keyless loopback model."}).to_string(),
+    ]);
+    // No API key, live loopback stub URL -> must be configured and succeed end-to-end!
+    let cfg = test_config(&root, None, format!("http://127.0.0.1:{}/v1", stub.port));
+    let port = start_app(cfg);
+
+    let (st, body) = http(port, "GET", "/api/status", None);
+    assert_eq!(st, 200, "{body}");
+    let sv: Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(sv["model_configured"], json!(true), "live loopback must not require API key: {sv}");
+
+    let (st, body) = http(
+        port,
+        "POST",
+        "/api/chat",
+        Some(&json!({"thread_id": "", "message": "write loopback proof"}).to_string()),
+    );
+    assert_eq!(st, 200, "keyless loopback chat must succeed: {body}");
+    assert!(root.join("data/workspace/loopback-proof.md").exists());
+    assert!(
+        !stub.raw_requests.lock().unwrap().iter().any(|r| r.to_ascii_lowercase().contains("authorization:")),
+        "keyless loopback call must not send a dummy Authorization header"
+    );
+
+    // GET /api/config works on loopback and NEVER leaks raw secrets; POST persists config.json.
+    let (st, body) = http(port, "GET", "/api/config", None);
+    assert_eq!(st, 200, "{body}");
+    let cv: Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(cv["has_api_key"], json!(false));
+    assert!(cv["detected_gateways"].is_array());
+
+    let (st, body) = http(
+        port,
+        "POST",
+        "/api/config",
+        Some(&json!({
+            "model_base_url": format!("http://127.0.0.1:{}/v1", stub.port),
+            "model_id": "custom-local-model",
+            "api_key": "sk-secret-do-not-echo"
+        }).to_string()),
+    );
+    assert_eq!(st, 200, "{body}");
+    assert!(!body.contains("sk-secret-do-not-echo"), "POST /api/config must not echo raw secret");
+    assert!(root.join("data/config.json").exists(), "config.json must persist");
+
+    let (st, body) = http(port, "GET", "/api/config", None);
+    assert_eq!(st, 200, "{body}");
+    assert!(!body.contains("sk-secret-do-not-echo"), "GET /api/config must not leak secret");
+    let cv2: Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(cv2["model_id"], json!("custom-local-model"));
+    assert_eq!(cv2["has_api_key"], json!(true));
+
+    // Shared LAN host must be refused 403 on /api/config.
+    let root2 = test_root("cfg_lan");
+    let cfg2 = test_config(&root2, None, "http://127.0.0.1:9/v1".to_string());
+    let lan = start_app_hosts(cfg2, None, vec!["lan-desk.local".to_string()]);
+    let head = format!("GET /api/config HTTP/1.1\r\nHost: lan-desk.local:{lan}\r\n");
+    assert_eq!(raw_http(lan, &head, "").0, 403);
+}
+
+#[test]
+fn workspace_files_upload_list_preview_download_and_jail_security() {
+    let root = test_root("files_api");
+    let cfg = test_config(&root, None, "http://127.0.0.1:9/v1".to_string());
+    let port = start_app(cfg);
+
+    // Upload real CSV & Markdown files.
+    let csv_body = "Vendor,Category,Amount,Receipt\nCloudHost,Infra,240.00,missing\nOfficeCo,Supplies,85.50,ok\n";
+    let (st, body) = http(
+        port,
+        "POST",
+        "/api/files/upload",
+        Some(&json!({"path": "reports/q4-expenses.csv", "content": csv_body}).to_string()),
+    );
+    assert_eq!(st, 201, "upload csv failed: {body}");
+
+    let (st, body) = http(
+        port,
+        "POST",
+        "/api/files/upload",
+        Some(&json!({"name": "notes.md", "content": "# Notes\n- Ship v0.4.0\n"}).to_string()),
+    );
+    assert_eq!(st, 201, "upload md failed: {body}");
+
+    // List workspace files.
+    let (st, body) = http(port, "GET", "/api/files", None);
+    assert_eq!(st, 200, "{body}");
+    let fv: Value = serde_json::from_str(&body).unwrap();
+    let paths: Vec<&str> = fv["files"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|f| f["path"].as_str())
+        .collect();
+    assert!(paths.contains(&"reports/q4-expenses.csv"), "missing csv in {paths:?}");
+    assert!(paths.contains(&"notes.md"), "missing md in {paths:?}");
+
+    // Preview content JSON.
+    let (st, body) = http(port, "GET", "/api/files/content?path=reports%2Fq4-expenses.csv", None);
+    assert_eq!(st, 200, "{body}");
+    let cv: Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(cv["content"], json!(csv_body));
+    assert_eq!(cv["is_binary"], json!(false));
+
+    // Download raw bytes.
+    let (st, raw) = http(port, "GET", "/api/files/content?path=reports%2Fq4-expenses.csv&download=1", None);
+    assert_eq!(st, 200, "{raw}");
+    assert_eq!(raw, csv_body);
+
+    // Traversal & symlink escape security checks MUST fail closed (403).
+    for bad in [
+        "/api/files/content?path=../../etc/passwd",
+        "/api/files/content?path=%2e%2e%2f%2e%2e%2fetc%2fpasswd",
+        "/api/files/content?path=/etc/passwd",
+    ] {
+        let (st, body) = http(port, "GET", bad, None);
+        assert!(st == 400 || st == 403, "expected 400/403 for {bad}, got {st}: {body}");
+        assert!(!body.contains("root:"), "must never leak /etc/passwd: {body}");
+    }
+
+    #[cfg(unix)]
+    {
+        let link = root.join("data/workspace/escape-link");
+        let _ = std::os::unix::fs::symlink("/etc/passwd", &link);
+        let (st, body) = http(port, "GET", "/api/files/content?path=escape-link", None);
+        assert_eq!(st, 403, "symlink escape must be refused: {body}");
+        assert!(!body.contains("root:"));
+    }
+
+    // Upload traversal & hidden dotfile refused.
+    let (st, _) = http(
+        port,
+        "POST",
+        "/api/files/upload",
+        Some(&json!({"path": "../outside.txt", "content": "nope"}).to_string()),
+    );
+    assert_eq!(st, 403);
+    let (st, _) = http(
+        port,
+        "POST",
+        "/api/files/upload",
+        Some(&json!({"path": ".secret", "content": "nope"}).to_string()),
+    );
+    assert_eq!(st, 403);
+}
+
+#[test]
+fn live_runs_status_reports_idle_cleanly() {
+    let root = test_root("runs_status");
+    let cfg = test_config(&root, None, "http://127.0.0.1:9/v1".to_string());
+    let port = start_app(cfg);
+    let (st, body) = http(port, "GET", "/api/runs/status", None);
+    assert_eq!(st, 200, "{body}");
+    let v: Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(v["active"], json!(false));
+    assert_eq!(v["steps"], json!([]));
+}
+

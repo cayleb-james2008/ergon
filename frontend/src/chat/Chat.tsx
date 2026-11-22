@@ -1,7 +1,8 @@
-// Chat face: active Field-Book conversation thread, live BorderTrail + TextShimmer step ledger,
-// rich role-tailored Starter Task Cards (with category tags & Rune skill pills), and the pinned task composer.
+// Chat face: active Field-Book conversation thread, live BorderTrail + TextShimmer streamed step ledger,
+// rich role-tailored Starter Task Cards (with category tags & Rune skill pills), and the pinned task composer
+// with direct workspace file upload.
 import { useEffect, useRef } from "react";
-import { ArrowRight, Send, Sparkles } from "lucide-react";
+import { ArrowRight, ArrowUpRight, Check, Paperclip, Send, Sparkles } from "lucide-react";
 import { BorderTrail } from "@/components/ui/border-trail";
 import { TextShimmer } from "@/components/ui/text-shimmer";
 import { Button } from "@/components/ui/button";
@@ -9,9 +10,20 @@ import { Badge } from "@/components/ui/badge";
 import { InputGroup, InputGroupAddon, InputGroupTextarea } from "@/components/ui/input-group";
 import { Kbd } from "@/components/ui/kbd";
 import { Pill } from "@/components/kibo-ui/pill";
-import { Failure, FileGlyph, FinishedEntry, FinishedPill, type Item, LedgerRow, Reply, UserLine, WaitingEntry, buildItems } from "./Entry";
-import type { Msg } from "@/lib/api";
-import { normalizeFiles, relTime, type StarterCard, threadMs } from "@/lib/words";
+import {
+  Failure,
+  FileGlyph,
+  FinishedEntry,
+  FinishedPill,
+  type Item,
+  LedgerRow,
+  Reply,
+  UserLine,
+  WaitingEntry,
+  buildItems,
+} from "./Entry";
+import type { Msg, WorkspaceFile } from "@/lib/api";
+import { normalizeFiles, relTime, type StarterCard, threadMs, toolLabel } from "@/lib/words";
 import { cn } from "@/lib/utils";
 
 export function greeting(name: string, hour: number): string {
@@ -28,12 +40,39 @@ const TAG_TONE: Record<StarterCard["tone"], string> = {
   research: "bg-tag-research-bg text-tag-research-fg border-transparent",
 };
 
-export function Thread({ messages, busy, threadId, onReview, onStarter, starters, status, pendingNote, name, recent }: {
+function liveStepLabel(raw: string): { label: string; tool: string } {
+  const safe = String(raw ?? "");
+  const nl = safe.indexOf("\n");
+  const head = nl < 0 ? safe : safe.slice(0, nl);
+  const body = nl < 0 ? "" : safe.slice(nl + 1);
+  const m = /^Tool: (\S+)(?: \(via ([^)]+)\))?$/.exec(head);
+  return {
+    label: (m && toolLabel(m[1], m[2], body)) || head,
+    tool: m ? m[1] : "",
+  };
+}
+
+export function Thread({
+  messages,
+  busy,
+  liveSteps,
+  threadId,
+  onReview,
+  onStarter,
+  onOpenFile,
+  starters,
+  status,
+  pendingNote,
+  name,
+  recent,
+}: {
   messages: Msg[];
   busy: boolean;
+  liveSteps: string[];
   threadId: string | null;
   onReview: () => void;
   onStarter: (text: string) => void;
+  onOpenFile: (path: string) => void;
   starters: StarterCard[];
   status: "ok" | "wait";
   pendingNote: boolean;
@@ -47,23 +86,56 @@ export function Thread({ messages, busy, threadId, onReview, onStarter, starters
 
   useEffect(() => {
     if (items.length || busy) endRef.current?.scrollIntoView({ block: "end" });
-  }, [items.length, busy]);
+  }, [items.length, busy, liveSteps.length]);
 
   if (!items.length && !busy) {
-    return <Empty status={status} starters={starters} onStarter={onStarter} name={name} recent={recent} />;
+    return (
+      <Empty
+        status={status}
+        starters={starters}
+        onStarter={onStarter}
+        onOpenFile={onOpenFile}
+        name={name}
+        recent={recent}
+      />
+    );
   }
 
   return (
     <div className="mx-auto flex w-full max-w-[780px] flex-col gap-5">
-      {items.map((it, i) => <Row key={i} it={it} time={time} onReview={onReview} />)}
+      {items.map((it, i) => <Row key={i} it={it} time={time} onReview={onReview} onOpenFile={onOpenFile} />)}
       {busy && (
         <div role="status" className="relative overflow-hidden rounded-card border border-hairline bg-surface px-4 py-3.5">
           <BorderTrail size={56} />
-          <div className="flex items-center gap-2.5 text-sm font-medium text-ink">
-            <span aria-hidden className="size-2 rounded-full bg-blue motion-safe:animate-pulse" />
-            <TextShimmer as="span">Agent is working on it</TextShimmer>
+          <div className="flex items-center justify-between gap-2.5 text-sm font-medium text-ink">
+            <span className="flex items-center gap-2.5">
+              <span aria-hidden className="size-2 rounded-full bg-blue motion-safe:animate-pulse" />
+              <TextShimmer as="span">Agent is working on it</TextShimmer>
+            </span>
+            {liveSteps.length > 0 && (
+              <span className="mono text-xs text-ink-3">
+                {liveSteps.length} {liveSteps.length === 1 ? "step" : "steps"}
+              </span>
+            )}
           </div>
-          <p className="mt-1 text-xs text-ink-2">Running sandboxed workspace tools and verifying written files…</p>
+          {liveSteps.length === 0 ? (
+            <p className="mt-1 text-xs text-ink-2">Running sandboxed workspace tools and verifying written files…</p>
+          ) : (
+            <ol aria-label="Live tool progress" className="mt-2.5 flex flex-col gap-1.5 border-t border-hairline pt-2.5">
+              {liveSteps.map((s, idx) => {
+                const parsed = liveStepLabel(s);
+                return (
+                  <li key={idx} className="flex items-center justify-between gap-2 text-xs text-ink">
+                    <span className="flex min-w-0 items-center gap-1.5">
+                      <Check className="size-3.5 shrink-0 text-dot-green" strokeWidth={1.75} aria-hidden />
+                      <span className="truncate">{parsed.label}</span>
+                    </span>
+                    {parsed.tool && <span className="mono shrink-0 rounded-chip bg-track px-1.5 py-0.5 text-ink-2">{parsed.tool}</span>}
+                  </li>
+                );
+              })}
+            </ol>
+          )}
         </div>
       )}
       {pendingNote && (
@@ -76,11 +148,16 @@ export function Thread({ messages, busy, threadId, onReview, onStarter, starters
   );
 }
 
-function Row({ it, time, onReview }: { it: Item; time: string; onReview: () => void }) {
+function Row({ it, time, onReview, onOpenFile }: {
+  it: Item;
+  time: string;
+  onReview: () => void;
+  onOpenFile: (path: string) => void;
+}) {
   switch (it.k) {
     case "user": return <UserLine text={it.text} />;
     case "step": return <ol className="rounded-card border border-hairline bg-surface px-3.5"><LedgerRow raw={it.text} /></ol>;
-    case "finished": return <FinishedEntry time={time} task={it.task} steps={it.steps} result={it.text} notes={it.notes} />;
+    case "finished": return <FinishedEntry time={time} task={it.task} steps={it.steps} result={it.text} notes={it.notes} onOpenFile={onOpenFile} />;
     case "waiting": return <WaitingEntry time={time} name={it.name} steps={it.steps} result={it.text} onReview={onReview} />;
     case "error": return <Failure raw={it.text} />;
     default: return <Reply text={it.text} />;
@@ -112,10 +189,11 @@ export function ContourField() {
   );
 }
 
-function Empty({ status, starters, onStarter, name, recent }: {
+function Empty({ status, starters, onStarter, onOpenFile, name, recent }: {
   status: "ok" | "wait";
   starters: StarterCard[];
   onStarter: (t: string) => void;
+  onOpenFile: (path: string) => void;
   name: string;
   recent: Recent[];
 }) {
@@ -143,6 +221,7 @@ function Empty({ status, starters, onStarter, name, recent }: {
         {starters.map((card) => (
           <Button
             key={card.prompt}
+            data-starter-card=""
             variant="ghost"
             onClick={() => pickStarter(card.prompt)}
             className="mould h-auto sm:h-auto min-h-34 w-full flex-col items-stretch justify-between gap-3 whitespace-normal rounded-card border border-hairline bg-surface p-4 text-left font-normal hover:bg-board"
@@ -181,15 +260,23 @@ function Empty({ status, starters, onStarter, name, recent }: {
                 <div key={i} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-medium text-ink">{r.task}</p>
-                    <p className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-ink-2">
+                    <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-ink-2">
                       <span className="mono">{r.date}</span>
                       {files.map((f, idx) => (
-                        <span key={f + idx} className="mono inline-flex items-center gap-1 text-ink">
+                        <Button
+                          key={f + idx}
+                          size="xs"
+                          variant="outline"
+                          aria-label={`Open ${f}`}
+                          onClick={() => onOpenFile(f)}
+                          className="mono max-md:min-h-11 max-w-full gap-1 rounded-chip border-hairline bg-board/60 px-2 text-xs font-normal text-ink"
+                        >
                           <FileGlyph name={f} className="size-3.5" />
                           <span className="truncate">{f}</span>
-                        </span>
+                          <ArrowUpRight className="size-3 shrink-0 text-icon" strokeWidth={1.5} aria-hidden />
+                        </Button>
                       ))}
-                    </p>
+                    </div>
                   </div>
                   <FinishedPill />
                 </div>
@@ -202,14 +289,27 @@ function Empty({ status, starters, onStarter, name, recent }: {
   );
 }
 
-export function Composer({ value, onChange, onSend, busy, disabled }: {
+export function Composer({
+  value,
+  onChange,
+  onSend,
+  busy,
+  disabled,
+  files,
+  onUpload,
+  onOpenFile,
+}: {
   value: string;
   onChange: (v: string) => void;
   onSend: () => void;
   busy: boolean;
   disabled: boolean;
+  files: WorkspaceFile[];
+  onUpload: (path: string, content: string) => Promise<boolean>;
+  onOpenFile: (path: string) => void;
 }) {
   const ref = useRef<HTMLTextAreaElement>(null);
+  const uploadRef = useRef<HTMLInputElement>(null);
   const canSend = !disabled && !!value.trim();
 
   useEffect(() => {
@@ -219,9 +319,63 @@ export function Composer({ value, onChange, onSend, busy, disabled }: {
     el.style.height = Math.min(el.scrollHeight, 200) + "px";
   }, [value]);
 
+  const handleFiles = async (ev: React.ChangeEvent<HTMLInputElement>) => {
+    const picked = ev.target.files;
+    if (!picked || !picked.length) return;
+    for (const file of Array.from(picked)) {
+      const content = await file.text();
+      await onUpload(file.name, content);
+    }
+    ev.target.value = "";
+  };
+
   return (
     <form id="composer" aria-label="Send a task" className="mx-auto w-full max-w-[780px]" onSubmit={(e) => { e.preventDefault(); onSend(); }}>
+      {files.length > 0 && (
+        <div className="mb-2 flex flex-wrap items-center gap-1.5">
+          <span className="text-xs text-ink-3">Workspace:</span>
+          {files.slice(0, 4).map((f) => (
+            <Button
+              key={f.path}
+              type="button"
+              size="xs"
+              variant="outline"
+              aria-label={`Open ${f.path}`}
+              onClick={() => onOpenFile(f.path)}
+              className="mono max-md:min-h-11 max-w-[200px] gap-1 rounded-chip border-hairline bg-surface px-2 text-xs font-normal text-ink"
+            >
+              <FileGlyph name={f.path} className="size-3.5" />
+              <span className="truncate">{f.path}</span>
+            </Button>
+          ))}
+          {files.length > 4 && (
+            <span className="mono text-xs text-ink-3">+{files.length - 4} more</span>
+          )}
+        </div>
+      )}
       <InputGroup className="min-h-14 items-end rounded-card border-input bg-surface shadow-raised">
+        <input
+          ref={uploadRef}
+          id="composer-file-input"
+          type="file"
+          multiple
+          className="sr-only"
+          accept=".csv,.md,.txt,.json,.log,.tsv,.py,.ts,.tsx,.js,.rs,.toml,.yaml,.yml,.html"
+          onChange={handleFiles}
+        />
+        <InputGroupAddon align="inline-start" className="pb-2 pl-2">
+          <Button
+            type="button"
+            size="icon-sm"
+            variant="ghost"
+            disabled={disabled}
+            aria-label="Upload file to workspace"
+            className="min-h-11 min-w-11 md:min-h-9 md:min-w-9"
+            onClick={() => uploadRef.current?.click()}
+          >
+            <Paperclip className="size-4 text-icon" strokeWidth={1.5} aria-hidden />
+          </Button>
+        </InputGroupAddon>
         <label htmlFor="composer-input" className="sr-only">Describe a task for your agent</label>
         <InputGroupTextarea
           id="composer-input"

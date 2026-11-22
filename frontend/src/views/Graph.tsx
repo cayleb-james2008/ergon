@@ -2,6 +2,7 @@
 // so every SVG <text> label renders >= 13px at 768px..1440px without overlap or clipping, paired with a
 // SegmentedControl view toggle and an accessible structured list.
 import { useEffect, useMemo, useRef, useState } from "react";
+import { ArrowUpRight } from "lucide-react";
 import { SlidingNumber } from "@/components/ui/sliding-number";
 import { SegmentedControl, SegmentedControlItem } from "@/components/ui/segmented-control";
 import { Badge } from "@/components/ui/badge";
@@ -63,7 +64,7 @@ export function layout(nodes: GraphNode[], W: number) {
   return { pos, height, step, bands, bandX, room };
 }
 
-export function GraphFace() {
+export function GraphFace({ onOpenFile }: { onOpenFile?: (path: string) => void }) {
   const [graph, setGraph] = useState<GraphPayload | null>(null);
   const [failed, setFailed] = useState(false);
   const [hot, setHot] = useState<string | null>(null);
@@ -301,6 +302,18 @@ export function GraphFace() {
                 </div>
                 <div className="flex shrink-0 items-center gap-3">
                   {n.detail && <span className="mono text-xs text-ink-3">{String(n.detail)}</span>}
+                  {n.kind === "file" && onOpenFile && label && (
+                    <Button
+                      size="xs"
+                      variant="ghost"
+                      className="max-md:min-h-11"
+                      aria-label={`Open ${label}`}
+                      onClick={() => onOpenFile(label)}
+                    >
+                      Open
+                      <ArrowUpRight className="size-3.5" strokeWidth={1.5} aria-hidden />
+                    </Button>
+                  )}
                   <span className="mono text-xs text-ink-2">
                     {linked} {linked === 1 ? "link" : "links"}
                   </span>
