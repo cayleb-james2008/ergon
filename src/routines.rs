@@ -102,11 +102,11 @@ pub fn create_routine_with_options(
             if clean_sched.is_empty() { None } else { Some(clean_sched.as_str()) },
             Some(iv),
         )?;
-        (cadence.canonical_label(), cadence.interval_secs())
+        (cadence.canonical_label(), cadence.explicit_interval_secs())
     } else if clean_sched.is_empty() {
         ("manual".to_string(), None)
     } else if let Ok(cadence) = crate::scheduler::parse_cadence(&clean_sched) {
-        (cadence.canonical_label(), cadence.interval_secs())
+        (cadence.canonical_label(), cadence.explicit_interval_secs())
     } else {
         (clean_sched, None)
     };

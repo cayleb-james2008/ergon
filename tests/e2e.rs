@@ -4246,5 +4246,110 @@ fn v070_scheduler_file_history_audit_bundle_and_people_switch_http_e2e() {
     assert_eq!(serde_json::from_str::<Value>(&sw).unwrap()["active"], json!(pid));
 }
 
+/// v0.7.0 BUG-04 regression: wall-clock schedules (`daily 09:00`, `hourly`, `weekly mon`)
+/// must NOT degrade into relative `every 1d`/`every 1h`/`every 7d` intervals on POST,
+/// PATCH, GET readback, or legacy persisted records carrying stale `interval_secs`.
+#[test]
+fn v070_wall_clock_schedules_preserve_utc_slots_and_cadence_labels() {
+    let root = test_root("v070_bug04_wallclock");
+    let cfg = test_config(&root, Some("k"), "http://127.0.0.1:9/v1".to_string());
+    let port = start_app(cfg);
+
+    // 1. POST daily 09:00 -> exact 09:00:00.000Z slot, interval_secs null, cadence_label "daily 09:00"
+    let (st, body) = http(
+        port,
+        "POST",
+        "/api/routines",
+        Some(&json!({
+            "name": "Wall Clock Daily",
+            "prompt": "noop",
+            "schedule": "daily 09:00",
+            "enabled": true
+        }).to_string()),
+    );
+    assert_eq!(st, 201, "{body}");
+    let v: Value = serde_json::from_str(&body).unwrap();
+    let rtn = &v["routine"];
+    assert_eq!(rtn["schedule"], json!("daily 09:00"), "{rtn}");
+    assert_eq!(rtn["cadence_label"], json!("daily 09:00"), "{rtn}");
+    assert!(rtn["interval_secs"].is_null(), "daily schedule must not store interval_secs: {rtn}");
+    let next = rtn["next_run_ms"].as_u64().unwrap();
+    assert_eq!(next % 86_400_000, 9 * 3_600_000, "daily 09:00 must land at 09:00:00Z, got {next}");
+
+    // 2. Readback via GET /api/routines preserves daily 09:00 & 09:00:00Z
+    let (st, list_body) = http(port, "GET", "/api/routines", None);
+    assert_eq!(st, 200, "{list_body}");
+    let lv: Value = serde_json::from_str(&list_body).unwrap();
+    let r0 = &lv["routines"][0];
+    assert_eq!(r0["cadence_label"], json!("daily 09:00"), "{r0}");
+    assert!(r0["interval_secs"].is_null(), "{r0}");
+    assert_eq!(r0["next_run_ms"].as_u64().unwrap() % 86_400_000, 9 * 3_600_000, "{r0}");
+
+    // 3. POST hourly and weekly mon preserve exact wall-clock slots
+    let (st, hbody) = http(
+        port,
+        "POST",
+        "/api/routines",
+        Some(&json!({"name": "Hourly Pulse", "prompt": "noop", "schedule": "hourly"}).to_string()),
+    );
+    assert_eq!(st, 201, "{hbody}");
+    let hr = &serde_json::from_str::<Value>(&hbody).unwrap()["routine"];
+    assert_eq!(hr["cadence_label"], json!("hourly"), "{hr}");
+    assert!(hr["interval_secs"].is_null(), "{hr}");
+    assert_eq!(hr["next_run_ms"].as_u64().unwrap() % 3_600_000, 0, "hourly must land at :00:00Z: {hr}");
+
+    let (st, wbody) = http(
+        port,
+        "POST",
+        "/api/routines",
+        Some(&json!({"name": "Weekly Mon", "prompt": "noop", "schedule": "weekly mon"}).to_string()),
+    );
+    assert_eq!(st, 201, "{wbody}");
+    let wr = &serde_json::from_str::<Value>(&wbody).unwrap()["routine"];
+    assert_eq!(wr["cadence_label"], json!("weekly mon"), "{wr}");
+    assert!(wr["interval_secs"].is_null(), "{wr}");
+    assert_eq!(wr["next_run_ms"].as_u64().unwrap() % 86_400_000, 9 * 3_600_000, "weekly mon defaults to 09:00:00Z: {wr}");
+
+    // 4. PATCH from relative every 15m -> daily 09:00 removes interval_secs & restores 09:00:00Z
+    let (st, ibody) = http(
+        port,
+        "POST",
+        "/api/routines",
+        Some(&json!({"name": "Switch Test", "prompt": "noop", "schedule": "every 15m"}).to_string()),
+    );
+    assert_eq!(st, 201, "{ibody}");
+    let ir = &serde_json::from_str::<Value>(&ibody).unwrap()["routine"];
+    assert_eq!(ir["interval_secs"], json!(900), "{ir}");
+    let rid = ir["id"].as_str().unwrap();
+    let (st, pbody) = http(
+        port,
+        "PATCH",
+        &format!("/api/routines/{rid}"),
+        Some(&json!({"enabled": true, "schedule": "daily 09:00"}).to_string()),
+    );
+    assert_eq!(st, 200, "{pbody}");
+    let pr = &serde_json::from_str::<Value>(&pbody).unwrap()["routine"];
+    assert_eq!(pr["cadence_label"], json!("daily 09:00"), "{pr}");
+    assert!(pr["interval_secs"].is_null(), "PATCH to wall-clock must clear interval_secs: {pr}");
+    assert_eq!(pr["next_run_ms"].as_u64().unwrap() % 86_400_000, 9 * 3_600_000, "{pr}");
+
+    // 5. Legacy record carrying stale interval_secs alongside wall-clock schedule still resolves cleanly
+    let legacy = json!({
+        "id": "rtn-legacy",
+        "schedule": "daily 09:00",
+        "interval_secs": 86400,
+        "enabled": true,
+        "created_ms": 1_795_357_177_929u64
+    });
+    let enriched = ergon_rs::scheduler::enrich_routine_json(&legacy, 1_795_357_177_929u64, &[]);
+    assert_eq!(enriched["cadence_label"], json!("daily 09:00"), "{enriched}");
+    assert!(enriched["interval_secs"].is_null(), "{enriched}");
+    assert_eq!(
+        enriched["next_run_ms"].as_u64().unwrap() % 86_400_000,
+        9 * 3_600_000,
+        "legacy record must resolve to 09:00:00Z: {enriched}"
+    );
+}
+
 
 
