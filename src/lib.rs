@@ -156,7 +156,7 @@ pub fn sandbox_path_resolving(
     }
     let canon_root = root
         .canonicalize()
-        .unwrap_or_else(|_| normalize_absolute(&root.to_path_buf()));
+        .unwrap_or_else(|_| normalize_absolute(root));
     let mut cur = canon_root.clone();
     let mut hops = 0usize;
     while let Some(step) = queue.pop_front() {
@@ -167,7 +167,7 @@ pub fn sandbox_path_resolving(
             Step::Push(part) => {
                 cur.push(&part);
                 let is_final = queue.is_empty();
-                if !(is_final && !resolve_final) {
+                if !is_final || resolve_final {
                     if let Ok(md) = cur.symlink_metadata() {
                         if md.file_type().is_symlink() {
                             hops += 1;
@@ -384,10 +384,11 @@ fn workspace_has_basename(dir: &Path, base: &str, depth: usize) -> bool {
         if name == base {
             return true;
         }
-        if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) && !name.starts_with('.') {
-            if workspace_has_basename(&entry.path(), base, depth + 1) {
-                return true;
-            }
+        if entry.file_type().map(|t| t.is_dir()).unwrap_or(false)
+            && !name.starts_with('.')
+            && workspace_has_basename(&entry.path(), base, depth + 1)
+        {
+            return true;
         }
     }
     false
@@ -407,10 +408,9 @@ pub fn truncate(s: &str, max_chars: usize) -> String {
 pub fn html_to_text(html: &str) -> String {
     let lower = html.to_lowercase();
     let mut out = String::with_capacity(html.len());
-    let mut chars = html.char_indices().peekable();
     let mut in_tag = false;
     let mut skip_until: Option<&str> = None;
-    while let Some((i, c)) = chars.next() {
+    for (i, c) in html.char_indices() {
         if let Some(close) = skip_until {
             if lower[i..].starts_with(close) {
                 skip_until = None;
@@ -1598,13 +1598,10 @@ fn system_prompt(cfg: &Config, suite_items: &[library::LibraryItem]) -> String {
          - publish_skill {{\"name\": \"...\", \"description\": \"...\", \"params\": [\"entry\"], \"source\": \"<Rune script>\"}} — contribute a reusable skill you wrote to the company library, so every person's agent can use it. Library skills are Rune scripts whose main takes the declared params as strings in order and returns a string (or \"file:<name>\" after writing a file through host_workspace_write). A script that does not compile is refused.\n\
          - delegate {{\"subagent\": \"researcher\", \"task\": \"...\"}} — hand a focused sub-task to a specialist subagent from the suite; it works with the same tools and returns its result to you.\n\
          - delete_file {{\"path\": \"old.txt\"}} — CONSEQUENTIAL: deleting is permanent, so this does not delete immediately — it parks the deletion as a decision for your person to approve. Never claim a file was deleted when it was only parked.\n\
-         - flag_decision {{\"summary\": \"...\"}} — raise a question as a decision in your person's inbox when a choice is genuinely theirs to make.{suite}\n\n\
+         - flag_decision {{\"summary\": \"...\"}} — raise a question as a decision in your person's inbox when a choice is genuinely theirs to make.{suite_block}\n\n\
          RULES: Use tools to do the real work; never claim work you did not do through a tool. When you learn a durable preference or fact about this person, record it with update_memory before finishing. When you build something reusable, publish it to the library so the whole company benefits. Finish with done only when the task is actually complete.\n\n\
-         PREFERENCES AND FACTS THIS PERSON HAS TAUGHT YOU — apply them in every task:\n{prefs}\n\n\
-         WHAT YOU KNOW ABOUT THIS PERSON (their memory file — treat it as true and use it):\n{memory}",
-        prefs = prefs_block,
-        memory = memory,
-        suite = suite_block
+         PREFERENCES AND FACTS THIS PERSON HAS TAUGHT YOU — apply them in every task:\n{prefs_block}\n\n\
+         WHAT YOU KNOW ABOUT THIS PERSON (their memory file — treat it as true and use it):\n{memory}"
     )
 }
 
@@ -3082,7 +3079,7 @@ fn handle_connection(mut stream: std::net::TcpStream, state: &AppState) -> std::
                 );
             }
             let suite = library::load_suite(&runtime.cfg.data_dir);
-            if !suite.installed.iter().any(|i| *i == item.id) {
+            if !suite.installed.contains(&item.id) {
                 return respond_json(
                     &mut stream,
                     400,

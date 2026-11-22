@@ -15,7 +15,7 @@ use ergon_rs::Config;
 use serde_json::{json, Value};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -23,15 +23,18 @@ static COUNTER: AtomicU64 = AtomicU64::new(0);
 
 fn test_root(name: &str) -> PathBuf {
     let n = COUNTER.fetch_add(1, Ordering::SeqCst);
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("target/test-data")
+    let target_dir = std::env::var_os("CARGO_TARGET_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target"));
+    let root = target_dir
+        .join("test-data")
         .join(format!("{name}-{}-{n}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
     std::fs::create_dir_all(&root).unwrap();
     root
 }
 
-fn test_config(root: &PathBuf, api_key: Option<&str>, model_base: String) -> Config {
+fn test_config(root: &Path, api_key: Option<&str>, model_base: String) -> Config {
     let data_dir = root.join("data");
     let workspace_dir = data_dir.join("workspace");
     std::fs::create_dir_all(&workspace_dir).unwrap();
@@ -2878,7 +2881,7 @@ fn cross_site_requests_are_refused_and_change_nothing() {
     let rebound = format!("POST /api/people HTTP/1.1\r\nHost: evil.example:{port}\r\n{json_ct}");
     let (status, _) = raw_http(port, &rebound, body);
     assert_eq!(status, 403, "a foreign Host is refused");
-    let (status, _) = raw_http(port, &format!("GET /api/status HTTP/1.1\r\nHost: evil.example\r\n"), "");
+    let (status, _) = raw_http(port, "GET /api/status HTTP/1.1\r\nHost: evil.example\r\n", "");
     assert_eq!(status, 403, "a foreign Host is refused for reads too");
 
     let (_, people) = http(port, "GET", "/api/people", None);
@@ -2900,7 +2903,7 @@ fn over_long_header_line_is_refused_and_server_survives() {
     let cfg = test_config(&root, None, "http://127.0.0.1:9/v1".to_string());
     let port = start_app(cfg);
     let mut req = b"GET /api/status HTTP/1.1\r\nHost: 127.0.0.1\r\nX-Pad: ".to_vec();
-    req.extend(std::iter::repeat(b'a').take(200 * 1024));
+    req.extend(std::iter::repeat_n(b'a', 200 * 1024));
     let mut stream = TcpStream::connect(("127.0.0.1", port)).unwrap();
     let _ = stream.write_all(&req);
     let _ = stream.shutdown(std::net::Shutdown::Write);
