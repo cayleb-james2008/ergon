@@ -1,5 +1,5 @@
 // Ergon v0.5.0 client state: conversations, live SSE (/api/runs/stream) + /api/runs/status fallback,
-// active run cancellation, multi-file upload, 12 Rune skills catalog, recurring routines, drafts,
+// active run cancellation, multi-file upload, 12 built-in workflows catalog, recurring routines, drafts,
 // pending recovery, person isolation, and live rail/tab counts.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";

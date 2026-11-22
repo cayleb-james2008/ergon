@@ -1,6 +1,14 @@
-// Canonical catalog of all 12 Ergon v0.5.0 Rune skills with progressive merge over GET /api/skills.
-// Keeps full metadata, categories, input schemas, sample prompts, and Rune previews available even
+// Canonical catalog of all 12 Ergon v0.5.0 built-in workflows with progressive merge over GET /api/skills.
+// Keeps full metadata, categories, input schemas, sample prompts, and script previews available even
 // before a server advertises /api/skills, while seamlessly upgrading to live server catalog payloads.
+
+function sanitizeDisplaySource(src: string): string {
+  return src
+    .replace(/\s*\(Rune\)/gi, "")
+    .replace(/\bRune\b/gi, "Workflow")
+    .replace(/([a-z0-9_-]+)\.rn\b/gi, "$1")
+    .trim();
+}
 
 export type SkillCategory =
   | "Finance"
@@ -33,7 +41,7 @@ export const CANONICAL_SKILLS: SkillMeta[] = [
     title: "Reconcile ledger",
     category: "Finance",
     tone: "mint",
-    filename: "reconcile_ledger.rn",
+    filename: "reconcile_ledger",
     description:
       "Matches multi-CSV invoices and expense logs, computes vendor and category subtotals, and flags duplicate references or missing receipts.",
     inputs: ["csv_files", "threshold?"],
@@ -42,7 +50,7 @@ export const CANONICAL_SKILLS: SkillMeta[] = [
       "Reconcile expenses-q3.csv, compute vendor and category totals, and flag missing receipts or duplicates.",
       "Cross-check all workspace expense CSVs and write a reconciled ledger plus audit summary.",
     ],
-    source: `// reconcile_ledger.rn — deterministic multi-CSV expense & invoice audit
+    source: `// reconcile_ledger — deterministic multi-CSV expense & invoice audit
 pub fn run(args) {
   let rows = ergon::parse_csv(ergon::read_file(args.path)?);
   let audit = ergon::reconcile_rows(rows);
@@ -57,7 +65,7 @@ pub fn run(args) {
     title: "Summarize meeting",
     category: "Documents",
     tone: "ops",
-    filename: "summarize_meeting.rn",
+    filename: "summarize_meeting",
     description:
       "Distills meeting transcripts and raw notes into decisions made, owners, due dates, open blockers, and a ready-to-send follow-up draft.",
     inputs: ["notes_file", "audience?"],
@@ -66,7 +74,7 @@ pub fn run(args) {
       "Summarize tuesday-sync-notes.md into decisions, action owners, due dates, and a follow-up draft.",
       "Extract all unchecked action items and owners from my latest meeting notes.",
     ],
-    source: `// summarize_meeting.rn — structured decisions, owners, due dates & follow-up
+    source: `// summarize_meeting — structured decisions, owners, due dates & follow-up
 pub fn run(args) {
   let notes = ergon::read_file(args.notes_file)?;
   let digest = ergon::extract_meeting_digest(notes);
@@ -80,7 +88,7 @@ pub fn run(args) {
     title: "Audit contract",
     category: "Compliance",
     tone: "plan",
-    filename: "audit_contract.rn",
+    filename: "audit_contract",
     description:
       "Audits contracts and vendor agreements for renewal dates, liability caps, indemnity, termination notice, and missing clauses with line citations.",
     inputs: ["contract_file", "required_clauses?"],
@@ -89,7 +97,7 @@ pub fn run(args) {
       "Audit the vendor agreement in my workspace for renewal windows, liability terms, and missing clauses with line citations.",
       "Check workspace agreements for auto-renewal traps and output a line-cited risk table.",
     ],
-    source: `// audit_contract.rn — clause presence check, renewal dates & line-cited risk table
+    source: `// audit_contract — clause presence check, renewal dates & line-cited risk table
 pub fn run(args) {
   let text = ergon::read_file(args.contract_file)?;
   let findings = ergon::scan_contract_clauses(text, args.required_clauses);
@@ -103,7 +111,7 @@ pub fn run(args) {
     title: "Triage inbox",
     category: "Operations",
     tone: "ops",
-    filename: "triage_inbox.rn",
+    filename: "triage_inbox",
     description:
       "Sorts incoming messages, tickets, or ops requests into Urgent, Action, and FYI queues with concrete next steps and owner suggestions.",
     inputs: ["source_file"],
@@ -112,7 +120,7 @@ pub fn run(args) {
       "Triage workspace tickets and messages into Urgent, Action, and FYI queues with concrete next steps.",
       "Prioritize open support notes and draft a morning triage queue.",
     ],
-    source: `// triage_inbox.rn — Urgent / Action / FYI priority routing
+    source: `// triage_inbox — Urgent / Action / FYI priority routing
 pub fn run(args) {
   let items = ergon::read_file(args.source_file)?;
   let queue = ergon::classify_triage(items);
@@ -126,7 +134,7 @@ pub fn run(args) {
     title: "Clean dataset",
     category: "Data",
     tone: "mint",
-    filename: "clean_dataset.rn",
+    filename: "clean_dataset",
     description:
       "Normalizes CSV/JSON column headers and value formats, removes duplicate records, flags nulls and numeric outliers, and reports exact diff metrics.",
     inputs: ["dataset_file"],
@@ -135,7 +143,7 @@ pub fn run(args) {
       "Clean and deduplicate expenses-q3.csv, flag nulls or numeric outliers, and save a diff metrics report.",
       "Normalize whitespace and schema headers across my uploaded CSV dataset.",
     ],
-    source: `// clean_dataset.rn — schema normalization, deduplication & outlier metrics
+    source: `// clean_dataset — schema normalization, deduplication & outlier metrics
 pub fn run(args) {
   let raw = ergon::read_file(args.dataset_file)?;
   let cleaned = ergon::normalize_dataset(raw);
@@ -150,7 +158,7 @@ pub fn run(args) {
     title: "Compare documents",
     category: "Compliance",
     tone: "plan",
-    filename: "compare_documents.rn",
+    filename: "compare_documents",
     description:
       "Computes a deterministic line-by-line diff between two workspace files and writes a clear change summary highlighting additions and removals.",
     inputs: ["left_file", "right_file"],
@@ -159,7 +167,7 @@ pub fn run(args) {
       "Compare two documents in my workspace line by line and write a structured change summary.",
       "Diff old-vendor-draft.txt against tuesday-sync-notes.md and summarize every change.",
     ],
-    source: `// compare_documents.rn — deterministic line-by-line diff & change summary
+    source: `// compare_documents — deterministic line-by-line diff & change summary
 pub fn run(args) {
   let a = ergon::read_file(args.left_file)?;
   let b = ergon::read_file(args.right_file)?;
@@ -174,7 +182,7 @@ pub fn run(args) {
     title: "Draft brief",
     category: "Documents",
     tone: "research",
-    filename: "draft_brief.rn",
+    filename: "draft_brief",
     description:
       "Authors an executive memo or SOP grounded strictly in your workspace files and standing memory rules, citing every source file used.",
     inputs: ["topic", "sources?"],
@@ -183,7 +191,7 @@ pub fn run(args) {
       "Draft an executive brief grounded in my workspace files and standing preferences.",
       "Write a concise operational SOP from the notes in my workspace.",
     ],
-    source: `// draft_brief.rn — workspace-grounded executive memo & SOP author
+    source: `// draft_brief — workspace-grounded executive memo & SOP author
 pub fn run(args) {
   let mem = ergon::read_memory()?;
   let files = ergon::collect_sources(args.sources)?;
@@ -198,7 +206,7 @@ pub fn run(args) {
     title: "Extract tables",
     category: "Data",
     tone: "mint",
-    filename: "extract_tables.rn",
+    filename: "extract_tables",
     description:
       "Parses unstructured Markdown tables, key-value logs, or bulleted metrics into clean, verified RFC-4180 CSV spreadsheets.",
     inputs: ["source_file", "output_csv?"],
@@ -207,7 +215,7 @@ pub fn run(args) {
       "Extract structured tables from my workspace notes into a clean CSV spreadsheet.",
       "Parse key-value lines from logs or notes into extracted-table.csv.",
     ],
-    source: `// extract_tables.rn — unstructured Markdown/log text -> verified CSV
+    source: `// extract_tables — unstructured Markdown/log text -> verified CSV
 pub fn run(args) {
   let text = ergon::read_file(args.source_file)?;
   let table = ergon::extract_structured_rows(text);
@@ -221,7 +229,7 @@ pub fn run(args) {
     title: "Make spreadsheet",
     category: "Data",
     tone: "mint",
-    filename: "make_spreadsheet.rn",
+    filename: "make_spreadsheet",
     description:
       "Writes verified RFC-4180 CSV spreadsheets with checked column totals, normalized numeric columns, and clean headers.",
     inputs: ["title", "columns", "rows"],
@@ -230,7 +238,7 @@ pub fn run(args) {
       "Make a clean Q4 budget spreadsheet in CSV format with checked column totals.",
       "Build a vendor tracking CSV from my workspace files.",
     ],
-    source: `// make_spreadsheet.rn — verified CSV authoring with checked column totals
+    source: `// make_spreadsheet — verified CSV authoring with checked column totals
 pub fn run(args) {
   let csv = ergon::format_csv(args.columns, args.rows);
   ergon::write_file(args.title, csv)?;
@@ -243,7 +251,7 @@ pub fn run(args) {
     title: "Write document",
     category: "Documents",
     tone: "ops",
-    filename: "write_document.rn",
+    filename: "write_document",
     description:
       "Formats structured Markdown deliverables, reports, and checklists into your sandboxed workspace while applying standing memory rules.",
     inputs: ["title", "sections"],
@@ -252,7 +260,7 @@ pub fn run(args) {
       "Write a structured weekly status document summarizing finished workspace deliverables.",
       "Tidy my workspace notes into a clear Markdown summary document.",
     ],
-    source: `// write_document.rn — structured Markdown report writer
+    source: `// write_document — structured Markdown report writer
 pub fn run(args) {
   let body = ergon::format_markdown(args.title, args.sections);
   ergon::write_file(args.title, body)?;
@@ -265,7 +273,7 @@ pub fn run(args) {
     title: "Research",
     category: "Research",
     tone: "research",
-    filename: "research.rn",
+    filename: "research",
     description:
       "Cross-searches workspace files and notes to compile sourced research findings with explicit file and line citations.",
     inputs: ["topic", "query?"],
@@ -274,7 +282,7 @@ pub fn run(args) {
       "Research all workspace files for vendor risks and deadlines, and save a cited findings brief.",
       "Search workspace files for Q3/Q4 deliverables and compile sourced research notes.",
     ],
-    source: `// research.rn — sourced multi-file workspace research & citation compiler
+    source: `// research — sourced multi-file workspace research & citation compiler
 pub fn run(args) {
   let hits = ergon::search_files(args.query)?;
   let brief = ergon::compile_research(args.topic, hits);
@@ -288,7 +296,7 @@ pub fn run(args) {
     title: "Update memory",
     category: "Memory",
     tone: "plan",
-    filename: "update_memory.rn",
+    filename: "update_memory",
     description:
       "Records standing employee preferences, formatting rules, and review standards into personal memory.md so future tasks follow them automatically.",
     inputs: ["note"],
@@ -297,7 +305,7 @@ pub fn run(args) {
       "Remember to lead every executive brief with top risks, owners, and exact dates.",
       "Always flag expense variances over $250 in reconciliations.",
     ],
-    source: `// update_memory.rn — standing personal preferences persisted in memory.md
+    source: `// update_memory — standing personal preferences persisted in memory.md
 pub fn run(args) {
   ergon::append_memory_rule(args.note)?;
   Ok("recorded")
@@ -390,12 +398,12 @@ export function mergeServerSkills(payload: unknown): SkillMeta[] {
       title: String(obj.title ?? obj.name ?? base?.title ?? id.replace(/_/g, " ")).trim(),
       category,
       tone: base?.tone ?? toneForCategory(category),
-      filename: String(obj.filename ?? base?.filename ?? `${id}.rn`).trim(),
-      description: String(obj.description ?? base?.description ?? "Sandboxed Rune workflow skill.").trim(),
+      filename: String(obj.filename ?? base?.filename ?? id).replace(/\.rn$/i, "").trim(),
+      description: String(obj.description ?? base?.description ?? "Sandboxed built-in workflow.").trim(),
       inputs: extractInputs(obj.input_schema ?? obj.params ?? obj.inputs, base?.inputs ?? ["input"]),
       sample_prompt: singleSample || sample_prompts[0],
       sample_prompts,
-      source: String(obj.source ?? obj.rune_source ?? base?.source ?? "").trim(),
+      source: sanitizeDisplaySource(String(obj.source ?? obj.rune_source ?? base?.source ?? "")),
       builtin: typeof obj.builtin === "boolean" ? obj.builtin : (base?.builtin ?? true),
     });
   }

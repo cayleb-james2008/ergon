@@ -1,5 +1,5 @@
 // Ergon v0.5.0 Local-First Browser Engine (Standalone Web Edition)
-// Real IndexedDB workspace + all 12 deterministic client-side Rune-equivalent skills
+// Real IndexedDB workspace + all 12 deterministic client-side built-in workflows
 // (reconcile_ledger, summarize_meeting, audit_contract, triage_inbox, clean_dataset,
 // compare_documents, draft_brief, extract_tables, make_spreadsheet, write_document,
 // research, update_memory), recurring routines, indexed search, live EventSource stream,
@@ -682,7 +682,7 @@ function buildInitialState(): RootState {
     "# Tuesday Product & Operations Sync",
     "",
     "## Updates",
-    "- Decided: Ship Ergon v0.5.0 with 12 verified Rune skills and SHA-256 receipts.",
+    "- Decided: Ship Ergon v0.5.0 with 12 built-in workflows and SHA-256 receipts.",
     "- Owner: Maya Chen — finalize Q3 vendor reconciliation before Friday close.",
     "- [ ] Owner: Tomas Ruiz — chase missing $240.00 CloudHost Backup receipt by Thursday.",
     "- [ ] Owner: Priya Raman — publish dark-mode accessibility checklist for Settings.",
@@ -1289,7 +1289,7 @@ export async function installBrowserEngine(): Promise<void> {
     throw new Error("Stopped after 10 BYOK steps without completion.");
   }
 
-  /** Real deterministic client-side dispatcher covering ALL 12 Rune skills over IndexedDB files. */
+  /** Real deterministic client-side dispatcher covering ALL 12 built-in workflows over IndexedDB files. */
   async function runDeterministicTask(
     st: PersonStore,
     thread: WebThread,

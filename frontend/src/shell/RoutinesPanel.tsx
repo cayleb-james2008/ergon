@@ -1,6 +1,6 @@
 // Recurring Routines MorphingDialog (always mounted OUTSIDE Vaul Drawer):
 // - Lists standing routines from GET /api/routines (with localStorage progressive fallback on pre-v0.5.0 servers)
-// - Create new recurring routine (POST /api/routines) with cadence presets & linked Rune skill
+// - Create new recurring routine (POST /api/routines) with cadence presets & linked workflow
 // - Run Now (POST /api/routines/:id/run, falling back to running prompt directly in Today/Chat)
 // - Delete routine (DELETE /api/routines/:id)
 import { useEffect, useState } from "react";
@@ -154,7 +154,7 @@ function RoutinesBody({
 
             <div className="flex flex-col gap-1">
               <label htmlFor="routine-skill" className="text-xs font-medium text-ink">
-                Rune skill (optional)
+                Built-in workflow (optional)
               </label>
               <select
                 id="routine-skill"

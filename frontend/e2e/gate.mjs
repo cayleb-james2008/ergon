@@ -190,7 +190,7 @@ await reset();
   ok("empty chat renders 4 rich starter cards and fills composer", starterCount === 4 && draftFilled);
   await p.screenshot({ path: `${OUT}/empty-starters-1440.png` });
 
-  // Ctrl+K opens Global Command Palette (cmdk), filters 12 Rune skills, and Enter on "New task" focuses Chat composer
+  // Ctrl+K opens Global Command Palette (cmdk), filters 12 built-in workflows, and Enter on "New task" focuses Chat composer
   await p.locator('[role="tab"][data-id="graph"]').click();
   await p.waitForTimeout(300);
   await p.keyboard.press("Control+k");
@@ -207,20 +207,21 @@ await reset();
   await p.waitForTimeout(300);
   const composerFocusedViaPalette = await p.evaluate(() => document.activeElement?.id === "composer-input");
   ok(
-    "ctrl+k opens Command Palette, searches 12 Rune skills, and runs New task",
+    "ctrl+k opens Command Palette, searches 12 built-in workflows, and runs New task",
     paletteInputFocused && skillHitVisible && composerFocusedViaPalette,
     `focused=${paletteInputFocused} skill=${skillHitVisible} composer=${composerFocusedViaPalette}`
   );
 
-  // 12 Rune Skills & Recurring Routines MorphingDialogs open, filter/create/delete, and close cleanly
+  // 12 Built-in Workflows & Recurring Routines MorphingDialogs open, filter/create/delete, and close cleanly
   await p.locator('[data-thing="skills-btn"]').click();
   await p.waitForSelector("#skills-panel", { timeout: 4000 });
   const skillCardCount = await p.locator("#skills-panel [data-skill-id]").count();
-  await p.locator("#skills-panel [data-skill-id='reconcile_ledger']").getByRole("button", { name: "Test skill" }).click();
+  const zeroRuneJargon = await p.evaluate(() => !/\bRune\s+(skills?|scripts?|source|sandbox)\b/i.test(document.body.innerText));
+  await p.locator("#skills-panel [data-skill-id='reconcile_ledger']").getByRole("button", { name: "Test workflow" }).click();
   await p.waitForSelector("#skills-panel [role='status']", { timeout: 4000 });
   await p.keyboard.press("Escape");
   await p.locator("#skills-panel").waitFor({ state: "hidden", timeout: 4000 }).catch(() => {});
-  ok("skills morphing dialog lists all 12 Rune skills and tests cleanly", skillCardCount === 12, `count=${skillCardCount}`);
+  ok("workflows morphing dialog lists all 12 built-in workflows without Rune jargon and tests cleanly", skillCardCount === 12 && zeroRuneJargon, `count=${skillCardCount} zeroRune=${zeroRuneJargon}`);
 
   await p.locator('[data-thing="routines-btn"]').click();
   await p.waitForSelector("#routines-panel", { timeout: 4000 });
@@ -464,7 +465,7 @@ await reset();
         available: true,
         can_apply: true,
         dev_build: false,
-        notes: "Faster Rune sandbox execution.",
+        notes: "Faster sandboxed workflow execution.",
         release_url: "https://github.com/cayleb-james2008/ergon/releases/tag/v0.4.0",
       }),
     })
@@ -550,7 +551,7 @@ await reset();
   await p.keyboard.press("Escape");
   await p.locator("#settings-panel").waitFor({ state: "hidden", timeout: 4000 });
 
-  // Mobile Menu -> Rune skills & Routines dialogs open cleanly outside Vaul drawer
+  // Mobile Menu -> Workflows & Routines dialogs open cleanly outside Vaul drawer
   await p.getByRole("button", { name: "Open menu" }).click();
   await p.waitForSelector('[data-thing="skills-btn"]', { timeout: 4000 });
   await p.locator('[data-thing="skills-btn"]').click();
@@ -558,6 +559,7 @@ await reset();
   const mobileSkillsOk = (await p.locator("#skills-panel [data-skill-id]").count()) === 12;
   await p.keyboard.press("Escape");
   await p.locator("#skills-panel").waitFor({ state: "hidden", timeout: 4000 });
+  await p.locator('[role="dialog"]').waitFor({ state: "hidden", timeout: 4000 }).catch(() => {});
   await p.getByRole("button", { name: "Open menu" }).click();
   await p.waitForSelector('[data-thing="routines-btn"]', { timeout: 4000 });
   await p.locator('[data-thing="routines-btn"]').click();
@@ -565,7 +567,8 @@ await reset();
   const mobileRoutinesOk = await p.locator("#routines-panel").isVisible();
   await p.keyboard.press("Escape");
   await p.locator("#routines-panel").waitFor({ state: "hidden", timeout: 4000 });
-  ok("phone Menu -> Skills & Routines dialogs open cleanly without drawer blocking", mobileSkillsOk && mobileRoutinesOk);
+  await p.locator('[role="dialog"]').waitFor({ state: "hidden", timeout: 4000 }).catch(() => {});
+  ok("phone Menu -> Workflows & Routines dialogs open cleanly without drawer blocking", mobileSkillsOk && mobileRoutinesOk);
 
   ok("phone side column under the paper", (await p.getByRole("heading", { name: "Team" }).count()) === 1);
 

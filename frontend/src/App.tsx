@@ -2,7 +2,7 @@
 // Unified shell:
 // - Persistent 256px Left Rail on >=768px (Vaul Drawer <768px): Ergon wordmark, active person desk,
 //   primary New chat action, `/` conversation filter with Kbd hint, paginated AnimatedBackground thread list,
-//   Workspace files, 12 Rune Skills, Recurring Routines, Learned memory, Suite & Library, Add person,
+//   Workspace files, 12 built-in workflows, Recurring Routines, Learned memory, Suite & Library, Add person,
 //   and Settings (Model, Workspace & Appearance) MorphingDialogs — Light/Dark theme switch lives exclusively
 //   inside Settings (never on main chrome).
 // - ALL rail MorphingDialogs & Command Palette live OUTSIDE Vaul <Drawer.Content> (z-40 drawer / z-50 dialogs)
@@ -431,7 +431,7 @@ export function App() {
           />
           <RailPanelButton
             id="skills-btn"
-            label="Rune skills"
+            label="Workflows"
             icon={<Sparkles className="size-3.5 shrink-0 text-icon" strokeWidth={1.5} aria-hidden />}
             count={e.skills.length}
             expanded={openPanel === "skills"}

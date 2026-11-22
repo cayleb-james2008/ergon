@@ -1,6 +1,6 @@
 # Ergon — Job
 
-Ergon is a personal employee agent desk where each person states digital work in plain words, the agent finishes it end to end with sandboxed workspace tools and Rune skills, and every saved file and consequential hold is reported honestly.
+Ergon is a personal employee agent desk where each person states digital work in plain words, the agent finishes it end to end with sandboxed workspace tools and built-in workflows, and every saved file and consequential hold is reported honestly.
 
 1. Is my agent ready, and is anything waiting on my approval right now?
 2. What work did my agent finish recently, how are recent runs trending, and which workspace files were saved?

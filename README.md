@@ -5,12 +5,12 @@
 An AI agent desk for every employee — personal to each person, it learns how
 they work and **finishes their digital work autonomously, end to end**.
 The person states a task in plain words; the agent works it through real
-sandboxed tools and Rune skills, and the finished result lands as a verified
+sandboxed tools and built-in workflows, and the finished result lands as a verified
 Field-Book receipt. No approval ceremony in the core loop.
 
 A single Rust binary serves the whole product: the embedded web desk (`/` and
 `/phone`), the agent loop, the sandboxed tool layer, per-person standing
-memory, and the Rune skill runtime. No external runtime or database server.
+memory, and the embedded workflow runtime. No external runtime or database server.
 
 ## Install
 
@@ -92,7 +92,7 @@ Without a reachable local gateway or `ERGON_MODEL_API_KEY`, the UI shows an hone
   `{"tool": name, "args": {...}}` or `{"done": true, "summary": "..."}` —
   the loop executes the tool for real, feeds the result back, and
   repeats (cap 24 steps).
-- **Tools & 12 Built-in Rune Skills** — `list_dir`, `read_file`, `write_file`, `search_files`, `move_file` (all sandboxed to the person's workspace), `fetch_url` (HTML→text), and twelve compiled Rune skills (`write_document`, `make_spreadsheet`, `research`, `update_memory`, `reconcile_ledger`, `summarize_meeting`, `audit_contract`, `triage_inbox`, `clean_dataset`, `compare_documents`, `draft_brief`, `extract_tables`, inspectable via `GET /api/skills` and testable in an ephemeral sandbox via `POST /api/skills/test`), plus `browse_library`, `install_item`, `publish_skill`, `delegate`, `delete_file` (which parks a decision instead of deleting directly), and `flag_decision`.
+- **Tools & 12 Built-in Workflows** — `list_dir`, `read_file`, `write_file`, `search_files`, `move_file` (all sandboxed to the person's workspace), `fetch_url` (HTML→text), and twelve deterministic sandboxed workflows (`write_document`, `make_spreadsheet`, `research`, `update_memory`, `reconcile_ledger`, `summarize_meeting`, `audit_contract`, `triage_inbox`, `clean_dataset`, `compare_documents`, `draft_brief`, `extract_tables`, inspectable via `GET /api/skills` and testable in an ephemeral sandbox via `POST /api/skills/test`), plus `browse_library`, `install_item`, `publish_skill`, `delegate`, `delete_file` (which parks a decision instead of deleting directly), and `flag_decision`.
 - **Live SSE Streaming, Indexed Search, Routines & SHA-256 Receipts** — `GET /api/runs/stream` streams real-time tool steps, elapsed ms, file writes, and approvals with `POST /api/runs/:id/cancel`; `GET /api/search?q=...` and paginated `GET /api/receipts` / `GET /api/files` use a per-person `RwLock` inverted index tested at 5,000 receipts + 500 workspace files under 30 concurrent clients; `GET /api/receipts/:id/export?format=md|json` exports SHA-256 chained Field-Book provenance receipts; `GET/POST/DELETE /api/routines` + `POST /api/routines/:id/run` persist and execute standing recurring workflows.
 - **Sandbox** — every path is resolved through a component-walking
   resolver that re-checks containment at each step, follows at most 16
@@ -103,9 +103,9 @@ Without a reachable local gateway or `ERGON_MODEL_API_KEY`, the UI shows an hone
 - **Learning** — each person's `memory.md` (including standing
   preferences) is injected into the model's context at the start of every
   task, and updated via `update_memory`.
-- **Company library & personal suites** — shared library of skills,
+- **Company library & personal suites** — shared library of workflows,
   subagents, and one-tap apps (`library.json`, seeded with twelve items).
-  Published Rune skills are compile-gated and ownership-checked, running
+  Published workflow scripts are compile-gated and ownership-checked, running
   under an instruction budget and memory limit.
 - **Decisions & proactive offers** — `delete_file` parks an approval item
   in **Today**; only explicit approval deletes the exact path, rewriting the
@@ -120,13 +120,13 @@ Without a reachable local gateway or `ERGON_MODEL_API_KEY`, the UI shows an hone
 ## Verification
 
 ```sh
-CARGO_BUILD_JOBS=2 cargo test          # 128 Rust unit, E2E, scale & 12-skill Rune tests
+CARGO_BUILD_JOBS=2 cargo test          # 128 Rust unit, E2E, scale & 12-workflow tests
 cd frontend && npm run check:ui        # Playwright E2E gate, graph probe, and worst-case replay
 ```
 
 `tests/e2e.rs` drives a local stub chat-completions server over real HTTP to
-verify messy notes -> `list_dir` -> `read_file` -> `write_document` (Rune) ->
-`update_memory` (Rune) -> done, alongside sandbox containment, session
+verify messy notes -> `list_dir` -> `read_file` -> `write_document` ->
+`update_memory` -> done, alongside sandbox containment, session
 isolation, done-gate file verification, delete holds, proactive offers,
 brief/today/graph assembly, self-updater verification, and crash-safe store
 recovery.
