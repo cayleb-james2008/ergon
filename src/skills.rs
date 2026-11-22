@@ -203,6 +203,7 @@ fn build_context(cfg: &Config) -> Result<rune::Context, String> {
 
     // --- workspace fs host functions (sandboxed inside the workspace) ---
     let ws = cfg.workspace_dir.clone();
+    let hist_data_dir = cfg.data_dir.clone();
     module
         .function(["host_workspace_write"], move |path: String, content: String| -> String {
             match sandbox_path(&ws, &path) {
@@ -212,6 +213,12 @@ fn build_context(cfg: &Config) -> Result<rune::Context, String> {
                             return format!("error: create dirs: {e}");
                         }
                     }
+                    let _ = crate::file_history::record_revision(
+                        &hist_data_dir,
+                        &ws,
+                        &path,
+                        "workflow_write",
+                    );
                     match std::fs::write(&full, &content) {
                         Ok(()) => "ok".to_string(),
                         Err(e) => format!("error: write {path}: {e}"),

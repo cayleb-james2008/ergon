@@ -180,10 +180,17 @@ pub fn validate_history_path(workspace_dir: &Path, raw: &str) -> Result<(String,
     if trimmed.len() > 512 {
         return Err("path exceeds maximum length (512 bytes)".to_string());
     }
+    let low = trimmed.to_ascii_lowercase();
     if trimmed.contains('\0')
         || trimmed.contains('\\')
+        || trimmed.contains(':')
         || trimmed.starts_with('/')
         || trimmed.chars().any(|c| c.is_control())
+        || low.contains("%2e%2e")
+        || low.contains("%252e")
+        || low.contains("%2f")
+        || low.contains("%5c")
+        || low.contains("%00")
     {
         return Err(format!("invalid workspace path: {trimmed}"));
     }

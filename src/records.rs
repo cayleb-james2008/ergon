@@ -368,7 +368,15 @@ pub fn resolve_decision(
                 // right; delete now matches it.)
                 Some(rel) => match sandbox_path_resolving(&cfg.workspace_dir, rel, false) {
                     Ok(full) => {
-                        if full.symlink_metadata().is_ok() {
+                        if let Ok(md) = full.symlink_metadata() {
+                            if !md.file_type().is_symlink() && md.is_file() {
+                                let _ = crate::file_history::record_revision(
+                                    &cfg.data_dir,
+                                    &cfg.workspace_dir,
+                                    rel,
+                                    "delete",
+                                );
+                            }
                             match std::fs::remove_file(&full) {
                                 Ok(()) => format!("Approved and done: {rel} was deleted."),
                                 Err(e) => format!("Approved, but deleting {rel} failed: {e}"),
