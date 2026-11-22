@@ -437,6 +437,26 @@ await reset();
   await p.locator('[role="dialog"]').waitFor({ state: "hidden", timeout: 4000 });
   await p.waitForTimeout(100);
   ok("focus returns to Menu", (await p.evaluate(() => document.activeElement?.getAttribute("aria-label"))) === "Open menu");
+
+  // Mobile Menu -> Settings -> Dark click (real pointer click, NO force: true) must close drawer and switch theme cleanly
+  await p.getByRole("button", { name: "Open menu" }).click();
+  await p.waitForSelector('[data-thing="settings-btn"]', { timeout: 4000 });
+  await p.locator('[data-thing="settings-btn"]').click();
+  await p.waitForSelector("#settings-panel", { timeout: 4000 });
+  await p.waitForTimeout(250);
+  await p.locator('#settings-panel').getByRole("button", { name: "Dark", exact: true }).click();
+  await p.waitForTimeout(200);
+  const mobileDarkOk = await p.evaluate(() => {
+    const theme = document.documentElement.getAttribute("data-theme");
+    const bg = getComputedStyle(document.body).backgroundColor;
+    const m = bg.match(/\d+/g)?.map(Number) || [255, 255, 255];
+    const luma = 0.2126 * m[0] + 0.7152 * m[1] + 0.0722 * m[2];
+    const drawerOpen = Boolean(document.querySelector('[data-vaul-drawer][data-state="open"]'));
+    return theme === "dark" && luma < 40 && !drawerOpen;
+  });
+  ok("phone Menu -> Settings -> Dark toggles cleanly without drawer interception", mobileDarkOk);
+  await p.keyboard.press("Escape");
+  await p.locator("#settings-panel").waitFor({ state: "hidden", timeout: 4000 });
   ok("phone side column under the paper", (await p.getByRole("heading", { name: "Team" }).count()) === 1);
 
   await p.goto(BASE + "phone");

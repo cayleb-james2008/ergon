@@ -23,7 +23,50 @@ import { Details } from "@/chat/Entry";
 import { call, type LibraryItem, type Msg, type Person, type SuiteItem } from "@/lib/api";
 import { open as openPreset } from "@/motion";
 
-const TRIGGER = "focus-ring flex w-full min-h-11 md:min-h-9 items-center justify-between gap-1.5 rounded-sm px-1.5 text-left text-sm text-ink outline-none hover:bg-board";
+const TRIGGER = "focus-ring flex w-full min-h-11 md:min-h-9 items-center justify-between gap-1.5 rounded-sm px-1.5 text-left text-sm text-ink outline-none hover:bg-board cursor-pointer";
+
+export function RailPanelButton({
+  id,
+  domId,
+  label,
+  icon,
+  count,
+  answers,
+  expanded,
+  onClick,
+}: {
+  id: string;
+  domId?: string;
+  label: string;
+  icon: React.ReactNode;
+  count?: number;
+  answers?: string;
+  expanded?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      id={domId}
+      data-thing={id}
+      aria-haspopup="dialog"
+      aria-expanded={expanded}
+      onClick={onClick}
+      className={TRIGGER}
+      style={{ borderRadius: 7 }}
+    >
+      <span className="flex min-w-0 items-center gap-1.5" data-answers={answers}>
+        {icon}
+        <span className="leading-tight">{label}</span>
+      </span>
+      {typeof count === "number" && (
+        <span className="mono shrink-0 rounded-chip bg-track px-1.5 py-0.5 text-xs text-ink-2">
+          <SlidingNumber value={count} />
+        </span>
+      )}
+    </button>
+  );
+}
 
 function PanelShell({
   id,
@@ -32,6 +75,9 @@ function PanelShell({
   count,
   title,
   answers,
+  open,
+  onOpenChange,
+  hideTrigger,
   children,
 }: {
   id: string;
@@ -40,21 +86,26 @@ function PanelShell({
   count?: number;
   title: string;
   answers?: string;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  hideTrigger?: boolean;
   children: React.ReactNode;
 }) {
   return (
-    <MorphingDialog transition={openPreset}>
-      <MorphingDialogTrigger thing={id} className={TRIGGER} style={{ borderRadius: 7 }}>
-        <span className="flex min-w-0 items-center gap-1.5" data-answers={answers}>
-          {icon}
-          <span className="leading-tight">{label}</span>
-        </span>
-        {typeof count === "number" && (
-          <span className="mono shrink-0 rounded-chip bg-track px-1.5 py-0.5 text-xs text-ink-2">
-            <SlidingNumber value={count} />
+    <MorphingDialog transition={openPreset} open={open} onOpenChange={onOpenChange}>
+      {!hideTrigger && (
+        <MorphingDialogTrigger thing={id} className={TRIGGER} style={{ borderRadius: 7 }}>
+          <span className="flex min-w-0 items-center gap-1.5" data-answers={answers}>
+            {icon}
+            <span className="leading-tight">{label}</span>
           </span>
-        )}
-      </MorphingDialogTrigger>
+          {typeof count === "number" && (
+            <span className="mono shrink-0 rounded-chip bg-track px-1.5 py-0.5 text-xs text-ink-2">
+              <SlidingNumber value={count} />
+            </span>
+          )}
+        </MorphingDialogTrigger>
+      )}
       <MorphingDialogContainer>
         <MorphingDialogContent
           style={{ borderRadius: 18 }}
@@ -101,7 +152,17 @@ function LearnedBody() {
   return <LearnedList content={text} />;
 }
 
-export function LearnedPanel({ count }: { count: number }) {
+export function LearnedPanel({
+  count,
+  open,
+  onOpenChange,
+  hideTrigger,
+}: {
+  count: number;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  hideTrigger?: boolean;
+}) {
   return (
     <PanelShell
       id="memory-btn"
@@ -109,6 +170,9 @@ export function LearnedPanel({ count }: { count: number }) {
       icon={<BookOpen className="size-3.5 shrink-0 text-icon" strokeWidth={1.5} aria-hidden />}
       count={count}
       title="What your agent has learned"
+      open={open}
+      onOpenChange={onOpenChange}
+      hideTrigger={hideTrigger}
     >
       <LearnedBody />
     </PanelShell>
@@ -242,7 +306,21 @@ function SuiteBody({ onRun, onChanged }: { onRun: (id: string, msgs: Msg[]) => v
   );
 }
 
-export function SuitePanel({ count, onRun, onChanged }: { count: number; onRun: (id: string, msgs: Msg[]) => void; onChanged: () => void }) {
+export function SuitePanel({
+  count,
+  onRun,
+  onChanged,
+  open,
+  onOpenChange,
+  hideTrigger,
+}: {
+  count: number;
+  onRun: (id: string, msgs: Msg[]) => void;
+  onChanged: () => void;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  hideTrigger?: boolean;
+}) {
   return (
     <PanelShell
       id="suite-btn"
@@ -250,6 +328,9 @@ export function SuitePanel({ count, onRun, onChanged }: { count: number; onRun: 
       icon={<Blocks className="size-3.5 shrink-0 text-icon" strokeWidth={1.5} aria-hidden />}
       count={count}
       title="My suite and the library"
+      open={open}
+      onOpenChange={onOpenChange}
+      hideTrigger={hideTrigger}
     >
       <SuiteBody onRun={onRun} onChanged={onChanged} />
     </PanelShell>
@@ -357,13 +438,26 @@ function AddPersonBody({ onAdded }: { onAdded: (p: Person) => void }) {
   );
 }
 
-export function AddPersonPanel({ onAdded }: { onAdded: (p: Person) => void }) {
+export function AddPersonPanel({
+  onAdded,
+  open,
+  onOpenChange,
+  hideTrigger,
+}: {
+  onAdded: (p: Person) => void;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  hideTrigger?: boolean;
+}) {
   return (
     <PanelShell
       id="add-person-btn"
       label="Add a person"
       icon={<UserPlus className="size-3.5 shrink-0 text-icon" strokeWidth={1.5} aria-hidden />}
       title="Add a person"
+      open={open}
+      onOpenChange={onOpenChange}
+      hideTrigger={hideTrigger}
     >
       <AddPersonBody onAdded={onAdded} />
     </PanelShell>

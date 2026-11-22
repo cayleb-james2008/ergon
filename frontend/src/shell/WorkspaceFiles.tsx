@@ -528,23 +528,31 @@ export function WorkspaceFilesPanel({
   onRefresh,
   onOpenFile,
   onUpload,
+  open,
+  onOpenChange,
+  hideTrigger,
 }: {
   files: WorkspaceFile[];
   onRefresh: () => void;
   onOpenFile: (path: string) => void;
   onUpload: (path: string, content: string) => Promise<boolean>;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  hideTrigger?: boolean;
 }) {
   return (
-    <MorphingDialog transition={openPreset}>
-      <MorphingDialogTrigger thing="files-btn" className={TRIGGER} style={{ borderRadius: 7 }}>
-        <span className="flex min-w-0 items-center gap-1.5">
-          <FolderOpen className="size-3.5 shrink-0 text-icon" strokeWidth={1.5} aria-hidden />
-          <span className="leading-tight">Workspace files</span>
-        </span>
-        <span className="mono shrink-0 rounded-chip bg-track px-1.5 py-0.5 text-xs text-ink-2">
-          <SlidingNumber value={files.length} />
-        </span>
-      </MorphingDialogTrigger>
+    <MorphingDialog transition={openPreset} open={open} onOpenChange={onOpenChange}>
+      {!hideTrigger && (
+        <MorphingDialogTrigger thing="files-btn" className={TRIGGER} style={{ borderRadius: 7 }}>
+          <span className="flex min-w-0 items-center gap-1.5">
+            <FolderOpen className="size-3.5 shrink-0 text-icon" strokeWidth={1.5} aria-hidden />
+            <span className="leading-tight">Workspace files</span>
+          </span>
+          <span className="mono shrink-0 rounded-chip bg-track px-1.5 py-0.5 text-xs text-ink-2">
+            <SlidingNumber value={files.length} />
+          </span>
+        </MorphingDialogTrigger>
+      )}
       <MorphingDialogContainer>
         <MorphingDialogContent
           style={{ borderRadius: 18 }}
