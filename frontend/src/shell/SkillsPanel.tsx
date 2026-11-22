@@ -1,8 +1,8 @@
-// 12 Rune Skills Browser & Dry-Run Tester MorphingDialog (always mounted OUTSIDE Vaul Drawer):
-// - Displays all 12 employee-grade Rune skills (merged from GET /api/skills + canonical catalog)
+// 12 Built-in Workflows Browser & Dry-Run Tester MorphingDialog (always mounted OUTSIDE Vaul Drawer):
+// - Displays all 12 employee-grade built-in workflows (merged from GET /api/skills + canonical catalog)
 // - Instant filter search + category filter pills
-// - One-click "Run in Today" action + optional live "Dry-run test" (POST /api/skills/test)
-// - Cult UI Expandable to inspect Rune source & sample prompts
+// - One-click "Run in Today" action + optional live "Test workflow" (POST /api/skills/test)
+// - Cult UI Expandable to inspect script source & sample prompts
 import { useEffect, useMemo, useState } from "react";
 import { FlaskConical, Play, Search, Sparkles, X } from "lucide-react";
 import { toast } from "sonner";
@@ -90,7 +90,7 @@ function SkillsBody({
         ...prev,
         [skill.id]: {
           ok: true,
-          output: `Verified schema for ${skill.filename} (inputs: ${skill.inputs.join(", ")}). Use "Run in Today" to execute against your workspace.`,
+          output: `Verified schema for ${skill.id} (inputs: ${skill.inputs.join(", ")}). Use "Run in Today" to execute against your workspace.`,
           ms: Math.max(1, Math.round(performance.now() - t0)),
         },
       }));
@@ -117,7 +117,7 @@ function SkillsBody({
       toast.error(r.error || `Could not dry-run ${skill.title}.`);
       return;
     }
-    const out = String(r.data.output ?? r.data.summary ?? "Skill compiled and passed sandbox test cleanly.");
+    const out = String(r.data.output ?? r.data.summary ?? "Workflow validated and passed sandbox test cleanly.");
     setTestResults((prev) => ({
       ...prev,
       [skill.id]: { ok: r.data.ok !== false, output: out, ms: elapsed },
@@ -128,7 +128,7 @@ function SkillsBody({
   return (
     <div id="skills-panel" className="flex flex-col gap-4 pt-1">
       <p className="text-sm text-ink-2">
-        All {skills.length} sandboxed Rune skills compiled for your personal employee desk. Pick any skill to run directly in Today or inspect its Rune script.
+        All {skills.length} built-in sandboxed workflows ready for your personal desk. Pick any workflow to run directly in Today or inspect its script source.
       </p>
 
       <div className="flex flex-col gap-2.5">
@@ -139,8 +139,8 @@ function SkillsBody({
           <InputGroupInput
             id="skills-search-input"
             type="search"
-            aria-label="Filter Rune skills"
-            placeholder="Filter Rune skills…"
+            aria-label="Filter workflows"
+            placeholder="Filter workflows…"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             className="text-sm max-md:min-h-11"
@@ -185,7 +185,7 @@ function SkillsBody({
 
       {filtered.length === 0 ? (
         <p className="rounded-card border border-hairline bg-board/40 p-4 text-sm text-ink-2">
-          No Rune skills match &ldquo;{query}&rdquo;.
+          No workflows match &ldquo;{query}&rdquo;.
         </p>
       ) : (
         <div className="grid grid-cols-1 gap-3">
@@ -206,7 +206,7 @@ function SkillsBody({
                   </div>
                   <Pill variant="secondary" className="border border-hairline bg-board px-2 py-0.5 text-xs text-ink-2">
                     <Sparkles className="size-3 text-icon" strokeWidth={1.5} aria-hidden />
-                    <span className="mono">{sk.filename}</span>
+                    <span className="mono">{sk.id}</span>
                   </Pill>
                 </div>
 
@@ -245,7 +245,7 @@ function SkillsBody({
                     onClick={() => runDryTest(sk)}
                   >
                     <FlaskConical className="size-3.5" strokeWidth={1.5} aria-hidden />
-                    {testingId === sk.id ? "Testing…" : "Test skill"}
+                    {testingId === sk.id ? "Testing…" : "Test workflow"}
                   </Button>
                 </div>
 
@@ -263,7 +263,7 @@ function SkillsBody({
                 )}
 
                 {sk.source && (
-                  <Details label={`Inspect ${sk.filename}`}>
+                  <Details label="Inspect script source">
                     <pre className="overflow-x-auto whitespace-pre-wrap break-words rounded-sm border border-hairline bg-board p-2.5 font-mono text-xs leading-5 text-ink">
                       {sk.source}
                     </pre>
@@ -302,7 +302,7 @@ export function SkillsPanel({
         >
           <MorphingDialogClose className="focus-ring absolute right-3 top-3 grid size-11 place-items-center rounded-sm text-icon outline-none hover:bg-board md:size-9" />
           <MorphingDialogTitle className="pr-10 text-title font-medium text-ink">
-            Rune skills ({skills.length})
+            Built-in Workflows ({skills.length})
           </MorphingDialogTitle>
           <MorphingDialogDescription disableLayoutAnimation className="text-sm text-ink-2">
             <SkillsBody

@@ -1,7 +1,7 @@
 // Global Command Palette (Cmd+K / Ctrl+K) backed by COSS UI Command (cmdk):
 // Instant keyboard-navigable (ArrowUp/ArrowDown/Enter/Esc) search & jump across:
 // - Quick Actions (New Task, Upload File, Export Receipt .md/.json, Skills, Routines, Settings, Views)
-// - All 12 Rune Skills (jump/run in Today)
+// - All 12 built-in workflows (jump/run in Today)
 // - Workspace Files (500+ ready, capped visible slice)
 // - Receipts & Conversations (5,000+ ready + debounced server GET /api/search?q=... on v0.5.0+)
 // - Recurring Routines (Run Now or manage)
@@ -259,7 +259,7 @@ export function CommandPalette({
       { id: "action-export-receipt-md", keywords: "export receipt sha256 markdown download", label: "Export latest receipt (SHA-256 Markdown)", badge: ".md", icon: FileDown, run: () => onExportLatestReceipt("md") },
       { id: "action-export-receipt-json", keywords: "export receipt sha256 json download", label: "Export latest receipt (SHA-256 JSON)", badge: ".json", icon: FileDown, run: () => onExportLatestReceipt("json") },
       { id: "action-open-settings", keywords: "open settings appearance theme model", label: "Open Settings (Model & Appearance)", badge: "Panel", icon: SlidersHorizontal, run: onOpenSettings },
-      { id: "action-open-skills", keywords: "browse skills rune catalog 12", label: `Browse all ${skills.length} Rune skills`, badge: String(skills.length), icon: Sparkles, run: onOpenSkills },
+      { id: "action-open-skills", keywords: "browse workflows skills catalog 12", label: `Browse all ${skills.length} built-in workflows`, badge: String(skills.length), icon: Sparkles, run: onOpenSkills },
       { id: "action-open-routines", keywords: "routines recurring schedule cron automate", label: "Manage recurring routines", badge: String(routines.length), icon: CalendarClock, run: onOpenRoutines },
       { id: "action-open-files", keywords: "workspace files browser", label: "Open Workspace files", badge: String(files.length), icon: FolderOpen, run: onOpenFiles },
       { id: "action-face-today", keywords: "today paper desk brief", label: "Jump to Today's desk", badge: "View", icon: Newspaper, run: () => onSwitchFace("paper") },
@@ -293,7 +293,7 @@ export function CommandPalette({
       >
         <DialogTitle className="sr-only">Command palette</DialogTitle>
         <DialogDescription className="sr-only">
-          Search workspace files, receipts, 12 Rune skills, recurring routines, and quick actions.
+          Search workspace files, receipts, 12 built-in workflows, recurring routines, and quick actions.
         </DialogDescription>
 
         <Command
@@ -305,12 +305,12 @@ export function CommandPalette({
             aria-label="Search command palette"
             value={query}
             onValueChange={setQuery}
-            placeholder="Search files, skills, receipts…"
+            placeholder="Search files, workflows, receipts…"
             className="h-12 pr-12 text-sm text-ink placeholder:text-ink-3"
           />
           <CommandList className="max-h-[58vh] p-1.5">
             <CommandEmpty className="py-6 text-center text-sm text-ink-2">
-              {searching ? "Searching indexed workspace…" : "No matching files, receipts, skills, or actions."}
+              {searching ? "Searching indexed workspace…" : "No matching files, receipts, workflows, or actions."}
             </CommandEmpty>
 
             {quickActions.length > 0 && (
@@ -358,7 +358,7 @@ export function CommandPalette({
             {matchedSkills.length > 0 && (
               <>
                 <CommandSeparator className="my-1 bg-hairline" />
-                <CommandGroup heading={`Rune skills (${skills.length})`}>
+                <CommandGroup heading={`Built-in workflows (${skills.length})`}>
                   {matchedSkills.map((sk) => (
                     <CommandItem
                       key={sk.id}
@@ -465,7 +465,7 @@ export function CommandPalette({
           <div className="flex flex-wrap items-center justify-between gap-2 border-t border-hairline bg-board/50 px-3 py-2 text-xs text-ink-2">
             <span>Use ↑↓ to move, Enter to run, Esc to close</span>
             <span className="mono">
-              {files.length} files · {skills.length} skills · {receipts.length} receipts
+              {files.length} files · {skills.length} workflows · {receipts.length} receipts
             </span>
           </div>
         </Command>

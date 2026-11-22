@@ -18,13 +18,13 @@ export function buildStarterCards(installed: SuiteItem[], role: string): Starter
       tone: "ops",
       prompt: "Tidy my notes into a summary",
       detail: "Reads workspace notes and writes a structured Markdown brief.",
-      skill: "write_document.rn",
+      skill: "write_document",
     },
   ];
   const tones: ("mint" | "plan" | "research")[] = ["mint", "plan", "research"];
   const safeInstalled = Array.isArray(installed) ? installed.filter((x) => x && typeof x.name === "string") : [];
   safeInstalled.slice(0, 2).forEach((item, idx) => {
-    const kindWord = item.kind === "subagent" ? "Specialist" : item.kind === "app" ? "One-tap app" : "Rune skill";
+    const kindWord = item.kind === "subagent" ? "Specialist" : item.kind === "app" ? "One-tap app" : "Workflow";
     cards.push({
       category: kindWord,
       tone: tones[idx % tones.length],
@@ -39,7 +39,7 @@ export function buildStarterCards(installed: SuiteItem[], role: string): Starter
       tone: "plan",
       prompt: "Draft my weekly update",
       detail: `Compiles finished ${safeRole.toLowerCase()} deliverables and open blockers into Weekly update.md.`,
-      skill: "write_document.rn",
+      skill: "write_document",
     });
   }
   cards.push({
@@ -47,14 +47,14 @@ export function buildStarterCards(installed: SuiteItem[], role: string): Starter
     tone: "mint",
     prompt: "Reconcile expenses into a clean CSV",
     detail: "Checks line-item totals twice and writes a verified CSV table.",
-    skill: "make_spreadsheet.rn",
+    skill: "make_spreadsheet",
   });
   cards.push({
     category: "Research",
     tone: "research",
     prompt: "Research a topic for me",
     detail: "Reads sources and saves cited findings into your workspace.",
-    skill: "research.rn",
+    skill: "research",
   });
   return cards.slice(0, 4);
 }

@@ -1,6 +1,6 @@
 // Rail capability & person dialogs (Motion Primitives MorphingDialog with @/motion `open` preset):
 // 1. LearnedPanel ("What my agent has learned" + count chip)
-// 2. SuitePanel ("My suite and the library" + count chip, install/remove/run Rune apps)
+// 2. SuitePanel ("My suite and the library" + count chip, install/remove/run built-in workflows)
 // 3. AddPersonPanel ("Add a person" MorphingDialog form with clean close & focus return)
 import { useEffect, useState } from "react";
 import { Blocks, BookOpen, UserPlus } from "lucide-react";
@@ -419,7 +419,7 @@ function AddPersonBody({ onAdded }: { onAdded: (p: Person) => void }) {
 
   return (
     <form id="person-form" onSubmit={submit} className="flex flex-col gap-3 pt-1">
-      <p className="text-sm text-ink-2">Each employee gets an isolated workspace folder, conversation log, Rune skill suite, and standing memory.</p>
+      <p className="text-sm text-ink-2">Each employee gets an isolated workspace folder, conversation log, built-in workflow suite, and standing memory.</p>
       <div className="flex flex-col gap-1.5">
         <label className="text-xs font-medium text-ink" htmlFor="person-name">Name</label>
         <Input id="person-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Elena Rostova" autoComplete="off" maxLength={80} />
