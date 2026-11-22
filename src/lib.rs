@@ -1388,6 +1388,7 @@ pub fn execute_tool(cfg: &Config, name: &str, args: &Value) -> Result<String, St
             if let Some(parent) = full.parent() {
                 std::fs::create_dir_all(parent).map_err(|e| format!("write_file mkdir: {e}"))?;
             }
+            let _ = file_history::record_revision(&cfg.data_dir, &cfg.workspace_dir, rel, "write_file");
             std::fs::write(&full, content).map_err(|e| format!("write_file {rel}: {e}"))?;
             Ok(format!("wrote {rel} ({} bytes)", content.len()))
         }
@@ -3015,6 +3016,306 @@ pub fn serve_with_hosts(
     serve_inner(listener, cfg, gate_token, allowed_hosts, false)
 }
 
+fn scheduler_tick_ms() -> u64 {
+    std::env::var("ERGON_SCHEDULER_TICK_MS")
+        .ok()
+        .and_then(|s| s.trim().parse::<u64>().ok())
+        .map(|ms| ms.clamp(250, 300_000))
+        .unwrap_or(15_000)
+}
+
+fn is_history_security_error(err: &str) -> bool {
+    let low = err.to_ascii_lowercase();
+    low.contains("escapes")
+        || low.contains("invalid")
+        || low.contains("absolute")
+        || low.contains("symlink")
+        || low.contains("hidden")
+        || low.contains("control")
+        || low.contains("traversal")
+        || low.contains("nul")
+        || low.contains("workspace")
+}
+
+fn latest_receipt_id_for_thread(person_data_dir: &Path, thread_id: &str) -> Option<String> {
+    let entries = receipts::load_raw_entries(person_data_dir);
+    let chain = receipts::build_chain(&entries);
+    chain
+        .iter()
+        .rev()
+        .find(|r| r.thread_id == thread_id)
+        .map(|r| r.id.clone())
+}
+
+struct RoutineExecResult {
+    http_status: u16,
+    routine: Value,
+    thread_id: String,
+    thread: Value,
+    run_record: scheduler::RoutineRunRecord,
+    error: Option<String>,
+}
+
+fn execute_routine_run(
+    state: &AppState,
+    person: &Person,
+    runtime: &Arc<PersonRuntime>,
+    id: &str,
+    trigger: &str,
+) -> Option<RoutineExecResult> {
+    let routine = routines::get_routine(&runtime.cfg.data_dir, id)?;
+    let lock_key = format!("{}:{}", person.id, id);
+    {
+        let mut active = state
+            .running_routines
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
+        if !active.insert(lock_key.clone()) {
+            let now_ms = records::now_millis();
+            let rec = scheduler::new_run_record(
+                id,
+                routine["name"].as_str().unwrap_or("Routine"),
+                now_ms,
+                now_ms,
+                "error",
+                None,
+                None,
+                "Routine is already running.",
+                trigger,
+                Some("routine is already running".to_string()),
+            );
+            return Some(RoutineExecResult {
+                http_status: 409,
+                routine,
+                thread_id: String::new(),
+                thread: Value::Null,
+                run_record: rec,
+                error: Some("routine is already running".to_string()),
+            });
+        }
+    }
+    struct RunSlotGuard<'a>(&'a Mutex<std::collections::HashSet<String>>, String);
+    impl Drop for RunSlotGuard<'_> {
+        fn drop(&mut self) {
+            let mut active = self.0.lock().unwrap_or_else(|p| p.into_inner());
+            active.remove(&self.1);
+        }
+    }
+    let _slot_guard = RunSlotGuard(&state.running_routines, lock_key);
+
+    let name = routine["name"].as_str().unwrap_or("Routine").to_string();
+    let prompt = routine["prompt"].as_str().unwrap_or("").to_string();
+    let started_ms = records::now_millis();
+    let cfg = effective_cfg(state, runtime);
+    let ctx = ToolCtx {
+        library: state.library.clone(),
+        root_data_dir: state.cfg.data_dir.clone(),
+        person_id: person.id.clone(),
+    };
+    let thread_id = {
+        let mut store = runtime.store.lock().unwrap();
+        let tid = store.create_thread();
+        store.push(&tid, "user", &format!("{name} — {prompt}"));
+        tid
+    };
+
+    if !cfg.model_configured() {
+        runtime
+            .store
+            .lock()
+            .unwrap()
+            .push(&thread_id, "error", NO_KEY_ERROR);
+        let finished_ms = records::now_millis();
+        let updated = routines::record_run(&runtime.cfg.data_dir, id, &thread_id, "no_model")
+            .unwrap_or(routine);
+        let rec = scheduler::new_run_record(
+            id,
+            &name,
+            started_ms,
+            finished_ms,
+            "error",
+            None,
+            Some(thread_id.clone()),
+            NO_KEY_ERROR,
+            trigger,
+            Some(NO_KEY_ERROR.to_string()),
+        );
+        let _ = scheduler::record_run_history(&runtime.cfg.data_dir, rec.clone());
+        let hist = scheduler::list_run_history(&runtime.cfg.data_dir, Some(id), 20);
+        let enriched = scheduler::enrich_routine_json(&updated, finished_ms, &hist);
+        return Some(RoutineExecResult {
+            http_status: 503,
+            routine: enriched,
+            thread_id: thread_id.clone(),
+            thread: json!({"id": thread_id}),
+            run_record: rec,
+            error: Some(NO_KEY_ERROR.to_string()),
+        });
+    }
+
+    let outcome = run_agent_live(
+        &cfg,
+        &ctx,
+        &runtime.store,
+        &thread_id,
+        &prompt,
+        &[],
+        Some((&state.live_runs, &state.events, &person.id)),
+    );
+    state.search_cache.invalidate(&person.id);
+    let finished_ms = records::now_millis();
+    let receipt_id = latest_receipt_id_for_thread(&runtime.cfg.data_dir, &thread_id);
+
+    match outcome {
+        Ok(agent_out) => {
+            let updated = routines::record_run(&runtime.cfg.data_dir, id, &thread_id, "finished")
+                .unwrap_or(routine);
+            let rec = scheduler::new_run_record(
+                id,
+                &name,
+                started_ms,
+                finished_ms,
+                "ok",
+                receipt_id.clone(),
+                Some(thread_id.clone()),
+                &agent_out.summary,
+                trigger,
+                None,
+            );
+            let _ = scheduler::record_run_history(&runtime.cfg.data_dir, rec.clone());
+            let hist = scheduler::list_run_history(&runtime.cfg.data_dir, Some(id), 20);
+            let enriched = scheduler::enrich_routine_json(&updated, finished_ms, &hist);
+            state.events.publish(
+                "routine_fired",
+                &person.id,
+                &rec.run_id,
+                &thread_id,
+                json!({
+                    "routine_id": id,
+                    "routine_name": name,
+                    "trigger": trigger,
+                    "status": "ok",
+                    "thread_id": thread_id,
+                    "receipt_id": receipt_id,
+                    "duration_ms": rec.duration_ms,
+                    "summary": truncate(&agent_out.summary, 240),
+                    "next_run_ms": enriched["next_run_ms"],
+                    "ts_ms": finished_ms,
+                }),
+            );
+            let store = runtime.store.lock().unwrap();
+            let thread_v = store
+                .thread_json(&thread_id)
+                .unwrap_or_else(|| json!({"id": thread_id}));
+            Some(RoutineExecResult {
+                http_status: 200,
+                routine: enriched,
+                thread_id,
+                thread: thread_v,
+                run_record: rec,
+                error: None,
+            })
+        }
+        Err(e) => {
+            let is_cancel = e == "run cancelled by user";
+            let st = if is_cancel { "cancelled" } else { "error" };
+            runtime.store.lock().unwrap().push(&thread_id, "error", &e);
+            let updated = routines::record_run(&runtime.cfg.data_dir, id, &thread_id, st)
+                .unwrap_or(routine);
+            let rec = scheduler::new_run_record(
+                id,
+                &name,
+                started_ms,
+                finished_ms,
+                st,
+                receipt_id.clone(),
+                Some(thread_id.clone()),
+                &e,
+                trigger,
+                Some(e.clone()),
+            );
+            let _ = scheduler::record_run_history(&runtime.cfg.data_dir, rec.clone());
+            let hist = scheduler::list_run_history(&runtime.cfg.data_dir, Some(id), 20);
+            let enriched = scheduler::enrich_routine_json(&updated, finished_ms, &hist);
+            state.events.publish(
+                "routine_fired",
+                &person.id,
+                &rec.run_id,
+                &thread_id,
+                json!({
+                    "routine_id": id,
+                    "routine_name": name,
+                    "trigger": trigger,
+                    "status": st,
+                    "thread_id": thread_id,
+                    "receipt_id": receipt_id,
+                    "duration_ms": rec.duration_ms,
+                    "error": truncate(&e, 240),
+                    "next_run_ms": enriched["next_run_ms"],
+                    "ts_ms": finished_ms,
+                }),
+            );
+            Some(RoutineExecResult {
+                http_status: 500,
+                routine: enriched,
+                thread_id: thread_id.clone(),
+                thread: json!({"id": thread_id}),
+                run_record: rec,
+                error: Some(e),
+            })
+        }
+    }
+}
+
+fn start_scheduler_thread(state: &Arc<AppState>) {
+    let weak = Arc::downgrade(state);
+    let tick_ms = scheduler_tick_ms();
+    std::thread::spawn(move || {
+        loop {
+            std::thread::sleep(std::time::Duration::from_millis(tick_ms));
+            let Some(st) = weak.upgrade() else {
+                break;
+            };
+            let people: Vec<Person> = st
+                .people
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .people
+                .clone();
+            let now_ms = records::now_millis();
+            for person in people {
+                let rt = runtime_for(&st, &person);
+                let eff = effective_cfg(&st, &rt);
+                if !eff.model_configured() {
+                    continue;
+                }
+                let list = routines::list_routines(&rt.cfg.data_dir);
+                let due = scheduler::find_due_routines(&list, now_ms);
+                for r in due {
+                    let Some(rid) = r["id"].as_str().map(|s| s.to_string()) else {
+                        continue;
+                    };
+                    let lock_key = format!("{}:{}", person.id, rid);
+                    let already = st
+                        .running_routines
+                        .lock()
+                        .unwrap_or_else(|p| p.into_inner())
+                        .contains(&lock_key);
+                    if already {
+                        continue;
+                    }
+                    let st_run = st.clone();
+                    let person_run = person.clone();
+                    let rt_run = rt.clone();
+                    std::thread::spawn(move || {
+                        let _ = execute_routine_run(&st_run, &person_run, &rt_run, &rid, "scheduled");
+                    });
+                }
+            }
+        }
+    });
+}
+
 /// `background_updates` starts the periodic release check; only the real
 /// binary does (tests must not call out to GitHub).
 fn serve_inner(
@@ -3035,13 +3336,7 @@ fn serve_inner(
         api_key: cfg.api_key.clone(),
         auto_detected,
     }));
-    let scheduler_disabled = std::env::var("ERGON_DISABLE_SCHEDULER")
-        .ok()
-        .map(|v| {
-            let low = v.trim().to_ascii_lowercase();
-            matches!(low.as_str(), "1" | "true" | "yes" | "on")
-        })
-        .unwrap_or(false);
+    let scheduler_disabled = scheduler::is_scheduler_disabled_by_env();
     let state = Arc::new(AppState {
         cfg,
         model_cfg,
@@ -3060,6 +3355,9 @@ fn serve_inner(
     });
     if background_updates {
         state.updater.start_background();
+    }
+    if state.scheduler_enabled {
+        start_scheduler_thread(&state);
     }
     for stream in listener.incoming() {
         match stream {
@@ -3931,8 +4229,29 @@ fn handle_connection(mut stream: std::net::TcpStream, state: &AppState) -> std::
             }
         }
         ("GET", "/api/routines") => {
-            let items = routines::list_routines(&runtime.cfg.data_dir);
-            respond_json(&mut stream, 200, &json!({"routines": items}))
+            let now_ms = records::now_millis();
+            let raw = routines::list_routines(&runtime.cfg.data_dir);
+            let history = scheduler::list_run_history(&runtime.cfg.data_dir, None, 500);
+            let enriched: Vec<Value> = raw
+                .iter()
+                .map(|r| scheduler::enrich_routine_json(r, now_ms, &history))
+                .collect();
+            let tick_secs = (scheduler_tick_ms() / 1000).max(1);
+            let sched_status = scheduler::scheduler_status_json(
+                state.scheduler_enabled,
+                tick_secs,
+                &raw,
+                &history,
+                now_ms,
+            );
+            respond_json(
+                &mut stream,
+                200,
+                &json!({
+                    "routines": enriched,
+                    "scheduler": sched_status,
+                }),
+            )
         }
         ("POST", "/api/routines") => {
             let parsed: Value = serde_json::from_slice(&req.body).unwrap_or(Value::Null);
@@ -3940,36 +4259,90 @@ fn handle_connection(mut stream: std::net::TcpStream, state: &AppState) -> std::
             let prompt = parsed["prompt"].as_str().unwrap_or("");
             let schedule = parsed["schedule"].as_str().unwrap_or("manual");
             let skill_id = parsed["skill_id"].as_str();
-            match routines::create_routine(&runtime.cfg.data_dir, name, prompt, schedule, skill_id) {
-                Ok(routine) => respond_json(&mut stream, 201, &json!({"routine": routine})),
+            let enabled = parsed["enabled"].as_bool().unwrap_or(true);
+            let interval_secs = if parsed.get("interval_secs").is_some() && !parsed["interval_secs"].is_null() {
+                match parsed["interval_secs"].as_u64() {
+                    Some(v) => Some(v),
+                    None => {
+                        return respond_json(
+                            &mut stream,
+                            400,
+                            &json!({"error": "interval_secs must be a positive integer"}),
+                        )
+                    }
+                }
+            } else {
+                None
+            };
+            match routines::create_routine_with_options(
+                &runtime.cfg.data_dir,
+                name,
+                prompt,
+                schedule,
+                interval_secs,
+                skill_id,
+                enabled,
+            ) {
+                Ok(routine) => {
+                    let now_ms = records::now_millis();
+                    let enriched = scheduler::enrich_routine_json(&routine, now_ms, &[]);
+                    respond_json(&mut stream, 201, &json!({"routine": enriched}))
+                }
                 Err(e) => respond_json(&mut stream, 400, &json!({"error": e})),
             }
+        }
+        ("GET", path) if path.starts_with("/api/routines/") && path.ends_with("/history") => {
+            let id = path
+                .strip_prefix("/api/routines/")
+                .and_then(|r| r.strip_suffix("/history"))
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            if id.is_empty() || id.contains('/') {
+                return respond_json(&mut stream, 400, &json!({"error": "invalid routine id"}));
+            }
+            let limit = query_param(&req.query, "limit")
+                .and_then(|s| s.parse::<usize>().ok())
+                .unwrap_or(50)
+                .clamp(1, 500);
+            let runs = scheduler::list_run_history(&runtime.cfg.data_dir, Some(&id), limit);
+            if runs.is_empty() && routines::get_routine(&runtime.cfg.data_dir, &id).is_none() {
+                return respond_json(&mut stream, 404, &json!({"error": "routine not found"}));
+            }
+            let items: Vec<Value> = runs.iter().map(|r| r.to_json()).collect();
+            respond_json(
+                &mut stream,
+                200,
+                &json!({
+                    "routine_id": id,
+                    "count": items.len(),
+                    "runs": items,
+                    "history": items,
+                }),
+            )
         }
         ("PATCH", path) if path.starts_with("/api/routines/") => {
             let id = path.trim_start_matches("/api/routines/").trim().to_string();
             if id.is_empty() || id.contains('/') {
                 return respond_json(&mut stream, 400, &json!({"error": "invalid routine id"}));
             }
-            let parsed: Value = serde_json::from_slice(&req.body).unwrap_or(Value::Null);
-            let enabled = parsed["enabled"].as_bool();
-            let schedule = parsed["schedule"].as_str();
-            let name = parsed["name"].as_str();
-            let prompt = parsed["prompt"].as_str();
-            let skill_id = if parsed.get("skill_id").is_some() {
-                Some(parsed["skill_id"].as_str())
-            } else {
-                None
+            let parsed: Value = match serde_json::from_slice::<Value>(&req.body) {
+                Ok(v) if v.is_object() => v,
+                _ => {
+                    return respond_json(
+                        &mut stream,
+                        400,
+                        &json!({"error": "PATCH body must be a JSON object"}),
+                    )
+                }
             };
-            match routines::update_routine(
-                &runtime.cfg.data_dir,
-                &id,
-                enabled,
-                schedule,
-                name,
-                prompt,
-                skill_id,
-            ) {
-                Ok(Some(routine)) => respond_json(&mut stream, 200, &json!({"routine": routine})),
+            match routines::patch_routine(&runtime.cfg.data_dir, &id, &parsed) {
+                Ok(Some(routine)) => {
+                    let now_ms = records::now_millis();
+                    let hist = scheduler::list_run_history(&runtime.cfg.data_dir, Some(&id), 20);
+                    let enriched = scheduler::enrich_routine_json(&routine, now_ms, &hist);
+                    respond_json(&mut stream, 200, &json!({"routine": enriched}))
+                }
                 Ok(None) => respond_json(&mut stream, 404, &json!({"error": "routine not found"})),
                 Err(e) => respond_json(&mut stream, 400, &json!({"error": e})),
             }
@@ -3992,67 +4365,187 @@ fn handle_connection(mut stream: std::net::TcpStream, state: &AppState) -> std::
                 .unwrap_or("")
                 .trim()
                 .to_string();
-            let Some(routine) = routines::get_routine(&runtime.cfg.data_dir, &id) else {
+            let Some(exec) = execute_routine_run(state, &person, &runtime, &id, "manual") else {
                 return respond_json(&mut stream, 404, &json!({"error": "routine not found"}));
             };
-            let name = routine["name"].as_str().unwrap_or("Routine").to_string();
-            let prompt = routine["prompt"].as_str().unwrap_or("").to_string();
-            let cfg = effective_cfg(state, &runtime);
-            let thread_id = {
-                let mut store = runtime.store.lock().unwrap();
-                let tid = store.create_thread();
-                store.push(&tid, "user", &format!("{name} — {prompt}"));
-                tid
-            };
-            if !cfg.model_configured() {
-                runtime
-                    .store
-                    .lock()
-                    .unwrap()
-                    .push(&thread_id, "error", NO_KEY_ERROR);
-                let updated = routines::record_run(&runtime.cfg.data_dir, &id, &thread_id, "no_model")
-                    .unwrap_or(routine);
+            if let Some(err) = exec.error {
+                respond_json(
+                    &mut stream,
+                    exec.http_status,
+                    &json!({
+                        "error": err,
+                        "thread_id": exec.thread_id,
+                        "routine": exec.routine,
+                        "run": exec.run_record.to_json(),
+                    }),
+                )
+            } else {
+                respond_json(
+                    &mut stream,
+                    200,
+                    &json!({
+                        "routine": exec.routine,
+                        "thread": exec.thread,
+                        "thread_id": exec.thread_id,
+                        "run": exec.run_record.to_json(),
+                    }),
+                )
+            }
+        }
+        ("GET", "/api/files/history") => {
+            let rel = query_param(&req.query, "path").unwrap_or_default();
+            let rel = rel.trim().to_string();
+            if rel.is_empty() {
+                let tracked = file_history::list_tracked_files(&runtime.cfg.data_dir);
                 return respond_json(
                     &mut stream,
-                    503,
-                    &json!({"error": NO_KEY_ERROR, "thread_id": thread_id, "routine": updated}),
+                    200,
+                    &json!({
+                        "person_id": person.id,
+                        "count": tracked.len(),
+                        "tracked_files": tracked,
+                    }),
                 );
             }
-            let outcome = run_agent_live(
-                &cfg,
-                &ctx,
-                &runtime.store,
-                &thread_id,
-                &prompt,
-                &[],
-                Some((&state.live_runs, &state.events, &person.id)),
-            );
-            state.search_cache.invalidate(&person.id);
-            match outcome {
-                Ok(_) => {
-                    let updated = routines::record_run(&runtime.cfg.data_dir, &id, &thread_id, "finished")
-                        .unwrap_or(routine);
-                    let store = runtime.store.lock().unwrap();
-                    let thread_v = store
-                        .thread_json(&thread_id)
-                        .unwrap_or_else(|| json!({"id": thread_id}));
-                    respond_json(
-                        &mut stream,
-                        200,
-                        &json!({"routine": updated, "thread": thread_v, "thread_id": thread_id}),
-                    )
+            let mut payload = match file_history::history_payload_json(
+                &runtime.cfg.data_dir,
+                &runtime.cfg.workspace_dir,
+                &rel,
+            ) {
+                Ok(v) => v,
+                Err(e) => {
+                    let code = if is_history_security_error(&e) { 403 } else { 400 };
+                    return respond_json(&mut stream, code, &json!({"error": e}));
+                }
+            };
+            let diff_pair = query_param(&req.query, "diff")
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty());
+            let (rev_a, rev_b) = if let Some(pair) = diff_pair {
+                let (a, b) = pair
+                    .split_once(',')
+                    .map(|(x, y)| (x.trim().to_string(), y.trim().to_string()))
+                    .unwrap_or((pair, "current".to_string()));
+                (Some(a), if b.is_empty() { "current".to_string() } else { b })
+            } else {
+                let a = query_param(&req.query, "rev_a")
+                    .or_else(|| query_param(&req.query, "from"))
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty());
+                let b = query_param(&req.query, "rev_b")
+                    .or_else(|| query_param(&req.query, "to"))
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .unwrap_or_else(|| "current".to_string());
+                (a, b)
+            };
+            if let Some(a) = rev_a {
+                match file_history::diff_revisions(
+                    &runtime.cfg.data_dir,
+                    &runtime.cfg.workspace_dir,
+                    &rel,
+                    &a,
+                    &rev_b,
+                ) {
+                    Ok(diff) => {
+                        payload["diff"] = diff.to_json();
+                    }
+                    Err(e) => {
+                        let code = if is_history_security_error(&e) {
+                            403
+                        } else if e.contains("not found") {
+                            404
+                        } else {
+                            400
+                        };
+                        return respond_json(&mut stream, code, &json!({"error": e}));
+                    }
+                }
+            }
+            respond_json(&mut stream, 200, &payload)
+        }
+        ("POST", "/api/files/restore") => {
+            let parsed: Value = serde_json::from_slice(&req.body).unwrap_or(Value::Null);
+            let rel = parsed["path"].as_str().unwrap_or("").trim().to_string();
+            let rev_id = parsed["rev_id"]
+                .as_str()
+                .or_else(|| parsed["revision_id"].as_str())
+                .or_else(|| parsed["id"].as_str())
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            if rel.is_empty() || rev_id.is_empty() {
+                return respond_json(
+                    &mut stream,
+                    400,
+                    &json!({"error": "path and rev_id are required"}),
+                );
+            }
+            match file_history::restore_revision(
+                &runtime.cfg.data_dir,
+                &runtime.cfg.workspace_dir,
+                &rel,
+                &rev_id,
+            ) {
+                Ok(res) => {
+                    state.search_cache.invalidate(&person.id);
+                    let mut out = res.to_json();
+                    out["restored"] = json!(true);
+                    respond_json(&mut stream, 200, &out)
                 }
                 Err(e) => {
-                    let st = if e == "run cancelled by user" { "cancelled" } else { "error" };
-                    runtime.store.lock().unwrap().push(&thread_id, "error", &e);
-                    let updated = routines::record_run(&runtime.cfg.data_dir, &id, &thread_id, st)
-                        .unwrap_or(routine);
-                    respond_json(
-                        &mut stream,
-                        500,
-                        &json!({"error": e, "thread_id": thread_id, "routine": updated}),
-                    )
+                    let code = if is_history_security_error(&e) {
+                        403
+                    } else if e.contains("not found") {
+                        404
+                    } else {
+                        400
+                    };
+                    respond_json(&mut stream, code, &json!({"error": e}))
                 }
+            }
+        }
+        ("GET", "/api/audit/bundle") => {
+            let format = query_param(&req.query, "format")
+                .unwrap_or_else(|| "json".to_string())
+                .to_ascii_lowercase();
+            let download = query_param(&req.query, "download")
+                .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+                .unwrap_or(false);
+            let bundle = audit_bundle::build_audit_bundle(&runtime.cfg, &person);
+            if format == "md" || format == "markdown" {
+                let md = audit_bundle::render_audit_bundle_markdown(&bundle);
+                let mut headers = vec![("X-Content-Type-Options", "nosniff".to_string())];
+                if download {
+                    headers.push((
+                        "Content-Disposition",
+                        "attachment; filename=\"ergon-audit-bundle.md\"".to_string(),
+                    ));
+                }
+                respond_bytes(
+                    &mut stream,
+                    200,
+                    "text/markdown; charset=utf-8",
+                    md.as_bytes(),
+                    &headers,
+                )
+            } else {
+                let bytes = serde_json::to_vec_pretty(&bundle)
+                    .unwrap_or_else(|_| bundle.to_string().into_bytes());
+                let mut headers = vec![("X-Content-Type-Options", "nosniff".to_string())];
+                if download {
+                    headers.push((
+                        "Content-Disposition",
+                        "attachment; filename=\"ergon-audit-bundle.json\"".to_string(),
+                    ));
+                }
+                respond_bytes(
+                    &mut stream,
+                    200,
+                    "application/json; charset=utf-8",
+                    &bytes,
+                    &headers,
+                )
             }
         }
         ("GET", "/api/files") => {
@@ -4270,6 +4763,12 @@ fn handle_connection(mut stream: std::net::TcpStream, state: &AppState) -> std::
                     );
                 }
             }
+            let _ = file_history::record_revision(
+                &runtime.cfg.data_dir,
+                &runtime.cfg.workspace_dir,
+                &raw_rel,
+                "upload",
+            );
             let tmp = full.with_extension("upload.tmp");
             if let Err(e) = std::fs::write(&tmp, &bytes).and_then(|_| std::fs::rename(&tmp, &full)) {
                 let _ = std::fs::remove_file(&tmp);

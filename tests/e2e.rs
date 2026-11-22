@@ -4065,5 +4065,186 @@ fn workflow_tool_errors_never_leak_host_filesystem_paths() {
     );
 }
 
+/// v0.7.0 HTTP E2E: automatic `.history/` snapshots on overwrite & approved delete,
+/// `GET /api/files/history` (+ diff & traversal 403), `POST /api/files/restore`,
+/// `PATCH /api/routines/:id`, `GET /api/routines/:id/history`, `GET /api/audit/bundle`
+/// (JSON verified via `verify_audit_bundle` + Markdown), and `POST /api/people/switch`.
+#[test]
+fn v070_scheduler_file_history_audit_bundle_and_people_switch_http_e2e() {
+    let root = test_root("v070_http");
+    let stub = start_stub_model(vec![
+        json!({"tool": "write_file", "args": {"path": "status.md", "content": "# Status v1\n\nAll green.\n"}}).to_string(),
+        json!({"done": true, "summary": "Wrote status.md v1."}).to_string(),
+        json!({"tool": "delete_file", "args": {"path": "notes.md"}}).to_string(),
+        json!({"done": true, "summary": "Deletion parked for approval."}).to_string(),
+    ]);
+    let cfg = test_config(&root, Some("k"), format!("http://127.0.0.1:{}/v1", stub.port));
+    let port = start_app(cfg);
+
+    // 1. Upload v1, then overwrite with v2 -> v1 snapshotted automatically into .history/
+    let (st, _) = http(
+        port,
+        "POST",
+        "/api/files/upload",
+        Some(&json!({"path": "notes.md", "content": "line one\nline two\n"}).to_string()),
+    );
+    assert_eq!(st, 201);
+    let (st, _) = http(
+        port,
+        "POST",
+        "/api/files/upload",
+        Some(&json!({"path": "notes.md", "content": "line one\nline TWO edited\nline three\n"}).to_string()),
+    );
+    assert_eq!(st, 201);
+
+    let (st, hbody) = http(port, "GET", "/api/files/history?path=notes.md", None);
+    assert_eq!(st, 200, "{hbody}");
+    let hv: Value = serde_json::from_str(&hbody).unwrap();
+    assert_eq!(hv["count"], json!(1), "{hv}");
+    let rev1 = hv["revisions"][0]["rev_id"].as_str().unwrap().to_string();
+
+    // 2. Unified diff between rev1 and current
+    let (st, dbody) = http(
+        port,
+        "GET",
+        &format!("/api/files/history?path=notes.md&rev_a={rev1}&rev_b=current"),
+        None,
+    );
+    assert_eq!(st, 200, "{dbody}");
+    let dv: Value = serde_json::from_str(&dbody).unwrap();
+    assert!(dv["diff"]["added"].as_u64().unwrap_or(0) >= 1, "{dv}");
+    assert!(dv["diff"]["unified"].as_str().unwrap_or("").contains("+line TWO edited"), "{dv}");
+
+    // 3. Traversal/symlink attacks on /api/files/history & /api/files/restore fail closed (403)
+    for bad in ["../../etc/passwd", "%2e%2e/etc/passwd", ".history/secret", "/etc/hosts"] {
+        let (st, _) = http(port, "GET", &format!("/api/files/history?path={bad}"), None);
+        assert_eq!(st, 403, "expected 403 for history path {bad}");
+        let (st, _) = http(
+            port,
+            "POST",
+            "/api/files/restore",
+            Some(&json!({"path": bad, "rev_id": rev1}).to_string()),
+        );
+        assert_eq!(st, 403, "expected 403 for restore path {bad}");
+    }
+
+    // 4. Restore rev1 -> content returns to v1 AND pre-restore snapshot of v2 is recorded
+    let (st, rbody) = http(
+        port,
+        "POST",
+        "/api/files/restore",
+        Some(&json!({"path": "notes.md", "rev_id": rev1}).to_string()),
+    );
+    assert_eq!(st, 200, "{rbody}");
+    let rv: Value = serde_json::from_str(&rbody).unwrap();
+    assert_eq!(rv["restored"], json!(true), "{rv}");
+    assert!(rv["pre_restore_rev_id"].as_str().is_some(), "{rv}");
+    assert_eq!(
+        std::fs::read_to_string(root.join("data/workspace/notes.md")).unwrap(),
+        "line one\nline two\n"
+    );
+
+    // 5. Routine create with cadence + PATCH pause/resume + run + GET /api/routines/:id/history
+    let (st, cbody) = http(
+        port,
+        "POST",
+        "/api/routines",
+        Some(&json!({
+            "name": "Daily Status",
+            "prompt": "Write status.md",
+            "schedule": "every 15m"
+        }).to_string()),
+    );
+    assert_eq!(st, 201, "{cbody}");
+    let cv: Value = serde_json::from_str(&cbody).unwrap();
+    let rid = cv["routine"]["id"].as_str().unwrap().to_string();
+    assert_eq!(cv["routine"]["enabled"], json!(true));
+    assert!(cv["routine"]["next_run_ms"].as_u64().is_some(), "{cv}");
+
+    let (st, pbody) = http(
+        port,
+        "PATCH",
+        &format!("/api/routines/{rid}"),
+        Some(&json!({"enabled": false}).to_string()),
+    );
+    assert_eq!(st, 200, "{pbody}");
+    let pv: Value = serde_json::from_str(&pbody).unwrap();
+    assert_eq!(pv["routine"]["enabled"], json!(false), "{pv}");
+    assert!(pv["routine"]["next_run_ms"].is_null(), "paused routine has null next_run_ms: {pv}");
+
+    let (st, _) = http(
+        port,
+        "PATCH",
+        &format!("/api/routines/{rid}"),
+        Some(&json!({"enabled": true, "schedule": "daily 09:00"}).to_string()),
+    );
+    assert_eq!(st, 200);
+
+    let (st, run_body) = http(port, "POST", &format!("/api/routines/{rid}/run"), Some("{}"));
+    assert_eq!(st, 200, "{run_body}");
+    let run_v: Value = serde_json::from_str(&run_body).unwrap();
+    assert_eq!(run_v["run"]["status"], json!("ok"), "{run_v}");
+    assert!(run_v["run"]["receipt_id"].as_str().is_some(), "{run_v}");
+
+    let (st, rh_body) = http(port, "GET", &format!("/api/routines/{rid}/history"), None);
+    assert_eq!(st, 200, "{rh_body}");
+    let rh_v: Value = serde_json::from_str(&rh_body).unwrap();
+    assert_eq!(rh_v["count"], json!(1), "{rh_v}");
+    assert_eq!(rh_v["runs"][0]["trigger"], json!("manual"), "{rh_v}");
+
+    // 6. Approved delete snapshots notes.md to .history/ so it stays recoverable!
+    let (st, _) = chat(port, "Call delete_file on notes.md");
+    assert_eq!(st, 200);
+    let (_, dlist) = http(port, "GET", "/api/decisions", None);
+    let did = serde_json::from_str::<Value>(&dlist).unwrap()["decisions"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let (st, _) = http(port, "POST", &format!("/api/decisions/{did}/approve"), Some("{}"));
+    assert_eq!(st, 200);
+    assert!(!root.join("data/workspace/notes.md").exists());
+    let (st, del_hist) = http(port, "GET", "/api/files/history?path=notes.md", None);
+    assert_eq!(st, 200, "{del_hist}");
+    let del_v: Value = serde_json::from_str(&del_hist).unwrap();
+    assert_eq!(del_v["revisions"][0]["reason"], json!("delete"), "{del_v}");
+    let del_rev = del_v["revisions"][0]["rev_id"].as_str().unwrap().to_string();
+    let (st, _) = http(
+        port,
+        "POST",
+        "/api/files/restore",
+        Some(&json!({"path": "notes.md", "rev_id": del_rev}).to_string()),
+    );
+    assert_eq!(st, 200);
+    assert!(root.join("data/workspace/notes.md").exists());
+
+    // 7. GET /api/audit/bundle JSON (cryptographically verified!) and Markdown
+    let (st, ab_json) = http(port, "GET", "/api/audit/bundle", None);
+    assert_eq!(st, 200, "{ab_json}");
+    let bundle: Value = serde_json::from_str(&ab_json).unwrap();
+    let ver = ergon_rs::audit_bundle::verify_audit_bundle(&bundle);
+    assert!(ver.valid, "audit bundle failed verification: {:?}", ver.to_json());
+    let (st, ab_md) = http(port, "GET", "/api/audit/bundle?format=md", None);
+    assert_eq!(st, 200);
+    assert!(ab_md.contains("Field-Book Audit Bundle") && ab_md.contains("notes.md"), "{ab_md}");
+
+    // 8. POST /api/people/switch alias switches person cleanly
+    let (st, pnew) = http(
+        port,
+        "POST",
+        "/api/people",
+        Some(&json!({"name": "Dana Ops", "role": "Operations"}).to_string()),
+    );
+    assert_eq!(st, 201, "{pnew}");
+    let pid = serde_json::from_str::<Value>(&pnew).unwrap()["id"].as_str().unwrap().to_string();
+    let (st, sw) = http(
+        port,
+        "POST",
+        "/api/people/switch",
+        Some(&json!({"person_id": pid}).to_string()),
+    );
+    assert_eq!(st, 200, "{sw}");
+    assert_eq!(serde_json::from_str::<Value>(&sw).unwrap()["active"], json!(pid));
+}
+
 
 

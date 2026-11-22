@@ -66,6 +66,18 @@ pub fn create_routine(
     schedule: &str,
     skill_id: Option<&str>,
 ) -> Result<Value, String> {
+    create_routine_with_options(person_data_dir, name, prompt, schedule, None, skill_id, true)
+}
+
+pub fn create_routine_with_options(
+    person_data_dir: &Path,
+    name: &str,
+    prompt: &str,
+    schedule: &str,
+    interval_secs: Option<u64>,
+    skill_id: Option<&str>,
+    enabled: bool,
+) -> Result<Value, String> {
     let clean_name: String = name
         .replace(['\r', '\n'], " ")
         .trim()
@@ -85,10 +97,18 @@ pub fn create_routine(
         .chars()
         .take(64)
         .collect();
-    let sched = if clean_sched.is_empty() {
-        "manual".to_string()
+    let (sched, resolved_interval) = if let Some(iv) = interval_secs {
+        let cadence = crate::scheduler::parse_cadence_or_interval(
+            if clean_sched.is_empty() { None } else { Some(clean_sched.as_str()) },
+            Some(iv),
+        )?;
+        (cadence.canonical_label(), cadence.interval_secs())
+    } else if clean_sched.is_empty() {
+        ("manual".to_string(), None)
+    } else if let Ok(cadence) = crate::scheduler::parse_cadence(&clean_sched) {
+        (cadence.canonical_label(), cadence.interval_secs())
     } else {
-        clean_sched
+        (clean_sched, None)
     };
     let skill = skill_id
         .map(|s| s.trim().chars().take(64).collect::<String>())
@@ -100,22 +120,46 @@ pub fn create_routine(
         let ts = records::now_millis();
         let seq = ROUTINE_SEQ.fetch_add(1, Ordering::SeqCst);
         let id = format!("rtn-{ts}-{seq}");
-        let item = json!({
+        let mut item = json!({
             "id": id,
             "name": clean_name,
             "prompt": clean_prompt,
             "schedule": sched,
             "skill_id": skill,
-            "enabled": true,
+            "enabled": enabled,
             "created_ms": ts,
             "last_run_ms": Value::Null,
             "last_thread_id": Value::Null,
             "last_status": Value::Null,
             "run_count": 0,
         });
+        if let Some(iv) = resolved_interval {
+            item["interval_secs"] = json!(iv);
+        }
         items.push(item.clone());
         save_raw(&path, &items)?;
         Ok(item)
+    })
+}
+
+/// Patch an existing routine using `scheduler::apply_routine_patch` (validates
+/// cadence/interval_secs, supports pause/resume via `enabled`, atomic write).
+pub fn patch_routine(
+    person_data_dir: &Path,
+    id: &str,
+    patch: &Value,
+) -> Result<Option<Value>, String> {
+    with_lock(|| {
+        let path = routines_path(person_data_dir);
+        let mut items = load_raw(&path);
+        let Some(idx) = items.iter().position(|r| r["id"].as_str() == Some(id)) else {
+            return Ok(None);
+        };
+        crate::scheduler::apply_routine_patch(&mut items[idx], patch)?;
+        items[idx]["updated_ms"] = json!(records::now_millis());
+        let updated = items[idx].clone();
+        save_raw(&path, &items)?;
+        Ok(Some(updated))
     })
 }
 
