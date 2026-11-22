@@ -118,18 +118,21 @@ function SettingsBody({
 
   const probeLocalErgon = async () => {
     setLocalProbe("checking");
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 1600);
-    try {
-      await fetch("http://127.0.0.1:8787/api/version", { mode: "no-cors", signal: ctrl.signal });
-      clearTimeout(timer);
-      setLocalProbe("found");
-      window.open("http://127.0.0.1:8787/", "_blank", "noopener");
-      toast.success("Connected — opened your local Ergon desk on 127.0.0.1:8787.");
-    } catch {
-      clearTimeout(timer);
-      setLocalProbe("missing");
+    for (const port of [8787, 8473]) {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 1200);
+      try {
+        await fetch(`http://127.0.0.1:${port}/api/version`, { mode: "no-cors", signal: ctrl.signal });
+        clearTimeout(timer);
+        setLocalProbe("found");
+        window.open(`http://127.0.0.1:${port}/`, "_blank", "noopener");
+        toast.success(`Connected — opened your local Ergon desk on 127.0.0.1:${port}.`);
+        return;
+      } catch {
+        clearTimeout(timer);
+      }
     }
+    setLocalProbe("missing");
   };
 
   const gateways = cfg?.detected_gateways ?? [];
@@ -261,7 +264,7 @@ function SettingsBody({
             ) : (
               <form onSubmit={(e) => saveModel(e, true)} className="flex flex-col gap-2">
                 <p className="text-xs text-ink-2">
-                  Deterministic CSV reconciliation, Markdown summarization, action extraction, learned memory rules, and approval-gated deletion run locally over your IndexedDB workspace.
+                  All 12 deterministic workspace skills (ledger reconciliation, meeting summaries, contract audits, inbox triage, dataset cleaning, document diffs, table extraction, and memory rules), recurring routines, and SHA-256 receipts run locally over your IndexedDB workspace.
                 </p>
                 <div className="flex flex-wrap items-center gap-2">
                   <Button type="submit" size="sm" variant="outline" className="h-auto max-w-full whitespace-normal py-2 text-left max-md:min-h-11" disabled={saving}>
@@ -407,7 +410,7 @@ export function SettingsPanel({
       <MorphingDialogContainer>
         <MorphingDialogContent
           style={{ borderRadius: 18 }}
-          className="relative mx-4 flex max-h-[84vh] w-[540px] max-w-[calc(100vw-2rem)] flex-col gap-3 overflow-y-auto border border-hairline bg-surface p-5 text-ink shadow-lift"
+          className="relative mx-4 flex max-h-[84vh] w-[540px] max-w-[calc(100%-2rem)] flex-col gap-3 overflow-y-auto border border-hairline bg-surface p-5 text-ink shadow-lift"
         >
           <MorphingDialogClose className="focus-ring absolute right-3 top-3 grid size-11 place-items-center rounded-sm text-icon outline-none hover:bg-board md:size-9" />
           <MorphingDialogTitle className="pr-10 text-title font-medium text-ink">Settings</MorphingDialogTitle>

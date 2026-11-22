@@ -1,6 +1,14 @@
 // Ergon server JSON API client. Every failed or malformed call resolves to { ok: false }, never an uncaught throw.
 export type Msg = { role: string; content: string };
 export type Person = { id: string; name: string; role?: string };
+export type ServerCapabilities = {
+  sse?: boolean;
+  skills?: boolean;
+  routines?: boolean;
+  search?: boolean;
+  receipts_export?: boolean;
+  cancel?: boolean;
+};
 export type Status = {
   version: string;
   model_configured: boolean;
@@ -9,6 +17,7 @@ export type Status = {
   is_loopback_model?: boolean;
   auto_detected?: boolean;
   engine_mode?: "native" | "browser" | "byok";
+  capabilities?: ServerCapabilities;
   person?: Person;
   store_recovered?: string[];
 };
@@ -44,12 +53,59 @@ export type WorkspaceFileContent = {
   is_binary: boolean;
   content: string;
 };
+export type LiveRunStep = {
+  id?: string;
+  tool: string;
+  label?: string;
+  status: "running" | "done" | "error" | "waiting";
+  elapsed_ms?: number;
+  started_ms?: number;
+  finished_ms?: number;
+  raw: string;
+  file?: string;
+};
 export type LiveRunStatus = {
   active: boolean;
+  run_id?: string;
   thread_id: string;
   task: string;
   started_ms: number;
-  steps: string[];
+  elapsed_ms?: number;
+  steps: (string | LiveRunStep)[];
+  cancelled?: boolean;
+};
+export type Routine = {
+  id: string;
+  name: string;
+  prompt: string;
+  schedule: string;
+  skill_id?: string;
+  enabled: boolean;
+  last_run_ts?: number | null;
+  last_status?: string;
+  run_count?: number;
+  created_ts?: number;
+};
+export type SearchHit = {
+  kind: "file" | "receipt" | "skill" | "routine" | "memory" | "thread";
+  id: string;
+  title: string;
+  subtitle?: string;
+  path?: string;
+  thread_id?: string;
+  ts?: number;
+};
+export type ReceiptRecord = {
+  id: string;
+  thread_id?: string;
+  task: string;
+  summary?: string;
+  status: "finished" | "waiting" | "stopped";
+  files: string[];
+  date?: string;
+  ts: number;
+  sha256?: string;
+  prev_sha256?: string;
 };
 export type ThreadRow = { id: string; title?: string; messages?: number };
 export type Thread = { id: string; title?: string; messages: Msg[] };
@@ -70,7 +126,7 @@ export type Decision = { id: string; kind: string; summary: string; status: stri
 export type Offer = { id: string; title: string; detail: string; status: string; item_id?: string; ts?: number };
 export type SuiteItem = { id: string; kind: string; name: string; description: string; fields?: string[] };
 export type LibraryItem = { id: string; kind: string; name: string; description: string; author: string; builtin?: boolean };
-export type BriefJob = { task: string; date?: string; summary?: string; files?: string[]; thread_id?: string; ts?: number };
+export type BriefJob = { id?: string; task: string; date?: string; summary?: string; files?: string[]; thread_id?: string; ts?: number; sha256?: string };
 export type Brief = {
   date?: string;
   person?: string;
@@ -93,11 +149,38 @@ export function isWebStandalone(): boolean {
   return typeof window !== "undefined" && Boolean((window as unknown as { __ERGON_WEB_ENGINE__?: boolean }).__ERGON_WEB_ENGINE__);
 }
 
-export async function call<T>(path: string, opts: { method?: string; body?: unknown } = {}): Promise<Res<T>> {
+function isAtLeast050(version: string | undefined): boolean {
+  if (!version) return false;
+  const m = /^v?(\d+)\.(\d+)/.exec(version.trim());
+  if (!m) return false;
+  const major = Number(m[1]);
+  const minor = Number(m[2]);
+  return major > 0 || minor >= 5;
+}
+
+/** Progressive v0.5.0 API detector: avoids 404 console noise against v0.4.0 servers while
+ *  lighting up live SSE, /api/skills, /api/routines, /api/search, and /api/receipts automatically on v0.5.0+. */
+export function hasV050Api(
+  status: Status | null | "error",
+  cap?: keyof ServerCapabilities
+): boolean {
+  if (isWebStandalone()) return true;
+  if (!status || status === "error") return false;
+  if (cap && typeof status.capabilities?.[cap] === "boolean") {
+    return Boolean(status.capabilities[cap]);
+  }
+  return isAtLeast050(status.version);
+}
+
+export async function call<T>(
+  path: string,
+  opts: { method?: string; body?: unknown; signal?: AbortSignal } = {}
+): Promise<Res<T>> {
   try {
     const r = await fetch(path, {
       method: opts.method ?? "GET",
       cache: "no-store",
+      signal: opts.signal,
       headers: opts.body !== undefined ? { "Content-Type": "application/json" } : undefined,
       body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
     });
@@ -117,6 +200,9 @@ export async function call<T>(path: string, opts: { method?: string; body?: unkn
     }
     return { ok: true, data };
   } catch (e) {
+    if (e instanceof DOMException && e.name === "AbortError") {
+      return { ok: false, error: "Run cancelled.", status: 499 };
+    }
     return { ok: false, error: e instanceof TypeError ? "Could not reach the Ergon server." : String(e), status: 0 };
   }
 }

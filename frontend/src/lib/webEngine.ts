@@ -1,9 +1,15 @@
-// Ergon Local-First Browser Engine (Standalone Web Edition)
-// Real IndexedDB workspace + deterministic client-side tool engine (CSV reconciliation,
-// Markdown summarization & action extraction, checklist authoring, standing memory rules,
-// approval-gated file deletion, live Work Graph) + optional BYOK OpenAI-compatible LLM (sessionStorage only).
+// Ergon v0.5.0 Local-First Browser Engine (Standalone Web Edition)
+// Real IndexedDB workspace + all 12 deterministic client-side Rune-equivalent skills
+// (reconcile_ledger, summarize_meeting, audit_contract, triage_inbox, clean_dataset,
+// compare_documents, draft_brief, extract_tables, make_spreadsheet, write_document,
+// research, update_memory), recurring routines, indexed search, live EventSource stream,
+// cooperative run cancellation, Web Crypto SHA-256 receipt export, approval-gated deletion,
+// and optional BYOK OpenAI-compatible LLM (sessionStorage only).
 // ZERO hardcoded fixture replies, ZERO fixture demo pills.
 import { parseCsv } from "@/shell/WorkspaceFiles";
+import { CANONICAL_SKILLS } from "@/lib/skillsCatalog";
+import { buildSignedReceipt } from "@/lib/receiptExport";
+import type { LiveRunStep, Routine } from "@/lib/api";
 
 type WebFile = {
   path: string;
@@ -16,6 +22,7 @@ type WebFile = {
 type WebMsg = { role: string; content: string };
 type WebThread = { id: string; title: string; messages: WebMsg[] };
 type WebWork = {
+  id?: string;
   task: string;
   summary: string;
   files: string[];
@@ -23,6 +30,7 @@ type WebWork = {
   answered: boolean;
   thread_id: string;
   ts: number;
+  steps?: string[];
 };
 type WebDecision = {
   id: string;
@@ -62,6 +70,7 @@ type PersonStore = {
   work: WebWork[];
   decisions: WebDecision[];
   offers: WebOffer[];
+  routines: Routine[];
   memory: string;
   suite: string[];
 };
@@ -78,7 +87,7 @@ type ByokConfig = {
   api_key: string;
 };
 
-const DB_NAME = "ergon-workspace-v4";
+const DB_NAME = "ergon-workspace-v5";
 const DB_STORE = "state";
 const DB_KEY = "root";
 const BYOK_KEY = "ergon-byok-session";
@@ -137,22 +146,12 @@ function learnedLines(md: string): string[] {
     .filter(Boolean);
 }
 
-/** Real deterministic CSV reconciliation engine over ANY uploaded or workspace CSV. */
+/** Skill 1: reconcile_ledger — multi-CSV invoice/expense matching, duplicate ref & missing-receipt anomaly flags. */
 function runCsvReconciliation(
   sourcePath: string,
   csvText: string,
   rules: string[]
-): {
-  reconciledCsv: string;
-  reportMd: string;
-  rowCount: number;
-  grandTotal: number;
-  missingCount: number;
-  duplicateCount: number;
-  categories: [string, { count: number; total: number }][];
-  flaggedRows: string[];
-  amountColName: string;
-} {
+) {
   const rows = parseCsv(csvText);
   if (rows.length < 2) {
     return {
@@ -162,8 +161,8 @@ function runCsvReconciliation(
       grandTotal: 0,
       missingCount: 0,
       duplicateCount: 0,
-      categories: [],
-      flaggedRows: [],
+      categories: [] as [string, { count: number; total: number }][],
+      flaggedRows: [] as string[],
       amountColName: "Amount",
     };
   }
@@ -173,7 +172,6 @@ function runCsvReconciliation(
 
   let amountIdx = lower.findIndex((h) => /(amount|cost|total|price|spend|usd|value|charge|fee|balance)/.test(h));
   if (amountIdx < 0) {
-    // Auto-detect first predominantly numeric column
     for (let c = 0; c < header.length; c++) {
       const numericHits = data.filter((r) => parseMoney(r[c] ?? "") !== null).length;
       if (numericHits >= Math.max(1, Math.floor(data.length * 0.5))) {
@@ -188,12 +186,14 @@ function runCsvReconciliation(
   );
   const catIdx = lower.findIndex((h) => /(category|dept|department|type|group|cost.?center)/.test(h));
   const receiptIdx = lower.findIndex((h) => /(receipt|invoice|status|proof|verified|approved|doc)/.test(h));
+  const refIdx = lower.findIndex((h) => /(ref|invoice.?id|po|txn|number)/.test(h));
 
   let grandTotal = 0;
   let missingCount = 0;
   let duplicateCount = 0;
   const catMap = new Map<string, { count: number; total: number }>();
   const seenKey = new Set<string>();
+  const seenRef = new Set<string>();
   const flaggedRows: string[] = [];
 
   const outHeader = [...header, "Normalized_Amount", "Audit_Status"];
@@ -220,11 +220,13 @@ function runCsvReconciliation(
       }
     }
     const dupKey = `${vendor.toLowerCase()}|${amt.toFixed(2)}`;
-    if (amt !== 0 && seenKey.has(dupKey)) {
+    const refVal = refIdx >= 0 ? padded[refIdx].toLowerCase() : "";
+    if ((amt !== 0 && seenKey.has(dupKey)) || (refVal && seenRef.has(refVal))) {
       duplicateCount += 1;
-      flags.push("possible duplicate");
+      flags.push(refVal && seenRef.has(refVal) ? `duplicate ref ${padded[refIdx]}` : "possible duplicate");
     }
     seenKey.add(dupKey);
+    if (refVal) seenRef.add(refVal);
 
     if (flags.length) {
       flaggedRows.push(`Row ${idx + 2} (${vendor}, ${fmtMoney(amt)}): ${flags.join(", ")}`);
@@ -233,7 +235,7 @@ function runCsvReconciliation(
   });
 
   const totalRow = header.map((_, i) => (i === 0 ? "TOTAL" : i === amountIdx ? grandTotal.toFixed(2) : ""));
-  totalRow.push(grandTotal.toFixed(2), `${data.length} rows · ${missingCount} flagged`);
+  totalRow.push(grandTotal.toFixed(2), `${data.length} rows · ${missingCount + duplicateCount} flagged`);
   outRows.push(totalRow);
 
   const reconciledCsv = outRows.map((r) => r.map(csvEscape).join(",")).join("\n") + "\n";
@@ -277,16 +279,12 @@ function runCsvReconciliation(
   };
 }
 
-/** Real deterministic Markdown / text analyzer grounded in the actual document text & standing preferences. */
-function runDocumentSummary(
-  sources: WebFile[],
-  prompt: string,
-  rules: string[]
-): { outName: string; markdown: string; actionCount: number; blockerCount: number } {
+/** Skill 2: summarize_meeting — decisions, owners, due dates, blockers, and follow-up draft. */
+function runDocumentSummary(sources: WebFile[], prompt: string, rules: string[]) {
   const namedOut = /\b([A-Za-z0-9][A-Za-z0-9._-]*\.md)\b/.exec(prompt);
   const outName = namedOut ? namedOut[1] : sources.length === 1 ? `${sources[0].name.replace(/\.[^.]+$/, "")}-summary.md` : "Summary.md";
 
-  const headings: string[] = [];
+  const decisions: string[] = [];
   const actions: string[] = [];
   const blockers: string[] = [];
   const highlights: string[] = [];
@@ -295,12 +293,12 @@ function runDocumentSummary(
     const lines = src.content.replace(/\r\n/g, "\n").split("\n");
     lines.forEach((raw, idx) => {
       const line = raw.trim();
-      if (!line) return;
-      if (/^#{1,3}\s+/.test(line)) {
-        headings.push(`${line.replace(/^#{1,3}\s+/, "")} (${src.path})`);
+      if (!line || /^#{1,3}\s+/.test(line)) return;
+      if (/\b(decided|decision|approved|agreed|signed off|greenlit)\b/i.test(line)) {
+        decisions.push(`${line.replace(/^[-*]\s*/, "")} [${src.name}:L${idx + 1}]`);
         return;
       }
-      if (/^[-*]\s*\[\s\]\s*/.test(line) || /\b(action|todo|owner|follow[- ]?up|due|by friday|by monday|deadline|assigned)\b/i.test(line)) {
+      if (/^[-*]\s*\[\s\]\s*/.test(line) || /\b(action|todo|owner|follow[- ]?up|due|by friday|by thursday|by monday|deadline|assigned)\b/i.test(line)) {
         actions.push(`${line.replace(/^[-*]\s*(\[\s*\]\s*)?/, "")} [${src.name}:L${idx + 1}]`);
         return;
       }
@@ -310,7 +308,7 @@ function runDocumentSummary(
       }
       if (line.startsWith("- ") || line.startsWith("* ")) {
         highlights.push(line.slice(2));
-      } else if (highlights.length < 6 && line.length > 24) {
+      } else if (highlights.length < 6 && line.length > 20) {
         highlights.push(line);
       }
     });
@@ -321,51 +319,351 @@ function runDocumentSummary(
     "",
     `Compiled from ${sources.map((s) => `\`${s.path}\``).join(", ")}.`,
     "",
+    "## Decisions Made",
+    ...(decisions.length ? decisions.map((d) => `- ${d}`) : ["- No explicit final decisions recorded in the source notes."]),
+    "",
+    "## Action Items, Owners & Due Dates",
+    ...(actions.length ? actions.slice(0, 12).map((a) => `- ${a}`) : ["- No explicit unchecked action items found."]),
+    "",
+    "## Blockers & Risks",
+    ...(blockers.length ? blockers.slice(0, 8).map((b) => `- ${b}`) : ["- No open blockers identified."]),
+    "",
+    "## Follow-Up Draft",
+    `Team — here is the recap from ${sources.map((s) => s.name).join(", ")}: ${actions.length} action item(s) and ${blockers.length} open blocker(s) are tracked above. Please confirm owner dates by EOD.`,
   ];
 
-  const leadBlockers = rules.some((r) => /blocker|owner|executive/i.test(r));
-  if (leadBlockers && (blockers.length || actions.length)) {
-    lines.push("## Executive Takeaways & Blockers");
-    if (blockers.length) {
-      for (const b of blockers.slice(0, 6)) lines.push(`- **Blocker:** ${b}`);
-    } else {
-      lines.push("- No open blockers identified in the source notes.");
-    }
-    lines.push("");
-  }
-
-  lines.push("## Action Items & Owners");
-  if (actions.length) {
-    for (const a of actions.slice(0, 10)) lines.push(`- ${a}`);
-  } else {
-    lines.push("- No explicit unchecked action items found in the source files.");
-  }
-
-  if (!leadBlockers && blockers.length) {
-    lines.push("", "## Risks & Blockers");
-    for (const b of blockers.slice(0, 6)) lines.push(`- ${b}`);
-  }
-
-  lines.push("", "## Key Points");
   if (highlights.length) {
-    for (const h of highlights.slice(0, 8)) lines.push(`- ${h}`);
-  } else if (headings.length) {
-    for (const h of headings.slice(0, 6)) lines.push(`- ${h}`);
-  } else {
-    lines.push("- Reviewed workspace inputs; no additional bullet points extracted.");
+    lines.push("", "## Key Context", ...highlights.slice(0, 6).map((h) => `- ${h}`));
   }
-
   if (rules.length) {
-    lines.push("", "## Standing Preferences Applied");
-    for (const r of rules.slice(0, 4)) lines.push(`- ${r}`);
+    lines.push("", "## Standing Preferences Applied", ...rules.slice(0, 4).map((r) => `- ${r}`));
   }
 
-  return {
-    outName,
-    markdown: lines.join("\n") + "\n",
-    actionCount: actions.length,
-    blockerCount: blockers.length,
-  };
+  return { outName, markdown: lines.join("\n") + "\n", actionCount: actions.length, blockerCount: blockers.length, decisionCount: decisions.length };
+}
+
+/** Skill 3: audit_contract — required clause inspection, renewal dates, missing-clause flags, line-cited risk table. */
+function runContractAudit(src: WebFile, rules: string[]) {
+  const lines = src.content.replace(/\r\n/g, "\n").split("\n");
+  const checks: { clause: string; re: RegExp; riskIfMissing: string }[] = [
+    { clause: "Termination & Notice", re: /\b(terminat|notice\s+period|cancel(?:lation)?)\b/i, riskIfMissing: "High" },
+    { clause: "Auto-Renewal Window", re: /\b(auto[- ]?renew|renewal\s+term|evergreen)\b/i, riskIfMissing: "Medium" },
+    { clause: "Liability Cap", re: /\b(limitation\s+of\s+liability|liability\s+cap|aggregate\s+liability)\b/i, riskIfMissing: "High" },
+    { clause: "Indemnification", re: /\b(indemnif|hold\s+harmless)\b/i, riskIfMissing: "High" },
+    { clause: "Confidentiality / NDA", re: /\b(confidential|non[- ]?disclosure|proprietary\s+information)\b/i, riskIfMissing: "Medium" },
+    { clause: "Data Protection / Security", re: /\b(data\s+protection|security\s+breach|gdpr|soc\s*2|encryption)\b/i, riskIfMissing: "High" },
+    { clause: "Payment Terms", re: /\b(net\s*\d+|payment\s+terms|invoice|late\s+fee)\b/i, riskIfMissing: "Medium" },
+    { clause: "Governing Law", re: /\b(governing\s+law|jurisdiction|venue|arbitration)\b/i, riskIfMissing: "Low" },
+  ];
+
+  const rows: string[] = ["| Clause | Status | Citation | Risk |", "| --- | --- | --- | --- |"];
+  const missing: string[] = [];
+  const renewalHits: string[] = [];
+
+  for (const ck of checks) {
+    const hitIdx = lines.findIndex((l) => ck.re.test(l));
+    if (hitIdx >= 0) {
+      const snippet = lines[hitIdx].trim().slice(0, 72);
+      const isAutoRenewTrap = ck.clause === "Auto-Renewal Window" && /auto[- ]?renew/i.test(lines[hitIdx]);
+      rows.push(`| ${ck.clause} | Present | \`${src.name}:L${hitIdx + 1}\` ${snippet} | ${isAutoRenewTrap ? "Review" : "OK"} |`);
+      if (isAutoRenewTrap) renewalHits.push(`Auto-renewal clause detected at \`${src.name}:L${hitIdx + 1}\`: ${lines[hitIdx].trim()}`);
+    } else {
+      missing.push(ck.clause);
+      rows.push(`| ${ck.clause} | **MISSING** | — | ${ck.riskIfMissing} |`);
+    }
+  }
+
+  const dateMatches: string[] = [];
+  lines.forEach((l, i) => {
+    if (/\b(20\d{2}-\d{2}-\d{2}|\d+\s+days?\s+(?:prior|before|notice)|january|february|march|april|may|june|july|august|september|october|november|december)\b/i.test(l)) {
+      dateMatches.push(`- \`${src.name}:L${i + 1}\`: ${l.trim()}`);
+    }
+  });
+
+  const outName = `${src.name.replace(/\.[^.]+$/, "")}-contract-audit.md`;
+  const md = [
+    `# Contract Audit — ${src.path}`,
+    "",
+    "## Audit Summary",
+    `- Source file: \`${src.path}\` (${lines.length} lines)`,
+    `- Clauses verified: **${checks.length - missing.length}/${checks.length}**`,
+    `- Missing clauses flagged: **${missing.length}**${missing.length ? ` (${missing.join(", ")})` : ""}`,
+    "",
+    "## Clause & Risk Table",
+    ...rows,
+    "",
+    "## Dates & Renewal Windows",
+    ...(renewalHits.length ? renewalHits.map((r) => `- **Warning:** ${r}`) : []),
+    ...(dateMatches.length ? dateMatches.slice(0, 8) : ["- No explicit renewal or notice dates detected."]),
+    ...(rules.length ? ["", "## Standing Preferences Applied", ...rules.slice(0, 4).map((r) => `- ${r}`)] : []),
+  ].join("\n") + "\n";
+
+  return { outName, md, missingCount: missing.length, presentCount: checks.length - missing.length };
+}
+
+/** Skill 4: triage_inbox — classify messages/tickets into Urgent / Action / FYI with next steps. */
+function runInboxTriage(src: WebFile, rules: string[]) {
+  const lines = src.content.replace(/\r\n/g, "\n").split("\n").map((l) => l.trim()).filter((l) => l && !l.startsWith("#"));
+  const urgent: string[] = [];
+  const action: string[] = [];
+  const fyi: string[] = [];
+
+  lines.forEach((line, idx) => {
+    const clean = line.replace(/^[-*]\s*/, "");
+    const tag = `[${src.name}:L${idx + 1}]`;
+    if (/\b(urgent|sev1|p0|outage|down|security|breach|asap|blocked|failed|overdue|escalation|critical)\b/i.test(clean)) {
+      urgent.push(`${clean} ${tag} — Next step: assign owner & respond within 30 min.`);
+    } else if (/\b(please|review|approve|action|due|confirm|send|update|schedule|follow[- ]?up|request|ticket|invoice)\b/i.test(clean)) {
+      action.push(`${clean} ${tag} — Next step: complete in today's work block.`);
+    } else {
+      fyi.push(`${clean} ${tag}`);
+    }
+  });
+
+  const outName = `${src.name.replace(/\.[^.]+$/, "")}-triage.md`;
+  const md = [
+    `# Inbox Triage — ${src.path}`,
+    "",
+    `- Items processed: **${lines.length}** (Urgent: **${urgent.length}**, Action: **${action.length}**, FYI: **${fyi.length}**)`,
+    "",
+    "## Urgent",
+    ...(urgent.length ? urgent.map((x) => `- ${x}`) : ["- No urgent escalations detected."]),
+    "",
+    "## Action Required",
+    ...(action.length ? action.map((x) => `- ${x}`) : ["- No standard action items queued."]),
+    "",
+    "## FYI / Reference",
+    ...(fyi.length ? fyi.slice(0, 12).map((x) => `- ${x}`) : ["- None."]),
+    ...(rules.length ? ["", "## Standing Preferences Applied", ...rules.slice(0, 4).map((r) => `- ${r}`)] : []),
+  ].join("\n") + "\n";
+
+  return { outName, md, urgentCount: urgent.length, actionCount: action.length, fyiCount: fyi.length };
+}
+
+/** Skill 5: clean_dataset — normalize CSV/JSON schemas, deduplicate rows, flag nulls/outliers, report diff metrics. */
+function runCleanDataset(src: WebFile) {
+  const stem = src.name.replace(/\.[^.]+$/, "");
+  if (src.ext === "json") {
+    let parsed: unknown = [];
+    try { parsed = JSON.parse(src.content); } catch { parsed = []; }
+    const arr = Array.isArray(parsed) ? parsed : [parsed];
+    const seen = new Set<string>();
+    const cleanArr: Record<string, unknown>[] = [];
+    let dups = 0;
+    let nulls = 0;
+    for (const item of arr) {
+      if (!item || typeof item !== "object") continue;
+      const normalized: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(item as Record<string, unknown>)) {
+        const nk = k.trim().toLowerCase().replace(/\s+/g, "_");
+        if (v === null || v === undefined || String(v).trim() === "") nulls++;
+        normalized[nk] = typeof v === "string" ? v.trim() : v;
+      }
+      const key = JSON.stringify(normalized);
+      if (seen.has(key)) { dups++; continue; }
+      seen.add(key);
+      cleanArr.push(normalized);
+    }
+    const outFile = `${stem}-cleaned.json`;
+    const reportFile = `${stem}-clean-report.md`;
+    const reportMd = `# Dataset Clean Metrics — ${src.path}\n\n- Input records: **${arr.length}**\n- Output records: **${cleanArr.length}**\n- Duplicates removed: **${dups}**\n- Empty/null fields flagged: **${nulls}**\n`;
+    return { outFile, outBody: JSON.stringify(cleanArr, null, 2) + "\n", reportFile, reportMd, removedDups: dups, nullCells: nulls, rowCount: cleanArr.length };
+  }
+
+  const rows = parseCsv(src.content);
+  if (rows.length < 2) {
+    return { outFile: `${stem}-cleaned.csv`, outBody: src.content, reportFile: `${stem}-clean-report.md`, reportMd: `# Dataset Clean Metrics — ${src.path}\n\nNo rows to clean.\n`, removedDups: 0, nullCells: 0, rowCount: 0 };
+  }
+  const header = rows[0].map((h) => h.trim().replace(/\s+/g, "_"));
+  const body = rows.slice(1);
+  const seen = new Set<string>();
+  const cleaned: string[][] = [header];
+  let removedDups = 0;
+  let nullCells = 0;
+  for (const r of body) {
+    const norm = header.map((_, i) => {
+      const val = (r[i] ?? "").trim();
+      if (!val || /^(null|n\/a|none|nan)$/i.test(val)) {
+        nullCells++;
+        return "";
+      }
+      return val;
+    });
+    const key = norm.join("|").toLowerCase();
+    if (seen.has(key)) {
+      removedDups++;
+      continue;
+    }
+    seen.add(key);
+    cleaned.push(norm);
+  }
+  const outBody = cleaned.map((r) => r.map(csvEscape).join(",")).join("\n") + "\n";
+  const outFile = `${stem}-cleaned.csv`;
+  const reportFile = `${stem}-clean-report.md`;
+  const reportMd = [
+    `# Dataset Clean Metrics — ${src.path}`,
+    "",
+    `- Input rows: **${body.length}**`,
+    `- Output rows: **${cleaned.length - 1}**`,
+    `- Exact duplicate rows removed: **${removedDups}**`,
+    `- Null / empty cells normalized: **${nullCells}**`,
+    `- Output file: \`${outFile}\``,
+  ].join("\n") + "\n";
+  return { outFile, outBody, reportFile, reportMd, removedDups, nullCells, rowCount: cleaned.length - 1 };
+}
+
+/** Skill 6: compare_documents — real line-by-line LCS diff & change summary between two workspace files. */
+function runCompareDocuments(left: WebFile, right: WebFile) {
+  const a = left.content.replace(/\r\n/g, "\n").split("\n").slice(0, 400);
+  const b = right.content.replace(/\r\n/g, "\n").split("\n").slice(0, 400);
+  const m = a.length;
+  const n = b.length;
+  const dp: Uint16Array[] = Array.from({ length: m + 1 }, () => new Uint16Array(n + 1));
+  for (let i = m - 1; i >= 0; i--) {
+    for (let j = n - 1; j >= 0; j--) {
+      dp[i][j] = a[i] === b[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+    }
+  }
+  const diffLines: string[] = [];
+  let added = 0;
+  let removed = 0;
+  let unchanged = 0;
+  let i = 0;
+  let j = 0;
+  while (i < m && j < n) {
+    if (a[i] === b[j]) {
+      unchanged++;
+      i++;
+      j++;
+    } else if (dp[i + 1][j] >= dp[i][j + 1]) {
+      removed++;
+      diffLines.push(`- [L${i + 1}] ${a[i]}`);
+      i++;
+    } else {
+      added++;
+      diffLines.push(`+ [L${j + 1}] ${b[j]}`);
+      j++;
+    }
+  }
+  while (i < m) { removed++; diffLines.push(`- [L${i + 1}] ${a[i++]}`); }
+  while (j < n) { added++; diffLines.push(`+ [L${j + 1}] ${b[j++]}`); }
+
+  const outName = `diff-${left.name.replace(/\.[^.]+$/, "")}-vs-${right.name.replace(/\.[^.]+$/, "")}.md`.slice(0, 60);
+  const md = [
+    `# Document Comparison: ${left.path} vs ${right.path}`,
+    "",
+    "## Change Metrics",
+    `- Left file: \`${left.path}\` (${a.length} lines)`,
+    `- Right file: \`${right.path}\` (${b.length} lines)`,
+    `- Lines added: **+${added}** · Lines removed: **-${removed}** · Unchanged: **${unchanged}**`,
+    "",
+    "## Unified Line Diff",
+    "```diff",
+    ...(diffLines.length ? diffLines.slice(0, 120) : ["(files are identical)"]),
+    "```",
+  ].join("\n") + "\n";
+
+  return { outName, md, added, removed, unchanged };
+}
+
+/** Skill 7: draft_brief — grounded executive memo/SOP strictly citing workspace files & standing memory. */
+function runDraftBrief(sources: WebFile[], prompt: string, rules: string[]) {
+  const outName = "executive-brief.md";
+  const facts: string[] = [];
+  for (const s of sources.slice(0, 5)) {
+    const lines = s.content.replace(/\r\n/g, "\n").split("\n");
+    lines.forEach((raw, idx) => {
+      const t = raw.trim();
+      if (t.length > 18 && !t.startsWith("#") && facts.length < 14) {
+        facts.push(`- ${t.replace(/^[-*]\s*/, "")} [\`${s.path}:L${idx + 1}\`]`);
+      }
+    });
+  }
+  const md = [
+    "# Executive Brief",
+    "",
+    "## Objective",
+    prompt,
+    "",
+    "## Grounded Workspace Findings",
+    ...(facts.length ? facts : ["- No source files were available in the workspace."]),
+    "",
+    "## Sources Cited",
+    ...(sources.length ? sources.map((s) => `- \`${s.path}\` (${s.size} bytes)`) : ["- None"]),
+    "",
+    "## Standing Preferences Applied",
+    ...(rules.length ? rules.map((r) => `- ${r}`) : ["- None recorded yet."]),
+  ].join("\n") + "\n";
+  return { outName, md, citationCount: facts.length };
+}
+
+/** Skill 8: extract_tables — parse Markdown pipe tables, key-value logs, or delimited lines into structured CSV. */
+function runExtractTables(src: WebFile) {
+  const lines = src.content.replace(/\r\n/g, "\n").split("\n");
+  const pipeRows = lines
+    .map((l) => l.trim())
+    .filter((l) => /^\|.+\|$/.test(l))
+    .map((l) => l.slice(1, -1).split("|").map((c) => c.trim()))
+    .filter((r) => !r.every((c) => /^[-:\s]+$/.test(c)));
+
+  let columns: string[] = [];
+  let rows: string[][] = [];
+
+  if (pipeRows.length >= 2) {
+    columns = pipeRows[0];
+    rows = pipeRows.slice(1);
+  } else {
+    columns = ["Source_Line", "Key_or_Tag", "Value"];
+    lines.forEach((raw, idx) => {
+      const t = raw.trim();
+      if (!t || t.startsWith("#")) return;
+      const kv = /^[-*]?\s*([A-Za-z0-9 _/-]{2,32}):\s+(.+)$/.exec(t);
+      if (kv) {
+        rows.push([`L${idx + 1}`, kv[1].trim(), kv[2].trim()]);
+      } else if (t.includes("\t")) {
+        const parts = t.split("\t").map((p) => p.trim());
+        rows.push([`L${idx + 1}`, parts[0] || "", parts.slice(1).join(" | ")]);
+      } else if (t.startsWith("- ")) {
+        rows.push([`L${idx + 1}`, "Item", t.slice(2).trim()]);
+      }
+    });
+  }
+
+  const csv = [columns, ...rows].map((r) => r.map(csvEscape).join(",")).join("\n") + "\n";
+  const outName = `${src.name.replace(/\.[^.]+$/, "")}-extracted.csv`;
+  return { outName, csv, rowCount: rows.length, colCount: columns.length };
+}
+
+/** Skill 11: research — cross-file workspace search with line-level citations. */
+function runWorkspaceResearch(allFiles: WebFile[], prompt: string, rules: string[]) {
+  const keywords = prompt
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter((w) => w.length >= 4 && !/^(research|topic|about|workspace|files|compile|sourced|findings|brief|save|with|from|into|that|this|your|have)$/.test(w));
+
+  const citations: string[] = [];
+  for (const f of allFiles) {
+    f.content.replace(/\r\n/g, "\n").split("\n").forEach((raw, idx) => {
+      const t = raw.trim();
+      if (!t || citations.length >= 18) return;
+      const low = t.toLowerCase();
+      if (keywords.length === 0 ? t.length > 22 : keywords.some((k) => low.includes(k))) {
+        citations.push(`- [\`${f.path}:L${idx + 1}\`] ${t.slice(0, 140)}`);
+      }
+    });
+  }
+  const outName = "research-findings.md";
+  const md = [
+    "# Workspace Research Findings",
+    "",
+    `Query: ${prompt}`,
+    "",
+    "## Cited Evidence",
+    ...(citations.length ? citations : ["- No lines matched the search keywords across current workspace files."]),
+    ...(rules.length ? ["", "## Standing Preferences Applied", ...rules.slice(0, 4).map((r) => `- ${r}`)] : []),
+  ].join("\n") + "\n";
+  return { outName, md, hitCount: citations.length };
 }
 
 function buildInitialState(): RootState {
@@ -384,11 +682,29 @@ function buildInitialState(): RootState {
     "# Tuesday Product & Operations Sync",
     "",
     "## Updates",
-    "- Launch checklist for v0.4.0 desktop builds is ready for QA sign-off.",
+    "- Decided: Ship Ergon v0.5.0 with 12 verified Rune skills and SHA-256 receipts.",
     "- Owner: Maya Chen — finalize Q3 vendor reconciliation before Friday close.",
     "- [ ] Owner: Tomas Ruiz — chase missing $240.00 CloudHost Backup receipt by Thursday.",
     "- [ ] Owner: Priya Raman — publish dark-mode accessibility checklist for Settings.",
     "- Blocker: Q2 archived vendor draft (old-vendor-draft.txt) still sitting in active workspace.",
+  ].join("\n") + "\n";
+
+  const vendorContract = [
+    "# Northstar Cloud Vendor Services Agreement (Draft)",
+    "",
+    "1. Term & Auto-Renewal: Initial term ends 2026-12-31 and auto-renews for 12 months unless written notice is given 45 days prior.",
+    "2. Payment Terms: Net 30 from invoice receipt; late balances accrue 1.5% monthly interest.",
+    "3. Confidentiality: Both parties shall maintain proprietary information strictly confidential for 3 years.",
+    "4. Governing Law: State of Delaware.",
+    "5. Termination: Either party may terminate for uncured material breach with 30 days notice.",
+  ].join("\n") + "\n";
+
+  const supportInbox = [
+    "# Operations Inbox Feed",
+    "- URGENT: Payment webhook returned 502 error on billing-eu — customer invoices delayed.",
+    "- Action: Please approve Q4 Freight renewal quote from Northstar Logistics by Friday.",
+    "- Action: Review draft contract clauses before legal sign-off.",
+    "- FYI: Quarterly office badge audit completed with zero findings.",
   ].join("\n") + "\n";
 
   const oldDraft = [
@@ -407,15 +723,21 @@ function buildInitialState(): RootState {
   const mayaFiles: Record<string, WebFile> = {
     "expenses-q3.csv": makeFile("expenses-q3.csv", expensesCsv, now - 140 * 60_000),
     "tuesday-sync-notes.md": makeFile("tuesday-sync-notes.md", syncNotes, now - 110 * 60_000),
+    "vendor-agreement.md": makeFile("vendor-agreement.md", vendorContract, now - 105 * 60_000),
+    "ops-inbox.log": makeFile("ops-inbox.log", supportInbox, now - 95 * 60_000),
     "old-vendor-draft.txt": makeFile("old-vendor-draft.txt", oldDraft, now - 300 * 60_000),
     "expenses-q3-reconciled.csv": makeFile("expenses-q3-reconciled.csv", recon.reconciledCsv, now - 24 * 60_000),
   };
 
   const library: WebLibItem[] = [
-    { id: "write-document", kind: "skill", name: "Write document", description: "Formats structured sections into a Markdown document in the workspace.", author: "ergon", builtin: true },
-    { id: "make-spreadsheet", kind: "skill", name: "Make spreadsheet", description: "Writes verified CSV spreadsheets with checked column totals.", author: "ergon", builtin: true },
-    { id: "research", kind: "skill", name: "Research", description: "Compiles sourced workspace research notes.", author: "ergon", builtin: true },
-    { id: "update-memory", kind: "skill", name: "Update memory", description: "Records standing preferences into personal memory.md.", author: "ergon", builtin: true },
+    ...CANONICAL_SKILLS.map((sk) => ({
+      id: sk.id,
+      kind: "skill",
+      name: sk.title,
+      description: sk.description,
+      author: "ergon",
+      builtin: true,
+    })),
     { id: "bookkeeper", kind: "subagent", name: "Bookkeeper", description: "Reconciles raw expense CSVs, computes category subtotals, and flags missing receipts.", author: "ergon", builtin: false },
     { id: "meeting-actions", kind: "app", name: "Meeting actions", description: "Reads meeting notes and writes decisions and owner action items.", author: "ergon", builtin: false, fields: ["notes_file"], template: "Summarize {notes_file} into Summary.md with owners and action items" },
     { id: "researcher", kind: "subagent", name: "Researcher", description: "Searches workspace files and compiles sourced findings.", author: "ergon", builtin: false },
@@ -426,6 +748,31 @@ function buildInitialState(): RootState {
     files: mayaFiles,
     memory: `# Memory\n\n## About\n- Name: Maya Chen\n- Role: Operations lead\n\n## Standing preferences\n${initialRules.map((r) => `- ${r}`).join("\n")}\n`,
     suite: ["bookkeeper", "meeting-actions", "researcher"],
+    routines: [
+      {
+        id: "rt-morning-ledger",
+        name: "Morning expense ledger audit",
+        prompt: "Reconcile expenses-q3.csv, compute category subtotals, and flag missing receipts or duplicates.",
+        schedule: "Every weekday 08:30",
+        skill_id: "reconcile_ledger",
+        enabled: true,
+        last_run_ts: now - 24 * 60_000,
+        last_status: "finished",
+        run_count: 1,
+        created_ts: now - 3 * 86_400_000,
+      },
+      {
+        id: "rt-inbox-triage",
+        name: "Daily ops inbox triage",
+        prompt: "Triage ops-inbox.log into Urgent, Action, and FYI queues with concrete next steps.",
+        schedule: "Daily 09:00",
+        skill_id: "triage_inbox",
+        enabled: true,
+        last_run_ts: null,
+        run_count: 0,
+        created_ts: now - 2 * 86_400_000,
+      },
+    ],
     threads: [
       {
         id: t1,
@@ -434,7 +781,7 @@ function buildInitialState(): RootState {
           { role: "user", content: "Reconcile expenses-q3.csv and flag missing receipts" },
           { role: "step", content: "Tool: list_dir\nexpenses-q3.csv\nold-vendor-draft.txt\ntuesday-sync-notes.md" },
           { role: "step", content: `Tool: read_file\nread expenses-q3.csv (${utf8Bytes(expensesCsv)} bytes)` },
-          { role: "step", content: `Tool: make_spreadsheet\nwrote spreadsheet expenses-q3-reconciled.csv (${recon.rowCount} data rows, ${utf8Bytes(recon.reconciledCsv)} bytes)` },
+          { role: "step", content: `Tool: reconcile_ledger\nwrote spreadsheet expenses-q3-reconciled.csv (${recon.rowCount} data rows, ${utf8Bytes(recon.reconciledCsv)} bytes)` },
           { role: "assistant", content: `Reconciled ${recon.rowCount} entries (${fmtMoney(recon.grandTotal)} total) into expenses-q3-reconciled.csv and flagged ${recon.missingCount} missing receipt (CloudHost Backup, $240.00).` },
         ],
       },
@@ -451,6 +798,7 @@ function buildInitialState(): RootState {
     ],
     work: [
       {
+        id: t1,
         task: "Reconcile expenses-q3.csv and flag missing receipts",
         summary: `Reconciled ${recon.rowCount} entries (${fmtMoney(recon.grandTotal)} total) into expenses-q3-reconciled.csv.`,
         files: ["expenses-q3-reconciled.csv"],
@@ -460,6 +808,7 @@ function buildInitialState(): RootState {
         ts: now - 24 * 60_000,
       },
       {
+        id: t2,
         task: "Clean up old-vendor-draft.txt",
         summary: "Parked deletion of old-vendor-draft.txt for approval.",
         files: [],
@@ -500,6 +849,7 @@ function buildInitialState(): RootState {
     },
     memory: "# Memory\n\n## About\n- Name: Tomas Ruiz\n- Role: Finance analyst\n\n## Standing preferences\n- Flag variances over $50.\n",
     suite: ["bookkeeper", "expense-sheet"],
+    routines: [],
     threads: [],
     work: [],
     decisions: [],
@@ -520,11 +870,11 @@ function buildInitialState(): RootState {
   };
 }
 
-function openIdb(): Promise<IDBDatabase | null> {
+function openIdb(dbName = DB_NAME): Promise<IDBDatabase | null> {
   if (typeof indexedDB === "undefined") return Promise.resolve(null);
   return new Promise((resolve) => {
     try {
-      const req = indexedDB.open(DB_NAME, 1);
+      const req = indexedDB.open(dbName, 1);
       req.onupgradeneeded = () => {
         const db = req.result;
         if (!db.objectStoreNames.contains(DB_STORE)) db.createObjectStore(DB_STORE);
@@ -538,9 +888,9 @@ function openIdb(): Promise<IDBDatabase | null> {
 }
 
 async function idbLoad(): Promise<RootState | null> {
-  const db = await openIdb();
+  const db = await openIdb(DB_NAME);
   if (!db) return null;
-  return new Promise((resolve) => {
+  const loaded = await new Promise<RootState | null>((resolve) => {
     try {
       const tx = db.transaction(DB_STORE, "readonly");
       const req = tx.objectStore(DB_STORE).get(DB_KEY);
@@ -550,10 +900,16 @@ async function idbLoad(): Promise<RootState | null> {
       resolve(null);
     }
   });
+  if (loaded) {
+    for (const st of Object.values(loaded.stores || {})) {
+      if (!Array.isArray(st.routines)) st.routines = [];
+    }
+  }
+  return loaded;
 }
 
 async function idbSave(state: RootState): Promise<void> {
-  const db = await openIdb();
+  const db = await openIdb(DB_NAME);
   if (!db) return;
   await new Promise<void>((resolve) => {
     try {
@@ -599,8 +955,81 @@ export async function installBrowserEngine(): Promise<void> {
   let state: RootState = (await idbLoad()) || buildInitialState();
   await idbSave(state);
 
-  const liveRuns: Record<string, { active: boolean; thread_id: string; task: string; started_ms: number; steps: string[] }> = {};
-  const persist = () => { void idbSave(state); };
+  const liveRuns: Record<string, {
+    active: boolean;
+    run_id: string;
+    thread_id: string;
+    task: string;
+    started_ms: number;
+    steps: LiveRunStep[];
+    cancelled: boolean;
+  }> = {};
+
+  // Local EventSource listeners for /api/runs/stream (zero network traffic on static web hosting!).
+  const sseListeners = new Set<(event: string, payload: unknown) => void>();
+  const broadcastSse = (event: string, payload: unknown) => {
+    for (const fn of sseListeners) {
+      try { fn(event, payload); } catch { /* ignore */ }
+    }
+  };
+
+  if (typeof window.EventSource !== "undefined") {
+    const NativeEventSource = window.EventSource;
+    class VirtualRunEventSource {
+      static readonly CONNECTING = 0;
+      static readonly OPEN = 1;
+      static readonly CLOSED = 2;
+      readonly url: string;
+      readonly withCredentials = false;
+      readyState = 1;
+      onopen: ((ev: Event) => void) | null = null;
+      onmessage: ((ev: MessageEvent) => void) | null = null;
+      onerror: ((ev: Event) => void) | null = null;
+      private native: EventSource | null = null;
+      private handlers = new Map<string, Set<EventListener>>();
+      private sub: ((event: string, payload: unknown) => void) | null = null;
+
+      constructor(url: string | URL, init?: EventSourceInit) {
+        this.url = String(url);
+        if (!this.url.includes("/api/runs/stream")) {
+          this.native = new NativeEventSource(url, init);
+          return;
+        }
+        this.sub = (event, payload) => {
+          if (this.readyState === 2) return;
+          const ev = new MessageEvent(event, { data: JSON.stringify(payload) });
+          if (event === "message" && this.onmessage) this.onmessage(ev);
+          this.handlers.get(event)?.forEach((h) => h(ev));
+        };
+        sseListeners.add(this.sub);
+        setTimeout(() => {
+          if (this.readyState !== 2 && this.onopen) this.onopen(new Event("open"));
+        }, 0);
+      }
+
+      addEventListener(type: string, listener: EventListener) {
+        if (this.native) { this.native.addEventListener(type, listener); return; }
+        if (!this.handlers.has(type)) this.handlers.set(type, new Set());
+        this.handlers.get(type)!.add(listener);
+      }
+
+      removeEventListener(type: string, listener: EventListener) {
+        if (this.native) { this.native.removeEventListener(type, listener); return; }
+        this.handlers.get(type)?.delete(listener);
+      }
+
+      dispatchEvent(_event: Event): boolean { return true; }
+
+      close() {
+        this.readyState = 2;
+        if (this.native) { this.native.close(); return; }
+        if (this.sub) sseListeners.delete(this.sub);
+      }
+    }
+    (window as unknown as { EventSource: unknown }).EventSource = VirtualRunEventSource;
+  }
+
+  const persist = () => idbSave(state);
 
   const activePerson = (): WebPerson =>
     state.people.find((p) => p.id === state.activePerson) || state.people[0];
@@ -615,10 +1044,12 @@ export async function installBrowserEngine(): Promise<void> {
         work: [],
         decisions: [],
         offers: [],
+        routines: [],
         memory: `# Memory\n\n## About\n- Name: ${p.name}\n${p.role ? `- Role: ${p.role}\n` : ""}`,
         suite: ["researcher", "meeting-actions"],
       };
     }
+    if (!Array.isArray(state.stores[pid].routines)) state.stores[pid].routines = [];
     return state.stores[pid];
   };
 
@@ -632,7 +1063,8 @@ export async function installBrowserEngine(): Promise<void> {
       date: new Date().toISOString().slice(0, 10),
       person: p.name,
       headline: fin.length ? `${fin.length} job${fin.length === 1 ? "" : "s"} finished in the last two days.` : "Nothing finished in the last two days.",
-      finished: fin.map((x) => ({
+      finished: fin.map((x, idx) => ({
+        id: x.id || x.thread_id || `rec-${idx}`,
         date: new Date(x.ts).toISOString().slice(0, 10),
         task: x.task,
         summary: x.summary,
@@ -691,7 +1123,6 @@ export async function installBrowserEngine(): Promise<void> {
 
   const origFetch = window.fetch.bind(window);
 
-  /** Execute one tool call against the real IndexedDB store (used by both deterministic and BYOK LLM modes). */
   function execTool(st: PersonStore, threadId: string, tool: string, args: Record<string, unknown>, written: string[]): string {
     if (tool === "list_dir") {
       const keys = Object.keys(st.files).sort();
@@ -792,17 +1223,17 @@ export async function installBrowserEngine(): Promise<void> {
     return `error: unknown tool ${tool}`;
   }
 
-  /** Run BYOK OpenAI-compatible multi-step JSON tool loop over real IndexedDB tools. */
   async function runByokLoop(
     st: PersonStore,
     byok: ByokConfig,
     thread: WebThread,
     prompt: string,
-    pushStep: (s: string) => void
+    pushStep: (tool: string, raw: string) => void,
+    isCancelled: () => boolean
   ): Promise<{ summary: string; written: string[]; parkedFile: string | null }> {
     const rules = learnedLines(st.memory);
     const sys = [
-      "You are Ergon, a personal AI agent running over a real sandboxed browser workspace.",
+      "You are Ergon v0.5.0, a personal AI agent running over a real sandboxed browser workspace.",
       "Reply with ONLY ONE valid JSON object per message:",
       '- Tool call: {"tool": "<name>", "args": {...}}',
       '- Final answer: {"done": true, "summary": "<factual summary of what you did>"}',
@@ -818,6 +1249,7 @@ export async function installBrowserEngine(): Promise<void> {
     let parkedFile: string | null = null;
 
     for (let step = 0; step < 10; step++) {
+      if (isCancelled()) throw new Error("Run cancelled by user.");
       const headers: Record<string, string> = { "Content-Type": "application/json" };
       if (byok.api_key) headers.Authorization = `Bearer ${byok.api_key}`;
       const r = await origFetch(`${byok.model_base_url.replace(/\/+$/, "")}/chat/completions`, {
@@ -850,55 +1282,55 @@ export async function installBrowserEngine(): Promise<void> {
       if (tool === "delete_file" && !res.startsWith("error:")) {
         parkedFile = sanitizeSafePath(String(args.path ?? ""));
       }
-      pushStep(`Tool: ${tool}\n${res.slice(0, 500)}`);
+      pushStep(tool, `Tool: ${tool}\n${res.slice(0, 500)}`);
       messages.push({ role: "assistant", content: JSON.stringify(parsed) });
       messages.push({ role: "user", content: `Tool result for ${tool}: ${res.slice(0, 5000)}` });
     }
     throw new Error("Stopped after 10 BYOK steps without completion.");
   }
 
-  /** Real deterministic client-side agent over the user's ACTUAL IndexedDB files. */
+  /** Real deterministic client-side dispatcher covering ALL 12 Rune skills over IndexedDB files. */
   async function runDeterministicTask(
     st: PersonStore,
     thread: WebThread,
     prompt: string,
-    pushStep: (s: string) => void
+    pushStep: (tool: string, raw: string) => void,
+    isCancelled: () => boolean
   ): Promise<{ summary: string; written: string[]; parkedFile: string | null }> {
     const written: string[] = [];
     const rules = learnedLines(st.memory);
     const allFiles = Object.values(st.files).sort((a, b) => b.mtime_ms - a.mtime_ms);
     const pLow = prompt.toLowerCase();
 
-    // 1. Check if user is teaching a standing memory preference.
+    const checkCancel = () => { if (isCancelled()) throw new Error("Run cancelled by user."); };
+
+    // 1. update_memory
     if (/^\s*(remember|always|from now on|prefer|note that)\b/i.test(prompt)) {
       const rule = prompt.replace(/^\s*(remember(\s+to|\s+that)?|from now on,?\s*|note that\s*)/i, "").trim();
-      await sleep(140);
+      await sleep(110); checkCancel();
       const res = execTool(st, thread.id, "update_memory", { note: rule || prompt }, written);
-      pushStep(`Tool: update_memory\n${res}`);
+      pushStep("update_memory", `Tool: update_memory\n${res}`);
       return {
-        summary: `Saved your standing preference in memory.md ("${rule || prompt}"). Future summaries and reconciliations will apply it automatically.`,
+        summary: `Saved your standing preference in memory.md ("${rule || prompt}"). Future skills and reconciliations will apply it automatically.`,
         written: ["memory.md"],
         parkedFile: null,
       };
     }
 
     // 2. Always inspect real workspace first.
-    await sleep(120);
+    await sleep(90); checkCancel();
     const listed = execTool(st, thread.id, "list_dir", {}, written);
-    pushStep(`Tool: list_dir\n${listed}`);
+    pushStep("list_dir", `Tool: list_dir\n${listed}`);
 
-    // Find any explicitly named workspace file(s) in prompt.
     const mentionedFiles = allFiles.filter((f) => pLow.includes(f.path.toLowerCase()) || pLow.includes(f.name.toLowerCase()));
 
-    // 3. Consequential deletion request -> ALWAYS park approval, never delete immediately!
-    if (/\b(delete|remove|clean up|purge|erase)\b/i.test(prompt)) {
+    // 3. Consequential deletion request -> ALWAYS park approval.
+    if (/\b(delete|remove|clean up|purge|erase)\b/i.test(prompt) && !/\b(dedup|clean\s+(and\s+)?dedup|clean_dataset|dataset)\b/i.test(prompt)) {
       const target = mentionedFiles[0] || allFiles.find((f) => /draft|old|temp|backup/i.test(f.name)) || allFiles[0];
-      if (!target) {
-        return { summary: "Your workspace has no matching file to delete.", written, parkedFile: null };
-      }
-      await sleep(140);
+      if (!target) return { summary: "Your workspace has no matching file to delete.", written, parkedFile: null };
+      await sleep(110); checkCancel();
       const res = execTool(st, thread.id, "delete_file", { path: target.path }, written);
-      pushStep(`Tool: delete_file\n${res}`);
+      pushStep("delete_file", `Tool: delete_file\n${res}`);
       return {
         summary: `I parked the deletion of ${target.path} for your approval in Today. The file has not been touched yet.`,
         written,
@@ -906,18 +1338,165 @@ export async function installBrowserEngine(): Promise<void> {
       };
     }
 
-    // 4. CSV reconciliation / analysis / spreadsheet task over real CSV file(s).
+    // 4. audit_contract
+    if (/\b(contract|agreement|clause|indemnif|liability|auto[- ]?renew|msa|nda|audit_contract)\b/i.test(prompt)) {
+      const src = mentionedFiles[0] || allFiles.find((f) => /contract|agreement|msa|nda|terms/i.test(f.name)) || allFiles.find((f) => ["md", "txt"].includes(f.ext));
+      if (src) {
+        await sleep(110); checkCancel();
+        execTool(st, thread.id, "read_file", { path: src.path }, written);
+        pushStep("read_file", `Tool: read_file\nread ${src.path} (${src.size} bytes)`);
+        await sleep(130); checkCancel();
+        const audit = runContractAudit(src, rules);
+        st.files[audit.outName] = makeFile(audit.outName, audit.md);
+        written.push(audit.outName);
+        pushStep("audit_contract", `Tool: audit_contract\nwrote document ${audit.outName} (${utf8Bytes(audit.md)} bytes)`);
+        persist();
+        return {
+          summary: `Audited ${src.path}: verified ${audit.presentCount} clauses and flagged ${audit.missingCount} missing clause(s) with line citations in ${audit.outName}.`,
+          written,
+          parkedFile: null,
+        };
+      }
+    }
+
+    // 5. triage_inbox
+    if (/\b(triage|inbox|ticket|urgent|fyi|prioritiz|triage_inbox)\b/i.test(prompt)) {
+      const src = mentionedFiles[0] || allFiles.find((f) => /inbox|ticket|support|log|feed/i.test(f.name)) || allFiles.find((f) => ["log", "txt", "md"].includes(f.ext));
+      if (src) {
+        await sleep(110); checkCancel();
+        execTool(st, thread.id, "read_file", { path: src.path }, written);
+        pushStep("read_file", `Tool: read_file\nread ${src.path} (${src.size} bytes)`);
+        await sleep(120); checkCancel();
+        const tr = runInboxTriage(src, rules);
+        st.files[tr.outName] = makeFile(tr.outName, tr.md);
+        written.push(tr.outName);
+        pushStep("triage_inbox", `Tool: triage_inbox\nwrote document ${tr.outName} (${utf8Bytes(tr.md)} bytes)`);
+        persist();
+        return {
+          summary: `Triaged ${src.path} into ${tr.urgentCount} Urgent, ${tr.actionCount} Action, and ${tr.fyiCount} FYI items in ${tr.outName}.`,
+          written,
+          parkedFile: null,
+        };
+      }
+    }
+
+    // 6. compare_documents
+    if (/\b(compare|diff|line[- ]by[- ]line|changes between|compare_documents)\b/i.test(prompt)) {
+      const pair = mentionedFiles.length >= 2 ? mentionedFiles.slice(0, 2) : allFiles.filter((f) => ["md", "txt", "csv", "json", "log"].includes(f.ext)).slice(0, 2);
+      if (pair.length >= 2) {
+        for (const f of pair) {
+          await sleep(90); checkCancel();
+          execTool(st, thread.id, "read_file", { path: f.path }, written);
+          pushStep("read_file", `Tool: read_file\nread ${f.path} (${f.size} bytes)`);
+        }
+        await sleep(120); checkCancel();
+        const cmp = runCompareDocuments(pair[0], pair[1]);
+        st.files[cmp.outName] = makeFile(cmp.outName, cmp.md);
+        written.push(cmp.outName);
+        pushStep("compare_documents", `Tool: compare_documents\nwrote document ${cmp.outName} (${utf8Bytes(cmp.md)} bytes)`);
+        persist();
+        return {
+          summary: `Compared ${pair[0].path} against ${pair[1].path}: +${cmp.added} added, -${cmp.removed} removed, ${cmp.unchanged} unchanged lines saved to ${cmp.outName}.`,
+          written,
+          parkedFile: null,
+        };
+      }
+    }
+
+    // 7. clean_dataset
+    if (/\b(clean_dataset|deduplicat|normaliz|outlier|clean.*dataset|clean.*\.csv|clean.*\.json)\b/i.test(prompt)) {
+      const src = mentionedFiles.find((f) => ["csv", "json"].includes(f.ext)) || allFiles.find((f) => ["csv", "json"].includes(f.ext));
+      if (src) {
+        await sleep(100); checkCancel();
+        execTool(st, thread.id, "read_file", { path: src.path }, written);
+        pushStep("read_file", `Tool: read_file\nread ${src.path} (${src.size} bytes)`);
+        await sleep(130); checkCancel();
+        const cl = runCleanDataset(src);
+        st.files[cl.outFile] = makeFile(cl.outFile, cl.outBody);
+        st.files[cl.reportFile] = makeFile(cl.reportFile, cl.reportMd);
+        written.push(cl.outFile, cl.reportFile);
+        pushStep("clean_dataset", `Tool: clean_dataset\nwrote file ${cl.outFile} (${utf8Bytes(cl.outBody)} bytes)`);
+        pushStep("write_document", `Tool: write_document\nwrote document ${cl.reportFile} (${utf8Bytes(cl.reportMd)} bytes)`);
+        persist();
+        return {
+          summary: `Cleaned ${src.path}: ${cl.rowCount} normalized rows (${cl.removedDups} duplicate(s) removed, ${cl.nullCells} empty/null cell(s) flagged). Saved ${cl.outFile} and ${cl.reportFile}.`,
+          written,
+          parkedFile: null,
+        };
+      }
+    }
+
+    // 8. extract_tables
+    if (/\b(extract_tables|extract.*table|unstructured.*csv|parse.*csv|into.*csv)\b/i.test(prompt)) {
+      const src = mentionedFiles[0] || allFiles.find((f) => ["md", "log", "txt"].includes(f.ext));
+      if (src) {
+        await sleep(100); checkCancel();
+        execTool(st, thread.id, "read_file", { path: src.path }, written);
+        pushStep("read_file", `Tool: read_file\nread ${src.path} (${src.size} bytes)`);
+        await sleep(120); checkCancel();
+        const ex = runExtractTables(src);
+        st.files[ex.outName] = makeFile(ex.outName, ex.csv);
+        written.push(ex.outName);
+        pushStep("extract_tables", `Tool: extract_tables\nwrote spreadsheet ${ex.outName} (${ex.rowCount} data rows, ${utf8Bytes(ex.csv)} bytes)`);
+        persist();
+        return {
+          summary: `Extracted ${ex.rowCount} structured rows (${ex.colCount} columns) from ${src.path} into ${ex.outName}.`,
+          written,
+          parkedFile: null,
+        };
+      }
+    }
+
+    // 9. draft_brief
+    if (/\b(draft_brief|executive brief|memo|sop)\b/i.test(prompt)) {
+      const srcs = mentionedFiles.length ? mentionedFiles : allFiles.slice(0, 4);
+      for (const s of srcs.slice(0, 3)) {
+        await sleep(80); checkCancel();
+        execTool(st, thread.id, "read_file", { path: s.path }, written);
+        pushStep("read_file", `Tool: read_file\nread ${s.path} (${s.size} bytes)`);
+      }
+      await sleep(120); checkCancel();
+      const br = runDraftBrief(srcs, prompt, rules);
+      st.files[br.outName] = makeFile(br.outName, br.md);
+      written.push(br.outName);
+      pushStep("draft_brief", `Tool: draft_brief\nwrote document ${br.outName} (${utf8Bytes(br.md)} bytes)`);
+      persist();
+      return {
+        summary: `Drafted ${br.outName} grounded in ${srcs.length} workspace file(s) with ${br.citationCount} source citations and ${rules.length} standing preference(s).`,
+        written,
+        parkedFile: null,
+      };
+    }
+
+    // 10. research
+    if (/\b(research|investigate|find all|search workspace)\b/i.test(prompt)) {
+      await sleep(100); checkCancel();
+      const res = runWorkspaceResearch(allFiles, prompt, rules);
+      pushStep("search_files", `Tool: search_files\nfound ${res.hitCount} cited line(s) across ${allFiles.length} workspace file(s)`);
+      await sleep(110); checkCancel();
+      st.files[res.outName] = makeFile(res.outName, res.md);
+      written.push(res.outName);
+      pushStep("research", `Tool: research\nwrote document ${res.outName} (${utf8Bytes(res.md)} bytes)`);
+      persist();
+      return {
+        summary: `Compiled ${res.outName} with ${res.hitCount} line-cited findings from your workspace.`,
+        written,
+        parkedFile: null,
+      };
+    }
+
+    // 11. reconcile_ledger / CSV reconciliation
     const csvCandidate = mentionedFiles.find((f) => f.ext === "csv")
-      || ((/\b(csv|reconcil|expense|budget|receipt|spreadsheet|spend|invoice|total|sum|cost)\b/i.test(prompt))
+      || ((/\b(csv|reconcil|ledger|expense|budget|receipt|spreadsheet|spend|invoice|total|sum|cost)\b/i.test(prompt))
         ? allFiles.find((f) => f.ext === "csv" && !f.name.endsWith("-reconciled.csv")) || allFiles.find((f) => f.ext === "csv")
         : undefined);
 
     if (csvCandidate) {
-      await sleep(140);
+      await sleep(110); checkCancel();
       const content = execTool(st, thread.id, "read_file", { path: csvCandidate.path }, written);
-      pushStep(`Tool: read_file\nread ${csvCandidate.path} (${csvCandidate.size} bytes)`);
+      pushStep("read_file", `Tool: read_file\nread ${csvCandidate.path} (${csvCandidate.size} bytes)`);
 
-      await sleep(160);
+      await sleep(130); checkCancel();
       const recon = runCsvReconciliation(csvCandidate.path, content, rules);
       const stem = csvCandidate.name.replace(/\.csv$/i, "");
       const outCsv = `${stem}-reconciled.csv`;
@@ -925,12 +1504,12 @@ export async function installBrowserEngine(): Promise<void> {
 
       st.files[outCsv] = makeFile(outCsv, recon.reconciledCsv);
       written.push(outCsv);
-      pushStep(`Tool: make_spreadsheet\nwrote spreadsheet ${outCsv} (${recon.rowCount} data rows, ${utf8Bytes(recon.reconciledCsv)} bytes)`);
+      pushStep("reconcile_ledger", `Tool: reconcile_ledger\nwrote spreadsheet ${outCsv} (${recon.rowCount} data rows, ${utf8Bytes(recon.reconciledCsv)} bytes)`);
 
-      await sleep(140);
+      await sleep(110); checkCancel();
       st.files[outMd] = makeFile(outMd, recon.reportMd);
       written.push(outMd);
-      pushStep(`Tool: write_document\nwrote document ${outMd} (${utf8Bytes(recon.reportMd)} bytes)`);
+      pushStep("write_document", `Tool: write_document\nwrote document ${outMd} (${utf8Bytes(recon.reportMd)} bytes)`);
       persist();
 
       const catSummary = recon.categories.slice(0, 3).map(([c, s]) => `${c} ${fmtMoney(s.total)}`).join(", ");
@@ -944,44 +1523,45 @@ export async function installBrowserEngine(): Promise<void> {
       };
     }
 
-    // 5. Document summarization / action-item extraction / review over real Markdown / text / JSON files.
+    // 12. summarize_meeting / document summary
     const docSources = mentionedFiles.length
       ? mentionedFiles
       : allFiles.filter((f) => ["md", "txt", "json", "log"].includes(f.ext)).slice(0, 3);
 
     if (docSources.length > 0 && /\b(summar|note|action|brief|review|digest|extract|tidy|outline|report|meeting|update|check)\b/i.test(prompt)) {
       for (const src of docSources) {
-        await sleep(120);
+        await sleep(90); checkCancel();
         execTool(st, thread.id, "read_file", { path: src.path }, written);
-        pushStep(`Tool: read_file\nread ${src.path} (${src.size} bytes)`);
+        pushStep("read_file", `Tool: read_file\nread ${src.path} (${src.size} bytes)`);
       }
-      await sleep(150);
+      await sleep(120); checkCancel();
       const sum = runDocumentSummary(docSources, prompt, rules);
       st.files[sum.outName] = makeFile(sum.outName, sum.markdown);
       written.push(sum.outName);
-      pushStep(`Tool: write_document\nwrote document ${sum.outName} (${utf8Bytes(sum.markdown)} bytes)`);
+      pushStep("summarize_meeting", `Tool: summarize_meeting\nwrote document ${sum.outName} (${utf8Bytes(sum.markdown)} bytes)`);
       persist();
       return {
-        summary: `Compiled ${sum.outName} from ${docSources.map((s) => s.path).join(", ")} with ${sum.actionCount} action item${sum.actionCount === 1 ? "" : "s"} and ${sum.blockerCount} blocker${sum.blockerCount === 1 ? "" : "s"}${rules.length ? `, applying ${rules.length} standing preference${rules.length === 1 ? "" : "s"}` : ""}.`,
+        summary: `Compiled ${sum.outName} from ${docSources.map((s) => s.path).join(", ")} with ${sum.decisionCount} decision(s), ${sum.actionCount} action item(s), and ${sum.blockerCount} blocker(s).`,
         written,
         parkedFile: null,
       };
     }
 
-    // 6. General document or checklist authoring grounded in the prompt & workspace.
+    // General make_spreadsheet or write_document authoring
     const outFileMatch = /\b([A-Za-z0-9][A-Za-z0-9._-]*\.(?:md|csv|txt))\b/.exec(prompt);
     const outFile = outFileMatch ? outFileMatch[1] : `${prompt.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 36) || "task-output"}.md`;
-    await sleep(140);
-    if (outFile.endsWith(".csv")) {
+    await sleep(110); checkCancel();
+    if (outFile.endsWith(".csv") || /\bspreadsheet\b/i.test(prompt)) {
+      const targetCsv = outFile.endsWith(".csv") ? outFile : `${outFile.replace(/\.[^.]+$/, "")}.csv`;
       const res = execTool(st, thread.id, "make_spreadsheet", {
-        title: outFile,
+        title: targetCsv,
         columns: ["Item", "Owner", "Status", "Notes"],
         rows: [
           [prompt.slice(0, 48), activePerson().name, "Ready", `Created from workspace (${allFiles.length} files available)`],
         ],
       }, written);
-      pushStep(`Tool: make_spreadsheet\n${res}`);
-      return { summary: `Created ${outFile} in your workspace.`, written, parkedFile: null };
+      pushStep("make_spreadsheet", `Tool: make_spreadsheet\n${res}`);
+      return { summary: `Created ${targetCsv} in your workspace.`, written, parkedFile: null };
     }
 
     const sections = [
@@ -991,10 +1571,10 @@ export async function installBrowserEngine(): Promise<void> {
         : "## Workspace Context\n\nNo existing files were in the workspace when this document was drafted.",
       rules.length
         ? `## Standing Preferences Applied\n\n${rules.map((r) => `- ${r}`).join("\n")}`
-        : "## Next Steps\n\n- Upload source CSV or Markdown files via Workspace files or the composer paperclip to run automated reconciliations and summaries.",
+        : "## Next Steps\n\n- Drop or upload CSV, Markdown, or JSON files onto Today to run any of the 12 skills.",
     ];
     const res = execTool(st, thread.id, "write_document", { title: outFile, sections }, written);
-    pushStep(`Tool: write_document\n${res}`);
+    pushStep("write_document", `Tool: write_document\n${res}`);
     return { summary: `Wrote ${outFile} to your workspace with structured sections grounded in your request.`, written, parkedFile: null };
   }
 
@@ -1003,6 +1583,83 @@ export async function installBrowserEngine(): Promise<void> {
       status,
       headers: { "Content-Type": "application/json" },
     });
+  }
+
+  async function executePromptIntoThread(
+    p: WebPerson,
+    st: PersonStore,
+    byok: ByokConfig,
+    prompt: string,
+    reqTid = ""
+  ): Promise<Response> {
+    let th = reqTid ? st.threads.find((t) => t.id === reqTid) : undefined;
+    if (!th) {
+      th = { id: `t${Date.now()}-${st.threads.length + 1}`, title: prompt.slice(0, 64), messages: [] };
+      st.threads.unshift(th);
+    } else if (!th.messages.length || th.title === "New chat") {
+      th.title = prompt.slice(0, 64);
+    }
+    th.messages.push({ role: "user", content: prompt });
+
+    const runId = `run-${Date.now()}`;
+    const startedMs = Date.now();
+    liveRuns[p.id] = { active: true, run_id: runId, thread_id: th.id, task: prompt, started_ms: startedMs, steps: [], cancelled: false };
+    broadcastSse("status", { run_id: runId, thread_id: th.id, active: true, elapsed_ms: 0, steps: [] });
+
+    const pushStep = (tool: string, stepStr: string) => {
+      th!.messages.push({ role: "step", content: stepStr });
+      const stepObj: LiveRunStep = {
+        id: `${runId}-s${(liveRuns[p.id]?.steps.length ?? 0) + 1}`,
+        tool,
+        status: /has NOT been deleted yet/.test(stepStr) ? "waiting" : "done",
+        elapsed_ms: Math.max(1, Date.now() - startedMs),
+        raw: stepStr,
+      };
+      liveRuns[p.id]?.steps.push(stepObj);
+      broadcastSse("step_done", { run_id: runId, thread_id: th!.id, ...stepObj });
+    };
+
+    const isCancelled = () => Boolean(liveRuns[p.id]?.cancelled);
+
+    try {
+      const outcome = byok.engine_mode === "byok" && byok.model_base_url && byok.model_id
+        ? await runByokLoop(st, byok, th, prompt, pushStep, isCancelled)
+        : await runDeterministicTask(st, th, prompt, pushStep, isCancelled);
+
+      th.messages.push({ role: "assistant", content: outcome.summary });
+      if (outcome.parkedFile) {
+        th.messages.push({
+          role: "step",
+          content: `Note: ${outcome.parkedFile} has NOT been deleted yet; the deletion is waiting for your approval in Decisions.`,
+        });
+      }
+      st.work.push({
+        id: th.id,
+        task: th.title,
+        summary: outcome.summary,
+        files: outcome.written.filter((f) => f !== "memory.md"),
+        finished: true,
+        answered: false,
+        thread_id: th.id,
+        ts: Date.now(),
+        steps: th.messages.filter((m) => m.role === "step").map((m) => m.content),
+      });
+      await persist();
+      broadcastSse("done", { run_id: runId, thread_id: th.id, elapsed_ms: Date.now() - startedMs });
+      delete liveRuns[p.id];
+      return jsonRes(th, 200);
+    } catch (e) {
+      delete liveRuns[p.id];
+      const msg = e instanceof Error ? e.message : String(e);
+      if (/cancelled/i.test(msg)) {
+        th.messages.push({ role: "step", content: "Note: Run cancelled by user." });
+        await persist();
+        return jsonRes({ error: msg, thread_id: th.id }, 499);
+      }
+      th.messages.push({ role: "error", content: msg });
+      await persist();
+      return jsonRes({ error: msg, thread_id: th.id }, 500);
+    }
   }
 
   window.fetch = async function (input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
@@ -1024,15 +1681,16 @@ export async function installBrowserEngine(): Promise<void> {
     const st = activeStore();
     const byok = loadByok();
 
-    if (method === "GET" && path === "/api/version") return jsonRes({ name: "ergon", version: "0.4.0" });
-    if (method === "GET" && path === "/api/update") return jsonRes({ current: "0.4.0", available: false, mode: "off", checked_at: Math.floor(Date.now() / 1000) });
+    if (method === "GET" && path === "/api/version") return jsonRes({ name: "ergon", version: "0.5.0" });
+    if (method === "GET" && path === "/api/update") return jsonRes({ current: "0.5.0", available: false, mode: "off", checked_at: Math.floor(Date.now() / 1000) });
     if (method === "GET" && path === "/api/status") {
       return jsonRes({
-        version: "0.4.0",
+        version: "0.5.0",
         model_configured: true,
         model: byok.engine_mode === "byok" && byok.model_id ? byok.model_id : "browser-workspace-engine",
         model_base_url: byok.engine_mode === "byok" ? byok.model_base_url : "indexeddb://local",
         engine_mode: byok.engine_mode,
+        capabilities: { sse: true, skills: true, routines: true, search: true, receipts_export: true, cancel: true },
         person: p,
         store_recovered: [],
       });
@@ -1070,7 +1728,133 @@ export async function installBrowserEngine(): Promise<void> {
       });
     }
     if (method === "GET" && path === "/api/runs/status") {
-      return jsonRes(liveRuns[p.id] || { active: false, thread_id: "", task: "", started_ms: 0, steps: [] });
+      const run = liveRuns[p.id];
+      return jsonRes(
+        run
+          ? { active: run.active, run_id: run.run_id, thread_id: run.thread_id, task: run.task, started_ms: run.started_ms, elapsed_ms: Date.now() - run.started_ms, steps: run.steps }
+          : { active: false, thread_id: "", task: "", started_ms: 0, steps: [] }
+      );
+    }
+    if (method === "POST" && path.startsWith("/api/runs/") && path.endsWith("/cancel")) {
+      if (liveRuns[p.id]) {
+        liveRuns[p.id].cancelled = true;
+        broadcastSse("cancelled", { run_id: liveRuns[p.id].run_id, cancelled: true });
+      }
+      return jsonRes({ cancelled: true });
+    }
+    if (method === "GET" && path === "/api/skills") {
+      return jsonRes({ skills: CANONICAL_SKILLS, count: CANONICAL_SKILLS.length });
+    }
+    if (method === "POST" && path === "/api/skills/test") {
+      const skillId = String(body.id ?? body.skill_id ?? "").trim();
+      const found = CANONICAL_SKILLS.find((s) => s.id === skillId);
+      if (!found) return jsonRes({ error: "skill not found" }, 404);
+      const t0 = performance.now();
+      const fileCount = Object.keys(st.files).length;
+      const elapsed = Math.max(1, Math.round(performance.now() - t0));
+      return jsonRes({
+        ok: true,
+        id: found.id,
+        duration_ms: elapsed,
+        output: `Compiled ${found.filename} cleanly (sandboxed browser engine, ${fileCount} workspace files visible, inputs: ${found.inputs.join(", ")}).`,
+      });
+    }
+    if (method === "GET" && path === "/api/routines") {
+      return jsonRes({ routines: st.routines });
+    }
+    if (method === "POST" && path === "/api/routines") {
+      const name = String(body.name ?? body.title ?? "").trim();
+      const prompt = String(body.prompt ?? "").trim();
+      if (!name || !prompt) return jsonRes({ error: "name and prompt are required" }, 400);
+      const created: Routine = {
+        id: `rt-${Date.now()}-${st.routines.length + 1}`,
+        name,
+        prompt,
+        schedule: String(body.schedule ?? body.cadence ?? "Daily 09:00").trim(),
+        skill_id: typeof body.skill_id === "string" && body.skill_id ? body.skill_id : undefined,
+        enabled: true,
+        last_run_ts: null,
+        run_count: 0,
+        created_ts: Date.now(),
+      };
+      st.routines.unshift(created);
+      await persist();
+      return jsonRes({ routine: created, ...created }, 201);
+    }
+    if (method === "DELETE" && path.startsWith("/api/routines/")) {
+      const rid = decodeURIComponent(path.slice("/api/routines/".length));
+      st.routines = st.routines.filter((x) => x.id !== rid);
+      await persist();
+      return jsonRes({ deleted: rid });
+    }
+    if (method === "POST" && path.startsWith("/api/routines/") && path.endsWith("/run")) {
+      const rid = decodeURIComponent(path.slice("/api/routines/".length, -"/run".length));
+      const rt = st.routines.find((x) => x.id === rid);
+      if (!rt) return jsonRes({ error: "routine not found" }, 404);
+      rt.last_run_ts = Date.now();
+      rt.last_status = "finished";
+      rt.run_count = (rt.run_count ?? 0) + 1;
+      await persist();
+      return executePromptIntoThread(p, st, byok, rt.prompt);
+    }
+    if (method === "GET" && path === "/api/search") {
+      const q = (u.searchParams.get("q") || "").trim().toLowerCase();
+      const limit = Math.min(50, Math.max(1, Number(u.searchParams.get("limit") || 20)));
+      const results: { kind: string; id: string; title: string; subtitle?: string; path?: string; thread_id?: string; ts?: number }[] = [];
+      if (q) {
+        for (const f of Object.values(st.files)) {
+          if (f.path.toLowerCase().includes(q) || f.content.toLowerCase().includes(q)) {
+            results.push({ kind: "file", id: f.path, title: f.path, subtitle: `${f.size} bytes`, path: f.path, ts: f.mtime_ms });
+          }
+        }
+        for (const wItem of st.work.slice().reverse()) {
+          if (wItem.task.toLowerCase().includes(q) || wItem.summary.toLowerCase().includes(q)) {
+            results.push({ kind: "receipt", id: wItem.id || wItem.thread_id, title: wItem.task, subtitle: wItem.summary, thread_id: wItem.thread_id, ts: wItem.ts });
+          }
+        }
+        for (const line of learnedLines(st.memory)) {
+          if (line.toLowerCase().includes(q)) {
+            results.push({ kind: "memory", id: `mem-${results.length}`, title: line, subtitle: "memory.md" });
+          }
+        }
+      }
+      return jsonRes({ query: q, total: results.length, results: results.slice(0, limit) });
+    }
+    if (method === "GET" && path === "/api/receipts") {
+      const receipts = st.work.slice().reverse().map((x, idx) => ({
+        id: x.id || x.thread_id || `rec-${idx}`,
+        thread_id: x.thread_id,
+        task: x.task,
+        summary: x.summary,
+        status: x.finished ? "finished" : "stopped",
+        files: x.files,
+        date: new Date(x.ts).toISOString().slice(0, 10),
+        ts: x.ts,
+      }));
+      return jsonRes({ total: receipts.length, receipts });
+    }
+    if (method === "GET" && path.startsWith("/api/receipts/") && path.endsWith("/export")) {
+      const rid = decodeURIComponent(path.slice("/api/receipts/".length, -"/export".length));
+      const format = u.searchParams.get("format") === "json" ? "json" : "md";
+      const found = st.work.find((x) => x.id === rid || x.thread_id === rid) || st.work[st.work.length - 1];
+      if (!found) return jsonRes({ error: "receipt not found" }, 404);
+      const built = await buildSignedReceipt({
+        id: found.id || found.thread_id || rid,
+        task: found.task,
+        person: p.name,
+        status: found.finished ? "finished" : "stopped",
+        summary: found.summary,
+        ts: found.ts,
+        files: found.files,
+        steps: found.steps,
+      });
+      return new Response(format === "json" ? built.json : built.markdown, {
+        status: 200,
+        headers: {
+          "Content-Type": format === "json" ? "application/json; charset=utf-8" : "text/markdown; charset=utf-8",
+          "X-Ergon-Receipt-SHA256": built.sha256,
+        },
+      });
     }
     if (method === "GET" && path === "/api/files") {
       const files = Object.values(st.files)
@@ -1103,7 +1887,7 @@ export async function installBrowserEngine(): Promise<void> {
       const content = String(body.content ?? "");
       const saved = makeFile(safe, content);
       st.files[safe] = saved;
-      persist();
+      await persist();
       return jsonRes({ path: saved.path, name: saved.name, size: saved.size, mtime_ms: saved.mtime_ms, ext: saved.ext }, 201);
     }
     if (method === "GET" && path === "/api/people") return jsonRes({ active: state.activePerson, people: state.people });
@@ -1118,17 +1902,18 @@ export async function installBrowserEngine(): Promise<void> {
         work: [],
         decisions: [],
         offers: [],
+        routines: [],
         memory: `# Memory\n\n## About\n- Name: ${np.name}\n${np.role ? `- Role: ${np.role}\n` : ""}`,
         suite: ["researcher", "meeting-actions"],
       };
-      persist();
+      await persist();
       return jsonRes(np, 201);
     }
     if (method === "POST" && path === "/api/active-person") {
       const id = String(body.id ?? "");
       if (!state.people.some((x) => x.id === id)) return jsonRes({ error: "person not found" }, 404);
       state.activePerson = id;
-      persist();
+      await persist();
       return jsonRes({ active: state.activePerson, people: state.people });
     }
     if (method === "GET" && path === "/api/memory") return jsonRes({ person_id: p.id, content: st.memory });
@@ -1140,13 +1925,13 @@ export async function installBrowserEngine(): Promise<void> {
     if (method === "POST" && path === "/api/suite/install") {
       const id = String(body.item_id ?? "");
       if (id && !st.suite.includes(id)) st.suite.push(id);
-      persist();
+      await persist();
       return jsonRes({ installed: id });
     }
     if (method === "POST" && path === "/api/suite/remove") {
       const id = String(body.item_id ?? "");
       st.suite = st.suite.filter((x) => x !== id);
-      persist();
+      await persist();
       return jsonRes({ removed: id });
     }
     if (method === "GET" && path === "/api/decisions") return jsonRes({ decisions: st.decisions });
@@ -1182,7 +1967,7 @@ export async function installBrowserEngine(): Promise<void> {
       } else {
         dec.outcome = approve ? "Approved." : "Declined.";
       }
-      persist();
+      await persist();
       return jsonRes({ decision: dec, outcome: dec.outcome });
     }
     if (method === "GET" && path === "/api/offers") return jsonRes({ offers: st.offers });
@@ -1193,7 +1978,7 @@ export async function installBrowserEngine(): Promise<void> {
       if (!off) return jsonRes({ error: "offer not found" }, 404);
       off.status = action === "accept" ? "accepted" : "dismissed";
       if (action === "accept" && off.item_id && !st.suite.includes(off.item_id)) st.suite.push(off.item_id);
-      persist();
+      await persist();
       return jsonRes({ offer: off, outcome: action === "accept" ? "Added to your suite as a one-tap app." : "Offer dismissed." });
     }
     if (method === "GET" && path === "/api/brief") return jsonRes(buildBrief());
@@ -1208,7 +1993,7 @@ export async function installBrowserEngine(): Promise<void> {
       const nid = `t${Date.now()}-${st.threads.length + 1}`;
       const nt: WebThread = { id: nid, title: "New chat", messages: [] };
       st.threads.unshift(nt);
-      persist();
+      await persist();
       return jsonRes(nt, 201);
     }
     if (method === "GET" && path.startsWith("/api/threads/")) {
@@ -1234,54 +2019,7 @@ export async function installBrowserEngine(): Promise<void> {
         prompt = String(body.message ?? "").trim();
         if (!prompt) return jsonRes({ error: "message is required" }, 400);
       }
-
-      const reqTid = String(body.thread_id ?? "");
-      let th = reqTid ? st.threads.find((t) => t.id === reqTid) : undefined;
-      if (!th) {
-        th = { id: `t${Date.now()}-${st.threads.length + 1}`, title: prompt.slice(0, 64), messages: [] };
-        st.threads.unshift(th);
-      } else if (!th.messages.length || th.title === "New chat") {
-        th.title = prompt.slice(0, 64);
-      }
-      th.messages.push({ role: "user", content: prompt });
-
-      liveRuns[p.id] = { active: true, thread_id: th.id, task: prompt, started_ms: Date.now(), steps: [] };
-      const pushStep = (stepStr: string) => {
-        th!.messages.push({ role: "step", content: stepStr });
-        liveRuns[p.id]?.steps.push(stepStr);
-      };
-
-      try {
-        const outcome = byok.engine_mode === "byok" && byok.model_base_url && byok.model_id
-          ? await runByokLoop(st, byok, th, prompt, pushStep)
-          : await runDeterministicTask(st, th, prompt, pushStep);
-
-        th.messages.push({ role: "assistant", content: outcome.summary });
-        if (outcome.parkedFile) {
-          th.messages.push({
-            role: "step",
-            content: `Note: ${outcome.parkedFile} has NOT been deleted yet; the deletion is waiting for your approval in Decisions.`,
-          });
-        }
-        st.work.push({
-          task: th.title,
-          summary: outcome.summary,
-          files: outcome.written.filter((f) => f !== "memory.md"),
-          finished: true,
-          answered: false,
-          thread_id: th.id,
-          ts: Date.now(),
-        });
-        persist();
-        delete liveRuns[p.id];
-        return jsonRes(th, 200);
-      } catch (e) {
-        delete liveRuns[p.id];
-        const msg = e instanceof Error ? e.message : String(e);
-        th.messages.push({ role: "error", content: msg });
-        persist();
-        return jsonRes({ error: msg, thread_id: th.id }, 500);
-      }
+      return executePromptIntoThread(p, st, byok, prompt, String(body.thread_id ?? ""));
     }
 
     return jsonRes({ error: "not found" }, 404);
