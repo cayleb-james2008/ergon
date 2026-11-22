@@ -8,10 +8,13 @@
 //! sandboxed workspace folder, and uses Rune scripts (see `skills`) for
 //! the document-writing and memory-update skills.
 
+pub mod audit_bundle;
+pub mod file_history;
 pub mod library;
 pub mod receipts;
 pub mod records;
 pub mod routines;
+pub mod scheduler;
 pub mod search;
 pub mod skill_catalog;
 pub mod skills;
