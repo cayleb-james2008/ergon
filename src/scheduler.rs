@@ -80,6 +80,23 @@ impl Cadence {
         }
     }
 
+    /// Returns `Some(secs)` ONLY for relative `IntervalSecs` cadences (never for
+    /// wall-clock `Hourly`/`Daily`/`Weekly` schedules, so persisted JSON never
+    /// degrades wall-clock slots into relative intervals).
+    pub fn explicit_interval_secs(&self) -> Option<u64> {
+        match *self {
+            Cadence::IntervalSecs(s) => Some(s),
+            _ => None,
+        }
+    }
+
+    pub fn is_wall_clock(&self) -> bool {
+        matches!(
+            self,
+            Cadence::Hourly { .. } | Cadence::Daily { .. } | Cadence::Weekly { .. }
+        )
+    }
+
     pub fn is_scheduled(&self) -> bool {
         !matches!(self, Cadence::Manual)
     }
@@ -342,6 +359,23 @@ pub fn next_run_ms(cadence: &Cadence, last_run_ms: Option<u64>, now_ms: u64) -> 
     }
 }
 
+/// Resolve a persisted routine's cadence. Prefers a wall-clock `schedule`
+/// (`hourly`, `daily 09:00`, `weekly mon`) even if a legacy record also carries
+/// a stale `interval_secs` field, otherwise resolves via `parse_cadence_or_interval`.
+pub fn parse_routine_cadence(routine: &Value) -> Result<Cadence, String> {
+    if let Some(sched) = routine["schedule"].as_str() {
+        if let Ok(c) = parse_cadence(sched) {
+            if c.is_wall_clock() {
+                return Ok(c);
+            }
+        }
+    }
+    parse_cadence_or_interval(
+        routine["schedule"].as_str(),
+        routine["interval_secs"].as_u64(),
+    )
+}
+
 /// Compute `next_run_ms` for a persisted routine record (accounting for
 /// `enabled`, `created_ms`, and `last_run_ms`). Returns `None` when paused or
 /// manual.
@@ -349,11 +383,7 @@ pub fn compute_routine_next_run_ms(routine: &Value, now_ms: u64) -> Option<u64> 
     if !routine["enabled"].as_bool().unwrap_or(true) {
         return None;
     }
-    let cadence = parse_cadence_or_interval(
-        routine["schedule"].as_str(),
-        routine["interval_secs"].as_u64(),
-    )
-    .ok()?;
+    let cadence = parse_routine_cadence(routine).ok()?;
     if !cadence.is_scheduled() {
         return None;
     }
@@ -433,7 +463,7 @@ pub fn apply_routine_patch(routine: &mut Value, patch: &Value) -> Result<(), Str
         }
         let cadence = parse_cadence_or_interval(sched, interval)?;
         obj.insert("schedule".to_string(), json!(cadence.canonical_label()));
-        match cadence.interval_secs() {
+        match cadence.explicit_interval_secs() {
             Some(secs) => {
                 obj.insert("interval_secs".to_string(), json!(secs));
             }
@@ -633,12 +663,9 @@ pub fn list_run_history(
 pub fn enrich_routine_json(routine: &Value, now_ms: u64, history: &[RoutineRunRecord]) -> Value {
     let mut out = routine.clone();
     let enabled = routine["enabled"].as_bool().unwrap_or(true);
-    let parsed = parse_cadence_or_interval(
-        routine["schedule"].as_str(),
-        routine["interval_secs"].as_u64(),
-    );
+    let parsed = parse_routine_cadence(routine);
     let (cadence_valid, cadence_label, interval_secs) = match parsed {
-        Ok(c) => (true, c.canonical_label(), c.interval_secs()),
+        Ok(c) => (true, c.canonical_label(), c.explicit_interval_secs()),
         Err(_) => (
             false,
             routine["schedule"].as_str().unwrap_or("manual").to_string(),
@@ -685,12 +712,9 @@ pub fn scheduler_status_json(
 
     for r in routines {
         let enabled = r["enabled"].as_bool().unwrap_or(true);
-        let scheduled = parse_cadence_or_interval(
-            r["schedule"].as_str(),
-            r["interval_secs"].as_u64(),
-        )
-        .map(|c| c.is_scheduled())
-        .unwrap_or(false);
+        let scheduled = parse_routine_cadence(r)
+            .map(|c| c.is_scheduled())
+            .unwrap_or(false);
 
         if !scheduled {
             manual_routines += 1;
