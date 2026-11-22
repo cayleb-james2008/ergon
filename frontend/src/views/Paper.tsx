@@ -213,7 +213,7 @@ export function usePaper(onChanged: () => void) {
   return { data, failed, load, act };
 }
 
-export function PaperFace({ paper, personName, dateLabel, people, teamError, activePerson, onSwitchPerson, onAsk, onOpen }: {
+export function PaperFace({ paper, personName, dateLabel, people, teamError, activePerson, onSwitchPerson, onAsk, onOpen, onOpenFile }: {
   paper: ReturnType<typeof usePaper>;
   personName: string;
   dateLabel: string;
@@ -223,6 +223,7 @@ export function PaperFace({ paper, personName, dateLabel, people, teamError, act
   onSwitchPerson: (id: string) => void;
   onAsk: () => void;
   onOpen: (threadId: string) => void;
+  onOpenFile: (path: string) => void;
 }) {
   const { data, failed, load, act } = paper;
   const pending = data ? data.decisions.slice().reverse().filter((d) => d.status === "pending") : [];
@@ -497,21 +498,29 @@ export function PaperFace({ paper, personName, dateLabel, people, teamError, act
                           <span className="mono col-span-2 text-xs text-ink-2 md:col-span-1">{when(x)}</span>
                           <div className="min-w-0">
                             <p className="text-ui font-medium leading-6 text-ink [overflow-wrap:anywhere]">{taskTitle}</p>
-                            <p className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-ink-2">
+                            <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5 text-xs text-ink-2">
                               {files.length ? (
                                 <>
                                   <span>Saved</span>
                                   {files.map((f, k) => (
-                                    <span key={f + k} className="num inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-chip border border-hairline bg-board/60 px-2 py-0.5 text-ink">
+                                    <Button
+                                      key={f + k}
+                                      size="xs"
+                                      variant="outline"
+                                      aria-label={`Open ${f}`}
+                                      onClick={() => onOpenFile(f)}
+                                      className="num max-md:min-h-11 max-w-full gap-1.5 rounded-chip border-hairline bg-board/60 px-2 text-xs font-normal text-ink hover:bg-board"
+                                    >
                                       <FileGlyph name={f} />
                                       <span className="truncate">{f}</span>
-                                    </span>
+                                      <ArrowUpRight className="size-3 shrink-0 text-icon" strokeWidth={1.5} aria-hidden />
+                                    </Button>
                                   ))}
                                 </>
                               ) : (
                                 "Nothing saved to your workspace"
                               )}
-                            </p>
+                            </div>
                           </div>
                           {id && (
                             <Button
@@ -603,10 +612,18 @@ export function PaperFace({ paper, personName, dateLabel, people, teamError, act
                             {files.length > 0 && (
                               <div className="mt-1.5 flex flex-wrap items-center gap-2">
                                 {files.map((f, idx) => (
-                                  <span key={f + idx} className="mono inline-flex max-w-full items-center gap-1 rounded-chip bg-board px-2 py-0.5 text-xs text-ink">
+                                  <Button
+                                    key={f + idx}
+                                    size="xs"
+                                    variant="outline"
+                                    aria-label={`Open ${f}`}
+                                    onClick={() => onOpenFile(f)}
+                                    className="mono max-md:min-h-11 max-w-full gap-1 rounded-chip border-hairline bg-board px-2 text-xs font-normal text-ink"
+                                  >
                                     <FileGlyph name={f} className="size-3.5" />
                                     <span className="truncate">{f}</span>
-                                  </span>
+                                    <ArrowUpRight className="size-3 shrink-0 text-icon" strokeWidth={1.5} aria-hidden />
+                                  </Button>
                                 ))}
                               </div>
                             )}

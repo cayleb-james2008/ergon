@@ -6,8 +6,50 @@ export type Status = {
   model_configured: boolean;
   model?: string;
   model_base_url?: string;
+  is_loopback_model?: boolean;
+  auto_detected?: boolean;
+  engine_mode?: "native" | "browser" | "byok";
   person?: Person;
   store_recovered?: string[];
+};
+export type DetectedGateway = {
+  base_url: string;
+  model_id: string;
+  label: string;
+  models?: string[];
+};
+export type ModelConfigPayload = {
+  model_base_url: string;
+  model_id: string;
+  has_api_key: boolean;
+  model_configured: boolean;
+  is_loopback: boolean;
+  auto_detected?: boolean;
+  engine_mode?: "native" | "browser" | "byok";
+  detected_gateways?: DetectedGateway[];
+};
+export type WorkspaceFile = {
+  path: string;
+  name: string;
+  size: number;
+  mtime_ms: number;
+  ext: string;
+};
+export type WorkspaceFileContent = {
+  path: string;
+  name: string;
+  size: number;
+  mtime_ms: number;
+  ext: string;
+  is_binary: boolean;
+  content: string;
+};
+export type LiveRunStatus = {
+  active: boolean;
+  thread_id: string;
+  task: string;
+  started_ms: number;
+  steps: string[];
 };
 export type ThreadRow = { id: string; title?: string; messages?: number };
 export type Thread = { id: string; title?: string; messages: Msg[] };
@@ -24,7 +66,7 @@ export type Update = {
   error?: string;
   checked_at?: number;
 };
-export type Decision = { id: string; kind: string; summary: string; status: string; outcome?: string; thread_id?: string; ts?: number; resolved_ts?: number };
+export type Decision = { id: string; kind: string; summary: string; status: string; outcome?: string; thread_id?: string; path?: string; ts?: number; resolved_ts?: number };
 export type Offer = { id: string; title: string; detail: string; status: string; item_id?: string; ts?: number };
 export type SuiteItem = { id: string; kind: string; name: string; description: string; fields?: string[] };
 export type LibraryItem = { id: string; kind: string; name: string; description: string; author: string; builtin?: boolean };
@@ -46,6 +88,10 @@ export type GraphEdge = { from: string; to: string; kind?: string };
 export type GraphPayload = { nodes?: GraphNode[]; edges?: GraphEdge[] };
 
 export type Res<T> = { ok: true; data: T } | { ok: false; error: string; status: number };
+
+export function isWebStandalone(): boolean {
+  return typeof window !== "undefined" && Boolean((window as unknown as { __ERGON_WEB_ENGINE__?: boolean }).__ERGON_WEB_ENGINE__);
+}
 
 export async function call<T>(path: string, opts: { method?: string; body?: unknown } = {}): Promise<Res<T>> {
   try {
@@ -72,5 +118,25 @@ export async function call<T>(path: string, opts: { method?: string; body?: unkn
     return { ok: true, data };
   } catch (e) {
     return { ok: false, error: e instanceof TypeError ? "Could not reach the Ergon server." : String(e), status: 0 };
+  }
+}
+
+export async function downloadWorkspaceFile(filePath: string): Promise<boolean> {
+  const url = "/api/files/content?path=" + encodeURIComponent(filePath) + "&download=1";
+  try {
+    const r = await fetch(url, { cache: "no-store" });
+    if (!r.ok) return false;
+    const blob = await r.blob();
+    const dlUrl = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = dlUrl;
+    a.download = filePath.split("/").pop() || "workspace-file";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(dlUrl), 1500);
+    return true;
+  } catch {
+    return false;
   }
 }

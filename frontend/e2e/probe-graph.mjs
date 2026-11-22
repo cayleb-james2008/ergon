@@ -11,7 +11,11 @@ for (const [w, scheme] of [[1440, "light"], [1440, "dark"], [1100, "light"], [90
   const p = await b.newPage({ viewport: { width: w, height: 900 }, colorScheme: scheme });
   await p.goto(BASE);
   await p.waitForTimeout(600);
+  await p.locator('[data-thing="settings-btn"]').click();
+  await p.waitForSelector('[role="dialog"]', { timeout: 4000 });
   await p.getByRole("button", { name: scheme === "dark" ? "Dark" : "Light", exact: true }).first().click();
+  await p.keyboard.press("Escape");
+  await p.locator('[role="dialog"]').waitFor({ state: "hidden", timeout: 4000 }).catch(() => {});
   await p.locator('[role="tab"][data-id="graph"]').click();
   await p.waitForTimeout(900);
   const theme = await p.evaluate(() => document.documentElement.dataset.theme || "");

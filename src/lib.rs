@@ -31,6 +31,195 @@ pub const STEP_CAP: usize = 24;
 // Config
 // ---------------------------------------------------------------------------
 
+pub const DEFAULT_MODEL_BASE_URL: &str = "https://opencode.ai/zen/go/v1";
+pub const DEFAULT_MODEL_ID: &str = "deepseek-v4.1-flash";
+
+#[derive(Clone, Debug)]
+pub struct DetectedGateway {
+    pub base_url: String,
+    pub model_id: String,
+    pub label: String,
+    pub models: Vec<String>,
+}
+
+impl DetectedGateway {
+    pub fn to_json(&self) -> Value {
+        json!({
+            "base_url": self.base_url,
+            "model_id": self.model_id,
+            "label": self.label,
+            "models": self.models,
+        })
+    }
+}
+
+/// Extract (host, port) from an http(s) URL authority.
+fn parse_url_host_port(url: &str) -> Option<(String, u16)> {
+    let (scheme, rest) = url.trim().split_once("://")?;
+    let default_port = match scheme.to_ascii_lowercase().as_str() {
+        "http" => 80,
+        "https" => 443,
+        _ => return None,
+    };
+    let authority = rest.split('/').next().unwrap_or("").trim();
+    if authority.is_empty() {
+        return None;
+    }
+    if let Some(after_open) = authority.strip_prefix('[') {
+        let (host, tail) = after_open.split_once(']')?;
+        let port = if let Some(p) = tail.strip_prefix(':') {
+            p.parse::<u16>().ok()?
+        } else {
+            default_port
+        };
+        return Some((format!("[{}]", host.to_ascii_lowercase()), port));
+    }
+    if let Some((host, p)) = authority.rsplit_once(':') {
+        let port = p.parse::<u16>().ok()?;
+        Some((host.to_ascii_lowercase(), port))
+    } else {
+        Some((authority.to_ascii_lowercase(), default_port))
+    }
+}
+
+/// Whether `url` targets loopback (`127.0.0.1`, `localhost`, or `[::1]`).
+pub fn is_loopback_url(url: &str) -> bool {
+    parse_url_host_port(url)
+        .map(|(h, _)| matches!(h.as_str(), "127.0.0.1" | "localhost" | "[::1]"))
+        .unwrap_or(false)
+}
+
+/// Fast non-blocking TCP reachability probe for loopback model URLs (250ms).
+/// Ensures dead discard ports (e.g. `127.0.0.1:9` in unit/no-key tests) fail
+/// closed while running local OpenAI-compatible gateways work without an API key.
+pub fn loopback_tcp_reachable(url: &str) -> bool {
+    let Some((host, port)) = parse_url_host_port(url) else {
+        return false;
+    };
+    if !matches!(host.as_str(), "127.0.0.1" | "localhost" | "[::1]") {
+        return false;
+    }
+    let ip: std::net::IpAddr = match host.as_str() {
+        "[::1]" => std::net::IpAddr::V6(std::net::Ipv6Addr::LOCALHOST),
+        _ => std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST),
+    };
+    let addr = std::net::SocketAddr::new(ip, port);
+    std::net::TcpStream::connect_timeout(&addr, std::time::Duration::from_millis(250)).is_ok()
+}
+
+/// Probe known running local OpenAI-compatible gateways in priority order.
+/// Ollama (`11434`) is checked first because it is a pure stateless OpenAI JSON
+/// endpoint that executes Ergon's sandboxed tool protocol directly without
+/// running host-level CLI tools outside the workspace.
+pub fn detect_local_gateways() -> Vec<DetectedGateway> {
+    const CANDIDATES: [(&str, &str, &str); 3] = [
+        (
+            "http://127.0.0.1:11434/v1",
+            "qwen2.5:3b",
+            "Local Ollama (:11434)",
+        ),
+        (
+            "http://127.0.0.1:8790/v1",
+            "deepseek-v4.1-flash-free",
+            "Local OpenCode Zen (:8790)",
+        ),
+        (
+            "http://127.0.0.1:8789/v1",
+            "gemini-3.8-flash-high",
+            "Local Antigravity Bridge (:8789)",
+        ),
+    ];
+    let mut found = Vec::new();
+    for (base_url, preferred_model, label) in CANDIDATES {
+        if !loopback_tcp_reachable(base_url) {
+            continue;
+        }
+        let models_url = format!("{base_url}/models");
+        let resp = ureq::get(&models_url)
+            .timeout(std::time::Duration::from_millis(1200))
+            .call();
+        let Ok(r) = resp else { continue };
+        let Ok(v) = r.into_json::<Value>() else { continue };
+        let mut models: Vec<String> = v["data"]
+            .as_array()
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|m| m["id"].as_str().map(|s| s.to_string()))
+                    .collect()
+            })
+            .unwrap_or_default();
+        if models.is_empty() {
+            models.push(preferred_model.to_string());
+        }
+        let chosen = if models.iter().any(|m| m == preferred_model) {
+            preferred_model.to_string()
+        } else {
+            models[0].clone()
+        };
+        found.push(DetectedGateway {
+            base_url: base_url.to_string(),
+            model_id: chosen,
+            label: label.to_string(),
+            models,
+        });
+    }
+    found
+}
+
+#[derive(Clone, Debug)]
+pub struct SavedModelConfig {
+    pub model_base_url: String,
+    pub model_id: String,
+    pub api_key: Option<String>,
+}
+
+pub fn config_file_path(data_dir: &Path) -> PathBuf {
+    data_dir.join("config.json")
+}
+
+pub fn load_saved_model_config(data_dir: &Path) -> Option<SavedModelConfig> {
+    let raw = std::fs::read_to_string(config_file_path(data_dir)).ok()?;
+    let v: Value = serde_json::from_str(&raw).ok()?;
+    let base = v["model_base_url"]
+        .as_str()
+        .map(|s| s.trim().trim_end_matches('/').to_string())
+        .filter(|s| !s.is_empty())?;
+    let model = v["model_id"]
+        .as_str()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| DEFAULT_MODEL_ID.to_string());
+    let key = v["api_key"]
+        .as_str()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+    Some(SavedModelConfig {
+        model_base_url: base,
+        model_id: model,
+        api_key: key,
+    })
+}
+
+pub fn save_model_config(data_dir: &Path, saved: &SavedModelConfig) -> Result<(), String> {
+    std::fs::create_dir_all(data_dir).map_err(|e| format!("create data dir: {e}"))?;
+    let path = config_file_path(data_dir);
+    let tmp = data_dir.join("config.json.tmp");
+    let body = json!({
+        "model_base_url": saved.model_base_url,
+        "model_id": saved.model_id,
+        "api_key": saved.api_key,
+    })
+    .to_string();
+    std::fs::write(&tmp, body).map_err(|e| format!("write config.json: {e}"))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o600));
+    }
+    std::fs::rename(&tmp, &path).map_err(|e| format!("save config.json: {e}"))?;
+    Ok(())
+}
+
 #[derive(Clone, Debug)]
 pub struct Config {
     pub data_dir: PathBuf,
@@ -50,16 +239,55 @@ impl Config {
             .map(PathBuf::from)
             .unwrap_or_else(|_| data_dir.join("workspace"));
         let memory_path = data_dir.join("memory.md");
-        let model_base_url = std::env::var("ERGON_MODEL_BASE_URL")
-            .unwrap_or_else(|_| "https://opencode.ai/zen/go/v1".to_string())
-            .trim_end_matches('/')
-            .to_string();
-        let model_id =
-            std::env::var("ERGON_MODEL_ID").unwrap_or_else(|_| "deepseek-v4.1-flash".to_string());
-        let api_key = std::env::var("ERGON_MODEL_API_KEY")
+
+        let env_base = std::env::var("ERGON_MODEL_BASE_URL")
+            .ok()
+            .map(|s| s.trim().trim_end_matches('/').to_string())
+            .filter(|s| !s.is_empty());
+        let env_model = std::env::var("ERGON_MODEL_ID")
+            .ok()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty());
+        let env_key = std::env::var("ERGON_MODEL_API_KEY")
             .ok()
             .map(|k| k.trim().to_string())
             .filter(|k| !k.is_empty());
+        let no_auto = std::env::var("ERGON_NO_AUTO_MODEL")
+            .map(|v| v.trim() == "1" || v.trim().eq_ignore_ascii_case("true"))
+            .unwrap_or(false);
+
+        let saved = load_saved_model_config(&data_dir);
+
+        let (model_base_url, model_id, api_key) =
+            if env_base.is_some() || env_key.is_some() || saved.is_some() {
+                let base = env_base
+                    .or_else(|| saved.as_ref().map(|s| s.model_base_url.clone()))
+                    .unwrap_or_else(|| DEFAULT_MODEL_BASE_URL.to_string());
+                let model = env_model
+                    .or_else(|| saved.as_ref().map(|s| s.model_id.clone()))
+                    .unwrap_or_else(|| DEFAULT_MODEL_ID.to_string());
+                let key = env_key.or_else(|| saved.and_then(|s| s.api_key));
+                (base, model, key)
+            } else if !no_auto {
+                let gateways = detect_local_gateways();
+                if let Some(gw) = gateways.first() {
+                    let model = env_model.unwrap_or_else(|| gw.model_id.clone());
+                    (gw.base_url.clone(), model, None)
+                } else {
+                    (
+                        DEFAULT_MODEL_BASE_URL.to_string(),
+                        env_model.unwrap_or_else(|| DEFAULT_MODEL_ID.to_string()),
+                        None,
+                    )
+                }
+            } else {
+                (
+                    DEFAULT_MODEL_BASE_URL.to_string(),
+                    env_model.unwrap_or_else(|| DEFAULT_MODEL_ID.to_string()),
+                    None,
+                )
+            };
+
         Config {
             data_dir,
             workspace_dir,
@@ -68,6 +296,16 @@ impl Config {
             model_id,
             api_key,
         }
+    }
+
+    /// True when the agent can reach a configured model: either an API key is
+    /// present, or the base URL targets a real loopback OpenAI-compatible port
+    /// (excluding RFC 863 discard port 9 used by offline/no-key tests).
+    pub fn model_configured(&self) -> bool {
+        self.api_key.is_some()
+            || parse_url_host_port(&self.model_base_url)
+                .map(|(h, port)| matches!(h.as_str(), "127.0.0.1" | "localhost" | "[::1]") && port != 9)
+                .unwrap_or(false)
     }
 
     pub fn ensure_dirs(&self) -> std::io::Result<()> {
@@ -930,22 +1168,30 @@ impl Store {
 // Model client (OpenCode Go / OpenAI-compatible chat completions)
 // ---------------------------------------------------------------------------
 
-/// One model call. Carries the proven wire requirements: bearer key,
-/// `x-opencode-session` header, and a browser-like User-Agent.
+/// One model call. Carries the proven wire requirements: bearer key (when set
+/// or required for non-loopback endpoints), `x-opencode-session` header, and a
+/// browser-like User-Agent. Loopback gateways work without a bearer key.
 pub fn call_model(cfg: &Config, session: &str, messages: &[Value]) -> Result<Value, String> {
-    let key = cfg.api_key.as_deref().ok_or_else(|| NO_KEY_ERROR.to_string())?;
+    if !cfg.model_configured() {
+        return Err(NO_KEY_ERROR.to_string());
+    }
     let url = format!("{}/chat/completions", cfg.model_base_url);
-    let payload = json!({
+    let mut payload = json!({
         "model": cfg.model_id,
         "messages": messages,
         "temperature": 0.2,
     });
-    let resp = ureq::post(&url)
-        .set("Authorization", &format!("Bearer {key}"))
+    if cfg.model_base_url.contains(":11434") {
+        payload["response_format"] = json!({"type": "json_object"});
+    }
+    let mut req = ureq::post(&url)
         .set("x-opencode-session", session)
         .set("User-Agent", BROWSER_UA)
-        .timeout(std::time::Duration::from_secs(120))
-        .send_json(payload);
+        .timeout(std::time::Duration::from_secs(120));
+    if let Some(key) = cfg.api_key.as_deref().filter(|k| !k.is_empty()) {
+        req = req.set("Authorization", &format!("Bearer {key}"));
+    }
+    let resp = req.send_json(payload);
     let resp = match resp {
         Ok(r) => r,
         Err(ureq::Error::Status(code, r)) => {
@@ -960,7 +1206,7 @@ pub fn call_model(cfg: &Config, session: &str, messages: &[Value]) -> Result<Val
     let content = &v["choices"][0]["message"]["content"];
     match content {
         Value::String(s) => parse_model_reply(s),
-        Value::Object(_) => Ok(content.clone()),
+        Value::Object(_) => Ok(normalize_model_reply(content.clone())),
         _ => Err(format!(
             "model response had no message content: {}",
             truncate(&v.to_string(), 400)
@@ -968,8 +1214,105 @@ pub fn call_model(cfg: &Config, session: &str, messages: &[Value]) -> Result<Val
     }
 }
 
+fn normalize_model_reply(mut v: Value) -> Value {
+    if let Some(obj) = v.as_object_mut() {
+        // Common local-model / OpenAI-function-call aliases:
+        // {"name": "write_file", "arguments": {...}} -> {"tool": "write_file", "args": {...}}
+        if !obj.contains_key("tool") {
+            if let Some(name) = obj.get("name").and_then(|n| n.as_str()).map(|s| s.to_string()) {
+                obj.remove("name");
+                obj.insert("tool".to_string(), Value::String(name));
+            }
+        }
+        if obj.contains_key("tool") && !obj.contains_key("args") {
+            if let Some(arguments) = obj.remove("arguments") {
+                obj.insert("args".to_string(), arguments);
+            }
+        }
+        if let Some(Value::String(s)) = obj.get("args").cloned() {
+            if let Ok(parsed) = serde_json::from_str::<Value>(&s) {
+                if parsed.is_object() {
+                    obj.insert("args".to_string(), parsed);
+                }
+            }
+        }
+        if obj.contains_key("tool") && !obj.get("args").is_some_and(|a| a.is_object()) {
+            let mut extra = serde_json::Map::new();
+            let keys: Vec<String> = obj
+                .keys()
+                .filter(|k| k.as_str() != "tool" && k.as_str() != "args")
+                .cloned()
+                .collect();
+            for k in keys {
+                if let Some(val) = obj.remove(&k) {
+                    extra.insert(k, val);
+                }
+            }
+            obj.insert("args".to_string(), Value::Object(extra));
+        }
+        if obj.get("done").and_then(|d| d.as_str()) == Some("true") {
+            obj.insert("done".to_string(), Value::Bool(true));
+        }
+        if !obj.contains_key("tool")
+            && !obj.contains_key("done")
+            && !obj.contains_key("path")
+            && obj.get("summary").and_then(|s| s.as_str()).is_some_and(|s| !s.trim().is_empty())
+        {
+            obj.insert("done".to_string(), Value::Bool(true));
+        }
+    }
+    v
+}
+
+/// Extract the first balanced JSON object from a text blob that may include prose
+/// or code fences around it.
+fn extract_first_json_object(s: &str) -> Option<Value> {
+    let bytes = s.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'{' {
+            let mut depth = 0usize;
+            let mut in_str = false;
+            let mut esc = false;
+            let mut j = i;
+            while j < bytes.len() {
+                let b = bytes[j];
+                if in_str {
+                    if esc {
+                        esc = false;
+                    } else if b == b'\\' {
+                        esc = true;
+                    } else if b == b'"' {
+                        in_str = false;
+                    }
+                } else {
+                    match b {
+                        b'"' => in_str = true,
+                        b'{' => depth += 1,
+                        b'}' => {
+                            depth -= 1;
+                            if depth == 0 {
+                                if let Ok(v) = serde_json::from_str::<Value>(&s[i..=j]) {
+                                    if v.is_object() {
+                                        return Some(v);
+                                    }
+                                }
+                                break;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                j += 1;
+            }
+        }
+        i += 1;
+    }
+    None
+}
+
 /// Parse one model reply: exactly one JSON object, either a tool call or
-/// done. Tolerates ```json fences around the object.
+/// done. Tolerates ```json fences or brief wrapper prose around the object.
 pub fn parse_model_reply(raw: &str) -> Result<Value, String> {
     let trimmed = raw.trim();
     let unfenced = trimmed
@@ -980,15 +1323,18 @@ pub fn parse_model_reply(raw: &str) -> Result<Value, String> {
         .trim();
     if let Ok(v) = serde_json::from_str::<Value>(unfenced) {
         if v.is_object() {
-            return Ok(v);
+            return Ok(normalize_model_reply(v));
         }
+    }
+    if let Some(v) = extract_first_json_object(unfenced) {
+        return Ok(normalize_model_reply(v));
     }
     // Last resort: first { .. last } slice.
     if let (Some(a), Some(b)) = (unfenced.find('{'), unfenced.rfind('}')) {
         if a < b {
             if let Ok(v) = serde_json::from_str::<Value>(&unfenced[a..=b]) {
                 if v.is_object() {
-                    return Ok(v);
+                    return Ok(normalize_model_reply(v));
                 }
             }
         }
@@ -1307,6 +1653,11 @@ pub fn execute_tool_full(
                 return Err(format!("delete_file: no such file: {rel}"));
             }
             let thread_id = args["_thread"].as_str().unwrap_or("");
+            if let Some(existing_id) = records::find_pending_delete(&cfg.data_dir, rel) {
+                return Ok(format!(
+                    "already parked for your person's approval (decision {existing_id}): {rel} is already waiting in their decisions inbox. Do NOT call delete_file again for {rel}; finish now with {{\"done\": true, \"summary\": \"Parked deletion of {rel} for your approval.\"}}."
+                ));
+            }
             let id = records::add_decision(
                 &cfg.data_dir,
                 "delete",
@@ -1315,7 +1666,7 @@ pub fn execute_tool_full(
                 thread_id,
             );
             Ok(format!(
-                "parked for your person's approval (decision {id}): deleting is a consequential action, so {rel} has NOT been deleted yet. It will be deleted only if they approve it in their decisions inbox. Continue with the rest of the task and note in your summary that the deletion is awaiting their decision."
+                "parked for your person's approval (decision {id}): deleting is a consequential action, so {rel} has NOT been deleted yet. It will be deleted only if they approve it in their decisions inbox. Do NOT call delete_file again for {rel}. Continue with any remaining work or reply now with {{\"done\": true, \"summary\": \"...\"}} noting that the deletion is awaiting their decision."
             ))
         }
         "flag_decision" => {
@@ -1735,6 +2086,28 @@ fn subagent_system_prompt(
     )
 }
 
+/// Live execution state for an in-flight agent run so the UI can stream tool
+/// steps in real time before the final HTTP response returns.
+#[derive(Clone, Debug)]
+pub struct LiveRun {
+    pub thread_id: String,
+    pub task: String,
+    pub started_ms: u64,
+    pub steps: Vec<String>,
+}
+
+pub type LiveRuns = Arc<Mutex<HashMap<String, LiveRun>>>;
+
+fn push_live_step(live: Option<(&LiveRuns, &str)>, step: String) {
+    if let Some((runs, person_id)) = live {
+        if let Ok(mut map) = runs.lock() {
+            if let Some(run) = map.get_mut(person_id) {
+                run.steps.push(step);
+            }
+        }
+    }
+}
+
 /// One agent loop: model → tool → model → … until done or the step
 /// cap. Steps are pushed into the thread as they happen (subagent
 /// steps are labelled with the subagent's name). Returns the done
@@ -1757,6 +2130,7 @@ fn run_loop(
     suite_items: &[library::LibraryItem],
     budget: &mut usize,
     session_tag: &str,
+    live: Option<(&LiveRuns, &str)>,
 ) -> Result<(String, Vec<String>), String> {
     // Subagent runs get their own provider session: if the provider
     // keys conversation state on the session header, the two
@@ -1778,13 +2152,25 @@ fn run_loop(
     // task). Now every call, parent or subagent, draws from the
     // same budget of STEP_CAP.
     let mut local_steps = 0usize;
+    let mut json_retries = 0usize;
     loop {
         if local_steps >= step_cap || *budget >= STEP_CAP {
             break;
         }
         local_steps += 1;
         *budget += 1;
-        let reply = call_model(cfg, &session, &messages)?;
+        let reply = match call_model(cfg, &session, &messages) {
+            Ok(v) => v,
+            Err(e) if e.starts_with("model reply was not a JSON object:") && json_retries < 2 => {
+                json_retries += 1;
+                messages.push(json!({
+                    "role": "user",
+                    "content": "Protocol reminder: reply with ONLY one valid JSON object — either {\"tool\": \"<name>\", \"args\": {...}} (e.g. {\"tool\": \"write_file\", \"args\": {\"path\": \"...\", \"content\": \"...\"}}) or {\"done\": true, \"summary\": \"...\"}."
+                }));
+                continue;
+            }
+            Err(e) => return Err(e),
+        };
         if reply["done"].as_bool() == Some(true) {
             let summary = reply["summary"]
                 .as_str()
@@ -1793,10 +2179,24 @@ fn run_loop(
                 .to_string();
             return Ok((summary, steps));
         }
-        let tool = reply["tool"]
-            .as_str()
-            .ok_or_else(|| format!("model reply was neither a tool call nor done: {}", truncate(&reply.to_string(), 300)))?
-            .to_string();
+        let tool = match reply["tool"].as_str() {
+            Some(t) if !t.trim().is_empty() => t.to_string(),
+            _ if json_retries < 2 => {
+                json_retries += 1;
+                messages.push(json!({ "role": "assistant", "content": reply.to_string() }));
+                messages.push(json!({
+                    "role": "user",
+                    "content": "Protocol reminder: wrap tool calls with a \"tool\" key and an \"args\" object, like {\"tool\": \"write_file\", \"args\": {\"path\": \"...\", \"content\": \"...\"}}, or finish with {\"done\": true, \"summary\": \"...\"}."
+                }));
+                continue;
+            }
+            _ => {
+                return Err(format!(
+                    "model reply was neither a tool call nor done: {}",
+                    truncate(&reply.to_string(), 300)
+                ));
+            }
+        };
         let mut args = reply["args"].clone();
 
         let (result_text, ok) = if tool == "delegate" {
@@ -1808,7 +2208,7 @@ fn run_loop(
             } else {
                 run_delegation(
                     cfg, ctx, store, thread_id, &args, ledger, dynamic_skills, suite_items,
-                    budget,
+                    budget, live,
                 )
             }
         } else if !allow_delegate
@@ -1859,11 +2259,18 @@ fn run_loop(
             None => format!("Tool: {tool}"),
         };
         steps.push(step_line.clone());
-        store.lock().unwrap().push(
-            thread_id,
-            "step",
-            &format!("{step_line}\n{}", truncate(&result_text, 500)),
-        );
+        let rendered_step = format!("{step_line}\n{}", truncate(&result_text, 500));
+        push_live_step(live, rendered_step.clone());
+        store.lock().unwrap().push(thread_id, "step", &rendered_step);
+        // Guard against small local models looping on delete_file after a file
+        // has already been parked for approval in this run.
+        if tool == "delete_file" && ok && result_text.starts_with("already parked for your person's approval") {
+            let rel = args["path"].as_str().unwrap_or("the file");
+            return Ok((
+                format!("Parked deletion of {rel} for your approval in Today's desk. The file has not been deleted yet."),
+                steps,
+            ));
+        }
         messages.push(json!({"role": "assistant", "content": reply.to_string()}));
         messages.push(json!({
             "role": "user",
@@ -1896,6 +2303,7 @@ fn run_delegation(
     dynamic_skills: &mut std::collections::HashSet<String>,
     suite_items: &[library::LibraryItem],
     budget: &mut usize,
+    live: Option<(&LiveRuns, &str)>,
 ) -> (String, bool) {
     let sub_id = args["subagent"].as_str().unwrap_or("");
     let task = args["task"].as_str().unwrap_or("");
@@ -1917,11 +2325,9 @@ fn run_delegation(
             false,
         );
     };
-    store.lock().unwrap().push(
-        thread_id,
-        "step",
-        &format!("Delegated to {}: {}", profile.name, truncate(task, 300)),
-    );
+    let delegated_line = format!("Delegated to {}: {}", profile.name, truncate(task, 300));
+    push_live_step(live, delegated_line.clone());
+    store.lock().unwrap().push(thread_id, "step", &delegated_line);
     let system = subagent_system_prompt(cfg, &profile, suite_items);
     match run_loop(
         cfg,
@@ -1939,6 +2345,7 @@ fn run_delegation(
         suite_items,
         budget,
         &profile.id,
+        live,
     ) {
         Ok((summary, _)) => (format!("{} reports: {}", profile.name, summary), true),
         Err(e) => (format!("error: subagent {} failed: {e}", profile.name), false),
@@ -1952,18 +2359,39 @@ fn run_delegation(
 /// Agent runs in progress, so an update never restarts the server under one.
 static RUNS_IN_FLIGHT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
-struct RunGuard;
+struct RunGuard {
+    live: Option<(LiveRuns, String)>,
+}
 
 impl RunGuard {
-    fn new() -> RunGuard {
+    fn new(live: Option<(&LiveRuns, &str)>, thread_id: &str, task: &str, started_ms: u64) -> RunGuard {
         RUNS_IN_FLIGHT.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        RunGuard
+        let stored = live.map(|(runs, pid)| {
+            if let Ok(mut map) = runs.lock() {
+                map.insert(
+                    pid.to_string(),
+                    LiveRun {
+                        thread_id: thread_id.to_string(),
+                        task: task.to_string(),
+                        started_ms,
+                        steps: Vec::new(),
+                    },
+                );
+            }
+            (runs.clone(), pid.to_string())
+        });
+        RunGuard { live: stored }
     }
 }
 
 impl Drop for RunGuard {
     fn drop(&mut self) {
         RUNS_IN_FLIGHT.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+        if let Some((runs, pid)) = &self.live {
+            if let Ok(mut map) = runs.lock() {
+                map.remove(pid);
+            }
+        }
     }
 }
 
@@ -1975,12 +2403,24 @@ pub fn run_agent(
     task: &str,
     history: &[Value],
 ) -> Result<AgentOutcome, String> {
-    if cfg.api_key.is_none() {
+    run_agent_live(cfg, ctx, store, thread_id, task, history, None)
+}
+
+pub fn run_agent_live(
+    cfg: &Config,
+    ctx: &ToolCtx,
+    store: &SharedStore,
+    thread_id: &str,
+    task: &str,
+    history: &[Value],
+    live: Option<(&LiveRuns, &str)>,
+) -> Result<AgentOutcome, String> {
+    if !cfg.model_configured() {
         return Err(NO_KEY_ERROR.to_string());
     }
-    let _in_flight = RunGuard::new();
     // Deletes parked after this instant belong to this run (EB1).
     let run_started = records::now_millis();
+    let _in_flight = RunGuard::new(live, thread_id, task, run_started);
     let suite = library::load_suite(&cfg.data_dir);
     let suite_items = {
         let lib = ctx.library.lock().unwrap();
@@ -2010,6 +2450,7 @@ pub fn run_agent(
         &suite_items,
         &mut budget,
         "",
+        live,
     ) {
         Ok(v) => v,
         Err(e) => {
@@ -2139,9 +2580,19 @@ fn load_runtime(root: &Config, person: &Person, library: &library::Library) -> P
     }
 }
 
+#[derive(Clone, Debug)]
+pub struct LiveModelConfig {
+    pub model_base_url: String,
+    pub model_id: String,
+    pub api_key: Option<String>,
+    pub auto_detected: bool,
+}
+
 pub struct AppState {
-    /// Root config (model route + root data dir).
+    /// Root config (data dir + startup model route).
     pub cfg: Config,
+    /// Live mutable model configuration updated by POST /api/config without restarting.
+    pub model_cfg: Arc<Mutex<LiveModelConfig>>,
     /// The company library — one shared store of skills, subagents
     /// and apps that the agents themselves maintain.
     pub library: Arc<Mutex<library::Library>>,
@@ -2154,6 +2605,8 @@ pub struct AppState {
     pub allowed_hosts: Vec<String>,
     pub people: Arc<Mutex<PeopleState>>,
     pub runtimes: Arc<Mutex<HashMap<String, Arc<PersonRuntime>>>>,
+    /// In-flight runs per person for live step progress streaming (`GET /api/runs/status`).
+    pub live_runs: LiveRuns,
     /// Browser sessions (cookie id → person id). "Active person" used
     /// to be one global pointer: any client could switch it for every
     /// other client mid-task. A session pins the person per browser;
@@ -2297,13 +2750,22 @@ fn serve_inner(
     let gate_token_is_none = gate_token.is_none();
     let people = PeopleState::load(&cfg);
     let library = library::Library::load(&cfg.data_dir);
+    let auto_detected = cfg.api_key.is_none() && cfg.model_configured();
+    let model_cfg = Arc::new(Mutex::new(LiveModelConfig {
+        model_base_url: cfg.model_base_url.clone(),
+        model_id: cfg.model_id.clone(),
+        api_key: cfg.api_key.clone(),
+        auto_detected,
+    }));
     let state = Arc::new(AppState {
         cfg,
+        model_cfg,
         library: Arc::new(Mutex::new(library)),
         gate_token,
         allowed_hosts,
         people: Arc::new(Mutex::new(people)),
         runtimes: Arc::new(Mutex::new(HashMap::new())),
+        live_runs: Arc::new(Mutex::new(HashMap::new())),
         sessions: Arc::new(Mutex::new(HashMap::new())),
         updater: update::Updater::from_env("ERGON", "ergon", env!("CARGO_PKG_VERSION"), "cayleb-james2008/ergon", gate_token_is_none),
     });
@@ -2327,6 +2789,7 @@ fn serve_inner(
 struct Request {
     method: String,
     path: String,
+    query: String,
     body: Vec<u8>,
     /// The caller's `ergon_session` cookie, if they presented one.
     session: Option<String>,
@@ -2368,7 +2831,12 @@ fn read_request(stream: &mut std::net::TcpStream) -> Option<Request> {
     let mut parts = request_line.split_whitespace();
     let method = parts.next()?.to_string();
     let raw_path = parts.next()?.to_string();
-    let path = raw_path.split('?').next().unwrap_or("/").to_string();
+    let (path_part, query_part) = match raw_path.split_once('?') {
+        Some((p, q)) => (p, q),
+        None => (raw_path.as_str(), ""),
+    };
+    let path = path_part.to_string();
+    let query = query_part.to_string();
     let mut content_length: usize = 0;
     let mut session: Option<String> = None;
     let mut gate: Option<String> = None;
@@ -2465,6 +2933,7 @@ fn read_request(stream: &mut std::net::TcpStream) -> Option<Request> {
     Some(Request {
         method,
         path,
+        query,
         body,
         session,
         gate,
@@ -2561,11 +3030,11 @@ fn respond(
     respond_h(stream, status, content_type, body, &[])
 }
 
-fn respond_h(
+fn respond_bytes(
     stream: &mut std::net::TcpStream,
     status: u16,
     content_type: &str,
-    body: &str,
+    body: &[u8],
     extra_headers: &[(&str, String)],
 ) -> std::io::Result<()> {
     let reason = match status {
@@ -2576,6 +3045,7 @@ fn respond_h(
         403 => "Forbidden",
         404 => "Not Found",
         405 => "Method Not Allowed",
+        409 => "Conflict",
         413 => "Content Too Large",
         415 => "Unsupported Media Type",
         431 => "Request Header Fields Too Large",
@@ -2592,8 +3062,166 @@ fn respond_h(
     }
     head.push_str("\r\n");
     stream.write_all(head.as_bytes())?;
-    stream.write_all(body.as_bytes())?;
+    stream.write_all(body)?;
     stream.flush()
+}
+
+fn respond_h(
+    stream: &mut std::net::TcpStream,
+    status: u16,
+    content_type: &str,
+    body: &str,
+    extra_headers: &[(&str, String)],
+) -> std::io::Result<()> {
+    respond_bytes(stream, status, content_type, body.as_bytes(), extra_headers)
+}
+
+fn percent_decode(s: &str) -> String {
+    let bytes = s.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'+' => {
+                out.push(b' ');
+                i += 1;
+            }
+            b'%' if i + 2 < bytes.len() => {
+                let hex = &s[i + 1..i + 3];
+                if let Ok(v) = u8::from_str_radix(hex, 16) {
+                    out.push(v);
+                    i += 3;
+                } else {
+                    out.push(b'%');
+                    i += 1;
+                }
+            }
+            b => {
+                out.push(b);
+                i += 1;
+            }
+        }
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+fn query_param(query: &str, key: &str) -> Option<String> {
+    for pair in query.split('&') {
+        if pair.is_empty() {
+            continue;
+        }
+        let (k, v) = pair.split_once('=').unwrap_or((pair, ""));
+        if percent_decode(k) == key {
+            return Some(percent_decode(v));
+        }
+    }
+    None
+}
+
+fn decode_base64(input: &str) -> Result<Vec<u8>, String> {
+    let mut out = Vec::new();
+    let mut buf = 0u32;
+    let mut bits = 0u8;
+    for b in input.bytes() {
+        if b.is_ascii_whitespace() {
+            continue;
+        }
+        if b == b'=' {
+            break;
+        }
+        let val = match b {
+            b'A'..=b'Z' => (b - b'A') as u32,
+            b'a'..=b'z' => (b - b'a' + 26) as u32,
+            b'0'..=b'9' => (b - b'0' + 52) as u32,
+            b'+' => 62,
+            b'/' => 63,
+            _ => return Err("invalid base64 data".to_string()),
+        };
+        buf = (buf << 6) | val;
+        bits += 6;
+        if bits >= 8 {
+            bits -= 8;
+            out.push(((buf >> bits) & 0xff) as u8);
+        }
+    }
+    Ok(out)
+}
+
+fn mime_for_ext(ext: &str) -> &'static str {
+    match ext {
+        "csv" => "text/csv; charset=utf-8",
+        "md" | "markdown" => "text/markdown; charset=utf-8",
+        "json" => "application/json; charset=utf-8",
+        "txt" | "log" | "rs" | "ts" | "tsx" | "js" | "py" | "toml" | "yaml" | "yml" => {
+            "text/plain; charset=utf-8"
+        }
+        _ => "application/octet-stream",
+    }
+}
+
+fn list_workspace_files(root: &Path) -> Vec<Value> {
+    fn walk(root: &Path, dir: &Path, depth: usize, out: &mut Vec<(u64, String, Value)>) {
+        if depth > 6 {
+            return;
+        }
+        let Ok(rd) = std::fs::read_dir(dir) else { return };
+        for entry in rd.filter_map(|e| e.ok()) {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if name.starts_with('.') {
+                continue;
+            }
+            let Ok(ft) = entry.file_type() else { continue };
+            if ft.is_symlink() {
+                continue;
+            }
+            let p = entry.path();
+            if ft.is_dir() {
+                walk(root, &p, depth + 1, out);
+                continue;
+            }
+            let Ok(md) = entry.metadata() else { continue };
+            let rel = p
+                .strip_prefix(root)
+                .unwrap_or(&p)
+                .to_string_lossy()
+                .replace('\\', "/");
+            let ext = p
+                .extension()
+                .and_then(|s| s.to_str())
+                .unwrap_or("")
+                .to_ascii_lowercase();
+            let mtime_ms = md
+                .modified()
+                .ok()
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_millis() as u64)
+                .unwrap_or(0);
+            out.push((
+                mtime_ms,
+                rel.clone(),
+                json!({
+                    "path": rel,
+                    "name": name,
+                    "size": md.len(),
+                    "mtime_ms": mtime_ms,
+                    "ext": ext,
+                }),
+            ));
+        }
+    }
+    let mut items = Vec::new();
+    walk(root, root, 0, &mut items);
+    items.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
+    items.into_iter().map(|(_, _, v)| v).collect()
+}
+
+fn effective_cfg(state: &AppState, runtime: &PersonRuntime) -> Config {
+    let mut cfg = runtime.cfg.clone();
+    let live = state.model_cfg.lock().unwrap();
+    cfg.model_base_url = live.model_base_url.clone();
+    cfg.model_id = live.model_id.clone();
+    cfg.api_key = live.api_key.clone();
+    cfg
 }
 
 fn respond_json(stream: &mut std::net::TcpStream, status: u16, v: &Value) -> std::io::Result<()> {
@@ -2706,16 +3334,366 @@ fn handle_connection(mut stream: std::net::TcpStream, state: &AppState) -> std::
             }
             recovered.sort();
             recovered.dedup();
+            let eff = effective_cfg(state, &runtime);
+            let live_meta = state.model_cfg.lock().unwrap().clone();
             respond_json(
                 &mut stream,
                 200,
                 &json!({
                     "version": env!("CARGO_PKG_VERSION"),
-                    "model_configured": root_cfg.api_key.is_some(),
-                    "model": root_cfg.model_id,
-                    "model_base_url": root_cfg.model_base_url,
+                    "model_configured": eff.model_configured(),
+                    "model": eff.model_id,
+                    "model_base_url": eff.model_base_url,
+                    "is_loopback_model": is_loopback_url(&eff.model_base_url),
+                    "auto_detected": live_meta.auto_detected,
                     "person": person.to_json(),
                     "store_recovered": recovered,
+                }),
+            )
+        }
+        ("GET", "/api/config") => {
+            if state.gate_token.is_some() || !host_allowed(req.host.as_deref().unwrap_or(""), &[]) {
+                return respond_json(
+                    &mut stream,
+                    403,
+                    &json!({"error": "model settings are only available from this machine, not through a shared address"}),
+                );
+            }
+            let eff = effective_cfg(state, &runtime);
+            let live_meta = state.model_cfg.lock().unwrap().clone();
+            let gateways: Vec<Value> = detect_local_gateways()
+                .into_iter()
+                .map(|g| g.to_json())
+                .collect();
+            respond_json(
+                &mut stream,
+                200,
+                &json!({
+                    "model_base_url": eff.model_base_url,
+                    "model_id": eff.model_id,
+                    "has_api_key": eff.api_key.is_some(),
+                    "model_configured": eff.model_configured(),
+                    "is_loopback": is_loopback_url(&eff.model_base_url),
+                    "auto_detected": live_meta.auto_detected,
+                    "detected_gateways": gateways,
+                }),
+            )
+        }
+        ("POST", "/api/config") => {
+            if state.gate_token.is_some() || !host_allowed(req.host.as_deref().unwrap_or(""), &[]) {
+                return respond_json(
+                    &mut stream,
+                    403,
+                    &json!({"error": "changing model settings is only allowed from this machine, not through a shared address"}),
+                );
+            }
+            let parsed: Value = serde_json::from_slice(&req.body).unwrap_or(Value::Null);
+            let base = parsed["model_base_url"]
+                .as_str()
+                .unwrap_or("")
+                .trim()
+                .trim_end_matches('/')
+                .to_string();
+            let model_id = parsed["model_id"].as_str().unwrap_or("").trim().to_string();
+            if !(base.starts_with("http://") || base.starts_with("https://")) || parse_url_host_port(&base).is_none() {
+                return respond_json(
+                    &mut stream,
+                    400,
+                    &json!({"error": "model_base_url must be a valid http:// or https:// URL"}),
+                );
+            }
+            if model_id.is_empty() {
+                return respond_json(
+                    &mut stream,
+                    400,
+                    &json!({"error": "model_id is required"}),
+                );
+            }
+            let clear_key = parsed["clear_api_key"].as_bool().unwrap_or(false);
+            let next_key = if clear_key {
+                None
+            } else if let Some(raw_k) = parsed["api_key"].as_str() {
+                let k = raw_k.trim().to_string();
+                if k.is_empty() {
+                    state.model_cfg.lock().unwrap().api_key.clone()
+                } else {
+                    Some(k)
+                }
+            } else {
+                state.model_cfg.lock().unwrap().api_key.clone()
+            };
+            let saved = SavedModelConfig {
+                model_base_url: base.clone(),
+                model_id: model_id.clone(),
+                api_key: next_key.clone(),
+            };
+            if let Err(e) = save_model_config(&root_cfg.data_dir, &saved) {
+                return respond_json(&mut stream, 500, &json!({"error": e}));
+            }
+            {
+                let mut live = state.model_cfg.lock().unwrap();
+                live.model_base_url = base;
+                live.model_id = model_id;
+                live.api_key = next_key;
+                live.auto_detected = false;
+            }
+            let eff = effective_cfg(state, &runtime);
+            respond_json(
+                &mut stream,
+                200,
+                &json!({
+                    "model_base_url": eff.model_base_url,
+                    "model_id": eff.model_id,
+                    "has_api_key": eff.api_key.is_some(),
+                    "model_configured": eff.model_configured(),
+                    "is_loopback": is_loopback_url(&eff.model_base_url),
+                    "auto_detected": false,
+                }),
+            )
+        }
+        ("GET", "/api/runs/status") => {
+            let active = state.live_runs.lock().unwrap().get(&person.id).cloned();
+            match active {
+                Some(run) => respond_json(
+                    &mut stream,
+                    200,
+                    &json!({
+                        "active": true,
+                        "thread_id": run.thread_id,
+                        "task": run.task,
+                        "started_ms": run.started_ms,
+                        "steps": run.steps,
+                    }),
+                ),
+                None => respond_json(
+                    &mut stream,
+                    200,
+                    &json!({
+                        "active": false,
+                        "thread_id": "",
+                        "task": "",
+                        "started_ms": 0,
+                        "steps": [],
+                    }),
+                ),
+            }
+        }
+        ("GET", "/api/files") => {
+            let files = list_workspace_files(&runtime.cfg.workspace_dir);
+            respond_json(
+                &mut stream,
+                200,
+                &json!({
+                    "person_id": person.id,
+                    "files": files,
+                }),
+            )
+        }
+        ("GET", "/api/files/content") => {
+            let rel = query_param(&req.query, "path").unwrap_or_default();
+            let rel = rel.trim().to_string();
+            if rel.is_empty() {
+                return respond_json(&mut stream, 400, &json!({"error": "path is required"}));
+            }
+            if rel.contains('\0') || rel.starts_with('/') || rel.starts_with('\\') {
+                return respond_json(
+                    &mut stream,
+                    403,
+                    &json!({"error": "path escapes the workspace"}),
+                );
+            }
+            let full = match sandbox_path_resolving(&runtime.cfg.workspace_dir, &rel, true) {
+                Ok(p) => p,
+                Err(e) => return respond_json(&mut stream, 403, &json!({"error": e})),
+            };
+            if full == runtime.cfg.workspace_dir || full.is_dir() {
+                return respond_json(
+                    &mut stream,
+                    400,
+                    &json!({"error": "path must name a file inside the workspace"}),
+                );
+            }
+            let md = match std::fs::metadata(&full) {
+                Ok(m) => m,
+                Err(_) => return respond_json(&mut stream, 404, &json!({"error": "file not found"})),
+            };
+            const MAX_PREVIEW_BYTES: u64 = 2 * 1024 * 1024;
+            if md.len() > MAX_PREVIEW_BYTES {
+                return respond_json(
+                    &mut stream,
+                    413,
+                    &json!({"error": "file exceeds the 2 MiB preview limit"}),
+                );
+            }
+            let bytes = match std::fs::read(&full) {
+                Ok(b) => b,
+                Err(e) => return respond_json(&mut stream, 500, &json!({"error": format!("read failed: {e}")})),
+            };
+            let name = full
+                .file_name()
+                .and_then(|s| s.to_str())
+                .unwrap_or("file")
+                .to_string();
+            let ext = full
+                .extension()
+                .and_then(|s| s.to_str())
+                .unwrap_or("")
+                .to_ascii_lowercase();
+            let download = query_param(&req.query, "download")
+                .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+                .unwrap_or(false);
+            if download {
+                let safe_name: String = name
+                    .chars()
+                    .map(|c| if c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_' | ' ') { c } else { '_' })
+                    .collect();
+                let headers = [
+                    ("Content-Disposition", format!("attachment; filename=\"{safe_name}\"")),
+                    ("X-Content-Type-Options", "nosniff".to_string()),
+                ];
+                return respond_bytes(&mut stream, 200, mime_for_ext(&ext), &bytes, &headers);
+            }
+            let mtime_ms = md
+                .modified()
+                .ok()
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_millis() as u64)
+                .unwrap_or(0);
+            match String::from_utf8(bytes) {
+                Ok(content) => respond_json(
+                    &mut stream,
+                    200,
+                    &json!({
+                        "path": rel,
+                        "name": name,
+                        "size": md.len(),
+                        "mtime_ms": mtime_ms,
+                        "ext": ext,
+                        "is_binary": false,
+                        "content": content,
+                    }),
+                ),
+                Err(_) => respond_json(
+                    &mut stream,
+                    200,
+                    &json!({
+                        "path": rel,
+                        "name": name,
+                        "size": md.len(),
+                        "mtime_ms": mtime_ms,
+                        "ext": ext,
+                        "is_binary": true,
+                        "content": "",
+                    }),
+                ),
+            }
+        }
+        ("POST", "/api/files/upload") => {
+            let parsed: Value = serde_json::from_slice(&req.body).unwrap_or(Value::Null);
+            let raw_rel = parsed["path"]
+                .as_str()
+                .or_else(|| parsed["name"].as_str())
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            if raw_rel.is_empty() {
+                return respond_json(
+                    &mut stream,
+                    400,
+                    &json!({"error": "filename is required"}),
+                );
+            }
+            if raw_rel.contains('\0')
+                || raw_rel.starts_with('/')
+                || raw_rel.starts_with('\\')
+                || raw_rel.split('/').any(|seg| seg.is_empty() || seg.starts_with('.'))
+            {
+                return respond_json(
+                    &mut stream,
+                    403,
+                    &json!({"error": "invalid workspace filename"}),
+                );
+            }
+            let full = match sandbox_path_resolving(&runtime.cfg.workspace_dir, &raw_rel, false) {
+                Ok(p) => p,
+                Err(e) => return respond_json(&mut stream, 403, &json!({"error": e})),
+            };
+            if sandbox_path_resolving(&runtime.cfg.workspace_dir, &raw_rel, true).is_err() {
+                return respond_json(
+                    &mut stream,
+                    403,
+                    &json!({"error": "path escapes the workspace"}),
+                );
+            }
+            if full == runtime.cfg.workspace_dir {
+                return respond_json(
+                    &mut stream,
+                    400,
+                    &json!({"error": "filename must name a file"}),
+                );
+            }
+            let encoding = parsed["encoding"].as_str().unwrap_or("utf8");
+            let content_str = match parsed["content"].as_str() {
+                Some(s) => s,
+                None => {
+                    return respond_json(
+                        &mut stream,
+                        400,
+                        &json!({"error": "content is required"}),
+                    )
+                }
+            };
+            let bytes = if encoding.eq_ignore_ascii_case("base64") {
+                match decode_base64(content_str) {
+                    Ok(b) => b,
+                    Err(e) => return respond_json(&mut stream, 400, &json!({"error": e})),
+                }
+            } else {
+                content_str.as_bytes().to_vec()
+            };
+            if let Some(parent) = full.parent() {
+                if let Err(e) = std::fs::create_dir_all(parent) {
+                    return respond_json(
+                        &mut stream,
+                        500,
+                        &json!({"error": format!("create parent dir: {e}")}),
+                    );
+                }
+            }
+            let tmp = full.with_extension("upload.tmp");
+            if let Err(e) = std::fs::write(&tmp, &bytes).and_then(|_| std::fs::rename(&tmp, &full)) {
+                let _ = std::fs::remove_file(&tmp);
+                return respond_json(
+                    &mut stream,
+                    500,
+                    &json!({"error": format!("save file failed: {e}")}),
+                );
+            }
+            let name = full
+                .file_name()
+                .and_then(|s| s.to_str())
+                .unwrap_or(&raw_rel)
+                .to_string();
+            let ext = full
+                .extension()
+                .and_then(|s| s.to_str())
+                .unwrap_or("")
+                .to_ascii_lowercase();
+            let mtime_ms = std::fs::metadata(&full)
+                .ok()
+                .and_then(|m| m.modified().ok())
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_millis() as u64)
+                .unwrap_or(0);
+            respond_json(
+                &mut stream,
+                201,
+                &json!({
+                    "path": raw_rel,
+                    "name": name,
+                    "size": bytes.len(),
+                    "mtime_ms": mtime_ms,
+                    "ext": ext,
                 }),
             )
         }
@@ -3116,14 +4094,14 @@ fn handle_connection(mut stream: std::net::TcpStream, state: &AppState) -> std::
                     .to_string();
                 task = task.replace(&format!("{{{field}}}"), &value);
             }
-            let cfg = &runtime.cfg;
+            let cfg = effective_cfg(state, &runtime);
             let thread_id = {
                 let mut store = runtime.store.lock().unwrap();
                 let tid = store.create_thread();
                 store.push(&tid, "user", &format!("{} — {}", item.name, task));
                 tid
             };
-            if cfg.api_key.is_none() {
+            if !cfg.model_configured() {
                 runtime
                     .store
                     .lock()
@@ -3135,7 +4113,15 @@ fn handle_connection(mut stream: std::net::TcpStream, state: &AppState) -> std::
                     &json!({"error": NO_KEY_ERROR, "thread_id": thread_id}),
                 );
             }
-            match run_agent(cfg, &ctx, &runtime.store, &thread_id, &task, &[]) {
+            match run_agent_live(
+                &cfg,
+                &ctx,
+                &runtime.store,
+                &thread_id,
+                &task,
+                &[],
+                Some((&state.live_runs, &person.id)),
+            ) {
                 Ok(_outcome) => {
                     let store = runtime.store.lock().unwrap();
                     let v = store
@@ -3182,7 +4168,7 @@ fn handle_connection(mut stream: std::net::TcpStream, state: &AppState) -> std::
                     &json!({"error": "message is required"}),
                 );
             }
-            let cfg = &runtime.cfg;
+            let cfg = effective_cfg(state, &runtime);
             // The user's words are recorded FIRST, before any failure
             // path: a refused or failed run must never silently lose
             // the task the person typed (the no-key path used to drop
@@ -3200,7 +4186,7 @@ fn handle_connection(mut stream: std::net::TcpStream, state: &AppState) -> std::
                 store.push(&tid, "user", &message);
                 (tid, history)
             };
-            if cfg.api_key.is_none() {
+            if !cfg.model_configured() {
                 runtime
                     .store
                     .lock()
@@ -3212,7 +4198,15 @@ fn handle_connection(mut stream: std::net::TcpStream, state: &AppState) -> std::
                     &json!({"error": NO_KEY_ERROR, "thread_id": thread_id}),
                 );
             }
-            match run_agent(cfg, &ctx, &runtime.store, &thread_id, &message, &history) {
+            match run_agent_live(
+                &cfg,
+                &ctx,
+                &runtime.store,
+                &thread_id,
+                &message,
+                &history,
+                Some((&state.live_runs, &person.id)),
+            ) {
                 Ok(_outcome) => {
                     let store = runtime.store.lock().unwrap();
                     let v = store

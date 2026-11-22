@@ -183,8 +183,8 @@ await reset();
   // Ctrl+K jumps straight to composer & New chat shows 4 Starter Task Cards
   await p.getByRole("button", { name: "New chat" }).click();
   await p.waitForTimeout(400);
-  const starterCount = await p.locator('section[aria-label="Start a task"] button').count();
-  await p.locator('section[aria-label="Start a task"] button').first().click();
+  const starterCount = await p.locator('section[aria-label="Start a task"] button[data-starter-card]').count();
+  await p.locator('section[aria-label="Start a task"] button[data-starter-card]').first().click();
   await p.waitForTimeout(200);
   const draftFilled = (await p.locator("#composer-input").inputValue()).length > 5;
   ok("empty chat renders 4 rich starter cards and fills composer", starterCount === 4 && draftFilled);
@@ -227,9 +227,36 @@ await reset();
     ok("offer leaves the list", (await p.getByRole("button", { name: "Make it one tap" }).count()) === 0);
   }
 
-  // Theme toggle
+  // Theme toggle lives inside Settings (NOT on the main rail/bar)
+  ok("theme switcher is tucked inside Settings, not main rail", (await p.locator('[aria-label="Appearance"]').count()) === 0);
+  ok("no fixture demo pill rendered", (await p.getByText("fixture demo", { exact: true }).count()) === 0);
+
+  // Real Workspace File Upload (via active browser session) + Workspace Files panel + File Viewer table rendering
+  await p.evaluate(async () => {
+    await fetch("/api/files/upload", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ path: "q4-audit.csv", content: "Vendor,Amount,Status\nAcme Cloud,420.50,verified\nDelta Corp,180.00,missing\n" }),
+    });
+  });
+  await p.locator('[data-thing="files-btn"]').click();
+  await p.waitForSelector("#workspace-files-panel", { timeout: 4000 });
+  await p.getByRole("button", { name: "Open q4-audit.csv" }).click();
+  await p.waitForSelector("#file-viewer-dialog table", { timeout: 5000 });
+  const viewerTxt = await p.locator("#file-viewer-dialog").innerText();
+  ok("workspace file viewer renders real CSV table", viewerTxt.includes("Acme Cloud") && viewerTxt.includes("420.50") && viewerTxt.includes("Delta Corp"));
+  await p.keyboard.press("Escape");
+  await p.locator("#file-viewer-dialog").waitFor({ state: "hidden", timeout: 4000 }).catch(() => {});
+
+  // Settings dialog: Model connection + Appearance toggle
+  await p.locator('[data-thing="settings-btn"]').click();
+  await p.waitForSelector("#settings-panel", { timeout: 4000 });
+  const modelHeadingVisible = await p.locator("#settings-model-h").isVisible();
   await p.getByRole("button", { name: "Dark", exact: true }).first().click();
-  ok("theme toggles", (await p.evaluate(() => document.documentElement.getAttribute("data-theme"))) === "dark");
+  const darkSet = (await p.evaluate(() => document.documentElement.getAttribute("data-theme"))) === "dark";
+  await p.keyboard.press("Escape");
+  await p.locator('[role="dialog"]').waitFor({ state: "hidden", timeout: 4000 }).catch(() => {});
+  ok("settings dialog shows Model connection and toggles Dark theme", modelHeadingVisible && darkSet);
   await ctx.close();
 }
 
@@ -404,7 +431,7 @@ await reset();
   await p.getByRole("button", { name: "Open menu" }).click();
   await p.waitForTimeout(500);
   ok("phone drawer opens", await p.locator('[role="dialog"]').isVisible());
-  ok("appearance in the drawer", (await p.locator('[role="dialog"] [aria-label="Appearance"]').count()) === 1);
+  ok("settings trigger in phone drawer", (await p.locator('[role="dialog"] [data-thing="settings-btn"]').count()) === 1);
   await p.screenshot({ path: `${OUT}/drawer-390.png` });
   await p.keyboard.press("Escape");
   await p.locator('[role="dialog"]').waitFor({ state: "hidden", timeout: 4000 });

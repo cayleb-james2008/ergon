@@ -1,4 +1,4 @@
-# Ergon Front End — v0.3.0 Design & Verification
+# Ergon Front End — v0.4.0 Design & Verification
 
 ## 1. The Job (`JOB.md`)
 
@@ -18,11 +18,13 @@ First-screen questions answered within five seconds:
   - Primary `New chat` action (`COSS Button`).
   - `/` conversation filter (`COSS InputGroup` + `Input` + `Kbd` `/` hint) with live client-side filtering and clear button.
   - Conversation list (`#thread-list`) with `Motion Primitives AnimatedBackground` gliding selection highlight, state glyph (finished check / waiting hourglass), relative time, and message count in `Geist Mono`.
-  - Footer capabilities & preferences: `What my agent has learned` (`MorphingDialog` + count chip), `My suite and the library` (`MorphingDialog` + count chip + one-tap app runner), `Add a person` (`MorphingDialog`), `Light / Dark` `SegmentedControl`, and `VersionRow` (`Ergon 0.3.0` + `Check for updates`).
+  - Footer capabilities & preferences: `Workspace files` (`MorphingDialog` + file count chip + real file upload/create/open/download), `What my agent has learned` (`MorphingDialog` + count chip), `My suite and the library` (`MorphingDialog` + count chip + one-tap app runner), `Add a person` (`MorphingDialog`), `Settings` (`Model, Workspace & Appearance` `MorphingDialog` containing the `Light / Dark` `SegmentedControl`, live `GET/POST /api/config` provider selector with detected local gateways, and update controls — keeping Light/Dark off main rail chrome), and `VersionRow` (`Ergon 0.4.0` + `Check for updates`).
 - **Top Navigation & Command Bar**:
   - `COSS UI Tabs` (`Chat · Today · Work Graph`) with gliding active indicator and live pending count `Pill` on `Today`.
   - Global keyboard shortcuts: `/` outside inputs focuses the conversation filter; `⌘K` / `Ctrl+K` jumps straight to the `Chat` composer from any view.
-  - Honesty `fixture demo` `Pill` whenever running on standalone static demo data (`window.__ERGON_DEMO__`), plus `Agent ready` / `Not connected to a model yet` `Kibo UI Pill`.
+  - `Agent ready` / `Not connected to a model yet` `Kibo UI Pill` (zero `fixture demo` pills).
+- **Workspace File Viewer (`shell/WorkspaceFiles.tsx`)**:
+  - Clicking any saved file pill or `Open` button across `Chat`, `Today`, `Work Graph`, or `Workspace files` opens a real file preview modal (`GET /api/files/content?path=...`) rendering `.csv` as a scrollable table, `.md` as structured safe Markdown, `.json` pretty-printed, and plain text with one-click real file Download and "Ask agent about this file".
 - **Update Strip (`shell/Update.tsx`)**:
   - Follows `BANNER-FIX-BRIEF.md`: plain human error copy (`plainUpdateError` without raw GitHub URLs), single staged restart sentence (`Ergon <v> is installed. Restart to use it.`), loopback-only `Update now` / `Restart now`, and `Dismiss` -> `Show update` focus handoff.
 

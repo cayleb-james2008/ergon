@@ -12,10 +12,12 @@ const used = path.resolve(root, "../rune/used");
 // "@/x" is the app's own src/x first, then the copied library part rune/used/x.
 function runeUsed(): Plugin {
   const exts = ["", ".tsx", ".ts", ".css", "/index.tsx", "/index.ts"];
+  const VIRTUAL_BOOT = "\0ergon-boot";
   return {
     name: "rune-used",
     enforce: "pre",
     resolveId(id) {
+      if (id === "virtual:ergon-boot") return VIRTUAL_BOOT;
       if (!id.startsWith("@/")) return null;
       for (const base of [path.resolve(root, "src"), used]) {
         for (const e of exts) {
@@ -24,6 +26,13 @@ function runeUsed(): Plugin {
         }
       }
       return null;
+    },
+    load(id) {
+      if (id !== VIRTUAL_BOOT) return null;
+      if (process.env.VITE_WEB_STANDALONE === "1") {
+        return `export { installBrowserEngine } from "@/lib/webEngine";`;
+      }
+      return `export async function installBrowserEngine() {}`;
     },
   };
 }
@@ -49,11 +58,18 @@ function singleFile(): Plugin {
       // The transition utility is emitted only by identifiers in library source, never by an element of this page.
       html = html.replace(/\.transition\{[^}]*\}/g, "");
       html = html.replace(/--tw-ring-offset-color:#fff/g, "--tw-ring-offset-color:var(--surface)").replace(/(-apple-system|BlinkMacSystemFont|"Segoe UI"|Roboto|"Helvetica Neue"|"Noto Sans"),\s*/gi, "");
-      const out = path.resolve(root, "../assets/index.html");
-      fs.writeFileSync(out, html);
-      // /phone serves assets/phone.html (src/ui.rs): the same page, so the phone face is the same app at a narrow width.
-      fs.writeFileSync(path.resolve(root, "../assets/phone.html"), html);
-      console.log(`single file: ${out} (${(html.length / 1024).toFixed(0)} kB)`);
+      const webOut = process.env.ERGON_WEB_OUT || (process.env.VITE_WEB_STANDALONE === "1" ? path.resolve(root, "dist/ergon-web.html") : "");
+      if (webOut) {
+        fs.mkdirSync(path.dirname(webOut), { recursive: true });
+        fs.writeFileSync(webOut, html);
+        console.log(`standalone web app: ${webOut} (${(html.length / 1024).toFixed(0)} kB)`);
+      } else {
+        const out = path.resolve(root, "../assets/index.html");
+        fs.writeFileSync(out, html);
+        // /phone serves assets/phone.html (src/ui.rs): the same page, so the phone face is the same app at a narrow width.
+        fs.writeFileSync(path.resolve(root, "../assets/phone.html"), html);
+        console.log(`single file: ${out} (${(html.length / 1024).toFixed(0)} kB)`);
+      }
     },
   };
 }

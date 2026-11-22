@@ -1,11 +1,12 @@
 {
   "name": "ergon-frontend",
   "private": true,
-  "version": "0.3.0",
+  "version": "0.4.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
+    "build:web": "VITE_WEB_STANDALONE=1 tsc --noEmit && VITE_WEB_STANDALONE=1 vite build",
     "sync-used": "node scripts/sync-used.mjs",
     "check:ui": "node e2e/check.mjs"
   },

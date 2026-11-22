@@ -288,6 +288,21 @@ pub fn load_decisions(person_data_dir: &Path) -> Vec<Value> {
     load_array(&decisions_path(person_data_dir), "decisions")
 }
 
+/// If a pending delete decision for `rel` already exists, return its id so a
+/// retrying model cannot spam duplicate pending approvals for the same file.
+pub fn find_pending_delete(person_data_dir: &Path, rel: &str) -> Option<String> {
+    load_decisions(person_data_dir).into_iter().find_map(|d| {
+        if d["status"].as_str() == Some("pending")
+            && d["kind"].as_str() == Some("delete")
+            && d["path"].as_str() == Some(rel)
+        {
+            d["id"].as_str().map(|s| s.to_string())
+        } else {
+            None
+        }
+    })
+}
+
 pub fn add_decision(
     person_data_dir: &Path,
     kind: &str,
