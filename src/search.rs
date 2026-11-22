@@ -473,7 +473,7 @@ impl PersonIndex {
         q: &str,
         status: &str,
     ) -> Value {
-        let limit = limit.clamp(1, 500);
+        let limit = limit.clamp(1, 5000);
         let q_low = q.trim().to_lowercase();
         let mut matched: Vec<&ChainedReceipt> = Vec::new();
         for (i, r) in self.chain.iter().enumerate().rev() {
