@@ -42,7 +42,11 @@ export function build() {
 const sleep = ms => new Promise(r => setTimeout(r, ms))
 const listening = port => new Promise(res => { const s = net.connect(port, '127.0.0.1'); s.once('connect', () => { s.destroy(); res(true) }); s.once('error', () => res(false)) })
 const freePort = () => new Promise((res, rej) => { const s = net.createServer().once('error', rej).listen(0, '127.0.0.1', () => { const { port } = s.address(); s.close(() => res(port)) }) })
-async function pickPort(taken) { for (;;) { const p = await freePort(); if (p !== 9230 && !taken.includes(p)) return p } }
+const tryPort = port => new Promise(res => { const s = net.createServer().once('error', () => res(0)).listen(port, '127.0.0.1', () => s.close(() => res(port))) })
+async function pickPort(taken) {
+  for (let p = 18780; p <= 18789; p++) if (!taken.includes(p) && await tryPort(p)) return p
+  for (;;) { const p = await freePort(); if (p !== 9230 && !taken.includes(p)) return p }
+}
 
 // Only ever signal a pid this fixture wrote, and only while its command line is still the one it started.
 function alive(name, mark) {
@@ -68,15 +72,29 @@ function launchProc(name, cmd, args, env) {
   fs.writeFileSync(path.join(RUN, `${name}.pid`), String(child.pid))
 }
 
-// The seed was written once; move its times up to just now so the brief's 48-hour window always holds it.
-function shiftTimes(dir) {
-  const files = fs.readdirSync(dir, { recursive: true }).map(f => path.join(dir, f)).filter(f => f.endsWith('.json'))
+// The seed was written once; move each person's times up to just now so both the 48-hour brief window and Today's stream hold it.
+function shiftGroup(files) {
   const docs = files.map(f => [f, JSON.parse(fs.readFileSync(f, 'utf8'))])
-  let max = 0
+  let min = Infinity, max = 0
   const walk = (v, fn) => { if (Array.isArray(v)) v.forEach(x => walk(x, fn)); else if (v && typeof v === 'object') for (const k of Object.keys(v)) { if (k === 'ts' && typeof v[k] === 'number') v[k] = fn(v[k]); else walk(v[k], fn) } }
-  for (const [, d] of docs) walk(d, t => (max = Math.max(max, t), t))
-  const delta = Date.now() - 10 * 60_000 - max
+  for (const [, d] of docs) walk(d, t => (min = Math.min(min, t), max = Math.max(max, t), t))
+  if (!max) return
+  const now = Date.now(), utcDayStart = Math.floor(now / 86_400_000) * 86_400_000, span = Math.max(0, max - min)
+  const targetMax = now - utcDayStart > span + 10_000 ? Math.max(now - 2 * 60_000, utcDayStart + span + 2_000) : now - 2_000
+  const delta = targetMax - max
   for (const [f, d] of docs) { walk(d, t => t + delta); fs.writeFileSync(f, JSON.stringify(d)) }
+}
+function shiftTimes(dir) {
+  const rootFiles = fs.readdirSync(dir, { withFileTypes: true }).filter(e => e.isFile() && e.name.endsWith('.json')).map(e => path.join(dir, e.name))
+  shiftGroup(rootFiles)
+  const peopleDir = path.join(dir, 'people')
+  if (fs.existsSync(peopleDir)) {
+    for (const p of fs.readdirSync(peopleDir, { withFileTypes: true })) {
+      if (!p.isDirectory()) continue
+      const pFiles = fs.readdirSync(path.join(peopleDir, p.name)).filter(n => n.endsWith('.json')).map(n => path.join(peopleDir, p.name, n))
+      shiftGroup(pFiles)
+    }
+  }
 }
 
 export async function start({ fresh = false } = {}) {

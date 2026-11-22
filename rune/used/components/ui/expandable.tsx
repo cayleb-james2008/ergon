@@ -452,8 +452,8 @@ const ExpandableCard = React.forwardRef<HTMLDivElement, ExpandableCardProps>(
           )}
         >
           {/* Nested divs purely for styling and layout (the shadow ring around the card) */}
-          <div className="grid grid-cols-1 rounded-lg p-1 shadow-md sm:rounded-xl sm:p-1.5 md:rounded-[2rem] md:p-2">
-            <div className=" ring-border/50 rounded-md bg-white p-2 shadow-xl ring-1 sm:rounded-lg sm:p-3 md:rounded-3xl md:p-4">
+          <div className="grid grid-cols-1 rounded-lg p-1 sm:rounded-xl sm:p-1.5 md:rounded-[2rem] md:p-2">
+            <div className="ring-border/50 rounded-md bg-surface p-2 text-ink ring-1 sm:rounded-lg sm:p-3 md:rounded-3xl md:p-4">
               <div className="h-full w-full overflow-hidden">
                 {/* Ref for measuring content dimensions (so we can let framer know to animate into the dimensions) */}
                 <div ref={measureRef} className="flex h-full flex-col">
@@ -475,7 +475,7 @@ const ExpandableTrigger = React.forwardRef<
   HTMLDivElement,
   React.HTMLAttributes<HTMLDivElement>
 >(({ children, className, ...props }, ref) => {
-  const { toggleExpand } = useExpandable()
+  const { isExpanded, toggleExpand } = useExpandable()
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" || e.key === " ") {
@@ -491,6 +491,7 @@ const ExpandableTrigger = React.forwardRef<
       onKeyDown={handleKeyDown}
       role="button"
       tabIndex={0}
+      aria-expanded={isExpanded}
       aria-label="Toggle expand"
       className={cn("cursor-pointer", className)}
       {...props}

@@ -1,0 +1,14 @@
+# Role Coverage — House Frontend Libraries in Ergon
+
+Every one of the eight House Frontend libraries serves its intended role in Ergon v0.3.0 (`0` "no need here" rows).
+
+| Library | Need of this product | Part used and its file | If "no need here": why |
+| --- | --- | --- | --- |
+| Motion Primitives | Gliding selection highlights across conversations, morphing capability dialogs from the rail, rolling operational figures, live active-work shimmer and border trail | `AnimatedBackground` (`rune/used/components/ui/animated-background.tsx`, `mp-animated-background`), `MorphingDialog` (`rune/used/components/ui/morphing-dialog.tsx`, `mp-morphing-dialog`), `SlidingNumber` (`rune/used/components/ui/sliding-number.tsx`, `mp-sliding-number`), `TextShimmer` (`rune/used/components/ui/text-shimmer.tsx`, `mp-text-shimmer`), `BorderTrail` (`rune/used/components/ui/border-trail.tsx`, `mp-border-trail`) | — |
+| COSS UI | Compact hairline desk controls: view tabs, conversation `/` search and task composer with keyboard hints, buttons, Light/Dark segmented switch, badges | `Tabs` (`rune/used/components/ui/tabs.tsx`, `coss-tabs`), `InputGroup` + `Input` + `Textarea` + `Kbd` (`rune/used/components/ui/input-group.tsx`, `input.tsx`, `textarea.tsx`, `kbd.tsx`, `coss-input-group`), `Button` (`rune/used/components/ui/button.tsx`, `coss-button`), `SegmentedControl` (`rune/used/components/ui/segmented-control.tsx`, `coss-segmented-control`), `Badge` (`rune/used/components/ui/badge.tsx`, `coss-badge-avatar`) | — |
+| Cult UI | Spring-driven inline disclosures for raw tool outputs, failure diagnostics, and raw `memory.md` source inside Field-Book cards and panels | `Expandable` (`rune/used/components/ui/expandable.tsx`, `cult-expandable`) | — |
+| Kibo UI | Semantic status pills for agent readiness, pending Today approvals, Field-Book Finished/Waiting states, starter skill chips, and fixture honesty badge | `Pill` (`rune/used/components/kibo-ui/pill/index.tsx`, `kibo-pill`) | — |
+| Tremor | Operational telemetry strip on Today's Desk showing recent task outcomes (finished, waiting on approval, stopped) with per-run hover cards | `Tracker` (`rune/used/components/Tracker/Tracker.tsx`, `tremor-tracker`) | — |
+| Vaul | Gesture-friendly left navigation drawer under 768px carrying conversation search, thread list, capabilities, and appearance controls | `Drawer` (`vaul`, `vaul-drawer`) | — |
+| Sonner | Stacked non-blocking notices when approvals settle, proactive offers are accepted/dismissed, suite items change, or updates install | `Toaster` and `toast` (`sonner`, `sonner-toast`) | — |
+| Motion | Interruptible spring physics, FLIP layout transitions on decision/offer queues, and shared-layout highlights under `MotionConfig reducedMotion="user"` | `motion` element, `AnimatePresence`, `layout` (FLIP), `spring` (`motion/react` with presets in `frontend/src/motion.ts`: `glide`, `open`, `roll`, `layout`, `reveal`) | — |

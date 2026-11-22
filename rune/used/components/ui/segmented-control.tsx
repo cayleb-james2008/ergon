@@ -11,9 +11,9 @@ export const segmentedControlItemSizeClassNames: Record<
   SegmentedControlSize,
   string
 > = {
-  default: "h-8.5 px-[calc(--spacing(2.5)-1px)] sm:h-7.5",
-  lg: "h-9.5 px-[calc(--spacing(3)-1px)] sm:h-8.5",
-  sm: "h-7.5 px-[calc(--spacing(2)-1px)] sm:h-6.5",
+  default: "h-9.5 px-[calc(--spacing(2.5)-1px)] sm:h-8.5",
+  lg: "h-10 px-[calc(--spacing(3)-1px)] sm:h-9",
+  sm: "h-9 px-[calc(--spacing(2)-1px)] sm:h-8.5",
 };
 
 export const segmentedControlItemLayoutClassName =
@@ -46,7 +46,6 @@ export function SegmentedControl({
       className,
     ),
     "data-size": size,
-    "data-slot": "segmented-control",
   };
 
   const element = useRender({
@@ -85,7 +84,6 @@ export function SegmentedControlItem({
       className,
     ),
     "data-size": resolvedSize,
-    "data-slot": "segmented-control-item",
     ...(render ? {} : { type: "button" as const }),
   };
 
@@ -215,7 +213,7 @@ function SegmentedControlIndicator(): React.ReactElement {
     <span
       aria-hidden="true"
       className={cn(
-        "pointer-events-none absolute top-0 left-0 -z-1 h-(--active-item-height) w-(--active-item-width) translate-x-(--active-item-left) translate-y-(--active-item-top) transition-[translate] duration-200 ease-in-out motion-reduce:transition-none",
+        "pointer-events-none absolute top-0 left-0 -z-1 h-(--active-item-height) w-(--active-item-width) translate-x-(--active-item-left) translate-y-(--active-item-top) transition-[translate] duration-(--dur-swap) ease-(--ease-house) motion-reduce:transition-none",
         segmentedControlIndicatorSurfaceClassName,
       )}
       data-slot="segmented-control-indicator"

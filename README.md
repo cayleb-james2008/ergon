@@ -2,16 +2,15 @@
 
 [![latest release](https://img.shields.io/github/v/release/cayleb-james2008/ergon)](https://github.com/cayleb-james2008/ergon/releases)
 
-
-An AI agent for every employee — personal to each person, it learns how
+An AI agent desk for every employee — personal to each person, it learns how
 they work and **finishes their digital work autonomously, end to end**.
 The person states a task in plain words; the agent works it through real
-tools and the finished result lands in the thread. No approval ceremony
-in the core loop.
+sandboxed tools and Rune skills, and the finished result lands as a verified
+Field-Book receipt. No approval ceremony in the core loop.
 
-A single Rust binary serves the whole product: the web shell, the agent
-loop, the tool layer, the per-person memory, and the Rune skill runtime.
-No framework, no build step, no database server.
+A single Rust binary serves the whole product: the embedded web desk (`/` and
+`/phone`), the agent loop, the sandboxed tool layer, per-person standing
+memory, and the Rune skill runtime. No external runtime or database server.
 
 ## Install
 
@@ -34,8 +33,8 @@ CARGO_BUILD_JOBS=2 cargo build
 ERGON_MODEL_API_KEY=... ./target/debug/ergon   # http://127.0.0.1:8787
 ```
 
-Without `ERGON_MODEL_API_KEY` the UI shows an honest "no model key
-configured" banner and `/api/chat` refuses (HTTP 503) — Ergon never
+Without `ERGON_MODEL_API_KEY` the UI shows an honest "not connected to a
+model yet" banner and `/api/chat` refuses (HTTP 503) — Ergon never
 fabricates an answer. The model route is any OpenAI-compatible
 chat-completions endpoint; the default is OpenCode Go with
 `deepseek-v4.1-flash`.
@@ -55,17 +54,29 @@ chat-completions endpoint; the default is OpenCode Go with
 
 ## How it works
 
-- **Shell** — two embedded pages in `assets/` (`index.html`, `phone.html`),
-  each one file of HTML, CSS and JS. The desktop face opens on **Chat**: a
-  sidebar with the person switcher, New chat, the conversation list and
-  Settings (appearance, what the agent has learned, the suite and library,
-  add a person). The top bar switches to **Today** (the morning brief,
-  what is waiting on you with approve or decline, what the agent learned,
-  offers, today's stream) and **Work Graph** (a plain list under 768px).
-  Agent steps appear in the thread as a ledger of what was actually done;
-  the finished result is the final message. The phone face (`/phone`) has a
-  bottom tab bar (Brief, Chat, Decisions, Suite) with the composer above it.
-  Dark is the default; the light theme is under Settings, Appearance.
+- **Desk shell** — self-contained single-file bundles in `assets/`
+  (`index.html`, `phone.html`) with self-hosted **Geist** and **Geist Mono**
+  fonts, light-first House Frontend tokens, and full dark-mode parity. A
+  256px left rail (a gesture-friendly Vaul drawer under 768px and on `/phone`)
+  holds the active person desk, primary **New chat** action, `/` conversation
+  search filter, gliding conversation list, **What my agent has learned** and
+  **My suite and the library** dialogs with live counts, **Add a person**,
+  Light/Dark segmented switch, and version/update controls. The top command
+  bar switches across **Chat**, **Today** (with live pending-decision count),
+  and **Work Graph**, plus `Cmd/Ctrl+K` to jump straight to the task box.
+- **Chat & Field-Book entries** — empty chats present role-tailored starter
+  task cards with skill/tool chips. Active runs display a live shimmering step
+  ledger; completed runs settle into ruled Field-Book Result Cards with
+  file-type glyphs, saved workspace file pills, `Geist Mono` step counts, and
+  an expandable raw tool-step inspector.
+- **Today's Desk** — combines the 48-hour Morning Brief, a 14-slot Tremor
+  run-outcome `Tracker`, the **Waiting on you** consequential decision queue,
+  proactive **Offers from your agent**, finished work with file-type glyphs,
+  and the **Today so far** chronological event stream (`/api/today`).
+- **Work Graph** — deterministic four-band SVG map (`People`, `Suite items`,
+  `Finished work`, `Files`) drawn at 1:1 CSS scale (`>=13px` labels from
+  768px up) paired with a `Map & list` / `List only` switch and an accessible
+  structured list.
 - **People** — every employee gets their own workspace, memory and
   threads (`people.json` + one data directory per person). People can be
   created in the UI; a new person's agent starts from a seeded memory.
@@ -82,124 +93,64 @@ chat-completions endpoint; the default is OpenCode Go with
 - **Tools** — `list_dir`, `read_file`, `write_file`, `search_files`,
   `move_file` (all sandboxed to the person's workspace), `fetch_url`
   (HTML→text), and four Rune skills: `write_document`,
-  `make_spreadsheet`, `research`, `update_memory`. On top of those,
-  the completion build adds the library tools below, `delegate`,
-  `delete_file` (which never deletes directly — see Decisions) and
-  `flag_decision`. One run — the main agent plus everything it
-  delegates — draws from a single shared budget of 24 model calls.
+  `make_spreadsheet`, `research`, `update_memory`, plus `browse_library`,
+  `install_item`, `publish_skill`, `delegate`, `delete_file` (which parks a
+  decision instead of deleting directly), and `flag_decision`. One run draws
+  from a single shared budget of 24 model calls.
 - **Sandbox** — every path is resolved through a component-walking
   resolver that re-checks containment at each step, follows at most 16
   symlink hops, and treats a symlink as an object in its own right
   (moving a link moves the link). Escapes — `..`, absolute paths,
   symlink chains, sibling-prefix tricks — are refused, and the test
   suite pins each one.
-- **Learning** — each person's `memory.md` (including a standing-
-  preferences section) is injected into the model's context at the start
-  of every task, and the agent updates it through `update_memory` when
-  it learns a fact or preference — including for people created minutes
-  earlier. What it learned is visible in the UI's memory panel.
-- **Company library & personal suites** — one shared library of
-  skills, subagents and apps (`library.json` at the root data dir;
-  seeded with twelve items, not a clean slate). Each person's agent
-  carries a **suite** drawn from it, shaped by their role. Agents
-  maintain the library themselves: `browse_library`, `install_item`
-  and `publish_skill` (compile-gated, and ownership-checked — an agent
-  can update its own person's skills, never silently overwrite
-  another's). Installed library skills run through the same sandboxed
-  Rune host layer, under an instruction budget and memory limit.
-- **Subagents** — the main agent can `delegate` a focused sub-task to
-  a specialist in the person's suite (Researcher, Editor, Bookkeeper
-  seeds). The subagent's steps land in the same thread, labelled; its
-  writes credit the run's ledger; its toolset restriction is enforced
-  in the loop, not just written in its prompt — a subagent cannot
-  publish, install, or park decisions.
-- **Decisions** — work arrives as decisions only at consequential
-  moments. `delete_file` parks a decision instead of deleting; the
-  file is deleted (the exact path approved — a symlink approval
-  deletes the link, never its target) only when the person approves
-  in the inbox, and the outcome reports back into the thread it came
-  from; the thread's "has NOT been deleted yet" note for that file is
-  rewritten to say whether it was deleted or kept. Everything else
-  finishes autonomously.
-- **Proactive offers** — the agent watches its own work log: the same
-  kind of finished task three times earns an offer to turn it into a
-  one-tap app in the suite (accepting builds and installs it);
-  spreadsheets produced by hand three times earn an offer of the
-  expense-sheet app. A dismissed offer is never re-offered, unfinished
-  runs earn nothing, and re-running an existing app doesn't count.
-- **Morning brief** — yesterday's finished work, what's waiting on
-  the person, and what the agent learned recently, assembled from the
-  real stores on the Today face and the phone's Brief tab. "Today"
-  is the host's local day, read from its zone file. A plain answer (no
-  successful tool step and no written file), or a run whose tool steps
-  all failed, is kept in the log but is not finished work: it is not in
-  the brief, the graph's work nodes or the offers scan. A run that
-  parked a decision is not finished in the brief until that decision
-  is settled.
-- **Honesty machinery** — a run's summary is checked against the files
-  the run actually wrote: naming a file the run didn't write produces a
-  factual ledger line in the thread, never a silent pass. Requests over
-  1 MB get a real HTTP 413; request heads over 32 KiB get a 431; every
-  request has a 30-second total deadline. A request whose Host is not
-  localhost, 127.0.0.1, [::1] or `ERGON_ALLOWED_HOSTS` gets 403 (unless a
-  gate token is set), a POST that a browser sends cross-site or with a
-  foreign Origin gets 403, and a POST with a body that is not JSON gets
-  415. `GET /api/status` includes `store_recovered`: the file names moved
-  to a backup at load (empty when none), shown as a notice in the Chat face. Thread and people stores save atomically, and a corrupt
-  store — invalid JSON *or* valid JSON of the wrong shape — is backed
-  up (first free `.bak` suffix) instead of being silently overwritten.
-- **Rune skills** (`src/skills/*.rn`, host layer in `src/skills.rs`) —
-  document writing, spreadsheets, research and memory updates are Rune
-  scripts that format their output and act only through registered host
-  functions (workspace fs, memory, HTTP fetch).
+- **Learning** — each person's `memory.md` (including standing
+  preferences) is injected into the model's context at the start of every
+  task, and updated via `update_memory`.
+- **Company library & personal suites** — shared library of skills,
+  subagents, and one-tap apps (`library.json`, seeded with twelve items).
+  Published Rune skills are compile-gated and ownership-checked, running
+  under an instruction budget and memory limit.
+- **Decisions & proactive offers** — `delete_file` parks an approval item
+  in **Today**; only explicit approval deletes the exact path, rewriting the
+  originating thread note. Repeating a task pattern or producing three
+  spreadsheets earns a proactive one-tap app offer.
+- **Honesty machinery** — completion summaries are verified against files
+  actually written in the workspace (`check_mentions`). Requests over 1 MB
+  return HTTP 413; heads over 32 KiB return 431; cross-site or non-JSON
+  writes are refused; corrupt JSON stores are backed up to `.bak` and
+  reported in `store_recovered`.
 
-## Proof
+## Verification
 
 ```sh
-CARGO_BUILD_JOBS=2 cargo test   # 82 tests, all passing
+CARGO_BUILD_JOBS=2 cargo test          # 101 Rust unit + E2E tests
+cd frontend && npm run check:ui        # Playwright E2E gate, graph probe, and worst-case replay
 ```
 
-`tests/e2e.rs` runs a stub model server (test fixture only) speaking
-scripted chat-completions replies over the real HTTP path, and proves
-end to end: messy notes → `list_dir` → `read_file` ×2 →
-`write_document` (Rune) → `update_memory` (Rune) → done — asserting the
-merged document, the learned memory note, the transcript and the wire
-headers. The suite also pins the sandbox escapes, the session rules,
-the done-gate in both directions (including filenames with spaces),
-persistence across restarts, and the no-key honesty path.
-
-Beyond the suite, an independently written sealed acceptance exam
-(31 black-box checks — the original 19: people isolation, forged
-cookies, sandbox escapes, learning reaching the prompt, the done-gate
-both ways, 413 with a body in flight, corrupt-store backups; plus 12
-for the completion build: library seeding and role-shaped suites,
-cross-person skill publishing, delegation, the delete gate, offers,
-brief/today/graph truth, app runs, faces and phone, the hosting gate,
-installer) passed **31/31** against an earlier build of the binary; it was not re-run for this README.
-
-The completion build additionally survived a fresh-context thermonuclear review whose reproduced findings (a symlink-delete that hit the wrong file, unsynchronised record stores, prompt-only subagent restrictions, a library lock held across skill runs) were each fixed and pinned by a regression test.
-
-The live-model path is real code, exercised here against the stub
-because no model key is available in the build environment; point
-`ERGON_MODEL_BASE_URL` / `ERGON_MODEL_API_KEY` at any
-OpenAI-compatible endpoint to run it live.
+`tests/e2e.rs` drives a local stub chat-completions server over real HTTP to
+verify messy notes -> `list_dir` -> `read_file` -> `write_document` (Rune) ->
+`update_memory` (Rune) -> done, alongside sandbox containment, session
+isolation, done-gate file verification, delete holds, proactive offers,
+brief/today/graph assembly, self-updater verification, and crash-safe store
+recovery.
 
 ## Status
 
-Working software, verified as above. Not yet installed at a real
-company; no claim on this page goes past what the test record shows.
+Working software, verified by the automated Rust and browser suites above.
 
 ## Versions and updates
 
-**Releasing:** bump `version` in `Cargo.toml`, add a `## X.Y.Z - date` entry to `CHANGELOG.md`, and merge to `main`. `.github/workflows/release.yml` sees the new version, builds every platform and publishes the GitHub Release `vX.Y.Z` with the binaries and `SHA256SUMS`; a push that does not change the version publishes nothing, and a new version without a changelog entry fails the workflow. Pushing a `vX.Y.Z` tag by hand does the same.
+**Releasing:** bump `version` in `Cargo.toml` (and `frontend/package.json`),
+add a `## X.Y.Z - date` entry to `CHANGELOG.md`, and merge to `main`.
+`.github/workflows/release.yml` builds Linux (`x86_64`, `aarch64`), macOS
+(`aarch64`), and Windows (`x86_64`) binaries and publishes the GitHub Release
+`vX.Y.Z` with `SHA256SUMS`.
 
-The running version is shown in the page footer, in `GET /api/version` and `GET /api/status`, and by `ergon --version`. Every release is tagged `vX.Y.Z` on GitHub, with a changelog entry in `CHANGELOG.md`, binaries for each platform and a `SHA256SUMS` file; merging a new version to `main` (or pushing a tag) runs `.github/workflows/release.yml`, which refuses a tag that does not match the version in `Cargo.toml`.
-
-Self-update (`src/update.rs`): the app asks the newest GitHub release of its own repository whether a newer version exists (shortly after start and every 6 hours), and the page offers it. **Update now** downloads the binary for this platform, checks its SHA-256 against the release's `SHA256SUMS`, runs it with `--version` to confirm it is the build it claims to be, and only then swaps it in; **Restart** then starts the new build. Any failed step leaves the installed program untouched. Updating is refused for a cargo-built binary, through a shared (gated) address, from a non-local Host name, and while a task is running.
+Self-update (`src/update.rs`): checks GitHub Releases, verifies SHA-256 and
+`--version`, and swaps the binary only from loopback on released builds.
 
 | Var | Default |
 | --- | --- |
 | `ERGON_UPDATE_MODE` | `notify` (check and tell); `auto` also downloads and installs (a restart is still yours to press); `off` never contacts GitHub |
 | `ERGON_UPDATE_REPO` | `cayleb-james2008/ergon` |
 | `ERGON_UPDATE_API` | `https://api.github.com` (plain http only for a loopback address) |
-

@@ -245,8 +245,8 @@
   --spacing: 0.25rem;
 
   /* Fonts. The names --font-sans, --font-mono and --font-heading are required by COSS UI. */
-  --font-sans: "Red Hat Text", ui-sans-serif, system-ui, sans-serif; /* OWNER: Geist for all text (the kit uses an Inter-style sans; the owner's font wins) */
-  --font-mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace; /* OWNER: ids, model names, times, counts and every figure that must line up */
+  --font-sans: "Geist", ui-sans-serif, sans-serif; /* OWNER: Geist for all text */
+  --font-mono: "Geist Mono", ui-monospace, monospace; /* OWNER: ids, model names, times, counts and every figure that must line up */
   --font-heading: var(--font-sans);
 }
 
@@ -369,7 +369,6 @@
   --text-base: 16px;        --text-base--line-height: 24px; /* ESTIMATED */
   --text-title: 20px;       --text-title--line-height: 28px; /* page / dialog titles. ESTIMATED */
   --text-stat: 28px;        --text-stat--line-height: 34px;  /* stat numbers. DERIVED (kit shows 36-52px only on marketing) */
-  --tracking-label: 0.04em;                                  /* uppercase labels (+0.04 to 0.06em). ESTIMATED */
 }
 
 /* ---------- 5. Base ---------- */

@@ -1,5 +1,63 @@
-// Plain words for what the server reports. The raw text stays one tap away in Details.
-import type { Update } from "./api";
+// Plain words, file-type glyph helpers, starter cards, and update error translations.
+import { File, FileCode, FileImage, FileSpreadsheet, FileText } from "lucide-react";
+import type { SuiteItem, Update } from "./api";
+
+export type StarterCard = {
+  category: string;
+  tone: "ops" | "mint" | "plan" | "research";
+  prompt: string;
+  detail: string;
+  skill: string;
+};
+
+export function buildStarterCards(installed: SuiteItem[], role: string): StarterCard[] {
+  const safeRole = typeof role === "string" ? role.trim() : "";
+  const cards: StarterCard[] = [
+    {
+      category: "Documents",
+      tone: "ops",
+      prompt: "Tidy my notes into a summary",
+      detail: "Reads workspace notes and writes a structured Markdown brief.",
+      skill: "write_document.rn",
+    },
+  ];
+  const tones: ("mint" | "plan" | "research")[] = ["mint", "plan", "research"];
+  const safeInstalled = Array.isArray(installed) ? installed.filter((x) => x && typeof x.name === "string") : [];
+  safeInstalled.slice(0, 2).forEach((item, idx) => {
+    const kindWord = item.kind === "subagent" ? "Specialist" : item.kind === "app" ? "One-tap app" : "Rune skill";
+    cards.push({
+      category: kindWord,
+      tone: tones[idx % tones.length],
+      prompt: `Ask my ${item.name} for help`,
+      detail: typeof item.description === "string" && item.description ? item.description : "Runs this capability inside your sandboxed workspace.",
+      skill: item.id || item.name,
+    });
+  });
+  if (safeRole) {
+    cards.push({
+      category: safeRole,
+      tone: "plan",
+      prompt: "Draft my weekly update",
+      detail: `Compiles finished ${safeRole.toLowerCase()} deliverables and open blockers into Weekly update.md.`,
+      skill: "write_document.rn",
+    });
+  }
+  cards.push({
+    category: "Spreadsheet",
+    tone: "mint",
+    prompt: "Reconcile expenses into a clean CSV",
+    detail: "Checks line-item totals twice and writes a verified CSV table.",
+    skill: "make_spreadsheet.rn",
+  });
+  cards.push({
+    category: "Research",
+    tone: "research",
+    prompt: "Research a topic for me",
+    detail: "Reads sources and saves cited findings into your workspace.",
+    skill: "research.rn",
+  });
+  return cards.slice(0, 4);
+}
 
 export function toolLabel(tool: string, via: string | undefined, body: string): string | null {
   const pick = (re: RegExp) => { const m = re.exec(body); return m ? m[1] : ""; };
@@ -36,12 +94,32 @@ export function savedFile(tool: string, body: string): string {
   return m ? m[1] : "";
 }
 
+/** Icon component for a workspace filename by extension. */
+export function fileIconFor(name: string) {
+  const ext = String(name ?? "").split(".").pop()?.toLowerCase() ?? "";
+  if (/^(csv|xlsx?|tsv|ods)$/.test(ext)) return FileSpreadsheet;
+  if (/^(png|jpe?g|gif|webp|svg)$/.test(ext)) return FileImage;
+  if (/^(json|html?|css|js|ts|py|rs|rn|toml|xml|ya?ml)$/.test(ext)) return FileCode;
+  if (/^(md|txt|docx?|pdf|rtf|odt)$/.test(ext)) return FileText;
+  return File;
+}
+
+export function normalizeFiles(files: unknown): string[] {
+  if (!Array.isArray(files)) return [];
+  return files
+    .filter((f): f is string | number => typeof f === "string" || typeof f === "number")
+    .map((f) => String(f).trim())
+    .filter(Boolean);
+}
+
 export const FAILURE_RE = /not a JSON object|no model key|model endpoint returned HTTP|without finishing|could not reach|could not run|did not finish/i;
 export const PARKED_RE = /parked for your person|has NOT been deleted yet/;
 export const RESOLVED_RE = /was deleted after you approved it|was kept because you declined/;
 
 export function relTime(ms: number): string {
-  const now = new Date(); const then = new Date(ms);
+  if (!Number.isFinite(ms) || ms <= 0) return "";
+  const now = new Date();
+  const then = new Date(ms);
   const mins = Math.round((now.getTime() - then.getTime()) / 60000);
   if (mins < 1) return "just now";
   if (mins < 60) return mins + " min ago";
@@ -60,7 +138,7 @@ export function threadMs(id: string): number | null {
 
 /** Turns the server's update error text into one plain sentence. Raw text is shown only in Details. */
 export function plainUpdateError(raw: string): string {
-  const r = raw || "";
+  const r = String(raw || "");
   if (/could not reach|Connection/i.test(r)) return "Could not reach GitHub. Check your internet connection, then try again.";
   if (/checksum/i.test(r)) return "The download did not pass its safety check, so it was not installed. Nothing changed. Try again in a few minutes.";
   if (/answered HTTP/i.test(r)) return "GitHub had a problem. Nothing changed. Try again in a few minutes.";
