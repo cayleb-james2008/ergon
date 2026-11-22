@@ -2885,6 +2885,10 @@ pub struct AppState {
     pub sessions: Arc<Mutex<HashMap<String, String>>>,
     /// Checks GitHub for newer releases and installs them on request.
     pub updater: Arc<update::Updater>,
+    /// Whether the background routine scheduler thread is active (false when ERGON_DISABLE_SCHEDULER=1).
+    pub scheduler_enabled: bool,
+    /// Per-routine in-flight guard so overlapping ticks never double-fire the same routine.
+    pub running_routines: Arc<Mutex<std::collections::HashSet<String>>>,
 }
 
 static SESSION_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -3028,6 +3032,13 @@ fn serve_inner(
         api_key: cfg.api_key.clone(),
         auto_detected,
     }));
+    let scheduler_disabled = std::env::var("ERGON_DISABLE_SCHEDULER")
+        .ok()
+        .map(|v| {
+            let low = v.trim().to_ascii_lowercase();
+            matches!(low.as_str(), "1" | "true" | "yes" | "on")
+        })
+        .unwrap_or(false);
     let state = Arc::new(AppState {
         cfg,
         model_cfg,
@@ -3041,6 +3052,8 @@ fn serve_inner(
         search_cache: search::SearchCache::new(),
         sessions: Arc::new(Mutex::new(HashMap::new())),
         updater: update::Updater::from_env("ERGON", "ergon", env!("CARGO_PKG_VERSION"), "cayleb-james2008/ergon", gate_token_is_none),
+        scheduler_enabled: !scheduler_disabled,
+        running_routines: Arc::new(Mutex::new(std::collections::HashSet::new())),
     });
     if background_updates {
         state.updater.start_background();
@@ -3570,7 +3583,11 @@ fn handle_connection(mut stream: std::net::TcpStream, state: &AppState) -> std::
                         "search": true,
                         "receipts_export": true,
                         "cancel": true,
+                        "scheduler": state.scheduler_enabled,
+                        "file_history": true,
+                        "audit_bundle": true,
                     },
+                    "scheduler_enabled": state.scheduler_enabled,
                     "person": person.to_json(),
                     "store_recovered": recovered,
                 }),
@@ -3922,6 +3939,35 @@ fn handle_connection(mut stream: std::net::TcpStream, state: &AppState) -> std::
             let skill_id = parsed["skill_id"].as_str();
             match routines::create_routine(&runtime.cfg.data_dir, name, prompt, schedule, skill_id) {
                 Ok(routine) => respond_json(&mut stream, 201, &json!({"routine": routine})),
+                Err(e) => respond_json(&mut stream, 400, &json!({"error": e})),
+            }
+        }
+        ("PATCH", path) if path.starts_with("/api/routines/") => {
+            let id = path.trim_start_matches("/api/routines/").trim().to_string();
+            if id.is_empty() || id.contains('/') {
+                return respond_json(&mut stream, 400, &json!({"error": "invalid routine id"}));
+            }
+            let parsed: Value = serde_json::from_slice(&req.body).unwrap_or(Value::Null);
+            let enabled = parsed["enabled"].as_bool();
+            let schedule = parsed["schedule"].as_str();
+            let name = parsed["name"].as_str();
+            let prompt = parsed["prompt"].as_str();
+            let skill_id = if parsed.get("skill_id").is_some() {
+                Some(parsed["skill_id"].as_str())
+            } else {
+                None
+            };
+            match routines::update_routine(
+                &runtime.cfg.data_dir,
+                &id,
+                enabled,
+                schedule,
+                name,
+                prompt,
+                skill_id,
+            ) {
+                Ok(Some(routine)) => respond_json(&mut stream, 200, &json!({"routine": routine})),
+                Ok(None) => respond_json(&mut stream, 404, &json!({"error": "routine not found"})),
                 Err(e) => respond_json(&mut stream, 400, &json!({"error": e})),
             }
         }
@@ -4287,9 +4333,13 @@ fn handle_connection(mut stream: std::net::TcpStream, state: &AppState) -> std::
             let _ = runtime_for(state, &person);
             respond_json(&mut stream, 201, &person.to_json())
         }
-        ("POST", "/api/active-person") => {
+        ("POST", "/api/active-person") | ("POST", "/api/people/switch") => {
             let parsed: Value = serde_json::from_slice(&req.body).unwrap_or(Value::Null);
-            let id = parsed["id"].as_str().unwrap_or("").to_string();
+            let id = parsed["id"]
+                .as_str()
+                .or_else(|| parsed["person_id"].as_str())
+                .unwrap_or("")
+                .to_string();
             {
                 let people = state.people.lock().unwrap();
                 if !people.people.iter().any(|p| p.id == id) {
