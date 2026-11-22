@@ -133,6 +133,68 @@ pub fn delete_routine(person_data_dir: &Path, id: &str) -> Result<bool, String> 
     })
 }
 
+/// Update mutable fields of an existing routine (`enabled`, `schedule`, `name`,
+/// `prompt`, `skill_id`) atomically. Returns `Ok(Some(updated))` when found or
+/// `Ok(None)` when no routine has `id`.
+pub fn update_routine(
+    person_data_dir: &Path,
+    id: &str,
+    enabled: Option<bool>,
+    schedule: Option<&str>,
+    name: Option<&str>,
+    prompt: Option<&str>,
+    skill_id: Option<Option<&str>>,
+) -> Result<Option<Value>, String> {
+    with_lock(|| {
+        let path = routines_path(person_data_dir);
+        let mut items = load_raw(&path);
+        let Some(idx) = items.iter().position(|r| r["id"].as_str() == Some(id)) else {
+            return Ok(None);
+        };
+        if let Some(en) = enabled {
+            items[idx]["enabled"] = json!(en);
+        }
+        if let Some(raw_sched) = schedule {
+            let clean: String = raw_sched
+                .replace(['\r', '\n'], " ")
+                .trim()
+                .chars()
+                .take(64)
+                .collect();
+            items[idx]["schedule"] = json!(if clean.is_empty() { "manual" } else { &clean });
+        }
+        if let Some(raw_name) = name {
+            let clean: String = raw_name
+                .replace(['\r', '\n'], " ")
+                .trim()
+                .chars()
+                .take(120)
+                .collect();
+            if clean.is_empty() {
+                return Err("routine name cannot be empty".to_string());
+            }
+            items[idx]["name"] = json!(clean);
+        }
+        if let Some(raw_prompt) = prompt {
+            let clean: String = raw_prompt.trim().chars().take(4000).collect();
+            if clean.is_empty() {
+                return Err("routine prompt cannot be empty".to_string());
+            }
+            items[idx]["prompt"] = json!(clean);
+        }
+        if let Some(sk_opt) = skill_id {
+            let sk = sk_opt
+                .map(|s| s.trim().chars().take(64).collect::<String>())
+                .filter(|s| !s.is_empty());
+            items[idx]["skill_id"] = json!(sk);
+        }
+        items[idx]["updated_ms"] = json!(records::now_millis());
+        let updated = items[idx].clone();
+        save_raw(&path, &items)?;
+        Ok(Some(updated))
+    })
+}
+
 pub fn record_run(
     person_data_dir: &Path,
     id: &str,
