@@ -15,6 +15,7 @@ import {
   ArrowUpRight,
   CheckCircle2,
   Clock,
+  FileCheck2,
   FileDown,
   FolderOpen,
   Search,
@@ -416,6 +417,7 @@ export function PaperFace({
   onOpenFile,
   onOpenFilesPanel,
   onUploadMany,
+  onExportAuditBundle,
 }: {
   paper: ReturnType<typeof usePaper>;
   status: Status | null | "error";
@@ -437,9 +439,11 @@ export function PaperFace({
   onOpenFile: (path: string) => void;
   onOpenFilesPanel: () => void;
   onUploadMany: (files: FileList | File[]) => Promise<number>;
+  onExportAuditBundle?: (format: "json" | "md") => Promise<void>;
 }) {
   const { data, failed, load, act } = paper;
   const [dragOver, setDragOver] = useState(false);
+  const [exportingAudit, setExportingAudit] = useState(false);
   const [receiptQuery, setReceiptQuery] = useState("");
   const [onlyWithFiles, setOnlyWithFiles] = useState(false);
   const [receiptPage, setReceiptPage] = useState(0);
@@ -681,9 +685,29 @@ export function PaperFace({
                   <p id="dateline" className="text-sm font-medium text-ink-2">
                     {dateLabel}{personName ? `, for ${personName === "You" ? "you" : personName}` : ""}
                   </p>
-                  <Button variant="outline" size="sm" className="max-md:min-h-11" data-answers="3" onClick={onAsk}>
-                    Ask your agent for something
-                  </Button>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {onExportAuditBundle && (
+                      <Button
+                        id="export-audit-bundle-btn"
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="max-md:min-h-11"
+                        disabled={exportingAudit}
+                        onClick={async () => {
+                          setExportingAudit(true);
+                          await onExportAuditBundle("json");
+                          setExportingAudit(false);
+                        }}
+                      >
+                        <FileCheck2 className="size-3.5" strokeWidth={1.5} aria-hidden />
+                        {exportingAudit ? "Exporting…" : "Export Audit Bundle"}
+                      </Button>
+                    )}
+                    <Button variant="outline" size="sm" className="max-md:min-h-11" data-answers="3" onClick={onAsk}>
+                      Ask your agent for something
+                    </Button>
+                  </div>
                 </div>
                 <h1
                   id="brief-headline"

@@ -1,15 +1,25 @@
-// Ergon v0.5.0 Local-First Browser Engine (Standalone Web Edition)
+// Ergon v0.7.0 Local-First Browser Engine (Standalone Web Edition)
 // Real IndexedDB workspace + all 12 deterministic client-side built-in workflows
 // (reconcile_ledger, summarize_meeting, audit_contract, triage_inbox, clean_dataset,
 // compare_documents, draft_brief, extract_tables, make_spreadsheet, write_document,
-// research, update_memory), recurring routines, indexed search, live EventSource stream,
-// cooperative run cancellation, Web Crypto SHA-256 receipt export, approval-gated deletion,
-// and optional BYOK OpenAI-compatible LLM (sessionStorage only).
-// ZERO hardcoded fixture replies, ZERO fixture demo pills.
+// research, update_memory), background routine scheduler (pause/resume + run history),
+// automatic .history/ file revisions with unified diff & atomic restore, full tamper-evident
+// Field-Book Audit Bundle export, multi-workspace switching, indexed search, live EventSource
+// stream, cooperative run cancellation, Web Crypto SHA-256 receipt export, approval-gated
+// deletion, and optional BYOK OpenAI-compatible LLM (sessionStorage only).
+// ZERO hardcoded fixture replies, ZERO fixture demo pills, ZERO Rune jargon.
 import { parseCsv } from "@/shell/WorkspaceFiles";
 import { CANONICAL_SKILLS } from "@/lib/skillsCatalog";
-import { buildSignedReceipt } from "@/lib/receiptExport";
-import type { LiveRunStep, Routine } from "@/lib/api";
+import { buildSignedReceipt, sha256Hex } from "@/lib/receiptExport";
+import { buildAuditBundle } from "@/lib/auditBundle";
+import { computeLineDiff } from "@/lib/diff";
+import {
+  estimateNextRunMs,
+  type FileRevision,
+  type LiveRunStep,
+  type Routine,
+  type RoutineRunRecord,
+} from "@/lib/api";
 
 type WebFile = {
   path: string;
@@ -66,11 +76,13 @@ type WebLibItem = {
 };
 type PersonStore = {
   files: Record<string, WebFile>;
+  fileHistory: Record<string, FileRevision[]>;
   threads: WebThread[];
   work: WebWork[];
   decisions: WebDecision[];
   offers: WebOffer[];
   routines: Routine[];
+  routineRuns: Record<string, RoutineRunRecord[]>;
   memory: string;
   suite: string[];
 };
@@ -87,7 +99,7 @@ type ByokConfig = {
   api_key: string;
 };
 
-const DB_NAME = "ergon-workspace-v5";
+const DB_NAME = "ergon-workspace-v7";
 const DB_STORE = "state";
 const DB_KEY = "root";
 const BYOK_KEY = "ergon-byok-session";
@@ -744,8 +756,39 @@ function buildInitialState(): RootState {
     { id: "expense-sheet", kind: "app", name: "Expense sheet", description: "One-tap reconciliation of a CSV file into totals and discrepancies.", author: "ergon", builtin: false, fields: ["source_file"], template: "Reconcile {source_file} and flag missing receipts" },
   ];
 
+  const prevExpensesCsv = expensesCsv
+    .split("\n")
+    .filter((line) => !line.includes("CloudHost Backup"))
+    .join("\n");
+  const prevSyncNotes = syncNotes
+    .split("\n")
+    .slice(0, -2)
+    .join("\n") + "\n";
+
   const mayaStore: PersonStore = {
     files: mayaFiles,
+    fileHistory: {
+      "expenses-q3.csv": [
+        {
+          rev_id: `rev-${now - 260 * 60_000}-1`,
+          path: "expenses-q3.csv",
+          ts: now - 260 * 60_000,
+          size: utf8Bytes(prevExpensesCsv),
+          reason: "overwrite",
+          content: prevExpensesCsv,
+        },
+      ],
+      "tuesday-sync-notes.md": [
+        {
+          rev_id: `rev-${now - 200 * 60_000}-1`,
+          path: "tuesday-sync-notes.md",
+          ts: now - 200 * 60_000,
+          size: utf8Bytes(prevSyncNotes),
+          reason: "overwrite",
+          content: prevSyncNotes,
+        },
+      ],
+    },
     memory: `# Memory\n\n## About\n- Name: Maya Chen\n- Role: Operations lead\n\n## Standing preferences\n${initialRules.map((r) => `- ${r}`).join("\n")}\n`,
     suite: ["bookkeeper", "meeting-actions", "researcher"],
     routines: [
@@ -753,10 +796,12 @@ function buildInitialState(): RootState {
         id: "rt-morning-ledger",
         name: "Morning expense ledger audit",
         prompt: "Reconcile expenses-q3.csv, compute category subtotals, and flag missing receipts or duplicates.",
-        schedule: "Every weekday 08:30",
+        schedule: "daily 09:00",
+        cadence: "daily 09:00",
         skill_id: "reconcile_ledger",
         enabled: true,
         last_run_ts: now - 24 * 60_000,
+        next_run_ms: estimateNextRunMs("daily 09:00", now),
         last_status: "finished",
         run_count: 1,
         created_ts: now - 3 * 86_400_000,
@@ -765,14 +810,30 @@ function buildInitialState(): RootState {
         id: "rt-inbox-triage",
         name: "Daily ops inbox triage",
         prompt: "Triage ops-inbox.log into Urgent, Action, and FYI queues with concrete next steps.",
-        schedule: "Daily 09:00",
+        schedule: "every 15m",
+        cadence: "every 15m",
         skill_id: "triage_inbox",
         enabled: true,
         last_run_ts: null,
+        next_run_ms: estimateNextRunMs("every 15m", now),
         run_count: 0,
         created_ts: now - 2 * 86_400_000,
       },
     ],
+    routineRuns: {
+      "rt-morning-ledger": [
+        {
+          run_id: `run-${now - 24 * 60_000}-1`,
+          routine_id: "rt-morning-ledger",
+          started_ms: now - 24 * 60_000 - 340,
+          finished_ms: now - 24 * 60_000,
+          status: "finished",
+          receipt_id: t1,
+          thread_id: t1,
+          summary: `Reconciled ${recon.rowCount} entries (${fmtMoney(recon.grandTotal)} total) and flagged ${recon.missingCount} missing receipt.`,
+        },
+      ],
+    },
     threads: [
       {
         id: t1,
@@ -847,9 +908,11 @@ function buildInitialState(): RootState {
     files: {
       "budget-notes.md": makeFile("budget-notes.md", "# Finance Notes\n- Verify Q4 software renewals before Dec 1.\n", now - 200 * 60_000),
     },
+    fileHistory: {},
     memory: "# Memory\n\n## About\n- Name: Tomas Ruiz\n- Role: Finance analyst\n\n## Standing preferences\n- Flag variances over $50.\n",
     suite: ["bookkeeper", "expense-sheet"],
     routines: [],
+    routineRuns: {},
     threads: [],
     work: [],
     decisions: [],
@@ -903,6 +966,8 @@ async function idbLoad(): Promise<RootState | null> {
   if (loaded) {
     for (const st of Object.values(loaded.stores || {})) {
       if (!Array.isArray(st.routines)) st.routines = [];
+      if (!st.fileHistory || typeof st.fileHistory !== "object") st.fileHistory = {};
+      if (!st.routineRuns || typeof st.routineRuns !== "object") st.routineRuns = {};
     }
   }
   return loaded;
@@ -1040,18 +1105,56 @@ export async function installBrowserEngine(): Promise<void> {
       const p = activePerson();
       state.stores[pid] = {
         files: {},
+        fileHistory: {},
         threads: [],
         work: [],
         decisions: [],
         offers: [],
         routines: [],
+        routineRuns: {},
         memory: `# Memory\n\n## About\n- Name: ${p.name}\n${p.role ? `- Role: ${p.role}\n` : ""}`,
         suite: ["researcher", "meeting-actions"],
       };
     }
     if (!Array.isArray(state.stores[pid].routines)) state.stores[pid].routines = [];
+    if (!state.stores[pid].fileHistory) state.stores[pid].fileHistory = {};
+    if (!state.stores[pid].routineRuns) state.stores[pid].routineRuns = {};
     return state.stores[pid];
   };
+
+  function recordFileRevision(st: PersonStore, safePath: string, prev: WebFile | undefined, reason: string) {
+    if (!prev) return;
+    if (!st.fileHistory) st.fileHistory = {};
+    const list = st.fileHistory[safePath] || (st.fileHistory[safePath] = []);
+    const ts = Date.now();
+    const rev: FileRevision = {
+      rev_id: `rev-${ts}-${list.length + 1}`,
+      path: safePath,
+      ts,
+      size: prev.size,
+      reason,
+      content: prev.content,
+    };
+    list.unshift(rev);
+    if (list.length > 50) list.length = 50;
+  }
+
+  function buildSchedulerStatus(st: PersonStore) {
+    const activeRoutines = st.routines.filter((r) => r.enabled);
+    const dueCandidates = activeRoutines
+      .map((r) => r.next_run_ms ?? estimateNextRunMs(r.schedule, r.last_run_ts || Date.now(), r.interval_secs))
+      .filter((n): n is number => typeof n === "number" && Number.isFinite(n));
+    return {
+      running: true,
+      enabled: true,
+      disabled_by_env: false,
+      tick_secs: 15,
+      active_routines: activeRoutines.length,
+      paused_routines: st.routines.length - activeRoutines.length,
+      next_due_ms: dueCandidates.length ? Math.min(...dueCandidates) : null,
+      last_tick_ms: Date.now(),
+    };
+  }
 
   function buildBrief() {
     const p = activePerson();
@@ -1139,6 +1242,7 @@ export async function installBrowserEngine(): Promise<void> {
       const safe = sanitizeSafePath(String(args.path ?? ""));
       if (!safe) return "error: path escapes the workspace";
       const content = String(args.content ?? "");
+      if (st.files[safe] && st.files[safe].content !== content) recordFileRevision(st, safe, st.files[safe], "overwrite");
       st.files[safe] = makeFile(safe, content);
       if (!written.includes(safe)) written.push(safe);
       persist();
@@ -1150,6 +1254,7 @@ export async function installBrowserEngine(): Promise<void> {
       const safe = sanitizeSafePath(fileName) || "Document.md";
       const secs = Array.isArray(args.sections) ? args.sections.map(String) : [String(args.sections ?? "")];
       const content = `# ${title.replace(/\.md$/i, "")}\n\n${secs.join("\n\n")}\n`;
+      if (st.files[safe] && st.files[safe].content !== content) recordFileRevision(st, safe, st.files[safe], "overwrite");
       st.files[safe] = makeFile(safe, content);
       if (!written.includes(safe)) written.push(safe);
       persist();
@@ -1162,6 +1267,7 @@ export async function installBrowserEngine(): Promise<void> {
       const cols = Array.isArray(args.columns) ? args.columns.map(String) : [];
       const rows = Array.isArray(args.rows) ? args.rows.map((r) => (Array.isArray(r) ? r.map(String) : [String(r)])) : [];
       const csv = [cols, ...rows].filter((r) => r.length > 0).map((r) => r.map(csvEscape).join(",")).join("\n") + "\n";
+      if (st.files[safe] && st.files[safe].content !== csv) recordFileRevision(st, safe, st.files[safe], "overwrite");
       st.files[safe] = makeFile(safe, csv);
       if (!written.includes(safe)) written.push(safe);
       persist();
@@ -1681,16 +1787,28 @@ export async function installBrowserEngine(): Promise<void> {
     const st = activeStore();
     const byok = loadByok();
 
-    if (method === "GET" && path === "/api/version") return jsonRes({ name: "ergon", version: "0.6.0" });
-    if (method === "GET" && path === "/api/update") return jsonRes({ current: "0.6.0", available: false, mode: "off", checked_at: Math.floor(Date.now() / 1000) });
+    if (method === "GET" && path === "/api/version") return jsonRes({ name: "ergon", version: "0.7.0" });
+    if (method === "GET" && path === "/api/update") return jsonRes({ current: "0.7.0", available: false, mode: "off", checked_at: Math.floor(Date.now() / 1000) });
     if (method === "GET" && path === "/api/status") {
       return jsonRes({
-        version: "0.6.0",
+        version: "0.7.0",
         model_configured: true,
         model: byok.engine_mode === "byok" && byok.model_id ? byok.model_id : "browser-workspace-engine",
         model_base_url: byok.engine_mode === "byok" ? byok.model_base_url : "indexeddb://local",
         engine_mode: byok.engine_mode,
-        capabilities: { sse: true, skills: true, routines: true, search: true, receipts_export: true, cancel: true },
+        capabilities: {
+          sse: true,
+          skills: true,
+          routines: true,
+          search: true,
+          receipts_export: true,
+          cancel: true,
+          file_history: true,
+          scheduler: true,
+          audit_bundle: true,
+          people_switch: true,
+        },
+        scheduler: buildSchedulerStatus(st),
         person: p,
         store_recovered: [],
       });
@@ -1760,20 +1878,24 @@ export async function installBrowserEngine(): Promise<void> {
       });
     }
     if (method === "GET" && path === "/api/routines") {
-      return jsonRes({ routines: st.routines });
+      return jsonRes({ routines: st.routines, scheduler: buildSchedulerStatus(st) });
     }
     if (method === "POST" && path === "/api/routines") {
       const name = String(body.name ?? body.title ?? "").trim();
       const prompt = String(body.prompt ?? "").trim();
       if (!name || !prompt) return jsonRes({ error: "name and prompt are required" }, 400);
+      const schedule = String(body.schedule ?? body.cadence ?? "daily 09:00").trim();
+      const enabled = typeof body.enabled === "boolean" ? body.enabled : true;
       const created: Routine = {
         id: `rt-${Date.now()}-${st.routines.length + 1}`,
         name,
         prompt,
-        schedule: String(body.schedule ?? body.cadence ?? "Daily 09:00").trim(),
+        schedule,
+        cadence: schedule,
         skill_id: typeof body.skill_id === "string" && body.skill_id ? body.skill_id : undefined,
-        enabled: true,
+        enabled,
         last_run_ts: null,
+        next_run_ms: enabled ? estimateNextRunMs(schedule, Date.now()) : null,
         run_count: 0,
         created_ts: Date.now(),
       };
@@ -1781,9 +1903,34 @@ export async function installBrowserEngine(): Promise<void> {
       await persist();
       return jsonRes({ routine: created, ...created }, 201);
     }
+    if (method === "PATCH" && path.startsWith("/api/routines/") && !path.endsWith("/run") && !path.endsWith("/history")) {
+      const rid = decodeURIComponent(path.slice("/api/routines/".length));
+      const rt = st.routines.find((x) => x.id === rid);
+      if (!rt) return jsonRes({ error: "routine not found" }, 404);
+      if (typeof body.enabled === "boolean") rt.enabled = body.enabled;
+      if (typeof body.schedule === "string" && body.schedule.trim()) {
+        rt.schedule = body.schedule.trim();
+        rt.cadence = rt.schedule;
+      }
+      if (typeof body.cadence === "string" && body.cadence.trim()) {
+        rt.schedule = body.cadence.trim();
+        rt.cadence = rt.schedule;
+      }
+      if (typeof body.name === "string" && body.name.trim()) rt.name = body.name.trim();
+      if (typeof body.prompt === "string" && body.prompt.trim()) rt.prompt = body.prompt.trim();
+      rt.next_run_ms = rt.enabled ? estimateNextRunMs(rt.schedule, Date.now(), rt.interval_secs) : null;
+      await persist();
+      return jsonRes({ routine: rt, scheduler: buildSchedulerStatus(st) });
+    }
+    if (method === "GET" && path.startsWith("/api/routines/") && path.endsWith("/history")) {
+      const rid = decodeURIComponent(path.slice("/api/routines/".length, -"/history".length));
+      const runs = st.routineRuns[rid] ?? [];
+      return jsonRes({ routine_id: rid, runs, history: runs });
+    }
     if (method === "DELETE" && path.startsWith("/api/routines/")) {
       const rid = decodeURIComponent(path.slice("/api/routines/".length));
       st.routines = st.routines.filter((x) => x.id !== rid);
+      delete st.routineRuns[rid];
       await persist();
       return jsonRes({ deleted: rid });
     }
@@ -1791,11 +1938,27 @@ export async function installBrowserEngine(): Promise<void> {
       const rid = decodeURIComponent(path.slice("/api/routines/".length, -"/run".length));
       const rt = st.routines.find((x) => x.id === rid);
       if (!rt) return jsonRes({ error: "routine not found" }, 404);
-      rt.last_run_ts = Date.now();
-      rt.last_status = "finished";
+      const startedMs = Date.now();
+      const resp = await executePromptIntoThread(p, st, byok, rt.prompt);
+      const finishedMs = Date.now();
+      const lastWork = st.work[st.work.length - 1];
+      rt.last_run_ts = finishedMs;
+      rt.last_status = resp.ok ? "finished" : "error";
       rt.run_count = (rt.run_count ?? 0) + 1;
+      rt.next_run_ms = rt.enabled ? estimateNextRunMs(rt.schedule, finishedMs, rt.interval_secs) : null;
+      if (!st.routineRuns[rid]) st.routineRuns[rid] = [];
+      st.routineRuns[rid].unshift({
+        run_id: `run-${finishedMs}-${st.routineRuns[rid].length + 1}`,
+        routine_id: rid,
+        started_ms: startedMs,
+        finished_ms: finishedMs,
+        status: resp.ok ? "finished" : "error",
+        receipt_id: lastWork?.id || lastWork?.thread_id || null,
+        thread_id: lastWork?.thread_id || null,
+        summary: lastWork?.summary || `Executed "${rt.name}".`,
+      });
       await persist();
-      return executePromptIntoThread(p, st, byok, rt.prompt);
+      return resp;
     }
     if (method === "GET" && path === "/api/search") {
       const q = (u.searchParams.get("q") || "").trim().toLowerCase();
@@ -1880,11 +2043,94 @@ export async function installBrowserEngine(): Promise<void> {
       }
       return jsonRes({ ...found, is_binary: false });
     }
+    if (method === "GET" && path === "/api/files/history") {
+      const rawPath = u.searchParams.get("path") || "";
+      const safe = sanitizeSafePath(rawPath);
+      if (!safe) return jsonRes({ error: "path escapes the workspace" }, 403);
+      const rawRevs = st.fileHistory[safe] ?? [];
+      const revs = await Promise.all(
+        rawRevs.map(async (rev) => ({
+          ...rev,
+          sha256: rev.sha256 || (typeof rev.content === "string" ? await sha256Hex(rev.content) : undefined),
+        }))
+      );
+      const revAId = u.searchParams.get("rev_a") || "";
+      const revBId = u.searchParams.get("rev_b") || "current";
+      if (revAId) {
+        const ra = revs.find((x) => x.rev_id === revAId);
+        if (!ra) return jsonRes({ error: "revision not found" }, 404);
+        const textB =
+          revBId === "current"
+            ? (st.files[safe]?.content ?? "")
+            : (revs.find((x) => x.rev_id === revBId)?.content ?? "");
+        const diff = computeLineDiff(ra.content ?? "", textB, { path: safe, rev_a: revAId, rev_b: revBId });
+        return jsonRes({ path: safe, revisions: revs, diff });
+      }
+      return jsonRes({ path: safe, revisions: revs });
+    }
+    if (method === "POST" && path === "/api/files/restore") {
+      const rawPath = String(body.path ?? "");
+      const safe = sanitizeSafePath(rawPath);
+      if (!safe) return jsonRes({ error: "path escapes the workspace" }, 403);
+      const revId = String(body.rev_id ?? body.revision_id ?? body.id ?? "").trim();
+      const revs = st.fileHistory[safe] ?? [];
+      const found = revs.find((r) => r.rev_id === revId);
+      if (!found || typeof found.content !== "string") {
+        return jsonRes({ error: "revision not found" }, 404);
+      }
+      if (st.files[safe] && st.files[safe].content !== found.content) {
+        recordFileRevision(st, safe, st.files[safe], "restore");
+      }
+      const restored = makeFile(safe, found.content);
+      st.files[safe] = restored;
+      await persist();
+      return jsonRes({
+        restored: true,
+        path: restored.path,
+        rev_id: revId,
+        file: { path: restored.path, name: restored.name, size: restored.size, mtime_ms: restored.mtime_ms, ext: restored.ext },
+      });
+    }
+    if (method === "GET" && path === "/api/audit/bundle") {
+      const format = u.searchParams.get("format") === "md" ? "md" : "json";
+      const allRuns = Object.values(st.routineRuns).flat().sort((a, b) => b.started_ms - a.started_ms);
+      const built = await buildAuditBundle({
+        personName: p.name,
+        personId: p.id,
+        files: Object.values(st.files).map((f) => ({
+          path: f.path,
+          size: f.size,
+          mtime_ms: f.mtime_ms,
+          content: f.content,
+          revision_count: (st.fileHistory[f.path] ?? []).length,
+        })),
+        receipts: st.work.map((x, idx) => ({
+          id: x.id || x.thread_id || `rec-${idx}`,
+          thread_id: x.thread_id,
+          task: x.task,
+          summary: x.summary,
+          files: x.files,
+          ts: x.ts,
+        })),
+        routines: st.routines,
+        routineRuns: allRuns,
+      });
+      return new Response(format === "md" ? built.markdown : built.json, {
+        status: 200,
+        headers: {
+          "Content-Type": format === "md" ? "text/markdown; charset=utf-8" : "application/json; charset=utf-8",
+          "X-Ergon-Bundle-SHA256": built.bundleSha256,
+        },
+      });
+    }
     if (method === "POST" && path === "/api/files/upload") {
       const rawPath = String(body.path ?? body.name ?? "");
       const safe = sanitizeSafePath(rawPath);
       if (!safe) return jsonRes({ error: "invalid workspace filename" }, 403);
       const content = String(body.content ?? "");
+      if (st.files[safe] && st.files[safe].content !== content) {
+        recordFileRevision(st, safe, st.files[safe], "overwrite");
+      }
       const saved = makeFile(safe, content);
       st.files[safe] = saved;
       await persist();
@@ -1898,19 +2144,21 @@ export async function installBrowserEngine(): Promise<void> {
       state.people.push(np);
       state.stores[np.id] = {
         files: {},
+        fileHistory: {},
         threads: [],
         work: [],
         decisions: [],
         offers: [],
         routines: [],
+        routineRuns: {},
         memory: `# Memory\n\n## About\n- Name: ${np.name}\n${np.role ? `- Role: ${np.role}\n` : ""}`,
         suite: ["researcher", "meeting-actions"],
       };
       await persist();
       return jsonRes(np, 201);
     }
-    if (method === "POST" && path === "/api/active-person") {
-      const id = String(body.id ?? "");
+    if (method === "POST" && (path === "/api/active-person" || path === "/api/people/switch")) {
+      const id = String(body.id ?? body.person_id ?? "");
       if (!state.people.some((x) => x.id === id)) return jsonRes({ error: "person not found" }, 404);
       state.activePerson = id;
       await persist();
@@ -1947,6 +2195,7 @@ export async function installBrowserEngine(): Promise<void> {
       if (dec.kind === "delete" && dec.path) {
         if (approve) {
           if (st.files[dec.path]) {
+            recordFileRevision(st, dec.path, st.files[dec.path], "delete");
             delete st.files[dec.path];
             dec.outcome = `Approved and done: ${dec.path} was deleted.`;
           } else {

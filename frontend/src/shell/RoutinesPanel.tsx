@@ -1,10 +1,25 @@
-// Recurring Routines MorphingDialog (always mounted OUTSIDE Vaul Drawer):
-// - Lists standing routines from GET /api/routines (with localStorage progressive fallback on pre-v0.5.0 servers)
-// - Create new recurring routine (POST /api/routines) with cadence presets & linked workflow
-// - Run Now (POST /api/routines/:id/run, falling back to running prompt directly in Today/Chat)
-// - Delete routine (DELETE /api/routines/:id)
-import { useEffect, useState } from "react";
-import { CalendarClock, Play, Plus, Trash2 } from "lucide-react";
+// Recurring Routines MorphingDialog (v0.7.0, always mounted OUTSIDE Vaul Drawer):
+// - Scheduler status pill (active tick cadence / paused / on-demand) + active/paused counts
+// - Pause / Resume toggle (PATCH /api/routines/:id)
+// - Live Next run countdown badge ticked every 15s
+// - Expandable Run History (GET /api/routines/:id/history) with linked SHA-256 receipts & threads
+// - Create new recurring routine (POST /api/routines) with scheduler cadence presets
+// - Run Now (POST /api/routines/:id/run) & Delete routine (DELETE /api/routines/:id)
+import { useCallback, useEffect, useState } from "react";
+import {
+  ArrowUpRight,
+  CalendarClock,
+  ChevronDown,
+  ChevronRight,
+  Clock,
+  FileDown,
+  History,
+  Pause,
+  Play,
+  Plus,
+  Trash2,
+} from "lucide-react";
+import { toast } from "sonner";
 import {
   MorphingDialog,
   MorphingDialogClose,
@@ -14,53 +29,117 @@ import {
   MorphingDialogTitle,
   useMorphingDialog,
 } from "@/components/ui/morphing-dialog";
-import { SlidingNumber } from "@/components/ui/sliding-number";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Pill } from "@/components/kibo-ui/pill";
-import type { Routine } from "@/lib/api";
+import {
+  estimateNextRunMs,
+  formatCountdown,
+  hasV050Api,
+  hasV070Api,
+  type Routine,
+  type RoutineRunRecord,
+  type SchedulerStatus,
+  type Status,
+} from "@/lib/api";
+import { exportReceiptDownload } from "@/lib/receiptExport";
 import type { SkillMeta } from "@/lib/skillsCatalog";
+import { cn } from "@/lib/utils";
 import { relTime } from "@/lib/words";
 import { open as openPreset } from "@/motion";
 
 const SCHEDULES = [
-  "Every weekday 08:30",
-  "Daily 09:00",
-  "Weekly Monday 09:00",
-  "Every Friday 16:00",
-  "Hourly",
+  "every 15m",
+  "hourly",
+  "daily 09:00",
+  "weekly mon",
+  "every 30m",
 ];
+
+function fmtDuration(startMs: number, endMs?: number | null): string {
+  if (!endMs || endMs < startMs) return "";
+  const ms = endMs - startMs;
+  if (ms < 1000) return `${ms}ms`;
+  return `${(ms / 1000).toFixed(1)}s`;
+}
 
 function RoutinesBody({
   routines,
   skills,
+  status,
+  scheduler,
+  historyRev,
+  personName,
   onRefresh,
   onCreate,
+  onToggleEnabled,
+  onLoadHistory,
   onDelete,
   onRunNow,
+  onOpenThread,
 }: {
   routines: Routine[];
   skills: SkillMeta[];
+  status: Status | null | "error";
+  scheduler: SchedulerStatus | null;
+  historyRev: number;
+  personName: string;
   onRefresh: () => void;
   onCreate: (input: { name: string; schedule: string; prompt: string; skill_id?: string }) => Promise<boolean>;
+  onToggleEnabled: (id: string, enabled: boolean) => Promise<boolean>;
+  onLoadHistory: (id: string) => Promise<RoutineRunRecord[]>;
   onDelete: (id: string) => Promise<void>;
   onRunNow: (routine: Routine) => Promise<void>;
+  onOpenThread?: (threadId: string) => void;
 }) {
   const { isOpen, setIsOpen } = useMorphingDialog();
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState("");
-  const [schedule, setSchedule] = useState(SCHEDULES[0]);
+  const [schedule, setSchedule] = useState(SCHEDULES[2]);
   const [skillId, setSkillId] = useState("");
   const [prompt, setPrompt] = useState("");
   const [saving, setSaving] = useState(false);
   const [runningId, setRunningId] = useState<string | null>(null);
+  const [togglingId, setTogglingId] = useState<string | null>(null);
+  const [expandedHistory, setExpandedHistory] = useState<Record<string, boolean>>({});
+  const [historyByRoutine, setHistoryByRoutine] = useState<Record<string, RoutineRunRecord[]>>({});
+  const [historyLoading, setHistoryLoading] = useState<Record<string, boolean>>({});
+  const [nowMs, setNowMs] = useState(() => Date.now());
   const [err, setErr] = useState("");
 
   useEffect(() => {
-    if (isOpen) onRefresh();
+    if (!isOpen) return;
+    onRefresh();
+    setNowMs(Date.now());
+    const timer = window.setInterval(() => setNowMs(Date.now()), 15_000);
+    return () => window.clearInterval(timer);
   }, [isOpen, onRefresh]);
+
+  const refreshExpandedHistory = useCallback(
+    async (id: string) => {
+      setHistoryLoading((prev) => ({ ...prev, [id]: true }));
+      const runs = await onLoadHistory(id);
+      setHistoryByRoutine((prev) => ({ ...prev, [id]: runs }));
+      setHistoryLoading((prev) => ({ ...prev, [id]: false }));
+    },
+    [onLoadHistory]
+  );
+
+  // Refresh any open routine history drawers when a background routine fires.
+  useEffect(() => {
+    if (!isOpen) return;
+    for (const [id, open] of Object.entries(expandedHistory)) {
+      if (open) void refreshExpandedHistory(id);
+    }
+  }, [historyRev, isOpen]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const toggleHistory = (rt: Routine) => {
+    const next = !expandedHistory[rt.id];
+    setExpandedHistory((prev) => ({ ...prev, [rt.id]: next }));
+    if (next) void refreshExpandedHistory(rt.id);
+  };
 
   const handleSkillPick = (id: string) => {
     setSkillId(id);
@@ -81,7 +160,7 @@ function RoutinesBody({
     setErr("");
     const ok = await onCreate({
       name: name.trim(),
-      schedule: schedule.trim() || SCHEDULES[0],
+      schedule: schedule.trim() || SCHEDULES[2],
       prompt: prompt.trim(),
       skill_id: skillId || undefined,
     });
@@ -93,16 +172,73 @@ function RoutinesBody({
     setName("");
     setPrompt("");
     setSkillId("");
-    setSchedule(SCHEDULES[0]);
+    setSchedule(SCHEDULES[2]);
     setAdding(false);
   };
 
+  const handleExportRunReceipt = async (rt: Routine, run: RoutineRunRecord) => {
+    const useServer = hasV050Api(status, "receipts_export") && Boolean(run.receipt_id);
+    const res = await exportReceiptDownload(
+      {
+        id: run.receipt_id || run.run_id,
+        task: `Routine: ${rt.name}`,
+        person: personName || "Active employee",
+        status: run.status || "finished",
+        summary: run.summary || `Scheduled execution of "${rt.name}" (${rt.schedule}).`,
+        ts: run.finished_ms || run.started_ms,
+        files: [],
+      },
+      "md",
+      useServer
+    );
+    toast.success(`Exported ${res.filename} (sha256: ${res.sha256.slice(0, 12)}…)`);
+  };
+
+  const activeCount = routines.filter((r) => r.enabled).length;
+  const pausedCount = routines.length - activeCount;
+  const hasV070 = hasV070Api(status);
+  const statusSchedDisabled =
+    status && status !== "error" && (status.scheduler_enabled === false || status.capabilities?.scheduler === false);
+  const schedulerPausedByEnv = Boolean(scheduler?.disabled_by_env) || scheduler?.enabled === false || Boolean(statusSchedDisabled);
+  const schedulerActive = hasV070 && !schedulerPausedByEnv && scheduler?.running !== false;
+  const tickSecs = scheduler?.tick_secs ?? 15;
+
   return (
     <div id="routines-panel" className="flex flex-col gap-4 pt-1">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="min-w-0 flex-1 text-sm text-ink-2">
-          Standing workflows your agent runs on cadence or on demand with full Field-Book receipts.
-        </p>
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-card border border-hairline bg-board/40 px-3 py-2.5">
+        <div className="flex flex-wrap items-center gap-2">
+          <Pill
+            id="scheduler-status-pill"
+            variant="secondary"
+            className={cn(
+              "px-2.5 py-0.5 text-xs font-medium",
+              schedulerActive
+                ? "bg-pill-active-bg text-pill-active-fg"
+                : schedulerPausedByEnv
+                  ? "bg-pill-warn-bg text-pill-warn-fg"
+                  : "bg-track text-ink-2"
+            )}
+          >
+            <span
+              aria-hidden
+              className={cn(
+                "size-2 rounded-full",
+                schedulerActive ? "bg-dot-green" : schedulerPausedByEnv ? "bg-dot-amber" : "bg-icon"
+              )}
+            />
+            <span>
+              {schedulerActive
+                ? `Scheduler active · ${tickSecs}s tick`
+                : schedulerPausedByEnv
+                  ? "Scheduler paused"
+                  : "On-demand routines"}
+            </span>
+          </Pill>
+          <span className="mono text-xs text-ink-2">
+            {activeCount} active{pausedCount > 0 ? ` · ${pausedCount} paused` : ""}
+          </span>
+        </div>
+
         <Button
           type="button"
           size="sm"
@@ -147,7 +283,7 @@ function RoutinesBody({
                 id="routine-schedule"
                 value={schedule}
                 onChange={(e) => setSchedule(e.target.value)}
-                placeholder="Every weekday 08:30"
+                placeholder="daily 09:00 or every 15m"
                 autoComplete="off"
               />
             </div>
@@ -216,82 +352,244 @@ function RoutinesBody({
 
       {routines.length === 0 ? (
         <div className="rounded-card border border-hairline bg-board/40 p-4 text-sm text-ink-2">
-          No recurring routines yet. Create one above for daily expense audits, weekly meeting digests, or contract checks.
+          No recurring routines yet. Create one above for scheduled expense audits, meeting digests, or contract checks.
         </div>
       ) : (
         <ul className="flex flex-col gap-2.5">
-          {routines.map((rt) => (
-            <li
-              key={rt.id}
-              data-routine-id={rt.id}
-              className="flex flex-col gap-2.5 rounded-card border border-hairline bg-surface p-3.5"
-            >
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="flex min-w-0 flex-wrap items-center gap-2">
-                  <CalendarClock className="size-4 shrink-0 text-icon" strokeWidth={1.5} aria-hidden />
-                  <span className="truncate text-sm font-medium text-ink">{rt.name}</span>
-                  {rt.skill_id && (
-                    <Badge variant="outline" size="sm" className="mono text-xs">
-                      {rt.skill_id}
+          {routines.map((rt) => {
+            const nextMs = rt.enabled
+              ? (rt.next_run_ms ?? estimateNextRunMs(rt.schedule, rt.last_run_ts || nowMs, rt.interval_secs))
+              : null;
+            const nextLabel = rt.enabled ? `Next run ${formatCountdown(nextMs, nowMs)}` : "Paused";
+            const histOpen = Boolean(expandedHistory[rt.id]);
+            const runs = historyByRoutine[rt.id] ?? rt.recent_runs ?? [];
+            const loadingRuns = Boolean(historyLoading[rt.id]);
+
+            return (
+              <li
+                key={rt.id}
+                data-routine-id={rt.id}
+                data-routine-enabled={rt.enabled ? "true" : "false"}
+                className="flex flex-col gap-2.5 rounded-card border border-hairline bg-surface p-3.5"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex min-w-0 flex-wrap items-center gap-2">
+                    <CalendarClock className="size-4 shrink-0 text-icon" strokeWidth={1.5} aria-hidden />
+                    <span className="truncate text-sm font-medium text-ink">{rt.name}</span>
+                    <Pill
+                      variant="secondary"
+                      className={cn(
+                        "px-2 py-0.5 text-xs font-medium",
+                        rt.enabled ? "bg-pill-active-bg text-pill-active-fg" : "bg-track text-ink-2"
+                      )}
+                    >
+                      {rt.enabled ? "Active" : "Paused"}
+                    </Pill>
+                    {rt.skill_id && (
+                      <Badge variant="outline" size="sm" className="mono text-xs">
+                        {rt.skill_id}
+                      </Badge>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <Pill variant="secondary" className="border border-hairline bg-board px-2 py-0.5 text-xs text-ink-2">
+                      <span className="mono">{rt.schedule}</span>
+                    </Pill>
+                    <Badge
+                      variant="outline"
+                      size="sm"
+                      data-next-run={rt.id}
+                      className="mono gap-1 text-xs text-ink-2"
+                    >
+                      <Clock className="size-3 text-icon" strokeWidth={1.5} aria-hidden />
+                      {nextLabel}
                     </Badge>
-                  )}
-                </div>
-                <Pill variant="secondary" className="border border-hairline bg-board px-2 py-0.5 text-xs text-ink-2">
-                  <span className="mono">{rt.schedule}</span>
-                </Pill>
-              </div>
-
-              <p className="text-sm leading-5 text-ink-2">{rt.prompt}</p>
-
-              <div className="flex flex-wrap items-center justify-between gap-2 border-t border-hairline pt-2.5">
-                <div className="mono flex flex-wrap items-center gap-2 text-xs text-ink-2">
-                  <span>
-                    <SlidingNumber value={rt.run_count ?? 0} /> {(rt.run_count ?? 0) === 1 ? "run" : "runs"}
-                  </span>
-                  {rt.last_run_ts ? (
-                    <>
-                      <span aria-hidden>·</span>
-                      <span>Last {relTime(rt.last_run_ts)}</span>
-                    </>
-                  ) : (
-                    <>
-                      <span aria-hidden>·</span>
-                      <span>Not run yet</span>
-                    </>
-                  )}
+                  </div>
                 </div>
 
-                <div className="flex flex-wrap items-center gap-2">
-                  <Button
-                    type="button"
-                    size="sm"
-                    className="max-md:min-h-11"
-                    disabled={runningId === rt.id}
-                    onClick={async () => {
-                      setRunningId(rt.id);
-                      setIsOpen(false);
-                      await onRunNow(rt);
-                      setRunningId(null);
-                    }}
+                <p className="text-sm leading-5 text-ink-2">{rt.prompt}</p>
+
+                <div className="flex flex-wrap items-center justify-between gap-2 border-t border-hairline pt-2.5">
+                  <div className="mono flex flex-wrap items-center gap-2 text-xs text-ink-2">
+                    <span className="whitespace-nowrap">
+                      {rt.run_count ?? 0} {(rt.run_count ?? 0) === 1 ? "run" : "runs"}
+                    </span>
+                    {rt.last_run_ts ? (
+                      <>
+                        <span aria-hidden>·</span>
+                        <span>Last {relTime(rt.last_run_ts)}</span>
+                      </>
+                    ) : (
+                      <>
+                        <span aria-hidden>·</span>
+                        <span>Not run yet</span>
+                      </>
+                    )}
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      data-action="toggle-routine"
+                      aria-pressed={rt.enabled}
+                      aria-label={rt.enabled ? `Pause routine ${rt.name}` : `Resume routine ${rt.name}`}
+                      className="max-md:min-h-11"
+                      disabled={togglingId === rt.id}
+                      onClick={async () => {
+                        setTogglingId(rt.id);
+                        await onToggleEnabled(rt.id, !rt.enabled);
+                        setTogglingId(null);
+                      }}
+                    >
+                      {rt.enabled ? (
+                        <>
+                          <Pause className="size-3.5" strokeWidth={1.5} aria-hidden />
+                          Pause
+                        </>
+                      ) : (
+                        <>
+                          <Play className="size-3.5" strokeWidth={1.5} aria-hidden />
+                          Resume
+                        </>
+                      )}
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      data-action="routine-history"
+                      aria-expanded={histOpen}
+                      className="max-md:min-h-11"
+                      onClick={() => toggleHistory(rt)}
+                    >
+                      {histOpen ? (
+                        <ChevronDown className="size-3.5" strokeWidth={1.5} aria-hidden />
+                      ) : (
+                        <ChevronRight className="size-3.5" strokeWidth={1.5} aria-hidden />
+                      )}
+                      <History className="size-3.5" strokeWidth={1.5} aria-hidden />
+                      Run history
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      className="max-md:min-h-11"
+                      disabled={runningId === rt.id}
+                      onClick={async () => {
+                        setRunningId(rt.id);
+                        setIsOpen(false);
+                        await onRunNow(rt);
+                        setRunningId(null);
+                      }}
+                    >
+                      <Play className="size-3.5" strokeWidth={1.5} aria-hidden />
+                      {runningId === rt.id ? "Running…" : "Run now"}
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="max-md:min-h-11"
+                      aria-label={`Delete routine ${rt.name}`}
+                      onClick={() => onDelete(rt.id)}
+                    >
+                      <Trash2 className="size-3.5" strokeWidth={1.5} aria-hidden />
+                      Delete
+                    </Button>
+                  </div>
+                </div>
+
+                {histOpen && (
+                  <div
+                    data-routine-history={rt.id}
+                    className="flex flex-col gap-2 rounded-sm border border-hairline bg-board/40 p-3"
                   >
-                    <Play className="size-3.5" strokeWidth={1.5} aria-hidden />
-                    {runningId === rt.id ? "Running…" : "Run now"}
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    className="max-md:min-h-11"
-                    aria-label={`Delete routine ${rt.name}`}
-                    onClick={() => onDelete(rt.id)}
-                  >
-                    <Trash2 className="size-3.5" strokeWidth={1.5} aria-hidden />
-                    Delete
-                  </Button>
-                </div>
-              </div>
-            </li>
-          ))}
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs font-medium text-ink">Execution history</span>
+                      <span className="mono text-xs text-ink-2">{runs.length} recorded</span>
+                    </div>
+                    {loadingRuns ? (
+                      <p className="text-xs text-ink-2">Loading run history…</p>
+                    ) : runs.length === 0 ? (
+                      <p className="text-xs text-ink-2">
+                        No runs recorded yet. Click Run now or wait for the next scheduled tick.
+                      </p>
+                    ) : (
+                      <ul className="divide-y divide-hairline rounded-sm border border-hairline bg-surface">
+                        {runs.slice(0, 10).map((run) => {
+                          const okRun = run.status === "finished" || run.status === "ok" || run.status === "completed";
+                          const errRun = run.status === "error" || run.status === "failed";
+                          const durStr = fmtDuration(run.started_ms, run.finished_ms);
+                          return (
+                            <li
+                              key={run.run_id}
+                              data-run-id={run.run_id}
+                              className="flex flex-wrap items-center justify-between gap-2 px-2.5 py-2 text-xs"
+                            >
+                              <div className="min-w-0 flex-1">
+                                <div className="flex flex-wrap items-center gap-1.5">
+                                  <span
+                                    aria-hidden
+                                    className={cn(
+                                      "size-2 shrink-0 rounded-full",
+                                      okRun ? "bg-dot-green" : errRun ? "bg-dot-red" : "bg-dot-amber"
+                                    )}
+                                  />
+                                  <span className="font-medium capitalize text-ink">{run.status}</span>
+                                  <span className="mono text-ink-2">{relTime(run.started_ms)}</span>
+                                  {durStr && <span className="mono text-ink-3">· {durStr}</span>}
+                                  {run.receipt_id && (
+                                    <Badge variant="outline" size="sm" className="mono text-xs">
+                                      {run.receipt_id.slice(0, 14)}
+                                    </Badge>
+                                  )}
+                                </div>
+                                {run.summary && (
+                                  <p className="mt-0.5 truncate text-ink-2">{run.summary}</p>
+                                )}
+                              </div>
+                              <div className="flex shrink-0 items-center gap-1">
+                                {(run.receipt_id || okRun) && (
+                                  <Button
+                                    type="button"
+                                    size="xs"
+                                    variant="ghost"
+                                    className="max-md:min-h-11 gap-1 text-xs"
+                                    aria-label={`Export receipt for run ${run.run_id}`}
+                                    onClick={() => handleExportRunReceipt(rt, run)}
+                                  >
+                                    <FileDown className="size-3" strokeWidth={1.5} aria-hidden />
+                                    Receipt
+                                  </Button>
+                                )}
+                                {run.thread_id && onOpenThread && (
+                                  <Button
+                                    type="button"
+                                    size="xs"
+                                    variant="ghost"
+                                    className="max-md:min-h-11 gap-1 text-xs"
+                                    onClick={() => {
+                                      setIsOpen(false);
+                                      onOpenThread(run.thread_id!);
+                                    }}
+                                  >
+                                    Chat
+                                    <ArrowUpRight className="size-3" strokeWidth={1.5} aria-hidden />
+                                  </Button>
+                                )}
+                              </div>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    )}
+                  </div>
+                )}
+              </li>
+            );
+          })}
         </ul>
       )}
     </div>
@@ -301,28 +599,42 @@ function RoutinesBody({
 export function RoutinesPanel({
   routines,
   skills,
+  status,
+  scheduler,
+  historyRev,
+  personName,
   open,
   onOpenChange,
   onRefresh,
   onCreate,
+  onToggleEnabled,
+  onLoadHistory,
   onDelete,
   onRunNow,
+  onOpenThread,
 }: {
   routines: Routine[];
   skills: SkillMeta[];
+  status: Status | null | "error";
+  scheduler: SchedulerStatus | null;
+  historyRev: number;
+  personName: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onRefresh: () => void;
   onCreate: (input: { name: string; schedule: string; prompt: string; skill_id?: string }) => Promise<boolean>;
+  onToggleEnabled: (id: string, enabled: boolean) => Promise<boolean>;
+  onLoadHistory: (id: string) => Promise<RoutineRunRecord[]>;
   onDelete: (id: string) => Promise<void>;
   onRunNow: (routine: Routine) => Promise<void>;
+  onOpenThread?: (threadId: string) => void;
 }) {
   return (
     <MorphingDialog transition={openPreset} open={open} onOpenChange={onOpenChange}>
       <MorphingDialogContainer>
         <MorphingDialogContent
           style={{ borderRadius: 18 }}
-          className="relative mx-4 flex max-h-[84vh] w-[580px] max-w-[calc(100%-2rem)] flex-col gap-3 overflow-y-auto border border-hairline bg-surface p-5 text-ink shadow-lift"
+          className="relative mx-4 flex max-h-[84vh] w-[620px] max-w-[calc(100%-2rem)] flex-col gap-3 overflow-y-auto border border-hairline bg-surface p-5 text-ink shadow-lift"
         >
           <MorphingDialogClose className="focus-ring absolute right-3 top-3 grid size-11 place-items-center rounded-sm text-icon outline-none hover:bg-board md:size-9" />
           <MorphingDialogTitle className="pr-10 text-title font-medium text-ink">
@@ -332,10 +644,17 @@ export function RoutinesPanel({
             <RoutinesBody
               routines={routines}
               skills={skills}
+              status={status}
+              scheduler={scheduler}
+              historyRev={historyRev}
+              personName={personName}
               onRefresh={onRefresh}
               onCreate={onCreate}
+              onToggleEnabled={onToggleEnabled}
+              onLoadHistory={onLoadHistory}
               onDelete={onDelete}
               onRunNow={onRunNow}
+              onOpenThread={onOpenThread}
             />
           </MorphingDialogDescription>
         </MorphingDialogContent>

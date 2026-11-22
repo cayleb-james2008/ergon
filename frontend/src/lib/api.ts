@@ -8,6 +8,20 @@ export type ServerCapabilities = {
   search?: boolean;
   receipts_export?: boolean;
   cancel?: boolean;
+  file_history?: boolean;
+  scheduler?: boolean;
+  audit_bundle?: boolean;
+  people_switch?: boolean;
+};
+export type SchedulerStatus = {
+  running?: boolean;
+  enabled?: boolean;
+  disabled_by_env?: boolean;
+  tick_secs?: number;
+  active_routines?: number;
+  paused_routines?: number;
+  next_due_ms?: number | null;
+  last_tick_ms?: number | null;
 };
 export type Status = {
   version: string;
@@ -18,6 +32,8 @@ export type Status = {
   auto_detected?: boolean;
   engine_mode?: "native" | "browser" | "byok";
   capabilities?: ServerCapabilities;
+  scheduler?: SchedulerStatus;
+  scheduler_enabled?: boolean;
   person?: Person;
   store_recovered?: string[];
 };
@@ -74,17 +90,65 @@ export type LiveRunStatus = {
   steps: (string | LiveRunStep)[];
   cancelled?: boolean;
 };
+export type FileRevision = {
+  rev_id: string;
+  path: string;
+  ts: number;
+  size: number;
+  sha256?: string;
+  reason?: string;
+  content?: string;
+  preview?: string;
+};
+export type FileDiffLine = {
+  kind: "context" | "add" | "del" | "hunk";
+  text: string;
+  old_line?: number | null;
+  new_line?: number | null;
+};
+export type FileDiffHunk = {
+  header?: string;
+  old_start?: number;
+  old_count?: number;
+  new_start?: number;
+  new_count?: number;
+  lines: FileDiffLine[];
+};
+export type FileDiffPayload = {
+  path?: string;
+  rev_a?: string;
+  rev_b?: string;
+  added: number;
+  removed: number;
+  unchanged?: number;
+  hunks: FileDiffHunk[];
+  unified?: string;
+};
+export type RoutineRunRecord = {
+  run_id: string;
+  routine_id: string;
+  started_ms: number;
+  finished_ms?: number | null;
+  status: string;
+  receipt_id?: string | null;
+  thread_id?: string | null;
+  summary?: string;
+};
 export type Routine = {
   id: string;
   name: string;
   prompt: string;
   schedule: string;
+  cadence?: string;
+  interval_secs?: number | null;
   skill_id?: string;
   enabled: boolean;
   last_run_ts?: number | null;
+  next_run_ms?: number | null;
   last_status?: string;
   run_count?: number;
   created_ts?: number;
+  recent_runs?: RoutineRunRecord[];
 };
 export type SearchHit = {
   kind: "file" | "receipt" | "skill" | "routine" | "memory" | "thread";
@@ -149,19 +213,19 @@ export function isWebStandalone(): boolean {
   return typeof window !== "undefined" && Boolean((window as unknown as { __ERGON_WEB_ENGINE__?: boolean }).__ERGON_WEB_ENGINE__);
 }
 
-function isAtLeast050(version: string | undefined): boolean {
+function isAtLeastMinor(version: string | undefined, minMinor: number): boolean {
   if (!version) return false;
   const m = /^v?(\d+)\.(\d+)/.exec(version.trim());
   if (!m) return false;
   const major = Number(m[1]);
   const minor = Number(m[2]);
-  return major > 0 || minor >= 5;
+  return major > 0 || minor >= minMinor;
 }
 
 /** Progressive v0.5.0 API detector: avoids 404 console noise against v0.4.0 servers while
  *  lighting up live SSE, /api/skills, /api/routines, /api/search, and /api/receipts automatically on v0.5.0+. */
 export function hasV050Api(
-  status: Status | null | "error",
+  status: Status | null | "error" | undefined,
   cap?: keyof ServerCapabilities
 ): boolean {
   if (isWebStandalone()) return true;
@@ -169,7 +233,102 @@ export function hasV050Api(
   if (cap && typeof status.capabilities?.[cap] === "boolean") {
     return Boolean(status.capabilities[cap]);
   }
-  return isAtLeast050(status.version);
+  return isAtLeastMinor(status.version, 5);
+}
+
+/** Progressive v0.7.0 API detector: activates file history/diff/restore, background scheduler
+ *  controls/run history, audit bundle export, and /api/people/switch automatically on v0.7.0+
+ *  while keeping pre-v0.7.0 servers completely free of 404 console errors. */
+export function hasV070Api(
+  status: Status | null | "error" | undefined,
+  cap?: keyof ServerCapabilities
+): boolean {
+  if (isWebStandalone()) return true;
+  if (!status || status === "error") return false;
+  if (cap && typeof status.capabilities?.[cap] === "boolean") {
+    return Boolean(status.capabilities[cap]);
+  }
+  if (!cap && status.capabilities) {
+    if (
+      status.capabilities.file_history ||
+      status.capabilities.audit_bundle ||
+      typeof status.capabilities.scheduler === "boolean"
+    ) {
+      return true;
+    }
+  }
+  return isAtLeastMinor(status.version, 7);
+}
+
+/** Parses v0.7.0 routine cadence strings ("every 15m", "hourly", "daily 09:00", "weekly mon",
+ *  or interval_secs) to estimate the next scheduled execution epoch ms when the server omits it. */
+export function estimateNextRunMs(
+  schedule: string,
+  fromMs = Date.now(),
+  intervalSecs?: number | null
+): number | null {
+  if (typeof intervalSecs === "number" && Number.isFinite(intervalSecs) && intervalSecs > 0) {
+    return fromMs + intervalSecs * 1000;
+  }
+  const raw = String(schedule || "").trim().toLowerCase();
+  if (!raw) return null;
+  const everyMatch = /^every\s+(\d+)\s*(s|sec|secs|seconds?|m|min|mins|minutes?|h|hr|hrs|hours?|d|day|days?)$/.exec(raw);
+  if (everyMatch) {
+    const n = Math.max(1, Number(everyMatch[1]));
+    const unit = everyMatch[2];
+    const mult = unit.startsWith("s")
+      ? 1000
+      : unit.startsWith("m")
+        ? 60_000
+        : unit.startsWith("h")
+          ? 3_600_000
+          : 86_400_000;
+    return fromMs + n * mult;
+  }
+  if (raw === "hourly" || raw === "every hour") return fromMs + 3_600_000;
+  const dailyMatch = /^(?:daily|every\s+day|every\s+weekday)(?:\s+(\d{1,2}):(\d{2}))?$/.exec(raw);
+  if (dailyMatch) {
+    const hh = Math.min(23, Number(dailyMatch[1] ?? 9));
+    const mm = Math.min(59, Number(dailyMatch[2] ?? 0));
+    const next = new Date(fromMs);
+    next.setSeconds(0, 0);
+    next.setHours(hh, mm, 0, 0);
+    if (next.getTime() <= fromMs) next.setDate(next.getDate() + 1);
+    if (raw.includes("weekday")) {
+      while (next.getDay() === 0 || next.getDay() === 6) next.setDate(next.getDate() + 1);
+    }
+    return next.getTime();
+  }
+  const weeklyMatch = /^(?:weekly|every)\s+(sun|mon|tue|wed|thu|fri|sat)[a-z]*(?:\s+(\d{1,2}):(\d{2}))?$/.exec(raw);
+  if (weeklyMatch) {
+    const days = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
+    const targetDay = days.indexOf(weeklyMatch[1]);
+    const hh = Math.min(23, Number(weeklyMatch[2] ?? 9));
+    const mm = Math.min(59, Number(weeklyMatch[3] ?? 0));
+    const next = new Date(fromMs);
+    next.setSeconds(0, 0);
+    next.setHours(hh, mm, 0, 0);
+    let delta = (targetDay - next.getDay() + 7) % 7;
+    if (delta === 0 && next.getTime() <= fromMs) delta = 7;
+    next.setDate(next.getDate() + delta);
+    return next.getTime();
+  }
+  return fromMs + 3_600_000;
+}
+
+export function formatCountdown(targetMs: number | null | undefined, nowMs = Date.now()): string {
+  if (!targetMs || !Number.isFinite(targetMs)) return "Scheduled";
+  const diffSec = Math.round((targetMs - nowMs) / 1000);
+  if (diffSec <= 0) return "Due now";
+  if (diffSec < 60) return `in ${diffSec}s`;
+  const mins = Math.floor(diffSec / 60);
+  if (mins < 60) return `in ${mins}m`;
+  const hrs = Math.floor(mins / 60);
+  const remM = mins % 60;
+  if (hrs < 24) return remM > 0 ? `in ${hrs}h ${remM}m` : `in ${hrs}h`;
+  const days = Math.floor(hrs / 24);
+  const remH = hrs % 24;
+  return remH > 0 ? `in ${days}d ${remH}h` : `in ${days}d`;
 }
 
 export async function call<T>(
