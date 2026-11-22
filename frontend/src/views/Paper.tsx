@@ -1,23 +1,58 @@
-// Today's Desk (Morning Brief & Operational Queue):
+// Today's Desk (Morning Brief, Drag-and-Drop Workspace & High-Scale Operational Queue — v0.5.0):
 // - Morning brief headline with SlidingNumber counters
+// - Full-desk Drag-and-Drop Multi-File Upload + Workspace Files search card
+// - Live SSE Run Timeline right on Today when a Skill/Routine/Task is running
 // - Tremor 14-slot Task Outcome Tracker strip + Geist Mono completion metrics
 // - Waiting on you decision approval/decline band with plain consequence copy
-// - Finished work & Today so far (/api/today) chronological stream with file-type glyphs
+// - Virtualized / paginated Finished Work & Receipts ledger (5,000+ receipts ready) with instant search
+//   and one-click SHA-256 receipt export (.md / .json)
+// - Paginated Today so far (/api/today) chronological stream
 // - Proactive agent capability offers, learned preferences, and desk team roster
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { toast } from "sonner";
-import { ArrowUpRight, CheckCircle2, Clock, Sparkles, XCircle } from "lucide-react";
+import {
+  ArrowUpRight,
+  CheckCircle2,
+  Clock,
+  FileDown,
+  FolderOpen,
+  Search,
+  Sparkles,
+  Upload,
+  X,
+  XCircle,
+} from "lucide-react";
 import { Tracker, type TrackerBlockProps } from "@/components/Tracker/Tracker";
 import { SlidingNumber } from "@/components/ui/sliding-number";
 import { Button } from "@/components/ui/button";
+import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
 import { Pill } from "@/components/kibo-ui/pill";
 import { Details, FileGlyph, WaitingPill } from "@/chat/Entry";
+import { LiveRunTimeline } from "@/chat/Chat";
 import { personInitials } from "@/shell/PersonSelect";
-import { call, type Brief, type BriefJob, type Decision, type Offer, type Person, type ThreadRow, type TodayEvent, type TodayPayload } from "@/lib/api";
+import {
+  call,
+  hasV050Api,
+  type Brief,
+  type BriefJob,
+  type Decision,
+  type LiveRunStep,
+  type Offer,
+  type Person,
+  type Status,
+  type ThreadRow,
+  type TodayEvent,
+  type TodayPayload,
+  type WorkspaceFile,
+} from "@/lib/api";
+import { exportReceiptDownload } from "@/lib/receiptExport";
 import { cn } from "@/lib/utils";
 import { normalizeFiles, relTime, threadMs } from "@/lib/words";
 import { dur, ease, layout } from "@/motion";
+
+const RECEIPTS_PAGE_SIZE = 20;
+const EVENTS_PAGE_SIZE = 10;
 
 type Data = {
   brief: Brief;
@@ -25,6 +60,7 @@ type Data = {
   offers: Offer[];
   todayEvents: TodayEvent[];
   threads: ThreadRow[];
+  extraReceipts: BriefJob[];
 };
 
 function consequence(kind: string): string {
@@ -34,18 +70,154 @@ function consequence(kind: string): string {
   return "Your agent raised this while it worked and carried on. Your answer is recorded here; to have it act on the answer, tell it in the conversation.";
 }
 
-export function PaperSide({ people, teamError, active, onSwitch, offers, learned, failed, onAct }: {
+export function PaperSide({
+  people,
+  teamError,
+  active,
+  onSwitch,
+  offers,
+  learned,
+  files,
+  failed,
+  onAct,
+  onOpenFile,
+  onOpenFilesPanel,
+  onUploadMany,
+}: {
   people: Person[] | null;
   teamError?: string;
   active: string;
   onSwitch: (id: string) => void;
   offers: Offer[] | null;
   learned: string[] | null;
+  files: WorkspaceFile[];
   failed?: boolean;
   onAct: (path: string, done: string) => void;
+  onOpenFile: (path: string) => void;
+  onOpenFilesPanel: () => void;
+  onUploadMany: (files: FileList | File[]) => Promise<number>;
 }) {
+  const [fileQuery, setFileQuery] = useState("");
+  const sideUploadRef = useRef<HTMLInputElement>(null);
+
+  const filteredFiles = useMemo(() => {
+    const q = fileQuery.trim().toLowerCase();
+    const list = q
+      ? files.filter((f) => f.path.toLowerCase().includes(q) || f.ext.toLowerCase().includes(q))
+      : files;
+    return list.slice(0, 8);
+  }, [files, fileQuery]);
+
   return (
     <div className="flex flex-col gap-6" data-answers="4">
+      {/* Workspace Files Quick Search & Upload */}
+      <section aria-labelledby="today-files-h" className="flex flex-col gap-3 rounded-card border border-hairline bg-surface p-4">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <FolderOpen className="size-4 text-icon" strokeWidth={1.5} aria-hidden />
+            <h2 id="today-files-h" className="text-base font-medium text-ink">Workspace files</h2>
+          </div>
+          <span className="mono rounded-chip bg-track px-1.5 py-0.5 text-xs text-ink-2">
+            <SlidingNumber value={files.length} />
+          </span>
+        </div>
+
+        {files.length > 0 && (
+          <InputGroup className="rounded-sm bg-board/50 [&_input]:max-md:min-h-11">
+            <InputGroupAddon align="inline-start" className="pl-2.5 text-icon">
+              <Search className="size-3.5" strokeWidth={1.5} aria-hidden />
+            </InputGroupAddon>
+            <InputGroupInput
+              id="today-file-search"
+              type="search"
+              aria-label="Filter workspace files"
+              placeholder="Search files…"
+              value={fileQuery}
+              onChange={(e) => setFileQuery(e.target.value)}
+              className="text-sm max-md:min-h-11"
+            />
+            {fileQuery && (
+              <InputGroupAddon align="inline-end" className="pr-1.5">
+                <Button
+                  type="button"
+                  size="icon-xs"
+                  variant="ghost"
+                  className="max-md:min-h-11 max-md:min-w-11"
+                  aria-label="Clear workspace file search"
+                  onClick={() => setFileQuery("")}
+                >
+                  <X className="size-3.5" strokeWidth={1.5} aria-hidden />
+                </Button>
+              </InputGroupAddon>
+            )}
+          </InputGroup>
+        )}
+
+        {files.length === 0 ? (
+          <p className="text-sm leading-5 text-ink-2">
+            Drop CSV, Markdown, or JSON files anywhere on Today, or upload below.
+          </p>
+        ) : filteredFiles.length === 0 ? (
+          <p className="text-sm text-ink-2">No files match &ldquo;{fileQuery}&rdquo;.</p>
+        ) : (
+          <ul className="divide-y divide-hairline rounded-sm border border-hairline bg-board/30">
+            {filteredFiles.map((f) => (
+              <li key={f.path} className="flex items-center justify-between gap-2 px-2.5 py-1.5">
+                <Button
+                  type="button"
+                  size="xs"
+                  variant="ghost"
+                  aria-label={`Open ${f.path}`}
+                  onClick={() => onOpenFile(f.path)}
+                  className="h-auto min-h-11 w-full justify-between gap-2 px-1 text-left font-normal text-ink hover:bg-board md:min-h-8"
+                >
+                  <span className="flex min-w-0 items-center gap-1.5">
+                    <FileGlyph name={f.path} className="size-3.5" />
+                    <span className="mono truncate text-xs">{f.path}</span>
+                  </span>
+                  <ArrowUpRight className="size-3.5 shrink-0 text-icon" strokeWidth={1.5} aria-hidden />
+                </Button>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            ref={sideUploadRef}
+            type="file"
+            multiple
+            className="hidden"
+            accept=".csv,.md,.txt,.json,.log,.tsv,.py,.ts,.tsx,.js,.rs,.toml,.yaml,.yml,.html"
+            onChange={async (ev) => {
+              if (ev.target.files?.length) await onUploadMany(ev.target.files);
+              ev.target.value = "";
+            }}
+          />
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="max-md:min-h-11"
+            onClick={() => sideUploadRef.current?.click()}
+          >
+            <Upload className="size-3.5" strokeWidth={1.5} aria-hidden />
+            Upload files
+          </Button>
+          {files.length > 0 && (
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              className="max-md:min-h-11"
+              onClick={onOpenFilesPanel}
+            >
+              Browse all ({files.length})
+            </Button>
+          )}
+        </div>
+      </section>
+
       <section id="offers-list" aria-labelledby="offers-h" className="flex flex-col gap-3 rounded-card border border-hairline bg-surface p-4">
         <div className="flex items-center justify-between gap-2">
           <h2 id="offers-h" className="text-base font-medium text-ink">Offers from your agent</h2>
@@ -163,7 +335,7 @@ export function PaperSide({ people, teamError, active, onSwitch, offers, learned
   );
 }
 
-export function usePaper(onChanged: () => void) {
+export function usePaper(onChanged: () => void, status?: Status | null | "error") {
   const [data, setData] = useState<Data | null>(null);
   const [failed, setFailed] = useState(false);
 
@@ -187,6 +359,15 @@ export function usePaper(onChanged: () => void) {
       setFailed(true);
       return;
     }
+
+    let extraReceipts: BriefJob[] = [];
+    if (status && hasV050Api(status, "receipts_export")) {
+      const rec = await call<{ receipts?: BriefJob[] }>("/api/receipts?limit=5000");
+      if (rec.ok && Array.isArray(rec.data.receipts)) {
+        extraReceipts = rec.data.receipts.filter((x): x is BriefJob => !!x && typeof x === "object");
+      }
+    }
+
     setFailed(false);
     setData({
       brief: b.data,
@@ -194,8 +375,9 @@ export function usePaper(onChanged: () => void) {
       offers: (o.data.offers ?? []).filter((x): x is Offer => !!x && typeof x === "object"),
       todayEvents: (td.data.events ?? []).filter((x): x is TodayEvent => !!x && typeof x === "object"),
       threads: (t.data.threads ?? []).filter((x): x is ThreadRow => !!x && typeof x === "object"),
+      extraReceipts,
     });
-  }, []);
+  }, [status]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -213,57 +395,172 @@ export function usePaper(onChanged: () => void) {
   return { data, failed, load, act };
 }
 
-export function PaperFace({ paper, personName, dateLabel, people, teamError, activePerson, onSwitchPerson, onAsk, onOpen, onOpenFile }: {
+export function PaperFace({
+  paper,
+  status,
+  personName,
+  dateLabel,
+  people,
+  teamError,
+  activePerson,
+  files,
+  busy,
+  liveTimeline,
+  liveElapsedMs,
+  streamMode,
+  cancelling,
+  onCancel,
+  onSwitchPerson,
+  onAsk,
+  onOpen,
+  onOpenFile,
+  onOpenFilesPanel,
+  onUploadMany,
+}: {
   paper: ReturnType<typeof usePaper>;
+  status: Status | null | "error";
   personName: string;
   dateLabel: string;
   people: Person[] | null;
   teamError: string;
   activePerson: string;
+  files: WorkspaceFile[];
+  busy: boolean;
+  liveTimeline: LiveRunStep[];
+  liveElapsedMs: number;
+  streamMode: "sse" | "poll";
+  cancelling: boolean;
+  onCancel: () => void;
   onSwitchPerson: (id: string) => void;
   onAsk: () => void;
   onOpen: (threadId: string) => void;
   onOpenFile: (path: string) => void;
+  onOpenFilesPanel: () => void;
+  onUploadMany: (files: FileList | File[]) => Promise<number>;
 }) {
   const { data, failed, load, act } = paper;
+  const [dragOver, setDragOver] = useState(false);
+  const [receiptQuery, setReceiptQuery] = useState("");
+  const [onlyWithFiles, setOnlyWithFiles] = useState(false);
+  const [receiptPage, setReceiptPage] = useState(0);
+  const [eventsPage, setEventsPage] = useState(0);
+
   const pending = data ? data.decisions.slice().reverse().filter((d) => d.status === "pending") : [];
   const settled = data ? data.decisions.slice().reverse().filter((d) => d.status !== "pending") : [];
-  const threadOf = (x: BriefJob) => x.thread_id ?? data?.threads.find((t) => t.title === x.task)?.id;
+  const threadOf = useCallback(
+    (x: BriefJob) => x.thread_id ?? data?.threads.find((t) => t.title === x.task)?.id,
+    [data?.threads]
+  );
   const when = (x: BriefJob) => {
     const id = threadOf(x);
     const ms = typeof x.ts === "number" ? x.ts : (id ? threadMs(id) : null);
     return ms ? relTime(ms) : String(x.date ?? "");
   };
-  const waitingThreads = new Set(pending.map((d) => d.thread_id).filter(Boolean));
-  const finished = (data?.brief.finished ?? [])
-    .filter((x): x is BriefJob => !!x && typeof x === "object")
-    .filter((x) => { const id = threadOf(x); return !id || !waitingThreads.has(id); });
-  const stopped = (data?.brief.stopped ?? []).filter((x): x is BriefJob => !!x && typeof x === "object");
+  const waitingThreads = useMemo(() => new Set(pending.map((d) => d.thread_id).filter(Boolean)), [pending]);
+
+  const finished = useMemo(() => {
+    const briefFin = (data?.brief.finished ?? [])
+      .filter((x): x is BriefJob => !!x && typeof x === "object")
+      .filter((x) => { const id = threadOf(x); return !id || !waitingThreads.has(id); });
+    const extra = data?.extraReceipts ?? [];
+    if (!extra.length) return briefFin;
+    const seen = new Set(briefFin.map((x) => x.id || `${x.thread_id || ""}|${x.task}|${x.ts || 0}`));
+    const merged = [...briefFin];
+    for (const r of extra) {
+      const id = threadOf(r);
+      if (id && waitingThreads.has(id)) continue;
+      const key = r.id || `${r.thread_id || ""}|${r.task}|${r.ts || 0}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        merged.push(r);
+      }
+    }
+    return merged;
+  }, [data?.brief.finished, data?.extraReceipts, threadOf, waitingThreads]);
+
+  const stopped = useMemo(
+    () => (data?.brief.stopped ?? []).filter((x): x is BriefJob => !!x && typeof x === "object"),
+    [data?.brief.stopped]
+  );
+
+  useEffect(() => {
+    setReceiptPage(0);
+  }, [receiptQuery, onlyWithFiles, finished.length]);
+
+  const filteredFinished = useMemo(() => {
+    const q = receiptQuery.trim().toLowerCase();
+    return finished.filter((x) => {
+      const fList = normalizeFiles(x.files);
+      if (onlyWithFiles && fList.length === 0) return false;
+      if (!q) return true;
+      return (
+        String(x.task ?? "").toLowerCase().includes(q) ||
+        String(x.summary ?? "").toLowerCase().includes(q) ||
+        fList.some((f) => f.toLowerCase().includes(q))
+      );
+    });
+  }, [finished, receiptQuery, onlyWithFiles]);
+
+  const totalReceiptPages = Math.max(1, Math.ceil(filteredFinished.length / RECEIPTS_PAGE_SIZE));
+  const safeReceiptPage = Math.min(receiptPage, totalReceiptPages - 1);
+  const visibleFinished = filteredFinished.slice(
+    safeReceiptPage * RECEIPTS_PAGE_SIZE,
+    (safeReceiptPage + 1) * RECEIPTS_PAGE_SIZE
+  );
+
+  const allEvents = data?.todayEvents ?? [];
+  const totalEventPages = Math.max(1, Math.ceil(allEvents.length / EVENTS_PAGE_SIZE));
+  const safeEventPage = Math.min(eventsPage, totalEventPages - 1);
+  const visibleEvents = allEvents.slice(safeEventPage * EVENTS_PAGE_SIZE, (safeEventPage + 1) * EVENTS_PAGE_SIZE);
+
   const lead = pending[0];
   const n = finished.length;
   const w = pending.length;
-  const totalSavedFiles = finished.reduce((acc, job) => acc + normalizeFiles(job.files).length, 0);
+  const totalSavedFiles = useMemo(
+    () => finished.reduce((acc, job) => acc + normalizeFiles(job.files).length, 0),
+    [finished]
+  );
+
+  const useServerExport = hasV050Api(status, "receipts_export");
+
+  const handleRowReceiptExport = async (job: BriefJob, idx: number, format: "md" | "json") => {
+    const id = job.id || job.thread_id || `receipt-${idx}`;
+    const res = await exportReceiptDownload(
+      {
+        id,
+        task: String(job.task ?? "Completed task"),
+        person: personName || "Active employee",
+        status: "finished",
+        summary: String(job.summary ?? ""),
+        ts: typeof job.ts === "number" ? job.ts : Date.now(),
+        files: normalizeFiles(job.files),
+      },
+      format,
+      useServerExport && Boolean(job.id || job.thread_id)
+    );
+    toast.success(`Exported ${res.filename} (sha256: ${res.sha256.slice(0, 12)}…)`);
+  };
 
   const trackerBlocks = useMemo<TrackerBlockProps[]>(() => {
     const SLOTS = 14;
     const real: { ts: number; color: string; tooltip: string }[] = [];
-    finished.forEach((f, idx) => {
-      const files = normalizeFiles(f.files);
-      const filePart = files.length ? ` · Saved ${files.join(", ")}` : "";
+    finished.slice(0, 60).forEach((f, idx) => {
+      const fl = normalizeFiles(f.files);
+      const filePart = fl.length ? ` · Saved ${fl.join(", ")}` : "";
       real.push({
         ts: typeof f.ts === "number" ? f.ts : idx + 1,
         color: "bg-dot-green",
         tooltip: `Finished: ${String(f.task ?? "Task")}${filePart}`,
       });
     });
-    pending.forEach((d, idx) => {
+    pending.slice(0, 30).forEach((d, idx) => {
       real.push({
         ts: typeof d.ts === "number" ? d.ts : 1000 + idx,
         color: "bg-dot-amber",
         tooltip: `Waiting on you: ${String(d.summary ?? "Approval needed")}`,
       });
     });
-    stopped.forEach((s, idx) => {
+    stopped.slice(0, 30).forEach((s, idx) => {
       real.push({
         ts: typeof s.ts === "number" ? s.ts : 500 + idx,
         color: "bg-dot-red",
@@ -298,13 +595,46 @@ export function PaperFace({ paper, personName, dateLabel, people, teamError, act
       onSwitch={onSwitchPerson}
       offers={data ? data.offers.slice().reverse().filter((o) => o.status === "pending") : null}
       learned={data ? (Array.isArray(data.brief.learned_recently) ? data.brief.learned_recently : []) : null}
+      files={files}
       failed={failed}
       onAct={act}
+      onOpenFile={onOpenFile}
+      onOpenFilesPanel={onOpenFilesPanel}
+      onUploadMany={onUploadMany}
     />
   );
 
   return (
-    <div className="mx-auto w-full max-w-[1160px] px-4 pb-14 pt-5 md:px-6">
+    <div
+      className="relative mx-auto w-full max-w-[1160px] px-4 pb-14 pt-5 md:px-6"
+      onDragOver={(e) => {
+        if (e.dataTransfer?.types?.includes("Files")) {
+          e.preventDefault();
+          setDragOver(true);
+        }
+      }}
+      onDragLeave={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragOver(false);
+      }}
+      onDrop={async (e) => {
+        if (!e.dataTransfer?.files?.length) return;
+        e.preventDefault();
+        setDragOver(false);
+        await onUploadMany(e.dataTransfer.files);
+      }}
+    >
+      {dragOver && (
+        <div
+          id="today-drop-overlay"
+          role="status"
+          className="pointer-events-none fixed inset-4 z-30 flex flex-col items-center justify-center gap-2 rounded-panel border-2 border-dashed border-blue bg-blue-soft p-6 text-center text-ink shadow-lift"
+        >
+          <Upload className="size-7 text-ink" strokeWidth={1.5} aria-hidden />
+          <p className="text-base font-medium text-ink">Drop files onto Today to upload to your workspace</p>
+          <p className="mono text-xs text-ink-2">CSV · Markdown · JSON · TXT · TSV · LOG (multi-file supported)</p>
+        </div>
+      )}
+
       <div className="grid grid-cols-[minmax(0,1fr)] gap-8 xl:grid-cols-[minmax(0,1fr)_312px]">
         <main className="grid min-w-0 grid-cols-[minmax(0,1fr)] content-start gap-7" aria-label="Today's paper">
           {failed && (
@@ -361,12 +691,22 @@ export function PaperFace({ paper, personName, dateLabel, people, teamError, act
                 </h1>
                 <p className="max-w-[64ch] text-ui leading-6 text-ink-2">
                   {lead
-                    ? `The decision below is the only item parked on you${w > 1 ? " first" : " today"}. Autonomous tasks finished in the last 48 hours are filed underneath with their workspace files.`
+                    ? `The decision below is the only item parked on you${w > 1 ? " first" : " today"}. Autonomous tasks finished are filed underneath with their workspace files and SHA-256 receipts.`
                     : n
-                      ? "Your agent has nothing waiting on your approval. Completed work from the last 48 hours is filed below."
-                      : "Describe a task in plain words. Your agent runs real workspace tools, saves the output file, and asks here before deleting anything."}
+                      ? "Your agent has nothing waiting on your approval. Completed work and workspace files are filed below."
+                      : "Describe a task in plain words or drop files onto this desk. Your agent runs real workspace tools and asks here before deleting anything."}
                 </p>
               </header>
+
+              {busy && (
+                <LiveRunTimeline
+                  steps={liveTimeline}
+                  elapsedMs={liveElapsedMs}
+                  streamMode={streamMode}
+                  cancelling={cancelling}
+                  onCancel={onCancel}
+                />
+              )}
 
               {/* Tremor Operational Outcome Strip */}
               <section
@@ -475,69 +815,167 @@ export function PaperFace({ paper, personName, dateLabel, people, teamError, act
                 )}
               </div>
 
-              {/* Finished Work Ledger */}
+              {/* Virtualized / Paginated Finished Work & Receipts Ledger */}
               {n > 0 && (
                 <section aria-labelledby="finished-h" className="grid gap-3">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <h2 id="finished-h" className="text-title font-medium text-ink">Finished</h2>
-                    <span className="mono text-xs text-ink-3">{n} in last 48h</span>
+                    <span className="mono text-xs text-ink-3">
+                      {filteredFinished.length === n
+                        ? `${n} ${n === 1 ? "receipt" : "receipts"}`
+                        : `${filteredFinished.length} of ${n} ${n === 1 ? "receipt" : "receipts"}`}
+                    </span>
                   </div>
-                  <motion.ol layout className="divide-y divide-hairline rounded-card border border-hairline bg-surface">
-                    {finished.map((x, i) => {
-                      const id = threadOf(x);
-                      const files = normalizeFiles(x.files);
-                      const taskTitle = String(x.task ?? "Completed task");
-                      return (
-                        <motion.li
-                          key={taskTitle + String(x.date ?? "") + i}
-                          layout
-                          initial={false}
-                          transition={layout}
-                          className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-1 px-4 py-3.5 md:grid-cols-[104px_minmax(0,1fr)_auto]"
-                        >
-                          <span className="mono col-span-2 text-xs text-ink-2 md:col-span-1">{when(x)}</span>
-                          <div className="min-w-0">
-                            <p className="text-ui font-medium leading-6 text-ink [overflow-wrap:anywhere]">{taskTitle}</p>
-                            <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5 text-xs text-ink-2">
-                              {files.length ? (
-                                <>
-                                  <span>Saved</span>
-                                  {files.map((f, k) => (
-                                    <Button
-                                      key={f + k}
-                                      size="xs"
-                                      variant="outline"
-                                      aria-label={`Open ${f}`}
-                                      onClick={() => onOpenFile(f)}
-                                      className="num max-md:min-h-11 max-w-full gap-1.5 rounded-chip border-hairline bg-board/60 px-2 text-xs font-normal text-ink hover:bg-board"
-                                    >
-                                      <FileGlyph name={f} />
-                                      <span className="truncate">{f}</span>
-                                      <ArrowUpRight className="size-3 shrink-0 text-icon" strokeWidth={1.5} aria-hidden />
-                                    </Button>
-                                  ))}
-                                </>
-                              ) : (
-                                "Nothing saved to your workspace"
+
+                  {n >= 3 && (
+                    <div className="flex flex-wrap items-center gap-2">
+                      <InputGroup className="min-w-[200px] flex-1 rounded-sm bg-surface [&_input]:max-md:min-h-11">
+                        <InputGroupAddon align="inline-start" className="pl-2.5 text-icon">
+                          <Search className="size-3.5" strokeWidth={1.5} aria-hidden />
+                        </InputGroupAddon>
+                        <InputGroupInput
+                          id="finished-search"
+                          type="search"
+                          aria-label="Filter finished receipts"
+                          placeholder={`Filter ${n} finished receipts or files…`}
+                          value={receiptQuery}
+                          onChange={(e) => setReceiptQuery(e.target.value)}
+                          className="text-sm max-md:min-h-11"
+                        />
+                        {receiptQuery && (
+                          <InputGroupAddon align="inline-end" className="pr-1.5">
+                            <Button
+                              type="button"
+                              size="icon-xs"
+                              variant="ghost"
+                              className="max-md:min-h-11 max-md:min-w-11"
+                              aria-label="Clear receipt filter"
+                              onClick={() => setReceiptQuery("")}
+                            >
+                              <X className="size-3.5" strokeWidth={1.5} aria-hidden />
+                            </Button>
+                          </InputGroupAddon>
+                        )}
+                      </InputGroup>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={onlyWithFiles ? "default" : "outline"}
+                        aria-pressed={onlyWithFiles}
+                        className="max-md:min-h-11"
+                        onClick={() => setOnlyWithFiles((v) => !v)}
+                      >
+                        With saved files
+                      </Button>
+                    </div>
+                  )}
+
+                  {visibleFinished.length === 0 ? (
+                    <p className="rounded-card border border-hairline bg-surface px-4 py-3 text-sm text-ink-2">
+                      No finished receipts match your filter.
+                    </p>
+                  ) : (
+                    <ol className="divide-y divide-hairline rounded-card border border-hairline bg-surface">
+                      {visibleFinished.map((x, i) => {
+                        const globalIdx = safeReceiptPage * RECEIPTS_PAGE_SIZE + i;
+                        const id = threadOf(x);
+                        const jobFiles = normalizeFiles(x.files);
+                        const taskTitle = String(x.task ?? "Completed task");
+                        return (
+                          <li
+                            key={(x.id ?? x.thread_id ?? taskTitle) + "-" + globalIdx}
+                            className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-1 px-4 py-3.5 md:grid-cols-[104px_minmax(0,1fr)_auto]"
+                          >
+                            <span className="mono col-span-2 text-xs text-ink-2 md:col-span-1">{when(x)}</span>
+                            <div className="min-w-0">
+                              <p className="text-ui font-medium leading-6 text-ink [overflow-wrap:anywhere]">{taskTitle}</p>
+                              <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5 text-xs text-ink-2">
+                                {jobFiles.length ? (
+                                  <>
+                                    <span>Saved</span>
+                                    {jobFiles.map((f, k) => (
+                                      <Button
+                                        key={f + k}
+                                        size="xs"
+                                        variant="outline"
+                                        aria-label={`Open ${f}`}
+                                        onClick={() => onOpenFile(f)}
+                                        className="num max-md:min-h-11 max-w-full gap-1.5 rounded-chip border-hairline bg-board/60 px-2 text-xs font-normal text-ink hover:bg-board"
+                                      >
+                                        <FileGlyph name={f} />
+                                        <span className="truncate">{f}</span>
+                                        <ArrowUpRight className="size-3 shrink-0 text-icon" strokeWidth={1.5} aria-hidden />
+                                      </Button>
+                                    ))}
+                                  </>
+                                ) : (
+                                  "Nothing saved to your workspace"
+                                )}
+                              </div>
+                            </div>
+                            <div className="flex flex-wrap items-center justify-end gap-1">
+                              <Button
+                                type="button"
+                                size="xs"
+                                variant="ghost"
+                                className="max-md:min-h-11 gap-1 text-xs text-ink-2 hover:text-ink"
+                                aria-label={`Export SHA-256 receipt for ${taskTitle}`}
+                                onClick={() => handleRowReceiptExport(x, globalIdx, "md")}
+                              >
+                                <FileDown className="size-3.5" strokeWidth={1.5} aria-hidden />
+                                <span>Receipt</span>
+                              </Button>
+                              {id && (
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="min-h-11"
+                                  aria-label={`Open the conversation: ${taskTitle}`}
+                                  onClick={() => onOpen(id)}
+                                >
+                                  Open
+                                  <ArrowUpRight className="size-4" strokeWidth={1.5} aria-hidden />
+                                </Button>
                               )}
                             </div>
-                          </div>
-                          {id && (
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              className="min-h-11"
-                              aria-label={`Open the conversation: ${taskTitle}`}
-                              onClick={() => onOpen(id)}
-                            >
-                              Open
-                              <ArrowUpRight className="size-4" strokeWidth={1.5} aria-hidden />
-                            </Button>
-                          )}
-                        </motion.li>
-                      );
-                    })}
-                  </motion.ol>
+                          </li>
+                        );
+                      })}
+                    </ol>
+                  )}
+
+                  {totalReceiptPages > 1 && (
+                    <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-ink-2">
+                      <span className="mono">
+                        Showing {safeReceiptPage * RECEIPTS_PAGE_SIZE + 1}–{Math.min((safeReceiptPage + 1) * RECEIPTS_PAGE_SIZE, filteredFinished.length)} of {filteredFinished.length}
+                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <Button
+                          type="button"
+                          size="xs"
+                          variant="outline"
+                          className="max-md:min-h-11"
+                          disabled={safeReceiptPage === 0}
+                          onClick={() => setReceiptPage((p) => Math.max(0, p - 1))}
+                        >
+                          Prev
+                        </Button>
+                        <span className="mono px-1">
+                          {safeReceiptPage + 1} / {totalReceiptPages}
+                        </span>
+                        <Button
+                          type="button"
+                          size="xs"
+                          variant="outline"
+                          className="max-md:min-h-11"
+                          disabled={safeReceiptPage >= totalReceiptPages - 1}
+                          onClick={() => setReceiptPage((p) => Math.min(totalReceiptPages - 1, p + 1))}
+                        >
+                          Next
+                        </Button>
+                      </div>
+                    </div>
+                  )}
                 </section>
               )}
 
@@ -546,7 +984,7 @@ export function PaperFace({ paper, personName, dateLabel, people, teamError, act
                 <section aria-labelledby="stopped-h" className="grid gap-3">
                   <h2 id="stopped-h" className="text-title font-medium text-ink">Did not finish</h2>
                   <ol className="divide-y divide-hairline rounded-card border border-hairline bg-surface">
-                    {stopped.map((x, i) => {
+                    {stopped.slice(0, 20).map((x, i) => {
                       const id = threadOf(x);
                       const taskTitle = String(x.task ?? "Stopped task");
                       return (
@@ -578,60 +1016,95 @@ export function PaperFace({ paper, personName, dateLabel, people, teamError, act
                 </section>
               )}
 
-              {/* Today so far (/api/today chronological activity stream) */}
+              {/* Today so far (/api/today paginated chronological activity stream) */}
               <section aria-labelledby="today-stream-h" className="grid gap-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <h2 id="today-stream-h" className="text-title font-medium text-ink">Today so far</h2>
-                  <span className="mono text-xs text-ink-3">{data.todayEvents.length} {data.todayEvents.length === 1 ? "event" : "events"}</span>
+                  <span className="mono text-xs text-ink-3">{allEvents.length} {allEvents.length === 1 ? "event" : "events"}</span>
                 </div>
-                {data.todayEvents.length === 0 ? (
+                {allEvents.length === 0 ? (
                   <p className="rounded-card border border-hairline bg-surface px-4 py-3 text-sm text-ink-2">
                     No activity logged yet today. New tool runs, decisions, and capability offers appear here in order.
                   </p>
                 ) : (
-                  <ol className="divide-y divide-hairline rounded-card border border-hairline bg-surface">
-                    {data.todayEvents.slice(0, 8).map((ev, i) => {
-                      const files = normalizeFiles(ev.files);
-                      const kind = String(ev.kind ?? "work");
-                      const EventIcon = kind === "decision" ? Clock : kind === "offer" ? Sparkles : kind === "decision_settled" ? CheckCircle2 : CheckCircle2;
-                      const iconCls = kind === "decision" ? "text-dot-amber" : kind === "offer" ? "text-dot-clay" : "text-dot-green";
-                      const timeStr = typeof ev.ts === "number" ? relTime(ev.ts) : "";
-                      return (
-                        <li key={String(ev.ts ?? i) + "-" + i} className="flex items-start gap-3 px-4 py-3">
-                          {kind === "stopped" ? (
-                            <XCircle className="mt-0.5 size-4 shrink-0 text-dot-red" strokeWidth={1.5} aria-hidden />
-                          ) : (
-                            <EventIcon className={cn("mt-0.5 size-4 shrink-0", iconCls)} strokeWidth={1.5} aria-hidden />
-                          )}
-                          <div className="min-w-0 flex-1">
-                            <div className="flex flex-wrap items-baseline justify-between gap-2">
-                              <p className="min-w-0 text-sm font-medium text-ink [overflow-wrap:anywhere]">{String(ev.title ?? "Activity")}</p>
-                              {timeStr && <span className="mono shrink-0 text-xs text-ink-3">{timeStr}</span>}
-                            </div>
-                            {ev.detail && <p className="mt-0.5 text-sm text-ink-2 [overflow-wrap:anywhere]">{String(ev.detail)}</p>}
-                            {files.length > 0 && (
-                              <div className="mt-1.5 flex flex-wrap items-center gap-2">
-                                {files.map((f, idx) => (
-                                  <Button
-                                    key={f + idx}
-                                    size="xs"
-                                    variant="outline"
-                                    aria-label={`Open ${f}`}
-                                    onClick={() => onOpenFile(f)}
-                                    className="mono max-md:min-h-11 max-w-full gap-1 rounded-chip border-hairline bg-board px-2 text-xs font-normal text-ink"
-                                  >
-                                    <FileGlyph name={f} className="size-3.5" />
-                                    <span className="truncate">{f}</span>
-                                    <ArrowUpRight className="size-3 shrink-0 text-icon" strokeWidth={1.5} aria-hidden />
-                                  </Button>
-                                ))}
-                              </div>
+                  <>
+                    <ol className="divide-y divide-hairline rounded-card border border-hairline bg-surface">
+                      {visibleEvents.map((ev, i) => {
+                        const evFiles = normalizeFiles(ev.files);
+                        const kind = String(ev.kind ?? "work");
+                        const EventIcon = kind === "decision" ? Clock : kind === "offer" ? Sparkles : CheckCircle2;
+                        const iconCls = kind === "decision" ? "text-dot-amber" : kind === "offer" ? "text-dot-clay" : "text-dot-green";
+                        const timeStr = typeof ev.ts === "number" ? relTime(ev.ts) : "";
+                        return (
+                          <li key={String(ev.ts ?? i) + "-" + i} className="flex items-start gap-3 px-4 py-3">
+                            {kind === "stopped" ? (
+                              <XCircle className="mt-0.5 size-4 shrink-0 text-dot-red" strokeWidth={1.5} aria-hidden />
+                            ) : (
+                              <EventIcon className={cn("mt-0.5 size-4 shrink-0", iconCls)} strokeWidth={1.5} aria-hidden />
                             )}
-                          </div>
-                        </li>
-                      );
-                    })}
-                  </ol>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex flex-wrap items-baseline justify-between gap-2">
+                                <p className="min-w-0 text-sm font-medium text-ink [overflow-wrap:anywhere]">{String(ev.title ?? "Activity")}</p>
+                                {timeStr && <span className="mono shrink-0 text-xs text-ink-3">{timeStr}</span>}
+                              </div>
+                              {ev.detail && <p className="mt-0.5 text-sm text-ink-2 [overflow-wrap:anywhere]">{String(ev.detail)}</p>}
+                              {evFiles.length > 0 && (
+                                <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                                  {evFiles.map((f, idx) => (
+                                    <Button
+                                      key={f + idx}
+                                      size="xs"
+                                      variant="outline"
+                                      aria-label={`Open ${f}`}
+                                      onClick={() => onOpenFile(f)}
+                                      className="mono max-md:min-h-11 max-w-full gap-1 rounded-chip border-hairline bg-board px-2 text-xs font-normal text-ink"
+                                    >
+                                      <FileGlyph name={f} className="size-3.5" />
+                                      <span className="truncate">{f}</span>
+                                      <ArrowUpRight className="size-3 shrink-0 text-icon" strokeWidth={1.5} aria-hidden />
+                                    </Button>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          </li>
+                        );
+                      })}
+                    </ol>
+
+                    {totalEventPages > 1 && (
+                      <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-ink-2">
+                        <span className="mono">
+                          Events {safeEventPage * EVENTS_PAGE_SIZE + 1}–{Math.min((safeEventPage + 1) * EVENTS_PAGE_SIZE, allEvents.length)} of {allEvents.length}
+                        </span>
+                        <div className="flex items-center gap-1.5">
+                          <Button
+                            type="button"
+                            size="xs"
+                            variant="outline"
+                            className="max-md:min-h-11"
+                            disabled={safeEventPage === 0}
+                            onClick={() => setEventsPage((p) => Math.max(0, p - 1))}
+                          >
+                            Prev
+                          </Button>
+                          <span className="mono px-1">
+                            {safeEventPage + 1} / {totalEventPages}
+                          </span>
+                          <Button
+                            type="button"
+                            size="xs"
+                            variant="outline"
+                            className="max-md:min-h-11"
+                            disabled={safeEventPage >= totalEventPages - 1}
+                            onClick={() => setEventsPage((p) => Math.min(totalEventPages - 1, p + 1))}
+                          >
+                            Next
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </>
                 )}
               </section>
             </>

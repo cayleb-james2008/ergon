@@ -15,5 +15,5 @@ These parts were edited in place after `sync-used` copied them. `frontend/script
 - `components/ui/command.tsx`: disabled input uses disabled ink, not opacity alone.
 - `components/ui/morphing-dialog.tsx`: backdrop uses `bg-ink/40` token (no literal white/black, no backdrop blur); exports `useMorphingDialog` so child forms can close cleanly on submit; supports optional controlled `open`/`onOpenChange` and sets `pointer-events-auto z-50` on its portal layers so dialogs lifted outside mobile Vaul drawers stay interactive.
 - `components/kibo-ui/pill/index.tsx`: mask gradient uses `currentColor` instead of literal white.
-- `components/ui/dialog.tsx`: backdrop uses `bg-ink/45` token (no literal black), surface/hairline/shadow-lift tokens, and 44px mobile close target with `focus-ring`.
+- `components/ui/dialog.tsx`: backdrop uses `bg-ink/45` token (no literal black), surface/hairline/shadow-lift tokens, scrollbar-safe `w-[calc(100%-2rem)]` (no `100vw` overflow), and 44px mobile close target with `focus-ring`.
 - `components/Tracker/Tracker.tsx`: `px-0` on the 4px scale and `transition-[color,background-color]` (no bare `.transition` class).

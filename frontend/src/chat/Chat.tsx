@@ -1,8 +1,8 @@
-// Chat face: active Field-Book conversation thread, live BorderTrail + TextShimmer streamed step ledger,
-// rich role-tailored Starter Task Cards (with category tags & Rune skill pills), and the pinned task composer
-// with direct workspace file upload.
-import { useEffect, useRef } from "react";
-import { ArrowRight, ArrowUpRight, Check, Paperclip, Send, Sparkles } from "lucide-react";
+// Chat face: active Field-Book conversation thread, live SSE BorderTrail + TextShimmer step timeline
+// with elapsed ms & active cancellation, rich role-tailored Starter Task Cards, and pinned task composer
+// with drag-and-drop multi-file workspace upload.
+import { useEffect, useRef, useState } from "react";
+import { ArrowRight, ArrowUpRight, Check, Clock, Paperclip, Radio, Send, Sparkles, Square, XCircle } from "lucide-react";
 import { BorderTrail } from "@/components/ui/border-trail";
 import { TextShimmer } from "@/components/ui/text-shimmer";
 import { Button } from "@/components/ui/button";
@@ -22,8 +22,8 @@ import {
   WaitingEntry,
   buildItems,
 } from "./Entry";
-import type { Msg, WorkspaceFile } from "@/lib/api";
-import { normalizeFiles, relTime, type StarterCard, threadMs, toolLabel } from "@/lib/words";
+import type { LiveRunStep, Msg, WorkspaceFile } from "@/lib/api";
+import { normalizeFiles, relTime, type StarterCard, threadMs } from "@/lib/words";
 import { cn } from "@/lib/utils";
 
 export function greeting(name: string, hour: number): string {
@@ -40,23 +40,102 @@ const TAG_TONE: Record<StarterCard["tone"], string> = {
   research: "bg-tag-research-bg text-tag-research-fg border-transparent",
 };
 
-function liveStepLabel(raw: string): { label: string; tool: string } {
-  const safe = String(raw ?? "");
-  const nl = safe.indexOf("\n");
-  const head = nl < 0 ? safe : safe.slice(0, nl);
-  const body = nl < 0 ? "" : safe.slice(nl + 1);
-  const m = /^Tool: (\S+)(?: \(via ([^)]+)\))?$/.exec(head);
-  return {
-    label: (m && toolLabel(m[1], m[2], body)) || head,
-    tool: m ? m[1] : "",
-  };
+function formatElapsed(ms: number): string {
+  if (!Number.isFinite(ms) || ms <= 0) return "0ms";
+  if (ms < 1000) return `${Math.round(ms)}ms`;
+  return `${(ms / 1000).toFixed(1)}s`;
+}
+
+export function LiveRunTimeline({
+  steps,
+  elapsedMs,
+  streamMode,
+  cancelling,
+  onCancel,
+}: {
+  steps: LiveRunStep[];
+  elapsedMs: number;
+  streamMode: "sse" | "poll";
+  cancelling: boolean;
+  onCancel: () => void;
+}) {
+  return (
+    <div id="live-run-timeline" role="status" className="relative overflow-hidden rounded-card border border-hairline bg-surface px-4 py-3.5">
+      <BorderTrail size={56} />
+      <div className="flex flex-wrap items-center justify-between gap-2 text-sm font-medium text-ink">
+        <span className="flex items-center gap-2.5">
+          <span aria-hidden className="size-2 rounded-full bg-blue motion-safe:animate-pulse" />
+          <TextShimmer as="span">Agent is working on it</TextShimmer>
+        </span>
+        <div className="flex flex-wrap items-center gap-2">
+          <Pill variant="secondary" className="border border-hairline bg-board px-2 py-0.5 text-xs text-ink-2">
+            <Radio className="size-3 text-dot-green" strokeWidth={1.75} aria-hidden />
+            <span className="mono">{streamMode === "sse" ? "Live SSE" : "Live status"}</span>
+          </Pill>
+          <span className="mono text-xs text-ink-2">{formatElapsed(elapsedMs)}</span>
+          {steps.length > 0 && (
+            <span className="mono text-xs text-ink-2">
+              {steps.length} {steps.length === 1 ? "step" : "steps"}
+            </span>
+          )}
+          <Button
+            id="cancel-run-btn"
+            type="button"
+            size="xs"
+            variant="outline"
+            disabled={cancelling}
+            className="max-md:min-h-11 gap-1.5 text-xs"
+            onClick={onCancel}
+          >
+            <Square className="size-3 fill-current" strokeWidth={1.5} aria-hidden />
+            {cancelling ? "Cancelling…" : "Cancel run"}
+          </Button>
+        </div>
+      </div>
+
+      {steps.length === 0 ? (
+        <p className="mt-1.5 text-xs text-ink-2">Streaming sandboxed workspace tools and verifying written files…</p>
+      ) : (
+        <ol aria-label="Live tool progress" className="mt-2.5 flex flex-col gap-1.5 border-t border-hairline pt-2.5">
+          {steps.map((s, idx) => (
+            <li key={s.id || idx} className="flex flex-wrap items-center justify-between gap-2 text-xs text-ink">
+              <span className="flex min-w-0 items-center gap-2">
+                {s.status === "running" ? (
+                  <span aria-hidden className="size-2 shrink-0 rounded-full bg-blue motion-safe:animate-pulse" />
+                ) : s.status === "waiting" ? (
+                  <Clock className="size-3.5 shrink-0 text-dot-amber" strokeWidth={1.75} aria-hidden />
+                ) : s.status === "error" ? (
+                  <XCircle className="size-3.5 shrink-0 text-dot-red" strokeWidth={1.75} aria-hidden />
+                ) : (
+                  <Check className="size-3.5 shrink-0 text-dot-green" strokeWidth={1.75} aria-hidden />
+                )}
+                <span className="truncate">{s.label || s.tool || "Running step"}</span>
+              </span>
+              <span className="flex shrink-0 items-center gap-1.5">
+                {s.tool && <span className="mono rounded-chip bg-track px-1.5 py-0.5 text-ink-2">{s.tool}</span>}
+                {typeof s.elapsed_ms === "number" && (
+                  <span className="mono text-ink-2">{formatElapsed(s.elapsed_ms)}</span>
+                )}
+              </span>
+            </li>
+          ))}
+        </ol>
+      )}
+    </div>
+  );
 }
 
 export function Thread({
   messages,
   busy,
-  liveSteps,
+  liveTimeline,
+  liveElapsedMs,
+  streamMode,
+  cancelling,
+  onCancel,
   threadId,
+  personName,
+  useServerExport,
   onReview,
   onStarter,
   onOpenFile,
@@ -68,8 +147,14 @@ export function Thread({
 }: {
   messages: Msg[];
   busy: boolean;
-  liveSteps: string[];
+  liveTimeline: LiveRunStep[];
+  liveElapsedMs: number;
+  streamMode: "sse" | "poll";
+  cancelling: boolean;
+  onCancel: () => void;
   threadId: string | null;
+  personName?: string;
+  useServerExport?: boolean;
   onReview: () => void;
   onStarter: (text: string) => void;
   onOpenFile: (path: string) => void;
@@ -86,7 +171,7 @@ export function Thread({
 
   useEffect(() => {
     if (items.length || busy) endRef.current?.scrollIntoView({ block: "end" });
-  }, [items.length, busy, liveSteps.length]);
+  }, [items.length, busy, liveTimeline.length]);
 
   if (!items.length && !busy) {
     return (
@@ -103,40 +188,26 @@ export function Thread({
 
   return (
     <div className="mx-auto flex w-full max-w-[780px] flex-col gap-5">
-      {items.map((it, i) => <Row key={i} it={it} time={time} onReview={onReview} onOpenFile={onOpenFile} />)}
+      {items.map((it, i) => (
+        <Row
+          key={i}
+          it={it}
+          time={time}
+          receiptId={threadId || undefined}
+          personName={personName}
+          useServerExport={useServerExport}
+          onReview={onReview}
+          onOpenFile={onOpenFile}
+        />
+      ))}
       {busy && (
-        <div role="status" className="relative overflow-hidden rounded-card border border-hairline bg-surface px-4 py-3.5">
-          <BorderTrail size={56} />
-          <div className="flex items-center justify-between gap-2.5 text-sm font-medium text-ink">
-            <span className="flex items-center gap-2.5">
-              <span aria-hidden className="size-2 rounded-full bg-blue motion-safe:animate-pulse" />
-              <TextShimmer as="span">Agent is working on it</TextShimmer>
-            </span>
-            {liveSteps.length > 0 && (
-              <span className="mono text-xs text-ink-3">
-                {liveSteps.length} {liveSteps.length === 1 ? "step" : "steps"}
-              </span>
-            )}
-          </div>
-          {liveSteps.length === 0 ? (
-            <p className="mt-1 text-xs text-ink-2">Running sandboxed workspace tools and verifying written files…</p>
-          ) : (
-            <ol aria-label="Live tool progress" className="mt-2.5 flex flex-col gap-1.5 border-t border-hairline pt-2.5">
-              {liveSteps.map((s, idx) => {
-                const parsed = liveStepLabel(s);
-                return (
-                  <li key={idx} className="flex items-center justify-between gap-2 text-xs text-ink">
-                    <span className="flex min-w-0 items-center gap-1.5">
-                      <Check className="size-3.5 shrink-0 text-dot-green" strokeWidth={1.75} aria-hidden />
-                      <span className="truncate">{parsed.label}</span>
-                    </span>
-                    {parsed.tool && <span className="mono shrink-0 rounded-chip bg-track px-1.5 py-0.5 text-ink-2">{parsed.tool}</span>}
-                  </li>
-                );
-              })}
-            </ol>
-          )}
-        </div>
+        <LiveRunTimeline
+          steps={liveTimeline}
+          elapsedMs={liveElapsedMs}
+          streamMode={streamMode}
+          cancelling={cancelling}
+          onCancel={onCancel}
+        />
       )}
       {pendingNote && (
         <p id="pending-note" role="status" className="rounded-card border border-hairline bg-board px-3.5 py-2.5 text-sm text-ink-2">
@@ -148,16 +219,32 @@ export function Thread({
   );
 }
 
-function Row({ it, time, onReview, onOpenFile }: {
+function Row({ it, time, receiptId, personName, useServerExport, onReview, onOpenFile }: {
   it: Item;
   time: string;
+  receiptId?: string;
+  personName?: string;
+  useServerExport?: boolean;
   onReview: () => void;
   onOpenFile: (path: string) => void;
 }) {
   switch (it.k) {
     case "user": return <UserLine text={it.text} />;
     case "step": return <ol className="rounded-card border border-hairline bg-surface px-3.5"><LedgerRow raw={it.text} /></ol>;
-    case "finished": return <FinishedEntry time={time} task={it.task} steps={it.steps} result={it.text} notes={it.notes} onOpenFile={onOpenFile} />;
+    case "finished":
+      return (
+        <FinishedEntry
+          time={time}
+          task={it.task}
+          steps={it.steps}
+          result={it.text}
+          notes={it.notes}
+          receiptId={receiptId}
+          personName={personName}
+          useServerExport={useServerExport}
+          onOpenFile={onOpenFile}
+        />
+      );
     case "waiting": return <WaitingEntry time={time} name={it.name} steps={it.steps} result={it.text} onReview={onReview} />;
     case "error": return <Failure raw={it.text} />;
     default: return <Reply text={it.text} />;
@@ -296,7 +383,7 @@ export function Composer({
   busy,
   disabled,
   files,
-  onUpload,
+  onUploadMany,
   onOpenFile,
 }: {
   value: string;
@@ -305,11 +392,12 @@ export function Composer({
   busy: boolean;
   disabled: boolean;
   files: WorkspaceFile[];
-  onUpload: (path: string, content: string) => Promise<boolean>;
+  onUploadMany: (picked: FileList | File[]) => Promise<number>;
   onOpenFile: (path: string) => void;
 }) {
   const ref = useRef<HTMLTextAreaElement>(null);
   const uploadRef = useRef<HTMLInputElement>(null);
+  const [dragOver, setDragOver] = useState(false);
   const canSend = !disabled && !!value.trim();
 
   useEffect(() => {
@@ -321,16 +409,29 @@ export function Composer({
 
   const handleFiles = async (ev: React.ChangeEvent<HTMLInputElement>) => {
     const picked = ev.target.files;
-    if (!picked || !picked.length) return;
-    for (const file of Array.from(picked)) {
-      const content = await file.text();
-      await onUpload(file.name, content);
-    }
+    if (picked && picked.length) await onUploadMany(picked);
     ev.target.value = "";
   };
 
   return (
-    <form id="composer" aria-label="Send a task" className="mx-auto w-full max-w-[780px]" onSubmit={(e) => { e.preventDefault(); onSend(); }}>
+    <form
+      id="composer"
+      aria-label="Send a task"
+      className="mx-auto w-full max-w-[780px]"
+      onSubmit={(e) => { e.preventDefault(); onSend(); }}
+      onDragOver={(e) => {
+        e.preventDefault();
+        setDragOver(true);
+      }}
+      onDragLeave={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragOver(false);
+      }}
+      onDrop={async (e) => {
+        e.preventDefault();
+        setDragOver(false);
+        if (e.dataTransfer?.files?.length) await onUploadMany(e.dataTransfer.files);
+      }}
+    >
       {files.length > 0 && (
         <div className="mb-2 flex flex-wrap items-center gap-1.5">
           <span className="text-xs text-ink-3">Workspace:</span>
@@ -353,13 +454,18 @@ export function Composer({
           )}
         </div>
       )}
-      <InputGroup className="min-h-14 items-end rounded-card border-input bg-surface shadow-raised">
+      <InputGroup
+        className={cn(
+          "min-h-14 items-end rounded-card bg-surface shadow-raised",
+          dragOver ? "border-blue bg-blue-soft" : "border-input"
+        )}
+      >
         <input
           ref={uploadRef}
           id="composer-file-input"
           type="file"
           multiple
-          className="sr-only"
+          className="hidden"
           accept=".csv,.md,.txt,.json,.log,.tsv,.py,.ts,.tsx,.js,.rs,.toml,.yaml,.yml,.html"
           onChange={handleFiles}
         />
@@ -383,7 +489,7 @@ export function Composer({
           rows={1}
           value={value}
           disabled={disabled}
-          placeholder="Describe a task in plain words"
+          placeholder={dragOver ? "Drop files to add to your workspace…" : "Describe a task in plain words"}
           className="max-h-[200px] min-h-14 py-3.5 text-ui"
           onChange={(e) => onChange(e.target.value)}
           onKeyDown={(e) => {
@@ -408,9 +514,9 @@ export function Composer({
         </InputGroupAddon>
       </InputGroup>
       <p className="mt-2 flex flex-wrap items-center gap-1.5 text-xs text-ink-2">
-        <span>Press <Kbd>Enter</Kbd> to send.</span>
+        <span>Press <Kbd>Enter</Kbd> to send or drop files here.</span>
         <span className="max-sm:hidden"><Kbd>Shift</Kbd> <Kbd>Enter</Kbd> starts a new line.</span>
-        <span className="ml-auto max-sm:hidden"><Kbd>⌘K</Kbd> focuses from anywhere</span>
+        <span className="ml-auto max-sm:hidden"><Kbd>⌘K</Kbd> command palette</span>
       </p>
     </form>
   );

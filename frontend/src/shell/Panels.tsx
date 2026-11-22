@@ -109,7 +109,7 @@ function PanelShell({
       <MorphingDialogContainer>
         <MorphingDialogContent
           style={{ borderRadius: 18 }}
-          className="relative mx-4 flex max-h-[82vh] w-[520px] max-w-[calc(100vw-2rem)] flex-col gap-3 overflow-y-auto border border-hairline bg-surface p-5 text-ink shadow-lift"
+          className="relative mx-4 flex max-h-[82vh] w-[520px] max-w-[calc(100%-2rem)] flex-col gap-3 overflow-y-auto border border-hairline bg-surface p-5 text-ink shadow-lift"
         >
           <MorphingDialogClose className="focus-ring absolute right-3 top-3 grid size-11 place-items-center rounded-sm text-icon outline-none hover:bg-board md:size-9" />
           <MorphingDialogTitle className="pr-10 text-title font-medium text-ink">{title}</MorphingDialogTitle>
