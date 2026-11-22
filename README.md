@@ -93,7 +93,7 @@ Without a reachable local gateway or `ERGON_MODEL_API_KEY`, the UI shows an hone
   the loop executes the tool for real, feeds the result back, and
   repeats (cap 24 steps).
 - **Tools & 12 Built-in Workflows** — `list_dir`, `read_file`, `write_file`, `search_files`, `move_file` (all sandboxed to the person's workspace), `fetch_url` (HTML→text), and twelve deterministic sandboxed workflows (`write_document`, `make_spreadsheet`, `research`, `update_memory`, `reconcile_ledger`, `summarize_meeting`, `audit_contract`, `triage_inbox`, `clean_dataset`, `compare_documents`, `draft_brief`, `extract_tables`, inspectable via `GET /api/skills` and testable in an ephemeral sandbox via `POST /api/skills/test`), plus `browse_library`, `install_item`, `publish_skill`, `delegate`, `delete_file` (which parks a decision instead of deleting directly), and `flag_decision`.
-- **Live SSE Streaming, Indexed Search, Routines & SHA-256 Receipts** — `GET /api/runs/stream` streams real-time tool steps, elapsed ms, file writes, and approvals with `POST /api/runs/:id/cancel`; `GET /api/search?q=...` and paginated `GET /api/receipts` / `GET /api/files` use a per-person `RwLock` inverted index tested at 5,000 receipts + 500 workspace files under 30 concurrent clients; `GET /api/receipts/:id/export?format=md|json` exports SHA-256 chained Field-Book provenance receipts; `GET/POST/DELETE /api/routines` + `POST /api/routines/:id/run` persist and execute standing recurring workflows.
+- **Live SSE Streaming, Background Routine Scheduler, File History & Audit Bundles** — `GET /api/runs/stream` streams real-time tool steps, elapsed ms, file writes, approvals, and `routine_fired` events with `POST /api/runs/:id/cancel`; `GET /api/search?q=...` and paginated `GET /api/receipts` / `GET /api/files` use a per-person `RwLock` inverted index tested at 5,000 receipts + 500 workspace files under 30 concurrent clients; `GET /api/files/history` + `POST /api/files/restore` maintain traversal-proof `.history/` snapshots with unified diff and reversible restore on every overwrite/delete; `GET/POST/PATCH/DELETE /api/routines`, `GET /api/routines/:id/history`, and `POST /api/routines/:id/run` run standing schedules automatically (opt-out via `ERGON_DISABLE_SCHEDULER=1`); `GET /api/audit/bundle?format=json|md` exports a tamper-evident Field-Book Audit Bundle combining the SHA-256 receipt chain, file digests, and routine history.
 - **Sandbox** — every path is resolved through a component-walking
   resolver that re-checks containment at each step, follows at most 16
   symlink hops, and treats a symlink as an object in its own right
@@ -120,7 +120,7 @@ Without a reachable local gateway or `ERGON_MODEL_API_KEY`, the UI shows an hone
 ## Verification
 
 ```sh
-CARGO_BUILD_JOBS=2 cargo test          # 128 Rust unit, E2E, scale & 12-workflow tests
+CARGO_BUILD_JOBS=2 cargo test          # 140 Rust unit, E2E, scale, scheduler/history & 12-workflow tests
 cd frontend && npm run check:ui        # Playwright E2E gate, graph probe, and worst-case replay
 ```
 

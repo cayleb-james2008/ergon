@@ -4,11 +4,18 @@ Each release is tagged `vMAJOR.MINOR.PATCH` and published on GitHub Releases wit
 binaries and a `SHA256SUMS` file. The running app shows its version and can update
 itself from the newest release (see README, "Versions and updates").
 
+## 0.7.0 - 2026-11-22
+
+- **Background Routine Scheduler & Atomic Run History (`src/scheduler.rs`, `PATCH /api/routines/:id`, `GET /api/routines/:id/history`):** Real background cadence ticker (`15s` default, opt-out via `ERGON_DISABLE_SCHEDULER=1`, SSE `routine_fired` broadcast), exact UTC calendar math (`every 15m`, `hourly`, `daily 09:00`, `weekly mon`, or `interval_secs`), pause/resume toggles, live `Next run` countdowns, and atomic per-person `routine_history.json` records with linked receipts.
+- **Automatic File Version History, Unified Diff & Reversible Restore (`src/file_history.rs`, `GET /api/files/history`, `POST /api/files/restore`):** Traversal-proof `.history/` revision snapshots recorded automatically on file upload, `write_file`, workflow write, and approved delete, with SHA-256 blob verification, LCS unified diff hunks, and atomic `pre-restore` version recovery inside `FileViewerModal`.
+- **Tamper-Evident Field-Book Audit Bundle (`src/audit_bundle.rs`, `GET /api/audit/bundle?format=json|md`):** One-click signed JSON and Markdown audit export combining verified SHA-256 receipt chains, workspace file digests, standing memory digest, routine history, and independent offline verification instructions.
+- **Mobile-Safe Workspace Switcher (`POST /api/people/switch`, `WorkspaceSwitcherPanel`):** Lifted outside mobile Vaul drawers (`z-50` over `z-40`) with Settings and `Cmd+K` access, plus full v0.7.0 browser-edition parity (`IndexedDB` file history/diff/restore, routine scheduler/history, audit bundle export).
+
 ## 0.6.0 - 2026-11-22
 
 - Hardened agent honesty loop (`src/lib.rs::run_loop`, `run_agent_live`): detects tasks naming a workspace tool/workflow or workspace file and rejects premature zero-tool `{"done": true}` replies (forcing real tool invocation against the workspace before finishing, and recording an explicit caution + `finished: false` receipt if a model still runs no tools).
 - Eliminated host filesystem path disclosure in workflow & workspace tool errors (`src/skills.rs::host_workspace_{read,write,list}`, `src/lib.rs::list_dir`) so missing-file and I/O errors report only workspace-relative paths.
-- Aligned numeric parsing in `clean_dataset` (`src/skills/clean_dataset.rn::parse_num`) with `reconcile_ledger` to parse accounting parenthesized negatives (`($12.34)`, `($1,250.50)`) accurately in dataset profiling and outlier detection.
+- Aligned numeric parsing in `clean_dataset` (`parse_num`) with `reconcile_ledger` to parse accounting parenthesized negatives (`($12.34)`, `($1,250.50)`) accurately in dataset profiling and outlier detection.
 - Verified end-to-end across 3 distinct fictional company workspaces (`northstar-freight`, `cedarbrook-dental`, `ironwood-mechanical`) with all workflows and `EC-01..EC-08` adversarial edge cases against live local Ollama.
 
 ## 0.5.0 - 2026-11-22
