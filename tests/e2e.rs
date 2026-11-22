@@ -3865,4 +3865,70 @@ fn security_fuzz_20_vectors_fail_closed_with_zero_500s() {
     }
 }
 
+#[test]
+fn skills_catalog_http_api_test_harness_and_agent_dispatch_work_end_to_end() {
+    let root = test_root("skills_http");
+    let stub = start_stub_model(vec![
+        json!({
+            "tool": "reconcile_ledger",
+            "args": { "source_files": ["q4.csv"], "output_title": "Q4 Ledger" }
+        })
+        .to_string(),
+        json!({
+            "done": true,
+            "summary": "Reconciled q4.csv into Q4 Ledger.md and Q4 Ledger.csv."
+        })
+        .to_string(),
+    ]);
+    let cfg = test_config(&root, None, format!("http://127.0.0.1:{}/v1", stub.port));
+    std::fs::write(
+        cfg.workspace_dir.join("q4.csv"),
+        "Ref,Vendor,Category,Amount,Receipt\nINV-1,Northstar,Cloud,100.50,verified\nINV-2,Apex,Storage,49.50,missing\n",
+    )
+    .unwrap();
+    let port = start_app(cfg);
+
+    // 1. GET /api/skills exposes all 12 built-in Rune skills
+    let (st, body) = http(port, "GET", "/api/skills", None);
+    assert_eq!(st, 200, "{body}");
+    let cat: Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(cat["count"], json!(12));
+    assert_eq!(cat["skills"].as_array().unwrap().len(), 12);
+
+    // 2. GET /api/skills/reconcile_ledger returns metadata
+    let (st, body) = http(port, "GET", "/api/skills/reconcile_ledger", None);
+    assert_eq!(st, 200, "{body}");
+    assert_eq!(serde_json::from_str::<Value>(&body).unwrap()["id"], json!("reconcile_ledger"));
+
+    // 3. POST /api/skills/test validate_all compiles all 12 Rune scripts
+    let (st, body) = http(port, "POST", "/api/skills/test", Some(&json!({"validate_all": true}).to_string()));
+    assert_eq!(st, 200, "{body}");
+    let val: Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(val["all_ok"], json!(true), "{val}");
+    assert_eq!(val["passed"], json!(12));
+
+    // 4. POST /api/skills/test dry-runs a built-in skill in an isolated sandbox
+    let (st, body) = http(port, "POST", "/api/skills/test", Some(&json!({"skill_id": "triage_inbox"}).to_string()));
+    assert_eq!(st, 200, "{body}");
+    let dry: Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(dry["ok"], json!(true), "{dry}");
+    assert!(!dry["files_written"].as_array().unwrap().is_empty(), "{dry}");
+
+    // 5. Agent chat loop executes new Rune skill & credits written files cleanly
+    let (st, body) = http(
+        port,
+        "POST",
+        "/api/chat",
+        Some(&json!({"thread_id": "", "message": "Reconcile q4.csv"}).to_string()),
+    );
+    assert_eq!(st, 200, "{body}");
+    assert!(root.join("data/workspace/Q4 Ledger.md").exists());
+    let (st, rbody) = http(port, "GET", "/api/receipts?limit=5", None);
+    assert_eq!(st, 200, "{rbody}");
+    let rv: Value = serde_json::from_str(&rbody).unwrap();
+    let files = rv["receipts"][0]["files"].as_array().unwrap();
+    assert!(files.iter().any(|f| f == "Q4 Ledger.md"), "expected Q4 Ledger.md credited: {rv}");
+}
+
+
 

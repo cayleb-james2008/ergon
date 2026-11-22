@@ -1,0 +1,428 @@
+//! Ergon skill: triage_inbox (Rune)
+//!
+//! Prioritizes messages, emails, or support tickets (from Markdown,
+//! plain text, CSV, or JSON exports in the workspace) into Urgent,
+//! Action, and FYI buckets with concrete next steps, matched trigger
+//! rationale, and exact source citations. Writes `<output_title>.md`.
+
+use std::cmp::Ordering;
+
+fn md_esc(text) {
+    text.replace("|", "\\|").replace("\n", " ").replace("\r", "")
+}
+
+fn clip(text, max_len) {
+    let t = text.trim();
+    if t.len() <= max_len {
+        return t;
+    }
+    let out = String::new();
+    let count = 0;
+    for ch in t.chars() {
+        if count >= max_len {
+            break;
+        }
+        out.push(ch);
+        count = count + 1;
+    }
+    out.push_str("...");
+    out
+}
+
+fn find_col(headers, needles) {
+    let i = 0;
+    while i < headers.len() {
+        let h = headers[i].trim().to_lowercase();
+        for n in needles {
+            if h == n || h.contains(n) {
+                return i;
+            }
+        }
+        i = i + 1;
+    }
+    return -1;
+}
+
+fn get_cell(row, idx) {
+    if idx < 0 || idx >= row.len() {
+        ""
+    } else {
+        row[idx].trim()
+    }
+}
+
+fn classify_item(sender, subject, body) {
+    let combined = `${sender} ${subject} ${body}`.to_lowercase();
+    let score = 10;
+    let has_urgent = false;
+    let reasons = [];
+    let next_step = "Skim and archive; no reply required";
+
+    // Urgent triggers
+    if combined.contains("outage") || combined.contains("sev0") || combined.contains("sev1") || combined.contains("production down") || combined.contains("prod down") || combined.contains("incident") {
+        has_urgent = true;
+        score = score + 85;
+        reasons.push("service incident/outage");
+        next_step = "Acknowledge immediately, open incident response, and update stakeholders within 15 min";
+    }
+    if combined.contains("security") || combined.contains("breach") || combined.contains("unauthorized") || combined.contains("phishing") || combined.contains("compromised") {
+        has_urgent = true;
+        score = score + 85;
+        reasons.push("security alert");
+        next_step = "Escalate to security team immediately and verify affected credentials/access";
+    }
+    if combined.contains("payroll") || combined.contains("wire transfer") || combined.contains("legal") || combined.contains("subpoena") || combined.contains("failed payment") {
+        has_urgent = true;
+        score = score + 75;
+        reasons.push("finance/legal critical");
+        next_step = "Verify details out-of-band and resolve before cutoff today";
+    }
+    if combined.contains("urgent") || combined.contains("asap") || combined.contains("critical") || combined.contains("blocker") || combined.contains("escalat") || combined.contains("past due") || combined.contains("overdue") || combined.contains("deadline today") || combined.contains("eod today") {
+        has_urgent = true;
+        score = score + 65;
+        reasons.push("urgent/deadline language");
+        if next_step == "Skim and archive; no reply required" {
+            next_step = "Respond today with owner, status, and concrete ETA";
+        }
+    }
+
+    // Action triggers (never escalate to Urgent without an Urgent trigger)
+    let has_action = false;
+    if combined.contains("approve") || combined.contains("approval") || combined.contains("sign off") || combined.contains("sign-off") {
+        has_action = true;
+        score = score + 30;
+        reasons.push("approval requested");
+        if !has_urgent {
+            next_step = "Review attached terms/numbers and send explicit approve/reject decision";
+        }
+    }
+    if combined.contains("invoice") || combined.contains("quote") || combined.contains("proposal") || combined.contains("renewal") || combined.contains("contract") {
+        has_action = true;
+        score = score + 25;
+        reasons.push("commercial/billing item");
+        if !has_urgent && next_step == "Skim and archive; no reply required" {
+            next_step = "Validate line items against budget/contract and route for sign-off";
+        }
+    }
+    if combined.contains("please send") || combined.contains("can you") || combined.contains("could you") || combined.contains("need your") || combined.contains("review") || combined.contains("feedback") || combined.contains("schedule") || combined.contains("meeting") || combined.contains("follow up") || combined.contains("ticket") || combined.contains("bug") || subject.contains("?") || body.contains("?") {
+        has_action = true;
+        score = score + 20;
+        reasons.push("direct request/question");
+        if !has_urgent && next_step == "Skim and archive; no reply required" {
+            next_step = "Draft reply answering the question or scheduling the requested step";
+        }
+    }
+
+    if !has_urgent && score >= 70 {
+        score = 65;
+    }
+
+    // FYI dampening triggers
+    if combined.contains("newsletter") || combined.contains("digest") || combined.contains("no-reply") || combined.contains("noreply") || combined.contains("automated notification") || combined.contains("release notes") || combined.contains("fyi:") || combined.contains("[fyi]") || combined.contains("weekly update") {
+        if !has_urgent {
+            has_action = false;
+            score = 15;
+            reasons.push("informational/automated");
+            next_step = "Skim and archive; no reply required";
+        }
+    }
+
+    let bucket = if has_urgent {
+        "Urgent"
+    } else if has_action || score >= 30 {
+        "Action"
+    } else {
+        "FYI"
+    };
+
+    let reason_str = if reasons.is_empty() {
+        "routine notice"
+    } else {
+        let s = String::new();
+        let first = true;
+        for r in reasons {
+            if !first {
+                s.push_str(", ");
+            }
+            s.push_str(r);
+            first = false;
+        }
+        s
+    };
+
+    (bucket, score, reason_str, next_step)
+}
+
+fn parse_table_items(rows) {
+    let items = [];
+    if rows.len() < 2 {
+        return items;
+    }
+    let headers = rows[0];
+    let id_col = find_col(headers, ["id", "ticket", "ref", "number"]);
+    let from_col = find_col(headers, ["from", "sender", "author", "customer", "requester"]);
+    let subj_col = find_col(headers, ["subject", "title", "summary", "topic"]);
+    let body_col = find_col(headers, ["body", "message", "description", "content", "text", "notes"]);
+    let prio_col = find_col(headers, ["priority", "severity", "urgency"]);
+
+    let r = 1;
+    while r < rows.len() {
+        let row = rows[r];
+        let cite = `[Row ${r + 1}]`;
+        let id = get_cell(row, id_col);
+        let sender = get_cell(row, from_col);
+        if sender.is_empty() {
+            sender = "Unknown";
+        }
+        let subject = get_cell(row, subj_col);
+        let body = get_cell(row, body_col);
+        let prio = get_cell(row, prio_col);
+        if !prio.is_empty() {
+            body = `${prio} ${body}`.trim();
+        }
+        if subject.is_empty() {
+            subject = clip(body.clone(), 80);
+        }
+        if !id.is_empty() {
+            subject = `[${id}] ${subject}`;
+        }
+        if !subject.is_empty() || !body.is_empty() {
+            items.push([cite, sender, subject, body]);
+        }
+        r = r + 1;
+    }
+    items
+}
+
+fn parse_text_items(normalized) {
+    let items = [];
+    let cur_cite = "";
+    let cur_sender = "";
+    let cur_subject = "";
+    let cur_body = String::new();
+    let has_cur = false;
+
+    let line_no = 0;
+    for raw_line in normalized.split("\n") {
+        line_no = line_no + 1;
+        let line = raw_line.trim();
+        let low = line.to_lowercase();
+
+        // Hard separator between messages
+        if line == "---" || line == "===" {
+            if has_cur {
+                items.push([cur_cite, if cur_sender.is_empty() { "Unknown" } else { cur_sender }, if cur_subject.is_empty() { clip(cur_body.clone(), 80) } else { cur_subject }, cur_body.trim()]);
+                cur_cite = "";
+                cur_sender = "";
+                cur_subject = "";
+                cur_body = String::new();
+                has_cur = false;
+            }
+            continue;
+        }
+
+        // New message header: From:, ## Heading, or bullet/numbered ticket item
+        if low.starts_with("from:") {
+            if has_cur {
+                items.push([cur_cite, if cur_sender.is_empty() { "Unknown" } else { cur_sender }, if cur_subject.is_empty() { clip(cur_body.clone(), 80) } else { cur_subject }, cur_body.trim()]);
+                cur_subject = "";
+                cur_body = String::new();
+            }
+            cur_cite = `[L${line_no}]`;
+            cur_sender = match line.split_once(":") { Some((_, v)) => v.trim(), None => "Unknown" };
+            has_cur = true;
+            continue;
+        }
+        if low.starts_with("subject:") {
+            if !has_cur {
+                cur_cite = `[L${line_no}]`;
+                cur_sender = "Unknown";
+                has_cur = true;
+            }
+            cur_subject = match line.split_once(":") { Some((_, v)) => v.trim(), None => line };
+            continue;
+        }
+        if line.starts_with("## ") || line.starts_with("### ") {
+            if has_cur {
+                items.push([cur_cite, if cur_sender.is_empty() { "Unknown" } else { cur_sender }, if cur_subject.is_empty() { clip(cur_body.clone(), 80) } else { cur_subject }, cur_body.trim()]);
+                cur_sender = "";
+                cur_body = String::new();
+            }
+            cur_cite = `[L${line_no}]`;
+            cur_subject = line.replace("### ", "").replace("## ", "").trim();
+            has_cur = true;
+            continue;
+        }
+        if (line.starts_with("- ") || line.starts_with("* ")) && !has_cur {
+            let text = line.replace("- ", "").replace("* ", "").trim();
+            let (sender, rest) = match text.split_once(":") {
+                Some((l, r)) if l.len() <= 32 => (l.trim(), r.trim()),
+                _ => ("Inbox", text),
+            };
+            items.push([`[L${line_no}]`, sender, clip(rest.clone(), 80), rest]);
+            continue;
+        }
+        if line.is_empty() {
+            continue;
+        }
+        if !has_cur {
+            // Standalone line item
+            let (sender, rest) = match line.split_once(":") {
+                Some((l, r)) if l.len() <= 32 && !l.starts_with("#") => (l.trim(), r.trim()),
+                _ => ("Inbox", line),
+            };
+            if !rest.starts_with("#") {
+                items.push([`[L${line_no}]`, sender, clip(rest.clone(), 80), rest]);
+            }
+        } else {
+            if !cur_body.is_empty() {
+                cur_body.push(' ');
+            }
+            cur_body.push_str(line);
+        }
+    }
+
+    if has_cur {
+        items.push([
+            cur_cite,
+            if cur_sender.is_empty() { "Unknown" } else { cur_sender },
+            if cur_subject.is_empty() { clip(cur_body.clone(), 80) } else { cur_subject },
+            cur_body.trim(),
+        ]);
+    }
+    items
+}
+
+fn sort_bucket_desc(list) {
+    list.sort_by(|a, b| {
+        if a[1] > b[1] {
+            Ordering::Less
+        } else if a[1] < b[1] {
+            Ordering::Greater
+        } else if a[0] < b[0] {
+            Ordering::Less
+        } else if a[0] > b[0] {
+            Ordering::Greater
+        } else {
+            Ordering::Equal
+        }
+    });
+    list
+}
+
+pub fn main(inbox_file, output_title) {
+    let src = inbox_file.trim();
+    if src.is_empty() {
+        return "error: triage_inbox requires an inbox_file path";
+    }
+    let raw = host_workspace_read(src.clone());
+    if raw.starts_with("error:") {
+        return raw;
+    }
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        let msg = `error: ${src} is empty`;
+        return msg;
+    }
+    let title = output_title.trim();
+    if title.is_empty() {
+        title = "Inbox Triage";
+    }
+
+    let low_src = src.to_lowercase();
+    let items = if low_src.ends_with(".json") || trimmed.starts_with("[") || trimmed.starts_with("{") {
+        parse_table_items(host_parse_json_table(raw))
+    } else if low_src.ends_with(".csv") {
+        parse_table_items(host_parse_csv(raw))
+    } else {
+        let normalized = raw.replace("\r\n", "\n").replace("\r", "\n");
+        parse_text_items(normalized)
+    };
+
+    if items.is_empty() {
+        let msg = `error: no messages or tickets found in ${src}`;
+        return msg;
+    }
+
+    let urgent = [];
+    let action = [];
+    let fyi = [];
+
+    for it in items {
+        let cite = it[0];
+        let sender = it[1];
+        let subject = it[2];
+        let body = it[3];
+        let (bucket, score, reason, next_step) = classify_item(sender.clone(), subject.clone(), body.clone());
+        let row = [cite, score, sender, subject, reason, next_step];
+        if bucket == "Urgent" {
+            urgent.push(row);
+        } else if bucket == "Action" {
+            action.push(row);
+        } else {
+            fyi.push(row);
+        }
+    }
+
+    let urgent = sort_bucket_desc(urgent);
+    let action = sort_bucket_desc(action);
+    let fyi = sort_bucket_desc(fyi);
+
+    let md = String::new();
+    md.push_str(`# ${title}\n\n`);
+    md.push_str("## Triage Summary\n\n");
+    md.push_str("| Bucket | Count | SLA Guidance |\n|---|---:|---|\n");
+    md.push_str(`| **Urgent** | ${urgent.len()} | Handle immediately (within 30 min) |\n`);
+    md.push_str(`| **Action** | ${action.len()} | Respond or complete today |\n`);
+    md.push_str(`| **FYI** | ${fyi.len()} | Batch review / archive |\n`);
+    md.push_str(`| **Total processed** | ${urgent.len() + action.len() + fyi.len()} | Source: \`${src}\` |\n`);
+
+    md.push_str("\n## Urgent\n\n");
+    if urgent.is_empty() {
+        md.push_str("_No urgent items detected._\n");
+    } else {
+        md.push_str("| Ref | Score | From | Subject | Signals | Concrete Next Step |\n|---|---:|---|---|---|---|\n");
+        for u in urgent {
+            md.push_str(`| ${u[0]} | ${u[1]} | ${md_esc(u[2])} | ${md_esc(u[3])} | ${md_esc(u[4])} | ${md_esc(u[5])} |\n`);
+        }
+    }
+
+    md.push_str("\n## Action Required\n\n");
+    if action.is_empty() {
+        md.push_str("_No action items detected._\n");
+    } else {
+        md.push_str("| Ref | Score | From | Subject | Signals | Concrete Next Step |\n|---|---:|---|---|---|---|\n");
+        for a in action {
+            md.push_str(`| ${a[0]} | ${a[1]} | ${md_esc(a[2])} | ${md_esc(a[3])} | ${md_esc(a[4])} | ${md_esc(a[5])} |\n`);
+        }
+    }
+
+    md.push_str("\n## FYI / Informational\n\n");
+    if fyi.is_empty() {
+        md.push_str("_No FYI items detected._\n");
+    } else {
+        md.push_str("| Ref | From | Subject | Next Step |\n|---|---|---|---|\n");
+        for f in fyi {
+            md.push_str(`| ${f[0]} | ${md_esc(f[2])} | ${md_esc(f[3])} | ${md_esc(f[5])} |\n`);
+        }
+    }
+
+    md.push_str("\n## Immediate Action Checklist\n\n");
+    for u in urgent {
+        md.push_str(`- [ ] **[URGENT]** ${u[3]} (${u[2]}) — ${u[5]} ${u[0]}\n`);
+    }
+    for a in action {
+        md.push_str(`- [ ] **[ACTION]** ${a[3]} (${a[2]}) — ${a[5]} ${a[0]}\n`);
+    }
+    if urgent.is_empty() && action.is_empty() {
+        md.push_str("- [x] Inbox clear — only FYI items remained.\n");
+    }
+
+    let filename = `${title}.md`;
+    let label = `file:${filename}`;
+    let res = host_workspace_write(filename, md);
+    if res != "ok" {
+        return res;
+    }
+    label
+}

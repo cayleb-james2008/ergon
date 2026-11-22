@@ -13,6 +13,7 @@ pub mod receipts;
 pub mod records;
 pub mod routines;
 pub mod search;
+pub mod skill_catalog;
 pub mod skills;
 pub mod sse;
 pub mod ui;
@@ -1523,7 +1524,13 @@ pub fn execute_tool(cfg: &Config, name: &str, args: &Value) -> Result<String, St
                 .ok_or("update_memory needs args.note")?;
             skills::update_memory(cfg, note)
         }
-        other => Err(format!("unknown tool: {other}")),
+        other => {
+            if let Some(res) = skills::dispatch_builtin_skill(cfg, other, args) {
+                res
+            } else {
+                Err(format!("unknown tool: {other}"))
+            }
+        }
     }
 }
 
@@ -1948,6 +1955,14 @@ fn system_prompt(cfg: &Config, suite_items: &[library::LibraryItem]) -> String {
          - search_files {{\"query\": \"quarterly\", \"path\": \".\"}} — search the workspace's text files for a phrase; returns matching lines with file and line number.\n\
          - move_file {{\"from\": \"a.txt\", \"to\": \"archive/a.txt\"}} — move or rename a workspace file.\n\
          - update_memory {{\"note\": \"...\"}} — record something you learned about this person (a preference or fact) into their long-term memory (a Rune skill).\n\
+         - reconcile_ledger {{\"source_files\": [\"expenses.csv\"], \"output_title\": \"Q4 Reconciliation\"}} — reconcile one or more CSV expense/invoice files with penny-exact totals, duplicate/missing-receipt flags, and vendor rollups (Rune skill).\n\
+         - summarize_meeting {{\"notes_file\": \"notes.md\", \"output_title\": \"Meeting Summary\"}} — extract decisions, owners, due dates, blockers, and follow-up drafts from meeting notes (Rune skill).\n\
+         - audit_contract {{\"contract_file\": \"msa.md\", \"required_clauses\": [\"termination\", \"liability\"], \"output_title\": \"Contract Audit\"}} — audit a contract for renewal dates, missing clauses, and line-cited risk redlines (Rune skill).\n\
+         - triage_inbox {{\"inbox_file\": \"inbox.md\", \"output_title\": \"Inbox Triage\"}} — classify tickets/messages into Urgent / Action / FYI queues with next steps (Rune skill).\n\
+         - clean_dataset {{\"input_file\": \"raw.csv\", \"key_column\": \"id\", \"output_title\": \"Cleaned Data\"}} — normalize CSV/JSON columns, deduplicate rows, flag outliers, and write clean CSV + diff report (Rune skill).\n\
+         - compare_documents {{\"left_file\": \"v1.md\", \"right_file\": \"v2.md\", \"output_title\": \"Diff Report\"}} — produce a line-by-line comparison and change summary between two workspace files (Rune skill).\n\
+         - draft_brief {{\"topic\": \"...\", \"source_files\": [\"a.md\"], \"audience\": \"Leadership\", \"output_title\": \"Brief\"}} — draft a source-cited executive brief grounded strictly in workspace files and memory (Rune skill).\n\
+         - extract_tables {{\"source_file\": \"notes.md\", \"output_title\": \"Extracted Table\"}} — extract Markdown tables, TSV, or structured logs into RFC-4180 CSV spreadsheet(s) (Rune skill).\n\
          - browse_library {{\"query\": \"spreadsheet\"}} — search the company-wide library of skills, subagents and apps shared by every person's agent.\n\
          - install_item {{\"item_id\": \"daily-log\"}} — add a library item to this person's suite, so it is yours to use from the next task on.\n\
          - publish_skill {{\"name\": \"...\", \"description\": \"...\", \"params\": [\"entry\"], \"source\": \"<Rune script>\"}} — contribute a reusable skill you wrote to the company library, so every person's agent can use it. Library skills are Rune scripts whose main takes the declared params as strings in order and returns a string (or \"file:<name>\" after writing a file through host_workspace_write). A script that does not compile is refused.\n\
@@ -2014,10 +2029,15 @@ fn credit_writes(
                 .written
                 .extend(extract_written(result_text, &cfg.workspace_dir));
         }
-        // A library skill from the person's suite: credit only files
-        // its result names that actually exist (its result text is a
-        // claim, checked like any other).
-        other if dynamic_skills.contains(other) => {
+        // Built-in Rune skills and library skills from the person's suite:
+        // credit every file named in the tool result that actually exists in
+        // the workspace (deduplicated).
+        other if skills::is_builtin_skill(other) || dynamic_skills.contains(other) => {
+            for f in extract_written(result_text, &cfg.workspace_dir) {
+                if !ledger.written.contains(&f) {
+                    ledger.written.push(f);
+                }
+            }
             for cands in mention_candidates(result_text) {
                 if let Some(found) = cands.iter().find(|c| {
                     sandbox_path(&cfg.workspace_dir, c)
@@ -3779,6 +3799,21 @@ fn handle_connection(mut stream: std::net::TcpStream, state: &AppState) -> std::
                     ("X-Content-Type-Options", "nosniff".to_string()),
                 ];
                 respond_bytes(&mut stream, 200, "application/json; charset=utf-8", &bytes, &headers)
+            }
+        }
+        ("GET", "/api/skills") => {
+            respond_json(&mut stream, 200, &skill_catalog::catalog_json())
+        }
+        ("POST", "/api/skills/test") => {
+            let parsed: Value = serde_json::from_slice(&req.body).unwrap_or(Value::Null);
+            let res = skill_catalog::handle_skill_test_request(&parsed);
+            respond_json(&mut stream, 200, &res)
+        }
+        ("GET", path) if path.starts_with("/api/skills/") => {
+            let id = path.trim_start_matches("/api/skills/").trim();
+            match skill_catalog::get_skill(id) {
+                Some(skill) => respond_json(&mut stream, 200, &skill.to_json()),
+                None => respond_json(&mut stream, 404, &json!({"error": "skill not found"})),
             }
         }
         ("GET", "/api/routines") => {

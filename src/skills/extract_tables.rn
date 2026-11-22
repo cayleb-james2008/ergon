@@ -1,0 +1,362 @@
+//! Ergon skill: extract_tables (Rune)
+//!
+//! Parses unstructured Markdown pipe tables, key=value structured log
+//! lines, tab-separated data, or Key: Value record blocks from a
+//! workspace file and writes clean RFC-4180 CSV spreadsheet(s) into the
+//! workspace.
+
+use std::collections::HashMap;
+
+fn csv_esc(cell) {
+    if !cell.contains(",") && !cell.contains("\"") && !cell.contains("\n") && !cell.contains("\r") {
+        return cell;
+    }
+    let doubled = cell.replace("\"", "\"\"");
+    `"${doubled}"`
+}
+
+fn render_csv(headers, rows) {
+    let out = String::new();
+    let h = 0;
+    while h < headers.len() {
+        if h > 0 {
+            out.push(',');
+        }
+        out.push_str(csv_esc(headers[h].clone()));
+        h = h + 1;
+    }
+    out.push('\n');
+    for row in rows {
+        let c = 0;
+        while c < headers.len() {
+            if c > 0 {
+                out.push(',');
+            }
+            let val = if c < row.len() { row[c].clone() } else { "" };
+            out.push_str(csv_esc(val));
+            c = c + 1;
+        }
+        out.push('\n');
+    }
+    out
+}
+
+fn split_pipe_row(line) {
+    let t = line.trim();
+    if t.starts_with("|") {
+        t = match t.get(1..) { Some(s) => s, None => t };
+    }
+    if t.ends_with("|") && !t.is_empty() {
+        let end = t.len() - 1;
+        t = match t.get(0..end) { Some(s) => s, None => t };
+    }
+    let cells = [];
+    for part in t.split("|") {
+        cells.push(part.trim());
+    }
+    cells
+}
+
+fn is_md_separator(line) {
+    let t = line.trim();
+    if !t.contains("-") {
+        return false;
+    }
+    let has_dash = false;
+    for ch in t.chars() {
+        if ch == '-' {
+            has_dash = true;
+        } else if ch != '|' && ch != ':' && ch != ' ' && ch != '\t' {
+            return false;
+        }
+    }
+    has_dash
+}
+
+fn extract_markdown_tables(lines) {
+    let tables = [];
+    let i = 0;
+    while i + 1 < lines.len() {
+        let cur = lines[i].trim();
+        let nxt = lines[i + 1].trim();
+        if cur.contains("|") && is_md_separator(nxt) {
+            let headers = split_pipe_row(cur);
+            if !headers.is_empty() {
+                let rows = [];
+                let j = i + 2;
+                while j < lines.len() {
+                    let row_l = lines[j].trim();
+                    if row_l.is_empty() || !row_l.contains("|") {
+                        break;
+                    }
+                    let cells = split_pipe_row(row_l);
+                    if !cells.is_empty() {
+                        rows.push(cells);
+                    }
+                    j = j + 1;
+                }
+                if !rows.is_empty() {
+                    tables.push([headers, rows]);
+                }
+                i = j;
+                continue;
+            }
+        }
+        i = i + 1;
+    }
+    tables
+}
+
+fn parse_kv_line(line) {
+    // Parse tokens of form key=value or key="quoted value", plus optional leading timestamp/[LEVEL].
+    let pairs = [];
+    let t = line.trim();
+    if !t.contains("=") {
+        return pairs;
+    }
+
+    // Tokenize respecting double quotes
+    let tokens = [];
+    let cur = String::new();
+    let in_q = false;
+    for ch in t.chars() {
+        if ch == '"' {
+            in_q = !in_q;
+            continue;
+        }
+        if !in_q && (ch == ' ' || ch == '\t') {
+            if !cur.is_empty() {
+                tokens.push(cur);
+                cur = String::new();
+            }
+        } else {
+            cur.push(ch);
+        }
+    }
+    if !cur.is_empty() {
+        tokens.push(cur);
+    }
+
+    let kv_found = 0;
+    let tok_idx = 0;
+    while tok_idx < tokens.len() {
+        let tok = tokens[tok_idx];
+        if let Some((k, v)) = tok.split_once("=") {
+            let key = k.trim();
+            let val = v.trim();
+            if !key.is_empty() && key.len() <= 40 && !key.contains("/") && !key.contains(":") {
+                pairs.push([key, val]);
+                kv_found = kv_found + 1;
+            }
+        } else if tok_idx == 0 && (tok.contains("T") || (tok.len() >= 10 && tok.contains("-"))) {
+            pairs.push(["timestamp", tok]);
+        } else if tok.starts_with("[") && tok.ends_with("]") && tok.len() >= 3 {
+            let lvl = tok.replace("[", "").replace("]", "").trim();
+            if !lvl.is_empty() && lvl.len() <= 16 {
+                pairs.push(["level", lvl]);
+            }
+        }
+        tok_idx = tok_idx + 1;
+    }
+
+    if kv_found == 0 {
+        return [];
+    }
+    pairs
+}
+
+fn extract_kv_log_table(lines) {
+    let header_order = [];
+    let header_idx = HashMap::new();
+    let records = [];
+
+    for raw in lines {
+        let pairs = parse_kv_line(raw);
+        if pairs.is_empty() {
+            continue;
+        }
+        let rec = HashMap::new();
+        for p in pairs {
+            let k = p[0];
+            let v = p[1];
+            if !header_idx.contains_key(k.clone()) {
+                header_idx.insert(k.clone(), header_order.len());
+                header_order.push(k.clone());
+            }
+            rec.insert(k, v);
+        }
+        records.push(rec);
+    }
+
+    if records.is_empty() || header_order.is_empty() {
+        return [];
+    }
+
+    let rows = [];
+    for rec in records {
+        let row = [];
+        for col in header_order {
+            match rec.get(col.clone()) {
+                Some(v) => row.push(v),
+                None => row.push(""),
+            }
+        }
+        rows.push(row);
+    }
+    return [[header_order, rows]];
+}
+
+fn extract_tsv_table(lines) {
+    let header = [];
+    let rows = [];
+    for raw in lines {
+        let t = raw.trim();
+        if t.is_empty() || !t.contains("\t") {
+            continue;
+        }
+        let cells = [];
+        for part in t.split("\t") {
+            cells.push(part.trim());
+        }
+        if cells.len() >= 2 {
+            if header.is_empty() {
+                header = cells;
+            } else {
+                rows.push(cells);
+            }
+        }
+    }
+    if header.is_empty() || rows.is_empty() {
+        return [];
+    }
+    return [[header, rows]];
+}
+
+fn extract_colon_blocks(lines) {
+    let header_order = [];
+    let header_seen = HashMap::new();
+    let records = [];
+    let cur = HashMap::new();
+    let cur_count = 0;
+
+    for raw in lines {
+        let t = raw.trim();
+        if t.is_empty() || t == "---" {
+            if cur_count >= 2 {
+                records.push(cur);
+            }
+            cur = HashMap::new();
+            cur_count = 0;
+            continue;
+        }
+        if let Some((k, v)) = t.split_once(":") {
+            let key = k.trim();
+            let val = v.trim();
+            if !key.is_empty() && key.len() <= 32 && !key.starts_with("#") && !val.is_empty() {
+                if !header_seen.contains_key(key.clone()) {
+                    header_seen.insert(key.clone(), true);
+                    header_order.push(key.clone());
+                }
+                cur.insert(key, val);
+                cur_count = cur_count + 1;
+            }
+        }
+    }
+    if cur_count >= 2 {
+        records.push(cur);
+    }
+
+    if records.is_empty() || header_order.len() < 2 {
+        return [];
+    }
+
+    let rows = [];
+    for rec in records {
+        let row = [];
+        for col in header_order {
+            match rec.get(col.clone()) {
+                Some(v) => row.push(v),
+                None => row.push(""),
+            }
+        }
+        rows.push(row);
+    }
+    return [[header_order, rows]];
+}
+
+pub fn main(source_file, output_title) {
+    let src = source_file.trim();
+    if src.is_empty() {
+        return "error: extract_tables requires a source_file path";
+    }
+    let raw = host_workspace_read(src.clone());
+    if raw.starts_with("error:") {
+        return raw;
+    }
+    let norm = raw.replace("\r\n", "\n").replace("\r", "\n");
+    if norm.trim().is_empty() {
+        let msg = `error: ${src} is empty`;
+        return msg;
+    }
+
+    let title = output_title.trim();
+    if title.is_empty() {
+        title = "Extracted Table";
+    }
+
+    let lines = [];
+    for l in norm.split("\n") {
+        lines.push(l);
+    }
+
+    let tables = extract_markdown_tables(lines.clone());
+    if tables.is_empty() {
+        tables = extract_kv_log_table(lines.clone());
+    }
+    if tables.is_empty() {
+        tables = extract_tsv_table(lines.clone());
+    }
+    if tables.is_empty() {
+        tables = extract_colon_blocks(lines);
+    }
+
+    if tables.is_empty() {
+        let msg = `error: no extractable tables or structured log records found in ${src}`;
+        return msg;
+    }
+
+    let written_files = [];
+    let t_idx = 0;
+    while t_idx < tables.len() {
+        let tbl = tables[t_idx];
+        let csv = render_csv(tbl[0], tbl[1]);
+        let fname = if t_idx == 0 {
+            `${title}.csv`
+        } else {
+            `${title} - Table ${t_idx + 1}.csv`
+        };
+        let fname_copy = fname.clone();
+        let res = host_workspace_write(fname, csv);
+        if res != "ok" {
+            return res;
+        }
+        written_files.push(fname_copy);
+        t_idx = t_idx + 1;
+    }
+
+    if written_files.len() == 1 {
+        let label = `file:${written_files[0]}`;
+        return label;
+    }
+    let out = String::new();
+    out.push_str("files:");
+    let first = true;
+    for f in written_files {
+        if !first {
+            out.push('|');
+        }
+        out.push_str(f);
+        first = false;
+    }
+    out
+}
