@@ -1,11 +1,15 @@
 // Signature object: the Field-Book Work Entry.
 // Ink head strip (timestamp in Geist Mono, task title, semantic status pill), ruled metadata grid,
-// workspace saved-file rows with file-type glyphs, summary prose, and Cult UI Expandable raw tool-step inspector.
-import { ArrowUpRight, Check, ChevronDown, Hourglass } from "lucide-react";
+// workspace saved-file rows with file-type glyphs, summary prose, one-click SHA-256 receipt export,
+// and Cult UI Expandable raw tool-step inspector.
+import { useState } from "react";
+import { ArrowUpRight, Check, ChevronDown, FileDown, Hourglass } from "lucide-react";
+import { toast } from "sonner";
 import { Expandable, ExpandableContent, ExpandableTrigger } from "@/components/ui/expandable";
 import { Button } from "@/components/ui/button";
 import { Pill } from "@/components/kibo-ui/pill";
 import { cn } from "@/lib/utils";
+import { exportReceiptDownload } from "@/lib/receiptExport";
 import { fileIconFor, savedFile, toolLabel } from "@/lib/words";
 import type { Msg } from "@/lib/api";
 
@@ -162,16 +166,45 @@ export function StepList({ steps }: { steps: string[] }) {
   );
 }
 
-export function FinishedEntry({ time, task, steps, result, notes, onOpenFile }: {
+export function FinishedEntry({ time, task, steps, result, notes, receiptId, personName, useServerExport, onOpenFile }: {
   time: string;
   task: string;
   steps: string[];
   result: string;
   notes: string[];
+  receiptId?: string;
+  personName?: string;
+  useServerExport?: boolean;
   onOpenFile?: (path: string) => void;
 }) {
+  const [exporting, setExporting] = useState(false);
   const files = savedList(steps);
   const stepWord = steps.length === 1 ? "1 tool step" : `${steps.length} tool steps`;
+
+  const handleExport = async (format: "md" | "json") => {
+    setExporting(true);
+    try {
+      const res = await exportReceiptDownload(
+        {
+          id: receiptId || `fb-${Date.now()}`,
+          task: task || "Completed task",
+          person: personName || "Active employee",
+          status: "finished",
+          summary: result,
+          files,
+          steps,
+        },
+        format,
+        Boolean(useServerExport && receiptId)
+      );
+      toast.success(`Exported ${res.filename} (sha256: ${res.sha256.slice(0, 12)}…)`);
+    } catch {
+      toast.error("Could not export receipt.");
+    } finally {
+      setExporting(false);
+    }
+  };
+
   return (
     <EntryShell label="Finished work" time={time} title={task || "Completed task"} status={<FinishedPill />}>
       <Cells>
@@ -182,6 +215,30 @@ export function FinishedEntry({ time, task, steps, result, notes, onOpenFile }: 
       <div className="flex flex-col gap-3 px-4 py-4">
         <p className="whitespace-pre-wrap break-words text-ui leading-6 text-ink">{result}</p>
         {notes.map((n, idx) => <Note key={idx} text={n} />)}
+        <div className="flex flex-wrap items-center gap-2 pt-0.5">
+          <Button
+            type="button"
+            size="xs"
+            variant="outline"
+            className="max-md:min-h-11 gap-1.5 text-xs"
+            disabled={exporting}
+            onClick={() => handleExport("md")}
+          >
+            <FileDown className="size-3.5" strokeWidth={1.5} aria-hidden />
+            SHA-256 Receipt (.md)
+          </Button>
+          <Button
+            type="button"
+            size="xs"
+            variant="outline"
+            className="max-md:min-h-11 gap-1.5 text-xs"
+            disabled={exporting}
+            onClick={() => handleExport("json")}
+          >
+            <FileDown className="size-3.5" strokeWidth={1.5} aria-hidden />
+            Receipt (.json)
+          </Button>
+        </div>
         {steps.length > 0 && (
           <Details label={`Inspect tool steps (${steps.length})`}>
             <StepList steps={steps} />

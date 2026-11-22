@@ -190,12 +190,52 @@ await reset();
   ok("empty chat renders 4 rich starter cards and fills composer", starterCount === 4 && draftFilled);
   await p.screenshot({ path: `${OUT}/empty-starters-1440.png` });
 
-  // Ctrl+K from Work Graph jumps back to Chat composer
+  // Ctrl+K opens Global Command Palette (cmdk), filters 12 Rune skills, and Enter on "New task" focuses Chat composer
   await p.locator('[role="tab"][data-id="graph"]').click();
   await p.waitForTimeout(300);
   await p.keyboard.press("Control+k");
+  await p.waitForSelector("#command-palette-dialog", { timeout: 4000 });
+  const cmdInput = p.locator('[data-cmdk-input="command-palette"]');
+  await cmdInput.waitFor({ state: "visible", timeout: 4000 });
+  const paletteInputFocused = await p.evaluate(() => document.activeElement?.getAttribute("data-cmdk-input") === "command-palette");
+  await cmdInput.fill("reconcile");
+  await p.waitForTimeout(200);
+  const skillHitVisible = await p.locator("#command-palette-dialog").getByText("Reconcile ledger").isVisible();
+  await cmdInput.fill("New task");
+  await p.waitForTimeout(150);
+  await p.keyboard.press("Enter");
   await p.waitForTimeout(300);
-  ok("ctrl+k jumps to Chat composer", await p.evaluate(() => document.activeElement?.id === "composer-input"));
+  const composerFocusedViaPalette = await p.evaluate(() => document.activeElement?.id === "composer-input");
+  ok(
+    "ctrl+k opens Command Palette, searches 12 Rune skills, and runs New task",
+    paletteInputFocused && skillHitVisible && composerFocusedViaPalette,
+    `focused=${paletteInputFocused} skill=${skillHitVisible} composer=${composerFocusedViaPalette}`
+  );
+
+  // 12 Rune Skills & Recurring Routines MorphingDialogs open, filter/create/delete, and close cleanly
+  await p.locator('[data-thing="skills-btn"]').click();
+  await p.waitForSelector("#skills-panel", { timeout: 4000 });
+  const skillCardCount = await p.locator("#skills-panel [data-skill-id]").count();
+  await p.locator("#skills-panel [data-skill-id='reconcile_ledger']").getByRole("button", { name: "Test skill" }).click();
+  await p.waitForSelector("#skills-panel [role='status']", { timeout: 4000 });
+  await p.keyboard.press("Escape");
+  await p.locator("#skills-panel").waitFor({ state: "hidden", timeout: 4000 }).catch(() => {});
+  ok("skills morphing dialog lists all 12 Rune skills and tests cleanly", skillCardCount === 12, `count=${skillCardCount}`);
+
+  await p.locator('[data-thing="routines-btn"]').click();
+  await p.waitForSelector("#routines-panel", { timeout: 4000 });
+  await p.locator("#routines-panel").getByRole("button", { name: "New routine" }).click();
+  await p.locator("#routine-name").fill("Morning audit routine");
+  await p.locator("#routine-prompt").fill("Reconcile expenses and write summary.");
+  await p.locator("#routine-create-form").getByRole("button", { name: "Save routine" }).click();
+  await p.waitForTimeout(250);
+  const routineCreated = (await p.locator("#routines-panel [data-routine-id]").count()) >= 1;
+  await p.locator("#routines-panel").getByRole("button", { name: /Delete routine Morning audit routine/ }).click();
+  await p.waitForTimeout(200);
+  const routineDeleted = (await p.locator("#routines-panel").getByText("Morning audit routine").count()) === 0;
+  await p.keyboard.press("Escape");
+  await p.locator("#routines-panel").waitFor({ state: "hidden", timeout: 4000 }).catch(() => {});
+  ok("routines morphing dialog creates and deletes recurring routines", routineCreated && routineDeleted);
 
   // Learned & Suite MorphingDialogs open and close on Escape
   await p.locator('[data-thing="memory-btn"]').click();
@@ -231,22 +271,74 @@ await reset();
   ok("theme switcher is tucked inside Settings, not main rail", (await p.locator('[aria-label="Appearance"]').count()) === 0);
   ok("no fixture demo pill rendered", (await p.getByText("fixture demo", { exact: true }).count()) === 0);
 
-  // Real Workspace File Upload (via active browser session) + Workspace Files panel + File Viewer table rendering
+  // Real Workspace File Upload + upgraded FileViewerModal (CSV sort/filter + SHA-256 export, MD section jump, JSON tree)
   await p.evaluate(async () => {
     await fetch("/api/files/upload", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ path: "q4-audit.csv", content: "Vendor,Amount,Status\nAcme Cloud,420.50,verified\nDelta Corp,180.00,missing\n" }),
+      body: JSON.stringify({ path: "q4-audit.csv", content: "Vendor,Amount,Status\nAcme Cloud,420.50,verified\nDelta Corp,180.00,missing\nZenith Freight,950.00,verified\n" }),
+    });
+    await fetch("/api/files/upload", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ path: "brief-sections.md", content: "# Q4 Ops Brief\n\n## Financial Summary\nAll totals checked.\n\n## Open Risks\nOne receipt pending.\n" }),
+    });
+    await fetch("/api/files/upload", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ path: "desk-config.json", content: JSON.stringify({ desk: "ergon", version: "0.5.0", rules: ["strict-sha256", "sandboxed"] }) }),
     });
   });
   await p.locator('[data-thing="files-btn"]').click();
   await p.waitForSelector("#workspace-files-panel", { timeout: 4000 });
-  await p.getByRole("button", { name: "Open q4-audit.csv" }).click();
+  await p.locator("#workspace-file-search").fill("q4-audit");
+  await p.waitForTimeout(150);
+  await p.locator("#workspace-files-panel").getByRole("button", { name: "Open q4-audit.csv" }).click();
   await p.waitForSelector("#file-viewer-dialog table", { timeout: 5000 });
   const viewerTxt = await p.locator("#file-viewer-dialog").innerText();
-  ok("workspace file viewer renders real CSV table", viewerTxt.includes("Acme Cloud") && viewerTxt.includes("420.50") && viewerTxt.includes("Delta Corp"));
+  await p.locator("#file-viewer-dialog thead").getByRole("button", { name: "Amount" }).click();
+  await p.waitForTimeout(150);
+  const firstSortedRow = await p.locator("#file-viewer-dialog tbody tr").first().innerText();
+  await p.locator("#csv-filter-input").fill("Delta");
+  await p.waitForTimeout(150);
+  const filteredCsvRows = await p.locator("#file-viewer-dialog tbody tr").count();
+  await p.locator("#file-viewer-dialog").getByRole("button", { name: "SHA-256 Receipt (.md)" }).click();
+  const receiptToastOk = await p.waitForSelector("text=sha256:", { timeout: 4000 }).then(() => true, () => false);
+  ok(
+    "workspace file viewer sorts/filters CSV and exports SHA-256 receipt",
+    viewerTxt.includes("Acme Cloud") && firstSortedRow.includes("Delta Corp") && filteredCsvRows === 1 && receiptToastOk,
+    `first=${firstSortedRow.slice(0, 30)} rows=${filteredCsvRows} toast=${receiptToastOk}`
+  );
   await p.keyboard.press("Escape");
   await p.locator("#file-viewer-dialog").waitFor({ state: "hidden", timeout: 4000 }).catch(() => {});
+
+  // Markdown section jump & JSON collapsible tree checks
+  await p.locator('[data-thing="files-btn"]').click();
+  await p.waitForSelector("#workspace-files-panel", { timeout: 4000 });
+  await p.locator("#workspace-files-panel").getByRole("button", { name: "Open brief-sections.md" }).click();
+  await p.waitForSelector('nav[aria-label="Markdown section jump"]', { timeout: 4000 });
+  const mdJumpCount = await p.locator('nav[aria-label="Markdown section jump"] button').count();
+  await p.keyboard.press("Escape");
+  await p.locator("#file-viewer-dialog").waitFor({ state: "hidden", timeout: 4000 }).catch(() => {});
+
+  await p.locator('[data-thing="files-btn"]').click();
+  await p.waitForSelector("#workspace-files-panel", { timeout: 4000 });
+  await p.locator("#workspace-files-panel").getByRole("button", { name: "Open desk-config.json" }).click();
+  await p.waitForSelector("#json-tree-view", { timeout: 4000 });
+  const jsonTreeOk = await p.locator("#json-tree-view").isVisible();
+  await p.keyboard.press("Escape");
+  await p.locator("#file-viewer-dialog").waitFor({ state: "hidden", timeout: 4000 }).catch(() => {});
+  ok("file viewer supports Markdown section jump and JSON collapsible tree", mdJumpCount >= 2 && jsonTreeOk, `mdJump=${mdJumpCount} json=${jsonTreeOk}`);
+
+  // Drag-and-drop multi-file upload onto Today desk
+  await p.locator("#face-today").evaluate((el) => {
+    const dt = new DataTransfer();
+    dt.items.add(new File(["Item,Cost\nRack,95.00\n"], "drop-alpha.csv", { type: "text/csv" }));
+    dt.items.add(new File(["# Dropped Note\n- Owner: Maya\n"], "drop-beta.md", { type: "text/markdown" }));
+    el.querySelector("div")?.dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: dt }));
+  });
+  const dropToastOk = await p.waitForSelector("text=Uploaded 2 files to your workspace", { timeout: 5000 }).then(() => true, () => false);
+  ok("drag-and-drop multi-file upload onto Today saves both files", dropToastOk);
 
   // Settings dialog: Model connection + Appearance toggle
   await p.locator('[data-thing="settings-btn"]').click();
@@ -457,6 +549,24 @@ await reset();
   ok("phone Menu -> Settings -> Dark toggles cleanly without drawer interception", mobileDarkOk);
   await p.keyboard.press("Escape");
   await p.locator("#settings-panel").waitFor({ state: "hidden", timeout: 4000 });
+
+  // Mobile Menu -> Rune skills & Routines dialogs open cleanly outside Vaul drawer
+  await p.getByRole("button", { name: "Open menu" }).click();
+  await p.waitForSelector('[data-thing="skills-btn"]', { timeout: 4000 });
+  await p.locator('[data-thing="skills-btn"]').click();
+  await p.waitForSelector("#skills-panel", { timeout: 4000 });
+  const mobileSkillsOk = (await p.locator("#skills-panel [data-skill-id]").count()) === 12;
+  await p.keyboard.press("Escape");
+  await p.locator("#skills-panel").waitFor({ state: "hidden", timeout: 4000 });
+  await p.getByRole("button", { name: "Open menu" }).click();
+  await p.waitForSelector('[data-thing="routines-btn"]', { timeout: 4000 });
+  await p.locator('[data-thing="routines-btn"]').click();
+  await p.waitForSelector("#routines-panel", { timeout: 4000 });
+  const mobileRoutinesOk = await p.locator("#routines-panel").isVisible();
+  await p.keyboard.press("Escape");
+  await p.locator("#routines-panel").waitFor({ state: "hidden", timeout: 4000 });
+  ok("phone Menu -> Skills & Routines dialogs open cleanly without drawer blocking", mobileSkillsOk && mobileRoutinesOk);
+
   ok("phone side column under the paper", (await p.getByRole("heading", { name: "Team" }).count()) === 1);
 
   await p.goto(BASE + "phone");
@@ -464,6 +574,122 @@ await reset();
   await p.waitForTimeout(500);
   const pm = await p.evaluate(MEASURE);
   ok("/phone route serves unified responsive desk cleanly", pm.docOverflow <= 0 && pm.smallTargets === 0 && pm.lowContrast === 0);
+  await ctx.close();
+}
+
+// 6b. Compact phone 320x568 real non-forced Menu -> Settings -> Dark test
+{
+  const { ctx, p } = await open(320, 568);
+  await p.goto(BASE);
+  await waitPaper(p);
+  await p.getByRole("button", { name: "Open menu" }).click();
+  await p.waitForSelector('[data-thing="settings-btn"]', { timeout: 4000 });
+  await p.locator('[data-thing="settings-btn"]').scrollIntoViewIfNeeded();
+  await p.locator('[data-thing="settings-btn"]').click();
+  await p.waitForSelector("#settings-panel", { timeout: 4000 });
+  await p.locator('#settings-panel').getByRole("button", { name: "Dark", exact: true }).click();
+  await p.waitForTimeout(200);
+  const compactDarkOk = await p.evaluate(() => {
+    const theme = document.documentElement.getAttribute("data-theme");
+    const overflow = document.documentElement.scrollWidth - document.documentElement.clientWidth;
+    const drawerOpen = Boolean(document.querySelector('[data-vaul-drawer][data-state="open"]'));
+    return theme === "dark" && overflow <= 0 && !drawerOpen;
+  });
+  ok("320x568 phone Menu -> Settings -> Dark toggles cleanly with 0px overflow", compactDarkOk);
+  await ctx.close();
+}
+
+// 6c. Scale virtualization/pagination (5,000 receipts + 500 workspace files) + Live SSE timeline & cancel
+{
+  const { ctx, p } = await open(1440, 900);
+  const bigFinished = Array.from({ length: 5000 }, (_, i) => ({
+    id: `rec-${i}`,
+    task: `Automated ledger audit receipt-${i}`,
+    date: "2026-11-22",
+    summary: `Reconciled batch ${i}`,
+    files: i % 5 === 0 ? [`batch-${i}.csv`] : [],
+    ts: Date.now() - i * 1000,
+  }));
+  const bigFiles = Array.from({ length: 500 }, (_, i) => ({
+    path: `file-${String(i).padStart(3, "0")}.csv`,
+    name: `file-${String(i).padStart(3, "0")}.csv`,
+    size: 1024 + i,
+    mtime_ms: Date.now() - i * 1000,
+    ext: "csv",
+  }));
+  await p.route("**/api/brief", async (r) => {
+    const res = await r.fetch();
+    const j = await res.json();
+    await r.fulfill({ response: res, body: JSON.stringify({ ...j, finished: bigFinished }) });
+  });
+  await p.route("**/api/files", (r) =>
+    r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ files: bigFiles }) })
+  );
+  await p.goto(BASE);
+  await waitPaper(p);
+  await p.waitForTimeout(400);
+  const renderedRows = await p.locator('section[aria-labelledby="finished-h"] ol li').count();
+  await p.locator("#finished-search").fill("receipt-4999");
+  await p.waitForTimeout(200);
+  const filteredRows = await p.locator('section[aria-labelledby="finished-h"] ol li').count();
+  await p.locator('[data-thing="files-btn"]').click();
+  await p.waitForSelector("#workspace-files-panel", { timeout: 4000 });
+  const renderedFiles = await p.locator("#workspace-files-panel ul li").count();
+  await p.locator("#workspace-file-search").fill("file-499.csv");
+  await p.waitForTimeout(200);
+  const filteredFiles = await p.locator("#workspace-files-panel ul li").count();
+  ok(
+    "5,000 receipts and 500 files stay paginated and filter instantaneously",
+    renderedRows === 20 && filteredRows === 1 && renderedFiles === 25 && filteredFiles === 1,
+    `recRows=${renderedRows}->${filteredRows} fileRows=${renderedFiles}->${filteredFiles}`
+  );
+  await ctx.close();
+}
+
+{
+  const { ctx, p } = await open(1440, 900);
+  let cancelCalled = false;
+  await p.route("**/api/status", async (r) => {
+    const res = await r.fetch();
+    const j = await res.json();
+    await r.fulfill({
+      response: res,
+      body: JSON.stringify({ ...j, version: "0.5.0", capabilities: { sse: true, cancel: true, skills: true, routines: true, search: true, receipts_export: true } }),
+    });
+  });
+  await p.route("**/api/skills", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ skills: [] }) }));
+  await p.route("**/api/routines", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ routines: [] }) }));
+  await p.route("**/api/receipts**", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ receipts: [] }) }));
+  await p.route("**/api/runs/stream", (r) =>
+    r.fulfill({
+      status: 200,
+      contentType: "text/event-stream",
+      body: 'event: step_done\ndata: {"run_id":"run-sse-1","tool":"reconcile_ledger","label":"Reconciled expense ledger","status":"done","elapsed_ms":48}\n\n',
+    })
+  );
+  await p.route("**/api/runs/*/cancel", (r) => {
+    cancelCalled = true;
+    return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ cancelled: true }) });
+  });
+  await p.route("**/api/chat", async (r) => {
+    await new Promise((res) => setTimeout(res, 6000));
+    await r.abort();
+  });
+  await p.goto(BASE);
+  await waitPaper(p);
+  await p.locator('[role="tab"][data-id="chat"]').click();
+  await p.waitForSelector("#composer-input", { timeout: 4000 });
+  await p.locator("#composer-input").fill("Run live SSE test task");
+  await p.keyboard.press("Enter");
+  await p.waitForSelector("#live-run-timeline", { timeout: 4000 });
+  const sseText = await p.locator("#live-run-timeline").innerText();
+  await p.locator("#cancel-run-btn").click();
+  await p.locator("#live-run-timeline").waitFor({ state: "hidden", timeout: 4000 });
+  ok(
+    "live SSE step timeline displays tool progress, elapsed ms, and cancels cleanly",
+    sseText.includes("Reconciled expense ledger") && cancelCalled,
+    `cancel=${cancelCalled} txt=${sseText.slice(0, 80).replace(/\n/g, " ")}`
+  );
   await ctx.close();
 }
 

@@ -1,11 +1,29 @@
-// Real Workspace Files panel & Workspace File Viewer modal:
-// - Lists active person's workspace files (GET /api/files)
-// - Uploads real files from disk or creates new text/CSV/Markdown files (POST /api/files/upload)
-// - Opens any saved file chip or Open button into a real previewer (GET /api/files/content?path=...)
-//   rendering CSV as a clean scrollable table, Markdown as structured nodes, JSON pretty-printed,
-//   and plain text with line numbers, plus real Download & Copy buttons.
+// Real Workspace Files panel & upgraded Workspace File Viewer modal (v0.5.0):
+// - Lists active person's workspace files (GET /api/files) with instant search filter,
+//   extension filter chips, multi-file drag-and-drop upload, and paginated rendering for 500+ files.
+// - Upgraded FileViewerModal (GET /api/files/content?path=...):
+//   * CSV column sort (numeric-aware), column/global filter search, and 100-row windowed paging
+//   * Markdown section jump TOC + pipe-table & inline formatting support
+//   * JSON interactive collapsible tree + Raw toggle
+//   * One-click SHA-256 Receipt Export download (.md / .json)
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowUpRight, Copy, Download, FilePlus2, FolderOpen, MessageSquarePlus, Upload } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
+  ArrowUpRight,
+  ChevronDown,
+  ChevronRight,
+  Copy,
+  Download,
+  FileDown,
+  FilePlus2,
+  FolderOpen,
+  MessageSquarePlus,
+  Search,
+  Upload,
+  X,
+} from "lucide-react";
 import { toast } from "sonner";
 import {
   Dialog,
@@ -24,9 +42,11 @@ import {
   MorphingDialogTrigger,
   useMorphingDialog,
 } from "@/components/ui/morphing-dialog";
+import { SegmentedControl, SegmentedControlItem } from "@/components/ui/segmented-control";
 import { SlidingNumber } from "@/components/ui/sliding-number";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { FileGlyph } from "@/chat/Entry";
@@ -36,10 +56,14 @@ import {
   type WorkspaceFile,
   type WorkspaceFileContent,
 } from "@/lib/api";
+import { exportReceiptDownload } from "@/lib/receiptExport";
+import { cn } from "@/lib/utils";
 import { relTime } from "@/lib/words";
 import { open as openPreset } from "@/motion";
 
 const TRIGGER = "focus-ring flex w-full min-h-11 md:min-h-9 items-center justify-between gap-1.5 rounded-sm px-1.5 text-left text-sm text-ink outline-none hover:bg-board";
+const FILES_PAGE_SIZE = 25;
+const CSV_PAGE_SIZE = 100;
 
 export function formatBytes(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes < 0) return "0 B";
@@ -92,143 +116,579 @@ export function parseCsv(text: string): string[][] {
   return rows;
 }
 
-function renderInlineCode(line: string): React.ReactNode {
-  const parts = line.split(/(`[^`]+`)/g);
-  if (parts.length === 1) return line;
-  return parts.map((p, i) =>
-    p.startsWith("`") && p.endsWith("`") && p.length > 2
-      ? <code key={i} className="mono rounded-chip bg-board px-1.5 py-0.5 text-xs text-ink">{p.slice(1, -1)}</code>
-      : <span key={i}>{p}</span>
-  );
+function renderInlineFormatting(line: string): React.ReactNode {
+  const tokens = line.split(/(`[^`]+`|\*\*[^*]+\*\*)/g);
+  if (tokens.length === 1) return line;
+  return tokens.map((tok, i) => {
+    if (tok.startsWith("`") && tok.endsWith("`") && tok.length > 2) {
+      return (
+        <code key={i} className="mono rounded-chip bg-board px-1.5 py-0.5 text-xs text-ink">
+          {tok.slice(1, -1)}
+        </code>
+      );
+    }
+    if (tok.startsWith("**") && tok.endsWith("**") && tok.length > 4) {
+      return (
+        <strong key={i} className="font-medium text-ink">
+          {tok.slice(2, -2)}
+        </strong>
+      );
+    }
+    return <span key={i}>{tok}</span>;
+  });
+}
+
+function headingSlug(text: string, idx: number): string {
+  const clean = text.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 32);
+  return `md-sec-${idx}-${clean || "h"}`;
 }
 
 function MarkdownView({ content }: { content: string }) {
-  const lines = content.replace(/\r\n/g, "\n").split("\n");
-  const blocks: React.ReactNode[] = [];
-  let list: string[] = [];
-  let codeLines: string[] | null = null;
-  const flushList = (key: number) => {
-    if (!list.length) return;
-    blocks.push(
-      <ul key={"ul-" + key} className="flex list-disc flex-col gap-1 pl-5 text-sm leading-6 text-ink">
-        {list.map((item, idx) => <li key={idx}>{renderInlineCode(item)}</li>)}
-      </ul>
-    );
-    list = [];
-  };
-  lines.forEach((line, idx) => {
-    const t = line.trim();
-    if (t.startsWith("```")) {
-      flushList(idx);
-      if (codeLines === null) {
-        codeLines = [];
-      } else {
-        blocks.push(
-          <pre key={"code-" + idx} className="overflow-x-auto rounded-sm border border-hairline bg-board p-3 font-mono text-xs leading-5 text-ink">
-            {codeLines.join("\n")}
-          </pre>
-        );
-        codeLines = null;
+  const parsed = useMemo(() => {
+    const lines = content.replace(/\r\n/g, "\n").split("\n");
+    const blocks: React.ReactNode[] = [];
+    const headings: { id: string; level: number; text: string }[] = [];
+    let list: string[] = [];
+    let codeLines: string[] | null = null;
+    let tableRows: string[][] = [];
+
+    const flushList = (key: number) => {
+      if (!list.length) return;
+      blocks.push(
+        <ul key={"ul-" + key} className="flex list-disc flex-col gap-1 pl-5 text-sm leading-6 text-ink">
+          {list.map((item, idx) => <li key={idx}>{renderInlineFormatting(item)}</li>)}
+        </ul>
+      );
+      list = [];
+    };
+
+    const flushTable = (key: number) => {
+      if (!tableRows.length) return;
+      const head = tableRows[0];
+      const body = tableRows.slice(1).filter((r) => !r.every((c) => /^[-:\s]+$/.test(c)));
+      blocks.push(
+        <div key={"tbl-" + key} className="overflow-x-auto rounded-sm border border-hairline bg-surface">
+          <table className="w-full border-collapse text-left text-xs">
+            <thead className="border-b border-hairline bg-board text-ink">
+              <tr>
+                {head.map((c, ci) => (
+                  <th key={ci} className="whitespace-nowrap px-3 py-2 font-medium">{c}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-hairline">
+              {body.map((r, ri) => (
+                <tr key={ri}>
+                  {head.map((_, ci) => (
+                    <td key={ci} className="px-3 py-2 text-ink">{renderInlineFormatting(r[ci] ?? "")}</td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      );
+      tableRows = [];
+    };
+
+    lines.forEach((line, idx) => {
+      const t = line.trim();
+      if (t.startsWith("```")) {
+        flushList(idx);
+        flushTable(idx);
+        if (codeLines === null) {
+          codeLines = [];
+        } else {
+          blocks.push(
+            <pre key={"code-" + idx} className="overflow-x-auto rounded-sm border border-hairline bg-board p-3 font-mono text-xs leading-5 text-ink">
+              {codeLines.join("\n")}
+            </pre>
+          );
+          codeLines = null;
+        }
+        return;
       }
-      return;
-    }
+      if (codeLines !== null) {
+        codeLines.push(line);
+        return;
+      }
+      if (/^\|.+\|$/.test(t)) {
+        flushList(idx);
+        tableRows.push(t.slice(1, -1).split("|").map((c) => c.trim()));
+        return;
+      } else {
+        flushTable(idx);
+      }
+      if (!t) {
+        flushList(idx);
+        return;
+      }
+      if (t.startsWith("### ")) {
+        flushList(idx);
+        const text = t.slice(4);
+        const id = headingSlug(text, idx);
+        headings.push({ id, level: 3, text });
+        blocks.push(<h4 key={"h3-" + idx} id={id} className="scroll-mt-3 pt-2 text-sm font-semibold text-ink">{renderInlineFormatting(text)}</h4>);
+      } else if (t.startsWith("## ")) {
+        flushList(idx);
+        const text = t.slice(3);
+        const id = headingSlug(text, idx);
+        headings.push({ id, level: 2, text });
+        blocks.push(<h3 key={"h2-" + idx} id={id} className="scroll-mt-3 pt-3 text-base font-medium text-ink">{renderInlineFormatting(text)}</h3>);
+      } else if (t.startsWith("# ")) {
+        flushList(idx);
+        const text = t.slice(2);
+        const id = headingSlug(text, idx);
+        headings.push({ id, level: 1, text });
+        blocks.push(<h2 key={"h1-" + idx} id={id} className="scroll-mt-3 text-title font-medium text-ink">{renderInlineFormatting(text)}</h2>);
+      } else if (/^[-*]\s+/.test(t)) {
+        list.push(t.replace(/^[-*]\s+/, ""));
+      } else if (/^\d+\.\s+/.test(t)) {
+        list.push(t.replace(/^\d+\.\s+/, ""));
+      } else if (/^---+$/.test(t)) {
+        flushList(idx);
+        blocks.push(<hr key={"hr-" + idx} className="my-2 border-hairline" />);
+      } else {
+        flushList(idx);
+        blocks.push(<p key={"p-" + idx} className="text-sm leading-6 text-ink">{renderInlineFormatting(t)}</p>);
+      }
+    });
+    flushList(lines.length + 1);
+    flushTable(lines.length + 2);
     if (codeLines !== null) {
-      codeLines.push(line);
-      return;
+      blocks.push(
+        <pre key="code-tail" className="overflow-x-auto rounded-sm border border-hairline bg-board p-3 font-mono text-xs leading-5 text-ink">
+          {(codeLines as string[]).join("\n")}
+        </pre>
+      );
     }
-    if (!t) {
-      flushList(idx);
-      return;
-    }
-    if (t.startsWith("### ")) {
-      flushList(idx);
-      blocks.push(<h4 key={"h3-" + idx} className="pt-2 text-sm font-semibold text-ink">{renderInlineCode(t.slice(4))}</h4>);
-    } else if (t.startsWith("## ")) {
-      flushList(idx);
-      blocks.push(<h3 key={"h2-" + idx} className="pt-3 text-base font-medium text-ink">{renderInlineCode(t.slice(3))}</h3>);
-    } else if (t.startsWith("# ")) {
-      flushList(idx);
-      blocks.push(<h2 key={"h1-" + idx} className="text-title font-medium text-ink">{renderInlineCode(t.slice(2))}</h2>);
-    } else if (/^[-*]\s+/.test(t)) {
-      list.push(t.replace(/^[-*]\s+/, ""));
-    } else if (/^\d+\.\s+/.test(t)) {
-      list.push(t.replace(/^\d+\.\s+/, ""));
-    } else if (/^---+$/.test(t)) {
-      flushList(idx);
-      blocks.push(<hr key={"hr-" + idx} className="my-2 border-hairline" />);
-    } else {
-      flushList(idx);
-      blocks.push(<p key={"p-" + idx} className="text-sm leading-6 text-ink">{renderInlineCode(t)}</p>);
-    }
-  });
-  flushList(lines.length + 1);
-  if (codeLines !== null) {
-    blocks.push(
-      <pre key="code-tail" className="overflow-x-auto rounded-sm border border-hairline bg-board p-3 font-mono text-xs leading-5 text-ink">
-        {(codeLines as string[]).join("\n")}
-      </pre>
-    );
-  }
-  return <div className="flex flex-col gap-2">{blocks}</div>;
+    return { blocks, headings };
+  }, [content]);
+
+  const jumpTo = (id: string) => {
+    const el = document.getElementById(id);
+    if (el) el.scrollIntoView({ behavior: "auto", block: "start" });
+  };
+
+  return (
+    <div className="flex flex-col gap-3">
+      {parsed.headings.length > 1 && (
+        <nav aria-label="Markdown section jump" className="flex flex-wrap items-center gap-1.5 rounded-sm border border-hairline bg-surface p-2">
+          <span className="px-1 text-xs font-medium text-ink-2">Jump to section:</span>
+          {parsed.headings.map((h) => (
+            <Button
+              key={h.id}
+              type="button"
+              size="xs"
+              variant="outline"
+              className="max-md:min-h-11 max-w-[220px] truncate text-xs"
+              onClick={() => jumpTo(h.id)}
+            >
+              {h.text}
+            </Button>
+          ))}
+        </nav>
+      )}
+      <div className="flex flex-col gap-2 rounded-sm border border-hairline bg-board/30 p-4">
+        {parsed.blocks}
+      </div>
+    </div>
+  );
+}
+
+function parseSortableNumber(raw: string): number | null {
+  const cleaned = raw.trim().replace(/[$,%\s]/g, "");
+  if (!cleaned || !/^-?\d+(?:\.\d+)?$/.test(cleaned)) return null;
+  const n = Number(cleaned);
+  return Number.isFinite(n) ? n : null;
 }
 
 function CsvTableView({ content }: { content: string }) {
   const rows = useMemo(() => parseCsv(content), [content]);
+  const [query, setQuery] = useState("");
+  const [colFilter, setColFilter] = useState<string>("all");
+  const [sortCol, setSortCol] = useState<number | null>(null);
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+  const [page, setPage] = useState(0);
+
+  useEffect(() => {
+    setPage(0);
+  }, [query, colFilter, sortCol, sortDir, content]);
+
   if (!rows.length) {
     return <p className="text-sm text-ink-2">This CSV file is empty.</p>;
   }
   const header = rows[0];
   const body = rows.slice(1);
   const isNumeric = (v: string) => /^-?\$?\d[\d,]*(?:\.\d+)?%?$/.test(v.trim());
+
+  const toggleSort = (idx: number) => {
+    if (sortCol !== idx) {
+      setSortCol(idx);
+      setSortDir("asc");
+    } else if (sortDir === "asc") {
+      setSortDir("desc");
+    } else {
+      setSortCol(null);
+    }
+  };
+
+  const processed = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    const colIdx = colFilter === "all" ? -1 : Number(colFilter);
+    let out = q
+      ? body.filter((r) => {
+          if (colIdx >= 0) return (r[colIdx] ?? "").toLowerCase().includes(q);
+          return r.some((c) => c.toLowerCase().includes(q));
+        })
+      : body;
+
+    if (sortCol !== null) {
+      const col = sortCol;
+      const mult = sortDir === "asc" ? 1 : -1;
+      out = [...out].sort((a, b) => {
+        const av = (a[col] ?? "").trim();
+        const bv = (b[col] ?? "").trim();
+        const an = parseSortableNumber(av);
+        const bn = parseSortableNumber(bv);
+        if (an !== null && bn !== null) return (an - bn) * mult;
+        return av.localeCompare(bv, undefined, { numeric: true, sensitivity: "base" }) * mult;
+      });
+    }
+    return out;
+  }, [body, query, colFilter, sortCol, sortDir]);
+
+  const totalPages = Math.max(1, Math.ceil(processed.length / CSV_PAGE_SIZE));
+  const safePage = Math.min(page, totalPages - 1);
+  const visible = processed.slice(safePage * CSV_PAGE_SIZE, (safePage + 1) * CSV_PAGE_SIZE);
+
   return (
-    <div className="flex flex-col gap-2">
-      <div className="flex items-center justify-between text-xs text-ink-2">
-        <span className="mono">{body.length} {body.length === 1 ? "row" : "rows"} · {header.length} {header.length === 1 ? "column" : "columns"}</span>
+    <div className="flex flex-col gap-2.5">
+      <div className="flex flex-wrap items-center gap-2">
+        <InputGroup className="min-w-[200px] flex-1 rounded-sm bg-board/50 [&_input]:max-md:min-h-11">
+          <InputGroupAddon align="inline-start" className="pl-2.5 text-icon">
+            <Search className="size-3.5" strokeWidth={1.5} aria-hidden />
+          </InputGroupAddon>
+          <InputGroupInput
+            id="csv-filter-input"
+            type="search"
+            aria-label="Filter CSV rows"
+            placeholder="Filter rows…"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            className="text-sm max-md:min-h-11"
+          />
+          {query && (
+            <InputGroupAddon align="inline-end" className="pr-1.5">
+              <Button
+                type="button"
+                size="icon-xs"
+                variant="ghost"
+                className="max-md:min-h-11 max-md:min-w-11"
+                aria-label="Clear CSV filter"
+                onClick={() => setQuery("")}
+              >
+                <X className="size-3.5" strokeWidth={1.5} aria-hidden />
+              </Button>
+            </InputGroupAddon>
+          )}
+        </InputGroup>
+
+        <select
+          aria-label="Filter CSV column"
+          value={colFilter}
+          onChange={(e) => setColFilter(e.target.value)}
+          className="focus-ring h-9 min-h-11 rounded-sm border border-input bg-surface px-2.5 text-xs text-ink outline-none md:min-h-9"
+        >
+          <option value="all">All columns</option>
+          {header.map((col, idx) => (
+            <option key={idx} value={String(idx)}>
+              {col || `Column ${idx + 1}`}
+            </option>
+          ))}
+        </select>
+
+        <span className="mono text-xs text-ink-2">
+          {processed.length === body.length
+            ? `${body.length} ${body.length === 1 ? "row" : "rows"} · ${header.length} cols`
+            : `${processed.length} of ${body.length} rows`}
+        </span>
       </div>
-      <div className="max-h-[52vh] overflow-auto rounded-sm border border-hairline bg-surface">
+
+      <div className="max-h-[46vh] overflow-auto rounded-sm border border-hairline bg-surface">
         <table className="w-full border-collapse text-left text-xs">
           <thead className="sticky top-0 border-b border-hairline bg-board text-ink">
             <tr>
-              {header.map((col, idx) => (
-                <th key={idx} className="whitespace-nowrap px-3 py-2 font-medium">{col || `Column ${idx + 1}`}</th>
-              ))}
+              {header.map((col, idx) => {
+                const active = sortCol === idx;
+                const label = col || `Column ${idx + 1}`;
+                return (
+                  <th
+                    key={idx}
+                    aria-sort={active ? (sortDir === "asc" ? "ascending" : "descending") : "none"}
+                    className="whitespace-nowrap p-0 font-medium"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => toggleSort(idx)}
+                      className="focus-ring flex min-h-11 w-full items-center gap-1.5 px-3 py-2 text-left text-xs font-medium text-ink outline-none hover:bg-track md:min-h-8"
+                    >
+                      <span>{label}</span>
+                      {active ? (
+                        sortDir === "asc" ? (
+                          <ArrowUp className="size-3 shrink-0 text-ink" strokeWidth={1.75} aria-hidden />
+                        ) : (
+                          <ArrowDown className="size-3 shrink-0 text-ink" strokeWidth={1.75} aria-hidden />
+                        )
+                      ) : (
+                        <ArrowUpDown className="size-3 shrink-0 text-icon" strokeWidth={1.5} aria-hidden />
+                      )}
+                    </button>
+                  </th>
+                );
+              })}
             </tr>
           </thead>
           <tbody className="divide-y divide-hairline">
-            {body.map((r, rIdx) => (
-              <tr key={rIdx} className="hover:bg-board/50">
-                {header.map((_, cIdx) => {
-                  const val = r[cIdx] ?? "";
-                  return (
-                    <td
-                      key={cIdx}
-                      className={isNumeric(val) ? "mono whitespace-nowrap px-3 py-2 text-right text-ink" : "px-3 py-2 text-ink"}
-                    >
-                      {val}
-                    </td>
-                  );
-                })}
+            {visible.length === 0 ? (
+              <tr>
+                <td colSpan={header.length} className="px-3 py-4 text-center text-sm text-ink-2">
+                  No rows match &ldquo;{query}&rdquo;.
+                </td>
               </tr>
-            ))}
+            ) : (
+              visible.map((r, rIdx) => (
+                <tr key={safePage * CSV_PAGE_SIZE + rIdx} className="hover:bg-board/50">
+                  {header.map((_, cIdx) => {
+                    const val = r[cIdx] ?? "";
+                    return (
+                      <td
+                        key={cIdx}
+                        className={isNumeric(val) ? "mono whitespace-nowrap px-3 py-2 text-right text-ink" : "px-3 py-2 text-ink"}
+                      >
+                        {val}
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))
+            )}
           </tbody>
         </table>
       </div>
+
+      {totalPages > 1 && (
+        <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-ink-2">
+          <span className="mono">
+            Rows {safePage * CSV_PAGE_SIZE + 1}–{Math.min((safePage + 1) * CSV_PAGE_SIZE, processed.length)} of {processed.length}
+          </span>
+          <div className="flex items-center gap-1.5">
+            <Button
+              type="button"
+              size="xs"
+              variant="outline"
+              className="max-md:min-h-11"
+              disabled={safePage === 0}
+              onClick={() => setPage((p) => Math.max(0, p - 1))}
+            >
+              Prev
+            </Button>
+            <span className="mono px-1">
+              {safePage + 1} / {totalPages}
+            </span>
+            <Button
+              type="button"
+              size="xs"
+              variant="outline"
+              className="max-md:min-h-11"
+              disabled={safePage >= totalPages - 1}
+              onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+            >
+              Next
+            </Button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function JsonTreeNode({
+  name,
+  value,
+  depth,
+  forceState,
+}: {
+  name?: string;
+  value: unknown;
+  depth: number;
+  forceState: { mode: "auto" | "expand" | "collapse"; rev: number };
+}) {
+  const isArr = Array.isArray(value);
+  const isObj = !isArr && value !== null && typeof value === "object";
+  const isBranch = isArr || isObj;
+  const [open, setOpen] = useState(depth < 2);
+
+  useEffect(() => {
+    if (forceState.mode === "expand") setOpen(true);
+    else if (forceState.mode === "collapse") setOpen(depth === 0);
+  }, [forceState.mode, forceState.rev, depth]);
+
+  if (!isBranch) {
+    const formatted =
+      typeof value === "string"
+        ? JSON.stringify(value)
+        : value === null
+          ? "null"
+          : String(value);
+    const valCls =
+      typeof value === "number"
+        ? "text-info-foreground"
+        : typeof value === "boolean"
+          ? "text-success-foreground"
+          : value === null
+            ? "text-ink-2"
+            : "text-ink";
+    return (
+      <div className="flex items-baseline gap-1.5 py-0.5 pl-5 font-mono text-xs leading-5">
+        {name !== undefined && <span className="shrink-0 font-medium text-ink-2">{name}:</span>}
+        <span className={cn("break-all", valCls)}>{formatted}</span>
+      </div>
+    );
+  }
+
+  const entries: [string, unknown][] = isArr
+    ? (value as unknown[]).map((v, i) => [String(i), v])
+    : Object.entries(value as Record<string, unknown>);
+  const summary = isArr ? `[ ${entries.length} ${entries.length === 1 ? "item" : "items"} ]` : `{ ${entries.length} ${entries.length === 1 ? "key" : "keys"} }`;
+
+  return (
+    <div className="py-0.5 font-mono text-xs">
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+        className="focus-ring flex min-h-8 items-center gap-1 rounded-sm px-1 text-left text-xs text-ink outline-none hover:bg-track max-md:min-h-11"
+      >
+        {open ? (
+          <ChevronDown className="size-3.5 shrink-0 text-icon" strokeWidth={1.75} aria-hidden />
+        ) : (
+          <ChevronRight className="size-3.5 shrink-0 text-icon" strokeWidth={1.75} aria-hidden />
+        )}
+        {name !== undefined && <span className="font-medium text-ink">{name}:</span>}
+        <span className="text-ink-2">{summary}</span>
+      </button>
+      {open && (
+        <div className="ml-3 border-l border-hairline pl-2.5">
+          {entries.slice(0, 200).map(([k, v]) => (
+            <JsonTreeNode key={k} name={k} value={v} depth={depth + 1} forceState={forceState} />
+          ))}
+          {entries.length > 200 && (
+            <p className="py-1 pl-5 text-xs text-ink-2">… {entries.length - 200} more entries (switch to Raw to view full JSON)</p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function JsonViewer({ content }: { content: string }) {
+  const [mode, setMode] = useState<"tree" | "raw">("tree");
+  const [forceState, setForceState] = useState<{ mode: "auto" | "expand" | "collapse"; rev: number }>({ mode: "auto", rev: 0 });
+
+  const parsed = useMemo(() => {
+    try {
+      const value = JSON.parse(content) as unknown;
+      return { ok: true as const, value, pretty: JSON.stringify(value, null, 2) };
+    } catch {
+      return { ok: false as const, value: null, pretty: content };
+    }
+  }, [content]);
+
+  if (!parsed.ok) {
+    return (
+      <pre className="overflow-x-auto whitespace-pre-wrap break-words rounded-sm border border-hairline bg-board p-3.5 font-mono text-xs leading-5 text-ink">
+        {content}
+      </pre>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-2.5">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <SegmentedControl aria-label="JSON view mode">
+          <SegmentedControlItem
+            data-id="tree"
+            aria-pressed={mode === "tree"}
+            data-checked={mode === "tree" ? "" : undefined}
+            className="min-h-11 px-3 md:min-h-8"
+            onClick={() => setMode("tree")}
+          >
+            Collapsible tree
+          </SegmentedControlItem>
+          <SegmentedControlItem
+            data-id="raw"
+            aria-pressed={mode === "raw"}
+            data-checked={mode === "raw" ? "" : undefined}
+            className="min-h-11 px-3 md:min-h-8"
+            onClick={() => setMode("raw")}
+          >
+            Raw JSON
+          </SegmentedControlItem>
+        </SegmentedControl>
+
+        {mode === "tree" && (
+          <div className="flex items-center gap-1.5">
+            <Button
+              type="button"
+              size="xs"
+              variant="outline"
+              className="max-md:min-h-11"
+              onClick={() => setForceState((s) => ({ mode: "expand", rev: s.rev + 1 }))}
+            >
+              Expand all
+            </Button>
+            <Button
+              type="button"
+              size="xs"
+              variant="outline"
+              className="max-md:min-h-11"
+              onClick={() => setForceState((s) => ({ mode: "collapse", rev: s.rev + 1 }))}
+            >
+              Collapse all
+            </Button>
+          </div>
+        )}
+      </div>
+
+      {mode === "tree" ? (
+        <div id="json-tree-view" className="rounded-sm border border-hairline bg-board/40 p-3">
+          <JsonTreeNode value={parsed.value} depth={0} forceState={forceState} />
+        </div>
+      ) : (
+        <pre className="overflow-x-auto whitespace-pre-wrap break-words rounded-sm border border-hairline bg-board p-3.5 font-mono text-xs leading-5 text-ink">
+          {parsed.pretty}
+        </pre>
+      )}
     </div>
   );
 }
 
 export function FileViewerModal({
   filePath,
+  personName,
   onClose,
   onAskAbout,
 }: {
   filePath: string | null;
+  personName?: string;
   onClose: () => void;
   onAskAbout?: (path: string) => void;
 }) {
   const [data, setData] = useState<WorkspaceFileContent | null>(null);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
+  const [exporting, setExporting] = useState(false);
 
   useEffect(() => {
     if (!filePath) {
@@ -253,14 +713,6 @@ export function FileViewerModal({
   }, [filePath]);
 
   const ext = (data?.ext || filePath?.split(".").pop() || "").toLowerCase();
-  const formattedJson = useMemo(() => {
-    if (ext !== "json" || !data?.content) return null;
-    try {
-      return JSON.stringify(JSON.parse(data.content), null, 2);
-    } catch {
-      return data.content;
-    }
-  }, [ext, data?.content]);
 
   const copyContent = async () => {
     if (!data?.content) return;
@@ -279,9 +731,36 @@ export function FileViewerModal({
     else toast.error("Could not download this file.");
   };
 
+  const handleReceiptExport = async (format: "md" | "json") => {
+    if (!filePath || !data) return;
+    setExporting(true);
+    try {
+      const res = await exportReceiptDownload(
+        {
+          id: `file-${filePath}`,
+          task: `Workspace file receipt: ${filePath}`,
+          person: personName || "Active employee",
+          status: "verified",
+          summary: `Verified workspace file (${formatBytes(data.size)}, ${ext || "text"}).`,
+          ts: data.mtime_ms || Date.now(),
+          files: [filePath],
+          filePath,
+          fileContent: data.content,
+        },
+        format,
+        false
+      );
+      toast.success(`Exported ${res.filename} (sha256: ${res.sha256.slice(0, 12)}…)`);
+    } catch {
+      toast.error("Could not export SHA-256 receipt.");
+    } finally {
+      setExporting(false);
+    }
+  };
+
   return (
     <Dialog open={!!filePath} onOpenChange={(open) => { if (!open) onClose(); }}>
-      <DialogContent id="file-viewer-dialog" className="max-h-[86vh] max-w-3xl overflow-hidden">
+      <DialogContent id="file-viewer-dialog" className="max-h-[88vh] max-w-3xl overflow-hidden">
         <DialogHeader className="pr-10 text-left">
           <DialogTitle className="flex min-w-0 items-center gap-2 text-title font-medium text-ink">
             {filePath && <FileGlyph name={filePath} className="size-4 shrink-0" />}
@@ -316,6 +795,30 @@ export function FileViewerModal({
               Copy text
             </Button>
           )}
+          {data && !err && (
+            <>
+              <Button
+                size="sm"
+                variant="outline"
+                className="max-md:min-h-11"
+                disabled={exporting}
+                onClick={() => handleReceiptExport("md")}
+              >
+                <FileDown className="size-3.5" strokeWidth={1.5} aria-hidden />
+                SHA-256 Receipt (.md)
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="max-md:min-h-11"
+                disabled={exporting}
+                onClick={() => handleReceiptExport("json")}
+              >
+                <FileDown className="size-3.5" strokeWidth={1.5} aria-hidden />
+                Receipt (.json)
+              </Button>
+            </>
+          )}
           {filePath && onAskAbout && !err && (
             <Button
               size="sm"
@@ -327,7 +830,7 @@ export function FileViewerModal({
               }}
             >
               <MessageSquarePlus className="size-3.5" strokeWidth={1.5} aria-hidden />
-              Ask agent about this file
+              Ask agent
             </Button>
           )}
         </div>
@@ -341,13 +844,9 @@ export function FileViewerModal({
             ) : ext === "csv" ? (
               <CsvTableView content={data.content} />
             ) : ext === "md" || ext === "markdown" ? (
-              <div className="rounded-sm border border-hairline bg-board/30 p-4">
-                <MarkdownView content={data.content} />
-              </div>
-            ) : ext === "json" && formattedJson !== null ? (
-              <pre className="overflow-x-auto whitespace-pre-wrap break-words rounded-sm border border-hairline bg-board p-3.5 font-mono text-xs leading-5 text-ink">
-                {formattedJson}
-              </pre>
+              <MarkdownView content={data.content} />
+            ) : ext === "json" ? (
+              <JsonViewer content={data.content} />
             ) : (
               <pre className="overflow-x-auto whitespace-pre-wrap break-words rounded-sm border border-hairline bg-board p-3.5 font-mono text-xs leading-5 text-ink">
                 {data.content || "(empty file)"}
@@ -365,11 +864,13 @@ function WorkspaceFilesBody({
   onRefresh,
   onOpenFile,
   onUpload,
+  onUploadMany,
 }: {
   files: WorkspaceFile[];
   onRefresh: () => void;
   onOpenFile: (path: string) => void;
   onUpload: (path: string, content: string) => Promise<boolean>;
+  onUploadMany?: (picked: FileList | File[]) => Promise<number>;
 }) {
   const { isOpen, setIsOpen } = useMorphingDialog();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -378,20 +879,54 @@ function WorkspaceFilesBody({
   const [newContent, setNewContent] = useState("");
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
+  const [query, setQuery] = useState("");
+  const [extFilter, setExtFilter] = useState<"all" | "csv" | "md" | "json" | "other">("all");
+  const [page, setPage] = useState(0);
+  const [dragOver, setDragOver] = useState(false);
 
   useEffect(() => {
     if (isOpen) onRefresh();
   }, [isOpen, onRefresh]);
 
-  const handleFilePick = async (ev: React.ChangeEvent<HTMLInputElement>) => {
-    const picked = ev.target.files;
-    if (!picked || !picked.length) return;
+  useEffect(() => {
+    setPage(0);
+  }, [query, extFilter, files.length]);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return files.filter((f) => {
+      const ext = (f.ext || "").toLowerCase();
+      if (extFilter === "csv" && ext !== "csv") return false;
+      if (extFilter === "md" && ext !== "md" && ext !== "markdown") return false;
+      if (extFilter === "json" && ext !== "json") return false;
+      if (extFilter === "other" && ["csv", "md", "markdown", "json"].includes(ext)) return false;
+      if (!q) return true;
+      return f.path.toLowerCase().includes(q) || ext.includes(q);
+    });
+  }, [files, query, extFilter]);
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / FILES_PAGE_SIZE));
+  const safePage = Math.min(page, totalPages - 1);
+  const visible = filtered.slice(safePage * FILES_PAGE_SIZE, (safePage + 1) * FILES_PAGE_SIZE);
+
+  const ingestFiles = async (list: FileList | File[]) => {
+    if (!list || !list.length) return;
     setErr("");
-    for (const file of Array.from(picked)) {
+    if (onUploadMany) {
+      const okCount = await onUploadMany(list);
+      if (okCount === 0) setErr("Could not upload selected files.");
+      return;
+    }
+    for (const file of Array.from(list)) {
       const content = await file.text();
       const ok = await onUpload(file.name, content);
       if (!ok) setErr(`Could not upload ${file.name}.`);
     }
+  };
+
+  const handleFilePick = async (ev: React.ChangeEvent<HTMLInputElement>) => {
+    const picked = ev.target.files;
+    if (picked && picked.length) await ingestFiles(picked);
     ev.target.value = "";
   };
 
@@ -416,29 +951,54 @@ function WorkspaceFilesBody({
   };
 
   return (
-    <div id="workspace-files-panel" className="flex flex-col gap-4">
+    <div
+      id="workspace-files-panel"
+      className="flex flex-col gap-3.5"
+      onDragOver={(e) => {
+        e.preventDefault();
+        setDragOver(true);
+      }}
+      onDragLeave={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragOver(false);
+      }}
+      onDrop={async (e) => {
+        e.preventDefault();
+        setDragOver(false);
+        if (e.dataTransfer?.files?.length) await ingestFiles(e.dataTransfer.files);
+      }}
+    >
       <p className="text-sm text-ink-2">
-        Real files in this person&apos;s sandboxed workspace. Upload spreadsheets, notes, or documents for your agent to read and process.
+        Real files in this person&apos;s sandboxed workspace. Drop multiple files here or upload spreadsheets, notes, and JSON.
       </p>
 
-      <div className="flex flex-wrap items-center gap-2">
-        <input
-          ref={fileInputRef}
-          id="workspace-file-input"
-          type="file"
-          multiple
-          className="sr-only"
-          accept=".csv,.md,.txt,.json,.log,.tsv,.py,.ts,.tsx,.js,.rs,.toml,.yaml,.yml,.html"
-          onChange={handleFilePick}
-        />
-        <Button size="sm" className="max-md:min-h-11" onClick={() => fileInputRef.current?.click()}>
-          <Upload className="size-3.5" strokeWidth={1.5} aria-hidden />
-          Upload file
-        </Button>
-        <Button size="sm" variant="outline" className="max-md:min-h-11" onClick={() => setCreating((v) => !v)}>
-          <FilePlus2 className="size-3.5" strokeWidth={1.5} aria-hidden />
-          {creating ? "Cancel" : "New file"}
-        </Button>
+      <div
+        className={cn(
+          "flex flex-wrap items-center justify-between gap-2 rounded-card border border-dashed p-3",
+          dragOver ? "border-blue bg-blue-soft" : "border-hairline bg-board/40"
+        )}
+      >
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            ref={fileInputRef}
+            id="workspace-file-input"
+            type="file"
+            multiple
+            className="hidden"
+            accept=".csv,.md,.txt,.json,.log,.tsv,.py,.ts,.tsx,.js,.rs,.toml,.yaml,.yml,.html"
+            onChange={handleFilePick}
+          />
+          <Button size="sm" className="max-md:min-h-11" onClick={() => fileInputRef.current?.click()}>
+            <Upload className="size-3.5" strokeWidth={1.5} aria-hidden />
+            Upload files
+          </Button>
+          <Button size="sm" variant="outline" className="max-md:min-h-11" onClick={() => setCreating((v) => !v)}>
+            <FilePlus2 className="size-3.5" strokeWidth={1.5} aria-hidden />
+            {creating ? "Cancel" : "New file"}
+          </Button>
+        </div>
+        <span className="text-xs text-ink-2">
+          {dragOver ? "Release to upload files" : "Drag & drop multiple files"}
+        </span>
       </div>
 
       {creating && (
@@ -472,52 +1032,147 @@ function WorkspaceFilesBody({
         </form>
       )}
 
+      {files.length > 0 && (
+        <div className="flex flex-col gap-2">
+          <InputGroup className="rounded-sm bg-board/50 [&_input]:max-md:min-h-11">
+            <InputGroupAddon align="inline-start" className="pl-2.5 text-icon">
+              <Search className="size-3.5" strokeWidth={1.5} aria-hidden />
+            </InputGroupAddon>
+            <InputGroupInput
+              id="workspace-file-search"
+              type="search"
+              aria-label="Search workspace files"
+              placeholder={`Search ${files.length} workspace ${files.length === 1 ? "file" : "files"}…`}
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              className="text-sm max-md:min-h-11"
+            />
+            {query && (
+              <InputGroupAddon align="inline-end" className="pr-1.5">
+                <Button
+                  type="button"
+                  size="icon-xs"
+                  variant="ghost"
+                  className="max-md:min-h-11 max-md:min-w-11"
+                  aria-label="Clear file search"
+                  onClick={() => setQuery("")}
+                >
+                  <X className="size-3.5" strokeWidth={1.5} aria-hidden />
+                </Button>
+              </InputGroupAddon>
+            )}
+          </InputGroup>
+
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap gap-1" role="group" aria-label="Filter files by type">
+              {(["all", "csv", "md", "json", "other"] as const).map((kind) => (
+                <Button
+                  key={kind}
+                  type="button"
+                  size="xs"
+                  variant={extFilter === kind ? "default" : "outline"}
+                  aria-pressed={extFilter === kind}
+                  className="max-md:min-h-11 uppercase text-xs"
+                  onClick={() => setExtFilter(kind)}
+                >
+                  {kind === "all" ? "All" : kind}
+                </Button>
+              ))}
+            </div>
+            <span className="mono text-xs text-ink-2">
+              {filtered.length === files.length
+                ? `${files.length} total`
+                : `${filtered.length} of ${files.length}`}
+            </span>
+          </div>
+        </div>
+      )}
+
       {err && <p role="alert" className="text-sm text-destructive-foreground">{err}</p>}
 
       {!files.length ? (
         <p className="rounded-card border border-hairline bg-board/40 p-3.5 text-sm text-ink-2">
           No files in this workspace yet. Upload a CSV or Markdown file above, or ask your agent to create one.
         </p>
+      ) : !filtered.length ? (
+        <p className="rounded-card border border-hairline bg-board/40 p-3.5 text-sm text-ink-2">
+          No workspace files match &ldquo;{query}&rdquo;.
+        </p>
       ) : (
-        <ul className="divide-y divide-hairline rounded-card border border-hairline bg-surface">
-          {files.map((f) => (
-            <li key={f.path} className="flex flex-wrap items-center justify-between gap-2 px-3 py-2.5">
-              <div className="flex min-w-0 flex-1 items-center gap-2">
-                <FileGlyph name={f.path} />
-                <div className="min-w-0 flex-1">
-                  <p className="mono truncate text-sm font-medium text-ink">{f.path}</p>
-                  <p className="mono text-xs text-ink-3">
-                    {formatBytes(f.size)}{f.mtime_ms > 0 ? ` · ${relTime(f.mtime_ms)}` : ""}
-                  </p>
+        <>
+          <ul className="divide-y divide-hairline rounded-card border border-hairline bg-surface">
+            {visible.map((f) => (
+              <li key={f.path} className="flex flex-wrap items-center justify-between gap-2 px-3 py-2.5">
+                <div className="flex min-w-0 flex-1 items-center gap-2">
+                  <FileGlyph name={f.path} />
+                  <div className="min-w-0 flex-1">
+                    <p className="mono truncate text-sm font-medium text-ink">{f.path}</p>
+                    <p className="mono text-xs text-ink-2">
+                      {formatBytes(f.size)}{f.mtime_ms > 0 ? ` · ${relTime(f.mtime_ms)}` : ""}
+                    </p>
+                  </div>
                 </div>
-              </div>
-              <div className="flex items-center gap-1">
+                <div className="flex items-center gap-1">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="max-md:min-h-11"
+                    aria-label={`Open ${f.path}`}
+                    onClick={() => {
+                      setIsOpen(false);
+                      setTimeout(() => onOpenFile(f.path), 40);
+                    }}
+                  >
+                    Open
+                    <ArrowUpRight className="size-3.5" strokeWidth={1.5} aria-hidden />
+                  </Button>
+                  <Button
+                    size="icon-sm"
+                    variant="ghost"
+                    className="max-md:min-h-11 max-md:min-w-11"
+                    aria-label={`Download ${f.path}`}
+                    onClick={() => downloadWorkspaceFile(f.path)}
+                  >
+                    <Download className="size-3.5" strokeWidth={1.5} aria-hidden />
+                  </Button>
+                </div>
+              </li>
+            ))}
+          </ul>
+
+          {totalPages > 1 && (
+            <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-ink-2">
+              <span className="mono">
+                Showing {safePage * FILES_PAGE_SIZE + 1}–{Math.min((safePage + 1) * FILES_PAGE_SIZE, filtered.length)} of {filtered.length}
+              </span>
+              <div className="flex items-center gap-1.5">
                 <Button
-                  size="sm"
-                  variant="ghost"
+                  type="button"
+                  size="xs"
+                  variant="outline"
                   className="max-md:min-h-11"
-                  aria-label={`Open ${f.path}`}
-                  onClick={() => {
-                    setIsOpen(false);
-                    setTimeout(() => onOpenFile(f.path), 40);
-                  }}
+                  disabled={safePage === 0}
+                  onClick={() => setPage((p) => Math.max(0, p - 1))}
                 >
-                  Open
-                  <ArrowUpRight className="size-3.5" strokeWidth={1.5} aria-hidden />
+                  Prev
                 </Button>
+                <span className="mono px-1">
+                  {safePage + 1} / {totalPages}
+                </span>
                 <Button
-                  size="icon-sm"
-                  variant="ghost"
-                  className="max-md:min-h-11 max-md:min-w-11"
-                  aria-label={`Download ${f.path}`}
-                  onClick={() => downloadWorkspaceFile(f.path)}
+                  type="button"
+                  size="xs"
+                  variant="outline"
+                  className="max-md:min-h-11"
+                  disabled={safePage >= totalPages - 1}
+                  onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
                 >
-                  <Download className="size-3.5" strokeWidth={1.5} aria-hidden />
+                  Next
                 </Button>
               </div>
-            </li>
-          ))}
-        </ul>
+            </div>
+          )}
+        </>
       )}
     </div>
   );
@@ -528,6 +1183,7 @@ export function WorkspaceFilesPanel({
   onRefresh,
   onOpenFile,
   onUpload,
+  onUploadMany,
   open,
   onOpenChange,
   hideTrigger,
@@ -536,6 +1192,7 @@ export function WorkspaceFilesPanel({
   onRefresh: () => void;
   onOpenFile: (path: string) => void;
   onUpload: (path: string, content: string) => Promise<boolean>;
+  onUploadMany?: (picked: FileList | File[]) => Promise<number>;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   hideTrigger?: boolean;
@@ -556,12 +1213,18 @@ export function WorkspaceFilesPanel({
       <MorphingDialogContainer>
         <MorphingDialogContent
           style={{ borderRadius: 18 }}
-          className="relative mx-4 flex max-h-[84vh] w-[560px] max-w-[calc(100vw-2rem)] flex-col gap-3 overflow-y-auto border border-hairline bg-surface p-5 text-ink shadow-lift"
+          className="relative mx-4 flex max-h-[84vh] w-[580px] max-w-[calc(100%-2rem)] flex-col gap-3 overflow-y-auto border border-hairline bg-surface p-5 text-ink shadow-lift"
         >
           <MorphingDialogClose className="focus-ring absolute right-3 top-3 grid size-11 place-items-center rounded-sm text-icon outline-none hover:bg-board md:size-9" />
           <MorphingDialogTitle className="pr-10 text-title font-medium text-ink">Workspace files</MorphingDialogTitle>
           <MorphingDialogDescription disableLayoutAnimation className="text-sm text-ink-2">
-            <WorkspaceFilesBody files={files} onRefresh={onRefresh} onOpenFile={onOpenFile} onUpload={onUpload} />
+            <WorkspaceFilesBody
+              files={files}
+              onRefresh={onRefresh}
+              onOpenFile={onOpenFile}
+              onUpload={onUpload}
+              onUploadMany={onUploadMany}
+            />
           </MorphingDialogDescription>
         </MorphingDialogContent>
       </MorphingDialogContainer>
