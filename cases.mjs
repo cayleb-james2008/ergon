@@ -1,1 +1,1 @@
-export { cases } from "./frontend/e2e/cases.mjs";
+export { default } from "./frontend/e2e/cases.mjs";
