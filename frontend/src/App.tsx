@@ -10,7 +10,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MotionConfig } from "motion/react";
 import { Drawer } from "vaul";
-import { Check, Hourglass, Menu, Plus, Search, X } from "lucide-react";
+import { Blocks, BookOpen, Check, FolderOpen, Hourglass, Menu, Plus, Search, SlidersHorizontal, UserPlus, X } from "lucide-react";
 import { Toaster } from "sonner";
 import { AnimatedBackground } from "@/components/ui/animated-background";
 import { Tabs, TabsList, TabsTab } from "@/components/ui/tabs";
@@ -21,7 +21,7 @@ import { Pill } from "@/components/kibo-ui/pill";
 import { Composer, ContourField, Thread } from "@/chat/Chat";
 import { useErgon, type TState } from "./state";
 import { UpdateStrip, VersionRow, useUpdate } from "@/shell/Update";
-import { AddPersonPanel, LearnedPanel, SuitePanel } from "@/shell/Panels";
+import { AddPersonPanel, LearnedPanel, RailPanelButton, SuitePanel } from "@/shell/Panels";
 import { FileViewerModal, WorkspaceFilesPanel } from "@/shell/WorkspaceFiles";
 import { SettingsPanel, type Theme } from "@/shell/SettingsPanel";
 import { PaperFace, usePaper } from "@/views/Paper";
@@ -32,6 +32,7 @@ import { relTime, threadMs } from "@/lib/words";
 import { glide } from "@/motion";
 
 type Face = "chat" | "paper" | "graph";
+type RailPanel = "files" | "memory" | "suite" | "add-person" | "settings" | null;
 const RECOVERED_KEY = "ergon-recovered-dismissed";
 
 function initialFace(): Face {
@@ -82,20 +83,39 @@ export function App() {
   }, [face]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const [menuOpen, setMenuOpen] = useState(false);
+  const [openPanel, setOpenPanel] = useState<RailPanel>(null);
+  const openPanelRef = useRef<RailPanel>(null);
   const [recDismissed, setRecDismissed] = useState(false);
   const menuRef = useRef<HTMLButtonElement>(null);
   const newChatRef = useRef<HTMLButtonElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const wasOpen = useRef(false);
 
-  // Drawer focus return: open -> focus New chat; close -> return focus to Menu button.
+  const triggerPanel = useCallback((panel: Exclude<RailPanel, null>) => {
+    openPanelRef.current = panel;
+    setMenuOpen(false);
+    setOpenPanel(panel);
+  }, []);
+
+  const handlePanelChange = useCallback((panel: Exclude<RailPanel, null>, next: boolean) => {
+    if (next) {
+      openPanelRef.current = panel;
+      setMenuOpen(false);
+      setOpenPanel(panel);
+    } else if (openPanelRef.current === panel) {
+      openPanelRef.current = null;
+      setOpenPanel(null);
+    }
+  }, []);
+
+  // Drawer focus return: open -> focus New chat; close -> return focus to Menu button unless opening a dialog.
   useEffect(() => {
     if (menuOpen) {
       wasOpen.current = true;
       setTimeout(() => newChatRef.current?.focus(), 0);
     } else if (wasOpen.current) {
       wasOpen.current = false;
-      menuRef.current?.focus();
+      if (!openPanelRef.current) menuRef.current?.focus();
     }
   }, [menuOpen]);
 
@@ -326,35 +346,44 @@ export function App() {
         {e.sideError && <p role="alert" className="px-3.5 pb-2 text-xs text-destructive-foreground">{e.sideError}</p>}
 
         <div id="settings" className="flex flex-col gap-0.5 border-t border-hairline px-1.5 py-2.5">
-          <WorkspaceFilesPanel
-            files={e.files}
-            onRefresh={e.loadFiles}
-            onOpenFile={(p) => { setMenuOpen(false); setOpenFilePath(p); }}
-            onUpload={e.uploadFile}
+          <RailPanelButton
+            id="files-btn"
+            label="Workspace files"
+            icon={<FolderOpen className="size-3.5 shrink-0 text-icon" strokeWidth={1.5} aria-hidden />}
+            count={e.files.length}
+            expanded={openPanel === "files"}
+            onClick={() => triggerPanel("files")}
           />
-          <LearnedPanel count={e.learnedCount} />
-          <SuitePanel
+          <RailPanelButton
+            id="memory-btn"
+            label="What my agent has learned"
+            icon={<BookOpen className="size-3.5 shrink-0 text-icon" strokeWidth={1.5} aria-hidden />}
+            count={e.learnedCount}
+            expanded={openPanel === "memory"}
+            onClick={() => triggerPanel("memory")}
+          />
+          <RailPanelButton
+            id="suite-btn"
+            label="My suite and the library"
+            icon={<Blocks className="size-3.5 shrink-0 text-icon" strokeWidth={1.5} aria-hidden />}
             count={e.suiteCount}
-            onChanged={() => e.loadStarters(personRole)}
-            onRun={(id, msgs) => {
-              e.showRun(id, msgs);
-              setFace("chat");
-              setMenuOpen(false);
-            }}
+            expanded={openPanel === "suite"}
+            onClick={() => triggerPanel("suite")}
           />
-          <AddPersonPanel
-            onAdded={() => {
-              e.refreshPerson();
-              paper.load();
-              setMenuOpen(false);
-            }}
+          <RailPanelButton
+            id="add-person-btn"
+            label="Add a person"
+            icon={<UserPlus className="size-3.5 shrink-0 text-icon" strokeWidth={1.5} aria-hidden />}
+            expanded={openPanel === "add-person"}
+            onClick={() => triggerPanel("add-person")}
           />
-          <SettingsPanel
-            theme={theme}
-            onTheme={setTheme}
-            status={e.status}
-            onConfigSaved={() => { e.loadStatus(); paper.load(); }}
-            u={u}
+          <RailPanelButton
+            id="settings-btn"
+            domId="settings-btn"
+            label="Settings"
+            icon={<SlidersHorizontal className="size-3.5 shrink-0 text-icon" strokeWidth={1.5} aria-hidden />}
+            expanded={openPanel === "settings"}
+            onClick={() => triggerPanel("settings")}
           />
           <VersionRow u={u} />
         </div>
@@ -379,7 +408,7 @@ export function App() {
               <Drawer.Overlay className="fixed top-0 right-0 bottom-0 left-0 z-40 bg-ink/40" />
               <Drawer.Content
                 aria-label="Ergon navigation"
-                className="fixed inset-y-0 left-0 z-50 flex w-[288px] max-w-[88vw] flex-col border-r border-hairline bg-surface outline-none"
+                className="fixed inset-y-0 left-0 z-40 flex w-[288px] max-w-[88vw] flex-col border-r border-hairline bg-surface outline-none"
               >
                 <Drawer.Title className="sr-only">Ergon navigation</Drawer.Title>
                 {railContent}
@@ -554,6 +583,55 @@ export function App() {
           )}
         </div>
 
+        <WorkspaceFilesPanel
+          hideTrigger
+          open={openPanel === "files"}
+          onOpenChange={(o) => handlePanelChange("files", o)}
+          files={e.files}
+          onRefresh={e.loadFiles}
+          onOpenFile={(p) => { handlePanelChange("files", false); setOpenFilePath(p); }}
+          onUpload={e.uploadFile}
+        />
+        <LearnedPanel
+          hideTrigger
+          open={openPanel === "memory"}
+          onOpenChange={(o) => handlePanelChange("memory", o)}
+          count={e.learnedCount}
+        />
+        <SuitePanel
+          hideTrigger
+          open={openPanel === "suite"}
+          onOpenChange={(o) => handlePanelChange("suite", o)}
+          count={e.suiteCount}
+          onChanged={() => e.loadStarters(personRole)}
+          onRun={(id, msgs) => {
+            handlePanelChange("suite", false);
+            e.showRun(id, msgs);
+            setFace("chat");
+            setMenuOpen(false);
+          }}
+        />
+        <AddPersonPanel
+          hideTrigger
+          open={openPanel === "add-person"}
+          onOpenChange={(o) => handlePanelChange("add-person", o)}
+          onAdded={() => {
+            handlePanelChange("add-person", false);
+            e.refreshPerson();
+            paper.load();
+            setMenuOpen(false);
+          }}
+        />
+        <SettingsPanel
+          hideTrigger
+          open={openPanel === "settings"}
+          onOpenChange={(o) => handlePanelChange("settings", o)}
+          theme={theme}
+          onTheme={setTheme}
+          status={e.status}
+          onConfigSaved={() => { e.loadStatus(); paper.load(); }}
+          u={u}
+        />
         <FileViewerModal
           filePath={openFilePath}
           onClose={() => setOpenFilePath(null)}

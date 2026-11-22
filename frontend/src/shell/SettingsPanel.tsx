@@ -381,21 +381,29 @@ export function SettingsPanel({
   status,
   onConfigSaved,
   u,
+  open,
+  onOpenChange,
+  hideTrigger,
 }: {
   theme: Theme;
   onTheme: (t: Theme) => void;
   status: Status | null | "error";
   onConfigSaved: () => void;
   u: ReturnType<typeof useUpdate>;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  hideTrigger?: boolean;
 }) {
   return (
-    <MorphingDialog transition={openPreset}>
-      <MorphingDialogTrigger thing="settings-btn" className={TRIGGER} style={{ borderRadius: 7 }}>
-        <span className="flex min-w-0 items-center gap-1.5">
-          <SlidersHorizontal className="size-3.5 shrink-0 text-icon" strokeWidth={1.5} aria-hidden />
-          <span className="leading-tight">Settings</span>
-        </span>
-      </MorphingDialogTrigger>
+    <MorphingDialog transition={openPreset} open={open} onOpenChange={onOpenChange}>
+      {!hideTrigger && (
+        <MorphingDialogTrigger thing="settings-btn" className={TRIGGER} style={{ borderRadius: 7 }}>
+          <span className="flex min-w-0 items-center gap-1.5">
+            <SlidersHorizontal className="size-3.5 shrink-0 text-icon" strokeWidth={1.5} aria-hidden />
+            <span className="leading-tight">Settings</span>
+          </span>
+        </MorphingDialogTrigger>
+      )}
       <MorphingDialogContainer>
         <MorphingDialogContent
           style={{ borderRadius: 18 }}

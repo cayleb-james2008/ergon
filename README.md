@@ -33,7 +33,7 @@ CARGO_BUILD_JOBS=2 cargo build
 ./target/debug/ergon   # http://127.0.0.1:8787 (auto-detects running local model gateways)
 ```
 
-On startup (unless `ERGON_NO_AUTO_MODEL=1` or an explicit `ERGON_MODEL_BASE_URL` / `ERGON_MODEL_API_KEY` / `data/config.json` is present), Ergon automatically probes running local OpenAI-compatible gateways on loopback (`127.0.0.1:8790/v1`, `127.0.0.1:8789/v1`, `127.0.0.1:11434/v1`) and connects with no API key required. You can switch providers or enter a remote OpenAI-compatible endpoint and API key live inside **Settings** (`GET/POST /api/config`, persisted in `data/config.json`).
+On startup (unless `ERGON_NO_AUTO_MODEL=1` or an explicit `ERGON_MODEL_BASE_URL` / `ERGON_MODEL_API_KEY` / `data/config.json` is present), Ergon automatically probes running local OpenAI-compatible gateways on loopback (`127.0.0.1:11434/v1` first, then `127.0.0.1:8790/v1`, then `127.0.0.1:8789/v1`) and connects with no API key required. You can switch providers or enter a remote OpenAI-compatible endpoint and API key live inside **Settings** (`GET/POST /api/config`, persisted in `data/config.json`).
 
 Without a reachable local gateway or `ERGON_MODEL_API_KEY`, the UI shows an honest "not connected to a model yet" banner and `/api/chat` refuses (HTTP 503) — Ergon never fabricates an answer.
 
@@ -45,7 +45,7 @@ Without a reachable local gateway or `ERGON_MODEL_API_KEY`, the UI shows an hone
 | `ERGON_ALLOWED_HOSTS` | — (comma-separated host names, with or without ports, case-insensitive; extra Host names accepted when no gate token is set, e.g. a LAN name for `/phone`. Loopback is always accepted) |
 | `ERGON_DATA_DIR` | `./data` (people, threads, `config.json`, per-person workspaces) |
 | `ERGON_WORKSPACE` | `<data>/workspace` — the default person's sandbox root |
-| `ERGON_MODEL_BASE_URL` | auto-probed local gateway (`:8790` / `:8789` / `:11434`), else `https://opencode.ai/zen/go/v1` |
+| `ERGON_MODEL_BASE_URL` | auto-probed local gateway (`:11434` / `:8790` / `:8789`), else `https://opencode.ai/zen/go/v1` |
 | `ERGON_MODEL_ID` | auto-detected gateway default, else `deepseek-v4.1-flash` |
 | `ERGON_MODEL_API_KEY` | — (optional on loopback `127.0.0.1`/`localhost`/`[::1]`; required for remote endpoints) |
 | `ERGON_NO_AUTO_MODEL` | `0` (set to `1` to disable startup local gateway auto-probing) |
@@ -125,7 +125,7 @@ Without a reachable local gateway or `ERGON_MODEL_API_KEY`, the UI shows an hone
 ## Verification
 
 ```sh
-CARGO_BUILD_JOBS=2 cargo test          # 101 Rust unit + E2E tests
+CARGO_BUILD_JOBS=2 cargo test          # 104 Rust unit + E2E tests
 cd frontend && npm run check:ui        # Playwright E2E gate, graph probe, and worst-case replay
 ```
 
