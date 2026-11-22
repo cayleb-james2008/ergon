@@ -10,6 +10,7 @@ import {
   ArrowRight,
   Blocks,
   CalendarClock,
+  FileCheck2,
   FileDown,
   FolderOpen,
   GitBranch,
@@ -20,6 +21,7 @@ import {
   SlidersHorizontal,
   Sparkles,
   Upload,
+  Users,
 } from "lucide-react";
 import {
   Command,
@@ -64,6 +66,8 @@ export function CommandPalette({
   onNewTask,
   onUploadFile,
   onExportLatestReceipt,
+  onExportAuditBundle,
+  onOpenWorkspaceSwitcher,
   onOpenSettings,
   onOpenFiles,
   onOpenSkills,
@@ -85,6 +89,8 @@ export function CommandPalette({
   onNewTask: () => void;
   onUploadFile: () => void;
   onExportLatestReceipt: (format: "md" | "json") => void;
+  onExportAuditBundle?: (format: "json" | "md") => void;
+  onOpenWorkspaceSwitcher?: () => void;
   onOpenSettings: () => void;
   onOpenFiles: () => void;
   onOpenSkills: () => void;
@@ -258,6 +264,15 @@ export function CommandPalette({
       { id: "action-upload-file", keywords: "upload file csv markdown drop workspace", label: "Upload file to workspace", badge: "Files", icon: Upload, run: onUploadFile },
       { id: "action-export-receipt-md", keywords: "export receipt sha256 markdown download", label: "Export latest receipt (SHA-256 Markdown)", badge: ".md", icon: FileDown, run: () => onExportLatestReceipt("md") },
       { id: "action-export-receipt-json", keywords: "export receipt sha256 json download", label: "Export latest receipt (SHA-256 JSON)", badge: ".json", icon: FileDown, run: () => onExportLatestReceipt("json") },
+      ...(onExportAuditBundle
+        ? [
+            { id: "action-export-audit-json", keywords: "export full audit bundle sha256 compliance json", label: "Export Full Audit Bundle (JSON)", badge: "Bundle", icon: FileCheck2, run: () => onExportAuditBundle("json") },
+            { id: "action-export-audit-md", keywords: "export audit bundle report markdown", label: "Export Audit Bundle Report (Markdown)", badge: ".md", icon: FileCheck2, run: () => onExportAuditBundle("md") },
+          ]
+        : []),
+      ...(onOpenWorkspaceSwitcher
+        ? [{ id: "action-switch-workspace", keywords: "switch workspace person employee desk team", label: "Switch employee workspace", badge: "Desk", icon: Users, run: onOpenWorkspaceSwitcher }]
+        : []),
       { id: "action-open-settings", keywords: "open settings appearance theme model", label: "Open Settings (Model & Appearance)", badge: "Panel", icon: SlidersHorizontal, run: onOpenSettings },
       { id: "action-open-skills", keywords: "browse workflows skills catalog 12", label: `Browse all ${skills.length} built-in workflows`, badge: String(skills.length), icon: Sparkles, run: onOpenSkills },
       { id: "action-open-routines", keywords: "routines recurring schedule cron automate", label: "Manage recurring routines", badge: String(routines.length), icon: CalendarClock, run: onOpenRoutines },
@@ -267,7 +282,7 @@ export function CommandPalette({
     ];
     if (!qLower) return all;
     return all.filter((a) => a.keywords.includes(qLower) || a.label.toLowerCase().includes(qLower));
-  }, [qLower, onNewTask, onUploadFile, onExportLatestReceipt, onOpenSettings, skills.length, onOpenSkills, routines.length, onOpenRoutines, files.length, onOpenFiles, onSwitchFace]);
+  }, [qLower, onNewTask, onUploadFile, onExportLatestReceipt, onExportAuditBundle, onOpenWorkspaceSwitcher, onOpenSettings, skills.length, onOpenSkills, routines.length, onOpenRoutines, files.length, onOpenFiles, onSwitchFace]);
 
   const uniqueRemoteHits = useMemo(() => {
     const filePaths = new Set(matchedFiles.map((f) => f.path));
