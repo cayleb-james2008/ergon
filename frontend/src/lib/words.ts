@@ -79,6 +79,14 @@ export function toolLabel(tool: string, via: string | undefined, body: string): 
     case "delete_file": { const n = pick(/(\S+) has NOT been deleted/); label = "Asked your approval to delete " + (n || "a file"); break; }
     case "flag_decision": label = "Asked you to decide something"; break;
     case "delegate": label = via ? "Handed work to " + via : "Handed work to a specialist"; break;
+    case "reconcile_ledger": { const n = pick(/(?:wrote|reconciled)\s+([^\s(]+)/i); label = n ? "Reconciled ledger " + n : "Reconciled expense ledger"; break; }
+    case "summarize_meeting": label = "Summarized meeting notes & owners"; break;
+    case "audit_contract": label = "Audited contract clauses & risks"; break;
+    case "triage_inbox": label = "Triaged inbox into Urgent / Action / FYI"; break;
+    case "clean_dataset": label = "Cleaned & deduplicated dataset"; break;
+    case "compare_documents": label = "Compared two documents line by line"; break;
+    case "draft_brief": label = "Drafted grounded executive brief"; break;
+    case "extract_tables": label = "Extracted structured CSV table"; break;
     default: return null;
   }
   if (via && tool !== "delegate") label += " (for " + via + ")";
@@ -89,7 +97,10 @@ export function toolLabel(tool: string, via: string | undefined, body: string): 
 export function savedFile(tool: string, body: string): string {
   const re = tool === "write_document" ? /^wrote document (.+?) \(/
     : tool === "make_spreadsheet" ? /^wrote spreadsheet (.+?) \(/
-    : tool === "write_file" ? /^wrote (.+?) \(\d+ bytes\)/ : null;
+    : tool === "write_file" ? /^wrote (.+?) \(\d+ bytes\)/
+    : /^(reconcile_ledger|summarize_meeting|audit_contract|triage_inbox|clean_dataset|compare_documents|draft_brief|extract_tables)$/.test(tool)
+      ? /^wrote (?:document |spreadsheet |report |file )?(.+?) \(/
+    : null;
   const m = re && re.exec(body);
   return m ? m[1] : "";
 }
