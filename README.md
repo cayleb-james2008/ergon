@@ -29,9 +29,12 @@ and runs correctly.
 
 ```sh
 export PATH="$HOME/.local/rust/bin:$PATH"
-CARGO_BUILD_JOBS=2 cargo build
-./target/debug/ergon   # http://127.0.0.1:8787 (auto-detects running local model gateways)
+CARGO_BUILD_JOBS=2 cargo build --release
+./target/release/ergon             # desktop app window on http://127.0.0.1:8787 (auto-detects local gateways)
+./target/release/ergon --no-open   # headless server mode (never opens a desktop window)
 ```
+
+Launching `ergon` directly (or double-clicking `ergon.exe` on Windows, or passing `--app`) opens a chromeless desktop app window (`chromium`/`google-chrome`/`brave --app=` on Linux, `msedge.exe`/`chrome.exe --app=` on Windows) while serving the local workspace on `127.0.0.1:8787`. Window launch is automatically suppressed in headless shells, CI, systemd services, or when `--no-open` / `ERGON_NO_OPEN=1` is set.
 
 On startup (unless `ERGON_NO_AUTO_MODEL=1` or an explicit `ERGON_MODEL_BASE_URL` / `ERGON_MODEL_API_KEY` / `data/config.json` is present), Ergon automatically probes running local OpenAI-compatible gateways on loopback (`127.0.0.1:11434/v1` first, then `127.0.0.1:8790/v1`, then `127.0.0.1:8789/v1`) and connects with no API key required. You can switch providers or enter a remote OpenAI-compatible endpoint and API key live inside **Settings** (`GET/POST /api/config`, persisted in `data/config.json`).
 
@@ -49,6 +52,7 @@ Without a reachable local gateway or `ERGON_MODEL_API_KEY`, the UI shows an hone
 | `ERGON_MODEL_ID` | auto-detected gateway default, else `deepseek-v4.1-flash` |
 | `ERGON_MODEL_API_KEY` | — (optional on loopback `127.0.0.1`/`localhost`/`[::1]`; required for remote endpoints) |
 | `ERGON_NO_AUTO_MODEL` | `0` (set to `1` to disable startup local gateway auto-probing) |
+| `ERGON_NO_OPEN` / `ERGON_OPEN` | `0` (`ERGON_NO_OPEN=1` or `--no-open` disables desktop window launch; `ERGON_OPEN=1` or `--app` forces it when a display is present) |
 | `ERGON_GATE_TOKEN` | — (when set, every request must carry the matching `X-Ergon-Gate` header; this is the hosting layer's gate — Ergon itself has no accounts or passwords) |
 
 ## How it works

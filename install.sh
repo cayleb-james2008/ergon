@@ -83,9 +83,10 @@ echo "Data dir:  $DATA_DIR (people, library, suites and work records live here)"
   printf '%s\n' '# environment at start.'
   printf 'export ERGON_DATA_DIR=%s\n' "$(shq "$DATA_DIR")"
   printf '%s\n' 'export ERGON_PORT="${ERGON_PORT:-8787}"'
+  printf '%s\n' 'export ERGON_NO_OPEN="${ERGON_NO_OPEN:-1}"'
   printf '%s\n' '# export ERGON_MODEL_API_KEY=""        # DeepSeek V4.1 Flash via OpenCode Go'
   printf '%s\n' '# export ERGON_GATE_TOKEN=""           # optional hosting-layer gate token'
-  printf 'exec %s\n' "$(shq "$PREFIX/bin/ergon")"
+  printf 'exec %s "$@"\n' "$(shq "$PREFIX/bin/ergon")"
 } > "$PREFIX/bin/ergon-serve"
 chmod 0755 "$PREFIX/bin/ergon-serve"
 echo "Launcher:  $PREFIX/bin/ergon-serve"
