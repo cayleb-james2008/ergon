@@ -264,7 +264,7 @@ function SettingsBody({
                   Deterministic CSV reconciliation, Markdown summarization, action extraction, learned memory rules, and approval-gated deletion run locally over your IndexedDB workspace.
                 </p>
                 <div className="flex flex-wrap items-center gap-2">
-                  <Button type="submit" size="sm" variant="outline" className="max-md:min-h-11" disabled={saving}>
+                  <Button type="submit" size="sm" variant="outline" className="h-auto max-w-full whitespace-normal py-2 text-left max-md:min-h-11" disabled={saving}>
                     Active: Browser Workspace Engine
                   </Button>
                 </div>
@@ -278,12 +278,12 @@ function SettingsBody({
                   type="button"
                   size="sm"
                   variant="outline"
-                  className="max-md:min-h-11"
+                  className="h-auto max-w-full whitespace-normal py-2 text-left max-md:min-h-11"
                   disabled={localProbe === "checking"}
                   onClick={probeLocalErgon}
                 >
-                  <ExternalLink className="size-3.5" strokeWidth={1.5} aria-hidden />
-                  {localProbe === "checking" ? "Checking :8787…" : "Connect to Local Ergon (127.0.0.1:8787)"}
+                  <ExternalLink className="size-3.5 shrink-0" strokeWidth={1.5} aria-hidden />
+                  <span>{localProbe === "checking" ? "Checking :8787…" : "Connect to Local Ergon (127.0.0.1:8787)"}</span>
                 </Button>
               </div>
               {localProbe === "missing" && (
