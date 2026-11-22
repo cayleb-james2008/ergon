@@ -10,6 +10,7 @@
 
 pub mod library;
 pub mod records;
+pub mod skill_catalog;
 pub mod skills;
 pub mod ui;
 pub mod update;

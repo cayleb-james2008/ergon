@@ -124,35 +124,17 @@ fn item(
 pub fn seed_items() -> Vec<LibraryItem> {
     let mut out: Vec<LibraryItem> = Vec::new();
 
-    for (id, name, desc, params) in [
-        (
-            "write-document",
-            "Write document",
-            "Built into every agent: formats sections into a finished markdown document in the workspace.",
-            vec!["title", "sections"],
-        ),
-        (
-            "make-spreadsheet",
-            "Make spreadsheet",
-            "Built into every agent: turns columns and rows into a finished CSV spreadsheet in the workspace.",
-            vec!["title", "columns", "rows"],
-        ),
-        (
-            "research",
-            "Research",
-            "Built into every agent: fetches several pages and compiles them into one research notes document.",
-            vec!["topic", "urls"],
-        ),
-        (
-            "update-memory",
-            "Update memory",
-            "Built into every agent: records a learned preference or fact into the person's long-term memory.",
-            vec!["note"],
-        ),
-    ] {
-        let mut it = item(id, "skill", name, desc, "ergon");
+    for meta in crate::skill_catalog::all_skills() {
+        let mut it = item(
+            &meta.slug,
+            "skill",
+            &meta.title,
+            &meta.description,
+            "ergon",
+        );
         it.builtin = true;
-        it.params = params.into_iter().map(|s| s.to_string()).collect();
+        it.params = meta.param_names();
+        it.source = meta.source;
         out.push(it);
     }
 
