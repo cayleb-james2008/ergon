@@ -1358,7 +1358,7 @@ pub fn execute_tool(cfg: &Config, name: &str, args: &Value) -> Result<String, St
             let full = sandbox_path(&cfg.workspace_dir, rel)?;
             let mut entries: Vec<String> = Vec::new();
             let rd = std::fs::read_dir(&full)
-                .map_err(|e| format!("list_dir {}: {e}", full.display()))?;
+                .map_err(|e| format!("list_dir {rel}: {e}"))?;
             for e in rd.filter_map(|e| e.ok()) {
                 let fname = e.file_name().to_string_lossy().into_owned();
                 let suffix = if e.path().is_dir() { "/" } else { "" };
@@ -2151,6 +2151,66 @@ fn is_cancelled(live: Option<LiveStreamCtx<'_>>) -> bool {
         .unwrap_or(false)
 }
 
+/// Returns true when the user prompt explicitly names a built-in workspace tool
+/// or workflow (e.g. `draft_brief`, `audit_contract`, `read_file`) or a
+/// workspace filename (`.md`, `.csv`, `.txt`, `.json`, `.log`, `.tsv`, excluding
+/// URLs). Used to prevent a model from short-circuiting with `{"done": true}`
+/// before inspecting or running any tool against the real workspace.
+pub fn task_requires_workspace_tool(task: &str) -> bool {
+    const TOOLS: &[&str] = &[
+        "draft_brief",
+        "audit_contract",
+        "reconcile_ledger",
+        "summarize_meeting",
+        "triage_inbox",
+        "clean_dataset",
+        "compare_documents",
+        "extract_tables",
+        "write_file",
+        "read_file",
+        "delete_file",
+        "make_spreadsheet",
+        "write_document",
+        "update_memory",
+        "search_files",
+        "list_dir",
+        "move_file",
+        "fetch_url",
+        "flag_decision",
+    ];
+    const EXTS: &[&str] = &[".md", ".csv", ".txt", ".json", ".log", ".tsv"];
+
+    for tok in task.split(|c: char| !(c.is_ascii_alphanumeric() || c == '_')) {
+        if !tok.is_empty() {
+            let low = tok.to_ascii_lowercase();
+            if TOOLS.contains(&low.as_str()) {
+                return true;
+            }
+        }
+    }
+
+    for raw in task.split_whitespace() {
+        let cleaned = raw.trim_matches(|c: char| {
+            matches!(
+                c,
+                '"' | '\'' | '`' | '(' | ')' | '[' | ']' | '{' | '}' | ',' | ';' | ':' | '.' | '!' | '?'
+            )
+        });
+        let low = cleaned.to_ascii_lowercase();
+        if low.starts_with("http://") || low.starts_with("https://") || low.starts_with("mailto:") {
+            continue;
+        }
+        if EXTS
+            .iter()
+            .any(|ext| low.len() > ext.len() && low.ends_with(ext))
+        {
+            return true;
+        }
+    }
+
+    false
+}
+
 /// One agent loop: model → tool → model → … until done or the step
 /// cap. Steps are pushed into the thread as they happen (subagent
 /// steps are labelled with the subagent's name). Returns the done
@@ -2218,6 +2278,15 @@ fn run_loop(
             Err(e) => return Err(e),
         };
         if reply["done"].as_bool() == Some(true) {
+            if steps.is_empty() && json_retries < 2 && task_requires_workspace_tool(task) {
+                json_retries += 1;
+                messages.push(json!({ "role": "assistant", "content": reply.to_string() }));
+                messages.push(json!({
+                    "role": "user",
+                    "content": "Protocol reminder: you have not called any tool yet. Do NOT reply {\"done\": true} before running the requested workspace tool. Call {\"tool\": \"<name>\", \"args\": {...}} against the real workspace now so missing source files or real tool results are checked honestly."
+                }));
+                continue;
+            }
             let summary = reply["summary"]
                 .as_str()
                 .filter(|s| !s.trim().is_empty())
@@ -2651,6 +2720,14 @@ pub fn run_agent_live(
     //     so a pre-existing file claimed as the deliverable is
     //     visible without accusing an honest input reference.
     // Both lines are emitted when both apply.
+    let unverified_zero_tool = steps.is_empty() && task_requires_workspace_tool(task);
+    if unverified_zero_tool {
+        store.lock().unwrap().push(
+            thread_id,
+            "step",
+            "Note: this task named a workspace tool or file, but no tool ran — nothing was read, verified, or written. Treat the summary above with caution.",
+        );
+    }
     let (missing_named, unwritten_named) = check_mentions(
         &summary,
         &cfg.workspace_dir,
@@ -2698,7 +2775,16 @@ pub fn run_agent_live(
     // product (brief, graph, today, offers) is built from.
     // Work means a tool step that succeeded or a written file; a run whose
     // steps all failed is an answer, not finished work (EB2, EB2b).
-    if ledger.ok_steps == 0 && ledger.written.is_empty() {
+    if unverified_zero_tool {
+        records::append_work(
+            cfg,
+            task,
+            &format!("Did not run requested tool — {summary}"),
+            &[],
+            thread_id,
+            false,
+        );
+    } else if ledger.ok_steps == 0 && ledger.written.is_empty() {
         records::append_answer(cfg, task, &summary, thread_id);
     } else {
         records::append_work(cfg, task, &summary, &ledger.written, thread_id, true);

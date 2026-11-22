@@ -214,7 +214,7 @@ fn build_context(cfg: &Config) -> Result<rune::Context, String> {
                     }
                     match std::fs::write(&full, &content) {
                         Ok(()) => "ok".to_string(),
-                        Err(e) => format!("error: write {}: {e}", full.display()),
+                        Err(e) => format!("error: write {path}: {e}"),
                     }
                 }
                 Err(e) => format!("error: {e}"),
@@ -228,7 +228,7 @@ fn build_context(cfg: &Config) -> Result<rune::Context, String> {
         .function(["host_workspace_read"], move |path: String| -> String {
             match sandbox_path(&ws, &path) {
                 Ok(full) => std::fs::read_to_string(&full)
-                    .unwrap_or_else(|e| format!("error: read {}: {e}", full.display())),
+                    .unwrap_or_else(|e| format!("error: read {path}: {e}")),
                 Err(e) => format!("error: {e}"),
             }
         })
@@ -248,7 +248,7 @@ fn build_context(cfg: &Config) -> Result<rune::Context, String> {
                         names.sort();
                         names.join("\n")
                     }
-                    Err(e) => format!("error: list {}: {e}", full.display()),
+                    Err(e) => format!("error: list {path}: {e}"),
                 },
                 Err(e) => format!("error: {e}"),
             }

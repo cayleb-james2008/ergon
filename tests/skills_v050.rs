@@ -827,3 +827,32 @@ fn compare_documents_identical_and_triage_json_and_dispatcher_and_library_seed()
         assert!(!bs.source.is_empty(), "built-in skill {} missing Rune source", bs.id);
     }
 }
+
+/// v0.6.0 BUG-03 regression: clean_dataset::parse_num must parse accounting
+/// parenthesized negatives like `($12.34)` and `($1,250.50)` consistently with
+/// reconcile_ledger so credit memos are included in numeric profiling & outliers.
+#[test]
+fn clean_dataset_parses_accounting_parenthesized_negatives() {
+    let env = TestEnv::new("bug03_accounting_negatives");
+    env.write_ws(
+        "credits.csv",
+        concat!(
+            "ID,Vendor,Amount\n",
+            "1,Northstar,$500.00\n",
+            "2,Northstar,$480.00\n",
+            "3,Northstar,$520.00\n",
+            "4,Northstar,$495.00\n",
+            "5,Northstar,$510.00\n",
+            "6,Northstar,($12.34)\n",
+            "7,Northstar,\"($1,250.50)\"\n",
+            "8,Northstar,-$40.00\n",
+        ),
+    );
+    let out = skills::clean_dataset(&env.cfg, "credits.csv", "ID", "Credits Clean").unwrap();
+    assert!(out.contains("Credits Clean - Diff Report.md"), "{out}");
+    let md = env.read_ws("Credits Clean - Diff Report.md");
+    assert!(
+        md.contains("| `amount` | 8 | -1250.50 | 150.27 | 520.00 |"),
+        "expected all 8 numeric values incl. ($12.34) & ($1,250.50) with Min=-1250.50 and exact Mean=150.27: {md}"
+    );
+}

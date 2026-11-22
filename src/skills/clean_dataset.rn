@@ -52,13 +52,21 @@ fn is_null_token(s) {
 }
 
 fn parse_num(raw) {
-    if raw.is_empty() {
+    let s = raw.trim();
+    if s.is_empty() {
         return None;
     }
-    let clean = raw
+    let neg = false;
+    if s.starts_with("(") && s.ends_with(")") && s.len() >= 2 {
+        neg = true;
+        s = s.replace("(", "").replace(")", "").trim();
+    }
+    let clean = s
         .replace("$", "")
         .replace(",", "")
         .replace("%", "")
+        .replace("USD", "")
+        .replace("usd", "")
         .replace(" ", "");
     if clean.is_empty() {
         return None;
@@ -66,7 +74,16 @@ fn parse_num(raw) {
     match clean.parse::<f64>() {
         Ok(v) => {
             if v.is_finite() {
-                Some(v)
+                let signed = if neg {
+                    if v < 0.0 { v } else { -v }
+                } else {
+                    v
+                };
+                if signed == 0.0 {
+                    Some(0.0)
+                } else {
+                    Some(signed)
+                }
             } else {
                 None
             }
