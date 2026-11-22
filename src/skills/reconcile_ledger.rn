@@ -1,0 +1,494 @@
+//! Ergon skill: reconcile_ledger (Rune)
+//!
+//! Multi-CSV invoice and expense reconciliation: parses one or more
+//! workspace CSV ledgers, matches references across files, flags
+//! duplicate references, missing receipts, and invalid/non-positive
+//! amounts with exact `file:L##` citations, computes penny-exact
+//! vendor and category totals, and writes both a Markdown report and
+//! a structured summary CSV into the workspace.
+
+use std::cmp::Ordering;
+use std::collections::HashMap;
+
+fn parse_cents(raw) {
+    let s = raw.trim();
+    if s.is_empty() {
+        return None;
+    }
+    let neg = false;
+    if s.starts_with("(") && s.ends_with(")") && s.len() >= 2 {
+        neg = true;
+        s = s.replace("(", "").replace(")", "").trim();
+    }
+    let clean = s
+        .replace("$", "")
+        .replace(",", "")
+        .replace("USD", "")
+        .replace("usd", "")
+        .replace(" ", "");
+    if clean.starts_with("-") {
+        neg = !neg;
+        clean = clean.replace("-", "");
+    } else if clean.starts_with("+") {
+        clean = clean.replace("+", "");
+    }
+    if clean.is_empty() {
+        return None;
+    }
+    match clean.parse::<f64>() {
+        Ok(val) => {
+            if !val.is_finite() {
+                return None;
+            }
+            let cents = (val * 100.0).round().to::<i64>();
+            if neg {
+                Some(-cents)
+            } else {
+                Some(cents)
+            }
+        }
+        Err(_) => None,
+    }
+}
+
+fn fmt_money(cents) {
+    let neg = cents < 0;
+    let abs_c = if neg { -cents } else { cents };
+    let dollars = abs_c / 100;
+    let rem = abs_c % 100;
+    let frac = if rem < 10 { `0${rem}` } else { `${rem}` };
+    let d_str = `${dollars}`;
+    // Insert thousands commas for readability.
+    let len = d_str.len();
+    let formatted_dollars = if len <= 3 {
+        d_str
+    } else {
+        let out = String::new();
+        let idx = 0;
+        for ch in d_str.chars() {
+            let left = len - idx;
+            if idx > 0 && left % 3 == 0 {
+                out.push(',');
+            }
+            out.push(ch);
+            idx = idx + 1;
+        }
+        out
+    };
+    if neg {
+        "-$" + `${formatted_dollars}.${frac}`
+    } else {
+        "$" + `${formatted_dollars}.${frac}`
+    }
+}
+
+fn fmt_plain_decimal(cents) {
+    let neg = cents < 0;
+    let abs_c = if neg { -cents } else { cents };
+    let dollars = abs_c / 100;
+    let rem = abs_c % 100;
+    let frac = if rem < 10 { `0${rem}` } else { `${rem}` };
+    if neg {
+        `-${dollars}.${frac}`
+    } else {
+        `${dollars}.${frac}`
+    }
+}
+
+fn csv_esc(cell) {
+    if !cell.contains(",") && !cell.contains("\"") && !cell.contains("\n") && !cell.contains("\r") {
+        return cell;
+    }
+    let doubled = cell.replace("\"", "\"\"");
+    `"${doubled}"`
+}
+
+fn md_esc(cell) {
+    cell.replace("|", "\\|").replace("\n", " ").replace("\r", "")
+}
+
+fn find_col(headers, needles) {
+    let i = 0;
+    while i < headers.len() {
+        let h = headers[i].trim().to_lowercase();
+        for needle in needles {
+            if h == needle || h.contains(needle) {
+                return i;
+            }
+        }
+        i = i + 1;
+    }
+    return -1;
+}
+
+fn is_missing_receipt(val) {
+    let v = val.trim().to_lowercase();
+    v.is_empty()
+        || v == "missing"
+        || v == "none"
+        || v == "no"
+        || v == "n/a"
+        || v == "na"
+        || v == "false"
+        || v == "0"
+        || v == "pending"
+        || v == "unverified"
+}
+
+fn get_cell(row, idx) {
+    if idx < 0 || idx >= row.len() {
+        ""
+    } else {
+        row[idx].trim()
+    }
+}
+
+fn sort_totals_desc(map) {
+    let items = [];
+    for entry in map.iter() {
+        let key = entry.0;
+        let stats = entry.1;
+        items.push((key, stats[0], stats[1]));
+    }
+    items.sort_by(|a, b| {
+        if a.2 > b.2 {
+            Ordering::Less
+        } else if a.2 < b.2 {
+            Ordering::Greater
+        } else if a.0 < b.0 {
+            Ordering::Less
+        } else if a.0 > b.0 {
+            Ordering::Greater
+        } else {
+            Ordering::Equal
+        }
+    });
+    items
+}
+
+pub fn main(source_files, output_title) {
+    if source_files.is_empty() {
+        return "error: reconcile_ledger requires at least one CSV file path";
+    }
+    let title = output_title.trim();
+    if title.is_empty() {
+        title = "Ledger Reconciliation";
+    }
+
+    let total_rows = 0;
+    let total_cents = 0;
+    let files_processed = [];
+
+    let vendor_totals = HashMap::new();
+    let category_totals = HashMap::new();
+    // ref_key -> [first_loc, first_file_idx, first_cents, count, cross_file_matched]
+    let ref_seen = HashMap::new();
+
+    let duplicate_flags = [];
+    let amount_mismatch_flags = [];
+    let missing_receipt_flags = [];
+    let amount_anomalies = [];
+    let per_file_summaries = [];
+
+    let file_idx = 0;
+    for path in source_files {
+        let trimmed = path.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let raw = host_workspace_read(trimmed.clone());
+        if raw.starts_with("error:") {
+            return raw;
+        }
+        let rows = host_parse_csv(raw);
+        if rows.len() < 2 {
+            let msg = `error: ${trimmed} must contain a header row and at least one data row`;
+            return msg;
+        }
+        let headers = rows[0];
+        let date_col = find_col(headers, ["date", "posted", "txn_date", "invoice_date"]);
+        let ref_col = find_col(headers, ["ref", "reference", "invoice", "tx_id", "txn_id", "doc_id", "id", "number"]);
+        let vendor_col = find_col(headers, ["vendor", "merchant", "payee", "supplier", "counterparty", "name", "description"]);
+        let cat_col = find_col(headers, ["category", "dept", "department", "account", "gl", "cost_center", "type"]);
+        let amt_col = find_col(headers, ["amount", "total", "cost", "usd", "price", "net", "debit", "value"]);
+        let rcpt_col = find_col(headers, ["receipt", "voucher", "proof", "verified", "attachment", "status"]);
+
+        if amt_col < 0 {
+            let msg = `error: no amount column found in ${trimmed}`;
+            return msg;
+        }
+
+        let file_rows = 0;
+        let file_cents = 0;
+        let file_seen_refs = HashMap::new();
+        let r = 1;
+        while r < rows.len() {
+            let row = rows[r];
+            let line_no = r + 1;
+            let loc = `${trimmed}:L${line_no}`;
+            let date_v = get_cell(row, date_col);
+            let ref_v = get_cell(row, ref_col);
+            let vendor_v = get_cell(row, vendor_col);
+            if vendor_v.is_empty() {
+                vendor_v = "Uncategorized Vendor";
+            }
+            let cat_v = get_cell(row, cat_col);
+            if cat_v.is_empty() {
+                cat_v = "Uncategorized";
+            }
+            let amt_raw = get_cell(row, amt_col);
+            let rcpt_v = get_cell(row, rcpt_col);
+
+            total_rows = total_rows + 1;
+            file_rows = file_rows + 1;
+
+            let row_cents = 0;
+            match parse_cents(amt_raw.clone()) {
+                Some(c) => {
+                    row_cents = c;
+                    if c <= 0 {
+                        amount_anomalies.push([loc.clone(), vendor_v.clone(), amt_raw.clone(), "non-positive amount"]);
+                    }
+                    total_cents = total_cents + c;
+                    file_cents = file_cents + c;
+                }
+                None => {
+                    amount_anomalies.push([loc.clone(), vendor_v.clone(), amt_raw.clone(), "unparseable amount"]);
+                }
+            }
+
+            // Accumulate vendor totals
+            match vendor_totals.get(vendor_v.clone()) {
+                Some(prev) => {
+                    vendor_totals.insert(vendor_v.clone(), [prev[0] + 1, prev[1] + row_cents]);
+                }
+                None => {
+                    vendor_totals.insert(vendor_v.clone(), [1, row_cents]);
+                }
+            }
+
+            // Accumulate category totals
+            match category_totals.get(cat_v.clone()) {
+                Some(prev) => {
+                    category_totals.insert(cat_v.clone(), [prev[0] + 1, prev[1] + row_cents]);
+                }
+                None => {
+                    category_totals.insert(cat_v.clone(), [1, row_cents]);
+                }
+            }
+
+            // Reference tracking (per-file duplicates + cross-file reconciliation)
+            if !ref_v.is_empty() {
+                let ref_norm = ref_v.to_uppercase();
+                // 1) Within-file duplicate check (works for every file, 0..N)
+                let same_file_dup = match file_seen_refs.get(ref_norm.clone()) {
+                    Some(prev_loc) => {
+                        duplicate_flags.push([
+                            loc.clone(),
+                            ref_v.clone(),
+                            vendor_v.clone(),
+                            fmt_money(row_cents),
+                            `duplicate of ${prev_loc}`,
+                        ]);
+                        true
+                    }
+                    None => {
+                        file_seen_refs.insert(ref_norm.clone(), loc.clone());
+                        false
+                    }
+                };
+                // 2) Cross-file matching & amount mismatch check
+                match ref_seen.get(ref_norm.clone()) {
+                    Some(prev) => {
+                        let first_loc = prev[0];
+                        let first_fidx = prev[1];
+                        let first_cents = prev[2];
+                        let prev_count = prev[3];
+                        let matched_flag = prev[4];
+                        if !same_file_dup && first_fidx != file_idx {
+                            matched_flag = 1;
+                            if first_cents != row_cents {
+                                amount_mismatch_flags.push([
+                                    loc.clone(),
+                                    ref_v.clone(),
+                                    fmt_money(first_cents),
+                                    fmt_money(row_cents),
+                                    `differs from ${first_loc}`,
+                                ]);
+                            }
+                        }
+                        ref_seen.insert(
+                            ref_norm,
+                            [first_loc, first_fidx, first_cents, prev_count + 1, matched_flag],
+                        );
+                    }
+                    None => {
+                        ref_seen.insert(ref_norm, [loc.clone(), file_idx, row_cents, 1, 0]);
+                    }
+                }
+            }
+
+            // Missing receipt check (only when a receipt/status column is present)
+            if rcpt_col >= 0 && is_missing_receipt(rcpt_v) {
+                missing_receipt_flags.push([
+                    loc.clone(),
+                    if date_v.is_empty() { "-" } else { date_v },
+                    if ref_v.is_empty() { "-" } else { ref_v },
+                    vendor_v,
+                    fmt_money(row_cents),
+                ]);
+            }
+
+            r = r + 1;
+        }
+
+        per_file_summaries.push([trimmed.clone(), file_rows, file_cents]);
+        files_processed.push(trimmed);
+        file_idx = file_idx + 1;
+    }
+
+    if files_processed.is_empty() {
+        return "error: reconcile_ledger received no valid CSV paths";
+    }
+
+    let multi_file = files_processed.len() > 1;
+    let cross_matched = 0;
+    let cross_unmatched = 0;
+    if multi_file {
+        for entry in ref_seen.iter() {
+            let info = entry.1;
+            if info[4] == 1 {
+                cross_matched = cross_matched + 1;
+            } else {
+                cross_unmatched = cross_unmatched + 1;
+            }
+        }
+    }
+
+    let sorted_vendors = sort_totals_desc(vendor_totals);
+    let sorted_categories = sort_totals_desc(category_totals);
+
+    // Build Markdown report
+    let md = String::new();
+    md.push_str(`# ${title}\n\n`);
+    md.push_str("## Executive Summary\n\n");
+    md.push_str("| Metric | Value |\n|---|---|\n");
+    md.push_str(`| Source files reconciled | ${files_processed.len()} |\n`);
+    md.push_str(`| Total line items processed | ${total_rows} |\n`);
+    md.push_str(`| Combined ledger total | ${fmt_money(total_cents)} |\n`);
+    md.push_str(`| Distinct vendors | ${sorted_vendors.len()} |\n`);
+    md.push_str(`| Distinct categories | ${sorted_categories.len()} |\n`);
+    md.push_str(`| Duplicate references flagged | ${duplicate_flags.len()} |\n`);
+    md.push_str(`| Missing receipts flagged | ${missing_receipt_flags.len()} |\n`);
+    md.push_str(`| Amount anomalies flagged | ${amount_anomalies.len()} |\n`);
+    if multi_file {
+        md.push_str(`| Cross-file matched references | ${cross_matched} |\n`);
+        md.push_str(`| Cross-file unmatched references | ${cross_unmatched} |\n`);
+        md.push_str(`| Cross-file amount mismatches | ${amount_mismatch_flags.len()} |\n`);
+    }
+    md.push_str("\n### Files Processed\n\n| File | Rows | Subtotal |\n|---|---:|---:|\n");
+    for fs in per_file_summaries {
+        md.push_str(`| ${md_esc(fs[0])} | ${fs[1]} | ${fmt_money(fs[2])} |\n`);
+    }
+
+    md.push_str("\n## Anomaly Flags\n\n");
+    md.push_str("### Duplicate References\n\n");
+    if duplicate_flags.is_empty() {
+        md.push_str("None detected.\n\n");
+    } else {
+        md.push_str("| Location | Reference | Vendor | Amount | Note |\n|---|---|---|---|---|\n");
+        let shown = 0;
+        for d in duplicate_flags {
+            if shown < 50 {
+                md.push_str(`| ${md_esc(d[0])} | ${md_esc(d[1])} | ${md_esc(d[2])} | ${d[3]} | ${md_esc(d[4])} |\n`);
+            }
+            shown = shown + 1;
+        }
+        if shown > 50 {
+            md.push_str(`\n_Showing first 50 of ${shown} duplicate references._\n`);
+        }
+        md.push_str("\n");
+    }
+
+    if multi_file {
+        md.push_str("### Cross-File Amount Mismatches\n\n");
+        if amount_mismatch_flags.is_empty() {
+            md.push_str("None detected.\n\n");
+        } else {
+            md.push_str("| Location | Reference | First Amount | Second Amount | Note |\n|---|---|---|---|---|\n");
+            let shown = 0;
+            for m in amount_mismatch_flags {
+                if shown < 50 {
+                    md.push_str(`| ${md_esc(m[0])} | ${md_esc(m[1])} | ${m[2]} | ${m[3]} | ${md_esc(m[4])} |\n`);
+                }
+                shown = shown + 1;
+            }
+            md.push_str("\n");
+        }
+    }
+
+    md.push_str("### Missing Receipts\n\n");
+    if missing_receipt_flags.is_empty() {
+        md.push_str("None detected.\n\n");
+    } else {
+        md.push_str("| Location | Date | Reference | Vendor | Amount |\n|---|---|---|---|---:|\n");
+        let shown = 0;
+        for mr in missing_receipt_flags {
+            if shown < 50 {
+                md.push_str(`| ${md_esc(mr[0])} | ${md_esc(mr[1])} | ${md_esc(mr[2])} | ${md_esc(mr[3])} | ${mr[4]} |\n`);
+            }
+            shown = shown + 1;
+        }
+        if shown > 50 {
+            md.push_str(`\n_Showing first 50 of ${shown} missing receipts._\n`);
+        }
+        md.push_str("\n");
+    }
+
+    if !amount_anomalies.is_empty() {
+        md.push_str("### Amount Anomalies\n\n");
+        md.push_str("| Location | Vendor | Raw Value | Issue |\n|---|---|---|---|\n");
+        let shown = 0;
+        for a in amount_anomalies {
+            if shown < 50 {
+                md.push_str(`| ${md_esc(a[0])} | ${md_esc(a[1])} | ${md_esc(a[2])} | ${a[3]} |\n`);
+            }
+            shown = shown + 1;
+        }
+        md.push_str("\n");
+    }
+
+    md.push_str("## Vendor Totals\n\n| Vendor | Line Items | Total |\n|---|---:|---:|\n");
+    for v in sorted_vendors {
+        md.push_str(`| ${md_esc(v.0)} | ${v.1} | ${fmt_money(v.2)} |\n`);
+    }
+
+    md.push_str("\n## Category Totals\n\n| Category | Line Items | Total |\n|---|---:|---:|\n");
+    for c in sorted_categories {
+        md.push_str(`| ${md_esc(c.0)} | ${c.1} | ${fmt_money(c.2)} |\n`);
+    }
+
+    // Build structured CSV summary
+    let csv = String::new();
+    csv.push_str("group,name,line_items,total_usd\n");
+    for v in sorted_vendors {
+        csv.push_str(`vendor,${csv_esc(v.0)},${v.1},${fmt_plain_decimal(v.2)}\n`);
+    }
+    for c in sorted_categories {
+        csv.push_str(`category,${csv_esc(c.0)},${c.1},${fmt_plain_decimal(c.2)}\n`);
+    }
+
+    let md_file = `${title}.md`;
+    let csv_file = `${title} - Summary.csv`;
+    let label = `files:${md_file}|${csv_file}`;
+
+    let r1 = host_workspace_write(md_file, md);
+    if r1 != "ok" {
+        return r1;
+    }
+    let r2 = host_workspace_write(csv_file, csv);
+    if r2 != "ok" {
+        return r2;
+    }
+    label
+}

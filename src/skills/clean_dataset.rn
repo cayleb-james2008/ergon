@@ -1,0 +1,441 @@
+//! Ergon skill: clean_dataset (Rune)
+//!
+//! Normalizes CSV or JSON dataset schemas to clean snake_case headers,
+//! repairs ragged rows, standardizes null tokens, deduplicates rows by
+//! an optional key column (or full row signature), computes numeric
+//! column statistics & flags statistical outliers (|z| >= 2.5), and
+//! writes both the cleaned RFC-4180 CSV and a Markdown diff-metrics
+//! report into the workspace.
+
+use std::collections::HashMap;
+
+fn normalize_header(raw) {
+    let s = raw.trim().to_lowercase();
+    let out = String::new();
+    let prev_us = true;
+    for ch in s.chars() {
+        if ch.is_alphanumeric() {
+            out.push(ch);
+            prev_us = false;
+        } else if !prev_us {
+            out.push('_');
+            prev_us = true;
+        }
+    }
+    while out.ends_with("_") {
+        let new_len = out.len() - 1;
+        out = match out.get(0..new_len) {
+            Some(sub) => sub,
+            None => "",
+        };
+    }
+    if out.is_empty() {
+        "col"
+    } else {
+        out
+    }
+}
+
+fn is_null_token(s) {
+    if s.is_empty() {
+        return true;
+    }
+    let low = s.to_lowercase();
+    low == "null"
+        || low == "n/a"
+        || low == "na"
+        || low == "none"
+        || low == "nil"
+        || low == "nan"
+        || low == "-"
+        || low == "--"
+}
+
+fn parse_num(raw) {
+    if raw.is_empty() {
+        return None;
+    }
+    let clean = raw
+        .replace("$", "")
+        .replace(",", "")
+        .replace("%", "")
+        .replace(" ", "");
+    if clean.is_empty() {
+        return None;
+    }
+    match clean.parse::<f64>() {
+        Ok(v) => {
+            if v.is_finite() {
+                Some(v)
+            } else {
+                None
+            }
+        }
+        Err(_) => None,
+    }
+}
+
+fn fmt_2dp(v) {
+    let scaled = (v * 100.0).round().to::<i64>();
+    let neg = scaled < 0;
+    let abs_s = if neg { -scaled } else { scaled };
+    let whole = abs_s / 100;
+    let rem = abs_s % 100;
+    let frac = if rem < 10 { `0${rem}` } else { `${rem}` };
+    if neg {
+        `-${whole}.${frac}`
+    } else {
+        `${whole}.${frac}`
+    }
+}
+
+fn csv_esc(cell) {
+    if !cell.contains(",") && !cell.contains("\"") && !cell.contains("\n") && !cell.contains("\r") {
+        return cell;
+    }
+    let doubled = cell.replace("\"", "\"\"");
+    `"${doubled}"`
+}
+
+fn md_esc(cell) {
+    cell.replace("|", "\\|").replace("\n", " ").replace("\r", "")
+}
+
+pub fn main(input_file, key_column, output_title) {
+    let src = input_file.trim();
+    if src.is_empty() {
+        return "error: clean_dataset requires an input_file path";
+    }
+    let raw = host_workspace_read(src.clone());
+    if raw.starts_with("error:") {
+        return raw;
+    }
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        let msg = `error: ${src} is empty`;
+        return msg;
+    }
+    let title = output_title.trim();
+    if title.is_empty() {
+        title = "Cleaned Dataset";
+    }
+
+    let is_json = src.to_lowercase().ends_with(".json")
+        || trimmed.starts_with("[")
+        || trimmed.starts_with("{");
+    let rows = if is_json {
+        host_parse_json_table(raw)
+    } else {
+        host_parse_csv(raw)
+    };
+    if rows.len() < 2 {
+        let msg = `error: ${src} must contain a schema/header and at least one data row`;
+        return msg;
+    }
+
+    // 1. Normalize & deduplicate header names
+    let raw_headers = rows[0];
+    let headers = [];
+    let header_seen = HashMap::new();
+    let header_renames = [];
+    let col_count = raw_headers.len();
+
+    let h_idx = 0;
+    while h_idx < col_count {
+        let orig = raw_headers[h_idx].trim();
+        let base = normalize_header(orig.clone());
+        let final_name = match header_seen.get(base.clone()) {
+            Some(n) => {
+                let next = n + 1;
+                header_seen.insert(base.clone(), next);
+                `${base}_${next}`
+            }
+            None => {
+                header_seen.insert(base.clone(), 1);
+                base
+            }
+        };
+        if orig != final_name {
+            header_renames.push([orig, final_name.clone()]);
+        }
+        headers.push(final_name);
+        h_idx = h_idx + 1;
+    }
+
+    // Locate optional dedup key column
+    let norm_key_req = if key_column.trim().is_empty() {
+        ""
+    } else {
+        normalize_header(key_column.clone())
+    };
+    let key_idx = -1;
+    if !norm_key_req.is_empty() {
+        let i = 0;
+        while i < headers.len() {
+            if headers[i] == norm_key_req {
+                key_idx = i;
+                break;
+            }
+            i = i + 1;
+        }
+    }
+
+    // 2. Clean rows, count nulls, repair schema widths, and deduplicate
+    let rows_in = rows.len() - 1;
+    let cleaned_rows = [];
+    let cleaned_source_lines = [];
+    let seen_keys = HashMap::new();
+    let duplicates_removed = 0;
+    let duplicate_samples = [];
+    let repaired_rows = 0;
+    let total_nulls = 0;
+    let col_nulls = [];
+    let c0 = 0;
+    while c0 < col_count {
+        col_nulls.push(0);
+        c0 = c0 + 1;
+    }
+
+    let r = 1;
+    while r < rows.len() {
+        let raw_row = rows[r];
+        let src_line = r + 1;
+        if raw_row.len() != col_count {
+            repaired_rows = repaired_rows + 1;
+        }
+
+        let clean_row = [];
+        let full_sig = String::new();
+        let c = 0;
+        while c < col_count {
+            let cell = if c < raw_row.len() {
+                let t = raw_row[c].trim();
+                if t.contains("\n") || t.contains("\r") {
+                    t.replace("\r\n", " ").replace("\n", " ").replace("\r", " ").trim()
+                } else {
+                    t
+                }
+            } else {
+                ""
+            };
+            if is_null_token(cell.clone()) {
+                total_nulls = total_nulls + 1;
+                col_nulls[c] = col_nulls[c] + 1;
+                cell = "";
+            }
+            if c > 0 {
+                full_sig.push('\u{1f}');
+            }
+            full_sig.push_str(cell.to_lowercase());
+            clean_row.push(cell);
+            c = c + 1;
+        }
+
+        let dedup_key = if key_idx >= 0 && !clean_row[key_idx].is_empty() {
+            clean_row[key_idx].to_lowercase()
+        } else {
+            full_sig
+        };
+
+        if let Some(first_line) = seen_keys.get(dedup_key.clone()) {
+            duplicates_removed = duplicates_removed + 1;
+            if duplicate_samples.len() < 25 {
+                let display_k = if key_idx >= 0 && !clean_row[key_idx].is_empty() {
+                    clean_row[key_idx].clone()
+                } else {
+                    `row ${src_line}`
+                };
+                duplicate_samples.push([`L${src_line}`, `L${first_line}`, display_k]);
+            }
+        } else {
+            seen_keys.insert(dedup_key, src_line);
+            cleaned_rows.push(clean_row);
+            cleaned_source_lines.push(src_line);
+        }
+
+        r = r + 1;
+    }
+
+    // 3. Numeric column profiling & outlier detection (|z| >= 2.5)
+    let numeric_profiles = [];
+    let outliers = [];
+    let col = 0;
+    while col < col_count {
+        let parsed_vals = [];
+        let parsed_rows = [];
+        let non_empty = 0;
+        let ri = 0;
+        while ri < cleaned_rows.len() {
+            let cell = cleaned_rows[ri][col];
+            if !cell.is_empty() {
+                non_empty = non_empty + 1;
+                if let Some(v) = parse_num(cell) {
+                    parsed_vals.push(v);
+                    parsed_rows.push(ri);
+                }
+            }
+            ri = ri + 1;
+        }
+        let n_num = parsed_vals.len();
+        if n_num >= 4 && non_empty > 0 && (n_num * 10 >= non_empty * 6) {
+            let sum = 0.0;
+            let min_v = parsed_vals[0];
+            let max_v = parsed_vals[0];
+            for v in parsed_vals {
+                sum = sum + v;
+                if v < min_v {
+                    min_v = v;
+                }
+                if v > max_v {
+                    max_v = v;
+                }
+            }
+            let n_f = n_num as f64;
+            let mean = sum / n_f;
+            let sq_sum = 0.0;
+            for v in parsed_vals {
+                let d = v - mean;
+                sq_sum = sq_sum + d * d;
+            }
+            let stddev = (sq_sum / n_f).sqrt();
+            numeric_profiles.push([
+                headers[col].clone(),
+                `${n_num}`,
+                fmt_2dp(min_v),
+                fmt_2dp(mean),
+                fmt_2dp(max_v),
+                fmt_2dp(stddev),
+            ]);
+            if stddev > 0.000001 {
+                let pi = 0;
+                while pi < n_num {
+                    let v = parsed_vals[pi];
+                    let z = (v - mean).abs() / stddev;
+                    if z >= 2.5 {
+                        let row_idx = parsed_rows[pi];
+                        let src_l = cleaned_source_lines[row_idx];
+                        outliers.push([
+                            headers[col].clone(),
+                            `L${src_l}`,
+                            cleaned_rows[row_idx][col].clone(),
+                            fmt_2dp(mean),
+                            fmt_2dp(z),
+                        ]);
+                    }
+                    pi = pi + 1;
+                }
+            }
+        }
+        col = col + 1;
+    }
+
+    // 4. Emit cleaned RFC-4180 CSV
+    let csv = String::new();
+    let hc = 0;
+    while hc < headers.len() {
+        if hc > 0 {
+            csv.push(',');
+        }
+        csv.push_str(csv_esc(headers[hc].clone()));
+        hc = hc + 1;
+    }
+    csv.push('\n');
+    for row in cleaned_rows {
+        let ci = 0;
+        while ci < row.len() {
+            if ci > 0 {
+                csv.push(',');
+            }
+            csv.push_str(csv_esc(row[ci].clone()));
+            ci = ci + 1;
+        }
+        csv.push('\n');
+    }
+
+    // 5. Emit Diff Metrics Report
+    let md = String::new();
+    md.push_str(`# ${title} — Cleaning & Diff Report\n\n`);
+    md.push_str("## Diff Metrics\n\n");
+    md.push_str("| Metric | Value |\n|---|---|\n");
+    md.push_str(`| Source file | \`${src}\` (${if is_json { "JSON" } else { "CSV" }}) |\n`);
+    md.push_str(`| Output dataset | \`${title}.csv\` |\n`);
+    md.push_str(`| Input data rows | ${rows_in} |\n`);
+    md.push_str(`| Output clean rows | ${cleaned_rows.len()} |\n`);
+    md.push_str(`| Duplicate rows removed | ${duplicates_removed} |\n`);
+    md.push_str(`| Dedup strategy | ${if key_idx >= 0 { `key column "${headers[key_idx]}"` } else { "full normalized row" }} |\n`);
+    md.push_str(`| Schema-repaired ragged rows | ${repaired_rows} |\n`);
+    md.push_str(`| Columns normalized | ${header_renames.len()} / ${headers.len()} |\n`);
+    md.push_str(`| Null / empty cells flagged | ${total_nulls} |\n`);
+    md.push_str(`| Statistical outliers flagged (|z| >= 2.5) | ${outliers.len()} |\n`);
+
+    md.push_str("\n## Schema Normalization\n\n");
+    if header_renames.is_empty() {
+        md.push_str("All column headers already conformed to lowercase `snake_case`.\n");
+    } else {
+        md.push_str("| Original Header | Normalized Header |\n|---|---|\n");
+        for hr in header_renames {
+            md.push_str(`| ${md_esc(hr[0])} | \`${hr[1]}\` |\n`);
+        }
+    }
+
+    md.push_str("\n## Null & Missing Value Breakdown\n\n| Column | Null / Empty Count |\n|---|---:|\n");
+    let nc = 0;
+    while nc < headers.len() {
+        md.push_str(`| \`${headers[nc]}\` | ${col_nulls[nc]} |\n`);
+        nc = nc + 1;
+    }
+
+    md.push_str("\n## Deduplication Summary\n\n");
+    if duplicate_samples.is_empty() {
+        md.push_str("No duplicate rows detected.\n");
+    } else {
+        md.push_str("| Duplicate Row | Matches First Row | Key |\n|---|---|---|\n");
+        for ds in duplicate_samples {
+            md.push_str(`| ${ds[0]} | ${ds[1]} | ${md_esc(ds[2])} |\n`);
+        }
+        if duplicates_removed > duplicate_samples.len() {
+            md.push_str(`\n_Showing first ${duplicate_samples.len()} of ${duplicates_removed} duplicate rows removed._\n`);
+        }
+    }
+
+    md.push_str("\n## Numeric Column Profiles\n\n");
+    if numeric_profiles.is_empty() {
+        md.push_str("_No numeric columns with >= 4 observations detected._\n");
+    } else {
+        md.push_str("| Column | N | Min | Mean | Max | StdDev |\n|---|---:|---:|---:|---:|---:|\n");
+        for np in numeric_profiles {
+            md.push_str(`| \`${np[0]}\` | ${np[1]} | ${np[2]} | ${np[3]} | ${np[4]} | ${np[5]} |\n`);
+        }
+    }
+
+    md.push_str("\n## Outlier Flags\n\n");
+    if outliers.is_empty() {
+        md.push_str("No statistical outliers (|z| >= 2.5) detected.\n");
+    } else {
+        md.push_str("| Column | Source Line | Value | Column Mean | |z|-Score |\n|---|---|---:|---:|---:|\n");
+        let shown = 0;
+        for ol in outliers {
+            if shown < 50 {
+                md.push_str(`| \`${ol[0]}\` | ${ol[1]} | ${md_esc(ol[2])} | ${ol[3]} | ${ol[4]} |\n`);
+            }
+            shown = shown + 1;
+        }
+        if shown > 50 {
+            md.push_str(`\n_Showing first 50 of ${shown} outliers._\n`);
+        }
+    }
+
+    let csv_file = `${title}.csv`;
+    let md_file = `${title} - Diff Report.md`;
+    let label = `files:${csv_file}|${md_file}`;
+
+    let r1 = host_workspace_write(csv_file, csv);
+    if r1 != "ok" {
+        return r1;
+    }
+    let r2 = host_workspace_write(md_file, md);
+    if r2 != "ok" {
+        return r2;
+    }
+    label
+}

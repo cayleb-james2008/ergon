@@ -1,0 +1,229 @@
+//! Ergon skill: draft_brief (Rune)
+//!
+//! Produces an executive memo or standard operating procedure (SOP)
+//! grounded strictly in named workspace files and standing memory
+//! (`host_memory_read`). Every finding and procedure step carries an
+//! explicit `[filename:L##]` citation; missing sources are disclosed
+//! explicitly, and zero readable sources halts rather than fabricating.
+
+fn md_esc(text) {
+    text.replace("|", "\\|").replace("\n", " ").replace("\r", "")
+}
+
+fn contains_any(lower, needles) {
+    for n in needles {
+        if lower.contains(n) {
+            return true;
+        }
+    }
+    false
+}
+
+fn has_digit(s) {
+    for ch in s.chars() {
+        if ch.is_numeric() {
+            return true;
+        }
+    }
+    false
+}
+
+fn clip(text, max_len) {
+    let t = text.trim();
+    if t.len() <= max_len {
+        return t;
+    }
+    let out = String::new();
+    let count = 0;
+    for ch in t.chars() {
+        if count >= max_len {
+            break;
+        }
+        out.push(ch);
+        count = count + 1;
+    }
+    out.push_str("...");
+    out
+}
+
+pub fn main(topic, source_files, audience, output_title) {
+    let clean_topic = topic.trim();
+    if clean_topic.is_empty() {
+        return "error: draft_brief requires a non-empty topic";
+    }
+    if source_files.is_empty() {
+        return "error: draft_brief halted — at least one workspace source file is required (will not fabricate an ungrounded brief)";
+    }
+
+    let aud = audience.trim();
+    if aud.is_empty() {
+        aud = "Team stakeholders";
+    }
+    let title = output_title.trim();
+    if title.is_empty() {
+        title = `Brief - ${clean_topic}`;
+    }
+
+    // 1. Read standing memory preferences
+    let mem_raw = host_memory_read();
+    let mem_rules = [];
+    for raw_line in mem_raw.replace("\r\n", "\n").split("\n") {
+        let l = raw_line.trim();
+        if l.starts_with("- ") {
+            let item = l.replace("- ", "").trim();
+            if !item.is_empty() {
+                mem_rules.push(item);
+            }
+        }
+    }
+
+    // 2. Read & analyze each source file strictly inside sandbox
+    let loaded_sources = [];
+    let missing_sources = [];
+    let key_findings = [];
+    let procedure_steps = [];
+    let risk_notes = [];
+
+    for path in source_files {
+        let p = path.trim();
+        if p.is_empty() {
+            continue;
+        }
+        let raw = host_workspace_read(p.clone());
+        if raw.starts_with("error:") {
+            // Immediately propagate security/sandbox violations
+            if raw.contains("escapes the workspace") || raw.contains("absolute paths") {
+                return raw;
+            }
+            missing_sources.push([p, raw]);
+            continue;
+        }
+        let norm = raw.replace("\r\n", "\n").replace("\r", "\n");
+        let line_count = 0;
+        let first_heading = "";
+        let extracted_for_file = 0;
+
+        for raw_line in norm.split("\n") {
+            line_count = line_count + 1;
+            let l = raw_line.trim();
+            if l.is_empty() {
+                continue;
+            }
+            let cite = `[${p}:L${line_count}]`;
+            let low = l.to_lowercase();
+
+            if l.starts_with("#") {
+                let h_clean = l.replace("###", "").replace("##", "").replace("#", "").trim();
+                if first_heading.is_empty() && !h_clean.is_empty() {
+                    first_heading = h_clean;
+                }
+                continue;
+            }
+
+            let is_risk = contains_any(
+                low.clone(),
+                ["risk", "blocker", "warning", "missing", "overdue", "critical", "violation", "failure", "discrepancy", "flag"],
+            );
+            let is_proc = contains_any(
+                low.clone(),
+                ["must ", "should ", "always ", "never ", "step ", "procedure", "verify ", "approve ", "action:", "owner:", "policy:", "checklist", "run "],
+            ) || l.starts_with("1.") || l.starts_with("2.") || l.starts_with("3.") || l.starts_with("4.") || l.starts_with("5.");
+            let is_metric = l.contains("$") || l.contains("%") || (has_digit(l.clone()) && (l.contains(":") || l.contains("|")));
+
+            if is_risk && risk_notes.len() < 20 {
+                risk_notes.push([cite.clone(), clip(l.clone(), 160)]);
+                extracted_for_file = extracted_for_file + 1;
+            }
+            if is_proc && procedure_steps.len() < 20 {
+                procedure_steps.push([cite.clone(), clip(l.clone(), 160)]);
+                extracted_for_file = extracted_for_file + 1;
+            } else if (is_metric || l.starts_with("- ") || l.starts_with("* ")) && key_findings.len() < 30 {
+                let clean_l = l.replace("- ", "").replace("* ", "").trim();
+                key_findings.push([cite.clone(), clip(clean_l, 160)]);
+                extracted_for_file = extracted_for_file + 1;
+            } else if extracted_for_file < 3 && l.len() >= 24 && key_findings.len() < 30 {
+                // Ensure every readable prose source contributes grounded context
+                key_findings.push([cite, clip(l, 160)]);
+                extracted_for_file = extracted_for_file + 1;
+            }
+        }
+
+        if first_heading.is_empty() {
+            first_heading = p.clone();
+        }
+        loaded_sources.push([p, `${line_count}`, first_heading]);
+    }
+
+    if loaded_sources.is_empty() {
+        return "error: draft_brief halted — zero readable workspace source files (will not fabricate an ungrounded brief)";
+    }
+
+    // 3. Render grounded Executive Brief / SOP
+    let md = String::new();
+    md.push_str(`# ${title}\n\n`);
+    md.push_str("## Document Control\n\n");
+    md.push_str("| Field | Value |\n|---|---|\n");
+    md.push_str(`| Topic | ${md_esc(clean_topic)} |\n`);
+    md.push_str(`| Intended Audience | ${md_esc(aud)} |\n`);
+    md.push_str(`| Workspace Sources Grounded | ${loaded_sources.len()} read (${missing_sources.len()} missing) |\n`);
+    md.push_str(`| Standing Memory Rules Applied | ${mem_rules.len()} |\n`);
+
+    md.push_str("\n## Executive Summary\n\n");
+    md.push_str(`This brief on **${clean_topic}** is prepared for **${aud}** and is grounded strictly in ${loaded_sources.len()} verified workspace source file(s) and ${mem_rules.len()} standing memory rule(s). Every factual claim and procedural step below cites its exact \`[file:L##]\` origin.\n\n`);
+
+    md.push_str("### Source Inventory\n\n| Source File | Lines | Primary Heading / Title |\n|---|---:|---|\n");
+    for ls in loaded_sources {
+        md.push_str(`| \`${md_esc(ls[0])}\` | ${ls[1]} | ${md_esc(ls[2])} |\n`);
+    }
+
+    md.push_str("\n## Key Grounded Findings & Metrics\n\n");
+    if key_findings.is_empty() {
+        md.push_str("_No structured bullets or numeric findings extracted from the sources._\n");
+    } else {
+        for kf in key_findings {
+            md.push_str(`- ${kf[0]} ${kf[1]}\n`);
+        }
+    }
+
+    md.push_str("\n## Standard Procedure & Action Plan\n\n");
+    if procedure_steps.is_empty() {
+        md.push_str("1. Review the cited source inventory above and confirm any pending open items with owners.\n");
+    } else {
+        let step_n = 0;
+        for ps in procedure_steps {
+            step_n = step_n + 1;
+            md.push_str(`${step_n}. ${ps[1]} ${ps[0]}\n`);
+        }
+    }
+
+    if !risk_notes.is_empty() {
+        md.push_str("\n## Cited Risks & Watchpoints\n\n");
+        for rn in risk_notes {
+            md.push_str(`- ${rn[0]} ${rn[1]}\n`);
+        }
+    }
+
+    md.push_str("\n## Standing Memory & Working Preferences Applied\n\n");
+    if mem_rules.is_empty() {
+        md.push_str("_No standing memory preferences recorded yet in memory.md._\n");
+    } else {
+        for mr in mem_rules {
+            md.push_str(`- ${mr}\n`);
+        }
+    }
+
+    if !missing_sources.is_empty() {
+        md.push_str("\n## Unreadable / Missing Requested Sources\n\n");
+        for ms in missing_sources {
+            md.push_str(`- \`${ms[0]}\` — ${ms[1]}\n`);
+        }
+    }
+
+    let filename = `${title}.md`;
+    let label = `file:${filename}`;
+    let res = host_workspace_write(filename, md);
+    if res != "ok" {
+        return res;
+    }
+    label
+}

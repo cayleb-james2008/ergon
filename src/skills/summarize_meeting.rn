@@ -1,0 +1,404 @@
+//! Ergon skill: summarize_meeting (Rune)
+//!
+//! Reads a meeting transcript or notes file from the workspace and
+//! extracts attendees, line-cited decisions, action items with owners
+//! and due dates, open questions/risks, and ready-to-send follow-up
+//! drafts. Writes `<output_title>.md` into the workspace.
+
+use std::collections::HashMap;
+
+fn md_esc(text) {
+    text.replace("|", "\\|").replace("\n", " ").replace("\r", "")
+}
+
+fn contains_any(lower, needles) {
+    for n in needles {
+        if lower.contains(n) {
+            return true;
+        }
+    }
+    false
+}
+
+fn clean_owner(raw) {
+    let s = raw.trim();
+    if s.starts_with("@") {
+        s = s.replace("@", "");
+    }
+    let out = String::new();
+    for ch in s.chars() {
+        if ch == ',' || ch == ';' || ch == '(' || ch == ':' || ch == '-' {
+            break;
+        }
+        out.push(ch);
+    }
+    let t = out.trim();
+    if t.is_empty() || t.len() > 36 {
+        "Unassigned"
+    } else {
+        t
+    }
+}
+
+fn extract_owner(line, speaker) {
+    let lower = line.to_lowercase();
+    if let Some((_, rest)) = lower.split_once("owner:") {
+        if line.len() >= rest.len() {
+            let offset = line.len() - rest.len();
+            if let Some(orig) = line.get(offset..) {
+                let o = clean_owner(orig);
+                if o != "Unassigned" {
+                    return o;
+                }
+            }
+        }
+    }
+    if let Some((_, rest)) = lower.split_once("assigned to") {
+        if line.len() >= rest.len() {
+            let offset = line.len() - rest.len();
+            if let Some(orig) = line.get(offset..) {
+                let trimmed = orig.trim().replace(":", "");
+                let o = clean_owner(trimmed);
+                if o != "Unassigned" {
+                    return o;
+                }
+            }
+        }
+    }
+    // Check @mention token
+    for tok in line.split(" ") {
+        let t = tok.trim();
+        if t.starts_with("@") && t.len() > 1 {
+            return clean_owner(t);
+        }
+    }
+    // Check "<Name> will ..." or "<Name> to ..."
+    let body = match line.split_once(":") {
+        Some((prefix, after)) => {
+            let p_low = prefix.trim().to_lowercase();
+            if p_low == "action" || p_low == "todo" || p_low == "action item" || p_low == "follow up" || p_low == "follow-up" {
+                after.trim()
+            } else {
+                line.trim()
+            }
+        }
+        None => line.trim(),
+    };
+    let body = body.replace("- [ ]", "").replace("[ ]", "").replace("- ", "").trim();
+    if let Some((who, _)) = body.split_once(" will ") {
+        let w = who.trim();
+        if !w.is_empty() && w.len() <= 28 && !w.to_lowercase().starts_with("we") && !w.to_lowercase().starts_with("team") {
+            return clean_owner(w);
+        }
+    }
+    if !speaker.is_empty() {
+        return speaker;
+    }
+    "Unassigned"
+}
+
+fn extract_due(line) {
+    let lower = line.to_lowercase();
+    for marker in ["due:", "due ", "by ", "deadline:", "deadline ", "before "] {
+        if let Some((_, rest)) = lower.split_once(marker) {
+            if line.len() >= rest.len() {
+                let offset = line.len() - rest.len();
+                if let Some(orig) = line.get(offset..) {
+                    let phrase = String::new();
+                    let words = 0;
+                    for w in orig.trim().split(" ") {
+                        let wt = w.trim();
+                        if wt.is_empty() {
+                            continue;
+                        }
+                        if words > 0 {
+                            phrase.push(' ');
+                        }
+                        phrase.push_str(wt);
+                        words = words + 1;
+                        if wt.ends_with(".") || wt.ends_with(",") || wt.ends_with(")") || wt.ends_with(";") || words >= 3 {
+                            break;
+                        }
+                    }
+                    let cleaned = phrase.replace(".", "").replace(",", "").replace(")", "").replace(";", "").trim();
+                    if !cleaned.is_empty() {
+                        return cleaned;
+                    }
+                }
+            }
+        }
+    }
+    if lower.contains("eod") {
+        return "EOD";
+    }
+    if lower.contains("eow") {
+        return "EOW";
+    }
+    "TBD"
+}
+
+fn detect_speaker(line) {
+    if let Some((left, right)) = line.split_once(":") {
+        let l = left.trim();
+        let r = right.trim();
+        if l.is_empty() || r.is_empty() || l.len() > 36 {
+            return "";
+        }
+        let low = l.to_lowercase();
+        if low == "decision"
+            || low == "decided"
+            || low == "action"
+            || low == "action item"
+            || low == "todo"
+            || low == "note"
+            || low == "notes"
+            || low == "risk"
+            || low == "blocker"
+            || low == "question"
+            || low == "open question"
+            || low == "attendees"
+            || low == "participants"
+            || low == "date"
+            || low == "meeting"
+            || low == "subject"
+            || low == "agenda"
+            || low == "topic"
+            || low == "http"
+            || low == "https"
+            || l.starts_with("#")
+            || l.starts_with("-")
+            || l.starts_with("*")
+        {
+            return "";
+        }
+        // Reject timestamps like 10:30
+        if l.contains("/") || l.contains("\\") {
+            return "";
+        }
+        let has_alpha = false;
+        for ch in l.chars() {
+            if ch.is_alphabetic() {
+                has_alpha = true;
+                break;
+            }
+        }
+        if has_alpha {
+            return clean_owner(l);
+        }
+    }
+    ""
+}
+
+pub fn main(notes_file, output_title) {
+    let src = notes_file.trim();
+    if src.is_empty() {
+        return "error: summarize_meeting requires a notes_file path";
+    }
+    let raw = host_workspace_read(src.clone());
+    if raw.starts_with("error:") {
+        return raw;
+    }
+    let normalized = raw.replace("\r\n", "\n").replace("\r", "\n");
+    if normalized.trim().is_empty() {
+        let msg = `error: ${src} is empty`;
+        return msg;
+    }
+    let title = output_title.trim();
+    if title.is_empty() {
+        title = "Meeting Summary";
+    }
+
+    let attendees_map = HashMap::new();
+    let attendees = [];
+    let decisions = [];
+    let actions = [];
+    let questions = [];
+    let owner_actions = HashMap::new();
+    let owner_order = [];
+
+    let line_no = 0;
+    for raw_line in normalized.split("\n") {
+        line_no = line_no + 1;
+        let line = raw_line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let lower = line.to_lowercase();
+        let cite = `[L${line_no}]`;
+
+        // Attendees header line
+        if lower.starts_with("attendees:") || lower.starts_with("participants:") {
+            if let Some((_, rest)) = line.split_once(":") {
+                for part in rest.split(",") {
+                    let name = clean_owner(part);
+                    if name != "Unassigned" && !attendees_map.contains_key(name.clone()) {
+                        attendees_map.insert(name.clone(), true);
+                        attendees.push(name);
+                    }
+                }
+            }
+            continue;
+        }
+
+        let speaker = detect_speaker(line.clone());
+        if !speaker.is_empty() && speaker != "Unassigned" && !attendees_map.contains_key(speaker.clone()) {
+            attendees_map.insert(speaker.clone(), true);
+            attendees.push(speaker.clone());
+        }
+
+        let is_decision = lower.starts_with("decision:")
+            || lower.starts_with("decided:")
+            || contains_any(
+                lower.clone(),
+                [
+                    "decided to",
+                    "we decided",
+                    "decision:",
+                    "agreed to",
+                    "we agreed",
+                    "approved",
+                    "confirmed that",
+                    "finalized",
+                    "resolved to",
+                    "signed off",
+                    "moving forward with",
+                    "go with ",
+                ],
+            );
+
+        let is_action = lower.starts_with("action:")
+            || lower.starts_with("action item:")
+            || lower.starts_with("todo:")
+            || lower.starts_with("- [ ]")
+            || lower.starts_with("[ ]")
+            || contains_any(
+                lower.clone(),
+                [
+                    "action:",
+                    "todo:",
+                    "owner:",
+                    "assigned to",
+                    "follow up",
+                    "follow-up",
+                    " will ",
+                    "needs to ",
+                    "by monday",
+                    "by tuesday",
+                    "by wednesday",
+                    "by thursday",
+                    "by friday",
+                    "by eod",
+                    "by eow",
+                    "due ",
+                    "deadline",
+                ],
+            );
+
+        let is_question = line.ends_with("?")
+            || contains_any(
+                lower.clone(),
+                ["blocker", "open question", "risk:", "concern:", "unclear", "pending decision", "escalate"],
+            );
+
+        if is_decision {
+            decisions.push([cite.clone(), line.clone()]);
+        }
+        if is_action {
+            let owner = extract_owner(line.clone(), speaker);
+            let due = extract_due(line.clone());
+            actions.push([cite.clone(), owner.clone(), due.clone(), line.clone()]);
+            if !owner_actions.contains_key(owner.clone()) {
+                owner_actions.insert(owner.clone(), []);
+                owner_order.push(owner.clone());
+            }
+            if let Some(list) = owner_actions.get(owner.clone()) {
+                list.push([cite.clone(), due, line.clone()]);
+                owner_actions.insert(owner, list);
+            }
+        }
+        if is_question && !is_decision {
+            questions.push([cite, line]);
+        }
+    }
+
+    let md = String::new();
+    md.push_str(`# ${title}\n\n`);
+    md.push_str(`- **Source:** \`${src}\` (${line_no} lines)\n`);
+    md.push_str(`- **Decisions captured:** ${decisions.len()}\n`);
+    md.push_str(`- **Action items captured:** ${actions.len()}\n`);
+    md.push_str(`- **Open questions / risks:** ${questions.len()}\n`);
+    if !attendees.is_empty() {
+        let joined = String::new();
+        let first = true;
+        for a in attendees {
+            if !first {
+                joined.push_str(", ");
+            }
+            joined.push_str(a);
+            first = false;
+        }
+        md.push_str(`- **Participants detected:** ${joined}\n`);
+    }
+
+    md.push_str("\n## Decisions\n\n");
+    if decisions.is_empty() {
+        md.push_str("_No explicit decisions detected in the transcript._\n");
+    } else {
+        for d in decisions {
+            md.push_str(`- ${d[0]} ${d[1]}\n`);
+        }
+    }
+
+    md.push_str("\n## Action Items\n\n");
+    if actions.is_empty() {
+        md.push_str("_No explicit action items detected in the transcript._\n");
+    } else {
+        md.push_str("| Line | Owner | Due Date | Action |\n|---|---|---|---|\n");
+        for a in actions {
+            md.push_str(`| ${a[0]} | ${md_esc(a[1])} | ${md_esc(a[2])} | ${md_esc(a[3])} |\n`);
+        }
+    }
+
+    md.push_str("\n## Open Questions & Risks\n\n");
+    if questions.is_empty() {
+        md.push_str("_No open questions or blockers flagged._\n");
+    } else {
+        for q in questions {
+            md.push_str(`- ${q[0]} ${q[1]}\n`);
+        }
+    }
+
+    md.push_str("\n## Follow-Up Drafts\n\n");
+    md.push_str("### Team Recap Draft\n\n");
+    md.push_str(`> Subject: Recap — ${title}\n>\n`);
+    md.push_str(`> Team — thanks for joining. Here is our recap from \`${src}\`: ${decisions.len()} decision(s) finalized and ${actions.len()} action item(s) assigned.\n`);
+    for a in actions {
+        md.push_str(`> - **${a[1]}** (Due: ${a[2]}): ${a[3]} ${a[0]}\n`);
+    }
+    md.push_str(">\n> Reply if any owner or due date needs adjustment.\n\n");
+
+    if !owner_order.is_empty() {
+        md.push_str("### Owner Check-In Drafts\n\n");
+        for owner in owner_order {
+            if owner == "Unassigned" {
+                continue;
+            }
+            if let Some(items) = owner_actions.get(owner.clone()) {
+                md.push_str(`#### Draft to ${owner}\n\n`);
+                md.push_str(`> Hi ${owner}, confirming your action item(s) from ${title}:\n`);
+                for item in items {
+                    md.push_str(`> - [Due: ${item[1]}] ${item[2]} ${item[0]}\n`);
+                }
+                md.push_str("> Let me know if anything is blocked.\n\n");
+            }
+        }
+    }
+
+    let filename = `${title}.md`;
+    let label = `file:${filename}`;
+    let res = host_workspace_write(filename, md);
+    if res != "ok" {
+        return res;
+    }
+    label
+}
