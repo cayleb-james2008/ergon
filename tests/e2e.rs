@@ -3540,3 +3540,329 @@ fn live_runs_status_reports_idle_cleanly() {
     assert_eq!(v["steps"], json!([]));
 }
 
+#[test]
+fn sse_runs_stream_emits_live_events_and_cancel_stops_active_run() {
+    let root = test_root("sse_stream");
+    let stub = start_stub_model(vec![
+        json!({"tool": "write_file", "args": {"path": "streamed.md", "content": "# Live SSE\n"}}).to_string(),
+        json!({"done": true, "summary": "Wrote streamed.md cleanly."}).to_string(),
+    ]);
+    let cfg = test_config(&root, None, format!("http://127.0.0.1:{}/v1", stub.port));
+    let port = start_app(cfg);
+
+    // 1. Single-shot SSE handshake returns text/event-stream + initial status event immediately.
+    let (st, body) = http(port, "GET", "/api/runs/stream?once=1", None);
+    assert_eq!(st, 200, "{body}");
+    assert!(body.contains("event: status"), "expected initial SSE status event: {body}");
+    assert!(body.contains("\"active\":false"), "expected idle active=false: {body}");
+
+    // 2. Keep a real TCP SSE subscriber connected while a live chat run executes.
+    let sse_handle = std::thread::spawn(move || {
+        use std::io::{Read, Write};
+        let mut s = std::net::TcpStream::connect(("127.0.0.1", port)).unwrap();
+        let _ = s.set_read_timeout(Some(std::time::Duration::from_secs(5)));
+        let req = format!("GET /api/runs/stream HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nAccept: text/event-stream\r\n\r\n");
+        s.write_all(req.as_bytes()).unwrap();
+        let mut out = String::new();
+        let mut buf = [0u8; 4096];
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while std::time::Instant::now() < deadline {
+            match s.read(&mut buf) {
+                Ok(0) => break,
+                Ok(n) => {
+                    out.push_str(&String::from_utf8_lossy(&buf[..n]));
+                    if out.contains("event: run_finished") {
+                        break;
+                    }
+                }
+                Err(_) => break,
+            }
+        }
+        out
+    });
+    std::thread::sleep(std::time::Duration::from_millis(80));
+    let (st, chat_body) = http(
+        port,
+        "POST",
+        "/api/chat",
+        Some(&json!({"thread_id": "", "message": "create streamed.md"}).to_string()),
+    );
+    assert_eq!(st, 200, "{chat_body}");
+    let sse_raw = sse_handle.join().unwrap();
+    assert!(sse_raw.contains("text/event-stream"), "{sse_raw}");
+    assert!(sse_raw.contains("event: run_started"), "{sse_raw}");
+    assert!(sse_raw.contains("event: step_start"), "{sse_raw}");
+    assert!(sse_raw.contains("event: step_done"), "{sse_raw}");
+    assert!(sse_raw.contains("event: file_written"), "{sse_raw}");
+    assert!(sse_raw.contains("event: run_finished"), "{sse_raw}");
+
+    // 3. Cancel when idle returns 404.
+    let (st, _) = http(port, "POST", "/api/runs/active/cancel", Some("{}"));
+    assert_eq!(st, 404);
+}
+
+#[test]
+fn routines_crud_and_execution_persist_atomically() {
+    let root = test_root("routines_api");
+    let stub = start_stub_model(vec![
+        json!({"tool": "write_file", "args": {"path": "routine-out.md", "content": "Weekly check OK\n"}}).to_string(),
+        json!({"done": true, "summary": "Completed weekly check and wrote routine-out.md."}).to_string(),
+    ]);
+    let cfg = test_config(&root, None, format!("http://127.0.0.1:{}/v1", stub.port));
+    let port = start_app(cfg);
+
+    let (st, body) = http(port, "GET", "/api/routines", None);
+    assert_eq!(st, 200, "{body}");
+    assert_eq!(serde_json::from_str::<Value>(&body).unwrap()["routines"], json!([]));
+
+    let (st, body) = http(
+        port,
+        "POST",
+        "/api/routines",
+        Some(&json!({
+            "name": "Weekly Expense Check",
+            "prompt": "Write routine-out.md with status.",
+            "schedule": "weekly",
+            "skill_id": "reconcile_ledger"
+        }).to_string()),
+    );
+    assert_eq!(st, 201, "{body}");
+    let created: Value = serde_json::from_str(&body).unwrap();
+    let id = created["routine"]["id"].as_str().unwrap().to_string();
+    assert!(root.join("data/routines.json").exists());
+
+    let (st, body) = http(port, "POST", &format!("/api/routines/{id}/run"), Some("{}"));
+    assert_eq!(st, 200, "{body}");
+    let run_v: Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(run_v["routine"]["run_count"], json!(1));
+    assert_eq!(run_v["routine"]["last_status"], json!("finished"));
+    assert!(root.join("data/workspace/routine-out.md").exists());
+
+    let (st, body) = http(port, "DELETE", &format!("/api/routines/{id}"), None);
+    assert_eq!(st, 200, "{body}");
+    let (st, _) = http(port, "DELETE", &format!("/api/routines/{id}"), None);
+    assert_eq!(st, 404);
+}
+
+#[test]
+fn receipts_sha256_chain_verify_and_md_json_export() {
+    let root = test_root("receipts_export");
+    let stub = start_stub_model(vec![
+        json!({"tool": "write_file", "args": {"path": "alpha.md", "content": "Alpha report $100\n"}}).to_string(),
+        json!({"done": true, "summary": "Wrote alpha.md."}).to_string(),
+        json!({"tool": "write_file", "args": {"path": "beta.md", "content": "Beta report $200\n"}}).to_string(),
+        json!({"done": true, "summary": "Wrote beta.md."}).to_string(),
+    ]);
+    let cfg = test_config(&root, None, format!("http://127.0.0.1:{}/v1", stub.port));
+    let port = start_app(cfg);
+
+    assert_eq!(http(port, "POST", "/api/chat", Some(&json!({"thread_id":"","message":"write alpha"}).to_string())).0, 200);
+    assert_eq!(http(port, "POST", "/api/chat", Some(&json!({"thread_id":"","message":"write beta"}).to_string())).0, 200);
+
+    let (st, body) = http(port, "GET", "/api/receipts?limit=10", None);
+    assert_eq!(st, 200, "{body}");
+    let rv: Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(rv["total"], json!(2));
+    assert_eq!(rv["chain_valid"], json!(true));
+    let arr = rv["receipts"].as_array().unwrap();
+    // Newest first: arr[0] is index 1, arr[1] is index 0
+    assert_eq!(arr[1]["prev_hash"], json!(ergon_rs::receipts::GENESIS_HASH));
+    assert_eq!(arr[0]["prev_hash"], arr[1]["sha256"]);
+    assert_eq!(arr[0]["sha256"].as_str().unwrap().len(), 64);
+
+    let (st, vbody) = http(port, "GET", "/api/receipts/verify", None);
+    assert_eq!(st, 200, "{vbody}");
+    let vv: Value = serde_json::from_str(&vbody).unwrap();
+    assert_eq!(vv["valid"], json!(true));
+    assert_eq!(vv["total"], json!(2));
+
+    let rcpt_id = arr[0]["id"].as_str().unwrap();
+    let (st, jbody) = http(port, "GET", &format!("/api/receipts/{rcpt_id}/export?format=json"), None);
+    assert_eq!(st, 200, "{jbody}");
+    let jv: Value = serde_json::from_str(&jbody).unwrap();
+    assert_eq!(jv["provenance"]["chain_verified"], json!(true));
+    assert_eq!(jv["workspace_files"][0]["path"], json!("beta.md"));
+    assert_eq!(jv["workspace_files"][0]["present"], json!(true));
+    assert_eq!(jv["workspace_files"][0]["sha256"].as_str().unwrap().len(), 64);
+
+    let (st, mbody) = http(port, "GET", &format!("/api/receipts/{rcpt_id}/export?format=md"), None);
+    assert_eq!(st, 200, "{mbody}");
+    assert!(mbody.contains("# Field-Book Receipt:"), "{mbody}");
+    assert!(mbody.contains(arr[0]["sha256"].as_str().unwrap()), "{mbody}");
+    assert!(mbody.contains("beta.md"), "{mbody}");
+}
+
+#[test]
+fn scale_5000_receipts_and_500_files_search_p95_under_30_concurrent_clients() {
+    let root = test_root("scale_5k_500");
+    let data_dir = root.join("data");
+    let ws_dir = data_dir.join("workspace");
+    std::fs::create_dir_all(&ws_dir).unwrap();
+
+    // Seed 5,000 work/receipt entries
+    let mut entries = Vec::with_capacity(5000);
+    for i in 0..5000u64 {
+        let tag = if i == 4321 { "QUARTZ_NEEDLE_9941" } else { "routine quarterly audit" };
+        entries.push(json!({
+            "ts": 1_795_000_000_000u64 + i * 1000,
+            "task": format!("Task #{i}: {tag} vendor reconciliation"),
+            "summary": format!("Finished batch #{i} with verified totals for {tag}."),
+            "files": [format!("report-{:03}.csv", i % 500)],
+            "thread_id": format!("t-scale-{i}"),
+            "finished": true,
+            "answered": false
+        }));
+    }
+    std::fs::write(data_dir.join("work.json"), json!({"entries": entries}).to_string()).unwrap();
+
+    // Seed 500 workspace files
+    for i in 0..500usize {
+        let marker = if i == 321 { "QUARTZ_NEEDLE_9941,4250.00" } else { "Northstar,120.00" };
+        std::fs::write(
+            ws_dir.join(format!("report-{i:03}.csv")),
+            format!("Vendor,Amount\n{marker}\n"),
+        )
+        .unwrap();
+    }
+    let cfg = test_config(&root, None, "http://127.0.0.1:9/v1".to_string());
+    std::fs::write(
+        data_dir.join("memory.md"),
+        "# Memory\n\n- Prefers QUARTZ_NEEDLE_9941 format in USD.\n",
+    )
+    .unwrap();
+    let port = start_app(cfg);
+
+    // Warm once to verify exact results before concurrency stress
+    let (st, body) = http(port, "GET", "/api/search?q=QUARTZ_NEEDLE_9941", None);
+    assert_eq!(st, 200, "{body}");
+    let sv: Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(sv["indexed"]["receipts"], json!(5000));
+    assert_eq!(sv["indexed"]["files"], json!(500));
+    assert_eq!(sv["counts"]["receipts"], json!(1));
+    assert_eq!(sv["counts"]["files"], json!(1));
+    assert_eq!(sv["counts"]["memory"], json!(1));
+
+    // Hold 5 live SSE subscribers open concurrently
+    let sse_stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let mut sse_threads = Vec::new();
+    for _ in 0..5 {
+        let stop = sse_stop.clone();
+        sse_threads.push(std::thread::spawn(move || {
+            use std::io::{Read, Write};
+            let mut s = std::net::TcpStream::connect(("127.0.0.1", port)).unwrap();
+            let _ = s.set_read_timeout(Some(std::time::Duration::from_millis(200)));
+            let req = format!("GET /api/runs/stream HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n\r\n");
+            s.write_all(req.as_bytes()).unwrap();
+            let mut buf = [0u8; 512];
+            let _ = s.read(&mut buf);
+            while !stop.load(std::sync::atomic::Ordering::Relaxed) {
+                std::thread::sleep(std::time::Duration::from_millis(30));
+            }
+        }));
+    }
+
+    // 30 concurrent HTTP clients hitting /api/search, /api/receipts, /api/files
+    let mut handles = Vec::new();
+    for c in 0..30usize {
+        handles.push(std::thread::spawn(move || {
+            let mut lats = Vec::new();
+            for j in 0..3usize {
+                let path = match (c + j) % 3 {
+                    0 => "/api/search?q=QUARTZ_NEEDLE_9941",
+                    1 => "/api/receipts?limit=50&offset=0",
+                    _ => "/api/files?limit=50&offset=0",
+                };
+                let t0 = std::time::Instant::now();
+                let (st, b) = http(port, "GET", path, None);
+                let ms = t0.elapsed().as_secs_f64() * 1000.0;
+                assert_eq!(st, 200, "concurrent client {c} failed on {path}: {b}");
+                lats.push(ms);
+            }
+            lats
+        }));
+    }
+    let mut all_lats = Vec::new();
+    for h in handles {
+        all_lats.extend(h.join().unwrap());
+    }
+    sse_stop.store(true, std::sync::atomic::Ordering::Relaxed);
+    for h in sse_threads {
+        let _ = h.join();
+    }
+    all_lats.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    let p95 = all_lats[(all_lats.len() * 95 / 100).min(all_lats.len() - 1)];
+    assert!(p95 < 150.0, "expected p95 < 150ms across 90 concurrent reqs, got {p95:.2}ms");
+}
+
+#[test]
+fn security_fuzz_20_vectors_fail_closed_with_zero_500s() {
+    let root = test_root("fuzz_files");
+    let cfg = test_config(&root, None, "http://127.0.0.1:9/v1".to_string());
+    let port = start_app(cfg);
+
+    #[cfg(unix)]
+    {
+        let _ = std::os::unix::fs::symlink("/etc/passwd", root.join("data/workspace/sym_escape.txt"));
+    }
+
+    let long_name = format!("{}.txt", "a".repeat(260));
+    let get_vectors = vec![
+        "",
+        "../../etc/passwd",
+        "..%2f..%2fetc%2fpasswd",
+        "%252e%252e%252fetc%252fpasswd",
+        "..\\..\\etc\\passwd",
+        "/etc/passwd",
+        "C:\\Windows\\win.ini",
+        "foo%00bar.txt",
+        ".env",
+        ".git/config",
+        "sub/../../etc/passwd",
+        "sub/./secret.txt",
+        "a//b.txt",
+        "sym_escape.txt",
+        "file:stream.txt",
+        "bad%0d%0aname.txt",
+        &long_name,
+    ];
+    for v in &get_vectors {
+        let (st, body) = http(port, "GET", &format!("/api/files/content?path={v}"), None);
+        assert!(
+            st == 400 || st == 403,
+            "GET vector {v:?} expected 400/403, got HTTP {st}: {body}"
+        );
+        assert!(!body.contains("root:"), "host leak on GET {v:?}");
+    }
+
+    let post_vectors = vec![
+        "",
+        "../escape.txt",
+        "../../etc/cron.d/pwn",
+        "..\\escape.txt",
+        "/tmp/pwn.txt",
+        "C:\\pwn.txt",
+        "a\0b.txt",
+        ".env",
+        ".ssh/authorized_keys",
+        "sub/..hidden.txt",
+        "sub/../out.txt",
+        "a//b.txt",
+        "sym_escape.txt",
+        "bad\nname.txt",
+        &long_name,
+    ];
+    for v in &post_vectors {
+        let (st, body) = http(
+            port,
+            "POST",
+            "/api/files/upload",
+            Some(&json!({"path": v, "content": "nope"}).to_string()),
+        );
+        assert!(
+            st == 400 || st == 403,
+            "POST vector {v:?} expected 400/403, got HTTP {st}: {body}"
+        );
+    }
+}
+
+

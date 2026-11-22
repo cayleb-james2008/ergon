@@ -9,8 +9,12 @@
 //! the document-writing and memory-update skills.
 
 pub mod library;
+pub mod receipts;
 pub mod records;
+pub mod routines;
+pub mod search;
 pub mod skills;
+pub mod sse;
 pub mod ui;
 pub mod update;
 
@@ -2087,25 +2091,44 @@ fn subagent_system_prompt(
 }
 
 /// Live execution state for an in-flight agent run so the UI can stream tool
-/// steps in real time before the final HTTP response returns.
+/// steps in real time (via SSE `/api/runs/stream` or polling `/api/runs/status`)
+/// and cancel an active run (`POST /api/runs/:id/cancel`).
 #[derive(Clone, Debug)]
 pub struct LiveRun {
+    pub run_id: String,
     pub thread_id: String,
     pub task: String,
     pub started_ms: u64,
     pub steps: Vec<String>,
+    pub cancel: Arc<std::sync::atomic::AtomicBool>,
 }
 
 pub type LiveRuns = Arc<Mutex<HashMap<String, LiveRun>>>;
 
-fn push_live_step(live: Option<(&LiveRuns, &str)>, step: String) {
-    if let Some((runs, person_id)) = live {
-        if let Ok(mut map) = runs.lock() {
-            if let Some(run) = map.get_mut(person_id) {
+static RUN_ID_SEQ: AtomicU64 = AtomicU64::new(0);
+
+#[derive(Clone, Copy)]
+pub struct LiveStreamCtx<'a> {
+    pub runs: &'a LiveRuns,
+    pub events: &'a sse::RunEventBus,
+    pub person_id: &'a str,
+    pub run_id: &'a str,
+    pub cancel: &'a Arc<std::sync::atomic::AtomicBool>,
+}
+
+fn push_live_step(live: Option<LiveStreamCtx<'_>>, step: String) {
+    if let Some(ctx) = live {
+        if let Ok(mut map) = ctx.runs.lock() {
+            if let Some(run) = map.get_mut(ctx.person_id) {
                 run.steps.push(step);
             }
         }
     }
+}
+
+fn is_cancelled(live: Option<LiveStreamCtx<'_>>) -> bool {
+    live.map(|c| c.cancel.load(Ordering::SeqCst))
+        .unwrap_or(false)
 }
 
 /// One agent loop: model → tool → model → … until done or the step
@@ -2130,7 +2153,7 @@ fn run_loop(
     suite_items: &[library::LibraryItem],
     budget: &mut usize,
     session_tag: &str,
-    live: Option<(&LiveRuns, &str)>,
+    live: Option<LiveStreamCtx<'_>>,
 ) -> Result<(String, Vec<String>), String> {
     // Subagent runs get their own provider session: if the provider
     // keys conversation state on the session header, the two
@@ -2154,6 +2177,9 @@ fn run_loop(
     let mut local_steps = 0usize;
     let mut json_retries = 0usize;
     loop {
+        if is_cancelled(live) {
+            return Err("run cancelled by user".to_string());
+        }
         if local_steps >= step_cap || *budget >= STEP_CAP {
             break;
         }
@@ -2198,6 +2224,25 @@ fn run_loop(
             }
         };
         let mut args = reply["args"].clone();
+        if is_cancelled(live) {
+            return Err("run cancelled by user".to_string());
+        }
+        let step_t0 = std::time::Instant::now();
+        if let Some(lctx) = live {
+            lctx.events.publish(
+                "step_start",
+                lctx.person_id,
+                lctx.run_id,
+                thread_id,
+                json!({
+                    "step_index": local_steps,
+                    "tool": tool,
+                    "label": label,
+                    "ts_ms": records::now_millis(),
+                }),
+            );
+        }
+        let prev_written_len = ledger.written.len();
 
         let (result_text, ok) = if tool == "delegate" {
             if !allow_delegate {
@@ -2254,6 +2299,7 @@ fn run_loop(
                 }
             }
         }
+        let step_elapsed_ms = step_t0.elapsed().as_millis() as u64;
         let step_line = match label {
             Some(l) => format!("Tool: {tool} (via {l})"),
             None => format!("Tool: {tool}"),
@@ -2261,6 +2307,56 @@ fn run_loop(
         steps.push(step_line.clone());
         let rendered_step = format!("{step_line}\n{}", truncate(&result_text, 500));
         push_live_step(live, rendered_step.clone());
+        if let Some(lctx) = live {
+            let newly_written: Vec<String> = ledger.written[prev_written_len..].to_vec();
+            for p in &newly_written {
+                let bytes = sandbox_path_resolving(&cfg.workspace_dir, p, true)
+                    .ok()
+                    .and_then(|full| std::fs::metadata(full).ok())
+                    .map(|m| m.len())
+                    .unwrap_or(0);
+                lctx.events.publish(
+                    "file_written",
+                    lctx.person_id,
+                    lctx.run_id,
+                    thread_id,
+                    json!({
+                        "path": p,
+                        "bytes": bytes,
+                        "ts_ms": records::now_millis(),
+                    }),
+                );
+            }
+            if ok && matches!(tool.as_str(), "delete_file" | "flag_decision") {
+                lctx.events.publish(
+                    "approval_parked",
+                    lctx.person_id,
+                    lctx.run_id,
+                    thread_id,
+                    json!({
+                        "tool": tool,
+                        "path": args["path"].as_str(),
+                        "summary": truncate(&result_text, 240),
+                        "ts_ms": records::now_millis(),
+                    }),
+                );
+            }
+            lctx.events.publish(
+                "step_done",
+                lctx.person_id,
+                lctx.run_id,
+                thread_id,
+                json!({
+                    "step_index": local_steps,
+                    "tool": tool,
+                    "ok": ok,
+                    "elapsed_ms": step_elapsed_ms,
+                    "summary": truncate(&result_text, 240),
+                    "files_written": newly_written,
+                    "ts_ms": records::now_millis(),
+                }),
+            );
+        }
         store.lock().unwrap().push(thread_id, "step", &rendered_step);
         // Guard against small local models looping on delete_file after a file
         // has already been parked for approval in this run.
@@ -2303,7 +2399,7 @@ fn run_delegation(
     dynamic_skills: &mut std::collections::HashSet<String>,
     suite_items: &[library::LibraryItem],
     budget: &mut usize,
-    live: Option<(&LiveRuns, &str)>,
+    live: Option<LiveStreamCtx<'_>>,
 ) -> (String, bool) {
     let sub_id = args["subagent"].as_str().unwrap_or("");
     let task = args["task"].as_str().unwrap_or("");
@@ -2364,20 +2460,40 @@ struct RunGuard {
 }
 
 impl RunGuard {
-    fn new(live: Option<(&LiveRuns, &str)>, thread_id: &str, task: &str, started_ms: u64) -> RunGuard {
+    fn new(
+        live: Option<(&LiveRuns, &sse::RunEventBus, &str)>,
+        run_id: &str,
+        thread_id: &str,
+        task: &str,
+        started_ms: u64,
+        cancel: Arc<std::sync::atomic::AtomicBool>,
+    ) -> RunGuard {
         RUNS_IN_FLIGHT.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        let stored = live.map(|(runs, pid)| {
+        let stored = live.map(|(runs, events, pid)| {
             if let Ok(mut map) = runs.lock() {
                 map.insert(
                     pid.to_string(),
                     LiveRun {
+                        run_id: run_id.to_string(),
                         thread_id: thread_id.to_string(),
                         task: task.to_string(),
                         started_ms,
                         steps: Vec::new(),
+                        cancel,
                     },
                 );
             }
+            events.publish(
+                "run_started",
+                pid,
+                run_id,
+                thread_id,
+                json!({
+                    "task": truncate(task, 240),
+                    "started_ms": started_ms,
+                    "ts_ms": started_ms,
+                }),
+            );
             (runs.clone(), pid.to_string())
         });
         RunGuard { live: stored }
@@ -2413,14 +2529,24 @@ pub fn run_agent_live(
     thread_id: &str,
     task: &str,
     history: &[Value],
-    live: Option<(&LiveRuns, &str)>,
+    live: Option<(&LiveRuns, &sse::RunEventBus, &str)>,
 ) -> Result<AgentOutcome, String> {
     if !cfg.model_configured() {
         return Err(NO_KEY_ERROR.to_string());
     }
     // Deletes parked after this instant belong to this run (EB1).
     let run_started = records::now_millis();
-    let _in_flight = RunGuard::new(live, thread_id, task, run_started);
+    let run_t0 = std::time::Instant::now();
+    let run_id = format!("run-{run_started}-{}", RUN_ID_SEQ.fetch_add(1, Ordering::SeqCst));
+    let cancel = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let _in_flight = RunGuard::new(live, &run_id, thread_id, task, run_started, cancel.clone());
+    let live_ctx = live.map(|(runs, events, pid)| LiveStreamCtx {
+        runs,
+        events,
+        person_id: pid,
+        run_id: &run_id,
+        cancel: &cancel,
+    });
     let suite = library::load_suite(&cfg.data_dir);
     let suite_items = {
         let lib = ctx.library.lock().unwrap();
@@ -2450,7 +2576,7 @@ pub fn run_agent_live(
         &suite_items,
         &mut budget,
         "",
-        live,
+        live_ctx,
     ) {
         Ok(v) => v,
         Err(e) => {
@@ -2458,6 +2584,11 @@ pub fn run_agent_live(
             // (files written before the cap). Record it as
             // unfinished work — Today shows it; the brief and the
             // offers engine count only finished work.
+            let status_label = if cancel.load(Ordering::SeqCst) {
+                "cancelled"
+            } else {
+                "error"
+            };
             records::append_work(
                 cfg,
                 task,
@@ -2466,6 +2597,21 @@ pub fn run_agent_live(
                 thread_id,
                 false,
             );
+            if let Some(lctx) = live_ctx {
+                lctx.events.publish(
+                    "run_finished",
+                    lctx.person_id,
+                    lctx.run_id,
+                    thread_id,
+                    json!({
+                        "status": status_label,
+                        "error": e,
+                        "elapsed_ms": run_t0.elapsed().as_millis() as u64,
+                        "files": ledger.written,
+                        "ts_ms": records::now_millis(),
+                    }),
+                );
+            }
             return Err(e);
         }
     };
@@ -2542,6 +2688,21 @@ pub fn run_agent_live(
         let suite_now = library::load_suite(&cfg.data_dir);
         records::refresh_offers(cfg, &suite_now, &lib);
     }
+    if let Some(lctx) = live_ctx {
+        lctx.events.publish(
+            "run_finished",
+            lctx.person_id,
+            lctx.run_id,
+            thread_id,
+            json!({
+                "status": "finished",
+                "summary": truncate(&summary, 300),
+                "elapsed_ms": run_t0.elapsed().as_millis() as u64,
+                "files": ledger.written,
+                "ts_ms": records::now_millis(),
+            }),
+        );
+    }
     Ok(AgentOutcome { summary, steps })
 }
 
@@ -2605,8 +2766,12 @@ pub struct AppState {
     pub allowed_hosts: Vec<String>,
     pub people: Arc<Mutex<PeopleState>>,
     pub runtimes: Arc<Mutex<HashMap<String, Arc<PersonRuntime>>>>,
-    /// In-flight runs per person for live step progress streaming (`GET /api/runs/status`).
+    /// In-flight runs per person for live step progress streaming (`GET /api/runs/status` & `/api/runs/stream`).
     pub live_runs: LiveRuns,
+    /// Broadcast SSE event bus for real-time run events (`GET /api/runs/stream`).
+    pub events: sse::RunEventBus,
+    /// Per-person RwLock-cached search index, SHA-256 receipt chain, and file listing.
+    pub search_cache: search::SearchCache,
     /// Browser sessions (cookie id → person id). "Active person" used
     /// to be one global pointer: any client could switch it for every
     /// other client mid-task. A session pins the person per browser;
@@ -2766,6 +2931,8 @@ fn serve_inner(
         people: Arc::new(Mutex::new(people)),
         runtimes: Arc::new(Mutex::new(HashMap::new())),
         live_runs: Arc::new(Mutex::new(HashMap::new())),
+        events: sse::RunEventBus::new(),
+        search_cache: search::SearchCache::new(),
         sessions: Arc::new(Mutex::new(HashMap::new())),
         updater: update::Updater::from_env("ERGON", "ergon", env!("CARGO_PKG_VERSION"), "cayleb-james2008/ergon", gate_token_is_none),
     });
@@ -3159,62 +3326,6 @@ fn mime_for_ext(ext: &str) -> &'static str {
     }
 }
 
-fn list_workspace_files(root: &Path) -> Vec<Value> {
-    fn walk(root: &Path, dir: &Path, depth: usize, out: &mut Vec<(u64, String, Value)>) {
-        if depth > 6 {
-            return;
-        }
-        let Ok(rd) = std::fs::read_dir(dir) else { return };
-        for entry in rd.filter_map(|e| e.ok()) {
-            let name = entry.file_name().to_string_lossy().into_owned();
-            if name.starts_with('.') {
-                continue;
-            }
-            let Ok(ft) = entry.file_type() else { continue };
-            if ft.is_symlink() {
-                continue;
-            }
-            let p = entry.path();
-            if ft.is_dir() {
-                walk(root, &p, depth + 1, out);
-                continue;
-            }
-            let Ok(md) = entry.metadata() else { continue };
-            let rel = p
-                .strip_prefix(root)
-                .unwrap_or(&p)
-                .to_string_lossy()
-                .replace('\\', "/");
-            let ext = p
-                .extension()
-                .and_then(|s| s.to_str())
-                .unwrap_or("")
-                .to_ascii_lowercase();
-            let mtime_ms = md
-                .modified()
-                .ok()
-                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-                .map(|d| d.as_millis() as u64)
-                .unwrap_or(0);
-            out.push((
-                mtime_ms,
-                rel.clone(),
-                json!({
-                    "path": rel,
-                    "name": name,
-                    "size": md.len(),
-                    "mtime_ms": mtime_ms,
-                    "ext": ext,
-                }),
-            ));
-        }
-    }
-    let mut items = Vec::new();
-    walk(root, root, 0, &mut items);
-    items.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
-    items.into_iter().map(|(_, _, v)| v).collect()
-}
-
 fn effective_cfg(state: &AppState, runtime: &PersonRuntime) -> Config {
     let mut cfg = runtime.cfg.clone();
     let live = state.model_cfg.lock().unwrap();
@@ -3454,37 +3565,338 @@ fn handle_connection(mut stream: std::net::TcpStream, state: &AppState) -> std::
         ("GET", "/api/runs/status") => {
             let active = state.live_runs.lock().unwrap().get(&person.id).cloned();
             match active {
-                Some(run) => respond_json(
-                    &mut stream,
-                    200,
-                    &json!({
-                        "active": true,
-                        "thread_id": run.thread_id,
-                        "task": run.task,
-                        "started_ms": run.started_ms,
-                        "steps": run.steps,
-                    }),
-                ),
+                Some(run) => {
+                    let elapsed_ms = records::now_millis().saturating_sub(run.started_ms);
+                    respond_json(
+                        &mut stream,
+                        200,
+                        &json!({
+                            "active": true,
+                            "run_id": run.run_id,
+                            "thread_id": run.thread_id,
+                            "task": run.task,
+                            "started_ms": run.started_ms,
+                            "elapsed_ms": elapsed_ms,
+                            "steps": run.steps,
+                        }),
+                    )
+                }
                 None => respond_json(
                     &mut stream,
                     200,
                     &json!({
                         "active": false,
+                        "run_id": "",
                         "thread_id": "",
                         "task": "",
                         "started_ms": 0,
+                        "elapsed_ms": 0,
                         "steps": [],
                     }),
                 ),
             }
         }
+        ("GET", "/api/runs/stream") => {
+            let thread_filter = query_param(&req.query, "thread_id");
+            let once = query_param(&req.query, "once")
+                .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+                .unwrap_or(false);
+            let active = state.live_runs.lock().unwrap().get(&person.id).cloned();
+            let initial = match active {
+                Some(run) => json!({
+                    "active": true,
+                    "run_id": run.run_id,
+                    "thread_id": run.thread_id,
+                    "task": run.task,
+                    "started_ms": run.started_ms,
+                    "elapsed_ms": records::now_millis().saturating_sub(run.started_ms),
+                    "steps": run.steps,
+                }),
+                None => json!({
+                    "active": false,
+                    "run_id": "",
+                    "thread_id": "",
+                    "task": "",
+                    "started_ms": 0,
+                    "elapsed_ms": 0,
+                    "steps": [],
+                }),
+            };
+            sse::stream_sse(
+                &mut stream,
+                &state.events,
+                &person.id,
+                thread_filter.as_deref(),
+                &initial,
+                once,
+            )
+        }
+        ("POST", path) if path.starts_with("/api/runs/") && path.ends_with("/cancel") => {
+            let id = path
+                .strip_prefix("/api/runs/")
+                .and_then(|r| r.strip_suffix("/cancel"))
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            let found = {
+                let map = state.live_runs.lock().unwrap();
+                map.get(&person.id).and_then(|run| {
+                    if id == "active" || id.is_empty() || run.run_id == id || run.thread_id == id {
+                        run.cancel.store(true, Ordering::SeqCst);
+                        Some((run.run_id.clone(), run.thread_id.clone()))
+                    } else {
+                        None
+                    }
+                })
+            };
+            match found {
+                Some((run_id, thread_id)) => {
+                    state.events.publish(
+                        "run_cancelling",
+                        &person.id,
+                        &run_id,
+                        &thread_id,
+                        json!({"ts_ms": records::now_millis()}),
+                    );
+                    respond_json(
+                        &mut stream,
+                        200,
+                        &json!({"cancelled": true, "run_id": run_id, "thread_id": thread_id}),
+                    )
+                }
+                None => respond_json(
+                    &mut stream,
+                    404,
+                    &json!({"error": "no matching active run"}),
+                ),
+            }
+        }
+        ("GET", "/api/search") => {
+            let q = query_param(&req.query, "q").unwrap_or_default();
+            let scope = query_param(&req.query, "scope")
+                .map(|s| s.to_ascii_lowercase())
+                .filter(|s| matches!(s.as_str(), "all" | "receipts" | "files" | "memory"))
+                .unwrap_or_else(|| "all".to_string());
+            let limit = query_param(&req.query, "limit")
+                .and_then(|s| s.parse::<usize>().ok())
+                .unwrap_or(30);
+            let idx = state.search_cache.get(
+                &person.id,
+                &runtime.cfg.data_dir,
+                &runtime.cfg.workspace_dir,
+                &runtime.cfg.memory_path,
+            );
+            respond_json(&mut stream, 200, &idx.search(&q, &scope, limit))
+        }
+        ("GET", "/api/receipts") => {
+            let offset = query_param(&req.query, "offset")
+                .and_then(|s| s.parse::<usize>().ok())
+                .unwrap_or(0);
+            let limit = query_param(&req.query, "limit")
+                .and_then(|s| s.parse::<usize>().ok())
+                .unwrap_or(50);
+            let q = query_param(&req.query, "q").unwrap_or_default();
+            let status = query_param(&req.query, "status")
+                .map(|s| s.to_ascii_lowercase())
+                .unwrap_or_else(|| "all".to_string());
+            let idx = state.search_cache.get(
+                &person.id,
+                &runtime.cfg.data_dir,
+                &runtime.cfg.workspace_dir,
+                &runtime.cfg.memory_path,
+            );
+            respond_json(&mut stream, 200, &idx.list_receipts(offset, limit, &q, &status))
+        }
+        ("GET", "/api/receipts/verify") => {
+            let idx = state.search_cache.get(
+                &person.id,
+                &runtime.cfg.data_dir,
+                &runtime.cfg.workspace_dir,
+                &runtime.cfg.memory_path,
+            );
+            respond_json(
+                &mut stream,
+                200,
+                &json!({
+                    "total": idx.chain.len(),
+                    "valid": idx.chain_valid,
+                    "head_hash": idx.head_hash,
+                }),
+            )
+        }
+        ("GET", path) if path.starts_with("/api/receipts/") && path.ends_with("/export") => {
+            let raw_id = path
+                .strip_prefix("/api/receipts/")
+                .and_then(|r| r.strip_suffix("/export"))
+                .unwrap_or("");
+            let id = percent_decode(raw_id);
+            let fmt = query_param(&req.query, "format")
+                .map(|s| s.to_ascii_lowercase())
+                .unwrap_or_else(|| "json".to_string());
+            if fmt != "json" && fmt != "md" {
+                return respond_json(
+                    &mut stream,
+                    400,
+                    &json!({"error": "format must be md or json"}),
+                );
+            }
+            let idx = state.search_cache.get(
+                &person.id,
+                &runtime.cfg.data_dir,
+                &runtime.cfg.workspace_dir,
+                &runtime.cfg.memory_path,
+            );
+            let Some(rcpt) = receipts::find_receipt(&idx.chain, &id) else {
+                return respond_json(&mut stream, 404, &json!({"error": "receipt not found"}));
+            };
+            let safe_id: String = rcpt
+                .id
+                .chars()
+                .map(|c| if c.is_ascii_alphanumeric() || matches!(c, '-' | '_') { c } else { '_' })
+                .collect();
+            if fmt == "md" {
+                let md = receipts::export_receipt_markdown(
+                    rcpt,
+                    &runtime.cfg.workspace_dir,
+                    idx.chain.len(),
+                    idx.chain_valid,
+                );
+                let headers = [
+                    ("Content-Disposition", format!("attachment; filename=\"receipt-{safe_id}.md\"")),
+                    ("X-Content-Type-Options", "nosniff".to_string()),
+                ];
+                respond_bytes(&mut stream, 200, "text/markdown; charset=utf-8", md.as_bytes(), &headers)
+            } else {
+                let body = receipts::export_receipt_json(
+                    rcpt,
+                    &runtime.cfg.workspace_dir,
+                    idx.chain.len(),
+                    idx.chain_valid,
+                );
+                let bytes = serde_json::to_vec_pretty(&body).unwrap_or_else(|_| body.to_string().into_bytes());
+                let headers = [
+                    ("Content-Disposition", format!("attachment; filename=\"receipt-{safe_id}.json\"")),
+                    ("X-Content-Type-Options", "nosniff".to_string()),
+                ];
+                respond_bytes(&mut stream, 200, "application/json; charset=utf-8", &bytes, &headers)
+            }
+        }
+        ("GET", "/api/routines") => {
+            let items = routines::list_routines(&runtime.cfg.data_dir);
+            respond_json(&mut stream, 200, &json!({"routines": items}))
+        }
+        ("POST", "/api/routines") => {
+            let parsed: Value = serde_json::from_slice(&req.body).unwrap_or(Value::Null);
+            let name = parsed["name"].as_str().unwrap_or("");
+            let prompt = parsed["prompt"].as_str().unwrap_or("");
+            let schedule = parsed["schedule"].as_str().unwrap_or("manual");
+            let skill_id = parsed["skill_id"].as_str();
+            match routines::create_routine(&runtime.cfg.data_dir, name, prompt, schedule, skill_id) {
+                Ok(routine) => respond_json(&mut stream, 201, &json!({"routine": routine})),
+                Err(e) => respond_json(&mut stream, 400, &json!({"error": e})),
+            }
+        }
+        ("DELETE", path) if path.starts_with("/api/routines/") => {
+            let id = path.trim_start_matches("/api/routines/").trim().to_string();
+            if id.is_empty() || id.contains('/') {
+                return respond_json(&mut stream, 400, &json!({"error": "invalid routine id"}));
+            }
+            match routines::delete_routine(&runtime.cfg.data_dir, &id) {
+                Ok(true) => respond_json(&mut stream, 200, &json!({"deleted": id})),
+                Ok(false) => respond_json(&mut stream, 404, &json!({"error": "routine not found"})),
+                Err(e) => respond_json(&mut stream, 500, &json!({"error": e})),
+            }
+        }
+        ("POST", path) if path.starts_with("/api/routines/") && path.ends_with("/run") => {
+            let id = path
+                .strip_prefix("/api/routines/")
+                .and_then(|r| r.strip_suffix("/run"))
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            let Some(routine) = routines::get_routine(&runtime.cfg.data_dir, &id) else {
+                return respond_json(&mut stream, 404, &json!({"error": "routine not found"}));
+            };
+            let name = routine["name"].as_str().unwrap_or("Routine").to_string();
+            let prompt = routine["prompt"].as_str().unwrap_or("").to_string();
+            let cfg = effective_cfg(state, &runtime);
+            let thread_id = {
+                let mut store = runtime.store.lock().unwrap();
+                let tid = store.create_thread();
+                store.push(&tid, "user", &format!("{name} — {prompt}"));
+                tid
+            };
+            if !cfg.model_configured() {
+                runtime
+                    .store
+                    .lock()
+                    .unwrap()
+                    .push(&thread_id, "error", NO_KEY_ERROR);
+                let updated = routines::record_run(&runtime.cfg.data_dir, &id, &thread_id, "no_model")
+                    .unwrap_or(routine);
+                return respond_json(
+                    &mut stream,
+                    503,
+                    &json!({"error": NO_KEY_ERROR, "thread_id": thread_id, "routine": updated}),
+                );
+            }
+            let outcome = run_agent_live(
+                &cfg,
+                &ctx,
+                &runtime.store,
+                &thread_id,
+                &prompt,
+                &[],
+                Some((&state.live_runs, &state.events, &person.id)),
+            );
+            state.search_cache.invalidate(&person.id);
+            match outcome {
+                Ok(_) => {
+                    let updated = routines::record_run(&runtime.cfg.data_dir, &id, &thread_id, "finished")
+                        .unwrap_or(routine);
+                    let store = runtime.store.lock().unwrap();
+                    let thread_v = store
+                        .thread_json(&thread_id)
+                        .unwrap_or_else(|| json!({"id": thread_id}));
+                    respond_json(
+                        &mut stream,
+                        200,
+                        &json!({"routine": updated, "thread": thread_v, "thread_id": thread_id}),
+                    )
+                }
+                Err(e) => {
+                    let st = if e == "run cancelled by user" { "cancelled" } else { "error" };
+                    runtime.store.lock().unwrap().push(&thread_id, "error", &e);
+                    let updated = routines::record_run(&runtime.cfg.data_dir, &id, &thread_id, st)
+                        .unwrap_or(routine);
+                    respond_json(
+                        &mut stream,
+                        500,
+                        &json!({"error": e, "thread_id": thread_id, "routine": updated}),
+                    )
+                }
+            }
+        }
         ("GET", "/api/files") => {
-            let files = list_workspace_files(&runtime.cfg.workspace_dir);
+            let offset = query_param(&req.query, "offset")
+                .and_then(|s| s.parse::<usize>().ok())
+                .unwrap_or(0);
+            let limit = query_param(&req.query, "limit")
+                .and_then(|s| s.parse::<usize>().ok());
+            let q = query_param(&req.query, "q").unwrap_or_default();
+            let idx = state.search_cache.get(
+                &person.id,
+                &runtime.cfg.data_dir,
+                &runtime.cfg.workspace_dir,
+                &runtime.cfg.memory_path,
+            );
+            let (total, files) = idx.list_files(offset, limit, &q);
             respond_json(
                 &mut stream,
                 200,
                 &json!({
                     "person_id": person.id,
+                    "total": total,
                     "files": files,
                 }),
             )
@@ -3495,7 +3907,17 @@ fn handle_connection(mut stream: std::net::TcpStream, state: &AppState) -> std::
             if rel.is_empty() {
                 return respond_json(&mut stream, 400, &json!({"error": "path is required"}));
             }
-            if rel.contains('\0') || rel.starts_with('/') || rel.starts_with('\\') {
+            if rel.len() > 240 || rel.split('/').any(|s| s.len() > 200) {
+                return respond_json(&mut stream, 400, &json!({"error": "path is too long"}));
+            }
+            if rel.contains('\0')
+                || rel.contains('\\')
+                || rel.contains(':')
+                || rel.chars().any(|c| c.is_control())
+                || rel.starts_with('/')
+                || rel.to_ascii_lowercase().contains("%2e%2e")
+                || rel.split('/').any(|seg| seg == ".." || seg == "." || seg.is_empty() || seg.starts_with('.'))
+            {
                 return respond_json(
                     &mut stream,
                     403,
@@ -3527,7 +3949,7 @@ fn handle_connection(mut stream: std::net::TcpStream, state: &AppState) -> std::
             }
             let bytes = match std::fs::read(&full) {
                 Ok(b) => b,
-                Err(e) => return respond_json(&mut stream, 500, &json!({"error": format!("read failed: {e}")})),
+                Err(_) => return respond_json(&mut stream, 403, &json!({"error": "file could not be read"})),
             };
             let name = full
                 .file_name()
@@ -3603,10 +4025,20 @@ fn handle_connection(mut stream: std::net::TcpStream, state: &AppState) -> std::
                     &json!({"error": "filename is required"}),
                 );
             }
+            if raw_rel.len() > 240 || raw_rel.split('/').any(|s| s.len() > 200) {
+                return respond_json(
+                    &mut stream,
+                    400,
+                    &json!({"error": "filename is too long"}),
+                );
+            }
             if raw_rel.contains('\0')
+                || raw_rel.contains('\\')
+                || raw_rel.contains(':')
+                || raw_rel.chars().any(|c| c.is_control())
                 || raw_rel.starts_with('/')
-                || raw_rel.starts_with('\\')
-                || raw_rel.split('/').any(|seg| seg.is_empty() || seg.starts_with('.'))
+                || raw_rel.to_ascii_lowercase().contains("%2e%2e")
+                || raw_rel.split('/').any(|seg| seg.is_empty() || seg == "." || seg == ".." || seg.starts_with('.'))
             {
                 return respond_json(
                     &mut stream,
@@ -3669,6 +4101,7 @@ fn handle_connection(mut stream: std::net::TcpStream, state: &AppState) -> std::
                     &json!({"error": format!("save file failed: {e}")}),
                 );
             }
+            state.search_cache.invalidate(&person.id);
             let name = full
                 .file_name()
                 .and_then(|s| s.to_str())
@@ -3941,6 +4374,7 @@ fn handle_connection(mut stream: std::net::TcpStream, state: &AppState) -> std::
                             store.settle_note(tid, &parked_note(path), &settled);
                         }
                     }
+                    state.search_cache.invalidate(&person.id);
                     respond_json(
                         &mut stream,
                         200,
@@ -4113,15 +4547,17 @@ fn handle_connection(mut stream: std::net::TcpStream, state: &AppState) -> std::
                     &json!({"error": NO_KEY_ERROR, "thread_id": thread_id}),
                 );
             }
-            match run_agent_live(
+            let outcome = run_agent_live(
                 &cfg,
                 &ctx,
                 &runtime.store,
                 &thread_id,
                 &task,
                 &[],
-                Some((&state.live_runs, &person.id)),
-            ) {
+                Some((&state.live_runs, &state.events, &person.id)),
+            );
+            state.search_cache.invalidate(&person.id);
+            match outcome {
                 Ok(_outcome) => {
                     let store = runtime.store.lock().unwrap();
                     let v = store
@@ -4198,20 +4634,31 @@ fn handle_connection(mut stream: std::net::TcpStream, state: &AppState) -> std::
                     &json!({"error": NO_KEY_ERROR, "thread_id": thread_id}),
                 );
             }
-            match run_agent_live(
+            let outcome = run_agent_live(
                 &cfg,
                 &ctx,
                 &runtime.store,
                 &thread_id,
                 &message,
                 &history,
-                Some((&state.live_runs, &person.id)),
-            ) {
+                Some((&state.live_runs, &state.events, &person.id)),
+            );
+            state.search_cache.invalidate(&person.id);
+            match outcome {
                 Ok(_outcome) => {
                     let store = runtime.store.lock().unwrap();
                     let v = store
                         .thread_json(&thread_id)
                         .unwrap_or_else(|| json!({"thread_id": thread_id}));
+                    respond_json(&mut stream, 200, &v)
+                }
+                Err(e) if e == "run cancelled by user" => {
+                    let mut store = runtime.store.lock().unwrap();
+                    store.push(&thread_id, "step", "Run cancelled by user.");
+                    let mut v = store
+                        .thread_json(&thread_id)
+                        .unwrap_or_else(|| json!({"thread_id": thread_id}));
+                    v["cancelled"] = json!(true);
                     respond_json(&mut stream, 200, &v)
                 }
                 Err(e) => {
