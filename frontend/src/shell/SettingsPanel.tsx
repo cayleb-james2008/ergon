@@ -1,11 +1,12 @@
-// Unified Settings dialog ("Model, Workspace & Appearance") triggered from the Left Rail footer.
-// Holds:
+// Unified Settings dialog ("Model, Workspace & Appearance") triggered from the Left Rail footer
+// and strictly mounted OUTSIDE mobile Vaul Drawer.Content (z-50 over z-40):
 // 1. Appearance (Light / Dark COSS SegmentedControl — moved out of main rail chrome per owner ruling)
-// 2. Live Model Settings (GET/POST /api/config + detected local gateways in native Rust mode;
+// 2. Workspace Switcher (GET /api/people & POST /api/people/switch) + Field-Book Audit Bundle export
+// 3. Live Model Settings (GET/POST /api/config + detected local gateways in native Rust mode;
 //    Browser IndexedDB Engine / BYOK OpenAI-compatible in sessionStorage / Connect to Local Ergon in Web mode)
-// 3. Version & Update check
+// 4. Version & Update check
 import { useEffect, useState } from "react";
-import { Cpu, ExternalLink, Moon, SlidersHorizontal, Sun } from "lucide-react";
+import { Cpu, ExternalLink, FileCheck2, Moon, SlidersHorizontal, Sun, UserPlus, Users } from "lucide-react";
 import { toast } from "sonner";
 import {
   MorphingDialog,
@@ -21,12 +22,14 @@ import { SegmentedControl, SegmentedControlItem } from "@/components/ui/segmente
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Pill } from "@/components/kibo-ui/pill";
+import { WorkspaceSwitcherList } from "@/shell/PersonSelect";
 import { VersionRow, type useUpdate } from "@/shell/Update";
 import {
   call,
   isWebStandalone,
   type DetectedGateway,
   type ModelConfigPayload,
+  type Person,
   type Status,
 } from "@/lib/api";
 import { open as openPreset } from "@/motion";
@@ -39,16 +42,28 @@ function SettingsBody({
   theme,
   onTheme,
   status,
+  people,
+  activePerson,
+  onRefreshPeople,
+  onSwitchPerson,
+  onAddPerson,
+  onExportAuditBundle,
   onConfigSaved,
   u,
 }: {
   theme: Theme;
   onTheme: (t: Theme) => void;
   status: Status | null | "error";
+  people: Person[];
+  activePerson: string;
+  onRefreshPeople: () => void;
+  onSwitchPerson: (id: string) => Promise<void>;
+  onAddPerson: () => void;
+  onExportAuditBundle: (format: "json" | "md") => Promise<void>;
   onConfigSaved: () => void;
   u: ReturnType<typeof useUpdate>;
 }) {
-  const { isOpen } = useMorphingDialog();
+  const { isOpen, setIsOpen } = useMorphingDialog();
   const webMode = isWebStandalone();
   const [cfg, setCfg] = useState<ModelConfigPayload | null>(null);
   const [baseUrl, setBaseUrl] = useState("");
@@ -57,6 +72,8 @@ function SettingsBody({
   const [engineMode, setEngineMode] = useState<"browser" | "byok">("browser");
   const [localProbe, setLocalProbe] = useState<"idle" | "checking" | "found" | "missing">("idle");
   const [saving, setSaving] = useState(false);
+  const [switchingId, setSwitchingId] = useState<string | null>(null);
+  const [exportingBundle, setExportingBundle] = useState<"json" | "md" | null>(null);
   const [err, setErr] = useState("");
   const [lockedRemote, setLockedRemote] = useState(false);
 
@@ -64,6 +81,7 @@ function SettingsBody({
     if (!isOpen) return;
     setErr("");
     setLockedRemote(false);
+    onRefreshPeople();
     call<ModelConfigPayload>("/api/config").then((r) => {
       if (!r.ok) {
         if (r.status === 403) setLockedRemote(true);
@@ -77,7 +95,7 @@ function SettingsBody({
       if (r.data.engine_mode === "byok") setEngineMode("byok");
       else setEngineMode("browser");
     });
-  }, [isOpen]);
+  }, [isOpen, onRefreshPeople]);
 
   const applyGateway = (gw: DetectedGateway) => {
     setBaseUrl(gw.base_url);
@@ -170,7 +188,96 @@ function SettingsBody({
         </div>
       </section>
 
-      {/* 2. Model Provider & Runtime */}
+      {/* 2. Workspace Switcher */}
+      <section
+        id="settings-workspace-section"
+        aria-labelledby="settings-workspace-h"
+        className="flex flex-col gap-2.5 rounded-card border border-hairline bg-board/40 p-3.5"
+      >
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <Users className="size-4 text-icon" strokeWidth={1.5} aria-hidden />
+            <h3 id="settings-workspace-h" className="text-sm font-medium text-ink">Workspace switcher</h3>
+          </div>
+          <Button
+            type="button"
+            size="xs"
+            variant="outline"
+            className="max-md:min-h-11"
+            onClick={() => {
+              setIsOpen(false);
+              setTimeout(onAddPerson, 30);
+            }}
+          >
+            <UserPlus className="size-3.5" strokeWidth={1.5} aria-hidden />
+            Add workspace
+          </Button>
+        </div>
+        <WorkspaceSwitcherList
+          people={people}
+          active={activePerson}
+          switchingId={switchingId}
+          compact
+          onSwitch={async (id) => {
+            if (id === activePerson) return;
+            setSwitchingId(id);
+            await onSwitchPerson(id);
+            setSwitchingId(null);
+            toast.success("Switched active workspace.");
+          }}
+        />
+      </section>
+
+      {/* 3. Field-Book Audit Bundle */}
+      <section
+        id="settings-audit-section"
+        aria-labelledby="settings-audit-h"
+        className="flex flex-col gap-2.5 rounded-card border border-hairline bg-board/40 p-3.5"
+      >
+        <div className="flex items-center gap-2">
+          <FileCheck2 className="size-4 text-icon" strokeWidth={1.5} aria-hidden />
+          <h3 id="settings-audit-h" className="text-sm font-medium text-ink">Field-Book Audit Bundle</h3>
+        </div>
+        <p className="text-xs leading-5 text-ink-2">
+          Export a tamper-evident audit package combining the verified SHA-256 receipt chain, every workspace file digest, routine execution history, and offline verification instructions.
+        </p>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            id="settings-export-audit-json"
+            type="button"
+            size="sm"
+            variant="outline"
+            className="max-md:min-h-11"
+            disabled={exportingBundle !== null}
+            onClick={async () => {
+              setExportingBundle("json");
+              await onExportAuditBundle("json");
+              setExportingBundle(null);
+            }}
+          >
+            <FileCheck2 className="size-3.5" strokeWidth={1.5} aria-hidden />
+            {exportingBundle === "json" ? "Exporting…" : "Export Full Audit Bundle (.json)"}
+          </Button>
+          <Button
+            id="settings-export-audit-md"
+            type="button"
+            size="sm"
+            variant="outline"
+            className="max-md:min-h-11"
+            disabled={exportingBundle !== null}
+            onClick={async () => {
+              setExportingBundle("md");
+              await onExportAuditBundle("md");
+              setExportingBundle(null);
+            }}
+          >
+            <FileCheck2 className="size-3.5" strokeWidth={1.5} aria-hidden />
+            {exportingBundle === "md" ? "Exporting…" : "Audit Report (.md)"}
+          </Button>
+        </div>
+      </section>
+
+      {/* 4. Model Provider & Runtime */}
       <section aria-labelledby="settings-model-h" className="flex flex-col gap-3 rounded-card border border-hairline bg-board/40 p-3.5">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2">
@@ -264,7 +371,7 @@ function SettingsBody({
             ) : (
               <form onSubmit={(e) => saveModel(e, true)} className="flex flex-col gap-2">
                 <p className="text-xs text-ink-2">
-                  All 12 deterministic workspace skills (ledger reconciliation, meeting summaries, contract audits, inbox triage, dataset cleaning, document diffs, table extraction, and memory rules), recurring routines, and SHA-256 receipts run locally over your IndexedDB workspace.
+                  All 12 deterministic workspace workflows (ledger reconciliation, meeting summaries, contract audits, inbox triage, dataset cleaning, document diffs, table extraction, and memory rules), scheduled routines, file version history, and SHA-256 audit bundles run locally over your IndexedDB workspace.
                 </p>
                 <div className="flex flex-wrap items-center gap-2">
                   <Button type="submit" size="sm" variant="outline" className="h-auto max-w-full whitespace-normal py-2 text-left max-md:min-h-11" disabled={saving}>
@@ -382,6 +489,12 @@ export function SettingsPanel({
   theme,
   onTheme,
   status,
+  people,
+  activePerson,
+  onRefreshPeople,
+  onSwitchPerson,
+  onAddPerson,
+  onExportAuditBundle,
   onConfigSaved,
   u,
   open,
@@ -391,6 +504,12 @@ export function SettingsPanel({
   theme: Theme;
   onTheme: (t: Theme) => void;
   status: Status | null | "error";
+  people: Person[];
+  activePerson: string;
+  onRefreshPeople: () => void;
+  onSwitchPerson: (id: string) => Promise<void>;
+  onAddPerson: () => void;
+  onExportAuditBundle: (format: "json" | "md") => Promise<void>;
   onConfigSaved: () => void;
   u: ReturnType<typeof useUpdate>;
   open?: boolean;
@@ -415,7 +534,19 @@ export function SettingsPanel({
           <MorphingDialogClose className="focus-ring absolute right-3 top-3 grid size-11 place-items-center rounded-sm text-icon outline-none hover:bg-board md:size-9" />
           <MorphingDialogTitle className="pr-10 text-title font-medium text-ink">Settings</MorphingDialogTitle>
           <MorphingDialogDescription disableLayoutAnimation className="text-sm text-ink-2">
-            <SettingsBody theme={theme} onTheme={onTheme} status={status} onConfigSaved={onConfigSaved} u={u} />
+            <SettingsBody
+              theme={theme}
+              onTheme={onTheme}
+              status={status}
+              people={people}
+              activePerson={activePerson}
+              onRefreshPeople={onRefreshPeople}
+              onSwitchPerson={onSwitchPerson}
+              onAddPerson={onAddPerson}
+              onExportAuditBundle={onExportAuditBundle}
+              onConfigSaved={onConfigSaved}
+              u={u}
+            />
           </MorphingDialogDescription>
         </MorphingDialogContent>
       </MorphingDialogContainer>

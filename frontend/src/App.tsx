@@ -1,12 +1,13 @@
-// Ergon v0.5.0 — Personal Employee Agent Desk
+// Ergon v0.7.0 — Personal Employee Agent Desk
 // Unified shell:
-// - Persistent 256px Left Rail on >=768px (Vaul Drawer <768px): Ergon wordmark, active person desk,
+// - Persistent 256px Left Rail on >=768px (Vaul Drawer <768px): Ergon wordmark, Workspace Switcher trigger,
 //   primary New chat action, `/` conversation filter with Kbd hint, paginated AnimatedBackground thread list,
-//   Workspace files, 12 built-in workflows, Recurring Routines, Learned memory, Suite & Library, Add person,
-//   and Settings (Model, Workspace & Appearance) MorphingDialogs — Light/Dark theme switch lives exclusively
-//   inside Settings (never on main chrome).
-// - ALL rail MorphingDialogs & Command Palette live OUTSIDE Vaul <Drawer.Content> (z-40 drawer / z-50 dialogs)
-//   and close menuOpen on trigger so real non-forced phone taps (390x844 / 320x568) never get blocked.
+//   Workspace files, 12 built-in workflows, Recurring Routines (scheduler + pause/resume + run history),
+//   Learned memory, Suite & Library, Add person, and Settings (Appearance, Workspace Switcher, Audit Bundle, Model)
+//   MorphingDialogs — Light/Dark theme switch lives exclusively inside Settings (never on main chrome).
+// - ALL rail MorphingDialogs (including Workspace Switcher & Settings) & Command Palette live strictly
+//   OUTSIDE Vaul <Drawer.Content> (z-40 drawer / z-50 dialogs) and close menuOpen on trigger so real
+//   non-forced phone taps (390x844 / 320x568) never get blocked.
 // - Top Navigation & Command Bar: COSS UI Tabs (Chat · Today [pending Pill] · Work Graph), Cmd/Ctrl+K
 //   Global Command Palette trigger, Agent readiness Pill, and BANNER-FIX-BRIEF.md-compliant UpdateStrip.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -45,15 +46,16 @@ import { RoutinesPanel } from "@/shell/RoutinesPanel";
 import { CommandPalette } from "@/shell/CommandPalette";
 import { PaperFace, usePaper } from "@/views/Paper";
 import { GraphFace } from "@/views/Graph";
-import { PersonSelect } from "@/shell/PersonSelect";
+import { PersonSelect, WorkspaceSwitcherPanel } from "@/shell/PersonSelect";
 import { hasV050Api } from "@/lib/api";
+import { exportAuditBundleDownload } from "@/lib/auditBundle";
 import { exportReceiptDownload } from "@/lib/receiptExport";
 import { cn } from "@/lib/utils";
 import { relTime, threadMs } from "@/lib/words";
 import { glide } from "@/motion";
 
 type Face = "chat" | "paper" | "graph";
-type RailPanel = "files" | "skills" | "routines" | "memory" | "suite" | "add-person" | "settings" | null;
+type RailPanel = "files" | "skills" | "routines" | "memory" | "suite" | "add-person" | "workspace" | "settings" | null;
 const RECOVERED_KEY = "ergon-recovered-dismissed";
 const RAIL_THREADS_STEP = 50;
 
@@ -106,6 +108,11 @@ export function App() {
   useEffect(() => {
     if (face === "paper") paper.load();
   }, [face]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    e.setOnRoutineFired(() => paper.load());
+    return () => e.setOnRoutineFired(null);
+  }, [e.setOnRoutineFired, paper.load]);
 
   const [menuOpen, setMenuOpen] = useState(false);
   const [openPanel, setOpenPanel] = useState<RailPanel>(null);
@@ -245,6 +252,34 @@ export function App() {
     [allReceipts, personName, e.status]
   );
 
+  const handleExportAuditBundle = useCallback(
+    async (format: "json" | "md") => {
+      try {
+        const res = await exportAuditBundleDownload({
+          format,
+          status: e.status,
+          personName: personName || "Active employee",
+          personId: e.people?.active,
+          files: e.files,
+          receipts: allReceipts,
+          routines: e.routines,
+        });
+        toast.success(`Exported ${res.filename} (sha256: ${res.sha256.slice(0, 12)}…)`);
+      } catch {
+        toast.error("Could not export the Field-Book Audit Bundle.");
+      }
+    },
+    [e.status, personName, e.people?.active, e.files, allReceipts, e.routines]
+  );
+
+  const handleSwitchPerson = useCallback(
+    async (id: string) => {
+      await e.switchPerson(id);
+      paper.load();
+    },
+    [e.switchPerson, paper.load]
+  );
+
   const stateIcon = (s: TState | undefined) => s === "waiting"
     ? <Hourglass className="size-3.5 shrink-0 text-dot-amber" strokeWidth={1.75} aria-label="Waiting on you" />
     : s === "finished"
@@ -280,11 +315,8 @@ export function App() {
             people={e.people?.people ?? []}
             active={e.people?.active ?? ""}
             disabled={!e.people}
-            onChange={async (id) => {
-              await e.switchPerson(id);
-              paper.load();
-              setMenuOpen(false);
-            }}
+            expanded={openPanel === "workspace"}
+            onOpen={() => triggerPanel("workspace")}
           />
         </div>
 
@@ -682,10 +714,7 @@ export function App() {
                 streamMode={e.streamMode}
                 cancelling={e.cancelling}
                 onCancel={e.cancelRun}
-                onSwitchPerson={async (id) => {
-                  await e.switchPerson(id);
-                  paper.load();
-                }}
+                onSwitchPerson={handleSwitchPerson}
                 onAsk={jumpToComposer}
                 onOpen={(id) => {
                   setFace("chat");
@@ -694,6 +723,7 @@ export function App() {
                 onOpenFile={(p) => setOpenFilePath(p)}
                 onOpenFilesPanel={() => triggerPanel("files")}
                 onUploadMany={e.uploadFiles}
+                onExportAuditBundle={handleExportAuditBundle}
               />
             </div>
           )}
@@ -739,8 +769,14 @@ export function App() {
           onOpenChange={(o) => handlePanelChange("routines", o)}
           routines={e.routines}
           skills={e.skills}
+          status={e.status}
+          scheduler={e.scheduler}
+          historyRev={e.routineHistoryRev}
+          personName={personName}
           onRefresh={e.loadRoutines}
           onCreate={e.createRoutine}
+          onToggleEnabled={e.toggleRoutine}
+          onLoadHistory={e.loadRoutineHistory}
           onDelete={e.deleteRoutine}
           onRunNow={async (routine) => {
             handlePanelChange("routines", false);
@@ -749,6 +785,21 @@ export function App() {
             await e.runRoutineNow(routine);
             paper.load();
           }}
+          onOpenThread={(id) => {
+            handlePanelChange("routines", false);
+            setMenuOpen(false);
+            setFace("chat");
+            e.openThread(id);
+          }}
+        />
+        <WorkspaceSwitcherPanel
+          open={openPanel === "workspace"}
+          onOpenChange={(o) => handlePanelChange("workspace", o)}
+          people={e.people?.people ?? []}
+          active={e.people?.active ?? ""}
+          onRefresh={e.loadPeople}
+          onSwitch={handleSwitchPerson}
+          onAddPerson={() => triggerPanel("add-person")}
         />
         <LearnedPanel
           hideTrigger
@@ -787,6 +838,12 @@ export function App() {
           theme={theme}
           onTheme={setTheme}
           status={e.status}
+          people={e.people?.people ?? []}
+          activePerson={e.people?.active ?? ""}
+          onRefreshPeople={e.loadPeople}
+          onSwitchPerson={handleSwitchPerson}
+          onAddPerson={() => triggerPanel("add-person")}
+          onExportAuditBundle={handleExportAuditBundle}
           onConfigSaved={() => { e.loadStatus(); paper.load(); }}
           u={u}
         />
@@ -802,6 +859,8 @@ export function App() {
           onNewTask={jumpToComposer}
           onUploadFile={() => quickUploadRef.current?.click()}
           onExportLatestReceipt={handleExportLatestReceipt}
+          onExportAuditBundle={(fmt) => void handleExportAuditBundle(fmt)}
+          onOpenWorkspaceSwitcher={() => triggerPanel("workspace")}
           onOpenSettings={() => triggerPanel("settings")}
           onOpenFiles={() => triggerPanel("files")}
           onOpenSkills={() => triggerPanel("skills")}
@@ -824,7 +883,12 @@ export function App() {
         <FileViewerModal
           filePath={openFilePath}
           personName={personName}
+          status={e.status}
           onClose={() => setOpenFilePath(null)}
+          onRestored={() => {
+            e.loadFiles();
+            paper.load();
+          }}
           onAskAbout={(p) => {
             e.setDraft(`Review ${p} and summarize the key numbers and action items into a workspace report.`);
             jumpToComposer();
