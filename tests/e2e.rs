@@ -3930,5 +3930,140 @@ fn skills_catalog_http_api_test_harness_and_agent_dispatch_work_end_to_end() {
     assert!(files.iter().any(|f| f == "Q4 Ledger.md"), "expected Q4 Ledger.md credited: {rv}");
 }
 
+/// v0.6.0 BUG-01 regression: a model returning premature `{"done": true}` with
+/// zero tool calls on a task that explicitly names a workspace tool or file is
+/// forced to retry via protocol reminder; if it still refuses to call any tool,
+/// the run emits an explicit caution step and is NOT recorded as finished work.
+#[test]
+fn zero_tool_premature_done_is_retried_and_flagged_if_unverified() {
+    assert!(ergon_rs::task_requires_workspace_tool(
+        "Call the draft_brief tool with source_files [\"nonexistent-q9-ghost-brief-source.md\"]"
+    ));
+    assert!(ergon_rs::task_requires_workspace_tool("Audit missing-contract.md"));
+    assert!(!ergon_rs::task_requires_workspace_tool("What is 2+2?"));
+    assert!(!ergon_rs::task_requires_workspace_tool("write a report"));
+    assert!(!ergon_rs::task_requires_workspace_tool(
+        "Explain https://example.com/guide.md in two sentences"
+    ));
+
+    // Part A: model tries premature done once, then on retry calls draft_brief on
+    // a missing source file and reports the honest halt without leaking host paths.
+    let root_a = test_root("bug01_retry");
+    let stub_a = start_stub_model(vec![
+        json!({"done": true, "summary": "Drafted Ghost Brief cleanly."}).to_string(),
+        json!({"tool": "draft_brief", "args": {
+            "topic": "Ghost Q9 Forecast",
+            "source_files": ["nonexistent-q9-ghost-brief-source.md"],
+            "output_title": "Ghost Brief"
+        }}).to_string(),
+        json!({"done": true, "summary": "Halted because nonexistent-q9-ghost-brief-source.md was not found in the workspace."}).to_string(),
+    ]);
+    let cfg_a = test_config(&root_a, Some("k"), format!("http://127.0.0.1:{}/v1", stub_a.port));
+    let ws_str_a = cfg_a.workspace_dir.to_string_lossy().into_owned();
+    let port_a = start_app(cfg_a);
+    let prompt = "Call the draft_brief tool with topic \"Ghost Q9 Forecast\", source_files [\"nonexistent-q9-ghost-brief-source.md\"], and output_title \"Ghost Brief\". Report the exact result without creating any other file.";
+    let (st, body) = chat(port_a, prompt);
+    assert_eq!(st, 200, "{body}");
+    let v: Value = serde_json::from_str(&body).unwrap();
+    let msgs: Vec<&str> = v["messages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|m| m["content"].as_str().unwrap_or(""))
+        .collect();
+    let joined = msgs.join("\n");
+    assert!(
+        joined.contains("Tool: draft_brief"),
+        "premature done must be rejected so draft_brief actually executes: {joined}"
+    );
+    assert!(
+        joined.contains("nonexistent-q9-ghost-brief-source.md"),
+        "missing source filename must be disclosed: {joined}"
+    );
+    assert!(
+        !joined.contains(&ws_str_a),
+        "host workspace path must never leak into thread steps: {joined}"
+    );
+
+    // Part B: stubborn model returns premature done 3 times with zero tool calls ->
+    // caution step emitted AND receipt recorded as finished=false (not finished work).
+    let root_b = test_root("bug01_stubborn");
+    let stub_b = start_stub_model(vec![
+        json!({"done": true, "summary": "Drafted Ghost Brief."}).to_string(),
+        json!({"done": true, "summary": "Drafted Ghost Brief."}).to_string(),
+        json!({"done": true, "summary": "Drafted Ghost Brief."}).to_string(),
+    ]);
+    let cfg_b = test_config(&root_b, Some("k"), format!("http://127.0.0.1:{}/v1", stub_b.port));
+    let port_b = start_app(cfg_b);
+    let (st, body) = chat(port_b, prompt);
+    assert_eq!(st, 200, "{body}");
+    let vb: Value = serde_json::from_str(&body).unwrap();
+    let joined_b: String = vb["messages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|m| m["content"].as_str().unwrap_or(""))
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(
+        joined_b.contains("no tool ran") && joined_b.contains("Treat the summary above with caution"),
+        "stubborn zero-tool hallucination must emit explicit caution step: {joined_b}"
+    );
+    let (_, brief_b) = http(port_b, "GET", "/api/brief", None);
+    let bv: Value = serde_json::from_str(&brief_b).unwrap();
+    assert_eq!(bv["finished"], json!([]), "unverified zero-tool run must not count as finished: {brief_b}");
+    let (_, rec_b) = http(port_b, "GET", "/api/receipts?limit=5", None);
+    let rv: Value = serde_json::from_str(&rec_b).unwrap();
+    assert_eq!(
+        rv["receipts"][0]["finished"],
+        json!(false),
+        "receipt must record finished=false when no requested tool ran: {rv}"
+    );
+}
+
+/// v0.6.0 BUG-02 regression: workspace read/write/list tool and workflow errors
+/// must report workspace-relative paths, never absolute host filesystem paths.
+#[test]
+fn workflow_tool_errors_never_leak_host_filesystem_paths() {
+    let root = test_root("bug02_nopathleak");
+    let cfg = test_config(&root, Some("k"), "http://127.0.0.1:9/v1".to_string());
+    let ws_abs = cfg.workspace_dir.to_string_lossy().into_owned();
+    let root_abs = root.to_string_lossy().into_owned();
+
+    // 1. audit_contract on missing file
+    let err_audit = ergon_rs::execute_tool(
+        &cfg,
+        "audit_contract",
+        &json!({"contract_file": "nonexistent-q9-ghost-contract.md"}),
+    )
+    .unwrap_err();
+    assert!(err_audit.contains("nonexistent-q9-ghost-contract.md"), "{err_audit}");
+    assert!(!err_audit.contains(&ws_abs) && !err_audit.contains(&root_abs), "leaked host path: {err_audit}");
+
+    // 2. list_dir on missing subdir
+    let err_list = ergon_rs::execute_tool(&cfg, "list_dir", &json!({"path": "missing-subdir"}))
+        .unwrap_err();
+    assert!(err_list.contains("missing-subdir"), "{err_list}");
+    assert!(!err_list.contains(&ws_abs) && !err_list.contains(&root_abs), "leaked host path: {err_list}");
+
+    // 3. HTTP POST /api/skills/test with missing contract_file
+    let port = start_app(cfg);
+    let (st, body) = http(
+        port,
+        "POST",
+        "/api/skills/test",
+        Some(&json!({
+            "skill_id": "audit_contract",
+            "args": {"contract_file": "nonexistent-q9-ghost-contract.md"}
+        }).to_string()),
+    );
+    assert_eq!(st, 200, "{body}");
+    assert!(body.contains("nonexistent-q9-ghost-contract.md"), "{body}");
+    assert!(
+        !body.contains("/data/workspace/") && !body.contains(&root_abs),
+        "POST /api/skills/test leaked host path: {body}"
+    );
+}
+
 
 

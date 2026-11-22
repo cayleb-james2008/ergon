@@ -4,6 +4,13 @@ Each release is tagged `vMAJOR.MINOR.PATCH` and published on GitHub Releases wit
 binaries and a `SHA256SUMS` file. The running app shows its version and can update
 itself from the newest release (see README, "Versions and updates").
 
+## 0.6.0 - 2026-11-22
+
+- Hardened agent honesty loop (`src/lib.rs::run_loop`, `run_agent_live`): detects tasks naming a workspace tool/workflow or workspace file and rejects premature zero-tool `{"done": true}` replies (forcing real tool invocation against the workspace before finishing, and recording an explicit caution + `finished: false` receipt if a model still runs no tools).
+- Eliminated host filesystem path disclosure in workflow & workspace tool errors (`src/skills.rs::host_workspace_{read,write,list}`, `src/lib.rs::list_dir`) so missing-file and I/O errors report only workspace-relative paths.
+- Aligned numeric parsing in `clean_dataset` (`src/skills/clean_dataset.rn::parse_num`) with `reconcile_ledger` to parse accounting parenthesized negatives (`($12.34)`, `($1,250.50)`) accurately in dataset profiling and outlier detection.
+- Verified end-to-end across 3 distinct fictional company workspaces (`northstar-freight`, `cedarbrook-dental`, `ironwood-mechanical`) with all workflows and `EC-01..EC-08` adversarial edge cases against live local Ollama.
+
 ## 0.5.0 - 2026-11-22
 
 - Expanded built-in workflow library from 4 to 12 deterministic employee-grade workflows (`reconcile_ledger`, `summarize_meeting`, `audit_contract`, `triage_inbox`, `clean_dataset`, `compare_documents`, `draft_brief`, `extract_tables`, plus all 4 original workflows) with `src/skill_catalog.rs`, `GET /api/skills`, and sandboxed script test harness `POST /api/skills/test`.
