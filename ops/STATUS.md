@@ -1,6 +1,6 @@
 # Lane status
 
-Updated 06:26 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
+Updated 06:29 ET by the lane sensor (every 3 min). If that time is more than 15 min old, the sensor is down.
 
 | lane | state | since | doing / waiting on | next check | flags |
 |---|---|---|---|---|---|
@@ -8,7 +8,7 @@ Updated 06:26 ET by the lane sensor (every 3 min). If that time is more than 15 
 | Consolidation (lanes A-E) | CLOSED | — | PARKED BY RULING (Nox decision 31 Oct 10:19 ET, board mail 20261031T141930Z): HOLD on the Thudwick upload fix deploy and on Lane C dry-run-4 (Cayleb closed Apo… | Mon 01:07 | CLOSED, IDLE_DECLARED, WAIT_OVERDUE |
 | Outis / Codex desktop | SILENT | Fri 17:04 | Team board, mail, lane and coordination; Order A product work handed to its dedicated owner · meanwhile: Board and mail checks, evidence reconciliation and coo… | Fri 17:19 | STALE |
 | Grok / RSI desk | — | — |  | — | — |
-| Nox | — | — |  | — | — |
+| Nox | — | — |  | — | NOX_DARK |
 | Delegator (Cayleb's DSH master session) | — | — |  | — | — |
 
 ## Promises
@@ -82,6 +82,6 @@ None.
 
 ## Today
 
-- Flag-minutes: {"CLOSED": 768.0, "IDLE_DECLARED": 768.0, "MAIL_HELD": 768.0, "PROMISE_OVERDUE": 21504.0, "STALE": 384.0, "WAIT_OVERDUE": 768.0}
+- Flag-minutes: {"CLOSED": 774.0, "IDLE_DECLARED": 774.0, "MAIL_HELD": 774.0, "PROMISE_OVERDUE": 21672.0, "STALE": 387.0, "WAIT_OVERDUE": 774.0}
 - Flags raised: {}
 - Policy v4: idle 30m, stuck 30m, renotify 60m, claude delivery on.
