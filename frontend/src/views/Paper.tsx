@@ -19,6 +19,7 @@ import {
   FileDown,
   FolderOpen,
   Search,
+  ShieldAlert,
   Sparkles,
   Upload,
   X,
@@ -64,11 +65,93 @@ type Data = {
   extraReceipts: BriefJob[];
 };
 
-function consequence(kind: string): string {
-  if (/delete/.test(String(kind ?? ""))) {
-    return "Approving deletes the file for good. Keeping it leaves the file where it is. Your agent has not touched it yet.";
+type DecisionCopy = {
+  body: string;
+  approve: string;
+  /** null: a notice with a single acknowledgement. */
+  deny: string | null;
+  approvedToast: string;
+  deniedToast: string;
+  security: boolean;
+};
+
+const SECURITY_KINDS = new Set(["security", "security_notice", "allow_host", "memory_note", "publish_skill"]);
+
+/** Plain consequence copy and button words for each kind of decision. */
+function decisionCopy(d: Decision): DecisionCopy {
+  const kind = String(d.kind ?? "");
+  const detail = typeof d.detail === "string" ? d.detail.trim() : "";
+  const security = SECURITY_KINDS.has(kind);
+  if (/delete/.test(kind)) {
+    return {
+      body: "Approving deletes the file for good. Keeping it leaves the file where it is. Your agent has not touched it yet.",
+      approve: "Approve",
+      deny: "Keep the file",
+      approvedToast: "Approved and done.",
+      deniedToast: "You said no; kept safe.",
+      security,
+    };
   }
-  return "Your agent raised this while it worked and carried on. Your answer is recorded here; to have it act on the answer, tell it in the conversation.";
+  if (kind === "security") {
+    const src = d.source?.kind;
+    const approve = src === "url" || src === "host" ? "Block that site" : src === "file" ? "Quarantine the file" : "Got it";
+    return {
+      body: detail || "Ergon blocked something suspicious while your agent worked. Nothing harmful went through.",
+      approve,
+      deny: src === "url" || src === "host" || src === "file" ? "Dismiss" : null,
+      approvedToast: approve === "Got it" ? "Noted." : "Done — it is out of your agent's reach.",
+      deniedToast: "Dismissed.",
+      security,
+    };
+  }
+  if (kind === "allow_host") {
+    return {
+      body: detail || "Ergon blocked an address on your private network that did not come from you.",
+      approve: "Allow it",
+      deny: "Keep blocked",
+      approvedToast: "Allowed for future tasks.",
+      deniedToast: "Kept blocked.",
+      security,
+    };
+  }
+  if (kind === "memory_note") {
+    return {
+      body: detail || "Your agent wanted to remember something Ergon thought you should see first.",
+      approve: "Remember it",
+      deny: "Discard",
+      approvedToast: "Saved to your agent's memory.",
+      deniedToast: "Discarded.",
+      security,
+    };
+  }
+  if (kind === "publish_skill") {
+    return {
+      body: detail || "Your agent wants to share a skill with everyone's library.",
+      approve: "Publish",
+      deny: "Don't publish",
+      approvedToast: "Published to the library.",
+      deniedToast: "Not published.",
+      security,
+    };
+  }
+  if (kind === "security_notice") {
+    return {
+      body: detail || "Ergon's tripwires caught something and handled it. Nothing real was exposed.",
+      approve: "Got it",
+      deny: null,
+      approvedToast: "Noted.",
+      deniedToast: "Noted.",
+      security,
+    };
+  }
+  return {
+    body: "Your agent raised this while it worked and carried on. Your answer is recorded here; to have it act on the answer, tell it in the conversation.",
+    approve: "Approve",
+    deny: "Decline",
+    approvedToast: "Approved and done.",
+    deniedToast: "You said no; kept safe.",
+    security,
+  };
 }
 
 export function PaperSide({
@@ -449,7 +532,23 @@ export function PaperFace({
   const [receiptPage, setReceiptPage] = useState(0);
   const [eventsPage, setEventsPage] = useState(0);
 
-  const pending = data ? data.decisions.slice().reverse().filter((d) => d.status === "pending") : [];
+  // Most urgent first: a task Ergon stopped for safety, then real choices
+  // (deletions, questions, approvals), then informational notices —
+  // newest first within each rank.
+  const urgency = (d: Decision): number => {
+    if (d.severity === "critical" || d.stopped) return 3;
+    if (d.kind === "security_notice" || (d.kind === "security" && !d.source)) return 1;
+    return 2;
+  };
+  const pending = data
+    ? data.decisions
+        .slice()
+        .reverse()
+        .filter((d) => d.status === "pending")
+        .map((d, i) => ({ d, i }))
+        .sort((a, b) => urgency(b.d) - urgency(a.d) || a.i - b.i)
+        .map((x) => x.d)
+    : [];
   const settled = data ? data.decisions.slice().reverse().filter((d) => d.status !== "pending") : [];
   const threadOf = useCallback(
     (x: BriefJob) => x.thread_id ?? data?.threads.find((t) => t.title === x.task)?.id,
@@ -538,6 +637,7 @@ export function PaperFace({
   const visibleEvents = allEvents.slice(safeEventPage * EVENTS_PAGE_SIZE, (safeEventPage + 1) * EVENTS_PAGE_SIZE);
 
   const lead = pending[0];
+  const leadCopy = lead ? decisionCopy(lead) : null;
   const n = finished.length;
   const w = pending.length;
   const totalSavedFiles = useMemo(
@@ -802,26 +902,35 @@ export function PaperFace({
                       className="grid gap-3.5 rounded-card border border-hairline bg-blue-soft p-5"
                     >
                       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-                        <h2 id="lead-h" className="min-w-0 text-[22px] leading-snug font-medium tracking-[-0.025em] text-ink [overflow-wrap:anywhere]">
-                          {String(lead.summary ?? "Decision waiting on you")}
+                        <h2 id="lead-h" className="flex min-w-0 items-start gap-2 text-[22px] leading-snug font-medium tracking-[-0.025em] text-ink [overflow-wrap:anywhere]">
+                          {leadCopy?.security && (
+                            <ShieldAlert
+                              className={cn("mt-1 size-5 shrink-0", lead.severity === "critical" ? "text-dot-red" : "text-dot-amber")}
+                              strokeWidth={1.5}
+                              aria-label="Security"
+                            />
+                          )}
+                          <span className="min-w-0">{String(lead.summary ?? "Decision waiting on you")}</span>
                         </h2>
                         <WaitingPill />
                       </div>
-                      <p className="max-w-[60ch] text-sm leading-6 text-ink-2">{consequence(String(lead.kind ?? ""))}</p>
+                      <p className="max-w-[60ch] whitespace-pre-line text-sm leading-6 text-ink-2">{leadCopy?.body}</p>
                       <div className="flex flex-wrap gap-2">
                         <Button
                           className="min-h-11 px-4"
-                          onClick={() => act(`/api/decisions/${encodeURIComponent(lead.id)}/approve`, "Approved and done.")}
+                          onClick={() => act(`/api/decisions/${encodeURIComponent(lead.id)}/approve`, leadCopy?.approvedToast ?? "Approved and done.")}
                         >
-                          Approve
+                          {leadCopy?.approve ?? "Approve"}
                         </Button>
-                        <Button
-                          className="min-h-11 px-4"
-                          variant="outline"
-                          onClick={() => act(`/api/decisions/${encodeURIComponent(lead.id)}/deny`, "You said no; kept safe.")}
-                        >
-                          {/delete/.test(String(lead.kind ?? "")) ? "Keep the file" : "Decline"}
-                        </Button>
+                        {leadCopy?.deny !== null && (
+                          <Button
+                            className="min-h-11 px-4"
+                            variant="outline"
+                            onClick={() => act(`/api/decisions/${encodeURIComponent(lead.id)}/deny`, leadCopy?.deniedToast ?? "You said no; kept safe.")}
+                          >
+                            {leadCopy?.deny ?? "Decline"}
+                          </Button>
+                        )}
                       </div>
                       {w > 1 && (
                         <p className="text-xs text-ink-2">
@@ -1076,8 +1185,15 @@ export function PaperFace({
                       {visibleEvents.map((ev, i) => {
                         const evFiles = normalizeFiles(ev.files);
                         const kind = String(ev.kind ?? "work");
-                        const EventIcon = kind === "decision" ? Clock : kind === "offer" ? Sparkles : CheckCircle2;
-                        const iconCls = kind === "decision" ? "text-dot-amber" : kind === "offer" ? "text-dot-clay" : "text-dot-green";
+                        const EventIcon = kind === "decision" ? Clock : kind === "offer" ? Sparkles : kind === "security" ? ShieldAlert : CheckCircle2;
+                        const iconCls =
+                          kind === "decision"
+                            ? "text-dot-amber"
+                            : kind === "offer"
+                              ? "text-dot-clay"
+                              : kind === "security"
+                                ? ev.severity === "critical" ? "text-dot-red" : "text-dot-amber"
+                                : "text-dot-green";
                         const timeStr = typeof ev.ts === "number" ? relTime(ev.ts) : "";
                         return (
                           <li key={String(ev.ts ?? i) + "-" + i} className="flex items-start gap-3 px-4 py-3">

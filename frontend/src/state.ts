@@ -779,6 +779,9 @@ export function useErgon() {
         if (id) store.set(THREAD_KEY, id);
         setMessages(r.data.messages);
         setRunFailed(false);
+        if ((r.data as { stopped_for_safety?: boolean }).stopped_for_safety) {
+          toast.warning("Ergon stopped this task to keep your work safe. The details are waiting in Today.");
+        }
       } else if (!r.ok && r.status === 499) {
         setMessages((m) => [...m, { role: "step", content: "Note: Run cancelled by you before completion." }]);
       } else {

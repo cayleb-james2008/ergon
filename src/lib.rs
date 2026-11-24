@@ -19,6 +19,7 @@ pub mod search;
 pub mod skill_catalog;
 pub mod skills;
 pub mod sse;
+pub mod tripwire;
 pub mod ui;
 pub mod update;
 
@@ -688,12 +689,19 @@ pub fn html_to_text(html: &str) -> String {
     out.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
+/// Every outbound page fetch — the `fetch_url` tool, the research
+/// workflow and library skills' `host_fetch_url` — goes through the
+/// tripwire egress guard: URL-level checks (secrets, bait keys, blocked
+/// and metadata hosts) and then an SSRF-safe resolver that vets the
+/// RESOLVED address of every hop, redirects included.
 pub fn fetch_url_text(url: &str) -> Result<String, String> {
-    let resp = ureq::get(url)
+    tripwire::check_egress(url, "fetch")?;
+    let agent = tripwire::guarded_agent(std::time::Duration::from_secs(20));
+    let resp = agent
+        .get(url)
         .set("User-Agent", BROWSER_UA)
-        .timeout(std::time::Duration::from_secs(20))
         .call()
-        .map_err(|e| format!("fetch {url} failed: {e}"))?;
+        .map_err(|e| tripwire::explain_fetch_error(url, &e))?;
     let body = resp
         .into_string()
         .map_err(|e| format!("read {url} failed: {e}"))?;
@@ -1897,6 +1905,13 @@ fn is_identity_bullet(bullet: &str) -> bool {
     false
 }
 
+/// The armed run's SECURITY section (empty outside a run).
+fn security_block() -> String {
+    tripwire::prompt_section()
+        .map(|s| format!("\n\n{s}"))
+        .unwrap_or_default()
+}
+
 fn system_prompt(cfg: &Config, suite_items: &[library::LibraryItem]) -> String {
     let memory = cfg.read_memory();
     let prefs = standing_preferences(&memory);
@@ -1973,9 +1988,10 @@ fn system_prompt(cfg: &Config, suite_items: &[library::LibraryItem]) -> String {
          - delegate {{\"subagent\": \"researcher\", \"task\": \"...\"}} — hand a focused sub-task to a specialist subagent from the suite; it works with the same tools and returns its result to you.\n\
          - delete_file {{\"path\": \"old.txt\"}} — CONSEQUENTIAL: deleting is permanent, so this does not delete immediately — it parks the deletion as a decision for your person to approve. Never claim a file was deleted when it was only parked.\n\
          - flag_decision {{\"summary\": \"...\"}} — raise a question as a decision in your person's inbox when a choice is genuinely theirs to make.{suite_block}\n\n\
-         RULES: Use tools to do the real work; never claim work you did not do through a tool. When you learn a durable preference or fact about this person, record it with update_memory before finishing. When you build something reusable, publish it to the library so the whole company benefits. Finish with done only when the task is actually complete.\n\n\
+         RULES: Use tools to do the real work; never claim work you did not do through a tool. When you learn a durable preference or fact about this person, record it with update_memory before finishing. When you build something reusable, publish it to the library so the whole company benefits. Finish with done only when the task is actually complete.{security_block}\n\n\
          PREFERENCES AND FACTS THIS PERSON HAS TAUGHT YOU — apply them in every task:\n{prefs_block}\n\n\
-         WHAT YOU KNOW ABOUT THIS PERSON (their memory file — treat it as true and use it):\n{memory}"
+         WHAT YOU KNOW ABOUT THIS PERSON (their memory file — treat it as true and use it):\n{memory}",
+        security_block = security_block()
     )
 }
 
@@ -2109,8 +2125,8 @@ fn subagent_system_prompt(
          - move_file {{\"from\": \"a.txt\", \"to\": \"archive/a.txt\"}} — move or rename a workspace file.\n\
          - update_memory {{\"note\": \"...\"}} — record something learned about this person.{skills}\n\n\
          RULES: Use tools to do the real work; never claim work you did not do through a tool. Your summary goes back to the main agent, so state plainly what you produced and where.\n\n\
-         PREFERENCES AND FACTS THIS PERSON HAS TAUGHT THEIR AGENT:\n{prefs}",
-        profile.name, profile.instructions, prefs = prefs_block, skills = skills_block
+         PREFERENCES AND FACTS THIS PERSON HAS TAUGHT THEIR AGENT:\n{prefs}{security}",
+        profile.name, profile.instructions, prefs = prefs_block, skills = skills_block, security = security_block()
     )
 }
 
@@ -2264,6 +2280,9 @@ fn run_loop(
         if is_cancelled(live) {
             return Err("run cancelled by user".to_string());
         }
+        if let Some(reason) = tripwire::halted() {
+            return Err(format!("{}{reason}", tripwire::HALT_PREFIX));
+        }
         if local_steps >= step_cap || *budget >= STEP_CAP {
             break;
         }
@@ -2336,6 +2355,9 @@ fn run_loop(
             );
         }
         let prev_written_len = ledger.written.len();
+        // A tripwire hold (memory note, library publish) is a real,
+        // successful step — but it wrote nothing, so it earns no credit.
+        let mut held = false;
 
         let (result_text, ok) = if tool == "delegate" {
             if !allow_delegate {
@@ -2374,12 +2396,29 @@ fn run_loop(
             if matches!(tool.as_str(), "delete_file" | "flag_decision") {
                 args["_thread"] = json!(thread_id);
             }
-            match execute_tool_full(cfg, ctx, &tool, &args) {
-                Ok(r) => (r, true),
-                Err(e) => (format!("error: {e}"), false),
+            // Tripwire: refuse calls carrying the bait key or a secret,
+            // calls reaching outside the workspace for credentials, and
+            // hold suspicious memory notes / library publishes.
+            let library_skill = dynamic_skills.contains(&tool);
+            match tripwire::pre_tool(&tool, &args, library_skill) {
+                tripwire::PreTool::Refuse(msg) => (format!("error: {msg}"), false),
+                tripwire::PreTool::Hold(msg) => {
+                    held = true;
+                    (msg, true)
+                }
+                tripwire::PreTool::Proceed => {
+                    let res = execute_tool_full(cfg, ctx, &tool, &args);
+                    tripwire::post_tool(&tool, &args, &res);
+                    match res {
+                        Ok(r) => (r, true),
+                        Err(e) => (format!("error: {e}"), false),
+                    }
+                }
             }
         };
-        if ok {
+        if ok && held {
+            ledger.ok_steps += 1;
+        } else if ok {
             ledger.ok_steps += 1;
             credit_writes(ledger, cfg, &tool, &args, &result_text, dynamic_skills);
             // A skill installed mid-run is callable from the very
@@ -2460,10 +2499,15 @@ fn run_loop(
                 steps,
             ));
         }
+        // A tripped critical trap (or a score over the line) stops the
+        // run here: nothing more reaches the model or the tools.
+        if let Some(reason) = tripwire::halted() {
+            return Err(format!("{}{reason}", tripwire::HALT_PREFIX));
+        }
         messages.push(json!({"role": "assistant", "content": reply.to_string()}));
         messages.push(json!({
             "role": "user",
-            "content": format!("Tool result for {tool}: {}", truncate(&result_text, 6000)),
+            "content": tripwire::spotlight(&tool, &truncate(&result_text, 6000)),
         }));
     }
     Err(if *budget >= STEP_CAP {
@@ -2633,6 +2677,34 @@ pub fn run_agent_live(
     let run_id = format!("run-{run_started}-{}", RUN_ID_SEQ.fetch_add(1, Ordering::SeqCst));
     let cancel = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let _in_flight = RunGuard::new(live, &run_id, thread_id, task, run_started, cancel.clone());
+    // Arm this run's honeytraps BEFORE the system prompt is built (it
+    // carries the run's bait key and content boundary). Provenance is the
+    // person's own words: this task plus their earlier messages here.
+    let provenance = {
+        let mut p = task.to_string();
+        for m in history {
+            if m["role"] == "user" {
+                p.push('\n');
+                p.push_str(m["content"].as_str().unwrap_or(""));
+            }
+        }
+        p
+    };
+    let mut secrets: Vec<String> = cfg.api_key.iter().cloned().collect();
+    if let Ok(g) = std::env::var("ERGON_GATE_TOKEN") {
+        secrets.push(g.trim().to_string());
+    }
+    let _traps = tripwire::arm(tripwire::ArmSpec {
+        root: ctx.root_data_dir.clone(),
+        person_dir: cfg.data_dir.clone(),
+        workspace: cfg.workspace_dir.clone(),
+        memory_path: cfg.memory_path.clone(),
+        person_id: ctx.person_id.clone(),
+        run_id: run_id.clone(),
+        thread_id: thread_id.to_string(),
+        provenance,
+        secrets,
+    });
     let live_ctx = live.map(|(runs, events, pid)| LiveStreamCtx {
         runs,
         events,
@@ -2679,9 +2751,14 @@ pub fn run_agent_live(
             // offers engine count only finished work.
             let status_label = if cancel.load(Ordering::SeqCst) {
                 "cancelled"
+            } else if e.starts_with(tripwire::HALT_PREFIX) {
+                "stopped"
             } else {
                 "error"
             };
+            if let Some(report) = tripwire::take_report() {
+                tripwire::park_run_alert(&cfg.data_dir, thread_id, task, &report, e.starts_with(tripwire::HALT_PREFIX));
+            }
             records::append_work(
                 cfg,
                 task,
@@ -2708,6 +2785,8 @@ pub fn run_agent_live(
             return Err(e);
         }
     };
+    // The bait key never reaches the person's thread or the work log.
+    let summary = tripwire::redact(&summary);
     store
         .lock()
         .unwrap()
@@ -2797,6 +2876,17 @@ pub fn run_agent_live(
         let lib = ctx.library.lock().unwrap();
         let suite_now = library::load_suite(&cfg.data_dir);
         records::refresh_offers(cfg, &suite_now, &lib);
+    }
+    // Anything the traps blocked or held during an otherwise finished
+    // run becomes one plain notice in Today.
+    if let Some(report) = tripwire::take_report() {
+        if let Some(id) = tripwire::park_run_alert(&cfg.data_dir, thread_id, task, &report, false) {
+            store.lock().unwrap().push(
+                thread_id,
+                "step",
+                &format!("Note: Ergon blocked or held something suspicious during this task (decision {id} in Today has the details)."),
+            );
+        }
     }
     if let Some(lctx) = live_ctx {
         lctx.events.publish(
@@ -2893,6 +2983,8 @@ pub struct AppState {
     pub scheduler_enabled: bool,
     /// Per-routine in-flight guard so overlapping ticks never double-fire the same routine.
     pub running_routines: Arc<Mutex<std::collections::HashSet<String>>>,
+    /// Perimeter honeytraps: decoys, breadcrumbs, honeytoken use, bans.
+    pub tripwire: Arc<tripwire::Perimeter>,
 }
 
 static SESSION_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -3326,6 +3418,11 @@ fn serve_inner(
     background_updates: bool,
 ) -> std::io::Result<()> {
     cfg.ensure_dirs()?;
+    // The agent may never fetch this server's own API (egress guard).
+    if let Ok(addr) = listener.local_addr() {
+        tripwire::register_self_port(addr.port());
+    }
+    let perimeter = tripwire::Perimeter::new(&cfg.data_dir);
     let gate_token_is_none = gate_token.is_none();
     let people = PeopleState::load(&cfg);
     let library = library::Library::load(&cfg.data_dir);
@@ -3352,6 +3449,7 @@ fn serve_inner(
         updater: update::Updater::from_env("ERGON", "ergon", env!("CARGO_PKG_VERSION"), "cayleb-james2008/ergon", gate_token_is_none),
         scheduler_enabled: !scheduler_disabled,
         running_routines: Arc::new(Mutex::new(std::collections::HashSet::new())),
+        tripwire: perimeter,
     });
     if background_updates {
         state.updater.start_background();
@@ -3387,6 +3485,11 @@ struct Request {
     origin: Option<String>,
     host: Option<String>,
     sec_fetch_site: Option<String>,
+    /// Headers the tripwire reads (honeytoken use, decoy cookie, proxies).
+    authorization: Option<String>,
+    user_agent: Option<String>,
+    cookie_raw: Option<String>,
+    forwarded_for: Option<String>,
 }
 
 /// Bodies are small JSON. A request claiming a larger one is dropped
@@ -3431,6 +3534,10 @@ fn read_request(stream: &mut std::net::TcpStream) -> Option<Request> {
     let mut origin: Option<String> = None;
     let mut host: Option<String> = None;
     let mut sec_fetch_site: Option<String> = None;
+    let mut authorization: Option<String> = None;
+    let mut user_agent: Option<String> = None;
+    let mut cookie_raw: Option<String> = None;
+    let mut forwarded_for: Option<String> = None;
     let mut head_bytes = request_line.len();
     loop {
         arm(stream)?;
@@ -3459,6 +3566,20 @@ fn read_request(stream: &mut std::net::TcpStream) -> Option<Request> {
         }
         if let Some(v) = lower.strip_prefix("sec-fetch-site:") {
             sec_fetch_site = Some(v.trim().to_string());
+        }
+        // Original-case values (secrets and tokens are case-sensitive).
+        let original_value = || line.split_once(':').map(|(_, v)| v.trim().to_string());
+        if lower.starts_with("authorization:") {
+            authorization = original_value();
+        }
+        if lower.starts_with("user-agent:") {
+            user_agent = original_value();
+        }
+        if lower.starts_with("x-forwarded-for:") {
+            forwarded_for = original_value();
+        }
+        if lower.starts_with("cookie:") {
+            cookie_raw = original_value();
         }
         if let Some(v) = lower.strip_prefix("cookie:") {
             for pair in v.split(';') {
@@ -3528,6 +3649,10 @@ fn read_request(stream: &mut std::net::TcpStream) -> Option<Request> {
         origin,
         host,
         sec_fetch_site,
+        authorization,
+        user_agent,
+        cookie_raw,
+        forwarded_for,
     })
 }
 
@@ -3647,6 +3772,16 @@ fn respond_bytes(
     for (name, value) in extra_headers {
         head.push_str(&format!("{name}: {value}\r\n"));
     }
+    // Hardening on every response (unless the caller set its own).
+    let has = |n: &str| extra_headers.iter().any(|(h, _)| h.eq_ignore_ascii_case(n));
+    for (name, value) in tripwire::BASE_HEADERS {
+        if !has(name) {
+            head.push_str(&format!("{name}: {value}\r\n"));
+        }
+    }
+    if content_type.starts_with("application/json") && !has("Cache-Control") {
+        head.push_str("Cache-Control: no-store\r\n");
+    }
     head.push_str("\r\n");
     stream.write_all(head.as_bytes())?;
     stream.write_all(body)?;
@@ -3759,13 +3894,243 @@ fn respond_json(stream: &mut std::net::TcpStream, status: u16, v: &Value) -> std
     respond(stream, status, "application/json", &v.to_string())
 }
 
+/// Markdown for the audit bundle's tripwire section.
+fn render_security_markdown(sec: &Value) -> String {
+    let mut md = String::from("\n\n## Security tripwires\n\n");
+    md.push_str(&format!(
+        "- Log chain: **{}** ({} entries, head `{}`)\n- Events shown for this person: {} (SHA-256 `{}`)\n\n",
+        if sec["log_verified"].as_bool().unwrap_or(false) { "verified" } else { "BROKEN — edited outside Ergon" },
+        sec["log_length"],
+        sec["log_head_hash"].as_str().unwrap_or(""),
+        sec["events_for_person"],
+        sec["events_sha256"].as_str().unwrap_or(""),
+    ));
+    if let Some(events) = sec["events"].as_array() {
+        if events.is_empty() {
+            md.push_str("No tripwire has fired.\n");
+        }
+        for e in events.iter().take(100) {
+            md.push_str(&format!(
+                "- {} · `{}` · {} · {} — {}\n",
+                records::date_string(e["ts"].as_u64().unwrap_or(0)),
+                e["code"].as_str().unwrap_or(""),
+                e["severity"].as_str().unwrap_or(""),
+                e["title"].as_str().unwrap_or(""),
+                e["action"].as_str().unwrap_or(""),
+            ));
+        }
+    }
+    md
+}
+
+/// Carry out an approved (or declined) tripwire decision and return the
+/// updated decision + outcome. `None` for decisions that are not the
+/// tripwire's (deletes and questions keep their own handling).
+fn settle_tripwire_decision(
+    state: &AppState,
+    runtime: &PersonRuntime,
+    person: &Person,
+    decision: &Value,
+    approve: bool,
+) -> Option<(Value, String)> {
+    let kind = decision["kind"].as_str()?;
+    let id = decision["id"].as_str()?;
+    let root = &state.cfg.data_dir;
+    let outcome = match (kind, approve) {
+        ("security_notice", _) => "Noted — Ergon keeps the traps armed.".to_string(),
+        ("security", false) => "Dismissed — nothing else was changed.".to_string(),
+        ("security", true) => {
+            let value = decision["source"]["value"].as_str().unwrap_or("");
+            match decision["source"]["kind"].as_str() {
+                Some("url") | Some("host") => {
+                    let host = tripwire::normalize_host(value);
+                    match tripwire::update_policy(root, "block", &host, true) {
+                        Ok(_) => format!("Blocked {host}: your agent will not open it again (Settings → Security can undo this)."),
+                        Err(e) => format!("Could not block that site: {e}"),
+                    }
+                }
+                Some("file") => quarantine_file(&runtime.cfg, value),
+                _ => "Noted — nothing else needed doing.".to_string(),
+            }
+        }
+        ("allow_host", true) => {
+            let host = decision["path"].as_str().unwrap_or("");
+            match tripwire::update_policy(root, "allow", host, true) {
+                Ok(_) => format!("Allowed {host}: future tasks can open it (Settings → Security can undo this)."),
+                Err(e) => format!("Could not allow it: {e}"),
+            }
+        }
+        ("allow_host", false) => "Kept blocked.".to_string(),
+        ("memory_note", true) => {
+            let note = decision["note"].as_str().unwrap_or("");
+            let cfg = effective_cfg(state, runtime);
+            match skills::update_memory(&cfg, note) {
+                Ok(_) => "Saved to your agent's memory.".to_string(),
+                Err(e) => format!("Approved, but saving failed: {e}"),
+            }
+        }
+        ("memory_note", false) => "Discarded — your agent's memory is unchanged.".to_string(),
+        ("publish_skill", true) => {
+            let p = &decision["payload"];
+            let source = p["source"].as_str().unwrap_or("");
+            let params = string_list(&p["params"]);
+            match skills::check_script(&runtime.cfg, source) {
+                Err(e) => format!("Approved, but the skill no longer builds: {e}"),
+                Ok(()) => {
+                    let mut lib = state.library.lock().unwrap();
+                    match lib.publish_skill(
+                        p["name"].as_str().unwrap_or("skill"),
+                        p["description"].as_str().unwrap_or(""),
+                        params,
+                        source.to_string(),
+                        &person.id,
+                    ) {
+                        Ok(item) => {
+                            lib.save(root);
+                            format!("Published \"{}\" to the company library.", item.name)
+                        }
+                        Err(e) => format!("Approved, but publishing failed: {e}"),
+                    }
+                }
+            }
+        }
+        ("publish_skill", false) => "Not published — it stays out of the library.".to_string(),
+        _ => return None,
+    };
+    let updated = records::set_decision_outcome(&runtime.cfg.data_dir, id, &outcome)
+        .unwrap_or_else(|| decision.clone());
+    Some((updated, outcome))
+}
+
+/// Move a workspace file the tripwire flagged out of the agent's reach
+/// (into the person's data dir, never deleted), with a history snapshot.
+fn quarantine_file(cfg: &Config, rel: &str) -> String {
+    let full = match sandbox_path_resolving(&cfg.workspace_dir, rel, false) {
+        Ok(p) => p,
+        Err(e) => return format!("Could not quarantine {rel}: {e}"),
+    };
+    match full.symlink_metadata() {
+        Ok(md) if md.is_file() || md.file_type().is_symlink() => {}
+        _ => return format!("{rel} is no longer in the workspace — nothing to quarantine."),
+    }
+    let _ = file_history::record_revision(&cfg.data_dir, &cfg.workspace_dir, rel, "quarantine");
+    let dir = cfg.data_dir.join("quarantine");
+    if let Err(e) = std::fs::create_dir_all(&dir) {
+        return format!("Could not quarantine {rel}: {e}");
+    }
+    let base = full
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "file".to_string());
+    let dest = dir.join(format!("{}-{base}", records::now_millis()));
+    match std::fs::rename(&full, &dest) {
+        Ok(()) => format!("Quarantined {rel}: moved out of your agent's reach into your Ergon data folder (quarantine/), kept intact."),
+        Err(e) => format!("Could not quarantine {rel}: {e}"),
+    }
+}
+
+/// A run the tripwire stopped is not a server error: the thread says
+/// plainly what happened and where the details are, and the response is
+/// the thread (200) marked `stopped_for_safety`.
+fn respond_safety_stop(
+    stream: &mut std::net::TcpStream,
+    runtime: &PersonRuntime,
+    thread_id: &str,
+    err: &str,
+) -> std::io::Result<()> {
+    let reason = err.trim_start_matches(tripwire::HALT_PREFIX);
+    let mut store = runtime.store.lock().unwrap();
+    store.push(
+        thread_id,
+        "step",
+        &format!("Ergon stopped this task to keep your work safe: {reason}. Nothing further was run or sent. The details and one-tap follow-ups are waiting in Today."),
+    );
+    let mut v = store
+        .thread_json(thread_id)
+        .unwrap_or_else(|| json!({"thread_id": thread_id}));
+    v["stopped_for_safety"] = json!(true);
+    respond_json(stream, 200, &v)
+}
+
+/// The CSP for one embedded desk page, computed once from its own inline
+/// scripts (see `tripwire::csp_for_html`).
+fn page_csp(page: &'static str) -> String {
+    static INDEX: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    static PHONE: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    let cell = if std::ptr::eq(page, ui::INDEX_HTML) { &INDEX } else { &PHONE };
+    cell.get_or_init(|| tripwire::csp_for_html(page)).clone()
+}
+
+/// Serve a desk page (`/` or `/phone`). First visit (or an unknown,
+/// forged or stale cookie) gets a fresh server-generated session pinned
+/// to the current active person — so this browser keeps its own person
+/// even if another client switches the global one — plus the decoy
+/// `ergon_role` cookie (HT1). The page carries a strict CSP and a
+/// breadcrumb comment only scrapers read.
+fn serve_page(
+    stream: &mut std::net::TcpStream,
+    state: &AppState,
+    req: &Request,
+    person: &Person,
+    page: &'static str,
+) -> std::io::Result<()> {
+    let html = state.tripwire.decorate_html(page);
+    let mut headers: Vec<(&str, String)> = vec![("Content-Security-Policy", page_csp(page))];
+    if !session_known(state, &req.session) {
+        let sid = new_session_id();
+        insert_session(state, sid.clone(), person.id.clone());
+        headers.push((
+            "Set-Cookie",
+            format!("ergon_session={sid}; Path=/; HttpOnly; SameSite=Lax"),
+        ));
+        headers.push((
+            "Set-Cookie",
+            format!("ergon_role={}; Path=/; SameSite=Strict", tripwire::ROLE_COOKIE_VALUE),
+        ));
+    }
+    respond_h(stream, 200, "text/html; charset=utf-8", &html, &headers)
+}
+
 fn handle_connection(mut stream: std::net::TcpStream, state: &AppState) -> std::io::Result<()> {
+    // A banned scanner is dropped before one byte of its request is read
+    // (never this computer: loopback is never banned).
+    let peer = stream.peer_addr().ok().map(|a| a.ip());
+    if peer.map(|ip| state.tripwire.is_banned(ip)).unwrap_or(false) {
+        let _ = stream.shutdown(std::net::Shutdown::Both);
+        return Ok(());
+    }
     // A stalled client must not hold its connection thread forever.
     let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(30)));
     let req = match read_request(&mut stream) {
         Some(r) => r,
         None => return Ok(()),
     };
+    let client = state.tripwire.client_ip(peer, req.forwarded_for.as_deref());
+    if client != peer && client.map(|ip| state.tripwire.is_banned(ip)).unwrap_or(false) {
+        let _ = stream.shutdown(std::net::Shutdown::Both);
+        return Ok(());
+    }
+    let view = tripwire::RequestView {
+        method: &req.method,
+        path: &req.path,
+        query: &req.query,
+        host: req.host.as_deref(),
+        origin: req.origin.as_deref(),
+        user_agent: req.user_agent.as_deref(),
+        gate: req.gate.as_deref(),
+        authorization: req.authorization.as_deref(),
+        cookie: req.cookie_raw.as_deref(),
+        body: &req.body,
+    };
+    // HT1/HT3: an altered decoy cookie, or a decoy key coming back.
+    if let Some(d) = state.tripwire.inspect(&view, client) {
+        return respond(&mut stream, d.status, d.content_type, &d.body);
+    }
+    // HT2: decoy resources and breadcrumbs (before the gate, so probes
+    // of a gated or LAN-exposed desk are seen too).
+    if let Some(d) = state.tripwire.decoy(&req.method, &req.path, client, req.user_agent.as_deref()) {
+        return respond(&mut stream, d.status, d.content_type, &d.body);
+    }
     let root_cfg = &state.cfg;
     // Hosting-layer gate: when a gate token is configured, the
     // hosting layer (which authenticates people its own way) must
@@ -3773,6 +4138,7 @@ fn handle_connection(mut stream: std::net::TcpStream, state: &AppState) -> std::
     // and no passwords — this is a deployment gate, not a login.
     if let Some(expected) = &state.gate_token {
         if req.gate.as_deref() != Some(expected.as_str()) {
+            state.tripwire.note_refusal("gate", &view, client);
             return respond_json(
                 &mut stream,
                 401,
@@ -3781,6 +4147,10 @@ fn handle_connection(mut stream: std::net::TcpStream, state: &AppState) -> std::
         }
     }
     if let Some((status, message)) = refusal(&req, state.gate_token.is_some(), &state.allowed_hosts) {
+        // RE1: a page on another site (CSRF) or a rebound DNS name tried
+        // to drive this desk. Refused as before — and now the person hears of it.
+        let kind = if message.starts_with("requests must address") { "host" } else { "cross-site" };
+        state.tripwire.note_refusal(kind, &view, client);
         return respond_json(&mut stream, status, &json!({"error": message}));
     }
     // The person this request acts for (session-pinned when the caller
@@ -3794,27 +4164,7 @@ fn handle_connection(mut stream: std::net::TcpStream, state: &AppState) -> std::
         person_id: person.id.clone(),
     };
     match (req.method.as_str(), req.path.as_str()) {
-        ("GET", "/") => {
-            // First visit (or an unknown/forged/stale cookie): issue a
-            // fresh server-generated session pinned to the current
-            // active person, so this browser keeps its own person even
-            // if another client switches the global one.
-            if !session_known(state, &req.session) {
-                let sid = new_session_id();
-                insert_session(state, sid.clone(), person.id.clone());
-                return respond_h(
-                    &mut stream,
-                    200,
-                    "text/html; charset=utf-8",
-                    ui::INDEX_HTML,
-                    &[(
-                        "Set-Cookie",
-                        format!("ergon_session={sid}; Path=/; HttpOnly; SameSite=Lax"),
-                    )],
-                );
-            }
-            respond(&mut stream, 200, "text/html; charset=utf-8", ui::INDEX_HTML)
-        }
+        ("GET", "/") => serve_page(&mut stream, state, &req, &person, ui::INDEX_HTML),
         ("GET", "/api/version") => respond_json(
             &mut stream,
             200,
@@ -3887,6 +4237,7 @@ fn handle_connection(mut stream: std::net::TcpStream, state: &AppState) -> std::
                         "scheduler": state.scheduler_enabled,
                         "file_history": true,
                         "audit_bundle": true,
+                        "tripwire": true,
                     },
                     "scheduler_enabled": state.scheduler_enabled,
                     "person": person.to_json(),
@@ -4512,9 +4863,15 @@ fn handle_connection(mut stream: std::net::TcpStream, state: &AppState) -> std::
             let download = query_param(&req.query, "download")
                 .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
                 .unwrap_or(false);
-            let bundle = audit_bundle::build_audit_bundle(&runtime.cfg, &person);
+            let mut bundle = audit_bundle::build_audit_bundle(&runtime.cfg, &person);
+            // The tripwire log travels with the audit: its own hash chain
+            // plus a digest of this person's events.
+            let security = tripwire::audit_section(&root_cfg.data_dir, &person.id);
+            bundle["integrity"]["security_events_sha256"] = security["events_sha256"].clone();
+            bundle["security"] = security;
             if format == "md" || format == "markdown" {
-                let md = audit_bundle::render_audit_bundle_markdown(&bundle);
+                let mut md = audit_bundle::render_audit_bundle_markdown(&bundle);
+                md.push_str(&render_security_markdown(&bundle["security"]));
                 let mut headers = vec![("X-Content-Type-Options", "nosniff".to_string())];
                 if download {
                     headers.push((
@@ -4893,24 +5250,7 @@ fn handle_connection(mut stream: std::net::TcpStream, state: &AppState) -> std::
             200,
             &json!({"person_id": person.id, "content": runtime.cfg.read_memory()}),
         ),
-        ("GET", "/phone") => {
-            // The phone face: same core, same session discipline.
-            if !session_known(state, &req.session) {
-                let sid = new_session_id();
-                insert_session(state, sid.clone(), person.id.clone());
-                return respond_h(
-                    &mut stream,
-                    200,
-                    "text/html; charset=utf-8",
-                    ui::PHONE_HTML,
-                    &[(
-                        "Set-Cookie",
-                        format!("ergon_session={sid}; Path=/; HttpOnly; SameSite=Lax"),
-                    )],
-                );
-            }
-            respond(&mut stream, 200, "text/html; charset=utf-8", ui::PHONE_HTML)
-        }
+        ("GET", "/phone") => serve_page(&mut stream, state, &req, &person, ui::PHONE_HTML),
         ("GET", "/api/library") => {
             let lib = state.library.lock().unwrap();
             respond_json(
@@ -4991,11 +5331,104 @@ fn handle_connection(mut stream: std::net::TcpStream, state: &AppState) -> std::
             let brief = records::build_brief(&runtime.cfg, &person.name, &suite, &lib);
             respond_json(&mut stream, 200, &brief)
         }
-        ("GET", "/api/today") => respond_json(
-            &mut stream,
-            200,
-            &records::build_today(&runtime.cfg),
-        ),
+        ("GET", "/api/today") => {
+            let mut today = records::build_today(&runtime.cfg);
+            // Tripwire events from today join the stream — warnings and
+            // up only (individual decoy probes stay in Settings → Security),
+            // and never twice: an event already shown as a decision title
+            // is not repeated.
+            let date = today["date"].as_str().unwrap_or("").to_string();
+            let mut decision_titles: Vec<String> = records::load_decisions(&runtime.cfg.data_dir)
+                .iter()
+                .filter_map(|d| d["summary"].as_str().map(|s| s.to_string()))
+                .collect();
+            if person.id != "default" {
+                // Machine-level notices live in the default desk's inbox.
+                decision_titles.extend(
+                    records::load_decisions(&root_cfg.data_dir)
+                        .iter()
+                        .filter_map(|d| d["summary"].as_str().map(|s| s.to_string())),
+                );
+            }
+            if let Some(events) = today["events"].as_array_mut() {
+                for e in tripwire::events_for(&root_cfg.data_dir, &person.id, 200) {
+                    let ts = e["ts"].as_u64().unwrap_or(0);
+                    let sev = tripwire::Severity::from_label(e["severity"].as_str().unwrap_or(""));
+                    let title = e["title"].as_str().unwrap_or("");
+                    if sev >= tripwire::Severity::Warning
+                        && records::date_string_local(ts) == date
+                        && !decision_titles.iter().any(|t| t == title)
+                    {
+                        events.push(json!({
+                            "ts": ts,
+                            "kind": "security",
+                            "title": e["title"],
+                            "detail": e["detail"],
+                            "severity": e["severity"],
+                            "action": e["action"],
+                        }));
+                    }
+                }
+                events.sort_by_key(|e| std::cmp::Reverse(e["ts"].as_u64().unwrap_or(0)));
+            }
+            respond_json(&mut stream, 200, &today)
+        }
+        ("GET", "/api/security") => {
+            let (ok, len, head) = tripwire::check_log_integrity(&root_cfg.data_dir);
+            let events = tripwire::events_for(&root_cfg.data_dir, &person.id, 60);
+            let now = records::now_millis();
+            let day: Vec<&Value> = events
+                .iter()
+                .filter(|e| now.saturating_sub(e["ts"].as_u64().unwrap_or(0)) < 86_400_000)
+                .collect();
+            let policy = tripwire::load_policy(&root_cfg.data_dir);
+            let local = state.gate_token.is_none() && host_allowed(req.host.as_deref().unwrap_or(""), &[]);
+            respond_json(
+                &mut stream,
+                200,
+                &json!({
+                    "armed": tripwire::armed_traps(),
+                    "events": events,
+                    "last_24h": {
+                        "events": day.len(),
+                        "critical": day.iter().filter(|e| e["severity"] == "critical").count(),
+                        "blocked": day.iter().filter(|e| matches!(e["action"].as_str(), Some("blocked" | "stopped run" | "banned" | "refused" | "held"))).count(),
+                    },
+                    "log": {"verified": ok, "length": len, "head_hash": head},
+                    "bans": state.tripwire.bans_json(),
+                    "policy": {
+                        "allow_hosts": policy.allow_hosts,
+                        "block_hosts": policy.block_hosts,
+                        "allow_private_env": std::env::var("ERGON_FETCH_ALLOW_PRIVATE").map(|v| v.trim() == "1" || v.trim().eq_ignore_ascii_case("true")).unwrap_or(false),
+                    },
+                    "can_edit": local,
+                }),
+            )
+        }
+        ("POST", "/api/security/policy") => {
+            // Same rule as model settings: only from this machine.
+            if state.gate_token.is_some() || !host_allowed(req.host.as_deref().unwrap_or(""), &[]) {
+                return respond_json(
+                    &mut stream,
+                    403,
+                    &json!({"error": "security settings can only be changed from this machine, not through a shared address"}),
+                );
+            }
+            let parsed: Value = serde_json::from_slice(&req.body).unwrap_or(Value::Null);
+            if let Some(ip) = parsed["unban"].as_str() {
+                return match ip.trim().parse::<std::net::IpAddr>() {
+                    Ok(ip) => respond_json(&mut stream, 200, &json!({"unbanned": state.tripwire.unban(ip), "bans": state.tripwire.bans_json()})),
+                    Err(_) => respond_json(&mut stream, 400, &json!({"error": "unban needs an IP address"})),
+                };
+            }
+            let list = parsed["list"].as_str().unwrap_or("");
+            let host = parsed["host"].as_str().unwrap_or("");
+            let add = parsed["add"].as_bool().unwrap_or(true);
+            match tripwire::update_policy(&root_cfg.data_dir, list, host, add) {
+                Ok(p) => respond_json(&mut stream, 200, &json!({"policy": {"allow_hosts": p.allow_hosts, "block_hosts": p.block_hosts}})),
+                Err(e) => respond_json(&mut stream, 400, &json!({"error": e})),
+            }
+        }
         ("GET", "/api/graph") => {
             // Cloned snapshots, locks dropped: build_graph reads
             // every person's files from disk and must not hold the
@@ -5025,6 +5458,11 @@ fn handle_connection(mut stream: std::net::TcpStream, state: &AppState) -> std::
             }
             match records::resolve_decision(&runtime.cfg, &id, action == "approve") {
                 Ok((decision, outcome)) => {
+                    // Tripwire decisions act after the settle (blocking a
+                    // site, quarantining a file, publishing a held skill
+                    // need app state the records lock must not span).
+                    let (decision, outcome) = settle_tripwire_decision(state, &runtime, &person, &decision, action == "approve")
+                        .unwrap_or((decision, outcome));
                     // The outcome reports back into the thread the
                     // decision came from, so the record is complete
                     // where the work happened.
@@ -5246,6 +5684,9 @@ fn handle_connection(mut stream: std::net::TcpStream, state: &AppState) -> std::
                         .unwrap_or_else(|| json!({"thread_id": thread_id}));
                     respond_json(&mut stream, 200, &v)
                 }
+                Err(e) if e.starts_with(tripwire::HALT_PREFIX) => {
+                    respond_safety_stop(&mut stream, &runtime, &thread_id, &e)
+                }
                 Err(e) => {
                     runtime.store.lock().unwrap().push(&thread_id, "error", &e);
                     respond_json(&mut stream, 500, &json!({"error": e, "thread_id": thread_id}))
@@ -5341,6 +5782,9 @@ fn handle_connection(mut stream: std::net::TcpStream, state: &AppState) -> std::
                         .unwrap_or_else(|| json!({"thread_id": thread_id}));
                     v["cancelled"] = json!(true);
                     respond_json(&mut stream, 200, &v)
+                }
+                Err(e) if e.starts_with(tripwire::HALT_PREFIX) => {
+                    respond_safety_stop(&mut stream, &runtime, &thread_id, &e)
                 }
                 Err(e) => {
                     runtime.store.lock().unwrap().push(&thread_id, "error", &e);
