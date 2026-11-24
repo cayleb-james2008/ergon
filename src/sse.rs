@@ -132,7 +132,10 @@ pub fn stream_sse(
                   Content-Type: text/event-stream; charset=utf-8\r\n\
                   Cache-Control: no-cache, no-transform\r\n\
                   Connection: keep-alive\r\n\
-                  X-Accel-Buffering: no\r\n\r\n";
+                  X-Accel-Buffering: no\r\n\
+                  X-Content-Type-Options: nosniff\r\n\
+                  X-Frame-Options: DENY\r\n\
+                  Referrer-Policy: no-referrer\r\n\r\n";
     stream.write_all(header.as_bytes())?;
 
     let mut cursor = bus.head_seq();

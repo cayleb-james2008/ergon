@@ -196,7 +196,12 @@ pub fn parse_json_table_rows(raw: &str) -> Vec<Vec<String>> {
     out
 }
 
-fn build_context(cfg: &Config) -> Result<rune::Context, String> {
+/// `trusted` is true for Ergon's own built-in workflows. Library skills
+/// (written by any person's agent and shared company-wide) run untrusted:
+/// they may not rewrite the person's memory — memory is injected into
+/// every future prompt, so a write there is a persistent instruction
+/// channel into someone else's agent.
+fn build_context(cfg: &Config, trusted: bool) -> Result<rune::Context, String> {
     let mut context =
         rune::Context::with_default_modules().map_err(|e| format!("rune context: {e}"))?;
     let mut module = rune::Module::new();
@@ -282,6 +287,10 @@ fn build_context(cfg: &Config) -> Result<rune::Context, String> {
     let mem = cfg.memory_path.clone();
     module
         .function(["host_memory_write"], move |content: String| -> String {
+            if !trusted {
+                crate::tripwire::library_memory_write_refused();
+                return "error: library skills cannot rewrite memory — the agent records what it learns with update_memory".to_string();
+            }
             if let Some(parent) = mem.parent() {
                 if let Err(e) = std::fs::create_dir_all(parent) {
                     return format!("error: create dirs: {e}");
@@ -343,7 +352,7 @@ fn format_rune_diagnostics(
 /// Publishing a skill into the company library goes through this
 /// first: a script that does not build is refused, never stored.
 pub fn check_script(cfg: &Config, script: &str) -> Result<(), String> {
-    let context = build_context(cfg)?;
+    let context = build_context(cfg, false)?;
     let mut sources = rune::Sources::new();
     sources
         .insert(rune::Source::memory(script).map_err(|e| format!("rune source: {e}"))?)
@@ -361,7 +370,14 @@ fn run_script<A>(cfg: &Config, script: &str, args: A) -> Result<String, String>
 where
     A: rune::runtime::Args + rune::runtime::GuardedArgs,
 {
-    let context = build_context(cfg)?;
+    run_script_with(cfg, script, args, true)
+}
+
+fn run_script_with<A>(cfg: &Config, script: &str, args: A, trusted: bool) -> Result<String, String>
+where
+    A: rune::runtime::Args + rune::runtime::GuardedArgs,
+{
+    let context = build_context(cfg, trusted)?;
     let runtime = Arc::new(context.runtime().map_err(|e| format!("rune runtime: {e}"))?);
     let mut sources = rune::Sources::new();
     sources
@@ -837,12 +853,12 @@ pub fn dispatch_builtin_skill(
 pub fn run_library_skill(cfg: &Config, source: &str, values: &[String]) -> Result<String, String> {
     let v = |i: usize| values.get(i).cloned().unwrap_or_default();
     let returned = match values.len() {
-        0 => run_script(cfg, source, ())?,
-        1 => run_script(cfg, source, (v(0),))?,
-        2 => run_script(cfg, source, (v(0), v(1)))?,
-        3 => run_script(cfg, source, (v(0), v(1), v(2)))?,
-        4 => run_script(cfg, source, (v(0), v(1), v(2), v(3)))?,
-        5 => run_script(cfg, source, (v(0), v(1), v(2), v(3), v(4)))?,
+        0 => run_script_with(cfg, source, (), false)?,
+        1 => run_script_with(cfg, source, (v(0),), false)?,
+        2 => run_script_with(cfg, source, (v(0), v(1)), false)?,
+        3 => run_script_with(cfg, source, (v(0), v(1), v(2)), false)?,
+        4 => run_script_with(cfg, source, (v(0), v(1), v(2), v(3)), false)?,
+        5 => run_script_with(cfg, source, (v(0), v(1), v(2), v(3), v(4)), false)?,
         _ => return Err("library skills take at most 5 parameters".to_string()),
     };
     if let Some(err) = returned.strip_prefix("error:") {
