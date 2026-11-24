@@ -937,6 +937,17 @@ mod tests {
         std::fs::create_dir_all(&sub).unwrap();
         let exe = fake_exe(&sub, "0.2.0");
         std::fs::set_permissions(&sub, std::fs::Permissions::from_mode(0o555)).unwrap();
+        // Root (and some container filesystems) ignore directory write
+        // bits, so the "locked folder" this test needs cannot exist there.
+        // Probe instead of assuming: if a write still succeeds, the
+        // precondition is absent and the test has nothing to prove.
+        let probe = sub.join(".write-probe");
+        if std::fs::write(&probe, b"").is_ok() {
+            let _ = std::fs::remove_file(&probe);
+            std::fs::set_permissions(&sub, std::fs::Permissions::from_mode(0o755)).unwrap();
+            eprintln!("skipping errors_name_files_never_folders: directory permissions are not enforced for this user");
+            return;
+        }
         let new = b"#!/bin/sh\necho 'ergon 0.3.0'\n".to_vec();
         let m = mock("0.3.0", new.clone(), Some(sha256_hex(&new)), None);
         let u = updater(&m, &exe, Mode::Notify, true);
