@@ -164,8 +164,29 @@ fn collect_files(root: &Path, dir: &Path, out: &mut Vec<IndexedFile>) {
             .map(|d| d.as_millis() as u64)
             .unwrap_or(0);
 
-        // Read a bounded prefix for fast full-text indexing without blowing RSS.
-        let (preview, snippet_lower) = if md.len() <= 2 * 1024 * 1024 {
+        // Documents (PDF, Word, Excel, PowerPoint up to 5 MB) are indexed
+        // by their extracted text — cached, so only the first build after
+        // a change pays for the parse. Larger ones are indexed by name.
+        let doc = crate::docs::doc_kind(&rel);
+        let (preview, snippet_lower) = if let Some(kind) = doc.filter(|_| md.len() <= 5 * 1024 * 1024) {
+            match crate::docs::extract(&path, kind, None) {
+                Ok(ex) => {
+                    let text: String = ex.text.chars().take(MAX_SNIPPET_BYTES).collect();
+                    let first_line = text
+                        .lines()
+                        .map(|l| l.trim_start_matches('#').trim())
+                        .find(|l| !l.is_empty())
+                        .unwrap_or("")
+                        .chars()
+                        .take(160)
+                        .collect::<String>();
+                    (first_line, format!("{} {}", rel.to_ascii_lowercase(), text.to_lowercase()))
+                }
+                Err(_) => (String::new(), rel.to_ascii_lowercase()),
+            }
+        } else if doc.is_some() {
+            (String::new(), rel.to_ascii_lowercase())
+        } else if md.len() <= 2 * 1024 * 1024 {
             match std::fs::File::open(&path) {
                 Ok(mut f) => {
                     use std::io::Read as _;
