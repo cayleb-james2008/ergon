@@ -35,6 +35,10 @@ fn test_root(name: &str) -> PathBuf {
 }
 
 fn test_config(root: &Path, api_key: Option<&str>, model_base: String) -> Config {
+    // These tests serve "web pages" from loopback stub servers standing
+    // in for the public internet, so they opt in to private-address
+    // fetches. The egress guard's default-deny is proven in tripwire.rs.
+    std::env::set_var("ERGON_FETCH_ALLOW_PRIVATE", "1");
     let data_dir = root.join("data");
     let workspace_dir = data_dir.join("workspace");
     std::fs::create_dir_all(&workspace_dir).unwrap();

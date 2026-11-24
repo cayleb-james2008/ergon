@@ -310,23 +310,60 @@ pub fn add_decision(
     path: Option<&str>,
     thread_id: &str,
 ) -> String {
+    add_decision_with(person_data_dir, kind, summary, path, thread_id, Value::Null)
+}
+
+/// Like `add_decision`, with extra fields merged in (a tripwire alert's
+/// `detail`, `severity`, `source`, or the `payload` an approval acts on).
+/// The core fields always win over `extra`.
+pub fn add_decision_with(
+    person_data_dir: &Path,
+    kind: &str,
+    summary: &str,
+    path: Option<&str>,
+    thread_id: &str,
+    extra: Value,
+) -> String {
     with_records_lock(|| {
         let mut items = load_decisions(person_data_dir);
         let ts = now_millis();
         let id = format!("d{ts}-{}", next_seq());
-        items.push(json!({
-            "id": id,
-            "ts": ts,
-            "kind": kind,
-            "summary": summary,
-            "path": path,
-            "thread_id": thread_id,
-            "status": "pending",
-            "resolved_ts": Value::Null,
-            "outcome": Value::Null,
-        }));
+        let mut item = json!({});
+        if let Some(obj) = extra.as_object() {
+            for (k, v) in obj {
+                item[k] = v.clone();
+            }
+        }
+        for (k, v) in [
+            ("id", json!(id)),
+            ("ts", json!(ts)),
+            ("kind", json!(kind)),
+            ("summary", json!(summary)),
+            ("path", json!(path)),
+            ("thread_id", json!(thread_id)),
+            ("status", json!("pending")),
+            ("resolved_ts", Value::Null),
+            ("outcome", Value::Null),
+        ] {
+            item[k] = v;
+        }
+        items.push(item);
         save_array(&decisions_path(person_data_dir), "decisions", &items);
         id
+    })
+}
+
+/// Replace a settled decision's outcome text — for approvals whose
+/// action runs after the settle (it needs app state the records lock
+/// must not be held across, like the company library).
+pub fn set_decision_outcome(person_data_dir: &Path, id: &str, outcome: &str) -> Option<Value> {
+    with_records_lock(|| {
+        let mut items = load_decisions(person_data_dir);
+        let idx = items.iter().position(|d| d["id"].as_str() == Some(id))?;
+        items[idx]["outcome"] = json!(outcome);
+        let out = items[idx].clone();
+        save_array(&decisions_path(person_data_dir), "decisions", &items);
+        Some(out)
     })
 }
 
@@ -682,9 +719,18 @@ pub fn build_today(cfg: &Config) -> Value {
     for d in load_decisions(&cfg.data_dir) {
         let ts = d["ts"].as_u64().unwrap_or(0);
         if date_string_local(ts) == today {
+            let what = match d["kind"].as_str().unwrap_or("") {
+                "delete" => "a deletion",
+                "question" => "a question",
+                "security" | "security_notice" => "a security alert",
+                "allow_host" => "an address to allow",
+                "memory_note" => "a memory note",
+                "publish_skill" => "a library skill",
+                _ => "a decision",
+            };
             events.push(json!({
                 "ts": ts, "kind": "decision",
-                "title": d["summary"], "detail": format!("Waiting on you ({})", d["kind"]),
+                "title": d["summary"], "detail": format!("Waiting on you ({what})"),
             }));
         }
         if let Some(rts) = d["resolved_ts"].as_u64() {

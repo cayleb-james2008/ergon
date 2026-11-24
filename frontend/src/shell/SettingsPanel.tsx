@@ -23,6 +23,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Pill } from "@/components/kibo-ui/pill";
 import { WorkspaceSwitcherList } from "@/shell/PersonSelect";
+import { SecuritySection } from "@/shell/SecuritySection";
 import { VersionRow, type useUpdate } from "@/shell/Update";
 import {
   call,
@@ -276,6 +277,9 @@ function SettingsBody({
           </Button>
         </div>
       </section>
+
+      {/* Security tripwires (native v0.8.0+) */}
+      <SecuritySection status={status} />
 
       {/* 4. Model Provider & Runtime */}
       <section aria-labelledby="settings-model-h" className="flex flex-col gap-3 rounded-card border border-hairline bg-board/40 p-3.5">

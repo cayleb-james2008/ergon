@@ -54,6 +54,10 @@ Without a reachable local gateway or `ERGON_MODEL_API_KEY`, the UI shows an hone
 | `ERGON_NO_AUTO_MODEL` | `0` (set to `1` to disable startup local gateway auto-probing) |
 | `ERGON_NO_OPEN` / `ERGON_OPEN` | `0` (`ERGON_NO_OPEN=1` or `--no-open` disables desktop window launch; `ERGON_OPEN=1` or `--app` forces it when a display is present) |
 | `ERGON_GATE_TOKEN` | — (when set, every request must carry the matching `X-Ergon-Gate` header; this is the hosting layer's gate — Ergon itself has no accounts or passwords) |
+| `ERGON_FETCH_ALLOW_PRIVATE` | `0` (set to `1` to let the agent open loopback/private-network addresses without asking; by default only addresses named in your own task, or allowed once from Today, open) |
+| `ERGON_FETCH_ALLOW_HOSTS` | — (comma-separated hosts the agent may always open even on a private network, e.g. `wiki.corp,10.0.0.5`) |
+| `ERGON_TRIPWIRE_NO_BAN` | `0` (set to `1` to record scanners without banning them) |
+| `ERGON_TRUST_PROXY` | `0` (set to `1` behind a local reverse proxy so bans and alerts use the right-most `X-Forwarded-For` address) |
 
 ## How it works
 
@@ -115,6 +119,28 @@ Without a reachable local gateway or `ERGON_MODEL_API_KEY`, the UI shows an hone
   in **Today**; only explicit approval deletes the exact path, rewriting the
   originating thread note. Repeating a task pattern or producing three
   spreadsheets earns a proactive one-tap app offer.
+- **Security tripwires** (`src/tripwire.rs`, `GET /api/security`) — honeytraps
+  at every trust boundary, in the OWASP AppSensor tradition: decoy files and
+  admin pages (`/.env`, `/.git/config`, `/wp-login.php`, `/api/login` — Ergon has
+  no logins) that hand out unique, traceable `sk-ergon-…` keys; breadcrumbs in
+  `robots.txt` and the page source; a decoy `ergon_role` cookie. Using a decoy
+  key, or editing the cookie, is a confirmed attacker: refused, banned (remote
+  addresses only — this computer is never locked out), and named in Today with
+  where the key leaked from. Every agent run carries a bait key it is told it
+  never needs, and tool output reaches the model fenced off as data between a
+  per-run random boundary (Spotlighting). An egress guard vets every outbound
+  fetch — the bait key and real secrets never leave (raw, percent, base64 or hex),
+  cloud metadata and Ergon's own API are unreachable, and private-network
+  addresses open only when your own words named them or you allowed them once.
+  Reaching outside the workspace for credentials or Ergon's own data, sending the
+  bait key, or a pile-up of weaker signals stops the run; suspicious memory notes
+  and library skills that can read your data AND send it out wait for your OK;
+  library skills cannot rewrite memory. Each trip is logged in a hash-chained
+  `security_events.json` (tamper-evident, exported in the audit bundle) and turns
+  into one plain Today card with a one-tap follow-up: quarantine the file, block
+  the site, allow the address, keep the note, publish the skill. Pages carry a
+  hash-pinned CSP, `X-Frame-Options: DENY` and friends. Design:
+  `docs/superpowers/specs/2026-11-24-tripwire-honeytraps-design.md`.
 - **Honesty machinery** — completion summaries are verified against files
   actually written in the workspace (`check_mentions`). Requests over 1 MB
   return HTTP 413; heads over 32 KiB return 431; cross-site or non-JSON
@@ -124,7 +150,7 @@ Without a reachable local gateway or `ERGON_MODEL_API_KEY`, the UI shows an hone
 ## Verification
 
 ```sh
-CARGO_BUILD_JOBS=2 cargo test          # 140 Rust unit, E2E, scale, scheduler/history & 12-workflow tests
+CARGO_BUILD_JOBS=2 cargo test          # 176 Rust unit, E2E, scale, scheduler/history, 12-workflow & tripwire tests
 cd frontend && npm run check:ui        # Playwright E2E gate, graph probe, and worst-case replay
 ```
 
