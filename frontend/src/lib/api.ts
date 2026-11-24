@@ -69,7 +69,33 @@ export type WorkspaceFileContent = {
   ext: string;
   is_binary: boolean;
   content: string;
+  /** PDF, Word, Excel and PowerPoint files preview as their extracted text (v0.9.0+). */
+  extracted?: { kind: string; format: "markdown" | "csv"; sheets?: string[]; sheet?: string | null; pages?: number };
+  extract_error?: string;
 };
+
+/** Largest file the desk uploads (matches the server). */
+export const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
+
+/** A file as an upload body, byte-exact: every file travels base64-encoded,
+ *  so PDFs, Office files, images and non-UTF-8 CSVs arrive uncorrupted. */
+export async function fileUploadBody(file: File): Promise<{ content: string; encoding: "base64" }> {
+  const buf = new Uint8Array(await file.arrayBuffer());
+  let bin = "";
+  const chunk = 0x8000;
+  for (let i = 0; i < buf.length; i += chunk) {
+    bin += String.fromCharCode(...buf.subarray(i, i + chunk));
+  }
+  return { content: btoa(bin), encoding: "base64" };
+}
+
+/** Whether a workspace file can be saved as Word (.md/.txt) or Excel (.csv/.tsv). */
+export function exportTarget(path: string): "docx" | "xlsx" | null {
+  const ext = (path.split(".").pop() || "").toLowerCase();
+  if (ext === "md" || ext === "markdown" || ext === "txt") return "docx";
+  if (ext === "csv" || ext === "tsv") return "xlsx";
+  return null;
+}
 export type LiveRunStep = {
   id?: string;
   tool: string;

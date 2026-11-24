@@ -7,6 +7,8 @@ import { toast } from "sonner";
 import {
   call,
   estimateNextRunMs,
+  fileUploadBody,
+  MAX_UPLOAD_BYTES,
   hasV050Api,
   hasV070Api,
   type LiveRunStatus,
@@ -414,10 +416,10 @@ export function useErgon() {
     [loadRoutines]
   );
 
-  const uploadFile = useCallback(async (path: string, content: string, silent = false): Promise<boolean> => {
+  const uploadFile = useCallback(async (path: string, content: string, silent = false, encoding?: "base64"): Promise<boolean> => {
     const r = await call<WorkspaceFile>("/api/files/upload", {
       method: "POST",
-      body: { path, content },
+      body: encoding ? { path, content, encoding } : { path, content },
     });
     if (!r.ok) {
       if (!silent) toast.error(r.error || `Could not save ${path}.`);
@@ -435,10 +437,15 @@ export function useErgon() {
     if (!list.length) return 0;
     let okCount = 0;
     const savedNames: string[] = [];
+    const tooBig: string[] = [];
     for (const file of list) {
+      if (file.size > MAX_UPLOAD_BYTES) {
+        tooBig.push(file.name);
+        continue;
+      }
       try {
-        const content = await file.text();
-        const ok = await uploadFile(file.name, content, true);
+        const body = await fileUploadBody(file);
+        const ok = await uploadFile(file.name, body.content, true, body.encoding);
         if (ok) {
           okCount += 1;
           savedNames.push(file.name);
@@ -448,11 +455,14 @@ export function useErgon() {
       }
     }
     await loadFiles();
+    if (tooBig.length) {
+      toast.error(`${tooBig.join(", ")} ${tooBig.length === 1 ? "is" : "are"} over 25 MB, too large to upload.`);
+    }
     if (okCount === 1) {
       toast.success(`Saved ${savedNames[0]} to your workspace.`);
     } else if (okCount > 1) {
       toast.success(`Uploaded ${okCount} files to your workspace.`);
-    } else {
+    } else if (!tooBig.length) {
       toast.error("Could not upload the selected files.");
     }
     return okCount;

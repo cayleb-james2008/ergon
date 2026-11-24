@@ -135,6 +135,22 @@ fn is_missing_receipt(val) {
         || v == "unverified"
 }
 
+// A workbook's own summary line ("Total", "Subtotal", ...): no date, no
+// reference, and a cell that names it. Counting it would double the ledger.
+fn is_summary_row(row, date_v, ref_v) {
+    if !date_v.is_empty() || !ref_v.is_empty() {
+        return false;
+    }
+    for cell in row {
+        let c = cell.trim().to_lowercase().replace(":", "");
+        if c == "total" || c == "totals" || c == "subtotal" || c == "sub-total" || c == "sub total"
+            || c == "grand total" || c == "sum" || c == "net total" || c == "balance" {
+            return true;
+        }
+    }
+    false
+}
+
 fn get_cell(row, idx) {
     if idx < 0 || idx >= row.len() {
         ""
@@ -189,6 +205,8 @@ pub fn main(source_files, output_title) {
     let missing_receipt_flags = [];
     let amount_anomalies = [];
     let per_file_summaries = [];
+    let possible_dup_flags = [];
+    let summary_rows_skipped = [];
 
     let file_idx = 0;
     for path in source_files {
@@ -221,6 +239,8 @@ pub fn main(source_files, output_title) {
         let file_rows = 0;
         let file_cents = 0;
         let file_seen_refs = HashMap::new();
+        // date|vendor|cents -> [first location, first reference]
+        let file_seen_charges = HashMap::new();
         let r = 1;
         while r < rows.len() {
             let row = rows[r];
@@ -238,6 +258,12 @@ pub fn main(source_files, output_title) {
             }
             let amt_raw = get_cell(row, amt_col);
             let rcpt_v = get_cell(row, rcpt_col);
+
+            if is_summary_row(row, date_v.clone(), ref_v.clone()) {
+                summary_rows_skipped.push([loc.clone(), amt_raw.clone()]);
+                r = r + 1;
+                continue;
+            }
 
             total_rows = total_rows + 1;
             file_rows = file_rows + 1;
@@ -328,6 +354,30 @@ pub fn main(source_files, output_title) {
                 }
             }
 
+            // Possible duplicate charge: same date, vendor and amount twice in
+            // one file (no reference numbers needed). Rows whose references
+            // differ are separate invoices, never flagged.
+            if !date_v.is_empty() && row_cents != 0 {
+                let key = `${date_v.trim()}|${vendor_v.trim().to_lowercase()}|${row_cents}`;
+                match file_seen_charges.get(key.clone()) {
+                    Some(prev) => {
+                        let prev_ref = prev[1];
+                        if ref_v.is_empty() || prev_ref.is_empty() || prev_ref == ref_v {
+                            possible_dup_flags.push([
+                                loc.clone(),
+                                date_v.clone(),
+                                vendor_v.clone(),
+                                fmt_money(row_cents),
+                                `same date, vendor and amount as ${prev[0]}`,
+                            ]);
+                        }
+                    }
+                    None => {
+                        file_seen_charges.insert(key, [loc.clone(), ref_v.clone()]);
+                    }
+                }
+            }
+
             // Missing receipt check (only when a receipt/status column is present)
             if rcpt_col >= 0 && is_missing_receipt(rcpt_v) {
                 missing_receipt_flags.push([
@@ -380,6 +430,10 @@ pub fn main(source_files, output_title) {
     md.push_str(`| Distinct categories | ${sorted_categories.len()} |\n`);
     md.push_str(`| Duplicate references flagged | ${duplicate_flags.len()} |\n`);
     md.push_str(`| Missing receipts flagged | ${missing_receipt_flags.len()} |\n`);
+    md.push_str(`| Possible duplicate charges flagged | ${possible_dup_flags.len()} |\n`);
+    if !summary_rows_skipped.is_empty() {
+        md.push_str(`| Summary rows skipped (not counted) | ${summary_rows_skipped.len()} |\n`);
+    }
     md.push_str(`| Amount anomalies flagged | ${amount_anomalies.len()} |\n`);
     if multi_file {
         md.push_str(`| Cross-file matched references | ${cross_matched} |\n`);
@@ -425,6 +479,33 @@ pub fn main(source_files, output_title) {
             }
             md.push_str("\n");
         }
+    }
+
+    md.push_str("### Possible Duplicate Charges\n\n");
+    if possible_dup_flags.is_empty() {
+        md.push_str("None detected.\n\n");
+    } else {
+        md.push_str("| Location | Date | Vendor | Amount | Note |\n|---|---|---|---:|---|\n");
+        let shown = 0;
+        for d in possible_dup_flags {
+            if shown < 50 {
+                md.push_str(`| ${md_esc(d[0])} | ${md_esc(d[1])} | ${md_esc(d[2])} | ${d[3]} | ${md_esc(d[4])} |\n`);
+            }
+            shown = shown + 1;
+        }
+        if shown > 50 {
+            md.push_str(`\n_Showing first 50 of ${shown} possible duplicate charges._\n`);
+        }
+        md.push_str("\n");
+    }
+
+    if !summary_rows_skipped.is_empty() {
+        md.push_str("### Summary Rows Skipped\n\n");
+        md.push_str("These rows total the sheet rather than record a charge, so they were not counted:\n\n");
+        for s in summary_rows_skipped {
+            md.push_str(`- ${md_esc(s[0])} (${md_esc(s[1])})\n`);
+        }
+        md.push_str("\n");
     }
 
     md.push_str("### Missing Receipts\n\n");

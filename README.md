@@ -119,6 +119,25 @@ Without a reachable local gateway or `ERGON_MODEL_API_KEY`, the UI shows an hone
   in **Today**; only explicit approval deletes the exact path, rewriting the
   originating thread note. Repeating a task pattern or producing three
   spreadsheets earns a proactive one-tap app offer.
+- **Office & PDF documents** (`src/docs.rs`) — the agent, every built-in
+  workflow (`host_workspace_read`), `search_files`, the file viewer and the
+  search index read **PDF** (page by page, including the CID fonts modern apps
+  emit), **Word** `.docx` (as Markdown: headings, lists, tables), **Excel**
+  `.xlsx` (each sheet as CSV with real dates, booleans and cached formula
+  values; `book.xlsx#Sheet2` picks a sheet) and **PowerPoint** `.pptx` (slides
+  and speaker notes). Long files are read window by window (`read_file` with
+  `offset`) instead of being cut off. `export_file` (and **Save as Word / Save
+  as Excel** in the viewer, `POST /api/files/export`) turns Markdown into a
+  styled `.docx` (headings, lists, tables, links) and CSV into an `.xlsx` (typed
+  numbers and dates, bold frozen header, autofilter, fitted widths). Uploads
+  travel byte-exact up to 25 MB. Zip containers are read with per-entry and
+  total decompression caps; PDF parsing runs isolated behind `catch_unwind` and
+  a timeout.
+- **Resilient model calls & tidy memory** — rate limits, overloads and gateway
+  hiccups (HTTP 408/425/429/5xx, dropped connections to remote endpoints) are
+  retried with backoff honouring `Retry-After`; a duplicate memory note is not
+  added twice, and prompts carry a bounded slice of a long memory (identity +
+  most recent learning).
 - **Security tripwires** (`src/tripwire.rs`, `GET /api/security`) — honeytraps
   at every trust boundary, in the OWASP AppSensor tradition: decoy files and
   admin pages (`/.env`, `/.git/config`, `/wp-login.php`, `/api/login` — Ergon has
@@ -150,7 +169,7 @@ Without a reachable local gateway or `ERGON_MODEL_API_KEY`, the UI shows an hone
 ## Verification
 
 ```sh
-CARGO_BUILD_JOBS=2 cargo test          # 176 Rust unit, E2E, scale, scheduler/history, 12-workflow & tripwire tests
+CARGO_BUILD_JOBS=2 cargo test          # 200 Rust unit, E2E, scale, scheduler/history, 12-workflow, tripwire & document tests
 cd frontend && npm run check:ui        # Playwright E2E gate, graph probe, and worst-case replay
 ```
 
