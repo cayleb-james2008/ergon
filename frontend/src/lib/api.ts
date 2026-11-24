@@ -12,6 +12,7 @@ export type ServerCapabilities = {
   scheduler?: boolean;
   audit_bundle?: boolean;
   people_switch?: boolean;
+  tripwire?: boolean;
 };
 export type SchedulerStatus = {
   running?: boolean;
@@ -186,7 +187,22 @@ export type Update = {
   error?: string;
   checked_at?: number;
 };
-export type Decision = { id: string; kind: string; summary: string; status: string; outcome?: string; thread_id?: string; path?: string; ts?: number; resolved_ts?: number };
+export type Decision = {
+  id: string;
+  kind: string;
+  summary: string;
+  status: string;
+  outcome?: string;
+  thread_id?: string;
+  path?: string;
+  ts?: number;
+  resolved_ts?: number;
+  /** Tripwire decisions: plain-language detail, severity and the likely source. */
+  detail?: string;
+  severity?: string;
+  stopped?: boolean;
+  source?: { kind?: string; value?: string } | null;
+};
 export type Offer = { id: string; title: string; detail: string; status: string; item_id?: string; ts?: number };
 export type SuiteItem = { id: string; kind: string; name: string; description: string; fields?: string[] };
 export type LibraryItem = { id: string; kind: string; name: string; description: string; author: string; builtin?: boolean };
@@ -201,7 +217,32 @@ export type Brief = {
   library_size?: number;
   learned_recently?: string[];
 };
-export type TodayEvent = { ts?: number; kind?: string; title?: string; detail?: string; files?: string[] };
+export type TodayEvent = { ts?: number; kind?: string; title?: string; detail?: string; files?: string[]; severity?: string; action?: string };
+export type SecurityEvent = {
+  id: string;
+  ts: number;
+  code: string;
+  severity: "info" | "notice" | "warning" | "critical" | string;
+  title: string;
+  detail: string;
+  action: string;
+  repeats?: number;
+};
+export type SecurityPayload = {
+  armed: { id: string; label: string; detail: string }[];
+  events: SecurityEvent[];
+  last_24h: { events: number; critical: number; blocked: number };
+  log: { verified: boolean; length: number; head_hash: string };
+  bans: { ip: string; until_ms: number; bans: number; probed?: string[] }[];
+  policy: { allow_hosts: string[]; block_hosts: string[]; allow_private_env?: boolean };
+  can_edit: boolean;
+};
+
+/** Tripwire honeytraps exist on native Ergon v0.8.0+ (never in the browser edition). */
+export function hasTripwire(status: Status | null | "error" | undefined): boolean {
+  if (isWebStandalone() || !status || status === "error") return false;
+  return status.capabilities?.tripwire === true;
+}
 export type TodayPayload = { date?: string; events?: TodayEvent[] };
 export type GraphNode = { id: string; kind: string; label?: string; detail?: string };
 export type GraphEdge = { from: string; to: string; kind?: string };
