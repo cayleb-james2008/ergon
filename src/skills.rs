@@ -238,9 +238,17 @@ fn build_context(cfg: &Config, trusted: bool) -> Result<rune::Context, String> {
     let ws = cfg.workspace_dir.clone();
     module
         .function(["host_workspace_read"], move |path: String| -> String {
-            match sandbox_path(&ws, &path) {
-                Ok(full) => std::fs::read_to_string(&full)
-                    .unwrap_or_else(|e| format!("error: read {path}: {e}")),
+            // Workflows read PDF, Word, Excel (`book.xlsx#Sheet`) and
+            // PowerPoint as text, exactly like .md and .csv files.
+            let (base, sheet) = crate::docs::split_sheet(&path);
+            match sandbox_path(&ws, base) {
+                Ok(full) => match crate::docs::doc_kind(base) {
+                    Some(kind) => crate::docs::extract(&full, kind, sheet)
+                        .map(|e| e.text)
+                        .unwrap_or_else(|e| format!("error: read {path}: {e}")),
+                    None => std::fs::read_to_string(&full)
+                        .unwrap_or_else(|e| format!("error: read {path}: {e}")),
+                },
                 Err(e) => format!("error: {e}"),
             }
         })
@@ -509,6 +517,24 @@ pub fn update_memory(cfg: &Config, note: &str) -> Result<String, String> {
     let note = note.trim();
     if note.is_empty() {
         return Err("update_memory needs a non-empty note".to_string());
+    }
+    // The same lesson learned twice is one bullet, not two: every
+    // duplicate would ride along in every future prompt.
+    let norm = |s: &str| -> String {
+        s.split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
+            .trim_end_matches(['.', '!', ';'])
+            .to_lowercase()
+    };
+    let wanted = norm(note);
+    let memory = cfg.read_memory();
+    if memory
+        .lines()
+        .filter_map(|l| l.trim().strip_prefix("- "))
+        .any(|b| norm(b) == wanted)
+    {
+        return Ok(format!("already in memory (not added again): - {note}"));
     }
     let entry = run_script(cfg, UPDATE_MEMORY_SCRIPT, (note.to_string(),))?;
     if let Some(err) = entry.strip_prefix("error:") {

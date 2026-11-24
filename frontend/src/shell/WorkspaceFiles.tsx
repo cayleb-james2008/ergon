@@ -18,6 +18,8 @@ import {
   Download,
   FileDown,
   FilePlus2,
+  FileSpreadsheet,
+  FileText,
   FolderOpen,
   History,
   MessageSquarePlus,
@@ -55,6 +57,8 @@ import { FileGlyph } from "@/chat/Entry";
 import {
   call,
   downloadWorkspaceFile,
+  exportTarget,
+  fileUploadBody,
   hasV070Api,
   type FileDiffPayload,
   type FileRevision,
@@ -1059,10 +1063,12 @@ export function FileViewerModal({
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyErr, setHistoryErr] = useState("");
 
-  const loadContent = useCallback(async (path: string) => {
+  const loadContent = useCallback(async (path: string, sheet?: string) => {
     setLoading(true);
     setErr("");
-    const r = await call<WorkspaceFileContent>("/api/files/content?path=" + encodeURIComponent(path));
+    const r = await call<WorkspaceFileContent>(
+      "/api/files/content?path=" + encodeURIComponent(path) + (sheet ? "&sheet=" + encodeURIComponent(sheet) : "")
+    );
     setLoading(false);
     if (!r.ok) {
       setData(null);
@@ -1137,6 +1143,25 @@ export function FileViewerModal({
     const ok = await downloadWorkspaceFile(filePath);
     if (ok) toast.success(`Downloaded ${filePath.split("/").pop()}.`);
     else toast.error("Could not download this file.");
+  };
+
+  const target = filePath ? exportTarget(filePath) : null;
+  const [savingAs, setSavingAs] = useState(false);
+  const handleSaveAs = async () => {
+    if (!filePath || !target) return;
+    setSavingAs(true);
+    const r = await call<{ path: string; size: number }>("/api/files/export", {
+      method: "POST",
+      body: { path: filePath, format: target },
+    });
+    setSavingAs(false);
+    if (!r.ok) {
+      toast.error(r.error ? "Could not save a copy: " + r.error : "Could not save a copy.");
+      return;
+    }
+    toast.success(`Saved ${r.data.path} to your workspace.`);
+    await downloadWorkspaceFile(r.data.path);
+    onRestored?.();
   };
 
   const handleReceiptExport = async (format: "md" | "json") => {
@@ -1228,6 +1253,16 @@ export function FileViewerModal({
               <Download className="size-3.5" strokeWidth={1.5} aria-hidden />
               Download
             </Button>
+            {target && data && !err && (
+              <Button id="file-save-as" size="sm" variant="outline" className="max-md:min-h-11" disabled={savingAs} onClick={handleSaveAs}>
+                {target === "docx" ? (
+                  <FileText className="size-3.5" strokeWidth={1.5} aria-hidden />
+                ) : (
+                  <FileSpreadsheet className="size-3.5" strokeWidth={1.5} aria-hidden />
+                )}
+                {savingAs ? "Saving…" : target === "docx" ? "Save as Word" : "Save as Excel"}
+              </Button>
+            )}
             {data && !data.is_binary && (
               <Button size="sm" variant="outline" className="max-md:min-h-11" onClick={copyContent}>
                 <Copy className="size-3.5" strokeWidth={1.5} aria-hidden />
@@ -1294,9 +1329,41 @@ export function FileViewerModal({
             <>
               {loading && <p className="text-sm text-ink-2">Loading file…</p>}
               {!loading && err && <p role="alert" className="rounded-sm border border-hairline bg-board p-3.5 text-sm text-ink">{err}</p>}
+              {!loading && !err && data && data.extracted && (
+                <div className="mb-3 flex flex-wrap items-center gap-2 text-xs text-ink-2">
+                  <span>
+                    Text read from this {data.extracted.kind}
+                    {data.extracted.pages && data.extracted.pages > 1 ? ` (${data.extracted.pages} pages)` : ""} — your agent and every workflow read it the same way.
+                  </span>
+                  {(data.extracted.sheets?.length ?? 0) > 1 && filePath && (
+                    <SegmentedControl aria-label="Workbook sheet">
+                      {data.extracted.sheets!.slice(0, 8).map((sh) => (
+                        <SegmentedControlItem
+                          key={sh}
+                          data-id={sh}
+                          aria-pressed={data.extracted?.sheet === sh}
+                          data-checked={data.extracted?.sheet === sh ? "" : undefined}
+                          className="min-h-11 px-3 md:min-h-8"
+                          onClick={() => void loadContent(filePath, sh)}
+                        >
+                          {sh}
+                        </SegmentedControlItem>
+                      ))}
+                    </SegmentedControl>
+                  )}
+                </div>
+              )}
               {!loading && !err && data && (
                 data.is_binary ? (
-                  <p className="text-sm text-ink-2">Binary file ({formatBytes(data.size)}). Use Download above to save it to your computer.</p>
+                  <p className="text-sm text-ink-2">
+                    {data.extract_error
+                      ? `Ergon could not read this file's text: ${data.extract_error}. Use Download above to open it on your computer.`
+                      : `Binary file (${formatBytes(data.size)}). Use Download above to save it to your computer.`}
+                  </p>
+                ) : data.extracted?.format === "csv" ? (
+                  <CsvTableView content={data.content} />
+                ) : data.extracted?.format === "markdown" ? (
+                  <MarkdownView content={data.content} />
                 ) : ext === "csv" ? (
                   <CsvTableView content={data.content} />
                 ) : ext === "md" || ext === "markdown" ? (
@@ -1327,7 +1394,7 @@ function WorkspaceFilesBody({
   files: WorkspaceFile[];
   onRefresh: () => void;
   onOpenFile: (path: string) => void;
-  onUpload: (path: string, content: string) => Promise<boolean>;
+  onUpload: (path: string, content: string, silent?: boolean, encoding?: "base64") => Promise<boolean>;
   onUploadMany?: (picked: FileList | File[]) => Promise<number>;
 }) {
   const { isOpen, setIsOpen } = useMorphingDialog();
@@ -1376,8 +1443,8 @@ function WorkspaceFilesBody({
       return;
     }
     for (const file of Array.from(list)) {
-      const content = await file.text();
-      const ok = await onUpload(file.name, content);
+      const body = await fileUploadBody(file);
+      const ok = await onUpload(file.name, body.content, false, body.encoding);
       if (!ok) setErr(`Could not upload ${file.name}.`);
     }
   };
@@ -1649,7 +1716,7 @@ export function WorkspaceFilesPanel({
   files: WorkspaceFile[];
   onRefresh: () => void;
   onOpenFile: (path: string) => void;
-  onUpload: (path: string, content: string) => Promise<boolean>;
+  onUpload: (path: string, content: string, silent?: boolean, encoding?: "base64") => Promise<boolean>;
   onUploadMany?: (picked: FileList | File[]) => Promise<number>;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;

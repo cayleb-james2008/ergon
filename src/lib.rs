@@ -9,6 +9,7 @@
 //! the document-writing and memory-update skills.
 
 pub mod audit_bundle;
+pub mod docs;
 pub mod file_history;
 pub mod library;
 pub mod receipts;
@@ -480,7 +481,7 @@ pub fn sandbox_path_resolving(
 /// against the files that actually exist / were written; the longest
 /// match wins. URLs are excluded.
 pub fn mention_candidates(text: &str) -> Vec<Vec<String>> {
-    const EXTS: [&str; 8] = ["md", "csv", "txt", "json", "html", "pdf", "docx", "xlsx"];
+    const EXTS: [&str; 9] = ["md", "csv", "txt", "json", "html", "pdf", "docx", "xlsx", "pptx"];
     let chars: Vec<char> = text.chars().collect();
     let mut out: Vec<Vec<String>> = Vec::new();
     let mut i = 0usize;
@@ -639,6 +640,31 @@ fn workspace_has_basename(dir: &Path, base: &str, depth: usize) -> bool {
         }
     }
     false
+}
+
+/// Characters of a file the agent sees per `read_file` call (the loop
+/// passes tool results to the model at up to 6,000 characters).
+pub const READ_WINDOW: usize = 5_800;
+
+/// One window of a long text, with an explicit way to read on: a 40-page
+/// contract is read in full, window by window, instead of silently cut.
+pub fn page_text(content: &str, rel: &str, offset: usize) -> String {
+    let total = content.chars().count();
+    if offset == 0 && total <= READ_WINDOW {
+        return content.to_string();
+    }
+    if offset >= total {
+        return format!("(end of {rel}: it has {total} characters)");
+    }
+    let end = (offset + READ_WINDOW).min(total);
+    let window: String = content.chars().skip(offset).take(end - offset).collect();
+    if end < total {
+        format!(
+            "{window}\n…[showing characters {offset}–{end} of {total}; call read_file with {{\"path\": \"{rel}\", \"offset\": {end}}} to read on]"
+        )
+    } else {
+        format!("{window}\n…[end of {rel}: characters {offset}–{end} of {total}]")
+    }
 }
 
 pub fn truncate(s: &str, max_chars: usize) -> String {
@@ -1187,6 +1213,28 @@ impl Store {
 /// One model call. Carries the proven wire requirements: bearer key (when set
 /// or required for non-loopback endpoints), `x-opencode-session` header, and a
 /// browser-like User-Agent. Loopback gateways work without a bearer key.
+/// HTTP statuses worth another try: timeouts, rate limits, overloads and
+/// gateway hiccups. Anything else (400s, auth) fails at once.
+pub fn retryable_status(code: u16) -> bool {
+    matches!(code, 408 | 425 | 429 | 500 | 502 | 503 | 504 | 520..=529)
+}
+
+/// How long to wait before attempt `attempt + 1` (1-based attempts):
+/// the server's `Retry-After` seconds when given (capped), else 1.5 s, 4 s, 9 s.
+pub fn retry_delay(attempt: u32, retry_after: Option<&str>) -> std::time::Duration {
+    if let Some(secs) = retry_after.and_then(|v| v.trim().parse::<f64>().ok()).filter(|s| s.is_finite() && *s >= 0.0) {
+        return std::time::Duration::from_millis((secs.min(20.0) * 1000.0) as u64);
+    }
+    std::time::Duration::from_millis(match attempt {
+        1 => 1_500,
+        2 => 4_000,
+        _ => 9_000,
+    })
+}
+
+const MODEL_ATTEMPTS: u32 = 4;
+const MODEL_RETRY_BUDGET: std::time::Duration = std::time::Duration::from_secs(150);
+
 pub fn call_model(cfg: &Config, session: &str, messages: &[Value]) -> Result<Value, String> {
     if !cfg.model_configured() {
         return Err(NO_KEY_ERROR.to_string());
@@ -1200,21 +1248,45 @@ pub fn call_model(cfg: &Config, session: &str, messages: &[Value]) -> Result<Val
     if cfg.model_base_url.contains(":11434") {
         payload["response_format"] = json!({"type": "json_object"});
     }
-    let mut req = ureq::post(&url)
-        .set("x-opencode-session", session)
-        .set("User-Agent", BROWSER_UA)
-        .timeout(std::time::Duration::from_secs(120));
-    if let Some(key) = cfg.api_key.as_deref().filter(|k| !k.is_empty()) {
-        req = req.set("Authorization", &format!("Bearer {key}"));
-    }
-    let resp = req.send_json(payload);
-    let resp = match resp {
-        Ok(r) => r,
-        Err(ureq::Error::Status(code, r)) => {
-            let body = r.into_string().unwrap_or_default();
-            return Err(format!("model endpoint returned HTTP {code}: {}", truncate(&body, 400)));
+    // A rate limit, an overloaded provider or a dropped connection costs a
+    // short wait, not the whole task: transient failures are retried with
+    // backoff (honouring Retry-After) inside a fixed time budget. Dropped
+    // connections are retried for remote endpoints only — a local gateway
+    // that is not running should say so at once.
+    let started = std::time::Instant::now();
+    let remote = !is_loopback_url(&cfg.model_base_url);
+    let mut attempt: u32 = 0;
+    let resp = loop {
+        attempt += 1;
+        let mut req = ureq::post(&url)
+            .set("x-opencode-session", session)
+            .set("User-Agent", BROWSER_UA)
+            .timeout(std::time::Duration::from_secs(120));
+        if let Some(key) = cfg.api_key.as_deref().filter(|k| !k.is_empty()) {
+            req = req.set("Authorization", &format!("Bearer {key}"));
         }
-        Err(e) => return Err(format!("model call failed: {e}")),
+        let can_retry = attempt < MODEL_ATTEMPTS && started.elapsed() < MODEL_RETRY_BUDGET;
+        match req.send_json(payload.clone()) {
+            Ok(r) => break r,
+            Err(ureq::Error::Status(code, r)) if can_retry && retryable_status(code) => {
+                let wait = retry_delay(attempt, r.header("retry-after"));
+                eprintln!("ergon: model endpoint returned HTTP {code}; retrying in {} ms (attempt {}/{MODEL_ATTEMPTS})", wait.as_millis(), attempt + 1);
+                std::thread::sleep(wait);
+            }
+            Err(ureq::Error::Status(code, r)) => {
+                let body = r.into_string().unwrap_or_default();
+                let tries = if attempt > 1 { format!(" (after {attempt} attempts)") } else { String::new() };
+                return Err(format!("model endpoint returned HTTP {code}{tries}: {}", truncate(&body, 400)));
+            }
+            Err(ureq::Error::Transport(t))
+                if can_retry && remote && matches!(t.kind(), ureq::ErrorKind::Io | ureq::ErrorKind::ConnectionFailed) =>
+            {
+                let wait = retry_delay(attempt, None);
+                eprintln!("ergon: model call failed ({t}); retrying in {} ms (attempt {}/{MODEL_ATTEMPTS})", wait.as_millis(), attempt + 1);
+                std::thread::sleep(wait);
+            }
+            Err(e) => return Err(format!("model call failed: {e}")),
+        }
     };
     let v: Value = resp
         .into_json()
@@ -1384,10 +1456,21 @@ pub fn execute_tool(cfg: &Config, name: &str, args: &Value) -> Result<String, St
         }
         "read_file" => {
             let rel = args["path"].as_str().ok_or("read_file needs args.path")?;
-            let full = sandbox_path(&cfg.workspace_dir, rel)?;
-            let content = std::fs::read_to_string(&full)
-                .map_err(|e| format!("read_file {rel}: {e}"))?;
-            Ok(truncate(&content, 12_000))
+            // `book.xlsx#Q2` names one sheet of a workbook.
+            let (base, sheet) = docs::split_sheet(rel);
+            let full = sandbox_path(&cfg.workspace_dir, base)?;
+            let content = match docs::doc_kind(base) {
+                Some(kind) => docs::agent_view(&full, base, kind, sheet)?,
+                None => std::fs::read_to_string(&full).map_err(|e| {
+                    if e.kind() == std::io::ErrorKind::InvalidData {
+                        format!("read_file {rel}: this is a binary file (not text, PDF, Word, Excel or PowerPoint), so it cannot be read as text")
+                    } else {
+                        format!("read_file {rel}: {e}")
+                    }
+                })?,
+            };
+            let offset = args["offset"].as_u64().unwrap_or(0) as usize;
+            Ok(page_text(&content, rel, offset))
         }
         "write_file" => {
             let rel = args["path"].as_str().ok_or("write_file needs args.path")?;
@@ -1440,7 +1523,7 @@ pub fn execute_tool(cfg: &Config, name: &str, args: &Value) -> Result<String, St
                 // it as a directory used to silently find nothing). An
                 // unreadable file is disclosed as skipped, like the
                 // walk path — never a plain "(no matches)".
-                match std::fs::read_to_string(&base) {
+                match searchable_text(&base) {
                     Ok(content) => {
                         for (i, line) in content.lines().enumerate() {
                             if line.to_lowercase().contains(&query) {
@@ -1520,6 +1603,18 @@ pub fn execute_tool(cfg: &Config, name: &str, args: &Value) -> Result<String, St
                 .map_err(|e| format!("move_file {from} -> {to}: {e}"))?;
             Ok(format!("moved {from} to {to}"))
         }
+        "export_file" => {
+            let rel = args["path"]
+                .as_str()
+                .ok_or("export_file needs args.path (a .md, .txt, .csv or .tsv workspace file)")?;
+            let (out, bytes, label) = export_workspace_file(
+                cfg,
+                rel,
+                args["format"].as_str(),
+                args["output"].as_str(),
+            )?;
+            Ok(format!("wrote {out} ({bytes} bytes) — {label} made from {rel}, ready to share"))
+        }
         "write_document" => {
             let title = args["title"].as_str().ok_or("write_document needs args.title")?;
             let sections = normalize_sections(&args["sections"]);
@@ -1544,6 +1639,75 @@ pub fn execute_tool(cfg: &Config, name: &str, args: &Value) -> Result<String, St
             }
         }
     }
+}
+
+/// Turn a workspace Markdown/text file into Word, or a CSV/TSV into Excel,
+/// next to the source (or at `output`). Returns (path, bytes, what).
+pub fn export_workspace_file(
+    cfg: &Config,
+    rel: &str,
+    format: Option<&str>,
+    output: Option<&str>,
+) -> Result<(String, u64, &'static str), String> {
+    let lower = rel.to_ascii_lowercase();
+    let src_ext = lower.rsplit('.').next().unwrap_or("");
+    let fmt = match format.map(|f| f.trim().trim_start_matches('.').to_ascii_lowercase()) {
+        Some(f) if !f.is_empty() => f,
+        _ => match src_ext {
+            "csv" | "tsv" => "xlsx".to_string(),
+            _ => "docx".to_string(),
+        },
+    };
+    let to_word = match (fmt.as_str(), src_ext) {
+        ("docx" | "word", "md" | "markdown" | "txt") => true,
+        ("xlsx" | "excel", "csv" | "tsv") => false,
+        ("docx" | "word", _) => return Err(format!("export_file: Word export takes a .md or .txt file, not {rel}")),
+        ("xlsx" | "excel", _) => return Err(format!("export_file: Excel export takes a .csv or .tsv file, not {rel}")),
+        (other, _) => return Err(format!("export_file: unknown format \"{other}\" (use docx or xlsx)")),
+    };
+    let full = sandbox_path(&cfg.workspace_dir, rel)?;
+    let text = std::fs::read_to_string(&full).map_err(|e| format!("export_file {rel}: {e}"))?;
+    let stem_rel = rel.rsplit_once('.').map(|(a, _)| a).unwrap_or(rel);
+    let stem_name = stem_rel.rsplit('/').next().unwrap_or(stem_rel).to_string();
+    let want_ext = if to_word { "docx" } else { "xlsx" };
+    let out = match output.map(|o| o.trim()).filter(|o| !o.is_empty()) {
+        Some(o) if o.to_ascii_lowercase().ends_with(&format!(".{want_ext}")) => o.to_string(),
+        Some(o) => format!("{o}.{want_ext}"),
+        None => format!("{stem_rel}.{want_ext}"),
+    };
+    let out_full = sandbox_path(&cfg.workspace_dir, &out)?;
+    let bytes = if to_word {
+        let title = text
+            .lines()
+            .find_map(|l| l.strip_prefix("# ").map(|t| t.trim().to_string()))
+            .unwrap_or_else(|| stem_name.clone());
+        let md = if src_ext == "txt" {
+            // Plain text: every line its own paragraph.
+            text.lines().map(|l| format!("{l}  ")).collect::<Vec<_>>().join("\n")
+        } else {
+            text
+        };
+        docs::markdown_to_docx(&md, &title)
+    } else {
+        let rows: Vec<Vec<String>> = if src_ext == "tsv" {
+            text.lines().map(|l| l.split('\t').map(|c| c.to_string()).collect()).collect()
+        } else {
+            skills::parse_csv_rows(&text)
+        };
+        if rows.is_empty() {
+            return Err(format!("export_file: {rel} has no rows"));
+        }
+        docs::rows_to_xlsx(&rows, &stem_name, &stem_name)
+    };
+    if let Some(parent) = out_full.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| format!("export_file mkdir: {e}"))?;
+    }
+    let _ = file_history::record_revision(&cfg.data_dir, &cfg.workspace_dir, &out, "export");
+    let tmp = out_full.with_extension(format!("{want_ext}.tmp"));
+    std::fs::write(&tmp, &bytes)
+        .and_then(|_| std::fs::rename(&tmp, &out_full))
+        .map_err(|e| format!("export_file {out}: {e}"))?;
+    Ok((out, bytes.len() as u64, if to_word { "a Word document" } else { "an Excel workbook" }))
 }
 
 /// The wider context the completion-era tools need: the company
@@ -1772,6 +1936,26 @@ struct SearchStats {
     capped: bool,
 }
 
+/// Text to search in a file: plain text as-is; PDF, Word, Excel (every
+/// sheet) and PowerPoint through the document extractor.
+fn searchable_text(path: &Path) -> Result<String, String> {
+    let name = path.to_string_lossy();
+    match docs::doc_kind(&name) {
+        Some(docs::DocKind::Excel) => {
+            let first = docs::extract(path, docs::DocKind::Excel, None)?;
+            let mut all = String::new();
+            for sheet in &first.sheets {
+                if let Ok(ex) = docs::extract(path, docs::DocKind::Excel, Some(sheet)) {
+                    all.push_str(&ex.text);
+                }
+            }
+            Ok(all)
+        }
+        Some(kind) => docs::extract(path, kind, None).map(|e| e.text),
+        None => std::fs::read_to_string(path).map_err(|e| e.to_string()),
+    }
+}
+
 fn search_walk(
     root: &Path,
     base: &Path,
@@ -1809,11 +1993,13 @@ fn search_walk(
             search_walk(root, &path, query, out, depth + 1, stats);
             continue;
         }
-        if entry.metadata().map(|m| m.len()).unwrap_or(0) > 512_000 {
+        let is_doc = docs::doc_kind(&name).is_some();
+        let limit = if is_doc { docs::MAX_DOC_BYTES } else { 512_000 };
+        if entry.metadata().map(|m| m.len()).unwrap_or(0) > limit {
             stats.skipped += 1;
             continue;
         }
-        let Ok(content) = std::fs::read_to_string(&path) else {
+        let Ok(content) = searchable_text(&path) else {
             stats.skipped += 1;
             continue;
         };
@@ -1912,9 +2098,64 @@ fn security_block() -> String {
         .unwrap_or_default()
 }
 
+/// Characters of memory.md a prompt carries; preferences listed apart.
+const MEMORY_PROMPT_CHARS: usize = 10_000;
+const PREFS_IN_PROMPT: usize = 60;
+
+/// Memory as the prompt carries it: all of it while it is small; once it
+/// grows, the opening (who the person is) plus the most recent learning,
+/// with a plain note of what was left out. The file itself keeps everything.
+pub fn memory_for_prompt(memory: &str) -> String {
+    let total = memory.chars().count();
+    if total <= MEMORY_PROMPT_CHARS {
+        return memory.to_string();
+    }
+    let lines: Vec<&str> = memory.lines().collect();
+    // The head: up to the end of the About section (or 1,500 characters).
+    let mut head = Vec::new();
+    let mut used = 0usize;
+    for (i, l) in lines.iter().enumerate() {
+        if i > 0 && l.starts_with("## ") && !l.to_lowercase().contains("about") {
+            break;
+        }
+        used += l.chars().count() + 1;
+        if used > 1_500 {
+            break;
+        }
+        head.push(*l);
+    }
+    let budget = MEMORY_PROMPT_CHARS.saturating_sub(used + 120);
+    let mut tail: Vec<&str> = Vec::new();
+    let mut tail_used = 0usize;
+    for l in lines[head.len()..].iter().rev() {
+        let n = l.chars().count() + 1;
+        if tail_used + n > budget {
+            break;
+        }
+        tail_used += n;
+        tail.push(*l);
+    }
+    tail.reverse();
+    let omitted = lines.len() - head.len() - tail.len();
+    format!(
+        "{}\n(… {omitted} older lines of memory are not shown here; they are kept in memory.md …)\n{}",
+        head.join("\n"),
+        tail.join("\n")
+    )
+}
+
+fn recent_prefs(memory: &str) -> Vec<String> {
+    let mut prefs = standing_preferences(memory);
+    if prefs.len() > PREFS_IN_PROMPT {
+        prefs.drain(..prefs.len() - PREFS_IN_PROMPT);
+    }
+    prefs
+}
+
 fn system_prompt(cfg: &Config, suite_items: &[library::LibraryItem]) -> String {
-    let memory = cfg.read_memory();
-    let prefs = standing_preferences(&memory);
+    let full_memory = cfg.read_memory();
+    let prefs = recent_prefs(&full_memory);
+    let memory = memory_for_prompt(&full_memory);
     let prefs_block = if prefs.is_empty() {
         "(none yet — learn how this person works as you go, and record it with update_memory)".to_string()
     } else {
@@ -1965,18 +2206,19 @@ fn system_prompt(cfg: &Config, suite_items: &[library::LibraryItem]) -> String {
          - When the whole task is complete: {{\"done\": true, \"summary\": \"<what was accomplished>\"}}\n\n\
          TOOLS:\n\
          - list_dir {{\"path\": \".\"}} — list files in the workspace (paths are relative to the workspace root).\n\
-         - read_file {{\"path\": \"notes.txt\"}} — read a workspace file.\n\
+         - read_file {{\"path\": \"notes.txt\"}} — read a workspace file. It also reads PDF, Word (.docx), PowerPoint (.pptx) and Excel (.xlsx: one sheet as CSV; \"book.xlsx#Sheet2\" for another). Long files arrive in windows: pass \"offset\" as the result says to read on.\n\
          - write_file {{\"path\": \"out.txt\", \"content\": \"...\"}} — write a workspace file.\n\
          - fetch_url {{\"url\": \"https://...\"}} — fetch a URL and read its text.\n\
+         - export_file {{\"path\": \"Weekly Report.md\"}} — turn a finished Markdown/text file into a Word document (.docx), or a CSV into an Excel workbook (.xlsx), ready to share. Use it whenever the person wants a Word or Excel file, or a document to send to someone.\n\
          - write_document {{\"title\": \"Summary\", \"sections\": [\"section text\", ...]}} — produce a finished markdown document in the workspace (a Rune skill formats and writes it).\n\
          - make_spreadsheet {{\"title\": \"Budget\", \"columns\": [\"Item\", \"Cost\"], \"rows\": [[\"Coffee\", \"4.50\"]]}} — produce a finished CSV spreadsheet in the workspace (a Rune skill formats and writes it).\n\
          - research {{\"topic\": \"Local Prices\", \"urls\": [\"https://...\", \"https://...\"]}} — fetch several pages and compile them into one research notes document in the workspace (a Rune skill).\n\
          - search_files {{\"query\": \"quarterly\", \"path\": \".\"}} — search the workspace's text files for a phrase; returns matching lines with file and line number.\n\
          - move_file {{\"from\": \"a.txt\", \"to\": \"archive/a.txt\"}} — move or rename a workspace file.\n\
          - update_memory {{\"note\": \"...\"}} — record something you learned about this person (a preference or fact) into their long-term memory (a Rune skill).\n\
-         - reconcile_ledger {{\"source_files\": [\"expenses.csv\"], \"output_title\": \"Q4 Reconciliation\"}} — reconcile one or more CSV expense/invoice files with penny-exact totals, duplicate/missing-receipt flags, and vendor rollups (Rune skill).\n\
-         - summarize_meeting {{\"notes_file\": \"notes.md\", \"output_title\": \"Meeting Summary\"}} — extract decisions, owners, due dates, blockers, and follow-up drafts from meeting notes (Rune skill).\n\
-         - audit_contract {{\"contract_file\": \"msa.md\", \"required_clauses\": [\"termination\", \"liability\"], \"output_title\": \"Contract Audit\"}} — audit a contract for renewal dates, missing clauses, and line-cited risk redlines (Rune skill).\n\
+         - reconcile_ledger {{\"source_files\": [\"expenses.csv\"], \"output_title\": \"Q4 Reconciliation\"}} — reconcile one or more expense/invoice ledgers (CSV or Excel; \"book.xlsx#Sheet\" for a sheet) with penny-exact totals, duplicate-reference, possible-double-charge and missing-receipt flags, and vendor rollups (Rune skill).\n\
+         - summarize_meeting {{\"notes_file\": \"notes.md\", \"output_title\": \"Meeting Summary\"}} — extract decisions, owners, due dates, blockers, and follow-up drafts from meeting notes (.md, .txt, Word, PDF or a PowerPoint deck) (Rune skill).\n\
+         - audit_contract {{\"contract_file\": \"msa.md\", \"required_clauses\": [\"termination\", \"liability\"], \"output_title\": \"Contract Audit\"}} — audit a contract (.md, Word or PDF) for renewal dates, missing clauses, and line-cited risk redlines (Rune skill).\n\
          - triage_inbox {{\"inbox_file\": \"inbox.md\", \"output_title\": \"Inbox Triage\"}} — classify tickets/messages into Urgent / Action / FYI queues with next steps (Rune skill).\n\
          - clean_dataset {{\"input_file\": \"raw.csv\", \"key_column\": \"id\", \"output_title\": \"Cleaned Data\"}} — normalize CSV/JSON columns, deduplicate rows, flag outliers, and write clean CSV + diff report (Rune skill).\n\
          - compare_documents {{\"left_file\": \"v1.md\", \"right_file\": \"v2.md\", \"output_title\": \"Diff Report\"}} — produce a line-by-line comparison and change summary between two workspace files (Rune skill).\n\
@@ -2044,7 +2286,7 @@ fn credit_writes(
         }
         // The Rune skills name the file they produced in their
         // result text.
-        "write_document" | "make_spreadsheet" | "research" => {
+        "write_document" | "make_spreadsheet" | "research" | "export_file" => {
             ledger
                 .written
                 .extend(extract_written(result_text, &cfg.workspace_dir));
@@ -2085,7 +2327,7 @@ fn subagent_system_prompt(
     suite_items: &[library::LibraryItem],
 ) -> String {
     let memory = cfg.read_memory();
-    let prefs = standing_preferences(&memory);
+    let prefs = recent_prefs(&memory);
     let prefs_block = if prefs.is_empty() {
         "(none yet)".to_string()
     } else {
@@ -2115,9 +2357,10 @@ fn subagent_system_prompt(
          - When your sub-task is complete: {{\"done\": true, \"summary\": \"<what you did and found>\"}}\n\n\
          TOOLS:\n\
          - list_dir {{\"path\": \".\"}} — list files in the workspace.\n\
-         - read_file {{\"path\": \"notes.txt\"}} — read a workspace file.\n\
+         - read_file {{\"path\": \"notes.txt\"}} — read a workspace file (also PDF, .docx, .pptx, and .xlsx as CSV; \"offset\" reads on in long files).\n\
          - write_file {{\"path\": \"out.txt\", \"content\": \"...\"}} — write a workspace file.\n\
          - fetch_url {{\"url\": \"https://...\"}} — fetch a URL and read its text.\n\
+         - export_file {{\"path\": \"Summary.md\"}} — make a Word (.docx) copy of a Markdown file, or an Excel (.xlsx) copy of a CSV.\n\
          - write_document {{\"title\": \"Summary\", \"sections\": [\"...\"]}} — produce a finished markdown document.\n\
          - make_spreadsheet {{\"title\": \"Budget\", \"columns\": [\"Item\", \"Cost\"], \"rows\": [[\"Coffee\", \"4.50\"]]}} — produce a finished CSV spreadsheet.\n\
          - research {{\"topic\": \"...\", \"urls\": [\"https://...\"]}} — compile research notes from several pages.\n\
@@ -2197,8 +2440,9 @@ pub fn task_requires_workspace_tool(task: &str) -> bool {
         "move_file",
         "fetch_url",
         "flag_decision",
+        "export_file",
     ];
-    const EXTS: &[&str] = &[".md", ".csv", ".txt", ".json", ".log", ".tsv"];
+    const EXTS: &[&str] = &[".md", ".csv", ".txt", ".json", ".log", ".tsv", ".pdf", ".docx", ".xlsx", ".pptx"];
 
     for tok in task.split(|c: char| !(c.is_ascii_alphanumeric() || c == '_')) {
         if !tok.is_empty() {
@@ -3497,6 +3741,9 @@ struct Request {
 /// here once let a single header (Content-Length: 2^40, no body)
 /// abort the whole server process.
 const MAX_BODY_BYTES: usize = 1_048_576;
+/// File uploads only: a 25 MB file, base64-encoded inside JSON. Every
+/// other route keeps the 1 MB cap.
+const MAX_UPLOAD_BODY_BYTES: usize = 36 * 1_048_576;
 const MAX_HEAD_BYTES: usize = 32_768;
 
 fn read_request(stream: &mut std::net::TcpStream) -> Option<Request> {
@@ -3504,9 +3751,11 @@ fn read_request(stream: &mut std::net::TcpStream) -> Option<Request> {
     // a per-read clock lets a slow-loris drip headers forever, one
     // gap at a time. Before each read the socket timeout is re-armed
     // with whatever of the 30 seconds remains.
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+    // (A file upload's BODY gets up to 3 minutes once its head arrived in
+    // time: 25 MB from a phone on slow Wi-Fi needs more than 30 seconds.)
+    let deadline = std::cell::Cell::new(std::time::Instant::now() + std::time::Duration::from_secs(30));
     let arm = |stream: &std::net::TcpStream| -> Option<()> {
-        let remain = deadline.checked_duration_since(std::time::Instant::now())?;
+        let remain = deadline.get().checked_duration_since(std::time::Instant::now())?;
         stream.set_read_timeout(Some(remain)).ok()?;
         Some(())
     };
@@ -3603,7 +3852,12 @@ fn read_request(stream: &mut std::net::TcpStream) -> Option<Request> {
             }
         }
     }
-    if content_length > MAX_BODY_BYTES {
+    let body_limit = if method == "POST" && path == "/api/files/upload" {
+        MAX_UPLOAD_BODY_BYTES
+    } else {
+        MAX_BODY_BYTES
+    };
+    if content_length > body_limit {
         // A real 413, not a silent drop: the caller learns the limit
         // instead of staring at a dead connection. The in-flight body
         // is drained first (bounded — a few MB, within the deadline):
@@ -3623,7 +3877,7 @@ fn read_request(stream: &mut std::net::TcpStream) -> Option<Request> {
             }
         }
         let body = format!(
-            "{{\"error\": \"request body too large: the limit is {MAX_BODY_BYTES} bytes\"}}"
+            "{{\"error\": \"request body too large: the limit is {body_limit} bytes\"}}"
         );
         let response = format!(
             "HTTP/1.1 413 Content Too Large\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
@@ -3632,6 +3886,9 @@ fn read_request(stream: &mut std::net::TcpStream) -> Option<Request> {
         let _ = stream.write_all(response.as_bytes());
         let _ = stream.flush();
         return None;
+    }
+    if body_limit == MAX_UPLOAD_BODY_BYTES && content_length > MAX_BODY_BYTES {
+        deadline.set(std::time::Instant::now() + std::time::Duration::from_secs(180));
     }
     arm(stream)?;
     let mut body = vec![0u8; content_length];
@@ -3871,6 +4128,10 @@ fn decode_base64(input: &str) -> Result<Vec<u8>, String> {
 
 fn mime_for_ext(ext: &str) -> &'static str {
     match ext {
+        "pdf" => "application/pdf",
+        "docx" => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "xlsx" => "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "pptx" => "application/vnd.openxmlformats-officedocument.presentationml.presentation",
         "csv" => "text/csv; charset=utf-8",
         "md" | "markdown" => "text/markdown; charset=utf-8",
         "json" => "application/json; charset=utf-8",
@@ -4968,7 +5229,45 @@ fn handle_connection(mut stream: std::net::TcpStream, state: &AppState) -> std::
                 Err(_) => return respond_json(&mut stream, 404, &json!({"error": "file not found"})),
             };
             const MAX_PREVIEW_BYTES: u64 = 2 * 1024 * 1024;
-            if md.len() > MAX_PREVIEW_BYTES {
+            let download_requested = query_param(&req.query, "download")
+                .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+                .unwrap_or(false);
+            // Documents preview as their extracted text (a workbook one
+            // sheet at a time); downloading still sends the original bytes.
+            if let (false, Some(kind)) = (download_requested, docs::doc_kind(&rel)) {
+                let sheet = query_param(&req.query, "sheet");
+                let name = full.file_name().and_then(|s| s.to_str()).unwrap_or("file").to_string();
+                let ext = full.extension().and_then(|s| s.to_str()).unwrap_or("").to_ascii_lowercase();
+                let mtime_ms = md
+                    .modified()
+                    .ok()
+                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                    .map(|d| d.as_millis() as u64)
+                    .unwrap_or(0);
+                let mut v = json!({
+                    "path": rel, "name": name, "size": md.len(), "mtime_ms": mtime_ms, "ext": ext,
+                });
+                match docs::extract(&full, kind, sheet.as_deref()) {
+                    Ok(ex) => {
+                        v["is_binary"] = json!(false);
+                        v["content"] = json!(ex.text);
+                        v["extracted"] = json!({
+                            "kind": kind.label(),
+                            "format": ex.format,
+                            "sheets": ex.sheets,
+                            "sheet": ex.sheet,
+                            "pages": ex.pages,
+                        });
+                    }
+                    Err(e) => {
+                        v["is_binary"] = json!(true);
+                        v["content"] = json!("");
+                        v["extract_error"] = json!(e);
+                    }
+                }
+                return respond_json(&mut stream, 200, &v);
+            }
+            if md.len() > MAX_PREVIEW_BYTES && !download_requested {
                 return respond_json(
                     &mut stream,
                     413,
@@ -5036,6 +5335,23 @@ fn handle_connection(mut stream: std::net::TcpStream, state: &AppState) -> std::
                         "content": "",
                     }),
                 ),
+            }
+        }
+        ("POST", "/api/files/export") => {
+            let parsed: Value = serde_json::from_slice(&req.body).unwrap_or(Value::Null);
+            let rel = parsed["path"].as_str().unwrap_or("").trim().to_string();
+            if rel.is_empty() {
+                return respond_json(&mut stream, 400, &json!({"error": "path is required"}));
+            }
+            match export_workspace_file(&runtime.cfg, &rel, parsed["format"].as_str(), None) {
+                Ok((out, bytes, label)) => {
+                    state.search_cache.invalidate(&person.id);
+                    respond_json(&mut stream, 201, &json!({"path": out, "size": bytes, "kind": label, "source": rel}))
+                }
+                Err(e) => {
+                    let status = if e.contains("escapes") || e.contains("absolute") { 403 } else { 400 };
+                    respond_json(&mut stream, status, &json!({"error": e}))
+                }
             }
         }
         ("POST", "/api/files/upload") => {
@@ -5111,6 +5427,13 @@ fn handle_connection(mut stream: std::net::TcpStream, state: &AppState) -> std::
             } else {
                 content_str.as_bytes().to_vec()
             };
+            if bytes.len() as u64 > docs::MAX_DOC_BYTES {
+                return respond_json(
+                    &mut stream,
+                    413,
+                    &json!({"error": "files over 25 MB cannot be uploaded"}),
+                );
+            }
             if let Some(parent) = full.parent() {
                 if let Err(e) = std::fs::create_dir_all(parent) {
                     return respond_json(
