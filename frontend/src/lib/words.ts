@@ -3,6 +3,7 @@ import { File, FileCode, FileImage, FileSpreadsheet, FileText } from "lucide-rea
 import type { SuiteItem, Update } from "./api";
 
 export type StarterCard = {
+  label: string;
   category: string;
   tone: "ops" | "mint" | "plan" | "research";
   prompt: string;
@@ -14,6 +15,7 @@ export function buildStarterCards(installed: SuiteItem[], role: string): Starter
   const safeRole = typeof role === "string" ? role.trim() : "";
   const cards: StarterCard[] = [
     {
+      label: "Summarize to Word",
       category: "Word (.docx)",
       tone: "ops",
       prompt: "Tidy my notes into a summary document and export as Word",
@@ -26,6 +28,7 @@ export function buildStarterCards(installed: SuiteItem[], role: string): Starter
   safeInstalled.slice(0, 1).forEach((item, idx) => {
     const kindWord = item.kind === "subagent" ? "Specialist" : item.kind === "app" ? "One-tap app" : "Workflow";
     cards.push({
+      label: item.name,
       category: kindWord,
       tone: tones[idx % tones.length],
       prompt: `Ask my ${item.name} for help`,
@@ -34,6 +37,7 @@ export function buildStarterCards(installed: SuiteItem[], role: string): Starter
     });
   });
   cards.push({
+    label: "Reconcile to Excel",
     category: "Excel (.xlsx)",
     tone: "mint",
     prompt: "Reconcile expenses into a clean spreadsheet and export as Excel",
@@ -41,6 +45,7 @@ export function buildStarterCards(installed: SuiteItem[], role: string): Starter
     skill: "make_spreadsheet",
   });
   cards.push({
+    label: "Audit contract",
     category: safeRole ? `${safeRole} audit` : "Contract audit",
     tone: "plan",
     prompt: "Audit my workspace documents for risks, missing clauses, and action owners",
@@ -48,6 +53,7 @@ export function buildStarterCards(installed: SuiteItem[], role: string): Starter
     skill: "audit_contract",
   });
   cards.push({
+    label: "Executive brief",
     category: "Executive brief",
     tone: "research",
     prompt: "Draft a weekly executive brief from finished deliverables and open items",

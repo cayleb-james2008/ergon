@@ -4,6 +4,7 @@
 // - Central Thread / Today / Work Graph: inline Approvals & File Diffs, 1-click Deliverable Starters, Word/Excel & SHA-256 export
 // - Collapsible Right Inspector Drawer: Workspace Files, Version History & Diff, SHA-256 Audit Bundle & Offers
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AnimatePresence, MotionConfig, motion, useReducedMotion } from "motion/react";
 import { Drawer } from "vaul";
 import {
   Blocks,
@@ -44,15 +45,10 @@ import { exportAuditBundleDownload } from "@/lib/auditBundle";
 import { exportReceiptDownload } from "@/lib/receiptExport";
 import { cn } from "@/lib/utils";
 import { relTime, threadMs } from "@/lib/words";
+import { glide, instant, sheet } from "@/motion";
 
 type Face = "chat" | "paper" | "graph";
 const THREADS_PAGE_SIZE = 12;
-
-const ROUTINE_PRESETS = [
-  { label: "Weekdays 9am", value: "daily 09:00" },
-  { label: "Every hour", value: "hourly" },
-  { label: "Every 15m", value: "every 15m" },
-];
 
 function useTheme(): [Theme, (t: Theme) => void] {
   const [theme, setTheme] = useState<Theme>(() => {
@@ -144,13 +140,12 @@ export function App() {
   const desk = useErgon();
   const [theme, setTheme] = useTheme();
   const u = useUpdate();
+  const reduceMotion = useReducedMotion();
   const [face, setFace] = useState<Face>(initialFace);
   const [railOpen, setRailOpen] = useState(() =>
     typeof window !== "undefined" ? window.innerWidth >= 1024 : true
   );
-  const [inspectorOpen, setInspectorOpen] = useState(() =>
-    typeof window !== "undefined" ? window.innerWidth >= 1280 : true
-  );
+  const [inspectorOpen, setInspectorOpen] = useState(false);
   const [inspectorTab, setInspectorTab] = useState<InspectorTab>("files");
   const [selectedHistoryPath, setSelectedHistoryPath] = useState("");
   const [isXl, setIsXl] = useState(() =>
@@ -165,8 +160,6 @@ export function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [skillsOpen, setSkillsOpen] = useState(false);
   const [routinesOpen, setRoutinesOpen] = useState(false);
-  const [routinePresetSchedule, setRoutinePresetSchedule] = useState<string | null>(null);
-  const [routinePresetNonce, setRoutinePresetNonce] = useState(0);
   const [learnedOpen, setLearnedOpen] = useState(false);
   const [suiteOpen, setSuiteOpen] = useState(false);
   const [addPersonOpen, setAddPersonOpen] = useState(false);
@@ -337,8 +330,19 @@ export function App() {
         setPaletteOpen((v) => !v);
         return;
       }
+      if ((ev.metaKey || ev.ctrlKey) && ev.key.toLowerCase() === "i") {
+        ev.preventDefault();
+        setInspectorOpen((v) => {
+          const next = !v;
+          if (next) desk.loadFiles();
+          return next;
+        });
+        return;
+      }
       if (ev.key === "Escape") {
-        if (!isXl && inspectorOpen) setInspectorOpen(false);
+        if (!isXl && inspectorOpen && !document.querySelector('[role="dialog"]')) {
+          setInspectorOpen(false);
+        }
         return;
       }
       const target = ev.target as HTMLElement | null;
@@ -357,7 +361,7 @@ export function App() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [railOpen, isXl, inspectorOpen]);
+  }, [desk, railOpen, isXl, inspectorOpen]);
 
   const runAfterPersonChange = useCallback(() => {
     paper.load();
@@ -380,13 +384,6 @@ export function App() {
         : statusObj && !statusObj.model_configured
           ? "Setup needed"
           : "Ready";
-
-  const openRoutinePreset = (schedule: string) => {
-    setRoutinePresetSchedule(schedule);
-    setRoutinePresetNonce((n) => n + 1);
-    setMobileOpen(false);
-    setRoutinesOpen(true);
-  };
 
   const renderRailContent = () => (
     <div className="flex h-full min-h-0 flex-col">
@@ -458,7 +455,15 @@ export function App() {
               const st = desk.states[t.id];
               const ms = threadMs(t.id);
               return (
-                <li key={t.id}>
+                <li key={t.id} className="relative">
+                  {active && (
+                    <motion.span
+                      layoutId="rail-active-thread"
+                      aria-hidden
+                      transition={reduceMotion ? instant : glide}
+                      className="pointer-events-none absolute inset-0 rounded-sm bg-board"
+                    />
+                  )}
                   <button
                     type="button"
                     aria-current={active ? "page" : undefined}
@@ -468,8 +473,8 @@ export function App() {
                       setMobileOpen(false);
                     }}
                     className={cn(
-                      "thread-btn focus-ring flex min-h-11 w-full flex-col gap-0.5 rounded-sm px-2.5 py-2 text-left outline-none md:min-h-9",
-                      active ? "bg-board text-ink" : "text-ink-2 hover:bg-board/60 hover:text-ink"
+                      "thread-btn focus-ring relative z-10 flex min-h-11 w-full flex-col gap-0.5 rounded-sm px-2.5 py-2 text-left outline-none md:min-h-9",
+                      active ? "text-ink" : "text-ink-2 hover:bg-board/60 hover:text-ink"
                     )}
                   >
                     <span className="flex w-full items-center gap-2">
@@ -547,56 +552,47 @@ export function App() {
 
           {routinesExpanded && (
             <div className="mt-1 flex flex-col gap-1 px-1">
-              {desk.routines.slice(0, 3).map((rt: Routine) => (
-                <div
-                  key={rt.id}
-                  className="flex items-center justify-between gap-1.5 rounded-sm px-2 py-1.5 hover:bg-board/60"
-                >
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setMobileOpen(false);
-                      setRoutinesOpen(true);
-                    }}
-                    className="focus-ring flex min-w-0 flex-1 flex-col text-left"
+              {desk.routines.length === 0 ? (
+                <p className="px-2 py-1 text-xs text-ink-3">No routines scheduled yet.</p>
+              ) : (
+                desk.routines.slice(0, 3).map((rt: Routine) => (
+                  <div
+                    key={rt.id}
+                    className="flex items-center justify-between gap-1.5 rounded-sm px-2 py-1.5 hover:bg-board/60"
                   >
-                    <span className="flex items-center gap-1.5 truncate text-xs font-medium text-ink">
-                      <span
-                        aria-hidden
-                        className={cn(
-                          "size-1.5 shrink-0 rounded-full",
-                          rt.enabled !== false ? "bg-dot-green" : "bg-ink-3"
-                        )}
-                      />
-                      <span className="truncate">{rt.name}</span>
-                    </span>
-                    <span className="mono pl-3 text-xs text-ink-3">{rt.schedule}</span>
-                  </button>
-                  <Button
-                    type="button"
-                    size="icon-xs"
-                    variant="ghost"
-                    aria-label={`Run routine ${rt.name}`}
-                    onClick={() => void desk.runRoutineNow(rt)}
-                    className="shrink-0 max-md:min-h-11 max-md:min-w-11"
-                  >
-                    <Play className="size-3 text-icon" strokeWidth={1.75} aria-hidden />
-                  </Button>
-                </div>
-              ))}
-
-              <div className="flex flex-wrap gap-1 px-1 pt-1">
-                {ROUTINE_PRESETS.map((preset) => (
-                  <button
-                    key={preset.value}
-                    type="button"
-                    onClick={() => openRoutinePreset(preset.value)}
-                    className="focus-ring rounded-chip border border-hairline bg-board/50 px-2 py-1 text-xs text-ink-2 hover:bg-board hover:text-ink"
-                  >
-                    + {preset.label}
-                  </button>
-                ))}
-              </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMobileOpen(false);
+                        setRoutinesOpen(true);
+                      }}
+                      className="focus-ring flex min-w-0 flex-1 flex-col text-left"
+                    >
+                      <span className="flex items-center gap-1.5 truncate text-xs font-medium text-ink">
+                        <span
+                          aria-hidden
+                          className={cn(
+                            "size-1.5 shrink-0 rounded-full",
+                            rt.enabled !== false ? "bg-dot-green" : "bg-ink-3"
+                          )}
+                        />
+                        <span className="truncate">{rt.name}</span>
+                      </span>
+                      <span className="mono pl-3 text-xs text-ink-3">{rt.schedule}</span>
+                    </button>
+                    <Button
+                      type="button"
+                      size="icon-xs"
+                      variant="ghost"
+                      aria-label={`Run routine ${rt.name}`}
+                      onClick={() => void desk.runRoutineNow(rt)}
+                      className="shrink-0 max-md:min-h-11 max-md:min-w-11"
+                    >
+                      <Play className="size-3 text-icon" strokeWidth={1.75} aria-hidden />
+                    </Button>
+                  </div>
+                ))
+              )}
             </div>
           )}
         </section>
@@ -659,8 +655,15 @@ export function App() {
   );
 
   return (
+    <MotionConfig reducedMotion="user">
     <div className="flex h-dvh flex-col overflow-hidden bg-canvas text-ink">
-      <Toaster position="bottom-right" />
+      <Toaster
+        position="bottom-right"
+        theme={theme}
+        toastOptions={{
+          className: "!bg-surface !text-ink !border !border-hairline !shadow-lift",
+        }}
+      />
       <div id="announcer" role="status" aria-live="polite" className="sr-only" />
 
       <input
@@ -901,30 +904,37 @@ export function App() {
         </main>
 
         {/* Inline Right Inspector Drawer on >=1280px; Slide-over Drawer on <1280px */}
-        {isXl ? (
-          <InspectorDrawer
-            open={inspectorOpen}
-            tab={inspectorTab}
-            onTabChange={setInspectorTab}
-            onClose={() => setInspectorOpen(false)}
-            files={desk.files}
-            status={desk.status}
-            personName={personName}
-            offers={(paper.data?.offers ?? []).filter((o) => o.status === "pending")}
-            selectedHistoryPath={selectedHistoryPath}
-            onSelectHistoryPath={setSelectedHistoryPath}
-            onRefreshFiles={desk.loadFiles}
-            onOpenFile={(p) => setViewerPath(p)}
-            onUploadFile={desk.uploadFile}
-            onUploadMany={desk.uploadFiles}
-            onExportAuditBundle={handleExportAuditBundle}
-            onOfferAction={async (url, msg) => {
-              await paper.act(url, msg);
-            }}
-          />
-        ) : (
-          inspectorOpen && (
-            <div
+        <AnimatePresence>
+          {isXl && inspectorOpen && (
+            <InspectorDrawer
+              key="desktop-inspector"
+              open={inspectorOpen}
+              tab={inspectorTab}
+              onTabChange={setInspectorTab}
+              onClose={() => setInspectorOpen(false)}
+              files={desk.files}
+              status={desk.status}
+              personName={personName}
+              offers={(paper.data?.offers ?? []).filter((o) => o.status === "pending")}
+              selectedHistoryPath={selectedHistoryPath}
+              onSelectHistoryPath={setSelectedHistoryPath}
+              onRefreshFiles={desk.loadFiles}
+              onOpenFile={(p) => setViewerPath(p)}
+              onUploadFile={desk.uploadFile}
+              onUploadMany={desk.uploadFiles}
+              onExportAuditBundle={handleExportAuditBundle}
+              onOfferAction={async (url, msg) => {
+                await paper.act(url, msg);
+              }}
+            />
+          )}
+          {!isXl && inspectorOpen && (
+            <motion.div
+              key="mobile-inspector"
+              initial={reduceMotion ? false : { opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={reduceMotion ? undefined : { opacity: 0 }}
+              transition={reduceMotion ? instant : sheet}
               className="fixed inset-0 z-40 flex justify-end bg-ink/40"
               onClick={(e) => {
                 if (e.target === e.currentTarget) setInspectorOpen(false);
@@ -952,9 +962,9 @@ export function App() {
                   }}
                 />
               </div>
-            </div>
-          )
-        )}
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
       {/* External Modals mounted OUTSIDE Vaul Drawer (z-50 portals) */}
@@ -1064,8 +1074,6 @@ export function App() {
         scheduler={desk.scheduler}
         historyRev={desk.routineHistoryRev}
         personName={personName}
-        presetSchedule={routinePresetSchedule}
-        presetNonce={routinePresetNonce}
         open={routinesOpen}
         onOpenChange={setRoutinesOpen}
         onRefresh={desk.loadRoutines}
@@ -1123,6 +1131,7 @@ export function App() {
         }}
       />
     </div>
+    </MotionConfig>
   );
 }
 export default App;

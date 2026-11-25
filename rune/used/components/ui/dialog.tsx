@@ -19,7 +19,7 @@ const DialogOverlay = React.forwardRef<
   <DialogPrimitive.Overlay
     ref={ref}
     className={cn(
-      "fixed top-0 right-0 bottom-0 left-0 z-50 bg-ink/45",
+      "fixed top-0 right-0 bottom-0 left-0 z-50 bg-ink/45 motion-safe:transition-opacity motion-safe:duration-(--dur-enter) motion-safe:ease-(--ease-house) data-[state=closed]:opacity-0 data-[state=open]:opacity-100 starting:opacity-0",
       className
     )}
     {...props}
@@ -36,7 +36,7 @@ const DialogContent = React.forwardRef<
     <DialogPrimitive.Content
       ref={ref}
       className={cn(
-        "fixed left-[50%] top-[50%] z-50 grid w-[calc(100%-2rem)] max-w-2xl translate-x-[-50%] translate-y-[-50%] gap-4 rounded-card border border-hairline bg-surface p-5 text-ink shadow-lift outline-none",
+        "fixed left-[50%] top-[50%] z-50 grid w-[calc(100%-2rem)] max-w-2xl translate-x-[-50%] translate-y-[-50%] gap-4 rounded-card border border-hairline bg-surface p-5 text-ink shadow-lift outline-none motion-safe:transition-[opacity,transform] motion-safe:duration-(--dur-enter) motion-safe:ease-(--ease-house) data-[state=closed]:scale-[0.97] data-[state=closed]:opacity-0 data-[state=open]:scale-100 data-[state=open]:opacity-100 starting:scale-[0.97] starting:opacity-0",
         className
       )}
       {...props}

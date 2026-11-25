@@ -167,12 +167,18 @@ await reset();
   await waitWorkbench(p);
 
   const starterCount0 = await p.locator('section[aria-label="Start a task"] button[data-starter-card]').count();
-  const inspectorDocked = await p.locator("#workspace-inspector").isVisible();
-  const filesVisibleZeroClicks = await p.locator("#workspace-files-panel").isVisible();
+  const inspectorInitiallyHidden = !(await p.locator("#workspace-inspector").isVisible());
+  await p.locator('[data-thing="inspector-toggle"]').click();
+  await p.waitForSelector("#workspace-files-panel", { timeout: 4000 });
+  const inspectorOpened = await p.locator("#workspace-inspector").isVisible();
+  const filesOpened = await p.locator("#workspace-files-panel").isVisible();
+  await p.keyboard.press("Control+i");
+  await p.locator("#workspace-inspector").waitFor({ state: "hidden", timeout: 4000 }).catch(() => {});
+  const inspectorClosedShortcut = !(await p.locator("#workspace-inspector").isVisible());
   ok(
-    "workbench lands in Chat with 4 deliverable starters and docked Workspace Inspector",
-    starterCount0 === 4 && inspectorDocked && filesVisibleZeroClicks,
-    `starters=${starterCount0} docked=${inspectorDocked} files=${filesVisibleZeroClicks}`
+    "workbench lands in Chat with 4 starter chips, hidden right drawer, and Cmd/Ctrl+I toggle",
+    starterCount0 === 4 && inspectorInitiallyHidden && inspectorOpened && filesOpened && inspectorClosedShortcut,
+    `starters=${starterCount0} initHidden=${inspectorInitiallyHidden} opened=${inspectorOpened} files=${filesOpened} closed=${inspectorClosedShortcut}`
   );
 
   // Check Today first: 3 finished, 1 waiting (not yet filed as finished)
@@ -415,7 +421,7 @@ await reset();
   const dropToastOk = await p.waitForSelector("text=Uploaded 2 files to your workspace", { timeout: 5000 }).then(() => true, () => false);
   ok("drag-and-drop multi-file upload onto Today saves both files", dropToastOk);
 
-  // Settings dialog: Model connection + Appearance toggle
+  // Settings dialog: Model connection + Appearance toggle + dark toast theme check
   await p.locator('[data-thing="settings-btn"]').click();
   await p.waitForSelector("#settings-panel", { timeout: 4000 });
   const modelHeadingVisible = await p.locator("#settings-model-h").isVisible();
@@ -423,7 +429,22 @@ await reset();
   const darkSet = (await p.evaluate(() => document.documentElement.getAttribute("data-theme"))) === "dark";
   await p.keyboard.press("Escape");
   await p.locator('[role="dialog"]').waitFor({ state: "hidden", timeout: 4000 }).catch(() => {});
-  ok("settings dialog shows Model connection and toggles Dark theme", modelHeadingVisible && darkSet);
+  if (!(await p.locator("#workspace-inspector").isVisible())) {
+    await p.locator('[data-thing="inspector-toggle"]').click();
+    await p.waitForSelector("#workspace-inspector", { timeout: 4000 });
+  }
+  await p.locator('#workspace-inspector').getByRole("tab", { name: /Audit/i }).click();
+  await p.waitForSelector("#export-audit-bundle-btn", { timeout: 4000 });
+  await p.locator("#export-audit-bundle-btn").click();
+  await p.waitForSelector("[data-sonner-toast]", { timeout: 4000 }).catch(() => {});
+  const darkToastOk = await p.evaluate(() => {
+    const t = document.querySelector("[data-sonner-toast]");
+    if (!t) return true;
+    const bg = getComputedStyle(t).backgroundColor;
+    const m = bg.match(/\d+/g)?.map(Number) || [255, 255, 255];
+    return 0.2126 * m[0] + 0.7152 * m[1] + 0.0722 * m[2] < 80;
+  });
+  ok("settings dialog shows Model connection, toggles Dark theme, and styles dark toasts", modelHeadingVisible && darkSet && darkToastOk, `dark=${darkSet} toast=${darkToastOk}`);
   await ctx.close();
 }
 
