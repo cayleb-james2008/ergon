@@ -78,7 +78,7 @@ function decisionCopy(d: Decision): DecisionCopy {
       body: detail || "Ergon blocked something suspicious while your agent worked. Nothing harmful went through.",
       approve,
       deny: src === "url" || src === "host" || src === "file" ? "Dismiss" : null,
-      approvedToast: approve === "Got it" ? "Noted." : "Done — it is out of your agent's reach.",
+      approvedToast: approve === "Got it" ? "Noted." : "Done: it is out of your agent's reach.",
       deniedToast: "Dismissed.",
       security,
     };
@@ -1015,7 +1015,7 @@ export const PaperFace = memo(function PaperFace({
                   {totalReceiptPages > 1 && (
                     <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-ink-2">
                       <span className="mono">
-                        Showing {safeReceiptPage * RECEIPTS_PAGE_SIZE + 1}–{Math.min((safeReceiptPage + 1) * RECEIPTS_PAGE_SIZE, filteredFinished.length)} of {filteredFinished.length}
+                        Showing {safeReceiptPage * RECEIPTS_PAGE_SIZE + 1} to {Math.min((safeReceiptPage + 1) * RECEIPTS_PAGE_SIZE, filteredFinished.length)} of {filteredFinished.length}
                       </span>
                       <div className="flex items-center gap-1.5">
                         <Button
@@ -1148,7 +1148,7 @@ export const PaperFace = memo(function PaperFace({
                     {totalEventPages > 1 && (
                       <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-ink-2">
                         <span className="mono">
-                          Events {safeEventPage * EVENTS_PAGE_SIZE + 1}–{Math.min((safeEventPage + 1) * EVENTS_PAGE_SIZE, allEvents.length)} of {allEvents.length}
+                          Events {safeEventPage * EVENTS_PAGE_SIZE + 1} to {Math.min((safeEventPage + 1) * EVENTS_PAGE_SIZE, allEvents.length)} of {allEvents.length}
                         </span>
                         <div className="flex items-center gap-1.5">
                           <Button

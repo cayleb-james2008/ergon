@@ -2279,6 +2279,80 @@ fn build_workspace_pack(
     Ok((md, pack_sha, ok, ready))
 }
 
+fn build_receipt_compare(a: &receipts::ChainedReceipt, b: &receipts::ChainedReceipt) -> (Value, String) {
+    let diff = file_history::diff_texts(
+        &format!("{} ({})", a.id, a.task),
+        &format!("{} ({})", b.id, b.task),
+        &a.summary,
+        &b.summary,
+    );
+    let files_added: Vec<String> = b
+        .files
+        .iter()
+        .filter(|f| !a.files.contains(f))
+        .cloned()
+        .collect();
+    let files_removed: Vec<String> = a
+        .files
+        .iter()
+        .filter(|f| !b.files.contains(f))
+        .cloned()
+        .collect();
+    let files_shared: Vec<String> = b
+        .files
+        .iter()
+        .filter(|f| a.files.contains(f))
+        .cloned()
+        .collect();
+    let line_delta = diff.added as isize - diff.removed as isize;
+    let file_delta = b.files.len() as isize - a.files.len() as isize;
+    let mut delta_md = format!(
+        "## Verified Run Delta (`{}` -> `{}`)\n\n- **Baseline:** `{}` — {} (`sha256:{}`)\n- **Target:** `{}` — {} (`sha256:{}`)\n- **Summary Diff:** +{} / -{} lines ({}% similarity, net {:+} lines)\n- **File Outputs:** {} added, {} removed, {} shared (net {:+} files)\n",
+        a.id,
+        b.id,
+        a.id,
+        a.task,
+        &a.sha256[..12.min(a.sha256.len())],
+        b.id,
+        b.task,
+        &b.sha256[..12.min(b.sha256.len())],
+        diff.added,
+        diff.removed,
+        diff.similarity_pct,
+        line_delta,
+        files_added.len(),
+        files_removed.len(),
+        files_shared.len(),
+        file_delta
+    );
+    if !files_added.is_empty() {
+        delta_md.push_str(&format!("- **New Deliverables:** {}\n", files_added.join(", ")));
+    }
+    if !files_removed.is_empty() {
+        delta_md.push_str(&format!("- **Removed Deliverables:** {}\n", files_removed.join(", ")));
+    }
+    if !diff.unified.trim().is_empty() {
+        delta_md.push_str(&format!("\n```diff\n{}\n```\n", diff.unified.trim_end()));
+    }
+    let payload = json!({
+        "receipt_a": a.to_json(),
+        "receipt_b": b.to_json(),
+        "added": diff.added,
+        "removed": diff.removed,
+        "unchanged": diff.unchanged,
+        "similarity_pct": diff.similarity_pct,
+        "line_delta": line_delta,
+        "file_delta": file_delta,
+        "files_added": files_added,
+        "files_removed": files_removed,
+        "files_shared": files_shared,
+        "hunks": diff.hunks.iter().map(file_history::DiffHunk::to_json).collect::<Vec<_>>(),
+        "unified": diff.unified,
+        "delta_markdown": delta_md,
+    });
+    (payload, delta_md)
+}
+
 /// Routes workspace file listing/content/upload/export, file history/restore, and audit bundles.
 fn try_route_files_and_audit(
     stream: &mut std::net::TcpStream,
@@ -2493,7 +2567,7 @@ fn try_route_files_and_audit(
                 };
                 return Some(respond_json(stream, 200, &report.to_json()));
             }
-            let (md, pack_sha, preflight_ok, ready_count) = match build_workspace_pack(
+            let (mut md, mut pack_sha, preflight_ok, ready_count) = match build_workspace_pack(
                 &runtime.cfg.workspace_dir,
                 &person.name,
                 &title,
@@ -2503,6 +2577,63 @@ fn try_route_files_and_audit(
                 Ok(res) => res,
                 Err((status, err)) => return Some(respond_json(stream, status, &json!({"error": err}))),
             };
+            let delta_a = query_param(&req.query, "delta_a").unwrap_or_default();
+            let delta_b = query_param(&req.query, "delta_b").unwrap_or_default();
+            let delta_file = query_param(&req.query, "delta_file").unwrap_or_default();
+            let mut has_delta = false;
+            if !delta_a.trim().is_empty() && !delta_b.trim().is_empty() {
+                let idx = state.search_cache.get(
+                    &person.id,
+                    &runtime.cfg.data_dir,
+                    &runtime.cfg.workspace_dir,
+                    &runtime.cfg.memory_path,
+                );
+                let Some(ra) = receipts::find_receipt(&idx.chain, delta_a.trim()) else {
+                    return Some(respond_json(stream, 404, &json!({"error": "delta receipt a not found"})));
+                };
+                let Some(rb) = receipts::find_receipt(&idx.chain, delta_b.trim()) else {
+                    return Some(respond_json(stream, 404, &json!({"error": "delta receipt b not found"})));
+                };
+                let (_, delta_md) = build_receipt_compare(ra, rb);
+                md.push_str("\n---\n\n");
+                md.push_str(&delta_md);
+                has_delta = true;
+            } else if !delta_file.trim().is_empty() {
+                let rev_a = query_param(&req.query, "rev_a").unwrap_or_default();
+                let rev_b = query_param(&req.query, "rev_b").unwrap_or_else(|| "current".to_string());
+                match file_history::diff_revisions(
+                    &runtime.cfg.data_dir,
+                    &runtime.cfg.workspace_dir,
+                    delta_file.trim(),
+                    rev_a.trim(),
+                    rev_b.trim(),
+                ) {
+                    Ok(diff) => {
+                        md.push_str(&format!(
+                            "\n---\n\n## Verified Snapshot Delta (`{}`: `{}` -> `{}`)\n\n- **Changes:** +{} / -{} lines ({}% similarity)\n- **SHA-256:** `{}` -> `{}`\n",
+                            diff.path,
+                            diff.rev_a,
+                            diff.rev_b,
+                            diff.added,
+                            diff.removed,
+                            diff.similarity_pct,
+                            &diff.sha256_a[..12.min(diff.sha256_a.len())],
+                            &diff.sha256_b[..12.min(diff.sha256_b.len())]
+                        ));
+                        if !diff.unified.trim().is_empty() {
+                            md.push_str(&format!("\n```diff\n{}\n```\n", diff.unified.trim_end()));
+                        }
+                        has_delta = true;
+                    }
+                    Err(e) => {
+                        let code = if is_history_security_error(&e) { 403 } else { 404 };
+                        return Some(respond_json(stream, code, &json!({"error": e})));
+                    }
+                }
+            }
+            if has_delta {
+                pack_sha = receipts::sha256_hex(md.as_bytes());
+            }
             let mut headers = vec![
                 ("X-Content-Type-Options", "nosniff".to_string()),
                 ("X-Ergon-Pack-SHA256", pack_sha),
@@ -2511,6 +2642,10 @@ fn try_route_files_and_audit(
                     if preflight_ok { "pass" } else { "warn" }.to_string(),
                 ),
                 ("X-Ergon-Pack-Ready-Count", ready_count.to_string()),
+                (
+                    "X-Ergon-Pack-Delta",
+                    if has_delta { "yes" } else { "none" }.to_string(),
+                ),
             ];
             if download {
                 headers.push((
@@ -2913,6 +3048,31 @@ fn try_route_knowledge_and_routines(
                 &runtime.cfg.memory_path,
             );
             respond_json(stream, 200, &idx.list_receipts(offset, limit, &q, &status))
+        }
+        ("GET", "/api/receipts/compare") => {
+            let a_id = query_param(&req.query, "a").unwrap_or_default();
+            let b_id = query_param(&req.query, "b").unwrap_or_default();
+            if a_id.trim().is_empty() || b_id.trim().is_empty() {
+                return Some(respond_json(
+                    stream,
+                    400,
+                    &json!({"error": "query parameters a and b are required"}),
+                ));
+            }
+            let idx = state.search_cache.get(
+                &person.id,
+                &runtime.cfg.data_dir,
+                &runtime.cfg.workspace_dir,
+                &runtime.cfg.memory_path,
+            );
+            let Some(ra) = receipts::find_receipt(&idx.chain, a_id.trim()) else {
+                return Some(respond_json(stream, 404, &json!({"error": "receipt a not found"})));
+            };
+            let Some(rb) = receipts::find_receipt(&idx.chain, b_id.trim()) else {
+                return Some(respond_json(stream, 404, &json!({"error": "receipt b not found"})));
+            };
+            let (payload, _) = build_receipt_compare(ra, rb);
+            respond_json(stream, 200, &payload)
         }
         ("GET", "/api/receipts/verify") => {
             let idx = state.search_cache.get(

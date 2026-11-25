@@ -738,6 +738,72 @@ fn build_hunks(ops: &[Op], left: &[String], right: &[String], context: usize) ->
     hunks
 }
 
+#[derive(Clone, Debug)]
+pub struct TextDiffStats {
+    pub added: usize,
+    pub removed: usize,
+    pub unchanged: usize,
+    pub similarity_pct: u8,
+    pub hunks: Vec<DiffHunk>,
+    pub unified: String,
+}
+
+/// Compute structured line-by-line diff metrics and unified diff for two arbitrary text slices.
+pub fn diff_texts(label_a: &str, label_b: &str, text_a: &str, text_b: &str) -> TextDiffStats {
+    let left = split_lines_normalized(text_a);
+    let right = split_lines_normalized(text_b);
+    let ops = compute_line_ops(&left, &right);
+
+    let mut added = 0usize;
+    let mut removed = 0usize;
+    let mut unchanged = 0usize;
+    for op in &ops {
+        match op {
+            Op::Eq(_, _) => unchanged += 1,
+            Op::Del(_) => removed += 1,
+            Op::Add(_) => added += 1,
+        }
+    }
+
+    let max_lines = left.len().max(right.len());
+    let similarity_pct = if max_lines == 0 {
+        100u8
+    } else {
+        ((unchanged * 100) / max_lines).min(100) as u8
+    };
+
+    let hunks = build_hunks(&ops, &left, &right, 3);
+    let mut unified = String::new();
+    if !hunks.is_empty() {
+        unified.push_str(&format!("--- {label_a}\n+++ {label_b}\n"));
+        for hunk in &hunks {
+            unified.push_str(&format!(
+                "@@ -{},{} +{},{} @@\n",
+                hunk.left_start, hunk.left_count, hunk.right_start, hunk.right_count
+            ));
+            for line in &hunk.lines {
+                let prefix = match line.kind.as_str() {
+                    "add" => '+',
+                    "remove" => '-',
+                    _ => ' ',
+                };
+                unified.push(prefix);
+                unified.push_str(&line.text);
+                unified.push('\n');
+            }
+        }
+    }
+
+    TextDiffStats {
+        added,
+        removed,
+        unchanged,
+        similarity_pct,
+        hunks,
+        unified,
+    }
+}
+
 /// Compute a structured line-by-line unified diff between two revisions of
 /// `path`. Either `rev_a` or `rev_b` may be `"current"` to compare against the
 /// live workspace file.
@@ -786,49 +852,12 @@ pub fn diff_revisions(
 
     let text_a = std::str::from_utf8(&bytes_a).unwrap_or("");
     let text_b = std::str::from_utf8(&bytes_b).unwrap_or("");
-    let left = split_lines_normalized(text_a);
-    let right = split_lines_normalized(text_b);
-    let ops = compute_line_ops(&left, &right);
-
-    let mut added = 0usize;
-    let mut removed = 0usize;
-    let mut unchanged = 0usize;
-    for op in &ops {
-        match op {
-            Op::Eq(_, _) => unchanged += 1,
-            Op::Del(_) => removed += 1,
-            Op::Add(_) => added += 1,
-        }
-    }
-
-    let max_lines = left.len().max(right.len());
-    let similarity_pct = if max_lines == 0 {
-        100u8
-    } else {
-        ((unchanged * 100) / max_lines).min(100) as u8
-    };
-
-    let hunks = build_hunks(&ops, &left, &right, 3);
-    let mut unified = String::new();
-    if !hunks.is_empty() {
-        unified.push_str(&format!("--- {rel} ({clean_a})\n+++ {rel} ({clean_b})\n"));
-        for hunk in &hunks {
-            unified.push_str(&format!(
-                "@@ -{},{} +{},{} @@\n",
-                hunk.left_start, hunk.left_count, hunk.right_start, hunk.right_count
-            ));
-            for line in &hunk.lines {
-                let prefix = match line.kind.as_str() {
-                    "add" => '+',
-                    "remove" => '-',
-                    _ => ' ',
-                };
-                unified.push(prefix);
-                unified.push_str(&line.text);
-                unified.push('\n');
-            }
-        }
-    }
+    let diff = diff_texts(
+        &format!("{rel} ({clean_a})"),
+        &format!("{rel} ({clean_b})"),
+        text_a,
+        text_b,
+    );
 
     Ok(RevisionDiff {
         path: rel,
@@ -837,12 +866,12 @@ pub fn diff_revisions(
         sha256_a,
         sha256_b,
         is_binary: false,
-        added,
-        removed,
-        unchanged,
-        similarity_pct,
-        hunks,
-        unified,
+        added: diff.added,
+        removed: diff.removed,
+        unchanged: diff.unchanged,
+        similarity_pct: diff.similarity_pct,
+        hunks: diff.hunks,
+        unified: diff.unified,
     })
 }
 

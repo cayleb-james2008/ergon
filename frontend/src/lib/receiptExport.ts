@@ -281,15 +281,58 @@ export async function preflightClientPack(files: string[]): Promise<PackPrefligh
   throw new Error(`HTTP ${r.status}`);
 }
 
-/** Downloads a single verified Client Deliverable Pack (.md) combining selected or recent workspace files. */
+export type ReceiptCompareResult = {
+  receipt_a: { id: string; task: string; summary: string; files?: string[]; sha256?: string };
+  receipt_b: { id: string; task: string; summary: string; files?: string[]; sha256?: string };
+  added: number;
+  removed: number;
+  unchanged: number;
+  similarity_pct: number;
+  line_delta: number;
+  file_delta: number;
+  files_added: string[];
+  files_removed: string[];
+  files_shared: string[];
+  unified: string;
+  delta_markdown: string;
+};
+
+/** Compares two receipts/runs side-by-side and returns line/file deltas + verified Markdown delta. */
+export async function compareReceipts(a: string, b: string): Promise<ReceiptCompareResult> {
+  const params = new URLSearchParams({ a, b });
+  const r = await fetch(`/api/receipts/compare?${params.toString()}`, { cache: "no-store" });
+  if (r.ok) {
+    return (await r.json()) as ReceiptCompareResult;
+  }
+  throw new Error(`HTTP ${r.status}`);
+}
+
+export type PackDeltaOptions = {
+  delta_a?: string;
+  delta_b?: string;
+  delta_file?: string;
+  rev_a?: string;
+  rev_b?: string;
+};
+
+/** Downloads a single verified Client Deliverable Pack (.md) combining selected/recent files + optional verified delta. */
 export async function exportClientPackDownload(
   files: string[],
-  title = "Client Deliverable Pack"
+  title = "Client Deliverable Pack",
+  delta?: PackDeltaOptions
 ): Promise<{ filename: string; sha256: string; preflight?: string }> {
   const filename = `ergon-${safeSlug(title)}.md`;
   const params = new URLSearchParams();
   if (files.length > 0) params.set("files", files.slice(0, 25).join(","));
   if (title.trim()) params.set("title", title.trim());
+  if (delta?.delta_a && delta?.delta_b) {
+    params.set("delta_a", delta.delta_a);
+    params.set("delta_b", delta.delta_b);
+  } else if (delta?.delta_file && delta?.rev_a) {
+    params.set("delta_file", delta.delta_file);
+    params.set("rev_a", delta.rev_a);
+    params.set("rev_b", delta.rev_b || "current");
+  }
   params.set("download", "1");
 
   const r = await fetch(`/api/files/pack?${params.toString()}`, { cache: "no-store" });

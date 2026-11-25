@@ -293,7 +293,7 @@ export function Chat({
               if (!busy && draft.trim()) onSend();
             }
           }}
-          placeholder="Describe a task in plain words — write a report, spreadsheet, or audit…"
+          placeholder="Describe a task in plain words: write a report, spreadsheet, or audit…"
           aria-label="Describe a task for your agent"
           className="min-h-14 resize-none rounded-xl border border-input bg-surface px-1.5 py-1 text-ui leading-6 text-ink"
         />

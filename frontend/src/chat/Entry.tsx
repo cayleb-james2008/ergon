@@ -676,11 +676,12 @@ export function WaitingEntry({
         </div>
 
         {diffOpen && (
-          <div className="max-h-56 overflow-auto rounded-sm border border-hairline bg-board/60 p-3 font-mono text-xs leading-5">
+          <div className="max-h-56 overflow-auto rounded-sm border border-hairline bg-board/60 p-3 text-xs leading-5">
             {diffLoading ? (
               <p className="text-ink-2">Loading file preview…</p>
             ) : diffLines && diffLines.length > 0 ? (
-              diffLines.slice(0, 80).map((line, i) => (
+              <div className="font-mono">
+              {diffLines.slice(0, 80).map((line, i) => (
                 <div
                   key={i}
                   className={cn(
@@ -692,9 +693,10 @@ export function WaitingEntry({
                   {line.kind === "add" ? "+ " : line.kind === "del" ? "- " : "  "}
                   {line.text}
                 </div>
-              ))
+              ))}
+              </div>
             ) : (
-              <pre className="whitespace-pre-wrap break-words text-ink-2">{filePreview || "(empty file)"}</pre>
+              <pre className="font-mono whitespace-pre-wrap break-words text-ink-2">{filePreview || "(empty file)"}</pre>
             )}
           </div>
         )}
