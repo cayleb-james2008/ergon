@@ -43,6 +43,132 @@ fn stat_pair(path: &Path) -> (u128, u64) {
     }
 }
 
+#[inline]
+pub(crate) fn write_json_str(out: &mut Vec<u8>, s: &str) {
+    out.push(b'"');
+    let bytes = s.as_bytes();
+    let mut start = 0;
+    for (i, &b) in bytes.iter().enumerate() {
+        let esc = match b {
+            b'"' => b"\\\"".as_slice(),
+            b'\\' => b"\\\\".as_slice(),
+            0x08 => b"\\b".as_slice(),
+            0x0c => b"\\f".as_slice(),
+            b'\n' => b"\\n".as_slice(),
+            b'\r' => b"\\r".as_slice(),
+            b'\t' => b"\\t".as_slice(),
+            0..=0x1f => {
+                if start < i {
+                    out.extend_from_slice(&bytes[start..i]);
+                }
+                const HEX: &[u8; 16] = b"0123456789abcdef";
+                out.extend_from_slice(&[
+                    b'\\',
+                    b'u',
+                    b'0',
+                    b'0',
+                    HEX[(b >> 4) as usize],
+                    HEX[(b & 0x0f) as usize],
+                ]);
+                start = i + 1;
+                continue;
+            }
+            _ => continue,
+        };
+        if start < i {
+            out.extend_from_slice(&bytes[start..i]);
+        }
+        out.extend_from_slice(esc);
+        start = i + 1;
+    }
+    if start < bytes.len() {
+        out.extend_from_slice(&bytes[start..]);
+    }
+    out.push(b'"');
+}
+
+#[inline]
+pub(crate) fn write_json_u64(out: &mut Vec<u8>, mut n: u64) {
+    if n == 0 {
+        out.push(b'0');
+        return;
+    }
+    let mut buf = [0u8; 20];
+    let mut idx = buf.len();
+    while n > 0 {
+        idx -= 1;
+        buf[idx] = b'0' + (n % 10) as u8;
+        n /= 10;
+    }
+    out.extend_from_slice(&buf[idx..]);
+}
+
+#[inline]
+pub(crate) fn write_json_bool(out: &mut Vec<u8>, v: bool) {
+    out.extend_from_slice(if v { b"true" } else { b"false" });
+}
+
+fn write_receipt_json(out: &mut Vec<u8>, r: &ChainedReceipt) {
+    out.extend_from_slice(br#"{"id":"#);
+    write_json_str(out, &r.id);
+    out.extend_from_slice(br#","index":"#);
+    write_json_u64(out, r.index as u64);
+    out.extend_from_slice(br#","ts":"#);
+    write_json_u64(out, r.ts);
+    out.extend_from_slice(br#","task":"#);
+    write_json_str(out, &r.task);
+    out.extend_from_slice(br#","summary":"#);
+    write_json_str(out, &r.summary);
+    out.extend_from_slice(br#","files":["#);
+    for (i, f) in r.files.iter().enumerate() {
+        if i > 0 {
+            out.push(b',');
+        }
+        write_json_str(out, f);
+    }
+    out.extend_from_slice(br#"],"thread_id":"#);
+    write_json_str(out, &r.thread_id);
+    out.extend_from_slice(br#","finished":"#);
+    write_json_bool(out, r.finished);
+    out.extend_from_slice(br#","answered":"#);
+    write_json_bool(out, r.answered);
+    out.extend_from_slice(br#","prev_hash":"#);
+    write_json_str(out, &r.prev_hash);
+    out.extend_from_slice(br#","sha256":"#);
+    write_json_str(out, &r.sha256);
+    out.push(b'}');
+}
+
+fn write_file_summary_json(out: &mut Vec<u8>, f: &IndexedFile) {
+    out.extend_from_slice(br#"{"path":"#);
+    write_json_str(out, &f.path);
+    out.extend_from_slice(br#","name":"#);
+    write_json_str(out, &f.name);
+    out.extend_from_slice(br#","size":"#);
+    write_json_u64(out, f.size);
+    out.extend_from_slice(br#","mtime_ms":"#);
+    write_json_u64(out, f.mtime_ms);
+    out.extend_from_slice(br#","ext":"#);
+    write_json_str(out, &f.ext);
+    out.push(b'}');
+}
+
+fn write_file_hit_json(out: &mut Vec<u8>, f: &IndexedFile) {
+    out.extend_from_slice(br#"{"path":"#);
+    write_json_str(out, &f.path);
+    out.extend_from_slice(br#","name":"#);
+    write_json_str(out, &f.name);
+    out.extend_from_slice(br#","size":"#);
+    write_json_u64(out, f.size);
+    out.extend_from_slice(br#","mtime_ms":"#);
+    write_json_u64(out, f.mtime_ms);
+    out.extend_from_slice(br#","ext":"#);
+    write_json_str(out, &f.ext);
+    out.extend_from_slice(br#","preview":"#);
+    write_json_str(out, &f.preview);
+    out.push(b'}');
+}
+
 fn compute_fingerprint(data_dir: &Path, workspace_dir: &Path, memory_path: &Path) -> Fingerprint {
     let (work_mtime, work_len) = stat_pair(&records::work_path(data_dir));
     let (receipts_mtime, receipts_len) = stat_pair(&data_dir.join("receipts.json"));
@@ -102,6 +228,7 @@ pub struct PersonIndex {
 }
 
 /// Zero-allocation case-insensitive substring check (`needle` must already be lowercase).
+#[inline]
 fn contains_icase(haystack: &str, needle_lower: &str) -> bool {
     if needle_lower.is_empty() {
         return true;
@@ -119,6 +246,7 @@ fn contains_icase(haystack: &str, needle_lower: &str) -> bool {
     haystack.to_lowercase().contains(needle_lower)
 }
 
+#[inline]
 fn receipt_contains_icase(r: &ChainedReceipt, needle_lower: &str) -> bool {
     contains_icase(&r.id, needle_lower)
         || contains_icase(&r.task, needle_lower)
@@ -660,6 +788,348 @@ impl PersonIndex {
         };
         (total, items)
     }
+
+    /// Zero-DOM streaming writer equivalent to `list_files` + `/api/files` wrapper.
+    pub fn write_files_json(
+        &self,
+        out: &mut Vec<u8>,
+        person_id: &str,
+        offset: usize,
+        limit: Option<usize>,
+        q: &str,
+    ) {
+        let q_trim = q.trim();
+        out.extend_from_slice(br#"{"person_id":"#);
+        write_json_str(out, person_id);
+        if q_trim.is_empty() {
+            let total = self.files.len();
+            out.extend_from_slice(br#","total":"#);
+            write_json_u64(out, total as u64);
+            out.extend_from_slice(br#","files":["#);
+            let iter = self.files.iter().skip(offset);
+            match limit {
+                Some(l) => {
+                    for (i, f) in iter.take(l.clamp(1, 1000)).enumerate() {
+                        if i > 0 {
+                            out.push(b',');
+                        }
+                        write_file_summary_json(out, f);
+                    }
+                }
+                None => {
+                    for (i, f) in iter.enumerate() {
+                        if i > 0 {
+                            out.push(b',');
+                        }
+                        write_file_summary_json(out, f);
+                    }
+                }
+            }
+            out.extend_from_slice(b"]}");
+            return;
+        }
+        let q_low = q_trim.to_lowercase();
+        let tokens = tokenize_query(&q_low);
+        let candidates = narrow_candidates(&self.file_tokens, &q_low, &tokens, true);
+        let filtered: Vec<&IndexedFile> = match candidates {
+            Some(ids) => ids
+                .into_iter()
+                .map(|id| &self.files[id as usize])
+                .filter(|f| f.path.to_lowercase().contains(&q_low) || f.snippet_lower.contains(&q_low))
+                .collect(),
+            None => self
+                .files
+                .iter()
+                .filter(|f| f.path.to_lowercase().contains(&q_low) || f.snippet_lower.contains(&q_low))
+                .collect(),
+        };
+        let total = filtered.len();
+        out.extend_from_slice(br#","total":"#);
+        write_json_u64(out, total as u64);
+        out.extend_from_slice(br#","files":["#);
+        let iter = filtered.into_iter().skip(offset);
+        match limit {
+            Some(l) => {
+                for (i, f) in iter.take(l.clamp(1, 1000)).enumerate() {
+                    if i > 0 {
+                        out.push(b',');
+                    }
+                    write_file_summary_json(out, f);
+                }
+            }
+            None => {
+                for (i, f) in iter.enumerate() {
+                    if i > 0 {
+                        out.push(b',');
+                    }
+                    write_file_summary_json(out, f);
+                }
+            }
+        }
+        out.extend_from_slice(b"]}");
+    }
+
+    /// Zero-DOM streaming writer equivalent to `list_receipts`.
+    pub fn write_receipts_json(
+        &self,
+        out: &mut Vec<u8>,
+        offset: usize,
+        limit: usize,
+        q: &str,
+        status: &str,
+    ) {
+        let limit = limit.clamp(1, 5000);
+        let q_trim = q.trim();
+        if q_trim.is_empty() && status != "finished" && status != "failed" {
+            let total = self.chain.len();
+            out.extend_from_slice(br#"{"receipts":["#);
+            for (i, r) in self.chain.iter().rev().skip(offset).take(limit).enumerate() {
+                if i > 0 {
+                    out.push(b',');
+                }
+                write_receipt_json(out, r);
+            }
+            out.extend_from_slice(br#"],"total":"#);
+            write_json_u64(out, total as u64);
+            out.extend_from_slice(br#","offset":"#);
+            write_json_u64(out, offset as u64);
+            out.extend_from_slice(br#","limit":"#);
+            write_json_u64(out, limit as u64);
+            out.extend_from_slice(br#","chain_valid":"#);
+            write_json_bool(out, self.chain_valid);
+            out.extend_from_slice(br#","head_hash":"#);
+            write_json_str(out, &self.head_hash);
+            out.push(b'}');
+            return;
+        }
+        let q_low = q_trim.to_lowercase();
+        let mut matched: Vec<&ChainedReceipt> = Vec::new();
+        let tokens = if q_low.is_empty() {
+            Vec::new()
+        } else {
+            tokenize_query(&q_low)
+        };
+        let candidates = if q_low.is_empty() {
+            None
+        } else {
+            narrow_candidates(&self.receipt_tokens, &q_low, &tokens, false)
+        };
+        let mut push_if_match = |i: usize| {
+            let r = &self.chain[i];
+            if status == "finished" && !r.finished {
+                return;
+            }
+            if status == "failed" && r.finished {
+                return;
+            }
+            if !q_low.is_empty() && !receipt_contains_icase(r, &q_low) {
+                return;
+            }
+            matched.push(r);
+        };
+        match candidates {
+            Some(ids) => {
+                for &id in ids.iter().rev() {
+                    push_if_match(id as usize);
+                }
+            }
+            None => {
+                for i in (0..self.chain.len()).rev() {
+                    push_if_match(i);
+                }
+            }
+        }
+        let total = matched.len();
+        out.extend_from_slice(br#"{"receipts":["#);
+        for (i, r) in matched.into_iter().skip(offset).take(limit).enumerate() {
+            if i > 0 {
+                out.push(b',');
+            }
+            write_receipt_json(out, r);
+        }
+        out.extend_from_slice(br#"],"total":"#);
+        write_json_u64(out, total as u64);
+        out.extend_from_slice(br#","offset":"#);
+        write_json_u64(out, offset as u64);
+        out.extend_from_slice(br#","limit":"#);
+        write_json_u64(out, limit as u64);
+        out.extend_from_slice(br#","chain_valid":"#);
+        write_json_bool(out, self.chain_valid);
+        out.extend_from_slice(br#","head_hash":"#);
+        write_json_str(out, &self.head_hash);
+        out.push(b'}');
+    }
+
+    /// Zero-DOM streaming writer equivalent to `search`.
+    pub fn write_search_json(&self, out: &mut Vec<u8>, query: &str, scope: &str, limit: usize) {
+        let t0 = Instant::now();
+        let q_trim = query.trim();
+        let q = q_trim.to_lowercase();
+        let limit = limit.clamp(1, 200);
+        let tokens = tokenize_query(&q);
+
+        let want_receipts = scope == "all" || scope == "receipts";
+        let want_files = scope == "all" || scope == "files";
+        let want_memory = scope == "all" || scope == "memory";
+
+        let single_exact_token = tokens.len() == 1
+            && tokens[0] == q
+            && q.bytes().all(|b| b.is_ascii_alphanumeric());
+
+        let mut receipt_hits: Vec<&ChainedReceipt> = Vec::new();
+        let mut total_receipt_hits = 0usize;
+        if want_receipts {
+            if q.is_empty() {
+                total_receipt_hits = self.chain.len();
+                for r in self.chain.iter().rev().take(limit) {
+                    receipt_hits.push(r);
+                }
+            } else {
+                let candidates = narrow_candidates(&self.receipt_tokens, &q, &tokens, false);
+                match candidates {
+                    Some(ids) if single_exact_token => {
+                        total_receipt_hits = ids.len();
+                        for &id in ids.iter().rev().take(limit) {
+                            receipt_hits.push(&self.chain[id as usize]);
+                        }
+                    }
+                    Some(ids) => {
+                        for &id in ids.iter().rev() {
+                            let idx = id as usize;
+                            if receipt_matches(&self.chain[idx], &q, &tokens) {
+                                total_receipt_hits += 1;
+                                if receipt_hits.len() < limit {
+                                    receipt_hits.push(&self.chain[idx]);
+                                }
+                            }
+                        }
+                    }
+                    None => {
+                        for r in self.chain.iter().rev() {
+                            if receipt_matches(r, &q, &tokens) {
+                                total_receipt_hits += 1;
+                                if receipt_hits.len() < limit {
+                                    receipt_hits.push(r);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        let mut file_hits: Vec<&IndexedFile> = Vec::new();
+        let mut total_file_hits = 0usize;
+        if want_files {
+            if q.is_empty() {
+                total_file_hits = self.files.len();
+                for f in self.files.iter().take(limit) {
+                    file_hits.push(f);
+                }
+            } else {
+                let candidates = narrow_candidates(&self.file_tokens, &q, &tokens, true);
+                let check_file = |idx: usize| -> bool {
+                    let hay = &self.files[idx].snippet_lower;
+                    if hay.contains(&q) {
+                        return true;
+                    }
+                    !tokens.is_empty() && tokens.iter().all(|t| hay.contains(t.as_str()))
+                };
+                let mut push_file = |idx: usize| {
+                    total_file_hits += 1;
+                    if file_hits.len() < limit {
+                        file_hits.push(&self.files[idx]);
+                    }
+                };
+                match candidates {
+                    Some(ids) if single_exact_token => {
+                        for &id in ids.iter().take(limit) {
+                            push_file(id as usize);
+                        }
+                        total_file_hits = ids.len();
+                    }
+                    Some(ids) => {
+                        for id in ids {
+                            if check_file(id as usize) {
+                                push_file(id as usize);
+                            }
+                        }
+                    }
+                    None => {
+                        for idx in 0..self.files.len() {
+                            if check_file(idx) {
+                                push_file(idx);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        let mut memory_hits: Vec<&MemoryLine> = Vec::new();
+        let mut total_memory_hits = 0usize;
+        if want_memory {
+            for m in &self.memory {
+                let matched = q.is_empty()
+                    || m.lower.contains(&q)
+                    || (!tokens.is_empty() && tokens.iter().all(|t| m.lower.contains(t.as_str())));
+                if matched {
+                    total_memory_hits += 1;
+                    if memory_hits.len() < limit {
+                        memory_hits.push(m);
+                    }
+                }
+            }
+        }
+
+        let elapsed_ms = (t0.elapsed().as_secs_f64() * 1000.0 * 100.0).round() / 100.0;
+        out.extend_from_slice(br#"{"query":"#);
+        write_json_str(out, q_trim);
+        out.extend_from_slice(br#","scope":"#);
+        write_json_str(out, scope);
+        out.extend_from_slice(br#","elapsed_ms":"#);
+        let _ = serde_json::to_writer(&mut *out, &elapsed_ms);
+        out.extend_from_slice(br#","total_hits":"#);
+        write_json_u64(out, (total_receipt_hits + total_file_hits + total_memory_hits) as u64);
+        out.extend_from_slice(br#","counts":{"receipts":"#);
+        write_json_u64(out, total_receipt_hits as u64);
+        out.extend_from_slice(br#","files":"#);
+        write_json_u64(out, total_file_hits as u64);
+        out.extend_from_slice(br#","memory":"#);
+        write_json_u64(out, total_memory_hits as u64);
+        out.extend_from_slice(br#"},"indexed":{"receipts":"#);
+        write_json_u64(out, self.chain.len() as u64);
+        out.extend_from_slice(br#","files":"#);
+        write_json_u64(out, self.files.len() as u64);
+        out.extend_from_slice(br#","memory_lines":"#);
+        write_json_u64(out, self.memory.len() as u64);
+        out.extend_from_slice(br#"},"receipts":["#);
+        for (i, r) in receipt_hits.into_iter().enumerate() {
+            if i > 0 {
+                out.push(b',');
+            }
+            write_receipt_json(out, r);
+        }
+        out.extend_from_slice(br#"],"files":["#);
+        for (i, f) in file_hits.into_iter().enumerate() {
+            if i > 0 {
+                out.push(b',');
+            }
+            write_file_hit_json(out, f);
+        }
+        out.extend_from_slice(br#"],"memory":["#);
+        for (i, m) in memory_hits.into_iter().enumerate() {
+            if i > 0 {
+                out.push(b',');
+            }
+            out.extend_from_slice(br#"{"line":"#);
+            write_json_u64(out, m.line_no as u64);
+            out.extend_from_slice(br#","text":"#);
+            write_json_str(out, &m.text);
+            out.push(b'}');
+        }
+        out.extend_from_slice(b"]}");
+    }
 }
 
 type PersonIndexSlot = Arc<RwLock<Option<Arc<PersonIndex>>>>;
@@ -705,6 +1175,7 @@ impl SearchCache {
     /// Return a fresh shared `Arc<PersonIndex>` for `person_id`. Under 30+
     /// concurrent read requests, only the read lock is acquired after initial
     /// build, delivering zero-contention sub-5ms responses.
+    #[inline]
     pub fn get(
         &self,
         person_id: &str,

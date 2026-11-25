@@ -653,8 +653,40 @@ pub fn list_run_history(
     })
 }
 
+/// Count how many scheduled cadence windows have been missed up to `now_ms` (capped at 99).
+pub fn count_missed_windows(routine: &Value, now_ms: u64) -> usize {
+    if !routine["enabled"].as_bool().unwrap_or(true) {
+        return 0;
+    }
+    let Ok(cadence) = parse_routine_cadence(routine) else {
+        return 0;
+    };
+    if !cadence.is_scheduled() {
+        return 0;
+    }
+    let Some(mut cur) = routine["last_run_ms"]
+        .as_u64()
+        .filter(|&t| t > 0)
+        .or_else(|| routine["created_ms"].as_u64().filter(|&t| t > 0))
+    else {
+        return 0;
+    };
+    let mut missed = 0usize;
+    while missed < 99 {
+        let Some(slot) = next_run_ms(&cadence, Some(cur), now_ms) else {
+            break;
+        };
+        if slot > now_ms || slot <= cur {
+            break;
+        }
+        missed += 1;
+        cur = slot;
+    }
+    missed
+}
+
 /// Enrich a routine JSON record with live scheduler fields (`next_run_ms`,
-/// `cadence_label`, `interval_secs`, `due_now`, `in_seconds`, `history_count`).
+/// `cadence_label`, `interval_secs`, `due_now`, `missed_windows`, `in_seconds`, `history_count`).
 pub fn enrich_routine_json(routine: &Value, now_ms: u64, history: &[RoutineRunRecord]) -> Value {
     let mut out = routine.clone();
     let enabled = routine["enabled"].as_bool().unwrap_or(true);
@@ -669,6 +701,7 @@ pub fn enrich_routine_json(routine: &Value, now_ms: u64, history: &[RoutineRunRe
     };
     let next = compute_routine_next_run_ms(routine, now_ms);
     let due_now = enabled && next.map(|n| n <= now_ms).unwrap_or(false);
+    let missed_windows = count_missed_windows(routine, now_ms);
     let in_seconds = next.map(|n| n.saturating_sub(now_ms) / 1_000);
 
     let rid = routine["id"].as_str().unwrap_or("");
@@ -682,11 +715,72 @@ pub fn enrich_routine_json(routine: &Value, now_ms: u64, history: &[RoutineRunRe
         obj.insert("interval_secs".to_string(), json!(interval_secs));
         obj.insert("next_run_ms".to_string(), json!(next));
         obj.insert("due_now".to_string(), json!(due_now));
+        obj.insert("missed_windows".to_string(), json!(missed_windows));
         obj.insert("in_seconds".to_string(), json!(in_seconds));
         obj.insert("history_count".to_string(), json!(matching.len()));
         if obj.get("last_receipt_id").is_none() {
             obj.insert("last_receipt_id".to_string(), json!(last_receipt_id));
         }
+    }
+    out
+}
+
+/// Enrich a routine JSON record with SHA-256 receipt chain verification status
+/// (`last_run_verified`: `"verified"` | `"drift"` | `null`, `last_run_receipt_sha256`, `last_run_receipt_id`).
+pub fn enrich_routine_with_verification(
+    routine: &Value,
+    now_ms: u64,
+    history: &[RoutineRunRecord],
+    chain: &[crate::receipts::ChainedReceipt],
+    chain_valid: bool,
+) -> Value {
+    let mut out = enrich_routine_json(routine, now_ms, history);
+    let rid = routine["id"].as_str().unwrap_or("");
+    let latest = history.iter().find(|h| h.routine_id == rid);
+    let last_status = routine["last_status"]
+        .as_str()
+        .or_else(|| latest.map(|h| h.status.as_str()));
+    let last_thread = routine["last_thread_id"]
+        .as_str()
+        .or_else(|| latest.and_then(|h| h.thread_id.as_deref()));
+    let last_rcpt_id = latest
+        .and_then(|h| h.receipt_id.as_deref())
+        .or_else(|| out["last_receipt_id"].as_str())
+        .or(last_thread);
+
+    let matched = last_rcpt_id
+        .and_then(|id| crate::receipts::find_receipt(chain, id))
+        .or_else(|| last_thread.and_then(|tid| crate::receipts::find_receipt(chain, tid)));
+
+    let run_count = routine["run_count"].as_u64().unwrap_or(0);
+    let has_run = run_count > 0 || latest.is_some() || last_status.is_some();
+
+    let (verified_label, sha_val, rcpt_id_val) = if !has_run {
+        (Value::Null, Value::Null, Value::Null)
+    } else if matches!(
+        last_status,
+        Some("error" | "failed" | "cancelled" | "no_model")
+    ) || !chain_valid
+        || matched.is_none()
+    {
+        (
+            json!("drift"),
+            matched
+                .map(|r| json!(r.sha256))
+                .unwrap_or(Value::Null),
+            matched
+                .map(|r| json!(r.id))
+                .unwrap_or(Value::Null),
+        )
+    } else {
+        let r = matched.unwrap();
+        (json!("verified"), json!(r.sha256), json!(r.id))
+    };
+
+    if let Some(obj) = out.as_object_mut() {
+        obj.insert("last_run_verified".to_string(), verified_label);
+        obj.insert("last_run_receipt_sha256".to_string(), sha_val);
+        obj.insert("last_run_receipt_id".to_string(), rcpt_id_val);
     }
     out
 }
@@ -703,6 +797,7 @@ pub fn scheduler_status_json(
     let mut paused_routines = 0usize;
     let mut manual_routines = 0usize;
     let mut due_count = 0usize;
+    let mut missed_windows_total = 0usize;
     let mut next_due_ms: Option<u64> = None;
 
     for r in routines {
@@ -717,6 +812,8 @@ pub fn scheduler_status_json(
             paused_routines += 1;
         } else {
             active_routines += 1;
+            let missed = count_missed_windows(r, now_ms);
+            missed_windows_total += missed;
             if let Some(next) = compute_routine_next_run_ms(r, now_ms) {
                 if next <= now_ms {
                     due_count += 1;
@@ -734,6 +831,7 @@ pub fn scheduler_status_json(
         "paused_routines": paused_routines,
         "manual_routines": manual_routines,
         "due_count": due_count,
+        "missed_windows_total": missed_windows_total,
         "next_due_ms": next_due_ms,
         "total_runs": history.len(),
         "last_run_ms": last_run_ms,

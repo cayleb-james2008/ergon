@@ -1156,6 +1156,8 @@ export function App() {
         onDelete={desk.deleteRoutine}
         onImportPlaybook={desk.importPlaybook}
         onPreviewPlaybook={desk.previewPlaybook}
+        onCatchupRoutine={desk.catchupRoutine}
+        onCatchupAll={desk.catchupAllRoutines}
         onRunNow={async (rt) => {
           setFace("chat");
           await desk.runRoutineNow(rt);

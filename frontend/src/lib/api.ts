@@ -22,6 +22,8 @@ export type SchedulerStatus = {
   tick_secs?: number;
   active_routines?: number;
   paused_routines?: number;
+  due_count?: number;
+  missed_windows_total?: number;
   next_due_ms?: number | null;
   last_tick_ms?: number | null;
 };
@@ -173,7 +175,11 @@ export type Routine = {
   enabled: boolean;
   last_run_ts?: number | null;
   next_run_ms?: number | null;
+  missed_windows?: number;
   last_status?: string;
+  last_run_verified?: "verified" | "drift" | null;
+  last_run_receipt_sha256?: string | null;
+  last_run_receipt_id?: string | null;
   run_count?: number;
   created_ts?: number;
   steps?: string[];
