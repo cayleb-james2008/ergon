@@ -673,3 +673,163 @@ export async function exportPlaybookDownload(
   triggerDownload(built.filename, built.json, "application/json; charset=utf-8");
   return { filename: built.filename, sha256: built.sha256 };
 }
+
+function inferPreviewStep(
+  stepText: string,
+  fallbackSkill: string | undefined,
+  isFirst: boolean
+): { skillId: string | null; mode: "read_only" | "read_and_write"; outputHint: string | null } {
+  const lower = stepText.toLowerCase();
+  const explicitSkills = [
+    "reconcile_ledger", "clean_dataset", "audit_contract", "summarize_meeting",
+    "triage_inbox", "compare_documents", "draft_brief", "extract_tables",
+    "make_spreadsheet", "write_document", "update_memory", "research",
+  ];
+  let matched: string | null = explicitSkills.find((id) => lower.includes(id)) ?? null;
+  if (!matched) {
+    if (/ledger|reconcil|expense/.test(lower)) matched = "reconcile_ledger";
+    else if (/clean|dataset|normaliz/.test(lower)) matched = "clean_dataset";
+    else if (/contract|clause/.test(lower)) matched = "audit_contract";
+    else if (/meeting|action item/.test(lower)) matched = "summarize_meeting";
+    else if (/inbox|triage|email/.test(lower)) matched = "triage_inbox";
+    else if (/compare|diff/.test(lower)) matched = "compare_documents";
+    else if (/spreadsheet|\.xlsx/.test(lower)) matched = "make_spreadsheet";
+    else if (/docx|word|memo|write/.test(lower)) matched = "write_document";
+    else if (/table|extract/.test(lower)) matched = "extract_tables";
+    else if (/brief|summary/.test(lower)) matched = "draft_brief";
+    else if (/memory/.test(lower)) matched = "update_memory";
+    else if (/research/.test(lower)) matched = "research";
+    else if (isFirst && fallbackSkill) matched = fallbackSkill;
+  }
+  const writes = /export|write|save|create|clean|\.docx|\.xlsx/.test(lower)
+    || ["clean_dataset", "reconcile_ledger", "make_spreadsheet", "write_document", "draft_brief", "update_memory"].includes(matched ?? "");
+  const outputMap: Record<string, string> = {
+    clean_dataset: "Cleaned dataset (.csv)",
+    reconcile_ledger: "Expense reconciliation report (.md)",
+    make_spreadsheet: "Typed workbook (.xlsx)",
+    write_document: "Formatted deliverable (.docx / .md)",
+    draft_brief: "Executive brief (.md)",
+    summarize_meeting: "Meeting digest & follow-up (.md)",
+    update_memory: "Standing memory rules (memory.md)",
+  };
+  let outputHint: string | null = matched ? (outputMap[matched] ?? null) : null;
+  if (matched === "audit_contract" && writes) outputHint = "Contract audit findings (.md)";
+  if (!outputHint && writes) outputHint = "Workspace deliverable artifact";
+  return { skillId: matched, mode: writes ? "read_and_write" : "read_only", outputHint };
+}
+
+/** Builds a deterministic zero-side-effect Dry-Run Preview matching POST /api/playbooks/:id/preview. */
+export function buildDeterministicPlaybookPreview(
+  routine: {
+    id: string;
+    name: string;
+    prompt: string;
+    schedule: string;
+    skill_id?: string;
+    steps?: string[];
+    expected_inputs?: string[];
+    pack_deliverables?: boolean;
+  },
+  workspacePaths: string[],
+  revisionCountFor: (path: string) => number = () => 0,
+  totalTrackedFiles = 0
+): import("@/lib/api").PlaybookPreviewResult {
+  const exts = [".csv", ".tsv", ".md", ".markdown", ".txt", ".json", ".xlsx", ".docx", ".pdf", ".pptx", ".yaml", ".log"];
+  const rawSteps = routine.steps && routine.steps.length > 0
+    ? routine.steps.map((s) => s.trim()).filter(Boolean)
+    : [routine.prompt.trim()].filter(Boolean);
+  const expectedInputs = (routine.expected_inputs ?? []).map((s) => s.trim()).filter(Boolean);
+  const packDeliverables = Boolean(routine.pack_deliverables);
+  const impactMap = new Map<string, { role: string; step: string }>();
+  const pushImpact = (path: string, role: string, step: string) => {
+    const cur = impactMap.get(path);
+    if (!cur) impactMap.set(path, { role, step });
+    else if (role === "read_and_update" || role === "deliverable_output") cur.role = role;
+  };
+
+  const stepsOut = rawSteps.map((stepText, idx) => {
+    const { skillId, mode, outputHint } = inferPreviewStep(stepText, routine.skill_id, idx === 0);
+    const refs: string[] = [];
+    const addRef = (cand: string) => {
+      const clean = cand
+        .replace(/^["'`(\[{]+|["'`)\]},;.]+$/g, "")
+        .replace(/:L\d+(?:-\d+)?$/i, "");
+      if (!clean || clean.startsWith("/") || clean.includes("..")) return;
+      if (!refs.includes(clean)) refs.push(clean);
+    };
+    if (idx === 0) expectedInputs.forEach(addRef);
+    for (const tok of stepText.split(/\s+/)) {
+      const low = tok.toLowerCase();
+      if (exts.some((ext) => low.endsWith(ext) || low.includes(`${ext}:l`) || low.includes(`${ext},`))) {
+        addRef(tok);
+      }
+    }
+    const lowStep = stepText.toLowerCase();
+    for (const wsPath of workspacePaths) {
+      const base = wsPath.split("/").pop() || wsPath;
+      if ((lowStep.includes(wsPath.toLowerCase()) || lowStep.includes(base.toLowerCase())) && !refs.includes(wsPath)) {
+        refs.push(wsPath);
+      }
+    }
+    const predictedOutputs: string[] = [];
+    if (outputHint) predictedOutputs.push(outputHint);
+    if (packDeliverables && idx + 1 === rawSteps.length) predictedOutputs.push("Playbook Deliverable Pack.md");
+    for (const r of refs) {
+      const role = mode === "read_and_write" && r.endsWith(".csv") && skillId === "clean_dataset" ? "read_and_update" : "input";
+      pushImpact(r, role, `Step ${idx + 1}`);
+    }
+    return {
+      step: idx + 1,
+      prompt: stepText,
+      skill_id: skillId,
+      mode,
+      referenced_paths: refs,
+      predicted_outputs: predictedOutputs,
+    };
+  });
+
+  if (packDeliverables) {
+    pushImpact("Playbook Deliverable Pack.md", "deliverable_pack", "Final step");
+  }
+  if (impactMap.size === 0) {
+    workspacePaths.slice(0, 3).forEach((ws) => pushImpact(ws, "workspace_context", "Context"));
+  }
+
+  let existingSnapshots = totalTrackedFiles;
+  const fileImpacts = Array.from(impactMap.entries()).map(([path, info]) => {
+    const exists = workspacePaths.includes(path);
+    const revs = revisionCountFor(path);
+    if (revs > existingSnapshots) existingSnapshots = revs;
+    return {
+      path,
+      role: info.role,
+      step: info.step,
+      exists_in_workspace: exists,
+      history_revisions: revs,
+      reversible: true,
+    };
+  });
+
+  return {
+    routine_id: routine.id,
+    name: routine.name,
+    schedule: routine.schedule,
+    dry_run: true,
+    zero_side_effects: true,
+    step_count: stepsOut.length,
+    steps: stepsOut,
+    expected_inputs: expectedInputs,
+    matched_workspace_files: workspacePaths.filter((p) => impactMap.has(p)),
+    file_impacts: fileImpacts,
+    pack_deliverables: packDeliverables,
+    rollback: {
+      safe: true,
+      badge: "Reversible via .history/",
+      history_snapshots_enabled: true,
+      existing_snapshots: existingSnapshots,
+      reversible_paths: fileImpacts.length,
+      note: "Dry-run preview inspects your workspace read-only. Every existing file modified during execution is snapshotted into .history/ first for 1-click restore.",
+    },
+    generated_ms: Date.now(),
+  };
+}

@@ -4,6 +4,14 @@ Each release is tagged `vMAJOR.MINOR.PATCH` and published on GitHub Releases wit
 binaries and a `SHA256SUMS` file. The running app shows its version and can update
 itself from the newest release (see README, "Versions and updates").
 
+## 0.21.0 - 2026-11-25
+
+- **Playbook Dry-Run Preview & Reversible File-Impact Summary (`src/routines.rs`, `src/server.rs`, `frontend/src/lib/{api,receiptExport,webEngine}.ts`, `frontend/src/state.ts`, `frontend/src/shell/RoutinesPanel.tsx`):**
+  - Added read-only deterministic `POST /api/playbooks/:id/preview` and `POST /api/routines/:id/preview` expanding ordered playbook steps, matched built-in workflows, predicted workspace file impacts (with `.history/` revision counts), and the `Reversible via .history/` safety badge without touching disk or calling an LLM.
+  - Added 1-click **Preview** + inline **Dry-run preview** drawer (`#playbook-preview-drawer`, `#playbook-rollback-badge`) inside Recurring Routines with full `webEngine.ts` standalone parity.
+- **Visual Polish & Verified Benchmarks (`docs/screenshots/{hero,run-diff,worktree-lanes}-{light,dark}.png`, `README.md`):**
+  - Refreshed all 6 Light/Dark hero & gallery screenshots against a configured local gateway fixture so the status badge shows green **`Ready`** (zero unconfigured banner).
+
 ## 0.20.0 - 2026-11-25
 
 - **1-Click Verified Playbook Pack Export & Import (`.ergon-playbook.json` + SHA-256 Checksum) (`src/routines.rs`, `src/server.rs`, `frontend/src/lib/{api,receiptExport,webEngine}.ts`, `frontend/src/state.ts`, `frontend/src/shell/RoutinesPanel.tsx`):**
