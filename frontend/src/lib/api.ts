@@ -175,6 +175,9 @@ export type Routine = {
   last_status?: string;
   run_count?: number;
   created_ts?: number;
+  steps?: string[];
+  expected_inputs?: string[];
+  pack_deliverables?: boolean;
   recent_runs?: RoutineRunRecord[];
 };
 export type SearchHit = {

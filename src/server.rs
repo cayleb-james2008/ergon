@@ -1,5 +1,6 @@
 //! Embedded HTTP server, request parser, security gates, and API route handlers.
 
+use crate::tools::{atomic_write_bytes, string_list};
 use crate::*;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpListener;
@@ -300,6 +301,19 @@ fn execute_routine_run(
 
     let name = routine["name"].as_str().unwrap_or("Routine").to_string();
     let prompt = routine["prompt"].as_str().unwrap_or("").to_string();
+    let pack_deliverables = routine["pack_deliverables"].as_bool().unwrap_or(false);
+    let mut steps: Vec<String> = routine["steps"]
+        .as_array()
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(|s| s.trim().to_string()))
+                .filter(|s| !s.is_empty())
+                .collect()
+        })
+        .unwrap_or_default();
+    if steps.is_empty() && !prompt.trim().is_empty() {
+        steps.push(prompt.clone());
+    }
     let started_ms = records::now_millis();
     let cfg = effective_cfg(state, runtime);
     let ctx = ToolCtx {
@@ -348,16 +362,93 @@ fn execute_routine_run(
         });
     }
 
-    let outcome = run_agent_live(
-        &cfg,
-        &ctx,
-        &runtime.store,
-        &thread_id,
-        &prompt,
-        &[],
-        Some((&state.live_runs, &state.events, &person.id)),
-    );
+    let total_steps = steps.len();
+    let mut history: Vec<Value> = Vec::new();
+    let mut outcome: Result<AgentOutcome, String> = Err("routine has no steps".to_string());
+    let mut combined_summaries: Vec<String> = Vec::new();
+    for (idx, step_prompt) in steps.iter().enumerate() {
+        let task_msg = if total_steps > 1 {
+            format!(
+                "[Playbook step {}/{total_steps} for \"{name}\"] {step_prompt}",
+                idx + 1
+            )
+        } else {
+            step_prompt.clone()
+        };
+        if idx > 0 {
+            runtime.store.lock().unwrap().push(&thread_id, "user", &task_msg);
+        }
+        let step_res = run_agent_live(
+            &cfg,
+            &ctx,
+            &runtime.store,
+            &thread_id,
+            &task_msg,
+            &history,
+            Some((&state.live_runs, &state.events, &person.id)),
+        );
+        match step_res {
+            Ok(out) => {
+                history.push(json!({"role": "user", "content": task_msg}));
+                history.push(json!({"role": "assistant", "content": out.summary}));
+                combined_summaries.push(out.summary.clone());
+                outcome = Ok(out);
+            }
+            Err(e) => {
+                outcome = Err(e);
+                break;
+            }
+        }
+    }
+    if total_steps > 1 {
+        if let Ok(ref mut out) = outcome {
+            out.summary = combined_summaries.join("\n\n");
+        }
+    }
     state.search_cache.invalidate(&person.id);
+    if outcome.is_ok() && pack_deliverables {
+        let idx = state.search_cache.get(
+            &person.id,
+            &runtime.cfg.data_dir,
+            &runtime.cfg.workspace_dir,
+            &runtime.cfg.memory_path,
+        );
+        let (_, items) = idx.list_files(0, Some(15), "");
+        let pack_files: Vec<String> = items
+            .iter()
+            .filter_map(|item| item["path"].as_str().map(|s| s.to_string()))
+            .filter(|p| p != "Playbook Deliverable Pack.md")
+            .collect();
+        if let Ok((md, pack_sha)) = build_workspace_pack(
+            &runtime.cfg.workspace_dir,
+            &person.name,
+            &format!("{name} — Deliverable Pack"),
+            &pack_files,
+            false,
+        ) {
+            if let Ok(full) = sandbox_path(&runtime.cfg.workspace_dir, "Playbook Deliverable Pack.md") {
+                if !full.symlink_metadata().is_ok_and(|m| m.file_type().is_symlink()) {
+                    let _ = file_history::record_revision(
+                        &runtime.cfg.data_dir,
+                        &runtime.cfg.workspace_dir,
+                        "Playbook Deliverable Pack.md",
+                        "playbook",
+                    );
+                    if atomic_write_bytes(&full, md.as_bytes()).is_ok() {
+                        state.search_cache.invalidate(&person.id);
+                        runtime.store.lock().unwrap().push(
+                            &thread_id,
+                            "step",
+                            &format!(
+                                "wrote Playbook Deliverable Pack.md ({} bytes, sha256:{pack_sha})",
+                                md.len()
+                            ),
+                        );
+                    }
+                }
+            }
+        }
+    }
     let finished_ms = records::now_millis();
     let receipt_id = latest_receipt_id_for_thread(&runtime.cfg.data_dir, &thread_id);
 
@@ -1907,6 +1998,90 @@ fn try_route_system(
     })
 }
 
+/// Builds a Markdown Client Deliverable Pack across workspace files with SHA-256 digests and sandbox enforcement.
+fn build_workspace_pack(
+    workspace_dir: &std::path::Path,
+    person_name: &str,
+    title: &str,
+    requested: &[String],
+    explicit: bool,
+) -> Result<(String, String), (u16, String)> {
+    const MAX_PACK_BYTES: usize = 2 * 1024 * 1024;
+    const MAX_FILE_BYTES: usize = 512 * 1024;
+    let mut sections: Vec<(String, String, String)> = Vec::new();
+    let mut total_bytes = 0usize;
+    for rel in requested {
+        let full = match sandbox_path(workspace_dir, rel) {
+            Ok(p) => p,
+            Err(e) => {
+                if explicit {
+                    return Err((403, e));
+                }
+                continue;
+            }
+        };
+        if full.symlink_metadata().is_ok_and(|md| md.file_type().is_symlink()) {
+            if explicit {
+                return Err((403, "cannot pack symlinked path".to_string()));
+            }
+            continue;
+        }
+        let Ok(bytes) = std::fs::read(&full) else {
+            continue;
+        };
+        let digest = receipts::sha256_hex(&bytes);
+        let ext = full
+            .extension()
+            .and_then(|s| s.to_str())
+            .unwrap_or("")
+            .to_ascii_lowercase();
+        let body = if bytes.len() > MAX_FILE_BYTES {
+            format!(
+                "_Skipped inline preview ({} bytes exceeds 512 KB cap; SHA-256 `{}`)._",
+                bytes.len(),
+                digest
+            )
+        } else if let Ok(text) = std::str::from_utf8(&bytes) {
+            if ext == "md" || ext == "markdown" || ext == "txt" {
+                text.trim_end().to_string()
+            } else {
+                let fence = match ext.as_str() {
+                    "csv" | "tsv" => "csv",
+                    "json" => "json",
+                    _ => "text",
+                };
+                format!("```{fence}\n{}\n```", text.trim_end())
+            }
+        } else {
+            format!(
+                "_Binary deliverable ({} bytes, `.{ext}`; download original file from workspace; SHA-256 `{}`)._",
+                bytes.len(),
+                digest
+            )
+        };
+        if total_bytes + body.len() > MAX_PACK_BYTES {
+            break;
+        }
+        total_bytes += body.len();
+        sections.push((rel.clone(), digest, body));
+    }
+    if explicit && sections.is_empty() {
+        return Err((404, "no matching workspace files found".to_string()));
+    }
+    let mut md = format!(
+        "# {title}\n\n- Prepared for: **{person_name}**\n- Files included: {}\n\n## Included Deliverables\n\n",
+        sections.len()
+    );
+    for (rel, digest, _) in &sections {
+        md.push_str(&format!("- `{rel}` (`sha256:{digest}`)\n"));
+    }
+    for (rel, digest, body) in &sections {
+        md.push_str(&format!("\n---\n\n## `{rel}`\n\n_SHA-256: `{digest}`_\n\n{body}\n"));
+    }
+    let pack_sha = receipts::sha256_hex(md.as_bytes());
+    Ok((md, pack_sha))
+}
+
 /// Routes workspace file listing/content/upload/export, file history/restore, and audit bundles.
 fn try_route_files_and_audit(
     stream: &mut std::net::TcpStream,
@@ -2081,8 +2256,6 @@ fn try_route_files_and_audit(
             }
         }
         ("GET", "/api/files/pack") => {
-            const MAX_PACK_BYTES: usize = 2 * 1024 * 1024;
-            const MAX_FILE_BYTES: usize = 512 * 1024;
             let raw_files = query_param(&req.query, "files").unwrap_or_default();
             let title = query_param(&req.query, "title")
                 .map(|s| s.trim().to_string())
@@ -2112,82 +2285,16 @@ fn try_route_files_and_audit(
                     }
                 }
             }
-            let mut sections: Vec<(String, String, String)> = Vec::new();
-            let mut total_bytes = 0usize;
-            for rel in requested {
-                let full = match sandbox_path(&runtime.cfg.workspace_dir, &rel) {
-                    Ok(p) => p,
-                    Err(e) => {
-                        if explicit {
-                            return Some(respond_json(stream, 403, &json!({"error": e})));
-                        }
-                        continue;
-                    }
-                };
-                if full.symlink_metadata().is_ok_and(|md| md.file_type().is_symlink()) {
-                    if explicit {
-                        return Some(respond_json(
-                            stream,
-                            403,
-                            &json!({"error": "cannot pack symlinked path"}),
-                        ));
-                    }
-                    continue;
-                }
-                let Ok(bytes) = std::fs::read(&full) else {
-                    continue;
-                };
-                let digest = receipts::sha256_hex(&bytes);
-                let ext = full
-                    .extension()
-                    .and_then(|s| s.to_str())
-                    .unwrap_or("")
-                    .to_ascii_lowercase();
-                let body = if bytes.len() > MAX_FILE_BYTES {
-                    format!(
-                        "_Skipped inline preview ({} bytes exceeds 512 KB cap; SHA-256 `{}`)._",
-                        bytes.len(),
-                        digest
-                    )
-                } else if let Ok(text) = std::str::from_utf8(&bytes) {
-                    if ext == "md" || ext == "markdown" || ext == "txt" {
-                        text.trim_end().to_string()
-                    } else {
-                        let fence = match ext.as_str() {
-                            "csv" | "tsv" => "csv",
-                            "json" => "json",
-                            _ => "text",
-                        };
-                        format!("```{fence}\n{}\n```", text.trim_end())
-                    }
-                } else {
-                    format!(
-                        "_Binary deliverable ({} bytes, `.{ext}`; download original file from workspace; SHA-256 `{}`)._",
-                        bytes.len(),
-                        digest
-                    )
-                };
-                if total_bytes + body.len() > MAX_PACK_BYTES {
-                    break;
-                }
-                total_bytes += body.len();
-                sections.push((rel, digest, body));
-            }
-            if explicit && sections.is_empty() {
-                return Some(respond_json(
-                    stream,
-                    404,
-                    &json!({"error": "no matching workspace files found"}),
-                ));
-            }
-            let mut md = format!("# {title}\n\n- Prepared for: **{}**\n- Files included: {}\n\n## Included Deliverables\n\n", person.name, sections.len());
-            for (rel, digest, _) in &sections {
-                md.push_str(&format!("- `{rel}` (`sha256:{digest}`)\n"));
-            }
-            for (rel, digest, body) in &sections {
-                md.push_str(&format!("\n---\n\n## `{rel}`\n\n_SHA-256: `{digest}`_\n\n{body}\n"));
-            }
-            let pack_sha = receipts::sha256_hex(md.as_bytes());
+            let (md, pack_sha) = match build_workspace_pack(
+                &runtime.cfg.workspace_dir,
+                &person.name,
+                &title,
+                &requested,
+                explicit,
+            ) {
+                Ok(res) => res,
+                Err((status, err)) => return Some(respond_json(stream, status, &json!({"error": err}))),
+            };
             let mut headers = vec![
                 ("X-Content-Type-Options", "nosniff".to_string()),
                 ("X-Ergon-Pack-SHA256", pack_sha),
@@ -2710,7 +2817,18 @@ fn try_route_knowledge_and_routines(
             } else {
                 None
             };
-            match routines::create_routine_with_options(
+            let playbook = routines::PlaybookOptions {
+                steps: parsed["steps"]
+                    .as_array()
+                    .map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect())
+                    .unwrap_or_default(),
+                expected_inputs: parsed["expected_inputs"]
+                    .as_array()
+                    .map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect())
+                    .unwrap_or_default(),
+                pack_deliverables: parsed["pack_deliverables"].as_bool().unwrap_or(false),
+            };
+            match routines::create_playbook_routine(
                 &runtime.cfg.data_dir,
                 name,
                 prompt,
@@ -2718,6 +2836,7 @@ fn try_route_knowledge_and_routines(
                 interval_secs,
                 skill_id,
                 enabled,
+                &playbook,
             ) {
                 Ok(routine) => {
                     let now_ms = records::now_millis();

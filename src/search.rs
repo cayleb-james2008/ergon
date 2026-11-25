@@ -102,26 +102,67 @@ pub struct PersonIndex {
     pub memory: Vec<MemoryLine>,
 }
 
-fn tokenize(s: &str) -> HashSet<String> {
-    let mut set = HashSet::new();
-    let mut cur = String::new();
+/// Collect unique lowercase >=2-char alphanumeric tokens from `s` into `set`,
+/// reusing `set` and `cur` across calls to avoid per-item allocations.
+fn tokenize_into(s: &str, set: &mut HashSet<String>, cur: &mut String) {
+    set.clear();
+    cur.clear();
     for ch in s.chars() {
         if ch.is_alphanumeric() {
-            for lc in ch.to_lowercase() {
-                cur.push(lc);
+            if ch.is_ascii() {
+                cur.push(ch.to_ascii_lowercase());
+            } else {
+                for lc in ch.to_lowercase() {
+                    cur.push(lc);
+                }
             }
         } else if !cur.is_empty() {
             if cur.len() >= 2 {
-                set.insert(std::mem::take(&mut cur));
+                set.insert(std::mem::take(cur));
             } else {
                 cur.clear();
             }
         }
     }
     if cur.len() >= 2 {
-        set.insert(cur);
+        set.insert(std::mem::take(cur));
+    } else {
+        cur.clear();
     }
-    set
+}
+
+fn tokenize_query(s: &str) -> Vec<String> {
+    let mut set = HashSet::new();
+    let mut cur = String::new();
+    tokenize_into(s, &mut set, &mut cur);
+    set.into_iter().collect()
+}
+
+/// Narrow sorted posting lists in `index` for `tokens` using binary-search
+/// intersection (zero temporary `HashSet` allocations). Returns `None` when
+/// fallback substring scanning is required.
+fn narrow_candidates(
+    index: &HashMap<String, Vec<u32>>,
+    query: &str,
+    tokens: &[String],
+    disallow_slash: bool,
+) -> Option<Vec<u32>> {
+    if tokens.is_empty() || query.contains('.') || query.contains('-') || (disallow_slash && query.contains('/')) {
+        return None;
+    }
+    let mut lists: Vec<&Vec<u32>> = Vec::with_capacity(tokens.len());
+    for tok in tokens {
+        lists.push(index.get(tok)?);
+    }
+    if lists.is_empty() {
+        return None;
+    }
+    lists.sort_by_key(|l| l.len());
+    let mut acc: Vec<u32> = lists[0].clone();
+    for other in &lists[1..] {
+        acc.retain(|id| other.binary_search(id).is_ok());
+    }
+    Some(acc)
 }
 
 fn collect_files(root: &Path, dir: &Path, out: &mut Vec<IndexedFile>) {
@@ -234,6 +275,8 @@ impl PersonIndex {
 
         let mut receipt_lower = Vec::with_capacity(chain.len());
         let mut receipt_tokens: HashMap<String, Vec<u32>> = HashMap::new();
+        let mut tok_buf = HashSet::new();
+        let mut cur_buf = String::new();
         for (i, r) in chain.iter().enumerate() {
             let combined = format!(
                 "{} {} {} {} {}",
@@ -244,7 +287,8 @@ impl PersonIndex {
                 r.files.join(" ")
             )
             .to_lowercase();
-            for tok in tokenize(&combined) {
+            tokenize_into(&combined, &mut tok_buf, &mut cur_buf);
+            for tok in tok_buf.drain() {
                 receipt_tokens.entry(tok).or_default().push(i as u32);
             }
             receipt_lower.push(combined);
@@ -255,7 +299,8 @@ impl PersonIndex {
         files.sort_by(|a, b| b.mtime_ms.cmp(&a.mtime_ms).then_with(|| a.path.cmp(&b.path)));
         let mut file_tokens: HashMap<String, Vec<u32>> = HashMap::new();
         for (i, f) in files.iter().enumerate() {
-            for tok in tokenize(&f.snippet_lower) {
+            tokenize_into(&f.snippet_lower, &mut tok_buf, &mut cur_buf);
+            for tok in tok_buf.drain() {
                 file_tokens.entry(tok).or_default().push(i as u32);
             }
         }
@@ -292,7 +337,7 @@ impl PersonIndex {
         let t0 = Instant::now();
         let q = query.trim().to_lowercase();
         let limit = limit.clamp(1, 200);
-        let tokens: Vec<String> = tokenize(&q).into_iter().collect();
+        let tokens = tokenize_query(&q);
 
         let want_receipts = scope == "all" || scope == "receipts";
         let want_files = scope == "all" || scope == "files";
@@ -307,29 +352,7 @@ impl PersonIndex {
                     receipt_hits.push(r.to_json());
                 }
             } else {
-                // Fast inverted-index candidate narrowing when every query word >= 2 chars is indexed.
-                let mut candidates: Option<Vec<u32>> = None;
-                if !tokens.is_empty() && !q.contains('.') && !q.contains('-') {
-                    let mut lists: Vec<&Vec<u32>> = Vec::with_capacity(tokens.len());
-                    let mut all_present = true;
-                    for tok in &tokens {
-                        if let Some(list) = self.receipt_tokens.get(tok) {
-                            lists.push(list);
-                        } else {
-                            all_present = false;
-                            break;
-                        }
-                    }
-                    if all_present && !lists.is_empty() {
-                        lists.sort_by_key(|l| l.len());
-                        let mut acc: Vec<u32> = lists[0].clone();
-                        for other in &lists[1..] {
-                            let set: HashSet<u32> = other.iter().copied().collect();
-                            acc.retain(|id| set.contains(id));
-                        }
-                        candidates = Some(acc);
-                    }
-                }
+                let candidates = narrow_candidates(&self.receipt_tokens, &q, &tokens, false);
 
                 let check_match = |idx: usize| -> bool {
                     let hay = &self.receipt_lower[idx];
@@ -381,28 +404,7 @@ impl PersonIndex {
                     }));
                 }
             } else {
-                let mut candidates: Option<Vec<u32>> = None;
-                if !tokens.is_empty() && !q.contains('.') && !q.contains('-') && !q.contains('/') {
-                    let mut lists: Vec<&Vec<u32>> = Vec::with_capacity(tokens.len());
-                    let mut all_present = true;
-                    for tok in &tokens {
-                        if let Some(list) = self.file_tokens.get(tok) {
-                            lists.push(list);
-                        } else {
-                            all_present = false;
-                            break;
-                        }
-                    }
-                    if all_present && !lists.is_empty() {
-                        lists.sort_by_key(|l| l.len());
-                        let mut acc: Vec<u32> = lists[0].clone();
-                        for other in &lists[1..] {
-                            let set: HashSet<u32> = other.iter().copied().collect();
-                            acc.retain(|id| set.contains(id));
-                        }
-                        candidates = Some(acc);
-                    }
-                }
+                let candidates = narrow_candidates(&self.file_tokens, &q, &tokens, true);
 
                 let check_file = |idx: usize| -> bool {
                     let hay = &self.files[idx].snippet_lower;
@@ -516,17 +518,40 @@ impl PersonIndex {
             });
         }
         let mut matched: Vec<&ChainedReceipt> = Vec::new();
-        for (i, r) in self.chain.iter().enumerate().rev() {
+        let tokens = if q_low.is_empty() {
+            Vec::new()
+        } else {
+            tokenize_query(&q_low)
+        };
+        let candidates = if q_low.is_empty() {
+            None
+        } else {
+            narrow_candidates(&self.receipt_tokens, &q_low, &tokens, false)
+        };
+        let mut push_if_match = |i: usize| {
+            let r = &self.chain[i];
             if status == "finished" && !r.finished {
-                continue;
+                return;
             }
             if status == "failed" && r.finished {
-                continue;
+                return;
             }
             if !q_low.is_empty() && !self.receipt_lower[i].contains(&q_low) {
-                continue;
+                return;
             }
             matched.push(r);
+        };
+        match candidates {
+            Some(ids) => {
+                for &id in ids.iter().rev() {
+                    push_if_match(id as usize);
+                }
+            }
+            None => {
+                for i in (0..self.chain.len()).rev() {
+                    push_if_match(i);
+                }
+            }
         }
         let total = matched.len();
         let page: Vec<Value> = matched
@@ -556,11 +581,20 @@ impl PersonIndex {
             };
             return (total, items);
         }
-        let filtered: Vec<&IndexedFile> = self
-            .files
-            .iter()
-            .filter(|f| f.path.to_lowercase().contains(&q_low) || f.snippet_lower.contains(&q_low))
-            .collect();
+        let tokens = tokenize_query(&q_low);
+        let candidates = narrow_candidates(&self.file_tokens, &q_low, &tokens, true);
+        let filtered: Vec<&IndexedFile> = match candidates {
+            Some(ids) => ids
+                .into_iter()
+                .map(|id| &self.files[id as usize])
+                .filter(|f| f.path.to_lowercase().contains(&q_low) || f.snippet_lower.contains(&q_low))
+                .collect(),
+            None => self
+                .files
+                .iter()
+                .filter(|f| f.path.to_lowercase().contains(&q_low) || f.snippet_lower.contains(&q_low))
+                .collect(),
+        };
         let total = filtered.len();
         let iter = filtered.into_iter().skip(offset);
         let items: Vec<Value> = match limit {
@@ -625,5 +659,70 @@ impl SearchCache {
         let built = Arc::new(PersonIndex::build(data_dir, workspace_dir, memory_path, fp));
         *w = Some(built.clone());
         built
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn inverted_index_handles_10k_receipts_and_500_files_sub_5ms() {
+        let dir = std::env::temp_dir().join(format!(
+            "ergon-search-10k-{}",
+            std::time::SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let ws = dir.join("workspace");
+        std::fs::create_dir_all(&ws).unwrap();
+        let mem = dir.join("memory.md");
+        std::fs::write(&mem, "# Memory\n\n- Prefers concise tables\n").unwrap();
+
+        let mut entries = Vec::with_capacity(10_000);
+        for i in 0..10_000usize {
+            let tag = if i == 9876 { "needle_quarter_audit" } else { "routine_sync" };
+            entries.push(json!({
+                "id": format!("rcpt-{i}"),
+                "ts": 1_700_000_000_000u64 + i as u64,
+                "task": format!("Task {i} {tag}"),
+                "summary": format!("Summary for {tag} batch {i}"),
+                "thread_id": format!("t-{i}"),
+                "files": if i % 10 == 0 { vec!["summary.md"] } else { vec![] },
+                "finished": true,
+            }));
+        }
+        std::fs::write(
+            records::work_path(&dir),
+            json!({ "entries": entries }).to_string(),
+        )
+        .unwrap();
+        for i in 0..500usize {
+            let body = if i == 432 {
+                "vendor_contract_clause_alpha\n"
+            } else {
+                "standard ledger line\n"
+            };
+            std::fs::write(ws.join(format!("doc_{i:03}.txt")), body).unwrap();
+        }
+
+        let cache = SearchCache::new();
+        let idx = cache.get("default", &dir, &ws, &mem);
+        assert_eq!(idx.chain.len(), 10_000);
+        assert_eq!(idx.files.len(), 500);
+
+        let res = idx.search("needle_quarter_audit", "receipts", 20);
+        assert_eq!(res["counts"]["receipts"], json!(1));
+        assert_eq!(res["receipts"][0]["thread_id"], json!("t-9876"));
+
+        let listed = idx.list_receipts(0, 20, "needle_quarter_audit", "finished");
+        assert_eq!(listed["total"], json!(1));
+
+        let (f_total, f_items) = idx.list_files(0, Some(20), "vendor_contract_clause_alpha");
+        assert_eq!(f_total, 1);
+        assert_eq!(f_items[0]["path"], json!("doc_432.txt"));
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
