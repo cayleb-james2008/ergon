@@ -1,6 +1,6 @@
 [package]
 name = "ergon-rs"
-version = "0.21.0"
+version = "0.22.0"
 edition = "2021"
 
 [[bin]]
@@ -19,7 +19,7 @@ pdf-extract = "0.12"
 miniz_oxide = "0.9"
 
 [profile.release]
-opt-level = 3
+opt-level = "s"
 lto = "fat"
 codegen-units = 1
 strip = "symbols"

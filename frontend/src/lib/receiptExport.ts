@@ -342,7 +342,14 @@ async function fetchClientPack(
   title: string,
   format: "md" | "html",
   delta?: PackDeltaOptions
-): Promise<{ filename: string; sha256: string; preflight?: string; citationGate?: string }> {
+): Promise<{
+  filename: string;
+  sha256: string;
+  preflight?: string;
+  citationGate?: string;
+  summaryCitations?: string;
+  summaryStale?: number;
+}> {
   const ext = format === "html" ? "html" : "md";
   const filename = format === "html" ? `ergon-${safeSlug(title)}-handoff.html` : `ergon-${safeSlug(title)}.md`;
   const mime = format === "html" ? "text/html; charset=utf-8" : "text/markdown; charset=utf-8";
@@ -368,11 +375,29 @@ async function fetchClientPack(
     const headerHash = r.headers.get("X-Ergon-Pack-SHA256") || "";
     const preflight = r.headers.get("X-Ergon-Pack-Preflight") || undefined;
     const citationGate = r.headers.get("X-Ergon-Pack-Citation-Gate") || undefined;
+    const summaryCitations = r.headers.get("X-Ergon-Pack-Summary-Citations") || undefined;
+    const rawStale = r.headers.get("X-Ergon-Pack-Summary-Stale");
+    const summaryStale = rawStale !== null ? Number(rawStale) : undefined;
     const digest = headerHash || (await sha256Hex(text));
     triggerDownload(filename, text, mime);
-    return { filename, sha256: digest, preflight, citationGate };
+    return { filename, sha256: digest, preflight, citationGate, summaryCitations, summaryStale };
   }
   throw new Error(`HTTP ${r.status} (${ext})`);
+}
+
+/** Runs batch citation freshness pre-flight across recent finished summaries + deliverables. */
+export async function fetchSummaryPreflight(
+  files: string[] = []
+): Promise<(PackPreflightReport & { summary_runs_count?: number }) | null> {
+  const params = new URLSearchParams({ preflight: "1", summary: "1" });
+  if (files.length > 0) params.set("files", files.slice(0, 25).join(","));
+  try {
+    const r = await fetch(`/api/files/pack?${params.toString()}`, { cache: "no-store" });
+    if (!r.ok) return null;
+    return (await r.json()) as PackPreflightReport & { summary_runs_count?: number };
+  } catch {
+    return null;
+  }
 }
 
 /** Downloads a single verified Client Deliverable Pack (.md) combining selected/recent files + optional verified delta. */
@@ -380,7 +405,14 @@ export async function exportClientPackDownload(
   files: string[],
   title = "Client Deliverable Pack",
   delta?: PackDeltaOptions
-): Promise<{ filename: string; sha256: string; preflight?: string; citationGate?: string }> {
+): Promise<{
+  filename: string;
+  sha256: string;
+  preflight?: string;
+  citationGate?: string;
+  summaryCitations?: string;
+  summaryStale?: number;
+}> {
   return fetchClientPack(files, title, "md", delta);
 }
 
@@ -389,7 +421,14 @@ export async function exportClientHandoffHtml(
   files: string[],
   title = "Client Deliverable Pack",
   delta?: PackDeltaOptions
-): Promise<{ filename: string; sha256: string; preflight?: string; citationGate?: string }> {
+): Promise<{
+  filename: string;
+  sha256: string;
+  preflight?: string;
+  citationGate?: string;
+  summaryCitations?: string;
+  summaryStale?: number;
+}> {
   return fetchClientPack(files, title, "html", delta);
 }
 
@@ -398,7 +437,14 @@ export async function exportClientSummaryPack(
   files: string[],
   format: "md" | "html",
   title = "Client Summary Pack"
-): Promise<{ filename: string; sha256: string; preflight?: string; citationGate?: string }> {
+): Promise<{
+  filename: string;
+  sha256: string;
+  preflight?: string;
+  citationGate?: string;
+  summaryCitations?: string;
+  summaryStale?: number;
+}> {
   return fetchClientPack(files, title, format, { summary: true });
 }
 

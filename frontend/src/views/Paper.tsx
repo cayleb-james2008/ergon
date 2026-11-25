@@ -36,7 +36,7 @@ import {
   type TodayEvent,
   type WorkspaceFile,
 } from "@/lib/api";
-import { exportClientSummaryPack, exportReceiptDownload } from "@/lib/receiptExport";
+import { exportClientSummaryPack, exportReceiptDownload, fetchSummaryPreflight, type PackPreflightReport } from "@/lib/receiptExport";
 import { cn } from "@/lib/utils";
 import { extractPlaybookFromRun, normalizeFiles, relTime, threadMs } from "@/lib/words";
 
@@ -452,6 +452,7 @@ export const PaperFace = memo(function PaperFace({
   const [dragOver, setDragOver] = useState(false);
   const [exportingAudit, setExportingAudit] = useState(false);
   const [exportingSummary, setExportingSummary] = useState<"md" | "html" | null>(null);
+  const [summaryGate, setSummaryGate] = useState<(PackPreflightReport & { summary_runs_count?: number }) | null>(null);
   const [receiptQuery, setReceiptQuery] = useState("");
   const [remoteReceipts, setRemoteReceipts] = useState<BriefJob[] | null>(null);
   const [loadingAll, setLoadingAll] = useState(false);
@@ -459,6 +460,25 @@ export const PaperFace = memo(function PaperFace({
   const [onlyWithFiles, setOnlyWithFiles] = useState(false);
   const [receiptPage, setReceiptPage] = useState(0);
   const [eventsPage, setEventsPage] = useState(0);
+
+  const handleSummaryExport = async (fmt: "md" | "html") => {
+    setExportingSummary(fmt);
+    try {
+      const targets = files.slice(0, 15).map((f) => f.path);
+      const res = await exportClientSummaryPack(
+        targets,
+        fmt,
+        `${personName || "Client"} Summary Pack`
+      );
+      const msg = `Exported ${res.filename} (${res.citationGate || "100% Verified"}${res.summaryCitations ? ` · ${res.summaryCitations}` : ""}, sha256: ${res.sha256.slice(0, 12)}…)`;
+      if ((res.summaryStale ?? 0) > 0) toast.warning(msg);
+      else toast.success(msg);
+    } catch {
+      toast.error(`Could not export Client Summary Pack (.${fmt}).`);
+    } finally {
+      setExportingSummary(null);
+    }
+  };
 
   // Most urgent first: a task Ergon stopped for safety, then real choices
   // (deletions, questions, approvals), then informational notices —
@@ -557,6 +577,20 @@ export const PaperFace = memo(function PaperFace({
     () => (data?.brief.stopped ?? []).filter((x): x is BriefJob => !!x && typeof x === "object"),
     [data?.brief.stopped]
   );
+
+  useEffect(() => {
+    if (!data || finished.length === 0) {
+      setSummaryGate(null);
+      return;
+    }
+    let cancelled = false;
+    fetchSummaryPreflight().then((rep) => {
+      if (!cancelled && rep) setSummaryGate(rep);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [data, finished.length, files.length]);
 
   useEffect(() => {
     setReceiptPage(0);
@@ -864,6 +898,29 @@ export const PaperFace = memo(function PaperFace({
                           {loadingAll ? "Loading…" : `Load all (${totalReceiptsCount})`}
                         </Button>
                       )}
+                      {summaryGate && (
+                        <Pill
+                          id="summary-citation-gate"
+                          variant="secondary"
+                          className={cn(
+                            "mono px-2 py-0.5 text-xs font-medium",
+                            (summaryGate.citations_stale ?? 0) + (summaryGate.citations_broken ?? 0) > 0
+                              ? "bg-pill-warn-bg text-pill-warn-fg"
+                              : "bg-pill-active-bg text-pill-active-fg"
+                          )}
+                          title={
+                            (summaryGate.citations_checked ?? 0) > 0
+                              ? `${summaryGate.citations_verified}/${summaryGate.citations_checked} citations verified across summarized runs`
+                              : "Deliverables SHA-256 verified"
+                          }
+                        >
+                          {(summaryGate.citations_stale ?? 0) + (summaryGate.citations_broken ?? 0) > 0
+                            ? `${summaryGate.citations_verified}/${summaryGate.citations_checked} Verified · ${(summaryGate.citations_stale ?? 0) + (summaryGate.citations_broken ?? 0)} Stale`
+                            : (summaryGate.citations_checked ?? 0) > 0
+                              ? `${summaryGate.citations_verified}/${summaryGate.citations_checked} Verified`
+                              : "Verified"}
+                        </Pill>
+                      )}
                       <Button
                         id="export-summary-md-btn"
                         type="button"
@@ -871,24 +928,7 @@ export const PaperFace = memo(function PaperFace({
                         variant="outline"
                         disabled={exportingSummary !== null}
                         className="max-md:min-h-11 gap-1"
-                        onClick={async () => {
-                          setExportingSummary("md");
-                          try {
-                            const targets = files.slice(0, 15).map((f) => f.path);
-                            const res = await exportClientSummaryPack(
-                              targets,
-                              "md",
-                              `${personName || "Client"} Summary Pack`
-                            );
-                            toast.success(
-                              `Exported ${res.filename} (${res.citationGate || "100% Verified"}, sha256: ${res.sha256.slice(0, 12)}…)`
-                            );
-                          } catch {
-                            toast.error("Could not export Client Summary Pack (.md).");
-                          } finally {
-                            setExportingSummary(null);
-                          }
-                        }}
+                        onClick={() => handleSummaryExport("md")}
                       >
                         <FileDown className="size-3.5" strokeWidth={1.5} aria-hidden />
                         <span>{exportingSummary === "md" ? "Packing…" : "Client Summary (.md)"}</span>
@@ -900,24 +940,7 @@ export const PaperFace = memo(function PaperFace({
                         variant="outline"
                         disabled={exportingSummary !== null}
                         className="max-md:min-h-11 gap-1"
-                        onClick={async () => {
-                          setExportingSummary("html");
-                          try {
-                            const targets = files.slice(0, 15).map((f) => f.path);
-                            const res = await exportClientSummaryPack(
-                              targets,
-                              "html",
-                              `${personName || "Client"} Summary Pack`
-                            );
-                            toast.success(
-                              `Exported ${res.filename} (${res.citationGate || "100% Verified"}, sha256: ${res.sha256.slice(0, 12)}…)`
-                            );
-                          } catch {
-                            toast.error("Could not export Client Summary Pack (.html).");
-                          } finally {
-                            setExportingSummary(null);
-                          }
-                        }}
+                        onClick={() => handleSummaryExport("html")}
                       >
                         <Printer className="size-3.5" strokeWidth={1.5} aria-hidden />
                         <span>{exportingSummary === "html" ? "Rendering…" : "Summary (.html)"}</span>

@@ -3017,7 +3017,15 @@ mod v010_hardening_tests {
         assert_eq!(pf_stale_json["citations"][0]["status"], json!("stale"));
         assert_eq!(pf_stale_json["citations"][0]["line_excerpt"], json!("Notice: 60 days"));
 
-        // 3. Multi-Run Client Summary Pack (summary=1 .md + .html) & HTTP/1.1 Keep-Alive over single socket.
+        // 3. Batch Citation Freshness Gate across multi-run Client Summary Pack (preflight=1&summary=1, .md, .html) & Keep-Alive.
+        let batch_pf = send_get("/api/files/pack?preflight=1&summary=1");
+        assert!(batch_pf.starts_with("HTTP/1.1 200 OK"), "{batch_pf}");
+        let batch_json: Value = serde_json::from_str(batch_pf.split("\r\n\r\n").nth(1).unwrap()).unwrap();
+        assert_eq!(batch_json["summary_runs_count"], json!(2));
+        assert_eq!(batch_json["citations_checked"], json!(1));
+        assert_eq!(batch_json["citations_stale"], json!(1));
+        assert_eq!(batch_json["citation_gate"], json!("Stale Line Drift"));
+
         let mut ka = std::net::TcpStream::connect(addr).unwrap();
         ka.write_all(
             format!(
@@ -3033,6 +3041,10 @@ mod v010_hardening_tests {
         ka.read_to_string(&mut combined).unwrap();
         assert!(combined.contains("Connection: keep-alive"), "{combined}");
         assert!(combined.contains("X-Ergon-Pack-Summary: yes"), "{combined}");
+        assert!(combined.contains("X-Ergon-Pack-Summary-Runs: 2"), "{combined}");
+        assert!(combined.contains("X-Ergon-Pack-Summary-Stale: 1"), "{combined}");
+        assert!(combined.contains("Batch Citation Gate:"), "{combined}");
+        assert!(combined.contains("CITATION ALERT:"), "{combined}");
         assert!(combined.contains("## Verified Work Summary"), "{combined}");
         assert!(combined.contains("Audit notice period"), "{combined}");
         assert!(combined.contains("Verified Work Summary</h2>"), "{combined}");
