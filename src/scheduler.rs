@@ -608,17 +608,12 @@ fn load_history_unlocked(path: &Path) -> Vec<RoutineRunRecord> {
 }
 
 fn save_history_unlocked(path: &Path, runs: &[RoutineRunRecord]) -> Result<(), String> {
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| format!("mkdir routine history dir: {e}"))?;
-    }
-    let tmp = path.with_extension("json.tmp");
     let body = json!({
         "runs": runs.iter().map(|r| r.to_json()).collect::<Vec<_>>(),
     })
     .to_string();
-    std::fs::write(&tmp, body).map_err(|e| format!("write routine history tmp: {e}"))?;
-    std::fs::rename(&tmp, path).map_err(|e| format!("rename routine history: {e}"))?;
-    Ok(())
+    crate::atomic_write_bytes(path, body.as_bytes())
+        .map_err(|e| format!("write routine history: {e}"))
 }
 
 /// Append one `RoutineRunRecord` atomically (capping stored history at `MAX_RUN_HISTORY`).

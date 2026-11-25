@@ -2,13 +2,14 @@
 // 1. Files tab: live WorkspaceFilesBody (search, upload, new file, click to open/export)
 // 2. History tab: inline .history/ snapshot timeline, line diff, and 1-click restore
 // 3. Audit & Offers tab: 1-click SHA-256 Audit Bundle (.md/.json), receipt chain verification, and active offers
-import { useCallback, useEffect, useState } from "react";
-import { motion, useReducedMotion } from "motion/react";
-import { FileCheck2, FileDown, FolderOpen, History, ShieldCheck, Sparkles, X } from "lucide-react";
+import { memo, useCallback, useEffect, useState } from "react";
+import { m, useReducedMotion } from "motion/react";
+import { FileCheck2, FileDown, FolderOpen, History, PackageCheck, ShieldCheck, Sparkles, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { instant, sheet } from "@/motion";
+import { exportClientPackDownload } from "@/lib/receiptExport";
 import {
   FileHistoryDiffView,
   WorkspaceFilesBody,
@@ -26,7 +27,7 @@ import { cn } from "@/lib/utils";
 
 export type InspectorTab = "files" | "history" | "audit";
 
-export function InspectorDrawer({
+export const InspectorDrawer = memo(function InspectorDrawer({
   open,
   tab,
   onTabChange,
@@ -61,7 +62,7 @@ export function InspectorDrawer({
   onExportAuditBundle: (format: "json" | "md") => Promise<void>;
   onOfferAction: (url: string, msg: string) => Promise<void>;
 }) {
-  const [exporting, setExporting] = useState<"md" | "json" | null>(null);
+  const [exporting, setExporting] = useState<"md" | "json" | "pack" | null>(null);
   const [verifyInfo, setVerifyInfo] = useState<{ checked: number; ok: boolean } | null>(null);
   const [histLoading, setHistLoading] = useState(false);
   const [histErr, setHistErr] = useState("");
@@ -132,7 +133,7 @@ export function InspectorDrawer({
   if (!open) return null;
 
   return (
-    <motion.aside
+    <m.aside
       id="workspace-inspector"
       aria-label="Workspace inspector"
       initial={reduceMotion ? false : { opacity: 0, x: 6 }}
@@ -283,6 +284,30 @@ export function InspectorDrawer({
                   <FileDown className="size-3.5" strokeWidth={1.5} aria-hidden />
                   {exporting === "json" ? "Exporting…" : "Bundle (.json)"}
                 </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={exporting !== null || files.length === 0}
+                  className="max-md:min-h-11 gap-1.5"
+                  onClick={async () => {
+                    setExporting("pack");
+                    try {
+                      const res = await exportClientPackDownload(
+                        files.slice(0, 15).map((f) => f.path),
+                        `${personName} Deliverable Pack`
+                      );
+                      toast.success(`Exported ${res.filename} (sha256: ${res.sha256.slice(0, 12)}…)`);
+                    } catch {
+                      toast.error("Could not export client pack.");
+                    } finally {
+                      setExporting(null);
+                    }
+                  }}
+                >
+                  <PackageCheck className="size-3.5" strokeWidth={1.5} aria-hidden />
+                  {exporting === "pack" ? "Packing…" : "Client Pack (.md)"}
+                </Button>
               </div>
             </section>
 
@@ -339,6 +364,6 @@ export function InspectorDrawer({
           </div>
         )}
       </div>
-    </motion.aside>
+    </m.aside>
   );
-}
+});

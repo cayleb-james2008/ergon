@@ -214,3 +214,25 @@ export async function exportReceiptDownload(
   );
   return { filename, sha256: built.sha256 };
 }
+
+/** Downloads a single verified Client Deliverable Pack (.md) combining selected or recent workspace files. */
+export async function exportClientPackDownload(
+  files: string[],
+  title = "Client Deliverable Pack"
+): Promise<{ filename: string; sha256: string }> {
+  const filename = `ergon-${safeSlug(title)}.md`;
+  const params = new URLSearchParams();
+  if (files.length > 0) params.set("files", files.slice(0, 25).join(","));
+  if (title.trim()) params.set("title", title.trim());
+  params.set("download", "1");
+
+  const r = await fetch(`/api/files/pack?${params.toString()}`, { cache: "no-store" });
+  if (r.ok) {
+    const text = await r.text();
+    const headerHash = r.headers.get("X-Ergon-Pack-SHA256") || "";
+    const digest = headerHash || (await sha256Hex(text));
+    triggerDownload(filename, text, "text/markdown; charset=utf-8");
+    return { filename, sha256: digest };
+  }
+  throw new Error(`HTTP ${r.status}`);
+}

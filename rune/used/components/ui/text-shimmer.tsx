@@ -1,6 +1,6 @@
 'use client';
 import React, { useMemo, type JSX } from 'react';
-import { motion, useReducedMotion } from 'motion/react';
+import { m, useReducedMotion } from 'motion/react';
 import { cn } from '@/lib/utils';
 
 export type TextShimmerProps = {
@@ -22,7 +22,7 @@ function TextShimmerComponent({
   duration = 2,
   spread = 2,
 }: TextShimmerProps) {
-  const MotionComponent = motion.create(
+  const MotionComponent = m.create(
     Component as keyof JSX.IntrinsicElements
   );
   const reduce = useReducedMotion();

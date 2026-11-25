@@ -1,12 +1,12 @@
 // Work Entry cards & inline Approval/File-Diff card for the central Conversation Thread.
 // Keeps clean typography, tabular-nums timestamps, inline file diff preview, 1-click Word/Excel & SHA-256 receipt export.
-import { useState } from "react";
-import { Check, ChevronDown, Copy, FileDown, FileSpreadsheet, FileText, Hourglass } from "lucide-react";
+import { memo, useState } from "react";
+import { Check, ChevronDown, Copy, FileDown, FileSpreadsheet, FileText, Hourglass, PackageCheck, Repeat } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Pill } from "@/components/kibo-ui/pill";
 import { computeLineDiff } from "@/lib/diff";
-import { exportReceiptDownload } from "@/lib/receiptExport";
+import { exportClientPackDownload, exportReceiptDownload } from "@/lib/receiptExport";
 import { cn } from "@/lib/utils";
 import { fileIconFor, savedFile, toolLabel } from "@/lib/words";
 import {
@@ -178,7 +178,7 @@ export function StepList({ steps }: { steps: string[] }) {
   );
 }
 
-export function FinishedEntry({
+export const FinishedEntry = memo(function FinishedEntry({
   time,
   task,
   steps,
@@ -188,6 +188,7 @@ export function FinishedEntry({
   personName,
   useServerExport,
   onOpenFile,
+  onSaveRoutine,
 }: {
   time: string;
   task: string;
@@ -198,9 +199,13 @@ export function FinishedEntry({
   personName?: string;
   useServerExport?: boolean;
   onOpenFile?: (path: string) => void;
+  onSaveRoutine?: (name: string, prompt: string, schedule?: string) => Promise<boolean>;
 }) {
   const [exporting, setExporting] = useState(false);
+  const [packing, setPacking] = useState(false);
   const [officeBusy, setOfficeBusy] = useState(false);
+  const [savingRoutine, setSavingRoutine] = useState(false);
+  const [routineSaved, setRoutineSaved] = useState(false);
   const files = savedList(steps);
   const stepWord = steps.length === 1 ? "1 tool step" : `${steps.length} tool steps`;
 
@@ -324,6 +329,54 @@ export function FinishedEntry({
             <FileDown className="size-3.5" strokeWidth={1.5} aria-hidden />
             Receipt (.json)
           </Button>
+          {files.length >= 2 && (
+            <Button
+              type="button"
+              size="xs"
+              variant="outline"
+              className="max-md:min-h-11 gap-1.5 text-xs"
+              disabled={packing}
+              onClick={async () => {
+                setPacking(true);
+                try {
+                  const res = await exportClientPackDownload(files, task || "Client Deliverable Pack");
+                  toast.success(`Exported ${res.filename} (sha256: ${res.sha256.slice(0, 12)}…)`);
+                } catch {
+                  toast.error("Could not export client pack.");
+                } finally {
+                  setPacking(false);
+                }
+              }}
+            >
+              <PackageCheck className="size-3.5" strokeWidth={1.5} aria-hidden />
+              {packing ? "Packing…" : "Client Pack (.md)"}
+            </Button>
+          )}
+          {onSaveRoutine && task.trim() && (
+            <Button
+              type="button"
+              size="xs"
+              variant="outline"
+              className="max-md:min-h-11 gap-1.5 text-xs"
+              disabled={savingRoutine || routineSaved}
+              onClick={async () => {
+                setSavingRoutine(true);
+                try {
+                  const ok = await onSaveRoutine(task.trim().slice(0, 60), task.trim(), "daily 09:00");
+                  if (ok) setRoutineSaved(true);
+                } finally {
+                  setSavingRoutine(false);
+                }
+              }}
+            >
+              {routineSaved ? (
+                <Check className="size-3.5 text-dot-green" strokeWidth={1.75} aria-hidden />
+              ) : (
+                <Repeat className="size-3.5" strokeWidth={1.5} aria-hidden />
+              )}
+              {routineSaved ? "Saved routine" : savingRoutine ? "Saving…" : "Save as routine"}
+            </Button>
+          )}
           <Button
             type="button"
             size="xs"
@@ -343,7 +396,7 @@ export function FinishedEntry({
       </div>
     </EntryShell>
   );
-}
+});
 
 export function WaitingEntry({
   time,

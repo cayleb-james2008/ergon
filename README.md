@@ -170,7 +170,7 @@ Without a reachable local gateway or `ERGON_MODEL_API_KEY`, the UI shows an hone
 ## Verification
 
 ```sh
-CARGO_BUILD_JOBS=2 cargo test          # 208 Rust unit, E2E, scale, scheduler/history, 12-workflow, tripwire & document tests
+CARGO_BUILD_JOBS=2 cargo test          # 210 Rust unit, E2E, scale, scheduler/history, 12-workflow, tripwire & document tests
 cd frontend && npm run check:ui        # Playwright E2E gate, graph probe, and worst-case replay
 ```
 

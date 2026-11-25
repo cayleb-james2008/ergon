@@ -1,6 +1,6 @@
 'use client';
 import { cn } from '@/lib/utils';
-import { motion, Transition, useReducedMotion } from 'motion/react';
+import { m, Transition, useReducedMotion } from 'motion/react';
 
 export type BorderTrailProps = {
   className?: string;
@@ -37,7 +37,7 @@ export function BorderTrail({
       {reduce ? (
         <div className={cn('absolute inset-0 bg-blue', className)} />
       ) : (
-        <motion.div
+        <m.div
           className={cn('absolute aspect-square bg-blue', className)}
           style={{
             width: size,

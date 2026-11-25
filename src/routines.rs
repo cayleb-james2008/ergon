@@ -37,14 +37,8 @@ fn load_raw(path: &Path) -> Vec<Value> {
 }
 
 fn save_raw(path: &Path, items: &[Value]) -> Result<(), String> {
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| format!("mkdir routines dir: {e}"))?;
-    }
-    let tmp = path.with_extension("json.tmp");
     let body = json!({ "routines": items }).to_string();
-    std::fs::write(&tmp, body).map_err(|e| format!("write routines tmp: {e}"))?;
-    std::fs::rename(&tmp, path).map_err(|e| format!("rename routines: {e}"))?;
-    Ok(())
+    crate::atomic_write_bytes(path, body.as_bytes()).map_err(|e| format!("write routines: {e}"))
 }
 
 pub fn list_routines(person_data_dir: &Path) -> Vec<Value> {

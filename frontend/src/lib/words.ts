@@ -111,6 +111,38 @@ export function detectWorkspaceWorkflow(files: WorkspaceFile[]): DetectedWorkflo
   return detectWorkflowForFile(files[0].path);
 }
 
+/** Suggests a multi-file batch workflow when 2+ files are dropped or uploaded together. */
+export function detectBatchWorkflow(paths: string[]): DetectedWorkflow | null {
+  const clean = paths.map((p) => String(p || "").trim()).filter(Boolean);
+  if (clean.length === 0) return null;
+  if (clean.length === 1) return detectWorkflowForFile(clean[0]);
+  const listText = clean.slice(0, 8).join(", ");
+  const allSheets = clean.every((p) => /\.(csv|tsv|xlsx|xls)$/i.test(p));
+  const allDocs = clean.every((p) => /\.(md|markdown|txt|pdf|docx|doc)$/i.test(p));
+  if (allSheets) {
+    return {
+      skillId: "reconcile_ledger",
+      label: `Reconcile ${clean.length} sheets`,
+      file: clean[0],
+      prompt: `Reconcile and compare ${listText} with reconcile_ledger, flag mismatches or duplicates, and export a unified Excel (.xlsx) summary`,
+    };
+  }
+  if (allDocs) {
+    return {
+      skillId: "compare_documents",
+      label: `Compare ${clean.length} documents`,
+      file: clean[0],
+      prompt: `Compare and synthesize ${listText} with compare_documents, highlight key differences and risks, and save a summary Word (.docx) report`,
+    };
+  }
+  return {
+    skillId: "draft_brief",
+    label: `Summarize ${clean.length} files`,
+    file: clean[0],
+    prompt: `Inspect ${listText}, synthesize findings across all uploaded files into an executive brief, and save verified workspace deliverables`,
+  };
+}
+
 export function buildStarterCards(installed: SuiteItem[], role: string, files: WorkspaceFile[] = []): StarterCard[] {
   const safeRole = typeof role === "string" ? role.trim() : "";
   const docFile = files.find((f) => /\.(md|markdown|txt)$/i.test(f.path) && !/(summary|brief|audit)\./i.test(f.path));
