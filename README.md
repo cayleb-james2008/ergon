@@ -58,18 +58,18 @@ flowchart LR
 
 ---
 
-## Verified Benchmarks (`v0.18.0` vs `v0.11.0`)
+## Verified Benchmarks (`v0.19.0` vs `v0.11.0`)
 
 Measured against the stripped fat-LTO release binary (`target/release/ergon`) on isolated local loopback (`16w` pinned `#154` profile) and a synthetic `5,000` receipts + `500` workspace files dataset:
 
-| Metric | `v0.11.0` Baseline | `v0.18.0` Verified | Change |
+| Metric | `v0.11.0` Baseline | `v0.19.0` Verified | Change |
 | --- | --- | --- | --- |
-| Release Binary Size | `16.0 MB` | **`9.31 MB`** (`9,757,536 B`) | **`-41.8%`** |
+| Release Binary Size | `16.0 MB` | **`9.31 MB`** (`9,765,728 B`) | **`-41.8%`** |
 | Initial `/` Shell Payload | `1.15 MB` | **`149.1 KB` raw / `33.4 KB` gzip** (`15` `/chunks/*`) | **`-97.1%` wire** |
-| Cold Boot to `200 OK` | — | **`11.67–17.88 ms`** | Instant startup |
-| Peak RSS (`VmHWM`, `5k` receipts + `500` files, warm) | — | **`16.39 MB`** (`16,784 KB`) | Shared chain reuse |
-| Concurrent HTTP (`16w` `/api/search` across `5k`/`500`) | `724 req/s` (`188.7 ms` p95) | **`13,960.7 req/s`** (`0.95 ms` p50, `1.99 ms` p95, `0` err) | **`19.3x` throughput** |
-| Streaming Audit Bundle (`5k` entries) | — | **`17.52 ms`** (`1.93 MB` verified bundle) | Zero-DOM streaming |
+| Cold Boot to `200 OK` | — | **`16.71–20.72 ms`** | Instant startup |
+| Peak RSS (`VmHWM`, `5k` receipts + `500` files, warm) | — | **`20.50 MB`** (`20,988 KB`) | Thread-local buffers |
+| Concurrent HTTP (`16w` mixed 5 routes across `5k`/`500`) | `724 req/s` (`188.7 ms` p95) | **`48,867.7 req/s`** (`0.26 ms` p50, `0.59 ms` p95, `0` err) | **`67.5x` throughput** |
+| Streaming Audit Bundle (`5k` entries) | — | **`23.64 ms`** (`1.99 MB` verified bundle) | Zero-DOM streaming |
 | Automated Verification | `204` Rust tests | **`217/217` Rust tests** · **`100/100` UI checks** · `0` `sloplint` fails | `0` warnings / `0` externals |
 
 ---
@@ -128,7 +128,7 @@ On startup (unless `ERGON_NO_AUTO_MODEL=1` or an explicit `ERGON_MODEL_BASE_URL`
 ## Core Capabilities
 
 - **Desk Shell & Command Palette (`Cmd/Ctrl+K`)** — Lazy-split `assets/index.html` served over `/` and `/phone` with pre-compressed `.rodata` `/chunks/*`, `Vary: Accept-Encoding`, strong `ETag` + `304 Not Modified`, self-hosted **Geist** & **Geist Mono**, light-first tokens with Settings-only Light/Dark switch, collapsible right **Workspace** inspector (`Files`, `History`, `Audit`), and scored fuzzy `Cmd/Ctrl+K` jump across workspace files, `[file:L##]` citations, playbooks, workflows, and receipts.
-- **Cross-File Citations, Freshness Gate, Run Comparison & Client Handoff (`.html` / `.md`)** — `POST /api/citations/verify` checks `[file:L##]` citations against live workspace file SHA-256 digests and `.history/` snapshots (`100% Verified` vs `Stale Line Drift`) directly inside `GET /api/files/pack?preflight=1` before export. Clickable citation pills open `FileViewerModal` in highlighted source-line view. Inside **Inspector → Audit** and **History Diff**, `GET /api/receipts/compare`, `GET /api/files/pack?delta_a=...&delta_b=...`, and `GET /api/files/pack?format=html` generate signed Markdown Delta Packs and printable standalone Client Handoffs (`.html`, `Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'`).
+- **Multi-Run Retainer Summary Packs, Freshness Gate & Client Handoff (`.html` / `.md`)** — From **Today → Finished**, export a 1-click **Client Summary Pack** (`.md` or printable CSP-locked `.html`) combining a `## Verified Work Summary` table of recent finished runs, file SHA-256 digests, and verified `[file:L##]` citation ratios (`100% Verified` vs `Stale Line Drift`). `POST /api/citations/verify` checks citations against live workspace file SHA-256 digests and `.history/` snapshots directly inside `GET /api/files/pack?preflight=1` before export. Inside **Inspector → Audit** and **History Diff**, `GET /api/receipts/compare` and `GET /api/files/pack?delta_a=...&delta_b=...` compute exact line/file deltas.
 - **Standalone Web Demo (`npm run build:web`)** — Builds `frontend/dist/ergon-web.html` backed by an offline in-browser workflow & file engine (`webEngine.ts`) with zero external network requests.
 - **Workspace File Viewer, History & Playbooks** — Real CSV table sorting/filtering, Markdown section jump, collapsible JSON tree, `.history/` side-by-side diffs with reversible restore, and multi-step sequential **Workspace Playbooks** (`POST /api/routines/:id/run`).
 - **Office & PDF Documents (`src/docs.rs`)** — Reads PDFs (including modern CID fonts), Word `.docx`, Excel `.xlsx` (`book.xlsx#Sheet2`), and PowerPoint `.pptx` (slides + notes), and exports Markdown to styled `.docx` and CSV to typed `.xlsx` (`POST /api/files/export`). Uploads travel byte-exact up to `25 MB` behind zip-bomb and PDF timeout guards.

@@ -773,6 +773,12 @@ pub(crate) struct Request {
     /// Content negotiation & conditional GET headers.
     pub(crate) accept_encoding: Option<String>,
     pub(crate) if_none_match: Option<String>,
+    pub(crate) keep_alive: bool,
+}
+
+thread_local! {
+    static KEEP_ALIVE_CONN: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    static JSON_SCRATCH: std::cell::RefCell<Vec<u8>> = std::cell::RefCell::new(Vec::with_capacity(4096));
 }
 
 /// Bodies are small JSON. A request claiming a larger one is dropped
@@ -785,34 +791,64 @@ const MAX_BODY_BYTES: usize = 1_048_576;
 const MAX_UPLOAD_BODY_BYTES: usize = 36 * 1_048_576;
 const MAX_HEAD_BYTES: usize = 32_768;
 
+trait SockStream: Read + Write {
+    fn set_rt(&self, dur: std::time::Duration) -> std::io::Result<()>;
+    fn shutdown_write(&self);
+}
+
+impl SockStream for std::net::TcpStream {
+    fn set_rt(&self, dur: std::time::Duration) -> std::io::Result<()> {
+        self.set_read_timeout(Some(dur))
+    }
+    fn shutdown_write(&self) {
+        let _ = self.shutdown(std::net::Shutdown::Write);
+    }
+}
+
+impl SockStream for &mut std::net::TcpStream {
+    fn set_rt(&self, dur: std::time::Duration) -> std::io::Result<()> {
+        self.set_read_timeout(Some(dur))
+    }
+    fn shutdown_write(&self) {
+        let _ = self.shutdown(std::net::Shutdown::Write);
+    }
+}
+
+#[cfg(test)]
 pub(crate) fn read_request(stream: &mut std::net::TcpStream) -> Option<Request> {
-    // A TOTAL deadline for the whole request, not a per-read timeout:
-    // a per-read clock lets a slow-loris drip headers forever, one
-    // gap at a time. Before each read the socket timeout is re-armed
-    // with whatever of the 30 seconds remains.
-    // (A file upload's BODY gets up to 3 minutes once its head arrived in
-    // time: 25 MB from a phone on slow Wi-Fi needs more than 30 seconds.)
-    let deadline = std::cell::Cell::new(std::time::Instant::now() + std::time::Duration::from_secs(30));
-    let arm = |s: &std::net::TcpStream| -> Option<()> {
+    let mut reader = BufReader::new(stream);
+    read_request_from(&mut reader, std::time::Duration::from_secs(30))
+}
+
+fn read_request_from<S: SockStream>(
+    reader: &mut BufReader<S>,
+    initial_timeout: std::time::Duration,
+) -> Option<Request> {
+    let deadline = std::cell::Cell::new(std::time::Instant::now() + initial_timeout);
+    let arm = |s: &S| -> Option<()> {
         let remain = deadline.get().checked_duration_since(std::time::Instant::now())?;
-        s.set_read_timeout(Some(remain)).ok()?;
+        s.set_rt(remain).ok()?;
         Some(())
     };
-    let mut reader = BufReader::new(&mut *stream);
     let mut line_buf = Vec::with_capacity(256);
     arm(reader.get_ref())?;
-    let n_req = match head_line_into(&mut reader, MAX_HEAD_BYTES, &mut line_buf) {
+    let n_req = match head_line_into(reader, MAX_HEAD_BYTES, &mut line_buf) {
         Ok(Some(0)) => return None,
         Ok(Some(n)) => n,
-        Ok(None) => return refuse_head(&mut reader),
+        Ok(None) => return refuse_head(reader),
         Err(_) => return None,
     };
+    // Once request-line bytes arrived, give the remaining head up to 30s total.
+    deadline.set(std::time::Instant::now() + std::time::Duration::from_secs(30));
     let request_line = std::str::from_utf8(&line_buf)
         .map(|s| s.to_string())
         .unwrap_or_else(|_| String::from_utf8_lossy(&line_buf).into_owned());
     let mut parts = request_line.split_whitespace();
     let method = parts.next()?.to_string();
     let raw_path = parts.next()?.to_string();
+    let proto = parts.next().unwrap_or("HTTP/1.1");
+    let mut conn_close = false;
+    let mut conn_keep_alive = false;
     let (path_part, query_part) = match raw_path.split_once('?') {
         Some((p, q)) => (p, q),
         None => (raw_path.as_str(), ""),
@@ -839,9 +875,9 @@ pub(crate) fn read_request(stream: &mut std::net::TcpStream) -> Option<Request> 
     loop {
         arm(reader.get_ref())?;
         let room = MAX_HEAD_BYTES - head_bytes;
-        let n = match head_line_into(&mut reader, room, &mut line_buf) {
+        let n = match head_line_into(reader, room, &mut line_buf) {
             Ok(Some(read)) => read,
-            Ok(None) => return refuse_head(&mut reader),
+            Ok(None) => return refuse_head(reader),
             Err(_) => return None,
         };
         if n == 0 || line_buf == b"\r\n" || line_buf == b"\n" {
@@ -906,6 +942,13 @@ pub(crate) fn read_request(stream: &mut std::net::TcpStream) -> Option<Request> 
                     }
                 }
             }
+        } else if name.eq_ignore_ascii_case("connection") {
+            let low = val.to_ascii_lowercase();
+            if low.contains("close") {
+                conn_close = true;
+            } else if low.contains("keep-alive") {
+                conn_keep_alive = true;
+            }
         } else if name.eq_ignore_ascii_case("x-ergon-gate") && !val.is_empty() {
             gate = Some(val.to_string());
         }
@@ -925,7 +968,7 @@ pub(crate) fn read_request(stream: &mut std::net::TcpStream) -> Option<Request> 
         let s = reader.get_mut();
         let _ = s.write_all(response.as_bytes());
         let _ = s.flush();
-        let _ = s.shutdown(std::net::Shutdown::Write);
+        s.shutdown_write();
         return None;
     }
     let content_length = content_length.unwrap_or(0);
@@ -942,7 +985,7 @@ pub(crate) fn read_request(stream: &mut std::net::TcpStream) -> Option<Request> 
         let drain_end = std::time::Instant::now() + std::time::Duration::from_millis(250);
         let _ = reader
             .get_ref()
-            .set_read_timeout(Some(std::time::Duration::from_millis(50)));
+            .set_rt(std::time::Duration::from_millis(50));
         let mut sink = [0u8; 8192];
         while to_drain > 0 && std::time::Instant::now() < drain_end {
             let want = to_drain.min(sink.len());
@@ -962,7 +1005,7 @@ pub(crate) fn read_request(stream: &mut std::net::TcpStream) -> Option<Request> 
         let s = reader.get_mut();
         let _ = s.write_all(response.as_bytes());
         let _ = s.flush();
-        let _ = s.shutdown(std::net::Shutdown::Write);
+        s.shutdown_write();
         return None;
     }
     if body_limit == MAX_UPLOAD_BODY_BYTES && content_length > MAX_BODY_BYTES {
@@ -990,14 +1033,19 @@ pub(crate) fn read_request(stream: &mut std::net::TcpStream) -> Option<Request> 
         forwarded_for,
         accept_encoding,
         if_none_match,
+        keep_alive: if proto == "HTTP/1.0" {
+            conn_keep_alive
+        } else {
+            !conn_close
+        },
     })
 }
 
 /// Reads one request-head line of at most `room` bytes into `buf`, returning its
 /// length. `Ok(None)` means the line is longer than `room`: it is never buffered
 /// past the cap (E2).
-fn head_line_into(
-    reader: &mut BufReader<&mut std::net::TcpStream>,
+fn head_line_into<R: Read>(
+    reader: &mut BufReader<R>,
     room: usize,
     buf: &mut Vec<u8>,
 ) -> std::io::Result<Option<usize>> {
@@ -1012,7 +1060,7 @@ fn head_line_into(
 /// Answers an over-long request head with 431 at once, then reads and
 /// discards what the client still sends until it closes (or the read
 /// deadline passes) so the answer is not reset by the socket (E2).
-fn refuse_head(reader: &mut BufReader<&mut std::net::TcpStream>) -> Option<Request> {
+fn refuse_head<S: SockStream>(reader: &mut BufReader<S>) -> Option<Request> {
     let body = format!(
         "{{\"error\": \"request head too large: the limit is {MAX_HEAD_BYTES} bytes\"}}"
     );
@@ -1024,8 +1072,8 @@ fn refuse_head(reader: &mut BufReader<&mut std::net::TcpStream>) -> Option<Reque
         let s = reader.get_mut();
         let _ = s.write_all(response.as_bytes());
         let _ = s.flush();
-        let _ = s.shutdown(std::net::Shutdown::Write);
     }
+    let _ = reader.get_ref().set_rt(std::time::Duration::from_millis(200));
     let mut sink = [0u8; 8192];
     while matches!(reader.read(&mut sink), Ok(n) if n > 0) {}
     None
@@ -1118,15 +1166,22 @@ fn respond_bytes(
         _ => "OK",
     };
     let body_len = if status == 304 { 0 } else { body.len() };
-    let mut buf = Vec::with_capacity(384 + body_len);
+    let keep_open = KEEP_ALIVE_CONN.get() && status < 400;
+    if !keep_open {
+        KEEP_ALIVE_CONN.set(false);
+    }
+    let conn_hdr = if keep_open { "keep-alive" } else { "close" };
     let mut head = String::with_capacity(384);
     if status == 304 {
-        let _ = write!(&mut head, "HTTP/1.1 304 {reason}\r\nConnection: close\r\n");
+        let _ = write!(&mut head, "HTTP/1.1 304 {reason}\r\nConnection: {conn_hdr}\r\n");
     } else {
         let _ = write!(
             &mut head,
-            "HTTP/1.1 {status} {reason}\r\nContent-Type: {content_type}\r\nContent-Length: {body_len}\r\nConnection: close\r\n"
+            "HTTP/1.1 {status} {reason}\r\nContent-Type: {content_type}\r\nContent-Length: {body_len}\r\nConnection: {conn_hdr}\r\n"
         );
+    }
+    if keep_open {
+        head.push_str("Keep-Alive: timeout=2, max=10000\r\n");
     }
     for (name, value) in extra_headers {
         let _ = write!(&mut head, "{name}: {value}\r\n");
@@ -1149,12 +1204,20 @@ fn respond_bytes(
         }
     }
     head.push_str("\r\n");
-    buf.extend_from_slice(head.as_bytes());
     if status != 304 && !body.is_empty() {
-        buf.extend_from_slice(body);
+        let mut bufs = [std::io::IoSlice::new(head.as_bytes()), std::io::IoSlice::new(body)];
+        let mut slice_ref: &mut [std::io::IoSlice<'_>] = &mut bufs;
+        while !slice_ref.is_empty() {
+            let n = stream.write_vectored(slice_ref)?;
+            if n == 0 {
+                return Err(std::io::Error::new(std::io::ErrorKind::WriteZero, "write_vectored 0"));
+            }
+            std::io::IoSlice::advance_slices(&mut slice_ref, n);
+        }
+        Ok(())
+    } else {
+        stream.write_all(head.as_bytes())
     }
-    stream.write_all(&buf)?;
-    stream.flush()
 }
 
 fn respond_h(
@@ -1264,8 +1327,19 @@ fn effective_cfg(state: &AppState, runtime: &PersonRuntime) -> Config {
 }
 
 fn respond_json(stream: &mut std::net::TcpStream, status: u16, v: &Value) -> std::io::Result<()> {
-    let bytes = serde_json::to_vec(v).unwrap_or_else(|_| v.to_string().into_bytes());
-    respond_bytes(stream, status, "application/json", &bytes, &[])
+    JSON_SCRATCH.with(|cell| {
+        let mut buf = cell.borrow_mut();
+        buf.clear();
+        if serde_json::to_writer(&mut *buf, v).is_err() {
+            buf.clear();
+            buf.extend_from_slice(v.to_string().as_bytes());
+        }
+        let res = respond_bytes(stream, status, "application/json", &buf, &[]);
+        if buf.capacity() > 256 * 1024 {
+            *buf = Vec::with_capacity(4096);
+        }
+        res
+    })
 }
 
 /// Markdown for the audit bundle's tripwire section.
@@ -1536,7 +1610,7 @@ fn serve_page(
     }
 }
 
-fn handle_connection(mut stream: std::net::TcpStream, state: &AppState) -> std::io::Result<()> {
+fn handle_connection(stream: std::net::TcpStream, state: &AppState) -> std::io::Result<()> {
     let _ = stream.set_nodelay(true);
     // A banned scanner is dropped before one byte of its request is read
     // (never this computer: loopback is never banned).
@@ -1545,84 +1619,102 @@ fn handle_connection(mut stream: std::net::TcpStream, state: &AppState) -> std::
         let _ = stream.shutdown(std::net::Shutdown::Both);
         return Ok(());
     }
-    // A stalled client must not hold its connection thread forever.
-    let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(30)));
-    let req = match read_request(&mut stream) {
-        Some(r) => r,
-        None => return Ok(()),
-    };
-    let client = state.tripwire.client_ip(peer, req.forwarded_for.as_deref());
-    if client != peer && client.map(|ip| state.tripwire.is_banned(ip)).unwrap_or(false) {
-        let _ = stream.shutdown(std::net::Shutdown::Both);
-        return Ok(());
-    }
-    let view = tripwire::RequestView {
-        method: &req.method,
-        path: &req.path,
-        query: &req.query,
-        host: req.host.as_deref(),
-        origin: req.origin.as_deref(),
-        user_agent: req.user_agent.as_deref(),
-        gate: req.gate.as_deref(),
-        authorization: req.authorization.as_deref(),
-        cookie: req.cookie_raw.as_deref(),
-        body: &req.body,
-    };
-    // HT1/HT3: an altered decoy cookie, or a decoy key coming back.
-    if let Some(d) = state.tripwire.inspect(&view, client) {
-        return respond(&mut stream, d.status, d.content_type, &d.body);
-    }
-    // HT2: decoy resources and breadcrumbs (before the gate, so probes
-    // of a gated or LAN-exposed desk are seen too).
-    if let Some(d) = state.tripwire.decoy(&req.method, &req.path, client, req.user_agent.as_deref()) {
-        return respond(&mut stream, d.status, d.content_type, &d.body);
-    }
-    let root_cfg = &state.cfg;
-    // Hosting-layer gate: when a gate token is configured, the
-    // hosting layer (which authenticates people its own way) must
-    // present it on every request. Ergon itself keeps no accounts
-    // and no passwords — this is a deployment gate, not a login.
-    if let Some(expected) = &state.gate_token {
-        if req.gate.as_deref() != Some(expected.as_str()) {
-            state.tripwire.note_refusal("gate", &view, client);
-            return respond_json(
-                &mut stream,
-                401,
-                &json!({"error": "this Ergon is gated by its hosting layer — the gate header is missing or wrong"}),
-            );
+    let mut reader = BufReader::new(stream);
+    const MAX_KEEP_ALIVE_REQUESTS: usize = 10_000;
+    for req_idx in 0..MAX_KEEP_ALIVE_REQUESTS {
+        let initial_wait = if req_idx == 0 {
+            std::time::Duration::from_secs(30)
+        } else {
+            std::time::Duration::from_secs(2)
+        };
+        let req = match read_request_from(&mut reader, initial_wait) {
+            Some(r) => r,
+            None => break,
+        };
+        let client = state.tripwire.client_ip(peer, req.forwarded_for.as_deref());
+        if client != peer && client.map(|ip| state.tripwire.is_banned(ip)).unwrap_or(false) {
+            let _ = reader.get_ref().shutdown(std::net::Shutdown::Both);
+            break;
+        }
+        let view = tripwire::RequestView {
+            method: &req.method,
+            path: &req.path,
+            query: &req.query,
+            host: req.host.as_deref(),
+            origin: req.origin.as_deref(),
+            user_agent: req.user_agent.as_deref(),
+            gate: req.gate.as_deref(),
+            authorization: req.authorization.as_deref(),
+            cookie: req.cookie_raw.as_deref(),
+            body: &req.body,
+        };
+        // HT1/HT3: an altered decoy cookie, or a decoy key coming back.
+        if let Some(d) = state.tripwire.inspect(&view, client) {
+            KEEP_ALIVE_CONN.set(false);
+            return respond(reader.get_mut(), d.status, d.content_type, &d.body);
+        }
+        // HT2: decoy resources and breadcrumbs (before the gate, so probes
+        // of a gated or LAN-exposed desk are seen too).
+        if let Some(d) = state.tripwire.decoy(&req.method, &req.path, client, req.user_agent.as_deref()) {
+            KEEP_ALIVE_CONN.set(false);
+            return respond(reader.get_mut(), d.status, d.content_type, &d.body);
+        }
+        let root_cfg = &state.cfg;
+        // Hosting-layer gate: when a gate token is configured, the
+        // hosting layer (which authenticates people its own way) must
+        // present it on every request. Ergon itself keeps no accounts
+        // and no passwords — this is a deployment gate, not a login.
+        if let Some(expected) = &state.gate_token {
+            if req.gate.as_deref() != Some(expected.as_str()) {
+                state.tripwire.note_refusal("gate", &view, client);
+                KEEP_ALIVE_CONN.set(false);
+                return respond_json(
+                    reader.get_mut(),
+                    401,
+                    &json!({"error": "this Ergon is gated by its hosting layer — the gate header is missing or wrong"}),
+                );
+            }
+        }
+        if let Some((status, message)) = refusal(&req, state.gate_token.is_some(), &state.allowed_hosts) {
+            // RE1: a page on another site (CSRF) or a rebound DNS name tried
+            // to drive this desk. Refused as before — and now the person hears of it.
+            let kind = if message.starts_with("requests must address") { "host" } else { "cross-site" };
+            state.tripwire.note_refusal(kind, &view, client);
+            KEEP_ALIVE_CONN.set(false);
+            return respond_json(reader.get_mut(), status, &json!({"error": message}));
+        }
+        let is_sse = req.path == "/api/runs/stream";
+        KEEP_ALIVE_CONN.set(req.keep_alive && !is_sse);
+        // The person this request acts for (session-pinned when the caller
+        // has a session cookie, else the global active person).
+        let person = effective_person(state, &req.session);
+        let runtime = runtime_for(state, &person);
+        // The tool context for agent runs on behalf of this person.
+        let ctx = ToolCtx {
+            library: state.library.clone(),
+            root_data_dir: root_cfg.data_dir.clone(),
+            person_id: person.id.clone(),
+        };
+        let stream = reader.get_mut();
+        let res = if let Some(res) = try_route_system(stream, state, &req, &person, &runtime) {
+            res
+        } else if let Some(res) = try_route_files_and_audit(stream, state, &req, &person, &runtime) {
+            res
+        } else if let Some(res) = try_route_knowledge_and_routines(stream, state, &req, &person, &runtime) {
+            res
+        } else if let Some(res) = try_route_runs_and_chat(stream, state, &req, &person, &runtime, &ctx) {
+            res
+        } else {
+            respond_json(stream, 404, &json!({"error": "not found"}))
+        };
+        let continue_loop = KEEP_ALIVE_CONN.get() && !is_sse && res.is_ok();
+        KEEP_ALIVE_CONN.set(false);
+        res?;
+        if !continue_loop {
+            break;
         }
     }
-    if let Some((status, message)) = refusal(&req, state.gate_token.is_some(), &state.allowed_hosts) {
-        // RE1: a page on another site (CSRF) or a rebound DNS name tried
-        // to drive this desk. Refused as before — and now the person hears of it.
-        let kind = if message.starts_with("requests must address") { "host" } else { "cross-site" };
-        state.tripwire.note_refusal(kind, &view, client);
-        return respond_json(&mut stream, status, &json!({"error": message}));
-    }
-    // The person this request acts for (session-pinned when the caller
-    // has a session cookie, else the global active person).
-    let person = effective_person(state, &req.session);
-    let runtime = runtime_for(state, &person);
-    // The tool context for agent runs on behalf of this person.
-    let ctx = ToolCtx {
-        library: state.library.clone(),
-        root_data_dir: root_cfg.data_dir.clone(),
-        person_id: person.id.clone(),
-    };
-    if let Some(res) = try_route_system(&mut stream, state, &req, &person, &runtime) {
-        return res;
-    }
-    if let Some(res) = try_route_files_and_audit(&mut stream, state, &req, &person, &runtime) {
-        return res;
-    }
-    if let Some(res) = try_route_knowledge_and_routines(&mut stream, state, &req, &person, &runtime) {
-        return res;
-    }
-    if let Some(res) = try_route_runs_and_chat(&mut stream, state, &req, &person, &runtime, &ctx) {
-        return res;
-    }
-    respond_json(&mut stream, 404, &json!({"error": "not found"}))
-
+    Ok(())
 }
 
 /// Routes UI pages, server status/config, updates, people, library/suite, and security.
@@ -2347,21 +2439,53 @@ fn inspect_workspace_pack(
     })
 }
 
-fn format_workspace_pack_markdown(preflight: &PackPreflight, person_name: &str, title: &str) -> String {
+fn format_workspace_pack_markdown(
+    preflight: &PackPreflight,
+    person_name: &str,
+    title: &str,
+    summary_runs: &[&receipts::ChainedReceipt],
+) -> String {
     let ok = preflight.ok();
     let ready = preflight.ready_count;
     let status_word = if ok { "PASS" } else { "WARN" };
+    let total_cits = preflight.citations.len();
+    let ratio_label = if total_cits == 0 {
+        "no inline citations".to_string()
+    } else {
+        format!(
+            "{}/{} verified ({}%)",
+            preflight.citations_verified,
+            total_cits,
+            preflight.freshness_pct()
+        )
+    };
     let mut md = format!(
-        "# {title}\n\n- Prepared for: **{person_name}**\n- Files included: {}\n- Pre-flight check: **{status_word}** ({ready} non-empty, {} empty, {} missing, {} total bytes; citations: {} ({} verified, {} stale, {} broken))\n\n## Included Deliverables\n\n",
+        "# {title}\n\n- Prepared for: **{person_name}**\n- Deliverables included: {}\n- Completed runs summarized: {}\n- Pre-flight check: **{status_word}** ({ready} non-empty, {} empty, {} missing, {} total bytes; citations: {} — {ratio_label})\n\n",
         preflight.items.len(),
+        summary_runs.len(),
         preflight.empty_count,
         preflight.missing_paths.len(),
         preflight.total_bytes,
         preflight.citation_gate(),
-        preflight.citations_verified,
-        preflight.citations_stale,
-        preflight.citations_broken
     );
+    if !summary_runs.is_empty() {
+        md.push_str("## Verified Work Summary\n\n");
+        for r in summary_runs {
+            let short_sha = &r.sha256[..12.min(r.sha256.len())];
+            let snippet = truncate(r.summary.trim(), 180);
+            let files_part = if r.files.is_empty() {
+                String::new()
+            } else {
+                format!(" · Files: {}", r.files.join(", "))
+            };
+            md.push_str(&format!(
+                "- **{}** (`{}` · `sha256:{}`{files_part}): {}\n",
+                r.task, r.id, short_sha, snippet
+            ));
+        }
+        md.push('\n');
+    }
+    md.push_str("## Included Deliverables\n\n");
     for f in &preflight.items {
         md.push_str(&format!(
             "- `{}` ({} {}, `sha256:{}`)\n",
@@ -2400,7 +2524,7 @@ fn build_workspace_pack(
     let preflight = inspect_workspace_pack(workspace_dir, workspace_dir, requested, explicit, &[], None)?;
     let ok = preflight.ok();
     let ready = preflight.ready_count;
-    let md = format_workspace_pack_markdown(&preflight, person_name, title);
+    let md = format_workspace_pack_markdown(&preflight, person_name, title, &[]);
     let pack_sha = receipts::sha256_hex(md.as_bytes());
     Ok((md, pack_sha, ok, ready))
 }
@@ -2411,9 +2535,36 @@ fn build_workspace_handoff_html(
     person_name: &str,
     title: &str,
     delta_md: Option<&str>,
+    summary_runs: &[&receipts::ChainedReceipt],
 ) -> (String, String) {
     let gate = preflight.citation_gate();
     let gate_class = if preflight.ok() { "ok" } else { "warn" };
+    let total_cits = preflight.citations.len();
+    let cit_ratio = if total_cits == 0 {
+        "0 inline citations".to_string()
+    } else {
+        format!(
+            "{}/{} verified ({}%)",
+            preflight.citations_verified,
+            total_cits,
+            preflight.freshness_pct()
+        )
+    };
+    let mut summary_section = String::new();
+    if !summary_runs.is_empty() {
+        summary_section.push_str("<section><h2>Verified Work Summary</h2><table><thead><tr><th>Task</th><th>Summary</th><th>Deliverables</th><th>Receipt SHA-256</th></tr></thead><tbody>");
+        for r in summary_runs {
+            let short_sha = &r.sha256[..12.min(r.sha256.len())];
+            summary_section.push_str(&format!(
+                "<tr><td><strong>{}</strong></td><td>{}</td><td><code>{}</code></td><td><code>{}</code></td></tr>",
+                html_escape(&r.task),
+                html_escape(&truncate(r.summary.trim(), 180)),
+                html_escape(&r.files.join(", ")),
+                html_escape(short_sha)
+            ));
+        }
+        summary_section.push_str("</tbody></table></section>");
+    }
     let mut files_rows = String::new();
     for f in &preflight.items {
         files_rows.push_str(&format!(
@@ -2469,16 +2620,15 @@ fn build_workspace_handoff_html(
         .join("|");
     let manifest_sha = receipts::sha256_hex(manifest_seed.as_bytes());
     let html = format!(
-        "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>{}</title><style>:root{{color-scheme:light}}body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:920px;margin:32px auto;padding:0 20px;color:#111827;background:#fff;line-height:1.55}}header{{border-bottom:1px solid #e5e7eb;padding-bottom:16px;margin-bottom:24px}}h1{{margin:0 0 8px;font-size:24px}}h2{{font-size:17px;margin:28px 0 10px}}h3{{font-size:14px;margin:0 0 6px}}.meta{{color:#4b5563;font-size:13px;margin:4px 0 12px}}.pill{{display:inline-block;padding:2px 9px;border-radius:999px;font-size:12px;font-weight:600}}.pill.ok{{background:#dcfce7;color:#166534}}.pill.warn{{background:#fef3c7;color:#92400e}}table{{width:100%;border-collapse:collapse;font-size:13px}}th,td{{text-align:left;padding:8px 10px;border-bottom:1px solid #e5e7eb;vertical-align:top}}th{{background:#f9fafb;font-weight:600}}code{{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;word-break:break-all}}pre{{background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:12px;overflow:auto;font-size:12px;white-space:pre-wrap;word-break:break-word}}.doc{{margin-top:20px;break-inside:avoid}}@media print{{body{{margin:0}}header,section{{break-inside:avoid}}}}</style></head><body><header><h1>{}</h1><p class=\"meta\">Prepared for <strong>{}</strong> &middot; <span class=\"pill {}\">{}</span> ({} verified, {} stale, {} broken) &middot; Manifest SHA-256: <code>{}</code></p></header><section><h2>SHA-256 Deliverable Manifest</h2><table><thead><tr><th>File</th><th>Contents</th><th>Size</th><th>SHA-256</th></tr></thead><tbody>{}</tbody></table></section>{}{}<section><h2>Deliverable Previews</h2>{}</section></body></html>",
+        "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>{}</title><style>:root{{color-scheme:light}}body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:920px;margin:32px auto;padding:0 20px;color:#111827;background:#fff;line-height:1.55}}header{{border-bottom:1px solid #e5e7eb;padding-bottom:16px;margin-bottom:24px}}h1{{margin:0 0 8px;font-size:24px}}h2{{font-size:17px;margin:28px 0 10px}}h3{{font-size:14px;margin:0 0 6px}}.meta{{color:#4b5563;font-size:13px;margin:4px 0 12px}}.pill{{display:inline-block;padding:2px 9px;border-radius:999px;font-size:12px;font-weight:600}}.pill.ok{{background:#dcfce7;color:#166534}}.pill.warn{{background:#fef3c7;color:#92400e}}table{{width:100%;border-collapse:collapse;font-size:13px}}th,td{{text-align:left;padding:8px 10px;border-bottom:1px solid #e5e7eb;vertical-align:top}}th{{background:#f9fafb;font-weight:600}}code{{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;word-break:break-all}}pre{{background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:12px;overflow:auto;font-size:12px;white-space:pre-wrap;word-break:break-word}}.doc{{margin-top:20px;break-inside:avoid}}@media print{{body{{margin:0}}header,section{{break-inside:avoid}}}}</style></head><body><header><h1>{}</h1><p class=\"meta\">Prepared for <strong>{}</strong> &middot; <span class=\"pill {}\">{}</span> &middot; Citations: {} &middot; Manifest SHA-256: <code>{}</code></p></header>{}<section><h2>SHA-256 Deliverable Manifest</h2><table><thead><tr><th>File</th><th>Contents</th><th>Size</th><th>SHA-256</th></tr></thead><tbody>{}</tbody></table></section>{}{}<section><h2>Deliverable Previews</h2>{}</section></body></html>",
         html_escape(title),
         html_escape(title),
         html_escape(person_name),
         gate_class,
         html_escape(gate),
-        preflight.citations_verified,
-        preflight.citations_stale,
-        preflight.citations_broken,
+        html_escape(&cit_ratio),
         html_escape(&manifest_sha),
+        summary_section,
         files_rows,
         cit_section,
         delta_section,
@@ -2760,6 +2910,9 @@ fn try_route_files_and_audit(
             let preflight_only = query_param(&req.query, "preflight")
                 .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
                 .unwrap_or(false);
+            let include_summary = query_param(&req.query, "summary")
+                .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+                .unwrap_or(false);
             let receipt_id = query_param(&req.query, "receipt_id")
                 .map(|s| s.trim().to_string())
                 .unwrap_or_default();
@@ -2770,7 +2923,7 @@ fn try_route_files_and_audit(
                 .take(25)
                 .collect();
             let explicit = !requested.is_empty();
-            let idx_opt = if requested.is_empty() || !receipt_id.is_empty() {
+            let idx_opt = if requested.is_empty() || !receipt_id.is_empty() || include_summary {
                 Some(state.search_cache.get(
                     &person.id,
                     &runtime.cfg.data_dir,
@@ -2796,18 +2949,27 @@ fn try_route_files_and_audit(
                 }
             }
             let mut extra_receipts: Vec<(&str, u64)> = Vec::new();
+            let mut summary_runs: Vec<&receipts::ChainedReceipt> = Vec::new();
             if let Some(idx) = &idx_opt {
                 if !receipt_id.is_empty() {
                     if let Some(rcpt) = receipts::find_receipt(&idx.chain, &receipt_id) {
                         extra_receipts.push((rcpt.summary.as_str(), rcpt.ts));
                     }
                 }
-                for rcpt in idx.chain.iter().rev().take(8) {
-                    if !rcpt.summary.is_empty()
+                let scan_limit = if include_summary { 15 } else { 8 };
+                for rcpt in idx.chain.iter().rev() {
+                    if include_summary && rcpt.finished && !rcpt.answered && summary_runs.len() < 15 {
+                        summary_runs.push(rcpt);
+                    }
+                    if extra_receipts.len() < scan_limit
+                        && !rcpt.summary.is_empty()
                         && rcpt.id != receipt_id
                         && rcpt.thread_id != receipt_id
                     {
                         extra_receipts.push((rcpt.summary.as_str(), rcpt.ts));
+                    }
+                    if summary_runs.len() >= 15 && extra_receipts.len() >= scan_limit {
+                        break;
                     }
                 }
             }
@@ -2833,14 +2995,19 @@ fn try_route_files_and_audit(
             let delta_file = query_param(&req.query, "delta_file").unwrap_or_default();
             let mut delta_md_opt: Option<String> = None;
             if !delta_a.trim().is_empty() && !delta_b.trim().is_empty() {
-                let idx = idx_opt.unwrap_or_else(|| {
-                    state.search_cache.get(
-                        &person.id,
-                        &runtime.cfg.data_dir,
-                        &runtime.cfg.workspace_dir,
-                        &runtime.cfg.memory_path,
-                    )
-                });
+                let owned_idx;
+                let idx = match &idx_opt {
+                    Some(i) => i,
+                    None => {
+                        owned_idx = state.search_cache.get(
+                            &person.id,
+                            &runtime.cfg.data_dir,
+                            &runtime.cfg.workspace_dir,
+                            &runtime.cfg.memory_path,
+                        );
+                        &owned_idx
+                    }
+                };
                 let Some(ra) = receipts::find_receipt(&idx.chain, delta_a.trim()) else {
                     return Some(respond_json(stream, 404, &json!({"error": "delta receipt a not found"})));
                 };
@@ -2883,12 +3050,14 @@ fn try_route_files_and_audit(
                 }
             }
             let has_delta = delta_md_opt.is_some();
+            let has_summary = !summary_runs.is_empty();
             if format == "html" {
                 let (html, pack_sha) = build_workspace_handoff_html(
                     &preflight,
                     &person.name,
                     &title,
                     delta_md_opt.as_deref(),
+                    &summary_runs,
                 );
                 let mut headers = vec![
                     ("X-Content-Type-Options", "nosniff".to_string()),
@@ -2907,6 +3076,10 @@ fn try_route_files_and_audit(
                         "X-Ergon-Pack-Delta",
                         if has_delta { "yes" } else { "none" }.to_string(),
                     ),
+                    (
+                        "X-Ergon-Pack-Summary",
+                        if has_summary { "yes" } else { "none" }.to_string(),
+                    ),
                 ];
                 if download {
                     headers.push((
@@ -2922,7 +3095,12 @@ fn try_route_files_and_audit(
                     &headers,
                 ));
             }
-            let mut md = format_workspace_pack_markdown(&preflight, &person.name, &title);
+            let mut md = format_workspace_pack_markdown(
+                &preflight,
+                &person.name,
+                &title,
+                &summary_runs,
+            );
             if let Some(delta_md) = delta_md_opt {
                 md.push_str("\n---\n\n");
                 md.push_str(&delta_md);
@@ -2940,6 +3118,10 @@ fn try_route_files_and_audit(
                 (
                     "X-Ergon-Pack-Delta",
                     if has_delta { "yes" } else { "none" }.to_string(),
+                ),
+                (
+                    "X-Ergon-Pack-Summary",
+                    if has_summary { "yes" } else { "none" }.to_string(),
                 ),
             ];
             if download {

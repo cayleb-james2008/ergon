@@ -391,6 +391,10 @@ impl PersonIndex {
         let want_files = scope == "all" || scope == "files";
         let want_memory = scope == "all" || scope == "memory";
 
+        let single_exact_token = tokens.len() == 1
+            && tokens[0] == q
+            && q.bytes().all(|b| b.is_ascii_alphanumeric());
+
         let mut receipt_hits: Vec<Value> = Vec::new();
         let mut total_receipt_hits = 0usize;
         if want_receipts {
@@ -403,6 +407,12 @@ impl PersonIndex {
                 let candidates = narrow_candidates(&self.receipt_tokens, &q, &tokens, false);
 
                 match candidates {
+                    Some(ids) if single_exact_token => {
+                        total_receipt_hits = ids.len();
+                        for &id in ids.iter().rev().take(limit) {
+                            receipt_hits.push(self.chain[id as usize].to_json());
+                        }
+                    }
                     Some(ids) => {
                         for &id in ids.iter().rev() {
                             let idx = id as usize;
@@ -470,6 +480,12 @@ impl PersonIndex {
                 };
 
                 match candidates {
+                    Some(ids) if single_exact_token => {
+                        for &id in ids.iter().take(limit) {
+                            push_file(id as usize);
+                        }
+                        total_file_hits = ids.len();
+                    }
                     Some(ids) => {
                         for id in ids {
                             if check_file(id as usize) {

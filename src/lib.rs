@@ -2198,6 +2198,7 @@ mod v010_hardening_tests {
             forwarded_for: None,
             accept_encoding: None,
             if_none_match: None,
+            keep_alive: false,
         };
         assert!(refusal(&req, false, &[]).is_none());
     }
@@ -3015,6 +3016,26 @@ mod v010_hardening_tests {
         assert_eq!(pf_stale_json["ok"], json!(false));
         assert_eq!(pf_stale_json["citations"][0]["status"], json!("stale"));
         assert_eq!(pf_stale_json["citations"][0]["line_excerpt"], json!("Notice: 60 days"));
+
+        // 3. Multi-Run Client Summary Pack (summary=1 .md + .html) & HTTP/1.1 Keep-Alive over single socket.
+        let mut ka = std::net::TcpStream::connect(addr).unwrap();
+        ka.write_all(
+            format!(
+                "GET /api/files/pack?summary=1&files=contract.txt HTTP/1.1\r\nHost: 127.0.0.1:{}\r\n\r\n\
+                 GET /api/files/pack?summary=1&format=html&files=contract.txt HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nConnection: close\r\n\r\n",
+                addr.port(),
+                addr.port()
+            )
+            .as_bytes(),
+        )
+        .unwrap();
+        let mut combined = String::new();
+        ka.read_to_string(&mut combined).unwrap();
+        assert!(combined.contains("Connection: keep-alive"), "{combined}");
+        assert!(combined.contains("X-Ergon-Pack-Summary: yes"), "{combined}");
+        assert!(combined.contains("## Verified Work Summary"), "{combined}");
+        assert!(combined.contains("Audit notice period"), "{combined}");
+        assert!(combined.contains("Verified Work Summary</h2>"), "{combined}");
 
         let _ = std::fs::remove_dir_all(&dir);
     }

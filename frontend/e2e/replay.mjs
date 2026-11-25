@@ -13,7 +13,7 @@ const LONG = "x".repeat(260);
 const h = {
   LONG,
   json: (r, body, status = 200) => r.fulfill({ status, contentType: "application/json", body: typeof body === "string" ? body : JSON.stringify(body) }),
-  patch: (fn) => async (r) => { const res0 = await r.fetch(); const j = await res0.json(); r.fulfill({ response: res0, body: JSON.stringify(fn(j)) }); },
+  patch: (fn) => async (r) => { try { const res0 = await r.fetch(); const j = await res0.json(); await r.fulfill({ response: res0, body: JSON.stringify(fn(j)) }); } catch {} },
   malformed: (r) => r.fulfill({ status: 200, contentType: "application/json", body: '{"items": [tr' }),
   down: (r) => r.abort("connectionrefused"),
   overflowing: async (p, sel) => {
@@ -56,6 +56,7 @@ for (const w of [1440, 390]) {
     const pass = errs.length === 0 && clip === 0 && !badWords && checkRes === true;
     ok(`ergon ${w}: ${c.name}`, pass, [errs.join("|"), clip ? `clipped:${clip}` : "", badWords ? "badWords" : "", checkRes === true ? "" : String(checkRes)].filter(Boolean).join(" "));
     if (c.shot) await p.screenshot({ path: `${OUT}/${c.name.replace(/\W+/g, "-").slice(0, 48)}-${w}.png` });
+    await p.unrouteAll({ behavior: "ignoreErrors" }).catch(() => {});
     await ctx.close();
   }
 }
