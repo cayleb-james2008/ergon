@@ -974,6 +974,8 @@ fn read_request_from<S: SockStream>(
     let content_length = content_length.unwrap_or(0);
     let body_limit = if method == "POST" && path == "/api/files/upload" {
         MAX_UPLOAD_BODY_BYTES
+    } else if method == "POST" && path == "/api/playbooks/import" {
+        routines::MAX_PLAYBOOK_PACK_BYTES
     } else {
         MAX_BODY_BYTES
     };
@@ -1796,6 +1798,7 @@ fn try_route_system(
                         "sse": true,
                         "skills": true,
                         "routines": true,
+                        "playbooks": true,
                         "search": true,
                         "receipts_export": true,
                         "cancel": true,
@@ -3848,6 +3851,64 @@ fn try_route_knowledge_and_routines(
                         "run": exec.run_record.to_json(),
                     }),
                 )
+            }
+        }
+        ("GET", path) if path.starts_with("/api/playbooks/") && path.ends_with("/export") => {
+            let raw_id = path
+                .strip_prefix("/api/playbooks/")
+                .and_then(|r| r.strip_suffix("/export"))
+                .unwrap_or("")
+                .trim();
+            let id = percent_decode(raw_id).trim().to_string();
+            if id.is_empty() || id.contains('/') || id.contains("..") {
+                return Some(respond_json(
+                    stream,
+                    400,
+                    &json!({"error": "invalid playbook id"}),
+                ));
+            }
+            let Some((pack, digest, filename)) =
+                routines::export_playbook_pack(&runtime.cfg.data_dir, &id)
+            else {
+                return Some(respond_json(
+                    stream,
+                    404,
+                    &json!({"error": "playbook not found"}),
+                ));
+            };
+            let body = serde_json::to_vec_pretty(&pack).unwrap_or_default();
+            let headers = vec![
+                ("X-Content-Type-Options", "nosniff".to_string()),
+                ("X-Ergon-Playbook-SHA256", digest),
+                (
+                    "Content-Disposition",
+                    format!("attachment; filename=\"{filename}\""),
+                ),
+            ];
+            respond_bytes(
+                stream,
+                200,
+                "application/json; charset=utf-8",
+                &body,
+                &headers,
+            )
+        }
+        ("POST", "/api/playbooks/import") => {
+            match routines::import_playbook_pack(&runtime.cfg.data_dir, &req.body) {
+                Ok((routine, digest)) => {
+                    let now_ms = records::now_millis();
+                    let enriched = scheduler::enrich_routine_json(&routine, now_ms, &[]);
+                    respond_json(
+                        stream,
+                        201,
+                        &json!({
+                            "routine": enriched,
+                            "sha256": digest,
+                            "verified": true,
+                        }),
+                    )
+                }
+                Err((status, msg)) => respond_json(stream, status, &json!({"error": msg})),
             }
         }
         ("GET", "/api/decisions") => {

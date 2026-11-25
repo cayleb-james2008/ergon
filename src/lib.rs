@@ -3039,4 +3039,116 @@ mod v010_hardening_tests {
 
         let _ = std::fs::remove_dir_all(&dir);
     }
+
+    #[test]
+    fn playbook_pack_export_import_verifies_sha256_schema_and_size_cap() {
+        let dir = std::env::temp_dir().join(format!(
+            "ergon-playbook-pack-v020-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let ws = dir.join("workspace");
+        std::fs::create_dir_all(&ws).unwrap();
+
+        let mut cfg = Config::from_env();
+        cfg.data_dir = dir.clone();
+        cfg.workspace_dir = ws.clone();
+        cfg.memory_path = dir.join("memory.md");
+        std::fs::write(&cfg.memory_path, "- Role: Ops\n").unwrap();
+
+        let created = routines::create_playbook_routine(
+            &dir,
+            "Quarter-End Close",
+            "Step 1 clean ledger",
+            "weekly mon",
+            None,
+            Some("reconcile_ledger"),
+            true,
+            &routines::PlaybookOptions {
+                steps: vec![
+                    "Step 1 clean ledger".to_string(),
+                    "Step 2 generate summary".to_string(),
+                ],
+                expected_inputs: vec!["ledger.csv".to_string()],
+                pack_deliverables: true,
+            },
+        )
+        .unwrap();
+        let rt_id = created["id"].as_str().unwrap().to_string();
+
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        std::thread::spawn(move || {
+            let _ = serve(listener, cfg);
+        });
+        std::thread::sleep(std::time::Duration::from_millis(50));
+
+        let send_req = |method: &str, target: &str, body: Option<&[u8]>| -> String {
+            let mut s = std::net::TcpStream::connect(addr).unwrap();
+            let b = body.unwrap_or(&[]);
+            let hdr = format!(
+                "{method} {target} HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                addr.port(),
+                b.len()
+            );
+            s.write_all(hdr.as_bytes()).unwrap();
+            if !b.is_empty() {
+                s.write_all(b).unwrap();
+            }
+            let mut out = String::new();
+            s.read_to_string(&mut out).unwrap();
+            out
+        };
+
+        // 1. Export signed pack with X-Ergon-Playbook-SHA256 & .ergon-playbook.json disposition.
+        let exp = send_req("GET", &format!("/api/playbooks/{rt_id}/export"), None);
+        assert!(exp.starts_with("HTTP/1.1 200 OK"), "{exp}");
+        assert!(exp.contains("X-Ergon-Playbook-SHA256:"), "{exp}");
+        assert!(exp.contains("quarter-end-close.ergon-playbook.json"), "{exp}");
+        let exp_body = exp.split("\r\n\r\n").nth(1).unwrap();
+        let exp_json: Value = serde_json::from_str(exp_body).unwrap();
+        assert_eq!(exp_json["format"], json!("ergon-playbook-v1"));
+        assert_eq!(exp_json["playbook"]["steps"].as_array().unwrap().len(), 2);
+        assert_eq!(exp_json["playbook"]["pack_deliverables"], json!(true));
+        let digest = exp_json["sha256"].as_str().unwrap().to_string();
+        assert_eq!(digest.len(), 64);
+
+        // 2. Import valid pack creates verified new routine.
+        let imp = send_req("POST", "/api/playbooks/import", Some(exp_body.as_bytes()));
+        assert!(imp.starts_with("HTTP/1.1 201 Created"), "{imp}");
+        let imp_json: Value = serde_json::from_str(imp.split("\r\n\r\n").nth(1).unwrap()).unwrap();
+        assert_eq!(imp_json["verified"], json!(true));
+        assert_eq!(imp_json["sha256"], json!(digest));
+        assert_eq!(imp_json["routine"]["name"], json!("Quarter-End Close"));
+        assert_ne!(imp_json["routine"]["id"], json!(rt_id));
+        assert_eq!(routines::list_routines(&dir).len(), 2);
+
+        // 3. Tampered prompt fails SHA-256 verification (400).
+        let mut tampered = exp_json.clone();
+        tampered["playbook"]["prompt"] = json!("Tampered instructions");
+        let tampered_bytes = serde_json::to_vec(&tampered).unwrap();
+        let bad_sha = send_req("POST", "/api/playbooks/import", Some(&tampered_bytes));
+        assert!(bad_sha.starts_with("HTTP/1.1 400 Bad Request"), "{bad_sha}");
+        assert!(bad_sha.contains("sha256 checksum mismatch"), "{bad_sha}");
+
+        // 4. Unexpected schema key fails strict validation (400).
+        let mut bad_schema = exp_json.clone();
+        bad_schema["extra"] = json!(true);
+        let bad_schema_bytes = serde_json::to_vec(&bad_schema).unwrap();
+        let bad_field = send_req("POST", "/api/playbooks/import", Some(&bad_schema_bytes));
+        assert!(bad_field.starts_with("HTTP/1.1 400 Bad Request"), "{bad_field}");
+
+        // 5. Payload > 256 KB fails with 413 Content Too Large.
+        let oversize = vec![b' '; routines::MAX_PLAYBOOK_PACK_BYTES + 1];
+        let big = send_req("POST", "/api/playbooks/import", Some(&oversize));
+        assert!(big.starts_with("HTTP/1.1 413 Content Too Large"), "{big}");
+
+        // 6. Export missing playbook returns 404.
+        let missing = send_req("GET", "/api/playbooks/rtn-missing/export", None);
+        assert!(missing.starts_with("HTTP/1.1 404 Not Found"), "{missing}");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

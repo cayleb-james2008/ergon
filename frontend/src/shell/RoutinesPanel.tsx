@@ -5,18 +5,20 @@
 // - Expandable Run History (GET /api/routines/:id/history) with linked SHA-256 receipts & threads
 // - Create new recurring routine (POST /api/routines) with scheduler cadence presets
 // - Run Now (POST /api/routines/:id/run) & Delete routine (DELETE /api/routines/:id)
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   CalendarClock,
   ChevronDown,
   ChevronRight,
   Clock,
+  Download,
   FileDown,
   History,
   Pause,
   Play,
   Plus,
   Trash2,
+  Upload,
 } from "lucide-react";
 import { toast } from "sonner";
 import { PanelModal, usePanelModalClose } from "@/shell/PanelModal";
@@ -35,7 +37,7 @@ import {
   type SchedulerStatus,
   type Status,
 } from "@/lib/api";
-import { exportReceiptDownload } from "@/lib/receiptExport";
+import { exportPlaybookDownload, exportReceiptDownload, MAX_PLAYBOOK_PACK_BYTES } from "@/lib/receiptExport";
 import type { SkillMeta } from "@/lib/skillsCatalog";
 import { cn } from "@/lib/utils";
 import { relTime } from "@/lib/words";
@@ -71,6 +73,7 @@ function RoutinesBody({
   onDelete,
   onRunNow,
   onOpenThread,
+  onImportPlaybook,
 }: {
   routines: Routine[];
   skills: SkillMeta[];
@@ -95,8 +98,11 @@ function RoutinesBody({
   onDelete: (id: string) => Promise<void>;
   onRunNow: (routine: Routine) => Promise<void>;
   onOpenThread?: (threadId: string) => void;
+  onImportPlaybook?: (rawText: string) => Promise<{ ok: boolean; sha256?: string; error?: string }>;
 }) {
   const { isOpen, setIsOpen } = usePanelModalClose();
+  const importInputRef = useRef<HTMLInputElement | null>(null);
+  const [importing, setImporting] = useState(false);
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState("");
   const [schedule, setSchedule] = useState(SCHEDULES[2]);
@@ -235,6 +241,29 @@ function RoutinesBody({
     toast.success(`Exported ${res.filename} (sha256: ${res.sha256.slice(0, 12)}…)`);
   };
 
+  const handleExportPlaybook = async (rt: Routine) => {
+    const useServer = hasV050Api(status, "routines");
+    const res = await exportPlaybookDownload(rt, useServer);
+    toast.success(`Exported ${res.filename} (sha256: ${res.sha256.slice(0, 12)}…)`);
+  };
+
+  const handleImportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file || !onImportPlaybook) return;
+    if (file.size > MAX_PLAYBOOK_PACK_BYTES) {
+      toast.error(`Playbook pack exceeds the 256 KB limit (${file.size} bytes).`);
+      return;
+    }
+    setImporting(true);
+    try {
+      const rawText = await file.text();
+      await onImportPlaybook(rawText);
+    } finally {
+      setImporting(false);
+    }
+  };
+
   const activeCount = routines.filter((r) => r.enabled).length;
   const pausedCount = routines.length - activeCount;
   const hasV070 = hasV070Api(status);
@@ -280,19 +309,45 @@ function RoutinesBody({
           </span>
         </div>
 
-        <Button
-          type="button"
-          size="sm"
-          variant={adding ? "outline" : "default"}
-          className="max-md:min-h-11"
-          onClick={() => {
-            setAdding((v) => !v);
-            setErr("");
-          }}
-        >
-          <Plus className="size-3.5" strokeWidth={1.5} aria-hidden />
-          {adding ? "Cancel" : "New routine"}
-        </Button>
+        <div className="flex flex-wrap items-center gap-1.5">
+          {onImportPlaybook && (
+            <>
+              <input
+                ref={importInputRef}
+                id="playbook-import-input"
+                type="file"
+                accept=".json,.ergon-playbook.json,application/json"
+                className="sr-only"
+                onChange={handleImportFile}
+              />
+              <Button
+                id="playbook-import-btn"
+                type="button"
+                size="sm"
+                variant="outline"
+                className="max-md:min-h-11"
+                disabled={importing}
+                onClick={() => importInputRef.current?.click()}
+              >
+                <Upload className="size-3.5" strokeWidth={1.5} aria-hidden />
+                {importing ? "Importing…" : "Import playbook"}
+              </Button>
+            </>
+          )}
+          <Button
+            type="button"
+            size="sm"
+            variant={adding ? "outline" : "default"}
+            className="max-md:min-h-11"
+            onClick={() => {
+              setAdding((v) => !v);
+              setErr("");
+            }}
+          >
+            <Plus className="size-3.5" strokeWidth={1.5} aria-hidden />
+            {adding ? "Cancel" : "New routine"}
+          </Button>
+        </div>
       </div>
 
       {adding && (
@@ -606,6 +661,18 @@ function RoutinesBody({
                       type="button"
                       size="sm"
                       variant="outline"
+                      data-action="export-playbook"
+                      aria-label={`Export playbook ${rt.name}`}
+                      className="max-md:min-h-11"
+                      onClick={() => handleExportPlaybook(rt)}
+                    >
+                      <Download className="size-3.5" strokeWidth={1.5} aria-hidden />
+                      Export
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
                       className="max-md:min-h-11"
                       aria-label={`Delete routine ${rt.name}`}
                       onClick={() => onDelete(rt.id)}
@@ -728,6 +795,7 @@ export function RoutinesPanel({
   onDelete,
   onRunNow,
   onOpenThread,
+  onImportPlaybook,
 }: {
   routines: Routine[];
   skills: SkillMeta[];
@@ -754,6 +822,7 @@ export function RoutinesPanel({
   onDelete: (id: string) => Promise<void>;
   onRunNow: (routine: Routine) => Promise<void>;
   onOpenThread?: (threadId: string) => void;
+  onImportPlaybook?: (rawText: string) => Promise<{ ok: boolean; sha256?: string; error?: string }>;
 }) {
   return (
     <PanelModal
@@ -779,6 +848,7 @@ export function RoutinesPanel({
         onDelete={onDelete}
         onRunNow={onRunNow}
         onOpenThread={onOpenThread}
+        onImportPlaybook={onImportPlaybook}
       />
     </PanelModal>
   );

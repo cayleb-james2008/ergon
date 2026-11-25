@@ -10,7 +10,7 @@
 // ZERO hardcoded fixture replies, ZERO fixture demo pills, ZERO Rune jargon.
 import { parseCsv } from "@/shell/WorkspaceFiles";
 import { CANONICAL_SKILLS } from "@/lib/skillsCatalog";
-import { buildSignedReceipt, sha256Hex } from "@/lib/receiptExport";
+import { buildSignedPlaybookPack, buildSignedReceipt, sha256Hex, verifyAndParsePlaybookPack } from "@/lib/receiptExport";
 import { extractCitations } from "@/lib/words";
 import { buildAuditBundle } from "@/lib/auditBundle";
 import { computeLineDiff } from "@/lib/diff";
@@ -1890,11 +1890,11 @@ export async function installBrowserEngine(): Promise<void> {
     const st = activeStore();
     const byok = loadByok();
 
-    if (method === "GET" && path === "/api/version") return jsonRes({ name: "ergon", version: "0.19.0" });
-    if (method === "GET" && path === "/api/update") return jsonRes({ current: "0.19.0", available: false, mode: "off", checked_at: Math.floor(Date.now() / 1000) });
+    if (method === "GET" && path === "/api/version") return jsonRes({ name: "ergon", version: "0.20.0" });
+    if (method === "GET" && path === "/api/update") return jsonRes({ current: "0.20.0", available: false, mode: "off", checked_at: Math.floor(Date.now() / 1000) });
     if (method === "GET" && path === "/api/status") {
       return jsonRes({
-        version: "0.19.0",
+        version: "0.20.0",
         model_configured: true,
         model: byok.engine_mode === "byok" && byok.model_id ? byok.model_id : "browser-workspace-engine",
         model_base_url: byok.engine_mode === "byok" ? byok.model_base_url : "indexeddb://local",
@@ -1904,6 +1904,7 @@ export async function installBrowserEngine(): Promise<void> {
           sse: true,
           skills: true,
           routines: true,
+          playbooks: true,
           search: true,
           receipts_export: true,
           cancel: true,
@@ -2076,6 +2077,49 @@ export async function installBrowserEngine(): Promise<void> {
       });
       await persist();
       return resp;
+    }
+    if (method === "GET" && path.startsWith("/api/playbooks/") && path.endsWith("/export")) {
+      const pid = decodeURIComponent(path.slice("/api/playbooks/".length, -"/export".length)).trim();
+      const rt = st.routines.find((x) => x.id === pid);
+      if (!rt) return jsonRes({ error: "playbook not found" }, 404);
+      const built = await buildSignedPlaybookPack(rt, "0.20.0");
+      return new Response(built.json, {
+        status: 200,
+        headers: {
+          "Content-Type": "application/json; charset=utf-8",
+          "X-Content-Type-Options": "nosniff",
+          "X-Ergon-Playbook-SHA256": built.sha256,
+          "Content-Disposition": `attachment; filename="${built.filename}"`,
+        },
+      });
+    }
+    if (method === "POST" && path === "/api/playbooks/import") {
+      const rawText = typeof init?.body === "string" ? init.body : JSON.stringify(body ?? {});
+      const checked = await verifyAndParsePlaybookPack(rawText);
+      if (!checked.ok) {
+        return jsonRes({ error: checked.error }, checked.status);
+      }
+      const pb = checked.playbook;
+      const created: Routine = {
+        id: `rt-${Date.now()}-${st.routines.length + 1}`,
+        name: pb.name.trim(),
+        prompt: pb.prompt.trim(),
+        schedule: pb.schedule.trim(),
+        cadence: pb.schedule.trim(),
+        interval_secs: pb.interval_secs ?? undefined,
+        skill_id: pb.skill_id ?? undefined,
+        steps: pb.steps.length > 0 ? pb.steps : undefined,
+        expected_inputs: pb.expected_inputs.length > 0 ? pb.expected_inputs : undefined,
+        pack_deliverables: pb.pack_deliverables ? true : undefined,
+        enabled: true,
+        last_run_ts: null,
+        next_run_ms: estimateNextRunMs(pb.schedule.trim(), Date.now(), pb.interval_secs ?? undefined),
+        run_count: 0,
+        created_ts: Date.now(),
+      };
+      st.routines.unshift(created);
+      await persist();
+      return jsonRes({ routine: created, sha256: checked.sha256, verified: true }, 201);
     }
     if (method === "GET" && path === "/api/search") {
       const q = (u.searchParams.get("q") || "").trim().toLowerCase();

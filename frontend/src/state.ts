@@ -25,6 +25,7 @@ import {
   type WorkspaceFile,
 } from "@/lib/api";
 import { CANONICAL_SKILLS, mergeServerSkills, type SkillMeta } from "@/lib/skillsCatalog";
+import { MAX_PLAYBOOK_PACK_BYTES, verifyAndParsePlaybookPack } from "@/lib/receiptExport";
 import { buildStarterCards, toolLabel, type StarterCard } from "@/lib/words";
 import { threadState } from "@/chat/Entry";
 import type { Recent } from "@/chat/Chat";
@@ -429,6 +430,76 @@ export function useErgon() {
       saveLocalRoutines(next);
       setRoutines((prev) => prev.filter((x) => x.id !== id));
       toast("Deleted routine.");
+    },
+    [loadRoutines]
+  );
+
+  const importPlaybook = useCallback(
+    async (rawText: string): Promise<{ ok: boolean; sha256?: string; error?: string }> => {
+      const byteLen = new TextEncoder().encode(rawText).length;
+      if (byteLen > MAX_PLAYBOOK_PACK_BYTES) {
+        const msg = `Playbook pack exceeds the 256 KB limit (${byteLen} bytes).`;
+        toast.error(msg);
+        return { ok: false, error: msg };
+      }
+      if (hasV050Api(statusRef.current, "routines")) {
+        try {
+          const resp = await fetch("/api/playbooks/import", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: rawText,
+          });
+          const data = (await resp.json().catch(() => ({}))) as {
+            routine?: unknown;
+            sha256?: string;
+            error?: string;
+          };
+          if (resp.ok) {
+            const rt = normalizeRoutine(data.routine);
+            const digest = typeof data.sha256 === "string" ? data.sha256 : "";
+            toast.success(
+              `Imported "${rt?.name || "playbook"}"${digest ? ` (verified sha256:${digest.slice(0, 12)}…)` : ""}.`
+            );
+            await loadRoutines();
+            return { ok: true, sha256: digest };
+          }
+          if (resp.status !== 404 && resp.status !== 405) {
+            const msg = data.error || `Playbook import failed (${resp.status}).`;
+            toast.error(msg);
+            return { ok: false, error: msg };
+          }
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : "Could not import playbook.";
+          toast.error(msg);
+          return { ok: false, error: msg };
+        }
+      }
+      const verified = await verifyAndParsePlaybookPack(rawText);
+      if (!verified.ok) {
+        toast.error(verified.error);
+        return { ok: false, error: verified.error };
+      }
+      const pb = verified.playbook;
+      const created: Routine = {
+        id: `rt-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        name: pb.name.trim(),
+        prompt: pb.prompt.trim(),
+        schedule: pb.schedule.trim(),
+        interval_secs: pb.interval_secs ?? undefined,
+        skill_id: pb.skill_id ?? undefined,
+        steps: pb.steps.length > 0 ? pb.steps : undefined,
+        expected_inputs: pb.expected_inputs.length > 0 ? pb.expected_inputs : undefined,
+        pack_deliverables: pb.pack_deliverables ? true : undefined,
+        enabled: true,
+        last_run_ts: null,
+        run_count: 0,
+        created_ts: Date.now(),
+      };
+      const next = [created, ...loadLocalRoutines()];
+      saveLocalRoutines(next);
+      setRoutines(next);
+      toast.success(`Imported "${created.name}" (verified sha256:${verified.sha256.slice(0, 12)}…).`);
+      return { ok: true, sha256: verified.sha256 };
     },
     [loadRoutines]
   );
@@ -964,7 +1035,7 @@ export function useErgon() {
     todayCount, learnedCount, suiteCount, files, lastUploaded, setLastUploaded, skills, routines, scheduler, routineHistoryRev,
     send, sendPrompt, cancelRun, openThread, newThread, switchPerson, refreshPerson, showRun,
     loadThreads, loadStatus, loadPeople, refreshCounts, loadRecent, loadStarters,
-    loadFiles, uploadFile, uploadFiles, loadSkills, loadRoutines, createRoutine, deleteRoutine,
+    loadFiles, uploadFile, uploadFiles, loadSkills, loadRoutines, createRoutine, deleteRoutine, importPlaybook,
     toggleRoutine, loadRoutineHistory, runRoutineNow, setOnRoutineFired,
     setSideError, setRecovered,
   };

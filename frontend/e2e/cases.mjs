@@ -10,6 +10,10 @@ export default ({ LONG, json, patch, malformed, down, overflowing, has }) => [
         people: [...(j.people || []), { id: "n1", name: null, role: null }, { id: "n2", name: 42, role: "" }],
       })),
     ]],
+    waitFor: async (p) => {
+      await p.locator("main h1").first().waitFor({ state: "visible", timeout: 10_000 });
+      await p.locator("#team-h").first().waitFor({ state: "visible", timeout: 10_000 });
+    },
     check: async (p) => (await p.locator("main h1").count()) === 1 || "no headline rendered",
   },
   {
@@ -21,18 +25,24 @@ export default ({ LONG, json, patch, malformed, down, overflowing, has }) => [
       ["**/api/brief", patch((j) => ({ ...j, finished: j.finished.map((f) => ({ ...f, task: "Task " + LONG })) }))],
       ["**/api/today", patch((j) => ({ ...j, events: (j.events || []).map((ev) => ({ ...ev, title: "Event " + LONG })) }))],
     ],
+    waitFor: async (p, { LONG: L }) => {
+      await p.locator("#lead-h").first().waitFor({ state: "visible", timeout: 10_000 });
+      await p.locator("main ol p", { hasText: L }).first().waitFor({ state: "visible", timeout: 10_000 });
+    },
     check: async (p) => (await overflowing(p, "#lead-h, main ol p")) === 0 || "text wider than its box",
   },
   {
     name: "malformed brief shows plain error with Retry",
     path: "?face=today",
     routes: [["**/api/brief", malformed]],
+    waitFor: (p) => p.getByText("Today's paper could not be loaded").first().waitFor({ state: "visible", timeout: 10_000 }),
     check: async (p) => (await has(p, "Today's paper could not be loaded")) || "missing brief error message",
   },
   {
     name: "unreachable brief shows plain error with Retry",
     path: "?face=today",
     routes: [["**/api/brief", down]],
+    waitFor: (p) => p.getByText("Today's paper could not be loaded").first().waitFor({ state: "visible", timeout: 10_000 }),
     check: async (p) => (await has(p, "Today's paper could not be loaded")) || "missing unreachable brief error message",
   },
   {
@@ -42,6 +52,7 @@ export default ({ LONG, json, patch, malformed, down, overflowing, has }) => [
       "**/api/decisions",
       patch((j) => ({ decisions: j.decisions.map((d) => ({ ...d, kind: "question", summary: "Use the new supplier list?" })) })),
     ]],
+    waitFor: (p) => p.getByRole("button", { name: "Decline", exact: true }).first().waitFor({ state: "visible", timeout: 10_000 }),
     check: async (p) => {
       const band = await p.locator("section[aria-labelledby=lead-h]").innerText();
       if (!/recorded/.test(band) || /went ahead/.test(band)) return "unexpected band copy: " + band.slice(0, 80);
@@ -54,8 +65,8 @@ export default ({ LONG, json, patch, malformed, down, overflowing, has }) => [
     act: async (p) => {
       if ((p.viewportSize()?.width ?? 1440) < 768) {
         await p.getByRole("button", { name: "Open menu" }).click();
-        await p.waitForTimeout(400);
       }
+      await p.getByText("Could not load your conversations").first().waitFor({ state: "visible", timeout: 10_000 });
     },
     check: async (p) => (await has(p, "Could not load your conversations")) || "missing conversations error message",
   },
@@ -63,6 +74,7 @@ export default ({ LONG, json, patch, malformed, down, overflowing, has }) => [
     name: "malformed people list shows error alert in Team card",
     path: "?face=today",
     routes: [["**/api/people", (r) => (r.request().method() === "GET" ? json(r, '{"people": [tr') : r.continue())]],
+    waitFor: (p) => p.locator("#team-h ~ p[role=alert]:visible", { hasText: "Could not load the people list" }).first().waitFor({ state: "visible", timeout: 10_000 }),
     check: async (p) =>
       (await p.locator("#team-h ~ p[role=alert]:visible", { hasText: "Could not load the people list" }).count()) === 1
       || "missing people error alert",
@@ -81,6 +93,7 @@ export default ({ LONG, json, patch, malformed, down, overflowing, has }) => [
         })),
       })),
     ]],
+    waitFor: (p, { LONG: L }) => p.locator("section[aria-labelledby=finished-h] ol li", { hasText: L }).first().waitFor({ state: "visible", timeout: 10_000 }),
     check: async (p) => {
       if ((await overflowing(p, "main ol p")) !== 0) return "file row overflowed";
       return (await p.locator("section[aria-labelledby=finished-h] ol li svg[aria-hidden=true]").count()) >= 8 || "missing file glyphs";
@@ -105,6 +118,10 @@ export default ({ LONG, json, patch, malformed, down, overflowing, has }) => [
         })),
       ],
     ],
+    waitFor: async (p) => {
+      await p.locator("main h1").first().waitFor({ state: "visible", timeout: 10_000 });
+      await p.getByText("ok.md").first().waitFor({ state: "visible", timeout: 10_000 });
+    },
     check: async (p) => (await p.locator("main h1").count()) === 1 || "headline crashed on non-array files",
   },
   {
@@ -112,7 +129,7 @@ export default ({ LONG, json, patch, malformed, down, overflowing, has }) => [
     routes: [["**/api/graph", malformed]],
     act: async (p) => {
       await p.getByRole("tab", { name: "Work Graph" }).click();
-      await p.waitForTimeout(500);
+      await p.getByText("The graph could not be loaded.").first().waitFor({ state: "visible", timeout: 10_000 });
     },
     check: async (p) => (await has(p, "The graph could not be loaded.")) || "missing graph error state",
   },
