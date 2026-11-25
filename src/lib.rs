@@ -74,6 +74,14 @@ impl DetectedGateway {
     }
 }
 
+#[inline]
+pub fn model_configured_for(model_base_url: &str, has_api_key: bool) -> bool {
+    has_api_key
+        || parse_url_host_port(model_base_url)
+            .map(|(h, port)| matches!(h.as_str(), "127.0.0.1" | "localhost" | "[::1]") && port != 9)
+            .unwrap_or(false)
+}
+
 /// Extract (host, port) from an http(s) URL authority.
 fn parse_url_host_port(url: &str) -> Option<(String, u16)> {
     let (scheme, rest) = url.trim().split_once("://")?;
@@ -314,11 +322,9 @@ impl Config {
     /// True when the agent can reach a configured model: either an API key is
     /// present, or the base URL targets a real loopback OpenAI-compatible port
     /// (excluding RFC 863 discard port 9 used by offline/no-key tests).
+    #[inline]
     pub fn model_configured(&self) -> bool {
-        self.api_key.is_some()
-            || parse_url_host_port(&self.model_base_url)
-                .map(|(h, port)| matches!(h.as_str(), "127.0.0.1" | "localhost" | "[::1]") && port != 9)
-                .unwrap_or(false)
+        model_configured_for(&self.model_base_url, self.api_key.is_some())
     }
 
     pub fn ensure_dirs(&self) -> std::io::Result<()> {
@@ -3247,6 +3253,178 @@ mod v010_hardening_tests {
         assert_eq!(std::fs::read_to_string(ws.join("ledger.csv")).unwrap(), orig_csv);
         assert!(!ws.join("Playbook Deliverable Pack.md").exists());
         assert!(send_post("/api/playbooks/rtn-missing/preview").starts_with("HTTP/1.1 404 Not Found"));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn routine_catchup_and_sha256_verification_badge_work_end_to_end() {
+        let dir = std::env::temp_dir().join(format!(
+            "ergon-catchup-v023-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let ws = dir.join("workspace");
+        std::fs::create_dir_all(&ws).unwrap();
+
+        // Stub OpenAI-compatible loopback model returning a clean final answer.
+        let model_listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let model_addr = model_listener.local_addr().unwrap();
+        std::thread::spawn(move || {
+            for mut s in model_listener.incoming().flatten() {
+                let mut buf = [0u8; 4096];
+                let _ = s.read(&mut buf);
+                let payload = r#"{"id":"m1","choices":[{"message":{"role":"assistant","content":"{\"action\":\"done\",\"summary\":\"Caught up ledger check cleanly.\"}"}}]}"#;
+                let resp = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{payload}",
+                    payload.len()
+                );
+                let _ = s.write_all(resp.as_bytes());
+            }
+        });
+
+        let mut cfg = Config::from_env();
+        cfg.data_dir = dir.clone();
+        cfg.workspace_dir = ws.clone();
+        cfg.memory_path = dir.join("memory.md");
+        cfg.model_base_url = format!("http://{model_addr}/v1");
+        cfg.model_id = "stub-model".to_string();
+        std::fs::write(&cfg.memory_path, "- Role: Finance\n").unwrap();
+
+        // Seed an active routine whose created_ms was 35 minutes ago on an "every 15m" schedule -> 2 missed windows.
+        let now_ms = records::now_millis();
+        let old_ms = now_ms.saturating_sub(35 * 60 * 1000);
+        let seeded = json!({
+            "routines": [{
+                "id": "rtn-missed-1",
+                "name": "15m Ledger Watch",
+                "prompt": "Check workspace status",
+                "schedule": "every 15m",
+                "interval_secs": 900,
+                "enabled": true,
+                "created_ms": old_ms,
+                "last_run_ms": Value::Null,
+                "run_count": 0
+            }]
+        });
+        std::fs::write(routines::routines_path(&dir), seeded.to_string()).unwrap();
+
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        std::thread::spawn(move || {
+            let _ = serve(listener, cfg);
+        });
+        std::thread::sleep(std::time::Duration::from_millis(50));
+
+        let send_http = |method: &str, target: &str| -> String {
+            let mut s = std::net::TcpStream::connect(addr).unwrap();
+            let body = if method == "POST" { "{}" } else { "" };
+            let req = format!(
+                "{method} {target} HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                addr.port(),
+                body.len()
+            );
+            s.write_all(req.as_bytes()).unwrap();
+            let mut out = String::new();
+            s.read_to_string(&mut out).unwrap();
+            out
+        };
+
+        // 1. Before catch-up: missed_windows >= 2, last_run_verified == null.
+        let before = send_http("GET", "/api/routines");
+        let before_json: Value = serde_json::from_str(before.split("\r\n\r\n").nth(1).unwrap()).unwrap();
+        assert!(before_json["routines"][0]["missed_windows"].as_u64().unwrap() >= 2, "{before_json}");
+        assert!(before_json["scheduler"]["missed_windows_total"].as_u64().unwrap() >= 2);
+        assert_eq!(before_json["routines"][0]["last_run_verified"], Value::Null);
+
+        // 2. Run 1-click Catch Up -> clears missed windows and stamps verified SHA-256 receipt!
+        let cu = send_http("POST", "/api/routines/rtn-missed-1/catchup");
+        assert!(cu.starts_with("HTTP/1.1 200 OK"), "{cu}");
+        let cu_json: Value = serde_json::from_str(cu.split("\r\n\r\n").nth(1).unwrap()).unwrap();
+        assert_eq!(cu_json["caught_up"], json!(true));
+        assert!(cu_json["missed_windows_cleared"].as_u64().unwrap() >= 2);
+        assert_eq!(cu_json["routine"]["missed_windows"], json!(0));
+        assert_eq!(cu_json["routine"]["last_run_verified"], json!("verified"));
+        assert_eq!(
+            cu_json["routine"]["last_run_receipt_sha256"]
+                .as_str()
+                .unwrap()
+                .len(),
+            64
+        );
+
+        // 3. Repeated catch-up reports caught_up: false, missed_windows: 0.
+        let cu2 = send_http("POST", "/api/routines/rtn-missed-1/catchup");
+        let cu2_json: Value = serde_json::from_str(cu2.split("\r\n\r\n").nth(1).unwrap()).unwrap();
+        assert_eq!(cu2_json["caught_up"], json!(false));
+        assert_eq!(cu2_json["missed_windows"], json!(0));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn fast_json_writers_match_value_builders() {
+        let dir = std::env::temp_dir().join(format!(
+            "ergon-fast-json-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let mut cfg = Config::from_env();
+        cfg.data_dir = dir.clone();
+        cfg.workspace_dir = dir.join("workspace");
+        cfg.memory_path = dir.join("memory.md");
+        cfg.ensure_dirs().unwrap();
+        std::fs::write(cfg.workspace_dir.join("notes\"q\\.md"), "alpha\nbeta\n\"quoted\"\n").unwrap();
+        std::fs::write(&cfg.memory_path, "# Memory\n- remembered alpha item\n").unwrap();
+        records::append_work(
+            &cfg,
+            "Analyze \"alpha\"\titem",
+            "Line1\nLine2",
+            &["notes\"q\\.md".to_string()],
+            "t-fast-1",
+            true,
+        );
+
+        let idx = search::SearchCache::new().get(
+            "default",
+            &cfg.data_dir,
+            &cfg.workspace_dir,
+            &cfg.memory_path,
+        );
+
+        // 1. write_files_json parity
+        let (total_f, files_v) = idx.list_files(0, Some(10), "");
+        let mut buf = Vec::new();
+        idx.write_files_json(&mut buf, "default", 0, Some(10), "");
+        let fast_files: Value = serde_json::from_slice(&buf).unwrap();
+        assert_eq!(
+            fast_files,
+            json!({"person_id": "default", "total": total_f, "files": files_v})
+        );
+
+        // 2. write_receipts_json parity (unfiltered + filtered)
+        for (q, st) in [("", "all"), ("alpha", "finished"), ("missing", "all")] {
+            buf.clear();
+            idx.write_receipts_json(&mut buf, 0, 50, q, st);
+            let fast_r: Value = serde_json::from_slice(&buf).unwrap();
+            let slow_r = idx.list_receipts(0, 50, q, st);
+            assert_eq!(fast_r, slow_r, "receipt mismatch for q={q} status={st}");
+        }
+
+        // 3. write_search_json parity (compare everything except timing field elapsed_ms)
+        for (q, sc) in [("", "all"), ("alpha", "all"), ("quoted", "files"), ("remembered", "memory")] {
+            buf.clear();
+            idx.write_search_json(&mut buf, q, sc, 30);
+            let mut fast_s: Value = serde_json::from_slice(&buf).unwrap();
+            let mut slow_s = idx.search(q, sc, 30);
+            fast_s["elapsed_ms"] = json!(0);
+            slow_s["elapsed_ms"] = json!(0);
+            assert_eq!(fast_s, slow_s, "search mismatch for q={q} scope={sc}");
+        }
 
         let _ = std::fs::remove_dir_all(&dir);
     }

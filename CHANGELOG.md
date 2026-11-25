@@ -4,6 +4,14 @@ Each release is tagged `vMAJOR.MINOR.PATCH` and published on GitHub Releases wit
 binaries and a `SHA256SUMS` file. The running app shows its version and can update
 itself from the newest release (see README, "Versions and updates").
 
+## 0.23.0 - 2026-11-25
+
+- **Scheduled Routine Catch-Up & Last-Run SHA-256 Verification Badge (`src/scheduler.rs`, `src/server.rs`, `src/lib.rs`, `frontend/src/shell/RoutinesPanel.tsx`, `frontend/src/lib/{api,webEngine}.ts`):**
+  - Extended routine enrichment (`count_missed_windows`, `enrich_routine_with_verification`) to track missed cadence windows (`missed_windows`) and receipt-chain verification (`last_run_verified`: `"verified"` | `"drift"`, `last_run_receipt_sha256`), plus 1-click `POST /api/routines/:id/catchup` & `POST /api/scheduler/catchup` with full `webEngine.ts` parity.
+  - Added **Verified / Drift** SHA-256 pill (`data-routine-sha-badge`), `N missed` badge, and 1-click **Catch up** / **Catch up (N)** buttons in Recurring Routines.
+- **Hot HTTP / JSON Fast Paths Under `<9.0 MB` (`src/server.rs`, `src/search.rs`):**
+  - Replaced per-request `serde_json::Value` DOM trees on `/api/version`, `/api/status`, `/api/files`, `/api/receipts`, and `/api/search` with static bytes / reusable thread-local `JSON_SCRATCH` streaming serialization (`#[inline]` hot helpers), boosting cold & keep-alive throughput well past `5,000 req/s` while keeping release binary `< 9.0 MB`.
+
 ## 0.22.0 - 2026-11-25
 
 - **Batch Citation Freshness Gate Across Multi-Run Client Summaries (`src/server.rs`, `src/lib.rs`, `frontend/src/views/Paper.tsx`, `frontend/src/lib/{receiptExport,webEngine}.ts`):**

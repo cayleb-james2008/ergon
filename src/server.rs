@@ -469,7 +469,19 @@ fn execute_routine_run(
             );
             let _ = scheduler::record_run_history(&runtime.cfg.data_dir, rec.clone());
             let hist = scheduler::list_run_history(&runtime.cfg.data_dir, Some(id), 20);
-            let enriched = scheduler::enrich_routine_json(&updated, finished_ms, &hist);
+            let idx = state.search_cache.get(
+                &person.id,
+                &runtime.cfg.data_dir,
+                &runtime.cfg.workspace_dir,
+                &runtime.cfg.memory_path,
+            );
+            let enriched = scheduler::enrich_routine_with_verification(
+                &updated,
+                finished_ms,
+                &hist,
+                &idx.chain,
+                idx.chain_valid,
+            );
             state.events.publish(
                 "routine_fired",
                 &person.id,
@@ -521,7 +533,19 @@ fn execute_routine_run(
             );
             let _ = scheduler::record_run_history(&runtime.cfg.data_dir, rec.clone());
             let hist = scheduler::list_run_history(&runtime.cfg.data_dir, Some(id), 20);
-            let enriched = scheduler::enrich_routine_json(&updated, finished_ms, &hist);
+            let idx = state.search_cache.get(
+                &person.id,
+                &runtime.cfg.data_dir,
+                &runtime.cfg.workspace_dir,
+                &runtime.cfg.memory_path,
+            );
+            let enriched = scheduler::enrich_routine_with_verification(
+                &updated,
+                finished_ms,
+                &hist,
+                &idx.chain,
+                idx.chain_valid,
+            );
             state.events.publish(
                 "routine_fired",
                 &person.id,
@@ -820,6 +844,7 @@ pub(crate) fn read_request(stream: &mut std::net::TcpStream) -> Option<Request> 
     read_request_from(&mut reader, std::time::Duration::from_secs(30))
 }
 
+#[inline]
 fn read_request_from<S: SockStream>(
     reader: &mut BufReader<S>,
     initial_timeout: std::time::Duration,
@@ -1095,6 +1120,7 @@ fn host_name(host: &str) -> String {
 }
 
 /// Whether a Host names this machine or one the operator allowed (EH1).
+#[inline]
 pub(crate) fn host_allowed(host: &str, allowed: &[String]) -> bool {
     let name = host_name(host);
     matches!(name.as_str(), "localhost" | "127.0.0.1" | "[::1]")
@@ -1142,6 +1168,7 @@ fn respond(
     respond_h(stream, status, content_type, body, &[])
 }
 
+#[inline]
 fn respond_bytes(
     stream: &mut std::net::TcpStream,
     status: u16,
@@ -1326,6 +1353,31 @@ fn effective_cfg(state: &AppState, runtime: &PersonRuntime) -> Config {
     cfg.model_id = live.model_id.clone();
     cfg.api_key = live.api_key.clone();
     cfg
+}
+
+const VERSION_JSON_BYTES: &[u8] = concat!(
+    r#"{"name":"ergon","version":""#,
+    env!("CARGO_PKG_VERSION"),
+    r#""}"#,
+)
+.as_bytes();
+
+#[inline]
+fn respond_json_with<F: FnOnce(&mut Vec<u8>)>(
+    stream: &mut std::net::TcpStream,
+    status: u16,
+    fill: F,
+) -> std::io::Result<()> {
+    JSON_SCRATCH.with(|cell| {
+        let mut buf = cell.borrow_mut();
+        buf.clear();
+        fill(&mut buf);
+        let res = respond_bytes(stream, status, "application/json", &buf, &[]);
+        if buf.capacity() > 256 * 1024 {
+            *buf = Vec::with_capacity(4096);
+        }
+        res
+    })
 }
 
 fn respond_json(stream: &mut std::net::TcpStream, status: u16, v: &Value) -> std::io::Result<()> {
@@ -1691,12 +1743,6 @@ fn handle_connection(stream: std::net::TcpStream, state: &AppState) -> std::io::
         // has a session cookie, else the global active person).
         let person = effective_person(state, &req.session);
         let runtime = runtime_for(state, &person);
-        // The tool context for agent runs on behalf of this person.
-        let ctx = ToolCtx {
-            library: state.library.clone(),
-            root_data_dir: root_cfg.data_dir.clone(),
-            person_id: person.id.clone(),
-        };
         let stream = reader.get_mut();
         let res = if let Some(res) = try_route_system(stream, state, &req, &person, &runtime) {
             res
@@ -1704,10 +1750,17 @@ fn handle_connection(stream: std::net::TcpStream, state: &AppState) -> std::io::
             res
         } else if let Some(res) = try_route_knowledge_and_routines(stream, state, &req, &person, &runtime) {
             res
-        } else if let Some(res) = try_route_runs_and_chat(stream, state, &req, &person, &runtime, &ctx) {
-            res
         } else {
-            respond_json(stream, 404, &json!({"error": "not found"}))
+            let ctx = ToolCtx {
+                library: state.library.clone(),
+                root_data_dir: root_cfg.data_dir.clone(),
+                person_id: person.id.clone(),
+            };
+            if let Some(res) = try_route_runs_and_chat(stream, state, &req, &person, &runtime, &ctx) {
+                res
+            } else {
+                respond_json(stream, 404, &json!({"error": "not found"}))
+            }
         };
         let continue_loop = KEEP_ALIVE_CONN.get() && !is_sse && res.is_ok();
         KEEP_ALIVE_CONN.set(false);
@@ -1732,11 +1785,9 @@ fn try_route_system(
     Some(match (req.method.as_str(), req.path.as_str()) {
         ("GET", "/") => serve_page(stream, state, req, person, ui::index_html()),
         ("GET", path) if path.starts_with("/chunks/") => serve_chunk(stream, req, path),
-        ("GET", "/api/version") => respond_json(
-            stream,
-            200,
-            &json!({"name": "ergon", "version": env!("CARGO_PKG_VERSION")}),
-        ),
+        ("GET", "/api/version") => {
+            respond_bytes(stream, 200, "application/json", VERSION_JSON_BYTES, &[])
+        }
         ("GET", "/api/update") => respond_json(stream, 200, &state.updater.snapshot()),
         ("POST", "/api/update/check") => respond_json(stream, 200, &state.updater.check_now()),
         ("POST", "/api/update/apply") | ("POST", "/api/update/restart") => {
@@ -1775,43 +1826,78 @@ fn try_route_system(
             }
         }
         ("GET", "/api/status") => {
-            let mut recovered: Vec<String> = state.people.read().unwrap().recovered.clone();
-            recovered.extend(state.library.lock().unwrap().recovered.clone());
-            for rt in state.runtimes.read().unwrap().values() {
-                recovered.extend(rt.store.lock().unwrap().recovered.clone());
+            let mut recovered: Vec<String> = Vec::new();
+            {
+                let people = state.people.read().unwrap();
+                if !people.recovered.is_empty() {
+                    recovered.extend(people.recovered.iter().cloned());
+                }
             }
-            recovered.sort();
-            recovered.dedup();
-            let eff = effective_cfg(state, runtime);
-            let live_meta = state.model_cfg.lock().unwrap().clone();
-            respond_json(
-                stream,
-                200,
-                &json!({
-                    "version": env!("CARGO_PKG_VERSION"),
-                    "model_configured": eff.model_configured(),
-                    "model": eff.model_id,
-                    "model_base_url": eff.model_base_url,
-                    "is_loopback_model": is_loopback_url(&eff.model_base_url),
-                    "auto_detected": live_meta.auto_detected,
-                    "capabilities": {
-                        "sse": true,
-                        "skills": true,
-                        "routines": true,
-                        "playbooks": true,
-                        "search": true,
-                        "receipts_export": true,
-                        "cancel": true,
-                        "scheduler": state.scheduler_enabled,
-                        "file_history": true,
-                        "audit_bundle": true,
-                        "tripwire": true,
-                    },
-                    "scheduler_enabled": state.scheduler_enabled,
-                    "person": person.to_json(),
-                    "store_recovered": recovered,
-                }),
-            )
+            {
+                let lib = state.library.lock().unwrap();
+                if let Some(s) = &lib.recovered {
+                    recovered.push(s.clone());
+                }
+            }
+            {
+                let runtimes = state.runtimes.read().unwrap();
+                for rt in runtimes.values() {
+                    let st = rt.store.lock().unwrap();
+                    if let Some(s) = &st.recovered {
+                        recovered.push(s.clone());
+                    }
+                }
+            }
+            if recovered.len() > 1 {
+                recovered.sort();
+                recovered.dedup();
+            }
+            let (model_configured, model_id, model_base_url, auto_detected) = {
+                let live = state.model_cfg.lock().unwrap();
+                (
+                    crate::model_configured_for(&live.model_base_url, live.api_key.is_some()),
+                    live.model_id.clone(),
+                    live.model_base_url.clone(),
+                    live.auto_detected,
+                )
+            };
+            let is_loopback = is_loopback_url(&model_base_url);
+            respond_json_with(stream, 200, |buf| {
+                buf.extend_from_slice(br#"{"version":"#);
+                search::write_json_str(buf, env!("CARGO_PKG_VERSION"));
+                buf.extend_from_slice(br#","model_configured":"#);
+                search::write_json_bool(buf, model_configured);
+                buf.extend_from_slice(br#","model":"#);
+                search::write_json_str(buf, &model_id);
+                buf.extend_from_slice(br#","model_base_url":"#);
+                search::write_json_str(buf, &model_base_url);
+                buf.extend_from_slice(br#","is_loopback_model":"#);
+                search::write_json_bool(buf, is_loopback);
+                buf.extend_from_slice(br#","auto_detected":"#);
+                search::write_json_bool(buf, auto_detected);
+                buf.extend_from_slice(
+                    br#","capabilities":{"sse":true,"skills":true,"routines":true,"playbooks":true,"search":true,"receipts_export":true,"cancel":true,"scheduler":"#,
+                );
+                search::write_json_bool(buf, state.scheduler_enabled);
+                buf.extend_from_slice(
+                    br#","file_history":true,"audit_bundle":true,"tripwire":true},"scheduler_enabled":"#,
+                );
+                search::write_json_bool(buf, state.scheduler_enabled);
+                buf.extend_from_slice(br#","person":{"id":"#);
+                search::write_json_str(buf, &person.id);
+                buf.extend_from_slice(br#","name":"#);
+                search::write_json_str(buf, &person.name);
+                buf.extend_from_slice(br#","role":"#);
+                search::write_json_str(buf, &person.role);
+                buf.extend_from_slice(br#"},"store_recovered":["#);
+                for (i, item) in recovered.iter().enumerate() {
+                    if i > 0 {
+                        buf.push(b',');
+                    }
+                    search::write_json_str(buf, item);
+                }
+                buf.extend_from_slice(b"]}");
+            })
         }
         ("GET", "/api/config") => {
             if state.gate_token.is_some() || !host_allowed(req.host.as_deref().unwrap_or(""), &[]) {
@@ -3362,28 +3448,26 @@ fn try_route_files_and_audit(
             respond_json(stream, 200, &report.to_json())
         }
         ("GET", "/api/files") => {
-            let offset = query_param(&req.query, "offset")
-                .and_then(|s| s.parse::<usize>().ok())
-                .unwrap_or(0);
-            let limit = query_param(&req.query, "limit")
-                .and_then(|s| s.parse::<usize>().ok());
-            let q = query_param(&req.query, "q").unwrap_or_default();
+            let (offset, limit, q) = if req.query.is_empty() {
+                (0usize, None, String::new())
+            } else {
+                (
+                    query_param(&req.query, "offset")
+                        .and_then(|s| s.parse::<usize>().ok())
+                        .unwrap_or(0),
+                    query_param(&req.query, "limit").and_then(|s| s.parse::<usize>().ok()),
+                    query_param(&req.query, "q").unwrap_or_default(),
+                )
+            };
             let idx = state.search_cache.get(
                 &person.id,
                 &runtime.cfg.data_dir,
                 &runtime.cfg.workspace_dir,
                 &runtime.cfg.memory_path,
             );
-            let (total, files) = idx.list_files(offset, limit, &q);
-            respond_json(
-                stream,
-                200,
-                &json!({
-                    "person_id": person.id,
-                    "total": total,
-                    "files": files,
-                }),
-            )
+            respond_json_with(stream, 200, |buf| {
+                idx.write_files_json(buf, &person.id, offset, limit, &q);
+            })
         }
         ("GET", "/api/files/content") => {
             let rel = query_param(&req.query, "path").unwrap_or_default();
@@ -3696,40 +3780,56 @@ fn try_route_knowledge_and_routines(
     let _ = root_cfg;
     Some(match (req.method.as_str(), req.path.as_str()) {
         ("GET", "/api/search") => {
-            let q = query_param(&req.query, "q").unwrap_or_default();
-            let scope = query_param(&req.query, "scope")
-                .map(|s| s.to_ascii_lowercase())
-                .filter(|s| matches!(s.as_str(), "all" | "receipts" | "files" | "memory"))
-                .unwrap_or_else(|| "all".to_string());
-            let limit = query_param(&req.query, "limit")
-                .and_then(|s| s.parse::<usize>().ok())
-                .unwrap_or(30);
+            let (q, scope, limit) = if req.query.is_empty() {
+                (String::new(), String::from("all"), 30usize)
+            } else {
+                (
+                    query_param(&req.query, "q").unwrap_or_default(),
+                    query_param(&req.query, "scope")
+                        .map(|s| s.to_ascii_lowercase())
+                        .filter(|s| matches!(s.as_str(), "all" | "receipts" | "files" | "memory"))
+                        .unwrap_or_else(|| "all".to_string()),
+                    query_param(&req.query, "limit")
+                        .and_then(|s| s.parse::<usize>().ok())
+                        .unwrap_or(30),
+                )
+            };
             let idx = state.search_cache.get(
                 &person.id,
                 &runtime.cfg.data_dir,
                 &runtime.cfg.workspace_dir,
                 &runtime.cfg.memory_path,
             );
-            respond_json(stream, 200, &idx.search(&q, &scope, limit))
+            respond_json_with(stream, 200, |buf| {
+                idx.write_search_json(buf, &q, &scope, limit);
+            })
         }
         ("GET", "/api/receipts") => {
-            let offset = query_param(&req.query, "offset")
-                .and_then(|s| s.parse::<usize>().ok())
-                .unwrap_or(0);
-            let limit = query_param(&req.query, "limit")
-                .and_then(|s| s.parse::<usize>().ok())
-                .unwrap_or(50);
-            let q = query_param(&req.query, "q").unwrap_or_default();
-            let status = query_param(&req.query, "status")
-                .map(|s| s.to_ascii_lowercase())
-                .unwrap_or_else(|| "all".to_string());
+            let (offset, limit, q, status) = if req.query.is_empty() {
+                (0usize, 50usize, String::new(), String::from("all"))
+            } else {
+                (
+                    query_param(&req.query, "offset")
+                        .and_then(|s| s.parse::<usize>().ok())
+                        .unwrap_or(0),
+                    query_param(&req.query, "limit")
+                        .and_then(|s| s.parse::<usize>().ok())
+                        .unwrap_or(50),
+                    query_param(&req.query, "q").unwrap_or_default(),
+                    query_param(&req.query, "status")
+                        .map(|s| s.to_ascii_lowercase())
+                        .unwrap_or_else(|| "all".to_string()),
+                )
+            };
             let idx = state.search_cache.get(
                 &person.id,
                 &runtime.cfg.data_dir,
                 &runtime.cfg.workspace_dir,
                 &runtime.cfg.memory_path,
             );
-            respond_json(stream, 200, &idx.list_receipts(offset, limit, &q, &status))
+            respond_json_with(stream, 200, |buf| {
+                idx.write_receipts_json(buf, offset, limit, &q, &status);
+            })
         }
         ("GET", "/api/receipts/compare") => {
             let a_id = query_param(&req.query, "a").unwrap_or_default();
@@ -3849,9 +3949,23 @@ fn try_route_knowledge_and_routines(
             let now_ms = records::now_millis();
             let raw = routines::list_routines(&runtime.cfg.data_dir);
             let history = scheduler::list_run_history(&runtime.cfg.data_dir, None, 500);
+            let idx = state.search_cache.get(
+                &person.id,
+                &runtime.cfg.data_dir,
+                &runtime.cfg.workspace_dir,
+                &runtime.cfg.memory_path,
+            );
             let enriched: Vec<Value> = raw
                 .iter()
-                .map(|r| scheduler::enrich_routine_json(r, now_ms, &history))
+                .map(|r| {
+                    scheduler::enrich_routine_with_verification(
+                        r,
+                        now_ms,
+                        &history,
+                        &idx.chain,
+                        idx.chain_valid,
+                    )
+                })
                 .collect();
             let tick_secs = (scheduler_tick_ms() / 1000).max(1);
             let sched_status = scheduler::scheduler_status_json(
@@ -3983,6 +4097,159 @@ fn try_route_knowledge_and_routines(
                 Ok(true) => respond_json(stream, 200, &json!({"deleted": id})),
                 Ok(false) => respond_json(stream, 404, &json!({"error": "routine not found"})),
                 Err(e) => respond_json(stream, 500, &json!({"error": e})),
+            }
+        }
+        ("POST", "/api/scheduler/catchup") => {
+            let now_ms = records::now_millis();
+            let raw = routines::list_routines(&runtime.cfg.data_dir);
+            let due = scheduler::find_due_routines(&raw, now_ms);
+            let mut results: Vec<Value> = Vec::new();
+            let mut caught_up_count = 0usize;
+            let mut failed_count = 0usize;
+            for rt in due.iter().take(10) {
+                let rid = rt["id"].as_str().unwrap_or("");
+                if rid.is_empty() {
+                    continue;
+                }
+                let missed = scheduler::count_missed_windows(rt, now_ms);
+                if let Some(exec) = execute_routine_run(state, person, runtime, rid, "catchup") {
+                    let ok = exec.error.is_none();
+                    if ok {
+                        caught_up_count += 1;
+                    } else {
+                        failed_count += 1;
+                    }
+                    results.push(json!({
+                        "routine_id": rid,
+                        "ok": ok,
+                        "missed_windows_cleared": if ok { missed } else { 0 },
+                        "thread_id": exec.thread_id,
+                        "error": exec.error,
+                    }));
+                }
+            }
+            let updated_now = records::now_millis();
+            let updated_raw = routines::list_routines(&runtime.cfg.data_dir);
+            let history = scheduler::list_run_history(&runtime.cfg.data_dir, None, 500);
+            let idx = state.search_cache.get(
+                &person.id,
+                &runtime.cfg.data_dir,
+                &runtime.cfg.workspace_dir,
+                &runtime.cfg.memory_path,
+            );
+            let enriched: Vec<Value> = updated_raw
+                .iter()
+                .map(|r| {
+                    scheduler::enrich_routine_with_verification(
+                        r,
+                        updated_now,
+                        &history,
+                        &idx.chain,
+                        idx.chain_valid,
+                    )
+                })
+                .collect();
+            let tick_secs = (scheduler_tick_ms() / 1000).max(1);
+            let sched_status = scheduler::scheduler_status_json(
+                state.scheduler_enabled,
+                tick_secs,
+                &updated_raw,
+                &history,
+                updated_now,
+            );
+            respond_json(
+                stream,
+                200,
+                &json!({
+                    "total_due": due.len(),
+                    "caught_up_count": caught_up_count,
+                    "failed_count": failed_count,
+                    "results": results,
+                    "routines": enriched,
+                    "scheduler": sched_status,
+                }),
+            )
+        }
+        ("POST", path)
+            if (path.starts_with("/api/routines/") || path.starts_with("/api/playbooks/"))
+                && path.ends_with("/catchup") =>
+        {
+            let prefix = if path.starts_with("/api/playbooks/") {
+                "/api/playbooks/"
+            } else {
+                "/api/routines/"
+            };
+            let raw_id = path
+                .strip_prefix(prefix)
+                .and_then(|r| r.strip_suffix("/catchup"))
+                .unwrap_or("")
+                .trim();
+            let id = percent_decode(raw_id).trim().to_string();
+            if id.is_empty() || id.contains('/') || id.contains("..") {
+                return Some(respond_json(stream, 400, &json!({"error": "invalid routine id"})));
+            }
+            let Some(rt) = routines::get_routine(&runtime.cfg.data_dir, &id) else {
+                return Some(respond_json(stream, 404, &json!({"error": "routine not found"})));
+            };
+            let now_ms = records::now_millis();
+            let missed = scheduler::count_missed_windows(&rt, now_ms);
+            let force = query_param(&req.query, "force")
+                .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+                .unwrap_or(false);
+            if missed == 0 && !force {
+                let hist = scheduler::list_run_history(&runtime.cfg.data_dir, Some(&id), 20);
+                let idx = state.search_cache.get(
+                    &person.id,
+                    &runtime.cfg.data_dir,
+                    &runtime.cfg.workspace_dir,
+                    &runtime.cfg.memory_path,
+                );
+                let enriched = scheduler::enrich_routine_with_verification(
+                    &rt,
+                    now_ms,
+                    &hist,
+                    &idx.chain,
+                    idx.chain_valid,
+                );
+                return Some(respond_json(
+                    stream,
+                    200,
+                    &json!({
+                        "routine": enriched,
+                        "caught_up": false,
+                        "missed_windows": 0,
+                    }),
+                ));
+            }
+            let Some(exec) = execute_routine_run(state, person, runtime, &id, "catchup") else {
+                return Some(respond_json(stream, 404, &json!({"error": "routine not found"})));
+            };
+            if let Some(err) = exec.error {
+                respond_json(
+                    stream,
+                    exec.http_status,
+                    &json!({
+                        "error": err,
+                        "caught_up": false,
+                        "missed_windows": missed,
+                        "thread_id": exec.thread_id,
+                        "routine": exec.routine,
+                        "run": exec.run_record.to_json(),
+                    }),
+                )
+            } else {
+                respond_json(
+                    stream,
+                    200,
+                    &json!({
+                        "caught_up": true,
+                        "missed_windows_cleared": missed,
+                        "routine": exec.routine,
+                        "thread": exec.thread,
+                        "thread_id": exec.thread_id,
+                        "run": exec.run_record.to_json(),
+                    }),
+                )
             }
         }
         ("POST", path) if path.starts_with("/api/routines/") && path.ends_with("/run") => {

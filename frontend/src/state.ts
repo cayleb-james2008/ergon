@@ -167,6 +167,9 @@ function normalizeRoutine(raw: unknown): Routine | null {
   const recentRuns = rawRuns
     .map((item) => normalizeRoutineRun(item, id))
     .filter((x): x is RoutineRunRecord => x !== null);
+  const verifiedRaw = o.last_run_verified;
+  const lastRunVerified: "verified" | "drift" | null =
+    verifiedRaw === "verified" || verifiedRaw === "drift" ? verifiedRaw : null;
   return {
     id,
     name,
@@ -178,9 +181,16 @@ function normalizeRoutine(raw: unknown): Routine | null {
     enabled,
     last_run_ts: lastRunTs,
     next_run_ms: enabled ? nextRunMs : null,
+    missed_windows: typeof o.missed_windows === "number" ? o.missed_windows : 0,
     last_status: typeof o.last_status === "string" ? o.last_status : undefined,
+    last_run_verified: lastRunVerified,
+    last_run_receipt_sha256: typeof o.last_run_receipt_sha256 === "string" ? o.last_run_receipt_sha256 : null,
+    last_run_receipt_id: typeof o.last_run_receipt_id === "string" ? o.last_run_receipt_id : null,
     run_count: typeof o.run_count === "number" ? o.run_count : 0,
     created_ts: typeof o.created_ms === "number" ? o.created_ms : typeof o.created_ts === "number" ? o.created_ts : undefined,
+    steps: Array.isArray(o.steps) ? o.steps.filter((s): s is string => typeof s === "string") : undefined,
+    expected_inputs: Array.isArray(o.expected_inputs) ? o.expected_inputs.filter((s): s is string => typeof s === "string") : undefined,
+    pack_deliverables: typeof o.pack_deliverables === "boolean" ? o.pack_deliverables : undefined,
     recent_runs: recentRuns.length ? recentRuns : undefined,
   };
 }
@@ -976,6 +986,68 @@ export function useErgon() {
     [showRun, loadThreads, loadRecent, refreshCounts, loadFiles, loadRoutines, sendPrompt]
   );
 
+  const catchupRoutine = useCallback(
+    async (routine: Routine): Promise<boolean> => {
+      if (busyRef.current) return false;
+      if (hasV070Api(statusRef.current)) {
+        const r = await call<{
+          caught_up?: boolean;
+          missed_windows_cleared?: number;
+          routine?: unknown;
+        }>(`/api/routines/${encodeURIComponent(routine.id)}/catchup`, { method: "POST", body: {} });
+        if (r.ok) {
+          const cleared = r.data.missed_windows_cleared ?? 0;
+          toast.success(
+            r.data.caught_up
+              ? `Caught up "${routine.name}" (${cleared || 1} missed window${cleared === 1 ? "" : "s"} cleared).`
+              : `"${routine.name}" is already up to date.`
+          );
+          await loadRoutines();
+          loadThreads();
+          loadRecent();
+          refreshCounts();
+          loadFiles();
+          return true;
+        }
+        if (r.status !== 404 && r.status !== 405) {
+          toast.error(r.error || `Could not catch up "${routine.name}".`);
+          return false;
+        }
+      }
+      await runRoutineNow(routine);
+      return true;
+    },
+    [loadRoutines, loadThreads, loadRecent, refreshCounts, loadFiles, runRoutineNow]
+  );
+
+  const catchupAllRoutines = useCallback(async (): Promise<boolean> => {
+    if (busyRef.current) return false;
+    if (hasV070Api(statusRef.current)) {
+      const r = await call<{ caught_up_count?: number; failed_count?: number; total_due?: number }>(
+        "/api/scheduler/catchup",
+        { method: "POST", body: {} }
+      );
+      if (r.ok) {
+        const count = r.data.caught_up_count ?? 0;
+        const failed = r.data.failed_count ?? 0;
+        if (failed > 0) {
+          toast.warning(`Caught up ${count} routine(s); ${failed} failed (check model connection).`);
+        } else {
+          toast.success(count > 0 ? `Caught up ${count} due routine(s) with verified receipts.` : "All routines are up to date.");
+        }
+        await loadRoutines();
+        loadThreads();
+        loadRecent();
+        refreshCounts();
+        loadFiles();
+        return failed === 0;
+      }
+      toast.error(r.error || "Could not catch up missed routines.");
+      return false;
+    }
+    return false;
+  }, [loadRoutines, loadThreads, loadRecent, refreshCounts, loadFiles]);
+
   useEffect(() => {
     (async () => {
       await loadStatus();
@@ -1062,7 +1134,7 @@ export function useErgon() {
     send, sendPrompt, cancelRun, openThread, newThread, switchPerson, refreshPerson, showRun,
     loadThreads, loadStatus, loadPeople, refreshCounts, loadRecent, loadStarters,
     loadFiles, uploadFile, uploadFiles, loadSkills, loadRoutines, createRoutine, deleteRoutine, importPlaybook, previewPlaybook,
-    toggleRoutine, loadRoutineHistory, runRoutineNow, setOnRoutineFired,
+    toggleRoutine, loadRoutineHistory, runRoutineNow, catchupRoutine, catchupAllRoutines, setOnRoutineFired,
     setSideError, setRecovered,
   };
 }

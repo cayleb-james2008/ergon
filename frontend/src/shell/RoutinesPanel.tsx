@@ -78,6 +78,8 @@ function RoutinesBody({
   onOpenThread,
   onImportPlaybook,
   onPreviewPlaybook,
+  onCatchupRoutine,
+  onCatchupAll,
 }: {
   routines: Routine[];
   skills: SkillMeta[];
@@ -104,10 +106,14 @@ function RoutinesBody({
   onOpenThread?: (threadId: string) => void;
   onImportPlaybook?: (rawText: string) => Promise<{ ok: boolean; sha256?: string; error?: string }>;
   onPreviewPlaybook?: (routine: Routine) => Promise<PlaybookPreviewResult | null>;
+  onCatchupRoutine?: (routine: Routine) => Promise<boolean>;
+  onCatchupAll?: () => Promise<boolean>;
 }) {
   const { isOpen, setIsOpen } = usePanelModalClose();
   const importInputRef = useRef<HTMLInputElement | null>(null);
   const [importing, setImporting] = useState(false);
+  const [catchingId, setCatchingId] = useState<string | null>(null);
+  const [catchingAll, setCatchingAll] = useState(false);
   const [previewById, setPreviewById] = useState<Record<string, PlaybookPreviewResult>>({});
   const [previewOpenId, setPreviewOpenId] = useState<string | null>(null);
   const [previewLoadingId, setPreviewLoadingId] = useState<string | null>(null);
@@ -300,6 +306,7 @@ function RoutinesBody({
   const schedulerPausedByEnv = Boolean(scheduler?.disabled_by_env) || scheduler?.enabled === false || Boolean(statusSchedDisabled);
   const schedulerActive = hasV070 && !schedulerPausedByEnv && scheduler?.running !== false;
   const tickSecs = scheduler?.tick_secs ?? 15;
+  const missedTotal = routines.reduce((acc, r) => acc + (r.missed_windows ?? 0), 0) || (scheduler?.missed_windows_total ?? 0);
 
   return (
     <div id="routines-panel" className="flex flex-col gap-4 pt-1">
@@ -338,6 +345,27 @@ function RoutinesBody({
         </div>
 
         <div className="flex flex-wrap items-center gap-1.5">
+          {missedTotal > 0 && onCatchupAll && (
+            <Button
+              id="scheduler-catchup-all-btn"
+              type="button"
+              size="sm"
+              variant="outline"
+              className="max-md:min-h-11"
+              disabled={catchingAll}
+              onClick={async () => {
+                setCatchingAll(true);
+                try {
+                  await onCatchupAll();
+                } finally {
+                  setCatchingAll(false);
+                }
+              }}
+            >
+              <Play className="size-3.5" strokeWidth={1.5} aria-hidden />
+              {catchingAll ? "Catching up…" : `Catch up (${missedTotal})`}
+            </Button>
+          )}
           {onImportPlaybook && (
             <>
               <input
@@ -586,6 +614,36 @@ function RoutinesBody({
                         Playbook · {rt.steps.length} steps
                       </Badge>
                     )}
+                    {rt.last_run_verified && (
+                      <Pill
+                        variant="secondary"
+                        data-routine-sha-badge={rt.id}
+                        title={
+                          rt.last_run_receipt_sha256
+                            ? `Receipt sha256:${rt.last_run_receipt_sha256.slice(0, 12)}`
+                            : "Last run receipt verification status"
+                        }
+                        className={cn(
+                          "px-2 py-0.5 text-xs font-medium",
+                          rt.last_run_verified === "verified"
+                            ? "bg-pill-active-bg text-pill-active-fg"
+                            : "bg-pill-warn-bg text-pill-warn-fg"
+                        )}
+                      >
+                        <ShieldCheck className="size-3" strokeWidth={1.5} aria-hidden />
+                        <span>{rt.last_run_verified === "verified" ? "Verified" : "Drift"}</span>
+                      </Pill>
+                    )}
+                    {(rt.missed_windows ?? 0) > 0 && (
+                      <Badge
+                        variant="outline"
+                        size="sm"
+                        data-routine-missed={rt.id}
+                        className="mono bg-pill-warn-bg text-xs text-pill-warn-fg"
+                      >
+                        {rt.missed_windows} missed
+                      </Badge>
+                    )}
                   </div>
                   <div className="flex flex-wrap items-center gap-1.5">
                     <Pill variant="secondary" className="border border-hairline bg-board px-2 py-0.5 text-xs text-ink-2">
@@ -688,6 +746,28 @@ function RoutinesBody({
                       <Play className="size-3.5" strokeWidth={1.5} aria-hidden />
                       {runningId === rt.id ? "Running…" : "Run now"}
                     </Button>
+                    {(rt.missed_windows ?? 0) > 0 && onCatchupRoutine && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        data-action="catchup-routine"
+                        aria-label={`Catch up ${rt.name}`}
+                        className="max-md:min-h-11"
+                        disabled={catchingId === rt.id}
+                        onClick={async () => {
+                          setCatchingId(rt.id);
+                          try {
+                            await onCatchupRoutine(rt);
+                          } finally {
+                            setCatchingId(null);
+                          }
+                        }}
+                      >
+                        <Play className="size-3.5" strokeWidth={1.5} aria-hidden />
+                        {catchingId === rt.id ? "Catching up…" : "Catch up"}
+                      </Button>
+                    )}
                     <Button
                       type="button"
                       size="sm"
@@ -967,6 +1047,8 @@ export function RoutinesPanel({
   onOpenThread,
   onImportPlaybook,
   onPreviewPlaybook,
+  onCatchupRoutine,
+  onCatchupAll,
 }: {
   routines: Routine[];
   skills: SkillMeta[];
@@ -995,6 +1077,8 @@ export function RoutinesPanel({
   onOpenThread?: (threadId: string) => void;
   onImportPlaybook?: (rawText: string) => Promise<{ ok: boolean; sha256?: string; error?: string }>;
   onPreviewPlaybook?: (routine: Routine) => Promise<PlaybookPreviewResult | null>;
+  onCatchupRoutine?: (routine: Routine) => Promise<boolean>;
+  onCatchupAll?: () => Promise<boolean>;
 }) {
   return (
     <PanelModal
@@ -1022,6 +1106,8 @@ export function RoutinesPanel({
         onOpenThread={onOpenThread}
         onImportPlaybook={onImportPlaybook}
         onPreviewPlaybook={onPreviewPlaybook}
+        onCatchupRoutine={onCatchupRoutine}
+        onCatchupAll={onCatchupAll}
       />
     </PanelModal>
   );

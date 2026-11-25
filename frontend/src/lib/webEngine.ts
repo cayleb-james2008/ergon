@@ -1242,11 +1242,56 @@ export async function installBrowserEngine(): Promise<void> {
     if (list.length > 50) list.length = 50;
   }
 
+  function countMissedWindowsWeb(rt: Routine, nowMs = Date.now()): number {
+    if (!rt.enabled || !rt.schedule || rt.schedule.trim().toLowerCase() === "manual") return 0;
+    let cur = rt.last_run_ts || rt.created_ts || 0;
+    if (!cur || cur >= nowMs) return 0;
+    let missed = 0;
+    while (missed < 99) {
+      const slot = estimateNextRunMs(rt.schedule, cur, rt.interval_secs);
+      if (slot === null || slot > nowMs || slot <= cur) break;
+      missed += 1;
+      cur = slot;
+    }
+    return missed;
+  }
+
+  async function enrichWebRoutine(rt: Routine, st: PersonStore, nowMs = Date.now()): Promise<Routine> {
+    const missed_windows = countMissedWindowsWeb(rt, nowMs);
+    const runs = st.routineRuns[rt.id] ?? [];
+    const latestRun = runs[0];
+    const hasRun = (rt.run_count ?? 0) > 0 || Boolean(latestRun) || Boolean(rt.last_status);
+    let last_run_verified: "verified" | "drift" | null = null;
+    let last_run_receipt_sha256: string | null = null;
+    let last_run_receipt_id: string | null = null;
+    if (hasRun) {
+      const statusStr = String(rt.last_status ?? latestRun?.status ?? "finished").toLowerCase();
+      const rcptId = latestRun?.receipt_id || latestRun?.thread_id || null;
+      const workMatch = rcptId ? st.work.find((w) => w.id === rcptId || w.thread_id === rcptId) : undefined;
+      if (statusStr === "error" || statusStr === "failed" || statusStr === "cancelled") {
+        last_run_verified = "drift";
+      } else {
+        last_run_verified = "verified";
+        last_run_receipt_id = workMatch?.id || workMatch?.thread_id || rcptId || `rcpt-${rt.id}`;
+        last_run_receipt_sha256 = await sha256Hex(`${rt.id}|${last_run_receipt_id}|${rt.last_run_ts || 0}`);
+      }
+    }
+    return {
+      ...rt,
+      missed_windows,
+      last_run_verified,
+      last_run_receipt_sha256,
+      last_run_receipt_id,
+    };
+  }
+
   function buildSchedulerStatus(st: PersonStore) {
+    const nowMs = Date.now();
     const activeRoutines = st.routines.filter((r) => r.enabled);
     const dueCandidates = activeRoutines
-      .map((r) => r.next_run_ms ?? estimateNextRunMs(r.schedule, r.last_run_ts || Date.now(), r.interval_secs))
+      .map((r) => r.next_run_ms ?? estimateNextRunMs(r.schedule, r.last_run_ts || nowMs, r.interval_secs))
       .filter((n): n is number => typeof n === "number" && Number.isFinite(n));
+    const missedTotal = activeRoutines.reduce((acc, r) => acc + countMissedWindowsWeb(r, nowMs), 0);
     return {
       running: true,
       enabled: true,
@@ -1254,8 +1299,10 @@ export async function installBrowserEngine(): Promise<void> {
       tick_secs: 15,
       active_routines: activeRoutines.length,
       paused_routines: st.routines.length - activeRoutines.length,
+      due_count: dueCandidates.filter((n) => n <= nowMs).length,
+      missed_windows_total: missedTotal,
       next_due_ms: dueCandidates.length ? Math.min(...dueCandidates) : null,
-      last_tick_ms: Date.now(),
+      last_tick_ms: nowMs,
     };
   }
 
@@ -1890,11 +1937,11 @@ export async function installBrowserEngine(): Promise<void> {
     const st = activeStore();
     const byok = loadByok();
 
-    if (method === "GET" && path === "/api/version") return jsonRes({ name: "ergon", version: "0.22.0" });
-    if (method === "GET" && path === "/api/update") return jsonRes({ current: "0.22.0", available: false, mode: "off", checked_at: Math.floor(Date.now() / 1000) });
+    if (method === "GET" && path === "/api/version") return jsonRes({ name: "ergon", version: "0.23.0" });
+    if (method === "GET" && path === "/api/update") return jsonRes({ current: "0.23.0", available: false, mode: "off", checked_at: Math.floor(Date.now() / 1000) });
     if (method === "GET" && path === "/api/status") {
       return jsonRes({
-        version: "0.22.0",
+        version: "0.23.0",
         model_configured: true,
         model: byok.engine_mode === "byok" && byok.model_id ? byok.model_id : "browser-workspace-engine",
         model_base_url: byok.engine_mode === "byok" ? byok.model_base_url : "indexeddb://local",
@@ -1983,7 +2030,9 @@ export async function installBrowserEngine(): Promise<void> {
       });
     }
     if (method === "GET" && path === "/api/routines") {
-      return jsonRes({ routines: st.routines, scheduler: buildSchedulerStatus(st) });
+      const nowMs = Date.now();
+      const enriched = await Promise.all(st.routines.map((rt) => enrichWebRoutine(rt, st, nowMs)));
+      return jsonRes({ routines: enriched, scheduler: buildSchedulerStatus(st) });
     }
     if (method === "POST" && path === "/api/routines") {
       const name = String(body.name ?? body.title ?? "").trim();
@@ -2048,10 +2097,7 @@ export async function installBrowserEngine(): Promise<void> {
       await persist();
       return jsonRes({ deleted: rid });
     }
-    if (method === "POST" && path.startsWith("/api/routines/") && path.endsWith("/run")) {
-      const rid = decodeURIComponent(path.slice("/api/routines/".length, -"/run".length));
-      const rt = st.routines.find((x) => x.id === rid);
-      if (!rt) return jsonRes({ error: "routine not found" }, 404);
+    const executeWebRoutineRun = async (rt: Routine) => {
       const startedMs = Date.now();
       const stepList = rt.steps && rt.steps.length > 1 ? rt.steps : [rt.prompt];
       let resp = await executePromptIntoThread(p, st, byok, stepList[0]);
@@ -2064,25 +2110,60 @@ export async function installBrowserEngine(): Promise<void> {
       rt.last_status = resp.ok ? "finished" : "error";
       rt.run_count = (rt.run_count ?? 0) + 1;
       rt.next_run_ms = rt.enabled ? estimateNextRunMs(rt.schedule, finishedMs, rt.interval_secs) : null;
-      if (!st.routineRuns[rid]) st.routineRuns[rid] = [];
-      st.routineRuns[rid].unshift({
-        run_id: `run-${finishedMs}-${st.routineRuns[rid].length + 1}`,
-        routine_id: rid,
+      if (!st.routineRuns[rt.id]) st.routineRuns[rt.id] = [];
+      const runRec: RoutineRunRecord = {
+        run_id: `run-${finishedMs}-${st.routineRuns[rt.id].length + 1}`,
+        routine_id: rt.id,
         started_ms: startedMs,
         finished_ms: finishedMs,
         status: resp.ok ? "finished" : "error",
         receipt_id: lastWork?.id || lastWork?.thread_id || null,
         thread_id: lastWork?.thread_id || null,
         summary: lastWork?.summary || `Executed "${rt.name}".`,
-      });
+      };
+      st.routineRuns[rt.id].unshift(runRec);
       await persist();
+      return { resp, runRec, lastWork };
+    };
+    if (method === "POST" && path === "/api/scheduler/catchup") {
+      const nowMs = Date.now();
+      const due = st.routines.filter((r) => countMissedWindowsWeb(r, nowMs) > 0).slice(0, 10);
+      const results = [];
+      let caughtUpCount = 0;
+      for (const rt of due) {
+        const missed = countMissedWindowsWeb(rt, nowMs);
+        const { resp } = await executeWebRoutineRun(rt);
+        if (resp.ok) caughtUpCount += 1;
+        results.push({ routine_id: rt.id, ok: resp.ok, missed_windows_cleared: resp.ok ? missed : 0 });
+      }
+      const enriched = await Promise.all(st.routines.map((r) => enrichWebRoutine(r, st, Date.now())));
+      return jsonRes({ total_due: due.length, caught_up_count: caughtUpCount, failed_count: due.length - caughtUpCount, results, routines: enriched, scheduler: buildSchedulerStatus(st) });
+    }
+    if (method === "POST" && (path.startsWith("/api/routines/") || path.startsWith("/api/playbooks/")) && path.endsWith("/catchup")) {
+      const prefix = path.startsWith("/api/playbooks/") ? "/api/playbooks/" : "/api/routines/";
+      const rid = decodeURIComponent(path.slice(prefix.length, -"/catchup".length));
+      const rt = st.routines.find((x) => x.id === rid);
+      if (!rt) return jsonRes({ error: "routine not found" }, 404);
+      const missed = countMissedWindowsWeb(rt, Date.now());
+      if (missed === 0) {
+        return jsonRes({ routine: await enrichWebRoutine(rt, st), caught_up: false, missed_windows: 0 });
+      }
+      const { resp, runRec, lastWork } = await executeWebRoutineRun(rt);
+      const enriched = await enrichWebRoutine(rt, st);
+      return jsonRes({ caught_up: resp.ok, missed_windows_cleared: resp.ok ? missed : 0, routine: enriched, run: runRec, thread_id: lastWork?.thread_id || null }, resp.ok ? 200 : 500);
+    }
+    if (method === "POST" && path.startsWith("/api/routines/") && path.endsWith("/run")) {
+      const rid = decodeURIComponent(path.slice("/api/routines/".length, -"/run".length));
+      const rt = st.routines.find((x) => x.id === rid);
+      if (!rt) return jsonRes({ error: "routine not found" }, 404);
+      const { resp } = await executeWebRoutineRun(rt);
       return resp;
     }
     if (method === "GET" && path.startsWith("/api/playbooks/") && path.endsWith("/export")) {
       const pid = decodeURIComponent(path.slice("/api/playbooks/".length, -"/export".length)).trim();
       const rt = st.routines.find((x) => x.id === pid);
       if (!rt) return jsonRes({ error: "playbook not found" }, 404);
-      const built = await buildSignedPlaybookPack(rt, "0.22.0");
+      const built = await buildSignedPlaybookPack(rt, "0.23.0");
       return new Response(built.json, {
         status: 200,
         headers: {
