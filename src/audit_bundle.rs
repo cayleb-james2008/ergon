@@ -8,6 +8,7 @@
 use crate::receipts::{self, sha256_hex, ChainedReceipt};
 use crate::{file_history, records, routines, scheduler, Config, Person};
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 use std::path::Path;
 
 pub const AUDIT_BUNDLE_SCHEMA: &str = "ergon.audit_bundle.v1";
@@ -132,8 +133,33 @@ fn compute_receipt_chain_digest(head_hash: &str, length: usize, verified: bool) 
     sha256_hex(format!("{head_hash}|{length}|{flag}").as_bytes())
 }
 
+struct ShaWriter(Sha256);
+
+impl std::io::Write for ShaWriter {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.0.update(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+fn sha256_json_writer(f: impl FnOnce(&mut ShaWriter) -> serde_json::Result<()>) -> String {
+    let mut w = ShaWriter(Sha256::new());
+    let _ = f(&mut w);
+    let digest = w.0.finalize();
+    let mut out = String::with_capacity(64);
+    for b in digest {
+        use std::fmt::Write as _;
+        let _ = write!(&mut out, "{b:02x}");
+    }
+    out
+}
+
 fn compute_routines_digest(routines_obj: &Value) -> String {
-    sha256_hex(routines_obj.to_string().as_bytes())
+    sha256_json_writer(|w| serde_json::to_writer(w, routines_obj))
 }
 
 struct CanonicalPayload<'a> {
@@ -148,17 +174,19 @@ struct CanonicalPayload<'a> {
 }
 
 fn compute_canonical_bundle_sha256(p: &CanonicalPayload<'_>) -> String {
-    let payload = json!({
-        "schema": p.schema,
-        "app_version": p.app_version,
-        "generated_at_ms": p.generated_at_ms,
-        "person": p.person,
-        "receipt_chain": p.receipt_chain,
-        "workspace_files": p.workspace_files,
-        "standing_memory": p.standing_memory,
-        "routines": p.routines,
-    });
-    sha256_hex(payload.to_string().as_bytes())
+    let schema_val = Value::String(p.schema.to_string());
+    let version_val = Value::String(p.app_version.to_string());
+    let ts_val = Value::from(p.generated_at_ms);
+    let mut map = std::collections::BTreeMap::new();
+    map.insert("app_version", &version_val);
+    map.insert("generated_at_ms", &ts_val);
+    map.insert("person", p.person);
+    map.insert("receipt_chain", p.receipt_chain);
+    map.insert("routines", p.routines);
+    map.insert("schema", &schema_val);
+    map.insert("standing_memory", p.standing_memory);
+    map.insert("workspace_files", p.workspace_files);
+    sha256_json_writer(|w| serde_json::to_writer(w, &map))
 }
 
 /// Build a complete tamper-evident Field-Book Audit Bundle for `person` using
@@ -166,21 +194,23 @@ fn compute_canonical_bundle_sha256(p: &CanonicalPayload<'_>) -> String {
 /// memory, and recurring routine history.
 pub fn build_audit_bundle(cfg: &Config, person: &Person) -> Value {
     let now_ms = records::now_millis();
-    let raw_entries = receipts::load_raw_entries(&cfg.data_dir);
-    let chain = receipts::build_chain(&raw_entries);
+    let chain = receipts::load_chain(&cfg.data_dir);
+    let chain_len = chain.len();
     let (chain_verified, head_hash) = receipts::verify_chain(&chain);
 
     let receipt_chain_val = json!({
         "algorithm": "SHA-256",
         "genesis_hash": receipts::GENESIS_HASH,
-        "length": chain.len(),
+        "length": chain_len,
         "verified": chain_verified,
         "head_hash": head_hash,
         "entries": chain.iter().map(|r| r.to_json()).collect::<Vec<_>>(),
     });
+    drop(chain);
 
     let workspace_files = collect_workspace_digests(&cfg.data_dir, &cfg.workspace_dir);
-    let workspace_files_val = Value::Array(workspace_files.clone());
+    let workspace_manifest_sha256 = compute_workspace_manifest_sha256(&workspace_files);
+    let workspace_files_val = Value::Array(workspace_files);
 
     let (mem_present, mem_bytes, mem_sha256, mem_rules) = match std::fs::read(&cfg.memory_path) {
         Ok(bytes) => {
@@ -220,8 +250,7 @@ pub fn build_audit_bundle(cfg: &Config, person: &Person) -> Value {
     });
 
     let person_val = person.to_json();
-    let receipt_chain_sha256 = compute_receipt_chain_digest(&head_hash, chain.len(), chain_verified);
-    let workspace_manifest_sha256 = compute_workspace_manifest_sha256(&workspace_files);
+    let receipt_chain_sha256 = compute_receipt_chain_digest(&head_hash, chain_len, chain_verified);
     let routines_sha256 = compute_routines_digest(&routines_val);
     let bundle_sha256 = compute_canonical_bundle_sha256(&CanonicalPayload {
         schema: AUDIT_BUNDLE_SCHEMA,

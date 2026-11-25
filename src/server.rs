@@ -234,8 +234,7 @@ fn is_history_security_error(err: &str) -> bool {
 }
 
 fn latest_receipt_id_for_thread(person_data_dir: &Path, thread_id: &str) -> Option<String> {
-    let entries = receipts::load_raw_entries(person_data_dir);
-    let chain = receipts::build_chain(&entries);
+    let chain = receipts::load_chain(person_data_dir);
     chain
         .iter()
         .rev()
@@ -419,7 +418,7 @@ fn execute_routine_run(
             .filter_map(|item| item["path"].as_str().map(|s| s.to_string()))
             .filter(|p| p != "Playbook Deliverable Pack.md")
             .collect();
-        if let Ok((md, pack_sha)) = build_workspace_pack(
+        if let Ok((md, pack_sha, _, _)) = build_workspace_pack(
             &runtime.cfg.workspace_dir,
             &person.name,
             &format!("{name} — Deliverable Pack"),
@@ -1469,63 +1468,27 @@ fn etag_matches(if_none_match: Option<&str>, etag: &str) -> bool {
     false
 }
 
-struct CachedChunk {
-    mime: &'static str,
-    raw: &'static [u8],
-    gzip: Option<Vec<u8>>,
-    etag_raw: String,
-    etag_gzip: String,
-}
-
-fn cached_chunks() -> &'static HashMap<&'static str, CachedChunk> {
-    static CACHE: std::sync::OnceLock<HashMap<&'static str, CachedChunk>> = std::sync::OnceLock::new();
-    CACHE.get_or_init(|| {
-        let mut map = HashMap::with_capacity(ui::CHUNKS.len());
-        for &(route, mime, raw) in ui::CHUNKS {
-            let short = &receipts::sha256_hex(raw)[..24];
-            let etag_raw = format!("\"{short}\"");
-            let compressible = mime.starts_with("application/javascript") || mime.starts_with("text/");
-            let (gzip, etag_gzip) = if compressible {
-                (Some(tripwire::gzip_compress(raw)), format!("\"{short}-gzip\""))
-            } else {
-                (None, etag_raw.clone())
-            };
-            map.insert(
-                route,
-                CachedChunk {
-                    mime,
-                    raw,
-                    gzip,
-                    etag_raw,
-                    etag_gzip,
-                },
-            );
-        }
-        map
-    })
-}
-
 fn serve_chunk(stream: &mut std::net::TcpStream, req: &Request, path: &str) -> std::io::Result<()> {
-    let Some(chunk) = cached_chunks().get(path) else {
+    let Some(chunk) = ui::chunk(path) else {
         return respond_json(stream, 404, &json!({"error": "chunk not found"}));
     };
-    let wants_gzip = chunk.gzip.is_some() && accepts_gzip(req.accept_encoding.as_deref());
-    let etag = if wants_gzip { &chunk.etag_gzip } else { &chunk.etag_raw };
+    let wants_gzip = chunk.pre_gzipped && accepts_gzip(req.accept_encoding.as_deref());
+    let etag = if wants_gzip { chunk.etag_gzip } else { chunk.etag_raw };
     let mut headers: Vec<(&str, String)> = vec![
-        ("ETag", etag.clone()),
+        ("ETag", etag.to_string()),
         ("Vary", "Accept-Encoding".to_string()),
         ("Cache-Control", "public, max-age=31536000, immutable".to_string()),
     ];
     if etag_matches(req.if_none_match.as_deref(), etag) {
         return respond_bytes(stream, 304, chunk.mime, &[], &headers);
     }
-    let body = if wants_gzip {
+    if wants_gzip {
         headers.push(("Content-Encoding", "gzip".to_string()));
-        chunk.gzip.as_deref().unwrap_or(chunk.raw)
+        respond_bytes(stream, 200, chunk.mime, chunk.bytes, &headers)
     } else {
-        chunk.raw
-    };
-    respond_bytes(stream, 200, chunk.mime, body, &headers)
+        let raw = ui::chunk_raw(chunk);
+        respond_bytes(stream, 200, chunk.mime, raw.as_ref(), &headers)
+    }
 }
 
 /// Serve a desk page (`/` or `/phone`). First visit (or an unknown,
@@ -2061,18 +2024,81 @@ fn try_route_system(
     })
 }
 
-/// Builds a Markdown Client Deliverable Pack across workspace files with SHA-256 digests and sandbox enforcement.
-fn build_workspace_pack(
+struct PackCheckedFile {
+    path: String,
+    size_bytes: usize,
+    non_empty: bool,
+    count: usize,
+    unit: &'static str,
+    digest: String,
+    body: String,
+}
+
+struct PackPreflight {
+    ready_count: usize,
+    empty_count: usize,
+    missing_paths: Vec<String>,
+    total_bytes: usize,
+    items: Vec<PackCheckedFile>,
+}
+
+impl PackPreflight {
+    fn ok(&self) -> bool {
+        self.ready_count > 0 && self.empty_count == 0 && self.missing_paths.is_empty()
+    }
+
+    fn to_json(&self) -> Value {
+        let mut files_json: Vec<Value> = self
+            .items
+            .iter()
+            .map(|f| {
+                json!({
+                    "path": f.path,
+                    "size_bytes": f.size_bytes,
+                    "non_empty": f.non_empty,
+                    "count": f.count,
+                    "unit": f.unit,
+                    "sha256": f.digest,
+                    "status": if f.non_empty { "ready" } else { "empty" },
+                })
+            })
+            .collect();
+        for miss in &self.missing_paths {
+            files_json.push(json!({
+                "path": miss,
+                "size_bytes": 0,
+                "non_empty": false,
+                "count": 0,
+                "unit": "bytes",
+                "sha256": "",
+                "status": "missing",
+            }));
+        }
+        json!({
+            "ok": self.ok(),
+            "ready_count": self.ready_count,
+            "empty_count": self.empty_count,
+            "missing_count": self.missing_paths.len(),
+            "total_bytes": self.total_bytes,
+            "files": files_json,
+        })
+    }
+}
+
+/// Validates workspace deliverable paths, computes non-empty/row/line counts + SHA-256 digests.
+fn inspect_workspace_pack(
     workspace_dir: &std::path::Path,
-    person_name: &str,
-    title: &str,
     requested: &[String],
     explicit: bool,
-) -> Result<(String, String), (u16, String)> {
+) -> Result<PackPreflight, (u16, String)> {
     const MAX_PACK_BYTES: usize = 2 * 1024 * 1024;
     const MAX_FILE_BYTES: usize = 512 * 1024;
-    let mut sections: Vec<(String, String, String)> = Vec::new();
+    let mut items: Vec<PackCheckedFile> = Vec::new();
+    let mut missing_paths: Vec<String> = Vec::new();
+    let mut ready_count = 0usize;
+    let mut empty_count = 0usize;
     let mut total_bytes = 0usize;
+    let mut rendered_bytes = 0usize;
     for rel in requested {
         let full = match sandbox_path(workspace_dir, rel) {
             Ok(p) => p,
@@ -2090,6 +2116,9 @@ fn build_workspace_pack(
             continue;
         }
         let Ok(bytes) = std::fs::read(&full) else {
+            if explicit {
+                missing_paths.push(rel.clone());
+            }
             continue;
         };
         let digest = receipts::sha256_hex(&bytes);
@@ -2098,14 +2127,31 @@ fn build_workspace_pack(
             .and_then(|s| s.to_str())
             .unwrap_or("")
             .to_ascii_lowercase();
-        let body = if bytes.len() > MAX_FILE_BYTES {
-            format!(
-                "_Skipped inline preview ({} bytes exceeds 512 KB cap; SHA-256 `{}`)._",
+        let non_empty = !bytes.iter().all(|b| b.is_ascii_whitespace());
+        if non_empty {
+            ready_count += 1;
+        } else {
+            empty_count += 1;
+        }
+        total_bytes += bytes.len();
+        let (count, unit, body) = if bytes.len() > MAX_FILE_BYTES {
+            (
                 bytes.len(),
-                digest
+                "bytes",
+                format!(
+                    "_Skipped inline preview ({} bytes exceeds 512 KB cap; SHA-256 `{}`)._",
+                    bytes.len(),
+                    digest
+                ),
             )
         } else if let Ok(text) = std::str::from_utf8(&bytes) {
-            if ext == "md" || ext == "markdown" || ext == "txt" {
+            let line_count = text.lines().filter(|l| !l.trim().is_empty()).count();
+            let (metric, unit_name) = if ext == "csv" || ext == "tsv" {
+                (line_count.saturating_sub(1), "rows")
+            } else {
+                (line_count, "lines")
+            };
+            let rendered = if ext == "md" || ext == "markdown" || ext == "txt" {
                 text.trim_end().to_string()
             } else {
                 let fence = match ext.as_str() {
@@ -2114,35 +2160,78 @@ fn build_workspace_pack(
                     _ => "text",
                 };
                 format!("```{fence}\n{}\n```", text.trim_end())
-            }
+            };
+            (metric, unit_name, rendered)
         } else {
-            format!(
-                "_Binary deliverable ({} bytes, `.{ext}`; download original file from workspace; SHA-256 `{}`)._",
+            (
                 bytes.len(),
-                digest
+                "bytes",
+                format!(
+                    "_Binary deliverable ({} bytes, `.{ext}`; download original file from workspace; SHA-256 `{}`)._",
+                    bytes.len(),
+                    digest
+                ),
             )
         };
-        if total_bytes + body.len() > MAX_PACK_BYTES {
+        if rendered_bytes + body.len() > MAX_PACK_BYTES {
             break;
         }
-        total_bytes += body.len();
-        sections.push((rel.clone(), digest, body));
+        rendered_bytes += body.len();
+        items.push(PackCheckedFile {
+            path: rel.clone(),
+            size_bytes: bytes.len(),
+            non_empty,
+            count,
+            unit,
+            digest,
+            body,
+        });
     }
-    if explicit && sections.is_empty() {
+    if explicit && items.is_empty() {
         return Err((404, "no matching workspace files found".to_string()));
     }
+    Ok(PackPreflight {
+        ready_count,
+        empty_count,
+        missing_paths,
+        total_bytes,
+        items,
+    })
+}
+
+/// Builds a Markdown Client Deliverable Pack across workspace files with pre-flight verification & SHA-256 digests.
+fn build_workspace_pack(
+    workspace_dir: &std::path::Path,
+    person_name: &str,
+    title: &str,
+    requested: &[String],
+    explicit: bool,
+) -> Result<(String, String, bool, usize), (u16, String)> {
+    let preflight = inspect_workspace_pack(workspace_dir, requested, explicit)?;
+    let ok = preflight.ok();
+    let ready = preflight.ready_count;
+    let status_word = if ok { "PASS" } else { "WARN" };
     let mut md = format!(
-        "# {title}\n\n- Prepared for: **{person_name}**\n- Files included: {}\n\n## Included Deliverables\n\n",
-        sections.len()
+        "# {title}\n\n- Prepared for: **{person_name}**\n- Files included: {}\n- Pre-flight check: **{status_word}** ({ready} non-empty, {} empty, {} missing, {} total bytes)\n\n## Included Deliverables\n\n",
+        preflight.items.len(),
+        preflight.empty_count,
+        preflight.missing_paths.len(),
+        preflight.total_bytes
     );
-    for (rel, digest, _) in &sections {
-        md.push_str(&format!("- `{rel}` (`sha256:{digest}`)\n"));
+    for f in &preflight.items {
+        md.push_str(&format!(
+            "- `{}` ({} {}, `sha256:{}`)\n",
+            f.path, f.count, f.unit, f.digest
+        ));
     }
-    for (rel, digest, body) in &sections {
-        md.push_str(&format!("\n---\n\n## `{rel}`\n\n_SHA-256: `{digest}`_\n\n{body}\n"));
+    for f in &preflight.items {
+        md.push_str(&format!(
+            "\n---\n\n## `{}`\n\n_SHA-256: `{}` · {} {} · {} bytes_\n\n{}\n",
+            f.path, f.digest, f.count, f.unit, f.size_bytes, f.body
+        ));
     }
     let pack_sha = receipts::sha256_hex(md.as_bytes());
-    Ok((md, pack_sha))
+    Ok((md, pack_sha, ok, ready))
 }
 
 /// Routes workspace file listing/content/upload/export, file history/restore, and audit bundles.
@@ -2300,8 +2389,13 @@ fn try_route_files_and_audit(
                     &headers,
                 )
             } else {
-                let bytes = serde_json::to_vec_pretty(&bundle)
-                    .unwrap_or_else(|_| bundle.to_string().into_bytes());
+                let large = bundle["receipt_chain"]["length"].as_u64().unwrap_or(0) > 200;
+                let bytes = if large {
+                    serde_json::to_vec(&bundle)
+                } else {
+                    serde_json::to_vec_pretty(&bundle)
+                }
+                .unwrap_or_else(|_| bundle.to_string().into_bytes());
                 let mut headers = vec![("X-Content-Type-Options", "nosniff".to_string())];
                 if download {
                     headers.push((
@@ -2327,6 +2421,9 @@ fn try_route_files_and_audit(
             let download = query_param(&req.query, "download")
                 .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
                 .unwrap_or(false);
+            let preflight_only = query_param(&req.query, "preflight")
+                .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+                .unwrap_or(false);
             let mut requested: Vec<String> = raw_files
                 .split(',')
                 .map(|s| s.trim().to_string())
@@ -2348,7 +2445,14 @@ fn try_route_files_and_audit(
                     }
                 }
             }
-            let (md, pack_sha) = match build_workspace_pack(
+            if preflight_only {
+                let report = match inspect_workspace_pack(&runtime.cfg.workspace_dir, &requested, explicit) {
+                    Ok(res) => res,
+                    Err((status, err)) => return Some(respond_json(stream, status, &json!({"error": err}))),
+                };
+                return Some(respond_json(stream, 200, &report.to_json()));
+            }
+            let (md, pack_sha, preflight_ok, ready_count) = match build_workspace_pack(
                 &runtime.cfg.workspace_dir,
                 &person.name,
                 &title,
@@ -2361,6 +2465,11 @@ fn try_route_files_and_audit(
             let mut headers = vec![
                 ("X-Content-Type-Options", "nosniff".to_string()),
                 ("X-Ergon-Pack-SHA256", pack_sha),
+                (
+                    "X-Ergon-Pack-Preflight",
+                    if preflight_ok { "pass" } else { "warn" }.to_string(),
+                ),
+                ("X-Ergon-Pack-Ready-Count", ready_count.to_string()),
             ];
             if download {
                 headers.push((

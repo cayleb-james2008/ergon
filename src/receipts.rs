@@ -120,53 +120,319 @@ pub fn load_raw_entries(person_data_dir: &Path) -> Vec<Value> {
     entries
 }
 
+/// Append a single parsed receipt object onto the hash chain.
+fn chain_step(prev_hash: &mut String, index: usize, v: &Value) -> ChainedReceipt {
+    let ts = v["ts"].as_u64().unwrap_or(0);
+    let task = v["task"]
+        .as_str()
+        .or_else(|| v["title"].as_str())
+        .unwrap_or("")
+        .to_string();
+    let summary = v["summary"].as_str().unwrap_or("").to_string();
+    let thread_id = v["thread_id"].as_str().unwrap_or("").to_string();
+    let finished = v["finished"].as_bool().unwrap_or(true);
+    let answered = v["answered"].as_bool().unwrap_or(false);
+    let files: Vec<String> = v["files"]
+        .as_array()
+        .map(|a| {
+            a.iter()
+                .filter_map(|x| x.as_str().map(|s| s.to_string()))
+                .collect()
+        })
+        .unwrap_or_default();
+    let id = v["id"]
+        .as_str()
+        .filter(|s| !s.trim().is_empty())
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| format!("rcpt-{ts}-{index}"));
+
+    let sha256 = compute_entry_hash(
+        prev_hash, index, ts, &thread_id, finished, answered, &task, &summary, &files,
+    );
+    let prev = std::mem::replace(prev_hash, sha256.clone());
+    ChainedReceipt {
+        id,
+        index,
+        ts,
+        task,
+        summary,
+        files,
+        thread_id,
+        finished,
+        answered,
+        prev_hash: prev,
+        sha256,
+    }
+}
+
+/// Read one JSON byte from a buffered reader, skipping ASCII whitespace when `skip_ws` is true.
+fn next_json_byte<R: std::io::BufRead>(r: &mut R, skip_ws: bool) -> Option<u8> {
+    loop {
+        let buf = r.fill_buf().ok()?;
+        if buf.is_empty() {
+            return None;
+        }
+        if !skip_ws {
+            let b = buf[0];
+            r.consume(1);
+            return Some(b);
+        }
+        if let Some(pos) = buf.iter().position(|b| !b.is_ascii_whitespace()) {
+            let b = buf[pos];
+            r.consume(pos + 1);
+            return Some(b);
+        }
+        let len = buf.len();
+        r.consume(len);
+    }
+}
+
+/// Read a JSON string literal (starting immediately after the opening `"`), appending raw bytes
+/// if `capture` is `Some`. Returns the unescaped text when `decode` is `Some`, or `false` on EOF.
+fn scan_json_string<R: std::io::BufRead>(
+    r: &mut R,
+    capture: Option<&mut Vec<u8>>,
+    decode: Option<&mut Vec<u8>>,
+) -> bool {
+    let mut cap = capture;
+    let mut dec = decode;
+    let mut escaped = false;
+    while let Some(b) = next_json_byte(r, false) {
+        if let Some(buf) = cap.as_deref_mut() {
+            buf.push(b);
+        }
+        if escaped {
+            if let Some(d) = dec.as_deref_mut() {
+                d.push(b);
+            }
+            escaped = false;
+            continue;
+        }
+        if b == b'\\' {
+            escaped = true;
+            continue;
+        }
+        if b == b'"' {
+            return true;
+        }
+        if let Some(d) = dec.as_deref_mut() {
+            d.push(b);
+        }
+    }
+    false
+}
+
+/// Skip any JSON value whose first non-whitespace byte has already been consumed (`first`).
+fn skip_json_value<R: std::io::BufRead>(r: &mut R, first: u8) -> bool {
+    match first {
+        b'"' => scan_json_string(r, None, None),
+        b'{' | b'[' => {
+            let mut depth = 1usize;
+            while let Some(b) = next_json_byte(r, false) {
+                match b {
+                    b'"' => {
+                        if !scan_json_string(r, None, None) {
+                            return false;
+                        }
+                    }
+                    b'{' | b'[' => depth += 1,
+                    b'}' | b']' => {
+                        depth -= 1;
+                        if depth == 0 {
+                            return true;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            false
+        }
+        _ => loop {
+            let buf = match r.fill_buf() {
+                Ok(b) if !b.is_empty() => b,
+                _ => return true,
+            };
+            if let Some(pos) = buf
+                .iter()
+                .position(|b| matches!(b, b',' | b'}' | b']') || b.is_ascii_whitespace())
+            {
+                r.consume(pos);
+                return true;
+            }
+            let len = buf.len();
+            r.consume(len);
+        },
+    }
+}
+
+/// Stream objects from either a top-level JSON array or a named array key (`entries`/`receipts`)
+/// inside a top-level JSON object, reusing one tiny buffer so 5k-entry files never materialize a DOM.
+fn stream_json_array_objects(
+    path: &Path,
+    keys: &[&str],
+    on_obj: &mut dyn FnMut(Value),
+) -> bool {
+    let Ok(file) = std::fs::File::open(path) else {
+        return true;
+    };
+    let mut r = std::io::BufReader::with_capacity(64 * 1024, file);
+    let Some(first) = next_json_byte(&mut r, true) else {
+        return true;
+    };
+    let in_array = match first {
+        b'[' => true,
+        b'{' => {
+            let mut found = false;
+            let mut key_buf = Vec::with_capacity(32);
+            while let Some(b) = next_json_byte(&mut r, true) {
+                if b == b'}' {
+                    break;
+                }
+                if b == b',' {
+                    continue;
+                }
+                if b != b'"' {
+                    return false;
+                }
+                key_buf.clear();
+                if !scan_json_string(&mut r, None, Some(&mut key_buf)) {
+                    return false;
+                }
+                if next_json_byte(&mut r, true) != Some(b':') {
+                    return false;
+                }
+                let Some(val_first) = next_json_byte(&mut r, true) else {
+                    return false;
+                };
+                let matches_key = std::str::from_utf8(&key_buf)
+                    .is_ok_and(|k| keys.contains(&k));
+                if matches_key && val_first == b'[' {
+                    found = true;
+                    break;
+                }
+                if !skip_json_value(&mut r, val_first) {
+                    return false;
+                }
+            }
+            if !found {
+                return true;
+            }
+            true
+        }
+        _ => return false,
+    };
+    if !in_array {
+        return false;
+    }
+
+    let mut obj_buf = Vec::with_capacity(1024);
+    while let Some(b) = next_json_byte(&mut r, true) {
+        if b == b']' {
+            return true;
+        }
+        if b == b',' {
+            continue;
+        }
+        if b != b'{' {
+            return false;
+        }
+        obj_buf.clear();
+        obj_buf.push(b'{');
+        let mut depth = 1usize;
+        while let Some(ch) = next_json_byte(&mut r, false) {
+            obj_buf.push(ch);
+            match ch {
+                b'"' => {
+                    if !scan_json_string(&mut r, Some(&mut obj_buf), None) {
+                        return false;
+                    }
+                }
+                b'{' => depth += 1,
+                b'}' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+        if depth != 0 {
+            return false;
+        }
+        match serde_json::from_slice::<Value>(&obj_buf) {
+            Ok(v) => on_obj(v),
+            Err(_) => return false,
+        }
+    }
+    false
+}
+
+/// Stream `work.json` + optional `receipts.json` directly into a verified `ChainedReceipt` vector
+/// without materializing all raw `serde_json::Value` DOM trees in memory simultaneously.
+pub fn load_chain(person_data_dir: &Path) -> Vec<ChainedReceipt> {
+    let mut chain = Vec::new();
+    let mut prev_hash = GENESIS_HASH.to_string();
+
+    let work_path = records::work_path(person_data_dir);
+    let mut work_ok = true;
+    if work_path.exists() {
+        let mut idx = chain.len();
+        let start_len = idx;
+        let start_prev = prev_hash.clone();
+        work_ok = stream_json_array_objects(&work_path, &["entries"], &mut |v| {
+            chain.push(chain_step(&mut prev_hash, idx, &v));
+            idx += 1;
+        });
+        if !work_ok {
+            chain.truncate(start_len);
+            prev_hash = start_prev;
+            for v in records::load_work(person_data_dir) {
+                let i = chain.len();
+                chain.push(chain_step(&mut prev_hash, i, &v));
+            }
+        }
+    }
+    let _ = work_ok;
+
+    let extra_path = person_data_dir.join("receipts.json");
+    if extra_path.exists() {
+        let start_len = chain.len();
+        let start_prev = prev_hash.clone();
+        let mut idx = start_len;
+        let ok = stream_json_array_objects(&extra_path, &["receipts", "entries"], &mut |v| {
+            chain.push(chain_step(&mut prev_hash, idx, &v));
+            idx += 1;
+        });
+        if !ok {
+            chain.truncate(start_len);
+            prev_hash = start_prev;
+            if let Ok(text) = std::fs::read_to_string(&extra_path) {
+                if let Ok(v) = serde_json::from_str::<Value>(&text) {
+                    let extra = v["receipts"]
+                        .as_array()
+                        .or_else(|| v["entries"].as_array())
+                        .or_else(|| v.as_array());
+                    if let Some(arr) = extra {
+                        for item in arr {
+                            let i = chain.len();
+                            chain.push(chain_step(&mut prev_hash, i, item));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    chain.shrink_to_fit();
+    chain
+}
+
 pub fn build_chain(entries: &[Value]) -> Vec<ChainedReceipt> {
     let mut chain = Vec::with_capacity(entries.len());
     let mut prev_hash = GENESIS_HASH.to_string();
 
     for (index, v) in entries.iter().enumerate() {
-        let ts = v["ts"].as_u64().unwrap_or(0);
-        let task = v["task"]
-            .as_str()
-            .or_else(|| v["title"].as_str())
-            .unwrap_or("")
-            .to_string();
-        let summary = v["summary"].as_str().unwrap_or("").to_string();
-        let thread_id = v["thread_id"].as_str().unwrap_or("").to_string();
-        let finished = v["finished"].as_bool().unwrap_or(true);
-        let answered = v["answered"].as_bool().unwrap_or(false);
-        let files: Vec<String> = v["files"]
-            .as_array()
-            .map(|a| {
-                a.iter()
-                    .filter_map(|x| x.as_str().map(|s| s.to_string()))
-                    .collect()
-            })
-            .unwrap_or_default();
-        let id = v["id"]
-            .as_str()
-            .filter(|s| !s.trim().is_empty())
-            .map(|s| s.to_string())
-            .unwrap_or_else(|| format!("rcpt-{ts}-{index}"));
-
-        let sha256 = compute_entry_hash(
-            &prev_hash, index, ts, &thread_id, finished, answered, &task, &summary, &files,
-        );
-        let receipt = ChainedReceipt {
-            id,
-            index,
-            ts,
-            task,
-            summary,
-            files,
-            thread_id,
-            finished,
-            answered,
-            prev_hash,
-            sha256: sha256.clone(),
-        };
-        prev_hash = sha256;
-        chain.push(receipt);
+        chain.push(chain_step(&mut prev_hash, index, v));
     }
     chain
 }

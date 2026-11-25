@@ -673,8 +673,12 @@ export function App() {
   );
 
   const handleSaveRoutineFromWork = useCallback(
-    (name: string, prompt: string, schedule = "daily 09:00") =>
-      desk.createRoutine({ name, prompt, schedule }),
+    (
+      name: string,
+      prompt: string,
+      schedule = "daily 09:00",
+      playbook?: { steps?: string[]; expected_inputs?: string[]; pack_deliverables?: boolean }
+    ) => desk.createRoutine({ name, prompt, schedule, ...playbook }),
     [desk.createRoutine]
   );
 

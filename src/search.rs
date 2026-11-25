@@ -306,8 +306,7 @@ fn collect_files(root: &Path, dir: &Path, out: &mut Vec<IndexedFile>) {
 
 impl PersonIndex {
     fn build(data_dir: &Path, workspace_dir: &Path, memory_path: &Path, fp: Fingerprint) -> Self {
-        let raw_entries = receipts::load_raw_entries(data_dir);
-        let chain = receipts::build_chain(&raw_entries);
+        let chain = receipts::load_chain(data_dir);
         let (chain_valid, head_hash) = receipts::verify_chain(&chain);
 
         let mut receipt_tokens: HashMap<String, Vec<u32>> = HashMap::new();

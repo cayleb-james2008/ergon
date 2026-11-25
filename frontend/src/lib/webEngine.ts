@@ -1787,11 +1787,11 @@ export async function installBrowserEngine(): Promise<void> {
     const st = activeStore();
     const byok = loadByok();
 
-    if (method === "GET" && path === "/api/version") return jsonRes({ name: "ergon", version: "0.14.0" });
-    if (method === "GET" && path === "/api/update") return jsonRes({ current: "0.14.0", available: false, mode: "off", checked_at: Math.floor(Date.now() / 1000) });
+    if (method === "GET" && path === "/api/version") return jsonRes({ name: "ergon", version: "0.15.0" });
+    if (method === "GET" && path === "/api/update") return jsonRes({ current: "0.15.0", available: false, mode: "off", checked_at: Math.floor(Date.now() / 1000) });
     if (method === "GET" && path === "/api/status") {
       return jsonRes({
-        version: "0.14.0",
+        version: "0.15.0",
         model_configured: true,
         model: byok.engine_mode === "byok" && byok.model_id ? byok.model_id : "browser-workspace-engine",
         model_base_url: byok.engine_mode === "byok" ? byok.model_base_url : "indexeddb://local",
@@ -2064,6 +2064,7 @@ export async function installBrowserEngine(): Promise<void> {
     if (method === "GET" && path === "/api/files/pack") {
       const rawFiles = u.searchParams.get("files") || "";
       const title = (u.searchParams.get("title") || "").trim() || "Client Deliverable Pack";
+      const preflightOnly = ["1", "true"].includes((u.searchParams.get("preflight") || "").toLowerCase());
       const requested = rawFiles
         .split(",")
         .map((s) => s.trim())
@@ -2076,7 +2077,19 @@ export async function installBrowserEngine(): Promise<void> {
             .sort((a, b) => b.mtime_ms - a.mtime_ms || a.path.localeCompare(b.path))
             .slice(0, 15)
             .map((f) => f.path);
-      const sections: Array<{ path: string; sha: string; body: string }> = [];
+      const sections: Array<{
+        path: string;
+        size_bytes: number;
+        non_empty: boolean;
+        count: number;
+        unit: "rows" | "lines" | "bytes";
+        sha: string;
+        body: string;
+      }> = [];
+      const missingPaths: string[] = [];
+      let readyCount = 0;
+      let emptyCount = 0;
+      let totalBytes = 0;
       for (const rel of targets) {
         const safe = sanitizeSafePath(rel);
         if (!safe) {
@@ -2084,29 +2097,73 @@ export async function installBrowserEngine(): Promise<void> {
           continue;
         }
         const f = st.files[safe];
-        if (!f) continue;
+        if (!f) {
+          if (explicit) missingPaths.push(rel);
+          continue;
+        }
+        const sizeBytes = new TextEncoder().encode(f.content).length;
+        const nonEmpty = f.content.trim().length > 0;
+        if (nonEmpty) readyCount += 1;
+        else emptyCount += 1;
+        totalBytes += sizeBytes;
+        const linesNonEmpty = f.content.split(/\r?\n/).filter((l) => l.trim().length > 0).length;
+        const isTable = f.ext === "csv" || f.ext === "tsv";
+        const count = isTable ? Math.max(0, linesNonEmpty - 1) : linesNonEmpty;
+        const unit = isTable ? "rows" : "lines";
         const sha = await sha256Hex(f.content);
         const body =
           f.ext === "md" || f.ext === "markdown" || f.ext === "txt"
             ? f.content.trimEnd()
             : `\`\`\`${f.ext === "csv" || f.ext === "tsv" ? "csv" : f.ext === "json" ? "json" : "text"}\n${f.content.trimEnd()}\n\`\`\``;
-        sections.push({ path: safe, sha, body });
+        sections.push({ path: safe, size_bytes: sizeBytes, non_empty: nonEmpty, count, unit, sha, body });
       }
       if (explicit && sections.length === 0) {
         return jsonRes({ error: "no matching workspace files found" }, 404);
       }
+      const preflightOk = readyCount > 0 && emptyCount === 0 && missingPaths.length === 0;
+      if (preflightOnly) {
+        return jsonRes({
+          ok: preflightOk,
+          ready_count: readyCount,
+          empty_count: emptyCount,
+          missing_count: missingPaths.length,
+          total_bytes: totalBytes,
+          files: [
+            ...sections.map((s) => ({
+              path: s.path,
+              size_bytes: s.size_bytes,
+              non_empty: s.non_empty,
+              count: s.count,
+              unit: s.unit,
+              sha256: s.sha,
+              status: s.non_empty ? "ready" : "empty",
+            })),
+            ...missingPaths.map((mp) => ({
+              path: mp,
+              size_bytes: 0,
+              non_empty: false,
+              count: 0,
+              unit: "bytes",
+              sha256: "",
+              status: "missing",
+            })),
+          ],
+        });
+      }
+      const statusWord = preflightOk ? "PASS" : "WARN";
       const lines = [
         `# ${title}`,
         "",
         `- Prepared for: **${p.name}**`,
         `- Files included: ${sections.length}`,
+        `- Pre-flight check: **${statusWord}** (${readyCount} non-empty, ${emptyCount} empty, ${missingPaths.length} missing, ${totalBytes} total bytes)`,
         "",
         "## Included Deliverables",
         "",
-        ...sections.map((s) => `- \`${s.path}\` (\`sha256:${s.sha}\`)`),
+        ...sections.map((s) => `- \`${s.path}\` (${s.count} ${s.unit}, \`sha256:${s.sha}\`)`),
       ];
       for (const s of sections) {
-        lines.push("", "---", "", `## \`${s.path}\``, "", `_SHA-256: \`${s.sha}\`_`, "", s.body);
+        lines.push("", "---", "", `## \`${s.path}\``, "", `_SHA-256: \`${s.sha}\` · ${s.count} ${s.unit} · ${s.size_bytes} bytes_`, "", s.body);
       }
       const md = lines.join("\n") + "\n";
       const packSha = await sha256Hex(md);
@@ -2116,6 +2173,8 @@ export async function installBrowserEngine(): Promise<void> {
           "Content-Type": "text/markdown; charset=utf-8",
           "X-Content-Type-Options": "nosniff",
           "X-Ergon-Pack-SHA256": packSha,
+          "X-Ergon-Pack-Preflight": preflightOk ? "pass" : "warn",
+          "X-Ergon-Pack-Ready-Count": String(readyCount),
         },
       });
     }

@@ -98,7 +98,12 @@ export function Chat({
   onOpenFiles: () => void;
   onExportAuditBundle: (format: "json" | "md") => Promise<void>;
   onUploadFiles: (files: FileList | File[]) => Promise<number>;
-  onSaveRoutine?: (name: string, prompt: string, schedule?: string) => Promise<boolean>;
+  onSaveRoutine?: (
+    name: string,
+    prompt: string,
+    schedule?: string,
+    playbook?: { steps?: string[]; expected_inputs?: string[]; pack_deliverables?: boolean }
+  ) => Promise<boolean>;
   inputRef: React.RefObject<HTMLTextAreaElement | null>;
 }) {
   const bottomRef = useRef<HTMLDivElement>(null);

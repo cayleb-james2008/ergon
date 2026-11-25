@@ -614,10 +614,10 @@ fn shell_has_themes_settings_people_and_memory_view() {
     let (status, body) = http(port, "GET", "/", None);
     assert_eq!(status, 200);
     let mut bundle_text = body.clone();
-    for &(route, mime, _) in ergon_rs::ui::CHUNKS {
-        if mime.starts_with("application/javascript") {
-            let (cs, cb) = http(port, "GET", route, None);
-            assert_eq!(cs, 200, "chunk {route} should serve 200");
+    for asset in ergon_rs::ui::CHUNKS {
+        if asset.mime.starts_with("application/javascript") {
+            let (cs, cb) = http(port, "GET", asset.route, None);
+            assert_eq!(cs, 200, "chunk {} should serve 200", asset.route);
             bundle_text.push_str(&cb);
         }
     }
@@ -1131,10 +1131,10 @@ fn shell_accessibility_and_contrast_pins() {
         assert!(contrast(&ink3, &back) >= 4.5, "light secondary text {ink3} on {bg} {back} is under 4.5:1");
     }
     let mut bundle_text = body.clone();
-    for &(route, mime, _) in ergon_rs::ui::CHUNKS {
-        if mime.starts_with("application/javascript") {
-            let (cs, cb) = http(port, "GET", route, None);
-            assert_eq!(cs, 200, "chunk {route} should serve 200");
+    for asset in ergon_rs::ui::CHUNKS {
+        if asset.mime.starts_with("application/javascript") {
+            let (cs, cb) = http(port, "GET", asset.route, None);
+            assert_eq!(cs, 200, "chunk {} should serve 200", asset.route);
             bundle_text.push_str(&cb);
         }
     }

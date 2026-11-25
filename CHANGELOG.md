@@ -4,6 +4,15 @@ Each release is tagged `vMAJOR.MINOR.PATCH` and published on GitHub Releases wit
 binaries and a `SHA256SUMS` file. The running app shows its version and can update
 itself from the newest release (see README, "Versions and updates").
 
+## 0.15.0 - 2026-11-25
+
+- **Pre-Gzipped `.rodata` `/chunks/*` (`build.rs`, `Cargo.toml`, `src/ui.rs`, `src/server.rs`):**
+  - Pre-compressed all lazy `.js` and `.css` chunks at compile time via `miniz_oxide` inside `build.rs` and served zero-copy directly from `.rodata` (eliminating runtime `CHUNK_CACHE` heap allocations and trimming release binary size), with transparent on-the-fly inflation fallback for non-gzip clients.
+- **Streaming Receipts & Zero-Clone Audit Bundle RSS Diet (`src/receipts.rs`, `src/search.rs`, `src/audit_bundle.rs`, `src/server.rs`):**
+  - Added streaming `receipts::load_chain` parsing `work.json` and `receipts.json` one JSON object at a time (~2 KB transient buffer instead of materializing two full `Value` DOMs) and streamed `compute_canonical_bundle_sha256` directly into `Sha256` without cloning 5k-entry arrays, reducing Peak `VmHWM` under 5k receipts + 500 workspace files.
+- **1-Click Playbook Promotion & Deliverable Pre-Flight Check (`frontend/src/`, `src/server.rs`, `frontend/src/lib/webEngine.ts`):**
+  - Upgraded run saving into 1-click **Promote to Playbook** (`extractPlaybookFromRun` auto-extracting tool steps, input globs like `*.csv`/`*.md`, and `pack_deliverables`), and added `GET /api/files/pack?preflight=1` + inline **Pre-Flight Check** verifying non-empty deliverables, row/line counts, and SHA-256 digests prior to Client Pack export (`webEngine.ts` 100% synced).
+
 ## 0.14.0 - 2026-11-25
 
 - **Initial-Shell `React.lazy` Code-Splitting & Compile-Time `/chunks/*` (`build.rs`, `src/ui.rs`, `src/server.rs`, `frontend/vite.config.ts`, `frontend/src/App.tsx`, `frontend/src/chat/LiveRunTimeline.tsx`, `frontend/src/views/usePaper.ts`):**

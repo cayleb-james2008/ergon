@@ -37,7 +37,7 @@ import {
 } from "@/lib/api";
 import { exportReceiptDownload } from "@/lib/receiptExport";
 import { cn } from "@/lib/utils";
-import { normalizeFiles, relTime, threadMs } from "@/lib/words";
+import { extractPlaybookFromRun, normalizeFiles, relTime, threadMs } from "@/lib/words";
 
 export { usePaper };
 
@@ -440,7 +440,12 @@ export const PaperFace = memo(function PaperFace({
   onOpenFilesPanel: () => void;
   onUploadMany: (files: FileList | File[]) => Promise<number>;
   onExportAuditBundle?: (format: "json" | "md") => Promise<void>;
-  onSaveRoutine?: (name: string, prompt: string, schedule?: string) => Promise<boolean>;
+  onSaveRoutine?: (
+    name: string,
+    prompt: string,
+    schedule?: string,
+    playbook?: { steps?: string[]; expected_inputs?: string[]; pack_deliverables?: boolean }
+  ) => Promise<boolean>;
 }) {
   const { data, failed, load, loadAllReceipts, act } = paper;
   const [dragOver, setDragOver] = useState(false);
@@ -957,11 +962,16 @@ export const PaperFace = memo(function PaperFace({
                                   size="xs"
                                   variant="ghost"
                                   className="max-md:min-h-11 gap-1 text-xs text-ink-2 hover:text-ink"
-                                  aria-label={`Save routine from ${taskTitle}`}
+                                  aria-label={`Promote ${taskTitle} to Playbook`}
                                   disabled={Boolean(savedRoutineKeys[x.id ?? `${globalIdx}`])}
                                   onClick={async () => {
                                     const key = x.id ?? `${globalIdx}`;
-                                    const ok = await onSaveRoutine(taskTitle.slice(0, 60), taskTitle, "daily 09:00");
+                                    const pb = extractPlaybookFromRun(taskTitle, [], jobFiles);
+                                    const ok = await onSaveRoutine(pb.name, pb.prompt, "manual", {
+                                      steps: pb.steps,
+                                      expected_inputs: pb.expected_inputs,
+                                      pack_deliverables: pb.pack_deliverables,
+                                    });
                                     if (ok) setSavedRoutineKeys((prev) => ({ ...prev, [key]: true }));
                                   }}
                                 >
@@ -970,7 +980,7 @@ export const PaperFace = memo(function PaperFace({
                                   ) : (
                                     <Repeat className="size-3.5" strokeWidth={1.5} aria-hidden />
                                   )}
-                                  <span>{savedRoutineKeys[x.id ?? `${globalIdx}`] ? "Saved" : "Routine"}</span>
+                                  <span>{savedRoutineKeys[x.id ?? `${globalIdx}`] ? "Saved" : "Playbook"}</span>
                                 </Button>
                               )}
                               <Button

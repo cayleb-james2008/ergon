@@ -9,7 +9,11 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { instant, sheet } from "@/motion";
-import { exportClientPackDownload } from "@/lib/receiptExport";
+import {
+  exportClientPackDownload,
+  preflightClientPack,
+  type PackPreflightReport,
+} from "@/lib/receiptExport";
 import {
   FileHistoryDiffView,
   WorkspaceFilesBody,
@@ -62,8 +66,9 @@ export const InspectorDrawer = memo(function InspectorDrawer({
   onExportAuditBundle: (format: "json" | "md") => Promise<void>;
   onOfferAction: (url: string, msg: string) => Promise<void>;
 }) {
-  const [exporting, setExporting] = useState<"md" | "json" | "pack" | null>(null);
+  const [exporting, setExporting] = useState<"md" | "json" | "pack" | "preflight" | null>(null);
   const [verifyInfo, setVerifyInfo] = useState<{ checked: number; ok: boolean } | null>(null);
+  const [packPreflight, setPackPreflight] = useState<PackPreflightReport | null>(null);
   const [histLoading, setHistLoading] = useState(false);
   const [histErr, setHistErr] = useState("");
   const [revisions, setRevisions] = useState<FileRevision[]>([]);
@@ -285,6 +290,31 @@ export const InspectorDrawer = memo(function InspectorDrawer({
                   {exporting === "json" ? "Exporting…" : "Bundle (.json)"}
                 </Button>
                 <Button
+                  id="pack-preflight-btn"
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={exporting !== null || files.length === 0}
+                  className="max-md:min-h-11 gap-1.5"
+                  onClick={async () => {
+                    setExporting("preflight");
+                    try {
+                      const check = await preflightClientPack(files.slice(0, 15).map((f) => f.path));
+                      setPackPreflight(check);
+                      toast.success(
+                        `Pre-flight ${check.ok ? "PASS" : "WARN"}: ${check.ready_count}/${check.files.length} non-empty deliverables`
+                      );
+                    } catch {
+                      toast.error("Could not run deliverable pre-flight check.");
+                    } finally {
+                      setExporting(null);
+                    }
+                  }}
+                >
+                  <ShieldCheck className="size-3.5" strokeWidth={1.5} aria-hidden />
+                  {exporting === "preflight" ? "Checking…" : "Pre-Flight Check"}
+                </Button>
+                <Button
                   id="package-verify-btn"
                   type="button"
                   size="sm"
@@ -294,12 +324,11 @@ export const InspectorDrawer = memo(function InspectorDrawer({
                   onClick={async () => {
                     setExporting("pack");
                     try {
-                      const [verifyRes, packRes] = await Promise.all([
+                      const targets = files.slice(0, 15).map((f) => f.path);
+                      const [verifyRes, checkRes, packRes] = await Promise.all([
                         call<{ valid?: boolean; total?: number; count?: number }>("/api/receipts/verify"),
-                        exportClientPackDownload(
-                          files.slice(0, 15).map((f) => f.path),
-                          `${personName} Verified Deliverable Pack`
-                        ),
+                        preflightClientPack(targets).catch(() => null),
+                        exportClientPackDownload(targets, `${personName} Verified Deliverable Pack`),
                       ]);
                       const checked = verifyRes.ok
                         ? Number(verifyRes.data.total ?? verifyRes.data.count ?? 0)
@@ -308,8 +337,11 @@ export const InspectorDrawer = memo(function InspectorDrawer({
                       if (verifyRes.ok) {
                         setVerifyInfo({ ok: valid, checked });
                       }
+                      if (checkRes) {
+                        setPackPreflight(checkRes);
+                      }
                       toast.success(
-                        `Verified ${checked} receipts + packaged ${packRes.filename} (sha256: ${packRes.sha256.slice(0, 12)}…)`
+                        `Verified ${checked} receipts + ${checkRes?.ready_count ?? targets.length} deliverables (sha256: ${packRes.sha256.slice(0, 12)}…)`
                       );
                     } catch {
                       toast.error("Could not package and verify deliverables.");
@@ -322,6 +354,29 @@ export const InspectorDrawer = memo(function InspectorDrawer({
                   {exporting === "pack" ? "Packaging…" : "Package & Verify (.md)"}
                 </Button>
               </div>
+              {packPreflight && (
+                <div
+                  id="pack-preflight-summary"
+                  className="rounded-sm border border-hairline bg-surface p-2.5 text-xs text-ink-2"
+                >
+                  <div className="flex items-center justify-between gap-2 font-medium text-ink">
+                    <span>Deliverable Pre-Flight</span>
+                    <span className={cn("mono rounded-chip px-2 py-0.5", packPreflight.ok ? "status-finished" : "status-stopped")}>
+                      {packPreflight.ok ? `PASS (${packPreflight.ready_count})` : `WARN (${packPreflight.empty_count} empty)`}
+                    </span>
+                  </div>
+                  <ul className="mt-1.5 flex flex-col gap-1">
+                    {packPreflight.files.slice(0, 5).map((f) => (
+                      <li key={f.path} className="flex items-center justify-between gap-2">
+                        <span className="mono truncate text-ink">{f.path}</span>
+                        <span className="mono shrink-0 text-ink-2">
+                          {f.count} {f.unit} · {f.sha256 ? f.sha256.slice(0, 8) : "missing"}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
             </section>
 
             <section className="flex flex-col gap-2.5">

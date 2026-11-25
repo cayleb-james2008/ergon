@@ -215,11 +215,42 @@ export async function exportReceiptDownload(
   return { filename, sha256: built.sha256 };
 }
 
+export type PackPreflightFile = {
+  path: string;
+  size_bytes: number;
+  non_empty: boolean;
+  count: number;
+  unit: "rows" | "lines" | "bytes";
+  sha256: string;
+  status: "ready" | "empty" | "missing";
+};
+
+export type PackPreflightReport = {
+  ok: boolean;
+  ready_count: number;
+  empty_count: number;
+  missing_count: number;
+  total_bytes: number;
+  files: PackPreflightFile[];
+};
+
+/** Verifies non-empty deliverables, row/line counts, and SHA-256 digests before Client Pack export. */
+export async function preflightClientPack(files: string[]): Promise<PackPreflightReport> {
+  const params = new URLSearchParams();
+  if (files.length > 0) params.set("files", files.slice(0, 25).join(","));
+  params.set("preflight", "1");
+  const r = await fetch(`/api/files/pack?${params.toString()}`, { cache: "no-store" });
+  if (r.ok) {
+    return (await r.json()) as PackPreflightReport;
+  }
+  throw new Error(`HTTP ${r.status}`);
+}
+
 /** Downloads a single verified Client Deliverable Pack (.md) combining selected or recent workspace files. */
 export async function exportClientPackDownload(
   files: string[],
   title = "Client Deliverable Pack"
-): Promise<{ filename: string; sha256: string }> {
+): Promise<{ filename: string; sha256: string; preflight?: string }> {
   const filename = `ergon-${safeSlug(title)}.md`;
   const params = new URLSearchParams();
   if (files.length > 0) params.set("files", files.slice(0, 25).join(","));
@@ -230,9 +261,10 @@ export async function exportClientPackDownload(
   if (r.ok) {
     const text = await r.text();
     const headerHash = r.headers.get("X-Ergon-Pack-SHA256") || "";
+    const preflight = r.headers.get("X-Ergon-Pack-Preflight") || undefined;
     const digest = headerHash || (await sha256Hex(text));
     triggerDownload(filename, text, "text/markdown; charset=utf-8");
-    return { filename, sha256: digest };
+    return { filename, sha256: digest, preflight };
   }
   throw new Error(`HTTP ${r.status}`);
 }
