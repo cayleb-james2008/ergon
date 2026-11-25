@@ -290,7 +290,7 @@ export function App() {
       const toastMsg =
         action === "approve"
           ? rawOutcome
-            ? (/approved/i.test(rawOutcome) ? rawOutcome : `Approved — ${rawOutcome}`)
+            ? (/approved/i.test(rawOutcome) ? rawOutcome : `Approved: ${rawOutcome}`)
             : `Approved action for ${label}.`
           : rawOutcome || `Kept ${label} safe.`;
       toast.success(toastMsg);

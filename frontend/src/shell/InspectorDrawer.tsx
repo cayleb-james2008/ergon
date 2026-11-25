@@ -10,9 +10,11 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { instant, sheet } from "@/motion";
 import {
+  compareReceipts,
   exportClientPackDownload,
   preflightClientPack,
   type PackPreflightReport,
+  type ReceiptCompareResult,
 } from "@/lib/receiptExport";
 import {
   FileHistoryDiffView,
@@ -66,9 +68,14 @@ export const InspectorDrawer = memo(function InspectorDrawer({
   onExportAuditBundle: (format: "json" | "md") => Promise<void>;
   onOfferAction: (url: string, msg: string) => Promise<void>;
 }) {
-  const [exporting, setExporting] = useState<"md" | "json" | "pack" | "preflight" | null>(null);
+  const [exporting, setExporting] = useState<"md" | "json" | "pack" | "preflight" | "delta" | null>(null);
   const [verifyInfo, setVerifyInfo] = useState<{ checked: number; ok: boolean } | null>(null);
   const [packPreflight, setPackPreflight] = useState<PackPreflightReport | null>(null);
+  const [recentReceipts, setRecentReceipts] = useState<Array<{ id: string; task: string; ts?: number }>>([]);
+  const [compareA, setCompareA] = useState("");
+  const [compareB, setCompareB] = useState("");
+  const [compareResult, setCompareResult] = useState<ReceiptCompareResult | null>(null);
+  const [comparing, setComparing] = useState(false);
   const [histLoading, setHistLoading] = useState(false);
   const [histErr, setHistErr] = useState("");
   const [revisions, setRevisions] = useState<FileRevision[]>([]);
@@ -129,6 +136,17 @@ export const InspectorDrawer = memo(function InspectorDrawer({
           ok: isOk,
           checked: Number(r.data.total ?? r.data.receipts_checked ?? r.data.count ?? 0),
         });
+      }
+    });
+    call<{ receipts?: Array<{ id?: string; task?: string; ts?: number }> }>("/api/receipts?limit=25").then((r) => {
+      if (!r.ok || !Array.isArray(r.data.receipts)) return;
+      const list = r.data.receipts
+        .map((x) => ({ id: String(x.id ?? "").trim(), task: String(x.task ?? "Completed task").trim(), ts: x.ts }))
+        .filter((x) => x.id.length > 0);
+      setRecentReceipts(list);
+      if (list.length >= 2) {
+        setCompareA((prev) => prev || list[1].id);
+        setCompareB((prev) => prev || list[0].id);
       }
     });
   }, [open, tab]);
@@ -399,6 +417,126 @@ export const InspectorDrawer = memo(function InspectorDrawer({
                     ))}
                   </ul>
                 </div>
+              )}
+            </section>
+
+            <section id="receipt-compare-panel" className="flex flex-col gap-2.5 rounded-card border border-hairline bg-board/40 p-3.5">
+              <div className="flex items-center justify-between gap-2">
+                <h2 className="text-sm font-medium text-ink">Compare runs</h2>
+                <span className="mono text-xs text-ink-2">{recentReceipts.length} recent</span>
+              </div>
+              {recentReceipts.length < 2 ? (
+                <p className="text-xs leading-5 text-ink-2">
+                  Complete at least two runs to compare summary/file deltas and append a verified delta section to your Client Pack.
+                </p>
+              ) : (
+                <>
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    <label className="flex flex-col gap-1 text-xs text-ink-2">
+                      <span>Baseline run</span>
+                      <select
+                        id="compare-receipt-a"
+                        value={compareA}
+                        onChange={(e) => setCompareA(e.target.value)}
+                        className="focus-ring min-h-11 rounded-md border border-hairline bg-surface px-2 text-xs text-ink md:min-h-9"
+                      >
+                        {recentReceipts.map((r) => (
+                          <option key={`a-${r.id}`} value={r.id}>
+                            {r.task.slice(0, 34)} ({r.id.slice(-8)})
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="flex flex-col gap-1 text-xs text-ink-2">
+                      <span>Target run</span>
+                      <select
+                        id="compare-receipt-b"
+                        value={compareB}
+                        onChange={(e) => setCompareB(e.target.value)}
+                        className="focus-ring min-h-11 rounded-md border border-hairline bg-surface px-2 text-xs text-ink md:min-h-9"
+                      >
+                        {recentReceipts.map((r) => (
+                          <option key={`b-${r.id}`} value={r.id}>
+                            {r.task.slice(0, 34)} ({r.id.slice(-8)})
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      id="compare-runs-btn"
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={comparing || !compareA || !compareB}
+                      className="max-md:min-h-11 gap-1.5"
+                      onClick={async () => {
+                        setComparing(true);
+                        try {
+                          const res = await compareReceipts(compareA, compareB);
+                          setCompareResult(res);
+                        } catch {
+                          toast.error("Could not compare selected runs.");
+                        } finally {
+                          setComparing(false);
+                        }
+                      }}
+                    >
+                      {comparing ? "Comparing…" : "Compare Runs"}
+                    </Button>
+                    <Button
+                      id="append-receipt-delta-btn"
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={exporting !== null || !compareA || !compareB}
+                      className="max-md:min-h-11 gap-1.5"
+                      onClick={async () => {
+                        setExporting("delta");
+                        try {
+                          const res = await exportClientPackDownload(
+                            files.slice(0, 15).map((f) => f.path),
+                            `${personName} Delta Pack`,
+                            { delta_a: compareA, delta_b: compareB }
+                          );
+                          toast.success(`Exported ${res.filename} with run delta (sha256: ${res.sha256.slice(0, 12)}…)`);
+                        } catch {
+                          toast.error("Could not export Delta Pack.");
+                        } finally {
+                          setExporting(null);
+                        }
+                      }}
+                    >
+                      <PackageCheck className="size-3.5" strokeWidth={1.5} aria-hidden />
+                      {exporting === "delta" ? "Packing…" : "Append Delta to Client Pack (.md)"}
+                    </Button>
+                  </div>
+                  {compareResult && (
+                    <div id="receipt-compare-result" className="flex flex-col gap-2 rounded-sm border border-hairline bg-surface p-2.5 text-xs">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="font-medium text-ink">Run delta</span>
+                        <div className="mono flex items-center gap-1.5">
+                          <span className="rounded-chip bg-pill-active-bg px-1.5 py-0.5 text-pill-active-fg">+{compareResult.added}</span>
+                          <span className="rounded-chip bg-pill-pro-bg px-1.5 py-0.5 text-pill-pro-fg">-{compareResult.removed}</span>
+                          <span className="text-ink-2">{compareResult.similarity_pct}% match</span>
+                        </div>
+                      </div>
+                      {(compareResult.files_added.length > 0 || compareResult.files_removed.length > 0) && (
+                        <p className="text-ink-2">
+                          Files: +{compareResult.files_added.length} added, -{compareResult.files_removed.length} removed
+                        </p>
+                      )}
+                      {compareResult.unified.trim() ? (
+                        <pre className="max-h-36 overflow-auto whitespace-pre-wrap break-words rounded-sm bg-board p-2 font-mono text-xs text-ink">
+                          {compareResult.unified}
+                        </pre>
+                      ) : (
+                        <p className="text-ink-2">Summaries are identical across both runs.</p>
+                      )}
+                    </div>
+                  )}
+                </>
               )}
             </section>
 

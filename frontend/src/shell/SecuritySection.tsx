@@ -140,7 +140,7 @@ export function SecuritySection({ status }: { status: Status | null | "error" })
                       <span className="mono shrink-0 text-[11px] text-ink-3">{relTime(e.ts)}</span>
                     </div>
                     <p className="mono mt-0.5 text-[11px] text-ink-3">
-                      {e.code} — {e.action}
+                      {e.code} · {e.action}
                       {e.repeats ? ` (+${e.repeats} similar)` : ""}
                     </p>
                   </div>
@@ -187,7 +187,7 @@ export function SecuritySection({ status }: { status: Status | null | "error" })
             <ul className="flex flex-col gap-1.5">
               {data.armed.map((a) => (
                 <li key={a.id} className="text-xs leading-5 text-ink-2">
-                  <span className="font-medium text-ink">{a.label}</span> — {a.detail}
+                  <span className="font-medium text-ink">{a.label}</span>: {a.detail}
                 </li>
               ))}
             </ul>

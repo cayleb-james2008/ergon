@@ -1811,11 +1811,11 @@ export async function installBrowserEngine(): Promise<void> {
     const st = activeStore();
     const byok = loadByok();
 
-    if (method === "GET" && path === "/api/version") return jsonRes({ name: "ergon", version: "0.16.0" });
-    if (method === "GET" && path === "/api/update") return jsonRes({ current: "0.16.0", available: false, mode: "off", checked_at: Math.floor(Date.now() / 1000) });
+    if (method === "GET" && path === "/api/version") return jsonRes({ name: "ergon", version: "0.17.0" });
+    if (method === "GET" && path === "/api/update") return jsonRes({ current: "0.17.0", available: false, mode: "off", checked_at: Math.floor(Date.now() / 1000) });
     if (method === "GET" && path === "/api/status") {
       return jsonRes({
-        version: "0.16.0",
+        version: "0.17.0",
         model_configured: true,
         model: byok.engine_mode === "byok" && byok.model_id ? byok.model_id : "browser-workspace-engine",
         model_base_url: byok.engine_mode === "byok" ? byok.model_base_url : "indexeddb://local",
@@ -2209,6 +2209,39 @@ export async function installBrowserEngine(): Promise<void> {
       for (const s of sections) {
         lines.push("", "---", "", `## \`${s.path}\``, "", `_SHA-256: \`${s.sha}\` · ${s.count} ${s.unit} · ${s.size_bytes} bytes_`, "", s.body);
       }
+      const deltaA = (u.searchParams.get("delta_a") || "").trim();
+      const deltaB = (u.searchParams.get("delta_b") || "").trim();
+      const deltaFile = (u.searchParams.get("delta_file") || "").trim();
+      let hasDelta = false;
+      const simPct = (d: { added: number; removed: number; unchanged?: number }) => {
+        const unc = d.unchanged ?? 0;
+        const denom = unc + Math.max(d.added, d.removed);
+        return denom === 0 ? 100 : Math.min(100, Math.round((unc * 100) / denom));
+      };
+      if (deltaA && deltaB) {
+        const ra = st.work.find((w, idx) => w.id === deltaA || w.thread_id === deltaA || String(idx) === deltaA);
+        const rb = st.work.find((w, idx) => w.id === deltaB || w.thread_id === deltaB || String(idx) === deltaB);
+        if (!ra || !rb) return jsonRes({ error: "delta receipt not found" }, 404);
+        const diff = computeLineDiff(ra.summary || "", rb.summary || "", { path: `${deltaA}->${deltaB}` });
+        const unifiedText = (diff.unified ?? "").trimEnd();
+        lines.push("", "---", "", `## Verified Run Delta (\`${deltaA}\` -> \`${deltaB}\`)`, "", `- **Changes:** +${diff.added} / -${diff.removed} lines (${simPct(diff)}% similarity)`);
+        if (unifiedText) lines.push("", "```diff", unifiedText, "```");
+        hasDelta = true;
+      } else if (deltaFile) {
+        const safeDelta = sanitizeSafePath(deltaFile);
+        if (!safeDelta) return jsonRes({ error: "path escapes the workspace" }, 403);
+        const revAId = (u.searchParams.get("rev_a") || "").trim();
+        const revBId = (u.searchParams.get("rev_b") || "current").trim();
+        const revList = st.fileHistory[safeDelta] ?? [];
+        const textA = revList.find((r) => r.rev_id === revAId)?.content;
+        const textB = revBId === "current" ? st.files[safeDelta]?.content : revList.find((r) => r.rev_id === revBId)?.content;
+        if (typeof textA !== "string" || typeof textB !== "string") return jsonRes({ error: "snapshot not found" }, 404);
+        const diff = computeLineDiff(textA, textB, { path: safeDelta, rev_a: revAId, rev_b: revBId });
+        const unifiedText = (diff.unified ?? "").trimEnd();
+        lines.push("", "---", "", `## Verified Snapshot Delta (\`${safeDelta}\`: \`${revAId}\` -> \`${revBId}\`)`, "", `- **Changes:** +${diff.added} / -${diff.removed} lines (${simPct(diff)}% similarity)`);
+        if (unifiedText) lines.push("", "```diff", unifiedText, "```");
+        hasDelta = true;
+      }
       const md = lines.join("\n") + "\n";
       const packSha = await sha256Hex(md);
       return new Response(md, {
@@ -2219,7 +2252,54 @@ export async function installBrowserEngine(): Promise<void> {
           "X-Ergon-Pack-SHA256": packSha,
           "X-Ergon-Pack-Preflight": allOk ? "pass" : "warn",
           "X-Ergon-Pack-Ready-Count": String(readyCount),
+          "X-Ergon-Pack-Delta": hasDelta ? "yes" : "none",
         },
+      });
+    }
+    if (method === "GET" && path === "/api/receipts/compare") {
+      const aId = (u.searchParams.get("a") || "").trim();
+      const bId = (u.searchParams.get("b") || "").trim();
+      if (!aId || !bId) return jsonRes({ error: "query parameters a and b are required" }, 400);
+      const findW = (key: string) =>
+        st.work.find((w, idx) => w.id === key || w.thread_id === key || String(idx) === key);
+      const ra = findW(aId);
+      const rb = findW(bId);
+      if (!ra) return jsonRes({ error: "receipt a not found" }, 404);
+      if (!rb) return jsonRes({ error: "receipt b not found" }, 404);
+      const diff = computeLineDiff(ra.summary || "", rb.summary || "", { path: `${aId}->${bId}` });
+      const unc = diff.unchanged ?? 0;
+      const denom = unc + Math.max(diff.added, diff.removed);
+      const simPct = denom === 0 ? 100 : Math.min(100, Math.round((unc * 100) / denom));
+      const unifiedText = (diff.unified ?? "").trimEnd();
+      const filesA = Array.isArray(ra.files) ? ra.files : [];
+      const filesB = Array.isArray(rb.files) ? rb.files : [];
+      const filesAdded = filesB.filter((f) => !filesA.includes(f));
+      const filesRemoved = filesA.filter((f) => !filesB.includes(f));
+      const filesShared = filesB.filter((f) => filesA.includes(f));
+      const lineDelta = diff.added - diff.removed;
+      const fileDelta = filesB.length - filesA.length;
+      const deltaMd = [
+        `## Verified Run Delta (\`${ra.id || aId}\` -> \`${rb.id || bId}\`)`,
+        "",
+        `- **Summary Diff:** +${diff.added} / -${diff.removed} lines (${simPct}% similarity, net ${lineDelta >= 0 ? "+" : ""}${lineDelta} lines)`,
+        `- **File Outputs:** ${filesAdded.length} added, ${filesRemoved.length} removed, ${filesShared.length} shared`,
+        ...(unifiedText ? ["", "```diff", unifiedText, "```"] : []),
+      ].join("\n") + "\n";
+      return jsonRes({
+        receipt_a: { id: ra.id || aId, task: ra.task, summary: ra.summary, files: filesA },
+        receipt_b: { id: rb.id || bId, task: rb.task, summary: rb.summary, files: filesB },
+        added: diff.added,
+        removed: diff.removed,
+        unchanged: diff.unchanged,
+        similarity_pct: simPct,
+        line_delta: lineDelta,
+        file_delta: fileDelta,
+        files_added: filesAdded,
+        files_removed: filesRemoved,
+        files_shared: filesShared,
+        hunks: diff.hunks,
+        unified: diff.unified ?? "",
+        delta_markdown: deltaMd,
       });
     }
     if (method === "POST" && path === "/api/citations/verify") {

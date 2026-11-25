@@ -53,7 +53,29 @@ import {
   type WorkspaceFile,
 } from "@/lib/api";
 import type { SkillMeta } from "@/lib/skillsCatalog";
-import { detectWorkspaceWorkflow, relTime } from "@/lib/words";
+import { detectWorkspaceWorkflow, extractCitations, relTime } from "@/lib/words";
+
+/** Lightweight fuzzy scorer: exact substring > multi-token match > ordered subsequence. */
+function fuzzyScore(query: string, ...fields: Array<string | undefined>): number {
+  const q = query.trim().toLowerCase();
+  if (!q) return 1;
+  const hay = fields
+    .filter((f): f is string => typeof f === "string" && f.length > 0)
+    .join(" ")
+    .toLowerCase();
+  if (!hay) return 0;
+  if (hay.includes(q)) return 100 - Math.min(40, hay.indexOf(q));
+  const tokens = q.split(/\s+/).filter(Boolean);
+  if (tokens.length > 1 && tokens.every((t) => hay.includes(t))) return 60;
+  let qi = 0;
+  let gaps = 0;
+  for (let i = 0; i < hay.length && qi < q.length; i++) {
+    if (hay[i] === q[qi]) qi++;
+    else if (qi > 0) gaps++;
+  }
+  if (qi === q.length) return Math.max(10, 45 - Math.floor(gaps / 4));
+  return 0;
+}
 
 export const CommandPalette = memo(function CommandPalette({
   open,
@@ -108,6 +130,7 @@ export const CommandPalette = memo(function CommandPalette({
 }) {
   const [query, setQuery] = useState("");
   const [remoteHits, setRemoteHits] = useState<SearchHit[]>([]);
+  const [ledgerReceipts, setLedgerReceipts] = useState<BriefJob[]>([]);
   const [searching, setSearching] = useState(false);
 
   useEffect(() => {
@@ -115,7 +138,17 @@ export const CommandPalette = memo(function CommandPalette({
       setQuery("");
       setRemoteHits([]);
       setSearching(false);
+      return;
     }
+    let cancelled = false;
+    call<{ receipts?: BriefJob[] }>("/api/receipts?limit=30").then((r) => {
+      if (!cancelled && r.ok && Array.isArray(r.data.receipts)) {
+        setLedgerReceipts(r.data.receipts);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [open]);
 
   // Query server indexed search (GET /api/search?q=...) on v0.5.0+ when typing >= 2 chars.
@@ -190,16 +223,48 @@ export const CommandPalette = memo(function CommandPalette({
 
   const qLower = query.trim().toLowerCase();
 
-  // Pre-filter and cap large lists (500+ files, 5,000+ receipts) so cmdk stays instant at 60fps.
+  // Pre-filter and cap large lists (500+ files, 5,000+ receipts) with fuzzy scoring so cmdk stays instant at 60fps.
   const matchedFiles = useMemo(() => {
-    const list = qLower
-      ? files.filter((f) => f.path.toLowerCase().includes(qLower) || f.ext.toLowerCase().includes(qLower))
-      : files;
-    return list.slice(0, 12);
+    if (!qLower) return files.slice(0, 12);
+    return files
+      .map((f) => ({ f, score: fuzzyScore(qLower, f.path, f.ext) }))
+      .filter((x) => x.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 12)
+      .map((x) => x.f);
   }, [files, qLower]);
 
+  const matchedCitations = useMemo(() => {
+    const out: Array<{ raw: string; path: string; line: number; endLine?: number; sourceTask: string }> = [];
+    const seen = new Set<string>();
+    const combined = [...ledgerReceipts, ...receipts];
+    for (const r of combined.slice(0, 80)) {
+      const text = `${String(r.task ?? "")}\n${String(r.summary ?? "")}`;
+      for (const c of extractCitations(text)) {
+        if (seen.has(c.raw)) continue;
+        seen.add(c.raw);
+        if (!qLower || fuzzyScore(qLower, c.raw, c.path, r.task) > 0) {
+          out.push({ ...c, sourceTask: String(r.task ?? "") });
+        }
+        if (out.length >= 8) return out;
+      }
+    }
+    for (const h of remoteHits) {
+      const text = `${String(h.title ?? "")}\n${String(h.subtitle ?? "")}`;
+      for (const c of extractCitations(text)) {
+        if (seen.has(c.raw)) continue;
+        seen.add(c.raw);
+        if (!qLower || fuzzyScore(qLower, c.raw, c.path, h.title) > 0) {
+          out.push({ ...c, sourceTask: String(h.title ?? "") });
+        }
+        if (out.length >= 8) return out;
+      }
+    }
+    return out;
+  }, [ledgerReceipts, receipts, remoteHits, qLower]);
+
   const matchedReceipts = useMemo(() => {
-    const combined: { id: string; title: string; subtitle: string; thread_id?: string; ts?: number }[] = [];
+    const combined: { id: string; title: string; subtitle: string; thread_id?: string; ts?: number; score: number }[] = [];
     const seen = new Set<string>();
     for (const r of receipts) {
       const title = String(r.task ?? "").trim();
@@ -207,16 +272,18 @@ export const CommandPalette = memo(function CommandPalette({
       const key = `${r.thread_id || ""}|${title}`;
       if (seen.has(key)) continue;
       seen.add(key);
-      if (!qLower || title.toLowerCase().includes(qLower) || String(r.summary ?? "").toLowerCase().includes(qLower)) {
+      const score = qLower ? fuzzyScore(qLower, title, String(r.summary ?? ""), (r.files ?? []).join(" ")) : 1;
+      if (score > 0) {
         combined.push({
           id: r.id || r.thread_id || key,
           title,
           subtitle: Array.isArray(r.files) && r.files.length ? r.files.slice(0, 2).join(", ") : (r.date || ""),
           thread_id: r.thread_id,
           ts: r.ts,
+          score,
         });
       }
-      if (combined.length >= 10) break;
+      if (combined.length >= 40) break;
     }
     if (combined.length < 10) {
       for (const t of threads) {
@@ -224,43 +291,43 @@ export const CommandPalette = memo(function CommandPalette({
         const key = `${t.id}|${title}`;
         if (seen.has(key)) continue;
         seen.add(key);
-        if (!qLower || title.toLowerCase().includes(qLower)) {
+        const score = qLower ? fuzzyScore(qLower, title, t.id) : 1;
+        if (score > 0) {
           combined.push({
             id: t.id,
             title,
             subtitle: typeof t.messages === "number" ? `${t.messages} msgs` : "Conversation",
             thread_id: t.id,
+            score,
           });
         }
-        if (combined.length >= 10) break;
+        if (combined.length >= 40) break;
       }
     }
-    return combined;
+    return combined.sort((a, b) => b.score - a.score).slice(0, 10);
   }, [receipts, threads, qLower]);
 
   const matchedSkills = useMemo(() => {
-    const list = qLower
-      ? skills.filter(
-          (s) =>
-            s.title.toLowerCase().includes(qLower) ||
-            s.id.toLowerCase().includes(qLower) ||
-            s.category.toLowerCase().includes(qLower) ||
-            s.description.toLowerCase().includes(qLower)
-        )
-      : skills;
-    return list.slice(0, 12);
+    if (!qLower) return skills.slice(0, 12);
+    return skills
+      .map((s) => ({ s, score: fuzzyScore(qLower, s.title, s.id, s.category, s.description) }))
+      .filter((x) => x.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 12)
+      .map((x) => x.s);
   }, [skills, qLower]);
 
   const matchedRoutines = useMemo(() => {
-    const list = qLower
-      ? routines.filter(
-          (r) =>
-            r.name.toLowerCase().includes(qLower) ||
-            r.prompt.toLowerCase().includes(qLower) ||
-            r.schedule.toLowerCase().includes(qLower)
-        )
-      : routines;
-    return list.slice(0, 8);
+    if (!qLower) return routines.slice(0, 8);
+    return routines
+      .map((r) => ({
+        r,
+        score: fuzzyScore(qLower, r.name, r.prompt, r.schedule, (r.steps ?? []).join(" "), (r.expected_inputs ?? []).join(" ")),
+      }))
+      .filter((x) => x.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 8)
+      .map((x) => x.r);
   }, [routines, qLower]);
 
   const recommended = useMemo(() => detectWorkspaceWorkflow(files), [files]);
@@ -422,7 +489,7 @@ export const CommandPalette = memo(function CommandPalette({
             {matchedRoutines.length > 0 && (
               <>
                 <CommandSeparator className="my-1 bg-hairline" />
-                <CommandGroup heading={`Routines (${routines.length})`}>
+                <CommandGroup heading={`Playbooks & routines (${routines.length})`}>
                   {matchedRoutines.map((rt) => (
                     <CommandItem
                       key={rt.id}
@@ -433,8 +500,39 @@ export const CommandPalette = memo(function CommandPalette({
                       <span className="flex min-w-0 items-center gap-2">
                         <Play className="size-3.5 shrink-0 text-icon" strokeWidth={1.5} aria-hidden />
                         <span className="truncate">{rt.name}</span>
+                        {(rt.steps?.length ?? 0) > 1 && (
+                          <Badge variant="outline" size="sm" className="mono shrink-0 text-xs">
+                            {rt.steps!.length} steps
+                          </Badge>
+                        )}
                       </span>
                       <span className="mono shrink-0 text-xs text-ink-2">{rt.schedule}</span>
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+              </>
+            )}
+
+            {matchedCitations.length > 0 && (
+              <>
+                <CommandSeparator className="my-1 bg-hairline" />
+                <CommandGroup heading="Source citations ([file:L##])">
+                  {matchedCitations.map((cit) => (
+                    <CommandItem
+                      key={`cit-${cit.raw}`}
+                      value={`citation-${cit.raw}`}
+                      onSelect={() =>
+                        runAndClose(() =>
+                          onOpenFile(`${cit.path}#L${cit.line}${cit.endLine ? `-L${cit.endLine}` : ""}`)
+                        )
+                      }
+                      className="min-h-11 cursor-pointer justify-between gap-2 rounded-sm px-2.5 py-2 text-sm text-ink data-[selected=true]:bg-board md:min-h-9"
+                    >
+                      <span className="flex min-w-0 items-center gap-2">
+                        <FileGlyph name={cit.path} className="size-4 shrink-0" />
+                        <span className="mono truncate">{cit.raw}</span>
+                      </span>
+                      <span className="truncate text-xs text-ink-2">{cit.sourceTask}</span>
                     </CommandItem>
                   ))}
                 </CommandGroup>

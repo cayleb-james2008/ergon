@@ -135,7 +135,7 @@ function SettingsBody({
         clearTimeout(timer);
         setLocalProbe("found");
         window.open(`http://127.0.0.1:${port}/`, "_blank", "noopener");
-        toast.success(`Connected — opened your local Ergon desk on 127.0.0.1:${port}.`);
+        toast.success(`Connected: opened your local Ergon desk on 127.0.0.1:${port}.`);
         return;
       } catch {
         clearTimeout(timer);

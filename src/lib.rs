@@ -2846,4 +2846,88 @@ mod v010_hardening_tests {
 
         let _ = std::fs::remove_dir_all(&dir);
     }
+
+    #[test]
+    fn receipts_compare_and_delta_pack_work_end_to_end() {
+        let dir = std::env::temp_dir().join(format!(
+            "ergon-delta-v017-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let ws = dir.join("workspace");
+        std::fs::create_dir_all(&ws).unwrap();
+        std::fs::write(ws.join("brief.md"), "# Q1 Brief\nRevenue $90k\n").unwrap();
+        let rev1 = file_history::record_revision(&dir, &ws, "brief.md", "initial")
+            .unwrap()
+            .unwrap();
+        std::fs::write(ws.join("brief.md"), "# Q1 Brief\nRevenue $100k\n").unwrap();
+
+        let mut cfg = Config::from_env();
+        cfg.data_dir = dir.clone();
+        cfg.workspace_dir = ws.clone();
+        cfg.memory_path = dir.join("memory.md");
+        std::fs::write(&cfg.memory_path, "- Role: Finance\n").unwrap();
+        records::append_work(
+            &cfg,
+            "Run Q1 Close v1",
+            "Revenue: $90k\nOpen items: 3",
+            &["brief.md".to_string()],
+            "t-run-1",
+            true,
+        );
+        records::append_work(
+            &cfg,
+            "Run Q1 Close v2",
+            "Revenue: $100k\nOpen items: 0\nAll reconciled.",
+            &["brief.md".to_string(), "summary.md".to_string()],
+            "t-run-2",
+            true,
+        );
+        std::fs::write(ws.join("summary.md"), "# Summary\nClosed.\n").unwrap();
+
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        std::thread::spawn(move || {
+            let _ = serve(listener, cfg);
+        });
+        std::thread::sleep(std::time::Duration::from_millis(50));
+
+        let send_get = |target: &str| -> String {
+            let mut s = std::net::TcpStream::connect(addr).unwrap();
+            let req = format!(
+                "GET {target} HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nConnection: close\r\n\r\n",
+                addr.port()
+            );
+            s.write_all(req.as_bytes()).unwrap();
+            let mut out = String::new();
+            s.read_to_string(&mut out).unwrap();
+            out
+        };
+
+        let cmp_resp = send_get("/api/receipts/compare?a=t-run-1&b=t-run-2");
+        assert!(cmp_resp.starts_with("HTTP/1.1 200 OK"), "{cmp_resp}");
+        let cmp_json: Value = serde_json::from_str(cmp_resp.split("\r\n\r\n").nth(1).unwrap()).unwrap();
+        assert_eq!(cmp_json["added"], json!(3));
+        assert_eq!(cmp_json["removed"], json!(2));
+        assert_eq!(cmp_json["files_added"], json!(["summary.md"]));
+
+        let pack_run = send_get("/api/files/pack?files=brief.md,summary.md&delta_a=t-run-1&delta_b=t-run-2");
+        assert!(pack_run.starts_with("HTTP/1.1 200 OK"), "{pack_run}");
+        assert!(pack_run.contains("X-Ergon-Pack-Delta: yes"), "{pack_run}");
+        assert!(pack_run.contains("## Verified Run Delta"), "{pack_run}");
+        assert!(pack_run.contains("+All reconciled."), "{pack_run}");
+
+        let pack_snap = send_get(&format!(
+            "/api/files/pack?files=brief.md&delta_file=brief.md&rev_a={}&rev_b=current",
+            rev1.rev_id
+        ));
+        assert!(pack_snap.starts_with("HTTP/1.1 200 OK"), "{pack_snap}");
+        assert!(pack_snap.contains("X-Ergon-Pack-Delta: yes"), "{pack_snap}");
+        assert!(pack_snap.contains("## Verified Snapshot Delta"), "{pack_snap}");
+        assert!(pack_snap.contains("+Revenue $100k"), "{pack_snap}");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

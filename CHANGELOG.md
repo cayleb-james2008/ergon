@@ -4,6 +4,14 @@ Each release is tagged `vMAJOR.MINOR.PATCH` and published on GitHub Releases wit
 binaries and a `SHA256SUMS` file. The running app shows its version and can update
 itself from the newest release (see README, "Versions and updates").
 
+## 0.17.0 - 2026-11-25
+
+- **1-Click Run / Receipt Comparison & Delta Client Pack (`src/file_history.rs`, `src/server.rs`, `frontend/src/shell/{InspectorDrawer,WorkspaceFiles}.tsx`, `frontend/src/lib/{receiptExport,webEngine}.ts`):**
+  - Added `file_history::diff_texts` and `GET /api/receipts/compare?a=<id>&b=<id>` computing exact line-by-line summary deltas (`+added / -removed / % similarity`), added/removed deliverable files, and unified Markdown diff blocks.
+  - Extended `GET /api/files/pack` with `delta_a`/`delta_b` (run delta) and `delta_file`/`rev_a`/`rev_b` (`.history/` snapshot delta) and added 1-click **Append Delta to Client Pack (.md)** buttons inside both `InspectorDrawer` (**Compare runs**) and `FileHistoryDiffView`, with 100% `webEngine.ts` standalone parity.
+- **Unified Fuzzy `Cmd+K` Jump Across Files, Citations, Playbooks & Receipts (`frontend/src/shell/CommandPalette.tsx`):**
+  - Added scored fuzzy search (`fuzzyScore`) across workspace files, extracted `[file:L##]` source citations (`onOpenFile("file#L##")`), multi-step playbooks & routines (showing step counts), workflows, and receipts.
+
 ## 0.16.0 - 2026-11-25
 
 - **Cross-File Citation Verification & Clickable `[file:L##]` Source Inspector (`src/tools.rs`, `src/server.rs`, `frontend/src/chat/Entry.tsx`, `frontend/src/shell/WorkspaceFiles.tsx`, `frontend/src/shell/InspectorDrawer.tsx`, `frontend/src/lib/webEngine.ts`):**

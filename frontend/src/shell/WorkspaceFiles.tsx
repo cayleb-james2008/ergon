@@ -58,7 +58,7 @@ import {
   type WorkspaceFileContent,
 } from "@/lib/api";
 import { computeLineDiff, normalizeServerDiff } from "@/lib/diff";
-import { exportReceiptDownload } from "@/lib/receiptExport";
+import { exportClientPackDownload, exportReceiptDownload } from "@/lib/receiptExport";
 import { cn } from "@/lib/utils";
 import { detectWorkflowForFile, parseCitationTarget, relTime } from "@/lib/words";
 
@@ -481,7 +481,7 @@ function CsvTableView({ content }: { content: string }) {
       {totalPages > 1 && (
         <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-ink-2">
           <span className="mono">
-            Rows {safePage * CSV_PAGE_SIZE + 1}–{Math.min((safePage + 1) * CSV_PAGE_SIZE, processed.length)} of {processed.length}
+            Rows {safePage * CSV_PAGE_SIZE + 1} to {Math.min((safePage + 1) * CSV_PAGE_SIZE, processed.length)} of {processed.length}
           </span>
           <div className="flex items-center gap-1.5">
             <Button
@@ -985,6 +985,31 @@ export function FileHistoryDiffView({
                 </SegmentedControlItem>
               </SegmentedControl>
               <Button
+                id="append-file-delta-btn"
+                type="button"
+                size="sm"
+                variant="outline"
+                className="max-md:min-h-11"
+                onClick={async () => {
+                  try {
+                    const res = await exportClientPackDownload(
+                      [filePath],
+                      `${filePath} Delta Pack`,
+                      {
+                        delta_file: filePath,
+                        rev_a: selectedRev.rev_id,
+                        rev_b: compareTarget || "current",
+                      }
+                    );
+                    toast.success(`Exported ${res.filename} with snapshot delta (sha256: ${res.sha256.slice(0, 12)}…)`);
+                  } catch {
+                    toast.error("Could not append snapshot delta to Client Pack.");
+                  }
+                }}
+              >
+                Append Delta to Client Pack (.md)
+              </Button>
+              <Button
                 id="restore-version-btn"
                 type="button"
                 size="sm"
@@ -1315,7 +1340,7 @@ export function FileViewerModal({
             <span className="mono min-w-0 truncate">{cleanPath ?? ""}</span>
             {target.line && (
               <Badge variant="outline" size="sm" className="mono shrink-0">
-                L{target.line}{target.endLine ? `–L${target.endLine}` : ""}
+                L{target.line}{target.endLine ? ` to L${target.endLine}` : ""}
               </Badge>
             )}
           </DialogTitle>
@@ -1475,7 +1500,7 @@ export function FileViewerModal({
                 <div className="mb-3 flex flex-wrap items-center gap-2 text-xs text-ink-2">
                   <span>
                     Text read from this {data.extracted.kind}
-                    {data.extracted.pages && data.extracted.pages > 1 ? ` (${data.extracted.pages} pages)` : ""} — your agent and every workflow read it the same way.
+                    {data.extracted.pages && data.extracted.pages > 1 ? ` (${data.extracted.pages} pages)` : ""}: your agent and every workflow read it the same way.
                   </span>
                   {(data.extracted.sheets?.length ?? 0) > 1 && cleanPath && (
                     <SegmentedControl aria-label="Workbook sheet">
@@ -1758,10 +1783,10 @@ export function WorkspaceFilesBody({
                   size="xs"
                   variant={extFilter === kind ? "default" : "outline"}
                   aria-pressed={extFilter === kind}
-                  className="max-md:min-h-11 uppercase text-xs"
+                  className="max-md:min-h-11 text-xs"
                   onClick={() => setExtFilter(kind)}
                 >
-                  {kind === "all" ? "All" : kind}
+                  {kind === "all" ? "All" : kind === "other" ? "Other" : kind.toUpperCase()}
                 </Button>
               ))}
             </div>
@@ -1828,7 +1853,7 @@ export function WorkspaceFilesBody({
           {totalPages > 1 && (
             <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-ink-2">
               <span className="mono">
-                Showing {safePage * FILES_PAGE_SIZE + 1}–{Math.min((safePage + 1) * FILES_PAGE_SIZE, filtered.length)} of {filtered.length}
+                Showing {safePage * FILES_PAGE_SIZE + 1} to {Math.min((safePage + 1) * FILES_PAGE_SIZE, filtered.length)} of {filtered.length}
               </span>
               <div className="flex items-center gap-1.5">
                 <Button
