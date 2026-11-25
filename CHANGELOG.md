@@ -4,6 +4,14 @@ Each release is tagged `vMAJOR.MINOR.PATCH` and published on GitHub Releases wit
 binaries and a `SHA256SUMS` file. The running app shows its version and can update
 itself from the newest release (see README, "Versions and updates").
 
+## 0.22.0 - 2026-11-25
+
+- **Batch Citation Freshness Gate Across Multi-Run Client Summaries (`src/server.rs`, `src/lib.rs`, `frontend/src/views/Paper.tsx`, `frontend/src/lib/{receiptExport,webEngine}.ts`):**
+  - Extended `GET /api/files/pack?summary=1` (`.md`, `.html`, and `preflight=1&summary=1`) to union deliverable files and verify `[file:L##]` citations across all summarized finished runs in one batch pass, keeping strictest per-citation drift status, annotating `## Verified Work Summary` rows, and emitting `X-Ergon-Pack-Summary-Runs`, `X-Ergon-Pack-Summary-Citations`, and `X-Ergon-Pack-Summary-Stale` headers (with 100% `webEngine.ts` parity).
+  - Added live `#summary-citation-gate` freshness pill (`Verified` / `X/Y Verified · Z Stale`) and stale-warning export toasts in **Today → Finished**.
+- **Binary & Peak RSS Diet (`Cargo.toml`, `src/server.rs`, `src/search.rs`):**
+  - Tuned `[profile.release]` (`opt-level = "s"` on `ergon-rs` while preserving `opt-level = 3` on `serde`, `serde_json`, `itoa`, `ryu`, `memchr`, `sha2`, `digest`, `block-buffer`, `cpufeatures`), shrank `PersonIndex` chain slack (`chain.shrink_to_fit()`) + snippet read buffers (`1024 B`), and trimmed HTTP worker stack size (`512 KB`).
+
 ## 0.21.0 - 2026-11-25
 
 - **Playbook Dry-Run Preview & Reversible File-Impact Summary (`src/routines.rs`, `src/server.rs`, `frontend/src/lib/{api,receiptExport,webEngine}.ts`, `frontend/src/state.ts`, `frontend/src/shell/RoutinesPanel.tsx`):**

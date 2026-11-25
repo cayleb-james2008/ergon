@@ -14,7 +14,7 @@
 
 An AI agent desk for every employee — personal to each person, it learns how they work and **finishes digital work autonomously, end to end**. State a task in plain words; the agent executes against real sandboxed files and built-in workflows, grounds outputs with clickable `[file:L##]` source citations, and settles every completed run as a SHA-256 chained Field-Book receipt.
 
-A single `9.39 MB` Rust binary serves the entire product: the lazy-split web desk (`/` and `/phone`), raw-TCP HTTP + SSE engine, sandboxed document tools, per-person standing memory, background routine scheduler, and `.history/` revision store. Zero external runtime or database server.
+A single `8.76 MB` Rust binary serves the entire product: the lazy-split web desk (`/` and `/phone`), raw-TCP HTTP + SSE engine, sandboxed document tools, per-person standing memory, background routine scheduler, and `.history/` revision store. Zero external runtime or database server.
 
 ---
 
@@ -58,18 +58,18 @@ flowchart LR
 
 ---
 
-## Verified Benchmarks (`v0.21.0` vs `v0.11.0`)
+## Verified Benchmarks (`v0.22.0` vs `v0.11.0`)
 
 Measured against the stripped fat-LTO release binary (`target/release/ergon`) on isolated local loopback (`16w` pinned `#154` profile) and a synthetic `5,000` receipts + `500` workspace files dataset:
 
-| Metric | `v0.11.0` Baseline | `v0.21.0` Verified | Change |
+| Metric | `v0.11.0` Baseline | `v0.22.0` Verified | Change |
 | --- | --- | --- | --- |
-| Release Binary Size | `16.0 MB` | **`9.39 MB`** (`9,843,552 B`) | **`-41.3%`** |
-| Initial `/` Shell Payload | `1.15 MB` | **`151.0 KB` raw / `34.0 KB` (`33,996 B`) gzip** (`15` `/chunks/*`) | **`-97.0%` wire** |
-| Cold Boot to `200 OK` | — | **`9.85 ms`** | Instant startup |
-| Peak RSS (`VmHWM`, `5k` receipts + `500` files, warm) | — | **`11.44 MB`** (`11,712 KB`) | Thread-local buffers |
-| Concurrent HTTP (`16w` mixed 5 routes across `5k`/`500`) | `724 req/s` (`188.7 ms` p95) | **`34,096.9 req/s`** (`0.41 ms` p50, `0.84 ms` p95, `0` err) | **`47.1x` throughput** |
-| Streaming Audit Bundle (`5k` entries) | — | **`17.86 ms`** | Zero-DOM streaming |
+| Release Binary Size | `16.0 MB` | **`8.76 MB`** (`9,188,192 B`) | **`-45.2%`** |
+| Initial `/` Shell Payload | `1.15 MB` | **`151.0 KB` raw / `33.2 KB` (`33,982 B`) gzip** (`15` `/chunks/*`) | **`-97.0%` wire** |
+| Cold Boot to `200 OK` | — | **`10.98 ms`** | Instant startup |
+| Peak RSS (`VmHWM`, `5k` receipts + `500` files, warm) | — | **`11.96 MB`** (`12,244 KB`) | Compact index + buffers |
+| Concurrent HTTP (`16w` mixed 5 routes across `5k`/`500`) | `724 req/s` (`188.7 ms` p95) | **`26,655.7 req/s`** keep-alive (`26,336.1 req/s` cold, `0.51 ms` p50, `1.08 ms` p95, `0` err) | **`36.8x` throughput** |
+| Streaming Audit Bundle (`5k` entries) | — | **`25.61 ms`** | Zero-DOM streaming |
 | Automated Verification | `204` Rust tests | **`219/219` Rust tests** · **`100/100` UI checks** · `0` `sloplint` fails | `0` warnings / `0` externals |
 
 ---
@@ -128,7 +128,7 @@ On startup (unless `ERGON_NO_AUTO_MODEL=1` or an explicit `ERGON_MODEL_BASE_URL`
 ## Core Capabilities
 
 - **Desk Shell & Command Palette (`Cmd/Ctrl+K`)** — Lazy-split `assets/index.html` served over `/` and `/phone` with pre-compressed `.rodata` `/chunks/*`, `Vary: Accept-Encoding`, strong `ETag` + `304 Not Modified`, self-hosted **Geist** & **Geist Mono**, light-first tokens with Settings-only Light/Dark switch, collapsible right **Workspace** inspector (`Files`, `History`, `Audit`), and scored fuzzy `Cmd/Ctrl+K` jump across workspace files, `[file:L##]` citations, playbooks, workflows, and receipts.
-- **Multi-Run Retainer Summary Packs, Freshness Gate & Client Handoff (`.html` / `.md`)** — From **Today → Finished**, export a 1-click **Client Summary Pack** (`.md` or printable CSP-locked `.html`) combining a `## Verified Work Summary` table of recent finished runs, file SHA-256 digests, and verified `[file:L##]` citation ratios (`100% Verified` vs `Stale Line Drift`). `POST /api/citations/verify` checks citations against live workspace file SHA-256 digests and `.history/` snapshots directly inside `GET /api/files/pack?preflight=1` before export. Inside **Inspector → Audit** and **History Diff**, `GET /api/receipts/compare` and `GET /api/files/pack?delta_a=...&delta_b=...` compute exact line/file deltas.
+- **Multi-Run Retainer Summary Packs, Batch Citation Freshness Gate & Client Handoff (`.html` / `.md`)** — From **Today → Finished**, export a 1-click **Client Summary Pack** (`.md` or printable CSP-locked `.html`) with a live `#summary-citation-gate` freshness badge. `GET /api/files/pack?summary=1` (`preflight=1&summary=1`) verifies `[file:L##]` citations and workspace deliverable SHA-256 digests across all summarized finished runs in one batch pass (`X-Ergon-Pack-Summary-Runs`, `X-Ergon-Pack-Summary-Citations`, `X-Ergon-Pack-Summary-Stale`), annotating any drifted lines against `.history/` snapshots automatically. Inside **Inspector → Audit** and **History Diff**, `GET /api/receipts/compare` and `GET /api/files/pack?delta_a=...&delta_b=...` compute exact line/file deltas.
 - **Standalone Web Demo (`npm run build:web`)** — Builds `frontend/dist/ergon-web.html` backed by an offline in-browser workflow & file engine (`webEngine.ts`) with zero external network requests.
 - **Workspace File Viewer, History & Signed Playbook Packs** — Real CSV table sorting/filtering, Markdown section jump, collapsible JSON tree, `.history/` side-by-side diffs with reversible restore, multi-step sequential **Workspace Playbooks** (`POST /api/routines/:id/run`), 1-click deterministic **Dry-Run Preview** (`POST /api/playbooks/:id/preview`) with ordered step inference, expected file-impact paths, and a **`Reversible via .history/`** safety badge, plus portable `.ergon-playbook.json` export & import (`GET /api/playbooks/:id/export`, `POST /api/playbooks/import`) enforced by strict `ergon-playbook-v1` schema validation, `<= 256 KB` payload cap, and canonical SHA-256 checksums.
 - **Office & PDF Documents (`src/docs.rs`)** — Reads PDFs (including modern CID fonts), Word `.docx`, Excel `.xlsx` (`book.xlsx#Sheet2`), and PowerPoint `.pptx` (slides + notes), and exports Markdown to styled `.docx` and CSV to typed `.xlsx` (`POST /api/files/export`). Uploads travel byte-exact up to `25 MB` behind zip-bomb and PDF timeout guards.

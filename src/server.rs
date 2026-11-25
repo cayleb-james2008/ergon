@@ -2246,6 +2246,27 @@ fn history_baseline_sha_for_receipt(
         .map(|r| r.sha256)
 }
 
+fn status_severity(status: &str) -> u8 {
+    match status {
+        "verified" => 0,
+        "stale" => 1,
+        _ => 2,
+    }
+}
+
+fn adjust_citation_counts(status: &str, delta: isize, verified: &mut usize, stale: &mut usize, broken: &mut usize) {
+    let target = match status {
+        "verified" => verified,
+        "stale" => stale,
+        _ => broken,
+    };
+    if delta >= 0 {
+        *target = target.saturating_add(delta as usize);
+    } else {
+        *target = target.saturating_sub((-delta) as usize);
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn collect_citations_into(
     data_dir: Option<&std::path::Path>,
@@ -2254,19 +2275,20 @@ fn collect_citations_into(
     receipt_ts: u64,
     expected_shas: Option<&std::collections::HashMap<String, String>>,
     citations: &mut Vec<CitationCheck>,
-    seen: &mut std::collections::HashSet<(String, usize, Option<usize>)>,
+    seen: &mut std::collections::HashMap<(String, usize, Option<usize>), usize>,
     verified: &mut usize,
     stale: &mut usize,
     broken: &mut usize,
-) {
-    if citations.len() >= 32 || text.is_empty() {
-        return;
+) -> (usize, usize, usize, usize) {
+    if text.is_empty() {
+        return (0, 0, 0, 0);
     }
     let mut rep = verify_text_citations_against(workspace_dir, text, expected_shas);
+    let mut run_total = 0usize;
+    let mut run_verified = 0usize;
+    let mut run_stale = 0usize;
+    let mut run_broken = 0usize;
     for mut c in rep.citations.drain(..) {
-        if !seen.insert((c.path.clone(), c.line, c.end_line)) {
-            continue;
-        }
         if c.status == "verified" && receipt_ts > 0 {
             if let Some(ddir) = data_dir {
                 if let Some(base_sha) = history_baseline_sha_for_receipt(ddir, workspace_dir, &c.path, receipt_ts) {
@@ -2277,15 +2299,68 @@ fn collect_citations_into(
                 }
             }
         }
+        run_total += 1;
         match c.status {
-            "verified" => *verified += 1,
-            "stale" => *stale += 1,
-            _ => *broken += 1,
+            "verified" => run_verified += 1,
+            "stale" => run_stale += 1,
+            _ => run_broken += 1,
         }
+        let key = (c.path.clone(), c.line, c.end_line);
+        if let Some(&existing_idx) = seen.get(&key) {
+            let old_status = citations[existing_idx].status;
+            if status_severity(c.status) > status_severity(old_status) {
+                adjust_citation_counts(old_status, -1, verified, stale, broken);
+                adjust_citation_counts(c.status, 1, verified, stale, broken);
+                citations[existing_idx] = c;
+            }
+            continue;
+        }
+        if citations.len() >= 128 {
+            continue;
+        }
+        let idx = citations.len();
+        seen.insert(key, idx);
+        adjust_citation_counts(c.status, 1, verified, stale, broken);
         citations.push(c);
-        if citations.len() >= 32 {
-            break;
+    }
+    (run_total, run_verified, run_stale, run_broken)
+}
+
+#[derive(Clone)]
+struct SummaryRunGate<'a> {
+    receipt: &'a receipts::ChainedReceipt,
+    checked: usize,
+    verified: usize,
+    stale: usize,
+    broken: usize,
+}
+
+impl SummaryRunGate<'_> {
+    fn gate_label(&self) -> &'static str {
+        if self.checked == 0 {
+            "Deliverables ready"
+        } else if self.broken == 0 && self.stale == 0 {
+            "Verified"
+        } else if self.stale > 0 {
+            "Stale Line Drift"
+        } else {
+            "Broken Citations"
         }
+    }
+
+    fn to_json(&self) -> Value {
+        json!({
+            "id": self.receipt.id,
+            "task": self.receipt.task,
+            "ts": self.receipt.ts,
+            "sha256": self.receipt.sha256,
+            "files": self.receipt.files,
+            "citations_checked": self.checked,
+            "citations_verified": self.verified,
+            "citations_stale": self.stale,
+            "citations_broken": self.broken,
+            "citation_gate": self.gate_label(),
+        })
     }
 }
 
@@ -2307,8 +2382,8 @@ fn inspect_workspace_pack(
     let mut total_bytes = 0usize;
     let mut rendered_bytes = 0usize;
     let mut citations: Vec<CitationCheck> = Vec::new();
-    let mut seen_citations: std::collections::HashSet<(String, usize, Option<usize>)> =
-        std::collections::HashSet::new();
+    let mut seen_citations: std::collections::HashMap<(String, usize, Option<usize>), usize> =
+        std::collections::HashMap::new();
     let mut citations_verified = 0usize;
     let mut citations_stale = 0usize;
     let mut citations_broken = 0usize;
@@ -2446,7 +2521,7 @@ fn format_workspace_pack_markdown(
     preflight: &PackPreflight,
     person_name: &str,
     title: &str,
-    summary_runs: &[&receipts::ChainedReceipt],
+    summary_runs: &[SummaryRunGate<'_>],
 ) -> String {
     let ok = preflight.ok();
     let ready = preflight.ready_count;
@@ -2473,7 +2548,25 @@ fn format_workspace_pack_markdown(
     );
     if !summary_runs.is_empty() {
         md.push_str("## Verified Work Summary\n\n");
-        for r in summary_runs {
+        if preflight.citations_stale > 0 || preflight.citations_broken > 0 {
+            md.push_str(&format!(
+                "- **Batch Citation Gate:** WARN — {}/{} verified, **{} stale**, {} broken across {} runs\n\n",
+                preflight.citations_verified,
+                total_cits,
+                preflight.citations_stale,
+                preflight.citations_broken,
+                summary_runs.len(),
+            ));
+        } else if total_cits > 0 {
+            md.push_str(&format!(
+                "- **Batch Citation Gate:** 100% Verified ({}/{} citations across {} runs)\n\n",
+                preflight.citations_verified,
+                total_cits,
+                summary_runs.len(),
+            ));
+        }
+        for sg in summary_runs {
+            let r = sg.receipt;
             let short_sha = &r.sha256[..12.min(r.sha256.len())];
             let snippet = truncate(r.summary.trim(), 180);
             let files_part = if r.files.is_empty() {
@@ -2481,8 +2574,18 @@ fn format_workspace_pack_markdown(
             } else {
                 format!(" · Files: {}", r.files.join(", "))
             };
+            let cit_part = if sg.checked == 0 {
+                String::new()
+            } else if sg.stale > 0 || sg.broken > 0 {
+                format!(
+                    " · **[CITATION ALERT: {}/{} verified, {} stale, {} broken]**",
+                    sg.verified, sg.checked, sg.stale, sg.broken
+                )
+            } else {
+                format!(" · [citations: {}/{} verified]", sg.verified, sg.checked)
+            };
             md.push_str(&format!(
-                "- **{}** (`{}` · `sha256:{}`{files_part}): {}\n",
+                "- **{}** (`{}` · `sha256:{}`{files_part}{cit_part}): {}\n",
                 r.task, r.id, short_sha, snippet
             ));
         }
@@ -2538,7 +2641,7 @@ fn build_workspace_handoff_html(
     person_name: &str,
     title: &str,
     delta_md: Option<&str>,
-    summary_runs: &[&receipts::ChainedReceipt],
+    summary_runs: &[SummaryRunGate<'_>],
 ) -> (String, String) {
     let gate = preflight.citation_gate();
     let gate_class = if preflight.ok() { "ok" } else { "warn" };
@@ -2555,14 +2658,25 @@ fn build_workspace_handoff_html(
     };
     let mut summary_section = String::new();
     if !summary_runs.is_empty() {
-        summary_section.push_str("<section><h2>Verified Work Summary</h2><table><thead><tr><th>Task</th><th>Summary</th><th>Deliverables</th><th>Receipt SHA-256</th></tr></thead><tbody>");
-        for r in summary_runs {
+        summary_section.push_str("<section><h2>Verified Work Summary</h2><table><thead><tr><th>Task</th><th>Summary</th><th>Deliverables</th><th>Citations</th><th>Receipt SHA-256</th></tr></thead><tbody>");
+        for sg in summary_runs {
+            let r = sg.receipt;
             let short_sha = &r.sha256[..12.min(r.sha256.len())];
+            let cit_pill_cls = if sg.stale > 0 || sg.broken > 0 { "warn" } else { "ok" };
+            let cit_pill_txt = if sg.checked == 0 {
+                "ready".to_string()
+            } else if sg.stale > 0 || sg.broken > 0 {
+                format!("{}/{} ({} stale)", sg.verified, sg.checked, sg.stale + sg.broken)
+            } else {
+                format!("{}/{} verified", sg.verified, sg.checked)
+            };
             summary_section.push_str(&format!(
-                "<tr><td><strong>{}</strong></td><td>{}</td><td><code>{}</code></td><td><code>{}</code></td></tr>",
+                "<tr><td><strong>{}</strong></td><td>{}</td><td><code>{}</code></td><td><span class=\"pill {}\">{}</span></td><td><code>{}</code></td></tr>",
                 html_escape(&r.task),
                 html_escape(&truncate(r.summary.trim(), 180)),
                 html_escape(&r.files.join(", ")),
+                cit_pill_cls,
+                html_escape(&cit_pill_txt),
                 html_escape(short_sha)
             ));
         }
@@ -2963,6 +3077,13 @@ fn try_route_files_and_audit(
                 for rcpt in idx.chain.iter().rev() {
                     if include_summary && rcpt.finished && !rcpt.answered && summary_runs.len() < 15 {
                         summary_runs.push(rcpt);
+                        if !explicit {
+                            for f in &rcpt.files {
+                                if requested.len() < 25 && !requested.iter().any(|x| x == f) {
+                                    requested.push(f.clone());
+                                }
+                            }
+                        }
                     }
                     if extra_receipts.len() < scan_limit
                         && !rcpt.summary.is_empty()
@@ -2987,8 +3108,44 @@ fn try_route_files_and_audit(
                 Ok(res) => res,
                 Err((status, err)) => return Some(respond_json(stream, status, &json!({"error": err}))),
             };
+            let mut summary_gates: Vec<SummaryRunGate<'_>> = Vec::with_capacity(summary_runs.len());
+            if !summary_runs.is_empty() {
+                let mut dummy_cits = Vec::new();
+                let mut dummy_seen = std::collections::HashMap::new();
+                for &rcpt in &summary_runs {
+                    dummy_cits.clear();
+                    dummy_seen.clear();
+                    let mut v = 0usize;
+                    let mut s = 0usize;
+                    let mut b = 0usize;
+                    let (tot, rv, rs, rb) = collect_citations_into(
+                        Some(&runtime.cfg.data_dir),
+                        &runtime.cfg.workspace_dir,
+                        &rcpt.summary,
+                        rcpt.ts,
+                        None,
+                        &mut dummy_cits,
+                        &mut dummy_seen,
+                        &mut v,
+                        &mut s,
+                        &mut b,
+                    );
+                    summary_gates.push(SummaryRunGate {
+                        receipt: rcpt,
+                        checked: tot,
+                        verified: rv,
+                        stale: rs,
+                        broken: rb,
+                    });
+                }
+            }
             if preflight_only {
-                return Some(respond_json(stream, 200, &preflight.to_json()));
+                let mut out = preflight.to_json();
+                if include_summary {
+                    out["summary_runs_count"] = json!(summary_gates.len());
+                    out["summary_runs"] = json!(summary_gates.iter().map(SummaryRunGate::to_json).collect::<Vec<_>>());
+                }
+                return Some(respond_json(stream, 200, &out));
             }
             let preflight_ok = preflight.ok();
             let ready_count = preflight.ready_count;
@@ -3053,14 +3210,17 @@ fn try_route_files_and_audit(
                 }
             }
             let has_delta = delta_md_opt.is_some();
-            let has_summary = !summary_runs.is_empty();
+            let has_summary = !summary_gates.is_empty();
+            let total_cits = preflight.citations.len();
+            let summary_cits_hdr = format!("{}/{}", preflight.citations_verified, total_cits);
+            let summary_stale_hdr = (preflight.citations_stale + preflight.citations_broken).to_string();
             if format == "html" {
                 let (html, pack_sha) = build_workspace_handoff_html(
                     &preflight,
                     &person.name,
                     &title,
                     delta_md_opt.as_deref(),
-                    &summary_runs,
+                    &summary_gates,
                 );
                 let mut headers = vec![
                     ("X-Content-Type-Options", "nosniff".to_string()),
@@ -3083,6 +3243,9 @@ fn try_route_files_and_audit(
                         "X-Ergon-Pack-Summary",
                         if has_summary { "yes" } else { "none" }.to_string(),
                     ),
+                    ("X-Ergon-Pack-Summary-Runs", summary_gates.len().to_string()),
+                    ("X-Ergon-Pack-Summary-Citations", summary_cits_hdr),
+                    ("X-Ergon-Pack-Summary-Stale", summary_stale_hdr),
                 ];
                 if download {
                     headers.push((
@@ -3102,7 +3265,7 @@ fn try_route_files_and_audit(
                 &preflight,
                 &person.name,
                 &title,
-                &summary_runs,
+                &summary_gates,
             );
             if let Some(delta_md) = delta_md_opt {
                 md.push_str("\n---\n\n");
@@ -3126,6 +3289,9 @@ fn try_route_files_and_audit(
                     "X-Ergon-Pack-Summary",
                     if has_summary { "yes" } else { "none" }.to_string(),
                 ),
+                ("X-Ergon-Pack-Summary-Runs", summary_gates.len().to_string()),
+                ("X-Ergon-Pack-Summary-Citations", summary_cits_hdr),
+                ("X-Ergon-Pack-Summary-Stale", summary_stale_hdr),
             ];
             if download {
                 headers.push((
@@ -3170,7 +3336,7 @@ fn try_route_files_and_audit(
                 .unwrap_or_default();
             let exp_opt = (!expected_map.is_empty()).then_some(&expected_map);
             let mut citations = Vec::new();
-            let mut seen = std::collections::HashSet::new();
+            let mut seen = std::collections::HashMap::new();
             let mut verified = 0usize;
             let mut stale = 0usize;
             let mut broken = 0usize;

@@ -15,7 +15,7 @@ use std::time::{Instant, UNIX_EPOCH};
 use crate::receipts::{self, ChainedReceipt};
 use crate::records;
 
-const MAX_SNIPPET_BYTES: usize = 4096;
+const MAX_SNIPPET_BYTES: usize = 1024;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct Fingerprint {
@@ -306,7 +306,8 @@ fn collect_files(root: &Path, dir: &Path, out: &mut Vec<IndexedFile>) {
 
 impl PersonIndex {
     fn build(data_dir: &Path, workspace_dir: &Path, memory_path: &Path, fp: Fingerprint) -> Self {
-        let chain = receipts::load_chain(data_dir);
+        let mut chain = receipts::load_chain(data_dir);
+        chain.shrink_to_fit();
         let (chain_valid, head_hash) = receipts::verify_chain(&chain);
 
         let mut receipt_tokens: HashMap<String, Vec<u32>> = HashMap::new();

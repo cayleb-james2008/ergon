@@ -1890,11 +1890,11 @@ export async function installBrowserEngine(): Promise<void> {
     const st = activeStore();
     const byok = loadByok();
 
-    if (method === "GET" && path === "/api/version") return jsonRes({ name: "ergon", version: "0.21.0" });
-    if (method === "GET" && path === "/api/update") return jsonRes({ current: "0.21.0", available: false, mode: "off", checked_at: Math.floor(Date.now() / 1000) });
+    if (method === "GET" && path === "/api/version") return jsonRes({ name: "ergon", version: "0.22.0" });
+    if (method === "GET" && path === "/api/update") return jsonRes({ current: "0.22.0", available: false, mode: "off", checked_at: Math.floor(Date.now() / 1000) });
     if (method === "GET" && path === "/api/status") {
       return jsonRes({
-        version: "0.21.0",
+        version: "0.22.0",
         model_configured: true,
         model: byok.engine_mode === "byok" && byok.model_id ? byok.model_id : "browser-workspace-engine",
         model_base_url: byok.engine_mode === "byok" ? byok.model_base_url : "indexeddb://local",
@@ -2082,7 +2082,7 @@ export async function installBrowserEngine(): Promise<void> {
       const pid = decodeURIComponent(path.slice("/api/playbooks/".length, -"/export".length)).trim();
       const rt = st.routines.find((x) => x.id === pid);
       if (!rt) return jsonRes({ error: "playbook not found" }, 404);
-      const built = await buildSignedPlaybookPack(rt, "0.21.0");
+      const built = await buildSignedPlaybookPack(rt, "0.22.0");
       return new Response(built.json, {
         status: 200,
         headers: {
@@ -2234,12 +2234,22 @@ export async function installBrowserEngine(): Promise<void> {
         .filter(Boolean)
         .slice(0, 25);
       const explicit = requested.length > 0;
-      const targets = explicit
-        ? requested
-        : Object.values(st.files)
-            .sort((a, b) => b.mtime_ms - a.mtime_ms || a.path.localeCompare(b.path))
-            .slice(0, 15)
-            .map((f) => f.path);
+      const summaryRuns = includeSummary
+        ? [...st.work].filter((w) => w.finished && !w.answered).reverse().slice(0, 15)
+        : [];
+      const unionTargets = [...requested];
+      if (!explicit) {
+        for (const r of summaryRuns) {
+          for (const rf of r.files || []) {
+            if (unionTargets.length < 25 && !unionTargets.includes(rf)) unionTargets.push(rf);
+          }
+        }
+        for (const f of Object.values(st.files).sort((a, b) => b.mtime_ms - a.mtime_ms || a.path.localeCompare(b.path))) {
+          if (unionTargets.length >= 25) break;
+          if (!unionTargets.includes(f.path)) unionTargets.push(f.path);
+        }
+      }
+      const targets = explicit ? requested : unionTargets.slice(0, 25);
       const sections: Array<{
         path: string;
         size_bytes: number;
@@ -2286,16 +2296,61 @@ export async function installBrowserEngine(): Promise<void> {
       const matchedReceipt = receiptId
         ? st.work.find((w) => w.id === receiptId || w.thread_id === receiptId)
         : undefined;
-      const receiptExtraText = matchedReceipt
-        ? `${matchedReceipt.task}\n${matchedReceipt.summary}`
-        : st.work.slice(-8).map((w) => w.summary).filter(Boolean).join("\n");
-      const citations = await verifyTextCitationsInMemory(
-        st.files,
-        [receiptExtraText, ...sections.map((s) => s.body)].filter(Boolean).join("\n"),
-        undefined,
-        st.fileHistory,
-        matchedReceipt?.ts ?? 0
-      );
+      const citMap = new Map<string, Awaited<ReturnType<typeof verifyTextCitationsInMemory>>["citations"][number]>();
+      const rank = (s: string) => (s === "verified" ? 0 : s === "stale" ? 1 : 2);
+      const mergeCits = (rep: Awaited<ReturnType<typeof verifyTextCitationsInMemory>>) => {
+        for (const c of rep.citations) {
+          const k = `${c.path}:${c.line}:${c.end_line ?? ""}`;
+          const prev = citMap.get(k);
+          if (!prev || rank(c.status) > rank(prev.status)) {
+            citMap.set(k, c);
+          }
+        }
+      };
+      const summaryGates: Array<{
+        run: WebWork;
+        checked: number;
+        verified: number;
+        stale: number;
+        broken: number;
+        gate: string;
+      }> = [];
+      if (matchedReceipt) {
+        mergeCits(await verifyTextCitationsInMemory(st.files, `${matchedReceipt.task}\n${matchedReceipt.summary}`, undefined, st.fileHistory, matchedReceipt.ts));
+      } else if (includeSummary && summaryRuns.length > 0) {
+        for (const sr of summaryRuns) {
+          const rep = await verifyTextCitationsInMemory(st.files, sr.summary || "", undefined, st.fileHistory, sr.ts);
+          mergeCits(rep);
+          summaryGates.push({
+            run: sr,
+            checked: rep.total,
+            verified: rep.verified,
+            stale: rep.stale,
+            broken: rep.broken,
+            gate: rep.total === 0 ? "Deliverables ready" : rep.gate_status,
+          });
+        }
+      } else {
+        for (const sr of st.work.slice(-8)) {
+          if (sr.summary) mergeCits(await verifyTextCitationsInMemory(st.files, sr.summary, undefined, st.fileHistory, sr.ts));
+        }
+      }
+      for (const sec of sections) {
+        mergeCits(await verifyTextCitationsInMemory(st.files, sec.body, undefined, st.fileHistory, 0));
+      }
+      const mergedList = Array.from(citMap.values());
+      const cVer = mergedList.filter((c) => c.status === "verified").length;
+      const cStale = mergedList.filter((c) => c.status === "stale").length;
+      const cBroken = mergedList.filter((c) => c.status !== "verified" && c.status !== "stale").length;
+      const citations = {
+        total: mergedList.length,
+        verified: cVer,
+        stale: cStale,
+        broken: cBroken,
+        freshness_pct: mergedList.length ? Math.floor((cVer * 100) / mergedList.length) : 100,
+        gate_status: cBroken === 0 && cStale === 0 ? "100% Verified" : cStale > 0 ? "Stale Line Drift" : "Broken Citations",
+        citations: mergedList,
+      };
       const preflightOk = readyCount > 0 && emptyCount === 0 && missingPaths.length === 0;
       const allOk = preflightOk && citations.broken === 0 && citations.stale === 0;
       if (preflightOnly) {
@@ -2312,6 +2367,22 @@ export async function installBrowserEngine(): Promise<void> {
           citations_freshness_pct: citations.freshness_pct,
           citation_gate: citations.gate_status,
           citations: citations.citations,
+          ...(includeSummary
+            ? {
+                summary_runs_count: summaryGates.length,
+                summary_runs: summaryGates.map((sg) => ({
+                  id: sg.run.id || sg.run.thread_id,
+                  task: sg.run.task,
+                  ts: sg.run.ts,
+                  files: sg.run.files,
+                  citations_checked: sg.checked,
+                  citations_verified: sg.verified,
+                  citations_stale: sg.stale,
+                  citations_broken: sg.broken,
+                  citation_gate: sg.gate,
+                })),
+              }
+            : {}),
           files: [
             ...sections.map((s) => ({
               path: s.path,
@@ -2366,10 +2437,9 @@ export async function installBrowserEngine(): Promise<void> {
         deltaMd = `## Verified Snapshot Delta (\`${safeDelta}\`: \`${revAId}\` -> \`${revBId}\`)\n\n- **Changes:** +${diff.added} / -${diff.removed} lines (${simPct(diff)}% similarity)${unifiedText ? `\n\n\`\`\`diff\n${unifiedText}\n\`\`\`` : ""}`;
         hasDelta = true;
       }
-      const summaryRuns = includeSummary
-        ? [...st.work].filter((w) => w.finished && !w.answered).reverse().slice(0, 15)
-        : [];
-      const hasSummary = summaryRuns.length > 0;
+      const hasSummary = summaryGates.length > 0;
+      const summaryCitsHdr = `${citations.verified}/${citations.total}`;
+      const summaryStaleHdr = String(citations.stale + citations.broken);
       const ratioLabel =
         citations.total === 0
           ? "0 inline citations"
@@ -2377,10 +2447,10 @@ export async function installBrowserEngine(): Promise<void> {
       if (format === "html") {
         const manifestSha = await sha256Hex(sections.map((s) => `${s.path}:${s.sha}`).join("|"));
         const summaryHtml = hasSummary
-          ? `<section><h2>Verified Work Summary</h2><table><thead><tr><th>Task</th><th>Summary</th><th>Deliverables</th></tr></thead><tbody>${summaryRuns
+          ? `<section><h2>Verified Work Summary</h2><table><thead><tr><th>Task</th><th>Summary</th><th>Deliverables</th><th>Citations</th></tr></thead><tbody>${summaryGates
               .map(
-                (r) =>
-                  `<tr><td><strong>${escapeHtml(r.task)}</strong></td><td>${escapeHtml(String(r.summary || "").slice(0, 180))}</td><td><code>${escapeHtml((r.files || []).join(", "))}</code></td></tr>`
+                (sg) =>
+                  `<tr><td><strong>${escapeHtml(sg.run.task)}</strong></td><td>${escapeHtml(String(sg.run.summary || "").slice(0, 180))}</td><td><code>${escapeHtml((sg.run.files || []).join(", "))}</code></td><td><span class="pill ${sg.stale + sg.broken > 0 ? "warn" : "ok"}">${sg.checked === 0 ? "ready" : sg.stale + sg.broken > 0 ? `${sg.verified}/${sg.checked} (${sg.stale + sg.broken} stale)` : `${sg.verified}/${sg.checked} verified`}</span></td></tr>`
               )
               .join("")}</tbody></table></section>`
           : "";
@@ -2399,7 +2469,7 @@ export async function installBrowserEngine(): Promise<void> {
         const previews = sections
           .map((s) => `<section><h3><code>${escapeHtml(s.path)}</code></h3><pre>${escapeHtml(s.body)}</pre></section>`)
           .join("");
-        const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>${escapeHtml(title)}</title><style>body{font-family:sans-serif;max-width:920px;margin:32px auto;padding:0 20px;color:#111827}table{width:100%;border-collapse:collapse;font-size:13px}th,td{padding:8px;border-bottom:1px solid #e5e7eb;text-align:left}pre{background:#f9fafb;border:1px solid #e5e7eb;padding:12px;border-radius:8px;white-space:pre-wrap}</style></head><body><h1>${escapeHtml(title)}</h1><p>Prepared for <strong>${escapeHtml(p.name)}</strong> &middot; ${escapeHtml(citations.gate_status)} &middot; Citations: ${escapeHtml(ratioLabel)} &middot; Manifest SHA-256: <code>${escapeHtml(manifestSha)}</code></p>${summaryHtml}<table><thead><tr><th>File</th><th>Contents</th><th>Size</th><th>SHA-256</th></tr></thead><tbody>${filesRows}</tbody></table>${citSection}${deltaHtml}${previews}</body></html>`;
+        const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>${escapeHtml(title)}</title><style>body{font-family:sans-serif;max-width:920px;margin:32px auto;padding:0 20px;color:#111827}table{width:100%;border-collapse:collapse;font-size:13px}th,td{padding:8px;border-bottom:1px solid #e5e7eb;text-align:left}pre{background:#f9fafb;border:1px solid #e5e7eb;padding:12px;border-radius:8px;white-space:pre-wrap}.pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;font-weight:600}.pill.ok{background:#dcfce7;color:#166534}.pill.warn{background:#fef3c7;color:#92400e}</style></head><body><h1>${escapeHtml(title)}</h1><p>Prepared for <strong>${escapeHtml(p.name)}</strong> &middot; ${escapeHtml(citations.gate_status)} &middot; Citations: ${escapeHtml(ratioLabel)} &middot; Manifest SHA-256: <code>${escapeHtml(manifestSha)}</code></p>${summaryHtml}<table><thead><tr><th>File</th><th>Contents</th><th>Size</th><th>SHA-256</th></tr></thead><tbody>${filesRows}</tbody></table>${citSection}${deltaHtml}${previews}</body></html>`;
         const packSha = await sha256Hex(html);
         return new Response(html, {
           status: 200,
@@ -2413,6 +2483,9 @@ export async function installBrowserEngine(): Promise<void> {
             "X-Ergon-Pack-Ready-Count": String(readyCount),
             "X-Ergon-Pack-Delta": hasDelta ? "yes" : "none",
             "X-Ergon-Pack-Summary": hasSummary ? "yes" : "none",
+            "X-Ergon-Pack-Summary-Runs": String(summaryGates.length),
+            "X-Ergon-Pack-Summary-Citations": summaryCitsHdr,
+            "X-Ergon-Pack-Summary-Stale": summaryStaleHdr,
           },
         });
       }
@@ -2422,15 +2495,27 @@ export async function installBrowserEngine(): Promise<void> {
         "",
         `- Prepared for: **${p.name}**`,
         `- Deliverables included: ${sections.length}`,
-        `- Completed runs summarized: ${summaryRuns.length}`,
+        `- Completed runs summarized: ${summaryGates.length}`,
         `- Pre-flight check: **${statusWord}** (${readyCount} non-empty, ${emptyCount} empty, ${missingPaths.length} missing, ${totalBytes} total bytes; citations: ${citations.gate_status} — ${ratioLabel})`,
         "",
       ];
       if (hasSummary) {
         lines.push("## Verified Work Summary", "");
-        for (const r of summaryRuns) {
+        if (citations.stale > 0 || citations.broken > 0) {
+          lines.push(`- **Batch Citation Gate:** WARN — ${citations.verified}/${citations.total} verified, **${citations.stale} stale**, ${citations.broken} broken across ${summaryGates.length} runs`, "");
+        } else if (citations.total > 0) {
+          lines.push(`- **Batch Citation Gate:** 100% Verified (${citations.verified}/${citations.total} citations across ${summaryGates.length} runs)`, "");
+        }
+        for (const sg of summaryGates) {
+          const r = sg.run;
           const filesPart = r.files?.length ? ` · Files: ${r.files.join(", ")}` : "";
-          lines.push(`- **${r.task}** (\`${r.id || r.thread_id}\`${filesPart}): ${String(r.summary || "").trim().slice(0, 180)}`);
+          const citPart =
+            sg.checked === 0
+              ? ""
+              : sg.stale > 0 || sg.broken > 0
+                ? ` · **[CITATION ALERT: ${sg.verified}/${sg.checked} verified, ${sg.stale} stale, ${sg.broken} broken]**`
+                : ` · [citations: ${sg.verified}/${sg.checked} verified]`;
+          lines.push(`- **${r.task}** (\`${r.id || r.thread_id}\`${filesPart}${citPart}): ${String(r.summary || "").trim().slice(0, 180)}`);
         }
         lines.push("");
       }
