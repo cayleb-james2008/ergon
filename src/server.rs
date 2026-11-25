@@ -701,7 +701,10 @@ fn serve_inner(
                     inner.total_workers += 1;
                     let pool_w = pool.clone();
                     let state_w = state.clone();
-                    std::thread::spawn(move || {
+                    let _ = std::thread::Builder::new()
+                        .name("ergon-http".to_string())
+                        .stack_size(2 * 1024 * 1024)
+                        .spawn(move || {
                         struct ExitGuard<'a>(&'a (Mutex<PoolInner>, Condvar));
                         impl Drop for ExitGuard<'_> {
                             fn drop(&mut self) {
@@ -1466,6 +1469,65 @@ fn etag_matches(if_none_match: Option<&str>, etag: &str) -> bool {
     false
 }
 
+struct CachedChunk {
+    mime: &'static str,
+    raw: &'static [u8],
+    gzip: Option<Vec<u8>>,
+    etag_raw: String,
+    etag_gzip: String,
+}
+
+fn cached_chunks() -> &'static HashMap<&'static str, CachedChunk> {
+    static CACHE: std::sync::OnceLock<HashMap<&'static str, CachedChunk>> = std::sync::OnceLock::new();
+    CACHE.get_or_init(|| {
+        let mut map = HashMap::with_capacity(ui::CHUNKS.len());
+        for &(route, mime, raw) in ui::CHUNKS {
+            let short = &receipts::sha256_hex(raw)[..24];
+            let etag_raw = format!("\"{short}\"");
+            let compressible = mime.starts_with("application/javascript") || mime.starts_with("text/");
+            let (gzip, etag_gzip) = if compressible {
+                (Some(tripwire::gzip_compress(raw)), format!("\"{short}-gzip\""))
+            } else {
+                (None, etag_raw.clone())
+            };
+            map.insert(
+                route,
+                CachedChunk {
+                    mime,
+                    raw,
+                    gzip,
+                    etag_raw,
+                    etag_gzip,
+                },
+            );
+        }
+        map
+    })
+}
+
+fn serve_chunk(stream: &mut std::net::TcpStream, req: &Request, path: &str) -> std::io::Result<()> {
+    let Some(chunk) = cached_chunks().get(path) else {
+        return respond_json(stream, 404, &json!({"error": "chunk not found"}));
+    };
+    let wants_gzip = chunk.gzip.is_some() && accepts_gzip(req.accept_encoding.as_deref());
+    let etag = if wants_gzip { &chunk.etag_gzip } else { &chunk.etag_raw };
+    let mut headers: Vec<(&str, String)> = vec![
+        ("ETag", etag.clone()),
+        ("Vary", "Accept-Encoding".to_string()),
+        ("Cache-Control", "public, max-age=31536000, immutable".to_string()),
+    ];
+    if etag_matches(req.if_none_match.as_deref(), etag) {
+        return respond_bytes(stream, 304, chunk.mime, &[], &headers);
+    }
+    let body = if wants_gzip {
+        headers.push(("Content-Encoding", "gzip".to_string()));
+        chunk.gzip.as_deref().unwrap_or(chunk.raw)
+    } else {
+        chunk.raw
+    };
+    respond_bytes(stream, 200, chunk.mime, body, &headers)
+}
+
 /// Serve a desk page (`/` or `/phone`). First visit (or an unknown,
 /// forged or stale cookie) gets a fresh server-generated session pinned
 /// to the current active person — so this browser keeps its own person
@@ -1612,6 +1674,7 @@ fn try_route_system(
     let _ = root_cfg;
     Some(match (req.method.as_str(), req.path.as_str()) {
         ("GET", "/") => serve_page(stream, state, req, person, ui::INDEX_HTML),
+        ("GET", path) if path.starts_with("/chunks/") => serve_chunk(stream, req, path),
         ("GET", "/api/version") => respond_json(
             stream,
             200,

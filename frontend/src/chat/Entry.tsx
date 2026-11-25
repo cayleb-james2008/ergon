@@ -426,9 +426,12 @@ export function WaitingEntry({
   const [filePreview, setFilePreview] = useState<string | null>(null);
 
   const matchedDecision = (decisions ?? []).find((d) => {
+    if (d.status && d.status !== "pending") return false;
+    const p = (d as { path?: string }).path;
+    if (name && p && p === name) return true;
     const hay = `${d.summary ?? ""} ${d.detail ?? ""}`.toLowerCase();
     return name ? hay.includes(name.toLowerCase()) : true;
-  }) ?? ((decisions ?? []).length === 1 ? decisions?.[0] : undefined);
+  }) ?? ((decisions ?? []).find((d) => !d.status || d.status === "pending"));
 
   const toggleInlineDiff = async () => {
     if (diffOpen) {

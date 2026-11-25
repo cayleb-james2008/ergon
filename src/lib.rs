@@ -2621,4 +2621,59 @@ mod v010_hardening_tests {
 
         let _ = std::fs::remove_dir_all(&dir);
     }
+
+    #[test]
+    fn embedded_chunks_serve_with_gzip_etag_304_and_immutable_headers() {
+        let Some(&(route, expected_mime, _)) = ui::CHUNKS.first() else {
+            return;
+        };
+        let dir = std::env::temp_dir().join(format!(
+            "ergon-chunks-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(dir.join("workspace")).unwrap();
+        let mut cfg = Config::from_env();
+        cfg.data_dir = dir.clone();
+        cfg.workspace_dir = dir.join("workspace");
+        cfg.memory_path = dir.join("memory.md");
+
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        std::thread::spawn(move || {
+            let _ = serve(listener, cfg);
+        });
+        std::thread::sleep(std::time::Duration::from_millis(50));
+
+        let send = |req_hdrs: &str, target: &str| -> String {
+            let mut s = std::net::TcpStream::connect(addr).unwrap();
+            let req = format!(
+                "GET {target} HTTP/1.1\r\nHost: 127.0.0.1:{}\r\n{req_hdrs}Connection: close\r\n\r\n",
+                addr.port()
+            );
+            s.write_all(req.as_bytes()).unwrap();
+            let mut buf = Vec::new();
+            s.read_to_end(&mut buf).unwrap();
+            String::from_utf8_lossy(&buf).into_owned()
+        };
+
+        let resp = send("Accept-Encoding: gzip\r\n", route);
+        assert!(resp.starts_with("HTTP/1.1 200 OK"), "{resp}");
+        assert!(resp.contains(expected_mime), "{resp}");
+        assert!(resp.contains("Cache-Control: public, max-age=31536000, immutable"), "{resp}");
+        assert!(resp.contains("X-Content-Type-Options: nosniff"), "{resp}");
+        let etag = resp
+            .lines()
+            .find_map(|l| l.strip_prefix("ETag: ").map(|v| v.trim().to_string()))
+            .unwrap();
+        let resp304 = send(&format!("Accept-Encoding: gzip\r\nIf-None-Match: {etag}\r\n"), route);
+        assert!(resp304.starts_with("HTTP/1.1 304 Not Modified"), "{resp304}");
+
+        let missing = send("", "/chunks/nonexistent-abc.js");
+        assert!(missing.starts_with("HTTP/1.1 404"), "{missing}");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }
