@@ -81,7 +81,15 @@ function RoutinesBody({
   presetSchedule?: string | null;
   presetNonce?: number;
   onRefresh: () => void;
-  onCreate: (input: { name: string; schedule: string; prompt: string; skill_id?: string }) => Promise<boolean>;
+  onCreate: (input: {
+    name: string;
+    schedule: string;
+    prompt: string;
+    skill_id?: string;
+    steps?: string[];
+    expected_inputs?: string[];
+    pack_deliverables?: boolean;
+  }) => Promise<boolean>;
   onToggleEnabled: (id: string, enabled: boolean) => Promise<boolean>;
   onLoadHistory: (id: string) => Promise<RoutineRunRecord[]>;
   onDelete: (id: string) => Promise<void>;
@@ -94,6 +102,8 @@ function RoutinesBody({
   const [schedule, setSchedule] = useState(SCHEDULES[2]);
   const [skillId, setSkillId] = useState("");
   const [prompt, setPrompt] = useState("");
+  const [extraSteps, setExtraSteps] = useState<string[]>([]);
+  const [packDeliverables, setPackDeliverables] = useState(false);
   const [saving, setSaving] = useState(false);
   const [runningId, setRunningId] = useState<string | null>(null);
   const [togglingId, setTogglingId] = useState<string | null>(null);
@@ -151,12 +161,38 @@ function RoutinesBody({
     }
   };
 
+  const applyPlaybookPreset = (preset: "close" | "contract") => {
+    setAdding(true);
+    setErr("");
+    if (preset === "close") {
+      setName("Month-End Close Playbook");
+      setSchedule("weekly mon");
+      setSkillId("reconcile_ledger");
+      setPrompt("Clean and normalize workspace expense sheets with clean_dataset");
+      setExtraSteps([
+        "Reconcile expenses and flag duplicates with reconcile_ledger",
+        "Draft an executive financial brief and export Word (.docx)",
+      ]);
+      setPackDeliverables(true);
+    } else {
+      setName("Vendor Contract Audit Playbook");
+      setSchedule("daily 09:00");
+      setSkillId("audit_contract");
+      setPrompt("Audit workspace contract documents with audit_contract for risks and missing clauses");
+      setExtraSteps([
+        "Summarize contract findings and action owners into a Word (.docx) review memo",
+      ]);
+      setPackDeliverables(true);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim() || !prompt.trim()) {
       setErr("Enter both a routine name and the task prompt your agent should run.");
       return;
     }
+    const cleanChain = [prompt.trim(), ...extraSteps.map((s) => s.trim()).filter(Boolean)];
     setSaving(true);
     setErr("");
     const ok = await onCreate({
@@ -164,6 +200,8 @@ function RoutinesBody({
       schedule: schedule.trim() || SCHEDULES[2],
       prompt: prompt.trim(),
       skill_id: skillId || undefined,
+      steps: cleanChain.length > 1 ? cleanChain : undefined,
+      pack_deliverables: packDeliverables || undefined,
     });
     setSaving(false);
     if (!ok) {
@@ -172,6 +210,8 @@ function RoutinesBody({
     }
     setName("");
     setPrompt("");
+    setExtraSteps([]);
+    setPackDeliverables(false);
     setSkillId("");
     setSchedule(SCHEDULES[2]);
     setAdding(false);
@@ -324,9 +364,30 @@ function RoutinesBody({
             ))}
           </div>
 
-          <div className="flex flex-col gap-1">
+          <div className="flex flex-col gap-1.5">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="text-xs font-medium text-ink-2">Playbook templates</span>
+              <div className="flex flex-wrap gap-1.5">
+                <Button
+                  type="button"
+                  size="xs"
+                  variant="outline"
+                  onClick={() => applyPlaybookPreset("close")}
+                >
+                  Month-End Close (3 steps)
+                </Button>
+                <Button
+                  type="button"
+                  size="xs"
+                  variant="outline"
+                  onClick={() => applyPlaybookPreset("contract")}
+                >
+                  Contract Audit + Pack (2 steps)
+                </Button>
+              </div>
+            </div>
             <label htmlFor="routine-prompt" className="text-xs font-medium text-ink">
-              Task prompt
+              {extraSteps.length > 0 ? "Step 1 prompt" : "Task prompt"}
             </label>
             <Textarea
               id="routine-prompt"
@@ -335,6 +396,49 @@ function RoutinesBody({
               onChange={(e) => setPrompt(e.target.value)}
               placeholder="Describe what your agent should finish each time this routine runs…"
             />
+            {extraSteps.map((stepVal, sIdx) => (
+              <div key={sIdx} className="flex items-start gap-2 pt-1">
+                <span className="mono mt-2 shrink-0 text-xs text-ink-2">Step {sIdx + 2}</span>
+                <Input
+                  value={stepVal}
+                  aria-label={`Playbook step ${sIdx + 2}`}
+                  placeholder="Next chained step prompt…"
+                  onChange={(e) =>
+                    setExtraSteps((prev) => prev.map((v, i) => (i === sIdx ? e.target.value : v)))
+                  }
+                />
+                <Button
+                  type="button"
+                  size="xs"
+                  variant="ghost"
+                  aria-label={`Remove step ${sIdx + 2}`}
+                  onClick={() => setExtraSteps((prev) => prev.filter((_, i) => i !== sIdx))}
+                >
+                  Remove
+                </Button>
+              </div>
+            ))}
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+              {extraSteps.length < 5 && (
+                <Button
+                  type="button"
+                  size="xs"
+                  variant="outline"
+                  onClick={() => setExtraSteps((prev) => [...prev, ""])}
+                >
+                  <Plus className="size-3" strokeWidth={1.5} aria-hidden />
+                  Chain step
+                </Button>
+              )}
+              <label className="inline-flex cursor-pointer items-center gap-1.5 text-xs text-ink-2">
+                <input
+                  type="checkbox"
+                  checked={packDeliverables}
+                  onChange={(e) => setPackDeliverables(e.target.checked)}
+                />
+                Auto-bundle Deliverable Pack (.md)
+              </label>
+            </div>
           </div>
 
           {err && (
@@ -391,6 +495,11 @@ function RoutinesBody({
                         {rt.skill_id}
                       </Badge>
                     )}
+                    {rt.steps && rt.steps.length > 1 && (
+                      <Badge variant="outline" size="sm" className="mono text-xs">
+                        Playbook · {rt.steps.length} steps
+                      </Badge>
+                    )}
                   </div>
                   <div className="flex flex-wrap items-center gap-1.5">
                     <Pill variant="secondary" className="border border-hairline bg-board px-2 py-0.5 text-xs text-ink-2">
@@ -408,7 +517,18 @@ function RoutinesBody({
                   </div>
                 </div>
 
-                <p className="text-sm leading-5 text-ink-2">{rt.prompt}</p>
+                {rt.steps && rt.steps.length > 1 ? (
+                  <ol className="flex flex-col gap-1 text-xs leading-5 text-ink-2">
+                    {rt.steps.map((stText, sIdx) => (
+                      <li key={sIdx} className="flex gap-1.5">
+                        <span className="mono shrink-0 text-ink-3">{sIdx + 1}.</span>
+                        <span>{stText}</span>
+                      </li>
+                    ))}
+                  </ol>
+                ) : (
+                  <p className="text-sm leading-5 text-ink-2">{rt.prompt}</p>
+                )}
 
                 <div className="flex flex-wrap items-center justify-between gap-2 border-t border-hairline pt-2.5">
                   <div className="mono flex flex-wrap items-center gap-2 text-xs text-ink-2">
@@ -620,7 +740,15 @@ export function RoutinesPanel({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onRefresh: () => void;
-  onCreate: (input: { name: string; schedule: string; prompt: string; skill_id?: string }) => Promise<boolean>;
+  onCreate: (input: {
+    name: string;
+    schedule: string;
+    prompt: string;
+    skill_id?: string;
+    steps?: string[];
+    expected_inputs?: string[];
+    pack_deliverables?: boolean;
+  }) => Promise<boolean>;
   onToggleEnabled: (id: string, enabled: boolean) => Promise<boolean>;
   onLoadHistory: (id: string) => Promise<RoutineRunRecord[]>;
   onDelete: (id: string) => Promise<void>;

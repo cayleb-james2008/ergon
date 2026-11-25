@@ -4,6 +4,17 @@ Each release is tagged `vMAJOR.MINOR.PATCH` and published on GitHub Releases wit
 binaries and a `SHA256SUMS` file. The running app shows its version and can update
 itself from the newest release (see README, "Versions and updates").
 
+## 0.13.0 - 2026-11-25
+
+- **Multi-Step Workflow Chaining & 1-Click Workspace Playbooks (`src/routines.rs`, `src/server.rs`, `frontend/src/shell/RoutinesPanel.tsx`, `frontend/src/lib/webEngine.ts`):**
+  - Extended routines into sequential **Workspace Playbooks** (`steps`, optional `expected_inputs`, and `pack_deliverables`) executed step-by-step in one shared thread context via `POST /api/routines/:id/run`, optionally assembling `"Playbook Deliverable Pack.md"` via shared `build_workspace_pack`.
+  - Added 1-click Playbook presets (**Month-End Close (3 steps)**, **Contract Audit + Pack (2 steps)**), interactive step chaining (`+ Chain step`), and `"Auto-bundle Deliverable Pack (.md)"` in `RoutinesPanel.tsx`, with matching standalone browser shim parity in `webEngine.ts`.
+- **Indexed Search Speed & `src/tools.rs` Modularization (`src/search.rs`, `src/tools.rs`, `src/lib.rs`, `src/tripwire.rs`):**
+  - Reused one token scratch buffer across 10k-receipt/500-file index builds in `src/search.rs`, replaced temporary `HashSet` query intersections with zero-alloc sorted `binary_search` narrowing (`narrow_candidates`), and routed filtered `list_receipts` / `list_files` queries through the inverted token indexes (verified up to 10,000 receipts + 500 files).
+  - Extracted sandboxed workspace tools, URL egress fetchers, `export_workspace_file`, and honesty-check helpers out of `src/lib.rs` into cohesive `src/tools.rs`, and upgraded cached `DecoratedPage` pre-compression in `src/tripwire.rs` to level 9.
+- **Frontend Bundle Diet (`frontend/src/fonts.css`, `frontend/vite.config.ts`, `frontend/src/shell/WorkspaceFiles.tsx`):**
+  - Consolidated Geist weights (`400`, `500 600` on `Geist-Medium.woff2`) + `Geist Mono`, targeted `es2022` in Vite, and pruned dead `WorkspaceFilesPanel`, shrinking embedded `assets/index.html` to `1,054 KB` raw / `~375 KB` gzip (`~366 KiB`).
+
 ## 0.12.0 - 2026-11-25
 
 - **Modular HTTP Server & Atomic Persistence (`src/server.rs`, `src/lib.rs`, `src/routines.rs`, `src/scheduler.rs`, `src/file_history.rs`):**

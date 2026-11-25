@@ -1787,11 +1787,11 @@ export async function installBrowserEngine(): Promise<void> {
     const st = activeStore();
     const byok = loadByok();
 
-    if (method === "GET" && path === "/api/version") return jsonRes({ name: "ergon", version: "0.12.0" });
-    if (method === "GET" && path === "/api/update") return jsonRes({ current: "0.12.0", available: false, mode: "off", checked_at: Math.floor(Date.now() / 1000) });
+    if (method === "GET" && path === "/api/version") return jsonRes({ name: "ergon", version: "0.13.0" });
+    if (method === "GET" && path === "/api/update") return jsonRes({ current: "0.13.0", available: false, mode: "off", checked_at: Math.floor(Date.now() / 1000) });
     if (method === "GET" && path === "/api/status") {
       return jsonRes({
-        version: "0.12.0",
+        version: "0.13.0",
         model_configured: true,
         model: byok.engine_mode === "byok" && byok.model_id ? byok.model_id : "browser-workspace-engine",
         model_base_url: byok.engine_mode === "byok" ? byok.model_base_url : "indexeddb://local",
@@ -1883,10 +1883,16 @@ export async function installBrowserEngine(): Promise<void> {
     }
     if (method === "POST" && path === "/api/routines") {
       const name = String(body.name ?? body.title ?? "").trim();
-      const prompt = String(body.prompt ?? "").trim();
+      const rawSteps = Array.isArray(body.steps)
+        ? body.steps.map((s) => String(s ?? "").trim()).filter(Boolean).slice(0, 8)
+        : [];
+      const prompt = String(body.prompt ?? "").trim() || rawSteps.join(" -> ");
       if (!name || !prompt) return jsonRes({ error: "name and prompt are required" }, 400);
       const schedule = String(body.schedule ?? body.cadence ?? "daily 09:00").trim();
       const enabled = typeof body.enabled === "boolean" ? body.enabled : true;
+      const expectedInputs = Array.isArray(body.expected_inputs)
+        ? body.expected_inputs.map((s) => String(s ?? "").trim()).filter(Boolean).slice(0, 8)
+        : undefined;
       const created: Routine = {
         id: `rt-${Date.now()}-${st.routines.length + 1}`,
         name,
@@ -1894,6 +1900,9 @@ export async function installBrowserEngine(): Promise<void> {
         schedule,
         cadence: schedule,
         skill_id: typeof body.skill_id === "string" && body.skill_id ? body.skill_id : undefined,
+        steps: rawSteps.length > 1 ? rawSteps : undefined,
+        expected_inputs: expectedInputs?.length ? expectedInputs : undefined,
+        pack_deliverables: body.pack_deliverables === true ? true : undefined,
         enabled,
         last_run_ts: null,
         next_run_ms: enabled ? estimateNextRunMs(schedule, Date.now()) : null,
@@ -1940,7 +1949,11 @@ export async function installBrowserEngine(): Promise<void> {
       const rt = st.routines.find((x) => x.id === rid);
       if (!rt) return jsonRes({ error: "routine not found" }, 404);
       const startedMs = Date.now();
-      const resp = await executePromptIntoThread(p, st, byok, rt.prompt);
+      const stepList = rt.steps && rt.steps.length > 1 ? rt.steps : [rt.prompt];
+      let resp = await executePromptIntoThread(p, st, byok, stepList[0]);
+      for (let i = 1; i < stepList.length && resp.ok; i += 1) {
+        resp = await executePromptIntoThread(p, st, byok, stepList[i]);
+      }
       const finishedMs = Date.now();
       const lastWork = st.work[st.work.length - 1];
       rt.last_run_ts = finishedMs;

@@ -1961,7 +1961,7 @@ pub struct DecoratedPage {
 
 /// Compress bytes into an RFC 1952 gzip stream using `miniz_oxide` + IEEE CRC-32.
 pub fn gzip_compress(data: &[u8]) -> Vec<u8> {
-    let deflated = miniz_oxide::deflate::compress_to_vec(data, 6);
+    let deflated = miniz_oxide::deflate::compress_to_vec(data, 9);
     let crc = crate::docs::crc32(data);
     let isize_bytes = (data.len() as u32).to_le_bytes();
     let mut out = Vec::with_capacity(10 + deflated.len() + 8);

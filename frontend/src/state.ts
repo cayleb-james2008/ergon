@@ -360,7 +360,15 @@ export function useErgon() {
   }, []);
 
   const createRoutine = useCallback(
-    async (input: { name: string; schedule: string; prompt: string; skill_id?: string }): Promise<boolean> => {
+    async (input: {
+      name: string;
+      schedule: string;
+      prompt: string;
+      skill_id?: string;
+      steps?: string[];
+      expected_inputs?: string[];
+      pack_deliverables?: boolean;
+    }): Promise<boolean> => {
       if (hasV050Api(statusRef.current, "routines")) {
         const r = await call<{ routine?: unknown } & Record<string, unknown>>("/api/routines", {
           method: "POST",
@@ -371,6 +379,9 @@ export function useErgon() {
             cadence: input.schedule,
             prompt: input.prompt,
             skill_id: input.skill_id,
+            steps: input.steps,
+            expected_inputs: input.expected_inputs,
+            pack_deliverables: input.pack_deliverables,
             enabled: true,
           },
         });

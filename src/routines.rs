@@ -53,6 +53,13 @@ pub fn get_routine(person_data_dir: &Path, id: &str) -> Option<Value> {
     })
 }
 
+#[derive(Clone, Debug, Default)]
+pub struct PlaybookOptions {
+    pub steps: Vec<String>,
+    pub expected_inputs: Vec<String>,
+    pub pack_deliverables: bool,
+}
+
 pub fn create_routine(
     person_data_dir: &Path,
     name: &str,
@@ -72,13 +79,62 @@ pub fn create_routine_with_options(
     skill_id: Option<&str>,
     enabled: bool,
 ) -> Result<Value, String> {
+    create_playbook_routine(
+        person_data_dir,
+        name,
+        prompt,
+        schedule,
+        interval_secs,
+        skill_id,
+        enabled,
+        &PlaybookOptions::default(),
+    )
+}
+
+/// Create a recurring routine or multi-step chained Workspace Playbook (`steps`,
+/// optional `expected_inputs`, and optional `pack_deliverables`).
+#[allow(clippy::too_many_arguments)]
+pub fn create_playbook_routine(
+    person_data_dir: &Path,
+    name: &str,
+    prompt: &str,
+    schedule: &str,
+    interval_secs: Option<u64>,
+    skill_id: Option<&str>,
+    enabled: bool,
+    playbook: &PlaybookOptions,
+) -> Result<Value, String> {
     let clean_name: String = name
         .replace(['\r', '\n'], " ")
         .trim()
         .chars()
         .take(120)
         .collect();
-    let clean_prompt: String = prompt.trim().chars().take(4000).collect();
+    let clean_steps: Vec<String> = playbook
+        .steps
+        .iter()
+        .map(|s| s.trim().chars().take(2000).collect::<String>())
+        .filter(|s| !s.is_empty())
+        .take(8)
+        .collect();
+    let clean_inputs: Vec<String> = playbook
+        .expected_inputs
+        .iter()
+        .map(|s| s.replace(['\r', '\n'], " ").trim().chars().take(64).collect::<String>())
+        .filter(|s| !s.is_empty())
+        .take(8)
+        .collect();
+    let clean_prompt: String = {
+        let raw = prompt.trim();
+        if raw.is_empty() && !clean_steps.is_empty() {
+            clean_steps.join(" -> ")
+        } else {
+            raw.to_string()
+        }
+    }
+    .chars()
+    .take(4000)
+    .collect();
     if clean_name.is_empty() {
         return Err("routine name is required".to_string());
     }
@@ -129,6 +185,15 @@ pub fn create_routine_with_options(
         });
         if let Some(iv) = resolved_interval {
             item["interval_secs"] = json!(iv);
+        }
+        if !clean_steps.is_empty() {
+            item["steps"] = json!(clean_steps);
+        }
+        if !clean_inputs.is_empty() {
+            item["expected_inputs"] = json!(clean_inputs);
+        }
+        if playbook.pack_deliverables {
+            item["pack_deliverables"] = json!(true);
         }
         items.push(item.clone());
         save_raw(&path, &items)?;
