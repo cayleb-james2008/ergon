@@ -30,8 +30,8 @@ pub mod tripwire;
 pub use tools::{
     check_mentions, execute_tool, execute_tool_full, export_workspace_file, extract_written,
     fetch_url_text, html_to_text, mention_candidates, page_text, sandbox_path,
-    sandbox_path_resolving, truncate, verify_text_citations, CitationCheck, CitationReport,
-    ToolCtx,
+    sandbox_path_resolving, truncate, verify_text_citations, verify_text_citations_against,
+    CitationCheck, CitationReport, ToolCtx,
 };
 pub mod ui;
 pub mod update;
@@ -2927,6 +2927,94 @@ mod v010_hardening_tests {
         assert!(pack_snap.contains("X-Ergon-Pack-Delta: yes"), "{pack_snap}");
         assert!(pack_snap.contains("## Verified Snapshot Delta"), "{pack_snap}");
         assert!(pack_snap.contains("+Revenue $100k"), "{pack_snap}");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn citation_freshness_stale_drift_and_html_handoff_work_end_to_end() {
+        let dir = std::env::temp_dir().join(format!(
+            "ergon-freshness-v018-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let ws = dir.join("workspace");
+        std::fs::create_dir_all(&ws).unwrap();
+        let contract_v1 = "Master Agreement\nNotice: 30 days\n";
+        std::fs::write(ws.join("contract.txt"), contract_v1).unwrap();
+
+        let mut cfg = Config::from_env();
+        cfg.data_dir = dir.clone();
+        cfg.workspace_dir = ws.clone();
+        cfg.memory_path = dir.join("memory.md");
+        std::fs::write(&cfg.memory_path, "- Role: Legal\n").unwrap();
+        records::append_work(
+            &cfg,
+            "Audit notice period",
+            "Confirmed clause [contract.txt:L2] in contract.",
+            &["contract.txt".to_string()],
+            "t-fresh-1",
+            true,
+        );
+        records::append_work(
+            &cfg,
+            "Verify updated notice",
+            "Updated clause [contract.txt:L2] in contract.",
+            &["contract.txt".to_string()],
+            "t-fresh-2",
+            true,
+        );
+
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        std::thread::spawn(move || {
+            let _ = serve(listener, cfg);
+        });
+        std::thread::sleep(std::time::Duration::from_millis(50));
+
+        let send_get = |target: &str| -> String {
+            let mut s = std::net::TcpStream::connect(addr).unwrap();
+            let req = format!(
+                "GET {target} HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nConnection: close\r\n\r\n",
+                addr.port()
+            );
+            s.write_all(req.as_bytes()).unwrap();
+            let mut out = String::new();
+            s.read_to_string(&mut out).unwrap();
+            out
+        };
+
+        // 1. Live citation matches before file modification -> 100% Verified + clean HTML handoff.
+        let pf_ok = send_get("/api/files/pack?preflight=1&files=contract.txt&receipt_id=t-fresh-1");
+        let pf_ok_json: Value = serde_json::from_str(pf_ok.split("\r\n\r\n").nth(1).unwrap()).unwrap();
+        assert_eq!(pf_ok_json["citation_gate"], json!("100% Verified"));
+        assert_eq!(pf_ok_json["citations_verified"], json!(1));
+        assert_eq!(pf_ok_json["citations_stale"], json!(0));
+        assert_eq!(pf_ok_json["citations"][0]["line_excerpt"], json!("Notice: 30 days"));
+
+        let html_resp = send_get(
+            "/api/files/pack?format=html&download=1&files=contract.txt&receipt_id=t-fresh-1&delta_a=t-fresh-1&delta_b=t-fresh-2",
+        );
+        assert!(html_resp.starts_with("HTTP/1.1 200 OK"), "{html_resp}");
+        assert!(html_resp.contains("X-Ergon-Pack-Citation-Gate: 100% Verified"), "{html_resp}");
+        assert!(html_resp.contains("ergon-client-handoff.html"), "{html_resp}");
+        assert!(html_resp.contains("Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'"), "{html_resp}");
+        assert!(html_resp.contains("Verified Delta"), "{html_resp}");
+
+        // 2. Record .history/ snapshot > receipt_ts and mutate contract.txt -> Stale Line Drift.
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        file_history::record_revision(&dir, &ws, "contract.txt", "amended").unwrap();
+        std::fs::write(ws.join("contract.txt"), "Master Agreement\nNotice: 60 days\n").unwrap();
+
+        let pf_stale = send_get("/api/files/pack?preflight=1&files=contract.txt&receipt_id=t-fresh-1");
+        let pf_stale_json: Value = serde_json::from_str(pf_stale.split("\r\n\r\n").nth(1).unwrap()).unwrap();
+        assert_eq!(pf_stale_json["citation_gate"], json!("Stale Line Drift"));
+        assert_eq!(pf_stale_json["citations_stale"], json!(1));
+        assert_eq!(pf_stale_json["ok"], json!(false));
+        assert_eq!(pf_stale_json["citations"][0]["status"], json!("stale"));
+        assert_eq!(pf_stale_json["citations"][0]["line_excerpt"], json!("Notice: 60 days"));
 
         let _ = std::fs::remove_dir_all(&dir);
     }

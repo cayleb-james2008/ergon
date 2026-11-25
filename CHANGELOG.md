@@ -4,6 +4,15 @@ Each release is tagged `vMAJOR.MINOR.PATCH` and published on GitHub Releases wit
 binaries and a `SHA256SUMS` file. The running app shows its version and can update
 itself from the newest release (see README, "Versions and updates").
 
+## 0.18.0 - 2026-11-25
+
+- **Citation Freshness Pre-Flight Gate & 1-Click Verified Client Handoff (`.html`) (`src/tools.rs`, `src/server.rs`, `frontend/src/lib/{receiptExport,webEngine}.ts`, `frontend/src/shell/InspectorDrawer.tsx`):**
+  - Extended `verify_text_citations_against` & `PackPreflight` with live SHA-256 digests (`file_sha256`), live line excerpts (`line_excerpt`), and `.history/` / baseline SHA-256 drift detection (`stale` vs `verified` status, `100% Verified` vs `Stale Line Drift` gate).
+  - Added `GET /api/files/pack?format=html` (`build_workspace_handoff_html`) and `#export-handoff-html-btn` (**Client Handoff (.html)**) generating standalone printable HTML deliverables with SHA-256 manifest, live citation freshness gate, optional delta, and strict CSP (`default-src 'none'; style-src 'unsafe-inline'`), with 100% `webEngine.ts` parity.
+- **Release Binary & Warm Audit-Bundle Peak RSS Diet (`Cargo.toml`, `src/search.rs`, `src/audit_bundle.rs`, `src/server.rs`):**
+  - Configured `[profile.release.package."*"] opt-level = "z"` (keeping `ergon-rs`, `serde_json`, and `sha2` at `opt-level = 3`), cutting cold VM/parser/TLS bloat from the release binary.
+  - Added `SearchCache::get_if_fresh` + `audit_bundle::build_audit_bundle_json_bytes_with_chain` and zero-alloc `compute_workspace_manifest_sha256` hashing so warm `/api/audit/bundle` calls borrow cached receipt chains with zero duplicate 5k-entry allocation.
+
 ## 0.17.0 - 2026-11-25
 
 - **1-Click Run / Receipt Comparison & Delta Client Pack (`src/file_history.rs`, `src/server.rs`, `frontend/src/shell/{InspectorDrawer,WorkspaceFiles}.tsx`, `frontend/src/lib/{receiptExport,webEngine}.ts`):**
