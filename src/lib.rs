@@ -2471,10 +2471,28 @@ mod v010_hardening_tests {
         let ok_resp = send_get("/api/files/pack?files=brief.md,ledger.csv&download=1");
         assert!(ok_resp.starts_with("HTTP/1.1 200 OK"), "{ok_resp}");
         assert!(ok_resp.contains("X-Ergon-Pack-SHA256:"), "{ok_resp}");
+        assert!(ok_resp.contains("X-Ergon-Pack-Preflight: pass"), "{ok_resp}");
+        assert!(ok_resp.contains("X-Ergon-Pack-Ready-Count: 2"), "{ok_resp}");
         assert!(ok_resp.contains("attachment; filename=\"ergon-client-pack.md\""), "{ok_resp}");
         assert!(ok_resp.contains("# Client Deliverable Pack"), "{ok_resp}");
         assert!(ok_resp.contains("All green."), "{ok_resp}");
         assert!(ok_resp.contains("```csv\nitem,amount\nCoffee,4.50\n```"), "{ok_resp}");
+
+        let pf_resp = send_get("/api/files/pack?preflight=1&files=brief.md,ledger.csv");
+        assert!(pf_resp.starts_with("HTTP/1.1 200 OK"), "{pf_resp}");
+        let pf_json: Value = serde_json::from_str(pf_resp.split("\r\n\r\n").nth(1).unwrap()).unwrap();
+        assert_eq!(pf_json["ok"], json!(true));
+        assert_eq!(pf_json["ready_count"], json!(2));
+        assert_eq!(pf_json["empty_count"], json!(0));
+        assert_eq!(pf_json["files"][0]["unit"], json!("lines"));
+        assert_eq!(pf_json["files"][1]["unit"], json!("rows"));
+        assert_eq!(pf_json["files"][1]["count"], json!(1));
+
+        std::fs::write(ws.join("blank.md"), "   \n").unwrap();
+        let pf_warn = send_get("/api/files/pack?preflight=1&files=brief.md,blank.md");
+        let pf_warn_json: Value = serde_json::from_str(pf_warn.split("\r\n\r\n").nth(1).unwrap()).unwrap();
+        assert_eq!(pf_warn_json["ok"], json!(false));
+        assert_eq!(pf_warn_json["empty_count"], json!(1));
 
         let trav = send_get("/api/files/pack?files=../secret.txt");
         assert!(trav.starts_with("HTTP/1.1 403"), "{trav}");
@@ -2624,9 +2642,11 @@ mod v010_hardening_tests {
 
     #[test]
     fn embedded_chunks_serve_with_gzip_etag_304_and_immutable_headers() {
-        let Some(&(route, expected_mime, _)) = ui::CHUNKS.first() else {
+        let Some(asset) = ui::CHUNKS.iter().find(|c| c.pre_gzipped) else {
             return;
         };
+        let route = asset.route;
+        let expected_mime = asset.mime;
         let dir = std::env::temp_dir().join(format!(
             "ergon-chunks-{}",
             std::time::SystemTime::now()
@@ -2674,6 +2694,75 @@ mod v010_hardening_tests {
         let missing = send("", "/chunks/nonexistent-abc.js");
         assert!(missing.starts_with("HTTP/1.1 404"), "{missing}");
 
+        // Non-gzip fallback inflates pre-compressed .rodata transparently
+        let raw_resp = send("", route);
+        assert!(raw_resp.starts_with("HTTP/1.1 200 OK"), "{raw_resp}");
+        assert!(!raw_resp.contains("Content-Encoding: gzip"), "{raw_resp}");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn receipts_load_chain_streaming_matches_build_chain() {
+        let dir = std::env::temp_dir().join(format!(
+            "ergon-stream-rcpt-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("work.json"),
+            serde_json::to_string_pretty(&json!({
+                "version": 1,
+                "entries": [
+                    {
+                        "id": "rcpt-1",
+                        "ts": 1760000001000u64,
+                        "task": "Audit \"Vendor\" {braces} & [brackets]",
+                        "summary": "Checked 3 clauses\nand flagged \"net-60\".",
+                        "files": ["contract.md", "audit.md"],
+                        "thread_id": "t-1",
+                        "finished": true,
+                        "answered": false
+                    }
+                ]
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("receipts.json"),
+            serde_json::to_string(&json!({
+                "receipts": [
+                    {
+                        "ts": 1760000002000u64,
+                        "title": "Reconcile Q1 CSV",
+                        "summary": "Matched 42 rows.",
+                        "files": ["ledger.csv"],
+                        "thread_id": "t-2"
+                    }
+                ]
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+
+        let streamed = receipts::load_chain(&dir);
+        let dom = receipts::build_chain(&receipts::load_raw_entries(&dir));
+        assert_eq!(streamed.len(), 2);
+        assert_eq!(streamed.len(), dom.len());
+        for (a, b) in streamed.iter().zip(dom.iter()) {
+            assert_eq!(a.id, b.id);
+            assert_eq!(a.index, b.index);
+            assert_eq!(a.task, b.task);
+            assert_eq!(a.summary, b.summary);
+            assert_eq!(a.files, b.files);
+            assert_eq!(a.prev_hash, b.prev_hash);
+            assert_eq!(a.sha256, b.sha256);
+        }
+        assert!(receipts::verify_chain(&streamed).0);
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

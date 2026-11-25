@@ -6,9 +6,14 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Pill } from "@/components/kibo-ui/pill";
 import { computeLineDiff } from "@/lib/diff";
-import { exportClientPackDownload, exportReceiptDownload } from "@/lib/receiptExport";
+import {
+  exportClientPackDownload,
+  exportReceiptDownload,
+  preflightClientPack,
+  type PackPreflightReport,
+} from "@/lib/receiptExport";
 import { cn } from "@/lib/utils";
-import { fileIconFor, savedFile, toolLabel } from "@/lib/words";
+import { extractPlaybookFromRun, fileIconFor, savedFile, toolLabel } from "@/lib/words";
 import {
   call,
   exportTarget,
@@ -199,10 +204,16 @@ export const FinishedEntry = memo(function FinishedEntry({
   personName?: string;
   useServerExport?: boolean;
   onOpenFile?: (path: string) => void;
-  onSaveRoutine?: (name: string, prompt: string, schedule?: string) => Promise<boolean>;
+  onSaveRoutine?: (
+    name: string,
+    prompt: string,
+    schedule?: string,
+    playbook?: { steps?: string[]; expected_inputs?: string[]; pack_deliverables?: boolean }
+  ) => Promise<boolean>;
 }) {
   const [exporting, setExporting] = useState(false);
   const [packing, setPacking] = useState(false);
+  const [packPreflight, setPackPreflight] = useState<PackPreflightReport | null>(null);
   const [officeBusy, setOfficeBusy] = useState(false);
   const [savingRoutine, setSavingRoutine] = useState(false);
   const [routineSaved, setRoutineSaved] = useState(false);
@@ -339,8 +350,15 @@ export const FinishedEntry = memo(function FinishedEntry({
               onClick={async () => {
                 setPacking(true);
                 try {
-                  const res = await exportClientPackDownload(files, task || "Client Deliverable Pack");
-                  toast.success(`Exported ${res.filename} (sha256: ${res.sha256.slice(0, 12)}…)`);
+                  const [check, res] = await Promise.all([
+                    preflightClientPack(files).catch(() => null),
+                    exportClientPackDownload(files, task || "Client Deliverable Pack"),
+                  ]);
+                  if (check) setPackPreflight(check);
+                  const checkLabel = check
+                    ? `${check.ready_count}/${check.files.length} non-empty`
+                    : res.preflight || "verified";
+                  toast.success(`Exported ${res.filename} (${checkLabel} · sha256: ${res.sha256.slice(0, 12)}…)`);
                 } catch {
                   toast.error("Could not export client pack.");
                 } finally {
@@ -357,12 +375,18 @@ export const FinishedEntry = memo(function FinishedEntry({
               type="button"
               size="xs"
               variant="outline"
+              data-action="promote-playbook"
               className="max-md:min-h-11 gap-1.5 text-xs"
               disabled={savingRoutine || routineSaved}
               onClick={async () => {
                 setSavingRoutine(true);
                 try {
-                  const ok = await onSaveRoutine(task.trim().slice(0, 60), task.trim(), "daily 09:00");
+                  const pb = extractPlaybookFromRun(task, steps, files);
+                  const ok = await onSaveRoutine(pb.name, pb.prompt, "manual", {
+                    steps: pb.steps,
+                    expected_inputs: pb.expected_inputs,
+                    pack_deliverables: pb.pack_deliverables,
+                  });
                   if (ok) setRoutineSaved(true);
                 } finally {
                   setSavingRoutine(false);
@@ -374,7 +398,7 @@ export const FinishedEntry = memo(function FinishedEntry({
               ) : (
                 <Repeat className="size-3.5" strokeWidth={1.5} aria-hidden />
               )}
-              {routineSaved ? "Saved routine" : savingRoutine ? "Saving…" : "Save as routine"}
+              {routineSaved ? "Promoted to Playbook" : savingRoutine ? "Saving…" : "Promote to Playbook"}
             </Button>
           )}
           <Button
@@ -388,6 +412,15 @@ export const FinishedEntry = memo(function FinishedEntry({
             Copy summary
           </Button>
         </div>
+        {packPreflight && (
+          <div className="rounded-sm border border-hairline bg-board/50 px-3 py-2 text-xs text-ink-2">
+            <span className="font-medium text-ink">
+              Pre-flight {packPreflight.ok ? "PASS" : "CHECK"}:
+            </span>{" "}
+            {packPreflight.ready_count} non-empty deliverables verified (
+            {packPreflight.files.map((f) => `${f.path}: ${f.count} ${f.unit}`).join(", ")})
+          </div>
+        )}
         {steps.length > 0 && (
           <Details label={`Inspect tool steps (${steps.length})`}>
             <StepList steps={steps} />

@@ -323,3 +323,46 @@ export function resultLine(s: Update): string {
 }
 
 export const isLocal = () => ["localhost", "127.0.0.1", "[::1]"].includes(location.hostname);
+
+export type ExtractedPlaybook = {
+  name: string;
+  prompt: string;
+  steps: string[];
+  expected_inputs: string[];
+  pack_deliverables: boolean;
+};
+
+/** Derives a multi-step Playbook definition (steps, input globs, auto-pack) from a completed run. */
+export function extractPlaybookFromRun(task: string, rawSteps: string[], files: string[]): ExtractedPlaybook {
+  const cleanTask = String(task || "").replace(/\s+/g, " ").trim();
+  const steps: string[] = [];
+  for (const raw of rawSteps || []) {
+    const safe = String(raw || "");
+    const nl = safe.indexOf("\n");
+    const head = nl < 0 ? safe : safe.slice(0, nl);
+    const body = nl < 0 ? "" : safe.slice(nl + 1);
+    const m = /^Tool: (\S+)(?: \(via ([^)]+)\))?$/.exec(head);
+    const label = m ? toolLabel(m[1], m[2], body) : head.trim();
+    const cleaned = (label || "").replace(/\s+/g, " ").trim();
+    if (cleaned && steps[steps.length - 1] !== cleaned && steps.length < 6) {
+      steps.push(cleaned);
+    }
+  }
+  if (!steps.length && cleanTask) steps.push(cleanTask);
+
+  const inputs: string[] = [];
+  for (const f of files || []) {
+    const base = String(f || "").trim();
+    if (!base) continue;
+    const ext = base.includes(".") ? `*.${base.split(".").pop()?.toLowerCase()}` : base;
+    if (ext && !inputs.includes(ext) && inputs.length < 6) inputs.push(ext);
+  }
+
+  return {
+    name: (cleanTask || "Saved playbook").slice(0, 60),
+    prompt: cleanTask || steps.join(" -> "),
+    steps,
+    expected_inputs: inputs,
+    pack_deliverables: (files?.length ?? 0) > 0,
+  };
+}
