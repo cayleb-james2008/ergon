@@ -42,8 +42,8 @@
   --blue-fg: #ffffff;    /* text on blue. DERIVED */
   --blue-hover: #0f52d6; /* one step darker for hover/press. ESTIMATED (SPEC: hover not shown) */
   --blue-soft: #e8f0ff;  /* selected-row tint, 8% blue on white. DERIVED */
-  --ink-button: #14161b; /* near-black button. MEASURED (#14161b to #20242b; disagreement noted in SPEC) */
-  --ink-button-fg: #ffffff; /* DERIVED */
+  --ink-button: #111318; /* monochrome ink primary action. v2.0 (#111318 light / #F3F4F6 dark) */
+  --ink-button-fg: #fdfdfe; /* DERIVED (6-hex non-collapsible off-white) */
 
   /* Status dots (8px) */
   --dot-green: #4dc296;  /* MEASURED */
@@ -81,7 +81,7 @@
   --elev-card: 0 1px 2px rgba(16, 24, 40, 0.04);      /* ESTIMATED */
   --elev-raised: 0 1px 2px rgba(16, 24, 40, 0.08);    /* raised segment / secondary button. ESTIMATED */
   --elev-lift: 0 9px 24px rgba(16, 24, 40, 0.12);     /* dragged card, menus. ESTIMATED */
-  --elev-primary: inset 0 1px 0 rgba(255, 255, 255, 0.2), 0 1px 2px rgba(21, 98, 252, 0.35); /* blue button: inner top highlight, blue-tinted shadow. ESTIMATED */
+  --elev-primary: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 1px 2px rgba(17, 19, 24, 0.18); /* monochrome ink primary specular. v2.0 */
 
   /* Names the shadcn-style libraries read (COSS UI, Kibo UI, Cult UI) */
   --background: var(--surface);
@@ -90,8 +90,8 @@
   --card-foreground: var(--ink);
   --popover: var(--surface);
   --popover-foreground: var(--ink);
-  --primary: var(--blue);
-  --primary-foreground: var(--blue-fg);
+  --primary: var(--ink-button);
+  --primary-foreground: var(--ink-button-fg);
   --secondary: var(--board);
   --secondary-foreground: var(--ink);
   --muted: var(--track);
@@ -134,8 +134,8 @@
   --blue-fg: #0b1220;     /* DERIVED: dark text on the lighter dark-mode blue */
   --blue-hover: #6b9bff;  /* DERIVED */
   --blue-soft: rgba(74, 134, 255, 0.14); /* DERIVED */
-  --ink-button: #eceef2;  /* DERIVED: the near-black button inverts to a light one */
-  --ink-button-fg: #14161b; /* DERIVED */
+  --ink-button: #f3f4f6;  /* monochrome ink primary action inverted for dark. v2.0 */
+  --ink-button-fg: #111318; /* DERIVED */
 
   --dot-green: #4dc296;   /* MEASURED value kept: reads on dark */
   --dot-red: #e0603a;     /* DERIVED: lifted for dark */
@@ -169,7 +169,7 @@
   --elev-card: 0 0 #0000;
   --elev-raised: 0 1px 2px rgba(0, 0, 0, 0.4);
   --elev-lift: 0 9px 24px rgba(0, 0, 0, 0.5);
-  --elev-primary: inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  --elev-primary: inset 0 1px 0 rgba(255, 255, 255, 0.55), 0 1px 2px rgba(0, 0, 0, 0.35);
 
   --destructive-foreground: #f2848f;
   --info-foreground: #86adff;
@@ -197,8 +197,8 @@
     --blue-fg: #0b1220;
     --blue-hover: #6b9bff;
     --blue-soft: rgba(74, 134, 255, 0.14);
-    --ink-button: #eceef2;
-    --ink-button-fg: #14161b;
+    --ink-button: #f3f4f6;
+    --ink-button-fg: #111318;
     --dot-red: #e0603a;
     --unread: #ef5a6b;
     --tag-plan-bg: rgba(232, 115, 76, 0.16);    --tag-plan-fg: #f08c63;
@@ -221,7 +221,7 @@
     --elev-card: 0 0 #0000;
     --elev-raised: 0 1px 2px rgba(0, 0, 0, 0.4);
     --elev-lift: 0 9px 24px rgba(0, 0, 0, 0.5);
-    --elev-primary: inset 0 1px 0 rgba(255, 255, 255, 0.25);
+    --elev-primary: inset 0 1px 0 rgba(255, 255, 255, 0.55), 0 1px 2px rgba(0, 0, 0, 0.35);
     --destructive-foreground: #f2848f;
     --info-foreground: #86adff;
     --success-foreground: #56d8a9;
@@ -260,12 +260,12 @@
    duration-(--dur-press) and ease-(--ease-house); a literal duration-200, delay-75 or ease-out in screen code fails the source check.
    Each value's source is in references/motion.md. */
 :root {
-  --dur-press: 120ms;      /* press feedback on a flat control. motion.md section 4 (tap 120 ms) */
-  --dur-reveal: 150ms;     /* a status line, a menu or a tooltip appearing. motion.md sections 3 (Tremor hover card 150 ms) and 4 (menus 150 to 250 ms) */
-  --dur-swap: 200ms;       /* one thing replacing another. motion.md section 4 (swap 200 ms) */
-  --dur-enter: 250ms;      /* something entering. motion.md section 4 (enter 250 ms) */
-  --dur-sheet: 350ms;      /* a sheet or panel travelling. motion.md section 4 (sheet 350 ms) */
-  --ease-house: cubic-bezier(0.23, 1, 0.32, 1); /* the one easing for CSS written by hand. motion.md section 4 */
+  --dur-press: 150ms;      /* press feedback: scale(0.97) 150ms on :active. motion.md v2.0 */
+  --dur-reveal: 180ms;     /* hover / tooltips / small popovers: 180ms. motion.md v2.0 */
+  --dur-swap: 200ms;       /* view/panel swaps: 200ms. motion.md v2.0 */
+  --dur-enter: 220ms;      /* drawer/modal entrance: 220ms. motion.md v2.0 */
+  --dur-sheet: 220ms;      /* sheet/drawer travel: 220ms. motion.md v2.0 */
+  --ease-house: cubic-bezier(0.23, 1, 0.32, 1); /* strong exponential UI ease-out */
 }
 
 /* ---------- 4. Tailwind v4 theme mapping ---------- */

@@ -7,6 +7,7 @@
 @source "../src";
 @source "../../rune/used/components/ui/avatar.tsx";
 @source "../../rune/used/components/ui/badge.tsx";
+@source "../../rune/used/components/ui/border-trail.tsx";
 @source "../../rune/used/components/ui/button.tsx";
 @source "../../rune/used/components/ui/command.tsx";
 @source "../../rune/used/components/ui/dialog.tsx";
@@ -16,8 +17,44 @@
 @source "../../rune/used/components/ui/segmented-control.tsx";
 @source "../../rune/used/components/ui/spinner.tsx";
 @source "../../rune/used/components/ui/tabs.tsx";
+@source "../../rune/used/components/ui/text-shimmer.tsx";
 @source "../../rune/used/components/ui/textarea.tsx";
 @source "../../rune/used/components/kibo-ui/pill/index.tsx";
+
+@layer base {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--hairline) transparent;
+  }
+  *::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  *::-webkit-scrollbar-thumb {
+    background: var(--hairline);
+    border-radius: 9999px;
+  }
+  *::-webkit-scrollbar-thumb:hover {
+    background: var(--icon);
+  }
+  ::selection {
+    background: var(--blue-soft);
+    color: var(--ink);
+  }
+  input, textarea, [contenteditable] {
+    caret-color: var(--blue);
+  }
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+  code, kbd, pre, .font-mono, .tabular-nums, .mono {
+    font-variant-numeric: tabular-nums;
+  }
+}
 
 html, body {
   overflow-x: clip;
@@ -68,8 +105,15 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 .focus-ring:focus-visible {
-  outline: 2px solid var(--blue);
+  outline: 2px solid var(--ring);
   outline-offset: 2px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .hover-surface:hover {
+    background-color: var(--board);
+    color: var(--ink);
+  }
 }
 
 @keyframes pulseSoft {

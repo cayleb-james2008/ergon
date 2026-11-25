@@ -3,10 +3,12 @@
 // 2. History tab: inline .history/ snapshot timeline, line diff, and 1-click restore
 // 3. Audit & Offers tab: 1-click SHA-256 Audit Bundle (.md/.json), receipt chain verification, and active offers
 import { useCallback, useEffect, useState } from "react";
+import { motion, useReducedMotion } from "motion/react";
 import { FileCheck2, FileDown, FolderOpen, History, ShieldCheck, Sparkles, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { instant, sheet } from "@/motion";
 import {
   FileHistoryDiffView,
   WorkspaceFilesBody,
@@ -122,12 +124,18 @@ export function InspectorDrawer({
     });
   }, [open, tab]);
 
+  const reduceMotion = useReducedMotion();
+
   if (!open) return null;
 
   return (
-    <aside
+    <motion.aside
       id="workspace-inspector"
       aria-label="Workspace inspector"
+      initial={reduceMotion ? false : { opacity: 0, x: 6 }}
+      animate={{ opacity: 1, x: 0 }}
+      exit={reduceMotion ? undefined : { opacity: 0, x: 6 }}
+      transition={reduceMotion ? instant : sheet}
       className="flex h-full w-full flex-col border-l border-hairline bg-surface xl:w-[340px] xl:shrink-0"
     >
       <div className="flex h-12 shrink-0 items-center justify-between gap-2 border-b border-hairline px-3.5">
@@ -328,6 +336,6 @@ export function InspectorDrawer({
           </div>
         )}
       </div>
-    </aside>
+    </motion.aside>
   );
 }

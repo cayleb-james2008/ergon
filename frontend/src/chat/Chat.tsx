@@ -1,14 +1,28 @@
 // Claude-Desktop central conversation desk:
-// - Serene centered thread (max-w-3xl) with generous vertical rhythm
-// - 4 1-click Business Deliverable Starter cards when empty
+// - Serene empty start canvas: greeting + elevated floating composer + 1 quiet horizontal row of quick-start chips
 // - Inline Approval & File-Diff cards directly inside the thread (Approve / Hold / Revise)
-// - Live SSE / poll run status banner (#live-run-timeline) + cancel (#cancel-run-btn)
-// - Pinned composer (#composer-input) with multi-file upload & drag-drop
+// - Live SSE / poll run status banner (#live-run-timeline) with TextShimmer + BorderTrail (live work only) + cancel
+// - Elevated floating composer (#composer-input) with multi-file upload & drag-drop
 import { useEffect, useRef, useState } from "react";
-import { Check, Clock, FileCheck2, FolderOpen, Paperclip, Send, Sparkles, Square, XCircle } from "lucide-react";
+import {
+  Check,
+  Clock,
+  FileCheck2,
+  FileSpreadsheet,
+  FileText,
+  FolderOpen,
+  Paperclip,
+  Send,
+  ShieldCheck,
+  Sparkles,
+  Square,
+  XCircle,
+} from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { BorderTrail } from "@/components/ui/border-trail";
+import { TextShimmer } from "@/components/ui/text-shimmer";
 import {
   buildItems,
   Failure,
@@ -47,12 +61,15 @@ export function LiveRunTimeline({
       id="live-run-timeline"
       role="status"
       aria-live="polite"
-      className="flex flex-col gap-3 rounded-card border border-hairline bg-surface p-4"
+      className="relative flex flex-col gap-3 overflow-hidden rounded-card border border-hairline bg-surface p-4 shadow-card"
     >
+      <BorderTrail size={56} className="opacity-70" />
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2.5">
           <span className="pulse-dot size-2.5 rounded-full bg-blue" aria-hidden />
-          <span className="text-sm font-medium text-ink">Agent is working on it</span>
+          <TextShimmer as="span" className="text-sm font-medium">
+            Agent is working on it
+          </TextShimmer>
           {streamMode && (
             <span className="mono rounded-chip bg-track px-2 py-0.5 text-xs text-ink-2">
               {streamMode.toUpperCase()}
@@ -185,6 +202,88 @@ export function Chat({
     });
   };
 
+  const empty = items.length === 0 && !busy;
+
+  const starterIcon = (skill: string) => {
+    if (skill === "write_document") return FileText;
+    if (skill === "make_spreadsheet") return FileSpreadsheet;
+    if (skill === "audit_contract") return ShieldCheck;
+    return Sparkles;
+  };
+
+  const composerNode = (
+    <div className="flex w-full flex-col gap-2">
+      {pendingNote && (
+        <p className="text-xs text-ink-2">
+          Your previous draft was restored below because the connection interrupted before it reached the server.
+        </p>
+      )}
+      {dragOver && (
+        <div className="rounded-sm border border-dashed border-blue bg-blue-soft px-3 py-2 text-xs font-medium text-blue">
+          Drop files to upload them straight into {personName}&rsquo;s workspace.
+        </div>
+      )}
+      <div className="flex flex-col gap-2 rounded-dialog border border-hairline bg-board/45 p-2.5 shadow-card motion-safe:transition-[border-color] motion-safe:duration-(--dur-reveal) motion-safe:ease-(--ease-house)">
+        <Textarea
+          ref={inputRef}
+          id="composer-input"
+          rows={empty ? 3 : 2}
+          value={draft}
+          disabled={busy}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              if (!busy && draft.trim()) onSend();
+            }
+          }}
+          placeholder="Describe a task in plain words — write a report, spreadsheet, or audit…"
+          aria-label="Describe a task for your agent"
+          className="min-h-14 resize-none rounded-xl border border-input bg-surface px-1.5 py-1 text-ui leading-6 text-ink"
+        />
+        <div className="flex flex-wrap items-center justify-between gap-2 pt-0.5">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <input
+              ref={attachRef}
+              type="file"
+              multiple
+              className="hidden"
+              accept=".csv,.md,.txt,.json,.log,.tsv,.py,.ts,.tsx,.js,.rs,.toml,.yaml,.yml,.html,.docx,.xlsx,.pdf"
+              onChange={(e) => {
+                void handleFiles(e.target.files);
+                e.target.value = "";
+              }}
+            />
+            <Button
+              type="button"
+              size="xs"
+              variant="ghost"
+              className="max-md:min-h-11 gap-1.5 text-ink-2 hover:text-ink"
+              onClick={() => attachRef.current?.click()}
+            >
+              <Paperclip className="size-3.5" strokeWidth={1.5} aria-hidden />
+              Attach files
+            </Button>
+            {empty && (
+              <span className="hidden text-xs text-ink-3 sm:inline">Drop spreadsheets or documents anywhere</span>
+            )}
+          </div>
+          <Button
+            id="send-btn"
+            type="button"
+            size="sm"
+            disabled={busy || !draft.trim()}
+            onClick={onSend}
+            className="max-md:min-h-11 gap-1.5"
+          >
+            <Send className="size-3.5" strokeWidth={1.5} aria-hidden />
+            {busy ? "Working…" : "Send"}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+
   return (
     <div
       className="flex h-full min-h-0 flex-col"
@@ -202,25 +301,53 @@ export function Chat({
       }}
     >
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-6 sm:px-6">
-        <div className="mx-auto flex w-full max-w-[780px] flex-col gap-5">
-          {items.length === 0 && !busy ? (
-            <div className="flex flex-col gap-6 pt-4 sm:pt-8">
-              <div className="flex flex-col gap-2">
+        <div
+          className={cn(
+            "mx-auto flex w-full max-w-[740px] flex-col",
+            empty ? "min-h-full justify-center gap-6 py-4" : "gap-5"
+          )}
+        >
+          {empty ? (
+            <>
+              <div className="flex flex-col items-start gap-1.5 sm:items-center sm:text-center">
                 <p className="text-xs font-medium text-ink-2" aria-label={`Working for ${personName}`}>
                   Working for {personName}{role ? ` (${role})` : ""}
                 </p>
-                <h1 className="text-title font-medium tracking-tight text-ink sm:text-[24px] sm:leading-8">
+                <h1 className="text-[24px] leading-8 font-medium tracking-[-0.02em] text-ink sm:text-[28px] sm:leading-9">
                   What would you like finished today?
                 </h1>
-                <p className="max-w-xl text-sm leading-6 text-ink-2">
-                  Pick a deliverable workflow below, drop spreadsheets or documents here, or describe a task in plain words.
-                </p>
-                <div className="flex flex-wrap items-center gap-2 pt-1">
+              </div>
+
+              {composerNode}
+
+              <div className="flex flex-col gap-3 sm:items-center">
+                <section aria-label="Start a task" className="flex flex-wrap items-center gap-2 sm:justify-center">
+                  {cards.map((card, i) => {
+                    const Icon = starterIcon(card.skill);
+                    return (
+                      <button
+                        key={card.prompt + i}
+                        type="button"
+                        data-starter-card
+                        title={card.detail}
+                        onClick={() => {
+                          setDraft(card.prompt);
+                          requestAnimationFrame(() => inputRef.current?.focus());
+                        }}
+                        className="focus-ring inline-flex min-h-11 items-center gap-1.5 rounded-full border border-hairline bg-surface px-3.5 py-1.5 text-xs font-medium text-ink-2 outline-none motion-safe:transition-[transform,background-color,border-color,color] motion-safe:duration-(--dur-press) motion-safe:ease-(--ease-house) motion-safe:active:scale-[0.97] hover:border-ink-3/50 hover:bg-board hover:text-ink md:min-h-9"
+                      >
+                        <Icon className="size-3.5 shrink-0 text-icon" strokeWidth={1.5} aria-hidden />
+                        <span>{card.label || card.category}</span>
+                      </button>
+                    );
+                  })}
+                </section>
+                <div className="flex flex-wrap items-center gap-1.5 sm:justify-center">
                   <Button
                     type="button"
                     size="xs"
-                    variant="outline"
-                    className="max-md:min-h-11 gap-1.5"
+                    variant="ghost"
+                    className="max-md:min-h-11 gap-1.5 text-ink-3 hover:text-ink"
                     onClick={onOpenFiles}
                   >
                     <FolderOpen className="size-3.5" strokeWidth={1.5} aria-hidden />
@@ -229,8 +356,8 @@ export function Chat({
                   <Button
                     type="button"
                     size="xs"
-                    variant="outline"
-                    className="max-md:min-h-11 gap-1.5"
+                    variant="ghost"
+                    className="max-md:min-h-11 gap-1.5 text-ink-3 hover:text-ink"
                     onClick={() => void onExportAuditBundle("md")}
                   >
                     <FileCheck2 className="size-3.5" strokeWidth={1.5} aria-hidden />
@@ -238,41 +365,7 @@ export function Chat({
                   </Button>
                 </div>
               </div>
-
-              <section aria-label="Start a task" className="grid gap-3 sm:grid-cols-2">
-                {cards.map((card, i) => (
-                  <button
-                    key={card.prompt + i}
-                    type="button"
-                    data-starter-card
-                    onClick={() => {
-                      setDraft(card.prompt);
-                      requestAnimationFrame(() => inputRef.current?.focus());
-                    }}
-                    className="focus-ring flex min-h-11 flex-col items-start justify-between gap-2 rounded-card border border-hairline bg-surface p-4 text-left outline-none motion-safe:transition-[background-color,border-color] motion-safe:duration-(--dur-press) hover:border-ink-3/40 hover:bg-board"
-                  >
-                    <div className="flex w-full items-center justify-between gap-2">
-                      <span
-                        className={cn(
-                          "rounded-chip px-2 py-0.5 text-xs font-medium",
-                          card.tone === "ops" && "bg-tag-ops-bg text-tag-ops-fg",
-                          card.tone === "mint" && "bg-tag-mint-bg text-tag-mint-fg",
-                          card.tone === "plan" && "bg-tag-plan-bg text-tag-plan-fg",
-                          card.tone === "research" && "bg-tag-research-bg text-tag-research-fg"
-                        )}
-                      >
-                        {card.category}
-                      </span>
-                      <Sparkles className="size-3.5 text-icon" strokeWidth={1.5} aria-hidden />
-                    </div>
-                    <div className="flex flex-col gap-1">
-                      <span className="text-sm font-medium text-ink">{card.prompt}</span>
-                      <span className="text-xs leading-5 text-ink-2">{card.detail}</span>
-                    </div>
-                  </button>
-                ))}
-              </section>
-            </div>
+            </>
           ) : (
             <div id="thread" className="flex flex-col gap-4" aria-live="polite">
               {items.map((item, idx) => {
@@ -335,75 +428,11 @@ export function Chat({
         </div>
       </div>
 
-      <div className="safe-b shrink-0 border-t border-hairline bg-surface px-4 py-3 sm:px-6">
-        <div className="mx-auto flex w-full max-w-[780px] flex-col gap-2">
-          {pendingNote && (
-            <p className="text-xs text-ink-2">
-              Your previous draft was restored below because the connection interrupted before it reached the server.
-            </p>
-          )}
-          {dragOver && (
-            <div className="rounded-sm border border-dashed border-blue bg-blue-soft px-3 py-2 text-xs font-medium text-blue">
-              Drop files to upload them straight into {personName}&rsquo;s workspace.
-            </div>
-          )}
-          <div className="flex flex-col gap-2 rounded-card border border-hairline bg-board/40 p-2.5">
-            <Textarea
-              ref={inputRef}
-              id="composer-input"
-              rows={2}
-              value={draft}
-              disabled={busy}
-              onChange={(e) => setDraft(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  if (!busy && draft.trim()) onSend();
-                }
-              }}
-              placeholder="Describe a task in plain words — write a report, spreadsheet, or audit…"
-              aria-label="Describe a task for your agent"
-              className="min-h-14 resize-none rounded-md border border-input bg-surface px-3 py-2 text-ui leading-6"
-            />
-            <div className="flex flex-wrap items-center justify-between gap-2 px-1">
-              <div className="flex items-center gap-1.5">
-                <input
-                  ref={attachRef}
-                  type="file"
-                  multiple
-                  className="hidden"
-                  accept=".csv,.md,.txt,.json,.log,.tsv,.py,.ts,.tsx,.js,.rs,.toml,.yaml,.yml,.html,.docx,.xlsx,.pdf"
-                  onChange={(e) => {
-                    void handleFiles(e.target.files);
-                    e.target.value = "";
-                  }}
-                />
-                <Button
-                  type="button"
-                  size="xs"
-                  variant="ghost"
-                  className="max-md:min-h-11 gap-1.5 text-ink-2 hover:text-ink"
-                  onClick={() => attachRef.current?.click()}
-                >
-                  <Paperclip className="size-3.5" strokeWidth={1.5} aria-hidden />
-                  Attach files
-                </Button>
-              </div>
-              <Button
-                id="send-btn"
-                type="button"
-                size="sm"
-                disabled={busy || !draft.trim()}
-                onClick={onSend}
-                className="max-md:min-h-11 gap-1.5 disabled:border disabled:border-hairline disabled:bg-track disabled:text-ink-2"
-              >
-                <Send className="size-3.5" strokeWidth={1.5} aria-hidden />
-                {busy ? "Working…" : "Send"}
-              </Button>
-            </div>
-          </div>
+      {!empty && (
+        <div className="safe-b shrink-0 border-t border-hairline bg-canvas px-4 py-3 sm:px-6">
+          <div className="mx-auto w-full max-w-[740px]">{composerNode}</div>
         </div>
-      </div>
+      )}
     </div>
   );
 }
