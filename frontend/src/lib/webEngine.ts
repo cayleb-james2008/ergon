@@ -10,7 +10,7 @@
 // ZERO hardcoded fixture replies, ZERO fixture demo pills, ZERO Rune jargon.
 import { parseCsv } from "@/shell/WorkspaceFiles";
 import { CANONICAL_SKILLS } from "@/lib/skillsCatalog";
-import { buildSignedPlaybookPack, buildSignedReceipt, sha256Hex, verifyAndParsePlaybookPack } from "@/lib/receiptExport";
+import { buildDeterministicPlaybookPreview, buildSignedPlaybookPack, buildSignedReceipt, sha256Hex, verifyAndParsePlaybookPack } from "@/lib/receiptExport";
 import { extractCitations } from "@/lib/words";
 import { buildAuditBundle } from "@/lib/auditBundle";
 import { computeLineDiff } from "@/lib/diff";
@@ -1890,11 +1890,11 @@ export async function installBrowserEngine(): Promise<void> {
     const st = activeStore();
     const byok = loadByok();
 
-    if (method === "GET" && path === "/api/version") return jsonRes({ name: "ergon", version: "0.20.0" });
-    if (method === "GET" && path === "/api/update") return jsonRes({ current: "0.20.0", available: false, mode: "off", checked_at: Math.floor(Date.now() / 1000) });
+    if (method === "GET" && path === "/api/version") return jsonRes({ name: "ergon", version: "0.21.0" });
+    if (method === "GET" && path === "/api/update") return jsonRes({ current: "0.21.0", available: false, mode: "off", checked_at: Math.floor(Date.now() / 1000) });
     if (method === "GET" && path === "/api/status") {
       return jsonRes({
-        version: "0.20.0",
+        version: "0.21.0",
         model_configured: true,
         model: byok.engine_mode === "byok" && byok.model_id ? byok.model_id : "browser-workspace-engine",
         model_base_url: byok.engine_mode === "byok" ? byok.model_base_url : "indexeddb://local",
@@ -2082,7 +2082,7 @@ export async function installBrowserEngine(): Promise<void> {
       const pid = decodeURIComponent(path.slice("/api/playbooks/".length, -"/export".length)).trim();
       const rt = st.routines.find((x) => x.id === pid);
       if (!rt) return jsonRes({ error: "playbook not found" }, 404);
-      const built = await buildSignedPlaybookPack(rt, "0.20.0");
+      const built = await buildSignedPlaybookPack(rt, "0.21.0");
       return new Response(built.json, {
         status: 200,
         headers: {
@@ -2120,6 +2120,19 @@ export async function installBrowserEngine(): Promise<void> {
       st.routines.unshift(created);
       await persist();
       return jsonRes({ routine: created, sha256: checked.sha256, verified: true }, 201);
+    }
+    if (method === "POST" && (path.startsWith("/api/playbooks/") || path.startsWith("/api/routines/")) && path.endsWith("/preview")) {
+      const prefix = path.startsWith("/api/playbooks/") ? "/api/playbooks/" : "/api/routines/";
+      const pid = decodeURIComponent(path.slice(prefix.length, -"/preview".length)).trim();
+      const rt = st.routines.find((x) => x.id === pid);
+      if (!rt) return jsonRes({ error: "routine not found" }, 404);
+      const preview = buildDeterministicPlaybookPreview(
+        rt,
+        Object.keys(st.files),
+        (fp) => (st.fileHistory[fp] ?? []).length,
+        Object.keys(st.fileHistory).length
+      );
+      return jsonRes(preview, 200);
     }
     if (method === "GET" && path === "/api/search") {
       const q = (u.searchParams.get("q") || "").trim().toLowerCase();

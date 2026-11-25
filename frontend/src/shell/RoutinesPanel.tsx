@@ -12,11 +12,13 @@ import {
   ChevronRight,
   Clock,
   Download,
+  Eye,
   FileDown,
   History,
   Pause,
   Play,
   Plus,
+  ShieldCheck,
   Trash2,
   Upload,
 } from "lucide-react";
@@ -32,6 +34,7 @@ import {
   formatCountdown,
   hasV050Api,
   hasV070Api,
+  type PlaybookPreviewResult,
   type Routine,
   type RoutineRunRecord,
   type SchedulerStatus,
@@ -74,6 +77,7 @@ function RoutinesBody({
   onRunNow,
   onOpenThread,
   onImportPlaybook,
+  onPreviewPlaybook,
 }: {
   routines: Routine[];
   skills: SkillMeta[];
@@ -99,10 +103,14 @@ function RoutinesBody({
   onRunNow: (routine: Routine) => Promise<void>;
   onOpenThread?: (threadId: string) => void;
   onImportPlaybook?: (rawText: string) => Promise<{ ok: boolean; sha256?: string; error?: string }>;
+  onPreviewPlaybook?: (routine: Routine) => Promise<PlaybookPreviewResult | null>;
 }) {
   const { isOpen, setIsOpen } = usePanelModalClose();
   const importInputRef = useRef<HTMLInputElement | null>(null);
   const [importing, setImporting] = useState(false);
+  const [previewById, setPreviewById] = useState<Record<string, PlaybookPreviewResult>>({});
+  const [previewOpenId, setPreviewOpenId] = useState<string | null>(null);
+  const [previewLoadingId, setPreviewLoadingId] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState("");
   const [schedule, setSchedule] = useState(SCHEDULES[2]);
@@ -261,6 +269,26 @@ function RoutinesBody({
       await onImportPlaybook(rawText);
     } finally {
       setImporting(false);
+    }
+  };
+
+  const handleTogglePreview = async (rt: Routine) => {
+    if (previewOpenId === rt.id) {
+      setPreviewOpenId(null);
+      return;
+    }
+    setPreviewOpenId(rt.id);
+    if (!onPreviewPlaybook) return;
+    setPreviewLoadingId(rt.id);
+    try {
+      const res = await onPreviewPlaybook(rt);
+      if (res) {
+        setPreviewById((prev) => ({ ...prev, [rt.id]: res }));
+      } else {
+        setPreviewOpenId(null);
+      }
+    } finally {
+      setPreviewLoadingId(null);
     }
   };
 
@@ -524,6 +552,9 @@ function RoutinesBody({
             const histOpen = Boolean(expandedHistory[rt.id]);
             const runs = historyByRoutine[rt.id] ?? rt.recent_runs ?? [];
             const loadingRuns = Boolean(historyLoading[rt.id]);
+            const previewOpen = previewOpenId === rt.id;
+            const previewData = previewById[rt.id];
+            const loadingPreview = previewLoadingId === rt.id;
 
             return (
               <li
@@ -669,6 +700,21 @@ function RoutinesBody({
                       <Download className="size-3.5" strokeWidth={1.5} aria-hidden />
                       Export
                     </Button>
+                    {onPreviewPlaybook && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={previewOpen ? "default" : "outline"}
+                        data-action="preview-playbook"
+                        aria-expanded={previewOpen}
+                        aria-label={`Preview playbook ${rt.name}`}
+                        className="max-md:min-h-11"
+                        onClick={() => handleTogglePreview(rt)}
+                      >
+                        <Eye className="size-3.5" strokeWidth={1.5} aria-hidden />
+                        {previewOpen ? "Hide preview" : "Preview"}
+                      </Button>
+                    )}
                     <Button
                       type="button"
                       size="sm"
@@ -682,6 +728,130 @@ function RoutinesBody({
                     </Button>
                   </div>
                 </div>
+
+                {previewOpen && (
+                  <div
+                    id="playbook-preview-drawer"
+                    data-playbook-preview={rt.id}
+                    className="flex flex-col gap-2.5 rounded-sm border border-hairline bg-board/40 p-3"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-xs font-medium text-ink">Dry-run preview</span>
+                        <Badge variant="outline" size="sm" className="mono text-xs text-ink-2">
+                          Zero side effects
+                        </Badge>
+                      </div>
+                      <Pill
+                        id="playbook-rollback-badge"
+                        variant="secondary"
+                        className="bg-pill-active-bg px-2.5 py-0.5 text-xs font-medium text-pill-active-fg"
+                      >
+                        <ShieldCheck className="size-3.5" strokeWidth={1.5} aria-hidden />
+                        <span>{previewData?.rollback.badge ?? "Reversible via .history/"}</span>
+                      </Pill>
+                    </div>
+
+                    {loadingPreview && !previewData ? (
+                      <p className="text-xs text-ink-2">Inspecting playbook steps and workspace files…</p>
+                    ) : previewData ? (
+                      <>
+                        <div className="flex flex-col gap-1.5">
+                          <span className="text-xs font-medium text-ink-2">
+                            Ordered steps ({previewData.step_count})
+                          </span>
+                          <ol className="flex flex-col gap-1.5 rounded-sm border border-hairline bg-surface p-2.5 text-xs">
+                            {previewData.steps.map((st) => (
+                              <li key={st.step} className="flex flex-col gap-1">
+                                <div className="flex flex-wrap items-center justify-between gap-1.5">
+                                  <span className="font-medium text-ink">
+                                    <span className="mono mr-1.5 text-ink-3">{st.step}.</span>
+                                    {st.prompt}
+                                  </span>
+                                  <div className="flex flex-wrap items-center gap-1">
+                                    {st.skill_id && (
+                                      <Badge variant="outline" size="sm" className="mono text-xs">
+                                        {st.skill_id}
+                                      </Badge>
+                                    )}
+                                    <Badge variant="outline" size="sm" className="mono text-xs text-ink-2">
+                                      {st.mode === "read_and_write" ? "read + write" : "read-only"}
+                                    </Badge>
+                                  </div>
+                                </div>
+                                {st.predicted_outputs.length > 0 && (
+                                  <div className="mono pl-4 text-xs text-ink-2">
+                                    Output: {st.predicted_outputs.join(" · ")}
+                                  </div>
+                                )}
+                              </li>
+                            ))}
+                          </ol>
+                        </div>
+
+                        <div className="flex flex-col gap-1.5">
+                          <span className="text-xs font-medium text-ink-2">
+                            Expected file impact paths ({previewData.file_impacts.length})
+                          </span>
+                          {previewData.file_impacts.length === 0 ? (
+                            <p className="text-xs text-ink-2">
+                              No specific workspace file paths detected yet; runs against active workspace context.
+                            </p>
+                          ) : (
+                            <ul className="divide-y divide-hairline rounded-sm border border-hairline bg-surface text-xs">
+                              {previewData.file_impacts.map((imp) => (
+                                <li
+                                  key={imp.path}
+                                  className="flex flex-wrap items-center justify-between gap-2 px-2.5 py-1.5"
+                                >
+                                  <span className="mono truncate font-medium text-ink">{imp.path}</span>
+                                  <div className="flex flex-wrap items-center gap-1.5">
+                                    <Badge variant="outline" size="sm" className="mono text-xs text-ink-2">
+                                      {imp.role.replace(/_/g, " ")}
+                                    </Badge>
+                                    <Badge variant="outline" size="sm" className="mono text-xs text-ink-2">
+                                      {imp.exists_in_workspace ? "in workspace" : "created on run"}
+                                    </Badge>
+                                    <Badge variant="outline" size="sm" className="mono text-xs text-ink-2">
+                                      {imp.history_revisions} .history/ snaps
+                                    </Badge>
+                                  </div>
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                        </div>
+
+                        <p className="text-xs leading-5 text-ink-2">{previewData.rollback.note}</p>
+
+                        <div className="flex flex-wrap items-center justify-end gap-2">
+                          <Button
+                            type="button"
+                            size="xs"
+                            variant="outline"
+                            onClick={() => setPreviewOpenId(null)}
+                          >
+                            Close preview
+                          </Button>
+                          <Button
+                            type="button"
+                            size="xs"
+                            disabled={runningId === rt.id}
+                            onClick={async () => {
+                              setRunningId(rt.id);
+                              setIsOpen(false);
+                              await onRunNow(rt);
+                              setRunningId(null);
+                            }}
+                          >
+                            <Play className="size-3" strokeWidth={1.5} aria-hidden />
+                            Run now
+                          </Button>
+                        </div>
+                      </>
+                    ) : null}
+                  </div>
+                )}
 
                 {histOpen && (
                   <div
@@ -796,6 +966,7 @@ export function RoutinesPanel({
   onRunNow,
   onOpenThread,
   onImportPlaybook,
+  onPreviewPlaybook,
 }: {
   routines: Routine[];
   skills: SkillMeta[];
@@ -823,6 +994,7 @@ export function RoutinesPanel({
   onRunNow: (routine: Routine) => Promise<void>;
   onOpenThread?: (threadId: string) => void;
   onImportPlaybook?: (rawText: string) => Promise<{ ok: boolean; sha256?: string; error?: string }>;
+  onPreviewPlaybook?: (routine: Routine) => Promise<PlaybookPreviewResult | null>;
 }) {
   return (
     <PanelModal
@@ -849,6 +1021,7 @@ export function RoutinesPanel({
         onRunNow={onRunNow}
         onOpenThread={onOpenThread}
         onImportPlaybook={onImportPlaybook}
+        onPreviewPlaybook={onPreviewPlaybook}
       />
     </PanelModal>
   );

@@ -674,3 +674,292 @@ pub fn import_playbook_pack(
     .map_err(|e| (400, e))?;
     Ok((routine, expected_sha))
 }
+
+fn infer_step_skill_and_mode(
+    step_text: &str,
+    fallback_skill: Option<&str>,
+    is_first: bool,
+) -> (Option<String>, &'static str, Option<&'static str>) {
+    let lower = step_text.to_ascii_lowercase();
+    let explicit_skills = [
+        "reconcile_ledger",
+        "clean_dataset",
+        "audit_contract",
+        "summarize_meeting",
+        "triage_inbox",
+        "compare_documents",
+        "draft_brief",
+        "extract_tables",
+        "make_spreadsheet",
+        "write_document",
+        "update_memory",
+        "research",
+    ];
+    let matched = explicit_skills
+        .iter()
+        .find(|&&id| lower.contains(id))
+        .map(|s| (*s).to_string())
+        .or_else(|| {
+            if lower.contains("ledger") || lower.contains("reconcil") || lower.contains("expense") {
+                Some("reconcile_ledger".to_string())
+            } else if lower.contains("clean") || lower.contains("dataset") || lower.contains("normaliz") {
+                Some("clean_dataset".to_string())
+            } else if lower.contains("contract") || lower.contains("clause") {
+                Some("audit_contract".to_string())
+            } else if lower.contains("meeting") || lower.contains("action item") {
+                Some("summarize_meeting".to_string())
+            } else if lower.contains("inbox") || lower.contains("triage") || lower.contains("email") {
+                Some("triage_inbox".to_string())
+            } else if lower.contains("compare") || lower.contains("diff") {
+                Some("compare_documents".to_string())
+            } else if lower.contains("spreadsheet") || lower.contains(".xlsx") {
+                Some("make_spreadsheet".to_string())
+            } else if lower.contains("docx") || lower.contains("word") || lower.contains("memo") || lower.contains("write") {
+                Some("write_document".to_string())
+            } else if lower.contains("table") || lower.contains("extract") {
+                Some("extract_tables".to_string())
+            } else if lower.contains("brief") || lower.contains("summary") {
+                Some("draft_brief".to_string())
+            } else if lower.contains("memory") {
+                Some("update_memory".to_string())
+            } else if lower.contains("research") {
+                Some("research".to_string())
+            } else if is_first {
+                fallback_skill.map(str::to_string)
+            } else {
+                None
+            }
+        });
+
+    let writes = lower.contains("export")
+        || lower.contains("write")
+        || lower.contains("save")
+        || lower.contains("create")
+        || lower.contains("clean")
+        || lower.contains(".docx")
+        || lower.contains(".xlsx")
+        || matches!(
+            matched.as_deref(),
+            Some(
+                "clean_dataset"
+                    | "reconcile_ledger"
+                    | "make_spreadsheet"
+                    | "write_document"
+                    | "draft_brief"
+                    | "update_memory"
+            )
+        );
+
+    let output_hint = match matched.as_deref() {
+        Some("clean_dataset") => Some("Cleaned dataset (.csv)"),
+        Some("reconcile_ledger") => Some("Expense reconciliation report (.md)"),
+        Some("make_spreadsheet") => Some("Typed workbook (.xlsx)"),
+        Some("write_document") => Some("Formatted deliverable (.docx / .md)"),
+        Some("draft_brief") => Some("Executive brief (.md)"),
+        Some("audit_contract") => {
+            if writes {
+                Some("Contract audit findings (.md)")
+            } else {
+                None
+            }
+        }
+        Some("summarize_meeting") => Some("Meeting digest & follow-up (.md)"),
+        Some("update_memory") => Some("Standing memory rules (memory.md)"),
+        _ if writes => Some("Workspace deliverable artifact"),
+        _ => None,
+    };
+
+    (
+        matched,
+        if writes { "read_and_write" } else { "read_only" },
+        output_hint,
+    )
+}
+
+fn extract_step_paths(
+    step_text: &str,
+    workspace_paths: &[String],
+    expected_inputs: &[String],
+    include_expected: bool,
+) -> Vec<String> {
+    const EXTS: [&str; 12] = [
+        ".csv", ".tsv", ".md", ".markdown", ".txt", ".json", ".xlsx", ".docx", ".pdf", ".pptx",
+        ".yaml", ".log",
+    ];
+    let mut found: Vec<String> = Vec::new();
+    let mut push_unique = |cand: &str| {
+        let clean = cand
+            .trim_matches(|c: char| {
+                matches!(
+                    c,
+                    '"' | '\'' | '`' | '(' | ')' | '[' | ']' | '{' | '}' | ',' | ';'
+                )
+            })
+            .trim_end_matches('.');
+        let clean = clean
+            .split_once(":L")
+            .map(|(p, _)| p)
+            .unwrap_or(clean);
+        if clean.is_empty() || clean.starts_with('/') || clean.contains("..") {
+            return;
+        }
+        if !found.iter().any(|x| x == clean) {
+            found.push(clean.to_string());
+        }
+    };
+
+    if include_expected {
+        for inp in expected_inputs {
+            push_unique(inp);
+        }
+    }
+    for tok in step_text.split_whitespace() {
+        let low = tok.to_ascii_lowercase();
+        if EXTS.iter().any(|ext| {
+            low.ends_with(ext)
+                || low.contains(&format!("{ext}:l"))
+                || low.contains(&format!("{ext},"))
+                || low.contains(&format!("{ext})"))
+        }) {
+            push_unique(tok);
+        }
+    }
+    let lower_step = step_text.to_ascii_lowercase();
+    for ws_path in workspace_paths {
+        let base = ws_path.rsplit('/').next().unwrap_or(ws_path);
+        if (lower_step.contains(&ws_path.to_ascii_lowercase())
+            || lower_step.contains(&base.to_ascii_lowercase()))
+            && !found.iter().any(|x| x == ws_path)
+        {
+            found.push(ws_path.clone());
+        }
+    }
+    found
+}
+
+/// Deterministic, zero-side-effect dry-run preview of a saved routine/playbook:
+/// expands ordered steps, matches workspace inputs & predicted output paths,
+/// and reports `.history/` rollback readiness before execution.
+pub fn preview_playbook_routine(
+    person_data_dir: &Path,
+    workspace_dir: &Path,
+    workspace_paths: &[String],
+    id: &str,
+) -> Option<Value> {
+    let rt = get_routine(person_data_dir, id)?;
+    let name = rt["name"].as_str().unwrap_or("Playbook").trim();
+    let prompt = rt["prompt"].as_str().unwrap_or("").trim();
+    let schedule = rt["schedule"].as_str().unwrap_or("manual").trim();
+    let fallback_skill = rt["skill_id"].as_str().map(str::trim).filter(|s| !s.is_empty());
+    let pack_deliverables = rt["pack_deliverables"].as_bool().unwrap_or(false);
+    let expected_inputs = clean_playbook_list(rt["expected_inputs"].as_array(), 64);
+    let mut raw_steps = clean_playbook_list(rt["steps"].as_array(), 2000);
+    if raw_steps.is_empty() && !prompt.is_empty() {
+        raw_steps.push(prompt.to_string());
+    }
+
+    let mut steps_out = Vec::with_capacity(raw_steps.len());
+    let mut impact_order: Vec<(String, &'static str, Option<String>)> = Vec::new();
+    let mut push_impact = |path: String, role: &'static str, step_label: Option<String>| {
+        if let Some(existing) = impact_order.iter_mut().find(|x| x.0 == path) {
+            if role == "read_and_update" || role == "deliverable_output" {
+                existing.1 = role;
+            }
+            return;
+        }
+        impact_order.push((path, role, step_label));
+    };
+
+    for (idx, step_text) in raw_steps.iter().enumerate() {
+        let (matched_skill, mode, output_hint) =
+            infer_step_skill_and_mode(step_text, fallback_skill, idx == 0);
+        let refs = extract_step_paths(step_text, workspace_paths, &expected_inputs, idx == 0);
+        let mut predicted_outputs: Vec<String> = Vec::new();
+        if let Some(hint) = output_hint {
+            predicted_outputs.push(hint.to_string());
+        }
+        if pack_deliverables && idx + 1 == raw_steps.len() {
+            predicted_outputs.push("Playbook Deliverable Pack.md".to_string());
+        }
+        for r in &refs {
+            let role = if mode == "read_and_write" && r.ends_with(".csv") && matched_skill.as_deref() == Some("clean_dataset") {
+                "read_and_update"
+            } else {
+                "input"
+            };
+            push_impact(r.clone(), role, Some(format!("Step {}", idx + 1)));
+        }
+        steps_out.push(json!({
+            "step": idx + 1,
+            "prompt": step_text,
+            "skill_id": matched_skill,
+            "mode": mode,
+            "referenced_paths": refs,
+            "predicted_outputs": predicted_outputs,
+        }));
+    }
+
+    if pack_deliverables {
+        push_impact(
+            "Playbook Deliverable Pack.md".to_string(),
+            "deliverable_pack",
+            Some("Final step".to_string()),
+        );
+    }
+
+    // If no concrete file paths were referenced, surface up to 3 relevant workspace files as candidate context.
+    if impact_order.is_empty() {
+        for ws in workspace_paths.iter().take(3) {
+            impact_order.push((ws.clone(), "workspace_context", Some("Context".to_string())));
+        }
+    }
+
+    let mut existing_snapshots = crate::file_history::list_tracked_files(person_data_dir).len();
+    let mut file_impacts = Vec::with_capacity(impact_order.len());
+    for (path, role, step_label) in &impact_order {
+        let exists = workspace_paths.iter().any(|p| p == path)
+            || crate::tools::sandbox_path(workspace_dir, path)
+                .map(|p| p.is_file())
+                .unwrap_or(false);
+        let revs = crate::file_history::revision_count(person_data_dir, workspace_dir, path);
+        if revs > 0 {
+            existing_snapshots = existing_snapshots.max(revs);
+        }
+        file_impacts.push(json!({
+            "path": path,
+            "role": role,
+            "step": step_label,
+            "exists_in_workspace": exists,
+            "history_revisions": revs,
+            "reversible": true,
+        }));
+    }
+
+    let matched_ws: Vec<&String> = workspace_paths
+        .iter()
+        .filter(|p| impact_order.iter().any(|(imp, _, _)| imp == *p))
+        .collect();
+
+    Some(json!({
+        "routine_id": id,
+        "name": name,
+        "schedule": schedule,
+        "dry_run": true,
+        "zero_side_effects": true,
+        "step_count": steps_out.len(),
+        "steps": steps_out,
+        "expected_inputs": expected_inputs,
+        "matched_workspace_files": matched_ws,
+        "file_impacts": file_impacts,
+        "pack_deliverables": pack_deliverables,
+        "rollback": {
+            "safe": true,
+            "badge": "Reversible via .history/",
+            "history_snapshots_enabled": true,
+            "existing_snapshots": existing_snapshots,
+            "reversible_paths": file_impacts.len(),
+            "note": "Dry-run preview inspects your workspace read-only. Every existing file modified during execution is snapshotted into .history/ first for 1-click restore.",
+        },
+        "generated_ms": records::now_millis(),
+    }))
+}

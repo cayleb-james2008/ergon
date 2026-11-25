@@ -3911,6 +3911,49 @@ fn try_route_knowledge_and_routines(
                 Err((status, msg)) => respond_json(stream, status, &json!({"error": msg})),
             }
         }
+        ("POST", path)
+            if (path.starts_with("/api/playbooks/") || path.starts_with("/api/routines/"))
+                && path.ends_with("/preview") =>
+        {
+            let prefix = if path.starts_with("/api/playbooks/") {
+                "/api/playbooks/"
+            } else {
+                "/api/routines/"
+            };
+            let raw_id = path
+                .strip_prefix(prefix)
+                .and_then(|r| r.strip_suffix("/preview"))
+                .unwrap_or("")
+                .trim();
+            let id = percent_decode(raw_id).trim().to_string();
+            if id.is_empty() || id.contains('/') || id.contains("..") {
+                return Some(respond_json(
+                    stream,
+                    400,
+                    &json!({"error": "invalid routine id"}),
+                ));
+            }
+            let idx = state.search_cache.get(
+                &person.id,
+                &runtime.cfg.data_dir,
+                &runtime.cfg.workspace_dir,
+                &runtime.cfg.memory_path,
+            );
+            let (_, ws_files) = idx.list_files(0, Some(500), "");
+            let ws_paths: Vec<String> = ws_files
+                .into_iter()
+                .filter_map(|v| v["path"].as_str().map(str::to_string))
+                .collect();
+            match routines::preview_playbook_routine(
+                &runtime.cfg.data_dir,
+                &runtime.cfg.workspace_dir,
+                &ws_paths,
+                &id,
+            ) {
+                Some(preview) => respond_json(stream, 200, &preview),
+                None => respond_json(stream, 404, &json!({"error": "routine not found"})),
+            }
+        }
         ("GET", "/api/decisions") => {
             let decisions = records::load_decisions(&runtime.cfg.data_dir);
             respond_json(stream, 200, &json!({"decisions": decisions}))

@@ -15,6 +15,7 @@ import {
   type LiveRunStep,
   type Msg,
   type Person,
+  type PlaybookPreviewResult,
   type Routine,
   type RoutineRunRecord,
   type SchedulerStatus,
@@ -25,7 +26,7 @@ import {
   type WorkspaceFile,
 } from "@/lib/api";
 import { CANONICAL_SKILLS, mergeServerSkills, type SkillMeta } from "@/lib/skillsCatalog";
-import { MAX_PLAYBOOK_PACK_BYTES, verifyAndParsePlaybookPack } from "@/lib/receiptExport";
+import { buildDeterministicPlaybookPreview, MAX_PLAYBOOK_PACK_BYTES, verifyAndParsePlaybookPack } from "@/lib/receiptExport";
 import { buildStarterCards, toolLabel, type StarterCard } from "@/lib/words";
 import { threadState } from "@/chat/Entry";
 import type { Recent } from "@/chat/Chat";
@@ -502,6 +503,31 @@ export function useErgon() {
       return { ok: true, sha256: verified.sha256 };
     },
     [loadRoutines]
+  );
+
+  const previewPlaybook = useCallback(
+    async (routine: Routine): Promise<PlaybookPreviewResult | null> => {
+      if (hasV050Api(statusRef.current, "routines")) {
+        const r = await call<PlaybookPreviewResult>(
+          `/api/playbooks/${encodeURIComponent(routine.id)}/preview`,
+          { method: "POST", body: {} }
+        );
+        if (r.ok) {
+          return r.data;
+        }
+        if (r.status !== 404 && r.status !== 405) {
+          toast.error(r.error || "Could not preview playbook.");
+          return null;
+        }
+      }
+      return buildDeterministicPlaybookPreview(
+        routine,
+        files.map((f) => f.path),
+        () => 0,
+        0
+      );
+    },
+    [files]
   );
 
   const uploadFile = useCallback(async (path: string, content: string, silent = false, encoding?: "base64"): Promise<boolean> => {
@@ -1035,7 +1061,7 @@ export function useErgon() {
     todayCount, learnedCount, suiteCount, files, lastUploaded, setLastUploaded, skills, routines, scheduler, routineHistoryRev,
     send, sendPrompt, cancelRun, openThread, newThread, switchPerson, refreshPerson, showRun,
     loadThreads, loadStatus, loadPeople, refreshCounts, loadRecent, loadStarters,
-    loadFiles, uploadFile, uploadFiles, loadSkills, loadRoutines, createRoutine, deleteRoutine, importPlaybook,
+    loadFiles, uploadFile, uploadFiles, loadSkills, loadRoutines, createRoutine, deleteRoutine, importPlaybook, previewPlaybook,
     toggleRoutine, loadRoutineHistory, runRoutineNow, setOnRoutineFired,
     setSideError, setRecovered,
   };

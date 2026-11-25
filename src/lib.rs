@@ -3151,4 +3151,91 @@ mod v010_hardening_tests {
 
         let _ = std::fs::remove_dir_all(&dir);
     }
+
+    #[test]
+    fn playbook_dry_run_preview_reports_steps_impacts_and_rollback_without_writes() {
+        let dir = std::env::temp_dir().join(format!(
+            "ergon-preview-v021-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let ws = dir.join("workspace");
+        std::fs::create_dir_all(&ws).unwrap();
+        let orig_csv = "vendor,amount\nAcme,120.50\n";
+        std::fs::write(ws.join("ledger.csv"), orig_csv).unwrap();
+        file_history::record_revision(&dir, &ws, "ledger.csv", "seed").unwrap();
+
+        let mut cfg = Config::from_env();
+        cfg.data_dir = dir.clone();
+        cfg.workspace_dir = ws.clone();
+        cfg.memory_path = dir.join("memory.md");
+        std::fs::write(&cfg.memory_path, "- Role: Finance\n").unwrap();
+
+        let created = routines::create_playbook_routine(
+            &dir,
+            "Month-End Close",
+            "Clean ledger.csv with clean_dataset",
+            "weekly mon",
+            None,
+            Some("reconcile_ledger"),
+            true,
+            &routines::PlaybookOptions {
+                steps: vec![
+                    "Clean ledger.csv with clean_dataset".to_string(),
+                    "Draft executive close memo and export Word (.docx)".to_string(),
+                ],
+                expected_inputs: vec!["ledger.csv".to_string()],
+                pack_deliverables: true,
+            },
+        )
+        .unwrap();
+        let rt_id = created["id"].as_str().unwrap().to_string();
+
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        std::thread::spawn(move || {
+            let _ = serve(listener, cfg);
+        });
+        std::thread::sleep(std::time::Duration::from_millis(50));
+
+        let send_post = |target: &str| -> String {
+            let mut s = std::net::TcpStream::connect(addr).unwrap();
+            let req = format!(
+                "POST {target} HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nContent-Type: application/json\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{{}}",
+                addr.port()
+            );
+            s.write_all(req.as_bytes()).unwrap();
+            let mut out = String::new();
+            s.read_to_string(&mut out).unwrap();
+            out
+        };
+
+        for path in [
+            format!("/api/playbooks/{rt_id}/preview"),
+            format!("/api/routines/{rt_id}/preview"),
+        ] {
+            let resp = send_post(&path);
+            assert!(resp.starts_with("HTTP/1.1 200 OK"), "{resp}");
+            let body: Value = serde_json::from_str(resp.split("\r\n\r\n").nth(1).unwrap()).unwrap();
+            assert_eq!(body["dry_run"], json!(true));
+            assert_eq!(body["zero_side_effects"], json!(true));
+            assert_eq!(body["step_count"], json!(2));
+            assert_eq!(body["steps"][0]["skill_id"], json!("clean_dataset"));
+            assert_eq!(body["steps"][1]["skill_id"], json!("write_document"));
+            assert_eq!(body["rollback"]["safe"], json!(true));
+            assert_eq!(body["rollback"]["badge"], json!("Reversible via .history/"));
+            let impacts = body["file_impacts"].as_array().unwrap();
+            assert!(impacts.iter().any(|x| x["path"] == "ledger.csv" && x["exists_in_workspace"] == true && x["history_revisions"] == 1));
+            assert!(impacts.iter().any(|x| x["path"] == "Playbook Deliverable Pack.md" && x["role"] == "deliverable_pack"));
+        }
+
+        // Confirm zero workspace mutations occurred.
+        assert_eq!(std::fs::read_to_string(ws.join("ledger.csv")).unwrap(), orig_csv);
+        assert!(!ws.join("Playbook Deliverable Pack.md").exists());
+        assert!(send_post("/api/playbooks/rtn-missing/preview").starts_with("HTTP/1.1 404 Not Found"));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

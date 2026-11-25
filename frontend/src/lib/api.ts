@@ -181,6 +181,44 @@ export type Routine = {
   pack_deliverables?: boolean;
   recent_runs?: RoutineRunRecord[];
 };
+export type PlaybookPreviewStep = {
+  step: number;
+  prompt: string;
+  skill_id?: string | null;
+  mode: "read_only" | "read_and_write";
+  referenced_paths: string[];
+  predicted_outputs: string[];
+};
+export type PlaybookFileImpact = {
+  path: string;
+  role: string;
+  step?: string | null;
+  exists_in_workspace: boolean;
+  history_revisions: number;
+  reversible: boolean;
+};
+export type PlaybookPreviewResult = {
+  routine_id: string;
+  name: string;
+  schedule: string;
+  dry_run: boolean;
+  zero_side_effects: boolean;
+  step_count: number;
+  steps: PlaybookPreviewStep[];
+  expected_inputs: string[];
+  matched_workspace_files: string[];
+  file_impacts: PlaybookFileImpact[];
+  pack_deliverables: boolean;
+  rollback: {
+    safe: boolean;
+    badge: string;
+    history_snapshots_enabled: boolean;
+    existing_snapshots: number;
+    reversible_paths: number;
+    note: string;
+  };
+  generated_ms: number;
+};
 export type SearchHit = {
   kind: "file" | "receipt" | "skill" | "routine" | "memory" | "thread";
   id: string;
