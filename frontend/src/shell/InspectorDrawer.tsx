@@ -285,28 +285,41 @@ export const InspectorDrawer = memo(function InspectorDrawer({
                   {exporting === "json" ? "Exporting…" : "Bundle (.json)"}
                 </Button>
                 <Button
+                  id="package-verify-btn"
                   type="button"
                   size="sm"
-                  variant="outline"
+                  variant="default"
                   disabled={exporting !== null || files.length === 0}
                   className="max-md:min-h-11 gap-1.5"
                   onClick={async () => {
                     setExporting("pack");
                     try {
-                      const res = await exportClientPackDownload(
-                        files.slice(0, 15).map((f) => f.path),
-                        `${personName} Deliverable Pack`
+                      const [verifyRes, packRes] = await Promise.all([
+                        call<{ valid?: boolean; total?: number; count?: number }>("/api/receipts/verify"),
+                        exportClientPackDownload(
+                          files.slice(0, 15).map((f) => f.path),
+                          `${personName} Verified Deliverable Pack`
+                        ),
+                      ]);
+                      const checked = verifyRes.ok
+                        ? Number(verifyRes.data.total ?? verifyRes.data.count ?? 0)
+                        : 0;
+                      const valid = verifyRes.ok && verifyRes.data.valid !== false;
+                      if (verifyRes.ok) {
+                        setVerifyInfo({ ok: valid, checked });
+                      }
+                      toast.success(
+                        `Verified ${checked} receipts + packaged ${packRes.filename} (sha256: ${packRes.sha256.slice(0, 12)}…)`
                       );
-                      toast.success(`Exported ${res.filename} (sha256: ${res.sha256.slice(0, 12)}…)`);
                     } catch {
-                      toast.error("Could not export client pack.");
+                      toast.error("Could not package and verify deliverables.");
                     } finally {
                       setExporting(null);
                     }
                   }}
                 >
                   <PackageCheck className="size-3.5" strokeWidth={1.5} aria-hidden />
-                  {exporting === "pack" ? "Packing…" : "Client Pack (.md)"}
+                  {exporting === "pack" ? "Packaging…" : "Package & Verify (.md)"}
                 </Button>
               </div>
             </section>

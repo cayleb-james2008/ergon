@@ -94,12 +94,44 @@ pub struct PersonIndex {
     pub chain: Vec<ChainedReceipt>,
     pub chain_valid: bool,
     pub head_hash: String,
-    receipt_lower: Vec<String>,
     /// Inverted token index mapping lowercase ASCII/alnum words -> receipt indices.
     receipt_tokens: HashMap<String, Vec<u32>>,
     pub files: Vec<IndexedFile>,
     file_tokens: HashMap<String, Vec<u32>>,
     pub memory: Vec<MemoryLine>,
+}
+
+/// Zero-allocation case-insensitive substring check (`needle` must already be lowercase).
+fn contains_icase(haystack: &str, needle_lower: &str) -> bool {
+    if needle_lower.is_empty() {
+        return true;
+    }
+    if haystack.is_ascii() && needle_lower.is_ascii() {
+        let hb = haystack.as_bytes();
+        let nb = needle_lower.as_bytes();
+        if nb.len() > hb.len() {
+            return false;
+        }
+        return hb
+            .windows(nb.len())
+            .any(|w| w.eq_ignore_ascii_case(nb));
+    }
+    haystack.to_lowercase().contains(needle_lower)
+}
+
+fn receipt_contains_icase(r: &ChainedReceipt, needle_lower: &str) -> bool {
+    contains_icase(&r.id, needle_lower)
+        || contains_icase(&r.task, needle_lower)
+        || contains_icase(&r.summary, needle_lower)
+        || contains_icase(&r.thread_id, needle_lower)
+        || r.files.iter().any(|f| contains_icase(f, needle_lower))
+}
+
+fn receipt_matches(r: &ChainedReceipt, q_lower: &str, tokens: &[String]) -> bool {
+    if receipt_contains_icase(r, q_lower) {
+        return true;
+    }
+    !tokens.is_empty() && tokens.iter().all(|t| receipt_contains_icase(r, t.as_str()))
 }
 
 /// Collect unique lowercase >=2-char alphanumeric tokens from `s` into `set`,
@@ -221,7 +253,8 @@ fn collect_files(root: &Path, dir: &Path, out: &mut Vec<IndexedFile>) {
                         .chars()
                         .take(160)
                         .collect::<String>();
-                    (first_line, format!("{} {}", rel.to_ascii_lowercase(), text.to_lowercase()))
+                    let snippet = text.chars().take(512).collect::<String>().to_lowercase();
+                    (first_line, format!("{} {}", rel.to_ascii_lowercase(), snippet))
                 }
                 Err(_) => (String::new(), rel.to_ascii_lowercase()),
             }
@@ -243,7 +276,11 @@ fn collect_files(root: &Path, dir: &Path, out: &mut Vec<IndexedFile>) {
                                 .chars()
                                 .take(160)
                                 .collect::<String>();
-                            let lower = format!("{} {}", rel.to_ascii_lowercase(), s.to_lowercase());
+                            let lower = format!(
+                                "{} {}",
+                                rel.to_ascii_lowercase(),
+                                s.chars().take(512).collect::<String>().to_lowercase()
+                            );
                             (first_line, lower)
                         }
                         Err(_) => (String::new(), rel.to_ascii_lowercase()),
@@ -273,26 +310,33 @@ impl PersonIndex {
         let chain = receipts::build_chain(&raw_entries);
         let (chain_valid, head_hash) = receipts::verify_chain(&chain);
 
-        let mut receipt_lower = Vec::with_capacity(chain.len());
         let mut receipt_tokens: HashMap<String, Vec<u32>> = HashMap::new();
         let mut tok_buf = HashSet::new();
         let mut cur_buf = String::new();
         for (i, r) in chain.iter().enumerate() {
-            let combined = format!(
-                "{} {} {} {} {}",
-                r.id,
-                r.task,
-                r.summary,
-                r.thread_id,
-                r.files.join(" ")
-            )
-            .to_lowercase();
-            tokenize_into(&combined, &mut tok_buf, &mut cur_buf);
-            for tok in tok_buf.drain() {
-                receipt_tokens.entry(tok).or_default().push(i as u32);
+            for field in [r.id.as_str(), r.task.as_str(), r.summary.as_str(), r.thread_id.as_str()] {
+                tokenize_into(field, &mut tok_buf, &mut cur_buf);
+                for tok in tok_buf.drain() {
+                    let list = receipt_tokens.entry(tok).or_default();
+                    if list.last().copied() != Some(i as u32) {
+                        list.push(i as u32);
+                    }
+                }
             }
-            receipt_lower.push(combined);
+            for f in &r.files {
+                tokenize_into(f, &mut tok_buf, &mut cur_buf);
+                for tok in tok_buf.drain() {
+                    let list = receipt_tokens.entry(tok).or_default();
+                    if list.last().copied() != Some(i as u32) {
+                        list.push(i as u32);
+                    }
+                }
+            }
         }
+        for list in receipt_tokens.values_mut() {
+            list.shrink_to_fit();
+        }
+        receipt_tokens.shrink_to_fit();
 
         let mut files = Vec::new();
         collect_files(workspace_dir, workspace_dir, &mut files);
@@ -304,6 +348,11 @@ impl PersonIndex {
                 file_tokens.entry(tok).or_default().push(i as u32);
             }
         }
+        for list in file_tokens.values_mut() {
+            list.shrink_to_fit();
+        }
+        file_tokens.shrink_to_fit();
+        files.shrink_to_fit();
 
         let mut memory = Vec::new();
         if let Ok(text) = std::fs::read_to_string(memory_path) {
@@ -319,13 +368,13 @@ impl PersonIndex {
                 });
             }
         }
+        memory.shrink_to_fit();
 
         Self {
             fp,
             chain,
             chain_valid,
             head_hash,
-            receipt_lower,
             receipt_tokens,
             files,
             file_tokens,
@@ -354,19 +403,11 @@ impl PersonIndex {
             } else {
                 let candidates = narrow_candidates(&self.receipt_tokens, &q, &tokens, false);
 
-                let check_match = |idx: usize| -> bool {
-                    let hay = &self.receipt_lower[idx];
-                    if hay.contains(&q) {
-                        return true;
-                    }
-                    !tokens.is_empty() && tokens.iter().all(|t| hay.contains(t.as_str()))
-                };
-
                 match candidates {
                     Some(ids) => {
                         for &id in ids.iter().rev() {
                             let idx = id as usize;
-                            if check_match(idx) {
+                            if receipt_matches(&self.chain[idx], &q, &tokens) {
                                 total_receipt_hits += 1;
                                 if receipt_hits.len() < limit {
                                     receipt_hits.push(self.chain[idx].to_json());
@@ -375,11 +416,11 @@ impl PersonIndex {
                         }
                     }
                     None => {
-                        for idx in (0..self.chain.len()).rev() {
-                            if check_match(idx) {
+                        for r in self.chain.iter().rev() {
+                            if receipt_matches(r, &q, &tokens) {
                                 total_receipt_hits += 1;
                                 if receipt_hits.len() < limit {
-                                    receipt_hits.push(self.chain[idx].to_json());
+                                    receipt_hits.push(r.to_json());
                                 }
                             }
                         }
@@ -536,7 +577,7 @@ impl PersonIndex {
             if status == "failed" && r.finished {
                 return;
             }
-            if !q_low.is_empty() && !self.receipt_lower[i].contains(&q_low) {
+            if !q_low.is_empty() && !receipt_contains_icase(r, &q_low) {
                 return;
             }
             matched.push(r);

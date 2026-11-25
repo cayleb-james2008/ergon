@@ -3,7 +3,7 @@
 // - Collapsible Left Rail (desktop pane / mobile Vaul Drawer): New chat, `/` filter, paginated Conversations (#thread-list), Scheduled Routines quick drawer with cadence presets, Workflows / Learned / Suite / Add person / Settings (#67 Light/Dark only in Settings)
 // - Central Thread / Today / Work Graph: inline Approvals & File Diffs, 1-click Deliverable Starters, Word/Excel & SHA-256 export
 // - Collapsible Right Inspector Drawer: Workspace Files, Version History & Diff, SHA-256 Audit Bundle & Offers
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, LazyMotion, MotionConfig, domAnimation, m, useReducedMotion } from "motion/react";
 import { Drawer } from "vaul";
 import {
@@ -28,17 +28,24 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Chat } from "@/chat/Chat";
-import { PaperFace, usePaper } from "@/views/Paper";
-import { GraphFace } from "@/views/Graph";
-import { AddPersonPanel, LearnedPanel, RailPanelButton, SuitePanel } from "@/shell/Panels";
-import { FileViewerModal } from "@/shell/WorkspaceFiles";
-import { InspectorDrawer, type InspectorTab } from "@/shell/InspectorDrawer";
+import { usePaper } from "@/views/usePaper";
+import { RailPanelButton } from "@/shell/RailPanelButton";
+import type { InspectorTab } from "@/shell/InspectorDrawer";
 import { PersonSelect, WorkspaceSwitcherPanel } from "@/shell/PersonSelect";
-import { SettingsPanel, type Theme } from "@/shell/SettingsPanel";
-import { SkillsPanel } from "@/shell/SkillsPanel";
-import { RoutinesPanel } from "@/shell/RoutinesPanel";
-import { CommandPalette } from "@/shell/CommandPalette";
+import type { Theme } from "@/shell/SettingsPanel";
 import { UpdateStrip, VersionRow, useUpdate } from "@/shell/Update";
+
+const PaperFace = lazy(() => import("@/views/Paper"));
+const GraphFace = lazy(() => import("@/views/Graph").then((mod) => ({ default: mod.GraphFace })));
+const AddPersonPanel = lazy(() => import("@/shell/Panels").then((mod) => ({ default: mod.AddPersonPanel })));
+const LearnedPanel = lazy(() => import("@/shell/Panels").then((mod) => ({ default: mod.LearnedPanel })));
+const SuitePanel = lazy(() => import("@/shell/Panels").then((mod) => ({ default: mod.SuitePanel })));
+const FileViewerModal = lazy(() => import("@/shell/WorkspaceFiles").then((mod) => ({ default: mod.FileViewerModal })));
+const InspectorDrawer = lazy(() => import("@/shell/InspectorDrawer").then((mod) => ({ default: mod.InspectorDrawer })));
+const SettingsPanel = lazy(() => import("@/shell/SettingsPanel").then((mod) => ({ default: mod.SettingsPanel })));
+const SkillsPanel = lazy(() => import("@/shell/SkillsPanel").then((mod) => ({ default: mod.SkillsPanel })));
+const RoutinesPanel = lazy(() => import("@/shell/RoutinesPanel").then((mod) => ({ default: mod.RoutinesPanel })));
+const CommandPalette = lazy(() => import("@/shell/CommandPalette").then((mod) => ({ default: mod.CommandPalette })));
 import { useErgon } from "@/state";
 import { call, hasV050Api, type Routine } from "@/lib/api";
 import { exportAuditBundleDownload } from "@/lib/auditBundle";
@@ -279,12 +286,18 @@ export function App() {
         toast.error(r.error || "Could not update decision.");
         return;
       }
-      toast.success(
-        r.data?.outcome ||
-          (action === "approve" ? `Approved action for ${label}.` : `Kept ${label} safe.`)
-      );
-      await paper.load();
-      if (desk.threadId) await desk.openThread(desk.threadId);
+      const rawOutcome = typeof r.data?.outcome === "string" ? r.data.outcome.trim() : "";
+      const toastMsg =
+        action === "approve"
+          ? rawOutcome
+            ? (/approved/i.test(rawOutcome) ? rawOutcome : `Approved — ${rawOutcome}`)
+            : `Approved action for ${label}.`
+          : rawOutcome || `Kept ${label} safe.`;
+      toast.success(toastMsg);
+      await Promise.all([
+        paper.load(),
+        desk.threadId ? desk.openThread(desk.threadId) : Promise.resolve(),
+      ]);
       onPaperChanged();
     },
     [desk, onPaperChanged, paper]
@@ -866,6 +879,7 @@ export function App() {
               setDraft={desk.setDraft}
               pendingNote={desk.pendingNote}
               starters={desk.starters}
+              fileCount={desk.files.length}
               lastUploaded={desk.lastUploaded}
               onDismissUploaded={handleDismissUploaded}
               onRemoveUploaded={handleRemoveUploaded}
@@ -890,6 +904,7 @@ export function App() {
 
           {face === "paper" && (
             <div id="face-today" aria-label="Today's paper" className="h-full overflow-y-auto px-4 py-6 sm:px-8">
+              <Suspense fallback={null}>
               <PaperFace
                 paper={paper}
                 status={desk.status}
@@ -921,20 +936,24 @@ export function App() {
                 onExportAuditBundle={handleExportAuditBundle}
                 onSaveRoutine={handleSaveRoutineFromWork}
               />
+              </Suspense>
             </div>
           )}
 
           {face === "graph" && (
             <div id="face-graph" aria-label="Work graph" className="h-full overflow-y-auto px-4 py-6 sm:px-8">
+              <Suspense fallback={null}>
               <GraphFace
                 key={graphSeed}
                 onOpenFile={(p) => setViewerPath(p)}
               />
+              </Suspense>
             </div>
           )}
         </main>
 
         {/* Inline Right Inspector Drawer on >=1280px; Slide-over Drawer on <1280px */}
+        <Suspense fallback={null}>
         <AnimatePresence>
           {isXl && inspectorOpen && (
             <InspectorDrawer
@@ -996,9 +1015,12 @@ export function App() {
             </m.div>
           )}
         </AnimatePresence>
+        </Suspense>
       </div>
 
       {/* External Modals mounted OUTSIDE Vaul Drawer (z-50 portals) */}
+      <Suspense fallback={null}>
+      {paletteOpen && (
       <CommandPalette
         open={paletteOpen}
         onOpenChange={setPaletteOpen}
@@ -1042,6 +1064,7 @@ export function App() {
         }}
         onSwitchFace={switchFace}
       />
+      )}
 
       <WorkspaceSwitcherPanel
         people={peopleList}
@@ -1056,6 +1079,7 @@ export function App() {
         onAddPerson={() => setAddPersonOpen(true)}
       />
 
+      {addPersonOpen && (
       <AddPersonPanel
         open={addPersonOpen}
         onOpenChange={setAddPersonOpen}
@@ -1065,14 +1089,18 @@ export function App() {
           runAfterPersonChange();
         }}
       />
+      )}
 
+      {learnedOpen && (
       <LearnedPanel
         open={learnedOpen}
         onOpenChange={setLearnedOpen}
         hideTrigger
         count={desk.learnedCount}
       />
+      )}
 
+      {suiteOpen && (
       <SuitePanel
         open={suiteOpen}
         onOpenChange={setSuiteOpen}
@@ -1090,7 +1118,9 @@ export function App() {
           desk.refreshCounts();
         }}
       />
+      )}
 
+      {skillsOpen && (
       <SkillsPanel
         skills={desk.skills}
         status={desk.status}
@@ -1103,7 +1133,9 @@ export function App() {
           requestAnimationFrame(() => inputRef.current?.focus());
         }}
       />
+      )}
 
+      {routinesOpen && (
       <RoutinesPanel
         routines={desk.routines}
         skills={desk.skills}
@@ -1127,7 +1159,9 @@ export function App() {
           setFace("chat");
         }}
       />
+      )}
 
+      {settingsOpen && (
       <SettingsPanel
         theme={theme}
         onTheme={setTheme}
@@ -1150,7 +1184,9 @@ export function App() {
         onOpenChange={setSettingsOpen}
         hideTrigger
       />
+      )}
 
+      {viewerPath && (
       <FileViewerModal
         filePath={viewerPath}
         status={desk.status}
@@ -1173,6 +1209,8 @@ export function App() {
           paper.load();
         }}
       />
+      )}
+      </Suspense>
     </div>
     </MotionConfig>
     </LazyMotion>

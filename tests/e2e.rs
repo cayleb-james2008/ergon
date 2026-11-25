@@ -613,14 +613,22 @@ fn shell_has_themes_settings_people_and_memory_view() {
     let port = start_app(cfg);
     let (status, body) = http(port, "GET", "/", None);
     assert_eq!(status, 200);
+    let mut bundle_text = body.clone();
+    for &(route, mime, _) in ergon_rs::ui::CHUNKS {
+        if mime.starts_with("application/javascript") {
+            let (cs, cb) = http(port, "GET", route, None);
+            assert_eq!(cs, 200, "chunk {route} should serve 200");
+            bundle_text.push_str(&cb);
+        }
+    }
     // Native theme is Light (Furrow, 2026-11-19): the page opens light, and the dark theme is a full second theme.
     assert!(body.contains("data-theme=\"light\""), "light is the native default theme: page must open light");
     assert!(body.contains("[data-theme=\"dark\"]") || body.contains("[data-theme=dark]"), "a dark theme must be defined");
-    assert!(body.contains("Appearance"), "appearance toggle missing from settings");
+    assert!(bundle_text.contains("Appearance"), "appearance toggle missing from settings");
     assert!(body.contains("ergon-theme"), "theme choice must persist via localStorage");
     assert!(body.contains("Working for"), "person switcher missing");
     assert!(body.contains("What my agent has learned"), "memory view control missing");
-    assert!(body.contains("Nothing learned yet."), "memory view empty state missing");
+    assert!(bundle_text.contains("Nothing learned yet."), "memory view empty state missing");
     assert!(body.contains(":focus-visible"), "keyboard focus must be visible");
     assert!(body.contains("composer-input"), "composer input must be labelled");
     assert!(body.contains("prefers-reduced-motion"), "reduced motion must be respected");
@@ -1122,9 +1130,17 @@ fn shell_accessibility_and_contrast_pins() {
         let back = css_token(&body, "[data-theme=light]", bg);
         assert!(contrast(&ink3, &back) >= 4.5, "light secondary text {ink3} on {bg} {back} is under 4.5:1");
     }
+    let mut bundle_text = body.clone();
+    for &(route, mime, _) in ergon_rs::ui::CHUNKS {
+        if mime.starts_with("application/javascript") {
+            let (cs, cb) = http(port, "GET", route, None);
+            assert_eq!(cs, 200, "chunk {route} should serve 200");
+            bundle_text.push_str(&cb);
+        }
+    }
     // The composer shows the busy state (Working) and keeps the textarea's label while a run is in flight.
-    assert!(body.contains("Agent is working on it"), "the working line must show while a run is in flight");
-    assert!(body.contains("Working"), "the send key must say it is working");
+    assert!(bundle_text.contains("Agent is working on it"), "the working line must show while a run is in flight");
+    assert!(bundle_text.contains("Working"), "the send key must say it is working");
 }
 
 /// A token's value in the served stylesheet, read from the named theme block (first occurrence, its own block).

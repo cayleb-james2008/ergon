@@ -4,6 +4,17 @@ Each release is tagged `vMAJOR.MINOR.PATCH` and published on GitHub Releases wit
 binaries and a `SHA256SUMS` file. The running app shows its version and can update
 itself from the newest release (see README, "Versions and updates").
 
+## 0.14.0 - 2026-11-25
+
+- **Initial-Shell `React.lazy` Code-Splitting & Compile-Time `/chunks/*` (`build.rs`, `src/ui.rs`, `src/server.rs`, `frontend/vite.config.ts`, `frontend/src/App.tsx`, `frontend/src/chat/LiveRunTimeline.tsx`, `frontend/src/views/usePaper.ts`):**
+  - Split `PaperFace`, `GraphFace`, `FileViewerModal`, `InspectorDrawer`, `SettingsPanel`, `SkillsPanel`, `RoutinesPanel`, `CommandPalette`, and secondary `Panels` into lazy-loaded `/chunks/*.js` + `.woff2` + `.css` assets (+ shared vendor chunk) embedded at compile time via `build.rs` and served with cached RFC 1952 `gzip`, strong `ETag` + `304`, `Vary: Accept-Encoding`, `Cache-Control: public, max-age=31536000, immutable`, and strict security headers (`nosniff`/`DENY`).
+  - Reduced initial `GET /` shell from `1,054 KB` (`~375 KB` gzip) down to `148,263 B` (`144.8 KiB`) raw / `33,291 B` (`32.5 KiB`) gzip (-91% initial shell wire transfer) while keeping `npm run build:web` 100% single-file (`ergon-web.html`, `0` external requests).
+- **Deterministic Approval UX & Zero-Effort Onboarding (`frontend/src/App.tsx`, `frontend/src/chat/Entry.tsx`, `frontend/src/chat/Chat.tsx`, `frontend/src/shell/InspectorDrawer.tsx`):**
+  - Fixed `handleResolveDecision` & `WaitingEntry` pending decision matching so approvals emit immediate deterministic `"Approved"` feedback toasts and refresh Today + active thread in parallel (`Promise.all`).
+  - Added 1-click **Load sample workspace** (`#starter-pack-btn`) for empty workspaces and 1-click **Package & Verify (.md)** (`#package-verify-btn`) combining hash-chain verification (`/api/receipts/verify`) with SHA-256 Client Deliverable Pack download.
+- **Peak RSS Diet & Thread Stack Tuning (`src/search.rs`, `src/server.rs`):**
+  - Eliminated duplicate `receipt_lower: Vec<String>` allocations from `PersonIndex` via zero-alloc `contains_icase` field checks, capped file snippet previews at 512 chars, called `shrink_to_fit()` on inverted token posting lists, and tuned HTTP worker pool stack size to `2 MB`.
+
 ## 0.13.0 - 2026-11-25
 
 - **Multi-Step Workflow Chaining & 1-Click Workspace Playbooks (`src/routines.rs`, `src/server.rs`, `frontend/src/shell/RoutinesPanel.tsx`, `frontend/src/lib/webEngine.ts`):**
