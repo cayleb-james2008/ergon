@@ -318,3 +318,359 @@ pub fn record_run(
         Some(updated)
     })
 }
+
+pub const PLAYBOOK_PACK_FORMAT: &str = "ergon-playbook-v1";
+pub const MAX_PLAYBOOK_PACK_BYTES: usize = 256 * 1024;
+
+fn clean_playbook_list(arr: Option<&Vec<Value>>, max_chars: usize) -> Vec<String> {
+    arr.map(|items| {
+        items
+            .iter()
+            .filter_map(|v| v.as_str())
+            .map(|s| s.trim().chars().take(max_chars).collect::<String>())
+            .filter(|s| !s.is_empty())
+            .take(8)
+            .collect()
+    })
+    .unwrap_or_default()
+}
+
+pub fn playbook_canonical_sha256(
+    name: &str,
+    prompt: &str,
+    schedule: &str,
+    interval_secs: Option<u64>,
+    skill_id: Option<&str>,
+    playbook: &PlaybookOptions,
+) -> String {
+    let canonical = json!([
+        PLAYBOOK_PACK_FORMAT,
+        name,
+        prompt,
+        schedule,
+        interval_secs,
+        skill_id,
+        playbook.steps,
+        playbook.expected_inputs,
+        playbook.pack_deliverables,
+    ])
+    .to_string();
+    crate::receipts::sha256_hex(canonical.as_bytes())
+}
+
+fn safe_playbook_filename(name: &str) -> String {
+    let slug: String = name
+        .to_ascii_lowercase()
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+        .collect();
+    let trimmed = slug
+        .split('-')
+        .filter(|s| !s.is_empty())
+        .collect::<Vec<_>>()
+        .join("-");
+    let stem = if trimmed.is_empty() {
+        "playbook"
+    } else {
+        &trimmed[..trimmed.len().min(48)]
+    };
+    format!("{stem}.ergon-playbook.json")
+}
+
+/// Export a saved routine/playbook as a signed `.ergon-playbook.json` pack with SHA-256 digest.
+pub fn export_playbook_pack(person_data_dir: &Path, id: &str) -> Option<(Value, String, String)> {
+    let rt = get_routine(person_data_dir, id)?;
+    let name: String = rt["name"]
+        .as_str()
+        .unwrap_or("")
+        .replace(['\r', '\n'], " ")
+        .trim()
+        .chars()
+        .take(120)
+        .collect();
+    let prompt: String = rt["prompt"]
+        .as_str()
+        .unwrap_or("")
+        .trim()
+        .chars()
+        .take(4000)
+        .collect();
+    let schedule: String = rt["schedule"]
+        .as_str()
+        .unwrap_or("manual")
+        .replace(['\r', '\n'], " ")
+        .trim()
+        .chars()
+        .take(64)
+        .collect();
+    let schedule = if schedule.is_empty() {
+        "manual".to_string()
+    } else {
+        schedule
+    };
+    let interval_secs = rt["interval_secs"].as_u64();
+    let skill_id = rt["skill_id"]
+        .as_str()
+        .map(|s| s.trim().chars().take(64).collect::<String>())
+        .filter(|s| !s.is_empty());
+    let opts = PlaybookOptions {
+        steps: clean_playbook_list(rt["steps"].as_array(), 2000),
+        expected_inputs: clean_playbook_list(rt["expected_inputs"].as_array(), 64),
+        pack_deliverables: rt["pack_deliverables"].as_bool().unwrap_or(false),
+    };
+    let digest = playbook_canonical_sha256(
+        &name,
+        &prompt,
+        &schedule,
+        interval_secs,
+        skill_id.as_deref(),
+        &opts,
+    );
+    let filename = safe_playbook_filename(&name);
+    let pack = json!({
+        "format": PLAYBOOK_PACK_FORMAT,
+        "version": env!("CARGO_PKG_VERSION"),
+        "exported_ms": records::now_millis(),
+        "playbook": {
+            "id": id,
+            "name": name,
+            "prompt": prompt,
+            "schedule": schedule,
+            "interval_secs": interval_secs,
+            "skill_id": skill_id,
+            "steps": opts.steps,
+            "expected_inputs": opts.expected_inputs,
+            "pack_deliverables": opts.pack_deliverables,
+        },
+        "sha256": digest,
+    });
+    Some((pack, digest, filename))
+}
+
+fn validate_string_array(
+    obj: &serde_json::Map<String, Value>,
+    key: &str,
+    max_items: usize,
+    max_chars: usize,
+) -> Result<Vec<String>, (u16, String)> {
+    let Some(val) = obj.get(key) else {
+        return Ok(Vec::new());
+    };
+    if val.is_null() {
+        return Ok(Vec::new());
+    }
+    let Some(arr) = val.as_array() else {
+        return Err((400, format!("playbook.{key} must be an array of strings")));
+    };
+    if arr.len() > max_items {
+        return Err((
+            400,
+            format!("playbook.{key} exceeds maximum of {max_items} entries"),
+        ));
+    }
+    let mut out = Vec::with_capacity(arr.len());
+    for (idx, item) in arr.iter().enumerate() {
+        let Some(s) = item.as_str() else {
+            return Err((
+                400,
+                format!("playbook.{key}[{idx}] must be a non-empty string"),
+            ));
+        };
+        let trimmed = s.trim();
+        if trimmed.is_empty() || trimmed.chars().count() > max_chars {
+            return Err((
+                400,
+                format!("playbook.{key}[{idx}] must be 1..={max_chars} characters"),
+            ));
+        }
+        out.push(s.to_string());
+    }
+    Ok(out)
+}
+
+/// Strictly validate, verify SHA-256 checksum, and import a `.ergon-playbook.json` pack (<= 256 KB).
+pub fn import_playbook_pack(
+    person_data_dir: &Path,
+    raw_bytes: &[u8],
+) -> Result<(Value, String), (u16, String)> {
+    if raw_bytes.len() > MAX_PLAYBOOK_PACK_BYTES {
+        return Err((
+            413,
+            format!("playbook pack exceeds maximum size of {MAX_PLAYBOOK_PACK_BYTES} bytes"),
+        ));
+    }
+    let parsed: Value = serde_json::from_slice(raw_bytes)
+        .map_err(|e| (400, format!("invalid playbook JSON: {e}")))?;
+    let Some(top) = parsed.as_object() else {
+        return Err((400, "playbook pack must be a JSON object".to_string()));
+    };
+    for key in top.keys() {
+        if !matches!(
+            key.as_str(),
+            "format" | "version" | "exported_ms" | "playbook" | "sha256"
+        ) {
+            return Err((400, format!("unexpected top-level field '{key}'")));
+        }
+    }
+    if top.get("format").and_then(|v| v.as_str()) != Some(PLAYBOOK_PACK_FORMAT) {
+        return Err((
+            400,
+            format!("playbook.format must be '{PLAYBOOK_PACK_FORMAT}'"),
+        ));
+    }
+    if let Some(ver) = top.get("version").filter(|v| !v.is_null()) {
+        let Some(s) = ver.as_str() else {
+            return Err((400, "version must be a string".to_string()));
+        };
+        if s.len() > 32 {
+            return Err((400, "version exceeds 32 characters".to_string()));
+        }
+    }
+    if let Some(exp) = top.get("exported_ms").filter(|v| !v.is_null()) {
+        if exp.as_u64().is_none() {
+            return Err((400, "exported_ms must be an unsigned integer".to_string()));
+        }
+    }
+    let claimed_sha = top
+        .get("sha256")
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .unwrap_or("");
+    if claimed_sha.len() != 64 || !claimed_sha.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return Err((
+            400,
+            "sha256 checksum must be a 64-character hex digest".to_string(),
+        ));
+    }
+    let Some(pb) = top.get("playbook").and_then(|v| v.as_object()) else {
+        return Err((400, "playbook object is required".to_string()));
+    };
+    for key in pb.keys() {
+        if !matches!(
+            key.as_str(),
+            "id"
+                | "name"
+                | "prompt"
+                | "schedule"
+                | "interval_secs"
+                | "skill_id"
+                | "steps"
+                | "expected_inputs"
+                | "pack_deliverables"
+        ) {
+            return Err((400, format!("unexpected playbook field '{key}'")));
+        }
+    }
+    if let Some(id_val) = pb.get("id").filter(|v| !v.is_null()) {
+        let Some(s) = id_val.as_str() else {
+            return Err((400, "playbook.id must be a string".to_string()));
+        };
+        if s.len() > 128 {
+            return Err((400, "playbook.id exceeds 128 characters".to_string()));
+        }
+    }
+    let Some(name) = pb.get("name").and_then(|v| v.as_str()) else {
+        return Err((400, "playbook.name is required".to_string()));
+    };
+    if name.trim().is_empty()
+        || name.contains(['\r', '\n'])
+        || name.chars().count() > 120
+    {
+        return Err((
+            400,
+            "playbook.name must be 1..=120 non-control characters".to_string(),
+        ));
+    }
+    let Some(prompt) = pb.get("prompt").and_then(|v| v.as_str()) else {
+        return Err((400, "playbook.prompt is required".to_string()));
+    };
+    if prompt.trim().is_empty() || prompt.chars().count() > 4000 {
+        return Err((
+            400,
+            "playbook.prompt must be 1..=4000 characters".to_string(),
+        ));
+    }
+    let Some(schedule) = pb.get("schedule").and_then(|v| v.as_str()) else {
+        return Err((400, "playbook.schedule is required".to_string()));
+    };
+    if schedule.trim().is_empty()
+        || schedule.contains(['\r', '\n'])
+        || schedule.chars().count() > 64
+    {
+        return Err((
+            400,
+            "playbook.schedule must be 1..=64 single-line characters".to_string(),
+        ));
+    }
+    let interval_secs = match pb.get("interval_secs") {
+        None | Some(Value::Null) => None,
+        Some(v) => match v.as_u64() {
+            Some(iv) => Some(iv),
+            None => {
+                return Err((
+                    400,
+                    "playbook.interval_secs must be a positive integer or null".to_string(),
+                ))
+            }
+        },
+    };
+    let cadence = crate::scheduler::parse_cadence_or_interval(Some(schedule), interval_secs)
+        .map_err(|e| (400, format!("invalid playbook schedule: {e}")))?;
+    let skill_id = match pb.get("skill_id") {
+        None | Some(Value::Null) => None,
+        Some(v) => {
+            let Some(s) = v.as_str() else {
+                return Err((400, "playbook.skill_id must be a string or null".to_string()));
+            };
+            if s.trim().is_empty() || s.chars().any(|c| c.is_control()) || s.chars().count() > 64 {
+                return Err((
+                    400,
+                    "playbook.skill_id must be 1..=64 non-control characters".to_string(),
+                ));
+            }
+            Some(s)
+        }
+    };
+    let steps = validate_string_array(pb, "steps", 8, 2000)?;
+    let expected_inputs = validate_string_array(pb, "expected_inputs", 8, 64)?;
+    let pack_deliverables = match pb.get("pack_deliverables") {
+        None | Some(Value::Null) => false,
+        Some(v) => v.as_bool().ok_or_else(|| {
+            (
+                400,
+                "playbook.pack_deliverables must be a boolean".to_string(),
+            )
+        })?,
+    };
+    let opts = PlaybookOptions {
+        steps,
+        expected_inputs,
+        pack_deliverables,
+    };
+    let expected_sha = playbook_canonical_sha256(
+        name,
+        prompt,
+        schedule,
+        interval_secs,
+        skill_id,
+        &opts,
+    );
+    if !expected_sha.eq_ignore_ascii_case(claimed_sha) {
+        return Err((
+            400,
+            "sha256 checksum mismatch: playbook pack failed integrity verification".to_string(),
+        ));
+    }
+    let routine = create_playbook_routine(
+        person_data_dir,
+        name,
+        prompt,
+        &cadence.canonical_label(),
+        cadence.explicit_interval_secs(),
+        skill_id,
+        true,
+        &opts,
+    )
+    .map_err(|e| (400, e))?;
+    Ok((routine, expected_sha))
+}

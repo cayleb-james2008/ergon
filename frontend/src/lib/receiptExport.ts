@@ -401,3 +401,275 @@ export async function exportClientSummaryPack(
 ): Promise<{ filename: string; sha256: string; preflight?: string; citationGate?: string }> {
   return fetchClientPack(files, title, format, { summary: true });
 }
+
+export const PLAYBOOK_PACK_FORMAT = "ergon-playbook-v1";
+export const MAX_PLAYBOOK_PACK_BYTES = 256 * 1024;
+
+export type PlaybookPackFields = {
+  id?: string | null;
+  name: string;
+  prompt: string;
+  schedule: string;
+  interval_secs?: number | null;
+  skill_id?: string | null;
+  steps: string[];
+  expected_inputs: string[];
+  pack_deliverables: boolean;
+};
+
+export type PlaybookPackDocument = {
+  format: typeof PLAYBOOK_PACK_FORMAT;
+  version: string;
+  exported_ms: number;
+  playbook: PlaybookPackFields;
+  sha256: string;
+};
+
+function cleanPlaybookFieldList(raw: unknown, maxChars: number): string[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter((v): v is string => typeof v === "string")
+    .map((s) => s.trim().slice(0, maxChars))
+    .filter(Boolean)
+    .slice(0, 8);
+}
+
+export async function computePlaybookSha256(pb: PlaybookPackFields): Promise<string> {
+  const canonical = JSON.stringify([
+    PLAYBOOK_PACK_FORMAT,
+    pb.name,
+    pb.prompt,
+    pb.schedule,
+    pb.interval_secs ?? null,
+    pb.skill_id ?? null,
+    pb.steps,
+    pb.expected_inputs,
+    Boolean(pb.pack_deliverables),
+  ]);
+  return sha256Hex(canonical);
+}
+
+export async function buildSignedPlaybookPack(
+  routine: {
+    id?: string;
+    name: string;
+    prompt: string;
+    schedule: string;
+    interval_secs?: number | null;
+    skill_id?: string | null;
+    steps?: string[];
+    expected_inputs?: string[];
+    pack_deliverables?: boolean;
+  },
+  version = "0.20.0"
+): Promise<{ doc: PlaybookPackDocument; json: string; filename: string; sha256: string }> {
+  const name = String(routine.name || "").replace(/[\r\n]/g, " ").trim().slice(0, 120);
+  const prompt = String(routine.prompt || "").trim().slice(0, 4000);
+  const schedule = String(routine.schedule || "manual").replace(/[\r\n]/g, " ").trim().slice(0, 64) || "manual";
+  const interval_secs = typeof routine.interval_secs === "number" && Number.isInteger(routine.interval_secs) && routine.interval_secs >= 0
+    ? routine.interval_secs
+    : null;
+  const skill_id = typeof routine.skill_id === "string" && routine.skill_id.trim()
+    ? routine.skill_id.trim().slice(0, 64)
+    : null;
+  const steps = cleanPlaybookFieldList(routine.steps, 2000);
+  const expected_inputs = cleanPlaybookFieldList(routine.expected_inputs, 64);
+  const pack_deliverables = Boolean(routine.pack_deliverables);
+  const fields: PlaybookPackFields = {
+    id: routine.id ?? null,
+    name,
+    prompt,
+    schedule,
+    interval_secs,
+    skill_id,
+    steps,
+    expected_inputs,
+    pack_deliverables,
+  };
+  const sha256 = await computePlaybookSha256(fields);
+  const doc: PlaybookPackDocument = {
+    format: PLAYBOOK_PACK_FORMAT,
+    version,
+    exported_ms: Date.now(),
+    playbook: fields,
+    sha256,
+  };
+  const slug = safeSlug(name) || "playbook";
+  return {
+    doc,
+    json: JSON.stringify(doc, null, 2),
+    filename: `${slug}.ergon-playbook.json`,
+    sha256,
+  };
+}
+
+export async function verifyAndParsePlaybookPack(rawBytesOrText: string): Promise<{
+  ok: true;
+  playbook: PlaybookPackFields;
+  sha256: string;
+} | {
+  ok: false;
+  status: 400 | 413;
+  error: string;
+}> {
+  const byteLen = new TextEncoder().encode(rawBytesOrText).length;
+  if (byteLen > MAX_PLAYBOOK_PACK_BYTES) {
+    return {
+      ok: false,
+      status: 413,
+      error: `playbook pack exceeds maximum size of ${MAX_PLAYBOOK_PACK_BYTES} bytes`,
+    };
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(rawBytesOrText);
+  } catch (e) {
+    return { ok: false, status: 400, error: `invalid playbook JSON: ${String(e)}` };
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return { ok: false, status: 400, error: "playbook pack must be a JSON object" };
+  }
+  const top = parsed as Record<string, unknown>;
+  const allowedTop = new Set(["format", "version", "exported_ms", "playbook", "sha256"]);
+  for (const key of Object.keys(top)) {
+    if (!allowedTop.has(key)) return { ok: false, status: 400, error: `unexpected top-level field '${key}'` };
+  }
+  if (top.format !== PLAYBOOK_PACK_FORMAT) {
+    return { ok: false, status: 400, error: `playbook.format must be '${PLAYBOOK_PACK_FORMAT}'` };
+  }
+  if (top.version !== undefined && top.version !== null) {
+    if (typeof top.version !== "string" || top.version.length > 32) {
+      return { ok: false, status: 400, error: "version must be a string <= 32 chars" };
+    }
+  }
+  if (top.exported_ms !== undefined && top.exported_ms !== null) {
+    if (typeof top.exported_ms !== "number" || !Number.isInteger(top.exported_ms) || top.exported_ms < 0) {
+      return { ok: false, status: 400, error: "exported_ms must be an unsigned integer" };
+    }
+  }
+  const claimedSha = typeof top.sha256 === "string" ? top.sha256.trim() : "";
+  if (!/^[a-fA-F0-9]{64}$/.test(claimedSha)) {
+    return { ok: false, status: 400, error: "sha256 checksum must be a 64-character hex digest" };
+  }
+  const pbRaw = top.playbook;
+  if (!pbRaw || typeof pbRaw !== "object" || Array.isArray(pbRaw)) {
+    return { ok: false, status: 400, error: "playbook object is required" };
+  }
+  const pb = pbRaw as Record<string, unknown>;
+  const allowedPb = new Set(["id", "name", "prompt", "schedule", "interval_secs", "skill_id", "steps", "expected_inputs", "pack_deliverables"]);
+  for (const key of Object.keys(pb)) {
+    if (!allowedPb.has(key)) return { ok: false, status: 400, error: `unexpected playbook field '${key}'` };
+  }
+  if (pb.id !== undefined && pb.id !== null && (typeof pb.id !== "string" || pb.id.length > 128)) {
+    return { ok: false, status: 400, error: "playbook.id must be a string <= 128 chars" };
+  }
+  if (typeof pb.name !== "string" || !pb.name.trim() || /[\r\n]/.test(pb.name) || pb.name.length > 120) {
+    return { ok: false, status: 400, error: "playbook.name must be 1..=120 single-line characters" };
+  }
+  if (typeof pb.prompt !== "string" || !pb.prompt.trim() || pb.prompt.length > 4000) {
+    return { ok: false, status: 400, error: "playbook.prompt must be 1..=4000 characters" };
+  }
+  if (typeof pb.schedule !== "string" || !pb.schedule.trim() || /[\r\n]/.test(pb.schedule) || pb.schedule.length > 64) {
+    return { ok: false, status: 400, error: "playbook.schedule must be 1..=64 single-line characters" };
+  }
+  let intervalSecs: number | null = null;
+  if (pb.interval_secs !== undefined && pb.interval_secs !== null) {
+    if (typeof pb.interval_secs !== "number" || !Number.isInteger(pb.interval_secs) || pb.interval_secs < 10 || pb.interval_secs > 2_592_000) {
+      return { ok: false, status: 400, error: "playbook.interval_secs must be an integer between 10 and 2592000" };
+    }
+    intervalSecs = pb.interval_secs;
+  }
+  let skillId: string | null = null;
+  if (pb.skill_id !== undefined && pb.skill_id !== null) {
+    if (typeof pb.skill_id !== "string" || !pb.skill_id.trim() || pb.skill_id.length > 64) {
+      return { ok: false, status: 400, error: "playbook.skill_id must be 1..=64 characters" };
+    }
+    skillId = pb.skill_id;
+  }
+  const checkArr = (val: unknown, key: string, maxChars: number): string[] | string => {
+    if (val === undefined || val === null) return [];
+    if (!Array.isArray(val) || val.length > 8) return `playbook.${key} must be an array of at most 8 strings`;
+    for (let i = 0; i < val.length; i += 1) {
+      const item = val[i];
+      if (typeof item !== "string" || !item.trim() || item.length > maxChars) {
+        return `playbook.${key}[${i}] must be 1..=${maxChars} characters`;
+      }
+    }
+    return val as string[];
+  };
+  const steps = checkArr(pb.steps, "steps", 2000);
+  if (typeof steps === "string") return { ok: false, status: 400, error: steps };
+  const expectedInputs = checkArr(pb.expected_inputs, "expected_inputs", 64);
+  if (typeof expectedInputs === "string") return { ok: false, status: 400, error: expectedInputs };
+  let packDeliverables = false;
+  if (pb.pack_deliverables !== undefined && pb.pack_deliverables !== null) {
+    if (typeof pb.pack_deliverables !== "boolean") {
+      return { ok: false, status: 400, error: "playbook.pack_deliverables must be a boolean" };
+    }
+    packDeliverables = pb.pack_deliverables;
+  }
+  const fields: PlaybookPackFields = {
+    id: (pb.id as string | null | undefined) ?? null,
+    name: pb.name,
+    prompt: pb.prompt,
+    schedule: pb.schedule,
+    interval_secs: intervalSecs,
+    skill_id: skillId,
+    steps,
+    expected_inputs: expectedInputs,
+    pack_deliverables: packDeliverables,
+  };
+  const expectedSha = await computePlaybookSha256(fields);
+  if (expectedSha.toLowerCase() !== claimedSha.toLowerCase()) {
+    return {
+      ok: false,
+      status: 400,
+      error: "sha256 checksum mismatch: playbook pack failed integrity verification",
+    };
+  }
+  return { ok: true, playbook: fields, sha256: expectedSha };
+}
+
+/** Downloads a signed .ergon-playbook.json pack with SHA-256 verification metadata. */
+export async function exportPlaybookDownload(
+  routine: {
+    id: string;
+    name: string;
+    prompt: string;
+    schedule: string;
+    interval_secs?: number | null;
+    skill_id?: string | null;
+    steps?: string[];
+    expected_inputs?: string[];
+    pack_deliverables?: boolean;
+  },
+  useServer: boolean
+): Promise<{ filename: string; sha256: string }> {
+  const fallbackSlug = safeSlug(routine.name) || "playbook";
+  const fallbackName = `${fallbackSlug}.ergon-playbook.json`;
+  if (useServer && routine.id) {
+    try {
+      const r = await fetch(`/api/playbooks/${encodeURIComponent(routine.id)}/export`, { cache: "no-store" });
+      if (r.ok) {
+        const text = await r.text();
+        const headerHash = r.headers.get("X-Ergon-Playbook-SHA256") || "";
+        let parsedSha = "";
+        try {
+          const parsed = JSON.parse(text) as { sha256?: string };
+          parsedSha = typeof parsed.sha256 === "string" ? parsed.sha256 : "";
+        } catch { /* ignore */ }
+        const disp = r.headers.get("Content-Disposition") || "";
+        const m = disp.match(/filename="([^"]+)"/);
+        const filename = m?.[1] || fallbackName;
+        const sha256 = headerHash || parsedSha || (await sha256Hex(text));
+        triggerDownload(filename, text, "application/json; charset=utf-8");
+        return { filename, sha256 };
+      }
+    } catch {
+      // Fall back to local deterministic signing.
+    }
+  }
+  const built = await buildSignedPlaybookPack(routine);
+  triggerDownload(built.filename, built.json, "application/json; charset=utf-8");
+  return { filename: built.filename, sha256: built.sha256 };
+}

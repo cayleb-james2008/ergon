@@ -45,10 +45,39 @@ for (const w of [1440, 390]) {
     const p = await ctx.newPage();
     const errs = [];
     p.on("pageerror", (e) => errs.push(e.message));
-    for (const [pat, fn] of c.routes) await p.route(pat, fn);
-    await p.goto(BASE + (c.path || ""));
-    await p.waitForTimeout(1800);
+    let pendingRoutes = 0;
+    let resolveIdle = null;
+    const waitRoutesIdle = () =>
+      pendingRoutes === 0
+        ? Promise.resolve()
+        : new Promise((res) => {
+            const prev = resolveIdle;
+            resolveIdle = () => {
+              if (prev) prev();
+              res();
+            };
+          });
+    for (const [pat, fn] of c.routes) {
+      await p.route(pat, async (r) => {
+        pendingRoutes += 1;
+        try {
+          await fn(r);
+        } finally {
+          pendingRoutes = Math.max(0, pendingRoutes - 1);
+          if (pendingRoutes === 0 && resolveIdle) {
+            const done = resolveIdle;
+            resolveIdle = null;
+            done();
+          }
+        }
+      });
+    }
+    await p.goto(BASE + (c.path || ""), { waitUntil: "domcontentloaded" });
+    await p.locator("main h1, [role=alert], [role=tablist]").first().waitFor({ state: "visible", timeout: 10_000 });
+    if (c.waitFor) await c.waitFor(p, h);
     if (c.act) await c.act(p, h);
+    await Promise.race([waitRoutesIdle(), new Promise((r) => setTimeout(r, 2000))]);
+    await p.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
     const clip = await clipped(p);
     const bodyTxt = await p.evaluate(() => document.body.innerText);
     const badWords = /\bundefined\b|\bNaN\b|\[object Object\]/.test(bodyTxt);

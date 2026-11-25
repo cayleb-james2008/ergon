@@ -4,6 +4,14 @@ Each release is tagged `vMAJOR.MINOR.PATCH` and published on GitHub Releases wit
 binaries and a `SHA256SUMS` file. The running app shows its version and can update
 itself from the newest release (see README, "Versions and updates").
 
+## 0.20.0 - 2026-11-25
+
+- **1-Click Verified Playbook Pack Export & Import (`.ergon-playbook.json` + SHA-256 Checksum) (`src/routines.rs`, `src/server.rs`, `frontend/src/lib/{api,receiptExport,webEngine}.ts`, `frontend/src/state.ts`, `frontend/src/shell/RoutinesPanel.tsx`):**
+  - Added `GET /api/playbooks/:id/export` and `POST /api/playbooks/import` with strict `ergon-playbook-v1` schema validation, `<= 256 KB` payload cap (`413` on oversize), and canonical SHA-256 checksum verification (`X-Ergon-Playbook-SHA256`), plus 100% standalone `webEngine.ts` parity.
+  - Added 1-click **Export** on routine/playbook cards and **Import playbook** (`#playbook-import-btn`) in Recurring Routines with live SHA-256 verification feedback.
+- **Deterministic Playwright Replay Hardening (`frontend/e2e/replay.mjs`, `frontend/e2e/cases.mjs`):**
+  - Replaced arbitrary `waitForTimeout(1800)` / `waitForTimeout(400)` / `waitForTimeout(500)` sleeps with explicit DOM/route settlement waits (`waitFor` + `requestAnimationFrame` paint sync) for deterministic `20/20` replay passes on pinned CPUs.
+
 ## 0.19.0 - 2026-11-25
 
 - **HTTP Keep-Alive, `-O3` Hot-Path Split & `O(limit)` Token Search (`Cargo.toml`, `Cargo.lock`, `src/server.rs`, `src/search.rs`):**

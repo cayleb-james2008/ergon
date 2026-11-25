@@ -1154,6 +1154,7 @@ export function App() {
         onToggleEnabled={desk.toggleRoutine}
         onLoadHistory={desk.loadRoutineHistory}
         onDelete={desk.deleteRoutine}
+        onImportPlaybook={desk.importPlaybook}
         onRunNow={async (rt) => {
           setFace("chat");
           await desk.runRoutineNow(rt);

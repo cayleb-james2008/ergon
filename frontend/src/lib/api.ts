@@ -5,6 +5,7 @@ export type ServerCapabilities = {
   sse?: boolean;
   skills?: boolean;
   routines?: boolean;
+  playbooks?: boolean;
   search?: boolean;
   receipts_export?: boolean;
   cancel?: boolean;
