@@ -34,7 +34,7 @@ import {
 } from "@/chat/Entry";
 import { cn } from "@/lib/utils";
 import type { Decision, LiveRunStep, Msg } from "@/lib/api";
-import { detectWorkflowForFile, type StarterCard, toolLabel } from "@/lib/words";
+import { detectBatchWorkflow, detectWorkflowForFile, type StarterCard, toolLabel } from "@/lib/words";
 
 export type Recent = { task: string; date: string; files: string[] };
 
@@ -158,6 +158,7 @@ export function Chat({
   starters,
   lastUploaded,
   onDismissUploaded,
+  onRemoveUploaded,
   useServerExport,
   onSend,
   onRunPrompt,
@@ -168,6 +169,7 @@ export function Chat({
   onOpenFiles,
   onExportAuditBundle,
   onUploadFiles,
+  onSaveRoutine,
   inputRef,
 }: {
   threadId: string | null;
@@ -188,6 +190,7 @@ export function Chat({
   starters: StarterCard[];
   lastUploaded?: string[];
   onDismissUploaded?: () => void;
+  onRemoveUploaded?: (path: string) => void;
   useServerExport?: boolean;
   onSend: () => void;
   onRunPrompt?: (prompt: string) => void;
@@ -198,6 +201,7 @@ export function Chat({
   onOpenFiles: () => void;
   onExportAuditBundle: (format: "json" | "md") => Promise<void>;
   onUploadFiles: (files: FileList | File[]) => Promise<number>;
+  onSaveRoutine?: (name: string, prompt: string, schedule?: string) => Promise<boolean>;
   inputRef: React.RefObject<HTMLTextAreaElement | null>;
 }) {
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -207,8 +211,9 @@ export function Chat({
   const items = buildItems(messages);
   const cards = starters;
   const uploadSuggestion = useMemo(() => {
-    const first = lastUploaded?.[0];
-    return first ? detectWorkflowForFile(first) : null;
+    if (!lastUploaded || lastUploaded.length === 0) return null;
+    if (lastUploaded.length >= 2) return detectBatchWorkflow(lastUploaded);
+    return detectWorkflowForFile(lastUploaded[0]);
   }, [lastUploaded]);
 
   useEffect(() => {
@@ -259,53 +264,89 @@ export function Chat({
         <div
           id="upload-workflow-suggestion"
           role="status"
-          className="flex flex-wrap items-center justify-between gap-2 rounded-card border border-hairline bg-surface px-3 py-2 text-xs"
+          className="flex flex-col gap-2 rounded-card border border-hairline bg-surface px-3 py-2 text-xs"
         >
-          <div className="flex min-w-0 items-center gap-2">
-            <Sparkles className="size-3.5 shrink-0 text-dot-green" strokeWidth={1.5} aria-hidden />
-            <span className="truncate text-ink">
-              Ready: <span className="mono font-medium">{uploadSuggestion.file}</span>
-            </span>
-          </div>
-          <div className="flex flex-wrap items-center gap-1.5">
-            <Button
-              type="button"
-              size="xs"
-              className="max-md:min-h-11 gap-1.5"
-              onClick={() => {
-                onDismissUploaded?.();
-                if (onRunPrompt) {
-                  onRunPrompt(uploadSuggestion.prompt);
-                } else {
-                  setDraft(uploadSuggestion.prompt);
-                  requestAnimationFrame(() => inputRef.current?.focus());
-                }
-              }}
-            >
-              {uploadSuggestion.label}
-            </Button>
-            <Button
-              type="button"
-              size="xs"
-              variant="outline"
-              className="max-md:min-h-11"
-              onClick={() => onOpenFile(uploadSuggestion.file)}
-            >
-              Inspect
-            </Button>
-            {onDismissUploaded && (
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex min-w-0 items-center gap-2">
+              <Sparkles className="size-3.5 shrink-0 text-dot-green" strokeWidth={1.5} aria-hidden />
+              <span className="truncate text-ink">
+                Ready:{" "}
+                <span className="mono font-medium">
+                  {lastUploaded && lastUploaded.length > 1
+                    ? `${lastUploaded.length} workspace files`
+                    : uploadSuggestion.file}
+                </span>
+              </span>
+            </div>
+            <div className="flex flex-wrap items-center gap-1.5">
               <Button
                 type="button"
-                size="icon-xs"
-                variant="ghost"
-                aria-label="Dismiss upload suggestion"
-                className="max-md:min-h-11 max-md:min-w-11"
-                onClick={onDismissUploaded}
+                size="xs"
+                className="max-md:min-h-11 gap-1.5"
+                onClick={() => {
+                  onDismissUploaded?.();
+                  if (onRunPrompt) {
+                    onRunPrompt(uploadSuggestion.prompt);
+                  } else {
+                    setDraft(uploadSuggestion.prompt);
+                    requestAnimationFrame(() => inputRef.current?.focus());
+                  }
+                }}
               >
-                <X className="size-3.5 text-icon" strokeWidth={1.5} aria-hidden />
+                {uploadSuggestion.label}
               </Button>
-            )}
+              <Button
+                type="button"
+                size="xs"
+                variant="outline"
+                className="max-md:min-h-11"
+                onClick={() => onOpenFile(uploadSuggestion.file)}
+              >
+                Inspect
+              </Button>
+              {onDismissUploaded && (
+                <Button
+                  type="button"
+                  size="icon-xs"
+                  variant="ghost"
+                  aria-label="Dismiss upload suggestion"
+                  className="max-md:min-h-11 max-md:min-w-11"
+                  onClick={onDismissUploaded}
+                >
+                  <X className="size-3.5 text-icon" strokeWidth={1.5} aria-hidden />
+                </Button>
+              )}
+            </div>
           </div>
+          {lastUploaded && lastUploaded.length > 1 && (
+            <div className="flex flex-wrap items-center gap-1.5">
+              {lastUploaded.map((fname) => (
+                <span
+                  key={fname}
+                  className="inline-flex max-w-full items-center gap-1 rounded-chip border border-hairline bg-board/60 pl-2 pr-1 py-0.5 text-xs text-ink"
+                >
+                  <button
+                    type="button"
+                    onClick={() => onOpenFile(fname)}
+                    className="mono max-w-[200px] truncate text-left hover:underline"
+                    title={`Inspect ${fname}`}
+                  >
+                    {fname}
+                  </button>
+                  {onRemoveUploaded && (
+                    <button
+                      type="button"
+                      aria-label={`Remove ${fname} from queue`}
+                      onClick={() => onRemoveUploaded(fname)}
+                      className="rounded-full p-0.5 text-ink-3 hover:bg-board hover:text-ink"
+                    >
+                      <X className="size-3" strokeWidth={1.5} aria-hidden />
+                    </button>
+                  )}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
       )}
       <div className="flex flex-col gap-2 rounded-dialog border border-hairline bg-board/45 p-2.5 shadow-card motion-safe:transition-[border-color] motion-safe:duration-(--dur-reveal) motion-safe:ease-(--ease-house)">
@@ -468,6 +509,7 @@ export function Chat({
                       personName={personName}
                       useServerExport={useServerExport}
                       onOpenFile={onOpenFile}
+                      onSaveRoutine={onSaveRoutine}
                     />
                   );
                 }

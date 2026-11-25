@@ -4,6 +4,17 @@ Each release is tagged `vMAJOR.MINOR.PATCH` and published on GitHub Releases wit
 binaries and a `SHA256SUMS` file. The running app shows its version and can update
 itself from the newest release (see README, "Versions and updates").
 
+## 0.12.0 - 2026-11-25
+
+- **Modular HTTP Server & Atomic Persistence (`src/server.rs`, `src/lib.rs`, `src/routines.rs`, `src/scheduler.rs`, `src/file_history.rs`):**
+  - Extracted the embedded HTTP server, request parser, security gates, and domain route handlers (`try_route_system`, `try_route_files_and_audit`, `try_route_knowledge_and_routines`, `try_route_runs_and_chat`) out of `src/lib.rs` into a cohesive `src/server.rs` module while keeping all public crate exports intact.
+  - Standardized config, thread store, routine store, scheduler run history, and `.history/` manifests/blobs onto unique-temp atomic writes (`atomic_write_bytes` / `atomic_write_bytes_with_mode` preserving `0o600` on saved API keys).
+  - Added `GET /api/files/pack` (with corresponding `frontend/src/lib/webEngine.ts` standalone parity) to assemble verified SHA-256 Client Deliverable Packs (`.md`) with sandbox containment and symlink rejection.
+- **Zero-Effort User Value & Frontend Bundle / 60fps Optimizations (`frontend/src/`, `rune/used/`):**
+  - Added 1-click **Save as routine** actions directly on finished deliverables (`FinishedEntry` in `Entry.tsx`) and finished receipt rows in `Today` (`PaperFace` in `Paper.tsx`), plus 1-click **Client Pack (.md)** batch deliverable downloads in `FinishedEntry` and `InspectorDrawer` Audit tab.
+  - Enhanced composer drag-and-drop / multi-file uploads (`Chat.tsx`, `detectBatchWorkflow` in `words.ts`) with interactive file queue chips (inspect / remove individual files) and 1-click multi-file batch workflow actions (`Reconcile N sheets`, `Compare N documents`, `Summarize N files`).
+  - Switched `motion/react` to `<LazyMotion features={domAnimation} strict>` + `m` across `App.tsx`, `InspectorDrawer.tsx`, `text-shimmer.tsx`, and `border-trail.tsx` (trimming JS & single-file HTML bundle size), memoized heavy workbench panes (`PaperFace`, `InspectorDrawer`, `CommandPalette`, `FinishedEntry`), and replaced `Today`'s eager `?limit=5000` fetch with fast `/api/receipts?limit=200` initial load + debounced server search and on-demand load-all.
+
 ## 0.11.0 - 2026-11-25
 
 - **Faster Runtime, Compression & Release Binary Diet (`Cargo.toml`, `src/lib.rs`, `src/tripwire.rs`, `src/search.rs`):**

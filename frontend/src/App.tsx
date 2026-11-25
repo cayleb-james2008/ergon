@@ -4,7 +4,7 @@
 // - Central Thread / Today / Work Graph: inline Approvals & File Diffs, 1-click Deliverable Starters, Word/Excel & SHA-256 export
 // - Collapsible Right Inspector Drawer: Workspace Files, Version History & Diff, SHA-256 Audit Bundle & Offers
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AnimatePresence, MotionConfig, motion, useReducedMotion } from "motion/react";
+import { AnimatePresence, LazyMotion, MotionConfig, domAnimation, m, useReducedMotion } from "motion/react";
 import { Drawer } from "vaul";
 import {
   Blocks,
@@ -464,10 +464,8 @@ export function App() {
               return (
                 <li key={t.id} className="relative">
                   {active && (
-                    <motion.span
-                      layoutId="rail-active-thread"
+                    <span
                       aria-hidden
-                      transition={reduceMotion ? instant : glide}
                       className="pointer-events-none absolute inset-0 rounded-sm bg-board"
                     />
                   )}
@@ -661,7 +659,20 @@ export function App() {
     </div>
   );
 
+  const handleSaveRoutineFromWork = useCallback(
+    (name: string, prompt: string, schedule = "daily 09:00") =>
+      desk.createRoutine({ name, prompt, schedule }),
+    [desk.createRoutine]
+  );
+
+  const handleDismissUploaded = useCallback(() => desk.setLastUploaded([]), [desk.setLastUploaded]);
+  const handleRemoveUploaded = useCallback(
+    (path: string) => desk.setLastUploaded((prev) => prev.filter((p) => p !== path)),
+    [desk.setLastUploaded]
+  );
+
   return (
+    <LazyMotion features={domAnimation} strict>
     <MotionConfig reducedMotion="user">
     <div className="flex h-dvh flex-col overflow-hidden bg-canvas text-ink">
       <Toaster
@@ -856,7 +867,8 @@ export function App() {
               pendingNote={desk.pendingNote}
               starters={desk.starters}
               lastUploaded={desk.lastUploaded}
-              onDismissUploaded={() => desk.setLastUploaded([])}
+              onDismissUploaded={handleDismissUploaded}
+              onRemoveUploaded={handleRemoveUploaded}
               useServerExport={hasV050Api(desk.status, "receipts_export")}
               onSend={desk.send}
               onRunPrompt={(prompt) => {
@@ -871,6 +883,7 @@ export function App() {
               onOpenFiles={openFilesInspector}
               onExportAuditBundle={handleExportAuditBundle}
               onUploadFiles={desk.uploadFiles}
+              onSaveRoutine={handleSaveRoutineFromWork}
               inputRef={inputRef}
             />
           )}
@@ -906,6 +919,7 @@ export function App() {
                 onOpenFilesPanel={openFilesInspector}
                 onUploadMany={desk.uploadFiles}
                 onExportAuditBundle={handleExportAuditBundle}
+                onSaveRoutine={handleSaveRoutineFromWork}
               />
             </div>
           )}
@@ -946,7 +960,7 @@ export function App() {
             />
           )}
           {!isXl && inspectorOpen && (
-            <motion.div
+            <m.div
               key="mobile-inspector"
               initial={reduceMotion ? false : { opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -979,7 +993,7 @@ export function App() {
                   }}
                 />
               </div>
-            </motion.div>
+            </m.div>
           )}
         </AnimatePresence>
       </div>
@@ -1161,6 +1175,7 @@ export function App() {
       />
     </div>
     </MotionConfig>
+    </LazyMotion>
   );
 }
 export default App;

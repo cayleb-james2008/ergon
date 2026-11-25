@@ -286,17 +286,14 @@ fn load_manifest(bucket: &Path) -> Vec<FileRevision> {
 }
 
 fn save_manifest(bucket: &Path, rel: &str, revisions: &[FileRevision]) -> Result<(), String> {
-    std::fs::create_dir_all(bucket).map_err(|e| format!("create history dir: {e}"))?;
     let path = manifest_path(bucket);
-    let tmp = bucket.join("manifest.json.tmp");
     let body = json!({
         "path": rel,
         "revisions": revisions.iter().map(|r| r.to_json()).collect::<Vec<_>>(),
     })
     .to_string();
-    std::fs::write(&tmp, body).map_err(|e| format!("write history manifest: {e}"))?;
-    std::fs::rename(&tmp, &path).map_err(|e| format!("commit history manifest: {e}"))?;
-    Ok(())
+    crate::atomic_write_bytes(&path, body.as_bytes())
+        .map_err(|e| format!("write history manifest: {e}"))
 }
 
 fn sanitize_reason(reason: &str) -> String {
@@ -336,9 +333,7 @@ fn write_revision_unlocked(
     let line_count = if is_text { count_lines(bytes) } else { 0 };
 
     let final_blob = blob_path(&bucket, &rev_id);
-    let tmp_blob = blobs_dir.join(format!("{rev_id}.blob.tmp"));
-    std::fs::write(&tmp_blob, bytes).map_err(|e| format!("write revision blob: {e}"))?;
-    std::fs::rename(&tmp_blob, &final_blob).map_err(|e| format!("commit revision blob: {e}"))?;
+    crate::atomic_write_bytes(&final_blob, bytes).map_err(|e| format!("write revision blob: {e}"))?;
 
     let rev = FileRevision {
         rev_id,

@@ -5,7 +5,7 @@
 // - Workspace Files (500+ ready, capped visible slice)
 // - Receipts & Conversations (5,000+ ready + debounced server GET /api/search?q=... on v0.5.0+)
 // - Recurring Routines (Run Now or manage)
-import { useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowRight,
   Blocks,
@@ -55,7 +55,7 @@ import {
 import type { SkillMeta } from "@/lib/skillsCatalog";
 import { detectWorkspaceWorkflow, relTime } from "@/lib/words";
 
-export function CommandPalette({
+export const CommandPalette = memo(function CommandPalette({
   open,
   onOpenChange,
   status,
@@ -508,4 +508,4 @@ export function CommandPalette({
       </DialogContent>
     </Dialog>
   );
-}
+});

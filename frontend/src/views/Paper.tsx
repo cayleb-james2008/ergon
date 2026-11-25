@@ -1,12 +1,14 @@
 // Today's Desk (Morning Brief, Drag-and-Drop Workspace & Operational Queue):
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
+  Check,
   CheckCircle2,
   Clock,
   FileCheck2,
   FileDown,
   FolderOpen,
+  Repeat,
   Search,
   ShieldAlert,
   Sparkles,
@@ -49,6 +51,7 @@ type Data = {
   todayEvents: TodayEvent[];
   threads: ThreadRow[];
   extraReceipts: BriefJob[];
+  receiptTotal: number;
 };
 
 type DecisionCopy = {
@@ -426,10 +429,12 @@ export function usePaper(onChanged: () => void, status?: Status | null | "error"
     }
 
     let extraReceipts: BriefJob[] = [];
+    let receiptTotal = 0;
     if (status && hasV050Api(status, "receipts_export")) {
-      const rec = await call<{ receipts?: BriefJob[] }>("/api/receipts?limit=5000");
+      const rec = await call<{ receipts?: BriefJob[]; total?: number }>("/api/receipts?limit=200");
       if (rec.ok && Array.isArray(rec.data.receipts)) {
         extraReceipts = rec.data.receipts.filter((x): x is BriefJob => !!x && typeof x === "object");
+        receiptTotal = typeof rec.data.total === "number" ? rec.data.total : extraReceipts.length;
       }
     }
 
@@ -441,8 +446,25 @@ export function usePaper(onChanged: () => void, status?: Status | null | "error"
       todayEvents: (td.data.events ?? []).filter((x): x is TodayEvent => !!x && typeof x === "object"),
       threads: (t.data.threads ?? []).filter((x): x is ThreadRow => !!x && typeof x === "object"),
       extraReceipts,
+      receiptTotal,
     });
   }, [status]);
+
+  const loadAllReceipts = useCallback(async () => {
+    const rec = await call<{ receipts?: BriefJob[]; total?: number }>("/api/receipts?limit=5000");
+    if (rec.ok && Array.isArray(rec.data.receipts)) {
+      const list = rec.data.receipts.filter((x): x is BriefJob => !!x && typeof x === "object");
+      setData((prev) =>
+        prev
+          ? {
+              ...prev,
+              extraReceipts: list,
+              receiptTotal: typeof rec.data.total === "number" ? rec.data.total : list.length,
+            }
+          : prev
+      );
+    }
+  }, []);
 
   useEffect(() => { load(); }, [load]);
 
@@ -457,10 +479,10 @@ export function usePaper(onChanged: () => void, status?: Status | null | "error"
     onChanged();
   }, [load, onChanged]);
 
-  return { data, failed, load, act };
+  return { data, failed, load, loadAllReceipts, act };
 }
 
-export function PaperFace({
+export const PaperFace = memo(function PaperFace({
   paper,
   status,
   personName,
@@ -483,6 +505,7 @@ export function PaperFace({
   onOpenFilesPanel,
   onUploadMany,
   onExportAuditBundle,
+  onSaveRoutine,
 }: {
   paper: ReturnType<typeof usePaper>;
   status: Status | null | "error";
@@ -506,11 +529,15 @@ export function PaperFace({
   onOpenFilesPanel: () => void;
   onUploadMany: (files: FileList | File[]) => Promise<number>;
   onExportAuditBundle?: (format: "json" | "md") => Promise<void>;
+  onSaveRoutine?: (name: string, prompt: string, schedule?: string) => Promise<boolean>;
 }) {
-  const { data, failed, load, act } = paper;
+  const { data, failed, load, loadAllReceipts, act } = paper;
   const [dragOver, setDragOver] = useState(false);
   const [exportingAudit, setExportingAudit] = useState(false);
   const [receiptQuery, setReceiptQuery] = useState("");
+  const [remoteReceipts, setRemoteReceipts] = useState<BriefJob[] | null>(null);
+  const [loadingAll, setLoadingAll] = useState(false);
+  const [savedRoutineKeys, setSavedRoutineKeys] = useState<Record<string, boolean>>({});
   const [onlyWithFiles, setOnlyWithFiles] = useState(false);
   const [receiptPage, setReceiptPage] = useState(0);
   const [eventsPage, setEventsPage] = useState(0);
@@ -544,11 +571,35 @@ export function PaperFace({
   };
   const waitingThreads = useMemo(() => new Set(pending.map((d) => d.thread_id).filter(Boolean)), [pending]);
 
+  const totalReceiptsCount = data?.receiptTotal ?? 0;
+  const loadedExtraCount = data?.extraReceipts.length ?? 0;
+  const hasMoreReceipts = totalReceiptsCount > loadedExtraCount;
+
+  useEffect(() => {
+    const q = receiptQuery.trim();
+    if (!q || !hasMoreReceipts || !status || !hasV050Api(status, "receipts_export")) {
+      setRemoteReceipts(null);
+      return;
+    }
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      call<{ receipts?: BriefJob[] }>(`/api/receipts?limit=200&q=${encodeURIComponent(q)}`).then((r) => {
+        if (!cancelled && r.ok && Array.isArray(r.data.receipts)) {
+          setRemoteReceipts(r.data.receipts.filter((x): x is BriefJob => !!x && typeof x === "object"));
+        }
+      });
+    }, 180);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [receiptQuery, hasMoreReceipts, status]);
+
   const finished = useMemo(() => {
     const briefFin = (data?.brief.finished ?? [])
       .filter((x): x is BriefJob => !!x && typeof x === "object")
       .filter((x) => { const id = threadOf(x); return !id || !waitingThreads.has(id); });
-    const extra = data?.extraReceipts ?? [];
+    const extra = remoteReceipts ?? (data?.extraReceipts ?? []);
     if (!extra.length) return briefFin;
     const matchKey = (x: BriefJob) =>
       x.thread_id
@@ -582,7 +633,7 @@ export function PaperFace({
       merged.push(r);
     }
     return merged;
-  }, [data?.brief.finished, data?.extraReceipts, threadOf, waitingThreads]);
+  }, [data?.brief.finished, data?.extraReceipts, remoteReceipts, threadOf, waitingThreads]);
 
   const stopped = useMemo(
     () => (data?.brief.stopped ?? []).filter((x): x is BriefJob => !!x && typeof x === "object"),
@@ -875,11 +926,32 @@ export function PaperFace({
                 <section aria-labelledby="finished-h" className="grid gap-3">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <h2 id="finished-h" className="text-title font-medium text-ink">Finished</h2>
-                    <span className="mono text-xs text-ink-2">
-                      {filteredFinished.length === n
-                        ? `${n} ${n === 1 ? "receipt" : "receipts"}`
-                        : `${filteredFinished.length} of ${n} ${n === 1 ? "receipt" : "receipts"}`}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      {hasMoreReceipts && (
+                        <Button
+                          type="button"
+                          size="xs"
+                          variant="ghost"
+                          disabled={loadingAll}
+                          className="text-xs text-ink-2 hover:text-ink"
+                          onClick={async () => {
+                            setLoadingAll(true);
+                            try {
+                              await loadAllReceipts();
+                            } finally {
+                              setLoadingAll(false);
+                            }
+                          }}
+                        >
+                          {loadingAll ? "Loading…" : `Load all (${totalReceiptsCount})`}
+                        </Button>
+                      )}
+                      <span className="mono text-xs text-ink-2">
+                        {filteredFinished.length === n
+                          ? `${n} ${n === 1 ? "receipt" : "receipts"}`
+                          : `${filteredFinished.length} of ${n} ${n === 1 ? "receipt" : "receipts"}`}
+                      </span>
+                    </div>
                   </div>
 
                   {n >= 3 && (
@@ -968,6 +1040,28 @@ export function PaperFace({
                               </div>
                             </div>
                             <div className="flex flex-wrap items-center justify-end gap-1">
+                              {onSaveRoutine && taskTitle && (
+                                <Button
+                                  type="button"
+                                  size="xs"
+                                  variant="ghost"
+                                  className="max-md:min-h-11 gap-1 text-xs text-ink-2 hover:text-ink"
+                                  aria-label={`Save routine from ${taskTitle}`}
+                                  disabled={Boolean(savedRoutineKeys[x.id ?? `${globalIdx}`])}
+                                  onClick={async () => {
+                                    const key = x.id ?? `${globalIdx}`;
+                                    const ok = await onSaveRoutine(taskTitle.slice(0, 60), taskTitle, "daily 09:00");
+                                    if (ok) setSavedRoutineKeys((prev) => ({ ...prev, [key]: true }));
+                                  }}
+                                >
+                                  {savedRoutineKeys[x.id ?? `${globalIdx}`] ? (
+                                    <Check className="size-3.5 text-dot-green" strokeWidth={1.75} aria-hidden />
+                                  ) : (
+                                    <Repeat className="size-3.5" strokeWidth={1.5} aria-hidden />
+                                  )}
+                                  <span>{savedRoutineKeys[x.id ?? `${globalIdx}`] ? "Saved" : "Routine"}</span>
+                                </Button>
+                              )}
                               <Button
                                 type="button"
                                 size="xs"
@@ -1173,4 +1267,4 @@ export function PaperFace({
       </div>
     </div>
   );
-}
+});

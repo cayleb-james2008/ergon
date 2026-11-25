@@ -1787,11 +1787,11 @@ export async function installBrowserEngine(): Promise<void> {
     const st = activeStore();
     const byok = loadByok();
 
-    if (method === "GET" && path === "/api/version") return jsonRes({ name: "ergon", version: "0.11.0" });
-    if (method === "GET" && path === "/api/update") return jsonRes({ current: "0.11.0", available: false, mode: "off", checked_at: Math.floor(Date.now() / 1000) });
+    if (method === "GET" && path === "/api/version") return jsonRes({ name: "ergon", version: "0.12.0" });
+    if (method === "GET" && path === "/api/update") return jsonRes({ current: "0.12.0", available: false, mode: "off", checked_at: Math.floor(Date.now() / 1000) });
     if (method === "GET" && path === "/api/status") {
       return jsonRes({
-        version: "0.11.0",
+        version: "0.12.0",
         model_configured: true,
         model: byok.engine_mode === "byok" && byok.model_id ? byok.model_id : "browser-workspace-engine",
         model_base_url: byok.engine_mode === "byok" ? byok.model_base_url : "indexeddb://local",
@@ -2047,6 +2047,64 @@ export async function installBrowserEngine(): Promise<void> {
         });
       }
       return jsonRes({ ...found, is_binary: false });
+    }
+    if (method === "GET" && path === "/api/files/pack") {
+      const rawFiles = u.searchParams.get("files") || "";
+      const title = (u.searchParams.get("title") || "").trim() || "Client Deliverable Pack";
+      const requested = rawFiles
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean)
+        .slice(0, 25);
+      const explicit = requested.length > 0;
+      const targets = explicit
+        ? requested
+        : Object.values(st.files)
+            .sort((a, b) => b.mtime_ms - a.mtime_ms || a.path.localeCompare(b.path))
+            .slice(0, 15)
+            .map((f) => f.path);
+      const sections: Array<{ path: string; sha: string; body: string }> = [];
+      for (const rel of targets) {
+        const safe = sanitizeSafePath(rel);
+        if (!safe) {
+          if (explicit) return jsonRes({ error: "path escapes the workspace" }, 403);
+          continue;
+        }
+        const f = st.files[safe];
+        if (!f) continue;
+        const sha = await sha256Hex(f.content);
+        const body =
+          f.ext === "md" || f.ext === "markdown" || f.ext === "txt"
+            ? f.content.trimEnd()
+            : `\`\`\`${f.ext === "csv" || f.ext === "tsv" ? "csv" : f.ext === "json" ? "json" : "text"}\n${f.content.trimEnd()}\n\`\`\``;
+        sections.push({ path: safe, sha, body });
+      }
+      if (explicit && sections.length === 0) {
+        return jsonRes({ error: "no matching workspace files found" }, 404);
+      }
+      const lines = [
+        `# ${title}`,
+        "",
+        `- Prepared for: **${p.name}**`,
+        `- Files included: ${sections.length}`,
+        "",
+        "## Included Deliverables",
+        "",
+        ...sections.map((s) => `- \`${s.path}\` (\`sha256:${s.sha}\`)`),
+      ];
+      for (const s of sections) {
+        lines.push("", "---", "", `## \`${s.path}\``, "", `_SHA-256: \`${s.sha}\`_`, "", s.body);
+      }
+      const md = lines.join("\n") + "\n";
+      const packSha = await sha256Hex(md);
+      return new Response(md, {
+        status: 200,
+        headers: {
+          "Content-Type": "text/markdown; charset=utf-8",
+          "X-Content-Type-Options": "nosniff",
+          "X-Ergon-Pack-SHA256": packSha,
+        },
+      });
     }
     if (method === "GET" && path === "/api/files/history") {
       const rawPath = u.searchParams.get("path") || "";
