@@ -1079,6 +1079,9 @@ pub struct CitationCheck {
     pub end_line: Option<usize>,
     pub status: &'static str,
     pub total_lines: usize,
+    pub file_sha256: String,
+    pub line_excerpt: String,
+    pub baseline_sha256: Option<String>,
 }
 
 impl CitationCheck {
@@ -1090,6 +1093,9 @@ impl CitationCheck {
             "end_line": self.end_line,
             "status": self.status,
             "total_lines": self.total_lines,
+            "file_sha256": self.file_sha256,
+            "line_excerpt": self.line_excerpt,
+            "baseline_sha256": self.baseline_sha256,
         })
     }
 }
@@ -1098,17 +1104,39 @@ impl CitationCheck {
 pub struct CitationReport {
     pub total: usize,
     pub verified: usize,
+    pub stale: usize,
     pub broken: usize,
     pub citations: Vec<CitationCheck>,
 }
 
 impl CitationReport {
+    pub fn freshness_pct(&self) -> u8 {
+        if self.total == 0 {
+            100
+        } else {
+            ((self.verified * 100) / self.total) as u8
+        }
+    }
+
+    pub fn gate_status(&self) -> &'static str {
+        if self.broken == 0 && self.stale == 0 {
+            "100% Verified"
+        } else if self.stale > 0 {
+            "Stale Line Drift"
+        } else {
+            "Broken Citations"
+        }
+    }
+
     pub fn to_json(&self) -> Value {
         json!({
             "total": self.total,
             "verified": self.verified,
+            "stale": self.stale,
             "broken": self.broken,
-            "ok": self.broken == 0,
+            "freshness_pct": self.freshness_pct(),
+            "gate_status": self.gate_status(),
+            "ok": self.broken == 0 && self.stale == 0,
             "citations": self.citations.iter().map(CitationCheck::to_json).collect::<Vec<_>>(),
         })
     }
@@ -1211,45 +1239,60 @@ pub fn extract_file_citations(text: &str) -> Vec<(String, String, usize, Option<
     out
 }
 
-/// Verify `[file:L##]` cross-file citations against sandboxed files and exact line counts in `workspace_dir`.
-pub fn verify_text_citations(workspace_dir: &Path, text: &str) -> CitationReport {
+/// Verify `[file:L##]` cross-file citations against live workspace files, exact line counts,
+/// SHA-256 digests, and optional baseline SHA-256 digests (`expected_shas` -> `"stale"` on drift).
+pub fn verify_text_citations_against(
+    workspace_dir: &Path,
+    text: &str,
+    expected_shas: Option<&std::collections::HashMap<String, String>>,
+) -> CitationReport {
     let extracted = extract_file_citations(text);
-    let mut line_cache: std::collections::HashMap<String, Option<usize>> =
+    // Cache per path: Option<(file_sha256, lines)>
+    let mut file_cache: std::collections::HashMap<String, Option<(String, Vec<String>)>> =
         std::collections::HashMap::new();
     let mut report = CitationReport::default();
 
     for (raw, path, line, end_line) in extracted {
-        let total_lines_opt = if let Some(cached) = line_cache.get(&path) {
-            *cached
-        } else {
-            let count_opt = sandbox_path(workspace_dir, &path).ok().and_then(|full| {
+        if !file_cache.contains_key(&path) {
+            let loaded = sandbox_path(workspace_dir, &path).ok().and_then(|full| {
                 if full
                     .symlink_metadata()
                     .is_ok_and(|md| md.file_type().is_symlink())
                 {
                     return None;
                 }
-                searchable_text(&full).ok().map(|s| s.lines().count())
+                let raw_bytes = std::fs::read(&full).ok()?;
+                let sha = crate::receipts::sha256_hex(&raw_bytes);
+                let text_body = searchable_text(&full).ok()?;
+                let lines: Vec<String> = text_body.lines().map(|l| l.to_string()).collect();
+                Some((sha, lines))
             });
-            line_cache.insert(path.clone(), count_opt);
-            count_opt
-        };
+            file_cache.insert(path.clone(), loaded);
+        }
+        let cached = file_cache.get(&path).and_then(|v| v.as_ref());
+        let expected_sha = expected_shas.and_then(|m| m.get(&path)).cloned();
 
-        let (status, total_lines) = match total_lines_opt {
-            None => ("missing", 0),
-            Some(total) => {
+        let (status, total_lines, file_sha256, line_excerpt) = match cached {
+            None => ("missing", 0, String::new(), String::new()),
+            Some((sha, lines)) => {
+                let total = lines.len();
                 let end_ok = end_line.is_none_or(|e| e >= line && e <= total);
                 if line >= 1 && line <= total && end_ok {
-                    ("verified", total)
+                    let excerpt = truncate(lines[line - 1].trim(), 140);
+                    let is_stale = expected_sha
+                        .as_deref()
+                        .is_some_and(|exp| !exp.is_empty() && !exp.eq_ignore_ascii_case(sha));
+                    let st = if is_stale { "stale" } else { "verified" };
+                    (st, total, sha.clone(), excerpt)
                 } else {
-                    ("out_of_range", total)
+                    ("out_of_range", total, sha.clone(), String::new())
                 }
             }
         };
-        if status == "verified" {
-            report.verified += 1;
-        } else {
-            report.broken += 1;
+        match status {
+            "verified" => report.verified += 1,
+            "stale" => report.stale += 1,
+            _ => report.broken += 1,
         }
         report.total += 1;
         report.citations.push(CitationCheck {
@@ -1259,8 +1302,16 @@ pub fn verify_text_citations(workspace_dir: &Path, text: &str) -> CitationReport
             end_line,
             status,
             total_lines,
+            file_sha256,
+            line_excerpt,
+            baseline_sha256: expected_sha,
         });
     }
     report
+}
+
+/// Verify `[file:L##]` cross-file citations against sandboxed files and exact line counts in `workspace_dir`.
+pub fn verify_text_citations(workspace_dir: &Path, text: &str) -> CitationReport {
+    verify_text_citations_against(workspace_dir, text, None)
 }
 

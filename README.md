@@ -14,7 +14,7 @@
 
 An AI agent desk for every employee — personal to each person, it learns how they work and **finishes digital work autonomously, end to end**. State a task in plain words; the agent executes against real sandboxed files and built-in workflows, grounds outputs with clickable `[file:L##]` source citations, and settles every completed run as a SHA-256 chained Field-Book receipt.
 
-A single `11.76 MB` Rust binary serves the entire product: the lazy-split web desk (`/` and `/phone`), raw-TCP HTTP + SSE engine, sandboxed document tools, per-person standing memory, background routine scheduler, and `.history/` revision store. Zero external runtime or database server.
+A single `9.31 MB` Rust binary serves the entire product: the lazy-split web desk (`/` and `/phone`), raw-TCP HTTP + SSE engine, sandboxed document tools, per-person standing memory, background routine scheduler, and `.history/` revision store. Zero external runtime or database server.
 
 ---
 
@@ -58,19 +58,19 @@ flowchart LR
 
 ---
 
-## Verified Benchmarks (`v0.17.0` vs `v0.11.0`)
+## Verified Benchmarks (`v0.18.0` vs `v0.11.0`)
 
-Measured against the stripped fat-LTO release binary (`target/release/ergon`) on isolated local loopback and a synthetic `5,000` receipts + `500` workspace files dataset:
+Measured against the stripped fat-LTO release binary (`target/release/ergon`) on isolated local loopback (`16w` pinned `#154` profile) and a synthetic `5,000` receipts + `500` workspace files dataset:
 
-| Metric | `v0.11.0` Baseline | `v0.17.0` Verified | Change |
+| Metric | `v0.11.0` Baseline | `v0.18.0` Verified | Change |
 | --- | --- | --- | --- |
-| Release Binary Size | `16.0 MB` | **`11.76 MB`** (`12,334,000 B`) | **`-26.5%`** |
+| Release Binary Size | `16.0 MB` | **`9.31 MB`** (`9,757,536 B`) | **`-41.8%`** |
 | Initial `/` Shell Payload | `1.15 MB` | **`149.1 KB` raw / `33.4 KB` gzip** (`15` `/chunks/*`) | **`-97.1%` wire** |
-| Cold Boot to `200 OK` | — | **`9.79–13.02 ms`** | Instant startup |
-| Peak RSS (`VmHWM`, `5k` receipts + `500` files) | — | **`13.72 MB`** (`14,052 KB`) | Zero-DOM streaming |
-| Concurrent HTTP (`16w` keep-alive `/api/status`) | `724 req/s` (`188.7 ms` p95) | **`21,003.7 req/s`** (`0.69 ms` p50, `1.04 ms` p95, `0` err) | **`29.0x` throughput** |
-| Streaming Audit Bundle (`5k` entries) | — | **`28.09 ms`** (`1.93 MB` verified bundle) | Sub-30ms export |
-| Automated Verification | `204` Rust tests | **`216/216` Rust tests** · **`100/100` UI checks** · `0` `sloplint` fails | `0` warnings / `0` externals |
+| Cold Boot to `200 OK` | — | **`11.67–17.88 ms`** | Instant startup |
+| Peak RSS (`VmHWM`, `5k` receipts + `500` files, warm) | — | **`16.39 MB`** (`16,784 KB`) | Shared chain reuse |
+| Concurrent HTTP (`16w` `/api/search` across `5k`/`500`) | `724 req/s` (`188.7 ms` p95) | **`13,960.7 req/s`** (`0.95 ms` p50, `1.99 ms` p95, `0` err) | **`19.3x` throughput** |
+| Streaming Audit Bundle (`5k` entries) | — | **`17.52 ms`** (`1.93 MB` verified bundle) | Zero-DOM streaming |
+| Automated Verification | `204` Rust tests | **`217/217` Rust tests** · **`100/100` UI checks** · `0` `sloplint` fails | `0` warnings / `0` externals |
 
 ---
 
@@ -128,7 +128,7 @@ On startup (unless `ERGON_NO_AUTO_MODEL=1` or an explicit `ERGON_MODEL_BASE_URL`
 ## Core Capabilities
 
 - **Desk Shell & Command Palette (`Cmd/Ctrl+K`)** — Lazy-split `assets/index.html` served over `/` and `/phone` with pre-compressed `.rodata` `/chunks/*`, `Vary: Accept-Encoding`, strong `ETag` + `304 Not Modified`, self-hosted **Geist** & **Geist Mono**, light-first tokens with Settings-only Light/Dark switch, collapsible right **Workspace** inspector (`Files`, `History`, `Audit`), and scored fuzzy `Cmd/Ctrl+K` jump across workspace files, `[file:L##]` citations, playbooks, workflows, and receipts.
-- **Cross-File Citations, Run Comparison & Client Packs** — `POST /api/citations/verify` checks `[file:L##]` citations directly into `GET /api/files/pack?preflight=1` before export. Clickable citation pills open `FileViewerModal` in highlighted source-line view. Inside **Inspector → Audit** and **History Diff**, `GET /api/receipts/compare` and `GET /api/files/pack?delta_a=...&delta_b=...` compute exact line/file deltas and append a verified delta section straight into your `.md` Client Pack.
+- **Cross-File Citations, Freshness Gate, Run Comparison & Client Handoff (`.html` / `.md`)** — `POST /api/citations/verify` checks `[file:L##]` citations against live workspace file SHA-256 digests and `.history/` snapshots (`100% Verified` vs `Stale Line Drift`) directly inside `GET /api/files/pack?preflight=1` before export. Clickable citation pills open `FileViewerModal` in highlighted source-line view. Inside **Inspector → Audit** and **History Diff**, `GET /api/receipts/compare`, `GET /api/files/pack?delta_a=...&delta_b=...`, and `GET /api/files/pack?format=html` generate signed Markdown Delta Packs and printable standalone Client Handoffs (`.html`, `Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'`).
 - **Standalone Web Demo (`npm run build:web`)** — Builds `frontend/dist/ergon-web.html` backed by an offline in-browser workflow & file engine (`webEngine.ts`) with zero external network requests.
 - **Workspace File Viewer, History & Playbooks** — Real CSV table sorting/filtering, Markdown section jump, collapsible JSON tree, `.history/` side-by-side diffs with reversible restore, and multi-step sequential **Workspace Playbooks** (`POST /api/routines/:id/run`).
 - **Office & PDF Documents (`src/docs.rs`)** — Reads PDFs (including modern CID fonts), Word `.docx`, Excel `.xlsx` (`book.xlsx#Sheet2`), and PowerPoint `.pptx` (slides + notes), and exports Markdown to styled `.docx` and CSV to typed `.xlsx` (`POST /api/files/export`). Uploads travel byte-exact up to `25 MB` behind zip-bomb and PDF timeout guards.
@@ -141,7 +141,7 @@ On startup (unless `ERGON_NO_AUTO_MODEL=1` or an explicit `ERGON_MODEL_BASE_URL`
 
 ```sh
 CARGO_BUILD_JOBS=2 cargo clippy --all-targets -- -D warnings
-CARGO_BUILD_JOBS=2 cargo test          # 216 Rust unit, E2E, scale, scheduler/history, workflow, tripwire & document tests
+CARGO_BUILD_JOBS=2 cargo test          # 217 Rust unit, E2E, scale, scheduler/history, workflow, tripwire & document tests
 cargo xwin check --target x86_64-pc-windows-msvc
 cd frontend && npm run check:ui        # Playwright E2E gate (74/74), Work Graph probe (6/6), worst-case replay (20/20)
 ```

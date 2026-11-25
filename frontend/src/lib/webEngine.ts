@@ -150,27 +150,106 @@ function sanitizeSafePath(raw: string): string | null {
   return segs.join("/");
 }
 
-function verifyTextCitationsInMemory(files: Record<string, WebFile>, text: string) {
+function escapeHtml(s: string): string {
+  return String(s || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+async function verifyTextCitationsInMemory(
+  files: Record<string, WebFile>,
+  text: string,
+  expectedShas?: Record<string, string>,
+  fileHistory?: Record<string, FileRevision[]>,
+  receiptTs = 0
+) {
   const extracted = extractCitations(text);
   let verified = 0;
+  let stale = 0;
   let broken = 0;
-  const citations = extracted.map((c) => {
-    const safe = sanitizeSafePath(c.path);
-    const f = safe ? files[safe] : undefined;
-    if (!f) {
+  const shaByPath: Record<string, string> = {};
+  const citations = await Promise.all(
+    extracted.map(async (c) => {
+      const safe = sanitizeSafePath(c.path);
+      const f = safe ? files[safe] : undefined;
+      if (!f || !safe) {
+        broken += 1;
+        return {
+          raw: c.raw,
+          path: c.path,
+          line: c.line,
+          end_line: c.endLine ?? null,
+          status: "missing" as const,
+          total_lines: 0,
+          file_sha256: "",
+          line_excerpt: "",
+          baseline_sha256: null,
+        };
+      }
+      if (!shaByPath[safe]) shaByPath[safe] = await sha256Hex(f.content);
+      const liveSha = shaByPath[safe];
+      const lines = f.content ? f.content.split(/\r?\n/) : [];
+      const totalLines = lines.length;
+      const endOk = c.endLine === undefined || (c.endLine >= c.line && c.endLine <= totalLines);
+      if (c.line >= 1 && c.line <= totalLines && endOk) {
+        const excerpt = String(lines[c.line - 1] || "").trim().slice(0, 140);
+        let baseSha = expectedShas?.[safe] || null;
+        if (!baseSha && receiptTs > 0 && Array.isArray(fileHistory?.[safe])) {
+          const postRev = [...fileHistory[safe]]
+            .filter((r) => r.ts > receiptTs)
+            .sort((a, b) => a.ts - b.ts)[0];
+          if (postRev?.content) baseSha = await sha256Hex(postRev.content);
+        }
+        const isStale = Boolean(baseSha && baseSha.toLowerCase() !== liveSha.toLowerCase());
+        if (isStale) {
+          stale += 1;
+          return {
+            raw: c.raw,
+            path: safe,
+            line: c.line,
+            end_line: c.endLine ?? null,
+            status: "stale" as const,
+            total_lines: totalLines,
+            file_sha256: liveSha,
+            line_excerpt: excerpt,
+            baseline_sha256: baseSha,
+          };
+        }
+        verified += 1;
+        return {
+          raw: c.raw,
+          path: safe,
+          line: c.line,
+          end_line: c.endLine ?? null,
+          status: "verified" as const,
+          total_lines: totalLines,
+          file_sha256: liveSha,
+          line_excerpt: excerpt,
+          baseline_sha256: baseSha,
+        };
+      }
       broken += 1;
-      return { raw: c.raw, path: c.path, line: c.line, end_line: c.endLine ?? null, status: "missing" as const, total_lines: 0 };
-    }
-    const totalLines = f.content ? f.content.split(/\r?\n/).length : 0;
-    const endOk = c.endLine === undefined || (c.endLine >= c.line && c.endLine <= totalLines);
-    if (c.line >= 1 && c.line <= totalLines && endOk) {
-      verified += 1;
-      return { raw: c.raw, path: safe!, line: c.line, end_line: c.endLine ?? null, status: "verified" as const, total_lines: totalLines };
-    }
-    broken += 1;
-    return { raw: c.raw, path: safe!, line: c.line, end_line: c.endLine ?? null, status: "out_of_range" as const, total_lines: totalLines };
-  });
-  return { total: citations.length, verified, broken, ok: broken === 0, citations };
+      return {
+        raw: c.raw,
+        path: safe,
+        line: c.line,
+        end_line: c.endLine ?? null,
+        status: "out_of_range" as const,
+        total_lines: totalLines,
+        file_sha256: liveSha,
+        line_excerpt: "",
+        baseline_sha256: null,
+      };
+    })
+  );
+  const total = citations.length;
+  const freshness_pct = total === 0 ? 100 : Math.floor((verified * 100) / total);
+  const gate_status =
+    broken === 0 && stale === 0 ? "100% Verified" : stale > 0 ? "Stale Line Drift" : "Broken Citations";
+  return { total, verified, stale, broken, freshness_pct, gate_status, ok: broken === 0 && stale === 0, citations };
 }
 
 function learnedLines(md: string): string[] {
@@ -1811,11 +1890,11 @@ export async function installBrowserEngine(): Promise<void> {
     const st = activeStore();
     const byok = loadByok();
 
-    if (method === "GET" && path === "/api/version") return jsonRes({ name: "ergon", version: "0.17.0" });
-    if (method === "GET" && path === "/api/update") return jsonRes({ current: "0.17.0", available: false, mode: "off", checked_at: Math.floor(Date.now() / 1000) });
+    if (method === "GET" && path === "/api/version") return jsonRes({ name: "ergon", version: "0.18.0" });
+    if (method === "GET" && path === "/api/update") return jsonRes({ current: "0.18.0", available: false, mode: "off", checked_at: Math.floor(Date.now() / 1000) });
     if (method === "GET" && path === "/api/status") {
       return jsonRes({
-        version: "0.17.0",
+        version: "0.18.0",
         model_configured: true,
         model: byok.engine_mode === "byok" && byok.model_id ? byok.model_id : "browser-workspace-engine",
         model_base_url: byok.engine_mode === "byok" ? byok.model_base_url : "indexeddb://local",
@@ -2088,6 +2167,8 @@ export async function installBrowserEngine(): Promise<void> {
     if (method === "GET" && path === "/api/files/pack") {
       const rawFiles = u.searchParams.get("files") || "";
       const title = (u.searchParams.get("title") || "").trim() || "Client Deliverable Pack";
+      const format = (u.searchParams.get("format") || "md").toLowerCase();
+      const receiptId = (u.searchParams.get("receipt_id") || "").trim();
       const preflightOnly = ["1", "true"].includes((u.searchParams.get("preflight") || "").toLowerCase());
       const requested = rawFiles
         .split(",")
@@ -2144,13 +2225,22 @@ export async function installBrowserEngine(): Promise<void> {
       if (explicit && sections.length === 0) {
         return jsonRes({ error: "no matching workspace files found" }, 404);
       }
+      const matchedReceipt = receiptId
+        ? st.work.find((w) => w.id === receiptId || w.thread_id === receiptId)
+        : undefined;
+      const receiptExtraText = matchedReceipt
+        ? `${matchedReceipt.task}\n${matchedReceipt.summary}`
+        : st.work.slice(-8).map((w) => w.summary).filter(Boolean).join("\n");
+      const citations = await verifyTextCitationsInMemory(
+        st.files,
+        [receiptExtraText, ...sections.map((s) => s.body)].filter(Boolean).join("\n"),
+        undefined,
+        st.fileHistory,
+        matchedReceipt?.ts ?? 0
+      );
       const preflightOk = readyCount > 0 && emptyCount === 0 && missingPaths.length === 0;
+      const allOk = preflightOk && citations.broken === 0 && citations.stale === 0;
       if (preflightOnly) {
-        const citations = verifyTextCitationsInMemory(
-          st.files,
-          sections.map((s) => s.body).join("\n")
-        );
-        const allOk = preflightOk && citations.broken === 0;
         return jsonRes({
           ok: allOk,
           ready_count: readyCount,
@@ -2159,7 +2249,10 @@ export async function installBrowserEngine(): Promise<void> {
           total_bytes: totalBytes,
           citations_checked: citations.total,
           citations_verified: citations.verified,
+          citations_stale: citations.stale,
           citations_broken: citations.broken,
+          citations_freshness_pct: citations.freshness_pct,
+          citation_gate: citations.gate_status,
           citations: citations.citations,
           files: [
             ...sections.map((s) => ({
@@ -2183,35 +2276,10 @@ export async function installBrowserEngine(): Promise<void> {
           ],
         });
       }
-      const citations = verifyTextCitationsInMemory(
-        st.files,
-        sections.map((s) => s.body).join("\n")
-      );
-      const allOk = preflightOk && citations.broken === 0;
-      const statusWord = allOk ? "PASS" : "WARN";
-      const lines = [
-        `# ${title}`,
-        "",
-        `- Prepared for: **${p.name}**`,
-        `- Files included: ${sections.length}`,
-        `- Pre-flight check: **${statusWord}** (${readyCount} non-empty, ${emptyCount} empty, ${missingPaths.length} missing, ${totalBytes} total bytes; citations: ${citations.verified} verified / ${citations.broken} broken)`,
-        "",
-        "## Included Deliverables",
-        "",
-        ...sections.map((s) => `- \`${s.path}\` (${s.count} ${s.unit}, \`sha256:${s.sha}\`)`),
-      ];
-      if (citations.citations.length > 0) {
-        lines.push("", "## Citation Verification", "");
-        for (const c of citations.citations) {
-          lines.push(`- \`${c.raw}\` -> **${c.status}** (${c.total_lines} lines in file)`);
-        }
-      }
-      for (const s of sections) {
-        lines.push("", "---", "", `## \`${s.path}\``, "", `_SHA-256: \`${s.sha}\` · ${s.count} ${s.unit} · ${s.size_bytes} bytes_`, "", s.body);
-      }
       const deltaA = (u.searchParams.get("delta_a") || "").trim();
       const deltaB = (u.searchParams.get("delta_b") || "").trim();
       const deltaFile = (u.searchParams.get("delta_file") || "").trim();
+      let deltaMd = "";
       let hasDelta = false;
       const simPct = (d: { added: number; removed: number; unchanged?: number }) => {
         const unc = d.unchanged ?? 0;
@@ -2224,8 +2292,7 @@ export async function installBrowserEngine(): Promise<void> {
         if (!ra || !rb) return jsonRes({ error: "delta receipt not found" }, 404);
         const diff = computeLineDiff(ra.summary || "", rb.summary || "", { path: `${deltaA}->${deltaB}` });
         const unifiedText = (diff.unified ?? "").trimEnd();
-        lines.push("", "---", "", `## Verified Run Delta (\`${deltaA}\` -> \`${deltaB}\`)`, "", `- **Changes:** +${diff.added} / -${diff.removed} lines (${simPct(diff)}% similarity)`);
-        if (unifiedText) lines.push("", "```diff", unifiedText, "```");
+        deltaMd = `## Verified Run Delta (\`${deltaA}\` -> \`${deltaB}\`)\n\n- **Changes:** +${diff.added} / -${diff.removed} lines (${simPct(diff)}% similarity)${unifiedText ? `\n\n\`\`\`diff\n${unifiedText}\n\`\`\`` : ""}`;
         hasDelta = true;
       } else if (deltaFile) {
         const safeDelta = sanitizeSafePath(deltaFile);
@@ -2238,10 +2305,64 @@ export async function installBrowserEngine(): Promise<void> {
         if (typeof textA !== "string" || typeof textB !== "string") return jsonRes({ error: "snapshot not found" }, 404);
         const diff = computeLineDiff(textA, textB, { path: safeDelta, rev_a: revAId, rev_b: revBId });
         const unifiedText = (diff.unified ?? "").trimEnd();
-        lines.push("", "---", "", `## Verified Snapshot Delta (\`${safeDelta}\`: \`${revAId}\` -> \`${revBId}\`)`, "", `- **Changes:** +${diff.added} / -${diff.removed} lines (${simPct(diff)}% similarity)`);
-        if (unifiedText) lines.push("", "```diff", unifiedText, "```");
+        deltaMd = `## Verified Snapshot Delta (\`${safeDelta}\`: \`${revAId}\` -> \`${revBId}\`)\n\n- **Changes:** +${diff.added} / -${diff.removed} lines (${simPct(diff)}% similarity)${unifiedText ? `\n\n\`\`\`diff\n${unifiedText}\n\`\`\`` : ""}`;
         hasDelta = true;
       }
+      if (format === "html") {
+        const manifestSha = await sha256Hex(sections.map((s) => `${s.path}:${s.sha}`).join("|"));
+        const filesRows = sections
+          .map((s) => `<tr><td><code>${escapeHtml(s.path)}</code></td><td>${s.count} ${s.unit}</td><td>${s.size_bytes} B</td><td><code>${escapeHtml(s.sha)}</code></td></tr>`)
+          .join("");
+        const citSection = citations.citations.length
+          ? `<section><h2>Live Citation Verification</h2><table><thead><tr><th>Citation</th><th>Gate Status</th><th>Live File SHA-256</th><th>Excerpt</th></tr></thead><tbody>${citations.citations
+              .map(
+                (c) =>
+                  `<tr><td><code>${escapeHtml(c.raw)}</code></td><td><span class="pill ${c.status === "verified" ? "ok" : "warn"}">${escapeHtml(c.status)}</span></td><td><code>${escapeHtml((c.file_sha256 || "").slice(0, 12))}</code></td><td>${escapeHtml(c.line_excerpt || "")}</td></tr>`
+              )
+              .join("")}</tbody></table></section>`
+          : "";
+        const deltaHtml = deltaMd ? `<section><h2>Verified Delta</h2><pre>${escapeHtml(deltaMd)}</pre></section>` : "";
+        const previews = sections
+          .map((s) => `<section><h3><code>${escapeHtml(s.path)}</code></h3><pre>${escapeHtml(s.body)}</pre></section>`)
+          .join("");
+        const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>${escapeHtml(title)}</title><style>body{font-family:sans-serif;max-width:920px;margin:32px auto;padding:0 20px;color:#111827}table{width:100%;border-collapse:collapse;font-size:13px}th,td{padding:8px;border-bottom:1px solid #e5e7eb;text-align:left}pre{background:#f9fafb;border:1px solid #e5e7eb;padding:12px;border-radius:8px;white-space:pre-wrap}</style></head><body><h1>${escapeHtml(title)}</h1><p>Prepared for <strong>${escapeHtml(p.name)}</strong> &middot; ${escapeHtml(citations.gate_status)} &middot; Manifest SHA-256: <code>${escapeHtml(manifestSha)}</code></p><table><thead><tr><th>File</th><th>Contents</th><th>Size</th><th>SHA-256</th></tr></thead><tbody>${filesRows}</tbody></table>${citSection}${deltaHtml}${previews}</body></html>`;
+        const packSha = await sha256Hex(html);
+        return new Response(html, {
+          status: 200,
+          headers: {
+            "Content-Type": "text/html; charset=utf-8",
+            "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'",
+            "X-Content-Type-Options": "nosniff",
+            "X-Ergon-Pack-SHA256": packSha,
+            "X-Ergon-Pack-Preflight": allOk ? "pass" : "warn",
+            "X-Ergon-Pack-Citation-Gate": citations.gate_status,
+            "X-Ergon-Pack-Ready-Count": String(readyCount),
+            "X-Ergon-Pack-Delta": hasDelta ? "yes" : "none",
+          },
+        });
+      }
+      const statusWord = allOk ? "PASS" : "WARN";
+      const lines = [
+        `# ${title}`,
+        "",
+        `- Prepared for: **${p.name}**`,
+        `- Files included: ${sections.length}`,
+        `- Pre-flight check: **${statusWord}** (${readyCount} non-empty, ${emptyCount} empty, ${missingPaths.length} missing, ${totalBytes} total bytes; citations: ${citations.gate_status} (${citations.verified} verified, ${citations.stale} stale, ${citations.broken} broken))`,
+        "",
+        "## Included Deliverables",
+        "",
+        ...sections.map((s) => `- \`${s.path}\` (${s.count} ${s.unit}, \`sha256:${s.sha}\`)`),
+      ];
+      if (citations.citations.length > 0) {
+        lines.push("", "## Citation Verification", "");
+        for (const c of citations.citations) {
+          lines.push(`- \`${c.raw}\` -> **${c.status}** (${c.total_lines} lines in file, live \`sha256:${(c.file_sha256 || "").slice(0, 12)}\`)`);
+        }
+      }
+      for (const s of sections) {
+        lines.push("", "---", "", `## \`${s.path}\``, "", `_SHA-256: \`${s.sha}\` · ${s.count} ${s.unit} · ${s.size_bytes} bytes_`, "", s.body);
+      }
+      if (deltaMd) lines.push("", "---", "", deltaMd);
       const md = lines.join("\n") + "\n";
       const packSha = await sha256Hex(md);
       return new Response(md, {
@@ -2251,6 +2372,7 @@ export async function installBrowserEngine(): Promise<void> {
           "X-Content-Type-Options": "nosniff",
           "X-Ergon-Pack-SHA256": packSha,
           "X-Ergon-Pack-Preflight": allOk ? "pass" : "warn",
+          "X-Ergon-Pack-Citation-Gate": citations.gate_status,
           "X-Ergon-Pack-Ready-Count": String(readyCount),
           "X-Ergon-Pack-Delta": hasDelta ? "yes" : "none",
         },
@@ -2306,11 +2428,19 @@ export async function installBrowserEngine(): Promise<void> {
       const b = (body && typeof body === "object" ? body : {}) as Record<string, unknown>;
       let text = String(b.text || "");
       const receiptId = String(b.receipt_id || "").trim();
-      if (!text && receiptId) {
+      let receiptTs = 0;
+      if (receiptId) {
         const hit = st.work.find((r) => r.id === receiptId || r.thread_id === receiptId);
-        if (hit) text = `${hit.task}\n${hit.summary}`;
+        if (hit) {
+          receiptTs = hit.ts;
+          if (!text) text = `${hit.task}\n${hit.summary}`;
+        }
       }
-      return jsonRes(verifyTextCitationsInMemory(st.files, text));
+      const expectedShas =
+        b.expected_shas && typeof b.expected_shas === "object"
+          ? (b.expected_shas as Record<string, string>)
+          : undefined;
+      return jsonRes(await verifyTextCitationsInMemory(st.files, text, expectedShas, st.fileHistory, receiptTs));
     }
     if (method === "GET" && path === "/api/files/history") {
       const rawPath = u.searchParams.get("path") || "";

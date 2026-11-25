@@ -230,14 +230,20 @@ export type CitationCheck = {
   path: string;
   line: number;
   end_line?: number | null;
-  status: "verified" | "out_of_range" | "missing";
+  status: "verified" | "stale" | "out_of_range" | "missing";
   total_lines: number;
+  file_sha256?: string;
+  line_excerpt?: string;
+  baseline_sha256?: string | null;
 };
 
 export type CitationReport = {
   total: number;
   verified: number;
+  stale?: number;
   broken: number;
+  freshness_pct?: number;
+  gate_status?: string;
   ok: boolean;
   citations: CitationCheck[];
 };
@@ -250,17 +256,27 @@ export type PackPreflightReport = {
   total_bytes: number;
   citations_checked?: number;
   citations_verified?: number;
+  citations_stale?: number;
   citations_broken?: number;
+  citations_freshness_pct?: number;
+  citation_gate?: string;
   citations?: CitationCheck[];
   files: PackPreflightFile[];
 };
 
-/** Verifies `[file:L##]` citations against workspace files and line counts. */
-export async function verifyCitations(text: string): Promise<CitationReport> {
+/** Verifies `[file:L##]` citations against live workspace files, SHA-256 digests, and line counts. */
+export async function verifyCitations(
+  text: string,
+  opts?: { receipt_id?: string; expected_shas?: Record<string, string> }
+): Promise<CitationReport> {
   const r = await fetch("/api/citations/verify", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ text }),
+    body: JSON.stringify({
+      text,
+      receipt_id: opts?.receipt_id,
+      expected_shas: opts?.expected_shas,
+    }),
     cache: "no-store",
   });
   if (r.ok) {
@@ -269,10 +285,14 @@ export async function verifyCitations(text: string): Promise<CitationReport> {
   throw new Error(`HTTP ${r.status}`);
 }
 
-/** Verifies non-empty deliverables, row/line counts, and SHA-256 digests before Client Pack export. */
-export async function preflightClientPack(files: string[]): Promise<PackPreflightReport> {
+/** Verifies non-empty deliverables, row/line counts, and live citation freshness before export. */
+export async function preflightClientPack(
+  files: string[],
+  receiptId?: string
+): Promise<PackPreflightReport> {
   const params = new URLSearchParams();
   if (files.length > 0) params.set("files", files.slice(0, 25).join(","));
+  if (receiptId) params.set("receipt_id", receiptId);
   params.set("preflight", "1");
   const r = await fetch(`/api/files/pack?${params.toString()}`, { cache: "no-store" });
   if (r.ok) {
@@ -313,18 +333,22 @@ export type PackDeltaOptions = {
   delta_file?: string;
   rev_a?: string;
   rev_b?: string;
+  receipt_id?: string;
 };
 
-/** Downloads a single verified Client Deliverable Pack (.md) combining selected/recent files + optional verified delta. */
-export async function exportClientPackDownload(
+async function fetchClientPack(
   files: string[],
-  title = "Client Deliverable Pack",
+  title: string,
+  format: "md" | "html",
   delta?: PackDeltaOptions
-): Promise<{ filename: string; sha256: string; preflight?: string }> {
-  const filename = `ergon-${safeSlug(title)}.md`;
+): Promise<{ filename: string; sha256: string; preflight?: string; citationGate?: string }> {
+  const ext = format === "html" ? "html" : "md";
+  const filename = format === "html" ? `ergon-${safeSlug(title)}-handoff.html` : `ergon-${safeSlug(title)}.md`;
+  const mime = format === "html" ? "text/html; charset=utf-8" : "text/markdown; charset=utf-8";
   const params = new URLSearchParams();
   if (files.length > 0) params.set("files", files.slice(0, 25).join(","));
   if (title.trim()) params.set("title", title.trim());
+  if (delta?.receipt_id) params.set("receipt_id", delta.receipt_id);
   if (delta?.delta_a && delta?.delta_b) {
     params.set("delta_a", delta.delta_a);
     params.set("delta_b", delta.delta_b);
@@ -333,6 +357,7 @@ export async function exportClientPackDownload(
     params.set("rev_a", delta.rev_a);
     params.set("rev_b", delta.rev_b || "current");
   }
+  if (format === "html") params.set("format", "html");
   params.set("download", "1");
 
   const r = await fetch(`/api/files/pack?${params.toString()}`, { cache: "no-store" });
@@ -340,9 +365,28 @@ export async function exportClientPackDownload(
     const text = await r.text();
     const headerHash = r.headers.get("X-Ergon-Pack-SHA256") || "";
     const preflight = r.headers.get("X-Ergon-Pack-Preflight") || undefined;
+    const citationGate = r.headers.get("X-Ergon-Pack-Citation-Gate") || undefined;
     const digest = headerHash || (await sha256Hex(text));
-    triggerDownload(filename, text, "text/markdown; charset=utf-8");
-    return { filename, sha256: digest, preflight };
+    triggerDownload(filename, text, mime);
+    return { filename, sha256: digest, preflight, citationGate };
   }
-  throw new Error(`HTTP ${r.status}`);
+  throw new Error(`HTTP ${r.status} (${ext})`);
+}
+
+/** Downloads a single verified Client Deliverable Pack (.md) combining selected/recent files + optional verified delta. */
+export async function exportClientPackDownload(
+  files: string[],
+  title = "Client Deliverable Pack",
+  delta?: PackDeltaOptions
+): Promise<{ filename: string; sha256: string; preflight?: string; citationGate?: string }> {
+  return fetchClientPack(files, title, "md", delta);
+}
+
+/** Downloads a standalone printable Verified Client Handoff (.html) with SHA-256 manifest and live citation gate. */
+export async function exportClientHandoffHtml(
+  files: string[],
+  title = "Client Deliverable Pack",
+  delta?: PackDeltaOptions
+): Promise<{ filename: string; sha256: string; preflight?: string; citationGate?: string }> {
+  return fetchClientPack(files, title, "html", delta);
 }

@@ -118,14 +118,21 @@ fn collect_workspace_digests(person_data_dir: &Path, workspace_dir: &Path) -> Ve
 }
 
 fn compute_workspace_manifest_sha256(files: &[Value]) -> String {
-    let mut canonical = String::new();
+    use std::io::Write as _;
+    let mut w = ShaWriter(Sha256::new());
     for f in files {
         let p = f["path"].as_str().unwrap_or("");
         let sz = f["size_bytes"].as_u64().unwrap_or(0);
         let h = f["sha256"].as_str().unwrap_or("");
-        canonical.push_str(&format!("{p}|{sz}|{h}\n"));
+        let _ = writeln!(&mut w, "{p}|{sz}|{h}");
     }
-    sha256_hex(canonical.as_bytes())
+    let digest = w.0.finalize();
+    let mut out = String::with_capacity(64);
+    for b in digest {
+        use std::fmt::Write as _;
+        let _ = write!(&mut out, "{b:02x}");
+    }
+    out
 }
 
 fn compute_receipt_chain_digest(head_hash: &str, length: usize, verified: bool) -> String {
@@ -659,13 +666,26 @@ fn write_receipt_chain_json(
     w.write_all(b"}")
 }
 
-/// Stream a complete tamper-evident JSON Audit Bundle directly into `Vec<u8>` without
-/// allocating `serde_json::Value::Object` maps for 5k+ receipt entries.
-pub fn build_audit_bundle_json_bytes(cfg: &Config, person: &Person, security: &Value) -> Vec<u8> {
+/// Stream a complete tamper-evident JSON Audit Bundle directly into `Vec<u8>`,
+/// optionally borrowing an already-loaded `ChainedReceipt` slice so warm
+/// `/api/audit/bundle` calls never allocate a duplicate 5k-receipt vector.
+pub fn build_audit_bundle_json_bytes_with_chain(
+    cfg: &Config,
+    person: &Person,
+    security: &Value,
+    cached: Option<(&[ChainedReceipt], bool, &str)>,
+) -> Vec<u8> {
     let now_ms = records::now_millis();
-    let chain = receipts::load_chain(&cfg.data_dir);
+    let owned_chain;
+    let (chain, chain_verified, head_hash): (&[ChainedReceipt], bool, String) = match cached {
+        Some((c, v, h)) => (c, v, h.to_string()),
+        None => {
+            owned_chain = receipts::load_chain(&cfg.data_dir);
+            let (v, h) = receipts::verify_chain(&owned_chain);
+            (&owned_chain, v, h)
+        }
+    };
     let chain_len = chain.len();
-    let (chain_verified, head_hash) = receipts::verify_chain(&chain);
 
     let workspace_files = collect_workspace_digests(&cfg.data_dir, &cfg.workspace_dir);
     let workspace_manifest_sha256 = compute_workspace_manifest_sha256(&workspace_files);
@@ -723,7 +743,7 @@ pub fn build_audit_bundle_json_bytes(cfg: &Config, person: &Person, security: &V
         sha.write_all(b",\"person\":")?;
         serde_json::to_writer(&mut sha, &person_val).map_err(std::io::Error::other)?;
         sha.write_all(b",\"receipt_chain\":")?;
-        write_receipt_chain_json(&mut sha, &chain, chain_verified, &head_hash)?;
+        write_receipt_chain_json(&mut sha, chain, chain_verified, &head_hash)?;
         sha.write_all(b",\"routines\":")?;
         serde_json::to_writer(&mut sha, &routines_val).map_err(std::io::Error::other)?;
         sha.write_all(b",\"schema\":")?;
@@ -762,7 +782,7 @@ pub fn build_audit_bundle_json_bytes(cfg: &Config, person: &Person, security: &V
         out.write_all(b",\"person\":")?;
         serde_json::to_writer(&mut out, &person_val).map_err(std::io::Error::other)?;
         out.write_all(b",\"receipt_chain\":")?;
-        write_receipt_chain_json(&mut out, &chain, chain_verified, &head_hash)?;
+        write_receipt_chain_json(&mut out, chain, chain_verified, &head_hash)?;
         out.write_all(b",\"workspace_files\":")?;
         serde_json::to_writer(&mut out, &workspace_files_val).map_err(std::io::Error::other)?;
         out.write_all(b",\"standing_memory\":")?;
@@ -786,4 +806,8 @@ pub fn build_audit_bundle_json_bytes(cfg: &Config, person: &Person, security: &V
         out.write_all(b"}")
     })();
     out
+}
+
+pub fn build_audit_bundle_json_bytes(cfg: &Config, person: &Person, security: &Value) -> Vec<u8> {
+    build_audit_bundle_json_bytes_with_chain(cfg, person, security, None)
 }

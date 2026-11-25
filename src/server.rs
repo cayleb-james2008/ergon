@@ -2042,14 +2042,35 @@ struct PackPreflight {
     items: Vec<PackCheckedFile>,
     citations: Vec<CitationCheck>,
     citations_verified: usize,
+    citations_stale: usize,
     citations_broken: usize,
 }
 
 impl PackPreflight {
+    fn freshness_pct(&self) -> u8 {
+        let total = self.citations.len();
+        if total == 0 {
+            100
+        } else {
+            ((self.citations_verified * 100) / total) as u8
+        }
+    }
+
+    fn citation_gate(&self) -> &'static str {
+        if self.citations_broken == 0 && self.citations_stale == 0 {
+            "100% Verified"
+        } else if self.citations_stale > 0 {
+            "Stale Line Drift"
+        } else {
+            "Broken Citations"
+        }
+    }
+
     fn ok(&self) -> bool {
         self.ready_count > 0
             && self.empty_count == 0
             && self.missing_paths.is_empty()
+            && self.citations_stale == 0
             && self.citations_broken == 0
     }
 
@@ -2088,18 +2109,99 @@ impl PackPreflight {
             "total_bytes": self.total_bytes,
             "citations_checked": self.citations.len(),
             "citations_verified": self.citations_verified,
+            "citations_stale": self.citations_stale,
             "citations_broken": self.citations_broken,
+            "citations_freshness_pct": self.freshness_pct(),
+            "citation_gate": self.citation_gate(),
             "citations": self.citations.iter().map(CitationCheck::to_json).collect::<Vec<_>>(),
             "files": files_json,
         })
     }
 }
 
+fn html_escape(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for ch in s.chars() {
+        match ch {
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            '"' => out.push_str("&quot;"),
+            '\'' => out.push_str("&#39;"),
+            _ => out.push(ch),
+        }
+    }
+    out
+}
+
+/// Find the pre-overwrite SHA-256 recorded just after `receipt_ts` (oldest snapshot with `ts > receipt_ts`).
+fn history_baseline_sha_for_receipt(
+    data_dir: &std::path::Path,
+    workspace_dir: &std::path::Path,
+    rel_path: &str,
+    receipt_ts: u64,
+) -> Option<String> {
+    if receipt_ts == 0 {
+        return None;
+    }
+    let revs = file_history::list_revisions(data_dir, workspace_dir, rel_path).ok()?;
+    revs.into_iter()
+        .filter(|r| r.timestamp_ms > receipt_ts)
+        .min_by_key(|r| r.timestamp_ms)
+        .map(|r| r.sha256)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn collect_citations_into(
+    data_dir: Option<&std::path::Path>,
+    workspace_dir: &std::path::Path,
+    text: &str,
+    receipt_ts: u64,
+    expected_shas: Option<&std::collections::HashMap<String, String>>,
+    citations: &mut Vec<CitationCheck>,
+    seen: &mut std::collections::HashSet<(String, usize, Option<usize>)>,
+    verified: &mut usize,
+    stale: &mut usize,
+    broken: &mut usize,
+) {
+    if citations.len() >= 32 || text.is_empty() {
+        return;
+    }
+    let mut rep = verify_text_citations_against(workspace_dir, text, expected_shas);
+    for mut c in rep.citations.drain(..) {
+        if !seen.insert((c.path.clone(), c.line, c.end_line)) {
+            continue;
+        }
+        if c.status == "verified" && receipt_ts > 0 {
+            if let Some(ddir) = data_dir {
+                if let Some(base_sha) = history_baseline_sha_for_receipt(ddir, workspace_dir, &c.path, receipt_ts) {
+                    if !base_sha.is_empty() && !base_sha.eq_ignore_ascii_case(&c.file_sha256) {
+                        c.status = "stale";
+                        c.baseline_sha256 = Some(base_sha);
+                    }
+                }
+            }
+        }
+        match c.status {
+            "verified" => *verified += 1,
+            "stale" => *stale += 1,
+            _ => *broken += 1,
+        }
+        citations.push(c);
+        if citations.len() >= 32 {
+            break;
+        }
+    }
+}
+
 /// Validates workspace deliverable paths, computes non-empty/row/line counts, citations, and SHA-256 digests.
 fn inspect_workspace_pack(
+    data_dir: &std::path::Path,
     workspace_dir: &std::path::Path,
     requested: &[String],
     explicit: bool,
+    extra_receipt_texts: &[(&str, u64)],
+    expected_shas: Option<&std::collections::HashMap<String, String>>,
 ) -> Result<PackPreflight, (u16, String)> {
     const MAX_PACK_BYTES: usize = 2 * 1024 * 1024;
     const MAX_FILE_BYTES: usize = 512 * 1024;
@@ -2113,7 +2215,22 @@ fn inspect_workspace_pack(
     let mut seen_citations: std::collections::HashSet<(String, usize, Option<usize>)> =
         std::collections::HashSet::new();
     let mut citations_verified = 0usize;
+    let mut citations_stale = 0usize;
     let mut citations_broken = 0usize;
+    for &(rtext, rts) in extra_receipt_texts {
+        collect_citations_into(
+            Some(data_dir),
+            workspace_dir,
+            rtext,
+            rts,
+            expected_shas,
+            &mut citations,
+            &mut seen_citations,
+            &mut citations_verified,
+            &mut citations_stale,
+            &mut citations_broken,
+        );
+    }
     for rel in requested {
         let full = match sandbox_path(workspace_dir, rel) {
             Ok(p) => p,
@@ -2166,22 +2283,18 @@ fn inspect_workspace_pack(
             } else {
                 (line_count, "lines")
             };
-            if citations.len() < 32 {
-                let cr = verify_text_citations(workspace_dir, text);
-                for c in cr.citations {
-                    if seen_citations.insert((c.path.clone(), c.line, c.end_line)) {
-                        if c.status == "verified" {
-                            citations_verified += 1;
-                        } else {
-                            citations_broken += 1;
-                        }
-                        citations.push(c);
-                        if citations.len() >= 32 {
-                            break;
-                        }
-                    }
-                }
-            }
+            collect_citations_into(
+                Some(data_dir),
+                workspace_dir,
+                text,
+                0,
+                expected_shas,
+                &mut citations,
+                &mut seen_citations,
+                &mut citations_verified,
+                &mut citations_stale,
+                &mut citations_broken,
+            );
             let rendered = if ext == "md" || ext == "markdown" || ext == "txt" {
                 text.trim_end().to_string()
             } else {
@@ -2229,29 +2342,24 @@ fn inspect_workspace_pack(
         items,
         citations,
         citations_verified,
+        citations_stale,
         citations_broken,
     })
 }
 
-/// Builds a Markdown Client Deliverable Pack across workspace files with pre-flight verification & SHA-256 digests.
-fn build_workspace_pack(
-    workspace_dir: &std::path::Path,
-    person_name: &str,
-    title: &str,
-    requested: &[String],
-    explicit: bool,
-) -> Result<(String, String, bool, usize), (u16, String)> {
-    let preflight = inspect_workspace_pack(workspace_dir, requested, explicit)?;
+fn format_workspace_pack_markdown(preflight: &PackPreflight, person_name: &str, title: &str) -> String {
     let ok = preflight.ok();
     let ready = preflight.ready_count;
     let status_word = if ok { "PASS" } else { "WARN" };
     let mut md = format!(
-        "# {title}\n\n- Prepared for: **{person_name}**\n- Files included: {}\n- Pre-flight check: **{status_word}** ({ready} non-empty, {} empty, {} missing, {} total bytes; citations: {} verified / {} broken)\n\n## Included Deliverables\n\n",
+        "# {title}\n\n- Prepared for: **{person_name}**\n- Files included: {}\n- Pre-flight check: **{status_word}** ({ready} non-empty, {} empty, {} missing, {} total bytes; citations: {} ({} verified, {} stale, {} broken))\n\n## Included Deliverables\n\n",
         preflight.items.len(),
         preflight.empty_count,
         preflight.missing_paths.len(),
         preflight.total_bytes,
+        preflight.citation_gate(),
         preflight.citations_verified,
+        preflight.citations_stale,
         preflight.citations_broken
     );
     for f in &preflight.items {
@@ -2264,8 +2372,11 @@ fn build_workspace_pack(
         md.push_str("\n## Citation Verification\n\n");
         for c in &preflight.citations {
             md.push_str(&format!(
-                "- `{}` -> **{}** ({} lines in file)\n",
-                c.raw, c.status, c.total_lines
+                "- `{}` -> **{}** ({} lines in file, live `sha256:{}`)\n",
+                c.raw,
+                c.status,
+                c.total_lines,
+                &c.file_sha256[..12.min(c.file_sha256.len())]
             ));
         }
     }
@@ -2275,8 +2386,106 @@ fn build_workspace_pack(
             f.path, f.digest, f.count, f.unit, f.size_bytes, f.body
         ));
     }
+    md
+}
+
+/// Builds a Markdown Client Deliverable Pack across workspace files with pre-flight verification & SHA-256 digests.
+fn build_workspace_pack(
+    workspace_dir: &std::path::Path,
+    person_name: &str,
+    title: &str,
+    requested: &[String],
+    explicit: bool,
+) -> Result<(String, String, bool, usize), (u16, String)> {
+    let preflight = inspect_workspace_pack(workspace_dir, workspace_dir, requested, explicit, &[], None)?;
+    let ok = preflight.ok();
+    let ready = preflight.ready_count;
+    let md = format_workspace_pack_markdown(&preflight, person_name, title);
     let pack_sha = receipts::sha256_hex(md.as_bytes());
     Ok((md, pack_sha, ok, ready))
+}
+
+/// Builds a standalone, zero-external-request, printable Client Handoff (`.html`) with SHA-256 Manifest.
+fn build_workspace_handoff_html(
+    preflight: &PackPreflight,
+    person_name: &str,
+    title: &str,
+    delta_md: Option<&str>,
+) -> (String, String) {
+    let gate = preflight.citation_gate();
+    let gate_class = if preflight.ok() { "ok" } else { "warn" };
+    let mut files_rows = String::new();
+    for f in &preflight.items {
+        files_rows.push_str(&format!(
+            "<tr><td><code>{}</code></td><td>{} {}</td><td>{} B</td><td><code>{}</code></td></tr>\n",
+            html_escape(&f.path),
+            f.count,
+            f.unit,
+            f.size_bytes,
+            html_escape(&f.digest)
+        ));
+    }
+    let mut cit_section = String::new();
+    if !preflight.citations.is_empty() {
+        cit_section.push_str("<section><h2>Live Citation Verification</h2><table><thead><tr><th>Citation</th><th>Gate Status</th><th>Live File SHA-256</th><th>Excerpt</th></tr></thead><tbody>");
+        for c in &preflight.citations {
+            let short_sha = if c.file_sha256.is_empty() {
+                "—"
+            } else {
+                &c.file_sha256[..12.min(c.file_sha256.len())]
+            };
+            cit_section.push_str(&format!(
+                "<tr><td><code>{}</code></td><td><span class=\"pill {}\">{}</span></td><td><code>{}</code></td><td>{}</td></tr>",
+                html_escape(&c.raw),
+                if c.status == "verified" { "ok" } else { "warn" },
+                html_escape(c.status),
+                html_escape(short_sha),
+                html_escape(&c.line_excerpt)
+            ));
+        }
+        cit_section.push_str("</tbody></table></section>");
+    }
+    let delta_section = delta_md
+        .filter(|d| !d.trim().is_empty())
+        .map(|d| format!("<section><h2>Verified Delta</h2><pre>{}</pre></section>", html_escape(d)))
+        .unwrap_or_default();
+    let mut previews = String::new();
+    for f in &preflight.items {
+        previews.push_str(&format!(
+            "<section class=\"doc\"><h3><code>{}</code></h3><p class=\"meta\">SHA-256: <code>{}</code> &middot; {} {} &middot; {} bytes</p><pre>{}</pre></section>\n",
+            html_escape(&f.path),
+            html_escape(&f.digest),
+            f.count,
+            f.unit,
+            f.size_bytes,
+            html_escape(&f.body)
+        ));
+    }
+    let manifest_seed = preflight
+        .items
+        .iter()
+        .map(|f| format!("{}:{}", f.path, f.digest))
+        .collect::<Vec<_>>()
+        .join("|");
+    let manifest_sha = receipts::sha256_hex(manifest_seed.as_bytes());
+    let html = format!(
+        "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>{}</title><style>:root{{color-scheme:light}}body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:920px;margin:32px auto;padding:0 20px;color:#111827;background:#fff;line-height:1.55}}header{{border-bottom:1px solid #e5e7eb;padding-bottom:16px;margin-bottom:24px}}h1{{margin:0 0 8px;font-size:24px}}h2{{font-size:17px;margin:28px 0 10px}}h3{{font-size:14px;margin:0 0 6px}}.meta{{color:#4b5563;font-size:13px;margin:4px 0 12px}}.pill{{display:inline-block;padding:2px 9px;border-radius:999px;font-size:12px;font-weight:600}}.pill.ok{{background:#dcfce7;color:#166534}}.pill.warn{{background:#fef3c7;color:#92400e}}table{{width:100%;border-collapse:collapse;font-size:13px}}th,td{{text-align:left;padding:8px 10px;border-bottom:1px solid #e5e7eb;vertical-align:top}}th{{background:#f9fafb;font-weight:600}}code{{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;word-break:break-all}}pre{{background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:12px;overflow:auto;font-size:12px;white-space:pre-wrap;word-break:break-word}}.doc{{margin-top:20px;break-inside:avoid}}@media print{{body{{margin:0}}header,section{{break-inside:avoid}}}}</style></head><body><header><h1>{}</h1><p class=\"meta\">Prepared for <strong>{}</strong> &middot; <span class=\"pill {}\">{}</span> ({} verified, {} stale, {} broken) &middot; Manifest SHA-256: <code>{}</code></p></header><section><h2>SHA-256 Deliverable Manifest</h2><table><thead><tr><th>File</th><th>Contents</th><th>Size</th><th>SHA-256</th></tr></thead><tbody>{}</tbody></table></section>{}{}<section><h2>Deliverable Previews</h2>{}</section></body></html>",
+        html_escape(title),
+        html_escape(title),
+        html_escape(person_name),
+        gate_class,
+        html_escape(gate),
+        preflight.citations_verified,
+        preflight.citations_stale,
+        preflight.citations_broken,
+        html_escape(&manifest_sha),
+        files_rows,
+        cit_section,
+        delta_section,
+        previews
+    );
+    let pack_sha = receipts::sha256_hex(html.as_bytes());
+    (html, pack_sha)
 }
 
 fn build_receipt_compare(a: &receipts::ChainedReceipt, b: &receipts::ChainedReceipt) -> (Value, String) {
@@ -2506,10 +2715,19 @@ fn try_route_files_and_audit(
                     &headers,
                 )
             } else {
-                let bytes = audit_bundle::build_audit_bundle_json_bytes(
+                let cached = state.search_cache.get_if_fresh(
+                    &person.id,
+                    &runtime.cfg.data_dir,
+                    &runtime.cfg.workspace_dir,
+                    &runtime.cfg.memory_path,
+                );
+                let bytes = audit_bundle::build_audit_bundle_json_bytes_with_chain(
                     &runtime.cfg,
                     person,
                     &security,
+                    cached
+                        .as_ref()
+                        .map(|idx| (idx.chain.as_slice(), idx.chain_valid, idx.head_hash.as_str())),
                 );
                 let mut headers = vec![("X-Content-Type-Options", "nosniff".to_string())];
                 if download {
@@ -2536,9 +2754,15 @@ fn try_route_files_and_audit(
             let download = query_param(&req.query, "download")
                 .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
                 .unwrap_or(false);
+            let format = query_param(&req.query, "format")
+                .unwrap_or_else(|| "md".to_string())
+                .to_ascii_lowercase();
             let preflight_only = query_param(&req.query, "preflight")
                 .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
                 .unwrap_or(false);
+            let receipt_id = query_param(&req.query, "receipt_id")
+                .map(|s| s.trim().to_string())
+                .unwrap_or_default();
             let mut requested: Vec<String> = raw_files
                 .split(',')
                 .map(|s| s.trim().to_string())
@@ -2546,48 +2770,77 @@ fn try_route_files_and_audit(
                 .take(25)
                 .collect();
             let explicit = !requested.is_empty();
-            if requested.is_empty() {
-                let idx = state.search_cache.get(
+            let idx_opt = if requested.is_empty() || !receipt_id.is_empty() {
+                Some(state.search_cache.get(
                     &person.id,
                     &runtime.cfg.data_dir,
                     &runtime.cfg.workspace_dir,
                     &runtime.cfg.memory_path,
-                );
-                let (_, items) = idx.list_files(0, Some(15), "");
-                for item in items {
-                    if let Some(p) = item["path"].as_str() {
-                        requested.push(p.to_string());
+                ))
+            } else {
+                state.search_cache.get_if_fresh(
+                    &person.id,
+                    &runtime.cfg.data_dir,
+                    &runtime.cfg.workspace_dir,
+                    &runtime.cfg.memory_path,
+                )
+            };
+            if requested.is_empty() {
+                if let Some(idx) = &idx_opt {
+                    let (_, items) = idx.list_files(0, Some(15), "");
+                    for item in items {
+                        if let Some(p) = item["path"].as_str() {
+                            requested.push(p.to_string());
+                        }
                     }
                 }
             }
-            if preflight_only {
-                let report = match inspect_workspace_pack(&runtime.cfg.workspace_dir, &requested, explicit) {
-                    Ok(res) => res,
-                    Err((status, err)) => return Some(respond_json(stream, status, &json!({"error": err}))),
-                };
-                return Some(respond_json(stream, 200, &report.to_json()));
+            let mut extra_receipts: Vec<(&str, u64)> = Vec::new();
+            if let Some(idx) = &idx_opt {
+                if !receipt_id.is_empty() {
+                    if let Some(rcpt) = receipts::find_receipt(&idx.chain, &receipt_id) {
+                        extra_receipts.push((rcpt.summary.as_str(), rcpt.ts));
+                    }
+                }
+                for rcpt in idx.chain.iter().rev().take(8) {
+                    if !rcpt.summary.is_empty()
+                        && rcpt.id != receipt_id
+                        && rcpt.thread_id != receipt_id
+                    {
+                        extra_receipts.push((rcpt.summary.as_str(), rcpt.ts));
+                    }
+                }
             }
-            let (mut md, mut pack_sha, preflight_ok, ready_count) = match build_workspace_pack(
+            let preflight = match inspect_workspace_pack(
+                &runtime.cfg.data_dir,
                 &runtime.cfg.workspace_dir,
-                &person.name,
-                &title,
                 &requested,
                 explicit,
+                &extra_receipts,
+                None,
             ) {
                 Ok(res) => res,
                 Err((status, err)) => return Some(respond_json(stream, status, &json!({"error": err}))),
             };
+            if preflight_only {
+                return Some(respond_json(stream, 200, &preflight.to_json()));
+            }
+            let preflight_ok = preflight.ok();
+            let ready_count = preflight.ready_count;
+            let gate_label = preflight.citation_gate();
             let delta_a = query_param(&req.query, "delta_a").unwrap_or_default();
             let delta_b = query_param(&req.query, "delta_b").unwrap_or_default();
             let delta_file = query_param(&req.query, "delta_file").unwrap_or_default();
-            let mut has_delta = false;
+            let mut delta_md_opt: Option<String> = None;
             if !delta_a.trim().is_empty() && !delta_b.trim().is_empty() {
-                let idx = state.search_cache.get(
-                    &person.id,
-                    &runtime.cfg.data_dir,
-                    &runtime.cfg.workspace_dir,
-                    &runtime.cfg.memory_path,
-                );
+                let idx = idx_opt.unwrap_or_else(|| {
+                    state.search_cache.get(
+                        &person.id,
+                        &runtime.cfg.data_dir,
+                        &runtime.cfg.workspace_dir,
+                        &runtime.cfg.memory_path,
+                    )
+                });
                 let Some(ra) = receipts::find_receipt(&idx.chain, delta_a.trim()) else {
                     return Some(respond_json(stream, 404, &json!({"error": "delta receipt a not found"})));
                 };
@@ -2595,9 +2848,7 @@ fn try_route_files_and_audit(
                     return Some(respond_json(stream, 404, &json!({"error": "delta receipt b not found"})));
                 };
                 let (_, delta_md) = build_receipt_compare(ra, rb);
-                md.push_str("\n---\n\n");
-                md.push_str(&delta_md);
-                has_delta = true;
+                delta_md_opt = Some(delta_md);
             } else if !delta_file.trim().is_empty() {
                 let rev_a = query_param(&req.query, "rev_a").unwrap_or_default();
                 let rev_b = query_param(&req.query, "rev_b").unwrap_or_else(|| "current".to_string());
@@ -2609,8 +2860,8 @@ fn try_route_files_and_audit(
                     rev_b.trim(),
                 ) {
                     Ok(diff) => {
-                        md.push_str(&format!(
-                            "\n---\n\n## Verified Snapshot Delta (`{}`: `{}` -> `{}`)\n\n- **Changes:** +{} / -{} lines ({}% similarity)\n- **SHA-256:** `{}` -> `{}`\n",
+                        let mut dmd = format!(
+                            "## Verified Snapshot Delta (`{}`: `{}` -> `{}`)\n\n- **Changes:** +{} / -{} lines ({}% similarity)\n- **SHA-256:** `{}` -> `{}`\n",
                             diff.path,
                             diff.rev_a,
                             diff.rev_b,
@@ -2619,11 +2870,11 @@ fn try_route_files_and_audit(
                             diff.similarity_pct,
                             &diff.sha256_a[..12.min(diff.sha256_a.len())],
                             &diff.sha256_b[..12.min(diff.sha256_b.len())]
-                        ));
+                        );
                         if !diff.unified.trim().is_empty() {
-                            md.push_str(&format!("\n```diff\n{}\n```\n", diff.unified.trim_end()));
+                            dmd.push_str(&format!("\n```diff\n{}\n```\n", diff.unified.trim_end()));
                         }
-                        has_delta = true;
+                        delta_md_opt = Some(dmd);
                     }
                     Err(e) => {
                         let code = if is_history_security_error(&e) { 403 } else { 404 };
@@ -2631,9 +2882,52 @@ fn try_route_files_and_audit(
                     }
                 }
             }
-            if has_delta {
-                pack_sha = receipts::sha256_hex(md.as_bytes());
+            let has_delta = delta_md_opt.is_some();
+            if format == "html" {
+                let (html, pack_sha) = build_workspace_handoff_html(
+                    &preflight,
+                    &person.name,
+                    &title,
+                    delta_md_opt.as_deref(),
+                );
+                let mut headers = vec![
+                    ("X-Content-Type-Options", "nosniff".to_string()),
+                    (
+                        "Content-Security-Policy",
+                        "default-src 'none'; style-src 'unsafe-inline'".to_string(),
+                    ),
+                    ("X-Ergon-Pack-SHA256", pack_sha),
+                    (
+                        "X-Ergon-Pack-Preflight",
+                        if preflight_ok { "pass" } else { "warn" }.to_string(),
+                    ),
+                    ("X-Ergon-Pack-Citation-Gate", gate_label.to_string()),
+                    ("X-Ergon-Pack-Ready-Count", ready_count.to_string()),
+                    (
+                        "X-Ergon-Pack-Delta",
+                        if has_delta { "yes" } else { "none" }.to_string(),
+                    ),
+                ];
+                if download {
+                    headers.push((
+                        "Content-Disposition",
+                        "attachment; filename=\"ergon-client-handoff.html\"".to_string(),
+                    ));
+                }
+                return Some(respond_bytes(
+                    stream,
+                    200,
+                    "text/html; charset=utf-8",
+                    html.as_bytes(),
+                    &headers,
+                ));
             }
+            let mut md = format_workspace_pack_markdown(&preflight, &person.name, &title);
+            if let Some(delta_md) = delta_md_opt {
+                md.push_str("\n---\n\n");
+                md.push_str(&delta_md);
+            }
+            let pack_sha = receipts::sha256_hex(md.as_bytes());
             let mut headers = vec![
                 ("X-Content-Type-Options", "nosniff".to_string()),
                 ("X-Ergon-Pack-SHA256", pack_sha),
@@ -2641,6 +2935,7 @@ fn try_route_files_and_audit(
                     "X-Ergon-Pack-Preflight",
                     if preflight_ok { "pass" } else { "warn" }.to_string(),
                 ),
+                ("X-Ergon-Pack-Citation-Gate", gate_label.to_string()),
                 ("X-Ergon-Pack-Ready-Count", ready_count.to_string()),
                 (
                     "X-Ergon-Pack-Delta",
@@ -2665,7 +2960,8 @@ fn try_route_files_and_audit(
             let parsed: Value = serde_json::from_slice(&req.body).unwrap_or(Value::Null);
             let mut text = parsed["text"].as_str().unwrap_or("").to_string();
             let receipt_id = parsed["receipt_id"].as_str().unwrap_or("").trim();
-            if text.is_empty() && !receipt_id.is_empty() {
+            let mut receipt_ts = 0u64;
+            if !receipt_id.is_empty() {
                 let idx = state.search_cache.get(
                     &person.id,
                     &runtime.cfg.data_dir,
@@ -2673,10 +2969,45 @@ fn try_route_files_and_audit(
                     &runtime.cfg.memory_path,
                 );
                 if let Some(rcpt) = receipts::find_receipt(&idx.chain, receipt_id) {
-                    text = format!("{}\n{}", rcpt.task, rcpt.summary);
+                    receipt_ts = rcpt.ts;
+                    if text.is_empty() {
+                        text = format!("{}\n{}", rcpt.task, rcpt.summary);
+                    }
                 }
             }
-            let report = verify_text_citations(&runtime.cfg.workspace_dir, &text);
+            let expected_map: std::collections::HashMap<String, String> = parsed["expected_shas"]
+                .as_object()
+                .map(|obj| {
+                    obj.iter()
+                        .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
+                        .collect()
+                })
+                .unwrap_or_default();
+            let exp_opt = (!expected_map.is_empty()).then_some(&expected_map);
+            let mut citations = Vec::new();
+            let mut seen = std::collections::HashSet::new();
+            let mut verified = 0usize;
+            let mut stale = 0usize;
+            let mut broken = 0usize;
+            collect_citations_into(
+                Some(&runtime.cfg.data_dir),
+                &runtime.cfg.workspace_dir,
+                &text,
+                receipt_ts,
+                exp_opt,
+                &mut citations,
+                &mut seen,
+                &mut verified,
+                &mut stale,
+                &mut broken,
+            );
+            let report = CitationReport {
+                total: citations.len(),
+                verified,
+                stale,
+                broken,
+                citations,
+            };
             respond_json(stream, 200, &report.to_json())
         }
         ("GET", "/api/files") => {

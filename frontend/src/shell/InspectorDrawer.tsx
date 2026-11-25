@@ -4,13 +4,14 @@
 // 3. Audit & Offers tab: 1-click SHA-256 Audit Bundle (.md/.json), receipt chain verification, and active offers
 import { memo, useCallback, useEffect, useState } from "react";
 import { m, useReducedMotion } from "motion/react";
-import { FileCheck2, FileDown, FolderOpen, History, PackageCheck, ShieldCheck, Sparkles, X } from "lucide-react";
+import { FileCheck2, FileDown, FolderOpen, History, PackageCheck, Printer, ShieldCheck, Sparkles, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { instant, sheet } from "@/motion";
 import {
   compareReceipts,
+  exportClientHandoffHtml,
   exportClientPackDownload,
   preflightClientPack,
   type PackPreflightReport,
@@ -68,7 +69,7 @@ export const InspectorDrawer = memo(function InspectorDrawer({
   onExportAuditBundle: (format: "json" | "md") => Promise<void>;
   onOfferAction: (url: string, msg: string) => Promise<void>;
 }) {
-  const [exporting, setExporting] = useState<"md" | "json" | "pack" | "preflight" | "delta" | null>(null);
+  const [exporting, setExporting] = useState<"md" | "json" | "pack" | "html" | "preflight" | "delta" | null>(null);
   const [verifyInfo, setVerifyInfo] = useState<{ checked: number; ok: boolean } | null>(null);
   const [packPreflight, setPackPreflight] = useState<PackPreflightReport | null>(null);
   const [recentReceipts, setRecentReceipts] = useState<Array<{ id: string; task: string; ts?: number }>>([]);
@@ -317,10 +318,12 @@ export const InspectorDrawer = memo(function InspectorDrawer({
                   onClick={async () => {
                     setExporting("preflight");
                     try {
-                      const check = await preflightClientPack(files.slice(0, 15).map((f) => f.path));
+                      const receiptCtx = compareB || recentReceipts[0]?.id;
+                      const check = await preflightClientPack(files.slice(0, 15).map((f) => f.path), receiptCtx);
                       setPackPreflight(check);
+                      const gate = check.citation_gate || (check.ok ? "100% Verified" : "Needs review");
                       toast.success(
-                        `Pre-flight ${check.ok ? "PASS" : "WARN"}: ${check.ready_count}/${check.files.length} non-empty deliverables`
+                        `Pre-flight ${check.ok ? "PASS" : "WARN"} (${gate}): ${check.ready_count}/${check.files.length} deliverables`
                       );
                     } catch {
                       toast.error("Could not run deliverable pre-flight check.");
@@ -343,10 +346,13 @@ export const InspectorDrawer = memo(function InspectorDrawer({
                     setExporting("pack");
                     try {
                       const targets = files.slice(0, 15).map((f) => f.path);
+                      const receiptCtx = compareB || recentReceipts[0]?.id;
                       const [verifyRes, checkRes, packRes] = await Promise.all([
                         call<{ valid?: boolean; total?: number; count?: number }>("/api/receipts/verify"),
-                        preflightClientPack(targets).catch(() => null),
-                        exportClientPackDownload(targets, `${personName} Verified Deliverable Pack`),
+                        preflightClientPack(targets, receiptCtx).catch(() => null),
+                        exportClientPackDownload(targets, `${personName} Verified Deliverable Pack`, {
+                          receipt_id: receiptCtx,
+                        }),
                       ]);
                       const checked = verifyRes.ok
                         ? Number(verifyRes.data.total ?? verifyRes.data.count ?? 0)
@@ -371,28 +377,85 @@ export const InspectorDrawer = memo(function InspectorDrawer({
                   <PackageCheck className="size-3.5" strokeWidth={1.5} aria-hidden />
                   {exporting === "pack" ? "Packaging…" : "Package & Verify (.md)"}
                 </Button>
+                <Button
+                  id="export-handoff-html-btn"
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={exporting !== null || files.length === 0}
+                  className="max-md:min-h-11 gap-1.5"
+                  onClick={async () => {
+                    setExporting("html");
+                    try {
+                      const targets = files.slice(0, 15).map((f) => f.path);
+                      const receiptCtx = compareB || recentReceipts[0]?.id;
+                      const [checkRes, htmlRes] = await Promise.all([
+                        preflightClientPack(targets, receiptCtx).catch(() => null),
+                        exportClientHandoffHtml(targets, `${personName} Verified Deliverable`, {
+                          receipt_id: receiptCtx,
+                          ...(compareA && compareB && compareResult ? { delta_a: compareA, delta_b: compareB } : {}),
+                        }),
+                      ]);
+                      if (checkRes) {
+                        setPackPreflight(checkRes);
+                      }
+                      toast.success(
+                        `Exported ${htmlRes.filename} (${htmlRes.citationGate || "100% Verified"}, sha256: ${htmlRes.sha256.slice(0, 12)}…)`
+                      );
+                    } catch {
+                      toast.error("Could not export printable HTML client handoff.");
+                    } finally {
+                      setExporting(null);
+                    }
+                  }}
+                >
+                  <Printer className="size-3.5" strokeWidth={1.5} aria-hidden />
+                  {exporting === "html" ? "Rendering…" : "Client Handoff (.html)"}
+                </Button>
               </div>
               {packPreflight && (
                 <div
                   id="pack-preflight-summary"
                   className="rounded-sm border border-hairline bg-surface p-2.5 text-xs text-ink-2"
                 >
-                  <div className="flex items-center justify-between gap-2 font-medium text-ink">
+                  <div className="flex flex-wrap items-center justify-between gap-2 font-medium text-ink">
                     <span>Deliverable Pre-Flight</span>
-                    <span className={cn("mono rounded-chip px-2 py-0.5", packPreflight.ok ? "status-finished" : "status-stopped")}>
-                      {packPreflight.ok ? `PASS (${packPreflight.ready_count})` : `WARN (${packPreflight.empty_count + (packPreflight.citations_broken ?? 0)} issue)`}
-                    </span>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span
+                        id="citation-freshness-gate"
+                        className={cn(
+                          "mono rounded-chip px-2 py-0.5",
+                          (packPreflight.citations_stale ?? 0) === 0 && (packPreflight.citations_broken ?? 0) === 0
+                            ? "status-finished"
+                            : "status-stopped"
+                        )}
+                      >
+                        {packPreflight.citation_gate || "100% Verified"}
+                      </span>
+                      <span className={cn("mono rounded-chip px-2 py-0.5", packPreflight.ok ? "status-finished" : "status-stopped")}>
+                        {packPreflight.ok
+                          ? `PASS (${packPreflight.ready_count})`
+                          : `WARN (${packPreflight.empty_count + (packPreflight.citations_stale ?? 0) + (packPreflight.citations_broken ?? 0)} issue)`}
+                      </span>
+                    </div>
                   </div>
                   {(packPreflight.citations_checked ?? 0) > 0 && (
                     <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
                       <span className="text-ink-2">
                         Citations: {packPreflight.citations_verified ?? 0}/{packPreflight.citations_checked} verified
+                        {(packPreflight.citations_stale ?? 0) > 0 ? ` · ${packPreflight.citations_stale} stale` : ""}
                       </span>
                       {(packPreflight.citations ?? []).slice(0, 6).map((c) => (
                         <button
                           key={c.raw}
                           type="button"
                           data-citation={c.raw}
+                          data-citation-status={c.status}
+                          title={
+                            c.line_excerpt
+                              ? `${c.line_excerpt}${c.file_sha256 ? ` (sha256:${c.file_sha256.slice(0, 8)})` : ""}`
+                              : undefined
+                          }
                           onClick={() => onOpenFile(`${c.path}#L${c.line}`)}
                           className={cn(
                             "focus-ring mono rounded-chip border px-2 py-0.5 text-xs hover:bg-board",

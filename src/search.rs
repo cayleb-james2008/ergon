@@ -670,6 +670,21 @@ impl SearchCache {
         *w = None;
     }
 
+    /// Return an already-cached `Arc<PersonIndex>` if its fingerprint is still fresh,
+    /// without building a full token index when cold.
+    pub fn get_if_fresh(
+        &self,
+        person_id: &str,
+        data_dir: &Path,
+        workspace_dir: &Path,
+        memory_path: &Path,
+    ) -> Option<Arc<PersonIndex>> {
+        let fp = compute_fingerprint(data_dir, workspace_dir, memory_path);
+        let slot = self.slot(person_id);
+        let r = slot.read().unwrap();
+        r.as_ref().filter(|idx| idx.fp == fp).cloned()
+    }
+
     /// Return a fresh shared `Arc<PersonIndex>` for `person_id`. Under 30+
     /// concurrent read requests, only the read lock is acquired after initial
     /// build, delivering zero-contention sub-5ms responses.
