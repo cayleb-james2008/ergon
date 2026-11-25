@@ -480,7 +480,7 @@ export function Chat({
                     </div>
                   );
                 }
-                return <Reply key={idx} text={item.text} />;
+                return <Reply key={idx} text={item.text} onOpenFile={onOpenFile} />;
               })}
             </div>
           )}

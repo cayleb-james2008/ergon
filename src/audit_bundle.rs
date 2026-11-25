@@ -607,3 +607,183 @@ pub fn render_audit_bundle_markdown(bundle: &Value) -> String {
 
     md
 }
+
+fn write_chained_receipt_json(w: &mut impl std::io::Write, r: &ChainedReceipt) -> std::io::Result<()> {
+    // Alphabetical key order matching serde_json::Value(BTreeMap) for canonical bundle SHA-256 parity.
+    w.write_all(b"{\"answered\":")?;
+    serde_json::to_writer(&mut *w, &r.answered).map_err(std::io::Error::other)?;
+    w.write_all(b",\"files\":")?;
+    serde_json::to_writer(&mut *w, &r.files).map_err(std::io::Error::other)?;
+    w.write_all(b",\"finished\":")?;
+    serde_json::to_writer(&mut *w, &r.finished).map_err(std::io::Error::other)?;
+    w.write_all(b",\"id\":")?;
+    serde_json::to_writer(&mut *w, &r.id).map_err(std::io::Error::other)?;
+    w.write_all(b",\"index\":")?;
+    serde_json::to_writer(&mut *w, &r.index).map_err(std::io::Error::other)?;
+    w.write_all(b",\"prev_hash\":")?;
+    serde_json::to_writer(&mut *w, &r.prev_hash).map_err(std::io::Error::other)?;
+    w.write_all(b",\"sha256\":")?;
+    serde_json::to_writer(&mut *w, &r.sha256).map_err(std::io::Error::other)?;
+    w.write_all(b",\"summary\":")?;
+    serde_json::to_writer(&mut *w, &r.summary).map_err(std::io::Error::other)?;
+    w.write_all(b",\"task\":")?;
+    serde_json::to_writer(&mut *w, &r.task).map_err(std::io::Error::other)?;
+    w.write_all(b",\"thread_id\":")?;
+    serde_json::to_writer(&mut *w, &r.thread_id).map_err(std::io::Error::other)?;
+    w.write_all(b",\"ts\":")?;
+    serde_json::to_writer(&mut *w, &r.ts).map_err(std::io::Error::other)?;
+    w.write_all(b"}")
+}
+
+fn write_receipt_chain_json(
+    w: &mut impl std::io::Write,
+    chain: &[ChainedReceipt],
+    verified: bool,
+    head_hash: &str,
+) -> std::io::Result<()> {
+    w.write_all(b"{\"algorithm\":\"SHA-256\",\"entries\":[")?;
+    for (i, r) in chain.iter().enumerate() {
+        if i > 0 {
+            w.write_all(b",")?;
+        }
+        write_chained_receipt_json(&mut *w, r)?;
+    }
+    w.write_all(b"],\"genesis_hash\":")?;
+    serde_json::to_writer(&mut *w, receipts::GENESIS_HASH).map_err(std::io::Error::other)?;
+    w.write_all(b",\"head_hash\":")?;
+    serde_json::to_writer(&mut *w, head_hash).map_err(std::io::Error::other)?;
+    w.write_all(b",\"length\":")?;
+    serde_json::to_writer(&mut *w, &chain.len()).map_err(std::io::Error::other)?;
+    w.write_all(b",\"verified\":")?;
+    serde_json::to_writer(&mut *w, &verified).map_err(std::io::Error::other)?;
+    w.write_all(b"}")
+}
+
+/// Stream a complete tamper-evident JSON Audit Bundle directly into `Vec<u8>` without
+/// allocating `serde_json::Value::Object` maps for 5k+ receipt entries.
+pub fn build_audit_bundle_json_bytes(cfg: &Config, person: &Person, security: &Value) -> Vec<u8> {
+    let now_ms = records::now_millis();
+    let chain = receipts::load_chain(&cfg.data_dir);
+    let chain_len = chain.len();
+    let (chain_verified, head_hash) = receipts::verify_chain(&chain);
+
+    let workspace_files = collect_workspace_digests(&cfg.data_dir, &cfg.workspace_dir);
+    let workspace_manifest_sha256 = compute_workspace_manifest_sha256(&workspace_files);
+    let workspace_files_val = Value::Array(workspace_files);
+
+    let (mem_present, mem_bytes, mem_sha256, mem_rules) = match std::fs::read(&cfg.memory_path) {
+        Ok(bytes) => {
+            let text = String::from_utf8_lossy(&bytes);
+            let rule_count = text
+                .lines()
+                .filter(|l| l.trim_start().starts_with("- "))
+                .count();
+            (true, bytes.len() as u64, sha256_hex(&bytes), rule_count)
+        }
+        Err(_) => (false, 0, sha256_hex(b""), 0),
+    };
+    let standing_memory_val = json!({
+        "present": mem_present,
+        "size_bytes": mem_bytes,
+        "sha256": mem_sha256,
+        "rule_count": mem_rules,
+    });
+
+    let routine_items = routines::list_routines(&cfg.data_dir);
+    let run_history = scheduler::list_run_history(&cfg.data_dir, None, 200);
+    let enriched_routines: Vec<Value> = routine_items
+        .iter()
+        .map(|r| scheduler::enrich_routine_json(r, now_ms, &run_history))
+        .collect();
+    let status = scheduler::scheduler_status_json(
+        !scheduler::is_scheduler_disabled_by_env(),
+        scheduler::DEFAULT_SCHEDULER_TICK_SECS,
+        &routine_items,
+        &run_history,
+        now_ms,
+    );
+    let routines_val = json!({
+        "status": status,
+        "items": enriched_routines,
+        "run_history": run_history.iter().map(|r| r.to_json()).collect::<Vec<_>>(),
+    });
+
+    let person_val = person.to_json();
+    let receipt_chain_sha256 = compute_receipt_chain_digest(&head_hash, chain_len, chain_verified);
+    let routines_sha256 = compute_routines_digest(&routines_val);
+
+    // Compute canonical bundle SHA-256 directly via ShaWriter (alphabetical top-level keys).
+    let mut sha = ShaWriter(Sha256::new());
+    let _ = (|| -> std::io::Result<()> {
+        use std::io::Write as _;
+        sha.write_all(b"{\"app_version\":")?;
+        serde_json::to_writer(&mut sha, env!("CARGO_PKG_VERSION")).map_err(std::io::Error::other)?;
+        sha.write_all(b",\"generated_at_ms\":")?;
+        serde_json::to_writer(&mut sha, &now_ms).map_err(std::io::Error::other)?;
+        sha.write_all(b",\"person\":")?;
+        serde_json::to_writer(&mut sha, &person_val).map_err(std::io::Error::other)?;
+        sha.write_all(b",\"receipt_chain\":")?;
+        write_receipt_chain_json(&mut sha, &chain, chain_verified, &head_hash)?;
+        sha.write_all(b",\"routines\":")?;
+        serde_json::to_writer(&mut sha, &routines_val).map_err(std::io::Error::other)?;
+        sha.write_all(b",\"schema\":")?;
+        serde_json::to_writer(&mut sha, AUDIT_BUNDLE_SCHEMA).map_err(std::io::Error::other)?;
+        sha.write_all(b",\"standing_memory\":")?;
+        serde_json::to_writer(&mut sha, &standing_memory_val).map_err(std::io::Error::other)?;
+        sha.write_all(b",\"workspace_files\":")?;
+        serde_json::to_writer(&mut sha, &workspace_files_val).map_err(std::io::Error::other)?;
+        sha.write_all(b"}")
+    })();
+    let digest = sha.0.finalize();
+    let mut bundle_sha256 = String::with_capacity(64);
+    for b in digest {
+        use std::fmt::Write as _;
+        let _ = write!(&mut bundle_sha256, "{b:02x}");
+    }
+
+    let verification_instructions = vec![
+        "1. Verify each workspace file locally with `sha256sum <path>` and compare against `workspace_files[].sha256`.",
+        "2. Recompute the Field-Book receipt chain from `receipt_chain.genesis_hash` (64 zeroes) over `prev_hash|index|ts|thread_id|finished|answered|task|summary|files` using SHA-256 and confirm the final hash matches `receipt_chain.head_hash`.",
+        "3. Recompute `integrity.workspace_manifest_sha256` over sorted `<path>|<size_bytes>|<sha256>\\n` lines and confirm it matches.",
+        "4. Recompute `integrity.bundle_sha256` over the canonical JSON object `{app_version, generated_at_ms, person, receipt_chain, routines, schema, standing_memory, workspace_files}` (alphabetical keys, compact JSON) to confirm zero tampering.",
+    ];
+
+    let mut out = Vec::with_capacity(8192 + chain.len() * 320);
+    let _ = (|| -> std::io::Result<()> {
+        use std::io::Write as _;
+        out.write_all(b"{\"schema\":")?;
+        serde_json::to_writer(&mut out, AUDIT_BUNDLE_SCHEMA).map_err(std::io::Error::other)?;
+        out.write_all(b",\"app_version\":")?;
+        serde_json::to_writer(&mut out, env!("CARGO_PKG_VERSION")).map_err(std::io::Error::other)?;
+        out.write_all(b",\"generated_at_ms\":")?;
+        serde_json::to_writer(&mut out, &now_ms).map_err(std::io::Error::other)?;
+        out.write_all(b",\"generated_at_iso\":")?;
+        serde_json::to_writer(&mut out, &format_utc_iso(now_ms)).map_err(std::io::Error::other)?;
+        out.write_all(b",\"person\":")?;
+        serde_json::to_writer(&mut out, &person_val).map_err(std::io::Error::other)?;
+        out.write_all(b",\"receipt_chain\":")?;
+        write_receipt_chain_json(&mut out, &chain, chain_verified, &head_hash)?;
+        out.write_all(b",\"workspace_files\":")?;
+        serde_json::to_writer(&mut out, &workspace_files_val).map_err(std::io::Error::other)?;
+        out.write_all(b",\"standing_memory\":")?;
+        serde_json::to_writer(&mut out, &standing_memory_val).map_err(std::io::Error::other)?;
+        out.write_all(b",\"routines\":")?;
+        serde_json::to_writer(&mut out, &routines_val).map_err(std::io::Error::other)?;
+        out.write_all(b",\"integrity\":")?;
+        let integrity = json!({
+            "algorithm": "SHA-256",
+            "receipt_chain_sha256": receipt_chain_sha256,
+            "workspace_manifest_sha256": workspace_manifest_sha256,
+            "routines_sha256": routines_sha256,
+            "bundle_sha256": bundle_sha256,
+            "security_events_sha256": security["events_sha256"],
+        });
+        serde_json::to_writer(&mut out, &integrity).map_err(std::io::Error::other)?;
+        out.write_all(b",\"security\":")?;
+        serde_json::to_writer(&mut out, security).map_err(std::io::Error::other)?;
+        out.write_all(b",\"verification_instructions\":")?;
+        serde_json::to_writer(&mut out, &verification_instructions).map_err(std::io::Error::other)?;
+        out.write_all(b"}")
+    })();
+    out
+}

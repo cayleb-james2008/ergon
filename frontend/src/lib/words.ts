@@ -366,3 +366,68 @@ export function extractPlaybookFromRun(task: string, rawSteps: string[], files: 
     pack_deliverables: (files?.length ?? 0) > 0,
   };
 }
+
+export type ParsedCitationTarget = {
+  path: string;
+  line?: number;
+  endLine?: number;
+};
+
+export type TextCitation = {
+  raw: string;
+  path: string;
+  line: number;
+  endLine?: number;
+};
+
+const CITATION_EXT_RE =
+  /\[?([A-Za-z0-9_./ -]+\.(?:md|markdown|csv|tsv|txt|json|log|py|ts|tsx|js|rs|rn|toml|ya?ml|html)):L?(\d+)(?:-L?(\d+))?\]?/gi;
+
+/** Parse `"path#L12"`, `"path#L12-L18"`, or `"path:L12"` into file path + optional 1-based line range. */
+export function parseCitationTarget(raw: string): ParsedCitationTarget {
+  const trimmed = String(raw || "").trim();
+  const mHash = /^(.+?)#L(\d+)(?:-L?(\d+))?$/i.exec(trimmed);
+  if (mHash) {
+    return {
+      path: mHash[1].trim(),
+      line: Number(mHash[2]),
+      endLine: mHash[3] ? Number(mHash[3]) : undefined,
+    };
+  }
+  const mColon = /^(.+\.[A-Za-z0-9]+):L?(\d+)(?:-L?(\d+))?$/i.exec(trimmed);
+  if (mColon) {
+    return {
+      path: mColon[1].trim(),
+      line: Number(mColon[2]),
+      endLine: mColon[3] ? Number(mColon[3]) : undefined,
+    };
+  }
+  return { path: trimmed };
+}
+
+/** Extract deduped `[file:L##]` / `file:L##` source citations from agent summaries or deliverables. */
+export function extractCitations(text: string): TextCitation[] {
+  const out: TextCitation[] = [];
+  const seen = new Set<string>();
+  CITATION_EXT_RE.lastIndex = 0;
+  let m: RegExpExecArray | null;
+  while ((m = CITATION_EXT_RE.exec(String(text || ""))) !== null) {
+    const rawPath = m[1].trim();
+    if (!rawPath || rawPath.includes("://")) continue;
+    const path = m[0].startsWith("[") ? rawPath : rawPath.split(/\s+/).pop() || rawPath;
+    const line = Number(m[2]);
+    const endLine = m[3] ? Number(m[3]) : undefined;
+    if (!Number.isFinite(line) || line < 1) continue;
+    const key = `${path}:${line}:${endLine ?? ""}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({
+      raw: `${path}:L${line}${endLine ? `-L${endLine}` : ""}`,
+      path,
+      line,
+      endLine,
+    });
+    if (out.length >= 24) break;
+  }
+  return out;
+}

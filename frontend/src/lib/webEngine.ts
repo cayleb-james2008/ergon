@@ -11,6 +11,7 @@
 import { parseCsv } from "@/shell/WorkspaceFiles";
 import { CANONICAL_SKILLS } from "@/lib/skillsCatalog";
 import { buildSignedReceipt, sha256Hex } from "@/lib/receiptExport";
+import { extractCitations } from "@/lib/words";
 import { buildAuditBundle } from "@/lib/auditBundle";
 import { computeLineDiff } from "@/lib/diff";
 import {
@@ -147,6 +148,29 @@ function sanitizeSafePath(raw: string): string | null {
   const segs = p.split("/");
   if (segs.some((s) => !s || s === "." || s === ".." || s.startsWith("."))) return null;
   return segs.join("/");
+}
+
+function verifyTextCitationsInMemory(files: Record<string, WebFile>, text: string) {
+  const extracted = extractCitations(text);
+  let verified = 0;
+  let broken = 0;
+  const citations = extracted.map((c) => {
+    const safe = sanitizeSafePath(c.path);
+    const f = safe ? files[safe] : undefined;
+    if (!f) {
+      broken += 1;
+      return { raw: c.raw, path: c.path, line: c.line, end_line: c.endLine ?? null, status: "missing" as const, total_lines: 0 };
+    }
+    const totalLines = f.content ? f.content.split(/\r?\n/).length : 0;
+    const endOk = c.endLine === undefined || (c.endLine >= c.line && c.endLine <= totalLines);
+    if (c.line >= 1 && c.line <= totalLines && endOk) {
+      verified += 1;
+      return { raw: c.raw, path: safe!, line: c.line, end_line: c.endLine ?? null, status: "verified" as const, total_lines: totalLines };
+    }
+    broken += 1;
+    return { raw: c.raw, path: safe!, line: c.line, end_line: c.endLine ?? null, status: "out_of_range" as const, total_lines: totalLines };
+  });
+  return { total: citations.length, verified, broken, ok: broken === 0, citations };
 }
 
 function learnedLines(md: string): string[] {
@@ -1787,11 +1811,11 @@ export async function installBrowserEngine(): Promise<void> {
     const st = activeStore();
     const byok = loadByok();
 
-    if (method === "GET" && path === "/api/version") return jsonRes({ name: "ergon", version: "0.15.0" });
-    if (method === "GET" && path === "/api/update") return jsonRes({ current: "0.15.0", available: false, mode: "off", checked_at: Math.floor(Date.now() / 1000) });
+    if (method === "GET" && path === "/api/version") return jsonRes({ name: "ergon", version: "0.16.0" });
+    if (method === "GET" && path === "/api/update") return jsonRes({ current: "0.16.0", available: false, mode: "off", checked_at: Math.floor(Date.now() / 1000) });
     if (method === "GET" && path === "/api/status") {
       return jsonRes({
-        version: "0.15.0",
+        version: "0.16.0",
         model_configured: true,
         model: byok.engine_mode === "byok" && byok.model_id ? byok.model_id : "browser-workspace-engine",
         model_base_url: byok.engine_mode === "byok" ? byok.model_base_url : "indexeddb://local",
@@ -2122,12 +2146,21 @@ export async function installBrowserEngine(): Promise<void> {
       }
       const preflightOk = readyCount > 0 && emptyCount === 0 && missingPaths.length === 0;
       if (preflightOnly) {
+        const citations = verifyTextCitationsInMemory(
+          st.files,
+          sections.map((s) => s.body).join("\n")
+        );
+        const allOk = preflightOk && citations.broken === 0;
         return jsonRes({
-          ok: preflightOk,
+          ok: allOk,
           ready_count: readyCount,
           empty_count: emptyCount,
           missing_count: missingPaths.length,
           total_bytes: totalBytes,
+          citations_checked: citations.total,
+          citations_verified: citations.verified,
+          citations_broken: citations.broken,
+          citations: citations.citations,
           files: [
             ...sections.map((s) => ({
               path: s.path,
@@ -2150,18 +2183,29 @@ export async function installBrowserEngine(): Promise<void> {
           ],
         });
       }
-      const statusWord = preflightOk ? "PASS" : "WARN";
+      const citations = verifyTextCitationsInMemory(
+        st.files,
+        sections.map((s) => s.body).join("\n")
+      );
+      const allOk = preflightOk && citations.broken === 0;
+      const statusWord = allOk ? "PASS" : "WARN";
       const lines = [
         `# ${title}`,
         "",
         `- Prepared for: **${p.name}**`,
         `- Files included: ${sections.length}`,
-        `- Pre-flight check: **${statusWord}** (${readyCount} non-empty, ${emptyCount} empty, ${missingPaths.length} missing, ${totalBytes} total bytes)`,
+        `- Pre-flight check: **${statusWord}** (${readyCount} non-empty, ${emptyCount} empty, ${missingPaths.length} missing, ${totalBytes} total bytes; citations: ${citations.verified} verified / ${citations.broken} broken)`,
         "",
         "## Included Deliverables",
         "",
         ...sections.map((s) => `- \`${s.path}\` (${s.count} ${s.unit}, \`sha256:${s.sha}\`)`),
       ];
+      if (citations.citations.length > 0) {
+        lines.push("", "## Citation Verification", "");
+        for (const c of citations.citations) {
+          lines.push(`- \`${c.raw}\` -> **${c.status}** (${c.total_lines} lines in file)`);
+        }
+      }
       for (const s of sections) {
         lines.push("", "---", "", `## \`${s.path}\``, "", `_SHA-256: \`${s.sha}\` · ${s.count} ${s.unit} · ${s.size_bytes} bytes_`, "", s.body);
       }
@@ -2173,10 +2217,20 @@ export async function installBrowserEngine(): Promise<void> {
           "Content-Type": "text/markdown; charset=utf-8",
           "X-Content-Type-Options": "nosniff",
           "X-Ergon-Pack-SHA256": packSha,
-          "X-Ergon-Pack-Preflight": preflightOk ? "pass" : "warn",
+          "X-Ergon-Pack-Preflight": allOk ? "pass" : "warn",
           "X-Ergon-Pack-Ready-Count": String(readyCount),
         },
       });
+    }
+    if (method === "POST" && path === "/api/citations/verify") {
+      const b = (body && typeof body === "object" ? body : {}) as Record<string, unknown>;
+      let text = String(b.text || "");
+      const receiptId = String(b.receipt_id || "").trim();
+      if (!text && receiptId) {
+        const hit = st.work.find((r) => r.id === receiptId || r.thread_id === receiptId);
+        if (hit) text = `${hit.task}\n${hit.summary}`;
+      }
+      return jsonRes(verifyTextCitationsInMemory(st.files, text));
     }
     if (method === "GET" && path === "/api/files/history") {
       const rawPath = u.searchParams.get("path") || "";

@@ -362,9 +362,32 @@ export const InspectorDrawer = memo(function InspectorDrawer({
                   <div className="flex items-center justify-between gap-2 font-medium text-ink">
                     <span>Deliverable Pre-Flight</span>
                     <span className={cn("mono rounded-chip px-2 py-0.5", packPreflight.ok ? "status-finished" : "status-stopped")}>
-                      {packPreflight.ok ? `PASS (${packPreflight.ready_count})` : `WARN (${packPreflight.empty_count} empty)`}
+                      {packPreflight.ok ? `PASS (${packPreflight.ready_count})` : `WARN (${packPreflight.empty_count + (packPreflight.citations_broken ?? 0)} issue)`}
                     </span>
                   </div>
+                  {(packPreflight.citations_checked ?? 0) > 0 && (
+                    <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                      <span className="text-ink-2">
+                        Citations: {packPreflight.citations_verified ?? 0}/{packPreflight.citations_checked} verified
+                      </span>
+                      {(packPreflight.citations ?? []).slice(0, 6).map((c) => (
+                        <button
+                          key={c.raw}
+                          type="button"
+                          data-citation={c.raw}
+                          onClick={() => onOpenFile(`${c.path}#L${c.line}`)}
+                          className={cn(
+                            "focus-ring mono rounded-chip border px-2 py-0.5 text-xs hover:bg-board",
+                            c.status === "verified"
+                              ? "border-hairline bg-board/60 text-ink"
+                              : "border-destructive/40 bg-board text-destructive-foreground"
+                          )}
+                        >
+                          {c.raw} ({c.status === "verified" ? "ok" : c.status})
+                        </button>
+                      ))}
+                    </div>
+                  )}
                   <ul className="mt-1.5 flex flex-col gap-1">
                     {packPreflight.files.slice(0, 5).map((f) => (
                       <li key={f.path} className="flex items-center justify-between gap-2">

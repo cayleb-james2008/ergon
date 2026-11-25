@@ -1071,3 +1071,196 @@ fn normalize_sections(v: &Value) -> Vec<String> {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CitationCheck {
+    pub raw: String,
+    pub path: String,
+    pub line: usize,
+    pub end_line: Option<usize>,
+    pub status: &'static str,
+    pub total_lines: usize,
+}
+
+impl CitationCheck {
+    pub fn to_json(&self) -> Value {
+        json!({
+            "raw": self.raw,
+            "path": self.path,
+            "line": self.line,
+            "end_line": self.end_line,
+            "status": self.status,
+            "total_lines": self.total_lines,
+        })
+    }
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct CitationReport {
+    pub total: usize,
+    pub verified: usize,
+    pub broken: usize,
+    pub citations: Vec<CitationCheck>,
+}
+
+impl CitationReport {
+    pub fn to_json(&self) -> Value {
+        json!({
+            "total": self.total,
+            "verified": self.verified,
+            "broken": self.broken,
+            "ok": self.broken == 0,
+            "citations": self.citations.iter().map(CitationCheck::to_json).collect::<Vec<_>>(),
+        })
+    }
+}
+
+const CITATION_EXTS: &[&str] = &[
+    "md", "markdown", "csv", "tsv", "txt", "json", "log", "py", "ts", "tsx", "js", "rs", "rn",
+    "toml", "yaml", "yml", "html",
+];
+
+fn is_path_char(b: u8) -> bool {
+    b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-' | b'/' | b' ')
+}
+
+/// Extract deduped `[file.ext:L##]` / `file.ext:L##` / `[file.ext:L##-L##]` citations from text.
+pub fn extract_file_citations(text: &str) -> Vec<(String, String, usize, Option<usize>)> {
+    let bytes = text.as_bytes();
+    let mut out: Vec<(String, String, usize, Option<usize>)> = Vec::new();
+    let mut seen: std::collections::HashSet<(String, usize, Option<usize>)> =
+        std::collections::HashSet::new();
+    let mut i = 0usize;
+    while i < bytes.len() {
+        if bytes[i] == b':' {
+            let after = &bytes[i + 1..];
+            let mut pos = 0usize;
+            let has_l = after.first().is_some_and(|c| *c == b'L' || *c == b'l');
+            if has_l {
+                pos += 1;
+            }
+            let num_start = pos;
+            while pos < after.len() && after[pos].is_ascii_digit() {
+                pos += 1;
+            }
+            if pos > num_start {
+                if let Ok(line_no) = std::str::from_utf8(&after[num_start..pos])
+                    .unwrap_or("")
+                    .parse::<usize>()
+                {
+                    // Optional range `-L##` or `-##`
+                    let mut end_line: Option<usize> = None;
+                    let mut total_after = pos;
+                    if pos < after.len() && after[pos] == b'-' {
+                        let mut rpos = pos + 1;
+                        if after.get(rpos).is_some_and(|c| *c == b'L' || *c == b'l') {
+                            rpos += 1;
+                        }
+                        let rstart = rpos;
+                        while rpos < after.len() && after[rpos].is_ascii_digit() {
+                            rpos += 1;
+                        }
+                        if rpos > rstart {
+                            if let Ok(end_no) = std::str::from_utf8(&after[rstart..rpos])
+                                .unwrap_or("")
+                                .parse::<usize>()
+                            {
+                                end_line = Some(end_no);
+                                total_after = rpos;
+                            }
+                        }
+                    }
+                    // Look left for `<path>.<ext>` (stopping at `[`, `` ` ``, newline, quote, or boundary).
+                    let mut left = i;
+                    while left > 0 && is_path_char(bytes[left - 1]) {
+                        left -= 1;
+                    }
+                    let cand_raw = text[left..i].trim();
+                    // Strip leading words before the rightmost space unless preceded by `[` or `` ` ``.
+                    let bracketed = left > 0 && bytes[left - 1] == b'[';
+                    let candidate = if bracketed {
+                        cand_raw
+                    } else {
+                        cand_raw.rsplit_once(' ').map(|(_, r)| r).unwrap_or(cand_raw)
+                    };
+                    if let Some((_, ext)) = candidate.rsplit_once('.') {
+                        let ext_low = ext.to_ascii_lowercase();
+                        if !candidate.contains("://")
+                            && CITATION_EXTS.contains(&ext_low.as_str())
+                            && line_no > 0
+                        {
+                            let raw_span = format!(
+                                "{}{}",
+                                candidate,
+                                &text[i..i + 1 + total_after]
+                            );
+                            if seen.insert((candidate.to_string(), line_no, end_line)) {
+                                out.push((raw_span, candidate.to_string(), line_no, end_line));
+                                if out.len() >= 32 {
+                                    break;
+                                }
+                            }
+                            i += 1 + total_after;
+                            continue;
+                        }
+                    }
+                }
+            }
+        }
+        i += 1;
+    }
+    out
+}
+
+/// Verify `[file:L##]` cross-file citations against sandboxed files and exact line counts in `workspace_dir`.
+pub fn verify_text_citations(workspace_dir: &Path, text: &str) -> CitationReport {
+    let extracted = extract_file_citations(text);
+    let mut line_cache: std::collections::HashMap<String, Option<usize>> =
+        std::collections::HashMap::new();
+    let mut report = CitationReport::default();
+
+    for (raw, path, line, end_line) in extracted {
+        let total_lines_opt = if let Some(cached) = line_cache.get(&path) {
+            *cached
+        } else {
+            let count_opt = sandbox_path(workspace_dir, &path).ok().and_then(|full| {
+                if full
+                    .symlink_metadata()
+                    .is_ok_and(|md| md.file_type().is_symlink())
+                {
+                    return None;
+                }
+                searchable_text(&full).ok().map(|s| s.lines().count())
+            });
+            line_cache.insert(path.clone(), count_opt);
+            count_opt
+        };
+
+        let (status, total_lines) = match total_lines_opt {
+            None => ("missing", 0),
+            Some(total) => {
+                let end_ok = end_line.is_none_or(|e| e >= line && e <= total);
+                if line >= 1 && line <= total && end_ok {
+                    ("verified", total)
+                } else {
+                    ("out_of_range", total)
+                }
+            }
+        };
+        if status == "verified" {
+            report.verified += 1;
+        } else {
+            report.broken += 1;
+        }
+        report.total += 1;
+        report.citations.push(CitationCheck {
+            raw,
+            path,
+            line,
+            end_line,
+            status,
+            total_lines,
+        });
+    }
+    report
+}
+

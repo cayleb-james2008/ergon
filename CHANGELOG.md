@@ -4,6 +4,15 @@ Each release is tagged `vMAJOR.MINOR.PATCH` and published on GitHub Releases wit
 binaries and a `SHA256SUMS` file. The running app shows its version and can update
 itself from the newest release (see README, "Versions and updates").
 
+## 0.16.0 - 2026-11-25
+
+- **Cross-File Citation Verification & Clickable `[file:L##]` Source Inspector (`src/tools.rs`, `src/server.rs`, `frontend/src/chat/Entry.tsx`, `frontend/src/shell/WorkspaceFiles.tsx`, `frontend/src/shell/InspectorDrawer.tsx`, `frontend/src/lib/webEngine.ts`):**
+  - Added `verify_text_citations` & `POST /api/citations/verify`, and integrated automatic `[file:L##]` cross-file citation verification directly into `GET /api/files/pack?preflight=1` and `Client Pack (.md)` exports (flagging missing files or out-of-range line references before export).
+  - Rendered clickable `[file:L##]` citation pills inside finished receipts, replies, and Pack Pre-Flight summaries that open `FileViewerModal` in line-numbered Source Inspector mode scrolled & highlighted directly to the cited line range (`webEngine.ts` 100% synced).
+- **Binary & Peak RSS Diet (`Cargo.toml`, `build.rs`, `src/ui.rs`, `src/audit_bundle.rs`, `src/server.rs`):**
+  - Enabled fat LTO (`lto = "fat"`) in `[profile.release]` and pre-gzipped `assets/index.html` into `.rodata` (`index.html.gz`) inflated once on demand, trimming the release binary below `11.8 MB`.
+  - Added zero-DOM streaming `audit_bundle::build_audit_bundle_json_bytes` serializing 5k+ `receipt_chain.entries` directly into `ShaWriter` & response bytes without allocating `5,000` `Value::Object` maps, slashing Peak `VmHWM` under 5k receipts + 500 workspace files below `29 MB`.
+
 ## 0.15.0 - 2026-11-25
 
 - **Pre-Gzipped `.rodata` `/chunks/*` (`build.rs`, `Cargo.toml`, `src/ui.rs`, `src/server.rs`):**

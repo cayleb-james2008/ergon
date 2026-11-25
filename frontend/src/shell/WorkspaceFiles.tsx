@@ -60,7 +60,7 @@ import {
 import { computeLineDiff, normalizeServerDiff } from "@/lib/diff";
 import { exportReceiptDownload } from "@/lib/receiptExport";
 import { cn } from "@/lib/utils";
-import { detectWorkflowForFile, relTime } from "@/lib/words";
+import { detectWorkflowForFile, parseCitationTarget, relTime } from "@/lib/words";
 
 const TRIGGER = "focus-ring flex w-full min-h-11 md:min-h-9 items-center justify-between gap-1.5 rounded-sm px-1.5 text-left text-sm text-ink outline-none hover:bg-board";
 const FILES_PAGE_SIZE = 25;
@@ -1096,6 +1096,59 @@ export function FileHistoryDiffView({
   );
 }
 
+function SourceLineView({
+  content,
+  highlightLine,
+  highlightEnd,
+}: {
+  content: string;
+  highlightLine?: number;
+  highlightEnd?: number;
+}) {
+  const targetRef = useRef<HTMLDivElement>(null);
+  const lines = useMemo(() => String(content ?? "").split(/\r?\n/), [content]);
+
+  useEffect(() => {
+    if (highlightLine && targetRef.current) {
+      targetRef.current.scrollIntoView({ block: "center", behavior: "auto" });
+    }
+  }, [highlightLine, content]);
+
+  const endLine = highlightEnd && highlightEnd >= (highlightLine ?? 0) ? highlightEnd : highlightLine;
+
+  return (
+    <div
+      id="file-source-lines"
+      data-highlighted-line={highlightLine ?? undefined}
+      className="overflow-x-auto rounded-sm border border-hairline bg-board/40 font-mono text-xs leading-5"
+    >
+      {lines.map((line, idx) => {
+        const lineNo = idx + 1;
+        const active =
+          typeof highlightLine === "number" &&
+          lineNo >= highlightLine &&
+          lineNo <= (endLine ?? highlightLine);
+        const isAnchor = lineNo === highlightLine;
+        return (
+          <div
+            key={lineNo}
+            id={`viewer-line-${lineNo}`}
+            ref={isAnchor ? targetRef : undefined}
+            data-active-line={active ? "true" : undefined}
+            className={cn(
+              "grid grid-cols-[3.25rem_minmax(0,1fr)] gap-3 px-2.5 py-0.5",
+              active ? "border-l-2 border-accent bg-tag-plan-bg/60 text-ink" : "text-ink"
+            )}
+          >
+            <span className="select-none text-right text-ink-3 tabular-nums">{lineNo}</span>
+            <span className="whitespace-pre-wrap break-words">{line || " "}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export function FileViewerModal({
   filePath,
   personName,
@@ -1113,11 +1166,13 @@ export function FileViewerModal({
   onRunWorkflow?: (prompt: string) => void;
   onRestored?: () => void;
 }) {
+  const target = useMemo(() => parseCitationTarget(filePath || ""), [filePath]);
+  const cleanPath = filePath ? target.path : null;
   const [data, setData] = useState<WorkspaceFileContent | null>(null);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
   const [exporting, setExporting] = useState(false);
-  const [tab, setTab] = useState<"preview" | "history">("preview");
+  const [tab, setTab] = useState<"preview" | "source" | "history">("preview");
   const [revisions, setRevisions] = useState<FileRevision[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyErr, setHistoryErr] = useState("");
@@ -1172,7 +1227,7 @@ export function FileViewerModal({
   }, [status]);
 
   useEffect(() => {
-    if (!filePath) {
+    if (!cleanPath) {
       setData(null);
       setErr("");
       setTab("preview");
@@ -1180,12 +1235,12 @@ export function FileViewerModal({
       setHistoryErr("");
       return;
     }
-    setTab("preview");
-    void loadContent(filePath);
-    void loadHistory(filePath);
-  }, [filePath, loadContent, loadHistory]);
+    setTab(target.line ? "source" : "preview");
+    void loadContent(cleanPath);
+    void loadHistory(cleanPath);
+  }, [cleanPath, target.line, loadContent, loadHistory]);
 
-  const ext = (data?.ext || filePath?.split(".").pop() || "").toLowerCase();
+  const ext = (data?.ext || cleanPath?.split(".").pop() || "").toLowerCase();
 
   const copyContent = async () => {
     if (!data?.content) return;
@@ -1198,21 +1253,21 @@ export function FileViewerModal({
   };
 
   const handleDownload = async () => {
-    if (!filePath) return;
-    const ok = await downloadWorkspaceFile(filePath);
-    if (ok) toast.success(`Downloaded ${filePath.split("/").pop()}.`);
+    if (!cleanPath) return;
+    const ok = await downloadWorkspaceFile(cleanPath);
+    if (ok) toast.success(`Downloaded ${cleanPath.split("/").pop()}.`);
     else toast.error("Could not download this file.");
   };
 
-  const target = filePath ? exportTarget(filePath) : null;
-  const suggestedWorkflow = filePath ? detectWorkflowForFile(filePath) : null;
+  const expTarget = cleanPath ? exportTarget(cleanPath) : null;
+  const suggestedWorkflow = cleanPath ? detectWorkflowForFile(cleanPath) : null;
   const [savingAs, setSavingAs] = useState(false);
   const handleSaveAs = async () => {
-    if (!filePath || !target) return;
+    if (!cleanPath || !expTarget) return;
     setSavingAs(true);
     const r = await call<{ path: string; size: number }>("/api/files/export", {
       method: "POST",
-      body: { path: filePath, format: target },
+      body: { path: cleanPath, format: expTarget },
     });
     setSavingAs(false);
     if (!r.ok) {
@@ -1225,19 +1280,19 @@ export function FileViewerModal({
   };
 
   const handleReceiptExport = async (format: "md" | "json") => {
-    if (!filePath || !data) return;
+    if (!cleanPath || !data) return;
     setExporting(true);
     try {
       const res = await exportReceiptDownload(
         {
-          id: `file-${filePath}`,
-          task: `Workspace file receipt: ${filePath}`,
+          id: `file-${cleanPath}`,
+          task: `Workspace file receipt: ${cleanPath}`,
           person: personName || "Active employee",
           status: "verified",
           summary: `Verified workspace file (${formatBytes(data.size)}, ${ext || "text"}).`,
           ts: data.mtime_ms || Date.now(),
-          files: [filePath],
-          filePath,
+          files: [cleanPath],
+          filePath: cleanPath,
           fileContent: data.content,
         },
         format,
@@ -1256,8 +1311,13 @@ export function FileViewerModal({
       <DialogContent id="file-viewer-dialog" className="max-h-[88vh] max-w-3xl overflow-hidden">
         <DialogHeader className="pr-10 text-left">
           <DialogTitle className="flex min-w-0 items-center gap-2 text-title font-medium text-ink">
-            {filePath && <FileGlyph name={filePath} className="size-4 shrink-0" />}
-            <span className="mono min-w-0 truncate">{filePath ?? ""}</span>
+            {cleanPath && <FileGlyph name={cleanPath} className="size-4 shrink-0" />}
+            <span className="mono min-w-0 truncate">{cleanPath ?? ""}</span>
+            {target.line && (
+              <Badge variant="outline" size="sm" className="mono shrink-0">
+                L{target.line}{target.endLine ? `–L${target.endLine}` : ""}
+              </Badge>
+            )}
           </DialogTitle>
           <DialogDescription className="flex flex-wrap items-center gap-2 text-xs text-ink-2">
             {data ? (
@@ -1289,13 +1349,22 @@ export function FileViewerModal({
               Preview
             </SegmentedControlItem>
             <SegmentedControlItem
+              data-id="source"
+              aria-pressed={tab === "source"}
+              data-checked={tab === "source" ? "" : undefined}
+              className="min-h-11 px-3 md:min-h-8"
+              onClick={() => setTab("source")}
+            >
+              {target.line ? `Source (L${target.line})` : "Lines"}
+            </SegmentedControlItem>
+            <SegmentedControlItem
               data-id="history"
               aria-pressed={tab === "history"}
               data-checked={tab === "history" ? "" : undefined}
               className="min-h-11 gap-1.5 px-3 md:min-h-8"
               onClick={() => {
                 setTab("history");
-                if (filePath) void loadHistory(filePath);
+                if (cleanPath) void loadHistory(cleanPath);
               }}
             >
               <History className="size-3.5" strokeWidth={1.5} aria-hidden />
@@ -1309,18 +1378,18 @@ export function FileViewerModal({
           </SegmentedControl>
 
           <div className="flex flex-wrap items-center gap-2">
-            <Button size="sm" variant="outline" className="max-md:min-h-11" disabled={!filePath || !!err} onClick={handleDownload}>
+            <Button size="sm" variant="outline" className="max-md:min-h-11" disabled={!cleanPath || !!err} onClick={handleDownload}>
               <Download className="size-3.5" strokeWidth={1.5} aria-hidden />
               Download
             </Button>
-            {target && data && !err && (
+            {expTarget && data && !err && (
               <Button id="file-save-as" size="sm" variant="outline" className="max-md:min-h-11" disabled={savingAs} onClick={handleSaveAs}>
-                {target === "docx" ? (
+                {expTarget === "docx" ? (
                   <FileText className="size-3.5" strokeWidth={1.5} aria-hidden />
                 ) : (
                   <FileSpreadsheet className="size-3.5" strokeWidth={1.5} aria-hidden />
                 )}
-                {savingAs ? "Saving…" : target === "docx" ? "Save as Word" : "Save as Excel"}
+                {savingAs ? "Saving…" : expTarget === "docx" ? "Save as Word" : "Save as Excel"}
               </Button>
             )}
             {data && !data.is_binary && (
@@ -1366,13 +1435,13 @@ export function FileViewerModal({
                 {suggestedWorkflow.label}
               </Button>
             )}
-            {filePath && onAskAbout && !err && (
+            {cleanPath && onAskAbout && !err && (
               <Button
                 size="sm"
                 variant="ghost"
                 className="max-md:min-h-11"
                 onClick={() => {
-                  onAskAbout(filePath);
+                  onAskAbout(cleanPath);
                   onClose();
                 }}
               >
@@ -1384,17 +1453,17 @@ export function FileViewerModal({
         </div>
 
         <div id="file-viewer-body" className="max-h-[58vh] min-h-24 overflow-y-auto pr-1">
-          {tab === "history" && filePath ? (
+          {tab === "history" && cleanPath ? (
             <FileHistoryDiffView
-              filePath={filePath}
+              filePath={cleanPath}
               currentContent={data?.content ?? ""}
               status={status}
               revisions={revisions}
               loading={historyLoading}
               err={historyErr}
-              onReloadHistory={() => void loadHistory(filePath)}
+              onReloadHistory={() => void loadHistory(cleanPath)}
               onRestored={async () => {
-                await loadContent(filePath);
+                await loadContent(cleanPath);
                 onRestored?.();
               }}
             />
@@ -1408,7 +1477,7 @@ export function FileViewerModal({
                     Text read from this {data.extracted.kind}
                     {data.extracted.pages && data.extracted.pages > 1 ? ` (${data.extracted.pages} pages)` : ""} — your agent and every workflow read it the same way.
                   </span>
-                  {(data.extracted.sheets?.length ?? 0) > 1 && filePath && (
+                  {(data.extracted.sheets?.length ?? 0) > 1 && cleanPath && (
                     <SegmentedControl aria-label="Workbook sheet">
                       {data.extracted.sheets!.slice(0, 8).map((sh) => (
                         <SegmentedControlItem
@@ -1417,7 +1486,7 @@ export function FileViewerModal({
                           aria-pressed={data.extracted?.sheet === sh}
                           data-checked={data.extracted?.sheet === sh ? "" : undefined}
                           className="min-h-11 px-3 md:min-h-8"
-                          onClick={() => void loadContent(filePath, sh)}
+                          onClick={() => void loadContent(cleanPath, sh)}
                         >
                           {sh}
                         </SegmentedControlItem>
@@ -1433,6 +1502,12 @@ export function FileViewerModal({
                       ? `Ergon could not read this file's text: ${data.extract_error}. Use Download above to open it on your computer.`
                       : `Binary file (${formatBytes(data.size)}). Use Download above to save it to your computer.`}
                   </p>
+                ) : tab === "source" ? (
+                  <SourceLineView
+                    content={data.content}
+                    highlightLine={target.line}
+                    highlightEnd={target.endLine}
+                  />
                 ) : data.extracted?.format === "csv" ? (
                   <CsvTableView content={data.content} />
                 ) : data.extracted?.format === "markdown" ? (
