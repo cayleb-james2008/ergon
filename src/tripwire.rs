@@ -619,7 +619,7 @@ fn event_hash(ev: &Value) -> String {
     // serde_json maps are BTreeMaps here (no preserve_order), so the
     // compact form is canonical: sorted keys, no whitespace.
     let prev = ev["prev_hash"].as_str().unwrap_or("");
-    sha256_hex(format!("{prev}|{}", body).as_bytes())
+    sha256_hex(format!("{prev}|{body}").as_bytes())
 }
 
 /// Verify the chain: `(ok, length, head_hash, first_bad_index)`.
@@ -844,8 +844,9 @@ pub fn names_host(text: &str, host: &str) -> bool {
         let end = start + host.len();
         let before_ok = start == 0 || !(t[start - 1].is_ascii_alphanumeric() || matches!(t[start - 1], b'.' | b'-' | b'_'));
         let after_ok = end >= t.len()
-            || !(t[end].is_ascii_alphanumeric() || matches!(t[end], b'-' | b'_'))
-                && !(t[end] == b'.' && end + 1 < t.len() && t[end + 1].is_ascii_alphanumeric());
+            || !(t[end].is_ascii_alphanumeric()
+                || matches!(t[end], b'-' | b'_')
+                || (t[end] == b'.' && end + 1 < t.len() && t[end + 1].is_ascii_alphanumeric()));
         if before_ok && after_ok {
             return true;
         }

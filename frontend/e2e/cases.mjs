@@ -2,6 +2,7 @@
 export default ({ LONG, json, patch, malformed, down, overflowing, has }) => [
   {
     name: "null and numeric person names do not blank the desk",
+    path: "?face=today",
     routes: [[
       "**/api/people",
       patch((j) => ({
@@ -13,6 +14,7 @@ export default ({ LONG, json, patch, malformed, down, overflowing, has }) => [
   },
   {
     name: "long unbroken decision, finished task, and today event titles stay inside boxes",
+    path: "?face=today",
     shot: true,
     routes: [
       ["**/api/decisions", patch((j) => ({ decisions: j.decisions.map((d) => ({ ...d, summary: "Delete " + LONG + ".txt" })) }))],
@@ -23,16 +25,19 @@ export default ({ LONG, json, patch, malformed, down, overflowing, has }) => [
   },
   {
     name: "malformed brief shows plain error with Retry",
+    path: "?face=today",
     routes: [["**/api/brief", malformed]],
     check: async (p) => (await has(p, "Today's paper could not be loaded")) || "missing brief error message",
   },
   {
     name: "unreachable brief shows plain error with Retry",
+    path: "?face=today",
     routes: [["**/api/brief", down]],
     check: async (p) => (await has(p, "Today's paper could not be loaded")) || "missing unreachable brief error message",
   },
   {
     name: "a question decision states answer is recorded and offers Decline",
+    path: "?face=today",
     routes: [[
       "**/api/decisions",
       patch((j) => ({ decisions: j.decisions.map((d) => ({ ...d, kind: "question", summary: "Use the new supplier list?" })) })),
@@ -56,6 +61,7 @@ export default ({ LONG, json, patch, malformed, down, overflowing, has }) => [
   },
   {
     name: "malformed people list shows error alert in Team card",
+    path: "?face=today",
     routes: [["**/api/people", (r) => (r.request().method() === "GET" ? json(r, '{"people": [tr') : r.continue())]],
     check: async (p) =>
       (await p.locator("#team-h ~ p[role=alert]:visible", { hasText: "Could not load the people list" }).count()) === 1
@@ -63,6 +69,7 @@ export default ({ LONG, json, patch, malformed, down, overflowing, has }) => [
   },
   {
     name: "many long saved-file names wrap cleanly with file-type glyphs",
+    path: "?face=today",
     shot: true,
     routes: [[
       "**/api/brief",
@@ -81,6 +88,7 @@ export default ({ LONG, json, patch, malformed, down, overflowing, has }) => [
   },
   {
     name: "non-array or null files values do not crash Finished or Today stream",
+    path: "?face=today",
     routes: [
       [
         "**/api/brief",

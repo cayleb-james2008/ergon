@@ -224,7 +224,7 @@ fn build_context(cfg: &Config, trusted: bool) -> Result<rune::Context, String> {
                         &path,
                         "workflow_write",
                     );
-                    match std::fs::write(&full, &content) {
+                    match crate::atomic_write_bytes(&full, content.as_bytes()) {
                         Ok(()) => "ok".to_string(),
                         Err(e) => format!("error: write {path}: {e}"),
                     }

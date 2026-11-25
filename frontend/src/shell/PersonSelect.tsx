@@ -6,21 +6,12 @@
 // - WorkspaceSwitcherList: Reusable compact switcher list also embedded inside SettingsPanel.
 import { useEffect, useMemo, useState } from "react";
 import { Check, ChevronsUpDown, Search, UserPlus, Users, X } from "lucide-react";
-import {
-  MorphingDialog,
-  MorphingDialogClose,
-  MorphingDialogContainer,
-  MorphingDialogContent,
-  MorphingDialogDescription,
-  MorphingDialogTitle,
-  useMorphingDialog,
-} from "@/components/ui/morphing-dialog";
+import { PanelModal, usePanelModalClose } from "@/shell/PanelModal";
 import { Button } from "@/components/ui/button";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
 import { Pill } from "@/components/kibo-ui/pill";
 import type { Person } from "@/lib/api";
 import { cn } from "@/lib/utils";
-import { open as openPreset } from "@/motion";
 
 export function personLabel(p: Person): string {
   const n = String(p?.name ?? "").trim() || "Unnamed";
@@ -60,12 +51,12 @@ export function PersonSelect({
       type="button"
       id="person-select"
       data-thing="workspace-btn"
-      aria-labelledby="person-label"
+      aria-label={`Working for ${currentName}`}
       aria-haspopup="dialog"
       aria-expanded={expanded}
       disabled={disabled}
       onClick={onOpen}
-      className="focus-ring mt-1 flex min-h-11 w-full cursor-pointer items-center justify-between gap-2.5 rounded-sm border border-hairline bg-board/60 px-2.5 py-1.5 text-left text-sm text-ink outline-none hover:bg-board disabled:cursor-not-allowed disabled:bg-track disabled:text-ink-3 md:min-h-10"
+      className="focus-ring flex min-h-11 min-w-[44px] max-w-[210px] cursor-pointer items-center justify-between gap-2 rounded-sm border border-hairline bg-board/60 px-2.5 py-1 text-left text-sm text-ink outline-none hover:bg-board disabled:cursor-not-allowed disabled:bg-track disabled:text-ink-2 sm:max-w-[250px] md:min-h-9"
     >
       <span className="flex min-w-0 items-center gap-2.5">
         <span aria-hidden className="grid size-7 shrink-0 place-items-center rounded-full bg-av-sky-bg text-xs font-medium text-av-sky-fg">
@@ -175,7 +166,7 @@ function WorkspaceSwitcherBody({
   onSwitch: (id: string) => Promise<void>;
   onAddPerson: () => void;
 }) {
-  const { isOpen, setIsOpen } = useMorphingDialog();
+  const { isOpen, setIsOpen } = usePanelModalClose();
   const [query, setQuery] = useState("");
   const [switchingId, setSwitchingId] = useState<string | null>(null);
 
@@ -299,27 +290,20 @@ export function WorkspaceSwitcherPanel({
   onAddPerson: () => void;
 }) {
   return (
-    <MorphingDialog transition={openPreset} open={open} onOpenChange={onOpenChange}>
-      <MorphingDialogContainer>
-        <MorphingDialogContent
-          style={{ borderRadius: 18 }}
-          className="relative mx-4 flex max-h-[84vh] w-[520px] max-w-[calc(100%-2rem)] flex-col gap-3 overflow-y-auto border border-hairline bg-surface p-5 text-ink shadow-lift"
-        >
-          <MorphingDialogClose className="focus-ring absolute right-3 top-3 grid size-11 place-items-center rounded-sm text-icon outline-none hover:bg-board md:size-9" />
-          <MorphingDialogTitle className="pr-10 text-title font-medium text-ink">
-            Switch workspace
-          </MorphingDialogTitle>
-          <MorphingDialogDescription disableLayoutAnimation className="text-sm text-ink-2">
-            <WorkspaceSwitcherBody
-              people={people}
-              active={active}
-              onRefresh={onRefresh}
-              onSwitch={onSwitch}
-              onAddPerson={onAddPerson}
-            />
-          </MorphingDialogDescription>
-        </MorphingDialogContent>
-      </MorphingDialogContainer>
-    </MorphingDialog>
+    <PanelModal
+      open={open}
+      onOpenChange={onOpenChange}
+      title="Switch workspace"
+      description="Choose a person or company workspace to work inside."
+      className="max-w-lg"
+    >
+      <WorkspaceSwitcherBody
+        people={people}
+        active={active}
+        onRefresh={onRefresh}
+        onSwitch={onSwitch}
+        onAddPerson={onAddPerson}
+      />
+    </PanelModal>
   );
 }

@@ -835,7 +835,7 @@ fn civil_from_days(z: i64) -> (i64, u32, u32) {
 fn clean_number(v: &str) -> String {
     match v.parse::<f64>() {
         Ok(f) if v.len() > 12 && f.is_finite() && (v.contains('.') || v.contains('E') || v.contains('e')) => {
-            let s = format!("{:.10}", f);
+            let s = format!("{f:.10}");
             let s = s.trim_end_matches('0').trim_end_matches('.').to_string();
             if s == "-0" { "0".into() } else { s }
         }

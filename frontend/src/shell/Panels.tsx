@@ -5,23 +5,12 @@
 import { useEffect, useState } from "react";
 import { Blocks, BookOpen, UserPlus } from "lucide-react";
 import { toast } from "sonner";
-import {
-  MorphingDialog,
-  MorphingDialogClose,
-  MorphingDialogContainer,
-  MorphingDialogContent,
-  MorphingDialogDescription,
-  MorphingDialogTitle,
-  MorphingDialogTrigger,
-  useMorphingDialog,
-} from "@/components/ui/morphing-dialog";
-import { SlidingNumber } from "@/components/ui/sliding-number";
+import { PanelModal, usePanelModalClose } from "@/shell/PanelModal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Details } from "@/chat/Entry";
 import { call, type LibraryItem, type Msg, type Person, type SuiteItem } from "@/lib/api";
-import { open as openPreset } from "@/motion";
 
 const TRIGGER = "focus-ring flex w-full min-h-11 md:min-h-9 items-center justify-between gap-1.5 rounded-sm px-1.5 text-left text-sm text-ink outline-none hover:bg-board cursor-pointer";
 
@@ -61,7 +50,7 @@ export function RailPanelButton({
       </span>
       {typeof count === "number" && (
         <span className="mono shrink-0 rounded-chip bg-track px-1.5 py-0.5 text-xs text-ink-2">
-          <SlidingNumber value={count} />
+          {count}
         </span>
       )}
     </button>
@@ -92,38 +81,34 @@ function PanelShell({
   children: React.ReactNode;
 }) {
   return (
-    <MorphingDialog transition={openPreset} open={open} onOpenChange={onOpenChange}>
-      {!hideTrigger && (
-        <MorphingDialogTrigger thing={id} className={TRIGGER} style={{ borderRadius: 7 }}>
-          <span className="flex min-w-0 items-center gap-1.5" data-answers={answers}>
-            {icon}
-            <span className="leading-tight">{label}</span>
-          </span>
-          {typeof count === "number" && (
-            <span className="mono shrink-0 rounded-chip bg-track px-1.5 py-0.5 text-xs text-ink-2">
-              <SlidingNumber value={count} />
+    <PanelModal
+      open={open}
+      onOpenChange={onOpenChange}
+      title={title}
+      className="max-w-xl"
+      trigger={
+        !hideTrigger ? (
+          <button type="button" data-thing={id} className={TRIGGER} style={{ borderRadius: 7 }}>
+            <span className="flex min-w-0 items-center gap-1.5" data-answers={answers}>
+              {icon}
+              <span className="leading-tight">{label}</span>
             </span>
-          )}
-        </MorphingDialogTrigger>
-      )}
-      <MorphingDialogContainer>
-        <MorphingDialogContent
-          style={{ borderRadius: 18 }}
-          className="relative mx-4 flex max-h-[82vh] w-[520px] max-w-[calc(100%-2rem)] flex-col gap-3 overflow-y-auto border border-hairline bg-surface p-5 text-ink shadow-lift"
-        >
-          <MorphingDialogClose className="focus-ring absolute right-3 top-3 grid size-11 place-items-center rounded-sm text-icon outline-none hover:bg-board md:size-9" />
-          <MorphingDialogTitle className="pr-10 text-title font-medium text-ink">{title}</MorphingDialogTitle>
-          <MorphingDialogDescription disableLayoutAnimation className="text-sm text-ink-2">
-            {children}
-          </MorphingDialogDescription>
-        </MorphingDialogContent>
-      </MorphingDialogContainer>
-    </MorphingDialog>
+            {typeof count === "number" && (
+              <span className="mono shrink-0 rounded-chip bg-track px-1.5 py-0.5 text-xs text-ink-2">
+                {count}
+              </span>
+            )}
+          </button>
+        ) : undefined
+      }
+    >
+      {children}
+    </PanelModal>
   );
 }
 
 function LearnedBody() {
-  const { isOpen } = useMorphingDialog();
+  const { isOpen } = usePanelModalClose();
   const [text, setText] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
 
@@ -216,7 +201,7 @@ function LearnedList({ content }: { content: string }) {
 }
 
 function SuiteBody({ onRun, onChanged }: { onRun: (id: string, msgs: Msg[]) => void; onChanged: () => void }) {
-  const { isOpen, setIsOpen } = useMorphingDialog();
+  const { isOpen, setIsOpen } = usePanelModalClose();
   const [suite, setSuite] = useState<SuiteItem[] | null>(null);
   const [lib, setLib] = useState<LibraryItem[]>([]);
   const [err, setErr] = useState("");
@@ -388,7 +373,7 @@ function SuiteRow({ item, onRemove, onRun }: { item: SuiteItem; onRemove: () => 
 }
 
 function AddPersonBody({ onAdded }: { onAdded: (p: Person) => void }) {
-  const { setIsOpen } = useMorphingDialog();
+  const { setIsOpen } = usePanelModalClose();
   const [name, setName] = useState("");
   const [role, setRole] = useState("");
   const [err, setErr] = useState("");

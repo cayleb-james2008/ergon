@@ -117,7 +117,7 @@ export function SecuritySection({ status }: { status: Status | null | "error" })
         <>
           <div className="mono flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-ink-2">
             <span>
-              {data.last_24h.events} {data.last_24h.events === 1 ? "event" : "events"} · {data.last_24h.blocked} blocked · last 24h
+              {data.last_24h.events} {data.last_24h.events === 1 ? "event" : "events"}, {data.last_24h.blocked} blocked (last 24h)
             </span>
             <span className={cn("inline-flex items-center gap-1.5", data.log.verified ? "text-ink-2" : "text-ink")}>
               <span aria-hidden className={cn("size-2 rounded-full", data.log.verified ? "bg-dot-green" : "bg-dot-red")} />
@@ -140,8 +140,8 @@ export function SecuritySection({ status }: { status: Status | null | "error" })
                       <span className="mono shrink-0 text-[11px] text-ink-3">{relTime(e.ts)}</span>
                     </div>
                     <p className="mono mt-0.5 text-[11px] text-ink-3">
-                      {e.code} · {e.action}
-                      {e.repeats ? ` · +${e.repeats} similar` : ""}
+                      {e.code} — {e.action}
+                      {e.repeats ? ` (+${e.repeats} similar)` : ""}
                     </p>
                   </div>
                 </li>

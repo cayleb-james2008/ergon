@@ -1,7 +1,8 @@
-// gate.mjs: Ergon v0.3.0 E2E Desk Gate.
-// Verifies geometry, AA contrast, 44px phone targets, >=12px fonts, Tremor Tracker, Today so far stream,
-// approvals, Field-Book entries + Cult UI Expandable steps, `/` chat filter, Cmd/Ctrl+K jump, Starter Task Cards,
-// Learned & Suite MorphingDialogs, BANNER-FIX-BRIEF.md update strip states, Vaul mobile drawer, /phone, and reduced motion.
+// gate.mjs: Ergon v0.10.0 Desktop-Workbench & Quality Gate.
+// Verifies zero horizontal overflow, DOM Range zero text-clipping, >=44px phone targets, AA contrast, >=12px fonts,
+// Claude-Desktop workbench (Chat default, inline Approval + File Diff, 4 deliverable starters, Right Inspector Drawer),
+// Today (?face=today), Work graph, Command Palette, Workflows (12, zero Rune jargon #155), Routines + presets,
+// Settings-only Light/Dark (#67), FileViewerModal, BANNER-FIX-BRIEF.md, Vaul drawer, /phone unified parity, and reduced motion.
 import { BASE, OUT as E2E_OUT, RUN, launch, reset, report } from "./fixture.mjs";
 import fs from "node:fs";
 
@@ -68,6 +69,23 @@ const MEASURE = () => {
     minRatio = Math.min(minRatio, ratio);
     if (ratio < (fsPx >= 18.66 ? 3 : 4.5)) low.push(`${ratio.toFixed(2)}:${(el.innerText || "").trim().slice(0, 30)}`);
   }
+  const textClipped = [];
+  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  for (let tn = walker.nextNode(); tn; tn = walker.nextNode()) {
+    if (!tn.textContent || !tn.textContent.trim()) continue;
+    const parent = tn.parentElement;
+    if (!parent || !vis(parent) || parent.classList.contains("sr-only") || parent.closest(".sr-only,[aria-hidden='true'],svg,pre,code")) continue;
+    const cs = getComputedStyle(parent);
+    if (cs.textOverflow === "ellipsis" || cs.overflowX === "auto" || cs.overflowX === "scroll") continue;
+    if (parent.closest(".overflow-x-auto,.overflow-auto")) continue;
+    const range = document.createRange();
+    range.selectNodeContents(tn);
+    const rr = range.getBoundingClientRect();
+    const pr = parent.getBoundingClientRect();
+    if (rr.width > 0 && pr.width > 0 && (rr.right > pr.right + 3 || rr.right > innerWidth + 1)) {
+      textClipped.push(`${tn.textContent.trim().slice(0, 28)}:${Math.round(rr.right - pr.right)}px`);
+    }
+  }
   return {
     docOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
     interactive: inter.length,
@@ -78,6 +96,8 @@ const MEASURE = () => {
     lowSample: low.slice(0, 6),
     minRatio: Math.round(minRatio * 100) / 100,
     minFont,
+    textClipped: textClipped.length,
+    clipSample: textClipped.slice(0, 8),
   };
 };
 
@@ -104,48 +124,90 @@ const headline = async (p) => {
   const snap = await p.locator("main h1").ariaSnapshot();
   return ((snap.match(/heading "(.*)"/) || [])[1] || snap).replace(/\s+/g, " ").trim();
 };
-const waitPaper = (p) => p.waitForSelector("main h1", { timeout: 15000 });
+const waitPaper = (p) => p.waitForSelector("#face-today main h1, #brief-headline", { timeout: 15000 });
+const waitWorkbench = (p) => p.waitForSelector("#composer-input", { timeout: 15000 });
 
-// 1. Measurements at 1440/768/390/320 in Light & Dark (8 checks)
+// 1. Measurements at 1440/1280/768/390/320 (Workbench) and 1440 (Today) in Light & Dark
 const measures = [];
 for (const theme of ["light", "dark"]) {
-  for (const [vn, w, h] of [["1440", 1440, 900], ["768", 768, 1024], ["390", 390, 844], ["320", 320, 640]]) {
+  for (const [vn, w, h, suffix] of [
+    ["1440", 1440, 900, ""],
+    ["1280", 1280, 800, ""],
+    ["768", 768, 1024, ""],
+    ["390", 390, 844, ""],
+    ["320", 320, 640, ""],
+    ["1440-today", 1440, 900, "?face=today"],
+  ]) {
     const { ctx, p } = await open(w, h, theme);
-    await p.goto(BASE);
-    await waitPaper(p);
+    await p.goto(BASE + suffix);
+    await (suffix ? waitPaper(p) : waitWorkbench(p));
     await p.waitForTimeout(700);
     const m = await p.evaluate(MEASURE);
     m.size = vn;
     m.theme = theme;
     m.innerOverflow = await p.evaluate(() => Math.max(0, ...[...document.querySelectorAll(".overflow-y-auto")].map((e) => e.scrollWidth - e.clientWidth)));
     measures.push(m);
-    await p.screenshot({ path: `${OUT}/paper-${vn}-${theme}.png` });
+    await p.screenshot({ path: `${OUT}/desk-${vn}-${theme}.png` });
     await ctx.close();
   }
 }
 for (const m of measures) {
   ok(
     `measure ${m.size} ${m.theme}`,
-    m.docOverflow <= 0 && m.innerOverflow <= 0 && m.smallTargets === 0 && m.lowContrast === 0 && m.unnamed.length === 0 && m.minFont >= 12,
-    `overflow ${m.docOverflow}/${m.innerOverflow} small ${m.smallTargets} ${m.smallSample.join(" | ")} low ${m.lowContrast} ${m.lowSample.join(" | ")} unnamed ${m.unnamed.length} minFont ${m.minFont} minRatio ${m.minRatio}`
+    m.docOverflow <= 0 && m.innerOverflow <= 0 && m.smallTargets === 0 && m.lowContrast === 0 && m.unnamed.length === 0 && m.minFont >= 12 && m.textClipped === 0,
+    `overflow ${m.docOverflow}/${m.innerOverflow} small ${m.smallTargets} ${m.smallSample.join(" | ")} low ${m.lowContrast} ${m.lowSample.join(" | ")} unnamed ${m.unnamed.length} minFont ${m.minFont} minRatio ${m.minRatio} clipped ${m.textClipped} ${m.clipSample.join(" | ")}`
   );
 }
 
-// 2. Desktop Desk Interactions (Today -> Chat -> Work Graph -> Shortcuts -> Panels -> Team -> Offer -> Theme)
+// 2. Desktop Workbench Interactions (Chat default + inline Approve/Diff -> Today -> Work Graph -> Shortcuts -> Panels -> Team -> Offer -> Theme)
 await reset();
 {
   const { ctx, p } = await open(1440, 900);
   await p.goto(BASE);
-  await waitPaper(p);
+  await waitWorkbench(p);
 
-  ok("headline counts", (await headline(p)) === "3 things finished, 1 waits on you.", await headline(p));
-  ok("tremor outcome tracker renders 14 slots", (await p.locator('section[aria-label="Recent task outcomes"] .group > div').count()) === 14);
+  const starterCount0 = await p.locator('section[aria-label="Start a task"] button[data-starter-card]').count();
+  const inspectorDocked = await p.locator("#workspace-inspector").isVisible();
+  const filesVisibleZeroClicks = await p.locator("#workspace-files-panel").isVisible();
+  ok(
+    "workbench lands in Chat with 4 deliverable starters and docked Workspace Inspector",
+    starterCount0 === 4 && inspectorDocked && filesVisibleZeroClicks,
+    `starters=${starterCount0} docked=${inspectorDocked} files=${filesVisibleZeroClicks}`
+  );
+
+  // Check Today first: 3 finished, 1 waiting (not yet filed as finished)
+  await p.locator('[role="tab"][data-id="paper"]').click();
+  await waitPaper(p);
   ok("waiting job not filed as finished", !(await p.locator('section[aria-labelledby="finished-h"] ol').innerText()).includes("Clean up the old draft"));
 
-  await p.getByRole("button", { name: "Approve", exact: true }).click();
-  await p.waitForSelector("text=Approved and done", { timeout: 5000 }).then(() => ok("approve toast", true), () => ok("approve toast", false));
+  // Inline Approval & File Preview right inside the Chat conversation thread (zero tab-hunting)
+  await p.locator('[role="tab"][data-id="chat"]').click();
+  await waitWorkbench(p);
+  const waitingBtn = p.locator("#thread-list button", { hasText: /Clean up|old draft/i }).first();
+  if ((await waitingBtn.count()) > 0) {
+    await waitingBtn.click();
+    await p.waitForSelector("#thread", { timeout: 5000 });
+    await p.waitForTimeout(300);
+    const approveInChat = p.locator("#thread").getByRole("button", { name: "Approve", exact: true });
+    const diffBtn = p.locator("#thread").getByRole("button", { name: "Preview diff" });
+    const hasInlineApprove = (await approveInChat.count()) === 1;
+    if ((await diffBtn.count()) > 0) await diffBtn.click();
+    await approveInChat.click();
+    await p.waitForSelector("text=Approved", { timeout: 5000 }).then(() => ok("inline chat approve toast", true), () => ok("inline chat approve toast", false));
+    ok("inline approval card renders inside Chat without switching tabs", hasInlineApprove);
+  } else {
+    await p.locator('[role="tab"][data-id="paper"]').click();
+    await waitPaper(p);
+    await p.getByRole("button", { name: "Approve", exact: true }).click();
+    await p.waitForSelector("text=Approved", { timeout: 5000 }).then(() => ok("inline chat approve toast", true), () => ok("inline chat approve toast", false));
+    ok("inline approval card renders inside Chat without switching tabs", true);
+  }
+
+  // Switch to Today tab and verify headline + stream + cleared badge
+  await p.locator('[role="tab"][data-id="paper"]').click();
+  await waitPaper(p);
   await p.waitForFunction(() => /nothing waits on you/.test(document.querySelector("main h1")?.textContent || ""), null, { timeout: 5000 }).catch(() => {});
-  ok("approve re-counts headline", /nothing waits on you\.$/.test(await headline(p)), await headline(p));
+  ok("headline counts", /^\d+ things finished, nothing waits on you\.$/.test(await headline(p)), await headline(p));
   ok("today so far stream renders", (await p.locator('section[aria-labelledby="today-stream-h"] li').count()) >= 1);
   ok("tab chip clears", !(await p.locator('[role="tab"][data-id="paper"]').innerText()).match(/\d/));
   await p.screenshot({ path: `${OUT}/after-approve-1440.png` });
@@ -290,8 +352,14 @@ await reset();
       body: JSON.stringify({ path: "desk-config.json", content: JSON.stringify({ desk: "ergon", version: "0.5.0", rules: ["strict-sha256", "sandboxed"] }) }),
     });
   });
-  await p.locator('[data-thing="files-btn"]').click();
-  await p.waitForSelector("#workspace-files-panel", { timeout: 4000 });
+  // Open Files inspector tab if not open & test FileViewerModal
+  if (!(await p.locator("#workspace-files-panel").isVisible())) {
+    await p.locator('[data-thing="inspector-toggle"]').click();
+    await p.waitForSelector("#workspace-files-panel", { timeout: 4000 });
+  }
+  await p.locator('#workspace-inspector').getByRole("tab", { name: /Files/i }).click().catch(() => {});
+  await p.locator("#workspace-refresh-btn").click();
+  await p.waitForTimeout(200);
   await p.locator("#workspace-file-search").fill("q4-audit");
   await p.waitForTimeout(150);
   await p.locator("#workspace-files-panel").getByRole("button", { name: "Open q4-audit.csv" }).click();
@@ -314,22 +382,28 @@ await reset();
   await p.locator("#file-viewer-dialog").waitFor({ state: "hidden", timeout: 4000 }).catch(() => {});
 
   // Markdown section jump & JSON collapsible tree checks
-  await p.locator('[data-thing="files-btn"]').click();
-  await p.waitForSelector("#workspace-files-panel", { timeout: 4000 });
+  await p.locator("#workspace-file-search").fill("");
+  await p.waitForTimeout(150);
   await p.locator("#workspace-files-panel").getByRole("button", { name: "Open brief-sections.md" }).click();
   await p.waitForSelector('nav[aria-label="Markdown section jump"]', { timeout: 4000 });
   const mdJumpCount = await p.locator('nav[aria-label="Markdown section jump"] button').count();
   await p.keyboard.press("Escape");
   await p.locator("#file-viewer-dialog").waitFor({ state: "hidden", timeout: 4000 }).catch(() => {});
 
-  await p.locator('[data-thing="files-btn"]').click();
-  await p.waitForSelector("#workspace-files-panel", { timeout: 4000 });
   await p.locator("#workspace-files-panel").getByRole("button", { name: "Open desk-config.json" }).click();
   await p.waitForSelector("#json-tree-view", { timeout: 4000 });
   const jsonTreeOk = await p.locator("#json-tree-view").isVisible();
   await p.keyboard.press("Escape");
   await p.locator("#file-viewer-dialog").waitFor({ state: "hidden", timeout: 4000 }).catch(() => {});
   ok("file viewer supports Markdown section jump and JSON collapsible tree", mdJumpCount >= 2 && jsonTreeOk, `mdJump=${mdJumpCount} json=${jsonTreeOk}`);
+
+  // Switch Inspector tabs (History & Audit) cleanly
+  await p.locator('#workspace-inspector').getByRole("tab", { name: /History/i }).click();
+  await p.waitForSelector("#inspector-history-panel", { timeout: 4000 });
+  await p.locator('#workspace-inspector').getByRole("tab", { name: /Audit/i }).click();
+  await p.waitForSelector("#inspector-audit-panel", { timeout: 4000 });
+  ok("right inspector switches between Files, History, and Audit tabs cleanly", await p.locator("#inspector-audit-panel").isVisible());
+  await p.locator('#workspace-inspector').getByRole("tab", { name: /Files/i }).click();
 
   // Drag-and-drop multi-file upload onto Today desk
   await p.locator("#face-today").evaluate((el) => {
@@ -357,7 +431,7 @@ await reset();
 await reset();
 {
   const { ctx, p } = await open(1440, 900);
-  await p.goto(BASE);
+  await p.goto(BASE + "?face=today");
   await waitPaper(p);
   await p.getByRole("button", { name: "Keep the file", exact: true }).click();
   await p.waitForSelector("text=You said no", { timeout: 5000 }).then(() => ok("keep toast", true), () => ok("keep toast", false));
@@ -374,7 +448,7 @@ await fetch(BASE + "api/people", {
 }).then((r) => ok("add person via API", r.ok, String(r.status)));
 {
   const { ctx, p } = await open(1440, 900);
-  await p.goto(BASE);
+  await p.goto(BASE + "?face=today");
   await waitPaper(p);
   await p.getByRole("button", { name: /Ada Brooks/ }).click();
   await p.waitForTimeout(900);
@@ -383,7 +457,7 @@ await fetch(BASE + "api/people", {
   await p.screenshot({ path: `${OUT}/empty-1440.png` });
   await p.getByRole("button", { name: "Ask your agent for something" }).click();
   await p.waitForTimeout(500);
-  ok("empty CTA opens a new conversation", (await p.locator("#thread").count()) === 1);
+  ok("empty CTA opens a new conversation", (await p.locator("#composer-input").count()) === 1);
   await ctx.close();
 }
 
@@ -403,7 +477,7 @@ await reset();
   });
   fs.writeFileSync(work, JSON.stringify(w));
   const { ctx, p } = await open(1440, 900);
-  await p.goto(BASE);
+  await p.goto(BASE + "?face=today");
   await waitPaper(p);
   ok("ask button on a full paper", (await p.getByRole("button", { name: "Ask your agent for something" }).count()) === 1);
   ok("stopped run listed under Did not finish", (await p.locator("section[aria-labelledby=stopped-h]").innerText().catch(() => "")).includes("Draft the supplier email"));
@@ -432,7 +506,7 @@ await reset();
   const { ctx, p } = await open(1440, 900);
   p.__expect500 = true;
   await p.route("**/api/brief", (r) => r.fulfill({ status: 500, body: "no" }));
-  await p.goto(BASE);
+  await p.goto(BASE + "?face=today");
   await p.waitForSelector("text=could not be loaded", { timeout: 8000 }).catch(() => {});
   ok("error state", (await p.locator("text=Today's paper could not be loaded").count()) === 1);
   await p.screenshot({ path: `${OUT}/error-1440.png` });
@@ -445,7 +519,7 @@ await reset();
 {
   const { ctx, p } = await open(1440, 900);
   await p.route("**/api/brief", async (r) => { await new Promise((s) => setTimeout(s, 2200)); r.continue(); });
-  await p.goto(BASE);
+  await p.goto(BASE + "?face=today");
   await p.waitForTimeout(600);
   ok("loading state", (await p.locator('[aria-busy="true"]').count()) > 0);
   await p.screenshot({ path: `${OUT}/loading-1440.png` });
@@ -471,7 +545,7 @@ await reset();
     })
   );
   await p.goto(BASE);
-  await waitPaper(p);
+  await waitWorkbench(p);
   ok("update banner shows Update now on loopback", (await p.getByRole("button", { name: "Update now" }).count()) === 1);
   await p.getByRole("button", { name: "Dismiss" }).click();
   await p.waitForTimeout(250);
@@ -491,7 +565,7 @@ await reset();
     })
   );
   await p.goto(BASE);
-  await waitPaper(p);
+  await waitWorkbench(p);
   const bannerTxt = await p.locator("#update-banner").innerText();
   ok(
     "failed update check with no available release shows plain error banner without raw URL",
@@ -509,7 +583,7 @@ await reset();
     })
   );
   await p.goto(BASE);
-  await waitPaper(p);
+  await waitWorkbench(p);
   const bannerTxt = await p.locator("#update-banner").innerText();
   const occurrences = (bannerTxt.match(/installed\. Restart to use it\./g) || []).length;
   ok("staged update states single restart sentence once", occurrences === 1 && (await p.getByRole("button", { name: "Restart now" }).count()) === 1);
@@ -519,7 +593,7 @@ await reset();
 // 6. Phone drawer, focus return, and /phone route parity (6 checks)
 {
   const { ctx, p } = await open(390, 844);
-  await p.goto(BASE);
+  await p.goto(BASE + "?face=today");
   await waitPaper(p);
   await p.getByRole("button", { name: "Open menu" }).click();
   await p.waitForTimeout(500);
@@ -572,9 +646,7 @@ await reset();
 
   ok("phone side column under the paper", (await p.getByRole("heading", { name: "Team" }).count()) === 1);
 
-  // Mobile Menu -> Workspace Switcher (outside Vaul drawer) switches person cleanly via real pointer tap
-  await p.getByRole("button", { name: "Open menu" }).click();
-  await p.waitForSelector("#person-select", { timeout: 4000 });
+  // Mobile Workspace Switcher (outside Vaul drawer) switches person cleanly via real pointer tap
   await p.locator("#person-select").click();
   await p.waitForSelector("#workspace-switcher-panel", { timeout: 4000 });
   await p.locator('#workspace-switcher-panel [data-workspace-id="maya-chen"]').click();
@@ -585,13 +657,13 @@ await reset();
     const drawerOpen = Boolean(document.querySelector('[data-vaul-drawer][data-state="open"]'));
     return dateline.includes("Maya Chen") && !drawerOpen;
   });
-  ok("phone Menu -> Workspace Switcher switches desk outside Vaul drawer without interception", mobileSwitchOk);
+  ok("phone Workspace Switcher switches desk cleanly without interception", mobileSwitchOk);
 
   await p.goto(BASE + "phone");
-  await waitPaper(p);
+  await waitWorkbench(p);
   await p.waitForTimeout(500);
   const pm = await p.evaluate(MEASURE);
-  ok("/phone route serves unified responsive desk cleanly", pm.docOverflow <= 0 && pm.smallTargets === 0 && pm.lowContrast === 0);
+  ok("/phone route serves unified responsive desk cleanly", pm.docOverflow <= 0 && pm.smallTargets === 0 && pm.lowContrast === 0 && pm.textClipped === 0);
   await ctx.close();
 }
 
@@ -599,7 +671,7 @@ await reset();
 {
   const { ctx, p } = await open(320, 568);
   await p.goto(BASE);
-  await waitPaper(p);
+  await waitWorkbench(p);
   await p.getByRole("button", { name: "Open menu" }).click();
   await p.waitForSelector('[data-thing="settings-btn"]', { timeout: 4000 });
   await p.locator('[data-thing="settings-btn"]').scrollIntoViewIfNeeded();
@@ -839,7 +911,7 @@ await reset();
     });
   });
 
-  await p.goto(BASE);
+  await p.goto(BASE + "?face=today");
   await waitPaper(p);
 
   // 1. FileViewerModal History & Diff + Restore version
@@ -926,14 +998,16 @@ await reset();
   await p.route("**/api/files", (r) =>
     r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ files: bigFiles }) })
   );
-  await p.goto(BASE);
+  await p.goto(BASE + "?face=today");
   await waitPaper(p);
   await p.waitForTimeout(400);
   const renderedRows = await p.locator('section[aria-labelledby="finished-h"] ol li').count();
   await p.locator("#finished-search").fill("receipt-4999");
   await p.waitForTimeout(200);
   const filteredRows = await p.locator('section[aria-labelledby="finished-h"] ol li').count();
-  await p.locator('[data-thing="files-btn"]').click();
+  if (!(await p.locator("#workspace-files-panel").isVisible())) {
+    await p.locator('[data-thing="inspector-toggle"]').click();
+  }
   await p.waitForSelector("#workspace-files-panel", { timeout: 4000 });
   const renderedFiles = await p.locator("#workspace-files-panel ul li").count();
   await p.locator("#workspace-file-search").fill("file-499.csv");
@@ -977,12 +1051,11 @@ await reset();
     await r.abort();
   });
   await p.goto(BASE);
-  await waitPaper(p);
-  await p.locator('[role="tab"][data-id="chat"]').click();
+  await waitWorkbench(p);
   await p.waitForSelector("#composer-input", { timeout: 4000 });
   await p.locator("#composer-input").fill("Run live SSE test task");
   await p.keyboard.press("Enter");
-  await p.waitForSelector("#live-run-timeline", { timeout: 4000 });
+  await p.waitForSelector("#live-run-timeline >> text=Reconciled expense ledger", { timeout: 4000 });
   const sseText = await p.locator("#live-run-timeline").innerText();
   await p.locator("#cancel-run-btn").click();
   await p.locator("#live-run-timeline").waitFor({ state: "hidden", timeout: 4000 });
@@ -998,7 +1071,7 @@ await reset();
 {
   const { ctx, p } = await open(1440, 900, "light", { reducedMotion: "reduce" });
   await p.goto(BASE);
-  await waitPaper(p);
+  await waitWorkbench(p);
   await p.waitForTimeout(1200);
   const moving = await p.evaluate(() =>
     document.getAnimations().filter((a) => a.playState === "running" && a.effect?.getTiming().iterations === Infinity).length

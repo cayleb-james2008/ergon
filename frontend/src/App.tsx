@@ -1,26 +1,20 @@
-// Ergon v0.7.0 — Personal Employee Agent Desk
-// Unified shell:
-// - Persistent 256px Left Rail on >=768px (Vaul Drawer <768px): Ergon wordmark, Workspace Switcher trigger,
-//   primary New chat action, `/` conversation filter with Kbd hint, paginated AnimatedBackground thread list,
-//   Workspace files, 12 built-in workflows, Recurring Routines (scheduler + pause/resume + run history),
-//   Learned memory, Suite & Library, Add person, and Settings (Appearance, Workspace Switcher, Audit Bundle, Model)
-//   MorphingDialogs — Light/Dark theme switch lives exclusively inside Settings (never on main chrome).
-// - ALL rail MorphingDialogs (including Workspace Switcher & Settings) & Command Palette live strictly
-//   OUTSIDE Vaul <Drawer.Content> (z-40 drawer / z-50 dialogs) and close menuOpen on trigger so real
-//   non-forced phone taps (390x844 / 320x568) never get blocked.
-// - Top Navigation & Command Bar: COSS UI Tabs (Chat · Today [pending Pill] · Work Graph), Cmd/Ctrl+K
-//   Global Command Palette trigger, Agent readiness Pill, and BANNER-FIX-BRIEF.md-compliant UpdateStrip.
+// Ergon v0.10.0 — Unified Responsive Claude-Desktop Personal Employee Workbench:
+// - Slim Top Bar: Rail toggle, Active Workspace/Company switcher (#person-select), View switcher (Chat / Today / Work graph), Commands (⌘K), Workspace inspector toggle, Agent readiness pill
+// - Collapsible Left Rail (desktop pane / mobile Vaul Drawer): New chat, `/` filter, paginated Conversations (#thread-list), Scheduled Routines quick drawer with cadence presets, Workflows / Learned / Suite / Add person / Settings (#67 Light/Dark only in Settings)
+// - Central Thread / Today / Work Graph: inline Approvals & File Diffs, 1-click Deliverable Starters, Word/Excel & SHA-256 export
+// - Collapsible Right Inspector Drawer: Workspace Files, Version History & Diff, SHA-256 Audit Bundle & Offers
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { MotionConfig } from "motion/react";
 import { Drawer } from "vaul";
 import {
   Blocks,
   BookOpen,
   CalendarClock,
-  Check,
+  Command as CommandIcon,
   FolderOpen,
-  Hourglass,
   Menu,
+  PanelLeft,
+  PanelRight,
+  Play,
   Plus,
   Search,
   SlidersHorizontal,
@@ -29,873 +23,1106 @@ import {
   X,
 } from "lucide-react";
 import { Toaster, toast } from "sonner";
-import { AnimatedBackground } from "@/components/ui/animated-background";
-import { Tabs, TabsList, TabsTab } from "@/components/ui/tabs";
-import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
-import { Kbd } from "@/components/ui/kbd";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { Pill } from "@/components/kibo-ui/pill";
-import { Composer, ContourField, Thread } from "@/chat/Chat";
-import { useErgon, type TState } from "./state";
-import { UpdateStrip, VersionRow, useUpdate } from "@/shell/Update";
+import { Input } from "@/components/ui/input";
+import { Chat } from "@/chat/Chat";
+import { PaperFace, usePaper } from "@/views/Paper";
+import { GraphFace } from "@/views/Graph";
 import { AddPersonPanel, LearnedPanel, RailPanelButton, SuitePanel } from "@/shell/Panels";
-import { FileViewerModal, WorkspaceFilesPanel } from "@/shell/WorkspaceFiles";
+import { FileViewerModal } from "@/shell/WorkspaceFiles";
+import { InspectorDrawer, type InspectorTab } from "@/shell/InspectorDrawer";
+import { PersonSelect, WorkspaceSwitcherPanel } from "@/shell/PersonSelect";
 import { SettingsPanel, type Theme } from "@/shell/SettingsPanel";
 import { SkillsPanel } from "@/shell/SkillsPanel";
 import { RoutinesPanel } from "@/shell/RoutinesPanel";
 import { CommandPalette } from "@/shell/CommandPalette";
-import { PaperFace, usePaper } from "@/views/Paper";
-import { GraphFace } from "@/views/Graph";
-import { PersonSelect, WorkspaceSwitcherPanel } from "@/shell/PersonSelect";
-import { hasV050Api } from "@/lib/api";
+import { UpdateStrip, VersionRow, useUpdate } from "@/shell/Update";
+import { useErgon } from "@/state";
+import { call, hasV050Api, type Routine } from "@/lib/api";
 import { exportAuditBundleDownload } from "@/lib/auditBundle";
 import { exportReceiptDownload } from "@/lib/receiptExport";
 import { cn } from "@/lib/utils";
 import { relTime, threadMs } from "@/lib/words";
-import { glide } from "@/motion";
 
 type Face = "chat" | "paper" | "graph";
-type RailPanel = "files" | "skills" | "routines" | "memory" | "suite" | "add-person" | "workspace" | "settings" | null;
-const RECOVERED_KEY = "ergon-recovered-dismissed";
-const RAIL_THREADS_STEP = 50;
+const THREADS_PAGE_SIZE = 12;
+
+const ROUTINE_PRESETS = [
+  { label: "Weekdays 9am", value: "daily 09:00" },
+  { label: "Every hour", value: "hourly" },
+  { label: "Every 15m", value: "every 15m" },
+];
+
+function useTheme(): [Theme, (t: Theme) => void] {
+  const [theme, setTheme] = useState<Theme>(() => {
+    try {
+      const saved = localStorage.getItem("ergon-theme");
+      if (saved === "light" || saved === "dark") return saved;
+    } catch { /* ignore */ }
+    return typeof window !== "undefined" && window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  });
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+  }, [theme]);
+
+  const set = useCallback((t: Theme) => {
+    setTheme(t);
+    document.documentElement.dataset.theme = t;
+    try {
+      localStorage.setItem("ergon-theme", t);
+    } catch { /* ignore */ }
+  }, []);
+
+  return [theme, set];
+}
 
 function initialFace(): Face {
   try {
     const q = new URLSearchParams(window.location.search).get("face");
-    if (q === "chat") return "chat";
-    if (q === "graph") return "graph";
     if (q === "today" || q === "paper") return "paper";
-    if (sessionStorage.getItem("ergon-thread")) return "chat";
+    if (q === "graph") return "graph";
+    if (q === "chat") return "chat";
   } catch { /* ignore */ }
-  return "paper";
+  return "chat";
 }
 
-function useTheme(): [Theme, (t: Theme) => void] {
-  const [t, setT] = useState<Theme>(() => (document.documentElement.getAttribute("data-theme") === "dark" ? "dark" : "light"));
-  const set = (next: Theme) => {
-    setT(next);
-    document.documentElement.setAttribute("data-theme", next);
-    try { localStorage.setItem("ergon-theme", next); } catch { /* transient fallback */ }
-  };
-  return [t, set];
+function Banner({
+  id,
+  tone,
+  children,
+}: {
+  id: string;
+  tone: "warn" | "info";
+  children: React.ReactNode;
+}) {
+  return (
+    <div
+      id={id}
+      role={tone === "warn" ? "alert" : "status"}
+      className={cn(
+        "flex flex-wrap items-center justify-between gap-3 border-b border-hairline px-4 py-2 text-sm",
+        tone === "warn" ? "bg-pill-warn-bg text-ink" : "bg-surface text-ink-2"
+      )}
+    >
+      {children}
+    </div>
+  );
 }
 
-function useNarrow() {
-  const q = "(max-width: 767px)";
-  const [narrow, setNarrow] = useState(() => window.matchMedia(q).matches);
-  useEffect(() => {
-    const m = window.matchMedia(q);
-    const on = () => setNarrow(m.matches);
-    m.addEventListener("change", on);
-    return () => m.removeEventListener("change", on);
-  }, []);
-  return narrow;
+function NoKeyBanner({ onOpenSettings }: { onOpenSettings: () => void }) {
+  return (
+    <Banner id="no-key-banner" tone="warn">
+      <div className="flex min-w-0 flex-1 flex-wrap items-baseline gap-2">
+        <span className="font-medium text-ink">Your agent is not connected to a model yet.</span>
+        <span className="text-ink-2">
+          Connect a local or hosted AI model in Settings (or set ERGON_MODEL_API_KEY) to run tasks live.
+        </span>
+      </div>
+      <Button size="xs" variant="outline" className="max-md:min-h-11 shrink-0" onClick={onOpenSettings}>
+        Open Settings
+      </Button>
+    </Banner>
+  );
+}
+
+function RecoveredBanner({ files, onDismiss }: { files: string[]; onDismiss: () => void }) {
+  return (
+    <Banner id="recovered-banner" tone="info">
+      <div className="min-w-0 flex-1">
+        <span>Saved history recovered for {files.join(", ")}.</span>
+      </div>
+      <Button size="xs" variant="ghost" className="max-md:min-h-11 shrink-0" onClick={onDismiss}>
+        Dismiss
+      </Button>
+    </Banner>
+  );
 }
 
 export function App() {
-  const e = useErgon();
-  const u = useUpdate();
+  const desk = useErgon();
   const [theme, setTheme] = useTheme();
-  const narrow = useNarrow();
+  const u = useUpdate();
   const [face, setFace] = useState<Face>(initialFace);
-  const [chatQuery, setChatQuery] = useState("");
-  const [threadLimit, setThreadLimit] = useState(RAIL_THREADS_STEP);
-  const [openFilePath, setOpenFilePath] = useState<string | null>(null);
+  const [railOpen, setRailOpen] = useState(() =>
+    typeof window !== "undefined" ? window.innerWidth >= 1024 : true
+  );
+  const [inspectorOpen, setInspectorOpen] = useState(() =>
+    typeof window !== "undefined" ? window.innerWidth >= 1280 : true
+  );
+  const [inspectorTab, setInspectorTab] = useState<InspectorTab>("files");
+  const [selectedHistoryPath, setSelectedHistoryPath] = useState("");
+  const [isXl, setIsXl] = useState(() =>
+    typeof window !== "undefined" ? window.innerWidth >= 1280 : true
+  );
+  const [isMd, setIsMd] = useState(() =>
+    typeof window !== "undefined" ? window.innerWidth >= 768 : true
+  );
+  const [mobileOpen, setMobileOpen] = useState(false);
+
+  const [switcherOpen, setSwitcherOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [skillsOpen, setSkillsOpen] = useState(false);
+  const [routinesOpen, setRoutinesOpen] = useState(false);
+  const [routinePresetSchedule, setRoutinePresetSchedule] = useState<string | null>(null);
+  const [routinePresetNonce, setRoutinePresetNonce] = useState(0);
+  const [learnedOpen, setLearnedOpen] = useState(false);
+  const [suiteOpen, setSuiteOpen] = useState(false);
+  const [addPersonOpen, setAddPersonOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
-  const quickUploadRef = useRef<HTMLInputElement>(null);
-  const paper = usePaper(() => { e.refreshCounts(); e.loadRecent(); e.loadFiles(); }, e.status);
+  const [viewerPath, setViewerPath] = useState<string | null>(null);
+  const [threadFilter, setThreadFilter] = useState("");
+  const [threadPage, setThreadPage] = useState(0);
+  const [routinesExpanded, setRoutinesExpanded] = useState(true);
 
-  useEffect(() => {
-    if (face === "paper") paper.load();
-  }, [face]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => {
-    e.setOnRoutineFired(() => paper.load());
-    return () => e.setOnRoutineFired(null);
-  }, [e.setOnRoutineFired, paper.load]);
-
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [openPanel, setOpenPanel] = useState<RailPanel>(null);
-  const openPanelRef = useRef<RailPanel>(null);
-  const [recDismissed, setRecDismissed] = useState(false);
-  const menuRef = useRef<HTMLButtonElement>(null);
-  const newChatRef = useRef<HTMLButtonElement>(null);
+  const [graphSeed, setGraphSeed] = useState(0);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
-  const wasOpen = useRef(false);
+  const fileUploadRef = useRef<HTMLInputElement>(null);
 
-  const triggerPanel = useCallback((panel: Exclude<RailPanel, null>) => {
-    openPanelRef.current = panel;
-    setMenuOpen(false);
-    setOpenPanel(panel);
-  }, []);
+  const onPaperChanged = useCallback(() => {
+    desk.loadThreads();
+    desk.loadRecent();
+    desk.refreshCounts();
+    desk.loadFiles();
+    setGraphSeed((s) => s + 1);
+  }, [desk]);
 
-  const handlePanelChange = useCallback((panel: Exclude<RailPanel, null>, next: boolean) => {
-    if (next) {
-      openPanelRef.current = panel;
-      setMenuOpen(false);
-      setOpenPanel(panel);
-    } else if (openPanelRef.current === panel) {
-      openPanelRef.current = null;
-      setOpenPanel(null);
-    }
-  }, []);
+  const paper = usePaper(onPaperChanged, desk.status);
 
-  // Drawer focus return: open -> focus New chat; close -> return focus to Menu button unless opening a dialog.
   useEffect(() => {
-    if (menuOpen) {
-      wasOpen.current = true;
-      setTimeout(() => newChatRef.current?.focus(), 0);
-    } else if (wasOpen.current) {
-      wasOpen.current = false;
-      if (!openPanelRef.current) menuRef.current?.focus();
-    }
-  }, [menuOpen]);
-
-  const jumpToComposer = useCallback(() => {
-    setMenuOpen(false);
-    setFace("chat");
-    setTimeout(() => document.getElementById("composer-input")?.focus(), 20);
-  }, []);
-
-  // Global keyboard shortcuts: Cmd/Ctrl+K -> Global Command Palette; `/` outside inputs -> focus conversation filter.
-  useEffect(() => {
-    const onKey = (ev: KeyboardEvent) => {
-      if ((ev.metaKey || ev.ctrlKey) && ev.key.toLowerCase() === "k") {
-        ev.preventDefault();
-        setMenuOpen(false);
-        setPaletteOpen((v) => !v);
-        return;
-      }
-      if (ev.key === "/" && !ev.metaKey && !ev.ctrlKey && !ev.altKey) {
-        const el = document.activeElement as HTMLElement | null;
-        const inField = el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable);
-        if (inField) return;
-        ev.preventDefault();
-        if (narrow) {
-          setMenuOpen(true);
-          setTimeout(() => document.getElementById("chat-search")?.focus(), 60);
-        } else {
-          searchRef.current?.focus();
-        }
-      }
+    const mqXl = window.matchMedia?.("(min-width: 1280px)");
+    const mqMd = window.matchMedia?.("(min-width: 768px)");
+    const sync = () => {
+      if (mqXl) setIsXl(mqXl.matches);
+      if (mqMd) setIsMd(mqMd.matches);
     };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [narrow]);
+    sync();
+    mqXl?.addEventListener("change", sync);
+    mqMd?.addEventListener("change", sync);
+    return () => {
+      mqXl?.removeEventListener("change", sync);
+      mqMd?.removeEventListener("change", sync);
+    };
+  }, []);
 
-  const modelOff = e.status !== null && e.status !== "error" && !e.status.model_configured;
-  const chip = e.status === null
-    ? { cls: "", text: "Checking the agent" }
-    : e.status === "error"
-      ? { cls: "", text: "Could not check the agent" }
-      : modelOff
-        ? { cls: "wait", text: "Not connected to a model yet" }
-        : e.runFailed
-          ? { cls: "wait", text: "Last run did not finish" }
-          : { cls: "ok", text: "Agent ready" };
+  useEffect(() => {
+    desk.setOnRoutineFired(() => {
+      paper.load();
+      setGraphSeed((s) => s + 1);
+    });
+    return () => desk.setOnRoutineFired(null);
+  }, [desk, paper]);
 
-  const recovered = e.recovered.length > 0 && !recDismissed && (() => {
-    try { return localStorage.getItem(RECOVERED_KEY) !== e.recovered.join("|"); } catch { return true; }
-  })();
-  const dismissRecovered = () => {
-    try { localStorage.setItem(RECOVERED_KEY, e.recovered.join("|")); } catch { /* */ }
-    setRecDismissed(true);
-  };
-
-  const personName = e.status && e.status !== "error" ? String(e.status.person?.name ?? "") : "";
-  const greetingName = personName === "You" ? "" : personName;
-  const personRole = e.status && e.status !== "error" ? String(e.status.person?.role ?? "") : "";
+  const statusObj = desk.status && desk.status !== "error" ? desk.status : null;
+  const peopleList = useMemo(() => desk.people?.people ?? [], [desk.people]);
+  const activePersonId = desk.people?.active || statusObj?.person?.id || "";
+  const activePerson = useMemo(
+    () => peopleList.find((p) => p.id === activePersonId) || statusObj?.person,
+    [peopleList, activePersonId, statusObj?.person]
+  );
+  const personName = String(activePerson?.name ?? "").trim() || "Personal desk";
+  const pendingDecisions = useMemo(
+    () => (paper.data?.decisions ?? []).filter((d) => d.status === "pending"),
+    [paper.data]
+  );
+  const pendingCount = paper.data ? pendingDecisions.length : desk.todayCount;
+  const threadList = useMemo(() => desk.threads ?? [], [desk.threads]);
 
   const filteredThreads = useMemo(() => {
-    const all = e.threads ?? [];
-    const q = chatQuery.trim().toLowerCase();
-    if (!q) return all;
-    return all.filter((t) => String(t.title ?? "Untitled task").toLowerCase().includes(q));
-  }, [e.threads, chatQuery]);
+    const q = threadFilter.trim().toLowerCase();
+    if (!q) return threadList;
+    return threadList.filter((t) => String(t.title ?? "").toLowerCase().includes(q));
+  }, [threadList, threadFilter]);
 
-  const visibleThreads = filteredThreads.slice(0, threadLimit);
+  const totalThreadPages = Math.max(1, Math.ceil(filteredThreads.length / THREADS_PAGE_SIZE));
+  const safeThreadPage = Math.min(threadPage, totalThreadPages - 1);
+  const visibleThreads = filteredThreads.slice(
+    safeThreadPage * THREADS_PAGE_SIZE,
+    (safeThreadPage + 1) * THREADS_PAGE_SIZE
+  );
 
-  const pendingDecisionsCount = paper.data
-    ? paper.data.decisions.filter((d) => d.status === "pending").length
-    : e.todayCount;
+  useEffect(() => {
+    setThreadPage(0);
+  }, [threadFilter, threadList.length]);
 
-  const allReceipts = useMemo(() => {
-    const fin = paper.data?.brief.finished ?? [];
-    const extra = paper.data?.extraReceipts ?? [];
-    if (!extra.length) return fin;
-    const seen = new Set(fin.map((x) => x.id || `${x.thread_id || ""}|${x.task}`));
-    return [...fin, ...extra.filter((x) => !seen.has(x.id || `${x.thread_id || ""}|${x.task}`))];
-  }, [paper.data?.brief.finished, paper.data?.extraReceipts]);
+  const switchFace = useCallback(
+    (next: Face) => {
+      setFace(next);
+      setMobileOpen(false);
+      if (next === "paper") paper.load();
+      if (next === "graph") setGraphSeed((s) => s + 1);
+    },
+    [paper]
+  );
+
+  const focusComposer = useCallback(() => {
+    setFace("chat");
+    setMobileOpen(false);
+    setPaletteOpen(false);
+    window.setTimeout(() => inputRef.current?.focus(), 80);
+  }, []);
+
+  const openFilesInspector = useCallback(() => {
+    setInspectorTab("files");
+    setInspectorOpen(true);
+    setMobileOpen(false);
+    desk.loadFiles();
+  }, [desk]);
+
+  const handleResolveDecision = useCallback(
+    async (id: string, action: "approve" | "deny", label: string) => {
+      const url = `/api/decisions/${encodeURIComponent(id)}/${action}`;
+      const r = await call<{ outcome?: string }>(url, { method: "POST", body: {} });
+      if (!r.ok) {
+        toast.error(r.error || "Could not update decision.");
+        return;
+      }
+      toast.success(
+        r.data?.outcome ||
+          (action === "approve" ? `Approved action for ${label}.` : `Kept ${label} safe.`)
+      );
+      await paper.load();
+      if (desk.threadId) await desk.openThread(desk.threadId);
+      onPaperChanged();
+    },
+    [desk, onPaperChanged, paper]
+  );
+
+  const handleExportAuditBundle = useCallback(
+    async (format: "json" | "md") => {
+      const res = await exportAuditBundleDownload({
+        format,
+        status: desk.status,
+        personName,
+        personId: activePerson?.id,
+        files: desk.files,
+        receipts: paper.data?.brief.finished ?? [],
+        routines: desk.routines,
+      });
+      toast.success(`Exported ${res.filename} (sha256: ${res.sha256.slice(0, 12)}…)`);
+    },
+    [activePerson?.id, desk.files, desk.routines, desk.status, paper.data, personName]
+  );
 
   const handleExportLatestReceipt = useCallback(
     async (format: "md" | "json") => {
-      const latest = allReceipts[0];
+      const latest = paper.data?.brief.finished?.[0];
       if (!latest) {
         toast("No finished receipt to export yet.");
         return;
       }
       const res = await exportReceiptDownload(
         {
-          id: latest.id || latest.thread_id || `latest-${Date.now()}`,
+          id: latest.id || "latest",
           task: String(latest.task ?? "Completed task"),
-          person: personName || "Active employee",
+          person: personName,
           status: "finished",
           summary: String(latest.summary ?? ""),
-          ts: typeof latest.ts === "number" ? latest.ts : Date.now(),
           files: Array.isArray(latest.files) ? latest.files.map(String) : [],
         },
         format,
-        hasV050Api(e.status, "receipts_export") && Boolean(latest.id || latest.thread_id)
+        hasV050Api(desk.status, "receipts_export") && Boolean(latest.id)
       );
       toast.success(`Exported ${res.filename} (sha256: ${res.sha256.slice(0, 12)}…)`);
     },
-    [allReceipts, personName, e.status]
+    [desk.status, paper.data, personName]
   );
 
-  const handleExportAuditBundle = useCallback(
-    async (format: "json" | "md") => {
-      try {
-        const res = await exportAuditBundleDownload({
-          format,
-          status: e.status,
-          personName: personName || "Active employee",
-          personId: e.people?.active,
-          files: e.files,
-          receipts: allReceipts,
-          routines: e.routines,
-        });
-        toast.success(`Exported ${res.filename} (sha256: ${res.sha256.slice(0, 12)}…)`);
-      } catch {
-        toast.error("Could not export the Field-Book Audit Bundle.");
+  useEffect(() => {
+    const onKey = (ev: KeyboardEvent) => {
+      if ((ev.metaKey || ev.ctrlKey) && ev.key.toLowerCase() === "k") {
+        ev.preventDefault();
+        setPaletteOpen((v) => !v);
+        return;
       }
-    },
-    [e.status, personName, e.people?.active, e.files, allReceipts, e.routines]
-  );
+      if (ev.key === "Escape") {
+        if (!isXl && inspectorOpen) setInspectorOpen(false);
+        return;
+      }
+      const target = ev.target as HTMLElement | null;
+      const typing =
+        target &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.tagName === "SELECT" ||
+          target.isContentEditable);
+      if (!typing && ev.key === "/") {
+        ev.preventDefault();
+        if (!railOpen) setRailOpen(true);
+        if (window.innerWidth < 768) setMobileOpen(true);
+        requestAnimationFrame(() => searchRef.current?.focus());
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [railOpen, isXl, inspectorOpen]);
 
-  const handleSwitchPerson = useCallback(
-    async (id: string) => {
-      await e.switchPerson(id);
-      paper.load();
-    },
-    [e.switchPerson, paper.load]
-  );
+  const runAfterPersonChange = useCallback(() => {
+    paper.load();
+    desk.loadFiles();
+    desk.loadRoutines();
+    setGraphSeed((s) => s + 1);
+  }, [desk, paper]);
 
-  const stateIcon = (s: TState | undefined) => s === "waiting"
-    ? <Hourglass className="size-3.5 shrink-0 text-dot-amber" strokeWidth={1.75} aria-label="Waiting on you" />
-    : s === "finished"
-      ? <Check className="size-3.5 shrink-0 text-dot-green" strokeWidth={1.75} aria-label="Finished" />
-      : null;
+  const dateLabel = paper.data?.brief.date || new Date().toLocaleDateString("en-US", {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  });
 
-  const railContent = (
-    <div id="sidebar" className="flex h-full min-h-0 flex-col bg-surface text-ink">
-      <div className="flex shrink-0 items-center justify-between gap-2 px-3.5 pb-2 pt-3.5">
-        <a
-          href="#top"
-          onClick={(ev) => { ev.preventDefault(); setFace("paper"); setMenuOpen(false); }}
-          className="focus-ring flex items-center gap-2 rounded-sm px-0.5 py-0.5 text-base font-semibold tracking-[-0.025em] text-ink outline-none"
-        >
-          <svg aria-hidden width="17" height="17" viewBox="0 0 18 18" fill="none" className="shrink-0">
-            <rect x="1.2" y="1.2" width="15.6" height="15.6" rx="4" stroke="currentColor" strokeWidth="1.5" />
-            <path d="M5.2 9.2L7.8 11.8L12.8 6.4" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-          <span>Ergon</span>
-        </a>
-        {narrow && (
-          <Button size="icon-sm" variant="ghost" className="min-h-11 min-w-11" aria-label="Close menu" onClick={() => setMenuOpen(false)}>
-            <X className="size-4" strokeWidth={1.5} aria-hidden />
-          </Button>
-        )}
-      </div>
+  const readinessState =
+    desk.status === "error"
+      ? "Disconnected"
+      : desk.busy
+        ? "Busy"
+        : statusObj && !statusObj.model_configured
+          ? "Setup needed"
+          : "Ready";
 
-      {/* Scrollable on compact phones (320x568) so Settings/Skills/Routines never clip; fixed split on desktop */}
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto md:overflow-hidden">
-        <div className="shrink-0 px-3.5 pt-1">
-          <span id="person-label" className="block text-xs text-ink-3">Working for</span>
-          <PersonSelect
-            people={e.people?.people ?? []}
-            active={e.people?.active ?? ""}
-            disabled={!e.people}
-            expanded={openPanel === "workspace"}
-            onOpen={() => triggerPanel("workspace")}
-          />
-        </div>
+  const openRoutinePreset = (schedule: string) => {
+    setRoutinePresetSchedule(schedule);
+    setRoutinePresetNonce((n) => n + 1);
+    setMobileOpen(false);
+    setRoutinesOpen(true);
+  };
 
-        <div className="shrink-0 px-3.5 pt-2.5">
+  const renderRailContent = () => (
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="flex shrink-0 flex-col gap-2.5 p-3">
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-sm font-medium tracking-tight text-ink">Ergon</span>
           <Button
-            ref={newChatRef}
-            className="w-full shadow-primary max-md:min-h-11"
+            type="button"
+            size="sm"
+            variant="outline"
             onClick={() => {
-              setFace("chat");
-              setMenuOpen(false);
-              e.newThread();
-              setTimeout(() => document.getElementById("composer-input")?.focus(), 20);
+              desk.newThread();
+              focusComposer();
             }}
+            className="max-md:min-h-11 gap-1.5"
           >
-            <Plus className="size-4" strokeWidth={1.5} aria-hidden />
+            <Plus className="size-3.5" strokeWidth={1.75} aria-hidden />
             New chat
           </Button>
         </div>
 
-        <div className="shrink-0 px-3.5 pt-2.5">
-          <InputGroup className="rounded-sm bg-board/50 [&_input]:max-md:min-h-11">
-            <InputGroupAddon align="inline-start" className="pl-2.5 text-icon">
-              <Search className="size-3.5" strokeWidth={1.5} aria-hidden />
-            </InputGroupAddon>
-            <InputGroupInput
-              id="chat-search"
-              ref={searchRef}
-              type="search"
-              aria-label="Filter conversations"
-              placeholder="Filter chats"
-              value={chatQuery}
-              onChange={(ev) => { setChatQuery(ev.target.value); setThreadLimit(RAIL_THREADS_STEP); }}
-              className="max-md:min-h-11 text-sm"
-            />
-            <InputGroupAddon align="inline-end" className="pr-2">
-              {chatQuery ? (
-                <Button
-                  size="icon-xs"
-                  variant="ghost"
-                  className="max-md:min-h-11 max-md:min-w-11"
-                  aria-label="Clear conversation filter"
-                  onClick={() => setChatQuery("")}
-                >
-                  <X className="size-3.5" strokeWidth={1.5} aria-hidden />
-                </Button>
-              ) : (
-                <Kbd>/</Kbd>
-              )}
-            </InputGroupAddon>
-          </InputGroup>
+        <div className="relative flex items-center">
+          <Search className="pointer-events-none absolute left-2.5 size-3.5 text-icon" strokeWidth={1.5} aria-hidden />
+          <Input
+            ref={searchRef}
+            id="chat-search"
+            value={threadFilter}
+            onChange={(e) => setThreadFilter(e.target.value)}
+            placeholder="Filter conversations (/)"
+            aria-label="Filter conversations"
+            className="h-9 border-input bg-surface pl-8 pr-8 text-sm max-md:min-h-11"
+          />
+          {threadFilter && (
+            <button
+              type="button"
+              aria-label="Clear conversation filter"
+              onClick={() => setThreadFilter("")}
+              className="focus-ring absolute right-1.5 grid size-7 place-items-center rounded-sm text-icon hover:bg-board hover:text-ink"
+            >
+              <X className="size-3.5" strokeWidth={1.5} aria-hidden />
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
+        <div className="flex items-center justify-between px-2 py-1">
+          <span className="text-xs font-medium text-ink-3">Conversations</span>
+          {threadList.length > 0 && (
+            <span className="mono text-xs text-ink-3">{filteredThreads.length}</span>
+          )}
         </div>
 
-        <div className="mt-3 flex min-h-[120px] flex-1 flex-col md:min-h-0">
-          <div className="flex shrink-0 items-center justify-between px-3.5 pb-1">
-            <span className="text-xs font-medium text-ink-3">Conversations</span>
-            {e.threads && <span className="mono text-xs text-ink-3">{filteredThreads.length}</span>}
+        {desk.threadsError ? (
+          <div role="alert" className="mx-1 rounded-sm border border-hairline bg-board p-2.5 text-xs text-ink-2">
+            <p>Could not load your conversations.</p>
+            <Button size="xs" variant="ghost" className="mt-1 px-0" onClick={() => desk.loadThreads()}>
+              Retry
+            </Button>
           </div>
-          <ul id="thread-list" aria-label="Conversations" className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-2 pb-2">
-            {e.threadsError && (
-              <li className="px-2 py-2 text-sm text-ink-2">
-                Could not load your conversations. Check that Ergon is running.
-                <div className="mt-2">
-                  <Button size="sm" variant="outline" className="max-md:min-h-11" onClick={e.loadThreads}>Retry</Button>
-                </div>
-              </li>
-            )}
-            {!e.threadsError && e.threads && !e.threads.length && (
-              <li className="px-2 py-2 text-sm text-ink-2">No conversations yet</li>
-            )}
-            {!e.threadsError && e.threads && e.threads.length > 0 && !filteredThreads.length && (
-              <li className="px-2 py-2 text-sm text-ink-2">
-                No chats match &ldquo;{chatQuery}&rdquo;.
-                <div className="mt-1.5">
-                  <Button size="xs" variant="outline" className="max-md:min-h-11" onClick={() => setChatQuery("")}>Clear filter</Button>
-                </div>
-              </li>
-            )}
-            {!e.threadsError && visibleThreads.length > 0 && (
-              <AnimatedBackground
-                defaultValue={face === "chat" && e.threadId ? e.threadId : undefined}
-                className="rounded-sm bg-blue-soft"
-                transition={glide}
-              >
-                {visibleThreads.map((t) => {
-                  const active = face === "chat" && t.id === e.threadId;
-                  const s = e.states[t.id];
-                  const ms = threadMs(t.id);
-                  const title = String(t.title ?? "").trim() || "Untitled task";
-                  return (
-                    <li key={t.id} data-id={t.id} className="w-full min-w-0">
-                      <Button
-                        variant="ghost"
-                        aria-current={active ? "true" : undefined}
-                        onClick={() => {
-                          setMenuOpen(false);
-                          setFace("chat");
-                          e.openThread(t.id);
-                        }}
-                        className={cn(
-                          "thread-btn h-auto sm:h-auto min-h-11 w-full min-w-0 flex-col items-stretch justify-start gap-0.5 whitespace-normal rounded-sm px-2.5 py-1.5 text-left font-normal md:min-h-11",
-                          active ? "bg-transparent text-ink" : "hover:bg-board"
-                        )}
-                      >
-                        <span className="block min-w-0 truncate text-sm font-medium text-ink">{title}</span>
-                        <span className="flex min-w-0 items-center gap-1.5 text-xs text-ink-2">
-                          {stateIcon(s)}
-                          <span className="mono truncate">
-                            {ms ? relTime(ms) : ""}
-                            {typeof t.messages === "number" ? (ms ? " · " : "") + (t.messages === 1 ? "1 msg" : `${t.messages} msgs`) : ""}
-                          </span>
-                        </span>
-                      </Button>
-                    </li>
-                  );
-                })}
-              </AnimatedBackground>
-            )}
-            {filteredThreads.length > visibleThreads.length && (
-              <li className="px-1 pt-1">
-                <Button
-                  type="button"
-                  size="xs"
-                  variant="outline"
-                  className="w-full max-md:min-h-11"
-                  onClick={() => setThreadLimit((n) => n + RAIL_THREADS_STEP)}
-                >
-                  Show more ({filteredThreads.length - visibleThreads.length} remaining)
-                </Button>
-              </li>
-            )}
+        ) : visibleThreads.length === 0 ? (
+          <p className="px-2 py-2 text-xs text-ink-3">
+            {threadFilter ? "No matching conversations." : "No past conversations yet."}
+          </p>
+        ) : (
+          <ul id="thread-list" className="flex flex-col gap-0.5">
+            {visibleThreads.map((t) => {
+              const active = desk.threadId === t.id && face === "chat";
+              const st = desk.states[t.id];
+              const ms = threadMs(t.id);
+              return (
+                <li key={t.id}>
+                  <button
+                    type="button"
+                    aria-current={active ? "page" : undefined}
+                    onClick={() => {
+                      desk.openThread(t.id);
+                      setFace("chat");
+                      setMobileOpen(false);
+                    }}
+                    className={cn(
+                      "thread-btn focus-ring flex min-h-11 w-full flex-col gap-0.5 rounded-sm px-2.5 py-2 text-left outline-none md:min-h-9",
+                      active ? "bg-board text-ink" : "text-ink-2 hover:bg-board/60 hover:text-ink"
+                    )}
+                  >
+                    <span className="flex w-full items-center gap-2">
+                      {st === "waiting" ? (
+                        <span className="size-2 shrink-0 rounded-full bg-dot-amber" aria-label="Waiting on you" />
+                      ) : st === "finished" ? (
+                        <span className="size-2 shrink-0 rounded-full bg-dot-green" aria-label="Finished" />
+                      ) : (
+                        <span className="size-2 shrink-0 rounded-full bg-hairline" aria-hidden />
+                      )}
+                      <span className={cn("min-w-0 flex-1 truncate text-sm", active && "font-medium text-ink")}>
+                        {String(t.title ?? "Conversation")}
+                      </span>
+                    </span>
+                    <span className="mono flex items-center gap-2 pl-4 text-xs text-ink-3">
+                      {ms ? <span>{relTime(ms)}</span> : null}
+                      {typeof t.messages === "number" && (
+                        <span>{t.messages === 1 ? "1 msg" : `${t.messages} msgs`}</span>
+                      )}
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
           </ul>
-        </div>
+        )}
 
-        {e.sideError && <p role="alert" className="shrink-0 px-3.5 pb-2 text-xs text-destructive-foreground">{e.sideError}</p>}
+        {totalThreadPages > 1 && (
+          <div className="mt-1 flex items-center justify-between px-2 py-1 text-xs text-ink-3">
+            <Button
+              type="button"
+              size="xs"
+              variant="ghost"
+              disabled={safeThreadPage === 0}
+              onClick={() => setThreadPage((p) => Math.max(0, p - 1))}
+            >
+              Prev
+            </Button>
+            <span className="mono">{safeThreadPage + 1} / {totalThreadPages}</span>
+            <Button
+              type="button"
+              size="xs"
+              variant="ghost"
+              disabled={safeThreadPage >= totalThreadPages - 1}
+              onClick={() => setThreadPage((p) => Math.min(totalThreadPages - 1, p + 1))}
+            >
+              Next
+            </Button>
+          </div>
+        )}
 
-        <div id="settings" className="flex shrink-0 flex-col gap-0.5 border-t border-hairline px-1.5 py-2">
-          <RailPanelButton
-            id="files-btn"
-            label="Workspace files"
-            icon={<FolderOpen className="size-3.5 shrink-0 text-icon" strokeWidth={1.5} aria-hidden />}
-            count={e.files.length}
-            expanded={openPanel === "files"}
-            onClick={() => triggerPanel("files")}
-          />
-          <RailPanelButton
-            id="skills-btn"
-            label="Workflows"
-            icon={<Sparkles className="size-3.5 shrink-0 text-icon" strokeWidth={1.5} aria-hidden />}
-            count={e.skills.length}
-            expanded={openPanel === "skills"}
-            onClick={() => triggerPanel("skills")}
-          />
-          <RailPanelButton
-            id="routines-btn"
-            label="Routines"
-            icon={<CalendarClock className="size-3.5 shrink-0 text-icon" strokeWidth={1.5} aria-hidden />}
-            count={e.routines.length}
-            expanded={openPanel === "routines"}
-            onClick={() => triggerPanel("routines")}
-          />
-          <RailPanelButton
-            id="memory-btn"
-            label="What my agent has learned"
-            icon={<BookOpen className="size-3.5 shrink-0 text-icon" strokeWidth={1.5} aria-hidden />}
-            count={e.learnedCount}
-            expanded={openPanel === "memory"}
-            onClick={() => triggerPanel("memory")}
-          />
-          <RailPanelButton
-            id="suite-btn"
-            label="My suite and the library"
-            icon={<Blocks className="size-3.5 shrink-0 text-icon" strokeWidth={1.5} aria-hidden />}
-            count={e.suiteCount}
-            expanded={openPanel === "suite"}
-            onClick={() => triggerPanel("suite")}
-          />
-          <RailPanelButton
-            id="add-person-btn"
-            label="Add a person"
-            icon={<UserPlus className="size-3.5 shrink-0 text-icon" strokeWidth={1.5} aria-hidden />}
-            expanded={openPanel === "add-person"}
-            onClick={() => triggerPanel("add-person")}
-          />
-          <RailPanelButton
-            id="settings-btn"
-            domId="settings-btn"
-            label="Settings"
-            icon={<SlidersHorizontal className="size-3.5 shrink-0 text-icon" strokeWidth={1.5} aria-hidden />}
-            expanded={openPanel === "settings"}
-            onClick={() => triggerPanel("settings")}
-          />
+        {/* Scheduled Routines Quick Drawer */}
+        <section aria-label="Scheduled routines" className="mt-3 border-t border-hairline pt-2.5">
+          <div className="flex items-center justify-between gap-1 px-1 py-1">
+            <button
+              type="button"
+              onClick={() => setRoutinesExpanded((v) => !v)}
+              className="focus-ring flex min-h-8 items-center gap-1.5 rounded-sm px-1.5 text-xs font-medium text-ink-2 hover:bg-board/60 hover:text-ink max-md:min-h-11"
+            >
+              <CalendarClock className="size-3.5 text-icon" strokeWidth={1.5} aria-hidden />
+              <span>Scheduled routines</span>
+            </button>
+            <button
+              type="button"
+              data-thing="routines-btn"
+              onClick={() => {
+                setMobileOpen(false);
+                setRoutinesOpen(true);
+              }}
+              className="focus-ring min-h-8 rounded-sm px-2 text-xs text-ink-2 hover:bg-board hover:text-ink max-md:min-h-11"
+            >
+              Manage ({desk.routines.length})
+            </button>
+          </div>
+
+          {routinesExpanded && (
+            <div className="mt-1 flex flex-col gap-1 px-1">
+              {desk.routines.slice(0, 3).map((rt: Routine) => (
+                <div
+                  key={rt.id}
+                  className="flex items-center justify-between gap-1.5 rounded-sm px-2 py-1.5 hover:bg-board/60"
+                >
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMobileOpen(false);
+                      setRoutinesOpen(true);
+                    }}
+                    className="focus-ring flex min-w-0 flex-1 flex-col text-left"
+                  >
+                    <span className="flex items-center gap-1.5 truncate text-xs font-medium text-ink">
+                      <span
+                        aria-hidden
+                        className={cn(
+                          "size-1.5 shrink-0 rounded-full",
+                          rt.enabled !== false ? "bg-dot-green" : "bg-ink-3"
+                        )}
+                      />
+                      <span className="truncate">{rt.name}</span>
+                    </span>
+                    <span className="mono pl-3 text-xs text-ink-3">{rt.schedule}</span>
+                  </button>
+                  <Button
+                    type="button"
+                    size="icon-xs"
+                    variant="ghost"
+                    aria-label={`Run routine ${rt.name}`}
+                    onClick={() => void desk.runRoutineNow(rt)}
+                    className="shrink-0 max-md:min-h-11 max-md:min-w-11"
+                  >
+                    <Play className="size-3 text-icon" strokeWidth={1.75} aria-hidden />
+                  </Button>
+                </div>
+              ))}
+
+              <div className="flex flex-wrap gap-1 px-1 pt-1">
+                {ROUTINE_PRESETS.map((preset) => (
+                  <button
+                    key={preset.value}
+                    type="button"
+                    onClick={() => openRoutinePreset(preset.value)}
+                    className="focus-ring rounded-chip border border-hairline bg-board/50 px-2 py-1 text-xs text-ink-2 hover:bg-board hover:text-ink"
+                  >
+                    + {preset.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </section>
+      </div>
+
+      <div className="flex shrink-0 flex-col gap-0.5 border-t border-hairline p-2">
+        <RailPanelButton
+          id="skills-btn"
+          label="Workflows"
+          icon={<Sparkles className="size-3.5 shrink-0 text-icon" strokeWidth={1.5} aria-hidden />}
+          count={desk.skills.length}
+          onClick={() => {
+            setMobileOpen(false);
+            setSkillsOpen(true);
+          }}
+        />
+        <RailPanelButton
+          id="memory-btn"
+          label="What my agent has learned"
+          icon={<BookOpen className="size-3.5 shrink-0 text-icon" strokeWidth={1.5} aria-hidden />}
+          count={desk.learnedCount}
+          onClick={() => {
+            setMobileOpen(false);
+            setLearnedOpen(true);
+          }}
+        />
+        <RailPanelButton
+          id="suite-btn"
+          label="My suite"
+          icon={<Blocks className="size-3.5 shrink-0 text-icon" strokeWidth={1.5} aria-hidden />}
+          count={desk.suiteCount}
+          onClick={() => {
+            setMobileOpen(false);
+            setSuiteOpen(true);
+          }}
+        />
+        <RailPanelButton
+          id="add-person-btn"
+          label="Add a person"
+          icon={<UserPlus className="size-3.5 shrink-0 text-icon" strokeWidth={1.5} aria-hidden />}
+          onClick={() => {
+            setMobileOpen(false);
+            setAddPersonOpen(true);
+          }}
+        />
+        <RailPanelButton
+          id="settings-btn"
+          label="Settings"
+          icon={<SlidersHorizontal className="size-3.5 shrink-0 text-icon" strokeWidth={1.5} aria-hidden />}
+          onClick={() => {
+            setMobileOpen(false);
+            setSettingsOpen(true);
+          }}
+        />
+        <div className="pt-1">
           <VersionRow u={u} />
         </div>
       </div>
     </div>
   );
 
-  const dateLabel = new Date().toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" });
-
   return (
-    <MotionConfig reducedMotion="user">
-      <div className="flex h-dvh min-h-0 overflow-hidden bg-canvas text-ink">
-        <input
-          ref={quickUploadRef}
-          type="file"
-          multiple
-          className="hidden"
-          accept=".csv,.md,.txt,.json,.log,.tsv,.py,.ts,.tsx,.js,.rs,.toml,.yaml,.yml,.html"
-          onChange={async (ev) => {
-            if (ev.target.files?.length) await e.uploadFiles(ev.target.files);
-            ev.target.value = "";
-          }}
-        />
+    <div className="flex h-dvh flex-col overflow-hidden bg-canvas text-ink">
+      <Toaster position="bottom-right" />
+      <div id="announcer" role="status" aria-live="polite" className="sr-only" />
 
-        {!narrow && (
-          <aside aria-label="Ergon navigation" className="flex w-64 shrink-0 flex-col border-r border-hairline bg-surface">
-            {railContent}
+      <input
+        ref={fileUploadRef}
+        type="file"
+        multiple
+        className="hidden"
+        accept=".csv,.md,.txt,.json,.log,.tsv,.py,.ts,.tsx,.js,.rs,.toml,.yaml,.yml,.html,.docx,.xlsx,.pdf"
+        onChange={async (e) => {
+          if (e.target.files?.length) await desk.uploadFiles(e.target.files);
+          e.target.value = "";
+        }}
+      />
+
+      {statusObj && !statusObj.model_configured && (
+        <NoKeyBanner onOpenSettings={() => setSettingsOpen(true)} />
+      )}
+      {desk.recovered.length > 0 && (
+        <RecoveredBanner files={desk.recovered} onDismiss={() => desk.setRecovered([])} />
+      )}
+      <UpdateStrip u={u} />
+
+      {/* Slim Desktop-Workbench Top Bar */}
+      <header className="safe-t flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-hairline bg-surface px-3 py-1.5 sm:h-12 sm:flex-nowrap sm:px-4 sm:py-0">
+        <div className="flex min-w-0 items-center gap-2">
+          <Button
+            type="button"
+            size="icon-sm"
+            variant="ghost"
+            aria-label="Open menu"
+            onClick={() => setMobileOpen(true)}
+            className="min-h-11 min-w-11 md:hidden"
+          >
+            <Menu className="size-4" strokeWidth={1.5} aria-hidden />
+          </Button>
+          <Button
+            type="button"
+            size="icon-sm"
+            variant="ghost"
+            aria-label="Toggle conversations rail"
+            aria-expanded={railOpen}
+            onClick={() => setRailOpen((v) => !v)}
+            className="hidden md:inline-flex"
+          >
+            <PanelLeft className="size-4 text-icon" strokeWidth={1.5} aria-hidden />
+          </Button>
+
+          <PersonSelect
+            people={peopleList}
+            active={activePersonId}
+            disabled={desk.busy}
+            expanded={switcherOpen}
+            onOpen={() => setSwitcherOpen(true)}
+          />
+        </div>
+
+        <Tabs
+          value={face}
+          onValueChange={(v) => switchFace(v as Face)}
+          className="order-3 w-full sm:order-none sm:w-auto"
+        >
+          <TabsList aria-label="Workspace view" className="w-full sm:w-fit">
+            <TabsTrigger value="chat" data-id="chat" className="max-md:min-h-11 flex-1 sm:flex-initial">Chat</TabsTrigger>
+            <TabsTrigger
+              value="paper"
+              data-id="paper"
+              aria-label={pendingCount > 0 ? `Today's paper, ${pendingCount} waiting` : "Today's paper"}
+              className="max-md:min-h-11 flex-1 sm:flex-initial"
+            >
+              <span>Today</span>
+              {pendingCount > 0 && (
+                <span className="mono ml-1 rounded-chip bg-status-waiting-bg px-1.5 py-0.5 text-xs font-medium text-status-waiting-fg">
+                  {pendingCount}
+                </span>
+              )}
+            </TabsTrigger>
+            <TabsTrigger value="graph" data-id="graph" className="max-md:min-h-11 flex-1 sm:flex-initial">Work graph</TabsTrigger>
+          </TabsList>
+        </Tabs>
+
+        <div className="flex shrink-0 items-center gap-1.5">
+          <Button
+            type="button"
+            size="xs"
+            variant="ghost"
+            aria-label="Open command palette"
+            onClick={() => setPaletteOpen(true)}
+            className="hidden gap-1.5 sm:inline-flex"
+          >
+            <CommandIcon className="size-3.5 text-icon" strokeWidth={1.5} aria-hidden />
+            <span>Commands</span>
+          </Button>
+          <Button
+            type="button"
+            size="xs"
+            variant={inspectorOpen ? "secondary" : "ghost"}
+            data-thing="inspector-toggle"
+            aria-label="Toggle workspace inspector"
+            aria-expanded={inspectorOpen}
+            onClick={() => {
+              const next = !inspectorOpen;
+              setInspectorOpen(next);
+              if (next) desk.loadFiles();
+            }}
+            className="min-h-11 min-w-11 gap-1.5 md:min-h-8 md:min-w-0"
+          >
+            <FolderOpen className="size-3.5 text-icon sm:hidden" strokeWidth={1.5} aria-hidden />
+            <PanelRight className="hidden size-3.5 text-icon sm:block" strokeWidth={1.5} aria-hidden />
+            <span className="hidden sm:inline">Workspace</span>
+            <span className="mono rounded-chip bg-track px-1.5 py-0.5 text-xs text-ink-2">
+              {desk.files.length}
+            </span>
+          </Button>
+          <button
+            id="ready-chip"
+            type="button"
+            onClick={() => {
+              if (readinessState !== "Ready") setSettingsOpen(true);
+            }}
+            aria-label={`Agent status: ${readinessState}`}
+            className="focus-ring hidden items-center gap-1.5 rounded-chip border border-hairline bg-board/50 px-2.5 py-1 text-xs text-ink-2 hover:bg-board lg:inline-flex"
+          >
+            <span
+              aria-hidden
+              className={cn(
+                "size-2 rounded-full",
+                readinessState === "Ready"
+                  ? "bg-dot-online"
+                  : readinessState === "Busy"
+                    ? "pulse-dot bg-blue"
+                    : "bg-dot-amber"
+              )}
+            />
+            <span id="ready-text">{readinessState}</span>
+          </button>
+        </div>
+      </header>
+
+      {/* Mobile Left Drawer (<768px only) */}
+      {!isMd && (
+        <Drawer.Root open={mobileOpen} onOpenChange={setMobileOpen} direction="left">
+          <Drawer.Portal>
+            <Drawer.Overlay className="fixed inset-0 z-40 bg-ink/40" />
+            <Drawer.Content
+              aria-label="Ergon navigation drawer"
+              className="fixed inset-y-0 left-0 z-40 flex w-[280px] max-w-[85vw] flex-col border-r border-hairline bg-surface text-ink outline-none"
+            >
+              <Drawer.Title className="sr-only">Ergon navigation</Drawer.Title>
+              {renderRailContent()}
+            </Drawer.Content>
+          </Drawer.Portal>
+        </Drawer.Root>
+      )}
+
+      {/* Main 3-Pane Workbench Body */}
+      <div className="flex min-h-0 flex-1 overflow-hidden">
+        {isMd && railOpen && (
+          <aside
+            aria-label="Ergon navigation"
+            className="flex w-[256px] shrink-0 flex-col border-r border-hairline bg-surface"
+          >
+            {renderRailContent()}
           </aside>
         )}
 
-        {narrow && (
-          <Drawer.Root open={menuOpen} onOpenChange={setMenuOpen} direction="left">
-            <Drawer.Portal>
-              <Drawer.Overlay className="fixed top-0 right-0 bottom-0 left-0 z-40 bg-ink/40" />
-              <Drawer.Content
-                aria-label="Ergon navigation"
-                className="fixed inset-y-0 left-0 z-40 flex w-[288px] max-w-[88vw] flex-col border-r border-hairline bg-surface outline-none"
-              >
-                <Drawer.Title className="sr-only">Ergon navigation</Drawer.Title>
-                {railContent}
-              </Drawer.Content>
-            </Drawer.Portal>
-          </Drawer.Root>
-        )}
-
-        <div className="relative isolate flex min-w-0 flex-1 flex-col overflow-hidden bg-canvas">
-          <ContourField />
-
-          <header className="flex w-full flex-wrap items-center justify-between gap-2 border-b border-hairline bg-surface px-3 py-2 md:px-6 md:py-2.5">
-            <div className="flex min-w-0 flex-wrap items-center gap-2">
-              {narrow && (
-                <Button
-                  ref={menuRef}
-                  variant="outline"
-                  size="sm"
-                  className="min-h-11"
-                  aria-label="Open menu"
-                  data-answers-via="4"
-                  onClick={() => setMenuOpen(true)}
-                >
-                  <Menu className="size-4" strokeWidth={1.5} aria-hidden />
-                  Menu
-                </Button>
-              )}
-
-              <Tabs
-                id="face-bar"
-                value={face}
-                onValueChange={(v) => { if (v === "chat" || v === "paper" || v === "graph") setFace(v); }}
-                className="min-w-0"
-              >
-                <TabsList aria-label="Ergon views" className="max-w-full overflow-x-auto bg-track p-0.5">
-                  <TabsTab value="chat" data-id="chat" data-face="chat" className="max-md:min-h-11 px-3">
-                    Chat
-                  </TabsTab>
-                  <TabsTab
-                    value="paper"
-                    data-id="paper"
-                    data-face="today"
-                    aria-label={pendingDecisionsCount > 0 ? `Today's paper, ${pendingDecisionsCount} waiting` : "Today's paper"}
-                    className="max-md:min-h-11 gap-1.5 px-3"
-                  >
-                    Today
-                    {pendingDecisionsCount > 0 && (
-                      <Pill className="status-waiting border-0 px-1.5 py-0 text-xs font-medium" aria-hidden>
-                        <span className="mono">{pendingDecisionsCount}</span>
-                      </Pill>
-                    )}
-                  </TabsTab>
-                  <TabsTab value="graph" data-id="graph" data-face="graph" className="max-md:min-h-11 px-3">
-                    Work Graph
-                  </TabsTab>
-                </TabsList>
-              </Tabs>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2">
-              <Button
-                id="cmdk-trigger"
-                variant="outline"
-                size="sm"
-                aria-label="Open command palette"
-                className="min-h-11 min-w-11 items-center gap-1.5 text-xs text-ink-2 hover:text-ink md:min-h-8 md:min-w-0"
-                onClick={() => setPaletteOpen(true)}
-              >
-                <Search className="size-3.5" strokeWidth={1.5} aria-hidden />
-                <span className="hidden sm:inline">Commands</span>
-                <Kbd className="hidden md:inline-flex">⌘K</Kbd>
-              </Button>
-
-              <div role="status" id="ready-chip" className="flex items-center">
-                <Pill
-                  variant="secondary"
-                  className={cn(
-                    "px-2.5 py-1 text-xs font-medium",
-                    chip.cls === "ok"
-                      ? "bg-pill-active-bg text-pill-active-fg"
-                      : chip.cls === "wait"
-                        ? "bg-pill-warn-bg text-pill-warn-fg"
-                        : "bg-track text-ink-2"
-                  )}
-                >
-                  <span
-                    aria-hidden
-                    className={cn(
-                      "size-2 rounded-full",
-                      chip.cls === "ok" ? "bg-dot-green" : chip.cls === "wait" ? "bg-dot-amber" : "bg-icon"
-                    )}
-                  />
-                  <span id="ready-text">{chip.text}</span>
-                </Pill>
-              </div>
-            </div>
-          </header>
-
-          <UpdateStrip u={u} />
-
-          {modelOff && (
-            <div id="no-key-banner" className="mx-4 mt-3 rounded-card border border-hairline bg-board px-4 py-2.5 text-sm text-ink md:mx-6">
-              Ergon is not connected to a model yet, so the agent cannot run. Nothing here is simulated, and Ergon will not invent answers. Anything you type is kept in the thread.
-              <span className="mt-1 block text-ink-2">Open Settings to pick a local model gateway or set <span className="mono">ERGON_MODEL_API_KEY</span> on the server.</span>
-            </div>
-          )}
-
-          {recovered && (
-            <div id="recovered-banner" className="mx-4 mt-3 flex flex-wrap items-center justify-between gap-3 rounded-card border border-hairline bg-board px-4 py-2.5 text-sm text-ink md:mx-6">
-              <span>Earlier conversations were moved to a backup file ({e.recovered.join(", ")}) and Ergon started fresh. Nothing was deleted.</span>
-              <Button size="sm" variant="outline" className="max-md:min-h-11" onClick={dismissRecovered}>Dismiss</Button>
-            </div>
-          )}
-
+        <main className="min-w-0 flex-1 overflow-hidden bg-canvas">
           {face === "chat" && (
-            <>
-              <section id="thread" aria-live="polite" aria-label="Chat" className="min-h-0 flex-1 overflow-y-auto px-4 pb-6 pt-5 md:px-6">
-                <Thread
-                  messages={e.messages}
-                  busy={e.busy}
-                  liveTimeline={e.liveTimeline}
-                  liveElapsedMs={e.liveElapsedMs}
-                  streamMode={e.streamMode}
-                  cancelling={e.cancelling}
-                  onCancel={e.cancelRun}
-                  threadId={e.threadId}
-                  personName={personName}
-                  useServerExport={hasV050Api(e.status, "receipts_export")}
-                  onReview={() => setFace("paper")}
-                  onStarter={(t) => e.setDraft(t)}
-                  onOpenFile={(p) => setOpenFilePath(p)}
-                  starters={e.starters}
-                  status={modelOff ? "wait" : "ok"}
-                  pendingNote={e.pendingNote}
-                  name={greetingName}
-                  recent={e.recent}
-                />
-              </section>
-              <div className="border-t border-hairline bg-surface px-4 py-3.5 md:px-6">
-                <Composer
-                  value={e.draft}
-                  onChange={e.setDraft}
-                  onSend={e.send}
-                  busy={e.busy}
-                  disabled={e.busy}
-                  files={e.files}
-                  onUploadMany={e.uploadFiles}
-                  onOpenFile={(p) => setOpenFilePath(p)}
-                />
-              </div>
-            </>
+            <Chat
+              threadId={desk.threadId}
+              personName={personName}
+              role={String(activePerson?.role ?? "")}
+              messages={desk.messages}
+              decisions={pendingDecisions}
+              busy={desk.busy}
+              cancelling={desk.cancelling}
+              liveElapsedMs={desk.liveElapsedMs}
+              streamMode={desk.streamMode}
+              liveSteps={desk.liveSteps}
+              liveTimeline={desk.liveTimeline}
+              draft={desk.draft}
+              setDraft={desk.setDraft}
+              pendingNote={desk.pendingNote}
+              starters={desk.starters}
+              onSend={desk.send}
+              onCancel={desk.cancelRun}
+              onReview={() => switchFace("paper")}
+              onResolveDecision={handleResolveDecision}
+              onOpenFile={(p) => setViewerPath(p)}
+              onOpenFiles={openFilesInspector}
+              onExportAuditBundle={handleExportAuditBundle}
+              onUploadFiles={desk.uploadFiles}
+              inputRef={inputRef}
+            />
           )}
 
           {face === "paper" && (
-            <div id="face-today" className="min-h-0 flex-1 overflow-y-auto">
+            <div id="face-today" aria-label="Today's paper" className="h-full overflow-y-auto px-4 py-6 sm:px-8">
               <PaperFace
                 paper={paper}
-                status={e.status}
+                status={desk.status}
                 personName={personName}
                 dateLabel={dateLabel}
-                people={e.people?.people ?? null}
-                teamError={e.people ? "" : e.sideError}
-                activePerson={e.people?.active ?? ""}
-                files={e.files}
-                busy={e.busy}
-                liveTimeline={e.liveTimeline}
-                liveElapsedMs={e.liveElapsedMs}
-                streamMode={e.streamMode}
-                cancelling={e.cancelling}
-                onCancel={e.cancelRun}
-                onSwitchPerson={handleSwitchPerson}
-                onAsk={jumpToComposer}
-                onOpen={(id) => {
-                  setFace("chat");
-                  e.openThread(id);
+                people={desk.people ? desk.people.people : null}
+                teamError={desk.sideError}
+                activePerson={activePersonId}
+                files={desk.files}
+                busy={desk.busy}
+                liveTimeline={desk.liveTimeline}
+                liveElapsedMs={desk.liveElapsedMs}
+                streamMode={desk.streamMode}
+                cancelling={desk.cancelling}
+                onCancel={desk.cancelRun}
+                onSwitchPerson={async (id) => {
+                  await desk.switchPerson(id);
+                  runAfterPersonChange();
                 }}
-                onOpenFile={(p) => setOpenFilePath(p)}
-                onOpenFilesPanel={() => triggerPanel("files")}
-                onUploadMany={e.uploadFiles}
+                onAsk={focusComposer}
+                onOpen={(id) => {
+                  desk.openThread(id);
+                  setFace("chat");
+                }}
+                onOpenFile={(p) => setViewerPath(p)}
+                onOpenFilesPanel={openFilesInspector}
+                onUploadMany={desk.uploadFiles}
                 onExportAuditBundle={handleExportAuditBundle}
               />
             </div>
           )}
 
           {face === "graph" && (
-            <div className="min-h-0 flex-1 overflow-y-auto">
-              <GraphFace onOpenFile={(p) => setOpenFilePath(p)} />
+            <div id="face-graph" aria-label="Work graph" className="h-full overflow-y-auto px-4 py-6 sm:px-8">
+              <GraphFace
+                key={graphSeed}
+                onOpenFile={(p) => setViewerPath(p)}
+              />
             </div>
           )}
-        </div>
+        </main>
 
-        {/* ALL rail MorphingDialogs & modals live OUTSIDE Vaul Drawer.Content (z-40 drawer / z-50 portals) */}
-        <WorkspaceFilesPanel
-          hideTrigger
-          open={openPanel === "files"}
-          onOpenChange={(o) => handlePanelChange("files", o)}
-          files={e.files}
-          onRefresh={e.loadFiles}
-          onOpenFile={(p) => { handlePanelChange("files", false); setOpenFilePath(p); }}
-          onUpload={e.uploadFile}
-          onUploadMany={e.uploadFiles}
-        />
-        <SkillsPanel
-          open={openPanel === "skills"}
-          onOpenChange={(o) => handlePanelChange("skills", o)}
-          skills={e.skills}
-          status={e.status}
-          onRefresh={e.loadSkills}
-          onRunInToday={(skill) => {
-            handlePanelChange("skills", false);
-            setMenuOpen(false);
-            if (!modelOff && !e.busy) {
-              setFace("chat");
-              void e.sendPrompt(skill.sample_prompt).then(() => paper.load());
-            } else {
-              e.setDraft(skill.sample_prompt);
-              jumpToComposer();
-            }
-          }}
-        />
-        <RoutinesPanel
-          open={openPanel === "routines"}
-          onOpenChange={(o) => handlePanelChange("routines", o)}
-          routines={e.routines}
-          skills={e.skills}
-          status={e.status}
-          scheduler={e.scheduler}
-          historyRev={e.routineHistoryRev}
-          personName={personName}
-          onRefresh={e.loadRoutines}
-          onCreate={e.createRoutine}
-          onToggleEnabled={e.toggleRoutine}
-          onLoadHistory={e.loadRoutineHistory}
-          onDelete={e.deleteRoutine}
-          onRunNow={async (routine) => {
-            handlePanelChange("routines", false);
-            setMenuOpen(false);
-            setFace("chat");
-            await e.runRoutineNow(routine);
-            paper.load();
-          }}
-          onOpenThread={(id) => {
-            handlePanelChange("routines", false);
-            setMenuOpen(false);
-            setFace("chat");
-            e.openThread(id);
-          }}
-        />
-        <WorkspaceSwitcherPanel
-          open={openPanel === "workspace"}
-          onOpenChange={(o) => handlePanelChange("workspace", o)}
-          people={e.people?.people ?? []}
-          active={e.people?.active ?? ""}
-          onRefresh={e.loadPeople}
-          onSwitch={handleSwitchPerson}
-          onAddPerson={() => triggerPanel("add-person")}
-        />
-        <LearnedPanel
-          hideTrigger
-          open={openPanel === "memory"}
-          onOpenChange={(o) => handlePanelChange("memory", o)}
-          count={e.learnedCount}
-        />
-        <SuitePanel
-          hideTrigger
-          open={openPanel === "suite"}
-          onOpenChange={(o) => handlePanelChange("suite", o)}
-          count={e.suiteCount}
-          onChanged={() => e.loadStarters(personRole)}
-          onRun={(id, msgs) => {
-            handlePanelChange("suite", false);
-            e.showRun(id, msgs);
-            setFace("chat");
-            setMenuOpen(false);
-          }}
-        />
-        <AddPersonPanel
-          hideTrigger
-          open={openPanel === "add-person"}
-          onOpenChange={(o) => handlePanelChange("add-person", o)}
-          onAdded={() => {
-            handlePanelChange("add-person", false);
-            e.refreshPerson();
-            paper.load();
-            setMenuOpen(false);
-          }}
-        />
-        <SettingsPanel
-          hideTrigger
-          open={openPanel === "settings"}
-          onOpenChange={(o) => handlePanelChange("settings", o)}
-          theme={theme}
-          onTheme={setTheme}
-          status={e.status}
-          people={e.people?.people ?? []}
-          activePerson={e.people?.active ?? ""}
-          onRefreshPeople={e.loadPeople}
-          onSwitchPerson={handleSwitchPerson}
-          onAddPerson={() => triggerPanel("add-person")}
-          onExportAuditBundle={handleExportAuditBundle}
-          onConfigSaved={() => { e.loadStatus(); paper.load(); }}
-          u={u}
-        />
-        <CommandPalette
-          open={paletteOpen}
-          onOpenChange={setPaletteOpen}
-          status={e.status}
-          files={e.files}
-          receipts={allReceipts}
-          threads={e.threads ?? []}
-          skills={e.skills}
-          routines={e.routines}
-          onNewTask={jumpToComposer}
-          onUploadFile={() => quickUploadRef.current?.click()}
-          onExportLatestReceipt={handleExportLatestReceipt}
-          onExportAuditBundle={(fmt) => void handleExportAuditBundle(fmt)}
-          onOpenWorkspaceSwitcher={() => triggerPanel("workspace")}
-          onOpenSettings={() => triggerPanel("settings")}
-          onOpenFiles={() => triggerPanel("files")}
-          onOpenSkills={() => triggerPanel("skills")}
-          onOpenRoutines={() => triggerPanel("routines")}
-          onOpenFile={(p) => setOpenFilePath(p)}
-          onOpenThread={(id) => {
-            setFace("chat");
-            e.openThread(id);
-          }}
-          onRunSkill={(sk) => {
-            e.setDraft(sk.sample_prompt);
-            jumpToComposer();
-          }}
-          onRunRoutine={(rt) => {
-            setFace("chat");
-            void e.runRoutineNow(rt).then(() => paper.load());
-          }}
-          onSwitchFace={(nextFace) => setFace(nextFace)}
-        />
-        <FileViewerModal
-          filePath={openFilePath}
-          personName={personName}
-          status={e.status}
-          onClose={() => setOpenFilePath(null)}
-          onRestored={() => {
-            e.loadFiles();
-            paper.load();
-          }}
-          onAskAbout={(p) => {
-            e.setDraft(`Review ${p} and summarize the key numbers and action items into a workspace report.`);
-            jumpToComposer();
-          }}
-        />
-        <Toaster position="bottom-right" />
+        {/* Inline Right Inspector Drawer on >=1280px; Slide-over Drawer on <1280px */}
+        {isXl ? (
+          <InspectorDrawer
+            open={inspectorOpen}
+            tab={inspectorTab}
+            onTabChange={setInspectorTab}
+            onClose={() => setInspectorOpen(false)}
+            files={desk.files}
+            status={desk.status}
+            personName={personName}
+            offers={(paper.data?.offers ?? []).filter((o) => o.status === "pending")}
+            selectedHistoryPath={selectedHistoryPath}
+            onSelectHistoryPath={setSelectedHistoryPath}
+            onRefreshFiles={desk.loadFiles}
+            onOpenFile={(p) => setViewerPath(p)}
+            onUploadFile={desk.uploadFile}
+            onUploadMany={desk.uploadFiles}
+            onExportAuditBundle={handleExportAuditBundle}
+            onOfferAction={async (url, msg) => {
+              await paper.act(url, msg);
+            }}
+          />
+        ) : (
+          inspectorOpen && (
+            <div
+              className="fixed inset-0 z-40 flex justify-end bg-ink/40"
+              onClick={(e) => {
+                if (e.target === e.currentTarget) setInspectorOpen(false);
+              }}
+            >
+              <div className="h-full w-full max-w-sm bg-surface shadow-lift">
+                <InspectorDrawer
+                  open={inspectorOpen}
+                  tab={inspectorTab}
+                  onTabChange={setInspectorTab}
+                  onClose={() => setInspectorOpen(false)}
+                  files={desk.files}
+                  status={desk.status}
+                  personName={personName}
+                  offers={(paper.data?.offers ?? []).filter((o) => o.status === "pending")}
+                  selectedHistoryPath={selectedHistoryPath}
+                  onSelectHistoryPath={setSelectedHistoryPath}
+                  onRefreshFiles={desk.loadFiles}
+                  onOpenFile={(p) => setViewerPath(p)}
+                  onUploadFile={desk.uploadFile}
+                  onUploadMany={desk.uploadFiles}
+                  onExportAuditBundle={handleExportAuditBundle}
+                  onOfferAction={async (url, msg) => {
+                    await paper.act(url, msg);
+                  }}
+                />
+              </div>
+            </div>
+          )
+        )}
       </div>
-    </MotionConfig>
+
+      {/* External Modals mounted OUTSIDE Vaul Drawer (z-50 portals) */}
+      <CommandPalette
+        open={paletteOpen}
+        onOpenChange={setPaletteOpen}
+        status={desk.status}
+        files={desk.files}
+        receipts={paper.data?.brief.finished ?? []}
+        threads={threadList}
+        skills={desk.skills}
+        routines={desk.routines}
+        onNewTask={() => {
+          desk.newThread();
+          focusComposer();
+        }}
+        onUploadFile={() => fileUploadRef.current?.click()}
+        onExportLatestReceipt={(fmt) => void handleExportLatestReceipt(fmt)}
+        onExportAuditBundle={(fmt) => void handleExportAuditBundle(fmt)}
+        onOpenWorkspaceSwitcher={() => setSwitcherOpen(true)}
+        onOpenSettings={() => setSettingsOpen(true)}
+        onOpenFiles={openFilesInspector}
+        onOpenSkills={() => setSkillsOpen(true)}
+        onOpenRoutines={() => setRoutinesOpen(true)}
+        onOpenFile={(p) => setViewerPath(p)}
+        onOpenThread={(id) => {
+          desk.openThread(id);
+          setFace("chat");
+        }}
+        onRunSkill={(sk) => {
+          setFace("chat");
+          desk.setDraft(sk.sample_prompt || `Run ${sk.title}`);
+          requestAnimationFrame(() => inputRef.current?.focus());
+        }}
+        onRunRoutine={(rt) => {
+          setFace("chat");
+          void desk.runRoutineNow(rt);
+        }}
+        onSwitchFace={switchFace}
+      />
+
+      <WorkspaceSwitcherPanel
+        people={peopleList}
+        active={activePersonId}
+        open={switcherOpen}
+        onOpenChange={setSwitcherOpen}
+        onRefresh={desk.loadPeople}
+        onSwitch={async (id) => {
+          await desk.switchPerson(id);
+          runAfterPersonChange();
+        }}
+        onAddPerson={() => setAddPersonOpen(true)}
+      />
+
+      <AddPersonPanel
+        open={addPersonOpen}
+        onOpenChange={setAddPersonOpen}
+        hideTrigger
+        onAdded={async () => {
+          await desk.refreshPerson();
+          runAfterPersonChange();
+        }}
+      />
+
+      <LearnedPanel
+        open={learnedOpen}
+        onOpenChange={setLearnedOpen}
+        hideTrigger
+        count={desk.learnedCount}
+      />
+
+      <SuitePanel
+        open={suiteOpen}
+        onOpenChange={setSuiteOpen}
+        hideTrigger
+        count={desk.suiteCount}
+        onChanged={() => {
+          desk.refreshCounts();
+          desk.loadStarters(String(activePerson?.role ?? ""));
+          paper.load();
+          setGraphSeed((s) => s + 1);
+        }}
+        onRun={(id, msgs) => {
+          setFace("chat");
+          desk.showRun(id, msgs);
+          desk.refreshCounts();
+        }}
+      />
+
+      <SkillsPanel
+        skills={desk.skills}
+        status={desk.status}
+        open={skillsOpen}
+        onOpenChange={setSkillsOpen}
+        onRefresh={desk.loadSkills}
+        onRunInToday={(sk) => {
+          setFace("chat");
+          desk.setDraft(sk.sample_prompt || `Run ${sk.title}`);
+          requestAnimationFrame(() => inputRef.current?.focus());
+        }}
+      />
+
+      <RoutinesPanel
+        routines={desk.routines}
+        skills={desk.skills}
+        status={desk.status}
+        scheduler={desk.scheduler}
+        historyRev={desk.routineHistoryRev}
+        personName={personName}
+        presetSchedule={routinePresetSchedule}
+        presetNonce={routinePresetNonce}
+        open={routinesOpen}
+        onOpenChange={setRoutinesOpen}
+        onRefresh={desk.loadRoutines}
+        onCreate={desk.createRoutine}
+        onToggleEnabled={desk.toggleRoutine}
+        onLoadHistory={desk.loadRoutineHistory}
+        onDelete={desk.deleteRoutine}
+        onRunNow={async (rt) => {
+          setFace("chat");
+          await desk.runRoutineNow(rt);
+        }}
+        onOpenThread={(id) => {
+          desk.openThread(id);
+          setFace("chat");
+        }}
+      />
+
+      <SettingsPanel
+        theme={theme}
+        onTheme={setTheme}
+        status={desk.status}
+        people={peopleList}
+        activePerson={activePersonId}
+        onRefreshPeople={desk.loadPeople}
+        onSwitchPerson={async (id) => {
+          await desk.switchPerson(id);
+          runAfterPersonChange();
+        }}
+        onAddPerson={() => setAddPersonOpen(true)}
+        onExportAuditBundle={handleExportAuditBundle}
+        onConfigSaved={() => {
+          desk.loadStatus();
+          paper.load();
+        }}
+        u={u}
+        open={settingsOpen}
+        onOpenChange={setSettingsOpen}
+        hideTrigger
+      />
+
+      <FileViewerModal
+        filePath={viewerPath}
+        status={desk.status}
+        personName={personName}
+        onClose={() => setViewerPath(null)}
+        onAskAbout={(p) => {
+          setViewerPath(null);
+          setFace("chat");
+          desk.setDraft(`Review ${p} and summarize key findings.`);
+          requestAnimationFrame(() => inputRef.current?.focus());
+        }}
+        onRestored={() => {
+          desk.loadFiles();
+          paper.load();
+        }}
+      />
+    </div>
   );
 }
+export default App;

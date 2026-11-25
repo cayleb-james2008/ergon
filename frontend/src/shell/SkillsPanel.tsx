@@ -6,15 +6,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { FlaskConical, Play, Search, Sparkles, X } from "lucide-react";
 import { toast } from "sonner";
-import {
-  MorphingDialog,
-  MorphingDialogClose,
-  MorphingDialogContainer,
-  MorphingDialogContent,
-  MorphingDialogDescription,
-  MorphingDialogTitle,
-  useMorphingDialog,
-} from "@/components/ui/morphing-dialog";
+import { PanelModal, usePanelModalClose } from "@/shell/PanelModal";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
@@ -23,7 +15,6 @@ import { Details } from "@/chat/Entry";
 import { call, hasV050Api, type Status } from "@/lib/api";
 import type { SkillCategory, SkillMeta } from "@/lib/skillsCatalog";
 import { cn } from "@/lib/utils";
-import { open as openPreset } from "@/motion";
 
 const CATEGORIES: ("All" | SkillCategory)[] = [
   "All",
@@ -54,7 +45,7 @@ function SkillsBody({
   onRefresh: () => void;
   onRunInToday: (skill: SkillMeta) => void;
 }) {
-  const { isOpen, setIsOpen } = useMorphingDialog();
+  const { isOpen, setIsOpen } = usePanelModalClose();
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<"All" | SkillCategory>("All");
   const [testingId, setTestingId] = useState<string | null>(null);
@@ -294,26 +285,19 @@ export function SkillsPanel({
   onRunInToday: (skill: SkillMeta) => void;
 }) {
   return (
-    <MorphingDialog transition={openPreset} open={open} onOpenChange={onOpenChange}>
-      <MorphingDialogContainer>
-        <MorphingDialogContent
-          style={{ borderRadius: 18 }}
-          className="relative mx-4 flex max-h-[84vh] w-[620px] max-w-[calc(100%-2rem)] flex-col gap-3 overflow-y-auto border border-hairline bg-surface p-5 text-ink shadow-lift"
-        >
-          <MorphingDialogClose className="focus-ring absolute right-3 top-3 grid size-11 place-items-center rounded-sm text-icon outline-none hover:bg-board md:size-9" />
-          <MorphingDialogTitle className="pr-10 text-title font-medium text-ink">
-            Built-in Workflows ({skills.length})
-          </MorphingDialogTitle>
-          <MorphingDialogDescription disableLayoutAnimation className="text-sm text-ink-2">
-            <SkillsBody
-              skills={skills}
-              status={status}
-              onRefresh={onRefresh}
-              onRunInToday={onRunInToday}
-            />
-          </MorphingDialogDescription>
-        </MorphingDialogContent>
-      </MorphingDialogContainer>
-    </MorphingDialog>
+    <PanelModal
+      open={open}
+      onOpenChange={onOpenChange}
+      title={`Built-in Workflows (${skills.length})`}
+      description="Run or test ready-to-use workflows inside your sandboxed workspace."
+      className="max-w-2xl"
+    >
+      <SkillsBody
+        skills={skills}
+        status={status}
+        onRefresh={onRefresh}
+        onRunInToday={onRunInToday}
+      />
+    </PanelModal>
   );
 }

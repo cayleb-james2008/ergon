@@ -1,53 +1,63 @@
-// Signature object: the Field-Book Work Entry.
-// Ink head strip (timestamp in Geist Mono, task title, semantic status pill), ruled metadata grid,
-// workspace saved-file rows with file-type glyphs, summary prose, one-click SHA-256 receipt export,
-// and Cult UI Expandable raw tool-step inspector.
+// Work Entry cards & inline Approval/File-Diff card for the central Conversation Thread.
+// Keeps clean typography, tabular-nums timestamps, inline file diff preview, 1-click Word/Excel & SHA-256 receipt export.
 import { useState } from "react";
-import { ArrowUpRight, Check, ChevronDown, FileDown, Hourglass } from "lucide-react";
+import { Check, ChevronDown, FileDown, FileSpreadsheet, FileText, Hourglass } from "lucide-react";
 import { toast } from "sonner";
-import { Expandable, ExpandableContent, ExpandableTrigger } from "@/components/ui/expandable";
 import { Button } from "@/components/ui/button";
 import { Pill } from "@/components/kibo-ui/pill";
-import { cn } from "@/lib/utils";
+import { computeLineDiff } from "@/lib/diff";
 import { exportReceiptDownload } from "@/lib/receiptExport";
+import { cn } from "@/lib/utils";
 import { fileIconFor, savedFile, toolLabel } from "@/lib/words";
-import type { Msg } from "@/lib/api";
+import {
+  call,
+  exportTarget,
+  type Decision,
+  type FileDiffLine,
+  type FileRevision,
+  type Msg,
+  type WorkspaceFileContent,
+} from "@/lib/api";
 
 export function FileGlyph({ name, className }: { name: string; className?: string }) {
   const Icon = fileIconFor(name);
   return <Icon className={cn("size-4 shrink-0 text-ink-2", className)} strokeWidth={1.5} aria-hidden="true" />;
 }
 
-/** Disclosure key backed by Cult UI Expandable (ExpandableTrigger manages aria-expanded and keyboard Enter/Space). */
+/** Accessible collapsible disclosure without heavy animation runtime dependencies. */
 export function Details({ label = "Details", children }: { label?: string; children: React.ReactNode }) {
+  const [open, setOpen] = useState(false);
   return (
-    <Expandable expandDirection="vertical" expandBehavior="push" className="w-full">
-      {({ isExpanded }) => (
-        <div className="w-full">
-          <ExpandableTrigger
-            aria-label={label}
-            className="mould focus-ring flex min-h-11 w-full items-center justify-between gap-2 rounded-sm border border-hairline bg-surface px-3 text-left text-sm font-medium text-ink outline-none md:min-h-9"
-          >
-            <span>{label}</span>
-            <ChevronDown
-              className={cn(
-                "size-4 shrink-0 text-icon motion-safe:transition-transform motion-safe:duration-(--dur-swap) motion-safe:ease-(--ease-house)",
-                isExpanded && "rotate-180"
-              )}
-              strokeWidth={1.5}
-              aria-hidden
-            />
-          </ExpandableTrigger>
-          <ExpandableContent preset="fade">
-            <div className="mt-2 flex flex-col gap-2.5">{children}</div>
-          </ExpandableContent>
-        </div>
-      )}
-    </Expandable>
+    <div className="w-full">
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-label={label}
+        onClick={() => setOpen((v) => !v)}
+        className="focus-ring flex min-h-11 w-full items-center justify-between gap-2 rounded-sm border border-hairline bg-board/40 px-3 text-left text-sm font-medium text-ink outline-none hover:bg-board md:min-h-9"
+      >
+        <span>{label}</span>
+        <ChevronDown
+          className={cn(
+            "size-4 shrink-0 text-icon motion-safe:transition-transform motion-safe:duration-(--dur-swap) motion-safe:ease-(--ease-house)",
+            open && "rotate-180"
+          )}
+          strokeWidth={1.5}
+          aria-hidden
+        />
+      </button>
+      {open && <div className="mt-2 flex flex-col gap-2.5">{children}</div>}
+    </div>
   );
 }
 
-export function EntryShell({ time, title, status, label, children }: {
+export function EntryShell({
+  time,
+  title,
+  status,
+  label,
+  children,
+}: {
   time: string;
   title: string;
   status?: React.ReactNode;
@@ -55,10 +65,13 @@ export function EntryShell({ time, title, status, label, children }: {
   children: React.ReactNode;
 }) {
   return (
-    <article aria-label={label} className="overflow-hidden rounded-entry border border-ink bg-surface shadow-card dark:border-hairline dark:shadow-none">
-      <header className="entry-head flex min-w-0 flex-wrap items-center gap-2.5 border-b border-ink px-4 py-2.5 dark:border-hairline">
-        {time && <span className="mono shrink-0 text-xs">{time}</span>}
-        <span className="min-w-0 flex-1 truncate text-sm font-medium">{title}</span>
+    <article
+      aria-label={label}
+      className="overflow-hidden rounded-entry border border-hairline bg-surface"
+    >
+      <header className="entry-head flex min-w-0 flex-wrap items-center gap-2.5 border-b border-hairline px-4 py-2.5">
+        {time && <span className="mono shrink-0 text-xs text-ink-2">{time}</span>}
+        <span className="min-w-0 flex-1 truncate text-sm font-medium text-ink">{title}</span>
         {status}
       </header>
       {children}
@@ -98,9 +111,9 @@ export function Cell({ label, children, span }: { label: string; children: React
 export function FileRow({ files, onOpenFile }: { files: string[]; onOpenFile?: (path: string) => void }) {
   if (!files.length) return null;
   return (
-    <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 border-b border-hairline bg-board/50 px-4 py-2.5">
+    <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 border-b border-hairline bg-board/40 px-4 py-2.5">
       <div className="flex min-w-0 flex-wrap items-center gap-2">
-        {files.map((name, idx) => (
+        {files.map((name, idx) =>
           onOpenFile ? (
             <Button
               key={name + idx}
@@ -112,8 +125,7 @@ export function FileRow({ files, onOpenFile }: { files: string[]; onOpenFile?: (
             >
               <FileGlyph name={name} />
               <span className="mono min-w-0 truncate">{name}</span>
-              <span className="text-ink-2">Open</span>
-              <ArrowUpRight className="size-3.5 shrink-0 text-icon" strokeWidth={1.5} aria-hidden />
+              <span className="text-ink-2">Inspect</span>
             </Button>
           ) : (
             <Pill key={name + idx} variant="secondary" className="max-w-full border border-hairline bg-surface px-2.5 py-1 text-xs font-normal text-ink">
@@ -121,7 +133,7 @@ export function FileRow({ files, onOpenFile }: { files: string[]; onOpenFile?: (
               <span className="mono min-w-0 truncate">{name}</span>
             </Pill>
           )
-        ))}
+        )}
       </div>
       <span className="text-xs text-ink-3">Saved in workspace</span>
     </div>
@@ -166,7 +178,17 @@ export function StepList({ steps }: { steps: string[] }) {
   );
 }
 
-export function FinishedEntry({ time, task, steps, result, notes, receiptId, personName, useServerExport, onOpenFile }: {
+export function FinishedEntry({
+  time,
+  task,
+  steps,
+  result,
+  notes,
+  receiptId,
+  personName,
+  useServerExport,
+  onOpenFile,
+}: {
   time: string;
   task: string;
   steps: string[];
@@ -178,8 +200,12 @@ export function FinishedEntry({ time, task, steps, result, notes, receiptId, per
   onOpenFile?: (path: string) => void;
 }) {
   const [exporting, setExporting] = useState(false);
+  const [officeBusy, setOfficeBusy] = useState(false);
   const files = savedList(steps);
   const stepWord = steps.length === 1 ? "1 tool step" : `${steps.length} tool steps`;
+
+  const docCandidate = files.find((f) => /\.(md|markdown|txt)$/i.test(f));
+  const sheetCandidate = files.find((f) => /\.(csv|tsv)$/i.test(f));
 
   const handleExport = async (format: "md" | "json") => {
     setExporting(true);
@@ -205,6 +231,25 @@ export function FinishedEntry({ time, task, steps, result, notes, receiptId, per
     }
   };
 
+  const handleOfficeExport = async (path: string, format: "docx" | "xlsx") => {
+    setOfficeBusy(true);
+    try {
+      const r = await call<{ output_path?: string; path?: string }>("/api/files/export", {
+        method: "POST",
+        body: { path, format },
+      });
+      if (!r.ok) {
+        toast.error(r.error || `Could not export ${format.toUpperCase()}.`);
+        return;
+      }
+      const outPath = r.data.output_path || r.data.path || `${path}.${format}`;
+      toast.success(`Exported ${outPath}`);
+      if (onOpenFile && outPath) onOpenFile(outPath);
+    } finally {
+      setOfficeBusy(false);
+    }
+  };
+
   return (
     <EntryShell label="Finished work" time={time} title={task || "Completed task"} status={<FinishedPill />}>
       <Cells>
@@ -216,6 +261,32 @@ export function FinishedEntry({ time, task, steps, result, notes, receiptId, per
         <p className="whitespace-pre-wrap break-words text-ui leading-6 text-ink">{result}</p>
         {notes.map((n, idx) => <Note key={idx} text={n} />)}
         <div className="flex flex-wrap items-center gap-2 pt-0.5">
+          {docCandidate && (
+            <Button
+              type="button"
+              size="xs"
+              variant="outline"
+              className="max-md:min-h-11 gap-1.5 text-xs"
+              disabled={officeBusy}
+              onClick={() => handleOfficeExport(docCandidate, "docx")}
+            >
+              <FileText className="size-3.5" strokeWidth={1.5} aria-hidden />
+              Export Word (.docx)
+            </Button>
+          )}
+          {sheetCandidate && (
+            <Button
+              type="button"
+              size="xs"
+              variant="outline"
+              className="max-md:min-h-11 gap-1.5 text-xs"
+              disabled={officeBusy}
+              onClick={() => handleOfficeExport(sheetCandidate, "xlsx")}
+            >
+              <FileSpreadsheet className="size-3.5" strokeWidth={1.5} aria-hidden />
+              Export Excel (.xlsx)
+            </Button>
+          )}
           <Button
             type="button"
             size="xs"
@@ -249,24 +320,180 @@ export function FinishedEntry({ time, task, steps, result, notes, receiptId, per
   );
 }
 
-export function WaitingEntry({ time, name, steps, result, onReview }: {
+export function WaitingEntry({
+  time,
+  name,
+  steps,
+  result,
+  decisions,
+  onResolveDecision,
+  onRevise,
+  onOpenFile,
+  onReview,
+}: {
   time: string;
   name: string;
   steps?: string[];
   result: string;
+  decisions?: Decision[];
+  onResolveDecision?: (id: string, action: "approve" | "deny", label: string) => Promise<void>;
+  onRevise?: (prompt: string) => void;
+  onOpenFile?: (path: string) => void;
   onReview: () => void;
 }) {
+  const [acting, setActing] = useState<"approve" | "deny" | null>(null);
+  const [diffOpen, setDiffOpen] = useState(false);
+  const [diffLoading, setDiffLoading] = useState(false);
+  const [diffLines, setDiffLines] = useState<FileDiffLine[] | null>(null);
+  const [filePreview, setFilePreview] = useState<string | null>(null);
+
+  const matchedDecision = (decisions ?? []).find((d) => {
+    const hay = `${d.summary ?? ""} ${d.detail ?? ""}`.toLowerCase();
+    return name ? hay.includes(name.toLowerCase()) : true;
+  }) ?? ((decisions ?? []).length === 1 ? decisions?.[0] : undefined);
+
+  const toggleInlineDiff = async () => {
+    if (diffOpen) {
+      setDiffOpen(false);
+      return;
+    }
+    setDiffOpen(true);
+    if (!name || diffLines || filePreview !== null) return;
+    setDiffLoading(true);
+    try {
+      const [contentRes, histRes] = await Promise.all([
+        call<WorkspaceFileContent>("/api/files/content?path=" + encodeURIComponent(name)),
+        call<{ revisions?: FileRevision[]; history?: FileRevision[] }>(
+          "/api/files/history?path=" + encodeURIComponent(name)
+        ),
+      ]);
+      const curText = contentRes.ok ? String(contentRes.data.content ?? "") : "";
+      const revs = histRes.ok
+        ? (Array.isArray(histRes.data.revisions) ? histRes.data.revisions : histRes.data.history ?? [])
+        : [];
+      if (revs.length > 0 && typeof revs[0]?.content === "string") {
+        const diff = computeLineDiff(revs[0].content, curText);
+        setDiffLines(diff.hunks.flatMap((h) => h.lines));
+      } else if (curText) {
+        setFilePreview(curText.slice(0, 1200));
+      } else {
+        setFilePreview("(No preview content available for this target.)");
+      }
+    } finally {
+      setDiffLoading(false);
+    }
+  };
+
   return (
-    <EntryShell label="Waiting on you" time={time} title={"Delete " + (name || "a file") + "?"} status={<WaitingPill />}>
+    <EntryShell label="Waiting on you" time={time} title={name ? `Approve change to ${name}?` : "Waiting on your approval"} status={<WaitingPill />}>
       <Cells>
         <Cell label="Waiting for"><span className="mono">{name || "your approval"}</span></Cell>
-        <Cell label="Decision">Approve or keep</Cell>
+        <Cell label="Decision">Approve, hold, or revise</Cell>
       </Cells>
       <div className="flex flex-col gap-3 px-4 py-4">
         <p className="whitespace-pre-wrap break-words text-ui leading-6 text-ink">{result}</p>
+
         <div className="flex flex-wrap items-center gap-2">
-          <Button variant="outline" size="sm" className="max-md:min-h-11" onClick={onReview}>Review in Today</Button>
+          {matchedDecision && onResolveDecision ? (
+            <>
+              <Button
+                type="button"
+                size="sm"
+                className="max-md:min-h-11"
+                disabled={acting !== null}
+                onClick={async () => {
+                  setActing("approve");
+                  try {
+                    await onResolveDecision(matchedDecision.id, "approve", name || matchedDecision.summary);
+                  } finally {
+                    setActing(null);
+                  }
+                }}
+              >
+                {acting === "approve" ? "Approving…" : "Approve"}
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="max-md:min-h-11"
+                disabled={acting !== null}
+                onClick={async () => {
+                  setActing("deny");
+                  try {
+                    await onResolveDecision(matchedDecision.id, "deny", name || matchedDecision.summary);
+                  } finally {
+                    setActing(null);
+                  }
+                }}
+              >
+                {acting === "deny" ? "Holding…" : "Hold / Keep"}
+              </Button>
+            </>
+          ) : (
+            <Button variant="outline" size="sm" className="max-md:min-h-11" onClick={onReview}>
+              Review in Today
+            </Button>
+          )}
+          {onRevise && (
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              className="max-md:min-h-11"
+              onClick={() => onRevise(name ? `Please keep ${name} and revise instead: ` : "Please revise this plan: ")}
+            >
+              Revise
+            </Button>
+          )}
+          {name && (
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              className="max-md:min-h-11"
+              onClick={toggleInlineDiff}
+            >
+              {diffOpen ? "Hide file preview" : "Preview diff"}
+            </Button>
+          )}
+          {name && onOpenFile && (
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              className="max-md:min-h-11"
+              onClick={() => onOpenFile(name)}
+            >
+              Inspect file
+            </Button>
+          )}
         </div>
+
+        {diffOpen && (
+          <div className="max-h-56 overflow-auto rounded-sm border border-hairline bg-board/60 p-3 font-mono text-xs leading-5">
+            {diffLoading ? (
+              <p className="text-ink-2">Loading file preview…</p>
+            ) : diffLines && diffLines.length > 0 ? (
+              diffLines.slice(0, 80).map((line, i) => (
+                <div
+                  key={i}
+                  className={cn(
+                    "whitespace-pre-wrap break-words px-1",
+                    line.kind === "add" && "bg-pill-active-bg text-pill-active-fg",
+                    line.kind === "del" && "bg-status-stopped-bg text-status-stopped-fg"
+                  )}
+                >
+                  {line.kind === "add" ? "+ " : line.kind === "del" ? "- " : "  "}
+                  {line.text}
+                </div>
+              ))
+            ) : (
+              <pre className="whitespace-pre-wrap break-words text-ink-2">{filePreview || "(empty file)"}</pre>
+            )}
+          </div>
+        )}
+
         {steps && steps.length > 0 && (
           <Details label={`Inspect tool steps (${steps.length})`}>
             <StepList steps={steps} />
