@@ -4,6 +4,18 @@ Each release is tagged `vMAJOR.MINOR.PATCH` and published on GitHub Releases wit
 binaries and a `SHA256SUMS` file. The running app shows its version and can update
 itself from the newest release (see README, "Versions and updates").
 
+## 0.11.0 - 2026-11-25
+
+- **Faster Runtime, Compression & Release Binary Diet (`Cargo.toml`, `src/lib.rs`, `src/tripwire.rs`, `src/search.rs`):**
+  - Added `[profile.release]` (`opt-level = 3`, `lto = "thin"`, `codegen-units = 1`, `strip = "symbols"`), shrinking the compiled binary while boosting throughput.
+  - Served embedded `assets/index.html` with pre-compressed RFC 1952 `gzip` (`Accept-Encoding: gzip`), strong `ETag` + `304 Not Modified`, `Vary: Accept-Encoding`, `Cache-Control: no-cache`, and full security headers (`X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, CSP).
+  - Replaced per-connection `thread::spawn` with a warm elastic worker pool, enabled `TCP_NODELAY`, coalesced HTTP headers + body into a single socket write with preformatted `BASE_HEADERS_BLOCK`, eliminated `TcpStream::try_clone()` and per-header `.to_lowercase()` allocations in `read_request`, converted `sessions`/`runtimes`/`people`/`decorated` locks to `RwLock`, added zero-alloc fast paths in `SearchCache::list_receipts` and `list_files`, and included precomputed thread `state` in `GET /api/threads` (`Store::list_json`) so the frontend skips up to 40 N+1 `/api/threads/:id` fetches on load.
+- **Zero-Friction User Velocity & Side-by-Side Diff (`frontend/src/`):**
+  - Added context-aware workflow auto-detection (`detectWorkflowForFile`, `detectWorkspaceWorkflow`) that binds starter cards to real workspace files, surfaces a 1-click suggested workflow bar immediately after drag-and-drop/file upload, adds a 1-click contextual workflow button in `FileViewerModal`, and exposes recommended actions in `Cmd+K`.
+  - Added an instant **Unified | Side-by-side** diff toggle in `FileHistoryDiffView` before restoring `.history/` snapshots, fixed `/api/receipts/verify` chain-count parsing in `InspectorDrawer`, wired server-side SHA-256 receipt export into chat `FinishedEntry`, added a 1-click **Copy summary** deliverable action, and isolated the live elapsed timer inside `LiveElapsedClock` to eliminate 4x/sec full-app React re-renders during active runs.
+- **Hardening (`src/lib.rs`, `src/file_history.rs`):**
+  - Rejected duplicate `Host` headers with HTTP `400 Bad Request`, bounded `LiveRun::steps` (`MAX_LIVE_STEPS = 128`), blocked hidden dotfiles in `.history/` (`validate_history_path`), and guarded `export_workspace_file` against overwriting workspace symlinks.
+
 ## 0.10.0 - 2026-11-25
 
 - **Unified Responsive Desktop Workbench:** Eliminated the duplicate 1.2 MB `assets/phone.html` asset and `ui::PHONE_HTML`, serving one unified responsive SPA (`assets/index.html`, 972 kB — a ~59% reduction from 2.39 MB combined) cleanly across `/`, `/phone`, desktop, tablet, and mobile.

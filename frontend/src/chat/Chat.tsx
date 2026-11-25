@@ -3,7 +3,7 @@
 // - Inline Approval & File-Diff cards directly inside the thread (Approve / Hold / Revise)
 // - Live SSE / poll run status banner (#live-run-timeline) with TextShimmer + BorderTrail (live work only) + cancel
 // - Elevated floating composer (#composer-input) with multi-file upload & drag-drop
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Check,
   Clock,
@@ -16,6 +16,7 @@ import {
   ShieldCheck,
   Sparkles,
   Square,
+  X,
   XCircle,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -33,7 +34,7 @@ import {
 } from "@/chat/Entry";
 import { cn } from "@/lib/utils";
 import type { Decision, LiveRunStep, Msg } from "@/lib/api";
-import { type StarterCard, toolLabel } from "@/lib/words";
+import { detectWorkflowForFile, type StarterCard, toolLabel } from "@/lib/words";
 
 export type Recent = { task: string; date: string; files: string[] };
 
@@ -43,15 +44,32 @@ function fmtElapsed(ms: number): string {
   return `${(ms / 1000).toFixed(1)}s`;
 }
 
+function LiveElapsedClock({ startedMs, serverElapsedMs }: { startedMs?: number; serverElapsedMs: number }) {
+  const [tickMs, setTickMs] = useState(serverElapsedMs);
+  useEffect(() => {
+    if (!startedMs) {
+      setTickMs(serverElapsedMs);
+      return;
+    }
+    const update = () => setTickMs(Math.max(serverElapsedMs, Date.now() - startedMs));
+    update();
+    const timer = window.setInterval(update, 250);
+    return () => window.clearInterval(timer);
+  }, [startedMs, serverElapsedMs]);
+  return <>{fmtElapsed(tickMs)}</>;
+}
+
 export function LiveRunTimeline({
   steps,
   elapsedMs,
+  startedMs,
   streamMode,
   cancelling,
   onCancel,
 }: {
   steps: LiveRunStep[];
   elapsedMs: number;
+  startedMs?: number;
   streamMode: "sse" | "poll" | null;
   cancelling: boolean;
   onCancel: () => void;
@@ -79,7 +97,7 @@ export function LiveRunTimeline({
         <div className="flex items-center gap-2">
           <span className="mono flex items-center gap-1 text-xs text-ink-2">
             <Clock className="size-3.5 text-icon" strokeWidth={1.5} aria-hidden />
-            {fmtElapsed(elapsedMs)}
+            <LiveElapsedClock startedMs={startedMs} serverElapsedMs={elapsedMs} />
           </span>
           <Button
             id="cancel-run-btn"
@@ -129,6 +147,7 @@ export function Chat({
   decisions,
   busy,
   cancelling,
+  runStartedMs,
   liveElapsedMs,
   streamMode,
   liveSteps,
@@ -137,7 +156,11 @@ export function Chat({
   setDraft,
   pendingNote,
   starters,
+  lastUploaded,
+  onDismissUploaded,
+  useServerExport,
   onSend,
+  onRunPrompt,
   onCancel,
   onReview,
   onResolveDecision,
@@ -154,6 +177,7 @@ export function Chat({
   decisions: Decision[];
   busy: boolean;
   cancelling: boolean;
+  runStartedMs?: number;
   liveElapsedMs: number;
   streamMode: "sse" | "poll" | null;
   liveSteps: string[];
@@ -162,7 +186,11 @@ export function Chat({
   setDraft: (s: string) => void;
   pendingNote: boolean;
   starters: StarterCard[];
+  lastUploaded?: string[];
+  onDismissUploaded?: () => void;
+  useServerExport?: boolean;
   onSend: () => void;
+  onRunPrompt?: (prompt: string) => void;
   onCancel: () => void;
   onReview: () => void;
   onResolveDecision: (id: string, action: "approve" | "deny", label: string) => Promise<void>;
@@ -178,6 +206,10 @@ export function Chat({
 
   const items = buildItems(messages);
   const cards = starters;
+  const uploadSuggestion = useMemo(() => {
+    const first = lastUploaded?.[0];
+    return first ? detectWorkflowForFile(first) : null;
+  }, [lastUploaded]);
 
   useEffect(() => {
     if (items.length > 0 || busy) {
@@ -221,6 +253,59 @@ export function Chat({
       {dragOver && (
         <div className="rounded-sm border border-dashed border-blue bg-blue-soft px-3 py-2 text-xs font-medium text-blue">
           Drop files to upload them straight into {personName}&rsquo;s workspace.
+        </div>
+      )}
+      {uploadSuggestion && !busy && (
+        <div
+          id="upload-workflow-suggestion"
+          role="status"
+          className="flex flex-wrap items-center justify-between gap-2 rounded-card border border-hairline bg-surface px-3 py-2 text-xs"
+        >
+          <div className="flex min-w-0 items-center gap-2">
+            <Sparkles className="size-3.5 shrink-0 text-dot-green" strokeWidth={1.5} aria-hidden />
+            <span className="truncate text-ink">
+              Ready: <span className="mono font-medium">{uploadSuggestion.file}</span>
+            </span>
+          </div>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <Button
+              type="button"
+              size="xs"
+              className="max-md:min-h-11 gap-1.5"
+              onClick={() => {
+                onDismissUploaded?.();
+                if (onRunPrompt) {
+                  onRunPrompt(uploadSuggestion.prompt);
+                } else {
+                  setDraft(uploadSuggestion.prompt);
+                  requestAnimationFrame(() => inputRef.current?.focus());
+                }
+              }}
+            >
+              {uploadSuggestion.label}
+            </Button>
+            <Button
+              type="button"
+              size="xs"
+              variant="outline"
+              className="max-md:min-h-11"
+              onClick={() => onOpenFile(uploadSuggestion.file)}
+            >
+              Inspect
+            </Button>
+            {onDismissUploaded && (
+              <Button
+                type="button"
+                size="icon-xs"
+                variant="ghost"
+                aria-label="Dismiss upload suggestion"
+                className="max-md:min-h-11 max-md:min-w-11"
+                onClick={onDismissUploaded}
+              >
+                <X className="size-3.5 text-icon" strokeWidth={1.5} aria-hidden />
+              </Button>
+            )}
+          </div>
         </div>
       )}
       <div className="flex flex-col gap-2 rounded-dialog border border-hairline bg-board/45 p-2.5 shadow-card motion-safe:transition-[border-color] motion-safe:duration-(--dur-reveal) motion-safe:ease-(--ease-house)">
@@ -381,6 +466,7 @@ export function Chat({
                       notes={item.notes}
                       receiptId={threadId ?? undefined}
                       personName={personName}
+                      useServerExport={useServerExport}
                       onOpenFile={onOpenFile}
                     />
                   );
@@ -418,6 +504,7 @@ export function Chat({
             <LiveRunTimeline
               steps={liveTimeline}
               elapsedMs={liveElapsedMs}
+              startedMs={runStartedMs}
               streamMode={streamMode}
               cancelling={cancelling}
               onCancel={onCancel}

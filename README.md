@@ -61,17 +61,18 @@ Without a reachable local gateway or `ERGON_MODEL_API_KEY`, the UI shows an hone
 
 ## How it works
 
-- **Desk shell** — self-contained single-file bundles in `assets/`
-  (`index.html`, `phone.html`) with self-hosted **Geist** and **Geist Mono**
-  fonts, light-first House Frontend tokens, and full dark-mode parity. A
-  256px left rail (a gesture-friendly Vaul drawer under 768px and on `/phone`)
-  holds the active person desk, primary **New chat** action, `/` conversation
-  search filter, gliding conversation list, **Workspace files** (upload,
-  create, inspect, and download real files), **What my agent has learned**,
-  **My suite and the library**, **Add a person**, and **Settings** (live Model
-  provider config, Light/Dark `SegmentedControl`, and Update controls). The top
-  command bar switches across **Chat**, **Today** (with live pending-decision
-  count), and **Work Graph**, plus `Cmd/Ctrl+K` to jump straight to the task box.
+- **Desk shell** — self-contained single-file bundle in `assets/index.html`
+  served over `/` and `/phone` with `gzip` compression, strong `ETag` + `304 Not Modified`,
+  self-hosted **Geist** and **Geist Mono** fonts, light-first House Frontend tokens,
+  and full dark-mode parity. A 256px left rail (a gesture-friendly Vaul drawer under
+  768px and on `/phone`) holds the active person desk, primary **New chat** action,
+  `/` conversation search filter, gliding conversation list, **Scheduled routines**,
+  **Workflows**, **What my agent has learned**, **My suite**, **Add a person**, and
+  **Settings** (live Model provider config, Light/Dark `SegmentedControl`, Security
+  tripwires, Audit Bundle, and Update controls), paired with a collapsible right
+  **Workspace** inspector (`Files`, `History` side-by-side diff & restore, `Audit`).
+  The top command bar switches across **Chat**, **Today** (with live pending-decision
+  count), and **Work Graph**, plus `Cmd/Ctrl+K` for instant command palette search.
 - **Workspace File Viewer & Upload** — `GET /api/files`, `GET /api/files/content?path=...(&download=1)` (jailed through `sandbox_path_resolving` to block `..` traversal and symlink escapes), and `POST /api/files/upload`. Clicking any saved file pill or **Open** button across Chat, Today, Work Graph, or Workspace files renders real CSV tables, structured Markdown, formatted JSON, or plain text with one-click Download.
 - **Chat & Field-Book entries** — empty chats present role-tailored starter
   task cards with skill/tool chips, and the composer supports direct file
@@ -169,7 +170,7 @@ Without a reachable local gateway or `ERGON_MODEL_API_KEY`, the UI shows an hone
 ## Verification
 
 ```sh
-CARGO_BUILD_JOBS=2 cargo test          # 200 Rust unit, E2E, scale, scheduler/history, 12-workflow, tripwire & document tests
+CARGO_BUILD_JOBS=2 cargo test          # 208 Rust unit, E2E, scale, scheduler/history, 12-workflow, tripwire & document tests
 cd frontend && npm run check:ui        # Playwright E2E gate, graph probe, and worst-case replay
 ```
 

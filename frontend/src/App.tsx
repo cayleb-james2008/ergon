@@ -264,6 +264,13 @@ export function App() {
     desk.loadFiles();
   }, [desk]);
 
+  const openHistoryInspector = useCallback(() => {
+    setInspectorTab("history");
+    setInspectorOpen(true);
+    setMobileOpen(false);
+    desk.loadFiles();
+  }, [desk]);
+
   const handleResolveDecision = useCallback(
     async (id: string, action: "approve" | "deny", label: string) => {
       const url = `/api/decisions/${encodeURIComponent(id)}/${action}`;
@@ -839,6 +846,7 @@ export function App() {
               decisions={pendingDecisions}
               busy={desk.busy}
               cancelling={desk.cancelling}
+              runStartedMs={desk.runStartedMs}
               liveElapsedMs={desk.liveElapsedMs}
               streamMode={desk.streamMode}
               liveSteps={desk.liveSteps}
@@ -847,7 +855,15 @@ export function App() {
               setDraft={desk.setDraft}
               pendingNote={desk.pendingNote}
               starters={desk.starters}
+              lastUploaded={desk.lastUploaded}
+              onDismissUploaded={() => desk.setLastUploaded([])}
+              useServerExport={hasV050Api(desk.status, "receipts_export")}
               onSend={desk.send}
+              onRunPrompt={(prompt) => {
+                setFace("chat");
+                desk.setDraft(prompt);
+                requestAnimationFrame(() => inputRef.current?.focus());
+              }}
               onCancel={desk.cancelRun}
               onReview={() => switchFace("paper")}
               onResolveDecision={handleResolveDecision}
@@ -873,6 +889,7 @@ export function App() {
                 busy={desk.busy}
                 liveTimeline={desk.liveTimeline}
                 liveElapsedMs={desk.liveElapsedMs}
+                runStartedMs={desk.runStartedMs}
                 streamMode={desk.streamMode}
                 cancelling={desk.cancelling}
                 onCancel={desk.cancelRun}
@@ -987,6 +1004,7 @@ export function App() {
         onOpenWorkspaceSwitcher={() => setSwitcherOpen(true)}
         onOpenSettings={() => setSettingsOpen(true)}
         onOpenFiles={openFilesInspector}
+        onOpenHistory={openHistoryInspector}
         onOpenSkills={() => setSkillsOpen(true)}
         onOpenRoutines={() => setRoutinesOpen(true)}
         onOpenFile={(p) => setViewerPath(p)}
@@ -997,6 +1015,11 @@ export function App() {
         onRunSkill={(sk) => {
           setFace("chat");
           desk.setDraft(sk.sample_prompt || `Run ${sk.title}`);
+          requestAnimationFrame(() => inputRef.current?.focus());
+        }}
+        onRunPrompt={(prompt) => {
+          setFace("chat");
+          desk.setDraft(prompt);
           requestAnimationFrame(() => inputRef.current?.focus());
         }}
         onRunRoutine={(rt) => {
@@ -1123,6 +1146,12 @@ export function App() {
           setViewerPath(null);
           setFace("chat");
           desk.setDraft(`Review ${p} and summarize key findings.`);
+          requestAnimationFrame(() => inputRef.current?.focus());
+        }}
+        onRunWorkflow={(prompt) => {
+          setViewerPath(null);
+          setFace("chat");
+          desk.setDraft(prompt);
           requestAnimationFrame(() => inputRef.current?.focus());
         }}
         onRestored={() => {

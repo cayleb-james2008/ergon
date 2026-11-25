@@ -1,6 +1,6 @@
 // Plain words, file-type glyph helpers, starter cards, and update error translations.
 import { File, FileCode, FileImage, FileSpreadsheet, FileText } from "lucide-react";
-import type { SuiteItem, Update } from "./api";
+import type { SuiteItem, Update, WorkspaceFile } from "./api";
 
 export type StarterCard = {
   label: string;
@@ -11,15 +11,124 @@ export type StarterCard = {
   skill: string;
 };
 
-export function buildStarterCards(installed: SuiteItem[], role: string): StarterCard[] {
+export type DetectedWorkflow = {
+  skillId: string;
+  label: string;
+  file: string;
+  prompt: string;
+};
+
+/** Picks the highest-leverage built-in workflow for a workspace file from its name & extension. */
+export function detectWorkflowForFile(path: string): DetectedWorkflow | null {
+  const clean = String(path || "").trim();
+  if (!clean) return null;
+  const low = clean.toLowerCase();
+  const ext = low.split(".").pop() || "";
+
+  if (ext === "csv" || ext === "tsv" || ext === "xlsx" || ext === "xls") {
+    if (/(expense|invoice|ledger|spend|budget|receipt|ap|ar|payout|billing|cost)/.test(low)) {
+      return {
+        skillId: "reconcile_ledger",
+        label: "Reconcile ledger",
+        file: clean,
+        prompt: `Reconcile ${clean} with reconcile_ledger, flag duplicates or missing receipts, and export a verified Excel (.xlsx) workbook`,
+      };
+    }
+    return {
+      skillId: "clean_dataset",
+      label: "Clean & summarize sheet",
+      file: clean,
+      prompt: `Clean and profile ${clean} with clean_dataset, normalize columns, and export a clean Excel (.xlsx) summary`,
+    };
+  }
+  if (ext === "pdf" || ext === "docx" || ext === "doc") {
+    if (/(contract|nda|msa|agreement|terms|lease|vendor|policy|clause)/.test(low)) {
+      return {
+        skillId: "audit_contract",
+        label: "Audit contract",
+        file: clean,
+        prompt: `Audit ${clean} with audit_contract for risks, missing clauses, and action owners`,
+      };
+    }
+    return {
+      skillId: "extract_tables",
+      label: "Extract & summarize",
+      file: clean,
+      prompt: `Read ${clean}, extract structured tables to CSV with extract_tables, and summarize key takeaways`,
+    };
+  }
+  if (ext === "md" || ext === "markdown" || ext === "txt" || ext === "log") {
+    if (/(meeting|standup|sync|call|transcript|agenda|minutes)/.test(low)) {
+      return {
+        skillId: "summarize_meeting",
+        label: "Summarize meeting",
+        file: clean,
+        prompt: `Summarize ${clean} with summarize_meeting into decisions, action items, and owners, then export as Word (.docx)`,
+      };
+    }
+    if (/(inbox|email|mail|triage|ticket|support)/.test(low)) {
+      return {
+        skillId: "triage_inbox",
+        label: "Triage inbox",
+        file: clean,
+        prompt: `Triage ${clean} with triage_inbox into Urgent, Action, and FYI with suggested replies`,
+      };
+    }
+    if (/(contract|nda|msa|agreement|terms)/.test(low)) {
+      return {
+        skillId: "audit_contract",
+        label: "Audit contract",
+        file: clean,
+        prompt: `Audit ${clean} with audit_contract for risks, missing clauses, and action owners`,
+      };
+    }
+    return {
+      skillId: "write_document",
+      label: "Polish to Word",
+      file: clean,
+      prompt: `Tidy ${clean} into an executive-ready summary document and export as Word (.docx)`,
+    };
+  }
+  if (ext === "json") {
+    return {
+      skillId: "clean_dataset",
+      label: "Analyze JSON",
+      file: clean,
+      prompt: `Inspect ${clean}, extract key structured records into a clean CSV/Markdown summary, and flag anomalies`,
+    };
+  }
+  return null;
+}
+
+/** Finds the single best next workflow across the active workspace's files. */
+export function detectWorkspaceWorkflow(files: WorkspaceFile[]): DetectedWorkflow | null {
+  if (!Array.isArray(files) || files.length === 0) return null;
+  for (const f of files) {
+    if (!f?.path || /(-reconciled|-audit|-summary|-cleaned)\./i.test(f.path)) continue;
+    const hit = detectWorkflowForFile(f.path);
+    if (hit) return hit;
+  }
+  return detectWorkflowForFile(files[0].path);
+}
+
+export function buildStarterCards(installed: SuiteItem[], role: string, files: WorkspaceFile[] = []): StarterCard[] {
   const safeRole = typeof role === "string" ? role.trim() : "";
+  const docFile = files.find((f) => /\.(md|markdown|txt)$/i.test(f.path) && !/(summary|brief|audit)\./i.test(f.path));
+  const sheetFile = files.find((f) => /\.(csv|tsv|xlsx)$/i.test(f.path) && !/-reconciled\./i.test(f.path));
+  const contractFile = files.find((f) => /(contract|nda|msa|agreement|vendor|policy)/i.test(f.path))
+    || files.find((f) => /\.(pdf|docx)$/i.test(f.path));
+
   const cards: StarterCard[] = [
     {
       label: "Summarize to Word",
       category: "Word (.docx)",
       tone: "ops",
-      prompt: "Tidy my notes into a summary document and export as Word",
-      detail: "Reads workspace notes, writes Summary.md, and prepares a formatted Word deliverable.",
+      prompt: docFile
+        ? `Tidy ${docFile.path} into a summary document and export as Word`
+        : "Tidy my notes into a summary document and export as Word",
+      detail: docFile
+        ? `Reads ${docFile.path}, writes a clean summary, and prepares a formatted Word (.docx) deliverable.`
+        : "Reads workspace notes, writes Summary.md, and prepares a formatted Word deliverable.",
       skill: "write_document",
     },
   ];
@@ -40,16 +149,24 @@ export function buildStarterCards(installed: SuiteItem[], role: string): Starter
     label: "Reconcile to Excel",
     category: "Excel (.xlsx)",
     tone: "mint",
-    prompt: "Reconcile expenses into a clean spreadsheet and export as Excel",
-    detail: "Checks line-item totals twice, saves a verified CSV, and exports an .xlsx workbook.",
+    prompt: sheetFile
+      ? `Reconcile ${sheetFile.path} into a clean spreadsheet and export as Excel`
+      : "Reconcile expenses into a clean spreadsheet and export as Excel",
+    detail: sheetFile
+      ? `Audits ${sheetFile.path}, checks line-item totals twice, and exports an .xlsx workbook.`
+      : "Checks line-item totals twice, saves a verified CSV, and exports an .xlsx workbook.",
     skill: "make_spreadsheet",
   });
   cards.push({
     label: "Audit contract",
     category: safeRole ? `${safeRole} audit` : "Contract audit",
     tone: "plan",
-    prompt: "Audit my workspace documents for risks, missing clauses, and action owners",
-    detail: "Scans contracts and briefs, flags gaps with exact line citations, and builds an audit report.",
+    prompt: contractFile
+      ? `Audit ${contractFile.path} for risks, missing clauses, and action owners`
+      : "Audit my workspace documents for risks, missing clauses, and action owners",
+    detail: contractFile
+      ? `Scans ${contractFile.path}, flags gaps with exact line citations, and builds an audit report.`
+      : "Scans contracts and briefs, flags gaps with exact line citations, and builds an audit report.",
     skill: "audit_contract",
   });
   cards.push({

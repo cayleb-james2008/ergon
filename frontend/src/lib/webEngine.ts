@@ -1787,15 +1787,16 @@ export async function installBrowserEngine(): Promise<void> {
     const st = activeStore();
     const byok = loadByok();
 
-    if (method === "GET" && path === "/api/version") return jsonRes({ name: "ergon", version: "0.7.0" });
-    if (method === "GET" && path === "/api/update") return jsonRes({ current: "0.7.0", available: false, mode: "off", checked_at: Math.floor(Date.now() / 1000) });
+    if (method === "GET" && path === "/api/version") return jsonRes({ name: "ergon", version: "0.11.0" });
+    if (method === "GET" && path === "/api/update") return jsonRes({ current: "0.11.0", available: false, mode: "off", checked_at: Math.floor(Date.now() / 1000) });
     if (method === "GET" && path === "/api/status") {
       return jsonRes({
-        version: "0.7.0",
+        version: "0.11.0",
         model_configured: true,
         model: byok.engine_mode === "byok" && byok.model_id ? byok.model_id : "browser-workspace-engine",
         model_base_url: byok.engine_mode === "byok" ? byok.model_base_url : "indexeddb://local",
         engine_mode: byok.engine_mode,
+        scheduler_enabled: true,
         capabilities: {
           sse: true,
           skills: true,
@@ -1995,6 +1996,10 @@ export async function installBrowserEngine(): Promise<void> {
         ts: x.ts,
       }));
       return jsonRes({ total: receipts.length, receipts });
+    }
+    if (method === "GET" && path === "/api/receipts/verify") {
+      const head = await sha256Hex(JSON.stringify(st.work.map((w) => w.id || w.thread_id || w.ts)));
+      return jsonRes({ total: st.work.length, valid: true, head_hash: head });
     }
     if (method === "GET" && path.startsWith("/api/receipts/") && path.endsWith("/export")) {
       const rid = decodeURIComponent(path.slice("/api/receipts/".length, -"/export".length));
@@ -2235,7 +2240,20 @@ export async function installBrowserEngine(): Promise<void> {
     if (method === "GET" && path === "/api/graph") return jsonRes(buildGraph());
     if (method === "GET" && path === "/api/threads") {
       return jsonRes({
-        threads: st.threads.map((t) => ({ id: t.id, title: t.title, messages: t.messages.length })),
+        threads: st.threads.map((t) => {
+          const hasParked = t.messages.some(
+            (m) => m.role === "step" && /parked for your person|has NOT been deleted yet/.test(m.content)
+          );
+          const hasResolved = t.messages.some(
+            (m) => m.role === "step" && /was deleted after you approved it|was kept because you declined/.test(m.content)
+          );
+          const state = hasParked && !hasResolved
+            ? "waiting"
+            : t.messages.some((m) => m.role === "assistant")
+              ? "finished"
+              : "none";
+          return { id: t.id, title: t.title, messages: t.messages.length, state };
+        }),
       });
     }
     if (method === "POST" && path === "/api/threads") {

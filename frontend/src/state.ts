@@ -208,13 +208,15 @@ export function useErgon() {
   const [draft, setDraftState] = useState("");
   const [pendingNote, setPendingNote] = useState(false);
   const [sideError, setSideError] = useState("");
-  const [starters, setStarters] = useState<StarterCard[]>(() => buildStarterCards([], ""));
+  const [starters, setStarters] = useState<StarterCard[]>(() => buildStarterCards([], "", []));
   const [recovered, setRecovered] = useState<string[]>([]);
   const [recent, setRecent] = useState<Recent[]>([]);
   const [todayCount, setTodayCount] = useState(0);
   const [learnedCount, setLearnedCount] = useState(0);
   const [suiteCount, setSuiteCount] = useState(0);
   const [files, setFiles] = useState<WorkspaceFile[]>([]);
+  const filesRef = useRef<WorkspaceFile[]>([]);
+  const [lastUploaded, setLastUploaded] = useState<string[]>([]);
   const [skills, setSkills] = useState<SkillMeta[]>(() => CANONICAL_SKILLS);
   const [routines, setRoutines] = useState<Routine[]>(() => loadLocalRoutines());
   const [scheduler, setScheduler] = useState<SchedulerStatus | null>(null);
@@ -224,6 +226,10 @@ export function useErgon() {
   useEffect(() => {
     statusRef.current = status;
   }, [status]);
+
+  useEffect(() => {
+    filesRef.current = files;
+  }, [files]);
 
   const setThread = (id: string | null) => { threadRef.current = id; setThreadIdState(id); };
   const draftKey = (id: string | null) => DRAFT + (id || "new");
@@ -458,6 +464,9 @@ export function useErgon() {
     if (tooBig.length) {
       toast.error(`${tooBig.join(", ")} ${tooBig.length === 1 ? "is" : "are"} over 25 MB, too large to upload.`);
     }
+    if (savedNames.length > 0) {
+      setLastUploaded(savedNames);
+    }
     if (okCount === 1) {
       toast.success(`Saved ${savedNames[0]} to your workspace.`);
     } else if (okCount > 1) {
@@ -474,11 +483,24 @@ export function useErgon() {
     setThreadsError(false);
     const clean = r.data.threads.filter((t): t is ThreadRow => !!t && typeof t === "object" && typeof t.id === "string");
     setThreads(clean);
-    const found = await Promise.all(clean.slice(0, 40).map(async (t) => {
-      const th = await call<Thread>("/api/threads/" + encodeURIComponent(t.id));
-      return [t.id, th.ok && Array.isArray(th.data.messages) ? threadState(th.data.messages) : "none"] as const;
-    }));
-    setStates(Object.fromEntries(found));
+    const slice = clean.slice(0, 40);
+    const nextStates: Record<string, TState> = {};
+    const missing: ThreadRow[] = [];
+    for (const t of slice) {
+      if (t.state === "waiting" || t.state === "finished" || t.state === "none") {
+        nextStates[t.id] = t.state;
+      } else {
+        missing.push(t);
+      }
+    }
+    if (missing.length > 0) {
+      const found = await Promise.all(missing.map(async (t) => {
+        const th = await call<Thread>("/api/threads/" + encodeURIComponent(t.id));
+        return [t.id, th.ok && Array.isArray(th.data.messages) ? threadState(th.data.messages) : "none"] as const;
+      }));
+      for (const [id, st] of found) nextStates[id] = st;
+    }
+    setStates(nextStates);
   }, []);
 
   const loadRecent = useCallback(async () => {
@@ -516,7 +538,7 @@ export function useErgon() {
   const loadStarters = useCallback(async (role: string) => {
     const r = await call<{ installed?: SuiteItem[] }>("/api/suite");
     const items = r.ok && Array.isArray(r.data.installed) ? r.data.installed : [];
-    setStarters(buildStarterCards(items, role));
+    setStarters(buildStarterCards(items, role, filesRef.current));
     setSuiteCount(items.length);
   }, []);
 
@@ -604,10 +626,6 @@ export function useErgon() {
     let cancelled = false;
     let pollTimer: number | null = null;
     let es: EventSource | null = null;
-
-    const elapsedTick = window.setInterval(() => {
-      if (!cancelled) setLiveElapsedMs(Math.max(0, Date.now() - started));
-    }, 250);
 
     const applyStatusPayload = (payload: Partial<LiveRunStatus>) => {
       if (cancelled) return;
@@ -733,7 +751,6 @@ export function useErgon() {
 
     return () => {
       cancelled = true;
-      window.clearInterval(elapsedTick);
       if (pollTimer !== null) window.clearInterval(pollTimer);
       if (es) es.close();
     };
@@ -927,13 +944,13 @@ export function useErgon() {
       loadSkills();
       loadRoutines();
     }
-  }, [status, loadStarters, loadSkills, loadRoutines]);
+  }, [status, files, loadStarters, loadSkills, loadRoutines]);
 
   return {
     status, runFailed, people, threads, threadsError, states, threadId, messages,
-    busy, activeRunId, liveElapsedMs, streamMode, cancelling, liveSteps, liveTimeline,
+    busy, activeRunId, runStartedMs, liveElapsedMs, streamMode, cancelling, liveSteps, liveTimeline,
     draft, setDraft, pendingNote, sideError, starters, recovered, recent,
-    todayCount, learnedCount, suiteCount, files, skills, routines, scheduler, routineHistoryRev,
+    todayCount, learnedCount, suiteCount, files, lastUploaded, setLastUploaded, skills, routines, scheduler, routineHistoryRev,
     send, sendPrompt, cancelRun, openThread, newThread, switchPerson, refreshPerson, showRun,
     loadThreads, loadStatus, loadPeople, refreshCounts, loadRecent, loadStarters,
     loadFiles, uploadFile, uploadFiles, loadSkills, loadRoutines, createRoutine, deleteRoutine,
