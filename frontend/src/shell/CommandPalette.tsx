@@ -5,7 +5,7 @@
 // - Workspace Files (500+ ready, capped visible slice)
 // - Receipts & Conversations (5,000+ ready + debounced server GET /api/search?q=... on v0.5.0+)
 // - Recurring Routines (Run Now or manage)
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowRight,
   Blocks,
@@ -295,15 +295,23 @@ export function CommandPalette({
     });
   }, [remoteHits, matchedFiles, matchedReceipts]);
 
+  const ranRef = useRef(false);
   const runAndClose = (fn: () => void) => {
+    ranRef.current = true;
     onOpenChange(false);
-    setTimeout(fn, 20);
+    setTimeout(fn, 30);
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={(next) => { if (next) ranRef.current = false; onOpenChange(next); }}>
       <DialogContent
         id="command-palette-dialog"
+        onCloseAutoFocus={(e) => {
+          if (ranRef.current) {
+            e.preventDefault();
+            ranRef.current = false;
+          }
+        }}
         className="max-h-[82vh] max-w-2xl overflow-hidden border border-hairline bg-surface p-0 text-ink shadow-lift"
       >
         <DialogTitle className="sr-only">Command palette</DialogTitle>
@@ -480,7 +488,7 @@ export function CommandPalette({
           <div className="flex flex-wrap items-center justify-between gap-2 border-t border-hairline bg-board/50 px-3 py-2 text-xs text-ink-2">
             <span>Use ↑↓ to move, Enter to run, Esc to close</span>
             <span className="mono">
-              {files.length} files · {skills.length} workflows · {receipts.length} receipts
+              {files.length} files, {skills.length} workflows, {receipts.length} receipts
             </span>
           </div>
         </Command>

@@ -29,7 +29,7 @@ use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpListener;
 use std::path::{Component, Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 pub const BROWSER_UA: &str = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
@@ -352,6 +352,27 @@ fn normalize_absolute(p: &Path) -> PathBuf {
         }
     }
     out
+}
+
+static FILE_TMP_SEQ: AtomicU64 = AtomicU64::new(0);
+
+/// Atomically write `bytes` to `full` using a unique temporary file in the same
+/// parent directory, cleaning up on failure so concurrent writes never collide.
+pub(crate) fn atomic_write_bytes(full: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    if let Some(parent) = full.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let seq = FILE_TMP_SEQ.fetch_add(1, Ordering::Relaxed);
+    let file_name = full
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("file");
+    let tmp = full.with_file_name(format!(".{file_name}.ergon-{seq}.tmp"));
+    if let Err(e) = std::fs::write(&tmp, bytes).and_then(|_| std::fs::rename(&tmp, full)) {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(e);
+    }
+    Ok(())
 }
 
 /// Resolve `rel` inside `root`, rejecting absolute paths and any escape
@@ -1476,11 +1497,8 @@ pub fn execute_tool(cfg: &Config, name: &str, args: &Value) -> Result<String, St
             let rel = args["path"].as_str().ok_or("write_file needs args.path")?;
             let content = args["content"].as_str().ok_or("write_file needs args.content")?;
             let full = sandbox_path(&cfg.workspace_dir, rel)?;
-            if let Some(parent) = full.parent() {
-                std::fs::create_dir_all(parent).map_err(|e| format!("write_file mkdir: {e}"))?;
-            }
             let _ = file_history::record_revision(&cfg.data_dir, &cfg.workspace_dir, rel, "write_file");
-            std::fs::write(&full, content).map_err(|e| format!("write_file {rel}: {e}"))?;
+            atomic_write_bytes(&full, content.as_bytes()).map_err(|e| format!("write_file {rel}: {e}"))?;
             Ok(format!("wrote {rel} ({} bytes)", content.len()))
         }
         "fetch_url" => {
@@ -1699,14 +1717,8 @@ pub fn export_workspace_file(
         }
         docs::rows_to_xlsx(&rows, &stem_name, &stem_name)
     };
-    if let Some(parent) = out_full.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| format!("export_file mkdir: {e}"))?;
-    }
     let _ = file_history::record_revision(&cfg.data_dir, &cfg.workspace_dir, &out, "export");
-    let tmp = out_full.with_extension(format!("{want_ext}.tmp"));
-    std::fs::write(&tmp, &bytes)
-        .and_then(|_| std::fs::rename(&tmp, &out_full))
-        .map_err(|e| format!("export_file {out}: {e}"))?;
+    atomic_write_bytes(&out_full, &bytes).map_err(|e| format!("export_file {out}: {e}"))?;
     Ok((out, bytes.len() as u64, if to_word { "a Word document" } else { "an Excel workbook" }))
 }
 
@@ -3620,6 +3632,10 @@ fn start_scheduler_thread(state: &Arc<AppState>) {
                 .clone();
             let now_ms = records::now_millis();
             for person in people {
+                let p_cfg = st.cfg.person_config(&person);
+                if !routines::routines_path(&p_cfg.data_dir).exists() {
+                    continue;
+                }
                 let rt = runtime_for(&st, &person);
                 let eff = effective_cfg(&st, &rt);
                 if !eff.model_configured() {
@@ -3701,11 +3717,33 @@ fn serve_inner(
     if state.scheduler_enabled {
         start_scheduler_thread(&state);
     }
+    const MAX_ACTIVE_CONNS: usize = 128;
+    let active_conns = Arc::new(AtomicUsize::new(0));
+    struct ConnGuard(Arc<AtomicUsize>);
+    impl Drop for ConnGuard {
+        fn drop(&mut self) {
+            self.0.fetch_sub(1, Ordering::Relaxed);
+        }
+    }
     for stream in listener.incoming() {
         match stream {
-            Ok(stream) => {
+            Ok(mut stream) => {
+                let prev = active_conns.fetch_add(1, Ordering::Relaxed);
+                if prev >= MAX_ACTIVE_CONNS {
+                    active_conns.fetch_sub(1, Ordering::Relaxed);
+                    let body = r#"{"error":"server busy — too many concurrent connections"}"#;
+                    let resp = format!(
+                        "HTTP/1.1 503 Service Unavailable\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                        body.len()
+                    );
+                    let _ = stream.write_all(resp.as_bytes());
+                    let _ = stream.flush();
+                    continue;
+                }
+                let guard = ConnGuard(active_conns.clone());
                 let state = state.clone();
                 std::thread::spawn(move || {
+                    let _guard = guard;
                     let _ = handle_connection(stream, &state);
                 });
             }
@@ -3776,7 +3814,9 @@ fn read_request(stream: &mut std::net::TcpStream) -> Option<Request> {
     };
     let path = path_part.to_string();
     let query = query_part.to_string();
-    let mut content_length: usize = 0;
+    let mut content_length: Option<usize> = None;
+    let mut bad_length = false;
+    let mut chunked = false;
     let mut session: Option<String> = None;
     let mut gate: Option<String> = None;
     let mut content_type = String::new();
@@ -3802,7 +3842,23 @@ fn read_request(stream: &mut std::net::TcpStream) -> Option<Request> {
         head_bytes += n;
         let lower = line.to_lowercase();
         if let Some(v) = lower.strip_prefix("content-length:") {
-            content_length = v.trim().parse().unwrap_or(0);
+            match v.trim().parse::<usize>() {
+                Ok(len) => {
+                    if let Some(prev) = content_length {
+                        if prev != len {
+                            bad_length = true;
+                        }
+                    } else {
+                        content_length = Some(len);
+                    }
+                }
+                Err(_) => bad_length = true,
+            }
+        }
+        if let Some(v) = lower.strip_prefix("transfer-encoding:") {
+            if v.contains("chunked") {
+                chunked = true;
+            }
         }
         if let Some(v) = lower.strip_prefix("content-type:") {
             content_type = v.trim().to_string();
@@ -3852,6 +3908,21 @@ fn read_request(stream: &mut std::net::TcpStream) -> Option<Request> {
             }
         }
     }
+    if bad_length || chunked {
+        let msg = if chunked {
+            r#"{"error":"chunked transfer-encoding is not supported"}"#
+        } else {
+            r#"{"error":"invalid Content-Length header"}"#
+        };
+        let response = format!(
+            "HTTP/1.1 400 Bad Request\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{msg}",
+            msg.len()
+        );
+        let _ = stream.write_all(response.as_bytes());
+        let _ = stream.flush();
+        return None;
+    }
+    let content_length = content_length.unwrap_or(0);
     let body_limit = if method == "POST" && path == "/api/files/upload" {
         MAX_UPLOAD_BODY_BYTES
     } else {
@@ -3952,15 +4023,16 @@ pub fn parked_note(path: &str) -> String {
 /// Whether a Host header names this machine (DNS-rebinding guard).
 fn host_name(host: &str) -> String {
     match host.strip_prefix('[') {
-        Some(rest) => format!("[{}]", rest.split(']').next().unwrap_or("")),
-        None => host.split(':').next().unwrap_or("").to_string(),
+        Some(rest) => format!("[{}]", rest.split(']').next().unwrap_or("")).to_ascii_lowercase(),
+        None => host.split(':').next().unwrap_or("").to_ascii_lowercase(),
     }
 }
 
 /// Whether a Host names this machine or one the operator allowed (EH1).
 fn host_allowed(host: &str, allowed: &[String]) -> bool {
     let name = host_name(host);
-    matches!(name.as_str(), "localhost" | "127.0.0.1" | "[::1]") || allowed.contains(&name)
+    matches!(name.as_str(), "localhost" | "127.0.0.1" | "[::1]")
+        || allowed.iter().any(|a| a.eq_ignore_ascii_case(&name))
 }
 
 /// Refuses a request a page on another site could have sent (E1), with
@@ -3983,7 +4055,12 @@ fn refusal(req: &Request, gated: bool, allowed: &[String]) -> Option<(u16, &'sta
     }
     if let Some(origin) = &req.origin {
         let authority = origin.split("://").nth(1).unwrap_or("").split('/').next().unwrap_or("");
-        if req.host.as_deref() != Some(authority) {
+        let matches = req
+            .host
+            .as_deref()
+            .map(|h| h.eq_ignore_ascii_case(authority))
+            .unwrap_or(false);
+        if !matches {
             return Some((403, "cross-origin requests are refused"));
         }
     }
@@ -4313,13 +4390,11 @@ fn respond_safety_stop(
     respond_json(stream, 200, &v)
 }
 
-/// The CSP for one embedded desk page, computed once from its own inline
+/// The CSP for the embedded desk page, computed once from its own inline
 /// scripts (see `tripwire::csp_for_html`).
 fn page_csp(page: &'static str) -> String {
     static INDEX: std::sync::OnceLock<String> = std::sync::OnceLock::new();
-    static PHONE: std::sync::OnceLock<String> = std::sync::OnceLock::new();
-    let cell = if std::ptr::eq(page, ui::INDEX_HTML) { &INDEX } else { &PHONE };
-    cell.get_or_init(|| tripwire::csp_for_html(page)).clone()
+    INDEX.get_or_init(|| tripwire::csp_for_html(page)).clone()
 }
 
 /// Serve a desk page (`/` or `/phone`). First visit (or an unknown,
@@ -5434,14 +5509,12 @@ fn handle_connection(mut stream: std::net::TcpStream, state: &AppState) -> std::
                     &json!({"error": "files over 25 MB cannot be uploaded"}),
                 );
             }
-            if let Some(parent) = full.parent() {
-                if let Err(e) = std::fs::create_dir_all(parent) {
-                    return respond_json(
-                        &mut stream,
-                        500,
-                        &json!({"error": format!("create parent dir: {e}")}),
-                    );
-                }
+            if full.symlink_metadata().is_ok_and(|md| md.file_type().is_symlink()) {
+                return respond_json(
+                    &mut stream,
+                    403,
+                    &json!({"error": "cannot overwrite symlink"}),
+                );
             }
             let _ = file_history::record_revision(
                 &runtime.cfg.data_dir,
@@ -5449,9 +5522,7 @@ fn handle_connection(mut stream: std::net::TcpStream, state: &AppState) -> std::
                 &raw_rel,
                 "upload",
             );
-            let tmp = full.with_extension("upload.tmp");
-            if let Err(e) = std::fs::write(&tmp, &bytes).and_then(|_| std::fs::rename(&tmp, &full)) {
-                let _ = std::fs::remove_file(&tmp);
+            if let Err(e) = atomic_write_bytes(&full, &bytes) {
                 return respond_json(
                     &mut stream,
                     500,
@@ -5573,7 +5644,7 @@ fn handle_connection(mut stream: std::net::TcpStream, state: &AppState) -> std::
             200,
             &json!({"person_id": person.id, "content": runtime.cfg.read_memory()}),
         ),
-        ("GET", "/phone") => serve_page(&mut stream, state, &req, &person, ui::PHONE_HTML),
+        ("GET", "/phone") => serve_page(&mut stream, state, &req, &person, ui::INDEX_HTML),
         ("GET", "/api/library") => {
             let lib = state.library.lock().unwrap();
             respond_json(
@@ -6124,5 +6195,86 @@ fn handle_connection(mut stream: std::net::TcpStream, state: &AppState) -> std::
             }
         }
         _ => respond_json(&mut stream, 404, &json!({"error": "not found"})),
+    }
+}
+
+#[cfg(test)]
+mod v010_hardening_tests {
+    use super::*;
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+
+    #[test]
+    fn atomic_write_bytes_writes_and_replaces_cleanly() {
+        let dir = std::env::temp_dir().join(format!(
+            "ergon-atomic-test-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let path = dir.join("nested").join("sample.txt");
+        atomic_write_bytes(&path, b"first").unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), b"first");
+        atomic_write_bytes(&path, b"second").unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), b"second");
+        let leftovers: Vec<_> = std::fs::read_dir(path.parent().unwrap())
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_name().to_string_lossy().ends_with(".tmp"))
+            .collect();
+        assert!(leftovers.is_empty(), "temp file leaked: {leftovers:?}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn host_and_origin_checks_are_case_insensitive() {
+        let allowed = vec!["Desk.TailNet.ts.net".to_string()];
+        assert!(host_allowed("LOCALHOST:8787", &allowed));
+        assert!(host_allowed("desk.tailnet.ts.net:8787", &allowed));
+        assert!(!host_allowed("evil.example:8787", &allowed));
+        let req = Request {
+            method: "POST".into(),
+            path: "/api/threads".into(),
+            query: String::new(),
+            body: b"{}".to_vec(),
+            session: None,
+            gate: None,
+            content_type: "application/json".into(),
+            origin: Some("http://LocalHost:8787".into()),
+            host: Some("localhost:8787".into()),
+            sec_fetch_site: Some("same-origin".into()),
+            authorization: None,
+            user_agent: None,
+            cookie_raw: None,
+            forwarded_for: None,
+        };
+        assert!(refusal(&req, false, &[]).is_none());
+    }
+
+    #[test]
+    fn read_request_rejects_conflicting_content_length_and_chunked() {
+        for raw in [
+            "POST /api/threads HTTP/1.1\r\nHost: localhost:8787\r\nContent-Length: 2\r\nContent-Length: 5\r\n\r\n{}",
+            "POST /api/threads HTTP/1.1\r\nHost: localhost:8787\r\nContent-Length: nope\r\n\r\n",
+            "POST /api/threads HTTP/1.1\r\nHost: localhost:8787\r\nTransfer-Encoding: chunked\r\n\r\n2\r\n{}\r\n0\r\n\r\n",
+        ] {
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            let addr = listener.local_addr().unwrap();
+            let raw_owned = raw.to_string();
+            let handle = std::thread::spawn(move || {
+                let mut client = std::net::TcpStream::connect(addr).unwrap();
+                client.write_all(raw_owned.as_bytes()).unwrap();
+                let mut resp = String::new();
+                let _ = client.read_to_string(&mut resp);
+                resp
+            });
+            let (mut server, _) = listener.accept().unwrap();
+            let parsed = read_request(&mut server);
+            drop(server);
+            let resp = handle.join().unwrap();
+            assert!(parsed.is_none());
+            assert!(resp.starts_with("HTTP/1.1 400 Bad Request"), "got: {resp}");
+        }
     }
 }

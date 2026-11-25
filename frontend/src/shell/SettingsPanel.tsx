@@ -8,16 +8,7 @@
 import { useEffect, useState } from "react";
 import { Cpu, ExternalLink, FileCheck2, Moon, SlidersHorizontal, Sun, UserPlus, Users } from "lucide-react";
 import { toast } from "sonner";
-import {
-  MorphingDialog,
-  MorphingDialogClose,
-  MorphingDialogContainer,
-  MorphingDialogContent,
-  MorphingDialogDescription,
-  MorphingDialogTitle,
-  MorphingDialogTrigger,
-  useMorphingDialog,
-} from "@/components/ui/morphing-dialog";
+import { PanelModal, usePanelModalClose } from "@/shell/PanelModal";
 import { SegmentedControl, SegmentedControlItem } from "@/components/ui/segmented-control";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -33,7 +24,6 @@ import {
   type Person,
   type Status,
 } from "@/lib/api";
-import { open as openPreset } from "@/motion";
 
 const TRIGGER = "focus-ring flex w-full min-h-11 md:min-h-9 items-center justify-between gap-1.5 rounded-sm px-1.5 text-left text-sm text-ink outline-none hover:bg-board";
 
@@ -64,7 +54,7 @@ function SettingsBody({
   onConfigSaved: () => void;
   u: ReturnType<typeof useUpdate>;
 }) {
-  const { isOpen, setIsOpen } = useMorphingDialog();
+  const { isOpen, setIsOpen } = usePanelModalClose();
   const webMode = isWebStandalone();
   const [cfg, setCfg] = useState<ModelConfigPayload | null>(null);
   const [baseUrl, setBaseUrl] = useState("");
@@ -521,39 +511,36 @@ export function SettingsPanel({
   hideTrigger?: boolean;
 }) {
   return (
-    <MorphingDialog transition={openPreset} open={open} onOpenChange={onOpenChange}>
-      {!hideTrigger && (
-        <MorphingDialogTrigger thing="settings-btn" className={TRIGGER} style={{ borderRadius: 7 }}>
-          <span className="flex min-w-0 items-center gap-1.5">
-            <SlidersHorizontal className="size-3.5 shrink-0 text-icon" strokeWidth={1.5} aria-hidden />
-            <span className="leading-tight">Settings</span>
-          </span>
-        </MorphingDialogTrigger>
-      )}
-      <MorphingDialogContainer>
-        <MorphingDialogContent
-          style={{ borderRadius: 18 }}
-          className="relative mx-4 flex max-h-[84vh] w-[540px] max-w-[calc(100%-2rem)] flex-col gap-3 overflow-y-auto border border-hairline bg-surface p-5 text-ink shadow-lift"
-        >
-          <MorphingDialogClose className="focus-ring absolute right-3 top-3 grid size-11 place-items-center rounded-sm text-icon outline-none hover:bg-board md:size-9" />
-          <MorphingDialogTitle className="pr-10 text-title font-medium text-ink">Settings</MorphingDialogTitle>
-          <MorphingDialogDescription disableLayoutAnimation className="text-sm text-ink-2">
-            <SettingsBody
-              theme={theme}
-              onTheme={onTheme}
-              status={status}
-              people={people}
-              activePerson={activePerson}
-              onRefreshPeople={onRefreshPeople}
-              onSwitchPerson={onSwitchPerson}
-              onAddPerson={onAddPerson}
-              onExportAuditBundle={onExportAuditBundle}
-              onConfigSaved={onConfigSaved}
-              u={u}
-            />
-          </MorphingDialogDescription>
-        </MorphingDialogContent>
-      </MorphingDialogContainer>
-    </MorphingDialog>
+    <PanelModal
+      open={open}
+      onOpenChange={onOpenChange}
+      title="Settings"
+      description="Appearance, workspaces, model configuration, security, and audit bundle export."
+      className="max-w-xl"
+      trigger={
+        !hideTrigger ? (
+          <button type="button" data-thing="settings-btn" className={TRIGGER} style={{ borderRadius: 7 }}>
+            <span className="flex min-w-0 items-center gap-1.5">
+              <SlidersHorizontal className="size-3.5 shrink-0 text-icon" strokeWidth={1.5} aria-hidden />
+              <span className="leading-tight">Settings</span>
+            </span>
+          </button>
+        ) : undefined
+      }
+    >
+      <SettingsBody
+        theme={theme}
+        onTheme={onTheme}
+        status={status}
+        people={people}
+        activePerson={activePerson}
+        onRefreshPeople={onRefreshPeople}
+        onSwitchPerson={onSwitchPerson}
+        onAddPerson={onAddPerson}
+        onExportAuditBundle={onExportAuditBundle}
+        onConfigSaved={onConfigSaved}
+        u={u}
+      />
+    </PanelModal>
   );
 }

@@ -1,18 +1,7 @@
-// Today's Desk (Morning Brief, Drag-and-Drop Workspace & High-Scale Operational Queue — v0.5.0):
-// - Morning brief headline with SlidingNumber counters
-// - Full-desk Drag-and-Drop Multi-File Upload + Workspace Files search card
-// - Live SSE Run Timeline right on Today when a Skill/Routine/Task is running
-// - Tremor 14-slot Task Outcome Tracker strip + Geist Mono completion metrics
-// - Waiting on you decision approval/decline band with plain consequence copy
-// - Virtualized / paginated Finished Work & Receipts ledger (5,000+ receipts ready) with instant search
-//   and one-click SHA-256 receipt export (.md / .json)
-// - Paginated Today so far (/api/today) chronological stream
-// - Proactive agent capability offers, learned preferences, and desk team roster
+// Today's Desk (Morning Brief, Drag-and-Drop Workspace & Operational Queue):
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AnimatePresence, motion } from "motion/react";
 import { toast } from "sonner";
 import {
-  ArrowUpRight,
   CheckCircle2,
   Clock,
   FileCheck2,
@@ -25,8 +14,6 @@ import {
   X,
   XCircle,
 } from "lucide-react";
-import { Tracker, type TrackerBlockProps } from "@/components/Tracker/Tracker";
-import { SlidingNumber } from "@/components/ui/sliding-number";
 import { Button } from "@/components/ui/button";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
 import { Pill } from "@/components/kibo-ui/pill";
@@ -51,7 +38,6 @@ import {
 import { exportReceiptDownload } from "@/lib/receiptExport";
 import { cn } from "@/lib/utils";
 import { normalizeFiles, relTime, threadMs } from "@/lib/words";
-import { dur, ease, layout } from "@/motion";
 
 const RECEIPTS_PAGE_SIZE = 20;
 const EVENTS_PAGE_SIZE = 10;
@@ -202,7 +188,7 @@ export function PaperSide({
             <h2 id="today-files-h" className="text-base font-medium text-ink">Workspace files</h2>
           </div>
           <span className="mono rounded-chip bg-track px-1.5 py-0.5 text-xs text-ink-2">
-            <SlidingNumber value={files.length} />
+            {files.length}
           </span>
         </div>
 
@@ -259,7 +245,7 @@ export function PaperSide({
                     <FileGlyph name={f.path} className="size-3.5" />
                     <span className="mono truncate text-xs">{f.path}</span>
                   </span>
-                  <ArrowUpRight className="size-3.5 shrink-0 text-icon" strokeWidth={1.5} aria-hidden />
+                  <span className="text-xs text-ink-3">Open</span>
                 </Button>
               </li>
             ))}
@@ -317,15 +303,10 @@ export function PaperSide({
             {failed ? "Offers could not be loaded. Retry the desk to try again." : "Loading offers…"}
           </p>
         )}
-        <AnimatePresence initial={false}>
+        <div className="flex flex-col gap-3">
           {(offers ?? []).map((o) => (
-            <motion.div
+            <div
               key={o.id}
-              layout
-              initial={{ opacity: 0, y: 6 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.98 }}
-              transition={{ duration: dur.enter, ease }}
               className="flex flex-col gap-2.5 rounded-sm border border-hairline bg-board/60 p-3.5"
             >
               <p className="text-sm font-medium leading-5 text-ink">{String(o.title ?? "Suggested capability")}</p>
@@ -347,9 +328,9 @@ export function PaperSide({
                   No, thanks
                 </Button>
               </div>
-            </motion.div>
+            </div>
           ))}
-        </AnimatePresence>
+        </div>
         {offers && !offers.length && (
           <p className="text-sm leading-5 text-ink-2">
             No offers right now. Your agent proposes a one-tap app when you ask for the same kind of work three times.
@@ -665,52 +646,6 @@ export function PaperFace({
     toast.success(`Exported ${res.filename} (sha256: ${res.sha256.slice(0, 12)}…)`);
   };
 
-  const trackerBlocks = useMemo<TrackerBlockProps[]>(() => {
-    const SLOTS = 14;
-    const real: { ts: number; color: string; tooltip: string }[] = [];
-    finished.slice(0, 60).forEach((f, idx) => {
-      const fl = normalizeFiles(f.files);
-      const filePart = fl.length ? ` · Saved ${fl.join(", ")}` : "";
-      real.push({
-        ts: typeof f.ts === "number" ? f.ts : idx + 1,
-        color: "bg-dot-green",
-        tooltip: `Finished: ${String(f.task ?? "Task")}${filePart}`,
-      });
-    });
-    pending.slice(0, 30).forEach((d, idx) => {
-      real.push({
-        ts: typeof d.ts === "number" ? d.ts : 1000 + idx,
-        color: "bg-dot-amber",
-        tooltip: `Waiting on you: ${String(d.summary ?? "Approval needed")}`,
-      });
-    });
-    stopped.slice(0, 30).forEach((s, idx) => {
-      real.push({
-        ts: typeof s.ts === "number" ? s.ts : 500 + idx,
-        color: "bg-dot-red",
-        tooltip: `Stopped early: ${String(s.task ?? "Task")}`,
-      });
-    });
-    real.sort((a, b) => a.ts - b.ts);
-    const recentSlice = real.slice(-SLOTS);
-    const padCount = Math.max(0, SLOTS - recentSlice.length);
-    const emptyBlocks: TrackerBlockProps[] = Array.from({ length: padCount }, (_, i) => ({
-      key: `empty-${i}`,
-      color: "bg-track",
-      tooltip: "Open run slot — no task recorded here yet",
-      hoverEffect: true,
-    }));
-    return [
-      ...emptyBlocks,
-      ...recentSlice.map((item, i) => ({
-        key: `run-${i}-${item.ts}`,
-        color: item.color,
-        tooltip: item.tooltip,
-        hoverEffect: true,
-      })),
-    ];
-  }, [finished, pending, stopped]);
-
   const sideColumn = (
     <PaperSide
       people={people}
@@ -755,7 +690,7 @@ export function PaperFace({
         >
           <Upload className="size-7 text-ink" strokeWidth={1.5} aria-hidden />
           <p className="text-base font-medium text-ink">Drop files onto Today to upload to your workspace</p>
-          <p className="mono text-xs text-ink-2">CSV · Markdown · JSON · TXT · TSV · LOG (multi-file supported)</p>
+          <p className="mono text-xs text-ink-2">CSV, Markdown, JSON, TXT, TSV, LOG (multi-file supported)</p>
         </div>
       )}
 
@@ -812,23 +747,17 @@ export function PaperFace({
                 <h1
                   id="brief-headline"
                   data-answers="1"
-                  className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[30px] leading-[1.12] font-medium tracking-[-0.035em] text-ink [text-wrap:wrap] md:text-[40px]"
+                  className="text-[28px] leading-[1.15] font-medium tracking-[-0.03em] text-ink [text-wrap:wrap] md:text-[36px]"
                 >
                   {n ? (
-                    <span className="inline-flex items-center gap-2">
-                      <SlidingNumber value={n} />
-                      <span>{n === 1 ? "thing" : "things"} finished,</span>
-                    </span>
+                    <span>{n} {n === 1 ? "thing" : "things"} finished, </span>
                   ) : w ? (
-                    <span>Nothing finished yet,</span>
+                    <span>Nothing finished yet, </span>
                   ) : (
                     <span>Nothing finished yet.</span>
                   )}
                   {w ? (
-                    <span className="inline-flex items-center gap-2">
-                      <SlidingNumber value={w} />
-                      <span>{w === 1 ? "waits" : "wait"} on you.</span>
-                    </span>
+                    <span>{w} {w === 1 ? "waits" : "wait"} on you.</span>
                   ) : n ? (
                     <span>nothing waits on you.</span>
                   ) : null}
@@ -840,6 +769,23 @@ export function PaperFace({
                       ? "Your agent has nothing waiting on your approval. Completed work and workspace files are filed below."
                       : "Describe a task in plain words or drop files onto this desk. Your agent runs real workspace tools and asks here before deleting anything."}
                 </p>
+                <div className="mono flex flex-wrap items-center gap-x-4 gap-y-1 pt-1 text-xs text-ink-2">
+                  <span className="inline-flex items-center gap-1.5 text-ink">
+                    <span aria-hidden className="size-2 rounded-full bg-dot-green" />
+                    {n} finished
+                  </span>
+                  <span className="inline-flex items-center gap-1.5 text-ink">
+                    <span aria-hidden className="size-2 rounded-full bg-dot-amber" />
+                    {w} waiting
+                  </span>
+                  {stopped.length > 0 && (
+                    <span className="inline-flex items-center gap-1.5 text-ink">
+                      <span aria-hidden className="size-2 rounded-full bg-dot-red" />
+                      {stopped.length} stopped
+                    </span>
+                  )}
+                  <span>{totalSavedFiles} {totalSavedFiles === 1 ? "file" : "files"} saved</span>
+                </div>
               </header>
 
               {busy && (
@@ -852,55 +798,14 @@ export function PaperFace({
                 />
               )}
 
-              {/* Tremor Operational Outcome Strip */}
-              <section
-                aria-label="Recent task outcomes"
-                data-answers="2"
-                className="flex flex-col gap-3 rounded-card border border-hairline bg-surface p-4"
-              >
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
-                    <h2 className="text-sm font-medium text-ink">Recent run outcomes</h2>
-                    <span className="text-xs text-ink-3">(last 14 run slots)</span>
-                  </div>
-                  <div className="mono flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-ink-2">
-                    <span className="inline-flex items-center gap-1.5 text-ink">
-                      <span aria-hidden className="size-2 rounded-full bg-dot-green" />
-                      <SlidingNumber value={n} /> finished
-                    </span>
-                    <span className="inline-flex items-center gap-1.5 text-ink">
-                      <span aria-hidden className="size-2 rounded-full bg-dot-amber" />
-                      <SlidingNumber value={w} /> waiting
-                    </span>
-                    {stopped.length > 0 && (
-                      <span className="inline-flex items-center gap-1.5 text-ink">
-                        <span aria-hidden className="size-2 rounded-full bg-dot-red" />
-                        <SlidingNumber value={stopped.length} /> stopped
-                      </span>
-                    )}
-                    <span className="inline-flex items-center gap-1 text-ink-2">
-                      <SlidingNumber value={totalSavedFiles} />
-                      <span>{totalSavedFiles === 1 ? "file" : "files"} saved</span>
-                    </span>
-                  </div>
-                </div>
-                <Tracker data={trackerBlocks} hoverEffect />
-              </section>
-
               {/* Waiting on you Approval Queue */}
               <div id="decisions-list">
-                <AnimatePresence initial={false} mode="popLayout">
-                  {lead ? (
-                    <motion.section
-                      key={lead.id}
-                      layout
-                      initial={{ opacity: 0, y: 6 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, scale: 0.98 }}
-                      transition={layout}
-                      aria-labelledby="lead-h"
-                      className="grid gap-3.5 rounded-card border border-hairline bg-blue-soft p-5"
-                    >
+                {lead ? (
+                  <section
+                    key={lead.id}
+                    aria-labelledby="lead-h"
+                    className="grid gap-3.5 rounded-card border border-hairline bg-blue-soft p-5"
+                  >
                       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
                         <h2 id="lead-h" className="flex min-w-0 items-start gap-2 text-[22px] leading-snug font-medium tracking-[-0.025em] text-ink [overflow-wrap:anywhere]">
                           {leadCopy?.security && (
@@ -937,21 +842,15 @@ export function PaperFace({
                           <span className="mono">{w - 1}</span> more {w - 1 === 1 ? "decision waits" : "decisions wait"} after this one.
                         </p>
                       )}
-                    </motion.section>
+                    </section>
                   ) : n > 0 ? (
-                    <motion.p
+                    <p
                       key="quiet"
-                      layout
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      exit={{ opacity: 0 }}
-                      transition={{ duration: dur.swap, ease }}
                       className="rounded-card border border-hairline bg-surface px-4 py-3 text-sm text-ink-2"
                     >
                       Nothing waits on you. Your agent asks here before it deletes anything.
-                    </motion.p>
+                    </p>
                   ) : null}
-                </AnimatePresence>
                 {settled.length > 0 && (
                   <div className="mt-3">
                     <Details label={`Recently settled (${settled.length})`}>
@@ -973,7 +872,7 @@ export function PaperFace({
                 <section aria-labelledby="finished-h" className="grid gap-3">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <h2 id="finished-h" className="text-title font-medium text-ink">Finished</h2>
-                    <span className="mono text-xs text-ink-3">
+                    <span className="mono text-xs text-ink-2">
                       {filteredFinished.length === n
                         ? `${n} ${n === 1 ? "receipt" : "receipts"}`
                         : `${filteredFinished.length} of ${n} ${n === 1 ? "receipt" : "receipts"}`}
@@ -1057,7 +956,6 @@ export function PaperFace({
                                       >
                                         <FileGlyph name={f} />
                                         <span className="truncate">{f}</span>
-                                        <ArrowUpRight className="size-3 shrink-0 text-icon" strokeWidth={1.5} aria-hidden />
                                       </Button>
                                     ))}
                                   </>
@@ -1087,7 +985,6 @@ export function PaperFace({
                                   onClick={() => onOpen(id)}
                                 >
                                   Open
-                                  <ArrowUpRight className="size-4" strokeWidth={1.5} aria-hidden />
                                 </Button>
                               )}
                             </div>
@@ -1159,7 +1056,6 @@ export function PaperFace({
                               onClick={() => onOpen(id)}
                             >
                               Open
-                              <ArrowUpRight className="size-4" strokeWidth={1.5} aria-hidden />
                             </Button>
                           )}
                         </li>
@@ -1173,7 +1069,7 @@ export function PaperFace({
               <section aria-labelledby="today-stream-h" className="grid gap-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <h2 id="today-stream-h" className="text-title font-medium text-ink">Today so far</h2>
-                  <span className="mono text-xs text-ink-3">{allEvents.length} {allEvents.length === 1 ? "event" : "events"}</span>
+                  <span className="mono text-xs text-ink-2">{allEvents.length} {allEvents.length === 1 ? "event" : "events"}</span>
                 </div>
                 {allEvents.length === 0 ? (
                   <p className="rounded-card border border-hairline bg-surface px-4 py-3 text-sm text-ink-2">
@@ -1221,7 +1117,6 @@ export function PaperFace({
                                     >
                                       <FileGlyph name={f} className="size-3.5" />
                                       <span className="truncate">{f}</span>
-                                      <ArrowUpRight className="size-3 shrink-0 text-icon" strokeWidth={1.5} aria-hidden />
                                     </Button>
                                   ))}
                                 </div>

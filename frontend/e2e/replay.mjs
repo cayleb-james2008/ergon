@@ -46,7 +46,7 @@ for (const w of [1440, 390]) {
     const errs = [];
     p.on("pageerror", (e) => errs.push(e.message));
     for (const [pat, fn] of c.routes) await p.route(pat, fn);
-    await p.goto(BASE);
+    await p.goto(BASE + (c.path || ""));
     await p.waitForTimeout(1800);
     if (c.act) await c.act(p, h);
     const clip = await clipped(p);

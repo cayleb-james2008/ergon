@@ -14,16 +14,16 @@ export function buildStarterCards(installed: SuiteItem[], role: string): Starter
   const safeRole = typeof role === "string" ? role.trim() : "";
   const cards: StarterCard[] = [
     {
-      category: "Documents",
+      category: "Word (.docx)",
       tone: "ops",
-      prompt: "Tidy my notes into a summary",
-      detail: "Reads workspace notes and writes a structured Markdown brief.",
+      prompt: "Tidy my notes into a summary document and export as Word",
+      detail: "Reads workspace notes, writes Summary.md, and prepares a formatted Word deliverable.",
       skill: "write_document",
     },
   ];
   const tones: ("mint" | "plan" | "research")[] = ["mint", "plan", "research"];
   const safeInstalled = Array.isArray(installed) ? installed.filter((x) => x && typeof x.name === "string") : [];
-  safeInstalled.slice(0, 2).forEach((item, idx) => {
+  safeInstalled.slice(0, 1).forEach((item, idx) => {
     const kindWord = item.kind === "subagent" ? "Specialist" : item.kind === "app" ? "One-tap app" : "Workflow";
     cards.push({
       category: kindWord,
@@ -33,28 +33,26 @@ export function buildStarterCards(installed: SuiteItem[], role: string): Starter
       skill: item.id || item.name,
     });
   });
-  if (safeRole) {
-    cards.push({
-      category: safeRole,
-      tone: "plan",
-      prompt: "Draft my weekly update",
-      detail: `Compiles finished ${safeRole.toLowerCase()} deliverables and open blockers into Weekly update.md.`,
-      skill: "write_document",
-    });
-  }
   cards.push({
-    category: "Spreadsheet",
+    category: "Excel (.xlsx)",
     tone: "mint",
-    prompt: "Reconcile expenses into a clean CSV",
-    detail: "Checks line-item totals twice and writes a verified CSV table.",
+    prompt: "Reconcile expenses into a clean spreadsheet and export as Excel",
+    detail: "Checks line-item totals twice, saves a verified CSV, and exports an .xlsx workbook.",
     skill: "make_spreadsheet",
   });
   cards.push({
-    category: "Research",
+    category: safeRole ? `${safeRole} audit` : "Contract audit",
+    tone: "plan",
+    prompt: "Audit my workspace documents for risks, missing clauses, and action owners",
+    detail: "Scans contracts and briefs, flags gaps with exact line citations, and builds an audit report.",
+    skill: "audit_contract",
+  });
+  cards.push({
+    category: "Executive brief",
     tone: "research",
-    prompt: "Research a topic for me",
-    detail: "Reads sources and saves cited findings into your workspace.",
-    skill: "research",
+    prompt: "Draft a weekly executive brief from finished deliverables and open items",
+    detail: "Compiles recent work, open approvals, and cited findings into Weekly update.md.",
+    skill: "draft_brief",
   });
   return cards.slice(0, 4);
 }

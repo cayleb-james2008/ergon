@@ -2,8 +2,6 @@
 // so every SVG <text> label renders >= 13px at 768px..1440px without overlap or clipping, paired with a
 // SegmentedControl view toggle and an accessible structured list.
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowUpRight } from "lucide-react";
-import { SlidingNumber } from "@/components/ui/sliding-number";
 import { SegmentedControl, SegmentedControlItem } from "@/components/ui/segmented-control";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -146,10 +144,10 @@ export function GraphFace({ onOpenFile }: { onOpenFile?: (path: string) => void 
             Who the work belongs to, and what it touched
           </h1>
           <p className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-sm text-ink-2">
-            <span className="inline-flex items-center gap-1.5"><span className="mono font-medium text-ink"><SlidingNumber value={count("person")} /></span><span>people</span></span>
-            <span className="inline-flex items-center gap-1.5"><span className="mono font-medium text-ink"><SlidingNumber value={count("work")} /></span><span>finished jobs</span></span>
-            <span className="inline-flex items-center gap-1.5"><span className="mono font-medium text-ink"><SlidingNumber value={count("file")} /></span><span>files produced</span></span>
-            <span className="inline-flex items-center gap-1.5"><span className="mono font-medium text-ink"><SlidingNumber value={count("item")} /></span><span>suite items in play</span></span>
+            <span className="inline-flex items-center gap-1.5"><span className="mono font-medium text-ink">{count("person")}</span><span>people</span></span>
+            <span className="inline-flex items-center gap-1.5"><span className="mono font-medium text-ink">{count("work")}</span><span>finished jobs</span></span>
+            <span className="inline-flex items-center gap-1.5"><span className="mono font-medium text-ink">{count("file")}</span><span>files produced</span></span>
+            <span className="inline-flex items-center gap-1.5"><span className="mono font-medium text-ink">{count("item")}</span><span>suite items in play</span></span>
           </p>
         </div>
         {nodes.length > 0 && canShowMap && (
@@ -311,7 +309,6 @@ export function GraphFace({ onOpenFile }: { onOpenFile?: (path: string) => void 
                       onClick={() => onOpenFile(label)}
                     >
                       Open
-                      <ArrowUpRight className="size-3.5" strokeWidth={1.5} aria-hidden />
                     </Button>
                   )}
                   <span className="mono text-xs text-ink-2">

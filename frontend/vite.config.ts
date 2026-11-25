@@ -66,8 +66,6 @@ function singleFile(): Plugin {
       } else {
         const out = path.resolve(root, "../assets/index.html");
         fs.writeFileSync(out, html);
-        // /phone serves assets/phone.html (src/ui.rs): the same page, so the phone face is the same app at a narrow width.
-        fs.writeFileSync(path.resolve(root, "../assets/phone.html"), html);
         console.log(`single file: ${out} (${(html.length / 1024).toFixed(0)} kB)`);
       }
     },

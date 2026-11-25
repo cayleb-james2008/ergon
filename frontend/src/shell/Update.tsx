@@ -281,7 +281,6 @@ export function VersionRow({ u }: { u: U }) {
         className="focus-ring flex min-h-11 min-w-0 flex-1 items-center gap-1.5 truncate rounded-sm px-1 text-xs text-ink-2 outline-none hover:text-ink md:min-h-8"
       >
         <span className="mono font-medium text-ink">Ergon {u.version}</span>
-        <span aria-hidden>·</span>
         <span className="truncate">{state}</span>
         <span className="sr-only"> (opens release notes in a new tab)</span>
       </a>

@@ -33,7 +33,7 @@
   /* Text roles */
   --ink: #13151a;        /* primary text. MEASURED (never #000) */
   --ink-2: #616a81;      /* secondary text. MEASURED #697289, darkened for 4.5 to 1 on --track */
-  --ink-3: #6c717f;      /* placeholder, section label. DERIVED, CHANGED FROM THE KIT'S MEASURED GREY (owner to confirm, reconcile.md item 13): the kit's #858c9d measured 3.37:1 on white and 3.14 on --board, under the 4.5 the small-text gate asks for (gates.md section 3). Darkened in proportion to #6c717f, the lightest step that reaches 4.5 on --board: 4.54 there, 4.88 on white. Use for placeholder and labels only */
+  --ink-3: #646977;      /* placeholder, section label: darkened slightly so AA >= 4.5:1 holds on --canvas (#f0f2f5) as well as --board and --surface */
   --icon: #828a9d;       /* icon stroke. MEASURED */
   --disabled: #c3c7ce;   /* disabled. MEASURED */
 
@@ -101,7 +101,7 @@
   --destructive: var(--unread);
   --destructive-foreground: #b4232f; /* readable red text on a pale red wash. DERIVED */
   --border: var(--hairline);
-  --input: var(--hairline);
+  --input: #7f8696;
   --ring: var(--blue);
   --info: var(--blue);          --info-foreground: #1a56d6;     /* DERIVED from accent */
   --success: var(--dot-online); --success-foreground: #067a54;  /* text on the COSS success badge. DERIVED, CHANGED 2026-11-10 from the Active pill text #087d58 (MEASURED), which is 4.49:1 on the badge fill (success at 8% over white) and failed the render check's contrast sweep; #067a54 is 4.68:1 */
@@ -175,6 +175,7 @@
   --info-foreground: #86adff;
   --success-foreground: #56d8a9;
   --warning-foreground: #f5bd5a;
+  --input: #636b7c;
 }
 
 /* Same dark values when the system prefers dark and no theme attribute has been set. */
@@ -225,6 +226,7 @@
     --info-foreground: #86adff;
     --success-foreground: #56d8a9;
     --warning-foreground: #f5bd5a;
+    --input: #636b7c;
   }
 }
 

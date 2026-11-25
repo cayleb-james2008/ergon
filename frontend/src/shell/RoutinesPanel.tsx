@@ -7,7 +7,6 @@
 // - Run Now (POST /api/routines/:id/run) & Delete routine (DELETE /api/routines/:id)
 import { useCallback, useEffect, useState } from "react";
 import {
-  ArrowUpRight,
   CalendarClock,
   ChevronDown,
   ChevronRight,
@@ -20,15 +19,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
-import {
-  MorphingDialog,
-  MorphingDialogClose,
-  MorphingDialogContainer,
-  MorphingDialogContent,
-  MorphingDialogDescription,
-  MorphingDialogTitle,
-  useMorphingDialog,
-} from "@/components/ui/morphing-dialog";
+import { PanelModal, usePanelModalClose } from "@/shell/PanelModal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -48,7 +39,6 @@ import { exportReceiptDownload } from "@/lib/receiptExport";
 import type { SkillMeta } from "@/lib/skillsCatalog";
 import { cn } from "@/lib/utils";
 import { relTime } from "@/lib/words";
-import { open as openPreset } from "@/motion";
 
 const SCHEDULES = [
   "every 15m",
@@ -72,6 +62,8 @@ function RoutinesBody({
   scheduler,
   historyRev,
   personName,
+  presetSchedule,
+  presetNonce,
   onRefresh,
   onCreate,
   onToggleEnabled,
@@ -86,6 +78,8 @@ function RoutinesBody({
   scheduler: SchedulerStatus | null;
   historyRev: number;
   personName: string;
+  presetSchedule?: string | null;
+  presetNonce?: number;
   onRefresh: () => void;
   onCreate: (input: { name: string; schedule: string; prompt: string; skill_id?: string }) => Promise<boolean>;
   onToggleEnabled: (id: string, enabled: boolean) => Promise<boolean>;
@@ -94,7 +88,7 @@ function RoutinesBody({
   onRunNow: (routine: Routine) => Promise<void>;
   onOpenThread?: (threadId: string) => void;
 }) {
-  const { isOpen, setIsOpen } = useMorphingDialog();
+  const { isOpen, setIsOpen } = usePanelModalClose();
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState("");
   const [schedule, setSchedule] = useState(SCHEDULES[2]);
@@ -108,6 +102,13 @@ function RoutinesBody({
   const [historyLoading, setHistoryLoading] = useState<Record<string, boolean>>({});
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [err, setErr] = useState("");
+
+  useEffect(() => {
+    if (presetNonce && presetSchedule) {
+      setSchedule(presetSchedule);
+      setAdding(true);
+    }
+  }, [presetSchedule, presetNonce]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -228,14 +229,14 @@ function RoutinesBody({
             />
             <span>
               {schedulerActive
-                ? `Scheduler active · ${tickSecs}s tick`
+                ? `Scheduler active (${tickSecs}s tick)`
                 : schedulerPausedByEnv
                   ? "Scheduler paused"
                   : "On-demand routines"}
             </span>
           </Pill>
           <span className="mono text-xs text-ink-2">
-            {activeCount} active{pausedCount > 0 ? ` · ${pausedCount} paused` : ""}
+            {activeCount} active{pausedCount > 0 ? `, ${pausedCount} paused` : ""}
           </span>
         </div>
 
@@ -415,15 +416,9 @@ function RoutinesBody({
                       {rt.run_count ?? 0} {(rt.run_count ?? 0) === 1 ? "run" : "runs"}
                     </span>
                     {rt.last_run_ts ? (
-                      <>
-                        <span aria-hidden>·</span>
-                        <span>Last {relTime(rt.last_run_ts)}</span>
-                      </>
+                      <span>Last {relTime(rt.last_run_ts)}</span>
                     ) : (
-                      <>
-                        <span aria-hidden>·</span>
-                        <span>Not run yet</span>
-                      </>
+                      <span>Not run yet</span>
                     )}
                   </div>
 
@@ -576,7 +571,6 @@ function RoutinesBody({
                                     }}
                                   >
                                     Chat
-                                    <ArrowUpRight className="size-3" strokeWidth={1.5} aria-hidden />
                                   </Button>
                                 )}
                               </div>
@@ -603,6 +597,8 @@ export function RoutinesPanel({
   scheduler,
   historyRev,
   personName,
+  presetSchedule,
+  presetNonce,
   open,
   onOpenChange,
   onRefresh,
@@ -619,6 +615,8 @@ export function RoutinesPanel({
   scheduler: SchedulerStatus | null;
   historyRev: number;
   personName: string;
+  presetSchedule?: string | null;
+  presetNonce?: number;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onRefresh: () => void;
@@ -630,35 +628,30 @@ export function RoutinesPanel({
   onOpenThread?: (threadId: string) => void;
 }) {
   return (
-    <MorphingDialog transition={openPreset} open={open} onOpenChange={onOpenChange}>
-      <MorphingDialogContainer>
-        <MorphingDialogContent
-          style={{ borderRadius: 18 }}
-          className="relative mx-4 flex max-h-[84vh] w-[620px] max-w-[calc(100%-2rem)] flex-col gap-3 overflow-y-auto border border-hairline bg-surface p-5 text-ink shadow-lift"
-        >
-          <MorphingDialogClose className="focus-ring absolute right-3 top-3 grid size-11 place-items-center rounded-sm text-icon outline-none hover:bg-board md:size-9" />
-          <MorphingDialogTitle className="pr-10 text-title font-medium text-ink">
-            Recurring routines
-          </MorphingDialogTitle>
-          <MorphingDialogDescription disableLayoutAnimation className="text-sm text-ink-2">
-            <RoutinesBody
-              routines={routines}
-              skills={skills}
-              status={status}
-              scheduler={scheduler}
-              historyRev={historyRev}
-              personName={personName}
-              onRefresh={onRefresh}
-              onCreate={onCreate}
-              onToggleEnabled={onToggleEnabled}
-              onLoadHistory={onLoadHistory}
-              onDelete={onDelete}
-              onRunNow={onRunNow}
-              onOpenThread={onOpenThread}
-            />
-          </MorphingDialogDescription>
-        </MorphingDialogContent>
-      </MorphingDialogContainer>
-    </MorphingDialog>
+    <PanelModal
+      open={open}
+      onOpenChange={onOpenChange}
+      title="Recurring routines"
+      description="Schedule plain-English routines to run automatically or on demand."
+      className="max-w-2xl"
+    >
+      <RoutinesBody
+        routines={routines}
+        skills={skills}
+        status={status}
+        scheduler={scheduler}
+        historyRev={historyRev}
+        personName={personName}
+        presetSchedule={presetSchedule}
+        presetNonce={presetNonce}
+        onRefresh={onRefresh}
+        onCreate={onCreate}
+        onToggleEnabled={onToggleEnabled}
+        onLoadHistory={onLoadHistory}
+        onDelete={onDelete}
+        onRunNow={onRunNow}
+        onOpenThread={onOpenThread}
+      />
+    </PanelModal>
   );
 }

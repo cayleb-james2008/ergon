@@ -1,70 +1,99 @@
-/* Hallmark · shape: app screen · genre: modern-minimal · theme: furrow (ergon) · scope: app · checked: 2026-11-21 · v3.0 */
+@import "./fonts.css";
 @import "tailwindcss";
 @import "./reset.css";
-/* Tokens: the house roles (tokens.css), then Ergon's warm desk values (theme.css), then self-hosted Geist & Geist Mono. */
 @import "./tokens.css";
 @import "./theme.css";
-@import "./fonts.css";
-@source "../../rune/used";
-@source not "../../rune/used/components/ui/morphing-dialog.tsx";
-@source not "../../rune/used/components/ui/sliding-number.tsx";
-@source not "../../rune/used/components/ui/border-trail.tsx";
-@source not "./motion.ts";
-@source not "../e2e";
-@source inline("fixed inset-0 z-40 z-50 flex inline-flex items-center items-baseline justify-center min-w-0 flex-1 bg-ink/40 overflow-hidden relative inline-block w-[1ch] overflow-x-visible overflow-y-clip leading-none tabular-nums invisible absolute sr-only -mx-[0.2ch] pointer-events-none rounded-[inherit] border border-transparent [mask-clip:padding-box,border-box] [mask-composite:intersect] [mask-image:linear-gradient(transparent,transparent),linear-gradient(CanvasText,CanvasText)] aspect-square bg-blue");
 
-/* Tremor Raw HoverCard animation block used by Tracker tooltips. */
-@theme {
-  --animate-slide-down-and-fade: slideDownAndFade var(--dur-reveal) var(--ease-house);
-  --animate-slide-up-and-fade: slideUpAndFade var(--dur-reveal) var(--ease-house);
-  --animate-slide-left-and-fade: slideLeftAndFade var(--dur-reveal) var(--ease-house);
-  --animate-slide-right-and-fade: slideRightAndFade var(--dur-reveal) var(--ease-house);
+@source "../src";
+@source "../../rune/used/components/ui/avatar.tsx";
+@source "../../rune/used/components/ui/badge.tsx";
+@source "../../rune/used/components/ui/button.tsx";
+@source "../../rune/used/components/ui/command.tsx";
+@source "../../rune/used/components/ui/dialog.tsx";
+@source "../../rune/used/components/ui/input-group.tsx";
+@source "../../rune/used/components/ui/input.tsx";
+@source "../../rune/used/components/ui/kbd.tsx";
+@source "../../rune/used/components/ui/segmented-control.tsx";
+@source "../../rune/used/components/ui/spinner.tsx";
+@source "../../rune/used/components/ui/tabs.tsx";
+@source "../../rune/used/components/ui/textarea.tsx";
+@source "../../rune/used/components/kibo-ui/pill/index.tsx";
 
-  @keyframes slideDownAndFade {
-    from { opacity: 0; transform: translateY(-6px); }
-    to { opacity: 1; transform: translateY(0); }
-  }
-  @keyframes slideUpAndFade {
-    from { opacity: 0; transform: translateY(6px); }
-    to { opacity: 1; transform: translateY(0); }
-  }
-  @keyframes slideLeftAndFade {
-    from { opacity: 0; transform: translateX(6px); }
-    to { opacity: 1; transform: translateX(0); }
-  }
-  @keyframes slideRightAndFade {
-    from { opacity: 0; transform: translateX(-6px); }
-    to { opacity: 1; transform: translateX(0); }
-  }
+html, body {
+  overflow-x: clip;
 }
 
-/* Vaul ignores prefers-reduced-motion; cut both animation and transition durations on the real attributes. */
+body {
+  min-height: 100dvh;
+  background: var(--canvas);
+  color: var(--ink);
+  font-family: var(--font-sans);
+}
+
+h1, h2, h3, h4, h5, h6 {
+  text-wrap: balance;
+}
+
+#root {
+  min-height: 100dvh;
+}
+
+.mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.entry-head {
+  background-color: var(--entry-head);
+  color: var(--entry-head-ink);
+}
+
+.entry-rule {
+  background-color: var(--entry-rule);
+}
+
+.status-finished {
+  background-color: var(--status-finished-bg);
+  color: var(--status-finished-fg);
+}
+
+.status-waiting {
+  background-color: var(--status-waiting-bg);
+  color: var(--status-waiting-fg);
+}
+
+.status-stopped {
+  background-color: var(--status-stopped-bg);
+  color: var(--status-stopped-fg);
+}
+
+.focus-ring:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+
+@keyframes pulseSoft {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+
+.pulse-dot {
+  animation: pulseSoft 1.8s var(--ease-house) infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  [data-vaul-drawer], [data-vaul-overlay] { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+  .pulse-dot {
+    animation: none;
+  }
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+  }
 }
 
-h1, h2, h3 { text-wrap: balance; }
-@layer base { *, ::before, ::after, ::backdrop { --tw-ring-offset-color: var(--surface); } }
-.contour-field { color: var(--hairline); }
-.status-finished, .status-waiting { border-radius: 9999px; }
-.status-waiting { background: var(--pill-warn-bg); color: var(--pill-warn-fg); }
-.status-finished { background: var(--pill-active-bg); color: var(--pill-active-fg); }
-
-html, body { overflow-x: clip; }
-
-/* Moulded tactile surfaces & controls: lit 1px top highlight, 1px press travel, house duration & ease. */
-.mould {
-  box-shadow: inset 0 1px 0 var(--mould-hi), 0 1px 0 var(--mould-lo), var(--elev-card);
-  transition: transform var(--dur-press) var(--ease-house), background-color var(--dur-press) var(--ease-house), border-color var(--dur-press) var(--ease-house);
+.safe-b {
+  padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
 }
-@media (hover: hover) and (pointer: fine) {
-  .mould:hover:not(:disabled) { background-color: var(--board); }
-}
-.mould:active:not(:disabled) { transform: translateY(1px) scale(0.99); box-shadow: inset 0 1px 0 var(--mould-hi); }
-.mould:disabled { background-color: var(--track); color: var(--ink-3); cursor: not-allowed; box-shadow: none; }
-.mould:focus-visible, .focus-ring:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
-@media (prefers-reduced-motion: reduce) { .mould { transition: none; } .mould:active:not(:disabled) { transform: none; } }
 
-/* Field-book cell rule & head strip (tokens live in theme.css). */
-.entry-rule { background-color: var(--entry-rule); }
-.entry-head { background-color: var(--entry-head); color: var(--entry-head-ink); }
+.safe-t {
+  padding-top: max(0px, env(safe-area-inset-top));
+}

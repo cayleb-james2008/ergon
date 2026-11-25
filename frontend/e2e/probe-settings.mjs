@@ -41,6 +41,10 @@ for (const w of opt.widths.split(",").map(Number)) {
     if (exposedBefore > 0) why.push("Appearance control exposed on main chrome instead of inside Settings");
 
     // Open Settings dialog, toggle theme, and close Settings.
+    if (!(await p.locator('[data-thing="settings-btn"]').isVisible().catch(() => false))) {
+      await p.locator('button[aria-label="Toggle conversations rail"]:visible, button[aria-label="Open menu"]:visible').first().click().catch(() => {});
+      await p.waitForTimeout(250);
+    }
     await p.locator('[data-thing="settings-btn"]').first().click({ timeout: 3000 }).catch(() => why.push("no visible Settings trigger"));
     await p.waitForSelector("#settings-panel", { timeout: 3000 }).catch(() => why.push("Settings dialog did not open"));
     const label = theme === "dark" ? "Dark" : "Light";

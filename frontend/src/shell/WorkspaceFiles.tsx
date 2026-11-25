@@ -11,7 +11,6 @@ import {
   ArrowDown,
   ArrowUp,
   ArrowUpDown,
-  ArrowUpRight,
   ChevronDown,
   ChevronRight,
   Copy,
@@ -23,6 +22,7 @@ import {
   FolderOpen,
   History,
   MessageSquarePlus,
+  RefreshCw,
   RotateCcw,
   Search,
   Upload,
@@ -36,18 +36,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  MorphingDialog,
-  MorphingDialogClose,
-  MorphingDialogContainer,
-  MorphingDialogContent,
-  MorphingDialogDescription,
-  MorphingDialogTitle,
-  MorphingDialogTrigger,
-  useMorphingDialog,
-} from "@/components/ui/morphing-dialog";
+import { PanelModal, usePanelModalClose } from "@/shell/PanelModal";
 import { SegmentedControl, SegmentedControlItem } from "@/components/ui/segmented-control";
-import { SlidingNumber } from "@/components/ui/sliding-number";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
@@ -70,7 +60,6 @@ import { computeLineDiff, normalizeServerDiff } from "@/lib/diff";
 import { exportReceiptDownload } from "@/lib/receiptExport";
 import { cn } from "@/lib/utils";
 import { relTime } from "@/lib/words";
-import { open as openPreset } from "@/motion";
 
 const TRIGGER = "focus-ring flex w-full min-h-11 md:min-h-9 items-center justify-between gap-1.5 rounded-sm px-1.5 text-left text-sm text-ink outline-none hover:bg-board";
 const FILES_PAGE_SIZE = 25;
@@ -421,7 +410,7 @@ function CsvTableView({ content }: { content: string }) {
 
         <span className="mono text-xs text-ink-2">
           {processed.length === body.length
-            ? `${body.length} ${body.length === 1 ? "row" : "rows"} · ${header.length} cols`
+            ? `${body.length} ${body.length === 1 ? "row" : "rows"}, ${header.length} cols`
             : `${processed.length} of ${body.length} rows`}
         </span>
       </div>
@@ -721,7 +710,7 @@ function normalizeRevision(raw: unknown, fallbackPath: string): FileRevision | n
   };
 }
 
-function FileHistoryDiffView({
+export function FileHistoryDiffView({
   filePath,
   currentContent,
   status,
@@ -1384,20 +1373,22 @@ export function FileViewerModal({
   );
 }
 
-function WorkspaceFilesBody({
+export function WorkspaceFilesBody({
   files,
   onRefresh,
   onOpenFile,
   onUpload,
   onUploadMany,
+  embedded = false,
 }: {
   files: WorkspaceFile[];
   onRefresh: () => void;
   onOpenFile: (path: string) => void;
   onUpload: (path: string, content: string, silent?: boolean, encoding?: "base64") => Promise<boolean>;
   onUploadMany?: (picked: FileList | File[]) => Promise<number>;
+  embedded?: boolean;
 }) {
-  const { isOpen, setIsOpen } = useMorphingDialog();
+  const { isOpen, setIsOpen } = usePanelModalClose();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState("");
@@ -1410,8 +1401,8 @@ function WorkspaceFilesBody({
   const [dragOver, setDragOver] = useState(false);
 
   useEffect(() => {
-    if (isOpen) onRefresh();
-  }, [isOpen, onRefresh]);
+    if (embedded || isOpen) onRefresh();
+  }, [embedded, isOpen, onRefresh]);
 
   useEffect(() => {
     setPage(0);
@@ -1519,6 +1510,17 @@ function WorkspaceFilesBody({
           <Button size="sm" variant="outline" className="max-md:min-h-11" onClick={() => setCreating((v) => !v)}>
             <FilePlus2 className="size-3.5" strokeWidth={1.5} aria-hidden />
             {creating ? "Cancel" : "New file"}
+          </Button>
+          <Button
+            id="workspace-refresh-btn"
+            type="button"
+            size="icon-sm"
+            variant="ghost"
+            aria-label="Refresh files"
+            className="max-md:min-h-11 max-md:min-w-11"
+            onClick={onRefresh}
+          >
+            <RefreshCw className="size-3.5 text-icon" strokeWidth={1.5} aria-hidden />
           </Button>
         </div>
         <span className="text-xs text-ink-2">
@@ -1633,7 +1635,7 @@ function WorkspaceFilesBody({
                   <div className="min-w-0 flex-1">
                     <p className="mono truncate text-sm font-medium text-ink">{f.path}</p>
                     <p className="mono text-xs text-ink-2">
-                      {formatBytes(f.size)}{f.mtime_ms > 0 ? ` · ${relTime(f.mtime_ms)}` : ""}
+                      {formatBytes(f.size)}{f.mtime_ms > 0 ? `, ${relTime(f.mtime_ms)}` : ""}
                     </p>
                   </div>
                 </div>
@@ -1644,12 +1646,11 @@ function WorkspaceFilesBody({
                     className="max-md:min-h-11"
                     aria-label={`Open ${f.path}`}
                     onClick={() => {
-                      setIsOpen(false);
-                      setTimeout(() => onOpenFile(f.path), 40);
+                      if (!embedded) setIsOpen(false);
+                      setTimeout(() => onOpenFile(f.path), embedded ? 0 : 40);
                     }}
                   >
                     Open
-                    <ArrowUpRight className="size-3.5" strokeWidth={1.5} aria-hidden />
                   </Button>
                   <Button
                     size="icon-sm"
@@ -1723,36 +1724,33 @@ export function WorkspaceFilesPanel({
   hideTrigger?: boolean;
 }) {
   return (
-    <MorphingDialog transition={openPreset} open={open} onOpenChange={onOpenChange}>
-      {!hideTrigger && (
-        <MorphingDialogTrigger thing="files-btn" className={TRIGGER} style={{ borderRadius: 7 }}>
-          <span className="flex min-w-0 items-center gap-1.5">
-            <FolderOpen className="size-3.5 shrink-0 text-icon" strokeWidth={1.5} aria-hidden />
-            <span className="leading-tight">Workspace files</span>
-          </span>
-          <span className="mono shrink-0 rounded-chip bg-track px-1.5 py-0.5 text-xs text-ink-2">
-            <SlidingNumber value={files.length} />
-          </span>
-        </MorphingDialogTrigger>
-      )}
-      <MorphingDialogContainer>
-        <MorphingDialogContent
-          style={{ borderRadius: 18 }}
-          className="relative mx-4 flex max-h-[84vh] w-[580px] max-w-[calc(100%-2rem)] flex-col gap-3 overflow-y-auto border border-hairline bg-surface p-5 text-ink shadow-lift"
-        >
-          <MorphingDialogClose className="focus-ring absolute right-3 top-3 grid size-11 place-items-center rounded-sm text-icon outline-none hover:bg-board md:size-9" />
-          <MorphingDialogTitle className="pr-10 text-title font-medium text-ink">Workspace files</MorphingDialogTitle>
-          <MorphingDialogDescription disableLayoutAnimation className="text-sm text-ink-2">
-            <WorkspaceFilesBody
-              files={files}
-              onRefresh={onRefresh}
-              onOpenFile={onOpenFile}
-              onUpload={onUpload}
-              onUploadMany={onUploadMany}
-            />
-          </MorphingDialogDescription>
-        </MorphingDialogContent>
-      </MorphingDialogContainer>
-    </MorphingDialog>
+    <PanelModal
+      open={open}
+      onOpenChange={onOpenChange}
+      title="Workspace files"
+      description="Inspect, upload, export, and restore files inside this workspace."
+      className="max-w-xl"
+      trigger={
+        !hideTrigger ? (
+          <button type="button" data-thing="files-btn" className={TRIGGER} style={{ borderRadius: 7 }}>
+            <span className="flex min-w-0 items-center gap-1.5">
+              <FolderOpen className="size-3.5 shrink-0 text-icon" strokeWidth={1.5} aria-hidden />
+              <span className="leading-tight">Workspace files</span>
+            </span>
+            <span className="mono shrink-0 rounded-chip bg-track px-1.5 py-0.5 text-xs text-ink-2">
+              {files.length}
+            </span>
+          </button>
+        ) : undefined
+      }
+    >
+      <WorkspaceFilesBody
+        files={files}
+        onRefresh={onRefresh}
+        onOpenFile={onOpenFile}
+        onUpload={onUpload}
+        onUploadMany={onUploadMany}
+      />
+    </PanelModal>
   );
 }
