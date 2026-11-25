@@ -25,12 +25,12 @@ pub mod ui;
 pub mod update;
 
 use serde_json::{json, Value};
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpListener;
 use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex, RwLock};
 
 pub const BROWSER_UA: &str = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
 pub const NO_KEY_ERROR: &str =
@@ -1222,7 +1222,22 @@ impl Store {
 
     pub fn list_json(&self) -> Value {
         json!({
-            "threads": self.threads.iter().rev().map(|t| json!({"id": t.id, "title": t.title, "messages": t.messages.len()})).collect::<Vec<_>>(),
+            "threads": self.threads.iter().rev().map(|t| {
+                let has_parked = t.messages.iter().any(|m| {
+                    m.role == "step" && (m.content.contains("parked for your person") || m.content.contains("has NOT been deleted yet"))
+                });
+                let has_resolved = t.messages.iter().any(|m| {
+                    m.role == "step" && (m.content.contains("was deleted after you approved it") || m.content.contains("was kept because you declined"))
+                });
+                let state = if has_parked && !has_resolved {
+                    "waiting"
+                } else if t.messages.iter().any(|m| m.role == "assistant") {
+                    "finished"
+                } else {
+                    "none"
+                };
+                json!({"id": t.id, "title": t.title, "messages": t.messages.len(), "state": state})
+            }).collect::<Vec<_>>(),
         })
     }
 }
@@ -1684,6 +1699,9 @@ pub fn export_workspace_file(
         (other, _) => return Err(format!("export_file: unknown format \"{other}\" (use docx or xlsx)")),
     };
     let full = sandbox_path(&cfg.workspace_dir, rel)?;
+    if rel.trim().split('/').any(|seg| seg.starts_with('.')) {
+        return Err("export_file: hidden paths are not allowed".to_string());
+    }
     let text = std::fs::read_to_string(&full).map_err(|e| format!("export_file {rel}: {e}"))?;
     let stem_rel = rel.rsplit_once('.').map(|(a, _)| a).unwrap_or(rel);
     let stem_name = stem_rel.rsplit('/').next().unwrap_or(stem_rel).to_string();
@@ -1693,7 +1711,15 @@ pub fn export_workspace_file(
         Some(o) => format!("{o}.{want_ext}"),
         None => format!("{stem_rel}.{want_ext}"),
     };
-    let out_full = sandbox_path(&cfg.workspace_dir, &out)?;
+    if out.split('/').any(|seg| seg.starts_with('.')) {
+        return Err("export_file: hidden output paths are not allowed".to_string());
+    }
+    let out_full = sandbox_path_resolving(&cfg.workspace_dir, &out, false)?;
+    if sandbox_path_resolving(&cfg.workspace_dir, &out, true).is_err()
+        || out_full.symlink_metadata().is_ok_and(|md| md.file_type().is_symlink())
+    {
+        return Err("export_file: cannot overwrite symlink".to_string());
+    }
     let bytes = if to_word {
         let title = text
             .lines()
@@ -2411,11 +2437,16 @@ pub struct LiveStreamCtx<'a> {
     pub cancel: &'a Arc<std::sync::atomic::AtomicBool>,
 }
 
+const MAX_LIVE_STEPS: usize = 128;
+
 fn push_live_step(live: Option<LiveStreamCtx<'_>>, step: String) {
     if let Some(ctx) = live {
         if let Ok(mut map) = ctx.runs.lock() {
             if let Some(run) = map.get_mut(ctx.person_id) {
-                run.steps.push(step);
+                if run.steps.len() >= MAX_LIVE_STEPS {
+                    run.steps.remove(0);
+                }
+                run.steps.push(truncate(&step, 2048));
             }
         }
     }
@@ -3220,8 +3251,8 @@ pub struct AppState {
     pub gate_token: Option<String>,
     /// Extra Host names accepted without a gate token (ERGON_ALLOWED_HOSTS).
     pub allowed_hosts: Vec<String>,
-    pub people: Arc<Mutex<PeopleState>>,
-    pub runtimes: Arc<Mutex<HashMap<String, Arc<PersonRuntime>>>>,
+    pub people: Arc<RwLock<PeopleState>>,
+    pub runtimes: Arc<RwLock<HashMap<String, Arc<PersonRuntime>>>>,
     /// In-flight runs per person for live step progress streaming (`GET /api/runs/status` & `/api/runs/stream`).
     pub live_runs: LiveRuns,
     /// Broadcast SSE event bus for real-time run events (`GET /api/runs/stream`).
@@ -3232,7 +3263,7 @@ pub struct AppState {
     /// to be one global pointer: any client could switch it for every
     /// other client mid-task. A session pins the person per browser;
     /// cookie-less API clients keep the global-pointer behaviour.
-    pub sessions: Arc<Mutex<HashMap<String, String>>>,
+    pub sessions: Arc<RwLock<HashMap<String, String>>>,
     /// Checks GitHub for newer releases and installs them on request.
     pub updater: Arc<update::Updater>,
     /// Whether the background routine scheduler thread is active (false when ERGON_DISABLE_SCHEDULER=1).
@@ -3277,7 +3308,7 @@ fn new_session_id() -> String {
 /// re-issued transparently, so past a generous cap the map is simply
 /// cleared rather than growing for the life of the process.
 fn insert_session(state: &AppState, sid: String, person_id: String) {
-    let mut sessions = state.sessions.lock().unwrap();
+    let mut sessions = state.sessions.write().unwrap();
     if sessions.len() > 10_000 {
         sessions.clear();
     }
@@ -3286,7 +3317,7 @@ fn insert_session(state: &AppState, sid: String, person_id: String) {
 
 fn session_known(state: &AppState, session: &Option<String>) -> bool {
     match session {
-        Some(sid) => state.sessions.lock().unwrap().contains_key(sid),
+        Some(sid) => state.sessions.read().unwrap().contains_key(sid),
         None => false,
     }
 }
@@ -3295,19 +3326,22 @@ fn session_known(state: &AppState, session: &Option<String>) -> bool {
 /// caller presented a known session cookie, else the global active.
 fn effective_person(state: &AppState, session: &Option<String>) -> Person {
     if let Some(sid) = session {
-        let mapped = state.sessions.lock().unwrap().get(sid).cloned();
+        let mapped = state.sessions.read().unwrap().get(sid).cloned();
         if let Some(pid) = mapped {
-            let people = state.people.lock().unwrap();
+            let people = state.people.read().unwrap();
             if let Some(p) = people.people.iter().find(|p| p.id == pid) {
                 return p.clone();
             }
         }
     }
-    state.people.lock().unwrap().active_person()
+    state.people.read().unwrap().active_person()
 }
 
 fn runtime_for(state: &AppState, person: &Person) -> Arc<PersonRuntime> {
-    let mut map = state.runtimes.lock().unwrap();
+    if let Some(rt) = state.runtimes.read().unwrap().get(&person.id) {
+        return rt.clone();
+    }
+    let mut map = state.runtimes.write().unwrap();
     if let Some(rt) = map.get(&person.id) {
         return rt.clone();
     }
@@ -3626,7 +3660,7 @@ fn start_scheduler_thread(state: &Arc<AppState>) {
             };
             let people: Vec<Person> = st
                 .people
-                .lock()
+                .read()
                 .unwrap_or_else(|p| p.into_inner())
                 .people
                 .clone();
@@ -3700,12 +3734,12 @@ fn serve_inner(
         library: Arc::new(Mutex::new(library)),
         gate_token,
         allowed_hosts,
-        people: Arc::new(Mutex::new(people)),
-        runtimes: Arc::new(Mutex::new(HashMap::new())),
+        people: Arc::new(RwLock::new(people)),
+        runtimes: Arc::new(RwLock::new(HashMap::new())),
         live_runs: Arc::new(Mutex::new(HashMap::new())),
         events: sse::RunEventBus::new(),
         search_cache: search::SearchCache::new(),
-        sessions: Arc::new(Mutex::new(HashMap::new())),
+        sessions: Arc::new(RwLock::new(HashMap::new())),
         updater: update::Updater::from_env("ERGON", "ergon", env!("CARGO_PKG_VERSION"), "cayleb-james2008/ergon", gate_token_is_none),
         scheduler_enabled: !scheduler_disabled,
         running_routines: Arc::new(Mutex::new(std::collections::HashSet::new())),
@@ -3718,6 +3752,7 @@ fn serve_inner(
         start_scheduler_thread(&state);
     }
     const MAX_ACTIVE_CONNS: usize = 128;
+    const WARM_WORKER_FLOOR: usize = 4;
     let active_conns = Arc::new(AtomicUsize::new(0));
     struct ConnGuard(Arc<AtomicUsize>);
     impl Drop for ConnGuard {
@@ -3725,6 +3760,20 @@ fn serve_inner(
             self.0.fetch_sub(1, Ordering::Relaxed);
         }
     }
+    struct PoolInner {
+        queue: VecDeque<(std::net::TcpStream, ConnGuard)>,
+        idle_workers: usize,
+        total_workers: usize,
+    }
+    let pool = Arc::new((
+        Mutex::new(PoolInner {
+            queue: VecDeque::with_capacity(64),
+            idle_workers: 0,
+            total_workers: 0,
+        }),
+        Condvar::new(),
+    ));
+
     for stream in listener.incoming() {
         match stream {
             Ok(mut stream) => {
@@ -3741,11 +3790,54 @@ fn serve_inner(
                     continue;
                 }
                 let guard = ConnGuard(active_conns.clone());
-                let state = state.clone();
-                std::thread::spawn(move || {
-                    let _guard = guard;
-                    let _ = handle_connection(stream, &state);
-                });
+                let (lock, cvar) = &*pool;
+                let mut inner = lock.lock().unwrap_or_else(|p| p.into_inner());
+                inner.queue.push_back((stream, guard));
+                if inner.idle_workers == 0 && inner.total_workers < MAX_ACTIVE_CONNS {
+                    inner.total_workers += 1;
+                    let pool_w = pool.clone();
+                    let state_w = state.clone();
+                    std::thread::spawn(move || {
+                        struct ExitGuard<'a>(&'a (Mutex<PoolInner>, Condvar));
+                        impl Drop for ExitGuard<'_> {
+                            fn drop(&mut self) {
+                                let (l, _) = self.0;
+                                let mut g = l.lock().unwrap_or_else(|p| p.into_inner());
+                                g.total_workers = g.total_workers.saturating_sub(1);
+                            }
+                        }
+                        let _exit = ExitGuard(&pool_w);
+                        let (l, cv) = &*pool_w;
+                        loop {
+                            let job = {
+                                let mut g = l.lock().unwrap_or_else(|p| p.into_inner());
+                                loop {
+                                    if let Some(item) = g.queue.pop_front() {
+                                        break Some(item);
+                                    }
+                                    g.idle_workers += 1;
+                                    let (next_g, wait_res) = cv
+                                        .wait_timeout(g, std::time::Duration::from_secs(10))
+                                        .unwrap_or_else(|p| p.into_inner());
+                                    g = next_g;
+                                    g.idle_workers = g.idle_workers.saturating_sub(1);
+                                    if g.queue.is_empty()
+                                        && wait_res.timed_out()
+                                        && g.total_workers > WARM_WORKER_FLOOR
+                                    {
+                                        break None;
+                                    }
+                                }
+                            };
+                            let Some((conn, conn_guard)) = job else {
+                                break;
+                            };
+                            let _ = handle_connection(conn, &state_w);
+                            drop(conn_guard);
+                        }
+                    });
+                }
+                cvar.notify_one();
             }
             Err(_) => continue,
         }
@@ -3772,6 +3864,9 @@ struct Request {
     user_agent: Option<String>,
     cookie_raw: Option<String>,
     forwarded_for: Option<String>,
+    /// Content negotiation & conditional GET headers.
+    accept_encoding: Option<String>,
+    if_none_match: Option<String>,
 }
 
 /// Bodies are small JSON. A request claiming a larger one is dropped
@@ -3792,19 +3887,23 @@ fn read_request(stream: &mut std::net::TcpStream) -> Option<Request> {
     // (A file upload's BODY gets up to 3 minutes once its head arrived in
     // time: 25 MB from a phone on slow Wi-Fi needs more than 30 seconds.)
     let deadline = std::cell::Cell::new(std::time::Instant::now() + std::time::Duration::from_secs(30));
-    let arm = |stream: &std::net::TcpStream| -> Option<()> {
+    let arm = |s: &std::net::TcpStream| -> Option<()> {
         let remain = deadline.get().checked_duration_since(std::time::Instant::now())?;
-        stream.set_read_timeout(Some(remain)).ok()?;
+        s.set_read_timeout(Some(remain)).ok()?;
         Some(())
     };
-    let mut reader = BufReader::new(stream.try_clone().ok()?);
-    arm(stream)?;
-    let request_line = match head_line(&mut reader, MAX_HEAD_BYTES) {
-        Ok(Some((0, _))) => return None,
-        Ok(Some((_, line))) => line,
-        Ok(None) => return refuse_head(stream, &mut reader),
+    let mut reader = BufReader::new(&mut *stream);
+    let mut line_buf = Vec::with_capacity(256);
+    arm(reader.get_ref())?;
+    let n_req = match head_line_into(&mut reader, MAX_HEAD_BYTES, &mut line_buf) {
+        Ok(Some(0)) => return None,
+        Ok(Some(n)) => n,
+        Ok(None) => return refuse_head(&mut reader),
         Err(_) => return None,
     };
+    let request_line = std::str::from_utf8(&line_buf)
+        .map(|s| s.to_string())
+        .unwrap_or_else(|_| String::from_utf8_lossy(&line_buf).into_owned());
     let mut parts = request_line.split_whitespace();
     let method = parts.next()?.to_string();
     let raw_path = parts.next()?.to_string();
@@ -3816,6 +3915,7 @@ fn read_request(stream: &mut std::net::TcpStream) -> Option<Request> {
     let query = query_part.to_string();
     let mut content_length: Option<usize> = None;
     let mut bad_length = false;
+    let mut bad_host = false;
     let mut chunked = false;
     let mut session: Option<String> = None;
     let mut gate: Option<String> = None;
@@ -3827,22 +3927,29 @@ fn read_request(stream: &mut std::net::TcpStream) -> Option<Request> {
     let mut user_agent: Option<String> = None;
     let mut cookie_raw: Option<String> = None;
     let mut forwarded_for: Option<String> = None;
-    let mut head_bytes = request_line.len();
+    let mut accept_encoding: Option<String> = None;
+    let mut if_none_match: Option<String> = None;
+    let mut head_bytes = n_req;
     loop {
-        arm(stream)?;
+        arm(reader.get_ref())?;
         let room = MAX_HEAD_BYTES - head_bytes;
-        let (n, line) = match head_line(&mut reader, room) {
+        let n = match head_line_into(&mut reader, room, &mut line_buf) {
             Ok(Some(read)) => read,
-            Ok(None) => return refuse_head(stream, &mut reader),
+            Ok(None) => return refuse_head(&mut reader),
             Err(_) => return None,
         };
-        if n == 0 || line == "\r\n" || line == "\n" {
+        if n == 0 || line_buf == b"\r\n" || line_buf == b"\n" {
             break;
         }
         head_bytes += n;
-        let lower = line.to_lowercase();
-        if let Some(v) = lower.strip_prefix("content-length:") {
-            match v.trim().parse::<usize>() {
+        let line_cow = String::from_utf8_lossy(&line_buf);
+        let Some((raw_name, raw_val)) = line_cow.split_once(':') else {
+            continue;
+        };
+        let name = raw_name.trim();
+        let val = raw_val.trim();
+        if name.eq_ignore_ascii_case("content-length") {
+            match val.parse::<usize>() {
                 Ok(len) => {
                     if let Some(prev) = content_length {
                         if prev != len {
@@ -3854,63 +3961,54 @@ fn read_request(stream: &mut std::net::TcpStream) -> Option<Request> {
                 }
                 Err(_) => bad_length = true,
             }
-        }
-        if let Some(v) = lower.strip_prefix("transfer-encoding:") {
-            if v.contains("chunked") {
+        } else if name.eq_ignore_ascii_case("transfer-encoding") {
+            if val.to_ascii_lowercase().contains("chunked") {
                 chunked = true;
             }
-        }
-        if let Some(v) = lower.strip_prefix("content-type:") {
-            content_type = v.trim().to_string();
-        }
-        if let Some(v) = lower.strip_prefix("origin:") {
-            origin = Some(v.trim().to_string());
-        }
-        if let Some(v) = lower.strip_prefix("host:") {
-            host = Some(v.trim().to_string());
-        }
-        if let Some(v) = lower.strip_prefix("sec-fetch-site:") {
-            sec_fetch_site = Some(v.trim().to_string());
-        }
-        // Original-case values (secrets and tokens are case-sensitive).
-        let original_value = || line.split_once(':').map(|(_, v)| v.trim().to_string());
-        if lower.starts_with("authorization:") {
-            authorization = original_value();
-        }
-        if lower.starts_with("user-agent:") {
-            user_agent = original_value();
-        }
-        if lower.starts_with("x-forwarded-for:") {
-            forwarded_for = original_value();
-        }
-        if lower.starts_with("cookie:") {
-            cookie_raw = original_value();
-        }
-        if let Some(v) = lower.strip_prefix("cookie:") {
-            for pair in v.split(';') {
+        } else if name.eq_ignore_ascii_case("content-type") {
+            content_type = val.to_ascii_lowercase();
+        } else if name.eq_ignore_ascii_case("origin") {
+            origin = Some(val.to_ascii_lowercase());
+        } else if name.eq_ignore_ascii_case("host") {
+            if host.is_some() {
+                bad_host = true;
+            } else {
+                host = Some(val.to_ascii_lowercase());
+            }
+        } else if name.eq_ignore_ascii_case("sec-fetch-site") {
+            sec_fetch_site = Some(val.to_ascii_lowercase());
+        } else if name.eq_ignore_ascii_case("accept-encoding") {
+            accept_encoding = Some(val.to_string());
+        } else if name.eq_ignore_ascii_case("if-none-match") {
+            if_none_match = Some(val.to_string());
+        } else if name.eq_ignore_ascii_case("authorization") {
+            authorization = Some(val.to_string());
+        } else if name.eq_ignore_ascii_case("user-agent") {
+            user_agent = Some(val.to_string());
+        } else if name.eq_ignore_ascii_case("x-forwarded-for") {
+            forwarded_for = Some(val.to_string());
+        } else if name.eq_ignore_ascii_case("cookie") {
+            cookie_raw = Some(val.to_string());
+            for pair in val.split(';') {
                 let pair = pair.trim();
-                if let Some(id) = pair.strip_prefix("ergon_session=") {
-                    let id = id.trim().to_string();
-                    if !id.is_empty() {
-                        session = Some(id);
+                if let Some((k, id)) = pair.split_once('=') {
+                    if k.trim().eq_ignore_ascii_case("ergon_session") {
+                        let id = id.trim().to_string();
+                        if !id.is_empty() {
+                            session = Some(id);
+                        }
                     }
                 }
             }
-        }
-        if lower.starts_with("x-ergon-gate:") {
-            // The value is a secret: take it from the ORIGINAL line,
-            // not the lowercased copy used for header-name matching.
-            if let Some((_, v)) = line.split_once(':') {
-                let v = v.trim().to_string();
-                if !v.is_empty() {
-                    gate = Some(v);
-                }
-            }
+        } else if name.eq_ignore_ascii_case("x-ergon-gate") && !val.is_empty() {
+            gate = Some(val.to_string());
         }
     }
-    if bad_length || chunked {
+    if bad_length || bad_host || chunked {
         let msg = if chunked {
             r#"{"error":"chunked transfer-encoding is not supported"}"#
+        } else if bad_host {
+            r#"{"error":"multiple Host headers are not permitted"}"#
         } else {
             r#"{"error":"invalid Content-Length header"}"#
         };
@@ -3918,9 +4016,10 @@ fn read_request(stream: &mut std::net::TcpStream) -> Option<Request> {
             "HTTP/1.1 400 Bad Request\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{msg}",
             msg.len()
         );
-        let _ = stream.write_all(response.as_bytes());
-        let _ = stream.flush();
-        let _ = stream.shutdown(std::net::Shutdown::Write);
+        let s = reader.get_mut();
+        let _ = s.write_all(response.as_bytes());
+        let _ = s.flush();
+        let _ = s.shutdown(std::net::Shutdown::Write);
         return None;
     }
     let content_length = content_length.unwrap_or(0);
@@ -3935,7 +4034,9 @@ fn read_request(stream: &mut std::net::TcpStream) -> Option<Request> {
         // headers (e.g. 99999999999999) with an open write-half return 413 promptly.
         let mut to_drain = content_length.min(4 * 1024 * 1024);
         let drain_end = std::time::Instant::now() + std::time::Duration::from_millis(250);
-        let _ = stream.set_read_timeout(Some(std::time::Duration::from_millis(50)));
+        let _ = reader
+            .get_ref()
+            .set_read_timeout(Some(std::time::Duration::from_millis(50)));
         let mut sink = [0u8; 8192];
         while to_drain > 0 && std::time::Instant::now() < drain_end {
             let want = to_drain.min(sink.len());
@@ -3952,15 +4053,16 @@ fn read_request(stream: &mut std::net::TcpStream) -> Option<Request> {
             "HTTP/1.1 413 Content Too Large\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
             body.len()
         );
-        let _ = stream.write_all(response.as_bytes());
-        let _ = stream.flush();
-        let _ = stream.shutdown(std::net::Shutdown::Write);
+        let s = reader.get_mut();
+        let _ = s.write_all(response.as_bytes());
+        let _ = s.flush();
+        let _ = s.shutdown(std::net::Shutdown::Write);
         return None;
     }
     if body_limit == MAX_UPLOAD_BODY_BYTES && content_length > MAX_BODY_BYTES {
         deadline.set(std::time::Instant::now() + std::time::Duration::from_secs(180));
     }
-    arm(stream)?;
+    arm(reader.get_ref())?;
     let mut body = vec![0u8; content_length];
     if content_length > 0 {
         reader.read_exact(&mut body).ok()?;
@@ -3980,25 +4082,31 @@ fn read_request(stream: &mut std::net::TcpStream) -> Option<Request> {
         user_agent,
         cookie_raw,
         forwarded_for,
+        accept_encoding,
+        if_none_match,
     })
 }
 
-/// Reads one request-head line of at most `room` bytes, returning its
-/// length and text. `Ok(None)` means the line is longer than `room`:
-/// it is never buffered past the cap (E2).
-fn head_line(reader: &mut BufReader<std::net::TcpStream>, room: usize) -> std::io::Result<Option<(usize, String)>> {
-    let mut buf = Vec::new();
-    let n = (&mut *reader).take(room as u64 + 1).read_until(b'\n', &mut buf)?;
+/// Reads one request-head line of at most `room` bytes into `buf`, returning its
+/// length. `Ok(None)` means the line is longer than `room`: it is never buffered
+/// past the cap (E2).
+fn head_line_into(
+    reader: &mut BufReader<&mut std::net::TcpStream>,
+    room: usize,
+    buf: &mut Vec<u8>,
+) -> std::io::Result<Option<usize>> {
+    buf.clear();
+    let n = (&mut *reader).take(room as u64 + 1).read_until(b'\n', buf)?;
     if n > room {
         return Ok(None);
     }
-    Ok(Some((n, String::from_utf8_lossy(&buf).into_owned())))
+    Ok(Some(n))
 }
 
 /// Answers an over-long request head with 431 at once, then reads and
 /// discards what the client still sends until it closes (or the read
 /// deadline passes) so the answer is not reset by the socket (E2).
-fn refuse_head(stream: &mut std::net::TcpStream, reader: &mut BufReader<std::net::TcpStream>) -> Option<Request> {
+fn refuse_head(reader: &mut BufReader<&mut std::net::TcpStream>) -> Option<Request> {
     let body = format!(
         "{{\"error\": \"request head too large: the limit is {MAX_HEAD_BYTES} bytes\"}}"
     );
@@ -4006,9 +4114,12 @@ fn refuse_head(stream: &mut std::net::TcpStream, reader: &mut BufReader<std::net
         "HTTP/1.1 431 Request Header Fields Too Large\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
         body.len()
     );
-    let _ = stream.write_all(response.as_bytes());
-    let _ = stream.flush();
-    let _ = stream.shutdown(std::net::Shutdown::Write);
+    {
+        let s = reader.get_mut();
+        let _ = s.write_all(response.as_bytes());
+        let _ = s.flush();
+        let _ = s.shutdown(std::net::Shutdown::Write);
+    }
     let mut sink = [0u8; 8192];
     while matches!(reader.read(&mut sink), Ok(n) if n > 0) {}
     None
@@ -4082,9 +4193,11 @@ fn respond_bytes(
     body: &[u8],
     extra_headers: &[(&str, String)],
 ) -> std::io::Result<()> {
+    use std::fmt::Write as _;
     let reason = match status {
         200 => "OK",
         201 => "Created",
+        304 => "Not Modified",
         400 => "Bad Request",
         401 => "Unauthorized",
         403 => "Forbidden",
@@ -4098,26 +4211,43 @@ fn respond_bytes(
         503 => "Service Unavailable",
         _ => "OK",
     };
-    let mut head = format!(
-        "HTTP/1.1 {status} {reason}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nConnection: close\r\n",
-        body.len()
-    );
+    let body_len = if status == 304 { 0 } else { body.len() };
+    let mut buf = Vec::with_capacity(384 + body_len);
+    let mut head = String::with_capacity(384);
+    if status == 304 {
+        let _ = write!(&mut head, "HTTP/1.1 304 {reason}\r\nConnection: close\r\n");
+    } else {
+        let _ = write!(
+            &mut head,
+            "HTTP/1.1 {status} {reason}\r\nContent-Type: {content_type}\r\nContent-Length: {body_len}\r\nConnection: close\r\n"
+        );
+    }
     for (name, value) in extra_headers {
-        head.push_str(&format!("{name}: {value}\r\n"));
+        let _ = write!(&mut head, "{name}: {value}\r\n");
     }
     // Hardening on every response (unless the caller set its own).
-    let has = |n: &str| extra_headers.iter().any(|(h, _)| h.eq_ignore_ascii_case(n));
-    for (name, value) in tripwire::BASE_HEADERS {
-        if !has(name) {
-            head.push_str(&format!("{name}: {value}\r\n"));
+    if extra_headers.is_empty() {
+        head.push_str(tripwire::BASE_HEADERS_BLOCK);
+        if content_type.starts_with("application/json") {
+            head.push_str("Cache-Control: no-store\r\n");
+        }
+    } else {
+        let has = |n: &str| extra_headers.iter().any(|(h, _)| h.eq_ignore_ascii_case(n));
+        for (name, value) in tripwire::BASE_HEADERS {
+            if !has(name) {
+                let _ = write!(&mut head, "{name}: {value}\r\n");
+            }
+        }
+        if content_type.starts_with("application/json") && !has("Cache-Control") {
+            head.push_str("Cache-Control: no-store\r\n");
         }
     }
-    if content_type.starts_with("application/json") && !has("Cache-Control") {
-        head.push_str("Cache-Control: no-store\r\n");
-    }
     head.push_str("\r\n");
-    stream.write_all(head.as_bytes())?;
-    stream.write_all(body)?;
+    buf.extend_from_slice(head.as_bytes());
+    if status != 304 && !body.is_empty() {
+        buf.extend_from_slice(body);
+    }
+    stream.write_all(&buf)?;
     stream.flush()
 }
 
@@ -4228,7 +4358,8 @@ fn effective_cfg(state: &AppState, runtime: &PersonRuntime) -> Config {
 }
 
 fn respond_json(stream: &mut std::net::TcpStream, status: u16, v: &Value) -> std::io::Result<()> {
-    respond(stream, status, "application/json", &v.to_string())
+    let bytes = serde_json::to_vec(v).unwrap_or_else(|_| v.to_string().into_bytes());
+    respond_bytes(stream, status, "application/json", &bytes, &[])
 }
 
 /// Markdown for the audit bundle's tripwire section.
@@ -4396,12 +4527,47 @@ fn page_csp(page: &'static str) -> String {
     INDEX.get_or_init(|| tripwire::csp_for_html(page)).clone()
 }
 
+fn accepts_gzip(header: Option<&str>) -> bool {
+    let Some(raw) = header else { return false };
+    for part in raw.split(',') {
+        let mut pieces = part.trim().split(';');
+        let enc = pieces.next().unwrap_or("").trim();
+        if !enc.eq_ignore_ascii_case("gzip") {
+            continue;
+        }
+        let mut rejected = false;
+        for param in pieces {
+            let param = param.trim();
+            if let Some(q) = param.strip_prefix("q=").or_else(|| param.strip_prefix("Q=")) {
+                if q.trim().parse::<f32>().ok().is_some_and(|v| v <= 0.0) {
+                    rejected = true;
+                }
+            }
+        }
+        if !rejected {
+            return true;
+        }
+    }
+    false
+}
+
+fn etag_matches(if_none_match: Option<&str>, etag: &str) -> bool {
+    let Some(raw) = if_none_match else { return false };
+    for item in raw.split(',') {
+        let tag = item.trim();
+        if tag == "*" || tag == etag || tag.strip_prefix("W/") == Some(etag) {
+            return true;
+        }
+    }
+    false
+}
+
 /// Serve a desk page (`/` or `/phone`). First visit (or an unknown,
 /// forged or stale cookie) gets a fresh server-generated session pinned
 /// to the current active person — so this browser keeps its own person
 /// even if another client switches the global one — plus the decoy
-/// `ergon_role` cookie (HT1). The page carries a strict CSP and a
-/// breadcrumb comment only scrapers read.
+/// `ergon_role` cookie (HT1). Supports gzip (`Accept-Encoding: gzip`),
+/// strong `ETag` + `304 Not Modified`, `Vary: Accept-Encoding`, and strict CSP.
 fn serve_page(
     stream: &mut std::net::TcpStream,
     state: &AppState,
@@ -4409,8 +4575,15 @@ fn serve_page(
     person: &Person,
     page: &'static str,
 ) -> std::io::Result<()> {
-    let html = state.tripwire.decorate_html(page);
-    let mut headers: Vec<(&str, String)> = vec![("Content-Security-Policy", page_csp(page))];
+    let bundle = state.tripwire.decorate_html_bundle(page);
+    let wants_gzip = accepts_gzip(req.accept_encoding.as_deref());
+    let etag = if wants_gzip { &bundle.etag_gzip } else { &bundle.etag_raw };
+    let mut headers: Vec<(&str, String)> = vec![
+        ("Content-Security-Policy", page_csp(page)),
+        ("ETag", etag.clone()),
+        ("Vary", "Accept-Encoding".to_string()),
+        ("Cache-Control", "no-cache".to_string()),
+    ];
     if !session_known(state, &req.session) {
         let sid = new_session_id();
         insert_session(state, sid.clone(), person.id.clone());
@@ -4423,10 +4596,19 @@ fn serve_page(
             format!("ergon_role={}; Path=/; SameSite=Strict", tripwire::ROLE_COOKIE_VALUE),
         ));
     }
-    respond_h(stream, 200, "text/html; charset=utf-8", &html, &headers)
+    if etag_matches(req.if_none_match.as_deref(), etag) {
+        return respond_bytes(stream, 304, "text/html; charset=utf-8", &[], &headers);
+    }
+    if wants_gzip {
+        headers.push(("Content-Encoding", "gzip".to_string()));
+        respond_bytes(stream, 200, "text/html; charset=utf-8", &bundle.gzip, &headers)
+    } else {
+        respond_bytes(stream, 200, "text/html; charset=utf-8", bundle.html.as_bytes(), &headers)
+    }
 }
 
 fn handle_connection(mut stream: std::net::TcpStream, state: &AppState) -> std::io::Result<()> {
+    let _ = stream.set_nodelay(true);
     // A banned scanner is dropped before one byte of its request is read
     // (never this computer: loopback is never banned).
     let peer = stream.peer_addr().ok().map(|a| a.ip());
@@ -4543,9 +4725,9 @@ fn handle_connection(mut stream: std::net::TcpStream, state: &AppState) -> std::
             }
         }
         ("GET", "/api/status") => {
-            let mut recovered: Vec<String> = state.people.lock().unwrap().recovered.clone();
+            let mut recovered: Vec<String> = state.people.read().unwrap().recovered.clone();
             recovered.extend(state.library.lock().unwrap().recovered.clone());
-            for rt in state.runtimes.lock().unwrap().values() {
+            for rt in state.runtimes.read().unwrap().values() {
                 recovered.extend(rt.store.lock().unwrap().recovered.clone());
             }
             recovered.sort();
@@ -5423,7 +5605,15 @@ fn handle_connection(mut stream: std::net::TcpStream, state: &AppState) -> std::
                     respond_json(&mut stream, 201, &json!({"path": out, "size": bytes, "kind": label, "source": rel}))
                 }
                 Err(e) => {
-                    let status = if e.contains("escapes") || e.contains("absolute") { 403 } else { 400 };
+                    let status = if e.contains("escapes")
+                        || e.contains("absolute")
+                        || e.contains("symlink")
+                        || e.contains("hidden")
+                    {
+                        403
+                    } else {
+                        400
+                    };
                     respond_json(&mut stream, status, &json!({"error": e}))
                 }
             }
@@ -5558,7 +5748,7 @@ fn handle_connection(mut stream: std::net::TcpStream, state: &AppState) -> std::
             )
         }
         ("GET", "/api/people") => {
-            let people = state.people.lock().unwrap();
+            let people = state.people.read().unwrap();
             let mut v = people.to_json();
             v["active"] = json!(person.id);
             respond_json(&mut stream, 200, &v)
@@ -5575,7 +5765,7 @@ fn handle_connection(mut stream: std::net::TcpStream, state: &AppState) -> std::
             }
             let role = parsed["role"].as_str().unwrap_or("").trim().to_string();
             let person = {
-                let mut people = state.people.lock().unwrap();
+                let mut people = state.people.write().unwrap();
                 let p = people.add(&name, &role);
                 people.save(root_cfg);
                 p
@@ -5593,7 +5783,7 @@ fn handle_connection(mut stream: std::net::TcpStream, state: &AppState) -> std::
                 .unwrap_or("")
                 .to_string();
             {
-                let people = state.people.lock().unwrap();
+                let people = state.people.read().unwrap();
                 if !people.people.iter().any(|p| p.id == id) {
                     return respond_json(
                         &mut stream,
@@ -5614,7 +5804,7 @@ fn handle_connection(mut stream: std::net::TcpStream, state: &AppState) -> std::
                 insert_session(state, sid, id.clone());
             } else {
                 {
-                    let mut people = state.people.lock().unwrap();
+                    let mut people = state.people.write().unwrap();
                     people.active = id.clone();
                     people.save(root_cfg);
                 }
@@ -5624,7 +5814,7 @@ fn handle_connection(mut stream: std::net::TcpStream, state: &AppState) -> std::
                     "ergon_session={sid}; Path=/; HttpOnly; SameSite=Lax"
                 ));
             }
-            let people = state.people.lock().unwrap();
+            let people = state.people.read().unwrap();
             let mut v = people.to_json();
             v["active"] = json!(id);
             match set_cookie {
@@ -5826,7 +6016,7 @@ fn handle_connection(mut stream: std::net::TcpStream, state: &AppState) -> std::
             // Cloned snapshots, locks dropped: build_graph reads
             // every person's files from disk and must not hold the
             // people/library locks across that I/O.
-            let people_snapshot = state.people.lock().unwrap().people.clone();
+            let people_snapshot = state.people.read().unwrap().people.clone();
             let lib = state.library.lock().unwrap().clone();
             respond_json(
                 &mut stream,
@@ -6247,6 +6437,8 @@ mod v010_hardening_tests {
             user_agent: None,
             cookie_raw: None,
             forwarded_for: None,
+            accept_encoding: None,
+            if_none_match: None,
         };
         assert!(refusal(&req, false, &[]).is_none());
     }
@@ -6304,5 +6496,177 @@ mod v010_hardening_tests {
         assert!(parsed.is_none());
         assert!(resp.starts_with("HTTP/1.1 413"), "got: {resp}");
         assert!(elapsed.as_secs() < 2, "took too long: {elapsed:?}");
+    }
+
+    #[test]
+    fn read_request_rejects_duplicate_host_header() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let handle = std::thread::spawn(move || {
+            let mut client = std::net::TcpStream::connect(addr).unwrap();
+            client
+                .write_all(b"GET /api/version HTTP/1.1\r\nHost: evil.example\r\nHost: localhost:8787\r\n\r\n")
+                .unwrap();
+            let mut resp = String::new();
+            let _ = client.read_to_string(&mut resp);
+            resp
+        });
+        let (mut server, _) = listener.accept().unwrap();
+        let parsed = read_request(&mut server);
+        drop(server);
+        let resp = handle.join().unwrap();
+        assert!(parsed.is_none());
+        assert!(resp.starts_with("HTTP/1.1 400 Bad Request"), "got: {resp}");
+    }
+
+    #[test]
+    fn gzip_compress_and_serve_page_etag_304_work_end_to_end() {
+        let sample = b"<!doctype html><html><head><title>Ergon</title></head><body>ok</body></html>";
+        let gz = tripwire::gzip_compress(sample);
+        assert_eq!(&gz[..3], &[0x1f, 0x8b, 0x08]);
+        let payload = &gz[10..gz.len() - 8];
+        let decompressed = miniz_oxide::inflate::decompress_to_vec(payload).unwrap();
+        assert_eq!(decompressed, sample);
+
+        let root = std::env::temp_dir().join(format!(
+            "ergon-v011-gzip-test-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let mut cfg = Config::from_env();
+        cfg.data_dir = root.join("data");
+        cfg.workspace_dir = cfg.data_dir.join("workspace");
+        cfg.memory_path = cfg.data_dir.join("memory.md");
+        cfg.api_key = None;
+        cfg.model_base_url = "http://127.0.0.1:9/v1".to_string();
+
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            let _ = serve(listener, cfg);
+        });
+        std::thread::sleep(std::time::Duration::from_millis(40));
+
+        // 1. Gzip request returns 200 with Content-Encoding: gzip, ETag, Vary, and security headers
+        let mut s1 = std::net::TcpStream::connect(("127.0.0.1", port)).unwrap();
+        s1.write_all(
+            format!("GET / HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nAccept-Encoding: gzip, deflate\r\n\r\n").as_bytes(),
+        )
+        .unwrap();
+        let mut raw1 = Vec::new();
+        s1.read_to_end(&mut raw1).unwrap();
+        let split1 = raw1.windows(4).position(|w| w == b"\r\n\r\n").unwrap();
+        let head1 = String::from_utf8_lossy(&raw1[..split1]).to_string();
+        let body1 = &raw1[split1 + 4..];
+        assert!(head1.starts_with("HTTP/1.1 200 OK"), "{head1}");
+        assert!(head1.to_ascii_lowercase().contains("content-encoding: gzip"), "{head1}");
+        assert!(head1.to_ascii_lowercase().contains("vary: accept-encoding"), "{head1}");
+        assert!(head1.to_ascii_lowercase().contains("x-content-type-options: nosniff"), "{head1}");
+        assert!(head1.to_ascii_lowercase().contains("x-frame-options: deny"), "{head1}");
+        assert!(head1.to_ascii_lowercase().contains("referrer-policy: no-referrer"), "{head1}");
+        let etag = head1
+            .lines()
+            .find_map(|l| {
+                let (k, v) = l.split_once(':')?;
+                k.trim().eq_ignore_ascii_case("etag").then(|| v.trim().to_string())
+            })
+            .expect("ETag header missing");
+        assert!(etag.ends_with("-gzip\""), "expected gzip ETag, got {etag}");
+        assert_eq!(&body1[..3], &[0x1f, 0x8b, 0x08]);
+        let html = String::from_utf8(
+            miniz_oxide::inflate::decompress_to_vec(&body1[10..body1.len() - 8]).unwrap(),
+        )
+        .unwrap();
+        assert!(html.contains("<html") && html.contains("Ergon"), "unexpected html");
+
+        // 2. Conditional GET with If-None-Match returns 304 Not Modified with empty body
+        let mut s2 = std::net::TcpStream::connect(("127.0.0.1", port)).unwrap();
+        s2.write_all(
+            format!(
+                "GET / HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nAccept-Encoding: gzip\r\nIf-None-Match: {etag}\r\n\r\n"
+            )
+            .as_bytes(),
+        )
+        .unwrap();
+        let mut raw2 = Vec::new();
+        s2.read_to_end(&mut raw2).unwrap();
+        let split2 = raw2.windows(4).position(|w| w == b"\r\n\r\n").unwrap();
+        let head2 = String::from_utf8_lossy(&raw2[..split2]).to_string();
+        let body2 = &raw2[split2 + 4..];
+        assert!(head2.starts_with("HTTP/1.1 304 Not Modified"), "{head2}");
+        assert!(head2.to_ascii_lowercase().contains("vary: accept-encoding"), "{head2}");
+        assert!(head2.to_ascii_lowercase().contains("x-frame-options: deny"), "{head2}");
+        assert!(body2.is_empty(), "304 must have empty body");
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn store_list_json_computes_accurate_thread_states() {
+        let dir = std::env::temp_dir().join(format!(
+            "ergon-list-state-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut store = Store::load(&dir.join("threads.json"));
+        let t_none = store.create_thread();
+        store.push(&t_none, "user", "hello");
+        let t_fin = store.create_thread();
+        store.push(&t_fin, "user", "summarize");
+        store.push(&t_fin, "assistant", "done");
+        let t_wait = store.create_thread();
+        store.push(&t_wait, "user", "delete old.txt");
+        store.push(&t_wait, "step", &parked_note("old.txt"));
+        store.push(&t_wait, "assistant", "waiting on you");
+
+        let listed = store.list_json();
+        let arr = listed["threads"].as_array().unwrap();
+        let state_of = |id: &str| {
+            arr.iter()
+                .find(|x| x["id"].as_str() == Some(id))
+                .and_then(|x| x["state"].as_str())
+                .unwrap()
+                .to_string()
+        };
+        assert_eq!(state_of(&t_none), "none");
+        assert_eq!(state_of(&t_fin), "finished");
+        assert_eq!(state_of(&t_wait), "waiting");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn history_and_export_reject_hidden_dotfiles_and_symlinks() {
+        let dir = std::env::temp_dir().join(format!(
+            "ergon-sec-guard-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let ws = dir.join("workspace");
+        std::fs::create_dir_all(&ws).unwrap();
+        assert!(file_history::validate_history_path(&ws, ".env").is_err());
+        assert!(file_history::validate_history_path(&ws, "sub/.git/config").is_err());
+
+        #[cfg(unix)]
+        {
+            std::fs::write(ws.join("note.md"), "# Note\nHello\n").unwrap();
+            let outside = dir.join("outside.docx");
+            std::fs::write(&outside, b"untouched").unwrap();
+            std::os::unix::fs::symlink(&outside, ws.join("note.docx")).unwrap();
+            let mut cfg = Config::from_env();
+            cfg.data_dir = dir.clone();
+            cfg.workspace_dir = ws.clone();
+            cfg.memory_path = dir.join("memory.md");
+            let err = export_workspace_file(&cfg, "note.md", Some("docx"), None).unwrap_err();
+            assert!(err.contains("symlink"), "got: {err}");
+            assert_eq!(std::fs::read(&outside).unwrap(), b"untouched");
+        }
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

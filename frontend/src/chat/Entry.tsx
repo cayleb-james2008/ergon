@@ -1,7 +1,7 @@
 // Work Entry cards & inline Approval/File-Diff card for the central Conversation Thread.
 // Keeps clean typography, tabular-nums timestamps, inline file diff preview, 1-click Word/Excel & SHA-256 receipt export.
 import { useState } from "react";
-import { Check, ChevronDown, FileDown, FileSpreadsheet, FileText, Hourglass } from "lucide-react";
+import { Check, ChevronDown, Copy, FileDown, FileSpreadsheet, FileText, Hourglass } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Pill } from "@/components/kibo-ui/pill";
@@ -250,6 +250,21 @@ export function FinishedEntry({
     }
   };
 
+  const handleCopySummary = async () => {
+    const lines = [
+      `# ${task || "Completed deliverable"}`,
+      "",
+      result,
+      ...(files.length ? ["", "Saved workspace files:", ...files.map((f) => `- ${f}`)] : []),
+    ];
+    try {
+      await navigator.clipboard.writeText(lines.join("\n"));
+      toast.success("Copied client-ready summary.");
+    } catch {
+      toast.error("Could not access clipboard.");
+    }
+  };
+
   return (
     <EntryShell label="Finished work" time={time} title={task || "Completed task"} status={<FinishedPill />}>
       <Cells>
@@ -308,6 +323,16 @@ export function FinishedEntry({
           >
             <FileDown className="size-3.5" strokeWidth={1.5} aria-hidden />
             Receipt (.json)
+          </Button>
+          <Button
+            type="button"
+            size="xs"
+            variant="ghost"
+            className="max-md:min-h-11 gap-1.5 text-xs text-ink-2 hover:text-ink"
+            onClick={() => void handleCopySummary()}
+          >
+            <Copy className="size-3.5" strokeWidth={1.5} aria-hidden />
+            Copy summary
           </Button>
         </div>
         {steps.length > 0 && (

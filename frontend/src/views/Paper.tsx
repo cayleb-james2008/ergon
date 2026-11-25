@@ -472,6 +472,7 @@ export function PaperFace({
   busy,
   liveTimeline,
   liveElapsedMs,
+  runStartedMs,
   streamMode,
   cancelling,
   onCancel,
@@ -494,6 +495,7 @@ export function PaperFace({
   busy: boolean;
   liveTimeline: LiveRunStep[];
   liveElapsedMs: number;
+  runStartedMs?: number;
   streamMode: "sse" | "poll";
   cancelling: boolean;
   onCancel: () => void;
@@ -792,6 +794,7 @@ export function PaperFace({
                 <LiveRunTimeline
                   steps={liveTimeline}
                   elapsedMs={liveElapsedMs}
+                  startedMs={runStartedMs}
                   streamMode={streamMode}
                   cancelling={cancelling}
                   onCancel={onCancel}

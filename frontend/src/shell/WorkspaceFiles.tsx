@@ -25,6 +25,7 @@ import {
   RefreshCw,
   RotateCcw,
   Search,
+  Sparkles,
   Upload,
   X,
 } from "lucide-react";
@@ -59,7 +60,7 @@ import {
 import { computeLineDiff, normalizeServerDiff } from "@/lib/diff";
 import { exportReceiptDownload } from "@/lib/receiptExport";
 import { cn } from "@/lib/utils";
-import { relTime } from "@/lib/words";
+import { detectWorkflowForFile, relTime } from "@/lib/words";
 
 const TRIGGER = "focus-ring flex w-full min-h-11 md:min-h-9 items-center justify-between gap-1.5 rounded-sm px-1.5 text-left text-sm text-ink outline-none hover:bg-board";
 const FILES_PAGE_SIZE = 25;
@@ -731,6 +732,7 @@ export function FileHistoryDiffView({
 }) {
   const [selectedId, setSelectedId] = useState<string>("");
   const [compareTarget, setCompareTarget] = useState<string>("current");
+  const [diffMode, setDiffMode] = useState<"unified" | "split">("unified");
   const [serverDiff, setServerDiff] = useState<FileDiffPayload | null>(null);
   const [diffLoading, setDiffLoading] = useState(false);
   const [restoring, setRestoring] = useState(false);
@@ -961,17 +963,39 @@ export function FileHistoryDiffView({
                 </>
               )}
             </div>
-            <Button
-              id="restore-version-btn"
-              type="button"
-              size="sm"
-              className="max-md:min-h-11"
-              disabled={restoring}
-              onClick={handleRestore}
-            >
-              <RotateCcw className="size-3.5" strokeWidth={1.5} aria-hidden />
-              {restoring ? "Restoring…" : "Restore version"}
-            </Button>
+            <div className="flex flex-wrap items-center gap-2">
+              <SegmentedControl aria-label="Diff layout">
+                <SegmentedControlItem
+                  data-id="unified"
+                  aria-pressed={diffMode === "unified"}
+                  data-checked={diffMode === "unified" ? "" : undefined}
+                  className="min-h-11 px-2.5 text-xs md:min-h-8"
+                  onClick={() => setDiffMode("unified")}
+                >
+                  Unified
+                </SegmentedControlItem>
+                <SegmentedControlItem
+                  data-id="split"
+                  aria-pressed={diffMode === "split"}
+                  data-checked={diffMode === "split" ? "" : undefined}
+                  className="min-h-11 px-2.5 text-xs md:min-h-8"
+                  onClick={() => setDiffMode("split")}
+                >
+                  Side-by-side
+                </SegmentedControlItem>
+              </SegmentedControl>
+              <Button
+                id="restore-version-btn"
+                type="button"
+                size="sm"
+                className="max-md:min-h-11"
+                disabled={restoring}
+                onClick={handleRestore}
+              >
+                <RotateCcw className="size-3.5" strokeWidth={1.5} aria-hidden />
+                {restoring ? "Restoring…" : "Restore version"}
+              </Button>
+            </div>
           </div>
 
           <div id="file-diff-view" className="max-h-[34vh] overflow-auto rounded-sm border border-hairline bg-surface font-mono text-xs leading-5">
@@ -983,6 +1007,50 @@ export function FileHistoryDiffView({
               </p>
             ) : activeDiff.hunks.length === 0 ? (
               <p className="p-3 text-ink-2">No line differences between these two versions (identical content).</p>
+            ) : diffMode === "split" ? (
+              <div className="min-w-0">
+                <div className="sticky top-0 z-10 grid grid-cols-2 border-b border-hairline bg-board text-xs font-medium text-ink-2">
+                  <div className="truncate border-r border-hairline px-2.5 py-1">
+                    Snapshot ({selectedRev.rev_id.slice(0, 14)})
+                  </div>
+                  <div className="truncate px-2.5 py-1">
+                    {compareTarget === "current" ? "Current file" : `Snapshot (${compareTarget.slice(0, 14)})`}
+                  </div>
+                </div>
+                {activeDiff.hunks.map((hunk, hi) => (
+                  <div key={hi}>
+                    {hunk.header && (
+                      <div className="border-y border-hairline bg-board/60 px-3 py-1 text-ink-2">
+                        {hunk.header}
+                      </div>
+                    )}
+                    {hunk.lines.map((line, li) => {
+                      const isDel = line.kind === "del";
+                      const isAdd = line.kind === "add";
+                      const leftCls = isDel ? "bg-pill-pro-bg text-pill-pro-fg" : isAdd ? "bg-board/30 text-ink-3" : "bg-surface text-ink";
+                      const rightCls = isAdd ? "bg-pill-active-bg text-pill-active-fg" : isDel ? "bg-board/30 text-ink-3" : "bg-surface text-ink";
+                      return (
+                        <div key={`${hi}-${li}`} className="grid grid-cols-2 border-b border-hairline/40">
+                          <div
+                            data-diff-kind={isDel ? "del" : undefined}
+                            className={cn("grid min-w-0 grid-cols-[2.25rem_minmax(0,1fr)] gap-1 border-r border-hairline px-2 py-0.5", leftCls)}
+                          >
+                            <span className="select-none text-right opacity-75">{!isAdd ? (line.old_line ?? "") : ""}</span>
+                            <span className="whitespace-pre-wrap break-all">{!isAdd ? (line.text || " ") : ""}</span>
+                          </div>
+                          <div
+                            data-diff-kind={isAdd ? "add" : undefined}
+                            className={cn("grid min-w-0 grid-cols-[2.25rem_minmax(0,1fr)] gap-1 px-2 py-0.5", rightCls)}
+                          >
+                            <span className="select-none text-right opacity-75">{!isDel ? (line.new_line ?? "") : ""}</span>
+                            <span className="whitespace-pre-wrap break-all">{!isDel ? (line.text || " ") : ""}</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ))}
+              </div>
             ) : (
               <div className="min-w-0">
                 {activeDiff.hunks.map((hunk, hi) => (
@@ -1034,6 +1102,7 @@ export function FileViewerModal({
   status,
   onClose,
   onAskAbout,
+  onRunWorkflow,
   onRestored,
 }: {
   filePath: string | null;
@@ -1041,6 +1110,7 @@ export function FileViewerModal({
   status?: Status | null | "error";
   onClose: () => void;
   onAskAbout?: (path: string) => void;
+  onRunWorkflow?: (prompt: string) => void;
   onRestored?: () => void;
 }) {
   const [data, setData] = useState<WorkspaceFileContent | null>(null);
@@ -1135,6 +1205,7 @@ export function FileViewerModal({
   };
 
   const target = filePath ? exportTarget(filePath) : null;
+  const suggestedWorkflow = filePath ? detectWorkflowForFile(filePath) : null;
   const [savingAs, setSavingAs] = useState(false);
   const handleSaveAs = async () => {
     if (!filePath || !target) return;
@@ -1281,6 +1352,19 @@ export function FileViewerModal({
                   Receipt (.json)
                 </Button>
               </>
+            )}
+            {suggestedWorkflow && onRunWorkflow && !err && (
+              <Button
+                size="sm"
+                className="max-md:min-h-11 gap-1.5"
+                onClick={() => {
+                  onRunWorkflow(suggestedWorkflow.prompt);
+                  onClose();
+                }}
+              >
+                <Sparkles className="size-3.5" strokeWidth={1.5} aria-hidden />
+                {suggestedWorkflow.label}
+              </Button>
             )}
             {filePath && onAskAbout && !err && (
               <Button

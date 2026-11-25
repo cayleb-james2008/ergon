@@ -43,7 +43,7 @@ use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::net::{IpAddr, SocketAddr, ToSocketAddrs};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock, RwLock};
 
 use crate::records;
 
@@ -1952,13 +1952,33 @@ struct PeerState {
 /// (peer, decoy path, slot) → (token, issued ms).
 type DecoyTokenCache = HashMap<(Option<IpAddr>, String, u8), (String, u64)>;
 
+pub struct DecoratedPage {
+    pub html: Arc<String>,
+    pub gzip: Arc<Vec<u8>>,
+    pub etag_raw: String,
+    pub etag_gzip: String,
+}
+
+/// Compress bytes into an RFC 1952 gzip stream using `miniz_oxide` + IEEE CRC-32.
+pub fn gzip_compress(data: &[u8]) -> Vec<u8> {
+    let deflated = miniz_oxide::deflate::compress_to_vec(data, 6);
+    let crc = crate::docs::crc32(data);
+    let isize_bytes = (data.len() as u32).to_le_bytes();
+    let mut out = Vec::with_capacity(10 + deflated.len() + 8);
+    out.extend_from_slice(&[0x1f, 0x8b, 0x08, 0x00, 0, 0, 0, 0, 0x00, 0xff]);
+    out.extend_from_slice(&deflated);
+    out.extend_from_slice(&crc.to_le_bytes());
+    out.extend_from_slice(&isize_bytes);
+    out
+}
+
 pub struct Perimeter {
     pub root: PathBuf,
     ring: Arc<Keyring>,
     peers: Mutex<HashMap<IpAddr, PeerState>>,
     no_ban: bool,
     pub trust_proxy: bool,
-    decorated: Mutex<HashMap<usize, Arc<String>>>,
+    decorated: RwLock<HashMap<usize, Arc<DecoratedPage>>>,
     /// The same peer asking for the same decoy again gets the same keys
     /// (a real .env does not change per request), and the issuance log is
     /// not churned by a flood.
@@ -2098,7 +2118,7 @@ impl Perimeter {
             peers: Mutex::new(HashMap::new()),
             no_ban: env_truthy("ERGON_TRIPWIRE_NO_BAN"),
             trust_proxy: env_truthy("ERGON_TRUST_PROXY"),
-            decorated: Mutex::new(HashMap::new()),
+            decorated: RwLock::new(HashMap::new()),
             decoy_tokens: Mutex::new(HashMap::new()),
             last_local_alert: Mutex::new(0),
             alerted_origins: Mutex::new(HashMap::new()),
@@ -2444,12 +2464,20 @@ impl Perimeter {
         }
     }
 
-    /// The desk page with a breadcrumb comment only scrapers read.
-    pub fn decorate_html(&self, html: &'static str) -> Arc<String> {
+    /// The desk page with a breadcrumb comment only scrapers read, plus cached gzip and strong ETags.
+    pub fn decorate_html_bundle(&self, html: &'static str) -> Arc<DecoratedPage> {
         let key = html.as_ptr() as usize;
-        let mut map = lock(&self.decorated);
-        if let Some(s) = map.get(&key) {
-            return s.clone();
+        if let Ok(map) = self.decorated.read() {
+            if let Some(cached) = map.get(&key) {
+                return cached.clone();
+            }
+        }
+        let mut map = self
+            .decorated
+            .write()
+            .unwrap_or_else(|p| p.into_inner());
+        if let Some(cached) = map.get(&key) {
+            return cached.clone();
         }
         let token = self.ring.mint(&self.ring.breadcrumb_nonce());
         let crumb = format!("<!-- ergon maintenance console: /api/internal/console (key {token}) — internal, do not publish -->");
@@ -2457,9 +2485,22 @@ impl Perimeter {
             Some(i) => format!("{}{}{}", &html[..i + 6], crumb, &html[i + 6..]),
             None => format!("{crumb}{html}"),
         };
-        let arc = Arc::new(out);
-        map.insert(key, arc.clone());
-        arc
+        let gz = gzip_compress(out.as_bytes());
+        let digest = sha256_hex(out.as_bytes());
+        let short = &digest[..32];
+        let bundle = Arc::new(DecoratedPage {
+            html: Arc::new(out),
+            gzip: Arc::new(gz),
+            etag_raw: format!("\"{short}\""),
+            etag_gzip: format!("\"{short}-gzip\""),
+        });
+        map.insert(key, bundle.clone());
+        bundle
+    }
+
+    /// The desk page with a breadcrumb comment only scrapers read.
+    pub fn decorate_html(&self, html: &'static str) -> Arc<String> {
+        self.decorate_html_bundle(html).html.clone()
     }
 }
 
@@ -2503,6 +2544,14 @@ pub const BASE_HEADERS: &[(&str, &str)] = &[
     ("Cross-Origin-Resource-Policy", "same-origin"),
     ("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=()"),
 ];
+
+pub const BASE_HEADERS_BLOCK: &str = "\
+X-Content-Type-Options: nosniff\r\n\
+X-Frame-Options: DENY\r\n\
+Referrer-Policy: no-referrer\r\n\
+Cross-Origin-Opener-Policy: same-origin\r\n\
+Cross-Origin-Resource-Policy: same-origin\r\n\
+Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=()\r\n";
 
 // ---------------------------------------------------------------------------
 // Status for Settings, Today and the audit bundle

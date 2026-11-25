@@ -198,7 +198,7 @@ export type ReceiptRecord = {
   sha256?: string;
   prev_sha256?: string;
 };
-export type ThreadRow = { id: string; title?: string; messages?: number };
+export type ThreadRow = { id: string; title?: string; messages?: number; state?: "waiting" | "finished" | "none" };
 export type Thread = { id: string; title?: string; messages: Msg[] };
 export type Update = {
   current?: string;

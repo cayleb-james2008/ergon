@@ -200,7 +200,7 @@ pub fn validate_history_path(workspace_dir: &Path, raw: &str) -> Result<(String,
         match comp {
             Component::Normal(os) => {
                 let part = os.to_string_lossy();
-                if part.is_empty() || part == "." || part == ".." || part == ".history" {
+                if part.is_empty() || part == "." || part == ".." || part.starts_with('.') {
                     return Err(format!("path escapes the workspace: {trimmed}"));
                 }
                 clean_parts.push(part.into_owned());

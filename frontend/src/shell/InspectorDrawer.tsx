@@ -114,11 +114,14 @@ export function InspectorDrawer({
 
   useEffect(() => {
     if (!open || tab !== "audit") return;
-    call<{ verified?: boolean; ok?: boolean; count?: number; receipts_checked?: number }>("/api/receipts/verify").then((r) => {
+    call<{ valid?: boolean; verified?: boolean; ok?: boolean; total?: number; count?: number; receipts_checked?: number; head_hash?: string }>("/api/receipts/verify").then((r) => {
       if (r.ok) {
+        const isOk = typeof r.data.valid === "boolean"
+          ? r.data.valid
+          : r.data.verified !== false && r.data.ok !== false;
         setVerifyInfo({
-          ok: r.data.verified !== false && r.data.ok !== false,
-          checked: Number(r.data.receipts_checked ?? r.data.count ?? 0),
+          ok: isOk,
+          checked: Number(r.data.total ?? r.data.receipts_checked ?? r.data.count ?? 0),
         });
       }
     });
@@ -236,7 +239,7 @@ export function InspectorDrawer({
                       verifyInfo.ok ? "status-finished" : "status-stopped"
                     )}
                   >
-                    {verifyInfo.ok ? "Verified" : "Check chain"}
+                    {verifyInfo.ok ? `Verified (${verifyInfo.checked})` : "Check chain"}
                   </span>
                 )}
               </div>

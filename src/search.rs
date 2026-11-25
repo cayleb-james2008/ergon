@@ -496,6 +496,25 @@ impl PersonIndex {
     ) -> Value {
         let limit = limit.clamp(1, 5000);
         let q_low = q.trim().to_lowercase();
+        if q_low.is_empty() && status != "finished" && status != "failed" {
+            let total = self.chain.len();
+            let page: Vec<Value> = self
+                .chain
+                .iter()
+                .rev()
+                .skip(offset)
+                .take(limit)
+                .map(|r| r.to_json())
+                .collect();
+            return json!({
+                "receipts": page,
+                "total": total,
+                "offset": offset,
+                "limit": limit,
+                "chain_valid": self.chain_valid,
+                "head_hash": self.head_hash,
+            });
+        }
         let mut matched: Vec<&ChainedReceipt> = Vec::new();
         for (i, r) in self.chain.iter().enumerate().rev() {
             if status == "finished" && !r.finished {
@@ -528,14 +547,20 @@ impl PersonIndex {
 
     pub fn list_files(&self, offset: usize, limit: Option<usize>, q: &str) -> (usize, Vec<Value>) {
         let q_low = q.trim().to_lowercase();
-        let filtered: Vec<&IndexedFile> = if q_low.is_empty() {
-            self.files.iter().collect()
-        } else {
-            self.files
-                .iter()
-                .filter(|f| f.path.to_lowercase().contains(&q_low) || f.snippet_lower.contains(&q_low))
-                .collect()
-        };
+        if q_low.is_empty() {
+            let total = self.files.len();
+            let iter = self.files.iter().skip(offset);
+            let items: Vec<Value> = match limit {
+                Some(l) => iter.take(l.clamp(1, 1000)).map(|f| f.to_json()).collect(),
+                None => iter.map(|f| f.to_json()).collect(),
+            };
+            return (total, items);
+        }
+        let filtered: Vec<&IndexedFile> = self
+            .files
+            .iter()
+            .filter(|f| f.path.to_lowercase().contains(&q_low) || f.snippet_lower.contains(&q_low))
+            .collect();
         let total = filtered.len();
         let iter = filtered.into_iter().skip(offset);
         let items: Vec<Value> = match limit {

@@ -14,6 +14,7 @@ import {
   FileDown,
   FolderOpen,
   GitBranch,
+  History,
   MessageSquarePlus,
   Newspaper,
   Play,
@@ -52,7 +53,7 @@ import {
   type WorkspaceFile,
 } from "@/lib/api";
 import type { SkillMeta } from "@/lib/skillsCatalog";
-import { relTime } from "@/lib/words";
+import { detectWorkspaceWorkflow, relTime } from "@/lib/words";
 
 export function CommandPalette({
   open,
@@ -70,11 +71,13 @@ export function CommandPalette({
   onOpenWorkspaceSwitcher,
   onOpenSettings,
   onOpenFiles,
+  onOpenHistory,
   onOpenSkills,
   onOpenRoutines,
   onOpenFile,
   onOpenThread,
   onRunSkill,
+  onRunPrompt,
   onRunRoutine,
   onSwitchFace,
 }: {
@@ -93,11 +96,13 @@ export function CommandPalette({
   onOpenWorkspaceSwitcher?: () => void;
   onOpenSettings: () => void;
   onOpenFiles: () => void;
+  onOpenHistory?: () => void;
   onOpenSkills: () => void;
   onOpenRoutines: () => void;
   onOpenFile: (path: string) => void;
   onOpenThread: (id: string) => void;
   onRunSkill: (skill: SkillMeta) => void;
+  onRunPrompt?: (prompt: string) => void;
   onRunRoutine: (routine: Routine) => void;
   onSwitchFace: (face: "chat" | "paper" | "graph") => void;
 }) {
@@ -258,9 +263,14 @@ export function CommandPalette({
     return list.slice(0, 8);
   }, [routines, qLower]);
 
+  const recommended = useMemo(() => detectWorkspaceWorkflow(files), [files]);
+
   const quickActions = useMemo(() => {
     const all = [
       { id: "action-new-task", keywords: "new task start chat composer", label: "New task", badge: "Chat", icon: MessageSquarePlus, run: onNewTask },
+      ...(recommended && onRunPrompt
+        ? [{ id: "action-recommended-workflow", keywords: `recommended auto workflow ${recommended.label} ${recommended.file}`, label: `${recommended.label}: ${recommended.file}`, badge: "1-click", icon: Sparkles, run: () => onRunPrompt(recommended.prompt) }]
+        : []),
       { id: "action-upload-file", keywords: "upload file csv markdown drop workspace", label: "Upload file to workspace", badge: "Files", icon: Upload, run: onUploadFile },
       { id: "action-export-receipt-md", keywords: "export receipt sha256 markdown download", label: "Export latest receipt (SHA-256 Markdown)", badge: ".md", icon: FileDown, run: () => onExportLatestReceipt("md") },
       { id: "action-export-receipt-json", keywords: "export receipt sha256 json download", label: "Export latest receipt (SHA-256 JSON)", badge: ".json", icon: FileDown, run: () => onExportLatestReceipt("json") },
@@ -276,13 +286,16 @@ export function CommandPalette({
       { id: "action-open-settings", keywords: "open settings appearance theme model", label: "Open Settings (Model & Appearance)", badge: "Panel", icon: SlidersHorizontal, run: onOpenSettings },
       { id: "action-open-skills", keywords: "browse workflows skills catalog 12", label: `Browse all ${skills.length} built-in workflows`, badge: String(skills.length), icon: Sparkles, run: onOpenSkills },
       { id: "action-open-routines", keywords: "routines recurring schedule cron automate", label: "Manage recurring routines", badge: String(routines.length), icon: CalendarClock, run: onOpenRoutines },
-      { id: "action-open-files", keywords: "workspace files browser", label: "Open Workspace files", badge: String(files.length), icon: FolderOpen, run: onOpenFiles },
+      { id: "action-open-files", keywords: "workspace files browser", label: "Open Workspace files", badge: "⌘I", icon: FolderOpen, run: onOpenFiles },
+      ...(onOpenHistory
+        ? [{ id: "action-open-history", keywords: "file version history diff restore snapshot", label: "Open file version history & diff", badge: "Diff", icon: History, run: onOpenHistory }]
+        : []),
       { id: "action-face-today", keywords: "today paper desk brief", label: "Jump to Today's desk", badge: "View", icon: Newspaper, run: () => onSwitchFace("paper") },
       { id: "action-face-graph", keywords: "work graph map links", label: "Jump to Work Graph", badge: "View", icon: GitBranch, run: () => onSwitchFace("graph") },
     ];
     if (!qLower) return all;
-    return all.filter((a) => a.keywords.includes(qLower) || a.label.toLowerCase().includes(qLower));
-  }, [qLower, onNewTask, onUploadFile, onExportLatestReceipt, onExportAuditBundle, onOpenWorkspaceSwitcher, onOpenSettings, skills.length, onOpenSkills, routines.length, onOpenRoutines, files.length, onOpenFiles, onSwitchFace]);
+    return all.filter((a) => a.keywords.toLowerCase().includes(qLower) || a.label.toLowerCase().includes(qLower));
+  }, [qLower, recommended, onRunPrompt, onNewTask, onUploadFile, onExportLatestReceipt, onExportAuditBundle, onOpenWorkspaceSwitcher, onOpenSettings, skills.length, onOpenSkills, routines.length, onOpenRoutines, onOpenFiles, onOpenHistory, onSwitchFace]);
 
   const uniqueRemoteHits = useMemo(() => {
     const filePaths = new Set(matchedFiles.map((f) => f.path));
