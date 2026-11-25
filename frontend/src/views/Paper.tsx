@@ -8,6 +8,7 @@ import {
   FileCheck2,
   FileDown,
   FolderOpen,
+  Printer,
   Repeat,
   Search,
   ShieldAlert,
@@ -35,7 +36,7 @@ import {
   type TodayEvent,
   type WorkspaceFile,
 } from "@/lib/api";
-import { exportReceiptDownload } from "@/lib/receiptExport";
+import { exportClientSummaryPack, exportReceiptDownload } from "@/lib/receiptExport";
 import { cn } from "@/lib/utils";
 import { extractPlaybookFromRun, normalizeFiles, relTime, threadMs } from "@/lib/words";
 
@@ -450,6 +451,7 @@ export const PaperFace = memo(function PaperFace({
   const { data, failed, load, loadAllReceipts, act } = paper;
   const [dragOver, setDragOver] = useState(false);
   const [exportingAudit, setExportingAudit] = useState(false);
+  const [exportingSummary, setExportingSummary] = useState<"md" | "html" | null>(null);
   const [receiptQuery, setReceiptQuery] = useState("");
   const [remoteReceipts, setRemoteReceipts] = useState<BriefJob[] | null>(null);
   const [loadingAll, setLoadingAll] = useState(false);
@@ -842,7 +844,7 @@ export const PaperFace = memo(function PaperFace({
                 <section aria-labelledby="finished-h" className="grid gap-3">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <h2 id="finished-h" className="text-title font-medium text-ink">Finished</h2>
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       {hasMoreReceipts && (
                         <Button
                           type="button"
@@ -862,6 +864,64 @@ export const PaperFace = memo(function PaperFace({
                           {loadingAll ? "Loading…" : `Load all (${totalReceiptsCount})`}
                         </Button>
                       )}
+                      <Button
+                        id="export-summary-md-btn"
+                        type="button"
+                        size="xs"
+                        variant="outline"
+                        disabled={exportingSummary !== null}
+                        className="max-md:min-h-11 gap-1"
+                        onClick={async () => {
+                          setExportingSummary("md");
+                          try {
+                            const targets = files.slice(0, 15).map((f) => f.path);
+                            const res = await exportClientSummaryPack(
+                              targets,
+                              "md",
+                              `${personName || "Client"} Summary Pack`
+                            );
+                            toast.success(
+                              `Exported ${res.filename} (${res.citationGate || "100% Verified"}, sha256: ${res.sha256.slice(0, 12)}…)`
+                            );
+                          } catch {
+                            toast.error("Could not export Client Summary Pack (.md).");
+                          } finally {
+                            setExportingSummary(null);
+                          }
+                        }}
+                      >
+                        <FileDown className="size-3.5" strokeWidth={1.5} aria-hidden />
+                        <span>{exportingSummary === "md" ? "Packing…" : "Client Summary (.md)"}</span>
+                      </Button>
+                      <Button
+                        id="export-summary-html-btn"
+                        type="button"
+                        size="xs"
+                        variant="outline"
+                        disabled={exportingSummary !== null}
+                        className="max-md:min-h-11 gap-1"
+                        onClick={async () => {
+                          setExportingSummary("html");
+                          try {
+                            const targets = files.slice(0, 15).map((f) => f.path);
+                            const res = await exportClientSummaryPack(
+                              targets,
+                              "html",
+                              `${personName || "Client"} Summary Pack`
+                            );
+                            toast.success(
+                              `Exported ${res.filename} (${res.citationGate || "100% Verified"}, sha256: ${res.sha256.slice(0, 12)}…)`
+                            );
+                          } catch {
+                            toast.error("Could not export Client Summary Pack (.html).");
+                          } finally {
+                            setExportingSummary(null);
+                          }
+                        }}
+                      >
+                        <Printer className="size-3.5" strokeWidth={1.5} aria-hidden />
+                        <span>{exportingSummary === "html" ? "Rendering…" : "Summary (.html)"}</span>
+                      </Button>
                       <span className="mono text-xs text-ink-2">
                         {filteredFinished.length === n
                           ? `${n} ${n === 1 ? "receipt" : "receipts"}`

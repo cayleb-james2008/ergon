@@ -1,6 +1,6 @@
 [package]
 name = "ergon-rs"
-version = "0.18.0"
+version = "0.19.0"
 edition = "2021"
 
 [[bin]]
@@ -25,12 +25,36 @@ codegen-units = 1
 strip = "symbols"
 
 # Keep cold dependencies (Rune VM, PDF parser, TLS client) size-optimized while
-# preserving opt-level = 3 on ergon-rs and hot JSON/SHA-256 primitives.
+# preserving opt-level = 3 on ergon-rs and hot JSON/HTTP/SHA-256 primitives.
 [profile.release.package."*"]
 opt-level = "z"
+
+[profile.release.package.serde]
+opt-level = 3
+
+[profile.release.package.serde_core]
+opt-level = 3
 
 [profile.release.package.serde_json]
 opt-level = 3
 
+[profile.release.package.itoa]
+opt-level = 3
+
+[profile.release.package.ryu]
+opt-level = 3
+
+[profile.release.package.memchr]
+opt-level = 3
+
 [profile.release.package.sha2]
+opt-level = 3
+
+[profile.release.package.digest]
+opt-level = 3
+
+[profile.release.package.block-buffer]
+opt-level = 3
+
+[profile.release.package.cpufeatures]
 opt-level = 3

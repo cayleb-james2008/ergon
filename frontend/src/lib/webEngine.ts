@@ -1890,11 +1890,11 @@ export async function installBrowserEngine(): Promise<void> {
     const st = activeStore();
     const byok = loadByok();
 
-    if (method === "GET" && path === "/api/version") return jsonRes({ name: "ergon", version: "0.18.0" });
-    if (method === "GET" && path === "/api/update") return jsonRes({ current: "0.18.0", available: false, mode: "off", checked_at: Math.floor(Date.now() / 1000) });
+    if (method === "GET" && path === "/api/version") return jsonRes({ name: "ergon", version: "0.19.0" });
+    if (method === "GET" && path === "/api/update") return jsonRes({ current: "0.19.0", available: false, mode: "off", checked_at: Math.floor(Date.now() / 1000) });
     if (method === "GET" && path === "/api/status") {
       return jsonRes({
-        version: "0.18.0",
+        version: "0.19.0",
         model_configured: true,
         model: byok.engine_mode === "byok" && byok.model_id ? byok.model_id : "browser-workspace-engine",
         model_base_url: byok.engine_mode === "byok" ? byok.model_base_url : "indexeddb://local",
@@ -2168,6 +2168,7 @@ export async function installBrowserEngine(): Promise<void> {
       const rawFiles = u.searchParams.get("files") || "";
       const title = (u.searchParams.get("title") || "").trim() || "Client Deliverable Pack";
       const format = (u.searchParams.get("format") || "md").toLowerCase();
+      const includeSummary = ["1", "true"].includes((u.searchParams.get("summary") || "").toLowerCase());
       const receiptId = (u.searchParams.get("receipt_id") || "").trim();
       const preflightOnly = ["1", "true"].includes((u.searchParams.get("preflight") || "").toLowerCase());
       const requested = rawFiles
@@ -2308,8 +2309,24 @@ export async function installBrowserEngine(): Promise<void> {
         deltaMd = `## Verified Snapshot Delta (\`${safeDelta}\`: \`${revAId}\` -> \`${revBId}\`)\n\n- **Changes:** +${diff.added} / -${diff.removed} lines (${simPct(diff)}% similarity)${unifiedText ? `\n\n\`\`\`diff\n${unifiedText}\n\`\`\`` : ""}`;
         hasDelta = true;
       }
+      const summaryRuns = includeSummary
+        ? [...st.work].filter((w) => w.finished && !w.answered).reverse().slice(0, 15)
+        : [];
+      const hasSummary = summaryRuns.length > 0;
+      const ratioLabel =
+        citations.total === 0
+          ? "0 inline citations"
+          : `${citations.verified}/${citations.total} verified (${citations.freshness_pct}%)`;
       if (format === "html") {
         const manifestSha = await sha256Hex(sections.map((s) => `${s.path}:${s.sha}`).join("|"));
+        const summaryHtml = hasSummary
+          ? `<section><h2>Verified Work Summary</h2><table><thead><tr><th>Task</th><th>Summary</th><th>Deliverables</th></tr></thead><tbody>${summaryRuns
+              .map(
+                (r) =>
+                  `<tr><td><strong>${escapeHtml(r.task)}</strong></td><td>${escapeHtml(String(r.summary || "").slice(0, 180))}</td><td><code>${escapeHtml((r.files || []).join(", "))}</code></td></tr>`
+              )
+              .join("")}</tbody></table></section>`
+          : "";
         const filesRows = sections
           .map((s) => `<tr><td><code>${escapeHtml(s.path)}</code></td><td>${s.count} ${s.unit}</td><td>${s.size_bytes} B</td><td><code>${escapeHtml(s.sha)}</code></td></tr>`)
           .join("");
@@ -2325,7 +2342,7 @@ export async function installBrowserEngine(): Promise<void> {
         const previews = sections
           .map((s) => `<section><h3><code>${escapeHtml(s.path)}</code></h3><pre>${escapeHtml(s.body)}</pre></section>`)
           .join("");
-        const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>${escapeHtml(title)}</title><style>body{font-family:sans-serif;max-width:920px;margin:32px auto;padding:0 20px;color:#111827}table{width:100%;border-collapse:collapse;font-size:13px}th,td{padding:8px;border-bottom:1px solid #e5e7eb;text-align:left}pre{background:#f9fafb;border:1px solid #e5e7eb;padding:12px;border-radius:8px;white-space:pre-wrap}</style></head><body><h1>${escapeHtml(title)}</h1><p>Prepared for <strong>${escapeHtml(p.name)}</strong> &middot; ${escapeHtml(citations.gate_status)} &middot; Manifest SHA-256: <code>${escapeHtml(manifestSha)}</code></p><table><thead><tr><th>File</th><th>Contents</th><th>Size</th><th>SHA-256</th></tr></thead><tbody>${filesRows}</tbody></table>${citSection}${deltaHtml}${previews}</body></html>`;
+        const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>${escapeHtml(title)}</title><style>body{font-family:sans-serif;max-width:920px;margin:32px auto;padding:0 20px;color:#111827}table{width:100%;border-collapse:collapse;font-size:13px}th,td{padding:8px;border-bottom:1px solid #e5e7eb;text-align:left}pre{background:#f9fafb;border:1px solid #e5e7eb;padding:12px;border-radius:8px;white-space:pre-wrap}</style></head><body><h1>${escapeHtml(title)}</h1><p>Prepared for <strong>${escapeHtml(p.name)}</strong> &middot; ${escapeHtml(citations.gate_status)} &middot; Citations: ${escapeHtml(ratioLabel)} &middot; Manifest SHA-256: <code>${escapeHtml(manifestSha)}</code></p>${summaryHtml}<table><thead><tr><th>File</th><th>Contents</th><th>Size</th><th>SHA-256</th></tr></thead><tbody>${filesRows}</tbody></table>${citSection}${deltaHtml}${previews}</body></html>`;
         const packSha = await sha256Hex(html);
         return new Response(html, {
           status: 200,
@@ -2338,6 +2355,7 @@ export async function installBrowserEngine(): Promise<void> {
             "X-Ergon-Pack-Citation-Gate": citations.gate_status,
             "X-Ergon-Pack-Ready-Count": String(readyCount),
             "X-Ergon-Pack-Delta": hasDelta ? "yes" : "none",
+            "X-Ergon-Pack-Summary": hasSummary ? "yes" : "none",
           },
         });
       }
@@ -2346,13 +2364,20 @@ export async function installBrowserEngine(): Promise<void> {
         `# ${title}`,
         "",
         `- Prepared for: **${p.name}**`,
-        `- Files included: ${sections.length}`,
-        `- Pre-flight check: **${statusWord}** (${readyCount} non-empty, ${emptyCount} empty, ${missingPaths.length} missing, ${totalBytes} total bytes; citations: ${citations.gate_status} (${citations.verified} verified, ${citations.stale} stale, ${citations.broken} broken))`,
+        `- Deliverables included: ${sections.length}`,
+        `- Completed runs summarized: ${summaryRuns.length}`,
+        `- Pre-flight check: **${statusWord}** (${readyCount} non-empty, ${emptyCount} empty, ${missingPaths.length} missing, ${totalBytes} total bytes; citations: ${citations.gate_status} — ${ratioLabel})`,
         "",
-        "## Included Deliverables",
-        "",
-        ...sections.map((s) => `- \`${s.path}\` (${s.count} ${s.unit}, \`sha256:${s.sha}\`)`),
       ];
+      if (hasSummary) {
+        lines.push("## Verified Work Summary", "");
+        for (const r of summaryRuns) {
+          const filesPart = r.files?.length ? ` · Files: ${r.files.join(", ")}` : "";
+          lines.push(`- **${r.task}** (\`${r.id || r.thread_id}\`${filesPart}): ${String(r.summary || "").trim().slice(0, 180)}`);
+        }
+        lines.push("");
+      }
+      lines.push("## Included Deliverables", "", ...sections.map((s) => `- \`${s.path}\` (${s.count} ${s.unit}, \`sha256:${s.sha}\`)`));
       if (citations.citations.length > 0) {
         lines.push("", "## Citation Verification", "");
         for (const c of citations.citations) {
@@ -2375,6 +2400,7 @@ export async function installBrowserEngine(): Promise<void> {
           "X-Ergon-Pack-Citation-Gate": citations.gate_status,
           "X-Ergon-Pack-Ready-Count": String(readyCount),
           "X-Ergon-Pack-Delta": hasDelta ? "yes" : "none",
+          "X-Ergon-Pack-Summary": hasSummary ? "yes" : "none",
         },
       });
     }

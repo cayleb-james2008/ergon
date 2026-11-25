@@ -268,7 +268,7 @@ await reset();
   const paletteInputFocused = await p.evaluate(() => document.activeElement?.getAttribute("data-cmdk-input") === "command-palette");
   await cmdInput.fill("reconcile");
   await p.waitForTimeout(200);
-  const skillHitVisible = await p.locator("#command-palette-dialog").getByText("Reconcile ledger").isVisible();
+  const skillHitVisible = await p.locator("#command-palette-dialog").getByText("Reconcile ledger").first().isVisible();
   await cmdInput.fill("New task");
   await p.waitForTimeout(150);
   await p.keyboard.press("Enter");

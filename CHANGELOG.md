@@ -4,6 +4,15 @@ Each release is tagged `vMAJOR.MINOR.PATCH` and published on GitHub Releases wit
 binaries and a `SHA256SUMS` file. The running app shows its version and can update
 itself from the newest release (see README, "Versions and updates").
 
+## 0.19.0 - 2026-11-25
+
+- **HTTP Keep-Alive, `-O3` Hot-Path Split & `O(limit)` Token Search (`Cargo.toml`, `Cargo.lock`, `src/server.rs`, `src/search.rs`):**
+  - Enabled HTTP/1.1 persistent Keep-Alive connections (`handle_connection` + `respond_bytes` zero-copy `IoSlice` vectored writes, preserving immediate `Connection: close` on 4xx/5xx/SSE) and restored `opt-level = 3` on `serde`/`serde_core`/`itoa`/`ryu`/`memchr`/`digest` while keeping heavy cold crates (`rune`, `lopdf`, `rustls`) at `opt-level = "z"`.
+  - Added single-token `O(limit)` fast path in `PersonIndex::search` eliminating 5,000-entry substring scans on exact token queries (`GET /api/search?q=...`).
+- **1-Click Multi-Run Retainer / Client Summary Pack (`.md` & `.html`) (`src/server.rs`, `frontend/src/lib/{receiptExport,webEngine}.ts`, `frontend/src/views/Paper.tsx`):**
+  - Extended `GET /api/files/pack?summary=1` (`format=md|html`) to compile recent finished receipts into a `## Verified Work Summary` table/list alongside file SHA-256 digests and verified `[file:L##]` citation ratios (`100% Verified` vs `Stale Line Drift`).
+  - Added 1-click **Client Summary (.md)** (`#export-summary-md-btn`) and **Summary (.html)** (`#export-summary-html-btn`) buttons in Today's **Finished** header with full `webEngine.ts` standalone parity.
+
 ## 0.18.0 - 2026-11-25
 
 - **Citation Freshness Pre-Flight Gate & 1-Click Verified Client Handoff (`.html`) (`src/tools.rs`, `src/server.rs`, `frontend/src/lib/{receiptExport,webEngine}.ts`, `frontend/src/shell/InspectorDrawer.tsx`):**

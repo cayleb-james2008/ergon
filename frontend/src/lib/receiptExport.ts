@@ -334,6 +334,7 @@ export type PackDeltaOptions = {
   rev_a?: string;
   rev_b?: string;
   receipt_id?: string;
+  summary?: boolean;
 };
 
 async function fetchClientPack(
@@ -349,6 +350,7 @@ async function fetchClientPack(
   if (files.length > 0) params.set("files", files.slice(0, 25).join(","));
   if (title.trim()) params.set("title", title.trim());
   if (delta?.receipt_id) params.set("receipt_id", delta.receipt_id);
+  if (delta?.summary) params.set("summary", "1");
   if (delta?.delta_a && delta?.delta_b) {
     params.set("delta_a", delta.delta_a);
     params.set("delta_b", delta.delta_b);
@@ -389,4 +391,13 @@ export async function exportClientHandoffHtml(
   delta?: PackDeltaOptions
 ): Promise<{ filename: string; sha256: string; preflight?: string; citationGate?: string }> {
   return fetchClientPack(files, title, "html", delta);
+}
+
+/** Downloads a 1-click multi-run Retainer / Client Summary Pack (.md or .html) combining recent finished work, verified citations, and SHA-256 deliverables. */
+export async function exportClientSummaryPack(
+  files: string[],
+  format: "md" | "html",
+  title = "Client Summary Pack"
+): Promise<{ filename: string; sha256: string; preflight?: string; citationGate?: string }> {
+  return fetchClientPack(files, title, format, { summary: true });
 }
