@@ -3920,6 +3920,7 @@ fn read_request(stream: &mut std::net::TcpStream) -> Option<Request> {
         );
         let _ = stream.write_all(response.as_bytes());
         let _ = stream.flush();
+        let _ = stream.shutdown(std::net::Shutdown::Write);
         return None;
     }
     let content_length = content_length.unwrap_or(0);
@@ -3929,17 +3930,14 @@ fn read_request(stream: &mut std::net::TcpStream) -> Option<Request> {
         MAX_BODY_BYTES
     };
     if content_length > body_limit {
-        // A real 413, not a silent drop: the caller learns the limit
-        // instead of staring at a dead connection. The in-flight body
-        // is drained first (bounded — a few MB, within the deadline):
-        // answering while the client's body is still queued gets the
-        // response reset away before the client can read it.
+        // Drain only already-arrived / fast in-flight body bytes using a short 50ms timeout
+        // (and 250ms total cap) so real uploads don't get RST while forged huge Content-Length
+        // headers (e.g. 99999999999999) with an open write-half return 413 promptly.
         let mut to_drain = content_length.min(4 * 1024 * 1024);
+        let drain_end = std::time::Instant::now() + std::time::Duration::from_millis(250);
+        let _ = stream.set_read_timeout(Some(std::time::Duration::from_millis(50)));
         let mut sink = [0u8; 8192];
-        while to_drain > 0 {
-            if arm(stream).is_none() {
-                break;
-            }
+        while to_drain > 0 && std::time::Instant::now() < drain_end {
             let want = to_drain.min(sink.len());
             match reader.read(&mut sink[..want]) {
                 Ok(0) => break,
@@ -3956,6 +3954,7 @@ fn read_request(stream: &mut std::net::TcpStream) -> Option<Request> {
         );
         let _ = stream.write_all(response.as_bytes());
         let _ = stream.flush();
+        let _ = stream.shutdown(std::net::Shutdown::Write);
         return None;
     }
     if body_limit == MAX_UPLOAD_BODY_BYTES && content_length > MAX_BODY_BYTES {
@@ -6276,5 +6275,34 @@ mod v010_hardening_tests {
             assert!(parsed.is_none());
             assert!(resp.starts_with("HTTP/1.1 400 Bad Request"), "got: {resp}");
         }
+    }
+
+    #[test]
+    fn read_request_returns_413_promptly_on_overflow_content_length_with_open_write_half() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let handle = std::thread::spawn(move || {
+            let mut client = std::net::TcpStream::connect(addr).unwrap();
+            client
+                .set_read_timeout(Some(std::time::Duration::from_secs(2)))
+                .unwrap();
+            client
+                .write_all(
+                    b"POST /api/config HTTP/1.1\r\nHost: localhost:8787\r\nContent-Type: application/json\r\nContent-Length: 99999999999999\r\n\r\n{}",
+                )
+                .unwrap();
+            let mut resp = String::new();
+            let _ = client.read_to_string(&mut resp);
+            resp
+        });
+        let (mut server, _) = listener.accept().unwrap();
+        let start = std::time::Instant::now();
+        let parsed = read_request(&mut server);
+        let elapsed = start.elapsed();
+        drop(server);
+        let resp = handle.join().unwrap();
+        assert!(parsed.is_none());
+        assert!(resp.starts_with("HTTP/1.1 413"), "got: {resp}");
+        assert!(elapsed.as_secs() < 2, "took too long: {elapsed:?}");
     }
 }
