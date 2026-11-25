@@ -1,7 +1,7 @@
 // Work Entry cards & inline Approval/File-Diff card for the central Conversation Thread.
 // Keeps clean typography, tabular-nums timestamps, inline file diff preview, 1-click Word/Excel & SHA-256 receipt export.
-import { memo, useState } from "react";
-import { Check, ChevronDown, Copy, FileDown, FileSpreadsheet, FileText, Hourglass, PackageCheck, Repeat } from "lucide-react";
+import { memo, useEffect, useState } from "react";
+import { Check, ChevronDown, Copy, FileDown, FileSpreadsheet, FileText, Hourglass, PackageCheck, Repeat, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Pill } from "@/components/kibo-ui/pill";
@@ -10,10 +10,12 @@ import {
   exportClientPackDownload,
   exportReceiptDownload,
   preflightClientPack,
+  verifyCitations,
+  type CitationReport,
   type PackPreflightReport,
 } from "@/lib/receiptExport";
 import { cn } from "@/lib/utils";
-import { extractPlaybookFromRun, fileIconFor, savedFile, toolLabel } from "@/lib/words";
+import { extractCitations, extractPlaybookFromRun, fileIconFor, savedFile, toolLabel } from "@/lib/words";
 import {
   call,
   exportTarget,
@@ -183,6 +185,51 @@ export function StepList({ steps }: { steps: string[] }) {
   );
 }
 
+const INLINE_CITATION_RE =
+  /\[([A-Za-z0-9_./ -]+\.(?:md|markdown|csv|tsv|txt|json|log|py|ts|tsx|js|rs|rn|toml|ya?ml|html)):L?(\d+)(?:-L?(\d+))?\]|(?<![A-Za-z0-9_./-])([A-Za-z0-9_./-]+\.(?:md|markdown|csv|tsv|txt|json|log|py|ts|tsx|js|rs|rn|toml|ya?ml|html)):L(\d+)(?:-L?(\d+))?/gi;
+
+function CitedText({
+  text,
+  onOpenFile,
+}: {
+  text: string;
+  onOpenFile?: (path: string) => void;
+}) {
+  if (!onOpenFile) return <>{text}</>;
+  const safe = String(text ?? "");
+  const parts: React.ReactNode[] = [];
+  let last = 0;
+  INLINE_CITATION_RE.lastIndex = 0;
+  let m: RegExpExecArray | null;
+  let idx = 0;
+  while ((m = INLINE_CITATION_RE.exec(safe)) !== null) {
+    const filePath = (m[1] ?? m[4] ?? "").trim();
+    const startLine = Number(m[2] ?? m[5]);
+    const endLine = m[3] || m[6] ? Number(m[3] || m[6]) : undefined;
+    if (!filePath || filePath.includes("://") || !Number.isFinite(startLine) || startLine < 1) {
+      continue;
+    }
+    if (m.index > last) parts.push(safe.slice(last, m.index));
+    const display = `${filePath}:L${startLine}${endLine ? `-L${endLine}` : ""}`;
+    const target = `${filePath}#L${startLine}${endLine ? `-L${endLine}` : ""}`;
+    parts.push(
+      <button
+        key={`cit-${idx++}`}
+        type="button"
+        data-citation={display}
+        onClick={() => onOpenFile(target)}
+        className="focus-ring mono mx-0.5 inline-flex items-center rounded-chip border border-hairline bg-board/80 px-1.5 py-0.5 text-xs font-medium text-ink underline-offset-2 hover:bg-board hover:underline"
+      >
+        {display}
+      </button>
+    );
+    last = m.index + m[0].length;
+  }
+  if (last === 0) return <>{safe}</>;
+  if (last < safe.length) parts.push(safe.slice(last));
+  return <>{parts}</>;
+}
+
 export const FinishedEntry = memo(function FinishedEntry({
   time,
   task,
@@ -214,10 +261,28 @@ export const FinishedEntry = memo(function FinishedEntry({
   const [exporting, setExporting] = useState(false);
   const [packing, setPacking] = useState(false);
   const [packPreflight, setPackPreflight] = useState<PackPreflightReport | null>(null);
+  const [citationReport, setCitationReport] = useState<CitationReport | null>(null);
   const [officeBusy, setOfficeBusy] = useState(false);
   const [savingRoutine, setSavingRoutine] = useState(false);
   const [routineSaved, setRoutineSaved] = useState(false);
   const files = savedList(steps);
+  const hasCitations = extractCitations(result).length > 0;
+
+  useEffect(() => {
+    if (!hasCitations) {
+      setCitationReport(null);
+      return;
+    }
+    let alive = true;
+    verifyCitations(result)
+      .then((rep) => {
+        if (alive && rep.total > 0) setCitationReport(rep);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [hasCitations, result]);
   const stepWord = steps.length === 1 ? "1 tool step" : `${steps.length} tool steps`;
 
   const docCandidate = files.find((f) => /\.(md|markdown|txt)$/i.test(f));
@@ -289,7 +354,33 @@ export const FinishedEntry = memo(function FinishedEntry({
       </Cells>
       <FileRow files={files} onOpenFile={onOpenFile} />
       <div className="flex flex-col gap-3 px-4 py-4">
-        <p className="whitespace-pre-wrap break-words text-ui leading-6 text-ink">{result}</p>
+        <p className="whitespace-pre-wrap break-words text-ui leading-6 text-ink">
+          <CitedText text={result} onOpenFile={onOpenFile} />
+        </p>
+        {citationReport && citationReport.total > 0 && (
+          <div className="flex flex-wrap items-center gap-1.5 rounded-sm border border-hairline bg-board/40 px-2.5 py-1.5 text-xs text-ink-2">
+            <ShieldCheck className={cn("size-3.5 shrink-0", citationReport.ok ? "text-dot-green" : "text-dot-amber")} strokeWidth={1.75} aria-hidden />
+            <span className="font-medium text-ink">
+              Citations: {citationReport.verified}/{citationReport.total} verified
+            </span>
+            {citationReport.citations.slice(0, 6).map((c) => (
+              <button
+                key={c.raw}
+                type="button"
+                data-citation={c.raw}
+                onClick={() => onOpenFile?.(`${c.path}#L${c.line}`)}
+                className={cn(
+                  "focus-ring mono rounded-chip border px-1.5 py-0.5 text-xs hover:bg-board",
+                  c.status === "verified"
+                    ? "border-hairline bg-surface text-ink"
+                    : "border-destructive/40 bg-surface text-destructive-foreground"
+                )}
+              >
+                {c.raw}
+              </button>
+            ))}
+          </div>
+        )}
         {notes.map((n, idx) => <Note key={idx} text={n} />)}
         <div className="flex flex-wrap items-center gap-2 pt-0.5">
           {docCandidate && (
@@ -618,10 +709,12 @@ export function WaitingEntry({
   );
 }
 
-export function Reply({ text }: { text: string }) {
+export function Reply({ text, onOpenFile }: { text: string; onOpenFile?: (path: string) => void }) {
   return (
     <div className="rounded-card border border-hairline bg-surface px-4 py-3">
-      <p className="whitespace-pre-wrap break-words text-ui leading-6 text-ink">{text}</p>
+      <p className="whitespace-pre-wrap break-words text-ui leading-6 text-ink">
+        <CitedText text={text} onOpenFile={onOpenFile} />
+      </p>
     </div>
   );
 }

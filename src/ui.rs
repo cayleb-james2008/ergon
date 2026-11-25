@@ -3,8 +3,23 @@
 //! pre-compressed and embedded at compile time. Both `/` and `/phone` serve this responsive app.
 
 use std::borrow::Cow;
+use std::sync::OnceLock;
 
-pub const INDEX_HTML: &str = include_str!("../assets/index.html");
+static INDEX_HTML_GZ: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/index.html.gz"));
+
+/// Return the embedded initial HTML shell, inflating the pre-gzipped `.rodata` payload once on demand.
+pub fn index_html() -> &'static str {
+    static HTML: OnceLock<String> = OnceLock::new();
+    HTML.get_or_init(|| {
+        let raw = if INDEX_HTML_GZ.len() >= 18 {
+            miniz_oxide::inflate::decompress_to_vec(&INDEX_HTML_GZ[10..INDEX_HTML_GZ.len() - 8])
+                .unwrap_or_default()
+        } else {
+            Vec::new()
+        };
+        String::from_utf8(raw).unwrap_or_default()
+    })
+}
 
 pub struct ChunkAsset {
     pub route: &'static str,

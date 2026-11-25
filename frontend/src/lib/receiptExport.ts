@@ -225,14 +225,49 @@ export type PackPreflightFile = {
   status: "ready" | "empty" | "missing";
 };
 
+export type CitationCheck = {
+  raw: string;
+  path: string;
+  line: number;
+  end_line?: number | null;
+  status: "verified" | "out_of_range" | "missing";
+  total_lines: number;
+};
+
+export type CitationReport = {
+  total: number;
+  verified: number;
+  broken: number;
+  ok: boolean;
+  citations: CitationCheck[];
+};
+
 export type PackPreflightReport = {
   ok: boolean;
   ready_count: number;
   empty_count: number;
   missing_count: number;
   total_bytes: number;
+  citations_checked?: number;
+  citations_verified?: number;
+  citations_broken?: number;
+  citations?: CitationCheck[];
   files: PackPreflightFile[];
 };
+
+/** Verifies `[file:L##]` citations against workspace files and line counts. */
+export async function verifyCitations(text: string): Promise<CitationReport> {
+  const r = await fetch("/api/citations/verify", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text }),
+    cache: "no-store",
+  });
+  if (r.ok) {
+    return (await r.json()) as CitationReport;
+  }
+  throw new Error(`HTTP ${r.status}`);
+}
 
 /** Verifies non-empty deliverables, row/line counts, and SHA-256 digests before Client Pack export. */
 export async function preflightClientPack(files: string[]): Promise<PackPreflightReport> {

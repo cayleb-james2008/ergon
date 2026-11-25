@@ -1636,7 +1636,7 @@ fn try_route_system(
     let root_cfg = &state.cfg;
     let _ = root_cfg;
     Some(match (req.method.as_str(), req.path.as_str()) {
-        ("GET", "/") => serve_page(stream, state, req, person, ui::INDEX_HTML),
+        ("GET", "/") => serve_page(stream, state, req, person, ui::index_html()),
         ("GET", path) if path.starts_with("/chunks/") => serve_chunk(stream, req, path),
         ("GET", "/api/version") => respond_json(
             stream,
@@ -1904,7 +1904,7 @@ fn try_route_system(
             200,
             &json!({"person_id": person.id, "content": runtime.cfg.read_memory()}),
         ),
-        ("GET", "/phone") => serve_page(stream, state, req, person, ui::INDEX_HTML),
+        ("GET", "/phone") => serve_page(stream, state, req, person, ui::index_html()),
         ("GET", "/api/library") => {
             let lib = state.library.lock().unwrap();
             respond_json(
@@ -2040,11 +2040,17 @@ struct PackPreflight {
     missing_paths: Vec<String>,
     total_bytes: usize,
     items: Vec<PackCheckedFile>,
+    citations: Vec<CitationCheck>,
+    citations_verified: usize,
+    citations_broken: usize,
 }
 
 impl PackPreflight {
     fn ok(&self) -> bool {
-        self.ready_count > 0 && self.empty_count == 0 && self.missing_paths.is_empty()
+        self.ready_count > 0
+            && self.empty_count == 0
+            && self.missing_paths.is_empty()
+            && self.citations_broken == 0
     }
 
     fn to_json(&self) -> Value {
@@ -2080,12 +2086,16 @@ impl PackPreflight {
             "empty_count": self.empty_count,
             "missing_count": self.missing_paths.len(),
             "total_bytes": self.total_bytes,
+            "citations_checked": self.citations.len(),
+            "citations_verified": self.citations_verified,
+            "citations_broken": self.citations_broken,
+            "citations": self.citations.iter().map(CitationCheck::to_json).collect::<Vec<_>>(),
             "files": files_json,
         })
     }
 }
 
-/// Validates workspace deliverable paths, computes non-empty/row/line counts + SHA-256 digests.
+/// Validates workspace deliverable paths, computes non-empty/row/line counts, citations, and SHA-256 digests.
 fn inspect_workspace_pack(
     workspace_dir: &std::path::Path,
     requested: &[String],
@@ -2099,6 +2109,11 @@ fn inspect_workspace_pack(
     let mut empty_count = 0usize;
     let mut total_bytes = 0usize;
     let mut rendered_bytes = 0usize;
+    let mut citations: Vec<CitationCheck> = Vec::new();
+    let mut seen_citations: std::collections::HashSet<(String, usize, Option<usize>)> =
+        std::collections::HashSet::new();
+    let mut citations_verified = 0usize;
+    let mut citations_broken = 0usize;
     for rel in requested {
         let full = match sandbox_path(workspace_dir, rel) {
             Ok(p) => p,
@@ -2151,6 +2166,22 @@ fn inspect_workspace_pack(
             } else {
                 (line_count, "lines")
             };
+            if citations.len() < 32 {
+                let cr = verify_text_citations(workspace_dir, text);
+                for c in cr.citations {
+                    if seen_citations.insert((c.path.clone(), c.line, c.end_line)) {
+                        if c.status == "verified" {
+                            citations_verified += 1;
+                        } else {
+                            citations_broken += 1;
+                        }
+                        citations.push(c);
+                        if citations.len() >= 32 {
+                            break;
+                        }
+                    }
+                }
+            }
             let rendered = if ext == "md" || ext == "markdown" || ext == "txt" {
                 text.trim_end().to_string()
             } else {
@@ -2196,6 +2227,9 @@ fn inspect_workspace_pack(
         missing_paths,
         total_bytes,
         items,
+        citations,
+        citations_verified,
+        citations_broken,
     })
 }
 
@@ -2212,17 +2246,28 @@ fn build_workspace_pack(
     let ready = preflight.ready_count;
     let status_word = if ok { "PASS" } else { "WARN" };
     let mut md = format!(
-        "# {title}\n\n- Prepared for: **{person_name}**\n- Files included: {}\n- Pre-flight check: **{status_word}** ({ready} non-empty, {} empty, {} missing, {} total bytes)\n\n## Included Deliverables\n\n",
+        "# {title}\n\n- Prepared for: **{person_name}**\n- Files included: {}\n- Pre-flight check: **{status_word}** ({ready} non-empty, {} empty, {} missing, {} total bytes; citations: {} verified / {} broken)\n\n## Included Deliverables\n\n",
         preflight.items.len(),
         preflight.empty_count,
         preflight.missing_paths.len(),
-        preflight.total_bytes
+        preflight.total_bytes,
+        preflight.citations_verified,
+        preflight.citations_broken
     );
     for f in &preflight.items {
         md.push_str(&format!(
             "- `{}` ({} {}, `sha256:{}`)\n",
             f.path, f.count, f.unit, f.digest
         ));
+    }
+    if !preflight.citations.is_empty() {
+        md.push_str("\n## Citation Verification\n\n");
+        for c in &preflight.citations {
+            md.push_str(&format!(
+                "- `{}` -> **{}** ({} lines in file)\n",
+                c.raw, c.status, c.total_lines
+            ));
+        }
     }
     for f in &preflight.items {
         md.push_str(&format!(
@@ -2365,13 +2410,11 @@ fn try_route_files_and_audit(
             let download = query_param(&req.query, "download")
                 .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
                 .unwrap_or(false);
-            let mut bundle = audit_bundle::build_audit_bundle(&runtime.cfg, person);
-            // The tripwire log travels with the audit: its own hash chain
-            // plus a digest of this person's events.
             let security = tripwire::audit_section(&root_cfg.data_dir, &person.id);
-            bundle["integrity"]["security_events_sha256"] = security["events_sha256"].clone();
-            bundle["security"] = security;
             if format == "md" || format == "markdown" {
+                let mut bundle = audit_bundle::build_audit_bundle(&runtime.cfg, person);
+                bundle["integrity"]["security_events_sha256"] = security["events_sha256"].clone();
+                bundle["security"] = security;
                 let mut md = audit_bundle::render_audit_bundle_markdown(&bundle);
                 md.push_str(&render_security_markdown(&bundle["security"]));
                 let mut headers = vec![("X-Content-Type-Options", "nosniff".to_string())];
@@ -2389,13 +2432,11 @@ fn try_route_files_and_audit(
                     &headers,
                 )
             } else {
-                let large = bundle["receipt_chain"]["length"].as_u64().unwrap_or(0) > 200;
-                let bytes = if large {
-                    serde_json::to_vec(&bundle)
-                } else {
-                    serde_json::to_vec_pretty(&bundle)
-                }
-                .unwrap_or_else(|_| bundle.to_string().into_bytes());
+                let bytes = audit_bundle::build_audit_bundle_json_bytes(
+                    &runtime.cfg,
+                    person,
+                    &security,
+                );
                 let mut headers = vec![("X-Content-Type-Options", "nosniff".to_string())];
                 if download {
                     headers.push((
@@ -2484,6 +2525,24 @@ fn try_route_files_and_audit(
                 md.as_bytes(),
                 &headers,
             )
+        }
+        ("POST", "/api/citations/verify") => {
+            let parsed: Value = serde_json::from_slice(&req.body).unwrap_or(Value::Null);
+            let mut text = parsed["text"].as_str().unwrap_or("").to_string();
+            let receipt_id = parsed["receipt_id"].as_str().unwrap_or("").trim();
+            if text.is_empty() && !receipt_id.is_empty() {
+                let idx = state.search_cache.get(
+                    &person.id,
+                    &runtime.cfg.data_dir,
+                    &runtime.cfg.workspace_dir,
+                    &runtime.cfg.memory_path,
+                );
+                if let Some(rcpt) = receipts::find_receipt(&idx.chain, receipt_id) {
+                    text = format!("{}\n{}", rcpt.task, rcpt.summary);
+                }
+            }
+            let report = verify_text_citations(&runtime.cfg.workspace_dir, &text);
+            respond_json(stream, 200, &report.to_json())
         }
         ("GET", "/api/files") => {
             let offset = query_param(&req.query, "offset")

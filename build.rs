@@ -49,11 +49,18 @@ fn etag_tag(data: &[u8], crc: u32) -> String {
 
 fn main() {
     let manifest_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
+    let index_path = Path::new(&manifest_dir).join("assets").join("index.html");
     let chunks_dir = Path::new(&manifest_dir).join("assets").join("chunks");
     let out_dir = env::var("OUT_DIR").unwrap();
     let gz_dir = Path::new(&out_dir).join("chunks_gz");
     fs::create_dir_all(&gz_dir).unwrap();
+    println!("cargo:rerun-if-changed={}", index_path.display());
     println!("cargo:rerun-if-changed={}", chunks_dir.display());
+
+    let index_raw = fs::read(&index_path).unwrap();
+    let index_gz = gzip_compress(&index_raw);
+    let index_gz_path = Path::new(&out_dir).join("index.html.gz");
+    fs::write(&index_gz_path, &index_gz).unwrap();
 
     struct Entry {
         route: String,

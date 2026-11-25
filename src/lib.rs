@@ -30,7 +30,8 @@ pub mod tripwire;
 pub use tools::{
     check_mentions, execute_tool, execute_tool_full, export_workspace_file, extract_written,
     fetch_url_text, html_to_text, mention_candidates, page_text, sandbox_path,
-    sandbox_path_resolving, truncate, ToolCtx,
+    sandbox_path_resolving, truncate, verify_text_citations, CitationCheck, CitationReport,
+    ToolCtx,
 };
 pub mod ui;
 pub mod update;
@@ -2763,6 +2764,86 @@ mod v010_hardening_tests {
             assert_eq!(a.sha256, b.sha256);
         }
         assert!(receipts::verify_chain(&streamed).0);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn citations_verify_and_streaming_audit_bundle_json_bytes_work_end_to_end() {
+        let dir = std::env::temp_dir().join(format!(
+            "ergon-cit-v016-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let ws = dir.join("workspace");
+        std::fs::create_dir_all(&ws).unwrap();
+        std::fs::write(ws.join("contract.md"), "# MSA\nTerm 1\nTerm 2\nNet-60 risk\n").unwrap();
+        std::fs::write(
+            ws.join("report.md"),
+            "See [contract.md:L4] for net-60 and [contract.md:L99] and [missing.md:L1].\n",
+        )
+        .unwrap();
+
+        let rep = verify_text_citations(
+            &ws,
+            "Checked [contract.md:L4], [contract.md:L99], and [missing.md:L1].",
+        );
+        assert_eq!(rep.total, 3);
+        assert_eq!(rep.verified, 1);
+        assert_eq!(rep.broken, 2);
+        assert_eq!(rep.citations[0].status, "verified");
+        assert_eq!(rep.citations[1].status, "out_of_range");
+        assert_eq!(rep.citations[2].status, "missing");
+
+        let mut cfg = Config::from_env();
+        cfg.data_dir = dir.clone();
+        cfg.workspace_dir = ws.clone();
+        cfg.memory_path = dir.join("memory.md");
+        std::fs::write(&cfg.memory_path, "- Role: Legal\n").unwrap();
+        records::append_work(
+            &cfg,
+            "Audit contract [contract.md:L4]",
+            "Flagged [contract.md:L4]",
+            &["report.md".to_string()],
+            "t-cit",
+            true,
+        );
+
+        let person = Person {
+            id: "default".to_string(),
+            name: "Default".to_string(),
+            role: "Legal".to_string(),
+        };
+        let sec = json!({"events_sha256": receipts::GENESIS_HASH});
+        let raw_bytes = audit_bundle::build_audit_bundle_json_bytes(&cfg, &person, &sec);
+        let parsed: Value = serde_json::from_slice(&raw_bytes).unwrap();
+        let ver = audit_bundle::verify_audit_bundle(&parsed);
+        assert!(ver.valid, "streaming audit bundle failed: {:?}", ver.errors);
+
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        std::thread::spawn(move || {
+            let _ = serve(listener, cfg);
+        });
+        std::thread::sleep(std::time::Duration::from_millis(50));
+
+        let mut s = std::net::TcpStream::connect(addr).unwrap();
+        let body = json!({"text": "Check [contract.md:L4] and [contract.md:L99]."}).to_string();
+        let req = format!(
+            "POST /api/citations/verify HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+            addr.port(),
+            body.len(),
+            body
+        );
+        s.write_all(req.as_bytes()).unwrap();
+        let mut resp = String::new();
+        s.read_to_string(&mut resp).unwrap();
+        assert!(resp.starts_with("HTTP/1.1 200 OK"), "{resp}");
+        let res_json: Value = serde_json::from_str(resp.split("\r\n\r\n").nth(1).unwrap()).unwrap();
+        assert_eq!(res_json["verified"], json!(1));
+        assert_eq!(res_json["broken"], json!(1));
+
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
