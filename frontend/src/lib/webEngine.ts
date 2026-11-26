@@ -1166,18 +1166,84 @@ async function computeHmacHex(secret: string, bodyText: string): Promise<string>
   return await sha256Hex(`${secret}:${bodyText}`);
 }
 
-function isSensitiveWatchDir(dir: string): boolean {
-  const low = dir.replace(/\\/g, "/").toLowerCase();
-  return (
+function constantTimeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) {
+    diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return diff === 0;
+}
+
+function validateWebWatchDir(dir: string): string | null {
+  const trimmed = dir.trim();
+  if (!trimmed) return "Host directory path is required.";
+  if (/[\0\r\n]/.test(trimmed)) return "Directory path contains invalid control characters.";
+  const norm = trimmed.replace(/\\/g, "/");
+  if (/(^|\/)\.\.(\/|$)/.test(norm)) {
+    return "Directory path cannot contain '..' traversal segments.";
+  }
+  if (!norm.startsWith("/") && !/^[A-Za-z]:\//.test(norm)) {
+    return "Host directory path must be an absolute path.";
+  }
+  const low = norm.replace(/\/+$/, "").toLowerCase() || "/";
+  if (
     low === "/" ||
-    low.startsWith("/etc") ||
-    low.startsWith("/root") ||
+    low === "/etc" ||
+    low.startsWith("/etc/") ||
+    low === "/root" ||
+    low.startsWith("/root/") ||
+    low === "/proc" ||
+    low.startsWith("/proc/") ||
+    low === "/sys" ||
+    low.startsWith("/sys/") ||
+    low === "/dev" ||
+    low.startsWith("/dev/") ||
+    low === "/var/run" ||
+    low.startsWith("/var/run/") ||
     low.includes("/.ssh") ||
     low.includes("/.aws") ||
     low.includes("/.gnupg") ||
     low.includes("/.talos-wallet") ||
+    low.includes("/.credentials") ||
     low.includes("/.env")
-  );
+  ) {
+    return "Sensitive system or credential directories cannot be watched.";
+  }
+  return null;
+}
+
+function validateWebOutboundUrl(rawUrl: string, kind: OutboundConnectorKind): string | null {
+  const url = rawUrl.trim();
+  if (!url) return "Connector URL is required.";
+  if (/[\s\0\r\n]/.test(url)) return "Destination URL cannot contain spaces or control characters.";
+  if (kind === "smtp_relay") {
+    if (/^smtps?:\/\//i.test(url)) {
+      try {
+        const parsed = new URL(url);
+        if (!parsed.hostname) return "SMTP relay URL must include a hostname.";
+        if (parsed.username || parsed.password) return "Do not embed credentials in the URL.";
+        return null;
+      } catch {
+        return "Invalid SMTP relay URL.";
+      }
+    }
+    if (/^[a-zA-Z0-9.-]+(?::\d{1,5})?$/.test(url) && !url.startsWith(".") && !url.endsWith(".")) {
+      return null;
+    }
+    return "Invalid SMTP relay host or URL.";
+  }
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      return "Destination URL must start with http:// or https://.";
+    }
+    if (!parsed.hostname) return "Destination URL must include a hostname.";
+    if (parsed.username || parsed.password) return "Do not embed credentials in the URL.";
+    return null;
+  } catch {
+    return "Destination URL must start with http:// or https://.";
+  }
 }
 
 function getHeaderCI(headers: HeadersInit | undefined, name: string): string {
@@ -1502,7 +1568,7 @@ export async function installBrowserEngine(): Promise<void> {
     const edges: { from: string; to: string; kind: string }[] = [];
     for (const p of state.people) {
       const pid = `person:${p.id}`;
-      nodes.push({ id: pid, kind: "person", label: p.role ? `${p.name} — ${p.role}` : p.name });
+      nodes.push({ id: pid, kind: "person", label: p.role ? `${p.name} (${p.role})` : p.name });
       const st = state.stores[p.id];
       if (!st) continue;
       for (const sid of st.suite) {
@@ -2465,8 +2531,9 @@ export async function installBrowserEngine(): Promise<void> {
           const dummyPush = () => {};
           const outcome =
             byok.engine_mode === "byok" && byok.model_base_url && byok.model_id
-              ? await runByokLoop(st, byok, tempThread, resolvedPrompt, dummyPush, () => false)
-              : await runDeterministicTask(st, tempThread, resolvedPrompt, dummyPush, () => false);
+              ? await runByokLoop(st, byok, tempThread, resolvedPrompt, dummyPush, () => (run.status as string) === "cancelled")
+              : await runDeterministicTask(st, tempThread, resolvedPrompt, dummyPush, () => (run.status as string) === "cancelled");
+          if ((run.status as string) === "cancelled") return;
           stState.status = "ok";
           stState.finished_ms = Date.now();
           stState.output = outcome.summary;
@@ -2510,6 +2577,7 @@ export async function installBrowserEngine(): Promise<void> {
       }
     }
 
+    if ((run.status as string) === "cancelled") return;
     run.status = "completed";
     run.pending_checkpoint = null;
     run.updated_ms = Date.now();
@@ -3768,6 +3836,28 @@ function runWebTableQuery(
       const runId = decodeURIComponent(path.slice("/api/pipelines/runs/".length, -"/resume".length));
       const run = (st.pipelineRuns ?? []).find((r) => r.run_id === runId);
       if (!run) return jsonRes({ error: "pipeline run not found" }, 404);
+      if (run.status !== "paused_checkpoint" && run.status !== "interrupted") {
+        return jsonRes({ error: `pipeline run is ${run.status} and cannot be resumed` }, 409);
+      }
+      if (run.status === "interrupted" && !run.pending_checkpoint) {
+        const resumeIdx = Math.max(0, run.current_step_index);
+        run.status = "running";
+        run.error = null;
+        run.updated_ms = Date.now();
+        await persist();
+        broadcastSse("pipeline_resumed", {
+          run_id: run.run_id,
+          thread_id: run.thread_id ?? null,
+          step_index: resumeIdx,
+          action: "approve",
+          human_answer: "resumed",
+          run,
+        });
+        window.setTimeout(() => {
+          void executeWebPipelineFrom(p, st, byok, run, resumeIdx);
+        }, 15);
+        return jsonRes({ run }, 202);
+      }
       const cpIdx = run.pending_checkpoint?.step_index ?? run.current_step_index;
       const cpId = run.pending_checkpoint?.checkpoint_id;
       const action = String(body.action ?? "approve");
@@ -3824,10 +3914,28 @@ function runWebTableQuery(
       const runId = decodeURIComponent(path.slice("/api/pipelines/runs/".length, -"/retry".length));
       const run = (st.pipelineRuns ?? []).find((r) => r.run_id === runId);
       if (!run) return jsonRes({ error: "pipeline run not found" }, 404);
+      if (run.status !== "failed" && run.status !== "interrupted") {
+        return jsonRes({ error: `pipeline run is ${run.status}; only failed or interrupted runs can be retried` }, 409);
+      }
+      const steps = run.steps ?? run.steps_v2 ?? [];
       const fromIdx =
         typeof body.from_step_index === "number"
-          ? Math.max(0, body.from_step_index)
+          ? Math.floor(body.from_step_index)
           : run.current_step_index;
+      if (!Number.isFinite(fromIdx) || fromIdx < 0 || fromIdx >= steps.length) {
+        return jsonRes({ error: "from_step_index out of range" }, 400);
+      }
+      for (let j = fromIdx; j < run.step_states.length; j++) {
+        run.step_states[j] = {
+          ...run.step_states[j],
+          status: "pending",
+          output: undefined,
+          files: [],
+          error: null,
+        };
+      }
+      run.current_step_index = fromIdx;
+      run.pending_checkpoint = null;
       run.status = "running";
       run.error = null;
       run.updated_ms = Date.now();
@@ -3841,6 +3949,12 @@ function runWebTableQuery(
       const runId = decodeURIComponent(path.slice("/api/pipelines/runs/".length, -"/cancel".length));
       const run = (st.pipelineRuns ?? []).find((r) => r.run_id === runId);
       if (!run) return jsonRes({ error: "pipeline run not found" }, 404);
+      if (run.status === "cancelled") {
+        return jsonRes({ run }, 200);
+      }
+      if (run.status === "completed") {
+        return jsonRes({ error: "pipeline run already completed" }, 409);
+      }
       const cpId = run.pending_checkpoint?.checkpoint_id;
       if (cpId) {
         const dec = st.decisions.find((d) => d.id === cpId && d.status === "pending");
@@ -3974,7 +4088,9 @@ function runWebTableQuery(
       });
     }
     if (method === "PUT" && path === "/api/files/content") {
-      const safe = sanitizeSafePath(String(body.path ?? ""));
+      const rawPath = String(body.path ?? "").trim();
+      if (!rawPath) return jsonRes({ error: "path is required" }, 400);
+      const safe = sanitizeSafePath(rawPath);
       if (!safe) return jsonRes({ error: "path escapes the workspace" }, 403);
       const content = String(body.content ?? "");
       const existing = st.files[safe];
@@ -4008,10 +4124,15 @@ function runWebTableQuery(
       });
     }
     if (method === "PATCH" && path === "/api/files/content") {
-      const safe = sanitizeSafePath(String(body.path ?? ""));
+      const rawPath = String(body.path ?? "").trim();
+      if (!rawPath) return jsonRes({ error: "path is required" }, 400);
+      const safe = sanitizeSafePath(rawPath);
       if (!safe) return jsonRes({ error: "path escapes the workspace" }, 403);
       const existing = st.files[safe];
       if (!existing) return jsonRes({ error: "file not found" }, 404);
+      if (existing.binaryBase64 && !existing.extracted) {
+        return jsonRes({ error: "binary files cannot be patched" }, 400);
+      }
       const expectedSha = typeof body.expected_sha256 === "string" ? body.expected_sha256.trim() : "";
       const currentSha = await sha256Hex(existing.content);
       if (expectedSha && currentSha !== expectedSha) {
@@ -4036,8 +4157,11 @@ function runWebTableQuery(
           nextText = op.replace_all ? parts.join(rep) : nextText.replace(find, rep);
           applied += 1;
         } else if (kind === "replace_lines") {
-          const start = Math.max(1, Number(op.start_line ?? 1));
-          const end = Math.max(start, Number(op.end_line ?? start));
+          const start = Number(op.start_line ?? 1);
+          const end = Number(op.end_line ?? start);
+          if (!Number.isInteger(start) || !Number.isInteger(end) || start < 1 || end < start) {
+            return jsonRes({ error: "invalid start_line/end_line range" }, 400);
+          }
           const lines = nextText.split(/\r?\n/);
           if (start > lines.length) return jsonRes({ error: "start_line out of range" }, 400);
           const repLines = rep.split(/\r?\n/);
@@ -4450,13 +4574,13 @@ function runWebTableQuery(
         `- Prepared for: **${p.name}**`,
         `- Deliverables included: ${sections.length}`,
         `- Completed runs summarized: ${summaryGates.length}`,
-        `- Pre-flight check: **${statusWord}** (${readyCount} non-empty, ${emptyCount} empty, ${missingPaths.length} missing, ${totalBytes} total bytes; citations: ${citations.gate_status} — ${ratioLabel})`,
+        `- Pre-flight check: **${statusWord}** (${readyCount} non-empty, ${emptyCount} empty, ${missingPaths.length} missing, ${totalBytes} total bytes; citations: ${citations.gate_status}: ${ratioLabel})`,
         "",
       ];
       if (hasSummary) {
         lines.push("## Verified Work Summary", "");
         if (citations.stale > 0 || citations.broken > 0) {
-          lines.push(`- **Batch Citation Gate:** WARN — ${citations.verified}/${citations.total} verified, **${citations.stale} stale**, ${citations.broken} broken across ${summaryGates.length} runs`, "");
+          lines.push(`- **Batch Citation Gate:** WARN (${citations.verified}/${citations.total} verified, **${citations.stale} stale**, ${citations.broken} broken across ${summaryGates.length} runs)`, "");
         } else if (citations.total > 0) {
           lines.push(`- **Batch Citation Gate:** 100% Verified (${citations.verified}/${citations.total} citations across ${summaryGates.length} runs)`, "");
         }
@@ -5180,11 +5304,15 @@ function runWebTableQuery(
       const nowMs = Date.now();
       if (kind === "folder_watch") {
         const watchDir = String(body.watch_dir ?? body.folder_path ?? "").trim();
-        if (!watchDir) return jsonRes({ error: "Host directory path is required." }, 400);
-        if (isSensitiveWatchDir(watchDir)) {
-          return jsonRes({ error: "Sensitive system or credential directories cannot be watched." }, 403);
+        const dirErr = validateWebWatchDir(watchDir);
+        if (dirErr) {
+          const status = dirErr.includes("Sensitive") ? 403 : 400;
+          return jsonRes({ error: dirErr }, status);
         }
         const glob = String(body.glob ?? body.glob_filter ?? "*.pdf,*.csv").trim() || "*.*";
+        if (/[\0\r\n/\\]/.test(glob) || glob.includes("..")) {
+          return jsonRes({ error: "Glob filter cannot contain path separators or '..'." }, 400);
+        }
         const trg: TriggerRule = {
           id: `trg-${nowMs}-${cs.triggers.length + 1}`,
           name,
@@ -5244,7 +5372,9 @@ function runWebTableQuery(
         : "";
       const tid = idFromPath || String(u.searchParams.get("id") ?? body.id ?? "").trim();
       if (!tid) return jsonRes({ error: "trigger id is required" }, 400);
+      const before = cs.triggers.length;
       cs.triggers = cs.triggers.filter((t) => t.id !== tid);
+      if (cs.triggers.length === before) return jsonRes({ error: "trigger not found" }, 404);
       delete cs.webhookSecrets[tid];
       await persist();
       return jsonRes({ deleted: tid });
@@ -5256,6 +5386,13 @@ function runWebTableQuery(
       if (!trg) return jsonRes({ error: "Webhook endpoint not found." }, 404);
       const rawBody = typeof init?.body === "string" ? init.body : JSON.stringify(body ?? {});
       if (utf8Bytes(rawBody) > 1024 * 1024) return jsonRes({ error: "Payload exceeds 1 MB limit." }, 413);
+      if (rawBody.trim()) {
+        try {
+          JSON.parse(rawBody);
+        } catch {
+          return jsonRes({ error: "Webhook payload must be valid JSON." }, 400);
+        }
+      }
       const expectedSecret = cs.webhookSecrets[trg.id] || "";
       const sigHdr = getHeaderCI(init?.headers, "X-Ergon-Signature");
       const tokenHdr = getHeaderCI(init?.headers, "X-Ergon-Hook-Token");
@@ -5263,9 +5400,9 @@ function runWebTableQuery(
       let authed = false;
       if (sigHdr && expectedSecret) {
         const expectedHex = await computeHmacHex(expectedSecret, rawBody);
-        if (sigHdr.toLowerCase() === `sha256=${expectedHex}`) authed = true;
+        if (constantTimeEqual(sigHdr.toLowerCase(), `sha256=${expectedHex}`)) authed = true;
       }
-      if (!authed && tokenHdr && expectedSecret && tokenHdr === expectedSecret) {
+      if (!authed && tokenHdr && expectedSecret && constantTimeEqual(tokenHdr, expectedSecret)) {
         authed = true;
       }
       if (!authed && !sigHdr && !tokenHdr && simHdr === "1") {
@@ -5304,12 +5441,11 @@ function runWebTableQuery(
       const cs = ensureWebConnectors(st);
       const name = String(body.name ?? "").trim();
       const url = String(body.url ?? "").trim();
-      if (!name || !url) return jsonRes({ error: "Connector name and URL are required." }, 400);
+      if (!name) return jsonRes({ error: "Connector name is required." }, 400);
       const kind: OutboundConnectorKind =
         body.kind === "rest_api" || body.kind === "smtp_relay" ? body.kind : "http_webhook";
-      if (kind !== "smtp_relay" && !/^https?:\/\//i.test(url)) {
-        return jsonRes({ error: "Destination URL must start with http:// or https://." }, 400);
-      }
+      const urlErr = validateWebOutboundUrl(url, kind);
+      if (urlErr) return jsonRes({ error: urlErr }, 400);
       const methodVal: "POST" | "PUT" = body.method === "PUT" ? "PUT" : "POST";
       const headersTemplate: Record<string, string> = {};
       if (body.headers_template && typeof body.headers_template === "object" && !Array.isArray(body.headers_template)) {
@@ -5370,7 +5506,9 @@ function runWebTableQuery(
         : "";
       const cid = idFromPath || String(u.searchParams.get("id") ?? body.id ?? "").trim();
       if (!cid) return jsonRes({ error: "connector id is required" }, 400);
+      const before = cs.outbound.length;
       cs.outbound = cs.outbound.filter((c) => c.id !== cid);
+      if (cs.outbound.length === before) return jsonRes({ error: "outbound connector not found" }, 404);
       await persist();
       return jsonRes({ deleted: cid });
     }
@@ -5379,6 +5517,7 @@ function runWebTableQuery(
       const cs = ensureWebConnectors(st);
       const conn = cs.outbound.find((c) => c.id === cid);
       if (!conn) return jsonRes({ error: "outbound connector not found" }, 404);
+      if (conn.enabled === false) return jsonRes({ error: "outbound connector is paused" }, 409);
       const pol = buildWebPolicy(p.id, st);
       const ts = Date.now();
       const payloadStr = JSON.stringify(body.payload ?? { event: "ergon.connector.test", connector: conn.name });
@@ -5520,7 +5659,7 @@ function runWebTableQuery(
             dec.outcome = `Approved: ${dec.path} was already gone.`;
           }
         } else {
-          dec.outcome = `You said no — kept ${dec.path} safe.`;
+          dec.outcome = `You said no; kept ${dec.path} safe.`;
         }
         const th = st.threads.find((t) => t.id === dec.thread_id);
         if (th) {
@@ -5529,7 +5668,7 @@ function runWebTableQuery(
               ? { role: "step", content: approve ? `Note: ${dec.path} was deleted after you approved it.` : `Note: ${dec.path} was kept because you declined the deletion.` }
               : m
           );
-          th.messages.push({ role: "step", content: `Decision settled — ${dec.summary}: ${dec.outcome}` });
+          th.messages.push({ role: "step", content: `Decision settled (${dec.summary}): ${dec.outcome}` });
         }
       } else {
         dec.outcome = approve ? "Approved." : "Declined.";

@@ -66,6 +66,101 @@ function parseHeadersText(raw: string): Record<string, string> {
   return out;
 }
 
+function validateHeadersText(raw: string): string | null {
+  for (const line of raw.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    const idx = trimmed.indexOf(":");
+    if (idx <= 0) {
+      return `Invalid header line "${trimmed.slice(0, 40)}". Use "Header-Name: value" format.`;
+    }
+    const key = trimmed.slice(0, idx).trim();
+    if (!/^[A-Za-z0-9-]+$/.test(key)) {
+      return `Invalid header name "${key}".`;
+    }
+  }
+  return null;
+}
+
+function validateWatchDir(raw: string): string | null {
+  const dir = raw.trim();
+  if (!dir) return "Enter a host directory path to watch.";
+  if (/[\0\r\n]/.test(dir)) return "Directory path contains invalid control characters.";
+  const norm = dir.replace(/\\/g, "/");
+  if (/(^|\/)\.\.(\/|$)/.test(norm)) {
+    return "Directory path cannot contain '..' traversal segments.";
+  }
+  const isAbsUnix = norm.startsWith("/");
+  const isAbsWin = /^[A-Za-z]:\//.test(norm);
+  if (!isAbsUnix && !isAbsWin) {
+    return "Enter an absolute host directory path (for example /home/you/Documents/Inbox).";
+  }
+  const low = norm.replace(/\/+$/, "").toLowerCase() || "/";
+  if (
+    low === "/" ||
+    low === "/etc" ||
+    low.startsWith("/etc/") ||
+    low === "/root" ||
+    low.startsWith("/root/") ||
+    low === "/proc" ||
+    low.startsWith("/proc/") ||
+    low === "/sys" ||
+    low.startsWith("/sys/") ||
+    low === "/dev" ||
+    low.startsWith("/dev/") ||
+    low === "/var/run" ||
+    low.startsWith("/var/run/") ||
+    low.includes("/.ssh") ||
+    low.includes("/.aws") ||
+    low.includes("/.gnupg") ||
+    low.includes("/.talos-wallet") ||
+    low.includes("/.credentials") ||
+    low.includes("/.env")
+  ) {
+    return "Sensitive system or credential directories cannot be watched.";
+  }
+  return null;
+}
+
+function validateOutboundUrl(raw: string, kind: OutboundConnectorKind): string | null {
+  const url = raw.trim();
+  if (!url) return "Enter a destination URL.";
+  if (/[\s\0\r\n]/.test(url)) return "Destination URL cannot contain spaces or control characters.";
+  if (kind === "smtp_relay") {
+    if (/^smtps?:\/\//i.test(url)) {
+      try {
+        const parsed = new URL(url);
+        if (!parsed.hostname) return "SMTP relay URL must include a hostname.";
+        if (parsed.username || parsed.password) {
+          return "Do not embed credentials in the URL; use the write-only secret field below.";
+        }
+        return null;
+      } catch {
+        return "Enter a valid SMTP relay URL (for example smtps://smtp.example.com:465).";
+      }
+    }
+    if (/^[a-zA-Z0-9.-]+(?::\d{1,5})?$/.test(url) && !url.startsWith(".") && !url.endsWith(".")) {
+      return null;
+    }
+    return "Enter a valid SMTP relay host or smtps:// URL (for example smtps://smtp.example.com:465).";
+  }
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      return "Destination URL must start with http:// or https://.";
+    }
+    if (!parsed.hostname) {
+      return "Destination URL must include a valid host.";
+    }
+    if (parsed.username || parsed.password) {
+      return "Do not embed credentials in the URL; use the write-only secret field below.";
+    }
+    return null;
+  } catch {
+    return "Enter a valid http:// or https:// destination URL.";
+  }
+}
+
 function deliveryStatusBadge(status: string): { label: string; cls: string } {
   const s = status.toLowerCase();
   if (s === "ok" || s === "sent" || s === "delivered") {
@@ -101,6 +196,7 @@ function ConnectorsBody({
   const [tab, setTab] = useState<ConnectorTab>("webhooks");
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
+  const [loadErr, setLoadErr] = useState("");
   const [triggers, setTriggers] = useState<TriggerRule[]>([]);
   const [outbound, setOutbound] = useState<OutboundConnector[]>([]);
   const [deliveries, setDeliveries] = useState<DeliveryLog[]>([]);
@@ -114,6 +210,7 @@ function ConnectorsBody({
   const [addingHook, setAddingHook] = useState(false);
   const [hookName, setHookName] = useState("");
   const [hookRoutineId, setHookRoutineId] = useState("");
+  const [hookFormErr, setHookFormErr] = useState("");
   const [savingHook, setSavingHook] = useState(false);
   const [rotatingId, setRotatingId] = useState<string | null>(null);
   const [simOpenId, setSimOpenId] = useState<string | null>(null);
@@ -128,6 +225,7 @@ function ConnectorsBody({
   const [folderPath, setFolderPath] = useState("");
   const [folderGlob, setFolderGlob] = useState("*.pdf,*.csv");
   const [folderRoutineId, setFolderRoutineId] = useState("");
+  const [folderFormErr, setFolderFormErr] = useState("");
   const [savingFolder, setSavingFolder] = useState(false);
 
   // Outbound connector builder state (secret value is strictly write-only and cleared immediately)
@@ -140,19 +238,23 @@ function ConnectorsBody({
   const [outSecretKey, setOutSecretKey] = useState("api_token");
   const [outSecretValue, setOutSecretValue] = useState("");
   const [outRequireApproval, setOutRequireApproval] = useState(true);
+  const [outboundFormErr, setOutboundFormErr] = useState("");
   const [savingOutbound, setSavingOutbound] = useState(false);
   const [testingOutboundId, setTestingOutboundId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     setErr("");
+    setLoadErr("");
     const [res, polRes] = await Promise.all([
       listConnectors(),
       call<WorkspacePolicy>("/api/workspace/policy"),
     ]);
     setLoading(false);
     if (!res.ok) {
-      setErr(res.error || "Could not load connectors.");
+      const msg = res.error || "Could not load connectors and delivery history.";
+      setErr(msg);
+      setLoadErr(msg);
       return;
     }
     setTriggers(res.data.triggers);
@@ -166,7 +268,13 @@ function ConnectorsBody({
   }, []);
 
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen) {
+      // Wipe any transient secret state as soon as the modal closes.
+      setOutSecretValue("");
+      setSimTokens({});
+      setEphemeralSecrets({});
+      return;
+    }
     void load();
   }, [isOpen, load, status]);
 
@@ -215,10 +323,11 @@ function ConnectorsBody({
     e.preventDefault();
     const name = hookName.trim();
     if (!name || !hookRoutineId) {
-      setErr("Enter a webhook name and choose a target routine.");
+      setHookFormErr("Enter a webhook name and choose a target routine.");
       return;
     }
     setSavingHook(true);
+    setHookFormErr("");
     setErr("");
     const r = await saveTriggerRule({
       name,
@@ -228,7 +337,7 @@ function ConnectorsBody({
     });
     setSavingHook(false);
     if (!r.ok) {
-      setErr(r.error || "Could not create inbound webhook.");
+      setHookFormErr(r.error || "Could not create inbound webhook.");
       return;
     }
     const createdId = r.data.trigger?.id;
@@ -274,8 +383,26 @@ function ConnectorsBody({
         null,
         2
       );
-    setSimBusyId(rule.id);
     const token = (simTokens[rule.id] ?? "").trim() || ephemeralSecrets[rule.id] || "";
+    // Always wipe user-entered signing secret from React state on submit.
+    setSimTokens((prev) => {
+      if (!(rule.id in prev)) return prev;
+      const next = { ...prev };
+      delete next[rule.id];
+      return next;
+    });
+    if (rawPayload.trim()) {
+      try {
+        JSON.parse(rawPayload);
+      } catch {
+        setSimResultById((prev) => ({
+          ...prev,
+          [rule.id]: { ok: false, text: "Test payload must be valid JSON." },
+        }));
+        return;
+      }
+    }
+    setSimBusyId(rule.id);
     const r = await simulateWebhookTrigger(hookId, rawPayload, token);
     setSimBusyId(null);
     if (!r.ok) {
@@ -302,30 +429,41 @@ function ConnectorsBody({
     e.preventDefault();
     const name = folderName.trim();
     const dir = folderPath.trim();
-    if (!name || !dir || !folderRoutineId) {
-      setErr("Enter a rule name, host directory path, and target routine.");
+    const glob = folderGlob.trim() || "*.*";
+    if (!name || !folderRoutineId) {
+      setFolderFormErr("Enter a rule name and choose a target routine.");
+      return;
+    }
+    const dirErr = validateWatchDir(dir);
+    if (dirErr) {
+      setFolderFormErr(dirErr);
+      return;
+    }
+    if (/[\0\r\n/\\]/.test(glob) || glob.includes("..")) {
+      setFolderFormErr("Glob filter cannot contain path separators or '..'.");
       return;
     }
     setSavingFolder(true);
+    setFolderFormErr("");
     setErr("");
     const r = await saveTriggerRule({
       name,
       kind: "folder_watch",
       watch_dir: dir,
-      glob: folderGlob.trim() || "*.*",
+      glob,
       routine_id: folderRoutineId,
       enabled: true,
     });
     setSavingFolder(false);
     if (!r.ok) {
-      setErr(r.error || "Could not create watched folder rule.");
+      setFolderFormErr(r.error || "Could not create watched folder rule.");
       return;
     }
     setFolderName("");
     setFolderPath("");
     setFolderGlob("*.pdf,*.csv");
     setAddingFolder(false);
-    toast.success(`Watching "${dir}" for ${folderGlob.trim() || "*.*"}.`);
+    toast.success(`Watching "${dir}" for ${glob}.`);
     await load();
     onChanged?.();
   };
@@ -334,16 +472,35 @@ function ConnectorsBody({
     e.preventDefault();
     const name = outName.trim();
     const url = outUrl.trim();
-    if (!name || !url) {
-      setErr("Enter a connector name and destination URL.");
+    const skey = outSecretKey.trim();
+    const sval = outSecretValue.trim();
+    // Strictly wipe plaintext secret input from React state immediately on submit.
+    setOutSecretValue("");
+
+    if (!name) {
+      setOutboundFormErr("Enter a connector name.");
       return;
     }
+    const urlErr = validateOutboundUrl(url, outKind);
+    if (urlErr) {
+      setOutboundFormErr(urlErr);
+      return;
+    }
+    const hdrErr = validateHeadersText(outHeadersText);
+    if (hdrErr) {
+      setOutboundFormErr(hdrErr);
+      return;
+    }
+    if (sval && (!skey || !/^[a-zA-Z0-9_.-]+$/.test(skey))) {
+      setOutboundFormErr("Secret key name must use letters, numbers, underscores, dots, or dashes.");
+      return;
+    }
+
     setSavingOutbound(true);
+    setOutboundFormErr("");
     setErr("");
     const headers_template = parseHeadersText(outHeadersText);
     const secrets: Record<string, string> = {};
-    const skey = outSecretKey.trim();
-    const sval = outSecretValue.trim();
     if (skey && sval) {
       secrets[skey] = sval;
     }
@@ -358,10 +515,8 @@ function ConnectorsBody({
       enabled: true,
     });
     setSavingOutbound(false);
-    // Always wipe the secret input immediately so no raw secret lingers in React state.
-    setOutSecretValue("");
     if (!r.ok) {
-      setErr(r.error || "Could not save outbound connector.");
+      setOutboundFormErr(r.error || "Could not save outbound connector.");
       return;
     }
     setOutName("");
@@ -440,7 +595,17 @@ function ConnectorsBody({
         </div>
       )}
 
-      <Tabs value={tab} onValueChange={(v) => { setErr(""); setTab(v as ConnectorTab); }}>
+      <Tabs
+        value={tab}
+        onValueChange={(v) => {
+          setErr("");
+          setHookFormErr("");
+          setFolderFormErr("");
+          setOutboundFormErr("");
+          setOutSecretValue("");
+          setTab(v as ConnectorTab);
+        }}
+      >
         <TabsList aria-label="Connector categories" className="w-full sm:w-fit">
           <TabsTrigger value="webhooks" data-id="webhooks" className="max-md:min-h-11 gap-1.5 px-2 text-xs sm:px-3 sm:text-sm">
             <Webhook className="hidden size-3.5 shrink-0 sm:inline" strokeWidth={1.5} aria-hidden />
@@ -514,8 +679,13 @@ function ConnectorsBody({
                   </select>
                 </div>
               </div>
+              {hookFormErr && (
+                <p id="webhook-form-error" role="alert" className="rounded-sm border border-hairline bg-status-stopped-bg px-2.5 py-1.5 text-xs text-status-stopped-fg">
+                  {hookFormErr}
+                </p>
+              )}
               <div className="flex flex-wrap items-center justify-end gap-2">
-                <Button type="button" size="sm" variant="ghost" className="max-md:min-h-11" onClick={() => setAddingHook(false)}>
+                <Button type="button" size="sm" variant="ghost" className="max-md:min-h-11" onClick={() => { setHookFormErr(""); setAddingHook(false); }}>
                   Cancel
                 </Button>
                 <Button type="submit" size="sm" className="max-md:min-h-11" disabled={savingHook || routines.length === 0}>
@@ -839,8 +1009,13 @@ function ConnectorsBody({
               <p className="text-xs text-ink-2">
                 Sensitive system and credential folders are blocked automatically. Only files under 25 MB with steady size and timestamp are ingested.
               </p>
+              {folderFormErr && (
+                <p id="folder-watch-error" role="alert" className="rounded-sm border border-hairline bg-status-stopped-bg px-2.5 py-1.5 text-xs text-status-stopped-fg">
+                  {folderFormErr}
+                </p>
+              )}
               <div className="flex flex-wrap items-center justify-end gap-2">
-                <Button type="button" size="sm" variant="ghost" className="max-md:min-h-11" onClick={() => setAddingFolder(false)}>
+                <Button type="button" size="sm" variant="ghost" className="max-md:min-h-11" onClick={() => { setFolderFormErr(""); setAddingFolder(false); }}>
                   Cancel
                 </Button>
                 <Button type="submit" size="sm" className="max-md:min-h-11" disabled={savingFolder || routines.length === 0}>
@@ -1058,6 +1233,7 @@ function ConnectorsBody({
                   className="max-md:min-h-11"
                   onClick={() => {
                     setOutSecretValue("");
+                    setOutboundFormErr("");
                     setAddingOutbound(false);
                   }}
                 >
@@ -1067,6 +1243,11 @@ function ConnectorsBody({
                   {savingOutbound ? "Saving…" : "Save connector"}
                 </Button>
               </div>
+              {outboundFormErr && (
+                <p id="outbound-form-error" role="alert" className="rounded-sm border border-hairline bg-status-stopped-bg px-2.5 py-1.5 text-xs text-status-stopped-fg">
+                  {outboundFormErr}
+                </p>
+              )}
             </form>
           )}
 
@@ -1155,12 +1336,42 @@ function ConnectorsBody({
 
           {/* Delivery Log */}
           <section id="connector-delivery-log" aria-labelledby="delivery-log-h" className="flex flex-col gap-2 border-t border-hairline pt-3">
-            <div className="flex items-center justify-between gap-2">
-              <h3 id="delivery-log-h" className="text-sm font-medium text-ink">Delivery log</h3>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <h3 id="delivery-log-h" className="text-sm font-medium text-ink">Delivery log</h3>
+                {deliveries.some((d) => ["error", "failed", "blocked", "denied"].includes(String(d.status).toLowerCase())) && (
+                  <Badge variant="outline" size="sm" className="bg-status-stopped-bg text-xs text-status-stopped-fg">
+                    {deliveries.filter((d) => ["error", "failed", "blocked", "denied"].includes(String(d.status).toLowerCase())).length} failed/blocked
+                  </Badge>
+                )}
+              </div>
               <span className="mono text-xs text-ink-3">{deliveries.length}</span>
             </div>
-            {deliveries.length === 0 ? (
-              <p className="text-xs text-ink-2">No outbound deliveries recorded yet.</p>
+            {loadErr ? (
+              <div
+                id="connector-delivery-error"
+                role="alert"
+                className="flex flex-wrap items-center justify-between gap-2 rounded-sm border border-hairline bg-status-stopped-bg px-3 py-2.5 text-xs text-status-stopped-fg"
+              >
+                <span>{loadErr}</span>
+                <Button
+                  type="button"
+                  size="xs"
+                  variant="outline"
+                  className="max-md:min-h-11 bg-surface text-ink"
+                  onClick={() => void load()}
+                >
+                  Retry
+                </Button>
+              </div>
+            ) : loading && deliveries.length === 0 ? (
+              <p className="text-xs text-ink-2">Loading delivery log…</p>
+            ) : deliveries.length === 0 ? (
+              <p id="connector-delivery-empty" className="rounded-sm border border-hairline bg-board/40 px-3 py-2.5 text-xs text-ink-2">
+                {outbound.length === 0
+                  ? "No outbound deliveries recorded yet. Add an outbound connector above and run Test Delivery to verify."
+                  : "No outbound deliveries recorded yet. Click Test Delivery on a connector above to send a test event."}
+              </p>
             ) : (
               <ul className="divide-y divide-hairline rounded-card border border-hairline bg-surface">
                 {deliveries.slice(0, 20).map((d) => {

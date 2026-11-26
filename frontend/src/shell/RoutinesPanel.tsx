@@ -24,7 +24,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { PanelModal, usePanelModalClose } from "@/shell/PanelModal";
-import { PipelineBuilder, makeDefaultStep } from "@/shell/PipelineBuilder";
+import { PipelineBuilder, makeDefaultStep, validatePipelineSteps } from "@/shell/PipelineBuilder";
 import { PipelineRunStrip } from "@/shell/CheckpointCard";
 import { StarterPlaybooksBar } from "@/shell/StarterPlaybooksBar";
 import { Button } from "@/components/ui/button";
@@ -290,6 +290,16 @@ function RoutinesBody({
     if (!name.trim() || !derivedPrompt) {
       setErr("Enter both a routine name and the task prompt or pipeline steps your agent should run.");
       return;
+    }
+    if (typedSteps.length > 0) {
+      const check = validatePipelineSteps(typedSteps);
+      if (!check.valid) {
+        const firstStepErr = Object.entries(check.errorsByStep)
+          .sort((a, b) => Number(a[0]) - Number(b[0]))
+          .map(([idx, msgs]) => `Step ${Number(idx) + 1}: ${msgs[0]}`)[0];
+        setErr(firstStepErr || check.globalErrors[0] || "Fix invalid pipeline step fields before saving.");
+        return;
+      }
     }
     const cleanChain =
       typedSteps.length > 0
@@ -619,7 +629,10 @@ function RoutinesBody({
             {builderOpen && (
               <PipelineBuilder
                 steps={stepsV2}
-                onChange={setStepsV2}
+                onChange={(next) => {
+                  setStepsV2(next);
+                  if (err) setErr("");
+                }}
                 skills={skills}
                 workspaceFiles={workspaceFiles}
               />

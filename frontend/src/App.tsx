@@ -54,7 +54,7 @@ import { exportAuditBundleDownload } from "@/lib/auditBundle";
 import { exportReceiptDownload } from "@/lib/receiptExport";
 import { cn } from "@/lib/utils";
 import { relTime, threadMs } from "@/lib/words";
-import { glide, instant, sheet } from "@/motion";
+import { instant, sheet } from "@/motion";
 
 type Face = "chat" | "paper" | "graph";
 const THREADS_PAGE_SIZE = 12;

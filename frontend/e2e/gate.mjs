@@ -1670,6 +1670,351 @@ await reset();
   await mctx.close();
 }
 
+// 6g. v0.32.0 Wave H1 Hardening (PipelineBuilder validation, CheckpointCard/Strip double-submit guard, FileEditor 409/unsaved/CSV-error, Connectors validation/masking/delivery-log-error)
+{
+  // 1 & 2. E1: PipelineBuilder validation + CheckpointCard & PipelineRunStrip double-submit guards
+  const { ctx, p } = await open(1440, 900);
+  let routinePostCount = 0;
+  let resumeCalls = 0;
+  let cancelCalls = 0;
+  const pausedRun = {
+    run_id: "prun-h1-cp",
+    routine_id: "rtn-h1",
+    routine_name: "H1 Checkpoint Guard",
+    status: "paused_checkpoint",
+    current_step_index: 1,
+    created_ms: Date.now() - 2000,
+    updated_ms: Date.now(),
+    step_states: [
+      { step_id: "clean", kind: "skill", status: "ok", files: ["cleaned.csv"], output: "Done" },
+      { step_id: "review", kind: "checkpoint", status: "waiting_human", checkpoint_id: "d-h1-cp" },
+    ],
+    pending_checkpoint: {
+      checkpoint_id: "d-h1-cp",
+      step_index: 1,
+      step_id: "review",
+      prompt: "Approve cleaned output",
+      input_mode: "approve_reject",
+      inspect_files: ["cleaned.csv"],
+    },
+  };
+  const runningRun = {
+    run_id: "prun-h1-run",
+    routine_id: "rtn-h1-2",
+    routine_name: "H1 Running Guard",
+    status: "running",
+    current_step_index: 0,
+    created_ms: Date.now() - 1000,
+    updated_ms: Date.now(),
+    step_states: [{ step_id: "step_1", kind: "skill", status: "running" }],
+  };
+  let runsList = [pausedRun, runningRun];
+
+  await p.route("**/api/status", async (r) => {
+    const res = await r.fetch();
+    const j = await res.json();
+    await r.fulfill({
+      response: res,
+      body: JSON.stringify({
+        ...j,
+        version: "0.32.0",
+        capabilities: { ...(j.capabilities || {}), routines: true, sse: true, pipelines: true, file_edit: true, connectors: true },
+      }),
+    });
+  });
+  await p.route("**/api/routines", async (r) => {
+    if (r.request().method() === "POST") {
+      routinePostCount += 1;
+      return r.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ routine: { id: "rt-new" } }) });
+    }
+    return r.continue();
+  });
+  await p.route(/\/api\/pipelines\/runs(\?.*)?$/, (r) =>
+    r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ runs: runsList }) })
+  );
+  await p.route("**/api/pipelines/runs/prun-h1-cp/resume", async (r) => {
+    resumeCalls += 1;
+    await new Promise((res) => setTimeout(res, 180));
+    runsList = runsList.filter((x) => x.run_id !== "prun-h1-cp");
+    return r.fulfill({
+      status: 202,
+      contentType: "application/json",
+      body: JSON.stringify({ run: { ...pausedRun, status: "completed", pending_checkpoint: null } }),
+    });
+  });
+  await p.route("**/api/pipelines/runs/prun-h1-run/cancel", async (r) => {
+    cancelCalls += 1;
+    await new Promise((res) => setTimeout(res, 180));
+    runsList = runsList.filter((x) => x.run_id !== "prun-h1-run");
+    return r.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ run: { ...runningRun, status: "cancelled" } }),
+    });
+  });
+
+  await p.goto(BASE);
+  await waitWorkbench(p);
+
+  // Check PipelineBuilder blocks invalid template & empty agent prompt
+  await p.locator('[data-thing="routines-btn"]').click();
+  await p.waitForSelector("#routines-panel", { timeout: 4000 });
+  await p.locator("#routines-panel").getByRole("button", { name: "New routine" }).click();
+  await p.locator("#routine-create-form").getByRole("button", { name: "Pipeline + Checkpoint (3 steps)" }).click();
+  await p.locator('#pipeline-builder [data-add-pipeline-step="agent"]').click();
+  await p.locator('#pipeline-builder input[aria-label="Step 3 arg input_file"]').fill("{{steps.missing_step.files[0]}}");
+  await p.locator('#pipeline-builder textarea[aria-label="Step 4 agent prompt"]').fill("");
+  await p.locator('#routine-create-form button[type="submit"]').click();
+  const step3ErrVisible = await p.locator('[data-step-validation-error="2"]').isVisible();
+  const step4ErrVisible = await p.locator('[data-step-validation-error="3"]').isVisible();
+  const formErrTxt = await p.locator('#routine-create-form [role="alert"]').last().innerText();
+  ok(
+    "v0.32.0 E1 PipelineBuilder blocks empty agent prompt and invalid {{steps.*}} template",
+    step3ErrVisible && step4ErrVisible && routinePostCount === 0 && /Step 3|Unknown step/i.test(formErrTxt),
+    `s3=${step3ErrVisible} s4=${step4ErrVisible} posts=${routinePostCount}`
+  );
+  await p.keyboard.press("Escape");
+  await p.locator("#routines-panel").waitFor({ state: "hidden", timeout: 4000 }).catch(() => {});
+
+  // Check CheckpointCard & PipelineRunStrip double-submit guards
+  await p.getByRole("tab", { name: "Today" }).click();
+  await waitPaper(p);
+  await p.waitForSelector('[data-pipeline-checkpoint="prun-h1-cp"]', { timeout: 4000 });
+  await p.waitForSelector('[data-pipeline-running="prun-h1-run"]', { timeout: 4000 });
+  await p.evaluate(() => {
+    const resumeBtn = document.querySelector('[data-pipeline-checkpoint="prun-h1-cp"] [data-action="resume-pipeline"]');
+    if (resumeBtn instanceof HTMLButtonElement) {
+      resumeBtn.click();
+      resumeBtn.click();
+    }
+    const abortBtn = document.querySelector('[data-pipeline-running="prun-h1-run"] [data-action="abort-running-pipeline"]');
+    if (abortBtn instanceof HTMLButtonElement) {
+      abortBtn.click();
+      abortBtn.click();
+    }
+  });
+  await p.locator('[data-pipeline-checkpoint="prun-h1-cp"]').waitFor({ state: "hidden", timeout: 4000 });
+  await p.locator('[data-pipeline-running="prun-h1-run"]').waitFor({ state: "hidden", timeout: 4000 });
+  ok(
+    "v0.32.0 E1 CheckpointCard and PipelineRunStrip double-submit guards send single requests",
+    resumeCalls === 1 && cancelCalls === 1,
+    `resume=${resumeCalls} cancel=${cancelCalls}`
+  );
+  await ctx.close();
+}
+
+{
+  // 3 & 4. E2: FileEditor 409 conflict recovery, unsaved-changes guard, malformed CSV grid error state
+  const { ctx, p } = await open(1440, 900);
+  p.__expect500 = true;
+  const h1Files = {
+    "conflict.md": { content: "# Conflict Test\n\nInitial line.\n", sha: "sha-v1" },
+    "malformed.csv": { content: 'Vendor,Amount\n"Unclosed Co,420.00\n', sha: "sha-csv-1" },
+  };
+  const putExpectedShas = [];
+
+  await p.route("**/api/status", async (r) => {
+    const res = await r.fetch();
+    const j = await res.json();
+    await r.fulfill({
+      response: res,
+      body: JSON.stringify({
+        ...j,
+        version: "0.32.0",
+        capabilities: { ...(j.capabilities || {}), file_edit: true, table_query: true, pdf_export: true },
+      }),
+    });
+  });
+  await p.route(/\/api\/files(\?.*)?$/, (r) => {
+    const files = Object.entries(h1Files).map(([path, info]) => ({
+      path,
+      name: path,
+      size: info.content.length,
+      mtime_ms: Date.now(),
+      ext: path.split(".").pop() || "txt",
+    }));
+    return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ person_id: "default", files }) });
+  });
+  await p.route(/\/api\/files\/content(\?.*)?$/, async (r) => {
+    const reqUrl = new URL(r.request().url());
+    if (r.request().method() === "PUT") {
+      const b = JSON.parse(r.request().postData() || "{}");
+      putExpectedShas.push(b.expected_sha256 ?? null);
+      if (b.path === "conflict.md" && b.expected_sha256 === "sha-v1") {
+        return r.fulfill({
+          status: 409,
+          contentType: "application/json",
+          body: JSON.stringify({ error: "File changed in workspace.", current_sha256: "sha-v2" }),
+        });
+      }
+      if (b.path && h1Files[b.path]) {
+        h1Files[b.path].content = b.content;
+        h1Files[b.path].sha = "sha-v3";
+      }
+      return r.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ path: b.path, size: (b.content || "").length, mtime_ms: Date.now(), sha256: "sha-v3" }),
+      });
+    }
+    const fp = reqUrl.searchParams.get("path") || "";
+    const entry = h1Files[fp];
+    if (!entry) return r.fulfill({ status: 404, contentType: "application/json", body: JSON.stringify({ error: "not found" }) });
+    return r.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        path: fp,
+        name: fp,
+        size: entry.content.length,
+        mtime_ms: Date.now(),
+        ext: fp.split(".").pop() || "txt",
+        is_binary: false,
+        content: entry.content,
+        sha256: entry.sha,
+      }),
+    });
+  });
+
+  await p.goto(BASE);
+  await waitWorkbench(p);
+  if (!(await p.locator("#workspace-files-panel").isVisible())) {
+    await p.locator('[data-thing="inspector-toggle"]').click();
+    await p.waitForSelector("#workspace-files-panel", { timeout: 4000 });
+  }
+  await p.locator("#workspace-refresh-btn").click();
+  await p.locator("#workspace-files-panel").getByRole("button", { name: "Open conflict.md" }).click();
+  await p.waitForSelector("#file-viewer-dialog", { timeout: 4000 });
+  await p.locator('#file-viewer-dialog [data-id="edit"]').click();
+  await p.waitForSelector("#file-editor-textarea", { timeout: 4000 });
+  await p.locator("#file-editor-textarea").fill("# Conflict Test\n\nLocal edit.\n");
+  await p.locator("#file-editor-save").click();
+  await p.waitForSelector("#file-editor-conflict", { timeout: 4000 });
+
+  // Verify unsaved-changes guard intercepts tab switch while dirty, and Keep editing keeps draft
+  await p.locator('#file-viewer-dialog [aria-label="File viewer mode"] [data-id="preview"]').click();
+  await p.waitForSelector("#file-unsaved-guard", { timeout: 4000 });
+  await p.locator("#file-unsaved-keep").click();
+  const keptDraft = (await p.locator("#file-editor-textarea").inputValue()).includes("Local edit.");
+
+  // Overwrite anyway resolves 409 using server's current_sha256
+  await p.locator("#file-editor-force-save").click();
+  await p.locator("#file-editor-conflict").waitFor({ state: "hidden", timeout: 4000 });
+  await p.keyboard.press("Escape");
+  await p.locator("#file-viewer-dialog").waitFor({ state: "hidden", timeout: 4000 }).catch(() => {});
+  ok(
+    "v0.32.0 E2 FileEditor 409 conflict banner recovers via Overwrite anyway and unsaved-changes guard protects edits",
+    keptDraft && putExpectedShas.join(",") === "sha-v1,sha-v2" && h1Files["conflict.md"].content.includes("Local edit."),
+    `kept=${keptDraft} shas=${putExpectedShas.join(",")}`
+  );
+
+  // Malformed CSV grid error state + raw fallback
+  await p.locator("#workspace-files-panel").getByRole("button", { name: "Open malformed.csv" }).click();
+  await p.waitForSelector("#file-viewer-dialog", { timeout: 4000 });
+  await p.locator('#file-viewer-dialog [data-id="edit"]').click();
+  await p.waitForSelector("#csv-grid-error", { timeout: 4000 });
+  const gridHidden = (await p.locator("#csv-editor-table").count()) === 0;
+  await p.locator("#csv-raw-fallback-btn").click();
+  await p.waitForSelector("#file-editor-textarea", { timeout: 4000 });
+  const rawVisible = await p.locator("#file-editor-textarea").isVisible();
+  ok(
+    "v0.32.0 E2 FileEditor malformed CSV shows error state and allows raw text fallback",
+    gridHidden && rawVisible,
+    `gridHidden=${gridHidden} rawVisible=${rawVisible}`
+  );
+  await ctx.close();
+}
+
+{
+  // 5. E3: ConnectorsPanel validation errors, strict secret masking, delivery log error state
+  const { ctx, p } = await open(1440, 900);
+  p.__expect500 = true;
+  let failConnectorsLoad = true;
+  let postTriggerCalled = false;
+  let postOutboundCalled = false;
+
+  await p.route("**/api/status", async (r) => {
+    const res = await r.fetch();
+    const j = await res.json();
+    await r.fulfill({
+      response: res,
+      body: JSON.stringify({
+        ...j,
+        version: "0.32.0",
+        capabilities: { ...(j.capabilities || {}), routines: true, connectors: true },
+      }),
+    });
+  });
+  await p.route("**/api/routines", (r) =>
+    r.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        routines: [{ id: "rt-h1", name: "Daily Audit", prompt: "Audit", schedule: "daily 09:00", enabled: true }],
+      }),
+    })
+  );
+  await p.route("**/api/workspace/policy", (r) =>
+    r.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ profile: "fast_internal", label: "Fast Internal", summary: "Default" }),
+    })
+  );
+  await p.route("**/api/connectors", (r) => {
+    if (failConnectorsLoad) {
+      return r.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ error: "Connector store unavailable" }) });
+    }
+    return r.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ triggers: [], outbound: [], delivery_log: [], policy_profile: "fast_internal" }),
+    });
+  });
+  await p.route("**/api/connectors/triggers", (r) => {
+    if (r.request().method() === "POST") postTriggerCalled = true;
+    return r.fulfill({ status: 400, contentType: "application/json", body: JSON.stringify({ error: "bad" }) });
+  });
+  await p.route("**/api/connectors/outbound", (r) => {
+    if (r.request().method() === "POST") postOutboundCalled = true;
+    return r.fulfill({ status: 400, contentType: "application/json", body: JSON.stringify({ error: "bad" }) });
+  });
+
+  await p.goto(BASE);
+  await waitWorkbench(p);
+  await p.locator('[data-thing="connectors-btn"]').click();
+  await p.waitForSelector("#connectors-panel", { timeout: 4000 });
+  await p.locator('#connectors-panel [role="tab"][data-id="outbound"]').click();
+  await p.waitForSelector("#connector-delivery-error", { timeout: 4000 });
+
+  failConnectorsLoad = false;
+  await p.locator("#connector-delivery-error").getByRole("button", { name: "Retry" }).click();
+  await p.waitForSelector("#connector-delivery-empty", { timeout: 4000 });
+
+  await p.locator("#connectors-panel").getByRole("button", { name: "New connector" }).click();
+  await p.locator("#outbound-name").fill("Invalid Proto Hook");
+  await p.locator("#outbound-url").fill("ftp://bad-proto.example/hook");
+  await p.locator("#outbound-secret-value").fill("masked-secret-999");
+  await p.locator("#outbound-create-form").getByRole("button", { name: "Save connector" }).click();
+  await p.waitForSelector("#outbound-form-error", { timeout: 4000 });
+  const secretCleared = (await p.locator("#outbound-secret-value").inputValue()) === "";
+  const secretLeaked = await p.evaluate(() => document.body.innerText.includes("masked-secret-999"));
+
+  await p.locator('#connectors-panel [role="tab"][data-id="folders"]').click();
+  await p.locator("#connectors-panel").getByRole("button", { name: "Watch folder" }).click();
+  await p.locator("#folder-watch-name").fill("Bad Sensitive Path");
+  await p.locator("#folder-watch-path").fill("/etc/shadow");
+  await p.locator("#folder-watch-form").getByRole("button", { name: "Save watched folder" }).click();
+  await p.waitForSelector("#folder-watch-error", { timeout: 4000 });
+
+  ok(
+    "v0.32.0 E3 ConnectorsPanel enforces URL/watch_dir validation, strict secret masking, and delivery log error recovery",
+    secretCleared && !secretLeaked && !postTriggerCalled && !postOutboundCalled,
+    `cleared=${secretCleared} leaked=${secretLeaked} trig=${postTriggerCalled} out=${postOutboundCalled}`
+  );
+  await ctx.close();
+}
+
 // 7. Reduced motion & Console Cleanliness (2 checks)
 {
   const { ctx, p } = await open(1440, 900, "light", { reducedMotion: "reduce" });
