@@ -26,7 +26,8 @@ for (const [w, scheme] of [[1440, "light"], [1440, "dark"], [1100, "light"], [90
     await p.waitForTimeout(200);
   }
   await p.locator('[role="tab"][data-id="graph"]').click();
-  await p.waitForTimeout(900);
+  await p.waitForSelector('svg#graph-svg', { timeout: 8000 });
+  await p.waitForTimeout(150);
   const theme = await p.evaluate(() => document.documentElement.dataset.theme || "");
   const r = await p.evaluate(() => {
     const svg = document.querySelector("svg#graph-svg");
@@ -78,7 +79,8 @@ for (const [w, scheme] of [[1440, "light"], [1440, "dark"], [1100, "light"], [90
   await p.goto(BASE);
   await p.waitForTimeout(500);
   await p.locator('[role="tab"][data-id="graph"]').click();
-  await p.waitForTimeout(700);
+  await p.waitForSelector('svg#graph-svg', { timeout: 8000 });
+  await p.waitForTimeout(150);
   await p.getByRole("button", { name: "List only", exact: true }).click();
   await p.waitForTimeout(300);
   const listOnlyOk = (await p.locator("svg#graph-svg").count()) === 0 && (await p.locator("#graph-list li").count()) > 0;

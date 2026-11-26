@@ -4,6 +4,14 @@ Each release is tagged `vMAJOR.MINOR.PATCH` and published on GitHub Releases wit
 binaries and a `SHA256SUMS` file. The running app shows its version and can update
 itself from the newest release (see README, "Versions and updates").
 
+## 0.27.0 - 2026-11-25
+
+One-click client handoff bundling packs a verified `CLIENT_SUMMARY.md`, tamper-evident `audit_bundle.json`, `SHA256SUMS`, and offline verification instructions (`VERIFY.txt`) into a self-contained ZIP archive or directory. Run `ergon export-handoff [--out PATH] [--title TITLE] [--workspace DIR] [--force] [--json]` from the CLI (`src/main.rs`), call `POST /api/export/handoff` (`src/server.rs`), or use the Client handoff card in the right inspector (`frontend/src/shell/InspectorDrawer.tsx`, `frontend/src/lib/webEngine.ts`).
+
+Every handoff export runs a deterministic pre-check across workspace deliverables and generated summaries for exposed host machine paths, API keys, `.env` credential snippets, private keys, and SSN patterns, returning `file:L##` fix hints and blocking export (`409 Conflict` or CLI exit `1`) under `Strict Client` unless `--force` is passed (`src/audit_bundle.rs`).
+
+Warm HTTP accept pool initialization drops from four worker threads to two (`src/server.rs`), and `frontend/e2e/probe-graph.mjs` replaces fixed graph settle waits with deterministic `svg#graph-svg` selector waits.
+
 ## 0.26.0 - 2026-11-25
 
 Offline evidence verification lets auditors and clients check exported audit bundles (`.json`), client deliverable packs (`.md`), and signed playbook packs (`.ergon-playbook.json`) without a running server or model gateway. Run `ergon verify <bundle-or-pack> [--workspace <dir>] [--json]` from the command line (`src/main.rs`, `src/audit_bundle.rs`), call `POST /api/verify/evidence` (`src/server.rs`), or use the Verify evidence card inside the right inspector (`frontend/src/shell/InspectorDrawer.tsx`, `frontend/src/lib/webEngine.ts`).

@@ -2153,11 +2153,165 @@ function redactWebHostPaths(input: string): string {
     .replace(/\/tmp\//g, "[redacted-tmp]/");
 }
 
-    if (method === "GET" && path === "/api/version") return jsonRes({ name: "ergon", version: "0.26.0" });
-    if (method === "GET" && path === "/api/update") return jsonRes({ current: "0.26.0", available: false, mode: "off", checked_at: Math.floor(Date.now() / 1000) });
+type WebHandoffLeakFinding = {
+  kind: string;
+  severity: string;
+  file: string;
+  line: number;
+  excerpt: string;
+  fix: string;
+};
+
+type WebHandoffLeakScan = {
+  clean: boolean;
+  leak_count: number;
+  host_path_count: number;
+  secret_count: number;
+  env_snippet_count: number;
+  pii_count: number;
+  findings: WebHandoffLeakFinding[];
+};
+
+function scanWebHandoffLeaks(
+  files: Array<{ path: string; content: string }>,
+  summaryMd: string,
+  extraSecret?: string
+): WebHandoffLeakScan {
+  const findings: WebHandoffLeakFinding[] = [];
+  const push = (kind: string, severity: string, file: string, line: number, rawLine: string, fix: string) => {
+    if (findings.length >= 64) return;
+    const excerpt = rawLine.trim().slice(0, 96);
+    findings.push({ kind, severity, file, line, excerpt, fix });
+  };
+  const secretTokenRe = /(sk-ergon-[A-Za-z0-9_-]+|sk-ant-[A-Za-z0-9_-]{8,}|sk-proj-[A-Za-z0-9_-]{8,}|sk-[A-Za-z0-9]{16,}|ghp_[A-Za-z0-9]{16,}|gho_[A-Za-z0-9]{16,}|github_pat_[A-Za-z0-9_]{16,}|AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{20,}|xoxb-[0-9A-Za-z-]{16,}|-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----)/;
+  const hostPathRe = /(\/home\/|\/Users\/|\/tmp\/|\/var\/folders\/|C:\\Users\\|C:\/Users\/)/;
+  const envAssignRe = /^(?:export\s+)?([A-Z0-9_]*(?:API_KEY|SECRET_KEY|AUTH_TOKEN|PRIVATE_KEY|DATABASE_URL|ACCESS_TOKEN|PASSWORD)[A-Z0-9_]*)\s*=\s*(.+)$/;
+  const ssnRe = /(^|[^0-9])\d{3}-\d{2}-\d{4}([^0-9]|$)/;
+
+  const sources = [
+    ...files.map((f) => ({ name: f.path, text: f.content })),
+    { name: "CLIENT_SUMMARY.md", text: summaryMd },
+  ];
+  for (const src of sources) {
+    const isEnvFile = src.name.split("/").pop()?.startsWith(".env") ?? false;
+    const lines = src.text.split("\n");
+    for (let idx = 0; idx < lines.length; idx++) {
+      const lineNo = idx + 1;
+      const line = lines[idx];
+      if (!line.trim()) continue;
+      if (isEnvFile && line.includes("=") && !line.trim().startsWith("#")) {
+        push("env_snippet", "critical", src.name, lineNo, line, `Remove .env credential assignment at ${src.name}:L${lineNo} before client handoff.`);
+      }
+      if (hostPathRe.test(line)) {
+        push("host_path", "warning", src.name, lineNo, line, `Replace local machine path at ${src.name}:L${lineNo} with a relative workspace path.`);
+      }
+      if (secretTokenRe.test(line) || (extraSecret && extraSecret.length >= 8 && line.includes(extraSecret))) {
+        push("api_key", "critical", src.name, lineNo, line, `Revoke and remove exposed key/token at ${src.name}:L${lineNo} before shipping.`);
+      } else {
+        const em = envAssignRe.exec(line.trim());
+        if (em) {
+          const val = em[2].trim().replace(/^["']|["']$/g, "");
+          if (val && !/^(example|placeholder|changeme|<.*>|\$\{.*\})$/i.test(val)) {
+            push("env_snippet", "critical", src.name, lineNo, line, `Strip live ${em[1]} value at ${src.name}:L${lineNo}.`);
+          }
+        }
+      }
+      if (ssnRe.test(line)) {
+        push("pii", "warning", src.name, lineNo, line, `Mask or remove SSN-formatted identifier at ${src.name}:L${lineNo}.`);
+      }
+    }
+  }
+  const host_path_count = findings.filter((f) => f.kind === "host_path").length;
+  const secret_count = findings.filter((f) => f.kind === "api_key").length;
+  const env_snippet_count = findings.filter((f) => f.kind === "env_snippet").length;
+  const pii_count = findings.filter((f) => f.kind === "pii").length;
+  return {
+    clean: findings.length === 0,
+    leak_count: findings.length,
+    host_path_count,
+    secret_count,
+    env_snippet_count,
+    pii_count,
+    findings,
+  };
+}
+
+function crc32Bytes(data: Uint8Array): number {
+  let crc = 0xffffffff;
+  for (let i = 0; i < data.length; i++) {
+    crc ^= data[i];
+    for (let j = 0; j < 8; j++) {
+      crc = (crc >>> 1) ^ (crc & 1 ? 0xedb88320 : 0);
+    }
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+function buildWebStoreZip(entries: Array<[string, Uint8Array]>): Uint8Array {
+  const enc = new TextEncoder();
+  const chunks: Uint8Array[] = [];
+  const centrals: Uint8Array[] = [];
+  let offset = 0;
+  for (const [name, data] of entries) {
+    const nameBytes = enc.encode(name);
+    const crc = crc32Bytes(data);
+    const lh = new Uint8Array(30 + nameBytes.length);
+    const lv = new DataView(lh.buffer);
+    lv.setUint32(0, 0x04034b50, true);
+    lv.setUint16(4, 20, true);
+    lv.setUint16(6, 0x0800, true);
+    lv.setUint16(8, 0, true);
+    lv.setUint32(14, crc, true);
+    lv.setUint32(18, data.length, true);
+    lv.setUint32(22, data.length, true);
+    lv.setUint16(26, nameBytes.length, true);
+    lh.set(nameBytes, 30);
+    chunks.push(lh, data);
+
+    const ch = new Uint8Array(46 + nameBytes.length);
+    const cv = new DataView(ch.buffer);
+    cv.setUint32(0, 0x02014b50, true);
+    cv.setUint16(4, 20, true);
+    cv.setUint16(6, 20, true);
+    cv.setUint16(8, 0x0800, true);
+    cv.setUint16(10, 0, true);
+    cv.setUint32(16, crc, true);
+    cv.setUint32(20, data.length, true);
+    cv.setUint32(24, data.length, true);
+    cv.setUint16(28, nameBytes.length, true);
+    cv.setUint32(42, offset, true);
+    ch.set(nameBytes, 46);
+    centrals.push(ch);
+    offset += lh.length + data.length;
+  }
+  const cdSize = centrals.reduce((acc, b) => acc + b.length, 0);
+  const eocd = new Uint8Array(22);
+  const ev = new DataView(eocd.buffer);
+  ev.setUint32(0, 0x06054b50, true);
+  ev.setUint16(8, entries.length, true);
+  ev.setUint16(10, entries.length, true);
+  ev.setUint32(12, cdSize, true);
+  ev.setUint32(16, offset, true);
+
+  const out = new Uint8Array(offset + cdSize + 22);
+  let pos = 0;
+  for (const c of chunks) {
+    out.set(c, pos);
+    pos += c.length;
+  }
+  for (const c of centrals) {
+    out.set(c, pos);
+    pos += c.length;
+  }
+  out.set(eocd, pos);
+  return out;
+}
+
+    if (method === "GET" && path === "/api/version") return jsonRes({ name: "ergon", version: "0.27.0" });
+    if (method === "GET" && path === "/api/update") return jsonRes({ current: "0.27.0", available: false, mode: "off", checked_at: Math.floor(Date.now() / 1000) });
     if (method === "GET" && path === "/api/status") {
       return jsonRes({
-        version: "0.26.0",
+        version: "0.27.0",
         model_configured: true,
         model: byok.engine_mode === "byok" && byok.model_id ? byok.model_id : "browser-workspace-engine",
         model_base_url: byok.engine_mode === "byok" ? byok.model_base_url : "indexeddb://local",
@@ -2379,7 +2533,7 @@ function redactWebHostPaths(input: string): string {
       const pid = decodeURIComponent(path.slice("/api/playbooks/".length, -"/export".length)).trim();
       const rt = st.routines.find((x) => x.id === pid);
       if (!rt) return jsonRes({ error: "playbook not found" }, 404);
-      const built = await buildSignedPlaybookPack(rt, "0.26.0");
+      const built = await buildSignedPlaybookPack(rt, "0.27.0");
       return new Response(built.json, {
         status: 200,
         headers: {
@@ -3028,6 +3182,104 @@ function redactWebHostPaths(input: string): string {
         headers: {
           "Content-Type": format === "md" ? "text/markdown; charset=utf-8" : "application/json; charset=utf-8",
           "X-Ergon-Bundle-SHA256": built.bundleSha256,
+        },
+      });
+    }
+    if (method === "POST" && path === "/api/export/handoff") {
+      const dryRun = Boolean(body.dry_run) || u.searchParams.get("dry_run") === "1";
+      const force = Boolean(body.force) || u.searchParams.get("force") === "1";
+      const title = String(body.title ?? "Client Handoff").trim() || "Client Handoff";
+      const policy = buildWebPolicy(p.id, st);
+      const packRes = await window.fetch(`/api/files/pack?summary=1&format=md&force=1&title=${encodeURIComponent(title)}`, { method: "GET" });
+      const rawSummary = packRes.ok
+        ? await packRes.text()
+        : `# ${title}\n\n- Prepared for: **${p.name}**\n- Workspace files: ${Object.keys(st.files).length}\n`;
+      const wsFiles = Object.values(st.files).map((f) => ({ path: f.path, content: f.content }));
+      const scan = scanWebHandoffLeaks(wsFiles, rawSummary, byok.api_key || undefined);
+      const strictBlock = policy.profile === "strict_client" || policy.strict_citation_gate;
+
+      if (dryRun) {
+        const wouldBlock = strictBlock && !scan.clean;
+        return jsonRes({
+          ok: !wouldBlock,
+          dry_run: true,
+          would_block: wouldBlock,
+          policy,
+          scan,
+        });
+      }
+      if (strictBlock && !scan.clean && !force) {
+        return jsonRes(
+          {
+            error: `Blocked by ${policy.label} policy: ${scan.leak_count} leak/path finding(s) must be resolved before client handoff.`,
+            blocked: true,
+            policy: policy.profile,
+            scan,
+          },
+          409
+        );
+      }
+
+      const allRuns = Object.values(st.routineRuns).flat().sort((a, b) => b.started_ms - a.started_ms);
+      const builtBundle = await buildAuditBundle({
+        personName: p.name,
+        personId: p.id,
+        files: Object.values(st.files).map((f) => ({
+          path: f.path,
+          size: f.size,
+          mtime_ms: f.mtime_ms,
+          content: f.content,
+          revision_count: (st.fileHistory[f.path] ?? []).length,
+        })),
+        receipts: st.work.map((x, idx) => ({
+          id: x.id || x.thread_id || `rec-${idx}`,
+          thread_id: x.thread_id,
+          task: x.task,
+          summary: x.summary,
+          files: x.files,
+          ts: x.ts,
+        })),
+        routines: st.routines,
+        routineRuns: allRuns,
+      });
+      const summaryMd = policy.redact_host_paths ? redactWebHostPaths(rawSummary) : rawSummary;
+      const auditJson = policy.redact_host_paths ? redactWebHostPaths(builtBundle.json) : builtBundle.json;
+      const verifyTxt =
+        `Ergon Client Handoff Verification Guide\n` +
+        `Title: ${title}\n` +
+        `Policy: ${policy.label} (${policy.profile})\n` +
+        `Leak pre-check findings: ${scan.leak_count}\n\n` +
+        `1. Verify archive file checksums locally:\n   sha256sum -c SHA256SUMS\n\n` +
+        `2. Verify the Field-Book audit bundle offline with Ergon:\n   ergon verify audit_bundle.json\n\n` +
+        `3. Verify the client deliverable summary offline with Ergon:\n   ergon verify CLIENT_SUMMARY.md\n`;
+      const sumSummary = await sha256Hex(summaryMd);
+      const sumBundle = await sha256Hex(auditJson);
+      const sumVerify = await sha256Hex(verifyTxt);
+      const sha256sums =
+        `${sumSummary}  CLIENT_SUMMARY.md\n` +
+        `${sumBundle}  audit_bundle.json\n` +
+        `${sumVerify}  VERIFY.txt\n`;
+      const enc = new TextEncoder();
+      const zipBytes = buildWebStoreZip([
+        ["CLIENT_SUMMARY.md", enc.encode(summaryMd)],
+        ["audit_bundle.json", enc.encode(auditJson)],
+        ["VERIFY.txt", enc.encode(verifyTxt)],
+        ["SHA256SUMS", enc.encode(sha256sums)],
+      ]);
+      let hex = "";
+      if (typeof crypto !== "undefined" && crypto.subtle) {
+        const digest = await crypto.subtle.digest("SHA-256", new Uint8Array(zipBytes).buffer);
+        hex = Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("");
+      }
+      return new Response(new Uint8Array(zipBytes).buffer, {
+        status: 200,
+        headers: {
+          "Content-Type": "application/zip",
+          "X-Content-Type-Options": "nosniff",
+          "Content-Disposition": 'attachment; filename="ergon-client-handoff.zip"',
+          "X-Ergon-Handoff-SHA256": hex,
+          "X-Ergon-Handoff-Leaks": String(scan.leak_count),
+          "X-Ergon-Workspace-Policy": policy.profile,
         },
       });
     }

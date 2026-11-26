@@ -1413,6 +1413,433 @@ pub fn build_audit_bundle_json_bytes(cfg: &Config, person: &Person, security: &V
     build_audit_bundle_json_bytes_with_chain(cfg, person, security, None)
 }
 
+#[derive(Clone, Debug)]
+pub struct HandoffLeakFinding {
+    pub kind: &'static str,
+    pub severity: &'static str,
+    pub file: String,
+    pub line: usize,
+    pub excerpt: String,
+    pub fix: String,
+}
+
+impl HandoffLeakFinding {
+    pub fn to_json(&self) -> Value {
+        json!({
+            "kind": self.kind,
+            "severity": self.severity,
+            "file": self.file,
+            "line": self.line,
+            "excerpt": self.excerpt,
+            "fix": self.fix,
+        })
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct HandoffLeakScan {
+    pub clean: bool,
+    pub leak_count: usize,
+    pub host_path_count: usize,
+    pub secret_count: usize,
+    pub env_snippet_count: usize,
+    pub pii_count: usize,
+    pub findings: Vec<HandoffLeakFinding>,
+}
+
+impl HandoffLeakScan {
+    pub fn to_json(&self) -> Value {
+        json!({
+            "clean": self.clean,
+            "leak_count": self.leak_count,
+            "host_path_count": self.host_path_count,
+            "secret_count": self.secret_count,
+            "env_snippet_count": self.env_snippet_count,
+            "pii_count": self.pii_count,
+            "findings": self.findings.iter().map(HandoffLeakFinding::to_json).collect::<Vec<_>>(),
+        })
+    }
+}
+
+pub struct HandoffExportResult {
+    pub zip_bytes: Vec<u8>,
+    pub sha256: String,
+    pub summary_md: String,
+    pub audit_bundle_bytes: Vec<u8>,
+    pub verify_txt: String,
+    pub sha256sums: String,
+    pub scan: HandoffLeakScan,
+}
+
+pub struct HandoffExportBlocked {
+    pub scan: HandoffLeakScan,
+    pub policy: crate::WorkspacePolicy,
+}
+
+impl HandoffExportBlocked {
+    pub fn to_json(&self) -> Value {
+        json!({
+            "error": format!(
+                "Blocked by {} policy: {} leak/path finding(s) must be resolved before client handoff.",
+                self.policy.label, self.scan.leak_count
+            ),
+            "blocked": true,
+            "policy": self.policy.profile,
+            "scan": self.scan.to_json(),
+        })
+    }
+}
+
+fn contains_host_path(line: &str) -> bool {
+    line.contains("/home/")
+        || line.contains("/Users/")
+        || line.contains("/tmp/")
+        || line.contains("/var/folders/")
+        || line.contains("C:\\Users\\")
+        || line.contains("C:/Users/")
+}
+
+fn token_boundary(prev: Option<u8>) -> bool {
+    prev.map(|b| !b.is_ascii_alphanumeric() && b != b'_' && b != b'-')
+        .unwrap_or(true)
+}
+
+fn detect_secret_prefix(line: &str) -> Option<&'static str> {
+    if line.contains("-----BEGIN ") && line.contains("PRIVATE KEY-----") {
+        return Some("private key block");
+    }
+    let bytes = line.as_bytes();
+    let prefixes: [(&[u8], usize, &'static str); 10] = [
+        (b"sk-ergon-", 6, "bait API key"),
+        (b"sk-ant-", 10, "Anthropic API key"),
+        (b"sk-proj-", 10, "OpenAI API key"),
+        (b"sk-", 16, "API secret key"),
+        (b"ghp_", 16, "GitHub token"),
+        (b"gho_", 16, "GitHub OAuth token"),
+        (b"github_pat_", 16, "GitHub PAT"),
+        (b"AKIA", 16, "AWS access key"),
+        (b"AIza", 20, "Google API key"),
+        (b"xoxb-", 10, "Slack bot token"),
+    ];
+    for (i, _) in bytes.iter().enumerate() {
+        let prev = if i > 0 { Some(bytes[i - 1]) } else { None };
+        if !token_boundary(prev) {
+            continue;
+        }
+        let tail = &bytes[i..];
+        for (pfx, min_rest, label) in prefixes {
+            if tail.starts_with(pfx) {
+                let rest = &tail[pfx.len()..];
+                let ok_len = rest
+                    .iter()
+                    .take_while(|b| b.is_ascii_alphanumeric() || **b == b'_' || **b == b'-')
+                    .count();
+                if ok_len >= min_rest {
+                    return Some(label);
+                }
+            }
+        }
+    }
+    None
+}
+
+fn detect_env_assignment(line: &str) -> Option<String> {
+    let trimmed = line.trim().strip_prefix("export ").unwrap_or(line.trim());
+    let (lhs, rhs) = trimmed.split_once('=')?;
+    let key = lhs.trim();
+    if key.len() < 3
+        || !key
+            .bytes()
+            .all(|b| b.is_ascii_uppercase() || b.is_ascii_digit() || b == b'_')
+    {
+        return None;
+    }
+    let sensitive_key = key.ends_with("_API_KEY")
+        || key.ends_with("_SECRET")
+        || key.ends_with("_SECRET_KEY")
+        || key.ends_with("_TOKEN")
+        || key.ends_with("_PASSWORD")
+        || key == "API_KEY"
+        || key == "SECRET_KEY"
+        || key == "AUTH_TOKEN"
+        || key == "PRIVATE_KEY"
+        || key == "DATABASE_URL"
+        || key == "PASSWORD";
+    if !sensitive_key {
+        return None;
+    }
+    let val = rhs.trim().trim_matches(|c| c == '"' || c == '\'').trim();
+    if val.is_empty() || val.starts_with('<') || val.eq_ignore_ascii_case("changeme") || val.eq_ignore_ascii_case("example") {
+        return None;
+    }
+    Some(key.to_string())
+}
+
+fn detect_ssn(line: &str) -> bool {
+    let b = line.as_bytes();
+    if b.len() < 11 {
+        return false;
+    }
+    for i in 0..=b.len() - 11 {
+        let prev_ok = i == 0 || !b[i - 1].is_ascii_digit();
+        let next_ok = i + 11 == b.len() || !b[i + 11].is_ascii_digit();
+        if !prev_ok || !next_ok {
+            continue;
+        }
+        if b[i + 3] == b'-'
+            && b[i + 6] == b'-'
+            && b[i..i + 3].iter().all(u8::is_ascii_digit)
+            && b[i + 4..i + 6].iter().all(u8::is_ascii_digit)
+            && b[i + 7..i + 11].iter().all(u8::is_ascii_digit)
+        {
+            let area = &b[i..i + 3];
+            let group = &b[i + 4..i + 6];
+            let serial = &b[i + 7..i + 11];
+            if area != b"000" && area != b"666" && area[0] != b'9' && group != b"00" && serial != b"0000" {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+fn scan_text_into(
+    rel: &str,
+    text: &str,
+    configured_secret: Option<&str>,
+    scan: &mut HandoffLeakScan,
+) {
+    let is_env_file = Path::new(rel)
+        .file_name()
+        .and_then(|s| s.to_str())
+        .is_some_and(|n| n == ".env" || n.starts_with(".env."));
+    let mut push_finding = |kind: &'static str, severity: &'static str, line: usize, excerpt: String, fix: &str| {
+        scan.leak_count += 1;
+        match kind {
+            "host_path" => scan.host_path_count += 1,
+            "api_key" => scan.secret_count += 1,
+            "env_snippet" => scan.env_snippet_count += 1,
+            "pii" => scan.pii_count += 1,
+            _ => {}
+        }
+        if scan.findings.len() < 50 {
+            scan.findings.push(HandoffLeakFinding {
+                kind,
+                severity,
+                file: rel.to_string(),
+                line,
+                excerpt,
+                fix: fix.to_string(),
+            });
+        }
+    };
+
+    for (idx, raw_line) in text.lines().enumerate() {
+        let line_no = idx + 1;
+        let line = raw_line.trim_end_matches('\r');
+        if contains_host_path(line) {
+            let safe_preview = crate::redact_host_paths(line);
+            push_finding(
+                "host_path",
+                "high",
+                line_no,
+                crate::truncate(safe_preview.trim(), 120),
+                &format!("Replace local host path at {rel}:L{line_no} with a workspace-relative path or enable Strict Client redaction."),
+            );
+        }
+        let has_cfg_secret = configured_secret
+            .is_some_and(|s| !s.is_empty() && crate::tripwire::contains_secret(line, s));
+        if let Some(label) = detect_secret_prefix(line).or(if has_cfg_secret { Some("configured API key") } else { None }) {
+            push_finding(
+                "api_key",
+                "high",
+                line_no,
+                format!("Detected {label} at {rel}:L{line_no} (redacted)."),
+                &format!("Remove {label} from {rel}:L{line_no} before sharing client artifacts."),
+            );
+        } else if let Some(key_name) = detect_env_assignment(line) {
+            push_finding(
+                "env_snippet",
+                "high",
+                line_no,
+                format!("{key_name}=****"),
+                &format!("Remove .env credential assignment {key_name} at {rel}:L{line_no} before handoff."),
+            );
+        } else if is_env_file && line.contains('=') && !line.trim_start().starts_with('#') {
+            let k = line.split('=').next().unwrap_or("").trim();
+            push_finding(
+                "env_snippet",
+                "high",
+                line_no,
+                format!("{k}=****"),
+                &format!("Exclude {rel} from the workspace before exporting a client handoff."),
+            );
+        }
+        if detect_ssn(line) {
+            push_finding(
+                "pii",
+                "medium",
+                line_no,
+                format!("Potential government ID number at {rel}:L{line_no} (redacted)."),
+                &format!("Mask or remove the identification number at {rel}:L{line_no} before sharing."),
+            );
+        }
+    }
+}
+
+/// Deterministic secret, credential, PII, and host-path leak scanner across
+/// workspace deliverables and handoff texts.
+#[cold]
+#[inline(never)]
+pub fn scan_handoff_leaks(
+    cfg: &Config,
+    extra_texts: &[(&str, &str)],
+    configured_secret: Option<&str>,
+) -> HandoffLeakScan {
+    fn walk_ws(dir: &Path, depth: usize, out: &mut Vec<std::path::PathBuf>) {
+        if depth > 8 || out.len() >= 500 {
+            return;
+        }
+        let Ok(rd) = std::fs::read_dir(dir) else {
+            return;
+        };
+        for entry in rd.filter_map(|e| e.ok()) {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if name == ".history" || name == ".git" || (name.starts_with('.') && !name.starts_with(".env")) {
+                continue;
+            }
+            let Ok(ft) = entry.file_type() else { continue };
+            if ft.is_symlink() {
+                continue;
+            }
+            let p = entry.path();
+            if ft.is_dir() {
+                walk_ws(&p, depth + 1, out);
+            } else {
+                out.push(p);
+            }
+        }
+    }
+
+    let mut scan = HandoffLeakScan {
+        clean: true,
+        leak_count: 0,
+        host_path_count: 0,
+        secret_count: 0,
+        env_snippet_count: 0,
+        pii_count: 0,
+        findings: Vec::new(),
+    };
+    let mut paths = Vec::new();
+    walk_ws(&cfg.workspace_dir, 0, &mut paths);
+    paths.sort();
+    for p in paths {
+        let rel = p
+            .strip_prefix(&cfg.workspace_dir)
+            .unwrap_or(&p)
+            .to_string_lossy()
+            .replace('\\', "/");
+        if let Ok(meta) = std::fs::metadata(&p) {
+            if meta.len() > 1024 * 1024 {
+                continue;
+            }
+        }
+        if let Ok(bytes) = std::fs::read(&p) {
+            if bytes.contains(&0) {
+                continue;
+            }
+            let text = String::from_utf8_lossy(&bytes);
+            scan_text_into(&rel, &text, configured_secret, &mut scan);
+        }
+    }
+    for (name, text) in extra_texts {
+        scan_text_into(name, text, configured_secret, &mut scan);
+    }
+    scan.clean = scan.leak_count == 0;
+    scan
+}
+
+/// Build a self-contained client handoff zip archive (`CLIENT_SUMMARY.md`,
+/// `audit_bundle.json`, `VERIFY.txt`, and `SHA256SUMS`) after running the
+/// mandatory leak pre-check.
+#[cold]
+#[inline(never)]
+pub fn build_handoff_bundle_zip(
+    cfg: &Config,
+    person: &Person,
+    title: &str,
+    summary_markdown: &str,
+    security: &Value,
+    policy: &crate::WorkspacePolicy,
+    force: bool,
+) -> Result<HandoffExportResult, Box<HandoffExportBlocked>> {
+    let scan = scan_handoff_leaks(
+        cfg,
+        &[("CLIENT_SUMMARY.md", summary_markdown)],
+        cfg.api_key.as_deref(),
+    );
+    let strict_block = policy.profile == "strict_client" || policy.strict_citation_gate;
+    if strict_block && !scan.clean && !force {
+        return Err(Box::new(HandoffExportBlocked {
+            scan,
+            policy: policy.clone(),
+        }));
+    }
+
+    let mut summary_md = summary_markdown.to_string();
+    let mut audit_bytes = build_audit_bundle_json_bytes(cfg, person, security);
+    if policy.redact_host_paths {
+        summary_md = crate::redact_host_paths(&summary_md);
+        let s = String::from_utf8_lossy(&audit_bytes);
+        if contains_host_path(&s) {
+            audit_bytes = crate::redact_host_paths(&s).into_bytes();
+        }
+    }
+
+    let verify_txt = format!(
+        "Ergon Client Handoff Verification Guide\n\
+         Title: {title}\n\
+         Policy: {label} ({profile})\n\
+         Leak pre-check findings: {leaks}\n\n\
+         1. Verify archive file checksums locally:\n\
+            sha256sum -c SHA256SUMS\n\n\
+         2. Verify the Field-Book audit bundle offline with Ergon:\n\
+            ergon verify audit_bundle.json\n\n\
+         3. Verify the client deliverable summary offline with Ergon:\n\
+            ergon verify CLIENT_SUMMARY.md\n",
+        label = policy.label,
+        profile = policy.profile,
+        leaks = scan.leak_count
+    );
+
+    let sum_summary = sha256_hex(summary_md.as_bytes());
+    let sum_bundle = sha256_hex(&audit_bytes);
+    let sum_verify = sha256_hex(verify_txt.as_bytes());
+    let sha256sums = format!(
+        "{sum_summary}  CLIENT_SUMMARY.md\n\
+         {sum_bundle}  audit_bundle.json\n\
+         {sum_verify}  VERIFY.txt\n"
+    );
+
+    let zip_bytes = crate::docs::zip_write(&[
+        ("CLIENT_SUMMARY.md", summary_md.as_bytes().to_vec()),
+        ("audit_bundle.json", audit_bytes.clone()),
+        ("VERIFY.txt", verify_txt.as_bytes().to_vec()),
+        ("SHA256SUMS", sha256sums.as_bytes().to_vec()),
+    ]);
+    let sha256 = sha256_hex(&zip_bytes);
+
+    Ok(HandoffExportResult {
+        zip_bytes,
+        sha256,
+        summary_md,
+        audit_bundle_bytes: audit_bytes,
+        verify_txt,
+        sha256sums,
+        scan,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1515,5 +1942,77 @@ mod tests {
 
         let bad_pb = pb_json.replace("Audit report.md", "Audit tampered.md");
         assert!(!verify_evidence(&bad_pb, None, None).valid);
+    }
+
+    #[test]
+    fn handoff_leak_scanner_blocks_secrets_and_paths_under_strict_client_and_builds_valid_zip() {
+        let dir = TestDir::new("handoff_zip");
+        let data_dir = dir.path().to_path_buf();
+        let workspace_dir = data_dir.join("workspace");
+        let memory_path = data_dir.join("memory.md");
+        std::fs::create_dir_all(&workspace_dir).unwrap();
+        let cfg = Config {
+            data_dir: data_dir.clone(),
+            workspace_dir: workspace_dir.clone(),
+            memory_path,
+            model_base_url: "http://127.0.0.1:11434/v1".into(),
+            model_id: "test".into(),
+            api_key: None,
+        };
+        std::fs::write(
+            workspace_dir.join("deliverable.md"),
+            "Deliverable ready.\nLocal trace at /home/alice/secret.txt\nAPI_KEY=sk-ergon-test123456\n",
+        )
+        .unwrap();
+        let person = Person {
+            id: "default".into(),
+            name: "You".into(),
+            role: "Operations".into(),
+        };
+        let sec = json!({"events_sha256": "0".repeat(64), "events": []});
+        let strict = crate::WorkspacePolicy::for_profile("strict_client", 1000).unwrap();
+
+        let blocked = build_handoff_bundle_zip(
+            &cfg,
+            &person,
+            "Q4 Handoff",
+            "# Q4 Handoff\n\nAll good.\n",
+            &sec,
+            &strict,
+            false,
+        )
+        .err()
+        .expect("strict_client must block leak findings");
+        assert!(!blocked.scan.clean);
+        assert!(blocked.scan.host_path_count >= 1);
+        assert!(blocked.scan.secret_count >= 1 || blocked.scan.env_snippet_count >= 1);
+        assert!(blocked.scan.findings.iter().any(|f| f.file == "deliverable.md" && f.line >= 2));
+
+        // Clean workspace produces valid ZIP with all 4 artifacts and 0 leaks.
+        std::fs::write(workspace_dir.join("deliverable.md"), "# Q4 Summary\nAll figures verified.\n").unwrap();
+        let ok = build_handoff_bundle_zip(
+            &cfg,
+            &person,
+            "Q4 Handoff",
+            "# Q4 Handoff\n\nAll figures verified.\n",
+            &sec,
+            &strict,
+            false,
+        )
+        .ok()
+        .expect("clean workspace should succeed under strict_client");
+        assert!(ok.scan.clean);
+        assert_eq!(ok.scan.leak_count, 0);
+        assert!(ok.zip_bytes.starts_with(b"PK\x03\x04"));
+        assert!(ok.sha256sums.contains("CLIENT_SUMMARY.md"));
+        assert!(ok.sha256sums.contains("audit_bundle.json"));
+        assert!(ok.sha256sums.contains("VERIFY.txt"));
+        assert!(ok.verify_txt.contains("ergon verify audit_bundle.json"));
+        let verified = verify_evidence(
+            std::str::from_utf8(&ok.audit_bundle_bytes).unwrap(),
+            Some("audit_bundle.json"),
+            Some(&workspace_dir),
+        );
+        assert!(verified.valid, "handoff audit_bundle.json invalid: {:?}", verified.errors);
     }
 }

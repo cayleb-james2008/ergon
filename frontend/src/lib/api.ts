@@ -216,6 +216,30 @@ export type WorkspacePolicy = {
   block_outbound_fetch: boolean;
   updated_ms?: number;
 };
+export type HandoffLeakFinding = {
+  kind: string;
+  severity: string;
+  file: string;
+  line: number;
+  excerpt: string;
+  fix: string;
+};
+export type HandoffLeakScan = {
+  clean: boolean;
+  leak_count: number;
+  host_path_count: number;
+  secret_count: number;
+  env_snippet_count: number;
+  pii_count: number;
+  findings: HandoffLeakFinding[];
+};
+export type HandoffDryRunResult = {
+  ok: boolean;
+  dry_run: boolean;
+  would_block: boolean;
+  policy: WorkspacePolicy;
+  scan: HandoffLeakScan;
+};
 export type PlaybookPreviewStep = {
   step: number;
   prompt: string;

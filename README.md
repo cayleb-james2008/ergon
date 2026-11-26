@@ -56,19 +56,19 @@ flowchart LR
 
 ---
 
-## Verified benchmarks (`v0.26.0` vs `v0.11.0`)
+## Verified benchmarks (`v0.27.0` vs `v0.11.0`)
 
 Measured against the stripped fat-LTO release binary on local loopback against a `5,000` receipts and `500` workspace files dataset:
 
-| Metric | `v0.11.0` baseline | `v0.26.0` measured | Change |
+| Metric | `v0.11.0` baseline | `v0.27.0` measured | Change |
 | --- | --- | --- | --- |
-| Release binary size | `16.0 MB` | `7.46 MB` (`7,824,224 B`) | `-53.4%` |
-| Initial `/` shell payload | `1.15 MB` | `150.3 KB` raw / `34.0 KiB` (`34,848 B`) gzip (`15` `/chunks/*`) | `-97.0%` wire |
-| Cold boot to `200 OK` | `n/a` | `4.51 ms` median (`4.25 ms` min) | Under `10 ms` target |
-| Peak RSS (`VmHWM`, `5k` receipts + `500` files, warm + audit bundle) | `n/a` | `15.43 MB` (`15,800 KB`) | `M_ARENA_MAX=1` + pre-reserved stream |
-| Concurrent HTTP (`16w` mixed 5 routes across `5k`/`500`) | `724 req/s` (`188.7 ms` p95) | `48,009.1 req/s` keep-alive (`0.27 ms` p50, `0.70 ms` p95) / `37,833.2 req/s` cold (`0.35 ms` p50, `0.86 ms` p95, `0` err) | `66.3x` keep-alive / `52.3x` cold |
-| Streaming audit bundle (`5k` entries) | `n/a` | `36.66 ms` (`1,941,459 B`) | Single-allocation JSON |
-| Automated checks | `204` Rust tests | `225/225` Rust tests, `100/100` UI checks, `39/39` CLI/policy/fuzz, `0` `sloplint` fails | Zero warnings / zero externals |
+| Release binary size | `16.0 MB` | `7.497 MB` (`7,861,088 B`) | `-53.1%` |
+| Initial `/` shell payload | `1.15 MB` | `150.4 KB` raw / `34.0 KiB` (`34,857 B`) gzip (`15` `/chunks/*`) | `-97.0%` wire |
+| Cold boot to `200 OK` | `n/a` | `3.00 ms` median (`2.85 ms` min) | Under `5 ms` target |
+| Peak RSS (`VmHWM`, `5k` receipts + `500` files, warm + audit bundle) | `n/a` | `15.31 MB` (`15,680 KB`) | `M_ARENA_MAX=1` + 2 warm workers |
+| Concurrent HTTP (`16w` mixed 5 routes across `5k`/`500`) | `724 req/s` (`188.7 ms` p95) | `47,967.8 req/s` keep-alive (`0.26 ms` p50, `0.76 ms` p95) / `16,750.3 req/s` cold (`0.72 ms` p50, `1.67 ms` p95, `0` err) | `66.3x` keep-alive / `23.1x` cold |
+| Streaming audit bundle (`5k` entries) | `n/a` | `55.65 ms` (`1,936,272 B`) | Single-allocation JSON |
+| Automated checks | `204` Rust tests | `228/228` Rust tests, `100/100` UI checks, `47/47` CLI/policy/handoff fuzz, `0` `sloplint` fails | Zero warnings / zero externals |
 
 ---
 
@@ -89,6 +89,7 @@ CARGO_BUILD_JOBS=2 cargo build --release --locked
 ./target/release/ergon             # opens a desktop window on http://127.0.0.1:8787
 ./target/release/ergon --no-open   # runs in headless server mode
 ./target/release/ergon verify ergon-audit-bundle.json --workspace ./data/workspace
+./target/release/ergon export-handoff --out ergon-client-handoff.zip
 ```
 
 To install a managed local launcher (`ergon-serve`) with an optional `systemd --user` service:
@@ -125,6 +126,10 @@ On startup, unless `ERGON_NO_AUTO_MODEL=1` or an explicit `ERGON_MODEL_BASE_URL`
 ---
 
 ## Core capabilities
+
+### Client handoff bundle and leak pre-check
+
+Run `ergon export-handoff`, call `POST /api/export/handoff`, or use **Client handoff** in the Audit tab of the right inspector to scan deliverables and package `CLIENT_SUMMARY.md`, `audit_bundle.json`, `VERIFY.txt`, and `SHA256SUMS` into a client-ready ZIP archive. Under `Strict Client`, host machine paths, exposed keys, `.env` assignments, and SSN patterns block export with exact `file:L##` fix hints until cleaned or explicitly overridden (`--force`).
 
 ### Offline evidence verification
 

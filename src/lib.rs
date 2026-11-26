@@ -3730,4 +3730,81 @@ mod v010_hardening_tests {
 
         let _ = std::fs::remove_dir_all(&dir);
     }
+
+    #[test]
+    fn handoff_export_endpoint_prechecks_blocks_and_builds_zip() {
+        use std::io::{Read as _, Write as _};
+        let dir = std::env::temp_dir().join(format!(
+            "ergon-handoff-e2e-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let mut cfg = Config::from_env();
+        cfg.data_dir = dir.clone();
+        cfg.workspace_dir = dir.join("workspace");
+        cfg.memory_path = dir.join("memory.md");
+        cfg.ensure_dirs().unwrap();
+        std::fs::write(
+            cfg.workspace_dir.join("brief.md"),
+            "# Client Brief\nDebug trace from /home/alice/secrets/brief.md\nAPI_KEY=sk-ergon-live-123456\n",
+        )
+        .unwrap();
+
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let cfg_srv = cfg.clone();
+        std::thread::spawn(move || {
+            let _ = serve(listener, cfg_srv);
+        });
+        std::thread::sleep(std::time::Duration::from_millis(50));
+
+        let send_raw = |method: &str, target: &str, body: &str| -> Vec<u8> {
+            let mut s = std::net::TcpStream::connect(addr).unwrap();
+            let req = format!(
+                "{method} {target} HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                addr.port(),
+                body.len()
+            );
+            s.write_all(req.as_bytes()).unwrap();
+            let mut out = Vec::new();
+            s.read_to_end(&mut out).unwrap();
+            out
+        };
+
+        let p = send_raw("PUT", "/api/workspace/policy", r#"{"profile":"strict_client"}"#);
+        assert!(String::from_utf8_lossy(&p).starts_with("HTTP/1.1 200 OK"));
+
+        // 1. Dry-run reports leaks + would_block: true.
+        let dry_raw = send_raw("POST", "/api/export/handoff", r#"{"dry_run":true}"#);
+        let dry_str = String::from_utf8_lossy(&dry_raw);
+        assert!(dry_str.starts_with("HTTP/1.1 200 OK"), "{dry_str}");
+        let dry_json: Value = serde_json::from_str(dry_str.split("\r\n\r\n").nth(1).unwrap()).unwrap();
+        assert_eq!(dry_json["would_block"], json!(true));
+        assert!(dry_json["scan"]["leak_count"].as_u64().unwrap() >= 2);
+
+        // 2. Normal export under strict_client returns 409 Conflict with actionable fix list.
+        let blocked_raw = send_raw("POST", "/api/export/handoff", r#"{"title":"Client Q4"}"#);
+        let blocked_str = String::from_utf8_lossy(&blocked_raw);
+        assert!(blocked_str.starts_with("HTTP/1.1 409 Conflict"), "{blocked_str}");
+        let blocked_json: Value = serde_json::from_str(blocked_str.split("\r\n\r\n").nth(1).unwrap()).unwrap();
+        assert_eq!(blocked_json["blocked"], json!(true));
+
+        // 3. Clean workspace exports valid application/zip with SHA-256 header.
+        std::fs::write(cfg.workspace_dir.join("brief.md"), "# Client Brief\nAll figures verified.\n").unwrap();
+        let ok_raw = send_raw("POST", "/api/export/handoff", r#"{"title":"Client Q4"}"#);
+        let split_at = ok_raw
+            .windows(4)
+            .position(|w| w == b"\r\n\r\n")
+            .expect("http separator");
+        let head = String::from_utf8_lossy(&ok_raw[..split_at]);
+        let zip = &ok_raw[split_at + 4..];
+        assert!(head.starts_with("HTTP/1.1 200 OK"), "{head}");
+        assert!(head.contains("Content-Type: application/zip"), "{head}");
+        assert!(head.contains("X-Ergon-Handoff-SHA256:"), "{head}");
+        assert!(zip.starts_with(b"PK\x03\x04"), "expected PK zip header");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

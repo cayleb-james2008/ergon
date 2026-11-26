@@ -664,7 +664,7 @@ fn serve_inner(
         start_scheduler_thread(&state);
     }
     const MAX_ACTIVE_CONNS: usize = 128;
-    const WARM_WORKER_FLOOR: usize = 4;
+    const WARM_WORKER_FLOOR: usize = 2;
     let active_conns = Arc::new(AtomicUsize::new(0));
     struct ConnGuard(Arc<AtomicUsize>);
     impl Drop for ConnGuard {
@@ -2458,6 +2458,189 @@ impl SummaryRunGate<'_> {
     }
 }
 
+#[inline(never)]
+fn build_summary_run_gates<'a>(
+    data_dir: &std::path::Path,
+    workspace_dir: &std::path::Path,
+    summary_runs: &[&'a receipts::ChainedReceipt],
+) -> Vec<SummaryRunGate<'a>> {
+    let mut gates = Vec::with_capacity(summary_runs.len());
+    if summary_runs.is_empty() {
+        return gates;
+    }
+    let mut dummy_cits = Vec::new();
+    let mut dummy_seen = std::collections::HashMap::new();
+    for &rcpt in summary_runs {
+        dummy_cits.clear();
+        dummy_seen.clear();
+        let mut v = 0usize;
+        let mut s = 0usize;
+        let mut b = 0usize;
+        let (tot, rv, rs, rb) = collect_citations_into(
+            Some(data_dir),
+            workspace_dir,
+            &rcpt.summary,
+            rcpt.ts,
+            None,
+            &mut dummy_cits,
+            &mut dummy_seen,
+            &mut v,
+            &mut s,
+            &mut b,
+        );
+        gates.push(SummaryRunGate {
+            receipt: rcpt,
+            checked: tot,
+            verified: rv,
+            stale: rs,
+            broken: rb,
+        });
+    }
+    gates
+}
+
+#[cold]
+#[inline(never)]
+fn build_handoff_summary_with_idx(
+    cfg: &Config,
+    person: &Person,
+    title: &str,
+    idx: Option<&search::PersonIndex>,
+) -> String {
+    let mut requested = Vec::new();
+    let mut summary_runs: Vec<&receipts::ChainedReceipt> = Vec::new();
+    let mut extra_receipts: Vec<(&str, u64)> = Vec::new();
+    if let Some(idx) = idx {
+        let (_, items) = idx.list_files(0, Some(15), "");
+        for item in items {
+            if let Some(p) = item["path"].as_str() {
+                requested.push(p.to_string());
+            }
+        }
+        for rcpt in idx.chain.iter().rev() {
+            if rcpt.finished && !rcpt.answered && summary_runs.len() < 15 {
+                summary_runs.push(rcpt);
+                for f in &rcpt.files {
+                    if requested.len() < 25 && !requested.iter().any(|x| x == f) {
+                        requested.push(f.clone());
+                    }
+                }
+            }
+            if extra_receipts.len() < 15 && !rcpt.summary.is_empty() {
+                extra_receipts.push((rcpt.summary.as_str(), rcpt.ts));
+            }
+            if summary_runs.len() >= 15 && extra_receipts.len() >= 15 {
+                break;
+            }
+        }
+    }
+    if let Ok(preflight) = inspect_workspace_pack(
+        &cfg.data_dir,
+        &cfg.workspace_dir,
+        &requested,
+        false,
+        &extra_receipts,
+        None,
+    ) {
+        let summary_gates = build_summary_run_gates(&cfg.data_dir, &cfg.workspace_dir, &summary_runs);
+        return format_workspace_pack_markdown(&preflight, &person.name, title, &summary_gates);
+    }
+    let bundle = audit_bundle::build_audit_bundle(cfg, person);
+    audit_bundle::render_audit_bundle_markdown(&bundle)
+}
+
+#[cold]
+#[inline(never)]
+pub fn build_handoff_summary_markdown(cfg: &Config, person: &Person, title: &str) -> String {
+    let idx = search::SearchCache::new().get(
+        &person.id,
+        &cfg.data_dir,
+        &cfg.workspace_dir,
+        &cfg.memory_path,
+    );
+    build_handoff_summary_with_idx(cfg, person, title, Some(&idx))
+}
+
+#[cold]
+#[inline(never)]
+fn handle_export_handoff(
+    stream: &mut std::net::TcpStream,
+    state: &AppState,
+    req: &Request,
+    person: &Person,
+    runtime: &Arc<PersonRuntime>,
+) -> std::io::Result<()> {
+    let parsed: Value = serde_json::from_slice(&req.body).unwrap_or(Value::Null);
+    let dry_run = parsed["dry_run"].as_bool().unwrap_or_else(|| {
+        query_param(&req.query, "dry_run")
+            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+            .unwrap_or(false)
+    });
+    let force = parsed["force"].as_bool().unwrap_or_else(|| {
+        query_param(&req.query, "force")
+            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+            .unwrap_or(false)
+    });
+    let title = parsed["title"]
+        .as_str()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or("Client Handoff");
+
+    let idx = person_idx(state, person, runtime);
+    let summary_md = build_handoff_summary_with_idx(&runtime.cfg, person, title, Some(&idx));
+    let policy = crate::load_workspace_policy(&runtime.cfg.data_dir);
+    let mut eff_cfg = runtime.cfg.clone();
+    eff_cfg.api_key = effective_cfg(state, runtime).api_key;
+
+    if dry_run {
+        let scan = audit_bundle::scan_handoff_leaks(
+            &eff_cfg,
+            &[("CLIENT_SUMMARY.md", &summary_md)],
+            eff_cfg.api_key.as_deref(),
+        );
+        let strict_block = policy.profile == "strict_client" || policy.strict_citation_gate;
+        let would_block = strict_block && !scan.clean;
+        return respond_json(
+            stream,
+            200,
+            &json!({
+                "ok": !would_block,
+                "dry_run": true,
+                "would_block": would_block,
+                "policy": policy.to_json(&person.id),
+                "scan": scan.to_json(),
+            }),
+        );
+    }
+
+    let security = tripwire::audit_section(&state.cfg.data_dir, &person.id);
+    match audit_bundle::build_handoff_bundle_zip(
+        &eff_cfg,
+        person,
+        title,
+        &summary_md,
+        &security,
+        &policy,
+        force,
+    ) {
+        Err(blocked) => respond_json(stream, 409, &blocked.to_json()),
+        Ok(res) => {
+            let headers = vec![
+                ("X-Content-Type-Options", "nosniff".to_string()),
+                (
+                    "Content-Disposition",
+                    "attachment; filename=\"ergon-client-handoff.zip\"".to_string(),
+                ),
+                ("X-Ergon-Handoff-SHA256", res.sha256),
+                ("X-Ergon-Handoff-Leaks", res.scan.leak_count.to_string()),
+                ("X-Ergon-Workspace-Policy", policy.profile.to_string()),
+            ];
+            respond_bytes(stream, 200, "application/zip", &res.zip_bytes, &headers)
+        }
+    }
+}
+
 /// Validates workspace deliverable paths, computes non-empty/row/line counts, citations, and SHA-256 digests.
 fn inspect_workspace_pack(
     data_dir: &std::path::Path,
@@ -3211,37 +3394,11 @@ fn try_route_files_and_audit(
                 Ok(res) => res,
                 Err((status, err)) => return Some(respond_err(stream, status, &err)),
             };
-            let mut summary_gates: Vec<SummaryRunGate<'_>> = Vec::with_capacity(summary_runs.len());
-            if !summary_runs.is_empty() {
-                let mut dummy_cits = Vec::new();
-                let mut dummy_seen = std::collections::HashMap::new();
-                for &rcpt in &summary_runs {
-                    dummy_cits.clear();
-                    dummy_seen.clear();
-                    let mut v = 0usize;
-                    let mut s = 0usize;
-                    let mut b = 0usize;
-                    let (tot, rv, rs, rb) = collect_citations_into(
-                        Some(&runtime.cfg.data_dir),
-                        &runtime.cfg.workspace_dir,
-                        &rcpt.summary,
-                        rcpt.ts,
-                        None,
-                        &mut dummy_cits,
-                        &mut dummy_seen,
-                        &mut v,
-                        &mut s,
-                        &mut b,
-                    );
-                    summary_gates.push(SummaryRunGate {
-                        receipt: rcpt,
-                        checked: tot,
-                        verified: rv,
-                        stale: rs,
-                        broken: rb,
-                    });
-                }
-            }
+            let summary_gates = build_summary_run_gates(
+                &runtime.cfg.data_dir,
+                &runtime.cfg.workspace_dir,
+                &summary_runs,
+            );
             if preflight_only {
                 let mut out = preflight.to_json();
                 if include_summary {
@@ -3464,6 +3621,9 @@ fn try_route_files_and_audit(
             };
             let res = audit_bundle::verify_evidence(content, filename, ws_opt);
             respond_json(stream, 200, &res.to_json())
+        }
+        ("POST", "/api/export/handoff") => {
+            handle_export_handoff(stream, state, req, person, runtime)
         }
         ("POST", "/api/citations/verify") => {
             let parsed: Value = serde_json::from_slice(&req.body).unwrap_or(Value::Null);

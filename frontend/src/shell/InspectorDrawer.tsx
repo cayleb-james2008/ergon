@@ -26,6 +26,8 @@ import {
   hasV070Api,
   type EvidenceVerificationResult,
   type FileRevision,
+  type HandoffDryRunResult,
+  type HandoffLeakScan,
   type Offer,
   type Status,
   type WorkspaceFile,
@@ -75,6 +77,10 @@ export const InspectorDrawer = memo(function InspectorDrawer({
   const [exporting, setExporting] = useState<"md" | "json" | "pack" | "html" | "preflight" | "delta" | null>(null);
   const [policy, setPolicy] = useState<WorkspacePolicy | null>(null);
   const [savingPolicy, setSavingPolicy] = useState<WorkspacePolicyProfile | null>(null);
+  const [handoffScan, setHandoffScan] = useState<HandoffLeakScan | null>(null);
+  const [handoffBusy, setHandoffBusy] = useState<"check" | "export" | null>(null);
+  const [handoffBlockedMsg, setHandoffBlockedMsg] = useState<string | null>(null);
+  const [handoffZipSha, setHandoffZipSha] = useState<string | null>(null);
   const [verifyInfo, setVerifyInfo] = useState<{ checked: number; ok: boolean } | null>(null);
   const [packPreflight, setPackPreflight] = useState<PackPreflightReport | null>(null);
   const [verifyingEvidence, setVerifyingEvidence] = useState(false);
@@ -164,6 +170,65 @@ export const InspectorDrawer = memo(function InspectorDrawer({
       }
     });
   }, [open, tab]);
+
+  const runHandoffExport = useCallback(async (force: boolean) => {
+    setHandoffBusy("export");
+    try {
+      const resp = await fetch("/api/export/handoff", {
+        method: "POST",
+        cache: "no-store",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: "Client Handoff", force }),
+      });
+      if (resp.status === 409) {
+        const errJson = (await resp.json().catch(() => ({}))) as {
+          error?: string;
+          scan?: HandoffLeakScan;
+        };
+        if (errJson.scan) setHandoffScan(errJson.scan);
+        const msg = errJson.error || "Handoff blocked by Strict Client policy.";
+        setHandoffBlockedMsg(msg);
+        toast.error(msg);
+        return;
+      }
+      if (!resp.ok) {
+        toast.error(`Handoff export failed (HTTP ${resp.status}).`);
+        return;
+      }
+      const blob = await resp.blob();
+      const sha = resp.headers.get("X-Ergon-Handoff-SHA256") ?? "";
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "ergon-client-handoff.zip";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      setHandoffBlockedMsg(null);
+      setHandoffZipSha(sha || "exported");
+      setHandoffScan((prev) =>
+        prev ?? {
+          clean: true,
+          leak_count: 0,
+          host_path_count: 0,
+          secret_count: 0,
+          env_snippet_count: 0,
+          pii_count: 0,
+          findings: [],
+        }
+      );
+      toast.success(
+        force
+          ? "Exported ergon-client-handoff.zip (policy override)."
+          : sha
+            ? `Exported ergon-client-handoff.zip (sha256: ${sha.slice(0, 12)}…)`
+            : "Exported ergon-client-handoff.zip"
+      );
+    } finally {
+      setHandoffBusy(null);
+    }
+  }, []);
 
   const reduceMotion = useReducedMotion();
 
@@ -267,6 +332,127 @@ export const InspectorDrawer = memo(function InspectorDrawer({
 
         {tab === "audit" && (
           <div id="inspector-audit-panel" className="flex flex-col gap-4">
+            <section
+              id="handoff-export-card"
+              className="flex flex-col gap-2.5 rounded-card border border-hairline bg-board/40 p-3.5"
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h2 className="text-sm font-medium text-ink">Client handoff</h2>
+                <span
+                  id="handoff-leak-badge"
+                  data-handoff-clean={handoffScan ? String(handoffScan.clean) : "unscanned"}
+                  className={cn(
+                    "mono rounded-chip px-2 py-0.5 text-xs",
+                    handoffScan === null
+                      ? "bg-track text-ink-2"
+                      : handoffScan.clean
+                        ? "status-finished"
+                        : "status-stopped"
+                  )}
+                >
+                  {handoffScan === null
+                    ? "Ready to scan"
+                    : handoffScan.clean
+                      ? "0 leaks"
+                      : `${handoffScan.leak_count} finding${handoffScan.leak_count === 1 ? "" : "s"}`}
+                </span>
+              </div>
+              <p className="text-xs leading-5 text-ink-2">
+                Scan workspace deliverables for host paths, keys, and tokens, then bundle a verified ZIP archive for client delivery.
+              </p>
+              <div className="grid grid-cols-2 gap-1.5">
+                <Button
+                  id="handoff-precheck-btn"
+                  type="button"
+                  size="xs"
+                  variant="outline"
+                  disabled={handoffBusy !== null}
+                  className="max-md:min-h-11 justify-center gap-1.5 text-xs"
+                  onClick={async () => {
+                    setHandoffBusy("check");
+                    try {
+                      const r = await call<HandoffDryRunResult>("/api/export/handoff", {
+                        method: "POST",
+                        body: { dry_run: true },
+                      });
+                      if (!r.ok) {
+                        toast.error(r.error || "Could not run handoff leak pre-check.");
+                        return;
+                      }
+                      setHandoffScan(r.data.scan);
+                      if (r.data.would_block) {
+                        setHandoffBlockedMsg(
+                          `Blocked under ${r.data.policy.label}: ${r.data.scan.leak_count} finding(s) detected.`
+                        );
+                        toast.error(`Leak pre-check flagged ${r.data.scan.leak_count} finding(s).`);
+                      } else if (!r.data.scan.clean) {
+                        setHandoffBlockedMsg(null);
+                        toast.success(`Leak pre-check found ${r.data.scan.leak_count} advisory item(s).`);
+                      } else {
+                        setHandoffBlockedMsg(null);
+                        toast.success("Leak pre-check passed with 0 findings.");
+                      }
+                    } finally {
+                      setHandoffBusy(null);
+                    }
+                  }}
+                >
+                  <ShieldCheck className="size-3.5" aria-hidden="true" />
+                  <span>{handoffBusy === "check" ? "Scanning…" : "Check Leaks"}</span>
+                </Button>
+                <Button
+                  id="handoff-export-btn"
+                  type="button"
+                  size="xs"
+                  variant="default"
+                  disabled={handoffBusy !== null}
+                  className="max-md:min-h-11 justify-center gap-1.5 text-xs"
+                  onClick={() => void runHandoffExport(false)}
+                >
+                  <FileDown className="size-3.5" aria-hidden="true" />
+                  <span>{handoffBusy === "export" ? "Bundling…" : "Export Handoff"}</span>
+                </Button>
+              </div>
+              {handoffZipSha && !handoffBlockedMsg && (
+                <div className="mono rounded-chip border border-hairline bg-surface px-2.5 py-1 text-[11px] text-ink-2">
+                  ergon-client-handoff.zip · sha256:{handoffZipSha.slice(0, 16)}
+                </div>
+              )}
+              {handoffBlockedMsg && (
+                <div
+                  id="handoff-blocked-alert"
+                  className="flex flex-col gap-2 rounded-card border border-hairline bg-surface p-2.5 text-xs text-ink"
+                >
+                  <p className="font-medium text-ink">{handoffBlockedMsg}</p>
+                  <Button
+                    id="handoff-force-export-btn"
+                    type="button"
+                    size="xs"
+                    variant="outline"
+                    disabled={handoffBusy !== null}
+                    className="self-start text-xs"
+                    onClick={() => void runHandoffExport(true)}
+                  >
+                    Export Anyway
+                  </Button>
+                </div>
+              )}
+              {handoffScan && handoffScan.findings.length > 0 && (
+                <ul
+                  id="handoff-findings-list"
+                  className="flex max-h-40 flex-col gap-1.5 overflow-y-auto rounded-card border border-hairline bg-surface p-2.5 text-xs"
+                >
+                  {handoffScan.findings.slice(0, 12).map((f, idx) => (
+                    <li key={`${f.file}:${f.line}:${idx}`} className="flex flex-col gap-0.5">
+                      <span className="mono font-medium text-ink">
+                        {f.file}:L{f.line} [{f.kind}]
+                      </span>
+                      <span className="text-ink-2">{f.fix}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
             <section
               id="workspace-policy-card"
               className="flex flex-col gap-2.5 rounded-card border border-hairline bg-board/40 p-3.5"

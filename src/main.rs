@@ -24,6 +24,10 @@ struct CliOpts {
     verify_mode: bool,
     verify_target: Option<String>,
     verify_workspace: Option<String>,
+    export_handoff_mode: bool,
+    export_out: Option<String>,
+    export_title: Option<String>,
+    export_force: bool,
     json_output: bool,
     host: Option<String>,
     port: Option<u16>,
@@ -39,10 +43,26 @@ fn parse_cli_args(args: &[String]) -> CliOpts {
             "--app" | "--open" => opts.force_open = true,
             "--no-open" => opts.no_open = true,
             "--json" => opts.json_output = true,
-            "verify" if !opts.verify_mode => opts.verify_mode = true,
+            "--force" => opts.export_force = true,
+            "verify" if !opts.verify_mode && !opts.export_handoff_mode => opts.verify_mode = true,
+            "export-handoff" if !opts.verify_mode && !opts.export_handoff_mode => {
+                opts.export_handoff_mode = true
+            }
             "--workspace" => {
                 if let Some(v) = args.get(i + 1) {
                     opts.verify_workspace = Some(v.clone());
+                    i += 1;
+                }
+            }
+            "--out" => {
+                if let Some(v) = args.get(i + 1) {
+                    opts.export_out = Some(v.clone());
+                    i += 1;
+                }
+            }
+            "--title" => {
+                if let Some(v) = args.get(i + 1) {
+                    opts.export_title = Some(v.clone());
                     i += 1;
                 }
             }
@@ -69,8 +89,21 @@ fn parse_cli_args(args: &[String]) -> CliOpts {
                     if !v.is_empty() {
                         opts.verify_workspace = Some(v.to_string());
                     }
+                } else if let Some(v) = other.strip_prefix("--out=") {
+                    if !v.is_empty() {
+                        opts.export_out = Some(v.to_string());
+                    }
+                } else if let Some(v) = other.strip_prefix("--title=") {
+                    if !v.is_empty() {
+                        opts.export_title = Some(v.to_string());
+                    }
                 } else if opts.verify_mode && !other.starts_with('-') && opts.verify_target.is_none() {
                     opts.verify_target = Some(other.to_string());
+                } else if opts.export_handoff_mode
+                    && !other.starts_with('-')
+                    && opts.export_out.is_none()
+                {
+                    opts.export_out = Some(other.to_string());
                 }
             }
         }
@@ -241,17 +274,125 @@ fn maybe_open_desktop_window(opts: &CliOpts, host: &str, port: u16) {
     });
 }
 
+#[cold]
+fn run_export_handoff_cli(opts: &CliOpts) -> i32 {
+    let cfg = ergon_rs::Config::from_env();
+    let people = ergon_rs::PeopleState::load(&cfg);
+    let person = people.active_person();
+    let mut p_cfg = cfg.person_config(&person);
+    if let Some(ws) = &opts.verify_workspace {
+        p_cfg.workspace_dir = std::path::PathBuf::from(ws);
+    }
+    let policy = ergon_rs::load_workspace_policy(&p_cfg.data_dir);
+    let security = ergon_rs::tripwire::audit_section(&cfg.data_dir, &person.id);
+    let title = opts.export_title.as_deref().unwrap_or("Client Handoff");
+    let summary_md = ergon_rs::server::build_handoff_summary_markdown(&p_cfg, &person, title);
+
+    match ergon_rs::audit_bundle::build_handoff_bundle_zip(
+        &p_cfg,
+        &person,
+        title,
+        &summary_md,
+        &security,
+        &policy,
+        opts.export_force,
+    ) {
+        Err(blocked) => {
+            if opts.json_output {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&blocked.to_json()).unwrap_or_default()
+                );
+            } else {
+                eprintln!(
+                    "ergon export-handoff: BLOCKED by {} policy ({} finding(s))",
+                    blocked.policy.label, blocked.scan.leak_count
+                );
+                for f in &blocked.scan.findings {
+                    eprintln!("  {}:L{} [{}] {}", f.file, f.line, f.kind, f.fix);
+                }
+                eprintln!("Fix the findings above or pass --force to export anyway.");
+            }
+            1
+        }
+        Ok(res) => {
+            let out_arg = opts
+                .export_out
+                .as_deref()
+                .unwrap_or("ergon-client-handoff.zip");
+            let out_path = std::path::Path::new(out_arg);
+            let is_zip = out_arg.to_ascii_lowercase().ends_with(".zip");
+            if is_zip {
+                if let Some(parent) = out_path.parent().filter(|p| !p.as_os_str().is_empty()) {
+                    if let Err(e) = std::fs::create_dir_all(parent) {
+                        eprintln!("ergon export-handoff: cannot create {}: {e}", parent.display());
+                        return 2;
+                    }
+                }
+                if let Err(e) = std::fs::write(out_path, &res.zip_bytes) {
+                    eprintln!("ergon export-handoff: cannot write {}: {e}", out_path.display());
+                    return 2;
+                }
+            } else {
+                if let Err(e) = std::fs::create_dir_all(out_path) {
+                    eprintln!("ergon export-handoff: cannot create {}: {e}", out_path.display());
+                    return 2;
+                }
+                for (name, bytes) in [
+                    ("CLIENT_SUMMARY.md", res.summary_md.as_bytes()),
+                    ("audit_bundle.json", res.audit_bundle_bytes.as_slice()),
+                    ("VERIFY.txt", res.verify_txt.as_bytes()),
+                    ("SHA256SUMS", res.sha256sums.as_bytes()),
+                ] {
+                    if let Err(e) = std::fs::write(out_path.join(name), bytes) {
+                        eprintln!("ergon export-handoff: cannot write {name}: {e}");
+                        return 2;
+                    }
+                }
+            }
+            if opts.json_output {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&serde_json::json!({
+                        "ok": true,
+                        "mode": if is_zip { "zip" } else { "dir" },
+                        "output": out_arg,
+                        "sha256": res.sha256,
+                        "zip_bytes": res.zip_bytes.len(),
+                        "policy": policy.profile,
+                        "scan": res.scan.to_json(),
+                    }))
+                    .unwrap_or_default()
+                );
+            } else {
+                println!(
+                    "ergon export-handoff: PASS -> {} ({} bytes, sha256:{}, leaks:{})",
+                    out_arg,
+                    res.zip_bytes.len(),
+                    &res.sha256[..12.min(res.sha256.len())],
+                    res.scan.leak_count
+                );
+            }
+            0
+        }
+    }
+}
+
 fn print_help() {
     println!(
         "ergon {} - Personal Employee Agent Desk\n\n\
          USAGE:\n  ergon [--app | --no-open] [--host HOST] [--port PORT] [--version] [--help]\n  \
-         ergon verify <BUNDLE_OR_PACK> [--workspace DIR] [--json]\n\n\
+         ergon verify <BUNDLE_OR_PACK> [--workspace DIR] [--json]\n  \
+         ergon export-handoff [--out PATH] [--title TITLE] [--workspace DIR] [--force] [--json]\n\n\
          FLAGS:\n  --app, --open       Open chromeless desktop app window (Chromium/Edge --app)\n  \
          --no-open           Run headless without opening a desktop window\n  \
          --host HOST         Bind address (default: ERGON_HOST or 127.0.0.1)\n  \
          --port PORT         Bind port (default: ERGON_PORT or 8787)\n  \
-         --workspace DIR     Cross-check bundle or pack digests against workspace files\n  \
-         --json              Emit machine-readable verification JSON\n  \
+         --workspace DIR     Cross-check bundle/pack or override workspace directory\n  \
+         --out PATH          Handoff output .zip file or directory (default: ergon-client-handoff.zip)\n  \
+         --title TITLE       Handoff bundle title (default: Client Handoff)\n  \
+         --force             Override Strict Client leak pre-check block\n  \
+         --json              Emit machine-readable JSON\n  \
          -V, --version       Print version and exit\n  \
          -h, --help          Print this help and exit",
         env!("CARGO_PKG_VERSION")
@@ -335,6 +476,9 @@ fn main() {
     }
     if opts.verify_mode {
         std::process::exit(run_verify_cli(&opts));
+    }
+    if opts.export_handoff_mode {
+        std::process::exit(run_export_handoff_cli(&opts));
     }
     let cfg = ergon_rs::Config::from_env();
     let host = opts
@@ -450,6 +594,30 @@ mod tests {
         assert!(opts.verify_mode);
         assert_eq!(opts.verify_target.as_deref(), Some("ergon-audit-bundle.json"));
         assert_eq!(opts.verify_workspace.as_deref(), Some("./ws"));
+        assert!(opts.json_output);
+    }
+
+    #[test]
+    fn cli_parses_export_handoff_flags() {
+        let args: Vec<String> = [
+            "export-handoff",
+            "--out",
+            "/tmp/out.zip",
+            "--title=Q4 Review",
+            "--workspace",
+            "./ws",
+            "--force",
+            "--json",
+        ]
+        .into_iter()
+        .map(String::from)
+        .collect();
+        let opts = parse_cli_args(&args);
+        assert!(opts.export_handoff_mode);
+        assert_eq!(opts.export_out.as_deref(), Some("/tmp/out.zip"));
+        assert_eq!(opts.export_title.as_deref(), Some("Q4 Review"));
+        assert_eq!(opts.verify_workspace.as_deref(), Some("./ws"));
+        assert!(opts.export_force);
         assert!(opts.json_output);
     }
 }
