@@ -275,7 +275,7 @@ function ConnectorsBody({
         2
       );
     setSimBusyId(rule.id);
-    const token = simTokens[rule.id] ?? ephemeralSecrets[rule.id] ?? "";
+    const token = (simTokens[rule.id] ?? "").trim() || ephemeralSecrets[rule.id] || "";
     const r = await simulateWebhookTrigger(hookId, rawPayload, token);
     setSimBusyId(null);
     if (!r.ok) {
@@ -567,7 +567,7 @@ function ConnectorsBody({
                           )}
                         </div>
                         <p className="mt-1 text-xs text-ink-2">
-                          Triggers <span className="font-medium text-ink">{(rule.routine_id && routineNameMap.get(rule.routine_id)) || rule.routine_id || "default handler"}</span>
+                          Triggers <span className="font-medium text-ink">{targetName}</span>
                           {typeof rule.trigger_count === "number" && (
                             <span className="mono text-ink-3"> · {rule.trigger_count} {rule.trigger_count === 1 ? "run" : "runs"}</span>
                           )}
@@ -1166,8 +1166,12 @@ function ConnectorsBody({
                 {deliveries.slice(0, 20).map((d) => {
                   const badge = deliveryStatusBadge(d.status);
                   const tsVal = typeof d.ts_ms === "number" ? d.ts_ms : typeof d.ts === "number" ? d.ts : 0;
-                  const note = d.error || d.summary || d.response_preview || "";
                   const isHeld = d.status === "pending_approval" || d.status === "held";
+                  const note =
+                    d.error ||
+                    d.summary ||
+                    d.response_preview ||
+                    (isHeld ? "Waiting for approval in Today before sending." : "");
                   return (
                     <li
                       key={d.id}

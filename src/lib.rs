@@ -3576,8 +3576,26 @@ mod v010_hardening_tests {
         let model_addr = model_listener.local_addr().unwrap();
         std::thread::spawn(move || {
             for mut s in model_listener.incoming().flatten() {
-                let mut buf = [0u8; 4096];
-                let _ = s.read(&mut buf);
+                let mut reader = std::io::BufReader::new(&mut s);
+                let mut content_len = 0usize;
+                loop {
+                    let mut line = String::new();
+                    if std::io::BufRead::read_line(&mut reader, &mut line).unwrap_or(0) == 0
+                        || line == "\r\n"
+                        || line == "\n"
+                    {
+                        break;
+                    }
+                    if let Some((k, v)) = line.split_once(':') {
+                        if k.trim().eq_ignore_ascii_case("content-length") {
+                            content_len = v.trim().parse().unwrap_or(0);
+                        }
+                    }
+                }
+                if content_len > 0 {
+                    let mut body_buf = vec![0u8; content_len.min(262_144)];
+                    let _ = std::io::Read::read_exact(&mut reader, &mut body_buf);
+                }
                 let payload = r#"{"id":"m1","choices":[{"message":{"role":"assistant","content":"{\"action\":\"done\",\"summary\":\"Caught up ledger check cleanly.\"}"}}]}"#;
                 let resp = format!(
                     "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{payload}",

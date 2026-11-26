@@ -4,6 +4,12 @@ Each release is tagged `vMAJOR.MINOR.PATCH` and published on GitHub Releases wit
 binaries and a `SHA256SUMS` file. The running app shows its version and can update
 itself from the newest release (see README, "Versions and updates").
 
+## 0.31.0 - 2026-11-26
+
+Added unattended intake triggers and policy-gated outbound connectors (`src/connectors.rs`, `src/server.rs`, `src/tools.rs`, `src/records.rs`, `src/tripwire.rs`, `frontend/src/shell/ConnectorsPanel.tsx`, `frontend/src/views/Paper.tsx`, `frontend/src/lib/api.ts`, and `frontend/src/lib/webEngine.ts`). Signed inbound webhooks (`POST /api/hooks/:hook_id`) verify `X-Ergon-Signature` or `X-Ergon-Hook-Token` in constant time, write payloads up to `1 MB` to `workspace/inbox/`, and start linked routines or pipelines with `inputs.trigger_file`. Loopback-configured `folder_watch` rules reject sensitive and internal data paths, wait for two steady `(size, mtime)` checks under `25 MB`, deduplicate with a SHA-256 intake manifest, and copy files to `workspace/intake/`.
+
+Added `http_webhook`, `rest_api`, and `smtp_relay` outbound connectors plus the `invoke_connector` agent tool with host-side credential isolation in `0600` `connector_secrets.json`, `{{secret:key}}` header substitution after `tripwire::check_egress` checks, active-run secret redaction, `Air-Gapped` blocking, forced `Strict Client` approval cards (`connector_delivery` in Today), and a recorded `DeliveryLog`. Verified post-final-edit: `clippy` 0 warnings, `x86_64-pc-windows-msvc` `xwin` check 0 errors, `246/246` Rust tests (`3/3` `connectors_v031`), `gate 84/84`, `graph 6/6`, `replay 20/20`, `SLOP 0/0/0`, `7.92 MiB` (`8,303,456 B`) binary, `5.94 ms` boot, `16.96 MB` peak RSS, `8,194.5 req/s` (`2.29 ms` p95, `0/20,493` errors), `5/5` SSE, and `44/44` fuzz.
+
 ## 0.30.0 - 2026-11-26
 
 Added the Interactive Deliverable Studio (`FileEditor.tsx` inside `FileViewerModal`, `WorkspaceFiles.tsx`, `Paper.tsx`, `api.ts`, and `webEngine.ts`) with inline split Markdown editing, editable CSV grids, optimistic-lock `PUT /api/files/content` and `PATCH /api/files/content` (`409 Conflict` detection plus automatic `.history/` revisions), live Table Query / Group-By rollups (`POST /api/tables/query` + `src/tables.rs` exact fixed-point `i128` queries across `.csv`, `.tsv`, `.xlsx#SheetName`, and `.json`), and expanded upload `accept` filters covering `.pdf,.docx,.xlsx,.pptx`.

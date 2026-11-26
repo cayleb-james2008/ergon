@@ -53,7 +53,17 @@ One Rust binary serves the React web UI (`/` and `/phone`), the raw-TCP HTTP and
       <br /><br />
       <picture>
         <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/studio-editor-dark.png" />
-        <img src="docs/screenshots/studio-editor-light.png" alt="Ergon v0.30.0 Deliverable Studio editor, inline CSV query rollup, and PDF export" width="100%" />
+        <img src="docs/screenshots/studio-editor-light.png" alt="Ergon Deliverable Studio editor, inline CSV query rollup, and PDF export" width="100%" />
+      </picture>
+    </td>
+  </tr>
+  <tr>
+    <td colspan="2">
+      Accept signed inbound webhooks (<code>POST /api/hooks/:hook_id</code>) and local watched folders into routines, keep credentials isolated inside <code>connector_secrets.json</code>, and gate outbound HTTP deliveries through Today approval cards and workspace policies.
+      <br /><br />
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/connectors-dark.png" />
+        <img src="docs/screenshots/connectors-light.png" alt="Ergon v0.31.0 Connectors modal showing Inbound Webhooks, Watched Folders, Outbound Actions, Delivery Log, and Today approval card" width="100%" />
       </picture>
     </td>
   </tr>
@@ -66,26 +76,26 @@ One Rust binary serves the React web UI (`/` and `/phone`), the raw-TCP HTTP and
 ```mermaid
 flowchart LR
   UI["Desk UI (React 19 + Geist)\n/ (lazy shell), /phone, ergon-web.html"] -->|HTTP Keep-Alive + SSE| HTTP["Raw-TCP Engine (src/server.rs)\npre-gzipped /chunks/*, ETag 304, Host/413 guards"]
-  HTTP --> Agent["Agent Loop (src/lib.rs)\npatch_file, query_table, Done Gate, Spotlighting"]
-  HTTP --> Workflows["12 Built-In Workflows & Pipelines\nsandbox FS, tables.rs, PDF 1.4 & XLSX formulas (src/docs.rs)"]
+  HTTP --> Agent["Agent Loop (src/lib.rs)\npatch_file, query_table, invoke_connector, Done Gate"]
+  HTTP --> Workflows["12 Built-In Workflows & Connectors\nsandbox FS, webhooks, folder watch, PDF 1.4 & XLSX (src/docs.rs)"]
   HTTP --> Index["Per-Person RwLock Index (src/search.rs)\nCmd+K fuzzy search, [file:L##] verification"]
-  Agent --> Ledger["Provenance and Safety\nSHA-256 receipts, .history/ snapshots, Tripwires"]
+  Agent --> Ledger["Provenance and Safety\nSHA-256 receipts, .history/ snapshots, Tripwires, connector_secrets.json"]
 ```
 
 ---
 
-## Verified benchmarks (`v0.30.0` vs `v0.11.0`)
+## Verified benchmarks (`v0.31.0` vs `v0.11.0`)
 
 Measured against the stripped fat-LTO release binary on local loopback against a `5,000` receipts and `500` workspace files dataset:
 
-| Metric | `v0.11.0` baseline | `v0.30.0` measured | Change |
+| Metric | `v0.11.0` baseline | `v0.31.0` measured | Change |
 | --- | --- | --- | --- |
-| Release binary size | `16.0 MB` | `7.77 MiB` (`8,147,808 B`) | `-49.1%` |
-| Initial `/` shell payload | `1.15 MB` | `157.6 KiB` (`161,422 B`) raw / `35.8 KiB` (`36,705 B`) gzip (`16` `/chunks/*`) | `-96.8%` wire |
-| Cold boot to `200 OK` | `n/a` | `4.3 ms` | Under `10 ms` self-audit |
-| Peak RSS (`VmHWM`, `5k` receipts + `500` files, `5/5` SSE, `16w`) | `n/a` | `16.84 MB` (`17,244 KB`) | `16.84 MB` peak RSS |
-| Concurrent HTTP (`16w` mixed 5 routes + `5/5` SSE across `5k`/`500`) | `724 req/s` (`188.7 ms` p95) | `8,194.8 req/s` (`1.84 ms` p50, `2.31 ms` p95, `0/20,493` err) | `11.3x` under full concurrency |
-| Automated checks | `204` Rust tests | `243/243` Rust tests (`6/6` `studio_tables_pdf`), `79/79` gate, `6/6` graph, `20/20` replay, `44/44` fuzz, `0/0/0` `sloplint` | Zero warnings / zero externals |
+| Release binary size | `16.0 MB` | `7.92 MiB` (`8,303,456 B`) | `-48.1%` |
+| Initial `/` shell payload | `1.15 MB` | `158.6 KiB` (`162,423 B`) raw / `36.1 KiB` (`36,935 B`) gzip (`17` `/chunks/*`) | `-96.8%` wire |
+| Cold boot to `200 OK` | `n/a` | `5.94 ms` | Under `10 ms` self-audit |
+| Peak RSS (`VmHWM`, `5k` receipts + `500` files, `5/5` SSE, `16w`) | `n/a` | `16.96 MB` (`17,368 KB`) | `16.96 MB` peak RSS |
+| Concurrent HTTP (`16w` mixed 5 routes + `5/5` SSE across `5k`/`500`) | `724 req/s` (`188.7 ms` p95) | `8,194.5 req/s` (`1.89 ms` p50, `2.29 ms` p95, `0/20,493` err) | `11.3x` under full concurrency |
+| Automated checks | `204` Rust tests | `246/246` Rust tests (`3/3` `connectors_v031`), `84/84` gate, `6/6` graph, `20/20` replay, `44/44` fuzz, `0/0/0` `sloplint` | Zero warnings / zero externals |
 
 ---
 
@@ -155,6 +165,10 @@ Run `ergon export-handoff`, call `POST /api/export/handoff`, or use **Client han
 ### Offline evidence verification
 
 `ergon verify <bundle-or-pack> [--workspace <dir>] [--json]`, `POST /api/verify/evidence`, and the Verify evidence card in the Audit tab verify exported audit bundles (`.json`), client deliverable packs (`.md`), and signed playbook packs (`.ergon-playbook.json`) against SHA-256 digests and Field-Book receipt chains without starting a server or model endpoint.
+
+### Inbound triggers and outbound connectors
+
+`src/connectors.rs` and the Connectors dialog (`ConnectorsPanel.tsx`) add unattended intake triggers and policy-gated outbound actions. Signed webhooks (`POST /api/hooks/:hook_id`) verify `X-Ergon-Signature` (`sha256=<hex>`) or `X-Ergon-Hook-Token`, write payloads up to `1 MB` into `workspace/inbox/`, and start linked routines or pipelines. Loopback-only watched folders validate host directories outside system and credential paths, wait for two steady `(size, mtime)` polls up to `25 MB`, deduplicate by SHA-256 manifest, and copy matching files into `workspace/intake/`. Outbound `http_webhook`, `rest_api`, and `smtp_relay` connectors keep credentials in `0600` `connector_secrets.json`, substitute `{{secret:key}}` headers on the host only after `tripwire::check_egress` passes, block all deliveries under `Air-Gapped`, and park deliveries as `connector_delivery` approval cards in Today under `Strict Client` or when approval is enabled.
 
 ### Workspace audit policy profiles
 
