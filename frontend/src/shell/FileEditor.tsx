@@ -841,7 +841,7 @@ export function FileEditor({
                   value={aggCol}
                   disabled={!aggFn}
                   onChange={(e) => setAggCol(e.target.value)}
-                  className="focus-ring h-9 min-h-9 rounded-sm border border-input bg-board/40 px-2 text-xs text-ink outline-none disabled:opacity-50 max-md:min-h-11"
+                  className="focus-ring h-9 min-h-9 rounded-sm border border-input bg-board/40 px-2 text-xs text-ink outline-none disabled:cursor-not-allowed disabled:bg-board disabled:text-ink-3 max-md:min-h-11"
                 >
                   {tableHeader.map((col, idx) => (
                     <option key={idx} value={col}>

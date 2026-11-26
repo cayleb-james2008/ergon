@@ -40,12 +40,20 @@ One Rust binary serves the React web UI (`/` and `/phone`), the raw-TCP HTTP and
     </td>
   </tr>
   <tr>
-    <td colspan="2">
+    <td width="50%">
       Run resumable hybrid pipelines combining deterministic local skills, AI agent steps, structured human checkpoints, and document exports with restart persistence (<code>/api/pipelines/*</code>) and offline browser parity.
       <br /><br />
       <picture>
         <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/pipelines-dark.png" />
-        <img src="docs/screenshots/pipelines-light.png" alt="Ergon v0.29.0 Resumable Hybrid Workflow and Human Checkpoint Card" width="100%" />
+        <img src="docs/screenshots/pipelines-light.png" alt="Ergon Resumable Hybrid Workflow and Human Checkpoint Card" width="100%" />
+      </picture>
+    </td>
+    <td width="50%">
+      Edit Markdown deliverables or CSV tables inline with <code>.history/</code> revision safety, run fixed-point <code>POST /api/tables/query</code> group-by rollups across CSV/XLSX/JSON files, and export native PDF 1.4 reports or multi-sheet formula <code>.xlsx</code> workbooks.
+      <br /><br />
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/studio-editor-dark.png" />
+        <img src="docs/screenshots/studio-editor-light.png" alt="Ergon v0.30.0 Deliverable Studio editor, inline CSV query rollup, and PDF export" width="100%" />
       </picture>
     </td>
   </tr>
@@ -58,26 +66,26 @@ One Rust binary serves the React web UI (`/` and `/phone`), the raw-TCP HTTP and
 ```mermaid
 flowchart LR
   UI["Desk UI (React 19 + Geist)\n/ (lazy shell), /phone, ergon-web.html"] -->|HTTP Keep-Alive + SSE| HTTP["Raw-TCP Engine (src/server.rs)\npre-gzipped /chunks/*, ETag 304, Host/413 guards"]
-  HTTP --> Agent["Agent Loop (src/lib.rs)\n24-step tool loop, Done Gate, Spotlighting"]
-  HTTP --> Workflows["12 Built-In Workflows and Playbooks\nsandbox FS, DOCX/XLSX/PPTX/PDF (src/docs.rs)"]
+  HTTP --> Agent["Agent Loop (src/lib.rs)\npatch_file, query_table, Done Gate, Spotlighting"]
+  HTTP --> Workflows["12 Built-In Workflows & Pipelines\nsandbox FS, tables.rs, PDF 1.4 & XLSX formulas (src/docs.rs)"]
   HTTP --> Index["Per-Person RwLock Index (src/search.rs)\nCmd+K fuzzy search, [file:L##] verification"]
   Agent --> Ledger["Provenance and Safety\nSHA-256 receipts, .history/ snapshots, Tripwires"]
 ```
 
 ---
 
-## Verified benchmarks (`v0.29.0` vs `v0.11.0`)
+## Verified benchmarks (`v0.30.0` vs `v0.11.0`)
 
 Measured against the stripped fat-LTO release binary on local loopback against a `5,000` receipts and `500` workspace files dataset:
 
-| Metric | `v0.11.0` baseline | `v0.29.0` measured | Change |
+| Metric | `v0.11.0` baseline | `v0.30.0` measured | Change |
 | --- | --- | --- | --- |
-| Release binary size | `16.0 MB` | `7.66 MiB` (`8,037,216 B`) | `-49.8%` |
-| Initial `/` shell payload | `1.15 MB` | `160.5 KB` raw / `36.6 KB` (`36,619 B`) gzip (`16` `/chunks/*`) | `-96.8%` wire |
-| Cold boot to `200 OK` | `n/a` | `6.22 ms` | Under `10 ms` self-audit |
-| Peak RSS (`VmHWM`, `5k` receipts + `500` files, `5/5` SSE, `16w`) | `n/a` | `17.99 MB` (`18,420 KB`) | `17.99 MB` peak RSS |
-| Concurrent HTTP (`16w` mixed 5 routes + `5/5` SSE across `5k`/`500`) | `724 req/s` (`188.7 ms` p95) | `5,058.3 req/s` (`2.84 ms` p50, `4.18 ms` p95, `0` err) | `7.0x` under full concurrency |
-| Automated checks | `204` Rust tests | `234/234` Rust tests (`6/6` `pipelines_v029`), `75/75` gate, `6/6` graph, `20/20` replay, `44/44` fuzz, `0` `sloplint` fails | Zero warnings / zero externals |
+| Release binary size | `16.0 MB` | `7.77 MiB` (`8,147,808 B`) | `-49.1%` |
+| Initial `/` shell payload | `1.15 MB` | `157.6 KiB` (`161,422 B`) raw / `35.8 KiB` (`36,705 B`) gzip (`16` `/chunks/*`) | `-96.8%` wire |
+| Cold boot to `200 OK` | `n/a` | `4.3 ms` | Under `10 ms` self-audit |
+| Peak RSS (`VmHWM`, `5k` receipts + `500` files, `5/5` SSE, `16w`) | `n/a` | `16.84 MB` (`17,244 KB`) | `16.84 MB` peak RSS |
+| Concurrent HTTP (`16w` mixed 5 routes + `5/5` SSE across `5k`/`500`) | `724 req/s` (`188.7 ms` p95) | `8,194.8 req/s` (`1.84 ms` p50, `2.31 ms` p95, `0/20,493` err) | `11.3x` under full concurrency |
+| Automated checks | `204` Rust tests | `243/243` Rust tests (`6/6` `studio_tables_pdf`), `79/79` gate, `6/6` graph, `20/20` replay, `44/44` fuzz, `0/0/0` `sloplint` | Zero warnings / zero externals |
 
 ---
 

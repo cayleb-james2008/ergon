@@ -4,6 +4,12 @@ Each release is tagged `vMAJOR.MINOR.PATCH` and published on GitHub Releases wit
 binaries and a `SHA256SUMS` file. The running app shows its version and can update
 itself from the newest release (see README, "Versions and updates").
 
+## 0.30.0 - 2026-11-26
+
+Added the Interactive Deliverable Studio (`FileEditor.tsx` inside `FileViewerModal`, `WorkspaceFiles.tsx`, `Paper.tsx`, `api.ts`, and `webEngine.ts`) with inline split Markdown editing, editable CSV grids, optimistic-lock `PUT /api/files/content` and `PATCH /api/files/content` (`409 Conflict` detection plus automatic `.history/` revisions), live Table Query / Group-By rollups (`POST /api/tables/query` + `src/tables.rs` exact fixed-point `i128` queries across `.csv`, `.tsv`, `.xlsx#SheetName`, and `.json`), and expanded upload `accept` filters covering `.pdf,.docx,.xlsx,.pptx`.
+
+Added surgical `patch_file` and `query_table` agent tools (`src/tools.rs`, `src/lib.rs`), pure-Rust native PDF 1.4 export (`markdown_to_pdf`), and multi-sheet formula `.xlsx` workbooks (`sheets_to_xlsx` emitting `<f>SUM(...)</f>` formulas and cached totals in `src/docs.rs`). Verified post-final-edit: `clippy` 0 warnings, `x86_64-pc-windows-msvc` `xwin` check 0 errors, `243/243` Rust tests (`6/6` `studio_tables_pdf`), `gate 79/79`, `graph 6/6`, `replay 20/20`, `SLOP 0/0/0`, `7.77 MiB` (`8,147,808 B`) binary, `4.3 ms` boot, `16.84 MB` peak RSS, `8,194.8 req/s` (`2.31 ms` p95, `0/20,493` errors), `5/5` SSE, and `44/44` fuzz.
+
 ## 0.29.0 - 2026-11-26
 
 Resumable hybrid workflow pipelines (`steps_v2`) execute multi-step combinations of zero-LLM deterministic skills, AI agent runs, structured human checkpoints, and document exports asynchronously under `/api/pipelines/{run,runs,runs/:id,resume,retry,cancel}`, persisting execution state to `pipeline_runs.json` across restarts and streaming `pipeline_*` events over `/api/runs/stream` (`src/pipelines.rs`, `src/routines.rs`, `src/tools.rs`, `src/lib.rs`, `src/server.rs`).
