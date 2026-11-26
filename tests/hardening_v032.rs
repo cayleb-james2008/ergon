@@ -185,6 +185,7 @@ fn make_state(id: &str, kind: &str, status: &str, output: &str) -> pipelines::Pi
         output: output.to_string(),
         files: Vec::new(),
         metrics: json!({}),
+        usage: None,
         checkpoint_id: None,
         human_answer: None,
         human_action: None,
@@ -222,6 +223,8 @@ fn pipeline_restart_recovery_handles_interrupted_cancelled_and_corrupt_checkpoin
         pending_checkpoint: None,
         error: None,
         cancel_requested: true,
+        engagement_id: None,
+        usage: Default::default(),
     };
     pipelines::save_run(&td.cfg.data_dir, &cancelled_stale).unwrap();
 
@@ -246,6 +249,8 @@ fn pipeline_restart_recovery_handles_interrupted_cancelled_and_corrupt_checkpoin
         pending_checkpoint: None,
         error: None,
         cancel_requested: false,
+        engagement_id: None,
+        usage: Default::default(),
     };
     pipelines::save_run(&td.cfg.data_dir, &broken_cp).unwrap();
 
@@ -281,6 +286,8 @@ fn pipeline_restart_recovery_handles_interrupted_cancelled_and_corrupt_checkpoin
         pending_checkpoint: None,
         error: None,
         cancel_requested: false,
+        engagement_id: None,
+        usage: Default::default(),
     };
     pipelines::save_run(&td.cfg.data_dir, &interrupted_multi).unwrap();
 
@@ -340,6 +347,8 @@ fn pipeline_template_caps_circular_self_forward_deep_and_utf8_metrics() {
         pending_checkpoint: None,
         error: None,
         cancel_requested: false,
+        engagement_id: None,
+        usage: Default::default(),
     };
 
     // Self-reference (s2 while current_step_index=1) and forward reference (s3) must NOT resolve!

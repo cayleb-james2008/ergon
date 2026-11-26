@@ -477,6 +477,7 @@ fn boot_recovery_converts_stale_running_runs_to_interrupted_and_paused() {
             output: String::new(),
             files: Vec::new(),
             metrics: json!({}),
+            usage: None,
             checkpoint_id: None,
             human_answer: None,
             human_action: None,
@@ -485,6 +486,8 @@ fn boot_recovery_converts_stale_running_runs_to_interrupted_and_paused() {
         pending_checkpoint: None,
         error: None,
         cancel_requested: false,
+        engagement_id: None,
+        usage: Default::default(),
     };
     pipelines::save_run(&env.cfg.data_dir, &stale_running).unwrap();
 

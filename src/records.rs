@@ -5,9 +5,12 @@
 //! state the agent did not produce).
 
 use crate::library::{Library, Suite};
-use crate::{sandbox_path_resolving, truncate, Config};
+use crate::tools::atomic_write_bytes_with_mode;
+use crate::{sandbox_path_resolving, slugify, truncate, Config};
 use serde_json::{json, Value};
-use std::path::Path;
+use std::collections::{BTreeMap, HashMap};
+use std::io::Write as _;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 
@@ -234,16 +237,62 @@ pub fn append_work(
     thread_id: &str,
     finished: bool,
 ) {
-    append_entry(cfg, task, summary, files, thread_id, finished, false);
+    append_entry(cfg, task, summary, files, thread_id, finished, false, None, None);
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn append_work_with_usage(
+    cfg: &Config,
+    task: &str,
+    summary: &str,
+    files: &[String],
+    thread_id: &str,
+    finished: bool,
+    engagement_id: Option<&str>,
+    usage: Option<&RunUsage>,
+) {
+    append_entry(
+        cfg,
+        task,
+        summary,
+        files,
+        thread_id,
+        finished,
+        false,
+        engagement_id,
+        usage,
+    );
 }
 
 /// A run with no tool step and no written file: an answer, not work.
 /// It is kept in the log, marked `answered`, and left out of the brief,
 /// the graph's work nodes and the offers scan (EB2).
 pub fn append_answer(cfg: &Config, task: &str, summary: &str, thread_id: &str) {
-    append_entry(cfg, task, summary, &[], thread_id, true, true);
+    append_entry(cfg, task, summary, &[], thread_id, true, true, None, None);
 }
 
+pub fn append_answer_with_usage(
+    cfg: &Config,
+    task: &str,
+    summary: &str,
+    thread_id: &str,
+    engagement_id: Option<&str>,
+    usage: Option<&RunUsage>,
+) {
+    append_entry(
+        cfg,
+        task,
+        summary,
+        &[],
+        thread_id,
+        true,
+        true,
+        engagement_id,
+        usage,
+    );
+}
+
+#[allow(clippy::too_many_arguments)]
 fn append_entry(
     cfg: &Config,
     task: &str,
@@ -252,11 +301,13 @@ fn append_entry(
     thread_id: &str,
     finished: bool,
     answered: bool,
+    engagement_id: Option<&str>,
+    usage: Option<&RunUsage>,
 ) {
     with_records_lock(|| {
         let path = work_path(&cfg.data_dir);
         let mut items = load_array(&path, "entries");
-        items.push(json!({
+        let mut entry = json!({
             "ts": now_millis(),
             "task": task,
             "summary": summary,
@@ -264,7 +315,14 @@ fn append_entry(
             "thread_id": thread_id,
             "finished": finished,
             "answered": answered,
-        }));
+        });
+        if let Some(eid) = engagement_id.map(str::trim).filter(|s| !s.is_empty()) {
+            entry["engagement_id"] = json!(eid);
+        }
+        if let Some(u) = usage {
+            entry["usage"] = u.to_json();
+        }
+        items.push(entry);
         save_array(&path, "entries", &items);
     });
 }
@@ -397,6 +455,8 @@ pub fn resolve_decision(
         let outcome = if !approve {
             if kind == "connector_delivery" {
                 "You said no — outbound delivery was cancelled.".to_string()
+            } else if kind == "budget_gate" {
+                "You said no — retainer budget gate remains active.".to_string()
             } else {
                 "You said no — nothing was done.".to_string()
             }
@@ -436,12 +496,18 @@ pub fn resolve_decision(
             }
         } else if kind == "connector_delivery" {
             "Approved — executing outbound delivery...".to_string()
+        } else if kind == "budget_gate" {
+            "Approved — retainer budget gate lifted for the next run on this engagement."
+                .to_string()
         } else {
             "Approved.".to_string()
         };
         items[idx]["status"] = json!(if approve { "approved" } else { "denied" });
         items[idx]["resolved_ts"] = json!(now_millis());
         items[idx]["outcome"] = json!(outcome);
+        if kind == "budget_gate" && approve {
+            items[idx]["budget_gate_consumed"] = json!(false);
+        }
         let decision = items[idx].clone();
         save_array(&path, "decisions", &items);
         Ok((decision, outcome, kind))
@@ -746,6 +812,7 @@ pub fn build_today(cfg: &Config) -> Value {
                 "allow_host" => "an address to allow",
                 "memory_note" => "a memory note",
                 "publish_skill" => "a library skill",
+                "budget_gate" => "a retainer budget gate",
                 _ => "a decision",
             };
             events.push(json!({
@@ -833,4 +900,1347 @@ pub fn build_graph(people: &[crate::Person], root: &Config, library: &Library) -
         }
     }
     json!({ "nodes": nodes, "edges": edges })
+}
+
+// ---------------------------------------------------------------------------
+// Clients, Engagements, Model Pricing, Usage Ledger & Metering Summary (v0.33)
+// ---------------------------------------------------------------------------
+
+static CLIENTS_LOCK: Mutex<()> = Mutex::new(());
+
+fn with_clients_lock<T>(f: impl FnOnce() -> T) -> T {
+    let _g = CLIENTS_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+    f()
+}
+
+pub fn round_usd_8(v: f64) -> f64 {
+    if !v.is_finite() {
+        return 0.0;
+    }
+    (v * 100_000_000.0).round() / 100_000_000.0
+}
+
+pub fn round_4(v: f64) -> f64 {
+    if !v.is_finite() {
+        return 0.0;
+    }
+    (v * 10_000.0).round() / 10_000.0
+}
+
+pub fn round_2(v: f64) -> f64 {
+    if !v.is_finite() {
+        return 0.0;
+    }
+    (v * 100.0).round() / 100.0
+}
+
+fn clean_single_line(s: &str, cap: usize) -> String {
+    let flat: String = s
+        .replace(['\r', '\n'], " ")
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    flat.chars().take(cap).collect()
+}
+
+pub fn valid_entity_id(id: &str) -> bool {
+    !id.is_empty()
+        && id.len() <= 64
+        && id
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-' || c == '_')
+        && !id.starts_with('-')
+        && !id.ends_with('-')
+}
+
+fn non_neg_f64(v: &Value, default: f64, field: &str) -> Result<f64, (u16, String)> {
+    if v.is_null() {
+        return Ok(default);
+    }
+    let Some(n) = v.as_f64() else {
+        return Err((400, format!("{field} must be a finite non-negative number")));
+    };
+    if !n.is_finite() || n < 0.0 {
+        return Err((400, format!("{field} must be a finite non-negative number")));
+    }
+    Ok(n)
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct ClientRecord {
+    pub id: String,
+    pub name: String,
+    pub brand_header: String,
+    pub billing_currency: String,
+    pub default_rate_usd: f64,
+    pub created_ms: u64,
+    pub updated_ms: u64,
+}
+
+impl ClientRecord {
+    pub fn to_json(&self) -> Value {
+        json!({
+            "id": self.id,
+            "name": self.name,
+            "brand_header": self.brand_header,
+            "billing_currency": self.billing_currency,
+            "default_rate_usd": round_4(self.default_rate_usd),
+            "created_ms": self.created_ms,
+            "updated_ms": self.updated_ms,
+        })
+    }
+
+    pub fn from_json(v: &Value) -> Option<Self> {
+        let id = v["id"].as_str()?.trim().to_string();
+        if !valid_entity_id(&id) {
+            return None;
+        }
+        let name = clean_single_line(v["name"].as_str().unwrap_or(""), 120);
+        if name.is_empty() {
+            return None;
+        }
+        Some(Self {
+            id,
+            name,
+            brand_header: clean_single_line(v["brand_header"].as_str().unwrap_or(""), 240),
+            billing_currency: clean_single_line(
+                v["billing_currency"].as_str().unwrap_or("USD"),
+                12,
+            )
+            .to_ascii_uppercase(),
+            default_rate_usd: v["default_rate_usd"]
+                .as_f64()
+                .filter(|n| n.is_finite() && *n >= 0.0)
+                .unwrap_or(0.0),
+            created_ms: v["created_ms"].as_u64().unwrap_or(0),
+            updated_ms: v["updated_ms"].as_u64().unwrap_or(0),
+        })
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct EngagementRecord {
+    pub id: String,
+    pub client_id: String,
+    pub person_id: String,
+    pub name: String,
+    pub retainer_hours: f64,
+    pub retainer_budget_usd: f64,
+    pub hourly_rate_usd: f64,
+    pub period: String,
+    pub status: String,
+    pub created_ms: u64,
+    pub updated_ms: u64,
+}
+
+impl EngagementRecord {
+    pub fn to_json(&self) -> Value {
+        json!({
+            "id": self.id,
+            "client_id": self.client_id,
+            "person_id": self.person_id,
+            "name": self.name,
+            "retainer_hours": round_4(self.retainer_hours),
+            "retainer_budget_usd": round_4(self.retainer_budget_usd),
+            "hourly_rate_usd": round_4(self.hourly_rate_usd),
+            "period": self.period,
+            "status": self.status,
+            "created_ms": self.created_ms,
+            "updated_ms": self.updated_ms,
+        })
+    }
+
+    pub fn from_json(v: &Value) -> Option<Self> {
+        let id = v["id"].as_str()?.trim().to_string();
+        let client_id = v["client_id"].as_str()?.trim().to_string();
+        if !valid_entity_id(&id) || !valid_entity_id(&client_id) {
+            return None;
+        }
+        let name = clean_single_line(v["name"].as_str().unwrap_or(""), 120);
+        if name.is_empty() {
+            return None;
+        }
+        let person_id = v["person_id"]
+            .as_str()
+            .map(str::trim)
+            .filter(|s| crate::valid_person_id(s))
+            .unwrap_or("default")
+            .to_string();
+        Some(Self {
+            id,
+            client_id,
+            person_id,
+            name,
+            retainer_hours: v["retainer_hours"]
+                .as_f64()
+                .filter(|n| n.is_finite() && *n >= 0.0)
+                .unwrap_or(0.0),
+            retainer_budget_usd: v["retainer_budget_usd"]
+                .as_f64()
+                .filter(|n| n.is_finite() && *n >= 0.0)
+                .unwrap_or(0.0),
+            hourly_rate_usd: v["hourly_rate_usd"]
+                .as_f64()
+                .filter(|n| n.is_finite() && *n >= 0.0)
+                .unwrap_or(0.0),
+            period: clean_single_line(v["period"].as_str().unwrap_or("monthly"), 32),
+            status: clean_single_line(v["status"].as_str().unwrap_or("active"), 32),
+            created_ms: v["created_ms"].as_u64().unwrap_or(0),
+            updated_ms: v["updated_ms"].as_u64().unwrap_or(0),
+        })
+    }
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct ClientsStore {
+    pub clients: Vec<ClientRecord>,
+    pub engagements: Vec<EngagementRecord>,
+    pub active_engagement_by_person: HashMap<String, String>,
+}
+
+impl ClientsStore {
+    pub fn to_json(&self) -> Value {
+        json!({
+            "clients": self.clients.iter().map(|c| c.to_json()).collect::<Vec<_>>(),
+            "engagements": self.engagements.iter().map(|e| e.to_json()).collect::<Vec<_>>(),
+            "active_engagement_by_person": self.active_engagement_by_person,
+        })
+    }
+}
+
+pub fn clients_path(root_data_dir: &Path) -> PathBuf {
+    root_data_dir.join("clients.json")
+}
+
+fn load_clients_store_unlocked(root_data_dir: &Path) -> ClientsStore {
+    let path = clients_path(root_data_dir);
+    let Ok(text) = std::fs::read_to_string(&path) else {
+        return ClientsStore::default();
+    };
+    let Ok(v) = serde_json::from_str::<Value>(&text) else {
+        let _ = crate::backup_corrupt(&path);
+        return ClientsStore::default();
+    };
+    if !v.is_object() {
+        let _ = crate::backup_corrupt(&path);
+        return ClientsStore::default();
+    }
+    let clients: Vec<ClientRecord> = v["clients"]
+        .as_array()
+        .map(|arr| arr.iter().filter_map(ClientRecord::from_json).collect())
+        .unwrap_or_default();
+    let engagements: Vec<EngagementRecord> = v["engagements"]
+        .as_array()
+        .map(|arr| arr.iter().filter_map(EngagementRecord::from_json).collect())
+        .unwrap_or_default();
+    let mut active_engagement_by_person = HashMap::new();
+    if let Some(obj) = v["active_engagement_by_person"].as_object() {
+        for (pid, eid_val) in obj {
+            if let Some(eid) = eid_val.as_str() {
+                if crate::valid_person_id(pid) && engagements.iter().any(|e| e.id == eid) {
+                    active_engagement_by_person.insert(pid.clone(), eid.to_string());
+                }
+            }
+        }
+    }
+    ClientsStore {
+        clients,
+        engagements,
+        active_engagement_by_person,
+    }
+}
+
+fn save_clients_store_unlocked(root_data_dir: &Path, store: &ClientsStore) -> Result<(), String> {
+    let path = clients_path(root_data_dir);
+    let body = store.to_json().to_string();
+    atomic_write_bytes_with_mode(&path, body.as_bytes(), Some(0o600))
+        .map_err(|e| format!("save clients.json: {e}"))
+}
+
+pub fn load_clients_store(root_data_dir: &Path) -> ClientsStore {
+    with_clients_lock(|| load_clients_store_unlocked(root_data_dir))
+}
+
+fn mint_unique_id(desired: Option<&str>, fallback_name: &str, existing: &[&str]) -> Result<String, (u16, String)> {
+    if let Some(raw) = desired.map(str::trim).filter(|s| !s.is_empty()) {
+        let low = raw.to_ascii_lowercase();
+        if !valid_entity_id(&low) {
+            return Err((
+                400,
+                "id must be 1..=64 lowercase alphanumeric, '-', or '_' characters".to_string(),
+            ));
+        }
+        if existing.contains(&low.as_str()) {
+            return Err((409, format!("id '{low}' already exists")));
+        }
+        return Ok(low);
+    }
+    let base = slugify(fallback_name);
+    let mut candidate = base.clone();
+    let mut n = 2usize;
+    while existing.contains(&candidate.as_str()) {
+        candidate = format!("{base}-{n}");
+        n += 1;
+    }
+    Ok(candidate)
+}
+
+pub fn create_client(root_data_dir: &Path, body: &Value) -> Result<ClientRecord, (u16, String)> {
+    if !body.is_object() {
+        return Err((400, "request body must be a JSON object".to_string()));
+    }
+    let name = clean_single_line(body["name"].as_str().unwrap_or(""), 120);
+    if name.is_empty() {
+        return Err((400, "name is required".to_string()));
+    }
+    let brand_header = clean_single_line(body["brand_header"].as_str().unwrap_or(""), 240);
+    let raw_currency = clean_single_line(body["billing_currency"].as_str().unwrap_or("USD"), 12);
+    let billing_currency = if raw_currency.is_empty() {
+        "USD".to_string()
+    } else {
+        raw_currency.to_ascii_uppercase()
+    };
+    let default_rate_usd = non_neg_f64(&body["default_rate_usd"], 0.0, "default_rate_usd")?;
+
+    with_clients_lock(|| {
+        let mut store = load_clients_store_unlocked(root_data_dir);
+        let existing: Vec<&str> = store.clients.iter().map(|c| c.id.as_str()).collect();
+        let id = mint_unique_id(body["id"].as_str(), &name, &existing)?;
+        let ts = now_millis();
+        let client = ClientRecord {
+            id,
+            name,
+            brand_header,
+            billing_currency,
+            default_rate_usd,
+            created_ms: ts,
+            updated_ms: ts,
+        };
+        store.clients.push(client.clone());
+        save_clients_store_unlocked(root_data_dir, &store).map_err(|e| (500, e))?;
+        Ok(client)
+    })
+}
+
+pub fn create_engagement(
+    root_data_dir: &Path,
+    default_person_id: &str,
+    body: &Value,
+) -> Result<EngagementRecord, (u16, String)> {
+    if !body.is_object() {
+        return Err((400, "request body must be a JSON object".to_string()));
+    }
+    let client_id = body["client_id"].as_str().unwrap_or("").trim().to_string();
+    if client_id.is_empty() {
+        return Err((400, "client_id is required".to_string()));
+    }
+    let name = clean_single_line(body["name"].as_str().unwrap_or(""), 120);
+    if name.is_empty() {
+        return Err((400, "name is required".to_string()));
+    }
+    let person_id = body["person_id"]
+        .as_str()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or(default_person_id)
+        .to_string();
+    if !crate::valid_person_id(&person_id) {
+        return Err((400, "invalid person_id".to_string()));
+    }
+    let retainer_hours = non_neg_f64(&body["retainer_hours"], 0.0, "retainer_hours")?;
+    let retainer_budget_usd =
+        non_neg_f64(&body["retainer_budget_usd"], 0.0, "retainer_budget_usd")?;
+    let period = {
+        let p = clean_single_line(body["period"].as_str().unwrap_or("monthly"), 32);
+        if p.is_empty() {
+            "monthly".to_string()
+        } else {
+            p.to_ascii_lowercase()
+        }
+    };
+    let status = {
+        let s = clean_single_line(body["status"].as_str().unwrap_or("active"), 32);
+        if s.is_empty() {
+            "active".to_string()
+        } else {
+            s.to_ascii_lowercase()
+        }
+    };
+    let activate = body["activate"].as_bool().unwrap_or(false);
+
+    with_clients_lock(|| {
+        let mut store = load_clients_store_unlocked(root_data_dir);
+        let Some(client) = store.clients.iter().find(|c| c.id == client_id).cloned() else {
+            return Err((404, "client not found".to_string()));
+        };
+        let hourly_rate_usd = non_neg_f64(
+            &body["hourly_rate_usd"],
+            client.default_rate_usd,
+            "hourly_rate_usd",
+        )?;
+        let existing: Vec<&str> = store.engagements.iter().map(|e| e.id.as_str()).collect();
+        let id = mint_unique_id(body["id"].as_str(), &name, &existing)?;
+        let ts = now_millis();
+        let engagement = EngagementRecord {
+            id: id.clone(),
+            client_id,
+            person_id: person_id.clone(),
+            name,
+            retainer_hours,
+            retainer_budget_usd,
+            hourly_rate_usd,
+            period,
+            status,
+            created_ms: ts,
+            updated_ms: ts,
+        };
+        store.engagements.push(engagement.clone());
+        if activate {
+            store.active_engagement_by_person.insert(person_id, id);
+        }
+        save_clients_store_unlocked(root_data_dir, &store).map_err(|e| (500, e))?;
+        Ok(engagement)
+    })
+}
+
+pub fn switch_engagement(
+    root_data_dir: &Path,
+    person_id: &str,
+    body: &Value,
+) -> Result<(Option<String>, Option<EngagementRecord>), (u16, String)> {
+    if !body.is_object() {
+        return Err((400, "request body must be a JSON object".to_string()));
+    }
+    let clear_requested = body["clear"].as_bool().unwrap_or(false)
+        || body.get("engagement_id").is_some_and(Value::is_null)
+        || body.get("id").is_some_and(Value::is_null);
+    let requested = body["engagement_id"]
+        .as_str()
+        .or_else(|| body["id"].as_str())
+        .map(str::trim)
+        .unwrap_or("");
+    if !clear_requested && requested.is_empty() {
+        return Err((400, "engagement_id is required".to_string()));
+    }
+    with_clients_lock(|| {
+        let mut store = load_clients_store_unlocked(root_data_dir);
+        if clear_requested && requested.is_empty() {
+            store.active_engagement_by_person.remove(person_id);
+            save_clients_store_unlocked(root_data_dir, &store).map_err(|e| (500, e))?;
+            return Ok((None, None));
+        }
+        let Some(eng) = store
+            .engagements
+            .iter()
+            .find(|e| e.id == requested)
+            .cloned()
+        else {
+            return Err((404, "engagement not found".to_string()));
+        };
+        store
+            .active_engagement_by_person
+            .insert(person_id.to_string(), eng.id.clone());
+        save_clients_store_unlocked(root_data_dir, &store).map_err(|e| (500, e))?;
+        Ok((Some(eng.id.clone()), Some(eng)))
+    })
+}
+
+pub fn active_engagement_for(
+    root_data_dir: &Path,
+    person_id: &str,
+) -> Option<(EngagementRecord, Option<ClientRecord>)> {
+    let store = load_clients_store(root_data_dir);
+    let eid = store.active_engagement_by_person.get(person_id)?;
+    let eng = store.engagements.iter().find(|e| &e.id == eid)?.clone();
+    let client = store
+        .clients
+        .iter()
+        .find(|c| c.id == eng.client_id)
+        .cloned();
+    Some((eng, client))
+}
+
+pub fn active_brand_header_for(root_data_dir: &Path, person_id: &str) -> Option<String> {
+    let (_, client) = active_engagement_for(root_data_dir, person_id)?;
+    let hdr = client?.brand_header.trim().to_string();
+    if hdr.is_empty() {
+        None
+    } else {
+        Some(hdr)
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ModelPrice {
+    pub input_per_1m_usd: f64,
+    pub output_per_1m_usd: f64,
+    pub cached_input_per_1m_usd: f64,
+}
+
+impl ModelPrice {
+    pub fn to_json(&self) -> Value {
+        json!({
+            "input_per_1m_usd": self.input_per_1m_usd,
+            "output_per_1m_usd": self.output_per_1m_usd,
+            "cached_input_per_1m_usd": self.cached_input_per_1m_usd,
+        })
+    }
+
+    pub fn from_json(v: &Value) -> Result<Self, String> {
+        let obj = v
+            .as_object()
+            .ok_or_else(|| "model pricing entry must be an object".to_string())?;
+        let read_rate = |keys: &[&str], default: f64| -> Result<f64, String> {
+            for k in keys {
+                if let Some(val) = obj.get(*k) {
+                    if val.is_null() {
+                        continue;
+                    }
+                    let n = val
+                        .as_f64()
+                        .filter(|n| n.is_finite() && *n >= 0.0)
+                        .ok_or_else(|| format!("pricing field '{k}' must be a finite non-negative number"))?;
+                    return Ok(n);
+                }
+            }
+            Ok(default)
+        };
+        let input = read_rate(&["input_per_1m_usd", "prompt_per_1m_usd"], 0.0)?;
+        let output = read_rate(&["output_per_1m_usd", "completion_per_1m_usd"], 0.0)?;
+        let cached = read_rate(
+            &["cached_input_per_1m_usd", "cached_per_1m_usd"],
+            input * 0.25,
+        )?;
+        Ok(Self {
+            input_per_1m_usd: input,
+            output_per_1m_usd: output,
+            cached_input_per_1m_usd: cached,
+        })
+    }
+}
+
+pub fn builtin_model_pricing() -> BTreeMap<String, ModelPrice> {
+    let entries: &[(&str, f64, f64, f64)] = &[
+        ("deepseek-v4.1-flash", 0.14, 0.28, 0.035),
+        ("deepseek-v4.1-flash-free", 0.14, 0.28, 0.035),
+        ("deepseek-chat", 0.27, 1.10, 0.07),
+        ("deepseek-reasoner", 0.55, 2.19, 0.14),
+        ("gpt-4o", 2.50, 10.00, 1.25),
+        ("gpt-4o-mini", 0.15, 0.60, 0.075),
+        ("gpt-4.1", 2.00, 8.00, 0.50),
+        ("gpt-4.1-mini", 0.40, 1.60, 0.10),
+        ("gpt-4.1-nano", 0.10, 0.40, 0.025),
+        ("o3-mini", 1.10, 4.40, 0.55),
+        ("o4-mini", 1.10, 4.40, 0.275),
+        ("claude-3-5-sonnet", 3.00, 15.00, 0.30),
+        ("claude-3-7-sonnet", 3.00, 15.00, 0.30),
+        ("claude-sonnet-4", 3.00, 15.00, 0.30),
+        ("claude-opus-4", 15.00, 75.00, 1.50),
+        ("claude-haiku-3-5", 0.80, 4.00, 0.08),
+        ("gemini-2.5-pro", 1.25, 10.00, 0.3125),
+        ("gemini-2.5-flash", 0.15, 0.60, 0.0375),
+        ("gemini-3.8-flash-high", 0.30, 1.20, 0.075),
+        ("default", 0.50, 1.50, 0.125),
+    ];
+    let mut map = BTreeMap::new();
+    for (id, i, o, c) in entries {
+        map.insert(
+            (*id).to_string(),
+            ModelPrice {
+                input_per_1m_usd: *i,
+                output_per_1m_usd: *o,
+                cached_input_per_1m_usd: *c,
+            },
+        );
+    }
+    map
+}
+
+pub fn model_pricing_path(root_data_dir: &Path) -> PathBuf {
+    root_data_dir.join("model_pricing.json")
+}
+
+pub fn load_model_pricing_overrides(root_data_dir: &Path) -> BTreeMap<String, ModelPrice> {
+    let path = model_pricing_path(root_data_dir);
+    let Ok(text) = std::fs::read_to_string(&path) else {
+        return BTreeMap::new();
+    };
+    let Ok(v) = serde_json::from_str::<Value>(&text) else {
+        return BTreeMap::new();
+    };
+    let obj = v["models"]
+        .as_object()
+        .or_else(|| v.as_object());
+    let Some(map_obj) = obj else {
+        return BTreeMap::new();
+    };
+    let mut out = BTreeMap::new();
+    for (k, val) in map_obj {
+        let model = k.trim();
+        if model.is_empty() {
+            continue;
+        }
+        if let Ok(price) = ModelPrice::from_json(val) {
+            out.insert(model.to_string(), price);
+        }
+    }
+    out
+}
+
+pub fn load_effective_model_pricing(root_data_dir: &Path) -> BTreeMap<String, ModelPrice> {
+    let mut map = builtin_model_pricing();
+    for (k, v) in load_model_pricing_overrides(root_data_dir) {
+        map.insert(k, v);
+    }
+    map
+}
+
+pub fn effective_model_pricing_json(root_data_dir: &Path) -> Value {
+    let map = load_effective_model_pricing(root_data_dir);
+    let mut obj = serde_json::Map::new();
+    for (k, v) in map {
+        obj.insert(k, v.to_json());
+    }
+    Value::Object(obj)
+}
+
+pub fn save_model_pricing_overrides(
+    root_data_dir: &Path,
+    overrides_val: &Value,
+) -> Result<BTreeMap<String, ModelPrice>, String> {
+    let raw_obj = overrides_val
+        .get("models")
+        .and_then(|v| v.as_object())
+        .or_else(|| overrides_val.as_object())
+        .ok_or_else(|| "model_pricing must be a JSON object mapping model_id -> rates".to_string())?;
+    let mut overrides = load_model_pricing_overrides(root_data_dir);
+    for (k, val) in raw_obj {
+        let key = clean_single_line(k, 128);
+        if key.is_empty() {
+            return Err("model_pricing key cannot be empty".to_string());
+        }
+        if val.is_null() {
+            overrides.remove(&key);
+            continue;
+        }
+        let price = ModelPrice::from_json(val)?;
+        overrides.insert(key, price);
+    }
+    let mut models_json = serde_json::Map::new();
+    for (k, v) in &overrides {
+        models_json.insert(k.clone(), v.to_json());
+    }
+    let body = json!({ "models": models_json }).to_string();
+    atomic_write_bytes_with_mode(&model_pricing_path(root_data_dir), body.as_bytes(), Some(0o600))
+        .map_err(|e| format!("save model_pricing.json: {e}"))?;
+    Ok(load_effective_model_pricing(root_data_dir))
+}
+
+pub fn resolve_model_price(pricing: &BTreeMap<String, ModelPrice>, model_id: &str) -> ModelPrice {
+    let trimmed = model_id.trim();
+    if let Some(p) = pricing.get(trimmed) {
+        return *p;
+    }
+    let low = trimmed.to_ascii_lowercase();
+    if let Some((_, p)) = pricing
+        .iter()
+        .find(|(k, _)| k.to_ascii_lowercase() == low)
+    {
+        return *p;
+    }
+    if let Some((_, p)) = pricing
+        .iter()
+        .filter(|(k, _)| *k != "default" && low.starts_with(&k.to_ascii_lowercase()))
+        .max_by_key(|(k, _)| k.len())
+    {
+        return *p;
+    }
+    pricing.get("default").copied().unwrap_or(ModelPrice {
+        input_per_1m_usd: 0.50,
+        output_per_1m_usd: 1.50,
+        cached_input_per_1m_usd: 0.125,
+    })
+}
+
+pub fn compute_call_cost_usd(
+    price: &ModelPrice,
+    prompt_tokens: u64,
+    completion_tokens: u64,
+    cached_tokens: u64,
+) -> f64 {
+    let cached = cached_tokens.min(prompt_tokens);
+    let uncached = prompt_tokens.saturating_sub(cached);
+    let cost = (uncached as f64 * price.input_per_1m_usd
+        + cached as f64 * price.cached_input_per_1m_usd
+        + completion_tokens as f64 * price.output_per_1m_usd)
+        / 1_000_000.0;
+    round_usd_8(cost.max(0.0))
+}
+
+pub fn compute_minutes_saved(
+    finished: bool,
+    answered: bool,
+    ok_steps: usize,
+    files_written: usize,
+    completion_tokens: u64,
+) -> f64 {
+    let raw = if !finished {
+        if ok_steps == 0 && files_written == 0 {
+            0.0
+        } else {
+            (ok_steps as f64) * 2.0 + (files_written as f64) * 4.0
+        }
+    } else if answered && ok_steps == 0 && files_written == 0 {
+        2.0 + (completion_tokens as f64 / 250.0).min(10.0)
+    } else {
+        3.0 + (ok_steps as f64) * 4.0
+            + (files_written as f64) * 8.0
+            + (completion_tokens as f64 / 250.0).min(15.0)
+    };
+    round_2(raw.max(0.0))
+}
+
+pub fn compute_billable_value_usd(minutes_saved: f64, hourly_rate_usd: f64) -> f64 {
+    if minutes_saved <= 0.0 || hourly_rate_usd <= 0.0 || !hourly_rate_usd.is_finite() {
+        return 0.0;
+    }
+    round_4((minutes_saved / 60.0) * hourly_rate_usd)
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct RunUsage {
+    pub model_id: String,
+    pub calls: u64,
+    pub prompt_tokens: u64,
+    pub completion_tokens: u64,
+    pub total_tokens: u64,
+    pub cached_tokens: u64,
+    pub latency_ms: u64,
+    pub cost_usd: f64,
+    pub estimated_minutes_saved: f64,
+    pub billable_value_usd: f64,
+}
+
+impl RunUsage {
+    #[allow(clippy::too_many_arguments)]
+    pub fn add_call(
+        &mut self,
+        model_id: &str,
+        prompt_tokens: u64,
+        completion_tokens: u64,
+        total_tokens: u64,
+        cached_tokens: u64,
+        latency_ms: u64,
+        cost_usd: f64,
+    ) {
+        if !model_id.trim().is_empty() {
+            self.model_id = model_id.trim().to_string();
+        }
+        self.calls = self.calls.saturating_add(1);
+        self.prompt_tokens = self.prompt_tokens.saturating_add(prompt_tokens);
+        self.completion_tokens = self.completion_tokens.saturating_add(completion_tokens);
+        let eff_total = if total_tokens > 0 {
+            total_tokens
+        } else {
+            prompt_tokens.saturating_add(completion_tokens)
+        };
+        self.total_tokens = self.total_tokens.saturating_add(eff_total);
+        self.cached_tokens = self.cached_tokens.saturating_add(cached_tokens);
+        self.latency_ms = self.latency_ms.saturating_add(latency_ms);
+        self.cost_usd = round_usd_8(self.cost_usd + cost_usd.max(0.0));
+    }
+
+    pub fn accumulate(&mut self, other: &RunUsage) {
+        if !other.model_id.trim().is_empty() {
+            self.model_id = other.model_id.clone();
+        }
+        self.calls = self.calls.saturating_add(other.calls);
+        self.prompt_tokens = self.prompt_tokens.saturating_add(other.prompt_tokens);
+        self.completion_tokens = self.completion_tokens.saturating_add(other.completion_tokens);
+        self.total_tokens = self.total_tokens.saturating_add(other.total_tokens);
+        self.cached_tokens = self.cached_tokens.saturating_add(other.cached_tokens);
+        self.latency_ms = self.latency_ms.saturating_add(other.latency_ms);
+        self.cost_usd = round_usd_8(self.cost_usd + other.cost_usd);
+        self.estimated_minutes_saved =
+            round_2(self.estimated_minutes_saved + other.estimated_minutes_saved);
+        self.billable_value_usd = round_4(self.billable_value_usd + other.billable_value_usd);
+    }
+
+    pub fn finalize_attribution(
+        &mut self,
+        finished: bool,
+        answered: bool,
+        ok_steps: usize,
+        files_written: usize,
+        hourly_rate_usd: f64,
+    ) {
+        self.estimated_minutes_saved = compute_minutes_saved(
+            finished,
+            answered,
+            ok_steps,
+            files_written,
+            self.completion_tokens,
+        );
+        self.billable_value_usd =
+            compute_billable_value_usd(self.estimated_minutes_saved, hourly_rate_usd);
+    }
+
+    pub fn to_json(&self) -> Value {
+        json!({
+            "model_id": self.model_id,
+            "calls": self.calls,
+            "prompt_tokens": self.prompt_tokens,
+            "completion_tokens": self.completion_tokens,
+            "total_tokens": self.total_tokens,
+            "cached_tokens": self.cached_tokens,
+            "latency_ms": self.latency_ms,
+            "cost_usd": round_usd_8(self.cost_usd),
+            "estimated_minutes_saved": round_2(self.estimated_minutes_saved),
+            "billable_value_usd": round_4(self.billable_value_usd),
+        })
+    }
+
+    pub fn from_json(v: &Value) -> Option<Self> {
+        let obj = v.as_object()?;
+        let prompt_tokens = obj.get("prompt_tokens").and_then(|x| x.as_u64()).unwrap_or(0);
+        let completion_tokens = obj
+            .get("completion_tokens")
+            .and_then(|x| x.as_u64())
+            .unwrap_or(0);
+        let total_tokens = obj
+            .get("total_tokens")
+            .and_then(|x| x.as_u64())
+            .unwrap_or_else(|| prompt_tokens.saturating_add(completion_tokens));
+        Some(Self {
+            model_id: obj
+                .get("model_id")
+                .and_then(|x| x.as_str())
+                .unwrap_or("")
+                .to_string(),
+            calls: obj.get("calls").and_then(|x| x.as_u64()).unwrap_or(0),
+            prompt_tokens,
+            completion_tokens,
+            total_tokens,
+            cached_tokens: obj
+                .get("cached_tokens")
+                .and_then(|x| x.as_u64())
+                .unwrap_or(0),
+            latency_ms: obj.get("latency_ms").and_then(|x| x.as_u64()).unwrap_or(0),
+            cost_usd: obj
+                .get("cost_usd")
+                .and_then(|x| x.as_f64())
+                .filter(|n| n.is_finite() && *n >= 0.0)
+                .unwrap_or(0.0),
+            estimated_minutes_saved: obj
+                .get("estimated_minutes_saved")
+                .and_then(|x| x.as_f64())
+                .filter(|n| n.is_finite() && *n >= 0.0)
+                .unwrap_or(0.0),
+            billable_value_usd: obj
+                .get("billable_value_usd")
+                .and_then(|x| x.as_f64())
+                .filter(|n| n.is_finite() && *n >= 0.0)
+                .unwrap_or(0.0),
+        })
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct UsageLedgerEntry {
+    pub ts_ms: u64,
+    pub run_id: String,
+    pub thread_id: String,
+    pub person_id: String,
+    pub engagement_id: Option<String>,
+    pub client_id: Option<String>,
+    pub source: String,
+    pub finished: bool,
+    pub answered: bool,
+    pub usage: RunUsage,
+}
+
+impl UsageLedgerEntry {
+    pub fn to_json(&self) -> Value {
+        json!({
+            "ts_ms": self.ts_ms,
+            "run_id": self.run_id,
+            "thread_id": self.thread_id,
+            "person_id": self.person_id,
+            "engagement_id": self.engagement_id,
+            "client_id": self.client_id,
+            "source": self.source,
+            "finished": self.finished,
+            "answered": self.answered,
+            "usage": self.usage.to_json(),
+        })
+    }
+
+    pub fn from_json(v: &Value) -> Option<Self> {
+        let obj = v.as_object()?;
+        let usage = obj
+            .get("usage")
+            .and_then(RunUsage::from_json)
+            .or_else(|| RunUsage::from_json(v))?;
+        Some(Self {
+            ts_ms: obj
+                .get("ts_ms")
+                .or_else(|| obj.get("ts"))
+                .and_then(|x| x.as_u64())
+                .unwrap_or(0),
+            run_id: obj
+                .get("run_id")
+                .and_then(|x| x.as_str())
+                .unwrap_or("")
+                .to_string(),
+            thread_id: obj
+                .get("thread_id")
+                .and_then(|x| x.as_str())
+                .unwrap_or("")
+                .to_string(),
+            person_id: obj
+                .get("person_id")
+                .and_then(|x| x.as_str())
+                .unwrap_or("default")
+                .to_string(),
+            engagement_id: obj
+                .get("engagement_id")
+                .and_then(|x| x.as_str())
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(str::to_string),
+            client_id: obj
+                .get("client_id")
+                .and_then(|x| x.as_str())
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(str::to_string),
+            source: obj
+                .get("source")
+                .and_then(|x| x.as_str())
+                .unwrap_or("agent")
+                .to_string(),
+            finished: obj
+                .get("finished")
+                .and_then(|x| x.as_bool())
+                .unwrap_or(true),
+            answered: obj
+                .get("answered")
+                .and_then(|x| x.as_bool())
+                .unwrap_or(false),
+            usage,
+        })
+    }
+}
+
+pub fn usage_ledger_path(person_data_dir: &Path) -> PathBuf {
+    person_data_dir.join("usage_ledger.jsonl")
+}
+
+pub fn append_usage_ledger(person_data_dir: &Path, entry: &UsageLedgerEntry) {
+    with_records_lock(|| {
+        let path = usage_ledger_path(person_data_dir);
+        if let Some(parent) = path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        let line = format!("{}\n", entry.to_json());
+        if let Ok(mut f) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&path)
+        {
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let _ = f.set_permissions(std::fs::Permissions::from_mode(0o600));
+            }
+            let _ = f.write_all(line.as_bytes());
+        }
+    });
+}
+
+pub fn load_usage_ledger(person_data_dir: &Path) -> Vec<UsageLedgerEntry> {
+    let path = usage_ledger_path(person_data_dir);
+    let Ok(text) = std::fs::read_to_string(&path) else {
+        return Vec::new();
+    };
+    text.lines()
+        .filter(|l| !l.trim().is_empty())
+        .filter_map(|l| serde_json::from_str::<Value>(l).ok())
+        .filter_map(|v| UsageLedgerEntry::from_json(&v))
+        .collect()
+}
+
+pub fn engagement_spent_usd(
+    root_data_dir: &Path,
+    person_data_dir: &Path,
+    engagement_id: &str,
+) -> f64 {
+    let mut dirs: Vec<PathBuf> = Vec::new();
+    let mut push_unique = |p: PathBuf| {
+        if !dirs.iter().any(|existing| existing == &p) {
+            dirs.push(p);
+        }
+    };
+    push_unique(person_data_dir.to_path_buf());
+    push_unique(root_data_dir.to_path_buf());
+    let people_dir = root_data_dir.join("people");
+    if let Ok(rd) = std::fs::read_dir(&people_dir) {
+        for entry in rd.flatten() {
+            let p = entry.path();
+            if p.is_dir() {
+                push_unique(p);
+            }
+        }
+    }
+    let mut total = 0.0_f64;
+    for dir in dirs {
+        for e in load_usage_ledger(&dir) {
+            if e.engagement_id.as_deref() == Some(engagement_id) {
+                total += e.usage.cost_usd;
+            }
+        }
+    }
+    round_usd_8(total)
+}
+
+pub fn find_pending_budget_gate(
+    person_data_dir: &Path,
+    engagement_id: &str,
+    thread_id: &str,
+) -> Option<String> {
+    load_decisions(person_data_dir).into_iter().find_map(|d| {
+        if d["status"].as_str() == Some("pending")
+            && d["kind"].as_str() == Some("budget_gate")
+            && d["engagement_id"].as_str() == Some(engagement_id)
+            && d["thread_id"].as_str() == Some(thread_id)
+        {
+            d["id"].as_str().map(str::to_string)
+        } else {
+            None
+        }
+    })
+}
+
+pub fn consume_approved_budget_gate(
+    person_data_dir: &Path,
+    engagement_id: &str,
+) -> Option<String> {
+    with_records_lock(|| {
+        let path = decisions_path(person_data_dir);
+        let mut items = load_decisions(person_data_dir);
+        let idx = items.iter().position(|d| {
+            d["status"].as_str() == Some("approved")
+                && d["kind"].as_str() == Some("budget_gate")
+                && d["engagement_id"].as_str() == Some(engagement_id)
+                && d["budget_gate_consumed"].as_bool() != Some(true)
+        })?;
+        items[idx]["budget_gate_consumed"] = json!(true);
+        items[idx]["budget_gate_consumed_ts"] = json!(now_millis());
+        let id = items[idx]["id"].as_str().map(str::to_string)?;
+        save_array(&path, "decisions", &items);
+        Some(id)
+    })
+}
+
+pub fn compute_metering_summary(
+    root_data_dir: &Path,
+    person_data_dir: &Path,
+    person_id: &str,
+    engagement_filter: Option<&str>,
+    client_filter: Option<&str>,
+    window_days: u64,
+) -> Value {
+    let store = load_clients_store(root_data_dir);
+    let eng_map: HashMap<&str, &EngagementRecord> = store
+        .engagements
+        .iter()
+        .map(|e| (e.id.as_str(), e))
+        .collect();
+    let client_map: HashMap<&str, &ClientRecord> =
+        store.clients.iter().map(|c| (c.id.as_str(), c)).collect();
+
+    let mut entries = load_usage_ledger(person_data_dir);
+    if entries.is_empty() && !usage_ledger_path(person_data_dir).exists() {
+        for w in load_work(person_data_dir) {
+            if let Some(usage) = w.get("usage").and_then(RunUsage::from_json) {
+                let eid = w["engagement_id"]
+                    .as_str()
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .map(str::to_string);
+                let cid = eid
+                    .as_deref()
+                    .and_then(|id| eng_map.get(id).map(|e| e.client_id.clone()));
+                entries.push(UsageLedgerEntry {
+                    ts_ms: w["ts"].as_u64().unwrap_or(0),
+                    run_id: String::new(),
+                    thread_id: w["thread_id"].as_str().unwrap_or("").to_string(),
+                    person_id: person_id.to_string(),
+                    engagement_id: eid,
+                    client_id: cid,
+                    source: "work".to_string(),
+                    finished: w["finished"].as_bool().unwrap_or(true),
+                    answered: w["answered"].as_bool().unwrap_or(false),
+                    usage,
+                });
+            }
+        }
+    }
+
+    let now_ms = now_millis();
+    let clamped_days = window_days.clamp(1, 3650);
+    let cutoff_ms = now_ms.saturating_sub(clamped_days.saturating_mul(86_400_000));
+    let eng_f = engagement_filter.map(str::trim).filter(|s| !s.is_empty());
+    let cli_f = client_filter.map(str::trim).filter(|s| !s.is_empty());
+
+    let mut runs: u64 = 0;
+    let mut prompt_tokens: u64 = 0;
+    let mut completion_tokens: u64 = 0;
+    let mut total_tokens: u64 = 0;
+    let mut cached_tokens: u64 = 0;
+    let mut cost_usd: f64 = 0.0;
+    let mut minutes_saved: f64 = 0.0;
+    let mut billable_value_usd: f64 = 0.0;
+
+    #[derive(Default)]
+    struct EngAgg {
+        runs: u64,
+        prompt_tokens: u64,
+        completion_tokens: u64,
+        total_tokens: u64,
+        cost_usd: f64,
+        minutes_saved: f64,
+        billable_value_usd: f64,
+    }
+    #[derive(Default)]
+    struct ModelAgg {
+        runs: u64,
+        calls: u64,
+        prompt_tokens: u64,
+        completion_tokens: u64,
+        total_tokens: u64,
+        cached_tokens: u64,
+        cost_usd: f64,
+    }
+    #[derive(Default)]
+    struct DayAgg {
+        runs: u64,
+        prompt_tokens: u64,
+        completion_tokens: u64,
+        total_tokens: u64,
+        cost_usd: f64,
+        minutes_saved: f64,
+        billable_value_usd: f64,
+    }
+
+    let mut by_eng: BTreeMap<String, EngAgg> = BTreeMap::new();
+    let mut by_mod: BTreeMap<String, ModelAgg> = BTreeMap::new();
+    let mut by_day: BTreeMap<String, DayAgg> = BTreeMap::new();
+
+    for e in entries {
+        if e.ts_ms < cutoff_ms {
+            continue;
+        }
+        let eid = e.engagement_id.as_deref().unwrap_or("");
+        let resolved_cid = e
+            .client_id
+            .as_deref()
+            .or_else(|| eng_map.get(eid).map(|eng| eng.client_id.as_str()))
+            .unwrap_or("");
+        if let Some(f) = eng_f {
+            if eid != f {
+                continue;
+            }
+        }
+        if let Some(f) = cli_f {
+            if resolved_cid != f {
+                continue;
+            }
+        }
+
+        runs = runs.saturating_add(1);
+        prompt_tokens = prompt_tokens.saturating_add(e.usage.prompt_tokens);
+        completion_tokens = completion_tokens.saturating_add(e.usage.completion_tokens);
+        total_tokens = total_tokens.saturating_add(e.usage.total_tokens);
+        cached_tokens = cached_tokens.saturating_add(e.usage.cached_tokens);
+        cost_usd += e.usage.cost_usd;
+        minutes_saved += e.usage.estimated_minutes_saved;
+        billable_value_usd += e.usage.billable_value_usd;
+
+        let ea = by_eng.entry(eid.to_string()).or_default();
+        ea.runs += 1;
+        ea.prompt_tokens += e.usage.prompt_tokens;
+        ea.completion_tokens += e.usage.completion_tokens;
+        ea.total_tokens += e.usage.total_tokens;
+        ea.cost_usd += e.usage.cost_usd;
+        ea.minutes_saved += e.usage.estimated_minutes_saved;
+        ea.billable_value_usd += e.usage.billable_value_usd;
+
+        let model_key = if e.usage.model_id.trim().is_empty() {
+            "none".to_string()
+        } else {
+            e.usage.model_id.clone()
+        };
+        let ma = by_mod.entry(model_key).or_default();
+        ma.runs += 1;
+        ma.calls += e.usage.calls;
+        ma.prompt_tokens += e.usage.prompt_tokens;
+        ma.completion_tokens += e.usage.completion_tokens;
+        ma.total_tokens += e.usage.total_tokens;
+        ma.cached_tokens += e.usage.cached_tokens;
+        ma.cost_usd += e.usage.cost_usd;
+
+        let day_key = date_string_local(e.ts_ms);
+        let da = by_day.entry(day_key).or_default();
+        da.runs += 1;
+        da.prompt_tokens += e.usage.prompt_tokens;
+        da.completion_tokens += e.usage.completion_tokens;
+        da.total_tokens += e.usage.total_tokens;
+        da.cost_usd += e.usage.cost_usd;
+        da.minutes_saved += e.usage.estimated_minutes_saved;
+        da.billable_value_usd += e.usage.billable_value_usd;
+    }
+
+    let retainer_burn_pct = if let Some(eid) = eng_f {
+        eng_map
+            .get(eid)
+            .filter(|e| e.retainer_budget_usd > 0.0)
+            .map(|e| round_2((cost_usd / e.retainer_budget_usd) * 100.0))
+            .unwrap_or(0.0)
+    } else if let Some(cid) = cli_f {
+        let budget: f64 = store
+            .engagements
+            .iter()
+            .filter(|e| e.client_id == cid && e.retainer_budget_usd > 0.0)
+            .map(|e| e.retainer_budget_usd)
+            .sum();
+        if budget > 0.0 {
+            round_2((cost_usd / budget) * 100.0)
+        } else {
+            0.0
+        }
+    } else if let Some(active_eid) = store.active_engagement_by_person.get(person_id) {
+        if let Some(eng) = eng_map.get(active_eid.as_str()) {
+            if eng.retainer_budget_usd > 0.0 {
+                let spent = by_eng
+                    .get(active_eid.as_str())
+                    .map(|a| a.cost_usd)
+                    .unwrap_or(0.0);
+                round_2((spent / eng.retainer_budget_usd) * 100.0)
+            } else {
+                0.0
+            }
+        } else {
+            0.0
+        }
+    } else {
+        0.0
+    };
+
+    let mut by_engagement: Vec<Value> = by_eng
+        .into_iter()
+        .map(|(eid, agg)| {
+            let eng = eng_map.get(eid.as_str()).copied();
+            let cid = eng.map(|e| e.client_id.as_str()).unwrap_or("");
+            let cname = client_map.get(cid).map(|c| c.name.as_str()).unwrap_or("");
+            let budget = eng.map(|e| e.retainer_budget_usd).unwrap_or(0.0);
+            let burn = if budget > 0.0 {
+                round_2((agg.cost_usd / budget) * 100.0)
+            } else {
+                0.0
+            };
+            json!({
+                "engagement_id": eid,
+                "engagement_name": eng.map(|e| e.name.as_str()).unwrap_or("Unassigned"),
+                "client_id": cid,
+                "client_name": cname,
+                "runs": agg.runs,
+                "prompt_tokens": agg.prompt_tokens,
+                "completion_tokens": agg.completion_tokens,
+                "total_tokens": agg.total_tokens,
+                "cost_usd": round_usd_8(agg.cost_usd),
+                "minutes_saved": round_2(agg.minutes_saved),
+                "billable_value_usd": round_4(agg.billable_value_usd),
+                "retainer_budget_usd": round_4(budget),
+                "retainer_hours": round_4(eng.map(|e| e.retainer_hours).unwrap_or(0.0)),
+                "retainer_burn_pct": burn,
+            })
+        })
+        .collect();
+    by_engagement.sort_by(|a, b| {
+        b["cost_usd"]
+            .as_f64()
+            .unwrap_or(0.0)
+            .total_cmp(&a["cost_usd"].as_f64().unwrap_or(0.0))
+            .then_with(|| {
+                a["engagement_id"]
+                    .as_str()
+                    .unwrap_or("")
+                    .cmp(b["engagement_id"].as_str().unwrap_or(""))
+            })
+    });
+
+    let mut by_model: Vec<Value> = by_mod
+        .into_iter()
+        .map(|(mid, agg)| {
+            json!({
+                "model_id": mid,
+                "runs": agg.runs,
+                "calls": agg.calls,
+                "prompt_tokens": agg.prompt_tokens,
+                "completion_tokens": agg.completion_tokens,
+                "total_tokens": agg.total_tokens,
+                "cached_tokens": agg.cached_tokens,
+                "cost_usd": round_usd_8(agg.cost_usd),
+            })
+        })
+        .collect();
+    by_model.sort_by(|a, b| {
+        b["cost_usd"]
+            .as_f64()
+            .unwrap_or(0.0)
+            .total_cmp(&a["cost_usd"].as_f64().unwrap_or(0.0))
+            .then_with(|| {
+                a["model_id"]
+                    .as_str()
+                    .unwrap_or("")
+                    .cmp(b["model_id"].as_str().unwrap_or(""))
+            })
+    });
+
+    let daily_series: Vec<Value> = by_day
+        .into_iter()
+        .map(|(date, agg)| {
+            json!({
+                "date": date,
+                "runs": agg.runs,
+                "prompt_tokens": agg.prompt_tokens,
+                "completion_tokens": agg.completion_tokens,
+                "total_tokens": agg.total_tokens,
+                "cost_usd": round_usd_8(agg.cost_usd),
+                "minutes_saved": round_2(agg.minutes_saved),
+                "billable_value_usd": round_4(agg.billable_value_usd),
+            })
+        })
+        .collect();
+
+    json!({
+        "window_days": clamped_days,
+        "engagement_id": eng_f,
+        "client_id": cli_f,
+        "totals": {
+            "runs": runs,
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens,
+            "total_tokens": total_tokens,
+            "cached_tokens": cached_tokens,
+            "cost_usd": round_usd_8(cost_usd),
+            "minutes_saved": round_2(minutes_saved),
+            "billable_value_usd": round_4(billable_value_usd),
+            "retainer_burn_pct": retainer_burn_pct,
+        },
+        "by_engagement": by_engagement,
+        "by_model": by_model,
+        "daily_series": daily_series,
+    })
 }

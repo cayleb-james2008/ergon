@@ -1004,7 +1004,39 @@ pub fn retry_delay(attempt: u32, retry_after: Option<&str>) -> std::time::Durati
 const MODEL_ATTEMPTS: u32 = 4;
 const MODEL_RETRY_BUDGET: std::time::Duration = std::time::Duration::from_secs(150);
 
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ModelCallUsage {
+    pub model_id: String,
+    pub prompt_tokens: u64,
+    pub completion_tokens: u64,
+    pub total_tokens: u64,
+    pub cached_tokens: u64,
+    pub latency_ms: u64,
+}
+
+impl ModelCallUsage {
+    pub fn to_json(&self, cost_usd: f64) -> Value {
+        json!({
+            "model_id": self.model_id,
+            "prompt_tokens": self.prompt_tokens,
+            "completion_tokens": self.completion_tokens,
+            "total_tokens": self.total_tokens,
+            "cached_tokens": self.cached_tokens,
+            "latency_ms": self.latency_ms,
+            "cost_usd": records::round_usd_8(cost_usd),
+        })
+    }
+}
+
 pub fn call_model(cfg: &Config, session: &str, messages: &[Value]) -> Result<Value, String> {
+    call_model_with_usage(cfg, session, messages).map(|(v, _)| v)
+}
+
+pub fn call_model_with_usage(
+    cfg: &Config,
+    session: &str,
+    messages: &[Value],
+) -> Result<(Value, ModelCallUsage), String> {
     if !cfg.model_configured() {
         return Err(NO_KEY_ERROR.to_string());
     }
@@ -1060,15 +1092,60 @@ pub fn call_model(cfg: &Config, session: &str, messages: &[Value]) -> Result<Val
     let v: Value = resp
         .into_json()
         .map_err(|e| format!("model response was not JSON: {e}"))?;
+    let latency_ms = started.elapsed().as_millis() as u64;
+    let model_id = v["model"]
+        .as_str()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or(&cfg.model_id)
+        .to_string();
+    let usage_obj = v.get("usage");
+    let prompt_tokens = usage_obj
+        .and_then(|u| {
+            u.get("prompt_tokens")
+                .or_else(|| u.get("input_tokens"))
+                .and_then(|x| x.as_u64())
+        })
+        .unwrap_or(0);
+    let completion_tokens = usage_obj
+        .and_then(|u| {
+            u.get("completion_tokens")
+                .or_else(|| u.get("output_tokens"))
+                .and_then(|x| x.as_u64())
+        })
+        .unwrap_or(0);
+    let total_tokens = usage_obj
+        .and_then(|u| u.get("total_tokens").and_then(|x| x.as_u64()))
+        .unwrap_or_else(|| prompt_tokens.saturating_add(completion_tokens));
+    let cached_tokens = usage_obj
+        .and_then(|u| {
+            u.get("cached_tokens")
+                .or_else(|| u.get("prompt_tokens_details").and_then(|d| d.get("cached_tokens")))
+                .or_else(|| u.get("input_tokens_details").and_then(|d| d.get("cached_tokens")))
+                .or_else(|| u.get("cache_read_input_tokens"))
+                .and_then(|x| x.as_u64())
+        })
+        .unwrap_or(0);
+    let usage = ModelCallUsage {
+        model_id,
+        prompt_tokens,
+        completion_tokens,
+        total_tokens,
+        cached_tokens,
+        latency_ms,
+    };
     let content = &v["choices"][0]["message"]["content"];
-    match content {
-        Value::String(s) => parse_model_reply(s),
-        Value::Object(_) => Ok(normalize_model_reply(content.clone())),
-        _ => Err(format!(
-            "model response had no message content: {}",
-            truncate(&v.to_string(), 400)
-        )),
-    }
+    let parsed = match content {
+        Value::String(s) => parse_model_reply(s)?,
+        Value::Object(_) => normalize_model_reply(content.clone()),
+        _ => {
+            return Err(format!(
+                "model response had no message content: {}",
+                truncate(&v.to_string(), 400)
+            ))
+        }
+    };
+    Ok((parsed, usage))
 }
 
 fn normalize_model_reply(mut v: Value) -> Value {
@@ -1409,6 +1486,10 @@ pub struct AgentOutcome {
     pub paused_checkpoint: Option<CheckpointPause>,
     pub paused_run_id: Option<String>,
     pub written_files: Vec<String>,
+    pub usage: records::RunUsage,
+    pub engagement_id: Option<String>,
+    pub budget_gated: bool,
+    pub decision_id: Option<String>,
 }
 
 /// The files one run actually wrote — the evidence a "done" summary's
@@ -1660,6 +1741,74 @@ pub fn task_requires_workspace_tool(task: &str) -> bool {
     false
 }
 
+#[derive(Clone)]
+struct BudgetGateCfg {
+    engagement_id: String,
+    engagement_name: String,
+    client_id: String,
+    retainer_budget_usd: f64,
+    prior_spent_usd: f64,
+}
+
+struct LoopOutcome {
+    summary: String,
+    steps: Vec<String>,
+    paused_checkpoint: Option<CheckpointPause>,
+    budget_gate_decision_id: Option<String>,
+}
+
+fn park_budget_gate_decision(
+    cfg: &Config,
+    thread_id: &str,
+    gate: &BudgetGateCfg,
+    spent_usd: f64,
+    live: Option<LiveStreamCtx<'_>>,
+) -> (String, String) {
+    let did = records::find_pending_budget_gate(&cfg.data_dir, &gate.engagement_id, thread_id)
+        .unwrap_or_else(|| {
+            let summary = format!(
+                "Retainer budget gate reached for '{}' (${:.4} spent of ${:.2} budget)",
+                gate.engagement_name, spent_usd, gate.retainer_budget_usd
+            );
+            records::add_decision_with(
+                &cfg.data_dir,
+                "budget_gate",
+                &summary,
+                None,
+                thread_id,
+                json!({
+                    "engagement_id": gate.engagement_id,
+                    "engagement_name": gate.engagement_name,
+                    "client_id": gate.client_id,
+                    "spent_usd": records::round_usd_8(spent_usd),
+                    "retainer_budget_usd": records::round_4(gate.retainer_budget_usd),
+                }),
+            )
+        });
+    let msg = format!(
+        "Paused at retainer budget gate for '{}' (${:.4} spent of ${:.2} budget) — approve decision {} in Decisions to continue.",
+        gate.engagement_name, spent_usd, gate.retainer_budget_usd, did
+    );
+    if let Some(lctx) = live {
+        lctx.events.publish(
+            "approval_parked",
+            lctx.person_id,
+            lctx.run_id,
+            thread_id,
+            json!({
+                "kind": "budget_gate",
+                "decision_id": did,
+                "engagement_id": gate.engagement_id,
+                "spent_usd": records::round_usd_8(spent_usd),
+                "retainer_budget_usd": records::round_4(gate.retainer_budget_usd),
+                "summary": truncate(&msg, 240),
+                "ts_ms": records::now_millis(),
+            }),
+        );
+    }
+    (did, msg)
+}
+
 /// One agent loop: model → tool → model → … until done or the step
 /// cap. Steps are pushed into the thread as they happen (subagent
 /// steps are labelled with the subagent's name). Returns the done
@@ -1683,7 +1832,10 @@ fn run_loop(
     budget: &mut usize,
     session_tag: &str,
     live: Option<LiveStreamCtx<'_>>,
-) -> Result<(String, Vec<String>, Option<CheckpointPause>), String> {
+    pricing: &std::collections::BTreeMap<String, records::ModelPrice>,
+    run_usage: &mut records::RunUsage,
+    budget_gate: Option<&BudgetGateCfg>,
+) -> Result<LoopOutcome, String> {
     // Subagent runs get their own provider session: if the provider
     // keys conversation state on the session header, the two
     // personas must not interleave in one server-side conversation.
@@ -1712,12 +1864,24 @@ fn run_loop(
         if let Some(reason) = tripwire::halted() {
             return Err(format!("{}{reason}", tripwire::HALT_PREFIX));
         }
+        if let Some(gate) = budget_gate {
+            let total_spent = gate.prior_spent_usd + run_usage.cost_usd;
+            if gate.retainer_budget_usd > 0.0 && total_spent >= gate.retainer_budget_usd {
+                let (did, msg) = park_budget_gate_decision(cfg, thread_id, gate, total_spent, live);
+                return Ok(LoopOutcome {
+                    summary: msg,
+                    steps,
+                    paused_checkpoint: None,
+                    budget_gate_decision_id: Some(did),
+                });
+            }
+        }
         if local_steps >= step_cap || *budget >= STEP_CAP {
             break;
         }
         local_steps += 1;
         *budget += 1;
-        let reply = match call_model(cfg, &session, &messages) {
+        let (reply, call_usage) = match call_model_with_usage(cfg, &session, &messages) {
             Ok(v) => v,
             Err(e) if e.starts_with("model reply was not a JSON object:") && json_retries < 2 => {
                 json_retries += 1;
@@ -1729,6 +1893,23 @@ fn run_loop(
             }
             Err(e) => return Err(e),
         };
+        let price = records::resolve_model_price(pricing, &call_usage.model_id);
+        let call_cost = records::compute_call_cost_usd(
+            &price,
+            call_usage.prompt_tokens,
+            call_usage.completion_tokens,
+            call_usage.cached_tokens,
+        );
+        run_usage.add_call(
+            &call_usage.model_id,
+            call_usage.prompt_tokens,
+            call_usage.completion_tokens,
+            call_usage.total_tokens,
+            call_usage.cached_tokens,
+            call_usage.latency_ms,
+            call_cost,
+        );
+        let step_usage_json = call_usage.to_json(call_cost);
         if reply["done"].as_bool() == Some(true) {
             if steps.is_empty() && json_retries < 2 && task_requires_workspace_tool(task) {
                 json_retries += 1;
@@ -1744,7 +1925,12 @@ fn run_loop(
                 .filter(|s| !s.trim().is_empty())
                 .unwrap_or("Task complete.")
                 .to_string();
-            return Ok((summary, steps, None));
+            return Ok(LoopOutcome {
+                summary,
+                steps,
+                paused_checkpoint: None,
+                budget_gate_decision_id: None,
+            });
         }
         let tool = match reply["tool"].as_str() {
             Some(t) if !t.trim().is_empty() => t.to_string(),
@@ -1788,6 +1974,7 @@ fn run_loop(
         // successful step — but it wrote nothing, so it earns no credit.
         let mut held = false;
 
+        let mut delegated_budget_gate: Option<String> = None;
         let (result_text, ok) = if tool == "delegate" {
             if !allow_delegate {
                 (
@@ -1795,10 +1982,23 @@ fn run_loop(
                     false,
                 )
             } else {
-                run_delegation(
-                    cfg, ctx, store, thread_id, &args, ledger, dynamic_skills, suite_items,
-                    budget, live,
-                )
+                let (txt, d_ok, bg_id) = run_delegation(
+                    cfg,
+                    ctx,
+                    store,
+                    thread_id,
+                    &args,
+                    ledger,
+                    dynamic_skills,
+                    suite_items,
+                    budget,
+                    live,
+                    pricing,
+                    run_usage,
+                    budget_gate,
+                );
+                delegated_budget_gate = bg_id;
+                (txt, d_ok)
             }
         } else if !allow_delegate
             && matches!(
@@ -1929,28 +2129,41 @@ fn run_loop(
                     "elapsed_ms": step_elapsed_ms,
                     "summary": truncate(&result_text, 240),
                     "files_written": newly_written,
+                    "usage": step_usage_json,
+                    "run_usage": run_usage.to_json(),
+                    "engagement_id": budget_gate.map(|g| g.engagement_id.as_str()),
                     "ts_ms": records::now_millis(),
                 }),
             );
         }
         store.lock().unwrap().push(thread_id, "step", &rendered_step);
+        if let Some(bg_id) = delegated_budget_gate {
+            return Ok(LoopOutcome {
+                summary: result_text,
+                steps,
+                paused_checkpoint: None,
+                budget_gate_decision_id: Some(bg_id),
+            });
+        }
         if tool == "request_checkpoint" && ok {
             let cp_pause = tools::parse_checkpoint_tool_args(cfg, &args)?;
-            return Ok((
-                format!("Paused at human checkpoint: {}", cp_pause.prompt),
+            return Ok(LoopOutcome {
+                summary: format!("Paused at human checkpoint: {}", cp_pause.prompt),
                 steps,
-                Some(cp_pause),
-            ));
+                paused_checkpoint: Some(cp_pause),
+                budget_gate_decision_id: None,
+            });
         }
         // Guard against small local models looping on delete_file after a file
         // has already been parked for approval in this run.
         if tool == "delete_file" && ok && result_text.starts_with("already parked for your person's approval") {
             let rel = args["path"].as_str().unwrap_or("the file");
-            return Ok((
-                format!("Parked deletion of {rel} for your approval in Today's desk. The file has not been deleted yet."),
+            return Ok(LoopOutcome {
+                summary: format!("Parked deletion of {rel} for your approval in Today's desk. The file has not been deleted yet."),
                 steps,
-                None,
-            ));
+                paused_checkpoint: None,
+                budget_gate_decision_id: None,
+            });
         }
         // A tripped critical trap (or a score over the line) stops the
         // run here: nothing more reaches the model or the tools.
@@ -1990,13 +2203,17 @@ fn run_delegation(
     suite_items: &[library::LibraryItem],
     budget: &mut usize,
     live: Option<LiveStreamCtx<'_>>,
-) -> (String, bool) {
+    pricing: &std::collections::BTreeMap<String, records::ModelPrice>,
+    run_usage: &mut records::RunUsage,
+    budget_gate: Option<&BudgetGateCfg>,
+) -> (String, bool, Option<String>) {
     let sub_id = args["subagent"].as_str().unwrap_or("");
     let task = args["task"].as_str().unwrap_or("");
     if sub_id.is_empty() || task.is_empty() {
         return (
             "error: delegate needs args.subagent and args.task".to_string(),
             false,
+            None,
         );
     }
     let Some(profile) = suite_items
@@ -2009,6 +2226,7 @@ fn run_delegation(
                 "error: no subagent '{sub_id}' in this person's suite — delegate only to a subagent the suite carries"
             ),
             false,
+            None,
         );
     };
     let delegated_line = format!("Delegated to {}: {}", profile.name, truncate(task, 300));
@@ -2032,9 +2250,22 @@ fn run_delegation(
         budget,
         &profile.id,
         live,
+        pricing,
+        run_usage,
+        budget_gate,
     ) {
-        Ok((summary, _, _)) => (format!("{} reports: {}", profile.name, summary), true),
-        Err(e) => (format!("error: subagent {} failed: {e}", profile.name), false),
+        Ok(out) => {
+            if let Some(bg_id) = out.budget_gate_decision_id {
+                (out.summary, false, Some(bg_id))
+            } else {
+                (format!("{} reports: {}", profile.name, out.summary), true, None)
+            }
+        }
+        Err(e) => (
+            format!("error: subagent {} failed: {e}", profile.name),
+            false,
+            None,
+        ),
     }
 }
 
@@ -2204,7 +2435,118 @@ fn run_agent_inner(
     let system = system_prompt(cfg, &suite_items);
     let mut ledger = WriteLedger::default();
     let mut budget = 0usize;
-    let (summary, steps, paused_checkpoint) = match run_loop(
+    let pricing = records::load_effective_model_pricing(&ctx.root_data_dir);
+    let active_eng = records::active_engagement_for(&ctx.root_data_dir, &ctx.person_id);
+    let engagement_id = active_eng.as_ref().map(|(e, _)| e.id.clone());
+    let client_id = active_eng.as_ref().map(|(e, _)| e.client_id.clone());
+    let hourly_rate_usd = active_eng
+        .as_ref()
+        .map(|(e, c)| {
+            if e.hourly_rate_usd > 0.0 {
+                e.hourly_rate_usd
+            } else {
+                c.as_ref().map(|cl| cl.default_rate_usd).unwrap_or(0.0)
+            }
+        })
+        .unwrap_or(0.0);
+
+    let budget_gate_cfg = active_eng.as_ref().and_then(|(e, _)| {
+        if e.retainer_budget_usd <= 0.0 {
+            return None;
+        }
+        if records::consume_approved_budget_gate(&cfg.data_dir, &e.id).is_some() {
+            return None;
+        }
+        let prior_spent_usd =
+            records::engagement_spent_usd(&ctx.root_data_dir, &cfg.data_dir, &e.id);
+        Some(BudgetGateCfg {
+            engagement_id: e.id.clone(),
+            engagement_name: e.name.clone(),
+            client_id: e.client_id.clone(),
+            retainer_budget_usd: e.retainer_budget_usd,
+            prior_spent_usd,
+        })
+    });
+
+    let mut run_usage = records::RunUsage {
+        model_id: cfg.model_id.clone(),
+        ..records::RunUsage::default()
+    };
+
+    let record_ledger = |usage: &records::RunUsage, finished: bool, answered: bool| {
+        if usage.calls == 0 && !finished {
+            return;
+        }
+        records::append_usage_ledger(
+            &cfg.data_dir,
+            &records::UsageLedgerEntry {
+                ts_ms: records::now_millis(),
+                run_id: run_id.clone(),
+                thread_id: thread_id.to_string(),
+                person_id: ctx.person_id.clone(),
+                engagement_id: engagement_id.clone(),
+                client_id: client_id.clone(),
+                source: if from_pipeline {
+                    "pipeline_agent".to_string()
+                } else {
+                    "agent".to_string()
+                },
+                finished,
+                answered,
+                usage: usage.clone(),
+            },
+        );
+    };
+
+    if let Some(ref gate) = budget_gate_cfg {
+        if gate.prior_spent_usd >= gate.retainer_budget_usd {
+            let (did, gate_msg) =
+                park_budget_gate_decision(cfg, thread_id, gate, gate.prior_spent_usd, live_ctx);
+            store.lock().unwrap().push(thread_id, "step", &gate_msg);
+            store.lock().unwrap().push(thread_id, "assistant", &gate_msg);
+            records::append_work_with_usage(
+                cfg,
+                task,
+                &gate_msg,
+                &[],
+                thread_id,
+                false,
+                engagement_id.as_deref(),
+                Some(&run_usage),
+            );
+            if let Some(lctx) = live_ctx {
+                lctx.events.publish(
+                    "run_finished",
+                    lctx.person_id,
+                    lctx.run_id,
+                    thread_id,
+                    json!({
+                        "status": "budget_gate",
+                        "decision_id": did,
+                        "engagement_id": engagement_id,
+                        "usage": run_usage.to_json(),
+                        "summary": truncate(&gate_msg, 300),
+                        "elapsed_ms": run_t0.elapsed().as_millis() as u64,
+                        "files": [],
+                        "ts_ms": records::now_millis(),
+                    }),
+                );
+            }
+            return Ok(AgentOutcome {
+                summary: gate_msg,
+                steps: Vec::new(),
+                paused_checkpoint: None,
+                paused_run_id: None,
+                written_files: Vec::new(),
+                usage: run_usage,
+                engagement_id,
+                budget_gated: true,
+                decision_id: Some(did),
+            });
+        }
+    }
+
+    let loop_out = match run_loop(
         cfg,
         ctx,
         store,
@@ -2221,6 +2563,9 @@ fn run_agent_inner(
         &mut budget,
         "",
         live_ctx,
+        &pricing,
+        &mut run_usage,
+        budget_gate_cfg.as_ref(),
     ) {
         Ok(v) => v,
         Err(e) => {
@@ -2238,13 +2583,23 @@ fn run_agent_inner(
             if let Some(report) = tripwire::take_report() {
                 tripwire::park_run_alert(&cfg.data_dir, thread_id, task, &report, e.starts_with(tripwire::HALT_PREFIX));
             }
-            records::append_work(
+            run_usage.finalize_attribution(
+                false,
+                false,
+                ledger.ok_steps,
+                ledger.written.len(),
+                hourly_rate_usd,
+            );
+            record_ledger(&run_usage, false, false);
+            records::append_work_with_usage(
                 cfg,
                 task,
                 &format!("Did not finish — {e}"),
                 &ledger.written,
                 thread_id,
                 false,
+                engagement_id.as_deref(),
+                if run_usage.calls > 0 { Some(&run_usage) } else { None },
             );
             if let Some(lctx) = live_ctx {
                 lctx.events.publish(
@@ -2257,6 +2612,8 @@ fn run_agent_inner(
                         "error": e,
                         "elapsed_ms": run_t0.elapsed().as_millis() as u64,
                         "files": ledger.written,
+                        "engagement_id": engagement_id,
+                        "usage": run_usage.to_json(),
                         "ts_ms": records::now_millis(),
                     }),
                 );
@@ -2264,9 +2621,67 @@ fn run_agent_inner(
             return Err(e);
         }
     };
-    // The bait key never reaches the person's thread or the work log.
-    let summary = tripwire::redact(&summary);
-    if let Some(cp_pause) = paused_checkpoint {
+    let summary = tripwire::redact(&loop_out.summary);
+    let steps = loop_out.steps;
+    if let Some(bg_id) = loop_out.budget_gate_decision_id {
+        run_usage.finalize_attribution(
+            false,
+            false,
+            ledger.ok_steps,
+            ledger.written.len(),
+            hourly_rate_usd,
+        );
+        record_ledger(&run_usage, false, false);
+        store.lock().unwrap().push(thread_id, "assistant", &summary);
+        records::append_work_with_usage(
+            cfg,
+            task,
+            &summary,
+            &ledger.written,
+            thread_id,
+            false,
+            engagement_id.as_deref(),
+            Some(&run_usage),
+        );
+        if let Some(lctx) = live_ctx {
+            lctx.events.publish(
+                "run_finished",
+                lctx.person_id,
+                lctx.run_id,
+                thread_id,
+                json!({
+                    "status": "budget_gate",
+                    "decision_id": bg_id,
+                    "engagement_id": engagement_id,
+                    "usage": run_usage.to_json(),
+                    "summary": truncate(&summary, 300),
+                    "elapsed_ms": run_t0.elapsed().as_millis() as u64,
+                    "files": ledger.written,
+                    "ts_ms": records::now_millis(),
+                }),
+            );
+        }
+        return Ok(AgentOutcome {
+            summary,
+            steps,
+            paused_checkpoint: None,
+            paused_run_id: None,
+            written_files: ledger.written,
+            usage: run_usage,
+            engagement_id,
+            budget_gated: true,
+            decision_id: Some(bg_id),
+        });
+    }
+    if let Some(cp_pause) = loop_out.paused_checkpoint {
+        run_usage.finalize_attribution(
+            false,
+            false,
+            ledger.ok_steps,
+            ledger.written.len(),
+            hourly_rate_usd,
+        );
+        record_ledger(&run_usage, false, false);
         if !from_pipeline {
             let live_bus = live_ctx.map(|l| (l.events, l.person_id));
             let (prun_id, _) = pipelines::park_adhoc_checkpoint(
@@ -2286,13 +2701,15 @@ fn run_agent_inner(
                 .lock()
                 .unwrap()
                 .push(thread_id, "assistant", &paused_msg);
-            records::append_work(
+            records::append_work_with_usage(
                 cfg,
                 task,
                 &paused_msg,
                 &ledger.written,
                 thread_id,
                 false,
+                engagement_id.as_deref(),
+                Some(&run_usage),
             );
             if let Some(lctx) = live_ctx {
                 lctx.events.publish(
@@ -2306,6 +2723,8 @@ fn run_agent_inner(
                         "pipeline_run_id": prun_id,
                         "elapsed_ms": run_t0.elapsed().as_millis() as u64,
                         "files": ledger.written,
+                        "engagement_id": engagement_id,
+                        "usage": run_usage.to_json(),
                         "ts_ms": records::now_millis(),
                     }),
                 );
@@ -2316,6 +2735,10 @@ fn run_agent_inner(
                 paused_checkpoint: Some(cp_pause),
                 paused_run_id: Some(prun_id),
                 written_files: ledger.written,
+                usage: run_usage,
+                engagement_id,
+                budget_gated: false,
+                decision_id: None,
             });
         }
         return Ok(AgentOutcome {
@@ -2324,6 +2747,10 @@ fn run_agent_inner(
             paused_checkpoint: Some(cp_pause),
             paused_run_id: None,
             written_files: ledger.written,
+            usage: run_usage,
+            engagement_id,
+            budget_gated: false,
+            decision_id: None,
         });
     }
     store
@@ -2398,18 +2825,48 @@ fn run_agent_inner(
     // Work means a tool step that succeeded or a written file; a run whose
     // steps all failed is an answer, not finished work (EB2, EB2b).
     if unverified_zero_tool {
-        records::append_work(
+        run_usage.finalize_attribution(false, false, 0, 0, hourly_rate_usd);
+        record_ledger(&run_usage, false, false);
+        records::append_work_with_usage(
             cfg,
             task,
             &format!("Did not run requested tool — {summary}"),
             &[],
             thread_id,
             false,
+            engagement_id.as_deref(),
+            Some(&run_usage),
         );
     } else if ledger.ok_steps == 0 && ledger.written.is_empty() {
-        records::append_answer(cfg, task, &summary, thread_id);
+        run_usage.finalize_attribution(true, true, 0, 0, hourly_rate_usd);
+        record_ledger(&run_usage, true, true);
+        records::append_answer_with_usage(
+            cfg,
+            task,
+            &summary,
+            thread_id,
+            engagement_id.as_deref(),
+            Some(&run_usage),
+        );
     } else {
-        records::append_work(cfg, task, &summary, &ledger.written, thread_id, true);
+        run_usage.finalize_attribution(
+            true,
+            false,
+            ledger.ok_steps,
+            ledger.written.len(),
+            hourly_rate_usd,
+        );
+        record_ledger(&run_usage, true, false);
+        records::append_work_with_usage(
+            cfg,
+            task,
+            &summary,
+            &ledger.written,
+            thread_id,
+            true,
+            engagement_id.as_deref(),
+            Some(&run_usage),
+        );
     }
     {
         let lib = ctx.library.lock().unwrap();
@@ -2438,6 +2895,8 @@ fn run_agent_inner(
                 "summary": truncate(&summary, 300),
                 "elapsed_ms": run_t0.elapsed().as_millis() as u64,
                 "files": ledger.written,
+                "engagement_id": engagement_id,
+                "usage": run_usage.to_json(),
                 "ts_ms": records::now_millis(),
             }),
         );
@@ -2448,6 +2907,10 @@ fn run_agent_inner(
         paused_checkpoint: None,
         paused_run_id: None,
         written_files: ledger.written,
+        usage: run_usage,
+        engagement_id,
+        budget_gated: false,
+        decision_id: None,
     })
 }
 

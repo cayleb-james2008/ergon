@@ -315,6 +315,15 @@ fn chained_receipt_from_json(v: &Value) -> Option<ChainedReceipt> {
         answered: v["answered"].as_bool()?,
         prev_hash: v["prev_hash"].as_str()?.to_string(),
         sha256: v["sha256"].as_str()?.to_string(),
+        engagement_id: v["engagement_id"]
+            .as_str()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string),
+        usage: v
+            .get("usage")
+            .filter(|u| !u.is_null())
+            .map(receipts::canonical_json),
     })
 }
 
@@ -1218,6 +1227,10 @@ fn write_chained_receipt_json(w: &mut impl std::io::Write, r: &ChainedReceipt) -
     // Alphabetical key order matching serde_json::Value(BTreeMap) for canonical bundle SHA-256 parity.
     w.write_all(b"{\"answered\":")?;
     serde_json::to_writer(&mut *w, &r.answered).map_err(std::io::Error::other)?;
+    if let Some(eid) = r.engagement_id.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+        w.write_all(b",\"engagement_id\":")?;
+        serde_json::to_writer(&mut *w, eid).map_err(std::io::Error::other)?;
+    }
     w.write_all(b",\"files\":")?;
     serde_json::to_writer(&mut *w, &r.files).map_err(std::io::Error::other)?;
     w.write_all(b",\"finished\":")?;
@@ -1238,6 +1251,11 @@ fn write_chained_receipt_json(w: &mut impl std::io::Write, r: &ChainedReceipt) -
     serde_json::to_writer(&mut *w, &r.thread_id).map_err(std::io::Error::other)?;
     w.write_all(b",\"ts\":")?;
     serde_json::to_writer(&mut *w, &r.ts).map_err(std::io::Error::other)?;
+    if let Some(u) = r.usage.as_ref().filter(|u| !u.is_null()) {
+        let can = receipts::canonical_json(u);
+        w.write_all(b",\"usage\":")?;
+        serde_json::to_writer(&mut *w, &can).map_err(std::io::Error::other)?;
+    }
     w.write_all(b"}")
 }
 

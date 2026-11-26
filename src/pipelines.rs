@@ -414,6 +414,7 @@ pub struct PipelineStepState {
     pub output: String,
     pub files: Vec<String>,
     pub metrics: Value,
+    pub usage: Option<records::RunUsage>,
     pub checkpoint_id: Option<String>,
     pub human_answer: Option<String>,
     pub human_action: Option<String>,
@@ -432,6 +433,7 @@ impl PipelineStepState {
             output: String::new(),
             files: Vec::new(),
             metrics: json!({}),
+            usage: None,
             checkpoint_id: None,
             human_answer: None,
             human_action: None,
@@ -450,6 +452,7 @@ impl PipelineStepState {
             "output": self.output,
             "files": self.files,
             "metrics": self.metrics,
+            "usage": self.usage.as_ref().map(|u| u.to_json()),
             "checkpoint_id": self.checkpoint_id,
             "human_answer": self.human_answer,
             "human_action": self.human_action,
@@ -479,6 +482,7 @@ impl PipelineStepState {
             } else {
                 json!({})
             },
+            usage: v.get("usage").and_then(records::RunUsage::from_json),
             checkpoint_id: v["checkpoint_id"].as_str().map(str::to_string),
             human_answer: v["human_answer"].as_str().map(str::to_string),
             human_action: v["human_action"].as_str().map(str::to_string),
@@ -557,6 +561,8 @@ pub struct PipelineRun {
     pub pending_checkpoint: Option<PendingCheckpoint>,
     pub error: Option<String>,
     pub cancel_requested: bool,
+    pub engagement_id: Option<String>,
+    pub usage: records::RunUsage,
 }
 
 impl PipelineRun {
@@ -575,6 +581,8 @@ impl PipelineRun {
             "step_states": self.step_states.iter().map(|s| s.to_json()).collect::<Vec<_>>(),
             "pending_checkpoint": self.pending_checkpoint.as_ref().map(|c| c.to_json()),
             "error": self.error,
+            "engagement_id": self.engagement_id,
+            "usage": self.usage.to_json(),
         })
     }
 
@@ -626,6 +634,15 @@ impl PipelineRun {
             pending_checkpoint,
             error: v["error"].as_str().map(str::to_string),
             cancel_requested: v["cancel_requested"].as_bool().unwrap_or(false),
+            engagement_id: v["engagement_id"]
+                .as_str()
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(str::to_string),
+            usage: v
+                .get("usage")
+                .and_then(records::RunUsage::from_json)
+                .unwrap_or_default(),
         })
     }
 }
@@ -1173,6 +1190,8 @@ pub fn execute_deterministic_steps_sync(
         pending_checkpoint: None,
         error: None,
         cancel_requested: false,
+        engagement_id: None,
+        usage: records::RunUsage::default(),
     };
     save_run(&cfg.data_dir, &run)?;
 
@@ -1398,6 +1417,33 @@ fn is_run_cancelled(person_data_dir: &Path, run_id: &str, flag: &AtomicBool) -> 
         .unwrap_or(false)
 }
 
+fn deterministic_step_usage(
+    root_data_dir: &Path,
+    engagement_id: Option<&str>,
+    files_written: usize,
+) -> (records::RunUsage, Option<String>) {
+    let store = records::load_clients_store(root_data_dir);
+    let eng = engagement_id.and_then(|eid| store.engagements.iter().find(|e| e.id == eid));
+    let client_id = eng.map(|e| e.client_id.clone());
+    let hourly_rate = eng
+        .map(|e| {
+            if e.hourly_rate_usd > 0.0 {
+                e.hourly_rate_usd
+            } else {
+                store
+                    .clients
+                    .iter()
+                    .find(|c| c.id == e.client_id)
+                    .map(|c| c.default_rate_usd)
+                    .unwrap_or(0.0)
+            }
+        })
+        .unwrap_or(0.0);
+    let mut usage = records::RunUsage::default();
+    usage.finalize_attribution(true, false, 1, files_written, hourly_rate);
+    (usage, client_id)
+}
+
 fn execute_pipeline_loop(env: &PipelineExecEnv, run_id: &str, start_index: usize) -> Result<PipelineRun, String> {
     let cancel_flag = register_cancel_flag(run_id);
     struct CancelGuard<'a>(&'a str);
@@ -1429,6 +1475,8 @@ fn execute_pipeline_loop(env: &PipelineExecEnv, run_id: &str, start_index: usize
                 json!({
                     "status": "cancelled",
                     "error": Value::Null,
+                    "engagement_id": cancelled.engagement_id,
+                    "usage": cancelled.usage.to_json(),
                     "run": cancelled.to_json(),
                     "ts_ms": now_ms,
                 }),
@@ -1527,25 +1575,49 @@ fn execute_pipeline_loop(env: &PipelineExecEnv, run_id: &str, start_index: usize
                         let finished_ms = records::now_millis();
                         let metrics = extract_step_metrics(&env.cfg, &files, &output);
                         let elapsed_ms = step_t0.elapsed().as_millis() as u64;
-                        mutate_run(&env.cfg.data_dir, run_id, |r| {
+                        let (step_usage, step_client_id) = deterministic_step_usage(
+                            &env.ctx.root_data_dir,
+                            run_snap.engagement_id.as_deref(),
+                            files.len(),
+                        );
+                        let updated_run = mutate_run(&env.cfg.data_dir, run_id, |r| {
                             r.updated_ms = finished_ms;
+                            r.usage.accumulate(&step_usage);
                             if let Some(st) = r.step_states.get_mut(idx) {
                                 st.status = "ok".to_string();
                                 st.finished_ms = finished_ms;
                                 st.output = output.clone();
                                 st.files = files.clone();
                                 st.metrics = metrics.clone();
+                                st.usage = Some(step_usage.clone());
                                 st.error = None;
                             }
-                            Ok(())
+                            Ok(r.clone())
                         })?;
-                        records::append_work(
+                        records::append_work_with_usage(
                             &env.cfg,
                             &format!("Pipeline {}: {}", run_snap.routine_name, step.label),
                             &output,
                             &files,
                             &run_snap.thread_id,
                             true,
+                            run_snap.engagement_id.as_deref(),
+                            Some(&step_usage),
+                        );
+                        records::append_usage_ledger(
+                            &env.cfg.data_dir,
+                            &records::UsageLedgerEntry {
+                                ts_ms: finished_ms,
+                                run_id: run_snap.run_id.clone(),
+                                thread_id: run_snap.thread_id.clone(),
+                                person_id: env.ctx.person_id.clone(),
+                                engagement_id: run_snap.engagement_id.clone(),
+                                client_id: step_client_id,
+                                source: "pipeline_skill".to_string(),
+                                finished: true,
+                                answered: false,
+                                usage: step_usage.clone(),
+                            },
                         );
                         env.store.lock().unwrap().push(
                             &run_snap.thread_id,
@@ -1567,6 +1639,9 @@ fn execute_pipeline_loop(env: &PipelineExecEnv, run_id: &str, start_index: usize
                                 "output": output,
                                 "files": files,
                                 "metrics": metrics,
+                                "usage": step_usage.to_json(),
+                                "run_usage": updated_run.usage.to_json(),
+                                "engagement_id": updated_run.engagement_id,
                                 "error": Value::Null,
                                 "elapsed_ms": elapsed_ms,
                                 "ts_ms": finished_ms,
@@ -1619,6 +1694,8 @@ fn execute_pipeline_loop(env: &PipelineExecEnv, run_id: &str, start_index: usize
                             json!({
                                 "status": "failed",
                                 "error": failed.error,
+                                "engagement_id": failed.engagement_id,
+                                "usage": failed.usage.to_json(),
                                 "run": failed.to_json(),
                                 "ts_ms": finished_ms,
                             }),
@@ -1644,25 +1721,49 @@ fn execute_pipeline_loop(env: &PipelineExecEnv, run_id: &str, start_index: usize
                         let output = format!("exported {out_path} ({bytes} bytes, {what})");
                         let files = vec![out_path];
                         let metrics = json!({ "files_count": 1, "bytes_total": bytes, "anomalies": 0, "has_anomaly": false });
-                        mutate_run(&env.cfg.data_dir, run_id, |r| {
+                        let (step_usage, step_client_id) = deterministic_step_usage(
+                            &env.ctx.root_data_dir,
+                            run_snap.engagement_id.as_deref(),
+                            files.len(),
+                        );
+                        let updated_run = mutate_run(&env.cfg.data_dir, run_id, |r| {
                             r.updated_ms = finished_ms;
+                            r.usage.accumulate(&step_usage);
                             if let Some(st) = r.step_states.get_mut(idx) {
                                 st.status = "ok".to_string();
                                 st.finished_ms = finished_ms;
                                 st.output = output.clone();
                                 st.files = files.clone();
                                 st.metrics = metrics.clone();
+                                st.usage = Some(step_usage.clone());
                                 st.error = None;
                             }
-                            Ok(())
+                            Ok(r.clone())
                         })?;
-                        records::append_work(
+                        records::append_work_with_usage(
                             &env.cfg,
                             &format!("Pipeline {}: {}", run_snap.routine_name, step.label),
                             &output,
                             &files,
                             &run_snap.thread_id,
                             true,
+                            run_snap.engagement_id.as_deref(),
+                            Some(&step_usage),
+                        );
+                        records::append_usage_ledger(
+                            &env.cfg.data_dir,
+                            &records::UsageLedgerEntry {
+                                ts_ms: finished_ms,
+                                run_id: run_snap.run_id.clone(),
+                                thread_id: run_snap.thread_id.clone(),
+                                person_id: env.ctx.person_id.clone(),
+                                engagement_id: run_snap.engagement_id.clone(),
+                                client_id: step_client_id,
+                                source: "pipeline_export".to_string(),
+                                finished: true,
+                                answered: false,
+                                usage: step_usage.clone(),
+                            },
                         );
                         env.store.lock().unwrap().push(
                             &run_snap.thread_id,
@@ -1684,6 +1785,9 @@ fn execute_pipeline_loop(env: &PipelineExecEnv, run_id: &str, start_index: usize
                                 "output": output,
                                 "files": files,
                                 "metrics": metrics,
+                                "usage": step_usage.to_json(),
+                                "run_usage": updated_run.usage.to_json(),
+                                "engagement_id": updated_run.engagement_id,
                                 "error": Value::Null,
                                 "elapsed_ms": elapsed_ms,
                                 "ts_ms": finished_ms,
@@ -1736,6 +1840,8 @@ fn execute_pipeline_loop(env: &PipelineExecEnv, run_id: &str, start_index: usize
                             json!({
                                 "status": "failed",
                                 "error": failed.error,
+                                "engagement_id": failed.engagement_id,
+                                "usage": failed.usage.to_json(),
                                 "run": failed.to_json(),
                                 "ts_ms": finished_ms,
                             }),
@@ -1763,7 +1869,70 @@ fn execute_pipeline_loop(env: &PipelineExecEnv, run_id: &str, start_index: usize
                     Some((&env.live_runs, &env.events, &env.ctx.person_id)),
                 ) {
                     Ok(out) => {
+                        if out.budget_gated {
+                            let finished_ms = records::now_millis();
+                            let elapsed_ms = step_t0.elapsed().as_millis() as u64;
+                            let step_usage = out.usage.clone();
+                            let failed = mutate_run(&env.cfg.data_dir, run_id, |r| {
+                                r.status = "failed".to_string();
+                                r.updated_ms = finished_ms;
+                                r.usage.accumulate(&step_usage);
+                                r.error = Some(out.summary.clone());
+                                if let Some(st) = r.step_states.get_mut(idx) {
+                                    st.status = "failed".to_string();
+                                    st.finished_ms = finished_ms;
+                                    st.usage = Some(step_usage.clone());
+                                    st.error = Some(out.summary.clone());
+                                }
+                                Ok(r.clone())
+                            })?;
+                            env.events.publish(
+                                "pipeline_step_done",
+                                &env.ctx.person_id,
+                                &run_snap.run_id,
+                                &run_snap.thread_id,
+                                json!({
+                                    "step_index": idx,
+                                    "step_id": step.id,
+                                    "label": step.label,
+                                    "kind": step.kind,
+                                    "status": "failed",
+                                    "output": out.summary,
+                                    "files": out.written_files,
+                                    "metrics": {},
+                                    "usage": step_usage.to_json(),
+                                    "run_usage": failed.usage.to_json(),
+                                    "engagement_id": failed.engagement_id,
+                                    "error": failed.error,
+                                    "elapsed_ms": elapsed_ms,
+                                    "ts_ms": finished_ms,
+                                }),
+                            );
+                            env.events.publish(
+                                "pipeline_finished",
+                                &env.ctx.person_id,
+                                &failed.run_id,
+                                &failed.thread_id,
+                                json!({
+                                    "status": "failed",
+                                    "error": failed.error,
+                                    "engagement_id": failed.engagement_id,
+                                    "usage": failed.usage.to_json(),
+                                    "run": failed.to_json(),
+                                    "ts_ms": finished_ms,
+                                }),
+                            );
+                            return Ok(failed);
+                        }
                         if let Some(cp_pause) = out.paused_checkpoint {
+                            let step_usage = out.usage.clone();
+                            let _ = mutate_run(&env.cfg.data_dir, run_id, |r| {
+                                r.usage.accumulate(&step_usage);
+                                if let Some(st) = r.step_states.get_mut(idx) {
+                                    st.usage = Some(step_usage);
+                                }
+                                Ok(())
+                            });
                             let cp_spec = PipelineCheckpointSpec {
                                 prompt: cp_pause.prompt,
                                 input_mode: cp_pause.input_mode,
@@ -1782,17 +1951,20 @@ fn execute_pipeline_loop(env: &PipelineExecEnv, run_id: &str, start_index: usize
                         let finished_ms = records::now_millis();
                         let elapsed_ms = step_t0.elapsed().as_millis() as u64;
                         let metrics = extract_step_metrics(&env.cfg, &out.written_files, &out.summary);
-                        mutate_run(&env.cfg.data_dir, run_id, |r| {
+                        let step_usage = out.usage.clone();
+                        let updated_run = mutate_run(&env.cfg.data_dir, run_id, |r| {
                             r.updated_ms = finished_ms;
+                            r.usage.accumulate(&step_usage);
                             if let Some(st) = r.step_states.get_mut(idx) {
                                 st.status = "ok".to_string();
                                 st.finished_ms = finished_ms;
                                 st.output = out.summary.clone();
                                 st.files = out.written_files.clone();
                                 st.metrics = metrics.clone();
+                                st.usage = Some(step_usage.clone());
                                 st.error = None;
                             }
-                            Ok(())
+                            Ok(r.clone())
                         })?;
                         env.search_cache.invalidate(&env.ctx.person_id);
                         env.events.publish(
@@ -1809,6 +1981,9 @@ fn execute_pipeline_loop(env: &PipelineExecEnv, run_id: &str, start_index: usize
                                 "output": out.summary,
                                 "files": out.written_files,
                                 "metrics": metrics,
+                                "usage": step_usage.to_json(),
+                                "run_usage": updated_run.usage.to_json(),
+                                "engagement_id": updated_run.engagement_id,
                                 "error": Value::Null,
                                 "elapsed_ms": elapsed_ms,
                                 "ts_ms": finished_ms,
@@ -1863,6 +2038,8 @@ fn execute_pipeline_loop(env: &PipelineExecEnv, run_id: &str, start_index: usize
                             json!({
                                 "status": next_status,
                                 "error": failed.error,
+                                "engagement_id": failed.engagement_id,
+                                "usage": failed.usage.to_json(),
                                 "run": failed.to_json(),
                                 "ts_ms": finished_ms,
                             }),
@@ -1898,6 +2075,8 @@ fn execute_pipeline_loop(env: &PipelineExecEnv, run_id: &str, start_index: usize
             json!({
                 "status": "cancelled",
                 "error": Value::Null,
+                "engagement_id": completed.engagement_id,
+                "usage": completed.usage.to_json(),
                 "run": completed.to_json(),
                 "ts_ms": finished_ms,
             }),
@@ -1915,6 +2094,8 @@ fn execute_pipeline_loop(env: &PipelineExecEnv, run_id: &str, start_index: usize
         json!({
             "status": "completed",
             "error": Value::Null,
+            "engagement_id": completed.engagement_id,
+            "usage": completed.usage.to_json(),
             "run": completed.to_json(),
             "ts_ms": finished_ms,
         }),
@@ -1946,6 +2127,8 @@ fn spawn_pipeline_worker(env: PipelineExecEnv, run_id: String, start_index: usiz
                             json!({
                                 "status": "failed",
                                 "error": failed.error,
+                                "engagement_id": failed.engagement_id,
+                                "usage": failed.usage.to_json(),
                                 "run": failed.to_json(),
                                 "ts_ms": now_ms,
                             }),
@@ -2041,6 +2224,15 @@ pub fn create_and_start_pipeline(
         .iter()
         .map(PipelineStepState::pending_for)
         .collect();
+    let engagement_id = body["engagement_id"]
+        .as_str()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .or_else(|| {
+            records::active_engagement_for(&env.ctx.root_data_dir, &env.ctx.person_id)
+                .map(|(e, _)| e.id)
+        });
     let run = PipelineRun {
         run_id: run_id.clone(),
         routine_id,
@@ -2056,6 +2248,8 @@ pub fn create_and_start_pipeline(
         pending_checkpoint: None,
         error: None,
         cancel_requested: false,
+        engagement_id,
+        usage: records::RunUsage::default(),
     };
     save_run(&env.cfg.data_dir, &run).map_err(|e| (500, e))?;
 
@@ -2559,6 +2753,7 @@ pub fn park_adhoc_checkpoint(
         output: steps_taken.join(" | "),
         files: written_files.to_vec(),
         metrics: json!({ "files_count": written_files.len() }),
+        usage: None,
         checkpoint_id: None,
         human_answer: None,
         human_action: None,
@@ -2574,6 +2769,7 @@ pub fn park_adhoc_checkpoint(
         output: format!("Waiting on human checkpoint: {}", cp.prompt),
         files: safe_inspect.clone(),
         metrics: json!({}),
+        usage: None,
         checkpoint_id: Some(decision_id.clone()),
         human_answer: None,
         human_action: None,
@@ -2607,6 +2803,8 @@ pub fn park_adhoc_checkpoint(
         pending_checkpoint: Some(pending.clone()),
         error: None,
         cancel_requested: false,
+        engagement_id: None,
+        usage: records::RunUsage::default(),
     };
     save_run(&cfg.data_dir, &run)?;
 
