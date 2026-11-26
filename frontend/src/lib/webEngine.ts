@@ -37,6 +37,11 @@ import {
   type RoutineRunRecord,
   type RunUsage,
   type TriggerRule,
+  type VaultChunkHit,
+  type VaultFileHit,
+  type VaultIndexStats,
+  type VaultSearchMode,
+  type VaultSearchScope,
 } from "@/lib/api";
 
 type WebFile = {
@@ -48,6 +53,7 @@ type WebFile = {
   ext: string;
   binaryBase64?: string;
   extracted?: { kind: string; format: "markdown" | "csv"; sheets?: string[]; sheet?: string | null; pages?: number };
+  extractedSheets?: Record<string, string>;
 };
 type WebMsg = { role: string; content: string };
 type WebThread = { id: string; title: string; messages: WebMsg[] };
@@ -3883,32 +3889,20 @@ function buildWebDocx(content: string, title: string): Uint8Array {
   ]);
 }
 
-function runWebTableQuery(
-  file: WebFile,
-  req: {
-    where?: Array<{ col: string; op: string; value: string }>;
-    group_by?: string[];
-    aggregates?: Array<{ col: string; fn: string; as: string }>;
-    sort?: { col: string; dir: string };
-    limit?: number;
-  }
-): { columns: string[]; rows: string[][]; total_rows: number; matched_rows: number } {
-  let header: string[] = [];
-  let dataRows: string[][] = [];
-  if (file.ext === "json") {
-    const parsed = JSON.parse(file.content);
-    const arr = Array.isArray(parsed) ? parsed : [];
-    const keys = Array.from(new Set(arr.flatMap((item) => (item && typeof item === "object" ? Object.keys(item) : []))));
-    header = keys;
-    dataRows = arr.map((item) => keys.map((k) => String((item as Record<string, unknown>)?.[k] ?? "")));
-  } else {
-    const delim = file.ext === "tsv" ? "\t" : ",";
-    const parsed = parseDelimited(file.content, delim);
-    if (!parsed.length) return { columns: [], rows: [], total_rows: 0, matched_rows: 0 };
-    header = parsed[0];
-    dataRows = parsed.slice(1).map((r) => header.map((_, i) => r[i] ?? ""));
-  }
+type TabularQuerySpec = {
+  where?: Array<{ col: string; op: string; value: string }>;
+  group_by?: string[];
+  aggregates?: Array<{ col: string; fn: string; as: string }>;
+  sort?: { col: string; dir: string };
+  limit?: number;
+};
 
+function runTabularAggregation(
+  header: string[],
+  dataRows: string[][],
+  req: TabularQuerySpec
+): { columns: string[]; rows: string[][]; total_rows: number; matched_rows: number } {
+  if (!header.length) return { columns: [], rows: [], total_rows: 0, matched_rows: 0 };
   const colIndex = (name: string) => header.findIndex((h) => h.trim().toLowerCase() === name.trim().toLowerCase());
   const total_rows = dataRows.length;
 
@@ -4014,6 +4008,514 @@ function runWebTableQuery(
   return { columns: outCols, rows: outRows, total_rows, matched_rows };
 }
 
+function runWebTableQuery(
+  file: WebFile,
+  req: TabularQuerySpec
+): { columns: string[]; rows: string[][]; total_rows: number; matched_rows: number } {
+  let header: string[] = [];
+  let dataRows: string[][] = [];
+  if (file.ext === "json") {
+    const parsed = JSON.parse(file.content);
+    const arr = Array.isArray(parsed) ? parsed : [];
+    const keys = Array.from(new Set(arr.flatMap((item) => (item && typeof item === "object" ? Object.keys(item) : []))));
+    header = keys;
+    dataRows = arr.map((item) => keys.map((k) => String((item as Record<string, unknown>)?.[k] ?? "")));
+  } else {
+    const delim = file.ext === "tsv" ? "\t" : ",";
+    const parsed = parseDelimited(file.content, delim);
+    if (!parsed.length) return { columns: [], rows: [], total_rows: 0, matched_rows: 0 };
+    header = parsed[0];
+    dataRows = parsed.slice(1).map((r) => header.map((_, i) => r[i] ?? ""));
+  }
+  return runTabularAggregation(header, dataRows, req);
+}
+
+type InternalVaultChunk = {
+  chunk_id: string;
+  path: string;
+  sheet: string | null;
+  page: number | null;
+  line_start: number;
+  line_end: number;
+  heading: string | null;
+  text: string;
+  textLower: string;
+  tf: Map<string, number>;
+  tokenLen: number;
+  semVec: Float32Array;
+};
+
+type CachedVaultIndex = {
+  sig: string;
+  chunks: InternalVaultChunk[];
+  df: Map<string, number>;
+  avgLen: number;
+  stats: VaultIndexStats;
+};
+
+const SEM_DIMS = 64;
+const vaultIndexCache = new WeakMap<PersonStore, CachedVaultIndex>();
+
+function isVaultExcludedPath(fp: string): boolean {
+  const clean = fp.replace(/\\/g, "/");
+  if (!clean || clean.startsWith(".") || clean.includes("/.")) return true;
+  return clean === "connector_secrets.json" || clean.endsWith("/connector_secrets.json");
+}
+
+function tokenizeVaultText(text: string): string[] {
+  return text.toLowerCase().match(/[a-z0-9_]+/g) || [];
+}
+
+function hashToken32(str: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
+function embedVaultText(text: string): Float32Array {
+  const vec = new Float32Array(SEM_DIMS);
+  const tokens = tokenizeVaultText(text);
+  for (const tok of tokens) {
+    const b1 = hashToken32(tok) % SEM_DIMS;
+    vec[b1] += 1.5;
+    if (tok.length >= 3) {
+      for (let i = 0; i <= tok.length - 3; i++) {
+        const gram = tok.slice(i, i + 3);
+        const bg = hashToken32(gram) % SEM_DIMS;
+        vec[bg] += 0.5;
+      }
+    }
+  }
+  let norm = 0;
+  for (let i = 0; i < SEM_DIMS; i++) norm += vec[i] * vec[i];
+  norm = Math.sqrt(norm);
+  if (norm > 0) {
+    for (let i = 0; i < SEM_DIMS; i++) vec[i] /= norm;
+  }
+  return vec;
+}
+
+function cosineSim(a: Float32Array, b: Float32Array): number {
+  let dot = 0;
+  for (let i = 0; i < SEM_DIMS; i++) dot += a[i] * b[i];
+  return dot;
+}
+
+function makeVaultExcerpt(text: string, query: string): string {
+  const clean = text.replace(/\s+/g, " ").trim();
+  if (clean.length <= 220) return clean;
+  const qLower = query.trim().toLowerCase();
+  const terms = tokenizeVaultText(qLower);
+  const lower = clean.toLowerCase();
+  let hitIdx = qLower ? lower.indexOf(qLower) : -1;
+  if (hitIdx < 0) {
+    for (const t of terms) {
+      const idx = lower.indexOf(t);
+      if (idx >= 0) {
+        hitIdx = idx;
+        break;
+      }
+    }
+  }
+  if (hitIdx < 0) return clean.slice(0, 217) + "…";
+  const start = Math.max(0, hitIdx - 70);
+  const end = Math.min(clean.length, start + 220);
+  return (start > 0 ? "…" : "") + clean.slice(start, end) + (end < clean.length ? "…" : "");
+}
+
+function chunkWebFile(file: WebFile): InternalVaultChunk[] {
+  const chunks: InternalVaultChunk[] = [];
+  const sections: Array<{ sheet: string | null; text: string }> =
+    file.extractedSheets && Object.keys(file.extractedSheets).length > 0
+      ? Object.entries(file.extractedSheets).map(([sheet, text]) => ({ sheet, text }))
+      : [{ sheet: file.extracted?.sheet ?? null, text: file.content }];
+
+  for (const sec of sections) {
+    const lines = sec.text.replace(/\r\n/g, "\n").split("\n");
+    let currentHeading: string | null = null;
+    let currentPage: number | null = file.extracted?.kind === "PDF" ? 1 : null;
+    let buf: string[] = [];
+    let bufChars = 0;
+    let startLine = 1;
+
+    const flush = (endLine: number) => {
+      const joined = buf.join("\n").trim();
+      if (joined) {
+        const tokens = tokenizeVaultText(`${file.path} ${currentHeading ?? ""} ${sec.sheet ?? ""} ${joined}`);
+        const tf = new Map<string, number>();
+        for (const t of tokens) tf.set(t, (tf.get(t) ?? 0) + 1);
+        chunks.push({
+          chunk_id: `${file.path}${sec.sheet ? `#${sec.sheet}` : ""}:L${startLine}-${endLine}`,
+          path: file.path,
+          sheet: sec.sheet,
+          page: currentPage,
+          line_start: startLine,
+          line_end: endLine,
+          heading: currentHeading,
+          text: joined,
+          textLower: joined.toLowerCase(),
+          tf,
+          tokenLen: tokens.length || 1,
+          semVec: embedVaultText(joined),
+        });
+      }
+      buf = [];
+      bufChars = 0;
+    };
+
+    for (let i = 0; i < lines.length; i++) {
+      const lineNo = i + 1;
+      const line = lines[i];
+      const trimmed = line.trim();
+      const pageMatch = /^(?:---+\s*)?(?:#+\s*)?(?:\[)?Page\s+(\d+)(?:\])?(?:\s*---+)?$/i.exec(trimmed);
+      if (pageMatch) {
+        if (buf.length > 0) flush(lineNo - 1);
+        currentPage = Number(pageMatch[1]);
+        startLine = lineNo;
+      } else if (/^#{1,3}\s+/.test(trimmed)) {
+        if (buf.length > 0 && bufChars >= 120) flush(lineNo - 1);
+        currentHeading = trimmed.replace(/^#{1,3}\s+/, "").slice(0, 80);
+        if (buf.length === 0) startLine = lineNo;
+      } else if (buf.length === 0) {
+        startLine = lineNo;
+      }
+
+      buf.push(line);
+      bufChars += line.length + 1;
+
+      const atBreak = trimmed === "" && bufChars >= 420;
+      if (buf.length >= 24 || bufChars >= 1000 || atBreak) {
+        flush(lineNo);
+        startLine = lineNo + 1;
+      }
+    }
+    if (buf.length > 0) flush(lines.length);
+  }
+  return chunks;
+}
+
+function buildVaultIndex(st: PersonStore): CachedVaultIndex {
+  const entries = Object.values(st.files)
+    .filter((f) => !isVaultExcludedPath(f.path))
+    .sort((a, b) => a.path.localeCompare(b.path));
+  const sig = entries.map((f) => `${f.path}:${f.mtime_ms}:${f.size}`).join("|");
+  const chunks: InternalVaultChunk[] = [];
+  let indexedBytes = 0;
+  for (const f of entries) {
+    indexedBytes += f.size;
+    chunks.push(...chunkWebFile(f));
+  }
+  const df = new Map<string, number>();
+  let totalLen = 0;
+  for (const ch of chunks) {
+    totalLen += ch.tokenLen;
+    for (const term of ch.tf.keys()) {
+      df.set(term, (df.get(term) ?? 0) + 1);
+    }
+  }
+  const avgLen = chunks.length > 0 ? totalLen / chunks.length : 1;
+  const built: CachedVaultIndex = {
+    sig,
+    chunks,
+    df,
+    avgLen,
+    stats: {
+      total_files: entries.length,
+      total_chunks: chunks.length,
+      indexed_bytes: indexedBytes,
+      semantic_enabled: true,
+    },
+  };
+  vaultIndexCache.set(st, built);
+  return built;
+}
+
+function getVaultIndex(st: PersonStore, forceRebuild = false): CachedVaultIndex {
+  if (!forceRebuild) {
+    const cached = vaultIndexCache.get(st);
+    if (cached) {
+      const sig = Object.values(st.files)
+        .filter((f) => !isVaultExcludedPath(f.path))
+        .sort((a, b) => a.path.localeCompare(b.path))
+        .map((f) => `${f.path}:${f.mtime_ms}:${f.size}`)
+        .join("|");
+      if (cached.sig === sig) return cached;
+    }
+  }
+  return buildVaultIndex(st);
+}
+
+function searchWebVault(
+  st: PersonStore,
+  opts: {
+    q: string;
+    scope?: VaultSearchScope;
+    mode?: VaultSearchMode;
+    limit?: number;
+    pathPrefix?: string;
+  }
+) {
+  const idx = getVaultIndex(st, false);
+  const qRaw = opts.q.trim();
+  const qLower = qRaw.toLowerCase();
+  const scope: VaultSearchScope = opts.scope ?? "all";
+  const mode: VaultSearchMode = opts.mode ?? "hybrid";
+  const limit = Math.min(50, Math.max(1, opts.limit ?? 20));
+  const prefix = (opts.pathPrefix || "").trim().replace(/^\/+/, "").toLowerCase();
+
+  const fileHits: VaultFileHit[] = [];
+  const results: Array<{
+    kind: string;
+    id: string;
+    title: string;
+    subtitle?: string;
+    path?: string;
+    thread_id?: string;
+    ts?: number;
+    score?: number;
+    chunks?: VaultChunkHit[];
+  }> = [];
+
+  if (qLower && (scope === "all" || scope === "files")) {
+    const qTerms = tokenizeVaultText(qLower);
+    const qVec = embedVaultText(qLower);
+    const N = Math.max(1, idx.chunks.length);
+    const k1 = 1.2;
+    const b = 0.75;
+
+    const candidateChunks = idx.chunks.filter((ch) => !prefix || ch.path.toLowerCase().startsWith(prefix));
+    const scored = candidateChunks.map((ch) => {
+      let bm25 = 0;
+      for (const term of qTerms) {
+        const tf = ch.tf.get(term) ?? 0;
+        if (tf <= 0) continue;
+        const df = idx.df.get(term) ?? 0;
+        const idf = Math.log(1 + (N - df + 0.5) / (df + 0.5));
+        bm25 += idf * ((tf * (k1 + 1)) / (tf + k1 * (1 - b + (b * ch.tokenLen) / idx.avgLen)));
+      }
+      if (ch.path.toLowerCase().includes(qLower)) bm25 += 2.5;
+      const sem = cosineSim(qVec, ch.semVec);
+      const exactHit =
+        ch.textLower.includes(qLower) ||
+        ch.path.toLowerCase().includes(qLower) ||
+        (qTerms.length > 1 && qTerms.every((t) => ch.textLower.includes(t)));
+      return { ch, bm25, sem, exactHit };
+    });
+
+    const bm25Order = [...scored]
+      .filter((s) => s.bm25 > 0)
+      .sort((a, b) => b.bm25 - a.bm25);
+    const semOrder = [...scored]
+      .filter((s) => s.sem > 0.1)
+      .sort((a, b) => b.sem - a.sem);
+    const bm25Rank = new Map<string, number>();
+    bm25Order.forEach((s, i) => bm25Rank.set(s.ch.chunk_id, i + 1));
+    const semRank = new Map<string, number>();
+    semOrder.forEach((s, i) => semRank.set(s.ch.chunk_id, i + 1));
+
+    const rankedChunks: Array<{ ch: InternalVaultChunk; score: number; bm25: number; sem: number }> = [];
+    for (const item of scored) {
+      let finalScore = 0;
+      if (mode === "exact") {
+        if (!item.exactHit) continue;
+        finalScore = item.bm25 > 0 ? item.bm25 + 1 : 1;
+      } else if (mode === "bm25") {
+        if (item.bm25 <= 0) continue;
+        finalScore = item.bm25;
+      } else {
+        const rB = bm25Rank.get(item.ch.chunk_id);
+        const rS = semRank.get(item.ch.chunk_id);
+        if (!rB && (!rS || item.sem < 0.2)) continue;
+        finalScore = (rB ? 1 / (60 + rB) : 0) + (rS ? 1 / (60 + rS) : 0);
+        if (item.exactHit) finalScore += 0.02;
+      }
+      rankedChunks.push({ ch: item.ch, score: finalScore, bm25: item.bm25, sem: item.sem });
+    }
+    rankedChunks.sort((a, b) => b.score - a.score || a.ch.line_start - b.ch.line_start);
+
+    const byFile = new Map<string, { topScore: number; chunks: VaultChunkHit[] }>();
+    for (const r of rankedChunks) {
+      const existing = byFile.get(r.ch.path);
+      const hit: VaultChunkHit = {
+        chunk_id: r.ch.chunk_id,
+        score: Number(r.score.toFixed(4)),
+        bm25_score: Number(r.bm25.toFixed(4)),
+        semantic_score: Number(r.sem.toFixed(4)),
+        ...(r.ch.page ? { page: r.ch.page } : {}),
+        ...(r.ch.sheet ? { sheet: r.ch.sheet } : {}),
+        line_start: r.ch.line_start,
+        line_end: r.ch.line_end,
+        ...(r.ch.heading ? { heading: r.ch.heading } : {}),
+        excerpt: makeVaultExcerpt(r.ch.text, qRaw),
+      };
+      if (!existing) {
+        byFile.set(r.ch.path, { topScore: r.score, chunks: [hit] });
+      } else if (existing.chunks.length < 4) {
+        existing.chunks.push(hit);
+      }
+    }
+
+    for (const [fp, entry] of Array.from(byFile.entries()).sort((a, b) => b[1].topScore - a[1].topScore).slice(0, limit)) {
+      const wf = st.files[fp];
+      if (!wf) continue;
+      fileHits.push({
+        path: wf.path,
+        name: wf.name,
+        ext: wf.ext,
+        size: wf.size,
+        mtime_ms: wf.mtime_ms,
+        score: Number(entry.topScore.toFixed(4)),
+        chunks: entry.chunks,
+      });
+      results.push({
+        kind: "file",
+        id: wf.path,
+        title: wf.path,
+        subtitle: entry.chunks[0]?.excerpt || `${wf.size} bytes`,
+        path: wf.path,
+        ts: wf.mtime_ms,
+        score: Number(entry.topScore.toFixed(4)),
+        chunks: entry.chunks,
+      });
+    }
+  }
+
+  if (qLower && (scope === "all" || scope === "receipts")) {
+    for (const wItem of st.work.slice().reverse()) {
+      if (wItem.task.toLowerCase().includes(qLower) || wItem.summary.toLowerCase().includes(qLower)) {
+        results.push({
+          kind: "receipt",
+          id: wItem.id || wItem.thread_id,
+          title: wItem.task,
+          subtitle: wItem.summary,
+          thread_id: wItem.thread_id,
+          ts: wItem.ts,
+        });
+      }
+    }
+  }
+
+  if (qLower && (scope === "all" || scope === "memory")) {
+    for (const line of learnedLines(st.memory)) {
+      if (line.toLowerCase().includes(qLower)) {
+        results.push({ kind: "memory", id: `mem-${results.length}`, title: line, subtitle: "memory.md" });
+      }
+    }
+  }
+
+  return {
+    query: qLower,
+    mode,
+    scope,
+    total: results.length,
+    results: results.slice(0, limit),
+    file_hits: fileHits,
+    files: fileHits.map((fh) => ({ path: fh.path, name: fh.name, size: fh.size, mtime_ms: fh.mtime_ms, ext: fh.ext, chunks: fh.chunks })),
+    index_stats: idx.stats,
+  };
+}
+
+function globToRegex(glob: string): RegExp {
+  const normalized = glob.trim().replace(/\\/g, "/").replace(/^\/+/, "") || "*";
+  let re = "^";
+  for (let i = 0; i < normalized.length; i++) {
+    const c = normalized[i];
+    if (c === "*") {
+      if (normalized[i + 1] === "*") {
+        re += ".*";
+        i++;
+        if (normalized[i + 1] === "/") i++;
+      } else {
+        re += "[^/]*";
+      }
+    } else if (c === "?") {
+      re += "[^/]";
+    } else if (/[.+^${}()|[\]\\]/.test(c)) {
+      re += "\\" + c;
+    } else {
+      re += c;
+    }
+  }
+  return new RegExp(re + "$", "i");
+}
+
+function runWebVaultAggregate(
+  st: PersonStore,
+  req: TabularQuerySpec & { glob?: string; sheet?: string }
+): { ok: true; columns: string[]; rows: string[][]; source_files: string[]; row_count: number } {
+  const pattern = globToRegex(String(req.glob || "*.csv"));
+  const matchedFiles = Object.values(st.files)
+    .filter((f) => !isVaultExcludedPath(f.path) && pattern.test(f.path))
+    .sort((a, b) => a.path.localeCompare(b.path));
+
+  const canonicalHeader: string[] = [];
+  const headerIdxMap = new Map<string, number>();
+  const rowRecords: Array<Record<string, string>> = [];
+  const sourceFiles: string[] = [];
+
+  const ensureCol = (rawName: string) => {
+    const clean = rawName.trim();
+    const key = clean.toLowerCase();
+    if (!key) return -1;
+    if (!headerIdxMap.has(key)) {
+      headerIdxMap.set(key, canonicalHeader.length);
+      canonicalHeader.push(clean);
+    }
+    return headerIdxMap.get(key)!;
+  };
+
+  const ingestTable = (fp: string, parsed: string[][]) => {
+    if (parsed.length < 2) return;
+    const hdr = parsed[0];
+    hdr.forEach((col) => ensureCol(col));
+    let added = false;
+    for (let r = 1; r < parsed.length; r++) {
+      const row = parsed[r];
+      if (!row.some((c) => c.trim().length > 0)) continue;
+      const rec: Record<string, string> = {};
+      hdr.forEach((col, cIdx) => {
+        const key = col.trim().toLowerCase();
+        if (key) rec[key] = row[cIdx] ?? "";
+      });
+      rowRecords.push(rec);
+      added = true;
+    }
+    if (added && !sourceFiles.includes(fp)) sourceFiles.push(fp);
+  };
+
+  for (const f of matchedFiles) {
+    if (f.extractedSheets && Object.keys(f.extractedSheets).length > 0) {
+      const targetSheet = (req.sheet || "").trim().toLowerCase();
+      for (const [shName, csvText] of Object.entries(f.extractedSheets)) {
+        if (targetSheet && shName.toLowerCase() !== targetSheet) continue;
+        ingestTable(f.path, parseDelimited(csvText, ","));
+      }
+    } else if (f.ext === "csv" || f.ext === "tsv" || f.extracted?.format === "csv") {
+      const delim = f.ext === "tsv" ? "\t" : ",";
+      ingestTable(f.path, parseDelimited(f.content, delim));
+    }
+  }
+
+  if (!canonicalHeader.length || !rowRecords.length) {
+    return { ok: true, columns: canonicalHeader, rows: [], source_files: sourceFiles, row_count: 0 };
+  }
+
+  const normalizedRows = rowRecords.map((rec) =>
+    canonicalHeader.map((col) => rec[col.trim().toLowerCase()] ?? "")
+  );
+  const aggRes = runTabularAggregation(canonicalHeader, normalizedRows, req);
+  return {
+    ok: true,
+    columns: aggRes.columns,
+    rows: aggRes.rows,
+    source_files: sourceFiles,
+    row_count: aggRes.rows.length,
+  };
+}
+
     if (method === "GET" && path === "/api/version") return jsonRes({ name: "ergon", version: "0.33.0" });
     if (method === "GET" && path === "/api/update") return jsonRes({ current: "0.33.0", available: false, mode: "off", checked_at: Math.floor(Date.now() / 1000) });
     if (method === "GET" && path === "/api/status") {
@@ -4043,6 +4545,7 @@ function runWebTableQuery(
           connectors: true,
           clients: true,
           metering: true,
+          vault_search: true,
         },
         scheduler: buildSchedulerStatus(st),
         person: p,
@@ -4646,27 +5149,53 @@ function runWebTableQuery(
       return jsonRes({ run }, 200);
     }
     if (method === "GET" && path === "/api/search") {
-      const q = (u.searchParams.get("q") || "").trim().toLowerCase();
+      const q = (u.searchParams.get("q") || "").trim();
+      const scopeRaw = (u.searchParams.get("scope") || "all").trim().toLowerCase();
+      const modeRaw = (u.searchParams.get("mode") || "hybrid").trim().toLowerCase();
+      const scope: VaultSearchScope =
+        scopeRaw === "files" || scopeRaw === "receipts" || scopeRaw === "memory" ? scopeRaw : "all";
+      const mode: VaultSearchMode =
+        modeRaw === "bm25" || modeRaw === "exact" ? modeRaw : "hybrid";
       const limit = Math.min(50, Math.max(1, Number(u.searchParams.get("limit") || 20)));
-      const results: { kind: string; id: string; title: string; subtitle?: string; path?: string; thread_id?: string; ts?: number }[] = [];
-      if (q) {
-        for (const f of Object.values(st.files)) {
-          if (f.path.toLowerCase().includes(q) || f.content.toLowerCase().includes(q)) {
-            results.push({ kind: "file", id: f.path, title: f.path, subtitle: `${f.size} bytes`, path: f.path, ts: f.mtime_ms });
-          }
+      const pathPrefix = u.searchParams.get("path_prefix") || undefined;
+      return jsonRes(searchWebVault(st, { q, scope, mode, limit, pathPrefix }));
+    }
+    if (method === "POST" && path === "/api/vault/reindex") {
+      const t0 = performance.now();
+      const idx = getVaultIndex(st, true);
+      const elapsed_ms = Math.max(1, Math.round(performance.now() - t0));
+      return jsonRes({
+        ok: true,
+        indexed_files: idx.stats.total_files,
+        total_chunks: idx.stats.total_chunks,
+        elapsed_ms,
+        index_stats: idx.stats,
+      });
+    }
+    if (method === "POST" && path === "/api/vault/aggregate") {
+      const glob = String(body.glob ?? "*.csv").trim() || "*.csv";
+      const result = runWebVaultAggregate(st, {
+        glob,
+        sheet: typeof body.sheet === "string" && body.sheet.trim() ? body.sheet.trim() : undefined,
+        where: Array.isArray(body.where) ? (body.where as Array<{ col: string; op: string; value: string }>) : undefined,
+        group_by: Array.isArray(body.group_by) ? (body.group_by as string[]) : undefined,
+        aggregates: Array.isArray(body.aggregates) ? (body.aggregates as Array<{ col: string; fn: string; as: string }>) : undefined,
+        sort: body.sort && typeof body.sort === "object" ? (body.sort as { col: string; dir: string }) : undefined,
+        limit: typeof body.limit === "number" ? body.limit : undefined,
+      });
+      let saved_path: string | undefined;
+      if (typeof body.save_as === "string" && body.save_as.trim()) {
+        const safeOut = sanitizeSafePath(body.save_as);
+        if (!safeOut) return jsonRes({ error: "save_as path escapes the workspace" }, 403);
+        const csvText = [result.columns, ...result.rows].map((r) => r.map(csvEscape).join(",")).join("\n") + "\n";
+        if (st.files[safeOut] && st.files[safeOut].content !== csvText) {
+          recordFileRevision(st, safeOut, st.files[safeOut], "vault_aggregate");
         }
-        for (const wItem of st.work.slice().reverse()) {
-          if (wItem.task.toLowerCase().includes(q) || wItem.summary.toLowerCase().includes(q)) {
-            results.push({ kind: "receipt", id: wItem.id || wItem.thread_id, title: wItem.task, subtitle: wItem.summary, thread_id: wItem.thread_id, ts: wItem.ts });
-          }
-        }
-        for (const line of learnedLines(st.memory)) {
-          if (line.toLowerCase().includes(q)) {
-            results.push({ kind: "memory", id: `mem-${results.length}`, title: line, subtitle: "memory.md" });
-          }
-        }
+        st.files[safeOut] = makeFile(safeOut, csvText);
+        saved_path = safeOut;
+        await persist();
       }
-      return jsonRes({ query: q, total: results.length, results: results.slice(0, limit) });
+      return jsonRes({ ...result, ...(saved_path ? { saved_path } : {}) });
     }
     if (method === "GET" && path === "/api/receipts") {
       const receipts = st.work.slice().reverse().map((x, idx) => ({
@@ -4742,17 +5271,28 @@ function runWebTableQuery(
           },
         });
       }
-      const sha256 = await sha256Hex(found.content);
+      const reqSheet = (u.searchParams.get("sheet") || "").trim();
+      const activeContent =
+        reqSheet && found.extractedSheets && typeof found.extractedSheets[reqSheet] === "string"
+          ? found.extractedSheets[reqSheet]
+          : found.content;
+      const activeExtracted = found.extracted
+        ? {
+            ...found.extracted,
+            ...(reqSheet && found.extractedSheets?.[reqSheet] ? { sheet: reqSheet } : {}),
+          }
+        : undefined;
+      const sha256 = await sha256Hex(activeContent);
       return jsonRes({
         path: found.path,
         name: found.name,
         size: found.size,
         mtime_ms: found.mtime_ms,
         ext: found.ext,
-        content: found.content,
+        content: activeContent,
         sha256,
         is_binary: Boolean(found.binaryBase64 && !found.extracted),
-        ...(found.extracted ? { extracted: found.extracted } : {}),
+        ...(activeExtracted ? { extracted: activeExtracted } : {}),
       });
     }
     if (method === "PUT" && path === "/api/files/content") {
@@ -4896,6 +5436,8 @@ function runWebTableQuery(
       let previewText = "";
       let extractedKind = fmt.toUpperCase();
       let extractedFmt: "markdown" | "csv" = "markdown";
+      let extractedSheets: Record<string, string> | undefined;
+      let sheetNames: string[] | undefined;
       if (fmt === "pdf") {
         const mdText =
           srcFile?.ext === "csv" || srcFile?.ext === "tsv"
@@ -4930,6 +5472,11 @@ function runWebTableQuery(
             ];
         bytes = buildWebMultiSheetXlsx(sheets);
         previewText = sheets[0]?.rows.map((r) => r.map(csvEscape).join(",")).join("\n") || "";
+        extractedSheets = {};
+        for (const sh of sheets) {
+          extractedSheets[sh.name] = sh.rows.map((r) => r.map(csvEscape).join(",")).join("\n");
+        }
+        sheetNames = sheets.map((s) => s.name);
         extractedKind = "Excel";
         extractedFmt = "csv";
       }
@@ -4942,7 +5489,13 @@ function runWebTableQuery(
         mtime_ms: Date.now(),
         ext: fmt,
         binaryBase64: b64,
-        extracted: { kind: extractedKind, format: extractedFmt, pages: 1 },
+        extracted: {
+          kind: extractedKind,
+          format: extractedFmt,
+          pages: 1,
+          ...(sheetNames ? { sheets: sheetNames, sheet: sheetNames[0] ?? null } : {}),
+        },
+        ...(extractedSheets ? { extractedSheets } : {}),
       };
       await persist();
       let sha256 = "";

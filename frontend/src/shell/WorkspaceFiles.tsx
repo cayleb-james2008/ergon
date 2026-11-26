@@ -20,10 +20,13 @@ import {
   FileSpreadsheet,
   FileText,
   History,
+  Layers,
   MessageSquarePlus,
   Pencil,
+  Play,
   RefreshCw,
   RotateCcw,
+  Save,
   Search,
   Sparkles,
   Upload,
@@ -46,6 +49,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { FileGlyph } from "@/chat/Entry";
 import {
+  aggregateVault,
   call,
   canExportPdf,
   downloadWorkspaceFile,
@@ -53,9 +57,18 @@ import {
   exportTarget,
   fileUploadBody,
   hasV070Api,
+  reindexVault,
+  searchVault,
   type FileDiffPayload,
   type FileRevision,
   type Status,
+  type TableAggregateFn,
+  type TableWhereOp,
+  type VaultAggregateResult,
+  type VaultChunkHit,
+  type VaultFileHit,
+  type VaultIndexStats,
+  type VaultSearchMode,
   type WorkspaceFile,
   type WorkspaceFileContent,
 } from "@/lib/api";
@@ -899,6 +912,30 @@ export function FileHistoryDiffView({
   );
 }
 
+function parseViewerTarget(raw: string): { path: string; sheet?: string; line?: number; endLine?: number } {
+  const trimmed = String(raw || "").trim();
+  const hashIdx = trimmed.indexOf("#");
+  const basePart = hashIdx >= 0 ? trimmed.slice(0, hashIdx) : trimmed;
+  const hashPart = hashIdx >= 0 ? trimmed.slice(hashIdx) : "";
+  const qIdx = basePart.indexOf("?sheet=");
+  if (qIdx >= 0) {
+    const cleanBase = basePart.slice(0, qIdx);
+    const sheet = decodeURIComponent(basePart.slice(qIdx + "?sheet=".length));
+    const parsed = parseCitationTarget(`${cleanBase}${hashPart}`);
+    return { ...parsed, sheet: sheet || undefined };
+  }
+  return parseCitationTarget(trimmed);
+}
+
+function buildVaultJumpTarget(path: string, ch: VaultChunkHit): string {
+  const sheetPart = ch.sheet ? `?sheet=${encodeURIComponent(ch.sheet)}` : "";
+  const linePart =
+    ch.line_start > 0
+      ? `#L${ch.line_start}${ch.line_end > ch.line_start ? `-L${ch.line_end}` : ""}`
+      : "";
+  return `${path}${sheetPart}${linePart}`;
+}
+
 function SourceLineView({
   content,
   highlightLine,
@@ -912,9 +949,13 @@ function SourceLineView({
   const lines = useMemo(() => String(content ?? "").split(/\r?\n/), [content]);
 
   useEffect(() => {
-    if (highlightLine && targetRef.current) {
-      targetRef.current.scrollIntoView({ block: "center", behavior: "auto" });
-    }
+    if (!highlightLine) return;
+    const scrollTarget = () => {
+      targetRef.current?.scrollIntoView({ block: "center", behavior: "auto" });
+    };
+    scrollTarget();
+    const raf = window.requestAnimationFrame(scrollTarget);
+    return () => window.cancelAnimationFrame(raf);
   }, [highlightLine, content]);
 
   const endLine = highlightEnd && highlightEnd >= (highlightLine ?? 0) ? highlightEnd : highlightLine;
@@ -971,7 +1012,7 @@ export function FileViewerModal({
 }) {
   const [overridePath, setOverridePath] = useState<string | null>(null);
   const effectiveFilePath = overridePath ?? filePath;
-  const target = useMemo(() => parseCitationTarget(effectiveFilePath || ""), [effectiveFilePath]);
+  const target = useMemo(() => parseViewerTarget(effectiveFilePath || ""), [effectiveFilePath]);
   const cleanPath = effectiveFilePath ? target.path : null;
   const [data, setData] = useState<WorkspaceFileContent | null>(null);
   const [loading, setLoading] = useState(false);
@@ -1063,9 +1104,9 @@ export function FileViewerModal({
       return;
     }
     setTab(target.line ? "source" : "preview");
-    void loadContent(cleanPath);
+    void loadContent(cleanPath, target.sheet);
     void loadHistory(cleanPath);
-  }, [cleanPath, target.line, loadContent, loadHistory]);
+  }, [cleanPath, target.line, target.sheet, loadContent, loadHistory]);
 
   const ext = (data?.ext || cleanPath?.split(".").pop() || "").toLowerCase();
 
@@ -1216,6 +1257,11 @@ export function FileViewerModal({
           <DialogTitle className="flex min-w-0 items-center gap-2 text-title font-medium text-ink">
             {cleanPath && <FileGlyph name={cleanPath} className="size-4 shrink-0" />}
             <span className="mono min-w-0 truncate">{cleanPath ?? ""}</span>
+            {target.sheet && (
+              <Badge variant="outline" size="sm" className="shrink-0">
+                #{target.sheet}
+              </Badge>
+            )}
             {target.line && (
               <Badge variant="outline" size="sm" className="mono shrink-0">
                 L{target.line}{target.endLine ? ` to L${target.endLine}` : ""}
@@ -1537,30 +1583,200 @@ export function WorkspaceFilesBody({
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
   const [query, setQuery] = useState("");
+  const [searchMode, setSearchMode] = useState<VaultSearchMode>("hybrid");
+  const [vaultHits, setVaultHits] = useState<VaultFileHit[]>([]);
+  const [indexStats, setIndexStats] = useState<VaultIndexStats | null>(null);
+  const [vaultSearching, setVaultSearching] = useState(false);
+  const [reindexing, setReindexing] = useState(false);
+  const [searchNonce, setSearchNonce] = useState(0);
   const [extFilter, setExtFilter] = useState<"all" | "csv" | "md" | "json" | "other">("all");
   const [page, setPage] = useState(0);
   const [dragOver, setDragOver] = useState(false);
+
+  const [aggOpen, setAggOpen] = useState(false);
+  const [aggGlob, setAggGlob] = useState("*.csv");
+  const [aggSheet, setAggSheet] = useState("");
+  const [aggWhereCol, setAggWhereCol] = useState("");
+  const [aggWhereOp, setAggWhereOp] = useState<TableWhereOp>("contains");
+  const [aggWhereVal, setAggWhereVal] = useState("");
+  const [aggGroupBy, setAggGroupBy] = useState("");
+  const [aggFn, setAggFn] = useState<TableAggregateFn>("sum");
+  const [aggCol, setAggCol] = useState("Amount");
+  const [aggAlias, setAggAlias] = useState("");
+  const [aggSaveAs, setAggSaveAs] = useState("vault-rollup.csv");
+  const [aggBusy, setAggBusy] = useState(false);
+  const [aggErr, setAggErr] = useState("");
+  const [aggResult, setAggResult] = useState<VaultAggregateResult | null>(null);
 
   useEffect(() => {
     if (embedded || isOpen) onRefresh();
   }, [embedded, isOpen, onRefresh]);
 
   useEffect(() => {
+    if (!embedded && !isOpen) return;
+    let cancelled = false;
+    searchVault({ q: "", limit: 1 }).then((r) => {
+      if (!cancelled && r.ok && r.data.index_stats) {
+        setIndexStats(r.data.index_stats);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [embedded, isOpen, files.length]);
+
+  useEffect(() => {
+    const q = query.trim();
+    if ((!embedded && !isOpen) || q.length < 2) {
+      setVaultHits([]);
+      setVaultSearching(false);
+      return;
+    }
+    let cancelled = false;
+    const controller = new AbortController();
+    setVaultSearching(true);
+    const timer = window.setTimeout(async () => {
+      const r = await searchVault({
+        q,
+        scope: "files",
+        mode: searchMode,
+        limit: 20,
+        signal: controller.signal,
+      });
+      if (cancelled) return;
+      setVaultSearching(false);
+      if (!r.ok) {
+        setVaultHits([]);
+        return;
+      }
+      if (r.data.index_stats) {
+        setIndexStats(r.data.index_stats);
+      }
+      const nextHits: VaultFileHit[] = [];
+      if (Array.isArray(r.data.file_hits)) {
+        for (const fh of r.data.file_hits) {
+          if (fh && typeof fh.path === "string" && fh.path.trim()) {
+            nextHits.push({ ...fh, chunks: Array.isArray(fh.chunks) ? fh.chunks : [] });
+          }
+        }
+      } else if (Array.isArray(r.data.results)) {
+        for (const h of r.data.results) {
+          if (h.kind === "file" && h.path && Array.isArray(h.chunks)) {
+            nextHits.push({ path: h.path, score: h.score, chunks: h.chunks });
+          }
+        }
+      }
+      setVaultHits(nextHits);
+    }, 120);
+    return () => {
+      cancelled = true;
+      controller.abort();
+      window.clearTimeout(timer);
+    };
+  }, [query, searchMode, searchNonce, embedded, isOpen, files.length]);
+
+  const handleReindexVault = async () => {
+    if (reindexing) return;
+    setReindexing(true);
+    const r = await reindexVault();
+    setReindexing(false);
+    if (!r.ok) {
+      toast.error(r.error || "Could not reindex workspace vault.");
+      return;
+    }
+    if (r.data.index_stats) {
+      setIndexStats(r.data.index_stats);
+    } else {
+      setIndexStats((prev) => ({
+        total_files: r.data.indexed_files,
+        total_chunks: r.data.total_chunks,
+        indexed_bytes: prev?.indexed_bytes ?? 0,
+        semantic_enabled: prev?.semantic_enabled ?? true,
+      }));
+    }
+    toast.success(`Indexed ${r.data.indexed_files} files (${r.data.total_chunks} chunks) in ${r.data.elapsed_ms} ms.`);
+    setSearchNonce((n) => n + 1);
+  };
+
+  const runVaultAggregate = async (savePath?: string) => {
+    const cleanGlob = aggGlob.trim() || "*.csv";
+    const groupCols = aggGroupBy
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const targetCol = aggCol.trim() || "*";
+    const alias =
+      aggAlias.trim() ||
+      `${aggFn}_${targetCol === "*" ? "rows" : targetCol.toLowerCase().replace(/[^a-z0-9]+/g, "_")}`;
+    setAggBusy(true);
+    setAggErr("");
+    const res = await aggregateVault({
+      glob: cleanGlob,
+      ...(aggSheet.trim() ? { sheet: aggSheet.trim() } : {}),
+      ...(aggWhereCol.trim() && aggWhereVal.trim()
+        ? { where: [{ col: aggWhereCol.trim(), op: aggWhereOp, value: aggWhereVal.trim() }] }
+        : {}),
+      ...(groupCols.length ? { group_by: groupCols } : {}),
+      aggregates: [{ col: targetCol, fn: aggFn, as: alias }],
+      sort: { col: alias, dir: "desc" },
+      limit: 500,
+      ...(savePath ? { save_as: savePath } : {}),
+    });
+    setAggBusy(false);
+    if (!res.ok) {
+      setAggErr(res.error || "Multi-file rollup failed.");
+      toast.error(res.error || "Multi-file rollup failed.");
+      return;
+    }
+    setAggResult(res.data);
+    if (res.data.saved_path) {
+      toast.success(`Saved ${res.data.saved_path} to workspace.`);
+      onRefresh();
+    }
+  };
+
+  useEffect(() => {
     setPage(0);
-  }, [query, extFilter, files.length]);
+  }, [query, extFilter, files.length, vaultHits.length]);
+
+  const vaultHitsMap = useMemo(() => {
+    const map = new Map<string, VaultFileHit>();
+    for (const fh of vaultHits) {
+      map.set(fh.path, fh);
+    }
+    return map;
+  }, [vaultHits]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return files.filter((f) => {
+    const matchesExt = (f: WorkspaceFile) => {
       const ext = (f.ext || "").toLowerCase();
       if (extFilter === "csv" && ext !== "csv") return false;
       if (extFilter === "md" && ext !== "md" && ext !== "markdown") return false;
       if (extFilter === "json" && ext !== "json") return false;
       if (extFilter === "other" && ["csv", "md", "markdown", "json"].includes(ext)) return false;
+      return true;
+    };
+    const base = files.filter((f) => {
+      if (!matchesExt(f)) return false;
       if (!q) return true;
-      return f.path.toLowerCase().includes(q) || ext.includes(q);
+      const ext = (f.ext || "").toLowerCase();
+      return f.path.toLowerCase().includes(q) || ext.includes(q) || vaultHitsMap.has(f.path);
     });
-  }, [files, query, extFilter]);
+    if (q.length >= 2 && vaultHits.length > 0) {
+      const rankMap = new Map<string, number>();
+      vaultHits.forEach((fh, idx) => rankMap.set(fh.path, idx));
+      return [...base].sort((a, b) => {
+        const ra = rankMap.get(a.path);
+        const rb = rankMap.get(b.path);
+        if (ra !== undefined && rb !== undefined) return ra - rb;
+        if (ra !== undefined) return -1;
+        if (rb !== undefined) return 1;
+        return 0;
+      });
+    }
+    return base;
+  }, [files, query, extFilter, vaultHits, vaultHitsMap]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / FILES_PAGE_SIZE));
   const safePage = Math.min(page, totalPages - 1);
@@ -1651,6 +1867,17 @@ export function WorkspaceFilesBody({
           <Button size="sm" variant="outline" className="max-md:min-h-11" onClick={() => setCreating((v) => !v)}>
             <FilePlus2 className="size-3.5" strokeWidth={1.5} aria-hidden />
             {creating ? "Cancel" : "New file"}
+          </Button>
+          <Button
+            id="vault-aggregate-open-btn"
+            type="button"
+            size="sm"
+            variant="outline"
+            className="max-md:min-h-11"
+            onClick={() => setAggOpen(true)}
+          >
+            <Layers className="size-3.5" strokeWidth={1.5} aria-hidden />
+            Rollup
           </Button>
           <Button
             id="workspace-refresh-btn"
@@ -1753,6 +1980,42 @@ export function WorkspaceFilesBody({
                 : `${filtered.length} of ${files.length}`}
             </span>
           </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <SegmentedControl aria-label="Workspace vault search mode">
+              {(["hybrid", "bm25", "exact"] as const).map((m) => (
+                <SegmentedControlItem
+                  key={m}
+                  data-id={m}
+                  aria-pressed={searchMode === m}
+                  data-checked={searchMode === m ? "" : undefined}
+                  className="min-h-11 px-2 text-xs md:min-h-7"
+                  onClick={() => setSearchMode(m)}
+                >
+                  {m === "hybrid" ? "Hybrid" : m === "bm25" ? "BM25" : "Exact"}
+                </SegmentedControlItem>
+              ))}
+            </SegmentedControl>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <Badge id="workspace-vault-stats" variant="outline" size="sm" className="text-xs text-ink-2 tabular-nums">
+                {indexStats
+                  ? `${indexStats.total_chunks} chunks, ${indexStats.total_files} files`
+                  : `${files.length} files`}
+              </Badge>
+              <Button
+                id="workspace-vault-reindex-btn"
+                type="button"
+                size="xs"
+                variant="outline"
+                className="max-md:min-h-11 gap-1 text-xs"
+                disabled={reindexing}
+                onClick={() => void handleReindexVault()}
+              >
+                <RefreshCw className={cn("size-3", reindexing && "animate-spin")} strokeWidth={1.5} aria-hidden />
+                <span>{reindexing ? "Reindexing…" : "Reindex Vault"}</span>
+              </Button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -1764,47 +2027,95 @@ export function WorkspaceFilesBody({
         </p>
       ) : !filtered.length ? (
         <p className="rounded-card border border-hairline bg-board/40 p-3.5 text-sm text-ink-2">
-          No workspace files match &ldquo;{query}&rdquo;.
+          {vaultSearching
+            ? "Searching indexed workspace…"
+            : `No workspace files match "${query}".`}
         </p>
       ) : (
         <>
           <ul className="divide-y divide-hairline rounded-card border border-hairline bg-surface">
-            {visible.map((f) => (
-              <li key={f.path} className="flex flex-wrap items-center justify-between gap-2 px-3 py-2.5">
-                <div className="flex min-w-0 flex-1 items-center gap-2">
-                  <FileGlyph name={f.path} />
-                  <div className="min-w-0 flex-1">
-                    <p className="mono truncate text-sm font-medium text-ink">{f.path}</p>
-                    <p className="mono text-xs text-ink-2">
-                      {formatBytes(f.size)}{f.mtime_ms > 0 ? `, ${relTime(f.mtime_ms)}` : ""}
-                    </p>
+            {visible.map((f) => {
+              const hit = query.trim().length >= 2 ? vaultHitsMap.get(f.path) : undefined;
+              const chunks = hit?.chunks?.slice(0, 3) ?? [];
+              return (
+                <li key={f.path} className="flex flex-col gap-2 px-3 py-2.5">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex min-w-0 flex-1 items-center gap-2">
+                      <FileGlyph name={f.path} />
+                      <div className="min-w-0 flex-1">
+                        <p className="mono truncate text-sm font-medium text-ink">{f.path}</p>
+                        <p className="mono text-xs text-ink-2">
+                          {formatBytes(f.size)}{f.mtime_ms > 0 ? `, ${relTime(f.mtime_ms)}` : ""}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="max-md:min-h-11"
+                        aria-label={`Open ${f.path}`}
+                        onClick={() => {
+                          if (!embedded) setIsOpen(false);
+                          setTimeout(() => onOpenFile(f.path), embedded ? 0 : 40);
+                        }}
+                      >
+                        Open
+                      </Button>
+                      <Button
+                        size="icon-sm"
+                        variant="ghost"
+                        className="max-md:min-h-11 max-md:min-w-11"
+                        aria-label={`Download ${f.path}`}
+                        onClick={() => downloadWorkspaceFile(f.path)}
+                      >
+                        <Download className="size-3.5" strokeWidth={1.5} aria-hidden />
+                      </Button>
+                    </div>
                   </div>
-                </div>
-                <div className="flex items-center gap-1">
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="max-md:min-h-11"
-                    aria-label={`Open ${f.path}`}
-                    onClick={() => {
-                      if (!embedded) setIsOpen(false);
-                      setTimeout(() => onOpenFile(f.path), embedded ? 0 : 40);
-                    }}
-                  >
-                    Open
-                  </Button>
-                  <Button
-                    size="icon-sm"
-                    variant="ghost"
-                    className="max-md:min-h-11 max-md:min-w-11"
-                    aria-label={`Download ${f.path}`}
-                    onClick={() => downloadWorkspaceFile(f.path)}
-                  >
-                    <Download className="size-3.5" strokeWidth={1.5} aria-hidden />
-                  </Button>
-                </div>
-              </li>
-            ))}
+                  {chunks.length > 0 && (
+                    <div className="flex flex-col gap-1.5 border-l-2 border-hairline pl-2.5">
+                      {chunks.map((ch) => (
+                        <button
+                          key={ch.chunk_id}
+                          type="button"
+                          data-vault-jump={f.path}
+                          data-line-start={ch.line_start}
+                          onClick={() => {
+                            const jumpTarget = buildVaultJumpTarget(f.path, ch);
+                            if (!embedded) setIsOpen(false);
+                            setTimeout(() => onOpenFile(jumpTarget), embedded ? 0 : 40);
+                          }}
+                          className="focus-ring flex min-h-11 w-full cursor-pointer flex-col items-start gap-1 rounded-sm bg-board/50 px-2.5 py-1.5 text-left text-xs text-ink outline-none hover:bg-board md:min-h-9"
+                        >
+                          <div className="flex w-full flex-wrap items-center gap-1">
+                            {typeof ch.page === "number" && ch.page > 0 && (
+                              <Badge variant="outline" size="sm" className="text-xs tabular-nums">
+                                Page {ch.page}
+                              </Badge>
+                            )}
+                            {ch.sheet && (
+                              <Badge variant="outline" size="sm" className="text-xs">
+                                #{ch.sheet}
+                              </Badge>
+                            )}
+                            <Badge variant="outline" size="sm" className="text-xs tabular-nums">
+                              L{ch.line_start}{ch.line_end > ch.line_start ? `-L${ch.line_end}` : ""}
+                            </Badge>
+                            {ch.heading && (
+                              <span className="truncate text-xs font-medium text-ink">{ch.heading}</span>
+                            )}
+                          </div>
+                          <span className="line-clamp-2 w-full text-xs leading-5 text-ink-2">
+                            {ch.excerpt}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </li>
+              );
+            })}
           </ul>
 
           {totalPages > 1 && (
@@ -1841,6 +2152,280 @@ export function WorkspaceFilesBody({
           )}
         </>
       )}
+
+      <Dialog open={aggOpen} onOpenChange={setAggOpen}>
+        <DialogContent id="vault-aggregate-dialog" className="max-h-[88vh] max-w-3xl overflow-y-auto">
+          <DialogHeader className="pr-10 text-left">
+            <DialogTitle className="flex items-center gap-2 text-title font-medium text-ink">
+              <Layers className="size-4 shrink-0 text-icon" strokeWidth={1.5} aria-hidden />
+              <span>Multi-file table rollup</span>
+            </DialogTitle>
+            <DialogDescription className="text-xs text-ink-2">
+              Aggregate CSV, TSV, and workbook sheets across matching workspace files with exact decimal totals.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="flex flex-col gap-3">
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+              <div className="flex flex-col gap-1">
+                <label htmlFor="vault-agg-glob" className="text-xs text-ink-2">
+                  File glob
+                </label>
+                <Input
+                  id="vault-agg-glob"
+                  value={aggGlob}
+                  onChange={(e) => setAggGlob(e.target.value)}
+                  placeholder="e.g. *.csv or invoices/*.csv"
+                  className="h-9 text-xs max-md:min-h-11"
+                />
+              </div>
+              <div className="flex flex-col gap-1">
+                <label htmlFor="vault-agg-sheet" className="text-xs text-ink-2">
+                  Workbook sheet (optional)
+                </label>
+                <Input
+                  id="vault-agg-sheet"
+                  value={aggSheet}
+                  onChange={(e) => setAggSheet(e.target.value)}
+                  placeholder="All sheets"
+                  className="h-9 text-xs max-md:min-h-11"
+                />
+              </div>
+              <div className="flex flex-col gap-1">
+                <label htmlFor="vault-agg-group-by" className="text-xs text-ink-2">
+                  Group by columns
+                </label>
+                <Input
+                  id="vault-agg-group-by"
+                  value={aggGroupBy}
+                  onChange={(e) => setAggGroupBy(e.target.value)}
+                  placeholder="e.g. Vendor, Region"
+                  className="h-9 text-xs max-md:min-h-11"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+              <div className="flex flex-col gap-1">
+                <label htmlFor="vault-agg-fn" className="text-xs text-ink-2">
+                  Aggregate
+                </label>
+                <select
+                  id="vault-agg-fn"
+                  aria-label="Rollup aggregate function"
+                  value={aggFn}
+                  onChange={(e) => setAggFn(e.target.value as TableAggregateFn)}
+                  className="focus-ring h-9 min-h-9 rounded-sm border border-input bg-surface px-2 text-xs text-ink outline-none max-md:min-h-11"
+                >
+                  <option value="sum">SUM</option>
+                  <option value="avg">AVG</option>
+                  <option value="min">MIN</option>
+                  <option value="max">MAX</option>
+                  <option value="count">COUNT</option>
+                </select>
+              </div>
+              <div className="flex flex-col gap-1">
+                <label htmlFor="vault-agg-col" className="text-xs text-ink-2">
+                  Target column
+                </label>
+                <Input
+                  id="vault-agg-col"
+                  value={aggCol}
+                  onChange={(e) => setAggCol(e.target.value)}
+                  placeholder="e.g. Amount"
+                  className="h-9 text-xs max-md:min-h-11"
+                />
+              </div>
+              <div className="flex flex-col gap-1">
+                <label htmlFor="vault-agg-alias" className="text-xs text-ink-2">
+                  Output column name
+                </label>
+                <Input
+                  id="vault-agg-alias"
+                  value={aggAlias}
+                  onChange={(e) => setAggAlias(e.target.value)}
+                  placeholder="e.g. total_amount"
+                  className="h-9 text-xs max-md:min-h-11"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+              <div className="flex flex-col gap-1">
+                <label htmlFor="vault-agg-where-col" className="text-xs text-ink-2">
+                  Filter column (optional)
+                </label>
+                <Input
+                  id="vault-agg-where-col"
+                  value={aggWhereCol}
+                  onChange={(e) => setAggWhereCol(e.target.value)}
+                  placeholder="e.g. Status"
+                  className="h-9 text-xs max-md:min-h-11"
+                />
+              </div>
+              <div className="flex flex-col gap-1">
+                <label htmlFor="vault-agg-where-op" className="text-xs text-ink-2">
+                  Filter operator
+                </label>
+                <select
+                  id="vault-agg-where-op"
+                  aria-label="Rollup filter operator"
+                  value={aggWhereOp}
+                  onChange={(e) => setAggWhereOp(e.target.value as TableWhereOp)}
+                  className="focus-ring h-9 min-h-9 rounded-sm border border-input bg-surface px-2 text-xs text-ink outline-none max-md:min-h-11"
+                >
+                  <option value="contains">contains</option>
+                  <option value="eq">equals (=)</option>
+                  <option value="neq">not equal (!=)</option>
+                  <option value="gt">greater (&gt;)</option>
+                  <option value="gte">at least (&gt;=)</option>
+                  <option value="lt">less (&lt;)</option>
+                  <option value="lte">at most (&lt;=)</option>
+                </select>
+              </div>
+              <div className="flex flex-col gap-1">
+                <label htmlFor="vault-agg-where-val" className="text-xs text-ink-2">
+                  Filter value
+                </label>
+                <Input
+                  id="vault-agg-where-val"
+                  value={aggWhereVal}
+                  onChange={(e) => setAggWhereVal(e.target.value)}
+                  placeholder="Match value…"
+                  className="h-9 text-xs max-md:min-h-11"
+                />
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-2 border-t border-hairline pt-2.5">
+              <Button
+                id="vault-agg-run-btn"
+                type="button"
+                size="sm"
+                className="max-md:min-h-11"
+                disabled={aggBusy}
+                onClick={() => void runVaultAggregate()}
+              >
+                <Play className="size-3.5" strokeWidth={1.5} aria-hidden />
+                {aggBusy ? "Running…" : "Run Rollup"}
+              </Button>
+              <div className="flex flex-wrap items-center gap-2">
+                <Input
+                  id="vault-agg-save-as"
+                  aria-label="Save rollup CSV path"
+                  value={aggSaveAs}
+                  onChange={(e) => setAggSaveAs(e.target.value)}
+                  placeholder="vault-rollup.csv"
+                  className="h-9 w-44 text-xs max-md:min-h-11"
+                />
+                <Button
+                  id="vault-agg-save-btn"
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="max-md:min-h-11"
+                  disabled={aggBusy || !aggSaveAs.trim()}
+                  onClick={() => void runVaultAggregate(aggSaveAs.trim())}
+                >
+                  <Save className="size-3.5" strokeWidth={1.5} aria-hidden />
+                  Save Rollup CSV
+                </Button>
+              </div>
+            </div>
+
+            {aggErr && (
+              <p role="alert" className="text-xs text-status-stopped-fg">
+                {aggErr}
+              </p>
+            )}
+
+            {aggResult && (
+              <section
+                id="vault-agg-result"
+                aria-label="Multi-file rollup results"
+                className="flex flex-col gap-2 rounded-sm border border-hairline bg-board/30 p-3"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex flex-wrap items-center gap-2 text-xs text-ink-2">
+                    <span className="font-medium text-ink">Rollup result</span>
+                    <Badge variant="outline" size="sm" className="tabular-nums">
+                      {aggResult.row_count} rows from {aggResult.source_files.length} files
+                    </Badge>
+                    {aggResult.saved_path && (
+                      <Badge variant="outline" size="sm" className="status-finished border-hairline">
+                        Saved: {aggResult.saved_path}
+                      </Badge>
+                    )}
+                  </div>
+                  {aggResult.saved_path && (
+                    <Button
+                      id="vault-agg-open-saved"
+                      type="button"
+                      size="xs"
+                      variant="outline"
+                      className="max-md:min-h-11"
+                      onClick={() => {
+                        const saved = aggResult.saved_path!;
+                        setAggOpen(false);
+                        if (!embedded) setIsOpen(false);
+                        setTimeout(() => onOpenFile(saved), 40);
+                      }}
+                    >
+                      Open {aggResult.saved_path}
+                    </Button>
+                  )}
+                </div>
+
+                {aggResult.source_files.length > 0 && (
+                  <p className="text-xs text-ink-2">
+                    Sources: {aggResult.source_files.join(", ")}
+                  </p>
+                )}
+
+                <div className="max-h-60 overflow-auto rounded-sm border border-hairline bg-surface">
+                  <table className="w-full border-collapse text-left text-xs">
+                    <thead className="sticky top-0 border-b border-hairline bg-board text-ink">
+                      <tr>
+                        {aggResult.columns.map((col, idx) => (
+                          <th key={idx} className="whitespace-nowrap px-3 py-2 font-medium">
+                            {col}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-hairline">
+                      {aggResult.rows.length === 0 ? (
+                        <tr>
+                          <td colSpan={Math.max(1, aggResult.columns.length)} className="px-3 py-4 text-center text-ink-2">
+                            No rows matched this rollup query.
+                          </td>
+                        </tr>
+                      ) : (
+                        aggResult.rows.map((r, ri) => (
+                          <tr key={ri} className="hover:bg-board/40">
+                            {aggResult.columns.map((_, ci) => {
+                              const val = r[ci] ?? "";
+                              const numeric = /^-?\$?\d[\d,]*(?:\.\d+)?%?$/.test(val.trim());
+                              return (
+                                <td
+                                  key={ci}
+                                  className={numeric ? "mono whitespace-nowrap px-3 py-1.5 text-right text-ink" : "px-3 py-1.5 text-ink"}
+                                >
+                                  {val}
+                                </td>
+                              );
+                            })}
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

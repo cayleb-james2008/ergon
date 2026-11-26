@@ -21,6 +21,7 @@ export type ServerCapabilities = {
   connectors?: boolean;
   clients?: boolean;
   metering?: boolean;
+  vault_search?: boolean;
 };
 
 export type Client = {
@@ -507,6 +508,87 @@ export type StarterLaunchResult = {
   summary?: string;
   preview?: PlaybookPreviewResult | null;
 };
+export type VaultSearchMode = "hybrid" | "bm25" | "exact";
+export type VaultSearchScope = "all" | "files" | "receipts" | "memory";
+
+export type VaultChunkHit = {
+  chunk_id: string;
+  score: number;
+  bm25_score?: number;
+  semantic_score?: number;
+  page?: number | null;
+  sheet?: string | null;
+  line_start: number;
+  line_end: number;
+  heading?: string | null;
+  excerpt: string;
+};
+
+export type VaultFileHit = {
+  path: string;
+  name?: string;
+  ext?: string;
+  size?: number;
+  mtime_ms?: number;
+  score?: number;
+  chunks: VaultChunkHit[];
+};
+
+export type VaultIndexStats = {
+  total_files: number;
+  total_chunks: number;
+  indexed_bytes: number;
+  semantic_enabled: boolean;
+};
+
+export type VaultSearchResponse = {
+  query?: string;
+  mode?: VaultSearchMode;
+  scope?: VaultSearchScope;
+  total?: number;
+  results?: SearchHit[];
+  files?: Array<{
+    path?: string;
+    name?: string;
+    size?: number;
+    mtime_ms?: number;
+    ext?: string;
+    chunks?: VaultChunkHit[];
+  }>;
+  file_hits?: VaultFileHit[];
+  receipts?: Array<{ id?: string; thread_id?: string; task?: string; summary?: string; ts?: number }>;
+  memory?: Array<{ line?: number | string; text?: string }>;
+  index_stats?: VaultIndexStats;
+};
+
+export type VaultReindexResult = {
+  ok: boolean;
+  indexed_files: number;
+  total_chunks: number;
+  elapsed_ms: number;
+  index_stats?: VaultIndexStats;
+};
+
+export type VaultAggregateRequest = {
+  glob: string;
+  sheet?: string;
+  where?: TableWhereFilter[];
+  group_by?: string[];
+  aggregates: TableAggregateSpec[];
+  sort?: { col: string; dir: "asc" | "desc" };
+  limit?: number;
+  save_as?: string;
+};
+
+export type VaultAggregateResult = {
+  ok: boolean;
+  columns: string[];
+  rows: string[][];
+  source_files: string[];
+  row_count: number;
+  saved_path?: string;
+};
+
 export type SearchHit = {
   kind: "file" | "receipt" | "skill" | "routine" | "memory" | "thread";
   id: string;
@@ -515,6 +597,12 @@ export type SearchHit = {
   path?: string;
   thread_id?: string;
   ts?: number;
+  score?: number;
+  chunks?: VaultChunkHit[];
+  line_start?: number;
+  line_end?: number;
+  page?: number;
+  sheet?: string;
 };
 export type ReceiptRecord = {
   id: string;
@@ -1432,4 +1520,45 @@ export async function fetchMeteringSummary(opts: {
   if (typeof opts.window_days === "number") params.set("window_days", String(opts.window_days));
   const qs = params.toString();
   return call<MeteringSummary>(`/api/metering/summary${qs ? `?${qs}` : ""}`);
+}
+
+export function hasVaultSearchApi(status: Status | null | "error" | undefined): boolean {
+  if (isWebStandalone()) return true;
+  if (!status || status === "error") return false;
+  if (typeof status.capabilities?.vault_search === "boolean") {
+    return Boolean(status.capabilities.vault_search);
+  }
+  return isAtLeastMinor(status.version, 34);
+}
+
+export async function searchVault(opts: {
+  q: string;
+  scope?: VaultSearchScope;
+  mode?: VaultSearchMode;
+  limit?: number;
+  path_prefix?: string;
+  signal?: AbortSignal;
+}): Promise<Res<VaultSearchResponse>> {
+  const params = new URLSearchParams();
+  params.set("q", opts.q);
+  if (opts.scope) params.set("scope", opts.scope);
+  if (opts.mode) params.set("mode", opts.mode);
+  if (typeof opts.limit === "number") params.set("limit", String(opts.limit));
+  if (opts.path_prefix) params.set("path_prefix", opts.path_prefix);
+  return call<VaultSearchResponse>(`/api/search?${params.toString()}`, { signal: opts.signal });
+}
+
+export async function searchWorkspace(
+  q: string,
+  opts: { limit?: number; scope?: VaultSearchScope; mode?: VaultSearchMode; signal?: AbortSignal } = {}
+): Promise<Res<VaultSearchResponse>> {
+  return searchVault({ q, ...opts });
+}
+
+export async function reindexVault(): Promise<Res<VaultReindexResult>> {
+  return call<VaultReindexResult>("/api/vault/reindex", { method: "POST", body: {} });
+}
+
+export async function aggregateVault(body: VaultAggregateRequest): Promise<Res<VaultAggregateResult>> {
+  return call<VaultAggregateResult>("/api/vault/aggregate", { method: "POST", body });
 }
