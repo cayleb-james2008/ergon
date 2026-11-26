@@ -5622,6 +5622,23 @@ fn try_route_knowledge_and_routines(
                             });
                             let _ = pipelines::resume_pipeline(env, prun_id, &resume_body, true);
                         }
+                    } else if decision["kind"].as_str() == Some("connector_delivery") {
+                        if let Some(linked_run) = pipelines::find_run_by_checkpoint_id(&runtime.cfg.data_dir, &id) {
+                            let env = pipeline_exec_env(
+                                state,
+                                person,
+                                runtime,
+                                &ToolCtx {
+                                    library: state.library.clone(),
+                                    root_data_dir: root_cfg.data_dir.clone(),
+                                    person_id: person.id.clone(),
+                                },
+                            );
+                            let resume_body = json!({
+                                "action": if action == "approve" { "approve" } else { "reject" }
+                            });
+                            let _ = pipelines::resume_pipeline(env, &linked_run.run_id, &resume_body, true);
+                        }
                     }
                     // The outcome reports back into the thread the
                     // decision came from, so the record is complete
@@ -5769,6 +5786,24 @@ fn try_route_runs_and_chat(
     let root_cfg = &state.cfg;
     let _ = root_cfg;
     Some(match (req.method.as_str(), req.path.as_str()) {
+        ("POST", "/api/pipelines/validate") => {
+            if state.gate_token.is_none()
+                && !host_allowed(req.host.as_deref().unwrap_or(""), &state.allowed_hosts)
+            {
+                return Some(respond_err(stream, 403, "loopback host required"));
+            }
+            let parsed: Value = if req.body.iter().all(u8::is_ascii_whitespace) {
+                json!({})
+            } else {
+                match serde_json::from_slice(&req.body) {
+                    Ok(v) => v,
+                    Err(_) => return Some(respond_err(stream, 400, "request body is not valid JSON")),
+                }
+            };
+            let (status, payload) =
+                pipelines::validate_pipeline_payload(&runtime.cfg, &state.library, &parsed);
+            respond_json(stream, status, &payload)
+        }
         ("POST", "/api/pipelines/run") => {
             let parsed: Value = if req.body.iter().all(u8::is_ascii_whitespace) {
                 json!({})

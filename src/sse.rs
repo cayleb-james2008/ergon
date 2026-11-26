@@ -1,7 +1,7 @@
 //! True Server-Sent Events (SSE) live run event bus and active run cancellation.
 //!
 //! Each in-flight agent run publishes structured events (`run_started`,
-//! `step_start`, `step_done`, `file_written`, `approval_parked`,
+//! `step_start`, `token_delta`, `step_done`, `file_written`, `approval_parked`,
 //! `run_cancelling`, `run_finished`) onto a bounded ring buffer guarded by a
 //! Condvar. Multiple concurrent `GET /api/runs/stream` clients receive events
 //! in real time with periodic heartbeats and zero thread leaks on disconnect.
@@ -13,7 +13,7 @@ use std::net::TcpStream;
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::Duration;
 
-const MAX_BUFFERED_EVENTS: usize = 256;
+const MAX_BUFFERED_EVENTS: usize = 1024;
 
 #[derive(Clone, Debug)]
 pub struct RunEvent {
@@ -86,6 +86,27 @@ impl RunEventBus {
         });
         cvar.notify_all();
         seq
+    }
+
+    pub fn publish_token_delta(
+        &self,
+        person_id: &str,
+        run_id: &str,
+        thread_id: &str,
+        delta: &str,
+        step_index: usize,
+    ) -> u64 {
+        self.publish(
+            "token_delta",
+            person_id,
+            run_id,
+            thread_id,
+            json!({
+                "delta": delta,
+                "step_index": step_index,
+                "ts_ms": crate::records::now_millis(),
+            }),
+        )
     }
 
     pub fn head_seq(&self) -> u64 {
