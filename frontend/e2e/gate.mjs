@@ -2570,6 +2570,19 @@ for (const [theme, vw, vh] of [
   const { ctx, p } = await open(vw, vh, theme);
   p.__expect400 = true;
 
+  await p.request.post(BASE + "api/connectors/outbound", {
+    headers: { origin: ORIGIN },
+    data: {
+      id: "conn-dag-1",
+      name: "Ops Webhook",
+      kind: "http_webhook",
+      method: "POST",
+      url: "https://hooks.example.invalid/ergon",
+      enabled: true,
+      require_approval: true,
+    },
+  });
+
   await p.route("**/api/status", async (r) => {
     const res = await r.fetch();
     const j = await res.json();
@@ -2588,9 +2601,11 @@ for (const [theme, vw, vh] of [
       const res = await r.fetch();
       if (res.ok()) {
         const j = await res.json();
-        const outbound = Array.isArray(j?.outbound) && j.outbound.length > 0
-          ? j.outbound
+        const existing = Array.isArray(j?.outbound) ? j.outbound : [];
+        const outbound = existing.some((c) => c?.id === "conn-dag-1")
+          ? existing
           : [
+              ...existing,
               {
                 id: "conn-dag-1",
                 name: "Ops Webhook",

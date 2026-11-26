@@ -5089,11 +5089,11 @@ function runWebVaultAggregate(
   };
 }
 
-    if (method === "GET" && path === "/api/version") return jsonRes({ name: "ergon", version: "0.34.0" });
-    if (method === "GET" && path === "/api/update") return jsonRes({ current: "0.34.0", available: false, mode: "off", checked_at: Math.floor(Date.now() / 1000) });
+    if (method === "GET" && path === "/api/version") return jsonRes({ name: "ergon", version: "0.35.0" });
+    if (method === "GET" && path === "/api/update") return jsonRes({ current: "0.35.0", available: false, mode: "off", checked_at: Math.floor(Date.now() / 1000) });
     if (method === "GET" && path === "/api/status") {
       return jsonRes({
-        version: "0.34.0",
+        version: "0.35.0",
         model_configured: true,
         model: byok.engine_mode === "byok" && byok.model_id ? byok.model_id : "browser-workspace-engine",
         model_base_url: byok.engine_mode === "byok" ? byok.model_base_url : "indexeddb://local",
@@ -5477,7 +5477,7 @@ function runWebVaultAggregate(
       const pid = decodeURIComponent(path.slice("/api/playbooks/".length, -"/export".length)).trim();
       const rt = st.routines.find((x) => x.id === pid);
       if (!rt) return jsonRes({ error: "playbook not found" }, 404);
-      const built = await buildSignedPlaybookPack(rt, "0.34.0");
+      const built = await buildSignedPlaybookPack(rt, "0.35.0");
       return new Response(built.json, {
         status: 200,
         headers: {

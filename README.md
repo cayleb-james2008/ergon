@@ -76,12 +76,20 @@ One Rust binary serves the React web UI (`/` and `/phone`), the raw-TCP HTTP and
     </td>
   </tr>
   <tr>
-    <td colspan="2">
+    <td width="50%">
       Search every line, PDF page, and Excel sheet past the first 512 characters with hybrid BM25 and vector ranking, jump straight to highlighted source lines, and run exact-decimal multi-file CSV, TSV, and workbook rollups (<code>GET /api/search</code>, <code>POST /api/vault/reindex</code>, <code>POST /api/vault/aggregate</code>).
       <br /><br />
       <picture>
         <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/vault-search-dark.png" />
         <img src="docs/screenshots/vault-search-light.png" alt="Ergon v0.34.0 Full-Vault Chunked Search with Hybrid/BM25/Exact ranking and Multi-file table rollup dialog" width="100%" />
+      </picture>
+    </td>
+    <td width="50%">
+      Build parallel DAG pipelines with <code>depends_on</code> branches, <code>for_each</code> batch fan-out, conditional <code>on_all_ok</code> and <code>expr:</code> gates, policy-held <code>deliver</code> steps, <code>POST /api/pipelines/validate</code> cycle checking, and live <code>token_delta</code> SSE streaming.
+      <br /><br />
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/dag-pipelines-dark.png" />
+        <img src="docs/screenshots/dag-pipelines-light.png" alt="Ergon v0.35.0 DAG Pipeline Builder with depends_on, for_each batch fan-out, deliver step, and Validate DAG topological stages" width="100%" />
       </picture>
     </td>
   </tr>
@@ -93,8 +101,8 @@ One Rust binary serves the React web UI (`/` and `/phone`), the raw-TCP HTTP and
 
 ```mermaid
 flowchart LR
-  UI["Desk UI (React 19 + Geist)\n/ (lazy shell), /phone, ergon-web.html"] -->|HTTP Keep-Alive + SSE| HTTP["Raw-TCP Engine (src/server.rs)\npre-gzipped /chunks/*, ETag 304, Host/413 guards"]
-  HTTP --> Agent["Agent Loop (src/lib.rs)\npatch_file, search_vault, aggregate_vault, Done Gate"]
+  UI["Desk UI (React 19 + Geist)\n/ (lazy shell), /phone, ergon-web.html"] -->|HTTP Keep-Alive + token_delta SSE| HTTP["Raw-TCP Engine (src/server.rs)\npre-gzipped /chunks/*, ETag 304, Host/413 guards"]
+  HTTP --> Agent["Agent Loop & DAG Pipelines (src/lib.rs, src/pipelines.rs)\ndepends_on, for_each, deliver, compaction, Done Gate"]
   HTTP --> Workflows["12 Built-In Workflows & Connectors\nsandbox FS, webhooks, folder watch, PDF 1.4 & XLSX (src/docs.rs)"]
   HTTP --> Index["Per-Person RwLock Vault Index (src/search.rs)\nHybrid BM25+vector chunks, [file:L##] verification"]
   Agent --> Ledger["Provenance and Safety\nSHA-256 receipts, usage_ledger.jsonl, .history/, Tripwires"]
@@ -102,18 +110,18 @@ flowchart LR
 
 ---
 
-## Verified benchmarks (`v0.34.0` vs `v0.11.0`)
+## Verified benchmarks (`v0.35.0` vs `v0.11.0`)
 
 Measured against the stripped fat-LTO release binary on local loopback against a `5,000` receipts and `500` workspace files dataset:
 
-| Metric | `v0.11.0` baseline | `v0.34.0` measured | Change |
+| Metric | `v0.11.0` baseline | `v0.35.0` measured | Change |
 | --- | --- | --- | --- |
-| Release binary size | `16.0 MB` | `8.19 MiB` (`8,590,176 B`) | `-46.3%` |
-| Initial `/` shell payload | `1.15 MB` | `162.92 KiB` (`166,825 B`) raw / `37.28 KiB` (`38,172 B`) gzip (`17` `/chunks/*`) | `-96.7%` wire |
-| Cold boot to `200 OK` | `n/a` | `10.07 ms` | `10 ms` self-audit |
-| Peak RSS (`VmHWM`, `5k` receipts + `500` files, `5/5` SSE, `16w`) | `n/a` | `21.93 MB` (`22,456 KB`) | `21.93 MB` peak RSS |
-| Concurrent HTTP (`16w` mixed 5 routes + `5/5` SSE across `5k`/`500`) | `724 req/s` (`188.7 ms` p95) | `4,070.9 req/s` (`3.69 ms` p50, `8.14 ms` p95, `0/10,195` err) | `5.62x` under full concurrency |
-| Automated checks | `204` Rust tests | `268/268` Rust tests (`5/5` `vault_search_v034`), `97/97` gate, `6/6` graph, `20/20` replay, `44/44` fuzz, `0/0/0` `sloplint` | Zero warnings / zero externals |
+| Release binary size | `16.0 MB` | `8.31 MiB` (`8,713,056 B`) | `-45.5%` |
+| Initial `/` shell payload | `1.15 MB` | `162.94 KiB` (`166,851 B`) raw / `37.26 KiB` (`38,151 B`) gzip (`17` `/chunks/*`) | `-96.7%` wire |
+| Cold boot to `200 OK` | `n/a` | `7.62 ms` | `7.6 ms` self-audit |
+| Peak RSS (`VmHWM`, `5k` receipts + `500` files, `5/5` SSE, `16w`) | `n/a` | `22.68 MB` (`23,220 KB`) | `22.68 MB` peak RSS |
+| Concurrent HTTP (`16w` mixed 5 routes + `5/5` SSE across `5k`/`500`) | `724 req/s` (`188.7 ms` p95) | `3,699.0 req/s` (`3.97 ms` p50, `9.25 ms` p95, `0/9,272` err) | `5.11x` under full concurrency |
+| Automated checks | `204` Rust tests | `274/274` Rust tests (`6/6` `dag_pipelines_v035`), `101/101` gate, `6/6` graph, `20/20` replay, `44/44` fuzz, `0/0/0` `sloplint` | Zero warnings / zero externals |
 
 ---
 
@@ -171,6 +179,10 @@ On startup, unless `ERGON_NO_AUTO_MODEL=1` or an explicit `ERGON_MODEL_BASE_URL`
 ---
 
 ## Core capabilities
+
+### DAG parallel pipelines and live token streaming
+
+`PipelineStepSpec` (`src/pipelines.rs`) supports `depends_on` topological branches (`MAX_DAG_CONCURRENCY = 4`), `for_each` batch fan-out (`MAX_FANOUT_ITEMS = 50`, exposing `child_items` and `{{steps.<id>.items}}`), `when` `on_all_ok` and `expr:` gates, and `deliver` steps wired through `connectors::invoke_connector`. `POST /api/pipelines/validate` checks DAG cycles, dependencies, templates, and outbound connectors (`HTTP 400` on invalid graphs). During execution, `RunEventBus` (`src/sse.rs`) emits `token_delta` SSE frames from `call_model_with_usage_streaming`, `run_loop` compacts history under `context_budget_chars`, and `AgentSnapshot` preserves turns and written files across `paused_checkpoint` holds. `PipelineBuilder.tsx`, `CheckpointCard.tsx`, `LiveRunTimeline.tsx`, and `webEngine.ts` mirror these controls and streaming views in both the server UI and `ergon-web.html`.
 
 ### Full-vault chunked search and multi-file rollups
 
