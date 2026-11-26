@@ -632,6 +632,7 @@ export function App() {
           label="What my agent has learned"
           icon={<BookOpen className="size-3.5 shrink-0 text-icon" strokeWidth={1.5} aria-hidden />}
           count={desk.learnedCount}
+          issueCount={desk.memoryHealth?.issue_count ?? 0}
           onClick={() => {
             setMobileOpen(false);
             setLearnedOpen(true);
@@ -937,6 +938,12 @@ export function App() {
                 onOpenFile={(p) => setViewerPath(p)}
                 onOpenFilesPanel={openFilesInspector}
                 onUploadMany={desk.uploadFiles}
+                memoryHealth={desk.memoryHealth}
+                onHealMemory={async () => {
+                  const removed = await desk.healMemory("all");
+                  if (removed !== null) paper.load();
+                  return removed;
+                }}
                 onExportAuditBundle={handleExportAuditBundle}
                 onSaveRoutine={handleSaveRoutineFromWork}
               />
@@ -1101,6 +1108,10 @@ export function App() {
         onOpenChange={setLearnedOpen}
         hideTrigger
         count={desk.learnedCount}
+        onHealed={() => {
+          desk.refreshCounts();
+          paper.load();
+        }}
       />
       )}
 

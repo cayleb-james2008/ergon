@@ -13,6 +13,7 @@ import {
   hasV070Api,
   type LiveRunStatus,
   type LiveRunStep,
+  type MemoryHealth,
   type Msg,
   type Person,
   type PlaybookPreviewResult,
@@ -225,6 +226,7 @@ export function useErgon() {
   const [recent, setRecent] = useState<Recent[]>([]);
   const [todayCount, setTodayCount] = useState(0);
   const [learnedCount, setLearnedCount] = useState(0);
+  const [memoryHealth, setMemoryHealth] = useState<MemoryHealth | null>(null);
   const [suiteCount, setSuiteCount] = useState(0);
   const [files, setFiles] = useState<WorkspaceFile[]>([]);
   const filesRef = useRef<WorkspaceFile[]>([]);
@@ -639,7 +641,7 @@ export function useErgon() {
   const refreshCounts = useCallback(async () => {
     const [dec, mem, sui] = await Promise.all([
       call<{ decisions?: { status?: string }[] }>("/api/decisions"),
-      call<{ content?: string }>("/api/memory"),
+      call<{ content?: string; health?: MemoryHealth }>("/api/memory"),
       call<{ installed?: SuiteItem[] }>("/api/suite"),
     ]);
     if (dec.ok && Array.isArray(dec.data.decisions)) {
@@ -647,11 +649,44 @@ export function useErgon() {
     }
     if (mem.ok && typeof mem.data.content === "string") {
       setLearnedCount(countLearnedLines(mem.data.content));
+      if (mem.data.health && typeof mem.data.health === "object") {
+        setMemoryHealth(mem.data.health);
+      }
     }
     if (sui.ok && Array.isArray(sui.data.installed)) {
       setSuiteCount(sui.data.installed.length);
     }
   }, []);
+
+  const healMemory = useCallback(
+    async (mode = "all"): Promise<number | null> => {
+      const r = await call<{ content?: string; removed_count?: number; health?: MemoryHealth }>(
+        "/api/memory/heal",
+        {
+          method: "POST",
+          body: { mode },
+        }
+      );
+      if (!r.ok) {
+        toast.error("Could not clean up stale memory rules.");
+        return null;
+      }
+      if (typeof r.data.content === "string") {
+        setLearnedCount(countLearnedLines(r.data.content));
+      }
+      if (r.data.health && typeof r.data.health === "object") {
+        setMemoryHealth(r.data.health);
+      }
+      const removed = typeof r.data.removed_count === "number" ? r.data.removed_count : 0;
+      toast.success(
+        removed > 0
+          ? `Pruned ${removed} stale or conflicting memory ${removed === 1 ? "rule" : "rules"}.`
+          : "Memory is already clean."
+      );
+      return removed;
+    },
+    []
+  );
 
   const loadStarters = useCallback(async (role: string) => {
     const r = await call<{ installed?: SuiteItem[] }>("/api/suite");
@@ -1130,9 +1165,9 @@ export function useErgon() {
     status, runFailed, people, threads, threadsError, states, threadId, messages,
     busy, activeRunId, runStartedMs, liveElapsedMs, streamMode, cancelling, liveSteps, liveTimeline,
     draft, setDraft, pendingNote, sideError, starters, recovered, recent,
-    todayCount, learnedCount, suiteCount, files, lastUploaded, setLastUploaded, skills, routines, scheduler, routineHistoryRev,
+    todayCount, learnedCount, memoryHealth, suiteCount, files, lastUploaded, setLastUploaded, skills, routines, scheduler, routineHistoryRev,
     send, sendPrompt, cancelRun, openThread, newThread, switchPerson, refreshPerson, showRun,
-    loadThreads, loadStatus, loadPeople, refreshCounts, loadRecent, loadStarters,
+    loadThreads, loadStatus, loadPeople, refreshCounts, healMemory, loadRecent, loadStarters,
     loadFiles, uploadFile, uploadFiles, loadSkills, loadRoutines, createRoutine, deleteRoutine, importPlaybook, previewPlaybook,
     toggleRoutine, loadRoutineHistory, runRoutineNow, catchupRoutine, catchupAllRoutines, setOnRoutineFired,
     setSideError, setRecovered,

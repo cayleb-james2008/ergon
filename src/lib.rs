@@ -3428,4 +3428,75 @@ mod v010_hardening_tests {
 
         let _ = std::fs::remove_dir_all(&dir);
     }
+
+    #[test]
+    fn memory_health_and_heal_work_end_to_end() {
+        use std::io::{Read, Write};
+        let dir = std::env::temp_dir().join(format!(
+            "ergon-mem-health-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let mut cfg = Config::from_env();
+        cfg.data_dir = dir.clone();
+        cfg.workspace_dir = dir.join("workspace");
+        cfg.memory_path = dir.join("memory.md");
+        cfg.ensure_dirs().unwrap();
+        std::fs::write(cfg.workspace_dir.join("active.csv"), "a,b\n1,2\n").unwrap();
+        std::fs::write(cfg.workspace_dir.join("Q1 budget.csv"), "item,amt\ncloud,100\n").unwrap();
+        std::fs::write(
+            &cfg.memory_path,
+            "# Memory\n\n## About\n- Name: Cayleb\n- Role: Finance Lead\n\n## Learned\n- Always include executive bullet points.\n- Flag variances against [active.csv:L2] and [Q1 budget.csv:L1].\n- Flag missing rows in [missing.csv:L5].\n- Always include executive bullet points.\n- Never include executive bullet points.\n- Prefer CSV exports.\n- Prefer Excel exports.\n",
+        )
+        .unwrap();
+
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let cfg_srv = cfg.clone();
+        std::thread::spawn(move || {
+            let _ = serve(listener, cfg_srv);
+        });
+        std::thread::sleep(std::time::Duration::from_millis(50));
+
+        let send_http = |method: &str, target: &str, body: &str| -> String {
+            let mut s = std::net::TcpStream::connect(addr).unwrap();
+            let req = format!(
+                "{method} {target} HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                addr.port(),
+                body.len()
+            );
+            s.write_all(req.as_bytes()).unwrap();
+            let mut out = String::new();
+            s.read_to_string(&mut out).unwrap();
+            out
+        };
+
+        // 1. Audit should flag stale ref ([missing.csv:L5]), duplicate ("Always include..."), and conflicts (Always vs Never, Prefer CSV vs Excel).
+        let before = send_http("GET", "/api/memory", "");
+        assert!(before.starts_with("HTTP/1.1 200 OK"), "{before}");
+        let bj: Value = serde_json::from_str(before.split("\r\n\r\n").nth(1).unwrap()).unwrap();
+        let h = &bj["health"];
+        assert_eq!(h["status"], json!("issues"));
+        assert!(h["conflicts"].as_u64().unwrap() >= 2, "{h}");
+        assert!(h["duplicates"].as_u64().unwrap() >= 1, "{h}");
+        assert!(h["stale_refs"].as_u64().unwrap() >= 1, "{h}");
+
+        // 2. Heal all issues in 1 click -> removes stale/dup/superseded rules, keeps valid & newer rules.
+        let heal = send_http("POST", "/api/memory/heal", r#"{"mode":"all"}"#);
+        assert!(heal.starts_with("HTTP/1.1 200 OK"), "{heal}");
+        let hj: Value = serde_json::from_str(heal.split("\r\n\r\n").nth(1).unwrap()).unwrap();
+        assert!(hj["removed_count"].as_u64().unwrap() >= 4, "{hj}");
+        assert_eq!(hj["health"]["status"], json!("healthy"));
+        assert_eq!(hj["health"]["issue_count"], json!(0));
+        let content = hj["content"].as_str().unwrap();
+        assert!(content.contains("- Name: Cayleb"));
+        assert!(content.contains("- Flag variances against [active.csv:L2] and [Q1 budget.csv:L1]."));
+        assert!(content.contains("- Never include executive bullet points."));
+        assert!(content.contains("- Prefer Excel exports."));
+        assert!(!content.contains("missing.csv"));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

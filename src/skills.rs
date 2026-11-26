@@ -7,7 +7,9 @@
 //! deterministic CSV/JSON table parsers.
 
 use crate::{fetch_url_text, sandbox_path, Config};
+use rune::ast::Spanned;
 use serde_json::Value;
+use std::path::Path;
 use std::sync::Arc;
 
 pub const WRITE_DOCUMENT_SCRIPT: &str = include_str!("skills/write_document.rn");
@@ -346,14 +348,36 @@ fn format_rune_diagnostics(
     diagnostics: &rune::Diagnostics,
     sources: &rune::Sources,
 ) -> String {
-    let mut buf = rune::termcolor::Buffer::no_color();
-    if diagnostics.emit(&mut buf, sources).is_ok() {
-        let rendered = String::from_utf8_lossy(buf.as_slice()).trim().to_string();
-        if !rendered.is_empty() {
-            return format!("rune skill failed to build: {err}\n{rendered}");
-        }
+    let mut details = Vec::new();
+    for d in diagnostics.diagnostics() {
+        let (prefix, id, span_opt, msg) = match d {
+            rune::diagnostics::Diagnostic::Fatal(f) => {
+                let sp = match f.kind() {
+                    rune::diagnostics::FatalDiagnosticKind::CompileError(e) => Some(e.span()),
+                    _ => None,
+                };
+                ("", f.source_id(), sp, f.to_string())
+            }
+            rune::diagnostics::Diagnostic::Warning(w) => {
+                ("warning: ", w.source_id(), Some(w.span()), w.to_string())
+            }
+            rune::diagnostics::Diagnostic::RuntimeWarning(r) => {
+                details.push(format!("warning: {r}"));
+                continue;
+            }
+            _ => continue,
+        };
+        let loc = span_opt
+            .and_then(|sp| sources.get(id).map(|s| s.pos_to_utf8_linecol(sp.start.into_usize())))
+            .map(|(line, col)| format!("line {} col {}: ", line + 1, col + 1))
+            .unwrap_or_default();
+        details.push(format!("{prefix}{loc}{msg}"));
     }
-    format!("rune skill failed to build: {err}")
+    if details.is_empty() {
+        format!("rune skill failed to build: {err}")
+    } else {
+        format!("rune skill failed to build: {err}\n{}", details.join("\n"))
+    }
 }
 
 /// Compile a script against the host context without running it.
@@ -541,6 +565,420 @@ pub fn update_memory(cfg: &Config, note: &str) -> Result<String, String> {
         return Err(err.trim().to_string());
     }
     Ok(format!("memory updated: {entry}"))
+}
+
+fn normalize_memory_rule(s: &str) -> String {
+    s.split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .trim_end_matches(['.', '!', ';'])
+        .to_lowercase()
+}
+
+fn is_learned_bullet(raw_line: &str) -> Option<&str> {
+    let t = raw_line.trim();
+    let rest = t.strip_prefix("- ")?.trim();
+    if rest.is_empty() || t.starts_with("- Name:") || t.starts_with("- Role:") {
+        return None;
+    }
+    Some(rest)
+}
+
+fn memory_rule_polarity_and_topics(norm: &str) -> (i8, Option<(&'static str, String)>, Vec<String>) {
+    let neg_markers = [
+        "never ",
+        "avoid ",
+        "do not ",
+        "don't ",
+        "dont ",
+        "exclude ",
+        "omit ",
+        "skip ",
+        "disable ",
+        "no ",
+    ];
+    let pos_markers = [
+        "always ",
+        "use ",
+        "include ",
+        "enable ",
+        "keep ",
+        "require ",
+        "prefer ",
+    ];
+    let has_neg = neg_markers.iter().any(|m| norm.starts_with(m) || norm.contains(&format!(" {m}")));
+    let has_pos = pos_markers.iter().any(|m| norm.starts_with(m) || norm.contains(&format!(" {m}")));
+    let pol = match (has_pos, has_neg) {
+        (true, false) => 1,
+        (false, true) => -1,
+        (true, true) => -1,
+        _ => 0,
+    };
+    let pref_prefixes = [
+        "prefer ",
+        "default format ",
+        "export format ",
+        "tone: ",
+        "currency: ",
+        "rounding: ",
+        "date format: ",
+        "language: ",
+    ];
+    let pref = pref_prefixes.iter().find_map(|p| {
+        norm.strip_prefix(p)
+            .map(|val| (*p, val.trim().to_string()))
+            .filter(|(_, val)| !val.is_empty())
+    });
+    const STOP: &[&str] = &[
+        "the", "and", "for", "with", "from", "that", "this", "use", "always", "never", "avoid",
+        "not", "dont", "don", "prefer", "include", "exclude", "omit", "skip", "keep", "only",
+        "must", "should", "when", "into", "all", "are", "was", "were", "have", "has", "any",
+        "enable", "disable", "require",
+    ];
+    let mut topics: Vec<String> = norm
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|w| w.len() >= 3 && !STOP.contains(w))
+        .map(|w| w.to_string())
+        .collect();
+    topics.sort();
+    topics.dedup();
+    (pol, pref, topics)
+}
+
+fn strip_bracketed_citations(rule: &str) -> String {
+    let mut out = String::with_capacity(rule.len());
+    let mut rest = rule;
+    while let Some(start) = rest.find('[') {
+        out.push_str(&rest[..start]);
+        if let Some(end) = rest[start..].find(']') {
+            let inner = &rest[start + 1..start + end];
+            if inner.contains(":L") {
+                out.push(' ');
+                rest = &rest[start + end + 1..];
+                continue;
+            }
+        }
+        out.push('[');
+        rest = &rest[start + 1..];
+    }
+    out.push_str(rest);
+    out
+}
+
+fn extract_workspace_file_refs(rule: &str) -> Vec<String> {
+    const EXTS: &[&str] = &[
+        ".csv", ".md", ".json", ".txt", ".docx", ".xlsx", ".pptx", ".pdf", ".rn", ".tsv", ".yaml",
+        ".yml",
+    ];
+    let stripped = strip_bracketed_citations(rule);
+    let mut refs = Vec::new();
+    // 1. Check backtick-delimited paths first (supports spaces in filenames like `Q1 budget.csv`).
+    let mut rem = stripped.as_str();
+    while let Some(a) = rem.find('`') {
+        let after = &rem[a + 1..];
+        let Some(b) = after.find('`') else {
+            break;
+        };
+        let cand = after[..b].trim();
+        let low = cand.to_ascii_lowercase();
+        if cand.len() >= 3
+            && !low.starts_with("http://")
+            && !low.starts_with("https://")
+            && EXTS.iter().any(|ext| low.ends_with(ext))
+            && !refs.iter().any(|r| r == cand)
+        {
+            refs.push(cand.to_string());
+        }
+        rem = &after[b + 1..];
+    }
+    // 2. Scan unbracketed, un-backticked whitespace tokens.
+    let without_backticks: String = stripped
+        .split('`')
+        .enumerate()
+        .filter(|(i, _)| i % 2 == 0)
+        .map(|(_, s)| s)
+        .collect::<Vec<_>>()
+        .join(" ");
+    for tok in without_backticks.split_whitespace() {
+        let cleaned = tok.trim_matches(|c: char| {
+            matches!(c, '\'' | '"' | '(' | ')' | '[' | ']' | ',' | ';' | ':' | '.' | '!')
+        });
+        let base = match cleaned.rfind(":L") {
+            Some(pos)
+                if cleaned[pos + 2..]
+                    .chars()
+                    .next()
+                    .is_some_and(|c| c.is_ascii_digit()) =>
+            {
+                &cleaned[..pos]
+            }
+            _ => cleaned,
+        };
+        let low = base.to_ascii_lowercase();
+        if base.len() >= 3
+            && !low.starts_with("http://")
+            && !low.starts_with("https://")
+            && EXTS.iter().any(|ext| low.ends_with(ext))
+            && !refs.iter().any(|r| r == base)
+        {
+            refs.push(base.to_string());
+        }
+    }
+    refs
+}
+
+fn check_rule_stale_ref(workspace_dir: &Path, rule: &str) -> Option<String> {
+    let report = crate::verify_text_citations(workspace_dir, rule);
+    if report.broken > 0 {
+        if let Some(bad) = report
+            .citations
+            .iter()
+            .find(|c| c.status == "missing" || c.status == "out_of_range")
+        {
+            if bad.status == "missing" {
+                return Some(format!("Missing cited file `[{}]`", bad.raw));
+            }
+            return Some(format!(
+                "Out-of-range citation `[{}]` (file has {} lines)",
+                bad.raw, bad.total_lines
+            ));
+        }
+    }
+    for rel in extract_workspace_file_refs(rule) {
+        if rel == "memory.md" {
+            continue;
+        }
+        let ok = sandbox_path(workspace_dir, &rel).is_ok_and(|p| {
+            p.exists() && !p.symlink_metadata().is_ok_and(|m| m.file_type().is_symlink())
+        });
+        if !ok {
+            return Some(format!("Missing workspace file `{rel}`"));
+        }
+    }
+    None
+}
+
+#[derive(Clone)]
+struct MemoryIssue {
+    line: usize,
+    kind: &'static str,
+    text: String,
+    detail: String,
+    related_line: Option<usize>,
+}
+
+fn scan_memory_issues(cfg: &Config, memory: &str) -> (usize, Vec<MemoryIssue>) {
+    struct Entry {
+        line: usize,
+        text: String,
+        norm: String,
+        pol: i8,
+        pref: Option<(&'static str, String)>,
+        topics: Vec<String>,
+        is_dup: bool,
+    }
+
+    let mut seen: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    let mut entries: Vec<Entry> = Vec::new();
+    let mut issues: Vec<MemoryIssue> = Vec::new();
+
+    for (idx, raw) in memory.lines().enumerate() {
+        let line_no = idx + 1;
+        let Some(rule) = is_learned_bullet(raw) else {
+            continue;
+        };
+        let norm = normalize_memory_rule(rule);
+        let is_dup = if let Some(&first_line) = seen.get(&norm) {
+            issues.push(MemoryIssue {
+                line: line_no,
+                kind: "duplicate",
+                text: rule.to_string(),
+                detail: format!("Duplicate of L{first_line}"),
+                related_line: Some(first_line),
+            });
+            true
+        } else {
+            seen.insert(norm.clone(), line_no);
+            false
+        };
+
+        if let Some(detail) = check_rule_stale_ref(&cfg.workspace_dir, rule) {
+            issues.push(MemoryIssue {
+                line: line_no,
+                kind: "stale_ref",
+                text: rule.to_string(),
+                detail,
+                related_line: None,
+            });
+        }
+
+        let (pol, pref, topics) = memory_rule_polarity_and_topics(&norm);
+        entries.push(Entry {
+            line: line_no,
+            text: rule.to_string(),
+            norm,
+            pol,
+            pref,
+            topics,
+            is_dup,
+        });
+    }
+
+    // Conflict pass: flag older superseded rule when a newer distinct rule contradicts it.
+    let mut conflicted_lines: std::collections::HashSet<usize> = std::collections::HashSet::new();
+    for i in 0..entries.len() {
+        if entries[i].is_dup {
+            continue;
+        }
+        for j in (i + 1)..entries.len() {
+            if entries[j].is_dup || entries[i].norm == entries[j].norm {
+                continue;
+            }
+            let same_pref_conflict = match (&entries[i].pref, &entries[j].pref) {
+                (Some((p1, v1)), Some((p2, v2))) => p1 == p2 && v1 != v2,
+                _ => false,
+            };
+            let opposite_pol = entries[i].pol * entries[j].pol == -1;
+            let shared_topics = if opposite_pol {
+                entries[i]
+                    .topics
+                    .iter()
+                    .filter(|t| entries[j].topics.contains(t))
+                    .count()
+            } else {
+                0
+            };
+            let min_topics = entries[i].topics.len().min(entries[j].topics.len());
+            let topic_conflict = opposite_pol
+                && ((shared_topics >= 2) || (min_topics > 0 && min_topics <= 2 && shared_topics >= 1));
+
+            if (same_pref_conflict || topic_conflict) && conflicted_lines.insert(entries[i].line) {
+                issues.push(MemoryIssue {
+                    line: entries[i].line,
+                    kind: "conflict",
+                    text: entries[i].text.clone(),
+                    detail: format!(
+                        "{} L{}",
+                        if same_pref_conflict {
+                            "Superseded by preference at"
+                        } else {
+                            "Conflicts with newer rule at"
+                        },
+                        entries[j].line
+                    ),
+                    related_line: Some(entries[j].line),
+                });
+                break;
+            }
+        }
+    }
+
+    issues.sort_by_key(|x| (x.line, x.kind));
+    (entries.len(), issues)
+}
+
+fn memory_health_json(learned_count: usize, issues: &[MemoryIssue]) -> Value {
+    let mut conflicts = 0usize;
+    let mut duplicates = 0usize;
+    let mut stale_refs = 0usize;
+    let mut issue_lines: std::collections::HashSet<usize> = std::collections::HashSet::new();
+    let issue_vals: Vec<Value> = issues
+        .iter()
+        .map(|i| {
+            issue_lines.insert(i.line);
+            match i.kind {
+                "conflict" => conflicts += 1,
+                "duplicate" => duplicates += 1,
+                "stale_ref" => stale_refs += 1,
+                _ => {}
+            }
+            serde_json::json!({
+                "line": i.line,
+                "kind": i.kind,
+                "text": i.text,
+                "detail": i.detail,
+                "related_line": i.related_line,
+                "removable": true,
+            })
+        })
+        .collect();
+    let issue_count = issue_lines.len();
+    serde_json::json!({
+        "status": if issue_count == 0 { "healthy" } else { "issues" },
+        "learned_count": learned_count,
+        "issue_count": issue_count,
+        "conflicts": conflicts,
+        "duplicates": duplicates,
+        "stale_refs": stale_refs,
+        "issues": issue_vals,
+    })
+}
+
+/// Audit standing `memory.md` rules for duplicates, contradictions, and broken workspace paths.
+pub fn audit_memory_health(cfg: &Config) -> Value {
+    let memory = cfg.read_memory();
+    let (learned_count, issues) = scan_memory_issues(cfg, &memory);
+    memory_health_json(learned_count, &issues)
+}
+
+/// Prune stale references, duplicate entries, and/or superseded conflicting rules from `memory.md`.
+pub fn heal_memory(cfg: &Config, mode: &str) -> Result<Value, String> {
+    let mode = mode.trim().to_ascii_lowercase();
+    let mode = if mode.is_empty() { "all" } else { mode.as_str() };
+    if !matches!(mode, "all" | "stale" | "conflicts" | "duplicates") {
+        return Err("mode must be all, stale, conflicts, or duplicates".to_string());
+    }
+    let memory = cfg.read_memory();
+    let (_, issues) = scan_memory_issues(cfg, &memory);
+    let mut remove_lines: std::collections::HashSet<usize> = std::collections::HashSet::new();
+    for iss in &issues {
+        let take = match mode {
+            "all" => true,
+            "stale" => iss.kind == "stale_ref",
+            "conflicts" => iss.kind == "conflict",
+            "duplicates" => iss.kind == "duplicate",
+            _ => false,
+        };
+        if take {
+            remove_lines.insert(iss.line);
+        }
+    }
+    if remove_lines.is_empty() {
+        let (learned_count, fresh_issues) = scan_memory_issues(cfg, &memory);
+        return Ok(serde_json::json!({
+            "content": memory,
+            "removed_count": 0,
+            "removed": [],
+            "health": memory_health_json(learned_count, &fresh_issues),
+        }));
+    }
+
+    let mut kept = Vec::new();
+    let mut removed = Vec::new();
+    for (idx, line) in memory.lines().enumerate() {
+        let line_no = idx + 1;
+        if remove_lines.contains(&line_no) {
+            removed.push(serde_json::json!({
+                "line": line_no,
+                "text": line.trim(),
+            }));
+        } else {
+            kept.push(line);
+        }
+    }
+    let mut next_content = kept.join("\n");
+    if !next_content.ends_with('\n') {
+        next_content.push('\n');
+    }
+    crate::tools::atomic_write_bytes(&cfg.memory_path, next_content.as_bytes())
+        .map_err(|e| format!("failed to write memory.md: {e}"))?;
+    let (learned_count, fresh_issues) = scan_memory_issues(cfg, &next_content);
+    Ok(serde_json::json!({
+        "content": next_content,
+        "removed_count": removed.len(),
+        "removed": removed,
+        "health": memory_health_json(learned_count, &fresh_issues),
+    }))
 }
 
 /// Rune skill: reconcile one or more workspace CSV invoice/expense ledgers,

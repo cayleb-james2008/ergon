@@ -4,6 +4,14 @@ Each release is tagged `vMAJOR.MINOR.PATCH` and published on GitHub Releases wit
 binaries and a `SHA256SUMS` file. The running app shows its version and can update
 itself from the newest release (see README, "Versions and updates").
 
+## 0.24.0 - 2026-11-25
+
+- **Learned Memory Health & Stale-Reference Guard (`src/skills.rs`, `src/server.rs`, `frontend/src/shell/Panels.tsx`, `frontend/src/views/Paper.tsx`, `frontend/src/lib/{api,webEngine}.ts`):**
+  - Added automated `audit_memory_health` and `heal_memory` (`GET /api/memory`, `GET /api/memory/health`, `POST /api/memory/heal`) detecting duplicate preferences, contradicting standing rules, and broken `[file:L##]` or workspace file references (with full `webEngine.ts` parity).
+  - Surfaced crisp **Healthy / N Issues** pills and 1-click **Resolve & Prune** (`#memory-heal-btn`) across the **What my agent has learned** modal, left navigation rail, and Today desk card.
+- **Sub-`8.55 MB` Binary & Peak RSS Diet (`Cargo.toml`, `src/skills.rs`, `src/server.rs`):**
+  - Switched `rune` to `default-features = false, features = ["std"]` with native diagnostic span formatting (removing `termcolor` / `codespan-reporting` bloat), tuned `[profile.release]` `opt-level = "z"` while preserving `opt-level = 3` on hot HTTP/JSON/SHA-256 crates, and capped idle `BufReader` (`4 KB`) & `JSON_SCRATCH` (`32 KB`) slack for `< 16.5 MB` Peak RSS.
+
 ## 0.23.0 - 2026-11-25
 
 - **Scheduled Routine Catch-Up & Last-Run SHA-256 Verification Badge (`src/scheduler.rs`, `src/server.rs`, `src/lib.rs`, `frontend/src/shell/RoutinesPanel.tsx`, `frontend/src/lib/{api,webEngine}.ts`):**

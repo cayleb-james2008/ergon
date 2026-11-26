@@ -30,6 +30,7 @@ import {
   type BriefJob,
   type Decision,
   type LiveRunStep,
+  type MemoryHealth,
   type Offer,
   type Person,
   type Status,
@@ -141,6 +142,8 @@ export function PaperSide({
   onSwitch,
   offers,
   learned,
+  memoryHealth,
+  onHealMemory,
   files,
   failed,
   onAct,
@@ -154,6 +157,8 @@ export function PaperSide({
   onSwitch: (id: string) => void;
   offers: Offer[] | null;
   learned: string[] | null;
+  memoryHealth?: MemoryHealth | null;
+  onHealMemory?: () => Promise<number | null>;
   files: WorkspaceFile[];
   failed?: boolean;
   onAct: (path: string, done: string) => void;
@@ -162,6 +167,7 @@ export function PaperSide({
   onUploadMany: (files: FileList | File[]) => Promise<number>;
 }) {
   const [fileQuery, setFileQuery] = useState("");
+  const [healingMemory, setHealingMemory] = useState(false);
   const sideUploadRef = useRef<HTMLInputElement>(null);
 
   const filteredFiles = useMemo(() => {
@@ -333,12 +339,50 @@ export function PaperSide({
       </section>
 
       <section aria-labelledby="learned-h" className="flex flex-col gap-2.5 rounded-card border border-hairline bg-surface p-4">
-        <h2 id="learned-h" className="text-base font-medium text-ink">What your agent has learned</h2>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 id="learned-h" className="text-base font-medium text-ink">What your agent has learned</h2>
+          {memoryHealth && (learned?.length || memoryHealth.issue_count > 0) ? (
+            <span
+              data-today-memory-badge={memoryHealth.status}
+              className={cn(
+                "mono inline-flex items-center gap-1 rounded-chip px-2 py-0.5 text-[11px] font-medium",
+                memoryHealth.issue_count === 0 ? "bg-ok-soft text-ok" : "bg-warn-soft text-warn"
+              )}
+            >
+              {memoryHealth.issue_count === 0
+                ? "Healthy"
+                : `${memoryHealth.issue_count} ${memoryHealth.issue_count === 1 ? "issue" : "issues"}`}
+            </span>
+          ) : null}
+        </div>
         {!learned && <p className="text-sm text-ink-2">{failed ? "Could not be loaded with the brief." : "Loading…"}</p>}
         {learned && learned.length > 0 && (
           <ul className="flex list-disc flex-col gap-1.5 pl-5 text-sm leading-5 text-ink-2">
             {learned.map((l, i) => <li key={i} className="text-ink">{String(l)}</li>)}
           </ul>
+        )}
+        {memoryHealth && memoryHealth.issue_count > 0 && onHealMemory && (
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-sm border border-hairline bg-board px-2.5 py-2 text-xs text-ink-2">
+            <span>
+              {memoryHealth.conflicts > 0 ? `${memoryHealth.conflicts} conflict` : ""}
+              {memoryHealth.conflicts > 0 && memoryHealth.stale_refs > 0 ? " · " : ""}
+              {memoryHealth.stale_refs > 0 ? `${memoryHealth.stale_refs} stale path` : ""}
+            </span>
+            <Button
+              type="button"
+              size="xs"
+              variant="outline"
+              data-action="heal-memory-inline"
+              disabled={healingMemory}
+              onClick={async () => {
+                setHealingMemory(true);
+                await onHealMemory();
+                setHealingMemory(false);
+              }}
+            >
+              {healingMemory ? "Pruning…" : "Resolve & Prune"}
+            </Button>
+          </div>
         )}
         {learned && !learned.length && (
           <p className="text-sm leading-5 text-ink-2">
@@ -416,6 +460,8 @@ export const PaperFace = memo(function PaperFace({
   onOpenFile,
   onOpenFilesPanel,
   onUploadMany,
+  memoryHealth,
+  onHealMemory,
   onExportAuditBundle,
   onSaveRoutine,
 }: {
@@ -440,6 +486,8 @@ export const PaperFace = memo(function PaperFace({
   onOpenFile: (path: string) => void;
   onOpenFilesPanel: () => void;
   onUploadMany: (files: FileList | File[]) => Promise<number>;
+  memoryHealth?: MemoryHealth | null;
+  onHealMemory?: () => Promise<number | null>;
   onExportAuditBundle?: (format: "json" | "md") => Promise<void>;
   onSaveRoutine?: (
     name: string,
@@ -659,6 +707,8 @@ export const PaperFace = memo(function PaperFace({
       onSwitch={onSwitchPerson}
       offers={data ? data.offers.slice().reverse().filter((o) => o.status === "pending") : null}
       learned={data ? (Array.isArray(data.brief.learned_recently) ? data.brief.learned_recently : []) : null}
+      memoryHealth={memoryHealth}
+      onHealMemory={onHealMemory}
       files={files}
       failed={failed}
       onAct={act}
