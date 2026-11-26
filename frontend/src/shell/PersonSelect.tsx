@@ -212,6 +212,8 @@ function WorkspaceSwitcherBody({
   const [retainerBudgetInput, setRetainerBudgetInput] = useState("2500");
   const [createError, setCreateError] = useState("");
   const [creating, setCreating] = useState(false);
+  const opLockRef = useRef(false);
+  const isBusyOp = Boolean(switchingId || switchingEngId || creating);
 
   useEffect(() => {
     if (isOpen) {
@@ -261,34 +263,47 @@ function WorkspaceSwitcherBody({
   }, [people, query]);
 
   const handleSelect = async (id: string) => {
+    if (opLockRef.current) return;
     if (id === active) {
       setIsOpen(false);
       return;
     }
+    opLockRef.current = true;
     setSwitchingId(id);
-    await onSwitch(id);
-    setSwitchingId(null);
-    setIsOpen(false);
+    try {
+      await onSwitch(id);
+      setIsOpen(false);
+    } finally {
+      opLockRef.current = false;
+      setSwitchingId(null);
+    }
   };
 
   const handleSelectEngagement = async (engId: string) => {
-    if (!onSwitchEngagement) return;
+    if (!onSwitchEngagement || opLockRef.current) return;
     if (engId === activeEngagementId) {
       setIsOpen(false);
       return;
     }
+    opLockRef.current = true;
     setSwitchingEngId(engId);
-    await onSwitchEngagement(engId);
-    setSwitchingEngId(null);
-    setIsOpen(false);
+    try {
+      await onSwitchEngagement(engId);
+      setIsOpen(false);
+    } finally {
+      opLockRef.current = false;
+      setSwitchingEngId(null);
+    }
   };
 
   const handleQuickCreate = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!onCreateEngagement) return;
+    if (!onCreateEngagement || opLockRef.current) return;
     const engName = engagementNameInput.trim();
-    const rate = Number(hourlyRateInput);
-    const budget = Number(retainerBudgetInput);
+    const rawRate = hourlyRateInput.trim();
+    const rawBudget = retainerBudgetInput.trim();
+    const rate = rawRate === "" ? 0 : Number(rawRate);
+    const budget = rawBudget === "" ? 0 : Number(rawBudget);
     const useNewClient = createNewClientMode || clients.length === 0;
     const cliName = clientNameInput.trim();
 
@@ -309,38 +324,42 @@ function WorkspaceSwitcherBody({
       return;
     }
 
+    opLockRef.current = true;
     setCreateError("");
     setCreating(true);
-    let targetClientId = selectedClientId;
-    if (useNewClient && onCreateClient) {
-      const createdCli = await onCreateClient({ name: cliName, default_rate_usd: rate });
-      if (!createdCli) {
-        setCreating(false);
-        setCreateError("Could not create client.");
+    try {
+      let targetClientId = selectedClientId;
+      if (useNewClient && onCreateClient) {
+        const createdCli = await onCreateClient({ name: cliName, default_rate_usd: rate });
+        if (!createdCli) {
+          setCreateError("Could not create client.");
+          return;
+        }
+        targetClientId = createdCli.id;
+        setSelectedClientId(createdCli.id);
+      }
+      const createdEng = await onCreateEngagement({
+        client_id: targetClientId,
+        name: engName,
+        person_id: active || undefined,
+        hourly_rate_usd: rate,
+        retainer_budget_usd: budget,
+      });
+      if (!createdEng) {
+        setCreateError("Could not create engagement.");
         return;
       }
-      targetClientId = createdCli.id;
-      setSelectedClientId(createdCli.id);
+      if (onSwitchEngagement) {
+        await onSwitchEngagement(createdEng.id);
+      }
+      setClientNameInput("");
+      setEngagementNameInput("");
+      setCreateOpen(false);
+      setIsOpen(false);
+    } finally {
+      opLockRef.current = false;
+      setCreating(false);
     }
-    const createdEng = await onCreateEngagement({
-      client_id: targetClientId,
-      name: engName,
-      person_id: active || undefined,
-      hourly_rate_usd: rate,
-      retainer_budget_usd: budget,
-    });
-    setCreating(false);
-    if (!createdEng) {
-      setCreateError("Could not create engagement.");
-      return;
-    }
-    if (onSwitchEngagement) {
-      await onSwitchEngagement(createdEng.id);
-    }
-    setClientNameInput("");
-    setEngagementNameInput("");
-    setCreateOpen(false);
-    setIsOpen(false);
   };
 
   return (
@@ -358,6 +377,7 @@ function WorkspaceSwitcherBody({
                 type="button"
                 size="xs"
                 variant="outline"
+                disabled={isBusyOp}
                 className="max-md:min-h-11 gap-1"
                 onClick={() => {
                   setCreateOpen((v) => !v);
@@ -491,6 +511,7 @@ function WorkspaceSwitcherBody({
                     size="xs"
                     variant={isSel ? "default" : "outline"}
                     data-client-id={c.id}
+                    disabled={isBusyOp}
                     className="max-md:min-h-11"
                     onClick={() => setSelectedClientId(c.id)}
                   >
@@ -510,8 +531,14 @@ function WorkspaceSwitcherBody({
               {visibleEngagements.map((eng) => {
                 const isCurrent = eng.id === activeEngagementId;
                 const busyThis = switchingEngId === eng.id;
-                const rateLabel = typeof eng.hourly_rate_usd === "number" ? `$${eng.hourly_rate_usd}/hr` : "";
-                const budgetLabel = typeof eng.retainer_budget_usd === "number" ? `$${eng.retainer_budget_usd} cap` : "";
+                const rateLabel =
+                  typeof eng.hourly_rate_usd === "number" && eng.hourly_rate_usd > 0
+                    ? `$${eng.hourly_rate_usd}/hr`
+                    : "";
+                const budgetLabel =
+                  typeof eng.retainer_budget_usd === "number" && eng.retainer_budget_usd > 0
+                    ? `$${eng.retainer_budget_usd} cap`
+                    : "No retainer cap";
                 const metaLabel = [rateLabel, budgetLabel].filter(Boolean).join(", ");
                 return (
                   <li key={eng.id}>
@@ -519,7 +546,7 @@ function WorkspaceSwitcherBody({
                       type="button"
                       data-engagement-id={eng.id}
                       aria-current={isCurrent ? "true" : undefined}
-                      disabled={Boolean(switchingEngId)}
+                      disabled={isBusyOp}
                       onClick={() => void handleSelectEngagement(eng.id)}
                       className={cn(
                         "focus-ring flex min-h-11 w-full cursor-pointer items-center justify-between gap-2.5 rounded-sm border px-3 py-2 text-left outline-none disabled:cursor-wait disabled:bg-track disabled:text-ink-3",
@@ -595,7 +622,7 @@ function WorkspaceSwitcherBody({
           <WorkspaceSwitcherList
             people={filtered}
             active={active}
-            switchingId={switchingId}
+            switchingId={switchingId || (isBusyOp ? "__busy__" : null)}
             onSwitch={handleSelect}
           />
         )}

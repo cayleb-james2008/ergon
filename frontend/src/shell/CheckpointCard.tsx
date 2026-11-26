@@ -55,6 +55,7 @@ export function CheckpointCard({
   const [selectedChoice, setSelectedChoice] = useState<string>(() => choices[0] ?? "");
   const [textAnswer, setTextAnswer] = useState("");
   const [busyAction, setBusyAction] = useState<"resume" | "retry" | "cancel" | null>(null);
+  const [busyChoice, setBusyChoice] = useState<"approve" | "reject" | "answer" | null>(null);
   const [localErr, setLocalErr] = useState("");
   const actionLockRef = useRef(false);
 
@@ -62,6 +63,9 @@ export function CheckpointCard({
     setSelectedChoice(cp?.choices?.[0] ?? "");
     setTextAnswer("");
     setLocalErr("");
+    setBusyAction(null);
+    setBusyChoice(null);
+    actionLockRef.current = false;
   }, [run.run_id, cp?.checkpoint_id]);
 
   const inspectFiles = useMemo(() => collectInspectableFiles(run), [run]);
@@ -95,6 +99,7 @@ export function CheckpointCard({
     }
     actionLockRef.current = true;
     setBusyAction("resume");
+    setBusyChoice(inputMode === "choice" || inputMode === "text" ? "answer" : (overrideAction ?? "approve"));
     try {
       if (inputMode === "choice") {
         const picked = selectedChoice || choices[0] || "";
@@ -120,6 +125,7 @@ export function CheckpointCard({
     } finally {
       actionLockRef.current = false;
       setBusyAction(null);
+      setBusyChoice(null);
     }
   };
 
@@ -395,7 +401,7 @@ export function CheckpointCard({
             onClick={() => void handleResume("approve")}
           >
             <Play className="size-3.5" strokeWidth={1.5} aria-hidden />
-            {busyAction === "resume" ? "Resuming..." : "Resume Job"}
+            {busyAction === "resume" && busyChoice !== "reject" ? "Resuming..." : "Resume Job"}
           </Button>
         )}
 
@@ -404,11 +410,12 @@ export function CheckpointCard({
             type="button"
             size="sm"
             variant="outline"
+            data-action="reject-pipeline"
             className="max-md:min-h-11"
             disabled={busyAction !== null}
             onClick={() => void handleResume("reject")}
           >
-            Reject & continue
+            {busyAction === "resume" && busyChoice === "reject" ? "Rejecting..." : "Reject & continue"}
           </Button>
         )}
 
