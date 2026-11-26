@@ -19,12 +19,14 @@ import {
   Newspaper,
   Play,
   ReceiptText,
+  RefreshCw,
   SlidersHorizontal,
   Sparkles,
   Upload,
   Users,
   Webhook,
 } from "lucide-react";
+import { toast } from "sonner";
 import {
   Command,
   CommandEmpty,
@@ -42,19 +44,37 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { SegmentedControl, SegmentedControlItem } from "@/components/ui/segmented-control";
 import { FileGlyph } from "@/chat/Entry";
 import {
   call,
   hasV050Api,
+  reindexVault,
+  searchVault,
   type BriefJob,
   type Routine,
   type SearchHit,
   type Status,
   type ThreadRow,
+  type VaultChunkHit,
+  type VaultFileHit,
+  type VaultIndexStats,
+  type VaultSearchMode,
   type WorkspaceFile,
 } from "@/lib/api";
+import { cn } from "@/lib/utils";
 import type { SkillMeta } from "@/lib/skillsCatalog";
 import { detectWorkspaceWorkflow, extractCitations, relTime } from "@/lib/words";
+
+function buildChunkJumpTarget(path: string, ch: VaultChunkHit): string {
+  const sheetPart = ch.sheet ? `?sheet=${encodeURIComponent(ch.sheet)}` : "";
+  const linePart =
+    ch.line_start > 0
+      ? `#L${ch.line_start}${ch.line_end > ch.line_start ? `-L${ch.line_end}` : ""}`
+      : "";
+  return `${path}${sheetPart}${linePart}`;
+}
 
 /** Lightweight fuzzy scorer: exact substring > multi-token match > ordered subsequence. */
 function fuzzyScore(query: string, ...fields: Array<string | undefined>): number {
@@ -132,7 +152,12 @@ export const CommandPalette = memo(function CommandPalette({
   onSwitchFace: (face: "chat" | "paper" | "graph") => void;
 }) {
   const [query, setQuery] = useState("");
+  const [searchMode, setSearchMode] = useState<VaultSearchMode>("hybrid");
   const [remoteHits, setRemoteHits] = useState<SearchHit[]>([]);
+  const [fileHits, setFileHits] = useState<VaultFileHit[]>([]);
+  const [indexStats, setIndexStats] = useState<VaultIndexStats | null>(null);
+  const [reindexing, setReindexing] = useState(false);
+  const [searchNonce, setSearchNonce] = useState(0);
   const [ledgerReceipts, setLedgerReceipts] = useState<BriefJob[]>([]);
   const [searching, setSearching] = useState(false);
 
@@ -140,6 +165,7 @@ export const CommandPalette = memo(function CommandPalette({
     if (!open) {
       setQuery("");
       setRemoteHits([]);
+      setFileHits([]);
       setSearching(false);
       return;
     }
@@ -149,40 +175,73 @@ export const CommandPalette = memo(function CommandPalette({
         setLedgerReceipts(r.data.receipts);
       }
     });
+    if (hasV050Api(status, "search")) {
+      searchVault({ q: "", limit: 1 }).then((r) => {
+        if (!cancelled && r.ok && r.data.index_stats) {
+          setIndexStats(r.data.index_stats);
+        }
+      });
+    }
     return () => {
       cancelled = true;
     };
-  }, [open]);
+  }, [open, status]);
 
   // Query server indexed search (GET /api/search?q=...) on v0.5.0+ when typing >= 2 chars.
   useEffect(() => {
     const q = query.trim();
     if (!open || q.length < 2 || !hasV050Api(status, "search")) {
       setRemoteHits([]);
+      setFileHits([]);
       setSearching(false);
       return;
     }
     let cancelled = false;
+    const controller = new AbortController();
     setSearching(true);
     const timer = window.setTimeout(async () => {
-      const r = await call<{
-        results?: SearchHit[];
-        files?: { path?: string; name?: string }[];
-        receipts?: { id?: string; thread_id?: string; task?: string; summary?: string; ts?: number }[];
-        memory?: { line?: string; text?: string }[];
-      }>("/api/search?q=" + encodeURIComponent(q) + "&limit=16");
+      const r = await searchVault({
+        q,
+        mode: searchMode,
+        limit: 16,
+        signal: controller.signal,
+      });
       if (cancelled) return;
       setSearching(false);
       if (!r.ok) return;
+      if (r.data.index_stats) {
+        setIndexStats(r.data.index_stats);
+      }
+
+      const nextFileHits: VaultFileHit[] = [];
+      if (Array.isArray(r.data.file_hits)) {
+        for (const fh of r.data.file_hits) {
+          if (fh && typeof fh.path === "string" && fh.path.trim()) {
+            nextFileHits.push({
+              ...fh,
+              chunks: Array.isArray(fh.chunks) ? fh.chunks : [],
+            });
+          }
+        }
+      }
+
       const hits: SearchHit[] = [];
       if (Array.isArray(r.data.results)) {
         for (const h of r.data.results) {
-          if (h && typeof h === "object" && typeof h.title === "string") hits.push(h);
+          if (h && typeof h === "object" && typeof h.title === "string") {
+            if (h.kind === "file" && h.path && Array.isArray(h.chunks) && h.chunks.length > 0 && !nextFileHits.some((x) => x.path === h.path)) {
+              nextFileHits.push({ path: h.path, score: h.score, chunks: h.chunks });
+            }
+            hits.push(h);
+          }
         }
       }
       if (Array.isArray(r.data.files)) {
         for (const f of r.data.files.slice(0, 8)) {
           const fp = String(f?.path ?? f?.name ?? "").trim();
+          if (fp && Array.isArray(f?.chunks) && f.chunks.length > 0 && !nextFileHits.some((x) => x.path === fp)) {
+            nextFileHits.push({ path: fp, name: f.name, size: f.size, mtime_ms: f.mtime_ms, ext: f.ext, chunks: f.chunks });
+          }
           if (fp && !hits.some((x) => x.kind === "file" && x.path === fp)) {
             hits.push({ kind: "file", id: `f:${fp}`, title: fp, path: fp });
           }
@@ -216,13 +275,38 @@ export const CommandPalette = memo(function CommandPalette({
           }
         }
       }
+      setFileHits(nextFileHits.slice(0, 10));
       setRemoteHits(hits.slice(0, 16));
     }, 110);
     return () => {
       cancelled = true;
+      controller.abort();
       window.clearTimeout(timer);
     };
-  }, [open, query, status]);
+  }, [open, query, searchMode, searchNonce, status]);
+
+  const handleReindexVault = async () => {
+    if (reindexing) return;
+    setReindexing(true);
+    const r = await reindexVault();
+    setReindexing(false);
+    if (!r.ok) {
+      toast.error(r.error || "Could not reindex workspace vault.");
+      return;
+    }
+    if (r.data.index_stats) {
+      setIndexStats(r.data.index_stats);
+    } else {
+      setIndexStats((prev) => ({
+        total_files: r.data.indexed_files,
+        total_chunks: r.data.total_chunks,
+        indexed_bytes: prev?.indexed_bytes ?? 0,
+        semantic_enabled: prev?.semantic_enabled ?? true,
+      }));
+    }
+    toast.success(`Indexed ${r.data.indexed_files} files (${r.data.total_chunks} chunks) in ${r.data.elapsed_ms} ms.`);
+    setSearchNonce((n) => n + 1);
+  };
 
   const qLower = query.trim().toLowerCase();
 
@@ -372,6 +456,7 @@ export const CommandPalette = memo(function CommandPalette({
 
   const uniqueRemoteHits = useMemo(() => {
     const filePaths = new Set(matchedFiles.map((f) => f.path));
+    for (const fh of fileHits) filePaths.add(fh.path);
     const recIds = new Set(matchedReceipts.map((r) => r.id));
     const recTitles = new Set(matchedReceipts.map((r) => r.title));
     return remoteHits.filter((h) => {
@@ -379,7 +464,7 @@ export const CommandPalette = memo(function CommandPalette({
       if (h.kind === "receipt" && (recIds.has(h.id) || recTitles.has(h.title))) return false;
       return true;
     });
-  }, [remoteHits, matchedFiles, matchedReceipts]);
+  }, [remoteHits, fileHits, matchedFiles, matchedReceipts]);
 
   const ranRef = useRef(false);
   const runAndClose = (fn: () => void) => {
@@ -414,16 +499,118 @@ export const CommandPalette = memo(function CommandPalette({
             aria-label="Search command palette"
             value={query}
             onValueChange={setQuery}
-            placeholder="Search files, workflows, receipts…"
+            placeholder="Search files, passages, workflows, receipts…"
             className="h-12 pr-12 text-sm text-ink placeholder:text-ink-3"
           />
+          <div
+            id="palette-vault-toolbar"
+            className="flex flex-wrap items-center justify-between gap-2 border-b border-hairline bg-board/40 px-3 py-1.5"
+          >
+            <SegmentedControl aria-label="Vault search mode">
+              {(["hybrid", "bm25", "exact"] as const).map((m) => (
+                <SegmentedControlItem
+                  key={m}
+                  data-id={m}
+                  aria-pressed={searchMode === m}
+                  data-checked={searchMode === m ? "" : undefined}
+                  className="min-h-11 px-2.5 text-xs md:min-h-7"
+                  onClick={() => setSearchMode(m)}
+                >
+                  {m === "hybrid" ? "Hybrid" : m === "bm25" ? "BM25" : "Exact"}
+                </SegmentedControlItem>
+              ))}
+            </SegmentedControl>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <Badge id="palette-index-stats" variant="outline" size="sm" className="text-xs text-ink-2 tabular-nums">
+                {indexStats
+                  ? `${indexStats.total_chunks} chunks, ${indexStats.total_files} files`
+                  : `${files.length} files`}
+              </Badge>
+              <Button
+                id="palette-reindex-btn"
+                type="button"
+                size="xs"
+                variant="outline"
+                className="min-h-11 gap-1.5 text-xs md:min-h-7"
+                disabled={reindexing}
+                onClick={() => void handleReindexVault()}
+              >
+                <RefreshCw className={cn("size-3", reindexing && "animate-spin")} strokeWidth={1.5} aria-hidden />
+                <span>{reindexing ? "Reindexing…" : "Reindex Vault"}</span>
+              </Button>
+            </div>
+          </div>
           <CommandList className="max-h-[58vh] p-1.5">
             <CommandEmpty className="py-6 text-center text-sm text-ink-2">
               {searching ? "Searching indexed workspace…" : "No matching files, receipts, workflows, or actions."}
             </CommandEmpty>
 
+            {qLower.length >= 2 && fileHits.length > 0 && (
+              <CommandGroup heading="Ranked vault passages">
+                {fileHits.flatMap((fh) => {
+                  const chunks = fh.chunks.slice(0, 3);
+                  if (chunks.length === 0) {
+                    return [
+                      <CommandItem
+                        key={`vh-${fh.path}`}
+                        value={`vault-file-${fh.path}`}
+                        onSelect={() => runAndClose(() => onOpenFile(fh.path))}
+                        className="min-h-11 cursor-pointer justify-between gap-2 rounded-sm px-2.5 py-2 text-sm text-ink data-[selected=true]:bg-board md:min-h-9"
+                      >
+                        <span className="flex min-w-0 items-center gap-2">
+                          <FileGlyph name={fh.path} className="size-4 shrink-0" />
+                          <span className="truncate font-medium">{fh.path}</span>
+                        </span>
+                      </CommandItem>,
+                    ];
+                  }
+                  return chunks.map((ch) => (
+                    <CommandItem
+                      key={`vc-${fh.path}-${ch.chunk_id}`}
+                      value={`vault-chunk-${fh.path}-${ch.chunk_id}`}
+                      data-vault-chunk={ch.chunk_id}
+                      data-vault-path={fh.path}
+                      data-line-start={ch.line_start}
+                      onSelect={() => runAndClose(() => onOpenFile(buildChunkJumpTarget(fh.path, ch)))}
+                      className="min-h-11 cursor-pointer flex-col items-start gap-1 rounded-sm px-2.5 py-2 text-sm text-ink data-[selected=true]:bg-board"
+                    >
+                      <div className="flex w-full flex-wrap items-center justify-between gap-1.5">
+                        <span className="flex min-w-0 items-center gap-1.5">
+                          <FileGlyph name={fh.path} className="size-4 shrink-0" />
+                          <span className="truncate font-medium text-ink">{fh.path}</span>
+                          {ch.heading && (
+                            <span className="truncate text-xs text-ink-2">{ch.heading}</span>
+                          )}
+                        </span>
+                        <span className="flex shrink-0 flex-wrap items-center gap-1">
+                          {typeof ch.page === "number" && ch.page > 0 && (
+                            <Badge variant="outline" size="sm" className="text-xs tabular-nums">
+                              Page {ch.page}
+                            </Badge>
+                          )}
+                          {ch.sheet && (
+                            <Badge variant="outline" size="sm" className="text-xs">
+                              #{ch.sheet}
+                            </Badge>
+                          )}
+                          <Badge variant="outline" size="sm" className="text-xs tabular-nums">
+                            L{ch.line_start}{ch.line_end > ch.line_start ? `-L${ch.line_end}` : ""}
+                          </Badge>
+                        </span>
+                      </div>
+                      <p className="line-clamp-2 w-full text-xs leading-5 text-ink-2">
+                        {ch.excerpt}
+                      </p>
+                    </CommandItem>
+                  ));
+                })}
+              </CommandGroup>
+            )}
+
             {quickActions.length > 0 && (
-              <CommandGroup heading="Quick actions">
+              <>
+                {qLower.length >= 2 && fileHits.length > 0 && <CommandSeparator className="my-1 bg-hairline" />}
+                <CommandGroup heading="Quick actions">
                 {quickActions.map((act) => {
                   const Icon = act.icon;
                   return (
@@ -440,6 +627,7 @@ export const CommandPalette = memo(function CommandPalette({
                   );
                 })}
               </CommandGroup>
+              </>
             )}
 
             {matchedFiles.length > 0 && (

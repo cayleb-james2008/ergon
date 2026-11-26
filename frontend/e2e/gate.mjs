@@ -2301,6 +2301,259 @@ await reset();
   await ctx.close();
 }
 
+// 6b. v0.34.0 E2 Grounded Full-Vault Intelligence (deep >512-char chunk search, mode toggle, reindex, locator jump, multi-file rollup in Light & Dark)
+await reset();
+{
+  const deepLines = [
+    "# Full Vault Operations Audit",
+    "## Page 1",
+    ...Array.from({ length: 28 }, (_, i) => `Baseline paragraph ${i + 1}: routine ledger verification across Q3-Q4 regional ledgers.`),
+    "## Page 3",
+    "Escalation marker: aurora-threshold-99 requires dual signoff before settlement.",
+    "Supporting note: aurora-threshold-99 applies to multi-currency vendor batches.",
+    "## Page 4",
+    "Closing reconciliation appendix.",
+  ];
+  const deepContent = deepLines.join("\n");
+  const deepBytes = Buffer.byteLength(deepContent, "utf8");
+  const csvNorth = "Vendor,Region,Amount\nAcme Cloud,North,150.25\nBeacon Ops,North,100.00\n";
+  const csvSouth = "Vendor,Region,Amount\nAcme Cloud,South,300.25\nBeacon Ops,South,200.25\n";
+  const rollupCsv = "Vendor,sum_amount\nAcme Cloud,450.50\nBeacon Ops,300.25\n";
+
+  for (const theme of ["light", "dark"]) {
+    const { ctx, p } = await open(1440, 900, theme);
+    let reindexCalls = 0;
+
+    await p.route(/\/api\/search(\?.*)?$/, async (r) => {
+      const reqUrl = new URL(r.request().url());
+      const q = (reqUrl.searchParams.get("q") || "").trim().toLowerCase();
+      const mode = (reqUrl.searchParams.get("mode") || "hybrid").toLowerCase();
+      try {
+        const res = await r.fetch();
+        if (res.ok()) {
+          const j = await res.json();
+          if (j && j.index_stats && (!q.includes("aurora-threshold-99") || (Array.isArray(j.file_hits) && j.file_hits.length > 0))) {
+            return r.fulfill({ response: res, body: JSON.stringify(j) });
+          }
+        }
+      } catch {}
+      const chunks = q.includes("aurora-threshold-99")
+        ? [
+            {
+              chunk_id: "deep-vault-brief.md:L31-L34",
+              score: 0.94,
+              bm25_score: 4.8,
+              semantic_score: 0.89,
+              page: 3,
+              line_start: 31,
+              line_end: 34,
+              heading: "Page 3",
+              excerpt: "Escalation marker: aurora-threshold-99 requires dual signoff before settlement.",
+            },
+          ]
+        : [];
+      const fileHits = chunks.length
+        ? [{ path: "deep-vault-brief.md", name: "deep-vault-brief.md", ext: "md", size: deepBytes, score: 0.94, chunks }]
+        : [];
+      return r.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          query: q,
+          mode,
+          total: fileHits.length,
+          results: fileHits.map((fh) => ({
+            kind: "file",
+            id: fh.path,
+            title: fh.path,
+            subtitle: fh.chunks[0]?.excerpt,
+            path: fh.path,
+            chunks: fh.chunks,
+          })),
+          file_hits: fileHits,
+          index_stats: { total_files: 6, total_chunks: 18, indexed_bytes: deepBytes + 512, semantic_enabled: true },
+        }),
+      });
+    });
+
+    await p.route("**/api/vault/reindex", async (r) => {
+      reindexCalls += 1;
+      try {
+        const res = await r.fetch();
+        if (res.ok()) {
+          const j = await res.json();
+          if (j && j.ok) return r.fulfill({ response: res, body: JSON.stringify(j) });
+        }
+      } catch {}
+      return r.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          ok: true,
+          indexed_files: 6,
+          total_chunks: 18,
+          elapsed_ms: 4,
+          index_stats: { total_files: 6, total_chunks: 18, indexed_bytes: deepBytes + 512, semantic_enabled: true },
+        }),
+      });
+    });
+
+    await p.route("**/api/vault/aggregate", async (r) => {
+      try {
+        const res = await r.fetch();
+        if (res.ok()) {
+          const j = await res.json();
+          if (j && j.ok) return r.fulfill({ response: res, body: JSON.stringify(j) });
+        }
+      } catch {}
+      const reqBody = JSON.parse(r.request().postData() || "{}");
+      const saveAs = typeof reqBody.save_as === "string" && reqBody.save_as.trim() ? reqBody.save_as.trim() : undefined;
+      return r.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          ok: true,
+          columns: ["Vendor", "sum_amount"],
+          rows: [
+            ["Acme Cloud", "450.50"],
+            ["Beacon Ops", "300.25"],
+          ],
+          source_files: ["rollup-north.csv", "rollup-south.csv"],
+          row_count: 2,
+          ...(saveAs ? { saved_path: saveAs } : {}),
+        }),
+      });
+    });
+
+    await p.route(/\/api\/files\/content\?path=vault-rollup\.csv/, async (r) => {
+      try {
+        const res = await r.fetch();
+        if (res.ok()) return r.fulfill({ response: res });
+      } catch {}
+      return r.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          path: "vault-rollup.csv",
+          name: "vault-rollup.csv",
+          size: rollupCsv.length,
+          mtime_ms: Date.now(),
+          ext: "csv",
+          is_binary: false,
+          content: rollupCsv,
+        }),
+      });
+    });
+
+    await p.goto(BASE);
+    await waitWorkbench(p);
+
+    if (theme === "light") {
+      await p.evaluate(
+        async ({ dContent, cNorth, cSouth }) => {
+          await fetch("/api/files/upload", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ path: "deep-vault-brief.md", content: dContent }),
+          });
+          await fetch("/api/files/upload", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ path: "rollup-north.csv", content: cNorth }),
+          });
+          await fetch("/api/files/upload", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ path: "rollup-south.csv", content: cSouth }),
+          });
+        },
+        { dContent: deepContent, cNorth: csvNorth, cSouth: csvSouth }
+      );
+      await p.reload();
+      await waitWorkbench(p);
+    }
+
+    // 1. Command Palette: mode selector, index stats, Reindex Vault, deep chunk search >512 chars & 1-click jump to FileViewerModal
+    await p.keyboard.press("Control+k");
+    await p.waitForSelector("#palette-vault-toolbar", { timeout: 4000 });
+    const paletteStatsTxt = await p.locator("#palette-index-stats").innerText();
+    await p.locator("#palette-reindex-btn").click();
+    await p.waitForSelector("text=chunks", { timeout: 4000 }).catch(() => {});
+    await p.locator('#palette-vault-toolbar [data-id="bm25"]').click();
+    await p.locator('#palette-vault-toolbar [data-id="hybrid"]').click();
+    const cmdInput = p.locator('[data-cmdk-input="command-palette"]');
+    await cmdInput.fill("aurora-threshold-99");
+    await p.waitForSelector('#command-palette-dialog [data-vault-path="deep-vault-brief.md"]', { timeout: 5000 });
+    const paletteHitTxt = await p.locator('#command-palette-dialog [data-vault-path="deep-vault-brief.md"]').first().innerText();
+    await p.locator('#command-palette-dialog [data-vault-path="deep-vault-brief.md"]').first().click();
+    await p.waitForSelector("#file-source-lines [data-active-line='true']", { timeout: 5000 });
+    const activeLineTxt = await p.locator("#file-source-lines [data-active-line='true']").first().innerText();
+    ok(
+      `v0.34.0 E2 (${theme}) Command Palette reindexes, searches past char 512, and jumps to active line`,
+      deepBytes > 1800 &&
+        reindexCalls >= 1 &&
+        paletteStatsTxt.includes("chunks") &&
+        paletteHitTxt.includes("Page 3") &&
+        paletteHitTxt.includes("L31") &&
+        activeLineTxt.includes("31"),
+      `bytes=${deepBytes} stats=${paletteStatsTxt} line=${activeLineTxt.slice(0, 40)}`
+    );
+    await p.keyboard.press("Escape");
+    await p.locator("#file-viewer-dialog").waitFor({ state: "hidden", timeout: 4000 }).catch(() => {});
+
+    // 2. WorkspaceFiles: mode toggle, Reindex Vault, ranked passage jump, and Multi-File Rollup modal
+    if (!(await p.locator("#workspace-files-panel").isVisible())) {
+      await p.locator('[data-thing="inspector-toggle"]').click();
+      await p.waitForSelector("#workspace-files-panel", { timeout: 4000 });
+    }
+    await p.locator("#workspace-refresh-btn").click();
+    await p.waitForTimeout(200);
+    await p.locator("#workspace-vault-reindex-btn").click();
+    await p.waitForTimeout(200);
+    await p.locator("#workspace-file-search").fill("aurora-threshold-99");
+    await p.waitForSelector('#workspace-files-panel [data-vault-jump="deep-vault-brief.md"]', { timeout: 5000 });
+    const wsJumpTxt = await p.locator('#workspace-files-panel [data-vault-jump="deep-vault-brief.md"]').first().innerText();
+    await p.locator('#workspace-files-panel [data-vault-jump="deep-vault-brief.md"]').first().click();
+    await p.waitForSelector("#file-source-lines [data-active-line='true']", { timeout: 5000 });
+    const wsLineVisible = await p.locator("#file-source-lines [data-active-line='true']").first().isVisible();
+    await p.keyboard.press("Escape");
+    await p.locator("#file-viewer-dialog").waitFor({ state: "hidden", timeout: 4000 }).catch(() => {});
+    await p.locator("#workspace-file-search").fill("");
+
+    // Multi-file Rollup modal
+    await p.locator("#vault-aggregate-open-btn").click();
+    await p.waitForSelector("#vault-aggregate-dialog", { timeout: 4000 });
+    await p.locator("#vault-agg-glob").fill("rollup-*.csv");
+    await p.locator("#vault-agg-group-by").fill("Vendor");
+    await p.locator("#vault-agg-col").fill("Amount");
+    await p.locator("#vault-agg-run-btn").click();
+    await p.waitForSelector("#vault-agg-result", { timeout: 5000 });
+    const aggTxt = await p.locator("#vault-agg-result").innerText();
+    await p.locator("#vault-agg-save-btn").click();
+    await p.waitForSelector("#vault-agg-open-saved", { timeout: 5000 });
+    const mVault = await p.evaluate(MEASURE);
+    await p.locator("#vault-agg-open-saved").click();
+    await p.waitForSelector("#file-viewer-dialog table", { timeout: 5000 });
+    const savedCsvVisible = (await p.locator("#file-viewer-dialog").innerText()).includes("Acme Cloud");
+    await p.keyboard.press("Escape");
+    await p.locator("#file-viewer-dialog").waitFor({ state: "hidden", timeout: 4000 }).catch(() => {});
+
+    ok(
+      `v0.34.0 E2 (${theme}) WorkspaceFiles passage jump, Rollup aggregate, and contrast/layout`,
+      wsJumpTxt.includes("Page 3") &&
+        wsLineVisible &&
+        aggTxt.includes("450.50") &&
+        aggTxt.includes("300.25") &&
+        savedCsvVisible &&
+        mVault.docOverflow <= 0 &&
+        mVault.lowContrast === 0 &&
+        mVault.unnamed.length === 0,
+      `agg=${aggTxt.replace(/\s+/g, " ").slice(0, 60)} overflow=${mVault.docOverflow} low=${mVault.lowContrast} unnamed=${mVault.unnamed.length}`
+    );
+    await ctx.close();
+  }
+}
+
 // 7. Reduced motion & Console Cleanliness (2 checks)
 {
   const { ctx, p } = await open(1440, 900, "light", { reducedMotion: "reduce" });
