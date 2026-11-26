@@ -13,7 +13,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::io::Read as _;
 use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Condvar, Mutex, OnceLock};
 use std::time::{Duration, UNIX_EPOCH};
 
 pub const MAX_WEBHOOK_BYTES: usize = 1_048_576;
@@ -2136,10 +2136,94 @@ pub fn test_outbound_connector(
     }
 }
 
+static IN_FLIGHT_DELIVERY_SETTLE: OnceLock<(Mutex<HashSet<String>>, Condvar)> = OnceLock::new();
+
+fn settling_bus() -> &'static (Mutex<HashSet<String>>, Condvar) {
+    IN_FLIGHT_DELIVERY_SETTLE.get_or_init(|| (Mutex::new(HashSet::new()), Condvar::new()))
+}
+
+struct DeliverySettleGuard<'a> {
+    key: String,
+    bus: &'a (Mutex<HashSet<String>>, Condvar),
+}
+
+impl<'a> Drop for DeliverySettleGuard<'a> {
+    fn drop(&mut self) {
+        let (mtx, cv) = self.bus;
+        let mut set = mtx.lock().unwrap_or_else(|p| p.into_inner());
+        set.remove(&self.key);
+        cv.notify_all();
+    }
+}
+
+fn acquire_delivery_settle_guard(data_dir: &Path, decision_id: &str) -> DeliverySettleGuard<'static> {
+    let bus = settling_bus();
+    let key = format!("{}::{}", data_dir.display(), decision_id);
+    let (mtx, cv) = bus;
+    let mut set = mtx.lock().unwrap_or_else(|p| p.into_inner());
+    while set.contains(&key) {
+        set = cv.wait(set).unwrap_or_else(|p| p.into_inner());
+    }
+    set.insert(key.clone());
+    DeliverySettleGuard { key, bus }
+}
+
+fn existing_settled_delivery_outcome(data_dir: &Path, decision_id: &str) -> Option<String> {
+    if decision_id.is_empty() {
+        return None;
+    }
+    with_connectors_lock(|| {
+        let store = ConnectorsStore::load_unlocked(data_dir);
+        store
+            .delivery_log
+            .iter()
+            .rev()
+            .find(|d| {
+                d.decision_id.as_deref() == Some(decision_id)
+                    && matches!(d.status.as_str(), "ok" | "delivered" | "denied" | "error" | "blocked")
+            })
+            .map(|d| match d.status.as_str() {
+                "denied" => "You said no — outbound delivery was cancelled.".to_string(),
+                "error" | "blocked" => format!(
+                    "Approved, but outbound delivery failed: {}",
+                    d.error.as_deref().unwrap_or("delivery failed")
+                ),
+                _ => format!(
+                    "Approved and delivered via \"{}\" (HTTP {}, {} bytes).",
+                    d.connector_name,
+                    d.http_status.unwrap_or(200),
+                    d.payload_bytes
+                ),
+            })
+    })
+}
+
+/// Wait for any in-flight `settle_delivery_decision` on `decision_id` to finish
+/// and return the persisted decision outcome (or delivery log summary).
+pub fn wait_for_delivery_settlement(data_dir: &Path, decision_id: &str) -> Option<String> {
+    if decision_id.is_empty() {
+        return None;
+    }
+    let _guard = acquire_delivery_settle_guard(data_dir, decision_id);
+    if let Some(existing) = existing_settled_delivery_outcome(data_dir, decision_id) {
+        return Some(existing);
+    }
+    records::load_decisions(data_dir)
+        .into_iter()
+        .find(|d| d["id"].as_str() == Some(decision_id))
+        .and_then(|d| d["outcome"].as_str().map(str::to_string))
+}
+
 /// Execute an approved `connector_delivery` decision (called from `records::resolve_decision`
-/// outside `RECORDS_LOCK`). Returns the final human-readable outcome string.
+/// outside `RECORDS_LOCK`). Idempotent per `decision_id` so concurrent/repeated settlement
+/// cannot double-deliver. Returns the final human-readable outcome string.
 pub fn settle_delivery_decision(cfg: &Config, decision: &Value) -> String {
     let decision_id = decision["id"].as_str().unwrap_or("");
+    let _guard = (!decision_id.is_empty())
+        .then(|| acquire_delivery_settle_guard(&cfg.data_dir, decision_id));
+    if let Some(existing) = existing_settled_delivery_outcome(&cfg.data_dir, decision_id) {
+        return existing;
+    }
     let connector_id = decision["connector_id"].as_str().unwrap_or("");
     let thread_id = decision["thread_id"].as_str().unwrap_or("");
     let payload = &decision["payload"];

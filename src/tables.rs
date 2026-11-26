@@ -115,11 +115,12 @@ pub fn validate_workspace_rel_path(raw: &str) -> Result<String, String> {
         || trimmed.contains(':')
         || trimmed.chars().any(|c| c.is_control())
         || trimmed.starts_with('/')
-        || low.contains("%2e%2e")
-        || low.contains("%252e")
+        || low.contains("%2e")
         || low.contains("%2f")
         || low.contains("%5c")
         || low.contains("%00")
+        || low.contains("%25")
+        || low.contains("connector_secrets.json")
         || trimmed
             .split('/')
             .any(|seg| seg.is_empty() || seg == "." || seg == ".." || seg.starts_with('.'))
@@ -940,6 +941,20 @@ pub fn execute_query(cfg: &Config, args: &Value) -> Result<TableQueryResult, Str
     run_table_pipeline(cfg, table.columns, table.rows, args, "query_table")
 }
 
+const MAX_GLOB_BRACE_PATTERNS: usize = 64;
+
+fn check_glob_segments_safe(pat: &str, raw_display: &str) -> Result<(), String> {
+    if pat.is_empty()
+        || pat.starts_with('/')
+        || pat.split('/').any(|seg| {
+            seg.is_empty() || seg == "." || seg == ".." || seg.starts_with('.')
+        })
+    {
+        return Err(format!("glob pattern escapes the workspace: {raw_display}"));
+    }
+    Ok(())
+}
+
 fn validate_glob_pattern(raw: &str) -> Result<String, String> {
     let mut trimmed = raw.trim().to_string();
     if trimmed.is_empty() {
@@ -948,8 +963,11 @@ fn validate_glob_pattern(raw: &str) -> Result<String, String> {
     while let Some(rest) = trimmed.strip_prefix("./") {
         trimmed = rest.to_string();
     }
-    if trimmed.is_empty() || trimmed.len() > 240 {
-        return Err("glob pattern is invalid or too long".to_string());
+    if trimmed.is_empty() {
+        return Err("aggregate_vault needs args.glob".to_string());
+    }
+    if trimmed.len() > 240 {
+        return Err("malformed glob pattern: exceeds 240 characters".to_string());
     }
     let low = trimmed.to_ascii_lowercase();
     if trimmed.contains('\0')
@@ -957,22 +975,63 @@ fn validate_glob_pattern(raw: &str) -> Result<String, String> {
         || trimmed.contains(':')
         || trimmed.chars().any(|c| c.is_control())
         || trimmed.starts_with('/')
-        || low.contains("%2e%2e")
-        || low.contains("%252e")
+        || low.contains("%2e")
         || low.contains("%2f")
         || low.contains("%5c")
         || low.contains("%00")
-        || trimmed.split('/').any(|seg| {
-            seg.is_empty() || seg == "." || seg == ".." || seg.starts_with('.')
-        })
+        || low.contains("%25")
         || low.contains("connector_secrets.json")
     {
         return Err(format!("glob pattern escapes the workspace: {trimmed}"));
     }
+
+    // Validate brace syntax (balanced, non-nested, non-empty alternatives).
+    let mut depth = 0usize;
+    let mut cur_alt_nonempty = false;
+    for ch in trimmed.chars() {
+        match ch {
+            '{' => {
+                if depth > 0 {
+                    return Err("malformed glob pattern: nested '{' braces are not supported".to_string());
+                }
+                depth = 1;
+                cur_alt_nonempty = false;
+            }
+            ',' if depth == 1 => {
+                if !cur_alt_nonempty {
+                    return Err("malformed glob pattern: empty brace alternative".to_string());
+                }
+                cur_alt_nonempty = false;
+            }
+            '}' => {
+                if depth == 0 {
+                    return Err("malformed glob pattern: unmatched '}'".to_string());
+                }
+                if !cur_alt_nonempty {
+                    return Err("malformed glob pattern: empty brace alternative".to_string());
+                }
+                depth = 0;
+            }
+            _ => {
+                if depth == 1 {
+                    cur_alt_nonempty = true;
+                }
+            }
+        }
+    }
+    if depth != 0 {
+        return Err("malformed glob pattern: unclosed '{'".to_string());
+    }
+
+    check_glob_segments_safe(&trimmed, &trimmed)?;
+    let expanded = expand_glob_braces_bounded(&trimmed)?;
+    for pat in &expanded {
+        check_glob_segments_safe(pat, &trimmed)?;
+    }
     Ok(trimmed)
 }
 
-fn expand_glob_braces(pattern: &str) -> Vec<String> {
+fn expand_glob_braces_bounded(pattern: &str) -> Result<Vec<String>, String> {
     if let Some(open) = pattern.find('{') {
         if let Some(rel_close) = pattern[open + 1..].find('}') {
             let close = open + 1 + rel_close;
@@ -980,14 +1039,22 @@ fn expand_glob_braces(pattern: &str) -> Vec<String> {
             let suffix = &pattern[close + 1..];
             let mut out = Vec::new();
             for alt in pattern[open + 1..close].split(',') {
-                for sub in expand_glob_braces(&format!("{prefix}{alt}{suffix}")) {
-                    out.push(sub);
+                let sub_patterns = expand_glob_braces_bounded(&format!("{prefix}{alt}{suffix}"))?;
+                if out.len() + sub_patterns.len() > MAX_GLOB_BRACE_PATTERNS {
+                    return Err(format!(
+                        "malformed glob pattern: brace expansion exceeds {MAX_GLOB_BRACE_PATTERNS} patterns"
+                    ));
                 }
+                out.extend(sub_patterns);
             }
-            return out;
+            return Ok(out);
         }
     }
-    vec![pattern.to_string()]
+    Ok(vec![pattern.to_string()])
+}
+
+fn expand_glob_braces(pattern: &str) -> Vec<String> {
+    expand_glob_braces_bounded(pattern).unwrap_or_else(|_| vec![pattern.to_string()])
 }
 
 fn glob_seg_match(pat: &[char], val: &[char]) -> bool {
@@ -1194,6 +1261,11 @@ pub fn execute_vault_aggregate(cfg: &Config, args: &Value) -> Result<VaultAggreg
         } else {
             loaded_tables.push(load_table(cfg, rel, None)?);
         }
+    }
+    if loaded_tables.is_empty() {
+        return Err(format!(
+            "no readable table rows matched glob '{clean_glob}'"
+        ));
     }
 
     let include_source_col = args_mentions_col(args, "_source_file");

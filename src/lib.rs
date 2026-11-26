@@ -1093,12 +1093,15 @@ fn parse_usage_from_value(usage_obj: Option<&Value>, model_id: String, latency_m
     }
 }
 
+const MAX_SSE_STREAM_BYTES: usize = 2 * 1024 * 1024;
+
 fn consume_sse_data_line(
     line: &str,
     content_buf: &mut String,
     tool_calls: &mut std::collections::BTreeMap<usize, SseToolCallAccum>,
     model_id: &mut Option<String>,
     usage_val: &mut Option<Value>,
+    sse_error: &mut Option<String>,
     stream_target: Option<ModelStreamTarget<'_>>,
 ) -> bool {
     let trimmed = line.trim();
@@ -1109,12 +1112,23 @@ fn consume_sse_data_line(
         return false;
     };
     let data = data_raw.trim();
+    if data.is_empty() {
+        return false;
+    }
     if data == "[DONE]" {
         return true;
     }
     let Ok(chunk) = serde_json::from_str::<Value>(data) else {
         return false;
     };
+    if let Some(err_obj) = chunk.get("error").filter(|e| !e.is_null()) {
+        let msg = err_obj
+            .get("message")
+            .and_then(|m| m.as_str())
+            .map(str::to_string)
+            .unwrap_or_else(|| err_obj.to_string());
+        *sse_error = Some(truncate(&msg, 400));
+    }
     if let Some(m) = chunk["model"].as_str().map(str::trim).filter(|s| !s.is_empty()) {
         *model_id = Some(m.to_string());
     }
@@ -1129,7 +1143,7 @@ fn consume_sse_data_line(
         return false;
     };
     if let Some(text) = delta.get("content").and_then(|c| c.as_str()) {
-        if !text.is_empty() {
+        if !text.is_empty() && content_buf.len() < MAX_SSE_STREAM_BYTES {
             content_buf.push_str(text);
             if let Some(target) = stream_target {
                 target.events.publish_token_delta(
@@ -1148,10 +1162,14 @@ fn consume_sse_data_line(
             let entry = tool_calls.entry(idx).or_default();
             if let Some(func) = tc.get("function") {
                 if let Some(name) = func.get("name").and_then(|n| n.as_str()) {
-                    entry.name.push_str(name);
+                    if entry.name.len() < 256 {
+                        entry.name.push_str(name);
+                    }
                 }
                 if let Some(args) = func.get("arguments").and_then(|a| a.as_str()) {
-                    entry.arguments.push_str(args);
+                    if entry.arguments.len() < MAX_SSE_STREAM_BYTES {
+                        entry.arguments.push_str(args);
+                    }
                     if !args.is_empty() {
                         if let Some(target) = stream_target {
                             target.events.publish_token_delta(
@@ -1173,19 +1191,35 @@ fn consume_sse_data_line(
 fn finalize_sse_reply(
     content_buf: &str,
     tool_calls: &std::collections::BTreeMap<usize, SseToolCallAccum>,
+    sse_error: Option<&str>,
 ) -> Result<Value, String> {
     if !content_buf.trim().is_empty() {
         return parse_model_reply(content_buf);
     }
     if let Some((_, tc)) = tool_calls.iter().next() {
         if !tc.name.trim().is_empty() {
-            let args_val = serde_json::from_str::<Value>(&tc.arguments)
-                .unwrap_or_else(|_| Value::String(tc.arguments.clone()));
+            let raw_args = tc.arguments.trim();
+            let args_val = if raw_args.is_empty() {
+                json!({})
+            } else {
+                match serde_json::from_str::<Value>(raw_args) {
+                    Ok(v) if v.is_object() => v,
+                    Ok(_) | Err(_) => {
+                        return Err(format!(
+                            "model SSE tool_call arguments were incomplete or malformed JSON: {}",
+                            truncate(raw_args, 200)
+                        ));
+                    }
+                }
+            };
             return Ok(normalize_model_reply(json!({
                 "tool": tc.name.trim(),
                 "args": args_val,
             })));
         }
+    }
+    if let Some(err) = sse_error {
+        return Err(format!("model SSE stream error: {err}"));
     }
     Err("model SSE stream ended with no assistant content or tool_calls".to_string())
 }
@@ -1318,7 +1352,9 @@ pub fn call_model_with_usage_streaming(
             std::collections::BTreeMap::new();
         let mut model_id: Option<String> = None;
         let mut usage_val: Option<Value> = None;
+        let mut sse_error: Option<String> = None;
         let mut line = String::new();
+        let mut bytes_seen = 0usize;
         loop {
             line.clear();
             let n = reader
@@ -1327,19 +1363,24 @@ pub fn call_model_with_usage_streaming(
             if n == 0 {
                 break;
             }
+            bytes_seen = bytes_seen.saturating_add(n);
+            if bytes_seen > MAX_SSE_STREAM_BYTES * 2 {
+                return Err("model SSE stream exceeded maximum size".to_string());
+            }
             if consume_sse_data_line(
                 &line,
                 &mut content_buf,
                 &mut tool_calls,
                 &mut model_id,
                 &mut usage_val,
+                &mut sse_error,
                 stream_target,
             ) {
                 break;
             }
         }
         let latency_ms = started.elapsed().as_millis() as u64;
-        let parsed = finalize_sse_reply(&content_buf, &tool_calls)?;
+        let parsed = finalize_sse_reply(&content_buf, &tool_calls, sse_error.as_deref())?;
         let usage = parse_usage_from_value(
             usage_val.as_ref(),
             model_id.unwrap_or_else(|| cfg.model_id.clone()),
@@ -1352,12 +1393,18 @@ pub fn call_model_with_usage_streaming(
         .into_string()
         .map_err(|e| format!("reading model response failed: {e}"))?;
     let latency_ms = started.elapsed().as_millis() as u64;
-    if raw_body.trim_start().starts_with("data:") {
+    let looks_like_sse = raw_body.trim_start().starts_with("data:")
+        || (!raw_body.trim_start().starts_with('{')
+            && raw_body
+                .lines()
+                .any(|l| l.trim_start().starts_with("data:")));
+    if looks_like_sse {
         let mut content_buf = String::new();
         let mut tool_calls: std::collections::BTreeMap<usize, SseToolCallAccum> =
             std::collections::BTreeMap::new();
         let mut model_id: Option<String> = None;
         let mut usage_val: Option<Value> = None;
+        let mut sse_error: Option<String> = None;
         for line in raw_body.lines() {
             if consume_sse_data_line(
                 line,
@@ -1365,12 +1412,13 @@ pub fn call_model_with_usage_streaming(
                 &mut tool_calls,
                 &mut model_id,
                 &mut usage_val,
+                &mut sse_error,
                 stream_target,
             ) {
                 break;
             }
         }
-        let parsed = finalize_sse_reply(&content_buf, &tool_calls)?;
+        let parsed = finalize_sse_reply(&content_buf, &tool_calls, sse_error.as_deref())?;
         let usage = parse_usage_from_value(
             usage_val.as_ref(),
             model_id.unwrap_or_else(|| cfg.model_id.clone()),
@@ -2104,6 +2152,28 @@ fn collect_citations_from_text(text: &str, out: &mut Vec<String>) {
     }
 }
 
+fn clamp_oversized_tail_messages(
+    slice: &mut [Value],
+    max_single_msg: usize,
+    citations: &mut Vec<String>,
+) -> bool {
+    let mut trimmed_any = false;
+    for m in slice {
+        if m["role"].as_str() == Some("system") {
+            continue;
+        }
+        if let Some(s) = m.get("content").and_then(|c| c.as_str()) {
+            if s.chars().count() > max_single_msg {
+                collect_citations_from_text(s, citations);
+                let clipped = truncate(s, max_single_msg);
+                m["content"] = Value::String(clipped);
+                trimmed_any = true;
+            }
+        }
+    }
+    trimmed_any
+}
+
 /// Compact older tool-call/result turns into a concise structured state digest
 /// while preserving `messages[0]` (system prompt), the newest 4 turns, and
 /// `WriteLedger` (`written` + citations) intact.
@@ -2115,12 +2185,40 @@ fn compact_messages_if_needed(
     thread_id: &str,
 ) -> bool {
     let keep_tail = 4usize;
-    if messages.len() <= keep_tail + 2 {
+    if messages.len() <= 1 || context_budget_chars == 0 {
         return false;
     }
     let before_chars = estimate_messages_chars(messages);
     if before_chars <= context_budget_chars {
         return false;
+    }
+    let max_single_msg = (context_budget_chars / 2).max(400);
+    if messages.len() <= keep_tail + 2 {
+        let mut cits = Vec::new();
+        let trimmed_any = if messages.len() > 2 {
+            clamp_oversized_tail_messages(&mut messages[2..], max_single_msg, &mut cits)
+        } else {
+            false
+        };
+        if trimmed_any {
+            let after_chars = estimate_messages_chars(messages);
+            if let Some(lctx) = live {
+                lctx.events.publish(
+                    "context_compacted",
+                    lctx.person_id,
+                    lctx.run_id,
+                    thread_id,
+                    json!({
+                        "compacted_turns": 0,
+                        "before_chars": before_chars,
+                        "after_chars": after_chars,
+                        "written_count": ledger.written.len(),
+                        "ts_ms": records::now_millis(),
+                    }),
+                );
+            }
+        }
+        return trimmed_any;
     }
 
     let split_idx = messages.len() - keep_tail;
@@ -2170,8 +2268,12 @@ fn compact_messages_if_needed(
         prior_digest_lines.push(format!("- {prefix}: {}", truncate(trimmed, 120)));
     }
 
+    // Trim any oversized single message in the preserved tail so it cannot blow the budget.
+    let mut tail_msgs: Vec<Value> = messages[split_idx..].to_vec();
+    clamp_oversized_tail_messages(&mut tail_msgs, max_single_msg, &mut citations);
+
     // Keep digest concise so total messages stay comfortably within budget.
-    let tail_chars: usize = messages[split_idx..]
+    let tail_chars: usize = tail_msgs
         .iter()
         .map(|m| m.to_string().len())
         .sum();
@@ -2208,7 +2310,6 @@ fn compact_messages_if_needed(
         digest = truncate(&digest, max_digest_chars);
     }
 
-    let tail_msgs: Vec<Value> = messages[split_idx..].to_vec();
     let system_msg = messages[0].clone();
     messages.clear();
     messages.push(system_msg);
@@ -2693,10 +2794,11 @@ fn run_loop(
             return Err(format!("{}{reason}", tripwire::HALT_PREFIX));
         }
         messages.push(json!({"role": "assistant", "content": reply.to_string()}));
+        let tool_cap = 6000usize.min((context_budget_chars / 2).max(400));
         let spotlighted = if tool == "search_vault" && result_text.starts_with("Tool result for ") {
-            truncate(&result_text, 6000)
+            truncate(&result_text, tool_cap)
         } else {
-            tripwire::spotlight(&tool, &truncate(&result_text, 6000))
+            tripwire::spotlight(&tool, &truncate(&result_text, tool_cap))
         };
         messages.push(json!({
             "role": "user",

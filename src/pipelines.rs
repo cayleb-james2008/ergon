@@ -495,6 +495,11 @@ impl PipelineStepSpec {
                 }
             }
             Some(Value::Array(arr)) => {
+                if arr.is_empty() {
+                    return Err(format!(
+                        "steps_v2[{index}].for_each array cannot be empty"
+                    ));
+                }
                 if arr.len() > MAX_FANOUT_ITEMS {
                     return Err(format!(
                         "steps_v2[{index}].for_each exceeds MAX_FANOUT_ITEMS ({MAX_FANOUT_ITEMS})"
@@ -679,26 +684,24 @@ pub fn parse_steps_v2(v: &Value) -> Result<Vec<PipelineStepSpec>, String> {
         ));
     }
     let mut seen_ids = HashSet::new();
+    let mut raw_ids = HashSet::new();
+    let mut dup_raw_id: Option<String> = None;
     let mut out = Vec::with_capacity(arr.len());
-    let mut has_deps = false;
     for (idx, item) in arr.iter().enumerate() {
         let mut step = PipelineStepSpec::from_json(item, idx)?;
-        if !step.depends_on().is_empty() {
-            has_deps = true;
+        if !raw_ids.insert(step.id.clone()) && dup_raw_id.is_none() {
+            dup_raw_id = Some(step.id.clone());
         }
         if !seen_ids.insert(step.id.clone()) {
-            if has_deps || item.get("id").and_then(|s| s.as_str()).is_some() {
-                // Keep unique rename for legacy steps without deps, reject duplicate ids in DAGs
-                if has_deps {
-                    return Err(format!("duplicate step id '{}' in DAG pipeline", step.id));
-                }
-            }
             step.id = format!("{}_{}", step.id, idx + 1);
             seen_ids.insert(step.id.clone());
         }
         out.push(step);
     }
     if out.iter().any(|s| !s.depends_on().is_empty()) {
+        if let Some(dup) = dup_raw_id {
+            return Err(format!("duplicate step id '{dup}' in DAG pipeline"));
+        }
         topological_sort_steps(&out)?;
     }
     Ok(out)
@@ -1969,8 +1972,43 @@ pub fn validate_pipeline_payload(
         if let Some(fe) = step.for_each() {
             scan_templates_in_str(&fe, &step.id, &step_ids, anc_ref, &mut errors);
             if !fe.contains("{{steps.") && !fe.contains("{{item") {
-                if let Err(e) = resolve_for_each_items(&fe, &dummy_run) {
-                    errors.push(format!("step '{}': {e}", step.id));
+                let is_literal = !fe.contains("{{");
+                let all_inputs_present = !is_literal && {
+                    let mut all_ok = true;
+                    let mut rest = fe.as_str();
+                    while let Some(s) = rest.find("{{") {
+                        let after = &rest[s + 2..];
+                        if let Some(e) = after.find("}}") {
+                            let expr = after[..e].trim();
+                            if let Some(k) = expr.strip_prefix("inputs.") {
+                                if !dummy_run.inputs.contains_key(k.trim()) {
+                                    all_ok = false;
+                                    break;
+                                }
+                            } else {
+                                all_ok = false;
+                                break;
+                            }
+                            rest = &after[e + 2..];
+                        } else {
+                            all_ok = false;
+                            break;
+                        }
+                    }
+                    all_ok
+                };
+                match resolve_for_each_items(&fe, &dummy_run) {
+                    Ok(items) => {
+                        if items.is_empty() && (is_literal || all_inputs_present) {
+                            errors.push(format!(
+                                "step '{}': for_each array cannot be empty",
+                                step.id
+                            ));
+                        }
+                    }
+                    Err(e) => {
+                        errors.push(format!("step '{}': {e}", step.id));
+                    }
                 }
             }
         }
@@ -4294,12 +4332,26 @@ pub fn resume_pipeline(
                             .find(|d| d["id"].as_str() == Some(checkpoint_id.as_str()))
                         {
                             if dec["kind"].as_str() == Some("connector_delivery") {
-                                let out_str = dec["outcome"]
+                                let status_str = dec["status"].as_str().unwrap_or("");
+                                let mut out_str = dec["outcome"]
                                     .as_str()
                                     .unwrap_or("Approved.")
                                     .to_string();
+                                if status_str == "approved"
+                                    && out_str.starts_with("Approved — executing")
+                                {
+                                    if let Some(waited) = connectors::wait_for_delivery_settlement(
+                                        &env.cfg.data_dir,
+                                        &checkpoint_id,
+                                    ) {
+                                        out_str = waited;
+                                    }
+                                }
                                 delivery_outcome_msg = Some(out_str.clone());
-                                if out_str.starts_with("Approved, but") {
+                                if status_str == "denied"
+                                    || out_str.starts_with("Approved, but")
+                                    || out_str.starts_with("You said no")
+                                {
                                     delivery_error = Some(out_str);
                                 }
                             }
