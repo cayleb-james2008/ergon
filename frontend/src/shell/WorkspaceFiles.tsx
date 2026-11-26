@@ -22,6 +22,7 @@ import {
   FolderOpen,
   History,
   MessageSquarePlus,
+  Pencil,
   RefreshCw,
   RotateCcw,
   Search,
@@ -47,7 +48,9 @@ import { Badge } from "@/components/ui/badge";
 import { FileGlyph } from "@/chat/Entry";
 import {
   call,
+  canExportPdf,
   downloadWorkspaceFile,
+  exportFile,
   exportTarget,
   fileUploadBody,
   hasV070Api,
@@ -57,6 +60,8 @@ import {
   type WorkspaceFile,
   type WorkspaceFileContent,
 } from "@/lib/api";
+import { FileEditor, MarkdownView, parseCsv } from "@/shell/FileEditor";
+export { parseCsv };
 import { computeLineDiff, normalizeServerDiff } from "@/lib/diff";
 import { exportClientPackDownload, exportReceiptDownload } from "@/lib/receiptExport";
 import { cn } from "@/lib/utils";
@@ -71,230 +76,6 @@ export function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} kB`;
   return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
-}
-
-/** RFC-4180 compliant CSV parser handling quoted fields, commas inside quotes, and doubled quotes. */
-export function parseCsv(text: string): string[][] {
-  const rows: string[][] = [];
-  let row: string[] = [];
-  let cell = "";
-  let inQuotes = false;
-  for (let i = 0; i < text.length; i++) {
-    const ch = text[i];
-    if (inQuotes) {
-      if (ch === '"') {
-        if (text[i + 1] === '"') {
-          cell += '"';
-          i++;
-        } else {
-          inQuotes = false;
-        }
-      } else {
-        cell += ch;
-      }
-    } else if (ch === '"') {
-      inQuotes = true;
-    } else if (ch === ",") {
-      row.push(cell);
-      cell = "";
-    } else if (ch === "\r") {
-      if (text[i + 1] === "\n") i++;
-      row.push(cell);
-      if (row.some((c) => c.length > 0)) rows.push(row);
-      row = [];
-      cell = "";
-    } else if (ch === "\n") {
-      row.push(cell);
-      if (row.some((c) => c.length > 0)) rows.push(row);
-      row = [];
-      cell = "";
-    } else {
-      cell += ch;
-    }
-  }
-  row.push(cell);
-  if (row.some((c) => c.length > 0)) rows.push(row);
-  return rows;
-}
-
-function renderInlineFormatting(line: string): React.ReactNode {
-  const tokens = line.split(/(`[^`]+`|\*\*[^*]+\*\*)/g);
-  if (tokens.length === 1) return line;
-  return tokens.map((tok, i) => {
-    if (tok.startsWith("`") && tok.endsWith("`") && tok.length > 2) {
-      return (
-        <code key={i} className="mono rounded-chip bg-board px-1.5 py-0.5 text-xs text-ink">
-          {tok.slice(1, -1)}
-        </code>
-      );
-    }
-    if (tok.startsWith("**") && tok.endsWith("**") && tok.length > 4) {
-      return (
-        <strong key={i} className="font-medium text-ink">
-          {tok.slice(2, -2)}
-        </strong>
-      );
-    }
-    return <span key={i}>{tok}</span>;
-  });
-}
-
-function headingSlug(text: string, idx: number): string {
-  const clean = text.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 32);
-  return `md-sec-${idx}-${clean || "h"}`;
-}
-
-function MarkdownView({ content }: { content: string }) {
-  const parsed = useMemo(() => {
-    const lines = content.replace(/\r\n/g, "\n").split("\n");
-    const blocks: React.ReactNode[] = [];
-    const headings: { id: string; level: number; text: string }[] = [];
-    let list: string[] = [];
-    let codeLines: string[] | null = null;
-    let tableRows: string[][] = [];
-
-    const flushList = (key: number) => {
-      if (!list.length) return;
-      blocks.push(
-        <ul key={"ul-" + key} className="flex list-disc flex-col gap-1 pl-5 text-sm leading-6 text-ink">
-          {list.map((item, idx) => <li key={idx}>{renderInlineFormatting(item)}</li>)}
-        </ul>
-      );
-      list = [];
-    };
-
-    const flushTable = (key: number) => {
-      if (!tableRows.length) return;
-      const head = tableRows[0];
-      const body = tableRows.slice(1).filter((r) => !r.every((c) => /^[-:\s]+$/.test(c)));
-      blocks.push(
-        <div key={"tbl-" + key} className="overflow-x-auto rounded-sm border border-hairline bg-surface">
-          <table className="w-full border-collapse text-left text-xs">
-            <thead className="border-b border-hairline bg-board text-ink">
-              <tr>
-                {head.map((c, ci) => (
-                  <th key={ci} className="whitespace-nowrap px-3 py-2 font-medium">{c}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-hairline">
-              {body.map((r, ri) => (
-                <tr key={ri}>
-                  {head.map((_, ci) => (
-                    <td key={ci} className="px-3 py-2 text-ink">{renderInlineFormatting(r[ci] ?? "")}</td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      );
-      tableRows = [];
-    };
-
-    lines.forEach((line, idx) => {
-      const t = line.trim();
-      if (t.startsWith("```")) {
-        flushList(idx);
-        flushTable(idx);
-        if (codeLines === null) {
-          codeLines = [];
-        } else {
-          blocks.push(
-            <pre key={"code-" + idx} className="overflow-x-auto rounded-sm border border-hairline bg-board p-3 font-mono text-xs leading-5 text-ink">
-              {codeLines.join("\n")}
-            </pre>
-          );
-          codeLines = null;
-        }
-        return;
-      }
-      if (codeLines !== null) {
-        codeLines.push(line);
-        return;
-      }
-      if (/^\|.+\|$/.test(t)) {
-        flushList(idx);
-        tableRows.push(t.slice(1, -1).split("|").map((c) => c.trim()));
-        return;
-      } else {
-        flushTable(idx);
-      }
-      if (!t) {
-        flushList(idx);
-        return;
-      }
-      if (t.startsWith("### ")) {
-        flushList(idx);
-        const text = t.slice(4);
-        const id = headingSlug(text, idx);
-        headings.push({ id, level: 3, text });
-        blocks.push(<h4 key={"h3-" + idx} id={id} className="scroll-mt-3 pt-2 text-sm font-semibold text-ink">{renderInlineFormatting(text)}</h4>);
-      } else if (t.startsWith("## ")) {
-        flushList(idx);
-        const text = t.slice(3);
-        const id = headingSlug(text, idx);
-        headings.push({ id, level: 2, text });
-        blocks.push(<h3 key={"h2-" + idx} id={id} className="scroll-mt-3 pt-3 text-base font-medium text-ink">{renderInlineFormatting(text)}</h3>);
-      } else if (t.startsWith("# ")) {
-        flushList(idx);
-        const text = t.slice(2);
-        const id = headingSlug(text, idx);
-        headings.push({ id, level: 1, text });
-        blocks.push(<h2 key={"h1-" + idx} id={id} className="scroll-mt-3 text-title font-medium text-ink">{renderInlineFormatting(text)}</h2>);
-      } else if (/^[-*]\s+/.test(t)) {
-        list.push(t.replace(/^[-*]\s+/, ""));
-      } else if (/^\d+\.\s+/.test(t)) {
-        list.push(t.replace(/^\d+\.\s+/, ""));
-      } else if (/^---+$/.test(t)) {
-        flushList(idx);
-        blocks.push(<hr key={"hr-" + idx} className="my-2 border-hairline" />);
-      } else {
-        flushList(idx);
-        blocks.push(<p key={"p-" + idx} className="text-sm leading-6 text-ink">{renderInlineFormatting(t)}</p>);
-      }
-    });
-    flushList(lines.length + 1);
-    flushTable(lines.length + 2);
-    if (codeLines !== null) {
-      blocks.push(
-        <pre key="code-tail" className="overflow-x-auto rounded-sm border border-hairline bg-board p-3 font-mono text-xs leading-5 text-ink">
-          {(codeLines as string[]).join("\n")}
-        </pre>
-      );
-    }
-    return { blocks, headings };
-  }, [content]);
-
-  const jumpTo = (id: string) => {
-    const el = document.getElementById(id);
-    if (el) el.scrollIntoView({ behavior: "auto", block: "start" });
-  };
-
-  return (
-    <div className="flex flex-col gap-3">
-      {parsed.headings.length > 1 && (
-        <nav aria-label="Markdown section jump" className="flex flex-wrap items-center gap-1.5 rounded-sm border border-hairline bg-surface p-2">
-          <span className="px-1 text-xs font-medium text-ink-2">Jump to section:</span>
-          {parsed.headings.map((h) => (
-            <Button
-              key={h.id}
-              type="button"
-              size="xs"
-              variant="outline"
-              className="max-md:min-h-11 max-w-[220px] truncate text-xs"
-              onClick={() => jumpTo(h.id)}
-            >
-              {h.text}
-            </Button>
-          ))}
-        </nav>
-      )}
-      <div className="flex flex-col gap-2 rounded-sm border border-hairline bg-board/30 p-4">
-        {parsed.blocks}
-      </div>
-    </div>
-  );
 }
 
 function parseSortableNumber(raw: string): number | null {
@@ -1191,16 +972,24 @@ export function FileViewerModal({
   onRunWorkflow?: (prompt: string) => void;
   onRestored?: () => void;
 }) {
-  const target = useMemo(() => parseCitationTarget(filePath || ""), [filePath]);
-  const cleanPath = filePath ? target.path : null;
+  const [overridePath, setOverridePath] = useState<string | null>(null);
+  const effectiveFilePath = overridePath ?? filePath;
+  const target = useMemo(() => parseCitationTarget(effectiveFilePath || ""), [effectiveFilePath]);
+  const cleanPath = effectiveFilePath ? target.path : null;
   const [data, setData] = useState<WorkspaceFileContent | null>(null);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
   const [exporting, setExporting] = useState(false);
-  const [tab, setTab] = useState<"preview" | "source" | "history">("preview");
+  const [tab, setTab] = useState<"preview" | "edit" | "source" | "history">("preview");
+  const [editorDirty, setEditorDirty] = useState(false);
+  const [pendingNav, setPendingNav] = useState<{ kind: "close" } | { kind: "tab"; nextTab: "preview" | "source" | "history" } | null>(null);
   const [revisions, setRevisions] = useState<FileRevision[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyErr, setHistoryErr] = useState("");
+
+  useEffect(() => {
+    setOverridePath(null);
+  }, [filePath]);
 
   const loadContent = useCallback(async (path: string, sheet?: string) => {
     setLoading(true);
@@ -1252,6 +1041,8 @@ export function FileViewerModal({
   }, [status]);
 
   useEffect(() => {
+    setEditorDirty(false);
+    setPendingNav(null);
     if (!cleanPath) {
       setData(null);
       setErr("");
@@ -1266,6 +1057,39 @@ export function FileViewerModal({
   }, [cleanPath, target.line, loadContent, loadHistory]);
 
   const ext = (data?.ext || cleanPath?.split(".").pop() || "").toLowerCase();
+
+  const requestTabChange = (nextTab: "preview" | "edit" | "source" | "history") => {
+    if (nextTab === tab) return;
+    if (tab === "edit" && editorDirty && nextTab !== "edit") {
+      setPendingNav({ kind: "tab", nextTab });
+      return;
+    }
+    setPendingNav(null);
+    setTab(nextTab);
+    if (nextTab === "history" && cleanPath) void loadHistory(cleanPath);
+  };
+
+  const requestClose = () => {
+    if (tab === "edit" && editorDirty) {
+      setPendingNav({ kind: "close" });
+      return;
+    }
+    setPendingNav(null);
+    onClose();
+  };
+
+  const confirmDiscardNav = () => {
+    const act = pendingNav;
+    setEditorDirty(false);
+    setPendingNav(null);
+    if (!act) return;
+    if (act.kind === "close") {
+      onClose();
+      return;
+    }
+    setTab(act.nextTab);
+    if (act.nextTab === "history" && cleanPath) void loadHistory(cleanPath);
+  };
 
   const copyContent = async () => {
     if (!data?.content) return;
@@ -1285,18 +1109,31 @@ export function FileViewerModal({
   };
 
   const expTarget = cleanPath ? exportTarget(cleanPath) : null;
+  const canPdf = cleanPath ? canExportPdf(cleanPath, data?.extracted?.format) : false;
   const suggestedWorkflow = cleanPath ? detectWorkflowForFile(cleanPath) : null;
   const [savingAs, setSavingAs] = useState(false);
+  const [savingPdf, setSavingPdf] = useState(false);
   const handleSaveAs = async () => {
     if (!cleanPath || !expTarget) return;
     setSavingAs(true);
-    const r = await call<{ path: string; size: number }>("/api/files/export", {
-      method: "POST",
-      body: { path: cleanPath, format: expTarget },
-    });
+    const r = await exportFile({ path: cleanPath, format: expTarget });
     setSavingAs(false);
     if (!r.ok) {
       toast.error(r.error ? "Could not save a copy: " + r.error : "Could not save a copy.");
+      return;
+    }
+    toast.success(`Saved ${r.data.path} to your workspace.`);
+    await downloadWorkspaceFile(r.data.path);
+    onRestored?.();
+  };
+
+  const handleSaveAsPdf = async () => {
+    if (!cleanPath || !canPdf) return;
+    setSavingPdf(true);
+    const r = await exportFile({ path: cleanPath, format: "pdf" });
+    setSavingPdf(false);
+    if (!r.ok) {
+      toast.error(r.error ? "Could not export PDF: " + r.error : "Could not export PDF.");
       return;
     }
     toast.success(`Saved ${r.data.path} to your workspace.`);
@@ -1332,8 +1169,11 @@ export function FileViewerModal({
   };
 
   return (
-    <Dialog open={!!filePath} onOpenChange={(open) => { if (!open) onClose(); }}>
-      <DialogContent id="file-viewer-dialog" className="max-h-[88vh] max-w-3xl overflow-hidden">
+    <Dialog open={!!filePath} onOpenChange={(open) => { if (!open) requestClose(); }}>
+      <DialogContent
+        id="file-viewer-dialog"
+        className={cn("max-h-[88vh] overflow-hidden", tab === "edit" ? "max-w-5xl" : "max-w-3xl")}
+      >
         <DialogHeader className="pr-10 text-left">
           <DialogTitle className="flex min-w-0 items-center gap-2 text-title font-medium text-ink">
             {cleanPath && <FileGlyph name={cleanPath} className="size-4 shrink-0" />}
@@ -1369,16 +1209,27 @@ export function FileViewerModal({
               aria-pressed={tab === "preview"}
               data-checked={tab === "preview" ? "" : undefined}
               className="min-h-11 px-3 md:min-h-8"
-              onClick={() => setTab("preview")}
+              onClick={() => requestTabChange("preview")}
             >
               Preview
+            </SegmentedControlItem>
+            <SegmentedControlItem
+              data-id="edit"
+              aria-pressed={tab === "edit"}
+              data-checked={tab === "edit" ? "" : undefined}
+              disabled={!data || data.is_binary || !!err}
+              className="min-h-11 gap-1.5 px-3 md:min-h-8"
+              onClick={() => requestTabChange("edit")}
+            >
+              <Pencil className="size-3.5" strokeWidth={1.5} aria-hidden />
+              <span>Edit</span>
             </SegmentedControlItem>
             <SegmentedControlItem
               data-id="source"
               aria-pressed={tab === "source"}
               data-checked={tab === "source" ? "" : undefined}
               className="min-h-11 px-3 md:min-h-8"
-              onClick={() => setTab("source")}
+              onClick={() => requestTabChange("source")}
             >
               {target.line ? `Source (L${target.line})` : "Lines"}
             </SegmentedControlItem>
@@ -1387,10 +1238,7 @@ export function FileViewerModal({
               aria-pressed={tab === "history"}
               data-checked={tab === "history" ? "" : undefined}
               className="min-h-11 gap-1.5 px-3 md:min-h-8"
-              onClick={() => {
-                setTab("history");
-                if (cleanPath) void loadHistory(cleanPath);
-              }}
+              onClick={() => requestTabChange("history")}
             >
               <History className="size-3.5" strokeWidth={1.5} aria-hidden />
               <span>History &amp; Diff</span>
@@ -1415,6 +1263,12 @@ export function FileViewerModal({
                   <FileSpreadsheet className="size-3.5" strokeWidth={1.5} aria-hidden />
                 )}
                 {savingAs ? "Saving…" : expTarget === "docx" ? "Save as Word" : "Save as Excel"}
+              </Button>
+            )}
+            {canPdf && data && !err && (
+              <Button id="file-save-pdf" size="sm" variant="outline" className="max-md:min-h-11" disabled={savingPdf} onClick={handleSaveAsPdf}>
+                <FileDown className="size-3.5" strokeWidth={1.5} aria-hidden />
+                {savingPdf ? "Exporting…" : "Save as PDF"}
               </Button>
             )}
             {data && !data.is_binary && (
@@ -1477,8 +1331,69 @@ export function FileViewerModal({
           </div>
         </div>
 
+        {pendingNav && (
+          <div
+            id="file-unsaved-guard"
+            role="alert"
+            className="flex flex-wrap items-center justify-between gap-2 rounded-sm border border-hairline bg-board px-3 py-2 text-xs text-ink"
+          >
+            <span>You have unsaved edits in {cleanPath}. Discard changes and leave?</span>
+            <div className="flex items-center gap-2">
+              <Button
+                id="file-unsaved-keep"
+                type="button"
+                size="xs"
+                variant="outline"
+                className="max-md:min-h-11"
+                onClick={() => setPendingNav(null)}
+              >
+                Keep editing
+              </Button>
+              <Button
+                id="file-unsaved-discard"
+                type="button"
+                size="xs"
+                className="max-md:min-h-11"
+                onClick={confirmDiscardNav}
+              >
+                Discard changes
+              </Button>
+            </div>
+          </div>
+        )}
+
         <div id="file-viewer-body" className="max-h-[58vh] min-h-24 overflow-y-auto pr-1">
-          {tab === "history" && cleanPath ? (
+          {tab === "edit" && cleanPath && data && !data.is_binary && !err ? (
+            <FileEditor
+              filePath={cleanPath}
+              initialContent={data.content}
+              ext={ext}
+              initialSha256={data.sha256}
+              isExtracted={Boolean(data.extracted)}
+              extractedFormat={data.extracted?.format}
+              extractedKind={data.extracted?.kind}
+              sheet={data.extracted?.sheet}
+              onDirtyChange={setEditorDirty}
+              onReloadFromServer={async () => {
+                await loadContent(cleanPath, data.extracted?.sheet ?? undefined);
+              }}
+              onSaved={(res) => {
+                setData((prev) =>
+                  prev
+                    ? { ...prev, content: res.content, size: res.size, mtime_ms: res.mtime_ms, sha256: res.sha256 }
+                    : prev
+                );
+                void loadHistory(cleanPath);
+                onRestored?.();
+              }}
+              onOpenSavedFile={(savedPath) => {
+                setOverridePath(savedPath);
+                setTab("preview");
+                onRestored?.();
+              }}
+              onWorkspaceMutated={() => onRestored?.()}
+            />
+          ) : tab === "history" && cleanPath ? (
             <FileHistoryDiffView
               filePath={cleanPath}
               currentContent={data?.content ?? ""}
@@ -1684,7 +1599,7 @@ export function WorkspaceFilesBody({
             type="file"
             multiple
             className="hidden"
-            accept=".csv,.md,.txt,.json,.log,.tsv,.py,.ts,.tsx,.js,.rs,.toml,.yaml,.yml,.html"
+            accept=".csv,.md,.txt,.json,.log,.tsv,.pdf,.docx,.xlsx,.pptx,.py,.ts,.tsx,.js,.rs,.toml,.yaml,.yml,.html"
             onChange={handleFilePick}
           />
           <Button size="sm" className="max-md:min-h-11" onClick={() => fileInputRef.current?.click()}>

@@ -8,7 +8,7 @@
 // stream, cooperative run cancellation, Web Crypto SHA-256 receipt export, approval-gated
 // deletion, and optional BYOK OpenAI-compatible LLM (sessionStorage only).
 // ZERO hardcoded fixture replies, ZERO fixture demo pills, ZERO Rune jargon.
-import { parseCsv } from "@/shell/WorkspaceFiles";
+import { parseCsv, parseDelimited } from "@/shell/FileEditor";
 import { CANONICAL_SKILLS, CANONICAL_STARTER_PLAYBOOKS } from "@/lib/skillsCatalog";
 import { buildDeterministicPlaybookPreview, buildSignedPlaybookPack, buildSignedReceipt, sha256Hex, verifyAndParsePlaybookPack } from "@/lib/receiptExport";
 import { extractCitations } from "@/lib/words";
@@ -33,6 +33,8 @@ type WebFile = {
   size: number;
   mtime_ms: number;
   ext: string;
+  binaryBase64?: string;
+  extracted?: { kind: string; format: "markdown" | "csv"; sheets?: string[]; sheet?: string | null; pages?: number };
 };
 type WebMsg = { role: string; content: string };
 type WebThread = { id: string; title: string; messages: WebMsg[] };
@@ -2804,6 +2806,399 @@ function buildWebStoreZip(entries: Array<[string, Uint8Array]>): Uint8Array {
   return out;
 }
 
+function bytesToBase64(bytes: Uint8Array): string {
+  let bin = "";
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    bin += String.fromCharCode(...bytes.subarray(i, i + chunk));
+  }
+  return btoa(bin);
+}
+
+function base64ToBytes(b64: string): Uint8Array {
+  const bin = atob(b64);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
+function pdfEscape(s: string): string {
+  return s
+    .replace(/[^\x20-\x7e]/g, " ")
+    .replace(/\\/g, "\\\\")
+    .replace(/\(/g, "\\(")
+    .replace(/\)/g, "\\)");
+}
+
+function wrapPdfLines(text: string, maxChars: number): Array<{ text: string; bold: boolean }> {
+  const out: Array<{ text: string; bold: boolean }> = [];
+  for (const raw of text.replace(/\r\n/g, "\n").split("\n")) {
+    const t = raw.trimEnd();
+    if (!t.trim()) {
+      out.push({ text: "", bold: false });
+      continue;
+    }
+    const isHeading = /^#{1,3}\s+/.test(t.trim());
+    const clean = isHeading ? t.trim().replace(/^#{1,3}\s+/, "") : t;
+    let rest = clean;
+    while (rest.length > maxChars) {
+      let cut = rest.lastIndexOf(" ", maxChars);
+      if (cut <= 0) cut = maxChars;
+      out.push({ text: rest.slice(0, cut), bold: isHeading });
+      rest = rest.slice(cut).trimStart();
+    }
+    out.push({ text: rest, bold: isHeading });
+  }
+  return out.length ? out : [{ text: "(empty document)", bold: false }];
+}
+
+function buildWebPdf(content: string, title: string, brandHeader?: string): Uint8Array {
+  const enc = new TextEncoder();
+  const lines = wrapPdfLines(content, 82);
+  const perPage = 44;
+  const pages: Array<Array<{ text: string; bold: boolean }>> = [];
+  for (let i = 0; i < lines.length; i += perPage) {
+    pages.push(lines.slice(i, i + perPage));
+  }
+  if (!pages.length) pages.push([{ text: title || "Document", bold: false }]);
+
+  const totalPages = pages.length;
+  // Objects: 1=Catalog, 2=Pages, 3=Helvetica, 4=Helvetica-Bold, then per page: Page obj & Stream obj
+  const objects: string[] = [];
+  const pageIds: number[] = [];
+  const baseObjId = 5;
+  for (let pIdx = 0; pIdx < totalPages; pIdx++) {
+    const pageObjId = baseObjId + pIdx * 2;
+    const contentObjId = pageObjId + 1;
+    pageIds.push(pageObjId);
+
+    const cmds: string[] = ["BT"];
+    if (brandHeader || title) {
+      cmds.push("/F2 10 Tf 54 756 Td (" + pdfEscape(brandHeader || title) + ") Tj");
+    }
+    let y = 732;
+    for (const ln of pages[pIdx]) {
+      if (ln.text) {
+        cmds.push(`${ln.bold ? "/F2 12" : "/F1 10"} Tf 1 0 0 1 54 ${y} Tm (${pdfEscape(ln.text)}) Tj`);
+      }
+      y -= ln.bold ? 18 : 14;
+    }
+    cmds.push(`/F1 9 Tf 1 0 0 1 54 36 Tm (${pdfEscape(`Page ${pIdx + 1} of ${totalPages}`)}) Tj`);
+    cmds.push("ET");
+    const stream = cmds.join("\n");
+    objects[pageObjId] = `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents ${contentObjId} 0 R >>`;
+    objects[contentObjId] = `<< /Length ${enc.encode(stream).length} >>\nstream\n${stream}\nendstream`;
+  }
+
+  objects[1] = "<< /Type /Catalog /Pages 2 0 R >>";
+  objects[2] = `<< /Type /Pages /Kids [${pageIds.map((id) => `${id} 0 R`).join(" ")}] /Count ${totalPages} >>`;
+  objects[3] = "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>";
+  objects[4] = "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>";
+
+  const parts: string[] = ["%PDF-1.4\n"];
+  const offsets: number[] = [0];
+  let byteOffset = enc.encode(parts[0]).length;
+  for (let id = 1; id < objects.length; id++) {
+    offsets[id] = byteOffset;
+    const chunk = `${id} 0 obj\n${objects[id]}\nendobj\n`;
+    parts.push(chunk);
+    byteOffset += enc.encode(chunk).length;
+  }
+  const xrefOffset = byteOffset;
+  let xref = `xref\n0 ${objects.length}\n0000000000 65535 f \n`;
+  for (let id = 1; id < objects.length; id++) {
+    xref += `${String(offsets[id]).padStart(10, "0")} 00000 n \n`;
+  }
+  const trailer = `trailer\n<< /Size ${objects.length} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF\n`;
+  parts.push(xref, trailer);
+  return enc.encode(parts.join(""));
+}
+
+function xmlEscape(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+}
+
+function colLetter(idx: number): string {
+  let n = idx;
+  let out = "";
+  while (n >= 0) {
+    out = String.fromCharCode(65 + (n % 26)) + out;
+    n = Math.floor(n / 26) - 1;
+  }
+  return out;
+}
+
+function parseNumericCell(raw: string): number | null {
+  const cleaned = raw.trim().replace(/[$,%\s]/g, "");
+  if (!cleaned || !/^-?\d+(?:\.\d+)?$/.test(cleaned)) return null;
+  const n = Number(cleaned);
+  return Number.isFinite(n) ? n : null;
+}
+
+function buildWebMultiSheetXlsx(sheets: Array<{ name: string; rows: string[][]; totals_row?: boolean }>): Uint8Array {
+  const enc = new TextEncoder();
+  const safeSheets = sheets.length ? sheets : [{ name: "Sheet1", rows: [["Empty"]] }];
+  const entries: Array<[string, Uint8Array]> = [];
+
+  const overrides = safeSheets
+    .map((_, i) => `<Override PartName="/xl/worksheets/sheet${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`)
+    .join("");
+  entries.push([
+    "[Content_Types].xml",
+    enc.encode(
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>${overrides}</Types>`
+    ),
+  ]);
+  entries.push([
+    "_rels/.rels",
+    enc.encode(
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`
+    ),
+  ]);
+  entries.push([
+    "xl/styles.xml",
+    enc.encode(
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="2"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/></cellXfs></styleSheet>`
+    ),
+  ]);
+  const sheetXmlRefs = safeSheets
+    .map((sh, i) => `<sheet name="${xmlEscape(sh.name.slice(0, 31) || `Sheet${i + 1}`)}" sheetId="${i + 1}" r:id="rId${i + 1}"/>`)
+    .join("");
+  entries.push([
+    "xl/workbook.xml",
+    enc.encode(
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>${sheetXmlRefs}</sheets></workbook>`
+    ),
+  ]);
+  const wbRels = safeSheets
+    .map((_, i) => `<Relationship Id="rId${i + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i + 1}.xml"/>`)
+    .join("");
+  entries.push([
+    "xl/_rels/workbook.xml.rels",
+    enc.encode(
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${wbRels}</Relationships>`
+    ),
+  ]);
+
+  safeSheets.forEach((sh, i) => {
+    const rows = sh.rows.length ? sh.rows : [[""]];
+    const maxCols = Math.max(1, ...rows.map((r) => r.length));
+    const xmlRows: string[] = [];
+    rows.forEach((row, rIdx) => {
+      const rNum = rIdx + 1;
+      const cells = Array.from({ length: maxCols }, (_, cIdx) => {
+        const ref = `${colLetter(cIdx)}${rNum}`;
+        const raw = row[cIdx] ?? "";
+        const num = rIdx > 0 ? parseNumericCell(raw) : null;
+        if (num !== null) {
+          return `<c r="${ref}"><v>${num}</v></c>`;
+        }
+        return `<c r="${ref}" t="inlineStr"${rIdx === 0 ? ' s="1"' : ""}><is><t>${xmlEscape(raw)}</t></is></c>`;
+      }).join("");
+      xmlRows.push(`<row r="${rNum}">${cells}</row>`);
+    });
+    if (sh.totals_row && rows.length > 1) {
+      const totRowNum = rows.length + 1;
+      const cells: string[] = [];
+      for (let cIdx = 0; cIdx < maxCols; cIdx++) {
+        const ref = `${colLetter(cIdx)}${totRowNum}`;
+        if (cIdx === 0) {
+          cells.push(`<c r="${ref}" t="inlineStr" s="1"><is><t>Total</t></is></c>`);
+          continue;
+        }
+        let sum = 0;
+        let hasNum = false;
+        for (let rIdx = 1; rIdx < rows.length; rIdx++) {
+          const n = parseNumericCell(rows[rIdx]?.[cIdx] ?? "");
+          if (n !== null) {
+            sum += Math.round(n * 1_000_000);
+            hasNum = true;
+          }
+        }
+        if (hasNum) {
+          const col = colLetter(cIdx);
+          const cached = Math.round(sum) / 1_000_000;
+          cells.push(`<c r="${ref}" s="1"><f>SUM(${col}2:${col}${rows.length})</f><v>${cached}</v></c>`);
+        } else {
+          cells.push(`<c r="${ref}" t="inlineStr"><is><t></t></is></c>`);
+        }
+      }
+      xmlRows.push(`<row r="${totRowNum}">${cells.join("")}</row>`);
+    }
+    entries.push([
+      `xl/worksheets/sheet${i + 1}.xml`,
+      enc.encode(
+        `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>${xmlRows.join("")}</sheetData></worksheet>`
+      ),
+    ]);
+  });
+
+  return buildWebStoreZip(entries);
+}
+
+function buildWebDocx(content: string, title: string): Uint8Array {
+  const enc = new TextEncoder();
+  const paras = [title, ...content.replace(/\r\n/g, "\n").split("\n")]
+    .map((line) => `<w:p><w:r><w:t xml:space="preserve">${xmlEscape(line)}</w:t></w:r></w:p>`)
+    .join("");
+  return buildWebStoreZip([
+    [
+      "[Content_Types].xml",
+      enc.encode(
+        `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>`
+      ),
+    ],
+    [
+      "_rels/.rels",
+      enc.encode(
+        `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>`
+      ),
+    ],
+    [
+      "word/document.xml",
+      enc.encode(
+        `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>${paras}<w:sectPr/></w:body></w:document>`
+      ),
+    ],
+  ]);
+}
+
+function runWebTableQuery(
+  file: WebFile,
+  req: {
+    where?: Array<{ col: string; op: string; value: string }>;
+    group_by?: string[];
+    aggregates?: Array<{ col: string; fn: string; as: string }>;
+    sort?: { col: string; dir: string };
+    limit?: number;
+  }
+): { columns: string[]; rows: string[][]; total_rows: number; matched_rows: number } {
+  let header: string[] = [];
+  let dataRows: string[][] = [];
+  if (file.ext === "json") {
+    const parsed = JSON.parse(file.content);
+    const arr = Array.isArray(parsed) ? parsed : [];
+    const keys = Array.from(new Set(arr.flatMap((item) => (item && typeof item === "object" ? Object.keys(item) : []))));
+    header = keys;
+    dataRows = arr.map((item) => keys.map((k) => String((item as Record<string, unknown>)?.[k] ?? "")));
+  } else {
+    const delim = file.ext === "tsv" ? "\t" : ",";
+    const parsed = parseDelimited(file.content, delim);
+    if (!parsed.length) return { columns: [], rows: [], total_rows: 0, matched_rows: 0 };
+    header = parsed[0];
+    dataRows = parsed.slice(1).map((r) => header.map((_, i) => r[i] ?? ""));
+  }
+
+  const colIndex = (name: string) => header.findIndex((h) => h.trim().toLowerCase() === name.trim().toLowerCase());
+  const total_rows = dataRows.length;
+
+  let filtered = dataRows;
+  if (Array.isArray(req.where) && req.where.length > 0) {
+    filtered = dataRows.filter((row) =>
+      req.where!.every((w) => {
+        const idx = colIndex(w.col);
+        if (idx < 0) return false;
+        const cell = (row[idx] ?? "").trim();
+        const target = String(w.value ?? "").trim();
+        const cn = parseNumericCell(cell);
+        const tn = parseNumericCell(target);
+        switch (w.op) {
+          case "eq":
+            return cn !== null && tn !== null ? cn === tn : cell.toLowerCase() === target.toLowerCase();
+          case "neq":
+            return cn !== null && tn !== null ? cn !== tn : cell.toLowerCase() !== target.toLowerCase();
+          case "contains":
+            return cell.toLowerCase().includes(target.toLowerCase());
+          case "gt":
+            return cn !== null && tn !== null ? cn > tn : cell.localeCompare(target) > 0;
+          case "gte":
+            return cn !== null && tn !== null ? cn >= tn : cell.localeCompare(target) >= 0;
+          case "lt":
+            return cn !== null && tn !== null ? cn < tn : cell.localeCompare(target) < 0;
+          case "lte":
+            return cn !== null && tn !== null ? cn <= tn : cell.localeCompare(target) <= 0;
+          default:
+            return true;
+        }
+      })
+    );
+  }
+  const matched_rows = filtered.length;
+
+  let outCols = [...header];
+  let outRows = filtered.map((r) => [...r]);
+
+  const groupCols = Array.isArray(req.group_by) ? req.group_by.filter(Boolean) : [];
+  const aggs = Array.isArray(req.aggregates) ? req.aggregates : [];
+  if (groupCols.length > 0 || aggs.length > 0) {
+    const gIdxs = groupCols.map((g) => colIndex(g));
+    const groups = new Map<string, { keyVals: string[]; rows: string[][] }>();
+    for (const row of filtered) {
+      const keyVals = gIdxs.map((idx) => (idx >= 0 ? (row[idx] ?? "").trim() : ""));
+      const key = JSON.stringify(keyVals);
+      const entry = groups.get(key) || { keyVals, rows: [] };
+      entry.rows.push(row);
+      groups.set(key, entry);
+    }
+    outCols = [
+      ...groupCols,
+      ...aggs.map((a) => a.as || `${a.fn}_${a.col}`),
+    ];
+    outRows = [];
+    for (const grp of groups.values()) {
+      const aggCells = aggs.map((a) => {
+        if (a.fn === "count") return String(grp.rows.length);
+        const cIdx = colIndex(a.col);
+        if (cIdx < 0) return "0";
+        const nums: number[] = [];
+        let hasDecimal = false;
+        for (const r of grp.rows) {
+          const raw = (r[cIdx] ?? "").trim();
+          const n = parseNumericCell(raw);
+          if (n !== null) {
+            nums.push(n);
+            if (raw.includes(".")) hasDecimal = true;
+          }
+        }
+        if (!nums.length) return "0";
+        const scaled = nums.map((n) => Math.round(n * 1_000_000));
+        let val = 0;
+        if (a.fn === "sum") val = scaled.reduce((acc, v) => acc + v, 0) / 1_000_000;
+        else if (a.fn === "avg") val = scaled.reduce((acc, v) => acc + v, 0) / 1_000_000 / nums.length;
+        else if (a.fn === "min") val = Math.min(...nums);
+        else if (a.fn === "max") val = Math.max(...nums);
+        return hasDecimal || a.fn === "avg" ? val.toFixed(2) : String(Math.round(val * 100) / 100);
+      });
+      outRows.push([...grp.keyVals, ...aggCells]);
+    }
+  }
+
+  if (req.sort?.col) {
+    const sIdx = outCols.findIndex((c) => c.trim().toLowerCase() === req.sort!.col.trim().toLowerCase());
+    if (sIdx >= 0) {
+      const mult = req.sort.dir === "desc" ? -1 : 1;
+      outRows.sort((a, b) => {
+        const av = (a[sIdx] ?? "").trim();
+        const bv = (b[sIdx] ?? "").trim();
+        const an = parseNumericCell(av);
+        const bn = parseNumericCell(bv);
+        if (an !== null && bn !== null) return (an - bn) * mult;
+        return av.localeCompare(bv, undefined, { numeric: true, sensitivity: "base" }) * mult;
+      });
+    }
+  }
+
+  if (typeof req.limit === "number" && req.limit > 0) {
+    outRows = outRows.slice(0, req.limit);
+  }
+  return { columns: outCols, rows: outRows, total_rows, matched_rows };
+}
+
     if (method === "GET" && path === "/api/version") return jsonRes({ name: "ergon", version: "0.29.0" });
     if (method === "GET" && path === "/api/update") return jsonRes({ current: "0.29.0", available: false, mode: "off", checked_at: Math.floor(Date.now() / 1000) });
     if (method === "GET" && path === "/api/status") {
@@ -2827,6 +3222,9 @@ function buildWebStoreZip(entries: Array<[string, Uint8Array]>): Uint8Array {
           audit_bundle: true,
           people_switch: true,
           pipelines: true,
+          file_edit: true,
+          table_query: true,
+          pdf_export: true,
         },
         scheduler: buildSchedulerStatus(st),
         person: p,
@@ -3411,8 +3809,20 @@ function buildWebStoreZip(entries: Array<[string, Uint8Array]>): Uint8Array {
       const found = st.files[safe];
       if (!found) return jsonRes({ error: "file not found" }, 404);
       if (u.searchParams.get("download") === "1") {
-        const mime = found.ext === "csv" ? "text/csv; charset=utf-8" : found.ext === "json" ? "application/json; charset=utf-8" : "text/plain; charset=utf-8";
-        return new Response(found.content, {
+        const mime =
+          found.ext === "pdf"
+            ? "application/pdf"
+            : found.ext === "xlsx"
+              ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+              : found.ext === "docx"
+                ? "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                : found.ext === "csv"
+                  ? "text/csv; charset=utf-8"
+                  : found.ext === "json"
+                    ? "application/json; charset=utf-8"
+                    : "text/plain; charset=utf-8";
+        const bodyData = found.binaryBase64 ? new Uint8Array(base64ToBytes(found.binaryBase64)).buffer : found.content;
+        return new Response(bodyData, {
           status: 200,
           headers: {
             "Content-Type": mime,
@@ -3420,7 +3830,205 @@ function buildWebStoreZip(entries: Array<[string, Uint8Array]>): Uint8Array {
           },
         });
       }
-      return jsonRes({ ...found, is_binary: false });
+      const sha256 = await sha256Hex(found.content);
+      return jsonRes({
+        path: found.path,
+        name: found.name,
+        size: found.size,
+        mtime_ms: found.mtime_ms,
+        ext: found.ext,
+        content: found.content,
+        sha256,
+        is_binary: Boolean(found.binaryBase64 && !found.extracted),
+        ...(found.extracted ? { extracted: found.extracted } : {}),
+      });
+    }
+    if (method === "PUT" && path === "/api/files/content") {
+      const safe = sanitizeSafePath(String(body.path ?? ""));
+      if (!safe) return jsonRes({ error: "path escapes the workspace" }, 403);
+      const content = String(body.content ?? "");
+      const existing = st.files[safe];
+      const expectedSha = typeof body.expected_sha256 === "string" ? body.expected_sha256.trim() : "";
+      if (expectedSha) {
+        const currentSha = existing ? await sha256Hex(existing.content) : "";
+        if (!existing || currentSha !== expectedSha) {
+          return jsonRes(
+            {
+              error: "File changed in workspace while you were editing.",
+              current_sha256: currentSha,
+            },
+            409
+          );
+        }
+      }
+      if (existing && existing.content !== content) {
+        recordFileRevision(st, safe, existing, String(body.reason ?? "edit") || "edit");
+      }
+      const saved = makeFile(safe, content);
+      st.files[safe] = saved;
+      await persist();
+      const sha256 = await sha256Hex(saved.content);
+      const rev_id = st.fileHistory[safe]?.[0]?.rev_id;
+      return jsonRes({
+        path: saved.path,
+        size: saved.size,
+        mtime_ms: saved.mtime_ms,
+        sha256,
+        ...(rev_id ? { rev_id } : {}),
+      });
+    }
+    if (method === "PATCH" && path === "/api/files/content") {
+      const safe = sanitizeSafePath(String(body.path ?? ""));
+      if (!safe) return jsonRes({ error: "path escapes the workspace" }, 403);
+      const existing = st.files[safe];
+      if (!existing) return jsonRes({ error: "file not found" }, 404);
+      const expectedSha = typeof body.expected_sha256 === "string" ? body.expected_sha256.trim() : "";
+      const currentSha = await sha256Hex(existing.content);
+      if (expectedSha && currentSha !== expectedSha) {
+        return jsonRes({ error: "File changed in workspace while patching.", current_sha256: currentSha }, 409);
+      }
+      const ops = Array.isArray(body.ops) ? (body.ops as Array<Record<string, unknown>>) : [];
+      if (!ops.length) return jsonRes({ error: "ops array is required" }, 400);
+      let nextText = existing.content;
+      let applied = 0;
+      for (const op of ops) {
+        const kind = String(op.op ?? "replace");
+        const rep = String(op.replace ?? "");
+        if (kind === "replace") {
+          const find = String(op.find ?? "");
+          if (!find) return jsonRes({ error: "find string is required" }, 400);
+          const parts = nextText.split(find);
+          const count = parts.length - 1;
+          if (count === 0) return jsonRes({ error: `Text not found: ${find.slice(0, 40)}` }, 400);
+          if (count > 1 && !op.replace_all) {
+            return jsonRes({ error: `Ambiguous match (${count} occurrences); pass replace_all: true` }, 400);
+          }
+          nextText = op.replace_all ? parts.join(rep) : nextText.replace(find, rep);
+          applied += 1;
+        } else if (kind === "replace_lines") {
+          const start = Math.max(1, Number(op.start_line ?? 1));
+          const end = Math.max(start, Number(op.end_line ?? start));
+          const lines = nextText.split(/\r?\n/);
+          if (start > lines.length) return jsonRes({ error: "start_line out of range" }, 400);
+          const repLines = rep.split(/\r?\n/);
+          lines.splice(start - 1, end - start + 1, ...repLines);
+          nextText = lines.join("\n");
+          applied += 1;
+        } else {
+          return jsonRes({ error: `Unsupported patch op: ${kind}` }, 400);
+        }
+      }
+      if (nextText !== existing.content) {
+        recordFileRevision(st, safe, existing, "patch");
+      }
+      const saved = makeFile(safe, nextText);
+      st.files[safe] = saved;
+      await persist();
+      const sha256 = await sha256Hex(saved.content);
+      const diff = computeLineDiff(existing.content, nextText, { path: safe });
+      return jsonRes({ path: saved.path, applied, size: saved.size, sha256, diff });
+    }
+    if (method === "POST" && path === "/api/tables/query") {
+      const safe = sanitizeSafePath(String(body.path ?? ""));
+      if (!safe) return jsonRes({ error: "path escapes the workspace" }, 403);
+      const found = st.files[safe];
+      if (!found) return jsonRes({ error: "file not found" }, 404);
+      const result = runWebTableQuery(found, {
+        where: Array.isArray(body.where) ? (body.where as Array<{ col: string; op: string; value: string }>) : undefined,
+        group_by: Array.isArray(body.group_by) ? (body.group_by as string[]) : undefined,
+        aggregates: Array.isArray(body.aggregates) ? (body.aggregates as Array<{ col: string; fn: string; as: string }>) : undefined,
+        sort: body.sort && typeof body.sort === "object" ? (body.sort as { col: string; dir: string }) : undefined,
+        limit: typeof body.limit === "number" ? body.limit : undefined,
+      });
+      let saved_path: string | undefined;
+      if (typeof body.save_as === "string" && body.save_as.trim()) {
+        const safeOut = sanitizeSafePath(body.save_as);
+        if (!safeOut) return jsonRes({ error: "save_as path escapes the workspace" }, 403);
+        const csvText = [result.columns, ...result.rows].map((r) => r.map(csvEscape).join(",")).join("\n") + "\n";
+        if (st.files[safeOut] && st.files[safeOut].content !== csvText) {
+          recordFileRevision(st, safeOut, st.files[safeOut], "query_save");
+        }
+        st.files[safeOut] = makeFile(safeOut, csvText);
+        saved_path = safeOut;
+        await persist();
+      }
+      return jsonRes({ ...result, ...(saved_path ? { saved_path } : {}) });
+    }
+    if (method === "POST" && path === "/api/files/export") {
+      const fmt = String(body.format ?? "").trim().toLowerCase();
+      if (!["pdf", "docx", "xlsx"].includes(fmt)) {
+        return jsonRes({ error: "format must be pdf, docx, or xlsx" }, 400);
+      }
+      const rawPath = typeof body.path === "string" ? body.path : "";
+      const safeSrc = rawPath ? sanitizeSafePath(rawPath) : null;
+      if (rawPath && !safeSrc) return jsonRes({ error: "path escapes the workspace" }, 403);
+      const srcFile = safeSrc ? st.files[safeSrc] : undefined;
+      if (rawPath && !srcFile) return jsonRes({ error: "file not found" }, 404);
+      const stem = (safeSrc || String(body.title ?? "deliverable")).replace(/\.[^.]+$/, "").replace(/[^a-zA-Z0-9._/-]/g, "-");
+      const outReq = typeof body.output === "string" && body.output.trim() ? sanitizeSafePath(body.output) : `${stem}.${fmt}`;
+      if (!outReq) return jsonRes({ error: "output path escapes the workspace" }, 403);
+      const title = String(body.title ?? safeSrc ?? "Ergon Deliverable").trim();
+      const brandHeader = typeof body.brand_header === "string" ? body.brand_header.trim() : undefined;
+
+      let bytes: Uint8Array;
+      let previewText = "";
+      let extractedKind = fmt.toUpperCase();
+      let extractedFmt: "markdown" | "csv" = "markdown";
+      if (fmt === "pdf") {
+        const mdText =
+          srcFile?.ext === "csv" || srcFile?.ext === "tsv"
+            ? `# ${title}\n\n` + parseDelimited(srcFile.content, srcFile.ext === "tsv" ? "\t" : ",").map((r) => r.join(" | ")).join("\n")
+            : srcFile?.content || `# ${title}\n`;
+        bytes = buildWebPdf(mdText, title, brandHeader);
+        previewText = mdText;
+        extractedKind = "PDF";
+      } else if (fmt === "docx") {
+        const text = srcFile?.content || `# ${title}\n`;
+        bytes = buildWebDocx(text, title);
+        previewText = text;
+        extractedKind = "Word";
+      } else {
+        const rawSheets = Array.isArray(body.sheets) ? (body.sheets as Array<{ name?: string; path?: string; rows?: string[][]; totals_row?: boolean }>) : [];
+        const sheets = rawSheets.length
+          ? rawSheets.map((s, idx) => {
+              const sf = s.path ? st.files[sanitizeSafePath(s.path) || ""] : undefined;
+              const rows = Array.isArray(s.rows)
+                ? s.rows
+                : sf
+                  ? parseDelimited(sf.content, sf.ext === "tsv" ? "\t" : ",")
+                  : [["Empty"]];
+              return { name: String(s.name ?? `Sheet${idx + 1}`), rows, totals_row: Boolean(s.totals_row) };
+            })
+          : [
+              {
+                name: "Data",
+                rows: srcFile ? parseDelimited(srcFile.content, srcFile.ext === "tsv" ? "\t" : ",") : [["Empty"]],
+                totals_row: false,
+              },
+            ];
+        bytes = buildWebMultiSheetXlsx(sheets);
+        previewText = sheets[0]?.rows.map((r) => r.map(csvEscape).join(",")).join("\n") || "";
+        extractedKind = "Excel";
+        extractedFmt = "csv";
+      }
+      const b64 = bytesToBase64(bytes);
+      st.files[outReq] = {
+        path: outReq,
+        name: outReq.split("/").pop() || outReq,
+        content: previewText,
+        size: bytes.length,
+        mtime_ms: Date.now(),
+        ext: fmt,
+        binaryBase64: b64,
+        extracted: { kind: extractedKind, format: extractedFmt, pages: 1 },
+      };
+      await persist();
+      let sha256 = "";
+      if (typeof crypto !== "undefined" && crypto.subtle) {
+        const dig = await crypto.subtle.digest("SHA-256", new Uint8Array(bytes).buffer);
+        sha256 = Array.from(new Uint8Array(dig)).map((b) => b.toString(16).padStart(2, "0")).join("");
+      }
+      return jsonRes({ path: outReq, size: bytes.length, format: fmt, sha256 });
     }
     if (method === "GET" && path === "/api/files/pack") {
       const rawFiles = u.searchParams.get("files") || "";
@@ -4277,11 +4885,23 @@ function buildWebStoreZip(entries: Array<[string, Uint8Array]>): Uint8Array {
       const rawPath = String(body.path ?? body.name ?? "");
       const safe = sanitizeSafePath(rawPath);
       if (!safe) return jsonRes({ error: "invalid workspace filename" }, 403);
-      const content = String(body.content ?? "");
+      let content = String(body.content ?? "");
+      let binaryBase64: string | undefined;
+      const ext = fileExt(safe);
+      if (body.encoding === "base64") {
+        const bytes = base64ToBytes(content);
+        if (["pdf", "docx", "xlsx", "pptx"].includes(ext)) {
+          binaryBase64 = content;
+          content = `Uploaded ${ext.toUpperCase()} document (${bytes.length} bytes).`;
+        } else {
+          content = new TextDecoder().decode(bytes);
+        }
+      }
       if (st.files[safe] && st.files[safe].content !== content) {
         recordFileRevision(st, safe, st.files[safe], "overwrite");
       }
       const saved = makeFile(safe, content);
+      if (binaryBase64) saved.binaryBase64 = binaryBase64;
       st.files[safe] = saved;
       await persist();
       return jsonRes({ path: saved.path, name: saved.name, size: saved.size, mtime_ms: saved.mtime_ms, ext: saved.ext }, 201);

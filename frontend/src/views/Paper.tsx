@@ -264,7 +264,7 @@ export function PaperSide({
             type="file"
             multiple
             className="hidden"
-            accept=".csv,.md,.txt,.json,.log,.tsv,.py,.ts,.tsx,.js,.rs,.toml,.yaml,.yml,.html"
+            accept=".csv,.md,.txt,.json,.log,.tsv,.pdf,.docx,.xlsx,.pptx,.py,.ts,.tsx,.js,.rs,.toml,.yaml,.yml,.html"
             onChange={async (ev) => {
               if (ev.target.files?.length) await onUploadMany(ev.target.files);
               ev.target.value = "";

@@ -1171,6 +1171,199 @@ await reset();
   await ctx.close();
 }
 
+// 6e. v0.30.0 Interactive Deliverable Studio: Edit tab (Markdown + CSV), Table Query rollup + Save CSV, Save as PDF, upload accept parity
+{
+  const { ctx, p } = await open(1440, 900);
+  const studioFiles = {
+    "studio-brief.md": "# Draft Brief\n\nInitial draft text.\n",
+    "studio-expenses.csv": "Vendor,Amount,Category\nAcme Cloud,400.00,Infra\nAcme Cloud,150.00,Infra\nDelta Ops,220.00,Ops\n",
+  };
+  let pdfExportPayload = null;
+  let tableSavePayload = null;
+
+  await p.route("**/api/status", async (r) => {
+    const res = await r.fetch();
+    const j = await res.json();
+    await r.fulfill({
+      response: res,
+      body: JSON.stringify({
+        ...j,
+        version: "0.30.0",
+        capabilities: { ...(j.capabilities || {}), file_edit: true, table_query: true, pdf_export: true },
+      }),
+    });
+  });
+  await p.route(/\/api\/files(\?.*)?$/, (r) => {
+    const files = Object.entries(studioFiles).map(([path, content]) => ({
+      path,
+      name: path,
+      size: content.length,
+      mtime_ms: Date.now(),
+      ext: path.split(".").pop() || "txt",
+    }));
+    return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ person_id: "default", files }) });
+  });
+  await p.route(/\/api\/files\/content(\?.*)?$/, async (r) => {
+    const reqUrl = new URL(r.request().url());
+    if (r.request().method() === "PUT") {
+      const b = JSON.parse(r.request().postData() || "{}");
+      if (b.path && typeof b.content === "string") studioFiles[b.path] = b.content;
+      return r.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ path: b.path, size: (b.content || "").length, mtime_ms: Date.now(), sha256: "sha-updated-1", rev_id: "rev-edit-1" }),
+      });
+    }
+    const fp = reqUrl.searchParams.get("path") || "";
+    if (reqUrl.searchParams.get("download") === "1") {
+      const bodyText = fp.endsWith(".pdf") ? "%PDF-1.4\n%%EOF\n" : (studioFiles[fp] || "");
+      return r.fulfill({
+        status: 200,
+        contentType: fp.endsWith(".pdf") ? "application/pdf" : "text/plain",
+        body: bodyText,
+      });
+    }
+    const content = studioFiles[fp];
+    if (typeof content !== "string") {
+      return r.fulfill({ status: 404, contentType: "application/json", body: JSON.stringify({ error: "not found" }) });
+    }
+    return r.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        path: fp,
+        name: fp,
+        size: content.length,
+        mtime_ms: Date.now(),
+        ext: fp.split(".").pop() || "txt",
+        is_binary: false,
+        content,
+        sha256: "sha-init-1",
+      }),
+    });
+  });
+  await p.route("**/api/tables/query", async (r) => {
+    const b = JSON.parse(r.request().postData() || "{}");
+    if (b.save_as) tableSavePayload = b;
+    const rows = [
+      ["Acme Cloud", "650.00"],
+      ["Delta Ops", "220.00"],
+    ];
+    const columns = ["Vendor", "sum_amount"];
+    if (b.save_as) {
+      studioFiles[b.save_as] = [columns, ...rows].map((row) => row.join(",")).join("\n") + "\n";
+    }
+    return r.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        columns,
+        rows,
+        total_rows: 3,
+        matched_rows: 3,
+        ...(b.save_as ? { saved_path: b.save_as } : {}),
+      }),
+    });
+  });
+  await p.route("**/api/files/export", async (r) => {
+    const b = JSON.parse(r.request().postData() || "{}");
+    pdfExportPayload = b;
+    const outPath = `${(b.path || "deliverable").replace(/\.[^.]+$/, "")}.${b.format || "pdf"}`;
+    studioFiles[outPath] = "%PDF-1.4\n%%EOF\n";
+    return r.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ path: outPath, size: 16, format: b.format }),
+    });
+  });
+
+  await p.goto(BASE);
+  await waitWorkbench(p);
+  if (!(await p.locator("#workspace-files-panel").isVisible())) {
+    await p.locator('[data-thing="inspector-toggle"]').click();
+    await p.waitForSelector("#workspace-files-panel", { timeout: 4000 });
+  }
+  await p.locator("#workspace-inspector").getByRole("tab", { name: /Files/i }).click().catch(() => {});
+  await p.locator("#workspace-refresh-btn").click();
+  await p.waitForTimeout(200);
+
+  // Check upload accept attribute in WorkspaceFiles
+  const wsAccept = await p.locator("#workspace-file-input").getAttribute("accept");
+
+  // 1. Edit Markdown persistently + Save as PDF
+  await p.locator("#workspace-files-panel").getByRole("button", { name: "Open studio-brief.md" }).click();
+  await p.waitForSelector("#file-viewer-dialog", { timeout: 4000 });
+  await p.locator('#file-viewer-dialog [data-id="edit"]').click();
+  await p.waitForSelector("#file-editor-textarea", { timeout: 4000 });
+  await p.locator("#file-editor-textarea").fill("# Updated Client Brief\n\n## Verified Rollup\nReady for export.\n");
+  await p.locator("#file-editor-save").click();
+  await p.waitForSelector("text=Saved studio-brief.md", { timeout: 4000 });
+
+  await p.locator("#file-save-pdf").click();
+  const pdfToastOk = await p.waitForSelector("text=Saved studio-brief.pdf", { timeout: 4000 }).then(() => true, () => false);
+  await p.keyboard.press("Escape");
+  await p.locator("#file-viewer-dialog").waitFor({ state: "hidden", timeout: 4000 }).catch(() => {});
+
+  // Reopen studio-brief.md to verify persistence
+  await p.locator("#workspace-files-panel").getByRole("button", { name: "Open studio-brief.md" }).click();
+  await p.waitForSelector("#file-viewer-dialog", { timeout: 4000 });
+  const reopenedBriefTxt = await p.locator("#file-viewer-body").innerText();
+  await p.keyboard.press("Escape");
+  await p.locator("#file-viewer-dialog").waitFor({ state: "hidden", timeout: 4000 }).catch(() => {});
+
+  ok(
+    "v0.30.0 Edit tab saves Markdown edits persistently via PUT /api/files/content",
+    reopenedBriefTxt.includes("Updated Client Brief") && studioFiles["studio-brief.md"].includes("Verified Rollup"),
+    `reopened=${reopenedBriefTxt.slice(0, 60).replace(/\n/g, " ")}`
+  );
+  ok(
+    "v0.30.0 Save as PDF export triggers POST /api/files/export with format pdf",
+    pdfExportPayload?.path === "studio-brief.md" && pdfExportPayload?.format === "pdf" && pdfToastOk,
+    `payload=${JSON.stringify(pdfExportPayload)} toast=${pdfToastOk}`
+  );
+
+  // 2. Edit CSV cell + Table Query group-by rollup + Save query as CSV
+  await p.locator("#workspace-files-panel").getByRole("button", { name: "Open studio-expenses.csv" }).click();
+  await p.waitForSelector("#file-viewer-dialog", { timeout: 4000 });
+  await p.locator('#file-viewer-dialog [data-id="edit"]').click();
+  await p.waitForSelector("#csv-editor-table", { timeout: 4000 });
+  await p.locator('#csv-editor-table input[aria-label="Row 2 Amount"]').fill("250.00");
+  await p.locator("#file-editor-save").click();
+  await p.waitForSelector("text=Saved studio-expenses.csv", { timeout: 4000 });
+
+  await p.locator("#table-query-group-col").selectOption("Vendor");
+  await p.locator("#table-query-agg-fn").selectOption("sum");
+  await p.locator("#table-query-agg-col").selectOption("Amount");
+  await p.locator("#table-query-run").click();
+  await p.waitForSelector("#table-query-result", { timeout: 4000 });
+  const queryTxt = await p.locator("#table-query-result").innerText();
+  await p.locator("#table-query-save-csv").click();
+  await p.waitForSelector("text=Saved: studio-expenses-query.csv", { timeout: 4000 });
+  await p.keyboard.press("Escape");
+  await p.locator("#file-viewer-dialog").waitFor({ state: "hidden", timeout: 4000 }).catch(() => {});
+
+  ok(
+    "v0.30.0 Edit tab edits CSV cells and runs inline Table Query group-by rollup + Save query as CSV",
+    studioFiles["studio-expenses.csv"].includes("250.00") &&
+      queryTxt.includes("Acme Cloud") &&
+      queryTxt.includes("650.00") &&
+      tableSavePayload?.save_as === "studio-expenses-query.csv",
+    `saveAs=${tableSavePayload?.save_as} query=${queryTxt.slice(0, 60).replace(/\n/g, " ")}`
+  );
+
+  // 3. Upload accept attribute parity across WorkspaceFiles and Today
+  await p.getByRole("tab", { name: "Today" }).click();
+  await waitPaper(p);
+  const todayAccept = await p.locator('#face-today input[type="file"]').first().getAttribute("accept");
+  const hasDocExts = (s) => [".pdf", ".docx", ".xlsx", ".pptx"].every((ext) => (s || "").includes(ext));
+  ok(
+    "v0.30.0 upload inputs include .pdf, .docx, .xlsx, .pptx in accept attribute",
+    hasDocExts(wsAccept) && hasDocExts(todayAccept),
+    `ws=${wsAccept} today=${todayAccept}`
+  );
+  await ctx.close();
+}
+
 // 7. Reduced motion & Console Cleanliness (2 checks)
 {
   const { ctx, p } = await open(1440, 900, "light", { reducedMotion: "reduce" });

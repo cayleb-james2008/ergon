@@ -15,6 +15,9 @@ export type ServerCapabilities = {
   people_switch?: boolean;
   tripwire?: boolean;
   pipelines?: boolean;
+  file_edit?: boolean;
+  table_query?: boolean;
+  pdf_export?: boolean;
 };
 export type SchedulerStatus = {
   running?: boolean;
@@ -73,6 +76,7 @@ export type WorkspaceFileContent = {
   ext: string;
   is_binary: boolean;
   content: string;
+  sha256?: string;
   /** PDF, Word, Excel and PowerPoint files preview as their extracted text (v0.9.0+). */
   extracted?: { kind: string; format: "markdown" | "csv"; sheets?: string[]; sheet?: string | null; pages?: number };
   extract_error?: string;
@@ -497,7 +501,9 @@ export type GraphNode = { id: string; kind: string; label?: string; detail?: str
 export type GraphEdge = { from: string; to: string; kind?: string };
 export type GraphPayload = { nodes?: GraphNode[]; edges?: GraphEdge[] };
 
-export type Res<T> = { ok: true; data: T } | { ok: false; error: string; status: number };
+export type Res<T> =
+  | { ok: true; data: T }
+  | { ok: false; error: string; status: number; current_sha256?: string };
 
 export function isWebStandalone(): boolean {
   return typeof window !== "undefined" && Boolean((window as unknown as { __ERGON_WEB_ENGINE__?: boolean }).__ERGON_WEB_ENGINE__);
@@ -643,9 +649,14 @@ export async function call<T>(
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
       return { ok: false, error: "The server returned an unexpected data format.", status: r.status };
     }
-    const data = parsed as T & { error?: unknown };
+    const data = parsed as T & { error?: unknown; current_sha256?: unknown };
     if (!r.ok) {
-      return { ok: false, error: typeof data.error === "string" ? data.error : "", status: r.status };
+      return {
+        ok: false,
+        error: typeof data.error === "string" ? data.error : "",
+        status: r.status,
+        ...(typeof data.current_sha256 === "string" ? { current_sha256: data.current_sha256 } : {}),
+      };
     }
     return { ok: true, data };
   } catch (e) {
@@ -808,4 +819,122 @@ export async function cancelPipelineRun(runId: string): Promise<Res<{ run: Pipel
     method: "POST",
     body: {},
   });
+}
+
+export type SaveFileContentPayload = {
+  path: string;
+  content: string;
+  expected_sha256?: string;
+  reason?: string;
+};
+
+export type SaveFileContentResult = {
+  path: string;
+  size: number;
+  mtime_ms: number;
+  sha256: string;
+  rev_id?: string;
+};
+
+export async function saveFileContent(body: SaveFileContentPayload): Promise<Res<SaveFileContentResult>> {
+  return call<SaveFileContentResult>("/api/files/content", { method: "PUT", body });
+}
+
+export type PatchFileOp = {
+  op: "replace" | "replace_lines";
+  find?: string;
+  replace: string;
+  start_line?: number;
+  end_line?: number;
+  replace_all?: boolean;
+};
+
+export type PatchFilePayload = {
+  path: string;
+  ops: PatchFileOp[];
+  expected_sha256?: string;
+};
+
+export type PatchFileResult = {
+  path: string;
+  applied: number;
+  size: number;
+  sha256: string;
+  diff?: FileDiffPayload;
+};
+
+export async function patchFileContent(body: PatchFilePayload): Promise<Res<PatchFileResult>> {
+  return call<PatchFileResult>("/api/files/content", { method: "PATCH", body });
+}
+
+export type TableWhereOp = "eq" | "neq" | "contains" | "gt" | "gte" | "lt" | "lte";
+
+export type TableWhereFilter = {
+  col: string;
+  op: TableWhereOp;
+  value: string;
+};
+
+export type TableAggregateFn = "sum" | "avg" | "min" | "max" | "count";
+
+export type TableAggregateSpec = {
+  col: string;
+  fn: TableAggregateFn;
+  as: string;
+};
+
+export type TableQueryRequest = {
+  path: string;
+  sheet?: string;
+  where?: TableWhereFilter[];
+  group_by?: string[];
+  aggregates?: TableAggregateSpec[];
+  sort?: { col: string; dir: "asc" | "desc" };
+  limit?: number;
+  save_as?: string;
+};
+
+export type TableQueryResult = {
+  columns: string[];
+  rows: string[][];
+  total_rows: number;
+  matched_rows: number;
+  saved_path?: string;
+};
+
+export async function queryTable(body: TableQueryRequest): Promise<Res<TableQueryResult>> {
+  return call<TableQueryResult>("/api/tables/query", { method: "POST", body });
+}
+
+export type ExportXlsxSheet = {
+  name: string;
+  path?: string;
+  rows?: string[][];
+  totals_row?: boolean;
+};
+
+export type ExportFileRequest = {
+  path?: string;
+  format: "pdf" | "docx" | "xlsx";
+  title?: string;
+  brand_header?: string;
+  output?: string;
+  sheets?: ExportXlsxSheet[];
+};
+
+export type ExportFileResult = {
+  path: string;
+  size: number;
+  format?: string;
+  sha256?: string;
+};
+
+export async function exportFile(body: ExportFileRequest): Promise<Res<ExportFileResult>> {
+  return call<ExportFileResult>("/api/files/export", { method: "POST", body });
+}
+
+export function canExportPdf(path: string, extractedFormat?: "markdown" | "csv"): boolean {
+  if (extractedFormat === "markdown" || extractedFormat === "csv") return true;
+  const ext = (path.split(".").pop() || "").toLowerCase();
+  return ext === "md" || ext === "markdown" || ext === "txt" || ext === "csv" || ext === "tsv";
 }
