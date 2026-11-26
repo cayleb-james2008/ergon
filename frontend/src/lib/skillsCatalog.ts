@@ -410,3 +410,102 @@ export function mergeServerSkills(payload: unknown): SkillMeta[] {
 
   return Array.from(byId.values());
 }
+
+export const CANONICAL_STARTER_PLAYBOOKS: import("@/lib/api").StarterPlaybook[] = [
+  {
+    id: "starter-weekly-client-digest",
+    name: "Weekly Client Digest",
+    summary: "Summarize recent workspace notes into owners, deadlines, and a cited client brief ready for ZIP handoff.",
+    schedule: "weekly fri",
+    skill_id: "summarize_meeting",
+    prompt: "Summarize workspace notes into decisions, action items with owners, and export a verified client digest.",
+    steps: [
+      "Collect workspace notes and extract key decisions, owners, and target deadlines.",
+      "Draft Weekly Client Digest.md with verified [file:L##] references ready for ZIP handoff.",
+    ],
+    expected_inputs: ["Weekly Client Digest.md"],
+    pack_deliverables: true,
+    sample_title: "Weekly Client Digest",
+    sample_sections: [
+      "## Weekly Highlights\nCompleted milestone verification and updated project deliverables with SHA-256 receipts.",
+      "## Decisions and Owners\n- Operations lead: finalize Q4 deliverable review by Friday.\n- Finance ops: reconcile expense sheet totals before client handoff.",
+    ],
+    verified: true,
+  },
+  {
+    id: "starter-repo-release-audit",
+    name: "Repo Release Audit",
+    summary: "Audit release deliverables, verify file SHA-256 digests, and run strict secret and path leak checks.",
+    schedule: "manual",
+    skill_id: "reconcile_ledger",
+    prompt: "Audit release deliverables, verify checksums, and prepare a clean client handoff archive.",
+    steps: [
+      "Inspect workspace deliverables and confirm zero missing or stale line citations.",
+      "Verify host paths, keys, and tokens are clean before exporting the Client Handoff ZIP.",
+    ],
+    expected_inputs: ["Release Readiness Audit.md"],
+    pack_deliverables: true,
+    sample_title: "Release Readiness Audit",
+    sample_sections: [
+      "## Verification Checklist\n- Release build checked with zero warnings.\n- Client handoff leak pre-check passed with zero exposed host paths or keys.",
+      "## Deliverable Inventory\nAll workspace outputs carry SHA-256 digests verifiable offline via ergon verify.",
+    ],
+    verified: true,
+  },
+  {
+    id: "starter-research-brief-citation-pack",
+    name: "Research Brief + Citation Pack",
+    summary: "Compile a concise executive brief grounded in workspace notes with line-level citation verification.",
+    schedule: "daily 09:00",
+    skill_id: "draft_brief",
+    prompt: "Draft a sourced executive research brief grounded in workspace deliverables with verified [file:L##] citations.",
+    steps: [
+      "Review workspace deliverables and standing preferences in memory.md.",
+      "Write Research Brief Pack.md with verified inline citations for client review.",
+    ],
+    expected_inputs: ["Research Brief Pack.md"],
+    pack_deliverables: true,
+    sample_title: "Research Brief Pack",
+    sample_sections: [
+      "## Executive Summary\nSynthesized findings grounded in workspace deliverables and verified Field-Book receipts.",
+      "## Grounded Citations\nAll claims trace back to verified workspace artifacts and SHA-256 manifests.",
+    ],
+    verified: true,
+  },
+];
+
+export function mergeStarterPlaybooks(payload: unknown): import("@/lib/api").StarterPlaybook[] {
+  const byId = new Map(CANONICAL_STARTER_PLAYBOOKS.map((s) => [s.id, { ...s }]));
+  const rawList = Array.isArray(payload)
+    ? payload
+    : payload && typeof payload === "object"
+      ? (Array.isArray((payload as { starters?: unknown[] }).starters)
+          ? (payload as { starters: unknown[] }).starters
+          : Array.isArray((payload as { starter_playbooks?: unknown[] }).starter_playbooks)
+            ? (payload as { starter_playbooks: unknown[] }).starter_playbooks
+            : [])
+      : [];
+  for (const entry of rawList) {
+    if (!entry || typeof entry !== "object") continue;
+    const o = entry as Record<string, unknown>;
+    const id = String(o.id ?? "").trim();
+    if (!id) continue;
+    const base = byId.get(id);
+    byId.set(id, {
+      id,
+      name: String(o.name ?? base?.name ?? id).trim(),
+      summary: String(o.summary ?? base?.summary ?? "").trim(),
+      schedule: String(o.schedule ?? base?.schedule ?? "manual").trim(),
+      skill_id: String(o.skill_id ?? base?.skill_id ?? "write_document").trim(),
+      prompt: String(o.prompt ?? base?.prompt ?? "").trim(),
+      steps: Array.isArray(o.steps) ? o.steps.map(String) : (base?.steps ?? []),
+      expected_inputs: Array.isArray(o.expected_inputs) ? o.expected_inputs.map(String) : (base?.expected_inputs ?? []),
+      pack_deliverables: typeof o.pack_deliverables === "boolean" ? o.pack_deliverables : (base?.pack_deliverables ?? true),
+      sample_title: typeof o.sample_title === "string" ? o.sample_title : base?.sample_title,
+      sample_sections: Array.isArray(o.sample_sections) ? o.sample_sections.map(String) : base?.sample_sections,
+      sha256: typeof o.sha256 === "string" ? o.sha256 : base?.sha256,
+      verified: typeof o.verified === "boolean" ? o.verified : true,
+    });
+  }
+  return Array.from(byId.values());
+}

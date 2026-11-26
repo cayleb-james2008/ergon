@@ -3805,6 +3805,24 @@ mod v010_hardening_tests {
         assert!(head.contains("X-Ergon-Handoff-SHA256:"), "{head}");
         assert!(zip.starts_with(b"PK\x03\x04"), "expected PK zip header");
 
+        // 4. Bundled starter playbooks list and 1-click launch -> clean verified handoff ZIP.
+        let starters_raw = send_raw("GET", "/api/playbooks/starters", "");
+        let starters_str = String::from_utf8_lossy(&starters_raw);
+        assert!(starters_str.starts_with("HTTP/1.1 200 OK"), "{starters_str}");
+        let starters_json: Value = serde_json::from_str(starters_str.split("\r\n\r\n").nth(1).unwrap()).unwrap();
+        assert_eq!(starters_json["starters"].as_array().map(|a| a.len()), Some(3));
+
+        let launch_raw = send_raw(
+            "POST",
+            "/api/playbooks/starters/launch",
+            r#"{"id":"starter-weekly-client-digest","run_now":true}"#,
+        );
+        let launch_str = String::from_utf8_lossy(&launch_raw);
+        assert!(launch_str.starts_with("HTTP/1.1 201 Created"), "{launch_str}");
+        let launch_json: Value = serde_json::from_str(launch_str.split("\r\n\r\n").nth(1).unwrap()).unwrap();
+        assert_eq!(launch_json["ok"], json!(true));
+        assert!(cfg.workspace_dir.join("Weekly Client Digest.md").exists());
+
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

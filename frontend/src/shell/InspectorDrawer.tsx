@@ -23,6 +23,7 @@ import {
 } from "@/shell/WorkspaceFiles";
 import {
   call,
+  exportHandoffBundleZip,
   hasV070Api,
   type EvidenceVerificationResult,
   type FileRevision,
@@ -174,39 +175,15 @@ export const InspectorDrawer = memo(function InspectorDrawer({
   const runHandoffExport = useCallback(async (force: boolean) => {
     setHandoffBusy("export");
     try {
-      const resp = await fetch("/api/export/handoff", {
-        method: "POST",
-        cache: "no-store",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title: "Client Handoff", force }),
-      });
-      if (resp.status === 409) {
-        const errJson = (await resp.json().catch(() => ({}))) as {
-          error?: string;
-          scan?: HandoffLeakScan;
-        };
-        if (errJson.scan) setHandoffScan(errJson.scan);
-        const msg = errJson.error || "Handoff blocked by Strict Client policy.";
-        setHandoffBlockedMsg(msg);
-        toast.error(msg);
+      const res = await exportHandoffBundleZip({ title: "Client Handoff", force });
+      if (!res.ok) {
+        if (res.scan) setHandoffScan(res.scan);
+        if (res.blocked) setHandoffBlockedMsg(res.error);
+        toast.error(res.error);
         return;
       }
-      if (!resp.ok) {
-        toast.error(`Handoff export failed (HTTP ${resp.status}).`);
-        return;
-      }
-      const blob = await resp.blob();
-      const sha = resp.headers.get("X-Ergon-Handoff-SHA256") ?? "";
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "ergon-client-handoff.zip";
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
       setHandoffBlockedMsg(null);
-      setHandoffZipSha(sha || "exported");
+      setHandoffZipSha(res.sha256 || "exported");
       setHandoffScan((prev) =>
         prev ?? {
           clean: true,
@@ -221,8 +198,8 @@ export const InspectorDrawer = memo(function InspectorDrawer({
       toast.success(
         force
           ? "Exported ergon-client-handoff.zip (policy override)."
-          : sha
-            ? `Exported ergon-client-handoff.zip (sha256: ${sha.slice(0, 12)}…)`
+          : res.sha256
+            ? `Exported ergon-client-handoff.zip (sha256: ${res.sha256.slice(0, 12)}…)`
             : "Exported ergon-client-handoff.zip"
       );
     } finally {
@@ -414,7 +391,7 @@ export const InspectorDrawer = memo(function InspectorDrawer({
                 </Button>
               </div>
               {handoffZipSha && !handoffBlockedMsg && (
-                <div className="mono rounded-chip border border-hairline bg-surface px-2.5 py-1 text-[11px] text-ink-2">
+                <div className="mono rounded-chip border border-hairline bg-surface px-2.5 py-1 text-xs text-ink-2">
                   ergon-client-handoff.zip · sha256:{handoffZipSha.slice(0, 16)}
                 </div>
               )}

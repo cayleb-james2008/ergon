@@ -4,6 +4,12 @@ Each release is tagged `vMAJOR.MINOR.PATCH` and published on GitHub Releases wit
 binaries and a `SHA256SUMS` file. The running app shows its version and can update
 itself from the newest release (see README, "Versions and updates").
 
+## 0.28.0 - 2026-11-25
+
+Zero-setup starter playbooks bundle three verified workflows (`Weekly Client Digest`, `Repo Release Audit`, and `Research Brief + Citation Pack`) inside the compressed built-in skill catalog (`src/skills/catalog.json`, `src/skill_catalog.rs`). Launch, preview ordered dry-run steps, or run any starter directly into a signed Client Handoff ZIP archive in one click from Today or Recurring routines (`GET /api/playbooks/starters`, `POST /api/playbooks/starters/launch`, `frontend/src/shell/StarterPlaybooksBar.tsx`), with offline `ergon-web.html` parity (`frontend/src/lib/webEngine.ts`).
+
+Client handoff ZIP bundling (`src/audit_bundle.rs`, `src/docs.rs`, `src/server.rs`) now borrows slices via `zip_write_refs` without cloning the `audit_bundle.json` buffer, reuses the cached `PersonIndex` receipt chain when available, streams workspace leak scans through one shared read buffer, and drops temporary bundle buffers immediately for HTTP exports. Moving static skill dry-run fixtures into compressed `catalog.json` keeps the stripped release binary at `7.497 MB` (`7,861,088 B`).
+
 ## 0.27.0 - 2026-11-25
 
 One-click client handoff bundling packs a verified `CLIENT_SUMMARY.md`, tamper-evident `audit_bundle.json`, `SHA256SUMS`, and offline verification instructions (`VERIFY.txt`) into a self-contained ZIP archive or directory. Run `ergon export-handoff [--out PATH] [--title TITLE] [--workspace DIR] [--force] [--json]` from the CLI (`src/main.rs`), call `POST /api/export/handoff` (`src/server.rs`), or use the Client handoff card in the right inspector (`frontend/src/shell/InspectorDrawer.tsx`, `frontend/src/lib/webEngine.ts`).

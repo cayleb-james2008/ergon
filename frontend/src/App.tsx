@@ -946,6 +946,9 @@ export function App() {
                 }}
                 onExportAuditBundle={handleExportAuditBundle}
                 onSaveRoutine={handleSaveRoutineFromWork}
+                starterPlaybooks={desk.starterPlaybooks}
+                onLaunchStarter={desk.launchStarterPlaybook}
+                onOpenPlaybooks={() => setRoutinesOpen(true)}
               />
               </Suspense>
             </div>
@@ -1169,6 +1172,8 @@ export function App() {
         onPreviewPlaybook={desk.previewPlaybook}
         onCatchupRoutine={desk.catchupRoutine}
         onCatchupAll={desk.catchupAllRoutines}
+        starterPlaybooks={desk.starterPlaybooks}
+        onLaunchStarter={desk.launchStarterPlaybook}
         onRunNow={async (rt) => {
           setFace("chat");
           await desk.runRoutineNow(rt);

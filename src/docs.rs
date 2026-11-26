@@ -191,6 +191,12 @@ impl<'a> ZipReader<'a> {
 // ---------------------------------------------------------------------------
 
 pub fn zip_write(files: &[(&str, Vec<u8>)]) -> Vec<u8> {
+    let refs: Vec<(&str, &[u8])> = files.iter().map(|(n, d)| (*n, d.as_slice())).collect();
+    zip_write_refs(&refs)
+}
+
+#[inline(never)]
+pub fn zip_write_refs(files: &[(&str, &[u8])]) -> Vec<u8> {
     let mut out: Vec<u8> = Vec::new();
     let mut central: Vec<u8> = Vec::new();
     // DOS date 2026-01-01 00:00 (stable bytes across runs).
@@ -199,7 +205,7 @@ pub fn zip_write(files: &[(&str, Vec<u8>)]) -> Vec<u8> {
     for (name, data) in files {
         let crc = crc32(data);
         let deflated = miniz_oxide::deflate::compress_to_vec(data, 6);
-        let (method, body): (u16, &[u8]) = if deflated.len() < data.len() { (8, &deflated) } else { (0, data) };
+        let (method, body): (u16, &[u8]) = if deflated.len() < data.len() { (8, &deflated) } else { (0, *data) };
         let offset = out.len() as u32;
         let nb = name.as_bytes();
         let mut lh = Vec::with_capacity(30 + nb.len());

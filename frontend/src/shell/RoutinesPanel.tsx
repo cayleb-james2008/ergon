@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { PanelModal, usePanelModalClose } from "@/shell/PanelModal";
+import { StarterPlaybooksBar } from "@/shell/StarterPlaybooksBar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -38,6 +39,8 @@ import {
   type Routine,
   type RoutineRunRecord,
   type SchedulerStatus,
+  type StarterLaunchResult,
+  type StarterPlaybook,
   type Status,
 } from "@/lib/api";
 import { exportPlaybookDownload, exportReceiptDownload, MAX_PLAYBOOK_PACK_BYTES } from "@/lib/receiptExport";
@@ -80,6 +83,8 @@ function RoutinesBody({
   onPreviewPlaybook,
   onCatchupRoutine,
   onCatchupAll,
+  starterPlaybooks = [],
+  onLaunchStarter,
 }: {
   routines: Routine[];
   skills: SkillMeta[];
@@ -108,6 +113,8 @@ function RoutinesBody({
   onPreviewPlaybook?: (routine: Routine) => Promise<PlaybookPreviewResult | null>;
   onCatchupRoutine?: (routine: Routine) => Promise<boolean>;
   onCatchupAll?: () => Promise<boolean>;
+  starterPlaybooks?: StarterPlaybook[];
+  onLaunchStarter?: (starterId: string, runNow?: boolean) => Promise<StarterLaunchResult | null>;
 }) {
   const { isOpen, setIsOpen } = usePanelModalClose();
   const importInputRef = useRef<HTMLInputElement | null>(null);
@@ -564,6 +571,10 @@ function RoutinesBody({
             </Button>
           </div>
         </form>
+      )}
+
+      {onLaunchStarter && starterPlaybooks.length > 0 && (
+        <StarterPlaybooksBar starters={starterPlaybooks} onLaunch={onLaunchStarter} />
       )}
 
       {routines.length === 0 ? (
@@ -1049,6 +1060,8 @@ export function RoutinesPanel({
   onPreviewPlaybook,
   onCatchupRoutine,
   onCatchupAll,
+  starterPlaybooks = [],
+  onLaunchStarter,
 }: {
   routines: Routine[];
   skills: SkillMeta[];
@@ -1079,6 +1092,8 @@ export function RoutinesPanel({
   onPreviewPlaybook?: (routine: Routine) => Promise<PlaybookPreviewResult | null>;
   onCatchupRoutine?: (routine: Routine) => Promise<boolean>;
   onCatchupAll?: () => Promise<boolean>;
+  starterPlaybooks?: StarterPlaybook[];
+  onLaunchStarter?: (starterId: string, runNow?: boolean) => Promise<StarterLaunchResult | null>;
 }) {
   return (
     <PanelModal
@@ -1108,6 +1123,8 @@ export function RoutinesPanel({
         onPreviewPlaybook={onPreviewPlaybook}
         onCatchupRoutine={onCatchupRoutine}
         onCatchupAll={onCatchupAll}
+        starterPlaybooks={starterPlaybooks}
+        onLaunchStarter={onLaunchStarter}
       />
     </PanelModal>
   );

@@ -56,19 +56,19 @@ flowchart LR
 
 ---
 
-## Verified benchmarks (`v0.27.0` vs `v0.11.0`)
+## Verified benchmarks (`v0.28.0` vs `v0.11.0`)
 
 Measured against the stripped fat-LTO release binary on local loopback against a `5,000` receipts and `500` workspace files dataset:
 
-| Metric | `v0.11.0` baseline | `v0.27.0` measured | Change |
+| Metric | `v0.11.0` baseline | `v0.28.0` measured | Change |
 | --- | --- | --- | --- |
 | Release binary size | `16.0 MB` | `7.497 MB` (`7,861,088 B`) | `-53.1%` |
-| Initial `/` shell payload | `1.15 MB` | `150.4 KB` raw / `34.0 KiB` (`34,857 B`) gzip (`15` `/chunks/*`) | `-97.0%` wire |
-| Cold boot to `200 OK` | `n/a` | `3.00 ms` median (`2.85 ms` min) | Under `5 ms` target |
-| Peak RSS (`VmHWM`, `5k` receipts + `500` files, warm + audit bundle) | `n/a` | `15.31 MB` (`15,680 KB`) | `M_ARENA_MAX=1` + 2 warm workers |
-| Concurrent HTTP (`16w` mixed 5 routes across `5k`/`500`) | `724 req/s` (`188.7 ms` p95) | `47,967.8 req/s` keep-alive (`0.26 ms` p50, `0.76 ms` p95) / `16,750.3 req/s` cold (`0.72 ms` p50, `1.67 ms` p95, `0` err) | `66.3x` keep-alive / `23.1x` cold |
-| Streaming audit bundle (`5k` entries) | `n/a` | `55.65 ms` (`1,936,272 B`) | Single-allocation JSON |
-| Automated checks | `204` Rust tests | `228/228` Rust tests, `100/100` UI checks, `47/47` CLI/policy/handoff fuzz, `0` `sloplint` fails | Zero warnings / zero externals |
+| Initial `/` shell payload | `1.15 MB` | `151.0 KB` raw / `34.2 KiB` (`35,024 B`) gzip (`16` `/chunks/*`) | `-97.0%` wire |
+| Cold boot to `200 OK` | `n/a` | `3.52 ms` median (`3.30 ms` min) | Under `5 ms` self-audit |
+| Peak RSS (`VmHWM`, `5k` receipts + `500` files, audit + handoff ZIP + `16w`) | `n/a` | `15.41 MB` (`15,780 KB`) (`14.08 MB` after `5k` handoff ZIP) | `-36.1%` vs `22.02 MB` `v0.27.0` |
+| Concurrent HTTP (`16w` mixed 5 routes across `5k`/`500`) | `724 req/s` (`188.7 ms` p95) | `42,902.5 req/s` keep-alive (`0.30 ms` p50, `0.89 ms` p95) / `15,706.8 req/s` cold (`0.78 ms` p50, `1.76 ms` p95, `0` err) | `59.3x` keep-alive / `21.7x` cold |
+| Streaming audit bundle (`5k` entries) | `n/a` | `58.19 ms` (`1,936,272 B`) | Zero duplicate `5k` chain load |
+| Automated checks | `204` Rust tests | `228/228` Rust tests, `100/100` UI checks, `47/47` CLI/policy/starter/handoff fuzz, `0` `sloplint` fails | Zero warnings / zero externals |
 
 ---
 
@@ -126,6 +126,10 @@ On startup, unless `ERGON_NO_AUTO_MODEL=1` or an explicit `ERGON_MODEL_BASE_URL`
 ---
 
 ## Core capabilities
+
+### Starter playbooks and quick client handoff
+
+New workspaces include three zero-setup starter playbooks (`Weekly Client Digest`, `Repo Release Audit`, and `Research Brief + Citation Pack`) served from `GET /api/playbooks/starters` and `POST /api/playbooks/starters/launch`. Preview ordered steps or run any starter directly into a verified Client Handoff `.zip` in one click from Today, Recurring routines, or standalone `ergon-web.html`.
 
 ### Client handoff bundle and leak pre-check
 

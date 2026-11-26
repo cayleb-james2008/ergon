@@ -23,6 +23,7 @@ import { Pill } from "@/components/kibo-ui/pill";
 import { Details, FileGlyph, WaitingPill } from "@/chat/Entry";
 import { LiveRunTimeline } from "@/chat/LiveRunTimeline";
 import { personInitials } from "@/shell/PersonSelect";
+import { StarterPlaybooksBar } from "@/shell/StarterPlaybooksBar";
 import { usePaper } from "@/views/usePaper";
 import {
   call,
@@ -33,6 +34,8 @@ import {
   type MemoryHealth,
   type Offer,
   type Person,
+  type StarterLaunchResult,
+  type StarterPlaybook,
   type Status,
   type TodayEvent,
   type WorkspaceFile,
@@ -464,6 +467,9 @@ export const PaperFace = memo(function PaperFace({
   onHealMemory,
   onExportAuditBundle,
   onSaveRoutine,
+  starterPlaybooks = [],
+  onLaunchStarter,
+  onOpenPlaybooks,
 }: {
   paper: ReturnType<typeof usePaper>;
   status: Status | null | "error";
@@ -495,6 +501,9 @@ export const PaperFace = memo(function PaperFace({
     schedule?: string,
     playbook?: { steps?: string[]; expected_inputs?: string[]; pack_deliverables?: boolean }
   ) => Promise<boolean>;
+  starterPlaybooks?: StarterPlaybook[];
+  onLaunchStarter?: (starterId: string, runNow?: boolean) => Promise<StarterLaunchResult | null>;
+  onOpenPlaybooks?: () => void;
 }) {
   const { data, failed, load, loadAllReceipts, act } = paper;
   const [dragOver, setDragOver] = useState(false);
@@ -922,6 +931,19 @@ export const PaperFace = memo(function PaperFace({
                   </div>
                 )}
               </div>
+
+              {onLaunchStarter && starterPlaybooks.length > 0 && (
+                <StarterPlaybooksBar
+                  compact
+                  starters={starterPlaybooks}
+                  onLaunch={async (id, runNow) => {
+                    const res = await onLaunchStarter(id, runNow);
+                    if (res?.ok) load();
+                    return res;
+                  }}
+                  onOpenPlaybooks={onOpenPlaybooks}
+                />
+              )}
 
               {/* Virtualized / Paginated Finished Work & Receipts Ledger */}
               {n > 0 && (

@@ -207,17 +207,28 @@ fn parse_catalog_item(v: &Value) -> SkillMetadata {
     }
 }
 
+fn catalog_root() -> &'static Value {
+    static ROOT: std::sync::OnceLock<Value> = std::sync::OnceLock::new();
+    ROOT.get_or_init(|| {
+        static DEFLATED: &[u8] =
+            include_bytes!(concat!(env!("OUT_DIR"), "/skills_catalog.deflate"));
+        let raw = miniz_oxide::inflate::decompress_to_vec(DEFLATED)
+            .expect("skills catalog deflate valid");
+        serde_json::from_slice(&raw).expect("skills catalog json valid")
+    })
+}
+
 /// Complete catalog of all 12 built-in Rune skills shipped with Ergon.
 pub fn all_skills() -> Vec<SkillMetadata> {
     static CATALOG: std::sync::OnceLock<Vec<SkillMetadata>> = std::sync::OnceLock::new();
     CATALOG
         .get_or_init(|| {
-            static DEFLATED: &[u8] =
-                include_bytes!(concat!(env!("OUT_DIR"), "/skills_catalog.deflate"));
-            let raw = miniz_oxide::inflate::decompress_to_vec(DEFLATED)
-                .expect("skills catalog deflate valid");
-            let items: Vec<Value> =
-                serde_json::from_slice(&raw).expect("skills catalog json valid");
+            let root = catalog_root();
+            let items = root
+                .get("skills")
+                .and_then(|v| v.as_array())
+                .or_else(|| root.as_array())
+                .expect("skills catalog array valid");
             items.iter().map(parse_catalog_item).collect()
         })
         .clone()
@@ -230,6 +241,165 @@ pub fn get_skill(id_or_slug: &str) -> Option<SkillMetadata> {
     all_skills()
         .into_iter()
         .find(|s| s.id == q_snake || s.slug == q)
+}
+
+#[cold]
+#[inline(never)]
+pub fn starter_playbooks_json() -> Value {
+    let items = catalog_root()
+        .get("starter_playbooks")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+    let out: Vec<Value> = items
+        .into_iter()
+        .map(|mut item| {
+            let name = item["name"].as_str().unwrap_or("");
+            let prompt = item["prompt"].as_str().unwrap_or("");
+            let schedule = item["schedule"].as_str().unwrap_or("manual");
+            let skill_id = item["skill_id"].as_str();
+            let steps: Vec<String> = item["steps"]
+                .as_array()
+                .map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect())
+                .unwrap_or_default();
+            let expected_inputs: Vec<String> = item["expected_inputs"]
+                .as_array()
+                .map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect())
+                .unwrap_or_default();
+            let opts = crate::routines::PlaybookOptions {
+                steps,
+                expected_inputs,
+                pack_deliverables: item["pack_deliverables"].as_bool().unwrap_or(true),
+            };
+            let digest = crate::routines::playbook_canonical_sha256(
+                name,
+                prompt,
+                schedule,
+                None,
+                skill_id,
+                &opts,
+            );
+            item["sha256"] = json!(digest);
+            item["verified"] = json!(true);
+            item
+        })
+        .collect();
+    Value::Array(out)
+}
+
+#[cold]
+#[inline(never)]
+pub fn launch_starter_playbook(
+    cfg: &Config,
+    raw_id: &str,
+    run_now: bool,
+) -> Result<Value, (u16, String)> {
+    let q = raw_id.trim().to_ascii_lowercase();
+    let starters = starter_playbooks_json();
+    let Some(starter) = starters.as_array().and_then(|arr| {
+        arr.iter().find(|s| {
+            s["id"].as_str().is_some_and(|v| v.eq_ignore_ascii_case(&q))
+                || s["name"].as_str().is_some_and(|v| v.eq_ignore_ascii_case(&q))
+        })
+    }) else {
+        return Err((404, "starter playbook not found".to_string()));
+    };
+
+    let name = starter["name"].as_str().unwrap_or("Starter Playbook");
+    let prompt = starter["prompt"].as_str().unwrap_or("");
+    let schedule = starter["schedule"].as_str().unwrap_or("manual");
+    let skill_id = starter["skill_id"].as_str();
+    let steps: Vec<String> = starter["steps"]
+        .as_array()
+        .map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect())
+        .unwrap_or_default();
+    let expected_inputs: Vec<String> = starter["expected_inputs"]
+        .as_array()
+        .map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect())
+        .unwrap_or_default();
+    let pack_deliverables = starter["pack_deliverables"].as_bool().unwrap_or(true);
+    let pb_opts = crate::routines::PlaybookOptions {
+        steps,
+        expected_inputs: expected_inputs.clone(),
+        pack_deliverables,
+    };
+
+    let existing = crate::routines::list_routines(&cfg.data_dir)
+        .into_iter()
+        .find(|r| r["name"].as_str() == Some(name));
+    let routine = if let Some(rt) = existing {
+        rt
+    } else {
+        crate::routines::create_playbook_routine(
+            &cfg.data_dir,
+            name,
+            prompt,
+            schedule,
+            None,
+            skill_id,
+            true,
+            &pb_opts,
+        )
+        .map_err(|e| (400, e))?
+    };
+    let routine_id = routine["id"].as_str().unwrap_or("").to_string();
+
+    let mut created_files: Vec<String> = Vec::new();
+    let mut receipt_summary = String::new();
+    if run_now {
+        let sample_title = starter["sample_title"].as_str().unwrap_or(name);
+        let sample_sections = &starter["sample_sections"];
+        let out_res = crate::execute_tool(
+            cfg,
+            "write_document",
+            &json!({
+                "title": sample_title,
+                "sections": sample_sections,
+            }),
+        );
+        if let Ok(written_msg) = out_res {
+            let fname = format!("{sample_title}.md");
+            let target = if cfg.workspace_dir.join(&fname).exists() {
+                fname
+            } else {
+                expected_inputs
+                    .first()
+                    .cloned()
+                    .unwrap_or_else(|| written_msg.trim().to_string())
+            };
+            if cfg.workspace_dir.join(&target).exists() {
+                receipt_summary = format!("Verified [{target}:L1] via starter playbook {name}.");
+                crate::records::append_work(
+                    cfg,
+                    &format!("Starter: {name}"),
+                    &receipt_summary,
+                    std::slice::from_ref(&target),
+                    &format!("starter-{routine_id}"),
+                    true,
+                );
+                created_files.push(target);
+            }
+        }
+    }
+
+    let now_ms = crate::records::now_millis();
+    let enriched = crate::scheduler::enrich_routine_json(&routine, now_ms, &[]);
+    let preview = crate::routines::preview_playbook_routine(
+        &cfg.data_dir,
+        &cfg.workspace_dir,
+        &created_files,
+        &routine_id,
+    );
+
+    Ok(json!({
+        "ok": true,
+        "starter_id": starter["id"],
+        "sha256": starter["sha256"],
+        "routine": enriched,
+        "created_files": created_files,
+        "summary": receipt_summary,
+        "preview": preview,
+    }))
 }
 
 /// Ready-to-serve JSON payload for `GET /api/skills`.
@@ -245,6 +415,7 @@ pub fn catalog_json() -> Value {
         "count": list.len(),
         "categories": categories,
         "skills": list.iter().map(|s| s.to_json()).collect::<Vec<_>>(),
+        "starter_playbooks": starter_playbooks_json(),
     })
 }
 
@@ -443,134 +614,24 @@ fn spawn_local_sample_http(body: &'static str) -> Option<(String, std::thread::J
 /// Built-in realistic dry-run fixture (`args`, `seed_files`, `seed_memory`)
 /// used when `dry_run_skill` is invoked with empty/null args so `POST /api/skills/test`
 /// can smoke-test any of the 12 skills with one click.
+#[cold]
+#[inline(never)]
 fn default_fixture_for(
     canonical_id: &str,
     local_research_url: Option<&str>,
 ) -> (Value, Value, Option<&'static str>) {
-    match canonical_id {
-        "write_document" => (
-            json!({
-                "title": "Sample Ops Update",
-                "sections": ["## Highlights\nCompleted weekly close with zero blockers.", "## Next Steps\nPublish Q4 budget summary."]
-            }),
-            json!({}),
-            None,
-        ),
-        "make_spreadsheet" => (
-            json!({
-                "title": "Sample Budget",
-                "columns": ["Item", "Department", "Amount"],
-                "rows": [
-                    ["Design Licenses", "Product", "240.00"],
-                    ["Cloud Compute, US-East", "Engineering", "1180.50"]
-                ]
-            }),
-            json!({}),
-            None,
-        ),
-        "research" => {
-            let url = local_research_url.unwrap_or("http://127.0.0.1:9/offline");
-            (
-                json!({
-                    "topic": "Sample Topic",
-                    "urls": [url]
-                }),
-                json!({}),
-                None,
-            )
-        }
-        "update_memory" => (
-            json!({ "note": "Prefer concise executive bullet lists ahead of raw tables." }),
-            json!({}),
-            None,
-        ),
-        "reconcile_ledger" => (
-            json!({
-                "source_files": ["invoices.csv"],
-                "output_title": "Sample Ledger Reconciliation"
-            }),
-            json!({
-                "invoices.csv": "date,ref,vendor,category,amount,receipt\n2026-11-01,INV-101,Northwind Supply,Operations,420.00,verified\n2026-11-02,INV-102,Boreal Optics,Equipment,985.50,missing\n2026-11-03,INV-101,Northwind Supply,Operations,420.00,verified\n"
-            }),
-            None,
-        ),
-        "summarize_meeting" => (
-            json!({
-                "notes_file": "meeting.md",
-                "output_title": "Sample Meeting Summary"
-            }),
-            json!({
-                "meeting.md": "Attendees: Alice, Bob, Priya\nAlice: We decided to freeze schema changes on Thursday.\nAction: Bob will publish the migration guide by Friday.\nPriya: Owner: Priya — audit staging receipts due 2026-11-28.\nBob: Is the backup retention window confirmed?\n"
-            }),
-            None,
-        ),
-        "audit_contract" => (
-            json!({
-                "contract_file": "vendor-msa.md",
-                "output_title": "Sample Contract Audit"
-            }),
-            json!({
-                "vendor-msa.md": "# Master Services Agreement\nEffective Date: 2026-12-01. Initial Term: 12 months.\nThis agreement shall auto-renew for successive 12-month periods unless 90 days prior written notice is given.\nProvider may modify terms at its sole discretion.\nPayment terms are Net 60 from invoice receipt.\nGoverning Law: State of Delaware.\nTermination: Either party may terminate for material breach.\n"
-            }),
-            None,
-        ),
-        "triage_inbox" => (
-            json!({
-                "inbox_file": "inbox.md",
-                "output_title": "Sample Inbox Triage"
-            }),
-            json!({
-                "inbox.md": "From: alerts@infra.local\nSubject: SEV1 Production outage on billing API\nImmediate escalation required.\n---\nFrom: finance@partner.local\nSubject: Please approve Q4 invoice #442\nCan you review and sign off today?\n---\nFrom: newsletter@digest.local\nSubject: Weekly product digest\nFYI: automated release notes.\n"
-            }),
-            None,
-        ),
-        "clean_dataset" => (
-            json!({
-                "input_file": "orders.csv",
-                "key_column": "Order ID",
-                "output_title": "Sample Cleaned Orders"
-            }),
-            json!({
-                "orders.csv": "Order ID,Customer Name,Order Amount,Notes\nORD-1,Alice,100.00,ok\nORD-2,Bob,105.00,N/A\nORD-3,Cara,98.00,ok\nORD-4,Dan,102.00,none\nORD-5,Eli,101.00,ok\nORD-6,Fay,99.00,ok\nORD-7,Gus,9850.00,outlier\nORD-2,Bob,105.00,duplicate\n"
-            }),
-            None,
-        ),
-        "compare_documents" => (
-            json!({
-                "left_file": "policy-v1.md",
-                "right_file": "policy-v2.md",
-                "output_title": "Sample Policy Diff"
-            }),
-            json!({
-                "policy-v1.md": "# Expense Policy\nReceipts required above $50.\nApproval SLA: 5 business days.\n",
-                "policy-v2.md": "# Expense Policy\nReceipts required above $25.\nApproval SLA: 2 business days.\n## International Travel\nPre-approval required.\n"
-            }),
-            None,
-        ),
-        "draft_brief" => (
-            json!({
-                "topic": "Monthly Close Controls",
-                "source_files": ["close-notes.md"],
-                "audience": "Finance leadership",
-                "output_title": "Sample Monthly Close Brief"
-            }),
-            json!({
-                "close-notes.md": "# Close Notes\n- Total spend reconciled: $14,250.00 across 3 cost centers.\n- Risk: 2 invoices missing receipts.\n- Must verify duplicate references before ledger lock.\n"
-            }),
-            Some("# Memory\n\n- Always open executive briefs with verified dollar totals.\n"),
-        ),
-        "extract_tables" => (
-            json!({
-                "source_file": "metrics.md",
-                "output_title": "Sample Extracted Metrics"
-            }),
-            json!({
-                "metrics.md": "# Service Metrics\n\n| Service | Latency_ms | Status |\n|---|---:|---|\n| auth | 18 | ok |\n| billing | 42 | ok |\n"
-            }),
-            None,
-        ),
-        _ => (json!({}), json!({}), None),
+    let fx = &catalog_root()["fixtures"][canonical_id];
+    if fx.is_null() {
+        return (json!({}), json!({}), None);
     }
+    let mut args = fx["args"].clone();
+    if canonical_id == "research" {
+        let url = local_research_url.unwrap_or("http://127.0.0.1:9/offline");
+        args["urls"] = json!([url]);
+    }
+    let seeds = fx["seeds"].clone();
+    let mem = fx["memory"].as_str();
+    (args, seeds, mem)
 }
 
 /// Run a built-in Rune skill in a fresh ephemeral sandbox workspace.

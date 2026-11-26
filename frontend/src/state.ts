@@ -20,13 +20,21 @@ import {
   type Routine,
   type RoutineRunRecord,
   type SchedulerStatus,
+  type StarterLaunchResult,
+  type StarterPlaybook,
   type Status,
   type SuiteItem,
   type Thread,
   type ThreadRow,
   type WorkspaceFile,
 } from "@/lib/api";
-import { CANONICAL_SKILLS, mergeServerSkills, type SkillMeta } from "@/lib/skillsCatalog";
+import {
+  CANONICAL_SKILLS,
+  CANONICAL_STARTER_PLAYBOOKS,
+  mergeServerSkills,
+  mergeStarterPlaybooks,
+  type SkillMeta,
+} from "@/lib/skillsCatalog";
 import { buildDeterministicPlaybookPreview, MAX_PLAYBOOK_PACK_BYTES, verifyAndParsePlaybookPack } from "@/lib/receiptExport";
 import { buildStarterCards, toolLabel, type StarterCard } from "@/lib/words";
 import { threadState } from "@/chat/Entry";
@@ -232,6 +240,7 @@ export function useErgon() {
   const filesRef = useRef<WorkspaceFile[]>([]);
   const [lastUploaded, setLastUploaded] = useState<string[]>([]);
   const [skills, setSkills] = useState<SkillMeta[]>(() => CANONICAL_SKILLS);
+  const [starterPlaybooks, setStarterPlaybooks] = useState<StarterPlaybook[]>(() => CANONICAL_STARTER_PLAYBOOKS);
   const [routines, setRoutines] = useState<Routine[]>(() => loadLocalRoutines());
   const [scheduler, setScheduler] = useState<SchedulerStatus | null>(null);
   const [routineHistoryRev, setRoutineHistoryRev] = useState(0);
@@ -288,11 +297,17 @@ export function useErgon() {
   const loadSkills = useCallback(async () => {
     if (!hasV050Api(statusRef.current, "skills")) {
       setSkills(CANONICAL_SKILLS);
+      setStarterPlaybooks(CANONICAL_STARTER_PLAYBOOKS);
       return;
     }
     const r = await call<unknown>("/api/skills");
-    if (r.ok) setSkills(mergeServerSkills(r.data));
-    else setSkills(CANONICAL_SKILLS);
+    if (r.ok) {
+      setSkills(mergeServerSkills(r.data));
+      setStarterPlaybooks(mergeStarterPlaybooks(r.data));
+    } else {
+      setSkills(CANONICAL_SKILLS);
+      setStarterPlaybooks(CANONICAL_STARTER_PLAYBOOKS);
+    }
   }, []);
 
   const loadRoutines = useCallback(async () => {
@@ -657,6 +672,22 @@ export function useErgon() {
       setSuiteCount(sui.data.installed.length);
     }
   }, []);
+
+  const launchStarterPlaybook = useCallback(
+    async (starterId: string, runNow = true): Promise<StarterLaunchResult | null> => {
+      const r = await call<StarterLaunchResult>("/api/playbooks/starters/launch", {
+        method: "POST",
+        body: { id: starterId, run_now: runNow },
+      });
+      if (!r.ok) {
+        toast.error(r.error || "Could not launch starter playbook.");
+        return null;
+      }
+      await Promise.all([loadRoutines(), loadFiles(), refreshCounts()]);
+      return r.data;
+    },
+    [loadRoutines, loadFiles, refreshCounts]
+  );
 
   const healMemory = useCallback(
     async (mode = "all"): Promise<number | null> => {
@@ -1168,7 +1199,7 @@ export function useErgon() {
     todayCount, learnedCount, memoryHealth, suiteCount, files, lastUploaded, setLastUploaded, skills, routines, scheduler, routineHistoryRev,
     send, sendPrompt, cancelRun, openThread, newThread, switchPerson, refreshPerson, showRun,
     loadThreads, loadStatus, loadPeople, refreshCounts, healMemory, loadRecent, loadStarters,
-    loadFiles, uploadFile, uploadFiles, loadSkills, loadRoutines, createRoutine, deleteRoutine, importPlaybook, previewPlaybook,
+    loadFiles, uploadFile, uploadFiles, loadSkills, starterPlaybooks, launchStarterPlaybook, loadRoutines, createRoutine, deleteRoutine, importPlaybook, previewPlaybook,
     toggleRoutine, loadRoutineHistory, runRoutineNow, catchupRoutine, catchupAllRoutines, setOnRoutineFired,
     setSideError, setRecovered,
   };

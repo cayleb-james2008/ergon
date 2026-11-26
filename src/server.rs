@@ -2615,7 +2615,8 @@ fn handle_export_handoff(
     }
 
     let security = tripwire::audit_section(&state.cfg.data_dir, &person.id);
-    match audit_bundle::build_handoff_bundle_zip(
+    let cached = (idx.chain.as_slice(), idx.chain_valid, idx.head_hash.as_str());
+    match audit_bundle::build_handoff_bundle_zip_with_chain(
         &eff_cfg,
         person,
         title,
@@ -2623,6 +2624,8 @@ fn handle_export_handoff(
         &security,
         &policy,
         force,
+        Some(cached),
+        false,
     ) {
         Err(blocked) => respond_json(stream, 409, &blocked.to_json()),
         Ok(res) => {
@@ -4454,6 +4457,28 @@ fn try_route_knowledge_and_routines(
                             "verified": true,
                         }),
                     )
+                }
+                Err((status, msg)) => respond_err(stream, status, &msg),
+            }
+        }
+        ("GET", "/api/playbooks/starters") => {
+            respond_json(
+                stream,
+                200,
+                &json!({"starters": skill_catalog::starter_playbooks_json()}),
+            )
+        }
+        ("POST", "/api/playbooks/starters/launch") => {
+            let parsed: Value = serde_json::from_slice(&req.body).unwrap_or(Value::Null);
+            let id = parsed["id"]
+                .as_str()
+                .or_else(|| parsed["starter_id"].as_str())
+                .unwrap_or("");
+            let run_now = parsed["run_now"].as_bool().unwrap_or(true);
+            match skill_catalog::launch_starter_playbook(&runtime.cfg, id, run_now) {
+                Ok(res) => {
+                    state.search_cache.invalidate(&person.id);
+                    respond_json(stream, 201, &res)
                 }
                 Err((status, msg)) => respond_err(stream, status, &msg),
             }

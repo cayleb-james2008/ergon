@@ -9,7 +9,7 @@
 // deletion, and optional BYOK OpenAI-compatible LLM (sessionStorage only).
 // ZERO hardcoded fixture replies, ZERO fixture demo pills, ZERO Rune jargon.
 import { parseCsv } from "@/shell/WorkspaceFiles";
-import { CANONICAL_SKILLS } from "@/lib/skillsCatalog";
+import { CANONICAL_SKILLS, CANONICAL_STARTER_PLAYBOOKS } from "@/lib/skillsCatalog";
 import { buildDeterministicPlaybookPreview, buildSignedPlaybookPack, buildSignedReceipt, sha256Hex, verifyAndParsePlaybookPack } from "@/lib/receiptExport";
 import { extractCitations } from "@/lib/words";
 import { buildAuditBundle } from "@/lib/auditBundle";
@@ -2307,11 +2307,11 @@ function buildWebStoreZip(entries: Array<[string, Uint8Array]>): Uint8Array {
   return out;
 }
 
-    if (method === "GET" && path === "/api/version") return jsonRes({ name: "ergon", version: "0.27.0" });
-    if (method === "GET" && path === "/api/update") return jsonRes({ current: "0.27.0", available: false, mode: "off", checked_at: Math.floor(Date.now() / 1000) });
+    if (method === "GET" && path === "/api/version") return jsonRes({ name: "ergon", version: "0.28.0" });
+    if (method === "GET" && path === "/api/update") return jsonRes({ current: "0.28.0", available: false, mode: "off", checked_at: Math.floor(Date.now() / 1000) });
     if (method === "GET" && path === "/api/status") {
       return jsonRes({
-        version: "0.27.0",
+        version: "0.28.0",
         model_configured: true,
         model: byok.engine_mode === "byok" && byok.model_id ? byok.model_id : "browser-workspace-engine",
         model_base_url: byok.engine_mode === "byok" ? byok.model_base_url : "indexeddb://local",
@@ -2383,7 +2383,80 @@ function buildWebStoreZip(entries: Array<[string, Uint8Array]>): Uint8Array {
       return jsonRes({ cancelled: true });
     }
     if (method === "GET" && path === "/api/skills") {
-      return jsonRes({ skills: CANONICAL_SKILLS, count: CANONICAL_SKILLS.length });
+      return jsonRes({
+        skills: CANONICAL_SKILLS,
+        count: CANONICAL_SKILLS.length,
+        starter_playbooks: CANONICAL_STARTER_PLAYBOOKS,
+      });
+    }
+    if (method === "GET" && path === "/api/playbooks/starters") {
+      return jsonRes({ starters: CANONICAL_STARTER_PLAYBOOKS });
+    }
+    if (method === "POST" && path === "/api/playbooks/starters/launch") {
+      const sid = String(body.id ?? body.starter_id ?? "").trim().toLowerCase();
+      const starter = CANONICAL_STARTER_PLAYBOOKS.find(
+        (s) => s.id.toLowerCase() === sid || s.name.toLowerCase() === sid
+      );
+      if (!starter) return jsonRes({ error: "starter playbook not found" }, 404);
+      const runNow = body.run_now !== false;
+      let rt = st.routines.find((r) => r.name === starter.name);
+      if (!rt) {
+        rt = {
+          id: `rt-${Date.now()}-${st.routines.length + 1}`,
+          name: starter.name,
+          prompt: starter.prompt,
+          schedule: starter.schedule,
+          skill_id: starter.skill_id,
+          steps: starter.steps,
+          expected_inputs: starter.expected_inputs,
+          pack_deliverables: starter.pack_deliverables,
+          enabled: true,
+          last_run_ts: null,
+          next_run_ms: estimateNextRunMs(starter.schedule, Date.now()),
+          run_count: 0,
+          created_ts: Date.now(),
+        };
+        st.routines.unshift(rt);
+      }
+      const createdFiles: string[] = [];
+      let summary = "";
+      if (runNow) {
+        const fname = starter.expected_inputs[0] || `${starter.sample_title || starter.name}.md`;
+        const sections = starter.sample_sections || [starter.summary];
+        const md = `# ${starter.sample_title || starter.name}\n\n${sections.join("\n\n")}\n`;
+        const wf = makeFile(fname, md);
+        st.files[fname] = wf;
+        createdFiles.push(fname);
+        summary = `Verified [${fname}:L1] via starter playbook ${starter.name}.`;
+        st.work.push({
+          id: `starter-${rt.id}-${Date.now()}`,
+          task: `Starter: ${starter.name}`,
+          summary,
+          files: [fname],
+          finished: true,
+          answered: false,
+          thread_id: `starter-${rt.id}`,
+          ts: Date.now(),
+        });
+      }
+      await persist();
+      const preview = buildDeterministicPlaybookPreview(
+        rt,
+        Object.keys(st.files),
+        (fp) => (st.fileHistory[fp] ?? []).length,
+        Object.keys(st.fileHistory).length
+      );
+      return jsonRes(
+        {
+          ok: true,
+          starter_id: starter.id,
+          routine: await enrichWebRoutine(rt, st, Date.now()),
+          created_files: createdFiles,
+          summary,
+          preview,
+        },
+        201
+      );
     }
     if (method === "POST" && path === "/api/skills/test") {
       const skillId = String(body.id ?? body.skill_id ?? "").trim();
@@ -2533,7 +2606,7 @@ function buildWebStoreZip(entries: Array<[string, Uint8Array]>): Uint8Array {
       const pid = decodeURIComponent(path.slice("/api/playbooks/".length, -"/export".length)).trim();
       const rt = st.routines.find((x) => x.id === pid);
       if (!rt) return jsonRes({ error: "playbook not found" }, 404);
-      const built = await buildSignedPlaybookPack(rt, "0.27.0");
+      const built = await buildSignedPlaybookPack(rt, "0.28.0");
       return new Response(built.json, {
         status: 200,
         headers: {

@@ -1369,7 +1369,9 @@ pub fn build_audit_bundle_json_bytes_with_chain(
 
     // Reserve conservatively so 5k-receipt bundles never double-reallocate
     // mid-stream above the mmap threshold.
-    let mut out = Vec::with_capacity(65_536 + chain.len() * 448 + workspace_files_val.as_array().map_or(0, |a| a.len() * 256));
+    let mut out = Vec::with_capacity(
+        49_152 + chain.len() * 392 + workspace_files_val.as_array().map_or(0, |a| a.len() * 192),
+    );
     let _ = (|| -> std::io::Result<()> {
         use std::io::Write as _;
         out.write_all(b"{\"schema\":")?;
@@ -1733,6 +1735,7 @@ pub fn scan_handoff_leaks(
     let mut paths = Vec::new();
     walk_ws(&cfg.workspace_dir, 0, &mut paths);
     paths.sort();
+    let mut read_buf = Vec::with_capacity(8192);
     for p in paths {
         let rel = p
             .strip_prefix(&cfg.workspace_dir)
@@ -1744,14 +1747,19 @@ pub fn scan_handoff_leaks(
                 continue;
             }
         }
-        if let Ok(bytes) = std::fs::read(&p) {
-            if bytes.contains(&0) {
-                continue;
+        read_buf.clear();
+        if let Ok(mut f) = std::fs::File::open(&p) {
+            use std::io::Read as _;
+            if f.by_ref().take(1024 * 1024 + 1).read_to_end(&mut read_buf).is_ok()
+                && read_buf.len() <= 1024 * 1024
+                && !read_buf.contains(&0)
+            {
+                let text = String::from_utf8_lossy(&read_buf);
+                scan_text_into(&rel, &text, configured_secret, &mut scan);
             }
-            let text = String::from_utf8_lossy(&bytes);
-            scan_text_into(&rel, &text, configured_secret, &mut scan);
         }
     }
+    drop(read_buf);
     for (name, text) in extra_texts {
         scan_text_into(name, text, configured_secret, &mut scan);
     }
@@ -1773,6 +1781,33 @@ pub fn build_handoff_bundle_zip(
     policy: &crate::WorkspacePolicy,
     force: bool,
 ) -> Result<HandoffExportResult, Box<HandoffExportBlocked>> {
+    build_handoff_bundle_zip_with_chain(
+        cfg,
+        person,
+        title,
+        summary_markdown,
+        security,
+        policy,
+        force,
+        None,
+        true,
+    )
+}
+
+#[cold]
+#[inline(never)]
+#[allow(clippy::too_many_arguments)]
+pub fn build_handoff_bundle_zip_with_chain(
+    cfg: &Config,
+    person: &Person,
+    title: &str,
+    summary_markdown: &str,
+    security: &Value,
+    policy: &crate::WorkspacePolicy,
+    force: bool,
+    cached_chain: Option<(&[receipts::ChainedReceipt], bool, &str)>,
+    keep_parts: bool,
+) -> Result<HandoffExportResult, Box<HandoffExportBlocked>> {
     let scan = scan_handoff_leaks(
         cfg,
         &[("CLIENT_SUMMARY.md", summary_markdown)],
@@ -1787,12 +1822,19 @@ pub fn build_handoff_bundle_zip(
     }
 
     let mut summary_md = summary_markdown.to_string();
-    let mut audit_bytes = build_audit_bundle_json_bytes(cfg, person, security);
+    let mut audit_bytes = build_audit_bundle_json_bytes_with_chain(cfg, person, security, cached_chain);
     if policy.redact_host_paths {
         summary_md = crate::redact_host_paths(&summary_md);
-        let s = String::from_utf8_lossy(&audit_bytes);
-        if contains_host_path(&s) {
-            audit_bytes = crate::redact_host_paths(&s).into_bytes();
+        let redacted = {
+            let s = String::from_utf8_lossy(&audit_bytes);
+            if contains_host_path(&s) {
+                Some(crate::redact_host_paths(&s).into_bytes())
+            } else {
+                None
+            }
+        };
+        if let Some(new_bytes) = redacted {
+            audit_bytes = new_bytes;
         }
     }
 
@@ -1821,13 +1863,27 @@ pub fn build_handoff_bundle_zip(
          {sum_verify}  VERIFY.txt\n"
     );
 
-    let zip_bytes = crate::docs::zip_write(&[
-        ("CLIENT_SUMMARY.md", summary_md.as_bytes().to_vec()),
-        ("audit_bundle.json", audit_bytes.clone()),
-        ("VERIFY.txt", verify_txt.as_bytes().to_vec()),
-        ("SHA256SUMS", sha256sums.as_bytes().to_vec()),
+    let zip_bytes = crate::docs::zip_write_refs(&[
+        ("CLIENT_SUMMARY.md", summary_md.as_bytes()),
+        ("audit_bundle.json", &audit_bytes),
+        ("VERIFY.txt", verify_txt.as_bytes()),
+        ("SHA256SUMS", sha256sums.as_bytes()),
     ]);
     let sha256 = sha256_hex(&zip_bytes);
+
+    if !keep_parts {
+        drop(audit_bytes);
+        drop(summary_md);
+        return Ok(HandoffExportResult {
+            zip_bytes,
+            sha256,
+            summary_md: String::new(),
+            audit_bundle_bytes: Vec::new(),
+            verify_txt,
+            sha256sums,
+            scan,
+        });
+    }
 
     Ok(HandoffExportResult {
         zip_bytes,

@@ -278,6 +278,30 @@ export type PlaybookPreviewResult = {
   };
   generated_ms: number;
 };
+export type StarterPlaybook = {
+  id: string;
+  name: string;
+  summary: string;
+  schedule: string;
+  skill_id: string;
+  prompt: string;
+  steps: string[];
+  expected_inputs: string[];
+  pack_deliverables: boolean;
+  sample_title?: string;
+  sample_sections?: string[];
+  sha256?: string;
+  verified?: boolean;
+};
+export type StarterLaunchResult = {
+  ok: boolean;
+  starter_id: string;
+  sha256?: string;
+  routine?: Routine;
+  created_files?: string[];
+  summary?: string;
+  preview?: PlaybookPreviewResult | null;
+};
 export type SearchHit = {
   kind: "file" | "receipt" | "skill" | "routine" | "memory" | "thread";
   id: string;
@@ -581,3 +605,51 @@ export type EvidenceVerificationResult = {
   errors: string[];
   items: EvidenceVerificationItem[];
 };
+
+export type HandoffZipDownloadResult =
+  | { ok: true; sha256: string; leaks: number }
+  | { ok: false; blocked: boolean; status: number; error: string; scan?: HandoffLeakScan };
+
+export async function exportHandoffBundleZip(
+  opts: { title?: string; force?: boolean } = {}
+): Promise<HandoffZipDownloadResult> {
+  const resp = await fetch("/api/export/handoff", {
+    method: "POST",
+    cache: "no-store",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ title: opts.title || "Client Handoff", force: Boolean(opts.force) }),
+  });
+  if (resp.status === 409) {
+    const errJson = (await resp.json().catch(() => ({}))) as {
+      error?: string;
+      scan?: HandoffLeakScan;
+    };
+    return {
+      ok: false,
+      blocked: true,
+      status: 409,
+      error: errJson.error || "Handoff blocked by Strict Client policy.",
+      scan: errJson.scan,
+    };
+  }
+  if (!resp.ok) {
+    return {
+      ok: false,
+      blocked: false,
+      status: resp.status,
+      error: `Handoff export failed (HTTP ${resp.status}).`,
+    };
+  }
+  const blob = await resp.blob();
+  const sha256 = resp.headers.get("X-Ergon-Handoff-SHA256") ?? "";
+  const leaks = Number(resp.headers.get("X-Ergon-Handoff-Leaks") ?? "0") || 0;
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "ergon-client-handoff.zip";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  return { ok: true, sha256, leaks };
+}
