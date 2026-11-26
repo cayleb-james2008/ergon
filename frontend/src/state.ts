@@ -6,16 +6,26 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   call,
+  cancelPipelineRun,
   estimateNextRunMs,
   fileUploadBody,
+  getPipelineRun,
+  hasPipelinesApi,
   MAX_UPLOAD_BYTES,
   hasV050Api,
   hasV070Api,
+  listPipelineRuns,
+  resumePipelineRun,
+  retryPipelineRun,
+  startPipelineRun,
   type LiveRunStatus,
   type LiveRunStep,
   type MemoryHealth,
   type Msg,
   type Person,
+  type PipelineResumePayload,
+  type PipelineRun,
+  type PipelineStepSpec,
   type PlaybookPreviewResult,
   type Routine,
   type RoutineRunRecord,
@@ -198,6 +208,7 @@ function normalizeRoutine(raw: unknown): Routine | null {
     run_count: typeof o.run_count === "number" ? o.run_count : 0,
     created_ts: typeof o.created_ms === "number" ? o.created_ms : typeof o.created_ts === "number" ? o.created_ts : undefined,
     steps: Array.isArray(o.steps) ? o.steps.filter((s): s is string => typeof s === "string") : undefined,
+    steps_v2: Array.isArray(o.steps_v2) ? (o.steps_v2 as PipelineStepSpec[]) : undefined,
     expected_inputs: Array.isArray(o.expected_inputs) ? o.expected_inputs.filter((s): s is string => typeof s === "string") : undefined,
     pack_deliverables: typeof o.pack_deliverables === "boolean" ? o.pack_deliverables : undefined,
     recent_runs: recentRuns.length ? recentRuns : undefined,
@@ -242,6 +253,7 @@ export function useErgon() {
   const [skills, setSkills] = useState<SkillMeta[]>(() => CANONICAL_SKILLS);
   const [starterPlaybooks, setStarterPlaybooks] = useState<StarterPlaybook[]>(() => CANONICAL_STARTER_PLAYBOOKS);
   const [routines, setRoutines] = useState<Routine[]>(() => loadLocalRoutines());
+  const [pipelineRuns, setPipelineRuns] = useState<PipelineRun[]>([]);
   const [scheduler, setScheduler] = useState<SchedulerStatus | null>(null);
   const [routineHistoryRev, setRoutineHistoryRev] = useState(0);
   const onRoutineFiredRef = useRef<(() => void) | null>(null);
@@ -395,6 +407,7 @@ export function useErgon() {
       prompt: string;
       skill_id?: string;
       steps?: string[];
+      steps_v2?: PipelineStepSpec[];
       expected_inputs?: string[];
       pack_deliverables?: boolean;
     }): Promise<boolean> => {
@@ -409,6 +422,7 @@ export function useErgon() {
             prompt: input.prompt,
             skill_id: input.skill_id,
             steps: input.steps,
+            steps_v2: input.steps_v2,
             expected_inputs: input.expected_inputs,
             pack_deliverables: input.pack_deliverables,
             enabled: true,
@@ -430,6 +444,8 @@ export function useErgon() {
         schedule: input.schedule,
         prompt: input.prompt,
         skill_id: input.skill_id,
+        steps: input.steps,
+        steps_v2: input.steps_v2,
         enabled: true,
         last_run_ts: null,
         run_count: 0,
@@ -673,6 +689,108 @@ export function useErgon() {
     }
   }, []);
 
+  const loadPipelineRuns = useCallback(async () => {
+    if (!hasPipelinesApi(statusRef.current)) {
+      setPipelineRuns([]);
+      return;
+    }
+    const r = await listPipelineRuns({ limit: 50 });
+    if (r.ok && Array.isArray(r.data.runs)) {
+      setPipelineRuns(
+        r.data.runs.filter((x): x is PipelineRun => !!x && typeof x === "object" && typeof x.run_id === "string")
+      );
+    }
+  }, []);
+
+  const upsertPipelineRun = useCallback((run: PipelineRun) => {
+    if (!run || !run.run_id) return;
+    setPipelineRuns((prev) => {
+      const idx = prev.findIndex((r) => r.run_id === run.run_id);
+      if (idx >= 0) return prev.map((r, i) => (i === idx ? run : r));
+      return [run, ...prev];
+    });
+  }, []);
+
+  const startPipeline = useCallback(
+    async (input: {
+      routine_id?: string;
+      name?: string;
+      steps_v2?: PipelineStepSpec[];
+      inputs?: Record<string, string>;
+      thread_id?: string;
+    }): Promise<PipelineRun | null> => {
+      const r = await startPipelineRun(input);
+      if (!r.ok) {
+        toast.error(r.error || "Could not start pipeline.");
+        return null;
+      }
+      if (r.data.run) {
+        upsertPipelineRun(r.data.run);
+        toast.success(`Started pipeline "${r.data.run.routine_name || input.name || "Pipeline"}".`);
+        if (r.data.run.status === "completed") {
+          await Promise.all([loadFiles(), loadThreads(), loadRecent(), refreshCounts(), loadRoutines()]);
+        } else if (r.data.run.status === "paused_checkpoint") {
+          await Promise.all([refreshCounts(), loadFiles()]);
+        }
+        return r.data.run;
+      }
+      await loadPipelineRuns();
+      return null;
+    },
+    [upsertPipelineRun, loadFiles, loadThreads, loadRecent, refreshCounts, loadRoutines, loadPipelineRuns]
+  );
+
+  const resumePipeline = useCallback(
+    async (runId: string, payload: PipelineResumePayload): Promise<void> => {
+      const r = await resumePipelineRun(runId, payload);
+      if (!r.ok) {
+        toast.error(r.error || "Could not resume pipeline.");
+        return;
+      }
+      if (r.data.run) {
+        upsertPipelineRun(r.data.run);
+      }
+      toast.success("Pipeline resumed.");
+      await Promise.all([loadPipelineRuns(), loadFiles(), loadThreads(), loadRecent(), refreshCounts()]);
+      onRoutineFiredRef.current?.();
+    },
+    [upsertPipelineRun, loadPipelineRuns, loadFiles, loadThreads, loadRecent, refreshCounts]
+  );
+
+  const retryPipeline = useCallback(
+    async (runId: string, fromStepIndex?: number): Promise<void> => {
+      const r = await retryPipelineRun(runId, { from_step_index: fromStepIndex });
+      if (!r.ok) {
+        toast.error(r.error || "Could not retry failed step.");
+        return;
+      }
+      if (r.data.run) {
+        upsertPipelineRun(r.data.run);
+      }
+      toast.success("Retrying failed step.");
+      await Promise.all([loadPipelineRuns(), loadFiles(), loadThreads(), loadRecent(), refreshCounts()]);
+      onRoutineFiredRef.current?.();
+    },
+    [upsertPipelineRun, loadPipelineRuns, loadFiles, loadThreads, loadRecent, refreshCounts]
+  );
+
+  const cancelPipeline = useCallback(
+    async (runId: string): Promise<void> => {
+      const r = await cancelPipelineRun(runId);
+      if (!r.ok) {
+        toast.error(r.error || "Could not abort pipeline.");
+        return;
+      }
+      if (r.data.run) {
+        upsertPipelineRun(r.data.run);
+      }
+      toast("Pipeline aborted.");
+      await Promise.all([loadPipelineRuns(), refreshCounts()]);
+      onRoutineFiredRef.current?.();
+    },
+    [upsertPipelineRun, loadPipelineRuns, refreshCounts]
+  );
+
   const launchStarterPlaybook = useCallback(
     async (starterId: string, runNow = true): Promise<StarterLaunchResult | null> => {
       const r = await call<StarterLaunchResult>("/api/playbooks/starters/launch", {
@@ -683,10 +801,11 @@ export function useErgon() {
         toast.error(r.error || "Could not launch starter playbook.");
         return null;
       }
-      await Promise.all([loadRoutines(), loadFiles(), refreshCounts()]);
+      if (r.data.run) upsertPipelineRun(r.data.run);
+      await Promise.all([loadRoutines(), loadPipelineRuns(), loadFiles(), refreshCounts()]);
       return r.data;
     },
-    [loadRoutines, loadFiles, refreshCounts]
+    [upsertPipelineRun, loadRoutines, loadPipelineRuns, loadFiles, refreshCounts]
   );
 
   const healMemory = useCallback(
@@ -765,8 +884,8 @@ export function useErgon() {
     setMessages([]);
     loadDraftFor(null);
     setPendingNote(false);
-    await Promise.all([loadStatus(), loadPeople(), loadThreads(), loadRecent(), refreshCounts(), loadFiles(), loadSkills(), loadRoutines()]);
-  }, [loadStatus, loadPeople, loadThreads, loadRecent, refreshCounts, loadFiles, loadSkills, loadRoutines]);
+    await Promise.all([loadStatus(), loadPeople(), loadThreads(), loadRecent(), refreshCounts(), loadFiles(), loadSkills(), loadRoutines(), loadPipelineRuns()]);
+  }, [loadStatus, loadPeople, loadThreads, loadRecent, refreshCounts, loadFiles, loadSkills, loadRoutines, loadPipelineRuns]);
 
   const switchPerson = useCallback(async (id: string) => {
     if (busyRef.current) return;
@@ -793,6 +912,92 @@ export function useErgon() {
     refreshCounts();
     loadFiles();
   }, [loadThreads, loadRecent, refreshCounts, loadFiles]);
+
+  const handlePipelineSseEvent = useCallback(
+    (eventKind: string, rawData: string) => {
+      if (!rawData) return;
+      let parsed: Record<string, unknown> | null = null;
+      try {
+        const j = JSON.parse(rawData);
+        if (j && typeof j === "object") parsed = j as Record<string, unknown>;
+      } catch {
+        return;
+      }
+      if (!parsed) return;
+
+      if (parsed.run && typeof parsed.run === "object") {
+        upsertPipelineRun(parsed.run as PipelineRun);
+      } else if (typeof parsed.run_id === "string" && parsed.run_id) {
+        const rid = parsed.run_id;
+        const stepIdx = typeof parsed.step_index === "number" ? parsed.step_index : -1;
+        if ((eventKind === "pipeline_step_started" || eventKind === "pipeline_step_done") && stepIdx >= 0) {
+          setPipelineRuns((prev) => {
+            const idx = prev.findIndex((r) => r.run_id === rid);
+            if (idx < 0) return prev;
+            const cur = prev[idx];
+            const nextStates = cur.step_states.slice();
+            while (nextStates.length <= stepIdx) {
+              nextStates.push({
+                step_id: String(parsed.step_id ?? `step_${nextStates.length + 1}`),
+                kind: String(parsed.kind ?? "skill"),
+                status: "pending",
+              });
+            }
+            nextStates[stepIdx] = {
+              ...nextStates[stepIdx],
+              step_id: String(parsed.step_id ?? nextStates[stepIdx].step_id),
+              label: typeof parsed.label === "string" ? parsed.label : nextStates[stepIdx].label,
+              kind: String(parsed.kind ?? nextStates[stepIdx].kind),
+              status:
+                eventKind === "pipeline_step_started"
+                  ? "running"
+                  : ((parsed.status as "ok" | "failed" | "skipped" | "waiting_human") || "ok"),
+              output: typeof parsed.output === "string" ? parsed.output : nextStates[stepIdx].output,
+              files: Array.isArray(parsed.files) ? parsed.files.map(String) : nextStates[stepIdx].files,
+              metrics:
+                parsed.metrics && typeof parsed.metrics === "object"
+                  ? (parsed.metrics as Record<string, unknown>)
+                  : nextStates[stepIdx].metrics,
+              error: typeof parsed.error === "string" ? parsed.error : nextStates[stepIdx].error,
+            };
+            const updated: PipelineRun = {
+              ...cur,
+              current_step_index: stepIdx,
+              updated_ms: typeof parsed.ts_ms === "number" ? parsed.ts_ms : Date.now(),
+              step_states: nextStates,
+            };
+            return prev.map((r, i) => (i === idx ? updated : r));
+          });
+        } else {
+          void getPipelineRun(rid).then((res) => {
+            if (res.ok && res.data.run) upsertPipelineRun(res.data.run);
+          });
+        }
+      }
+
+      if (eventKind === "pipeline_paused") {
+        toast.warning("Pipeline paused at a human checkpoint.");
+        void loadPipelineRuns();
+        void refreshCounts();
+        onRoutineFiredRef.current?.();
+      } else if (eventKind === "pipeline_finished") {
+        const st = String(parsed.status ?? (parsed.run as { status?: string } | undefined)?.status ?? "");
+        if (st === "failed") toast.error("Pipeline run failed.");
+        else if (st === "cancelled") toast("Pipeline aborted.");
+        else toast.success("Pipeline finished.");
+        void loadPipelineRuns();
+        void loadFiles();
+        void loadThreads();
+        void loadRecent();
+        void refreshCounts();
+        void loadRoutines();
+        onRoutineFiredRef.current?.();
+      } else if (eventKind === "pipeline_resumed") {
+        void loadPipelineRuns();
+      }
+    },
+    [upsertPipelineRun, loadPipelineRuns, refreshCounts, loadFiles, loadThreads, loadRecent, loadRoutines]
+  );
 
   // Live SSE (/api/runs/stream) subscription with automatic fallback to /api/runs/status polling + live elapsed timer.
   useEffect(() => {
@@ -919,6 +1124,15 @@ export function useErgon() {
         ]) {
           es.addEventListener(evName, (ev) => handleSsePayload((ev as MessageEvent).data, evName));
         }
+        for (const pEv of [
+          "pipeline_step_started",
+          "pipeline_step_done",
+          "pipeline_paused",
+          "pipeline_resumed",
+          "pipeline_finished",
+        ]) {
+          es.addEventListener(pEv, (ev) => handlePipelineSseEvent(pEv, (ev as MessageEvent).data));
+        }
         es.onerror = () => {
           if (es) {
             es.close();
@@ -993,6 +1207,11 @@ export function useErgon() {
         if ((r.data as { stopped_for_safety?: boolean }).stopped_for_safety) {
           toast.warning("Ergon stopped this task to keep your work safe. The details are waiting in Today.");
         }
+        const pausedRunId = (r.data as { paused_pipeline_run_id?: string }).paused_pipeline_run_id;
+        if (pausedRunId) {
+          void loadPipelineRuns();
+          toast.warning("Task paused at a human checkpoint.");
+        }
       } else if (!r.ok && r.status === 499) {
         setMessages((m) => [...m, { role: "step", content: "Note: Run cancelled by you before completion." }]);
       } else {
@@ -1007,7 +1226,7 @@ export function useErgon() {
       refreshCounts();
       loadFiles();
     },
-    [loadThreads, loadRecent, refreshCounts, loadFiles]
+    [loadThreads, loadRecent, refreshCounts, loadFiles, loadPipelineRuns]
   );
 
   const send = useCallback(async () => {
@@ -1017,6 +1236,16 @@ export function useErgon() {
   const runRoutineNow = useCallback(
     async (routine: Routine) => {
       if (busyRef.current) return;
+      if (routine.steps_v2 && routine.steps_v2.length > 0 && hasPipelinesApi(statusRef.current)) {
+        await startPipeline({
+          routine_id: routine.id,
+          name: routine.name,
+          steps_v2: routine.steps_v2,
+          thread_id: threadRef.current || undefined,
+        });
+        await loadRoutines();
+        return;
+      }
       if (hasV050Api(statusRef.current, "routines")) {
         const r = await call<{ id?: string; thread_id?: string; messages?: Msg[]; outcome?: string }>(
           `/api/routines/${encodeURIComponent(routine.id)}/run`,
@@ -1124,6 +1353,7 @@ export function useErgon() {
       loadFiles();
       loadSkills();
       loadRoutines();
+      loadPipelineRuns();
       const pend = (() => { try { const v = JSON.parse(store.get(PENDING) || "null"); return v && typeof v.text === "string" ? v : null; } catch { return null; } })();
       const reopen = store.get(THREAD_KEY);
       if (reopen) await openThread(reopen);
@@ -1146,9 +1376,9 @@ export function useErgon() {
     onRoutineFiredRef.current = fn;
   }, []);
 
-  // Listen for background scheduler `routine_fired` SSE notifications on v0.7.0+ when idle.
+  // Listen for background scheduler `routine_fired` and `pipeline_*` SSE notifications when idle.
   useEffect(() => {
-    if (busy || !hasV070Api(status, "scheduler") || typeof EventSource === "undefined") return;
+    if (busy || (!hasV070Api(status, "scheduler") && !hasPipelinesApi(status)) || typeof EventSource === "undefined") return;
     let closed = false;
     let es: EventSource | null = null;
     try {
@@ -1171,6 +1401,17 @@ export function useErgon() {
         onRoutineFiredRef.current?.();
       };
       es.addEventListener("routine_fired", onFired);
+      for (const pEv of [
+        "pipeline_step_started",
+        "pipeline_step_done",
+        "pipeline_paused",
+        "pipeline_resumed",
+        "pipeline_finished",
+      ]) {
+        es.addEventListener(pEv, (ev) => {
+          if (!closed) handlePipelineSseEvent(pEv, (ev as MessageEvent).data);
+        });
+      }
       es.onerror = () => {
         if (es) {
           es.close();
@@ -1182,24 +1423,26 @@ export function useErgon() {
       closed = true;
       if (es) es.close();
     };
-  }, [busy, status, loadRoutines, loadFiles, loadThreads, loadRecent, refreshCounts]);
+  }, [busy, status, loadRoutines, loadFiles, loadThreads, loadRecent, refreshCounts, handlePipelineSseEvent]);
 
   useEffect(() => {
     if (status && status !== "error") {
       loadStarters(String(status.person?.role ?? ""));
       loadSkills();
       loadRoutines();
+      loadPipelineRuns();
     }
-  }, [status, files, loadStarters, loadSkills, loadRoutines]);
+  }, [status, files, loadStarters, loadSkills, loadRoutines, loadPipelineRuns]);
 
   return {
     status, runFailed, people, threads, threadsError, states, threadId, messages,
     busy, activeRunId, runStartedMs, liveElapsedMs, streamMode, cancelling, liveSteps, liveTimeline,
     draft, setDraft, pendingNote, sideError, starters, recovered, recent,
-    todayCount, learnedCount, memoryHealth, suiteCount, files, lastUploaded, setLastUploaded, skills, routines, scheduler, routineHistoryRev,
+    todayCount, learnedCount, memoryHealth, suiteCount, files, lastUploaded, setLastUploaded, skills, routines, pipelineRuns, scheduler, routineHistoryRev,
     send, sendPrompt, cancelRun, openThread, newThread, switchPerson, refreshPerson, showRun,
     loadThreads, loadStatus, loadPeople, refreshCounts, healMemory, loadRecent, loadStarters,
     loadFiles, uploadFile, uploadFiles, loadSkills, starterPlaybooks, launchStarterPlaybook, loadRoutines, createRoutine, deleteRoutine, importPlaybook, previewPlaybook,
+    loadPipelineRuns, startPipeline, resumePipeline, retryPipeline, cancelPipeline,
     toggleRoutine, loadRoutineHistory, runRoutineNow, catchupRoutine, catchupAllRoutines, setOnRoutineFired,
     setSideError, setRecovered,
   };

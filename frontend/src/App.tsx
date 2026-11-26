@@ -227,7 +227,17 @@ export function App() {
     () => (paper.data?.decisions ?? []).filter((d) => d.status === "pending"),
     [paper.data]
   );
-  const pendingCount = paper.data ? pendingDecisions.length : desk.todayCount;
+  const pausedPipelineCount = useMemo(() => {
+    const decRunIds = new Set(pendingDecisions.map((d) => d.run_id).filter(Boolean));
+    const decIds = new Set(pendingDecisions.map((d) => d.id));
+    return desk.pipelineRuns.filter(
+      (r) =>
+        (r.status === "paused_checkpoint" || r.status === "interrupted" || r.status === "failed") &&
+        !decRunIds.has(r.run_id) &&
+        !(r.pending_checkpoint?.checkpoint_id && decIds.has(r.pending_checkpoint.checkpoint_id))
+    ).length;
+  }, [desk.pipelineRuns, pendingDecisions]);
+  const pendingCount = (paper.data ? pendingDecisions.length : desk.todayCount) + pausedPipelineCount;
   const threadList = useMemo(() => desk.threads ?? [], [desk.threads]);
 
   const filteredThreads = useMemo(() => {
@@ -903,6 +913,10 @@ export function App() {
               onExportAuditBundle={handleExportAuditBundle}
               onUploadFiles={desk.uploadFiles}
               onSaveRoutine={handleSaveRoutineFromWork}
+              pipelineRuns={desk.pipelineRuns}
+              onResumePipeline={desk.resumePipeline}
+              onRetryPipeline={desk.retryPipeline}
+              onCancelPipeline={desk.cancelPipeline}
               inputRef={inputRef}
             />
           )}
@@ -949,6 +963,10 @@ export function App() {
                 starterPlaybooks={desk.starterPlaybooks}
                 onLaunchStarter={desk.launchStarterPlaybook}
                 onOpenPlaybooks={() => setRoutinesOpen(true)}
+                pipelineRuns={desk.pipelineRuns}
+                onResumePipeline={desk.resumePipeline}
+                onRetryPipeline={desk.retryPipeline}
+                onCancelPipeline={desk.cancelPipeline}
               />
               </Suspense>
             </div>
@@ -1174,7 +1192,20 @@ export function App() {
         onCatchupAll={desk.catchupAllRoutines}
         starterPlaybooks={desk.starterPlaybooks}
         onLaunchStarter={desk.launchStarterPlaybook}
+        workspaceFiles={desk.files}
+        pipelineRuns={desk.pipelineRuns}
+        onResumePipeline={desk.resumePipeline}
+        onRetryPipeline={desk.retryPipeline}
+        onCancelPipeline={desk.cancelPipeline}
+        onOpenFile={(p) => {
+          setRoutinesOpen(false);
+          setViewerPath(p);
+        }}
         onRunNow={async (rt) => {
+          if (rt.steps_v2 && rt.steps_v2.length > 0) {
+            await desk.runRoutineNow(rt);
+            return;
+          }
           setFace("chat");
           await desk.runRoutineNow(rt);
         }}
