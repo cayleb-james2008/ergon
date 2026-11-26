@@ -22,6 +22,7 @@ import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/in
 import { Pill } from "@/components/kibo-ui/pill";
 import { Details, FileGlyph, WaitingPill } from "@/chat/Entry";
 import { LiveRunTimeline } from "@/chat/LiveRunTimeline";
+import { CheckpointCard, PipelineRunStrip } from "@/shell/CheckpointCard";
 import { personInitials } from "@/shell/PersonSelect";
 import { StarterPlaybooksBar } from "@/shell/StarterPlaybooksBar";
 import { usePaper } from "@/views/usePaper";
@@ -34,6 +35,8 @@ import {
   type MemoryHealth,
   type Offer,
   type Person,
+  type PipelineResumePayload,
+  type PipelineRun,
   type StarterLaunchResult,
   type StarterPlaybook,
   type Status,
@@ -129,7 +132,7 @@ function decisionCopy(d: Decision): DecisionCopy {
     };
   }
   return {
-    body: "Your agent raised this while it worked and carried on. Your answer is recorded here; to have it act on the answer, tell it in the conversation.",
+    body: "Your agent raised this while it worked. Your answer is recorded here and unblocks any waiting workflow step automatically.",
     approve: "Approve",
     deny: "Decline",
     approvedToast: "Approved and done.",
@@ -470,6 +473,10 @@ export const PaperFace = memo(function PaperFace({
   starterPlaybooks = [],
   onLaunchStarter,
   onOpenPlaybooks,
+  pipelineRuns = [],
+  onResumePipeline,
+  onRetryPipeline,
+  onCancelPipeline,
 }: {
   paper: ReturnType<typeof usePaper>;
   status: Status | null | "error";
@@ -504,6 +511,10 @@ export const PaperFace = memo(function PaperFace({
   starterPlaybooks?: StarterPlaybook[];
   onLaunchStarter?: (starterId: string, runNow?: boolean) => Promise<StarterLaunchResult | null>;
   onOpenPlaybooks?: () => void;
+  pipelineRuns?: PipelineRun[];
+  onResumePipeline?: (runId: string, payload: PipelineResumePayload) => Promise<void>;
+  onRetryPipeline?: (runId: string) => Promise<void>;
+  onCancelPipeline?: (runId: string) => Promise<void>;
 }) {
   const { data, failed, load, loadAllReceipts, act } = paper;
   const [dragOver, setDragOver] = useState(false);
@@ -679,10 +690,30 @@ export const PaperFace = memo(function PaperFace({
   const safeEventPage = Math.min(eventsPage, totalEventPages - 1);
   const visibleEvents = allEvents.slice(safeEventPage * EVENTS_PAGE_SIZE, (safeEventPage + 1) * EVENTS_PAGE_SIZE);
 
-  const lead = pending[0];
+  const pausedPipelines = useMemo(
+    () =>
+      (pipelineRuns ?? []).filter(
+        (r) =>
+          r.status === "paused_checkpoint" ||
+          r.status === "interrupted" ||
+          r.status === "failed"
+      ),
+    [pipelineRuns]
+  );
+  const runningPipelines = useMemo(
+    () => (pipelineRuns ?? []).filter((r) => r.status === "running"),
+    [pipelineRuns]
+  );
+  const pendingNonPipeline = useMemo(() => {
+    const pausedIds = new Set(pausedPipelines.map((r) => r.run_id));
+    const cpIds = new Set(pausedPipelines.map((r) => r.pending_checkpoint?.checkpoint_id).filter(Boolean));
+    return pending.filter((d) => (!d.run_id || !pausedIds.has(d.run_id)) && !cpIds.has(d.id));
+  }, [pending, pausedPipelines]);
+
+  const lead = pendingNonPipeline[0];
   const leadCopy = lead ? decisionCopy(lead) : null;
   const n = finished.length;
-  const w = pending.length;
+  const w = pendingNonPipeline.length + pausedPipelines.length;
   const totalSavedFiles = useMemo(
     () => finished.reduce((acc, job) => acc + normalizeFiles(job.files).length, 0),
     [finished]
@@ -863,8 +894,28 @@ export const PaperFace = memo(function PaperFace({
                 />
               )}
 
+              {onResumePipeline && onCancelPipeline && runningPipelines.length > 0 && (
+                <PipelineRunStrip
+                  runs={runningPipelines}
+                  onResume={onResumePipeline}
+                  onRetry={onRetryPipeline}
+                  onCancel={onCancelPipeline}
+                  onOpenFile={onOpenFile}
+                />
+              )}
+
               {/* Waiting on you Approval Queue */}
-              <div id="decisions-list">
+              <div id="decisions-list" className="grid gap-3">
+                {onResumePipeline && onCancelPipeline && pausedPipelines.map((pr) => (
+                  <CheckpointCard
+                    key={pr.run_id}
+                    run={pr}
+                    onResume={onResumePipeline}
+                    onRetry={onRetryPipeline}
+                    onCancel={onCancelPipeline}
+                    onOpenFile={onOpenFile}
+                  />
+                ))}
                 {lead ? (
                   <section
                     key={lead.id}
@@ -902,13 +953,13 @@ export const PaperFace = memo(function PaperFace({
                           </Button>
                         )}
                       </div>
-                      {w > 1 && (
+                      {pendingNonPipeline.length > 1 && (
                         <p className="text-xs text-ink-2">
-                          <span className="mono">{w - 1}</span> more {w - 1 === 1 ? "decision waits" : "decisions wait"} after this one.
+                          <span className="mono">{pendingNonPipeline.length - 1}</span> more {pendingNonPipeline.length - 1 === 1 ? "decision waits" : "decisions wait"} after this one.
                         </p>
                       )}
                     </section>
-                  ) : n > 0 ? (
+                  ) : pausedPipelines.length === 0 && n > 0 ? (
                     <p
                       key="quiet"
                       className="rounded-card border border-hairline bg-surface px-4 py-3 text-sm text-ink-2"

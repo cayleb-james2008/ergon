@@ -1088,6 +1088,89 @@ await reset();
   await ctx.close();
 }
 
+// 6d. v0.29.0 PipelineBuilder + CheckpointCard pause/resume (mocked /api/pipelines/*)
+{
+  const { ctx, p } = await open(1440, 900);
+  let resumedBody = null;
+  let pipelineStatus = "paused_checkpoint";
+  const pausedRun = {
+    run_id: "prun-gate-1",
+    routine_id: "rtn-gate-1",
+    routine_name: "Expense Clean + Human Review",
+    status: "paused_checkpoint",
+    current_step_index: 1,
+    created_ms: Date.now() - 2000,
+    updated_ms: Date.now(),
+    step_states: [
+      { step_id: "clean", kind: "skill", status: "ok", files: ["expenses-cleaned.csv"], output: "Cleaned 6 rows" },
+      { step_id: "review", kind: "checkpoint", status: "waiting_human", checkpoint_id: "d-cp-gate-1" },
+      { step_id: "brief", kind: "skill", status: "pending", files: [] },
+    ],
+    pending_checkpoint: {
+      checkpoint_id: "d-cp-gate-1",
+      step_index: 1,
+      step_id: "review",
+      prompt: "Review cleaned CSV anomalies before drafting brief",
+      input_mode: "choice",
+      choices: ["Proceed as-is", "Exclude flagged rows"],
+      inspect_files: ["expenses-cleaned.csv"],
+    },
+  };
+  await p.route("**/api/status", async (r) => {
+    const res = await r.fetch();
+    const j = await res.json();
+    await r.fulfill({
+      response: res,
+      body: JSON.stringify({
+        ...j,
+        version: "0.29.0",
+        capabilities: { ...(j.capabilities || {}), routines: true, sse: true, pipelines: true },
+      }),
+    });
+  });
+  await p.route("**/api/pipelines/runs", (r) =>
+    r.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        runs: pipelineStatus === "paused_checkpoint" ? [pausedRun] : [{ ...pausedRun, status: "completed", pending_checkpoint: null }],
+      }),
+    })
+  );
+  await p.route("**/api/pipelines/runs/prun-gate-1/resume", async (r) => {
+    resumedBody = JSON.parse(r.request().postData() || "{}");
+    pipelineStatus = "completed";
+    return r.fulfill({
+      status: 202,
+      contentType: "application/json",
+      body: JSON.stringify({ run: { ...pausedRun, status: "completed", pending_checkpoint: null } }),
+    });
+  });
+  await p.goto(BASE);
+  await waitWorkbench(p);
+  await p.locator('[data-thing="routines-btn"]').click();
+  await p.waitForSelector("#routines-panel", { timeout: 4000 });
+  await p.locator("#routines-panel").getByRole("button", { name: "New routine" }).click();
+  await p.locator("#routine-create-form").getByRole("button", { name: "Pipeline + Checkpoint (3 steps)" }).click();
+  const builderOk = await p.locator("#pipeline-builder [data-pipeline-step-kind='checkpoint']").isVisible();
+  await p.keyboard.press("Escape");
+  await p.locator("#routines-panel").waitFor({ state: "hidden", timeout: 4000 }).catch(() => {});
+
+  await p.getByRole("tab", { name: "Today" }).click();
+  await p.waitForSelector('#decisions-list [data-pipeline-checkpoint="prun-gate-1"]', { timeout: 4000 });
+  const cpCard = p.locator('#decisions-list [data-pipeline-checkpoint="prun-gate-1"]');
+  const cpTxt = await cpCard.innerText();
+  await cpCard.getByRole("radio", { name: "Exclude flagged rows" }).click();
+  await cpCard.locator('[data-action="resume-pipeline"]').click();
+  await cpCard.waitFor({ state: "hidden", timeout: 4000 });
+  ok(
+    "v0.29.0 PipelineBuilder composes typed steps and CheckpointCard resumes paused pipeline with structured choice",
+    builderOk && cpTxt.includes("expenses-cleaned.csv") && resumedBody?.choice === "Exclude flagged rows",
+    `builder=${builderOk} choice=${resumedBody?.choice}`
+  );
+  await ctx.close();
+}
+
 // 7. Reduced motion & Console Cleanliness (2 checks)
 {
   const { ctx, p } = await open(1440, 900, "light", { reducedMotion: "reduce" });

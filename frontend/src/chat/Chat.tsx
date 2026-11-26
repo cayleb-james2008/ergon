@@ -27,8 +27,9 @@ import {
   WaitingEntry,
 } from "@/chat/Entry";
 import { LiveRunTimeline } from "@/chat/LiveRunTimeline";
+import { PipelineRunStrip } from "@/shell/CheckpointCard";
 import { cn } from "@/lib/utils";
-import type { Decision, LiveRunStep, Msg } from "@/lib/api";
+import type { Decision, LiveRunStep, Msg, PipelineResumePayload, PipelineRun } from "@/lib/api";
 import { detectBatchWorkflow, detectWorkflowForFile, type StarterCard } from "@/lib/words";
 
 export type Recent = { task: string; date: string; files: string[] };
@@ -66,6 +67,10 @@ export function Chat({
   onExportAuditBundle,
   onUploadFiles,
   onSaveRoutine,
+  pipelineRuns = [],
+  onResumePipeline,
+  onRetryPipeline,
+  onCancelPipeline,
   inputRef,
 }: {
   threadId: string | null;
@@ -104,6 +109,10 @@ export function Chat({
     schedule?: string,
     playbook?: { steps?: string[]; expected_inputs?: string[]; pack_deliverables?: boolean }
   ) => Promise<boolean>;
+  pipelineRuns?: PipelineRun[];
+  onResumePipeline?: (runId: string, payload: PipelineResumePayload) => Promise<void>;
+  onRetryPipeline?: (runId: string) => Promise<void>;
+  onCancelPipeline?: (runId: string) => Promise<void>;
   inputRef: React.RefObject<HTMLTextAreaElement | null>;
 }) {
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -112,6 +121,18 @@ export function Chat({
 
   const items = buildItems(messages);
   const cards = starters;
+  const visiblePipelineRuns = useMemo(
+    () =>
+      (pipelineRuns ?? []).filter(
+        (r) =>
+          (r.status === "running" ||
+            r.status === "paused_checkpoint" ||
+            r.status === "interrupted" ||
+            r.status === "failed") &&
+          (!threadId || !r.thread_id || r.thread_id === threadId)
+      ),
+    [pipelineRuns, threadId]
+  );
   const uploadSuggestion = useMemo(() => {
     if (!lastUploaded || lastUploaded.length === 0) return null;
     if (lastUploaded.length >= 2) return detectBatchWorkflow(lastUploaded);
@@ -376,6 +397,17 @@ export function Chat({
 
               {composerNode}
 
+              {onResumePipeline && onCancelPipeline && visiblePipelineRuns.length > 0 && (
+                <PipelineRunStrip
+                  runs={visiblePipelineRuns}
+                  onResume={onResumePipeline}
+                  onRetry={onRetryPipeline}
+                  onCancel={onCancelPipeline}
+                  onOpenFile={onOpenFile}
+                  showPausedCards
+                />
+              )}
+
               <div className="flex flex-col gap-3 sm:items-center">
                 <section aria-label="Start a task" className="flex flex-wrap items-center gap-2 sm:justify-center">
                   {cards.map((card, i) => {
@@ -493,6 +525,17 @@ export function Chat({
               streamMode={streamMode}
               cancelling={cancelling}
               onCancel={onCancel}
+            />
+          )}
+
+          {!empty && onResumePipeline && onCancelPipeline && visiblePipelineRuns.length > 0 && (
+            <PipelineRunStrip
+              runs={visiblePipelineRuns}
+              onResume={onResumePipeline}
+              onRetry={onRetryPipeline}
+              onCancel={onCancelPipeline}
+              onOpenFile={onOpenFile}
+              showPausedCards
             />
           )}
 

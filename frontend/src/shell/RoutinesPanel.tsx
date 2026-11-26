@@ -24,6 +24,8 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { PanelModal, usePanelModalClose } from "@/shell/PanelModal";
+import { PipelineBuilder, makeDefaultStep } from "@/shell/PipelineBuilder";
+import { PipelineRunStrip } from "@/shell/CheckpointCard";
 import { StarterPlaybooksBar } from "@/shell/StarterPlaybooksBar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -35,6 +37,9 @@ import {
   formatCountdown,
   hasV050Api,
   hasV070Api,
+  type PipelineResumePayload,
+  type PipelineRun,
+  type PipelineStepSpec,
   type PlaybookPreviewResult,
   type Routine,
   type RoutineRunRecord,
@@ -42,6 +47,7 @@ import {
   type StarterLaunchResult,
   type StarterPlaybook,
   type Status,
+  type WorkspaceFile,
 } from "@/lib/api";
 import { exportPlaybookDownload, exportReceiptDownload, MAX_PLAYBOOK_PACK_BYTES } from "@/lib/receiptExport";
 import type { SkillMeta } from "@/lib/skillsCatalog";
@@ -85,6 +91,12 @@ function RoutinesBody({
   onCatchupAll,
   starterPlaybooks = [],
   onLaunchStarter,
+  workspaceFiles = [],
+  pipelineRuns = [],
+  onResumePipeline,
+  onRetryPipeline,
+  onCancelPipeline,
+  onOpenFile,
 }: {
   routines: Routine[];
   skills: SkillMeta[];
@@ -101,6 +113,7 @@ function RoutinesBody({
     prompt: string;
     skill_id?: string;
     steps?: string[];
+    steps_v2?: PipelineStepSpec[];
     expected_inputs?: string[];
     pack_deliverables?: boolean;
   }) => Promise<boolean>;
@@ -115,6 +128,12 @@ function RoutinesBody({
   onCatchupAll?: () => Promise<boolean>;
   starterPlaybooks?: StarterPlaybook[];
   onLaunchStarter?: (starterId: string, runNow?: boolean) => Promise<StarterLaunchResult | null>;
+  workspaceFiles?: WorkspaceFile[];
+  pipelineRuns?: PipelineRun[];
+  onResumePipeline?: (runId: string, payload: PipelineResumePayload) => Promise<void>;
+  onRetryPipeline?: (runId: string) => Promise<void>;
+  onCancelPipeline?: (runId: string) => Promise<void>;
+  onOpenFile?: (path: string) => void;
 }) {
   const { isOpen, setIsOpen } = usePanelModalClose();
   const importInputRef = useRef<HTMLInputElement | null>(null);
@@ -130,6 +149,8 @@ function RoutinesBody({
   const [skillId, setSkillId] = useState("");
   const [prompt, setPrompt] = useState("");
   const [extraSteps, setExtraSteps] = useState<string[]>([]);
+  const [stepsV2, setStepsV2] = useState<PipelineStepSpec[]>([]);
+  const [builderOpen, setBuilderOpen] = useState(false);
   const [packDeliverables, setPackDeliverables] = useState(false);
   const [saving, setSaving] = useState(false);
   const [runningId, setRunningId] = useState<string | null>(null);
@@ -188,9 +209,54 @@ function RoutinesBody({
     }
   };
 
-  const applyPlaybookPreset = (preset: "close" | "contract") => {
+  const applyPlaybookPreset = (preset: "close" | "contract" | "pipeline_checkpoint") => {
     setAdding(true);
     setErr("");
+    if (preset === "pipeline_checkpoint") {
+      setName("Expense Clean + Human Review");
+      setSchedule("manual");
+      setSkillId("clean_dataset");
+      setPrompt("Clean workspace CSV, pause for human review, then export deliverables.");
+      setExtraSteps([]);
+      setBuilderOpen(true);
+      setStepsV2([
+        {
+          id: "clean",
+          label: "Clean expense CSV",
+          kind: "skill",
+          skill_id: "clean_dataset",
+          args: { input_file: "{{inputs.file}}" },
+          when: "always",
+        },
+        {
+          id: "review",
+          label: "Review cleaned file",
+          kind: "checkpoint",
+          checkpoint: {
+            prompt: "Review anomalies and cleaned rows before generating final brief.",
+            input_mode: "choice",
+            choices: ["Proceed as-is", "Exclude flagged rows", "Abort"],
+            inspect_files: ["{{steps.clean.files[0]}}"],
+          },
+          when: "always",
+        },
+        {
+          id: "brief",
+          label: "Draft executive brief",
+          kind: "skill",
+          skill_id: "draft_brief",
+          args: {
+            input_file: "{{steps.clean.files[0]}}",
+            note: "{{steps.review.human_answer}}",
+          },
+          when: "on_previous_ok",
+        },
+      ]);
+      setPackDeliverables(true);
+      return;
+    }
+    setBuilderOpen(false);
+    setStepsV2([]);
     if (preset === "close") {
       setName("Month-End Close Playbook");
       setSchedule("weekly mon");
@@ -215,19 +281,29 @@ function RoutinesBody({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim() || !prompt.trim()) {
-      setErr("Enter both a routine name and the task prompt your agent should run.");
+    const typedSteps = stepsV2.filter((s) => s.id.trim() || s.label.trim());
+    const derivedPrompt =
+      prompt.trim() ||
+      (typedSteps.length > 0
+        ? typedSteps.map((s) => s.label || s.prompt || s.checkpoint?.prompt || s.skill_id || s.kind).join(" -> ")
+        : "");
+    if (!name.trim() || !derivedPrompt) {
+      setErr("Enter both a routine name and the task prompt or pipeline steps your agent should run.");
       return;
     }
-    const cleanChain = [prompt.trim(), ...extraSteps.map((s) => s.trim()).filter(Boolean)];
+    const cleanChain =
+      typedSteps.length > 0
+        ? typedSteps.map((s) => s.label || s.prompt || s.checkpoint?.prompt || s.skill_id || s.kind)
+        : [derivedPrompt, ...extraSteps.map((s) => s.trim()).filter(Boolean)];
     setSaving(true);
     setErr("");
     const ok = await onCreate({
       name: name.trim(),
       schedule: schedule.trim() || SCHEDULES[2],
-      prompt: prompt.trim(),
-      skill_id: skillId || undefined,
+      prompt: derivedPrompt,
+      skill_id: skillId || (typedSteps[0]?.kind === "skill" ? typedSteps[0].skill_id : undefined),
       steps: cleanChain.length > 1 ? cleanChain : undefined,
+      steps_v2: typedSteps.length > 0 ? typedSteps : undefined,
       pack_deliverables: packDeliverables || undefined,
     });
     setSaving(false);
@@ -238,6 +314,8 @@ function RoutinesBody({
     setName("");
     setPrompt("");
     setExtraSteps([]);
+    setStepsV2([]);
+    setBuilderOpen(false);
     setPackDeliverables(false);
     setSkillId("");
     setSchedule(SCHEDULES[2]);
@@ -502,8 +580,51 @@ function RoutinesBody({
                 >
                   Contract Audit + Pack (2 steps)
                 </Button>
+                <Button
+                  type="button"
+                  size="xs"
+                  variant="outline"
+                  onClick={() => applyPlaybookPreset("pipeline_checkpoint")}
+                >
+                  Pipeline + Checkpoint (3 steps)
+                </Button>
               </div>
             </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-sm border border-hairline bg-surface px-2.5 py-2">
+              <div className="flex flex-col">
+                <span className="text-xs font-medium text-ink">Typed pipeline composer</span>
+                <span className="text-xs text-ink-2">
+                  Chain deterministic skills, AI agent steps, human checkpoints, and deliverable exports.
+                </span>
+              </div>
+              <Button
+                type="button"
+                size="xs"
+                variant={builderOpen ? "default" : "outline"}
+                data-toggle-pipeline-builder
+                className="max-md:min-h-11"
+                onClick={() => {
+                  const next = !builderOpen;
+                  setBuilderOpen(next);
+                  if (next && stepsV2.length === 0) {
+                    setStepsV2([makeDefaultStep("skill", 0)]);
+                  }
+                }}
+              >
+                {builderOpen ? `Hide builder (${stepsV2.length})` : `Build typed pipeline (${stepsV2.length})`}
+              </Button>
+            </div>
+
+            {builderOpen && (
+              <PipelineBuilder
+                steps={stepsV2}
+                onChange={setStepsV2}
+                skills={skills}
+                workspaceFiles={workspaceFiles}
+              />
+            )}
+
             <label htmlFor="routine-prompt" className="text-xs font-medium text-ink">
               {extraSteps.length > 0 ? "Step 1 prompt" : "Task prompt"}
             </label>
@@ -573,6 +694,17 @@ function RoutinesBody({
         </form>
       )}
 
+      {onResumePipeline && onCancelPipeline && onOpenFile && pipelineRuns.length > 0 && (
+        <PipelineRunStrip
+          runs={pipelineRuns}
+          onResume={onResumePipeline}
+          onRetry={onRetryPipeline}
+          onCancel={onCancelPipeline}
+          onOpenFile={onOpenFile}
+          showPausedCards
+        />
+      )}
+
       {onLaunchStarter && starterPlaybooks.length > 0 && (
         <StarterPlaybooksBar starters={starterPlaybooks} onLaunch={onLaunchStarter} />
       )}
@@ -620,7 +752,11 @@ function RoutinesBody({
                         {rt.skill_id}
                       </Badge>
                     )}
-                    {rt.steps && rt.steps.length > 1 && (
+                    {rt.steps_v2 && rt.steps_v2.length > 0 ? (
+                      <Badge variant="outline" size="sm" className="mono text-xs">
+                        Pipeline · {rt.steps_v2.length} steps
+                      </Badge>
+                    ) : rt.steps && rt.steps.length > 1 && (
                       <Badge variant="outline" size="sm" className="mono text-xs">
                         Playbook · {rt.steps.length} steps
                       </Badge>
@@ -672,7 +808,19 @@ function RoutinesBody({
                   </div>
                 </div>
 
-                {rt.steps && rt.steps.length > 1 ? (
+                {rt.steps_v2 && rt.steps_v2.length > 0 ? (
+                  <ol className="flex flex-col gap-1 text-xs leading-5 text-ink-2">
+                    {rt.steps_v2.map((st, sIdx) => (
+                      <li key={`${st.id}-${sIdx}`} className="flex flex-wrap items-center gap-1.5">
+                        <span className="mono shrink-0 text-ink-3">{sIdx + 1}.</span>
+                        <Badge variant="outline" size="sm" className="mono text-xs text-ink-2">
+                          {st.kind}
+                        </Badge>
+                        <span className="text-ink">{st.label || st.skill_id || st.prompt || st.checkpoint?.prompt || st.id}</span>
+                      </li>
+                    ))}
+                  </ol>
+                ) : rt.steps && rt.steps.length > 1 ? (
                   <ol className="flex flex-col gap-1 text-xs leading-5 text-ink-2">
                     {rt.steps.map((stText, sIdx) => (
                       <li key={sIdx} className="flex gap-1.5">
@@ -1062,6 +1210,12 @@ export function RoutinesPanel({
   onCatchupAll,
   starterPlaybooks = [],
   onLaunchStarter,
+  workspaceFiles = [],
+  pipelineRuns = [],
+  onResumePipeline,
+  onRetryPipeline,
+  onCancelPipeline,
+  onOpenFile,
 }: {
   routines: Routine[];
   skills: SkillMeta[];
@@ -1080,6 +1234,7 @@ export function RoutinesPanel({
     prompt: string;
     skill_id?: string;
     steps?: string[];
+    steps_v2?: PipelineStepSpec[];
     expected_inputs?: string[];
     pack_deliverables?: boolean;
   }) => Promise<boolean>;
@@ -1094,6 +1249,12 @@ export function RoutinesPanel({
   onCatchupAll?: () => Promise<boolean>;
   starterPlaybooks?: StarterPlaybook[];
   onLaunchStarter?: (starterId: string, runNow?: boolean) => Promise<StarterLaunchResult | null>;
+  workspaceFiles?: WorkspaceFile[];
+  pipelineRuns?: PipelineRun[];
+  onResumePipeline?: (runId: string, payload: PipelineResumePayload) => Promise<void>;
+  onRetryPipeline?: (runId: string) => Promise<void>;
+  onCancelPipeline?: (runId: string) => Promise<void>;
+  onOpenFile?: (path: string) => void;
 }) {
   return (
     <PanelModal
@@ -1125,6 +1286,12 @@ export function RoutinesPanel({
         onCatchupAll={onCatchupAll}
         starterPlaybooks={starterPlaybooks}
         onLaunchStarter={onLaunchStarter}
+        workspaceFiles={workspaceFiles}
+        pipelineRuns={pipelineRuns}
+        onResumePipeline={onResumePipeline}
+        onRetryPipeline={onRetryPipeline}
+        onCancelPipeline={onCancelPipeline}
+        onOpenFile={onOpenFile}
       />
     </PanelModal>
   );

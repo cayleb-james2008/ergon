@@ -18,6 +18,10 @@ import {
   estimateNextRunMs,
   type FileRevision,
   type LiveRunStep,
+  type PipelineCheckpointInputMode,
+  type PipelineRun,
+  type PipelineStepSpec,
+  type PipelineStepState,
   type Routine,
   type RoutineRunRecord,
 } from "@/lib/api";
@@ -53,6 +57,11 @@ type WebDecision = {
   thread_id: string;
   ts: number;
   resolved_ts?: number;
+  run_id?: string;
+  input_mode?: PipelineCheckpointInputMode;
+  choices?: string[];
+  inspect_files?: string[];
+  answer?: string;
 };
 type WebOffer = {
   id: string;
@@ -85,6 +94,7 @@ type PersonStore = {
   offers: WebOffer[];
   routines: Routine[];
   routineRuns: Record<string, RoutineRunRecord[]>;
+  pipelineRuns?: PipelineRun[];
   memory: string;
   suite: string[];
   policyProfile?: WorkspacePolicyProfile;
@@ -1138,9 +1148,15 @@ export async function installBrowserEngine(): Promise<void> {
 
   // Local EventSource listeners for /api/runs/stream (zero network traffic on static web hosting!).
   const sseListeners = new Set<(event: string, payload: unknown) => void>();
+  let sseSeq = 0;
   const broadcastSse = (event: string, payload: unknown) => {
+    sseSeq += 1;
+    const enriched =
+      payload && typeof payload === "object" && !Array.isArray(payload)
+        ? { seq: sseSeq, event, ts_ms: Date.now(), ...(payload as Record<string, unknown>) }
+        : payload;
     for (const fn of sseListeners) {
-      try { fn(event, payload); } catch { /* ignore */ }
+      try { fn(event, enriched); } catch { /* ignore */ }
     }
   };
 
@@ -1218,6 +1234,7 @@ export async function installBrowserEngine(): Promise<void> {
         offers: [],
         routines: [],
         routineRuns: {},
+        pipelineRuns: [],
         memory: `# Memory\n\n## About\n- Name: ${p.name}\n${p.role ? `- Role: ${p.role}\n` : ""}`,
         suite: ["researcher", "meeting-actions"],
       };
@@ -1225,6 +1242,7 @@ export async function installBrowserEngine(): Promise<void> {
     if (!Array.isArray(state.stores[pid].routines)) state.stores[pid].routines = [];
     if (!state.stores[pid].fileHistory) state.stores[pid].fileHistory = {};
     if (!state.stores[pid].routineRuns) state.stores[pid].routineRuns = {};
+    if (!Array.isArray(state.stores[pid].pipelineRuns)) state.stores[pid].pipelineRuns = [];
     return state.stores[pid];
   };
 
@@ -1921,6 +1939,485 @@ export async function installBrowserEngine(): Promise<void> {
     }
   }
 
+  function resolvePipelineTemplate(
+    raw: string,
+    inputs: Record<string, string>,
+    stepStates: PipelineStepState[]
+  ): string {
+    return String(raw || "").replace(/\{\{\s*([^}]+?)\s*\}\}/g, (_m, exprRaw: string) => {
+      const expr = exprRaw.trim();
+      if (expr.startsWith("inputs.")) {
+        const key = expr.slice("inputs.".length);
+        return inputs[key] ?? "";
+      }
+      if (expr.startsWith("steps.")) {
+        const rest = expr.slice("steps.".length);
+        const dotIdx = rest.indexOf(".");
+        if (dotIdx < 0) return "";
+        const stepId = rest.slice(0, dotIdx);
+        const field = rest.slice(dotIdx + 1);
+        const stState = stepStates.find((s) => s.step_id === stepId);
+        if (!stState) return "";
+        const filesMatch = /^files\[(\d+)\]$/.exec(field);
+        if (filesMatch) {
+          return stState.files?.[Number(filesMatch[1])] ?? "";
+        }
+        if (field === "files") return (stState.files ?? []).join(", ");
+        if (field === "human_answer") return stState.human_answer ?? "";
+        if (field === "output") return stState.output ?? "";
+        if (field.startsWith("metrics.")) {
+          const mk = field.slice("metrics.".length);
+          const mv = stState.metrics?.[mk];
+          return mv !== undefined && mv !== null ? String(mv) : "";
+        }
+      }
+      return "";
+    });
+  }
+
+  function shouldRunPipelineStep(
+    step: PipelineStepSpec,
+    prevState: PipelineStepState | undefined
+  ): boolean {
+    const when = step.when || "always";
+    if (when === "on_previous_ok") {
+      return !prevState || prevState.status === "ok";
+    }
+    if (when === "on_anomaly") {
+      if (!prevState) return true;
+      const anom = Number((prevState.metrics as { anomalies?: unknown } | undefined)?.anomalies ?? 0);
+      if (Number.isFinite(anom) && anom > 0) return true;
+      return /missing|flag|anomal|duplicate|warning/i.test(prevState.output || "");
+    }
+    return true;
+  }
+
+  function createPipelineRunRecord(
+    st: PersonStore,
+    opts: {
+      routine_id?: string;
+      name?: string;
+      steps_v2: PipelineStepSpec[];
+      inputs?: Record<string, string>;
+      thread_id?: string;
+    }
+  ): PipelineRun {
+    const now = Date.now();
+    if (!Array.isArray(st.pipelineRuns)) st.pipelineRuns = [];
+    const runId = `prun-${now}-${st.pipelineRuns.length + 1}`;
+    const stepStates: PipelineStepState[] = opts.steps_v2.map((s) => ({
+      step_id: s.id,
+      label: s.label,
+      kind: s.kind,
+      status: "pending",
+      files: [],
+      checkpoint_id: null,
+      human_answer: null,
+      human_action: null,
+      error: null,
+    }));
+    const run: PipelineRun = {
+      run_id: runId,
+      routine_id: opts.routine_id ?? null,
+      routine_name: opts.name || "Pipeline",
+      thread_id: opts.thread_id,
+      status: "running",
+      current_step_index: 0,
+      created_ms: now,
+      updated_ms: now,
+      inputs: opts.inputs ?? {},
+      steps: opts.steps_v2,
+      step_states: stepStates,
+      pending_checkpoint: null,
+      error: null,
+    };
+    st.pipelineRuns.unshift(run);
+    if (st.pipelineRuns.length > 50) st.pipelineRuns.length = 50;
+    return run;
+  }
+
+  function runPipelineSkillStep(
+    st: PersonStore,
+    skillId: string,
+    resolvedArgs: Record<string, string>
+  ): { output: string; files: string[]; metrics: Record<string, unknown> } {
+    const rules = learnedLines(st.memory);
+    const allFiles = Object.values(st.files).sort((a, b) => b.mtime_ms - a.mtime_ms);
+    const pickFile = (extFilter?: string[]): WebFile | undefined => {
+      const hint = String(resolvedArgs.input_file ?? resolvedArgs.path ?? resolvedArgs.file ?? "").trim();
+      if (hint && st.files[hint]) return st.files[hint];
+      if (hint) {
+        const found = allFiles.find((f) => f.path.toLowerCase() === hint.toLowerCase() || f.name.toLowerCase() === hint.toLowerCase());
+        if (found) return found;
+      }
+      const candidates = extFilter ? allFiles.filter((f) => extFilter.includes(f.ext)) : allFiles;
+      return candidates.find((f) => !/-(?:reconciled|cleaned|report|audit|summary|extracted)\./i.test(f.name)) || candidates[0];
+    };
+
+    if (skillId === "clean_dataset") {
+      const src = pickFile(["csv", "json"]);
+      if (!src) throw new Error("No CSV or JSON file available for clean_dataset.");
+      const cl = runCleanDataset(src);
+      const outName = resolvedArgs.output_title
+        ? (resolvedArgs.output_title.endsWith(".csv") || resolvedArgs.output_title.endsWith(".json")
+            ? resolvedArgs.output_title
+            : cl.outFile)
+        : cl.outFile;
+      st.files[outName] = makeFile(outName, cl.outBody);
+      st.files[cl.reportFile] = makeFile(cl.reportFile, cl.reportMd);
+      return {
+        output: `Cleaned ${src.path}: ${cl.rowCount} rows (${cl.removedDups} duplicates removed, ${cl.nullCells} nulls normalized).`,
+        files: [outName, cl.reportFile],
+        metrics: { rows: cl.rowCount, removed_dups: cl.removedDups, null_cells: cl.nullCells, anomalies: cl.removedDups + cl.nullCells },
+      };
+    }
+
+    if (skillId === "reconcile_ledger") {
+      const src = pickFile(["csv"]);
+      if (!src) throw new Error("No CSV file available for reconcile_ledger.");
+      const recon = runCsvReconciliation(src.path, src.content, rules);
+      const stem = src.name.replace(/\.csv$/i, "");
+      const outCsv = `${stem}-reconciled.csv`;
+      const outMd = `${stem}-report.md`;
+      st.files[outCsv] = makeFile(outCsv, recon.reconciledCsv);
+      st.files[outMd] = makeFile(outMd, recon.reportMd);
+      return {
+        output: `Reconciled ${recon.rowCount} rows totaling ${fmtMoney(recon.grandTotal)} (${recon.missingCount} missing receipts, ${recon.duplicateCount} duplicates).`,
+        files: [outCsv, outMd],
+        metrics: { rows: recon.rowCount, total: recon.grandTotal, anomalies: recon.missingCount + recon.duplicateCount },
+      };
+    }
+
+    if (skillId === "audit_contract") {
+      const src = pickFile(["md", "txt"]);
+      if (!src) throw new Error("No contract document available for audit_contract.");
+      const audit = runContractAudit(src, rules);
+      st.files[audit.outName] = makeFile(audit.outName, audit.md);
+      return {
+        output: `Audited ${src.path}: ${audit.presentCount} clauses present, ${audit.missingCount} missing.`,
+        files: [audit.outName],
+        metrics: { present: audit.presentCount, missing: audit.missingCount, anomalies: audit.missingCount },
+      };
+    }
+
+    if (skillId === "summarize_meeting") {
+      const src = pickFile(["md", "txt", "log"]);
+      const srcs = src ? [src] : allFiles.filter((f) => ["md", "txt", "log"].includes(f.ext)).slice(0, 3);
+      if (srcs.length === 0) throw new Error("No meeting notes available for summarize_meeting.");
+      const sum = runDocumentSummary(srcs, resolvedArgs.note || "Summarize workspace notes", rules);
+      const outName = resolvedArgs.output_title || sum.outName;
+      st.files[outName] = makeFile(outName, sum.markdown);
+      return {
+        output: `Compiled ${outName} with ${sum.decisionCount} decision(s) and ${sum.actionCount} action item(s).`,
+        files: [outName],
+        metrics: { decisions: sum.decisionCount, actions: sum.actionCount, blockers: sum.blockerCount },
+      };
+    }
+
+    if (skillId === "triage_inbox") {
+      const src = pickFile(["log", "txt", "md"]);
+      if (!src) throw new Error("No inbox feed available for triage_inbox.");
+      const tr = runInboxTriage(src, rules);
+      st.files[tr.outName] = makeFile(tr.outName, tr.md);
+      return {
+        output: `Triaged ${src.path}: ${tr.urgentCount} urgent, ${tr.actionCount} action, ${tr.fyiCount} FYI.`,
+        files: [tr.outName],
+        metrics: { urgent: tr.urgentCount, action: tr.actionCount, anomalies: tr.urgentCount },
+      };
+    }
+
+    if (skillId === "extract_tables") {
+      const src = pickFile(["md", "txt", "log"]);
+      if (!src) throw new Error("No document available for extract_tables.");
+      const ex = runExtractTables(src);
+      st.files[ex.outName] = makeFile(ex.outName, ex.csv);
+      return {
+        output: `Extracted ${ex.rowCount} rows into ${ex.outName}.`,
+        files: [ex.outName],
+        metrics: { rows: ex.rowCount, cols: ex.colCount },
+      };
+    }
+
+    if (skillId === "compare_documents") {
+      const docs = allFiles.filter((f) => ["md", "txt", "csv", "json"].includes(f.ext));
+      if (docs.length < 2) throw new Error("Need at least two workspace files for compare_documents.");
+      const cmp = runCompareDocuments(docs[0], docs[1]);
+      st.files[cmp.outName] = makeFile(cmp.outName, cmp.md);
+      return {
+        output: `Compared ${docs[0].path} vs ${docs[1].path}: +${cmp.added}/-${cmp.removed}.`,
+        files: [cmp.outName],
+        metrics: { added: cmp.added, removed: cmp.removed },
+      };
+    }
+
+    if (skillId === "research") {
+      const res = runWorkspaceResearch(allFiles, resolvedArgs.query || resolvedArgs.note || "workspace", rules);
+      st.files[res.outName] = makeFile(res.outName, res.md);
+      return {
+        output: `Compiled ${res.outName} with ${res.hitCount} cited findings.`,
+        files: [res.outName],
+        metrics: { hits: res.hitCount },
+      };
+    }
+
+    // draft_brief / write_document / fallback
+    const src = pickFile();
+    const srcs = src ? [src, ...allFiles.filter((f) => f.path !== src.path).slice(0, 2)] : allFiles.slice(0, 3);
+    const note = resolvedArgs.note || resolvedArgs.prompt || "Executive Pipeline Brief";
+    const br = runDraftBrief(srcs, note, rules);
+    const outName = resolvedArgs.output_title
+      ? (resolvedArgs.output_title.endsWith(".md") ? resolvedArgs.output_title : `${resolvedArgs.output_title}.md`)
+      : br.outName;
+    const body = resolvedArgs.note
+      ? `${br.md}\n## Human Decision\n\n- ${resolvedArgs.note}\n`
+      : br.md;
+    st.files[outName] = makeFile(outName, body);
+    return {
+      output: `Drafted ${outName} with ${br.citationCount} source citation(s).`,
+      files: [outName],
+      metrics: { citations: br.citationCount },
+    };
+  }
+
+  async function executeWebPipelineFrom(
+    p: WebPerson,
+    st: PersonStore,
+    byok: ByokConfig,
+    run: PipelineRun,
+    startIndex: number
+  ): Promise<void> {
+    const steps = run.steps ?? run.steps_v2 ?? [];
+    const inputs = run.inputs ?? {};
+    run.status = "running";
+    run.pending_checkpoint = null;
+    run.error = null;
+    run.updated_ms = Date.now();
+    await persist();
+
+    for (let i = startIndex; i < steps.length; i += 1) {
+      if ((run.status as string) === "cancelled") return;
+      const spec = steps[i];
+      const stState =
+        run.step_states[i] ||
+        (run.step_states[i] = {
+          step_id: spec.id,
+          label: spec.label,
+          kind: spec.kind,
+          status: "pending",
+          files: [],
+        });
+      const prevState = i > 0 ? run.step_states[i - 1] : undefined;
+
+      if (!shouldRunPipelineStep(spec, prevState)) {
+        stState.status = "skipped";
+        stState.finished_ms = Date.now();
+        run.current_step_index = i;
+        run.updated_ms = Date.now();
+        broadcastSse("pipeline_step_done", {
+          run_id: run.run_id,
+          thread_id: run.thread_id ?? null,
+          step_index: i,
+          step_id: spec.id,
+          label: spec.label,
+          kind: spec.kind,
+          status: "skipped",
+          output: "",
+          files: [],
+          metrics: {},
+          error: null,
+          elapsed_ms: 0,
+        });
+        continue;
+      }
+
+      stState.status = "running";
+      stState.started_ms = Date.now();
+      run.current_step_index = i;
+      run.updated_ms = Date.now();
+      broadcastSse("pipeline_step_started", {
+        run_id: run.run_id,
+        thread_id: run.thread_id ?? null,
+        routine_id: run.routine_id ?? null,
+        routine_name: run.routine_name ?? "",
+        step_index: i,
+        step_id: spec.id,
+        label: spec.label,
+        kind: spec.kind,
+        total_steps: steps.length,
+      });
+
+      try {
+        if (spec.kind === "checkpoint") {
+          const cp = spec.checkpoint ?? { prompt: "Confirm to continue", input_mode: "approve_reject" as const };
+          const resolvedPrompt = resolvePipelineTemplate(cp.prompt, inputs, run.step_states);
+          const resolvedInspect = (cp.inspect_files ?? [])
+            .map((f) => resolvePipelineTemplate(f, inputs, run.step_states))
+            .filter(Boolean);
+          const did = `d${Date.now()}-${st.decisions.length + 1}`;
+          st.decisions.push({
+            id: did,
+            kind: "pipeline_checkpoint",
+            summary: `${run.routine_name || "Pipeline"}: ${resolvedPrompt}`,
+            status: "pending",
+            outcome: null,
+            thread_id: run.thread_id || `pipeline-${run.run_id}`,
+            ts: Date.now(),
+            run_id: run.run_id,
+            input_mode: cp.input_mode,
+            choices: cp.choices,
+            inspect_files: resolvedInspect,
+          });
+          stState.status = "waiting_human";
+          stState.checkpoint_id = did;
+          run.status = "paused_checkpoint";
+          run.current_step_index = i;
+          const pendingCp = {
+            checkpoint_id: did,
+            step_index: i,
+            step_id: spec.id,
+            prompt: resolvedPrompt,
+            input_mode: cp.input_mode,
+            choices: cp.choices,
+            inspect_files: resolvedInspect,
+            created_ms: Date.now(),
+          };
+          run.pending_checkpoint = pendingCp;
+          run.updated_ms = Date.now();
+          await persist();
+          broadcastSse("pipeline_paused", {
+            run_id: run.run_id,
+            thread_id: run.thread_id ?? null,
+            routine_name: run.routine_name ?? "",
+            step_index: i,
+            step_id: spec.id,
+            checkpoint: pendingCp,
+            run,
+          });
+          return;
+        }
+
+        if (spec.kind === "skill") {
+          const resolvedArgs: Record<string, string> = {};
+          for (const [k, v] of Object.entries(spec.args ?? {})) {
+            resolvedArgs[k] = resolvePipelineTemplate(String(v ?? ""), inputs, run.step_states);
+          }
+          const res = runPipelineSkillStep(st, spec.skill_id || "draft_brief", resolvedArgs);
+          const bytesTotal = res.files.reduce((acc, f) => acc + (st.files[f]?.size ?? 0), 0);
+          const anom = Number((res.metrics as { anomalies?: unknown }).anomalies ?? 0);
+          stState.status = "ok";
+          stState.finished_ms = Date.now();
+          stState.output = res.output;
+          stState.files = res.files;
+          stState.metrics = {
+            ...res.metrics,
+            files_count: res.files.length,
+            bytes_total: bytesTotal,
+            anomalies: anom,
+            has_anomaly: anom > 0,
+          };
+        } else if (spec.kind === "export") {
+          const srcPath = resolvePipelineTemplate(spec.export?.path || "", inputs, run.step_states).trim();
+          const fmt = spec.export?.format || "docx";
+          const srcFile = srcPath && st.files[srcPath] ? st.files[srcPath] : Object.values(st.files)[0];
+          if (!srcFile) throw new Error("No workspace file available to export.");
+          const stem = srcFile.name.replace(/\.[^.]+$/, "");
+          const outName = spec.export?.output || `${stem}.${fmt}`;
+          st.files[outName] = makeFile(outName, `Exported (${fmt.toUpperCase()}) from ${srcFile.path}\n\n${srcFile.content.slice(0, 4000)}`);
+          stState.status = "ok";
+          stState.finished_ms = Date.now();
+          stState.output = `Exported ${outName} (${fmt.toUpperCase()}).`;
+          stState.files = [outName];
+        } else {
+          // "agent" step
+          const resolvedPrompt = resolvePipelineTemplate(spec.prompt || spec.label || "Complete task", inputs, run.step_states);
+          const tempThread: WebThread = { id: run.thread_id || `pipeline-${run.run_id}`, title: run.routine_name || "Pipeline", messages: [] };
+          const dummyPush = () => {};
+          const outcome =
+            byok.engine_mode === "byok" && byok.model_base_url && byok.model_id
+              ? await runByokLoop(st, byok, tempThread, resolvedPrompt, dummyPush, () => false)
+              : await runDeterministicTask(st, tempThread, resolvedPrompt, dummyPush, () => false);
+          stState.status = "ok";
+          stState.finished_ms = Date.now();
+          stState.output = outcome.summary;
+          stState.files = outcome.written.filter((f) => f !== "memory.md");
+        }
+
+        run.updated_ms = Date.now();
+        await persist();
+        broadcastSse("pipeline_step_done", {
+          run_id: run.run_id,
+          thread_id: run.thread_id ?? null,
+          step_index: i,
+          step_id: spec.id,
+          label: spec.label,
+          kind: spec.kind,
+          status: stState.status,
+          output: stState.output ?? "",
+          files: stState.files ?? [],
+          metrics: stState.metrics ?? {},
+          error: null,
+          elapsed_ms: stState.finished_ms && stState.started_ms ? stState.finished_ms - stState.started_ms : 1,
+        });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        stState.status = "failed";
+        stState.finished_ms = Date.now();
+        stState.error = msg;
+        run.status = "failed";
+        run.error = msg;
+        run.current_step_index = i;
+        run.updated_ms = Date.now();
+        await persist();
+        broadcastSse("pipeline_finished", {
+          run_id: run.run_id,
+          thread_id: run.thread_id ?? null,
+          status: "failed",
+          error: msg,
+          run,
+        });
+        return;
+      }
+    }
+
+    run.status = "completed";
+    run.pending_checkpoint = null;
+    run.updated_ms = Date.now();
+    const allOutFiles = Array.from(
+      new Set(run.step_states.flatMap((s) => s.files ?? []))
+    );
+    const finalSummary =
+      run.step_states
+        .map((s) => s.output)
+        .filter(Boolean)
+        .slice(-1)[0] || `Completed pipeline ${run.routine_name || run.run_id}.`;
+    st.work.push({
+      id: run.run_id,
+      task: run.routine_name || "Pipeline run",
+      summary: finalSummary,
+      files: allOutFiles,
+      finished: true,
+      answered: false,
+      thread_id: run.thread_id || `pipeline-${run.run_id}`,
+      ts: run.updated_ms,
+    });
+    if (run.routine_id) {
+      const rt = st.routines.find((r) => r.id === run.routine_id);
+      if (rt) {
+        rt.last_run_ts = run.updated_ms;
+        rt.last_status = "finished";
+        rt.run_count = (rt.run_count ?? 0) + 1;
+      }
+    }
+    await persist();
+    broadcastSse("pipeline_finished", {
+      run_id: run.run_id,
+      thread_id: run.thread_id ?? null,
+      status: "completed",
+      error: null,
+      run,
+    });
+  }
+
   window.fetch = async function (input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
     const rawUrl = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
     const u = new URL(rawUrl, window.location.origin);
@@ -2311,7 +2808,7 @@ function buildWebStoreZip(entries: Array<[string, Uint8Array]>): Uint8Array {
     if (method === "GET" && path === "/api/update") return jsonRes({ current: "0.28.0", available: false, mode: "off", checked_at: Math.floor(Date.now() / 1000) });
     if (method === "GET" && path === "/api/status") {
       return jsonRes({
-        version: "0.28.0",
+        version: "0.29.0",
         model_configured: true,
         model: byok.engine_mode === "byok" && byok.model_id ? byok.model_id : "browser-workspace-engine",
         model_base_url: byok.engine_mode === "byok" ? byok.model_base_url : "indexeddb://local",
@@ -2329,6 +2826,7 @@ function buildWebStoreZip(entries: Array<[string, Uint8Array]>): Uint8Array {
           scheduler: true,
           audit_bundle: true,
           people_switch: true,
+          pipelines: true,
         },
         scheduler: buildSchedulerStatus(st),
         person: p,
@@ -2399,6 +2897,19 @@ function buildWebStoreZip(entries: Array<[string, Uint8Array]>): Uint8Array {
       );
       if (!starter) return jsonRes({ error: "starter playbook not found" }, 404);
       const runNow = body.run_now !== false;
+      const starterStepsV2: PipelineStepSpec[] =
+        starter.steps_v2 && starter.steps_v2.length > 0
+          ? starter.steps_v2
+          : [
+              {
+                id: "step_1",
+                label: starter.steps[0] || starter.name,
+                kind: "skill",
+                skill_id: starter.skill_id,
+                args: { output_title: starter.expected_inputs[0] || `${starter.sample_title || starter.name}.md` },
+                when: "always",
+              },
+            ];
       let rt = st.routines.find((r) => r.name === starter.name);
       if (!rt) {
         rt = {
@@ -2408,6 +2919,7 @@ function buildWebStoreZip(entries: Array<[string, Uint8Array]>): Uint8Array {
           schedule: starter.schedule,
           skill_id: starter.skill_id,
           steps: starter.steps,
+          steps_v2: starterStepsV2,
           expected_inputs: starter.expected_inputs,
           pack_deliverables: starter.pack_deliverables,
           enabled: true,
@@ -2419,25 +2931,36 @@ function buildWebStoreZip(entries: Array<[string, Uint8Array]>): Uint8Array {
         st.routines.unshift(rt);
       }
       const createdFiles: string[] = [];
+      const seededInputs: string[] = [];
       let summary = "";
+      let starterRun: PipelineRun | undefined;
       if (runNow) {
-        const fname = starter.expected_inputs[0] || `${starter.sample_title || starter.name}.md`;
-        const sections = starter.sample_sections || [starter.summary];
-        const md = `# ${starter.sample_title || starter.name}\n\n${sections.join("\n\n")}\n`;
-        const wf = makeFile(fname, md);
-        st.files[fname] = wf;
-        createdFiles.push(fname);
-        summary = `Verified [${fname}:L1] via starter playbook ${starter.name}.`;
-        st.work.push({
-          id: `starter-${rt.id}-${Date.now()}`,
-          task: `Starter: ${starter.name}`,
-          summary,
-          files: [fname],
-          finished: true,
-          answered: false,
-          thread_id: `starter-${rt.id}`,
-          ts: Date.now(),
+        if (Object.keys(st.files).length === 0) {
+          const seedName = starter.skill_id === "reconcile_ledger" ? "starter-ledger.csv" : "starter-notes.md";
+          const seedBody =
+            starter.skill_id === "reconcile_ledger"
+              ? "Vendor,Category,Amount,Receipt_Status,Date\nCloudHost,Cloud,420.00,verified,2026-11-10\nOffice Supplies,Ops,85.50,missing,2026-11-12\n"
+              : `# ${starter.name} Input Notes\n\n- Decided: Prepare verified client deliverables.\n- Owner: Operations Lead - finalize review by Friday.\n`;
+          st.files[seedName] = makeFile(seedName, seedBody);
+          seededInputs.push(seedName);
+        }
+        starterRun = createPipelineRunRecord(st, {
+          routine_id: rt.id,
+          name: rt.name,
+          steps_v2: starterStepsV2,
+          inputs: {},
         });
+        await executeWebPipelineFrom(p, st, byok, starterRun, 0);
+        for (const ss of starterRun.step_states) {
+          for (const f of ss.files ?? []) {
+            if (!createdFiles.includes(f)) createdFiles.push(f);
+          }
+        }
+        summary =
+          starterRun.step_states
+            .map((s) => s.output)
+            .filter(Boolean)
+            .slice(-1)[0] || `Executed starter playbook ${starter.name}.`;
       }
       await persist();
       const preview = buildDeterministicPlaybookPreview(
@@ -2450,8 +2973,11 @@ function buildWebStoreZip(entries: Array<[string, Uint8Array]>): Uint8Array {
         {
           ok: true,
           starter_id: starter.id,
+          sha256: await sha256Hex(JSON.stringify(starterStepsV2)),
           routine: await enrichWebRoutine(rt, st, Date.now()),
+          run: starterRun,
           created_files: createdFiles,
+          seeded_inputs: seededInputs,
           summary,
           preview,
         },
@@ -2482,7 +3008,11 @@ function buildWebStoreZip(entries: Array<[string, Uint8Array]>): Uint8Array {
       const rawSteps = Array.isArray(body.steps)
         ? body.steps.map((s) => String(s ?? "").trim()).filter(Boolean).slice(0, 8)
         : [];
-      const prompt = String(body.prompt ?? "").trim() || rawSteps.join(" -> ");
+      const rawStepsV2 = Array.isArray(body.steps_v2) ? (body.steps_v2 as PipelineStepSpec[]) : undefined;
+      const prompt =
+        String(body.prompt ?? "").trim() ||
+        rawSteps.join(" -> ") ||
+        (rawStepsV2 ?? []).map((s) => s.label || s.skill_id || s.kind).join(" -> ");
       if (!name || !prompt) return jsonRes({ error: "name and prompt are required" }, 400);
       const schedule = String(body.schedule ?? body.cadence ?? "daily 09:00").trim();
       const enabled = typeof body.enabled === "boolean" ? body.enabled : true;
@@ -2497,6 +3027,7 @@ function buildWebStoreZip(entries: Array<[string, Uint8Array]>): Uint8Array {
         cadence: schedule,
         skill_id: typeof body.skill_id === "string" && body.skill_id ? body.skill_id : undefined,
         steps: rawSteps.length > 1 ? rawSteps : undefined,
+        steps_v2: rawStepsV2 && rawStepsV2.length > 0 ? rawStepsV2 : undefined,
         expected_inputs: expectedInputs?.length ? expectedInputs : undefined,
         pack_deliverables: body.pack_deliverables === true ? true : undefined,
         enabled,
@@ -2657,6 +3188,152 @@ function buildWebStoreZip(entries: Array<[string, Uint8Array]>): Uint8Array {
         Object.keys(st.fileHistory).length
       );
       return jsonRes(preview, 200);
+    }
+    if (method === "POST" && path === "/api/pipelines/run") {
+      const rid = typeof body.routine_id === "string" ? body.routine_id.trim() : "";
+      const rt = rid ? st.routines.find((r) => r.id === rid) : undefined;
+      let stepsV2: PipelineStepSpec[] = Array.isArray(body.steps_v2) ? (body.steps_v2 as PipelineStepSpec[]) : [];
+      if (stepsV2.length === 0 && rt) {
+        if (rt.steps_v2 && rt.steps_v2.length > 0) {
+          stepsV2 = rt.steps_v2;
+        } else {
+          const legacy = rt.steps && rt.steps.length > 0 ? rt.steps : [rt.prompt];
+          stepsV2 = legacy.map((txt, idx) => ({
+            id: `step_${idx + 1}`,
+            label: txt.slice(0, 48),
+            kind: idx === 0 && rt.skill_id ? "skill" : "agent",
+            skill_id: idx === 0 ? rt.skill_id : undefined,
+            prompt: txt,
+            when: "always",
+          }));
+        }
+      }
+      if (stepsV2.length === 0) {
+        return jsonRes({ error: "steps_v2 or routine_id is required" }, 400);
+      }
+      const run = createPipelineRunRecord(st, {
+        routine_id: rt?.id || (rid || undefined),
+        name: String(body.name ?? rt?.name ?? "Pipeline run").trim(),
+        steps_v2: stepsV2,
+        inputs: body.inputs && typeof body.inputs === "object" ? (body.inputs as Record<string, string>) : {},
+        thread_id: typeof body.thread_id === "string" && body.thread_id ? body.thread_id : undefined,
+      });
+      await persist();
+      window.setTimeout(() => {
+        void executeWebPipelineFrom(p, st, byok, run, 0);
+      }, 15);
+      return jsonRes({ run }, 202);
+    }
+    if (method === "GET" && path === "/api/pipelines/runs") {
+      const statusFilter = (u.searchParams.get("status") || "").trim();
+      const limit = Math.min(200, Math.max(1, Number(u.searchParams.get("limit") || 50)));
+      const allRuns = (st.pipelineRuns ?? []).filter((r) => !statusFilter || r.status === statusFilter);
+      return jsonRes({ runs: allRuns.slice(0, limit) });
+    }
+    if (method === "GET" && path.startsWith("/api/pipelines/runs/") && !path.endsWith("/resume") && !path.endsWith("/retry") && !path.endsWith("/cancel")) {
+      const runId = decodeURIComponent(path.slice("/api/pipelines/runs/".length));
+      const found = (st.pipelineRuns ?? []).find((r) => r.run_id === runId);
+      if (!found) return jsonRes({ error: "pipeline run not found" }, 404);
+      return jsonRes({ run: found });
+    }
+    if (method === "POST" && path.startsWith("/api/pipelines/runs/") && path.endsWith("/resume")) {
+      const runId = decodeURIComponent(path.slice("/api/pipelines/runs/".length, -"/resume".length));
+      const run = (st.pipelineRuns ?? []).find((r) => r.run_id === runId);
+      if (!run) return jsonRes({ error: "pipeline run not found" }, 404);
+      const cpIdx = run.pending_checkpoint?.step_index ?? run.current_step_index;
+      const cpId = run.pending_checkpoint?.checkpoint_id;
+      const action = String(body.action ?? "approve");
+      const humanAnswer =
+        typeof body.choice === "string" && body.choice
+          ? body.choice
+          : typeof body.answer === "string" && body.answer
+            ? body.answer
+            : action === "reject"
+              ? "rejected"
+              : "approved";
+      if (cpId) {
+        const dec = st.decisions.find((d) => d.id === cpId);
+        if (dec) {
+          dec.status = action === "reject" ? "denied" : "approved";
+          dec.resolved_ts = Date.now();
+          dec.answer = humanAnswer;
+          dec.outcome = `Resumed pipeline (${humanAnswer})`;
+        }
+      }
+      if (run.step_states[cpIdx]) {
+        run.step_states[cpIdx].status = "ok";
+        run.step_states[cpIdx].finished_ms = Date.now();
+        run.step_states[cpIdx].human_answer = humanAnswer;
+        run.step_states[cpIdx].human_action =
+          action === "reject" ? "reject" : action === "answer" ? "answer" : "approve";
+        run.step_states[cpIdx].output = `Human response: ${humanAnswer}`;
+      }
+      if (body.override_args && typeof body.override_args === "object") {
+        const nextSpec = (run.steps ?? run.steps_v2)?.[cpIdx + 1];
+        if (nextSpec) {
+          nextSpec.args = { ...(nextSpec.args ?? {}), ...(body.override_args as Record<string, string>) };
+        }
+      }
+      run.pending_checkpoint = null;
+      run.status = "running";
+      run.current_step_index = cpIdx + 1;
+      run.updated_ms = Date.now();
+      await persist();
+      broadcastSse("pipeline_resumed", {
+        run_id: run.run_id,
+        thread_id: run.thread_id ?? null,
+        step_index: cpIdx + 1,
+        action,
+        human_answer: humanAnswer,
+        run,
+      });
+      window.setTimeout(() => {
+        void executeWebPipelineFrom(p, st, byok, run, cpIdx + 1);
+      }, 15);
+      return jsonRes({ run }, 202);
+    }
+    if (method === "POST" && path.startsWith("/api/pipelines/runs/") && path.endsWith("/retry")) {
+      const runId = decodeURIComponent(path.slice("/api/pipelines/runs/".length, -"/retry".length));
+      const run = (st.pipelineRuns ?? []).find((r) => r.run_id === runId);
+      if (!run) return jsonRes({ error: "pipeline run not found" }, 404);
+      const fromIdx =
+        typeof body.from_step_index === "number"
+          ? Math.max(0, body.from_step_index)
+          : run.current_step_index;
+      run.status = "running";
+      run.error = null;
+      run.updated_ms = Date.now();
+      await persist();
+      window.setTimeout(() => {
+        void executeWebPipelineFrom(p, st, byok, run, fromIdx);
+      }, 15);
+      return jsonRes({ run }, 202);
+    }
+    if (method === "POST" && path.startsWith("/api/pipelines/runs/") && path.endsWith("/cancel")) {
+      const runId = decodeURIComponent(path.slice("/api/pipelines/runs/".length, -"/cancel".length));
+      const run = (st.pipelineRuns ?? []).find((r) => r.run_id === runId);
+      if (!run) return jsonRes({ error: "pipeline run not found" }, 404);
+      const cpId = run.pending_checkpoint?.checkpoint_id;
+      if (cpId) {
+        const dec = st.decisions.find((d) => d.id === cpId && d.status === "pending");
+        if (dec) {
+          dec.status = "denied";
+          dec.resolved_ts = Date.now();
+          dec.outcome = "Pipeline aborted.";
+        }
+      }
+      run.status = "cancelled";
+      run.pending_checkpoint = null;
+      run.updated_ms = Date.now();
+      await persist();
+      broadcastSse("pipeline_finished", {
+        run_id: run.run_id,
+        thread_id: run.thread_id ?? null,
+        status: "cancelled",
+        error: null,
+        run,
+      });
+      return jsonRes({ run }, 200);
     }
     if (method === "GET" && path === "/api/search") {
       const q = (u.searchParams.get("q") || "").trim().toLowerCase();

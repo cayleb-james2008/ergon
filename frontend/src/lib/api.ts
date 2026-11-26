@@ -14,6 +14,7 @@ export type ServerCapabilities = {
   audit_bundle?: boolean;
   people_switch?: boolean;
   tripwire?: boolean;
+  pipelines?: boolean;
 };
 export type SchedulerStatus = {
   running?: boolean;
@@ -154,6 +155,94 @@ export type FileDiffPayload = {
   hunks: FileDiffHunk[];
   unified?: string;
 };
+export type PipelineStepKind = "skill" | "agent" | "checkpoint" | "export";
+export type PipelineCheckpointInputMode = "approve_reject" | "choice" | "text";
+export type PipelineWhen = "always" | "on_anomaly" | "on_previous_ok";
+
+export type PipelineCheckpointSpec = {
+  prompt: string;
+  input_mode: PipelineCheckpointInputMode;
+  choices?: string[];
+  inspect_files?: string[];
+};
+
+export type PipelineExportSpec = {
+  path: string;
+  format: "docx" | "xlsx" | "pdf";
+  output?: string | null;
+};
+
+export type PipelineStepSpec = {
+  id: string;
+  label: string;
+  kind: PipelineStepKind;
+  skill_id?: string;
+  args?: Record<string, string>;
+  prompt?: string;
+  checkpoint?: PipelineCheckpointSpec;
+  export?: PipelineExportSpec;
+  when?: PipelineWhen;
+};
+
+export type PipelineStepState = {
+  step_id: string;
+  label?: string;
+  kind: PipelineStepKind | string;
+  status: "ok" | "waiting_human" | "failed" | "skipped" | "pending" | "running";
+  started_ms?: number;
+  finished_ms?: number;
+  output?: string;
+  files?: string[];
+  metrics?: Record<string, unknown>;
+  checkpoint_id?: string | null;
+  human_answer?: string | null;
+  human_action?: "approve" | "reject" | "answer" | null;
+  error?: string | null;
+};
+
+export type PipelinePendingCheckpoint = {
+  checkpoint_id: string;
+  step_index: number;
+  step_id?: string;
+  prompt: string;
+  input_mode: PipelineCheckpointInputMode;
+  choices?: string[];
+  inspect_files?: string[];
+  created_ms?: number;
+};
+
+export type PipelineRunStatus =
+  | "running"
+  | "paused_checkpoint"
+  | "interrupted"
+  | "completed"
+  | "failed"
+  | "cancelled";
+
+export type PipelineRun = {
+  run_id: string;
+  routine_id?: string | null;
+  routine_name?: string;
+  thread_id?: string;
+  status: PipelineRunStatus;
+  current_step_index: number;
+  created_ms: number;
+  updated_ms: number;
+  inputs?: Record<string, string>;
+  steps?: PipelineStepSpec[];
+  steps_v2?: PipelineStepSpec[];
+  step_states: PipelineStepState[];
+  pending_checkpoint?: PipelinePendingCheckpoint | null;
+  error?: string | null;
+};
+
+export type PipelineResumePayload = {
+  action: "approve" | "reject" | "answer";
+  answer?: string;
+  choice?: string;
+  override_args?: Record<string, unknown>;
+};
+
 export type RoutineRunRecord = {
   run_id: string;
   routine_id: string;
@@ -183,6 +272,7 @@ export type Routine = {
   run_count?: number;
   created_ts?: number;
   steps?: string[];
+  steps_v2?: PipelineStepSpec[];
   expected_inputs?: string[];
   pack_deliverables?: boolean;
   recent_runs?: RoutineRunRecord[];
@@ -286,6 +376,7 @@ export type StarterPlaybook = {
   skill_id: string;
   prompt: string;
   steps: string[];
+  steps_v2?: PipelineStepSpec[];
   expected_inputs: string[];
   pack_deliverables: boolean;
   sample_title?: string;
@@ -298,7 +389,9 @@ export type StarterLaunchResult = {
   starter_id: string;
   sha256?: string;
   routine?: Routine;
+  run?: PipelineRun;
   created_files?: string[];
+  seeded_inputs?: string[];
   summary?: string;
   preview?: PlaybookPreviewResult | null;
 };
@@ -353,6 +446,11 @@ export type Decision = {
   severity?: string;
   stopped?: boolean;
   source?: { kind?: string; value?: string } | null;
+  run_id?: string;
+  input_mode?: PipelineCheckpointInputMode;
+  choices?: string[];
+  inspect_files?: string[];
+  answer?: string;
 };
 export type Offer = { id: string; title: string; detail: string; status: string; item_id?: string; ts?: number };
 export type SuiteItem = { id: string; kind: string; name: string; description: string; fields?: string[] };
@@ -652,4 +750,62 @@ export async function exportHandoffBundleZip(
   a.remove();
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   return { ok: true, sha256, leaks };
+}
+
+export function hasPipelinesApi(status: Status | null | "error" | undefined): boolean {
+  if (isWebStandalone()) return true;
+  if (!status || status === "error") return false;
+  if (typeof status.capabilities?.pipelines === "boolean") {
+    return Boolean(status.capabilities.pipelines);
+  }
+  return isAtLeastMinor(status.version, 29);
+}
+
+export async function startPipelineRun(body: {
+  routine_id?: string;
+  name?: string;
+  steps_v2?: PipelineStepSpec[];
+  inputs?: Record<string, string>;
+  thread_id?: string;
+}): Promise<Res<{ run: PipelineRun }>> {
+  return call<{ run: PipelineRun }>("/api/pipelines/run", { method: "POST", body });
+}
+
+export async function listPipelineRuns(opts: { status?: string; limit?: number } = {}): Promise<Res<{ runs: PipelineRun[] }>> {
+  const params = new URLSearchParams();
+  if (opts.status) params.set("status", opts.status);
+  if (typeof opts.limit === "number") params.set("limit", String(opts.limit));
+  const qs = params.toString();
+  return call<{ runs: PipelineRun[] }>(`/api/pipelines/runs${qs ? `?${qs}` : ""}`);
+}
+
+export async function getPipelineRun(runId: string): Promise<Res<{ run: PipelineRun }>> {
+  return call<{ run: PipelineRun }>(`/api/pipelines/runs/${encodeURIComponent(runId)}`);
+}
+
+export async function resumePipelineRun(
+  runId: string,
+  body: PipelineResumePayload
+): Promise<Res<{ run: PipelineRun }>> {
+  return call<{ run: PipelineRun }>(`/api/pipelines/runs/${encodeURIComponent(runId)}/resume`, {
+    method: "POST",
+    body,
+  });
+}
+
+export async function retryPipelineRun(
+  runId: string,
+  body: { from_step_index?: number } = {}
+): Promise<Res<{ run: PipelineRun }>> {
+  return call<{ run: PipelineRun }>(`/api/pipelines/runs/${encodeURIComponent(runId)}/retry`, {
+    method: "POST",
+    body,
+  });
+}
+
+export async function cancelPipelineRun(runId: string): Promise<Res<{ run: PipelineRun }>> {
+  return call<{ run: PipelineRun }>(`/api/pipelines/runs/${encodeURIComponent(runId)}/cancel`, {
+    method: "POST",
+    body: {},
+  });
 }
