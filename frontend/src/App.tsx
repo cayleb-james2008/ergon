@@ -49,7 +49,7 @@ const RoutinesPanel = lazy(() => import("@/shell/RoutinesPanel").then((mod) => (
 const ConnectorsPanel = lazy(() => import("@/shell/ConnectorsPanel").then((mod) => ({ default: mod.ConnectorsPanel })));
 const CommandPalette = lazy(() => import("@/shell/CommandPalette").then((mod) => ({ default: mod.CommandPalette })));
 import { useErgon } from "@/state";
-import { call, hasV050Api, type Routine } from "@/lib/api";
+import { call, hasClientsApi, hasV050Api, type Routine } from "@/lib/api";
 import { exportAuditBundleDownload } from "@/lib/auditBundle";
 import { exportReceiptDownload } from "@/lib/receiptExport";
 import { cn } from "@/lib/utils";
@@ -224,6 +224,14 @@ export function App() {
   const activePerson = useMemo(
     () => peopleList.find((p) => p.id === activePersonId) || statusObj?.person,
     [peopleList, activePersonId, statusObj?.person]
+  );
+  const activeEngagement = useMemo(
+    () => desk.engagements.find((e) => e.id === desk.activeEngagementId) || null,
+    [desk.engagements, desk.activeEngagementId]
+  );
+  const activeClient = useMemo(
+    () => (activeEngagement ? desk.clients.find((c) => c.id === activeEngagement.client_id) || null : null),
+    [desk.clients, activeEngagement]
   );
   const personName = String(activePerson?.name ?? "").trim() || "Personal desk";
   const pendingDecisions = useMemo(
@@ -400,6 +408,8 @@ export function App() {
     paper.load();
     desk.loadFiles();
     desk.loadRoutines();
+    desk.loadClients();
+    desk.loadMetering();
     setGraphSeed((s) => s + 1);
   }, [desk, paper]);
 
@@ -772,6 +782,8 @@ export function App() {
           <PersonSelect
             people={peopleList}
             active={activePersonId}
+            activeClient={activeClient}
+            activeEngagement={activeEngagement}
             disabled={desk.busy}
             expanded={switcherOpen}
             onOpen={() => setSwitcherOpen(true)}
@@ -979,6 +991,12 @@ export function App() {
                 onResumePipeline={desk.resumePipeline}
                 onRetryPipeline={desk.retryPipeline}
                 onCancelPipeline={desk.cancelPipeline}
+                metering={desk.metering}
+                liveRunUsage={desk.liveRunUsage}
+                clients={desk.clients}
+                engagements={desk.engagements}
+                activeEngagementId={desk.activeEngagementId}
+                onOpenWorkspaceSwitcher={() => setSwitcherOpen(true)}
               />
               </Suspense>
             </div>
@@ -1122,6 +1140,17 @@ export function App() {
           runAfterPersonChange();
         }}
         onAddPerson={() => setAddPersonOpen(true)}
+        clientsEnabled={hasClientsApi(desk.status)}
+        clients={desk.clients}
+        engagements={desk.engagements}
+        activeEngagementId={desk.activeEngagementId}
+        onRefreshClients={desk.loadClients}
+        onSwitchEngagement={async (id) => {
+          await desk.switchActiveEngagement(id);
+          runAfterPersonChange();
+        }}
+        onCreateClient={desk.createNewClient}
+        onCreateEngagement={desk.createNewEngagement}
       />
 
       {addPersonOpen && (
@@ -1256,6 +1285,7 @@ export function App() {
         onExportAuditBundle={handleExportAuditBundle}
         onConfigSaved={() => {
           desk.loadStatus();
+          desk.loadMetering();
           paper.load();
         }}
         u={u}

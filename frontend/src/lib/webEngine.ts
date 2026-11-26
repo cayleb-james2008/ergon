@@ -16,9 +16,17 @@ import { buildAuditBundle } from "@/lib/auditBundle";
 import { computeLineDiff } from "@/lib/diff";
 import {
   estimateNextRunMs,
+  type Client,
   type DeliveryLog,
+  type Engagement,
   type FileRevision,
   type LiveRunStep,
+  type MeteringByEngagement,
+  type MeteringByModel,
+  type MeteringDailyPoint,
+  type MeteringSummary,
+  type ModelPricingEntry,
+  type ModelPricingMap,
   type OutboundConnector,
   type OutboundConnectorKind,
   type PipelineCheckpointInputMode,
@@ -27,6 +35,7 @@ import {
   type PipelineStepState,
   type Routine,
   type RoutineRunRecord,
+  type RunUsage,
   type TriggerRule,
 } from "@/lib/api";
 
@@ -52,6 +61,18 @@ type WebWork = {
   thread_id: string;
   ts: number;
   steps?: string[];
+  engagement_id?: string;
+  usage?: RunUsage;
+};
+type UsageLedgerEntry = {
+  id: string;
+  ts: number;
+  person_id: string;
+  engagement_id?: string;
+  thread_id?: string;
+  run_id?: string;
+  kind?: string;
+  usage: RunUsage;
 };
 type WebDecision = {
   id: string;
@@ -78,6 +99,13 @@ type WebDecision = {
   payload_preview?: string;
   payload_sha256?: string;
   delivery_id?: string;
+  engagement_id?: string;
+  engagement_name?: string;
+  client_name?: string;
+  retainer_budget_usd?: number;
+  spent_usd?: number;
+  projected_usd?: number;
+  estimated_cost_usd?: number;
 };
 type WebConnectorsState = {
   triggers: TriggerRule[];
@@ -123,12 +151,18 @@ type PersonStore = {
   suite: string[];
   policyProfile?: WorkspacePolicyProfile;
   policyUpdatedMs?: number;
+  usageLedger?: UsageLedgerEntry[];
+  budgetOverrunApproved?: Record<string, number>;
 };
 type RootState = {
   activePerson: string;
   people: WebPerson[];
   library: WebLibItem[];
   stores: Record<string, PersonStore>;
+  clients?: Client[];
+  engagements?: Engagement[];
+  activeEngagementByPerson?: Record<string, string>;
+  modelPricing?: ModelPricingMap;
 };
 type ByokConfig = {
   engine_mode: "browser" | "byok";
@@ -141,6 +175,130 @@ const DB_NAME = "ergon-workspace-v7";
 const DB_STORE = "state";
 const DB_KEY = "root";
 const BYOK_KEY = "ergon-byok-session";
+
+const DEFAULT_MODEL_PRICING: ModelPricingMap = {
+  "browser-workspace-engine": { input_per_1m_usd: 0.15, output_per_1m_usd: 0.6, cached_input_per_1m_usd: 0.075 },
+  "gpt-4o-mini": { input_per_1m_usd: 0.15, output_per_1m_usd: 0.6, cached_input_per_1m_usd: 0.075 },
+  "gpt-4o": { input_per_1m_usd: 2.5, output_per_1m_usd: 10.0, cached_input_per_1m_usd: 1.25 },
+  "claude-3-5-sonnet": { input_per_1m_usd: 3.0, output_per_1m_usd: 15.0, cached_input_per_1m_usd: 0.3 },
+  "deepseek-chat": { input_per_1m_usd: 0.27, output_per_1m_usd: 1.1, cached_input_per_1m_usd: 0.07 },
+  "qwen2.5:3b": { input_per_1m_usd: 0.0, output_per_1m_usd: 0.0, cached_input_per_1m_usd: 0.0 },
+};
+
+function mergeModelPricing(overrides?: ModelPricingMap): ModelPricingMap {
+  const merged: ModelPricingMap = {};
+  for (const [k, v] of Object.entries(DEFAULT_MODEL_PRICING)) {
+    merged[k] = { ...v };
+  }
+  if (overrides && typeof overrides === "object") {
+    for (const [k, v] of Object.entries(overrides)) {
+      if (!v || typeof v !== "object") continue;
+      merged[k] = {
+        input_per_1m_usd: Math.max(0, Number(v.input_per_1m_usd) || 0),
+        output_per_1m_usd: Math.max(0, Number(v.output_per_1m_usd) || 0),
+        cached_input_per_1m_usd: Math.max(0, Number(v.cached_input_per_1m_usd) || 0),
+      };
+    }
+  }
+  return merged;
+}
+
+function computeUsageCostUsd(
+  pricingMap: ModelPricingMap,
+  modelId: string,
+  promptTokens: number,
+  completionTokens: number,
+  cachedTokens = 0
+): number {
+  const key = modelId.trim();
+  const entry: ModelPricingEntry =
+    pricingMap[key] ||
+    pricingMap[key.toLowerCase()] ||
+    pricingMap["browser-workspace-engine"] ||
+    { input_per_1m_usd: 0.15, output_per_1m_usd: 0.6, cached_input_per_1m_usd: 0.075 };
+  const uncachedPrompt = Math.max(0, promptTokens - cachedTokens);
+  const cachedRate = entry.cached_input_per_1m_usd ?? entry.input_per_1m_usd * 0.5;
+  const cost =
+    (uncachedPrompt * entry.input_per_1m_usd +
+      cachedTokens * cachedRate +
+      completionTokens * entry.output_per_1m_usd) /
+    1_000_000;
+  return Math.round(cost * 1_000_000) / 1_000_000;
+}
+
+function estimateMinutesSaved(promptOrSkill: string, stepCount: number): number {
+  const s = promptOrSkill.toLowerCase();
+  if (/reconcil|ledger|invoice|expense/.test(s)) return 28;
+  if (/audit|contract|clause/.test(s)) return 35;
+  if (/clean_dataset|dedup|normaliz/.test(s)) return 24;
+  if (/extract_table|spreadsheet/.test(s)) return 20;
+  if (/compare|diff/.test(s)) return 22;
+  if (/summar|meeting|triage|inbox/.test(s)) return 18;
+  if (/brief|research|draft/.test(s)) return 25;
+  return Math.max(10, Math.min(40, 8 + stepCount * 4));
+}
+
+function ensureClientsAndPricing(state: RootState, now = Date.now()) {
+  if (!Array.isArray(state.clients) || state.clients.length === 0) {
+    state.clients = [
+      {
+        id: "cli-northstar",
+        name: "Northstar Advisory",
+        brand_header: "Northstar Advisory Partners",
+        billing_currency: "USD",
+        default_rate_usd: 220,
+        created_ms: now - 7 * 86_400_000,
+        updated_ms: now - 86_400_000,
+      },
+      {
+        id: "cli-harbor",
+        name: "Harbor Logistics",
+        brand_header: "Harbor Freight & Ops",
+        billing_currency: "USD",
+        default_rate_usd: 185,
+        created_ms: now - 5 * 86_400_000,
+        updated_ms: now - 2 * 86_400_000,
+      },
+    ];
+  }
+  if (!Array.isArray(state.engagements) || state.engagements.length === 0) {
+    state.engagements = [
+      {
+        id: "eng-northstar-q4",
+        client_id: "cli-northstar",
+        person_id: "maya-chen",
+        name: "Q4 Operations Retainer",
+        retainer_hours: 40,
+        retainer_budget_usd: 2500,
+        hourly_rate_usd: 220,
+        period: "monthly",
+        status: "active",
+        created_ms: now - 7 * 86_400_000,
+        updated_ms: now - 86_400_000,
+      },
+      {
+        id: "eng-harbor-close",
+        client_id: "cli-harbor",
+        person_id: "tomas-ruiz",
+        name: "Monthly Finance Close",
+        retainer_hours: 25,
+        retainer_budget_usd: 1500,
+        hourly_rate_usd: 185,
+        period: "monthly",
+        status: "active",
+        created_ms: now - 5 * 86_400_000,
+        updated_ms: now - 2 * 86_400_000,
+      },
+    ];
+  }
+  if (!state.activeEngagementByPerson || typeof state.activeEngagementByPerson !== "object") {
+    state.activeEngagementByPerson = {
+      "maya-chen": "eng-northstar-q4",
+      "tomas-ruiz": "eng-harbor-close",
+    };
+  }
+  state.modelPricing = mergeModelPricing(state.modelPricing);
+}
 
 function utf8Bytes(s: string): number {
   return new TextEncoder().encode(s).length;
@@ -1007,6 +1165,19 @@ function buildInitialState(): RootState {
         answered: false,
         thread_id: t1,
         ts: now - 24 * 60_000,
+        engagement_id: "eng-northstar-q4",
+        usage: {
+          model_id: "browser-workspace-engine",
+          prompt_tokens: 1420,
+          completion_tokens: 480,
+          cached_tokens: 320,
+          total_tokens: 1900,
+          cost_usd: 0.000477,
+          latency_ms: 340,
+          estimated_minutes_saved: 28,
+          billable_value_usd: 102.67,
+          engagement_id: "eng-northstar-q4",
+        },
       },
       {
         id: t2,
@@ -1017,6 +1188,30 @@ function buildInitialState(): RootState {
         answered: false,
         thread_id: t2,
         ts: now - 90 * 60_000,
+        engagement_id: "eng-northstar-q4",
+      },
+    ],
+    usageLedger: [
+      {
+        id: `ulg-${now - 24 * 60_000}`,
+        ts: now - 24 * 60_000,
+        person_id: "maya-chen",
+        engagement_id: "eng-northstar-q4",
+        thread_id: t1,
+        run_id: `run-${now - 24 * 60_000}-1`,
+        kind: "chat",
+        usage: {
+          model_id: "browser-workspace-engine",
+          prompt_tokens: 1420,
+          completion_tokens: 480,
+          cached_tokens: 320,
+          total_tokens: 1900,
+          cost_usd: 0.000477,
+          latency_ms: 340,
+          estimated_minutes_saved: 28,
+          billable_value_usd: 102.67,
+          engagement_id: "eng-northstar-q4",
+        },
       },
     ],
     decisions: [
@@ -1104,7 +1299,7 @@ function buildInitialState(): RootState {
     connectors: { triggers: [], outbound: [], deliveries: [], webhookSecrets: {}, outboundSecrets: {} },
   };
 
-  return {
+  const initRoot: RootState = {
     activePerson: "maya-chen",
     people: [
       { id: "maya-chen", name: "Maya Chen", role: "Operations lead" },
@@ -1116,6 +1311,8 @@ function buildInitialState(): RootState {
       "tomas-ruiz": tomasStore,
     },
   };
+  ensureClientsAndPricing(initRoot, now);
+  return initRoot;
 }
 
 function openIdb(dbName = DB_NAME): Promise<IDBDatabase | null> {
@@ -1276,10 +1473,12 @@ async function idbLoad(): Promise<RootState | null> {
     }
   });
   if (loaded) {
+    ensureClientsAndPricing(loaded);
     for (const st of Object.values(loaded.stores || {})) {
       if (!Array.isArray(st.routines)) st.routines = [];
       if (!st.fileHistory || typeof st.fileHistory !== "object") st.fileHistory = {};
       if (!st.routineRuns || typeof st.routineRuns !== "object") st.routineRuns = {};
+      if (!Array.isArray(st.usageLedger)) st.usageLedger = [];
       ensureWebConnectors(st);
     }
   }
@@ -1440,8 +1639,249 @@ export async function installBrowserEngine(): Promise<void> {
     if (!state.stores[pid].fileHistory) state.stores[pid].fileHistory = {};
     if (!state.stores[pid].routineRuns) state.stores[pid].routineRuns = {};
     if (!Array.isArray(state.stores[pid].pipelineRuns)) state.stores[pid].pipelineRuns = [];
+    if (!Array.isArray(state.stores[pid].usageLedger)) state.stores[pid].usageLedger = [];
     return state.stores[pid];
   };
+
+  function activeEngagementFor(pid: string): { engagement: Engagement | null; client: Client | null } {
+    ensureClientsAndPricing(state);
+    const engId = state.activeEngagementByPerson?.[pid] || "";
+    const eng =
+      (engId ? state.engagements?.find((e) => e.id === engId) : undefined) ||
+      state.engagements?.find((e) => e.person_id === pid) ||
+      null;
+    const cli = eng ? state.clients?.find((c) => c.id === eng.client_id) || null : null;
+    return { engagement: eng, client: cli };
+  }
+
+  function effectiveHourlyRate(pid: string, engagement: Engagement | null, client: Client | null): number {
+    if (engagement && typeof engagement.hourly_rate_usd === "number" && engagement.hourly_rate_usd > 0) {
+      return engagement.hourly_rate_usd;
+    }
+    if (client && typeof client.default_rate_usd === "number" && client.default_rate_usd > 0) {
+      return client.default_rate_usd;
+    }
+    void pid;
+    return 150;
+  }
+
+  function engagementSpentUsd(engagementId: string): number {
+    let sum = 0;
+    for (const store of Object.values(state.stores)) {
+      for (const entry of store.usageLedger ?? []) {
+        if (entry.engagement_id === engagementId) {
+          sum += Number(entry.usage?.cost_usd ?? 0) || 0;
+        }
+      }
+    }
+    return Math.round(sum * 1_000_000) / 1_000_000;
+  }
+
+  function checkBudgetGateHold(p: WebPerson, st: PersonStore, threadId: string): WebDecision | null {
+    const { engagement, client } = activeEngagementFor(p.id);
+    if (!engagement || typeof engagement.retainer_budget_usd !== "number" || engagement.retainer_budget_usd <= 0) {
+      return null;
+    }
+    const spent = engagementSpentUsd(engagement.id);
+    const budget = engagement.retainer_budget_usd;
+    if (spent < budget) return null;
+    const approvedCount = st.budgetOverrunApproved?.[engagement.id] ?? 0;
+    const ledgerCount = (st.usageLedger ?? []).filter((u) => u.engagement_id === engagement.id).length;
+    if (approvedCount > ledgerCount) {
+      return null;
+    }
+    const existingPending = st.decisions.find(
+      (d) => d.status === "pending" && d.kind === "budget_gate" && d.engagement_id === engagement.id
+    );
+    if (existingPending) return existingPending;
+    const did = `d-bgate-${Date.now()}-${st.decisions.length + 1}`;
+    const dec: WebDecision = {
+      id: did,
+      kind: "budget_gate",
+      summary: `Retainer budget limit reached for ${engagement.name}`,
+      status: "pending",
+      outcome: null,
+      thread_id: threadId,
+      ts: Date.now(),
+      severity: "warning",
+      engagement_id: engagement.id,
+      engagement_name: engagement.name,
+      client_name: client?.name,
+      retainer_budget_usd: budget,
+      spent_usd: spent,
+      projected_usd: Math.round((spent + 0.01) * 10_000) / 10_000,
+      estimated_cost_usd: 0.01,
+      detail: `Spending for ${client?.name ? `${client.name} / ` : ""}${engagement.name} has reached $${spent.toFixed(2)} against the $${budget.toFixed(2)} retainer limit. Approve overrun to run this task or pause spend.`,
+    };
+    st.decisions.push(dec);
+    return dec;
+  }
+
+  function recordUsageEntry(
+    p: WebPerson,
+    st: PersonStore,
+    opts: { engagement_id?: string; thread_id?: string; run_id?: string; kind?: string; usage: RunUsage }
+  ) {
+    if (!Array.isArray(st.usageLedger)) st.usageLedger = [];
+    st.usageLedger.push({
+      id: `ulg-${Date.now()}-${st.usageLedger.length + 1}`,
+      ts: Date.now(),
+      person_id: p.id,
+      engagement_id: opts.engagement_id,
+      thread_id: opts.thread_id,
+      run_id: opts.run_id,
+      kind: opts.kind || "chat",
+      usage: opts.usage,
+    });
+    if (st.usageLedger.length > 500) st.usageLedger.splice(0, st.usageLedger.length - 500);
+  }
+
+  function buildMeteringSummary(opts: {
+    engagement_id?: string;
+    client_id?: string;
+    window_days?: number;
+  }): MeteringSummary {
+    ensureClientsAndPricing(state);
+    const p = activePerson();
+    const { engagement: activeEng, client: activeCli } = activeEngagementFor(p.id);
+    const windowDays = opts.window_days && opts.window_days > 0 ? opts.window_days : 30;
+    const cutoffMs = Date.now() - windowDays * 86_400_000;
+
+    const engById = new Map<string, Engagement>((state.engagements ?? []).map((e) => [e.id, e]));
+    const cliById = new Map<string, Client>((state.clients ?? []).map((c) => [c.id, c]));
+
+    const allEntries: UsageLedgerEntry[] = [];
+    for (const store of Object.values(state.stores)) {
+      for (const entry of store.usageLedger ?? []) {
+        if (entry.ts < cutoffMs) continue;
+        if (opts.engagement_id && entry.engagement_id !== opts.engagement_id) continue;
+        if (opts.client_id) {
+          const e = entry.engagement_id ? engById.get(entry.engagement_id) : undefined;
+          if (!e || e.client_id !== opts.client_id) continue;
+        }
+        allEntries.push(entry);
+      }
+    }
+
+    let promptTokens = 0;
+    let completionTokens = 0;
+    let cachedTokens = 0;
+    let totalTokens = 0;
+    let costUsd = 0;
+    let minutesSaved = 0;
+    let billableValueUsd = 0;
+
+    const byEngMap = new Map<string, MeteringByEngagement>();
+    const byModelMap = new Map<string, MeteringByModel>();
+    const byDayMap = new Map<string, MeteringDailyPoint>();
+
+    for (const entry of allEntries) {
+      const u = entry.usage;
+      const pt = Number(u.prompt_tokens) || 0;
+      const ct = Number(u.completion_tokens) || 0;
+      const ca = Number(u.cached_tokens) || 0;
+      const tt = Number(u.total_tokens) || pt + ct;
+      const cost = Number(u.cost_usd) || 0;
+      const mins = Number(u.estimated_minutes_saved) || 0;
+      const bill = Number(u.billable_value_usd) || 0;
+
+      promptTokens += pt;
+      completionTokens += ct;
+      cachedTokens += ca;
+      totalTokens += tt;
+      costUsd += cost;
+      minutesSaved += mins;
+      billableValueUsd += bill;
+
+      const eid = entry.engagement_id || "unassigned";
+      const eng = eid !== "unassigned" ? engById.get(eid) : undefined;
+      const cli = eng ? cliById.get(eng.client_id) : undefined;
+      const engRow = byEngMap.get(eid) || {
+        engagement_id: eid,
+        engagement_name: eng?.name || "Unassigned workspace",
+        client_id: cli?.id,
+        client_name: cli?.name,
+        runs: 0,
+        total_tokens: 0,
+        cost_usd: 0,
+        minutes_saved: 0,
+        billable_value_usd: 0,
+        retainer_budget_usd: eng?.retainer_budget_usd,
+        retainer_burn_pct: 0,
+      };
+      engRow.runs += 1;
+      engRow.total_tokens += tt;
+      engRow.cost_usd = Math.round((engRow.cost_usd + cost) * 1_000_000) / 1_000_000;
+      engRow.minutes_saved += mins;
+      engRow.billable_value_usd = Math.round((engRow.billable_value_usd + bill) * 100) / 100;
+      if (engRow.retainer_budget_usd && engRow.retainer_budget_usd > 0) {
+        engRow.retainer_burn_pct = Math.round((engRow.cost_usd / engRow.retainer_budget_usd) * 10000) / 100;
+      }
+      byEngMap.set(eid, engRow);
+
+      const mid = u.model_id || "browser-workspace-engine";
+      const modRow = byModelMap.get(mid) || {
+        model_id: mid,
+        runs: 0,
+        prompt_tokens: 0,
+        completion_tokens: 0,
+        total_tokens: 0,
+        cost_usd: 0,
+      };
+      modRow.runs += 1;
+      modRow.prompt_tokens += pt;
+      modRow.completion_tokens += ct;
+      modRow.total_tokens += tt;
+      modRow.cost_usd = Math.round((modRow.cost_usd + cost) * 1_000_000) / 1_000_000;
+      byModelMap.set(mid, modRow);
+
+      const day = new Date(entry.ts).toISOString().slice(0, 10);
+      const dayRow = byDayMap.get(day) || {
+        date: day,
+        runs: 0,
+        total_tokens: 0,
+        cost_usd: 0,
+        minutes_saved: 0,
+        billable_value_usd: 0,
+      };
+      dayRow.runs += 1;
+      dayRow.total_tokens += tt;
+      dayRow.cost_usd = Math.round((dayRow.cost_usd + cost) * 1_000_000) / 1_000_000;
+      dayRow.minutes_saved += mins;
+      dayRow.billable_value_usd = Math.round((dayRow.billable_value_usd + bill) * 100) / 100;
+      byDayMap.set(day, dayRow);
+    }
+
+    const scopeEng = opts.engagement_id ? engById.get(opts.engagement_id) || activeEng : activeEng;
+    const scopeCli = scopeEng ? cliById.get(scopeEng.client_id) || activeCli : activeCli;
+    const retainerBudget = scopeEng?.retainer_budget_usd ?? 0;
+    const retainerSpent = scopeEng ? engagementSpentUsd(scopeEng.id) : costUsd;
+    const burnPct = retainerBudget > 0 ? Math.round((retainerSpent / retainerBudget) * 10000) / 100 : 0;
+    const netRoi = Math.round((billableValueUsd - costUsd) * 100) / 100;
+    const roiMultiple = costUsd > 0 ? Math.round((billableValueUsd / costUsd) * 10) / 10 : 0;
+
+    return {
+      totals: {
+        runs: allEntries.length,
+        prompt_tokens: promptTokens,
+        completion_tokens: completionTokens,
+        cached_tokens: cachedTokens,
+        total_tokens: totalTokens,
+        cost_usd: Math.round(costUsd * 1_000_000) / 1_000_000,
+        minutes_saved: Math.round(minutesSaved),
+        billable_value_usd: Math.round(billableValueUsd * 100) / 100,
+        retainer_burn_pct: burnPct,
+        retainer_budget_usd: retainerBudget,
+        net_roi_usd: netRoi,
+        roi_multiple: roiMultiple,
+      },
+      by_engagement: Array.from(byEngMap.values()).sort((a, b) => b.billable_value_usd - a.billable_value_usd),
+      by_model: Array.from(byModelMap.values()).sort((a, b) => b.total_tokens - a.total_tokens),
+      daily_series: Array.from(byDayMap.values()).sort((a, b) => a.date.localeCompare(b.date)),
+      active_engagement: scopeEng,
+      active_client: scopeCli,
+    };
+  }
 
   function recordFileRevision(st: PersonStore, safePath: string, prev: WebFile | undefined, reason: string) {
     if (!prev) return;
@@ -1542,6 +1982,8 @@ export async function installBrowserEngine(): Promise<void> {
         files: x.files,
         thread_id: x.thread_id,
         ts: x.ts,
+        engagement_id: x.engagement_id,
+        usage: x.usage,
       })),
       stopped: stopped.map((x) => ({ task: x.task, summary: x.summary, thread_id: x.thread_id, ts: x.ts })),
       suite_size: st.suite.length,
@@ -1704,7 +2146,12 @@ export async function installBrowserEngine(): Promise<void> {
     prompt: string,
     pushStep: (tool: string, raw: string) => void,
     isCancelled: () => boolean
-  ): Promise<{ summary: string; written: string[]; parkedFile: string | null }> {
+  ): Promise<{
+    summary: string;
+    written: string[];
+    parkedFile: string | null;
+    rawUsage: { prompt_tokens: number; completion_tokens: number; cached_tokens: number; latency_ms: number; model_id: string };
+  }> {
     const rules = learnedLines(st.memory);
     const sys = [
       "You are Ergon v0.5.0, a personal AI agent running over a real sandboxed browser workspace.",
@@ -1721,6 +2168,10 @@ export async function installBrowserEngine(): Promise<void> {
     ];
     const written: string[] = [];
     let parkedFile: string | null = null;
+    let promptTokens = 0;
+    let completionTokens = 0;
+    let cachedTokens = 0;
+    const loopStart = Date.now();
 
     for (let step = 0; step < 10; step++) {
       if (isCancelled()) throw new Error("Run cancelled by user.");
@@ -1736,7 +2187,18 @@ export async function installBrowserEngine(): Promise<void> {
         throw new Error(`BYOK endpoint returned HTTP ${r.status}: ${txt.slice(0, 240)}`);
       }
       const data = await r.json();
+      const u = data?.usage;
+      if (u && typeof u === "object") {
+        promptTokens += Number(u.prompt_tokens ?? 0) || 0;
+        completionTokens += Number(u.completion_tokens ?? 0) || 0;
+        cachedTokens += Number(u.cached_tokens ?? u.prompt_tokens_details?.cached_tokens ?? 0) || 0;
+      } else {
+        promptTokens += Math.max(80, Math.round(messages.map((m) => m.content.length).reduce((a, b) => a + b, 0) / 4));
+      }
       const raw = String(data?.choices?.[0]?.message?.content ?? "").trim();
+      if (!u || typeof u !== "object") {
+        completionTokens += Math.max(32, Math.round(raw.length / 4));
+      }
       const unfenced = raw.replace(/^```(?:json)?\s*/i, "").replace(/```$/, "").trim();
       let parsed: Record<string, unknown>;
       try {
@@ -1748,7 +2210,18 @@ export async function installBrowserEngine(): Promise<void> {
         else throw new Error(`Model did not return valid JSON: ${raw.slice(0, 200)}`);
       }
       if (parsed.done === true) {
-        return { summary: String(parsed.summary || "Task complete."), written, parkedFile };
+        return {
+          summary: String(parsed.summary || "Task complete."),
+          written,
+          parkedFile,
+          rawUsage: {
+            prompt_tokens: promptTokens,
+            completion_tokens: completionTokens,
+            cached_tokens: cachedTokens,
+            latency_ms: Math.max(1, Date.now() - loopStart),
+            model_id: byok.model_id || "byok-model",
+          },
+        };
       }
       const tool = String(parsed.tool || "");
       const args = (parsed.args && typeof parsed.args === "object" ? parsed.args : {}) as Record<string, unknown>;
@@ -2075,13 +2548,52 @@ export async function installBrowserEngine(): Promise<void> {
     }
     th.messages.push({ role: "user", content: prompt });
 
+    const { engagement, client } = activeEngagementFor(p.id);
+    const heldBudget = checkBudgetGateHold(p, st, th.id);
+    if (heldBudget) {
+      th.messages.push({
+        role: "step",
+        content: `Note: Retainer budget limit reached for ${heldBudget.engagement_name || "active engagement"}; parked for your approval in Today.`,
+      });
+      th.messages.push({
+        role: "assistant",
+        content: heldBudget.detail || "Retainer budget gate paused this run until approved in Today.",
+      });
+      await persist();
+      broadcastSse("approval_parked", {
+        thread_id: th.id,
+        decision_id: heldBudget.id,
+        kind: "budget_gate",
+      });
+      return jsonRes({ ...th, stopped_for_safety: true, budget_gate: heldBudget }, 200);
+    }
+
     const runId = `run-${Date.now()}`;
     const startedMs = Date.now();
+    const modelId = byok.engine_mode === "byok" && byok.model_id ? byok.model_id : "browser-workspace-engine";
+    const pricingMap = mergeModelPricing(state.modelPricing);
+    const hourlyRate = effectiveHourlyRate(p.id, engagement, client);
+    let stepPromptAcc = Math.max(240, Math.round(prompt.length / 4) + 180);
+    let stepCompletionAcc = 0;
+
     liveRuns[p.id] = { active: true, run_id: runId, thread_id: th.id, task: prompt, started_ms: startedMs, steps: [], cancelled: false };
     broadcastSse("status", { run_id: runId, thread_id: th.id, active: true, elapsed_ms: 0, steps: [] });
 
     const pushStep = (tool: string, stepStr: string) => {
       th!.messages.push({ role: "step", content: stepStr });
+      stepPromptAcc += Math.max(90, Math.round(stepStr.length / 4));
+      stepCompletionAcc += Math.max(45, Math.round(stepStr.length / 6));
+      const cachedTok = Math.round(stepPromptAcc * 0.2);
+      const stepUsage: RunUsage = {
+        model_id: modelId,
+        prompt_tokens: stepPromptAcc,
+        completion_tokens: stepCompletionAcc,
+        cached_tokens: cachedTok,
+        total_tokens: stepPromptAcc + stepCompletionAcc,
+        cost_usd: computeUsageCostUsd(pricingMap, modelId, stepPromptAcc, stepCompletionAcc, cachedTok),
+        latency_ms: Math.max(1, Date.now() - startedMs),
+        engagement_id: engagement?.id,
+      };
       const stepObj: LiveRunStep = {
         id: `${runId}-s${(liveRuns[p.id]?.steps.length ?? 0) + 1}`,
         tool,
@@ -2090,7 +2602,7 @@ export async function installBrowserEngine(): Promise<void> {
         raw: stepStr,
       };
       liveRuns[p.id]?.steps.push(stepObj);
-      broadcastSse("step_done", { run_id: runId, thread_id: th!.id, ...stepObj });
+      broadcastSse("step_done", { run_id: runId, thread_id: th!.id, ...stepObj, usage: stepUsage });
     };
 
     const isCancelled = () => Boolean(liveRuns[p.id]?.cancelled);
@@ -2107,6 +2619,42 @@ export async function installBrowserEngine(): Promise<void> {
           content: `Note: ${outcome.parkedFile} has NOT been deleted yet; the deletion is waiting for your approval in Decisions.`,
         });
       }
+      const stepCount = th.messages.filter((m) => m.role === "step").length;
+      const minsSaved = estimateMinutesSaved(prompt, stepCount);
+      const billableVal = Math.round((minsSaved / 60) * hourlyRate * 100) / 100;
+      const rawU =
+        "rawUsage" in outcome && outcome.rawUsage
+          ? (outcome.rawUsage as {
+              prompt_tokens: number;
+              completion_tokens: number;
+              cached_tokens: number;
+              latency_ms: number;
+              model_id: string;
+            })
+          : null;
+      const finalPrompt = rawU ? rawU.prompt_tokens : stepPromptAcc + Math.max(120, Math.round(prompt.length / 4));
+      const finalCompletion = rawU ? rawU.completion_tokens : stepCompletionAcc + Math.max(60, Math.round(outcome.summary.length / 4));
+      const finalCached = rawU ? rawU.cached_tokens : Math.round(finalPrompt * 0.22);
+      const finalModel = rawU ? rawU.model_id : modelId;
+      const runUsage: RunUsage = {
+        model_id: finalModel,
+        prompt_tokens: finalPrompt,
+        completion_tokens: finalCompletion,
+        cached_tokens: finalCached,
+        total_tokens: finalPrompt + finalCompletion,
+        cost_usd: computeUsageCostUsd(pricingMap, finalModel, finalPrompt, finalCompletion, finalCached),
+        latency_ms: rawU ? rawU.latency_ms : Math.max(1, Date.now() - startedMs),
+        estimated_minutes_saved: minsSaved,
+        billable_value_usd: billableVal,
+        engagement_id: engagement?.id,
+      };
+      recordUsageEntry(p, st, {
+        engagement_id: engagement?.id,
+        thread_id: th.id,
+        run_id: runId,
+        kind: "chat",
+        usage: runUsage,
+      });
       st.work.push({
         id: th.id,
         task: th.title,
@@ -2117,9 +2665,12 @@ export async function installBrowserEngine(): Promise<void> {
         thread_id: th.id,
         ts: Date.now(),
         steps: th.messages.filter((m) => m.role === "step").map((m) => m.content),
+        engagement_id: engagement?.id,
+        usage: runUsage,
       });
       await persist();
-      broadcastSse("done", { run_id: runId, thread_id: th.id, elapsed_ms: Date.now() - startedMs });
+      broadcastSse("run_finished", { run_id: runId, thread_id: th.id, elapsed_ms: Date.now() - startedMs, usage: runUsage });
+      broadcastSse("done", { run_id: runId, thread_id: th.id, elapsed_ms: Date.now() - startedMs, usage: runUsage });
       delete liveRuns[p.id];
       return jsonRes(th, 200);
     } catch (e) {
@@ -2540,6 +3091,27 @@ export async function installBrowserEngine(): Promise<void> {
           stState.files = outcome.written.filter((f) => f !== "memory.md");
         }
 
+        const pricingMap = mergeModelPricing(state.modelPricing);
+        const { engagement: actEng, client: actCli } = activeEngagementFor(p.id);
+        const pRate = effectiveHourlyRate(p.id, actEng, actCli);
+        const stepModelId = byok.engine_mode === "byok" && byok.model_id ? byok.model_id : "browser-workspace-engine";
+        const pTok = Math.max(120, Math.round(((spec.label || "").length + (stState.output || "").length) / 3) + 180);
+        const cTok = Math.max(40, Math.round((stState.output || "").length / 4) + 35);
+        const cachedTok = Math.round(pTok * 0.2);
+        const stepMins = spec.kind === "skill" ? estimateMinutesSaved(spec.skill_id || spec.label || "", 1) : 10;
+        const stepUsage: RunUsage = {
+          model_id: stepModelId,
+          prompt_tokens: pTok,
+          completion_tokens: cTok,
+          cached_tokens: cachedTok,
+          total_tokens: pTok + cTok,
+          cost_usd: computeUsageCostUsd(pricingMap, stepModelId, pTok, cTok, cachedTok),
+          latency_ms: stState.finished_ms && stState.started_ms ? Math.max(1, stState.finished_ms - stState.started_ms) : 1,
+          estimated_minutes_saved: stepMins,
+          billable_value_usd: Math.round((stepMins / 60) * pRate * 100) / 100,
+          engagement_id: actEng?.id,
+        };
+        stState.usage = stepUsage;
         run.updated_ms = Date.now();
         await persist();
         broadcastSse("pipeline_step_done", {
@@ -2553,6 +3125,7 @@ export async function installBrowserEngine(): Promise<void> {
           output: stState.output ?? "",
           files: stState.files ?? [],
           metrics: stState.metrics ?? {},
+          usage: stepUsage,
           error: null,
           elapsed_ms: stState.finished_ms && stState.started_ms ? stState.finished_ms - stState.started_ms : 1,
         });
@@ -2589,6 +3162,48 @@ export async function installBrowserEngine(): Promise<void> {
         .map((s) => s.output)
         .filter(Boolean)
         .slice(-1)[0] || `Completed pipeline ${run.routine_name || run.run_id}.`;
+    const { engagement: pipeEng } = activeEngagementFor(p.id);
+    const pipeUsage: RunUsage = run.step_states.reduce<RunUsage>(
+      (acc, s) => {
+        const u = s.usage;
+        if (!u) return acc;
+        return {
+          model_id: u.model_id || acc.model_id,
+          prompt_tokens: acc.prompt_tokens + (u.prompt_tokens || 0),
+          completion_tokens: acc.completion_tokens + (u.completion_tokens || 0),
+          cached_tokens: (acc.cached_tokens || 0) + (u.cached_tokens || 0),
+          total_tokens: acc.total_tokens + (u.total_tokens || 0),
+          cost_usd: Math.round((acc.cost_usd + (u.cost_usd || 0)) * 1_000_000) / 1_000_000,
+          latency_ms: (acc.latency_ms || 0) + (u.latency_ms || 0),
+          estimated_minutes_saved: (acc.estimated_minutes_saved || 0) + (u.estimated_minutes_saved || 0),
+          billable_value_usd: Math.round(((acc.billable_value_usd || 0) + (u.billable_value_usd || 0)) * 100) / 100,
+          engagement_id: pipeEng?.id,
+        };
+      },
+      {
+        model_id: byok.engine_mode === "byok" && byok.model_id ? byok.model_id : "browser-workspace-engine",
+        prompt_tokens: 0,
+        completion_tokens: 0,
+        cached_tokens: 0,
+        total_tokens: 0,
+        cost_usd: 0,
+        latency_ms: 0,
+        estimated_minutes_saved: 0,
+        billable_value_usd: 0,
+        engagement_id: pipeEng?.id,
+      }
+    );
+    run.engagement_id = pipeEng?.id ?? null;
+    run.usage = pipeUsage;
+    if (pipeUsage.total_tokens > 0) {
+      recordUsageEntry(p, st, {
+        engagement_id: pipeEng?.id,
+        thread_id: run.thread_id || `pipeline-${run.run_id}`,
+        run_id: run.run_id,
+        kind: "pipeline",
+        usage: pipeUsage,
+      });
+    }
     st.work.push({
       id: run.run_id,
       task: run.routine_name || "Pipeline run",
@@ -2598,6 +3213,8 @@ export async function installBrowserEngine(): Promise<void> {
       answered: false,
       thread_id: run.thread_id || `pipeline-${run.run_id}`,
       ts: run.updated_ms,
+      engagement_id: pipeEng?.id,
+      usage: pipeUsage.total_tokens > 0 ? pipeUsage : undefined,
     });
     if (run.routine_id) {
       const rt = st.routines.find((r) => r.id === run.routine_id);
@@ -2613,6 +3230,7 @@ export async function installBrowserEngine(): Promise<void> {
       thread_id: run.thread_id ?? null,
       status: "completed",
       error: null,
+      usage: pipeUsage,
       run,
     });
   }
@@ -3396,11 +4014,11 @@ function runWebTableQuery(
   return { columns: outCols, rows: outRows, total_rows, matched_rows };
 }
 
-    if (method === "GET" && path === "/api/version") return jsonRes({ name: "ergon", version: "0.32.0" });
-    if (method === "GET" && path === "/api/update") return jsonRes({ current: "0.32.0", available: false, mode: "off", checked_at: Math.floor(Date.now() / 1000) });
+    if (method === "GET" && path === "/api/version") return jsonRes({ name: "ergon", version: "0.33.0" });
+    if (method === "GET" && path === "/api/update") return jsonRes({ current: "0.33.0", available: false, mode: "off", checked_at: Math.floor(Date.now() / 1000) });
     if (method === "GET" && path === "/api/status") {
       return jsonRes({
-        version: "0.32.0",
+        version: "0.33.0",
         model_configured: true,
         model: byok.engine_mode === "byok" && byok.model_id ? byok.model_id : "browser-workspace-engine",
         model_base_url: byok.engine_mode === "byok" ? byok.model_base_url : "indexeddb://local",
@@ -3423,6 +4041,8 @@ function runWebTableQuery(
           table_query: true,
           pdf_export: true,
           connectors: true,
+          clients: true,
+          metering: true,
         },
         scheduler: buildSchedulerStatus(st),
         person: p,
@@ -3430,6 +4050,7 @@ function runWebTableQuery(
       });
     }
     if (method === "GET" && path === "/api/config") {
+      ensureClientsAndPricing(state);
       return jsonRes({
         model_base_url: byok.model_base_url,
         model_id: byok.model_id || "browser-workspace-engine",
@@ -3438,9 +4059,55 @@ function runWebTableQuery(
         is_loopback: true,
         engine_mode: byok.engine_mode,
         detected_gateways: [],
+        model_pricing: mergeModelPricing(state.modelPricing),
       });
     }
-    if (method === "POST" && path === "/api/config") {
+    if ((method === "POST" || method === "PUT") && path === "/api/config") {
+      ensureClientsAndPricing(state);
+      const pricingOnly =
+        body.model_pricing !== undefined &&
+        body.engine_mode === undefined &&
+        body.model_base_url === undefined &&
+        body.model_id === undefined;
+      if (body.model_pricing && typeof body.model_pricing === "object" && !Array.isArray(body.model_pricing)) {
+        const nextPricing: ModelPricingMap = { ...(state.modelPricing ?? {}) };
+        for (const [k, rawEntry] of Object.entries(body.model_pricing as Record<string, unknown>)) {
+          const id = k.trim();
+          if (!id) continue;
+          if (rawEntry === null) {
+            delete nextPricing[id];
+            continue;
+          }
+          if (!rawEntry || typeof rawEntry !== "object") {
+            return jsonRes({ error: `Invalid pricing entry for "${id}".` }, 400);
+          }
+          const eObj = rawEntry as Record<string, unknown>;
+          const inp = Number(eObj.input_per_1m_usd ?? 0);
+          const outp = Number(eObj.output_per_1m_usd ?? 0);
+          const cached = Number(eObj.cached_input_per_1m_usd ?? 0);
+          if (!Number.isFinite(inp) || inp < 0 || !Number.isFinite(outp) || outp < 0 || !Number.isFinite(cached) || cached < 0) {
+            return jsonRes({ error: `Model pricing rates for "${id}" must be non-negative numbers.` }, 400);
+          }
+          nextPricing[id] = {
+            input_per_1m_usd: inp,
+            output_per_1m_usd: outp,
+            cached_input_per_1m_usd: cached,
+          };
+        }
+        state.modelPricing = mergeModelPricing(nextPricing);
+        await persist();
+      }
+      if (pricingOnly) {
+        return jsonRes({
+          model_base_url: byok.model_base_url,
+          model_id: byok.model_id || "browser-workspace-engine",
+          has_api_key: Boolean(byok.api_key),
+          model_configured: true,
+          is_loopback: true,
+          engine_mode: byok.engine_mode,
+          model_pricing: state.modelPricing,
+        });
+      }
       const mode = body.engine_mode === "byok" ? "byok" : "browser";
       const next: ByokConfig = {
         engine_mode: mode,
@@ -3459,6 +4126,7 @@ function runWebTableQuery(
         model_configured: true,
         is_loopback: true,
         engine_mode: next.engine_mode,
+        model_pricing: mergeModelPricing(state.modelPricing),
       });
     }
     if (method === "GET" && path === "/api/runs/status") {
@@ -5189,6 +5857,96 @@ function runWebTableQuery(
       await persist();
       return jsonRes({ active: state.activePerson, people: state.people });
     }
+    if (method === "GET" && path === "/api/clients") {
+      ensureClientsAndPricing(state);
+      const { engagement } = activeEngagementFor(p.id);
+      return jsonRes({
+        clients: state.clients ?? [],
+        engagements: state.engagements ?? [],
+        active_engagement_id: engagement?.id ?? null,
+      });
+    }
+    if (method === "POST" && path === "/api/clients") {
+      ensureClientsAndPricing(state);
+      const name = String(body.name ?? "").trim();
+      if (!name) return jsonRes({ error: "Client name is required." }, 400);
+      const nowMs = Date.now();
+      const rate = body.default_rate_usd !== undefined ? Number(body.default_rate_usd) : 185;
+      if (!Number.isFinite(rate) || rate < 0) return jsonRes({ error: "Default hourly rate must be non-negative." }, 400);
+      const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 24) || "client";
+      const client: Client = {
+        id: `cli-${slug}-${nowMs}`,
+        name,
+        brand_header: typeof body.brand_header === "string" && body.brand_header.trim() ? body.brand_header.trim() : name,
+        billing_currency: typeof body.billing_currency === "string" && body.billing_currency.trim() ? body.billing_currency.trim() : "USD",
+        default_rate_usd: rate,
+        created_ms: nowMs,
+        updated_ms: nowMs,
+      };
+      state.clients!.push(client);
+      await persist();
+      return jsonRes({ client }, 201);
+    }
+    if (method === "POST" && path === "/api/engagements") {
+      ensureClientsAndPricing(state);
+      const clientId = String(body.client_id ?? "").trim();
+      const name = String(body.name ?? "").trim();
+      if (!clientId || !state.clients!.some((c) => c.id === clientId)) {
+        return jsonRes({ error: "Valid client_id is required." }, 404);
+      }
+      if (!name) return jsonRes({ error: "Engagement name is required." }, 400);
+      const cli = state.clients!.find((c) => c.id === clientId);
+      const hourlyRate =
+        body.hourly_rate_usd !== undefined ? Number(body.hourly_rate_usd) : (cli?.default_rate_usd ?? 185);
+      const retainerBudget = body.retainer_budget_usd !== undefined ? Number(body.retainer_budget_usd) : 2000;
+      const retainerHours =
+        body.retainer_hours !== undefined
+          ? Number(body.retainer_hours)
+          : hourlyRate > 0
+            ? Math.round((retainerBudget / hourlyRate) * 10) / 10
+            : 20;
+      if (!Number.isFinite(hourlyRate) || hourlyRate < 0 || !Number.isFinite(retainerBudget) || retainerBudget < 0) {
+        return jsonRes({ error: "Hourly rate and retainer budget must be non-negative numbers." }, 400);
+      }
+      const nowMs = Date.now();
+      const targetPerson = typeof body.person_id === "string" && body.person_id.trim() ? body.person_id.trim() : p.id;
+      const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 24) || "eng";
+      const engagement: Engagement = {
+        id: `eng-${slug}-${nowMs}`,
+        client_id: clientId,
+        person_id: targetPerson,
+        name,
+        retainer_hours: retainerHours,
+        retainer_budget_usd: retainerBudget,
+        hourly_rate_usd: hourlyRate,
+        period: typeof body.period === "string" && body.period.trim() ? body.period.trim() : "monthly",
+        status: "active",
+        created_ms: nowMs,
+        updated_ms: nowMs,
+      };
+      state.engagements!.push(engagement);
+      if (!state.activeEngagementByPerson) state.activeEngagementByPerson = {};
+      state.activeEngagementByPerson[targetPerson] = engagement.id;
+      await persist();
+      return jsonRes({ engagement, active_engagement_id: engagement.id }, 201);
+    }
+    if (method === "POST" && path === "/api/engagements/switch") {
+      ensureClientsAndPricing(state);
+      const engId = String(body.engagement_id ?? "").trim();
+      const eng = state.engagements!.find((e) => e.id === engId);
+      if (!eng) return jsonRes({ error: "Engagement not found." }, 404);
+      if (!state.activeEngagementByPerson) state.activeEngagementByPerson = {};
+      state.activeEngagementByPerson[p.id] = eng.id;
+      await persist();
+      return jsonRes({ active_engagement_id: eng.id, engagement: eng });
+    }
+    if (method === "GET" && path === "/api/metering/summary") {
+      const engagementId = u.searchParams.get("engagement_id") || undefined;
+      const clientId = u.searchParams.get("client_id") || undefined;
+      const winRaw = u.searchParams.get("window_days");
+      const windowDays = winRaw ? Number(winRaw) : 30;
+      return jsonRes(buildMeteringSummary({ engagement_id: engagementId, client_id: clientId, window_days: windowDays }));
+    }
     if (method === "GET" && path === "/api/memory") {
       return jsonRes({ person_id: p.id, content: st.memory, health: auditWebMemoryHealth(st) });
     }
@@ -5648,6 +6406,17 @@ function runWebTableQuery(
             log.status = "denied";
             log.error = dec.outcome;
           }
+        }
+      } else if (dec.kind === "budget_gate") {
+        if (approve) {
+          if (!st.budgetOverrunApproved) st.budgetOverrunApproved = {};
+          if (dec.engagement_id) {
+            const count = (st.usageLedger ?? []).filter((u) => u.engagement_id === dec.engagement_id).length;
+            st.budgetOverrunApproved[dec.engagement_id] = count + 1;
+          }
+          dec.outcome = `Approved budget overrun for ${dec.engagement_name || "engagement"}.`;
+        } else {
+          dec.outcome = `Kept retainer spend paused for ${dec.engagement_name || "engagement"}.`;
         }
       } else if (dec.kind === "delete" && dec.path) {
         if (approve) {

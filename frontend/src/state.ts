@@ -7,9 +7,15 @@ import { toast } from "sonner";
 import {
   call,
   cancelPipelineRun,
+  createClient,
+  createEngagement,
   estimateNextRunMs,
+  fetchClients,
+  fetchMeteringSummary,
   fileUploadBody,
   getPipelineRun,
+  hasClientsApi,
+  hasMeteringApi,
   hasPipelinesApi,
   MAX_UPLOAD_BYTES,
   hasV050Api,
@@ -18,9 +24,13 @@ import {
   resumePipelineRun,
   retryPipelineRun,
   startPipelineRun,
+  switchEngagement,
+  type Client,
+  type Engagement,
   type LiveRunStatus,
   type LiveRunStep,
   type MemoryHealth,
+  type MeteringSummary,
   type Msg,
   type Person,
   type PipelineResumePayload,
@@ -29,6 +39,7 @@ import {
   type PlaybookPreviewResult,
   type Routine,
   type RoutineRunRecord,
+  type RunUsage,
   type SchedulerStatus,
   type StarterLaunchResult,
   type StarterPlaybook,
@@ -215,6 +226,28 @@ function normalizeRoutine(raw: unknown): Routine | null {
   };
 }
 
+function parseRunUsage(raw: unknown): RunUsage | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const o = raw as Record<string, unknown>;
+  const pt = Number(o.prompt_tokens ?? 0);
+  const ct = Number(o.completion_tokens ?? 0);
+  const tt = Number(o.total_tokens ?? pt + ct);
+  const cost = Number(o.cost_usd ?? 0);
+  if (!Number.isFinite(pt) && !Number.isFinite(ct) && !Number.isFinite(cost)) return null;
+  return {
+    model_id: typeof o.model_id === "string" ? o.model_id : undefined,
+    prompt_tokens: Number.isFinite(pt) ? pt : 0,
+    completion_tokens: Number.isFinite(ct) ? ct : 0,
+    cached_tokens: typeof o.cached_tokens === "number" ? o.cached_tokens : undefined,
+    total_tokens: Number.isFinite(tt) ? tt : 0,
+    cost_usd: Number.isFinite(cost) ? cost : 0,
+    latency_ms: typeof o.latency_ms === "number" ? o.latency_ms : undefined,
+    estimated_minutes_saved: typeof o.estimated_minutes_saved === "number" ? o.estimated_minutes_saved : undefined,
+    billable_value_usd: typeof o.billable_value_usd === "number" ? o.billable_value_usd : undefined,
+    engagement_id: typeof o.engagement_id === "string" ? o.engagement_id : undefined,
+  };
+}
+
 export function useErgon() {
   const [status, setStatus] = useState<Status | null | "error">(null);
   const statusRef = useRef<Status | null | "error">(null);
@@ -256,6 +289,11 @@ export function useErgon() {
   const [pipelineRuns, setPipelineRuns] = useState<PipelineRun[]>([]);
   const [scheduler, setScheduler] = useState<SchedulerStatus | null>(null);
   const [routineHistoryRev, setRoutineHistoryRev] = useState(0);
+  const [clients, setClients] = useState<Client[]>([]);
+  const [engagements, setEngagements] = useState<Engagement[]>([]);
+  const [activeEngagementId, setActiveEngagementId] = useState("");
+  const [metering, setMetering] = useState<MeteringSummary | null>(null);
+  const [liveRunUsage, setLiveRunUsage] = useState<RunUsage | null>(null);
   const onRoutineFiredRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
@@ -295,6 +333,67 @@ export function useErgon() {
     });
     setSideError("");
   }, []);
+
+  const loadClients = useCallback(async () => {
+    if (!hasClientsApi(statusRef.current)) {
+      setClients([]);
+      setEngagements([]);
+      setActiveEngagementId("");
+      return;
+    }
+    const r = await fetchClients();
+    if (!r.ok) return;
+    setClients(r.data.clients);
+    setEngagements(r.data.engagements);
+    setActiveEngagementId(r.data.active_engagement_id || "");
+  }, []);
+
+  const loadMetering = useCallback(async (opts: { engagement_id?: string; client_id?: string; window_days?: number } = {}) => {
+    if (!hasMeteringApi(statusRef.current)) {
+      setMetering(null);
+      return;
+    }
+    const r = await fetchMeteringSummary(opts);
+    if (r.ok) {
+      setMetering(r.data);
+    }
+  }, []);
+
+  const createNewClient = useCallback(
+    async (input: { name: string; brand_header?: string; default_rate_usd?: number; billing_currency?: string }): Promise<Client | null> => {
+      const r = await createClient(input);
+      if (!r.ok) {
+        toast.error(r.error || "Could not create client.");
+        return null;
+      }
+      await loadClients();
+      toast.success(`Created client "${r.data.client.name}".`);
+      return r.data.client;
+    },
+    [loadClients]
+  );
+
+  const createNewEngagement = useCallback(
+    async (input: {
+      client_id: string;
+      name: string;
+      person_id?: string;
+      retainer_hours?: number;
+      retainer_budget_usd?: number;
+      hourly_rate_usd?: number;
+      period?: string;
+    }): Promise<Engagement | null> => {
+      const r = await createEngagement(input);
+      if (!r.ok) {
+        toast.error(r.error || "Could not create engagement.");
+        return null;
+      }
+      await Promise.all([loadClients(), loadMetering()]);
+      toast.success(`Created engagement "${r.data.engagement.name}".`);
+      return r.data.engagement;
+    },
+    [loadClients, loadMetering]
+  );
 
   const loadFiles = useCallback(async () => {
     const r = await call<{ files?: WorkspaceFile[] }>("/api/files");
@@ -904,8 +1003,8 @@ export function useErgon() {
     setMessages([]);
     loadDraftFor(null);
     setPendingNote(false);
-    await Promise.all([loadStatus(), loadPeople(), loadThreads(), loadRecent(), refreshCounts(), loadFiles(), loadSkills(), loadRoutines(), loadPipelineRuns()]);
-  }, [loadStatus, loadPeople, loadThreads, loadRecent, refreshCounts, loadFiles, loadSkills, loadRoutines, loadPipelineRuns]);
+    await Promise.all([loadStatus(), loadPeople(), loadClients(), loadMetering(), loadThreads(), loadRecent(), refreshCounts(), loadFiles(), loadSkills(), loadRoutines(), loadPipelineRuns()]);
+  }, [loadStatus, loadPeople, loadClients, loadMetering, loadThreads, loadRecent, refreshCounts, loadFiles, loadSkills, loadRoutines, loadPipelineRuns]);
 
   const switchPerson = useCallback(async (id: string) => {
     if (busyRef.current) return;
@@ -922,6 +1021,22 @@ export function useErgon() {
     setSideError("");
     await refreshPerson();
   }, [refreshPerson]);
+
+  const switchActiveEngagement = useCallback(
+    async (engagementId: string): Promise<boolean> => {
+      if (busyRef.current) return false;
+      const r = await switchEngagement(engagementId);
+      if (!r.ok) {
+        toast.error(r.error || "Could not switch engagement.");
+        return false;
+      }
+      setActiveEngagementId(r.data.active_engagement_id || engagementId);
+      await Promise.all([loadClients(), loadMetering(), loadFiles(), loadThreads(), loadRecent(), refreshCounts()]);
+      toast.success(`Switched engagement${r.data.engagement?.name ? ` to "${r.data.engagement.name}"` : ""}.`);
+      return true;
+    },
+    [loadClients, loadMetering, loadFiles, loadThreads, loadRecent, refreshCounts]
+  );
 
   const showRun = useCallback((id: string, msgs: Msg[]) => {
     setThread(id);
@@ -995,6 +1110,11 @@ export function useErgon() {
         }
       }
 
+      const uDelta = parseRunUsage(parsed.usage);
+      if (uDelta) {
+        setLiveRunUsage(uDelta);
+      }
+
       if (eventKind === "pipeline_paused") {
         toast.warning("Pipeline paused at a human checkpoint.");
         void loadPipelineRuns();
@@ -1011,12 +1131,13 @@ export function useErgon() {
         void loadRecent();
         void refreshCounts();
         void loadRoutines();
+        void loadMetering();
         onRoutineFiredRef.current?.();
       } else if (eventKind === "pipeline_resumed") {
         void loadPipelineRuns();
       }
     },
-    [upsertPipelineRun, loadPipelineRuns, refreshCounts, loadFiles, loadThreads, loadRecent, loadRoutines]
+    [upsertPipelineRun, loadPipelineRuns, refreshCounts, loadFiles, loadThreads, loadRecent, loadRoutines, loadMetering]
   );
 
   // Live SSE (/api/runs/stream) subscription with automatic fallback to /api/runs/status polling + live elapsed timer.
@@ -1027,6 +1148,7 @@ export function useErgon() {
       setLiveElapsedMs(0);
       setActiveRunId(null);
       activeRunIdRef.current = null;
+      setLiveRunUsage(null);
       setCancelling(false);
       return;
     }
@@ -1082,6 +1204,10 @@ export function useErgon() {
       }
       if (typeof parsed.elapsed_ms === "number") {
         setLiveElapsedMs(parsed.elapsed_ms);
+      }
+      const uDelta = parseRunUsage(parsed.usage);
+      if (uDelta) {
+        setLiveRunUsage(uDelta);
       }
       if (Array.isArray(parsed.steps)) {
         applyStatusPayload(parsed as Partial<LiveRunStatus>);
@@ -1245,8 +1371,9 @@ export function useErgon() {
       loadRecent();
       refreshCounts();
       loadFiles();
+      loadMetering();
     },
-    [loadThreads, loadRecent, refreshCounts, loadFiles, loadPipelineRuns]
+    [loadThreads, loadRecent, refreshCounts, loadFiles, loadPipelineRuns, loadMetering]
   );
 
   const send = useCallback(async () => {
@@ -1367,6 +1494,8 @@ export function useErgon() {
     (async () => {
       await loadStatus();
       loadPeople();
+      loadClients();
+      loadMetering();
       loadThreads();
       loadRecent();
       refreshCounts();
@@ -1421,6 +1550,19 @@ export function useErgon() {
         onRoutineFiredRef.current?.();
       };
       es.addEventListener("routine_fired", onFired);
+      for (const uEv of ["step_done", "run_finished", "done"]) {
+        es.addEventListener(uEv, (ev) => {
+          if (closed) return;
+          try {
+            const parsed = JSON.parse((ev as MessageEvent).data || "{}") as Record<string, unknown>;
+            const uDelta = parseRunUsage(parsed.usage);
+            if (uDelta) setLiveRunUsage(uDelta);
+            if (uEv === "run_finished" || uEv === "done") {
+              void loadMetering();
+            }
+          } catch { /* ignore */ }
+        });
+      }
       for (const pEv of [
         "pipeline_step_started",
         "pipeline_step_done",
@@ -1443,7 +1585,7 @@ export function useErgon() {
       closed = true;
       if (es) es.close();
     };
-  }, [busy, status, loadRoutines, loadFiles, loadThreads, loadRecent, refreshCounts, handlePipelineSseEvent]);
+  }, [busy, status, loadRoutines, loadFiles, loadThreads, loadRecent, refreshCounts, loadMetering, handlePipelineSseEvent]);
 
   useEffect(() => {
     if (status && status !== "error") {
@@ -1451,16 +1593,20 @@ export function useErgon() {
       loadSkills();
       loadRoutines();
       loadPipelineRuns();
+      loadClients();
+      loadMetering();
     }
-  }, [status, files, loadStarters, loadSkills, loadRoutines, loadPipelineRuns]);
+  }, [status, files, loadStarters, loadSkills, loadRoutines, loadPipelineRuns, loadClients, loadMetering]);
 
   return {
     status, runFailed, people, threads, threadsError, states, threadId, messages,
     busy, activeRunId, runStartedMs, liveElapsedMs, streamMode, cancelling, liveSteps, liveTimeline,
+    clients, engagements, activeEngagementId, metering, liveRunUsage,
     draft, setDraft, pendingNote, sideError, starters, recovered, recent,
     todayCount, learnedCount, memoryHealth, suiteCount, files, lastUploaded, setLastUploaded, skills, routines, pipelineRuns, scheduler, routineHistoryRev,
     send, sendPrompt, cancelRun, openThread, newThread, switchPerson, refreshPerson, showRun,
-    loadThreads, loadStatus, loadPeople, refreshCounts, healMemory, loadRecent, loadStarters,
+    loadThreads, loadStatus, loadPeople, loadClients, loadMetering, createNewClient, createNewEngagement, switchActiveEngagement,
+    refreshCounts, healMemory, loadRecent, loadStarters,
     loadFiles, uploadFile, uploadFiles, loadSkills, starterPlaybooks, launchStarterPlaybook, loadRoutines, createRoutine, deleteRoutine, importPlaybook, previewPlaybook,
     loadPipelineRuns, startPipeline, resumePipeline, retryPipeline, cancelPipeline,
     toggleRoutine, loadRoutineHistory, runRoutineNow, catchupRoutine, catchupAllRoutines, setOnRoutineFired,
