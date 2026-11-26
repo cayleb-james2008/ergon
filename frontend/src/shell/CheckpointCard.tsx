@@ -6,6 +6,7 @@ import {
   PauseCircle,
   Play,
   RotateCcw,
+  Send,
   Square,
   XCircle,
 } from "lucide-react";
@@ -65,9 +66,17 @@ export function CheckpointCard({
 
   const inspectFiles = useMemo(() => collectInspectableFiles(run), [run]);
   const specSteps = run.steps ?? run.steps_v2 ?? [];
+  const pausedSpec = specSteps[cp?.step_index ?? run.current_step_index];
+  const isDeliveryHold =
+    cp?.kind === "deliver" ||
+    Boolean(cp?.connector_id || cp?.deliver) ||
+    pausedSpec?.kind === "deliver";
+  const deliverTarget = cp?.connector_name || cp?.connector_id || cp?.deliver?.connector_id || pausedSpec?.deliver?.connector_id;
+  const deliverFile = cp?.deliver?.file || pausedSpec?.deliver?.file;
   const totalSteps = Math.max(run.step_states.length, specSteps.length, run.current_step_index + 1);
   const currentStepNum = Math.min(totalSteps, run.current_step_index + 1);
   const completedCount = run.step_states.filter((s) => s.status === "ok").length;
+  const stepsWithChildren = run.step_states.filter((s) => Array.isArray(s.child_items) && s.child_items.length > 0);
   const isFailed = run.status === "failed";
   const isInterrupted = run.status === "interrupted";
 
@@ -162,10 +171,10 @@ export function CheckpointCard({
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="flex min-w-0 flex-col gap-1">
           <div className="flex flex-wrap items-center gap-2">
-            <Badge variant="outline" size="sm" className="mono bg-surface text-xs text-ink-2">
+            <Badge variant="outline" size="sm" className="bg-surface text-xs text-ink-2">
               Step {currentStepNum} of {totalSteps}
             </Badge>
-            <span className="mono text-xs text-ink-2">
+            <span className="text-xs text-ink-2">
               {completedCount} completed
             </span>
           </div>
@@ -202,6 +211,36 @@ export function CheckpointCard({
         <p className="text-sm leading-6 text-ink [overflow-wrap:anywhere]">{cp.prompt}</p>
       )}
 
+      {isDeliveryHold && (
+        <div
+          data-delivery-hold-details="true"
+          className="flex flex-col gap-1 rounded-sm border border-hairline bg-surface px-3 py-2 text-xs text-ink-2"
+        >
+          <div className="flex items-center gap-1.5 font-medium text-ink">
+            <Send className="size-3.5 text-icon" strokeWidth={1.5} aria-hidden />
+            <span>Outbound delivery held for approval</span>
+          </div>
+          {deliverTarget && (
+            <div className="[overflow-wrap:anywhere]">
+              Target: {deliverTarget}
+              {cp?.delivery_url ? ` (${cp.delivery_url})` : ""}
+            </div>
+          )}
+          {deliverFile && <div className="[overflow-wrap:anywhere]">File: {deliverFile}</div>}
+          {cp?.payload_preview && (
+            <div className="rounded-sm bg-board/60 px-2 py-1 text-ink-2 [overflow-wrap:anywhere]">
+              {cp.payload_preview}
+            </div>
+          )}
+        </div>
+      )}
+
+      {run.agent_snapshot && (run.agent_snapshot.messages.length > 0 || run.agent_snapshot.written.length > 0) && (
+        <div data-agent-snapshot-badge="true" className="text-xs text-ink-2">
+          Agent context preserved ({run.agent_snapshot.messages.length} turns, {run.agent_snapshot.written.length} files)
+        </div>
+      )}
+
       {isFailed && run.error && (
         <p className="rounded-sm border border-hairline bg-board/60 px-3 py-2 text-xs text-ink-2 [overflow-wrap:anywhere]">
           {run.error}
@@ -210,24 +249,60 @@ export function CheckpointCard({
 
       {run.step_states.length > 0 && (
         <ol className="flex flex-wrap items-center gap-1.5 text-xs">
-          {run.step_states.map((st, idx) => (
-            <li
-              key={`${st.step_id}-${idx}`}
-              className="inline-flex items-center gap-1 rounded-chip border border-hairline bg-surface px-2 py-0.5 text-ink-2"
-            >
-              {st.status === "ok" ? (
-                <Check className="size-3 text-dot-green" strokeWidth={1.75} aria-hidden />
-              ) : st.status === "failed" ? (
-                <XCircle className="size-3 text-dot-red" strokeWidth={1.75} aria-hidden />
-              ) : st.status === "waiting_human" ? (
-                <Clock className="size-3 text-dot-amber" strokeWidth={1.75} aria-hidden />
-              ) : (
-                <span className="size-1.5 rounded-full bg-icon" aria-hidden />
-              )}
-              <span className="mono">{st.step_id}</span>
-            </li>
-          ))}
+          {run.step_states.map((st, idx) => {
+            const childTotal = st.child_items?.length ?? 0;
+            const childDone = st.child_items?.filter((c) => c.status === "ok").length ?? 0;
+            return (
+              <li
+                key={`${st.step_id}-${idx}`}
+                className="inline-flex items-center gap-1 rounded-chip border border-hairline bg-surface px-2 py-0.5 text-ink-2"
+              >
+                {st.status === "ok" ? (
+                  <Check className="size-3 text-dot-green" strokeWidth={1.75} aria-hidden />
+                ) : st.status === "failed" ? (
+                  <XCircle className="size-3 text-dot-red" strokeWidth={1.75} aria-hidden />
+                ) : st.status === "waiting_human" ? (
+                  <Clock className="size-3 text-dot-amber" strokeWidth={1.75} aria-hidden />
+                ) : st.status === "running" ? (
+                  <span className="pulse-dot size-1.5 rounded-full bg-blue" aria-hidden />
+                ) : (
+                  <span className="size-1.5 rounded-full bg-icon" aria-hidden />
+                )}
+                <span>{st.step_id}</span>
+                {childTotal > 0 && (
+                  <span className="mono text-ink-3">
+                    {childDone}/{childTotal}
+                  </span>
+                )}
+              </li>
+            );
+          })}
         </ol>
+      )}
+
+      {stepsWithChildren.length > 0 && (
+        <div className="flex flex-col gap-1 border-t border-hairline pt-2 text-xs text-ink-2">
+          {stepsWithChildren.map((st) => (
+            <div key={st.step_id} data-child-items-for={st.step_id} className="flex flex-wrap items-center gap-1.5">
+              <span className="font-medium text-ink">{st.step_id} batch:</span>
+              {st.child_items!.map((child, cIdx) => (
+                <span
+                  key={`${child.step_id}-${cIdx}`}
+                  className="inline-flex items-center gap-1 rounded-chip border border-hairline bg-surface px-2 py-0.5 text-xs text-ink-2"
+                >
+                  {child.status === "ok" ? (
+                    <Check className="size-3 text-dot-green" strokeWidth={1.75} aria-hidden />
+                  ) : child.status === "failed" ? (
+                    <XCircle className="size-3 text-dot-red" strokeWidth={1.75} aria-hidden />
+                  ) : (
+                    <span className="size-1.5 rounded-full bg-blue" aria-hidden />
+                  )}
+                  <span className="truncate max-w-[140px]">{child.item || child.step_id}</span>
+                </span>
+              ))}
+            </div>
+          ))}
+        </div>
       )}
 
       {inspectFiles.length > 0 && (
@@ -241,7 +316,7 @@ export function CheckpointCard({
               variant="outline"
               aria-label={`Inspect ${path}`}
               onClick={() => onOpenFile(path)}
-              className="mono max-md:min-h-11 max-w-full gap-1.5 rounded-chip border-hairline bg-surface px-2 text-xs font-normal text-ink hover:bg-board"
+              className="max-md:min-h-11 max-w-full gap-1.5 rounded-chip border-hairline bg-surface px-2 text-xs font-normal text-ink hover:bg-board"
             >
               <FileGlyph name={path} />
               <span className="truncate">{path}</span>
@@ -404,6 +479,17 @@ export function PipelineRunStrip({
     <div id="pipeline-runs-strip" className="flex flex-col gap-2.5">
       {running.map((run) => {
         const doneCount = run.step_states.filter((s) => s.status === "ok").length;
+        const activeBranches = run.step_states.filter((s) => s.status === "running").length;
+        const childStats = run.step_states.reduce(
+          (acc, s) => {
+            if (!s.child_items?.length) return acc;
+            return {
+              done: acc.done + s.child_items.filter((c) => c.status === "ok").length,
+              total: acc.total + s.child_items.length,
+            };
+          },
+          { done: 0, total: 0 }
+        );
         const total = Math.max(run.step_states.length, (run.steps ?? run.steps_v2 ?? []).length, 1);
         const isCancelling = Boolean(cancellingIds[run.run_id]);
         return (
@@ -413,16 +499,26 @@ export function PipelineRunStrip({
             role="status"
             className="flex flex-wrap items-center justify-between gap-2 rounded-card border border-hairline bg-surface px-3.5 py-2.5"
           >
-            <div className="flex min-w-0 items-center gap-2">
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
               <span className="pulse-dot size-2 shrink-0 rounded-full bg-blue" aria-hidden />
               <span className="truncate text-sm font-medium text-ink">
                 {run.routine_name || "Pipeline running"}
               </span>
-              <span className="mono text-xs text-ink-2">
-                Step {Math.min(total, doneCount + 1)}/{total}
+              <span className="text-xs text-ink-2">
+                Step <span className="mono">{Math.min(total, doneCount + 1)}/{total}</span>
               </span>
+              {activeBranches > 1 && (
+                <Badge variant="outline" size="sm" className="text-xs text-ink-2">
+                  {activeBranches} parallel
+                </Badge>
+              )}
+              {childStats.total > 0 && (
+                <Badge variant="outline" size="sm" className="mono text-xs text-ink-2">
+                  {childStats.done}/{childStats.total}
+                </Badge>
+              )}
               {run.updated_ms > 0 && (
-                <span className="mono hidden text-xs text-ink-3 sm:inline">
+                <span className="hidden text-xs text-ink-3 sm:inline">
                   {relTime(run.updated_ms)}
                 </span>
               )}
