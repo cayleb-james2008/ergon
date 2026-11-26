@@ -136,6 +136,18 @@ fn write_receipt_json(out: &mut Vec<u8>, r: &ChainedReceipt) {
     write_json_str(out, &r.prev_hash);
     out.extend_from_slice(br#","sha256":"#);
     write_json_str(out, &r.sha256);
+    if let Some(eid) = r.engagement_id.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+        out.extend_from_slice(br#","engagement_id":"#);
+        write_json_str(out, eid);
+    }
+    if let Some(u) = r.usage.as_ref().filter(|u| !u.is_null()) {
+        out.extend_from_slice(br#","usage":"#);
+        out.extend_from_slice(u.to_string().as_bytes());
+    }
+    if let Some(digest) = r.usage_digest() {
+        out.extend_from_slice(br#","usage_digest":"#);
+        write_json_str(out, &digest);
+    }
     out.push(b'}');
 }
 

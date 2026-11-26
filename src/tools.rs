@@ -1171,6 +1171,24 @@ pub fn execute_tool_full(
                 cp.prompt
             ))
         }
+        "export_file" => {
+            if args["brand_header"]
+                .as_str()
+                .map(str::trim)
+                .is_none_or(|s| s.is_empty())
+            {
+                if let Some(hdr) =
+                    crate::records::active_brand_header_for(&ctx.root_data_dir, &ctx.person_id)
+                {
+                    let mut patched = args.clone();
+                    if let Some(obj) = patched.as_object_mut() {
+                        obj.insert("brand_header".to_string(), serde_json::json!(hdr));
+                    }
+                    return execute_tool(cfg, name, &patched);
+                }
+            }
+            execute_tool(cfg, name, args)
+        }
         _ => {
             // An installed library skill, called by its item id.
             let suite = library::load_suite(&cfg.data_dir);

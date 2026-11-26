@@ -27,11 +27,58 @@ pub struct ChainedReceipt {
     pub answered: bool,
     pub prev_hash: String,
     pub sha256: String,
+    pub engagement_id: Option<String>,
+    pub usage: Option<Value>,
+}
+
+pub fn canonical_json(v: &Value) -> Value {
+    match v {
+        Value::Object(map) => {
+            let mut sorted: std::collections::BTreeMap<String, Value> =
+                std::collections::BTreeMap::new();
+            for (k, val) in map {
+                sorted.insert(k.clone(), canonical_json(val));
+            }
+            let mut out = serde_json::Map::new();
+            for (k, val) in sorted {
+                out.insert(k, val);
+            }
+            Value::Object(out)
+        }
+        Value::Array(arr) => Value::Array(arr.iter().map(canonical_json).collect()),
+        other => other.clone(),
+    }
+}
+
+pub fn compute_usage_digest(engagement_id: Option<&str>, usage: Option<&Value>) -> String {
+    let eid = engagement_id.map(str::trim).filter(|s| !s.is_empty());
+    let can_usage = usage.filter(|u| !u.is_null()).map(canonical_json);
+    let payload = json!({
+        "engagement_id": eid,
+        "usage": can_usage,
+    });
+    sha256_hex(payload.to_string().as_bytes())
 }
 
 impl ChainedReceipt {
+    pub fn usage_digest(&self) -> Option<String> {
+        let has_eid = self
+            .engagement_id
+            .as_deref()
+            .is_some_and(|s| !s.trim().is_empty());
+        let has_usage = self.usage.as_ref().is_some_and(|u| !u.is_null());
+        if has_eid || has_usage {
+            Some(compute_usage_digest(
+                self.engagement_id.as_deref(),
+                self.usage.as_ref(),
+            ))
+        } else {
+            None
+        }
+    }
+
     pub fn to_json(&self) -> Value {
-        json!({
+        let mut obj = json!({
             "id": self.id,
             "index": self.index,
             "ts": self.ts,
@@ -43,7 +90,22 @@ impl ChainedReceipt {
             "answered": self.answered,
             "prev_hash": self.prev_hash,
             "sha256": self.sha256,
-        })
+        });
+        if let Some(eid) = self
+            .engagement_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+        {
+            obj["engagement_id"] = json!(eid);
+        }
+        if let Some(u) = self.usage.as_ref().filter(|u| !u.is_null()) {
+            obj["usage"] = u.clone();
+        }
+        if let Some(digest) = self.usage_digest() {
+            obj["usage_digest"] = json!(digest);
+        }
+        obj
     }
 }
 
@@ -68,6 +130,8 @@ fn compute_entry_hash(
     task: &str,
     summary: &str,
     files: &[String],
+    engagement_id: Option<&str>,
+    usage: Option<&Value>,
 ) -> String {
     let mut hasher = Sha256::new();
     hasher.update(prev_hash.as_bytes());
@@ -91,6 +155,13 @@ fn compute_entry_hash(
             hasher.update(b",");
         }
         hasher.update(f.as_bytes());
+    }
+    let has_eid = engagement_id.is_some_and(|s| !s.trim().is_empty());
+    let has_usage = usage.is_some_and(|u| !u.is_null());
+    if has_eid || has_usage {
+        let digest = compute_usage_digest(engagement_id, usage);
+        hasher.update(b"|v2|");
+        hasher.update(digest.as_bytes());
     }
     let digest = hasher.finalize();
     let mut out = String::with_capacity(64);
@@ -145,9 +216,28 @@ fn chain_step(prev_hash: &mut String, index: usize, v: &Value) -> ChainedReceipt
         .filter(|s| !s.trim().is_empty())
         .map(|s| s.to_string())
         .unwrap_or_else(|| format!("rcpt-{ts}-{index}"));
+    let engagement_id = v["engagement_id"]
+        .as_str()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string);
+    let usage = v
+        .get("usage")
+        .filter(|u| !u.is_null())
+        .map(canonical_json);
 
     let sha256 = compute_entry_hash(
-        prev_hash, index, ts, &thread_id, finished, answered, &task, &summary, &files,
+        prev_hash,
+        index,
+        ts,
+        &thread_id,
+        finished,
+        answered,
+        &task,
+        &summary,
+        &files,
+        engagement_id.as_deref(),
+        usage.as_ref(),
     );
     let prev = std::mem::replace(prev_hash, sha256.clone());
     ChainedReceipt {
@@ -162,6 +252,8 @@ fn chain_step(prev_hash: &mut String, index: usize, v: &Value) -> ChainedReceipt
         answered,
         prev_hash: prev,
         sha256,
+        engagement_id,
+        usage,
     }
 }
 
@@ -453,6 +545,8 @@ pub fn verify_chain(chain: &[ChainedReceipt]) -> (bool, String) {
             &r.task,
             &r.summary,
             &r.files,
+            r.engagement_id.as_deref(),
+            r.usage.as_ref(),
         );
         if recomputed != r.sha256 {
             return (false, expected_prev);
@@ -560,7 +654,20 @@ pub fn export_receipt_markdown(
         chain_valid
     ));
     md.push_str(&format!("- **Previous SHA-256:** `{}`\n", receipt.prev_hash));
-    md.push_str(&format!("- **Receipt SHA-256:** `{}`\n\n", receipt.sha256));
+    md.push_str(&format!("- **Receipt SHA-256:** `{}`\n", receipt.sha256));
+    if let Some(eid) = receipt.engagement_id.as_deref().filter(|s| !s.is_empty()) {
+        md.push_str(&format!("- **Engagement:** `{eid}`\n"));
+    }
+    if let Some(digest) = receipt.usage_digest() {
+        md.push_str(&format!("- **Usage Digest:** `{digest}`\n"));
+    }
+    if let Some(u) = receipt.usage.as_ref().and_then(records::RunUsage::from_json) {
+        md.push_str(&format!(
+            "- **Metering:** {} tokens ({} prompt / {} completion), ${:.6} USD, {:.1} min saved (${:.2} billable)\n",
+            u.total_tokens, u.prompt_tokens, u.completion_tokens, u.cost_usd, u.estimated_minutes_saved, u.billable_value_usd
+        ));
+    }
+    md.push('\n');
 
     md.push_str("## Task\n\n");
     md.push_str(&receipt.task);

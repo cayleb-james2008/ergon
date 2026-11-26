@@ -2379,7 +2379,7 @@ fn try_route_system(
                 );
                 search::write_json_bool(buf, state.scheduler_enabled);
                 buf.extend_from_slice(
-                    br#","file_history":true,"audit_bundle":true,"tripwire":true,"file_edit":true,"table_query":true,"pdf_export":true,"connectors":true},"scheduler_enabled":"#,
+                    br#","file_history":true,"audit_bundle":true,"tripwire":true,"file_edit":true,"table_query":true,"pdf_export":true,"connectors":true,"clients":true,"metering":true},"scheduler_enabled":"#,
                 );
                 search::write_json_bool(buf, state.scheduler_enabled);
                 buf.extend_from_slice(br#","person":{"id":"#);
@@ -2412,6 +2412,7 @@ fn try_route_system(
                 .into_iter()
                 .map(|g| g.to_json())
                 .collect();
+            let model_pricing = records::effective_model_pricing_json(&root_cfg.data_dir);
             respond_json(
                 stream,
                 200,
@@ -2423,10 +2424,11 @@ fn try_route_system(
                     "is_loopback": is_loopback_url(&eff.model_base_url),
                     "auto_detected": live_meta.auto_detected,
                     "detected_gateways": gateways,
+                    "model_pricing": model_pricing,
                 }),
             )
         }
-        ("POST", "/api/config") => {
+        ("PUT", "/api/config") | ("POST", "/api/config") => {
             if state.gate_token.is_some() || !host_allowed(req.host.as_deref().unwrap_or(""), &[]) {
                 return Some(respond_json(
                     stream,
@@ -2435,48 +2437,72 @@ fn try_route_system(
                 ));
             }
             let parsed: Value = serde_json::from_slice(&req.body).unwrap_or(Value::Null);
-            let base = parsed["model_base_url"]
-                .as_str()
-                .unwrap_or("")
-                .trim()
-                .trim_end_matches('/')
-                .to_string();
-            let model_id = parsed["model_id"].as_str().unwrap_or("").trim().to_string();
-            if !(base.starts_with("http://") || base.starts_with("https://")) || parse_url_host_port(&base).is_none() {
-                return Some(respond_err(stream, 400, "model_base_url must be a valid http:// or https:// URL"));
-            }
-            if model_id.is_empty() {
-                return Some(respond_err(stream, 400, "model_id is required"));
-            }
-            let clear_key = parsed["clear_api_key"].as_bool().unwrap_or(false);
-            let next_key = if clear_key {
-                None
-            } else if let Some(raw_k) = parsed["api_key"].as_str() {
-                let k = raw_k.trim().to_string();
-                if k.is_empty() {
-                    state.model_cfg.lock().unwrap().api_key.clone()
-                } else {
-                    Some(k)
+            let has_pricing = parsed.get("model_pricing").is_some_and(|v| !v.is_null());
+            let has_model_fields = parsed.get("model_base_url").is_some_and(|v| !v.is_null())
+                || parsed.get("model_id").is_some_and(|v| !v.is_null())
+                || parsed.get("api_key").is_some_and(|v| !v.is_null())
+                || parsed["clear_api_key"].as_bool().unwrap_or(false);
+
+            if !has_pricing || has_model_fields {
+                let base = parsed["model_base_url"]
+                    .as_str()
+                    .unwrap_or("")
+                    .trim()
+                    .trim_end_matches('/')
+                    .to_string();
+                let model_id = parsed["model_id"].as_str().unwrap_or("").trim().to_string();
+                if !(base.starts_with("http://") || base.starts_with("https://"))
+                    || parse_url_host_port(&base).is_none()
+                {
+                    return Some(respond_err(
+                        stream,
+                        400,
+                        "model_base_url must be a valid http:// or https:// URL",
+                    ));
                 }
-            } else {
-                state.model_cfg.lock().unwrap().api_key.clone()
-            };
-            let saved = SavedModelConfig {
-                model_base_url: base.clone(),
-                model_id: model_id.clone(),
-                api_key: next_key.clone(),
-            };
-            if let Err(e) = save_model_config(&root_cfg.data_dir, &saved) {
-                return Some(respond_err(stream, 500, &e));
+                if model_id.is_empty() {
+                    return Some(respond_err(stream, 400, "model_id is required"));
+                }
+                let clear_key = parsed["clear_api_key"].as_bool().unwrap_or(false);
+                let next_key = if clear_key {
+                    None
+                } else if let Some(raw_k) = parsed["api_key"].as_str() {
+                    let k = raw_k.trim().to_string();
+                    if k.is_empty() {
+                        state.model_cfg.lock().unwrap().api_key.clone()
+                    } else {
+                        Some(k)
+                    }
+                } else {
+                    state.model_cfg.lock().unwrap().api_key.clone()
+                };
+                let saved = SavedModelConfig {
+                    model_base_url: base.clone(),
+                    model_id: model_id.clone(),
+                    api_key: next_key.clone(),
+                };
+                if let Err(e) = save_model_config(&root_cfg.data_dir, &saved) {
+                    return Some(respond_err(stream, 500, &e));
+                }
+                {
+                    let mut live = state.model_cfg.lock().unwrap();
+                    live.model_base_url = base;
+                    live.model_id = model_id;
+                    live.api_key = next_key;
+                    live.auto_detected = false;
+                }
             }
-            {
-                let mut live = state.model_cfg.lock().unwrap();
-                live.model_base_url = base;
-                live.model_id = model_id;
-                live.api_key = next_key;
-                live.auto_detected = false;
+            if has_pricing {
+                if let Err(e) = records::save_model_pricing_overrides(
+                    &root_cfg.data_dir,
+                    &parsed["model_pricing"],
+                ) {
+                    return Some(respond_err(stream, 400, &e));
+                }
             }
             let eff = effective_cfg(state, runtime);
+            let live_meta = state.model_cfg.lock().unwrap().clone();
+            let model_pricing = records::effective_model_pricing_json(&root_cfg.data_dir);
             respond_json(
                 stream,
                 200,
@@ -2486,7 +2512,8 @@ fn try_route_system(
                     "has_api_key": eff.api_key.is_some(),
                     "model_configured": eff.model_configured(),
                     "is_loopback": is_loopback_url(&eff.model_base_url),
-                    "auto_detected": false,
+                    "auto_detected": live_meta.auto_detected,
+                    "model_pricing": model_pricing,
                 }),
             )
         }
@@ -4468,12 +4495,26 @@ fn try_route_files_and_audit(
             if rel.is_empty() {
                 return Some(respond_err(stream, 400, "path is required"));
             }
+            let fallback_hdr = if parsed["brand_header"]
+                .as_str()
+                .map(str::trim)
+                .is_none_or(|s| s.is_empty())
+            {
+                records::active_brand_header_for(&root_cfg.data_dir, &person.id)
+            } else {
+                None
+            };
+            let brand_hdr = parsed["brand_header"]
+                .as_str()
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .or(fallback_hdr.as_deref());
             match export_workspace_file_with_options(
                 &runtime.cfg,
                 &rel,
                 parsed["format"].as_str(),
                 parsed["output"].as_str(),
-                parsed["brand_header"].as_str(),
+                brand_hdr,
                 parsed["sheets"].as_array().map(|a| a.as_slice()),
                 parsed["totals_row"].as_bool().unwrap_or(false),
             ) {
@@ -5323,6 +5364,90 @@ fn try_route_knowledge_and_routines(
                 connectors::test_outbound_connector(&runtime.cfg, &id, &parsed);
             respond_json(stream, status, &payload)
         }
+        ("GET", "/api/clients") => {
+            let store = records::load_clients_store(&root_cfg.data_dir);
+            let client_filter = query_param(&req.query, "client_id")
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty());
+            let person_filter = query_param(&req.query, "person_id")
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty());
+            let engagements: Vec<Value> = store
+                .engagements
+                .iter()
+                .filter(|e| client_filter.as_deref().is_none_or(|c| e.client_id == c))
+                .filter(|e| person_filter.as_deref().is_none_or(|p| e.person_id == p))
+                .map(|e| e.to_json())
+                .collect();
+            let active_engagement_id = store
+                .active_engagement_by_person
+                .get(&person.id)
+                .cloned();
+            respond_json(
+                stream,
+                200,
+                &json!({
+                    "clients": store.clients.iter().map(|c| c.to_json()).collect::<Vec<_>>(),
+                    "engagements": engagements,
+                    "active_engagement_id": active_engagement_id,
+                }),
+            )
+        }
+        ("POST", "/api/clients") => {
+            let parsed: Value = match serde_json::from_slice(&req.body) {
+                Ok(v) => v,
+                Err(_) => return Some(respond_err(stream, 400, "request body is not valid JSON")),
+            };
+            match records::create_client(&root_cfg.data_dir, &parsed) {
+                Ok(client) => respond_json(stream, 201, &json!({ "client": client.to_json() })),
+                Err((status, msg)) => respond_err(stream, status, &msg),
+            }
+        }
+        ("POST", "/api/engagements") => {
+            let parsed: Value = match serde_json::from_slice(&req.body) {
+                Ok(v) => v,
+                Err(_) => return Some(respond_err(stream, 400, "request body is not valid JSON")),
+            };
+            match records::create_engagement(&root_cfg.data_dir, &person.id, &parsed) {
+                Ok(engagement) => {
+                    respond_json(stream, 201, &json!({ "engagement": engagement.to_json() }))
+                }
+                Err((status, msg)) => respond_err(stream, status, &msg),
+            }
+        }
+        ("POST", "/api/engagements/switch") => {
+            let parsed: Value = match serde_json::from_slice(&req.body) {
+                Ok(v) => v,
+                Err(_) => return Some(respond_err(stream, 400, "request body is not valid JSON")),
+            };
+            match records::switch_engagement(&root_cfg.data_dir, &person.id, &parsed) {
+                Ok((active_engagement_id, engagement)) => respond_json(
+                    stream,
+                    200,
+                    &json!({
+                        "active_engagement_id": active_engagement_id,
+                        "engagement": engagement.map(|e| e.to_json()),
+                    }),
+                ),
+                Err((status, msg)) => respond_err(stream, status, &msg),
+            }
+        }
+        ("GET", "/api/metering/summary") => {
+            let engagement_id = query_param(&req.query, "engagement_id");
+            let client_id = query_param(&req.query, "client_id");
+            let window_days = query_param(&req.query, "window_days")
+                .and_then(|s| s.trim().parse::<u64>().ok())
+                .unwrap_or(30);
+            let summary = records::compute_metering_summary(
+                &root_cfg.data_dir,
+                &runtime.cfg.data_dir,
+                &person.id,
+                engagement_id.as_deref(),
+                client_id.as_deref(),
+                window_days,
+            );
+            respond_json(stream, 200, &summary)
+        }
         ("GET", "/api/decisions") => {
             let decisions = records::load_decisions(&runtime.cfg.data_dir);
             respond_json(stream, 200, &json!({"decisions": decisions}))
@@ -5880,6 +6005,12 @@ fn try_route_runs_and_chat(
                             "inspect_files": cp.inspect_files,
                         });
                     }
+                    v["usage"] = outcome.usage.to_json();
+                    v["engagement_id"] = json!(outcome.engagement_id);
+                    if outcome.budget_gated {
+                        v["budget_gated"] = json!(true);
+                        v["decision_id"] = json!(outcome.decision_id);
+                    }
                     respond_json(stream, 200, &v)
                 }
                 Err(e) if e.starts_with(tripwire::HALT_PREFIX) => {
@@ -5971,6 +6102,12 @@ fn try_route_runs_and_chat(
                             "choices": cp.choices,
                             "inspect_files": cp.inspect_files,
                         });
+                    }
+                    v["usage"] = outcome.usage.to_json();
+                    v["engagement_id"] = json!(outcome.engagement_id);
+                    if outcome.budget_gated {
+                        v["budget_gated"] = json!(true);
+                        v["decision_id"] = json!(outcome.decision_id);
                     }
                     respond_json(stream, 200, &v)
                 }
