@@ -917,21 +917,58 @@ pub fn round_usd_8(v: f64) -> f64 {
     if !v.is_finite() {
         return 0.0;
     }
-    (v * 100_000_000.0).round() / 100_000_000.0
+    let scaled = v * 100_000_000.0;
+    let out = if scaled.is_finite() {
+        scaled.round() / 100_000_000.0
+    } else {
+        v
+    };
+    if out == 0.0 { 0.0 } else { out }
 }
 
 pub fn round_4(v: f64) -> f64 {
     if !v.is_finite() {
         return 0.0;
     }
-    (v * 10_000.0).round() / 10_000.0
+    let scaled = v * 10_000.0;
+    let out = if scaled.is_finite() {
+        scaled.round() / 10_000.0
+    } else {
+        v
+    };
+    if out == 0.0 { 0.0 } else { out }
 }
 
 pub fn round_2(v: f64) -> f64 {
     if !v.is_finite() {
         return 0.0;
     }
-    (v * 100.0).round() / 100.0
+    let scaled = v * 100.0;
+    let out = if scaled.is_finite() {
+        scaled.round() / 100.0
+    } else {
+        v
+    };
+    if out == 0.0 { 0.0 } else { out }
+}
+
+fn clean_non_neg_f64(v: f64) -> f64 {
+    if v.is_finite() && v > 0.0 {
+        v
+    } else {
+        0.0
+    }
+}
+
+fn saturating_add_non_neg_f64(a: f64, b: f64, round_fn: fn(f64) -> f64) -> f64 {
+    let ca = clean_non_neg_f64(a);
+    let cb = clean_non_neg_f64(b);
+    let sum = ca + cb;
+    if sum.is_finite() {
+        round_fn(sum)
+    } else {
+        round_fn(ca.max(cb))
+    }
 }
 
 fn clean_single_line(s: &str, cap: usize) -> String {
@@ -953,9 +990,11 @@ pub fn valid_entity_id(id: &str) -> bool {
         && !id.ends_with('-')
 }
 
+const MAX_FINITE_BUDGET_OR_RATE: f64 = 1_000_000_000.0;
+
 fn non_neg_f64(v: &Value, default: f64, field: &str) -> Result<f64, (u16, String)> {
     if v.is_null() {
-        return Ok(default);
+        return Ok(if default == 0.0 { 0.0 } else { default });
     }
     let Some(n) = v.as_f64() else {
         return Err((400, format!("{field} must be a finite non-negative number")));
@@ -963,7 +1002,10 @@ fn non_neg_f64(v: &Value, default: f64, field: &str) -> Result<f64, (u16, String
     if !n.is_finite() || n < 0.0 {
         return Err((400, format!("{field} must be a finite non-negative number")));
     }
-    Ok(n)
+    if n > MAX_FINITE_BUDGET_OR_RATE {
+        return Err((400, format!("{field} exceeds maximum supported value")));
+    }
+    Ok(if n == 0.0 { 0.0 } else { n })
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -1114,10 +1156,14 @@ pub fn clients_path(root_data_dir: &Path) -> PathBuf {
 
 fn load_clients_store_unlocked(root_data_dir: &Path) -> ClientsStore {
     let path = clients_path(root_data_dir);
-    let Ok(text) = std::fs::read_to_string(&path) else {
+    let Ok(bytes) = std::fs::read(&path) else {
         return ClientsStore::default();
     };
-    let Ok(v) = serde_json::from_str::<Value>(&text) else {
+    let Ok(text) = std::str::from_utf8(&bytes) else {
+        let _ = crate::backup_corrupt(&path);
+        return ClientsStore::default();
+    };
+    let Ok(v) = serde_json::from_str::<Value>(text) else {
         let _ = crate::backup_corrupt(&path);
         return ClientsStore::default();
     };
@@ -1400,7 +1446,10 @@ impl ModelPrice {
                         .as_f64()
                         .filter(|n| n.is_finite() && *n >= 0.0)
                         .ok_or_else(|| format!("pricing field '{k}' must be a finite non-negative number"))?;
-                    return Ok(n);
+                    if n > 1_000_000.0 {
+                        return Err(format!("pricing field '{k}' exceeds maximum allowed rate (1000000)"));
+                    }
+                    return Ok(if n == 0.0 { 0.0 } else { n });
                 }
             }
             Ok(default)
@@ -1570,11 +1619,16 @@ pub fn compute_call_cost_usd(
 ) -> f64 {
     let cached = cached_tokens.min(prompt_tokens);
     let uncached = prompt_tokens.saturating_sub(cached);
-    let cost = (uncached as f64 * price.input_per_1m_usd
-        + cached as f64 * price.cached_input_per_1m_usd
-        + completion_tokens as f64 * price.output_per_1m_usd)
-        / 1_000_000.0;
-    round_usd_8(cost.max(0.0))
+    let in_rate = clean_non_neg_f64(price.input_per_1m_usd);
+    let cached_rate = clean_non_neg_f64(price.cached_input_per_1m_usd);
+    let out_rate = clean_non_neg_f64(price.output_per_1m_usd);
+    let cost = (uncached as f64 / 1_000_000.0) * in_rate
+        + (cached as f64 / 1_000_000.0) * cached_rate
+        + (completion_tokens as f64 / 1_000_000.0) * out_rate;
+    if !cost.is_finite() || cost <= 0.0 {
+        return 0.0;
+    }
+    round_usd_8(cost)
 }
 
 pub fn compute_minutes_saved(
@@ -1601,10 +1655,18 @@ pub fn compute_minutes_saved(
 }
 
 pub fn compute_billable_value_usd(minutes_saved: f64, hourly_rate_usd: f64) -> f64 {
-    if minutes_saved <= 0.0 || hourly_rate_usd <= 0.0 || !hourly_rate_usd.is_finite() {
+    if !minutes_saved.is_finite()
+        || minutes_saved <= 0.0
+        || !hourly_rate_usd.is_finite()
+        || hourly_rate_usd <= 0.0
+    {
         return 0.0;
     }
-    round_4((minutes_saved / 60.0) * hourly_rate_usd)
+    let val = (minutes_saved / 60.0) * hourly_rate_usd;
+    if !val.is_finite() || val <= 0.0 {
+        return 0.0;
+    }
+    round_4(val)
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -1647,7 +1709,7 @@ impl RunUsage {
         self.total_tokens = self.total_tokens.saturating_add(eff_total);
         self.cached_tokens = self.cached_tokens.saturating_add(cached_tokens);
         self.latency_ms = self.latency_ms.saturating_add(latency_ms);
-        self.cost_usd = round_usd_8(self.cost_usd + cost_usd.max(0.0));
+        self.cost_usd = saturating_add_non_neg_f64(self.cost_usd, cost_usd, round_usd_8);
     }
 
     pub fn accumulate(&mut self, other: &RunUsage) {
@@ -1660,10 +1722,17 @@ impl RunUsage {
         self.total_tokens = self.total_tokens.saturating_add(other.total_tokens);
         self.cached_tokens = self.cached_tokens.saturating_add(other.cached_tokens);
         self.latency_ms = self.latency_ms.saturating_add(other.latency_ms);
-        self.cost_usd = round_usd_8(self.cost_usd + other.cost_usd);
-        self.estimated_minutes_saved =
-            round_2(self.estimated_minutes_saved + other.estimated_minutes_saved);
-        self.billable_value_usd = round_4(self.billable_value_usd + other.billable_value_usd);
+        self.cost_usd = saturating_add_non_neg_f64(self.cost_usd, other.cost_usd, round_usd_8);
+        self.estimated_minutes_saved = saturating_add_non_neg_f64(
+            self.estimated_minutes_saved,
+            other.estimated_minutes_saved,
+            round_2,
+        );
+        self.billable_value_usd = saturating_add_non_neg_f64(
+            self.billable_value_usd,
+            other.billable_value_usd,
+            round_4,
+        );
     }
 
     pub fn finalize_attribution(
@@ -1896,7 +1965,7 @@ pub fn engagement_spent_usd(
     for dir in dirs {
         for e in load_usage_ledger(&dir) {
             if e.engagement_id.as_deref() == Some(engagement_id) {
-                total += e.usage.cost_usd;
+                total = saturating_add_non_neg_f64(total, e.usage.cost_usd, round_usd_8);
             }
         }
     }
@@ -2063,18 +2132,34 @@ pub fn compute_metering_summary(
         completion_tokens = completion_tokens.saturating_add(e.usage.completion_tokens);
         total_tokens = total_tokens.saturating_add(e.usage.total_tokens);
         cached_tokens = cached_tokens.saturating_add(e.usage.cached_tokens);
-        cost_usd += e.usage.cost_usd;
-        minutes_saved += e.usage.estimated_minutes_saved;
-        billable_value_usd += e.usage.billable_value_usd;
+        cost_usd = saturating_add_non_neg_f64(cost_usd, e.usage.cost_usd, round_usd_8);
+        minutes_saved = saturating_add_non_neg_f64(
+            minutes_saved,
+            e.usage.estimated_minutes_saved,
+            round_2,
+        );
+        billable_value_usd = saturating_add_non_neg_f64(
+            billable_value_usd,
+            e.usage.billable_value_usd,
+            round_4,
+        );
 
         let ea = by_eng.entry(eid.to_string()).or_default();
-        ea.runs += 1;
-        ea.prompt_tokens += e.usage.prompt_tokens;
-        ea.completion_tokens += e.usage.completion_tokens;
-        ea.total_tokens += e.usage.total_tokens;
-        ea.cost_usd += e.usage.cost_usd;
-        ea.minutes_saved += e.usage.estimated_minutes_saved;
-        ea.billable_value_usd += e.usage.billable_value_usd;
+        ea.runs = ea.runs.saturating_add(1);
+        ea.prompt_tokens = ea.prompt_tokens.saturating_add(e.usage.prompt_tokens);
+        ea.completion_tokens = ea.completion_tokens.saturating_add(e.usage.completion_tokens);
+        ea.total_tokens = ea.total_tokens.saturating_add(e.usage.total_tokens);
+        ea.cost_usd = saturating_add_non_neg_f64(ea.cost_usd, e.usage.cost_usd, round_usd_8);
+        ea.minutes_saved = saturating_add_non_neg_f64(
+            ea.minutes_saved,
+            e.usage.estimated_minutes_saved,
+            round_2,
+        );
+        ea.billable_value_usd = saturating_add_non_neg_f64(
+            ea.billable_value_usd,
+            e.usage.billable_value_usd,
+            round_4,
+        );
 
         let model_key = if e.usage.model_id.trim().is_empty() {
             "none".to_string()
@@ -2082,23 +2167,31 @@ pub fn compute_metering_summary(
             e.usage.model_id.clone()
         };
         let ma = by_mod.entry(model_key).or_default();
-        ma.runs += 1;
-        ma.calls += e.usage.calls;
-        ma.prompt_tokens += e.usage.prompt_tokens;
-        ma.completion_tokens += e.usage.completion_tokens;
-        ma.total_tokens += e.usage.total_tokens;
-        ma.cached_tokens += e.usage.cached_tokens;
-        ma.cost_usd += e.usage.cost_usd;
+        ma.runs = ma.runs.saturating_add(1);
+        ma.calls = ma.calls.saturating_add(e.usage.calls);
+        ma.prompt_tokens = ma.prompt_tokens.saturating_add(e.usage.prompt_tokens);
+        ma.completion_tokens = ma.completion_tokens.saturating_add(e.usage.completion_tokens);
+        ma.total_tokens = ma.total_tokens.saturating_add(e.usage.total_tokens);
+        ma.cached_tokens = ma.cached_tokens.saturating_add(e.usage.cached_tokens);
+        ma.cost_usd = saturating_add_non_neg_f64(ma.cost_usd, e.usage.cost_usd, round_usd_8);
 
         let day_key = date_string_local(e.ts_ms);
         let da = by_day.entry(day_key).or_default();
-        da.runs += 1;
-        da.prompt_tokens += e.usage.prompt_tokens;
-        da.completion_tokens += e.usage.completion_tokens;
-        da.total_tokens += e.usage.total_tokens;
-        da.cost_usd += e.usage.cost_usd;
-        da.minutes_saved += e.usage.estimated_minutes_saved;
-        da.billable_value_usd += e.usage.billable_value_usd;
+        da.runs = da.runs.saturating_add(1);
+        da.prompt_tokens = da.prompt_tokens.saturating_add(e.usage.prompt_tokens);
+        da.completion_tokens = da.completion_tokens.saturating_add(e.usage.completion_tokens);
+        da.total_tokens = da.total_tokens.saturating_add(e.usage.total_tokens);
+        da.cost_usd = saturating_add_non_neg_f64(da.cost_usd, e.usage.cost_usd, round_usd_8);
+        da.minutes_saved = saturating_add_non_neg_f64(
+            da.minutes_saved,
+            e.usage.estimated_minutes_saved,
+            round_2,
+        );
+        da.billable_value_usd = saturating_add_non_neg_f64(
+            da.billable_value_usd,
+            e.usage.billable_value_usd,
+            round_4,
+        );
     }
 
     let retainer_burn_pct = if let Some(eid) = eng_f {

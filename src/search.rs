@@ -27,8 +27,35 @@ const MAX_CHUNK_CHARS: usize = 1000;
 const MIN_SPLIT_CHARS: usize = 350;
 const OVERLAP_CHARS: usize = 120;
 const MAX_PLAIN_TEXT_BYTES: u64 = 5 * 1024 * 1024;
+const MAX_VAULT_INDEX_BYTES: u64 = 128 * 1024 * 1024;
+const MAX_EXTRACTED_TEXT_BYTES: usize = 2 * 1024 * 1024;
+const MAX_CHUNKS_PER_FILE: usize = 1000;
 const VAULT_INDEX_VERSION: u64 = 1;
 const VAULT_INDEX_FILE: &str = "vault_index.json";
+
+#[inline]
+fn trim_allocator_memory() {
+    #[cfg(all(target_os = "linux", target_env = "gnu"))]
+    {
+        extern "C" {
+            fn malloc_trim(pad: usize) -> std::os::raw::c_int;
+        }
+        unsafe {
+            let _ = malloc_trim(0);
+        }
+    }
+}
+
+fn cap_utf8_bytes(s: &str, max_bytes: usize) -> &str {
+    if s.len() <= max_bytes {
+        return s;
+    }
+    let mut end = max_bytes;
+    while end > 0 && !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    &s[..end]
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct Fingerprint {
@@ -892,7 +919,10 @@ fn chunk_text_lines(
         *buf_end = 0;
     };
 
-    for (idx, raw_line) in text.lines().enumerate() {
+    for (idx, raw_line) in cap_utf8_bytes(text, MAX_EXTRACTED_TEXT_BYTES).lines().enumerate() {
+        if out.len() >= MAX_CHUNKS_PER_FILE {
+            break;
+        }
         let line_no = idx + 1;
         let trimmed = raw_line.trim();
         let mut boundary_changed = false;
@@ -951,6 +981,9 @@ fn chunk_text_lines(
                 );
             }
             for win in split_long_line_windows(raw_line) {
+                if out.len() >= MAX_CHUNKS_PER_FILE {
+                    break;
+                }
                 let seq = *chunk_seq;
                 *chunk_seq += 1;
                 let chunk_id = match sheet {
@@ -1048,26 +1081,38 @@ struct CachedFileEntry {
 fn load_persisted_vault(
     data_dir: &Path,
     expected_emb_sig: &str,
-) -> HashMap<String, CachedFileEntry> {
+) -> (HashMap<String, CachedFileEntry>, bool) {
     let mut map = HashMap::new();
     let path = data_dir.join(VAULT_INDEX_FILE);
-    let Ok(raw) = std::fs::read_to_string(&path) else {
-        return map;
+    let Ok(md) = std::fs::metadata(&path) else {
+        return (map, false);
     };
-    let Ok(v) = serde_json::from_str::<Value>(&raw) else {
-        return map;
+    if md.len() > MAX_VAULT_INDEX_BYTES {
+        let _ = std::fs::remove_file(&path);
+        return (map, true);
+    }
+    let Ok(file) = std::fs::File::open(&path) else {
+        return (map, true);
     };
-    if v["version"].as_u64() != Some(VAULT_INDEX_VERSION) {
-        return map;
+    let Ok(v) = serde_json::from_reader::<_, Value>(std::io::BufReader::new(file)) else {
+        let _ = std::fs::remove_file(&path);
+        return (map, true);
+    };
+    if !v.is_object() || v["version"].as_u64() != Some(VAULT_INDEX_VERSION) {
+        let _ = std::fs::remove_file(&path);
+        return (map, true);
     }
     if v["embedding_sig"].as_str() != Some(expected_emb_sig) {
-        return map;
+        return (map, true);
     }
     let Some(files) = v["files"].as_array() else {
-        return map;
+        let _ = std::fs::remove_file(&path);
+        return (map, true);
     };
+    let mut had_corrupt_entry = false;
     for f in files {
         let Some(fpath) = f["path"].as_str().map(str::to_string) else {
+            had_corrupt_entry = true;
             continue;
         };
         let mtime_ns = f["mtime_ns"]
@@ -1076,6 +1121,7 @@ fn load_persisted_vault(
             .or_else(|| f["mtime_ns"].as_u64().map(|n| n as u128))
             .unwrap_or(0);
         let Some(sha256) = f["sha256"].as_str().map(str::to_string) else {
+            had_corrupt_entry = true;
             continue;
         };
         let name = f["name"].as_str().unwrap_or("").to_string();
@@ -1086,15 +1132,18 @@ fn load_persisted_vault(
         let preview = f["preview"].as_str().unwrap_or("").to_string();
         let indexed_bytes = f["indexed_bytes"].as_u64().unwrap_or(0);
         let mut chunks = Vec::new();
+        let mut bad_chunk = false;
         if let Some(arr) = f["chunks"].as_array() {
-            for c in arr {
+            for c in arr.iter().take(MAX_CHUNKS_PER_FILE) {
                 let Some(chunk_id) = c["chunk_id"].as_str().map(str::to_string) else {
-                    continue;
+                    bad_chunk = true;
+                    break;
                 };
                 let Some(text) = c["text"].as_str().map(str::to_string) else {
-                    continue;
+                    bad_chunk = true;
+                    break;
                 };
-                let embedding: Vec<f32> = c["embedding"]
+                let mut embedding: Vec<f32> = c["embedding"]
                     .as_array()
                     .map(|ea| {
                         ea.iter()
@@ -1102,6 +1151,11 @@ fn load_persisted_vault(
                             .collect()
                     })
                     .unwrap_or_default();
+                if embedding.is_empty() || !embedding.iter().all(|x| x.is_finite()) {
+                    bad_chunk = true;
+                    break;
+                }
+                embedding.shrink_to_fit();
                 chunks.push(VaultChunk {
                     chunk_id,
                     path: fpath.clone(),
@@ -1117,7 +1171,14 @@ fn load_persisted_vault(
                     file_idx: 0,
                 });
             }
+        } else {
+            bad_chunk = true;
         }
+        if bad_chunk {
+            had_corrupt_entry = true;
+            continue;
+        }
+        chunks.shrink_to_fit();
         map.insert(
             fpath.clone(),
             CachedFileEntry {
@@ -1135,7 +1196,7 @@ fn load_persisted_vault(
             },
         );
     }
-    map
+    (map, had_corrupt_entry)
 }
 
 fn save_persisted_vault(
@@ -1145,79 +1206,111 @@ fn save_persisted_vault(
     chunks: &[VaultChunk],
 ) {
     use std::io::Write as _;
-    let mut out = Vec::with_capacity(64 * 1024);
-    out.extend_from_slice(br#"{"version":"#);
-    write_json_u64(&mut out, VAULT_INDEX_VERSION);
-    out.extend_from_slice(br#","embedding_sig":"#);
-    write_json_str(&mut out, emb_sig);
-    out.extend_from_slice(br#","files":["#);
-    for (i, f) in files.iter().enumerate() {
-        if i > 0 {
-            out.push(b',');
-        }
-        out.extend_from_slice(br#"{"path":"#);
-        write_json_str(&mut out, &f.path);
-        out.extend_from_slice(br#","name":"#);
-        write_json_str(&mut out, &f.name);
-        out.extend_from_slice(br#","size":"#);
-        write_json_u64(&mut out, f.size);
-        out.extend_from_slice(br#","mtime_ms":"#);
-        write_json_u64(&mut out, f.mtime_ms);
-        out.extend_from_slice(br#","mtime_ns":"#);
-        write_json_str(&mut out, &f.mtime_ns.to_string());
-        out.extend_from_slice(br#","sha256":"#);
-        write_json_str(&mut out, &f.sha256);
-        out.extend_from_slice(br#","ext":"#);
-        write_json_str(&mut out, &f.ext);
-        out.extend_from_slice(br#","doc_kind":"#);
-        write_json_str(&mut out, &f.doc_kind);
-        out.extend_from_slice(br#","preview":"#);
-        write_json_str(&mut out, &f.preview);
-        out.extend_from_slice(br#","indexed_bytes":"#);
-        write_json_u64(&mut out, f.indexed_bytes);
-        out.extend_from_slice(br#","chunks":["#);
-        for (ci, c) in chunks[f.chunk_range.clone()].iter().enumerate() {
-            if ci > 0 {
-                out.push(b',');
-            }
-            out.extend_from_slice(br#"{"chunk_id":"#);
-            write_json_str(&mut out, &c.chunk_id);
-            out.extend_from_slice(br#","doc_kind":"#);
-            write_json_str(&mut out, &c.doc_kind);
-            if let Some(sh) = &c.sheet {
-                out.extend_from_slice(br#","sheet":"#);
-                write_json_str(&mut out, sh);
-            }
-            if let Some(pg) = c.page {
-                out.extend_from_slice(br#","page":"#);
-                write_json_u64(&mut out, pg as u64);
-            }
-            out.extend_from_slice(br#","line_start":"#);
-            write_json_u64(&mut out, c.line_start as u64);
-            out.extend_from_slice(br#","line_end":"#);
-            write_json_u64(&mut out, c.line_end as u64);
-            if let Some(h) = &c.heading {
-                out.extend_from_slice(br#","heading":"#);
-                write_json_str(&mut out, h);
-            }
-            out.extend_from_slice(br#","text":"#);
-            write_json_str(&mut out, &c.text);
-            out.extend_from_slice(br#","token_len":"#);
-            write_json_u64(&mut out, c.token_len as u64);
-            out.extend_from_slice(br#","embedding":["#);
-            for (ei, &val) in c.embedding.iter().enumerate() {
-                if ei > 0 {
-                    out.push(b',');
-                }
-                let clean = if val.is_finite() { val } else { 0.0 };
-                let _ = write!(&mut out, "{clean:.4}");
-            }
-            out.extend_from_slice(b"]}");
-        }
-        out.extend_from_slice(b"]}");
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static TMP_SEQ: AtomicU64 = AtomicU64::new(0);
+
+    let target = data_dir.join(VAULT_INDEX_FILE);
+    if let Some(parent) = target.parent() {
+        let _ = std::fs::create_dir_all(parent);
     }
-    out.extend_from_slice(b"]}");
-    let _ = crate::tools::atomic_write_bytes(&data_dir.join(VAULT_INDEX_FILE), &out);
+    let seq = TMP_SEQ.fetch_add(1, Ordering::Relaxed);
+    let tmp = target.with_file_name(format!(".{VAULT_INDEX_FILE}.ergon-{seq}.tmp"));
+    let Ok(file) = std::fs::File::create(&tmp) else {
+        return;
+    };
+    let mut out = std::io::BufWriter::with_capacity(64 * 1024, file);
+    let mut line_buf: Vec<u8> = Vec::with_capacity(4096);
+
+    let write_res: std::io::Result<()> = (|| {
+        line_buf.clear();
+        line_buf.extend_from_slice(br#"{"version":"#);
+        write_json_u64(&mut line_buf, VAULT_INDEX_VERSION);
+        line_buf.extend_from_slice(br#","embedding_sig":"#);
+        write_json_str(&mut line_buf, emb_sig);
+        line_buf.extend_from_slice(br#","files":["#);
+        out.write_all(&line_buf)?;
+
+        for (i, f) in files.iter().enumerate() {
+            line_buf.clear();
+            if i > 0 {
+                line_buf.push(b',');
+            }
+            line_buf.extend_from_slice(br#"{"path":"#);
+            write_json_str(&mut line_buf, &f.path);
+            line_buf.extend_from_slice(br#","name":"#);
+            write_json_str(&mut line_buf, &f.name);
+            line_buf.extend_from_slice(br#","size":"#);
+            write_json_u64(&mut line_buf, f.size);
+            line_buf.extend_from_slice(br#","mtime_ms":"#);
+            write_json_u64(&mut line_buf, f.mtime_ms);
+            line_buf.extend_from_slice(br#","mtime_ns":"#);
+            write_json_str(&mut line_buf, &f.mtime_ns.to_string());
+            line_buf.extend_from_slice(br#","sha256":"#);
+            write_json_str(&mut line_buf, &f.sha256);
+            line_buf.extend_from_slice(br#","ext":"#);
+            write_json_str(&mut line_buf, &f.ext);
+            line_buf.extend_from_slice(br#","doc_kind":"#);
+            write_json_str(&mut line_buf, &f.doc_kind);
+            line_buf.extend_from_slice(br#","preview":"#);
+            write_json_str(&mut line_buf, &f.preview);
+            line_buf.extend_from_slice(br#","indexed_bytes":"#);
+            write_json_u64(&mut line_buf, f.indexed_bytes);
+            line_buf.extend_from_slice(br#","chunks":["#);
+            out.write_all(&line_buf)?;
+
+            for (ci, c) in chunks[f.chunk_range.clone()].iter().enumerate() {
+                line_buf.clear();
+                if ci > 0 {
+                    line_buf.push(b',');
+                }
+                line_buf.extend_from_slice(br#"{"chunk_id":"#);
+                write_json_str(&mut line_buf, &c.chunk_id);
+                line_buf.extend_from_slice(br#","doc_kind":"#);
+                write_json_str(&mut line_buf, &c.doc_kind);
+                if let Some(sh) = &c.sheet {
+                    line_buf.extend_from_slice(br#","sheet":"#);
+                    write_json_str(&mut line_buf, sh);
+                }
+                if let Some(pg) = c.page {
+                    line_buf.extend_from_slice(br#","page":"#);
+                    write_json_u64(&mut line_buf, pg as u64);
+                }
+                line_buf.extend_from_slice(br#","line_start":"#);
+                write_json_u64(&mut line_buf, c.line_start as u64);
+                line_buf.extend_from_slice(br#","line_end":"#);
+                write_json_u64(&mut line_buf, c.line_end as u64);
+                if let Some(h) = &c.heading {
+                    line_buf.extend_from_slice(br#","heading":"#);
+                    write_json_str(&mut line_buf, h);
+                }
+                line_buf.extend_from_slice(br#","text":"#);
+                write_json_str(&mut line_buf, &c.text);
+                line_buf.extend_from_slice(br#","token_len":"#);
+                write_json_u64(&mut line_buf, c.token_len as u64);
+                line_buf.extend_from_slice(br#","embedding":["#);
+                for (ei, &val) in c.embedding.iter().enumerate() {
+                    if ei > 0 {
+                        line_buf.push(b',');
+                    }
+                    let clean = if val.is_finite() { val } else { 0.0 };
+                    let _ = write!(&mut line_buf, "{clean:.4}");
+                }
+                line_buf.extend_from_slice(b"]}");
+                out.write_all(&line_buf)?;
+            }
+            out.write_all(b"]}")?;
+        }
+        out.write_all(b"]}")?;
+        out.flush()
+    })();
+    drop(out);
+    if write_res.is_ok() {
+        if std::fs::rename(&tmp, &target).is_err() {
+            let _ = std::fs::remove_file(&tmp);
+        }
+    } else {
+        let _ = std::fs::remove_file(&tmp);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1286,9 +1379,21 @@ fn collect_files(
         let doc = docs::doc_kind(&rel);
         let kind_label = doc_kind_label(&ext, doc);
 
-        let sha256 = if size <= docs::MAX_DOC_BYTES {
+        let max_read = if doc.is_some() {
+            docs::MAX_DOC_BYTES
+        } else {
+            MAX_PLAIN_TEXT_BYTES
+        };
+        let mut prefetched_bytes: Option<Vec<u8>> = None;
+        let sha256 = if size <= max_read {
             match std::fs::read(&path) {
-                Ok(bytes) => receipts::sha256_hex(&bytes),
+                Ok(bytes) => {
+                    let h = receipts::sha256_hex(&bytes);
+                    if doc.is_none() {
+                        prefetched_bytes = Some(bytes);
+                    }
+                    h
+                }
                 Err(_) => String::new(),
             }
         } else {
@@ -1313,6 +1418,7 @@ fn collect_files(
         let mut indexed_bytes = 0u64;
 
         if let Some(dk) = doc.filter(|_| size <= docs::MAX_DOC_BYTES) {
+            drop(prefetched_bytes);
             match dk {
                 DocKind::Excel => {
                     if let Ok(first) = docs::extract(&path, DocKind::Excel, None) {
@@ -1322,13 +1428,17 @@ fn collect_files(
                             first.sheets
                         };
                         for sheet_name in sheets {
+                            if chunks.len() >= MAX_CHUNKS_PER_FILE {
+                                break;
+                            }
                             if let Ok(ex) =
                                 docs::extract(&path, DocKind::Excel, Some(&sheet_name))
                             {
                                 if preview.is_empty() {
                                     preview = first_preview_line(&ex.text);
                                 }
-                                indexed_bytes += ex.text.len() as u64;
+                                let capped = cap_utf8_bytes(&ex.text, MAX_EXTRACTED_TEXT_BYTES);
+                                indexed_bytes += capped.len() as u64;
                                 let src = ChunkSource {
                                     path: &rel,
                                     doc_kind: &kind_label,
@@ -1337,7 +1447,7 @@ fn collect_files(
                                     total_pdf_pages: 0,
                                     is_pptx: false,
                                 };
-                                chunk_text_lines(&src, &ex.text, &mut chunk_seq, &mut chunks);
+                                chunk_text_lines(&src, capped, &mut chunk_seq, &mut chunks);
                             }
                         }
                     }
@@ -1345,7 +1455,8 @@ fn collect_files(
                 DocKind::Pdf => {
                     if let Ok(ex) = docs::extract(&path, DocKind::Pdf, None) {
                         preview = first_preview_line(&ex.text);
-                        indexed_bytes = ex.text.len() as u64;
+                        let capped = cap_utf8_bytes(&ex.text, MAX_EXTRACTED_TEXT_BYTES);
+                        indexed_bytes = capped.len() as u64;
                         let src = ChunkSource {
                             path: &rel,
                             doc_kind: &kind_label,
@@ -1354,13 +1465,14 @@ fn collect_files(
                             total_pdf_pages: ex.pages.max(1),
                             is_pptx: false,
                         };
-                        chunk_text_lines(&src, &ex.text, &mut chunk_seq, &mut chunks);
+                        chunk_text_lines(&src, capped, &mut chunk_seq, &mut chunks);
                     }
                 }
                 DocKind::PowerPoint => {
                     if let Ok(ex) = docs::extract(&path, DocKind::PowerPoint, None) {
                         preview = first_preview_line(&ex.text);
-                        indexed_bytes = ex.text.len() as u64;
+                        let capped = cap_utf8_bytes(&ex.text, MAX_EXTRACTED_TEXT_BYTES);
+                        indexed_bytes = capped.len() as u64;
                         let src = ChunkSource {
                             path: &rel,
                             doc_kind: &kind_label,
@@ -1369,13 +1481,14 @@ fn collect_files(
                             total_pdf_pages: 0,
                             is_pptx: true,
                         };
-                        chunk_text_lines(&src, &ex.text, &mut chunk_seq, &mut chunks);
+                        chunk_text_lines(&src, capped, &mut chunk_seq, &mut chunks);
                     }
                 }
                 DocKind::Word => {
                     if let Ok(ex) = docs::extract(&path, DocKind::Word, None) {
                         preview = first_preview_line(&ex.text);
-                        indexed_bytes = ex.text.len() as u64;
+                        let capped = cap_utf8_bytes(&ex.text, MAX_EXTRACTED_TEXT_BYTES);
+                        indexed_bytes = capped.len() as u64;
                         let src = ChunkSource {
                             path: &rel,
                             doc_kind: &kind_label,
@@ -1384,16 +1497,17 @@ fn collect_files(
                             total_pdf_pages: 0,
                             is_pptx: false,
                         };
-                        chunk_text_lines(&src, &ex.text, &mut chunk_seq, &mut chunks);
+                        chunk_text_lines(&src, capped, &mut chunk_seq, &mut chunks);
                     }
                 }
             }
         } else if doc.is_none() && size <= MAX_PLAIN_TEXT_BYTES {
-            if let Ok(bytes) = std::fs::read(&path) {
+            if let Some(bytes) = prefetched_bytes.or_else(|| std::fs::read(&path).ok()) {
                 if !bytes.contains(&0) {
                     if let Ok(text) = String::from_utf8(bytes) {
                         preview = first_preview_line(&text);
-                        indexed_bytes = text.len() as u64;
+                        let capped = cap_utf8_bytes(&text, MAX_EXTRACTED_TEXT_BYTES);
+                        indexed_bytes = capped.len() as u64;
                         let src = ChunkSource {
                             path: &rel,
                             doc_kind: &kind_label,
@@ -1402,11 +1516,12 @@ fn collect_files(
                             total_pdf_pages: 0,
                             is_pptx: false,
                         };
-                        chunk_text_lines(&src, &text, &mut chunk_seq, &mut chunks);
+                        chunk_text_lines(&src, capped, &mut chunk_seq, &mut chunks);
                     }
                 }
             }
         }
+        chunks.shrink_to_fit();
 
         out.push(DiscoveredFile {
             entry: CachedFileEntry {
@@ -1498,10 +1613,11 @@ impl PersonIndex {
                 }
             }
         }
-        let receipt_tokens: HashMap<String, Box<[u32]>> = receipt_tokens
+        let mut receipt_tokens: HashMap<String, Box<[u32]>> = receipt_tokens
             .into_iter()
             .map(|(k, v)| (k, v.into_boxed_slice()))
             .collect();
+        receipt_tokens.shrink_to_fit();
 
         let embedding_cfg = load_embedding_config(data_dir);
         let wanted_emb_sig = embedding_cfg
@@ -1509,8 +1625,8 @@ impl PersonIndex {
             .map(EmbeddingConfig::signature)
             .unwrap_or_else(|| "det-256".to_string());
 
-        let mut cached = if force_reindex {
-            HashMap::new()
+        let (mut cached, cache_needs_rebuild) = if force_reindex {
+            (HashMap::new(), true)
         } else {
             load_persisted_vault(data_dir, &wanted_emb_sig)
         };
@@ -1524,6 +1640,7 @@ impl PersonIndex {
             &mut discovered,
         );
         let removed_any = !cached.is_empty();
+        drop(cached);
         let any_recomputed = discovered.iter().any(|d| d.recomputed);
 
         // Compute embeddings for newly parsed/changed chunks.
@@ -1600,6 +1717,7 @@ impl PersonIndex {
             let start = chunks.len();
             for mut c in e.chunks {
                 c.file_idx = file_idx as u32;
+                c.embedding.shrink_to_fit();
                 chunks.push(c);
             }
             let end = chunks.len();
@@ -1626,6 +1744,7 @@ impl PersonIndex {
         };
         let vault_path = data_dir.join(VAULT_INDEX_FILE);
         if force_reindex
+            || cache_needs_rebuild
             || any_recomputed
             || removed_any
             || initial_cached_len == 0 && !files.is_empty()
@@ -1678,14 +1797,16 @@ impl PersonIndex {
             }
         }
 
-        let file_tokens: HashMap<String, Box<[u32]>> = file_tokens
+        let mut file_tokens: HashMap<String, Box<[u32]>> = file_tokens
             .into_iter()
             .map(|(k, v)| (k, v.into_boxed_slice()))
             .collect();
-        let chunk_tokens: HashMap<String, Box<[(u32, u16)]>> = chunk_tokens_raw
+        file_tokens.shrink_to_fit();
+        let mut chunk_tokens: HashMap<String, Box<[(u32, u16)]>> = chunk_tokens_raw
             .into_iter()
             .map(|(k, v)| (k, v.into_boxed_slice()))
             .collect();
+        chunk_tokens.shrink_to_fit();
         let avg_chunk_len = if chunks.is_empty() {
             1.0
         } else {
@@ -2602,6 +2723,7 @@ impl SearchCache {
                 return idx.clone();
             }
         }
+        *w = None;
         let built = Arc::new(PersonIndex::build(
             data_dir,
             workspace_dir,
@@ -2610,6 +2732,8 @@ impl SearchCache {
             false,
         ));
         *w = Some(built.clone());
+        drop(w);
+        trim_allocator_memory();
         built
     }
 
@@ -2625,6 +2749,7 @@ impl SearchCache {
         let fp = compute_fingerprint(data_dir, workspace_dir, memory_path);
         let slot = self.slot(person_id);
         let mut w = slot.write().unwrap();
+        *w = None;
         let built = Arc::new(PersonIndex::build(
             data_dir,
             workspace_dir,
@@ -2633,6 +2758,8 @@ impl SearchCache {
             true,
         ));
         *w = Some(built.clone());
+        drop(w);
+        trim_allocator_memory();
         built
     }
 }
