@@ -500,7 +500,7 @@ export function PipelineBuilder({
                               }}
                               className="focus-ring h-8 rounded-sm border border-input bg-surface px-2 text-xs text-ink-2 outline-none max-md:min-h-11"
                             >
-                              <option value="">Workspace file...</option>
+                              <option value="">Workspace file…</option>
                               {workspaceFiles.slice(0, 20).map((f) => (
                                 <option key={f.path} value={f.path}>
                                   {f.path}

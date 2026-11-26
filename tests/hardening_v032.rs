@@ -570,6 +570,7 @@ fn tables_rejects_malformed_utf8_binary_and_handles_ragged_csv() {
     let td = TestDir::new("tables-edge");
     td.write_ws("bad_utf8.csv", b"name,amount\nCaf\xff,12.50\n");
     td.write_ws("binary.csv", b"name,amount\n\x00\x01\x02,10\n");
+    td.write_ws("nul.csv", b"name,amount\n\x00\x01\x02,10\n");
     td.write_ws("ragged.csv", b"vendor,amount\nAcme\nBeta,20.50,extra_tag,99\n");
 
     let addr = spawn_server(td.cfg.clone());
@@ -589,6 +590,14 @@ fn tables_rejects_malformed_utf8_binary_and_handles_ragged_csv() {
         r#"{"path":"binary.csv"}"#,
     );
     assert_eq!(st_b, 400, "{b_err}");
+
+    let (st_n, n_err) = http_req(
+        addr,
+        "POST",
+        "/api/tables/query",
+        r#"{"path":"nul.csv"}"#,
+    );
+    assert_eq!(st_n, 400, "{n_err}");
 
     let (st_r, r_ok) = http_req(
         addr,

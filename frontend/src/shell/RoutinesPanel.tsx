@@ -767,11 +767,11 @@ function RoutinesBody({
                     )}
                     {rt.steps_v2 && rt.steps_v2.length > 0 ? (
                       <Badge variant="outline" size="sm" className="mono text-xs">
-                        Pipeline · {rt.steps_v2.length} steps
+                        Pipeline ({rt.steps_v2.length} steps)
                       </Badge>
                     ) : rt.steps && rt.steps.length > 1 && (
                       <Badge variant="outline" size="sm" className="mono text-xs">
-                        Playbook · {rt.steps.length} steps
+                        Playbook ({rt.steps.length} steps)
                       </Badge>
                     )}
                     {rt.last_run_verified && (

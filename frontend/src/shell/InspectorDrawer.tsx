@@ -398,7 +398,7 @@ export const InspectorDrawer = memo(function InspectorDrawer({
               {handoffBlockedMsg && (
                 <div
                   id="handoff-blocked-alert"
-                  className="flex flex-col gap-2 rounded-card border border-hairline bg-surface p-2.5 text-xs text-ink"
+                  className="flex flex-col gap-2 border-l-2 border-hairline bg-surface/80 py-2 pl-2.5 pr-2 text-xs text-ink"
                 >
                   <p className="font-medium text-ink">{handoffBlockedMsg}</p>
                   <Button
@@ -417,7 +417,7 @@ export const InspectorDrawer = memo(function InspectorDrawer({
               {handoffScan && handoffScan.findings.length > 0 && (
                 <ul
                   id="handoff-findings-list"
-                  className="flex max-h-40 flex-col gap-1.5 overflow-y-auto rounded-card border border-hairline bg-surface p-2.5 text-xs"
+                  className="flex max-h-40 flex-col gap-1.5 overflow-y-auto border-t border-hairline pt-2 text-xs"
                 >
                   {handoffScan.findings.slice(0, 12).map((f, idx) => (
                     <li key={`${f.file}:${f.line}:${idx}`} className="flex flex-col gap-0.5">

@@ -52,7 +52,7 @@ export function StarterPlaybooksBar({
     <section
       id={compact ? "today-starter-launchers" : "starter-playbooks-strip"}
       aria-label="Starter playbooks"
-      className="flex flex-col gap-3 rounded-card border border-hairline bg-board/40 p-3.5"
+      className="flex flex-col gap-3 pt-1"
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-2">

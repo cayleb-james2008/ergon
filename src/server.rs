@@ -230,8 +230,10 @@ fn is_history_security_error(err: &str) -> bool {
         || low.contains("hidden")
         || low.contains("control")
         || low.contains("traversal")
-        || low.contains("nul")
-        || low.contains("workspace")
+        || low.contains("nul byte")
+        || low.contains("null byte")
+        || low.contains("escapes the workspace")
+        || low.contains("inside the workspace")
 }
 
 fn respond_checked_write_err(
@@ -4438,7 +4440,12 @@ fn try_route_files_and_audit(
                     respond_json(stream, 200, &res.to_json())
                 }
                 Err(e) => {
-                    let status = if is_history_security_error(&e) || e.contains("symlink") {
+                    let status = if e.contains("appears to be binary")
+                        || e.contains("is not valid UTF-8")
+                        || e.contains("cannot be parsed")
+                    {
+                        400
+                    } else if is_history_security_error(&e) || e.contains("symlink") {
                         403
                     } else if e.contains("not found") {
                         404
