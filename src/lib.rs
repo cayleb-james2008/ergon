@@ -51,6 +51,16 @@ pub const BROWSER_UA: &str = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36
 pub const NO_KEY_ERROR: &str =
     "no model key configured: set ERGON_MODEL_API_KEY so the agent can reach its model. Ergon will not fabricate an answer without one.";
 pub const STEP_CAP: usize = 24;
+pub const DEFAULT_CONTEXT_BUDGET_CHARS: usize = 80_000;
+pub const MAX_COMPACTED_STEPS: usize = 48;
+
+fn env_context_budget_chars() -> usize {
+    std::env::var("ERGON_CONTEXT_BUDGET_CHARS")
+        .ok()
+        .and_then(|v| v.trim().parse::<usize>().ok())
+        .filter(|&n| n >= 256)
+        .unwrap_or(DEFAULT_CONTEXT_BUDGET_CHARS)
+}
 
 // ---------------------------------------------------------------------------
 // Workspace Audit Policy Profiles (v0.25.0)
@@ -1031,6 +1041,200 @@ impl ModelCallUsage {
     }
 }
 
+#[derive(Clone, Copy)]
+pub struct ModelStreamTarget<'a> {
+    pub events: &'a sse::RunEventBus,
+    pub person_id: &'a str,
+    pub run_id: &'a str,
+    pub thread_id: &'a str,
+    pub step_index: usize,
+}
+
+#[derive(Default)]
+struct SseToolCallAccum {
+    name: String,
+    arguments: String,
+}
+
+fn parse_usage_from_value(usage_obj: Option<&Value>, model_id: String, latency_ms: u64) -> ModelCallUsage {
+    let prompt_tokens = usage_obj
+        .and_then(|u| {
+            u.get("prompt_tokens")
+                .or_else(|| u.get("input_tokens"))
+                .and_then(|x| x.as_u64())
+        })
+        .unwrap_or(0);
+    let completion_tokens = usage_obj
+        .and_then(|u| {
+            u.get("completion_tokens")
+                .or_else(|| u.get("output_tokens"))
+                .and_then(|x| x.as_u64())
+        })
+        .unwrap_or(0);
+    let total_tokens = usage_obj
+        .and_then(|u| u.get("total_tokens").and_then(|x| x.as_u64()))
+        .unwrap_or_else(|| prompt_tokens.saturating_add(completion_tokens));
+    let cached_tokens = usage_obj
+        .and_then(|u| {
+            u.get("cached_tokens")
+                .or_else(|| u.get("prompt_tokens_details").and_then(|d| d.get("cached_tokens")))
+                .or_else(|| u.get("input_tokens_details").and_then(|d| d.get("cached_tokens")))
+                .or_else(|| u.get("cache_read_input_tokens"))
+                .and_then(|x| x.as_u64())
+        })
+        .unwrap_or(0);
+    ModelCallUsage {
+        model_id,
+        prompt_tokens,
+        completion_tokens,
+        total_tokens,
+        cached_tokens,
+        latency_ms,
+    }
+}
+
+fn consume_sse_data_line(
+    line: &str,
+    content_buf: &mut String,
+    tool_calls: &mut std::collections::BTreeMap<usize, SseToolCallAccum>,
+    model_id: &mut Option<String>,
+    usage_val: &mut Option<Value>,
+    stream_target: Option<ModelStreamTarget<'_>>,
+) -> bool {
+    let trimmed = line.trim();
+    if trimmed.is_empty() || trimmed.starts_with(':') {
+        return false;
+    }
+    let Some(data_raw) = trimmed.strip_prefix("data:") else {
+        return false;
+    };
+    let data = data_raw.trim();
+    if data == "[DONE]" {
+        return true;
+    }
+    let Ok(chunk) = serde_json::from_str::<Value>(data) else {
+        return false;
+    };
+    if let Some(m) = chunk["model"].as_str().map(str::trim).filter(|s| !s.is_empty()) {
+        *model_id = Some(m.to_string());
+    }
+    if let Some(u) = chunk.get("usage").filter(|u| u.is_object()) {
+        *usage_val = Some(u.clone());
+    }
+    let Some(delta) = chunk
+        .get("choices")
+        .and_then(|c| c.get(0))
+        .and_then(|c0| c0.get("delta"))
+    else {
+        return false;
+    };
+    if let Some(text) = delta.get("content").and_then(|c| c.as_str()) {
+        if !text.is_empty() {
+            content_buf.push_str(text);
+            if let Some(target) = stream_target {
+                target.events.publish_token_delta(
+                    target.person_id,
+                    target.run_id,
+                    target.thread_id,
+                    text,
+                    target.step_index,
+                );
+            }
+        }
+    }
+    if let Some(tc_arr) = delta.get("tool_calls").and_then(|t| t.as_array()) {
+        for tc in tc_arr {
+            let idx = tc.get("index").and_then(|i| i.as_u64()).unwrap_or(0) as usize;
+            let entry = tool_calls.entry(idx).or_default();
+            if let Some(func) = tc.get("function") {
+                if let Some(name) = func.get("name").and_then(|n| n.as_str()) {
+                    entry.name.push_str(name);
+                }
+                if let Some(args) = func.get("arguments").and_then(|a| a.as_str()) {
+                    entry.arguments.push_str(args);
+                    if !args.is_empty() {
+                        if let Some(target) = stream_target {
+                            target.events.publish_token_delta(
+                                target.person_id,
+                                target.run_id,
+                                target.thread_id,
+                                args,
+                                target.step_index,
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+    false
+}
+
+fn finalize_sse_reply(
+    content_buf: &str,
+    tool_calls: &std::collections::BTreeMap<usize, SseToolCallAccum>,
+) -> Result<Value, String> {
+    if !content_buf.trim().is_empty() {
+        return parse_model_reply(content_buf);
+    }
+    if let Some((_, tc)) = tool_calls.iter().next() {
+        if !tc.name.trim().is_empty() {
+            let args_val = serde_json::from_str::<Value>(&tc.arguments)
+                .unwrap_or_else(|_| Value::String(tc.arguments.clone()));
+            return Ok(normalize_model_reply(json!({
+                "tool": tc.name.trim(),
+                "args": args_val,
+            })));
+        }
+    }
+    Err("model SSE stream ended with no assistant content or tool_calls".to_string())
+}
+
+fn parse_single_json_model_response(
+    cfg: &Config,
+    v: &Value,
+    latency_ms: u64,
+) -> Result<(Value, ModelCallUsage), String> {
+    let model_id = v["model"]
+        .as_str()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or(&cfg.model_id)
+        .to_string();
+    let usage = parse_usage_from_value(v.get("usage"), model_id, latency_ms);
+    let msg = &v["choices"][0]["message"];
+    let content = &msg["content"];
+    let parsed = match content {
+        Value::String(s) if !s.trim().is_empty() => parse_model_reply(s)?,
+        Value::Object(_) => normalize_model_reply(content.clone()),
+        _ => {
+            if let Some(tc0) = msg.get("tool_calls").and_then(|t| t.get(0)) {
+                let name = tc0["function"]["name"].as_str().unwrap_or("").trim();
+                if !name.is_empty() {
+                    let args_raw = &tc0["function"]["arguments"];
+                    let args_val = match args_raw {
+                        Value::String(s) => serde_json::from_str::<Value>(s)
+                            .unwrap_or_else(|_| Value::String(s.clone())),
+                        other => other.clone(),
+                    };
+                    normalize_model_reply(json!({ "tool": name, "args": args_val }))
+                } else {
+                    return Err(format!(
+                        "model response had no message content: {}",
+                        truncate(&v.to_string(), 400)
+                    ));
+                }
+            } else {
+                return Err(format!(
+                    "model response had no message content: {}",
+                    truncate(&v.to_string(), 400)
+                ));
+            }
+        }
+    };
+    Ok((parsed, usage))
+}
+
 pub fn call_model(cfg: &Config, session: &str, messages: &[Value]) -> Result<Value, String> {
     call_model_with_usage(cfg, session, messages).map(|(v, _)| v)
 }
@@ -1039,6 +1243,15 @@ pub fn call_model_with_usage(
     cfg: &Config,
     session: &str,
     messages: &[Value],
+) -> Result<(Value, ModelCallUsage), String> {
+    call_model_with_usage_streaming(cfg, session, messages, None)
+}
+
+pub fn call_model_with_usage_streaming(
+    cfg: &Config,
+    session: &str,
+    messages: &[Value],
+    stream_target: Option<ModelStreamTarget<'_>>,
 ) -> Result<(Value, ModelCallUsage), String> {
     if !cfg.model_configured() {
         return Err(NO_KEY_ERROR.to_string());
@@ -1049,6 +1262,9 @@ pub fn call_model_with_usage(
         "messages": messages,
         "temperature": 0.2,
     });
+    if stream_target.is_some() {
+        payload["stream"] = json!(true);
+    }
     if cfg.model_base_url.contains(":11434") {
         payload["response_format"] = json!({"type": "json_object"});
     }
@@ -1092,63 +1308,80 @@ pub fn call_model_with_usage(
             Err(e) => return Err(format!("model call failed: {e}")),
         }
     };
-    let v: Value = resp
-        .into_json()
-        .map_err(|e| format!("model response was not JSON: {e}"))?;
-    let latency_ms = started.elapsed().as_millis() as u64;
-    let model_id = v["model"]
-        .as_str()
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .unwrap_or(&cfg.model_id)
-        .to_string();
-    let usage_obj = v.get("usage");
-    let prompt_tokens = usage_obj
-        .and_then(|u| {
-            u.get("prompt_tokens")
-                .or_else(|| u.get("input_tokens"))
-                .and_then(|x| x.as_u64())
-        })
-        .unwrap_or(0);
-    let completion_tokens = usage_obj
-        .and_then(|u| {
-            u.get("completion_tokens")
-                .or_else(|| u.get("output_tokens"))
-                .and_then(|x| x.as_u64())
-        })
-        .unwrap_or(0);
-    let total_tokens = usage_obj
-        .and_then(|u| u.get("total_tokens").and_then(|x| x.as_u64()))
-        .unwrap_or_else(|| prompt_tokens.saturating_add(completion_tokens));
-    let cached_tokens = usage_obj
-        .and_then(|u| {
-            u.get("cached_tokens")
-                .or_else(|| u.get("prompt_tokens_details").and_then(|d| d.get("cached_tokens")))
-                .or_else(|| u.get("input_tokens_details").and_then(|d| d.get("cached_tokens")))
-                .or_else(|| u.get("cache_read_input_tokens"))
-                .and_then(|x| x.as_u64())
-        })
-        .unwrap_or(0);
-    let usage = ModelCallUsage {
-        model_id,
-        prompt_tokens,
-        completion_tokens,
-        total_tokens,
-        cached_tokens,
-        latency_ms,
-    };
-    let content = &v["choices"][0]["message"]["content"];
-    let parsed = match content {
-        Value::String(s) => parse_model_reply(s)?,
-        Value::Object(_) => normalize_model_reply(content.clone()),
-        _ => {
-            return Err(format!(
-                "model response had no message content: {}",
-                truncate(&v.to_string(), 400)
-            ))
+
+    let content_type = resp.header("content-type").unwrap_or("").to_ascii_lowercase();
+    if content_type.contains("text/event-stream") {
+        use std::io::BufRead as _;
+        let mut reader = std::io::BufReader::new(resp.into_reader());
+        let mut content_buf = String::new();
+        let mut tool_calls: std::collections::BTreeMap<usize, SseToolCallAccum> =
+            std::collections::BTreeMap::new();
+        let mut model_id: Option<String> = None;
+        let mut usage_val: Option<Value> = None;
+        let mut line = String::new();
+        loop {
+            line.clear();
+            let n = reader
+                .read_line(&mut line)
+                .map_err(|e| format!("reading model SSE stream failed: {e}"))?;
+            if n == 0 {
+                break;
+            }
+            if consume_sse_data_line(
+                &line,
+                &mut content_buf,
+                &mut tool_calls,
+                &mut model_id,
+                &mut usage_val,
+                stream_target,
+            ) {
+                break;
+            }
         }
-    };
-    Ok((parsed, usage))
+        let latency_ms = started.elapsed().as_millis() as u64;
+        let parsed = finalize_sse_reply(&content_buf, &tool_calls)?;
+        let usage = parse_usage_from_value(
+            usage_val.as_ref(),
+            model_id.unwrap_or_else(|| cfg.model_id.clone()),
+            latency_ms,
+        );
+        return Ok((parsed, usage));
+    }
+
+    let raw_body = resp
+        .into_string()
+        .map_err(|e| format!("reading model response failed: {e}"))?;
+    let latency_ms = started.elapsed().as_millis() as u64;
+    if raw_body.trim_start().starts_with("data:") {
+        let mut content_buf = String::new();
+        let mut tool_calls: std::collections::BTreeMap<usize, SseToolCallAccum> =
+            std::collections::BTreeMap::new();
+        let mut model_id: Option<String> = None;
+        let mut usage_val: Option<Value> = None;
+        for line in raw_body.lines() {
+            if consume_sse_data_line(
+                line,
+                &mut content_buf,
+                &mut tool_calls,
+                &mut model_id,
+                &mut usage_val,
+                stream_target,
+            ) {
+                break;
+            }
+        }
+        let parsed = finalize_sse_reply(&content_buf, &tool_calls)?;
+        let usage = parse_usage_from_value(
+            usage_val.as_ref(),
+            model_id.unwrap_or_else(|| cfg.model_id.clone()),
+            latency_ms,
+        );
+        return Ok((parsed, usage));
+    }
+
+    let v: Value = serde_json::from_str(&raw_body)
+        .map_err(|e| format!("model response was not JSON: {e}"))?;
+    parse_single_json_model_response(cfg, &v, latency_ms)
 }
 
 fn normalize_model_reply(mut v: Value) -> Value {
@@ -1485,6 +1718,67 @@ pub struct CheckpointPause {
     pub inspect_files: Vec<String>,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct AgentSnapshot {
+    pub messages: Vec<Value>,
+    pub written: Vec<String>,
+    pub budget_used: usize,
+}
+
+impl AgentSnapshot {
+    pub fn to_json(&self) -> Value {
+        json!({
+            "messages": self.messages,
+            "written": self.written,
+            "budget_used": self.budget_used,
+        })
+    }
+
+    pub fn from_json(v: &Value) -> Option<Self> {
+        let obj = v.as_object()?;
+        let messages = obj
+            .get("messages")
+            .and_then(|m| m.as_array())
+            .cloned()
+            .unwrap_or_default();
+        let written = obj
+            .get("written")
+            .and_then(|w| w.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|x| x.as_str().map(str::to_string))
+                    .collect()
+            })
+            .unwrap_or_default();
+        let budget_used = obj
+            .get("budget_used")
+            .and_then(|b| b.as_u64())
+            .unwrap_or(0) as usize;
+        Some(Self {
+            messages,
+            written,
+            budget_used,
+        })
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct AgentLoopOptions {
+    pub context_budget_chars: usize,
+    pub max_steps: usize,
+    pub snapshot: Option<AgentSnapshot>,
+}
+
+impl Default for AgentLoopOptions {
+    fn default() -> Self {
+        Self {
+            context_budget_chars: env_context_budget_chars(),
+            max_steps: STEP_CAP,
+            snapshot: None,
+        }
+    }
+}
+
 pub struct AgentOutcome {
     pub summary: String,
     pub steps: Vec<String>,
@@ -1495,6 +1789,7 @@ pub struct AgentOutcome {
     pub engagement_id: Option<String>,
     pub budget_gated: bool,
     pub decision_id: Option<String>,
+    pub agent_snapshot: Option<AgentSnapshot>,
 }
 
 /// The files one run actually wrote — the evidence a "done" summary's
@@ -1764,6 +2059,182 @@ struct LoopOutcome {
     steps: Vec<String>,
     paused_checkpoint: Option<CheckpointPause>,
     budget_gate_decision_id: Option<String>,
+    snapshot: Option<AgentSnapshot>,
+}
+
+fn estimate_messages_chars(messages: &[Value]) -> usize {
+    messages
+        .iter()
+        .map(|m| {
+            m.get("content")
+                .and_then(|c| c.as_str())
+                .map(str::len)
+                .unwrap_or_else(|| m.to_string().len())
+                + 24
+        })
+        .sum()
+}
+
+fn collect_citations_from_text(text: &str, out: &mut Vec<String>) {
+    for tok in text.split_whitespace() {
+        let cleaned = tok.trim_matches(|c: char| {
+            matches!(
+                c,
+                '"' | '\'' | '`' | '(' | ')' | '[' | ']' | '{' | '}' | ',' | ';' | ':' | '.'
+            )
+        });
+        let low = cleaned.to_ascii_lowercase();
+        let is_cit = low.starts_with("http://")
+            || low.starts_with("https://")
+            || ((low.ends_with(".md")
+                || low.ends_with(".csv")
+                || low.ends_with(".txt")
+                || low.ends_with(".json")
+                || low.ends_with(".pdf")
+                || low.ends_with(".docx")
+                || low.ends_with(".xlsx"))
+                && cleaned.len() > 3
+                && cleaned.len() <= 160);
+        if is_cit && !out.iter().any(|x| x == cleaned) {
+            out.push(cleaned.to_string());
+            if out.len() >= 24 {
+                break;
+            }
+        }
+    }
+}
+
+/// Compact older tool-call/result turns into a concise structured state digest
+/// while preserving `messages[0]` (system prompt), the newest 4 turns, and
+/// `WriteLedger` (`written` + citations) intact.
+fn compact_messages_if_needed(
+    messages: &mut Vec<Value>,
+    ledger: &WriteLedger,
+    context_budget_chars: usize,
+    live: Option<LiveStreamCtx<'_>>,
+    thread_id: &str,
+) -> bool {
+    let keep_tail = 4usize;
+    if messages.len() <= keep_tail + 2 {
+        return false;
+    }
+    let before_chars = estimate_messages_chars(messages);
+    if before_chars <= context_budget_chars {
+        return false;
+    }
+
+    let split_idx = messages.len() - keep_tail;
+    let older = &messages[1..split_idx];
+    let older_len = older.len();
+    let mut prior_digest_lines: Vec<String> = Vec::new();
+    let mut citations: Vec<String> = Vec::new();
+
+    for m in older {
+        let role = m["role"].as_str().unwrap_or("");
+        let content = m["content"].as_str().unwrap_or("");
+        if content.starts_with("[CONTEXT_DIGEST") {
+            for line in content.lines() {
+                let tr = line.trim();
+                if tr.starts_with("- ") && prior_digest_lines.len() < 12 {
+                    prior_digest_lines.push(tr.to_string());
+                } else if let Some(cits) = tr.strip_prefix("Citations:") {
+                    collect_citations_from_text(cits, &mut citations);
+                }
+            }
+            continue;
+        }
+        collect_citations_from_text(content, &mut citations);
+        let one_line = content.replace(['\r', '\n'], " ");
+        let trimmed = one_line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        if role == "assistant" {
+            if let Ok(v) = serde_json::from_str::<Value>(trimmed) {
+                if let Some(tool) = v["tool"].as_str() {
+                    let arg_hint = v["args"]["path"]
+                        .as_str()
+                        .or_else(|| v["args"]["query"].as_str())
+                        .or_else(|| v["args"]["title"].as_str())
+                        .unwrap_or("");
+                    if arg_hint.is_empty() {
+                        prior_digest_lines.push(format!("- called {tool}"));
+                    } else {
+                        prior_digest_lines.push(format!("- called {tool} ({})", truncate(arg_hint, 64)));
+                    }
+                    continue;
+                }
+            }
+        }
+        let prefix = if role == "assistant" { "assistant" } else { "obs" };
+        prior_digest_lines.push(format!("- {prefix}: {}", truncate(trimmed, 120)));
+    }
+
+    // Keep digest concise so total messages stay comfortably within budget.
+    let tail_chars: usize = messages[split_idx..]
+        .iter()
+        .map(|m| m.to_string().len())
+        .sum();
+    let sys_chars = messages[0].to_string().len();
+    let max_digest_chars = context_budget_chars
+        .saturating_sub(sys_chars + tail_chars + 128)
+        .clamp(256, 4096);
+
+    if prior_digest_lines.len() > 14 {
+        let skipped = prior_digest_lines.len() - 10;
+        let tail = prior_digest_lines.split_off(skipped);
+        prior_digest_lines = std::iter::once(format!("- (...{skipped} earlier turns compacted...)"))
+            .chain(tail)
+            .collect();
+    }
+
+    let written_line = if ledger.written.is_empty() {
+        "none".to_string()
+    } else {
+        ledger.written.join(", ")
+    };
+    let cit_line = if citations.is_empty() {
+        "none".to_string()
+    } else {
+        citations.join(", ")
+    };
+    let mut digest = format!(
+        "[CONTEXT_DIGEST compacted_turns={older_len}]\nWritten files: {}\nCitations: {}\nRecent compacted steps:\n{}",
+        written_line,
+        cit_line,
+        prior_digest_lines.join("\n")
+    );
+    if digest.len() > max_digest_chars {
+        digest = truncate(&digest, max_digest_chars);
+    }
+
+    let tail_msgs: Vec<Value> = messages[split_idx..].to_vec();
+    let system_msg = messages[0].clone();
+    messages.clear();
+    messages.push(system_msg);
+    messages.push(json!({
+        "role": "user",
+        "content": digest,
+    }));
+    messages.extend(tail_msgs);
+
+    let after_chars = estimate_messages_chars(messages);
+    if let Some(lctx) = live {
+        lctx.events.publish(
+            "context_compacted",
+            lctx.person_id,
+            lctx.run_id,
+            thread_id,
+            json!({
+                "compacted_turns": older_len,
+                "before_chars": before_chars,
+                "after_chars": after_chars,
+                "written_count": ledger.written.len(),
+                "ts_ms": records::now_millis(),
+            }),
+        );
+    }
+    true
 }
 
 fn park_budget_gate_decision(
@@ -1834,6 +2305,8 @@ fn run_loop(
     history: &[Value],
     allow_delegate: bool,
     step_cap: usize,
+    total_budget_cap: usize,
+    context_budget_chars: usize,
     label: Option<&str>,
     ledger: &mut WriteLedger,
     dynamic_skills: &mut std::collections::HashSet<String>,
@@ -1854,16 +2327,18 @@ fn run_loop(
         format!("ergon-{thread_id}-{session_tag}")
     };
     let mut messages: Vec<Value> = vec![json!({"role": "system", "content": system})];
-    messages.extend(history.iter().cloned());
+    messages.extend(
+        history
+            .iter()
+            .filter(|m| m["role"].as_str() != Some("system"))
+            .cloned(),
+    );
     messages.push(json!({"role": "user", "content": task}));
     let mut steps: Vec<String> = Vec::new();
 
     // Two caps, both enforced: this loop's own step cap, and the
-    // whole run's shared model-call budget. A delegate call used to
-    // cost the parent 1 step and buy a fresh 12 — delegation
-    // multiplied the cap (24 delegations ≈ 312 model calls in one
-    // task). Now every call, parent or subagent, draws from the
-    // same budget of STEP_CAP.
+    // whole run's shared model-call budget (STEP_CAP by default, or up to
+    // MAX_COMPACTED_STEPS = 48 when compacted multi-step execution is enabled).
     let mut local_steps = 0usize;
     let mut json_retries = 0usize;
     loop {
@@ -1882,15 +2357,31 @@ fn run_loop(
                     steps,
                     paused_checkpoint: None,
                     budget_gate_decision_id: Some(did),
+                    snapshot: None,
                 });
             }
         }
-        if local_steps >= step_cap || *budget >= STEP_CAP {
+        if local_steps >= step_cap || *budget >= total_budget_cap {
             break;
         }
         local_steps += 1;
         *budget += 1;
-        let (reply, call_usage) = match call_model_with_usage(cfg, &session, &messages) {
+        let _ = compact_messages_if_needed(
+            &mut messages,
+            ledger,
+            context_budget_chars,
+            live,
+            thread_id,
+        );
+        let stream_target = live.map(|lctx| ModelStreamTarget {
+            events: lctx.events,
+            person_id: lctx.person_id,
+            run_id: lctx.run_id,
+            thread_id,
+            step_index: local_steps,
+        });
+        let (reply, call_usage) =
+            match call_model_with_usage_streaming(cfg, &session, &messages, stream_target) {
             Ok(v) => v,
             Err(e) if e.starts_with("model reply was not a JSON object:") && json_retries < 2 => {
                 json_retries += 1;
@@ -1939,6 +2430,7 @@ fn run_loop(
                 steps,
                 paused_checkpoint: None,
                 budget_gate_decision_id: None,
+                snapshot: None,
             });
         }
         let tool = match reply["tool"].as_str() {
@@ -2001,6 +2493,8 @@ fn run_loop(
                     dynamic_skills,
                     suite_items,
                     budget,
+                    total_budget_cap,
+                    context_budget_chars,
                     live,
                     pricing,
                     run_usage,
@@ -2152,15 +2646,33 @@ fn run_loop(
                 steps,
                 paused_checkpoint: None,
                 budget_gate_decision_id: Some(bg_id),
+                snapshot: None,
             });
         }
         if tool == "request_checkpoint" && ok {
             let cp_pause = tools::parse_checkpoint_tool_args(cfg, &args)?;
+            let mut snap_messages: Vec<Value> = messages
+                .iter()
+                .skip(1)
+                .filter(|m| m["role"].as_str() != Some("system"))
+                .cloned()
+                .collect();
+            snap_messages.push(json!({"role": "assistant", "content": reply.to_string()}));
+            snap_messages.push(json!({
+                "role": "user",
+                "content": format!("Checkpoint requested ({}): waiting for human response.", cp_pause.prompt),
+            }));
+            let snapshot = AgentSnapshot {
+                messages: snap_messages,
+                written: ledger.written.clone(),
+                budget_used: *budget,
+            };
             return Ok(LoopOutcome {
                 summary: format!("Paused at human checkpoint: {}", cp_pause.prompt),
                 steps,
                 paused_checkpoint: Some(cp_pause),
                 budget_gate_decision_id: None,
+                snapshot: Some(snapshot),
             });
         }
         // Guard against small local models looping on delete_file after a file
@@ -2172,6 +2684,7 @@ fn run_loop(
                 steps,
                 paused_checkpoint: None,
                 budget_gate_decision_id: None,
+                snapshot: None,
             });
         }
         // A tripped critical trap (or a score over the line) stops the
@@ -2190,9 +2703,9 @@ fn run_loop(
             "content": spotlighted,
         }));
     }
-    Err(if *budget >= STEP_CAP {
+    Err(if *budget >= total_budget_cap {
         format!(
-            "agent stopped after {STEP_CAP} steps (the run's total budget, shared with its subagents) without finishing — the task may be blocked or too large for one run."
+            "agent stopped after {total_budget_cap} steps (the run's total budget, shared with its subagents) without finishing — the task may be blocked or too large for one run."
         )
     } else {
         format!(
@@ -2216,6 +2729,8 @@ fn run_delegation(
     dynamic_skills: &mut std::collections::HashSet<String>,
     suite_items: &[library::LibraryItem],
     budget: &mut usize,
+    total_budget_cap: usize,
+    context_budget_chars: usize,
     live: Option<LiveStreamCtx<'_>>,
     pricing: &std::collections::BTreeMap<String, records::ModelPrice>,
     run_usage: &mut records::RunUsage,
@@ -2257,6 +2772,8 @@ fn run_delegation(
         &[],
         false,
         12,
+        total_budget_cap,
+        context_budget_chars,
         Some(&profile.name),
         ledger,
         dynamic_skills,
@@ -2366,7 +2883,21 @@ pub fn run_agent_live(
     history: &[Value],
     live: Option<(&LiveRuns, &sse::RunEventBus, &str)>,
 ) -> Result<AgentOutcome, String> {
-    run_agent_inner(cfg, ctx, store, thread_id, task, history, live, false)
+    run_agent_inner(cfg, ctx, store, thread_id, task, history, live, false, AgentLoopOptions::default())
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn run_agent_with_options(
+    cfg: &Config,
+    ctx: &ToolCtx,
+    store: &SharedStore,
+    thread_id: &str,
+    task: &str,
+    history: &[Value],
+    live: Option<(&LiveRuns, &sse::RunEventBus, &str)>,
+    options: AgentLoopOptions,
+) -> Result<AgentOutcome, String> {
+    run_agent_inner(cfg, ctx, store, thread_id, task, history, live, false, options)
 }
 
 pub fn run_agent_for_pipeline(
@@ -2378,7 +2909,21 @@ pub fn run_agent_for_pipeline(
     history: &[Value],
     live: Option<(&LiveRuns, &sse::RunEventBus, &str)>,
 ) -> Result<AgentOutcome, String> {
-    run_agent_inner(cfg, ctx, store, thread_id, task, history, live, true)
+    run_agent_inner(cfg, ctx, store, thread_id, task, history, live, true, AgentLoopOptions::default())
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn run_agent_for_pipeline_with_options(
+    cfg: &Config,
+    ctx: &ToolCtx,
+    store: &SharedStore,
+    thread_id: &str,
+    task: &str,
+    history: &[Value],
+    live: Option<(&LiveRuns, &sse::RunEventBus, &str)>,
+    options: AgentLoopOptions,
+) -> Result<AgentOutcome, String> {
+    run_agent_inner(cfg, ctx, store, thread_id, task, history, live, true, options)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -2391,6 +2936,7 @@ fn run_agent_inner(
     history: &[Value],
     live: Option<(&LiveRuns, &sse::RunEventBus, &str)>,
     from_pipeline: bool,
+    options: AgentLoopOptions,
 ) -> Result<AgentOutcome, String> {
     if !cfg.model_configured() {
         return Err(NO_KEY_ERROR.to_string());
@@ -2447,8 +2993,25 @@ fn run_agent_inner(
         .map(|i| i.id.clone())
         .collect();
     let system = system_prompt(cfg, &suite_items);
+    let context_budget_chars = options.context_budget_chars.max(256);
+    let max_steps = options.max_steps.clamp(1, MAX_COMPACTED_STEPS);
     let mut ledger = WriteLedger::default();
     let mut budget = 0usize;
+    let effective_history: Vec<Value> = if let Some(ref snap) = options.snapshot {
+        for w in &snap.written {
+            if !ledger.written.contains(w) {
+                ledger.written.push(w.clone());
+            }
+        }
+        budget = snap.budget_used.min(max_steps.saturating_sub(1));
+        snap.messages
+            .iter()
+            .filter(|m| m["role"].as_str() != Some("system"))
+            .cloned()
+            .collect()
+    } else {
+        history.to_vec()
+    };
     let pricing = records::load_effective_model_pricing(&ctx.root_data_dir);
     let active_eng = records::active_engagement_for(&ctx.root_data_dir, &ctx.person_id);
     let engagement_id = active_eng.as_ref().map(|(e, _)| e.id.clone());
@@ -2556,6 +3119,7 @@ fn run_agent_inner(
                 engagement_id,
                 budget_gated: true,
                 decision_id: Some(did),
+                agent_snapshot: None,
             });
         }
     }
@@ -2567,9 +3131,11 @@ fn run_agent_inner(
         thread_id,
         &system,
         task,
-        history,
+        &effective_history,
         true,
-        STEP_CAP,
+        max_steps,
+        max_steps,
+        context_budget_chars,
         None,
         &mut ledger,
         &mut dynamic_skills,
@@ -2685,6 +3251,7 @@ fn run_agent_inner(
             engagement_id,
             budget_gated: true,
             decision_id: Some(bg_id),
+            agent_snapshot: None,
         });
     }
     if let Some(cp_pause) = loop_out.paused_checkpoint {
@@ -2698,7 +3265,7 @@ fn run_agent_inner(
         record_ledger(&run_usage, false, false);
         if !from_pipeline {
             let live_bus = live_ctx.map(|l| (l.events, l.person_id));
-            let (prun_id, _) = pipelines::park_adhoc_checkpoint(
+            let (prun_id, _) = pipelines::park_adhoc_checkpoint_with_snapshot(
                 cfg,
                 thread_id,
                 task,
@@ -2706,6 +3273,7 @@ fn run_agent_inner(
                 &steps,
                 &cp_pause,
                 live_bus,
+                loop_out.snapshot.clone(),
             )?;
             let paused_msg = format!(
                 "Paused at human checkpoint: {} — answer the checkpoint card to resume automatically.",
@@ -2753,6 +3321,7 @@ fn run_agent_inner(
                 engagement_id,
                 budget_gated: false,
                 decision_id: None,
+                agent_snapshot: loop_out.snapshot,
             });
         }
         return Ok(AgentOutcome {
@@ -2765,6 +3334,7 @@ fn run_agent_inner(
             engagement_id,
             budget_gated: false,
             decision_id: None,
+            agent_snapshot: loop_out.snapshot,
         });
     }
     store
@@ -2925,6 +3495,7 @@ fn run_agent_inner(
         engagement_id,
         budget_gated: false,
         decision_id: None,
+        agent_snapshot: None,
     })
 }
 
