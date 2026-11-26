@@ -5,13 +5,23 @@
 //   refreshing GET /api/people on open and switching via POST /api/people/switch (with fallback).
 // - WorkspaceSwitcherList: Reusable compact switcher list also embedded inside SettingsPanel.
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Briefcase, Check, ChevronsUpDown, Plus, Search, UserPlus, Users, X } from "lucide-react";
+import { Archive, Briefcase, Check, ChevronsUpDown, Lock, Pause, Play, Plus, Search, ShieldCheck, Trash2, UserPlus, Users, X } from "lucide-react";
 import { PanelModal, usePanelModalClose } from "@/shell/PanelModal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
+import { Textarea } from "@/components/ui/textarea";
 import { Pill } from "@/components/kibo-ui/pill";
-import type { Client, Engagement, Person } from "@/lib/api";
+import {
+  engagementWorkspacePrefix,
+  type Client,
+  type ClientContact,
+  type Engagement,
+  type EngagementContext,
+  type Person,
+  type RolloverMode,
+  type WorkspacePolicy,
+} from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 export function personLabel(p: Person): string {
@@ -174,10 +184,16 @@ function WorkspaceSwitcherBody({
   clients = [],
   engagements = [],
   activeEngagementId = "",
+  workspacePolicy = null,
+  activeEngagementContext = null,
   onRefreshClients,
   onSwitchEngagement,
   onCreateClient,
+  onUpdateClient,
   onCreateEngagement,
+  onUpdateEngagement,
+  onUpdateWorkspacePolicy,
+  onLoadEngagementContext,
 }: {
   people: Person[];
   active: string;
@@ -188,9 +204,24 @@ function WorkspaceSwitcherBody({
   clients?: Client[];
   engagements?: Engagement[];
   activeEngagementId?: string;
+  workspacePolicy?: WorkspacePolicy | null;
+  activeEngagementContext?: EngagementContext | null;
   onRefreshClients?: () => void;
   onSwitchEngagement?: (id: string) => Promise<void>;
   onCreateClient?: (input: { name: string; brand_header?: string; default_rate_usd?: number }) => Promise<Client | null>;
+  onUpdateClient?: (
+    id: string,
+    patch: {
+      name?: string;
+      brand_header?: string;
+      billing_currency?: string;
+      default_rate_usd?: number;
+      contacts?: ClientContact[];
+      notes_md?: string;
+      tax_rate_pct?: number;
+      payment_terms?: string;
+    }
+  ) => Promise<Client | null>;
   onCreateEngagement?: (input: {
     client_id: string;
     name: string;
@@ -198,6 +229,23 @@ function WorkspaceSwitcherBody({
     hourly_rate_usd?: number;
     retainer_budget_usd?: number;
   }) => Promise<Engagement | null>;
+  onUpdateEngagement?: (
+    id: string,
+    patch: {
+      name?: string;
+      retainer_hours?: number;
+      retainer_budget_usd?: number;
+      hourly_rate_usd?: number;
+      period?: string;
+      workspace_prefix?: string;
+      sow_rules?: string[];
+      rollover_mode?: RolloverMode;
+      status?: string;
+      archived_ms?: number | null;
+    }
+  ) => Promise<Engagement | null>;
+  onUpdateWorkspacePolicy?: (patch: { isolate_active_engagement?: boolean }) => Promise<WorkspacePolicy | null>;
+  onLoadEngagementContext?: (id: string) => Promise<EngagementContext | null>;
 }) {
   const { isOpen, setIsOpen } = usePanelModalClose();
   const [query, setQuery] = useState("");
@@ -205,6 +253,8 @@ function WorkspaceSwitcherBody({
   const [switchingEngId, setSwitchingEngId] = useState<string | null>(null);
   const [selectedClientId, setSelectedClientId] = useState<string>("");
   const [createOpen, setCreateOpen] = useState(false);
+  const [crmOpen, setCrmOpen] = useState(false);
+  const [crmTab, setCrmTab] = useState<"sow" | "crm">("sow");
   const [createNewClientMode, setCreateNewClientMode] = useState(false);
   const [clientNameInput, setClientNameInput] = useState("");
   const [engagementNameInput, setEngagementNameInput] = useState("");
@@ -212,8 +262,27 @@ function WorkspaceSwitcherBody({
   const [retainerBudgetInput, setRetainerBudgetInput] = useState("2500");
   const [createError, setCreateError] = useState("");
   const [creating, setCreating] = useState(false);
+
+  const [crmContacts, setCrmContacts] = useState<ClientContact[]>([]);
+  const [crmContactName, setCrmContactName] = useState("");
+  const [crmContactEmail, setCrmContactEmail] = useState("");
+  const [crmContactRole, setCrmContactRole] = useState("");
+  const [crmBrandHeader, setCrmBrandHeader] = useState("");
+  const [crmTaxRate, setCrmTaxRate] = useState("0");
+  const [crmPaymentTerms, setCrmPaymentTerms] = useState("Net 30");
+  const [crmNotesMd, setCrmNotesMd] = useState("");
+  const [savingClientCrm, setSavingClientCrm] = useState(false);
+
+  const [editingEngId, setEditingEngId] = useState("");
+  const [sowPrefix, setSowPrefix] = useState("");
+  const [sowRules, setSowRules] = useState<string[]>([]);
+  const [sowRuleInput, setSowRuleInput] = useState("");
+  const [sowRollover, setSowRollover] = useState<RolloverMode>("none");
+  const [savingEngSow, setSavingEngSow] = useState(false);
+  const [togglingIsolate, setTogglingIsolate] = useState(false);
+
   const opLockRef = useRef(false);
-  const isBusyOp = Boolean(switchingId || switchingEngId || creating);
+  const isBusyOp = Boolean(switchingId || switchingEngId || creating || savingClientCrm || savingEngSow);
 
   useEffect(() => {
     if (isOpen) {
@@ -222,6 +291,8 @@ function WorkspaceSwitcherBody({
       setCreateError("");
       onRefresh();
       onRefreshClients?.();
+    } else {
+      setCrmOpen(false);
     }
   }, [isOpen, onRefresh, onRefreshClients]);
 
@@ -250,6 +321,53 @@ function WorkspaceSwitcherBody({
     if (!selectedClientId) return engagements;
     return engagements.filter((e) => e.client_id === selectedClientId);
   }, [engagements, selectedClientId]);
+
+  const selectedClient = useMemo(
+    () => clients.find((c) => c.id === selectedClientId) || null,
+    [clients, selectedClientId]
+  );
+
+  const editingEngagement = useMemo(() => {
+    const activeInClient = visibleEngagements.find((e) => e.id === editingEngId);
+    if (activeInClient) return activeInClient;
+    const currentActive = visibleEngagements.find((e) => e.id === activeEngagementId);
+    return currentActive || visibleEngagements[0] || null;
+  }, [visibleEngagements, editingEngId, activeEngagementId]);
+
+  useEffect(() => {
+    if (!selectedClient) {
+      setCrmContacts([]);
+      setCrmBrandHeader("");
+      setCrmTaxRate("0");
+      setCrmPaymentTerms("Net 30");
+      setCrmNotesMd("");
+      return;
+    }
+    setCrmContacts(Array.isArray(selectedClient.contacts) ? selectedClient.contacts : []);
+    setCrmBrandHeader(selectedClient.brand_header ?? "");
+    setCrmTaxRate(typeof selectedClient.tax_rate_pct === "number" ? String(selectedClient.tax_rate_pct) : "0");
+    setCrmPaymentTerms(selectedClient.payment_terms ?? "Net 30");
+    setCrmNotesMd(selectedClient.notes_md ?? "");
+  }, [selectedClient]);
+
+  useEffect(() => {
+    if (!editingEngagement) {
+      setSowPrefix("");
+      setSowRules([]);
+      setSowRollover("none");
+      return;
+    }
+    setEditingEngId(editingEngagement.id);
+    setSowPrefix(engagementWorkspacePrefix(editingEngagement));
+    setSowRules(Array.isArray(editingEngagement.sow_rules) ? editingEngagement.sow_rules : []);
+    setSowRollover(editingEngagement.rollover_mode === "carry_hours" ? "carry_hours" : "none");
+  }, [editingEngagement?.id, editingEngagement?.workspace_prefix, editingEngagement?.rollover_mode, editingEngagement?.sow_rules]);
+
+  useEffect(() => {
+    if (crmOpen && editingEngagement?.id && onLoadEngagementContext) {
+      void onLoadEngagementContext(editingEngagement.id);
+    }
+  }, [crmOpen, editingEngagement?.id, onLoadEngagementContext]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -375,25 +493,476 @@ function WorkspaceSwitcherBody({
               <Briefcase className="size-3.5 text-icon" strokeWidth={1.5} aria-hidden />
               Client and engagement
             </span>
-            {onCreateEngagement && (
-              <Button
-                id="engagement-quick-create-toggle"
-                type="button"
-                size="xs"
-                variant="outline"
-                disabled={isBusyOp}
-                className="max-md:min-h-11 gap-1"
-                onClick={() => {
-                  setCreateOpen((v) => !v);
-                  setCreateNewClientMode(clients.length === 0);
-                  setCreateError("");
-                }}
-              >
-                <Plus className="size-3.5" strokeWidth={1.5} aria-hidden />
-                {createOpen ? "Close form" : "New client / engagement"}
-              </Button>
-            )}
+            <div className="flex flex-wrap items-center gap-1.5">
+              {(onUpdateClient || onUpdateEngagement) && clients.length > 0 && (
+                <Button
+                  id="client-crm-drawer-toggle"
+                  type="button"
+                  size="xs"
+                  variant={crmOpen ? "default" : "outline"}
+                  disabled={isBusyOp}
+                  className="max-md:min-h-11 gap-1"
+                  onClick={() => {
+                    setCrmOpen((v) => !v);
+                    setCreateOpen(false);
+                  }}
+                >
+                  <ShieldCheck className="size-3.5" strokeWidth={1.5} aria-hidden />
+                  {crmOpen ? "Close CRM & SOW" : "CRM & SOW"}
+                </Button>
+              )}
+              {onCreateEngagement && (
+                <Button
+                  id="engagement-quick-create-toggle"
+                  type="button"
+                  size="xs"
+                  variant="outline"
+                  disabled={isBusyOp}
+                  className="max-md:min-h-11 gap-1"
+                  onClick={() => {
+                    setCreateOpen((v) => !v);
+                    setCrmOpen(false);
+                    setCreateNewClientMode(clients.length === 0);
+                    setCreateError("");
+                  }}
+                >
+                  <Plus className="size-3.5" strokeWidth={1.5} aria-hidden />
+                  {createOpen ? "Close form" : "New client / engagement"}
+                </Button>
+              )}
+            </div>
           </div>
+
+          {crmOpen && selectedClient && (
+            <div
+              id="client-crm-sow-drawer"
+              className="flex flex-col gap-3 rounded-sm border border-hairline bg-board/40 p-3"
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-hairline pb-2">
+                <div className="flex items-center gap-1.5" role="tablist" aria-label="CRM and SOW section">
+                  <Button
+                    id="crm-tab-sow"
+                    type="button"
+                    size="xs"
+                    variant={crmTab === "sow" ? "default" : "outline"}
+                    className="max-md:min-h-11"
+                    onClick={() => setCrmTab("sow")}
+                  >
+                    Engagement SOW
+                  </Button>
+                  <Button
+                    id="crm-tab-client"
+                    type="button"
+                    size="xs"
+                    variant={crmTab === "crm" ? "default" : "outline"}
+                    className="max-md:min-h-11"
+                    onClick={() => setCrmTab("crm")}
+                  >
+                    Client CRM ({crmContacts.length})
+                  </Button>
+                </div>
+                {onUpdateWorkspacePolicy && (
+                  <Button
+                    id="crm-isolate-engagement-toggle"
+                    type="button"
+                    size="xs"
+                    variant={workspacePolicy?.isolate_active_engagement ? "default" : "outline"}
+                    aria-pressed={Boolean(workspacePolicy?.isolate_active_engagement)}
+                    disabled={togglingIsolate}
+                    className="max-md:min-h-11 gap-1"
+                    onClick={async () => {
+                      setTogglingIsolate(true);
+                      try {
+                        await onUpdateWorkspacePolicy({
+                          isolate_active_engagement: !workspacePolicy?.isolate_active_engagement,
+                        });
+                      } finally {
+                        setTogglingIsolate(false);
+                      }
+                    }}
+                  >
+                    <Lock className="size-3" strokeWidth={1.5} aria-hidden />
+                    {workspacePolicy?.isolate_active_engagement ? "Isolation: On" : "Isolation: Off"}
+                  </Button>
+                )}
+              </div>
+
+              {crmTab === "sow" && editingEngagement && (
+                <div id="crm-sow-panel" className="flex flex-col gap-2.5">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex min-w-0 flex-1 flex-col gap-1">
+                      <label htmlFor="crm-eng-select" className="text-xs font-medium text-ink">
+                        Engagement
+                      </label>
+                      <select
+                        id="crm-eng-select"
+                        value={editingEngagement.id}
+                        onChange={(e) => setEditingEngId(e.target.value)}
+                        className="h-9 w-full rounded-sm border border-input bg-surface px-2.5 text-xs text-ink outline-none focus-visible:ring-2 focus-visible:ring-ring max-md:min-h-11"
+                      >
+                        {visibleEngagements.map((e) => (
+                          <option key={e.id} value={e.id}>
+                            {e.name} ({e.status || "active"})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    {activeEngagementContext && activeEngagementContext.engagement?.id === editingEngagement.id && (
+                      <span id="crm-eng-context-meta" className="mono text-xs text-ink-2">
+                        {activeEngagementContext.scoped_file_count} scoped files
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    <div className="flex flex-col gap-1">
+                      <label htmlFor="crm-eng-prefix" className="text-xs font-medium text-ink">
+                        Workspace prefix
+                      </label>
+                      <Input
+                        id="crm-eng-prefix"
+                        value={sowPrefix}
+                        onChange={(e) => setSowPrefix(e.target.value)}
+                        placeholder={`clients/${editingEngagement.client_id}/${editingEngagement.id}`}
+                        className="mono text-xs max-md:min-h-11"
+                      />
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <label htmlFor="crm-eng-rollover" className="text-xs font-medium text-ink">
+                        Retainer rollover
+                      </label>
+                      <select
+                        id="crm-eng-rollover"
+                        value={sowRollover}
+                        onChange={(e) => setSowRollover(e.target.value === "carry_hours" ? "carry_hours" : "none")}
+                        className="h-9 w-full rounded-sm border border-input bg-surface px-2.5 text-xs text-ink outline-none focus-visible:ring-2 focus-visible:ring-ring max-md:min-h-11"
+                      >
+                        <option value="none">None (reset period)</option>
+                        <option value="carry_hours">Carry unused hours</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col gap-1.5">
+                    <label htmlFor="crm-sow-rule-input" className="text-xs font-medium text-ink">
+                      SOW rules ({sowRules.length})
+                    </label>
+                    {sowRules.length > 0 && (
+                      <ul id="crm-sow-rules-list" className="flex flex-col gap-1">
+                        {sowRules.map((rule, idx) => (
+                          <li
+                            key={`${idx}-${rule}`}
+                            className="flex items-center justify-between gap-2 rounded-sm border border-hairline bg-surface px-2.5 py-1.5 text-xs text-ink"
+                          >
+                            <span className="min-w-0 flex-1 break-words">{rule}</span>
+                            <Button
+                              type="button"
+                              size="icon-xs"
+                              variant="ghost"
+                              aria-label={`Remove SOW rule ${idx + 1}`}
+                              className="max-md:min-h-11 max-md:min-w-11 shrink-0"
+                              onClick={() => setSowRules((prev) => prev.filter((_, i) => i !== idx))}
+                            >
+                              <Trash2 className="size-3.5 text-icon" strokeWidth={1.5} aria-hidden />
+                            </Button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    <div className="flex items-center gap-1.5">
+                      <Input
+                        id="crm-sow-rule-input"
+                        value={sowRuleInput}
+                        onChange={(e) => setSowRuleInput(e.target.value)}
+                        placeholder="Add SOW constraint (e.g. Cite sources on every brief)"
+                        className="flex-1 text-xs max-md:min-h-11"
+                      />
+                      <Button
+                        id="crm-add-sow-rule-btn"
+                        type="button"
+                        size="xs"
+                        variant="outline"
+                        className="max-md:min-h-11 shrink-0"
+                        onClick={() => {
+                          const next = sowRuleInput.trim();
+                          if (!next) return;
+                          setSowRules((prev) => [...prev, next]);
+                          setSowRuleInput("");
+                        }}
+                      >
+                        Add rule
+                      </Button>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {onUpdateEngagement && (
+                        <>
+                          <Button
+                            id="crm-pause-engagement-btn"
+                            type="button"
+                            size="xs"
+                            variant="outline"
+                            disabled={savingEngSow}
+                            className="max-md:min-h-11 gap-1"
+                            onClick={async () => {
+                              setSavingEngSow(true);
+                              try {
+                                const nextStatus = editingEngagement.status === "paused" ? "active" : "paused";
+                                await onUpdateEngagement(editingEngagement.id, { status: nextStatus, archived_ms: null });
+                              } finally {
+                                setSavingEngSow(false);
+                              }
+                            }}
+                          >
+                            {editingEngagement.status === "paused" ? (
+                              <Play className="size-3" strokeWidth={1.5} aria-hidden />
+                            ) : (
+                              <Pause className="size-3" strokeWidth={1.5} aria-hidden />
+                            )}
+                            {editingEngagement.status === "paused" ? "Resume" : "Pause"}
+                          </Button>
+                          <Button
+                            id="crm-archive-engagement-btn"
+                            type="button"
+                            size="xs"
+                            variant="outline"
+                            disabled={savingEngSow}
+                            className="max-md:min-h-11 gap-1"
+                            onClick={async () => {
+                              setSavingEngSow(true);
+                              try {
+                                const isArchived = editingEngagement.status === "archived";
+                                await onUpdateEngagement(editingEngagement.id, {
+                                  status: isArchived ? "active" : "archived",
+                                  archived_ms: isArchived ? null : Date.now(),
+                                });
+                              } finally {
+                                setSavingEngSow(false);
+                              }
+                            }}
+                          >
+                            <Archive className="size-3" strokeWidth={1.5} aria-hidden />
+                            {editingEngagement.status === "archived" ? "Restore" : "Archive"}
+                          </Button>
+                        </>
+                      )}
+                    </div>
+                    {onUpdateEngagement && (
+                      <Button
+                        id="crm-save-engagement-btn"
+                        type="button"
+                        size="xs"
+                        disabled={savingEngSow}
+                        className="max-md:min-h-11"
+                        onClick={async () => {
+                          setSavingEngSow(true);
+                          try {
+                            await onUpdateEngagement(editingEngagement.id, {
+                              workspace_prefix: sowPrefix.trim(),
+                              sow_rules: sowRules,
+                              rollover_mode: sowRollover,
+                            });
+                          } finally {
+                            setSavingEngSow(false);
+                          }
+                        }}
+                      >
+                        {savingEngSow ? "Saving…" : "Save SOW"}
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {crmTab === "crm" && (
+                <div id="crm-client-panel" className="flex flex-col gap-2.5">
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                    <div className="flex flex-col gap-1">
+                      <label htmlFor="crm-brand-header" className="text-xs font-medium text-ink">
+                        Brand header
+                      </label>
+                      <Input
+                        id="crm-brand-header"
+                        value={crmBrandHeader}
+                        onChange={(e) => setCrmBrandHeader(e.target.value)}
+                        placeholder={selectedClient.name}
+                        className="text-xs max-md:min-h-11"
+                      />
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <label htmlFor="crm-tax-rate" className="text-xs font-medium text-ink">
+                        Tax rate (%)
+                      </label>
+                      <Input
+                        id="crm-tax-rate"
+                        type="number"
+                        min="0"
+                        max="100"
+                        step="any"
+                        value={crmTaxRate}
+                        onChange={(e) => setCrmTaxRate(e.target.value)}
+                        className="mono text-xs max-md:min-h-11"
+                      />
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <label htmlFor="crm-payment-terms" className="text-xs font-medium text-ink">
+                        Payment terms
+                      </label>
+                      <Input
+                        id="crm-payment-terms"
+                        value={crmPaymentTerms}
+                        onChange={(e) => setCrmPaymentTerms(e.target.value)}
+                        placeholder="Net 30"
+                        className="text-xs max-md:min-h-11"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col gap-1.5">
+                    <span className="text-xs font-medium text-ink">Contacts ({crmContacts.length})</span>
+                    {crmContacts.length > 0 && (
+                      <ul id="crm-contacts-list" className="flex flex-col gap-1">
+                        {crmContacts.map((c) => (
+                          <li
+                            key={c.id}
+                            className="flex flex-wrap items-center justify-between gap-2 rounded-sm border border-hairline bg-surface px-2.5 py-1.5 text-xs"
+                          >
+                            <span className="min-w-0 flex-1">
+                              <span className="font-medium text-ink">{c.name}</span>
+                              {c.role ? <span className="text-ink-2"> ({c.role})</span> : null}
+                              {c.email ? <span className="mono block truncate text-ink-2">{c.email}</span> : null}
+                            </span>
+                            <div className="flex items-center gap-1">
+                              <Button
+                                type="button"
+                                size="xs"
+                                variant={c.primary ? "default" : "outline"}
+                                className="max-md:min-h-11"
+                                onClick={() =>
+                                  setCrmContacts((prev) =>
+                                    prev.map((item) => ({ ...item, primary: item.id === c.id }))
+                                  )
+                                }
+                              >
+                                {c.primary ? "Primary" : "Make primary"}
+                              </Button>
+                              <Button
+                                type="button"
+                                size="icon-xs"
+                                variant="ghost"
+                                aria-label={`Remove contact ${c.name}`}
+                                className="max-md:min-h-11 max-md:min-w-11"
+                                onClick={() => setCrmContacts((prev) => prev.filter((item) => item.id !== c.id))}
+                              >
+                                <Trash2 className="size-3.5 text-icon" strokeWidth={1.5} aria-hidden />
+                              </Button>
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[1fr_1fr_0.8fr_auto]">
+                      <Input
+                        id="crm-contact-name"
+                        aria-label="Contact name"
+                        value={crmContactName}
+                        onChange={(e) => setCrmContactName(e.target.value)}
+                        placeholder="Contact name"
+                        className="text-xs max-md:min-h-11"
+                      />
+                      <Input
+                        id="crm-contact-email"
+                        aria-label="Contact email"
+                        value={crmContactEmail}
+                        onChange={(e) => setCrmContactEmail(e.target.value)}
+                        placeholder="billing@client.example"
+                        className="text-xs max-md:min-h-11"
+                      />
+                      <Input
+                        id="crm-contact-role"
+                        aria-label="Contact role"
+                        value={crmContactRole}
+                        onChange={(e) => setCrmContactRole(e.target.value)}
+                        placeholder="GC / AP Lead"
+                        className="text-xs max-md:min-h-11"
+                      />
+                      <Button
+                        id="crm-add-contact-btn"
+                        type="button"
+                        size="xs"
+                        variant="outline"
+                        className="max-md:min-h-11"
+                        onClick={() => {
+                          const nm = crmContactName.trim();
+                          if (!nm) return;
+                          setCrmContacts((prev) => [
+                            ...prev,
+                            {
+                              id: `ct-${Date.now()}-${prev.length + 1}`,
+                              name: nm,
+                              email: crmContactEmail.trim() || undefined,
+                              role: crmContactRole.trim() || undefined,
+                              primary: prev.length === 0,
+                            },
+                          ]);
+                          setCrmContactName("");
+                          setCrmContactEmail("");
+                          setCrmContactRole("");
+                        }}
+                      >
+                        Add
+                      </Button>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col gap-1">
+                    <label htmlFor="crm-client-notes" className="text-xs font-medium text-ink">
+                      Client notes
+                    </label>
+                    <Textarea
+                      id="crm-client-notes"
+                      rows={2}
+                      value={crmNotesMd}
+                      onChange={(e) => setCrmNotesMd(e.target.value)}
+                      placeholder="Billing preferences, escalation contacts, or delivery rules"
+                      className="text-xs"
+                    />
+                  </div>
+
+                  {onUpdateClient && (
+                    <div className="flex justify-end">
+                      <Button
+                        id="crm-save-client-btn"
+                        type="button"
+                        size="xs"
+                        disabled={savingClientCrm}
+                        className="max-md:min-h-11"
+                        onClick={async () => {
+                          const parsedTax = Number(crmTaxRate);
+                          setSavingClientCrm(true);
+                          try {
+                            await onUpdateClient(selectedClient.id, {
+                              brand_header: crmBrandHeader.trim(),
+                              tax_rate_pct: Number.isFinite(parsedTax) && parsedTax >= 0 ? parsedTax : 0,
+                              payment_terms: crmPaymentTerms.trim() || "Net 30",
+                              contacts: crmContacts,
+                              notes_md: crmNotesMd,
+                            });
+                          } finally {
+                            setSavingClientCrm(false);
+                          }
+                        }}
+                      >
+                        {savingClientCrm ? "Saving…" : "Save client CRM"}
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
 
           {createOpen && (
             <form
@@ -543,7 +1112,10 @@ function WorkspaceSwitcherBody({
                   typeof eng.retainer_budget_usd === "number" && eng.retainer_budget_usd > 0
                     ? `$${eng.retainer_budget_usd} cap`
                     : "No retainer cap";
-                const metaLabel = [rateLabel, budgetLabel].filter(Boolean).join(", ");
+                const prefixLabel = eng.workspace_prefix ? eng.workspace_prefix : "";
+                const statusBadge =
+                  eng.status && eng.status !== "active" ? eng.status : "";
+                const metaLabel = [rateLabel, budgetLabel, prefixLabel].filter(Boolean).join(", ");
                 return (
                   <li key={eng.id}>
                     <button
@@ -558,7 +1130,14 @@ function WorkspaceSwitcherBody({
                       )}
                     >
                       <span className="min-w-0 flex-1">
-                        <span className="block truncate text-sm font-medium text-ink">{eng.name}</span>
+                        <span className="flex items-center gap-1.5">
+                          <span className="truncate text-sm font-medium text-ink">{eng.name}</span>
+                          {statusBadge && (
+                            <span className="mono rounded-chip bg-track px-1.5 py-0.5 text-[11px] text-ink-2">
+                              {statusBadge}
+                            </span>
+                          )}
+                        </span>
                         {metaLabel && <span className="mono block truncate text-xs text-ink-2">{metaLabel}</span>}
                       </span>
                       <span className="flex shrink-0 items-center gap-1.5">
@@ -667,10 +1246,16 @@ export function WorkspaceSwitcherPanel({
   clients,
   engagements,
   activeEngagementId,
+  workspacePolicy,
+  activeEngagementContext,
   onRefreshClients,
   onSwitchEngagement,
   onCreateClient,
+  onUpdateClient,
   onCreateEngagement,
+  onUpdateEngagement,
+  onUpdateWorkspacePolicy,
+  onLoadEngagementContext,
 }: {
   people: Person[];
   active: string;
@@ -683,9 +1268,24 @@ export function WorkspaceSwitcherPanel({
   clients?: Client[];
   engagements?: Engagement[];
   activeEngagementId?: string;
+  workspacePolicy?: WorkspacePolicy | null;
+  activeEngagementContext?: EngagementContext | null;
   onRefreshClients?: () => void;
   onSwitchEngagement?: (id: string) => Promise<void>;
   onCreateClient?: (input: { name: string; brand_header?: string; default_rate_usd?: number }) => Promise<Client | null>;
+  onUpdateClient?: (
+    id: string,
+    patch: {
+      name?: string;
+      brand_header?: string;
+      billing_currency?: string;
+      default_rate_usd?: number;
+      contacts?: ClientContact[];
+      notes_md?: string;
+      tax_rate_pct?: number;
+      payment_terms?: string;
+    }
+  ) => Promise<Client | null>;
   onCreateEngagement?: (input: {
     client_id: string;
     name: string;
@@ -693,6 +1293,23 @@ export function WorkspaceSwitcherPanel({
     hourly_rate_usd?: number;
     retainer_budget_usd?: number;
   }) => Promise<Engagement | null>;
+  onUpdateEngagement?: (
+    id: string,
+    patch: {
+      name?: string;
+      retainer_hours?: number;
+      retainer_budget_usd?: number;
+      hourly_rate_usd?: number;
+      period?: string;
+      workspace_prefix?: string;
+      sow_rules?: string[];
+      rollover_mode?: RolloverMode;
+      status?: string;
+      archived_ms?: number | null;
+    }
+  ) => Promise<Engagement | null>;
+  onUpdateWorkspacePolicy?: (patch: { isolate_active_engagement?: boolean }) => Promise<WorkspacePolicy | null>;
+  onLoadEngagementContext?: (id: string) => Promise<EngagementContext | null>;
 }) {
   return (
     <PanelModal
@@ -700,7 +1317,7 @@ export function WorkspaceSwitcherPanel({
       onOpenChange={onOpenChange}
       title="Switch workspace"
       description="Choose a client engagement or person workspace to work inside."
-      className="max-w-lg"
+      className="max-w-xl"
     >
       <WorkspaceSwitcherBody
         people={people}
@@ -712,10 +1329,16 @@ export function WorkspaceSwitcherPanel({
         clients={clients}
         engagements={engagements}
         activeEngagementId={activeEngagementId}
+        workspacePolicy={workspacePolicy}
+        activeEngagementContext={activeEngagementContext}
         onRefreshClients={onRefreshClients}
         onSwitchEngagement={onSwitchEngagement}
         onCreateClient={onCreateClient}
+        onUpdateClient={onUpdateClient}
         onCreateEngagement={onCreateEngagement}
+        onUpdateEngagement={onUpdateEngagement}
+        onUpdateWorkspacePolicy={onUpdateWorkspacePolicy}
+        onLoadEngagementContext={onLoadEngagementContext}
       />
     </PanelModal>
   );

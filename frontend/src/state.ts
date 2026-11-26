@@ -9,11 +9,18 @@ import {
   cancelPipelineRun,
   createClient,
   createEngagement,
+  createTimeEntry,
+  deleteTimeEntry,
   estimateNextRunMs,
   fetchClients,
+  fetchEngagementContext,
+  fetchInvoices,
   fetchMeteringSummary,
+  fetchTimeEntries,
   fileUploadBody,
+  generateInvoice,
   getPipelineRun,
+  hasClientCrmInvoicingApi,
   hasClientsApi,
   hasMeteringApi,
   hasPipelinesApi,
@@ -25,8 +32,15 @@ import {
   retryPipelineRun,
   startPipelineRun,
   switchEngagement,
+  updateClient,
+  updateEngagement,
+  updateInvoiceStatus,
   type Client,
+  type ClientContact,
   type Engagement,
+  type EngagementContext,
+  type InvoiceRecord,
+  type InvoiceStatus,
   type LiveRunStatus,
   type LiveRunStep,
   type MemoryHealth,
@@ -37,6 +51,7 @@ import {
   type PipelineRun,
   type PipelineStepSpec,
   type PlaybookPreviewResult,
+  type RolloverMode,
   type Routine,
   type RoutineRunRecord,
   type RunUsage,
@@ -47,7 +62,11 @@ import {
   type SuiteItem,
   type Thread,
   type ThreadRow,
+  type TimeExpenseEntry,
+  type TimeExpenseKind,
   type WorkspaceFile,
+  type WorkspacePolicy,
+  type WorkspacePolicyProfile,
 } from "@/lib/api";
 import {
   CANONICAL_SKILLS,
@@ -292,6 +311,11 @@ export function useErgon() {
   const [clients, setClients] = useState<Client[]>([]);
   const [engagements, setEngagements] = useState<Engagement[]>([]);
   const [activeEngagementId, setActiveEngagementId] = useState("");
+  const [activeEngagementContext, setActiveEngagementContext] = useState<EngagementContext | null>(null);
+  const [timeEntries, setTimeEntries] = useState<TimeExpenseEntry[]>([]);
+  const [invoices, setInvoices] = useState<InvoiceRecord[]>([]);
+  const [workspacePolicy, setWorkspacePolicy] = useState<WorkspacePolicy | null>(null);
+  const [engagementScopeOnly, setEngagementScopeOnly] = useState(false);
   const [metering, setMetering] = useState<MeteringSummary | null>(null);
   const [liveRunUsage, setLiveRunUsage] = useState<RunUsage | null>(null);
   const onRoutineFiredRef = useRef<(() => void) | null>(null);
@@ -359,8 +383,76 @@ export function useErgon() {
     }
   }, []);
 
+  const loadWorkspacePolicy = useCallback(async () => {
+    const r = await call<WorkspacePolicy>("/api/workspace/policy");
+    if (r.ok && r.data && typeof r.data.profile === "string") {
+      setWorkspacePolicy(r.data);
+    }
+  }, []);
+
+  const updateWorkspacePolicyState = useCallback(
+    async (patch: { profile?: WorkspacePolicyProfile; isolate_active_engagement?: boolean }): Promise<WorkspacePolicy | null> => {
+      const r = await call<WorkspacePolicy>("/api/workspace/policy", {
+        method: "PUT",
+        body: patch,
+      });
+      if (!r.ok) {
+        toast.error(r.error || "Could not update workspace policy.");
+        return null;
+      }
+      setWorkspacePolicy(r.data);
+      return r.data;
+    },
+    []
+  );
+
+  const loadEngagementContext = useCallback(async (engagementId?: string) => {
+    const targetId = engagementId ?? activeEngagementId;
+    if (!targetId || !hasClientCrmInvoicingApi(statusRef.current)) {
+      setActiveEngagementContext(null);
+      return null;
+    }
+    const r = await fetchEngagementContext(targetId);
+    if (r.ok) {
+      setActiveEngagementContext(r.data);
+      return r.data;
+    }
+    return null;
+  }, [activeEngagementId]);
+
+  const loadTimeEntries = useCallback(async (opts: { engagement_id?: string; client_id?: string; force?: boolean } = {}) => {
+    if (!opts.force && !hasClientCrmInvoicingApi(statusRef.current)) {
+      setTimeEntries([]);
+      return;
+    }
+    const r = await fetchTimeEntries({ engagement_id: opts.engagement_id, client_id: opts.client_id });
+    if (r.ok) {
+      setTimeEntries(r.data.entries);
+    }
+  }, []);
+
+  const loadInvoices = useCallback(async (opts: { engagement_id?: string; client_id?: string; force?: boolean } = {}) => {
+    if (!opts.force && !hasClientCrmInvoicingApi(statusRef.current)) {
+      setInvoices([]);
+      return;
+    }
+    const r = await fetchInvoices({ engagement_id: opts.engagement_id, client_id: opts.client_id });
+    if (r.ok) {
+      setInvoices(r.data.invoices);
+    }
+  }, []);
+
   const createNewClient = useCallback(
-    async (input: { name: string; brand_header?: string; default_rate_usd?: number; billing_currency?: string }): Promise<Client | null> => {
+    async (input: {
+      name: string;
+      brand_header?: string;
+      default_rate_usd?: number;
+      billing_currency?: string;
+      contacts?: ClientContact[];
+      notes_md?: string;
+      tax_rate_pct?: number;
+      payment_terms?: string;
+    }): Promise<Client | null> => {
       const r = await createClient(input);
       if (!r.ok) {
         toast.error(r.error || "Could not create client.");
@@ -373,6 +465,32 @@ export function useErgon() {
     [loadClients]
   );
 
+  const saveClientCrm = useCallback(
+    async (
+      id: string,
+      patch: {
+        name?: string;
+        brand_header?: string;
+        billing_currency?: string;
+        default_rate_usd?: number;
+        contacts?: ClientContact[];
+        notes_md?: string;
+        tax_rate_pct?: number;
+        payment_terms?: string;
+      }
+    ): Promise<Client | null> => {
+      const r = await updateClient(id, patch);
+      if (!r.ok) {
+        toast.error(r.error || "Could not update client CRM details.");
+        return null;
+      }
+      await Promise.all([loadClients(), loadMetering(), loadEngagementContext()]);
+      toast.success(`Saved CRM details for "${r.data.client.name}".`);
+      return r.data.client;
+    },
+    [loadClients, loadMetering, loadEngagementContext]
+  );
+
   const createNewEngagement = useCallback(
     async (input: {
       client_id: string;
@@ -382,6 +500,9 @@ export function useErgon() {
       retainer_budget_usd?: number;
       hourly_rate_usd?: number;
       period?: string;
+      workspace_prefix?: string;
+      sow_rules?: string[];
+      rollover_mode?: RolloverMode;
     }): Promise<Engagement | null> => {
       const r = await createEngagement(input);
       if (!r.ok) {
@@ -393,6 +514,118 @@ export function useErgon() {
       return r.data.engagement;
     },
     [loadClients, loadMetering]
+  );
+
+  const saveEngagementSow = useCallback(
+    async (
+      id: string,
+      patch: {
+        name?: string;
+        retainer_hours?: number;
+        retainer_budget_usd?: number;
+        hourly_rate_usd?: number;
+        period?: string;
+        workspace_prefix?: string;
+        sow_rules?: string[];
+        rollover_mode?: RolloverMode;
+        status?: "active" | "paused" | "archived" | string;
+        archived_ms?: number | null;
+      }
+    ): Promise<Engagement | null> => {
+      const r = await updateEngagement(id, patch);
+      if (!r.ok) {
+        toast.error(r.error || "Could not update engagement SOW.");
+        return null;
+      }
+      await Promise.all([loadClients(), loadMetering(), loadEngagementContext(id)]);
+      toast.success(`Updated "${r.data.engagement.name}".`);
+      return r.data.engagement;
+    },
+    [loadClients, loadMetering, loadEngagementContext]
+  );
+
+  const addTimeEntry = useCallback(
+    async (input: {
+      client_id?: string;
+      engagement_id: string;
+      kind: TimeExpenseKind;
+      description: string;
+      hours?: number;
+      rate_usd?: number;
+      amount_usd?: number;
+      billable?: boolean;
+    }): Promise<TimeExpenseEntry | null> => {
+      const r = await createTimeEntry(input);
+      if (!r.ok) {
+        toast.error(r.error || "Could not log time or expense entry.");
+        return null;
+      }
+      await Promise.all([
+        loadTimeEntries({ engagement_id: input.engagement_id, force: true }),
+        loadEngagementContext(input.engagement_id),
+        loadMetering(),
+      ]);
+      toast.success("Logged billable entry.");
+      return r.data.entry;
+    },
+    [loadTimeEntries, loadEngagementContext, loadMetering]
+  );
+
+  const removeTimeEntry = useCallback(
+    async (id: string, engagementId?: string): Promise<boolean> => {
+      const r = await deleteTimeEntry(id);
+      if (!r.ok) {
+        toast.error(r.error || "Could not remove entry.");
+        return false;
+      }
+      await Promise.all([
+        loadTimeEntries({ engagement_id: engagementId, force: true }),
+        loadEngagementContext(engagementId),
+        loadMetering(),
+      ]);
+      toast.success("Removed entry.");
+      return true;
+    },
+    [loadTimeEntries, loadEngagementContext, loadMetering]
+  );
+
+  const createGeneratedInvoice = useCallback(
+    async (input: {
+      engagement_id: string;
+      period_label: string;
+      include_llm_cost: boolean;
+      include_time_entries: boolean;
+      export_formats: Array<"pdf" | "xlsx" | "json">;
+    }): Promise<InvoiceRecord | null> => {
+      const r = await generateInvoice(input);
+      if (!r.ok) {
+        toast.error(r.error || "Could not generate invoice.");
+        return null;
+      }
+      await Promise.all([
+        loadInvoices({ engagement_id: input.engagement_id, force: true }),
+        loadTimeEntries({ engagement_id: input.engagement_id, force: true }),
+        loadEngagementContext(input.engagement_id),
+        loadMetering(),
+      ]);
+      toast.success(`Generated invoice ${r.data.invoice.invoice_number}.`);
+      return r.data.invoice;
+    },
+    [loadInvoices, loadTimeEntries, loadEngagementContext, loadMetering]
+  );
+
+  const setInvoiceStatus = useCallback(
+    async (id: string, nextStatus: InvoiceStatus, engagementId?: string): Promise<InvoiceRecord | null> => {
+      const r = await updateInvoiceStatus(id, { status: nextStatus });
+      if (!r.ok) {
+        toast.error(r.error || "Could not update invoice status.");
+        return null;
+      }
+      await loadInvoices({ engagement_id: engagementId, force: true });
+      toast.success(`Invoice marked ${nextStatus}.`);
+      return r.data.invoice;
+    },
+    [loadInvoices]
   );
 
   const loadFiles = useCallback(async () => {
@@ -1003,8 +1236,8 @@ export function useErgon() {
     setMessages([]);
     loadDraftFor(null);
     setPendingNote(false);
-    await Promise.all([loadStatus(), loadPeople(), loadClients(), loadMetering(), loadThreads(), loadRecent(), refreshCounts(), loadFiles(), loadSkills(), loadRoutines(), loadPipelineRuns()]);
-  }, [loadStatus, loadPeople, loadClients, loadMetering, loadThreads, loadRecent, refreshCounts, loadFiles, loadSkills, loadRoutines, loadPipelineRuns]);
+    await Promise.all([loadStatus(), loadPeople(), loadClients(), loadMetering(), loadWorkspacePolicy(), loadThreads(), loadRecent(), refreshCounts(), loadFiles(), loadSkills(), loadRoutines(), loadPipelineRuns()]);
+  }, [loadStatus, loadPeople, loadClients, loadMetering, loadWorkspacePolicy, loadThreads, loadRecent, refreshCounts, loadFiles, loadSkills, loadRoutines, loadPipelineRuns]);
 
   const switchPerson = useCallback(async (id: string) => {
     if (busyRef.current) return;
@@ -1031,11 +1264,11 @@ export function useErgon() {
         return false;
       }
       setActiveEngagementId(r.data.active_engagement_id || engagementId);
-      await Promise.all([loadClients(), loadMetering(), loadFiles(), loadThreads(), loadRecent(), refreshCounts()]);
+      await Promise.all([loadClients(), loadMetering(), loadFiles(), loadThreads(), loadRecent(), refreshCounts(), loadTimeEntries({ engagement_id: engagementId }), loadInvoices({ engagement_id: engagementId }), loadEngagementContext(engagementId)]);
       toast.success(`Switched engagement${r.data.engagement?.name ? ` to "${r.data.engagement.name}"` : ""}.`);
       return true;
     },
-    [loadClients, loadMetering, loadFiles, loadThreads, loadRecent, refreshCounts]
+    [loadClients, loadMetering, loadFiles, loadThreads, loadRecent, refreshCounts, loadTimeEntries, loadInvoices, loadEngagementContext]
   );
 
   const showRun = useCallback((id: string, msgs: Msg[]) => {
@@ -1598,17 +1831,33 @@ export function useErgon() {
       loadPipelineRuns();
       loadClients();
       loadMetering();
+      loadWorkspacePolicy();
+      loadTimeEntries();
+      loadInvoices();
     }
-  }, [status, files, loadStarters, loadSkills, loadRoutines, loadPipelineRuns, loadClients, loadMetering]);
+  }, [status, files, loadStarters, loadSkills, loadRoutines, loadPipelineRuns, loadClients, loadMetering, loadWorkspacePolicy, loadTimeEntries, loadInvoices]);
+
+  useEffect(() => {
+    if (status && status !== "error" && activeEngagementId) {
+      void loadEngagementContext(activeEngagementId);
+      void loadTimeEntries({ engagement_id: activeEngagementId });
+      void loadInvoices({ engagement_id: activeEngagementId });
+    } else if (!activeEngagementId) {
+      setActiveEngagementContext(null);
+    }
+  }, [status, activeEngagementId, loadEngagementContext, loadTimeEntries, loadInvoices]);
 
   return {
     status, runFailed, people, threads, threadsError, states, threadId, messages,
     busy, activeRunId, runStartedMs, liveElapsedMs, streamMode, cancelling, liveSteps, liveTimeline,
-    clients, engagements, activeEngagementId, metering, liveRunUsage,
+    clients, engagements, activeEngagementId, activeEngagementContext, timeEntries, invoices, workspacePolicy, engagementScopeOnly, setEngagementScopeOnly, metering, liveRunUsage,
     draft, setDraft, pendingNote, sideError, starters, recovered, recent,
     todayCount, learnedCount, memoryHealth, suiteCount, files, lastUploaded, setLastUploaded, skills, routines, pipelineRuns, scheduler, routineHistoryRev,
     send, sendPrompt, cancelRun, openThread, newThread, switchPerson, refreshPerson, showRun,
-    loadThreads, loadStatus, loadPeople, loadClients, loadMetering, createNewClient, createNewEngagement, switchActiveEngagement,
+    loadThreads, loadStatus, loadPeople, loadClients, loadMetering, loadWorkspacePolicy, updateWorkspacePolicyState,
+    loadEngagementContext, loadTimeEntries, loadInvoices,
+    createNewClient, saveClientCrm, createNewEngagement, saveEngagementSow, switchActiveEngagement,
+    addTimeEntry, removeTimeEntry, createGeneratedInvoice, setInvoiceStatus,
     refreshCounts, healMemory, loadRecent, loadStarters,
     loadFiles, uploadFile, uploadFiles, loadSkills, starterPlaybooks, launchStarterPlaybook, loadRoutines, createRoutine, deleteRoutine, importPlaybook, previewPlaybook,
     loadPipelineRuns, startPipeline, resumePipeline, retryPipeline, cancelPipeline,

@@ -11,6 +11,7 @@ import {
   ArrowDown,
   ArrowUp,
   ArrowUpDown,
+  Briefcase,
   ChevronDown,
   ChevronRight,
   Copy,
@@ -53,12 +54,16 @@ import {
   call,
   canExportPdf,
   downloadWorkspaceFile,
+  engagementWorkspacePrefix,
   exportFile,
   exportTarget,
   fileUploadBody,
   hasV070Api,
+  isPathInEngagementScope,
   reindexVault,
   searchVault,
+  type Client,
+  type Engagement,
   type FileDiffPayload,
   type FileRevision,
   type Status,
@@ -1589,6 +1594,10 @@ export function WorkspaceFilesBody({
   onUpload,
   onUploadMany,
   embedded = false,
+  activeClient = null,
+  activeEngagement = null,
+  engagementScopeOnly,
+  onToggleEngagementScope,
 }: {
   files: WorkspaceFile[];
   onRefresh: () => void;
@@ -1596,8 +1605,19 @@ export function WorkspaceFilesBody({
   onUpload: (path: string, content: string, silent?: boolean, encoding?: "base64") => Promise<boolean>;
   onUploadMany?: (picked: FileList | File[]) => Promise<number>;
   embedded?: boolean;
+  activeClient?: Client | null;
+  activeEngagement?: Engagement | null;
+  engagementScopeOnly?: boolean;
+  onToggleEngagementScope?: (next: boolean) => void;
 }) {
   const { isOpen, setIsOpen } = usePanelModalClose();
+  const [innerScoped, setInnerScoped] = useState(false);
+  const scoped = Boolean(activeEngagement && (engagementScopeOnly !== undefined ? engagementScopeOnly : innerScoped));
+  const setScoped = (next: boolean) => {
+    if (onToggleEngagementScope) onToggleEngagementScope(next);
+    else setInnerScoped(next);
+  };
+  const activeScopePrefix = useMemo(() => engagementWorkspacePrefix(activeEngagement), [activeEngagement]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState("");
@@ -1643,7 +1663,18 @@ export function WorkspaceFilesBody({
     if (!embedded && !isOpen) return;
     let cancelled = false;
     const controller = new AbortController();
-    searchVault({ q: "", limit: 1, signal: controller.signal }).then((r) => {
+    searchVault({
+      q: "",
+      limit: 1,
+      ...(scoped && activeEngagement
+        ? {
+            client_id: activeEngagement.client_id,
+            engagement_id: activeEngagement.id,
+            ...(activeScopePrefix ? { path_prefix: activeScopePrefix } : {}),
+          }
+        : {}),
+      signal: controller.signal,
+    }).then((r) => {
       if (!cancelled && !controller.signal.aborted && r.ok && r.data.index_stats) {
         setIndexStats(r.data.index_stats);
       }
@@ -1652,7 +1683,7 @@ export function WorkspaceFilesBody({
       cancelled = true;
       controller.abort();
     };
-  }, [embedded, isOpen, files.length]);
+  }, [embedded, isOpen, files.length, scoped, activeEngagement?.id, activeEngagement?.client_id, activeScopePrefix]);
 
   useEffect(() => {
     const q = query.trim();
@@ -1675,6 +1706,13 @@ export function WorkspaceFilesBody({
         scope: "files",
         mode: searchMode,
         limit: 20,
+        ...(scoped && activeEngagement
+          ? {
+              client_id: activeEngagement.client_id,
+              engagement_id: activeEngagement.id,
+              ...(activeScopePrefix ? { path_prefix: activeScopePrefix } : {}),
+            }
+          : {}),
         signal: controller.signal,
       });
       if (cancelled || controller.signal.aborted || reqSeq !== searchSeqRef.current) return;
@@ -1724,7 +1762,7 @@ export function WorkspaceFilesBody({
       }
       window.clearTimeout(timer);
     };
-  }, [query, searchMode, searchNonce, embedded, isOpen, files.length]);
+  }, [query, searchMode, searchNonce, embedded, isOpen, files.length, scoped, activeEngagement?.id, activeEngagement?.client_id, activeScopePrefix]);
 
   const handleReindexVault = async () => {
     if (reindexLockRef.current || reindexing) return;
@@ -1790,6 +1828,9 @@ export function WorkspaceFilesBody({
         aggregates: [{ col: targetCol, fn: aggFn, as: alias }],
         sort: { col: alias, dir: "desc" },
         limit: 500,
+        ...(scoped && activeEngagement
+          ? { client_id: activeEngagement.client_id, engagement_id: activeEngagement.id }
+          : {}),
         ...(savePath ? { save_as: savePath.trim() } : {}),
       });
       if (!res.ok) {
@@ -1815,7 +1856,7 @@ export function WorkspaceFilesBody({
 
   useEffect(() => {
     setPage(0);
-  }, [query, extFilter, files.length, vaultHits.length]);
+  }, [query, extFilter, files.length, vaultHits.length, scoped, activeEngagement?.id]);
 
   const vaultHitsMap = useMemo(() => {
     const map = new Map<string, VaultFileHit>();
@@ -1836,6 +1877,7 @@ export function WorkspaceFilesBody({
       return true;
     };
     const base = files.filter((f) => {
+      if (scoped && activeEngagement && !isPathInEngagementScope(f.path, activeEngagement)) return false;
       if (!matchesExt(f)) return false;
       if (!q) return true;
       const ext = (f.ext || "").toLowerCase();
@@ -1854,7 +1896,7 @@ export function WorkspaceFilesBody({
       });
     }
     return base;
-  }, [files, query, extFilter, vaultHits, vaultHitsMap]);
+  }, [files, query, extFilter, vaultHits, vaultHitsMap, scoped, activeEngagement]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / FILES_PAGE_SIZE));
   const safePage = Math.min(page, totalPages - 1);
@@ -2003,6 +2045,28 @@ export function WorkspaceFilesBody({
             </Button>
           </div>
         </form>
+      )}
+
+      {activeEngagement && (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-sm border border-hairline bg-board/40 px-2.5 py-1.5 text-xs">
+          <span className="flex min-w-0 items-center gap-1.5 text-ink-2">
+            <Briefcase className="size-3.5 shrink-0 text-icon" strokeWidth={1.5} aria-hidden />
+            <span className="truncate">
+              {[activeClient?.name, activeEngagement.name].filter(Boolean).join(" / ")}
+            </span>
+          </span>
+          <Button
+            id="workspace-engagement-scope-toggle"
+            type="button"
+            size="xs"
+            variant={scoped ? "default" : "outline"}
+            aria-pressed={scoped}
+            className="max-md:min-h-11 shrink-0 text-xs"
+            onClick={() => setScoped(!scoped)}
+          >
+            {scoped ? "Active Engagement Scope: On" : "Active Engagement Scope"}
+          </Button>
+        </div>
       )}
 
       {files.length > 0 && (

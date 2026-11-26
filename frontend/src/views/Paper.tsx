@@ -10,12 +10,15 @@ import {
   FileCheck2,
   FileDown,
   FolderOpen,
+  Plus,
   Printer,
+  ReceiptText,
   Repeat,
   Search,
   Send,
   ShieldAlert,
   Sparkles,
+  Trash2,
   TrendingUp,
   Upload,
   Wallet,
@@ -23,21 +26,27 @@ import {
   XCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
 import { Pill } from "@/components/kibo-ui/pill";
 import { Details, FileGlyph, WaitingPill } from "@/chat/Entry";
 import { LiveRunTimeline } from "@/chat/LiveRunTimeline";
 import { CheckpointCard, PipelineRunStrip } from "@/shell/CheckpointCard";
+import { PanelModal } from "@/shell/PanelModal";
 import { personInitials } from "@/shell/PersonSelect";
 import { StarterPlaybooksBar } from "@/shell/StarterPlaybooksBar";
 import { usePaper } from "@/views/usePaper";
 import {
   call,
+  downloadWorkspaceFile,
+  exportHandoffBundleZip,
   hasV050Api,
   type BriefJob,
   type Client,
   type Decision,
   type Engagement,
+  type InvoiceRecord,
+  type InvoiceStatus,
   type LiveRunStep,
   type MemoryHealth,
   type MeteringSummary,
@@ -49,6 +58,8 @@ import {
   type StarterLaunchResult,
   type StarterPlaybook,
   type Status,
+  type TimeExpenseEntry,
+  type TimeExpenseKind,
   type WorkspaceFile,
 } from "@/lib/api";
 import { exportClientSummaryPack, exportReceiptDownload, fetchSummaryPreflight, type PackPreflightReport } from "@/lib/receiptExport";
@@ -535,6 +546,14 @@ export const PaperFace = memo(function PaperFace({
   engagements = [],
   activeEngagementId = "",
   onOpenWorkspaceSwitcher,
+  timeEntries = [],
+  invoices = [],
+  onLoadTimeEntries,
+  onAddTimeEntry,
+  onRemoveTimeEntry,
+  onLoadInvoices,
+  onGenerateInvoice,
+  onUpdateInvoiceStatus,
 }: {
   paper: ReturnType<typeof usePaper>;
   status: Status | null | "error";
@@ -579,6 +598,29 @@ export const PaperFace = memo(function PaperFace({
   engagements?: Engagement[];
   activeEngagementId?: string;
   onOpenWorkspaceSwitcher?: () => void;
+  timeEntries?: TimeExpenseEntry[];
+  invoices?: InvoiceRecord[];
+  onLoadTimeEntries?: (opts?: { engagement_id?: string; force?: boolean }) => Promise<void>;
+  onAddTimeEntry?: (input: {
+    client_id?: string;
+    engagement_id: string;
+    kind: TimeExpenseKind;
+    description: string;
+    hours?: number;
+    rate_usd?: number;
+    amount_usd?: number;
+    billable?: boolean;
+  }) => Promise<TimeExpenseEntry | null>;
+  onRemoveTimeEntry?: (id: string, engagementId?: string) => Promise<boolean>;
+  onLoadInvoices?: (opts?: { engagement_id?: string; force?: boolean }) => Promise<void>;
+  onGenerateInvoice?: (input: {
+    engagement_id: string;
+    period_label: string;
+    include_llm_cost: boolean;
+    include_time_entries: boolean;
+    export_formats: Array<"pdf" | "xlsx" | "json">;
+  }) => Promise<InvoiceRecord | null>;
+  onUpdateInvoiceStatus?: (id: string, status: InvoiceStatus, engagementId?: string) => Promise<InvoiceRecord | null>;
 }) {
   const { data, failed, load, loadAllReceipts, act } = paper;
   const [dragOver, setDragOver] = useState(false);
@@ -595,6 +637,28 @@ export const PaperFace = memo(function PaperFace({
   const [busyDecisionId, setBusyDecisionId] = useState<string | null>(null);
   const decisionLockRef = useRef<Set<string>>(new Set());
   const exportAuditLockRef = useRef(false);
+
+  const [timeModalOpen, setTimeModalOpen] = useState(false);
+  const [timeKind, setTimeKind] = useState<TimeExpenseKind>("time");
+  const [timeDesc, setTimeDesc] = useState("");
+  const [timeHours, setTimeHours] = useState("1.5");
+  const [timeRate, setTimeRate] = useState("200");
+  const [timeAmount, setTimeAmount] = useState("300");
+  const [timeBillable, setTimeBillable] = useState(true);
+  const [timeErr, setTimeErr] = useState("");
+  const [savingTime, setSavingTime] = useState(false);
+  const [deletingEntryId, setDeletingEntryId] = useState<string | null>(null);
+
+  const [scopedHandoffBusy, setScopedHandoffBusy] = useState(false);
+
+  const [invoicesOpen, setInvoicesOpen] = useState(false);
+  const [invPeriodLabel, setInvPeriodLabel] = useState(() => new Date().toISOString().slice(0, 7));
+  const [invIncludeLlm, setInvIncludeLlm] = useState(true);
+  const [invIncludeTime, setInvIncludeTime] = useState(true);
+  const [invFormats, setInvFormats] = useState<Array<"pdf" | "xlsx" | "json">>(["pdf", "xlsx", "json"]);
+  const [generatingInv, setGeneratingInv] = useState(false);
+  const [updatingInvId, setUpdatingInvId] = useState<string | null>(null);
+  const [selectedInvoiceId, setSelectedInvoiceId] = useState<string | null>(null);
 
   const handleDecisionAct = async (id: string, action: "approve" | "deny", toastMsg: string) => {
     if (decisionLockRef.current.has(id)) return;
@@ -842,6 +906,145 @@ export const PaperFace = memo(function PaperFace({
   const retainerBurnPct = retainerBudgetUsd > 0 && Number.isFinite(Number(rawBurn)) ? Math.max(0, Number(rawBurn)) : 0;
   const rawRate = activeEng?.hourly_rate_usd ?? activeCli?.default_rate_usd ?? 0;
   const hourlyRateUsd = Number.isFinite(Number(rawRate)) ? Math.max(0, Number(rawRate)) : 0;
+
+  const engagementEntries = useMemo(() => {
+    if (!activeEng) return timeEntries;
+    return timeEntries.filter((e) => e.engagement_id === activeEng.id);
+  }, [timeEntries, activeEng]);
+
+  const unbilledEntries = useMemo(
+    () => engagementEntries.filter((e) => !e.invoiced_id),
+    [engagementEntries]
+  );
+
+  const unbilledTotalUsd = useMemo(
+    () => unbilledEntries.reduce((acc, e) => acc + (e.billable ? Number(e.amount_usd) || 0 : 0), 0),
+    [unbilledEntries]
+  );
+
+  const engagementInvoices = useMemo(() => {
+    if (!activeEng) return invoices;
+    return invoices.filter((inv) => inv.engagement_id === activeEng.id);
+  }, [invoices, activeEng]);
+
+  const selectedInvoice = useMemo(
+    () => engagementInvoices.find((inv) => inv.id === selectedInvoiceId) || engagementInvoices[0] || null,
+    [engagementInvoices, selectedInvoiceId]
+  );
+
+  const openTimeModal = () => {
+    setTimeKind("time");
+    setTimeDesc("");
+    setTimeHours("1.5");
+    const defaultRate = hourlyRateUsd > 0 ? hourlyRateUsd : 200;
+    setTimeRate(String(defaultRate));
+    setTimeAmount(String(Math.round(1.5 * defaultRate * 100) / 100));
+    setTimeBillable(true);
+    setTimeErr("");
+    setTimeModalOpen(true);
+    if (activeEng && onLoadTimeEntries) {
+      void onLoadTimeEntries({ engagement_id: activeEng.id, force: true });
+    }
+  };
+
+  const openInvoicesDrawer = () => {
+    setInvoicesOpen(true);
+    if (activeEng && onLoadInvoices) {
+      void onLoadInvoices({ engagement_id: activeEng.id, force: true });
+    }
+    if (activeEng && onLoadTimeEntries) {
+      void onLoadTimeEntries({ engagement_id: activeEng.id, force: true });
+    }
+  };
+
+  const handleScopedHandoffExport = async () => {
+    if (scopedHandoffBusy) return;
+    setScopedHandoffBusy(true);
+    try {
+      const label = [activeCli?.name, activeEng?.name].filter(Boolean).join(" - ") || "Client Handoff";
+      const res = await exportHandoffBundleZip({
+        title: label,
+        client_id: activeEng?.client_id || activeCli?.id,
+        engagement_id: activeEng?.id,
+      });
+      if (!res.ok) {
+        toast.error(res.error);
+        return;
+      }
+      toast.success(
+        res.sha256
+          ? `Exported scoped handoff ZIP (sha256: ${res.sha256.slice(0, 12)}...)`
+          : "Exported scoped handoff ZIP"
+      );
+    } finally {
+      setScopedHandoffBusy(false);
+    }
+  };
+
+  const handleCreateTimeEntry = async () => {
+    if (!onAddTimeEntry || savingTime) return;
+    if (!activeEng) {
+      setTimeErr("Select an engagement first.");
+      return;
+    }
+    const desc = timeDesc.trim();
+    if (!desc) {
+      setTimeErr("Enter a description for this entry.");
+      return;
+    }
+    const hours = Number(timeHours);
+    const rate = Number(timeRate);
+    const amount = Number(timeAmount);
+    if (timeKind === "time" && (!Number.isFinite(hours) || hours <= 0)) {
+      setTimeErr("Hours must be greater than 0.");
+      return;
+    }
+    if (timeKind !== "time" && (!Number.isFinite(amount) || amount === 0)) {
+      setTimeErr("Enter a non-zero dollar amount.");
+      return;
+    }
+    setTimeErr("");
+    setSavingTime(true);
+    try {
+      const computedAmount = timeKind === "time" ? Math.round(hours * (Number.isFinite(rate) ? rate : 0) * 100) / 100 : amount;
+      const created = await onAddTimeEntry({
+        client_id: activeEng.client_id,
+        engagement_id: activeEng.id,
+        kind: timeKind,
+        description: desc,
+        hours: timeKind === "time" ? hours : 0,
+        rate_usd: timeKind === "time" && Number.isFinite(rate) ? rate : 0,
+        amount_usd: computedAmount,
+        billable: timeBillable,
+      });
+      if (created) {
+        setTimeDesc("");
+      }
+    } finally {
+      setSavingTime(false);
+    }
+  };
+
+  const handleGenerateInvoiceSubmit = async () => {
+    if (!onGenerateInvoice || !activeEng || generatingInv) return;
+    const period = invPeriodLabel.trim() || new Date().toISOString().slice(0, 7);
+    const formats: Array<"pdf" | "xlsx" | "json"> = invFormats.length > 0 ? invFormats : ["json"];
+    setGeneratingInv(true);
+    try {
+      const inv = await onGenerateInvoice({
+        engagement_id: activeEng.id,
+        period_label: period,
+        include_llm_cost: invIncludeLlm,
+        include_time_entries: invIncludeTime,
+        export_formats: formats,
+      });
+      if (inv) {
+        setSelectedInvoiceId(inv.id);
+      }
+    } finally {
+      setGeneratingInv(false);
+    }
+  };
 
   const handleRowReceiptExport = async (job: BriefJob, idx: number, format: "md" | "json") => {
     const id = job.id || job.thread_id || `receipt-${idx}`;
@@ -1135,6 +1338,59 @@ export const PaperFace = memo(function PaperFace({
                       <span className="mono text-xs text-ink-2">
                         {hourlyRateUsd > 0 ? `At $${hourlyRateUsd}/hr` : "Attributed value"}
                       </span>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-t border-hairline pt-2.5">
+                    <div id="retainer-billing-summary" className="mono flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-ink-2">
+                      <span>
+                        Unbilled: {unbilledEntries.length} ({formatUsd(unbilledTotalUsd)})
+                      </span>
+                      <span>
+                        Invoices: {engagementInvoices.length}
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {onAddTimeEntry && (
+                        <Button
+                          id="retainer-add-time-btn"
+                          type="button"
+                          size="xs"
+                          variant="outline"
+                          disabled={!activeEng}
+                          className="max-md:min-h-11 gap-1"
+                          onClick={openTimeModal}
+                        >
+                          <Plus className="size-3.5" strokeWidth={1.5} aria-hidden />
+                          Log time / expense
+                        </Button>
+                      )}
+                      <Button
+                        id="retainer-scoped-handoff-btn"
+                        type="button"
+                        size="xs"
+                        variant="outline"
+                        disabled={!activeEng || scopedHandoffBusy}
+                        className="max-md:min-h-11 gap-1"
+                        onClick={() => void handleScopedHandoffExport()}
+                      >
+                        <FileDown className="size-3.5" strokeWidth={1.5} aria-hidden />
+                        {scopedHandoffBusy ? "Exporting…" : "Scoped Handoff"}
+                      </Button>
+                      {onGenerateInvoice && (
+                        <Button
+                          id="retainer-invoices-btn"
+                          type="button"
+                          size="xs"
+                          variant="default"
+                          disabled={!activeEng}
+                          className="max-md:min-h-11 gap-1"
+                          onClick={openInvoicesDrawer}
+                        >
+                          <ReceiptText className="size-3.5" strokeWidth={1.5} aria-hidden />
+                          Invoices &amp; Billing
+                        </Button>
+                      )}
                     </div>
                   </div>
 
@@ -1762,6 +2018,424 @@ export const PaperFace = memo(function PaperFace({
 
         <aside aria-label="Offers, memory and team">{sideColumn}</aside>
       </div>
+      <PanelModal
+        open={timeModalOpen}
+        onOpenChange={setTimeModalOpen}
+        panelId="time-entry-modal"
+        title="Log billable time or expense"
+        description={activeEng ? `Record billable work or pass-through expenses for ${activeEng.name}.` : "Select an engagement to log entries."}
+        className="max-w-lg"
+      >
+        <div className="flex flex-col gap-4 pt-1">
+          <div className="flex flex-col gap-3 rounded-sm border border-hairline bg-board/40 p-3">
+            <div className="flex flex-wrap gap-1.5" role="group" aria-label="Entry kind">
+              {(["time", "expense", "adjustment"] as const).map((k) => (
+                <Button
+                  key={k}
+                  type="button"
+                  size="xs"
+                  data-time-kind={k}
+                  variant={timeKind === k ? "default" : "outline"}
+                  className="max-md:min-h-11 capitalize"
+                  onClick={() => setTimeKind(k)}
+                >
+                  {k}
+                </Button>
+              ))}
+            </div>
+
+            <div className="flex flex-col gap-1">
+              <label htmlFor="time-entry-desc" className="text-xs font-medium text-ink">
+                Description
+              </label>
+              <Input
+                id="time-entry-desc"
+                value={timeDesc}
+                onChange={(e) => setTimeDesc(e.target.value)}
+                placeholder="Client contract review and compliance memo"
+                className="text-sm max-md:min-h-11"
+              />
+            </div>
+
+            {timeKind === "time" ? (
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <div className="flex flex-col gap-1">
+                  <label htmlFor="time-entry-hours" className="text-xs font-medium text-ink">
+                    Hours
+                  </label>
+                  <Input
+                    id="time-entry-hours"
+                    type="number"
+                    min="0"
+                    step="any"
+                    value={timeHours}
+                    onChange={(e) => setTimeHours(e.target.value)}
+                    className="mono text-sm max-md:min-h-11"
+                  />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label htmlFor="time-entry-rate" className="text-xs font-medium text-ink">
+                    Rate (USD/hr)
+                  </label>
+                  <Input
+                    id="time-entry-rate"
+                    type="number"
+                    min="0"
+                    step="any"
+                    value={timeRate}
+                    onChange={(e) => setTimeRate(e.target.value)}
+                    className="mono text-sm max-md:min-h-11"
+                  />
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-1">
+                <label htmlFor="time-entry-amount" className="text-xs font-medium text-ink">
+                  Amount (USD)
+                </label>
+                <Input
+                  id="time-entry-amount"
+                  type="number"
+                  step="any"
+                  value={timeAmount}
+                  onChange={(e) => setTimeAmount(e.target.value)}
+                  className="mono text-sm max-md:min-h-11"
+                />
+              </div>
+            )}
+
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <label className="inline-flex min-h-11 items-center gap-2 text-xs text-ink md:min-h-8">
+                <input
+                  id="time-entry-billable"
+                  type="checkbox"
+                  checked={timeBillable}
+                  onChange={(e) => setTimeBillable(e.target.checked)}
+                />
+                <span>Billable to client invoice</span>
+              </label>
+              <Button id="time-entry-submit-btn" type="button" size="sm" disabled={savingTime} className="max-md:min-h-11" onClick={() => void handleCreateTimeEntry()}>
+                {savingTime ? "Saving…" : "Add entry"}
+              </Button>
+            </div>
+            {timeErr && (
+              <p role="alert" className="text-xs text-destructive-foreground">
+                {timeErr}
+              </p>
+            )}
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center justify-between gap-2">
+              <h3 className="text-xs font-medium text-ink">
+                Logged entries ({engagementEntries.length})
+              </h3>
+              <span className="mono text-xs text-ink-2">
+                Unbilled: {formatUsd(unbilledTotalUsd)}
+              </span>
+            </div>
+            {engagementEntries.length === 0 ? (
+              <p className="rounded-sm border border-hairline bg-board/40 px-3 py-2 text-xs text-ink-2">
+                No manual time or expense entries recorded for this engagement yet.
+              </p>
+            ) : (
+              <ul id="time-entries-list" className="divide-y divide-hairline rounded-sm border border-hairline bg-surface">
+                {engagementEntries.map((entry) => (
+                  <li key={entry.id} className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-xs">
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate font-medium text-ink">{entry.description}</p>
+                      <p className="mono text-ink-2">
+                        {entry.kind}
+                        {entry.kind === "time" ? ` · ${entry.hours}h @ ${formatUsd(entry.rate_usd)}/hr` : ""}
+                        {` · ${formatUsd(entry.amount_usd)}`}
+                        {entry.invoiced_id ? " · invoiced" : entry.billable ? " · unbilled" : " · non-billable"}
+                      </p>
+                    </div>
+                    {!entry.invoiced_id && onRemoveTimeEntry && (
+                      <Button
+                        type="button"
+                        size="icon-xs"
+                        variant="ghost"
+                        aria-label={`Delete entry ${entry.description}`}
+                        data-delete-time-entry={entry.id}
+                        disabled={deletingEntryId === entry.id}
+                        className="max-md:min-h-11 max-md:min-w-11"
+                        onClick={async () => {
+                          setDeletingEntryId(entry.id);
+                          try {
+                            await onRemoveTimeEntry(entry.id, activeEng?.id);
+                          } finally {
+                            setDeletingEntryId(null);
+                          }
+                        }}
+                      >
+                        <Trash2 className="size-3.5 text-icon" strokeWidth={1.5} aria-hidden />
+                      </Button>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
+      </PanelModal>
+
+      <PanelModal
+        open={invoicesOpen}
+        onOpenChange={setInvoicesOpen}
+        panelId="invoices-billing-drawer"
+        title="Invoices and billing"
+        description={activeEng ? `Generate, preview, and settle client invoices for ${activeEng.name}.` : "Select an engagement first."}
+        className="max-w-2xl"
+      >
+        <div className="flex flex-col gap-4 pt-1">
+          <div
+            id="invoice-generate-form"
+            className="flex flex-col gap-3 rounded-sm border border-hairline bg-board/40 p-3"
+          >
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <div className="flex flex-col gap-1">
+                <label htmlFor="invoice-period-input" className="text-xs font-medium text-ink">
+                  Billing period label
+                </label>
+                <Input
+                  id="invoice-period-input"
+                  value={invPeriodLabel}
+                  onChange={(e) => setInvPeriodLabel(e.target.value)}
+                  placeholder="2026-11"
+                  className="mono text-xs max-md:min-h-11"
+                />
+              </div>
+              <div className="flex flex-col gap-1">
+                <span className="text-xs font-medium text-ink">Export formats</span>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {(["pdf", "xlsx", "json"] as const).map((fmt) => {
+                    const active = invFormats.includes(fmt);
+                    return (
+                      <Button
+                        key={fmt}
+                        id={`invoice-fmt-${fmt}`}
+                        type="button"
+                        size="xs"
+                        variant={active ? "default" : "outline"}
+                        aria-pressed={active}
+                        className="max-md:min-h-11 uppercase"
+                        onClick={() =>
+                          setInvFormats((prev) =>
+                            prev.includes(fmt) ? (prev.length > 1 ? prev.filter((x) => x !== fmt) : prev) : [...prev, fmt]
+                          )
+                        }
+                      >
+                        {fmt}
+                      </Button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex flex-wrap items-center gap-4 text-xs text-ink">
+                <label className="inline-flex min-h-11 items-center gap-2 md:min-h-8">
+                  <input
+                    id="invoice-include-llm"
+                    type="checkbox"
+                    checked={invIncludeLlm}
+                    onChange={(e) => setInvIncludeLlm(e.target.checked)}
+                  />
+                  <span>Include LLM usage cost</span>
+                </label>
+                <label className="inline-flex min-h-11 items-center gap-2 md:min-h-8">
+                  <input
+                    id="invoice-include-time"
+                    type="checkbox"
+                    checked={invIncludeTime}
+                    onChange={(e) => setInvIncludeTime(e.target.checked)}
+                  />
+                  <span>Include unbilled time ({unbilledEntries.length})</span>
+                </label>
+              </div>
+              <Button id="invoice-generate-btn" type="button" size="sm" disabled={!activeEng || generatingInv} className="max-md:min-h-11" onClick={() => void handleGenerateInvoiceSubmit()}>
+                {generatingInv ? "Generating…" : "Generate invoice"}
+              </Button>
+            </div>
+          </div>
+
+          {engagementInvoices.length === 0 ? (
+            <p className="rounded-sm border border-hairline bg-board/40 px-3 py-2.5 text-xs text-ink-2">
+              No invoices generated for this engagement yet.
+            </p>
+          ) : (
+            <div className="grid gap-3">
+              <ul id="invoices-list" className="divide-y divide-hairline rounded-sm border border-hairline bg-surface">
+                {engagementInvoices.map((inv) => {
+                  const isSel = selectedInvoice?.id === inv.id;
+                  const busyThis = updatingInvId === inv.id;
+                  return (
+                    <li key={inv.id} data-invoice-id={inv.id} className={cn("flex flex-wrap items-center justify-between gap-2 px-3 py-2.5 text-xs", isSel && "bg-blue-soft/40")}>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span className="mono font-medium text-ink">{inv.invoice_number}</span>
+                          <span className="text-ink-2">{inv.period_label}</span>
+                          <span
+                            data-invoice-status={inv.status}
+                            className={cn(
+                              "mono rounded-chip px-1.5 py-0.5 text-[11px] font-medium",
+                              inv.status === "paid"
+                                ? "status-finished"
+                                : inv.status === "void"
+                                  ? "status-stopped"
+                                  : "bg-track text-ink-2"
+                            )}
+                          >
+                            {inv.status}
+                          </span>
+                        </div>
+                        <p className="mono text-ink-2">
+                          Total {formatUsd(inv.total_usd)} · sha256:{inv.sha256.slice(0, 12)}
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <Button
+                          type="button"
+                          size="xs"
+                          variant={isSel ? "default" : "outline"}
+                          data-preview-invoice={inv.id}
+                          className="max-md:min-h-11"
+                          onClick={() => setSelectedInvoiceId(inv.id)}
+                        >
+                          Preview
+                        </Button>
+                        {inv.status === "draft" && onUpdateInvoiceStatus && (
+                          <Button
+                            type="button"
+                            size="xs"
+                            variant="outline"
+                            data-issue-invoice={inv.id}
+                            disabled={busyThis}
+                            className="max-md:min-h-11"
+                            onClick={async () => {
+                              setUpdatingInvId(inv.id);
+                              try {
+                                await onUpdateInvoiceStatus(inv.id, "issued", activeEng?.id);
+                              } finally {
+                                setUpdatingInvId(null);
+                              }
+                            }}
+                          >
+                            Mark Issued
+                          </Button>
+                        )}
+                        {(inv.status === "draft" || inv.status === "issued") && onUpdateInvoiceStatus && (
+                          <Button
+                            type="button"
+                            size="xs"
+                            variant="outline"
+                            data-pay-invoice={inv.id}
+                            disabled={busyThis}
+                            className="max-md:min-h-11"
+                            onClick={async () => {
+                              setUpdatingInvId(inv.id);
+                              try {
+                                await onUpdateInvoiceStatus(inv.id, "paid", activeEng?.id);
+                              } finally {
+                                setUpdatingInvId(null);
+                              }
+                            }}
+                          >
+                            Mark Paid
+                          </Button>
+                        )}
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+
+              {selectedInvoice && (
+                <div id="invoice-preview-panel" className="flex flex-col gap-2.5 rounded-sm border border-hairline bg-board/40 p-3 text-xs">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="mono font-medium text-ink">
+                      {selectedInvoice.invoice_number} ({selectedInvoice.period_label})
+                    </span>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {selectedInvoice.pdf_path && (
+                        <Button
+                          type="button"
+                          size="xs"
+                          variant="outline"
+                          className="max-md:min-h-11"
+                          onClick={() => void downloadWorkspaceFile(selectedInvoice.pdf_path!)}
+                        >
+                          PDF
+                        </Button>
+                      )}
+                      {selectedInvoice.xlsx_path && (
+                        <Button
+                          type="button"
+                          size="xs"
+                          variant="outline"
+                          className="max-md:min-h-11"
+                          onClick={() => void downloadWorkspaceFile(selectedInvoice.xlsx_path!)}
+                        >
+                          XLSX
+                        </Button>
+                      )}
+                      {selectedInvoice.json_path && (
+                        <Button
+                          type="button"
+                          size="xs"
+                          variant="outline"
+                          className="max-md:min-h-11"
+                          onClick={() => onOpenFile(selectedInvoice.json_path!)}
+                        >
+                          JSON
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="overflow-x-auto rounded-sm border border-hairline bg-surface">
+                    <table className="w-full border-collapse text-left text-xs">
+                      <thead className="border-b border-hairline bg-board text-ink">
+                        <tr>
+                          <th className="px-2.5 py-1.5 font-medium">Item</th>
+                          <th className="px-2.5 py-1.5 text-right font-medium">Qty / Hrs</th>
+                          <th className="px-2.5 py-1.5 text-right font-medium">Rate</th>
+                          <th className="px-2.5 py-1.5 text-right font-medium">Amount</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-hairline">
+                        {selectedInvoice.line_items.map((item, idx) => (
+                          <tr key={item.id || `${idx}-${item.description}`}>
+                            <td className="px-2.5 py-1.5 text-ink">{item.description}</td>
+                            <td className="mono px-2.5 py-1.5 text-right text-ink-2">
+                              {item.hours ?? item.quantity ?? 1}
+                            </td>
+                            <td className="mono px-2.5 py-1.5 text-right text-ink-2">
+                              {formatUsd(item.rate_usd ?? item.unit_price_usd ?? item.amount_usd)}
+                            </td>
+                            <td className="mono px-2.5 py-1.5 text-right text-ink">
+                              {formatUsd(item.amount_usd)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div className="mono flex flex-wrap items-center justify-end gap-4 text-xs text-ink-2">
+                    <span>Subtotal: {formatUsd(selectedInvoice.billable_subtotal_usd)}</span>
+                    <span>LLM cost: {formatUsd(selectedInvoice.llm_cost_usd)}</span>
+                    <span>Tax: {formatUsd(selectedInvoice.tax_usd)}</span>
+                    <span className="font-medium text-ink">Total: {formatUsd(selectedInvoice.total_usd)}</span>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </PanelModal>
     </div>
   );
 });

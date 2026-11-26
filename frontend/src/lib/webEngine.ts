@@ -15,11 +15,17 @@ import { extractCitations } from "@/lib/words";
 import { buildAuditBundle } from "@/lib/auditBundle";
 import { computeLineDiff } from "@/lib/diff";
 import {
+  engagementWorkspacePrefix,
   estimateNextRunMs,
+  isPathInEngagementScope,
   type Client,
+  type ClientContact,
   type DeliveryLog,
   type Engagement,
   type FileRevision,
+  type InvoiceLineItem,
+  type InvoiceRecord,
+  type InvoiceStatus,
   type LiveRunStep,
   type MeteringByEngagement,
   type MeteringByModel,
@@ -37,9 +43,12 @@ import {
   type PipelineStepSpec,
   type PipelineStepState,
   type PipelineValidationResult,
+  type RolloverMode,
   type Routine,
   type RoutineRunRecord,
   type RunUsage,
+  type TimeExpenseEntry,
+  type TimeExpenseKind,
   type TriggerRule,
   type VaultChunkHit,
   type VaultFileHit,
@@ -161,8 +170,11 @@ type PersonStore = {
   suite: string[];
   policyProfile?: WorkspacePolicyProfile;
   policyUpdatedMs?: number;
+  isolateActiveEngagement?: boolean;
   usageLedger?: UsageLedgerEntry[];
   budgetOverrunApproved?: Record<string, number>;
+  timeEntries?: TimeExpenseEntry[];
+  invoices?: InvoiceRecord[];
 };
 type RootState = {
   activePerson: string;
@@ -257,6 +269,10 @@ function ensureClientsAndPricing(state: RootState, now = Date.now()) {
         brand_header: "Northstar Advisory Partners",
         billing_currency: "USD",
         default_rate_usd: 220,
+        contacts: [{ id: "ct-ns-1", name: "Elena Vance", email: "ap@northstar.example", role: "VP Finance", primary: true }],
+        notes_md: "Send monthly PDF and JSON invoice packets with [file:L##] citation checks.",
+        tax_rate_pct: 0,
+        payment_terms: "Net 30",
         created_ms: now - 7 * 86_400_000,
         updated_ms: now - 86_400_000,
       },
@@ -266,6 +282,10 @@ function ensureClientsAndPricing(state: RootState, now = Date.now()) {
         brand_header: "Harbor Freight & Ops",
         billing_currency: "USD",
         default_rate_usd: 185,
+        contacts: [{ id: "ct-hb-1", name: "Marcus Reed", email: "finance@harbor.example", role: "Controller", primary: true }],
+        notes_md: "",
+        tax_rate_pct: 0,
+        payment_terms: "Net 15",
         created_ms: now - 5 * 86_400_000,
         updated_ms: now - 2 * 86_400_000,
       },
@@ -283,6 +303,9 @@ function ensureClientsAndPricing(state: RootState, now = Date.now()) {
         hourly_rate_usd: 220,
         period: "monthly",
         status: "active",
+        workspace_prefix: "clients/cli-northstar/eng-northstar-q4",
+        sow_rules: ["Cite [file:L##] on all client memos", "Keep files under engagement workspace prefix"],
+        rollover_mode: "none",
         created_ms: now - 7 * 86_400_000,
         updated_ms: now - 86_400_000,
       },
@@ -296,6 +319,9 @@ function ensureClientsAndPricing(state: RootState, now = Date.now()) {
         hourly_rate_usd: 185,
         period: "monthly",
         status: "active",
+        workspace_prefix: "clients/cli-harbor/eng-harbor-close",
+        sow_rules: ["Reconcile variance CSV before close"],
+        rollover_mode: "carry_hours",
         created_ms: now - 5 * 86_400_000,
         updated_ms: now - 2 * 86_400_000,
       },
@@ -1650,6 +1676,8 @@ export async function installBrowserEngine(): Promise<void> {
     if (!state.stores[pid].routineRuns) state.stores[pid].routineRuns = {};
     if (!Array.isArray(state.stores[pid].pipelineRuns)) state.stores[pid].pipelineRuns = [];
     if (!Array.isArray(state.stores[pid].usageLedger)) state.stores[pid].usageLedger = [];
+    if (!Array.isArray(state.stores[pid].timeEntries)) state.stores[pid].timeEntries = [];
+    if (!Array.isArray(state.stores[pid].invoices)) state.stores[pid].invoices = [];
     return state.stores[pid];
   };
 
@@ -4072,6 +4100,7 @@ function buildWebPolicy(personId: string, st: PersonStore) {
   return {
     person_id: personId,
     ...(presets[raw] || presets.fast_internal),
+    isolate_active_engagement: Boolean(st.isolateActiveEngagement),
     updated_ms: st.policyUpdatedMs || 0,
   };
 }
@@ -4883,6 +4912,7 @@ function searchWebVault(
     mode?: VaultSearchMode;
     limit?: number;
     pathPrefix?: string;
+    engagementId?: string;
   }
 ) {
   const idx = getVaultIndex(st, false);
@@ -5012,6 +5042,7 @@ function searchWebVault(
 
   if (qLower && (scope === "all" || scope === "receipts")) {
     for (const wItem of st.work.slice().reverse()) {
+      if (opts.engagementId && wItem.engagement_id && wItem.engagement_id !== opts.engagementId) continue;
       if (wItem.task.toLowerCase().includes(qLower) || wItem.summary.toLowerCase().includes(qLower)) {
         results.push({
           kind: "receipt",
@@ -5071,11 +5102,17 @@ function globToRegex(glob: string): RegExp {
 
 function runWebVaultAggregate(
   st: PersonStore,
-  req: TabularQuerySpec & { glob?: string; sheet?: string }
+  req: TabularQuerySpec & { glob?: string; sheet?: string; pathPrefix?: string }
 ): { ok: true; columns: string[]; rows: string[][]; source_files: string[]; row_count: number } {
   const pattern = globToRegex(String(req.glob || "*.csv"));
+  const scopePrefix = (req.pathPrefix || "").trim().replace(/^\/+|\/+$/g, "").toLowerCase();
   const matchedFiles = Object.values(st.files)
-    .filter((f) => !isVaultExcludedPath(f.path) && pattern.test(f.path))
+    .filter((f) => {
+      if (isVaultExcludedPath(f.path) || !pattern.test(f.path)) return false;
+      if (!scopePrefix) return true;
+      const low = f.path.toLowerCase();
+      return low === scopePrefix || low.startsWith(`${scopePrefix}/`) || low.startsWith("shared/");
+    })
     .sort((a, b) => a.path.localeCompare(b.path));
 
   const canonicalHeader: string[] = [];
@@ -5182,6 +5219,9 @@ function runWebVaultAggregate(
           clients: true,
           metering: true,
           vault_search: true,
+          client_crm: true,
+          time_entries: true,
+          invoicing: true,
         },
         scheduler: buildSchedulerStatus(st),
         person: p,
@@ -5843,8 +5883,21 @@ function runWebVaultAggregate(
       const mode: VaultSearchMode =
         modeRaw === "bm25" || modeRaw === "exact" ? modeRaw : "hybrid";
       const limit = Math.min(50, Math.max(1, Number(u.searchParams.get("limit") || 20)));
-      const pathPrefix = u.searchParams.get("path_prefix") || undefined;
-      return jsonRes(searchWebVault(st, { q, scope, mode, limit, pathPrefix }));
+      const reqEngId = (u.searchParams.get("engagement_id") || "").trim();
+      const reqClientId = (u.searchParams.get("client_id") || "").trim();
+      let pathPrefix = u.searchParams.get("path_prefix") || undefined;
+      let scopedEngId: string | undefined = reqEngId || undefined;
+      if (reqEngId || st.isolateActiveEngagement) {
+        ensureClientsAndPricing(state);
+        const targetEng = reqEngId
+          ? state.engagements?.find((e) => e.id === reqEngId) || null
+          : activeEngagementFor(p.id).engagement;
+        if (targetEng && (!reqClientId || targetEng.client_id === reqClientId)) {
+          scopedEngId = targetEng.id;
+          if (!pathPrefix) pathPrefix = engagementWorkspacePrefix(targetEng) || undefined;
+        }
+      }
+      return jsonRes(searchWebVault(st, { q, scope, mode, limit, pathPrefix, engagementId: scopedEngId }));
     }
     if (method === "POST" && path === "/api/vault/reindex") {
       const t0 = performance.now();
@@ -5874,6 +5927,15 @@ function runWebVaultAggregate(
       ) {
         return jsonRes({ error: "glob path escapes the workspace" }, 400);
       }
+      const reqEngId = typeof body.engagement_id === "string" ? body.engagement_id.trim() : "";
+      let pathPrefix: string | undefined;
+      if (reqEngId || st.isolateActiveEngagement) {
+        ensureClientsAndPricing(state);
+        const targetEng = reqEngId
+          ? state.engagements?.find((e) => e.id === reqEngId) || null
+          : activeEngagementFor(p.id).engagement;
+        if (targetEng) pathPrefix = engagementWorkspacePrefix(targetEng) || undefined;
+      }
       const result = runWebVaultAggregate(st, {
         glob,
         sheet: typeof body.sheet === "string" && body.sheet.trim() ? body.sheet.trim() : undefined,
@@ -5882,6 +5944,7 @@ function runWebVaultAggregate(
         aggregates: Array.isArray(body.aggregates) ? (body.aggregates as Array<{ col: string; fn: string; as: string }>) : undefined,
         sort: body.sort && typeof body.sort === "object" ? (body.sort as { col: string; dir: string }) : undefined,
         limit: typeof body.limit === "number" ? body.limit : undefined,
+        pathPrefix,
       });
       let saved_path: string | undefined;
       if (typeof body.save_as === "string" && body.save_as.trim()) {
@@ -6665,23 +6728,28 @@ function runWebVaultAggregate(
       return jsonRes(buildWebPolicy(p.id, st));
     }
     if ((method === "PUT" || method === "POST") && path === "/api/workspace/policy") {
-      const raw = String(body.profile ?? "").trim().toLowerCase();
-      const map: Record<string, WorkspacePolicyProfile> = {
-        fast_internal: "fast_internal",
-        fast: "fast_internal",
-        internal: "fast_internal",
-        strict_client: "strict_client",
-        strict: "strict_client",
-        client: "strict_client",
-        air_gapped: "air_gapped",
-        airgapped: "air_gapped",
-        offline: "air_gapped",
-      };
-      const resolved = map[raw];
-      if (!resolved) {
-        return jsonRes({ error: "workspace policy profile must be fast_internal, strict_client, or air_gapped" }, 400);
+      if (body.profile !== undefined) {
+        const raw = String(body.profile ?? "").trim().toLowerCase();
+        const map: Record<string, WorkspacePolicyProfile> = {
+          fast_internal: "fast_internal",
+          fast: "fast_internal",
+          internal: "fast_internal",
+          strict_client: "strict_client",
+          strict: "strict_client",
+          client: "strict_client",
+          air_gapped: "air_gapped",
+          airgapped: "air_gapped",
+          offline: "air_gapped",
+        };
+        const resolved = map[raw];
+        if (!resolved) {
+          return jsonRes({ error: "workspace policy profile must be fast_internal, strict_client, or air_gapped" }, 400);
+        }
+        st.policyProfile = resolved;
       }
-      st.policyProfile = resolved;
+      if (typeof body.isolate_active_engagement === "boolean") {
+        st.isolateActiveEngagement = body.isolate_active_engagement;
+      }
       st.policyUpdatedMs = Date.now();
       await persist();
       return jsonRes(buildWebPolicy(p.id, st));
@@ -6725,12 +6793,21 @@ function runWebVaultAggregate(
       const dryRun = Boolean(body.dry_run) || u.searchParams.get("dry_run") === "1";
       const force = Boolean(body.force) || u.searchParams.get("force") === "1";
       const title = String(body.title ?? "Client Handoff").trim() || "Client Handoff";
+      const reqEngId = typeof body.engagement_id === "string" ? body.engagement_id.trim() : "";
+      ensureClientsAndPricing(state);
+      const scopedEng = reqEngId ? state.engagements?.find((e) => e.id === reqEngId) || null : null;
       const policy = buildWebPolicy(p.id, st);
+      const scopedFiles = Object.values(st.files).filter((f) =>
+        scopedEng ? isPathInEngagementScope(f.path, scopedEng) : true
+      );
+      const scopedWork = st.work.filter((x) =>
+        scopedEng ? !x.engagement_id || x.engagement_id === scopedEng.id : true
+      );
       const packRes = await window.fetch(`/api/files/pack?summary=1&format=md&force=1&title=${encodeURIComponent(title)}`, { method: "GET" });
-      const rawSummary = packRes.ok
+      const rawSummary = packRes.ok && !scopedEng
         ? await packRes.text()
-        : `# ${title}\n\n- Prepared for: **${p.name}**\n- Workspace files: ${Object.keys(st.files).length}\n`;
-      const wsFiles = Object.values(st.files).map((f) => ({ path: f.path, content: f.content }));
+        : `# ${title}\n\n- Prepared for: **${p.name}**\n${scopedEng ? `- Engagement: ${scopedEng.name}\n` : ""}- Workspace files: ${scopedFiles.length}\n`;
+      const wsFiles = scopedFiles.map((f) => ({ path: f.path, content: f.content }));
       const scan = scanWebHandoffLeaks(wsFiles, rawSummary, byok.api_key || undefined);
       const strictBlock = policy.profile === "strict_client" || policy.strict_citation_gate;
 
@@ -6760,14 +6837,14 @@ function runWebVaultAggregate(
       const builtBundle = await buildAuditBundle({
         personName: p.name,
         personId: p.id,
-        files: Object.values(st.files).map((f) => ({
+        files: scopedFiles.map((f) => ({
           path: f.path,
           size: f.size,
           mtime_ms: f.mtime_ms,
           content: f.content,
           revision_count: (st.fileHistory[f.path] ?? []).length,
         })),
-        receipts: st.work.map((x, idx) => ({
+        receipts: scopedWork.map((x, idx) => ({
           id: x.id || x.thread_id || `rec-${idx}`,
           thread_id: x.thread_id,
           task: x.task,
@@ -7138,12 +7215,37 @@ function runWebVaultAggregate(
         brand_header: typeof body.brand_header === "string" && body.brand_header.trim() ? body.brand_header.trim() : name,
         billing_currency: typeof body.billing_currency === "string" && body.billing_currency.trim() ? body.billing_currency.trim() : "USD",
         default_rate_usd: rate,
+        contacts: Array.isArray(body.contacts) ? (body.contacts as ClientContact[]) : [],
+        notes_md: typeof body.notes_md === "string" ? body.notes_md : "",
+        tax_rate_pct: typeof body.tax_rate_pct === "number" ? body.tax_rate_pct : 0,
+        payment_terms: typeof body.payment_terms === "string" && body.payment_terms.trim() ? body.payment_terms.trim() : "Net 30",
         created_ms: nowMs,
         updated_ms: nowMs,
       };
       state.clients!.push(client);
       await persist();
       return jsonRes({ client }, 201);
+    }
+    if (method === "PATCH" && path.startsWith("/api/clients/")) {
+      ensureClientsAndPricing(state);
+      const cid = decodeURIComponent(path.slice("/api/clients/".length));
+      const cli = state.clients!.find((c) => c.id === cid);
+      if (!cli) return jsonRes({ error: "Client not found." }, 404);
+      if (typeof body.name === "string" && body.name.trim()) cli.name = body.name.trim();
+      if (typeof body.brand_header === "string") cli.brand_header = body.brand_header.trim();
+      if (typeof body.billing_currency === "string" && body.billing_currency.trim()) cli.billing_currency = body.billing_currency.trim();
+      if (typeof body.default_rate_usd === "number" && Number.isFinite(body.default_rate_usd) && body.default_rate_usd >= 0) {
+        cli.default_rate_usd = body.default_rate_usd;
+      }
+      if (Array.isArray(body.contacts)) cli.contacts = body.contacts as ClientContact[];
+      if (typeof body.notes_md === "string") cli.notes_md = body.notes_md;
+      if (typeof body.tax_rate_pct === "number" && Number.isFinite(body.tax_rate_pct) && body.tax_rate_pct >= 0) {
+        cli.tax_rate_pct = body.tax_rate_pct;
+      }
+      if (typeof body.payment_terms === "string") cli.payment_terms = body.payment_terms.trim() || "Net 30";
+      cli.updated_ms = Date.now();
+      await persist();
+      return jsonRes({ client: cli });
     }
     if (method === "POST" && path === "/api/engagements") {
       ensureClientsAndPricing(state);
@@ -7176,8 +7278,10 @@ function runWebVaultAggregate(
       const nowMs = Date.now();
       const targetPerson = typeof body.person_id === "string" && body.person_id.trim() ? body.person_id.trim() : p.id;
       const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 24) || "eng";
+      const engId = `eng-${slug}-${nowMs}`;
+      const rawPrefix = typeof body.workspace_prefix === "string" ? body.workspace_prefix.trim().replace(/^\/+|\/+$/g, "") : "";
       const engagement: Engagement = {
-        id: `eng-${slug}-${nowMs}`,
+        id: engId,
         client_id: clientId,
         person_id: targetPerson,
         name,
@@ -7186,6 +7290,9 @@ function runWebVaultAggregate(
         hourly_rate_usd: hourlyRate,
         period: typeof body.period === "string" && body.period.trim() ? body.period.trim() : "monthly",
         status: "active",
+        workspace_prefix: rawPrefix || `clients/${clientId}/${engId}`,
+        sow_rules: Array.isArray(body.sow_rules) ? body.sow_rules.map(String) : [],
+        rollover_mode: body.rollover_mode === "carry_hours" ? "carry_hours" : "none",
         created_ms: nowMs,
         updated_ms: nowMs,
       };
@@ -7204,6 +7311,240 @@ function runWebVaultAggregate(
       state.activeEngagementByPerson[p.id] = eng.id;
       await persist();
       return jsonRes({ active_engagement_id: eng.id, engagement: eng });
+    }
+    if (method === "GET" && path.startsWith("/api/engagements/") && path.endsWith("/context")) {
+      ensureClientsAndPricing(state);
+      const engId = decodeURIComponent(path.slice("/api/engagements/".length, -"/context".length));
+      const eng = state.engagements!.find((e) => e.id === engId);
+      if (!eng) return jsonRes({ error: "Engagement not found." }, 404);
+      const cli = state.clients!.find((c) => c.id === eng.client_id) || null;
+      const scopedFiles = Object.values(st.files).filter((f) => isPathInEngagementScope(f.path, eng));
+      const unbilled = (st.timeEntries ?? []).filter((e) => e.engagement_id === eng.id && !e.invoiced_id);
+      const unbilledTotal = Math.round(unbilled.reduce((acc, e) => acc + (e.billable ? e.amount_usd : 0), 0) * 100) / 100;
+      const meter = buildMeteringSummary({ engagement_id: eng.id });
+      return jsonRes({
+        engagement: eng,
+        client: cli,
+        scoped_file_count: scopedFiles.length,
+        workspace_prefix: engagementWorkspacePrefix(eng),
+        sow_rules: eng.sow_rules ?? [],
+        contacts: cli?.contacts ?? [],
+        burn_metrics: {
+          runs: meter.totals.runs,
+          cost_usd: meter.totals.cost_usd,
+          retainer_budget_usd: eng.retainer_budget_usd,
+          retainer_burn_pct: meter.totals.retainer_burn_pct,
+          billable_value_usd: meter.totals.billable_value_usd,
+          minutes_saved: meter.totals.minutes_saved,
+        },
+        unbilled_entries: unbilled,
+        unbilled_total_usd: unbilledTotal,
+      });
+    }
+    if (method === "PATCH" && path.startsWith("/api/engagements/")) {
+      ensureClientsAndPricing(state);
+      const engId = decodeURIComponent(path.slice("/api/engagements/".length));
+      const eng = state.engagements!.find((e) => e.id === engId);
+      if (!eng) return jsonRes({ error: "Engagement not found." }, 404);
+      if (typeof body.name === "string" && body.name.trim()) eng.name = body.name.trim();
+      if (typeof body.workspace_prefix === "string") {
+        eng.workspace_prefix = body.workspace_prefix.trim().replace(/^\/+|\/+$/g, "");
+      }
+      if (Array.isArray(body.sow_rules)) eng.sow_rules = body.sow_rules.map(String).filter((s) => s.trim().length > 0);
+      if (body.rollover_mode === "carry_hours" || body.rollover_mode === "none") eng.rollover_mode = body.rollover_mode as RolloverMode;
+      if (typeof body.status === "string" && ["active", "paused", "archived"].includes(body.status)) eng.status = body.status;
+      if (body.archived_ms === null || typeof body.archived_ms === "number") eng.archived_ms = body.archived_ms;
+      if (typeof body.retainer_hours === "number" && Number.isFinite(body.retainer_hours) && body.retainer_hours >= 0) {
+        eng.retainer_hours = body.retainer_hours;
+      }
+      if (typeof body.retainer_budget_usd === "number" && Number.isFinite(body.retainer_budget_usd) && body.retainer_budget_usd >= 0) {
+        eng.retainer_budget_usd = body.retainer_budget_usd;
+      }
+      if (typeof body.hourly_rate_usd === "number" && Number.isFinite(body.hourly_rate_usd) && body.hourly_rate_usd >= 0) {
+        eng.hourly_rate_usd = body.hourly_rate_usd;
+      }
+      if (typeof body.period === "string" && body.period.trim()) eng.period = body.period.trim();
+      eng.updated_ms = Date.now();
+      await persist();
+      return jsonRes({ engagement: eng });
+    }
+    if (method === "GET" && path === "/api/time-entries") {
+      const engId = (u.searchParams.get("engagement_id") || "").trim();
+      const cliId = (u.searchParams.get("client_id") || "").trim();
+      const unbilledOnly = u.searchParams.get("unbilled_only") === "true";
+      const entries = (st.timeEntries ?? []).filter((e) => {
+        if (engId && e.engagement_id !== engId) return false;
+        if (cliId && e.client_id !== cliId) return false;
+        if (unbilledOnly && e.invoiced_id) return false;
+        return true;
+      });
+      const totalUsd = Math.round(entries.reduce((acc, e) => acc + (e.billable ? e.amount_usd : 0), 0) * 100) / 100;
+      return jsonRes({ entries, total_usd: totalUsd });
+    }
+    if (method === "POST" && path === "/api/time-entries") {
+      ensureClientsAndPricing(state);
+      const engId = String(body.engagement_id ?? "").trim();
+      const eng = state.engagements!.find((e) => e.id === engId);
+      if (!eng) return jsonRes({ error: "Valid engagement_id is required." }, 404);
+      const kindRaw = String(body.kind ?? "time").trim();
+      const kind: TimeExpenseKind =
+        kindRaw === "expense" || kindRaw === "adjustment" ? kindRaw : "time";
+      const description = String(body.description ?? "").trim();
+      if (!description) return jsonRes({ error: "Description is required." }, 400);
+      const hours = Number(body.hours ?? 0);
+      const rateUsd = Number(body.rate_usd ?? eng.hourly_rate_usd ?? 0);
+      const amountUsd =
+        body.amount_usd !== undefined && Number.isFinite(Number(body.amount_usd))
+          ? Math.round(Number(body.amount_usd) * 100) / 100
+          : Math.round(hours * rateUsd * 100) / 100;
+      const entry: TimeExpenseEntry = {
+        id: `te-${Date.now()}-${(st.timeEntries ?? []).length + 1}`,
+        ts_ms: Date.now(),
+        client_id: typeof body.client_id === "string" && body.client_id.trim() ? body.client_id.trim() : eng.client_id,
+        engagement_id: eng.id,
+        thread_id: typeof body.thread_id === "string" ? body.thread_id : null,
+        receipt_id: typeof body.receipt_id === "string" ? body.receipt_id : null,
+        kind,
+        description,
+        hours: Number.isFinite(hours) ? hours : 0,
+        rate_usd: Number.isFinite(rateUsd) ? rateUsd : 0,
+        amount_usd: amountUsd,
+        billable: body.billable !== undefined ? Boolean(body.billable) : true,
+        invoiced_id: null,
+      };
+      st.timeEntries = [...(st.timeEntries ?? []), entry];
+      await persist();
+      return jsonRes({ entry }, 201);
+    }
+    if (method === "DELETE" && path.startsWith("/api/time-entries/")) {
+      const tid = decodeURIComponent(path.slice("/api/time-entries/".length));
+      const before = st.timeEntries ?? [];
+      const found = before.find((e) => e.id === tid);
+      if (!found) return jsonRes({ error: "Time entry not found." }, 404);
+      st.timeEntries = before.filter((e) => e.id !== tid);
+      await persist();
+      return jsonRes({ deleted: tid, id: tid });
+    }
+    if (method === "GET" && path === "/api/invoices") {
+      const engId = (u.searchParams.get("engagement_id") || "").trim();
+      const cliId = (u.searchParams.get("client_id") || "").trim();
+      const invoices = (st.invoices ?? []).filter((inv) => {
+        if (engId && inv.engagement_id !== engId) return false;
+        if (cliId && inv.client_id !== cliId) return false;
+        return true;
+      });
+      return jsonRes({ invoices });
+    }
+    if (method === "POST" && path === "/api/invoices/generate") {
+      ensureClientsAndPricing(state);
+      const engId = String(body.engagement_id ?? "").trim();
+      const eng = state.engagements!.find((e) => e.id === engId);
+      if (!eng) return jsonRes({ error: "Valid engagement_id is required." }, 404);
+      const cli = state.clients!.find((c) => c.id === eng.client_id) || null;
+      const periodLabel = String(body.period_label ?? "").trim() || new Date().toISOString().slice(0, 7);
+      const includeLlm = body.include_llm_cost !== false;
+      const includeTime = body.include_time_entries !== false;
+      const formats = Array.isArray(body.export_formats) ? body.export_formats.map(String) : ["json"];
+      const invId = `inv-${Date.now()}-${(st.invoices ?? []).length + 1}`;
+      const invNum = `INV-${periodLabel.replace(/[^0-9A-Za-z]+/g, "")}-${String((st.invoices ?? []).length + 1).padStart(3, "0")}`;
+
+      const lineItems: InvoiceLineItem[] = [];
+      let billableSubtotal = 0;
+      if (includeTime) {
+        const unbilled = (st.timeEntries ?? []).filter((e) => e.engagement_id === eng.id && !e.invoiced_id && e.billable);
+        for (const entry of unbilled) {
+          lineItems.push({
+            id: entry.id,
+            kind: entry.kind,
+            description: entry.description,
+            hours: entry.kind === "time" ? entry.hours : undefined,
+            quantity: entry.kind !== "time" ? 1 : undefined,
+            rate_usd: entry.kind === "time" ? entry.rate_usd : entry.amount_usd,
+            amount_usd: entry.amount_usd,
+          });
+          billableSubtotal += entry.amount_usd;
+          entry.invoiced_id = invId;
+        }
+      }
+      const meter = buildMeteringSummary({ engagement_id: eng.id });
+      const llmCostUsd = includeLlm ? Math.round((meter.totals.cost_usd || 0) * 100) / 100 : 0;
+      if (includeLlm && llmCostUsd > 0) {
+        lineItems.push({
+          id: `${invId}-llm`,
+          kind: "llm_usage",
+          description: `AI compute metering (${meter.totals.runs} runs)`,
+          quantity: 1,
+          unit_price_usd: llmCostUsd,
+          amount_usd: llmCostUsd,
+        });
+      }
+      billableSubtotal = Math.round(billableSubtotal * 100) / 100;
+      const taxableBase = Math.round((billableSubtotal + llmCostUsd) * 100) / 100;
+      const taxRate = cli?.tax_rate_pct ?? 0;
+      const taxUsd = Math.round(taxableBase * (taxRate / 100) * 100) / 100;
+      const totalUsd = Math.round((taxableBase + taxUsd) * 100) / 100;
+
+      const deliverablePaths = Object.values(st.files)
+        .filter((f) => isPathInEngagementScope(f.path, eng))
+        .map((f) => f.path)
+        .slice(0, 20);
+
+      const prefix = engagementWorkspacePrefix(eng) || `clients/${eng.client_id}/${eng.id}`;
+      const basePath = `${prefix}/invoices/${invNum}`;
+      const exportedPaths: Record<string, string> = {};
+      const jsonPath = formats.includes("json") ? `${basePath}.json` : null;
+      const pdfPath = formats.includes("pdf") ? `${basePath}.pdf` : null;
+      const xlsxPath = formats.includes("xlsx") ? `${basePath}.xlsx` : null;
+
+      const draftInv: InvoiceRecord = {
+        id: invId,
+        invoice_number: invNum,
+        client_id: eng.client_id,
+        engagement_id: eng.id,
+        period_label: periodLabel,
+        issued_ms: Date.now(),
+        due_ms: Date.now() + 30 * 86_400_000,
+        status: "draft",
+        line_items: lineItems,
+        llm_cost_usd: llmCostUsd,
+        billable_subtotal_usd: billableSubtotal,
+        tax_usd: taxUsd,
+        total_usd: totalUsd,
+        deliverable_paths: deliverablePaths,
+        pdf_path: pdfPath,
+        xlsx_path: xlsxPath,
+        json_path: jsonPath,
+        sha256: await sha256Hex(JSON.stringify({ invNum, engId: eng.id, periodLabel, totalUsd, lineItems })),
+      };
+
+      if (jsonPath) {
+        st.files[jsonPath] = makeFile(jsonPath, JSON.stringify(draftInv, null, 2));
+        exportedPaths.json = jsonPath;
+      }
+      if (pdfPath) {
+        st.files[pdfPath] = makeFile(pdfPath, `%PDF-1.4\n% ${invNum} (${periodLabel}) Total: $${totalUsd.toFixed(2)}\n`);
+        exportedPaths.pdf = pdfPath;
+      }
+      if (xlsxPath) {
+        st.files[xlsxPath] = makeFile(xlsxPath, `Invoice,${invNum}\nPeriod,${periodLabel}\nTotal,${totalUsd.toFixed(2)}\n`);
+        exportedPaths.xlsx = xlsxPath;
+      }
+
+      st.invoices = [draftInv, ...(st.invoices ?? [])];
+      await persist();
+      return jsonRes({ invoice: draftInv, exported_paths: exportedPaths }, 201);
+    }
+    if (method === "PATCH" && path.startsWith("/api/invoices/")) {
+      const invId = decodeURIComponent(path.slice("/api/invoices/".length));
+      const inv = (st.invoices ?? []).find((x) => x.id === invId);
+      if (!inv) return jsonRes({ error: "Invoice not found." }, 404);
+      const nextStatus = String(body.status ?? "").trim();
+      if (!["draft", "issued", "paid", "void"].includes(nextStatus)) {
+        return jsonRes({ error: "Invoice status must be draft, issued, paid, or void." }, 400);
+      }
+      inv.status = nextStatus as InvoiceStatus;
+      await persist();
+      return jsonRes({ invoice: inv });
     }
     if (method === "GET" && path === "/api/metering/summary") {
       const engagementId = u.searchParams.get("engagement_id") || undefined;

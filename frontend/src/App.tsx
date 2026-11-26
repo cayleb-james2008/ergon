@@ -997,6 +997,14 @@ export function App() {
                 engagements={desk.engagements}
                 activeEngagementId={desk.activeEngagementId}
                 onOpenWorkspaceSwitcher={() => setSwitcherOpen(true)}
+                timeEntries={desk.timeEntries}
+                invoices={desk.invoices}
+                onLoadTimeEntries={desk.loadTimeEntries}
+                onAddTimeEntry={desk.addTimeEntry}
+                onRemoveTimeEntry={desk.removeTimeEntry}
+                onLoadInvoices={desk.loadInvoices}
+                onGenerateInvoice={desk.createGeneratedInvoice}
+                onUpdateInvoiceStatus={desk.setInvoiceStatus}
               />
               </Suspense>
             </div>
@@ -1038,6 +1046,11 @@ export function App() {
               onOfferAction={async (url, msg) => {
                 await paper.act(url, msg);
               }}
+              activeClient={activeClient}
+              activeEngagement={activeEngagement}
+              engagementScopeOnly={desk.engagementScopeOnly}
+              onToggleEngagementScope={desk.setEngagementScopeOnly}
+              onWorkspacePolicyChanged={() => void desk.loadWorkspacePolicy()}
             />
           )}
           {!isXl && inspectorOpen && (
@@ -1072,6 +1085,11 @@ export function App() {
                   onOfferAction={async (url, msg) => {
                     await paper.act(url, msg);
                   }}
+                  activeClient={activeClient}
+                  activeEngagement={activeEngagement}
+                  engagementScopeOnly={desk.engagementScopeOnly}
+                  onToggleEngagementScope={desk.setEngagementScopeOnly}
+                  onWorkspacePolicyChanged={() => void desk.loadWorkspacePolicy()}
                 />
               </div>
             </m.div>
@@ -1126,6 +1144,10 @@ export function App() {
           void desk.runRoutineNow(rt);
         }}
         onSwitchFace={switchFace}
+        activeClient={activeClient}
+        activeEngagement={activeEngagement}
+        engagementScopeOnly={desk.engagementScopeOnly}
+        onToggleEngagementScope={desk.setEngagementScopeOnly}
       />
       )}
 
@@ -1144,13 +1166,19 @@ export function App() {
         clients={desk.clients}
         engagements={desk.engagements}
         activeEngagementId={desk.activeEngagementId}
+        workspacePolicy={desk.workspacePolicy}
+        activeEngagementContext={desk.activeEngagementContext}
         onRefreshClients={desk.loadClients}
         onSwitchEngagement={async (id) => {
           await desk.switchActiveEngagement(id);
           runAfterPersonChange();
         }}
         onCreateClient={desk.createNewClient}
+        onUpdateClient={desk.saveClientCrm}
         onCreateEngagement={desk.createNewEngagement}
+        onUpdateEngagement={desk.saveEngagementSow}
+        onUpdateWorkspacePolicy={desk.updateWorkspacePolicyState}
+        onLoadEngagementContext={desk.loadEngagementContext}
       />
 
       {addPersonOpen && (
