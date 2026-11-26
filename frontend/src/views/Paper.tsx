@@ -154,8 +154,9 @@ function decisionCopy(d: Decision): DecisionCopy {
     };
   }
   if (kind === "budget_gate") {
-    const budget = typeof d.retainer_budget_usd === "number" ? `$${d.retainer_budget_usd.toFixed(2)}` : "the retainer limit";
-    const spent = typeof d.spent_usd === "number" ? `$${d.spent_usd.toFixed(2)}` : "the current spend";
+    const hasBudget = typeof d.retainer_budget_usd === "number" && Number.isFinite(d.retainer_budget_usd) && d.retainer_budget_usd > 0;
+    const budget = hasBudget ? `$${d.retainer_budget_usd!.toFixed(2)}` : "the retainer limit";
+    const spent = typeof d.spent_usd === "number" && Number.isFinite(d.spent_usd) ? `$${d.spent_usd.toFixed(2)}` : "the current spend";
     const target = d.engagement_name || "this engagement";
     return {
       body:
@@ -593,6 +594,7 @@ export const PaperFace = memo(function PaperFace({
   const [eventsPage, setEventsPage] = useState(0);
   const [busyDecisionId, setBusyDecisionId] = useState<string | null>(null);
   const decisionLockRef = useRef<Set<string>>(new Set());
+  const exportAuditLockRef = useRef(false);
 
   const handleDecisionAct = async (id: string, action: "approve" | "deny", toastMsg: string) => {
     if (decisionLockRef.current.has(id)) return;
@@ -800,23 +802,46 @@ export const PaperFace = memo(function PaperFace({
 
   const useServerExport = hasV050Api(status, "receipts_export");
 
-  const activeEng = useMemo(
-    () => metering?.active_engagement || engagements.find((e) => e.id === activeEngagementId) || null,
-    [metering?.active_engagement, engagements, activeEngagementId]
-  );
-  const activeCli = useMemo(
-    () => metering?.active_client || (activeEng ? clients.find((c) => c.id === activeEng.client_id) || null : null),
-    [metering?.active_client, activeEng, clients]
-  );
+  const activeEng = useMemo(() => {
+    if (activeEngagementId) {
+      const matched = engagements.find((e) => e.id === activeEngagementId);
+      if (matched) return matched;
+      if (metering?.active_engagement?.id === activeEngagementId) return metering.active_engagement;
+      return null;
+    }
+    return metering?.active_engagement || null;
+  }, [activeEngagementId, engagements, metering?.active_engagement]);
+  const activeCli = useMemo(() => {
+    if (activeEng) {
+      return (
+        clients.find((c) => c.id === activeEng.client_id) ||
+        (metering?.active_client?.id === activeEng.client_id ? metering.active_client : null)
+      );
+    }
+    return metering?.active_client || null;
+  }, [activeEng, clients, metering?.active_client]);
   const meteringTotals = metering?.totals;
   const activeEngRow = useMemo(
     () => (activeEng && metering?.by_engagement ? metering.by_engagement.find((r) => r.engagement_id === activeEng.id) || null : null),
     [activeEng, metering?.by_engagement]
   );
-  const retainerBudgetUsd = activeEng?.retainer_budget_usd ?? meteringTotals?.retainer_budget_usd ?? 0;
-  const retainerSpentUsd = activeEng ? (activeEngRow?.cost_usd ?? 0) : (meteringTotals?.cost_usd ?? 0);
-  const retainerBurnPct = Math.max(0, Number(meteringTotals?.retainer_burn_pct ?? activeEngRow?.retainer_burn_pct ?? 0) || 0);
-  const hourlyRateUsd = activeEng?.hourly_rate_usd ?? activeCli?.default_rate_usd ?? 0;
+  const rawBudget = activeEng
+    ? (activeEng.retainer_budget_usd ?? 0)
+    : (meteringTotals?.retainer_budget_usd ?? 0);
+  const retainerBudgetUsd = Number.isFinite(Number(rawBudget)) ? Math.max(0, Number(rawBudget)) : 0;
+  const rawSpent = activeEng ? (activeEngRow?.cost_usd ?? 0) : (meteringTotals?.cost_usd ?? 0);
+  const retainerSpentUsd = Number.isFinite(Number(rawSpent)) ? Math.max(0, Number(rawSpent)) : 0;
+  const rawBurn =
+    retainerBudgetUsd > 0
+      ? activeEng
+        ? (activeEngRow?.retainer_burn_pct ??
+            (metering?.active_engagement?.id === activeEng.id ? meteringTotals?.retainer_burn_pct : undefined) ??
+            (retainerSpentUsd / retainerBudgetUsd) * 100)
+        : (meteringTotals?.retainer_burn_pct ?? (retainerSpentUsd / retainerBudgetUsd) * 100)
+      : 0;
+  const retainerBurnPct = retainerBudgetUsd > 0 && Number.isFinite(Number(rawBurn)) ? Math.max(0, Number(rawBurn)) : 0;
+  const rawRate = activeEng?.hourly_rate_usd ?? activeCli?.default_rate_usd ?? 0;
+  const hourlyRateUsd = Number.isFinite(Number(rawRate)) ? Math.max(0, Number(rawRate)) : 0;
 
   const handleRowReceiptExport = async (job: BriefJob, idx: number, format: "md" | "json") => {
     const id = job.id || job.thread_id || `receipt-${idx}`;
@@ -922,9 +947,15 @@ export const PaperFace = memo(function PaperFace({
                         className="max-md:min-h-11"
                         disabled={exportingAudit}
                         onClick={async () => {
+                          if (exportAuditLockRef.current) return;
+                          exportAuditLockRef.current = true;
                           setExportingAudit(true);
-                          await onExportAuditBundle("json");
-                          setExportingAudit(false);
+                          try {
+                            await onExportAuditBundle("json");
+                          } finally {
+                            exportAuditLockRef.current = false;
+                            setExportingAudit(false);
+                          }
                         }}
                       >
                         <FileCheck2 className="size-3.5" strokeWidth={1.5} aria-hidden />
@@ -1026,7 +1057,7 @@ export const PaperFace = memo(function PaperFace({
                     </div>
                   </div>
 
-                  {retainerBudgetUsd > 0 && (
+                  {retainerBudgetUsd > 0 ? (
                     <div className="grid gap-1.5">
                       <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
                         <span className="font-medium text-ink">
@@ -1059,6 +1090,15 @@ export const PaperFace = memo(function PaperFace({
                         />
                       </div>
                     </div>
+                  ) : (
+                    <p
+                      id="retainer-empty-state"
+                      className="rounded-sm border border-hairline bg-board/40 px-3 py-2 text-xs text-ink-2"
+                    >
+                      {activeEng
+                        ? "No retainer cap set ($0 or uncapped). Tracking token spend and billable value."
+                        : "No engagement retainer selected. Tracking workspace usage totals."}
+                    </p>
                   )}
 
                   <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -1213,7 +1253,7 @@ export const PaperFace = memo(function PaperFace({
                                 {[lead.client_name, lead.engagement_name].filter(Boolean).join(" / ") || "Active engagement"}
                               </span>
                             </span>
-                            {typeof lead.retainer_budget_usd === "number" && (
+                            {typeof lead.retainer_budget_usd === "number" && lead.retainer_budget_usd > 0 && (
                               <span className="mono text-ink">
                                 Spent {formatUsd(lead.spent_usd ?? 0)} of {formatUsd(lead.retainer_budget_usd)} cap
                               </span>

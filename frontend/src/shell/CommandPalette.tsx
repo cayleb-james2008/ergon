@@ -69,10 +69,9 @@ import { detectWorkspaceWorkflow, extractCitations, relTime } from "@/lib/words"
 
 function buildChunkJumpTarget(path: string, ch: VaultChunkHit): string {
   const sheetPart = ch.sheet ? `?sheet=${encodeURIComponent(ch.sheet)}` : "";
-  const linePart =
-    ch.line_start > 0
-      ? `#L${ch.line_start}${ch.line_end > ch.line_start ? `-L${ch.line_end}` : ""}`
-      : "";
+  const start = Number.isFinite(ch.line_start) && ch.line_start > 0 ? Math.floor(ch.line_start) : 0;
+  const end = Number.isFinite(ch.line_end) && ch.line_end > start ? Math.floor(ch.line_end) : 0;
+  const linePart = start > 0 ? `#L${start}${end > start ? `-L${end}` : ""}` : "";
   return `${path}${sheetPart}${linePart}`;
 }
 
@@ -157,39 +156,54 @@ export const CommandPalette = memo(function CommandPalette({
   const [fileHits, setFileHits] = useState<VaultFileHit[]>([]);
   const [indexStats, setIndexStats] = useState<VaultIndexStats | null>(null);
   const [reindexing, setReindexing] = useState(false);
+  const [reindexError, setReindexError] = useState("");
   const [searchNonce, setSearchNonce] = useState(0);
   const [ledgerReceipts, setLedgerReceipts] = useState<BriefJob[]>([]);
   const [searching, setSearching] = useState(false);
+  const searchSeqRef = useRef(0);
+  const searchAbortRef = useRef<AbortController | null>(null);
+  const reindexLockRef = useRef(false);
 
   useEffect(() => {
     if (!open) {
+      searchSeqRef.current += 1;
+      searchAbortRef.current?.abort();
+      searchAbortRef.current = null;
       setQuery("");
       setRemoteHits([]);
       setFileHits([]);
       setSearching(false);
+      setReindexError("");
       return;
     }
+    setReindexError("");
     let cancelled = false;
-    call<{ receipts?: BriefJob[] }>("/api/receipts?limit=30").then((r) => {
-      if (!cancelled && r.ok && Array.isArray(r.data.receipts)) {
+    const controller = new AbortController();
+    call<{ receipts?: BriefJob[] }>("/api/receipts?limit=30", { signal: controller.signal }).then((r) => {
+      if (!cancelled && !controller.signal.aborted && r.ok && Array.isArray(r.data.receipts)) {
         setLedgerReceipts(r.data.receipts);
       }
     });
     if (hasV050Api(status, "search")) {
-      searchVault({ q: "", limit: 1 }).then((r) => {
-        if (!cancelled && r.ok && r.data.index_stats) {
+      searchVault({ q: "", limit: 1, signal: controller.signal }).then((r) => {
+        if (!cancelled && !controller.signal.aborted && r.ok && r.data.index_stats) {
           setIndexStats(r.data.index_stats);
         }
       });
     }
     return () => {
       cancelled = true;
+      controller.abort();
     };
   }, [open, status]);
 
   // Query server indexed search (GET /api/search?q=...) on v0.5.0+ when typing >= 2 chars.
   useEffect(() => {
     const q = query.trim();
+    searchSeqRef.current += 1;
+    const reqSeq = searchSeqRef.current;
+    searchAbortRef.current?.abort();
+    searchAbortRef.current = null;
     if (!open || q.length < 2 || !hasV050Api(status, "search")) {
       setRemoteHits([]);
       setFileHits([]);
@@ -198,6 +212,7 @@ export const CommandPalette = memo(function CommandPalette({
     }
     let cancelled = false;
     const controller = new AbortController();
+    searchAbortRef.current = controller;
     setSearching(true);
     const timer = window.setTimeout(async () => {
       const r = await searchVault({
@@ -206,9 +221,13 @@ export const CommandPalette = memo(function CommandPalette({
         limit: 16,
         signal: controller.signal,
       });
-      if (cancelled) return;
+      if (cancelled || controller.signal.aborted || reqSeq !== searchSeqRef.current) return;
       setSearching(false);
-      if (!r.ok) return;
+      if (!r.ok) {
+        setFileHits([]);
+        setRemoteHits([]);
+        return;
+      }
       if (r.data.index_stats) {
         setIndexStats(r.data.index_stats);
       }
@@ -281,31 +300,46 @@ export const CommandPalette = memo(function CommandPalette({
     return () => {
       cancelled = true;
       controller.abort();
+      if (searchAbortRef.current === controller) {
+        searchAbortRef.current = null;
+      }
       window.clearTimeout(timer);
     };
   }, [open, query, searchMode, searchNonce, status]);
 
   const handleReindexVault = async () => {
-    if (reindexing) return;
+    if (reindexLockRef.current || reindexing) return;
+    reindexLockRef.current = true;
     setReindexing(true);
-    const r = await reindexVault();
-    setReindexing(false);
-    if (!r.ok) {
-      toast.error(r.error || "Could not reindex workspace vault.");
-      return;
+    setReindexError("");
+    try {
+      const r = await reindexVault();
+      if (!r.ok) {
+        const msg = r.error || "Could not reindex workspace vault.";
+        setReindexError(msg);
+        toast.error(msg);
+        return;
+      }
+      if (r.data.index_stats) {
+        setIndexStats(r.data.index_stats);
+      } else {
+        setIndexStats((prev) => ({
+          total_files: r.data.indexed_files,
+          total_chunks: r.data.total_chunks,
+          indexed_bytes: r.data.indexed_bytes ?? prev?.indexed_bytes ?? 0,
+          semantic_enabled: r.data.semantic_enabled ?? prev?.semantic_enabled ?? true,
+        }));
+      }
+      toast.success(`Indexed ${r.data.indexed_files} files (${r.data.total_chunks} chunks) in ${r.data.elapsed_ms} ms.`);
+      setSearchNonce((n) => n + 1);
+    } catch {
+      const msg = "Could not reindex workspace vault.";
+      setReindexError(msg);
+      toast.error(msg);
+    } finally {
+      reindexLockRef.current = false;
+      setReindexing(false);
     }
-    if (r.data.index_stats) {
-      setIndexStats(r.data.index_stats);
-    } else {
-      setIndexStats((prev) => ({
-        total_files: r.data.indexed_files,
-        total_chunks: r.data.total_chunks,
-        indexed_bytes: r.data.indexed_bytes ?? prev?.indexed_bytes ?? 0,
-        semantic_enabled: r.data.semantic_enabled ?? prev?.semantic_enabled ?? true,
-      }));
-    }
-    toast.success(`Indexed ${r.data.indexed_files} files (${r.data.total_chunks} chunks) in ${r.data.elapsed_ms} ms.`);
-    setSearchNonce((n) => n + 1);
   };
 
   const qLower = query.trim().toLowerCase();
@@ -540,6 +574,24 @@ export const CommandPalette = memo(function CommandPalette({
               </Button>
             </div>
           </div>
+          {reindexError && (
+            <div
+              id="palette-reindex-error"
+              role="alert"
+              className="flex items-center justify-between gap-2 border-b border-hairline bg-status-stopped-bg px-3 py-1.5 text-xs text-status-stopped-fg"
+            >
+              <span>{reindexError}</span>
+              <Button
+                type="button"
+                size="xs"
+                variant="ghost"
+                aria-label="Dismiss reindex error"
+                onClick={() => setReindexError("")}
+              >
+                Dismiss
+              </Button>
+            </div>
+          )}
           <CommandList className="max-h-[58vh] p-1.5">
             <CommandEmpty className="py-6 text-center text-sm text-ink-2">
               {searching ? "Searching indexed workspace…" : "No matching files, receipts, workflows, or actions."}

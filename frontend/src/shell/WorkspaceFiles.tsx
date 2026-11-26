@@ -72,7 +72,7 @@ import {
   type WorkspaceFile,
   type WorkspaceFileContent,
 } from "@/lib/api";
-import { FileEditor, MarkdownView, inspectDelimited, parseCsv, parseSortableNumber } from "@/shell/FileEditor";
+import { FileEditor, MarkdownView, clampLineBounds, inspectDelimited, parseCsv, parseSortableNumber } from "@/shell/FileEditor";
 export { parseCsv };
 import { computeLineDiff, normalizeServerDiff } from "@/lib/diff";
 import { exportClientPackDownload, exportReceiptDownload } from "@/lib/receiptExport";
@@ -929,10 +929,9 @@ function parseViewerTarget(raw: string): { path: string; sheet?: string; line?: 
 
 function buildVaultJumpTarget(path: string, ch: VaultChunkHit): string {
   const sheetPart = ch.sheet ? `?sheet=${encodeURIComponent(ch.sheet)}` : "";
-  const linePart =
-    ch.line_start > 0
-      ? `#L${ch.line_start}${ch.line_end > ch.line_start ? `-L${ch.line_end}` : ""}`
-      : "";
+  const start = Number.isFinite(ch.line_start) && ch.line_start > 0 ? Math.floor(ch.line_start) : 0;
+  const end = Number.isFinite(ch.line_end) && ch.line_end > start ? Math.floor(ch.line_end) : 0;
+  const linePart = start > 0 ? `#L${start}${end > start ? `-L${end}` : ""}` : "";
   return `${path}${sheetPart}${linePart}`;
 }
 
@@ -947,32 +946,36 @@ function SourceLineView({
 }) {
   const targetRef = useRef<HTMLDivElement>(null);
   const lines = useMemo(() => String(content ?? "").split(/\r?\n/), [content]);
+  const { line: clampedStart, endLine: clampedEnd } = useMemo(
+    () => clampLineBounds(lines.length, highlightLine, highlightEnd),
+    [lines.length, highlightLine, highlightEnd]
+  );
 
   useEffect(() => {
-    if (!highlightLine) return;
+    if (!clampedStart) return;
     const scrollTarget = () => {
       targetRef.current?.scrollIntoView({ block: "center", behavior: "auto" });
     };
     scrollTarget();
     const raf = window.requestAnimationFrame(scrollTarget);
     return () => window.cancelAnimationFrame(raf);
-  }, [highlightLine, content]);
+  }, [clampedStart, content]);
 
-  const endLine = highlightEnd && highlightEnd >= (highlightLine ?? 0) ? highlightEnd : highlightLine;
+  const endLine = clampedEnd && clampedEnd >= (clampedStart ?? 0) ? clampedEnd : clampedStart;
 
   return (
     <div
       id="file-source-lines"
-      data-highlighted-line={highlightLine ?? undefined}
+      data-highlighted-line={clampedStart ?? undefined}
       className="overflow-x-auto rounded-sm border border-hairline bg-board/40 font-mono text-xs leading-5"
     >
       {lines.map((line, idx) => {
         const lineNo = idx + 1;
         const active =
-          typeof highlightLine === "number" &&
-          lineNo >= highlightLine &&
-          lineNo <= (endLine ?? highlightLine);
-        const isAnchor = lineNo === highlightLine;
+          typeof clampedStart === "number" &&
+          lineNo >= clampedStart &&
+          lineNo <= (endLine ?? clampedStart);
+        const isAnchor = lineNo === clampedStart;
         return (
           <div
             key={lineNo}
@@ -1092,6 +1095,24 @@ export function FileViewerModal({
     setRevisions(norm);
   }, [status]);
 
+  const hasLineTarget = typeof target.line === "number" && Number.isFinite(target.line);
+  const totalContentLines = useMemo(
+    () => (data && !data.is_binary ? Math.max(1, String(data.content ?? "").split(/\r?\n/).length) : 0),
+    [data]
+  );
+  const { line: clampedLine, endLine: clampedEndLine } = useMemo(() => {
+    if (!hasLineTarget) return { line: undefined, endLine: undefined };
+    if (totalContentLines > 0) {
+      return clampLineBounds(totalContentLines, target.line, target.endLine);
+    }
+    const start = Math.max(1, Math.floor(target.line!));
+    const end =
+      typeof target.endLine === "number" && Number.isFinite(target.endLine)
+        ? Math.max(start, Math.floor(target.endLine))
+        : undefined;
+    return { line: start, endLine: end };
+  }, [hasLineTarget, totalContentLines, target.line, target.endLine]);
+
   useEffect(() => {
     setEditorDirty(false);
     setPendingNav(null);
@@ -1103,10 +1124,10 @@ export function FileViewerModal({
       setHistoryErr("");
       return;
     }
-    setTab(target.line ? "source" : "preview");
+    setTab(hasLineTarget ? "source" : "preview");
     void loadContent(cleanPath, target.sheet);
     void loadHistory(cleanPath);
-  }, [cleanPath, target.line, target.sheet, loadContent, loadHistory]);
+  }, [cleanPath, hasLineTarget, target.line, target.sheet, loadContent, loadHistory]);
 
   const ext = (data?.ext || cleanPath?.split(".").pop() || "").toLowerCase();
 
@@ -1262,9 +1283,9 @@ export function FileViewerModal({
                 #{target.sheet}
               </Badge>
             )}
-            {target.line && (
+            {clampedLine && (
               <Badge variant="outline" size="sm" className="mono shrink-0">
-                L{target.line}{target.endLine ? ` to L${target.endLine}` : ""}
+                L{clampedLine}{clampedEndLine ? ` to L${clampedEndLine}` : ""}
               </Badge>
             )}
           </DialogTitle>
@@ -1315,7 +1336,7 @@ export function FileViewerModal({
               className="min-h-11 px-3 md:min-h-8"
               onClick={() => requestTabChange("source")}
             >
-              {target.line ? `Source (L${target.line})` : "Lines"}
+              {clampedLine ? `Source (L${clampedLine})` : "Lines"}
             </SegmentedControlItem>
             <SegmentedControlItem
               data-id="history"
@@ -1465,6 +1486,7 @@ export function FileViewerModal({
               extractedFormat={data.extracted?.format}
               extractedKind={data.extracted?.kind}
               sheet={data.extracted?.sheet}
+              jumpToLine={clampedLine}
               onDirtyChange={setEditorDirty}
               onReloadFromServer={async () => {
                 return await loadContent(cleanPath, data.extracted?.sheet ?? undefined, true);
@@ -1533,8 +1555,8 @@ export function FileViewerModal({
                 ) : tab === "source" ? (
                   <SourceLineView
                     content={data.content}
-                    highlightLine={target.line}
-                    highlightEnd={target.endLine}
+                    highlightLine={clampedLine}
+                    highlightEnd={clampedEndLine}
                   />
                 ) : data.extracted?.format === "csv" ? (
                   <CsvTableView content={data.content} />
@@ -1588,10 +1610,15 @@ export function WorkspaceFilesBody({
   const [indexStats, setIndexStats] = useState<VaultIndexStats | null>(null);
   const [vaultSearching, setVaultSearching] = useState(false);
   const [reindexing, setReindexing] = useState(false);
+  const [reindexErr, setReindexErr] = useState("");
   const [searchNonce, setSearchNonce] = useState(0);
   const [extFilter, setExtFilter] = useState<"all" | "csv" | "md" | "json" | "other">("all");
   const [page, setPage] = useState(0);
   const [dragOver, setDragOver] = useState(false);
+  const searchSeqRef = useRef(0);
+  const searchAbortRef = useRef<AbortController | null>(null);
+  const reindexLockRef = useRef(false);
+  const aggLockRef = useRef(false);
 
   const [aggOpen, setAggOpen] = useState(false);
   const [aggGlob, setAggGlob] = useState("*.csv");
@@ -1615,18 +1642,24 @@ export function WorkspaceFilesBody({
   useEffect(() => {
     if (!embedded && !isOpen) return;
     let cancelled = false;
-    searchVault({ q: "", limit: 1 }).then((r) => {
-      if (!cancelled && r.ok && r.data.index_stats) {
+    const controller = new AbortController();
+    searchVault({ q: "", limit: 1, signal: controller.signal }).then((r) => {
+      if (!cancelled && !controller.signal.aborted && r.ok && r.data.index_stats) {
         setIndexStats(r.data.index_stats);
       }
     });
     return () => {
       cancelled = true;
+      controller.abort();
     };
   }, [embedded, isOpen, files.length]);
 
   useEffect(() => {
     const q = query.trim();
+    searchSeqRef.current += 1;
+    const reqSeq = searchSeqRef.current;
+    searchAbortRef.current?.abort();
+    searchAbortRef.current = null;
     if ((!embedded && !isOpen) || q.length < 2) {
       setVaultHits([]);
       setVaultSearching(false);
@@ -1634,6 +1667,7 @@ export function WorkspaceFilesBody({
     }
     let cancelled = false;
     const controller = new AbortController();
+    searchAbortRef.current = controller;
     setVaultSearching(true);
     const timer = window.setTimeout(async () => {
       const r = await searchVault({
@@ -1643,7 +1677,7 @@ export function WorkspaceFilesBody({
         limit: 20,
         signal: controller.signal,
       });
-      if (cancelled) return;
+      if (cancelled || controller.signal.aborted || reqSeq !== searchSeqRef.current) return;
       setVaultSearching(false);
       if (!r.ok) {
         setVaultHits([]);
@@ -1685,34 +1719,54 @@ export function WorkspaceFilesBody({
     return () => {
       cancelled = true;
       controller.abort();
+      if (searchAbortRef.current === controller) {
+        searchAbortRef.current = null;
+      }
       window.clearTimeout(timer);
     };
   }, [query, searchMode, searchNonce, embedded, isOpen, files.length]);
 
   const handleReindexVault = async () => {
-    if (reindexing) return;
+    if (reindexLockRef.current || reindexing) return;
+    reindexLockRef.current = true;
     setReindexing(true);
-    const r = await reindexVault();
-    setReindexing(false);
-    if (!r.ok) {
-      toast.error(r.error || "Could not reindex workspace vault.");
-      return;
+    setReindexErr("");
+    try {
+      const r = await reindexVault();
+      if (!r.ok) {
+        const msg = r.error || "Could not reindex workspace vault.";
+        setReindexErr(msg);
+        toast.error(msg);
+        return;
+      }
+      if (r.data.index_stats) {
+        setIndexStats(r.data.index_stats);
+      } else {
+        setIndexStats((prev) => ({
+          total_files: r.data.indexed_files,
+          total_chunks: r.data.total_chunks,
+          indexed_bytes: r.data.indexed_bytes ?? prev?.indexed_bytes ?? 0,
+          semantic_enabled: r.data.semantic_enabled ?? prev?.semantic_enabled ?? true,
+        }));
+      }
+      toast.success(`Indexed ${r.data.indexed_files} files (${r.data.total_chunks} chunks) in ${r.data.elapsed_ms} ms.`);
+      setSearchNonce((n) => n + 1);
+    } catch {
+      const msg = "Could not reindex workspace vault.";
+      setReindexErr(msg);
+      toast.error(msg);
+    } finally {
+      reindexLockRef.current = false;
+      setReindexing(false);
     }
-    if (r.data.index_stats) {
-      setIndexStats(r.data.index_stats);
-    } else {
-      setIndexStats((prev) => ({
-        total_files: r.data.indexed_files,
-        total_chunks: r.data.total_chunks,
-        indexed_bytes: r.data.indexed_bytes ?? prev?.indexed_bytes ?? 0,
-        semantic_enabled: r.data.semantic_enabled ?? prev?.semantic_enabled ?? true,
-      }));
-    }
-    toast.success(`Indexed ${r.data.indexed_files} files (${r.data.total_chunks} chunks) in ${r.data.elapsed_ms} ms.`);
-    setSearchNonce((n) => n + 1);
   };
 
   const runVaultAggregate = async (savePath?: string) => {
+    if (aggLockRef.current || aggBusy) return;
+    if (savePath !== undefined && !savePath.trim()) {
+      setAggErr("Enter a filename to save the rollup CSV.");
+      return;
+    }
     const cleanGlob = aggGlob.trim() || "*.csv";
     const groupCols = aggGroupBy
       .split(",")
@@ -1722,30 +1776,40 @@ export function WorkspaceFilesBody({
     const alias =
       aggAlias.trim() ||
       `${aggFn}_${targetCol === "*" ? "rows" : targetCol.toLowerCase().replace(/[^a-z0-9]+/g, "_")}`;
+    aggLockRef.current = true;
     setAggBusy(true);
     setAggErr("");
-    const res = await aggregateVault({
-      glob: cleanGlob,
-      ...(aggSheet.trim() ? { sheet: aggSheet.trim() } : {}),
-      ...(aggWhereCol.trim() && aggWhereVal.trim()
-        ? { where: [{ col: aggWhereCol.trim(), op: aggWhereOp, value: aggWhereVal.trim() }] }
-        : {}),
-      ...(groupCols.length ? { group_by: groupCols } : {}),
-      aggregates: [{ col: targetCol, fn: aggFn, as: alias }],
-      sort: { col: alias, dir: "desc" },
-      limit: 500,
-      ...(savePath ? { save_as: savePath } : {}),
-    });
-    setAggBusy(false);
-    if (!res.ok) {
-      setAggErr(res.error || "Multi-file rollup failed.");
-      toast.error(res.error || "Multi-file rollup failed.");
-      return;
-    }
-    setAggResult(res.data);
-    if (res.data.saved_path) {
-      toast.success(`Saved ${res.data.saved_path} to workspace.`);
-      onRefresh();
+    try {
+      const res = await aggregateVault({
+        glob: cleanGlob,
+        ...(aggSheet.trim() ? { sheet: aggSheet.trim() } : {}),
+        ...(aggWhereCol.trim() && aggWhereVal.trim()
+          ? { where: [{ col: aggWhereCol.trim(), op: aggWhereOp, value: aggWhereVal.trim() }] }
+          : {}),
+        ...(groupCols.length ? { group_by: groupCols } : {}),
+        aggregates: [{ col: targetCol, fn: aggFn, as: alias }],
+        sort: { col: alias, dir: "desc" },
+        limit: 500,
+        ...(savePath ? { save_as: savePath.trim() } : {}),
+      });
+      if (!res.ok) {
+        const msg = res.error || "Multi-file rollup failed.";
+        setAggErr(msg);
+        toast.error(msg);
+        return;
+      }
+      setAggResult(res.data);
+      if (res.data.saved_path) {
+        toast.success(`Saved ${res.data.saved_path} to workspace.`);
+        onRefresh();
+      }
+    } catch {
+      const msg = "Multi-file rollup failed.";
+      setAggErr(msg);
+      toast.error(msg);
+    } finally {
+      aggLockRef.current = false;
+      setAggBusy(false);
     }
   };
 
@@ -2034,6 +2098,24 @@ export function WorkspaceFilesBody({
       )}
 
       {err && <p role="alert" className="text-sm text-destructive-foreground">{err}</p>}
+      {reindexErr && (
+        <div
+          id="workspace-reindex-error"
+          role="alert"
+          className="flex items-center justify-between gap-2 rounded-sm border border-hairline bg-status-stopped-bg px-3 py-2 text-xs text-status-stopped-fg"
+        >
+          <span>{reindexErr}</span>
+          <Button
+            type="button"
+            size="xs"
+            variant="ghost"
+            aria-label="Dismiss reindex error"
+            onClick={() => setReindexErr("")}
+          >
+            Dismiss
+          </Button>
+        </div>
+      )}
 
       {!files.length ? (
         <p className="rounded-card border border-hairline bg-board/40 p-3.5 text-sm text-ink-2">
@@ -2167,7 +2249,13 @@ export function WorkspaceFilesBody({
         </>
       )}
 
-      <Dialog open={aggOpen} onOpenChange={setAggOpen}>
+      <Dialog
+        open={aggOpen}
+        onOpenChange={(next) => {
+          setAggOpen(next);
+          if (next) setAggErr("");
+        }}
+      >
         <DialogContent id="vault-aggregate-dialog" className="max-h-[88vh] max-w-3xl overflow-y-auto">
           <DialogHeader className="pr-10 text-left">
             <DialogTitle className="flex items-center gap-2 text-title font-medium text-ink">
@@ -2348,9 +2436,22 @@ export function WorkspaceFilesBody({
             </div>
 
             {aggErr && (
-              <p role="alert" className="text-xs text-status-stopped-fg">
-                {aggErr}
-              </p>
+              <div
+                id="vault-agg-error"
+                role="alert"
+                className="flex items-center justify-between gap-2 rounded-sm border border-hairline bg-status-stopped-bg px-3 py-2 text-xs text-status-stopped-fg"
+              >
+                <span>{aggErr}</span>
+                <Button
+                  type="button"
+                  size="xs"
+                  variant="ghost"
+                  aria-label="Dismiss rollup error"
+                  onClick={() => setAggErr("")}
+                >
+                  Dismiss
+                </Button>
+              </div>
             )}
 
             {aggResult && (

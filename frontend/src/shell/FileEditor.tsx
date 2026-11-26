@@ -345,6 +345,24 @@ export function parseSortableNumber(raw: string): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+/** Clamp a 1-based line (and optional end line) to valid [1, totalLines] bounds. */
+export function clampLineBounds(
+  totalLines: number,
+  line?: number,
+  endLine?: number
+): { line?: number; endLine?: number } {
+  if (typeof line !== "number" || !Number.isFinite(line) || totalLines <= 0) {
+    return { line: undefined, endLine: undefined };
+  }
+  const safeTotal = Math.max(1, Math.floor(totalLines));
+  const clampedStart = Math.max(1, Math.min(safeTotal, Math.floor(line)));
+  const clampedEnd =
+    typeof endLine === "number" && Number.isFinite(endLine)
+      ? Math.max(clampedStart, Math.min(safeTotal, Math.floor(endLine)))
+      : undefined;
+  return { line: clampedStart, endLine: clampedEnd };
+}
+
 export type FileEditorProps = {
   filePath: string;
   initialContent: string;
@@ -354,6 +372,7 @@ export type FileEditorProps = {
   extractedFormat?: "markdown" | "csv";
   extractedKind?: string;
   sheet?: string | null;
+  jumpToLine?: number;
   onSaved: (res: { path: string; content: string; size: number; mtime_ms: number; sha256: string }) => void;
   onReloadFromServer: () => Promise<boolean | void>;
   onDirtyChange?: (dirty: boolean) => void;
@@ -370,6 +389,7 @@ export function FileEditor({
   extractedFormat,
   extractedKind,
   sheet,
+  jumpToLine,
   onSaved,
   onReloadFromServer,
   onDirtyChange,
@@ -388,6 +408,8 @@ export function FileEditor({
   const [conflictSha, setConflictSha] = useState<string | null>(null);
   const [saveErr, setSaveErr] = useState("");
   const saveLockRef = useRef(false);
+  const queryLockRef = useRef(false);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const prevFilePathRef = useRef(filePath);
 
   // Text / Markdown editor state
@@ -487,6 +509,30 @@ export function FileEditor({
   useEffect(() => {
     onDirtyChange?.(dirty);
   }, [dirty, onDirtyChange]);
+
+  useEffect(() => {
+    if (isTabular && !rawCsvMode) return;
+    const lines = textDraft.split(/\r?\n/);
+    const { line: clampedLine } = clampLineBounds(lines.length, jumpToLine);
+    if (!clampedLine) return;
+    const el = textareaRef.current;
+    if (!el) return;
+    let startOffset = 0;
+    for (let i = 0; i < clampedLine - 1; i++) {
+      startOffset += lines[i].length + 1;
+    }
+    const endOffset = startOffset + (lines[clampedLine - 1]?.length ?? 0);
+    const raf = window.requestAnimationFrame(() => {
+      try {
+        el.setSelectionRange(startOffset, endOffset);
+      } catch {
+        // Ignore selection errors if textarea is not focusable
+      }
+      const lineHeight = 20;
+      el.scrollTop = Math.max(0, (clampedLine - 3) * lineHeight);
+    });
+    return () => window.cancelAnimationFrame(raf);
+  }, [filePath, jumpToLine, isTabular, rawCsvMode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!dirty) return;
@@ -628,42 +674,48 @@ export function FileEditor({
   };
 
   const runTableQuery = async (saveAsPath?: string) => {
+    if (queryLockRef.current || queryBusy) return;
+    queryLockRef.current = true;
     setQueryBusy(true);
     setQueryErr("");
-    const where =
-      whereCol && whereVal.trim() !== ""
-        ? [{ col: whereCol, op: whereOp, value: whereVal.trim() }]
-        : undefined;
-    const groupBy = groupCol ? [groupCol] : undefined;
-    const aggAlias = aggFn && aggCol ? `${aggFn}_${aggCol.toLowerCase().replace(/[^a-z0-9]+/g, "_")}` : "";
-    const aggregates =
-      aggFn && aggCol ? [{ col: aggCol, fn: aggFn, as: aggAlias }] : undefined;
-    const sort = aggAlias
-      ? { col: aggAlias, dir: querySortDir }
-      : groupCol
-        ? { col: groupCol, dir: querySortDir }
-        : undefined;
+    try {
+      const where =
+        whereCol && whereVal.trim() !== ""
+          ? [{ col: whereCol, op: whereOp, value: whereVal.trim() }]
+          : undefined;
+      const groupBy = groupCol ? [groupCol] : undefined;
+      const aggAlias = aggFn && aggCol ? `${aggFn}_${aggCol.toLowerCase().replace(/[^a-z0-9]+/g, "_")}` : "";
+      const aggregates =
+        aggFn && aggCol ? [{ col: aggCol, fn: aggFn, as: aggAlias }] : undefined;
+      const sort = aggAlias
+        ? { col: aggAlias, dir: querySortDir }
+        : groupCol
+          ? { col: groupCol, dir: querySortDir }
+          : undefined;
 
-    const res = await queryTable({
-      path: filePath,
-      ...(sheet ? { sheet } : {}),
-      where,
-      group_by: groupBy,
-      aggregates,
-      sort,
-      limit: 500,
-      ...(saveAsPath ? { save_as: saveAsPath } : {}),
-    });
-    setQueryBusy(false);
-    if (!res.ok) {
-      setQueryErr(res.error || "Query could not run.");
-      toast.error(res.error || "Table query failed.");
-      return;
-    }
-    setQueryResult(res.data);
-    if (res.data.saved_path) {
-      toast.success(`Saved ${res.data.saved_path} to workspace.`);
-      onWorkspaceMutated?.();
+      const res = await queryTable({
+        path: filePath,
+        ...(sheet ? { sheet } : {}),
+        where,
+        group_by: groupBy,
+        aggregates,
+        sort,
+        limit: 500,
+        ...(saveAsPath ? { save_as: saveAsPath } : {}),
+      });
+      if (!res.ok) {
+        setQueryErr(res.error || "Query could not run.");
+        toast.error(res.error || "Table query failed.");
+        return;
+      }
+      setQueryResult(res.data);
+      if (res.data.saved_path) {
+        toast.success(`Saved ${res.data.saved_path} to workspace.`);
+        onWorkspaceMutated?.();
+      }
+    } finally {
+      queryLockRef.current = false;
+      setQueryBusy(false);
     }
   };
 
@@ -1273,6 +1325,7 @@ export function FileEditor({
                 Editor
               </label>
               <Textarea
+                ref={textareaRef}
                 id="file-editor-textarea"
                 aria-label={`Edit ${filePath}`}
                 readOnly={isExtracted}

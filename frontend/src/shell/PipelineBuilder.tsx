@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   ArrowDown,
@@ -266,8 +266,32 @@ export function validatePipelineSteps(steps: PipelineStepSpec[]): PipelineValida
     }
 
     const stringsToCheck: string[] = [];
-    if (st.for_each) {
-      stringsToCheck.push(st.for_each);
+    if (st.for_each !== undefined) {
+      if (st.kind === "checkpoint") {
+        stepErrs.push("Human checkpoint steps do not support batch fan-out (for_each).");
+      } else if (typeof st.for_each === "string") {
+        const trimmedForEach = st.for_each.trim();
+        if (!trimmedForEach) {
+          stepErrs.push("Batch fan-out (for_each) cannot be empty.");
+        } else {
+          if (trimmedForEach.startsWith("[")) {
+            try {
+              const parsed = JSON.parse(trimmedForEach);
+              if (!Array.isArray(parsed) || parsed.length === 0 || parsed.length > 50) {
+                stepErrs.push("Batch fan-out (for_each) array must have 1 to 50 items.");
+              }
+            } catch {
+              stepErrs.push("Batch fan-out (for_each) JSON array is invalid.");
+            }
+          }
+          stringsToCheck.push(st.for_each);
+        }
+      } else if (Array.isArray(st.for_each)) {
+        const arr = st.for_each as unknown[];
+        if (arr.length === 0 || arr.length > 50) {
+          stepErrs.push("Batch fan-out (for_each) array must have 1 to 50 items.");
+        }
+      }
     }
     if (typeof st.when === "string" && st.when.startsWith("expr:") && !st.when.slice(5).trim()) {
       stepErrs.push("Condition expression after expr: cannot be empty.");
@@ -445,25 +469,60 @@ export function PipelineBuilder({
 }) {
   const [newArgKey, setNewArgKey] = useState<Record<number, string>>({});
   const [fetchedConnectors, setFetchedConnectors] = useState<OutboundConnector[]>([]);
+  const [connectorsErr, setConnectorsErr] = useState(false);
   const [validatingDag, setValidatingDag] = useState(false);
   const [dagResult, setDagResult] = useState<ApiPipelineValidationResult | null>(null);
+  const validateLockRef = useRef(false);
+  const validateSeqRef = useRef(0);
+  const validatedSigRef = useRef<string | null>(null);
   const validation = useMemo(() => validatePipelineSteps(steps), [steps]);
+  const stepsSig = useMemo(() => JSON.stringify(steps), [steps]);
 
   useEffect(() => {
-    if (outboundConnectors !== undefined) return;
+    if (outboundConnectors !== undefined) {
+      setConnectorsErr(false);
+      return;
+    }
     let active = true;
-    void listConnectors().then((res) => {
-      if (!active || !res.ok) return;
-      setFetchedConnectors(res.data.outbound ?? []);
-    });
+    void listConnectors()
+      .then((res) => {
+        if (!active) return;
+        if (!res.ok) {
+          setConnectorsErr(true);
+          setFetchedConnectors([]);
+          return;
+        }
+        setConnectorsErr(false);
+        setFetchedConnectors(Array.isArray(res.data?.outbound) ? res.data.outbound : []);
+      })
+      .catch(() => {
+        if (!active) return;
+        setConnectorsErr(true);
+        setFetchedConnectors([]);
+      });
     return () => {
       active = false;
     };
   }, [outboundConnectors, steps.length]);
 
-  const connectors = outboundConnectors ?? fetchedConnectors;
+  useEffect(() => {
+    if (validatedSigRef.current !== null && validatedSigRef.current !== stepsSig) {
+      validateSeqRef.current += 1;
+      validatedSigRef.current = null;
+      setDagResult(null);
+    }
+  }, [stepsSig]);
+
+  const connectors = useMemo(() => {
+    const raw = Array.isArray(outboundConnectors) ? outboundConnectors : fetchedConnectors;
+    return Array.isArray(raw)
+      ? raw.filter((c): c is OutboundConnector => Boolean(c && typeof c.id === "string" && c.id.trim()))
+      : [];
+  }, [outboundConnectors, fetchedConnectors]);
 
   const commitSteps = (next: PipelineStepSpec[]) => {
+    validateSeqRef.current += 1;
+    validatedSigRef.current = null;
     setDagResult(null);
     onChange(next);
   };
@@ -580,34 +639,39 @@ export function PipelineBuilder({
   };
 
   const handleValidateDag = async () => {
-    if (validatingDag) return;
+    if (validateLockRef.current || validatingDag) return;
+    validateLockRef.current = true;
     setValidatingDag(true);
+    const reqSeq = ++validateSeqRef.current;
+    const reqSig = stepsSig;
     try {
       const localCheck = validatePipelineSteps(steps);
       const apiRes = await validatePipeline(steps);
+      if (reqSeq !== validateSeqRef.current) return;
+      validatedSigRef.current = reqSig;
       if (apiRes.ok) {
         const srv = apiRes.data;
         const mergedErrors = Array.from(
           new Set([
-            ...srv.errors,
+            ...(Array.isArray(srv.errors) ? srv.errors : []),
             ...localCheck.globalErrors,
             ...Object.entries(localCheck.errorsByStep).flatMap(([k, msgs]) =>
               msgs.map((m) => `Step ${Number(k) + 1}: ${m}`)
             ),
           ])
         );
-        const valid = srv.valid && localCheck.valid;
+        const valid = Boolean(srv.valid) && localCheck.valid;
         setDagResult({
           ok: valid,
           valid,
           errors: mergedErrors,
           topological_order: valid
-            ? srv.topological_order.length > 0
+            ? Array.isArray(srv.topological_order) && srv.topological_order.length > 0
               ? srv.topological_order
               : localCheck.topologicalOrder
             : [],
           stages: valid
-            ? srv.stages && srv.stages.length > 0
+            ? Array.isArray(srv.stages) && srv.stages.length > 0
               ? srv.stages
               : localCheck.stages
             : [],
@@ -622,12 +686,13 @@ export function PipelineBuilder({
         setDagResult({
           ok: localCheck.valid,
           valid: localCheck.valid,
-          errors: fallbackErrs.length > 0 ? fallbackErrs : [apiRes.error],
+          errors: fallbackErrs.length > 0 ? fallbackErrs : [apiRes.error || "Pipeline validation failed."],
           topological_order: localCheck.topologicalOrder,
           stages: localCheck.stages,
         });
       }
     } finally {
+      validateLockRef.current = false;
       setValidatingDag(false);
     }
   };
@@ -1141,21 +1206,31 @@ export function PipelineBuilder({
                               )}
                           </select>
                         ) : (
-                          <Input
-                            value={st.deliver?.connector_id ?? ""}
-                            aria-label={`Step ${idx + 1} connector`}
-                            placeholder="Outbound connector ID (create in Connectors)"
-                            onChange={(e) =>
-                              updateStep(idx, {
-                                deliver: {
-                                  connector_id: e.target.value,
-                                  file: st.deliver?.file,
-                                  payload: st.deliver?.payload,
-                                },
-                              })
-                            }
-                            className="h-8 text-xs max-md:min-h-11"
-                          />
+                          <>
+                            <Input
+                              value={st.deliver?.connector_id ?? ""}
+                              aria-label={`Step ${idx + 1} connector`}
+                              placeholder="Outbound connector ID (create in Connectors)"
+                              onChange={(e) =>
+                                updateStep(idx, {
+                                  deliver: {
+                                    connector_id: e.target.value,
+                                    file: st.deliver?.file,
+                                    payload: st.deliver?.payload,
+                                  },
+                                })
+                              }
+                              className="h-8 text-xs max-md:min-h-11"
+                            />
+                            <span
+                              data-missing-connectors-hint="true"
+                              className="text-xs text-ink-3"
+                            >
+                              {connectorsErr
+                                ? "Could not load outbound connectors. Enter an ID manually or retry."
+                                : "No outbound connectors configured yet. Create one in Connectors or enter an ID."}
+                            </span>
+                          </>
                         )}
                       </div>
                       <div className="flex flex-col gap-1">

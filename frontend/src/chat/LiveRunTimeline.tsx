@@ -1,10 +1,13 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Check, Clock, GitBranch, Square, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { BorderTrail } from "@/components/ui/border-trail";
 import { TextShimmer } from "@/components/ui/text-shimmer";
 import type { LiveRunStep, PipelineChildItemState } from "@/lib/api";
 import { toolLabel } from "@/lib/words";
+
+const MAX_TOKEN_PREVIEW_CHARS = 1000;
+const MAX_CHILD_ITEMS_PER_STEP = 50;
 
 function fmtElapsed(ms: number): string {
   if (!Number.isFinite(ms) || ms <= 0) return "0.0s";
@@ -44,11 +47,17 @@ export function LiveRunTimeline({
 }) {
   const [tokenPreview, setTokenPreview] = useState("");
   const [childItemsByStep, setChildItemsByStep] = useState<Record<string, PipelineChildItemState[]>>({});
+  const cancelLockRef = useRef(false);
 
   useEffect(() => {
     setTokenPreview("");
     setChildItemsByStep({});
+    cancelLockRef.current = false;
   }, [startedMs]);
+
+  useEffect(() => {
+    if (!cancelling) cancelLockRef.current = false;
+  }, [cancelling]);
 
   useEffect(() => {
     if (streamMode !== "sse" || typeof EventSource === "undefined") return;
@@ -73,9 +82,15 @@ export function LiveRunTimeline({
                   ? parsed.content
                   : "";
           if (!piece) return;
+          const tailPiece =
+            piece.length > MAX_TOKEN_PREVIEW_CHARS
+              ? piece.slice(-MAX_TOKEN_PREVIEW_CHARS)
+              : piece;
           setTokenPreview((prev) => {
-            const next = prev + piece;
-            return next.length > 1000 ? next.slice(-1000) : next;
+            const combined = prev + tailPiece;
+            return combined.length > MAX_TOKEN_PREVIEW_CHARS
+              ? combined.slice(-MAX_TOKEN_PREVIEW_CHARS)
+              : combined;
           });
         } catch {
           // Ignore malformed delta frames
@@ -89,7 +104,8 @@ export function LiveRunTimeline({
             child_items?: PipelineChildItemState[];
           };
           if (parsed.step_id && Array.isArray(parsed.child_items)) {
-            setChildItemsByStep((prev) => ({ ...prev, [parsed.step_id!]: parsed.child_items! }));
+            const bounded = parsed.child_items.slice(0, MAX_CHILD_ITEMS_PER_STEP);
+            setChildItemsByStep((prev) => ({ ...prev, [parsed.step_id!]: bounded }));
           }
         } catch {
           // Ignore malformed frames
@@ -157,7 +173,11 @@ export function LiveRunTimeline({
             size="xs"
             variant="outline"
             disabled={cancelling}
-            onClick={onCancel}
+            onClick={() => {
+              if (cancelLockRef.current || cancelling) return;
+              cancelLockRef.current = true;
+              onCancel();
+            }}
             className="max-md:min-h-11 gap-1.5"
           >
             <Square className="size-3" strokeWidth={1.75} aria-hidden />
@@ -205,7 +225,7 @@ export function LiveRunTimeline({
         <div
           id="live-token-delta-preview"
           data-live-token-delta="true"
-          className="border-t border-hairline pt-2.5 text-xs leading-5 text-ink-2 whitespace-pre-wrap break-words"
+          className="max-h-32 overflow-y-auto border-t border-hairline pt-2.5 text-xs leading-5 text-ink-2 whitespace-pre-wrap break-words"
         >
           {tokenPreview}
         </div>

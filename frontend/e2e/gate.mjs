@@ -2039,6 +2039,16 @@ await reset();
         period: "monthly",
         status: "active",
       },
+      {
+        id: "eng-uncapped",
+        client_id: "cli-1",
+        person_id: "default",
+        name: "Advisory Hourly",
+        retainer_budget_usd: 0,
+        hourly_rate_usd: 180,
+        period: "monthly",
+        status: "active",
+      },
     ],
     active_engagement_id: "eng-1",
   };
@@ -2047,6 +2057,8 @@ await reset();
   };
   let budgetDecisionStatus = "pending";
   let budgetApproveCount = 0;
+  let engagementCreateCount = 0;
+  let engagementSwitchCount = 0;
   let savedPricingPayload = null;
 
   await p.route("**/api/status", async (r) => {
@@ -2077,6 +2089,8 @@ await reset();
   });
   await p.route("**/api/engagements", async (r) => {
     if (r.request().method() === "POST") {
+      engagementCreateCount += 1;
+      await new Promise((res) => setTimeout(res, 120));
       const b = JSON.parse(r.request().postData() || "{}");
       const created = {
         id: "eng-acme-q1",
@@ -2100,6 +2114,7 @@ await reset();
     return r.continue();
   });
   await p.route("**/api/engagements/switch", async (r) => {
+    engagementSwitchCount += 1;
     const b = JSON.parse(r.request().postData() || "{}");
     clientsState.active_engagement_id = b.engagement_id;
     const eng = clientsState.engagements.find((e) => e.id === b.engagement_id) || null;
@@ -2233,7 +2248,13 @@ await reset();
   await p.locator("#quick-engagement-name").fill("Q1 Audit");
   await p.locator("#quick-engagement-rate").fill("250");
   await p.locator("#quick-engagement-budget").fill("3000");
-  await p.locator("#quick-engagement-submit").click();
+  await p.evaluate(() => {
+    const btn = document.querySelector("#quick-engagement-submit");
+    if (btn) {
+      btn.click();
+      btn.click();
+    }
+  });
   await p.locator("#workspace-switcher-panel").waitFor({ state: "hidden", timeout: 4000 });
   const personBtnTxt = await p.locator("#person-select").innerText();
   // Cross-client switch-back: reopen switcher, select another client tab, and confirm its engagements render and switch cleanly
@@ -2244,6 +2265,18 @@ await reset();
   await p.locator('[data-engagement-id="eng-1"]').click();
   await p.locator("#workspace-switcher-panel").waitFor({ state: "hidden", timeout: 4000 });
   const switchedBackTxt = await p.locator("#person-select").innerText();
+  // Switch to $0 uncapped engagement, verify empty-retainer state in Today, then switch to Acme Q1
+  await p.locator("#person-select").click();
+  await p.waitForSelector("#client-engagement-section", { timeout: 4000 });
+  await p.locator('[data-client-id="cli-1"]').click();
+  await p.waitForSelector('[data-engagement-id="eng-uncapped"]', { timeout: 4000 });
+  await p.locator('[data-engagement-id="eng-uncapped"]').click();
+  await p.locator("#workspace-switcher-panel").waitFor({ state: "hidden", timeout: 4000 });
+  await p.getByRole("tab", { name: "Today" }).click();
+  await waitPaper(p);
+  await p.waitForSelector("#retainer-empty-state", { timeout: 4000 });
+  const emptyRetainerTxt = await p.locator("#retainer-empty-state").innerText();
+  const burnBarHiddenWhenUncapped = !(await p.locator("#retainer-burn-bar").isVisible());
   await p.locator("#person-select").click();
   await p.waitForSelector("#client-engagement-section", { timeout: 4000 });
   await p.locator('[data-client-id="cli-acme"]').click();
@@ -2252,11 +2285,15 @@ await reset();
   await p.locator("#workspace-switcher-panel").waitFor({ state: "hidden", timeout: 4000 });
   ok(
     "v0.33.0 E1 Client -> Engagement selector and quick-create updates active engagement and switches cross-client",
-    personBtnTxt.includes("Acme Advisory") &&
+    engagementCreateCount === 1 &&
+      engagementSwitchCount === 4 &&
+      personBtnTxt.includes("Acme Advisory") &&
       personBtnTxt.includes("Q1 Audit") &&
       switchedBackTxt.includes("Northstar Advisory") &&
-      switchedBackTxt.includes("Q4 Operations Retainer"),
-    `${personBtnTxt.replace(/\s+/g, " ")} -> ${switchedBackTxt.replace(/\s+/g, " ")}`
+      switchedBackTxt.includes("Q4 Operations Retainer") &&
+      emptyRetainerTxt.includes("No retainer cap set") &&
+      burnBarHiddenWhenUncapped,
+    `creates=${engagementCreateCount} switches=${engagementSwitchCount} ${personBtnTxt.replace(/\s+/g, " ")} -> ${switchedBackTxt.replace(/\s+/g, " ")}`
   );
 
   // 2. Retainer burn progress bar & ROI telemetry card in Today
@@ -2327,6 +2364,7 @@ await reset();
 
   for (const theme of ["light", "dark"]) {
     const { ctx, p } = await open(1440, 900, theme);
+    p.__expect400 = true;
     let reindexCalls = 0;
 
     await p.route(/\/api\/search(\?.*)?$/, async (r) => {
@@ -2338,7 +2376,12 @@ await reset();
         if (res.ok()) {
           const j = await res.json();
           const hitsArr = Array.isArray(j?.file_hits) ? j.file_hits : Array.isArray(j?.files) ? j.files : [];
-          if (j && j.index_stats && (!q.includes("aurora-threshold-99") || hitsArr.some((f) => Array.isArray(f?.chunks) && f.chunks.length > 0))) {
+          if (
+            j &&
+            j.index_stats &&
+            (!(q.includes("aurora-threshold-99") || q.includes("clamped-bounds-999")) ||
+              hitsArr.some((f) => Array.isArray(f?.chunks) && f.chunks.length > 0))
+          ) {
             return r.fulfill({ response: res, body: JSON.stringify(j) });
           }
         }
@@ -2357,7 +2400,19 @@ await reset();
               excerpt: "Escalation marker: aurora-threshold-99 requires dual signoff before settlement.",
             },
           ]
-        : [];
+        : q.includes("clamped-bounds-999")
+          ? [
+              {
+                chunk_id: "deep-vault-brief.md:L999-L1005",
+                score: 0.9,
+                page: 4,
+                line_start: 999,
+                line_end: 1005,
+                heading: "Page 4",
+                excerpt: "Closing reconciliation appendix.",
+              },
+            ]
+          : [];
       const fileHits = chunks.length
         ? [{ path: "deep-vault-brief.md", name: "deep-vault-brief.md", ext: "md", size: deepBytes, score: 0.94, chunks }]
         : [];
@@ -2384,6 +2439,7 @@ await reset();
 
     await p.route("**/api/vault/reindex", async (r) => {
       reindexCalls += 1;
+      await new Promise((res) => setTimeout(res, 80));
       try {
         const res = await r.fetch();
         if (res.ok()) {
@@ -2405,6 +2461,14 @@ await reset();
     });
 
     await p.route("**/api/vault/aggregate", async (r) => {
+      const reqBody = JSON.parse(r.request().postData() || "{}");
+      if (typeof reqBody.glob === "string" && reqBody.glob.includes("..")) {
+        return r.fulfill({
+          status: 400,
+          contentType: "application/json",
+          body: JSON.stringify({ error: "glob path escapes the workspace" }),
+        });
+      }
       try {
         const res = await r.fetch();
         if (res.ok()) {
@@ -2412,7 +2476,6 @@ await reset();
           if (j && j.ok) return r.fulfill({ response: res, body: JSON.stringify(j) });
         }
       } catch {}
-      const reqBody = JSON.parse(r.request().postData() || "{}");
       const saveAs = typeof reqBody.save_as === "string" && reqBody.save_as.trim() ? reqBody.save_as.trim() : undefined;
       return r.fulfill({
         status: 200,
@@ -2514,8 +2577,16 @@ await reset();
     }
     await p.locator("#workspace-refresh-btn").click();
     await p.waitForTimeout(200);
-    await p.locator("#workspace-vault-reindex-btn").click();
-    await p.waitForTimeout(200);
+    const reindexBeforeWs = reindexCalls;
+    await p.evaluate(() => {
+      const btn = document.querySelector("#workspace-vault-reindex-btn");
+      if (btn) {
+        btn.click();
+        btn.click();
+      }
+    });
+    await p.waitForTimeout(220);
+    const reindexDeltaWs = reindexCalls - reindexBeforeWs;
     await p.locator("#workspace-file-search").fill("aurora-threshold-99");
     await p.waitForSelector('#workspace-files-panel [data-vault-jump="deep-vault-brief.md"]', { timeout: 5000 });
     const wsJumpTxt = await p.locator('#workspace-files-panel [data-vault-jump="deep-vault-brief.md"]').first().innerText();
@@ -2524,11 +2595,26 @@ await reset();
     const wsLineVisible = await p.locator("#file-source-lines [data-active-line='true']").first().isVisible();
     await p.keyboard.press("Escape");
     await p.locator("#file-viewer-dialog").waitFor({ state: "hidden", timeout: 4000 }).catch(() => {});
+
+    // Verify out-of-bounds line jump clamps cleanly to file total lines (35)
+    await p.locator("#workspace-file-search").fill("");
+    await p.locator('#workspace-files-panel [data-vault-jump="deep-vault-brief.md"]').waitFor({ state: "hidden", timeout: 4000 }).catch(() => {});
+    await p.locator("#workspace-file-search").fill("clamped-bounds-999");
+    await p.waitForSelector('#workspace-files-panel [data-vault-jump="deep-vault-brief.md"]', { timeout: 5000 });
+    await p.locator('#workspace-files-panel [data-vault-jump="deep-vault-brief.md"]').first().click();
+    await p.waitForSelector("#file-source-lines [data-active-line='true']", { timeout: 5000 });
+    const clampedAttr = await p.locator("#file-source-lines").getAttribute("data-highlighted-line");
+    await p.keyboard.press("Escape");
+    await p.locator("#file-viewer-dialog").waitFor({ state: "hidden", timeout: 4000 }).catch(() => {});
     await p.locator("#workspace-file-search").fill("");
 
-    // Multi-file Rollup modal
+    // Multi-file Rollup modal: verify error banner on invalid glob, then valid rollup
     await p.locator("#vault-aggregate-open-btn").click();
     await p.waitForSelector("#vault-aggregate-dialog", { timeout: 4000 });
+    await p.locator("#vault-agg-glob").fill("../bad.csv");
+    await p.locator("#vault-agg-run-btn").click();
+    await p.waitForSelector("#vault-agg-error", { timeout: 4000 });
+    const aggErrVisible = await p.locator("#vault-agg-error").isVisible();
     await p.locator("#vault-agg-glob").fill("rollup-*.csv");
     await p.locator("#vault-agg-group-by").fill("Vendor");
     await p.locator("#vault-agg-col").fill("Amount");
@@ -2546,7 +2632,10 @@ await reset();
 
     ok(
       `v0.34.0 E2 (${theme}) WorkspaceFiles passage jump, Rollup aggregate, and contrast/layout`,
-      wsJumpTxt.includes("Page 3") &&
+      reindexDeltaWs === 1 &&
+        Number(clampedAttr) === 35 &&
+        aggErrVisible &&
+        wsJumpTxt.includes("Page 3") &&
         wsLineVisible &&
         (aggTxt.includes("450.50") || /\b450\.5\b/.test(aggTxt)) &&
         aggTxt.includes("300.25") &&
@@ -2554,7 +2643,7 @@ await reset();
         mVault.docOverflow <= 0 &&
         mVault.lowContrast === 0 &&
         mVault.unnamed.length === 0,
-      `ws=${wsJumpTxt.slice(0, 30)} line=${wsLineVisible} agg=${aggTxt.replace(/\s+/g, " ").slice(0, 60)} saved=${savedCsvVisible} overflow=${mVault.docOverflow} low=${mVault.lowContrast} unnamed=${mVault.unnamed.length}`
+      `reindex=${reindexDeltaWs} clamped=${clampedAttr} aggErr=${aggErrVisible} ws=${wsJumpTxt.slice(0, 30)} line=${wsLineVisible} agg=${aggTxt.replace(/\s+/g, " ").slice(0, 60)} saved=${savedCsvVisible} overflow=${mVault.docOverflow} low=${mVault.lowContrast} unnamed=${mVault.unnamed.length}`
     );
     await ctx.close();
   }
@@ -2569,6 +2658,7 @@ for (const [theme, vw, vh] of [
 ]) {
   const { ctx, p } = await open(vw, vh, theme);
   p.__expect400 = true;
+  let dagValidateCalls = 0;
 
   await p.request.post(BASE + "api/connectors/outbound", {
     headers: { origin: ORIGIN },
@@ -2641,6 +2731,8 @@ for (const [theme, vw, vh] of [
   });
 
   await p.route("**/api/pipelines/validate", async (r) => {
+    dagValidateCalls += 1;
+    await new Promise((res) => setTimeout(res, 80));
     try {
       const res = await r.fetch();
       if (res.status() !== 404 && res.status() !== 405) {
@@ -2742,13 +2834,14 @@ for (const [theme, vw, vh] of [
     r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ cancelled: true }) })
   );
 
+  const longTokenPrefix = "x".repeat(1200);
   await p.route("**/api/runs/stream", (r) =>
     r.fulfill({
       status: 200,
       contentType: "text/event-stream",
       body:
         'event: step_start\ndata: {"run_id":"run-dag-sse","step_id":"agent_2","tool":"analyze","label":"Analyzing batch","status":"running"}\n\n' +
-        'event: token_delta\ndata: {"run_id":"run-dag-sse","step_id":"agent_2","delta":"Streaming delta check ok."}\n\n',
+        `event: token_delta\ndata: ${JSON.stringify({ run_id: "run-dag-sse", step_id: "agent_2", delta: `${longTokenPrefix} Streaming delta check ok.` })}\n\n`,
     })
   );
 
@@ -2775,10 +2868,23 @@ for (const [theme, vw, vh] of [
   await p.locator('#pipeline-builder select[aria-label="Step 3 condition"]').selectOption("on_all_ok");
   await p.locator('#pipeline-builder select[aria-label="Step 3 connector"]').selectOption("conn-dag-1");
 
-  // Validate valid DAG
-  await p.locator('#pipeline-builder [data-action="validate-dag"]').click();
+  // Validate valid DAG (double-click submit lock sends 1 request)
+  const validateBefore = dagValidateCalls;
+  await p.evaluate(() => {
+    const btn = document.querySelector('#pipeline-builder [data-action="validate-dag"]');
+    if (btn) {
+      btn.click();
+      btn.click();
+    }
+  });
   await p.waitForSelector('#pipeline-builder [data-dag-validation-result="valid"]', { timeout: 4000 });
+  const validateLockedOnce = dagValidateCalls - validateBefore === 1;
   const validDagTxt = await p.locator('#pipeline-builder [data-dag-validation-result="valid"]').innerText();
+
+  // Adding a step clears stale DAG validation result immediately
+  await p.locator('#pipeline-builder [data-add-pipeline-step="skill"]').click();
+  const staleClearedOnAdd = !(await p.locator('#pipeline-builder [data-dag-validation-result="valid"]').isVisible());
+  await p.locator('#pipeline-builder button[aria-label="Remove step 4"]').click();
 
   // Introduce cycle: Step 1 depends on deliver_3
   await p.locator('#pipeline-builder [data-dep-chip="0:deliver_3"]').click();
@@ -2814,7 +2920,7 @@ for (const [theme, vw, vh] of [
     await p.keyboard.press("Enter");
     await p.waitForSelector("#live-token-delta-preview", { timeout: 4000 });
     const deltaTxt = await p.locator("#live-token-delta-preview").innerText();
-    tokenDeltaOk = deltaTxt.includes("Streaming delta check ok.");
+    tokenDeltaOk = deltaTxt.includes("Streaming delta check ok.") && deltaTxt.length <= 1000;
     await p.locator("#cancel-run-btn").click();
     await p.locator("#live-run-timeline").waitFor({ state: "hidden", timeout: 4000 });
   }
@@ -2822,7 +2928,9 @@ for (const [theme, vw, vh] of [
   const builderUnnamed = mBuilder.unnamed.filter((u) => !u.includes("playbook-import-input"));
   ok(
     `v0.35.0 DAG builder, Validate DAG + cycle, deliver hold, child_items, token_delta (${vw}x${vh} ${theme})`,
-    validDagTxt.includes("DAG valid") &&
+    validateLockedOnce &&
+      staleClearedOnAdd &&
+      validDagTxt.includes("DAG valid") &&
       validDagTxt.includes("skill_1") &&
       validDagTxt.includes("deliver_3") &&
       /circular|cycle/i.test(cycleDagTxt) &&

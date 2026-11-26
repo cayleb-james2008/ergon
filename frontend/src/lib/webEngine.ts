@@ -8,7 +8,7 @@
 // stream, cooperative run cancellation, Web Crypto SHA-256 receipt export, approval-gated
 // deletion, and optional BYOK OpenAI-compatible LLM (sessionStorage only).
 // ZERO hardcoded fixture replies, ZERO fixture demo pills, ZERO Rune jargon.
-import { parseCsv, parseDelimited } from "@/shell/FileEditor";
+import { inspectDelimited, parseCsv, parseDelimited } from "@/shell/FileEditor";
 import { CANONICAL_SKILLS, CANONICAL_STARTER_PLAYBOOKS } from "@/lib/skillsCatalog";
 import { buildDeterministicPlaybookPreview, buildSignedPlaybookPack, buildSignedReceipt, sha256Hex, verifyAndParsePlaybookPack } from "@/lib/receiptExport";
 import { extractCitations } from "@/lib/words";
@@ -2797,6 +2797,10 @@ export async function installBrowserEngine(): Promise<void> {
 
     const idToIndex = new Map<string, number>();
     steps.forEach((st, idx) => {
+      if (!st || typeof st !== "object") {
+        errors.push(`Step ${idx + 1} must be an object.`);
+        return;
+      }
       const id = String(st.id ?? "").trim();
       if (!id) {
         errors.push(`Step ${idx + 1} is missing an id.`);
@@ -2804,6 +2808,30 @@ export async function installBrowserEngine(): Promise<void> {
         errors.push(`Duplicate step id "${id}".`);
       } else {
         idToIndex.set(id, idx);
+      }
+      if (st.for_each !== undefined) {
+        if (st.kind === "checkpoint") {
+          errors.push(`Step "${id || idx + 1}" of kind "checkpoint" does not support for_each.`);
+        } else if (typeof st.for_each === "string") {
+          const feTrimmed = st.for_each.trim();
+          if (!feTrimmed) {
+            errors.push(`Step "${id || idx + 1}" for_each cannot be empty.`);
+          } else if (feTrimmed.startsWith("[")) {
+            try {
+              const parsed = JSON.parse(feTrimmed);
+              if (!Array.isArray(parsed) || parsed.length === 0 || parsed.length > 50) {
+                errors.push(`Step "${id || idx + 1}" for_each array must contain 1 to 50 items.`);
+              }
+            } catch {
+              errors.push(`Step "${id || idx + 1}" for_each JSON array is invalid.`);
+            }
+          }
+        } else if (Array.isArray(st.for_each)) {
+          const arr = st.for_each as unknown[];
+          if (arr.length === 0 || arr.length > 50) {
+            errors.push(`Step "${id || idx + 1}" for_each array must contain 1 to 50 items.`);
+          }
+        }
       }
       if (st.kind === "skill" && !String(st.skill_id ?? "").trim()) {
         errors.push(`Step "${id || idx + 1}" requires skill_id.`);
@@ -2825,21 +2853,31 @@ export async function installBrowserEngine(): Promise<void> {
 
     const inDegree = new Map<string, number>();
     const dependents = new Map<string, string[]>();
-    for (const st of steps) {
-      const id = String(st.id ?? "").trim();
-      if (!id) continue;
+    for (const id of idToIndex.keys()) {
       inDegree.set(id, 0);
       dependents.set(id, []);
     }
 
     for (const st of steps) {
+      if (!st || typeof st !== "object") continue;
       const id = String(st.id ?? "").trim();
       if (!id) continue;
+      if (st.depends_on !== undefined && !Array.isArray(st.depends_on)) {
+        errors.push(`Step "${id}" depends_on must be an array.`);
+        continue;
+      }
       const deps = Array.isArray(st.depends_on) ? st.depends_on : [];
       const seenDeps = new Set<string>();
       for (const rawDep of deps) {
-        const dep = String(rawDep ?? "").trim();
-        if (!dep) continue;
+        if (typeof rawDep !== "string") {
+          errors.push(`Step "${id}" depends_on entries must be strings.`);
+          continue;
+        }
+        const dep = rawDep.trim();
+        if (!dep) {
+          errors.push(`Step "${id}" depends_on entry cannot be empty.`);
+          continue;
+        }
         if (dep === id) {
           errors.push(`Step "${id}" cannot depend on itself.`);
           continue;
@@ -2858,8 +2896,8 @@ export async function installBrowserEngine(): Promise<void> {
     const stages: string[][] = [];
     const topologicalOrder: string[] = [];
     let frontier = steps
-      .map((s) => String(s.id ?? "").trim())
-      .filter((id) => id && (inDegree.get(id) ?? 0) === 0);
+      .map((s) => (s && typeof s === "object" ? String(s.id ?? "").trim() : ""))
+      .filter((id, idx, arr) => id && arr.indexOf(id) === idx && (inDegree.get(id) ?? 0) === 0);
 
     while (frontier.length > 0) {
       stages.push(frontier);
@@ -4552,8 +4590,18 @@ function runTabularAggregation(
         let val = 0;
         if (a.fn === "sum") val = scaled.reduce((acc, v) => acc + v, 0) / 1_000_000;
         else if (a.fn === "avg") val = scaled.reduce((acc, v) => acc + v, 0) / 1_000_000 / nums.length;
-        else if (a.fn === "min") val = Math.min(...nums);
-        else if (a.fn === "max") val = Math.max(...nums);
+        else if (a.fn === "min") {
+          val = nums[0];
+          for (let ni = 1; ni < nums.length; ni++) {
+            if (nums[ni] < val) val = nums[ni];
+          }
+        } else if (a.fn === "max") {
+          val = nums[0];
+          for (let ni = 1; ni < nums.length; ni++) {
+            if (nums[ni] > val) val = nums[ni];
+          }
+        }
+        if (!Number.isFinite(val)) return "0";
         return hasDecimal || a.fn === "avg" ? val.toFixed(2) : String(Math.round(val * 100) / 100);
       });
       outRows.push([...grp.keyVals, ...aggCells]);
@@ -4588,17 +4636,23 @@ function runWebTableQuery(
   let header: string[] = [];
   let dataRows: string[][] = [];
   if (file.ext === "json") {
-    const parsed = JSON.parse(file.content);
-    const arr = Array.isArray(parsed) ? parsed : [];
-    const keys = Array.from(new Set(arr.flatMap((item) => (item && typeof item === "object" ? Object.keys(item) : []))));
-    header = keys;
-    dataRows = arr.map((item) => keys.map((k) => String((item as Record<string, unknown>)?.[k] ?? "")));
+    try {
+      const parsed = JSON.parse(file.content);
+      const arr = Array.isArray(parsed) ? parsed : [];
+      const keys = Array.from(new Set(arr.flatMap((item) => (item && typeof item === "object" ? Object.keys(item) : []))));
+      header = keys;
+      dataRows = arr.map((item) => keys.map((k) => String((item as Record<string, unknown>)?.[k] ?? "")));
+    } catch {
+      return { columns: [], rows: [], total_rows: 0, matched_rows: 0 };
+    }
   } else {
     const delim = file.ext === "tsv" ? "\t" : ",";
-    const parsed = parseDelimited(file.content, delim);
-    if (!parsed.length) return { columns: [], rows: [], total_rows: 0, matched_rows: 0 };
-    header = parsed[0];
-    dataRows = parsed.slice(1).map((r) => header.map((_, i) => r[i] ?? ""));
+    const insp = inspectDelimited(file.content, delim);
+    if (insp.hasNullByte || insp.unclosedQuote || !insp.rows.length) {
+      return { columns: [], rows: [], total_rows: 0, matched_rows: 0 };
+    }
+    header = insp.rows[0];
+    dataRows = insp.rows.slice(1).map((r) => header.map((_, i) => r[i] ?? ""));
   }
   return runTabularAggregation(header, dataRows, req);
 }
@@ -5040,9 +5094,12 @@ function runWebVaultAggregate(
     return headerIdxMap.get(key)!;
   };
 
-  const ingestTable = (fp: string, parsed: string[][]) => {
-    if (parsed.length < 2) return;
+  const ingestTable = (fp: string, rawText: string, delim: string) => {
+    const insp = inspectDelimited(rawText, delim);
+    if (insp.hasNullByte || insp.unclosedQuote || insp.rows.length === 0) return;
+    const parsed = insp.rows;
     const hdr = parsed[0];
+    if (!hdr.some((col) => col.trim().length > 0)) return;
     hdr.forEach((col) => ensureCol(col));
     let added = false;
     for (let r = 1; r < parsed.length; r++) {
@@ -5064,16 +5121,22 @@ function runWebVaultAggregate(
       const targetSheet = (req.sheet || "").trim().toLowerCase();
       for (const [shName, csvText] of Object.entries(f.extractedSheets)) {
         if (targetSheet && shName.toLowerCase() !== targetSheet) continue;
-        ingestTable(f.path, parseDelimited(csvText, ","));
+        ingestTable(f.path, csvText, ",");
       }
     } else if (f.ext === "csv" || f.ext === "tsv" || f.extracted?.format === "csv") {
       const delim = f.ext === "tsv" ? "\t" : ",";
-      ingestTable(f.path, parseDelimited(f.content, delim));
+      ingestTable(f.path, f.content, delim);
     }
   }
 
   if (!canonicalHeader.length || !rowRecords.length) {
-    return { ok: true, columns: canonicalHeader, rows: [], source_files: sourceFiles, row_count: 0 };
+    const groupCols = Array.isArray(req.group_by) ? req.group_by.filter(Boolean) : [];
+    const aggs = Array.isArray(req.aggregates) ? req.aggregates : [];
+    const fallbackCols =
+      groupCols.length > 0 || aggs.length > 0
+        ? [...groupCols, ...aggs.map((a) => a.as || `${a.fn}_${a.col}`)]
+        : canonicalHeader;
+    return { ok: true, columns: fallbackCols, rows: [], source_files: sourceFiles, row_count: 0 };
   }
 
   const normalizedRows = rowRecords.map((rec) =>
@@ -5797,6 +5860,9 @@ function runWebVaultAggregate(
     }
     if (method === "POST" && path === "/api/vault/aggregate") {
       const glob = String(body.glob ?? "*.csv").trim() || "*.csv";
+      if (glob.includes("..") || glob.includes("\0") || glob.startsWith("/")) {
+        return jsonRes({ error: "glob path escapes the workspace" }, 400);
+      }
       const result = runWebVaultAggregate(st, {
         glob,
         sheet: typeof body.sheet === "string" && body.sheet.trim() ? body.sheet.trim() : undefined,
@@ -5810,7 +5876,10 @@ function runWebVaultAggregate(
       if (typeof body.save_as === "string" && body.save_as.trim()) {
         const safeOut = sanitizeSafePath(body.save_as);
         if (!safeOut) return jsonRes({ error: "save_as path escapes the workspace" }, 403);
-        const csvText = [result.columns, ...result.rows].map((r) => r.map(csvEscape).join(",")).join("\n") + "\n";
+        const csvText =
+          result.columns.length > 0
+            ? [result.columns, ...result.rows].map((r) => r.map(csvEscape).join(",")).join("\n") + "\n"
+            : "";
         if (st.files[safeOut] && st.files[safeOut].content !== csvText) {
           recordFileRevision(st, safeOut, st.files[safeOut], "vault_aggregate");
         }
