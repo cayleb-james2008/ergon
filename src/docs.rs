@@ -1850,81 +1850,1142 @@ pub fn safe_sheet_name(name: &str) -> String {
     if n.trim().is_empty() { "Sheet1".to_string() } else { n }
 }
 
-/// Render rows (first row = header) as an Excel workbook.
-pub fn rows_to_xlsx(rows: &[Vec<String>], sheet_name: &str, title: &str) -> Vec<u8> {
-    let sheet = safe_sheet_name(sheet_name);
-    let width = rows.iter().map(|r| r.len()).max().unwrap_or(0).max(1);
-    let mut widths = vec![8usize; width];
-    let mut data = String::new();
-    for (ri, r) in rows.iter().enumerate() {
-        data.push_str(&format!(r#"<row r="{}">"#, ri + 1));
-        for (ci, cell) in r.iter().enumerate() {
-            let len = cell.chars().count();
-            widths[ci] = widths[ci].max(len.min(60));
-            if cell.is_empty() {
-                continue;
-            }
-            let rf = format!("{}{}", col_name(ci), ri + 1);
-            if ri == 0 {
-                data.push_str(&format!(r#"<c r="{rf}" t="inlineStr" s="1"><is><t xml:space="preserve">{}</t></is></c>"#, xml_escape(cell)));
-                continue;
-            }
-            match typed_cell(cell) {
-                CellValue::Num(v, s) => {
-                    if s == 4 {
-                        widths[ci] = widths[ci].max(10);
-                    }
-                    data.push_str(&format!(r#"<c r="{rf}" s="{s}"><v>{v}</v></c>"#));
-                }
-                CellValue::Text(t) => data.push_str(&format!(
-                    r#"<c r="{rf}" t="inlineStr"><is><t xml:space="preserve">{}</t></is></c>"#,
-                    xml_escape(&t)
-                )),
-            }
+pub struct ExportSheet {
+    pub name: String,
+    pub rows: Vec<Vec<String>>,
+    pub totals_row: bool,
+}
+
+fn unique_sheet_names(sheets: &[ExportSheet]) -> Vec<String> {
+    let mut seen: HashMap<String, usize> = HashMap::new();
+    let mut out = Vec::with_capacity(sheets.len());
+    for s in sheets {
+        let base = safe_sheet_name(&s.name);
+        let key = base.to_ascii_lowercase();
+        let count = seen.entry(key).or_insert(0);
+        *count += 1;
+        if *count == 1 {
+            out.push(base);
+        } else {
+            let suffix = format!(" ({})", *count);
+            let max_base = 31usize.saturating_sub(suffix.chars().count());
+            let truncated: String = base.chars().take(max_base).collect();
+            let candidate = format!("{truncated}{suffix}");
+            seen.insert(candidate.to_ascii_lowercase(), 1);
+            out.push(candidate);
         }
-        data.push_str("</row>");
     }
-    let last = format!("{}{}", col_name(width - 1), rows.len().max(1));
-    let mut cols = String::from("<cols>");
-    for (i, w) in widths.iter().enumerate() {
-        cols.push_str(&format!(r#"<col min="{0}" max="{0}" width="{1:.1}" customWidth="1"/>"#, i + 1, (*w as f64) * 1.1 + 2.0));
+    out
+}
+
+fn format_cached_total(sum: f64, dec_sum: Option<i128>) -> String {
+    if let Some(d) = dec_sum {
+        return crate::tables::format_decimal(d, 9);
     }
-    cols.push_str("</cols>");
-    let freeze = if rows.len() > 1 {
-        r#"<sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/><selection pane="bottomLeft" activeCell="A2" sqref="A2"/></sheetView></sheetViews>"#
+    let s = format!("{sum:.10}");
+    let s = s.trim_end_matches('0').trim_end_matches('.').to_string();
+    if s == "-0" || s.is_empty() { "0".into() } else { s }
+}
+
+/// Render one or more sheets (first row of each = header) as a multi-sheet
+/// `.xlsx` workbook, optionally appending a `SUM(...)` formula totals row per
+/// sheet with cached numeric `<v>` values.
+pub fn sheets_to_xlsx(sheets: &[ExportSheet], title: &str) -> Vec<u8> {
+    let fallback;
+    let sheets = if sheets.is_empty() {
+        fallback = vec![ExportSheet { name: "Sheet1".into(), rows: Vec::new(), totals_row: false }];
+        &fallback[..]
     } else {
-        r#"<sheetViews><sheetView workbookViewId="0"/></sheetViews>"#
+        sheets
     };
-    let filter = if rows.len() > 1 { format!(r#"<autoFilter ref="A1:{last}"/>"#) } else { String::new() };
-    let sheet_xml = format!(
-        r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><dimension ref="A1:{last}"/>{freeze}<sheetFormatPr defaultRowHeight="15"/>{cols}<sheetData>{data}</sheetData>{filter}<pageMargins left="0.7" right="0.7" top="0.75" bottom="0.75" header="0.3" footer="0.3"/></worksheet>"#
+    let names = unique_sheet_names(sheets);
+    let mut sheet_xmls: Vec<String> = Vec::with_capacity(sheets.len());
+    let mut defined_names = String::new();
+
+    for (si, (sheet_spec, sheet_name)) in sheets.iter().zip(names.iter()).enumerate() {
+        let rows = &sheet_spec.rows;
+        let width = rows.iter().map(|r| r.len()).max().unwrap_or(0).max(1);
+        let mut widths = vec![8usize; width];
+        let mut data = String::new();
+
+        #[derive(Clone)]
+        struct ColAgg {
+            num_count: usize,
+            has_text: bool,
+            has_date: bool,
+            style: u32,
+            sum_f64: f64,
+            dec_sum: Option<i128>,
+        }
+        let mut col_aggs = vec![
+            ColAgg {
+                num_count: 0,
+                has_text: false,
+                has_date: false,
+                style: 0,
+                sum_f64: 0.0,
+                dec_sum: Some(0),
+            };
+            width
+        ];
+
+        for (ri, r) in rows.iter().enumerate() {
+            data.push_str(&format!(r#"<row r="{}">"#, ri + 1));
+            for (ci, cell) in r.iter().enumerate() {
+                let len = cell.chars().count();
+                widths[ci] = widths[ci].max(len.min(60));
+                if cell.is_empty() {
+                    continue;
+                }
+                let rf = format!("{}{}", col_name(ci), ri + 1);
+                if ri == 0 {
+                    data.push_str(&format!(
+                        r#"<c r="{rf}" t="inlineStr" s="1"><is><t xml:space="preserve">{}</t></is></c>"#,
+                        xml_escape(cell)
+                    ));
+                    continue;
+                }
+                match typed_cell(cell) {
+                    CellValue::Num(v, s) => {
+                        if s == 4 {
+                            widths[ci] = widths[ci].max(10);
+                            col_aggs[ci].has_date = true;
+                        } else {
+                            col_aggs[ci].num_count += 1;
+                            col_aggs[ci].style = s;
+                            col_aggs[ci].sum_f64 += v;
+                            if s == 3 {
+                                col_aggs[ci].dec_sum = None;
+                            } else if let Some(acc) = col_aggs[ci].dec_sum {
+                                col_aggs[ci].dec_sum = crate::tables::parse_decimal(cell)
+                                    .and_then(|d| acc.checked_add(d));
+                            }
+                        }
+                        data.push_str(&format!(r#"<c r="{rf}" s="{s}"><v>{v}</v></c>"#));
+                    }
+                    CellValue::Text(t) => {
+                        col_aggs[ci].has_text = true;
+                        data.push_str(&format!(
+                            r#"<c r="{rf}" t="inlineStr"><is><t xml:space="preserve">{}</t></is></c>"#,
+                            xml_escape(&t)
+                        ));
+                    }
+                }
+            }
+            data.push_str("</row>");
+        }
+
+        let mut total_row_count = rows.len();
+        if sheet_spec.totals_row && rows.len() > 1 {
+            let tot_ri = rows.len() + 1;
+            let last_data_ri = rows.len();
+            total_row_count = tot_ri;
+            data.push_str(&format!(r#"<row r="{tot_ri}">"#));
+            for (ci, agg) in col_aggs.iter().enumerate() {
+                let col = col_name(ci);
+                let rf = format!("{col}{tot_ri}");
+                let summable = agg.num_count > 0 && !agg.has_text && !agg.has_date;
+                if summable {
+                    let cached = format_cached_total(agg.sum_f64, agg.dec_sum);
+                    let tot_style = match agg.style {
+                        2 => 7,
+                        3 => 8,
+                        _ => 6,
+                    };
+                    widths[ci] = widths[ci].max(cached.len().min(60));
+                    data.push_str(&format!(
+                        r#"<c r="{rf}" s="{tot_style}"><f>SUM({col}2:{col}{last_data_ri})</f><v>{cached}</v></c>"#
+                    ));
+                } else if ci == 0 {
+                    data.push_str(&format!(
+                        r#"<c r="{rf}" t="inlineStr" s="6"><is><t>Total</t></is></c>"#
+                    ));
+                }
+            }
+            data.push_str("</row>");
+        }
+
+        let last_dim = format!("{}{}", col_name(width - 1), total_row_count.max(1));
+        let last_filter = format!("{}{}", col_name(width - 1), rows.len().max(1));
+        let mut cols = String::from("<cols>");
+        for (i, w) in widths.iter().enumerate() {
+            cols.push_str(&format!(
+                r#"<col min="{0}" max="{0}" width="{1:.1}" customWidth="1"/>"#,
+                i + 1,
+                (*w as f64) * 1.1 + 2.0
+            ));
+        }
+        cols.push_str("</cols>");
+        let freeze = if rows.len() > 1 {
+            r#"<sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/><selection pane="bottomLeft" activeCell="A2" sqref="A2"/></sheetView></sheetViews>"#
+        } else {
+            r#"<sheetViews><sheetView workbookViewId="0"/></sheetViews>"#
+        };
+        let filter = if rows.len() > 1 {
+            format!(r#"<autoFilter ref="A1:{last_filter}"/>"#)
+        } else {
+            String::new()
+        };
+        sheet_xmls.push(format!(
+            r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><dimension ref="A1:{last_dim}"/>{freeze}<sheetFormatPr defaultRowHeight="15"/>{cols}<sheetData>{data}</sheetData>{filter}<pageMargins left="0.7" right="0.7" top="0.75" bottom="0.75" header="0.3" footer="0.3"/></worksheet>"#
+        ));
+        if rows.len() > 1 {
+            defined_names.push_str(&format!(
+                r#"<definedName name="_xlnm._FilterDatabase" localSheetId="{si}" hidden="1">'{}'!$A$1:${}${}</definedName>"#,
+                xml_escape(&sheet_name.replace('\'', "''")),
+                col_name(width - 1),
+                rows.len()
+            ));
+        }
+    }
+
+    let mut sheets_xml = String::from("<sheets>");
+    let mut wb_rels = String::from(
+        r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">"#,
     );
-    let defined = if rows.len() > 1 {
-        format!(
-            r#"<definedNames><definedName name="_xlnm._FilterDatabase" localSheetId="0" hidden="1">'{}'!$A$1:${}${}</definedName></definedNames>"#,
-            xml_escape(&sheet.replace('\'', "''")),
-            col_name(width - 1),
-            rows.len()
-        )
-    } else {
+    let mut content_types = String::from(
+        r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>"#,
+    );
+    for (i, name) in names.iter().enumerate() {
+        let idx = i + 1;
+        sheets_xml.push_str(&format!(
+            r#"<sheet name="{}" sheetId="{idx}" r:id="rId{idx}"/>"#,
+            xml_escape(name)
+        ));
+        wb_rels.push_str(&format!(
+            r#"<Relationship Id="rId{idx}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet{idx}.xml"/>"#
+        ));
+        content_types.push_str(&format!(
+            r#"<Override PartName="/xl/worksheets/sheet{idx}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>"#
+        ));
+    }
+    sheets_xml.push_str("</sheets>");
+    let styles_rid = names.len() + 1;
+    wb_rels.push_str(&format!(
+        r#"<Relationship Id="rId{styles_rid}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>"#
+    ));
+    content_types.push_str(
+        r#"<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/><Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/></Types>"#,
+    );
+
+    let defined_block = if defined_names.is_empty() {
         String::new()
+    } else {
+        format!("<definedNames>{defined_names}</definedNames>")
     };
     let workbook = format!(
-        r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><bookViews><workbookView/></bookViews><sheets><sheet name="{}" sheetId="1" r:id="rId1"/></sheets>{defined}</workbook>"#,
-        xml_escape(&sheet)
+        r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><bookViews><workbookView/></bookViews>{sheets_xml}{defined_block}</workbook>"#
     );
-    let styles = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><numFmts count="1"><numFmt numFmtId="164" formatCode="yyyy\-mm\-dd"/></numFmts><fonts count="2"><font><sz val="11"/><name val="Calibri"/><family val="2"/></font><font><b/><sz val="11"/><name val="Calibri"/><family val="2"/></font></fonts><fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FFF2F2F2"/><bgColor indexed="64"/></patternFill></fill></fills><borders count="2"><border><left/><right/><top/><bottom/><diagonal/></border><border><left/><right/><top/><bottom style="thin"><color rgb="FFBFBFBF"/></bottom><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="6"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1"/><xf numFmtId="4" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/><xf numFmtId="10" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/><xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/><xf numFmtId="3" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>"#;
-    let files: Vec<(&str, Vec<u8>)> = vec![
-        ("[Content_Types].xml", br#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/><Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/></Types>"#.to_vec()),
-        ("_rels/.rels", br#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/><Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties" Target="docProps/app.xml"/></Relationships>"#.to_vec()),
-        ("xl/workbook.xml", workbook.into_bytes()),
-        ("xl/_rels/workbook.xml.rels", br#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>"#.to_vec()),
-        ("xl/worksheets/sheet1.xml", sheet_xml.into_bytes()),
-        ("xl/styles.xml", styles.as_bytes().to_vec()),
-        ("docProps/core.xml", core_props(title).into_bytes()),
-        ("docProps/app.xml", br#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties"><Application>Ergon</Application></Properties>"#.to_vec()),
-    ];
-    zip_write(&files)
+    let styles = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><numFmts count="1"><numFmt numFmtId="164" formatCode="yyyy\-mm\-dd"/></numFmts><fonts count="2"><font><sz val="11"/><name val="Calibri"/><family val="2"/></font><font><b/><sz val="11"/><name val="Calibri"/><family val="2"/></font></fonts><fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FFF2F2F2"/><bgColor indexed="64"/></patternFill></fill></fills><borders count="3"><border><left/><right/><top/><bottom/><diagonal/></border><border><left/><right/><top/><bottom style="thin"><color rgb="FFBFBFBF"/></bottom><diagonal/></border><border><left/><right/><top style="thin"><color rgb="FF808080"/></top><bottom style="double"><color rgb="FF808080"/></bottom><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="9"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1"/><xf numFmtId="4" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/><xf numFmtId="10" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/><xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/><xf numFmtId="3" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/><xf numFmtId="0" fontId="1" fillId="2" borderId="2" xfId="0" applyFont="1" applyFill="1" applyBorder="1"/><xf numFmtId="4" fontId="1" fillId="2" borderId="2" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1"/><xf numFmtId="10" fontId="1" fillId="2" borderId="2" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1"/></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>"#;
+    let rels_root = br#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/><Relationship Id="rId3" Type="http://schemas.openxmlformats.org/package/2006/relationships/extended-properties" Target="docProps/app.xml"/></Relationships>"#;
+    let app_props = br#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties"><Application>Ergon</Application></Properties>"#;
+    let core_xml = core_props(title);
+
+    let mut sheet_paths: Vec<(String, &[u8])> = Vec::with_capacity(sheet_xmls.len());
+    for (i, xml) in sheet_xmls.iter().enumerate() {
+        sheet_paths.push((format!("xl/worksheets/sheet{}.xml", i + 1), xml.as_bytes()));
+    }
+    let mut files: Vec<(&str, &[u8])> = Vec::with_capacity(7 + sheet_paths.len());
+    files.push(("[Content_Types].xml", content_types.as_bytes()));
+    files.push(("_rels/.rels", rels_root));
+    files.push(("xl/workbook.xml", workbook.as_bytes()));
+    files.push(("xl/_rels/workbook.xml.rels", wb_rels.as_bytes()));
+    for (p, b) in &sheet_paths {
+        files.push((p.as_str(), b));
+    }
+    files.push(("xl/styles.xml", styles.as_bytes()));
+    files.push(("docProps/core.xml", core_xml.as_bytes()));
+    files.push(("docProps/app.xml", app_props));
+    zip_write_refs(&files)
+}
+
+// ---------------------------------------------------------------------------
+// Markdown → pure-Rust native PDF 1.4
+// ---------------------------------------------------------------------------
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum PdfFont {
+    Regular,
+    Bold,
+    Italic,
+    Mono,
+}
+
+impl PdfFont {
+    fn tag(self) -> &'static str {
+        match self {
+            PdfFont::Regular => "/F1",
+            PdfFont::Bold => "/F2",
+            PdfFont::Italic => "/F3",
+            PdfFont::Mono => "/F4",
+        }
+    }
+}
+
+fn pdf_char_width_em(c: char, font: PdfFont) -> f64 {
+    if font == PdfFont::Mono {
+        return 0.60;
+    }
+    let scale = if font == PdfFont::Bold { 1.05 } else { 1.0 };
+    let base = match c {
+        ' ' => 0.278,
+        'i' | 'l' | 'j' | 'I' | '!' | '.' | ',' | ':' | ';' | '\'' | '`' | '|' => 0.278,
+        'f' | 'r' | 't' | '(' | ')' | '[' | ']' | '-' | '/' | '\\' => 0.333,
+        'm' | 'w' | 'M' | 'W' | '@' | '%' | '&' | '—' => 0.833,
+        'A'..='Z' => 0.722,
+        '0'..='9' | '$' | '€' | '£' | '+' | '=' => 0.556,
+        _ => 0.520,
+    };
+    base * scale
+}
+
+fn pdf_text_width(s: &str, font: PdfFont, size: f64) -> f64 {
+    s.chars().map(|c| pdf_char_width_em(c, font)).sum::<f64>() * size
+}
+
+fn push_winansi_byte(out: &mut Vec<u8>, b: u8) {
+    match b {
+        b'\\' => out.extend_from_slice(b"\\\\"),
+        b'(' => out.extend_from_slice(b"\\("),
+        b')' => out.extend_from_slice(b"\\)"),
+        b'\r' | b'\n' => out.push(b' '),
+        b'\t' => out.extend_from_slice(b"  "),
+        0x20..=0x7E => out.push(b),
+        _ => {
+            let oct = format!("\\{b:03o}");
+            out.extend_from_slice(oct.as_bytes());
+        }
+    }
+}
+
+fn pdf_escape_literal(s: &str) -> Vec<u8> {
+    let mut out = Vec::with_capacity(s.len() + 8);
+    out.push(b'(');
+    for ch in s.chars() {
+        let mapped_str = match ch {
+            '☐' => Some("[ ]"),
+            '☑' => Some("[x]"),
+            '→' => Some("->"),
+            '←' => Some("<-"),
+            '≤' => Some("<="),
+            '≥' => Some(">="),
+            '≠' => Some("!="),
+            '×' => Some("x"),
+            _ => None,
+        };
+        if let Some(rep) = mapped_str {
+            for b in rep.bytes() {
+                push_winansi_byte(&mut out, b);
+            }
+            continue;
+        }
+        let code = ch as u32;
+        if code <= 0x7E || (0xA0..=0xFF).contains(&code) {
+            push_winansi_byte(&mut out, code as u8);
+        } else {
+            let win = match ch {
+                '€' => Some(0x80u8),
+                '‚' => Some(0x82),
+                '„' => Some(0x84),
+                '…' => Some(0x85),
+                '†' => Some(0x86),
+                '‡' => Some(0x87),
+                '‰' => Some(0x89),
+                '‹' => Some(0x8B),
+                '‘' => Some(0x91),
+                '’' => Some(0x92),
+                '“' => Some(0x93),
+                '”' => Some(0x94),
+                '•' => Some(0x95),
+                '–' => Some(0x96),
+                '—' => Some(0x97),
+                '™' => Some(0x99),
+                '›' => Some(0x9B),
+                _ => None,
+            };
+            match win {
+                Some(b) => push_winansi_byte(&mut out, b),
+                None => out.push(b'?'),
+            }
+        }
+    }
+    out.push(b')');
+    out
+}
+
+#[derive(Clone)]
+struct PdfSpan {
+    text: String,
+    font: PdfFont,
+}
+
+fn parse_md_inline_spans(text: &str, base: PdfFont) -> Vec<PdfSpan> {
+    let chars: Vec<char> = text.chars().collect();
+    let mut spans: Vec<PdfSpan> = Vec::new();
+    let mut buf = String::new();
+    let mut bold = base == PdfFont::Bold;
+    let mut italic = base == PdfFont::Italic;
+    let cur_font = |b: bool, it: bool| -> PdfFont {
+        if base == PdfFont::Mono {
+            PdfFont::Mono
+        } else if b {
+            PdfFont::Bold
+        } else if it {
+            PdfFont::Italic
+        } else {
+            PdfFont::Regular
+        }
+    };
+    let flush = |buf: &mut String, spans: &mut Vec<PdfSpan>, f: PdfFont| {
+        if !buf.is_empty() {
+            spans.push(PdfSpan { text: std::mem::take(buf), font: f });
+        }
+    };
+    let word = |c: Option<&char>| c.map(|c| c.is_alphanumeric()).unwrap_or(false);
+    let mut i = 0;
+    while i < chars.len() {
+        let c = chars[i];
+        if c == '\\' && i + 1 < chars.len() && "\\`*_[]()#+-.!|".contains(chars[i + 1]) {
+            buf.push(chars[i + 1]);
+            i += 2;
+            continue;
+        }
+        if c == '`' {
+            if let Some(end) = chars[i + 1..].iter().position(|&x| x == '`') {
+                flush(&mut buf, &mut spans, cur_font(bold, italic));
+                let code: String = chars[i + 1..i + 1 + end].iter().collect();
+                spans.push(PdfSpan { text: code, font: PdfFont::Mono });
+                i += end + 2;
+                continue;
+            }
+        }
+        if (c == '*' || c == '_')
+            && i + 1 < chars.len()
+            && chars[i + 1] == c
+            && (c == '*' || !(word(chars.get(i.wrapping_sub(1))) && word(chars.get(i + 2))))
+        {
+            flush(&mut buf, &mut spans, cur_font(bold, italic));
+            bold = !bold;
+            i += 2;
+            continue;
+        }
+        if (c == '*' || c == '_') && !(c == '_' && word(chars.get(i.wrapping_sub(1))) && word(chars.get(i + 1))) {
+            let closes = italic;
+            let opens = !italic
+                && chars[i + 1..].contains(&c)
+                && chars.get(i + 1).map(|n| !n.is_whitespace()).unwrap_or(false);
+            if closes || opens {
+                flush(&mut buf, &mut spans, cur_font(bold, italic));
+                italic = !italic;
+                i += 1;
+                continue;
+            }
+        }
+        if c == '[' {
+            if let Some(close) = chars[i + 1..].iter().position(|&x| x == ']') {
+                let after = i + 1 + close + 1;
+                if chars.get(after) == Some(&'(') {
+                    if let Some(end) = chars[after + 1..].iter().position(|&x| x == ')') {
+                        let label: String = chars[i + 1..i + 1 + close].iter().collect();
+                        let url: String = chars[after + 1..after + 1 + end].iter().collect();
+                        buf.push_str(&label);
+                        if url.starts_with("http://") || url.starts_with("https://") {
+                            buf.push_str(&format!(" ({url})"));
+                        }
+                        i = after + 1 + end + 1;
+                        continue;
+                    }
+                }
+            }
+        }
+        buf.push(c);
+        i += 1;
+    }
+    flush(&mut buf, &mut spans, cur_font(bold, italic));
+    if spans.is_empty() {
+        spans.push(PdfSpan { text: String::new(), font: base });
+    }
+    spans
+}
+
+fn wrap_spans(spans: &[PdfSpan], size: f64, max_width: f64) -> Vec<Vec<PdfSpan>> {
+    let mut tokens: Vec<(String, PdfFont, bool)> = Vec::new();
+    for sp in spans {
+        let mut cur = String::new();
+        let mut cur_ws: Option<bool> = None;
+        for ch in sp.text.chars() {
+            let ws = ch.is_whitespace();
+            if cur_ws == Some(ws) || cur_ws.is_none() {
+                cur.push(ch);
+                cur_ws = Some(ws);
+            } else {
+                tokens.push((std::mem::take(&mut cur), sp.font, cur_ws.unwrap_or(false)));
+                cur.push(ch);
+                cur_ws = Some(ws);
+            }
+        }
+        if !cur.is_empty() {
+            tokens.push((cur, sp.font, cur_ws.unwrap_or(false)));
+        }
+    }
+
+    let mut lines: Vec<Vec<PdfSpan>> = Vec::new();
+    let mut cur_line: Vec<PdfSpan> = Vec::new();
+    let mut cur_w = 0.0;
+
+    let push_tok = |line: &mut Vec<PdfSpan>, text: &str, font: PdfFont| {
+        if let Some(last) = line.last_mut() {
+            if last.font == font {
+                last.text.push_str(text);
+                return;
+            }
+        }
+        line.push(PdfSpan { text: text.to_string(), font });
+    };
+
+    for (tok, font, is_ws) in tokens {
+        if is_ws && cur_line.is_empty() {
+            continue;
+        }
+        let w = pdf_text_width(&tok, font, size);
+        if !is_ws && cur_w + w > max_width && !cur_line.is_empty() {
+            while cur_line.last().is_some_and(|s| s.text.trim().is_empty()) {
+                cur_line.pop();
+            }
+            lines.push(std::mem::take(&mut cur_line));
+            cur_w = 0.0;
+        }
+        if !is_ws && w > max_width && cur_line.is_empty() {
+            let mut chunk = String::new();
+            let mut chunk_w = 0.0;
+            for ch in tok.chars() {
+                let cw = pdf_char_width_em(ch, font) * size;
+                if chunk_w + cw > max_width && !chunk.is_empty() {
+                    push_tok(&mut cur_line, &chunk, font);
+                    lines.push(std::mem::take(&mut cur_line));
+                    chunk.clear();
+                    chunk_w = 0.0;
+                }
+                chunk.push(ch);
+                chunk_w += cw;
+            }
+            if !chunk.is_empty() {
+                push_tok(&mut cur_line, &chunk, font);
+                cur_w = chunk_w;
+            }
+        } else {
+            push_tok(&mut cur_line, &tok, font);
+            cur_w += w;
+        }
+    }
+    while cur_line.last().is_some_and(|s| s.text.trim().is_empty()) {
+        cur_line.pop();
+    }
+    if !cur_line.is_empty() || lines.is_empty() {
+        lines.push(cur_line);
+    }
+    lines
+}
+
+struct PdfCanvas {
+    pages: Vec<Vec<u8>>,
+    cur: Vec<u8>,
+    y: f64,
+}
+
+impl PdfCanvas {
+    const PAGE_W: f64 = 612.0;
+    const MARGIN_L: f64 = 54.0;
+    const MARGIN_R: f64 = 54.0;
+    const CONTENT_W: f64 = Self::PAGE_W - Self::MARGIN_L - Self::MARGIN_R;
+    const TOP_Y: f64 = 724.0;
+    const BOTTOM_Y: f64 = 58.0;
+
+    fn new() -> Self {
+        Self { pages: Vec::new(), cur: Vec::new(), y: Self::TOP_Y }
+    }
+
+    fn new_page(&mut self) {
+        let finished = std::mem::take(&mut self.cur);
+        self.pages.push(finished);
+        self.y = Self::TOP_Y;
+    }
+
+    fn ensure_space(&mut self, needed: f64) {
+        if self.y - needed < Self::BOTTOM_Y && !self.cur.is_empty() {
+            self.new_page();
+        }
+    }
+
+    fn draw_line_spans(&mut self, x: f64, y: f64, spans: &[PdfSpan], size: f64, rgb: (f64, f64, f64)) {
+        self.cur.extend_from_slice(
+            format!("q {:.3} {:.3} {:.3} rg BT\n", rgb.0, rgb.1, rgb.2).as_bytes(),
+        );
+        let mut cx = x;
+        for sp in spans {
+            if sp.text.is_empty() {
+                continue;
+            }
+            self.cur.extend_from_slice(
+                format!("{} {:.2} Tf 1 0 0 1 {:.2} {:.2} Tm ", sp.font.tag(), size, cx, y)
+                    .as_bytes(),
+            );
+            self.cur.extend_from_slice(&pdf_escape_literal(&sp.text));
+            self.cur.extend_from_slice(b" Tj\n");
+            cx += pdf_text_width(&sp.text, sp.font, size);
+        }
+        self.cur.extend_from_slice(b"ET Q\n");
+    }
+
+    fn draw_plain_text(&mut self, x: f64, y: f64, text: &str, font: PdfFont, size: f64, rgb: (f64, f64, f64)) {
+        self.cur.extend_from_slice(
+            format!(
+                "q {:.3} {:.3} {:.3} rg BT {} {:.2} Tf 1 0 0 1 {:.2} {:.2} Tm ",
+                rgb.0, rgb.1, rgb.2, font.tag(), size, x, y
+            )
+            .as_bytes(),
+        );
+        self.cur.extend_from_slice(&pdf_escape_literal(text));
+        self.cur.extend_from_slice(b" Tj ET Q\n");
+    }
+
+    fn draw_rect_fill(&mut self, x: f64, y: f64, w: f64, h: f64, rgb: (f64, f64, f64)) {
+        self.cur.extend_from_slice(
+            format!(
+                "q {:.3} {:.3} {:.3} rg {:.2} {:.2} {:.2} {:.2} re f Q\n",
+                rgb.0, rgb.1, rgb.2, x, y, w, h
+            )
+            .as_bytes(),
+        );
+    }
+
+    fn draw_stroke_line(&mut self, x1: f64, y1: f64, x2: f64, y2: f64, width: f64, rgb: (f64, f64, f64)) {
+        self.cur.extend_from_slice(
+            format!(
+                "q {:.2} w {:.3} {:.3} {:.3} RG {:.2} {:.2} m {:.2} {:.2} l S Q\n",
+                width, rgb.0, rgb.1, rgb.2, x1, y1, x2, y2
+            )
+            .as_bytes(),
+        );
+    }
+
+    fn draw_table(&mut self, rows: &[Vec<String>], aligns: &[&str]) {
+        if rows.is_empty() {
+            return;
+        }
+        let ncols = rows.iter().map(|r| r.len()).max().unwrap_or(1).max(1);
+        let pad_x = 5.0;
+        let pad_y = 4.0;
+        let font_sz = 9.5;
+        let line_h = 12.5;
+
+        let mut weights = vec![8.0f64; ncols];
+        for r in rows {
+            for (ci, w) in weights.iter_mut().enumerate() {
+                let len = r.get(ci).map(|s| s.chars().count()).unwrap_or(0).clamp(4, 36) as f64;
+                *w = w.max(len);
+            }
+        }
+        let sum_w: f64 = weights.iter().sum();
+        let mut col_ws: Vec<f64> = weights
+            .iter()
+            .map(|w| (w / sum_w) * Self::CONTENT_W)
+            .collect();
+        let min_col = (Self::CONTENT_W / (ncols as f64)).min(48.0);
+        for w in &mut col_ws {
+            if *w < min_col {
+                *w = min_col;
+            }
+        }
+        let scale = Self::CONTENT_W / col_ws.iter().sum::<f64>();
+        for w in &mut col_ws {
+            *w *= scale;
+        }
+
+        let measure_row = |ri: usize, row: &[String]| -> f64 {
+            let base_font = if ri == 0 { PdfFont::Bold } else { PdfFont::Regular };
+            let max_lines = (0..ncols)
+                .map(|ci| {
+                    let cell_txt = row.get(ci).map(String::as_str).unwrap_or("");
+                    let spans = parse_md_inline_spans(cell_txt, base_font);
+                    wrap_spans(&spans, font_sz, (col_ws[ci] - 2.0 * pad_x).max(16.0)).len()
+                })
+                .max()
+                .unwrap_or(1)
+                .max(1);
+            (max_lines as f64) * line_h + 2.0 * pad_y
+        };
+
+        let render_row = |canvas: &mut PdfCanvas, ri: usize, row: &[String], row_h: f64| {
+            let is_hdr = ri == 0;
+            let base_font = if is_hdr { PdfFont::Bold } else { PdfFont::Regular };
+            let y_top = canvas.y;
+            let y_bot = y_top - row_h;
+            if is_hdr {
+                canvas.draw_rect_fill(Self::MARGIN_L, y_bot, Self::CONTENT_W, row_h, (0.93, 0.94, 0.96));
+            } else if ri % 2 == 0 {
+                canvas.draw_rect_fill(Self::MARGIN_L, y_bot, Self::CONTENT_W, row_h, (0.98, 0.98, 0.99));
+            }
+            let mut cx = Self::MARGIN_L;
+            for (ci, &cw) in col_ws.iter().enumerate() {
+                let cell_txt = row.get(ci).map(String::as_str).unwrap_or("");
+                let spans = parse_md_inline_spans(cell_txt, base_font);
+                let lines = wrap_spans(&spans, font_sz, (cw - 2.0 * pad_x).max(16.0));
+                let align = aligns.get(ci).copied().unwrap_or("left");
+                for (li, line_spans) in lines.iter().enumerate() {
+                    let lw: f64 = line_spans
+                        .iter()
+                        .map(|s| pdf_text_width(&s.text, s.font, font_sz))
+                        .sum();
+                    let tx = match align {
+                        "right" => (cx + cw - pad_x - lw).max(cx + pad_x),
+                        "center" => (cx + (cw - lw) * 0.5).max(cx + pad_x),
+                        _ => cx + pad_x,
+                    };
+                    let ty = y_top - pad_y - font_sz * 0.85 - (li as f64) * line_h;
+                    canvas.draw_line_spans(tx, ty, line_spans, font_sz, (0.12, 0.14, 0.18));
+                }
+                canvas.draw_stroke_line(cx, y_top, cx, y_bot, 0.5, (0.78, 0.80, 0.84));
+                cx += cw;
+            }
+            canvas.draw_stroke_line(cx, y_top, cx, y_bot, 0.5, (0.78, 0.80, 0.84));
+            canvas.draw_stroke_line(
+                Self::MARGIN_L,
+                y_top,
+                Self::MARGIN_L + Self::CONTENT_W,
+                y_top,
+                if is_hdr { 0.8 } else { 0.5 },
+                (0.72, 0.75, 0.80),
+            );
+            canvas.draw_stroke_line(
+                Self::MARGIN_L,
+                y_bot,
+                Self::MARGIN_L + Self::CONTENT_W,
+                y_bot,
+                if is_hdr { 0.8 } else { 0.5 },
+                (0.72, 0.75, 0.80),
+            );
+            canvas.y = y_bot;
+        };
+
+        let hdr_h = measure_row(0, &rows[0]);
+        self.ensure_space(hdr_h + 18.0);
+        render_row(self, 0, &rows[0], hdr_h);
+        for (ri, r) in rows.iter().enumerate().skip(1) {
+            let rh = measure_row(ri, r);
+            if self.y - rh < Self::BOTTOM_Y {
+                self.new_page();
+                render_row(self, 0, &rows[0], hdr_h);
+            }
+            render_row(self, ri, r, rh);
+        }
+        self.y -= 10.0;
+    }
+
+    fn finish(mut self, title: &str, brand_header: Option<&str>) -> Vec<Vec<u8>> {
+        if !self.cur.is_empty() || self.pages.is_empty() {
+            let last = std::mem::take(&mut self.cur);
+            self.pages.push(last);
+        }
+        let total = self.pages.len();
+        let hdr_text = brand_header
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .or_else(|| {
+                let t = title.trim();
+                if t.is_empty() { None } else { Some(t) }
+            });
+        let footer_title = {
+            let t = title.trim();
+            if t.is_empty() { "Ergon Deliverable" } else { t }
+        };
+        let footer_title_short: String = if footer_title.chars().count() > 64 {
+            let mut s: String = footer_title.chars().take(61).collect();
+            s.push_str("...");
+            s
+        } else {
+            footer_title.to_string()
+        };
+
+        for (idx, page_bytes) in self.pages.iter_mut().enumerate() {
+            let mut chrome = PdfCanvas::new();
+            if let Some(h) = hdr_text {
+                chrome.draw_plain_text(Self::MARGIN_L, 756.0, h, PdfFont::Regular, 8.5, (0.45, 0.48, 0.54));
+                chrome.draw_stroke_line(Self::MARGIN_L, 748.0, Self::MARGIN_L + Self::CONTENT_W, 748.0, 0.5, (0.82, 0.84, 0.88));
+            }
+            chrome.draw_stroke_line(Self::MARGIN_L, 44.0, Self::MARGIN_L + Self::CONTENT_W, 44.0, 0.5, (0.82, 0.84, 0.88));
+            chrome.draw_plain_text(Self::MARGIN_L, 32.0, &footer_title_short, PdfFont::Regular, 8.5, (0.45, 0.48, 0.54));
+            let pg_label = format!("Page {} of {}", idx + 1, total);
+            let pg_w = pdf_text_width(&pg_label, PdfFont::Regular, 8.5);
+            chrome.draw_plain_text(
+                Self::MARGIN_L + Self::CONTENT_W - pg_w,
+                32.0,
+                &pg_label,
+                PdfFont::Regular,
+                8.5,
+                (0.45, 0.48, 0.54),
+            );
+            let mut combined = chrome.cur;
+            combined.extend_from_slice(page_bytes);
+            *page_bytes = combined;
+        }
+        self.pages
+    }
+}
+
+/// Render Markdown into a clean, multi-page pure-Rust PDF 1.4 document with
+/// Helvetica typography, headings, wrapped body text, lists, code blocks,
+/// ruled tables, and running page headers/footers.
+pub fn markdown_to_pdf(md: &str, title: &str, brand_header: Option<&str>) -> Vec<u8> {
+    let mut c = PdfCanvas::new();
+    let lines: Vec<&str> = md.lines().collect();
+    let has_h1 = lines.iter().any(|l| l.trim_start().starts_with("# "));
+    if !has_h1 && !title.trim().is_empty() {
+        let spans = parse_md_inline_spans(title.trim(), PdfFont::Bold);
+        let wrapped = wrap_spans(&spans, 19.0, PdfCanvas::CONTENT_W);
+        for wl in &wrapped {
+            c.ensure_space(25.0);
+            c.draw_line_spans(PdfCanvas::MARGIN_L, c.y, wl, 19.0, (0.08, 0.10, 0.14));
+            c.y -= 24.0;
+        }
+        c.draw_stroke_line(
+            PdfCanvas::MARGIN_L,
+            c.y + 8.0,
+            PdfCanvas::MARGIN_L + PdfCanvas::CONTENT_W,
+            c.y + 8.0,
+            0.8,
+            (0.75, 0.78, 0.84),
+        );
+        c.y -= 8.0;
+    }
+
+    let mut para_buf: Vec<String> = Vec::new();
+    let flush_para = |c: &mut PdfCanvas, buf: &mut Vec<String>| {
+        if buf.is_empty() {
+            return;
+        }
+        let joined = buf.join(" ");
+        buf.clear();
+        let spans = parse_md_inline_spans(&joined, PdfFont::Regular);
+        let wrapped = wrap_spans(&spans, 10.5, PdfCanvas::CONTENT_W);
+        for wl in &wrapped {
+            c.ensure_space(15.0);
+            c.draw_line_spans(PdfCanvas::MARGIN_L, c.y, wl, 10.5, (0.12, 0.14, 0.18));
+            c.y -= 14.5;
+        }
+        c.y -= 6.0;
+    };
+
+    let mut i = 0;
+    while i < lines.len() {
+        let line = lines[i];
+        let t = line.trim();
+
+        if t.starts_with("```") || t.starts_with("~~~") {
+            flush_para(&mut c, &mut para_buf);
+            let fence = &t[..3];
+            i += 1;
+            let mut code_lines: Vec<String> = Vec::new();
+            while i < lines.len() && !lines[i].trim().starts_with(fence) {
+                let wrapped = wrap_spans(
+                    &[PdfSpan { text: lines[i].to_string(), font: PdfFont::Mono }],
+                    9.0,
+                    PdfCanvas::CONTENT_W - 16.0,
+                );
+                for wl in wrapped {
+                    code_lines.push(wl.into_iter().map(|s| s.text).collect());
+                }
+                i += 1;
+            }
+            i += 1;
+            for cl in code_lines {
+                c.ensure_space(14.0);
+                c.draw_rect_fill(
+                    PdfCanvas::MARGIN_L,
+                    c.y - 3.0,
+                    PdfCanvas::CONTENT_W,
+                    13.0,
+                    (0.95, 0.95, 0.97),
+                );
+                c.draw_plain_text(
+                    PdfCanvas::MARGIN_L + 8.0,
+                    c.y,
+                    &cl,
+                    PdfFont::Mono,
+                    9.0,
+                    (0.16, 0.18, 0.22),
+                );
+                c.y -= 13.0;
+            }
+            c.y -= 6.0;
+            continue;
+        }
+
+        if t.is_empty() {
+            flush_para(&mut c, &mut para_buf);
+            i += 1;
+            continue;
+        }
+
+        let hashes = t.chars().take_while(|&ch| ch == '#').count();
+        if (1..=6).contains(&hashes) && t[hashes..].starts_with(' ') {
+            flush_para(&mut c, &mut para_buf);
+            let text = t[hashes..].trim().trim_end_matches('#').trim();
+            let (size, lead, space_before) = match hashes {
+                1 => (19.0, 24.0, 8.0),
+                2 => (14.5, 19.0, 8.0),
+                3 => (12.0, 16.0, 6.0),
+                _ => (10.8, 14.5, 4.0),
+            };
+            c.y -= space_before;
+            let spans = parse_md_inline_spans(text, PdfFont::Bold);
+            let wrapped = wrap_spans(&spans, size, PdfCanvas::CONTENT_W);
+            c.ensure_space((wrapped.len() as f64) * lead + 18.0);
+            for wl in &wrapped {
+                c.ensure_space(lead);
+                c.draw_line_spans(PdfCanvas::MARGIN_L, c.y, wl, size, (0.08, 0.10, 0.14));
+                c.y -= lead;
+            }
+            if hashes == 1 {
+                c.draw_stroke_line(
+                    PdfCanvas::MARGIN_L,
+                    c.y + 6.0,
+                    PdfCanvas::MARGIN_L + PdfCanvas::CONTENT_W,
+                    c.y + 6.0,
+                    0.7,
+                    (0.75, 0.78, 0.84),
+                );
+            }
+            c.y -= 5.0;
+            i += 1;
+            continue;
+        }
+
+        if t.len() >= 3
+            && (t.chars().all(|ch| ch == '-')
+                || t.chars().all(|ch| ch == '*')
+                || t.chars().all(|ch| ch == '_'))
+        {
+            flush_para(&mut c, &mut para_buf);
+            c.ensure_space(14.0);
+            c.draw_stroke_line(
+                PdfCanvas::MARGIN_L,
+                c.y - 4.0,
+                PdfCanvas::MARGIN_L + PdfCanvas::CONTENT_W,
+                c.y - 4.0,
+                0.7,
+                (0.75, 0.78, 0.82),
+            );
+            c.y -= 14.0;
+            i += 1;
+            continue;
+        }
+
+        if t.starts_with('|') && i + 1 < lines.len() && is_table_sep(lines[i + 1]) {
+            flush_para(&mut c, &mut para_buf);
+            let header = split_table_row(t);
+            let aligns: Vec<&str> = split_table_row(lines[i + 1])
+                .iter()
+                .map(|cell| {
+                    let s = cell.trim();
+                    match (s.starts_with(':'), s.ends_with(':')) {
+                        (true, true) => "center",
+                        (false, true) => "right",
+                        _ => "left",
+                    }
+                })
+                .collect();
+            let mut rows = vec![header];
+            i += 2;
+            while i < lines.len() && lines[i].trim().starts_with('|') {
+                rows.push(split_table_row(lines[i]));
+                i += 1;
+            }
+            c.draw_table(&rows, &aligns);
+            continue;
+        }
+
+        if let Some((level, numbered, text)) = list_item(line) {
+            flush_para(&mut c, &mut para_buf);
+            let indent = (level as f64) * 14.0;
+            let marker = if numbered {
+                let digits: String = t.chars().take_while(|ch| ch.is_ascii_digit()).collect();
+                format!("{digits}.")
+            } else {
+                "•".to_string()
+            };
+            let marker_w = if numbered { 18.0 } else { 12.0 };
+            let spans = parse_md_inline_spans(&text, PdfFont::Regular);
+            let wrapped = wrap_spans(&spans, 10.5, PdfCanvas::CONTENT_W - indent - marker_w);
+            for (li, wl) in wrapped.iter().enumerate() {
+                c.ensure_space(14.5);
+                if li == 0 {
+                    c.draw_plain_text(
+                        PdfCanvas::MARGIN_L + indent,
+                        c.y,
+                        &marker,
+                        PdfFont::Bold,
+                        10.5,
+                        (0.20, 0.24, 0.30),
+                    );
+                }
+                c.draw_line_spans(
+                    PdfCanvas::MARGIN_L + indent + marker_w,
+                    c.y,
+                    wl,
+                    10.5,
+                    (0.12, 0.14, 0.18),
+                );
+                c.y -= 14.5;
+            }
+            c.y -= 2.5;
+            i += 1;
+            continue;
+        }
+
+        if let Some(q) = t.strip_prefix('>') {
+            flush_para(&mut c, &mut para_buf);
+            let spans = parse_md_inline_spans(q.trim(), PdfFont::Italic);
+            let wrapped = wrap_spans(&spans, 10.2, PdfCanvas::CONTENT_W - 16.0);
+            for wl in &wrapped {
+                c.ensure_space(14.5);
+                c.draw_stroke_line(
+                    PdfCanvas::MARGIN_L + 4.0,
+                    c.y + 9.0,
+                    PdfCanvas::MARGIN_L + 4.0,
+                    c.y - 3.5,
+                    1.5,
+                    (0.65, 0.70, 0.78),
+                );
+                c.draw_line_spans(
+                    PdfCanvas::MARGIN_L + 14.0,
+                    c.y,
+                    wl,
+                    10.2,
+                    (0.28, 0.32, 0.38),
+                );
+                c.y -= 14.5;
+            }
+            c.y -= 4.0;
+            i += 1;
+            continue;
+        }
+
+        if line.ends_with("  ") {
+            para_buf.push(t.to_string());
+            flush_para(&mut c, &mut para_buf);
+        } else {
+            para_buf.push(t.to_string());
+        }
+        i += 1;
+    }
+    flush_para(&mut c, &mut para_buf);
+
+    let page_streams = c.finish(title, brand_header);
+    let n_pages = page_streams.len();
+    let first_page_content_id = 8usize;
+    let total_objs = 7 + n_pages * 2;
+    let mut kids = String::new();
+    for p in 0..n_pages {
+        if p > 0 {
+            kids.push(' ');
+        }
+        let page_id = first_page_content_id + p * 2 + 1;
+        kids.push_str(&format!("{page_id} 0 R"));
+    }
+
+    let mut pdf: Vec<u8> = Vec::with_capacity(8192);
+    pdf.extend_from_slice(b"%PDF-1.4\n%\xE2\xE3\xCF\xD3\n");
+    let mut offsets: Vec<usize> = vec![0; total_objs + 1];
+
+    let push_obj = |pdf: &mut Vec<u8>, offsets: &mut [usize], id: usize, body: &[u8]| {
+        offsets[id] = pdf.len();
+        pdf.extend_from_slice(format!("{id} 0 obj\n").as_bytes());
+        pdf.extend_from_slice(body);
+        pdf.extend_from_slice(b"\nendobj\n");
+    };
+
+    push_obj(&mut pdf, &mut offsets, 1, b"<< /Type /Catalog /Pages 2 0 R >>");
+    push_obj(
+        &mut pdf,
+        &mut offsets,
+        2,
+        format!("<< /Type /Pages /Kids [{kids}] /Count {n_pages} >>").as_bytes(),
+    );
+    push_obj(
+        &mut pdf,
+        &mut offsets,
+        3,
+        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>",
+    );
+    push_obj(
+        &mut pdf,
+        &mut offsets,
+        4,
+        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>",
+    );
+    push_obj(
+        &mut pdf,
+        &mut offsets,
+        5,
+        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Oblique /Encoding /WinAnsiEncoding >>",
+    );
+    push_obj(
+        &mut pdf,
+        &mut offsets,
+        6,
+        b"<< /Type /Font /Subtype /Type1 /BaseFont /Courier /Encoding /WinAnsiEncoding >>",
+    );
+
+    let mut info_body = Vec::from(&b"<< /Title "[..]);
+    info_body.extend_from_slice(&pdf_escape_literal(if title.trim().is_empty() {
+        "Ergon Deliverable"
+    } else {
+        title.trim()
+    }));
+    info_body.extend_from_slice(b" /Producer (Ergon) /Creator (Ergon) >>");
+    push_obj(&mut pdf, &mut offsets, 7, &info_body);
+
+    for (p, stream_bytes) in page_streams.iter().enumerate() {
+        let content_id = first_page_content_id + p * 2;
+        let page_id = content_id + 1;
+        let mut cbody = format!("<< /Length {} >>\nstream\n", stream_bytes.len()).into_bytes();
+        cbody.extend_from_slice(stream_bytes);
+        cbody.extend_from_slice(b"\nendstream");
+        push_obj(&mut pdf, &mut offsets, content_id, &cbody);
+
+        let pbody = format!(
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R /F2 4 0 R /F3 5 0 R /F4 6 0 R >> >> /Contents {content_id} 0 R >>"
+        );
+        push_obj(&mut pdf, &mut offsets, page_id, pbody.as_bytes());
+    }
+
+    let xref_offset = pdf.len();
+    pdf.extend_from_slice(format!("xref\n0 {}\n", total_objs + 1).as_bytes());
+    pdf.extend_from_slice(b"0000000000 65535 f \n");
+    for off in offsets.iter().skip(1) {
+        pdf.extend_from_slice(format!("{off:010} 00000 n \n").as_bytes());
+    }
+    pdf.extend_from_slice(
+        format!(
+            "trailer\n<< /Size {} /Root 1 0 R /Info 7 0 R >>\nstartxref\n{xref_offset}\n%%EOF\n",
+            total_objs + 1
+        )
+        .as_bytes(),
+    );
+    pdf
+}
+
+/// Render rows (first row = header) as an Excel workbook.
+pub fn rows_to_xlsx(rows: &[Vec<String>], sheet_name: &str, title: &str) -> Vec<u8> {
+    sheets_to_xlsx(
+        &[ExportSheet {
+            name: sheet_name.to_string(),
+            rows: rows.to_vec(),
+            totals_row: false,
+        }],
+        title,
+    )
 }
 
 #[cfg(test)]
@@ -2020,5 +3081,55 @@ mod tests {
         assert_eq!(split_sheet("book.xlsx#Q2"), ("book.xlsx", Some("Q2")));
         assert_eq!(split_sheet("notes#1.md"), ("notes#1.md", None));
         assert_eq!(split_sheet("book.xlsx"), ("book.xlsx", None));
+    }
+
+    #[test]
+    fn markdown_pdf_round_trips_and_paginates() {
+        let mut md = String::from("# Client Ops Brief\n\nExecutive summary for **Acme Advisory** (Q4) — includes `SQL` & café metrics.\n\n| Item | Cost |\n| --- | ---: |\n| Hosting | $120.00 |\n| Support | $450.50 |\n\n");
+        for i in 1..=55 {
+            md.push_str(&format!("- Line item {i}: detailed deliverable verification for client handoff.\n"));
+        }
+        let pdf = markdown_to_pdf(&md, "Client Ops Brief", Some("Acme Advisory"));
+        assert!(pdf.starts_with(b"%PDF-1.4\n"));
+        let raw = String::from_utf8_lossy(&pdf);
+        assert!(raw.contains("/BaseFont /Helvetica"));
+        assert!(raw.contains("xref"));
+        let (text, pages) = pdf_to_text(pdf).unwrap();
+        assert!(pages >= 2, "expected multi-page PDF, got {pages}");
+        assert!(text.contains("Client Ops Brief"), "{text}");
+        assert!(text.contains("Acme Advisory"), "{text}");
+        assert!(text.contains("Hosting"), "{text}");
+        assert!(text.contains("$450.50"), "{text}");
+        assert!(text.contains("Page 1 of"), "{text}");
+    }
+
+    #[test]
+    fn multi_sheet_xlsx_has_formulas_and_cached_totals() {
+        let s1 = ExportSheet {
+            name: "Q4 Spend".into(),
+            rows: vec![
+                vec!["Vendor".into(), "Amount".into()],
+                vec!["Acme".into(), "$100.25".into()],
+                vec!["Beta".into(), "$49.75".into()],
+            ],
+            totals_row: true,
+        };
+        let s2 = ExportSheet {
+            name: "Summary".into(),
+            rows: vec![
+                vec!["Metric".into(), "Count".into()],
+                vec!["Invoices".into(), "2".into()],
+            ],
+            totals_row: false,
+        };
+        let bytes = sheets_to_xlsx(&[s1, s2], "Q4 Workbook");
+        let zip = ZipReader::open(&bytes).unwrap();
+        let sheet1_xml = zip.read_string("xl/worksheets/sheet1.xml").unwrap();
+        assert!(sheet1_xml.contains("<f>SUM(B2:B3)</f><v>150</v>"), "{sheet1_xml}");
+        let parsed = xlsx_sheets(&bytes).unwrap();
+        assert_eq!(parsed.len(), 2);
+        assert_eq!(parsed[0].name, "Q4 Spend");
+        assert_eq!(parsed[1].name, "Summary");
+        assert_eq!(parsed[0].rows[3], vec!["Total", "150"]);
     }
 }

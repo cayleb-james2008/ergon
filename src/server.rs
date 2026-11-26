@@ -234,6 +234,123 @@ fn is_history_security_error(err: &str) -> bool {
         || low.contains("workspace")
 }
 
+fn resolve_studio_write_path(workspace_dir: &Path, raw: &str) -> Result<(String, PathBuf), (u16, String)> {
+    let rel = tables::validate_workspace_rel_path(raw).map_err(|e| {
+        let code = if e.contains("required") || e.contains("too long") {
+            400
+        } else {
+            403
+        };
+        (code, e)
+    })?;
+    let unresolved = sandbox_path_resolving(workspace_dir, &rel, false).map_err(|e| (403, e))?;
+    if unresolved
+        .symlink_metadata()
+        .is_ok_and(|md| md.file_type().is_symlink())
+    {
+        return Err((403, "cannot overwrite symlink".to_string()));
+    }
+    let resolved = sandbox_path_resolving(workspace_dir, &rel, true).map_err(|e| (403, e))?;
+    if resolved == workspace_dir || resolved.is_dir() {
+        return Err((400, "path must name a file inside the workspace".to_string()));
+    }
+    Ok((rel, resolved))
+}
+
+fn apply_patch_ops(orig: &str, ops: &[Value]) -> Result<(String, usize), String> {
+    let mut working = orig.to_string();
+    let mut applied = 0usize;
+    for (idx, op_val) in ops.iter().enumerate() {
+        let op = op_val["op"]
+            .as_str()
+            .unwrap_or("")
+            .trim()
+            .to_ascii_lowercase();
+        match op.as_str() {
+            "replace" => {
+                let find = op_val["find"]
+                    .as_str()
+                    .filter(|s| !s.is_empty())
+                    .ok_or_else(|| format!("op[{idx}] 'replace' requires a non-empty 'find' string"))?;
+                let replace = op_val["replace"]
+                    .as_str()
+                    .ok_or_else(|| format!("op[{idx}] 'replace' requires a 'replace' string"))?;
+                let replace_all = op_val["replace_all"].as_bool().unwrap_or(false);
+                let count = working.match_indices(find).count();
+                if count == 0 {
+                    return Err(format!("op[{idx}] 'replace': target text not found"));
+                }
+                if count > 1 && !replace_all {
+                    return Err(format!(
+                        "op[{idx}] 'replace': target matched {count} times (ambiguous); pass replace_all: true"
+                    ));
+                }
+                working = if replace_all {
+                    working.replace(find, replace)
+                } else {
+                    working.replacen(find, replace, 1)
+                };
+                applied += count;
+            }
+            "replace_lines" => {
+                let start = op_val["start_line"]
+                    .as_u64()
+                    .ok_or_else(|| format!("op[{idx}] 'replace_lines' requires 1-based 'start_line'"))?
+                    as usize;
+                let end = op_val["end_line"].as_u64().unwrap_or(start as u64) as usize;
+                let replace = op_val["replace"]
+                    .as_str()
+                    .ok_or_else(|| format!("op[{idx}] 'replace_lines' requires a 'replace' string"))?;
+                if start == 0 || end < start {
+                    return Err(format!("op[{idx}] 'replace_lines': invalid line range {start}..={end}"));
+                }
+                let had_nl = working.ends_with('\n');
+                let body = working
+                    .strip_suffix("\r\n")
+                    .or_else(|| working.strip_suffix('\n'))
+                    .unwrap_or(&working);
+                let mut lines: Vec<String> = if working.is_empty() {
+                    Vec::new()
+                } else {
+                    body.split('\n')
+                        .map(|s| s.strip_suffix('\r').unwrap_or(s).to_string())
+                        .collect()
+                };
+                if end > lines.len() {
+                    return Err(format!(
+                        "op[{idx}] 'replace_lines': end_line {end} exceeds line count {}",
+                        lines.len()
+                    ));
+                }
+                let rep_lines: Vec<String> = if replace.is_empty() {
+                    Vec::new()
+                } else {
+                    let trimmed = replace
+                        .strip_suffix("\r\n")
+                        .or_else(|| replace.strip_suffix('\n'))
+                        .unwrap_or(replace);
+                    trimmed
+                        .split('\n')
+                        .map(|s| s.strip_suffix('\r').unwrap_or(s).to_string())
+                        .collect()
+                };
+                lines.splice((start - 1)..end, rep_lines);
+                working = lines.join("\n");
+                if had_nl && !working.is_empty() {
+                    working.push('\n');
+                }
+                applied += 1;
+            }
+            other => {
+                return Err(format!(
+                    "op[{idx}] unknown patch op '{other}' (use 'replace' or 'replace_lines')"
+                ));
+            }
+        }
+    }
+    Ok((working, applied))
+}
+
 fn latest_receipt_id_for_thread(person_data_dir: &Path, thread_id: &str) -> Option<String> {
     let chain = receipts::load_chain(person_data_dir);
     chain
@@ -1094,6 +1211,8 @@ fn read_request_from<S: SockStream>(
     let content_length = content_length.unwrap_or(0);
     let body_limit = if method == "POST" && path == "/api/files/upload" {
         MAX_UPLOAD_BODY_BYTES
+    } else if matches!(method.as_str(), "PUT" | "PATCH") && path == "/api/files/content" {
+        4 * 1_048_576
     } else if method == "POST" && path == "/api/verify/evidence" {
         16 * 1024 * 1024
     } else if method == "POST" && path == "/api/playbooks/import" {
@@ -1997,7 +2116,7 @@ fn try_route_system(
                 );
                 search::write_json_bool(buf, state.scheduler_enabled);
                 buf.extend_from_slice(
-                    br#","file_history":true,"audit_bundle":true,"tripwire":true},"scheduler_enabled":"#,
+                    br#","file_history":true,"audit_bundle":true,"tripwire":true,"file_edit":true,"table_query":true,"pdf_export":true},"scheduler_enabled":"#,
                 );
                 search::write_json_bool(buf, state.scheduler_enabled);
                 buf.extend_from_slice(br#","person":{"id":"#);
@@ -3908,19 +4027,23 @@ fn try_route_files_and_audit(
                 .map(|d| d.as_millis() as u64)
                 .unwrap_or(0);
             match String::from_utf8(bytes) {
-                Ok(content) => respond_json(
-                    stream,
-                    200,
-                    &json!({
-                        "path": rel,
-                        "name": name,
-                        "size": md.len(),
-                        "mtime_ms": mtime_ms,
-                        "ext": ext,
-                        "is_binary": false,
-                        "content": content,
-                    }),
-                ),
+                Ok(content) => {
+                    let sha256 = receipts::sha256_hex(content.as_bytes());
+                    respond_json(
+                        stream,
+                        200,
+                        &json!({
+                            "path": rel,
+                            "name": name,
+                            "size": md.len(),
+                            "mtime_ms": mtime_ms,
+                            "ext": ext,
+                            "sha256": sha256,
+                            "is_binary": false,
+                            "content": content,
+                        }),
+                    )
+                }
                 Err(_) => respond_json(
                     stream,
                     200,
@@ -3936,13 +4059,231 @@ fn try_route_files_and_audit(
                 ),
             }
         }
+        ("PUT", "/api/files/content") => {
+            let parsed: Value = serde_json::from_slice(&req.body).unwrap_or(Value::Null);
+            let raw_rel = parsed["path"].as_str().unwrap_or("");
+            let (rel, full) = match resolve_studio_write_path(&runtime.cfg.workspace_dir, raw_rel) {
+                Ok(pair) => pair,
+                Err((code, msg)) => return Some(respond_err(stream, code, &msg)),
+            };
+            let content = match parsed["content"].as_str() {
+                Some(s) => s,
+                None => return Some(respond_err(stream, 400, "content is required")),
+            };
+            if content.len() as u64 > docs::MAX_DOC_BYTES {
+                return Some(respond_err(stream, 413, "file exceeds the 25 MB limit"));
+            }
+            if let Some(expected) = parsed["expected_sha256"]
+                .as_str()
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+            {
+                if full.is_file() {
+                    let cur_bytes = match std::fs::read(&full) {
+                        Ok(b) => b,
+                        Err(e) => return Some(respond_err(stream, 500, &format!("read {rel}: {e}"))),
+                    };
+                    let actual = receipts::sha256_hex(&cur_bytes);
+                    if !actual.eq_ignore_ascii_case(expected) {
+                        return Some(respond_json(
+                            stream,
+                            409,
+                            &json!({
+                                "error": "file was modified concurrently (expected_sha256 mismatch)",
+                                "path": rel,
+                                "expected_sha256": expected,
+                                "actual_sha256": actual,
+                                "current_sha256": actual,
+                            }),
+                        ));
+                    }
+                } else {
+                    return Some(respond_json(
+                        stream,
+                        409,
+                        &json!({
+                            "error": "file no longer exists on disk (expected_sha256 mismatch)",
+                            "path": rel,
+                            "expected_sha256": expected,
+                            "actual_sha256": Value::Null,
+                        }),
+                    ));
+                }
+            }
+            let reason = parsed["reason"]
+                .as_str()
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .unwrap_or("studio-edit");
+            let prev_rev = match file_history::record_revision(
+                &runtime.cfg.data_dir,
+                &runtime.cfg.workspace_dir,
+                &rel,
+                reason,
+            ) {
+                Ok(r) => r,
+                Err(e) => return Some(respond_err(stream, 500, &format!("snapshot {rel}: {e}"))),
+            };
+            if let Err(e) = atomic_write_bytes(&full, content.as_bytes()) {
+                return Some(respond_err(stream, 500, &format!("write {rel}: {e}")));
+            }
+            state.search_cache.invalidate(&person.id);
+            let sha256 = receipts::sha256_hex(content.as_bytes());
+            let mtime_ms = std::fs::metadata(&full)
+                .ok()
+                .and_then(|m| m.modified().ok())
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_millis() as u64)
+                .unwrap_or(0);
+            respond_json(
+                stream,
+                200,
+                &json!({
+                    "path": rel,
+                    "size": content.len(),
+                    "mtime_ms": mtime_ms,
+                    "sha256": sha256,
+                    "rev_id": prev_rev.map(|r| r.rev_id),
+                }),
+            )
+        }
+        ("PATCH", "/api/files/content") => {
+            let parsed: Value = serde_json::from_slice(&req.body).unwrap_or(Value::Null);
+            let raw_rel = parsed["path"].as_str().unwrap_or("");
+            let (rel, full) = match resolve_studio_write_path(&runtime.cfg.workspace_dir, raw_rel) {
+                Ok(pair) => pair,
+                Err((code, msg)) => return Some(respond_err(stream, code, &msg)),
+            };
+            if !full.is_file() {
+                return Some(respond_err(stream, 404, "file not found"));
+            }
+            let orig_bytes = match std::fs::read(&full) {
+                Ok(b) => b,
+                Err(e) => return Some(respond_err(stream, 500, &format!("read {rel}: {e}"))),
+            };
+            let orig_sha = receipts::sha256_hex(&orig_bytes);
+            if let Some(expected) = parsed["expected_sha256"]
+                .as_str()
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+            {
+                if !orig_sha.eq_ignore_ascii_case(expected) {
+                    return Some(respond_json(
+                        stream,
+                        409,
+                        &json!({
+                            "error": "file was modified concurrently (expected_sha256 mismatch)",
+                            "path": rel,
+                            "expected_sha256": expected,
+                            "actual_sha256": orig_sha,
+                            "current_sha256": orig_sha,
+                        }),
+                    ));
+                }
+            }
+            let orig_text = match String::from_utf8(orig_bytes) {
+                Ok(s) => s,
+                Err(_) => return Some(respond_err(stream, 400, "binary files cannot be patched as UTF-8 text")),
+            };
+            let Some(ops) = parsed["ops"].as_array().filter(|a| !a.is_empty()) else {
+                return Some(respond_err(stream, 400, "ops array is required and must be non-empty"));
+            };
+            let (working, applied) = match apply_patch_ops(&orig_text, ops) {
+                Ok(res) => res,
+                Err(e) => return Some(respond_err(stream, 400, &e)),
+            };
+            let prev_rev = match file_history::record_revision(
+                &runtime.cfg.data_dir,
+                &runtime.cfg.workspace_dir,
+                &rel,
+                "studio-patch",
+            ) {
+                Ok(r) => r,
+                Err(e) => return Some(respond_err(stream, 500, &format!("snapshot {rel}: {e}"))),
+            };
+            if let Err(e) = atomic_write_bytes(&full, working.as_bytes()) {
+                return Some(respond_err(stream, 500, &format!("write {rel}: {e}")));
+            }
+            state.search_cache.invalidate(&person.id);
+            let new_sha = receipts::sha256_hex(working.as_bytes());
+            let stats = file_history::diff_texts(
+                &format!("{rel} (before)"),
+                &format!("{rel} (after)"),
+                &orig_text,
+                &working,
+            );
+            let rev_diff = file_history::RevisionDiff {
+                path: rel.clone(),
+                rev_a: prev_rev
+                    .as_ref()
+                    .map(|r| r.rev_id.clone())
+                    .unwrap_or_else(|| "previous".to_string()),
+                rev_b: "current".to_string(),
+                sha256_a: orig_sha,
+                sha256_b: new_sha.clone(),
+                is_binary: false,
+                added: stats.added,
+                removed: stats.removed,
+                unchanged: stats.unchanged,
+                similarity_pct: stats.similarity_pct,
+                hunks: stats.hunks,
+                unified: stats.unified,
+            };
+            respond_json(
+                stream,
+                200,
+                &json!({
+                    "path": rel,
+                    "applied": applied,
+                    "size": working.len(),
+                    "sha256": new_sha,
+                    "rev_id": prev_rev.map(|r| r.rev_id),
+                    "diff": rev_diff.to_json(),
+                }),
+            )
+        }
+        ("POST", "/api/tables/query") => {
+            let parsed: Value = serde_json::from_slice(&req.body).unwrap_or(Value::Null);
+            match tables::execute_query(&runtime.cfg, &parsed) {
+                Ok(res) => {
+                    if res.saved_path.is_some() {
+                        state.search_cache.invalidate(&person.id);
+                    }
+                    respond_json(stream, 200, &res.to_json())
+                }
+                Err(e) => {
+                    let status = if is_history_security_error(&e) || e.contains("symlink") {
+                        403
+                    } else if e.contains("not found") {
+                        404
+                    } else {
+                        400
+                    };
+                    respond_err(stream, status, &e)
+                }
+            }
+        }
         ("POST", "/api/files/export") => {
             let parsed: Value = serde_json::from_slice(&req.body).unwrap_or(Value::Null);
-            let rel = parsed["path"].as_str().unwrap_or("").trim().to_string();
+            let has_sheets = parsed["sheets"].as_array().is_some_and(|a| !a.is_empty());
+            let rel = parsed["path"]
+                .as_str()
+                .or_else(|| if has_sheets { parsed["output"].as_str() } else { None })
+                .unwrap_or("")
+                .trim()
+                .to_string();
             if rel.is_empty() {
                 return Some(respond_err(stream, 400, "path is required"));
             }
-            match export_workspace_file(&runtime.cfg, &rel, parsed["format"].as_str(), None) {
+            match export_workspace_file_with_options(
+                &runtime.cfg,
+                &rel,
+                parsed["format"].as_str(),
+                parsed["output"].as_str(),
+                parsed["brand_header"].as_str(),
+                parsed["sheets"].as_array().map(|a| a.as_slice()),
+                parsed["totals_row"].as_bool().unwrap_or(false),
+            ) {
                 Ok((out, bytes, label)) => {
                     state.search_cache.invalidate(&person.id);
                     respond_json(stream, 201, &json!({"path": out, "size": bytes, "kind": label, "source": rel}))

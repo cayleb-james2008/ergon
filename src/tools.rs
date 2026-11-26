@@ -504,6 +504,88 @@ pub fn execute_tool(cfg: &Config, name: &str, args: &Value) -> Result<String, St
             atomic_write_bytes(&full, content.as_bytes()).map_err(|e| format!("write_file {rel}: {e}"))?;
             Ok(format!("wrote {rel} ({} bytes)", content.len()))
         }
+        "patch_file" => {
+            let raw_rel = args["path"].as_str().ok_or("patch_file needs args.path")?;
+            let find = args["find"].as_str().ok_or("patch_file needs args.find")?;
+            if find.is_empty() {
+                return Err("patch_file needs a non-empty args.find".to_string());
+            }
+            let replace = args["replace"]
+                .as_str()
+                .ok_or("patch_file needs args.replace")?;
+            let replace_all = args["replace_all"].as_bool().unwrap_or(false);
+            let rel = crate::tables::validate_workspace_rel_path(raw_rel)?;
+            let unresolved = sandbox_path_resolving(&cfg.workspace_dir, &rel, false)?;
+            if unresolved
+                .symlink_metadata()
+                .is_ok_and(|md| md.file_type().is_symlink())
+            {
+                return Err(format!("patch_file: cannot patch symlink {rel}"));
+            }
+            let full = sandbox_path(&cfg.workspace_dir, &rel)?;
+            let text = std::fs::read_to_string(&full).map_err(|e| {
+                if e.kind() == std::io::ErrorKind::NotFound {
+                    format!("patch_file: no such file: {rel}")
+                } else if e.kind() == std::io::ErrorKind::InvalidData {
+                    format!("patch_file {rel}: binary files cannot be patched as UTF-8 text")
+                } else {
+                    format!("patch_file {rel}: {e}")
+                }
+            })?;
+            let count = text.match_indices(find).count();
+            if count == 0 {
+                return Err(format!("patch_file: target text not found in {rel}"));
+            }
+            if count > 1 && !replace_all {
+                return Err(format!(
+                    "patch_file: found {count} matches in {rel} (ambiguous); pass a more specific find string or set replace_all: true"
+                ));
+            }
+            let updated = if replace_all {
+                text.replace(find, replace)
+            } else {
+                text.replacen(find, replace, 1)
+            };
+            let _ = file_history::record_revision(
+                &cfg.data_dir,
+                &cfg.workspace_dir,
+                &rel,
+                "patch_file",
+            );
+            atomic_write_bytes(&full, updated.as_bytes())
+                .map_err(|e| format!("patch_file {rel}: {e}"))?;
+            Ok(format!(
+                "patched {rel} ({count} replacement{}, {} bytes)",
+                if count == 1 { "" } else { "s" },
+                updated.len()
+            ))
+        }
+        "query_table" => {
+            let res = crate::tables::execute_query(cfg, args)?;
+            let mut out = format!(
+                "query_table: {} of {} rows matched ({} output row{})",
+                res.matched_rows,
+                res.total_rows,
+                res.rows.len(),
+                if res.rows.len() == 1 { "" } else { "s" }
+            );
+            if let Some(sp) = &res.saved_path {
+                out.push_str(&format!(" — wrote {sp}"));
+            }
+            let mut preview_rows = Vec::with_capacity(res.rows.len().min(40) + 1);
+            if !res.columns.is_empty() {
+                preview_rows.push(res.columns.clone());
+            }
+            preview_rows.extend(res.rows.iter().take(40).cloned());
+            if !preview_rows.is_empty() {
+                out.push('\n');
+                out.push_str(&docs::rows_to_csv(&preview_rows));
+                if res.rows.len() > 40 {
+                    out.push_str(&format!("... ({} more rows omitted)", res.rows.len() - 40));
+                }
+            }
+            Ok(out.trim_end().to_string())
+        }
         "fetch_url" => {
             if crate::load_workspace_policy(&cfg.data_dir).block_outbound_fetch {
                 return Err("blocked by Air-Gapped workspace policy: outbound network fetches are disabled for this workspace".to_string());
@@ -631,14 +713,19 @@ pub fn execute_tool(cfg: &Config, name: &str, args: &Value) -> Result<String, St
             Ok(format!("moved {from} to {to}"))
         }
         "export_file" => {
+            let has_sheets = args["sheets"].as_array().is_some_and(|a| !a.is_empty());
             let rel = args["path"]
                 .as_str()
+                .or_else(|| if has_sheets { args["output"].as_str() } else { None })
                 .ok_or("export_file needs args.path (a .md, .txt, .csv or .tsv workspace file)")?;
-            let (out, bytes, label) = export_workspace_file(
+            let (out, bytes, label) = export_workspace_file_with_options(
                 cfg,
                 rel,
                 args["format"].as_str(),
                 args["output"].as_str(),
+                args["brand_header"].as_str(),
+                args["sheets"].as_array().map(|a| a.as_slice()),
+                args["totals_row"].as_bool().unwrap_or(false),
             )?;
             Ok(format!("wrote {out} ({bytes} bytes) — {label} made from {rel}, ready to share"))
         }
@@ -668,7 +755,7 @@ pub fn execute_tool(cfg: &Config, name: &str, args: &Value) -> Result<String, St
     }
 }
 
-/// Turn a workspace Markdown/text file into Word, or a CSV/TSV into Excel,
+/// Turn a workspace Markdown/text file into Word or PDF, or a CSV/TSV into Excel,
 /// next to the source (or at `output`). Returns (path, bytes, what).
 pub fn export_workspace_file(
     cfg: &Config,
@@ -676,70 +763,151 @@ pub fn export_workspace_file(
     format: Option<&str>,
     output: Option<&str>,
 ) -> Result<(String, u64, &'static str), String> {
-    let lower = rel.to_ascii_lowercase();
+    export_workspace_file_with_options(cfg, rel, format, output, None, None, false)
+}
+
+/// Extended deliverable exporter supporting native `"pdf"` output (with
+/// optional `brand_header`), `"docx"`, and single- or multi-sheet `"xlsx"`
+/// (with optional `sheets` array and `totals_row` `SUM(...)` formulas).
+pub fn export_workspace_file_with_options(
+    cfg: &Config,
+    rel: &str,
+    format: Option<&str>,
+    output: Option<&str>,
+    brand_header: Option<&str>,
+    sheets: Option<&[Value]>,
+    totals_row: bool,
+) -> Result<(String, u64, &'static str), String> {
+    let clean_rel = crate::tables::validate_workspace_rel_path(rel)?;
+    let lower = clean_rel.to_ascii_lowercase();
     let src_ext = lower.rsplit('.').next().unwrap_or("");
+    let has_sheets = sheets.is_some_and(|s| !s.is_empty());
     let fmt = match format.map(|f| f.trim().trim_start_matches('.').to_ascii_lowercase()) {
         Some(f) if !f.is_empty() => f,
+        _ if has_sheets => "xlsx".to_string(),
         _ => match src_ext {
             "csv" | "tsv" => "xlsx".to_string(),
             _ => "docx".to_string(),
         },
     };
-    let to_word = match (fmt.as_str(), src_ext) {
-        ("docx" | "word", "md" | "markdown" | "txt") => true,
-        ("xlsx" | "excel", "csv" | "tsv") => false,
-        ("docx" | "word", _) => return Err(format!("export_file: Word export takes a .md or .txt file, not {rel}")),
-        ("xlsx" | "excel", _) => return Err(format!("export_file: Excel export takes a .csv or .tsv file, not {rel}")),
-        (other, _) => return Err(format!("export_file: unknown format \"{other}\" (use docx or xlsx)")),
-    };
-    let full = sandbox_path(&cfg.workspace_dir, rel)?;
-    if rel.trim().split('/').any(|seg| seg.starts_with('.')) {
-        return Err("export_file: hidden paths are not allowed".to_string());
+
+    enum ExportTarget {
+        Docx,
+        Pdf,
+        XlsxSingle,
+        XlsxMulti,
     }
-    let text = std::fs::read_to_string(&full).map_err(|e| format!("export_file {rel}: {e}"))?;
-    let stem_rel = rel.rsplit_once('.').map(|(a, _)| a).unwrap_or(rel);
+
+    let target = match (fmt.as_str(), src_ext, has_sheets) {
+        ("docx" | "word", "md" | "markdown" | "txt", _) => ExportTarget::Docx,
+        ("pdf", "md" | "markdown" | "txt", _) => ExportTarget::Pdf,
+        ("xlsx" | "excel", _, true) => ExportTarget::XlsxMulti,
+        ("xlsx" | "excel", "csv" | "tsv", false) => ExportTarget::XlsxSingle,
+        ("docx" | "word", _, _) => {
+            return Err(format!("export_file: Word export takes a .md or .txt file, not {clean_rel}"))
+        }
+        ("pdf", _, _) => {
+            return Err(format!("export_file: PDF export takes a .md or .txt file, not {clean_rel}"))
+        }
+        ("xlsx" | "excel", _, false) => {
+            return Err(format!("export_file: Excel export takes a .csv or .tsv file (or a sheets array), not {clean_rel}"))
+        }
+        (other, _, _) => {
+            return Err(format!("export_file: unknown format \"{other}\" (use pdf, docx, or xlsx)"))
+        }
+    };
+
+    let stem_rel = clean_rel.rsplit_once('.').map(|(a, _)| a).unwrap_or(&clean_rel);
     let stem_name = stem_rel.rsplit('/').next().unwrap_or(stem_rel).to_string();
-    let want_ext = if to_word { "docx" } else { "xlsx" };
+    let want_ext = match target {
+        ExportTarget::Docx => "docx",
+        ExportTarget::Pdf => "pdf",
+        ExportTarget::XlsxSingle | ExportTarget::XlsxMulti => "xlsx",
+    };
     let out = match output.map(|o| o.trim()).filter(|o| !o.is_empty()) {
         Some(o) if o.to_ascii_lowercase().ends_with(&format!(".{want_ext}")) => o.to_string(),
         Some(o) => format!("{o}.{want_ext}"),
         None => format!("{stem_rel}.{want_ext}"),
     };
-    if out.split('/').any(|seg| seg.starts_with('.')) {
-        return Err("export_file: hidden output paths are not allowed".to_string());
-    }
+    let out = crate::tables::validate_workspace_rel_path(&out)?;
     let out_full = sandbox_path_resolving(&cfg.workspace_dir, &out, false)?;
     if sandbox_path_resolving(&cfg.workspace_dir, &out, true).is_err()
         || out_full.symlink_metadata().is_ok_and(|md| md.file_type().is_symlink())
     {
         return Err("export_file: cannot overwrite symlink".to_string());
     }
-    let bytes = if to_word {
-        let title = text
-            .lines()
-            .find_map(|l| l.strip_prefix("# ").map(|t| t.trim().to_string()))
-            .unwrap_or_else(|| stem_name.clone());
-        let md = if src_ext == "txt" {
-            // Plain text: every line its own paragraph.
-            text.lines().map(|l| format!("{l}  ")).collect::<Vec<_>>().join("\n")
-        } else {
-            text
-        };
-        docs::markdown_to_docx(&md, &title)
-    } else {
-        let rows: Vec<Vec<String>> = if src_ext == "tsv" {
-            text.lines().map(|l| l.split('\t').map(|c| c.to_string()).collect()).collect()
-        } else {
-            skills::parse_csv_rows(&text)
-        };
-        if rows.is_empty() {
-            return Err(format!("export_file: {rel} has no rows"));
+
+    let (bytes, label) = match target {
+        ExportTarget::Docx | ExportTarget::Pdf => {
+            let full = sandbox_path(&cfg.workspace_dir, &clean_rel)?;
+            let text = std::fs::read_to_string(&full)
+                .map_err(|e| format!("export_file {clean_rel}: {e}"))?;
+            let title = text
+                .lines()
+                .find_map(|l| l.strip_prefix("# ").map(|t| t.trim().to_string()))
+                .unwrap_or_else(|| stem_name.clone());
+            let md = if src_ext == "txt" {
+                text.lines().map(|l| format!("{l}  ")).collect::<Vec<_>>().join("\n")
+            } else {
+                text
+            };
+            if matches!(target, ExportTarget::Pdf) {
+                (docs::markdown_to_pdf(&md, &title, brand_header), "a PDF document")
+            } else {
+                (docs::markdown_to_docx(&md, &title), "a Word document")
+            }
         }
-        docs::rows_to_xlsx(&rows, &stem_name, &stem_name)
+        ExportTarget::XlsxSingle => {
+            let full = sandbox_path(&cfg.workspace_dir, &clean_rel)?;
+            let text = std::fs::read_to_string(&full)
+                .map_err(|e| format!("export_file {clean_rel}: {e}"))?;
+            let rows: Vec<Vec<String>> = if src_ext == "tsv" {
+                text.lines().map(|l| l.split('\t').map(|c| c.to_string()).collect()).collect()
+            } else {
+                skills::parse_csv_rows(&text)
+            };
+            if rows.is_empty() {
+                return Err(format!("export_file: {clean_rel} has no rows"));
+            }
+            let bytes = docs::sheets_to_xlsx(
+                &[docs::ExportSheet { name: stem_name.clone(), rows, totals_row }],
+                &stem_name,
+            );
+            (bytes, "an Excel workbook")
+        }
+        ExportTarget::XlsxMulti => {
+            let specs = sheets.unwrap_or(&[]);
+            let mut export_sheets: Vec<docs::ExportSheet> = Vec::with_capacity(specs.len());
+            for (idx, item) in specs.iter().enumerate() {
+                let sname = item["name"]
+                    .as_str()
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .map(str::to_string)
+                    .unwrap_or_else(|| format!("Sheet{}", idx + 1));
+                let s_totals = item["totals_row"].as_bool().unwrap_or(false);
+                let rows = if item["rows"].is_array() {
+                    string_rows(&item["rows"])
+                } else if let Some(sp) = item["path"].as_str().map(str::trim).filter(|s| !s.is_empty()) {
+                    let loaded = crate::tables::load_table(cfg, sp, item["sheet"].as_str())?;
+                    let mut r = Vec::with_capacity(loaded.rows.len() + 1);
+                    if !loaded.columns.is_empty() {
+                        r.push(loaded.columns);
+                    }
+                    r.extend(loaded.rows);
+                    r
+                } else {
+                    return Err(format!("export_file: sheet '{sname}' requires either rows or path"));
+                };
+                export_sheets.push(docs::ExportSheet { name: sname, rows, totals_row: s_totals });
+            }
+            (docs::sheets_to_xlsx(&export_sheets, &stem_name), "an Excel workbook")
+        }
     };
+
     let _ = file_history::record_revision(&cfg.data_dir, &cfg.workspace_dir, &out, "export");
     atomic_write_bytes(&out_full, &bytes).map_err(|e| format!("export_file {out}: {e}"))?;
-    Ok((out, bytes.len() as u64, if to_word { "a Word document" } else { "an Excel workbook" }))
+    Ok((out, bytes.len() as u64, label))
 }
 
 /// The wider context the completion-era tools need: the company

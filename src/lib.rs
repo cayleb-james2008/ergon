@@ -26,10 +26,12 @@ pub use server::{
 pub mod skill_catalog;
 pub mod skills;
 pub mod sse;
+pub mod tables;
 pub mod tools;
 pub mod tripwire;
 pub use tools::{
-    check_mentions, execute_tool, execute_tool_full, export_workspace_file, extract_written,
+    check_mentions, execute_tool, execute_tool_full, export_workspace_file,
+    export_workspace_file_with_options, extract_written,
     fetch_url_text, html_to_text, mention_candidates, page_text, sandbox_path,
     sandbox_path_resolving, truncate, verify_text_citations, verify_text_citations_against,
     CitationCheck, CitationReport, ToolCtx,
@@ -1359,8 +1361,10 @@ fn system_prompt(cfg: &Config, suite_items: &[library::LibraryItem]) -> String {
          - list_dir {{\"path\": \".\"}} — list files in the workspace (paths are relative to the workspace root).\n\
          - read_file {{\"path\": \"notes.txt\"}} — read a workspace file. It also reads PDF, Word (.docx), PowerPoint (.pptx) and Excel (.xlsx: one sheet as CSV; \"book.xlsx#Sheet2\" for another). Long files arrive in windows: pass \"offset\" as the result says to read on.\n\
          - write_file {{\"path\": \"out.txt\", \"content\": \"...\"}} — write a workspace file.\n\
+         - patch_file {{\"path\": \"brief.md\", \"find\": \"...\", \"replace\": \"...\"}} — surgically replace a unique substring in an existing workspace text file (pass \"replace_all\": true to replace all occurrences; snapshots prior version to history).\n\
+         - query_table {{\"path\": \"expenses.xlsx#Q4\", \"where\": [{{\"col\": \"vendor\", \"op\": \"eq\", \"value\": \"Acme\"}}], \"group_by\": [\"vendor\"], \"aggregates\": [{{\"col\": \"amount\", \"fn\": \"sum\", \"as\": \"total\"}}], \"sort\": {{\"col\": \"total\", \"dir\": \"desc\"}}, \"limit\": 50, \"save_as\": \"totals.csv\"}} — run fast deterministic exact-decimal filtering, grouping, and aggregation over workspace .csv, .tsv, .xlsx#Sheet, or .json tables.\n\
          - fetch_url {{\"url\": \"https://...\"}} — fetch a URL and read its text.\n\
-         - export_file {{\"path\": \"Weekly Report.md\"}} — turn a finished Markdown/text file into a Word document (.docx), or a CSV into an Excel workbook (.xlsx), ready to share. Use it whenever the person wants a Word or Excel file, or a document to send to someone.\n\
+         - export_file {{\"path\": \"Weekly Report.md\", \"format\": \"pdf\"}} — turn a finished Markdown/text file into a Word document (.docx) or native PDF (.pdf, optional \"brand_header\"), or a CSV/TSV (or multi-sheet \"sheets\": [{{\"name\": \"...\", \"path\": \"...\", \"totals_row\": true}}]) into an Excel workbook (.xlsx) with live SUM formulas, ready to share.\n\
          - write_document {{\"title\": \"Summary\", \"sections\": [\"section text\", ...]}} — produce a finished markdown document in the workspace (a Rune skill formats and writes it).\n\
          - make_spreadsheet {{\"title\": \"Budget\", \"columns\": [\"Item\", \"Cost\"], \"rows\": [[\"Coffee\", \"4.50\"]]}} — produce a finished CSV spreadsheet in the workspace (a Rune skill formats and writes it).\n\
          - research {{\"topic\": \"Local Prices\", \"urls\": [\"https://...\", \"https://...\"]}} — fetch several pages and compile them into one research notes document in the workspace (a Rune skill).\n\
@@ -1428,8 +1432,13 @@ fn credit_writes(
     dynamic_skills: &std::collections::HashSet<String>,
 ) {
     match tool {
-        "write_file" => {
+        "write_file" | "patch_file" => {
             if let Some(p) = args["path"].as_str() {
+                ledger.written.push(p.to_string());
+            }
+        }
+        "query_table" => {
+            if let Some(p) = args["save_as"].as_str().map(str::trim).filter(|s| !s.is_empty()) {
                 ledger.written.push(p.to_string());
             }
         }
@@ -1522,8 +1531,10 @@ fn subagent_system_prompt(
          - list_dir {{\"path\": \".\"}} — list files in the workspace.\n\
          - read_file {{\"path\": \"notes.txt\"}} — read a workspace file (also PDF, .docx, .pptx, and .xlsx as CSV; \"offset\" reads on in long files).\n\
          - write_file {{\"path\": \"out.txt\", \"content\": \"...\"}} — write a workspace file.\n\
+         - patch_file {{\"path\": \"brief.md\", \"find\": \"...\", \"replace\": \"...\"}} — surgically replace a unique substring in an existing workspace text file (pass \"replace_all\": true to replace all occurrences).\n\
+         - query_table {{\"path\": \"expenses.xlsx#Q4\", \"where\": [...], \"group_by\": [...], \"aggregates\": [...], \"sort\": {{...}}, \"limit\": 50, \"save_as\": \"totals.csv\"}} — deterministic exact-decimal filter/group/aggregate over workspace .csv, .tsv, .xlsx#Sheet, or .json tables.\n\
          - fetch_url {{\"url\": \"https://...\"}} — fetch a URL and read its text.\n\
-         - export_file {{\"path\": \"Summary.md\"}} — make a Word (.docx) copy of a Markdown file, or an Excel (.xlsx) copy of a CSV.\n\
+         - export_file {{\"path\": \"Summary.md\", \"format\": \"pdf\"}} — make a Word (.docx) or native PDF (.pdf) copy of a Markdown/text file, or a single/multi-sheet Excel (.xlsx) workbook with optional \"sheets\" and \"totals_row\".\n\
          - write_document {{\"title\": \"Summary\", \"sections\": [\"...\"]}} — produce a finished markdown document.\n\
          - make_spreadsheet {{\"title\": \"Budget\", \"columns\": [\"Item\", \"Cost\"], \"rows\": [[\"Coffee\", \"4.50\"]]}} — produce a finished CSV spreadsheet.\n\
          - research {{\"topic\": \"...\", \"urls\": [\"https://...\"]}} — compile research notes from several pages.\n\
@@ -1598,6 +1609,8 @@ pub fn task_requires_workspace_tool(task: &str) -> bool {
         "compare_documents",
         "extract_tables",
         "write_file",
+        "patch_file",
+        "query_table",
         "read_file",
         "delete_file",
         "make_spreadsheet",
