@@ -4,7 +4,7 @@
 // - WorkspaceSwitcherPanel: MorphingDialog strictly mounted OUTSIDE Vaul <Drawer.Content> (z-50),
 //   refreshing GET /api/people on open and switching via POST /api/people/switch (with fallback).
 // - WorkspaceSwitcherList: Reusable compact switcher list also embedded inside SettingsPanel.
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Briefcase, Check, ChevronsUpDown, Plus, Search, UserPlus, Users, X } from "lucide-react";
 import { PanelModal, usePanelModalClose } from "@/shell/PanelModal";
 import { Button } from "@/components/ui/button";
@@ -223,17 +223,26 @@ function WorkspaceSwitcherBody({
     }
   }, [isOpen, onRefresh, onRefreshClients]);
 
+  const prevSyncKeyRef = useRef("");
+
   useEffect(() => {
     if (!clientsEnabled) return;
+    if (!isOpen) {
+      prevSyncKeyRef.current = "";
+      return;
+    }
+    const syncKey = `open:${activeEngagementId}`;
     const activeEng = engagements.find((e) => e.id === activeEngagementId);
-    if (activeEng && clients.some((c) => c.id === activeEng.client_id)) {
+    if (prevSyncKeyRef.current !== syncKey && activeEng && clients.some((c) => c.id === activeEng.client_id)) {
+      prevSyncKeyRef.current = syncKey;
       setSelectedClientId(activeEng.client_id);
       return;
     }
-    if (!selectedClientId || !clients.some((c) => c.id === selectedClientId)) {
-      setSelectedClientId(clients[0]?.id ?? "");
+    if (clients.length > 0 && (!selectedClientId || !clients.some((c) => c.id === selectedClientId))) {
+      prevSyncKeyRef.current = syncKey;
+      setSelectedClientId(activeEng?.client_id ?? clients[0]?.id ?? "");
     }
-  }, [clientsEnabled, clients, engagements, activeEngagementId, selectedClientId]);
+  }, [clientsEnabled, clients, engagements, activeEngagementId, isOpen, selectedClientId]);
 
   const visibleEngagements = useMemo(() => {
     if (!selectedClientId) return engagements;

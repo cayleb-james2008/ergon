@@ -2231,10 +2231,27 @@ await reset();
   await p.locator("#quick-engagement-submit").click();
   await p.locator("#workspace-switcher-panel").waitFor({ state: "hidden", timeout: 4000 });
   const personBtnTxt = await p.locator("#person-select").innerText();
+  // Cross-client switch-back: reopen switcher, select another client tab, and confirm its engagements render and switch cleanly
+  await p.locator("#person-select").click();
+  await p.waitForSelector("#client-engagement-section", { timeout: 4000 });
+  await p.locator('[data-client-id="cli-1"]').click();
+  await p.waitForSelector('[data-engagement-id="eng-1"]', { timeout: 4000 });
+  await p.locator('[data-engagement-id="eng-1"]').click();
+  await p.locator("#workspace-switcher-panel").waitFor({ state: "hidden", timeout: 4000 });
+  const switchedBackTxt = await p.locator("#person-select").innerText();
+  await p.locator("#person-select").click();
+  await p.waitForSelector("#client-engagement-section", { timeout: 4000 });
+  await p.locator('[data-client-id="cli-acme"]').click();
+  await p.waitForSelector('[data-engagement-id="eng-acme-q1"]', { timeout: 4000 });
+  await p.locator('[data-engagement-id="eng-acme-q1"]').click();
+  await p.locator("#workspace-switcher-panel").waitFor({ state: "hidden", timeout: 4000 });
   ok(
-    "v0.33.0 E1 Client -> Engagement selector and quick-create updates active engagement",
-    personBtnTxt.includes("Acme Advisory") && personBtnTxt.includes("Q1 Audit"),
-    personBtnTxt.replace(/\s+/g, " ")
+    "v0.33.0 E1 Client -> Engagement selector and quick-create updates active engagement and switches cross-client",
+    personBtnTxt.includes("Acme Advisory") &&
+      personBtnTxt.includes("Q1 Audit") &&
+      switchedBackTxt.includes("Northstar Advisory") &&
+      switchedBackTxt.includes("Q4 Operations Retainer"),
+    `${personBtnTxt.replace(/\s+/g, " ")} -> ${switchedBackTxt.replace(/\s+/g, " ")}`
   );
 
   // 2. Retainer burn progress bar & ROI telemetry card in Today

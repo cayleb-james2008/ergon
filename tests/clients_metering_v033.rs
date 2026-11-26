@@ -69,6 +69,28 @@ fn spawn_server(cfg: Config) -> SocketAddr {
     addr
 }
 
+fn drain_http_request(stream: &TcpStream) {
+    let mut reader = BufReader::new(stream.try_clone().unwrap());
+    let mut content_length = 0usize;
+    loop {
+        let mut line = String::new();
+        let Ok(n) = reader.read_line(&mut line) else {
+            break;
+        };
+        if n == 0 || line == "\r\n" || line == "\n" {
+            break;
+        }
+        let lower = line.to_ascii_lowercase();
+        if let Some(v) = lower.strip_prefix("content-length:") {
+            content_length = v.trim().parse().unwrap_or(0);
+        }
+    }
+    if content_length > 0 {
+        let mut body = vec![0u8; content_length.min(4 * 1024 * 1024)];
+        let _ = reader.read_exact(&mut body);
+    }
+}
+
 fn spawn_mock_openai(responses: Vec<Value>) -> (SocketAddr, Arc<AtomicUsize>) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = listener.local_addr().unwrap();
@@ -78,8 +100,7 @@ fn spawn_mock_openai(responses: Vec<Value>) -> (SocketAddr, Arc<AtomicUsize>) {
     std::thread::spawn(move || {
         for stream in listener.incoming() {
             let Ok(mut stream) = stream else { break };
-            let mut buf = [0u8; 65536];
-            let _ = stream.read(&mut buf);
+            drain_http_request(&stream);
             let idx = calls_bg.fetch_add(1, Ordering::SeqCst);
             let payload = {
                 let q = queue.lock().unwrap();

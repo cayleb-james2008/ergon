@@ -100,9 +100,9 @@ Measured against the stripped fat-LTO release binary on local loopback against a
 | --- | --- | --- | --- |
 | Release binary size | `16.0 MB` | `8.08 MiB` (`8,467,296 B`) | `-47.1%` |
 | Initial `/` shell payload | `1.15 MB` | `162.67 KiB` (`166,577 B`) raw / `37.23 KiB` (`38,119 B`) gzip (`17` `/chunks/*`) | `-96.7%` wire |
-| Cold boot to `200 OK` | `n/a` | `17.87 ms` | Under `20 ms` self-audit |
-| Peak RSS (`VmHWM`, `5k` receipts + `500` files, `5/5` SSE, `16w`) | `n/a` | `18.93 MB` (`19,384 KB`) | `18.93 MB` peak RSS |
-| Concurrent HTTP (`16w` mixed 5 routes + `5/5` SSE across `5k`/`500`) | `724 req/s` (`188.7 ms` p95) | `6,271.0 req/s` (`2.5 ms` p50, `3.19 ms` p95, `0/15,684` err) | `8.66x` under full concurrency |
+| Cold boot to `200 OK` | `n/a` | `6.65 ms` | Sub-10 ms self-audit |
+| Peak RSS (`VmHWM`, `5k` receipts + `500` files, `5/5` SSE, `16w`) | `n/a` | `18.62 MB` (`19,072 KB`) | `18.62 MB` peak RSS |
+| Concurrent HTTP (`16w` mixed 5 routes + `5/5` SSE across `5k`/`500`) | `724 req/s` (`188.7 ms` p95) | `5,777.9 req/s` (`2.62 ms` p50, `3.46 ms` p95, `0/14,453` err) | `7.98x` under full concurrency |
 | Automated checks | `204` Rust tests | `263/263` Rust tests (`6/6` `clients_metering_v033`), `93/93` gate, `6/6` graph, `20/20` replay, `44/44` fuzz, `0/0/0` `sloplint` | Zero warnings / zero externals |
 
 ---
