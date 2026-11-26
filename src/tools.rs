@@ -898,6 +898,32 @@ pub fn execute_tool_full(
                 "raised as decision {id} in your person's decisions inbox — they will see it and settle it there. Continue with the rest of the task."
             ))
         }
+        "request_checkpoint" => {
+            let cp = parse_checkpoint_tool_args(cfg, args)?;
+            if args["_defer_decision"].as_bool() == Some(true) {
+                return Ok(format!(
+                    "paused at human checkpoint ({}): {}",
+                    cp.input_mode, cp.prompt
+                ));
+            }
+            let thread_id = args["_thread"].as_str().unwrap_or("");
+            let id = records::add_decision_with(
+                &cfg.data_dir,
+                "checkpoint",
+                &cp.prompt,
+                cp.inspect_files.first().map(String::as_str),
+                thread_id,
+                serde_json::json!({
+                    "input_mode": cp.input_mode,
+                    "choices": cp.choices,
+                    "inspect_files": cp.inspect_files,
+                }),
+            );
+            Ok(format!(
+                "paused at human checkpoint (decision {id}): {}. The run will resume automatically once your person answers.",
+                cp.prompt
+            ))
+        }
         _ => {
             // An installed library skill, called by its item id.
             let suite = library::load_suite(&cfg.data_dir);
@@ -955,6 +981,63 @@ fn string_rows(v: &Value) -> Vec<Vec<String>> {
         Value::Array(rows) => rows.iter().map(string_list).collect(),
         _ => Vec::new(),
     }
+}
+
+pub(crate) fn parse_checkpoint_tool_args(
+    cfg: &Config,
+    args: &Value,
+) -> Result<crate::CheckpointPause, String> {
+    let prompt = args["prompt"]
+        .as_str()
+        .or_else(|| args["summary"].as_str())
+        .unwrap_or("")
+        .trim()
+        .chars()
+        .take(2000)
+        .collect::<String>();
+    if prompt.is_empty() {
+        return Err("request_checkpoint needs args.prompt".to_string());
+    }
+    let raw_mode = args["input_mode"]
+        .as_str()
+        .unwrap_or("approve_reject")
+        .trim()
+        .to_ascii_lowercase();
+    let input_mode = match raw_mode.as_str() {
+        "" | "approve_reject" => "approve_reject".to_string(),
+        "choice" | "text" => raw_mode,
+        other => {
+            return Err(format!(
+                "request_checkpoint: unknown input_mode '{other}' (use approve_reject, choice, or text)"
+            ))
+        }
+    };
+    let choices: Vec<String> = string_list(&args["choices"])
+        .into_iter()
+        .map(|s| s.trim().chars().take(200).collect::<String>())
+        .filter(|s| !s.is_empty())
+        .take(20)
+        .collect();
+    if input_mode == "choice" && choices.is_empty() {
+        return Err("request_checkpoint with input_mode='choice' requires args.choices".to_string());
+    }
+    let mut inspect_files: Vec<String> = Vec::new();
+    for raw_path in string_list(&args["inspect_files"]) {
+        let p = raw_path.trim();
+        if p.is_empty() {
+            continue;
+        }
+        sandbox_path(&cfg.workspace_dir, p)?;
+        if !inspect_files.iter().any(|x| x == p) {
+            inspect_files.push(p.to_string());
+        }
+    }
+    Ok(crate::CheckpointPause {
+        prompt,
+        input_mode,
+        choices,
+        inspect_files,
+    })
 }
 
 /// Recursive text search under `base` (already sandbox-checked). Skips

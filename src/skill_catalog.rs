@@ -287,6 +287,117 @@ pub fn starter_playbooks_json() -> Value {
     Value::Array(out)
 }
 
+fn list_workspace_input_candidates(workspace_dir: &Path) -> Vec<String> {
+    const GENERATED_OUTPUTS: &[&str] = &[
+        "Weekly Client Digest.md",
+        "Weekly Client Digest.docx",
+        "Release Readiness Audit.md",
+        "Release Readiness Audit.csv",
+        "Research Brief Pack.md",
+        "Playbook Deliverable Pack.md",
+    ];
+    let mut out = Vec::new();
+    let Ok(rd) = std::fs::read_dir(workspace_dir) else {
+        return out;
+    };
+    for ent in rd.flatten() {
+        let path = ent.path();
+        if !path.is_file() {
+            continue;
+        }
+        let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
+        if name.starts_with('.') || GENERATED_OUTPUTS.iter().any(|g| g.eq_ignore_ascii_case(name)) {
+            continue;
+        }
+        out.push(name.to_string());
+    }
+    out.sort();
+    out
+}
+
+fn ensure_starter_inputs(
+    cfg: &Config,
+    starter: &Value,
+) -> Result<(std::collections::HashMap<String, String>, Vec<String>), String> {
+    let mut inputs = std::collections::HashMap::new();
+    let mut seeded = Vec::new();
+    let candidates = list_workspace_input_candidates(&cfg.workspace_dir);
+    let input_kind = starter["input_kind"].as_str().unwrap_or("");
+    let seed_name = starter["seed_fixture"]["filename"].as_str().unwrap_or("");
+    let seed_body = starter["seed_fixture"]["content"].as_str().unwrap_or("");
+
+    let mut seed_if_needed = |default_name: &str| -> Result<String, String> {
+        let fname = if seed_name.is_empty() { default_name } else { seed_name };
+        let full = crate::sandbox_path(&cfg.workspace_dir, fname)?;
+        if !full.exists() && !seed_body.is_empty() {
+            crate::atomic_write_bytes(&full, seed_body.as_bytes())
+                .map_err(|e| format!("seed input {fname}: {e}"))?;
+            seeded.push(fname.to_string());
+        }
+        Ok(fname.to_string())
+    };
+
+    match input_kind {
+        "notes_md" => {
+            let md_txt: Vec<&String> = candidates
+                .iter()
+                .filter(|f| {
+                    let low = f.to_ascii_lowercase();
+                    low.ends_with(".md") || low.ends_with(".txt")
+                })
+                .collect();
+            let preferred = md_txt
+                .iter()
+                .find(|f| {
+                    let low = f.to_ascii_lowercase();
+                    low.contains("meeting")
+                        || low.contains("standup")
+                        || low.contains("notes")
+                        || low.contains("transcript")
+                })
+                .or_else(|| md_txt.first())
+                .map(|s| (*s).clone());
+            let chosen = match preferred {
+                Some(existing) => existing,
+                None => seed_if_needed("meeting-notes.md")?,
+            };
+            inputs.insert("notes_file".to_string(), chosen);
+        }
+        "ledger_csv" => {
+            let chosen = candidates
+                .iter()
+                .find(|f| f.to_ascii_lowercase().ends_with(".csv"))
+                .cloned();
+            let file = match chosen {
+                Some(existing) => existing,
+                None => seed_if_needed("release-ledger.csv")?,
+            };
+            inputs.insert("ledger_file".to_string(), file);
+        }
+        "source_docs" => {
+            let docs: Vec<String> = candidates
+                .iter()
+                .filter(|f| {
+                    let low = f.to_ascii_lowercase();
+                    low.ends_with(".md") || low.ends_with(".txt")
+                })
+                .take(5)
+                .cloned()
+                .collect();
+            let chosen = if docs.is_empty() {
+                vec![seed_if_needed("research-notes.md")?]
+            } else {
+                docs
+            };
+            inputs.insert("source_files".to_string(), chosen.join(","));
+        }
+        _ => {}
+    }
+    Ok((inputs, seeded))
+}
+
 #[cold]
 #[inline(never)]
 pub fn launch_starter_playbook(
@@ -313,6 +424,8 @@ pub fn launch_starter_playbook(
         .as_array()
         .map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect())
         .unwrap_or_default();
+    let steps_v2 = crate::pipelines::parse_steps_v2(&starter["steps_v2"])
+        .map_err(|e| (500, format!("invalid starter steps_v2: {e}")))?;
     let expected_inputs: Vec<String> = starter["expected_inputs"]
         .as_array()
         .map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect())
@@ -320,7 +433,7 @@ pub fn launch_starter_playbook(
     let pack_deliverables = starter["pack_deliverables"].as_bool().unwrap_or(true);
     let pb_opts = crate::routines::PlaybookOptions {
         steps,
-        expected_inputs: expected_inputs.clone(),
+        expected_inputs,
         pack_deliverables,
     };
 
@@ -328,9 +441,16 @@ pub fn launch_starter_playbook(
         .into_iter()
         .find(|r| r["name"].as_str() == Some(name));
     let routine = if let Some(rt) = existing {
-        rt
+        let rid = rt["id"].as_str().unwrap_or("");
+        if rt.get("steps_v2").is_none() && !rid.is_empty() {
+            crate::routines::set_routine_steps_v2(&cfg.data_dir, rid, &steps_v2)
+                .map_err(|e| (500, e))?
+                .unwrap_or(rt)
+        } else {
+            rt
+        }
     } else {
-        crate::routines::create_playbook_routine(
+        crate::routines::create_pipeline_routine(
             &cfg.data_dir,
             name,
             prompt,
@@ -339,51 +459,46 @@ pub fn launch_starter_playbook(
             skill_id,
             true,
             &pb_opts,
+            &steps_v2,
         )
         .map_err(|e| (400, e))?
     };
     let routine_id = routine["id"].as_str().unwrap_or("").to_string();
 
     let mut created_files: Vec<String> = Vec::new();
+    let mut seeded_inputs: Vec<String> = Vec::new();
     let mut receipt_summary = String::new();
+    let mut pipeline_run_json = Value::Null;
     if run_now {
-        let sample_title = starter["sample_title"].as_str().unwrap_or(name);
-        let sample_sections = &starter["sample_sections"];
-        let out_res = crate::execute_tool(
+        let (inputs, seeded) = ensure_starter_inputs(cfg, starter).map_err(|e| (500, e))?;
+        seeded_inputs = seeded;
+        let run = crate::pipelines::execute_deterministic_steps_sync(
             cfg,
-            "write_document",
-            &json!({
-                "title": sample_title,
-                "sections": sample_sections,
-            }),
-        );
-        if let Ok(written_msg) = out_res {
-            let fname = format!("{sample_title}.md");
-            let target = if cfg.workspace_dir.join(&fname).exists() {
-                fname
-            } else {
-                expected_inputs
-                    .first()
-                    .cloned()
-                    .unwrap_or_else(|| written_msg.trim().to_string())
-            };
-            if cfg.workspace_dir.join(&target).exists() {
-                receipt_summary = format!("Verified [{target}:L1] via starter playbook {name}.");
-                crate::records::append_work(
-                    cfg,
-                    &format!("Starter: {name}"),
-                    &receipt_summary,
-                    std::slice::from_ref(&target),
-                    &format!("starter-{routine_id}"),
-                    true,
-                );
-                created_files.push(target);
+            Some(&routine_id),
+            name,
+            &steps_v2,
+            inputs,
+        )
+        .map_err(|e| (500, e))?;
+        let mut step_summaries = Vec::new();
+        for st in &run.step_states {
+            for f in &st.files {
+                if !created_files.contains(f) {
+                    created_files.push(f.clone());
+                }
+            }
+            if !st.output.trim().is_empty() {
+                step_summaries.push(st.output.clone());
             }
         }
+        receipt_summary = step_summaries.join(" | ");
+        pipeline_run_json = run.to_json();
     }
 
+    let updated_routine = crate::routines::get_routine(&cfg.data_dir, &routine_id).unwrap_or(routine);
     let now_ms = crate::records::now_millis();
-    let enriched = crate::scheduler::enrich_routine_json(&routine, now_ms, &[]);
+    let hist = crate::scheduler::list_run_history(&cfg.data_dir, Some(&routine_id), 20);
+    let enriched = crate::scheduler::enrich_routine_json(&updated_routine, now_ms, &hist);
     let preview = crate::routines::preview_playbook_routine(
         &cfg.data_dir,
         &cfg.workspace_dir,
@@ -396,7 +511,9 @@ pub fn launch_starter_playbook(
         "starter_id": starter["id"],
         "sha256": starter["sha256"],
         "routine": enriched,
+        "run": pipeline_run_json,
         "created_files": created_files,
+        "seeded_inputs": seeded_inputs,
         "summary": receipt_summary,
         "preview": preview,
     }))

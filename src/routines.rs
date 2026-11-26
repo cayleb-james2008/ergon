@@ -104,19 +104,53 @@ pub fn create_playbook_routine(
     enabled: bool,
     playbook: &PlaybookOptions,
 ) -> Result<Value, String> {
+    create_pipeline_routine(
+        person_data_dir,
+        name,
+        prompt,
+        schedule,
+        interval_secs,
+        skill_id,
+        enabled,
+        playbook,
+        &[],
+    )
+}
+
+/// Create a routine/playbook with optional typed `steps_v2` alongside legacy
+/// `steps` for full backward compatibility.
+#[allow(clippy::too_many_arguments)]
+pub fn create_pipeline_routine(
+    person_data_dir: &Path,
+    name: &str,
+    prompt: &str,
+    schedule: &str,
+    interval_secs: Option<u64>,
+    skill_id: Option<&str>,
+    enabled: bool,
+    playbook: &PlaybookOptions,
+    steps_v2: &[crate::pipelines::PipelineStepSpec],
+) -> Result<Value, String> {
     let clean_name: String = name
         .replace(['\r', '\n'], " ")
         .trim()
         .chars()
         .take(120)
         .collect();
-    let clean_steps: Vec<String> = playbook
+    let mut clean_steps: Vec<String> = playbook
         .steps
         .iter()
         .map(|s| s.trim().chars().take(2000).collect::<String>())
         .filter(|s| !s.is_empty())
         .take(8)
         .collect();
+    if clean_steps.is_empty() && !steps_v2.is_empty() {
+        clean_steps = steps_v2
+            .iter()
+            .take(8)
+            .map(|s| s.label.clone())
+            .collect();
+    }
     let clean_inputs: Vec<String> = playbook
         .expected_inputs
         .iter()
@@ -189,6 +223,9 @@ pub fn create_playbook_routine(
         if !clean_steps.is_empty() {
             item["steps"] = json!(clean_steps);
         }
+        if !steps_v2.is_empty() {
+            item["steps_v2"] = json!(steps_v2.iter().map(|s| s.to_json()).collect::<Vec<_>>());
+        }
         if !clean_inputs.is_empty() {
             item["expected_inputs"] = json!(clean_inputs);
         }
@@ -201,12 +238,11 @@ pub fn create_playbook_routine(
     })
 }
 
-/// Patch an existing routine using `scheduler::apply_routine_patch` (validates
-/// cadence/interval_secs, supports pause/resume via `enabled`, atomic write).
-pub fn patch_routine(
+/// Update `steps_v2` on an existing routine atomically.
+pub fn set_routine_steps_v2(
     person_data_dir: &Path,
     id: &str,
-    patch: &Value,
+    steps_v2: &[crate::pipelines::PipelineStepSpec],
 ) -> Result<Option<Value>, String> {
     with_lock(|| {
         let path = routines_path(person_data_dir);
@@ -214,7 +250,49 @@ pub fn patch_routine(
         let Some(idx) = items.iter().position(|r| r["id"].as_str() == Some(id)) else {
             return Ok(None);
         };
+        if steps_v2.is_empty() {
+            if let Some(obj) = items[idx].as_object_mut() {
+                obj.remove("steps_v2");
+            }
+        } else {
+            items[idx]["steps_v2"] = json!(steps_v2.iter().map(|s| s.to_json()).collect::<Vec<_>>());
+        }
+        items[idx]["updated_ms"] = json!(records::now_millis());
+        let updated = items[idx].clone();
+        save_raw(&path, &items)?;
+        Ok(Some(updated))
+    })
+}
+
+/// Patch an existing routine using `scheduler::apply_routine_patch` (validates
+/// cadence/interval_secs, supports pause/resume via `enabled`, atomic write).
+pub fn patch_routine(
+    person_data_dir: &Path,
+    id: &str,
+    patch: &Value,
+) -> Result<Option<Value>, String> {
+    let parsed_steps_v2 = match patch.get("steps_v2") {
+        None => None,
+        Some(Value::Null) => Some(Vec::new()),
+        Some(v) if v.as_array().is_some_and(|a| a.is_empty()) => Some(Vec::new()),
+        Some(v) => Some(crate::pipelines::parse_steps_v2(v)?),
+    };
+    with_lock(|| {
+        let path = routines_path(person_data_dir);
+        let mut items = load_raw(&path);
+        let Some(idx) = items.iter().position(|r| r["id"].as_str() == Some(id)) else {
+            return Ok(None);
+        };
         crate::scheduler::apply_routine_patch(&mut items[idx], patch)?;
+        if let Some(ref steps_v2) = parsed_steps_v2 {
+            if steps_v2.is_empty() {
+                if let Some(obj) = items[idx].as_object_mut() {
+                    obj.remove("steps_v2");
+                }
+            } else {
+                items[idx]["steps_v2"] = json!(steps_v2.iter().map(|s| s.to_json()).collect::<Vec<_>>());
+            }
+        }
         items[idx]["updated_ms"] = json!(records::now_millis());
         let updated = items[idx].clone();
         save_raw(&path, &items)?;
@@ -858,7 +936,12 @@ pub fn preview_playbook_routine(
         raw_steps.push(prompt.to_string());
     }
 
-    let mut steps_out = Vec::with_capacity(raw_steps.len());
+    let typed_steps = rt
+        .get("steps_v2")
+        .filter(|v| v.as_array().is_some_and(|a| !a.is_empty()))
+        .and_then(|v| crate::pipelines::parse_steps_v2(v).ok());
+
+    let mut steps_out = Vec::new();
     let mut impact_order: Vec<(String, &'static str, Option<String>)> = Vec::new();
     let mut push_impact = |path: String, role: &'static str, step_label: Option<String>| {
         if let Some(existing) = impact_order.iter_mut().find(|x| x.0 == path) {
@@ -870,33 +953,84 @@ pub fn preview_playbook_routine(
         impact_order.push((path, role, step_label));
     };
 
-    for (idx, step_text) in raw_steps.iter().enumerate() {
-        let (matched_skill, mode, output_hint) =
-            infer_step_skill_and_mode(step_text, fallback_skill, idx == 0);
-        let refs = extract_step_paths(step_text, workspace_paths, &expected_inputs, idx == 0);
-        let mut predicted_outputs: Vec<String> = Vec::new();
-        if let Some(hint) = output_hint {
-            predicted_outputs.push(hint.to_string());
-        }
-        if pack_deliverables && idx + 1 == raw_steps.len() {
-            predicted_outputs.push("Playbook Deliverable Pack.md".to_string());
-        }
-        for r in &refs {
-            let role = if mode == "read_and_write" && r.ends_with(".csv") && matched_skill.as_deref() == Some("clean_dataset") {
-                "read_and_update"
-            } else {
-                "input"
+    if let Some(ref v2) = typed_steps {
+        let total = v2.len();
+        for (idx, st) in v2.iter().enumerate() {
+            let mode = match st.kind.as_str() {
+                "checkpoint" => "human_checkpoint",
+                "export" | "skill" => "read_and_write",
+                _ => "agent",
             };
-            push_impact(r.clone(), role, Some(format!("Step {}", idx + 1)));
+            let step_text = st
+                .prompt
+                .clone()
+                .or_else(|| st.checkpoint.as_ref().map(|c| c.prompt.clone()))
+                .unwrap_or_else(|| st.label.clone());
+            let mut refs = extract_step_paths(&step_text, workspace_paths, &expected_inputs, idx == 0);
+            if let Some(obj) = st.args.as_object() {
+                for v in obj.values() {
+                    if let Some(s) = v.as_str() {
+                        if !s.contains("{{") && !s.trim().is_empty() && s.contains('.') && !refs.iter().any(|x| x == s) {
+                            refs.push(s.to_string());
+                        }
+                    }
+                }
+            }
+            let mut predicted_outputs: Vec<String> = Vec::new();
+            if st.kind == "export" {
+                if let Some(ex) = &st.export {
+                    predicted_outputs.push(format!("Exported {} (.{})", ex.path, ex.format));
+                }
+            } else if let Some(sk) = &st.skill_id {
+                predicted_outputs.push(format!("Deterministic skill: {sk}"));
+            }
+            if pack_deliverables && idx + 1 == total {
+                predicted_outputs.push("Playbook Deliverable Pack.md".to_string());
+            }
+            for r in &refs {
+                push_impact(r.clone(), "input", Some(format!("Step {}", idx + 1)));
+            }
+            steps_out.push(json!({
+                "step": idx + 1,
+                "id": st.id,
+                "kind": st.kind,
+                "label": st.label,
+                "prompt": step_text,
+                "skill_id": st.skill_id,
+                "mode": mode,
+                "referenced_paths": refs,
+                "predicted_outputs": predicted_outputs,
+            }));
         }
-        steps_out.push(json!({
-            "step": idx + 1,
-            "prompt": step_text,
-            "skill_id": matched_skill,
-            "mode": mode,
-            "referenced_paths": refs,
-            "predicted_outputs": predicted_outputs,
-        }));
+    } else {
+        for (idx, step_text) in raw_steps.iter().enumerate() {
+            let (matched_skill, mode, output_hint) =
+                infer_step_skill_and_mode(step_text, fallback_skill, idx == 0);
+            let refs = extract_step_paths(step_text, workspace_paths, &expected_inputs, idx == 0);
+            let mut predicted_outputs: Vec<String> = Vec::new();
+            if let Some(hint) = output_hint {
+                predicted_outputs.push(hint.to_string());
+            }
+            if pack_deliverables && idx + 1 == raw_steps.len() {
+                predicted_outputs.push("Playbook Deliverable Pack.md".to_string());
+            }
+            for r in &refs {
+                let role = if mode == "read_and_write" && r.ends_with(".csv") && matched_skill.as_deref() == Some("clean_dataset") {
+                    "read_and_update"
+                } else {
+                    "input"
+                };
+                push_impact(r.clone(), role, Some(format!("Step {}", idx + 1)));
+            }
+            steps_out.push(json!({
+                "step": idx + 1,
+                "prompt": step_text,
+                "skill_id": matched_skill,
+                "mode": mode,
+                "referenced_paths": refs,
+                "predicted_outputs": predicted_outputs,
+            }));
+        }
     }
 
     if pack_deliverables {

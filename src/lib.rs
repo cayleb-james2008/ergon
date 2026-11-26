@@ -12,6 +12,7 @@ pub mod audit_bundle;
 pub mod docs;
 pub mod file_history;
 pub mod library;
+pub mod pipelines;
 pub mod receipts;
 pub mod records;
 pub mod routines;
@@ -1379,7 +1380,8 @@ fn system_prompt(cfg: &Config, suite_items: &[library::LibraryItem]) -> String {
          - publish_skill {{\"name\": \"...\", \"description\": \"...\", \"params\": [\"entry\"], \"source\": \"<Rune script>\"}} — contribute a reusable skill you wrote to the company library, so every person's agent can use it. Library skills are Rune scripts whose main takes the declared params as strings in order and returns a string (or \"file:<name>\" after writing a file through host_workspace_write). A script that does not compile is refused.\n\
          - delegate {{\"subagent\": \"researcher\", \"task\": \"...\"}} — hand a focused sub-task to a specialist subagent from the suite; it works with the same tools and returns its result to you.\n\
          - delete_file {{\"path\": \"old.txt\"}} — CONSEQUENTIAL: deleting is permanent, so this does not delete immediately — it parks the deletion as a decision for your person to approve. Never claim a file was deleted when it was only parked.\n\
-         - flag_decision {{\"summary\": \"...\"}} — raise a question as a decision in your person's inbox when a choice is genuinely theirs to make.{suite_block}\n\n\
+         - flag_decision {{\"summary\": \"...\"}} — raise a question as a decision in your person's inbox when a choice is genuinely theirs to make.\n\
+         - request_checkpoint {{\"prompt\": \"...\", \"input_mode\": \"approve_reject|choice|text\", \"choices\": [...], \"inspect_files\": [...]}} — pause this run cleanly at a structured human checkpoint so your person can inspect files and provide a decision or answer, after which the run resumes automatically.{suite_block}\n\n\
          RULES: Use tools to do the real work; never claim work you did not do through a tool. When you learn a durable preference or fact about this person, record it with update_memory before finishing. When you build something reusable, publish it to the library so the whole company benefits. Finish with done only when the task is actually complete.{security_block}\n\n\
          PREFERENCES AND FACTS THIS PERSON HAS TAUGHT YOU — apply them in every task:\n{prefs_block}\n\n\
          WHAT YOU KNOW ABOUT THIS PERSON (their memory file — treat it as true and use it):\n{memory}",
@@ -1387,9 +1389,20 @@ fn system_prompt(cfg: &Config, suite_items: &[library::LibraryItem]) -> String {
     )
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CheckpointPause {
+    pub prompt: String,
+    pub input_mode: String,
+    pub choices: Vec<String>,
+    pub inspect_files: Vec<String>,
+}
+
 pub struct AgentOutcome {
     pub summary: String,
     pub steps: Vec<String>,
+    pub paused_checkpoint: Option<CheckpointPause>,
+    pub paused_run_id: Option<String>,
+    pub written_files: Vec<String>,
 }
 
 /// The files one run actually wrote — the evidence a "done" summary's
@@ -1595,6 +1608,7 @@ pub fn task_requires_workspace_tool(task: &str) -> bool {
         "move_file",
         "fetch_url",
         "flag_decision",
+        "request_checkpoint",
         "export_file",
     ];
     const EXTS: &[&str] = &[".md", ".csv", ".txt", ".json", ".log", ".tsv", ".pdf", ".docx", ".xlsx", ".pptx"];
@@ -1653,7 +1667,7 @@ fn run_loop(
     budget: &mut usize,
     session_tag: &str,
     live: Option<LiveStreamCtx<'_>>,
-) -> Result<(String, Vec<String>), String> {
+) -> Result<(String, Vec<String>, Option<CheckpointPause>), String> {
     // Subagent runs get their own provider session: if the provider
     // keys conversation state on the session header, the two
     // personas must not interleave in one server-side conversation.
@@ -1714,7 +1728,7 @@ fn run_loop(
                 .filter(|s| !s.trim().is_empty())
                 .unwrap_or("Task complete.")
                 .to_string();
-            return Ok((summary, steps));
+            return Ok((summary, steps, None));
         }
         let tool = match reply["tool"].as_str() {
             Some(t) if !t.trim().is_empty() => t.to_string(),
@@ -1773,7 +1787,11 @@ fn run_loop(
         } else if !allow_delegate
             && matches!(
                 tool.as_str(),
-                "publish_skill" | "install_item" | "delete_file" | "flag_decision"
+                "publish_skill"
+                    | "install_item"
+                    | "delete_file"
+                    | "flag_decision"
+                    | "request_checkpoint"
                     | "browse_library"
             )
         {
@@ -1792,8 +1810,11 @@ fn run_loop(
         } else {
             // Consequential tools carry the originating thread, so a
             // settled decision can report back into it.
-            if matches!(tool.as_str(), "delete_file" | "flag_decision") {
+            if matches!(tool.as_str(), "delete_file" | "flag_decision" | "request_checkpoint") {
                 args["_thread"] = json!(thread_id);
+            }
+            if tool == "request_checkpoint" {
+                args["_defer_decision"] = json!(true);
             }
             // Tripwire: refuse calls carrying the bait key or a secret,
             // calls reaching outside the workspace for credentials, and
@@ -1858,7 +1879,7 @@ fn run_loop(
                     }),
                 );
             }
-            if ok && matches!(tool.as_str(), "delete_file" | "flag_decision") {
+            if ok && matches!(tool.as_str(), "delete_file" | "flag_decision" | "request_checkpoint") {
                 lctx.events.publish(
                     "approval_parked",
                     lctx.person_id,
@@ -1889,6 +1910,14 @@ fn run_loop(
             );
         }
         store.lock().unwrap().push(thread_id, "step", &rendered_step);
+        if tool == "request_checkpoint" && ok {
+            let cp_pause = tools::parse_checkpoint_tool_args(cfg, &args)?;
+            return Ok((
+                format!("Paused at human checkpoint: {}", cp_pause.prompt),
+                steps,
+                Some(cp_pause),
+            ));
+        }
         // Guard against small local models looping on delete_file after a file
         // has already been parked for approval in this run.
         if tool == "delete_file" && ok && result_text.starts_with("already parked for your person's approval") {
@@ -1896,6 +1925,7 @@ fn run_loop(
             return Ok((
                 format!("Parked deletion of {rel} for your approval in Today's desk. The file has not been deleted yet."),
                 steps,
+                None,
             ));
         }
         // A tripped critical trap (or a score over the line) stops the
@@ -1979,7 +2009,7 @@ fn run_delegation(
         &profile.id,
         live,
     ) {
-        Ok((summary, _)) => (format!("{} reports: {}", profile.name, summary), true),
+        Ok((summary, _, _)) => (format!("{} reports: {}", profile.name, summary), true),
         Err(e) => (format!("error: subagent {} failed: {e}", profile.name), false),
     }
 }
@@ -2067,6 +2097,32 @@ pub fn run_agent_live(
     history: &[Value],
     live: Option<(&LiveRuns, &sse::RunEventBus, &str)>,
 ) -> Result<AgentOutcome, String> {
+    run_agent_inner(cfg, ctx, store, thread_id, task, history, live, false)
+}
+
+pub fn run_agent_for_pipeline(
+    cfg: &Config,
+    ctx: &ToolCtx,
+    store: &SharedStore,
+    thread_id: &str,
+    task: &str,
+    history: &[Value],
+    live: Option<(&LiveRuns, &sse::RunEventBus, &str)>,
+) -> Result<AgentOutcome, String> {
+    run_agent_inner(cfg, ctx, store, thread_id, task, history, live, true)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn run_agent_inner(
+    cfg: &Config,
+    ctx: &ToolCtx,
+    store: &SharedStore,
+    thread_id: &str,
+    task: &str,
+    history: &[Value],
+    live: Option<(&LiveRuns, &sse::RunEventBus, &str)>,
+    from_pipeline: bool,
+) -> Result<AgentOutcome, String> {
     if !cfg.model_configured() {
         return Err(NO_KEY_ERROR.to_string());
     }
@@ -2124,7 +2180,7 @@ pub fn run_agent_live(
     let system = system_prompt(cfg, &suite_items);
     let mut ledger = WriteLedger::default();
     let mut budget = 0usize;
-    let (summary, steps) = match run_loop(
+    let (summary, steps, paused_checkpoint) = match run_loop(
         cfg,
         ctx,
         store,
@@ -2186,6 +2242,66 @@ pub fn run_agent_live(
     };
     // The bait key never reaches the person's thread or the work log.
     let summary = tripwire::redact(&summary);
+    if let Some(cp_pause) = paused_checkpoint {
+        if !from_pipeline {
+            let live_bus = live_ctx.map(|l| (l.events, l.person_id));
+            let (prun_id, _) = pipelines::park_adhoc_checkpoint(
+                cfg,
+                thread_id,
+                task,
+                &ledger.written,
+                &steps,
+                &cp_pause,
+                live_bus,
+            )?;
+            let paused_msg = format!(
+                "Paused at human checkpoint: {} — answer the checkpoint card to resume automatically.",
+                cp_pause.prompt
+            );
+            store
+                .lock()
+                .unwrap()
+                .push(thread_id, "assistant", &paused_msg);
+            records::append_work(
+                cfg,
+                task,
+                &paused_msg,
+                &ledger.written,
+                thread_id,
+                false,
+            );
+            if let Some(lctx) = live_ctx {
+                lctx.events.publish(
+                    "run_finished",
+                    lctx.person_id,
+                    lctx.run_id,
+                    thread_id,
+                    json!({
+                        "status": "paused_checkpoint",
+                        "summary": truncate(&paused_msg, 300),
+                        "pipeline_run_id": prun_id,
+                        "elapsed_ms": run_t0.elapsed().as_millis() as u64,
+                        "files": ledger.written,
+                        "ts_ms": records::now_millis(),
+                    }),
+                );
+            }
+            return Ok(AgentOutcome {
+                summary: paused_msg,
+                steps,
+                paused_checkpoint: Some(cp_pause),
+                paused_run_id: Some(prun_id),
+                written_files: ledger.written,
+            });
+        }
+        return Ok(AgentOutcome {
+            summary,
+            steps,
+            paused_checkpoint: Some(cp_pause),
+            paused_run_id: None,
+            written_files: ledger.written,
+        });
+    }
     store
         .lock()
         .unwrap()
@@ -2302,7 +2418,13 @@ pub fn run_agent_live(
             }),
         );
     }
-    Ok(AgentOutcome { summary, steps })
+    Ok(AgentOutcome {
+        summary,
+        steps,
+        paused_checkpoint: None,
+        paused_run_id: None,
+        written_files: ledger.written,
+    })
 }
 
 #[cfg(test)]
