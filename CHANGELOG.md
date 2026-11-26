@@ -4,6 +4,16 @@ Each release is tagged `vMAJOR.MINOR.PATCH` and published on GitHub Releases wit
 binaries and a `SHA256SUMS` file. The running app shows its version and can update
 itself from the newest release (see README, "Versions and updates").
 
+## 0.33.0 - 2026-11-26
+
+Added a Client, Engagement, and Retainer hierarchy with LLM token and cost metering, time-saved attribution, and retainer budget gates across the Rust server (`src/records.rs`, `src/lib.rs`, `src/pipelines.rs`, `src/receipts.rs`, `src/audit_bundle.rs`, `src/search.rs`, `src/tools.rs`, `src/server.rs`, `tests/clients_metering_v033.rs`) and the React workbench (`frontend/src/`, `frontend/src/lib/webEngine.ts`).
+
+Each person workspace now tracks clients and retainers (`clients.json` with `0600` permissions on Unix) through `GET /api/clients`, `POST /api/clients`, `POST /api/engagements`, `POST /api/engagements/switch`, and `GET /api/metering/summary`. PDF exports fall back to the active client `brand_header`, and `GET /api/config` plus `PUT`/`POST /api/config` accept per-model input, output, and cached token pricing overrides (`model_pricing.json` `0600`) layered over built-in model rates.
+
+Model calls in `call_model_with_usage` and deterministic pipeline steps record prompt, completion, total, and cached token counts, latency, USD spend, estimated minutes saved, and billable value (`usage_ledger.jsonl` `0600`, `work.json`, and v2 `ChainedReceipt` entries with canonical `usage_digest` while keeping legacy receipt hashes unchanged). Live runs and pipelines emit `usage` deltas on `step_done`, `run_finished`, `pipeline_step_done`, and `pipeline_finished` SSE events, and pre-run or mid-run spend checks park a `budget_gate` decision in Today whenever a metered engagement reaches its retainer cap.
+
+In the UI, `PersonSelect.tsx` adds a Client and Engagement selector with quick creation, `Paper.tsx` adds the Retainer burn and billable ROI card (`#retainer-roi-card`), receipt-row usage summaries, and plain-language `budget_gate` approval cards, `SettingsPanel.tsx` adds the Model pricing overrides editor, and `webEngine.ts` mirrors all client, metering, SSE usage, pricing, and budget gate flows in IndexedDB. Verified post-final-edit: `clippy` 0 warnings, `x86_64-pc-windows-msvc` `xwin` check 0 errors, `263/263` Rust tests (`6/6` `clients_metering_v033`), `gate 93/93`, `graph 6/6`, `replay 20/20`, `sloplint 0/0/0` (on both `frontend/src` and rendered app), `8.08 MiB` (`8,467,296 B`) binary, `17.87 ms` boot, `18.93 MB` peak RSS, `6,271.0 req/s` (`3.19 ms` p95, `0/15,684` errors), `5/5` SSE, and `44/44` fuzz.
+
 ## 0.32.0 - 2026-11-26
 
 Hardened hybrid pipelines, document and table handling, atomic file editing, and intake/outbound connectors across the Rust server, tests (`tests/hardening_v032.rs`), and React workbench (`frontend/src/` and `frontend/src/lib/webEngine.ts`).

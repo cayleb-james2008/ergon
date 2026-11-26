@@ -1353,6 +1353,9 @@ export function useErgon() {
         if ((r.data as { stopped_for_safety?: boolean }).stopped_for_safety) {
           toast.warning("Ergon stopped this task to keep your work safe. The details are waiting in Today.");
         }
+        if ((r.data as { budget_gated?: boolean }).budget_gated) {
+          toast.warning("Retainer budget limit reached. Approve overrun in Today to continue.");
+        }
         const pausedRunId = (r.data as { paused_pipeline_run_id?: string }).paused_pipeline_run_id;
         if (pausedRunId) {
           void loadPipelineRuns();

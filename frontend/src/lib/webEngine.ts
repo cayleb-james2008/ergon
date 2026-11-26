@@ -4401,7 +4401,7 @@ function runWebTableQuery(
       const pid = decodeURIComponent(path.slice("/api/playbooks/".length, -"/export".length)).trim();
       const rt = st.routines.find((x) => x.id === pid);
       if (!rt) return jsonRes({ error: "playbook not found" }, 404);
-      const built = await buildSignedPlaybookPack(rt, "0.32.0");
+      const built = await buildSignedPlaybookPack(rt, "0.33.0");
       return new Response(built.json, {
         status: 200,
         headers: {

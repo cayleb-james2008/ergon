@@ -58,12 +58,20 @@ One Rust binary serves the React web UI (`/` and `/phone`), the raw-TCP HTTP and
     </td>
   </tr>
   <tr>
-    <td colspan="2">
+    <td width="50%">
       Accept signed inbound webhooks (<code>POST /api/hooks/:hook_id</code>) and local watched folders into routines, keep credentials isolated inside <code>connector_secrets.json</code>, and gate outbound HTTP deliveries through Today approval cards and workspace policies.
       <br /><br />
       <picture>
         <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/connectors-dark.png" />
-        <img src="docs/screenshots/connectors-light.png" alt="Ergon v0.32.0 Connectors modal showing Inbound Webhooks, Watched Folders, Outbound Actions, Delivery Log, and Today approval card" width="100%" />
+        <img src="docs/screenshots/connectors-light.png" alt="Ergon Connectors modal showing Inbound Webhooks, Watched Folders, Outbound Actions, Delivery Log, and Today approval card" width="100%" />
+      </picture>
+    </td>
+    <td width="50%">
+      Group work under client engagements and retainers, track LLM token spend, time saved, and billable ROI in Today, configure per-model token rates in Settings, and pause spend at retainer budget gates until approved.
+      <br /><br />
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/clients-metering-dark.png" />
+        <img src="docs/screenshots/clients-metering-light.png" alt="Ergon v0.33.0 Retainer burn and billable ROI card, Client and Engagement selector, and Retainer budget gate decision card" width="100%" />
       </picture>
     </td>
   </tr>
@@ -79,23 +87,23 @@ flowchart LR
   HTTP --> Agent["Agent Loop (src/lib.rs)\npatch_file, query_table, invoke_connector, Done Gate"]
   HTTP --> Workflows["12 Built-In Workflows & Connectors\nsandbox FS, webhooks, folder watch, PDF 1.4 & XLSX (src/docs.rs)"]
   HTTP --> Index["Per-Person RwLock Index (src/search.rs)\nCmd+K fuzzy search, [file:L##] verification"]
-  Agent --> Ledger["Provenance and Safety\nSHA-256 receipts, .history/ snapshots, Tripwires, connector_secrets.json"]
+  Agent --> Ledger["Provenance and Safety\nSHA-256 receipts, usage_ledger.jsonl, .history/, Tripwires"]
 ```
 
 ---
 
-## Verified benchmarks (`v0.32.0` vs `v0.11.0`)
+## Verified benchmarks (`v0.33.0` vs `v0.11.0`)
 
 Measured against the stripped fat-LTO release binary on local loopback against a `5,000` receipts and `500` workspace files dataset:
 
-| Metric | `v0.11.0` baseline | `v0.32.0` measured | Change |
+| Metric | `v0.11.0` baseline | `v0.33.0` measured | Change |
 | --- | --- | --- | --- |
-| Release binary size | `16.0 MB` | `7.95 MiB` (`8,340,320 B`) | `-47.9%` |
-| Initial `/` shell payload | `1.15 MB` | `159.13 KiB` (`162,949 B`) raw / `36.16 KiB` (`37,027 B`) gzip (`17` `/chunks/*`) | `-96.8%` wire |
-| Cold boot to `200 OK` | `n/a` | `10.01 ms` | Near `10 ms` self-audit |
-| Peak RSS (`VmHWM`, `5k` receipts + `500` files, `5/5` SSE, `16w`) | `n/a` | `17.92 MB` (`18,348 KB`) | `17.92 MB` peak RSS |
-| Concurrent HTTP (`16w` mixed 5 routes + `5/5` SSE across `5k`/`500`) | `724 req/s` (`188.7 ms` p95) | `4,821.3 req/s` (`2.97 ms` p50, `4.99 ms` p95, `0/12,060` err) | `6.66x` under full concurrency |
-| Automated checks | `204` Rust tests | `257/257` Rust tests (`11/11` `hardening_v032`), `89/89` gate, `6/6` graph, `20/20` replay, `44/44` fuzz, `0/0/0` `sloplint` | Zero warnings / zero externals |
+| Release binary size | `16.0 MB` | `8.08 MiB` (`8,467,296 B`) | `-47.1%` |
+| Initial `/` shell payload | `1.15 MB` | `162.67 KiB` (`166,577 B`) raw / `37.23 KiB` (`38,119 B`) gzip (`17` `/chunks/*`) | `-96.7%` wire |
+| Cold boot to `200 OK` | `n/a` | `17.87 ms` | Under `20 ms` self-audit |
+| Peak RSS (`VmHWM`, `5k` receipts + `500` files, `5/5` SSE, `16w`) | `n/a` | `18.93 MB` (`19,384 KB`) | `18.93 MB` peak RSS |
+| Concurrent HTTP (`16w` mixed 5 routes + `5/5` SSE across `5k`/`500`) | `724 req/s` (`188.7 ms` p95) | `6,271.0 req/s` (`2.5 ms` p50, `3.19 ms` p95, `0/15,684` err) | `8.66x` under full concurrency |
+| Automated checks | `204` Rust tests | `263/263` Rust tests (`6/6` `clients_metering_v033`), `93/93` gate, `6/6` graph, `20/20` replay, `44/44` fuzz, `0/0/0` `sloplint` | Zero warnings / zero externals |
 
 ---
 
@@ -153,6 +161,10 @@ On startup, unless `ERGON_NO_AUTO_MODEL=1` or an explicit `ERGON_MODEL_BASE_URL`
 ---
 
 ## Core capabilities
+
+### Client engagements, retainer burn, and billable ROI
+
+Create clients and engagements from the top workspace switcher (`GET` and `POST /api/clients`, `POST /api/engagements`, `POST /api/engagements/switch`). Every agent run and pipeline step records prompt, completion, cached, and total tokens along with USD cost, estimated minutes saved, and billable value inside `usage_ledger.jsonl` and v2 SHA-256 `ChainedReceipt` entries (`GET /api/metering/summary`). Configure per-model token rates in Settings (`model_pricing.json`), track retainer burn in Today (`#retainer-roi-card`), and approve or pause spend on `budget_gate` decision cards when an engagement reaches its retainer cap.
 
 ### Starter playbooks and quick client handoff
 

@@ -707,6 +707,8 @@ export const PaperFace = memo(function PaperFace({
         if (!merged[existingIdx].id && r.id) merged[existingIdx].id = r.id;
         if (!merged[existingIdx].ts && r.ts) merged[existingIdx].ts = r.ts;
         if (!merged[existingIdx].sha256 && r.sha256) merged[existingIdx].sha256 = r.sha256;
+        if (!merged[existingIdx].usage && r.usage) merged[existingIdx].usage = r.usage;
+        if (!merged[existingIdx].engagement_id && r.engagement_id) merged[existingIdx].engagement_id = r.engagement_id;
         if (r.id) seenIds.add(r.id);
         continue;
       }
@@ -812,7 +814,7 @@ export const PaperFace = memo(function PaperFace({
     [activeEng, metering?.by_engagement]
   );
   const retainerBudgetUsd = activeEng?.retainer_budget_usd ?? meteringTotals?.retainer_budget_usd ?? 0;
-  const retainerSpentUsd = activeEngRow?.cost_usd ?? meteringTotals?.cost_usd ?? 0;
+  const retainerSpentUsd = activeEng ? (activeEngRow?.cost_usd ?? 0) : (meteringTotals?.cost_usd ?? 0);
   const retainerBurnPct = Math.max(0, Number(meteringTotals?.retainer_burn_pct ?? activeEngRow?.retainer_burn_pct ?? 0) || 0);
   const hourlyRateUsd = activeEng?.hourly_rate_usd ?? activeCli?.default_rate_usd ?? 0;
 

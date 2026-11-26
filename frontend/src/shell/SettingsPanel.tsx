@@ -174,10 +174,16 @@ function SettingsBody({
         cached_input_per_1m_usd: cached,
       };
     }
+    const payload: Record<string, ModelPricingMap[string] | null> = { ...map };
+    for (const prevKey of Object.keys(cfg?.model_pricing ?? {})) {
+      if (!(prevKey in payload)) {
+        payload[prevKey] = null;
+      }
+    }
     setSavingPricing(true);
     const r = await call<ModelConfigPayload>("/api/config", {
       method: "POST",
-      body: { model_pricing: map },
+      body: { model_pricing: payload },
     });
     setSavingPricing(false);
     if (!r.ok) {
