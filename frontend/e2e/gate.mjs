@@ -1128,7 +1128,7 @@ await reset();
       }),
     });
   });
-  await p.route("**/api/pipelines/runs", (r) =>
+  await p.route(/\/api\/pipelines\/runs(\?.*)?$/, (r) =>
     r.fulfill({
       status: 200,
       contentType: "application/json",

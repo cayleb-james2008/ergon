@@ -4,6 +4,12 @@ Each release is tagged `vMAJOR.MINOR.PATCH` and published on GitHub Releases wit
 binaries and a `SHA256SUMS` file. The running app shows its version and can update
 itself from the newest release (see README, "Versions and updates").
 
+## 0.29.0 - 2026-11-26
+
+Resumable hybrid workflow pipelines (`steps_v2`) execute multi-step combinations of zero-LLM deterministic skills, AI agent runs, structured human checkpoints, and document exports asynchronously under `/api/pipelines/{run,runs,runs/:id,resume,retry,cancel}`, persisting execution state to `pipeline_runs.json` across restarts and streaming `pipeline_*` events over `/api/runs/stream` (`src/pipelines.rs`, `src/routines.rs`, `src/tools.rs`, `src/lib.rs`, `src/server.rs`).
+
+Starter playbooks now launch live `steps_v2` deterministic skill pipelines against workspace files instead of canned preview text (`src/skill_catalog.rs`, `src/skills/catalog.json`), and `request_checkpoint` parks ad-hoc agent runs until answered in Today (`Paper.tsx`), inline chat (`Chat.tsx`), or Routines (`PipelineBuilder.tsx`, `CheckpointCard.tsx`) with full browser-only parity in `ergon-web.html` (`frontend/src/lib/webEngine.ts`).
+
 ## 0.28.0 - 2026-11-25
 
 Zero-setup starter playbooks bundle three verified workflows (`Weekly Client Digest`, `Repo Release Audit`, and `Research Brief + Citation Pack`) inside the compressed built-in skill catalog (`src/skills/catalog.json`, `src/skill_catalog.rs`). Launch, preview ordered dry-run steps, or run any starter directly into a signed Client Handoff ZIP archive in one click from Today or Recurring routines (`GET /api/playbooks/starters`, `POST /api/playbooks/starters/launch`, `frontend/src/shell/StarterPlaybooksBar.tsx`), with offline `ergon-web.html` parity (`frontend/src/lib/webEngine.ts`).

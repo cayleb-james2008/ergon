@@ -39,6 +39,16 @@ One Rust binary serves the React web UI (`/` and `/phone`), the raw-TCP HTTP and
       </picture>
     </td>
   </tr>
+  <tr>
+    <td colspan="2">
+      Run resumable hybrid pipelines combining deterministic local skills, AI agent steps, structured human checkpoints, and document exports with restart persistence (<code>/api/pipelines/*</code>) and offline browser parity.
+      <br /><br />
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/pipelines-dark.png" />
+        <img src="docs/screenshots/pipelines-light.png" alt="Ergon v0.29.0 Resumable Hybrid Workflow and Human Checkpoint Card" width="100%" />
+      </picture>
+    </td>
+  </tr>
 </table>
 
 ---
@@ -56,19 +66,18 @@ flowchart LR
 
 ---
 
-## Verified benchmarks (`v0.28.0` vs `v0.11.0`)
+## Verified benchmarks (`v0.29.0` vs `v0.11.0`)
 
 Measured against the stripped fat-LTO release binary on local loopback against a `5,000` receipts and `500` workspace files dataset:
 
-| Metric | `v0.11.0` baseline | `v0.28.0` measured | Change |
+| Metric | `v0.11.0` baseline | `v0.29.0` measured | Change |
 | --- | --- | --- | --- |
-| Release binary size | `16.0 MB` | `7.497 MB` (`7,861,088 B`) | `-53.1%` |
-| Initial `/` shell payload | `1.15 MB` | `151.0 KB` raw / `34.2 KiB` (`35,024 B`) gzip (`16` `/chunks/*`) | `-97.0%` wire |
-| Cold boot to `200 OK` | `n/a` | `3.52 ms` median (`3.30 ms` min) | Under `5 ms` self-audit |
-| Peak RSS (`VmHWM`, `5k` receipts + `500` files, audit + handoff ZIP + `16w`) | `n/a` | `15.41 MB` (`15,780 KB`) (`14.08 MB` after `5k` handoff ZIP) | `-36.1%` vs `22.02 MB` `v0.27.0` |
-| Concurrent HTTP (`16w` mixed 5 routes across `5k`/`500`) | `724 req/s` (`188.7 ms` p95) | `42,902.5 req/s` keep-alive (`0.30 ms` p50, `0.89 ms` p95) / `15,706.8 req/s` cold (`0.78 ms` p50, `1.76 ms` p95, `0` err) | `59.3x` keep-alive / `21.7x` cold |
-| Streaming audit bundle (`5k` entries) | `n/a` | `58.19 ms` (`1,936,272 B`) | Zero duplicate `5k` chain load |
-| Automated checks | `204` Rust tests | `228/228` Rust tests, `100/100` UI checks, `47/47` CLI/policy/starter/handoff fuzz, `0` `sloplint` fails | Zero warnings / zero externals |
+| Release binary size | `16.0 MB` | `7.66 MiB` (`8,037,216 B`) | `-49.8%` |
+| Initial `/` shell payload | `1.15 MB` | `160.5 KB` raw / `36.6 KB` (`36,619 B`) gzip (`16` `/chunks/*`) | `-96.8%` wire |
+| Cold boot to `200 OK` | `n/a` | `6.22 ms` | Under `10 ms` self-audit |
+| Peak RSS (`VmHWM`, `5k` receipts + `500` files, `5/5` SSE, `16w`) | `n/a` | `17.99 MB` (`18,420 KB`) | `17.99 MB` peak RSS |
+| Concurrent HTTP (`16w` mixed 5 routes + `5/5` SSE across `5k`/`500`) | `724 req/s` (`188.7 ms` p95) | `5,058.3 req/s` (`2.84 ms` p50, `4.18 ms` p95, `0` err) | `7.0x` under full concurrency |
+| Automated checks | `204` Rust tests | `234/234` Rust tests (`6/6` `pipelines_v029`), `75/75` gate, `6/6` graph, `20/20` replay, `44/44` fuzz, `0` `sloplint` fails | Zero warnings / zero externals |
 
 ---
 

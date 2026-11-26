@@ -552,7 +552,7 @@ export function PipelineBuilder({
                       type="button"
                       onClick={() => insertTokenIntoStep(idx, chip)}
                       className={cn(
-                        "mono rounded-chip border border-hairline bg-board/60 px-2 py-0.5 text-xs text-ink-2 transition-colors hover:border-ink-3 hover:bg-board hover:text-ink"
+                        "mono rounded-chip border border-hairline bg-board/60 px-2 py-0.5 text-xs text-ink-2 transition-[color,background-color,border-color] hover:border-ink-3 hover:bg-board hover:text-ink"
                       )}
                       title={`Insert ${chip}`}
                     >

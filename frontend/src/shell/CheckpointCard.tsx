@@ -227,7 +227,7 @@ export function CheckpointCard({
                 aria-checked={active}
                 onClick={() => setSelectedChoice(ch)}
                 className={cn(
-                  "flex min-h-10 items-center justify-between gap-2 rounded-sm border px-3 py-2 text-left text-sm transition-colors max-md:min-h-11",
+                  "flex min-h-10 items-center justify-between gap-2 rounded-sm border px-3 py-2 text-left text-sm transition-[color,background-color,border-color] max-md:min-h-11",
                   active
                     ? "border-blue bg-surface font-medium text-ink"
                     : "border-hairline bg-surface/75 text-ink-2 hover:bg-surface hover:text-ink"

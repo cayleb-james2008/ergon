@@ -2804,8 +2804,8 @@ function buildWebStoreZip(entries: Array<[string, Uint8Array]>): Uint8Array {
   return out;
 }
 
-    if (method === "GET" && path === "/api/version") return jsonRes({ name: "ergon", version: "0.28.0" });
-    if (method === "GET" && path === "/api/update") return jsonRes({ current: "0.28.0", available: false, mode: "off", checked_at: Math.floor(Date.now() / 1000) });
+    if (method === "GET" && path === "/api/version") return jsonRes({ name: "ergon", version: "0.29.0" });
+    if (method === "GET" && path === "/api/update") return jsonRes({ current: "0.29.0", available: false, mode: "off", checked_at: Math.floor(Date.now() / 1000) });
     if (method === "GET" && path === "/api/status") {
       return jsonRes({
         version: "0.29.0",
@@ -3137,7 +3137,7 @@ function buildWebStoreZip(entries: Array<[string, Uint8Array]>): Uint8Array {
       const pid = decodeURIComponent(path.slice("/api/playbooks/".length, -"/export".length)).trim();
       const rt = st.routines.find((x) => x.id === pid);
       if (!rt) return jsonRes({ error: "playbook not found" }, 404);
-      const built = await buildSignedPlaybookPack(rt, "0.28.0");
+      const built = await buildSignedPlaybookPack(rt, "0.29.0");
       return new Response(built.json, {
         status: 200,
         headers: {
