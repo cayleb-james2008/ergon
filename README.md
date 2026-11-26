@@ -63,7 +63,7 @@ One Rust binary serves the React web UI (`/` and `/phone`), the raw-TCP HTTP and
       <br /><br />
       <picture>
         <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/connectors-dark.png" />
-        <img src="docs/screenshots/connectors-light.png" alt="Ergon v0.31.0 Connectors modal showing Inbound Webhooks, Watched Folders, Outbound Actions, Delivery Log, and Today approval card" width="100%" />
+        <img src="docs/screenshots/connectors-light.png" alt="Ergon v0.32.0 Connectors modal showing Inbound Webhooks, Watched Folders, Outbound Actions, Delivery Log, and Today approval card" width="100%" />
       </picture>
     </td>
   </tr>
@@ -84,18 +84,18 @@ flowchart LR
 
 ---
 
-## Verified benchmarks (`v0.31.0` vs `v0.11.0`)
+## Verified benchmarks (`v0.32.0` vs `v0.11.0`)
 
 Measured against the stripped fat-LTO release binary on local loopback against a `5,000` receipts and `500` workspace files dataset:
 
-| Metric | `v0.11.0` baseline | `v0.31.0` measured | Change |
+| Metric | `v0.11.0` baseline | `v0.32.0` measured | Change |
 | --- | --- | --- | --- |
-| Release binary size | `16.0 MB` | `7.92 MiB` (`8,303,456 B`) | `-48.1%` |
-| Initial `/` shell payload | `1.15 MB` | `158.6 KiB` (`162,423 B`) raw / `36.1 KiB` (`36,935 B`) gzip (`17` `/chunks/*`) | `-96.8%` wire |
-| Cold boot to `200 OK` | `n/a` | `5.94 ms` | Under `10 ms` self-audit |
-| Peak RSS (`VmHWM`, `5k` receipts + `500` files, `5/5` SSE, `16w`) | `n/a` | `16.96 MB` (`17,368 KB`) | `16.96 MB` peak RSS |
-| Concurrent HTTP (`16w` mixed 5 routes + `5/5` SSE across `5k`/`500`) | `724 req/s` (`188.7 ms` p95) | `8,194.5 req/s` (`1.89 ms` p50, `2.29 ms` p95, `0/20,493` err) | `11.3x` under full concurrency |
-| Automated checks | `204` Rust tests | `246/246` Rust tests (`3/3` `connectors_v031`), `84/84` gate, `6/6` graph, `20/20` replay, `44/44` fuzz, `0/0/0` `sloplint` | Zero warnings / zero externals |
+| Release binary size | `16.0 MB` | `7.95 MiB` (`8,340,320 B`) | `-47.9%` |
+| Initial `/` shell payload | `1.15 MB` | `158.95 KiB` (`162,768 B`) raw / `36.14 KiB` (`37,011 B`) gzip (`17` `/chunks/*`) | `-96.8%` wire |
+| Cold boot to `200 OK` | `n/a` | `5.81 ms` | Under `10 ms` self-audit |
+| Peak RSS (`VmHWM`, `5k` receipts + `500` files, `5/5` SSE, `16w`) | `n/a` | `18.52 MB` (`18,968 KB`) | `18.52 MB` peak RSS |
+| Concurrent HTTP (`16w` mixed 5 routes + `5/5` SSE across `5k`/`500`) | `724 req/s` (`188.7 ms` p95) | `6,410.3 req/s` (`2.31 ms` p50, `3.17 ms` p95, `0/16,033` err) | `8.85x` under full concurrency |
+| Automated checks | `204` Rust tests | `257/257` Rust tests (`11/11` `hardening_v032`), `89/89` gate, `6/6` graph, `20/20` replay, `44/44` fuzz, `0/0/0` `sloplint` | Zero warnings / zero externals |
 
 ---
 
