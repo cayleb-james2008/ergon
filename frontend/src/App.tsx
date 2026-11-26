@@ -21,6 +21,7 @@ import {
   SlidersHorizontal,
   Sparkles,
   UserPlus,
+  Webhook,
   X,
 } from "lucide-react";
 import { Toaster, toast } from "sonner";
@@ -45,6 +46,7 @@ const InspectorDrawer = lazy(() => import("@/shell/InspectorDrawer").then((mod) 
 const SettingsPanel = lazy(() => import("@/shell/SettingsPanel").then((mod) => ({ default: mod.SettingsPanel })));
 const SkillsPanel = lazy(() => import("@/shell/SkillsPanel").then((mod) => ({ default: mod.SkillsPanel })));
 const RoutinesPanel = lazy(() => import("@/shell/RoutinesPanel").then((mod) => ({ default: mod.RoutinesPanel })));
+const ConnectorsPanel = lazy(() => import("@/shell/ConnectorsPanel").then((mod) => ({ default: mod.ConnectorsPanel })));
 const CommandPalette = lazy(() => import("@/shell/CommandPalette").then((mod) => ({ default: mod.CommandPalette })));
 import { useErgon } from "@/state";
 import { call, hasV050Api, type Routine } from "@/lib/api";
@@ -167,6 +169,7 @@ export function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [skillsOpen, setSkillsOpen] = useState(false);
   const [routinesOpen, setRoutinesOpen] = useState(false);
+  const [connectorsOpen, setConnectorsOpen] = useState(false);
   const [learnedOpen, setLearnedOpen] = useState(false);
   const [suiteOpen, setSuiteOpen] = useState(false);
   const [addPersonOpen, setAddPersonOpen] = useState(false);
@@ -638,6 +641,15 @@ export function App() {
           }}
         />
         <RailPanelButton
+          id="connectors-btn"
+          label="Connectors"
+          icon={<Webhook className="size-3.5 shrink-0 text-icon" strokeWidth={1.5} aria-hidden />}
+          onClick={() => {
+            setMobileOpen(false);
+            setConnectorsOpen(true);
+          }}
+        />
+        <RailPanelButton
           id="memory-btn"
           label="What my agent has learned"
           icon={<BookOpen className="size-3.5 shrink-0 text-icon" strokeWidth={1.5} aria-hidden />}
@@ -1075,6 +1087,7 @@ export function App() {
         onOpenHistory={openHistoryInspector}
         onOpenSkills={() => setSkillsOpen(true)}
         onOpenRoutines={() => setRoutinesOpen(true)}
+        onOpenConnectors={() => setConnectorsOpen(true)}
         onOpenFile={(p) => setViewerPath(p)}
         onOpenThread={(id) => {
           desk.openThread(id);
@@ -1213,6 +1226,17 @@ export function App() {
           desk.openThread(id);
           setFace("chat");
         }}
+      />
+      )}
+
+      {connectorsOpen && (
+      <ConnectorsPanel
+        open={connectorsOpen}
+        onOpenChange={setConnectorsOpen}
+        routines={desk.routines}
+        status={desk.status}
+        onChanged={onPaperChanged}
+        onOpenToday={() => switchFace("paper")}
       />
       )}
 

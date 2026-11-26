@@ -16,14 +16,18 @@ import { buildAuditBundle } from "@/lib/auditBundle";
 import { computeLineDiff } from "@/lib/diff";
 import {
   estimateNextRunMs,
+  type DeliveryLog,
   type FileRevision,
   type LiveRunStep,
+  type OutboundConnector,
+  type OutboundConnectorKind,
   type PipelineCheckpointInputMode,
   type PipelineRun,
   type PipelineStepSpec,
   type PipelineStepState,
   type Routine,
   type RoutineRunRecord,
+  type TriggerRule,
 } from "@/lib/api";
 
 type WebFile = {
@@ -59,11 +63,28 @@ type WebDecision = {
   thread_id: string;
   ts: number;
   resolved_ts?: number;
+  detail?: string;
+  severity?: string;
   run_id?: string;
   input_mode?: PipelineCheckpointInputMode;
   choices?: string[];
   inspect_files?: string[];
   answer?: string;
+  connector_id?: string;
+  connector_name?: string;
+  connector_kind?: string;
+  method?: string;
+  url?: string;
+  payload_preview?: string;
+  payload_sha256?: string;
+  delivery_id?: string;
+};
+type WebConnectorsState = {
+  triggers: TriggerRule[];
+  outbound: OutboundConnector[];
+  deliveries: DeliveryLog[];
+  webhookSecrets: Record<string, string>;
+  outboundSecrets: Record<string, string>;
 };
 type WebOffer = {
   id: string;
@@ -97,6 +118,7 @@ type PersonStore = {
   routines: Routine[];
   routineRuns: Record<string, RoutineRunRecord[]>;
   pipelineRuns?: PipelineRun[];
+  connectors?: WebConnectorsState;
   memory: string;
   suite: string[];
   policyProfile?: WorkspacePolicyProfile;
@@ -1020,6 +1042,50 @@ function buildInitialState(): RootState {
         ts: now - 20 * 60_000,
       },
     ],
+    connectors: {
+      triggers: [
+        {
+          id: "trg-maya-intake",
+          name: "Vendor invoice webhook",
+          kind: "webhook",
+          enabled: true,
+          routine_id: "rt-morning-ledger",
+          target_kind: "routine",
+          hook_id: "hk-maya-intake",
+          hook_path: "/api/hooks/hk-maya-intake",
+          has_secret: true,
+          trigger_count: 1,
+          last_triggered_ms: now - 45 * 60_000,
+          created_ms: now - 2 * 86_400_000,
+          updated_ms: now - 45 * 60_000,
+        },
+      ],
+      outbound: [
+        {
+          id: "conn-ops-digest",
+          name: "Ops digest webhook",
+          kind: "http_webhook",
+          url: "https://hooks.example.com/ops-digest",
+          method: "POST",
+          headers_template: { Authorization: "Bearer {{secret:api_token}}" },
+          secret_keys: ["api_token"],
+          has_secret: true,
+          require_approval: true,
+          enabled: true,
+          last_delivery_ms: null,
+          last_status: null,
+          created_ms: now - 2 * 86_400_000,
+          updated_ms: now - 2 * 86_400_000,
+        },
+      ],
+      deliveries: [],
+      webhookSecrets: {
+        "trg-maya-intake": "whsec_maya_initial_demo_only",
+      },
+      outboundSecrets: {
+        api_token: "tok_maya_hidden_host_secret",
+      },
+    },
   };
 
   const tomasStore: PersonStore = {
@@ -1035,6 +1101,7 @@ function buildInitialState(): RootState {
     work: [],
     decisions: [],
     offers: [],
+    connectors: { triggers: [], outbound: [], deliveries: [], webhookSecrets: {}, outboundSecrets: {} },
   };
 
   return {
@@ -1068,6 +1135,67 @@ function openIdb(dbName = DB_NAME): Promise<IDBDatabase | null> {
   });
 }
 
+function ensureWebConnectors(st: PersonStore): WebConnectorsState {
+  if (!st.connectors || typeof st.connectors !== "object") {
+    st.connectors = { triggers: [], outbound: [], deliveries: [], webhookSecrets: {}, outboundSecrets: {} };
+  }
+  if (!Array.isArray(st.connectors.triggers)) st.connectors.triggers = [];
+  if (!Array.isArray(st.connectors.outbound)) st.connectors.outbound = [];
+  if (!Array.isArray(st.connectors.deliveries)) st.connectors.deliveries = [];
+  if (!st.connectors.webhookSecrets || typeof st.connectors.webhookSecrets !== "object") st.connectors.webhookSecrets = {};
+  if (!st.connectors.outboundSecrets || typeof st.connectors.outboundSecrets !== "object") st.connectors.outboundSecrets = {};
+  return st.connectors;
+}
+
+function randomHex(byteCount = 12): string {
+  if (typeof crypto !== "undefined" && crypto.getRandomValues) {
+    const arr = new Uint8Array(byteCount);
+    crypto.getRandomValues(arr);
+    return Array.from(arr, (b) => b.toString(16).padStart(2, "0")).join("");
+  }
+  return Math.random().toString(16).slice(2) + Date.now().toString(16);
+}
+
+async function computeHmacHex(secret: string, bodyText: string): Promise<string> {
+  if (typeof crypto !== "undefined" && crypto.subtle) {
+    const enc = new TextEncoder();
+    const key = await crypto.subtle.importKey("raw", enc.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+    const sig = await crypto.subtle.sign("HMAC", key, enc.encode(bodyText));
+    return Array.from(new Uint8Array(sig), (b) => b.toString(16).padStart(2, "0")).join("");
+  }
+  return await sha256Hex(`${secret}:${bodyText}`);
+}
+
+function isSensitiveWatchDir(dir: string): boolean {
+  const low = dir.replace(/\\/g, "/").toLowerCase();
+  return (
+    low === "/" ||
+    low.startsWith("/etc") ||
+    low.startsWith("/root") ||
+    low.includes("/.ssh") ||
+    low.includes("/.aws") ||
+    low.includes("/.gnupg") ||
+    low.includes("/.talos-wallet") ||
+    low.includes("/.env")
+  );
+}
+
+function getHeaderCI(headers: HeadersInit | undefined, name: string): string {
+  if (!headers) return "";
+  const want = name.toLowerCase();
+  if (headers instanceof Headers) return headers.get(name) || "";
+  if (Array.isArray(headers)) {
+    for (const [k, v] of headers) {
+      if (String(k).toLowerCase() === want) return String(v);
+    }
+    return "";
+  }
+  for (const [k, v] of Object.entries(headers)) {
+    if (k.toLowerCase() === want) return String(v);
+  }
+  return "";
+}
+
 async function idbLoad(): Promise<RootState | null> {
   const db = await openIdb(DB_NAME);
   if (!db) return null;
@@ -1086,6 +1214,7 @@ async function idbLoad(): Promise<RootState | null> {
       if (!Array.isArray(st.routines)) st.routines = [];
       if (!st.fileHistory || typeof st.fileHistory !== "object") st.fileHistory = {};
       if (!st.routineRuns || typeof st.routineRuns !== "object") st.routineRuns = {};
+      ensureWebConnectors(st);
     }
   }
   return loaded;
@@ -3199,11 +3328,11 @@ function runWebTableQuery(
   return { columns: outCols, rows: outRows, total_rows, matched_rows };
 }
 
-    if (method === "GET" && path === "/api/version") return jsonRes({ name: "ergon", version: "0.30.0" });
-    if (method === "GET" && path === "/api/update") return jsonRes({ current: "0.30.0", available: false, mode: "off", checked_at: Math.floor(Date.now() / 1000) });
+    if (method === "GET" && path === "/api/version") return jsonRes({ name: "ergon", version: "0.31.0" });
+    if (method === "GET" && path === "/api/update") return jsonRes({ current: "0.31.0", available: false, mode: "off", checked_at: Math.floor(Date.now() / 1000) });
     if (method === "GET" && path === "/api/status") {
       return jsonRes({
-        version: "0.30.0",
+        version: "0.31.0",
         model_configured: true,
         model: byok.engine_mode === "byok" && byok.model_id ? byok.model_id : "browser-workspace-engine",
         model_base_url: byok.engine_mode === "byok" ? byok.model_base_url : "indexeddb://local",
@@ -3225,6 +3354,7 @@ function runWebTableQuery(
           file_edit: true,
           table_query: true,
           pdf_export: true,
+          connectors: true,
         },
         scheduler: buildSchedulerStatus(st),
         person: p,
@@ -4921,6 +5051,7 @@ function runWebTableQuery(
         offers: [],
         routines: [],
         routineRuns: {},
+        connectors: { triggers: [], outbound: [], deliveries: [], webhookSecrets: {}, outboundSecrets: {} },
         memory: `# Memory\n\n## About\n- Name: ${np.name}\n${np.role ? `- Role: ${np.role}\n` : ""}`,
         suite: ["researcher", "meeting-actions"],
       };
@@ -4993,6 +5124,352 @@ function runWebTableQuery(
       await persist();
       return jsonRes({ removed: id });
     }
+    if (method === "GET" && path === "/api/connectors") {
+      const cs = ensureWebConnectors(st);
+      const pol = buildWebPolicy(p.id, st);
+      const triggers = cs.triggers.map((t) => ({
+        ...t,
+        signing_secret: undefined,
+        hook_token: undefined,
+        has_secret: t.kind === "webhook" ? Boolean(cs.webhookSecrets[t.id]) : false,
+      }));
+      const outbound = cs.outbound.map((c) => ({
+        ...c,
+        effective_require_approval: pol.profile === "strict_client" ? true : Boolean(c.require_approval),
+        blocked_by_policy: pol.profile === "air_gapped",
+        has_secret: Boolean(c.secret_keys && c.secret_keys.length > 0),
+      }));
+      const secrets = Object.keys(cs.outboundSecrets).map((key) => ({
+        key,
+        has_secret: true,
+        updated_ms: Date.now(),
+      }));
+      return jsonRes({
+        triggers,
+        outbound,
+        secrets,
+        delivery_log: cs.deliveries,
+        policy_profile: pol.profile,
+      });
+    }
+    if (method === "POST" && path.startsWith("/api/connectors/triggers/") && path.endsWith("/rotate")) {
+      const cs = ensureWebConnectors(st);
+      const tid = decodeURIComponent(path.slice("/api/connectors/triggers/".length, -"/rotate".length));
+      const trg = cs.triggers.find((t) => t.id === tid);
+      if (!trg) return jsonRes({ error: "trigger not found" }, 404);
+      const secret = `whsec_${randomHex(16)}`;
+      cs.webhookSecrets[trg.id] = secret;
+      trg.has_secret = true;
+      trg.updated_ms = Date.now();
+      await persist();
+      return jsonRes({
+        trigger: { ...trg, signing_secret: undefined },
+        signing_secret: secret,
+        hook_token: secret,
+        hook_path: trg.hook_path || `/api/hooks/${trg.hook_id || trg.id}`,
+      });
+    }
+    if (method === "POST" && path === "/api/connectors/triggers") {
+      const cs = ensureWebConnectors(st);
+      const kind = body.kind === "folder_watch" ? "folder_watch" : "webhook";
+      const name = String(body.name ?? "").trim();
+      if (!name) return jsonRes({ error: "Trigger name is required." }, 400);
+      const routineId = typeof body.routine_id === "string" && body.routine_id.trim() ? body.routine_id.trim() : null;
+      const targetKind = body.target_kind === "pipeline" ? "pipeline" : "routine";
+      const enabled = typeof body.enabled === "boolean" ? body.enabled : true;
+      const nowMs = Date.now();
+      if (kind === "folder_watch") {
+        const watchDir = String(body.watch_dir ?? body.folder_path ?? "").trim();
+        if (!watchDir) return jsonRes({ error: "Host directory path is required." }, 400);
+        if (isSensitiveWatchDir(watchDir)) {
+          return jsonRes({ error: "Sensitive system or credential directories cannot be watched." }, 403);
+        }
+        const glob = String(body.glob ?? body.glob_filter ?? "*.pdf,*.csv").trim() || "*.*";
+        const trg: TriggerRule = {
+          id: `trg-${nowMs}-${cs.triggers.length + 1}`,
+          name,
+          kind: "folder_watch",
+          enabled,
+          routine_id: routineId,
+          target_kind: targetKind,
+          watch_dir: watchDir,
+          glob,
+          max_bytes: 25 * 1024 * 1024,
+          has_secret: false,
+          trigger_count: 0,
+          last_triggered_ms: null,
+          created_ms: nowMs,
+          updated_ms: nowMs,
+        };
+        cs.triggers.unshift(trg);
+        await persist();
+        return jsonRes({ trigger: trg }, 201);
+      }
+      const id = `trg-${nowMs}-${cs.triggers.length + 1}`;
+      const hookId = `hk-${randomHex(8)}`;
+      const hookPath = `/api/hooks/${hookId}`;
+      const secret = `whsec_${randomHex(16)}`;
+      const trg: TriggerRule = {
+        id,
+        name,
+        kind: "webhook",
+        enabled,
+        routine_id: routineId,
+        target_kind: targetKind,
+        hook_id: hookId,
+        hook_path: hookPath,
+        has_secret: true,
+        trigger_count: 0,
+        last_triggered_ms: null,
+        created_ms: nowMs,
+        updated_ms: nowMs,
+      };
+      cs.webhookSecrets[id] = secret;
+      cs.triggers.unshift(trg);
+      await persist();
+      return jsonRes(
+        {
+          trigger: trg,
+          signing_secret: secret,
+          hook_token: secret,
+          hook_path: hookPath,
+        },
+        201
+      );
+    }
+    if (method === "DELETE" && (path === "/api/connectors/triggers" || path.startsWith("/api/connectors/triggers/"))) {
+      const cs = ensureWebConnectors(st);
+      const idFromPath = path.startsWith("/api/connectors/triggers/")
+        ? decodeURIComponent(path.slice("/api/connectors/triggers/".length))
+        : "";
+      const tid = idFromPath || String(u.searchParams.get("id") ?? body.id ?? "").trim();
+      if (!tid) return jsonRes({ error: "trigger id is required" }, 400);
+      cs.triggers = cs.triggers.filter((t) => t.id !== tid);
+      delete cs.webhookSecrets[tid];
+      await persist();
+      return jsonRes({ deleted: tid });
+    }
+    if (method === "POST" && path.startsWith("/api/hooks/")) {
+      const hookId = decodeURIComponent(path.slice("/api/hooks/".length));
+      const cs = ensureWebConnectors(st);
+      const trg = cs.triggers.find((t) => t.kind === "webhook" && (t.hook_id === hookId || t.id === hookId));
+      if (!trg) return jsonRes({ error: "Webhook endpoint not found." }, 404);
+      const rawBody = typeof init?.body === "string" ? init.body : JSON.stringify(body ?? {});
+      if (utf8Bytes(rawBody) > 1024 * 1024) return jsonRes({ error: "Payload exceeds 1 MB limit." }, 413);
+      const expectedSecret = cs.webhookSecrets[trg.id] || "";
+      const sigHdr = getHeaderCI(init?.headers, "X-Ergon-Signature");
+      const tokenHdr = getHeaderCI(init?.headers, "X-Ergon-Hook-Token");
+      const simHdr = getHeaderCI(init?.headers, "X-Ergon-Simulate");
+      let authed = false;
+      if (sigHdr && expectedSecret) {
+        const expectedHex = await computeHmacHex(expectedSecret, rawBody);
+        if (sigHdr.toLowerCase() === `sha256=${expectedHex}`) authed = true;
+      }
+      if (!authed && tokenHdr && expectedSecret && tokenHdr === expectedSecret) {
+        authed = true;
+      }
+      if (!authed && !sigHdr && !tokenHdr && simHdr === "1") {
+        authed = true;
+      }
+      if (!authed) {
+        return jsonRes({ error: "Invalid or missing webhook signature." }, 401);
+      }
+      const ts = Date.now();
+      const triggerFile = `inbox/hook-${ts}.json`;
+      st.files[triggerFile] = makeFile(triggerFile, rawBody || "{}", ts);
+      trg.trigger_count = (trg.trigger_count ?? 0) + 1;
+      trg.last_triggered_ms = ts;
+      trg.updated_ms = ts;
+      let runId: string | undefined;
+      if (trg.routine_id) {
+        const rt = st.routines.find((r) => r.id === trg.routine_id);
+        if (rt) {
+          const { runRec } = await executeWebRoutineRun(rt);
+          runId = runRec.run_id;
+        }
+      }
+      await persist();
+      return jsonRes(
+        {
+          accepted: true,
+          trigger_file: triggerFile,
+          routine_id: trg.routine_id,
+          run_id: runId,
+          message: `Accepted payload into ${triggerFile}.`,
+        },
+        202
+      );
+    }
+    if (method === "POST" && path === "/api/connectors/outbound") {
+      const cs = ensureWebConnectors(st);
+      const name = String(body.name ?? "").trim();
+      const url = String(body.url ?? "").trim();
+      if (!name || !url) return jsonRes({ error: "Connector name and URL are required." }, 400);
+      const kind: OutboundConnectorKind =
+        body.kind === "rest_api" || body.kind === "smtp_relay" ? body.kind : "http_webhook";
+      if (kind !== "smtp_relay" && !/^https?:\/\//i.test(url)) {
+        return jsonRes({ error: "Destination URL must start with http:// or https://." }, 400);
+      }
+      const methodVal: "POST" | "PUT" = body.method === "PUT" ? "PUT" : "POST";
+      const headersTemplate: Record<string, string> = {};
+      if (body.headers_template && typeof body.headers_template === "object" && !Array.isArray(body.headers_template)) {
+        for (const [k, v] of Object.entries(body.headers_template as Record<string, unknown>)) {
+          if (k.trim()) headersTemplate[k.trim()] = String(v ?? "");
+        }
+      }
+      const secretKeys = new Set<string>();
+      if (body.secrets && typeof body.secrets === "object" && !Array.isArray(body.secrets)) {
+        for (const [k, v] of Object.entries(body.secrets as Record<string, unknown>)) {
+          const key = k.trim();
+          const val = String(v ?? "").trim();
+          if (key && val) {
+            cs.outboundSecrets[key] = val;
+            secretKeys.add(key);
+          }
+        }
+      }
+      if (typeof body.secret_key === "string" && typeof body.secret_value === "string") {
+        const key = body.secret_key.trim();
+        const val = body.secret_value.trim();
+        if (key && val) {
+          cs.outboundSecrets[key] = val;
+          secretKeys.add(key);
+        }
+      }
+      for (const hVal of Object.values(headersTemplate)) {
+        const m = /\{\{secret:([a-zA-Z0-9_.-]+)\}\}/.exec(hVal);
+        if (m && cs.outboundSecrets[m[1]]) secretKeys.add(m[1]);
+      }
+      const nowMs = Date.now();
+      const conn: OutboundConnector = {
+        id: typeof body.id === "string" && body.id.trim() ? body.id.trim() : `conn-${nowMs}-${cs.outbound.length + 1}`,
+        name,
+        kind,
+        url,
+        method: methodVal,
+        headers_template: headersTemplate,
+        secret_keys: Array.from(secretKeys),
+        has_secret: secretKeys.size > 0,
+        require_approval: typeof body.require_approval === "boolean" ? body.require_approval : true,
+        enabled: typeof body.enabled === "boolean" ? body.enabled : true,
+        last_delivery_ms: null,
+        last_status: null,
+        created_ms: nowMs,
+        updated_ms: nowMs,
+      };
+      const existingIdx = cs.outbound.findIndex((x) => x.id === conn.id);
+      if (existingIdx >= 0) cs.outbound[existingIdx] = conn;
+      else cs.outbound.unshift(conn);
+      await persist();
+      return jsonRes({ connector: conn }, 201);
+    }
+    if (method === "DELETE" && (path === "/api/connectors/outbound" || path.startsWith("/api/connectors/outbound/"))) {
+      const cs = ensureWebConnectors(st);
+      const idFromPath = path.startsWith("/api/connectors/outbound/")
+        ? decodeURIComponent(path.slice("/api/connectors/outbound/".length))
+        : "";
+      const cid = idFromPath || String(u.searchParams.get("id") ?? body.id ?? "").trim();
+      if (!cid) return jsonRes({ error: "connector id is required" }, 400);
+      cs.outbound = cs.outbound.filter((c) => c.id !== cid);
+      await persist();
+      return jsonRes({ deleted: cid });
+    }
+    if (method === "POST" && path.startsWith("/api/connectors/outbound/") && path.endsWith("/test")) {
+      const cid = decodeURIComponent(path.slice("/api/connectors/outbound/".length, -"/test".length));
+      const cs = ensureWebConnectors(st);
+      const conn = cs.outbound.find((c) => c.id === cid);
+      if (!conn) return jsonRes({ error: "outbound connector not found" }, 404);
+      const pol = buildWebPolicy(p.id, st);
+      const ts = Date.now();
+      const payloadStr = JSON.stringify(body.payload ?? { event: "ergon.connector.test", connector: conn.name });
+      const payloadSha = await sha256Hex(payloadStr);
+      if (pol.profile === "air_gapped") {
+        const delivery: DeliveryLog = {
+          id: `del-${ts}-${cs.deliveries.length + 1}`,
+          connector_id: conn.id,
+          connector_name: conn.name,
+          kind: conn.kind,
+          method: conn.method,
+          url: conn.url,
+          status: "blocked",
+          http_status: null,
+          payload_sha256: payloadSha,
+          payload_bytes: utf8Bytes(payloadStr),
+          error: "Blocked by Air-Gapped workspace policy.",
+          ts_ms: ts,
+          test: true,
+        };
+        cs.deliveries.unshift(delivery);
+        conn.last_delivery_ms = ts;
+        conn.last_status = "blocked";
+        await persist();
+        return jsonRes({ ok: false, error: delivery.error, delivery }, 403);
+      }
+      if (pol.profile === "strict_client" || conn.require_approval) {
+        const did = `d-${ts}-${st.decisions.length + 1}`;
+        const delId = `del-${ts}-${cs.deliveries.length + 1}`;
+        const delivery: DeliveryLog = {
+          id: delId,
+          connector_id: conn.id,
+          connector_name: conn.name,
+          kind: conn.kind,
+          method: conn.method,
+          url: conn.url,
+          status: "held",
+          http_status: null,
+          decision_id: did,
+          payload_sha256: payloadSha,
+          payload_bytes: utf8Bytes(payloadStr),
+          summary: `Waiting for approval in Today before sending to ${conn.url}.`,
+          ts_ms: ts,
+          test: true,
+        };
+        cs.deliveries.unshift(delivery);
+        st.decisions.push({
+          id: did,
+          kind: "connector_delivery",
+          summary: `Send test payload via ${conn.name}`,
+          detail: `Your outbound connector ${conn.name} is ready to send a test payload to ${conn.url}. Approving sends the payload now; blocking cancels the delivery.`,
+          severity: "warning",
+          status: "pending",
+          outcome: null,
+          thread_id: "",
+          ts,
+          connector_id: conn.id,
+          connector_name: conn.name,
+          connector_kind: conn.kind,
+          method: conn.method,
+          url: conn.url,
+          payload_preview: payloadStr.slice(0, 200),
+          payload_sha256: payloadSha,
+          delivery_id: delId,
+        });
+        conn.last_delivery_ms = ts;
+        conn.last_status = "held";
+        await persist();
+        return jsonRes({ held: true, decision_id: did, delivery }, 202);
+      }
+      const delivery: DeliveryLog = {
+        id: `del-${ts}-${cs.deliveries.length + 1}`,
+        connector_id: conn.id,
+        connector_name: conn.name,
+        kind: conn.kind,
+        method: conn.method,
+        url: conn.url,
+        status: "ok",
+        http_status: 200,
+        payload_sha256: payloadSha,
+        payload_bytes: utf8Bytes(payloadStr),
+        response_preview: "Offline browser engine recorded simulated 200 OK delivery.",
+        ts_ms: ts,
+        test: true,
+      };
+      cs.deliveries.unshift(delivery);
+      conn.last_delivery_ms = ts;
+      conn.last_status = "ok";
+      await persist();
+      return jsonRes({ ok: true, delivery, message: `Test delivery succeeded for "${conn.name}".` }, 200);
+    }
     if (method === "GET" && path === "/api/decisions") return jsonRes({ decisions: st.decisions });
     if (method === "POST" && path.startsWith("/api/decisions/")) {
       const [rawId, action] = path.slice("/api/decisions/".length).split("/");
@@ -5003,7 +5480,37 @@ function runWebTableQuery(
       const approve = action === "approve";
       dec.status = approve ? "approved" : "denied";
       dec.resolved_ts = Date.now();
-      if (dec.kind === "delete" && dec.path) {
+      if (dec.kind === "connector_delivery") {
+        const cs = ensureWebConnectors(st);
+        const pol = buildWebPolicy(p.id, st);
+        const log = cs.deliveries.find((dl) => dl.decision_id === dec.id || (dec.delivery_id && dl.id === dec.delivery_id));
+        if (approve && pol.profile === "air_gapped") {
+          dec.status = "denied";
+          dec.outcome = "Delivery blocked by Air-Gapped workspace policy.";
+          if (log) {
+            log.status = "blocked";
+            log.error = dec.outcome;
+          }
+        } else if (approve) {
+          dec.outcome = `Delivery approved and sent via ${dec.connector_name || "connector"}.`;
+          if (log) {
+            log.status = "ok";
+            log.http_status = 200;
+            log.response_preview = "Approved in Today and delivered.";
+          }
+          const conn = cs.outbound.find((c) => c.id === dec.connector_id);
+          if (conn) {
+            conn.last_delivery_ms = dec.resolved_ts;
+            conn.last_status = "ok";
+          }
+        } else {
+          dec.outcome = "Delivery blocked; nothing left your workspace.";
+          if (log) {
+            log.status = "denied";
+            log.error = dec.outcome;
+          }
+        }
+      } else if (dec.kind === "delete" && dec.path) {
         if (approve) {
           if (st.files[dec.path]) {
             recordFileRevision(st, dec.path, st.files[dec.path], "delete");

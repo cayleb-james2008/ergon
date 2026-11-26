@@ -18,6 +18,7 @@ export type ServerCapabilities = {
   file_edit?: boolean;
   table_query?: boolean;
   pdf_export?: boolean;
+  connectors?: boolean;
 };
 export type SchedulerStatus = {
   running?: boolean;
@@ -455,6 +456,14 @@ export type Decision = {
   choices?: string[];
   inspect_files?: string[];
   answer?: string;
+  connector_id?: string;
+  connector_name?: string;
+  connector_kind?: string;
+  target_url?: string;
+  url?: string;
+  method?: string;
+  payload_preview?: string;
+  payload_sha256?: string;
 };
 export type Offer = { id: string; title: string; detail: string; status: string; item_id?: string; ts?: number };
 export type SuiteItem = { id: string; kind: string; name: string; description: string; fields?: string[] };
@@ -937,4 +946,277 @@ export function canExportPdf(path: string, extractedFormat?: "markdown" | "csv")
   if (extractedFormat === "markdown" || extractedFormat === "csv") return true;
   const ext = (path.split(".").pop() || "").toLowerCase();
   return ext === "md" || ext === "markdown" || ext === "txt" || ext === "csv" || ext === "tsv";
+}
+
+export type TriggerKind = "webhook" | "folder_watch";
+
+export type TriggerRule = {
+  id: string;
+  name: string;
+  kind: TriggerKind;
+  enabled: boolean;
+  routine_id: string | null;
+  target_kind?: "routine" | "pipeline";
+  hook_id?: string | null;
+  hook_path?: string | null;
+  webhook_url?: string | null;
+  has_secret?: boolean;
+  /** Ephemeral: returned once on create or secret rotation; never persisted in client state after dismissal. */
+  signing_secret?: string;
+  hook_token?: string;
+  watch_dir?: string | null;
+  glob?: string | null;
+  folder_path?: string | null;
+  glob_filter?: string | null;
+  max_bytes?: number;
+  last_triggered_ms?: number | null;
+  trigger_count?: number;
+  created_ms?: number;
+  updated_ms?: number;
+};
+
+export type OutboundConnectorKind = "http_webhook" | "rest_api" | "smtp_relay";
+
+export type OutboundConnector = {
+  id: string;
+  name: string;
+  kind: OutboundConnectorKind;
+  url: string;
+  method: "POST" | "PUT";
+  headers_template?: Record<string, string>;
+  secret_keys?: string[];
+  has_secret?: boolean;
+  require_approval: boolean;
+  effective_require_approval?: boolean;
+  blocked_by_policy?: boolean;
+  enabled?: boolean;
+  last_delivery_ms?: number | null;
+  last_status?: string | null;
+  created_ms?: number;
+  updated_ms?: number;
+};
+
+export type DeliveryLog = {
+  id: string;
+  connector_id: string;
+  connector_name?: string;
+  kind?: string;
+  method?: string;
+  url?: string;
+  ts?: number;
+  ts_ms?: number;
+  status: "ok" | "error" | "held" | "blocked" | "denied" | "pending_approval" | string;
+  http_status?: number | null;
+  summary?: string;
+  response_preview?: string | null;
+  payload_sha256?: string;
+  payload_bytes?: number;
+  error?: string | null;
+  decision_id?: string | null;
+  thread_id?: string | null;
+  test?: boolean;
+};
+
+export type ConnectorSecretMeta = {
+  key: string;
+  has_secret: boolean;
+  updated_ms?: number;
+};
+
+export type ConnectorsSnapshot = {
+  triggers: TriggerRule[];
+  outbound: OutboundConnector[];
+  deliveries: DeliveryLog[];
+  secrets?: ConnectorSecretMeta[];
+  policy_profile?: WorkspacePolicyProfile;
+};
+
+export function hasConnectorsApi(status: Status | null | "error" | undefined): boolean {
+  if (isWebStandalone()) return true;
+  if (!status || status === "error") return false;
+  if (typeof status.capabilities?.connectors === "boolean") {
+    return Boolean(status.capabilities.connectors);
+  }
+  return isAtLeastMinor(status.version, 31);
+}
+
+export async function listConnectors(): Promise<Res<ConnectorsSnapshot>> {
+  const r = await call<{
+    triggers?: TriggerRule[];
+    outbound?: OutboundConnector[];
+    deliveries?: DeliveryLog[];
+    delivery_log?: DeliveryLog[];
+    logs?: DeliveryLog[];
+    secrets?: ConnectorSecretMeta[];
+    policy_profile?: WorkspacePolicyProfile;
+  }>("/api/connectors");
+  if (!r.ok) return r;
+  const rawLogs = Array.isArray(r.data.delivery_log)
+    ? r.data.delivery_log
+    : Array.isArray(r.data.deliveries)
+      ? r.data.deliveries
+      : Array.isArray(r.data.logs)
+        ? r.data.logs
+        : [];
+  return {
+    ok: true,
+    data: {
+      triggers: Array.isArray(r.data.triggers) ? r.data.triggers : [],
+      outbound: Array.isArray(r.data.outbound) ? r.data.outbound : [],
+      deliveries: rawLogs.map((d) => ({
+        ...d,
+        ts: typeof d.ts_ms === "number" ? d.ts_ms : typeof d.ts === "number" ? d.ts : Date.now(),
+      })),
+      secrets: Array.isArray(r.data.secrets) ? r.data.secrets : undefined,
+      policy_profile: r.data.policy_profile,
+    },
+  };
+}
+
+export async function saveTriggerRule(body: {
+  id?: string;
+  name: string;
+  kind: TriggerKind;
+  routine_id?: string | null;
+  target_kind?: "routine" | "pipeline";
+  enabled?: boolean;
+  watch_dir?: string;
+  glob?: string;
+}): Promise<
+  Res<{
+    trigger?: TriggerRule;
+    signing_secret?: string;
+    hook_token?: string;
+    hook_path?: string;
+  }>
+> {
+  return call("/api/connectors/triggers", {
+    method: "POST",
+    body,
+  });
+}
+
+export async function rotateTriggerSecret(
+  id: string
+): Promise<Res<{ trigger?: TriggerRule; signing_secret?: string; hook_token?: string; hook_path?: string }>> {
+  return call(`/api/connectors/triggers/${encodeURIComponent(id)}/rotate`, {
+    method: "POST",
+    body: {},
+  });
+}
+
+export async function deleteTriggerRule(id: string): Promise<Res<{ deleted?: string }>> {
+  return call<{ deleted?: string }>(`/api/connectors/triggers/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
+}
+
+async function hmacSha256Hex(secret: string, bodyText: string): Promise<string | null> {
+  try {
+    if (typeof crypto === "undefined" || !crypto.subtle) return null;
+    const enc = new TextEncoder();
+    const key = await crypto.subtle.importKey(
+      "raw",
+      enc.encode(secret),
+      { name: "HMAC", hash: "SHA-256" },
+      false,
+      ["sign"]
+    );
+    const sig = await crypto.subtle.sign("HMAC", key, enc.encode(bodyText));
+    return Array.from(new Uint8Array(sig))
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join("");
+  } catch {
+    return null;
+  }
+}
+
+export async function simulateWebhookTrigger(
+  hookId: string,
+  payloadText: string,
+  secretOrToken?: string
+): Promise<Res<{ accepted?: boolean; trigger_file?: string; run_id?: string; thread_id?: string; message?: string }>> {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  const trimmedSecret = (secretOrToken ?? "").trim();
+  if (trimmedSecret) {
+    const hex = await hmacSha256Hex(trimmedSecret, payloadText);
+    if (hex) headers["X-Ergon-Signature"] = `sha256=${hex}`;
+    headers["X-Ergon-Hook-Token"] = trimmedSecret;
+  } else {
+    headers["X-Ergon-Simulate"] = "1";
+  }
+  try {
+    const r = await fetch(`/api/hooks/${encodeURIComponent(hookId)}`, {
+      method: "POST",
+      cache: "no-store",
+      headers,
+      body: payloadText,
+    });
+    const raw = await r.text();
+    let parsed: Record<string, unknown> = {};
+    try {
+      parsed = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
+    } catch {
+      parsed = {};
+    }
+    if (!r.ok) {
+      return {
+        ok: false,
+        status: r.status,
+        error: typeof parsed.error === "string" ? parsed.error : `Webhook test returned HTTP ${r.status}.`,
+      };
+    }
+    return {
+      ok: true,
+      data: parsed as { accepted?: boolean; trigger_file?: string; run_id?: string; thread_id?: string; message?: string },
+    };
+  } catch (e) {
+    return { ok: false, status: 0, error: String(e) };
+  }
+}
+
+export async function saveOutboundConnector(body: {
+  id?: string;
+  name: string;
+  kind: OutboundConnectorKind;
+  url: string;
+  method: "POST" | "PUT";
+  headers_template?: Record<string, string>;
+  secrets?: Record<string, string>;
+  secret_key?: string;
+  secret_value?: string;
+  require_approval: boolean;
+  enabled?: boolean;
+}): Promise<Res<{ connector?: OutboundConnector }>> {
+  return call<{ connector?: OutboundConnector }>("/api/connectors/outbound", {
+    method: "POST",
+    body,
+  });
+}
+
+export async function deleteOutboundConnector(id: string): Promise<Res<{ deleted?: string }>> {
+  return call<{ deleted?: string }>(`/api/connectors/outbound/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
+}
+
+export async function testOutboundConnector(
+  id: string,
+  payload: Record<string, unknown> = {}
+): Promise<
+  Res<{
+    ok?: boolean;
+    held?: boolean;
+    status?: string;
+    http_status?: number | null;
+    decision_id?: string | null;
+    delivery?: DeliveryLog;
+    message?: string;
+    error?: string;
+  }>
+> {
+  return call(`/api/connectors/outbound/${encodeURIComponent(id)}/test`, {
+    method: "POST",
+    body: { payload },
+  });
 }
