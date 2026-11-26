@@ -109,15 +109,7 @@ impl ChainedReceipt {
     }
 }
 
-pub fn sha256_hex(bytes: &[u8]) -> String {
-    let digest = Sha256::digest(bytes);
-    let mut out = String::with_capacity(64);
-    for b in digest {
-        use std::fmt::Write as _;
-        let _ = write!(&mut out, "{b:02x}");
-    }
-    out
-}
+pub use crate::tripwire::sha256_hex;
 
 #[allow(clippy::too_many_arguments)]
 fn compute_entry_hash(
