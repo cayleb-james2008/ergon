@@ -593,6 +593,69 @@ pub fn execute_tool(cfg: &Config, name: &str, args: &Value) -> Result<String, St
             let url = args["url"].as_str().ok_or("fetch_url needs args.url")?;
             fetch_url_text(url)
         }
+        "invoke_connector" => {
+            let connector_id = args["connector_id"]
+                .as_str()
+                .or_else(|| args["id"].as_str())
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .ok_or("invoke_connector needs args.connector_id")?;
+            let attachment_rel = args["file"]
+                .as_str()
+                .map(str::trim)
+                .filter(|s| !s.is_empty());
+            let payload = if let Some(p) = args.get("payload").filter(|v| !v.is_null()) {
+                p.clone()
+            } else if let Some(rel) = attachment_rel {
+                let full = sandbox_path(&cfg.workspace_dir, rel)?;
+                let bytes = std::fs::read(&full)
+                    .map_err(|e| format!("invoke_connector cannot read file '{rel}': {e}"))?;
+                if bytes.len() > 512 * 1024 {
+                    return Err(format!("invoke_connector file '{rel}' exceeds 512 KB limit"));
+                }
+                if rel.to_ascii_lowercase().ends_with(".json") {
+                    serde_json::from_slice::<Value>(&bytes).unwrap_or_else(|_| {
+                        serde_json::json!({
+                            "file": rel,
+                            "content": String::from_utf8_lossy(&bytes).to_string(),
+                        })
+                    })
+                } else {
+                    serde_json::json!({
+                        "file": rel,
+                        "content": String::from_utf8_lossy(&bytes).to_string(),
+                    })
+                }
+            } else {
+                serde_json::json!({})
+            };
+            if let Some(rel) = attachment_rel {
+                sandbox_path(&cfg.workspace_dir, rel)?;
+            }
+            let thread_id = args["_thread"].as_str().unwrap_or("");
+            match crate::connectors::invoke_connector(
+                cfg,
+                connector_id,
+                &payload,
+                attachment_rel,
+                thread_id,
+            )? {
+                crate::connectors::InvokeOutcome::Delivered(log) => Ok(format!(
+                    "delivered via connector '{}' (HTTP {}, {} bytes, sha256:{})",
+                    log.connector_name,
+                    log.http_status.unwrap_or(200),
+                    log.payload_bytes,
+                    log.payload_sha256
+                )),
+                crate::connectors::InvokeOutcome::Held {
+                    decision_id,
+                    delivery,
+                } => Ok(format!(
+                    "parked for your person's approval (decision {decision_id}): outbound delivery to {} ({}) requires approval before sending. Do NOT call invoke_connector again for this delivery; report that it is awaiting approval.",
+                    delivery.connector_name, delivery.url
+                )),
+            }
+        }
         "make_spreadsheet" => {
             let title = args["title"]
                 .as_str()

@@ -118,7 +118,7 @@ pub fn hmac_sha256(key: &[u8], msg: &[u8]) -> [u8; 32] {
     out
 }
 
-fn ct_eq(a: &[u8], b: &[u8]) -> bool {
+pub fn ct_eq(a: &[u8], b: &[u8]) -> bool {
     if a.len() != b.len() {
         return false;
     }
@@ -1212,6 +1212,7 @@ pub struct RunTraps {
     honey_key: String,
     boundary: String,
     secrets: Vec<String>,
+    redaction_secrets: Vec<String>,
     pub score: u32,
     pub halted: Option<String>,
     pub sources: Vec<IngestedSource>,
@@ -1276,6 +1277,23 @@ pub fn arm(spec: ArmSpec) -> ArmGuard {
     let honey_key = issue_token(&spec.root, "agent run system prompt", "agent", None, Some(&spec.person_id), Some(&spec.run_id));
     let boundary = format!("ergon-{}", hex(&random_bytes(5)));
     let policy = load_policy(&spec.root);
+    let connector_secrets = crate::connectors::collect_all_secret_values(&spec.person_dir);
+    let mut secrets: Vec<String> = spec
+        .secrets
+        .into_iter()
+        .filter(|s| s.trim().len() >= 8)
+        .collect();
+    let mut redaction_secrets: Vec<String> = Vec::new();
+    for s in connector_secrets {
+        if s.trim().len() >= 6 {
+            if !redaction_secrets.contains(&s) {
+                redaction_secrets.push(s.clone());
+            }
+            if !secrets.contains(&s) {
+                secrets.push(s);
+            }
+        }
+    }
     let traps = RunTraps {
         root: spec.root,
         person_dir: spec.person_dir,
@@ -1287,7 +1305,8 @@ pub fn arm(spec: ArmSpec) -> ArmGuard {
         provenance: spec.provenance.to_lowercase(),
         honey_key,
         boundary,
-        secrets: spec.secrets.into_iter().filter(|s| s.trim().len() >= 8).collect(),
+        secrets,
+        redaction_secrets,
         score: 0,
         halted: None,
         sources: Vec::new(),
@@ -1365,21 +1384,58 @@ pub fn spotlight(tool: &str, text: &str) -> String {
     }
 }
 
-/// Remove the bait key from text that will be shown or stored.
-pub fn redact(text: &str) -> String {
-    match with_current(|t| t.honey_key.clone()) {
-        Some(k) if text.contains(&k) => {
-            let _ = with_current(|t| {
-                t.trip(
-                    Trip::new("HT3-EGRESS", Severity::Notice, "Your agent wrote its confidential bait key into its summary", "Ergon removed it before showing you the summary.")
-                        .action("redacted"),
-                    20,
-                )
-            });
-            text.replace(&k, "[redacted]")
+/// Register additional secret values into the active run's redaction and
+/// egress-protection lists so an agent can never echo or exfiltrate them.
+pub fn register_redaction_secrets(values: &[String]) {
+    let _ = with_current(|t| {
+        for v in values {
+            if v.trim().len() >= 6 {
+                if !t.redaction_secrets.contains(v) {
+                    t.redaction_secrets.push(v.clone());
+                }
+                if !t.secrets.contains(v) {
+                    t.secrets.push(v.clone());
+                }
+            }
         }
-        _ => text.to_string(),
+    });
+}
+
+/// Remove the bait key and any registered connector secrets from text that will
+/// be shown or stored.
+pub fn redact(text: &str) -> String {
+    let keys = with_current(|t| (t.honey_key.clone(), t.redaction_secrets.clone()));
+    let Some((honey_key, extra)) = keys else {
+        return text.to_string();
+    };
+    let mut out = text.to_string();
+    if out.contains(&honey_key) {
+        let _ = with_current(|t| {
+            t.trip(
+                Trip::new("HT3-EGRESS", Severity::Notice, "Your agent wrote its confidential bait key into its summary", "Ergon removed it before showing you the summary.")
+                    .action("redacted"),
+                20,
+            )
+        });
+        out = out.replace(&honey_key, "[redacted]");
     }
+    let mut redacted_connector_secret = false;
+    for sec in extra {
+        if !sec.is_empty() && out.contains(&sec) {
+            out = out.replace(&sec, "[redacted]");
+            redacted_connector_secret = true;
+        }
+    }
+    if redacted_connector_secret {
+        let _ = with_current(|t| {
+            t.trip(
+                Trip::new("AE3-SECRET", Severity::Notice, "Your agent wrote a connector secret into its output", "Ergon removed the secret before showing or storing the text.")
+                    .action("redacted"),
+                10,
+            )
+        });
+    }
+    out
 }
 
 pub enum PreTool {
@@ -1418,7 +1474,7 @@ pub fn library_memory_write_refused() {
     });
 }
 
-const EGRESS_TOOLS: &[&str] = &["fetch_url", "research", "publish_skill"];
+const EGRESS_TOOLS: &[&str] = &["fetch_url", "research", "publish_skill", "invoke_connector"];
 const FILE_ARG_SUFFIXES: &[&str] = &["path", "file", "files", "from", "to", "dir"];
 const RISKY_TOOL_WORDS: &[&str] = &[
     "shell", "bash", "sh", "zsh", "exec", "execute", "cmd", "powershell", "terminal", "command", "subprocess", "system", "eval",
@@ -1484,6 +1540,8 @@ pub fn sensitive_target(path: &str) -> Option<&'static str> {
         ("security_events", "Ergon's security log"),
         (".tripwire", "Ergon's tripwire keys"),
         ("decisions.json", "the decisions inbox"),
+        ("connectors.json", "connector settings"),
+        ("connector_secrets.json", "connector secrets"),
         ("library.json", "the company library"),
         ("people/", "another person's workspace"),
         (".history", "file version history"),

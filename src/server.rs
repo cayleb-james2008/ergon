@@ -376,6 +376,28 @@ fn execute_routine_run(
     id: &str,
     trigger: &str,
 ) -> Option<RoutineExecResult> {
+    execute_routine_run_with_inputs(state, person, runtime, id, trigger, None)
+}
+
+fn substitute_trigger_input(text: &str, trigger_file: Option<&str>) -> String {
+    let Some(tf) = trigger_file else {
+        return text.to_string();
+    };
+    if text.contains("{{inputs.trigger_file}}") {
+        text.replace("{{inputs.trigger_file}}", tf)
+    } else {
+        text.to_string()
+    }
+}
+
+fn execute_routine_run_with_inputs(
+    state: &AppState,
+    person: &Person,
+    runtime: &Arc<PersonRuntime>,
+    id: &str,
+    trigger: &str,
+    trigger_file: Option<&str>,
+) -> Option<RoutineExecResult> {
     let routine = routines::get_routine(&runtime.cfg.data_dir, id)?;
     let lock_key = format!("{}:{}", person.id, id);
     {
@@ -417,13 +439,27 @@ fn execute_routine_run(
     let _slot_guard = RunSlotGuard(&state.running_routines, lock_key);
 
     let name = routine["name"].as_str().unwrap_or("Routine").to_string();
-    let prompt = routine["prompt"].as_str().unwrap_or("").to_string();
+    let raw_prompt = routine["prompt"].as_str().unwrap_or("").to_string();
+    let prompt = {
+        let sub = substitute_trigger_input(&raw_prompt, trigger_file);
+        if let Some(tf) = trigger_file {
+            if raw_prompt.contains("{{inputs.trigger_file}}") {
+                sub
+            } else if sub.trim().is_empty() {
+                format!("Process trigger file: {tf}")
+            } else {
+                format!("{sub}\n\n[Trigger input trigger_file: {tf}]")
+            }
+        } else {
+            sub
+        }
+    };
     let pack_deliverables = routine["pack_deliverables"].as_bool().unwrap_or(false);
     let mut steps: Vec<String> = routine["steps"]
         .as_array()
         .map(|arr| {
             arr.iter()
-                .filter_map(|v| v.as_str().map(|s| s.trim().to_string()))
+                .filter_map(|v| v.as_str().map(|s| substitute_trigger_input(s.trim(), trigger_file)))
                 .filter(|s| !s.is_empty())
                 .collect()
         })
@@ -454,12 +490,16 @@ fn execute_routine_run(
                 .iter()
                 .all(|s| matches!(s.kind.as_str(), "skill" | "export"));
             if deterministic_only {
+                let mut pipe_inputs = HashMap::new();
+                if let Some(tf) = trigger_file {
+                    pipe_inputs.insert("trigger_file".to_string(), tf.to_string());
+                }
                 let outcome = pipelines::execute_deterministic_steps_sync(
                     &cfg,
                     Some(id),
                     &name,
                     &steps_v2,
-                    HashMap::new(),
+                    pipe_inputs,
                 );
                 state.search_cache.invalidate(&person.id);
                 let finished_ms = records::now_millis();
@@ -780,6 +820,124 @@ fn execute_routine_run(
     }
 }
 
+fn folder_watch_tick_ms() -> u64 {
+    std::env::var("ERGON_FOLDER_WATCH_TICK_MS")
+        .or_else(|_| std::env::var("ERGON_SCHEDULER_TICK_MS"))
+        .ok()
+        .and_then(|s| s.trim().parse::<u64>().ok())
+        .map(|ms| ms.clamp(50, 300_000))
+        .unwrap_or(2_000)
+}
+
+fn fire_linked_trigger_target(
+    state: &Arc<AppState>,
+    person: &Person,
+    runtime: &Arc<PersonRuntime>,
+    routine_id: Option<&str>,
+    target_kind: &str,
+    trigger_file: &str,
+    trigger_source: &str,
+) -> Option<Value> {
+    let rid = routine_id.map(str::trim).filter(|s| !s.is_empty())?;
+    let routine = routines::get_routine(&runtime.cfg.data_dir, rid)?;
+    let has_v2 = routine
+        .get("steps_v2")
+        .and_then(|v| v.as_array())
+        .is_some_and(|a| !a.is_empty());
+    if target_kind == "pipeline" || has_v2 {
+        let ctx = ToolCtx {
+            library: state.library.clone(),
+            root_data_dir: state.cfg.data_dir.clone(),
+            person_id: person.id.clone(),
+        };
+        let env = pipeline_exec_env(state, person, runtime, &ctx);
+        let body = json!({
+            "routine_id": rid,
+            "inputs": {
+                "trigger_file": trigger_file,
+            }
+        });
+        match pipelines::create_and_start_pipeline(env, &body, true) {
+            Ok(run) => Some(json!({
+                "kind": "pipeline",
+                "routine_id": rid,
+                "pipeline_run_id": run.run_id,
+                "thread_id": run.thread_id,
+                "trigger": trigger_source,
+            })),
+            Err((_, e)) => Some(json!({
+                "kind": "pipeline",
+                "routine_id": rid,
+                "error": e,
+            })),
+        }
+    } else {
+        let st_run = state.clone();
+        let person_run = person.clone();
+        let rt_run = runtime.clone();
+        let rid_owned = rid.to_string();
+        let tf_owned = trigger_file.to_string();
+        let src_owned = trigger_source.to_string();
+        std::thread::spawn(move || {
+            let _ = execute_routine_run_with_inputs(
+                &st_run,
+                &person_run,
+                &rt_run,
+                &rid_owned,
+                &src_owned,
+                Some(&tf_owned),
+            );
+        });
+        Some(json!({
+            "kind": "routine",
+            "routine_id": rid,
+            "trigger": trigger_source,
+        }))
+    }
+}
+
+fn start_folder_watch_thread(state: &Arc<AppState>) {
+    let weak = Arc::downgrade(state);
+    let tick_ms = folder_watch_tick_ms();
+    std::thread::spawn(move || {
+        let mut poll_states: HashMap<String, connectors::FolderWatchPollState> = HashMap::new();
+        loop {
+            std::thread::sleep(std::time::Duration::from_millis(tick_ms));
+            let Some(st) = weak.upgrade() else {
+                break;
+            };
+            let people: Vec<Person> = st
+                .people
+                .read()
+                .unwrap_or_else(|p| p.into_inner())
+                .people
+                .clone();
+            for person in people {
+                let p_cfg = st.cfg.person_config(&person);
+                if !connectors::connectors_path(&p_cfg.data_dir).exists() {
+                    continue;
+                }
+                let rt = runtime_for(&st, &person);
+                let poll_state = poll_states.entry(person.id.clone()).or_default();
+                let ingested =
+                    connectors::poll_folder_watch_once(&rt.cfg, &st.cfg.data_dir, poll_state);
+                for ev in ingested {
+                    st.search_cache.invalidate(&person.id);
+                    let _ = fire_linked_trigger_target(
+                        &st,
+                        &person,
+                        &rt,
+                        ev.routine_id.as_deref(),
+                        &ev.target_kind,
+                        &ev.trigger_file,
+                        "folder_watch",
+                    );
+                }
+            }
+        }
+    });
+}
+
 fn start_scheduler_thread(state: &Arc<AppState>) {
     let weak = Arc::downgrade(state);
     let tick_ms = scheduler_tick_ms();
@@ -889,6 +1047,7 @@ fn serve_inner(
     }
     if state.scheduler_enabled {
         start_scheduler_thread(&state);
+        start_folder_watch_thread(&state);
     }
     const MAX_ACTIVE_CONNS: usize = 128;
     const WARM_WORKER_FLOOR: usize = 2;
@@ -1009,6 +1168,9 @@ pub(crate) struct Request {
     /// Content negotiation & conditional GET headers.
     pub(crate) accept_encoding: Option<String>,
     pub(crate) if_none_match: Option<String>,
+    /// Webhook authentication headers for `POST /api/hooks/:hook_id`.
+    pub(crate) hook_signature: Option<String>,
+    pub(crate) hook_token: Option<String>,
     pub(crate) keep_alive: bool,
 }
 
@@ -1108,6 +1270,8 @@ fn read_request_from<S: SockStream>(
     let mut forwarded_for: Option<String> = None;
     let mut accept_encoding: Option<String> = None;
     let mut if_none_match: Option<String> = None;
+    let mut hook_signature: Option<String> = None;
+    let mut hook_token: Option<String> = None;
     let mut head_bytes = n_req;
     loop {
         arm(reader.get_ref())?;
@@ -1188,6 +1352,10 @@ fn read_request_from<S: SockStream>(
             }
         } else if name.eq_ignore_ascii_case("x-ergon-gate") && !val.is_empty() {
             gate = Some(val.to_string());
+        } else if name.eq_ignore_ascii_case("x-ergon-signature") && !val.is_empty() {
+            hook_signature = Some(val.to_string());
+        } else if name.eq_ignore_ascii_case("x-ergon-hook-token") && !val.is_empty() {
+            hook_token = Some(val.to_string());
         }
     }
     if bad_length || bad_host || chunked {
@@ -1276,6 +1444,8 @@ fn read_request_from<S: SockStream>(
         forwarded_for,
         accept_encoding,
         if_none_match,
+        hook_signature,
+        hook_token,
         keep_alive: if proto == "HTTP/1.0" {
             conn_keep_alive
         } else {
@@ -1900,7 +2070,67 @@ fn serve_page(
     }
 }
 
-fn handle_connection(stream: std::net::TcpStream, state: &AppState) -> std::io::Result<()> {
+fn handle_webhook_hook_request(
+    stream: &mut std::net::TcpStream,
+    state: &Arc<AppState>,
+    req: &Request,
+) -> std::io::Result<()> {
+    let hook_id = req.path.trim_start_matches("/api/hooks/").trim();
+    if hook_id.is_empty() || hook_id.contains('/') || hook_id.contains("..") {
+        return respond_err(stream, 401, "invalid or missing webhook authentication");
+    }
+    let people_snapshot = state.people.read().unwrap().people.clone();
+    let mut ordered: Vec<Person> = Vec::with_capacity(people_snapshot.len());
+    let active = effective_person(state, &req.session);
+    ordered.push(active.clone());
+    for p in people_snapshot {
+        if p.id != active.id {
+            ordered.push(p);
+        }
+    }
+    for person in ordered {
+        let rt = runtime_for(state, &person);
+        match connectors::verify_and_ingest_webhook(
+            &rt.cfg,
+            hook_id,
+            req.hook_signature.as_deref(),
+            req.hook_token.as_deref(),
+            &req.content_type,
+            &req.body,
+        ) {
+            Ok(ingested) => {
+                state.search_cache.invalidate(&person.id);
+                let run_info = fire_linked_trigger_target(
+                    state,
+                    &person,
+                    &rt,
+                    ingested.routine_id.as_deref(),
+                    &ingested.target_kind,
+                    &ingested.trigger_file,
+                    "webhook",
+                );
+                return respond_json(
+                    stream,
+                    202,
+                    &json!({
+                        "accepted": true,
+                        "trigger_id": ingested.trigger_id,
+                        "trigger_name": ingested.trigger_name,
+                        "trigger_file": ingested.trigger_file,
+                        "routine_id": ingested.routine_id,
+                        "received_ms": ingested.received_ms,
+                        "run": run_info,
+                    }),
+                );
+            }
+            Err((401, _)) => continue,
+            Err((status, msg)) => return respond_err(stream, status, &msg),
+        }
+    }
+    respond_err(stream, 401, "invalid or missing webhook authentication")
+}
+
+fn handle_connection(stream: std::net::TcpStream, state: &Arc<AppState>) -> std::io::Result<()> {
     let _ = stream.set_nodelay(true);
     // A banned scanner is dropped before one byte of its request is read
     // (never this computer: loopback is never banned).
@@ -1948,6 +2178,12 @@ fn handle_connection(stream: std::net::TcpStream, state: &AppState) -> std::io::
         if let Some(d) = state.tripwire.decoy(&req.method, &req.path, client, req.user_agent.as_deref()) {
             KEEP_ALIVE_CONN.set(false);
             return respond(reader.get_mut(), d.status, d.content_type, &d.body);
+        }
+        // Inbound webhook endpoint: exempt from browser Origin/CSRF checks,
+        // authenticated strictly via X-Ergon-Signature or X-Ergon-Hook-Token.
+        if req.method == "POST" && req.path.starts_with("/api/hooks/") {
+            KEEP_ALIVE_CONN.set(false);
+            return handle_webhook_hook_request(reader.get_mut(), state, &req);
         }
         let root_cfg = &state.cfg;
         // Hosting-layer gate: when a gate token is configured, the
@@ -2116,7 +2352,7 @@ fn try_route_system(
                 );
                 search::write_json_bool(buf, state.scheduler_enabled);
                 buf.extend_from_slice(
-                    br#","file_history":true,"audit_bundle":true,"tripwire":true,"file_edit":true,"table_query":true,"pdf_export":true},"scheduler_enabled":"#,
+                    br#","file_history":true,"audit_bundle":true,"tripwire":true,"file_edit":true,"table_query":true,"pdf_export":true,"connectors":true},"scheduler_enabled":"#,
                 );
                 search::write_json_bool(buf, state.scheduler_enabled);
                 buf.extend_from_slice(br#","person":{"id":"#);
@@ -4979,6 +5215,156 @@ fn try_route_knowledge_and_routines(
                 Some(preview) => respond_json(stream, 200, &preview),
                 None => respond_err(stream, 404, "routine not found"),
             }
+        }
+        ("GET", "/api/connectors") => {
+            let policy = crate::load_workspace_policy(&runtime.cfg.data_dir);
+            respond_json(
+                stream,
+                200,
+                &connectors::list_connectors_json(&runtime.cfg.data_dir, &policy),
+            )
+        }
+        ("POST", "/api/connectors/triggers") => {
+            let parsed: Value = match serde_json::from_slice(&req.body) {
+                Ok(v) => v,
+                Err(_) => return Some(respond_err(stream, 400, "request body is not valid JSON")),
+            };
+            let is_folder_watch = parsed["kind"]
+                .as_str()
+                .map(|s| s.trim().eq_ignore_ascii_case("folder_watch"))
+                .unwrap_or(false)
+                && parsed["rotate"].as_bool() != Some(true);
+            if is_folder_watch
+                && (state.gate_token.is_some()
+                    || !host_allowed(req.host.as_deref().unwrap_or(""), &[]))
+            {
+                return Some(respond_json(
+                    stream,
+                    403,
+                    &json!({"error": "folder_watch triggers can only be configured from this machine (loopback-only)"}),
+                ));
+            }
+            let is_rotate = parsed["rotate"].as_bool() == Some(true);
+            match connectors::create_trigger(&runtime.cfg.data_dir, &root_cfg.data_dir, &parsed) {
+                Ok(v) => respond_json(stream, if is_rotate { 200 } else { 201 }, &v),
+                Err((status, msg)) => respond_err(stream, status, &msg),
+            }
+        }
+        ("POST", path)
+            if path.starts_with("/api/connectors/triggers/") && path.ends_with("/rotate") =>
+        {
+            let raw_id = path
+                .strip_prefix("/api/connectors/triggers/")
+                .and_then(|r| r.strip_suffix("/rotate"))
+                .unwrap_or("")
+                .trim();
+            let id = percent_decode(raw_id).trim().to_string();
+            if id.is_empty() || id.contains('/') || id.contains("..") {
+                return Some(respond_err(stream, 400, "invalid trigger id"));
+            }
+            match connectors::rotate_webhook_secret(&runtime.cfg.data_dir, &id) {
+                Ok(v) => respond_json(stream, 200, &v),
+                Err((status, msg)) => respond_err(stream, status, &msg),
+            }
+        }
+        ("DELETE", path)
+            if path == "/api/connectors/triggers"
+                || path.starts_with("/api/connectors/triggers/") =>
+        {
+            let path_id = path
+                .strip_prefix("/api/connectors/triggers/")
+                .map(|s| percent_decode(s).trim().to_string())
+                .filter(|s| !s.is_empty());
+            let body_id = if req.body.is_empty() {
+                None
+            } else {
+                serde_json::from_slice::<Value>(&req.body)
+                    .ok()
+                    .and_then(|v| v["id"].as_str().map(|s| s.trim().to_string()))
+                    .filter(|s| !s.is_empty())
+            };
+            let id = path_id
+                .or_else(|| query_param(&req.query, "id").filter(|s| !s.is_empty()))
+                .or(body_id)
+                .unwrap_or_default();
+            if id.is_empty() || id.contains('/') || id.contains("..") {
+                return Some(respond_err(stream, 400, "trigger id is required"));
+            }
+            match connectors::delete_trigger(&runtime.cfg.data_dir, &id) {
+                Ok(true) => respond_json(stream, 200, &json!({"deleted": id})),
+                Ok(false) => respond_err(stream, 404, "trigger not found"),
+                Err(e) => respond_err(stream, 500, &e),
+            }
+        }
+        ("POST", "/api/connectors/outbound") => {
+            let parsed: Value = match serde_json::from_slice(&req.body) {
+                Ok(v) => v,
+                Err(_) => return Some(respond_err(stream, 400, "request body is not valid JSON")),
+            };
+            let policy = crate::load_workspace_policy(&runtime.cfg.data_dir);
+            match connectors::upsert_outbound_connector(&runtime.cfg.data_dir, &parsed, &policy) {
+                Ok((connector, created)) => respond_json(
+                    stream,
+                    if created { 201 } else { 200 },
+                    &json!({"connector": connector}),
+                ),
+                Err((status, msg)) => respond_err(stream, status, &msg),
+            }
+        }
+        ("DELETE", path)
+            if path == "/api/connectors/outbound"
+                || path.starts_with("/api/connectors/outbound/") =>
+        {
+            let path_id = path
+                .strip_prefix("/api/connectors/outbound/")
+                .map(|s| percent_decode(s).trim().to_string())
+                .filter(|s| !s.is_empty());
+            let body_id = if req.body.is_empty() {
+                None
+            } else {
+                serde_json::from_slice::<Value>(&req.body)
+                    .ok()
+                    .and_then(|v| v["id"].as_str().map(|s| s.trim().to_string()))
+                    .filter(|s| !s.is_empty())
+            };
+            let id = path_id
+                .or_else(|| query_param(&req.query, "id").filter(|s| !s.is_empty()))
+                .or(body_id)
+                .unwrap_or_default();
+            if id.is_empty() || id.contains('/') || id.contains("..") {
+                return Some(respond_err(stream, 400, "connector id is required"));
+            }
+            match connectors::delete_outbound_connector(&runtime.cfg.data_dir, &id) {
+                Ok(true) => respond_json(stream, 200, &json!({"deleted": id})),
+                Ok(false) => respond_err(stream, 404, "connector not found"),
+                Err(e) => respond_err(stream, 500, &e),
+            }
+        }
+        ("POST", path)
+            if path.starts_with("/api/connectors/outbound/") && path.ends_with("/test") =>
+        {
+            let raw_id = path
+                .strip_prefix("/api/connectors/outbound/")
+                .and_then(|r| r.strip_suffix("/test"))
+                .unwrap_or("")
+                .trim();
+            let id = percent_decode(raw_id).trim().to_string();
+            if id.is_empty() || id.contains('/') || id.contains("..") {
+                return Some(respond_err(stream, 400, "invalid connector id"));
+            }
+            let parsed: Value = if req.body.iter().all(u8::is_ascii_whitespace) {
+                Value::Null
+            } else {
+                match serde_json::from_slice::<Value>(&req.body) {
+                    Ok(v) => v.get("payload").cloned().unwrap_or(v),
+                    Err(_) => {
+                        return Some(respond_err(stream, 400, "request body is not valid JSON"))
+                    }
+                }
+            };
+            let (status, payload) =
+                connectors::test_outbound_connector(&runtime.cfg, &id, &parsed);
+            respond_json(stream, status, &payload)
         }
         ("GET", "/api/decisions") => {
             let decisions = records::load_decisions(&runtime.cfg.data_dir);

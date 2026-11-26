@@ -9,6 +9,7 @@
 //! the document-writing and memory-update skills.
 
 pub mod audit_bundle;
+pub mod connectors;
 pub mod docs;
 pub mod file_history;
 pub mod library;
@@ -1364,6 +1365,7 @@ fn system_prompt(cfg: &Config, suite_items: &[library::LibraryItem]) -> String {
          - patch_file {{\"path\": \"brief.md\", \"find\": \"...\", \"replace\": \"...\"}} — surgically replace a unique substring in an existing workspace text file (pass \"replace_all\": true to replace all occurrences; snapshots prior version to history).\n\
          - query_table {{\"path\": \"expenses.xlsx#Q4\", \"where\": [{{\"col\": \"vendor\", \"op\": \"eq\", \"value\": \"Acme\"}}], \"group_by\": [\"vendor\"], \"aggregates\": [{{\"col\": \"amount\", \"fn\": \"sum\", \"as\": \"total\"}}], \"sort\": {{\"col\": \"total\", \"dir\": \"desc\"}}, \"limit\": 50, \"save_as\": \"totals.csv\"}} — run fast deterministic exact-decimal filtering, grouping, and aggregation over workspace .csv, .tsv, .xlsx#Sheet, or .json tables.\n\
          - fetch_url {{\"url\": \"https://...\"}} — fetch a URL and read its text.\n\
+         - invoke_connector {{\"connector_id\": \"...\", \"payload\": {{...}}, \"file\": \"optional-workspace-file.pdf\"}} — deliver JSON or a workspace file to a configured outbound connector (secrets are injected only by the host; may park for approval depending on workspace policy).\n\
          - export_file {{\"path\": \"Weekly Report.md\", \"format\": \"pdf\"}} — turn a finished Markdown/text file into a Word document (.docx) or native PDF (.pdf, optional \"brand_header\"), or a CSV/TSV (or multi-sheet \"sheets\": [{{\"name\": \"...\", \"path\": \"...\", \"totals_row\": true}}]) into an Excel workbook (.xlsx) with live SUM formulas, ready to share.\n\
          - write_document {{\"title\": \"Summary\", \"sections\": [\"section text\", ...]}} — produce a finished markdown document in the workspace (a Rune skill formats and writes it).\n\
          - make_spreadsheet {{\"title\": \"Budget\", \"columns\": [\"Item\", \"Cost\"], \"rows\": [[\"Coffee\", \"4.50\"]]}} — produce a finished CSV spreadsheet in the workspace (a Rune skill formats and writes it).\n\
@@ -1620,6 +1622,7 @@ pub fn task_requires_workspace_tool(task: &str) -> bool {
         "list_dir",
         "move_file",
         "fetch_url",
+        "invoke_connector",
         "flag_decision",
         "request_checkpoint",
         "export_file",
@@ -1823,7 +1826,10 @@ fn run_loop(
         } else {
             // Consequential tools carry the originating thread, so a
             // settled decision can report back into it.
-            if matches!(tool.as_str(), "delete_file" | "flag_decision" | "request_checkpoint") {
+            if matches!(
+                tool.as_str(),
+                "delete_file" | "flag_decision" | "request_checkpoint" | "invoke_connector"
+            ) {
                 args["_thread"] = json!(thread_id);
             }
             if tool == "request_checkpoint" {
@@ -1864,6 +1870,7 @@ fn run_loop(
                 }
             }
         }
+        let result_text = tripwire::redact(&result_text);
         let step_elapsed_ms = step_t0.elapsed().as_millis() as u64;
         let step_line = match label {
             Some(l) => format!("Tool: {tool} (via {l})"),
@@ -1892,7 +1899,11 @@ fn run_loop(
                     }),
                 );
             }
-            if ok && matches!(tool.as_str(), "delete_file" | "flag_decision" | "request_checkpoint") {
+            if ok
+                && (matches!(tool.as_str(), "delete_file" | "flag_decision" | "request_checkpoint")
+                    || (tool == "invoke_connector"
+                        && result_text.starts_with("parked for your person's approval")))
+            {
                 lctx.events.publish(
                     "approval_parked",
                     lctx.person_id,
@@ -1900,7 +1911,7 @@ fn run_loop(
                     thread_id,
                     json!({
                         "tool": tool,
-                        "path": args["path"].as_str(),
+                        "path": args["path"].as_str().or_else(|| args["file"].as_str()),
                         "summary": truncate(&result_text, 240),
                         "ts_ms": records::now_millis(),
                     }),
@@ -2493,6 +2504,8 @@ mod v010_hardening_tests {
             forwarded_for: None,
             accept_encoding: None,
             if_none_match: None,
+            hook_signature: None,
+            hook_token: None,
             keep_alive: false,
         };
         assert!(refusal(&req, false, &[]).is_none());

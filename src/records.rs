@@ -379,8 +379,10 @@ pub fn resolve_decision(
 ) -> Result<(Value, String), String> {
     // The whole settle sequence — read, check pending, execute,
     // record — runs under the records lock: two approvals racing
-    // must not both execute.
-    with_records_lock(|| {
+    // must not both execute. Network-bound connector deliveries
+    // transition state atomically under the lock and execute right
+    // after releasing it.
+    let (decision, outcome, kind) = with_records_lock(|| {
         let path = decisions_path(&cfg.data_dir);
         let mut items = load_decisions(&cfg.data_dir);
         let idx = items
@@ -393,7 +395,11 @@ pub fn resolve_decision(
         let kind = items[idx]["kind"].as_str().unwrap_or("").to_string();
         let target = items[idx]["path"].as_str().map(|s| s.to_string());
         let outcome = if !approve {
-            "You said no — nothing was done.".to_string()
+            if kind == "connector_delivery" {
+                "You said no — outbound delivery was cancelled.".to_string()
+            } else {
+                "You said no — nothing was done.".to_string()
+            }
         } else if kind == "delete" {
             match target.as_deref() {
                 // The FINAL component is not resolved: approving
@@ -428,6 +434,8 @@ pub fn resolve_decision(
                 },
                 None => "Approved.".to_string(),
             }
+        } else if kind == "connector_delivery" {
+            "Approved — executing outbound delivery...".to_string()
         } else {
             "Approved.".to_string()
         };
@@ -436,8 +444,20 @@ pub fn resolve_decision(
         items[idx]["outcome"] = json!(outcome);
         let decision = items[idx].clone();
         save_array(&path, "decisions", &items);
-        Ok((decision, outcome))
-    })
+        Ok((decision, outcome, kind))
+    })?;
+
+    if kind == "connector_delivery" {
+        if approve {
+            let final_outcome = crate::connectors::settle_delivery_decision(cfg, &decision);
+            let updated =
+                set_decision_outcome(&cfg.data_dir, id, &final_outcome).unwrap_or(decision);
+            return Ok((updated, final_outcome));
+        } else {
+            crate::connectors::record_denied_delivery(cfg, &decision);
+        }
+    }
+    Ok((decision, outcome))
 }
 
 // ---------------------------------------------------------------------------
