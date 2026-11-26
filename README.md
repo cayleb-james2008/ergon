@@ -93,6 +93,16 @@ One Rust binary serves the React web UI (`/` and `/phone`), the raw-TCP HTTP and
       </picture>
     </td>
   </tr>
+  <tr>
+    <td colspan="2">
+      Isolate client vaults by engagement prefix with strict cross-client leak blocking (<code>HTTP 409</code>), manage client contacts, tax rates, SOW rules, and rollover retainers in the CRM drawer, log billable time and expenses, and generate PDF, XLSX, and JSON invoices straight from Today.
+      <br /><br />
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/client-vaults-invoicing-c4e1-dark.png" />
+        <img src="docs/screenshots/client-vaults-invoicing-c4e1-light.png" alt="Ergon v0.37.0 Client CRM and SOW drawer, billable time tracking, and Invoices and billing drawer in Today" width="100%" />
+      </picture>
+    </td>
+  </tr>
 </table>
 
 ---
@@ -110,18 +120,18 @@ flowchart LR
 
 ---
 
-## Verified benchmarks (`v0.36.0` vs `v0.11.0`)
+## Verified benchmarks (`v0.37.0` vs `v0.11.0`)
 
 Measured against the stripped fat-LTO release binary on local loopback against a `5,000` receipts and `500` workspace files dataset:
 
-| Metric | `v0.11.0` baseline | `v0.36.0` measured | Change |
+| Metric | `v0.11.0` baseline | `v0.37.0` measured | Change |
 | --- | --- | --- | --- |
-| Release binary size | `16.0 MB` | `8.34 MiB` (`8,741,728 B`) | `-45.4%` |
-| Initial `/` shell payload | `1.15 MB` | `162.99 KiB` (`166,898 B`) raw / `37.26 KiB` (`38,152 B`) gzip (`17` `/chunks/*`) | `-96.7%` wire |
-| Cold boot to `200 OK` | `n/a` | `8.11 ms` | `8.1 ms` self-audit |
-| Peak RSS (`VmHWM`, `5k` receipts + `500` files, `5/5` SSE, `16w`) | `n/a` | `21.45 MB` (`21,960 KB`) | `21.45 MB` peak RSS |
-| Concurrent HTTP (`16w` mixed 5 routes + `5/5` SSE across `5k`/`500`) | `724 req/s` (`188.7 ms` p95) | `4,001.9 req/s` (`3.75 ms` p50, `8.67 ms` p95, `0/10,019` err) | `5.53x` under full concurrency |
-| Automated checks | `204` Rust tests | `281/281` Rust tests (`7/7` `hardening_v036`), `101/101` gate, `6/6` graph, `20/20` replay, `44/44` fuzz, `0/0/0` `sloplint` | Zero warnings / zero externals |
+| Release binary size | `16.0 MB` | `8.48 MiB` (`8,889,184 B`) | `-44.4%` |
+| Initial `/` shell payload | `1.15 MB` | `167.42 KiB` (`171,443 B`) raw / `38.31 KiB` (`39,225 B`) gzip (`17` `/chunks/*`) | `-96.7%` wire |
+| Cold boot to `200 OK` | `n/a` | `16.83 ms` | `16.8 ms` self-audit |
+| Peak RSS (`VmHWM`, `5k` receipts + `500` files, `5/5` SSE, `16w`) | `n/a` | `21.62 MB` (`22,144 KB`) | `21.62 MB` peak RSS |
+| Concurrent HTTP (`16w` mixed 5 routes + `5/5` SSE across `5k`/`500`) | `724 req/s` (`188.7 ms` p95) | `3,501.0 req/s` (`4.2 ms` p50, `9.54 ms` p95, `0/8,769` err) | `4.84x` under full concurrency |
+| Automated checks | `204` Rust tests | `286/286` Rust tests (`5/5` `client_vault_invoicing_v040`), `104/104` gate, `6/6` graph, `20/20` replay, `44/44` fuzz, `0/0/0` `sloplint` | Zero warnings / zero externals |
 
 ---
 

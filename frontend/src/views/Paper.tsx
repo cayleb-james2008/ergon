@@ -2292,7 +2292,7 @@ export const PaperFace = memo(function PaperFace({
                           </span>
                         </div>
                         <p className="mono text-ink-2">
-                          Total {formatUsd(inv.total_usd)} · sha256:{inv.sha256.slice(0, 12)}
+                          Total {formatUsd(inv.total_usd)}{inv.sha256 ? ` · sha256:${inv.sha256.slice(0, 12)}` : ""}
                         </p>
                       </div>
                       <div className="flex flex-wrap items-center gap-1.5">

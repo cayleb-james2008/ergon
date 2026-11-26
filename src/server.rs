@@ -2379,7 +2379,7 @@ fn try_route_system(
                 );
                 search::write_json_bool(buf, state.scheduler_enabled);
                 buf.extend_from_slice(
-                    br#","file_history":true,"audit_bundle":true,"tripwire":true,"file_edit":true,"table_query":true,"pdf_export":true,"connectors":true,"clients":true,"metering":true,"vault_search":true},"scheduler_enabled":"#,
+                    br#","file_history":true,"audit_bundle":true,"tripwire":true,"file_edit":true,"table_query":true,"pdf_export":true,"connectors":true,"clients":true,"metering":true,"vault_search":true,"client_crm":true,"time_entries":true,"invoicing":true},"scheduler_enabled":"#,
                 );
                 search::write_json_bool(buf, state.scheduler_enabled);
                 buf.extend_from_slice(br#","person":{"id":"#);
@@ -5919,6 +5919,7 @@ fn try_route_knowledge_and_routines(
                     _ => None,
                 });
             let unbilled_only = query_param(&req.query, "unbilled")
+                .or_else(|| query_param(&req.query, "unbilled_only"))
                 .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
                 .unwrap_or(false);
             let invoices = records::load_invoices(&runtime.cfg.data_dir);

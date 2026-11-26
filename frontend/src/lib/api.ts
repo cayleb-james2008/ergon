@@ -1769,7 +1769,101 @@ export async function updateEngagement(
 }
 
 export async function fetchEngagementContext(id: string): Promise<Res<EngagementContext>> {
-  return call<EngagementContext>(`/api/engagements/${encodeURIComponent(id)}/context`);
+  const r = await call<Record<string, unknown>>(`/api/engagements/${encodeURIComponent(id)}/context`);
+  if (!r.ok) return r;
+  const raw = r.data || {};
+  const client = (raw.client as Client | null | undefined) ?? null;
+  const primaryContact = raw.primary_contact as ClientContact | null | undefined;
+  const contacts = Array.isArray(raw.contacts)
+    ? (raw.contacts as ClientContact[])
+    : Array.isArray(client?.contacts)
+      ? client.contacts
+      : primaryContact
+        ? [primaryContact]
+        : [];
+  const rawEntries = Array.isArray(raw.unbilled_entries)
+    ? raw.unbilled_entries
+    : Array.isArray(raw.recent_time_entries)
+      ? raw.recent_time_entries.filter((e: unknown) => {
+          const obj = (e || {}) as Record<string, unknown>;
+          return !obj.invoiced_id && !obj.invoiced_invoice_id;
+        })
+      : [];
+  const retainer = (raw.retainer as Record<string, unknown> | undefined) ?? undefined;
+  const burnMetrics =
+    (raw.burn_metrics as EngagementContext["burn_metrics"] | undefined) ??
+    (retainer
+      ? {
+          cost_usd: Number(retainer.llm_cost_usd ?? 0),
+          retainer_budget_usd: Number(retainer.retainer_budget_usd ?? 0),
+          retainer_burn_pct: Number(retainer.burn_pct ?? 0),
+        }
+      : undefined);
+  return {
+    ok: true,
+    data: {
+      engagement: raw.engagement as Engagement,
+      client,
+      scoped_file_count: Number(raw.scoped_file_count ?? raw.scoped_files_count ?? 0),
+      workspace_prefix: typeof raw.workspace_prefix === "string" ? raw.workspace_prefix : undefined,
+      sow_rules: Array.isArray(raw.sow_rules) ? (raw.sow_rules as string[]) : [],
+      contacts,
+      burn_metrics: burnMetrics,
+      unbilled_entries: rawEntries.map((e) => normalizeTimeEntry(e as Record<string, unknown>)),
+      unbilled_total_usd:
+        typeof raw.unbilled_total_usd === "number"
+          ? raw.unbilled_total_usd
+          : typeof retainer?.unbilled_amount_usd === "number"
+            ? retainer.unbilled_amount_usd
+            : undefined,
+    },
+  };
+}
+
+function normalizeTimeEntry(raw: Record<string, unknown>): TimeExpenseEntry {
+  const invoicedId =
+    typeof raw.invoiced_id === "string"
+      ? raw.invoiced_id
+      : typeof raw.invoiced_invoice_id === "string"
+        ? raw.invoiced_invoice_id
+        : null;
+  return {
+    ...(raw as unknown as TimeExpenseEntry),
+    invoiced_id: invoicedId,
+  };
+}
+
+function normalizeInvoiceRecord(raw: Record<string, unknown>): InvoiceRecord {
+  const lineItems = Array.isArray(raw.line_items) ? (raw.line_items as InvoiceLineItem[]) : [];
+  const deliverables = Array.isArray(raw.deliverable_paths)
+    ? raw.deliverable_paths.map(String)
+    : [];
+  const llmFromItems = lineItems
+    .filter((li) => li.kind === "llm_usage")
+    .reduce((acc, li) => acc + (Number(li.amount_usd) || 0), 0);
+  return {
+    ...(raw as unknown as InvoiceRecord),
+    issued_ms: typeof raw.issued_ms === "number" ? raw.issued_ms : Number(raw.created_ms ?? 0),
+    line_items: lineItems,
+    llm_cost_usd: typeof raw.llm_cost_usd === "number" ? raw.llm_cost_usd : Math.round(llmFromItems * 100) / 100,
+    billable_subtotal_usd: Number(raw.billable_subtotal_usd ?? raw.subtotal_usd ?? 0),
+    tax_usd: Number(raw.tax_usd ?? raw.tax_amount_usd ?? 0),
+    total_usd: Number(raw.total_usd ?? 0),
+    deliverable_paths: deliverables,
+    pdf_path:
+      typeof raw.pdf_path === "string"
+        ? raw.pdf_path
+        : deliverables.find((p) => p.toLowerCase().endsWith(".pdf")) ?? null,
+    xlsx_path:
+      typeof raw.xlsx_path === "string"
+        ? raw.xlsx_path
+        : deliverables.find((p) => p.toLowerCase().endsWith(".xlsx")) ?? null,
+    json_path:
+      typeof raw.json_path === "string"
+        ? raw.json_path
+        : deliverables.find((p) => p.toLowerCase().endsWith(".json")) ?? null,
+    sha256: typeof raw.sha256 === "string" ? raw.sha256 : "",
+  };
 }
 
 export async function switchEngagement(
@@ -1789,15 +1883,33 @@ export async function fetchTimeEntries(opts: {
   const params = new URLSearchParams();
   if (opts.engagement_id) params.set("engagement_id", opts.engagement_id);
   if (opts.client_id) params.set("client_id", opts.client_id);
-  if (typeof opts.unbilled_only === "boolean") params.set("unbilled_only", String(opts.unbilled_only));
+  if (typeof opts.unbilled_only === "boolean") params.set("unbilled", opts.unbilled_only ? "1" : "0");
   const qs = params.toString();
-  const r = await call<{ entries?: TimeExpenseEntry[]; total_usd?: number }>(`/api/time-entries${qs ? `?${qs}` : ""}`);
+  const r = await call<{
+    entries?: Record<string, unknown>[];
+    time_entries?: Record<string, unknown>[];
+    total_usd?: number;
+    totals?: { billable_amount_usd?: number; amount_usd?: number };
+  }>(`/api/time-entries${qs ? `?${qs}` : ""}`);
   if (!r.ok) return r;
+  const rawList = Array.isArray(r.data.entries)
+    ? r.data.entries
+    : Array.isArray(r.data.time_entries)
+      ? r.data.time_entries
+      : [];
+  const totalUsd =
+    typeof r.data.total_usd === "number"
+      ? r.data.total_usd
+      : typeof r.data.totals?.billable_amount_usd === "number"
+        ? r.data.totals.billable_amount_usd
+        : typeof r.data.totals?.amount_usd === "number"
+          ? r.data.totals.amount_usd
+          : undefined;
   return {
     ok: true,
     data: {
-      entries: Array.isArray(r.data.entries) ? r.data.entries : [],
-      total_usd: typeof r.data.total_usd === "number" ? r.data.total_usd : undefined,
+      entries: rawList.map(normalizeTimeEntry),
+      total_usd: totalUsd,
     },
   };
 }
@@ -1814,16 +1926,27 @@ export async function createTimeEntry(body: {
   thread_id?: string;
   receipt_id?: string;
 }): Promise<Res<{ entry: TimeExpenseEntry }>> {
-  return call<{ entry: TimeExpenseEntry }>("/api/time-entries", {
+  const r = await call<{ entry: Record<string, unknown> }>("/api/time-entries", {
     method: "POST",
     body,
   });
+  if (!r.ok) return r;
+  return { ok: true, data: { entry: normalizeTimeEntry(r.data.entry) } };
 }
 
 export async function deleteTimeEntry(id: string): Promise<Res<{ deleted?: string; id?: string }>> {
-  return call<{ deleted?: string; id?: string }>(`/api/time-entries/${encodeURIComponent(id)}`, {
-    method: "DELETE",
-  });
+  const r = await call<{ deleted?: string; deleted_id?: string; id?: string }>(
+    `/api/time-entries/${encodeURIComponent(id)}`,
+    { method: "DELETE" }
+  );
+  if (!r.ok) return r;
+  return {
+    ok: true,
+    data: {
+      deleted: r.data.deleted ?? r.data.deleted_id ?? r.data.id,
+      id: r.data.id ?? r.data.deleted_id ?? r.data.deleted,
+    },
+  };
 }
 
 export async function fetchInvoices(opts: {
@@ -1834,12 +1957,12 @@ export async function fetchInvoices(opts: {
   if (opts.engagement_id) params.set("engagement_id", opts.engagement_id);
   if (opts.client_id) params.set("client_id", opts.client_id);
   const qs = params.toString();
-  const r = await call<{ invoices?: InvoiceRecord[] }>(`/api/invoices${qs ? `?${qs}` : ""}`);
+  const r = await call<{ invoices?: Record<string, unknown>[] }>(`/api/invoices${qs ? `?${qs}` : ""}`);
   if (!r.ok) return r;
   return {
     ok: true,
     data: {
-      invoices: Array.isArray(r.data.invoices) ? r.data.invoices : [],
+      invoices: Array.isArray(r.data.invoices) ? r.data.invoices.map(normalizeInvoiceRecord) : [],
     },
   };
 }
@@ -1851,20 +1974,38 @@ export async function generateInvoice(body: {
   include_time_entries: boolean;
   export_formats: Array<"pdf" | "xlsx" | "json">;
 }): Promise<Res<{ invoice: InvoiceRecord; exported_paths?: Record<string, string> }>> {
-  return call<{ invoice: InvoiceRecord; exported_paths?: Record<string, string> }>("/api/invoices/generate", {
+  const r = await call<{
+    invoice: Record<string, unknown>;
+    exported_paths?: Record<string, string>;
+    deliverables?: string[];
+  }>("/api/invoices/generate", {
     method: "POST",
     body,
   });
+  if (!r.ok) return r;
+  const invoice = normalizeInvoiceRecord(r.data.invoice);
+  const exportedPaths: Record<string, string> | undefined =
+    r.data.exported_paths ??
+    (Array.isArray(r.data.deliverables) || invoice.deliverable_paths.length > 0
+      ? {
+          ...(invoice.pdf_path ? { pdf: invoice.pdf_path } : {}),
+          ...(invoice.xlsx_path ? { xlsx: invoice.xlsx_path } : {}),
+          ...(invoice.json_path ? { json: invoice.json_path } : {}),
+        }
+      : undefined);
+  return { ok: true, data: { invoice, exported_paths: exportedPaths } };
 }
 
 export async function updateInvoiceStatus(
   id: string,
   body: { status: InvoiceStatus }
 ): Promise<Res<{ invoice: InvoiceRecord }>> {
-  return call<{ invoice: InvoiceRecord }>(`/api/invoices/${encodeURIComponent(id)}`, {
+  const r = await call<{ invoice: Record<string, unknown> }>(`/api/invoices/${encodeURIComponent(id)}`, {
     method: "PATCH",
     body,
   });
+  if (!r.ok) return r;
+  return { ok: true, data: { invoice: normalizeInvoiceRecord(r.data.invoice) } };
 }
 
 export async function fetchMeteringSummary(opts: {

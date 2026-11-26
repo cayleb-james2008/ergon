@@ -5189,11 +5189,11 @@ function runWebVaultAggregate(
   };
 }
 
-    if (method === "GET" && path === "/api/version") return jsonRes({ name: "ergon", version: "0.36.0" });
-    if (method === "GET" && path === "/api/update") return jsonRes({ current: "0.36.0", available: false, mode: "off", checked_at: Math.floor(Date.now() / 1000) });
+    if (method === "GET" && path === "/api/version") return jsonRes({ name: "ergon", version: "0.37.0" });
+    if (method === "GET" && path === "/api/update") return jsonRes({ current: "0.37.0", available: false, mode: "off", checked_at: Math.floor(Date.now() / 1000) });
     if (method === "GET" && path === "/api/status") {
       return jsonRes({
-        version: "0.36.0",
+        version: "0.37.0",
         model_configured: true,
         model: byok.engine_mode === "byok" && byok.model_id ? byok.model_id : "browser-workspace-engine",
         model_base_url: byok.engine_mode === "byok" ? byok.model_base_url : "indexeddb://local",
@@ -5580,7 +5580,7 @@ function runWebVaultAggregate(
       const pid = decodeURIComponent(path.slice("/api/playbooks/".length, -"/export".length)).trim();
       const rt = st.routines.find((x) => x.id === pid);
       if (!rt) return jsonRes({ error: "playbook not found" }, 404);
-      const built = await buildSignedPlaybookPack(rt, "0.36.0");
+      const built = await buildSignedPlaybookPack(rt, "0.37.0");
       return new Response(built.json, {
         status: 200,
         headers: {
@@ -7371,7 +7371,8 @@ function runWebVaultAggregate(
     if (method === "GET" && path === "/api/time-entries") {
       const engId = (u.searchParams.get("engagement_id") || "").trim();
       const cliId = (u.searchParams.get("client_id") || "").trim();
-      const unbilledOnly = u.searchParams.get("unbilled_only") === "true";
+      const rawUnbilled = (u.searchParams.get("unbilled") || u.searchParams.get("unbilled_only") || "").trim().toLowerCase();
+      const unbilledOnly = rawUnbilled === "1" || rawUnbilled === "true";
       const entries = (st.timeEntries ?? []).filter((e) => {
         if (engId && e.engagement_id !== engId) return false;
         if (cliId && e.client_id !== cliId) return false;

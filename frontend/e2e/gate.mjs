@@ -2069,7 +2069,15 @@ await reset();
       body: JSON.stringify({
         ...j,
         version: "0.33.0",
-        capabilities: { ...(j.capabilities || {}), clients: true, metering: true, sse: true },
+        capabilities: {
+          ...(j.capabilities || {}),
+          clients: true,
+          metering: true,
+          sse: true,
+          client_crm: false,
+          time_entries: false,
+          invoicing: false,
+        },
       }),
     });
   });
