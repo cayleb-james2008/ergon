@@ -68,6 +68,8 @@ struct Fingerprint {
     ws_mtime: u128,
     ws_meta_hash: u64,
     cfg_mtime: u128,
+    clients_mtime: u128,
+    clients_len: u64,
 }
 
 fn stat_pair(path: &Path) -> (u128, u64) {
@@ -101,7 +103,9 @@ fn ws_metadata_hash_walk(root: &Path, dir: &Path, hash: &mut u64) {
     for entry in rd.filter_map(|e| e.ok()) {
         let name_os = entry.file_name();
         let name = name_os.to_string_lossy();
-        if name.starts_with('.') || name.eq_ignore_ascii_case("connector_secrets.json") {
+        if (name.starts_with('.') && name != ".ergon-scope.json")
+            || name.eq_ignore_ascii_case("connector_secrets.json")
+        {
             continue;
         }
         let path = entry.path();
@@ -143,6 +147,8 @@ fn compute_fingerprint(data_dir: &Path, workspace_dir: &Path, memory_path: &Path
     let (mem_mtime, mem_len) = stat_pair(memory_path);
     let (ws_mtime, _) = stat_pair(workspace_dir);
     let (cfg_mtime, _) = stat_pair(&crate::config_file_path(data_dir));
+    let root_data_dir = records::infer_root_data_dir(data_dir);
+    let (clients_mtime, clients_len) = stat_pair(&records::clients_path(&root_data_dir));
     let mut ws_meta_hash = 0u64;
     ws_metadata_hash_walk(workspace_dir, workspace_dir, &mut ws_meta_hash);
     Fingerprint {
@@ -155,6 +161,8 @@ fn compute_fingerprint(data_dir: &Path, workspace_dir: &Path, memory_path: &Path
         ws_mtime,
         ws_meta_hash,
         cfg_mtime,
+        clients_mtime,
+        clients_len,
     }
 }
 
@@ -290,6 +298,14 @@ fn write_file_summary_json(out: &mut Vec<u8>, f: &IndexedFile) {
     write_json_u64(out, f.mtime_ms);
     out.extend_from_slice(br#","ext":"#);
     write_json_str(out, &f.ext);
+    if let Some(cid) = f.client_id.as_deref() {
+        out.extend_from_slice(br#","client_id":"#);
+        write_json_str(out, cid);
+    }
+    if let Some(eid) = f.engagement_id.as_deref() {
+        out.extend_from_slice(br#","engagement_id":"#);
+        write_json_str(out, eid);
+    }
     out.push(b'}');
 }
 
@@ -318,6 +334,14 @@ fn write_chunk_hit_json(out: &mut Vec<u8>, hit: &ChunkHit<'_>) {
         out.extend_from_slice(br#","heading":"#);
         write_json_str(out, heading);
     }
+    if let Some(cid) = hit.chunk.client_id.as_deref() {
+        out.extend_from_slice(br#","client_id":"#);
+        write_json_str(out, cid);
+    }
+    if let Some(eid) = hit.chunk.engagement_id.as_deref() {
+        out.extend_from_slice(br#","engagement_id":"#);
+        write_json_str(out, eid);
+    }
     out.extend_from_slice(br#","excerpt":"#);
     write_json_str(out, &hit.excerpt);
     out.push(b'}');
@@ -339,6 +363,14 @@ fn write_file_hit_json(
     write_json_u64(out, f.mtime_ms);
     out.extend_from_slice(br#","ext":"#);
     write_json_str(out, &f.ext);
+    if let Some(cid) = f.client_id.as_deref() {
+        out.extend_from_slice(br#","client_id":"#);
+        write_json_str(out, cid);
+    }
+    if let Some(eid) = f.engagement_id.as_deref() {
+        out.extend_from_slice(br#","engagement_id":"#);
+        write_json_str(out, eid);
+    }
     out.extend_from_slice(br#","preview":"#);
     write_json_str(out, &f.preview);
     out.extend_from_slice(br#","score":"#);
@@ -547,8 +579,290 @@ fn cosine_similarity(a: &[f32], b: &[f32]) -> f64 {
 }
 
 // ---------------------------------------------------------------------------
-// Data Model & Chunking
+// Data Model, Client/Engagement Scope Resolution & Chunking
 // ---------------------------------------------------------------------------
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ScopeTag {
+    pub client_id: Option<String>,
+    pub engagement_id: Option<String>,
+}
+
+impl ScopeTag {
+    fn from_json(v: &Value) -> Self {
+        let client_id = v["client_id"]
+            .as_str()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string);
+        let engagement_id = v["engagement_id"]
+            .as_str()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string);
+        Self {
+            client_id,
+            engagement_id,
+        }
+    }
+
+    pub fn matches_filter(
+        &self,
+        client_filter: Option<&str>,
+        engagement_filter: Option<&str>,
+    ) -> bool {
+        let eng_f = engagement_filter.map(str::trim).filter(|s| !s.is_empty());
+        let cli_f = client_filter.map(str::trim).filter(|s| !s.is_empty());
+        if let Some(eid) = eng_f {
+            if self.engagement_id.as_deref() != Some(eid) {
+                return false;
+            }
+        }
+        if let Some(cid) = cli_f {
+            if self.client_id.as_deref() != Some(cid) {
+                return false;
+            }
+        }
+        true
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct ScopeResolver {
+    pub store: records::ClientsStore,
+    dir_scopes: HashMap<String, ScopeTag>,
+    file_scopes: HashMap<String, ScopeTag>,
+    prefix_scopes: Vec<(String, ScopeTag)>,
+}
+
+impl ScopeResolver {
+    pub fn load(root_data_dir: &Path, workspace_dir: &Path) -> Self {
+        let store = records::load_clients_store(root_data_dir);
+        let mut dir_scopes = HashMap::new();
+        let mut file_scopes = HashMap::new();
+        let mut prefix_scopes = Vec::new();
+
+        fn walk_scopes(
+            root: &Path,
+            dir: &Path,
+            depth: usize,
+            dir_scopes: &mut HashMap<String, ScopeTag>,
+            file_scopes: &mut HashMap<String, ScopeTag>,
+            prefix_scopes: &mut Vec<(String, ScopeTag)>,
+        ) {
+            if depth > 8 {
+                return;
+            }
+            let scope_file = dir.join(".ergon-scope.json");
+            if let Ok(md) = std::fs::symlink_metadata(&scope_file) {
+                if !md.file_type().is_symlink() && md.is_file() && md.len() <= 256 * 1024 {
+                    if let Ok(text) = std::fs::read_to_string(&scope_file) {
+                        if let Ok(v) = serde_json::from_str::<Value>(&text) {
+                            let rel_dir = dir
+                                .strip_prefix(root)
+                                .map(|p| p.to_string_lossy().replace('\\', "/"))
+                                .unwrap_or_default()
+                                .trim_matches('/')
+                                .to_string();
+                            let tag = ScopeTag::from_json(&v);
+                            if tag.client_id.is_some() || tag.engagement_id.is_some() {
+                                dir_scopes.insert(rel_dir.clone(), tag);
+                            }
+                            if rel_dir.is_empty() {
+                                if let Some(obj) = v["files"].as_object() {
+                                    for (k, fv) in obj {
+                                        let rel = k.trim().replace('\\', "/").trim_start_matches("./").to_string();
+                                        let ftag = ScopeTag::from_json(fv);
+                                        if !rel.is_empty() && (ftag.client_id.is_some() || ftag.engagement_id.is_some()) {
+                                            file_scopes.insert(rel, ftag);
+                                        }
+                                    }
+                                }
+                                let pfx_obj = v["prefixes"]
+                                    .as_object()
+                                    .or_else(|| v["paths"].as_object());
+                                if let Some(obj) = pfx_obj {
+                                    for (k, pv) in obj {
+                                        let pfx = k.trim().replace('\\', "/").trim_matches('/').to_string();
+                                        let ptag = ScopeTag::from_json(pv);
+                                        if !pfx.is_empty() && (ptag.client_id.is_some() || ptag.engagement_id.is_some()) {
+                                            prefix_scopes.push((pfx, ptag));
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            let Ok(rd) = std::fs::read_dir(dir) else {
+                return;
+            };
+            for entry in rd.filter_map(|e| e.ok()) {
+                let name = entry.file_name().to_string_lossy().into_owned();
+                if name.starts_with('.') {
+                    continue;
+                }
+                let Ok(ft) = entry.file_type() else { continue };
+                if ft.is_symlink() || !ft.is_dir() {
+                    continue;
+                }
+                walk_scopes(root, &entry.path(), depth + 1, dir_scopes, file_scopes, prefix_scopes);
+            }
+        }
+
+        walk_scopes(
+            workspace_dir,
+            workspace_dir,
+            0,
+            &mut dir_scopes,
+            &mut file_scopes,
+            &mut prefix_scopes,
+        );
+        Self {
+            store,
+            dir_scopes,
+            file_scopes,
+            prefix_scopes,
+        }
+    }
+
+    pub fn resolve(&self, rel_path: &str) -> ScopeTag {
+        let rel = rel_path.trim().replace('\\', "/");
+        let rel = rel.trim_start_matches("./");
+        let mut tag = ScopeTag::default();
+
+        if let Some(ft) = self.file_scopes.get(rel) {
+            tag = ft.clone();
+        }
+        if tag.client_id.is_none() || tag.engagement_id.is_none() {
+            let mut cur = match rel.rsplit_once('/') {
+                Some((parent, _)) => parent.to_string(),
+                None => String::new(),
+            };
+            loop {
+                if let Some(dt) = self.dir_scopes.get(&cur) {
+                    if tag.engagement_id.is_none() {
+                        tag.engagement_id = dt.engagement_id.clone();
+                    }
+                    if tag.client_id.is_none() {
+                        tag.client_id = dt.client_id.clone();
+                    }
+                    break;
+                }
+                if cur.is_empty() {
+                    break;
+                }
+                cur = match cur.rsplit_once('/') {
+                    Some((parent, _)) => parent.to_string(),
+                    None => String::new(),
+                };
+            }
+        }
+        if tag.engagement_id.is_none() || tag.client_id.is_none() {
+            if let Some((_, ptag)) = self
+                .prefix_scopes
+                .iter()
+                .filter(|(pfx, _)| records::path_matches_prefix(rel, pfx))
+                .max_by_key(|(pfx, _)| pfx.len())
+            {
+                if tag.engagement_id.is_none() {
+                    tag.engagement_id = ptag.engagement_id.clone();
+                }
+                if tag.client_id.is_none() {
+                    tag.client_id = ptag.client_id.clone();
+                }
+            }
+        }
+        if tag.engagement_id.is_none() || tag.client_id.is_none() {
+            if let Some(eng) = records::resolve_engagement_for_path(&self.store, rel) {
+                if tag.engagement_id.is_none() {
+                    tag.engagement_id = Some(eng.id.clone());
+                }
+                if tag.client_id.is_none() {
+                    tag.client_id = Some(eng.client_id.clone());
+                }
+            }
+        }
+        if tag.client_id.is_none() {
+            if let Some(ref eid) = tag.engagement_id {
+                if let Some(eng) = self.store.engagements.iter().find(|e| &e.id == eid) {
+                    tag.client_id = Some(eng.client_id.clone());
+                }
+            }
+        }
+        tag
+    }
+
+    pub fn matches_path(
+        &self,
+        rel_path: &str,
+        client_filter: Option<&str>,
+        engagement_filter: Option<&str>,
+    ) -> bool {
+        self.resolve(rel_path)
+            .matches_filter(client_filter, engagement_filter)
+    }
+
+    pub fn is_cross_client_path(
+        &self,
+        rel_path: &str,
+        target_client_id: Option<&str>,
+        target_engagement_id: Option<&str>,
+    ) -> Option<String> {
+        let tag = self.resolve(rel_path);
+        if let Some(cid) = target_client_id {
+            if let Some(ref path_cid) = tag.client_id {
+                if path_cid != cid {
+                    return Some(path_cid.clone());
+                }
+            }
+        }
+        if let Some(eid) = target_engagement_id {
+            let resolved_target_cid = target_client_id.map(str::to_string).or_else(|| {
+                self.store
+                    .engagements
+                    .iter()
+                    .find(|e| e.id == eid)
+                    .map(|e| e.client_id.clone())
+            });
+            if let Some(ref tcid) = resolved_target_cid {
+                if let Some(ref path_cid) = tag.client_id {
+                    if path_cid != tcid {
+                        return Some(path_cid.clone());
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    pub fn other_client_prefixes(&self, target_client_id: &str) -> Vec<(String, String)> {
+        let mut out = Vec::new();
+        for eng in &self.store.engagements {
+            if !eng.workspace_prefix.is_empty() && eng.client_id != target_client_id {
+                out.push((eng.workspace_prefix.clone(), eng.client_id.clone()));
+            }
+        }
+        for (pfx, tag) in &self.prefix_scopes {
+            if let Some(ref cid) = tag.client_id {
+                if cid != target_client_id {
+                    out.push((pfx.clone(), cid.clone()));
+                }
+            }
+        }
+        for (dir, tag) in &self.dir_scopes {
+            if !dir.is_empty() {
+                if let Some(ref cid) = tag.client_id {
+                    if cid != target_client_id {
+                        out.push((dir.clone(), cid.clone()));
+                    }
+                }
+            }
+        }
+        out
+    }
+}
 
 #[derive(Clone, Debug)]
 pub struct VaultChunk {
@@ -564,6 +878,8 @@ pub struct VaultChunk {
     pub token_len: usize,
     pub embedding: Vec<f32>,
     pub file_idx: u32,
+    pub client_id: Option<String>,
+    pub engagement_id: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -579,17 +895,25 @@ pub struct IndexedFile {
     pub preview: String,
     pub indexed_bytes: u64,
     pub chunk_range: Range<usize>,
+    pub client_id: Option<String>,
+    pub engagement_id: Option<String>,
 }
 
 impl IndexedFile {
     pub fn to_json(&self) -> Value {
-        json!({
-            "path": self.path,
-            "name": self.name,
-            "size": self.size,
-            "mtime_ms": self.mtime_ms,
-            "ext": self.ext,
-        })
+        let mut obj = serde_json::Map::new();
+        obj.insert("path".into(), json!(self.path));
+        obj.insert("name".into(), json!(self.name));
+        obj.insert("size".into(), json!(self.size));
+        obj.insert("mtime_ms".into(), json!(self.mtime_ms));
+        obj.insert("ext".into(), json!(self.ext));
+        if let Some(ref cid) = self.client_id {
+            obj.insert("client_id".into(), json!(cid));
+        }
+        if let Some(ref eid) = self.engagement_id {
+            obj.insert("engagement_id".into(), json!(eid));
+        }
+        Value::Object(obj)
     }
 }
 
@@ -623,6 +947,8 @@ pub struct OwnedChunkHit {
     pub bm25_score: f64,
     pub semantic_score: f64,
     pub excerpt: String,
+    pub client_id: Option<String>,
+    pub engagement_id: Option<String>,
 }
 
 pub struct PersonIndex {
@@ -642,6 +968,7 @@ pub struct PersonIndex {
     embedding_cfg: Option<EmbeddingConfig>,
     uses_remote_embeddings: bool,
     pub memory: Vec<MemoryLine>,
+    engagement_to_client: HashMap<String, String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -912,6 +1239,8 @@ fn chunk_text_lines(
                 token_len,
                 embedding: Vec::new(),
                 file_idx: 0,
+                client_id: None,
+                engagement_id: None,
             });
         }
         buf.clear();
@@ -1004,6 +1333,8 @@ fn chunk_text_lines(
                     token_len,
                     embedding: Vec::new(),
                     file_idx: 0,
+                    client_id: None,
+                    engagement_id: None,
                 });
             }
             continue;
@@ -1169,6 +1500,8 @@ fn load_persisted_vault(
                     token_len: c["token_len"].as_u64().unwrap_or(0) as usize,
                     embedding,
                     file_idx: 0,
+                    client_id: None,
+                    engagement_id: None,
                 });
             }
         } else {
@@ -1708,15 +2041,27 @@ impl PersonIndex {
                 .then_with(|| a.entry.path.cmp(&b.entry.path))
         });
 
+        let root_data_dir = records::infer_root_data_dir(data_dir);
+        let scope_resolver = ScopeResolver::load(&root_data_dir, workspace_dir);
+        let engagement_to_client: HashMap<String, String> = scope_resolver
+            .store
+            .engagements
+            .iter()
+            .map(|e| (e.id.clone(), e.client_id.clone()))
+            .collect();
+
         let mut files: Vec<IndexedFile> = Vec::with_capacity(discovered.len());
         let mut chunks: Vec<VaultChunk> = Vec::new();
         let mut indexed_bytes = 0u64;
 
         for (file_idx, d) in discovered.into_iter().enumerate() {
             let e = d.entry;
+            let scope = scope_resolver.resolve(&e.path);
             let start = chunks.len();
             for mut c in e.chunks {
                 c.file_idx = file_idx as u32;
+                c.client_id = scope.client_id.clone();
+                c.engagement_id = scope.engagement_id.clone();
                 c.embedding.shrink_to_fit();
                 chunks.push(c);
             }
@@ -1734,6 +2079,8 @@ impl PersonIndex {
                 preview: e.preview,
                 indexed_bytes: e.indexed_bytes,
                 chunk_range: start..end,
+                client_id: scope.client_id,
+                engagement_id: scope.engagement_id,
             });
         }
 
@@ -1847,6 +2194,7 @@ impl PersonIndex {
             embedding_cfg,
             uses_remote_embeddings,
             memory,
+            engagement_to_client,
         }
     }
 
@@ -1896,11 +2244,64 @@ impl PersonIndex {
         path.starts_with(norm_prefix)
     }
 
+    fn tag_matches(
+        item_client_id: Option<&str>,
+        item_engagement_id: Option<&str>,
+        client_filter: Option<&str>,
+        engagement_filter: Option<&str>,
+    ) -> bool {
+        let eng_f = engagement_filter.map(str::trim).filter(|s| !s.is_empty());
+        let cli_f = client_filter.map(str::trim).filter(|s| !s.is_empty());
+        if let Some(eid) = eng_f {
+            if item_engagement_id != Some(eid) {
+                return false;
+            }
+        }
+        if let Some(cid) = cli_f {
+            if item_client_id != Some(cid) {
+                return false;
+            }
+        }
+        true
+    }
+
+    fn receipt_matches_scope(
+        &self,
+        r: &ChainedReceipt,
+        client_filter: Option<&str>,
+        engagement_filter: Option<&str>,
+    ) -> bool {
+        let eng_f = engagement_filter.map(str::trim).filter(|s| !s.is_empty());
+        let cli_f = client_filter.map(str::trim).filter(|s| !s.is_empty());
+        if eng_f.is_none() && cli_f.is_none() {
+            return true;
+        }
+        let r_eid = r
+            .engagement_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty());
+        if let Some(eid) = eng_f {
+            if r_eid != Some(eid) {
+                return false;
+            }
+        }
+        if let Some(cid) = cli_f {
+            let r_cid = r_eid.and_then(|eid| self.engagement_to_client.get(eid).map(String::as_str));
+            if r_cid != Some(cid) {
+                return false;
+            }
+        }
+        true
+    }
+
     fn score_chunks<'a>(
         &'a self,
         query: &str,
         mode: &str,
         path_prefix: &str,
+        client_id: Option<&str>,
+        engagement_id: Option<&str>,
     ) -> (Vec<(usize, f64, Vec<ChunkHit<'a>>)>, usize) {
         let q_trim = query.trim();
         let q_low = q_trim.to_lowercase();
@@ -1910,12 +2311,30 @@ impl PersonIndex {
             "exact" => "exact",
             _ => "hybrid",
         };
+        let chunk_ok = |c: &VaultChunk| -> bool {
+            Self::file_matches_prefix(&c.path, &norm_prefix)
+                && Self::tag_matches(
+                    c.client_id.as_deref(),
+                    c.engagement_id.as_deref(),
+                    client_id,
+                    engagement_id,
+                )
+        };
+        let file_ok = |f: &IndexedFile| -> bool {
+            Self::file_matches_prefix(&f.path, &norm_prefix)
+                && Self::tag_matches(
+                    f.client_id.as_deref(),
+                    f.engagement_id.as_deref(),
+                    client_id,
+                    engagement_id,
+                )
+        };
 
         if q_low.is_empty() {
             let mut out = Vec::new();
             let mut total = 0usize;
             for (fi, f) in self.files.iter().enumerate() {
-                if Self::file_matches_prefix(&f.path, &norm_prefix) {
+                if file_ok(f) {
                     total += 1;
                     out.push((fi, 0.0, Vec::new()));
                 }
@@ -1931,7 +2350,7 @@ impl PersonIndex {
 
         if norm_mode == "exact" {
             for (ci, c) in self.chunks.iter().enumerate() {
-                if !Self::file_matches_prefix(&c.path, &norm_prefix) {
+                if !chunk_ok(c) {
                     continue;
                 }
                 let in_text = contains_icase(&c.text, &q_low);
@@ -1957,7 +2376,7 @@ impl PersonIndex {
                     let idf = (((n_docs - df + 0.5) / (df + 0.5)) + 1.0).ln().max(0.01);
                     for &(ci_u32, tf_u16) in postings.iter() {
                         let ci = ci_u32 as usize;
-                        if !Self::file_matches_prefix(&self.chunks[ci].path, &norm_prefix) {
+                        if !chunk_ok(&self.chunks[ci]) {
                             continue;
                         }
                         let tf = tf_u16 as f64;
@@ -1972,7 +2391,7 @@ impl PersonIndex {
             let need_substring_scan =
                 tokens.is_empty() || q_low.contains('.') || q_low.contains('-');
             for (ci, c) in self.chunks.iter().enumerate() {
-                if !Self::file_matches_prefix(&c.path, &norm_prefix) {
+                if !chunk_ok(c) {
                     continue;
                 }
                 if (bm25_scores[ci] > 0.0 || need_substring_scan) && contains_icase(&c.text, &q_low) {
@@ -1987,7 +2406,7 @@ impl PersonIndex {
         if norm_mode == "hybrid" {
             if let Some(q_emb) = self.query_embedding(q_trim) {
                 for (ci, c) in self.chunks.iter().enumerate() {
-                    if !Self::file_matches_prefix(&c.path, &norm_prefix) {
+                    if !chunk_ok(c) {
                         continue;
                     }
                     sem_scores[ci] = cosine_similarity(&q_emb, &c.embedding);
@@ -1998,7 +2417,7 @@ impl PersonIndex {
         // Select matching chunks and compute RRF (hybrid) or single-signal score.
         let mut candidates: Vec<usize> = Vec::new();
         for ci in 0..self.chunks.len() {
-            if !Self::file_matches_prefix(&self.chunks[ci].path, &norm_prefix) {
+            if !chunk_ok(&self.chunks[ci]) {
                 continue;
             }
             let matched = match norm_mode {
@@ -2083,7 +2502,7 @@ impl PersonIndex {
 
         // Also match filenames/paths that might have 0 chunk hits (e.g. binary files or filename searches).
         for (fi, f) in self.files.iter().enumerate() {
-            if !Self::file_matches_prefix(&f.path, &norm_prefix) {
+            if !file_ok(f) {
                 continue;
             }
             if by_file.contains_key(&fi) {
@@ -2132,8 +2551,20 @@ impl PersonIndex {
         mode: &str,
         limit: usize,
     ) -> Vec<OwnedChunkHit> {
+        self.search_vault_chunks_scoped(query, path_prefix, mode, limit, None, None)
+    }
+
+    pub fn search_vault_chunks_scoped(
+        &self,
+        query: &str,
+        path_prefix: &str,
+        mode: &str,
+        limit: usize,
+        client_id: Option<&str>,
+        engagement_id: Option<&str>,
+    ) -> Vec<OwnedChunkHit> {
         let limit = limit.clamp(1, 50);
-        let (file_results, _) = self.score_chunks(query, mode, path_prefix);
+        let (file_results, _) = self.score_chunks(query, mode, path_prefix, client_id, engagement_id);
         let mut flat: Vec<OwnedChunkHit> = Vec::new();
         for (fi, _, hits) in file_results {
             if hits.is_empty() {
@@ -2151,6 +2582,8 @@ impl PersonIndex {
                     bm25_score: 0.0,
                     semantic_score: 0.0,
                     excerpt: f.preview.clone(),
+                    client_id: f.client_id.clone(),
+                    engagement_id: f.engagement_id.clone(),
                 });
             } else {
                 for h in hits {
@@ -2167,6 +2600,8 @@ impl PersonIndex {
                         bm25_score: h.bm25_score,
                         semantic_score: h.semantic_score,
                         excerpt: h.excerpt,
+                        client_id: h.chunk.client_id.clone(),
+                        engagement_id: h.chunk.engagement_id.clone(),
                     });
                 }
             }
@@ -2194,8 +2629,31 @@ impl PersonIndex {
         limit: usize,
         path_prefix: &str,
     ) -> Value {
+        self.search_scoped(query, scope, mode, limit, path_prefix, None, None)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn search_scoped(
+        &self,
+        query: &str,
+        scope: &str,
+        mode: &str,
+        limit: usize,
+        path_prefix: &str,
+        client_id: Option<&str>,
+        engagement_id: Option<&str>,
+    ) -> Value {
         let mut buf = Vec::with_capacity(4096);
-        self.write_search_json_with(&mut buf, query, scope, mode, limit, path_prefix);
+        self.write_search_json_scoped(
+            &mut buf,
+            query,
+            scope,
+            mode,
+            limit,
+            path_prefix,
+            client_id,
+            engagement_id,
+        );
         serde_json::from_slice(&buf).unwrap_or_else(|_| json!({}))
     }
 
@@ -2291,10 +2749,31 @@ impl PersonIndex {
     }
 
     pub fn list_files(&self, offset: usize, limit: Option<usize>, q: &str) -> (usize, Vec<Value>) {
+        self.list_files_scoped(offset, limit, q, None, None)
+    }
+
+    pub fn list_files_scoped(
+        &self,
+        offset: usize,
+        limit: Option<usize>,
+        q: &str,
+        client_id: Option<&str>,
+        engagement_id: Option<&str>,
+    ) -> (usize, Vec<Value>) {
         let q_low = q.trim().to_lowercase();
+        let matches_scope = |f: &IndexedFile| -> bool {
+            Self::tag_matches(
+                f.client_id.as_deref(),
+                f.engagement_id.as_deref(),
+                client_id,
+                engagement_id,
+            )
+        };
         if q_low.is_empty() {
-            let total = self.files.len();
-            let iter = self.files.iter().skip(offset);
+            let scoped: Vec<&IndexedFile> =
+                self.files.iter().filter(|f| matches_scope(f)).collect();
+            let total = scoped.len();
+            let iter = scoped.into_iter().skip(offset);
             let items: Vec<Value> = match limit {
                 Some(l) => iter.take(l.clamp(1, 1000)).map(|f| f.to_json()).collect(),
                 None => iter.map(|f| f.to_json()).collect(),
@@ -2306,11 +2785,14 @@ impl PersonIndex {
         let filtered: Vec<&IndexedFile> = match candidates {
             Some(ids) => ids
                 .into_iter()
-                .filter(|&id| self.file_matches_query(id as usize, &q_low))
+                .filter(|&id| {
+                    matches_scope(&self.files[id as usize])
+                        && self.file_matches_query(id as usize, &q_low)
+                })
                 .map(|id| &self.files[id as usize])
                 .collect(),
             None => (0..self.files.len())
-                .filter(|&fi| self.file_matches_query(fi, &q_low))
+                .filter(|&fi| matches_scope(&self.files[fi]) && self.file_matches_query(fi, &q_low))
                 .map(|fi| &self.files[fi])
                 .collect(),
         };
@@ -2332,15 +2814,39 @@ impl PersonIndex {
         limit: Option<usize>,
         q: &str,
     ) {
+        self.write_files_json_scoped(out, person_id, offset, limit, q, None, None);
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn write_files_json_scoped(
+        &self,
+        out: &mut Vec<u8>,
+        person_id: &str,
+        offset: usize,
+        limit: Option<usize>,
+        q: &str,
+        client_id: Option<&str>,
+        engagement_id: Option<&str>,
+    ) {
         let q_trim = q.trim();
+        let matches_scope = |f: &IndexedFile| -> bool {
+            Self::tag_matches(
+                f.client_id.as_deref(),
+                f.engagement_id.as_deref(),
+                client_id,
+                engagement_id,
+            )
+        };
         out.extend_from_slice(br#"{"person_id":"#);
         write_json_str(out, person_id);
         if q_trim.is_empty() {
-            let total = self.files.len();
+            let scoped: Vec<&IndexedFile> =
+                self.files.iter().filter(|f| matches_scope(f)).collect();
+            let total = scoped.len();
             out.extend_from_slice(br#","total":"#);
             write_json_u64(out, total as u64);
             out.extend_from_slice(br#","files":["#);
-            let iter = self.files.iter().skip(offset);
+            let iter = scoped.into_iter().skip(offset);
             match limit {
                 Some(l) => {
                     for (i, f) in iter.take(l.clamp(1, 1000)).enumerate() {
@@ -2368,11 +2874,14 @@ impl PersonIndex {
         let filtered: Vec<&IndexedFile> = match candidates {
             Some(ids) => ids
                 .into_iter()
-                .filter(|&id| self.file_matches_query(id as usize, &q_low))
+                .filter(|&id| {
+                    matches_scope(&self.files[id as usize])
+                        && self.file_matches_query(id as usize, &q_low)
+                })
                 .map(|id| &self.files[id as usize])
                 .collect(),
             None => (0..self.files.len())
-                .filter(|&fi| self.file_matches_query(fi, &q_low))
+                .filter(|&fi| matches_scope(&self.files[fi]) && self.file_matches_query(fi, &q_low))
                 .map(|fi| &self.files[fi])
                 .collect(),
         };
@@ -2507,6 +3016,21 @@ impl PersonIndex {
         limit: usize,
         path_prefix: &str,
     ) {
+        self.write_search_json_scoped(out, query, scope, mode, limit, path_prefix, None, None);
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn write_search_json_scoped(
+        &self,
+        out: &mut Vec<u8>,
+        query: &str,
+        scope: &str,
+        mode: &str,
+        limit: usize,
+        path_prefix: &str,
+        client_id: Option<&str>,
+        engagement_id: Option<&str>,
+    ) {
         let t0 = Instant::now();
         let q_trim = query.trim();
         let q = q_trim.to_lowercase();
@@ -2517,6 +3041,8 @@ impl PersonIndex {
             "exact" => "exact",
             _ => "hybrid",
         };
+        let has_scope_filter = client_id.is_some_and(|s| !s.trim().is_empty())
+            || engagement_id.is_some_and(|s| !s.trim().is_empty());
 
         let want_receipts = scope == "all" || scope == "receipts";
         let want_files = scope == "all" || scope == "files";
@@ -2530,14 +3056,19 @@ impl PersonIndex {
         let mut total_receipt_hits = 0usize;
         if want_receipts {
             if q.is_empty() {
-                total_receipt_hits = self.chain.len();
-                for r in self.chain.iter().rev().take(limit) {
-                    receipt_hits.push(r);
+                for r in self.chain.iter().rev() {
+                    if !self.receipt_matches_scope(r, client_id, engagement_id) {
+                        continue;
+                    }
+                    total_receipt_hits += 1;
+                    if receipt_hits.len() < limit {
+                        receipt_hits.push(r);
+                    }
                 }
             } else {
                 let candidates = narrow_candidates(&self.receipt_tokens, &q, &tokens, false);
                 match candidates {
-                    Some(ids) if single_exact_token => {
+                    Some(ids) if single_exact_token && !has_scope_filter => {
                         total_receipt_hits = ids.len();
                         for &id in ids.iter().rev().take(limit) {
                             receipt_hits.push(&self.chain[id as usize]);
@@ -2546,17 +3077,22 @@ impl PersonIndex {
                     Some(ids) => {
                         for &id in ids.iter().rev() {
                             let idx = id as usize;
-                            if receipt_matches(&self.chain[idx], &q, &tokens) {
+                            let r = &self.chain[idx];
+                            if self.receipt_matches_scope(r, client_id, engagement_id)
+                                && receipt_matches(r, &q, &tokens)
+                            {
                                 total_receipt_hits += 1;
                                 if receipt_hits.len() < limit {
-                                    receipt_hits.push(&self.chain[idx]);
+                                    receipt_hits.push(r);
                                 }
                             }
                         }
                     }
                     None => {
                         for r in self.chain.iter().rev() {
-                            if receipt_matches(r, &q, &tokens) {
+                            if self.receipt_matches_scope(r, client_id, engagement_id)
+                                && receipt_matches(r, &q, &tokens)
+                            {
                                 total_receipt_hits += 1;
                                 if receipt_hits.len() < limit {
                                     receipt_hits.push(r);
@@ -2569,7 +3105,7 @@ impl PersonIndex {
         }
 
         let (file_hits, total_file_hits) = if want_files {
-            self.score_chunks(q_trim, norm_mode, path_prefix)
+            self.score_chunks(q_trim, norm_mode, path_prefix, client_id, engagement_id)
         } else {
             (Vec::new(), 0)
         };

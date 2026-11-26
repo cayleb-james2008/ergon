@@ -455,13 +455,254 @@ pub fn fetch_url_text(url: &str) -> Result<String, String> {
 
 
 // ---------------------------------------------------------------------------
+// Engagement Isolation Helpers (v0.37)
+// ---------------------------------------------------------------------------
+
+pub fn active_isolation_scope(
+    root_data_dir: &Path,
+    person_data_dir: &Path,
+    person_id: &str,
+) -> Option<(records::EngagementRecord, String)> {
+    let policy = crate::load_workspace_policy(person_data_dir);
+    if !policy.isolate_active_engagement {
+        return None;
+    }
+    let (eng, _) = records::active_engagement_for(root_data_dir, person_id)?;
+    let pfx = eng.workspace_prefix.trim().trim_matches('/').to_string();
+    if pfx.is_empty() {
+        return None;
+    }
+    Some((eng, pfx))
+}
+
+pub fn check_engagement_path_allowed(
+    workspace_dir: &Path,
+    prefix: &str,
+    rel_path: &str,
+    allow_root_dot: bool,
+) -> Result<(), String> {
+    let pfx = prefix.trim().trim_matches('/');
+    if pfx.is_empty() {
+        return Ok(());
+    }
+    let clean = rel_path
+        .trim()
+        .replace('\\', "/")
+        .trim_start_matches("./")
+        .trim_end_matches('/')
+        .to_string();
+    if clean.is_empty() || clean == "." {
+        if allow_root_dot {
+            return Ok(());
+        }
+        return Err(format!(
+            "blocked by engagement isolation: use '{pfx}/' or 'shared/' instead of workspace root"
+        ));
+    }
+    let allowed_lex =
+        records::path_matches_prefix(&clean, pfx) || records::path_matches_prefix(&clean, "shared");
+    if !allowed_lex {
+        return Err(format!(
+            "blocked by engagement isolation: path '{rel_path}' is outside active engagement prefix '{pfx}/' and 'shared/'"
+        ));
+    }
+    if let Ok(resolved) = sandbox_path_resolving(workspace_dir, &clean, true) {
+        let canon_ws = workspace_dir
+            .canonicalize()
+            .unwrap_or_else(|_| normalize_absolute(workspace_dir));
+        if let Ok(rel_resolved) = resolved.strip_prefix(&canon_ws) {
+            let rel_str = rel_resolved.to_string_lossy().replace('\\', "/");
+            if !rel_str.is_empty()
+                && !records::path_matches_prefix(&rel_str, pfx)
+                && !records::path_matches_prefix(&rel_str, "shared")
+            {
+                return Err(format!(
+                    "blocked by engagement isolation: resolved path '{rel_str}' escapes active engagement prefix '{pfx}/'"
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Scope `aggregate_vault` args (`glob` and `save_as`) to the given allowed prefixes or engagement/client scope.
+pub fn scope_aggregate_args(
+    cfg: &Config,
+    args: &Value,
+    required_prefix: Option<&str>,
+    client_id: Option<&str>,
+    engagement_id: Option<&str>,
+) -> Result<Value, String> {
+    let raw_glob = args["glob"]
+        .as_str()
+        .ok_or_else(|| "aggregate_vault needs args.glob".to_string())?
+        .trim();
+    if let Some(pfx) = required_prefix.map(|s| s.trim().trim_matches('/')).filter(|s| !s.is_empty()) {
+        if let Some(save_as) = args["save_as"].as_str().map(str::trim).filter(|s| !s.is_empty()) {
+            check_engagement_path_allowed(&cfg.workspace_dir, pfx, save_as, false)?;
+        }
+    }
+
+    let has_scope = required_prefix.is_some_and(|s| !s.trim().is_empty())
+        || client_id.is_some_and(|s| !s.trim().is_empty())
+        || engagement_id.is_some_and(|s| !s.trim().is_empty());
+    if !has_scope {
+        return Ok(args.clone());
+    }
+
+    let root_data_dir = records::infer_root_data_dir(&cfg.data_dir);
+    let resolver = search::ScopeResolver::load(&root_data_dir, &cfg.workspace_dir);
+
+    // If an explicit concrete prefix is requested in the glob (no wildcards in first seg),
+    // reject cross-client globs immediately.
+    if let Some(first_seg) = raw_glob.split('/').next() {
+        let is_wild = first_seg.contains('*') || first_seg.contains('?') || first_seg.contains('{');
+        if !is_wild && !first_seg.is_empty() && first_seg != "." {
+            if let Some(pfx) = required_prefix.map(|s| s.trim().trim_matches('/')).filter(|s| !s.is_empty()) {
+                let first_part = raw_glob.split(['*', '?', '{']).next().unwrap_or(raw_glob).trim_end_matches('/');
+                if !first_part.is_empty()
+                    && !records::path_matches_prefix(first_part, pfx)
+                    && !pfx.starts_with(&format!("{first_part}/"))
+                    && !records::path_matches_prefix(first_part, "shared")
+                {
+                    return Err(format!(
+                        "blocked by engagement isolation: glob '{raw_glob}' is outside active engagement prefix '{pfx}/'"
+                    ));
+                }
+            }
+            if resolver.is_cross_client_path(raw_glob, client_id, engagement_id).is_some() {
+                return Err(format!(
+                    "blocked by engagement isolation: glob '{raw_glob}' references another client"
+                ));
+            }
+        }
+    }
+
+    // Collect candidate table files from the workspace matching both the glob and the scope.
+    let key = cfg.data_dir.to_string_lossy().into_owned();
+    let idx = search::SearchCache::global().get(
+        &key,
+        &cfg.data_dir,
+        &cfg.workspace_dir,
+        &cfg.memory_path,
+    );
+    let mut scoped_candidates: Vec<String> = idx
+        .files
+        .iter()
+        .filter(|f| {
+            matches!(f.ext.as_str(), "csv" | "tsv" | "xlsx" | "xlsm" | "json")
+                && f.client_id.as_deref().is_some_and(|_| true)
+                || matches!(f.ext.as_str(), "csv" | "tsv" | "xlsx" | "xlsm" | "json")
+        })
+        .filter(|f| {
+            let eng_ok = engagement_id
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .is_none_or(|eid| f.engagement_id.as_deref() == Some(eid));
+            let cli_ok = client_id
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .is_none_or(|cid| f.client_id.as_deref() == Some(cid));
+            let pfx_ok = required_prefix
+                .map(|s| s.trim().trim_matches('/'))
+                .filter(|s| !s.is_empty())
+                .is_none_or(|pfx| {
+                    records::path_matches_prefix(&f.path, pfx)
+                        || records::path_matches_prefix(&f.path, "shared")
+                });
+            eng_ok && cli_ok && pfx_ok
+        })
+        .map(|f| f.path.clone())
+        .collect();
+
+    // Also filter against the caller's glob when possible; if caller passed a wildcard glob like `*.csv`
+    // or `**/*.csv`, prefixing with `pfx/` narrows to that engagement directory.
+    let mut patched = args.clone();
+    if let Some(pfx) = required_prefix.map(|s| s.trim().trim_matches('/')).filter(|s| !s.is_empty()) {
+        let already_scoped = records::path_matches_prefix(raw_glob, pfx)
+            || records::path_matches_prefix(raw_glob, "shared");
+        if !already_scoped && !raw_glob.contains('{') {
+            let scoped_glob = format!("{pfx}/{raw_glob}");
+            if let Some(obj) = patched.as_object_mut() {
+                obj.insert("glob".to_string(), serde_json::json!(scoped_glob));
+            }
+            return Ok(patched);
+        }
+    }
+
+    // Fallback: if we have scoped files (<= 32) and caller didn't restrict to an already-scoped prefix,
+    // narrow to matching files when glob is a broad wildcard (`**/*.csv`, `*.csv`, etc.).
+    let is_broad_wildcard = raw_glob.starts_with('*') || raw_glob.starts_with("**/");
+    if is_broad_wildcard && !scoped_candidates.is_empty() && scoped_candidates.len() <= 32 {
+        let suffix_ext = raw_glob.rsplit('.').next().unwrap_or("");
+        if !suffix_ext.is_empty() && !suffix_ext.contains('*') && !suffix_ext.contains('}') {
+            scoped_candidates.retain(|p| {
+                p.rsplit('.')
+                    .next()
+                    .is_some_and(|e| e.eq_ignore_ascii_case(suffix_ext))
+            });
+        }
+        if !scoped_candidates.is_empty() {
+            let new_glob = if scoped_candidates.len() == 1 {
+                scoped_candidates[0].clone()
+            } else {
+                format!("{{{}}}", scoped_candidates.join(","))
+            };
+            if let Some(obj) = patched.as_object_mut() {
+                obj.insert("glob".to_string(), serde_json::json!(new_glob));
+            }
+            return Ok(patched);
+        }
+    }
+    if is_broad_wildcard && scoped_candidates.is_empty() {
+        return Err(format!("no CSV, TSV, or XLSX files matched scoped glob '{raw_glob}'"));
+    }
+    Ok(patched)
+}
+
+// ---------------------------------------------------------------------------
 // Tools
 // ---------------------------------------------------------------------------
 
 pub fn execute_tool(cfg: &Config, name: &str, args: &Value) -> Result<String, String> {
+    let root_dir = records::infer_root_data_dir(&cfg.data_dir);
+    let person_id = records::infer_person_id(&cfg.data_dir);
+    execute_tool_with_scope(cfg, &root_dir, &person_id, name, args)
+}
+
+fn execute_tool_with_scope(
+    cfg: &Config,
+    root_data_dir: &Path,
+    person_id: &str,
+    name: &str,
+    args: &Value,
+) -> Result<String, String> {
+    let isolation = active_isolation_scope(root_data_dir, &cfg.data_dir, person_id);
+    let iso_prefix = isolation.as_ref().map(|(_, p)| p.as_str());
+    let iso_eng_id = isolation.as_ref().map(|(e, _)| e.id.as_str());
+
     match name {
         "list_dir" => {
             let rel = args["path"].as_str().unwrap_or(".");
+            if let Some(pfx) = iso_prefix {
+                let clean = rel.trim().replace('\\', "/");
+                if clean.is_empty() || clean == "." {
+                    let mut entries = Vec::new();
+                    if cfg.workspace_dir.join(pfx).is_dir() {
+                        entries.push(format!("{pfx}/"));
+                    }
+                    if cfg.workspace_dir.join("shared").is_dir() {
+                        entries.push("shared/".to_string());
+                    }
+                    entries.sort();
+                    return if entries.is_empty() {
+                        Ok("(empty directory)".to_string())
+                    } else {
+                        Ok(entries.join("\n"))
+                    };
+                }
+                check_engagement_path_allowed(&cfg.workspace_dir, pfx, rel, false)?;
+            }
             let full = sandbox_path(&cfg.workspace_dir, rel)?;
             let mut entries: Vec<String> = Vec::new();
             let rd = std::fs::read_dir(&full)
@@ -482,6 +723,9 @@ pub fn execute_tool(cfg: &Config, name: &str, args: &Value) -> Result<String, St
             let rel = args["path"].as_str().ok_or("read_file needs args.path")?;
             // `book.xlsx#Q2` names one sheet of a workbook.
             let (base, sheet) = docs::split_sheet(rel);
+            if let Some(pfx) = iso_prefix {
+                check_engagement_path_allowed(&cfg.workspace_dir, pfx, base, false)?;
+            }
             let full = sandbox_path(&cfg.workspace_dir, base)?;
             let content = match docs::doc_kind(base) {
                 Some(kind) => docs::agent_view(&full, base, kind, sheet)?,
@@ -499,6 +743,9 @@ pub fn execute_tool(cfg: &Config, name: &str, args: &Value) -> Result<String, St
         "write_file" => {
             let rel = args["path"].as_str().ok_or("write_file needs args.path")?;
             let content = args["content"].as_str().ok_or("write_file needs args.content")?;
+            if let Some(pfx) = iso_prefix {
+                check_engagement_path_allowed(&cfg.workspace_dir, pfx, rel, false)?;
+            }
             let full = sandbox_path(&cfg.workspace_dir, rel)?;
             let _ = file_history::record_revision(&cfg.data_dir, &cfg.workspace_dir, rel, "write_file");
             atomic_write_bytes(&full, content.as_bytes()).map_err(|e| format!("write_file {rel}: {e}"))?;
@@ -506,6 +753,9 @@ pub fn execute_tool(cfg: &Config, name: &str, args: &Value) -> Result<String, St
         }
         "patch_file" => {
             let raw_rel = args["path"].as_str().ok_or("patch_file needs args.path")?;
+            if let Some(pfx) = iso_prefix {
+                check_engagement_path_allowed(&cfg.workspace_dir, pfx, raw_rel, false)?;
+            }
             let find = args["find"].as_str().ok_or("patch_file needs args.find")?;
             if find.is_empty() {
                 return Err("patch_file needs a non-empty args.find".to_string());
@@ -562,6 +812,15 @@ pub fn execute_tool(cfg: &Config, name: &str, args: &Value) -> Result<String, St
             ))
         }
         "query_table" => {
+            if let Some(pfx) = iso_prefix {
+                if let Some(p) = args["path"].as_str() {
+                    let (base, _) = docs::split_sheet(p);
+                    check_engagement_path_allowed(&cfg.workspace_dir, pfx, base, false)?;
+                }
+                if let Some(sp) = args["save_as"].as_str().map(str::trim).filter(|s| !s.is_empty()) {
+                    check_engagement_path_allowed(&cfg.workspace_dir, pfx, sp, false)?;
+                }
+            }
             let res = crate::tables::execute_query(cfg, args)?;
             let mut out = format!(
                 "query_table: {} of {} rows matched ({} output row{})",
@@ -588,7 +847,12 @@ pub fn execute_tool(cfg: &Config, name: &str, args: &Value) -> Result<String, St
             Ok(out.trim_end().to_string())
         }
         "aggregate_vault" => {
-            let res = crate::tables::execute_vault_aggregate(cfg, args)?;
+            let scoped_args = if iso_prefix.is_some() || iso_eng_id.is_some() {
+                scope_aggregate_args(cfg, args, iso_prefix, None, iso_eng_id)?
+            } else {
+                args.clone()
+            };
+            let res = crate::tables::execute_vault_aggregate(cfg, &scoped_args)?;
             let mut out = format!(
                 "aggregate_vault: {} of {} rows matched across {} source{} ({} output row{})",
                 res.matched_rows,
@@ -638,6 +902,9 @@ pub fn execute_tool(cfg: &Config, name: &str, args: &Value) -> Result<String, St
             } else {
                 let trimmed = raw_prefix.trim_end_matches('/');
                 let clean = crate::tables::validate_workspace_rel_path(trimmed)?;
+                if let Some(pfx) = iso_prefix {
+                    check_engagement_path_allowed(&cfg.workspace_dir, pfx, &clean, false)?;
+                }
                 let cand = cfg.workspace_dir.join(&clean);
                 if cand.symlink_metadata().is_ok() {
                     let _ = sandbox_path(&cfg.workspace_dir, &clean)?;
@@ -653,7 +920,14 @@ pub fn execute_tool(cfg: &Config, name: &str, args: &Value) -> Result<String, St
                 &cfg.workspace_dir,
                 &cfg.memory_path,
             );
-            let hits = idx.search_vault_chunks(query, &clean_prefix, mode, limit);
+            let hits = idx.search_vault_chunks_scoped(
+                query,
+                &clean_prefix,
+                mode,
+                limit,
+                None,
+                iso_eng_id,
+            );
             let body = if hits.is_empty() {
                 "(no matching chunks in vault)".to_string()
             } else {
@@ -706,6 +980,9 @@ pub fn execute_tool(cfg: &Config, name: &str, args: &Value) -> Result<String, St
                 .filter(|s| !s.is_empty());
             if let Some(rel) = attachment_rel {
                 let clean = crate::tables::validate_workspace_rel_path(rel)?;
+                if let Some(pfx) = iso_prefix {
+                    check_engagement_path_allowed(&cfg.workspace_dir, pfx, &clean, false)?;
+                }
                 let unresolved = sandbox_path_resolving(&cfg.workspace_dir, &clean, false)?;
                 if unresolved
                     .symlink_metadata()
@@ -801,6 +1078,9 @@ pub fn execute_tool(cfg: &Config, name: &str, args: &Value) -> Result<String, St
                 return Err("search_files needs a non-empty args.query".to_string());
             }
             let rel = args["path"].as_str().unwrap_or(".");
+            if let Some(pfx) = iso_prefix {
+                check_engagement_path_allowed(&cfg.workspace_dir, pfx, rel, true)?;
+            }
             let base = sandbox_path(&cfg.workspace_dir, rel)?;
             let mut matches: Vec<String> = Vec::new();
             let mut stats = SearchStats::default();
@@ -831,7 +1111,21 @@ pub fn execute_tool(cfg: &Config, name: &str, args: &Value) -> Result<String, St
                     }
                 }
             } else {
-                search_walk(&cfg.workspace_dir, &base, &query, &mut matches, 0, &mut stats);
+                if let Some(pfx) = iso_prefix {
+                    if rel.trim().is_empty() || rel.trim() == "." {
+                        for allowed_sub in [pfx, "shared"] {
+                            if let Ok(sub_base) = sandbox_path(&cfg.workspace_dir, allowed_sub) {
+                                if sub_base.is_dir() {
+                                    search_walk(&cfg.workspace_dir, &sub_base, &query, &mut matches, 0, &mut stats);
+                                }
+                            }
+                        }
+                    } else {
+                        search_walk(&cfg.workspace_dir, &base, &query, &mut matches, 0, &mut stats);
+                    }
+                } else {
+                    search_walk(&cfg.workspace_dir, &base, &query, &mut matches, 0, &mut stats);
+                }
                 if matches.is_empty()
                     || stats.capped
                     || stats.skipped > 0
@@ -850,7 +1144,14 @@ pub fn execute_tool(cfg: &Config, name: &str, args: &Value) -> Result<String, St
                     } else {
                         "bm25"
                     };
-                    let vault_hits = idx.search_vault_chunks(&query, prefix, mode, 25);
+                    let vault_hits = idx.search_vault_chunks_scoped(
+                        &query,
+                        prefix,
+                        mode,
+                        25,
+                        None,
+                        iso_eng_id,
+                    );
                     for vh in vault_hits {
                         if matches.len() >= 50 {
                             stats.capped = true;
@@ -905,6 +1206,10 @@ pub fn execute_tool(cfg: &Config, name: &str, args: &Value) -> Result<String, St
         "move_file" => {
             let from = args["from"].as_str().ok_or("move_file needs args.from")?;
             let to = args["to"].as_str().ok_or("move_file needs args.to")?;
+            if let Some(pfx) = iso_prefix {
+                check_engagement_path_allowed(&cfg.workspace_dir, pfx, from, false)?;
+                check_engagement_path_allowed(&cfg.workspace_dir, pfx, to, false)?;
+            }
             // NEITHER side's final component is resolved: moving a
             // symlink moves the link itself, and moving onto a link's
             // name replaces the link, not its target. (Resolving the
@@ -939,6 +1244,19 @@ pub fn execute_tool(cfg: &Config, name: &str, args: &Value) -> Result<String, St
                 .as_str()
                 .or_else(|| if has_sheets { args["output"].as_str() } else { None })
                 .ok_or("export_file needs args.path (a .md, .txt, .csv or .tsv workspace file)")?;
+            if let Some(pfx) = iso_prefix {
+                check_engagement_path_allowed(&cfg.workspace_dir, pfx, rel, false)?;
+                if let Some(out) = args["output"].as_str().map(str::trim).filter(|s| !s.is_empty()) {
+                    check_engagement_path_allowed(&cfg.workspace_dir, pfx, out, false)?;
+                }
+                if let Some(arr) = args["sheets"].as_array() {
+                    for sh in arr {
+                        if let Some(sp) = sh["path"].as_str().map(str::trim).filter(|s| !s.is_empty()) {
+                            check_engagement_path_allowed(&cfg.workspace_dir, pfx, sp, false)?;
+                        }
+                    }
+                }
+            }
             let (out, bytes, label) = export_workspace_file_with_options(
                 cfg,
                 rel,
@@ -1248,6 +1566,11 @@ pub fn execute_tool_full(
             let rel = args["path"]
                 .as_str()
                 .ok_or("delete_file needs args.path")?;
+            if let Some((_, pfx)) =
+                active_isolation_scope(&ctx.root_data_dir, &cfg.data_dir, &ctx.person_id)
+            {
+                check_engagement_path_allowed(&cfg.workspace_dir, &pfx, rel, false)?;
+            }
             // Consequential: the file is NOT deleted here. The action
             // parks as a decision for the person; approval executes
             // it for real. The agent is told plainly that it is
@@ -1289,6 +1612,13 @@ pub fn execute_tool_full(
         }
         "request_checkpoint" => {
             let cp = parse_checkpoint_tool_args(cfg, args)?;
+            if let Some((_, pfx)) =
+                active_isolation_scope(&ctx.root_data_dir, &cfg.data_dir, &ctx.person_id)
+            {
+                for f in &cp.inspect_files {
+                    check_engagement_path_allowed(&cfg.workspace_dir, &pfx, f, false)?;
+                }
+            }
             if args["_defer_decision"].as_bool() == Some(true) {
                 return Ok(format!(
                     "paused at human checkpoint ({}): {}",
@@ -1326,10 +1656,16 @@ pub fn execute_tool_full(
                     if let Some(obj) = patched.as_object_mut() {
                         obj.insert("brand_header".to_string(), serde_json::json!(hdr));
                     }
-                    return execute_tool(cfg, name, &patched);
+                    return execute_tool_with_scope(
+                        cfg,
+                        &ctx.root_data_dir,
+                        &ctx.person_id,
+                        name,
+                        &patched,
+                    );
                 }
             }
-            execute_tool(cfg, name, args)
+            execute_tool_with_scope(cfg, &ctx.root_data_dir, &ctx.person_id, name, args)
         }
         _ => {
             // An installed library skill, called by its item id.
@@ -1364,7 +1700,7 @@ pub fn execute_tool_full(
                     return skills::run_library_skill(cfg, &source, &values);
                 }
             }
-            execute_tool(cfg, name, args)
+            execute_tool_with_scope(cfg, &ctx.root_data_dir, &ctx.person_id, name, args)
         }
     }
 }

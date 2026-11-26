@@ -75,6 +75,7 @@ pub struct WorkspacePolicy {
     pub approval_gate_mode: &'static str,
     pub redact_host_paths: bool,
     pub block_outbound_fetch: bool,
+    pub isolate_active_engagement: bool,
     pub updated_ms: u64,
 }
 
@@ -89,26 +90,29 @@ impl WorkspacePolicy {
                 approval_gate_mode: "deletes_and_risky",
                 redact_host_paths: false,
                 block_outbound_fetch: false,
+                isolate_active_engagement: false,
                 updated_ms,
             }),
             "strict_client" | "strict" | "client" => Ok(Self {
                 profile: "strict_client",
                 label: "Strict Client",
-                summary: "Blocks pack export on stale [file:L##] citations, redacts host paths in handoffs, and enforces approval gates.",
+                summary: "Blocks pack export on stale [file:L##] citations, redacts host paths in handoffs, isolates active engagement paths, and enforces approval gates.",
                 strict_citation_gate: true,
                 approval_gate_mode: "all_external_and_deletes",
                 redact_host_paths: true,
                 block_outbound_fetch: false,
+                isolate_active_engagement: true,
                 updated_ms,
             }),
             "air_gapped" | "airgapped" | "offline" => Ok(Self {
                 profile: "air_gapped",
                 label: "Air-Gapped",
-                summary: "Zero outbound network fetches, strict citation gate before export, and full host-path redaction.",
+                summary: "Zero outbound network fetches, strict citation gate before export, active engagement isolation, and full host-path redaction.",
                 strict_citation_gate: true,
                 approval_gate_mode: "lockdown",
                 redact_host_paths: true,
                 block_outbound_fetch: true,
+                isolate_active_engagement: true,
                 updated_ms,
             }),
             _ => Err("workspace policy profile must be fast_internal, strict_client, or air_gapped"),
@@ -125,6 +129,8 @@ impl WorkspacePolicy {
             "approval_gate_mode": self.approval_gate_mode,
             "redact_host_paths": self.redact_host_paths,
             "block_outbound_fetch": self.block_outbound_fetch,
+            "isolate_active_engagement": self.isolate_active_engagement,
+            "strict_engagement": self.isolate_active_engagement,
             "updated_ms": self.updated_ms,
         })
     }
@@ -134,11 +140,16 @@ pub fn load_workspace_policy(data_dir: &Path) -> WorkspacePolicy {
     let path = data_dir.join("workspace_policy.json");
     if let Ok(text) = std::fs::read_to_string(&path) {
         if let Ok(v) = serde_json::from_str::<Value>(&text) {
-            if let Some(p) = v["profile"].as_str() {
-                let updated = v["updated_ms"].as_u64().unwrap_or(0);
-                if let Ok(policy) = WorkspacePolicy::for_profile(p, updated) {
-                    return policy;
+            let p = v["profile"].as_str().unwrap_or("fast_internal");
+            let updated = v["updated_ms"].as_u64().unwrap_or(0);
+            if let Ok(mut policy) = WorkspacePolicy::for_profile(p, updated) {
+                if let Some(iso) = v["isolate_active_engagement"]
+                    .as_bool()
+                    .or_else(|| v["strict_engagement"].as_bool())
+                {
+                    policy.isolate_active_engagement = iso;
                 }
+                return policy;
             }
         }
     }
@@ -146,11 +157,30 @@ pub fn load_workspace_policy(data_dir: &Path) -> WorkspacePolicy {
 }
 
 pub fn save_workspace_policy(data_dir: &Path, profile: &str) -> Result<WorkspacePolicy, String> {
+    save_workspace_policy_with_options(data_dir, Some(profile), None)
+}
+
+pub fn save_workspace_policy_with_options(
+    data_dir: &Path,
+    profile: Option<&str>,
+    isolate_active_engagement: Option<bool>,
+) -> Result<WorkspacePolicy, String> {
     let ts = records::now_millis();
-    let policy = WorkspacePolicy::for_profile(profile, ts).map_err(|e| e.to_string())?;
+    let current = load_workspace_policy(data_dir);
+    let target_profile = profile
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or(current.profile);
+    let mut policy = WorkspacePolicy::for_profile(target_profile, ts).map_err(|e| e.to_string())?;
+    if let Some(iso) = isolate_active_engagement {
+        policy.isolate_active_engagement = iso;
+    } else if profile.is_none_or(|s| s.trim().is_empty()) {
+        policy.isolate_active_engagement = current.isolate_active_engagement;
+    }
     let path = data_dir.join("workspace_policy.json");
     let body = serde_json::to_vec(&json!({
         "profile": policy.profile,
+        "isolate_active_engagement": policy.isolate_active_engagement,
         "updated_ms": policy.updated_ms,
     }))
     .map_err(|e| format!("serialize policy: {e}"))?;
@@ -1667,7 +1697,116 @@ fn recent_prefs(memory: &str) -> Vec<String> {
     prefs
 }
 
-fn system_prompt(cfg: &Config, suite_items: &[library::LibraryItem]) -> String {
+pub fn active_engagement_prompt_block(
+    root_data_dir: &Path,
+    person_data_dir: &Path,
+    person_id: &str,
+) -> Option<String> {
+    let (eng, client_opt) = records::active_engagement_for(root_data_dir, person_id)?;
+    let budget = records::compute_engagement_budget_status(root_data_dir, person_data_dir, &eng);
+    let policy = load_workspace_policy(person_data_dir);
+    let client_name = client_opt
+        .as_ref()
+        .map(|c| c.name.as_str())
+        .unwrap_or(eng.client_id.as_str());
+    let currency = client_opt
+        .as_ref()
+        .map(|c| c.billing_currency.as_str())
+        .unwrap_or("USD");
+    let contact_str = client_opt
+        .as_ref()
+        .and_then(|c| c.primary_contact())
+        .map(|c| {
+            let mut parts = Vec::new();
+            if !c.name.is_empty() {
+                parts.push(c.name.clone());
+            }
+            if !c.email.is_empty() {
+                parts.push(format!("<{}>", c.email));
+            }
+            if !c.role.is_empty() {
+                parts.push(format!("({})", c.role));
+            }
+            parts.join(" ")
+        })
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "(none set)".to_string());
+    let prefix_str = if eng.workspace_prefix.is_empty() {
+        "(unscoped root workspace)".to_string()
+    } else if policy.isolate_active_engagement {
+        format!(
+            "{} (strict isolation active: keep all file access inside '{}/' or 'shared/')",
+            eng.workspace_prefix, eng.workspace_prefix
+        )
+    } else {
+        eng.workspace_prefix.clone()
+    };
+    let budget_str = if eng.retainer_budget_usd > 0.0 {
+        format!(
+            "{:.2} {} remaining of {:.2} {} ({:.1}% used; LLM cost {:.4} {})",
+            budget.remaining_budget_usd,
+            currency,
+            eng.retainer_budget_usd,
+            currency,
+            budget.burn_pct,
+            budget.llm_cost_usd,
+            currency
+        )
+    } else {
+        format!("unbounded (LLM cost {:.4} {})", budget.llm_cost_usd, currency)
+    };
+    let hours_str = if budget.effective_retainer_hours > 0.0 {
+        format!(
+            "{:.2}h remaining of {:.2}h",
+            budget.remaining_hours, budget.effective_retainer_hours
+        )
+    } else {
+        "unbounded".to_string()
+    };
+    let sow_block = if eng.sow_rules.is_empty() {
+        "- (no specific SOW rules configured)".to_string()
+    } else {
+        eng.sow_rules
+            .iter()
+            .map(|r| format!("- {r}"))
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    Some(format!(
+        "ACTIVE CLIENT ENGAGEMENT CONTEXT:\n\
+         - Client: {client_name} (id: {cid})\n\
+         - Engagement: {ename} (id: {eid}, status: {estatus}, period: {period})\n\
+         - Primary contact: {contact_str}\n\
+         - Workspace prefix: {prefix_str}\n\
+         - Remaining retainer budget: {budget_str}\n\
+         - Remaining retainer hours: {hours_str}\n\
+         - SOW rules:\n{sow_block}",
+        cid = eng.client_id,
+        ename = eng.name,
+        eid = eng.id,
+        estatus = eng.status,
+        period = eng.period,
+    ))
+}
+
+pub fn system_prompt(cfg: &Config, suite_items: &[library::LibraryItem]) -> String {
+    system_prompt_for(cfg, None, suite_items)
+}
+
+fn system_prompt_for(
+    cfg: &Config,
+    ctx: Option<&ToolCtx>,
+    suite_items: &[library::LibraryItem],
+) -> String {
+    let root_dir = ctx
+        .map(|c| c.root_data_dir.clone())
+        .unwrap_or_else(|| records::infer_root_data_dir(&cfg.data_dir));
+    let person_id = ctx
+        .map(|c| c.person_id.clone())
+        .unwrap_or_else(|| records::infer_person_id(&cfg.data_dir));
+    let engagement_block = active_engagement_prompt_block(&root_dir, &cfg.data_dir, &person_id)
+        .map(|b| format!("\n\n         {b}"))
+        .unwrap_or_default();
     let full_memory = cfg.read_memory();
     let prefs = recent_prefs(&full_memory);
     let memory = memory_for_prompt(&full_memory);
@@ -1751,10 +1890,11 @@ fn system_prompt(cfg: &Config, suite_items: &[library::LibraryItem]) -> String {
          - delete_file {{\"path\": \"old.txt\"}} — CONSEQUENTIAL: deleting is permanent, so this does not delete immediately — it parks the deletion as a decision for your person to approve. Never claim a file was deleted when it was only parked.\n\
          - flag_decision {{\"summary\": \"...\"}} — raise a question as a decision in your person's inbox when a choice is genuinely theirs to make.\n\
          - request_checkpoint {{\"prompt\": \"...\", \"input_mode\": \"approve_reject|choice|text\", \"choices\": [...], \"inspect_files\": [...]}} — pause this run cleanly at a structured human checkpoint so your person can inspect files and provide a decision or answer, after which the run resumes automatically.{suite_block}\n\n\
-         RULES: Use tools to do the real work; never claim work you did not do through a tool. When you learn a durable preference or fact about this person, record it with update_memory before finishing. When you build something reusable, publish it to the library so the whole company benefits. Finish with done only when the task is actually complete.{security_block}\n\n\
+         RULES: Use tools to do the real work; never claim work you did not do through a tool. When you learn a durable preference or fact about this person, record it with update_memory before finishing. When you build something reusable, publish it to the library so the whole company benefits. Finish with done only when the task is actually complete.{security_block}{engagement_block}\n\n\
          PREFERENCES AND FACTS THIS PERSON HAS TAUGHT YOU — apply them in every task:\n{prefs_block}\n\n\
          WHAT YOU KNOW ABOUT THIS PERSON (their memory file — treat it as true and use it):\n{memory}",
-        security_block = security_block()
+        security_block = security_block(),
+        engagement_block = engagement_block
     )
 }
 
@@ -1926,9 +2066,14 @@ fn credit_writes(
 /// consequential pair).
 fn subagent_system_prompt(
     cfg: &Config,
+    ctx: &ToolCtx,
     profile: &library::LibraryItem,
     suite_items: &[library::LibraryItem],
 ) -> String {
+    let engagement_block =
+        active_engagement_prompt_block(&ctx.root_data_dir, &cfg.data_dir, &ctx.person_id)
+            .map(|b| format!("\n\n         {b}"))
+            .unwrap_or_default();
     let memory = cfg.read_memory();
     let prefs = recent_prefs(&memory);
     let prefs_block = if prefs.is_empty() {
@@ -1975,8 +2120,8 @@ fn subagent_system_prompt(
          - move_file {{\"from\": \"a.txt\", \"to\": \"archive/a.txt\"}} — move or rename a workspace file.\n\
          - update_memory {{\"note\": \"...\"}} — record something learned about this person.{skills}\n\n\
          RULES: Use tools to do the real work; never claim work you did not do through a tool. Your summary goes back to the main agent, so state plainly what you produced and where.\n\n\
-         PREFERENCES AND FACTS THIS PERSON HAS TAUGHT THEIR AGENT:\n{prefs}{security}",
-        profile.name, profile.instructions, prefs = prefs_block, skills = skills_block, security = security_block()
+         PREFERENCES AND FACTS THIS PERSON HAS TAUGHT THEIR AGENT:\n{prefs}{security}{engagement_block}",
+        profile.name, profile.instructions, prefs = prefs_block, skills = skills_block, security = security_block(), engagement_block = engagement_block
     )
 }
 
@@ -2863,7 +3008,7 @@ fn run_delegation(
     let delegated_line = format!("Delegated to {}: {}", profile.name, truncate(task, 300));
     push_live_step(live, delegated_line.clone());
     store.lock().unwrap().push(thread_id, "step", &delegated_line);
-    let system = subagent_system_prompt(cfg, &profile, suite_items);
+    let system = subagent_system_prompt(cfg, ctx, &profile, suite_items);
     match run_loop(
         cfg,
         ctx,
@@ -3094,7 +3239,7 @@ fn run_agent_inner(
         .filter(|i| i.kind == "skill" && !i.builtin)
         .map(|i| i.id.clone())
         .collect();
-    let system = system_prompt(cfg, &suite_items);
+    let system = system_prompt_for(cfg, Some(ctx), &suite_items);
     let context_budget_chars = options.context_budget_chars.max(256);
     let max_steps = options.max_steps.clamp(1, MAX_COMPACTED_STEPS);
     let mut ledger = WriteLedger::default();

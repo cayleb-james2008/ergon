@@ -3018,6 +3018,32 @@ fn build_summary_run_gates<'a>(
     gates
 }
 
+fn receipt_matches_handoff_scope(
+    rcpt: &receipts::ChainedReceipt,
+    scope: &audit_bundle::HandoffScope,
+    resolver: &search::ScopeResolver,
+) -> bool {
+    let r_eid = rcpt
+        .engagement_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+    if let Some(ref target_eid) = scope.engagement_id {
+        return r_eid == Some(target_eid.as_str());
+    }
+    if let Some(ref target_cid) = scope.client_id {
+        return r_eid.and_then(|eid| {
+            resolver
+                .store
+                .engagements
+                .iter()
+                .find(|e| e.id == eid)
+                .map(|e| e.client_id.as_str())
+        }) == Some(target_cid.as_str());
+    }
+    true
+}
+
 #[cold]
 #[inline(never)]
 fn build_handoff_summary_with_idx(
@@ -3026,20 +3052,52 @@ fn build_handoff_summary_with_idx(
     title: &str,
     idx: Option<&search::PersonIndex>,
 ) -> String {
+    build_handoff_summary_scoped(cfg, person, title, idx, None)
+}
+
+#[cold]
+#[inline(never)]
+fn build_handoff_summary_scoped(
+    cfg: &Config,
+    person: &Person,
+    title: &str,
+    idx: Option<&search::PersonIndex>,
+    scope: Option<&audit_bundle::HandoffScope>,
+) -> String {
     let mut requested = Vec::new();
     let mut summary_runs: Vec<&receipts::ChainedReceipt> = Vec::new();
     let mut extra_receipts: Vec<(&str, u64)> = Vec::new();
+    let resolver = scope.map(|_| {
+        let root_data_dir = records::infer_root_data_dir(&cfg.data_dir);
+        search::ScopeResolver::load(&root_data_dir, &cfg.workspace_dir)
+    });
     if let Some(idx) = idx {
-        let (_, items) = idx.list_files(0, Some(15), "");
+        let (_, items) = idx.list_files_scoped(
+            0,
+            Some(15),
+            "",
+            scope.and_then(|s| s.client_id.as_deref()),
+            scope.and_then(|s| s.engagement_id.as_deref()),
+        );
         for item in items {
             if let Some(p) = item["path"].as_str() {
                 requested.push(p.to_string());
             }
         }
         for rcpt in idx.chain.iter().rev() {
+            if let (Some(sc), Some(res)) = (scope, resolver.as_ref()) {
+                if !receipt_matches_handoff_scope(rcpt, sc, res) {
+                    continue;
+                }
+            }
             if rcpt.finished && !rcpt.answered && summary_runs.len() < 15 {
                 summary_runs.push(rcpt);
                 for f in &rcpt.files {
+                    if let (Some(sc), Some(res)) = (scope, resolver.as_ref()) {
+                        if !res.matches_path(f, sc.client_id.as_deref(), sc.engagement_id.as_deref()) {
+                            continue;
+                        }
+                    }
                     if requested.len() < 25 && !requested.iter().any(|x| x == f) {
                         requested.push(f.clone());
                     }
@@ -3105,20 +3163,52 @@ fn handle_export_handoff(
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .unwrap_or("Client Handoff");
+    let req_client_id = parsed["client_id"]
+        .as_str()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .or_else(|| {
+            query_param(&req.query, "client_id")
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+        });
+    let req_engagement_id = parsed["engagement_id"]
+        .as_str()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .or_else(|| {
+            query_param(&req.query, "engagement_id")
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+        });
+
+    let policy = crate::load_workspace_policy(&runtime.cfg.data_dir);
+    let scope = audit_bundle::HandoffScope::resolve(
+        &state.cfg.data_dir,
+        &person.id,
+        req_client_id.as_deref(),
+        req_engagement_id.as_deref(),
+        &policy,
+    );
 
     let idx = person_idx(state, person, runtime);
-    let summary_md = build_handoff_summary_with_idx(&runtime.cfg, person, title, Some(&idx));
-    let policy = crate::load_workspace_policy(&runtime.cfg.data_dir);
+    let summary_md =
+        build_handoff_summary_scoped(&runtime.cfg, person, title, Some(&idx), scope.as_ref());
     let mut eff_cfg = runtime.cfg.clone();
     eff_cfg.api_key = effective_cfg(state, runtime).api_key;
 
     if dry_run {
-        let scan = audit_bundle::scan_handoff_leaks(
+        let scan = audit_bundle::scan_handoff_leaks_scoped(
             &eff_cfg,
             &[("CLIENT_SUMMARY.md", &summary_md)],
             eff_cfg.api_key.as_deref(),
+            scope.as_ref(),
         );
-        let strict_block = policy.profile == "strict_client" || policy.strict_citation_gate;
+        let strict_block = policy.profile == "strict_client"
+            || policy.strict_citation_gate
+            || (policy.isolate_active_engagement && scan.cross_client_count > 0);
         let would_block = strict_block && !scan.clean;
         return respond_json(
             stream,
@@ -3127,6 +3217,10 @@ fn handle_export_handoff(
                 "ok": !would_block,
                 "dry_run": true,
                 "would_block": would_block,
+                "scope": {
+                    "client_id": scope.as_ref().and_then(|s| s.client_id.clone()),
+                    "engagement_id": scope.as_ref().and_then(|s| s.engagement_id.clone()),
+                },
                 "policy": policy.to_json(&person.id),
                 "scan": scan.to_json(),
             }),
@@ -3135,7 +3229,7 @@ fn handle_export_handoff(
 
     let security = tripwire::audit_section(&state.cfg.data_dir, &person.id);
     let cached = (idx.chain.as_slice(), idx.chain_valid, idx.head_hash.as_str());
-    match audit_bundle::build_handoff_bundle_zip_with_chain(
+    match audit_bundle::build_handoff_bundle_zip_scoped(
         &eff_cfg,
         person,
         title,
@@ -3145,6 +3239,8 @@ fn handle_export_handoff(
         force,
         Some(cached),
         false,
+        req_client_id.as_deref(),
+        req_engagement_id.as_deref(),
     ) {
         Err(blocked) => respond_json(stream, 409, &blocked.to_json()),
         Ok(res) => {
@@ -3846,6 +3942,24 @@ fn try_route_files_and_audit(
             let receipt_id = query_param(&req.query, "receipt_id")
                 .map(|s| s.trim().to_string())
                 .unwrap_or_default();
+            let req_client_id = query_param(&req.query, "client_id")
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty());
+            let req_engagement_id = query_param(&req.query, "engagement_id")
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty());
+            let policy = crate::load_workspace_policy(&runtime.cfg.data_dir);
+            let scope = audit_bundle::HandoffScope::resolve(
+                &state.cfg.data_dir,
+                &person.id,
+                req_client_id.as_deref(),
+                req_engagement_id.as_deref(),
+                &policy,
+            );
+            let resolver = scope
+                .as_ref()
+                .map(|_| search::ScopeResolver::load(&state.cfg.data_dir, &runtime.cfg.workspace_dir));
+
             let mut requested: Vec<String> = raw_files
                 .split(',')
                 .map(|s| s.trim().to_string())
@@ -3865,7 +3979,13 @@ fn try_route_files_and_audit(
             };
             if requested.is_empty() {
                 if let Some(idx) = &idx_opt {
-                    let (_, items) = idx.list_files(0, Some(15), "");
+                    let (_, items) = idx.list_files_scoped(
+                        0,
+                        Some(15),
+                        "",
+                        scope.as_ref().and_then(|s| s.client_id.as_deref()),
+                        scope.as_ref().and_then(|s| s.engagement_id.as_deref()),
+                    );
                     for item in items {
                         if let Some(p) = item["path"].as_str() {
                             requested.push(p.to_string());
@@ -3883,10 +4003,24 @@ fn try_route_files_and_audit(
                 }
                 let scan_limit = if include_summary { 15 } else { 8 };
                 for rcpt in idx.chain.iter().rev() {
+                    if let (Some(sc), Some(res)) = (scope.as_ref(), resolver.as_ref()) {
+                        if !receipt_matches_handoff_scope(rcpt, sc, res) {
+                            continue;
+                        }
+                    }
                     if include_summary && rcpt.finished && !rcpt.answered && summary_runs.len() < 15 {
                         summary_runs.push(rcpt);
                         if !explicit {
                             for f in &rcpt.files {
+                                if let (Some(sc), Some(res)) = (scope.as_ref(), resolver.as_ref()) {
+                                    if !res.matches_path(
+                                        f,
+                                        sc.client_id.as_deref(),
+                                        sc.engagement_id.as_deref(),
+                                    ) {
+                                        continue;
+                                    }
+                                }
                                 if requested.len() < 25 && !requested.iter().any(|x| x == f) {
                                     requested.push(f.clone());
                                 }
@@ -3905,6 +4039,24 @@ fn try_route_files_and_audit(
                     }
                 }
             }
+            let mut cross_client_findings: Vec<Value> = Vec::new();
+            if let (Some(sc), Some(res)) = (scope.as_ref(), resolver.as_ref()) {
+                for req_p in &requested {
+                    if let Some(other_cid) = res.is_cross_client_path(
+                        req_p,
+                        sc.client_id.as_deref(),
+                        sc.engagement_id.as_deref(),
+                    ) {
+                        cross_client_findings.push(json!({
+                            "kind": "cross_client_path",
+                            "file": req_p,
+                            "line": 1,
+                            "other_client_id": other_cid,
+                            "excerpt": format!("Requested path '{req_p}' belongs to client '{other_cid}'"),
+                        }));
+                    }
+                }
+            }
             let preflight = match inspect_workspace_pack(
                 &runtime.cfg.data_dir,
                 &runtime.cfg.workspace_dir,
@@ -3916,6 +4068,41 @@ fn try_route_files_and_audit(
                 Ok(res) => res,
                 Err((status, err)) => return Some(respond_err(stream, status, &err)),
             };
+            if let (Some(sc), Some(res)) = (scope.as_ref(), resolver.as_ref()) {
+                let mut cc_scan = audit_bundle::HandoffLeakScan {
+                    clean: true,
+                    leak_count: 0,
+                    host_path_count: 0,
+                    secret_count: 0,
+                    env_snippet_count: 0,
+                    pii_count: 0,
+                    cross_client_count: 0,
+                    findings: Vec::new(),
+                };
+                for item in &preflight.items {
+                    audit_bundle::scan_text_cross_client_into(
+                        res,
+                        &item.path,
+                        &item.body,
+                        sc.client_id.as_deref(),
+                        sc.engagement_id.as_deref(),
+                        &mut cc_scan,
+                    );
+                }
+                for (rtext, _) in &extra_receipts {
+                    audit_bundle::scan_text_cross_client_into(
+                        res,
+                        "receipt_summary",
+                        rtext,
+                        sc.client_id.as_deref(),
+                        sc.engagement_id.as_deref(),
+                        &mut cc_scan,
+                    );
+                }
+                for f in cc_scan.findings {
+                    cross_client_findings.push(f.to_json());
+                }
+            }
             let summary_gates = build_summary_run_gates(
                 &runtime.cfg.data_dir,
                 &runtime.cfg.workspace_dir,
@@ -3927,12 +4114,36 @@ fn try_route_files_and_audit(
                     out["summary_runs_count"] = json!(summary_gates.len());
                     out["summary_runs"] = json!(summary_gates.iter().map(SummaryRunGate::to_json).collect::<Vec<_>>());
                 }
+                out["cross_client_count"] = json!(cross_client_findings.len());
+                out["cross_client_findings"] = json!(cross_client_findings);
+                out["scope"] = json!({
+                    "client_id": scope.as_ref().and_then(|s| s.client_id.clone()),
+                    "engagement_id": scope.as_ref().and_then(|s| s.engagement_id.clone()),
+                });
                 return Some(respond_json(stream, 200, &out));
             }
-            let policy = crate::load_workspace_policy(&runtime.cfg.data_dir);
             let force_pack = query_param(&req.query, "force")
                 .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
                 .unwrap_or(false);
+            let strict_cross_block = policy.profile == "strict_client"
+                || policy.strict_citation_gate
+                || policy.isolate_active_engagement;
+            if strict_cross_block && !force_pack && !cross_client_findings.is_empty() {
+                return Some(respond_json(
+                    stream,
+                    409,
+                    &json!({
+                        "error": format!(
+                            "Blocked by {} policy: {} cross-client path reference(s) detected in deliverable pack.",
+                            policy.label,
+                            cross_client_findings.len()
+                        ),
+                        "policy": policy.profile,
+                        "cross_client_count": cross_client_findings.len(),
+                        "findings": cross_client_findings,
+                    }),
+                ));
+            }
             let preflight_ok = preflight.ok();
             let ready_count = preflight.ready_count;
             let gate_label = preflight.citation_gate();
@@ -4122,8 +4333,25 @@ fn try_route_files_and_audit(
         }
         ("PUT", "/api/workspace/policy") | ("POST", "/api/workspace/policy") => {
             let parsed: Value = serde_json::from_slice(&req.body).unwrap_or(Value::Null);
-            let raw_profile = parsed["profile"].as_str().unwrap_or("");
-            match crate::save_workspace_policy(&runtime.cfg.data_dir, raw_profile) {
+            let raw_profile = parsed["profile"]
+                .as_str()
+                .map(str::trim)
+                .filter(|s| !s.is_empty());
+            let isolate_opt = parsed["isolate_active_engagement"]
+                .as_bool()
+                .or_else(|| parsed["strict_engagement"].as_bool());
+            if raw_profile.is_none() && isolate_opt.is_none() {
+                return Some(respond_err(
+                    stream,
+                    400,
+                    "profile or isolate_active_engagement is required",
+                ));
+            }
+            match crate::save_workspace_policy_with_options(
+                &runtime.cfg.data_dir,
+                raw_profile,
+                isolate_opt,
+            ) {
                 Ok(policy) => respond_json(stream, 200, &policy.to_json(&person.id)),
                 Err(e) => respond_err(stream, 400, &e),
             }
@@ -4197,8 +4425,8 @@ fn try_route_files_and_audit(
             respond_json(stream, 200, &report.to_json())
         }
         ("GET", "/api/files") => {
-            let (offset, limit, q) = if req.query.is_empty() {
-                (0usize, None, String::new())
+            let (offset, limit, q, client_id, engagement_id) = if req.query.is_empty() {
+                (0usize, None, String::new(), None, None)
             } else {
                 (
                     query_param(&req.query, "offset")
@@ -4206,11 +4434,25 @@ fn try_route_files_and_audit(
                         .unwrap_or(0),
                     query_param(&req.query, "limit").and_then(|s| s.parse::<usize>().ok()),
                     query_param(&req.query, "q").unwrap_or_default(),
+                    query_param(&req.query, "client_id")
+                        .map(|s| s.trim().to_string())
+                        .filter(|s| !s.is_empty()),
+                    query_param(&req.query, "engagement_id")
+                        .map(|s| s.trim().to_string())
+                        .filter(|s| !s.is_empty()),
                 )
             };
             let idx = person_idx(state, person, runtime);
             respond_json_with(stream, 200, |buf| {
-                idx.write_files_json(buf, &person.id, offset, limit, &q);
+                idx.write_files_json_scoped(
+                    buf,
+                    &person.id,
+                    offset,
+                    limit,
+                    &q,
+                    client_id.as_deref(),
+                    engagement_id.as_deref(),
+                );
             })
         }
         ("GET", "/api/files/content") => {
@@ -4488,7 +4730,67 @@ fn try_route_files_and_audit(
                 Ok(v) => v,
                 Err(_) => return Some(respond_err(stream, 400, "request body is not valid JSON")),
             };
-            match tables::execute_vault_aggregate(&runtime.cfg, &parsed) {
+            let req_client_id = parsed["client_id"]
+                .as_str()
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(str::to_string)
+                .or_else(|| {
+                    query_param(&req.query, "client_id")
+                        .map(|s| s.trim().to_string())
+                        .filter(|s| !s.is_empty())
+                });
+            let req_engagement_id = parsed["engagement_id"]
+                .as_str()
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(str::to_string)
+                .or_else(|| {
+                    query_param(&req.query, "engagement_id")
+                        .map(|s| s.trim().to_string())
+                        .filter(|s| !s.is_empty())
+                });
+            let policy = crate::load_workspace_policy(&runtime.cfg.data_dir);
+            let mut eff_client_id = req_client_id;
+            let mut eff_engagement_id = req_engagement_id;
+            let mut eff_prefix: Option<String> = None;
+            if let Some(ref eid) = eff_engagement_id {
+                let store = records::load_clients_store(&state.cfg.data_dir);
+                if let Some(eng) = store.engagements.iter().find(|e| &e.id == eid) {
+                    if !eng.workspace_prefix.is_empty() {
+                        eff_prefix = Some(eng.workspace_prefix.clone());
+                    }
+                    if eff_client_id.is_none() {
+                        eff_client_id = Some(eng.client_id.clone());
+                    }
+                }
+            } else if eff_client_id.is_none() && policy.isolate_active_engagement {
+                if let Some((eng, _)) = records::active_engagement_for(&state.cfg.data_dir, &person.id) {
+                    eff_engagement_id = Some(eng.id.clone());
+                    eff_client_id = Some(eng.client_id.clone());
+                    if !eng.workspace_prefix.is_empty() {
+                        eff_prefix = Some(eng.workspace_prefix.clone());
+                    }
+                }
+            }
+            let effective_args = match tools::scope_aggregate_args(
+                &runtime.cfg,
+                &parsed,
+                eff_prefix.as_deref(),
+                eff_client_id.as_deref(),
+                eff_engagement_id.as_deref(),
+            ) {
+                Ok(a) => a,
+                Err(e) => {
+                    let status = if e.contains("blocked by engagement isolation") {
+                        403
+                    } else {
+                        400
+                    };
+                    return Some(respond_err(stream, status, &e));
+                }
+            };
+            match tables::execute_vault_aggregate(&runtime.cfg, &effective_args) {
                 Ok(res) => {
                     if res.saved_path.is_some() {
                         state.search_cache.invalidate(&person.id);
@@ -4677,13 +4979,15 @@ fn try_route_knowledge_and_routines(
     let _ = root_cfg;
     Some(match (req.method.as_str(), req.path.as_str()) {
         ("GET", "/api/search") => {
-            let (q, scope, mode, limit, path_prefix) = if req.query.is_empty() {
+            let (q, scope, mode, limit, path_prefix, mut client_id, mut engagement_id) = if req.query.is_empty() {
                 (
                     String::new(),
                     String::from("all"),
                     String::from("hybrid"),
                     30usize,
                     String::new(),
+                    None,
+                    None,
                 )
             } else {
                 (
@@ -4700,11 +5004,37 @@ fn try_route_knowledge_and_routines(
                         .and_then(|s| s.parse::<usize>().ok())
                         .unwrap_or(30),
                     query_param(&req.query, "path_prefix").unwrap_or_default(),
+                    query_param(&req.query, "client_id")
+                        .map(|s| s.trim().to_string())
+                        .filter(|s| !s.is_empty()),
+                    query_param(&req.query, "engagement_id")
+                        .map(|s| s.trim().to_string())
+                        .filter(|s| !s.is_empty()),
                 )
             };
+            if client_id.is_none() && engagement_id.is_none() {
+                let policy = crate::load_workspace_policy(&runtime.cfg.data_dir);
+                if policy.isolate_active_engagement {
+                    if let Some((eng, _)) =
+                        records::active_engagement_for(&state.cfg.data_dir, &person.id)
+                    {
+                        engagement_id = Some(eng.id);
+                        client_id = Some(eng.client_id);
+                    }
+                }
+            }
             let idx = person_idx(state, person, runtime);
             respond_json_with(stream, 200, |buf| {
-                idx.write_search_json_with(buf, &q, &scope, &mode, limit, &path_prefix);
+                idx.write_search_json_scoped(
+                    buf,
+                    &q,
+                    &scope,
+                    &mode,
+                    limit,
+                    &path_prefix,
+                    client_id.as_deref(),
+                    engagement_id.as_deref(),
+                );
             })
         }
         ("POST", "/api/vault/reindex") => {
@@ -5475,6 +5805,7 @@ fn try_route_knowledge_and_routines(
             };
             match records::create_engagement(&root_cfg.data_dir, &person.id, &parsed) {
                 Ok(engagement) => {
+                    state.search_cache.invalidate(&person.id);
                     respond_json(stream, 201, &json!({ "engagement": engagement.to_json() }))
                 }
                 Err((status, msg)) => respond_err(stream, status, &msg),
@@ -5494,6 +5825,243 @@ fn try_route_knowledge_and_routines(
                         "engagement": engagement.map(|e| e.to_json()),
                     }),
                 ),
+                Err((status, msg)) => respond_err(stream, status, &msg),
+            }
+        }
+        ("PATCH", path) if path.starts_with("/api/clients/") => {
+            let raw_id = path.strip_prefix("/api/clients/").unwrap_or("").trim();
+            let id = percent_decode(raw_id).trim().to_string();
+            if id.is_empty() || id.contains('/') || id.contains("..") {
+                return Some(respond_err(stream, 404, "client not found"));
+            }
+            let parsed: Value = match serde_json::from_slice(&req.body) {
+                Ok(v) => v,
+                Err(_) => return Some(respond_err(stream, 400, "request body is not valid JSON")),
+            };
+            match records::update_client(&root_cfg.data_dir, &id, &parsed) {
+                Ok(client) => respond_json(stream, 200, &json!({ "client": client.to_json() })),
+                Err((status, msg)) => respond_err(stream, status, &msg),
+            }
+        }
+        ("GET", path)
+            if path.starts_with("/api/engagements/") && path.ends_with("/context") =>
+        {
+            let raw_id = path
+                .strip_prefix("/api/engagements/")
+                .and_then(|r| r.strip_suffix("/context"))
+                .unwrap_or("")
+                .trim();
+            let id = percent_decode(raw_id).trim().to_string();
+            if id.is_empty() || id.contains('/') || id.contains("..") {
+                return Some(respond_err(stream, 404, "engagement not found"));
+            }
+            match records::compute_engagement_context(
+                &root_cfg.data_dir,
+                &runtime.cfg.data_dir,
+                &person.id,
+                &id,
+            ) {
+                Ok(mut ctx_val) => {
+                    let idx = person_idx(state, person, runtime);
+                    let (scoped_count, scoped_items) =
+                        idx.list_files_scoped(0, Some(50), "", None, Some(&id));
+                    ctx_val["scoped_files_count"] = json!(scoped_count);
+                    ctx_val["scoped_files"] = json!(scoped_items);
+                    let policy = crate::load_workspace_policy(&runtime.cfg.data_dir);
+                    ctx_val["isolate_active_engagement"] = json!(policy.isolate_active_engagement);
+                    ctx_val["policy_profile"] = json!(policy.profile);
+                    if let Some(prompt_block) = crate::active_engagement_prompt_block(
+                        &root_cfg.data_dir,
+                        &runtime.cfg.data_dir,
+                        &person.id,
+                    ) {
+                        if ctx_val["is_active"].as_bool() == Some(true) {
+                            ctx_val["prompt_block"] = json!(prompt_block);
+                        }
+                    }
+                    respond_json(stream, 200, &ctx_val)
+                }
+                Err((status, msg)) => respond_err(stream, status, &msg),
+            }
+        }
+        ("PATCH", path) if path.starts_with("/api/engagements/") => {
+            let raw_id = path.strip_prefix("/api/engagements/").unwrap_or("").trim();
+            let id = percent_decode(raw_id).trim().to_string();
+            if id.is_empty() || id.contains('/') || id.contains("..") {
+                return Some(respond_err(stream, 404, "engagement not found"));
+            }
+            let parsed: Value = match serde_json::from_slice(&req.body) {
+                Ok(v) => v,
+                Err(_) => return Some(respond_err(stream, 400, "request body is not valid JSON")),
+            };
+            match records::update_engagement(&root_cfg.data_dir, &id, &parsed) {
+                Ok(engagement) => {
+                    state.search_cache.invalidate(&person.id);
+                    respond_json(stream, 200, &json!({ "engagement": engagement.to_json() }))
+                }
+                Err((status, msg)) => respond_err(stream, status, &msg),
+            }
+        }
+        ("GET", "/api/time-entries") => {
+            let eng_filter = query_param(&req.query, "engagement_id")
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty());
+            let cli_filter = query_param(&req.query, "client_id")
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty());
+            let kind_filter = query_param(&req.query, "kind")
+                .map(|s| s.trim().to_ascii_lowercase())
+                .filter(|s| !s.is_empty());
+            let billable_filter = query_param(&req.query, "billable")
+                .and_then(|s| match s.trim().to_ascii_lowercase().as_str() {
+                    "1" | "true" => Some(true),
+                    "0" | "false" => Some(false),
+                    _ => None,
+                });
+            let unbilled_only = query_param(&req.query, "unbilled")
+                .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+                .unwrap_or(false);
+            let invoices = records::load_invoices(&runtime.cfg.data_dir);
+            let active_inv_ids: std::collections::HashSet<String> = invoices
+                .into_iter()
+                .filter(|i| i.status != "void")
+                .map(|i| i.id)
+                .collect();
+
+            let mut entries = records::load_time_entries(&runtime.cfg.data_dir);
+            entries.retain(|e| {
+                eng_filter.as_deref().is_none_or(|id| e.engagement_id == id)
+                    && cli_filter.as_deref().is_none_or(|id| e.client_id == id)
+                    && kind_filter.as_deref().is_none_or(|k| e.kind == k)
+                    && billable_filter.is_none_or(|b| e.billable == b)
+                    && (!unbilled_only
+                        || e.invoiced_invoice_id
+                            .as_deref()
+                            .is_none_or(|iid| !active_inv_ids.contains(iid)))
+            });
+            entries.reverse();
+            let total_hours: f64 = entries.iter().map(|e| e.hours).sum();
+            let total_amount: f64 = entries.iter().map(|e| e.amount_usd).sum();
+            let billable_amount: f64 = entries
+                .iter()
+                .filter(|e| e.billable)
+                .map(|e| e.amount_usd)
+                .sum();
+            respond_json(
+                stream,
+                200,
+                &json!({
+                    "time_entries": entries.iter().map(records::TimeExpenseEntry::to_json).collect::<Vec<_>>(),
+                    "totals": {
+                        "count": entries.len(),
+                        "hours": records::round_4(total_hours),
+                        "amount_usd": records::round_4(total_amount),
+                        "billable_amount_usd": records::round_4(billable_amount),
+                    },
+                }),
+            )
+        }
+        ("POST", "/api/time-entries") => {
+            let parsed: Value = match serde_json::from_slice(&req.body) {
+                Ok(v) => v,
+                Err(_) => return Some(respond_err(stream, 400, "request body is not valid JSON")),
+            };
+            match records::create_time_entry(
+                &root_cfg.data_dir,
+                &runtime.cfg.data_dir,
+                &person.id,
+                &parsed,
+            ) {
+                Ok(entry) => respond_json(stream, 201, &json!({ "entry": entry.to_json() })),
+                Err((status, msg)) => respond_err(stream, status, &msg),
+            }
+        }
+        ("DELETE", path) if path == "/api/time-entries" || path.starts_with("/api/time-entries/") => {
+            let path_id = path
+                .strip_prefix("/api/time-entries/")
+                .map(|s| percent_decode(s).trim().to_string())
+                .filter(|s| !s.is_empty());
+            let body_id = if req.body.is_empty() {
+                None
+            } else {
+                serde_json::from_slice::<Value>(&req.body)
+                    .ok()
+                    .and_then(|v| v["id"].as_str().map(|s| s.trim().to_string()))
+                    .filter(|s| !s.is_empty())
+            };
+            let id = path_id
+                .or_else(|| query_param(&req.query, "id").filter(|s| !s.is_empty()))
+                .or(body_id)
+                .unwrap_or_default();
+            if id.is_empty() || id.contains('/') || id.contains("..") {
+                return Some(respond_err(stream, 400, "time entry id is required"));
+            }
+            match records::delete_time_entry(&runtime.cfg.data_dir, &id) {
+                Ok(removed) => respond_json(
+                    stream,
+                    200,
+                    &json!({ "ok": true, "deleted_id": removed.id, "entry": removed.to_json() }),
+                ),
+                Err((status, msg)) => respond_err(stream, status, &msg),
+            }
+        }
+        ("GET", "/api/invoices") => {
+            let eng_filter = query_param(&req.query, "engagement_id")
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty());
+            let cli_filter = query_param(&req.query, "client_id")
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty());
+            let status_filter = query_param(&req.query, "status")
+                .map(|s| s.trim().to_ascii_lowercase())
+                .filter(|s| !s.is_empty());
+            let mut invoices = records::load_invoices(&runtime.cfg.data_dir);
+            invoices.retain(|inv| {
+                eng_filter.as_deref().is_none_or(|id| inv.engagement_id == id)
+                    && cli_filter.as_deref().is_none_or(|id| inv.client_id == id)
+                    && status_filter.as_deref().is_none_or(|st| inv.status == st)
+            });
+            invoices.reverse();
+            respond_json(
+                stream,
+                200,
+                &json!({
+                    "invoices": invoices.iter().map(records::InvoiceRecord::to_json).collect::<Vec<_>>(),
+                }),
+            )
+        }
+        ("POST", "/api/invoices/generate") => {
+            let parsed: Value = match serde_json::from_slice(&req.body) {
+                Ok(v) => v,
+                Err(_) => return Some(respond_err(stream, 400, "request body is not valid JSON")),
+            };
+            match records::generate_invoice(&root_cfg.data_dir, &runtime.cfg, &person.id, &parsed) {
+                Ok(invoice) => {
+                    state.search_cache.invalidate(&person.id);
+                    respond_json(
+                        stream,
+                        201,
+                        &json!({
+                            "invoice": invoice.to_json(),
+                            "deliverables": invoice.deliverable_paths,
+                        }),
+                    )
+                }
+                Err((status, msg)) => respond_err(stream, status, &msg),
+            }
+        }
+        ("PATCH", path) if path.starts_with("/api/invoices/") => {
+            let raw_id = path.strip_prefix("/api/invoices/").unwrap_or("").trim();
+            let id = percent_decode(raw_id).trim().to_string();
+            if id.is_empty() || id.contains('/') || id.contains("..") {
+                return Some(respond_err(stream, 404, "invoice not found"));
+            }
+            let parsed: Value = match serde_json::from_slice(&req.body) {
+                Ok(v) => v,
+                Err(_) => return Some(respond_err(stream, 400, "request body is not valid JSON")),
+            };
+            match records::update_invoice_status(&runtime.cfg.data_dir, &id, &parsed) {
+                Ok(invoice) => respond_json(stream, 200, &json!({ "invoice": invoice.to_json() })),
                 Err((status, msg)) => respond_err(stream, status, &msg),
             }
         }

@@ -1292,6 +1292,16 @@ pub fn build_audit_bundle_json_bytes_with_chain(
     security: &Value,
     cached: Option<(&[ChainedReceipt], bool, &str)>,
 ) -> Vec<u8> {
+    build_audit_bundle_json_bytes_scoped(cfg, person, security, cached, None)
+}
+
+pub fn build_audit_bundle_json_bytes_scoped(
+    cfg: &Config,
+    person: &Person,
+    security: &Value,
+    cached: Option<(&[ChainedReceipt], bool, &str)>,
+    scope: Option<&HandoffScope>,
+) -> Vec<u8> {
     let now_ms = records::now_millis();
     let owned_chain;
     let (chain, chain_verified, head_hash): (&[ChainedReceipt], bool, String) = match cached {
@@ -1304,7 +1314,15 @@ pub fn build_audit_bundle_json_bytes_with_chain(
     };
     let chain_len = chain.len();
 
-    let workspace_files = collect_workspace_digests(&cfg.data_dir, &cfg.workspace_dir);
+    let mut workspace_files = collect_workspace_digests(&cfg.data_dir, &cfg.workspace_dir);
+    if let Some(sc) = scope {
+        let root_data_dir = records::infer_root_data_dir(&cfg.data_dir);
+        let resolver = crate::search::ScopeResolver::load(&root_data_dir, &cfg.workspace_dir);
+        workspace_files.retain(|f| {
+            let rel = f["path"].as_str().unwrap_or("");
+            resolver.matches_path(rel, sc.client_id.as_deref(), sc.engagement_id.as_deref())
+        });
+    }
     let workspace_manifest_sha256 = compute_workspace_manifest_sha256(&workspace_files);
     let workspace_files_val = Value::Array(workspace_files);
 
@@ -1456,6 +1474,54 @@ impl HandoffLeakFinding {
     }
 }
 
+#[derive(Clone, Debug, Default)]
+pub struct HandoffScope {
+    pub client_id: Option<String>,
+    pub engagement_id: Option<String>,
+}
+
+impl HandoffScope {
+    pub fn resolve(
+        root_data_dir: &Path,
+        person_id: &str,
+        client_id: Option<&str>,
+        engagement_id: Option<&str>,
+        policy: &crate::WorkspacePolicy,
+    ) -> Option<Self> {
+        let mut cid = client_id
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string);
+        let eid = engagement_id
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string);
+        if cid.is_some() || eid.is_some() {
+            if cid.is_none() {
+                if let Some(ref target_eid) = eid {
+                    let store = records::load_clients_store(root_data_dir);
+                    if let Some(eng) = store.engagements.iter().find(|e| &e.id == target_eid) {
+                        cid = Some(eng.client_id.clone());
+                    }
+                }
+            }
+            return Some(Self {
+                client_id: cid,
+                engagement_id: eid,
+            });
+        }
+        if policy.isolate_active_engagement {
+            if let Some((eng, _)) = records::active_engagement_for(root_data_dir, person_id) {
+                return Some(Self {
+                    client_id: Some(eng.client_id),
+                    engagement_id: Some(eng.id),
+                });
+            }
+        }
+        None
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct HandoffLeakScan {
     pub clean: bool,
@@ -1464,6 +1530,7 @@ pub struct HandoffLeakScan {
     pub secret_count: usize,
     pub env_snippet_count: usize,
     pub pii_count: usize,
+    pub cross_client_count: usize,
     pub findings: Vec<HandoffLeakFinding>,
 }
 
@@ -1476,6 +1543,7 @@ impl HandoffLeakScan {
             "secret_count": self.secret_count,
             "env_snippet_count": self.env_snippet_count,
             "pii_count": self.pii_count,
+            "cross_client_count": self.cross_client_count,
             "findings": self.findings.iter().map(HandoffLeakFinding::to_json).collect::<Vec<_>>(),
         })
     }
@@ -1707,14 +1775,118 @@ fn scan_text_into(
     }
 }
 
-/// Deterministic secret, credential, PII, and host-path leak scanner across
-/// workspace deliverables and handoff texts.
+fn push_cross_client_finding(
+    scan: &mut HandoffLeakScan,
+    rel: &str,
+    line: usize,
+    other_cid: &str,
+    ref_path: &str,
+) {
+    scan.leak_count += 1;
+    scan.cross_client_count += 1;
+    if scan.findings.len() < 50 {
+        scan.findings.push(HandoffLeakFinding {
+            kind: "cross_client_path",
+            severity: "high",
+            file: rel.to_string(),
+            line,
+            excerpt: format!("Cross-client reference to '{ref_path}' (client '{other_cid}')"),
+            fix: format!(
+                "Remove cross-client path reference '{ref_path}' at {rel}:L{line} before exporting."
+            ),
+        });
+    }
+}
+
+pub fn scan_text_cross_client_into(
+    resolver: &crate::search::ScopeResolver,
+    rel: &str,
+    text: &str,
+    target_client_id: Option<&str>,
+    target_engagement_id: Option<&str>,
+    scan: &mut HandoffLeakScan,
+) {
+    let eff_cid = target_client_id.map(str::to_string).or_else(|| {
+        target_engagement_id.and_then(|eid| {
+            resolver
+                .store
+                .engagements
+                .iter()
+                .find(|e| e.id == eid)
+                .map(|e| e.client_id.clone())
+        })
+    });
+    let Some(ref tcid) = eff_cid else {
+        return;
+    };
+    let other_prefixes = resolver.other_client_prefixes(tcid);
+
+    for (idx, raw_line) in text.lines().enumerate() {
+        let line_no = idx + 1;
+        let line = raw_line.trim_end_matches('\r');
+        let mut line_flagged = false;
+
+        for (_, path, _, _) in crate::tools::extract_file_citations(line) {
+            if let Some(other_cid) =
+                resolver.is_cross_client_path(&path, Some(tcid), target_engagement_id)
+            {
+                push_cross_client_finding(scan, rel, line_no, &other_cid, &path);
+                line_flagged = true;
+                break;
+            }
+        }
+        if line_flagged {
+            continue;
+        }
+        for cands in crate::mention_candidates(line) {
+            if let Some((cand, other_cid)) = cands.iter().find_map(|c| {
+                resolver
+                    .is_cross_client_path(c, Some(tcid), target_engagement_id)
+                    .map(|cid| (c.as_str(), cid))
+            }) {
+                push_cross_client_finding(scan, rel, line_no, &other_cid, cand);
+                line_flagged = true;
+                break;
+            }
+        }
+        if line_flagged {
+            continue;
+        }
+        for (pfx, other_cid) in &other_prefixes {
+            let slash_pfx = format!("{pfx}/");
+            if let Some(pos) = line.find(&slash_pfx) {
+                let prev = if pos > 0 { Some(line.as_bytes()[pos - 1]) } else { None };
+                let ok_boundary = prev
+                    .map(|b| !b.is_ascii_alphanumeric() && b != b'_' && b != b'-')
+                    .unwrap_or(true);
+                if ok_boundary {
+                    push_cross_client_finding(scan, rel, line_no, other_cid, pfx);
+                    break;
+                }
+            }
+        }
+    }
+}
+
+/// Deterministic secret, credential, PII, host-path, and cross-client leak scanner
+/// across workspace deliverables and handoff texts.
 #[cold]
 #[inline(never)]
 pub fn scan_handoff_leaks(
     cfg: &Config,
     extra_texts: &[(&str, &str)],
     configured_secret: Option<&str>,
+) -> HandoffLeakScan {
+    scan_handoff_leaks_scoped(cfg, extra_texts, configured_secret, None)
+}
+
+#[cold]
+#[inline(never)]
+pub fn scan_handoff_leaks_scoped(
+    cfg: &Config,
+    extra_texts: &[(&str, &str)],
+    configured_secret: Option<&str>,
+    scope: Option<&HandoffScope>,
 ) -> HandoffLeakScan {
     fn walk_ws(dir: &Path, depth: usize, out: &mut Vec<std::path::PathBuf>) {
         if depth > 8 || out.len() >= 500 {
@@ -1748,8 +1920,13 @@ pub fn scan_handoff_leaks(
         secret_count: 0,
         env_snippet_count: 0,
         pii_count: 0,
+        cross_client_count: 0,
         findings: Vec::new(),
     };
+    let resolver = scope.map(|_| {
+        let root_data_dir = records::infer_root_data_dir(&cfg.data_dir);
+        crate::search::ScopeResolver::load(&root_data_dir, &cfg.workspace_dir)
+    });
     let mut paths = Vec::new();
     walk_ws(&cfg.workspace_dir, 0, &mut paths);
     paths.sort();
@@ -1760,6 +1937,11 @@ pub fn scan_handoff_leaks(
             .unwrap_or(&p)
             .to_string_lossy()
             .replace('\\', "/");
+        if let (Some(sc), Some(res)) = (scope, resolver.as_ref()) {
+            if !res.matches_path(&rel, sc.client_id.as_deref(), sc.engagement_id.as_deref()) {
+                continue;
+            }
+        }
         if let Ok(meta) = std::fs::metadata(&p) {
             if meta.len() > 1024 * 1024 {
                 continue;
@@ -1774,12 +1956,32 @@ pub fn scan_handoff_leaks(
             {
                 let text = String::from_utf8_lossy(&read_buf);
                 scan_text_into(&rel, &text, configured_secret, &mut scan);
+                if let (Some(sc), Some(res)) = (scope, resolver.as_ref()) {
+                    scan_text_cross_client_into(
+                        res,
+                        &rel,
+                        &text,
+                        sc.client_id.as_deref(),
+                        sc.engagement_id.as_deref(),
+                        &mut scan,
+                    );
+                }
             }
         }
     }
     drop(read_buf);
     for (name, text) in extra_texts {
         scan_text_into(name, text, configured_secret, &mut scan);
+        if let (Some(sc), Some(res)) = (scope, resolver.as_ref()) {
+            scan_text_cross_client_into(
+                res,
+                name,
+                text,
+                sc.client_id.as_deref(),
+                sc.engagement_id.as_deref(),
+                &mut scan,
+            );
+        }
     }
     scan.clean = scan.leak_count == 0;
     scan
@@ -1826,12 +2028,48 @@ pub fn build_handoff_bundle_zip_with_chain(
     cached_chain: Option<(&[receipts::ChainedReceipt], bool, &str)>,
     keep_parts: bool,
 ) -> Result<HandoffExportResult, Box<HandoffExportBlocked>> {
-    let scan = scan_handoff_leaks(
+    build_handoff_bundle_zip_scoped(
+        cfg,
+        person,
+        title,
+        summary_markdown,
+        security,
+        policy,
+        force,
+        cached_chain,
+        keep_parts,
+        None,
+        None,
+    )
+}
+
+#[cold]
+#[inline(never)]
+#[allow(clippy::too_many_arguments)]
+pub fn build_handoff_bundle_zip_scoped(
+    cfg: &Config,
+    person: &Person,
+    title: &str,
+    summary_markdown: &str,
+    security: &Value,
+    policy: &crate::WorkspacePolicy,
+    force: bool,
+    cached_chain: Option<(&[receipts::ChainedReceipt], bool, &str)>,
+    keep_parts: bool,
+    client_id: Option<&str>,
+    engagement_id: Option<&str>,
+) -> Result<HandoffExportResult, Box<HandoffExportBlocked>> {
+    let root_data_dir = records::infer_root_data_dir(&cfg.data_dir);
+    let scope = HandoffScope::resolve(&root_data_dir, &person.id, client_id, engagement_id, policy);
+    let scan = scan_handoff_leaks_scoped(
         cfg,
         &[("CLIENT_SUMMARY.md", summary_markdown)],
         cfg.api_key.as_deref(),
+        scope.as_ref(),
     );
-    let strict_block = policy.profile == "strict_client" || policy.strict_citation_gate;
+    let strict_block = policy.profile == "strict_client"
+        || policy.strict_citation_gate
+        || (policy.isolate_active_engagement && scan.cross_client_count > 0);
     if strict_block && !scan.clean && !force {
         return Err(Box::new(HandoffExportBlocked {
             scan,
@@ -1840,7 +2078,8 @@ pub fn build_handoff_bundle_zip_with_chain(
     }
 
     let mut summary_md = summary_markdown.to_string();
-    let mut audit_bytes = build_audit_bundle_json_bytes_with_chain(cfg, person, security, cached_chain);
+    let mut audit_bytes =
+        build_audit_bundle_json_bytes_scoped(cfg, person, security, cached_chain, scope.as_ref());
     if policy.redact_host_paths {
         summary_md = crate::redact_host_paths(&summary_md);
         let redacted = {
