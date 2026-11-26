@@ -1041,6 +1041,7 @@ pub fn rows_to_csv(rows: &[Vec<String>]) -> String {
 // PDF → text (page by page), isolated
 // ---------------------------------------------------------------------------
 
+#[cfg(not(panic = "abort"))]
 fn install_quiet_panic_hook() {
     static ONCE: OnceLock<()> = OnceLock::new();
     ONCE.get_or_init(|| {
@@ -1054,35 +1055,103 @@ fn install_quiet_panic_hook() {
     });
 }
 
-pub fn pdf_to_text(bytes: Vec<u8>) -> Result<(String, usize), String> {
+/// Extract PDF text page-by-page without catch_unwind (used directly by the
+/// isolated `--internal-pdf-text` subprocess in `panic = "abort"` builds).
+pub fn pdf_extract_pages_raw(bytes: &[u8]) -> Result<Vec<String>, String> {
+    pdf_extract::extract_text_from_mem_by_pages(bytes)
+        .or_else(|_| pdf_extract::extract_text_from_mem_by_pages_encrypted(bytes, ""))
+        .map_err(|e| e.to_string())
+}
+
+fn format_pdf_error(e: &str) -> String {
+    let low = e.to_ascii_lowercase();
+    if low.contains("encrypt") || low.contains("password") {
+        "this PDF is password-protected; open it with its password and save an unlocked copy".into()
+    } else {
+        format!("this PDF could not be read ({})", crate::truncate(e, 160))
+    }
+}
+
+#[cfg(not(panic = "abort"))]
+fn extract_pdf_pages_isolated(bytes: Vec<u8>) -> Result<Vec<String>, String> {
     install_quiet_panic_hook();
     let (tx, rx) = std::sync::mpsc::channel();
     let spawned = std::thread::Builder::new()
         .name("ergon-pdf-extract".into())
         .spawn(move || {
-            let res = std::panic::catch_unwind(move || {
-                pdf_extract::extract_text_from_mem_by_pages(&bytes)
-                    .or_else(|_| pdf_extract::extract_text_from_mem_by_pages_encrypted(&bytes, ""))
-                    .map_err(|e| e.to_string())
-            });
+            let res = std::panic::catch_unwind(move || pdf_extract_pages_raw(&bytes));
             let _ = tx.send(res);
         });
     if spawned.is_err() {
         return Err("could not start the PDF reader".into());
     }
-    let pages = match rx.recv_timeout(std::time::Duration::from_secs(PDF_TIMEOUT_SECS)) {
-        Ok(Ok(Ok(p))) => p,
-        Ok(Ok(Err(e))) => {
-            let low = e.to_ascii_lowercase();
-            return Err(if low.contains("encrypt") || low.contains("password") {
-                "this PDF is password-protected; open it with its password and save an unlocked copy".into()
-            } else {
-                format!("this PDF could not be read ({})", crate::truncate(&e, 160))
-            });
+    match rx.recv_timeout(std::time::Duration::from_secs(PDF_TIMEOUT_SECS)) {
+        Ok(Ok(Ok(p))) => Ok(p),
+        Ok(Ok(Err(e))) => Err(format_pdf_error(&e)),
+        Ok(Err(_)) => Err("this PDF is damaged or uses features Ergon cannot read".into()),
+        Err(_) => Err("this PDF took too long to read".into()),
+    }
+}
+
+#[cfg(panic = "abort")]
+fn extract_pdf_pages_isolated(bytes: Vec<u8>) -> Result<Vec<String>, String> {
+    use std::io::Read as _;
+    use std::process::{Command, Stdio};
+    let exe = std::env::current_exe().map_err(|_| "could not start the PDF reader".to_string())?;
+    let mut child = Command::new(exe)
+        .arg("--internal-pdf-text")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|_| "could not start the PDF reader".to_string())?;
+    if let Some(mut stdin) = child.stdin.take() {
+        let _ = std::thread::spawn(move || {
+            use std::io::Write as _;
+            let _ = stdin.write_all(&bytes);
+        });
+    }
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(PDF_TIMEOUT_SECS);
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                let mut out = Vec::new();
+                if let Some(mut stdout) = child.stdout.take() {
+                    let _ = stdout.read_to_end(&mut out);
+                }
+                if !status.success() {
+                    return Err("this PDF is damaged or uses features Ergon cannot read".into());
+                }
+                let v: serde_json::Value = serde_json::from_slice(&out)
+                    .map_err(|_| "this PDF is damaged or uses features Ergon cannot read".to_string())?;
+                if v["ok"].as_bool() == Some(true) {
+                    let pages = v["pages"]
+                        .as_array()
+                        .map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_string)).collect())
+                        .unwrap_or_default();
+                    return Ok(pages);
+                }
+                let err = v["error"].as_str().unwrap_or("unreadable PDF");
+                return Err(format_pdf_error(err));
+            }
+            Ok(None) => {
+                if std::time::Instant::now() >= deadline {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return Err("this PDF took too long to read".into());
+                }
+                std::thread::sleep(std::time::Duration::from_millis(15));
+            }
+            Err(_) => {
+                let _ = child.kill();
+                return Err("could not start the PDF reader".into());
+            }
         }
-        Ok(Err(_)) => return Err("this PDF is damaged or uses features Ergon cannot read".into()),
-        Err(_) => return Err("this PDF took too long to read".into()),
-    };
+    }
+}
+
+pub fn pdf_to_text(bytes: Vec<u8>) -> Result<(String, usize), String> {
+    let pages = extract_pdf_pages_isolated(bytes)?;
     let n = pages.len();
     let mut out = String::new();
     for (i, p) in pages.iter().enumerate() {

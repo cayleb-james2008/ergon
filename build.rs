@@ -174,4 +174,10 @@ fn main() {
     }
     skills_code.push_str("];\n");
     fs::write(Path::new(&out_dir).join("embedded_skills.rs"), skills_code).unwrap();
+
+    let catalog_path = Path::new("src/skills/catalog.json");
+    println!("cargo:rerun-if-changed={}", catalog_path.display());
+    let catalog_raw = fs::read(catalog_path).unwrap();
+    let catalog_deflated = miniz_oxide::deflate::compress_to_vec(&catalog_raw, 9);
+    fs::write(Path::new(&out_dir).join("skills_catalog.deflate"), catalog_deflated).unwrap();
 }

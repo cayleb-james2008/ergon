@@ -21,6 +21,10 @@ struct CliOpts {
     show_help: bool,
     force_open: bool,
     no_open: bool,
+    verify_mode: bool,
+    verify_target: Option<String>,
+    verify_workspace: Option<String>,
+    json_output: bool,
     host: Option<String>,
     port: Option<u16>,
 }
@@ -34,6 +38,14 @@ fn parse_cli_args(args: &[String]) -> CliOpts {
             "--help" | "-h" => opts.show_help = true,
             "--app" | "--open" => opts.force_open = true,
             "--no-open" => opts.no_open = true,
+            "--json" => opts.json_output = true,
+            "verify" if !opts.verify_mode => opts.verify_mode = true,
+            "--workspace" => {
+                if let Some(v) = args.get(i + 1) {
+                    opts.verify_workspace = Some(v.clone());
+                    i += 1;
+                }
+            }
             "--host" => {
                 if let Some(v) = args.get(i + 1) {
                     opts.host = Some(v.clone());
@@ -53,6 +65,12 @@ fn parse_cli_args(args: &[String]) -> CliOpts {
                     }
                 } else if let Some(v) = other.strip_prefix("--port=").and_then(|s| s.parse::<u16>().ok()) {
                     opts.port = Some(v);
+                } else if let Some(v) = other.strip_prefix("--workspace=") {
+                    if !v.is_empty() {
+                        opts.verify_workspace = Some(v.to_string());
+                    }
+                } else if opts.verify_mode && !other.starts_with('-') && opts.verify_target.is_none() {
+                    opts.verify_target = Some(other.to_string());
                 }
             }
         }
@@ -225,11 +243,53 @@ fn maybe_open_desktop_window(opts: &CliOpts, host: &str, port: u16) {
 
 fn print_help() {
     println!(
-        "ergon {} — Personal Employee Agent Desk\n\n\
-         USAGE:\n  ergon [--app | --no-open] [--host HOST] [--port PORT] [--version] [--help]\n\n\
-         FLAGS:\n  --app, --open   Open chromeless desktop app window (Chromium/Edge --app)\n  --no-open       Run headless without opening a desktop window\n  --host HOST     Bind address (default: ERGON_HOST or 127.0.0.1)\n  --port PORT     Bind port (default: ERGON_PORT or 8787)\n  -V, --version   Print version and exit\n  -h, --help      Print this help and exit",
+        "ergon {} - Personal Employee Agent Desk\n\n\
+         USAGE:\n  ergon [--app | --no-open] [--host HOST] [--port PORT] [--version] [--help]\n  \
+         ergon verify <BUNDLE_OR_PACK> [--workspace DIR] [--json]\n\n\
+         FLAGS:\n  --app, --open       Open chromeless desktop app window (Chromium/Edge --app)\n  \
+         --no-open           Run headless without opening a desktop window\n  \
+         --host HOST         Bind address (default: ERGON_HOST or 127.0.0.1)\n  \
+         --port PORT         Bind port (default: ERGON_PORT or 8787)\n  \
+         --workspace DIR     Cross-check bundle or pack digests against workspace files\n  \
+         --json              Emit machine-readable verification JSON\n  \
+         -V, --version       Print version and exit\n  \
+         -h, --help          Print this help and exit",
         env!("CARGO_PKG_VERSION")
     );
+}
+
+#[cold]
+fn run_verify_cli(opts: &CliOpts) -> i32 {
+    let Some(target) = opts.verify_target.as_deref() else {
+        eprintln!("ergon verify requires a path to an audit bundle (.json), client pack (.md), or playbook pack (.json).");
+        return 2;
+    };
+    let content = match std::fs::read_to_string(target) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("ergon verify: cannot read {target}: {e}");
+            return 2;
+        }
+    };
+    let ws = opts.verify_workspace.as_deref().map(std::path::Path::new);
+    let res = ergon_rs::audit_bundle::verify_evidence(&content, Some(target), ws);
+    if opts.json_output {
+        println!("{}", res.to_json());
+    } else {
+        println!(
+            "{} [{}] {}",
+            if res.valid { "PASS" } else { "FAIL" },
+            res.kind,
+            res.summary
+        );
+        if !res.actual_sha256.is_empty() {
+            println!("sha256: {}", res.actual_sha256);
+        }
+        for err in &res.errors {
+            println!("error: {err}");
+        }
+    }
+    if res.valid { 0 } else { 1 }
 }
 
 #[cfg(all(target_os = "linux", target_env = "gnu"))]
@@ -251,6 +311,19 @@ fn main() {
     #[cfg(all(target_os = "linux", target_env = "gnu"))]
     tune_allocator_for_low_rss();
     let raw_args: Vec<String> = std::env::args().skip(1).collect();
+    if raw_args.first().map(String::as_str) == Some("--internal-pdf-text") {
+        use std::io::Read as _;
+        let mut buf = Vec::new();
+        if std::io::stdin().take(32 * 1024 * 1024).read_to_end(&mut buf).is_err() {
+            std::process::exit(1);
+        }
+        let out = match ergon_rs::docs::pdf_extract_pages_raw(&buf) {
+            Ok(pages) => serde_json::json!({"ok": true, "pages": pages}),
+            Err(error) => serde_json::json!({"ok": false, "error": error}),
+        };
+        println!("{out}");
+        return;
+    }
     let opts = parse_cli_args(&raw_args);
     if opts.show_version {
         println!("ergon {}", env!("CARGO_PKG_VERSION"));
@@ -259,6 +332,9 @@ fn main() {
     if opts.show_help {
         print_help();
         return;
+    }
+    if opts.verify_mode {
+        std::process::exit(run_verify_cli(&opts));
     }
     let cfg = ergon_rs::Config::from_env();
     let host = opts
@@ -356,5 +432,24 @@ mod tests {
         assert_eq!(desktop_url_for_bind("::", 8473), "http://127.0.0.1:8473/");
         assert_eq!(desktop_url_for_bind("127.0.0.1", 8787), "http://127.0.0.1:8787/");
         assert_eq!(desktop_url_for_bind("::1", 8787), "http://[::1]:8787/");
+    }
+
+    #[test]
+    fn cli_parses_verify_subcommand_and_flags() {
+        let args: Vec<String> = [
+            "verify",
+            "ergon-audit-bundle.json",
+            "--workspace",
+            "./ws",
+            "--json",
+        ]
+        .into_iter()
+        .map(String::from)
+        .collect();
+        let opts = parse_cli_args(&args);
+        assert!(opts.verify_mode);
+        assert_eq!(opts.verify_target.as_deref(), Some("ergon-audit-bundle.json"));
+        assert_eq!(opts.verify_workspace.as_deref(), Some("./ws"));
+        assert!(opts.json_output);
     }
 }

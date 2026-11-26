@@ -529,3 +529,31 @@ export async function downloadWorkspaceFile(filePath: string): Promise<boolean> 
     return false;
   }
 }
+
+export type EvidenceVerificationItem = {
+  label: string;
+  status: string;
+  sha256?: string;
+  detail?: string;
+};
+
+export type EvidenceVerificationResult = {
+  valid: boolean;
+  kind: "audit_bundle" | "deliverable_pack" | "playbook_pack" | "unknown";
+  title: string;
+  receipt_chain_valid: boolean | null;
+  bundle_hash_valid: boolean | null;
+  manifest_valid: boolean | null;
+  citations_valid: boolean | null;
+  workspace_valid: boolean | null;
+  receipt_count: number;
+  deliverable_count: number;
+  citation_count: number;
+  stale_citations: number;
+  broken_citations: number;
+  expected_sha256: string;
+  actual_sha256: string;
+  summary: string;
+  errors: string[];
+  items: EvidenceVerificationItem[];
+};

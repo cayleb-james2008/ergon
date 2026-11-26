@@ -166,45 +166,42 @@ impl SkillDryRunResult {
     }
 }
 
-fn field(
-    name: &str,
-    field_type: &str,
-    required: bool,
-    description: &str,
-    example: Value,
-) -> SkillInputField {
-    SkillInputField {
-        name: name.to_string(),
-        field_type: field_type.to_string(),
-        required,
-        description: description.to_string(),
-        example,
-    }
-}
-
-#[allow(clippy::too_many_arguments)]
-fn meta(
-    id: &str,
-    slug: &str,
-    title: &str,
-    category: &str,
-    description: &str,
-    deterministic: bool,
-    outputs: &[&str],
-    input_schema: Vec<SkillInputField>,
-    sample_prompts: &[&str],
-    source: &str,
-) -> SkillMetadata {
+fn parse_catalog_item(v: &Value) -> SkillMetadata {
+    let id = v["id"].as_str().unwrap_or_default().to_string();
+    let source = skills::builtin_script(&id);
+    let str_vec = |arr: &Value| -> Vec<String> {
+        arr.as_array()
+            .map(|xs| {
+                xs.iter()
+                    .filter_map(|x| x.as_str().map(str::to_string))
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+    let input_schema = v["input_schema"]
+        .as_array()
+        .map(|xs| {
+            xs.iter()
+                .map(|f| SkillInputField {
+                    name: f["name"].as_str().unwrap_or_default().to_string(),
+                    field_type: f["type"].as_str().unwrap_or_default().to_string(),
+                    required: f["required"].as_bool().unwrap_or(false),
+                    description: f["description"].as_str().unwrap_or_default().to_string(),
+                    example: f["example"].clone(),
+                })
+                .collect()
+        })
+        .unwrap_or_default();
     SkillMetadata {
-        id: id.to_string(),
-        slug: slug.to_string(),
-        title: title.to_string(),
-        category: category.to_string(),
-        description: description.to_string(),
-        deterministic,
-        outputs: outputs.iter().map(|s| s.to_string()).collect(),
+        id,
+        slug: v["slug"].as_str().unwrap_or_default().to_string(),
+        title: v["title"].as_str().unwrap_or_default().to_string(),
+        category: v["category"].as_str().unwrap_or_default().to_string(),
+        description: v["description"].as_str().unwrap_or_default().to_string(),
+        deterministic: v["deterministic"].as_bool().unwrap_or(false),
+        outputs: str_vec(&v["outputs"]),
         input_schema,
-        sample_prompts: sample_prompts.iter().map(|s| s.to_string()).collect(),
+        sample_prompts: str_vec(&v["sample_prompts"]),
         source: source.to_string(),
         source_lines: source.lines().count(),
     }
@@ -212,229 +209,18 @@ fn meta(
 
 /// Complete catalog of all 12 built-in Rune skills shipped with Ergon.
 pub fn all_skills() -> Vec<SkillMetadata> {
-    vec![
-        meta(
-            "write_document",
-            "write-document",
-            "Write Document",
-            "documents",
-            "Formats a title and structured section blocks into a finished Markdown document in the workspace.",
-            true,
-            &["markdown"],
-            vec![
-                field("title", "string", true, "Document title (also becomes `<title>.md`).", json!("Weekly Status")),
-                field("sections", "string_list", true, "Ordered Markdown section strings.", json!(["## Highlights\nShipped v0.5.0 milestones."])),
-            ],
-            &[
-                "Write a weekly status report covering shipped items and next week's priorities.",
-                "Compile our onboarding checklist into a clean workspace document.",
-            ],
-            skills::builtin_script("write_document"),
-        ),
-        meta(
-            "make_spreadsheet",
-            "make-spreadsheet",
-            "Make Spreadsheet",
-            "data",
-            "Formats column headers and row cells with RFC-4180 CSV quoting into `<title>.csv` in the workspace.",
-            true,
-            &["csv"],
-            vec![
-                field("title", "string", true, "Spreadsheet title (writes `<title>.csv`).", json!("Team Budget")),
-                field("columns", "string_list", true, "Ordered header column names.", json!(["Item", "Category", "Cost"])),
-                field("rows", "string_rows", true, "2D array of string cell values.", json!([["Cloud Hosting", "Infra", "420.00"]])),
-            ],
-            &[
-                "Turn my Q4 software expenses into a clean CSV spreadsheet with Vendor, Category, and Cost columns.",
-                "Build a structured inventory CSV from the items listed in my notes.",
-            ],
-            skills::builtin_script("make_spreadsheet"),
-        ),
-        meta(
-            "research",
-            "research",
-            "Web Research",
-            "research",
-            "Fetches one or more web pages, records fetch status honestly per source, and compiles sourced notes into `Research - <topic>.md`.",
-            false,
-            &["markdown"],
-            vec![
-                field("topic", "string", true, "Research subject used in the heading and filename.", json!("Cloud Pricing")),
-                field("urls", "string_list", true, "List of HTTP(S) URLs to fetch and compile.", json!(["https://example.com"])),
-            ],
-            &[
-                "Research vendor compliance documentation across these three URLs and compile sourced notes.",
-                "Fetch these release-note pages and save a single cited research summary.",
-            ],
-            skills::builtin_script("research"),
-        ),
-        meta(
-            "update_memory",
-            "update-memory",
-            "Update Memory",
-            "memory",
-            "Records a durable single-line preference or learned fact into the employee's standing `memory.md`.",
-            true,
-            &["memory"],
-            vec![
-                field("note", "string", true, "Single-line preference or fact to append to standing memory.", json!("Always include currency totals rounded to two decimals.")),
-            ],
-            &[
-                "Remember that I prefer concise bullet summaries before detailed tables.",
-                "Record in standing memory that all finance exports use USD with two decimal places.",
-            ],
-            skills::builtin_script("update_memory"),
-        ),
-        meta(
-            "reconcile_ledger",
-            "reconcile-ledger",
-            "Reconcile Ledger",
-            "finance",
-            "Reconciles one or more workspace CSV invoice/expense ledgers with penny-exact arithmetic, flagging duplicate references, missing receipts, and cross-file mismatches alongside vendor and category rollups.",
-            true,
-            &["markdown", "csv"],
-            vec![
-                field("source_files", "file_path_list", true, "One or more workspace-relative CSV ledger paths.", json!(["invoices.csv", "expenses.csv"])),
-                field("output_title", "string", false, "Output title prefix for the Markdown report and summary CSV.", json!("Ledger Reconciliation")),
-            ],
-            &[
-                "Reconcile invoices.csv and expenses.csv, flag duplicate invoice numbers and missing receipts, and total spend by vendor and category.",
-                "Audit Q4-expenses.csv for missing receipts, duplicate references, and anomalous amounts.",
-            ],
-            skills::builtin_script("reconcile_ledger"),
-        ),
-        meta(
-            "summarize_meeting",
-            "summarize-meeting",
-            "Summarize Meeting",
-            "operations",
-            "Extracts participants, line-cited decisions, action items with owners and due dates, open questions/risks, and ready-to-send team and per-owner follow-up drafts from meeting notes.",
-            true,
-            &["markdown"],
-            vec![
-                field("notes_file", "file_path", true, "Workspace-relative path to the meeting transcript or notes file.", json!("standup-notes.md")),
-                field("output_title", "string", false, "Title for the generated Markdown summary.", json!("Meeting Summary")),
-            ],
-            &[
-                "Summarize standup-notes.md into decisions, action items with owners and due dates, and follow-up drafts.",
-                "Extract every commitment, owner, deadline, and open blocker from q4-planning-transcript.txt.",
-            ],
-            skills::builtin_script("summarize_meeting"),
-        ),
-        meta(
-            "audit_contract",
-            "audit-contract",
-            "Audit Contract",
-            "legal",
-            "Checks contracts and vendor agreements for required clauses, extracts renewal/term/notice dates, flags missing provisions, and emits a line-cited `[L##]` risk table with redline guidance.",
-            true,
-            &["markdown"],
-            vec![
-                field("contract_file", "file_path", true, "Workspace-relative path to the contract text or Markdown file.", json!("vendor-msa.md")),
-                field("required_clauses", "string_list", false, "Optional checklist of required clauses (uses standard 8-clause corporate checklist if omitted).", json!(["termination", "liability", "confidentiality", "data protection", "renewal"])),
-                field("output_title", "string", false, "Title for the generated contract audit report.", json!("Contract Audit")),
-            ],
-            &[
-                "Audit vendor-msa.md for auto-renewal traps, unlimited liability, missing confidentiality/data-protection clauses, and produce a line-cited risk table.",
-                "Review supplier-agreement.txt against termination, indemnification, payment, and governing law requirements.",
-            ],
-            skills::builtin_script("audit_contract"),
-        ),
-        meta(
-            "triage_inbox",
-            "triage-inbox",
-            "Triage Inbox",
-            "operations",
-            "Classifies messages, emails, or support tickets (Markdown, plain text, CSV, or JSON) into Urgent, Action, and FYI buckets with priority scores, rationale, and concrete next steps.",
-            true,
-            &["markdown"],
-            vec![
-                field("inbox_file", "file_path", true, "Workspace-relative path to inbox export (.md, .txt, .csv, or .json).", json!("inbox.md")),
-                field("output_title", "string", false, "Title for the generated triage report.", json!("Inbox Triage")),
-            ],
-            &[
-                "Triage inbox.md into Urgent, Action, and FYI queues with concrete next steps for every item.",
-                "Prioritize support-tickets.csv so critical outages and overdue billing alerts float to the top.",
-            ],
-            skills::builtin_script("triage_inbox"),
-        ),
-        meta(
-            "clean_dataset",
-            "clean-dataset",
-            "Clean Dataset",
-            "data",
-            "Normalizes CSV or JSON schemas to lowercase snake_case, repairs ragged rows, standardizes null tokens, deduplicates rows, flags statistical outliers (|z| >= 2.5), and writes a clean CSV plus diff metrics report.",
-            true,
-            &["csv", "markdown"],
-            vec![
-                field("input_file", "file_path", true, "Workspace-relative path to the messy .csv or .json dataset.", json!("raw-orders.csv")),
-                field("key_column", "string", false, "Optional deduplication key column name (empty deduplicates by full normalized row).", json!("order_id")),
-                field("output_title", "string", false, "Title prefix for the cleaned CSV and diff metrics Markdown report.", json!("Cleaned Dataset")),
-            ],
-            &[
-                "Clean raw-orders.csv: normalize headers, deduplicate on order_id, standardize N/A values, flag numeric outliers, and produce a diff report.",
-                "Normalize crm-export.json into a deduplicated snake_case CSV with a column-level null and outlier audit.",
-            ],
-            skills::builtin_script("clean_dataset"),
-        ),
-        meta(
-            "compare_documents",
-            "compare-documents",
-            "Compare Documents",
-            "documents",
-            "Performs linear-time line-by-line diffing between two workspace files, reporting added/removed/unchanged counts, similarity %, heading changes, and unified `[L##]`/`[R##]` context hunks.",
-            true,
-            &["markdown"],
-            vec![
-                field("left_file", "file_path", true, "Baseline (before) workspace file path.", json!("policy-v1.md")),
-                field("right_file", "file_path", true, "Revised (after) workspace file path.", json!("policy-v2.md")),
-                field("output_title", "string", false, "Title for the generated comparison report.", json!("Document Comparison")),
-            ],
-            &[
-                "Compare policy-v1.md against policy-v2.md and summarize every added, removed, or modified clause.",
-                "Diff contract-draft-1.txt and contract-draft-2.txt with line-numbered hunks.",
-            ],
-            skills::builtin_script("compare_documents"),
-        ),
-        meta(
-            "draft_brief",
-            "draft-brief",
-            "Draft Brief",
-            "documents",
-            "Drafts an executive memo or SOP grounded strictly in named workspace files and standing memory (`memory.md`), citing `[file:L##]` for every finding and halting if zero readable sources exist.",
-            true,
-            &["markdown"],
-            vec![
-                field("topic", "string", true, "Subject of the executive memo or SOP.", json!("Q4 Spend Controls")),
-                field("source_files", "file_path_list", true, "Workspace files to ground the brief in.", json!(["reconciliation.md", "meeting-notes.md"])),
-                field("audience", "string", false, "Intended readers (e.g. Executive leadership, Finance ops).", json!("Executive leadership")),
-                field("output_title", "string", false, "Optional output document title (defaults to `Brief - <topic>`).", json!("Q4 Spend Controls Brief")),
-            ],
-            &[
-                "Draft an executive brief on Q4 Spend Controls grounded in reconciliation.md and meeting-notes.md using my standing preferences.",
-                "Turn ops-notes.md and audit.md into a cited SOP brief for the operations team.",
-            ],
-            skills::builtin_script("draft_brief"),
-        ),
-        meta(
-            "extract_tables",
-            "extract-tables",
-            "Extract Tables",
-            "data",
-            "Parses unstructured Markdown pipe tables, key=value structured logs, TSV blocks, or Key: Value records from a workspace file into clean RFC-4180 CSV spreadsheets.",
-            true,
-            &["csv"],
-            vec![
-                field("source_file", "file_path", true, "Workspace-relative path to Markdown, text, or log file.", json!("service.log")),
-                field("output_title", "string", false, "Title prefix for extracted CSV spreadsheet(s).", json!("Extracted Table")),
-            ],
-            &[
-                "Extract the structured key=value records from service.log into a clean CSV spreadsheet.",
-                "Pull all Markdown tables out of quarterly-review.md into separate CSV files.",
-            ],
-            skills::builtin_script("extract_tables"),
-        ),
-    ]
+    static CATALOG: std::sync::OnceLock<Vec<SkillMetadata>> = std::sync::OnceLock::new();
+    CATALOG
+        .get_or_init(|| {
+            static DEFLATED: &[u8] =
+                include_bytes!(concat!(env!("OUT_DIR"), "/skills_catalog.deflate"));
+            let raw = miniz_oxide::inflate::decompress_to_vec(DEFLATED)
+                .expect("skills catalog deflate valid");
+            let items: Vec<Value> =
+                serde_json::from_slice(&raw).expect("skills catalog json valid");
+            items.iter().map(parse_catalog_item).collect()
+        })
+        .clone()
 }
 
 /// Look up one built-in skill by either snake_case `id` or kebab-case `slug`.

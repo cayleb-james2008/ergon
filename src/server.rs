@@ -406,12 +406,7 @@ fn execute_routine_run(
     }
     state.search_cache.invalidate(&person.id);
     if outcome.is_ok() && pack_deliverables {
-        let idx = state.search_cache.get(
-            &person.id,
-            &runtime.cfg.data_dir,
-            &runtime.cfg.workspace_dir,
-            &runtime.cfg.memory_path,
-        );
+        let idx = person_idx(state, person, runtime);
         let (_, items) = idx.list_files(0, Some(15), "");
         let pack_files: Vec<String> = items
             .iter()
@@ -469,12 +464,7 @@ fn execute_routine_run(
             );
             let _ = scheduler::record_run_history(&runtime.cfg.data_dir, rec.clone());
             let hist = scheduler::list_run_history(&runtime.cfg.data_dir, Some(id), 20);
-            let idx = state.search_cache.get(
-                &person.id,
-                &runtime.cfg.data_dir,
-                &runtime.cfg.workspace_dir,
-                &runtime.cfg.memory_path,
-            );
+            let idx = person_idx(state, person, runtime);
             let enriched = scheduler::enrich_routine_with_verification(
                 &updated,
                 finished_ms,
@@ -533,12 +523,7 @@ fn execute_routine_run(
             );
             let _ = scheduler::record_run_history(&runtime.cfg.data_dir, rec.clone());
             let hist = scheduler::list_run_history(&runtime.cfg.data_dir, Some(id), 20);
-            let idx = state.search_cache.get(
-                &person.id,
-                &runtime.cfg.data_dir,
-                &runtime.cfg.workspace_dir,
-                &runtime.cfg.memory_path,
-            );
+            let idx = person_idx(state, person, runtime);
             let enriched = scheduler::enrich_routine_with_verification(
                 &updated,
                 finished_ms,
@@ -999,6 +984,8 @@ fn read_request_from<S: SockStream>(
     let content_length = content_length.unwrap_or(0);
     let body_limit = if method == "POST" && path == "/api/files/upload" {
         MAX_UPLOAD_BODY_BYTES
+    } else if method == "POST" && path == "/api/verify/evidence" {
+        16 * 1024 * 1024
     } else if method == "POST" && path == "/api/playbooks/import" {
         routines::MAX_PLAYBOOK_PACK_BYTES
     } else {
@@ -1380,6 +1367,16 @@ fn respond_json_with<F: FnOnce(&mut Vec<u8>)>(
     })
 }
 
+#[inline(never)]
+fn person_idx(state: &AppState, person: &Person, runtime: &PersonRuntime) -> Arc<search::PersonIndex> {
+    state.search_cache.get(
+        &person.id,
+        &runtime.cfg.data_dir,
+        &runtime.cfg.workspace_dir,
+        &runtime.cfg.memory_path,
+    )
+}
+
 #[cold]
 #[inline(never)]
 fn respond_err(stream: &mut std::net::TcpStream, status: u16, msg: &str) -> std::io::Result<()> {
@@ -1745,7 +1742,7 @@ fn handle_connection(stream: std::net::TcpStream, state: &AppState) -> std::io::
             let kind = if message.starts_with("requests must address") { "host" } else { "cross-site" };
             state.tripwire.note_refusal(kind, &view, client);
             KEEP_ALIVE_CONN.set(false);
-            return respond_json(reader.get_mut(), status, &json!({"error": message}));
+            return respond_err(reader.get_mut(), status, message);
         }
         let is_sse = req.path == "/api/runs/stream";
         KEEP_ALIVE_CONN.set(req.keep_alive && !is_sse);
@@ -1954,18 +1951,10 @@ fn try_route_system(
                 .to_string();
             let model_id = parsed["model_id"].as_str().unwrap_or("").trim().to_string();
             if !(base.starts_with("http://") || base.starts_with("https://")) || parse_url_host_port(&base).is_none() {
-                return Some(respond_json(
-                    stream,
-                    400,
-                    &json!({"error": "model_base_url must be a valid http:// or https:// URL"}),
-                ));
+                return Some(respond_err(stream, 400, "model_base_url must be a valid http:// or https:// URL"));
             }
             if model_id.is_empty() {
-                return Some(respond_json(
-                    stream,
-                    400,
-                    &json!({"error": "model_id is required"}),
-                ));
+                return Some(respond_err(stream, 400, "model_id is required"));
             }
             let clear_key = parsed["clear_api_key"].as_bool().unwrap_or(false);
             let next_key = if clear_key {
@@ -1986,7 +1975,7 @@ fn try_route_system(
                 api_key: next_key.clone(),
             };
             if let Err(e) = save_model_config(&root_cfg.data_dir, &saved) {
-                return Some(respond_json(stream, 500, &json!({"error": e})));
+                return Some(respond_err(stream, 500, &e));
             }
             {
                 let mut live = state.model_cfg.lock().unwrap();
@@ -2019,11 +2008,7 @@ fn try_route_system(
             let parsed: Value = serde_json::from_slice(&req.body).unwrap_or(Value::Null);
             let name = parsed["name"].as_str().unwrap_or("").trim().to_string();
             if name.is_empty() {
-                return Some(respond_json(
-                    stream,
-                    400,
-                    &json!({"error": "name is required"}),
-                ));
+                return Some(respond_err(stream, 400, "name is required"));
             }
             let role = parsed["role"].as_str().unwrap_or("").trim().to_string();
             let person = {
@@ -2047,11 +2032,7 @@ fn try_route_system(
             {
                 let people = state.people.read().unwrap();
                 if !people.people.iter().any(|p| p.id == id) {
-                    return Some(respond_json(
-                        stream,
-                        404,
-                        &json!({"error": "person not found"}),
-                    ));
+                    return Some(respond_err(stream, 404, "person not found"));
                 }
             }
             // Who does this switch move? A browser with a known session
@@ -2117,7 +2098,7 @@ fn try_route_system(
                     }
                     respond_json(stream, 200, &out)
                 }
-                Err(e) => respond_json(stream, 400, &json!({"error": e})),
+                Err(e) => respond_err(stream, 400, &e),
             }
         }
         ("GET", "/phone") => serve_page(stream, state, req, person, ui::index_html()),
@@ -2150,16 +2131,8 @@ fn try_route_system(
             let id = parsed["item_id"].as_str().unwrap_or("");
             let lib = state.library.lock().unwrap();
             match lib.get(id) {
-                None => respond_json(
-                    stream,
-                    404,
-                    &json!({"error": "library item not found"}),
-                ),
-                Some(item) if item.builtin => respond_json(
-                    stream,
-                    400,
-                    &json!({"error": "that item is built into every agent already"}),
-                ),
+                None => respond_err(stream, 404, "library item not found"),
+                Some(item) if item.builtin => respond_err(stream, 400, "that item is built into every agent already"),
                 Some(item) => {
                     library::with_suite_lock(|| {
                         let mut suite = library::load_suite(&runtime.cfg.data_dir);
@@ -2225,7 +2198,7 @@ fn try_route_system(
             if let Some(ip) = parsed["unban"].as_str() {
                 return Some(match ip.trim().parse::<std::net::IpAddr>() {
                     Ok(ip) => respond_json(stream, 200, &json!({"unbanned": state.tripwire.unban(ip), "bans": state.tripwire.bans_json()})),
-                    Err(_) => respond_json(stream, 400, &json!({"error": "unban needs an IP address"})),
+                    Err(_) => respond_err(stream, 400, "unban needs an IP address"),
                 });
             }
             let list = parsed["list"].as_str().unwrap_or("");
@@ -2233,7 +2206,7 @@ fn try_route_system(
             let add = parsed["add"].as_bool().unwrap_or(true);
             match tripwire::update_policy(&root_cfg.data_dir, list, host, add) {
                 Ok(p) => respond_json(stream, 200, &json!({"policy": {"allow_hosts": p.allow_hosts, "block_hosts": p.block_hosts}})),
-                Err(e) => respond_json(stream, 400, &json!({"error": e})),
+                Err(e) => respond_err(stream, 400, &e),
             }
         }
         _ => return None,
@@ -2638,6 +2611,7 @@ fn inspect_workspace_pack(
     })
 }
 
+#[inline(never)]
 fn format_workspace_pack_markdown(
     preflight: &PackPreflight,
     person_name: &str,
@@ -2757,6 +2731,7 @@ fn build_workspace_pack(
 }
 
 /// Builds a standalone, zero-external-request, printable Client Handoff (`.html`) with SHA-256 Manifest.
+#[inline(never)]
 fn build_workspace_handoff_html(
     preflight: &PackPreflight,
     person_name: &str,
@@ -2984,7 +2959,7 @@ fn try_route_files_and_audit(
                 Ok(v) => v,
                 Err(e) => {
                     let code = if is_history_security_error(&e) { 403 } else { 400 };
-                    return Some(respond_json(stream, code, &json!({"error": e})));
+                    return Some(respond_err(stream, code, &e));
                 }
             };
             let diff_pair = query_param(&req.query, "diff")
@@ -3027,7 +3002,7 @@ fn try_route_files_and_audit(
                         } else {
                             400
                         };
-                        return Some(respond_json(stream, code, &json!({"error": e})));
+                        return Some(respond_err(stream, code, &e));
                     }
                 }
             }
@@ -3044,11 +3019,7 @@ fn try_route_files_and_audit(
                 .trim()
                 .to_string();
             if rel.is_empty() || rev_id.is_empty() {
-                return Some(respond_json(
-                    stream,
-                    400,
-                    &json!({"error": "path and rev_id are required"}),
-                ));
+                return Some(respond_err(stream, 400, "path and rev_id are required"));
             }
             match file_history::restore_revision(
                 &runtime.cfg.data_dir,
@@ -3070,7 +3041,7 @@ fn try_route_files_and_audit(
                     } else {
                         400
                     };
-                    respond_json(stream, code, &json!({"error": e}))
+                    respond_err(stream, code, &e)
                 }
             }
         }
@@ -3178,12 +3149,7 @@ fn try_route_files_and_audit(
                 .collect();
             let explicit = !requested.is_empty();
             let idx_opt = if requested.is_empty() || !receipt_id.is_empty() || include_summary {
-                Some(state.search_cache.get(
-                    &person.id,
-                    &runtime.cfg.data_dir,
-                    &runtime.cfg.workspace_dir,
-                    &runtime.cfg.memory_path,
-                ))
+                Some(person_idx(state, person, runtime))
             } else {
                 state.search_cache.get_if_fresh(
                     &person.id,
@@ -3243,7 +3209,7 @@ fn try_route_files_and_audit(
                 None,
             ) {
                 Ok(res) => res,
-                Err((status, err)) => return Some(respond_json(stream, status, &json!({"error": err}))),
+                Err((status, err)) => return Some(respond_err(stream, status, &err)),
             };
             let mut summary_gates: Vec<SummaryRunGate<'_>> = Vec::with_capacity(summary_runs.len());
             if !summary_runs.is_empty() {
@@ -3321,12 +3287,7 @@ fn try_route_files_and_audit(
                 let idx = match &idx_opt {
                     Some(i) => i,
                     None => {
-                        owned_idx = state.search_cache.get(
-                            &person.id,
-                            &runtime.cfg.data_dir,
-                            &runtime.cfg.workspace_dir,
-                            &runtime.cfg.memory_path,
-                        );
+                        owned_idx = person_idx(state, person, runtime);
                         &owned_idx
                     }
                 };
@@ -3367,7 +3328,7 @@ fn try_route_files_and_audit(
                     }
                     Err(e) => {
                         let code = if is_history_security_error(&e) { 403 } else { 404 };
-                        return Some(respond_json(stream, code, &json!({"error": e})));
+                        return Some(respond_err(stream, code, &e));
                     }
                 }
             }
@@ -3488,18 +3449,29 @@ fn try_route_files_and_audit(
                 Err(e) => respond_err(stream, 400, &e),
             }
         }
+        ("POST", "/api/verify/evidence") => {
+            let parsed: Value = serde_json::from_slice(&req.body).unwrap_or(Value::Null);
+            let content = parsed["content"].as_str().unwrap_or("");
+            if content.trim().is_empty() {
+                return Some(respond_err(stream, 400, "evidence content is empty"));
+            }
+            let filename = parsed["filename"].as_str();
+            let check_ws = parsed["check_workspace"].as_bool().unwrap_or(false);
+            let ws_opt = if check_ws {
+                Some(runtime.cfg.workspace_dir.as_path())
+            } else {
+                None
+            };
+            let res = audit_bundle::verify_evidence(content, filename, ws_opt);
+            respond_json(stream, 200, &res.to_json())
+        }
         ("POST", "/api/citations/verify") => {
             let parsed: Value = serde_json::from_slice(&req.body).unwrap_or(Value::Null);
             let mut text = parsed["text"].as_str().unwrap_or("").to_string();
             let receipt_id = parsed["receipt_id"].as_str().unwrap_or("").trim();
             let mut receipt_ts = 0u64;
             if !receipt_id.is_empty() {
-                let idx = state.search_cache.get(
-                    &person.id,
-                    &runtime.cfg.data_dir,
-                    &runtime.cfg.workspace_dir,
-                    &runtime.cfg.memory_path,
-                );
+                let idx = person_idx(state, person, runtime);
                 if let Some(rcpt) = receipts::find_receipt(&idx.chain, receipt_id) {
                     receipt_ts = rcpt.ts;
                     if text.is_empty() {
@@ -3554,12 +3526,7 @@ fn try_route_files_and_audit(
                     query_param(&req.query, "q").unwrap_or_default(),
                 )
             };
-            let idx = state.search_cache.get(
-                &person.id,
-                &runtime.cfg.data_dir,
-                &runtime.cfg.workspace_dir,
-                &runtime.cfg.memory_path,
-            );
+            let idx = person_idx(state, person, runtime);
             respond_json_with(stream, 200, |buf| {
                 idx.write_files_json(buf, &person.id, offset, limit, &q);
             })
@@ -3568,10 +3535,10 @@ fn try_route_files_and_audit(
             let rel = query_param(&req.query, "path").unwrap_or_default();
             let rel = rel.trim().to_string();
             if rel.is_empty() {
-                return Some(respond_json(stream, 400, &json!({"error": "path is required"})));
+                return Some(respond_err(stream, 400, "path is required"));
             }
             if rel.len() > 240 || rel.split('/').any(|s| s.len() > 200) {
-                return Some(respond_json(stream, 400, &json!({"error": "path is too long"})));
+                return Some(respond_err(stream, 400, "path is too long"));
             }
             if rel.contains('\0')
                 || rel.contains('\\')
@@ -3581,25 +3548,17 @@ fn try_route_files_and_audit(
                 || rel.to_ascii_lowercase().contains("%2e%2e")
                 || rel.split('/').any(|seg| seg == ".." || seg == "." || seg.is_empty() || seg.starts_with('.'))
             {
-                return Some(respond_json(
-                    stream,
-                    403,
-                    &json!({"error": "path escapes the workspace"}),
-                ));
+                return Some(respond_err(stream, 403, "path escapes the workspace"));
             }
             let full = match sandbox_path_resolving(&runtime.cfg.workspace_dir, &rel, true) {
                 Ok(p) => p,
-                Err(e) => return Some(respond_json(stream, 403, &json!({"error": e})),)};
+                Err(e) => return Some(respond_err(stream, 403, &e),)};
             if full == runtime.cfg.workspace_dir || full.is_dir() {
-                return Some(respond_json(
-                    stream,
-                    400,
-                    &json!({"error": "path must name a file inside the workspace"}),
-                ));
+                return Some(respond_err(stream, 400, "path must name a file inside the workspace"));
             }
             let md = match std::fs::metadata(&full) {
                 Ok(m) => m,
-                Err(_) => return Some(respond_json(stream, 404, &json!({"error": "file not found"})),)};
+                Err(_) => return Some(respond_err(stream, 404, "file not found"),)};
             const MAX_PREVIEW_BYTES: u64 = 2 * 1024 * 1024;
             let download_requested = query_param(&req.query, "download")
                 .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
@@ -3640,15 +3599,11 @@ fn try_route_files_and_audit(
                 return Some(respond_json(stream, 200, &v));
             }
             if md.len() > MAX_PREVIEW_BYTES && !download_requested {
-                return Some(respond_json(
-                    stream,
-                    413,
-                    &json!({"error": "file exceeds the 2 MiB preview limit"}),
-                ));
+                return Some(respond_err(stream, 413, "file exceeds the 2 MiB preview limit"));
             }
             let bytes = match std::fs::read(&full) {
                 Ok(b) => b,
-                Err(_) => return Some(respond_json(stream, 403, &json!({"error": "file could not be read"})),)};
+                Err(_) => return Some(respond_err(stream, 403, "file could not be read"),)};
             let name = full
                 .file_name()
                 .and_then(|s| s.to_str())
@@ -3712,7 +3667,7 @@ fn try_route_files_and_audit(
             let parsed: Value = serde_json::from_slice(&req.body).unwrap_or(Value::Null);
             let rel = parsed["path"].as_str().unwrap_or("").trim().to_string();
             if rel.is_empty() {
-                return Some(respond_json(stream, 400, &json!({"error": "path is required"})));
+                return Some(respond_err(stream, 400, "path is required"));
             }
             match export_workspace_file(&runtime.cfg, &rel, parsed["format"].as_str(), None) {
                 Ok((out, bytes, label)) => {
@@ -3729,7 +3684,7 @@ fn try_route_files_and_audit(
                     } else {
                         400
                     };
-                    respond_json(stream, status, &json!({"error": e}))
+                    respond_err(stream, status, &e)
                 }
             }
         }
@@ -3742,18 +3697,10 @@ fn try_route_files_and_audit(
                 .trim()
                 .to_string();
             if raw_rel.is_empty() {
-                return Some(respond_json(
-                    stream,
-                    400,
-                    &json!({"error": "filename is required"}),
-                ));
+                return Some(respond_err(stream, 400, "filename is required"));
             }
             if raw_rel.len() > 240 || raw_rel.split('/').any(|s| s.len() > 200) {
-                return Some(respond_json(
-                    stream,
-                    400,
-                    &json!({"error": "filename is too long"}),
-                ));
+                return Some(respond_err(stream, 400, "filename is too long"));
             }
             if raw_rel.contains('\0')
                 || raw_rel.contains('\\')
@@ -3763,59 +3710,35 @@ fn try_route_files_and_audit(
                 || raw_rel.to_ascii_lowercase().contains("%2e%2e")
                 || raw_rel.split('/').any(|seg| seg.is_empty() || seg == "." || seg == ".." || seg.starts_with('.'))
             {
-                return Some(respond_json(
-                    stream,
-                    403,
-                    &json!({"error": "invalid workspace filename"}),
-                ));
+                return Some(respond_err(stream, 403, "invalid workspace filename"));
             }
             let full = match sandbox_path_resolving(&runtime.cfg.workspace_dir, &raw_rel, false) {
                 Ok(p) => p,
-                Err(e) => return Some(respond_json(stream, 403, &json!({"error": e})),)};
+                Err(e) => return Some(respond_err(stream, 403, &e),)};
             if sandbox_path_resolving(&runtime.cfg.workspace_dir, &raw_rel, true).is_err() {
-                return Some(respond_json(
-                    stream,
-                    403,
-                    &json!({"error": "path escapes the workspace"}),
-                ));
+                return Some(respond_err(stream, 403, "path escapes the workspace"));
             }
             if full == runtime.cfg.workspace_dir {
-                return Some(respond_json(
-                    stream,
-                    400,
-                    &json!({"error": "filename must name a file"}),
-                ));
+                return Some(respond_err(stream, 400, "filename must name a file"));
             }
             let encoding = parsed["encoding"].as_str().unwrap_or("utf8");
             let content_str = match parsed["content"].as_str() {
                 Some(s) => s,
                 None => {
-                    return Some(respond_json(
-                        stream,
-                        400,
-                        &json!({"error": "content is required"}),
-                    ))}
+                    return Some(respond_err(stream, 400, "content is required"))}
             };
             let bytes = if encoding.eq_ignore_ascii_case("base64") {
                 match decode_base64(content_str) {
                     Ok(b) => b,
-                    Err(e) => return Some(respond_json(stream, 400, &json!({"error": e})),)}
+                    Err(e) => return Some(respond_err(stream, 400, &e),)}
             } else {
                 content_str.as_bytes().to_vec()
             };
             if bytes.len() as u64 > docs::MAX_DOC_BYTES {
-                return Some(respond_json(
-                    stream,
-                    413,
-                    &json!({"error": "files over 25 MB cannot be uploaded"}),
-                ));
+                return Some(respond_err(stream, 413, "files over 25 MB cannot be uploaded"));
             }
             if full.symlink_metadata().is_ok_and(|md| md.file_type().is_symlink()) {
-                return Some(respond_json(
-                    stream,
-                    403,
-                    &json!({"error": "cannot overwrite symlink"}),
-                ));
+                return Some(respond_err(stream, 403, "cannot overwrite symlink"));
             }
             let _ = file_history::record_revision(
                 &runtime.cfg.data_dir,
@@ -3889,12 +3812,7 @@ fn try_route_knowledge_and_routines(
                         .unwrap_or(30),
                 )
             };
-            let idx = state.search_cache.get(
-                &person.id,
-                &runtime.cfg.data_dir,
-                &runtime.cfg.workspace_dir,
-                &runtime.cfg.memory_path,
-            );
+            let idx = person_idx(state, person, runtime);
             respond_json_with(stream, 200, |buf| {
                 idx.write_search_json(buf, &q, &scope, limit);
             })
@@ -3916,12 +3834,7 @@ fn try_route_knowledge_and_routines(
                         .unwrap_or_else(|| "all".to_string()),
                 )
             };
-            let idx = state.search_cache.get(
-                &person.id,
-                &runtime.cfg.data_dir,
-                &runtime.cfg.workspace_dir,
-                &runtime.cfg.memory_path,
-            );
+            let idx = person_idx(state, person, runtime);
             respond_json_with(stream, 200, |buf| {
                 idx.write_receipts_json(buf, offset, limit, &q, &status);
             })
@@ -3930,18 +3843,9 @@ fn try_route_knowledge_and_routines(
             let a_id = query_param(&req.query, "a").unwrap_or_default();
             let b_id = query_param(&req.query, "b").unwrap_or_default();
             if a_id.trim().is_empty() || b_id.trim().is_empty() {
-                return Some(respond_json(
-                    stream,
-                    400,
-                    &json!({"error": "query parameters a and b are required"}),
-                ));
+                return Some(respond_err(stream, 400, "query parameters a and b are required"));
             }
-            let idx = state.search_cache.get(
-                &person.id,
-                &runtime.cfg.data_dir,
-                &runtime.cfg.workspace_dir,
-                &runtime.cfg.memory_path,
-            );
+            let idx = person_idx(state, person, runtime);
             let Some(ra) = receipts::find_receipt(&idx.chain, a_id.trim()) else {
                 return Some(respond_err(stream, 404, "receipt a not found"));
             };
@@ -3952,12 +3856,7 @@ fn try_route_knowledge_and_routines(
             respond_json(stream, 200, &payload)
         }
         ("GET", "/api/receipts/verify") => {
-            let idx = state.search_cache.get(
-                &person.id,
-                &runtime.cfg.data_dir,
-                &runtime.cfg.workspace_dir,
-                &runtime.cfg.memory_path,
-            );
+            let idx = person_idx(state, person, runtime);
             respond_json(
                 stream,
                 200,
@@ -3978,20 +3877,11 @@ fn try_route_knowledge_and_routines(
                 .map(|s| s.to_ascii_lowercase())
                 .unwrap_or_else(|| "json".to_string());
             if fmt != "json" && fmt != "md" {
-                return Some(respond_json(
-                    stream,
-                    400,
-                    &json!({"error": "format must be md or json"}),
-                ));
+                return Some(respond_err(stream, 400, "format must be md or json"));
             }
-            let idx = state.search_cache.get(
-                &person.id,
-                &runtime.cfg.data_dir,
-                &runtime.cfg.workspace_dir,
-                &runtime.cfg.memory_path,
-            );
+            let idx = person_idx(state, person, runtime);
             let Some(rcpt) = receipts::find_receipt(&idx.chain, &id) else {
-                return Some(respond_json(stream, 404, &json!({"error": "receipt not found"})));
+                return Some(respond_err(stream, 404, "receipt not found"));
             };
             let safe_id: String = rcpt
                 .id
@@ -4037,19 +3927,14 @@ fn try_route_knowledge_and_routines(
             let id = path.trim_start_matches("/api/skills/").trim();
             match skill_catalog::get_skill(id) {
                 Some(skill) => respond_json(stream, 200, &skill.to_json()),
-                None => respond_json(stream, 404, &json!({"error": "skill not found"})),
+                None => respond_err(stream, 404, "skill not found"),
             }
         }
         ("GET", "/api/routines") => {
             let now_ms = records::now_millis();
             let raw = routines::list_routines(&runtime.cfg.data_dir);
             let history = scheduler::list_run_history(&runtime.cfg.data_dir, None, 500);
-            let idx = state.search_cache.get(
-                &person.id,
-                &runtime.cfg.data_dir,
-                &runtime.cfg.workspace_dir,
-                &runtime.cfg.memory_path,
-            );
+            let idx = person_idx(state, person, runtime);
             let enriched: Vec<Value> = raw
                 .iter()
                 .map(|r| {
@@ -4090,11 +3975,7 @@ fn try_route_knowledge_and_routines(
                 match parsed["interval_secs"].as_u64() {
                     Some(v) => Some(v),
                     None => {
-                        return Some(respond_json(
-                            stream,
-                            400,
-                            &json!({"error": "interval_secs must be a positive integer"}),
-                        ))}
+                        return Some(respond_err(stream, 400, "interval_secs must be a positive integer"))}
                 }
             } else {
                 None
@@ -4125,7 +4006,7 @@ fn try_route_knowledge_and_routines(
                     let enriched = scheduler::enrich_routine_json(&routine, now_ms, &[]);
                     respond_json(stream, 201, &json!({"routine": enriched}))
                 }
-                Err(e) => respond_json(stream, 400, &json!({"error": e})),
+                Err(e) => respond_err(stream, 400, &e),
             }
         }
         ("GET", path) if path.starts_with("/api/routines/") && path.ends_with("/history") => {
@@ -4136,7 +4017,7 @@ fn try_route_knowledge_and_routines(
                 .trim()
                 .to_string();
             if id.is_empty() || id.contains('/') {
-                return Some(respond_json(stream, 400, &json!({"error": "invalid routine id"})));
+                return Some(respond_err(stream, 400, "invalid routine id"));
             }
             let limit = query_param(&req.query, "limit")
                 .and_then(|s| s.parse::<usize>().ok())
@@ -4144,7 +4025,7 @@ fn try_route_knowledge_and_routines(
                 .clamp(1, 500);
             let runs = scheduler::list_run_history(&runtime.cfg.data_dir, Some(&id), limit);
             if runs.is_empty() && routines::get_routine(&runtime.cfg.data_dir, &id).is_none() {
-                return Some(respond_json(stream, 404, &json!({"error": "routine not found"})));
+                return Some(respond_err(stream, 404, "routine not found"));
             }
             let items: Vec<Value> = runs.iter().map(|r| r.to_json()).collect();
             respond_json(
@@ -4161,16 +4042,12 @@ fn try_route_knowledge_and_routines(
         ("PATCH", path) if path.starts_with("/api/routines/") => {
             let id = path.trim_start_matches("/api/routines/").trim().to_string();
             if id.is_empty() || id.contains('/') {
-                return Some(respond_json(stream, 400, &json!({"error": "invalid routine id"})));
+                return Some(respond_err(stream, 400, "invalid routine id"));
             }
             let parsed: Value = match serde_json::from_slice::<Value>(&req.body) {
                 Ok(v) if v.is_object() => v,
                 _ => {
-                    return Some(respond_json(
-                        stream,
-                        400,
-                        &json!({"error": "PATCH body must be a JSON object"}),
-                    ))}
+                    return Some(respond_err(stream, 400, "PATCH body must be a JSON object"))}
             };
             match routines::patch_routine(&runtime.cfg.data_dir, &id, &parsed) {
                 Ok(Some(routine)) => {
@@ -4179,19 +4056,19 @@ fn try_route_knowledge_and_routines(
                     let enriched = scheduler::enrich_routine_json(&routine, now_ms, &hist);
                     respond_json(stream, 200, &json!({"routine": enriched}))
                 }
-                Ok(None) => respond_json(stream, 404, &json!({"error": "routine not found"})),
-                Err(e) => respond_json(stream, 400, &json!({"error": e})),
+                Ok(None) => respond_err(stream, 404, "routine not found"),
+                Err(e) => respond_err(stream, 400, &e),
             }
         }
         ("DELETE", path) if path.starts_with("/api/routines/") => {
             let id = path.trim_start_matches("/api/routines/").trim().to_string();
             if id.is_empty() || id.contains('/') {
-                return Some(respond_json(stream, 400, &json!({"error": "invalid routine id"})));
+                return Some(respond_err(stream, 400, "invalid routine id"));
             }
             match routines::delete_routine(&runtime.cfg.data_dir, &id) {
                 Ok(true) => respond_json(stream, 200, &json!({"deleted": id})),
-                Ok(false) => respond_json(stream, 404, &json!({"error": "routine not found"})),
-                Err(e) => respond_json(stream, 500, &json!({"error": e})),
+                Ok(false) => respond_err(stream, 404, "routine not found"),
+                Err(e) => respond_err(stream, 500, &e),
             }
         }
         ("POST", "/api/scheduler/catchup") => {
@@ -4226,12 +4103,7 @@ fn try_route_knowledge_and_routines(
             let updated_now = records::now_millis();
             let updated_raw = routines::list_routines(&runtime.cfg.data_dir);
             let history = scheduler::list_run_history(&runtime.cfg.data_dir, None, 500);
-            let idx = state.search_cache.get(
-                &person.id,
-                &runtime.cfg.data_dir,
-                &runtime.cfg.workspace_dir,
-                &runtime.cfg.memory_path,
-            );
+            let idx = person_idx(state, person, runtime);
             let enriched: Vec<Value> = updated_raw
                 .iter()
                 .map(|r| {
@@ -4281,10 +4153,10 @@ fn try_route_knowledge_and_routines(
                 .trim();
             let id = percent_decode(raw_id).trim().to_string();
             if id.is_empty() || id.contains('/') || id.contains("..") {
-                return Some(respond_json(stream, 400, &json!({"error": "invalid routine id"})));
+                return Some(respond_err(stream, 400, "invalid routine id"));
             }
             let Some(rt) = routines::get_routine(&runtime.cfg.data_dir, &id) else {
-                return Some(respond_json(stream, 404, &json!({"error": "routine not found"})));
+                return Some(respond_err(stream, 404, "routine not found"));
             };
             let now_ms = records::now_millis();
             let missed = scheduler::count_missed_windows(&rt, now_ms);
@@ -4293,12 +4165,7 @@ fn try_route_knowledge_and_routines(
                 .unwrap_or(false);
             if missed == 0 && !force {
                 let hist = scheduler::list_run_history(&runtime.cfg.data_dir, Some(&id), 20);
-                let idx = state.search_cache.get(
-                    &person.id,
-                    &runtime.cfg.data_dir,
-                    &runtime.cfg.workspace_dir,
-                    &runtime.cfg.memory_path,
-                );
+                let idx = person_idx(state, person, runtime);
                 let enriched = scheduler::enrich_routine_with_verification(
                     &rt,
                     now_ms,
@@ -4317,7 +4184,7 @@ fn try_route_knowledge_and_routines(
                 ));
             }
             let Some(exec) = execute_routine_run(state, person, runtime, &id, "catchup") else {
-                return Some(respond_json(stream, 404, &json!({"error": "routine not found"})));
+                return Some(respond_err(stream, 404, "routine not found"));
             };
             if let Some(err) = exec.error {
                 respond_json(
@@ -4355,7 +4222,7 @@ fn try_route_knowledge_and_routines(
                 .trim()
                 .to_string();
             let Some(exec) = execute_routine_run(state, person, runtime, &id, "manual") else {
-                return Some(respond_json(stream, 404, &json!({"error": "routine not found"})));
+                return Some(respond_err(stream, 404, "routine not found"));
             };
             if let Some(err) = exec.error {
                 respond_json(
@@ -4389,20 +4256,12 @@ fn try_route_knowledge_and_routines(
                 .trim();
             let id = percent_decode(raw_id).trim().to_string();
             if id.is_empty() || id.contains('/') || id.contains("..") {
-                return Some(respond_json(
-                    stream,
-                    400,
-                    &json!({"error": "invalid playbook id"}),
-                ));
+                return Some(respond_err(stream, 400, "invalid playbook id"));
             }
             let Some((pack, digest, filename)) =
                 routines::export_playbook_pack(&runtime.cfg.data_dir, &id)
             else {
-                return Some(respond_json(
-                    stream,
-                    404,
-                    &json!({"error": "playbook not found"}),
-                ));
+                return Some(respond_err(stream, 404, "playbook not found"));
             };
             let body = serde_json::to_vec_pretty(&pack).unwrap_or_default();
             let headers = vec![
@@ -4436,7 +4295,7 @@ fn try_route_knowledge_and_routines(
                         }),
                     )
                 }
-                Err((status, msg)) => respond_json(stream, status, &json!({"error": msg})),
+                Err((status, msg)) => respond_err(stream, status, &msg),
             }
         }
         ("POST", path)
@@ -4455,18 +4314,9 @@ fn try_route_knowledge_and_routines(
                 .trim();
             let id = percent_decode(raw_id).trim().to_string();
             if id.is_empty() || id.contains('/') || id.contains("..") {
-                return Some(respond_json(
-                    stream,
-                    400,
-                    &json!({"error": "invalid routine id"}),
-                ));
+                return Some(respond_err(stream, 400, "invalid routine id"));
             }
-            let idx = state.search_cache.get(
-                &person.id,
-                &runtime.cfg.data_dir,
-                &runtime.cfg.workspace_dir,
-                &runtime.cfg.memory_path,
-            );
+            let idx = person_idx(state, person, runtime);
             let (_, ws_files) = idx.list_files(0, Some(500), "");
             let ws_paths: Vec<String> = ws_files
                 .into_iter()
@@ -4479,7 +4329,7 @@ fn try_route_knowledge_and_routines(
                 &id,
             ) {
                 Some(preview) => respond_json(stream, 200, &preview),
-                None => respond_json(stream, 404, &json!({"error": "routine not found"})),
+                None => respond_err(stream, 404, "routine not found"),
             }
         }
         ("GET", "/api/decisions") => {
@@ -4562,14 +4412,10 @@ fn try_route_knowledge_and_routines(
             let (id, action) = match rest.rsplit_once('/') {
                 Some((i, a)) => (i.to_string(), a.to_string()),
                 None => {
-                    return Some(respond_json(
-                        stream,
-                        404,
-                        &json!({"error": "not found"}),
-                    ))}
+                    return Some(respond_err(stream, 404, "not found"))}
             };
             if action != "approve" && action != "deny" {
-                return Some(respond_json(stream, 404, &json!({"error": "not found"})));
+                return Some(respond_err(stream, 404, "not found"));
             }
             match records::resolve_decision(&runtime.cfg, &id, action == "approve") {
                 Ok((decision, outcome)) => {
@@ -4615,7 +4461,7 @@ fn try_route_knowledge_and_routines(
                         &json!({"decision": decision, "outcome": outcome}),
                     )
                 }
-                Err(e) => respond_json(stream, 400, &json!({"error": e})),
+                Err(e) => respond_err(stream, 400, &e),
             }
         }
         ("POST", path) if path.starts_with("/api/offers/") => {
@@ -4623,16 +4469,12 @@ fn try_route_knowledge_and_routines(
             let (id, action) = match rest.rsplit_once('/') {
                 Some((i, a)) => (i.to_string(), a.to_string()),
                 None => {
-                    return Some(respond_json(
-                        stream,
-                        404,
-                        &json!({"error": "not found"}),
-                    ))}
+                    return Some(respond_err(stream, 404, "not found"))}
             };
             match action.as_str() {
                 "dismiss" => match records::set_offer_status(&runtime.cfg.data_dir, &id, "dismissed") {
                     Ok(offer) => respond_json(stream, 200, &json!({"offer": offer})),
-                    Err(e) => respond_json(stream, 400, &json!({"error": e})),
+                    Err(e) => respond_err(stream, 400, &e),
                 },
                 "accept" => {
                     // Look the offer up first; acceptance DOES the
@@ -4641,14 +4483,10 @@ fn try_route_knowledge_and_routines(
                     // the offer settled.
                     let offers = records::load_offers(&runtime.cfg.data_dir);
                     let Some(offer) = offers.iter().find(|o| o["id"].as_str() == Some(id.as_str())).cloned() else {
-                        return Some(respond_json(stream, 404, &json!({"error": "offer not found"})));
+                        return Some(respond_err(stream, 404, "offer not found"));
                     };
                     if offer["status"].as_str() != Some("pending") {
-                        return Some(respond_json(
-                            stream,
-                            400,
-                            &json!({"error": "that offer was already settled"}),
-                        ));
+                        return Some(respond_err(stream, 400, "that offer was already settled"));
                     }
                     let kind = offer["kind"].as_str().unwrap_or("");
                     let mut made: Option<Value> = None;
@@ -4684,7 +4522,7 @@ fn try_route_knowledge_and_routines(
                                 made = Some(item.to_json());
                             }
                             Err(e) => {
-                                return Some(respond_json(stream, 400, &json!({"error": e})))}
+                                return Some(respond_err(stream, 400, &e))}
                         }
                     }
                     match records::set_offer_status(&runtime.cfg.data_dir, &id, "accepted") {
@@ -4693,10 +4531,10 @@ fn try_route_knowledge_and_routines(
                             200,
                             &json!({"offer": offer, "made": made}),
                         ),
-                        Err(e) => respond_json(stream, 400, &json!({"error": e})),
+                        Err(e) => respond_err(stream, 400, &e),
                     }
                 }
-                _ => respond_json(stream, 404, &json!({"error": "not found"})),
+                _ => respond_err(stream, 404, "not found"),
             }
         }
         _ => return None,
@@ -4817,11 +4655,7 @@ fn try_route_runs_and_chat(
                         &json!({"cancelled": true, "run_id": run_id, "thread_id": thread_id}),
                     )
                 }
-                None => respond_json(
-                    stream,
-                    404,
-                    &json!({"error": "no matching active run"}),
-                ),
+                None => respond_err(stream, 404, "no matching active run"),
             }
         }
         ("POST", path) if path.starts_with("/api/apps/") && path.ends_with("/run") => {
@@ -4838,22 +4672,14 @@ fn try_route_runs_and_chat(
                 lib.get(&id)
             };
             let Some(item) = item else {
-                return Some(respond_json(stream, 404, &json!({"error": "app not found"})));
+                return Some(respond_err(stream, 404, "app not found"));
             };
             if item.kind != "app" {
-                return Some(respond_json(
-                    stream,
-                    400,
-                    &json!({"error": "that library item is not an app"}),
-                ));
+                return Some(respond_err(stream, 400, "that library item is not an app"));
             }
             let suite = library::load_suite(&runtime.cfg.data_dir);
             if !suite.installed.contains(&item.id) {
-                return Some(respond_json(
-                    stream,
-                    400,
-                    &json!({"error": "that app is not in this person's suite"}),
-                ));
+                return Some(respond_err(stream, 400, "that app is not in this person's suite"));
             }
             let parsed: Value = serde_json::from_slice(&req.body).unwrap_or(Value::Null);
             // Every field the template actually uses must be filled
@@ -4867,11 +4693,7 @@ fn try_route_runs_and_chat(
                         .unwrap_or("")
                         .trim();
                     if value.is_empty() {
-                        return Some(respond_json(
-                            stream,
-                            400,
-                            &json!({"error": "fill in every field before running the app"}),
-                        ));
+                        return Some(respond_err(stream, 400, "fill in every field before running the app"));
                     }
                 }
             }
@@ -4948,20 +4770,12 @@ fn try_route_runs_and_chat(
                 match serde_json::from_slice(&req.body) {
                     Ok(v) => v,
                     Err(_) => {
-                        return Some(respond_json(
-                            stream,
-                            400,
-                            &json!({"error": "request body is not valid JSON"}),
-                        ))}
+                        return Some(respond_err(stream, 400, "request body is not valid JSON"))}
                 }
             };
             let message = parsed["message"].as_str().unwrap_or("").trim().to_string();
             if message.is_empty() {
-                return Some(respond_json(
-                    stream,
-                    400,
-                    &json!({"error": "message is required"}),
-                ));
+                return Some(respond_err(stream, 400, "message is required"));
             }
             let cfg = effective_cfg(state, runtime);
             // The user's words are recorded FIRST, before any failure
@@ -4974,7 +4788,7 @@ fn try_route_runs_and_chat(
                 // A named thread must exist: opening a new one silently
                 // would put the message somewhere the person never asked (EB3).
                 if !requested.is_empty() && store.thread_json(requested).is_none() {
-                    return Some(respond_json(stream, 404, &json!({"error": "no such thread"})));
+                    return Some(respond_err(stream, 404, "no such thread"));
                 }
                 let tid = store.ensure_thread(requested);
                 let history = store.history_json(&tid);
@@ -5034,7 +4848,7 @@ fn try_route_runs_and_chat(
             let store = runtime.store.lock().unwrap();
             match store.thread_json(id) {
                 Some(v) => respond_json(stream, 200, &v),
-                None => respond_json(stream, 404, &json!({"error": "thread not found"})),
+                None => respond_err(stream, 404, "thread not found"),
             }
         }
         _ => return None,

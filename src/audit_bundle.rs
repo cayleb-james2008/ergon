@@ -472,8 +472,607 @@ pub fn verify_workspace_against_bundle(bundle: &Value, workspace_dir: &Path) -> 
     })
 }
 
+#[derive(Clone, Debug)]
+pub struct EvidenceVerification {
+    pub valid: bool,
+    pub kind: &'static str,
+    pub title: String,
+    pub receipt_chain_valid: Option<bool>,
+    pub bundle_hash_valid: Option<bool>,
+    pub manifest_valid: Option<bool>,
+    pub citations_valid: Option<bool>,
+    pub workspace_valid: Option<bool>,
+    pub receipt_count: usize,
+    pub deliverable_count: usize,
+    pub citation_count: usize,
+    pub stale_citations: usize,
+    pub broken_citations: usize,
+    pub expected_sha256: String,
+    pub actual_sha256: String,
+    pub summary: String,
+    pub errors: Vec<String>,
+    pub items: Vec<Value>,
+}
+
+impl EvidenceVerification {
+    pub fn to_json(&self) -> Value {
+        json!({
+            "valid": self.valid,
+            "kind": self.kind,
+            "title": self.title,
+            "receipt_chain_valid": self.receipt_chain_valid,
+            "bundle_hash_valid": self.bundle_hash_valid,
+            "manifest_valid": self.manifest_valid,
+            "citations_valid": self.citations_valid,
+            "workspace_valid": self.workspace_valid,
+            "receipt_count": self.receipt_count,
+            "deliverable_count": self.deliverable_count,
+            "citation_count": self.citation_count,
+            "stale_citations": self.stale_citations,
+            "broken_citations": self.broken_citations,
+            "expected_sha256": self.expected_sha256,
+            "actual_sha256": self.actual_sha256,
+            "summary": self.summary,
+            "errors": self.errors,
+            "items": self.items,
+        })
+    }
+}
+
+fn is_hex_sha256(s: &str) -> bool {
+    s.len() == 64 && s.bytes().all(|b| b.is_ascii_hexdigit())
+}
+
+#[inline(never)]
+fn ev_item(label: &str, status: &str, detail: &str, sha256: Option<&str>) -> Value {
+    let mut obj = serde_json::Map::new();
+    obj.insert("label".into(), Value::String(label.to_string()));
+    obj.insert("status".into(), Value::String(status.to_string()));
+    if !detail.is_empty() {
+        obj.insert("detail".into(), Value::String(detail.to_string()));
+    }
+    if let Some(h) = sha256 {
+        obj.insert("sha256".into(), Value::String(h.to_string()));
+    }
+    Value::Object(obj)
+}
+
+#[inline(never)]
+fn verify_playbook_pack_evidence(v: &Value, fallback_title: &str) -> EvidenceVerification {
+    let mut errors = Vec::new();
+    let format = v["format"].as_str().unwrap_or("");
+    if format != routines::PLAYBOOK_PACK_FORMAT {
+        errors.push(format!("Unexpected playbook pack format '{format}'."));
+    }
+    let pb = &v["playbook"];
+    let name = pb["name"].as_str().unwrap_or("").trim();
+    let prompt = pb["prompt"].as_str().unwrap_or("").trim();
+    let schedule = pb["schedule"].as_str().unwrap_or("manual").trim();
+    if name.is_empty() || prompt.is_empty() {
+        errors.push("Playbook pack is missing required name or prompt.".to_string());
+    }
+    let str_vec = |val: &Value| -> Vec<String> {
+        val.as_array()
+            .map(|a| {
+                a.iter()
+                    .filter_map(|x| x.as_str().map(|s| s.to_string()))
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+    let opts = routines::PlaybookOptions {
+        steps: str_vec(&pb["steps"]),
+        expected_inputs: str_vec(&pb["expected_inputs"]),
+        pack_deliverables: pb["pack_deliverables"].as_bool().unwrap_or(false),
+    };
+    let expected = routines::playbook_canonical_sha256(
+        name,
+        prompt,
+        if schedule.is_empty() { "manual" } else { schedule },
+        pb["interval_secs"].as_u64(),
+        pb["skill_id"].as_str(),
+        &opts,
+    );
+    let actual = v["sha256"].as_str().unwrap_or("").trim().to_ascii_lowercase();
+    let hash_ok = is_hex_sha256(&actual) && actual == expected;
+    if !hash_ok {
+        errors.push("Playbook SHA-256 digest does not match canonical payload.".to_string());
+    }
+    let valid = errors.is_empty();
+    let title = if name.is_empty() {
+        fallback_title.to_string()
+    } else {
+        name.to_string()
+    };
+    let summary = if valid {
+        format!(
+            "Playbook pack passed offline SHA-256 verification ({} steps).",
+            opts.steps.len()
+        )
+    } else {
+        format!("Playbook verification failed with {} issue(s).", errors.len())
+    };
+    EvidenceVerification {
+        valid,
+        kind: "playbook_pack",
+        title,
+        receipt_chain_valid: None,
+        bundle_hash_valid: Some(hash_ok),
+        manifest_valid: Some(format == routines::PLAYBOOK_PACK_FORMAT && !name.is_empty()),
+        citations_valid: None,
+        workspace_valid: None,
+        receipt_count: 0,
+        deliverable_count: opts.steps.len(),
+        citation_count: 0,
+        stale_citations: 0,
+        broken_citations: 0,
+        expected_sha256: expected,
+        actual_sha256: actual,
+        summary,
+        errors,
+        items: vec![ev_item(
+            "Playbook canonical checksum",
+            if hash_ok { "verified" } else { "tampered" },
+            &format!("{} steps", opts.steps.len()),
+            None,
+        )],
+    }
+}
+
+#[inline(never)]
+fn verify_deliverable_pack_markdown(
+    content: &str,
+    fallback_title: &str,
+    workspace_dir: Option<&Path>,
+) -> EvidenceVerification {
+    let mut errors = Vec::new();
+    let mut items = Vec::new();
+    let content_sha = sha256_hex(content.as_bytes());
+    let mut title = fallback_title.to_string();
+    let mut declared_deliverables: Option<usize> = None;
+    let mut manifest: std::collections::BTreeMap<String, String> = std::collections::BTreeMap::new();
+    let mut cit_rows: Vec<(String, String, String)> = Vec::new();
+    let mut citation_alerts = 0usize;
+    let mut section = "";
+
+    for raw_line in content.lines() {
+        let line = raw_line.trim_end_matches('\r');
+        if title == fallback_title {
+            if let Some(t) = line.strip_prefix("# ") {
+                let t = t.trim();
+                if !t.is_empty() {
+                    title = t.to_string();
+                }
+            }
+        }
+        if let Some(rest) = line.strip_prefix("- Deliverables included:") {
+            if let Ok(n) = rest.trim().parse::<usize>() {
+                declared_deliverables = Some(n);
+            }
+        } else if line.starts_with("## ") {
+            if line == "## Included Deliverables" {
+                section = "deliverables";
+            } else if line == "## Citation Verification" {
+                section = "citations";
+            } else if line == "## Verified Work Summary" {
+                section = "summary";
+            } else {
+                section = "other";
+            }
+            continue;
+        } else if line == "---" {
+            section = "other";
+            continue;
+        }
+
+        if section == "summary" && line.contains("[CITATION ALERT:") {
+            citation_alerts += 1;
+        } else if section == "deliverables" {
+            if let Some(after_tick) = line.strip_prefix("- `") {
+                if let Some((path, rest)) = after_tick.split_once('`') {
+                    if let Some((_, sha_tail)) = rest.split_once("`sha256:") {
+                        if let Some((sha, _)) = sha_tail.split_once('`') {
+                            let sha_lc = sha.trim().to_ascii_lowercase();
+                            if is_hex_sha256(&sha_lc) {
+                                manifest.insert(path.to_string(), sha_lc);
+                            }
+                        }
+                    }
+                }
+            }
+        } else if section == "citations" {
+            if let Some(after_tick) = line.strip_prefix("- `") {
+                if let Some((raw_cit, rest)) = after_tick.split_once("` -> **") {
+                    if let Some((status, tail)) = rest.split_once("**") {
+                        let live_prefix = tail
+                            .split_once("`sha256:")
+                            .and_then(|(_, s)| s.split_once('`'))
+                            .map(|(h, _)| h.trim().to_ascii_lowercase())
+                            .unwrap_or_default();
+                        cit_rows.push((raw_cit.to_string(), status.trim().to_string(), live_prefix));
+                    }
+                }
+            }
+        }
+    }
+
+    // Parse embedded deliverable sections: `\n---\n\n## `<path>`\n\n_SHA-256: `<64hex>` · ... · <N> bytes_\n\n<body>`
+    let mut embedded_count = 0usize;
+    let mut body_hash_failures = 0usize;
+    let mut ws_checked = 0usize;
+    let mut ws_failures = 0usize;
+    let marker = "\n---\n\n## `";
+    let mut pos = 0usize;
+    while let Some(rel_idx) = content[pos..].find(marker) {
+        let head_start = pos + rel_idx + marker.len();
+        pos = head_start;
+        let Some(path_end) = content[head_start..].find("`\n") else {
+            continue;
+        };
+        let sec_path = &content[head_start..head_start + path_end];
+        let after_path = &content[head_start + path_end + 2..];
+        let body_start_rel = match after_path.strip_prefix("\n_SHA-256: `") {
+            Some(_) => 1usize,
+            None if after_path.starts_with("_SHA-256: `") => 0usize,
+            _ => continue,
+        };
+        let meta_line_start = &after_path[body_start_rel + "_SHA-256: `".len()..];
+        let Some((sec_sha_raw, meta_rest)) = meta_line_start.split_once('`') else {
+            continue;
+        };
+        let sec_sha = sec_sha_raw.trim().to_ascii_lowercase();
+        let Some(meta_nl) = meta_rest.find('\n') else {
+            continue;
+        };
+        let meta_tail = meta_rest[..meta_nl].trim().trim_end_matches('_');
+        let declared_bytes = meta_tail
+            .rsplit('·')
+            .next()
+            .and_then(|s| s.trim().strip_suffix("bytes"))
+            .and_then(|s| s.trim().parse::<usize>().ok());
+        let body_rest = &meta_rest[meta_nl + 1..];
+        let body_rest = body_rest.strip_prefix('\n').unwrap_or(body_rest);
+        let next_sep = body_rest
+            .find("\n---\n\n## ")
+            .unwrap_or(body_rest.len());
+        let raw_body = &body_rest[..next_sep];
+        let trimmed_body = raw_body.strip_suffix('\n').unwrap_or(raw_body);
+        embedded_count += 1;
+
+        let mut sec_ok = is_hex_sha256(&sec_sha);
+        if !sec_ok {
+            errors.push(format!("Deliverable '{sec_path}' has an invalid SHA-256 digest."));
+        }
+        if let Some(m_sha) = manifest.get(sec_path) {
+            if m_sha != &sec_sha {
+                sec_ok = false;
+                errors.push(format!(
+                    "Deliverable '{sec_path}' section digest differs from manifest digest."
+                ));
+            }
+        }
+        let mut hash_checked = false;
+        if let Some(expected_len) = declared_bytes {
+            let candidate = if trimmed_body.len() == expected_len {
+                Some(trimmed_body)
+            } else if raw_body.len() == expected_len {
+                Some(raw_body)
+            } else {
+                None
+            };
+            if let Some(text_bytes) = candidate {
+                hash_checked = true;
+                let actual_body_sha = sha256_hex(text_bytes.as_bytes());
+                if actual_body_sha != sec_sha {
+                    sec_ok = false;
+                    body_hash_failures += 1;
+                    errors.push(format!(
+                        "Deliverable '{sec_path}' content was modified after export."
+                    ));
+                }
+            }
+        }
+        if let Some(ws) = workspace_dir {
+            ws_checked += 1;
+            match crate::sandbox_path_resolving(ws, sec_path, true)
+                .ok()
+                .and_then(|p| std::fs::read(p).ok())
+            {
+                Some(disk_bytes) => {
+                    let disk_sha = sha256_hex(&disk_bytes);
+                    if disk_sha != sec_sha {
+                        sec_ok = false;
+                        ws_failures += 1;
+                        errors.push(format!(
+                            "Workspace file '{sec_path}' changed on disk since pack export."
+                        ));
+                    }
+                }
+                None => {
+                    sec_ok = false;
+                    ws_failures += 1;
+                    errors.push(format!(
+                        "Workspace file '{sec_path}' is missing on disk."
+                    ));
+                }
+            }
+        }
+        items.push(ev_item(
+            sec_path,
+            if sec_ok { "verified" } else { "tampered" },
+            if hash_checked { "SHA-256 body matched" } else { "Manifest SHA-256 checked" },
+            Some(&sec_sha),
+        ));
+    }
+
+    if manifest.is_empty() && embedded_count == 0 {
+        errors.push("Markdown file does not contain Ergon deliverable digests.".to_string());
+    }
+    if let Some(decl) = declared_deliverables {
+        let count = manifest.len().max(embedded_count);
+        if decl != count {
+            errors.push(format!(
+                "Declared {decl} deliverable(s), found {count} in manifest."
+            ));
+        }
+    }
+
+    let mut stale_cits = 0usize;
+    let mut broken_cits = 0usize;
+    for (raw_cit, status, live_prefix) in &cit_rows {
+        let st_low = status.to_ascii_lowercase();
+        if st_low == "stale" {
+            stale_cits += 1;
+        } else if st_low == "broken" {
+            broken_cits += 1;
+        }
+        if !live_prefix.is_empty() {
+            let cit_file = raw_cit
+                .trim_matches(|c| c == '[' || c == ']')
+                .rsplit_once(":L")
+                .map(|(f, _)| f)
+                .unwrap_or("");
+            if let Some(m_sha) = manifest.get(cit_file) {
+                if !m_sha.starts_with(live_prefix) {
+                    errors.push(format!(
+                        "Citation '{raw_cit}' live digest prefix does not match deliverable manifest."
+                    ));
+                }
+            }
+        }
+    }
+    if stale_cits > 0 || broken_cits > 0 || citation_alerts > 0 {
+        errors.push(format!(
+            "Pack contains {stale_cits} stale citation(s) and {broken_cits} broken citation(s)."
+        ));
+    }
+
+    let manifest_ok = !manifest.is_empty() && body_hash_failures == 0;
+    let citations_ok = stale_cits == 0 && broken_cits == 0 && citation_alerts == 0;
+    let ws_ok_opt = if ws_checked > 0 {
+        Some(ws_failures == 0)
+    } else {
+        None
+    };
+    let deliverable_count = manifest.len().max(embedded_count);
+    let valid = errors.is_empty() && manifest_ok && citations_ok && ws_ok_opt.unwrap_or(true);
+    let summary = if valid {
+        format!(
+            "Client pack passed offline verification ({deliverable_count} deliverables, {} citations).",
+            cit_rows.len()
+        )
+    } else {
+        format!("Pack verification failed with {} issue(s).", errors.len())
+    };
+    EvidenceVerification {
+        valid,
+        kind: "deliverable_pack",
+        title,
+        receipt_chain_valid: None,
+        bundle_hash_valid: Some(body_hash_failures == 0 && errors.is_empty()),
+        manifest_valid: Some(manifest_ok),
+        citations_valid: Some(citations_ok),
+        workspace_valid: ws_ok_opt,
+        receipt_count: 0,
+        deliverable_count,
+        citation_count: cit_rows.len(),
+        stale_citations: stale_cits,
+        broken_citations: broken_cits,
+        expected_sha256: content_sha.clone(),
+        actual_sha256: content_sha,
+        summary,
+        errors,
+        items,
+    }
+}
+
+/// Independently verify an Ergon Audit Bundle (`.json`), Signed Playbook Pack
+/// (`.ergon-playbook.json`), or Client Deliverable Pack (`.md`) completely
+/// offline without a running server or model endpoint.
+pub fn verify_evidence(
+    content: &str,
+    filename: Option<&str>,
+    workspace_dir: Option<&Path>,
+) -> EvidenceVerification {
+    let trimmed = content.trim_start_matches('\u{feff}').trim();
+    let fallback_title = filename
+        .and_then(|p| Path::new(p).file_name())
+        .and_then(|s| s.to_str())
+        .unwrap_or("Evidence artifact");
+    if trimmed.is_empty() {
+        return EvidenceVerification {
+            valid: false,
+            kind: "unknown",
+            title: fallback_title.to_string(),
+            receipt_chain_valid: None,
+            bundle_hash_valid: None,
+            manifest_valid: None,
+            citations_valid: None,
+            workspace_valid: None,
+            receipt_count: 0,
+            deliverable_count: 0,
+            citation_count: 0,
+            stale_citations: 0,
+            broken_citations: 0,
+            expected_sha256: String::new(),
+            actual_sha256: String::new(),
+            summary: "Evidence input is empty.".to_string(),
+            errors: vec!["Evidence input is empty.".to_string()],
+            items: Vec::new(),
+        };
+    }
+
+    if trimmed.starts_with('{') {
+        match serde_json::from_str::<Value>(trimmed) {
+            Ok(v) => {
+                if v.get("schema").and_then(Value::as_str) == Some(AUDIT_BUNDLE_SCHEMA)
+                    || (v.get("receipt_chain").is_some() && v.get("integrity").is_some())
+                {
+                    let av = verify_audit_bundle(&v);
+                    let mut errors = av.errors.clone();
+                    let mut items = vec![
+                        ev_item("Receipt chain", if av.receipt_chain_valid { "verified" } else { "tampered" }, &format!("{} receipts", av.receipt_count), None),
+                        ev_item("Workspace manifest", if av.workspace_manifest_valid { "verified" } else { "tampered" }, &format!("{} files", av.workspace_file_count), None),
+                        ev_item("Routines digest", if av.routines_digest_valid { "verified" } else { "tampered" }, "SHA-256", None),
+                        ev_item("Bundle SHA-256", if av.bundle_hash_valid { "verified" } else { "tampered" }, &av.expected_bundle_sha256[..12.min(av.expected_bundle_sha256.len())], None),
+                    ];
+                    let ws_ok_opt = workspace_dir.map(|ws| {
+                        let wv = verify_workspace_against_bundle(&v, ws);
+                        let matched = wv["all_matched"].as_bool().unwrap_or(false);
+                        let mod_c = wv["modified_count"].as_u64().unwrap_or(0);
+                        let miss_c = wv["missing_count"].as_u64().unwrap_or(0);
+                        if !matched {
+                            errors.push(format!(
+                                "Workspace mismatch: {mod_c} modified file(s), {miss_c} missing file(s)."
+                            ));
+                        }
+                        items.push(ev_item(
+                            "Workspace files on disk",
+                            if matched { "verified" } else { "tampered" },
+                            &format!("{} matched, {mod_c} modified, {miss_c} missing", wv["matched_count"].as_u64().unwrap_or(0)),
+                            None,
+                        ));
+                        matched
+                    });
+                    let valid = av.valid && ws_ok_opt.unwrap_or(true);
+                    let person_name = v["person"]["name"].as_str().unwrap_or("");
+                    let title = if person_name.is_empty() {
+                        fallback_title.to_string()
+                    } else {
+                        format!("{person_name} audit bundle")
+                    };
+                    let summary = if valid {
+                        format!(
+                            "Audit bundle passed offline SHA-256 verification ({} receipts, {} files).",
+                            av.receipt_count, av.workspace_file_count
+                        )
+                    } else {
+                        format!("Audit bundle verification failed with {} issue(s).", errors.len())
+                    };
+                    return EvidenceVerification {
+                        valid,
+                        kind: "audit_bundle",
+                        title,
+                        receipt_chain_valid: Some(av.receipt_chain_valid),
+                        bundle_hash_valid: Some(av.bundle_hash_valid),
+                        manifest_valid: Some(av.workspace_manifest_valid && av.routines_digest_valid),
+                        citations_valid: None,
+                        workspace_valid: ws_ok_opt,
+                        receipt_count: av.receipt_count,
+                        deliverable_count: av.workspace_file_count,
+                        citation_count: 0,
+                        stale_citations: 0,
+                        broken_citations: 0,
+                        expected_sha256: av.expected_bundle_sha256,
+                        actual_sha256: av.actual_bundle_sha256,
+                        summary,
+                        errors,
+                        items,
+                    };
+                }
+                if v.get("format").and_then(Value::as_str) == Some(routines::PLAYBOOK_PACK_FORMAT)
+                    || (v.get("playbook").is_some() && v.get("sha256").is_some())
+                {
+                    return verify_playbook_pack_evidence(&v, fallback_title);
+                }
+                return EvidenceVerification {
+                    valid: false,
+                    kind: "unknown",
+                    title: fallback_title.to_string(),
+                    receipt_chain_valid: None,
+                    bundle_hash_valid: None,
+                    manifest_valid: None,
+                    citations_valid: None,
+                    workspace_valid: None,
+                    receipt_count: 0,
+                    deliverable_count: 0,
+                    citation_count: 0,
+                    stale_citations: 0,
+                    broken_citations: 0,
+                    expected_sha256: String::new(),
+                    actual_sha256: sha256_hex(content.as_bytes()),
+                    summary: "Unrecognized JSON evidence format.".to_string(),
+                    errors: vec!["JSON document is neither an Ergon audit bundle nor a signed playbook pack.".to_string()],
+                    items: Vec::new(),
+                };
+            }
+            Err(e) => {
+                return EvidenceVerification {
+                    valid: false,
+                    kind: "unknown",
+                    title: fallback_title.to_string(),
+                    receipt_chain_valid: None,
+                    bundle_hash_valid: Some(false),
+                    manifest_valid: None,
+                    citations_valid: None,
+                    workspace_valid: None,
+                    receipt_count: 0,
+                    deliverable_count: 0,
+                    citation_count: 0,
+                    stale_citations: 0,
+                    broken_citations: 0,
+                    expected_sha256: String::new(),
+                    actual_sha256: sha256_hex(content.as_bytes()),
+                    summary: "Malformed JSON evidence input.".to_string(),
+                    errors: vec![format!("Invalid JSON syntax: {e}")],
+                    items: Vec::new(),
+                };
+            }
+        }
+    }
+
+    if trimmed.contains("## Included Deliverables")
+        || trimmed.contains("_SHA-256: `")
+        || trimmed.contains("## Verified Work Summary")
+    {
+        return verify_deliverable_pack_markdown(content, fallback_title, workspace_dir);
+    }
+
+    EvidenceVerification {
+        valid: false,
+        kind: "unknown",
+        title: fallback_title.to_string(),
+        receipt_chain_valid: None,
+        bundle_hash_valid: None,
+        manifest_valid: None,
+        citations_valid: None,
+        workspace_valid: None,
+        receipt_count: 0,
+        deliverable_count: 0,
+        citation_count: 0,
+        stale_citations: 0,
+        broken_citations: 0,
+        expected_sha256: String::new(),
+        actual_sha256: sha256_hex(content.as_bytes()),
+        summary: "Unsupported evidence format.".to_string(),
+        errors: vec!["Provide an audit bundle (.json), client deliverable pack (.md), or signed playbook (.ergon-playbook.json).".to_string()],
+        items: Vec::new(),
+    }
+}
+
 /// Render a human-readable Markdown version of an Audit Bundle suitable for
 /// downloading as `ergon-audit-bundle.md`.
+#[inline(never)]
 pub fn render_audit_bundle_markdown(bundle: &Value) -> String {
     let person_name = bundle["person"]["name"].as_str().unwrap_or("Unknown");
     let person_id = bundle["person"]["id"].as_str().unwrap_or("default");
@@ -812,4 +1411,109 @@ pub fn build_audit_bundle_json_bytes_with_chain(
 
 pub fn build_audit_bundle_json_bytes(cfg: &Config, person: &Person, security: &Value) -> Vec<u8> {
     build_audit_bundle_json_bytes_with_chain(cfg, person, security, None)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct TestDir(std::path::PathBuf);
+    impl TestDir {
+        fn new(tag: &str) -> Self {
+            let p = std::env::temp_dir().join(format!(
+                "ergon_test_{tag}_{}_{}",
+                std::process::id(),
+                records::now_millis()
+            ));
+            std::fs::create_dir_all(&p).unwrap();
+            Self(p)
+        }
+        fn path(&self) -> &Path {
+            &self.0
+        }
+    }
+    impl Drop for TestDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn verify_evidence_covers_bundles_packs_and_playbooks() {
+        let dir = TestDir::new("verify_evidence");
+        let data_dir = dir.path().to_path_buf();
+        let workspace_dir = data_dir.join("workspace");
+        let memory_path = data_dir.join("memory.md");
+        std::fs::create_dir_all(&workspace_dir).unwrap();
+        let cfg = Config {
+            data_dir,
+            workspace_dir: workspace_dir.clone(),
+            memory_path,
+            model_base_url: "http://127.0.0.1:11434/v1".into(),
+            model_id: "test".into(),
+            api_key: None,
+        };
+        std::fs::write(cfg.workspace_dir.join("report.md"), "# Q4 Summary\nLine 2 ok.\n").unwrap();
+
+        let person = Person {
+            id: "default".into(),
+            name: "You".into(),
+            role: "Operations".into(),
+        };
+        let sec = json!({"events_sha256": "0".repeat(64), "events": []});
+        let bundle_bytes = build_audit_bundle_json_bytes(&cfg, &person, &sec);
+        let bundle_str = String::from_utf8(bundle_bytes).unwrap();
+
+        let ok_bundle = verify_evidence(&bundle_str, Some("ergon-audit-bundle.json"), Some(&cfg.workspace_dir));
+        assert!(ok_bundle.valid, "valid bundle failed: {:?}", ok_bundle.errors);
+        assert_eq!(ok_bundle.kind, "audit_bundle");
+        assert_eq!(ok_bundle.workspace_valid, Some(true));
+
+        let tampered_bundle = bundle_str.replace("Operations", "Tampered");
+        let bad_bundle = verify_evidence(&tampered_bundle, None, None);
+        assert!(!bad_bundle.valid);
+        assert_eq!(bad_bundle.bundle_hash_valid, Some(false));
+
+        let report_bytes = std::fs::read(cfg.workspace_dir.join("report.md")).unwrap();
+        let report_sha = sha256_hex(&report_bytes);
+        let pack_md = format!(
+            "# Client Pack\n\n- Prepared for: **You**\n- Deliverables included: 1\n\n## Included Deliverables\n\n- `report.md` (2 lines, `sha256:{report_sha}`)\n\n## Citation Verification\n\n- `[report.md:L2]` -> **Verified** (2 lines in file, live `sha256:{}`)\n\n---\n\n## `report.md`\n\n_SHA-256: `{report_sha}` · 2 lines · {} bytes_\n\n# Q4 Summary\nLine 2 ok.\n",
+            &report_sha[..12],
+            report_bytes.len()
+        );
+        let ok_pack = verify_evidence(&pack_md, Some("pack.md"), Some(&cfg.workspace_dir));
+        assert!(ok_pack.valid, "valid pack failed: {:?}", ok_pack.errors);
+        assert_eq!(ok_pack.kind, "deliverable_pack");
+        assert_eq!(ok_pack.citations_valid, Some(true));
+
+        let tampered_pack = pack_md.replace("Line 2 ok.", "Line 2 MOD");
+        let bad_pack = verify_evidence(&tampered_pack, Some("pack.md"), None);
+        assert!(!bad_pack.valid);
+
+        let rt_opts = routines::PlaybookOptions {
+            steps: vec!["Read report.md".into()],
+            expected_inputs: vec!["report.md".into()],
+            pack_deliverables: true,
+        };
+        let pb_sha = routines::playbook_canonical_sha256("Weekly Review", "Audit report.md", "manual", None, None, &rt_opts);
+        let pb_json = json!({
+            "format": routines::PLAYBOOK_PACK_FORMAT,
+            "playbook": {
+                "name": "Weekly Review",
+                "prompt": "Audit report.md",
+                "schedule": "manual",
+                "steps": ["Read report.md"],
+                "expected_inputs": ["report.md"],
+                "pack_deliverables": true
+            },
+            "sha256": pb_sha,
+        })
+        .to_string();
+        let ok_pb = verify_evidence(&pb_json, Some("weekly.ergon-playbook.json"), None);
+        assert!(ok_pb.valid, "valid playbook failed: {:?}", ok_pb.errors);
+        assert_eq!(ok_pb.kind, "playbook_pack");
+
+        let bad_pb = pb_json.replace("Audit report.md", "Audit tampered.md");
+        assert!(!verify_evidence(&bad_pb, None, None).valid);
+    }
 }

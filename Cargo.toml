@@ -1,6 +1,6 @@
 [package]
 name = "ergon-rs"
-version = "0.25.0"
+version = "0.26.0"
 edition = "2021"
 
 [[bin]]
@@ -22,6 +22,7 @@ miniz_oxide = "0.9"
 opt-level = "z"
 lto = "fat"
 codegen-units = 1
+panic = "abort"
 strip = "symbols"
 
 # Keep cold dependencies size-optimized while preserving opt-level = 3 on

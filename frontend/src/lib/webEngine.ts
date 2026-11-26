@@ -2153,11 +2153,11 @@ function redactWebHostPaths(input: string): string {
     .replace(/\/tmp\//g, "[redacted-tmp]/");
 }
 
-    if (method === "GET" && path === "/api/version") return jsonRes({ name: "ergon", version: "0.25.0" });
-    if (method === "GET" && path === "/api/update") return jsonRes({ current: "0.25.0", available: false, mode: "off", checked_at: Math.floor(Date.now() / 1000) });
+    if (method === "GET" && path === "/api/version") return jsonRes({ name: "ergon", version: "0.26.0" });
+    if (method === "GET" && path === "/api/update") return jsonRes({ current: "0.26.0", available: false, mode: "off", checked_at: Math.floor(Date.now() / 1000) });
     if (method === "GET" && path === "/api/status") {
       return jsonRes({
-        version: "0.25.0",
+        version: "0.26.0",
         model_configured: true,
         model: byok.engine_mode === "byok" && byok.model_id ? byok.model_id : "browser-workspace-engine",
         model_base_url: byok.engine_mode === "byok" ? byok.model_base_url : "indexeddb://local",
@@ -2379,7 +2379,7 @@ function redactWebHostPaths(input: string): string {
       const pid = decodeURIComponent(path.slice("/api/playbooks/".length, -"/export".length)).trim();
       const rt = st.routines.find((x) => x.id === pid);
       if (!rt) return jsonRes({ error: "playbook not found" }, 404);
-      const built = await buildSignedPlaybookPack(rt, "0.25.0");
+      const built = await buildSignedPlaybookPack(rt, "0.26.0");
       return new Response(built.json, {
         status: 200,
         headers: {
@@ -3029,6 +3029,246 @@ function redactWebHostPaths(input: string): string {
           "Content-Type": format === "md" ? "text/markdown; charset=utf-8" : "application/json; charset=utf-8",
           "X-Ergon-Bundle-SHA256": built.bundleSha256,
         },
+      });
+    }
+    if (method === "POST" && path === "/api/verify/evidence") {
+      const content = String(body.content ?? "");
+      const filename = typeof body.filename === "string" ? body.filename : "evidence";
+      const checkWorkspace = Boolean(body.check_workspace);
+      if (!content.trim()) return jsonRes({ error: "evidence content is empty" }, 400);
+      const trimmed = content.trim();
+      const contentSha = await sha256Hex(content);
+      const hex64 = (s: unknown) => typeof s === "string" && /^[a-f0-9]{64}$/i.test(s);
+      if (trimmed.startsWith("{")) {
+        let parsed: Record<string, unknown>;
+        try {
+          parsed = JSON.parse(trimmed) as Record<string, unknown>;
+        } catch (err) {
+          return jsonRes({
+            valid: false,
+            kind: "unknown",
+            title: filename,
+            receipt_chain_valid: null,
+            bundle_hash_valid: false,
+            manifest_valid: null,
+            citations_valid: null,
+            workspace_valid: null,
+            receipt_count: 0,
+            deliverable_count: 0,
+            citation_count: 0,
+            stale_citations: 0,
+            broken_citations: 0,
+            expected_sha256: "",
+            actual_sha256: contentSha,
+            summary: "Malformed JSON evidence input.",
+            errors: [String(err)],
+            items: [],
+          });
+        }
+        if (parsed.schema === "ergon.fieldbook.audit_bundle.v1") {
+          const errors: string[] = [];
+          const rc = (parsed.receipt_chain ?? {}) as Record<string, unknown>;
+          const entries = Array.isArray(rc.entries) ? (rc.entries as Array<Record<string, unknown>>) : [];
+          let prev = "0".repeat(64);
+          let chainOk = Boolean(rc.verified);
+          for (const e of entries) {
+            if (String(e.prev_sha256 ?? "").toLowerCase() !== prev || !hex64(e.sha256)) {
+              chainOk = false;
+              break;
+            }
+            prev = String(e.sha256).toLowerCase();
+          }
+          if (entries.length > 0 && prev !== String(rc.head_sha256 ?? "").toLowerCase()) chainOk = false;
+          if (!chainOk) errors.push("Receipt chain link verification failed.");
+
+          const corePayload = {
+            schema: parsed.schema,
+            generated_at: parsed.generated_at,
+            workspace: parsed.workspace,
+            receipt_chain: parsed.receipt_chain,
+            workspace_files: parsed.workspace_files,
+            routines: parsed.routines,
+            verification_instructions: parsed.verification_instructions,
+          };
+          const expectedSha = await sha256Hex(JSON.stringify(corePayload));
+          const actualSha = String(parsed.bundle_sha256 ?? "").toLowerCase();
+          const hashOk = hex64(actualSha) && expectedSha === actualSha;
+          if (!hashOk) errors.push("Bundle SHA-256 does not match payload.");
+
+          const wsObj = (parsed.workspace_files ?? {}) as Record<string, unknown>;
+          const wsEntries = Array.isArray(wsObj.entries) ? (wsObj.entries as Array<Record<string, unknown>>) : [];
+          let wsMatch: boolean | null = null;
+          if (checkWorkspace) {
+            let allMatch = true;
+            for (const f of wsEntries) {
+              const live = st.files[String(f.path ?? "")];
+              if (!live || (await sha256Hex(live.content)) !== String(f.sha256 ?? "").toLowerCase()) {
+                allMatch = false;
+                errors.push(`Workspace file '${String(f.path ?? "")}' changed or missing.`);
+              }
+            }
+            wsMatch = allMatch;
+          }
+          const valid = errors.length === 0 && chainOk && hashOk;
+          const wsName = String(((parsed.workspace ?? {}) as Record<string, unknown>).name ?? "");
+          return jsonRes({
+            valid,
+            kind: "audit_bundle",
+            title: wsName ? `${wsName} audit bundle` : filename,
+            receipt_chain_valid: chainOk,
+            bundle_hash_valid: hashOk,
+            manifest_valid: true,
+            citations_valid: null,
+            workspace_valid: wsMatch,
+            receipt_count: entries.length,
+            deliverable_count: wsEntries.length,
+            citation_count: 0,
+            stale_citations: 0,
+            broken_citations: 0,
+            expected_sha256: expectedSha,
+            actual_sha256: actualSha || contentSha,
+            summary: valid
+              ? `Audit bundle passed offline SHA-256 verification (${entries.length} receipts, ${wsEntries.length} files).`
+              : `Audit bundle verification failed with ${errors.length} issue(s).`,
+            errors,
+            items: [
+              { label: "Receipt chain", status: chainOk ? "verified" : "tampered", detail: `${entries.length} receipts` },
+              { label: "Bundle SHA-256", status: hashOk ? "verified" : "tampered", detail: expectedSha.slice(0, 12) },
+              { label: "Workspace files", status: wsMatch === false ? "tampered" : "verified", detail: `${wsEntries.length} files` },
+            ],
+          });
+        }
+        if (parsed.format === "ergon-playbook-v1" || (parsed.playbook && parsed.sha256)) {
+          const res = await verifyAndParsePlaybookPack(trimmed);
+          if (res.ok) {
+            return jsonRes({
+              valid: true,
+              kind: "playbook_pack",
+              title: res.playbook.name,
+              receipt_chain_valid: null,
+              bundle_hash_valid: true,
+              manifest_valid: true,
+              citations_valid: null,
+              workspace_valid: null,
+              receipt_count: 0,
+              deliverable_count: res.playbook.steps.length,
+              citation_count: 0,
+              stale_citations: 0,
+              broken_citations: 0,
+              expected_sha256: res.sha256,
+              actual_sha256: res.sha256,
+              summary: `Playbook pack passed offline SHA-256 verification (${res.playbook.steps.length} steps).`,
+              errors: [],
+              items: [{ label: "Playbook canonical checksum", status: "verified", detail: `${res.playbook.steps.length} steps` }],
+            });
+          }
+          return jsonRes({
+            valid: false,
+            kind: "playbook_pack",
+            title: filename,
+            receipt_chain_valid: null,
+            bundle_hash_valid: false,
+            manifest_valid: false,
+            citations_valid: null,
+            workspace_valid: null,
+            receipt_count: 0,
+            deliverable_count: 0,
+            citation_count: 0,
+            stale_citations: 0,
+            broken_citations: 0,
+            expected_sha256: "",
+            actual_sha256: String(parsed.sha256 ?? contentSha),
+            summary: "Playbook verification failed.",
+            errors: [res.error],
+            items: [{ label: "Playbook canonical checksum", status: "tampered" }],
+          });
+        }
+      }
+      if (trimmed.includes("## Included Deliverables") || trimmed.includes("_SHA-256: `")) {
+        const errors: string[] = [];
+        const items: Array<{ label: string; status: string; sha256?: string; detail?: string }> = [];
+        const manifest = new Map<string, string>();
+        for (const line of content.split(/\r?\n/)) {
+          const m = line.match(/^- `([^`]+)` .*`sha256:([a-f0-9]{64})`/i);
+          if (m) manifest.set(m[1], m[2].toLowerCase());
+        }
+        let stale = 0;
+        let broken = 0;
+        let citations = 0;
+        for (const line of content.split(/\r?\n/)) {
+          const cm = line.match(/^- `([^`]+)` -> \*\*([^*]+)\*\*/);
+          if (cm) {
+            citations += 1;
+            const stWord = cm[2].trim().toLowerCase();
+            if (stWord === "stale") stale += 1;
+            if (stWord === "broken") broken += 1;
+          }
+        }
+        const sections = content.split(/\n---\n\n## `([^`]+)`\n+/);
+        for (let i = 1; i + 1 < sections.length; i += 2) {
+          const secPath = sections[i];
+          const rest = sections[i + 1];
+          const mm = rest.match(/^_SHA-256: `([a-f0-9]{64})`[^·]*·[^·]*·\s*(\d+)\s*bytes_\n\n([\s\S]*)$/i);
+          if (!mm) continue;
+          const secSha = mm[1].toLowerCase();
+          const expBytes = Number(mm[2]);
+          const bodyRaw = mm[3].replace(/\n---\n\n## [\s\S]*$/, "");
+          const bodyTrim = bodyRaw.endsWith("\n") ? bodyRaw.slice(0, -1) : bodyRaw;
+          let secOk = !manifest.has(secPath) || manifest.get(secPath) === secSha;
+          if (bodyTrim.length === expBytes || bodyRaw.length === expBytes) {
+            const txt = bodyTrim.length === expBytes ? bodyTrim : bodyRaw;
+            if ((await sha256Hex(txt)) !== secSha) {
+              secOk = false;
+              errors.push(`Deliverable '${secPath}' content was modified after export.`);
+            }
+          }
+          items.push({ label: secPath, status: secOk ? "verified" : "tampered", sha256: secSha });
+        }
+        if (stale > 0 || broken > 0) errors.push(`Pack contains ${stale} stale and ${broken} broken citation(s).`);
+        if (manifest.size === 0 && items.length === 0) errors.push("Markdown file does not contain Ergon deliverable digests.");
+        const valid = errors.length === 0;
+        return jsonRes({
+          valid,
+          kind: "deliverable_pack",
+          title: filename,
+          receipt_chain_valid: null,
+          bundle_hash_valid: valid,
+          manifest_valid: manifest.size > 0,
+          citations_valid: stale === 0 && broken === 0,
+          workspace_valid: null,
+          receipt_count: 0,
+          deliverable_count: Math.max(manifest.size, items.length),
+          citation_count: citations,
+          stale_citations: stale,
+          broken_citations: broken,
+          expected_sha256: contentSha,
+          actual_sha256: contentSha,
+          summary: valid
+            ? `Client pack passed offline verification (${Math.max(manifest.size, items.length)} deliverables, ${citations} citations).`
+            : `Pack verification failed with ${errors.length} issue(s).`,
+          errors,
+          items,
+        });
+      }
+      return jsonRes({
+        valid: false,
+        kind: "unknown",
+        title: filename,
+        receipt_chain_valid: null,
+        bundle_hash_valid: null,
+        manifest_valid: null,
+        citations_valid: null,
+        workspace_valid: null,
+        receipt_count: 0,
+        deliverable_count: 0,
+        citation_count: 0,
+        stale_citations: 0,
+        broken_citations: 0,
+        expected_sha256: "",
+        actual_sha256: contentSha,
+        summary: "Unsupported evidence format.",
+        errors: ["Provide an audit bundle JSON, client pack Markdown, or signed playbook JSON."],
+        items: [],
       });
     }
     if (method === "POST" && path === "/api/files/upload") {

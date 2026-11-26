@@ -56,19 +56,19 @@ flowchart LR
 
 ---
 
-## Verified benchmarks (`v0.25.0` vs `v0.11.0`)
+## Verified benchmarks (`v0.26.0` vs `v0.11.0`)
 
 Measured against the stripped fat-LTO release binary on local loopback against a `5,000` receipts and `500` workspace files dataset:
 
-| Metric | `v0.11.0` baseline | `v0.25.0` measured | Change |
+| Metric | `v0.11.0` baseline | `v0.26.0` measured | Change |
 | --- | --- | --- | --- |
-| Release binary size | `16.0 MB` | `8.38 MB` (`8,786,784 B`) | `-47.6%` |
-| Initial `/` shell payload | `1.15 MB` | `150.3 KB` raw / `34.0 KiB` (`34,846 B`) gzip (`15` `/chunks/*`) | `-97.0%` wire |
-| Cold boot to `200 OK` | `n/a` | `6.96 ms` median (`5.39 ms` min) | Under `12 ms` target |
-| Peak RSS (`VmHWM`, `5k` receipts + `500` files, warm + audit bundle) | `n/a` | `15.89 MB` (`16,268 KB`) | `M_ARENA_MAX=1` + pre-reserved stream |
-| Concurrent HTTP (`16w` mixed 5 routes across `5k`/`500`) | `724 req/s` (`188.7 ms` p95) | `35,327.7 req/s` keep-alive (`0.31 ms` p50, `0.77 ms` p95) / `20,709.1 req/s` cold (`0.61 ms` p50, `1.69 ms` p95, `0` err) | `48.8x` keep-alive / `28.6x` cold |
-| Streaming audit bundle (`5k` entries) | `n/a` | `50.67 ms` (`1,941,459 B`) | Single-allocation JSON |
-| Automated checks | `204` Rust tests | `223/223` Rust tests, `100/100` UI checks, `35/35` raw-TCP fuzz and policy, `0` `sloplint` fails | Zero warnings / zero externals |
+| Release binary size | `16.0 MB` | `7.46 MB` (`7,824,224 B`) | `-53.4%` |
+| Initial `/` shell payload | `1.15 MB` | `150.3 KB` raw / `34.0 KiB` (`34,848 B`) gzip (`15` `/chunks/*`) | `-97.0%` wire |
+| Cold boot to `200 OK` | `n/a` | `4.51 ms` median (`4.25 ms` min) | Under `10 ms` target |
+| Peak RSS (`VmHWM`, `5k` receipts + `500` files, warm + audit bundle) | `n/a` | `15.43 MB` (`15,800 KB`) | `M_ARENA_MAX=1` + pre-reserved stream |
+| Concurrent HTTP (`16w` mixed 5 routes across `5k`/`500`) | `724 req/s` (`188.7 ms` p95) | `48,009.1 req/s` keep-alive (`0.27 ms` p50, `0.70 ms` p95) / `37,833.2 req/s` cold (`0.35 ms` p50, `0.86 ms` p95, `0` err) | `66.3x` keep-alive / `52.3x` cold |
+| Streaming audit bundle (`5k` entries) | `n/a` | `36.66 ms` (`1,941,459 B`) | Single-allocation JSON |
+| Automated checks | `204` Rust tests | `225/225` Rust tests, `100/100` UI checks, `39/39` CLI/policy/fuzz, `0` `sloplint` fails | Zero warnings / zero externals |
 
 ---
 
@@ -88,6 +88,7 @@ CARGO_BUILD_JOBS=2 cargo build --release --locked
 ```sh
 ./target/release/ergon             # opens a desktop window on http://127.0.0.1:8787
 ./target/release/ergon --no-open   # runs in headless server mode
+./target/release/ergon verify ergon-audit-bundle.json --workspace ./data/workspace
 ```
 
 To install a managed local launcher (`ergon-serve`) with an optional `systemd --user` service:
@@ -124,6 +125,10 @@ On startup, unless `ERGON_NO_AUTO_MODEL=1` or an explicit `ERGON_MODEL_BASE_URL`
 ---
 
 ## Core capabilities
+
+### Offline evidence verification
+
+`ergon verify <bundle-or-pack> [--workspace <dir>] [--json]`, `POST /api/verify/evidence`, and the Verify evidence card in the Audit tab verify exported audit bundles (`.json`), client deliverable packs (`.md`), and signed playbook packs (`.ergon-playbook.json`) against SHA-256 digests and Field-Book receipt chains without starting a server or model endpoint.
 
 ### Workspace audit policy profiles
 

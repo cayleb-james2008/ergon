@@ -2,9 +2,9 @@
 // 1. Files tab: live WorkspaceFilesBody (search, upload, new file, click to open/export)
 // 2. History tab: inline .history/ snapshot timeline, line diff, and 1-click restore
 // 3. Audit & Offers tab: 1-click SHA-256 Audit Bundle (.md/.json), receipt chain verification, and active offers
-import { memo, useCallback, useEffect, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { m, useReducedMotion } from "motion/react";
-import { FileCheck2, FileDown, FolderOpen, History, PackageCheck, Printer, ShieldCheck, Sparkles, X } from "lucide-react";
+import { FileCheck2, FileDown, FolderOpen, History, PackageCheck, Printer, ShieldCheck, Sparkles, Upload, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -24,6 +24,7 @@ import {
 import {
   call,
   hasV070Api,
+  type EvidenceVerificationResult,
   type FileRevision,
   type Offer,
   type Status,
@@ -76,6 +77,9 @@ export const InspectorDrawer = memo(function InspectorDrawer({
   const [savingPolicy, setSavingPolicy] = useState<WorkspacePolicyProfile | null>(null);
   const [verifyInfo, setVerifyInfo] = useState<{ checked: number; ok: boolean } | null>(null);
   const [packPreflight, setPackPreflight] = useState<PackPreflightReport | null>(null);
+  const [verifyingEvidence, setVerifyingEvidence] = useState(false);
+  const [evidenceResult, setEvidenceResult] = useState<EvidenceVerificationResult | null>(null);
+  const verifyFileInputRef = useRef<HTMLInputElement | null>(null);
   const [recentReceipts, setRecentReceipts] = useState<Array<{ id: string; task: string; ts?: number }>>([]);
   const [compareA, setCompareA] = useState("");
   const [compareB, setCompareB] = useState("");
@@ -573,6 +577,160 @@ export const InspectorDrawer = memo(function InspectorDrawer({
                       </li>
                     ))}
                   </ul>
+                </div>
+              )}
+            </section>
+
+            <section
+              id="evidence-verifier-card"
+              className="flex flex-col gap-2.5 rounded-card border border-hairline bg-board/40 p-3.5"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <h2 className="text-sm font-medium text-ink">Verify evidence</h2>
+                <span
+                  id="evidence-verify-badge"
+                  data-verify-state={
+                    evidenceResult ? (evidenceResult.valid ? "valid" : "invalid") : "idle"
+                  }
+                  className={cn(
+                    "mono rounded-chip px-2 py-0.5 text-xs",
+                    evidenceResult
+                      ? evidenceResult.valid
+                        ? "status-finished"
+                        : "status-stopped"
+                      : "border border-hairline bg-surface text-ink-2"
+                  )}
+                >
+                  {evidenceResult ? (evidenceResult.valid ? "Verified" : "Tampered") : "Offline ready"}
+                </span>
+              </div>
+              <p className="text-sm leading-5 text-ink-2">
+                Check an audit bundle JSON, client pack Markdown, or playbook pack offline against its SHA-256 digests.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  id="verify-current-bundle-btn"
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={verifyingEvidence}
+                  className="max-md:min-h-11 gap-1.5"
+                  onClick={async () => {
+                    setVerifyingEvidence(true);
+                    try {
+                      const raw = await fetch("/api/audit/bundle?format=json", { cache: "no-store" });
+                      if (!raw.ok) {
+                        toast.error("Could not load current audit bundle.");
+                        return;
+                      }
+                      const content = await raw.text();
+                      const res = await call<EvidenceVerificationResult>("/api/verify/evidence", {
+                        method: "POST",
+                        body: { filename: "ergon-audit-bundle.json", content, check_workspace: true },
+                      });
+                      if (!res.ok) {
+                        toast.error(res.error || "Could not verify evidence bundle.");
+                        return;
+                      }
+                      setEvidenceResult(res.data);
+                      if (res.data.valid) {
+                        toast.success(res.data.summary);
+                      } else {
+                        toast.error(res.data.summary);
+                      }
+                    } catch {
+                      toast.error("Could not verify evidence bundle.");
+                    } finally {
+                      setVerifyingEvidence(false);
+                    }
+                  }}
+                >
+                  <ShieldCheck className="size-3.5" strokeWidth={1.5} aria-hidden />
+                  {verifyingEvidence ? "Verifying…" : "Verify Current Bundle"}
+                </Button>
+                <Button
+                  id="verify-evidence-upload-btn"
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={verifyingEvidence}
+                  className="max-md:min-h-11 gap-1.5"
+                  onClick={() => verifyFileInputRef.current?.click()}
+                >
+                  <Upload className="size-3.5" strokeWidth={1.5} aria-hidden />
+                  Verify File
+                </Button>
+                <input
+                  id="verify-evidence-file-input"
+                  ref={verifyFileInputRef}
+                  type="file"
+                  accept=".json,.md,.txt"
+                  className="hidden"
+                  onChange={async (e) => {
+                    const picked = e.target.files?.[0];
+                    e.target.value = "";
+                    if (!picked) return;
+                    setVerifyingEvidence(true);
+                    try {
+                      const content = await picked.text();
+                      const res = await call<EvidenceVerificationResult>("/api/verify/evidence", {
+                        method: "POST",
+                        body: { filename: picked.name, content, check_workspace: false },
+                      });
+                      if (!res.ok) {
+                        toast.error(res.error || "Could not verify selected file.");
+                        return;
+                      }
+                      setEvidenceResult(res.data);
+                      if (res.data.valid) {
+                        toast.success(res.data.summary);
+                      } else {
+                        toast.error(res.data.summary);
+                      }
+                    } catch {
+                      toast.error("Could not read selected evidence file.");
+                    } finally {
+                      setVerifyingEvidence(false);
+                    }
+                  }}
+                />
+              </div>
+              {evidenceResult && (
+                <div
+                  id="evidence-verify-summary"
+                  className="rounded-chip border border-hairline bg-surface p-2.5 text-xs"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2 font-medium text-ink">
+                    <span className="truncate">{evidenceResult.title}</span>
+                    {evidenceResult.actual_sha256 && (
+                      <span className="mono text-ink-2">
+                        sha256:{evidenceResult.actual_sha256.slice(0, 12)}
+                      </span>
+                    )}
+                  </div>
+                  <p className="mt-1 text-ink-2">{evidenceResult.summary}</p>
+                  {evidenceResult.items.length > 0 && (
+                    <div className="mt-1.5 flex flex-wrap gap-1.5">
+                      {evidenceResult.items.slice(0, 5).map((item, idx) => (
+                        <span
+                          key={`${item.label}-${idx}`}
+                          className={cn(
+                            "mono rounded-chip px-2 py-0.5",
+                            item.status === "verified" ? "status-finished" : "status-stopped"
+                          )}
+                        >
+                          {item.label}: {item.status}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  {evidenceResult.errors.length > 0 && (
+                    <ul className="mt-1.5 flex flex-col gap-0.5 text-destructive-foreground">
+                      {evidenceResult.errors.slice(0, 4).map((err, idx) => (
+                        <li key={idx}>{err}</li>
+                      ))}
+                    </ul>
+                  )}
                 </div>
               )}
             </section>

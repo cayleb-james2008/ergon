@@ -4,6 +4,12 @@ Each release is tagged `vMAJOR.MINOR.PATCH` and published on GitHub Releases wit
 binaries and a `SHA256SUMS` file. The running app shows its version and can update
 itself from the newest release (see README, "Versions and updates").
 
+## 0.26.0 - 2026-11-25
+
+Offline evidence verification lets auditors and clients check exported audit bundles (`.json`), client deliverable packs (`.md`), and signed playbook packs (`.ergon-playbook.json`) without a running server or model gateway. Run `ergon verify <bundle-or-pack> [--workspace <dir>] [--json]` from the command line (`src/main.rs`, `src/audit_bundle.rs`), call `POST /api/verify/evidence` (`src/server.rs`), or use the Verify evidence card inside the right inspector (`frontend/src/shell/InspectorDrawer.tsx`, `frontend/src/lib/webEngine.ts`).
+
+Switching the release profile to `panic = "abort"` with an isolated `--internal-pdf-text` worker subprocess for untrusted PDF parsing (`Cargo.toml`, `src/docs.rs`, `src/main.rs`), moving the twelve built-in skill definitions into a compile-time compressed `src/skills/catalog.json` (`build.rs`, `src/skill_catalog.rs`), factoring `person_idx`, and replacing remaining inline error JSON allocations with `respond_err` bring the stripped release binary down to `7.46 MB` (`7,824,224 B`).
+
 ## 0.25.0 - 2026-11-25
 
 Workspace audit policy profiles let you switch between `Fast Internal`, `Strict Client`, and `Air-Gapped` in one click from the Audit tab in the right inspector. `GET`, `PUT`, and `POST /api/workspace/policy` save the choice to `workspace_policy.json` (`src/lib.rs`, `src/server.rs`, `frontend/src/shell/InspectorDrawer.tsx`, `frontend/src/lib/webEngine.ts`).
