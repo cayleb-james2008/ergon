@@ -18,7 +18,6 @@ import { cn } from "@/lib/utils";
 import { extractCitations, extractPlaybookFromRun, fileIconFor, savedFile, toolLabel } from "@/lib/words";
 import {
   call,
-  exportTarget,
   type Decision,
   type FileDiffLine,
   type FileRevision,

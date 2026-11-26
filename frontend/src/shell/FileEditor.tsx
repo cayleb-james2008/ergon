@@ -3,7 +3,7 @@
 //   dirty indicator, and 409 optimistic-lock conflict resolution banner.
 // - Inline editable CSV/TSV grid (cell edit, add/delete row, column sort, Save Changes)
 //   plus deterministic Table Query / Group-By bar (Where, Group By, Aggregate, Run Query, Save query as CSV).
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowDown,
   ArrowUp,
@@ -36,8 +36,18 @@ import {
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
-/** RFC-4180 compliant delimited parser handling quoted fields and doubled quotes. */
-export function parseDelimited(text: string, delimiter = ","): string[][] {
+export type DelimitedInspection = {
+  rows: string[][];
+  unclosedQuote: boolean;
+  hasNullByte: boolean;
+  raggedRows: number;
+  maxCols: number;
+  error: string | null;
+};
+
+/** Parse delimited text and surface structural issues (unclosed quotes, NUL bytes, or ragged extra columns). */
+export function inspectDelimited(text: string, delimiter = ","): DelimitedInspection {
+  const hasNullByte = text.includes("\0");
   const rows: string[][] = [];
   let row: string[] = [];
   let cell = "";
@@ -77,7 +87,31 @@ export function parseDelimited(text: string, delimiter = ","): string[][] {
   }
   row.push(cell);
   if (row.some((c) => c.length > 0)) rows.push(row);
-  return rows;
+
+  const headerLen = rows.length > 0 ? rows[0].length : 0;
+  let maxCols = headerLen;
+  let raggedRows = 0;
+  for (let r = 1; r < rows.length; r++) {
+    const len = rows[r].length;
+    if (len > maxCols) maxCols = len;
+    if (len > headerLen) raggedRows += 1;
+  }
+
+  let error: string | null = null;
+  if (hasNullByte) {
+    error = "This file contains binary NUL bytes and cannot be safely edited in the spreadsheet grid.";
+  } else if (inQuotes) {
+    error = "Unclosed quotation mark detected in delimited data. Switch to raw text to repair quotes before saving.";
+  } else if (raggedRows > 0) {
+    error = `${raggedRows} ${raggedRows === 1 ? "row has" : "rows have"} more columns than the header (${headerLen} header cols vs up to ${maxCols} data cols). Grid edits are paused to prevent dropping columns.`;
+  }
+
+  return { rows, unclosedQuote: inQuotes, hasNullByte, raggedRows, maxCols, error };
+}
+
+/** RFC-4180 compliant delimited parser handling quoted fields and doubled quotes. */
+export function parseDelimited(text: string, delimiter = ","): string[][] {
+  return inspectDelimited(text, delimiter).rows;
 }
 
 export function parseCsv(text: string): string[][] {
@@ -304,7 +338,7 @@ export function MarkdownView({ content }: { content: string }) {
   );
 }
 
-function parseSortableNumber(raw: string): number | null {
+export function parseSortableNumber(raw: string): number | null {
   const cleaned = raw.trim().replace(/[$,%\s]/g, "");
   if (!cleaned || !/^-?\d+(?:\.\d+)?$/.test(cleaned)) return null;
   const n = Number(cleaned);
@@ -321,7 +355,7 @@ export type FileEditorProps = {
   extractedKind?: string;
   sheet?: string | null;
   onSaved: (res: { path: string; content: string; size: number; mtime_ms: number; sha256: string }) => void;
-  onReloadFromServer: () => Promise<void>;
+  onReloadFromServer: () => Promise<boolean | void>;
   onDirtyChange?: (dirty: boolean) => void;
   onOpenSavedFile?: (path: string) => void;
   onWorkspaceMutated?: () => void;
@@ -350,17 +384,27 @@ export function FileEditor({
   const [savedContent, setSavedContent] = useState(initialContent);
   const [sha256, setSha256] = useState<string | undefined>(initialSha256);
   const [saving, setSaving] = useState(false);
+  const [reloading, setReloading] = useState(false);
   const [conflictSha, setConflictSha] = useState<string | null>(null);
   const [saveErr, setSaveErr] = useState("");
+  const saveLockRef = useRef(false);
+  const prevFilePathRef = useRef(filePath);
 
   // Text / Markdown editor state
   const [textDraft, setTextDraft] = useState(initialContent);
   const [viewMode, setViewMode] = useState<"split" | "write" | "preview">("split");
+  const [rawCsvMode, setRawCsvMode] = useState(false);
+  const [csvNormalized, setCsvNormalized] = useState(false);
 
   // CSV / TSV grid state
+  const csvInspection = useMemo(() => {
+    if (!isTabular) return null;
+    return inspectDelimited(savedContent, delimiter);
+  }, [savedContent, delimiter, isTabular]);
+
   const parsedInitial = useMemo(() => {
     if (!isTabular) return { header: [] as string[], body: [] as string[][] };
-    const raw = parseDelimited(initialContent, delimiter);
+    const raw = inspectDelimited(initialContent, delimiter).rows;
     if (!raw.length) return { header: ["Column 1"], body: [] as string[][] };
     const header = raw[0];
     const body = raw.slice(1).map((r) => header.map((_, i) => r[i] ?? ""));
@@ -386,8 +430,37 @@ export function FileEditor({
   const stem = useMemo(() => filePath.replace(/\.[^.]+$/, ""), [filePath]);
   const [saveQueryName, setSaveQueryName] = useState<string>(`${stem}-query.csv`);
 
-  // Sync baseline when filePath or server content refreshes
+  const gridBlockedByMalformed = Boolean(isTabular && csvInspection?.error && !rawCsvMode && !csvNormalized);
+
+  const currentSerialized = useMemo(() => {
+    if (!isTabular || rawCsvMode) return textDraft;
+    return serializeDelimited([tableHeader, ...tableRows], delimiter);
+  }, [isTabular, rawCsvMode, textDraft, tableHeader, tableRows, delimiter]);
+
+  const gridBaseline = useMemo(() => {
+    if (!isTabular) return savedContent;
+    const raw = inspectDelimited(savedContent, delimiter).rows;
+    if (!raw.length) return serializeDelimited([["Column 1"]], delimiter);
+    const hdr = raw[0];
+    const body = raw.slice(1).map((r) => hdr.map((_, i) => r[i] ?? ""));
+    return serializeDelimited([hdr, ...body], delimiter);
+  }, [isTabular, savedContent, delimiter]);
+
+  const dirty = !isExtracted && (
+    !isTabular || rawCsvMode
+      ? currentSerialized !== savedContent
+      : currentSerialized !== gridBaseline
+  );
+
+  // Sync baseline when filePath or server content refreshes (never silently discard unsaved edits on same path)
   useEffect(() => {
+    const pathChanged = prevFilePathRef.current !== filePath;
+    prevFilePathRef.current = filePath;
+    if (!pathChanged && dirty && initialSha256 && initialSha256 !== sha256) {
+      setConflictSha(initialSha256);
+      setSaveErr("File changed in the workspace while you were editing.");
+      return;
+    }
     setSavedContent(initialContent);
     setTextDraft(initialContent);
     setSha256(initialSha256);
@@ -395,9 +468,11 @@ export function FileEditor({
     setSaveErr("");
     setQueryResult(null);
     setQueryErr("");
+    setRawCsvMode(false);
+    setCsvNormalized(false);
     setSaveQueryName(`${filePath.replace(/\.[^.]+$/, "")}-query.csv`);
     if (isTabular) {
-      const raw = parseDelimited(initialContent, delimiter);
+      const raw = inspectDelimited(initialContent, delimiter).rows;
       const hdr = raw.length ? raw[0] : ["Column 1"];
       const body = raw.slice(1).map((r) => hdr.map((_, i) => r[i] ?? ""));
       setTableHeader(hdr);
@@ -407,14 +482,7 @@ export function FileEditor({
       setWhereCol((prev) => (hdr.includes(prev) ? prev : ""));
       setGroupCol((prev) => (hdr.includes(prev) ? prev : ""));
     }
-  }, [filePath, initialContent, initialSha256, delimiter, isTabular]);
-
-  const currentSerialized = useMemo(() => {
-    if (!isTabular) return textDraft;
-    return serializeDelimited([tableHeader, ...tableRows], delimiter);
-  }, [isTabular, textDraft, tableHeader, tableRows, delimiter]);
-
-  const dirty = !isExtracted && currentSerialized !== savedContent;
+  }, [filePath, initialContent, initialSha256, delimiter, isTabular]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     onDirtyChange?.(dirty);
@@ -432,46 +500,70 @@ export function FileEditor({
 
   const handleSave = useCallback(
     async (forceOverwrite = false) => {
-      if (isExtracted || saving) return;
+      if (isExtracted || saving || saveLockRef.current || gridBlockedByMalformed) return;
+      saveLockRef.current = true;
       setSaving(true);
       setSaveErr("");
-      const nextContent = currentSerialized;
-      const expected = forceOverwrite ? conflictSha ?? undefined : sha256;
-      const res = await saveFileContent({
-        path: filePath,
-        content: nextContent,
-        ...(expected ? { expected_sha256: expected } : {}),
-        reason: "edit",
-      });
-      setSaving(false);
-      if (!res.ok) {
-        if (res.status === 409) {
-          setConflictSha(res.current_sha256 ?? "");
-          setSaveErr(res.error || "File changed in the workspace while you were editing.");
+      try {
+        const nextContent = currentSerialized;
+        const expected = forceOverwrite ? (conflictSha ? conflictSha : undefined) : sha256;
+        const res = await saveFileContent({
+          path: filePath,
+          content: nextContent,
+          ...(expected ? { expected_sha256: expected } : {}),
+          reason: "edit",
+        });
+        if (!res.ok) {
+          if (res.status === 409) {
+            setConflictSha(res.current_sha256 ?? "");
+            setSaveErr(res.error || "File changed in the workspace while you were editing.");
+            return;
+          }
+          setSaveErr(res.error || "Could not save changes.");
+          toast.error(res.error || "Could not save changes.");
           return;
         }
-        setSaveErr(res.error || "Could not save changes.");
-        toast.error(res.error || "Could not save changes.");
+        setConflictSha(null);
+        setSavedContent(nextContent);
+        setTextDraft(nextContent);
+        setSha256(res.data.sha256);
+        onSaved({
+          path: res.data.path,
+          content: nextContent,
+          size: res.data.size,
+          mtime_ms: res.data.mtime_ms,
+          sha256: res.data.sha256,
+        });
+        toast.success(`Saved ${filePath.split("/").pop()}.`);
+      } finally {
+        saveLockRef.current = false;
+        setSaving(false);
+      }
+    },
+    [isExtracted, saving, gridBlockedByMalformed, currentSerialized, conflictSha, sha256, filePath, onSaved]
+  );
+
+  const handleReloadLatest = useCallback(async () => {
+    if (reloading) return;
+    setReloading(true);
+    setSaveErr("");
+    try {
+      const ok = await onReloadFromServer();
+      if (ok === false) {
+        setSaveErr("Could not reload the latest file copy from the server.");
         return;
       }
       setConflictSha(null);
-      setSavedContent(nextContent);
-      setSha256(res.data.sha256);
-      onSaved({
-        path: res.data.path,
-        content: nextContent,
-        size: res.data.size,
-        mtime_ms: res.data.mtime_ms,
-        sha256: res.data.sha256,
-      });
-      toast.success(`Saved ${filePath.split("/").pop()}.`);
-    },
-    [isExtracted, saving, currentSerialized, conflictSha, sha256, filePath, onSaved]
-  );
+    } catch {
+      setSaveErr("Could not reload the latest file copy from the server.");
+    } finally {
+      setReloading(false);
+    }
+  }, [reloading, onReloadFromServer]);
 
   const handleRevert = () => {
-    if (isTabular) {
-      const raw = parseDelimited(savedContent, delimiter);
+    if (isTabular && !rawCsvMode) {
+      const raw = inspectDelimited(savedContent, delimiter).rows;
       const hdr = raw.length ? raw[0] : ["Column 1"];
       setTableHeader(hdr);
       setTableRows(raw.slice(1).map((r) => hdr.map((_, i) => r[i] ?? "")));
@@ -479,8 +571,24 @@ export function FileEditor({
     } else {
       setTextDraft(savedContent);
     }
+    setCsvNormalized(false);
     setConflictSha(null);
     setSaveErr("");
+  };
+
+  const handleNormalizeRaggedGrid = () => {
+    if (!csvInspection || csvInspection.unclosedQuote || csvInspection.hasNullByte) return;
+    const raw = csvInspection.rows;
+    const maxCols = Math.max(1, csvInspection.maxCols);
+    const baseHdr = raw[0] ?? [];
+    const hdr = Array.from({ length: maxCols }, (_, i) => baseHdr[i] ?? `Column ${i + 1}`);
+    const body = raw.slice(1).map((r) => Array.from({ length: maxCols }, (_, i) => r[i] ?? ""));
+    const normalized = serializeDelimited([hdr, ...body], delimiter);
+    setTableHeader(hdr);
+    setTableRows(body);
+    setTextDraft(normalized);
+    setCsvNormalized(true);
+    setRawCsvMode(false);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -578,7 +686,7 @@ export function FileEditor({
             </Badge>
           )}
           <span className="mono text-xs text-ink-2">
-            {isTabular
+            {isTabular && !rawCsvMode
               ? `${tableRows.length} ${tableRows.length === 1 ? "row" : "rows"}, ${tableHeader.length} cols`
               : `${textDraft.split(/\r?\n/).length} lines`}
           </span>
@@ -592,7 +700,7 @@ export function FileEditor({
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          {!isTabular && !isExtracted && (
+          {(!isTabular || rawCsvMode) && !isExtracted && (
             <SegmentedControl aria-label="Editor layout mode">
               <SegmentedControlItem
                 data-id="split"
@@ -627,7 +735,7 @@ export function FileEditor({
             </SegmentedControl>
           )}
 
-          {isTabular && !isExtracted && (
+          {isTabular && !isExtracted && !rawCsvMode && !gridBlockedByMalformed && (
             <Button
               id="csv-add-row"
               type="button"
@@ -638,6 +746,32 @@ export function FileEditor({
             >
               <Plus className="size-3.5" strokeWidth={1.5} aria-hidden />
               Add row
+            </Button>
+          )}
+
+          {isTabular && !isExtracted && rawCsvMode && (
+            <Button
+              id="csv-grid-return-btn"
+              type="button"
+              size="sm"
+              variant="outline"
+              className="max-md:min-h-11"
+              onClick={() => {
+                const check = inspectDelimited(textDraft, delimiter);
+                if (check.error) {
+                  setSaveErr(check.error);
+                  return;
+                }
+                const hdr = check.rows.length ? check.rows[0] : ["Column 1"];
+                setTableHeader(hdr);
+                setTableRows(check.rows.slice(1).map((r) => hdr.map((_, i) => r[i] ?? "")));
+                setCsvNormalized(true);
+                setRawCsvMode(false);
+                setSaveErr("");
+              }}
+            >
+              <FileSpreadsheet className="size-3.5" strokeWidth={1.5} aria-hidden />
+              Use grid view
             </Button>
           )}
 
@@ -661,7 +795,7 @@ export function FileEditor({
               type="button"
               size="sm"
               className="max-md:min-h-11"
-              disabled={!dirty || saving}
+              disabled={!dirty || saving || gridBlockedByMalformed}
               onClick={() => void handleSave(false)}
             >
               <Save className="size-3.5" strokeWidth={1.5} aria-hidden />
@@ -681,7 +815,8 @@ export function FileEditor({
           <div className="min-w-0 flex-1">
             <p className="font-medium">This file changed while you were editing</p>
             <p className="text-xs text-ink-2">
-              Another run or tab updated {filePath}. Reload the latest copy or overwrite with your draft.
+              Another run or tab updated {filePath}
+              {conflictSha ? ` (server SHA ${conflictSha.slice(0, 10)})` : ""}. Reload the latest copy or overwrite with your draft.
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -691,20 +826,21 @@ export function FileEditor({
               size="sm"
               variant="outline"
               className="max-md:min-h-11"
-              onClick={() => void onReloadFromServer()}
+              disabled={reloading || saving}
+              onClick={() => void handleReloadLatest()}
             >
               <RefreshCw className="size-3.5" strokeWidth={1.5} aria-hidden />
-              Reload latest
+              {reloading ? "Reloading…" : "Reload latest"}
             </Button>
             <Button
               id="file-editor-force-save"
               type="button"
               size="sm"
               className="max-md:min-h-11"
-              disabled={saving}
+              disabled={saving || reloading || gridBlockedByMalformed}
               onClick={() => void handleSave(true)}
             >
-              Overwrite anyway
+              {saving ? "Overwriting…" : "Overwrite anyway"}
             </Button>
           </div>
         </div>
@@ -716,9 +852,53 @@ export function FileEditor({
         </p>
       )}
 
-      {/* Tabular mode: Table Query Bar + Inline Editable Grid */}
-      {isTabular ? (
+      {/* Tabular mode: Malformed CSV error state, Table Query Bar & Inline Editable Grid */}
+      {isTabular && !rawCsvMode ? (
         <div className="flex flex-col gap-3">
+          {gridBlockedByMalformed && csvInspection?.error && (
+            <div
+              id="csv-grid-error"
+              role="alert"
+              className="flex flex-wrap items-center justify-between gap-2 rounded-sm border border-hairline bg-status-stopped-bg p-3 text-sm text-status-stopped-fg"
+            >
+              <div className="min-w-0 flex-1">
+                <p className="font-medium">Malformed CSV cannot open safely in grid mode</p>
+                <p className="text-xs opacity-90">{csvInspection.error}</p>
+              </div>
+              {!isExtracted && (
+                <div className="flex flex-wrap items-center gap-2">
+                  {!csvInspection.unclosedQuote && !csvInspection.hasNullByte && csvInspection.raggedRows > 0 && (
+                    <Button
+                      id="csv-normalize-btn"
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="max-md:min-h-11 bg-surface text-ink"
+                      onClick={handleNormalizeRaggedGrid}
+                    >
+                      Pad columns to grid
+                    </Button>
+                  )}
+                  {!csvInspection.hasNullByte && (
+                    <Button
+                      id="csv-raw-fallback-btn"
+                      type="button"
+                      size="sm"
+                      className="max-md:min-h-11"
+                      onClick={() => {
+                        setTextDraft(savedContent);
+                        setRawCsvMode(true);
+                        setViewMode("write");
+                        setSaveErr("");
+                      }}
+                    >
+                      Edit as raw text
+                    </Button>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
           {/* Table Query / Group-By Bar */}
           <section
             id="table-query-bar"
@@ -991,6 +1171,7 @@ export function FileEditor({
           )}
 
           {/* Inline Editable CSV Grid */}
+          {!gridBlockedByMalformed && (
           <div className="max-h-[42vh] overflow-auto rounded-sm border border-hairline bg-surface">
             <table id="csv-editor-table" className="w-full border-collapse text-left text-xs">
               <thead className="sticky top-0 z-10 border-b border-hairline bg-board text-ink">
@@ -1076,6 +1257,7 @@ export function FileEditor({
               </tbody>
             </table>
           </div>
+          )}
         </div>
       ) : (
         /* Split Markdown / Text Editor */

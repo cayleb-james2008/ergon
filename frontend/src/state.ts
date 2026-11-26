@@ -740,53 +740,73 @@ export function useErgon() {
     [upsertPipelineRun, loadFiles, loadThreads, loadRecent, refreshCounts, loadRoutines, loadPipelineRuns]
   );
 
+  const pipelineOpLockRef = useRef<Set<string>>(new Set());
+
   const resumePipeline = useCallback(
     async (runId: string, payload: PipelineResumePayload): Promise<void> => {
-      const r = await resumePipelineRun(runId, payload);
-      if (!r.ok) {
-        toast.error(r.error || "Could not resume pipeline.");
-        return;
+      if (pipelineOpLockRef.current.has(runId)) return;
+      pipelineOpLockRef.current.add(runId);
+      try {
+        const r = await resumePipelineRun(runId, payload);
+        if (!r.ok) {
+          toast.error(r.error || "Could not resume pipeline.");
+          return;
+        }
+        if (r.data.run) {
+          upsertPipelineRun(r.data.run);
+        }
+        toast.success("Pipeline resumed.");
+        await Promise.all([loadPipelineRuns(), loadFiles(), loadThreads(), loadRecent(), refreshCounts()]);
+        onRoutineFiredRef.current?.();
+      } finally {
+        pipelineOpLockRef.current.delete(runId);
       }
-      if (r.data.run) {
-        upsertPipelineRun(r.data.run);
-      }
-      toast.success("Pipeline resumed.");
-      await Promise.all([loadPipelineRuns(), loadFiles(), loadThreads(), loadRecent(), refreshCounts()]);
-      onRoutineFiredRef.current?.();
     },
     [upsertPipelineRun, loadPipelineRuns, loadFiles, loadThreads, loadRecent, refreshCounts]
   );
 
   const retryPipeline = useCallback(
     async (runId: string, fromStepIndex?: number): Promise<void> => {
-      const r = await retryPipelineRun(runId, { from_step_index: fromStepIndex });
-      if (!r.ok) {
-        toast.error(r.error || "Could not retry failed step.");
-        return;
+      if (pipelineOpLockRef.current.has(runId)) return;
+      pipelineOpLockRef.current.add(runId);
+      try {
+        const r = await retryPipelineRun(runId, { from_step_index: fromStepIndex });
+        if (!r.ok) {
+          toast.error(r.error || "Could not retry failed step.");
+          return;
+        }
+        if (r.data.run) {
+          upsertPipelineRun(r.data.run);
+        }
+        toast.success("Retrying failed step.");
+        await Promise.all([loadPipelineRuns(), loadFiles(), loadThreads(), loadRecent(), refreshCounts()]);
+        onRoutineFiredRef.current?.();
+      } finally {
+        pipelineOpLockRef.current.delete(runId);
       }
-      if (r.data.run) {
-        upsertPipelineRun(r.data.run);
-      }
-      toast.success("Retrying failed step.");
-      await Promise.all([loadPipelineRuns(), loadFiles(), loadThreads(), loadRecent(), refreshCounts()]);
-      onRoutineFiredRef.current?.();
     },
     [upsertPipelineRun, loadPipelineRuns, loadFiles, loadThreads, loadRecent, refreshCounts]
   );
 
   const cancelPipeline = useCallback(
     async (runId: string): Promise<void> => {
-      const r = await cancelPipelineRun(runId);
-      if (!r.ok) {
-        toast.error(r.error || "Could not abort pipeline.");
-        return;
+      if (pipelineOpLockRef.current.has(runId)) return;
+      pipelineOpLockRef.current.add(runId);
+      try {
+        const r = await cancelPipelineRun(runId);
+        if (!r.ok) {
+          toast.error(r.error || "Could not abort pipeline.");
+          return;
+        }
+        if (r.data.run) {
+          upsertPipelineRun(r.data.run);
+        }
+        toast("Pipeline aborted.");
+        await Promise.all([loadPipelineRuns(), refreshCounts()]);
+        onRoutineFiredRef.current?.();
+      } finally {
+        pipelineOpLockRef.current.delete(runId);
       }
-      if (r.data.run) {
-        upsertPipelineRun(r.data.run);
-      }
-      toast("Pipeline aborted.");
-      await Promise.all([loadPipelineRuns(), refreshCounts()]);
-      onRoutineFiredRef.current?.();
     },
     [upsertPipelineRun, loadPipelineRuns, refreshCounts]
   );

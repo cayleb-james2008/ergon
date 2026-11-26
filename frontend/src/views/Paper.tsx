@@ -41,7 +41,6 @@ import {
   type StarterLaunchResult,
   type StarterPlaybook,
   type Status,
-  type TodayEvent,
   type WorkspaceFile,
 } from "@/lib/api";
 import { exportClientSummaryPack, exportReceiptDownload, fetchSummaryPreflight, type PackPreflightReport } from "@/lib/receiptExport";
@@ -543,6 +542,20 @@ export const PaperFace = memo(function PaperFace({
   const [onlyWithFiles, setOnlyWithFiles] = useState(false);
   const [receiptPage, setReceiptPage] = useState(0);
   const [eventsPage, setEventsPage] = useState(0);
+  const [busyDecisionId, setBusyDecisionId] = useState<string | null>(null);
+  const decisionLockRef = useRef<Set<string>>(new Set());
+
+  const handleDecisionAct = async (id: string, action: "approve" | "deny", toastMsg: string) => {
+    if (decisionLockRef.current.has(id)) return;
+    decisionLockRef.current.add(id);
+    setBusyDecisionId(id);
+    try {
+      await act(`/api/decisions/${encodeURIComponent(id)}/${action}`, toastMsg);
+    } finally {
+      decisionLockRef.current.delete(id);
+      setBusyDecisionId((cur) => (cur === id ? null : cur));
+    }
+  };
 
   const handleSummaryExport = async (fmt: "md" | "html") => {
     setExportingSummary(fmt);
@@ -990,7 +1003,8 @@ export const PaperFace = memo(function PaperFace({
                       <div className="flex flex-wrap gap-2">
                         <Button
                           className="min-h-11 px-4"
-                          onClick={() => act(`/api/decisions/${encodeURIComponent(lead.id)}/approve`, leadCopy?.approvedToast ?? "Approved and done.")}
+                          disabled={busyDecisionId === lead.id}
+                          onClick={() => void handleDecisionAct(lead.id, "approve", leadCopy?.approvedToast ?? "Approved and done.")}
                         >
                           {leadCopy?.approve ?? "Approve"}
                         </Button>
@@ -998,7 +1012,8 @@ export const PaperFace = memo(function PaperFace({
                           <Button
                             className="min-h-11 px-4"
                             variant="outline"
-                            onClick={() => act(`/api/decisions/${encodeURIComponent(lead.id)}/deny`, leadCopy?.deniedToast ?? "You said no; kept safe.")}
+                            disabled={busyDecisionId === lead.id}
+                            onClick={() => void handleDecisionAct(lead.id, "deny", leadCopy?.deniedToast ?? "You said no; kept safe.")}
                           >
                             {leadCopy?.deny ?? "Decline"}
                           </Button>

@@ -19,7 +19,6 @@ import {
   FilePlus2,
   FileSpreadsheet,
   FileText,
-  FolderOpen,
   History,
   MessageSquarePlus,
   Pencil,
@@ -38,7 +37,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { PanelModal, usePanelModalClose } from "@/shell/PanelModal";
+import { usePanelModalClose } from "@/shell/PanelModal";
 import { SegmentedControl, SegmentedControlItem } from "@/components/ui/segmented-control";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -60,14 +59,13 @@ import {
   type WorkspaceFile,
   type WorkspaceFileContent,
 } from "@/lib/api";
-import { FileEditor, MarkdownView, parseCsv } from "@/shell/FileEditor";
+import { FileEditor, MarkdownView, inspectDelimited, parseCsv, parseSortableNumber } from "@/shell/FileEditor";
 export { parseCsv };
 import { computeLineDiff, normalizeServerDiff } from "@/lib/diff";
 import { exportClientPackDownload, exportReceiptDownload } from "@/lib/receiptExport";
 import { cn } from "@/lib/utils";
 import { detectWorkflowForFile, parseCitationTarget, relTime } from "@/lib/words";
 
-const TRIGGER = "focus-ring flex w-full min-h-11 md:min-h-9 items-center justify-between gap-1.5 rounded-sm px-1.5 text-left text-sm text-ink outline-none hover:bg-board";
 const FILES_PAGE_SIZE = 25;
 const CSV_PAGE_SIZE = 100;
 
@@ -78,15 +76,9 @@ export function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
 }
 
-function parseSortableNumber(raw: string): number | null {
-  const cleaned = raw.trim().replace(/[$,%\s]/g, "");
-  if (!cleaned || !/^-?\d+(?:\.\d+)?$/.test(cleaned)) return null;
-  const n = Number(cleaned);
-  return Number.isFinite(n) ? n : null;
-}
-
 function CsvTableView({ content }: { content: string }) {
-  const rows = useMemo(() => parseCsv(content), [content]);
+  const inspection = useMemo(() => inspectDelimited(content, ","), [content]);
+  const rows = inspection.rows;
   const [query, setQuery] = useState("");
   const [colFilter, setColFilter] = useState<string>("all");
   const [sortCol, setSortCol] = useState<number | null>(null);
@@ -146,6 +138,11 @@ function CsvTableView({ content }: { content: string }) {
 
   return (
     <div className="flex flex-col gap-2.5">
+      {inspection.error && (
+        <p role="alert" className="rounded-sm border border-hairline bg-status-stopped-bg px-3 py-2 text-xs text-status-stopped-fg">
+          {inspection.error}
+        </p>
+      )}
       <div className="flex flex-wrap items-center gap-2">
         <InputGroup className="min-w-[200px] flex-1 rounded-sm bg-board/50 [&_input]:max-md:min-h-11">
           <InputGroupAddon align="inline-start" className="pl-2.5 text-icon">
@@ -982,7 +979,14 @@ export function FileViewerModal({
   const [exporting, setExporting] = useState(false);
   const [tab, setTab] = useState<"preview" | "edit" | "source" | "history">("preview");
   const [editorDirty, setEditorDirty] = useState(false);
-  const [pendingNav, setPendingNav] = useState<{ kind: "close" } | { kind: "tab"; nextTab: "preview" | "source" | "history" } | null>(null);
+  const [pendingNav, setPendingNav] = useState<
+    | { kind: "close" }
+    | { kind: "tab"; nextTab: "preview" | "source" | "history" }
+    | { kind: "openFile"; nextPath: string }
+    | { kind: "ask" }
+    | { kind: "workflow"; prompt: string }
+    | null
+  >(null);
   const [revisions, setRevisions] = useState<FileRevision[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyErr, setHistoryErr] = useState("");
@@ -991,7 +995,11 @@ export function FileViewerModal({
     setOverridePath(null);
   }, [filePath]);
 
-  const loadContent = useCallback(async (path: string, sheet?: string) => {
+  useEffect(() => {
+    if (!editorDirty) setPendingNav(null);
+  }, [editorDirty]);
+
+  const loadContent = useCallback(async (path: string, sheet?: string, preserveOnTransientErr = false): Promise<boolean> => {
     setLoading(true);
     setErr("");
     const r = await call<WorkspaceFileContent>(
@@ -999,11 +1007,14 @@ export function FileViewerModal({
     );
     setLoading(false);
     if (!r.ok) {
-      setData(null);
-      setErr(r.status === 404 ? `"${path}" is no longer in this workspace (it may have been deleted or moved).` : r.error || "Could not open this file.");
-      return;
+      if (!preserveOnTransientErr || r.status === 404) {
+        setData(null);
+        setErr(r.status === 404 ? `"${path}" is no longer in this workspace (it may have been deleted or moved).` : r.error || "Could not open this file.");
+      }
+      return false;
     }
     setData(r.data);
+    return true;
   }, []);
 
   const loadHistory = useCallback(async (path: string) => {
@@ -1078,12 +1089,39 @@ export function FileViewerModal({
     onClose();
   };
 
+  const requestOpenFile = (nextPath: string) => {
+    if (tab === "edit" && editorDirty) {
+      setPendingNav({ kind: "openFile", nextPath });
+      return;
+    }
+    setPendingNav(null);
+    setOverridePath(nextPath);
+    setTab("preview");
+    onRestored?.();
+  };
+
   const confirmDiscardNav = () => {
     const act = pendingNav;
     setEditorDirty(false);
     setPendingNav(null);
     if (!act) return;
     if (act.kind === "close") {
+      onClose();
+      return;
+    }
+    if (act.kind === "openFile") {
+      setOverridePath(act.nextPath);
+      setTab("preview");
+      onRestored?.();
+      return;
+    }
+    if (act.kind === "ask") {
+      if (cleanPath && onAskAbout) onAskAbout(cleanPath);
+      onClose();
+      return;
+    }
+    if (act.kind === "workflow") {
+      onRunWorkflow?.(act.prompt);
       onClose();
       return;
     }
@@ -1306,6 +1344,10 @@ export function FileViewerModal({
                 size="sm"
                 className="max-md:min-h-11 gap-1.5"
                 onClick={() => {
+                  if (tab === "edit" && editorDirty) {
+                    setPendingNav({ kind: "workflow", prompt: suggestedWorkflow.prompt });
+                    return;
+                  }
                   onRunWorkflow(suggestedWorkflow.prompt);
                   onClose();
                 }}
@@ -1320,6 +1362,10 @@ export function FileViewerModal({
                 variant="ghost"
                 className="max-md:min-h-11"
                 onClick={() => {
+                  if (tab === "edit" && editorDirty) {
+                    setPendingNav({ kind: "ask" });
+                    return;
+                  }
                   onAskAbout(cleanPath);
                   onClose();
                 }}
@@ -1375,7 +1421,7 @@ export function FileViewerModal({
               sheet={data.extracted?.sheet}
               onDirtyChange={setEditorDirty}
               onReloadFromServer={async () => {
-                await loadContent(cleanPath, data.extracted?.sheet ?? undefined);
+                return await loadContent(cleanPath, data.extracted?.sheet ?? undefined, true);
               }}
               onSaved={(res) => {
                 setData((prev) =>
@@ -1386,11 +1432,7 @@ export function FileViewerModal({
                 void loadHistory(cleanPath);
                 onRestored?.();
               }}
-              onOpenSavedFile={(savedPath) => {
-                setOverridePath(savedPath);
-                setTab("preview");
-                onRestored?.();
-              }}
+              onOpenSavedFile={requestOpenFile}
               onWorkspaceMutated={() => onRestored?.()}
             />
           ) : tab === "history" && cleanPath ? (

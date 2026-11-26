@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   Check,
@@ -54,6 +54,14 @@ export function CheckpointCard({
   const [selectedChoice, setSelectedChoice] = useState<string>(() => choices[0] ?? "");
   const [textAnswer, setTextAnswer] = useState("");
   const [busyAction, setBusyAction] = useState<"resume" | "retry" | "cancel" | null>(null);
+  const [localErr, setLocalErr] = useState("");
+  const actionLockRef = useRef(false);
+
+  useEffect(() => {
+    setSelectedChoice(cp?.choices?.[0] ?? "");
+    setTextAnswer("");
+    setLocalErr("");
+  }, [run.run_id, cp?.checkpoint_id]);
 
   const inspectFiles = useMemo(() => collectInspectableFiles(run), [run]);
   const specSteps = run.steps ?? run.steps_v2 ?? [];
@@ -64,6 +72,19 @@ export function CheckpointCard({
   const isInterrupted = run.status === "interrupted";
 
   const handleResume = async (overrideAction?: "approve" | "reject") => {
+    if (actionLockRef.current || busyAction !== null) return;
+    setLocalErr("");
+    if (!isFailed && !isInterrupted) {
+      if (inputMode === "choice" && choices.length > 0 && !(selectedChoice || choices[0])) {
+        setLocalErr("Select one of the choices before resuming.");
+        return;
+      }
+      if (inputMode === "text" && !textAnswer.trim()) {
+        setLocalErr("Enter an answer for downstream steps before resuming.");
+        return;
+      }
+    }
+    actionLockRef.current = true;
     setBusyAction("resume");
     try {
       if (inputMode === "choice") {
@@ -85,26 +106,40 @@ export function CheckpointCard({
           answer: act === "approve" ? "approved" : "rejected",
         });
       }
+    } catch {
+      setLocalErr("Could not resume pipeline. Try again.");
     } finally {
+      actionLockRef.current = false;
       setBusyAction(null);
     }
   };
 
   const handleRetry = async () => {
-    if (!onRetry) return;
+    if (!onRetry || actionLockRef.current || busyAction !== null) return;
+    actionLockRef.current = true;
     setBusyAction("retry");
+    setLocalErr("");
     try {
       await onRetry(run.run_id);
+    } catch {
+      setLocalErr("Could not retry failed step. Try again.");
     } finally {
+      actionLockRef.current = false;
       setBusyAction(null);
     }
   };
 
   const handleCancel = async () => {
+    if (actionLockRef.current || busyAction !== null) return;
+    actionLockRef.current = true;
     setBusyAction("cancel");
+    setLocalErr("");
     try {
       await onCancel(run.run_id);
+    } catch {
+      setLocalErr("Could not abort pipeline. Try again.");
     } finally {
+      actionLockRef.current = false;
       setBusyAction(null);
     }
   };
@@ -257,6 +292,12 @@ export function CheckpointCard({
         </div>
       )}
 
+      {localErr && (
+        <p role="alert" className="rounded-sm border border-hairline bg-status-stopped-bg px-3 py-1.5 text-xs text-status-stopped-fg">
+          {localErr}
+        </p>
+      )}
+
       <div className="flex flex-wrap items-center gap-2 pt-0.5">
         {isFailed && onRetry ? (
           <Button
@@ -328,6 +369,9 @@ export function PipelineRunStrip({
   onOpenFile: (path: string) => void;
   showPausedCards?: boolean;
 }) {
+  const [cancellingIds, setCancellingIds] = useState<Record<string, boolean>>({});
+  const cancelLockRef = useRef<Set<string>>(new Set());
+
   const activeOrPaused = runs.filter(
     (r) =>
       r.status === "running" ||
@@ -340,11 +384,28 @@ export function PipelineRunStrip({
   const running = activeOrPaused.filter((r) => r.status === "running");
   const actionable = activeOrPaused.filter((r) => r.status !== "running");
 
+  const handleStripCancel = async (runId: string) => {
+    if (cancelLockRef.current.has(runId)) return;
+    cancelLockRef.current.add(runId);
+    setCancellingIds((prev) => ({ ...prev, [runId]: true }));
+    try {
+      await onCancel(runId);
+    } finally {
+      cancelLockRef.current.delete(runId);
+      setCancellingIds((prev) => {
+        const next = { ...prev };
+        delete next[runId];
+        return next;
+      });
+    }
+  };
+
   return (
     <div id="pipeline-runs-strip" className="flex flex-col gap-2.5">
       {running.map((run) => {
         const doneCount = run.step_states.filter((s) => s.status === "ok").length;
         const total = Math.max(run.step_states.length, (run.steps ?? run.steps_v2 ?? []).length, 1);
+        const isCancelling = Boolean(cancellingIds[run.run_id]);
         return (
           <div
             key={run.run_id}
@@ -370,11 +431,13 @@ export function PipelineRunStrip({
               type="button"
               size="xs"
               variant="outline"
+              data-action="abort-running-pipeline"
+              disabled={isCancelling}
               className="max-md:min-h-11 gap-1"
-              onClick={() => void onCancel(run.run_id)}
+              onClick={() => void handleStripCancel(run.run_id)}
             >
               <Square className="size-3" strokeWidth={1.5} aria-hidden />
-              Abort
+              {isCancelling ? "Aborting..." : "Abort"}
             </Button>
           </div>
         );

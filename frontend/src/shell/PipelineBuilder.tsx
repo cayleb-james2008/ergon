@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
+  AlertTriangle,
   ArrowDown,
   ArrowUp,
   Bot,
@@ -40,6 +41,155 @@ function sanitizeStepId(raw: string, fallback: string): string {
     .replace(/^_+|_+$/g, "")
     .slice(0, 32);
   return cleaned || fallback;
+}
+
+export type PipelineValidationResult = {
+  valid: boolean;
+  errorsByStep: Record<number, string[]>;
+  globalErrors: string[];
+};
+
+function validateTemplateText(
+  raw: string,
+  stepIndex: number,
+  steps: PipelineStepSpec[]
+): string[] {
+  const errs: string[] = [];
+  const text = String(raw || "");
+  if (!text.includes("{{") && !text.includes("}}")) return errs;
+
+  let cursor = 0;
+  while (cursor < text.length) {
+    const open = text.indexOf("{{", cursor);
+    const strayClose = text.indexOf("}}", cursor);
+    if (strayClose !== -1 && (open === -1 || strayClose < open)) {
+      errs.push("Unmatched closing }} in template expression.");
+      break;
+    }
+    if (open === -1) break;
+    const close = text.indexOf("}}", open + 2);
+    if (close === -1) {
+      errs.push("Unclosed {{ template expression.");
+      break;
+    }
+    const expr = text.slice(open + 2, close).trim();
+    if (!expr) {
+      errs.push("Empty {{}} template expression is not allowed.");
+    } else if (expr.includes("{{")) {
+      errs.push(`Nested template syntax near "{{${expr}".`);
+    } else if (expr.startsWith("inputs.")) {
+      const key = expr.slice("inputs.".length).trim();
+      if (!key || !/^[a-zA-Z0-9_.-]+$/.test(key)) {
+        errs.push(`Invalid input template "{{${expr}}}".`);
+      }
+    } else if (expr.startsWith("steps.")) {
+      const rest = expr.slice("steps.".length);
+      const dot = rest.indexOf(".");
+      if (dot <= 0 || dot === rest.length - 1) {
+        errs.push(`Incomplete step reference "{{${expr}}}". Use {{steps.<id>.output}} or {{steps.<id>.files[0]}}.`);
+      } else {
+        const refId = rest.slice(0, dot);
+        const field = rest.slice(dot + 1);
+        const validField =
+          field === "files" ||
+          /^files\[\d+\]$/.test(field) ||
+          field === "output" ||
+          field === "human_answer" ||
+          /^metrics\.[a-zA-Z0-9_.-]+$/.test(field);
+        if (!validField) {
+          errs.push(`Unknown step field "${field}" in "{{${expr}}}".`);
+        }
+        const targetIdx = steps.findIndex((s) => s.id.trim() === refId);
+        if (targetIdx < 0) {
+          errs.push(`Unknown step reference "${refId}" in "{{${expr}}}".`);
+        } else if (targetIdx === stepIndex) {
+          errs.push(`Step "${refId}" cannot reference itself in "{{${expr}}}".`);
+        } else if (targetIdx > stepIndex) {
+          errs.push(`Step cannot reference later step "${refId}" in "{{${expr}}}".`);
+        }
+      }
+    } else {
+      errs.push(`Unsupported template "{{${expr}}}". Use {{inputs.*}} or {{steps.<prior_step>.*}}.`);
+    }
+    cursor = close + 2;
+  }
+  return errs;
+}
+
+/** Validate typed pipeline steps for empty prompts, duplicate IDs, and broken or circular templates. */
+export function validatePipelineSteps(steps: PipelineStepSpec[]): PipelineValidationResult {
+  const errorsByStep: Record<number, string[]> = {};
+  const globalErrors: string[] = [];
+  if (steps.length === 0) {
+    globalErrors.push("Add at least one pipeline step.");
+    return { valid: false, errorsByStep, globalErrors };
+  }
+
+  const seenIds = new Map<string, number>();
+  steps.forEach((st, idx) => {
+    const stepErrs: string[] = [];
+    const id = String(st.id ?? "").trim();
+    if (!id) {
+      stepErrs.push("Step ID is required.");
+    } else {
+      const prevIdx = seenIds.get(id);
+      if (prevIdx !== undefined) {
+        stepErrs.push(`Duplicate step ID "${id}" (already used by step ${prevIdx + 1}).`);
+      } else {
+        seenIds.set(id, idx);
+      }
+    }
+
+    const stringsToCheck: string[] = [];
+    if (st.kind === "skill") {
+      if (!String(st.skill_id ?? "").trim()) {
+        stepErrs.push("Select a built-in skill.");
+      }
+      for (const v of Object.values(st.args ?? {})) {
+        stringsToCheck.push(String(v ?? ""));
+      }
+    } else if (st.kind === "agent") {
+      const p = String(st.prompt ?? "");
+      if (!p.trim()) {
+        stepErrs.push("Agent instruction cannot be empty.");
+      }
+      stringsToCheck.push(p);
+    } else if (st.kind === "checkpoint") {
+      const p = String(st.checkpoint?.prompt ?? "");
+      if (!p.trim()) {
+        stepErrs.push("Checkpoint review prompt cannot be empty.");
+      }
+      stringsToCheck.push(p);
+      if (st.checkpoint?.input_mode === "choice") {
+        const choices = (st.checkpoint?.choices ?? []).map((c) => c.trim()).filter(Boolean);
+        if (choices.length === 0) {
+          stepErrs.push("Add at least one choice option for this checkpoint.");
+        }
+      }
+      for (const f of st.checkpoint?.inspect_files ?? []) {
+        stringsToCheck.push(String(f ?? ""));
+      }
+    } else if (st.kind === "export") {
+      const p = String(st.export?.path ?? "");
+      if (!p.trim()) {
+        stepErrs.push("Export source file path cannot be empty.");
+      }
+      stringsToCheck.push(p);
+    }
+
+    for (const s of stringsToCheck) {
+      for (const tErr of validateTemplateText(s, idx, steps)) {
+        if (!stepErrs.includes(tErr)) stepErrs.push(tErr);
+      }
+    }
+
+    if (stepErrs.length > 0) {
+      errorsByStep[idx] = stepErrs;
+    }
+  });
+
+  const valid = globalErrors.length === 0 && Object.keys(errorsByStep).length === 0;
+  return { valid, errorsByStep, globalErrors };
 }
 
 export function makeDefaultStep(kind: PipelineStepKind, index: number, prevId?: string): PipelineStepSpec {
@@ -103,6 +253,7 @@ export function PipelineBuilder({
   workspaceFiles?: WorkspaceFile[];
 }) {
   const [newArgKey, setNewArgKey] = useState<Record<number, string>>({});
+  const validation = useMemo(() => validatePipelineSteps(steps), [steps]);
 
   const updateStep = (idx: number, patch: Partial<PipelineStepSpec>) => {
     onChange(steps.map((s, i) => (i === idx ? { ...s, ...patch } : s)));
@@ -201,13 +352,17 @@ export function PipelineBuilder({
             }
 
             const argEntries = Object.entries(st.args ?? {});
+            const stepErrs = validation.errorsByStep[idx] ?? [];
 
             return (
               <li
                 key={`${idx}-${st.id}`}
                 data-pipeline-step-index={idx}
                 data-pipeline-step-kind={st.kind}
-                className="flex flex-col gap-2.5 rounded-card border border-hairline bg-surface p-3"
+                className={cn(
+                  "flex flex-col gap-2.5 rounded-card border bg-surface p-3",
+                  stepErrs.length > 0 ? "border-dot-red" : "border-hairline"
+                )}
               >
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="flex flex-wrap items-center gap-1.5">
@@ -541,6 +696,21 @@ export function PipelineBuilder({
                         <option value="xlsx">Excel (.xlsx)</option>
                       </select>
                     </div>
+                  </div>
+                )}
+
+                {stepErrs.length > 0 && (
+                  <div
+                    role="alert"
+                    data-step-validation-error={idx}
+                    className="flex items-start gap-1.5 rounded-sm border border-hairline bg-status-stopped-bg px-2.5 py-1.5 text-xs text-status-stopped-fg"
+                  >
+                    <AlertTriangle className="mt-0.5 size-3.5 shrink-0" strokeWidth={1.5} aria-hidden />
+                    <ul className="flex flex-col gap-0.5">
+                      {stepErrs.map((msg, eIdx) => (
+                        <li key={eIdx}>{msg}</li>
+                      ))}
+                    </ul>
                   </div>
                 )}
 
