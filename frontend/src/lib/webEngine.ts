@@ -5152,11 +5152,11 @@ function runWebVaultAggregate(
   };
 }
 
-    if (method === "GET" && path === "/api/version") return jsonRes({ name: "ergon", version: "0.35.0" });
-    if (method === "GET" && path === "/api/update") return jsonRes({ current: "0.35.0", available: false, mode: "off", checked_at: Math.floor(Date.now() / 1000) });
+    if (method === "GET" && path === "/api/version") return jsonRes({ name: "ergon", version: "0.36.0" });
+    if (method === "GET" && path === "/api/update") return jsonRes({ current: "0.36.0", available: false, mode: "off", checked_at: Math.floor(Date.now() / 1000) });
     if (method === "GET" && path === "/api/status") {
       return jsonRes({
-        version: "0.35.0",
+        version: "0.36.0",
         model_configured: true,
         model: byok.engine_mode === "byok" && byok.model_id ? byok.model_id : "browser-workspace-engine",
         model_base_url: byok.engine_mode === "byok" ? byok.model_base_url : "indexeddb://local",
@@ -5224,8 +5224,8 @@ function runWebVaultAggregate(
           const inp = Number(eObj.input_per_1m_usd ?? 0);
           const outp = Number(eObj.output_per_1m_usd ?? 0);
           const cached = Number(eObj.cached_input_per_1m_usd ?? 0);
-          if (!Number.isFinite(inp) || inp < 0 || !Number.isFinite(outp) || outp < 0 || !Number.isFinite(cached) || cached < 0) {
-            return jsonRes({ error: `Model pricing rates for "${id}" must be non-negative numbers.` }, 400);
+          if (!Number.isFinite(inp) || inp < 0 || inp > 1_000_000 || !Number.isFinite(outp) || outp < 0 || outp > 1_000_000 || !Number.isFinite(cached) || cached < 0 || cached > 1_000_000) {
+            return jsonRes({ error: `Model pricing rates for "${id}" must be finite non-negative numbers up to 1,000,000.` }, 400);
           }
           nextPricing[id] = {
             input_per_1m_usd: inp,
@@ -5540,7 +5540,7 @@ function runWebVaultAggregate(
       const pid = decodeURIComponent(path.slice("/api/playbooks/".length, -"/export".length)).trim();
       const rt = st.routines.find((x) => x.id === pid);
       if (!rt) return jsonRes({ error: "playbook not found" }, 404);
-      const built = await buildSignedPlaybookPack(rt, "0.35.0");
+      const built = await buildSignedPlaybookPack(rt, "0.36.0");
       return new Response(built.json, {
         status: 200,
         headers: {
@@ -5860,7 +5860,18 @@ function runWebVaultAggregate(
     }
     if (method === "POST" && path === "/api/vault/aggregate") {
       const glob = String(body.glob ?? "*.csv").trim() || "*.csv";
-      if (glob.includes("..") || glob.includes("\0") || glob.startsWith("/")) {
+      const lowGlob = glob.toLowerCase();
+      if (
+        glob.includes("..") ||
+        glob.includes("\0") ||
+        glob.includes("\\") ||
+        glob.startsWith("/") ||
+        lowGlob.includes("%2e") ||
+        lowGlob.includes("%2f") ||
+        lowGlob.includes("%5c") ||
+        lowGlob.includes("%00") ||
+        lowGlob.includes("%25")
+      ) {
         return jsonRes({ error: "glob path escapes the workspace" }, 400);
       }
       const result = runWebVaultAggregate(st, {
@@ -7117,7 +7128,9 @@ function runWebVaultAggregate(
       if (!name) return jsonRes({ error: "Client name is required." }, 400);
       const nowMs = Date.now();
       const rate = body.default_rate_usd !== undefined ? Number(body.default_rate_usd) : 185;
-      if (!Number.isFinite(rate) || rate < 0) return jsonRes({ error: "Default hourly rate must be non-negative." }, 400);
+      if (!Number.isFinite(rate) || rate < 0 || rate > 1_000_000_000) {
+        return jsonRes({ error: "Default hourly rate must be between 0 and 1,000,000,000." }, 400);
+      }
       const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 24) || "client";
       const client: Client = {
         id: `cli-${slug}-${nowMs}`,
@@ -7150,8 +7163,15 @@ function runWebVaultAggregate(
           : hourlyRate > 0
             ? Math.round((retainerBudget / hourlyRate) * 10) / 10
             : 20;
-      if (!Number.isFinite(hourlyRate) || hourlyRate < 0 || !Number.isFinite(retainerBudget) || retainerBudget < 0) {
-        return jsonRes({ error: "Hourly rate and retainer budget must be non-negative numbers." }, 400);
+      if (
+        !Number.isFinite(hourlyRate) ||
+        hourlyRate < 0 ||
+        hourlyRate > 1_000_000_000 ||
+        !Number.isFinite(retainerBudget) ||
+        retainerBudget < 0 ||
+        retainerBudget > 1_000_000_000
+      ) {
+        return jsonRes({ error: "Hourly rate and retainer budget must be finite numbers between 0 and 1,000,000,000." }, 400);
       }
       const nowMs = Date.now();
       const targetPerson = typeof body.person_id === "string" && body.person_id.trim() ? body.person_id.trim() : p.id;

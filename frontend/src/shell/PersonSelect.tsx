@@ -323,6 +323,10 @@ function WorkspaceSwitcherBody({
       setCreateError("Hourly rate and retainer budget must be zero or greater.");
       return;
     }
+    if (rate > 1_000_000_000 || budget > 1_000_000_000) {
+      setCreateError("Hourly rate and retainer budget cannot exceed $1,000,000,000.");
+      return;
+    }
 
     opLockRef.current = true;
     setCreateError("");
