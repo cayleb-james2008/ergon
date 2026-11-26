@@ -19,6 +19,109 @@ export type ServerCapabilities = {
   table_query?: boolean;
   pdf_export?: boolean;
   connectors?: boolean;
+  clients?: boolean;
+  metering?: boolean;
+};
+
+export type Client = {
+  id: string;
+  name: string;
+  brand_header?: string;
+  billing_currency?: string;
+  default_rate_usd?: number;
+  created_ms?: number;
+  updated_ms?: number;
+};
+
+export type Engagement = {
+  id: string;
+  client_id: string;
+  person_id?: string;
+  name: string;
+  retainer_hours?: number;
+  retainer_budget_usd?: number;
+  hourly_rate_usd?: number;
+  period?: string;
+  status?: string;
+  created_ms?: number;
+  updated_ms?: number;
+};
+
+export type RunUsage = {
+  model_id?: string;
+  prompt_tokens: number;
+  completion_tokens: number;
+  cached_tokens?: number;
+  total_tokens: number;
+  cost_usd: number;
+  latency_ms?: number;
+  estimated_minutes_saved?: number;
+  billable_value_usd?: number;
+  engagement_id?: string;
+};
+
+export type ModelPricingEntry = {
+  input_per_1m_usd: number;
+  output_per_1m_usd: number;
+  cached_input_per_1m_usd?: number;
+};
+
+export type ModelPricingMap = Record<string, ModelPricingEntry>;
+
+export type MeteringTotals = {
+  runs: number;
+  prompt_tokens: number;
+  completion_tokens: number;
+  cached_tokens?: number;
+  total_tokens: number;
+  cost_usd: number;
+  minutes_saved: number;
+  billable_value_usd: number;
+  retainer_burn_pct: number;
+  retainer_budget_usd?: number;
+  net_roi_usd?: number;
+  roi_multiple?: number;
+};
+
+export type MeteringByEngagement = {
+  engagement_id: string;
+  engagement_name?: string;
+  client_id?: string;
+  client_name?: string;
+  runs: number;
+  total_tokens: number;
+  cost_usd: number;
+  minutes_saved: number;
+  billable_value_usd: number;
+  retainer_budget_usd?: number;
+  retainer_burn_pct?: number;
+};
+
+export type MeteringByModel = {
+  model_id: string;
+  runs: number;
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
+  cost_usd: number;
+};
+
+export type MeteringDailyPoint = {
+  date: string;
+  runs: number;
+  total_tokens: number;
+  cost_usd: number;
+  minutes_saved: number;
+  billable_value_usd: number;
+};
+
+export type MeteringSummary = {
+  totals: MeteringTotals;
+  by_engagement: MeteringByEngagement[];
+  by_model: MeteringByModel[];
+  daily_series: MeteringDailyPoint[];
+  active_engagement?: Engagement | null;
+  active_client?: Client | null;
 };
 export type SchedulerStatus = {
   running?: boolean;
@@ -61,6 +164,7 @@ export type ModelConfigPayload = {
   auto_detected?: boolean;
   engine_mode?: "native" | "browser" | "byok";
   detected_gateways?: DetectedGateway[];
+  model_pricing?: ModelPricingMap;
 };
 export type WorkspaceFile = {
   path: string;
@@ -203,6 +307,7 @@ export type PipelineStepState = {
   human_answer?: string | null;
   human_action?: "approve" | "reject" | "answer" | null;
   error?: string | null;
+  usage?: RunUsage;
 };
 
 export type PipelinePendingCheckpoint = {
@@ -239,6 +344,8 @@ export type PipelineRun = {
   step_states: PipelineStepState[];
   pending_checkpoint?: PipelinePendingCheckpoint | null;
   error?: string | null;
+  engagement_id?: string | null;
+  usage?: RunUsage;
 };
 
 export type PipelineResumePayload = {
@@ -420,6 +527,8 @@ export type ReceiptRecord = {
   ts: number;
   sha256?: string;
   prev_sha256?: string;
+  engagement_id?: string;
+  usage?: RunUsage;
 };
 export type ThreadRow = { id: string; title?: string; messages?: number; state?: "waiting" | "finished" | "none" };
 export type Thread = { id: string; title?: string; messages: Msg[] };
@@ -464,11 +573,29 @@ export type Decision = {
   method?: string;
   payload_preview?: string;
   payload_sha256?: string;
+  engagement_id?: string;
+  engagement_name?: string;
+  client_name?: string;
+  retainer_budget_usd?: number;
+  spent_usd?: number;
+  projected_usd?: number;
+  estimated_cost_usd?: number;
 };
 export type Offer = { id: string; title: string; detail: string; status: string; item_id?: string; ts?: number };
 export type SuiteItem = { id: string; kind: string; name: string; description: string; fields?: string[] };
 export type LibraryItem = { id: string; kind: string; name: string; description: string; author: string; builtin?: boolean };
-export type BriefJob = { id?: string; task: string; date?: string; summary?: string; files?: string[]; thread_id?: string; ts?: number; sha256?: string };
+export type BriefJob = {
+  id?: string;
+  task: string;
+  date?: string;
+  summary?: string;
+  files?: string[];
+  thread_id?: string;
+  ts?: number;
+  sha256?: string;
+  engagement_id?: string;
+  usage?: RunUsage;
+};
 export type Brief = {
   date?: string;
   person?: string;
@@ -1219,4 +1346,90 @@ export async function testOutboundConnector(
     method: "POST",
     body: { payload },
   });
+}
+
+export function hasClientsApi(status: Status | null | "error" | undefined): boolean {
+  if (isWebStandalone()) return true;
+  if (!status || status === "error") return false;
+  if (typeof status.capabilities?.clients === "boolean") {
+    return Boolean(status.capabilities.clients);
+  }
+  return isAtLeastMinor(status.version, 33);
+}
+
+export function hasMeteringApi(status: Status | null | "error" | undefined): boolean {
+  if (isWebStandalone()) return true;
+  if (!status || status === "error") return false;
+  if (typeof status.capabilities?.metering === "boolean") {
+    return Boolean(status.capabilities.metering);
+  }
+  return isAtLeastMinor(status.version, 33);
+}
+
+export type ClientsPayload = {
+  clients: Client[];
+  engagements: Engagement[];
+  active_engagement_id?: string | null;
+};
+
+export async function fetchClients(): Promise<Res<ClientsPayload>> {
+  const r = await call<ClientsPayload>("/api/clients");
+  if (!r.ok) return r;
+  return {
+    ok: true,
+    data: {
+      clients: Array.isArray(r.data.clients) ? r.data.clients : [],
+      engagements: Array.isArray(r.data.engagements) ? r.data.engagements : [],
+      active_engagement_id: typeof r.data.active_engagement_id === "string" ? r.data.active_engagement_id : null,
+    },
+  };
+}
+
+export async function createClient(body: {
+  name: string;
+  brand_header?: string;
+  default_rate_usd?: number;
+  billing_currency?: string;
+}): Promise<Res<{ client: Client }>> {
+  return call<{ client: Client }>("/api/clients", {
+    method: "POST",
+    body,
+  });
+}
+
+export async function createEngagement(body: {
+  client_id: string;
+  name: string;
+  person_id?: string;
+  retainer_hours?: number;
+  retainer_budget_usd?: number;
+  hourly_rate_usd?: number;
+  period?: string;
+}): Promise<Res<{ engagement: Engagement; active_engagement_id?: string }>> {
+  return call<{ engagement: Engagement; active_engagement_id?: string }>("/api/engagements", {
+    method: "POST",
+    body,
+  });
+}
+
+export async function switchEngagement(
+  engagementId: string
+): Promise<Res<{ active_engagement_id: string; engagement?: Engagement | null }>> {
+  return call<{ active_engagement_id: string; engagement?: Engagement | null }>("/api/engagements/switch", {
+    method: "POST",
+    body: { engagement_id: engagementId },
+  });
+}
+
+export async function fetchMeteringSummary(opts: {
+  engagement_id?: string;
+  client_id?: string;
+  window_days?: number;
+} = {}): Promise<Res<MeteringSummary>> {
+  const params = new URLSearchParams();
+  if (opts.engagement_id) params.set("engagement_id", opts.engagement_id);
+  if (opts.client_id) params.set("client_id", opts.client_id);
+  if (typeof opts.window_days === "number") params.set("window_days", String(opts.window_days));
+  const qs = params.toString();
+  return call<MeteringSummary>(`/api/metering/summary${qs ? `?${qs}` : ""}`);
 }

@@ -6,7 +6,7 @@
 //    Browser IndexedDB Engine / BYOK OpenAI-compatible in sessionStorage / Connect to Local Ergon in Web mode)
 // 4. Version & Update check
 import { useEffect, useState } from "react";
-import { Cpu, ExternalLink, FileCheck2, Moon, SlidersHorizontal, Sun, UserPlus, Users } from "lucide-react";
+import { Coins, Cpu, ExternalLink, FileCheck2, Moon, Plus, SlidersHorizontal, Sun, Trash2, UserPlus, Users } from "lucide-react";
 import { toast } from "sonner";
 import { PanelModal, usePanelModalClose } from "@/shell/PanelModal";
 import { SegmentedControl, SegmentedControlItem } from "@/components/ui/segmented-control";
@@ -21,6 +21,7 @@ import {
   isWebStandalone,
   type DetectedGateway,
   type ModelConfigPayload,
+  type ModelPricingMap,
   type Person,
   type Status,
 } from "@/lib/api";
@@ -67,10 +68,15 @@ function SettingsBody({
   const [exportingBundle, setExportingBundle] = useState<"json" | "md" | null>(null);
   const [err, setErr] = useState("");
   const [lockedRemote, setLockedRemote] = useState(false);
+  const [pricingRows, setPricingRows] = useState<{ model: string; input: string; output: string; cached: string }[]>([]);
+  const [newPricingModel, setNewPricingModel] = useState("");
+  const [savingPricing, setSavingPricing] = useState(false);
+  const [pricingErr, setPricingErr] = useState("");
 
   useEffect(() => {
     if (!isOpen) return;
     setErr("");
+    setPricingErr("");
     setLockedRemote(false);
     onRefreshPeople();
     call<ModelConfigPayload>("/api/config").then((r) => {
@@ -85,6 +91,14 @@ function SettingsBody({
       setApiKey("");
       if (r.data.engine_mode === "byok") setEngineMode("byok");
       else setEngineMode("browser");
+      const mp = r.data.model_pricing ?? {};
+      const rows = Object.entries(mp).map(([model, entry]) => ({
+        model,
+        input: String(entry?.input_per_1m_usd ?? 0),
+        output: String(entry?.output_per_1m_usd ?? 0),
+        cached: String(entry?.cached_input_per_1m_usd ?? 0),
+      }));
+      setPricingRows(rows);
     });
   }, [isOpen, onRefreshPeople]);
 
@@ -122,6 +136,56 @@ function SettingsBody({
     setCfg((prev) => ({ ...(prev ?? r.data), ...r.data }));
     setApiKey("");
     toast.success("Model settings saved.");
+    onConfigSaved();
+  };
+
+  const addPricingRow = () => {
+    const id = newPricingModel.trim();
+    if (!id) {
+      setPricingErr("Enter a model ID before adding a pricing row.");
+      return;
+    }
+    if (pricingRows.some((row) => row.model.toLowerCase() === id.toLowerCase())) {
+      setPricingErr(`Pricing for "${id}" is already listed.`);
+      return;
+    }
+    setPricingErr("");
+    setPricingRows((prev) => [...prev, { model: id, input: "0.50", output: "1.50", cached: "0.25" }]);
+    setNewPricingModel("");
+  };
+
+  const savePricing = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPricingErr("");
+    const map: ModelPricingMap = {};
+    for (const row of pricingRows) {
+      const m = row.model.trim();
+      if (!m) continue;
+      const inp = Number(row.input);
+      const outp = Number(row.output);
+      const cached = Number(row.cached || "0");
+      if (!Number.isFinite(inp) || inp < 0 || !Number.isFinite(outp) || outp < 0 || !Number.isFinite(cached) || cached < 0) {
+        setPricingErr(`Rates for "${m}" must be non-negative numbers.`);
+        return;
+      }
+      map[m] = {
+        input_per_1m_usd: inp,
+        output_per_1m_usd: outp,
+        cached_input_per_1m_usd: cached,
+      };
+    }
+    setSavingPricing(true);
+    const r = await call<ModelConfigPayload>("/api/config", {
+      method: "POST",
+      body: { model_pricing: map },
+    });
+    setSavingPricing(false);
+    if (!r.ok) {
+      setPricingErr(r.error || "Could not save model pricing overrides.");
+      return;
+    }
+    setCfg((prev) => (prev ? { ...prev, ...r.data, model_pricing: r.data.model_pricing ?? map } : r.data));
+    toast.success("Model pricing overrides saved.");
     onConfigSaved();
   };
 
@@ -471,7 +535,142 @@ function SettingsBody({
         )}
       </section>
 
-      {/* 3. Version & Updates */}
+      {/* 5. Model Pricing Overrides */}
+      {!lockedRemote && (
+        <section
+          id="settings-pricing-section"
+          aria-labelledby="settings-pricing-h"
+          className="flex flex-col gap-3 rounded-card border border-hairline bg-board/40 p-3.5"
+        >
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <Coins className="size-4 text-icon" strokeWidth={1.5} aria-hidden />
+              <h3 id="settings-pricing-h" className="text-sm font-medium text-ink">Model pricing overrides (USD per 1M tokens)</h3>
+            </div>
+          </div>
+          <p className="text-xs leading-5 text-ink-2">
+            Set input, output, and cached token rates per model ID for retainer burn and billable ROI metering.
+          </p>
+
+          <form noValidate onSubmit={savePricing} className="flex flex-col gap-2.5">
+            {pricingRows.length === 0 ? (
+              <p className="rounded-sm border border-hairline bg-surface px-3 py-2 text-xs text-ink-2">
+                No custom pricing overrides yet. Add a model ID below to customize rates.
+              </p>
+            ) : (
+              <div className="flex flex-col gap-2">
+                {pricingRows.map((row, idx) => (
+                  <div
+                    key={row.model}
+                    data-pricing-model={row.model}
+                    className="flex flex-col gap-2 rounded-sm border border-hairline bg-surface p-2.5"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="mono truncate text-xs font-medium text-ink">{row.model}</span>
+                      <Button
+                        type="button"
+                        size="icon-xs"
+                        variant="ghost"
+                        aria-label={`Remove pricing for ${row.model}`}
+                        className="max-md:min-h-11 max-md:min-w-11"
+                        onClick={() => setPricingRows((prev) => prev.filter((_, i) => i !== idx))}
+                      >
+                        <Trash2 className="size-3.5 text-icon" strokeWidth={1.5} aria-hidden />
+                      </Button>
+                    </div>
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                      <div className="flex flex-col gap-1">
+                        <label htmlFor={`price-in-${idx}`} className="text-xs text-ink-2">Input / 1M</label>
+                        <Input
+                          id={`price-in-${idx}`}
+                          aria-label={`${row.model} input per 1M USD`}
+                          type="number"
+                          min="0"
+                          step="any"
+                          value={row.input}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setPricingRows((prev) => prev.map((r, i) => (i === idx ? { ...r, input: val } : r)));
+                          }}
+                          className="mono max-md:min-h-11"
+                        />
+                      </div>
+                      <div className="flex flex-col gap-1">
+                        <label htmlFor={`price-out-${idx}`} className="text-xs text-ink-2">Output / 1M</label>
+                        <Input
+                          id={`price-out-${idx}`}
+                          aria-label={`${row.model} output per 1M USD`}
+                          type="number"
+                          min="0"
+                          step="any"
+                          value={row.output}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setPricingRows((prev) => prev.map((r, i) => (i === idx ? { ...r, output: val } : r)));
+                          }}
+                          className="mono max-md:min-h-11"
+                        />
+                      </div>
+                      <div className="flex flex-col gap-1">
+                        <label htmlFor={`price-cached-${idx}`} className="text-xs text-ink-2">Cached / 1M</label>
+                        <Input
+                          id={`price-cached-${idx}`}
+                          aria-label={`${row.model} cached per 1M USD`}
+                          type="number"
+                          min="0"
+                          step="any"
+                          value={row.cached}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setPricingRows((prev) => prev.map((r, i) => (i === idx ? { ...r, cached: val } : r)));
+                          }}
+                          className="mono max-md:min-h-11"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="flex flex-wrap items-center gap-2 pt-0.5">
+              <Input
+                id="settings-new-pricing-model"
+                aria-label="New model ID for pricing override"
+                value={newPricingModel}
+                onChange={(e) => setNewPricingModel(e.target.value)}
+                placeholder="Model ID (for example gpt-4o)"
+                className="min-w-[180px] flex-1 max-md:min-h-11"
+              />
+              <Button
+                id="settings-add-pricing-btn"
+                type="button"
+                size="sm"
+                variant="outline"
+                className="max-md:min-h-11 gap-1"
+                onClick={addPricingRow}
+              >
+                <Plus className="size-3.5" strokeWidth={1.5} aria-hidden />
+                Add model
+              </Button>
+            </div>
+
+            {pricingErr && (
+              <p id="settings-pricing-error" role="alert" className="text-xs text-destructive-foreground">
+                {pricingErr}
+              </p>
+            )}
+
+            <div className="flex flex-wrap items-center gap-2 pt-0.5">
+              <Button id="settings-save-pricing-btn" type="submit" size="sm" variant="outline" className="max-md:min-h-11" disabled={savingPricing}>
+                {savingPricing ? "Saving…" : "Save pricing overrides"}
+              </Button>
+            </div>
+          </form>
+        </section>
+      )}
+
+      {/* 6. Version & Updates */}
       <section aria-label="Version and updates" className="rounded-card border border-hairline bg-board/40 px-2 py-2">
         <VersionRow u={u} />
       </section>

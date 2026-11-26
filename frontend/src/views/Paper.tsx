@@ -2,9 +2,11 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
+  Briefcase,
   Check,
   CheckCircle2,
   Clock,
+  Coins,
   FileCheck2,
   FileDown,
   FolderOpen,
@@ -14,7 +16,9 @@ import {
   Send,
   ShieldAlert,
   Sparkles,
+  TrendingUp,
   Upload,
+  Wallet,
   X,
   XCircle,
 } from "lucide-react";
@@ -31,13 +35,17 @@ import {
   call,
   hasV050Api,
   type BriefJob,
+  type Client,
   type Decision,
+  type Engagement,
   type LiveRunStep,
   type MemoryHealth,
+  type MeteringSummary,
   type Offer,
   type Person,
   type PipelineResumePayload,
   type PipelineRun,
+  type RunUsage,
   type StarterLaunchResult,
   type StarterPlaybook,
   type Status,
@@ -62,7 +70,21 @@ type DecisionCopy = {
   security: boolean;
 };
 
-const SECURITY_KINDS = new Set(["security", "security_notice", "allow_host", "memory_note", "publish_skill"]);
+function formatUsd(amount: number): string {
+  const n = Number(amount) || 0;
+  if (n > 0 && n < 0.01) return `$${n.toFixed(4)}`;
+  return `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+function formatMinutesSaved(mins: number): string {
+  const m = Math.max(0, Math.round(mins));
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  const rem = m % 60;
+  return rem > 0 ? `${h}h ${rem}m` : `${h}h`;
+}
+
+const SECURITY_KINDS = new Set(["security", "security_notice", "allow_host", "memory_note", "publish_skill", "budget_gate"]);
 
 /** Plain consequence copy and button words for each kind of decision. */
 function decisionCopy(d: Decision): DecisionCopy {
@@ -129,6 +151,21 @@ function decisionCopy(d: Decision): DecisionCopy {
       approvedToast: "Noted.",
       deniedToast: "Noted.",
       security,
+    };
+  }
+  if (kind === "budget_gate") {
+    const budget = typeof d.retainer_budget_usd === "number" ? `$${d.retainer_budget_usd.toFixed(2)}` : "the retainer limit";
+    const spent = typeof d.spent_usd === "number" ? `$${d.spent_usd.toFixed(2)}` : "the current spend";
+    const target = d.engagement_name || "this engagement";
+    return {
+      body:
+        detail ||
+        `Spending for ${target} has reached ${spent} against a ${budget} retainer limit. Approving lets this task continue past the cap. Declining keeps spending paused with no external model calls made.`,
+      approve: "Approve overrun",
+      deny: "Pause spend",
+      approvedToast: "Budget overrun approved; engagement unblocked.",
+      deniedToast: "Retainer spend kept paused.",
+      security: true,
     };
   }
   if (kind === "connector_delivery") {
@@ -491,6 +528,12 @@ export const PaperFace = memo(function PaperFace({
   onResumePipeline,
   onRetryPipeline,
   onCancelPipeline,
+  metering = null,
+  liveRunUsage = null,
+  clients = [],
+  engagements = [],
+  activeEngagementId = "",
+  onOpenWorkspaceSwitcher,
 }: {
   paper: ReturnType<typeof usePaper>;
   status: Status | null | "error";
@@ -529,6 +572,12 @@ export const PaperFace = memo(function PaperFace({
   onResumePipeline?: (runId: string, payload: PipelineResumePayload) => Promise<void>;
   onRetryPipeline?: (runId: string) => Promise<void>;
   onCancelPipeline?: (runId: string) => Promise<void>;
+  metering?: MeteringSummary | null;
+  liveRunUsage?: RunUsage | null;
+  clients?: Client[];
+  engagements?: Engagement[];
+  activeEngagementId?: string;
+  onOpenWorkspaceSwitcher?: () => void;
 }) {
   const { data, failed, load, loadAllReceipts, act } = paper;
   const [dragOver, setDragOver] = useState(false);
@@ -749,6 +798,24 @@ export const PaperFace = memo(function PaperFace({
 
   const useServerExport = hasV050Api(status, "receipts_export");
 
+  const activeEng = useMemo(
+    () => metering?.active_engagement || engagements.find((e) => e.id === activeEngagementId) || null,
+    [metering?.active_engagement, engagements, activeEngagementId]
+  );
+  const activeCli = useMemo(
+    () => metering?.active_client || (activeEng ? clients.find((c) => c.id === activeEng.client_id) || null : null),
+    [metering?.active_client, activeEng, clients]
+  );
+  const meteringTotals = metering?.totals;
+  const activeEngRow = useMemo(
+    () => (activeEng && metering?.by_engagement ? metering.by_engagement.find((r) => r.engagement_id === activeEng.id) || null : null),
+    [activeEng, metering?.by_engagement]
+  );
+  const retainerBudgetUsd = activeEng?.retainer_budget_usd ?? meteringTotals?.retainer_budget_usd ?? 0;
+  const retainerSpentUsd = activeEngRow?.cost_usd ?? meteringTotals?.cost_usd ?? 0;
+  const retainerBurnPct = Math.max(0, Number(meteringTotals?.retainer_burn_pct ?? activeEngRow?.retainer_burn_pct ?? 0) || 0);
+  const hourlyRateUsd = activeEng?.hourly_rate_usd ?? activeCli?.default_rate_usd ?? 0;
+
   const handleRowReceiptExport = async (job: BriefJob, idx: number, format: "md" | "json") => {
     const id = job.id || job.thread_id || `receipt-${idx}`;
     const res = await exportReceiptDownload(
@@ -911,6 +978,165 @@ export const PaperFace = memo(function PaperFace({
                 </div>
               </header>
 
+              {(metering || liveRunUsage) && (
+                <section
+                  id="retainer-roi-card"
+                  aria-labelledby="retainer-roi-h"
+                  className="grid gap-3.5 rounded-card border border-hairline bg-surface p-4 sm:p-5"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex min-w-0 flex-wrap items-center gap-2">
+                      <TrendingUp className="size-4 shrink-0 text-icon" strokeWidth={1.5} aria-hidden />
+                      <h2 id="retainer-roi-h" className="text-base font-medium text-ink">
+                        Retainer burn and billable ROI
+                      </h2>
+                      {(activeCli || activeEng) && (
+                        <span className="inline-flex items-center gap-1 rounded-chip bg-board px-2 py-0.5 text-xs font-medium text-ink-2">
+                          <Briefcase className="size-3 text-icon" strokeWidth={1.5} aria-hidden />
+                          <span>
+                            {[activeCli?.name, activeEng?.name].filter(Boolean).join(" / ")}
+                          </span>
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      {liveRunUsage && (
+                        <Pill
+                          id="live-usage-pill"
+                          variant="secondary"
+                          className="mono bg-blue-soft px-2 py-0.5 text-xs font-medium text-ink"
+                        >
+                          Live run: {liveRunUsage.total_tokens.toLocaleString()} tok, {formatUsd(liveRunUsage.cost_usd)}
+                        </Pill>
+                      )}
+                      {onOpenWorkspaceSwitcher && (
+                        <Button
+                          id="retainer-switch-engagement-btn"
+                          type="button"
+                          size="xs"
+                          variant="outline"
+                          className="max-md:min-h-11"
+                          onClick={onOpenWorkspaceSwitcher}
+                        >
+                          {activeEng ? "Switch engagement" : "Select engagement"}
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+
+                  {retainerBudgetUsd > 0 && (
+                    <div className="grid gap-1.5">
+                      <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                        <span className="font-medium text-ink">
+                          Engagement retainer burn
+                          {activeEng?.retainer_hours ? ` (${activeEng.retainer_hours}h cap)` : ""}
+                        </span>
+                        <span id="retainer-burn-label" className="mono text-ink-2">
+                          {formatUsd(retainerSpentUsd)} of {formatUsd(retainerBudgetUsd)} ({retainerBurnPct.toFixed(1)}%)
+                        </span>
+                      </div>
+                      <div
+                        role="progressbar"
+                        aria-label="Engagement retainer burn"
+                        aria-valuemin={0}
+                        aria-valuemax={100}
+                        aria-valuenow={Math.min(100, Math.round(retainerBurnPct))}
+                        className="h-2 w-full overflow-hidden rounded-chip bg-track"
+                      >
+                        <div
+                          id="retainer-burn-bar"
+                          className={cn(
+                            "h-full rounded-chip",
+                            retainerBurnPct >= 100
+                              ? "bg-dot-red"
+                              : retainerBurnPct >= 80
+                                ? "bg-dot-amber"
+                                : "bg-blue"
+                          )}
+                          style={{ width: `${Math.min(100, Math.max(0, retainerBurnPct))}%` }}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                    <div className="flex flex-col gap-0.5 rounded-sm bg-board/60 p-3">
+                      <span className="text-xs text-ink-2">LLM tokens</span>
+                      <span id="metering-tokens-val" className="mono text-base font-medium text-ink">
+                        {(meteringTotals?.total_tokens ?? 0).toLocaleString()}
+                      </span>
+                      <span className="mono text-xs text-ink-2">
+                        {(meteringTotals?.prompt_tokens ?? 0).toLocaleString()} in, {(meteringTotals?.completion_tokens ?? 0).toLocaleString()} out
+                      </span>
+                    </div>
+                    <div className="flex flex-col gap-0.5 rounded-sm bg-board/60 p-3">
+                      <span className="text-xs text-ink-2">Model spend</span>
+                      <span id="metering-cost-val" className="mono text-base font-medium text-ink">
+                        {formatUsd(meteringTotals?.cost_usd ?? 0)}
+                      </span>
+                      <span className="mono text-xs text-ink-2">
+                        {meteringTotals?.runs ?? 0} {(meteringTotals?.runs ?? 0) === 1 ? "metered run" : "metered runs"}
+                      </span>
+                    </div>
+                    <div className="flex flex-col gap-0.5 rounded-sm bg-board/60 p-3">
+                      <span className="text-xs text-ink-2">Time saved</span>
+                      <span id="metering-time-val" className="mono text-base font-medium text-ink">
+                        {formatMinutesSaved(meteringTotals?.minutes_saved ?? 0)}
+                      </span>
+                      <span className="text-xs text-ink-2">Estimated work hours</span>
+                    </div>
+                    <div className="flex flex-col gap-0.5 rounded-sm bg-board/60 p-3">
+                      <span className="text-xs text-ink-2">Billable ROI</span>
+                      <span id="metering-roi-val" className="mono text-base font-medium text-ink">
+                        {formatUsd(meteringTotals?.billable_value_usd ?? 0)}
+                      </span>
+                      <span className="mono text-xs text-ink-2">
+                        {hourlyRateUsd > 0 ? `At $${hourlyRateUsd}/hr` : "Attributed value"}
+                      </span>
+                    </div>
+                  </div>
+
+                  {metering && (metering.by_engagement.length > 0 || metering.by_model.length > 0) && (
+                    <Details label="Engagement and model breakdown">
+                      <div className="grid gap-3 pt-1 text-xs">
+                        {metering.by_engagement.length > 0 && (
+                          <div>
+                            <p className="mb-1 font-medium text-ink">By engagement</p>
+                            <ul className="divide-y divide-hairline">
+                              {metering.by_engagement.slice(0, 6).map((row) => (
+                                <li key={row.engagement_id} className="flex flex-wrap items-center justify-between gap-2 py-1.5">
+                                  <span className="min-w-0 truncate text-ink">
+                                    {row.client_name ? `${row.client_name} / ` : ""}{row.engagement_name || row.engagement_id}
+                                  </span>
+                                  <span className="mono text-ink-2">
+                                    {row.total_tokens.toLocaleString()} tok, {formatUsd(row.cost_usd)}, {formatUsd(row.billable_value_usd)} ROI
+                                  </span>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                        {metering.by_model.length > 0 && (
+                          <div>
+                            <p className="mb-1 font-medium text-ink">By model</p>
+                            <ul className="divide-y divide-hairline">
+                              {metering.by_model.slice(0, 6).map((m) => (
+                                <li key={m.model_id} className="flex flex-wrap items-center justify-between gap-2 py-1.5">
+                                  <span className="mono truncate text-ink">{m.model_id}</span>
+                                  <span className="mono text-ink-2">
+                                    {m.runs} {m.runs === 1 ? "run" : "runs"}, {m.total_tokens.toLocaleString()} tok, {formatUsd(m.cost_usd)}
+                                  </span>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                      </div>
+                    </Details>
+                  )}
+                </section>
+              )}
+
               {busy && (
                 <LiveRunTimeline
                   steps={liveTimeline}
@@ -958,6 +1184,12 @@ export const PaperFace = memo(function PaperFace({
                               strokeWidth={1.5}
                               aria-label="Outbound delivery"
                             />
+                          ) : lead.kind === "budget_gate" ? (
+                            <Wallet
+                              className="mt-1 size-5 shrink-0 text-dot-amber"
+                              strokeWidth={1.5}
+                              aria-label="Retainer budget gate"
+                            />
                           ) : leadCopy?.security ? (
                             <ShieldAlert
                               className={cn("mt-1 size-5 shrink-0", lead.severity === "critical" ? "text-dot-red" : "text-dot-amber")}
@@ -970,6 +1202,28 @@ export const PaperFace = memo(function PaperFace({
                         <WaitingPill />
                       </div>
                       <p className="max-w-[60ch] whitespace-pre-line text-sm leading-6 text-ink-2">{leadCopy?.body}</p>
+                      {lead.kind === "budget_gate" && (
+                        <div data-budget-gate={lead.id} className="flex flex-col gap-1.5 rounded-sm border border-hairline bg-surface px-3 py-2.5 text-xs text-ink-2">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <span className="flex items-center gap-1.5 font-medium text-ink">
+                              <Coins className="size-3.5 text-icon" strokeWidth={1.5} aria-hidden />
+                              <span>
+                                {[lead.client_name, lead.engagement_name].filter(Boolean).join(" / ") || "Active engagement"}
+                              </span>
+                            </span>
+                            {typeof lead.retainer_budget_usd === "number" && (
+                              <span className="mono text-ink">
+                                Spent {formatUsd(lead.spent_usd ?? 0)} of {formatUsd(lead.retainer_budget_usd)} cap
+                              </span>
+                            )}
+                          </div>
+                          {typeof lead.estimated_cost_usd === "number" && (
+                            <span className="mono text-ink-2">
+                              Estimated next run cost: {formatUsd(lead.estimated_cost_usd)}
+                            </span>
+                          )}
+                        </div>
+                      )}
                       {lead.kind === "connector_delivery" && (lead.connector_name || lead.url || lead.target_url || lead.payload_preview) && (
                         <div data-connector-consequence={lead.id} className="flex flex-col gap-1.5 rounded-sm border border-hairline bg-surface px-3 py-2.5 text-xs text-ink-2">
                           <div className="flex flex-wrap items-center gap-2">
@@ -1204,6 +1458,14 @@ export const PaperFace = memo(function PaperFace({
                             <span className="mono w-full shrink-0 text-xs text-ink-2 sm:w-[96px]">{when(x)}</span>
                             <div className="min-w-[13rem] flex-1">
                               <p className="text-ui font-medium leading-6 text-ink [overflow-wrap:anywhere]">{taskTitle}</p>
+                              {x.usage && x.usage.total_tokens > 0 && (
+                                <p className="mono mt-0.5 text-xs text-ink-2">
+                                  {x.usage.total_tokens.toLocaleString()} tokens, {formatUsd(x.usage.cost_usd)}
+                                  {typeof x.usage.estimated_minutes_saved === "number" && x.usage.estimated_minutes_saved > 0
+                                    ? `, ${formatMinutesSaved(x.usage.estimated_minutes_saved)} saved`
+                                    : ""}
+                                </p>
+                              )}
                               <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5 text-xs text-ink-2">
                                 {jobFiles.length ? (
                                   <>

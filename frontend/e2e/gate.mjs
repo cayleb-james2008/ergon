@@ -2015,6 +2015,275 @@ await reset();
   await ctx.close();
 }
 
+// 6h. v0.33.0 Wave E1 Clients/Engagements Selector, Retainer Burn & ROI Telemetry, Budget Gate & Pricing Overrides (4 checks)
+{
+  const { ctx, p } = await open(1440, 900);
+  let clientsState = {
+    clients: [
+      { id: "cli-1", name: "Northstar Advisory", billing_currency: "USD", default_rate_usd: 220 },
+    ],
+    engagements: [
+      {
+        id: "eng-1",
+        client_id: "cli-1",
+        person_id: "default",
+        name: "Q4 Operations Retainer",
+        retainer_hours: 20,
+        retainer_budget_usd: 2500,
+        hourly_rate_usd: 220,
+        period: "monthly",
+        status: "active",
+      },
+    ],
+    active_engagement_id: "eng-1",
+  };
+  let pricingState = {
+    "gpt-4o-mini": { input_per_1m_usd: 0.15, output_per_1m_usd: 0.6, cached_input_per_1m_usd: 0.075 },
+  };
+  let budgetDecisionStatus = "pending";
+  let budgetApproveCount = 0;
+  let savedPricingPayload = null;
+
+  await p.route("**/api/status", async (r) => {
+    const res = await r.fetch();
+    const j = await res.json();
+    await r.fulfill({
+      response: res,
+      body: JSON.stringify({
+        ...j,
+        version: "0.33.0",
+        capabilities: { ...(j.capabilities || {}), clients: true, metering: true, sse: true },
+      }),
+    });
+  });
+  await p.route("**/api/clients", async (r) => {
+    if (r.request().method() === "POST") {
+      const b = JSON.parse(r.request().postData() || "{}");
+      const created = {
+        id: "cli-acme",
+        name: b.name,
+        billing_currency: "USD",
+        default_rate_usd: b.default_rate_usd ?? 250,
+      };
+      clientsState.clients.push(created);
+      return r.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ client: created }) });
+    }
+    return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(clientsState) });
+  });
+  await p.route("**/api/engagements", async (r) => {
+    if (r.request().method() === "POST") {
+      const b = JSON.parse(r.request().postData() || "{}");
+      const created = {
+        id: "eng-acme-q1",
+        client_id: b.client_id,
+        person_id: b.person_id || "default",
+        name: b.name,
+        retainer_hours: 12,
+        retainer_budget_usd: b.retainer_budget_usd ?? 3000,
+        hourly_rate_usd: b.hourly_rate_usd ?? 250,
+        period: "monthly",
+        status: "active",
+      };
+      clientsState.engagements.push(created);
+      clientsState.active_engagement_id = created.id;
+      return r.fulfill({
+        status: 201,
+        contentType: "application/json",
+        body: JSON.stringify({ engagement: created, active_engagement_id: created.id }),
+      });
+    }
+    return r.continue();
+  });
+  await p.route("**/api/engagements/switch", async (r) => {
+    const b = JSON.parse(r.request().postData() || "{}");
+    clientsState.active_engagement_id = b.engagement_id;
+    const eng = clientsState.engagements.find((e) => e.id === b.engagement_id) || null;
+    return r.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ active_engagement_id: b.engagement_id, engagement: eng }),
+    });
+  });
+  await p.route(/\/api\/metering\/summary(\?.*)?$/, (r) => {
+    const activeEng = clientsState.engagements.find((e) => e.id === clientsState.active_engagement_id) || clientsState.engagements[0];
+    const activeCli = clientsState.clients.find((c) => c.id === activeEng?.client_id) || clientsState.clients[0];
+    return r.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        totals: {
+          runs: 4,
+          prompt_tokens: 4200,
+          completion_tokens: 1300,
+          cached_tokens: 600,
+          total_tokens: 5500,
+          cost_usd: 125.0,
+          minutes_saved: 95,
+          billable_value_usd: 395.83,
+          retainer_burn_pct: activeEng?.retainer_budget_usd ? (125.0 / activeEng.retainer_budget_usd) * 100 : 0,
+          retainer_budget_usd: activeEng?.retainer_budget_usd ?? 2500,
+        },
+        by_engagement: [
+          {
+            engagement_id: activeEng.id,
+            engagement_name: activeEng.name,
+            client_id: activeCli.id,
+            client_name: activeCli.name,
+            runs: 4,
+            total_tokens: 5500,
+            cost_usd: 125.0,
+            minutes_saved: 95,
+            billable_value_usd: 395.83,
+            retainer_budget_usd: activeEng.retainer_budget_usd,
+            retainer_burn_pct: 5.0,
+          },
+        ],
+        by_model: [
+          { model_id: "gpt-4o-mini", runs: 4, prompt_tokens: 4200, completion_tokens: 1300, total_tokens: 5500, cost_usd: 125.0 },
+        ],
+        daily_series: [],
+        active_engagement: activeEng,
+        active_client: activeCli,
+      }),
+    });
+  });
+  await p.route("**/api/decisions", (r) =>
+    r.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        decisions: [
+          {
+            id: "d-bgate-e2e-1",
+            kind: "budget_gate",
+            summary: "Retainer budget limit reached for Q4 Operations Retainer",
+            status: budgetDecisionStatus,
+            ts: Date.now(),
+            severity: "warning",
+            engagement_id: "eng-1",
+            engagement_name: "Q4 Operations Retainer",
+            client_name: "Northstar Advisory",
+            retainer_budget_usd: 2500,
+            spent_usd: 2504.25,
+            estimated_cost_usd: 0.12,
+          },
+        ],
+      }),
+    })
+  );
+  await p.route("**/api/decisions/d-bgate-e2e-1/approve", (r) => {
+    budgetDecisionStatus = "approved";
+    budgetApproveCount += 1;
+    return r.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ outcome: "Approved budget overrun; engagement unblocked." }),
+    });
+  });
+  await p.route("**/api/config", async (r) => {
+    if (r.request().method() === "POST" || r.request().method() === "PUT") {
+      const b = JSON.parse(r.request().postData() || "{}");
+      if (b.model_pricing) {
+        pricingState = b.model_pricing;
+        savedPricingPayload = b.model_pricing;
+      }
+      return r.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          model_base_url: "http://127.0.0.1:11434/v1",
+          model_id: "gpt-4o-mini",
+          has_api_key: false,
+          model_configured: true,
+          is_loopback: true,
+          model_pricing: pricingState,
+        }),
+      });
+    }
+    return r.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        model_base_url: "http://127.0.0.1:11434/v1",
+        model_id: "gpt-4o-mini",
+        has_api_key: false,
+        model_configured: true,
+        is_loopback: true,
+        detected_gateways: [],
+        model_pricing: pricingState,
+      }),
+    });
+  });
+
+  await p.goto(BASE);
+  await waitWorkbench(p);
+
+  // 1. Client -> Engagement selector & quick-create modal
+  await p.locator("#person-select").click();
+  await p.waitForSelector("#client-engagement-section", { timeout: 4000 });
+  await p.locator("#engagement-quick-create-toggle").click();
+  await p.waitForSelector("#engagement-quick-create-form", { timeout: 4000 });
+  await p.locator("#workspace-switcher-panel").getByRole("button", { name: "New client", exact: true }).click();
+  await p.locator("#quick-client-name").fill("Acme Advisory");
+  await p.locator("#quick-engagement-name").fill("Q1 Audit");
+  await p.locator("#quick-engagement-rate").fill("250");
+  await p.locator("#quick-engagement-budget").fill("3000");
+  await p.locator("#quick-engagement-submit").click();
+  await p.locator("#workspace-switcher-panel").waitFor({ state: "hidden", timeout: 4000 });
+  const personBtnTxt = await p.locator("#person-select").innerText();
+  ok(
+    "v0.33.0 E1 Client -> Engagement selector and quick-create updates active engagement",
+    personBtnTxt.includes("Acme Advisory") && personBtnTxt.includes("Q1 Audit"),
+    personBtnTxt.replace(/\s+/g, " ")
+  );
+
+  // 2. Retainer burn progress bar & ROI telemetry card in Today
+  await p.getByRole("tab", { name: "Today" }).click();
+  await waitPaper(p);
+  await p.waitForSelector("#retainer-roi-card", { timeout: 4000 });
+  const burnText = await p.locator("#retainer-burn-label").innerText();
+  const tokText = await p.locator("#metering-tokens-val").innerText();
+  const spendText = await p.locator("#metering-cost-val").innerText();
+  const timeText = await p.locator("#metering-time-val").innerText();
+  const roiText = await p.locator("#metering-roi-val").innerText();
+  ok(
+    "v0.33.0 E1 Paper surfaces retainer burn progress bar, tokens, USD spend, time saved, and billable ROI",
+    burnText.includes("$125.00") && tokText.includes("5,500") && spendText.includes("$125.00") && timeText.includes("1h 35m") && roiText.includes("$395.83"),
+    `burn=${burnText} tok=${tokText} time=${timeText} roi=${roiText}`
+  );
+
+  // 3. Plain-language budget_gate card in Waiting on you
+  await p.waitForSelector('#decisions-list [data-budget-gate="d-bgate-e2e-1"]', { timeout: 4000 });
+  const gateText = await p.locator('#decisions-list [data-budget-gate="d-bgate-e2e-1"]').innerText();
+  await p.locator("#decisions-list").getByRole("button", { name: "Approve overrun" }).click();
+  await p.locator('#decisions-list [data-budget-gate="d-bgate-e2e-1"]').waitFor({ state: "hidden", timeout: 4000 });
+  ok(
+    "v0.33.0 E1 Paper renders budget_gate card and settles Approve overrun",
+    gateText.includes("$2,504.25") && gateText.includes("$2,500.00") && budgetApproveCount === 1,
+    `approves=${budgetApproveCount}`
+  );
+
+  // 4. SettingsPanel model pricing overrides & validation
+  await p.locator('[data-thing="settings-btn"]').click();
+  await p.waitForSelector("#settings-pricing-section", { timeout: 4000 });
+  await p.locator("#settings-new-pricing-model").fill("gpt-4o");
+  await p.locator("#settings-add-pricing-btn").click();
+  await p.waitForSelector('[data-pricing-model="gpt-4o"]', { timeout: 4000 });
+  await p.locator('[data-pricing-model="gpt-4o"] input').first().fill("-1");
+  await p.locator("#settings-save-pricing-btn").click();
+  await p.waitForSelector("#settings-pricing-error", { timeout: 4000 });
+  await p.locator('[data-pricing-model="gpt-4o"] input').first().fill("2.5");
+  await p.locator("#settings-save-pricing-btn").click();
+  await p.waitForFunction(() => true, null, { timeout: 1000 });
+  await p.waitForTimeout(200);
+  ok(
+    "v0.33.0 E1 SettingsPanel validates and saves model pricing overrides",
+    Boolean(savedPricingPayload && savedPricingPayload["gpt-4o"]?.input_per_1m_usd === 2.5),
+    JSON.stringify(savedPricingPayload)
+  );
+  await ctx.close();
+}
+
 // 7. Reduced motion & Console Cleanliness (2 checks)
 {
   const { ctx, p } = await open(1440, 900, "light", { reducedMotion: "reduce" });
