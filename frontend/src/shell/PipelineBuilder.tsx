@@ -1,12 +1,15 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
   ArrowDown,
   ArrowUp,
   Bot,
+  CheckCircle2,
   FileDown,
+  GitBranch,
   PauseCircle,
   Plus,
+  Send,
   Trash2,
   Wrench,
 } from "lucide-react";
@@ -14,12 +17,16 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import type {
-  PipelineCheckpointInputMode,
-  PipelineStepKind,
-  PipelineStepSpec,
-  PipelineWhen,
-  WorkspaceFile,
+import {
+  listConnectors,
+  validatePipeline,
+  type OutboundConnector,
+  type PipelineCheckpointInputMode,
+  type PipelineStepKind,
+  type PipelineStepSpec,
+  type PipelineValidationResult as ApiPipelineValidationResult,
+  type PipelineWhen,
+  type WorkspaceFile,
 } from "@/lib/api";
 import type { SkillMeta } from "@/lib/skillsCatalog";
 import { cn } from "@/lib/utils";
@@ -32,6 +39,7 @@ const KIND_META: Record<
   agent: { label: "AI Agent", badge: "Model step", icon: Bot },
   checkpoint: { label: "Human Checkpoint", badge: "Pause & resume", icon: PauseCircle },
   export: { label: "Export", badge: "Deliverable", icon: FileDown },
+  deliver: { label: "Deliver", badge: "Outbound webhook", icon: Send },
 };
 
 function sanitizeStepId(raw: string, fallback: string): string {
@@ -47,16 +55,119 @@ export type PipelineValidationResult = {
   valid: boolean;
   errorsByStep: Record<number, string[]>;
   globalErrors: string[];
+  topologicalOrder: string[];
+  stages: string[][];
 };
+
+function collectAncestors(stepId: string, steps: PipelineStepSpec[]): Set<string> {
+  const byId = new Map<string, PipelineStepSpec>();
+  for (const s of steps) {
+    const id = String(s.id ?? "").trim();
+    if (id) byId.set(id, s);
+  }
+  const visited = new Set<string>();
+  const stack = [...(byId.get(stepId)?.depends_on ?? [])];
+  while (stack.length > 0) {
+    const cur = String(stack.pop() ?? "").trim();
+    if (!cur || visited.has(cur)) continue;
+    visited.add(cur);
+    const parent = byId.get(cur);
+    if (parent?.depends_on) {
+      for (const dep of parent.depends_on) stack.push(dep);
+    }
+  }
+  return visited;
+}
+
+function computeTopologicalStages(steps: PipelineStepSpec[]): {
+  hasCycle: boolean;
+  cycleIds: string[];
+  topologicalOrder: string[];
+  stages: string[][];
+  missingRefsByStep: Record<number, string[]>;
+} {
+  const idToIndex = new Map<string, number>();
+  steps.forEach((s, idx) => {
+    const id = String(s.id ?? "").trim();
+    if (id && !idToIndex.has(id)) idToIndex.set(id, idx);
+  });
+
+  const inDegree = new Map<string, number>();
+  const dependents = new Map<string, string[]>();
+  for (const id of idToIndex.keys()) {
+    inDegree.set(id, 0);
+    dependents.set(id, []);
+  }
+
+  const missingRefsByStep: Record<number, string[]> = {};
+  steps.forEach((st, idx) => {
+    const id = String(st.id ?? "").trim();
+    const deps = Array.isArray(st.depends_on) ? st.depends_on : [];
+    const seen = new Set<string>();
+    const errs: string[] = [];
+    for (const rawDep of deps) {
+      const dep = String(rawDep ?? "").trim();
+      if (!dep) continue;
+      if (dep === id) {
+        errs.push(`Step "${id}" cannot depend on itself.`);
+        continue;
+      }
+      if (!idToIndex.has(dep)) {
+        errs.push(`Depends on unknown step "${dep}".`);
+        continue;
+      }
+      if (seen.has(dep)) continue;
+      seen.add(dep);
+      if (id) {
+        dependents.get(dep)!.push(id);
+        inDegree.set(id, (inDegree.get(id) ?? 0) + 1);
+      }
+    }
+    if (errs.length > 0) missingRefsByStep[idx] = errs;
+  });
+
+  const stages: string[][] = [];
+  const topologicalOrder: string[] = [];
+  let frontier = steps
+    .map((s) => String(s.id ?? "").trim())
+    .filter((id, idx, arr) => id && arr.indexOf(id) === idx && (inDegree.get(id) ?? 0) === 0);
+
+  while (frontier.length > 0) {
+    stages.push(frontier);
+    const next: string[] = [];
+    for (const id of frontier) {
+      topologicalOrder.push(id);
+      for (const child of dependents.get(id) ?? []) {
+        const deg = (inDegree.get(child) ?? 0) - 1;
+        inDegree.set(child, deg);
+        if (deg === 0) next.push(child);
+      }
+    }
+    frontier = next;
+  }
+
+  const cycleIds = Array.from(idToIndex.keys()).filter((id) => !topologicalOrder.includes(id));
+  return {
+    hasCycle: cycleIds.length > 0,
+    cycleIds,
+    topologicalOrder,
+    stages,
+    missingRefsByStep,
+  };
+}
 
 function validateTemplateText(
   raw: string,
   stepIndex: number,
-  steps: PipelineStepSpec[]
+  steps: PipelineStepSpec[],
+  hasDagDeps: boolean
 ): string[] {
   const errs: string[] = [];
   const text = String(raw || "");
   if (!text.includes("{{") && !text.includes("}}")) return errs;
+
+  const curStepId = String(steps[stepIndex]?.id ?? "").trim();
+  const ancestors = hasDagDeps && curStepId ? collectAncestors(curStepId, steps) : new Set<string>();
 
   let cursor = 0;
   while (cursor < text.length) {
@@ -77,6 +188,8 @@ function validateTemplateText(
       errs.push("Empty {{}} template expression is not allowed.");
     } else if (expr.includes("{{")) {
       errs.push(`Nested template syntax near "{{${expr}".`);
+    } else if (expr === "item") {
+      // Valid inside for_each step templates
     } else if (expr.startsWith("inputs.")) {
       const key = expr.slice("inputs.".length).trim();
       if (!key || !/^[a-zA-Z0-9_.-]+$/.test(key)) {
@@ -92,6 +205,7 @@ function validateTemplateText(
         const field = rest.slice(dot + 1);
         const validField =
           field === "files" ||
+          field === "items" ||
           /^files\[\d+\]$/.test(field) ||
           field === "output" ||
           field === "human_answer" ||
@@ -104,8 +218,10 @@ function validateTemplateText(
           errs.push(`Unknown step reference "${refId}" in "{{${expr}}}".`);
         } else if (targetIdx === stepIndex) {
           errs.push(`Step "${refId}" cannot reference itself in "{{${expr}}}".`);
-        } else if (targetIdx > stepIndex) {
+        } else if (!hasDagDeps && targetIdx > stepIndex) {
           errs.push(`Step cannot reference later step "${refId}" in "{{${expr}}}".`);
+        } else if (hasDagDeps && ancestors.size > 0 && !ancestors.has(refId) && targetIdx > stepIndex) {
+          errs.push(`Step "${refId}" must precede or be in depends_on for "{{${expr}}}".`);
         }
       }
     } else {
@@ -116,18 +232,24 @@ function validateTemplateText(
   return errs;
 }
 
-/** Validate typed pipeline steps for empty prompts, duplicate IDs, and broken or circular templates. */
+/** Validate typed pipeline steps for empty prompts, duplicate IDs, DAG cycles, and broken templates. */
 export function validatePipelineSteps(steps: PipelineStepSpec[]): PipelineValidationResult {
   const errorsByStep: Record<number, string[]> = {};
   const globalErrors: string[] = [];
   if (steps.length === 0) {
     globalErrors.push("Add at least one pipeline step.");
-    return { valid: false, errorsByStep, globalErrors };
+    return { valid: false, errorsByStep, globalErrors, topologicalOrder: [], stages: [] };
+  }
+
+  const hasDagDeps = steps.some((s) => Array.isArray(s.depends_on) && s.depends_on.length > 0);
+  const topo = computeTopologicalStages(steps);
+  if (topo.hasCycle) {
+    globalErrors.push(`Circular dependency detected involving: ${topo.cycleIds.join(", ")}.`);
   }
 
   const seenIds = new Map<string, number>();
   steps.forEach((st, idx) => {
-    const stepErrs: string[] = [];
+    const stepErrs: string[] = [...(topo.missingRefsByStep[idx] ?? [])];
     const id = String(st.id ?? "").trim();
     if (!id) {
       stepErrs.push("Step ID is required.");
@@ -139,8 +261,18 @@ export function validatePipelineSteps(steps: PipelineStepSpec[]): PipelineValida
         seenIds.set(id, idx);
       }
     }
+    if (id && topo.cycleIds.includes(id)) {
+      stepErrs.push(`Step "${id}" is part of a dependency cycle.`);
+    }
 
     const stringsToCheck: string[] = [];
+    if (st.for_each) {
+      stringsToCheck.push(st.for_each);
+    }
+    if (typeof st.when === "string" && st.when.startsWith("expr:") && !st.when.slice(5).trim()) {
+      stepErrs.push("Condition expression after expr: cannot be empty.");
+    }
+
     if (st.kind === "skill") {
       if (!String(st.skill_id ?? "").trim()) {
         stepErrs.push("Select a built-in skill.");
@@ -175,10 +307,21 @@ export function validatePipelineSteps(steps: PipelineStepSpec[]): PipelineValida
         stepErrs.push("Export source file path cannot be empty.");
       }
       stringsToCheck.push(p);
+    } else if (st.kind === "deliver") {
+      const cid = String(st.deliver?.connector_id ?? "").trim();
+      if (!cid) {
+        stepErrs.push("Select or enter an outbound connector for delivery.");
+      }
+      if (st.deliver?.file) stringsToCheck.push(st.deliver.file);
+      if (typeof st.deliver?.payload === "string") {
+        stringsToCheck.push(st.deliver.payload);
+      } else if (st.deliver?.payload && typeof st.deliver.payload === "object") {
+        stringsToCheck.push(JSON.stringify(st.deliver.payload));
+      }
     }
 
     for (const s of stringsToCheck) {
-      for (const tErr of validateTemplateText(s, idx, steps)) {
+      for (const tErr of validateTemplateText(s, idx, steps, hasDagDeps)) {
         if (!stepErrs.includes(tErr)) stepErrs.push(tErr);
       }
     }
@@ -189,7 +332,13 @@ export function validatePipelineSteps(steps: PipelineStepSpec[]): PipelineValida
   });
 
   const valid = globalErrors.length === 0 && Object.keys(errorsByStep).length === 0;
-  return { valid, errorsByStep, globalErrors };
+  return {
+    valid,
+    errorsByStep,
+    globalErrors,
+    topologicalOrder: valid ? topo.topologicalOrder : [],
+    stages: valid ? topo.stages : [],
+  };
 }
 
 export function makeDefaultStep(kind: PipelineStepKind, index: number, prevId?: string): PipelineStepSpec {
@@ -213,6 +362,7 @@ export function makeDefaultStep(kind: PipelineStepKind, index: number, prevId?: 
         ? `Review {{steps.${prevId}.files[0]}} and draft a client-ready summary.`
         : "Review workspace files and draft a client-ready summary.",
       when: "always",
+      ...(prevId ? { depends_on: [prevId] } : {}),
     };
   }
   if (kind === "checkpoint") {
@@ -227,6 +377,21 @@ export function makeDefaultStep(kind: PipelineStepKind, index: number, prevId?: 
         inspect_files: prevId ? [`{{steps.${prevId}.files[0]}}`] : [],
       },
       when: "always",
+      ...(prevId ? { depends_on: [prevId] } : {}),
+    };
+  }
+  if (kind === "deliver") {
+    return {
+      id: `deliver_${n}`,
+      label: "Deliver to connector",
+      kind: "deliver",
+      deliver: {
+        connector_id: "",
+        file: prevId ? `{{steps.${prevId}.files[0]}}` : "",
+        payload: prevId ? { summary: `{{steps.${prevId}.output}}` } : undefined,
+      },
+      when: "on_all_ok",
+      ...(prevId ? { depends_on: [prevId] } : {}),
     };
   }
   return {
@@ -238,7 +403,31 @@ export function makeDefaultStep(kind: PipelineStepKind, index: number, prevId?: 
       format: "docx",
     },
     when: "on_previous_ok",
+    ...(prevId ? { depends_on: [prevId] } : {}),
   };
+}
+
+function serializeDeliverPayload(payload: unknown): string {
+  if (payload === undefined || payload === null) return "";
+  if (typeof payload === "string") return payload;
+  try {
+    return JSON.stringify(payload, null, 2);
+  } catch {
+    return String(payload);
+  }
+}
+
+function parseDeliverPayloadInput(raw: string): unknown {
+  const trimmed = raw.trim();
+  if (!trimmed) return undefined;
+  if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+    try {
+      return JSON.parse(trimmed);
+    } catch {
+      return raw;
+    }
+  }
+  return raw;
 }
 
 export function PipelineBuilder({
@@ -246,31 +435,61 @@ export function PipelineBuilder({
   onChange,
   skills,
   workspaceFiles = [],
+  outboundConnectors,
 }: {
   steps: PipelineStepSpec[];
   onChange: (next: PipelineStepSpec[]) => void;
   skills: SkillMeta[];
   workspaceFiles?: WorkspaceFile[];
+  outboundConnectors?: OutboundConnector[];
 }) {
   const [newArgKey, setNewArgKey] = useState<Record<number, string>>({});
+  const [fetchedConnectors, setFetchedConnectors] = useState<OutboundConnector[]>([]);
+  const [validatingDag, setValidatingDag] = useState(false);
+  const [dagResult, setDagResult] = useState<ApiPipelineValidationResult | null>(null);
   const validation = useMemo(() => validatePipelineSteps(steps), [steps]);
 
+  useEffect(() => {
+    if (outboundConnectors !== undefined) return;
+    let active = true;
+    void listConnectors().then((res) => {
+      if (!active || !res.ok) return;
+      setFetchedConnectors(res.data.outbound ?? []);
+    });
+    return () => {
+      active = false;
+    };
+  }, [outboundConnectors, steps.length]);
+
+  const connectors = outboundConnectors ?? fetchedConnectors;
+
+  const commitSteps = (next: PipelineStepSpec[]) => {
+    setDagResult(null);
+    onChange(next);
+  };
+
   const updateStep = (idx: number, patch: Partial<PipelineStepSpec>) => {
-    onChange(steps.map((s, i) => (i === idx ? { ...s, ...patch } : s)));
+    commitSteps(steps.map((s, i) => (i === idx ? { ...s, ...patch } : s)));
   };
 
   const changeKind = (idx: number, kind: PipelineStepKind) => {
     const cur = steps[idx];
     const prevId = idx > 0 ? steps[idx - 1].id : undefined;
     const template = makeDefaultStep(kind, idx, prevId);
-    onChange(
+    const defaultCid = kind === "deliver" && connectors[0]?.id ? connectors[0].id : undefined;
+    commitSteps(
       steps.map((s, i) =>
         i === idx
           ? {
               ...template,
+              ...(kind === "deliver" && defaultCid
+                ? { deliver: { ...(template.deliver ?? { connector_id: "" }), connector_id: defaultCid } }
+                : {}),
               id: cur.id || template.id,
               label: cur.label && cur.label !== KIND_META[cur.kind].label ? cur.label : template.label,
               when: cur.when || "always",
+              depends_on: cur.depends_on,
+              for_each: cur.for_each,
             }
           : s
       )
@@ -283,16 +502,38 @@ export function PipelineBuilder({
     const copy = steps.slice();
     const [item] = copy.splice(idx, 1);
     copy.splice(target, 0, item);
-    onChange(copy);
+    commitSteps(copy);
   };
 
   const removeStep = (idx: number) => {
-    onChange(steps.filter((_, i) => i !== idx));
+    const removedId = steps[idx]?.id;
+    const next = steps
+      .filter((_, i) => i !== idx)
+      .map((s) =>
+        removedId && s.depends_on?.includes(removedId)
+          ? { ...s, depends_on: s.depends_on.filter((d) => d !== removedId) }
+          : s
+      );
+    commitSteps(next);
   };
 
   const addStep = (kind: PipelineStepKind) => {
     const prevId = steps.length > 0 ? steps[steps.length - 1].id : undefined;
-    onChange([...steps, makeDefaultStep(kind, steps.length, prevId)]);
+    const created = makeDefaultStep(kind, steps.length, prevId);
+    if (kind === "deliver" && created.deliver && !created.deliver.connector_id && connectors[0]?.id) {
+      created.deliver.connector_id = connectors[0].id;
+    }
+    commitSteps([...steps, created]);
+  };
+
+  const toggleDependency = (idx: number, targetId: string) => {
+    const cur = steps[idx];
+    if (!cur || !targetId || targetId === cur.id) return;
+    const existing = Array.isArray(cur.depends_on) ? cur.depends_on : [];
+    const nextDeps = existing.includes(targetId)
+      ? existing.filter((d) => d !== targetId)
+      : [...existing, targetId];
+    updateStep(idx, { depends_on: nextDeps.length > 0 ? nextDeps : undefined });
   };
 
   const insertTokenIntoStep = (idx: number, token: string) => {
@@ -325,6 +566,69 @@ export function PipelineBuilder({
     if (st.kind === "export") {
       const exp = st.export ?? { path: "", format: "docx" as const };
       updateStep(idx, { export: { ...exp, path: token } });
+      return;
+    }
+    if (st.kind === "deliver") {
+      const del = st.deliver ?? { connector_id: "" };
+      if (token.includes(".files")) {
+        updateStep(idx, { deliver: { ...del, file: token } });
+      } else {
+        const cur = serializeDeliverPayload(del.payload);
+        updateStep(idx, { deliver: { ...del, payload: cur ? `${cur} ${token}` : token } });
+      }
+    }
+  };
+
+  const handleValidateDag = async () => {
+    if (validatingDag) return;
+    setValidatingDag(true);
+    try {
+      const localCheck = validatePipelineSteps(steps);
+      const apiRes = await validatePipeline(steps);
+      if (apiRes.ok) {
+        const srv = apiRes.data;
+        const mergedErrors = Array.from(
+          new Set([
+            ...srv.errors,
+            ...localCheck.globalErrors,
+            ...Object.entries(localCheck.errorsByStep).flatMap(([k, msgs]) =>
+              msgs.map((m) => `Step ${Number(k) + 1}: ${m}`)
+            ),
+          ])
+        );
+        const valid = srv.valid && localCheck.valid;
+        setDagResult({
+          ok: valid,
+          valid,
+          errors: mergedErrors,
+          topological_order: valid
+            ? srv.topological_order.length > 0
+              ? srv.topological_order
+              : localCheck.topologicalOrder
+            : [],
+          stages: valid
+            ? srv.stages && srv.stages.length > 0
+              ? srv.stages
+              : localCheck.stages
+            : [],
+        });
+      } else {
+        const fallbackErrs = [
+          ...localCheck.globalErrors,
+          ...Object.entries(localCheck.errorsByStep).flatMap(([k, msgs]) =>
+            msgs.map((m) => `Step ${Number(k) + 1}: ${m}`)
+          ),
+        ];
+        setDagResult({
+          ok: localCheck.valid,
+          valid: localCheck.valid,
+          errors: fallbackErrs.length > 0 ? fallbackErrs : [apiRes.error],
+          topological_order: localCheck.topologicalOrder,
+          stages: localCheck.stages,
+        });
+      }
+    } finally {
+      setValidatingDag(false);
     }
   };
 
@@ -332,27 +636,34 @@ export function PipelineBuilder({
     <div id="pipeline-builder" className="flex flex-col gap-3">
       {steps.length === 0 ? (
         <div className="rounded-sm border border-dashed border-hairline bg-surface px-3 py-4 text-center text-xs text-ink-2">
-          Add typed steps below to compose a resumable pipeline with deterministic skills, AI agent steps, human checkpoints, and deliverable exports.
+          Add typed steps below to compose a resumable DAG pipeline with skills, AI agents, parallel batch fan-out, checkpoints, exports, and outbound deliveries.
         </div>
       ) : (
         <ol className="flex flex-col gap-2.5">
           {steps.map((st, idx) => {
             const meta = KIND_META[st.kind] ?? KIND_META.skill;
             const KindIcon = meta.icon;
-            const prevSteps = steps.slice(0, idx);
+            const otherSteps = steps.filter((_, oIdx) => oIdx !== idx && Boolean(steps[oIdx]?.id?.trim()));
             const varChips: string[] = ["{{inputs.file}}"];
-            for (const prev of prevSteps) {
-              if (!prev.id) continue;
-              varChips.push(`{{steps.${prev.id}.files[0]}}`);
-              if (prev.kind === "checkpoint") {
-                varChips.push(`{{steps.${prev.id}.human_answer}}`);
+            if (st.for_each !== undefined) {
+              varChips.push("{{item}}");
+            }
+            for (const other of steps) {
+              if (!other.id || other.id === st.id) continue;
+              varChips.push(`{{steps.${other.id}.files[0]}}`);
+              if (other.kind === "checkpoint") {
+                varChips.push(`{{steps.${other.id}.human_answer}}`);
               } else {
-                varChips.push(`{{steps.${prev.id}.output}}`);
+                varChips.push(`{{steps.${other.id}.output}}`);
               }
             }
 
             const argEntries = Object.entries(st.args ?? {});
             const stepErrs = validation.errorsByStep[idx] ?? [];
+            const selectedDeps = Array.isArray(st.depends_on) ? st.depends_on : [];
+            const isExprWhen = typeof st.when === "string" && st.when.startsWith("expr:");
+            const whenSelectVal = isExprWhen ? "expr" : st.when || "always";
+            const forEachActive = st.for_each !== undefined;
 
             return (
               <li
@@ -380,8 +691,9 @@ export function PipelineBuilder({
                       <option value="agent">AI Agent</option>
                       <option value="checkpoint">Human Checkpoint</option>
                       <option value="export">Export</option>
+                      <option value="deliver">Deliver</option>
                     </select>
-                    <Badge variant="outline" size="sm" className="mono text-xs text-ink-2">
+                    <Badge variant="outline" size="sm" className="text-xs text-ink-2">
                       {meta.badge}
                     </Badge>
                   </div>
@@ -430,7 +742,7 @@ export function PipelineBuilder({
                       aria-label={`Step ${idx + 1} ID`}
                       placeholder={`step_${idx + 1}`}
                       onChange={(e) => updateStep(idx, { id: sanitizeStepId(e.target.value, `step_${idx + 1}`) })}
-                      className="mono h-8 text-xs max-md:min-h-11"
+                      className="h-8 text-xs max-md:min-h-11"
                     />
                   </div>
                   <div className="flex flex-col gap-1">
@@ -447,16 +759,112 @@ export function PipelineBuilder({
                     <label className="text-xs font-medium text-ink-2">Run condition</label>
                     <select
                       aria-label={`Step ${idx + 1} condition`}
-                      value={st.when ?? "always"}
-                      onChange={(e) => updateStep(idx, { when: e.target.value as PipelineWhen })}
+                      value={whenSelectVal}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        updateStep(idx, {
+                          when: v === "expr" ? (isExprWhen ? st.when : "expr:steps.clean.metrics.anomalies == 0") : (v as PipelineWhen),
+                        });
+                      }}
                       className="focus-ring h-8 rounded-sm border border-input bg-surface px-2 text-xs text-ink outline-none max-md:min-h-11"
                     >
                       <option value="always">Always run</option>
                       <option value="on_previous_ok">Only if previous succeeded</option>
+                      <option value="on_all_ok">Only if all dependencies succeeded</option>
                       <option value="on_anomaly">Only if anomaly flagged</option>
+                      <option value="expr">Custom expression (expr:...)</option>
                     </select>
                   </div>
                 </div>
+
+                {isExprWhen && (
+                  <div className="flex flex-col gap-1">
+                    <label className="text-xs font-medium text-ink-2">Condition expression</label>
+                    <Input
+                      value={st.when ?? "expr:"}
+                      aria-label={`Step ${idx + 1} expression`}
+                      placeholder="expr:steps.clean.metrics.anomalies == 0"
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        updateStep(idx, { when: val.startsWith("expr:") ? val : `expr:${val}` });
+                      }}
+                      className="h-8 text-xs max-md:min-h-11"
+                    />
+                  </div>
+                )}
+
+                {otherSteps.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-1.5 border-t border-hairline pt-2">
+                    <span className="flex items-center gap-1 text-xs font-medium text-ink-2">
+                      <GitBranch className="size-3.5 text-icon" strokeWidth={1.5} aria-hidden />
+                      Depends on:
+                    </span>
+                    {otherSteps.map((dep) => {
+                      const active = selectedDeps.includes(dep.id);
+                      return (
+                        <button
+                          key={dep.id}
+                          type="button"
+                          aria-pressed={active}
+                          aria-label={`Step ${idx + 1} depends on ${dep.id}`}
+                          data-dep-chip={`${idx}:${dep.id}`}
+                          onClick={() => toggleDependency(idx, dep.id)}
+                          className={cn(
+                            "rounded-chip border px-2 py-0.5 text-xs transition-[color,background-color,border-color] max-md:min-h-11",
+                            active
+                              ? "border-blue bg-blue-soft font-medium text-ink"
+                              : "border-hairline bg-board/60 text-ink-2 hover:bg-board hover:text-ink"
+                          )}
+                        >
+                          {dep.id}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {st.kind !== "checkpoint" && (
+                  <div className="flex flex-col gap-1.5 border-t border-hairline pt-2">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <button
+                        type="button"
+                        aria-pressed={forEachActive}
+                        aria-label={`Step ${idx + 1} batch fan-out`}
+                        data-toggle-for-each={idx}
+                        onClick={() => {
+                          if (forEachActive) {
+                            updateStep(idx, { for_each: undefined });
+                          } else {
+                            const prev = idx > 0 ? steps[idx - 1]?.id : undefined;
+                            updateStep(idx, { for_each: prev ? `{{steps.${prev}.files}}` : "{{inputs.items}}" });
+                          }
+                        }}
+                        className={cn(
+                          "inline-flex items-center gap-1.5 rounded-chip border px-2.5 py-0.5 text-xs transition-[color,background-color,border-color] max-md:min-h-11",
+                          forEachActive
+                            ? "border-blue bg-blue-soft font-medium text-ink"
+                            : "border-hairline bg-board/60 text-ink-2 hover:bg-board hover:text-ink"
+                        )}
+                      >
+                        Batch fan-out (for_each)
+                      </button>
+                      {forEachActive && (
+                        <span className="text-xs text-ink-3">
+                          Runs once per item via {`{{item}}`} (max 50).
+                        </span>
+                      )}
+                    </div>
+                    {forEachActive && (
+                      <Input
+                        value={st.for_each ?? ""}
+                        aria-label={`Step ${idx + 1} for_each template`}
+                        placeholder="{{steps.prev.files}} or JSON array / newline list"
+                        onChange={(e) => updateStep(idx, { for_each: e.target.value })}
+                        className="h-8 text-xs max-md:min-h-11"
+                      />
+                    )}
+                  </div>
+                )}
 
                 {st.kind === "skill" && (
                   <div className="flex flex-col gap-2 rounded-sm border border-hairline bg-board/40 p-2.5">
@@ -480,7 +888,7 @@ export function PipelineBuilder({
                       <span className="text-xs font-medium text-ink-2">Arguments</span>
                       {argEntries.map(([k, v]) => (
                         <div key={k} className="flex flex-wrap items-center gap-1.5">
-                          <span className="mono min-w-[96px] text-xs text-ink-2">{k}</span>
+                          <span className="min-w-[96px] text-xs font-medium text-ink-2">{k}</span>
                           <Input
                             value={String(v ?? "")}
                             aria-label={`Step ${idx + 1} arg ${k}`}
@@ -488,7 +896,7 @@ export function PipelineBuilder({
                             onChange={(e) =>
                               updateStep(idx, { args: { ...(st.args ?? {}), [k]: e.target.value } })
                             }
-                            className="mono h-8 min-w-[140px] flex-1 text-xs max-md:min-h-11"
+                            className="h-8 min-w-[140px] flex-1 text-xs max-md:min-h-11"
                           />
                           {workspaceFiles.length > 0 && k.includes("file") && (
                             <select
@@ -529,7 +937,7 @@ export function PipelineBuilder({
                           placeholder="Add arg name (e.g. output_title)"
                           aria-label={`New arg key for step ${idx + 1}`}
                           onChange={(e) => setNewArgKey((prev) => ({ ...prev, [idx]: e.target.value }))}
-                          className="mono h-8 w-48 text-xs max-md:min-h-11"
+                          className="h-8 w-48 text-xs max-md:min-h-11"
                         />
                         <Button
                           type="button"
@@ -627,7 +1035,7 @@ export function PipelineBuilder({
                               },
                             })
                           }
-                          className="mono h-8 text-xs max-md:min-h-11"
+                          className="h-8 text-xs max-md:min-h-11"
                         />
                       </div>
                     </div>
@@ -674,7 +1082,7 @@ export function PipelineBuilder({
                             },
                           })
                         }
-                        className="mono h-8 text-xs max-md:min-h-11"
+                        className="h-8 text-xs max-md:min-h-11"
                       />
                     </div>
                     <div className="flex flex-col gap-1">
@@ -695,6 +1103,98 @@ export function PipelineBuilder({
                         <option value="docx">Word (.docx)</option>
                         <option value="xlsx">Excel (.xlsx)</option>
                       </select>
+                    </div>
+                  </div>
+                )}
+
+                {st.kind === "deliver" && (
+                  <div className="flex flex-col gap-2 rounded-sm border border-hairline bg-board/40 p-2.5">
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                      <div className="flex flex-col gap-1">
+                        <label className="text-xs font-medium text-ink">Outbound connector</label>
+                        {connectors.length > 0 ? (
+                          <select
+                            aria-label={`Step ${idx + 1} connector`}
+                            value={st.deliver?.connector_id ?? ""}
+                            onChange={(e) =>
+                              updateStep(idx, {
+                                deliver: {
+                                  connector_id: e.target.value,
+                                  file: st.deliver?.file,
+                                  payload: st.deliver?.payload,
+                                },
+                              })
+                            }
+                            className="focus-ring h-8 rounded-sm border border-input bg-surface px-2 text-xs text-ink outline-none max-md:min-h-11"
+                          >
+                            <option value="">Select connector…</option>
+                            {connectors.map((c) => (
+                              <option key={c.id} value={c.id}>
+                                {c.name} ({c.kind})
+                              </option>
+                            ))}
+                            {st.deliver?.connector_id &&
+                              !connectors.some((c) => c.id === st.deliver?.connector_id) && (
+                                <option value={st.deliver.connector_id}>
+                                  {st.deliver.connector_id}
+                                </option>
+                              )}
+                          </select>
+                        ) : (
+                          <Input
+                            value={st.deliver?.connector_id ?? ""}
+                            aria-label={`Step ${idx + 1} connector`}
+                            placeholder="Outbound connector ID (create in Connectors)"
+                            onChange={(e) =>
+                              updateStep(idx, {
+                                deliver: {
+                                  connector_id: e.target.value,
+                                  file: st.deliver?.file,
+                                  payload: st.deliver?.payload,
+                                },
+                              })
+                            }
+                            className="h-8 text-xs max-md:min-h-11"
+                          />
+                        )}
+                      </div>
+                      <div className="flex flex-col gap-1">
+                        <label className="text-xs font-medium text-ink-2">Deliver file (optional)</label>
+                        <Input
+                          value={st.deliver?.file ?? ""}
+                          aria-label={`Step ${idx + 1} deliver file`}
+                          placeholder="{{steps.prev.files[0]}}"
+                          onChange={(e) =>
+                            updateStep(idx, {
+                              deliver: {
+                                connector_id: st.deliver?.connector_id ?? "",
+                                file: e.target.value || undefined,
+                                payload: st.deliver?.payload,
+                              },
+                            })
+                          }
+                          className="h-8 text-xs max-md:min-h-11"
+                        />
+                      </div>
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <label className="text-xs font-medium text-ink-2">Payload JSON or template (optional)</label>
+                      <Textarea
+                        rows={2}
+                        value={serializeDeliverPayload(st.deliver?.payload)}
+                        aria-label={`Step ${idx + 1} deliver payload`}
+                        placeholder='{"summary": "{{steps.prev.output}}"}'
+                        onChange={(e) =>
+                          updateStep(idx, {
+                            deliver: {
+                              connector_id: st.deliver?.connector_id ?? "",
+                              file: st.deliver?.file,
+                              payload: parseDeliverPayloadInput(e.target.value),
+                            },
+                          })
+                        }
+                        className="text-xs"
+                      />
                     </div>
                   </div>
                 )}
@@ -721,9 +1221,7 @@ export function PipelineBuilder({
                       key={chip}
                       type="button"
                       onClick={() => insertTokenIntoStep(idx, chip)}
-                      className={cn(
-                        "mono rounded-chip border border-hairline bg-board/60 px-2 py-0.5 text-xs text-ink-2 transition-[color,background-color,border-color] hover:border-ink-3 hover:bg-board hover:text-ink"
-                      )}
+                      className="rounded-chip border border-hairline bg-board/60 px-2 py-0.5 text-xs text-ink-2 transition-[color,background-color,border-color] hover:border-ink-3 hover:bg-board hover:text-ink"
                       title={`Insert ${chip}`}
                     >
                       {chip}
@@ -736,50 +1234,114 @@ export function PipelineBuilder({
         </ol>
       )}
 
-      <div className="flex flex-wrap items-center gap-1.5">
+      {dagResult && dagResult.valid && (
+        <div
+          role="status"
+          data-dag-validation-result="valid"
+          className="flex flex-wrap items-center gap-2 rounded-sm border border-hairline bg-status-running-bg/60 px-3 py-2 text-xs text-ink"
+        >
+          <CheckCircle2 className="size-3.5 shrink-0 text-dot-green" strokeWidth={1.75} aria-hidden />
+          <span className="font-medium">DAG valid</span>
+          {dagResult.stages && dagResult.stages.length > 0 ? (
+            <span className="text-ink-2 [overflow-wrap:anywhere]">
+              Stages:{" "}
+              {dagResult.stages
+                .map((stage, sIdx) => `Stage ${sIdx + 1}: ${stage.join(" + ")}`)
+                .join(" -> ")}
+            </span>
+          ) : (
+            <span className="text-ink-2 [overflow-wrap:anywhere]">
+              Order: {dagResult.topological_order.join(" -> ")}
+            </span>
+          )}
+        </div>
+      )}
+
+      {dagResult && !dagResult.valid && (
+        <div
+          role="alert"
+          data-dag-validation-error="true"
+          className="flex items-start gap-1.5 rounded-sm border border-hairline bg-status-stopped-bg px-3 py-2 text-xs text-status-stopped-fg"
+        >
+          <AlertTriangle className="mt-0.5 size-3.5 shrink-0" strokeWidth={1.5} aria-hidden />
+          <ul className="flex flex-col gap-0.5">
+            {dagResult.errors.map((msg, eIdx) => (
+              <li key={eIdx}>{msg}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <Button
+            type="button"
+            size="xs"
+            variant="outline"
+            data-add-pipeline-step="skill"
+            className="max-md:min-h-11 gap-1"
+            onClick={() => addStep("skill")}
+          >
+            <Plus className="size-3" strokeWidth={1.5} aria-hidden />
+            Skill
+          </Button>
+          <Button
+            type="button"
+            size="xs"
+            variant="outline"
+            data-add-pipeline-step="agent"
+            className="max-md:min-h-11 gap-1"
+            onClick={() => addStep("agent")}
+          >
+            <Plus className="size-3" strokeWidth={1.5} aria-hidden />
+            AI Agent
+          </Button>
+          <Button
+            type="button"
+            size="xs"
+            variant="outline"
+            data-add-pipeline-step="checkpoint"
+            className="max-md:min-h-11 gap-1"
+            onClick={() => addStep("checkpoint")}
+          >
+            <Plus className="size-3" strokeWidth={1.5} aria-hidden />
+            Human Checkpoint
+          </Button>
+          <Button
+            type="button"
+            size="xs"
+            variant="outline"
+            data-add-pipeline-step="export"
+            className="max-md:min-h-11 gap-1"
+            onClick={() => addStep("export")}
+          >
+            <Plus className="size-3" strokeWidth={1.5} aria-hidden />
+            Export
+          </Button>
+          <Button
+            type="button"
+            size="xs"
+            variant="outline"
+            data-add-pipeline-step="deliver"
+            className="max-md:min-h-11 gap-1"
+            onClick={() => addStep("deliver")}
+          >
+            <Plus className="size-3" strokeWidth={1.5} aria-hidden />
+            Deliver
+          </Button>
+        </div>
+
         <Button
           type="button"
           size="xs"
           variant="outline"
-          data-add-pipeline-step="skill"
+          data-action="validate-dag"
+          disabled={validatingDag || steps.length === 0}
           className="max-md:min-h-11 gap-1"
-          onClick={() => addStep("skill")}
+          onClick={() => void handleValidateDag()}
         >
-          <Plus className="size-3" strokeWidth={1.5} aria-hidden />
-          Skill
-        </Button>
-        <Button
-          type="button"
-          size="xs"
-          variant="outline"
-          data-add-pipeline-step="agent"
-          className="max-md:min-h-11 gap-1"
-          onClick={() => addStep("agent")}
-        >
-          <Plus className="size-3" strokeWidth={1.5} aria-hidden />
-          AI Agent
-        </Button>
-        <Button
-          type="button"
-          size="xs"
-          variant="outline"
-          data-add-pipeline-step="checkpoint"
-          className="max-md:min-h-11 gap-1"
-          onClick={() => addStep("checkpoint")}
-        >
-          <Plus className="size-3" strokeWidth={1.5} aria-hidden />
-          Human Checkpoint
-        </Button>
-        <Button
-          type="button"
-          size="xs"
-          variant="outline"
-          data-add-pipeline-step="export"
-          className="max-md:min-h-11 gap-1"
-          onClick={() => addStep("export")}
-        >
-          <Plus className="size-3" strokeWidth={1.5} aria-hidden />
-          Export
+          <GitBranch className="size-3" strokeWidth={1.5} aria-hidden />
+          {validatingDag ? "Validating…" : "Validate DAG"}
         </Button>
       </div>
     </div>

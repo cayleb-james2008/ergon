@@ -113,7 +113,11 @@ async function open(w, h, theme = "light", extra = {}) {
   const p = await ctx.newPage();
   p.on("pageerror", (e) => errs.push(`${w}-${theme}: pageerror ${e.message}`));
   p.on("console", (m) => {
-    if (m.type() === "error" && !(p.__expect500 && /500|409/.test(m.text()))) {
+    if (
+      m.type() === "error" &&
+      !(p.__expect500 && /500|409/.test(m.text())) &&
+      !(p.__expect400 && /400/.test(m.text()))
+    ) {
       errs.push(`${w}-${theme}: ${m.text().slice(0, 140)} @ ${m.location().url}`);
     }
   });
@@ -2554,6 +2558,272 @@ await reset();
     );
     await ctx.close();
   }
+}
+
+// 6e. v0.35.0 DAG Pipeline Composer (depends_on, for_each, deliver, Validate DAG) + Streaming Timeline & Delivery Checkpoint (4 checks)
+for (const [theme, vw, vh] of [
+  ["light", 1440, 900],
+  ["dark", 1440, 900],
+  ["light", 390, 844],
+  ["dark", 390, 844],
+]) {
+  const { ctx, p } = await open(vw, vh, theme);
+  p.__expect400 = true;
+
+  await p.route("**/api/status", async (r) => {
+    const res = await r.fetch();
+    const j = await res.json();
+    await r.fulfill({
+      response: res,
+      body: JSON.stringify({
+        ...j,
+        version: "0.35.0",
+        capabilities: { ...(j.capabilities || {}), routines: true, sse: true, pipelines: true, connectors: true },
+      }),
+    });
+  });
+
+  await p.route("**/api/connectors", async (r) => {
+    try {
+      const res = await r.fetch();
+      if (res.ok()) {
+        const j = await res.json();
+        const outbound = Array.isArray(j?.outbound) && j.outbound.length > 0
+          ? j.outbound
+          : [
+              {
+                id: "conn-dag-1",
+                name: "Ops Webhook",
+                kind: "http_webhook",
+                method: "POST",
+                url: "https://hooks.example.invalid/ergon",
+                enabled: true,
+                require_approval: true,
+              },
+            ];
+        return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ...j, outbound }) });
+      }
+    } catch {}
+    return r.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        triggers: [],
+        outbound: [
+          {
+            id: "conn-dag-1",
+            name: "Ops Webhook",
+            kind: "http_webhook",
+            method: "POST",
+            url: "https://hooks.example.invalid/ergon",
+            enabled: true,
+            require_approval: true,
+          },
+        ],
+        delivery_log: [],
+      }),
+    });
+  });
+
+  await p.route("**/api/pipelines/validate", async (r) => {
+    try {
+      const res = await r.fetch();
+      if (res.status() !== 404 && res.status() !== 405) {
+        const txt = await res.text();
+        return r.fulfill({ status: res.status(), contentType: "application/json", body: txt });
+      }
+    } catch {}
+    const req = JSON.parse(r.request().postData() || "{}");
+    const steps = Array.isArray(req.steps_v2) ? req.steps_v2 : [];
+    const inDeg = new Map(steps.map((s) => [s.id, 0]));
+    const adj = new Map(steps.map((s) => [s.id, []]));
+    for (const s of steps) {
+      for (const dep of s.depends_on || []) {
+        if (adj.has(dep) && dep !== s.id) {
+          adj.get(dep).push(s.id);
+          inDeg.set(s.id, (inDeg.get(s.id) || 0) + 1);
+        }
+      }
+    }
+    const stages = [];
+    const order = [];
+    let q = steps.map((s) => s.id).filter((id) => (inDeg.get(id) || 0) === 0);
+    while (q.length > 0) {
+      stages.push(q);
+      const nq = [];
+      for (const id of q) {
+        order.push(id);
+        for (const nxt of adj.get(id) || []) {
+          inDeg.set(nxt, inDeg.get(nxt) - 1);
+          if (inDeg.get(nxt) === 0) nq.push(nxt);
+        }
+      }
+      q = nq;
+    }
+    const valid = order.length === steps.length && steps.length > 0;
+    return r.fulfill({
+      status: valid ? 200 : 400,
+      contentType: "application/json",
+      body: JSON.stringify(
+        valid
+          ? { ok: true, valid: true, errors: [], topological_order: order, stages }
+          : { ok: false, valid: false, errors: ["Circular dependency detected in pipeline steps."], topological_order: [] }
+      ),
+    });
+  });
+
+  await p.route(/\/api\/pipelines\/runs(\?.*)?$/, (r) =>
+    r.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        runs: [
+          {
+            run_id: "prun-dag-hold",
+            routine_name: "DAG Batch & Deliver",
+            status: "paused_checkpoint",
+            current_step_index: 2,
+            created_ms: Date.now() - 2000,
+            updated_ms: Date.now() - 500,
+            steps_v2: [
+              { id: "skill_1", label: "Clean", kind: "skill" },
+              { id: "agent_2", label: "Analyze", kind: "agent", depends_on: ["skill_1"], for_each: "{{steps.skill_1.files}}" },
+              { id: "deliver_3", label: "Deliver", kind: "deliver", depends_on: ["agent_2"], deliver: { connector_id: "conn-dag-1", file: "summary.md" } },
+            ],
+            step_states: [
+              { step_id: "skill_1", kind: "skill", status: "ok", files: ["a.csv", "b.csv"] },
+              {
+                step_id: "agent_2",
+                kind: "agent",
+                status: "ok",
+                child_items: [
+                  { step_id: "agent_2[0]", item: "a.csv", status: "ok" },
+                  { step_id: "agent_2[1]", item: "b.csv", status: "ok" },
+                ],
+              },
+              { step_id: "deliver_3", kind: "deliver", status: "waiting_human" },
+            ],
+            pending_checkpoint: {
+              checkpoint_id: "cp-dag-deliver",
+              step_index: 2,
+              step_id: "deliver_3",
+              kind: "deliver",
+              connector_id: "conn-dag-1",
+              connector_name: "Ops Webhook",
+              delivery_url: "https://hooks.example.invalid/ergon",
+              payload_preview: '{"summary":"Batch complete"}',
+              prompt: "Approve outbound delivery to Ops Webhook",
+              input_mode: "approve_reject",
+              inspect_files: ["summary.md"],
+            },
+            agent_snapshot: { messages: [{ role: "user" }, { role: "assistant" }], written: ["summary.md"], budget_used: 420 },
+          },
+        ],
+      }),
+    })
+  );
+
+  await p.route("**/api/runs/*/cancel", (r) =>
+    r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ cancelled: true }) })
+  );
+
+  await p.route("**/api/runs/stream", (r) =>
+    r.fulfill({
+      status: 200,
+      contentType: "text/event-stream",
+      body:
+        'event: step_start\ndata: {"run_id":"run-dag-sse","step_id":"agent_2","tool":"analyze","label":"Analyzing batch","status":"running"}\n\n' +
+        'event: token_delta\ndata: {"run_id":"run-dag-sse","step_id":"agent_2","delta":"Streaming delta check ok."}\n\n',
+    })
+  );
+
+  await p.goto(BASE);
+  await waitWorkbench(p);
+
+  // Open Routines -> New routine -> PipelineBuilder
+  if (vw < 768) {
+    await p.getByRole("button", { name: "Open menu" }).click();
+    await p.waitForSelector('[data-thing="routines-btn"]', { timeout: 4000 });
+  }
+  await p.locator('[data-thing="routines-btn"]').click();
+  await p.waitForSelector("#routines-panel", { timeout: 4000 });
+  await p.locator("#routines-panel").getByRole("button", { name: "New routine" }).click();
+  await p.locator("[data-toggle-pipeline-builder]").click();
+  await p.waitForSelector("#pipeline-builder", { timeout: 4000 });
+
+  await p.locator('#pipeline-builder [data-add-pipeline-step="agent"]').click();
+  await p.locator('#pipeline-builder [data-add-pipeline-step="deliver"]').click();
+
+  // Configure for_each on Step 2 and connector + on_all_ok on Step 3
+  await p.locator('#pipeline-builder [data-toggle-for-each="1"]').click();
+  await p.locator('#pipeline-builder input[aria-label="Step 2 for_each template"]').fill("{{steps.skill_1.files}}");
+  await p.locator('#pipeline-builder select[aria-label="Step 3 condition"]').selectOption("on_all_ok");
+  await p.locator('#pipeline-builder select[aria-label="Step 3 connector"]').selectOption("conn-dag-1");
+
+  // Validate valid DAG
+  await p.locator('#pipeline-builder [data-action="validate-dag"]').click();
+  await p.waitForSelector('#pipeline-builder [data-dag-validation-result="valid"]', { timeout: 4000 });
+  const validDagTxt = await p.locator('#pipeline-builder [data-dag-validation-result="valid"]').innerText();
+
+  // Introduce cycle: Step 1 depends on deliver_3
+  await p.locator('#pipeline-builder [data-dep-chip="0:deliver_3"]').click();
+  await p.locator('#pipeline-builder [data-action="validate-dag"]').click();
+  await p.waitForSelector('#pipeline-builder [data-dag-validation-error="true"]', { timeout: 4000 });
+  const cycleDagTxt = await p.locator('#pipeline-builder [data-dag-validation-error="true"]').innerText();
+  // Remove cycle for clean state
+  await p.locator('#pipeline-builder [data-dep-chip="0:deliver_3"]').click();
+  const mBuilder = await p.evaluate(MEASURE);
+
+  await p.keyboard.press("Escape");
+  await p.locator("#routines-panel").waitFor({ state: "hidden", timeout: 4000 }).catch(() => {});
+
+  // Check Today view CheckpointCard delivery-hold + child_items + agent_snapshot
+  await p.getByRole("tab", { name: "Today" }).click();
+  await waitPaper(p);
+  await p.waitForSelector('[data-pipeline-checkpoint="prun-dag-hold"]', { timeout: 4000 });
+  const holdVisible = await p.locator('[data-pipeline-checkpoint="prun-dag-hold"] [data-delivery-hold-details="true"]').isVisible();
+  const childVisible = await p.locator('[data-pipeline-checkpoint="prun-dag-hold"] [data-child-items-for="agent_2"]').isVisible();
+  const snapVisible = await p.locator('[data-pipeline-checkpoint="prun-dag-hold"] [data-agent-snapshot-badge="true"]').isVisible();
+  const mToday = await p.evaluate(MEASURE);
+
+  // Check LiveRunTimeline token_delta streaming on desktop Light & Dark
+  let tokenDeltaOk = true;
+  if (vw === 1440) {
+    await p.route("**/api/chat", async (r) => {
+      await new Promise((res) => setTimeout(res, 6000));
+      await r.abort();
+    });
+    await p.getByRole("tab", { name: "Chat" }).click();
+    await waitWorkbench(p);
+    await p.locator("#composer-input").fill("Stream delta check");
+    await p.keyboard.press("Enter");
+    await p.waitForSelector("#live-token-delta-preview", { timeout: 4000 });
+    const deltaTxt = await p.locator("#live-token-delta-preview").innerText();
+    tokenDeltaOk = deltaTxt.includes("Streaming delta check ok.");
+    await p.locator("#cancel-run-btn").click();
+    await p.locator("#live-run-timeline").waitFor({ state: "hidden", timeout: 4000 });
+  }
+
+  const builderUnnamed = mBuilder.unnamed.filter((u) => !u.includes("playbook-import-input"));
+  ok(
+    `v0.35.0 DAG builder, Validate DAG + cycle, deliver hold, child_items, token_delta (${vw}x${vh} ${theme})`,
+    validDagTxt.includes("DAG valid") &&
+      validDagTxt.includes("skill_1") &&
+      validDagTxt.includes("deliver_3") &&
+      /circular|cycle/i.test(cycleDagTxt) &&
+      holdVisible &&
+      childVisible &&
+      snapVisible &&
+      tokenDeltaOk &&
+      mBuilder.docOverflow <= 0 &&
+      mToday.docOverflow <= 0 &&
+      mBuilder.lowContrast === 0 &&
+      mToday.lowContrast === 0 &&
+      builderUnnamed.length === 0 &&
+      mToday.unnamed.length === 0,
+    `valid=${validDagTxt.slice(0, 45)} cycle=${cycleDagTxt.slice(0, 40)} hold=${holdVisible} child=${childVisible} snap=${snapVisible} delta=${tokenDeltaOk} ov=${mBuilder.docOverflow}/${mToday.docOverflow} low=${mBuilder.lowContrast}/${mToday.lowContrast} un=${builderUnnamed.length}(${mBuilder.unnamed[0] || ""})/${mToday.unnamed.length}`
+  );
+  await ctx.close();
 }
 
 // 7. Reduced motion & Console Cleanliness (2 checks)

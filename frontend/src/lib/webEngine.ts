@@ -29,10 +29,14 @@ import {
   type ModelPricingMap,
   type OutboundConnector,
   type OutboundConnectorKind,
+  type PipelineAgentSnapshot,
   type PipelineCheckpointInputMode,
+  type PipelineChildItemState,
+  type PipelineDeliverSpec,
   type PipelineRun,
   type PipelineStepSpec,
   type PipelineStepState,
+  type PipelineValidationResult,
   type Routine,
   type RoutineRunRecord,
   type RunUsage,
@@ -2613,11 +2617,26 @@ export async function installBrowserEngine(): Promise<void> {
 
     const isCancelled = () => Boolean(liveRuns[p.id]?.cancelled);
 
+    const emitTokenDeltas = (text: string, stepId?: string) => {
+      const clean = String(text || "");
+      if (!clean) return;
+      const chunkSize = Math.max(24, Math.ceil(clean.length / 4));
+      for (let idx = 0; idx < clean.length; idx += chunkSize) {
+        broadcastSse("token_delta", {
+          run_id: runId,
+          thread_id: th!.id,
+          ...(stepId ? { step_id: stepId } : {}),
+          delta: clean.slice(idx, idx + chunkSize),
+        });
+      }
+    };
+
     try {
       const outcome = byok.engine_mode === "byok" && byok.model_base_url && byok.model_id
         ? await runByokLoop(st, byok, th, prompt, pushStep, isCancelled)
         : await runDeterministicTask(st, th, prompt, pushStep, isCancelled);
 
+      emitTokenDeltas(outcome.summary);
       th.messages.push({ role: "assistant", content: outcome.summary });
       if (outcome.parkedFile) {
         th.messages.push({
@@ -2693,15 +2712,23 @@ export async function installBrowserEngine(): Promise<void> {
     }
   }
 
+  const MAX_FANOUT_ITEMS = 50;
+  const DAG_MAX_CONCURRENCY = 4;
+
   function resolvePipelineTemplate(
     raw: string,
     inputs: Record<string, string>,
-    stepStates: PipelineStepState[]
+    stepStates: PipelineStepState[],
+    extraVars?: Record<string, string>
   ): string {
     return String(raw || "").replace(/\{\{\s*([^}]+?)\s*\}\}/g, (_m, exprRaw: string) => {
       const expr = exprRaw.trim();
+      if (extraVars && expr in extraVars) {
+        return extraVars[expr] ?? "";
+      }
       if (expr.startsWith("inputs.")) {
         const key = expr.slice("inputs.".length);
+        if (extraVars && key === "item" && "item" in extraVars) return extraVars.item ?? "";
         return inputs[key] ?? "";
       }
       if (expr.startsWith("steps.")) {
@@ -2717,6 +2744,14 @@ export async function installBrowserEngine(): Promise<void> {
           return stState.files?.[Number(filesMatch[1])] ?? "";
         }
         if (field === "files") return (stState.files ?? []).join(", ");
+        if (field === "items") {
+          const items = stState.metrics?.items;
+          if (Array.isArray(items)) return JSON.stringify(items);
+          if (stState.child_items?.length) {
+            return JSON.stringify(stState.child_items.map((c) => c.item ?? c.output ?? ""));
+          }
+          return JSON.stringify(stState.files ?? []);
+        }
         if (field === "human_answer") return stState.human_answer ?? "";
         if (field === "output") return stState.output ?? "";
         if (field.startsWith("metrics.")) {
@@ -2729,21 +2764,228 @@ export async function installBrowserEngine(): Promise<void> {
     });
   }
 
+  function resolvePipelineValue(
+    val: unknown,
+    inputs: Record<string, string>,
+    stepStates: PipelineStepState[],
+    extraVars?: Record<string, string>
+  ): unknown {
+    if (typeof val === "string") {
+      return resolvePipelineTemplate(val, inputs, stepStates, extraVars);
+    }
+    if (Array.isArray(val)) {
+      return val.map((item) => resolvePipelineValue(item, inputs, stepStates, extraVars));
+    }
+    if (val && typeof val === "object") {
+      const out: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(val as Record<string, unknown>)) {
+        out[k] = resolvePipelineValue(v, inputs, stepStates, extraVars);
+      }
+      return out;
+    }
+    return val;
+  }
+
+  function validateWebPipelineSpec(
+    steps: PipelineStepSpec[],
+    outbound: OutboundConnector[]
+  ): PipelineValidationResult {
+    const errors: string[] = [];
+    if (!Array.isArray(steps) || steps.length === 0) {
+      return { ok: false, valid: false, errors: ["At least one pipeline step is required."], topological_order: [] };
+    }
+
+    const idToIndex = new Map<string, number>();
+    steps.forEach((st, idx) => {
+      const id = String(st.id ?? "").trim();
+      if (!id) {
+        errors.push(`Step ${idx + 1} is missing an id.`);
+      } else if (idToIndex.has(id)) {
+        errors.push(`Duplicate step id "${id}".`);
+      } else {
+        idToIndex.set(id, idx);
+      }
+      if (st.kind === "skill" && !String(st.skill_id ?? "").trim()) {
+        errors.push(`Step "${id || idx + 1}" requires skill_id.`);
+      } else if (st.kind === "agent" && !String(st.prompt ?? "").trim()) {
+        errors.push(`Step "${id || idx + 1}" requires an agent prompt.`);
+      } else if (st.kind === "checkpoint" && !String(st.checkpoint?.prompt ?? "").trim()) {
+        errors.push(`Step "${id || idx + 1}" requires a checkpoint prompt.`);
+      } else if (st.kind === "export" && !String(st.export?.path ?? "").trim()) {
+        errors.push(`Step "${id || idx + 1}" requires an export file path.`);
+      } else if (st.kind === "deliver") {
+        const cid = String(st.deliver?.connector_id ?? "").trim();
+        if (!cid) {
+          errors.push(`Step "${id || idx + 1}" requires deliver.connector_id.`);
+        } else if (outbound.length > 0 && !outbound.some((c) => c.id === cid)) {
+          errors.push(`Step "${id || idx + 1}" references unknown outbound connector "${cid}".`);
+        }
+      }
+    });
+
+    const inDegree = new Map<string, number>();
+    const dependents = new Map<string, string[]>();
+    for (const st of steps) {
+      const id = String(st.id ?? "").trim();
+      if (!id) continue;
+      inDegree.set(id, 0);
+      dependents.set(id, []);
+    }
+
+    for (const st of steps) {
+      const id = String(st.id ?? "").trim();
+      if (!id) continue;
+      const deps = Array.isArray(st.depends_on) ? st.depends_on : [];
+      const seenDeps = new Set<string>();
+      for (const rawDep of deps) {
+        const dep = String(rawDep ?? "").trim();
+        if (!dep) continue;
+        if (dep === id) {
+          errors.push(`Step "${id}" cannot depend on itself.`);
+          continue;
+        }
+        if (!idToIndex.has(dep)) {
+          errors.push(`Step "${id}" depends on unknown step "${dep}".`);
+          continue;
+        }
+        if (seenDeps.has(dep)) continue;
+        seenDeps.add(dep);
+        dependents.get(dep)!.push(id);
+        inDegree.set(id, (inDegree.get(id) ?? 0) + 1);
+      }
+    }
+
+    const stages: string[][] = [];
+    const topologicalOrder: string[] = [];
+    let frontier = steps
+      .map((s) => String(s.id ?? "").trim())
+      .filter((id) => id && (inDegree.get(id) ?? 0) === 0);
+
+    while (frontier.length > 0) {
+      stages.push(frontier);
+      const nextFrontier: string[] = [];
+      for (const id of frontier) {
+        topologicalOrder.push(id);
+        for (const child of dependents.get(id) ?? []) {
+          const deg = (inDegree.get(child) ?? 0) - 1;
+          inDegree.set(child, deg);
+          if (deg === 0) nextFrontier.push(child);
+        }
+      }
+      frontier = nextFrontier;
+    }
+
+    const uniqueValidCount = idToIndex.size;
+    if (topologicalOrder.length < uniqueValidCount) {
+      const cycleIds = Array.from(idToIndex.keys()).filter((id) => !topologicalOrder.includes(id));
+      errors.push(`Circular dependency detected involving: ${cycleIds.join(", ")}.`);
+    }
+
+    const valid = errors.length === 0;
+    return {
+      ok: valid,
+      valid,
+      errors,
+      topological_order: valid ? topologicalOrder : [],
+      ...(valid ? { stages } : {}),
+    };
+  }
+
+  function hasStepDependencyAnomaly(stState: PipelineStepState | undefined): boolean {
+    if (!stState) return false;
+    const anom = Number((stState.metrics as { anomalies?: unknown } | undefined)?.anomalies ?? 0);
+    if (Number.isFinite(anom) && anom > 0) return true;
+    return /missing|flag|anomal|duplicate|warning/i.test(stState.output || "");
+  }
+
+  function evaluateWhenExpression(
+    exprRaw: string,
+    inputs: Record<string, string>,
+    stepStates: PipelineStepState[]
+  ): boolean {
+    const body = exprRaw.slice("expr:".length).trim();
+    const neqIdx = body.indexOf("!=");
+    const eqIdx = body.indexOf("==");
+    const op = neqIdx >= 0 ? "!=" : eqIdx >= 0 ? "==" : null;
+    if (!op) {
+      const resolved = resolvePipelineTemplate(`{{${body}}}`, inputs, stepStates).trim();
+      return Boolean(resolved && resolved !== "false" && resolved !== "0");
+    }
+    const splitIdx = op === "!=" ? neqIdx : eqIdx;
+    const lhsRaw = body.slice(0, splitIdx).trim();
+    const rhsRaw = body
+      .slice(splitIdx + 2)
+      .trim()
+      .replace(/^["']|["']$/g, "");
+    const lhsVal = lhsRaw.includes("{{")
+      ? resolvePipelineTemplate(lhsRaw, inputs, stepStates).trim()
+      : resolvePipelineTemplate(`{{${lhsRaw}}}`, inputs, stepStates).trim();
+    return op === "==" ? lhsVal === rhsRaw : lhsVal !== rhsRaw;
+  }
+
   function shouldRunPipelineStep(
     step: PipelineStepSpec,
-    prevState: PipelineStepState | undefined
+    prevState: PipelineStepState | undefined,
+    stepStates: PipelineStepState[] = [],
+    inputs: Record<string, string> = {}
   ): boolean {
-    const when = step.when || "always";
+    const when = String(step.when || "always").trim();
+    const depIds = Array.isArray(step.depends_on) ? step.depends_on.filter(Boolean) : [];
+    const depStates = depIds
+      .map((id) => stepStates.find((s) => s.step_id === id))
+      .filter((s): s is PipelineStepState => Boolean(s));
+
     if (when === "on_previous_ok") {
+      if (depStates.length > 0) return depStates.every((s) => s.status === "ok");
       return !prevState || prevState.status === "ok";
     }
+    if (when === "on_all_ok") {
+      if (depStates.length > 0) return depStates.every((s) => s.status === "ok");
+      const finished = stepStates.filter((s) => s.step_id !== step.id && s.status !== "pending" && s.status !== "running");
+      return finished.every((s) => s.status === "ok");
+    }
     if (when === "on_anomaly") {
+      if (depStates.length > 0) return depStates.some((s) => hasStepDependencyAnomaly(s));
       if (!prevState) return true;
-      const anom = Number((prevState.metrics as { anomalies?: unknown } | undefined)?.anomalies ?? 0);
-      if (Number.isFinite(anom) && anom > 0) return true;
-      return /missing|flag|anomal|duplicate|warning/i.test(prevState.output || "");
+      return hasStepDependencyAnomaly(prevState);
+    }
+    if (when.startsWith("expr:")) {
+      return evaluateWhenExpression(when, inputs, stepStates);
     }
     return true;
+  }
+
+  function expandForEachItems(
+    rawTemplate: string,
+    inputs: Record<string, string>,
+    stepStates: PipelineStepState[]
+  ): string[] {
+    const resolved = resolvePipelineTemplate(rawTemplate, inputs, stepStates).trim();
+    if (!resolved) return [];
+    let items: string[] = [];
+    if (resolved.startsWith("[")) {
+      try {
+        const parsed = JSON.parse(resolved);
+        if (Array.isArray(parsed)) {
+          items = parsed.map((v) => (typeof v === "string" ? v : JSON.stringify(v))).filter((s) => s.trim().length > 0);
+        }
+      } catch {
+        // Fallback to line/comma splitting below
+      }
+    }
+    if (items.length === 0) {
+      if (resolved.includes("\n")) {
+        items = resolved.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+      } else if (resolved.includes(",")) {
+        items = resolved.split(",").map((s) => s.trim()).filter(Boolean);
+      } else {
+        items = [resolved];
+      }
+    }
+    if (items.length > MAX_FANOUT_ITEMS) {
+      throw new Error(`for_each resolved ${items.length} items, exceeding maximum of ${MAX_FANOUT_ITEMS}.`);
+    }
+    return items;
   }
 
   function createPipelineRunRecord(
@@ -2769,6 +3011,7 @@ export async function installBrowserEngine(): Promise<void> {
       human_answer: null,
       human_action: null,
       error: null,
+      ...(Array.isArray(s.depends_on) && s.depends_on.length > 0 ? { depends_on: s.depends_on } : {}),
     }));
     const run: PipelineRun = {
       run_id: runId,
@@ -2783,6 +3026,7 @@ export async function installBrowserEngine(): Promise<void> {
       steps: opts.steps_v2,
       step_states: stepStates,
       pending_checkpoint: null,
+      agent_snapshot: null,
       error: null,
     };
     st.pipelineRuns.unshift(run);
@@ -2933,6 +3177,471 @@ export async function installBrowserEngine(): Promise<void> {
     };
   }
 
+  async function executeSinglePipelineItem(
+    p: WebPerson,
+    st: PersonStore,
+    byok: ByokConfig,
+    run: PipelineRun,
+    stepIndex: number,
+    spec: PipelineStepSpec,
+    stState: PipelineStepState,
+    extraVars?: Record<string, string>
+  ): Promise<{ paused?: boolean; output: string; files: string[]; metrics?: Record<string, unknown> }> {
+    const inputs = run.inputs ?? {};
+
+    if (spec.kind === "checkpoint") {
+      const cp = spec.checkpoint ?? { prompt: "Confirm to continue", input_mode: "approve_reject" as const };
+      const resolvedPrompt = resolvePipelineTemplate(cp.prompt, inputs, run.step_states, extraVars);
+      const resolvedInspect = (cp.inspect_files ?? [])
+        .map((f) => resolvePipelineTemplate(f, inputs, run.step_states, extraVars))
+        .filter(Boolean);
+      const did = `d${Date.now()}-${st.decisions.length + 1}`;
+      st.decisions.push({
+        id: did,
+        kind: "pipeline_checkpoint",
+        summary: `${run.routine_name || "Pipeline"}: ${resolvedPrompt}`,
+        status: "pending",
+        outcome: null,
+        thread_id: run.thread_id || `pipeline-${run.run_id}`,
+        ts: Date.now(),
+        run_id: run.run_id,
+        input_mode: cp.input_mode,
+        choices: cp.choices,
+        inspect_files: resolvedInspect,
+      });
+      stState.status = "waiting_human";
+      stState.checkpoint_id = did;
+      run.status = "paused_checkpoint";
+      run.current_step_index = stepIndex;
+      const pendingCp = {
+        checkpoint_id: did,
+        step_index: stepIndex,
+        step_id: spec.id,
+        prompt: resolvedPrompt,
+        input_mode: cp.input_mode,
+        choices: cp.choices,
+        inspect_files: resolvedInspect,
+        created_ms: Date.now(),
+        kind: "checkpoint",
+      };
+      run.pending_checkpoint = pendingCp;
+      run.updated_ms = Date.now();
+      await persist();
+      broadcastSse("pipeline_paused", {
+        run_id: run.run_id,
+        thread_id: run.thread_id ?? null,
+        routine_name: run.routine_name ?? "",
+        step_index: stepIndex,
+        step_id: spec.id,
+        checkpoint: pendingCp,
+        run,
+      });
+      return { paused: true, output: "", files: [] };
+    }
+
+    if (spec.kind === "deliver") {
+      const cs = ensureWebConnectors(st);
+      const deliverSpec: PipelineDeliverSpec = spec.deliver ?? { connector_id: "" };
+      const cid = resolvePipelineTemplate(deliverSpec.connector_id || "", inputs, run.step_states, extraVars).trim();
+      const conn = cs.outbound.find((c) => c.id === cid);
+      if (!conn) throw new Error(`Outbound connector "${cid || "(empty)"}" not found.`);
+      if (conn.enabled === false) throw new Error(`Outbound connector "${conn.name}" is paused.`);
+
+      const policyProfile = st.policyProfile || "fast_internal";
+      const resolvedFile = deliverSpec.file
+        ? resolvePipelineTemplate(deliverSpec.file, inputs, run.step_states, extraVars).trim()
+        : "";
+      const fileContent = resolvedFile && st.files[resolvedFile] ? st.files[resolvedFile].content : undefined;
+      const resolvedPayload =
+        deliverSpec.payload !== undefined
+          ? resolvePipelineValue(deliverSpec.payload, inputs, run.step_states, extraVars)
+          : {
+              event: "ergon.pipeline.deliver",
+              run_id: run.run_id,
+              step_id: spec.id,
+              ...(resolvedFile ? { file: resolvedFile, content_preview: (fileContent ?? "").slice(0, 1200) } : {}),
+            };
+      const payloadStr = typeof resolvedPayload === "string" ? resolvedPayload : JSON.stringify(resolvedPayload);
+      const payloadSha = await sha256Hex(payloadStr);
+      const ts = Date.now();
+
+      if (policyProfile === "air_gapped") {
+        const blockReason = "Blocked by Air-Gapped workspace policy.";
+        const delivery: DeliveryLog = {
+          id: `del-${ts}-${cs.deliveries.length + 1}`,
+          connector_id: conn.id,
+          connector_name: conn.name,
+          kind: conn.kind,
+          method: conn.method,
+          url: conn.url,
+          status: "blocked",
+          http_status: null,
+          payload_sha256: payloadSha,
+          payload_bytes: utf8Bytes(payloadStr),
+          error: blockReason,
+          ts_ms: ts,
+        };
+        cs.deliveries.unshift(delivery);
+        conn.last_delivery_ms = ts;
+        conn.last_status = "blocked";
+        throw new Error(blockReason);
+      }
+
+      if (policyProfile === "strict_client" || conn.require_approval) {
+        const did = `d-${ts}-${st.decisions.length + 1}`;
+        const delId = `del-${ts}-${cs.deliveries.length + 1}`;
+        const delivery: DeliveryLog = {
+          id: delId,
+          connector_id: conn.id,
+          connector_name: conn.name,
+          kind: conn.kind,
+          method: conn.method,
+          url: conn.url,
+          status: "held",
+          http_status: null,
+          decision_id: did,
+          payload_sha256: payloadSha,
+          payload_bytes: utf8Bytes(payloadStr),
+          summary: `Held at pipeline step "${spec.label}" awaiting approval before sending to ${conn.url}.`,
+          ts_ms: ts,
+        };
+        cs.deliveries.unshift(delivery);
+        st.decisions.push({
+          id: did,
+          kind: "connector_delivery",
+          summary: `${run.routine_name || "Pipeline"}: Deliver via ${conn.name}`,
+          detail: `Pipeline step "${spec.label}" is ready to send ${resolvedFile || "payload"} to ${conn.url}.`,
+          severity: "warning",
+          status: "pending",
+          outcome: null,
+          thread_id: run.thread_id || `pipeline-${run.run_id}`,
+          ts,
+          run_id: run.run_id,
+          connector_id: conn.id,
+          connector_name: conn.name,
+          connector_kind: conn.kind,
+          method: conn.method,
+          url: conn.url,
+          payload_preview: payloadStr.slice(0, 200),
+          payload_sha256: payloadSha,
+          delivery_id: delId,
+          inspect_files: resolvedFile ? [resolvedFile] : [],
+        });
+        conn.last_delivery_ms = ts;
+        conn.last_status = "held";
+        stState.status = "waiting_human";
+        stState.checkpoint_id = did;
+        run.status = "paused_checkpoint";
+        run.current_step_index = stepIndex;
+        const pendingCp = {
+          checkpoint_id: did,
+          step_index: stepIndex,
+          step_id: spec.id,
+          prompt: `Approve outbound delivery to ${conn.name} (${conn.url})`,
+          input_mode: "approve_reject" as const,
+          inspect_files: resolvedFile ? [resolvedFile] : [],
+          created_ms: ts,
+          kind: "deliver",
+          deliver: { ...deliverSpec, connector_id: conn.id, ...(resolvedFile ? { file: resolvedFile } : {}) },
+          connector_id: conn.id,
+          connector_name: conn.name,
+          delivery_url: conn.url,
+          payload_preview: payloadStr.slice(0, 200),
+        };
+        run.pending_checkpoint = pendingCp;
+        run.updated_ms = ts;
+        await persist();
+        broadcastSse("pipeline_paused", {
+          run_id: run.run_id,
+          thread_id: run.thread_id ?? null,
+          routine_name: run.routine_name ?? "",
+          step_index: stepIndex,
+          step_id: spec.id,
+          checkpoint: pendingCp,
+          run,
+        });
+        return { paused: true, output: "", files: [] };
+      }
+
+      const delivery: DeliveryLog = {
+        id: `del-${ts}-${cs.deliveries.length + 1}`,
+        connector_id: conn.id,
+        connector_name: conn.name,
+        kind: conn.kind,
+        method: conn.method,
+        url: conn.url,
+        status: "ok",
+        http_status: 200,
+        payload_sha256: payloadSha,
+        payload_bytes: utf8Bytes(payloadStr),
+        response_preview: "Offline browser engine delivered pipeline payload (200 OK).",
+        ts_ms: ts,
+      };
+      cs.deliveries.unshift(delivery);
+      conn.last_delivery_ms = ts;
+      conn.last_status = "ok";
+      return {
+        output: `Delivered via ${conn.name} (${conn.url}).`,
+        files: resolvedFile ? [resolvedFile] : [],
+        metrics: { connector_id: conn.id, delivery_id: delivery.id, payload_bytes: delivery.payload_bytes },
+      };
+    }
+
+    if (spec.kind === "skill") {
+      const resolvedArgs: Record<string, string> = {};
+      for (const [k, v] of Object.entries(spec.args ?? {})) {
+        resolvedArgs[k] = resolvePipelineTemplate(String(v ?? ""), inputs, run.step_states, extraVars);
+      }
+      const res = runPipelineSkillStep(st, spec.skill_id || "draft_brief", resolvedArgs);
+      const bytesTotal = res.files.reduce((acc, f) => acc + (st.files[f]?.size ?? 0), 0);
+      const anom = Number((res.metrics as { anomalies?: unknown }).anomalies ?? 0);
+      return {
+        output: res.output,
+        files: res.files,
+        metrics: {
+          ...res.metrics,
+          files_count: res.files.length,
+          bytes_total: bytesTotal,
+          anomalies: anom,
+          has_anomaly: anom > 0,
+        },
+      };
+    }
+
+    if (spec.kind === "export") {
+      const srcPath = resolvePipelineTemplate(spec.export?.path || "", inputs, run.step_states, extraVars).trim();
+      const fmt = spec.export?.format || "docx";
+      const srcFile = srcPath && st.files[srcPath] ? st.files[srcPath] : Object.values(st.files)[0];
+      if (!srcFile) throw new Error("No workspace file available to export.");
+      const stem = srcFile.name.replace(/\.[^.]+$/, "");
+      const outName = spec.export?.output || `${stem}.${fmt}`;
+      st.files[outName] = makeFile(outName, `Exported (${fmt.toUpperCase()}) from ${srcFile.path}\n\n${srcFile.content.slice(0, 4000)}`);
+      return {
+        output: `Exported ${outName} (${fmt.toUpperCase()}).`,
+        files: [outName],
+      };
+    }
+
+    // "agent" step
+    const resolvedPrompt = resolvePipelineTemplate(spec.prompt || spec.label || "Complete task", inputs, run.step_states, extraVars);
+    const snapshotMsgs = Array.isArray(run.agent_snapshot?.messages)
+      ? (run.agent_snapshot.messages as WebMsg[])
+      : [];
+    const tempThread: WebThread = {
+      id: run.thread_id || `pipeline-${run.run_id}`,
+      title: run.routine_name || "Pipeline",
+      messages: snapshotMsgs.slice(),
+    };
+    const dummyPush = () => {};
+    const outcome =
+      byok.engine_mode === "byok" && byok.model_base_url && byok.model_id
+        ? await runByokLoop(st, byok, tempThread, resolvedPrompt, dummyPush, () => (run.status as string) === "cancelled")
+        : await runDeterministicTask(st, tempThread, resolvedPrompt, dummyPush, () => (run.status as string) === "cancelled");
+    if ((run.status as string) === "cancelled") {
+      return { output: "", files: [] };
+    }
+    const summaryText = outcome.summary || "";
+    if (summaryText) {
+      const chunkSize = Math.max(24, Math.ceil(summaryText.length / 3));
+      for (let pos = 0; pos < summaryText.length; pos += chunkSize) {
+        broadcastSse("token_delta", {
+          run_id: run.run_id,
+          thread_id: run.thread_id ?? null,
+          step_id: spec.id,
+          delta: summaryText.slice(pos, pos + chunkSize),
+        });
+      }
+    }
+    run.agent_snapshot = {
+      messages: [...snapshotMsgs, { role: "user", content: resolvedPrompt }, { role: "assistant", content: summaryText }].slice(-24),
+      written: Array.from(new Set([...(run.agent_snapshot?.written ?? []), ...outcome.written])),
+      budget_used: (run.agent_snapshot?.budget_used ?? 0) + resolvedPrompt.length + summaryText.length,
+    };
+    return {
+      output: summaryText,
+      files: outcome.written.filter((f) => f !== "memory.md"),
+    };
+  }
+
+  async function executeWebPipelineStepAt(
+    p: WebPerson,
+    st: PersonStore,
+    byok: ByokConfig,
+    run: PipelineRun,
+    i: number
+  ): Promise<"ok" | "skipped" | "paused" | "failed" | "cancelled"> {
+    if ((run.status as string) === "cancelled") return "cancelled";
+    const steps = run.steps ?? run.steps_v2 ?? [];
+    const inputs = run.inputs ?? {};
+    const spec = steps[i];
+    const stState =
+      run.step_states[i] ||
+      (run.step_states[i] = {
+        step_id: spec.id,
+        label: spec.label,
+        kind: spec.kind,
+        status: "pending",
+        files: [],
+        ...(Array.isArray(spec.depends_on) && spec.depends_on.length > 0 ? { depends_on: spec.depends_on } : {}),
+      });
+    const prevState = i > 0 ? run.step_states[i - 1] : undefined;
+
+    if (!shouldRunPipelineStep(spec, prevState, run.step_states, inputs)) {
+      stState.status = "skipped";
+      stState.finished_ms = Date.now();
+      run.current_step_index = i;
+      run.updated_ms = Date.now();
+      broadcastSse("pipeline_step_done", {
+        run_id: run.run_id,
+        thread_id: run.thread_id ?? null,
+        step_index: i,
+        step_id: spec.id,
+        label: spec.label,
+        kind: spec.kind,
+        status: "skipped",
+        output: "",
+        files: [],
+        metrics: {},
+        error: null,
+        elapsed_ms: 0,
+      });
+      return "skipped";
+    }
+
+    stState.status = "running";
+    stState.started_ms = Date.now();
+    run.current_step_index = i;
+    run.updated_ms = Date.now();
+    broadcastSse("pipeline_step_started", {
+      run_id: run.run_id,
+      thread_id: run.thread_id ?? null,
+      routine_id: run.routine_id ?? null,
+      routine_name: run.routine_name ?? "",
+      step_index: i,
+      step_id: spec.id,
+      label: spec.label,
+      kind: spec.kind,
+      depends_on: spec.depends_on ?? [],
+      total_steps: steps.length,
+    });
+
+    try {
+      if (spec.for_each && spec.for_each.trim() && spec.kind !== "checkpoint") {
+        const items = expandForEachItems(spec.for_each, inputs, run.step_states);
+        const childItems: PipelineChildItemState[] = items.map((item, idx) => ({
+          step_id: `${spec.id}[${idx}]`,
+          index: idx,
+          item,
+          status: "pending",
+          files: [],
+        }));
+        stState.child_items = childItems;
+        const allChildFiles: string[] = [];
+        const childOutputs: string[] = [];
+        for (let idx = 0; idx < items.length; idx += 1) {
+          if ((run.status as string) === "cancelled") return "cancelled";
+          const child = childItems[idx];
+          child.status = "running";
+          child.started_ms = Date.now();
+          const res = await executeSinglePipelineItem(p, st, byok, run, i, spec, stState, {
+            item: items[idx],
+            "inputs.item": items[idx],
+          });
+          if (res.paused) {
+            child.status = "waiting_human";
+            return "paused";
+          }
+          child.status = "ok";
+          child.finished_ms = Date.now();
+          child.output = res.output;
+          child.files = res.files;
+          child.metrics = res.metrics;
+          for (const f of res.files) {
+            if (!allChildFiles.includes(f)) allChildFiles.push(f);
+          }
+          if (res.output) childOutputs.push(res.output);
+        }
+        stState.status = "ok";
+        stState.finished_ms = Date.now();
+        stState.files = allChildFiles;
+        stState.output = childOutputs.join("\n") || `Processed ${items.length} batch item(s).`;
+        stState.metrics = {
+          items,
+          items_count: items.length,
+          files_count: allChildFiles.length,
+        };
+      } else {
+        const res = await executeSinglePipelineItem(p, st, byok, run, i, spec, stState);
+        if ((run.status as string) === "cancelled") return "cancelled";
+        if (res.paused) return "paused";
+        stState.status = "ok";
+        stState.finished_ms = Date.now();
+        stState.output = res.output;
+        stState.files = res.files;
+        if (res.metrics) stState.metrics = res.metrics;
+      }
+
+      const pricingMap = mergeModelPricing(state.modelPricing);
+      const { engagement: actEng, client: actCli } = activeEngagementFor(p.id);
+      const pRate = effectiveHourlyRate(p.id, actEng, actCli);
+      const stepModelId = byok.engine_mode === "byok" && byok.model_id ? byok.model_id : "browser-workspace-engine";
+      const pTok = Math.max(120, Math.round(((spec.label || "").length + (stState.output || "").length) / 3) + 180);
+      const cTok = Math.max(40, Math.round((stState.output || "").length / 4) + 35);
+      const cachedTok = Math.round(pTok * 0.2);
+      const stepMins = spec.kind === "skill" ? estimateMinutesSaved(spec.skill_id || spec.label || "", 1) : 10;
+      const stepUsage: RunUsage = {
+        model_id: stepModelId,
+        prompt_tokens: pTok,
+        completion_tokens: cTok,
+        cached_tokens: cachedTok,
+        total_tokens: pTok + cTok,
+        cost_usd: computeUsageCostUsd(pricingMap, stepModelId, pTok, cTok, cachedTok),
+        latency_ms: stState.finished_ms && stState.started_ms ? Math.max(1, stState.finished_ms - stState.started_ms) : 1,
+        estimated_minutes_saved: stepMins,
+        billable_value_usd: Math.round((stepMins / 60) * pRate * 100) / 100,
+        engagement_id: actEng?.id,
+      };
+      stState.usage = stepUsage;
+      run.updated_ms = Date.now();
+      await persist();
+      broadcastSse("pipeline_step_done", {
+        run_id: run.run_id,
+        thread_id: run.thread_id ?? null,
+        step_index: i,
+        step_id: spec.id,
+        label: spec.label,
+        kind: spec.kind,
+        status: stState.status,
+        output: stState.output ?? "",
+        files: stState.files ?? [],
+        metrics: stState.metrics ?? {},
+        child_items: stState.child_items,
+        usage: stepUsage,
+        error: null,
+        elapsed_ms: stState.finished_ms && stState.started_ms ? stState.finished_ms - stState.started_ms : 1,
+      });
+      return "ok";
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      stState.status = "failed";
+      stState.finished_ms = Date.now();
+      stState.error = msg;
+      run.status = "failed";
+      run.error = msg;
+      run.current_step_index = i;
+      run.updated_ms = Date.now();
+      await persist();
+      broadcastSse("pipeline_finished", {
+        run_id: run.run_id,
+        thread_id: run.thread_id ?? null,
+        status: "failed",
+        error: msg,
+        run,
+      });
+      return "failed";
+    }
+  }
+
   async function executeWebPipelineFrom(
     p: WebPerson,
     st: PersonStore,
@@ -2941,208 +3650,19 @@ export async function installBrowserEngine(): Promise<void> {
     startIndex: number
   ): Promise<void> {
     const steps = run.steps ?? run.steps_v2 ?? [];
-    const inputs = run.inputs ?? {};
     run.status = "running";
     run.pending_checkpoint = null;
     run.error = null;
     run.updated_ms = Date.now();
     await persist();
 
-    for (let i = startIndex; i < steps.length; i += 1) {
-      if ((run.status as string) === "cancelled") return;
-      const spec = steps[i];
-      const stState =
-        run.step_states[i] ||
-        (run.step_states[i] = {
-          step_id: spec.id,
-          label: spec.label,
-          kind: spec.kind,
-          status: "pending",
-          files: [],
-        });
-      const prevState = i > 0 ? run.step_states[i - 1] : undefined;
-
-      if (!shouldRunPipelineStep(spec, prevState)) {
-        stState.status = "skipped";
-        stState.finished_ms = Date.now();
-        run.current_step_index = i;
-        run.updated_ms = Date.now();
-        broadcastSse("pipeline_step_done", {
-          run_id: run.run_id,
-          thread_id: run.thread_id ?? null,
-          step_index: i,
-          step_id: spec.id,
-          label: spec.label,
-          kind: spec.kind,
-          status: "skipped",
-          output: "",
-          files: [],
-          metrics: {},
-          error: null,
-          elapsed_ms: 0,
-        });
-        continue;
-      }
-
-      stState.status = "running";
-      stState.started_ms = Date.now();
-      run.current_step_index = i;
-      run.updated_ms = Date.now();
-      broadcastSse("pipeline_step_started", {
-        run_id: run.run_id,
-        thread_id: run.thread_id ?? null,
-        routine_id: run.routine_id ?? null,
-        routine_name: run.routine_name ?? "",
-        step_index: i,
-        step_id: spec.id,
-        label: spec.label,
-        kind: spec.kind,
-        total_steps: steps.length,
-      });
-
-      try {
-        if (spec.kind === "checkpoint") {
-          const cp = spec.checkpoint ?? { prompt: "Confirm to continue", input_mode: "approve_reject" as const };
-          const resolvedPrompt = resolvePipelineTemplate(cp.prompt, inputs, run.step_states);
-          const resolvedInspect = (cp.inspect_files ?? [])
-            .map((f) => resolvePipelineTemplate(f, inputs, run.step_states))
-            .filter(Boolean);
-          const did = `d${Date.now()}-${st.decisions.length + 1}`;
-          st.decisions.push({
-            id: did,
-            kind: "pipeline_checkpoint",
-            summary: `${run.routine_name || "Pipeline"}: ${resolvedPrompt}`,
-            status: "pending",
-            outcome: null,
-            thread_id: run.thread_id || `pipeline-${run.run_id}`,
-            ts: Date.now(),
-            run_id: run.run_id,
-            input_mode: cp.input_mode,
-            choices: cp.choices,
-            inspect_files: resolvedInspect,
-          });
-          stState.status = "waiting_human";
-          stState.checkpoint_id = did;
-          run.status = "paused_checkpoint";
-          run.current_step_index = i;
-          const pendingCp = {
-            checkpoint_id: did,
-            step_index: i,
-            step_id: spec.id,
-            prompt: resolvedPrompt,
-            input_mode: cp.input_mode,
-            choices: cp.choices,
-            inspect_files: resolvedInspect,
-            created_ms: Date.now(),
-          };
-          run.pending_checkpoint = pendingCp;
-          run.updated_ms = Date.now();
-          await persist();
-          broadcastSse("pipeline_paused", {
-            run_id: run.run_id,
-            thread_id: run.thread_id ?? null,
-            routine_name: run.routine_name ?? "",
-            step_index: i,
-            step_id: spec.id,
-            checkpoint: pendingCp,
-            run,
-          });
-          return;
-        }
-
-        if (spec.kind === "skill") {
-          const resolvedArgs: Record<string, string> = {};
-          for (const [k, v] of Object.entries(spec.args ?? {})) {
-            resolvedArgs[k] = resolvePipelineTemplate(String(v ?? ""), inputs, run.step_states);
-          }
-          const res = runPipelineSkillStep(st, spec.skill_id || "draft_brief", resolvedArgs);
-          const bytesTotal = res.files.reduce((acc, f) => acc + (st.files[f]?.size ?? 0), 0);
-          const anom = Number((res.metrics as { anomalies?: unknown }).anomalies ?? 0);
-          stState.status = "ok";
-          stState.finished_ms = Date.now();
-          stState.output = res.output;
-          stState.files = res.files;
-          stState.metrics = {
-            ...res.metrics,
-            files_count: res.files.length,
-            bytes_total: bytesTotal,
-            anomalies: anom,
-            has_anomaly: anom > 0,
-          };
-        } else if (spec.kind === "export") {
-          const srcPath = resolvePipelineTemplate(spec.export?.path || "", inputs, run.step_states).trim();
-          const fmt = spec.export?.format || "docx";
-          const srcFile = srcPath && st.files[srcPath] ? st.files[srcPath] : Object.values(st.files)[0];
-          if (!srcFile) throw new Error("No workspace file available to export.");
-          const stem = srcFile.name.replace(/\.[^.]+$/, "");
-          const outName = spec.export?.output || `${stem}.${fmt}`;
-          st.files[outName] = makeFile(outName, `Exported (${fmt.toUpperCase()}) from ${srcFile.path}\n\n${srcFile.content.slice(0, 4000)}`);
-          stState.status = "ok";
-          stState.finished_ms = Date.now();
-          stState.output = `Exported ${outName} (${fmt.toUpperCase()}).`;
-          stState.files = [outName];
-        } else {
-          // "agent" step
-          const resolvedPrompt = resolvePipelineTemplate(spec.prompt || spec.label || "Complete task", inputs, run.step_states);
-          const tempThread: WebThread = { id: run.thread_id || `pipeline-${run.run_id}`, title: run.routine_name || "Pipeline", messages: [] };
-          const dummyPush = () => {};
-          const outcome =
-            byok.engine_mode === "byok" && byok.model_base_url && byok.model_id
-              ? await runByokLoop(st, byok, tempThread, resolvedPrompt, dummyPush, () => (run.status as string) === "cancelled")
-              : await runDeterministicTask(st, tempThread, resolvedPrompt, dummyPush, () => (run.status as string) === "cancelled");
-          if ((run.status as string) === "cancelled") return;
-          stState.status = "ok";
-          stState.finished_ms = Date.now();
-          stState.output = outcome.summary;
-          stState.files = outcome.written.filter((f) => f !== "memory.md");
-        }
-
-        const pricingMap = mergeModelPricing(state.modelPricing);
-        const { engagement: actEng, client: actCli } = activeEngagementFor(p.id);
-        const pRate = effectiveHourlyRate(p.id, actEng, actCli);
-        const stepModelId = byok.engine_mode === "byok" && byok.model_id ? byok.model_id : "browser-workspace-engine";
-        const pTok = Math.max(120, Math.round(((spec.label || "").length + (stState.output || "").length) / 3) + 180);
-        const cTok = Math.max(40, Math.round((stState.output || "").length / 4) + 35);
-        const cachedTok = Math.round(pTok * 0.2);
-        const stepMins = spec.kind === "skill" ? estimateMinutesSaved(spec.skill_id || spec.label || "", 1) : 10;
-        const stepUsage: RunUsage = {
-          model_id: stepModelId,
-          prompt_tokens: pTok,
-          completion_tokens: cTok,
-          cached_tokens: cachedTok,
-          total_tokens: pTok + cTok,
-          cost_usd: computeUsageCostUsd(pricingMap, stepModelId, pTok, cTok, cachedTok),
-          latency_ms: stState.finished_ms && stState.started_ms ? Math.max(1, stState.finished_ms - stState.started_ms) : 1,
-          estimated_minutes_saved: stepMins,
-          billable_value_usd: Math.round((stepMins / 60) * pRate * 100) / 100,
-          engagement_id: actEng?.id,
-        };
-        stState.usage = stepUsage;
-        run.updated_ms = Date.now();
-        await persist();
-        broadcastSse("pipeline_step_done", {
-          run_id: run.run_id,
-          thread_id: run.thread_id ?? null,
-          step_index: i,
-          step_id: spec.id,
-          label: spec.label,
-          kind: spec.kind,
-          status: stState.status,
-          output: stState.output ?? "",
-          files: stState.files ?? [],
-          metrics: stState.metrics ?? {},
-          usage: stepUsage,
-          error: null,
-          elapsed_ms: stState.finished_ms && stState.started_ms ? stState.finished_ms - stState.started_ms : 1,
-        });
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        stState.status = "failed";
-        stState.finished_ms = Date.now();
-        stState.error = msg;
+    const isDag = steps.some((s) => Array.isArray(s.depends_on) && s.depends_on.length > 0);
+    if (isDag) {
+      const check = validateWebPipelineSpec(steps, ensureWebConnectors(st).outbound);
+      if (!check.valid) {
+        const msg = check.errors[0] || "Invalid pipeline DAG.";
         run.status = "failed";
         run.error = msg;
-        run.current_step_index = i;
         run.updated_ms = Date.now();
         await persist();
         broadcastSse("pipeline_finished", {
@@ -3154,9 +3674,62 @@ export async function installBrowserEngine(): Promise<void> {
         });
         return;
       }
+
+      while (true) {
+        if ((run.status as string) === "cancelled" || (run.status as string) === "paused_checkpoint" || (run.status as string) === "failed") {
+          return;
+        }
+        const readyIndices: number[] = [];
+        for (let i = 0; i < steps.length; i += 1) {
+          const stState = run.step_states[i];
+          if (!stState || stState.status !== "pending") continue;
+          const deps = Array.isArray(steps[i].depends_on) ? steps[i].depends_on! : [];
+          const allDone = deps.every((depId) => {
+            const depState = run.step_states.find((s) => s.step_id === depId);
+            return depState && (depState.status === "ok" || depState.status === "skipped");
+          });
+          if (allDone) {
+            readyIndices.push(i);
+            if (readyIndices.length >= DAG_MAX_CONCURRENCY) break;
+          }
+        }
+        if (readyIndices.length === 0) {
+          const hasPending = run.step_states.some((s) => s.status === "pending");
+          if (hasPending) {
+            run.status = "failed";
+            run.error = "Pipeline DAG could not resolve remaining pending steps.";
+            run.updated_ms = Date.now();
+            await persist();
+            broadcastSse("pipeline_finished", {
+              run_id: run.run_id,
+              thread_id: run.thread_id ?? null,
+              status: "failed",
+              error: run.error,
+              run,
+            });
+          }
+          break;
+        }
+        // Checkpoints run alone so parallel branches don't race past pause state
+        const cpIdx = readyIndices.find((idx) => steps[idx]?.kind === "checkpoint");
+        const batch = cpIdx !== undefined ? [cpIdx] : readyIndices;
+        const outcomes = await Promise.all(
+          batch.map((idx) => executeWebPipelineStepAt(p, st, byok, run, idx))
+        );
+        if (outcomes.includes("paused") || outcomes.includes("failed") || outcomes.includes("cancelled")) {
+          return;
+        }
+      }
+    } else {
+      for (let i = startIndex; i < steps.length; i += 1) {
+        const outcome = await executeWebPipelineStepAt(p, st, byok, run, i);
+        if (outcome === "paused" || outcome === "failed" || outcome === "cancelled") {
+          return;
+        }
+      }
     }
 
-    if ((run.status as string) === "cancelled") return;
+    if ((run.status as string) === "cancelled" || (run.status as string) === "paused_checkpoint" || (run.status as string) === "failed") return;
     run.status = "completed";
     run.pending_checkpoint = null;
     run.updated_ms = Date.now();
@@ -4956,6 +5529,15 @@ function runWebVaultAggregate(
       );
       return jsonRes(preview, 200);
     }
+    if (method === "POST" && path === "/api/pipelines/validate") {
+      const stepsV2: PipelineStepSpec[] = Array.isArray(body.steps_v2)
+        ? (body.steps_v2 as PipelineStepSpec[])
+        : Array.isArray(body.steps)
+          ? (body.steps as PipelineStepSpec[])
+          : [];
+      const result = validateWebPipelineSpec(stepsV2, ensureWebConnectors(st).outbound);
+      return jsonRes(result, result.valid ? 200 : 400);
+    }
     if (method === "POST" && path === "/api/pipelines/run") {
       const rid = typeof body.routine_id === "string" ? body.routine_id.trim() : "";
       const rt = rid ? st.routines.find((r) => r.id === rid) : undefined;
@@ -4977,6 +5559,10 @@ function runWebVaultAggregate(
       }
       if (stepsV2.length === 0) {
         return jsonRes({ error: "steps_v2 or routine_id is required" }, 400);
+      }
+      const check = validateWebPipelineSpec(stepsV2, ensureWebConnectors(st).outbound);
+      if (!check.valid) {
+        return jsonRes({ error: check.errors[0] || "Invalid pipeline specification", ...check }, 400);
       }
       const run = createPipelineRunRecord(st, {
         routine_id: rt?.id || (rid || undefined),
@@ -5046,16 +5632,53 @@ function runWebVaultAggregate(
           dec.status = action === "reject" ? "denied" : "approved";
           dec.resolved_ts = Date.now();
           dec.answer = humanAnswer;
-          dec.outcome = `Resumed pipeline (${humanAnswer})`;
+          if (dec.kind === "connector_delivery") {
+            const cs = ensureWebConnectors(st);
+            const pol = buildWebPolicy(p.id, st);
+            const log = cs.deliveries.find((dl) => dl.decision_id === dec.id || (dec.delivery_id && dl.id === dec.delivery_id));
+            if (action !== "reject" && pol.profile === "air_gapped") {
+              dec.status = "denied";
+              dec.outcome = "Delivery blocked by Air-Gapped workspace policy.";
+              if (log) {
+                log.status = "blocked";
+                log.error = dec.outcome;
+              }
+            } else if (action !== "reject") {
+              dec.outcome = `Delivery approved and sent via ${dec.connector_name || "connector"}.`;
+              if (log) {
+                log.status = "ok";
+                log.http_status = 200;
+                log.response_preview = "Approved at pipeline checkpoint and delivered.";
+              }
+              const conn = cs.outbound.find((c) => c.id === dec.connector_id);
+              if (conn) {
+                conn.last_delivery_ms = dec.resolved_ts;
+                conn.last_status = "ok";
+              }
+            } else {
+              dec.outcome = "Delivery rejected at pipeline checkpoint.";
+              if (log) {
+                log.status = "denied";
+                log.error = dec.outcome;
+              }
+            }
+          } else {
+            dec.outcome = `Resumed pipeline (${humanAnswer})`;
+          }
         }
       }
       if (run.step_states[cpIdx]) {
-        run.step_states[cpIdx].status = "ok";
+        const isDeliveryHold = run.pending_checkpoint?.kind === "deliver" || run.step_states[cpIdx].kind === "deliver";
+        run.step_states[cpIdx].status = isDeliveryHold && action === "reject" ? "skipped" : "ok";
         run.step_states[cpIdx].finished_ms = Date.now();
         run.step_states[cpIdx].human_answer = humanAnswer;
         run.step_states[cpIdx].human_action =
           action === "reject" ? "reject" : action === "answer" ? "answer" : "approve";
-        run.step_states[cpIdx].output = `Human response: ${humanAnswer}`;
+        run.step_states[cpIdx].output = isDeliveryHold
+          ? action === "reject"
+            ? "Delivery rejected at approval checkpoint."
+            : `Delivered via ${run.pending_checkpoint?.connector_name || "connector"} (approved).`
+          : `Human response: ${humanAnswer}`;
       }
       if (body.override_args && typeof body.override_args === "object") {
         const nextSpec = (run.steps ?? run.steps_v2)?.[cpIdx + 1];

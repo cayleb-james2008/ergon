@@ -212,6 +212,7 @@ export function exportTarget(path: string): "docx" | "xlsx" | null {
 }
 export type LiveRunStep = {
   id?: string;
+  step_id?: string;
   tool: string;
   label?: string;
   status: "running" | "done" | "error" | "waiting";
@@ -220,6 +221,8 @@ export type LiveRunStep = {
   finished_ms?: number;
   raw: string;
   file?: string;
+  depends_on?: string[];
+  child_items?: PipelineChildItemState[];
 };
 export type LiveRunStatus = {
   active: boolean;
@@ -265,9 +268,9 @@ export type FileDiffPayload = {
   hunks: FileDiffHunk[];
   unified?: string;
 };
-export type PipelineStepKind = "skill" | "agent" | "checkpoint" | "export";
+export type PipelineStepKind = "skill" | "agent" | "checkpoint" | "export" | "deliver";
 export type PipelineCheckpointInputMode = "approve_reject" | "choice" | "text";
-export type PipelineWhen = "always" | "on_anomaly" | "on_previous_ok";
+export type PipelineWhen = "always" | "on_anomaly" | "on_previous_ok" | "on_all_ok" | (string & {});
 
 export type PipelineCheckpointSpec = {
   prompt: string;
@@ -282,6 +285,12 @@ export type PipelineExportSpec = {
   output?: string | null;
 };
 
+export type PipelineDeliverSpec = {
+  connector_id: string;
+  payload?: unknown;
+  file?: string;
+};
+
 export type PipelineStepSpec = {
   id: string;
   label: string;
@@ -291,7 +300,23 @@ export type PipelineStepSpec = {
   prompt?: string;
   checkpoint?: PipelineCheckpointSpec;
   export?: PipelineExportSpec;
+  deliver?: PipelineDeliverSpec;
   when?: PipelineWhen;
+  depends_on?: string[];
+  for_each?: string;
+};
+
+export type PipelineChildItemState = {
+  step_id: string;
+  index?: number;
+  item?: string;
+  status: "ok" | "waiting_human" | "failed" | "skipped" | "pending" | "running";
+  started_ms?: number;
+  finished_ms?: number;
+  output?: string;
+  files?: string[];
+  metrics?: Record<string, unknown>;
+  error?: string | null;
 };
 
 export type PipelineStepState = {
@@ -309,6 +334,8 @@ export type PipelineStepState = {
   human_action?: "approve" | "reject" | "answer" | null;
   error?: string | null;
   usage?: RunUsage;
+  depends_on?: string[];
+  child_items?: PipelineChildItemState[];
 };
 
 export type PipelinePendingCheckpoint = {
@@ -320,6 +347,18 @@ export type PipelinePendingCheckpoint = {
   choices?: string[];
   inspect_files?: string[];
   created_ms?: number;
+  kind?: string;
+  deliver?: PipelineDeliverSpec;
+  connector_id?: string;
+  connector_name?: string;
+  delivery_url?: string;
+  payload_preview?: string;
+};
+
+export type PipelineAgentSnapshot = {
+  messages: unknown[];
+  written: string[];
+  budget_used: number;
 };
 
 export type PipelineRunStatus =
@@ -344,9 +383,18 @@ export type PipelineRun = {
   steps_v2?: PipelineStepSpec[];
   step_states: PipelineStepState[];
   pending_checkpoint?: PipelinePendingCheckpoint | null;
+  agent_snapshot?: PipelineAgentSnapshot | null;
   error?: string | null;
   engagement_id?: string | null;
   usage?: RunUsage;
+};
+
+export type PipelineValidationResult = {
+  ok: boolean;
+  valid: boolean;
+  errors: string[];
+  topological_order: string[];
+  stages?: string[][];
 };
 
 export type PipelineResumePayload = {
@@ -1006,6 +1054,63 @@ export async function startPipelineRun(body: {
   thread_id?: string;
 }): Promise<Res<{ run: PipelineRun }>> {
   return call<{ run: PipelineRun }>("/api/pipelines/run", { method: "POST", body });
+}
+
+export async function validatePipeline(
+  steps: PipelineStepSpec[]
+): Promise<Res<PipelineValidationResult> & { validation?: PipelineValidationResult }> {
+  try {
+    const r = await fetch("/api/pipelines/validate", {
+      method: "POST",
+      cache: "no-store",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ steps_v2: steps }),
+    });
+    const raw = await r.text();
+    let parsed: (Partial<PipelineValidationResult> & { error?: unknown }) | null = null;
+    try {
+      parsed = raw ? (JSON.parse(raw) as Partial<PipelineValidationResult> & { error?: unknown }) : {};
+    } catch {
+      return { ok: false, error: "The server returned an unreadable validation reply.", status: r.status };
+    }
+    const errors = Array.isArray(parsed?.errors)
+      ? parsed.errors.map(String)
+      : typeof parsed?.error === "string" && parsed.error
+        ? [parsed.error]
+        : [];
+    const topologicalOrder = Array.isArray(parsed?.topological_order)
+      ? parsed.topological_order.map(String)
+      : [];
+    const stages = Array.isArray(parsed?.stages)
+      ? parsed.stages.map((stage) => (Array.isArray(stage) ? stage.map(String) : []))
+      : undefined;
+    const valid = Boolean(parsed?.valid ?? (r.ok && errors.length === 0));
+    const validation: PipelineValidationResult = {
+      ok: Boolean(parsed?.ok ?? (r.ok && valid)),
+      valid,
+      errors,
+      topological_order: topologicalOrder,
+      ...(stages ? { stages } : {}),
+    };
+    if (!r.ok && r.status !== 400) {
+      return {
+        ok: false,
+        error: errors[0] || `Pipeline validation failed (HTTP ${r.status}).`,
+        status: r.status,
+      };
+    }
+    return {
+      ok: true,
+      data: validation,
+      validation,
+    };
+  } catch (e) {
+    return {
+      ok: false,
+      error: e instanceof TypeError ? "Could not reach the Ergon server." : String(e),
+      status: 0,
+    };
+  }
 }
 
 export async function listPipelineRuns(opts: { status?: string; limit?: number } = {}): Promise<Res<{ runs: PipelineRun[] }>> {
