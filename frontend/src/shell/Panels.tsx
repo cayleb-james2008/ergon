@@ -3,14 +3,21 @@
 // 2. SuitePanel ("My suite and the library" + count chip, install/remove/run built-in workflows)
 // 3. AddPersonPanel ("Add a person" MorphingDialog form with clean close & focus return)
 import { useEffect, useState } from "react";
-import { Blocks, BookOpen, UserPlus } from "lucide-react";
+import { Blocks, BookOpen, CheckCircle2, ShieldAlert, UserPlus } from "lucide-react";
 import { toast } from "sonner";
 import { PanelModal, usePanelModalClose } from "@/shell/PanelModal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Details } from "@/chat/Entry";
-import { call, type LibraryItem, type Msg, type Person, type SuiteItem } from "@/lib/api";
+import {
+  call,
+  type LibraryItem,
+  type MemoryHealth,
+  type Msg,
+  type Person,
+  type SuiteItem,
+} from "@/lib/api";
 
 const TRIGGER = "focus-ring flex w-full min-h-11 md:min-h-9 items-center justify-between gap-1.5 rounded-sm px-1.5 text-left text-sm text-ink outline-none hover:bg-board cursor-pointer";
 
@@ -20,6 +27,7 @@ export function RailPanelButton({
   label,
   icon,
   count,
+  issueCount,
   answers,
   expanded,
   onClick,
@@ -29,6 +37,7 @@ export function RailPanelButton({
   label: string;
   icon: React.ReactNode;
   count?: number;
+  issueCount?: number;
   answers?: string;
   expanded?: boolean;
   onClick: () => void;
@@ -48,11 +57,22 @@ export function RailPanelButton({
         {icon}
         <span className="leading-tight">{label}</span>
       </span>
-      {typeof count === "number" && (
-        <span className="mono shrink-0 rounded-chip bg-track px-1.5 py-0.5 text-xs text-ink-2">
-          {count}
-        </span>
-      )}
+      <span className="flex shrink-0 items-center gap-1">
+        {typeof issueCount === "number" && issueCount > 0 && (
+          <span
+            data-memory-rail-badge="issues"
+            className="mono rounded-chip bg-warn-soft px-1.5 py-0.5 text-[11px] font-medium text-warn"
+            title={`${issueCount} memory conflict or stale path`}
+          >
+            {issueCount} warn
+          </span>
+        )}
+        {typeof count === "number" && (
+          <span className="mono shrink-0 rounded-chip bg-track px-1.5 py-0.5 text-xs text-ink-2">
+            {count}
+          </span>
+        )}
+      </span>
     </button>
   );
 }
@@ -107,22 +127,53 @@ function PanelShell({
   );
 }
 
-function LearnedBody() {
+function LearnedBody({ onHealed }: { onHealed?: () => void }) {
   const { isOpen } = usePanelModalClose();
   const [text, setText] = useState<string | null>(null);
+  const [health, setHealth] = useState<MemoryHealth | null>(null);
+  const [healing, setHealing] = useState(false);
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
     if (!isOpen) return;
-    call<{ content?: string }>("/api/memory").then((r) => {
+    call<{ content?: string; health?: MemoryHealth }>("/api/memory").then((r) => {
       if (r.ok && typeof r.data.content === "string") {
         setFailed(false);
         setText(r.data.content.trim());
+        setHealth(r.data.health ?? null);
       } else {
         setFailed(true);
       }
     });
   }, [isOpen]);
+
+  const handleHeal = async () => {
+    setHealing(true);
+    try {
+      const r = await call<{ content?: string; removed_count?: number; health?: MemoryHealth }>(
+        "/api/memory/heal",
+        {
+          method: "POST",
+          body: { mode: "all" },
+        }
+      );
+      if (!r.ok) {
+        toast.error("Could not clean up stale memory rules.");
+        return;
+      }
+      if (typeof r.data.content === "string") setText(r.data.content.trim());
+      if (r.data.health) setHealth(r.data.health);
+      const removed = Number(r.data.removed_count ?? 0);
+      toast.success(
+        removed > 0
+          ? `Pruned ${removed} stale or conflicting memory ${removed === 1 ? "rule" : "rules"}.`
+          : "Memory is already clean."
+      );
+      onHealed?.();
+    } finally {
+      setHealing(false);
+    }
+  };
 
   const learned = (text ?? "").split("\n").some((l) => {
     const t = l.trim();
@@ -132,9 +183,27 @@ function LearnedBody() {
   if (failed) return <p role="alert">Memory could not be loaded. Is the Ergon server running?</p>;
   if (text === null) return <p>Loading…</p>;
   if (!learned) {
-    return <p id="memory-panel">Nothing learned yet. Preferences and facts your agent picks up as it works will appear here.</p>;
+    return (
+      <div id="memory-panel" className="flex flex-col gap-3">
+        <div
+          id="memory-health-banner"
+          className="flex flex-wrap items-center justify-between gap-2 rounded-entry border border-hairline bg-board px-3 py-2"
+        >
+          <span className="inline-flex items-center gap-1.5 text-xs text-ink-2">
+            <Badge
+              data-memory-health="healthy"
+              className="border-transparent bg-ok-soft text-ok"
+            >
+              Healthy
+            </Badge>
+            <span>No conflicts or broken workspace references.</span>
+          </span>
+        </div>
+        <p>Nothing learned yet. Preferences and facts your agent picks up as it works will appear here.</p>
+      </div>
+    );
   }
-  return <LearnedList content={text} />;
+  return <LearnedList content={text} health={health} healing={healing} onHeal={handleHeal} />;
 }
 
 export function LearnedPanel({
@@ -142,11 +211,13 @@ export function LearnedPanel({
   open,
   onOpenChange,
   hideTrigger,
+  onHealed,
 }: {
   count: number;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   hideTrigger?: boolean;
+  onHealed?: () => void;
 }) {
   return (
     <PanelShell
@@ -159,12 +230,22 @@ export function LearnedPanel({
       onOpenChange={onOpenChange}
       hideTrigger={hideTrigger}
     >
-      <LearnedBody />
+      <LearnedBody onHealed={onHealed} />
     </PanelShell>
   );
 }
 
-function LearnedList({ content }: { content: string }) {
+function LearnedList({
+  content,
+  health,
+  healing,
+  onHeal,
+}: {
+  content: string;
+  health: MemoryHealth | null;
+  healing: boolean;
+  onHeal: () => void;
+}) {
   const out: React.ReactNode[] = [];
   let list: string[] = [];
   const flush = (k: number) => {
@@ -190,8 +271,77 @@ function LearnedList({ content }: { content: string }) {
     }
   });
   flush(999);
+
+  const issueCount = health?.issue_count ?? 0;
+  const issues = health?.issues ?? [];
+
   return (
     <div id="memory-panel" className="flex flex-col gap-3">
+      {health && (
+        <div
+          id="memory-health-banner"
+          className="flex flex-wrap items-center justify-between gap-2 rounded-entry border border-hairline bg-board px-3 py-2.5"
+        >
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            {issueCount === 0 ? (
+              <Badge data-memory-health="healthy" className="gap-1 border-transparent bg-ok-soft text-ok">
+                <CheckCircle2 className="size-3.5" strokeWidth={1.75} aria-hidden />
+                Healthy
+              </Badge>
+            ) : (
+              <Badge data-memory-health="issues" className="gap-1 border-transparent bg-warn-soft text-warn">
+                <ShieldAlert className="size-3.5" strokeWidth={1.75} aria-hidden />
+                {issueCount} {issueCount === 1 ? "Issue" : "Issues"}
+              </Badge>
+            )}
+            <span className="text-xs text-ink-2">
+              {issueCount === 0
+                ? "All standing rules and [file:L##] references verified."
+                : [
+                    health.conflicts > 0 ? `${health.conflicts} conflict${health.conflicts === 1 ? "" : "s"}` : "",
+                    health.stale_refs > 0 ? `${health.stale_refs} stale path${health.stale_refs === 1 ? "" : "s"}` : "",
+                    health.duplicates > 0 ? `${health.duplicates} duplicate${health.duplicates === 1 ? "" : "s"}` : "",
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
+            </span>
+          </div>
+          {issueCount > 0 && (
+            <Button
+              id="memory-heal-btn"
+              type="button"
+              size="xs"
+              variant="outline"
+              disabled={healing}
+              onClick={onHeal}
+              className="max-md:min-h-11 shrink-0"
+            >
+              {healing ? "Pruning…" : "Resolve & Prune"}
+            </Button>
+          )}
+        </div>
+      )}
+
+      {issues.length > 0 && (
+        <ul className="flex flex-col gap-1.5">
+          {issues.map((iss, idx) => (
+            <li
+              key={`${iss.line}-${iss.kind}-${idx}`}
+              data-memory-issue={iss.kind}
+              className="flex flex-wrap items-start justify-between gap-2 rounded-sm border border-hairline bg-surface px-2.5 py-2 text-xs"
+            >
+              <div className="min-w-0 flex-1">
+                <span className="font-medium text-ink [overflow-wrap:anywhere]">{iss.text}</span>
+                <p className="mt-0.5 text-ink-2">{iss.detail}</p>
+              </div>
+              <span className="mono shrink-0 rounded-chip bg-warn-soft px-1.5 py-0.5 text-[11px] text-warn">
+                {iss.kind === "conflict" ? "Conflict" : iss.kind === "stale_ref" ? "Stale path" : "Duplicate"} · L{iss.line}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+
       <div className="flex flex-col gap-1.5">{out}</div>
       <Details label="Raw memory.md">
         <pre className="whitespace-pre-wrap break-words rounded-sm bg-board p-2.5 font-mono text-xs text-ink-2">{content}</pre>

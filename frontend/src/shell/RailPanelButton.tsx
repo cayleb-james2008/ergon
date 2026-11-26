@@ -8,6 +8,7 @@ export function RailPanelButton({
   label,
   icon,
   count,
+  issueCount,
   answers,
   expanded,
   onClick,
@@ -17,6 +18,7 @@ export function RailPanelButton({
   label: string;
   icon: React.ReactNode;
   count?: number;
+  issueCount?: number;
   answers?: string;
   expanded?: boolean;
   onClick: () => void;
@@ -36,11 +38,20 @@ export function RailPanelButton({
         {icon}
         <span className="leading-tight">{label}</span>
       </span>
-      {typeof count === "number" && (
-        <span className="mono shrink-0 rounded-chip bg-track px-1.5 py-0.5 text-xs text-ink-2">
-          {count}
-        </span>
-      )}
+      <span className="flex shrink-0 items-center gap-1">
+        {typeof issueCount === "number" && issueCount > 0 && (
+          <span
+            data-memory-rail-badge="issues"
+            aria-label={`${issueCount} issues`}
+            className="size-2 shrink-0 rounded-full bg-dot-amber"
+          />
+        )}
+        {typeof count === "number" && (
+          <span className="mono shrink-0 rounded-chip bg-track px-1.5 py-0.5 text-xs text-ink-2">
+            {count}
+          </span>
+        )}
+      </span>
     </button>
   );
 }

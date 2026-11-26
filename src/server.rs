@@ -840,7 +840,7 @@ impl SockStream for &mut std::net::TcpStream {
 
 #[cfg(test)]
 pub(crate) fn read_request(stream: &mut std::net::TcpStream) -> Option<Request> {
-    let mut reader = BufReader::new(stream);
+    let mut reader = BufReader::with_capacity(4096, stream);
     read_request_from(&mut reader, std::time::Duration::from_secs(30))
 }
 
@@ -1373,7 +1373,7 @@ fn respond_json_with<F: FnOnce(&mut Vec<u8>)>(
         buf.clear();
         fill(&mut buf);
         let res = respond_bytes(stream, status, "application/json", &buf, &[]);
-        if buf.capacity() > 256 * 1024 {
+        if buf.capacity() > 32 * 1024 {
             *buf = Vec::with_capacity(4096);
         }
         res
@@ -1389,7 +1389,7 @@ fn respond_json(stream: &mut std::net::TcpStream, status: u16, v: &Value) -> std
             buf.extend_from_slice(v.to_string().as_bytes());
         }
         let res = respond_bytes(stream, status, "application/json", &buf, &[]);
-        if buf.capacity() > 256 * 1024 {
+        if buf.capacity() > 32 * 1024 {
             *buf = Vec::with_capacity(4096);
         }
         res
@@ -1673,7 +1673,7 @@ fn handle_connection(stream: std::net::TcpStream, state: &AppState) -> std::io::
         let _ = stream.shutdown(std::net::Shutdown::Both);
         return Ok(());
     }
-    let mut reader = BufReader::new(stream);
+    let mut reader = BufReader::with_capacity(4096, stream);
     const MAX_KEEP_ALIVE_REQUESTS: usize = 10_000;
     for req_idx in 0..MAX_KEEP_ALIVE_REQUESTS {
         let initial_wait = if req_idx == 0 {
@@ -2080,11 +2080,36 @@ fn try_route_system(
                 None => respond_json(stream, 200, &v),
             }
         }
-        ("GET", "/api/memory") => respond_json(
-            stream,
-            200,
-            &json!({"person_id": person.id, "content": runtime.cfg.read_memory()}),
-        ),
+        ("GET", "/api/memory") => {
+            let content = runtime.cfg.read_memory();
+            let health = skills::audit_memory_health(&runtime.cfg);
+            respond_json(
+                stream,
+                200,
+                &json!({"person_id": person.id, "content": content, "health": health}),
+            )
+        }
+        ("GET", "/api/memory/health") => {
+            let mut health = skills::audit_memory_health(&runtime.cfg);
+            if let Some(obj) = health.as_object_mut() {
+                obj.insert("person_id".to_string(), json!(person.id));
+            }
+            respond_json(stream, 200, &health)
+        }
+        ("POST", "/api/memory/heal") => {
+            let parsed: Value = serde_json::from_slice(&req.body).unwrap_or(Value::Null);
+            let mode = parsed["mode"].as_str().unwrap_or("all");
+            match skills::heal_memory(&runtime.cfg, mode) {
+                Ok(mut out) => {
+                    state.search_cache.invalidate(&person.id);
+                    if let Some(obj) = out.as_object_mut() {
+                        obj.insert("person_id".to_string(), json!(person.id));
+                    }
+                    respond_json(stream, 200, &out)
+                }
+                Err(e) => respond_json(stream, 400, &json!({"error": e})),
+            }
+        }
         ("GET", "/phone") => serve_page(stream, state, req, person, ui::index_html()),
         ("GET", "/api/library") => {
             let lib = state.library.lock().unwrap();

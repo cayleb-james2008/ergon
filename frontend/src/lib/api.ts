@@ -187,6 +187,23 @@ export type Routine = {
   pack_deliverables?: boolean;
   recent_runs?: RoutineRunRecord[];
 };
+export type MemoryIssue = {
+  line: number;
+  kind: "conflict" | "duplicate" | "stale_ref";
+  text: string;
+  detail: string;
+  related_line?: number | null;
+  removable?: boolean;
+};
+export type MemoryHealth = {
+  status: "healthy" | "issues";
+  learned_count: number;
+  issue_count: number;
+  conflicts: number;
+  duplicates: number;
+  stale_refs: number;
+  issues: MemoryIssue[];
+};
 export type PlaybookPreviewStep = {
   step: number;
   prompt: string;

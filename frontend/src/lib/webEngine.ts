@@ -1937,11 +1937,178 @@ export async function installBrowserEngine(): Promise<void> {
     const st = activeStore();
     const byok = loadByok();
 
-    if (method === "GET" && path === "/api/version") return jsonRes({ name: "ergon", version: "0.23.0" });
-    if (method === "GET" && path === "/api/update") return jsonRes({ current: "0.23.0", available: false, mode: "off", checked_at: Math.floor(Date.now() / 1000) });
+function normalizeWebMemoryRule(s: string): string {
+  return s.trim().replace(/\s+/g, " ").replace(/[.!;]+$/, "").toLowerCase();
+}
+
+function webMemoryRuleMeta(norm: string): { pol: number; pref: [string, string] | null; topics: string[] } {
+  const negMarkers = ["never ", "avoid ", "do not ", "don't ", "dont ", "exclude ", "omit ", "skip ", "disable ", "no "];
+  const posMarkers = ["always ", "use ", "include ", "enable ", "keep ", "require ", "prefer "];
+  const hasNeg = negMarkers.some((m) => norm.startsWith(m) || norm.includes(" " + m));
+  const hasPos = posMarkers.some((m) => norm.startsWith(m) || norm.includes(" " + m));
+  const pol = hasPos && !hasNeg ? 1 : hasNeg ? -1 : 0;
+  const prefPrefixes = ["prefer ", "default format ", "export format ", "tone: ", "currency: ", "rounding: ", "date format: ", "language: "];
+  let pref: [string, string] | null = null;
+  for (const p of prefPrefixes) {
+    if (norm.startsWith(p)) {
+      const val = norm.slice(p.length).trim();
+      if (val) {
+        pref = [p, val];
+        break;
+      }
+    }
+  }
+  const stop = new Set([
+    "the", "and", "for", "with", "from", "that", "this", "use", "always", "never", "avoid",
+    "not", "dont", "don", "prefer", "include", "exclude", "omit", "skip", "keep", "only",
+    "must", "should", "when", "into", "all", "are", "was", "were", "have", "has", "any",
+    "enable", "disable", "require",
+  ]);
+  const topics = Array.from(
+    new Set(
+      norm
+        .split(/[^a-z0-9]+/)
+        .filter((w) => w.length >= 3 && !stop.has(w))
+    )
+  ).sort();
+  return { pol, pref, topics };
+}
+
+function auditWebMemoryHealth(st: PersonStore) {
+  const EXTS = [".csv", ".md", ".json", ".txt", ".docx", ".xlsx", ".pptx", ".pdf", ".rn", ".tsv", ".yaml", ".yml"];
+  const lines = st.memory.split("\n");
+  const seen = new Map<string, number>();
+  const entries: { line: number; text: string; norm: string; pol: number; pref: [string, string] | null; topics: string[]; isDup: boolean }[] = [];
+  const issues: { line: number; kind: "conflict" | "duplicate" | "stale_ref"; text: string; detail: string; related_line: number | null; removable: boolean }[] = [];
+
+  lines.forEach((raw, idx) => {
+    const lineNo = idx + 1;
+    const t = raw.trim();
+    if (!t.startsWith("- ") || t.startsWith("- Name:") || t.startsWith("- Role:")) return;
+    const rule = t.slice(2).trim();
+    if (!rule) return;
+    const norm = normalizeWebMemoryRule(rule);
+    const first = seen.get(norm);
+    const isDup = first !== undefined;
+    if (isDup && first !== undefined) {
+      issues.push({
+        line: lineNo,
+        kind: "duplicate",
+        text: rule,
+        detail: `Duplicate of L${first}`,
+        related_line: first,
+        removable: true,
+      });
+    } else {
+      seen.set(norm, lineNo);
+    }
+
+    // Check [file:L##] citations and file references against st.files
+    let staleDetail: string | null = null;
+    const citeRe = /\[([^\]\n]+?):L(\d+)(?:-L(\d+))?\]/g;
+    let m: RegExpExecArray | null;
+    while ((m = citeRe.exec(rule)) !== null) {
+      const fpath = m[1].trim();
+      const lnum = Number(m[2]);
+      const endNum = m[3] ? Number(m[3]) : lnum;
+      const wf = st.files[fpath];
+      if (!wf) {
+        staleDetail = `Missing cited file [${fpath}:L${lnum}]`;
+        break;
+      }
+      const totalLines = wf.content.split("\n").length;
+      if (lnum < 1 || lnum > totalLines || endNum < lnum || endNum > totalLines) {
+        staleDetail = `Out-of-range citation [${fpath}:L${lnum}] (file has ${totalLines} lines)`;
+        break;
+      }
+    }
+    if (!staleDetail) {
+      const stripped = rule.replace(/\[[^\]\n]+?:L\d+(?:-L\d+)?\]/g, " ");
+      const btRe = /`([^`\n]+)`/g;
+      let bm: RegExpExecArray | null;
+      while ((bm = btRe.exec(stripped)) !== null) {
+        const cand = bm[1].trim();
+        const low = cand.toLowerCase();
+        if (cand.length >= 3 && !low.startsWith("http://") && !low.startsWith("https://") && EXTS.some((ext) => low.endsWith(ext))) {
+          if (cand !== "memory.md" && !st.files[cand]) {
+            staleDetail = `Missing workspace file \`${cand}\``;
+            break;
+          }
+        }
+      }
+      if (!staleDetail) {
+        const plain = stripped.replace(/`[^`\n]*`/g, " ");
+        for (const tok of plain.split(/\s+/)) {
+          const cleaned = tok.replace(/^['"([\]]+|['"(\[\],;:.!]+$/g, "");
+          const base = cleaned.replace(/:L\d+(?:-L\d+)?$/, "");
+          const low = base.toLowerCase();
+          if (base.length >= 3 && !low.startsWith("http://") && !low.startsWith("https://") && EXTS.some((ext) => low.endsWith(ext))) {
+            if (base !== "memory.md" && !st.files[base]) {
+              staleDetail = `Missing workspace file \`${base}\``;
+              break;
+            }
+          }
+        }
+      }
+    }
+    if (staleDetail) {
+      issues.push({
+        line: lineNo,
+        kind: "stale_ref",
+        text: rule,
+        detail: staleDetail,
+        related_line: null,
+        removable: true,
+      });
+    }
+
+    const meta = webMemoryRuleMeta(norm);
+    entries.push({ line: lineNo, text: rule, norm, ...meta, isDup });
+  });
+
+  const conflictedLines = new Set<number>();
+  for (let i = 0; i < entries.length; i++) {
+    if (entries[i].isDup) continue;
+    for (let j = i + 1; j < entries.length; j++) {
+      if (entries[j].isDup || entries[i].norm === entries[j].norm) continue;
+      const samePref = entries[i].pref && entries[j].pref && entries[i].pref![0] === entries[j].pref![0] && entries[i].pref![1] !== entries[j].pref![1];
+      const oppPol = entries[i].pol * entries[j].pol === -1;
+      const shared = oppPol ? entries[i].topics.filter((t) => entries[j].topics.includes(t)).length : 0;
+      const minTopics = Math.min(entries[i].topics.length, entries[j].topics.length);
+      const topicConflict = oppPol && (shared >= 2 || (minTopics > 0 && minTopics <= 2 && shared >= 1));
+      if ((samePref || topicConflict) && !conflictedLines.has(entries[i].line)) {
+        conflictedLines.add(entries[i].line);
+        issues.push({
+          line: entries[i].line,
+          kind: "conflict",
+          text: entries[i].text,
+          detail: `${samePref ? "Superseded by preference at" : "Conflicts with newer rule at"} L${entries[j].line}`,
+          related_line: entries[j].line,
+          removable: true,
+        });
+        break;
+      }
+    }
+  }
+
+  issues.sort((a, b) => a.line - b.line || a.kind.localeCompare(b.kind));
+  const issueLines = new Set(issues.map((x) => x.line));
+  return {
+    status: issueLines.size === 0 ? ("healthy" as const) : ("issues" as const),
+    learned_count: entries.length,
+    issue_count: issueLines.size,
+    conflicts: issues.filter((x) => x.kind === "conflict").length,
+    duplicates: issues.filter((x) => x.kind === "duplicate").length,
+    stale_refs: issues.filter((x) => x.kind === "stale_ref").length,
+    issues,
+  };
+}
+
+    if (method === "GET" && path === "/api/version") return jsonRes({ name: "ergon", version: "0.24.0" });
+    if (method === "GET" && path === "/api/update") return jsonRes({ current: "0.24.0", available: false, mode: "off", checked_at: Math.floor(Date.now() / 1000) });
     if (method === "GET" && path === "/api/status") {
       return jsonRes({
-        version: "0.23.0",
+        version: "0.24.0",
         model_configured: true,
         model: byok.engine_mode === "byok" && byok.model_id ? byok.model_id : "browser-workspace-engine",
         model_base_url: byok.engine_mode === "byok" ? byok.model_base_url : "indexeddb://local",
@@ -2163,7 +2330,7 @@ export async function installBrowserEngine(): Promise<void> {
       const pid = decodeURIComponent(path.slice("/api/playbooks/".length, -"/export".length)).trim();
       const rt = st.routines.find((x) => x.id === pid);
       if (!rt) return jsonRes({ error: "playbook not found" }, 404);
-      const built = await buildSignedPlaybookPack(rt, "0.23.0");
+      const built = await buildSignedPlaybookPack(rt, "0.24.0");
       return new Response(built.json, {
         status: 200,
         headers: {
@@ -2812,7 +2979,48 @@ export async function installBrowserEngine(): Promise<void> {
       await persist();
       return jsonRes({ active: state.activePerson, people: state.people });
     }
-    if (method === "GET" && path === "/api/memory") return jsonRes({ person_id: p.id, content: st.memory });
+    if (method === "GET" && path === "/api/memory") {
+      return jsonRes({ person_id: p.id, content: st.memory, health: auditWebMemoryHealth(st) });
+    }
+    if (method === "GET" && path === "/api/memory/health") {
+      return jsonRes({ person_id: p.id, ...auditWebMemoryHealth(st) });
+    }
+    if (method === "POST" && path === "/api/memory/heal") {
+      const mode = String(body.mode ?? "all").trim().toLowerCase() || "all";
+      if (!["all", "stale", "conflicts", "duplicates"].includes(mode)) {
+        return jsonRes({ error: "mode must be all, stale, conflicts, or duplicates" }, 400);
+      }
+      const before = auditWebMemoryHealth(st);
+      const removeLines = new Set<number>();
+      for (const iss of before.issues) {
+        if (
+          mode === "all" ||
+          (mode === "stale" && iss.kind === "stale_ref") ||
+          (mode === "conflicts" && iss.kind === "conflict") ||
+          (mode === "duplicates" && iss.kind === "duplicate")
+        ) {
+          removeLines.add(iss.line);
+        }
+      }
+      const removed: { line: number; text: string }[] = [];
+      if (removeLines.size > 0) {
+        const kept: string[] = [];
+        st.memory.split("\n").forEach((line, idx) => {
+          const lineNo = idx + 1;
+          if (removeLines.has(lineNo)) removed.push({ line: lineNo, text: line.trim() });
+          else kept.push(line);
+        });
+        st.memory = kept.join("\n").replace(/\n*$/, "\n");
+        await persist();
+      }
+      return jsonRes({
+        person_id: p.id,
+        content: st.memory,
+        removed_count: removed.length,
+        removed,
+        health: auditWebMemoryHealth(st),
+      });
+    }
     if (method === "GET" && path === "/api/library") return jsonRes({ items: state.library });
     if (method === "GET" && path === "/api/suite") {
       const installed = st.suite.map((id) => state.library.find((x) => x.id === id)).filter(Boolean);
