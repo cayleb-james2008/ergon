@@ -493,7 +493,7 @@ pub fn read_revision(
         let data = std::fs::read(blob_path(&bucket, &clean_rev))
             .map_err(|e| format!("read revision blob {clean_rev}: {e}"))?;
         let actual = sha256_hex(&data);
-        if !meta.sha256.is_empty() && actual != meta.sha256 {
+        if meta.sha256.is_empty() || actual != meta.sha256 {
             return Err(format!(
                 "revision '{clean_rev}' failed integrity verification (expected {}, got {actual})",
                 meta.sha256
@@ -903,7 +903,7 @@ pub fn restore_revision(
         let bytes = std::fs::read(blob_path(&bucket, &clean_rev))
             .map_err(|e| format!("read revision blob {clean_rev}: {e}"))?;
         let digest = sha256_hex(&bytes);
-        if !meta.sha256.is_empty() && digest != meta.sha256 {
+        if meta.sha256.is_empty() || digest != meta.sha256 {
             return Err(format!(
                 "revision '{clean_rev}' failed integrity check (expected {}, got {digest})",
                 meta.sha256
@@ -941,6 +941,183 @@ pub fn restore_revision(
             pre_restore_rev_id,
             size_bytes: bytes.len() as u64,
             sha256: digest,
+        })
+    })
+}
+
+#[derive(Clone, Debug)]
+pub enum CheckedWriteErr {
+    BadRequest(String),
+    Forbidden(String),
+    NotFound(String),
+    Conflict {
+        path: String,
+        expected: String,
+        actual: Option<String>,
+        message: String,
+    },
+    Internal(String),
+}
+
+#[derive(Clone, Debug)]
+pub struct CheckedWriteOutcome {
+    pub rel: String,
+    pub prev_rev_id: Option<String>,
+    pub new_sha256: String,
+    pub size_bytes: usize,
+}
+
+#[derive(Clone, Debug)]
+pub struct CheckedPatchOutcome {
+    pub rel: String,
+    pub prev_rev_id: Option<String>,
+    pub orig_sha256: String,
+    pub new_sha256: String,
+    pub orig_text: String,
+    pub new_text: String,
+    pub applied: usize,
+}
+
+fn validate_write_target(workspace_dir: &Path, raw_rel: &str) -> Result<(String, PathBuf), CheckedWriteErr> {
+    let rel = crate::tables::validate_workspace_rel_path(raw_rel).map_err(|e| {
+        if e.contains("required") || e.contains("too long") {
+            CheckedWriteErr::BadRequest(e)
+        } else {
+            CheckedWriteErr::Forbidden(e)
+        }
+    })?;
+    let unresolved = sandbox_path_resolving(workspace_dir, &rel, false)
+        .map_err(CheckedWriteErr::Forbidden)?;
+    if unresolved
+        .symlink_metadata()
+        .is_ok_and(|md| md.file_type().is_symlink())
+    {
+        return Err(CheckedWriteErr::Forbidden("cannot overwrite symlink".to_string()));
+    }
+    let resolved = sandbox_path_resolving(workspace_dir, &rel, true)
+        .map_err(CheckedWriteErr::Forbidden)?;
+    if resolved == workspace_dir || resolved.is_dir() {
+        return Err(CheckedWriteErr::BadRequest(
+            "path must name a file inside the workspace".to_string(),
+        ));
+    }
+    Ok((rel, resolved))
+}
+
+/// Atomically check `expected_sha256`, snapshot the existing file bytes to
+/// `.history/`, and write `new_bytes` to `workspace_dir/<raw_rel>` under `HISTORY_LOCK`.
+pub fn atomic_checked_write_workspace(
+    person_data_dir: &Path,
+    workspace_dir: &Path,
+    raw_rel: &str,
+    new_bytes: &[u8],
+    expected_sha256: Option<&str>,
+    reason: &str,
+) -> Result<CheckedWriteOutcome, CheckedWriteErr> {
+    with_lock(|| {
+        let (rel, full) = validate_write_target(workspace_dir, raw_rel)?;
+        let cur_bytes = if full.is_file() {
+            Some(
+                std::fs::read(&full)
+                    .map_err(|e| CheckedWriteErr::Internal(format!("read {rel}: {e}")))?,
+            )
+        } else {
+            None
+        };
+        if let Some(expected) = expected_sha256.map(str::trim).filter(|s| !s.is_empty()) {
+            match &cur_bytes {
+                Some(bytes) => {
+                    let actual = sha256_hex(bytes);
+                    if !actual.eq_ignore_ascii_case(expected) {
+                        return Err(CheckedWriteErr::Conflict {
+                            path: rel,
+                            expected: expected.to_string(),
+                            actual: Some(actual),
+                            message: "file was modified concurrently (expected_sha256 mismatch)"
+                                .to_string(),
+                        });
+                    }
+                }
+                None => {
+                    return Err(CheckedWriteErr::Conflict {
+                        path: rel,
+                        expected: expected.to_string(),
+                        actual: None,
+                        message: "file no longer exists on disk (expected_sha256 mismatch)"
+                            .to_string(),
+                    });
+                }
+            }
+        }
+        let prev_rev_id = match &cur_bytes {
+            Some(bytes) => {
+                let rev = write_revision_unlocked(person_data_dir, &rel, bytes, reason)
+                    .map_err(|e| CheckedWriteErr::Internal(format!("snapshot {rel}: {e}")))?;
+                Some(rev.rev_id)
+            }
+            None => None,
+        };
+        crate::atomic_write_bytes(&full, new_bytes)
+            .map_err(|e| CheckedWriteErr::Internal(format!("write {rel}: {e}")))?;
+        Ok(CheckedWriteOutcome {
+            rel,
+            prev_rev_id,
+            new_sha256: sha256_hex(new_bytes),
+            size_bytes: new_bytes.len(),
+        })
+    })
+}
+
+/// Atomically check `expected_sha256`, validate UTF-8, apply `patch_fn`,
+/// snapshot the pre-patch bytes to `.history/`, and write the patched file
+/// under `HISTORY_LOCK`.
+pub fn atomic_checked_patch_workspace<F>(
+    person_data_dir: &Path,
+    workspace_dir: &Path,
+    raw_rel: &str,
+    expected_sha256: Option<&str>,
+    reason: &str,
+    patch_fn: F,
+) -> Result<CheckedPatchOutcome, CheckedWriteErr>
+where
+    F: FnOnce(&str) -> Result<(String, usize), String>,
+{
+    with_lock(|| {
+        let (rel, full) = validate_write_target(workspace_dir, raw_rel)?;
+        if !full.is_file() {
+            return Err(CheckedWriteErr::NotFound(format!("file not found: {rel}")));
+        }
+        let orig_bytes = std::fs::read(&full)
+            .map_err(|e| CheckedWriteErr::Internal(format!("read {rel}: {e}")))?;
+        let orig_sha = sha256_hex(&orig_bytes);
+        if let Some(expected) = expected_sha256.map(str::trim).filter(|s| !s.is_empty()) {
+            if !orig_sha.eq_ignore_ascii_case(expected) {
+                return Err(CheckedWriteErr::Conflict {
+                    path: rel,
+                    expected: expected.to_string(),
+                    actual: Some(orig_sha),
+                    message: "file was modified concurrently (expected_sha256 mismatch)"
+                        .to_string(),
+                });
+            }
+        }
+        let orig_text = String::from_utf8(orig_bytes).map_err(|_| {
+            CheckedWriteErr::BadRequest("binary files cannot be patched as UTF-8 text".to_string())
+        })?;
+        let (new_text, applied) = patch_fn(&orig_text).map_err(CheckedWriteErr::BadRequest)?;
+        let prev_rev = write_revision_unlocked(person_data_dir, &rel, orig_text.as_bytes(), reason)
+            .map_err(|e| CheckedWriteErr::Internal(format!("snapshot {rel}: {e}")))?;
+        crate::atomic_write_bytes(&full, new_text.as_bytes())
+            .map_err(|e| CheckedWriteErr::Internal(format!("write {rel}: {e}")))?;
+        let new_sha256 = sha256_hex(new_text.as_bytes());
+        Ok(CheckedPatchOutcome {
+            rel,
+            prev_rev_id: Some(prev_rev.rev_id),
+            orig_sha256: orig_sha,
+            new_sha256,
+            orig_text,
+            new_text,
+            applied,
         })
     })
 }

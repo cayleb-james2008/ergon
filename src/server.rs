@@ -234,30 +234,40 @@ fn is_history_security_error(err: &str) -> bool {
         || low.contains("workspace")
 }
 
-fn resolve_studio_write_path(workspace_dir: &Path, raw: &str) -> Result<(String, PathBuf), (u16, String)> {
-    let rel = tables::validate_workspace_rel_path(raw).map_err(|e| {
-        let code = if e.contains("required") || e.contains("too long") {
-            400
-        } else {
-            403
-        };
-        (code, e)
-    })?;
-    let unresolved = sandbox_path_resolving(workspace_dir, &rel, false).map_err(|e| (403, e))?;
-    if unresolved
-        .symlink_metadata()
-        .is_ok_and(|md| md.file_type().is_symlink())
-    {
-        return Err((403, "cannot overwrite symlink".to_string()));
+fn respond_checked_write_err(
+    stream: &mut std::net::TcpStream,
+    err: file_history::CheckedWriteErr,
+) -> std::io::Result<()> {
+    match err {
+        file_history::CheckedWriteErr::BadRequest(msg) => respond_err(stream, 400, &msg),
+        file_history::CheckedWriteErr::Forbidden(msg) => respond_err(stream, 403, &msg),
+        file_history::CheckedWriteErr::NotFound(msg) => respond_err(stream, 404, &msg),
+        file_history::CheckedWriteErr::Conflict {
+            path,
+            expected,
+            actual,
+            message,
+        } => respond_json(
+            stream,
+            409,
+            &json!({
+                "error": message,
+                "path": path,
+                "expected_sha256": expected,
+                "actual_sha256": actual,
+                "current_sha256": actual,
+            }),
+        ),
+        file_history::CheckedWriteErr::Internal(msg) => respond_err(stream, 500, &msg),
     }
-    let resolved = sandbox_path_resolving(workspace_dir, &rel, true).map_err(|e| (403, e))?;
-    if resolved == workspace_dir || resolved.is_dir() {
-        return Err((400, "path must name a file inside the workspace".to_string()));
-    }
-    Ok((rel, resolved))
 }
 
+const MAX_PATCH_OPS: usize = 64;
+
 fn apply_patch_ops(orig: &str, ops: &[Value]) -> Result<(String, usize), String> {
+    if ops.len() > MAX_PATCH_OPS {
+        return Err(format!("too many patch ops (max {MAX_PATCH_OPS})"));
+    }
     let mut working = orig.to_string();
     let mut applied = 0usize;
     for (idx, op_val) in ops.iter().enumerate() {
@@ -346,6 +356,9 @@ fn apply_patch_ops(orig: &str, ops: &[Value]) -> Result<(String, usize), String>
                     "op[{idx}] unknown patch op '{other}' (use 'replace' or 'replace_lines')"
                 ));
             }
+        }
+        if working.len() as u64 > docs::MAX_DOC_BYTES {
+            return Err("patched file exceeds maximum allowed size".to_string());
         }
     }
     Ok((working, applied))
@@ -1171,6 +1184,8 @@ pub(crate) struct Request {
     /// Webhook authentication headers for `POST /api/hooks/:hook_id`.
     pub(crate) hook_signature: Option<String>,
     pub(crate) hook_token: Option<String>,
+    pub(crate) hook_timestamp: Option<String>,
+    pub(crate) hook_delivery: Option<String>,
     pub(crate) keep_alive: bool,
 }
 
@@ -1272,6 +1287,8 @@ fn read_request_from<S: SockStream>(
     let mut if_none_match: Option<String> = None;
     let mut hook_signature: Option<String> = None;
     let mut hook_token: Option<String> = None;
+    let mut hook_timestamp: Option<String> = None;
+    let mut hook_delivery: Option<String> = None;
     let mut head_bytes = n_req;
     loop {
         arm(reader.get_ref())?;
@@ -1356,6 +1373,10 @@ fn read_request_from<S: SockStream>(
             hook_signature = Some(val.to_string());
         } else if name.eq_ignore_ascii_case("x-ergon-hook-token") && !val.is_empty() {
             hook_token = Some(val.to_string());
+        } else if name.eq_ignore_ascii_case("x-ergon-timestamp") && !val.is_empty() {
+            hook_timestamp = Some(val.to_string());
+        } else if name.eq_ignore_ascii_case("x-ergon-delivery") && !val.is_empty() {
+            hook_delivery = Some(val.to_string());
         }
     }
     if bad_length || bad_host || chunked {
@@ -1446,6 +1467,8 @@ fn read_request_from<S: SockStream>(
         if_none_match,
         hook_signature,
         hook_token,
+        hook_timestamp,
+        hook_delivery,
         keep_alive: if proto == "HTTP/1.0" {
             conn_keep_alive
         } else {
@@ -2090,11 +2113,13 @@ fn handle_webhook_hook_request(
     }
     for person in ordered {
         let rt = runtime_for(state, &person);
-        match connectors::verify_and_ingest_webhook(
+        match connectors::verify_and_ingest_webhook_with_meta(
             &rt.cfg,
             hook_id,
             req.hook_signature.as_deref(),
             req.hook_token.as_deref(),
+            req.hook_timestamp.as_deref(),
+            req.hook_delivery.as_deref(),
             &req.content_type,
             &req.body,
         ) {
@@ -4296,12 +4321,11 @@ fn try_route_files_and_audit(
             }
         }
         ("PUT", "/api/files/content") => {
-            let parsed: Value = serde_json::from_slice(&req.body).unwrap_or(Value::Null);
-            let raw_rel = parsed["path"].as_str().unwrap_or("");
-            let (rel, full) = match resolve_studio_write_path(&runtime.cfg.workspace_dir, raw_rel) {
-                Ok(pair) => pair,
-                Err((code, msg)) => return Some(respond_err(stream, code, &msg)),
+            let parsed: Value = match serde_json::from_slice(&req.body) {
+                Ok(v) => v,
+                Err(_) => return Some(respond_err(stream, 400, "request body is not valid JSON")),
             };
+            let raw_rel = parsed["path"].as_str().unwrap_or("");
             let content = match parsed["content"].as_str() {
                 Some(s) => s,
                 None => return Some(respond_err(stream, 400, "content is required")),
@@ -4309,64 +4333,27 @@ fn try_route_files_and_audit(
             if content.len() as u64 > docs::MAX_DOC_BYTES {
                 return Some(respond_err(stream, 413, "file exceeds the 25 MB limit"));
             }
-            if let Some(expected) = parsed["expected_sha256"]
-                .as_str()
-                .map(str::trim)
-                .filter(|s| !s.is_empty())
-            {
-                if full.is_file() {
-                    let cur_bytes = match std::fs::read(&full) {
-                        Ok(b) => b,
-                        Err(e) => return Some(respond_err(stream, 500, &format!("read {rel}: {e}"))),
-                    };
-                    let actual = receipts::sha256_hex(&cur_bytes);
-                    if !actual.eq_ignore_ascii_case(expected) {
-                        return Some(respond_json(
-                            stream,
-                            409,
-                            &json!({
-                                "error": "file was modified concurrently (expected_sha256 mismatch)",
-                                "path": rel,
-                                "expected_sha256": expected,
-                                "actual_sha256": actual,
-                                "current_sha256": actual,
-                            }),
-                        ));
-                    }
-                } else {
-                    return Some(respond_json(
-                        stream,
-                        409,
-                        &json!({
-                            "error": "file no longer exists on disk (expected_sha256 mismatch)",
-                            "path": rel,
-                            "expected_sha256": expected,
-                            "actual_sha256": Value::Null,
-                        }),
-                    ));
-                }
-            }
+            let expected = parsed["expected_sha256"].as_str();
             let reason = parsed["reason"]
                 .as_str()
                 .map(str::trim)
                 .filter(|s| !s.is_empty())
                 .unwrap_or("studio-edit");
-            let prev_rev = match file_history::record_revision(
+            let outcome = match file_history::atomic_checked_write_workspace(
                 &runtime.cfg.data_dir,
                 &runtime.cfg.workspace_dir,
-                &rel,
+                raw_rel,
+                content.as_bytes(),
+                expected,
                 reason,
             ) {
-                Ok(r) => r,
-                Err(e) => return Some(respond_err(stream, 500, &format!("snapshot {rel}: {e}"))),
+                Ok(o) => o,
+                Err(e) => return Some(respond_checked_write_err(stream, e)),
             };
-            if let Err(e) = atomic_write_bytes(&full, content.as_bytes()) {
-                return Some(respond_err(stream, 500, &format!("write {rel}: {e}")));
-            }
             state.search_cache.invalidate(&person.id);
-            let sha256 = receipts::sha256_hex(content.as_bytes());
-            let mtime_ms = std::fs::metadata(&full)
+            let mtime_ms = sandbox_path_resolving(&runtime.cfg.workspace_dir, &outcome.rel, true)
                 .ok()
+                .and_then(|p| std::fs::metadata(p).ok())
                 .and_then(|m| m.modified().ok())
                 .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
                 .map(|d| d.as_millis() as u64)
@@ -4375,88 +4362,51 @@ fn try_route_files_and_audit(
                 stream,
                 200,
                 &json!({
-                    "path": rel,
-                    "size": content.len(),
+                    "path": outcome.rel,
+                    "size": outcome.size_bytes,
                     "mtime_ms": mtime_ms,
-                    "sha256": sha256,
-                    "rev_id": prev_rev.map(|r| r.rev_id),
+                    "sha256": outcome.new_sha256,
+                    "rev_id": outcome.prev_rev_id,
                 }),
             )
         }
         ("PATCH", "/api/files/content") => {
-            let parsed: Value = serde_json::from_slice(&req.body).unwrap_or(Value::Null);
+            let parsed: Value = match serde_json::from_slice(&req.body) {
+                Ok(v) => v,
+                Err(_) => return Some(respond_err(stream, 400, "request body is not valid JSON")),
+            };
             let raw_rel = parsed["path"].as_str().unwrap_or("");
-            let (rel, full) = match resolve_studio_write_path(&runtime.cfg.workspace_dir, raw_rel) {
-                Ok(pair) => pair,
-                Err((code, msg)) => return Some(respond_err(stream, code, &msg)),
-            };
-            if !full.is_file() {
-                return Some(respond_err(stream, 404, "file not found"));
-            }
-            let orig_bytes = match std::fs::read(&full) {
-                Ok(b) => b,
-                Err(e) => return Some(respond_err(stream, 500, &format!("read {rel}: {e}"))),
-            };
-            let orig_sha = receipts::sha256_hex(&orig_bytes);
-            if let Some(expected) = parsed["expected_sha256"]
-                .as_str()
-                .map(str::trim)
-                .filter(|s| !s.is_empty())
-            {
-                if !orig_sha.eq_ignore_ascii_case(expected) {
-                    return Some(respond_json(
-                        stream,
-                        409,
-                        &json!({
-                            "error": "file was modified concurrently (expected_sha256 mismatch)",
-                            "path": rel,
-                            "expected_sha256": expected,
-                            "actual_sha256": orig_sha,
-                            "current_sha256": orig_sha,
-                        }),
-                    ));
-                }
-            }
-            let orig_text = match String::from_utf8(orig_bytes) {
-                Ok(s) => s,
-                Err(_) => return Some(respond_err(stream, 400, "binary files cannot be patched as UTF-8 text")),
-            };
             let Some(ops) = parsed["ops"].as_array().filter(|a| !a.is_empty()) else {
                 return Some(respond_err(stream, 400, "ops array is required and must be non-empty"));
             };
-            let (working, applied) = match apply_patch_ops(&orig_text, ops) {
-                Ok(res) => res,
-                Err(e) => return Some(respond_err(stream, 400, &e)),
-            };
-            let prev_rev = match file_history::record_revision(
+            let expected = parsed["expected_sha256"].as_str();
+            let outcome = match file_history::atomic_checked_patch_workspace(
                 &runtime.cfg.data_dir,
                 &runtime.cfg.workspace_dir,
-                &rel,
+                raw_rel,
+                expected,
                 "studio-patch",
+                |orig_text| apply_patch_ops(orig_text, ops),
             ) {
-                Ok(r) => r,
-                Err(e) => return Some(respond_err(stream, 500, &format!("snapshot {rel}: {e}"))),
+                Ok(o) => o,
+                Err(e) => return Some(respond_checked_write_err(stream, e)),
             };
-            if let Err(e) = atomic_write_bytes(&full, working.as_bytes()) {
-                return Some(respond_err(stream, 500, &format!("write {rel}: {e}")));
-            }
             state.search_cache.invalidate(&person.id);
-            let new_sha = receipts::sha256_hex(working.as_bytes());
             let stats = file_history::diff_texts(
-                &format!("{rel} (before)"),
-                &format!("{rel} (after)"),
-                &orig_text,
-                &working,
+                &format!("{} (before)", outcome.rel),
+                &format!("{} (after)", outcome.rel),
+                &outcome.orig_text,
+                &outcome.new_text,
             );
             let rev_diff = file_history::RevisionDiff {
-                path: rel.clone(),
-                rev_a: prev_rev
-                    .as_ref()
-                    .map(|r| r.rev_id.clone())
+                path: outcome.rel.clone(),
+                rev_a: outcome
+                    .prev_rev_id
+                    .clone()
                     .unwrap_or_else(|| "previous".to_string()),
                 rev_b: "current".to_string(),
-                sha256_a: orig_sha,
-                sha256_b: new_sha.clone(),
+                sha256_a: outcome.orig_sha256,
+                sha256_b: outcome.new_sha256.clone(),
                 is_binary: false,
                 added: stats.added,
                 removed: stats.removed,
@@ -4469,11 +4419,11 @@ fn try_route_files_and_audit(
                 stream,
                 200,
                 &json!({
-                    "path": rel,
-                    "applied": applied,
-                    "size": working.len(),
-                    "sha256": new_sha,
-                    "rev_id": prev_rev.map(|r| r.rev_id),
+                    "path": outcome.rel,
+                    "applied": outcome.applied,
+                    "size": outcome.new_text.len(),
+                    "sha256": outcome.new_sha256,
+                    "rev_id": outcome.prev_rev_id,
                     "diff": rev_diff.to_json(),
                 }),
             )

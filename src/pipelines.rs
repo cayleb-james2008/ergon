@@ -21,6 +21,9 @@ use std::sync::{Arc, Mutex};
 
 pub const MAX_PIPELINE_STEPS: usize = 24;
 const MAX_STORED_RUNS: usize = 200;
+pub const MAX_TEMPLATE_DEPTH: usize = 16;
+pub const MAX_TEMPLATE_EXPANSIONS: usize = 128;
+pub const MAX_TEMPLATE_OUTPUT_BYTES: usize = 256 * 1024;
 
 static PIPELINE_SEQ: AtomicU64 = AtomicU64::new(0);
 static PIPELINES_LOCK: Mutex<()> = Mutex::new(());
@@ -708,9 +711,25 @@ where
     })
 }
 
+fn mutate_run_http<F, R>(person_data_dir: &Path, run_id: &str, f: F) -> Result<R, (u16, String)>
+where
+    F: FnOnce(&mut PipelineRun) -> Result<R, (u16, String)>,
+{
+    with_pipelines_lock(|| {
+        let mut runs = load_runs_unlocked(person_data_dir);
+        let Some(pos) = runs.iter().position(|r| r.run_id == run_id) else {
+            return Err((404, "pipeline run not found".to_string()));
+        };
+        let out = f(&mut runs[pos])?;
+        save_runs_unlocked(person_data_dir, &runs).map_err(|e| (500, e))?;
+        Ok(out)
+    })
+}
+
 /// Convert any stale `"running"` runs persisted from a prior server process
-/// into resumable `"paused_checkpoint"` (when a checkpoint was already active)
-/// or `"interrupted"` state so the user can resume or retry after restart.
+/// into resumable `"paused_checkpoint"` (when a checkpoint was already active),
+/// `"cancelled"` (when cancellation was already requested), or `"interrupted"`
+/// state so the user can resume or retry after restart.
 pub fn recover_stale_runs_on_boot(person_data_dir: &Path) -> usize {
     let key = person_data_dir.to_path_buf();
     {
@@ -729,19 +748,52 @@ pub fn force_recover_stale_runs(person_data_dir: &Path) -> usize {
         let now_ms = records::now_millis();
         let mut changed = 0usize;
         for run in &mut runs {
+            if run.status == "paused_checkpoint" && run.pending_checkpoint.is_none() {
+                changed += 1;
+                run.updated_ms = now_ms;
+                run.status = "interrupted".to_string();
+                run.error = Some(
+                    "Interrupted by server restart (missing checkpoint state) — retry or resume to continue.".to_string(),
+                );
+                for st in &mut run.step_states {
+                    if st.status == "running" || st.status == "waiting_human" {
+                        st.status = "failed".to_string();
+                        st.finished_ms = now_ms;
+                        st.error = Some("Interrupted by server restart.".to_string());
+                    }
+                }
+                continue;
+            }
             if run.status != "running" {
                 continue;
             }
             changed += 1;
             run.updated_ms = now_ms;
-            if run.pending_checkpoint.is_some() {
+            if run.cancel_requested {
+                run.status = "cancelled".to_string();
+                run.pending_checkpoint = None;
+                run.error = Some("Cancelled before server restart.".to_string());
+                for st in &mut run.step_states {
+                    if st.status == "running" || st.status == "waiting_human" {
+                        st.status = "failed".to_string();
+                        st.finished_ms = now_ms;
+                        st.error = Some("Cancelled before server restart.".to_string());
+                    }
+                }
+            } else if let Some(cp) = run.pending_checkpoint.clone() {
                 run.status = "paused_checkpoint".to_string();
+                if let Some(st) = run.step_states.get_mut(cp.step_index) {
+                    if st.status != "waiting_human" {
+                        st.status = "waiting_human".to_string();
+                        st.checkpoint_id = Some(cp.checkpoint_id);
+                    }
+                }
             } else {
                 run.status = "interrupted".to_string();
                 run.error = Some(
                     "Interrupted by server restart — retry or resume to continue.".to_string(),
                 );
-                if let Some(st) = run.step_states.get_mut(run.current_step_index) {
+                for st in &mut run.step_states {
                     if st.status == "running" {
                         st.status = "failed".to_string();
                         st.finished_ms = now_ms;
@@ -762,19 +814,29 @@ pub fn force_recover_stale_runs(person_data_dir: &Path) -> usize {
 // ---------------------------------------------------------------------------
 
 fn find_step_state<'a>(run: &'a PipelineRun, id: &str) -> Option<&'a PipelineStepState> {
+    let limit = run.current_step_index.min(run.step_states.len());
     if id == "prev" || id == "previous" {
         return run
             .step_states
             .iter()
-            .take(run.current_step_index)
+            .take(limit)
             .rev()
             .find(|s| matches!(s.status.as_str(), "ok" | "waiting_human"));
     }
-    run.step_states.iter().find(|s| s.step_id == id)
+    // Only allow referencing steps strictly prior to `current_step_index` (and not
+    // currently running) so self-references and forward/circular step references
+    // never resolve to unexecuted or in-flight state.
+    run.step_states
+        .iter()
+        .take(limit)
+        .find(|s| s.step_id == id && s.status != "running")
 }
 
 fn resolve_expr(expr: &str, run: &PipelineRun) -> Option<Value> {
     let trimmed = expr.trim();
+    if trimmed.is_empty() || trimmed.len() > 256 || trimmed.contains("{{") || trimmed.contains("}}") {
+        return None;
+    }
     if let Some(key) = trimmed.strip_prefix("inputs.") {
         return Some(json!(run.inputs.get(key.trim()).cloned().unwrap_or_default()));
     }
@@ -800,10 +862,40 @@ fn resolve_expr(expr: &str, run: &PipelineRun) -> Option<Value> {
             return Some(json!(state.human_action.clone().unwrap_or_default()));
         }
         if let Some(metric_key) = field.strip_prefix("metrics.") {
-            return Some(state.metrics.get(metric_key.trim()).cloned().unwrap_or(json!("")));
+            let mut cur = &state.metrics;
+            let parts: Vec<&str> = metric_key.split('.').map(str::trim).take(9).collect();
+            if parts.len() > 8 {
+                return Some(json!(""));
+            }
+            for seg in parts {
+                if seg.is_empty() {
+                    return Some(json!(""));
+                }
+                cur = match cur.get(seg) {
+                    Some(v) => v,
+                    None => return Some(json!("")),
+                };
+            }
+            return Some(cur.clone());
         }
     }
     None
+}
+
+fn push_capped(out: &mut String, s: &str, cap: usize) {
+    if out.len() >= cap {
+        return;
+    }
+    let avail = cap - out.len();
+    if s.len() <= avail {
+        out.push_str(s);
+    } else {
+        let mut end = avail;
+        while end > 0 && !s.is_char_boundary(end) {
+            end -= 1;
+        }
+        out.push_str(&s[..end]);
+    }
 }
 
 fn value_to_inline_str(v: &Value) -> String {
@@ -821,28 +913,44 @@ fn value_to_inline_str(v: &Value) -> String {
 }
 
 pub fn resolve_template_str(tpl: &str, run: &PipelineRun) -> String {
-    let mut out = String::with_capacity(tpl.len());
+    let mut out = String::with_capacity(tpl.len().min(MAX_TEMPLATE_OUTPUT_BYTES));
     let mut rest = tpl;
+    let mut expansions = 0usize;
     while let Some(start) = rest.find("{{") {
-        out.push_str(&rest[..start]);
+        push_capped(&mut out, &rest[..start], MAX_TEMPLATE_OUTPUT_BYTES);
+        if out.len() >= MAX_TEMPLATE_OUTPUT_BYTES || expansions >= MAX_TEMPLATE_EXPANSIONS {
+            return out;
+        }
         let after_open = &rest[start + 2..];
         if let Some(end) = after_open.find("}}") {
+            expansions += 1;
             let expr = &after_open[..end];
+            // If a malformed nested `{{` appears before `}}`, advance past the
+            // outer `{{` without misparsing across braces.
+            if expr.contains("{{") {
+                push_capped(&mut out, "{{", MAX_TEMPLATE_OUTPUT_BYTES);
+                rest = after_open;
+                continue;
+            }
             if let Some(val) = resolve_expr(expr, run) {
-                out.push_str(&value_to_inline_str(&val));
+                let inline = value_to_inline_str(&val);
+                push_capped(&mut out, &inline, MAX_TEMPLATE_OUTPUT_BYTES);
             }
             rest = &after_open[end + 2..];
         } else {
-            out.push_str(&rest[start..]);
+            push_capped(&mut out, &rest[start..], MAX_TEMPLATE_OUTPUT_BYTES);
             rest = "";
             break;
         }
     }
-    out.push_str(rest);
+    push_capped(&mut out, rest, MAX_TEMPLATE_OUTPUT_BYTES);
     out
 }
 
-pub fn resolve_template_value(val: &Value, run: &PipelineRun) -> Value {
+fn resolve_template_value_depth(val: &Value, run: &PipelineRun, depth: usize) -> Value {
+    if depth >= MAX_TEMPLATE_DEPTH {
+        return val.clone();
+    }
     match val {
         Value::String(s) => {
             let trimmed = s.trim();
@@ -859,7 +967,7 @@ pub fn resolve_template_value(val: &Value, run: &PipelineRun) -> Value {
         Value::Array(arr) => {
             let mut out = Vec::with_capacity(arr.len());
             for item in arr {
-                let r = resolve_template_value(item, run);
+                let r = resolve_template_value_depth(item, run, depth + 1);
                 // If an array element resolved from `{{steps.x.files}}` into an array, flatten cleanly
                 if item.as_str().is_some_and(|s| s.trim().ends_with(".files}}")) {
                     if let Value::Array(inner) = r {
@@ -874,12 +982,16 @@ pub fn resolve_template_value(val: &Value, run: &PipelineRun) -> Value {
         Value::Object(map) => {
             let mut out = Map::with_capacity(map.len());
             for (k, v) in map {
-                out.insert(k.clone(), resolve_template_value(v, run));
+                out.insert(k.clone(), resolve_template_value_depth(v, run, depth + 1));
             }
             Value::Object(out)
         }
         other => other.clone(),
     }
+}
+
+pub fn resolve_template_value(val: &Value, run: &PipelineRun) -> Value {
+    resolve_template_value_depth(val, run, 0)
 }
 
 fn should_run_step(step: &PipelineStepSpec, prior_states: &[PipelineStepState]) -> (bool, &'static str) {
@@ -919,13 +1031,10 @@ fn should_run_step(step: &PipelineStepSpec, prior_states: &[PipelineStepState]) 
 // ---------------------------------------------------------------------------
 
 fn extract_table_pipe_u64(text: &str, needle: &str) -> u64 {
-    let low_needle = needle.to_ascii_lowercase();
     for line in text.lines() {
-        let low = line.to_ascii_lowercase();
-        if low.contains(&low_needle) {
-            let parts: Vec<&str> = line.split('|').map(str::trim).filter(|p| !p.is_empty()).collect();
-            if parts.len() >= 2 {
-                if let Ok(n) = parts[1].split_whitespace().next().unwrap_or("").parse::<u64>() {
+        if crate::tables::ascii_contains_ignore_case(line, needle) {
+            if let Some(after_first) = line.split('|').map(str::trim).filter(|p| !p.is_empty()).nth(1) {
+                if let Ok(n) = after_first.split_whitespace().next().unwrap_or("").parse::<u64>() {
                     return n;
                 }
             }
@@ -935,6 +1044,7 @@ fn extract_table_pipe_u64(text: &str, needle: &str) -> u64 {
 }
 
 fn extract_step_metrics(cfg: &Config, files: &[String], output: &str) -> Value {
+    use std::io::Read as _;
     let mut anomalies = 0u64;
     let mut duplicates = 0u64;
     let mut missing_receipts = 0u64;
@@ -949,15 +1059,18 @@ fn extract_step_metrics(cfg: &Config, files: &[String], output: &str) -> Value {
                 total_bytes += md.len();
             }
             if rel.to_ascii_lowercase().ends_with(".md") {
-                if let Ok(text) = std::fs::read_to_string(&full) {
-                    let clip = if text.len() > 65_536 { &text[..65_536] } else { &text };
-                    duplicates += extract_table_pipe_u64(clip, "Duplicate references flagged");
-                    duplicates += extract_table_pipe_u64(clip, "Duplicate rows removed");
-                    missing_receipts += extract_table_pipe_u64(clip, "Missing receipts flagged");
-                    anomalies += extract_table_pipe_u64(clip, "Amount anomalies flagged");
-                    outliers += extract_table_pipe_u64(clip, "Outlier");
-                    high_risks += extract_table_pipe_u64(clip, "Risk findings");
-                    urgent += extract_table_pipe_u64(clip, "**Urgent**");
+                if let Ok(f) = std::fs::File::open(&full) {
+                    let mut buf = Vec::with_capacity(8192);
+                    if f.take(65_536).read_to_end(&mut buf).is_ok() {
+                        let clip = String::from_utf8_lossy(&buf);
+                        duplicates += extract_table_pipe_u64(&clip, "Duplicate references flagged");
+                        duplicates += extract_table_pipe_u64(&clip, "Duplicate rows removed");
+                        missing_receipts += extract_table_pipe_u64(&clip, "Missing receipts flagged");
+                        anomalies += extract_table_pipe_u64(&clip, "Amount anomalies flagged");
+                        outliers += extract_table_pipe_u64(&clip, "Outlier");
+                        high_risks += extract_table_pipe_u64(&clip, "Risk findings");
+                        urgent += extract_table_pipe_u64(&clip, "**Urgent**");
+                    }
                 }
             }
         }
@@ -965,7 +1078,7 @@ fn extract_step_metrics(cfg: &Config, files: &[String], output: &str) -> Value {
 
     let total_flags = anomalies + duplicates + missing_receipts + outliers + high_risks + urgent;
     let has_anomaly = total_flags > 0
-        || output.to_ascii_lowercase().contains("anomal");
+        || crate::tables::ascii_contains_ignore_case(output, "anomal");
     json!({
         "files_count": files.len(),
         "bytes_total": total_bytes,
@@ -1364,7 +1477,7 @@ fn execute_pipeline_loop(env: &PipelineExecEnv, run_id: &str, start_index: usize
         }
 
         let started_ms = records::now_millis();
-        mutate_run(&env.cfg.data_dir, run_id, |r| {
+        let run_snap = mutate_run(&env.cfg.data_dir, run_id, |r| {
             r.status = "running".to_string();
             r.current_step_index = idx;
             r.updated_ms = started_ms;
@@ -1373,7 +1486,7 @@ fn execute_pipeline_loop(env: &PipelineExecEnv, run_id: &str, start_index: usize
                 st.started_ms = started_ms;
                 st.error = None;
             }
-            Ok(())
+            Ok(r.clone())
         })?;
 
         env.events.publish(
@@ -1762,14 +1875,35 @@ fn execute_pipeline_loop(env: &PipelineExecEnv, run_id: &str, start_index: usize
     }
 
     let finished_ms = records::now_millis();
+    let final_cancelled = is_run_cancelled(&env.cfg.data_dir, run_id, &cancel_flag);
     let completed = mutate_run(&env.cfg.data_dir, run_id, |r| {
-        r.status = "completed".to_string();
+        if final_cancelled || r.cancel_requested || r.status == "cancelled" {
+            r.status = "cancelled".to_string();
+            r.pending_checkpoint = None;
+        } else {
+            r.status = "completed".to_string();
+            r.current_step_index = total_steps;
+            r.pending_checkpoint = None;
+            r.error = None;
+        }
         r.updated_ms = finished_ms;
-        r.current_step_index = total_steps;
-        r.pending_checkpoint = None;
-        r.error = None;
         Ok(r.clone())
     })?;
+    if completed.status == "cancelled" {
+        env.events.publish(
+            "pipeline_finished",
+            &env.ctx.person_id,
+            &completed.run_id,
+            &completed.thread_id,
+            json!({
+                "status": "cancelled",
+                "error": Value::Null,
+                "run": completed.to_json(),
+                "ts_ms": finished_ms,
+            }),
+        );
+        return Ok(completed);
+    }
     if let Some(rid) = completed.routine_id.as_deref() {
         let _ = routines::record_run(&env.cfg.data_dir, rid, &completed.thread_id, "finished");
     }
@@ -1793,7 +1927,32 @@ fn spawn_pipeline_worker(env: PipelineExecEnv, run_id: String, start_index: usiz
         .name(format!("ergon-pipe-{run_id}"))
         .stack_size(4 * 1024 * 1024)
         .spawn(move || {
-            let _ = execute_pipeline_loop(&env, &run_id, start_index);
+            if let Err(err) = execute_pipeline_loop(&env, &run_id, start_index) {
+                let now_ms = records::now_millis();
+                if let Ok(failed) = mutate_run(&env.cfg.data_dir, &run_id, |r| {
+                    if r.status == "running" {
+                        r.status = "failed".to_string();
+                        r.error = Some(err.clone());
+                        r.updated_ms = now_ms;
+                    }
+                    Ok(r.clone())
+                }) {
+                    if failed.status == "failed" {
+                        env.events.publish(
+                            "pipeline_finished",
+                            &env.ctx.person_id,
+                            &failed.run_id,
+                            &failed.thread_id,
+                            json!({
+                                "status": "failed",
+                                "error": failed.error,
+                                "run": failed.to_json(),
+                                "ts_ms": now_ms,
+                            }),
+                        );
+                    }
+                }
+            }
         });
 }
 
@@ -1914,97 +2073,102 @@ pub fn resume_pipeline(
     body: &Value,
     async_exec: bool,
 ) -> Result<PipelineRun, (u16, String)> {
-    let existing = get_run(&env.cfg.data_dir, run_id)
-        .ok_or_else(|| (404, "pipeline run not found".to_string()))?;
-
-    if existing.status == "interrupted" && existing.pending_checkpoint.is_none() {
-        let start_idx = existing.current_step_index;
-        let now_ms = records::now_millis();
-        let updated = mutate_run(&env.cfg.data_dir, run_id, |r| {
-            r.status = "running".to_string();
-            r.error = None;
-            r.updated_ms = now_ms;
-            Ok(r.clone())
-        })
-        .map_err(|e| (500, e))?;
-        env.events.publish(
-            "pipeline_resumed",
-            &env.ctx.person_id,
-            &updated.run_id,
-            &updated.thread_id,
-            json!({
-                "step_index": start_idx,
-                "action": "resume",
-                "human_answer": Value::Null,
-                "run": updated.to_json(),
-                "ts_ms": now_ms,
-            }),
-        );
-        if async_exec {
-            spawn_pipeline_worker(env, run_id.to_string(), start_idx);
-            return Ok(updated);
-        } else {
-            return execute_pipeline_loop(&env, run_id, start_idx).map_err(|e| (500, e));
-        }
-    }
-
-    if existing.status != "paused_checkpoint" {
-        return Err((
-            409,
-            format!("pipeline run is '{}', not paused at a checkpoint", existing.status),
-        ));
-    }
-    let cp = existing
-        .pending_checkpoint
-        .clone()
-        .ok_or_else(|| (409, "pipeline run has no pending checkpoint".to_string()))?;
-
     let action = body["action"]
         .as_str()
         .unwrap_or("approve")
         .trim()
         .to_ascii_lowercase();
-    if !matches!(action.as_str(), "approve" | "reject" | "answer") {
-        return Err((400, "action must be approve, reject, or answer".to_string()));
-    }
     let choice = body["choice"].as_str().map(str::trim).filter(|s| !s.is_empty());
     let answer = body["answer"].as_str().map(str::trim).filter(|s| !s.is_empty());
-    let resolved_answer = choice
-        .or(answer)
-        .map(str::to_string)
-        .unwrap_or_else(|| {
-            if action == "reject" {
-                "rejected".to_string()
-            } else {
-                "approved".to_string()
-            }
-        });
-
-    if cp.input_mode == "choice" && action != "reject" && !cp.choices.is_empty() && choice.is_none() && answer.is_none() {
-        return Err((400, "choice or answer is required for this checkpoint".to_string()));
-    }
-    if cp.input_mode == "text" && action != "reject" && answer.is_none() && choice.is_none() {
-        return Err((400, "answer is required for this text checkpoint".to_string()));
-    }
-
-    // Atomically resolve linked decision if still pending.
-    if !cp.checkpoint_id.is_empty() {
-        let approve = action != "reject";
-        let _ = records::resolve_decision(&env.cfg, &cp.checkpoint_id, approve);
-        let outcome_text = if approve {
-            format!("Resumed ({action}): {resolved_answer}")
-        } else {
-            format!("Aborted at checkpoint: {resolved_answer}")
-        };
-        let _ = records::set_decision_outcome(&env.cfg.data_dir, &cp.checkpoint_id, &outcome_text);
-    }
-
+    let override_args = body.get("override_args").and_then(|v| v.as_object()).cloned();
     let now_ms = records::now_millis();
-    if action == "reject" {
-        let cancelled = mutate_run(&env.cfg.data_dir, run_id, |r| {
+
+    enum ResumeTransition {
+        Interrupted {
+            run: PipelineRun,
+            start_idx: usize,
+            completed_now: bool,
+        },
+        Rejected {
+            run: PipelineRun,
+            checkpoint_id: String,
+            resolved_answer: String,
+        },
+        CheckpointApproved {
+            run: PipelineRun,
+            checkpoint_id: String,
+            next_index: usize,
+            resolved_answer: String,
+        },
+    }
+
+    let transition = mutate_run_http(&env.cfg.data_dir, run_id, |r| {
+        if r.status == "interrupted" && r.pending_checkpoint.is_none() {
+            let start_idx = r.current_step_index.min(r.steps.len());
+            let completed_now = start_idx >= r.steps.len();
+            r.status = if completed_now {
+                "completed".to_string()
+            } else {
+                "running".to_string()
+            };
+            r.current_step_index = start_idx;
+            r.error = None;
+            r.cancel_requested = false;
+            r.updated_ms = now_ms;
+            if let Some(st) = r.step_states.get_mut(start_idx) {
+                if st.status == "failed" {
+                    *st = PipelineStepState::pending_for(&r.steps[start_idx]);
+                }
+            }
+            return Ok(ResumeTransition::Interrupted {
+                run: r.clone(),
+                start_idx,
+                completed_now,
+            });
+        }
+
+        if r.status != "paused_checkpoint" {
+            return Err((
+                409,
+                format!("pipeline run is '{}', not paused at a checkpoint", r.status),
+            ));
+        }
+        let cp = r
+            .pending_checkpoint
+            .clone()
+            .ok_or_else(|| (409, "pipeline run has no pending checkpoint".to_string()))?;
+
+        if !matches!(action.as_str(), "approve" | "reject" | "answer") {
+            return Err((400, "action must be approve, reject, or answer".to_string()));
+        }
+        let resolved_answer = choice
+            .or(answer)
+            .map(str::to_string)
+            .unwrap_or_else(|| {
+                if action == "reject" {
+                    "rejected".to_string()
+                } else {
+                    "approved".to_string()
+                }
+            });
+
+        if cp.input_mode == "choice"
+            && action != "reject"
+            && !cp.choices.is_empty()
+            && choice.is_none()
+            && answer.is_none()
+        {
+            return Err((400, "choice or answer is required for this checkpoint".to_string()));
+        }
+        if cp.input_mode == "text" && action != "reject" && answer.is_none() && choice.is_none() {
+            return Err((400, "answer is required for this text checkpoint".to_string()));
+        }
+
+        if action == "reject" {
             r.status = "cancelled".to_string();
             r.updated_ms = now_ms;
             r.pending_checkpoint = None;
+            r.cancel_requested = true;
             r.error = Some("Aborted at human checkpoint.".to_string());
             if let Some(st) = r.step_states.get_mut(cp.step_index) {
                 st.status = "failed".to_string();
@@ -2013,33 +2177,14 @@ pub fn resume_pipeline(
                 st.human_answer = Some(resolved_answer.clone());
                 st.error = Some("Aborted by user at checkpoint.".to_string());
             }
-            Ok(r.clone())
-        })
-        .map_err(|e| (500, e))?;
-        env.store.lock().unwrap().push(
-            &cancelled.thread_id,
-            "step",
-            &format!("Checkpoint rejected ({resolved_answer}) — pipeline aborted."),
-        );
-        env.events.publish(
-            "pipeline_finished",
-            &env.ctx.person_id,
-            &cancelled.run_id,
-            &cancelled.thread_id,
-            json!({
-                "status": "cancelled",
-                "error": cancelled.error,
-                "run": cancelled.to_json(),
-                "ts_ms": now_ms,
-            }),
-        );
-        return Ok(cancelled);
-    }
+            return Ok(ResumeTransition::Rejected {
+                run: r.clone(),
+                checkpoint_id: cp.checkpoint_id,
+                resolved_answer,
+            });
+        }
 
-    let next_index = cp.step_index + 1;
-    let override_args = body.get("override_args").and_then(|v| v.as_object()).cloned();
-
-    let updated = mutate_run(&env.cfg.data_dir, run_id, |r| {
+        let next_index = cp.step_index + 1;
         r.status = if next_index >= r.steps.len() {
             "completed".to_string()
         } else {
@@ -2049,6 +2194,7 @@ pub fn resume_pipeline(
         r.updated_ms = now_ms;
         r.pending_checkpoint = None;
         r.error = None;
+        r.cancel_requested = false;
         if let Some(st) = r.step_states.get_mut(cp.step_index) {
             st.status = "ok".to_string();
             st.finished_ms = now_ms;
@@ -2066,50 +2212,137 @@ pub fn resume_pipeline(
                 }
             }
         }
-        Ok(r.clone())
-    })
-    .map_err(|e| (500, e))?;
+        Ok(ResumeTransition::CheckpointApproved {
+            run: r.clone(),
+            checkpoint_id: cp.checkpoint_id,
+            next_index,
+            resolved_answer,
+        })
+    })?;
 
-    env.store.lock().unwrap().push(
-        &updated.thread_id,
-        "step",
-        &format!("Checkpoint settled ({action}: {resolved_answer}) — resuming pipeline."),
-    );
-    env.events.publish(
-        "pipeline_resumed",
-        &env.ctx.person_id,
-        &updated.run_id,
-        &updated.thread_id,
-        json!({
-            "step_index": next_index,
-            "action": action,
-            "human_answer": resolved_answer,
-            "run": updated.to_json(),
-            "ts_ms": now_ms,
-        }),
-    );
+    match transition {
+        ResumeTransition::Interrupted {
+            run,
+            start_idx,
+            completed_now,
+        } => {
+            env.events.publish(
+                "pipeline_resumed",
+                &env.ctx.person_id,
+                &run.run_id,
+                &run.thread_id,
+                json!({
+                    "step_index": start_idx,
+                    "action": "resume",
+                    "human_answer": Value::Null,
+                    "run": run.to_json(),
+                    "ts_ms": now_ms,
+                }),
+            );
+            if completed_now {
+                env.events.publish(
+                    "pipeline_finished",
+                    &env.ctx.person_id,
+                    &run.run_id,
+                    &run.thread_id,
+                    json!({
+                        "status": "completed",
+                        "error": Value::Null,
+                        "run": run.to_json(),
+                        "ts_ms": now_ms,
+                    }),
+                );
+                return Ok(run);
+            }
+            if async_exec {
+                spawn_pipeline_worker(env, run_id.to_string(), start_idx);
+                Ok(run)
+            } else {
+                execute_pipeline_loop(&env, run_id, start_idx).map_err(|e| (500, e))
+            }
+        }
+        ResumeTransition::Rejected {
+            run,
+            checkpoint_id,
+            resolved_answer,
+        } => {
+            if !checkpoint_id.is_empty() {
+                let _ = records::resolve_decision(&env.cfg, &checkpoint_id, false);
+                let outcome_text = format!("Aborted at checkpoint: {resolved_answer}");
+                let _ = records::set_decision_outcome(&env.cfg.data_dir, &checkpoint_id, &outcome_text);
+            }
+            env.store.lock().unwrap().push(
+                &run.thread_id,
+                "step",
+                &format!("Checkpoint rejected ({resolved_answer}) — pipeline aborted."),
+            );
+            env.events.publish(
+                "pipeline_finished",
+                &env.ctx.person_id,
+                &run.run_id,
+                &run.thread_id,
+                json!({
+                    "status": "cancelled",
+                    "error": run.error,
+                    "run": run.to_json(),
+                    "ts_ms": now_ms,
+                }),
+            );
+            Ok(run)
+        }
+        ResumeTransition::CheckpointApproved {
+            run,
+            checkpoint_id,
+            next_index,
+            resolved_answer,
+        } => {
+            if !checkpoint_id.is_empty() {
+                let _ = records::resolve_decision(&env.cfg, &checkpoint_id, true);
+                let outcome_text = format!("Resumed ({action}): {resolved_answer}");
+                let _ = records::set_decision_outcome(&env.cfg.data_dir, &checkpoint_id, &outcome_text);
+            }
+            env.store.lock().unwrap().push(
+                &run.thread_id,
+                "step",
+                &format!("Checkpoint settled ({action}: {resolved_answer}) — resuming pipeline."),
+            );
+            env.events.publish(
+                "pipeline_resumed",
+                &env.ctx.person_id,
+                &run.run_id,
+                &run.thread_id,
+                json!({
+                    "step_index": next_index,
+                    "action": action,
+                    "human_answer": resolved_answer,
+                    "run": run.to_json(),
+                    "ts_ms": now_ms,
+                }),
+            );
 
-    if next_index >= updated.steps.len() {
-        env.events.publish(
-            "pipeline_finished",
-            &env.ctx.person_id,
-            &updated.run_id,
-            &updated.thread_id,
-            json!({
-                "status": "completed",
-                "error": Value::Null,
-                "run": updated.to_json(),
-                "ts_ms": now_ms,
-            }),
-        );
-        return Ok(updated);
-    }
+            if next_index >= run.steps.len() {
+                env.events.publish(
+                    "pipeline_finished",
+                    &env.ctx.person_id,
+                    &run.run_id,
+                    &run.thread_id,
+                    json!({
+                        "status": "completed",
+                        "error": Value::Null,
+                        "run": run.to_json(),
+                        "ts_ms": now_ms,
+                    }),
+                );
+                return Ok(run);
+            }
 
-    if async_exec {
-        spawn_pipeline_worker(env, run_id.to_string(), next_index);
-        Ok(updated)
-    } else {
-        execute_pipeline_loop(&env, run_id, next_index).map_err(|e| (500, e))
+            if async_exec {
+                spawn_pipeline_worker(env, run_id.to_string(), next_index);
+                Ok(run)
+            } else {
+                execute_pipeline_loop(&env, run_id, next_index).map_err(|e| (500, e))
+            }
+        }
     }
 }
 
@@ -2119,29 +2352,23 @@ pub fn retry_pipeline(
     from_step_index: Option<usize>,
     async_exec: bool,
 ) -> Result<PipelineRun, (u16, String)> {
-    let existing = get_run(&env.cfg.data_dir, run_id)
-        .ok_or_else(|| (404, "pipeline run not found".to_string()))?;
-    if !matches!(
-        existing.status.as_str(),
-        "failed" | "interrupted" | "cancelled"
-    ) {
-        return Err((
-            409,
-            format!("cannot retry pipeline run in '{}' state", existing.status),
-        ));
-    }
-    let default_idx = existing
-        .step_states
-        .iter()
-        .position(|s| s.status == "failed")
-        .unwrap_or(existing.current_step_index);
-    let idx = from_step_index.unwrap_or(default_idx);
-    if idx >= existing.steps.len() {
-        return Err((400, "from_step_index out of range".to_string()));
-    }
-
     let now_ms = records::now_millis();
-    let updated = mutate_run(&env.cfg.data_dir, run_id, |r| {
+    let (updated, idx) = mutate_run_http(&env.cfg.data_dir, run_id, |r| {
+        if !matches!(r.status.as_str(), "failed" | "interrupted" | "cancelled") {
+            return Err((
+                409,
+                format!("cannot retry pipeline run in '{}' state", r.status),
+            ));
+        }
+        let default_idx = r
+            .step_states
+            .iter()
+            .position(|s| s.status == "failed")
+            .unwrap_or(r.current_step_index);
+        let idx = from_step_index.unwrap_or(default_idx);
+        if idx >= r.steps.len() {
+            return Err((400, "from_step_index out of range".to_string()));
+        }
         r.status = "running".to_string();
         r.current_step_index = idx;
         r.updated_ms = now_ms;
@@ -2151,9 +2378,8 @@ pub fn retry_pipeline(
         for i in idx..r.step_states.len() {
             r.step_states[i] = PipelineStepState::pending_for(&r.steps[i]);
         }
-        Ok(r.clone())
-    })
-    .map_err(|e| (500, e))?;
+        Ok((r.clone(), idx))
+    })?;
 
     env.store.lock().unwrap().push(
         &updated.thread_id,
@@ -2183,13 +2409,6 @@ pub fn retry_pipeline(
 }
 
 pub fn cancel_pipeline(env: &PipelineExecEnv, run_id: &str) -> Result<PipelineRun, (u16, String)> {
-    let existing = get_run(&env.cfg.data_dir, run_id)
-        .ok_or_else(|| (404, "pipeline run not found".to_string()))?;
-
-    if matches!(existing.status.as_str(), "completed" | "failed" | "cancelled") {
-        return Ok(existing);
-    }
-
     if let Some(flag) = cancel_registry()
         .lock()
         .unwrap_or_else(|p| p.into_inner())
@@ -2199,32 +2418,41 @@ pub fn cancel_pipeline(env: &PipelineExecEnv, run_id: &str) -> Result<PipelineRu
     }
 
     let now_ms = records::now_millis();
-    let mut was_paused_or_interrupted = false;
-    let mut linked_cp_id: Option<String> = None;
-
-    let updated = mutate_run(&env.cfg.data_dir, run_id, |r| {
-        r.cancel_requested = true;
-        r.updated_ms = now_ms;
-        if matches!(r.status.as_str(), "paused_checkpoint" | "interrupted") {
-            was_paused_or_interrupted = true;
-            r.status = "cancelled".to_string();
-            if let Some(cp) = r.pending_checkpoint.take() {
-                linked_cp_id = Some(cp.checkpoint_id);
+    let (updated, was_paused_or_interrupted, linked_cp_id) =
+        mutate_run_http(&env.cfg.data_dir, run_id, |r| {
+            if matches!(r.status.as_str(), "completed" | "failed" | "cancelled") {
+                return Ok((r.clone(), false, None));
             }
-            if let Some(st) = r.step_states.get_mut(r.current_step_index) {
-                if st.status == "waiting_human" || st.status == "running" {
-                    st.status = "failed".to_string();
-                    st.finished_ms = now_ms;
-                    st.error = Some("Cancelled by user.".to_string());
+            r.cancel_requested = true;
+            r.updated_ms = now_ms;
+            let mut transitioned = false;
+            let mut cp_id = None;
+            if matches!(r.status.as_str(), "paused_checkpoint" | "interrupted") {
+                transitioned = true;
+                r.status = "cancelled".to_string();
+                if let Some(cp) = r.pending_checkpoint.take() {
+                    cp_id = Some(cp.checkpoint_id);
+                }
+                if let Some(st) = r.step_states.get_mut(r.current_step_index) {
+                    if st.status == "waiting_human" || st.status == "running" {
+                        st.status = "failed".to_string();
+                        st.finished_ms = now_ms;
+                        st.error = Some("Cancelled by user.".to_string());
+                    }
                 }
             }
-        }
-        Ok(r.clone())
-    })
-    .map_err(|e| (500, e))?;
+            Ok((r.clone(), transitioned, cp_id))
+        })?;
 
     if let Some(did) = linked_cp_id {
         let _ = records::resolve_decision(&env.cfg, &did, false);
+    }
+    if let Ok(runs) = env.live_runs.lock() {
+        if let Some(live) = runs.get(&env.ctx.person_id) {
+            if live.thread_id == updated.thread_id {
+                live.cancel.store(true, Ordering::SeqCst);
+            }
+        }
     }
     if was_paused_or_interrupted {
         env.events.publish(

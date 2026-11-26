@@ -30,6 +30,11 @@ pub const MAX_DOC_BYTES: u64 = 25 * 1024 * 1024;
 /// Zip-bomb guards: one entry, and everything read from one archive.
 const MAX_ENTRY_BYTES: usize = 64 * 1024 * 1024;
 const MAX_ARCHIVE_INFLATE: usize = 160 * 1024 * 1024;
+const MAX_XLSX_ROWS: usize = 200_000;
+const MAX_XLSX_COLS: usize = 1_024;
+const MAX_XLSX_CELLS: usize = 2_000_000;
+pub const MAX_PDF_PAGES: usize = 200;
+const MAX_PDF_INPUT_BYTES: usize = 2 * 1024 * 1024;
 const PDF_TIMEOUT_SECS: u64 = 30;
 
 // ---------------------------------------------------------------------------
@@ -161,12 +166,21 @@ impl<'a> ZipReader<'a> {
         let n = le16(self.data, lh + 26).ok_or("bad part")? as usize;
         let x = le16(self.data, lh + 28).ok_or("bad part")? as usize;
         let start = lh + 30 + n + x;
-        let raw = self.data.get(start..start + e.comp_size).ok_or_else(|| format!("truncated part {name}"))?;
+        let end = start.checked_add(e.comp_size).ok_or_else(|| format!("truncated part {name}"))?;
+        let raw = self.data.get(start..end).ok_or_else(|| format!("truncated part {name}"))?;
         let budget = MAX_ARCHIVE_INFLATE.saturating_sub(self.inflated.get());
+        if budget == 0 {
+            return Err("document expands too large to open safely".into());
+        }
         // The declared size may lie (zip bomb); the cap never does.
-        let limit = MAX_ENTRY_BYTES.min(budget).max(1);
+        let limit = MAX_ENTRY_BYTES.min(budget);
         let out = match e.method {
-            0 => raw.to_vec(),
+            0 => {
+                if raw.len() > limit {
+                    return Err(format!("part {name} is too large to open safely"));
+                }
+                raw.to_vec()
+            }
             8 => miniz_oxide::inflate::decompress_to_vec_with_limit(raw, limit)
                 .map_err(|_| format!("part {name} is damaged or too large to open safely"))?,
             m => return Err(format!("part {name} uses unsupported compression ({m})")),
@@ -366,8 +380,7 @@ fn unescape(s: &str) -> String {
     out
 }
 
-pub fn xml_escape(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
+fn push_xml_escaped(out: &mut String, s: &str) {
     for c in s.chars() {
         match c {
             '<' => out.push_str("&lt;"),
@@ -379,6 +392,11 @@ pub fn xml_escape(s: &str) -> String {
             c => out.push(c),
         }
     }
+}
+
+pub fn xml_escape(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    push_xml_escaped(&mut out, s);
     out
 }
 
@@ -775,7 +793,11 @@ fn col_index(cell_ref: &str) -> Option<usize> {
     let mut seen = false;
     for c in cell_ref.chars() {
         if c.is_ascii_alphabetic() {
-            n = n * 26 + (c.to_ascii_uppercase() as usize - 'A' as usize + 1);
+            let digit = c.to_ascii_uppercase() as usize - 'A' as usize + 1;
+            n = n.checked_mul(26)?.checked_add(digit)?;
+            if n > 16_384 {
+                return None;
+            }
             seen = true;
         } else {
             break;
@@ -810,6 +832,9 @@ fn is_date_format(id: u32, code: Option<&str>) -> (bool, bool) {
 
 /// Excel serial (1900 date system) → "YYYY-MM-DD[ HH:MM]".
 pub fn excel_serial_to_iso(serial: f64, with_time: bool) -> String {
+    if !serial.is_finite() || !(0.0..2_958_466.0).contains(&serial) {
+        return String::new();
+    }
     let days = serial.floor() as i64;
     // Excel counts a fictitious 1900-02-29 (serial 60): serials from 61 on
     // are days since 1899-12-30 (1970-01-01 = 25569); earlier ones are one
@@ -929,6 +954,7 @@ pub fn xlsx_sheets(bytes: &[u8]) -> Result<Vec<Sheet>, String> {
     for (nm, path) in order {
         let Ok(x) = zip.read_string(&path) else { continue };
         let mut grid: Vec<Vec<String>> = Vec::new();
+        let mut max_col: usize = 0;
         let mut row_idx: usize = 0;
         let mut next_row: usize = 0;
         let (mut c_col, mut c_type, mut c_style) = (0usize, String::new(), 0usize);
@@ -941,16 +967,20 @@ pub fn xlsx_sheets(bytes: &[u8]) -> Result<Vec<Sheet>, String> {
                 Xml::Open { name, attrs, self_close } => match local(name) {
                     "row" => {
                         row_idx = attr(attrs, "r").and_then(|v| v.parse::<usize>().ok()).map(|r| r.saturating_sub(1)).unwrap_or(next_row);
-                        next_row = row_idx + 1;
+                        next_row = row_idx.saturating_add(1);
                         next_col = 0;
+                        in_v = false;
+                        in_is_t = false;
                     }
                     "c" => {
                         c_col = attr(attrs, "r").and_then(|r| col_index(&r)).unwrap_or(next_col);
-                        next_col = c_col + 1;
+                        next_col = c_col.saturating_add(1);
                         c_type = attr(attrs, "t").unwrap_or_default();
                         c_style = attr(attrs, "s").and_then(|v| v.parse().ok()).unwrap_or(0);
                         val.clear();
                         inline.clear();
+                        in_v = false;
+                        in_is_t = false;
                         if self_close {
                             continue;
                         }
@@ -970,6 +1000,8 @@ pub fn xlsx_sheets(bytes: &[u8]) -> Result<Vec<Sheet>, String> {
                     "v" => in_v = false,
                     "t" => in_is_t = false,
                     "c" => {
+                        in_v = false;
+                        in_is_t = false;
                         let text = match c_type.as_str() {
                             "s" => val.trim().parse::<usize>().ok().and_then(|i| shared.get(i).cloned()).unwrap_or_default(),
                             "inlineStr" => inline.clone(),
@@ -985,21 +1017,26 @@ pub fn xlsx_sheets(bytes: &[u8]) -> Result<Vec<Sheet>, String> {
                                 }
                             }
                         };
-                        if !text.is_empty() && row_idx < 1_048_576 && c_col < 16_384 {
-                            if grid.len() <= row_idx {
-                                grid.resize_with(row_idx + 1, Vec::new);
+                        if !text.is_empty() && row_idx < MAX_XLSX_ROWS && c_col < MAX_XLSX_COLS {
+                            let projected_rows = grid.len().max(row_idx + 1);
+                            let projected_cols = max_col.max(c_col + 1);
+                            if projected_rows.saturating_mul(projected_cols) <= MAX_XLSX_CELLS {
+                                if grid.len() <= row_idx {
+                                    grid.resize_with(row_idx + 1, Vec::new);
+                                }
+                                let r = &mut grid[row_idx];
+                                if r.len() <= c_col {
+                                    r.resize(c_col + 1, String::new());
+                                }
+                                r[c_col] = text;
+                                max_col = projected_cols;
                             }
-                            let r = &mut grid[row_idx];
-                            if r.len() <= c_col {
-                                r.resize(c_col + 1, String::new());
-                            }
-                            r[c_col] = text;
                         }
                     }
                     _ => {}
                 },
             }
-            if grid.len() > 200_000 {
+            if grid.len() >= MAX_XLSX_ROWS {
                 break;
             }
         }
@@ -1891,6 +1928,7 @@ fn format_cached_total(sum: f64, dec_sum: Option<i128>) -> String {
 /// `.xlsx` workbook, optionally appending a `SUM(...)` formula totals row per
 /// sheet with cached numeric `<v>` values.
 pub fn sheets_to_xlsx(sheets: &[ExportSheet], title: &str) -> Vec<u8> {
+    use std::fmt::Write as _;
     let fallback;
     let sheets = if sheets.is_empty() {
         fallback = vec![ExportSheet { name: "Sheet1".into(), rows: Vec::new(), totals_row: false }];
@@ -1904,9 +1942,9 @@ pub fn sheets_to_xlsx(sheets: &[ExportSheet], title: &str) -> Vec<u8> {
 
     for (si, (sheet_spec, sheet_name)) in sheets.iter().zip(names.iter()).enumerate() {
         let rows = &sheet_spec.rows;
-        let width = rows.iter().map(|r| r.len()).max().unwrap_or(0).max(1);
+        let width = rows.iter().map(|r| r.len()).max().unwrap_or(0).clamp(1, 16_384);
         let mut widths = vec![8usize; width];
-        let mut data = String::new();
+        let mut data = String::with_capacity(rows.len() * width * 32);
 
         #[derive(Clone)]
         struct ColAgg {
@@ -1928,21 +1966,22 @@ pub fn sheets_to_xlsx(sheets: &[ExportSheet], title: &str) -> Vec<u8> {
             };
             width
         ];
+        let col_names: Vec<String> = (0..width).map(col_name).collect();
 
         for (ri, r) in rows.iter().enumerate() {
-            data.push_str(&format!(r#"<row r="{}">"#, ri + 1));
-            for (ci, cell) in r.iter().enumerate() {
+            let row_num = ri + 1;
+            let _ = write!(data, r#"<row r="{row_num}">"#);
+            for (ci, cell) in r.iter().take(width).enumerate() {
                 let len = cell.chars().count();
                 widths[ci] = widths[ci].max(len.min(60));
                 if cell.is_empty() {
                     continue;
                 }
-                let rf = format!("{}{}", col_name(ci), ri + 1);
+                let col_n = &col_names[ci];
                 if ri == 0 {
-                    data.push_str(&format!(
-                        r#"<c r="{rf}" t="inlineStr" s="1"><is><t xml:space="preserve">{}</t></is></c>"#,
-                        xml_escape(cell)
-                    ));
+                    let _ = write!(data, r#"<c r="{col_n}{row_num}" t="inlineStr" s="1"><is><t xml:space="preserve">"#);
+                    push_xml_escaped(&mut data, cell);
+                    data.push_str("</t></is></c>");
                     continue;
                 }
                 match typed_cell(cell) {
@@ -1961,14 +2000,13 @@ pub fn sheets_to_xlsx(sheets: &[ExportSheet], title: &str) -> Vec<u8> {
                                     .and_then(|d| acc.checked_add(d));
                             }
                         }
-                        data.push_str(&format!(r#"<c r="{rf}" s="{s}"><v>{v}</v></c>"#));
+                        let _ = write!(data, r#"<c r="{col_n}{row_num}" s="{s}"><v>{v}</v></c>"#);
                     }
                     CellValue::Text(t) => {
                         col_aggs[ci].has_text = true;
-                        data.push_str(&format!(
-                            r#"<c r="{rf}" t="inlineStr"><is><t xml:space="preserve">{}</t></is></c>"#,
-                            xml_escape(&t)
-                        ));
+                        let _ = write!(data, r#"<c r="{col_n}{row_num}" t="inlineStr"><is><t xml:space="preserve">"#);
+                        push_xml_escaped(&mut data, &t);
+                        data.push_str("</t></is></c>");
                     }
                 }
             }
@@ -1980,10 +2018,9 @@ pub fn sheets_to_xlsx(sheets: &[ExportSheet], title: &str) -> Vec<u8> {
             let tot_ri = rows.len() + 1;
             let last_data_ri = rows.len();
             total_row_count = tot_ri;
-            data.push_str(&format!(r#"<row r="{tot_ri}">"#));
+            let _ = write!(data, r#"<row r="{tot_ri}">"#);
             for (ci, agg) in col_aggs.iter().enumerate() {
-                let col = col_name(ci);
-                let rf = format!("{col}{tot_ri}");
+                let col = &col_names[ci];
                 let summable = agg.num_count > 0 && !agg.has_text && !agg.has_date;
                 if summable {
                     let cached = format_cached_total(agg.sum_f64, agg.dec_sum);
@@ -1993,27 +2030,31 @@ pub fn sheets_to_xlsx(sheets: &[ExportSheet], title: &str) -> Vec<u8> {
                         _ => 6,
                     };
                     widths[ci] = widths[ci].max(cached.len().min(60));
-                    data.push_str(&format!(
-                        r#"<c r="{rf}" s="{tot_style}"><f>SUM({col}2:{col}{last_data_ri})</f><v>{cached}</v></c>"#
-                    ));
+                    let _ = write!(
+                        data,
+                        r#"<c r="{col}{tot_ri}" s="{tot_style}"><f>SUM({col}2:{col}{last_data_ri})</f><v>{cached}</v></c>"#
+                    );
                 } else if ci == 0 {
-                    data.push_str(&format!(
-                        r#"<c r="{rf}" t="inlineStr" s="6"><is><t>Total</t></is></c>"#
-                    ));
+                    let _ = write!(
+                        data,
+                        r#"<c r="{col}{tot_ri}" t="inlineStr" s="6"><is><t>Total</t></is></c>"#
+                    );
                 }
             }
             data.push_str("</row>");
         }
 
-        let last_dim = format!("{}{}", col_name(width - 1), total_row_count.max(1));
-        let last_filter = format!("{}{}", col_name(width - 1), rows.len().max(1));
+        let last_col = &col_names[width - 1];
+        let last_dim_row = total_row_count.max(1);
+        let last_filter_row = rows.len().max(1);
         let mut cols = String::from("<cols>");
         for (i, w) in widths.iter().enumerate() {
-            cols.push_str(&format!(
+            let _ = write!(
+                cols,
                 r#"<col min="{0}" max="{0}" width="{1:.1}" customWidth="1"/>"#,
                 i + 1,
                 (*w as f64) * 1.1 + 2.0
-            ));
+            );
         }
         cols.push_str("</cols>");
         let freeze = if rows.len() > 1 {
@@ -2022,20 +2063,21 @@ pub fn sheets_to_xlsx(sheets: &[ExportSheet], title: &str) -> Vec<u8> {
             r#"<sheetViews><sheetView workbookViewId="0"/></sheetViews>"#
         };
         let filter = if rows.len() > 1 {
-            format!(r#"<autoFilter ref="A1:{last_filter}"/>"#)
+            format!(r#"<autoFilter ref="A1:{last_col}{last_filter_row}"/>"#)
         } else {
             String::new()
         };
         sheet_xmls.push(format!(
-            r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><dimension ref="A1:{last_dim}"/>{freeze}<sheetFormatPr defaultRowHeight="15"/>{cols}<sheetData>{data}</sheetData>{filter}<pageMargins left="0.7" right="0.7" top="0.75" bottom="0.75" header="0.3" footer="0.3"/></worksheet>"#
+            r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><dimension ref="A1:{last_col}{last_dim_row}"/>{freeze}<sheetFormatPr defaultRowHeight="15"/>{cols}<sheetData>{data}</sheetData>{filter}<pageMargins left="0.7" right="0.7" top="0.75" bottom="0.75" header="0.3" footer="0.3"/></worksheet>"#
         ));
         if rows.len() > 1 {
-            defined_names.push_str(&format!(
+            let _ = write!(
+                defined_names,
                 r#"<definedName name="_xlnm._FilterDatabase" localSheetId="{si}" hidden="1">'{}'!$A$1:${}${}</definedName>"#,
                 xml_escape(&sheet_name.replace('\'', "''")),
-                col_name(width - 1),
+                last_col,
                 rows.len()
-            ));
+            );
         }
     }
 
@@ -2048,16 +2090,19 @@ pub fn sheets_to_xlsx(sheets: &[ExportSheet], title: &str) -> Vec<u8> {
     );
     for (i, name) in names.iter().enumerate() {
         let idx = i + 1;
-        sheets_xml.push_str(&format!(
+        let _ = write!(
+            sheets_xml,
             r#"<sheet name="{}" sheetId="{idx}" r:id="rId{idx}"/>"#,
             xml_escape(name)
-        ));
-        wb_rels.push_str(&format!(
+        );
+        let _ = write!(
+            wb_rels,
             r#"<Relationship Id="rId{idx}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet{idx}.xml"/>"#
-        ));
-        content_types.push_str(&format!(
+        );
+        let _ = write!(
+            content_types,
             r#"<Override PartName="/xl/worksheets/sheet{idx}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>"#
-        ));
+        );
     }
     sheets_xml.push_str("</sheets>");
     let styles_rid = names.len() + 1;
@@ -2391,6 +2436,7 @@ struct PdfCanvas {
     pages: Vec<Vec<u8>>,
     cur: Vec<u8>,
     y: f64,
+    page_limit_hit: bool,
 }
 
 impl PdfCanvas {
@@ -2402,34 +2448,49 @@ impl PdfCanvas {
     const BOTTOM_Y: f64 = 58.0;
 
     fn new() -> Self {
-        Self { pages: Vec::new(), cur: Vec::new(), y: Self::TOP_Y }
+        Self {
+            pages: Vec::new(),
+            cur: Vec::new(),
+            y: Self::TOP_Y,
+            page_limit_hit: false,
+        }
     }
 
     fn new_page(&mut self) {
+        if self.pages.len() + 1 >= MAX_PDF_PAGES {
+            self.page_limit_hit = true;
+            return;
+        }
         let finished = std::mem::take(&mut self.cur);
         self.pages.push(finished);
         self.y = Self::TOP_Y;
     }
 
-    fn ensure_space(&mut self, needed: f64) {
+    fn ensure_space(&mut self, needed: f64) -> bool {
+        if self.page_limit_hit {
+            return false;
+        }
         if self.y - needed < Self::BOTTOM_Y && !self.cur.is_empty() {
             self.new_page();
+            if self.page_limit_hit {
+                return false;
+            }
         }
+        true
     }
 
     fn draw_line_spans(&mut self, x: f64, y: f64, spans: &[PdfSpan], size: f64, rgb: (f64, f64, f64)) {
-        self.cur.extend_from_slice(
-            format!("q {:.3} {:.3} {:.3} rg BT\n", rgb.0, rgb.1, rgb.2).as_bytes(),
-        );
+        use std::io::Write as _;
+        if self.page_limit_hit {
+            return;
+        }
+        let _ = writeln!(self.cur, "q {:.3} {:.3} {:.3} rg BT", rgb.0, rgb.1, rgb.2);
         let mut cx = x;
         for sp in spans {
             if sp.text.is_empty() {
                 continue;
             }
-            self.cur.extend_from_slice(
-                format!("{} {:.2} Tf 1 0 0 1 {:.2} {:.2} Tm ", sp.font.tag(), size, cx, y)
-                    .as_bytes(),
-            );
+            let _ = write!(self.cur, "{} {:.2} Tf 1 0 0 1 {:.2} {:.2} Tm ", sp.font.tag(), size, cx, y);
             self.cur.extend_from_slice(&pdf_escape_literal(&sp.text));
             self.cur.extend_from_slice(b" Tj\n");
             cx += pdf_text_width(&sp.text, sp.font, size);
@@ -2438,46 +2499,53 @@ impl PdfCanvas {
     }
 
     fn draw_plain_text(&mut self, x: f64, y: f64, text: &str, font: PdfFont, size: f64, rgb: (f64, f64, f64)) {
-        self.cur.extend_from_slice(
-            format!(
-                "q {:.3} {:.3} {:.3} rg BT {} {:.2} Tf 1 0 0 1 {:.2} {:.2} Tm ",
-                rgb.0, rgb.1, rgb.2, font.tag(), size, x, y
-            )
-            .as_bytes(),
+        use std::io::Write as _;
+        if self.page_limit_hit {
+            return;
+        }
+        let _ = write!(
+            self.cur,
+            "q {:.3} {:.3} {:.3} rg BT {} {:.2} Tf 1 0 0 1 {:.2} {:.2} Tm ",
+            rgb.0, rgb.1, rgb.2, font.tag(), size, x, y
         );
         self.cur.extend_from_slice(&pdf_escape_literal(text));
         self.cur.extend_from_slice(b" Tj ET Q\n");
     }
 
     fn draw_rect_fill(&mut self, x: f64, y: f64, w: f64, h: f64, rgb: (f64, f64, f64)) {
-        self.cur.extend_from_slice(
-            format!(
-                "q {:.3} {:.3} {:.3} rg {:.2} {:.2} {:.2} {:.2} re f Q\n",
-                rgb.0, rgb.1, rgb.2, x, y, w, h
-            )
-            .as_bytes(),
+        use std::io::Write as _;
+        if self.page_limit_hit {
+            return;
+        }
+        let _ = writeln!(
+            self.cur,
+            "q {:.3} {:.3} {:.3} rg {:.2} {:.2} {:.2} {:.2} re f Q",
+            rgb.0, rgb.1, rgb.2, x, y, w, h
         );
     }
 
     fn draw_stroke_line(&mut self, x1: f64, y1: f64, x2: f64, y2: f64, width: f64, rgb: (f64, f64, f64)) {
-        self.cur.extend_from_slice(
-            format!(
-                "q {:.2} w {:.3} {:.3} {:.3} RG {:.2} {:.2} m {:.2} {:.2} l S Q\n",
-                width, rgb.0, rgb.1, rgb.2, x1, y1, x2, y2
-            )
-            .as_bytes(),
+        use std::io::Write as _;
+        if self.page_limit_hit {
+            return;
+        }
+        let _ = writeln!(
+            self.cur,
+            "q {:.2} w {:.3} {:.3} {:.3} RG {:.2} {:.2} m {:.2} {:.2} l S Q",
+            width, rgb.0, rgb.1, rgb.2, x1, y1, x2, y2
         );
     }
 
     fn draw_table(&mut self, rows: &[Vec<String>], aligns: &[&str]) {
-        if rows.is_empty() {
+        if rows.is_empty() || self.page_limit_hit {
             return;
         }
-        let ncols = rows.iter().map(|r| r.len()).max().unwrap_or(1).max(1);
+        let ncols = rows.iter().map(|r| r.len()).max().unwrap_or(1).clamp(1, 24);
         let pad_x = 5.0;
         let pad_y = 4.0;
         let font_sz = 9.5;
         let line_h = 12.5;
+        const MAX_CELL_LINES: usize = 36;
 
         let mut weights = vec![8.0f64; ncols];
         for r in rows {
@@ -2508,7 +2576,9 @@ impl PdfCanvas {
                 .map(|ci| {
                     let cell_txt = row.get(ci).map(String::as_str).unwrap_or("");
                     let spans = parse_md_inline_spans(cell_txt, base_font);
-                    wrap_spans(&spans, font_sz, (col_ws[ci] - 2.0 * pad_x).max(16.0)).len()
+                    wrap_spans(&spans, font_sz, (col_ws[ci] - 2.0 * pad_x).max(16.0))
+                        .len()
+                        .min(MAX_CELL_LINES)
                 })
                 .max()
                 .unwrap_or(1)
@@ -2517,6 +2587,9 @@ impl PdfCanvas {
         };
 
         let render_row = |canvas: &mut PdfCanvas, ri: usize, row: &[String], row_h: f64| {
+            if canvas.page_limit_hit {
+                return;
+            }
             let is_hdr = ri == 0;
             let base_font = if is_hdr { PdfFont::Bold } else { PdfFont::Regular };
             let y_top = canvas.y;
@@ -2530,7 +2603,16 @@ impl PdfCanvas {
             for (ci, &cw) in col_ws.iter().enumerate() {
                 let cell_txt = row.get(ci).map(String::as_str).unwrap_or("");
                 let spans = parse_md_inline_spans(cell_txt, base_font);
-                let lines = wrap_spans(&spans, font_sz, (cw - 2.0 * pad_x).max(16.0));
+                let mut lines = wrap_spans(&spans, font_sz, (cw - 2.0 * pad_x).max(16.0));
+                if lines.len() > MAX_CELL_LINES {
+                    lines.truncate(MAX_CELL_LINES);
+                    if let Some(last) = lines.last_mut() {
+                        last.push(PdfSpan {
+                            text: "...".to_string(),
+                            font: base_font,
+                        });
+                    }
+                }
                 let align = aligns.get(ci).copied().unwrap_or("left");
                 for (li, line_spans) in lines.iter().enumerate() {
                     let lw: f64 = line_spans
@@ -2569,12 +2651,20 @@ impl PdfCanvas {
         };
 
         let hdr_h = measure_row(0, &rows[0]);
-        self.ensure_space(hdr_h + 18.0);
+        if !self.ensure_space(hdr_h + 18.0) {
+            return;
+        }
         render_row(self, 0, &rows[0], hdr_h);
         for (ri, r) in rows.iter().enumerate().skip(1) {
+            if self.page_limit_hit {
+                break;
+            }
             let rh = measure_row(ri, r);
             if self.y - rh < Self::BOTTOM_Y {
                 self.new_page();
+                if self.page_limit_hit {
+                    break;
+                }
                 render_row(self, 0, &rows[0], hdr_h);
             }
             render_row(self, ri, r, rh);
@@ -2587,6 +2677,20 @@ impl PdfCanvas {
             let last = std::mem::take(&mut self.cur);
             self.pages.push(last);
         }
+        if self.page_limit_hit {
+            if let Some(last_page) = self.pages.last_mut() {
+                let mut notice = PdfCanvas::new();
+                notice.draw_plain_text(
+                    Self::MARGIN_L,
+                    Self::BOTTOM_Y - 6.0,
+                    &format!("... (output truncated at {MAX_PDF_PAGES}-page limit)"),
+                    PdfFont::Italic,
+                    8.5,
+                    (0.55, 0.25, 0.20),
+                );
+                last_page.extend_from_slice(&notice.cur);
+            }
+        }
         let total = self.pages.len();
         let hdr_text = brand_header
             .map(str::trim)
@@ -2594,6 +2698,15 @@ impl PdfCanvas {
             .or_else(|| {
                 let t = title.trim();
                 if t.is_empty() { None } else { Some(t) }
+            })
+            .map(|h| {
+                if h.chars().count() > 72 {
+                    let mut s: String = h.chars().take(69).collect();
+                    s.push_str("...");
+                    s
+                } else {
+                    h.to_string()
+                }
             });
         let footer_title = {
             let t = title.trim();
@@ -2609,7 +2722,7 @@ impl PdfCanvas {
 
         for (idx, page_bytes) in self.pages.iter_mut().enumerate() {
             let mut chrome = PdfCanvas::new();
-            if let Some(h) = hdr_text {
+            if let Some(ref h) = hdr_text {
                 chrome.draw_plain_text(Self::MARGIN_L, 756.0, h, PdfFont::Regular, 8.5, (0.45, 0.48, 0.54));
                 chrome.draw_stroke_line(Self::MARGIN_L, 748.0, Self::MARGIN_L + Self::CONTENT_W, 748.0, 0.5, (0.82, 0.84, 0.88));
             }
@@ -2638,13 +2751,24 @@ impl PdfCanvas {
 /// ruled tables, and running page headers/footers.
 pub fn markdown_to_pdf(md: &str, title: &str, brand_header: Option<&str>) -> Vec<u8> {
     let mut c = PdfCanvas::new();
-    let lines: Vec<&str> = md.lines().collect();
+    let md_clipped = if md.len() > MAX_PDF_INPUT_BYTES {
+        let mut end = MAX_PDF_INPUT_BYTES;
+        while end > 0 && !md.is_char_boundary(end) {
+            end -= 1;
+        }
+        &md[..end]
+    } else {
+        md
+    };
+    let lines: Vec<&str> = md_clipped.lines().collect();
     let has_h1 = lines.iter().any(|l| l.trim_start().starts_with("# "));
     if !has_h1 && !title.trim().is_empty() {
         let spans = parse_md_inline_spans(title.trim(), PdfFont::Bold);
         let wrapped = wrap_spans(&spans, 19.0, PdfCanvas::CONTENT_W);
         for wl in &wrapped {
-            c.ensure_space(25.0);
+            if !c.ensure_space(25.0) {
+                break;
+            }
             c.draw_line_spans(PdfCanvas::MARGIN_L, c.y, wl, 19.0, (0.08, 0.10, 0.14));
             c.y -= 24.0;
         }
@@ -2661,7 +2785,8 @@ pub fn markdown_to_pdf(md: &str, title: &str, brand_header: Option<&str>) -> Vec
 
     let mut para_buf: Vec<String> = Vec::new();
     let flush_para = |c: &mut PdfCanvas, buf: &mut Vec<String>| {
-        if buf.is_empty() {
+        if buf.is_empty() || c.page_limit_hit {
+            buf.clear();
             return;
         }
         let joined = buf.join(" ");
@@ -2669,7 +2794,9 @@ pub fn markdown_to_pdf(md: &str, title: &str, brand_header: Option<&str>) -> Vec
         let spans = parse_md_inline_spans(&joined, PdfFont::Regular);
         let wrapped = wrap_spans(&spans, 10.5, PdfCanvas::CONTENT_W);
         for wl in &wrapped {
-            c.ensure_space(15.0);
+            if !c.ensure_space(15.0) {
+                return;
+            }
             c.draw_line_spans(PdfCanvas::MARGIN_L, c.y, wl, 10.5, (0.12, 0.14, 0.18));
             c.y -= 14.5;
         }
@@ -2677,7 +2804,7 @@ pub fn markdown_to_pdf(md: &str, title: &str, brand_header: Option<&str>) -> Vec
     };
 
     let mut i = 0;
-    while i < lines.len() {
+    while i < lines.len() && !c.page_limit_hit {
         let line = lines[i];
         let t = line.trim();
 
@@ -2699,7 +2826,9 @@ pub fn markdown_to_pdf(md: &str, title: &str, brand_header: Option<&str>) -> Vec
             }
             i += 1;
             for cl in code_lines {
-                c.ensure_space(14.0);
+                if !c.ensure_space(14.0) {
+                    break;
+                }
                 c.draw_rect_fill(
                     PdfCanvas::MARGIN_L,
                     c.y - 3.0,
@@ -2740,9 +2869,13 @@ pub fn markdown_to_pdf(md: &str, title: &str, brand_header: Option<&str>) -> Vec
             c.y -= space_before;
             let spans = parse_md_inline_spans(text, PdfFont::Bold);
             let wrapped = wrap_spans(&spans, size, PdfCanvas::CONTENT_W);
-            c.ensure_space((wrapped.len() as f64) * lead + 18.0);
+            if !c.ensure_space((wrapped.len().min(6) as f64) * lead + 18.0) {
+                break;
+            }
             for wl in &wrapped {
-                c.ensure_space(lead);
+                if !c.ensure_space(lead) {
+                    break;
+                }
                 c.draw_line_spans(PdfCanvas::MARGIN_L, c.y, wl, size, (0.08, 0.10, 0.14));
                 c.y -= lead;
             }
@@ -2767,7 +2900,9 @@ pub fn markdown_to_pdf(md: &str, title: &str, brand_header: Option<&str>) -> Vec
                 || t.chars().all(|ch| ch == '_'))
         {
             flush_para(&mut c, &mut para_buf);
-            c.ensure_space(14.0);
+            if !c.ensure_space(14.0) {
+                break;
+            }
             c.draw_stroke_line(
                 PdfCanvas::MARGIN_L,
                 c.y - 4.0,
@@ -2818,7 +2953,9 @@ pub fn markdown_to_pdf(md: &str, title: &str, brand_header: Option<&str>) -> Vec
             let spans = parse_md_inline_spans(&text, PdfFont::Regular);
             let wrapped = wrap_spans(&spans, 10.5, PdfCanvas::CONTENT_W - indent - marker_w);
             for (li, wl) in wrapped.iter().enumerate() {
-                c.ensure_space(14.5);
+                if !c.ensure_space(14.5) {
+                    break;
+                }
                 if li == 0 {
                     c.draw_plain_text(
                         PdfCanvas::MARGIN_L + indent,
@@ -2848,7 +2985,9 @@ pub fn markdown_to_pdf(md: &str, title: &str, brand_header: Option<&str>) -> Vec
             let spans = parse_md_inline_spans(q.trim(), PdfFont::Italic);
             let wrapped = wrap_spans(&spans, 10.2, PdfCanvas::CONTENT_W - 16.0);
             for wl in &wrapped {
-                c.ensure_space(14.5);
+                if !c.ensure_space(14.5) {
+                    break;
+                }
                 c.draw_stroke_line(
                     PdfCanvas::MARGIN_L + 4.0,
                     c.y + 9.0,

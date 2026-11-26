@@ -331,7 +331,8 @@ fn build_context(cfg: &Config, trusted: bool) -> Result<rune::Context, String> {
     let policy_data_dir = cfg.data_dir.clone();
     module
         .function(["host_fetch_url"], move |url: String| -> String {
-            if crate::load_workspace_policy(&policy_data_dir).block_outbound_fetch {
+            let policy = crate::load_workspace_policy(&policy_data_dir);
+            if policy.block_outbound_fetch || policy.profile == "air_gapped" {
                 return "error: blocked by Air-Gapped workspace policy: outbound network fetches are disabled".to_string();
             }
             fetch_url_text(&url).unwrap_or_else(|e| format!("error: {e}"))

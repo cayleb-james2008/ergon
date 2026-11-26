@@ -8,9 +8,36 @@ use crate::tools::{atomic_write_bytes, sandbox_path, sandbox_path_resolving};
 use crate::{docs, file_history, skills, Config};
 use serde_json::{json, Value};
 use std::collections::HashMap;
+use std::path::Path;
 
 const DEC_SCALE: i128 = 1_000_000_000;
 const DEC_PLACES: usize = 9;
+const MAX_WHERE_FILTERS: usize = 64;
+const MAX_GROUP_BY_COLS: usize = 16;
+const MAX_AGGREGATES: usize = 32;
+
+pub(crate) fn ascii_contains_ignore_case(haystack: &str, needle: &str) -> bool {
+    let nb = needle.as_bytes();
+    if nb.is_empty() {
+        return true;
+    }
+    let hb = haystack.as_bytes();
+    if nb.len() > hb.len() {
+        return false;
+    }
+    hb.windows(nb.len()).any(|w| w.eq_ignore_ascii_case(nb))
+}
+
+fn read_utf8_table_text(full: &Path, base: &str, label: &str) -> Result<String, String> {
+    let bytes = std::fs::read(full).map_err(|e| format!("could not read {label} {base}: {e}"))?;
+    if bytes.contains(&0) {
+        return Err(format!(
+            "{label} file {base} appears to be binary (contains 0x00 bytes)"
+        ));
+    }
+    String::from_utf8(bytes)
+        .map_err(|_| format!("{label} file {base} is not valid UTF-8"))
+}
 
 #[derive(Clone, Debug)]
 pub struct LoadedTable {
@@ -105,13 +132,11 @@ pub fn load_table(
     let ext = base.rsplit('.').next().unwrap_or("").to_ascii_lowercase();
     let (mut raw_rows, resolved_sheet) = match ext.as_str() {
         "csv" => {
-            let text = std::fs::read_to_string(&full)
-                .map_err(|e| format!("could not read CSV {base}: {e}"))?;
+            let text = read_utf8_table_text(&full, &base, "CSV")?;
             (skills::parse_csv_rows(&text), None)
         }
         "tsv" => {
-            let text = std::fs::read_to_string(&full)
-                .map_err(|e| format!("could not read TSV {base}: {e}"))?;
+            let text = read_utf8_table_text(&full, &base, "TSV")?;
             let clean = text.strip_prefix('\u{feff}').unwrap_or(&text);
             let rows: Vec<Vec<String>> = clean
                 .lines()
@@ -142,13 +167,14 @@ pub fn load_table(
                             avail.join(", ")
                         )
                     })?,
-                None => &sheets[0],
+                None => sheets
+                    .first()
+                    .ok_or_else(|| format!("workbook {base} has no readable sheets"))?,
             };
             (selected.rows.clone(), Some(selected.name.clone()))
         }
         "json" => {
-            let text = std::fs::read_to_string(&full)
-                .map_err(|e| format!("could not read JSON {base}: {e}"))?;
+            let text = read_utf8_table_text(&full, &base, "JSON")?;
             let clean = text.strip_prefix('\u{feff}').unwrap_or(&text).trim();
             let parsed: Value = serde_json::from_str(clean)
                 .map_err(|e| format!("invalid JSON table in {base}: {e}"))?;
@@ -186,8 +212,18 @@ pub fn load_table(
         });
     }
 
-    let columns = raw_rows.remove(0);
-    let width = columns.len();
+    let mut columns = raw_rows.remove(0);
+    let max_row_width = raw_rows.iter().map(Vec::len).max().unwrap_or(0);
+    let width = columns.len().max(max_row_width);
+    while columns.len() < width {
+        let mut idx = columns.len() + 1;
+        let mut name = format!("col_{idx}");
+        while columns.iter().any(|c| c == &name) {
+            idx += 1;
+            name = format!("col_{idx}");
+        }
+        columns.push(name);
+    }
     let mut rows = raw_rows;
     for r in &mut rows {
         r.resize(width, String::new());
@@ -391,7 +427,7 @@ impl CompiledFilter {
                     _ => true,
                 }
             }
-            FilterOp::Contains => cell.to_ascii_lowercase().contains(&self.lower_val),
+            FilterOp::Contains => ascii_contains_ignore_case(cell, &self.lower_val),
             FilterOp::Gt | FilterOp::Gte | FilterOp::Lt | FilterOp::Lte => {
                 let ord = match (parse_decimal(cell_t), self.dec_val) {
                     (Some(a), Some(b)) => a.cmp(&b),
@@ -590,6 +626,9 @@ pub fn execute_query(cfg: &Config, args: &Value) -> Result<TableQueryResult, Str
     // Compile `where` filters.
     let mut filters: Vec<CompiledFilter> = Vec::new();
     if let Some(arr) = args["where"].as_array() {
+        if arr.len() > MAX_WHERE_FILTERS {
+            return Err(format!("too many where filters (max {MAX_WHERE_FILTERS})"));
+        }
         for item in arr {
             let col = item["col"]
                 .as_str()
@@ -643,6 +682,7 @@ pub fn execute_query(cfg: &Config, args: &Value) -> Result<TableQueryResult, Str
             arr.iter()
                 .filter_map(|v| v.as_str().map(str::trim))
                 .filter(|s| !s.is_empty())
+                .take(MAX_GROUP_BY_COLS)
                 .map(str::to_string)
                 .collect()
         })
@@ -657,6 +697,9 @@ pub fn execute_query(cfg: &Config, args: &Value) -> Result<TableQueryResult, Str
 
     let mut agg_specs: Vec<AggSpec> = Vec::new();
     if let Some(arr) = args["aggregates"].as_array() {
+        if arr.len() > MAX_AGGREGATES {
+            return Err(format!("too many aggregates (max {MAX_AGGREGATES})"));
+        }
         for item in arr {
             let fn_str = item["fn"]
                 .as_str()
@@ -812,10 +855,13 @@ pub fn execute_query(cfg: &Config, args: &Value) -> Result<TableQueryResult, Str
         if unresolved.is_dir() {
             return Err(format!("save_as must name a file, not a directory: {save_rel}"));
         }
-        let mut all_rows = Vec::with_capacity(out_rows.len() + 1);
-        all_rows.push(out_columns.clone());
-        all_rows.extend(out_rows.iter().cloned());
-        let csv = docs::rows_to_csv(&all_rows);
+        let mut csv = String::with_capacity((out_rows.len() + 1) * 48);
+        csv.push_str(&docs::csv_line(&out_columns));
+        csv.push('\n');
+        for r in &out_rows {
+            csv.push_str(&docs::csv_line(r));
+            csv.push('\n');
+        }
         let _ = file_history::record_revision(&cfg.data_dir, &cfg.workspace_dir, &save_rel, "query_table");
         atomic_write_bytes(&unresolved, csv.as_bytes())
             .map_err(|e| format!("save_as {save_rel}: {e}"))?;

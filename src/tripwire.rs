@@ -1105,7 +1105,66 @@ pub fn check_egress(url: &str, channel: &str) -> Result<(), String> {
         });
         return Err(format!("blocked by Ergon's egress guard: {host} is a cloud metadata service"));
     }
+    if let Ok(ip) = host.parse::<IpAddr>() {
+        if let AddrClass::Blocked(why) = classify_ip(ip) {
+            let _ = with_current(|t| {
+                t.trip(
+                    Trip::new("AE2-NETWORK", Severity::Critical, "Your agent tried to reach a protected address", format!("Blocked a request to {host} ({why})."))
+                        .action("blocked")
+                        .source(json!({"kind": "host", "value": host})),
+                    STOP_SCORE,
+                )
+            });
+            return Err(format!("blocked by Ergon's egress guard: {host} is {why}"));
+        }
+    }
     Ok(())
+}
+
+/// Check an outbound payload body against the active run's bait key and real
+/// secrets before any outbound connector delivery.
+pub fn check_egress_payload(payload: &str, channel: &str) -> Result<(), String> {
+    if payload.trim().is_empty() {
+        return Ok(());
+    }
+    with_current(|t| {
+        if let Some(r) = &t.halted {
+            return Some(format!("{HALT_PREFIX}{r}"));
+        }
+        if contains_secret(payload, &t.honey_key) {
+            t.trip(
+                Trip::new(
+                    "HT3-EGRESS",
+                    Severity::Critical,
+                    "Your agent tried to send its bait key in an outbound payload",
+                    format!("A {channel} payload carried the confidential bait key planted in this run. Ergon blocked the delivery and stopped the task."),
+                )
+                .action("stopped run"),
+                STOP_SCORE,
+            );
+            return Some(format!("{HALT_PREFIX}blocked an attempt to send a confidential key in {channel} payload"));
+        }
+        let leaked = t
+            .secrets
+            .iter()
+            .any(|s| contains_secret(payload, s) && !t.provenance.contains(&s.to_lowercase()));
+        if leaked {
+            t.trip(
+                Trip::new(
+                    "AE3-SECRET",
+                    Severity::Critical,
+                    "Your agent tried to send a real secret in an outbound payload",
+                    format!("A {channel} payload carried a secret or connector credential. Ergon blocked the delivery and stopped the task."),
+                )
+                .action("stopped run"),
+                STOP_SCORE,
+            );
+            return Some(format!("{HALT_PREFIX}blocked an attempt to send a secret in {channel} payload"));
+        }
+        None
+    })
+    .flatten()
+    .map_or(Ok(()), Err)
 }
 
 // ---------------------------------------------------------------------------
@@ -1401,6 +1460,298 @@ pub fn register_redaction_secrets(values: &[String]) {
     });
 }
 
+fn unescape_json_with_spans(src: &str) -> (String, Vec<usize>, Vec<usize>) {
+    let bytes = src.as_bytes();
+    let mut unescaped = String::with_capacity(src.len());
+    let mut u_char_bytes = Vec::with_capacity(src.len() + 1);
+    let mut orig_char_bytes = Vec::with_capacity(src.len() + 1);
+    let mut i = 0usize;
+    while i < bytes.len() {
+        u_char_bytes.push(unescaped.len());
+        orig_char_bytes.push(i);
+        if bytes[i] == b'\\' && i + 1 < bytes.len() {
+            match bytes[i + 1] {
+                b'"' => {
+                    unescaped.push('"');
+                    i += 2;
+                    continue;
+                }
+                b'\\' => {
+                    unescaped.push('\\');
+                    i += 2;
+                    continue;
+                }
+                b'/' => {
+                    unescaped.push('/');
+                    i += 2;
+                    continue;
+                }
+                b'b' => {
+                    unescaped.push('\u{0008}');
+                    i += 2;
+                    continue;
+                }
+                b'f' => {
+                    unescaped.push('\u{000c}');
+                    i += 2;
+                    continue;
+                }
+                b'n' => {
+                    unescaped.push('\n');
+                    i += 2;
+                    continue;
+                }
+                b'r' => {
+                    unescaped.push('\r');
+                    i += 2;
+                    continue;
+                }
+                b't' => {
+                    unescaped.push('\t');
+                    i += 2;
+                    continue;
+                }
+                b'u' if i + 6 <= bytes.len() => {
+                    if let Some(hex_s) = src.get(i + 2..i + 6) {
+                        if let Ok(code) = u16::from_str_radix(hex_s, 16) {
+                            if let Some(ch) = char::from_u32(code as u32) {
+                                unescaped.push(ch);
+                                i += 6;
+                                continue;
+                            }
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        let ch = src[i..].chars().next().unwrap();
+        unescaped.push(ch);
+        i += ch.len_utf8();
+    }
+    u_char_bytes.push(unescaped.len());
+    orig_char_bytes.push(src.len());
+    (unescaped, u_char_bytes, orig_char_bytes)
+}
+
+fn expand_secret_span(haystack: &str, m_start: usize, m_end: usize, secret: &str, sec_start: usize, sec_end: usize) -> (usize, usize) {
+    let mut h_start = m_start;
+    let mut s_start = sec_start;
+    while h_start > 0 && s_start > 0 {
+        let Some(hc) = haystack[..h_start].chars().next_back() else { break };
+        let Some(sc) = secret[..s_start].chars().next_back() else { break };
+        if hc == sc {
+            h_start -= hc.len_utf8();
+            s_start -= sc.len_utf8();
+        } else {
+            break;
+        }
+    }
+    let mut h_end = m_end;
+    let mut s_end = sec_end;
+    while h_end < haystack.len() && s_end < secret.len() {
+        let Some(hc) = haystack[h_end..].chars().next() else { break };
+        let Some(sc) = secret[s_end..].chars().next() else { break };
+        if hc == sc {
+            h_end += hc.len_utf8();
+            s_end += sc.len_utf8();
+        } else {
+            break;
+        }
+    }
+    (h_start, h_end)
+}
+
+fn replace_unescaped_matches(out: &mut String, needle: &str, expand_from: Option<(&str, usize, usize)>) -> bool {
+    if needle.is_empty() || out.is_empty() {
+        return false;
+    }
+    if out.contains(needle) {
+        if let Some((full_sec, sec_start, sec_end)) = expand_from {
+            let mut changed = false;
+            let mut search_from = 0usize;
+            let mut rebuilt = String::with_capacity(out.len());
+            while search_from < out.len() {
+                let Some(rel) = out[search_from..].find(needle) else {
+                    rebuilt.push_str(&out[search_from..]);
+                    break;
+                };
+                let m_start = search_from + rel;
+                let m_end = m_start + needle.len();
+                let (exp_s, exp_e) = expand_secret_span(out, m_start, m_end, full_sec, sec_start, sec_end);
+                if exp_s < search_from {
+                    rebuilt.push_str(&out[search_from..m_start]);
+                    rebuilt.push_str("[redacted]");
+                    search_from = exp_e.max(m_end);
+                } else {
+                    rebuilt.push_str(&out[search_from..exp_s]);
+                    rebuilt.push_str("[redacted]");
+                    search_from = exp_e;
+                }
+                changed = true;
+            }
+            if changed {
+                *out = rebuilt;
+                return true;
+            }
+        } else {
+            *out = out.replace(needle, "[redacted]");
+            return true;
+        }
+    }
+    if !out.contains('\\') {
+        return false;
+    }
+    let (unescaped, u_char_bytes, orig_char_bytes) = unescape_json_with_spans(out);
+    if !unescaped.contains(needle) {
+        return false;
+    }
+    let mut ranges: Vec<(usize, usize)> = Vec::new();
+    let mut from = 0usize;
+    while from < unescaped.len() {
+        let Some(rel) = unescaped[from..].find(needle) else {
+            break;
+        };
+        let u_start = from + rel;
+        let u_end = u_start + needle.len();
+        let (exp_s, exp_e) = if let Some((full_sec, sec_start, sec_end)) = expand_from {
+            expand_secret_span(&unescaped, u_start, u_end, full_sec, sec_start, sec_end)
+        } else {
+            (u_start, u_end)
+        };
+        if let (Ok(ci_s), Ok(ci_e)) = (u_char_bytes.binary_search(&exp_s), u_char_bytes.binary_search(&exp_e)) {
+            let orig_s = orig_char_bytes[ci_s];
+            let orig_e = orig_char_bytes[ci_e];
+            if ranges.last().is_none_or(|&(_, prev_e)| orig_s >= prev_e) {
+                ranges.push((orig_s, orig_e));
+            }
+        }
+        from = exp_e.max(u_end);
+    }
+    if ranges.is_empty() {
+        return false;
+    }
+    let mut rebuilt = String::with_capacity(out.len());
+    let mut pos = 0usize;
+    for (s, e) in ranges {
+        rebuilt.push_str(&out[pos..s]);
+        rebuilt.push_str("[redacted]");
+        pos = e;
+    }
+    rebuilt.push_str(&out[pos..]);
+    *out = rebuilt;
+    true
+}
+
+fn percent_encode_secret(secret: &str) -> String {
+    let mut out = String::with_capacity(secret.len());
+    for b in secret.bytes() {
+        if b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.' | b'~') {
+            out.push(b as char);
+        } else {
+            use std::fmt::Write as _;
+            let _ = write!(&mut out, "%{b:02X}");
+        }
+    }
+    out
+}
+
+fn strip_known_secret_prefix(secret: &str) -> usize {
+    for p in [
+        "sk-ergon-",
+        "whsec_",
+        "whtok_",
+        "sk-live-",
+        "sk-test-",
+        "sk-proj-",
+        "sk-ant-",
+        "xoxb-",
+        "xoxp-",
+        "ghp_",
+        "gho_",
+        "sk-",
+    ] {
+        if secret.starts_with(p) {
+            return p.len();
+        }
+    }
+    0
+}
+
+/// Redact `secret` from `out`, covering literal, JSON-escaped (`\"`, `\\`,
+/// `\/`, `\uXXXX`), URL-encoded, Base64/hex, and partial prefix/suffix echoes
+/// without false-positiving on short `token_hint` displays.
+pub fn redact_secret_value(out: &mut String, secret: &str, is_honey_key: bool) -> bool {
+    if out.is_empty() || secret.trim().len() < 6 {
+        return false;
+    }
+    let mut changed = false;
+    if replace_unescaped_matches(out, secret, None) {
+        changed = true;
+    }
+    if secret.len() >= 10 {
+        let b64 = base64_encode(secret.as_bytes());
+        let b64_unpadded = b64.trim_end_matches('=');
+        if replace_unescaped_matches(out, &b64, None)
+            || (b64_unpadded != b64 && replace_unescaped_matches(out, b64_unpadded, None))
+        {
+            changed = true;
+        }
+        let hex_enc = hex(secret.as_bytes());
+        if replace_unescaped_matches(out, &hex_enc, None) {
+            changed = true;
+        }
+        let pct = percent_encode_secret(secret);
+        if pct != secret {
+            if replace_unescaped_matches(out, &pct, None) {
+                changed = true;
+            }
+            let pct_low = pct.to_ascii_lowercase();
+            if pct_low != pct && replace_unescaped_matches(out, &pct_low, None) {
+                changed = true;
+            }
+        }
+    }
+
+    // Partial echo redaction for sufficiently long secret cores.
+    // For bait keys (`sk-ergon-<12hex>-<20hex>`), skip past the 6-char
+    // `token_hint` prefix (`sk-ergon-xxxxxx`) so safe hints remain visible.
+    let core_start = if is_honey_key {
+        (TOKEN_PREFIX.len() + 6).min(secret.len())
+    } else {
+        strip_known_secret_prefix(secret)
+    };
+    let core = &secret[core_start..];
+    let core_chars: Vec<(usize, char)> = core.char_indices().collect();
+    let win_len = if core_chars.len() >= 16 {
+        12
+    } else if core_chars.len() >= 12 {
+        10
+    } else {
+        0
+    };
+    if win_len > 0 {
+        let mut offsets: Vec<usize> = (0..=core_chars.len() - win_len).step_by(4).collect();
+        let last_off = core_chars.len() - win_len;
+        if offsets.last().copied() != Some(last_off) {
+            offsets.push(last_off);
+        }
+        for start_ci in offsets {
+            let b_start = core_start + core_chars[start_ci].0;
+            let b_end = if start_ci + win_len < core_chars.len() {
+                core_start + core_chars[start_ci + win_len].0
+            } else {
+                secret.len()
+            };
+            let win = &secret[b_start..b_end];
+            if replace_unescaped_matches(out, win, Some((secret, b_start, b_end))) {
+                changed = true;
+            }
+        }
+    }
+    changed
+}
+
 /// Remove the bait key and any registered connector secrets from text that will
 /// be shown or stored.
 pub fn redact(text: &str) -> String {
@@ -1409,7 +1760,7 @@ pub fn redact(text: &str) -> String {
         return text.to_string();
     };
     let mut out = text.to_string();
-    if out.contains(&honey_key) {
+    if redact_secret_value(&mut out, &honey_key, true) {
         let _ = with_current(|t| {
             t.trip(
                 Trip::new("HT3-EGRESS", Severity::Notice, "Your agent wrote its confidential bait key into its summary", "Ergon removed it before showing you the summary.")
@@ -1417,12 +1768,10 @@ pub fn redact(text: &str) -> String {
                 20,
             )
         });
-        out = out.replace(&honey_key, "[redacted]");
     }
     let mut redacted_connector_secret = false;
     for sec in extra {
-        if !sec.is_empty() && out.contains(&sec) {
-            out = out.replace(&sec, "[redacted]");
+        if redact_secret_value(&mut out, &sec, false) {
             redacted_connector_secret = true;
         }
     }

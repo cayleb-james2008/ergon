@@ -2506,6 +2506,8 @@ mod v010_hardening_tests {
             if_none_match: None,
             hook_signature: None,
             hook_token: None,
+            hook_timestamp: None,
+            hook_delivery: None,
             keep_alive: false,
         };
         assert!(refusal(&req, false, &[]).is_none());

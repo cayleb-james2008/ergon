@@ -6,24 +6,27 @@
 //! `<person_data_dir>/connector_secrets.json` (0600 POSIX) that is never
 //! readable from the workspace or injected into LLM prompts.
 
-use crate::tools::{atomic_write_bytes, atomic_write_bytes_with_mode, sandbox_path};
+use crate::tools::{atomic_write_bytes, atomic_write_bytes_with_mode, sandbox_path, sandbox_path_resolving};
 use crate::{records, tripwire, Config, WorkspacePolicy};
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::io::Read as _;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Mutex;
+use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, UNIX_EPOCH};
 
 pub const MAX_WEBHOOK_BYTES: usize = 1_048_576;
 pub const MAX_FOLDER_WATCH_BYTES: u64 = 25 * 1024 * 1024;
+pub const MAX_WEBHOOK_SKEW_MS: u64 = 5 * 60 * 1000;
+const MAX_WEBHOOK_REPLAY_ENTRIES: usize = 4096;
 const MAX_DELIVERY_LOG: usize = 500;
 const MAX_INTAKE_MANIFEST: usize = 2000;
 const MAX_RESPONSE_PREVIEW: usize = 512;
 
 static CONN_SEQ: AtomicU64 = AtomicU64::new(0);
 static CONNECTORS_LOCK: Mutex<()> = Mutex::new(());
+static WEBHOOK_REPLAY_CACHE: OnceLock<Mutex<HashMap<String, u64>>> = OnceLock::new();
 
 fn with_connectors_lock<T>(f: impl FnOnce() -> T) -> T {
     let _g = CONNECTORS_LOCK
@@ -557,13 +560,12 @@ pub fn collect_all_secret_values(person_data_dir: &Path) -> Vec<String> {
     with_connectors_lock(|| ConnectorSecretsStore::load_unlocked(person_data_dir).all_values())
 }
 
-/// Redact any known connector secret values from `text`.
+/// Redact any known connector secret values (including partial and JSON-escaped
+/// echoes) from `text`.
 pub fn redact_with_store(text: &str, secrets: &ConnectorSecretsStore) -> String {
     let mut out = tripwire::redact(text);
     for val in secrets.all_values() {
-        if out.contains(&val) {
-            out = out.replace(&val, "[redacted]");
-        }
+        tripwire::redact_secret_value(&mut out, &val, false);
     }
     out
 }
@@ -687,6 +689,26 @@ pub fn validate_watch_dir(
     if !p.is_absolute() {
         return Err("watch_dir must be an absolute directory path".to_string());
     }
+    // Walk every component from root to reject `..` traversal and any
+    // intermediate or final symlink (CWE-59).
+    let mut walked = PathBuf::new();
+    for comp in p.components() {
+        match comp {
+            Component::RootDir => walked.push("/"),
+            Component::CurDir => {}
+            Component::ParentDir | Component::Prefix(_) => {
+                return Err("watch_dir cannot contain '..' or drive prefixes".to_string());
+            }
+            Component::Normal(part) => {
+                walked.push(part);
+                let md = std::fs::symlink_metadata(&walked)
+                    .map_err(|e| format!("watch_dir does not exist or cannot be read: {e}"))?;
+                if md.file_type().is_symlink() {
+                    return Err("watch_dir cannot be or traverse a symlink".to_string());
+                }
+            }
+        }
+    }
     let meta = std::fs::symlink_metadata(&p)
         .map_err(|e| format!("watch_dir does not exist or cannot be read: {e}"))?;
     if meta.file_type().is_symlink() {
@@ -712,9 +734,12 @@ pub fn validate_watch_dir(
         "/dev",
         "/bin",
         "/sbin",
+        "/lib",
+        "/lib64",
         "/usr",
         "/boot",
         "/root",
+        "/run",
         "/var/run",
         "/home",
         "/Users",
@@ -1181,6 +1206,33 @@ fn hex_nibble(b: u8) -> Option<u8> {
     }
 }
 
+fn parse_webhook_timestamp_ms(raw: &str) -> Option<u64> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() || !trimmed.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    let val = trimmed.parse::<u64>().ok()?;
+    if val < 10_000_000_000 {
+        val.checked_mul(1000)
+    } else {
+        Some(val)
+    }
+}
+
+fn check_and_record_webhook_replay(replay_key: String, now_ms: u64) -> bool {
+    let cache = WEBHOOK_REPLAY_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+    let mut map = cache.lock().unwrap_or_else(|p| p.into_inner());
+    map.retain(|_, ts| now_ms.saturating_sub(*ts) <= MAX_WEBHOOK_SKEW_MS);
+    if map.contains_key(&replay_key) {
+        return false;
+    }
+    if map.len() >= MAX_WEBHOOK_REPLAY_ENTRIES {
+        map.clear();
+    }
+    map.insert(replay_key, now_ms);
+    true
+}
+
 /// Authenticate an incoming `POST /api/hooks/:hook_id` via HMAC-SHA256
 /// (`X-Ergon-Signature: sha256=<hex>`) or `X-Ergon-Hook-Token`, write payload to
 /// `workspace/inbox/hook-<ts>.json`, and return trigger metadata so the server
@@ -1193,6 +1245,29 @@ pub fn verify_and_ingest_webhook(
     content_type: &str,
     body: &[u8],
 ) -> Result<WebhookIngestResult, (u16, String)> {
+    verify_and_ingest_webhook_with_meta(
+        cfg,
+        hook_id,
+        signature_hdr,
+        token_hdr,
+        None,
+        None,
+        content_type,
+        body,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn verify_and_ingest_webhook_with_meta(
+    cfg: &Config,
+    hook_id: &str,
+    signature_hdr: Option<&str>,
+    token_hdr: Option<&str>,
+    timestamp_hdr: Option<&str>,
+    delivery_hdr: Option<&str>,
+    content_type: &str,
+    body: &[u8],
+) -> Result<WebhookIngestResult, (u16, String)> {
     if body.len() > MAX_WEBHOOK_BYTES {
         return Err((
             413,
@@ -1202,6 +1277,20 @@ pub fn verify_and_ingest_webhook(
     let hook_clean = hook_id.trim();
     if hook_clean.is_empty() {
         return Err((401, "invalid or missing webhook authentication".to_string()));
+    }
+
+    let now_ms = records::now_millis();
+    let ts_raw = timestamp_hdr.map(str::trim).filter(|s| !s.is_empty());
+    if let Some(ts_str) = ts_raw {
+        let Some(ts_ms) = parse_webhook_timestamp_ms(ts_str) else {
+            return Err((401, "invalid webhook timestamp header".to_string()));
+        };
+        if now_ms.abs_diff(ts_ms) > MAX_WEBHOOK_SKEW_MS {
+            return Err((
+                401,
+                "webhook timestamp outside allowed replay window".to_string(),
+            ));
+        }
     }
 
     let (trigger_id, trigger_name, routine_id, target_kind, wh_secret) =
@@ -1234,8 +1323,23 @@ pub fn verify_and_ingest_webhook(
             .or_else(|| sig.strip_prefix("SHA256="))
         {
             if let Some(presented) = decode_hex_32(hex_part) {
-                let expected = tripwire::hmac_sha256(wh_secret.signing_secret.as_bytes(), body);
-                if tripwire::ct_eq(&presented, &expected) {
+                let expected_body =
+                    tripwire::hmac_sha256(wh_secret.signing_secret.as_bytes(), body);
+                let mut sig_ok = tripwire::ct_eq(&presented, &expected_body);
+                if !sig_ok {
+                    if let Some(ts_str) = ts_raw {
+                        let mut signed_msg = Vec::with_capacity(ts_str.len() + 1 + body.len());
+                        signed_msg.extend_from_slice(ts_str.as_bytes());
+                        signed_msg.push(b'.');
+                        signed_msg.extend_from_slice(body);
+                        let expected_ts = tripwire::hmac_sha256(
+                            wh_secret.signing_secret.as_bytes(),
+                            &signed_msg,
+                        );
+                        sig_ok = tripwire::ct_eq(&presented, &expected_ts);
+                    }
+                }
+                if sig_ok {
                     authed = true;
                 }
             }
@@ -1243,7 +1347,9 @@ pub fn verify_and_ingest_webhook(
     }
     if !authed {
         if let Some(tok) = token_hdr.map(str::trim).filter(|s| !s.is_empty()) {
-            if tripwire::ct_eq(tok.as_bytes(), wh_secret.hook_token.as_bytes()) {
+            let h_tok = tripwire::sha256(tok.as_bytes());
+            let h_exp = tripwire::sha256(wh_secret.hook_token.as_bytes());
+            if tripwire::ct_eq(&h_tok, &h_exp) {
                 authed = true;
             }
         }
@@ -1252,7 +1358,19 @@ pub fn verify_and_ingest_webhook(
         return Err((401, "invalid or missing webhook authentication".to_string()));
     }
 
-    let now_ms = records::now_millis();
+    let delivery_clean = delivery_hdr.map(str::trim).filter(|s| !s.is_empty());
+    if let Some(did) = delivery_clean {
+        let key = format!("del:{trigger_id}:{did}");
+        if !check_and_record_webhook_replay(key, now_ms) {
+            return Err((401, "replayed webhook delivery rejected".to_string()));
+        }
+    } else if let Some(ts_str) = ts_raw {
+        let body_hash = tripwire::sha256_hex(body);
+        let key = format!("ts:{trigger_id}:{ts_str}:{body_hash}");
+        if !check_and_record_webhook_replay(key, now_ms) {
+            return Err((401, "replayed webhook delivery rejected".to_string()));
+        }
+    }
     let seq = next_seq();
     let rel_path = format!("inbox/hook-{now_ms}-{seq}.json");
     let full = sandbox_path(&cfg.workspace_dir, &rel_path).map_err(|e| (500, e))?;
@@ -1317,23 +1435,53 @@ pub struct FolderIngestEvent {
 fn glob_match_one(pat: &str, name: &str) -> bool {
     let p: Vec<char> = pat.to_ascii_lowercase().chars().collect();
     let s: Vec<char> = name.to_ascii_lowercase().chars().collect();
-    let mut dp = vec![vec![false; s.len() + 1]; p.len() + 1];
-    dp[0][0] = true;
-    for i in 1..=p.len() {
-        if p[i - 1] == '*' {
-            dp[i][0] = dp[i - 1][0];
-        }
-    }
-    for i in 1..=p.len() {
-        for j in 1..=s.len() {
-            if p[i - 1] == '*' {
-                dp[i][j] = dp[i - 1][j] || dp[i][j - 1];
-            } else if p[i - 1] == '?' || p[i - 1] == s[j - 1] {
-                dp[i][j] = dp[i - 1][j - 1];
+    let mut prev = vec![false; s.len() + 1];
+    let mut cur = vec![false; s.len() + 1];
+    prev[0] = true;
+    for pc in p {
+        cur.fill(false);
+        if pc == '*' {
+            cur[0] = prev[0];
+            for j in 1..=s.len() {
+                cur[j] = prev[j] || cur[j - 1];
+            }
+        } else {
+            for j in 1..=s.len() {
+                if pc == '?' || pc == s[j - 1] {
+                    cur[j] = prev[j - 1];
+                }
             }
         }
+        std::mem::swap(&mut prev, &mut cur);
     }
-    dp[p.len()][s.len()]
+    prev[s.len()]
+}
+
+fn read_watched_file_no_symlink(path: &Path, max_bytes: u64) -> Option<Vec<u8>> {
+    let lmeta = std::fs::symlink_metadata(path).ok()?;
+    if lmeta.file_type().is_symlink() || !lmeta.is_file() || lmeta.len() > max_bytes {
+        return None;
+    }
+    let file = std::fs::File::open(path).ok()?;
+    let fmeta = file.metadata().ok()?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt as _;
+        if lmeta.dev() != fmeta.dev() || lmeta.ino() != fmeta.ino() {
+            return None;
+        }
+    }
+    if !fmeta.is_file() || fmeta.len() > max_bytes {
+        return None;
+    }
+    let mut bytes = Vec::with_capacity(fmeta.len().min(65_536) as usize);
+    if file.take(max_bytes + 1).read_to_end(&mut bytes).is_err() {
+        return None;
+    }
+    if bytes.len() as u64 > max_bytes {
+        return None;
+    }
+    Some(bytes)
 }
 
 pub fn glob_matches(pattern_list: &str, filename: &str) -> bool {
@@ -1459,12 +1607,9 @@ pub fn poll_folder_watch_once(
                 continue;
             }
 
-            let Ok(bytes) = std::fs::read(&path) else {
+            let Some(bytes) = read_watched_file_no_symlink(&path, max_bytes) else {
                 continue;
             };
-            if bytes.len() as u64 > max_bytes {
-                continue;
-            }
             let sha = tripwire::sha256_hex(&bytes);
             let now_ms = records::now_millis();
             let safe_name = sanitize_intake_filename(&fname);
@@ -1475,11 +1620,22 @@ pub fn poll_folder_watch_once(
                     return Ok(None);
                 }
                 let mut rel = format!("intake/{safe_name}");
-                let mut dest = sandbox_path(&cfg.workspace_dir, &rel)?;
-                if dest.exists() {
+                let mut dest = sandbox_path_resolving(&cfg.workspace_dir, &rel, false)?;
+                if dest
+                    .symlink_metadata()
+                    .is_ok_and(|md| md.file_type().is_symlink())
+                    || dest.exists()
+                {
                     rel = format!("intake/{}", disambiguate_filename(&safe_name, &sha));
-                    dest = sandbox_path(&cfg.workspace_dir, &rel)?;
+                    dest = sandbox_path_resolving(&cfg.workspace_dir, &rel, false)?;
+                    if dest
+                        .symlink_metadata()
+                        .is_ok_and(|md| md.file_type().is_symlink())
+                    {
+                        return Err("cannot overwrite symlink in intake".to_string());
+                    }
                 }
+                sandbox_path(&cfg.workspace_dir, &rel)?;
                 atomic_write_bytes(&dest, &bytes)
                     .map_err(|e| format!("copy intake file: {e}"))?;
                 store.push_manifest(IntakeManifestEntry {
@@ -1610,7 +1766,12 @@ fn execute_http_delivery(
         return Err(err_msg);
     }
 
-    if let Err(e) = tripwire::check_egress(&connector.url, "connector") {
+    if let Err(e) = tripwire::check_egress(&connector.url, "connector")
+        .and_then(|_| {
+            let p_str = String::from_utf8_lossy(&payload_bytes);
+            tripwire::check_egress_payload(&p_str, "connector")
+        })
+    {
         let safe_err = redact_with_store(&e, &secrets);
         let log = DeliveryLog {
             id: del_id,
@@ -1827,8 +1988,10 @@ pub fn invoke_connector(
         return Err(err_msg);
     }
 
-    // Validate target URL before parking or delivering.
+    // Validate target URL and payload before parking or delivering.
+    let payload_text = String::from_utf8_lossy(&payload_bytes);
     tripwire::check_egress(&connector.url, "connector")
+        .and_then(|_| tripwire::check_egress_payload(&payload_text, "connector"))
         .map_err(|e| redact_with_store(&e, &secrets))?;
 
     let effective_require_approval =
@@ -1836,14 +1999,18 @@ pub fn invoke_connector(
 
     if effective_require_approval {
         let raw_preview = serde_json::to_string(payload).unwrap_or_default();
-        let payload_preview = crate::truncate(&redact_with_store(&raw_preview, &secrets), 400);
-        let safe_payload: Value = serde_json::from_str(&redact_with_store(&raw_preview, &secrets))
+        let mut redacted = redact_with_store(&raw_preview, &secrets);
+        if policy.redact_host_paths {
+            redacted = crate::redact_host_paths(&redacted);
+        }
+        let payload_preview = crate::truncate(&redacted, 400);
+        let safe_payload: Value = serde_json::from_str(&redacted)
             .unwrap_or_else(|_| json!(payload_preview));
         let summary = format!(
             "Send outbound {} via \"{}\" ({})",
             connector.method, connector.name, safe_url
         );
-        let detail = if policy.profile == "strict_client" {
+        let mut detail = if policy.profile == "strict_client" {
             format!(
                 "Strict Client policy requires human approval before sending data to {safe_url}. Payload SHA-256: {payload_sha256}."
             )
@@ -1853,6 +2020,9 @@ pub fn invoke_connector(
                 connector.name, safe_url, payload_sha256
             )
         };
+        if policy.redact_host_paths {
+            detail = crate::redact_host_paths(&detail);
+        }
         let decision_id = records::add_decision_with(
             &cfg.data_dir,
             "connector_delivery",
@@ -1977,6 +2147,9 @@ pub fn settle_delivery_decision(cfg: &Config, decision: &Value) -> String {
         Ok(c) => c,
         Err(e) => return format!("Approved, but connector is unavailable: {e}"),
     };
+    if !connector.enabled {
+        return format!("Approved, but connector \"{}\" is disabled.", connector.name);
+    }
     match execute_http_delivery(cfg, &connector, payload, thread_id, Some(decision_id)) {
         Ok(log) => format!(
             "Approved and delivered via \"{}\" (HTTP {}, {} bytes).",

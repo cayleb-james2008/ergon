@@ -514,50 +514,51 @@ pub fn execute_tool(cfg: &Config, name: &str, args: &Value) -> Result<String, St
                 .as_str()
                 .ok_or("patch_file needs args.replace")?;
             let replace_all = args["replace_all"].as_bool().unwrap_or(false);
-            let rel = crate::tables::validate_workspace_rel_path(raw_rel)?;
-            let unresolved = sandbox_path_resolving(&cfg.workspace_dir, &rel, false)?;
-            if unresolved
-                .symlink_metadata()
-                .is_ok_and(|md| md.file_type().is_symlink())
-            {
-                return Err(format!("patch_file: cannot patch symlink {rel}"));
-            }
-            let full = sandbox_path(&cfg.workspace_dir, &rel)?;
-            let text = std::fs::read_to_string(&full).map_err(|e| {
-                if e.kind() == std::io::ErrorKind::NotFound {
-                    format!("patch_file: no such file: {rel}")
-                } else if e.kind() == std::io::ErrorKind::InvalidData {
-                    format!("patch_file {rel}: binary files cannot be patched as UTF-8 text")
-                } else {
-                    format!("patch_file {rel}: {e}")
-                }
-            })?;
-            let count = text.match_indices(find).count();
-            if count == 0 {
-                return Err(format!("patch_file: target text not found in {rel}"));
-            }
-            if count > 1 && !replace_all {
-                return Err(format!(
-                    "patch_file: found {count} matches in {rel} (ambiguous); pass a more specific find string or set replace_all: true"
-                ));
-            }
-            let updated = if replace_all {
-                text.replace(find, replace)
-            } else {
-                text.replacen(find, replace, 1)
-            };
-            let _ = file_history::record_revision(
+            let outcome = file_history::atomic_checked_patch_workspace(
                 &cfg.data_dir,
                 &cfg.workspace_dir,
-                &rel,
+                raw_rel,
+                None,
                 "patch_file",
-            );
-            atomic_write_bytes(&full, updated.as_bytes())
-                .map_err(|e| format!("patch_file {rel}: {e}"))?;
+                |text| {
+                    let count = text.match_indices(find).count();
+                    if count == 0 {
+                        return Err(format!("patch_file: target text not found in {raw_rel}"));
+                    }
+                    if count > 1 && !replace_all {
+                        return Err(format!(
+                            "patch_file: found {count} matches in {raw_rel} (ambiguous); pass a more specific find string or set replace_all: true"
+                        ));
+                    }
+                    let updated = if replace_all {
+                        text.replace(find, replace)
+                    } else {
+                        text.replacen(find, replace, 1)
+                    };
+                    Ok((updated, count))
+                },
+            )
+            .map_err(|e| match e {
+                file_history::CheckedWriteErr::NotFound(_) => {
+                    format!("patch_file: no such file: {raw_rel}")
+                }
+                file_history::CheckedWriteErr::Forbidden(msg) if msg.contains("symlink") => {
+                    format!("patch_file: cannot patch symlink {raw_rel}")
+                }
+                file_history::CheckedWriteErr::BadRequest(msg) if msg.contains("binary") => {
+                    format!("patch_file {raw_rel}: {msg}")
+                }
+                file_history::CheckedWriteErr::BadRequest(msg)
+                | file_history::CheckedWriteErr::Forbidden(msg)
+                | file_history::CheckedWriteErr::Internal(msg) => msg,
+                file_history::CheckedWriteErr::Conflict { message, .. } => message,
+            })?;
             Ok(format!(
-                "patched {rel} ({count} replacement{}, {} bytes)",
-                if count == 1 { "" } else { "s" },
-                updated.len()
+                "patched {} ({} replacement{}, {} bytes)",
+                outcome.rel,
+                outcome.applied,
+                if outcome.applied == 1 { "" } else { "s" },
+                outcome.new_text.len()
             ))
         }
         "query_table" => {
@@ -587,7 +588,8 @@ pub fn execute_tool(cfg: &Config, name: &str, args: &Value) -> Result<String, St
             Ok(out.trim_end().to_string())
         }
         "fetch_url" => {
-            if crate::load_workspace_policy(&cfg.data_dir).block_outbound_fetch {
+            let policy = crate::load_workspace_policy(&cfg.data_dir);
+            if policy.block_outbound_fetch || policy.profile == "air_gapped" {
                 return Err("blocked by Air-Gapped workspace policy: outbound network fetches are disabled for this workspace".to_string());
             }
             let url = args["url"].as_str().ok_or("fetch_url needs args.url")?;
@@ -604,10 +606,26 @@ pub fn execute_tool(cfg: &Config, name: &str, args: &Value) -> Result<String, St
                 .as_str()
                 .map(str::trim)
                 .filter(|s| !s.is_empty());
+            if let Some(rel) = attachment_rel {
+                let clean = crate::tables::validate_workspace_rel_path(rel)?;
+                let unresolved = sandbox_path_resolving(&cfg.workspace_dir, &clean, false)?;
+                if unresolved
+                    .symlink_metadata()
+                    .is_ok_and(|md| md.file_type().is_symlink())
+                {
+                    return Err(format!("invoke_connector: cannot attach symlink '{rel}'"));
+                }
+                sandbox_path(&cfg.workspace_dir, &clean)?;
+            }
             let payload = if let Some(p) = args.get("payload").filter(|v| !v.is_null()) {
                 p.clone()
             } else if let Some(rel) = attachment_rel {
                 let full = sandbox_path(&cfg.workspace_dir, rel)?;
+                let md = std::fs::metadata(&full)
+                    .map_err(|e| format!("invoke_connector cannot read file '{rel}': {e}"))?;
+                if md.len() > 512 * 1024 {
+                    return Err(format!("invoke_connector file '{rel}' exceeds 512 KB limit"));
+                }
                 let bytes = std::fs::read(&full)
                     .map_err(|e| format!("invoke_connector cannot read file '{rel}': {e}"))?;
                 if bytes.len() > 512 * 1024 {
@@ -629,9 +647,6 @@ pub fn execute_tool(cfg: &Config, name: &str, args: &Value) -> Result<String, St
             } else {
                 serde_json::json!({})
             };
-            if let Some(rel) = attachment_rel {
-                sandbox_path(&cfg.workspace_dir, rel)?;
-            }
             let thread_id = args["_thread"].as_str().unwrap_or("");
             match crate::connectors::invoke_connector(
                 cfg,
@@ -668,7 +683,8 @@ pub fn execute_tool(cfg: &Config, name: &str, args: &Value) -> Result<String, St
             skills::make_spreadsheet(cfg, title, columns, rows)
         }
         "research" => {
-            if crate::load_workspace_policy(&cfg.data_dir).block_outbound_fetch {
+            let policy = crate::load_workspace_policy(&cfg.data_dir);
+            if policy.block_outbound_fetch || policy.profile == "air_gapped" {
                 return Err("blocked by Air-Gapped workspace policy: outbound network fetches are disabled for this workspace".to_string());
             }
             let topic = args["topic"].as_str().ok_or("research needs args.topic")?;
