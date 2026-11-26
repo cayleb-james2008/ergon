@@ -231,6 +231,7 @@ export function toolLabel(tool: string, via: string | undefined, body: string): 
     case "publish_skill": label = "Published a skill"; break;
     case "delete_file": { const n = pick(/(\S+) has NOT been deleted/); label = "Asked your approval to delete " + (n || "a file"); break; }
     case "flag_decision": label = "Asked you to decide something"; break;
+    case "invoke_connector": label = "Prepared an outbound connector delivery"; break;
     case "delegate": label = via ? "Handed work to " + via : "Handed work to a specialist"; break;
     case "reconcile_ledger": { const n = pick(/(?:wrote|reconciled)\s+([^\s(]+)/i); label = n ? "Reconciled ledger " + n : "Reconciled expense ledger"; break; }
     case "summarize_meeting": label = "Summarized meeting notes & owners"; break;

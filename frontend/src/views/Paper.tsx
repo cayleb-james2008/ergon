@@ -11,6 +11,7 @@ import {
   Printer,
   Repeat,
   Search,
+  Send,
   ShieldAlert,
   Sparkles,
   Upload,
@@ -129,6 +130,20 @@ function decisionCopy(d: Decision): DecisionCopy {
       approvedToast: "Noted.",
       deniedToast: "Noted.",
       security,
+    };
+  }
+  if (kind === "connector_delivery") {
+    const dest = d.url || d.target_url || d.connector_name || "the configured destination";
+    const verb = d.method ? `${d.method} ` : "";
+    return {
+      body:
+        detail ||
+        `Approving sends this outbound payload to ${verb}${dest} using your saved host credentials. Blocking stops the delivery and keeps all data inside your workspace.`,
+      approve: "Send delivery",
+      deny: "Block delivery",
+      approvedToast: "Delivery approved and sent.",
+      deniedToast: "Delivery blocked; nothing left your workspace.",
+      security: true,
     };
   }
   return {
@@ -924,18 +939,54 @@ export const PaperFace = memo(function PaperFace({
                   >
                       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
                         <h2 id="lead-h" className="flex min-w-0 items-start gap-2 text-[22px] leading-snug font-medium tracking-[-0.025em] text-ink [overflow-wrap:anywhere]">
-                          {leadCopy?.security && (
+                          {lead.kind === "connector_delivery" ? (
+                            <Send
+                              className="mt-1 size-5 shrink-0 text-dot-amber"
+                              strokeWidth={1.5}
+                              aria-label="Outbound delivery"
+                            />
+                          ) : leadCopy?.security ? (
                             <ShieldAlert
                               className={cn("mt-1 size-5 shrink-0", lead.severity === "critical" ? "text-dot-red" : "text-dot-amber")}
                               strokeWidth={1.5}
                               aria-label="Security"
                             />
-                          )}
+                          ) : null}
                           <span className="min-w-0">{String(lead.summary ?? "Decision waiting on you")}</span>
                         </h2>
                         <WaitingPill />
                       </div>
                       <p className="max-w-[60ch] whitespace-pre-line text-sm leading-6 text-ink-2">{leadCopy?.body}</p>
+                      {lead.kind === "connector_delivery" && (lead.connector_name || lead.url || lead.target_url || lead.payload_preview) && (
+                        <div data-connector-consequence={lead.id} className="flex flex-col gap-1.5 rounded-sm border border-hairline bg-surface px-3 py-2.5 text-xs text-ink-2">
+                          <div className="flex flex-wrap items-center gap-2">
+                            {lead.connector_name && <span className="font-medium text-ink">{lead.connector_name}</span>}
+                            {(lead.url || lead.target_url) && (
+                              <span className="mono break-all text-ink-2">
+                                {lead.method ? `${lead.method} ` : ""}{lead.url || lead.target_url}
+                              </span>
+                            )}
+                          </div>
+                          {lead.payload_preview && (
+                            <pre className="mono overflow-x-auto whitespace-pre-wrap break-words text-xs text-ink">
+                              {lead.payload_preview}
+                            </pre>
+                          )}
+                          {lead.path && (
+                            <div>
+                              <Button
+                                type="button"
+                                size="xs"
+                                variant="ghost"
+                                className="max-md:min-h-11 px-0 text-xs text-ink hover:underline"
+                                onClick={() => onOpenFile(lead.path!)}
+                              >
+                                Inspect {lead.path}
+                              </Button>
+                            </div>
+                          )}
+                        </div>
+                      )}
                       <div className="flex flex-wrap gap-2">
                         <Button
                           className="min-h-11 px-4"

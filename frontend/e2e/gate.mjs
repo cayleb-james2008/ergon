@@ -1364,6 +1364,312 @@ await reset();
   await ctx.close();
 }
 
+// 6f. v0.31.0 Connectors Panel (Inbound Webhooks, Watched Folders, Outbound Actions + Masked Secret, Today connector_delivery consequence card)
+{
+  const triggers = [];
+  const outbound = [];
+  const deliveries = [];
+  const decisions = [];
+  let hookSimPayload = null;
+
+  const setupConnectorRoutes = async (p) => {
+    await p.route("**/api/status", async (r) => {
+      const res = await r.fetch();
+      const j = await res.json();
+      await r.fulfill({
+        response: res,
+        body: JSON.stringify({
+          ...j,
+          version: "0.31.0",
+          capabilities: { ...(j.capabilities || {}), routines: true, connectors: true },
+        }),
+      });
+    });
+    await p.route("**/api/routines", (r) =>
+      r.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          routines: [
+            { id: "rt-conn-1", name: "Daily Intake Audit", prompt: "Audit incoming files", schedule: "daily 09:00", enabled: true },
+          ],
+        }),
+      })
+    );
+    await p.route("**/api/workspace/policy", (r) =>
+      r.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          profile: "strict_client",
+          label: "Strict Client",
+          summary: "Requires approval before outbound delivery.",
+          strict_citation_gate: true,
+          approval_gate_mode: "strict",
+          redact_host_paths: true,
+          block_outbound_fetch: false,
+        }),
+      })
+    );
+    await p.route("**/api/connectors", (r) =>
+      r.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          triggers,
+          outbound,
+          secrets: outbound.flatMap((c) => (c.secret_keys || []).map((k) => ({ key: k, has_secret: true, updated_ms: Date.now() }))),
+          delivery_log: deliveries,
+          policy_profile: "strict_client",
+        }),
+      })
+    );
+    await p.route(/\/api\/connectors\/triggers\/[^/]+\/rotate$/, (r) => {
+      const id = decodeURIComponent(new URL(r.request().url()).pathname.split("/")[4] || "");
+      const trg = triggers.find((t) => t.id === id);
+      return r.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          trigger: trg,
+          signing_secret: "whsec_rotated_secret_xyz",
+          hook_token: "whsec_rotated_secret_xyz",
+          hook_path: trg?.hook_path || `/api/hooks/${trg?.hook_id || id}`,
+        }),
+      });
+    });
+    await p.route("**/api/connectors/triggers", async (r) => {
+      if (r.request().method() === "POST") {
+        const b = JSON.parse(r.request().postData() || "{}");
+        const id = `trg-e2e-${triggers.length + 1}`;
+        if (b.kind === "folder_watch") {
+          const trg = {
+            id,
+            name: b.name,
+            kind: "folder_watch",
+            enabled: true,
+            routine_id: b.routine_id || "rt-conn-1",
+            watch_dir: b.watch_dir,
+            glob: b.glob || "*.pdf,*.csv",
+            has_secret: false,
+            trigger_count: 0,
+            created_ms: Date.now(),
+          };
+          triggers.unshift(trg);
+          return r.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ trigger: trg }) });
+        }
+        const trg = {
+          id,
+          name: b.name,
+          kind: "webhook",
+          enabled: true,
+          routine_id: b.routine_id || "rt-conn-1",
+          hook_id: "hk-e2e-1",
+          hook_path: "/api/hooks/hk-e2e-1",
+          has_secret: true,
+          trigger_count: 0,
+          created_ms: Date.now(),
+        };
+        triggers.unshift(trg);
+        return r.fulfill({
+          status: 201,
+          contentType: "application/json",
+          body: JSON.stringify({
+            trigger: trg,
+            signing_secret: "whsec_initial_secret_abc",
+            hook_token: "whsec_initial_secret_abc",
+            hook_path: trg.hook_path,
+          }),
+        });
+      }
+      return r.continue();
+    });
+    await p.route(/\/api\/hooks\/[^/]+$/, async (r) => {
+      hookSimPayload = r.request().postData() || "";
+      if (triggers[0]) triggers[0].trigger_count = (triggers[0].trigger_count || 0) + 1;
+      return r.fulfill({
+        status: 202,
+        contentType: "application/json",
+        body: JSON.stringify({ accepted: true, trigger_file: "inbox/hook-e2e-1.json", routine_id: "rt-conn-1" }),
+      });
+    });
+    await p.route("**/api/connectors/outbound", async (r) => {
+      if (r.request().method() === "POST") {
+        const b = JSON.parse(r.request().postData() || "{}");
+        const secretKeys = b.secrets ? Object.keys(b.secrets) : [];
+        const conn = {
+          id: `conn-e2e-${outbound.length + 1}`,
+          name: b.name,
+          kind: b.kind || "http_webhook",
+          url: b.url,
+          method: b.method || "POST",
+          headers_template: b.headers_template || {},
+          secret_keys: secretKeys,
+          has_secret: secretKeys.length > 0,
+          require_approval: true,
+          effective_require_approval: true,
+          blocked_by_policy: false,
+          enabled: true,
+          created_ms: Date.now(),
+        };
+        outbound.unshift(conn);
+        return r.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ connector: conn }) });
+      }
+      return r.continue();
+    });
+    await p.route(/\/api\/connectors\/outbound\/[^/]+\/test$/, async (r) => {
+      const id = decodeURIComponent(new URL(r.request().url()).pathname.split("/")[4] || "");
+      const conn = outbound.find((c) => c.id === id) || outbound[0];
+      const did = `dec-conn-e2e-${deliveries.length + 1}`;
+      const del = {
+        id: `del-e2e-${deliveries.length + 1}`,
+        connector_id: conn.id,
+        connector_name: conn.name,
+        kind: conn.kind,
+        method: conn.method,
+        url: conn.url,
+        status: "held",
+        decision_id: did,
+        summary: `Waiting for approval in Today before sending to ${conn.url}.`,
+        ts_ms: Date.now(),
+        test: true,
+      };
+      deliveries.unshift(del);
+      decisions.push({
+        id: did,
+        kind: "connector_delivery",
+        summary: `Send test payload via ${conn.name}`,
+        status: "pending",
+        severity: "warning",
+        connector_id: conn.id,
+        connector_name: conn.name,
+        connector_kind: conn.kind,
+        method: conn.method,
+        url: conn.url,
+        payload_preview: '{"event":"ergon.connector.test"}',
+        ts: Date.now(),
+      });
+      return r.fulfill({ status: 202, contentType: "application/json", body: JSON.stringify({ held: true, decision_id: did, delivery: del }) });
+    });
+    await p.route("**/api/decisions", (r) =>
+      r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ decisions }) })
+    );
+    await p.route(/\/api\/decisions\/[^/]+\/(approve|deny)$/, (r) => {
+      const parts = new URL(r.request().url()).pathname.split("/");
+      const did = decodeURIComponent(parts[3] || "");
+      const act = parts[4];
+      const dec = decisions.find((d) => d.id === did);
+      if (dec) {
+        dec.status = act === "approve" ? "approved" : "denied";
+        dec.outcome = act === "approve" ? `Delivery approved and sent via ${dec.connector_name}.` : "Delivery blocked.";
+      }
+      if (deliveries[0]) deliveries[0].status = act === "approve" ? "ok" : "denied";
+      return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ decision: dec, outcome: dec?.outcome }) });
+    });
+  };
+
+  const { ctx, p } = await open(1440, 900);
+  await setupConnectorRoutes(p);
+  await p.goto(BASE);
+  await waitWorkbench(p);
+
+  // 1. Open Connectors modal -> Inbound Webhooks create, rotate secret, simulate payload
+  await p.locator('[data-thing="connectors-btn"]').click();
+  await p.waitForSelector("#connectors-panel", { timeout: 4000 });
+  const hasThreeTabs =
+    (await p.locator('#connectors-panel [role="tab"]').count()) === 3;
+  await p.locator("#connectors-panel").getByRole("button", { name: "New webhook" }).click();
+  await p.locator("#webhook-name").fill("Invoice Intake Hook");
+  await p.locator("#webhook-create-form").getByRole("button", { name: "Create webhook" }).click();
+  await p.waitForSelector('#connectors-panel [data-one-time-secret="trg-e2e-1"]', { timeout: 4000 });
+  const initialSecretVisible = (await p.locator('#connectors-panel [data-one-time-secret="trg-e2e-1"]').innerText()).includes("whsec_initial_secret_abc");
+  await p.locator('#connectors-panel [data-trigger-id="trg-e2e-1"] [data-action="rotate-secret"]').click();
+  await p.waitForFunction(
+    () => (document.querySelector('[data-one-time-secret="trg-e2e-1"]')?.textContent || "").includes("whsec_rotated_secret_xyz"),
+    null,
+    { timeout: 4000 }
+  );
+  await p.locator('#connectors-panel [data-trigger-id="trg-e2e-1"] [data-action="toggle-simulate"]').click();
+  await p.locator('#connectors-panel [data-simulate-panel="trg-e2e-1"] [data-action="simulate-webhook"]').click();
+  await p.waitForSelector('#connectors-panel [data-simulate-panel="trg-e2e-1"] [role="status"]', { timeout: 4000 });
+  const simStatusTxt = await p.locator('#connectors-panel [data-simulate-panel="trg-e2e-1"] [role="status"]').innerText();
+  ok(
+    "v0.31.0 Connectors panel opens from rail with 3 tabs and creates, rotates, and simulates Inbound Webhooks",
+    hasThreeTabs && initialSecretVisible && simStatusTxt.includes("inbox/hook-e2e-1.json") && Boolean(hookSimPayload),
+    `tabs=${hasThreeTabs} secret=${initialSecretVisible} sim=${simStatusTxt}`
+  );
+
+  // 2. Watched Folders tab
+  await p.locator('#connectors-panel [role="tab"][data-id="folders"]').click();
+  await p.locator("#connectors-panel").getByRole("button", { name: "Watch folder" }).click();
+  await p.locator("#folder-watch-name").fill("Vendor Dropbox");
+  await p.locator("#folder-watch-path").fill("/home/cayleb/Documents/VendorDropbox");
+  await p.locator("#folder-watch-glob").fill("*.pdf,*.csv");
+  await p.locator("#folder-watch-form").getByRole("button", { name: "Save watched folder" }).click();
+  await p.waitForSelector('#connectors-panel [data-trigger-kind="folder_watch"]', { timeout: 4000 });
+  const folderCardTxt = await p.locator('#connectors-panel [data-trigger-kind="folder_watch"]').innerText();
+  ok(
+    "v0.31.0 Watched Folders tab creates folder watch rule with host path and glob filter",
+    folderCardTxt.includes("/home/cayleb/Documents/VendorDropbox") && folderCardTxt.includes("*.pdf,*.csv"),
+    folderCardTxt.slice(0, 90).replace(/\n/g, " ")
+  );
+
+  // 3. Outbound Actions tab: masked secret never exposed + Test Delivery + delivery log
+  await p.locator('#connectors-panel [role="tab"][data-id="outbound"]').click();
+  await p.locator("#connectors-panel").getByRole("button", { name: "New connector" }).click();
+  await p.locator("#outbound-name").fill("Client Webhook");
+  await p.locator("#outbound-url").fill("https://hooks.example.com/client");
+  await p.locator("#outbound-secret-value").fill("super-secret-token-999");
+  await p.locator("#outbound-create-form").getByRole("button", { name: "Save connector" }).click();
+  await p.waitForSelector('#connectors-panel [data-outbound-id="conn-e2e-1"]', { timeout: 4000 });
+  const secretExposedInDom = await p.evaluate(() => document.body.innerText.includes("super-secret-token-999"));
+  await p.locator('#connectors-panel [data-outbound-id="conn-e2e-1"] [data-action="test-delivery"]').click();
+  await p.waitForSelector('#connector-delivery-log [data-delivery-id="del-e2e-1"]', { timeout: 4000 });
+  const delLogTxt = await p.locator("#connector-delivery-log").innerText();
+  ok(
+    "v0.31.0 Outbound Actions tab keeps secrets masked, runs Test Delivery, and logs delivery",
+    !secretExposedInDom && delLogTxt.includes("Client Webhook") && delLogTxt.includes("Waiting approval"),
+    `exposed=${secretExposedInDom} log=${delLogTxt.slice(0, 80).replace(/\n/g, " ")}`
+  );
+
+  // 4. Today consequence card for connector_delivery decision
+  await p.keyboard.press("Escape");
+  await p.locator("#connectors-panel").waitFor({ state: "hidden", timeout: 4000 }).catch(() => {});
+  await p.locator('[role="tab"][data-id="paper"]').click();
+  await waitPaper(p);
+  await p.waitForSelector('#decisions-list [data-connector-consequence="dec-conn-e2e-1"]', { timeout: 4000 });
+  const leadText = await p.locator('section[aria-labelledby="lead-h"]').innerText();
+  const cleanProse = !/[—–]|\bRune\b|\bRHL\b/.test(leadText);
+  await p.locator('section[aria-labelledby="lead-h"]').getByRole("button", { name: "Send delivery" }).click();
+  const approvedToast = await p.waitForSelector("text=Delivery approved and sent", { timeout: 4000 }).then(() => true, () => false);
+  ok(
+    "v0.31.0 Today renders plain-language connector_delivery consequence card and settles on Send delivery",
+    leadText.includes("https://hooks.example.com/client") && cleanProse && approvedToast,
+    `clean=${cleanProse} toast=${approvedToast}`
+  );
+  await ctx.close();
+
+  // 5. Mobile 390px Connectors panel layout check (outside Vaul drawer, 0px overflow)
+  const { ctx: mctx, p: mp } = await open(390, 844);
+  await setupConnectorRoutes(mp);
+  await mp.goto(BASE);
+  await waitWorkbench(mp);
+  await mp.getByRole("button", { name: "Open menu" }).click();
+  await mp.waitForSelector('[data-thing="connectors-btn"]', { timeout: 4000 });
+  await mp.locator('[data-thing="connectors-btn"]').click();
+  await mp.waitForSelector("#connectors-panel", { timeout: 4000 });
+  await mp.waitForTimeout(250);
+  const mobileConnectorsOk = await mp.evaluate(() => {
+    const panel = document.querySelector("#connectors-panel");
+    const drawerOpen = Boolean(document.querySelector('[data-vaul-drawer][data-state="open"]'));
+    const overflow = document.documentElement.scrollWidth - document.documentElement.clientWidth;
+    const tabs = [...document.querySelectorAll('#connectors-panel [role="tab"]')];
+    return Boolean(panel) && !drawerOpen && overflow <= 0 && tabs.length === 3 && tabs.every((t) => t.getBoundingClientRect().height >= 44);
+  });
+  ok("v0.31.0 mobile Menu -> Connectors opens outside Vaul drawer with 0px overflow", mobileConnectorsOk);
+  await mctx.close();
+}
+
 // 7. Reduced motion & Console Cleanliness (2 checks)
 {
   const { ctx, p } = await open(1440, 900, "light", { reducedMotion: "reduce" });

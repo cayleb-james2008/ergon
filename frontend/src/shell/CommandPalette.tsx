@@ -23,6 +23,7 @@ import {
   Sparkles,
   Upload,
   Users,
+  Webhook,
 } from "lucide-react";
 import {
   Command,
@@ -96,6 +97,7 @@ export const CommandPalette = memo(function CommandPalette({
   onOpenHistory,
   onOpenSkills,
   onOpenRoutines,
+  onOpenConnectors,
   onOpenFile,
   onOpenThread,
   onRunSkill,
@@ -121,6 +123,7 @@ export const CommandPalette = memo(function CommandPalette({
   onOpenHistory?: () => void;
   onOpenSkills: () => void;
   onOpenRoutines: () => void;
+  onOpenConnectors?: () => void;
   onOpenFile: (path: string) => void;
   onOpenThread: (id: string) => void;
   onRunSkill: (skill: SkillMeta) => void;
@@ -353,6 +356,9 @@ export const CommandPalette = memo(function CommandPalette({
       { id: "action-open-settings", keywords: "open settings appearance theme model", label: "Open Settings (Model & Appearance)", badge: "Panel", icon: SlidersHorizontal, run: onOpenSettings },
       { id: "action-open-skills", keywords: "browse workflows skills catalog 12", label: `Browse all ${skills.length} built-in workflows`, badge: String(skills.length), icon: Sparkles, run: onOpenSkills },
       { id: "action-open-routines", keywords: "routines recurring schedule cron automate", label: "Manage recurring routines", badge: String(routines.length), icon: CalendarClock, run: onOpenRoutines },
+      ...(onOpenConnectors
+        ? [{ id: "action-open-connectors", keywords: "connectors webhooks watched folders outbound actions", label: "Manage connectors & webhooks", badge: "Panel", icon: Webhook, run: onOpenConnectors }]
+        : []),
       { id: "action-open-files", keywords: "workspace files browser", label: "Open Workspace files", badge: "⌘I", icon: FolderOpen, run: onOpenFiles },
       ...(onOpenHistory
         ? [{ id: "action-open-history", keywords: "file version history diff restore snapshot", label: "Open file version history & diff", badge: "Diff", icon: History, run: onOpenHistory }]
