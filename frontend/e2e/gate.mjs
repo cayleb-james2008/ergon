@@ -2949,6 +2949,455 @@ for (const [theme, vw, vh] of [
   await ctx.close();
 }
 
+// 6f. v0.37.0 Wave E1 Client CRM & SOW Drawer, Time Entries, Invoicing & Active Engagement Scope (3 checks)
+{
+  // Check 1 & 2 at 1440x900 light
+  const { ctx, p } = await open(1440, 900, "light");
+  const clientsData = {
+    clients: [
+      {
+        id: "cli-northstar",
+        name: "Northstar Advisory",
+        brand_header: "Northstar Advisory Partners",
+        billing_currency: "USD",
+        default_rate_usd: 220,
+        contacts: [{ id: "ct-1", name: "Elena Vance", email: "ap@northstar.example", role: "VP Finance", primary: true }],
+        notes_md: "",
+        tax_rate_pct: 0,
+        payment_terms: "Net 30",
+      },
+    ],
+    engagements: [
+      {
+        id: "eng-northstar-q4",
+        client_id: "cli-northstar",
+        person_id: "default",
+        name: "Q4 Operations Retainer",
+        retainer_hours: 40,
+        retainer_budget_usd: 2500,
+        hourly_rate_usd: 220,
+        period: "monthly",
+        status: "active",
+        workspace_prefix: "clients/cli-northstar/eng-northstar-q4",
+        sow_rules: ["Cite sources"],
+        rollover_mode: "none",
+      },
+    ],
+    active_engagement_id: "eng-northstar-q4",
+  };
+  let policyState = {
+    person_id: "default",
+    profile: "strict_client",
+    label: "Strict Client",
+    summary: "Strict client policy.",
+    strict_citation_gate: true,
+    approval_gate_mode: "all_external_and_deletes",
+    redact_host_paths: true,
+    block_outbound_fetch: false,
+    isolate_active_engagement: false,
+    updated_ms: Date.now(),
+  };
+  let timeEntriesState = [];
+  let invoicesState = [];
+  let clientPatchPayloads = [];
+  let engPatchPayloads = [];
+  let scopedHandoffPayloads = [];
+
+  await p.route("**/api/status", async (r) => {
+    const res = await r.fetch();
+    const j = await res.json();
+    await r.fulfill({
+      response: res,
+      body: JSON.stringify({
+        ...j,
+        version: "0.37.0",
+        capabilities: {
+          ...(j.capabilities || {}),
+          clients: true,
+          metering: true,
+          client_crm: true,
+          time_entries: true,
+          invoicing: true,
+          vault_search: true,
+          sse: true,
+        },
+      }),
+    });
+  });
+  await p.route("**/api/clients", (r) =>
+    r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(clientsData) })
+  );
+  await p.route("**/api/clients/*", async (r) => {
+    if (r.request().method() === "PATCH") {
+      const b = JSON.parse(r.request().postData() || "{}");
+      clientPatchPayloads.push(b);
+      Object.assign(clientsData.clients[0], b);
+      return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ client: clientsData.clients[0] }) });
+    }
+    return r.continue();
+  });
+  await p.route("**/api/engagements/*/context", (r) =>
+    r.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        engagement: clientsData.engagements[0],
+        client: clientsData.clients[0],
+        scoped_file_count: 3,
+        workspace_prefix: clientsData.engagements[0].workspace_prefix,
+        sow_rules: clientsData.engagements[0].sow_rules,
+        contacts: clientsData.clients[0].contacts,
+        unbilled_entries: timeEntriesState.filter((e) => !e.invoiced_id),
+      }),
+    })
+  );
+  await p.route("**/api/engagements/*", async (r) => {
+    if (r.request().method() === "PATCH") {
+      const b = JSON.parse(r.request().postData() || "{}");
+      engPatchPayloads.push(b);
+      Object.assign(clientsData.engagements[0], b);
+      return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ engagement: clientsData.engagements[0] }) });
+    }
+    return r.continue();
+  });
+  await p.route("**/api/workspace/policy", async (r) => {
+    if (r.request().method() === "PUT" || r.request().method() === "POST") {
+      const b = JSON.parse(r.request().postData() || "{}");
+      if (typeof b.isolate_active_engagement === "boolean") {
+        policyState.isolate_active_engagement = b.isolate_active_engagement;
+      }
+    }
+    return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(policyState) });
+  });
+  await p.route(/\/api\/metering\/summary(\?.*)?$/, (r) =>
+    r.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        totals: {
+          runs: 2,
+          prompt_tokens: 1200,
+          completion_tokens: 400,
+          total_tokens: 1600,
+          cost_usd: 18.5,
+          minutes_saved: 45,
+          billable_value_usd: 165.0,
+          retainer_burn_pct: 0.74,
+          retainer_budget_usd: 2500,
+        },
+        by_engagement: [
+          {
+            engagement_id: "eng-northstar-q4",
+            engagement_name: "Q4 Operations Retainer",
+            client_id: "cli-northstar",
+            client_name: "Northstar Advisory",
+            runs: 2,
+            total_tokens: 1600,
+            cost_usd: 18.5,
+            minutes_saved: 45,
+            billable_value_usd: 165.0,
+            retainer_budget_usd: 2500,
+            retainer_burn_pct: 0.74,
+          },
+        ],
+        by_model: [],
+        daily_series: [],
+        active_engagement: clientsData.engagements[0],
+        active_client: clientsData.clients[0],
+      }),
+    })
+  );
+  await p.route(/\/api\/time-entries(\?.*)?$/, async (r) => {
+    if (r.request().method() === "POST") {
+      const b = JSON.parse(r.request().postData() || "{}");
+      const entry = {
+        id: `te-${timeEntriesState.length + 1}`,
+        ts_ms: Date.now(),
+        client_id: b.client_id || "cli-northstar",
+        engagement_id: b.engagement_id || "eng-northstar-q4",
+        kind: b.kind || "time",
+        description: b.description,
+        hours: b.hours ?? 0,
+        rate_usd: b.rate_usd ?? 220,
+        amount_usd: b.amount_usd ?? 550,
+        billable: b.billable !== false,
+        invoiced_id: null,
+      };
+      timeEntriesState.push(entry);
+      return r.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ entry }) });
+    }
+    return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ entries: timeEntriesState }) });
+  });
+  await p.route(/\/api\/invoices(\?.*)?$/, (r) =>
+    r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ invoices: invoicesState }) })
+  );
+  await p.route("**/api/invoices/*", async (r) => {
+    if (r.request().url().endsWith("/generate")) return r.fallback();
+    if (r.request().method() === "PATCH") {
+      const b = JSON.parse(r.request().postData() || "{}");
+      if (invoicesState[0]) invoicesState[0].status = b.status;
+      return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ invoice: invoicesState[0] }) });
+    }
+    return r.continue();
+  });
+  await p.route("**/api/invoices/generate", async (r) => {
+    const b = JSON.parse(r.request().postData() || "{}");
+    const subtotal = timeEntriesState.reduce((acc, e) => acc + (e.billable ? e.amount_usd : 0), 0);
+    const llm = b.include_llm_cost ? 18.5 : 0;
+    const tax = Math.round((subtotal + llm) * 0.085 * 100) / 100;
+    const total = Math.round((subtotal + llm + tax) * 100) / 100;
+    const inv = {
+      id: "inv-e2e-1",
+      invoice_number: "INV-202611-001",
+      client_id: "cli-northstar",
+      engagement_id: b.engagement_id || "eng-northstar-q4",
+      period_label: b.period_label || "2026-11",
+      issued_ms: Date.now(),
+      status: "draft",
+      line_items: [
+        ...timeEntriesState.map((e) => ({ id: e.id, description: e.description, hours: e.hours, rate_usd: e.rate_usd, amount_usd: e.amount_usd })),
+        ...(llm > 0 ? [{ id: "llm-1", description: "LLM compute metering", quantity: 1, unit_price_usd: llm, amount_usd: llm }] : []),
+      ],
+      llm_cost_usd: llm,
+      billable_subtotal_usd: subtotal,
+      tax_usd: tax,
+      total_usd: total,
+      deliverable_paths: ["clients/cli-northstar/eng-northstar-q4/brief.md"],
+      pdf_path: "clients/cli-northstar/eng-northstar-q4/invoices/INV-202611-001.pdf",
+      xlsx_path: "clients/cli-northstar/eng-northstar-q4/invoices/INV-202611-001.xlsx",
+      json_path: "clients/cli-northstar/eng-northstar-q4/invoices/INV-202611-001.json",
+      sha256: "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
+    };
+    timeEntriesState.forEach((e) => { e.invoiced_id = inv.id; });
+    invoicesState = [inv];
+    return r.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ invoice: inv }) });
+  });
+  await p.route("**/api/export/handoff", async (r) => {
+    const b = JSON.parse(r.request().postData() || "{}");
+    scopedHandoffPayloads.push(b);
+    return r.fulfill({
+      status: 200,
+      headers: {
+        "Content-Type": "application/zip",
+        "X-Ergon-Handoff-SHA256": "1234567890abcdef1234567890abcdef",
+        "X-Ergon-Handoff-Leaks": "0",
+      },
+      body: Buffer.from("PK\x05\x06" + "\x00".repeat(18)),
+    });
+  });
+
+  await p.goto(BASE + "?face=today");
+  await waitPaper(p);
+
+  // Check 1: CRM & SOW Drawer
+  await p.locator("#person-select").click();
+  await p.waitForSelector("#client-crm-drawer-toggle", { timeout: 4000 });
+  await p.locator("#client-crm-drawer-toggle").click();
+  await p.waitForSelector("#client-crm-sow-drawer", { timeout: 4000 });
+  await p.locator("#crm-isolate-engagement-toggle").click();
+  await p.locator("#crm-eng-prefix").fill("clients/cli-northstar/eng-q4");
+  await p.locator("#crm-sow-rule-input").fill("Include audit hash");
+  await p.locator("#crm-add-sow-rule-btn").click();
+  await p.locator("#crm-save-engagement-btn").click();
+  await p.locator("#crm-pause-engagement-btn").click();
+  await p.locator("#crm-tab-client").click();
+  await p.waitForSelector("#crm-client-panel", { timeout: 4000 });
+  await p.locator("#crm-tax-rate").fill("8.5");
+  await p.locator("#crm-contact-name").fill("Jordan Lee");
+  await p.locator("#crm-contact-email").fill("jordan@northstar.example");
+  await p.locator("#crm-add-contact-btn").click();
+  await p.locator("#crm-save-client-btn").click();
+  const mCrm = await p.evaluate(MEASURE);
+  await p.keyboard.press("Escape");
+  await p.locator("#workspace-switcher-panel").waitFor({ state: "hidden", timeout: 4000 });
+
+  ok(
+    "v0.37.0 E1 Client CRM & SOW drawer saves contacts, tax rate, workspace prefix, SOW rules, pause, and isolation",
+    policyState.isolate_active_engagement === true &&
+      engPatchPayloads.some((x) => x.workspace_prefix === "clients/cli-northstar/eng-q4" && Array.isArray(x.sow_rules) && x.sow_rules.includes("Include audit hash")) &&
+      engPatchPayloads.some((x) => x.status === "paused") &&
+      clientPatchPayloads.some((x) => x.tax_rate_pct === 8.5 && Array.isArray(x.contacts) && x.contacts.some((c) => c.name === "Jordan Lee")) &&
+      mCrm.docOverflow <= 0 &&
+      mCrm.lowContrast === 0 &&
+      mCrm.unnamed.length === 0,
+    `iso=${policyState.isolate_active_engagement} engPatches=${engPatchPayloads.length} cliPatches=${clientPatchPayloads.length} ov=${mCrm.docOverflow} low=${mCrm.lowContrast}`
+  );
+
+  // Check 2: Time entry modal, scoped handoff, and Invoices & Billing drawer
+  await p.waitForSelector("#retainer-add-time-btn", { timeout: 4000 });
+  await p.locator("#retainer-add-time-btn").click();
+  await p.waitForSelector("#time-entry-modal", { timeout: 4000 });
+  await p.locator("#time-entry-desc").fill("Quarterly compliance review");
+  await p.locator("#time-entry-hours").fill("2.5");
+  await p.locator("#time-entry-submit-btn").click();
+  await p.waitForSelector("#time-entries-list li", { timeout: 4000 });
+  const timeRowTxt = await p.locator("#time-entries-list li").first().innerText();
+  await p.keyboard.press("Escape");
+  await p.locator("#time-entry-modal").waitFor({ state: "hidden", timeout: 4000 });
+
+  await p.locator("#retainer-scoped-handoff-btn").click();
+  await p.waitForTimeout(150);
+
+  await p.locator("#retainer-invoices-btn").click();
+  await p.waitForSelector("#invoices-billing-drawer", { timeout: 4000 });
+  await p.locator("#invoice-generate-btn").click();
+  await p.waitForSelector("#invoice-preview-panel", { timeout: 4000 });
+  const previewTxt = await p.locator("#invoice-preview-panel").innerText();
+  await p.locator('[data-issue-invoice="inv-e2e-1"]').click();
+  await p.locator('[data-pay-invoice="inv-e2e-1"]').waitFor({ state: "visible", timeout: 4000 });
+  await p.locator('[data-pay-invoice="inv-e2e-1"]').click();
+  await p.waitForSelector('[data-invoice-status="paid"]', { timeout: 4000 });
+  const mInv = await p.evaluate(MEASURE);
+  await p.keyboard.press("Escape");
+
+  ok(
+    "v0.37.0 E1 Paper retainer card supports time entries, scoped handoff ZIP, and invoice generation/status lifecycle",
+    timeRowTxt.includes("Quarterly compliance review") &&
+      scopedHandoffPayloads.some((x) => x.engagement_id === "eng-northstar-q4" && x.client_id === "cli-northstar") &&
+      previewTxt.includes("INV-202611-001") &&
+      previewTxt.includes("Quarterly compliance review") &&
+      invoicesState[0]?.status === "paid" &&
+      mInv.docOverflow <= 0 &&
+      mInv.lowContrast === 0 &&
+      mInv.unnamed.length === 0,
+    `time=${timeRowTxt.slice(0, 35)} handoffs=${scopedHandoffPayloads.length} invStatus=${invoicesState[0]?.status} ov=${mInv.docOverflow}`
+  );
+  await ctx.close();
+}
+
+{
+  // Check 3: Active Engagement Scope toggles in WorkspaceFiles, CommandPalette, and InspectorDrawer (390x844 dark)
+  const { ctx, p } = await open(390, 844, "dark");
+  const searchQueries = [];
+
+  await p.route("**/api/status", async (r) => {
+    const res = await r.fetch();
+    const j = await res.json();
+    await r.fulfill({
+      response: res,
+      body: JSON.stringify({
+        ...j,
+        version: "0.37.0",
+        capabilities: { ...(j.capabilities || {}), clients: true, metering: true, client_crm: true, vault_search: true, sse: true },
+      }),
+    });
+  });
+  await p.route("**/api/clients", (r) =>
+    r.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        clients: [{ id: "cli-northstar", name: "Northstar Advisory" }],
+        engagements: [
+          {
+            id: "eng-northstar-q4",
+            client_id: "cli-northstar",
+            person_id: "default",
+            name: "Q4 Operations Retainer",
+            workspace_prefix: "clients/cli-northstar/eng-northstar-q4",
+            status: "active",
+          },
+        ],
+        active_engagement_id: "eng-northstar-q4",
+      }),
+    })
+  );
+  await p.route("**/api/engagements/*/context", (r) =>
+    r.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        engagement: { id: "eng-northstar-q4", client_id: "cli-northstar", name: "Q4 Operations Retainer" },
+        scoped_file_count: 1,
+        sow_rules: [],
+        contacts: [],
+        unbilled_entries: [],
+      }),
+    })
+  );
+  await p.route(/\/api\/time-entries(\?.*)?$/, (r) =>
+    r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ entries: [] }) })
+  );
+  await p.route(/\/api\/invoices(\?.*)?$/, (r) =>
+    r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ invoices: [] }) })
+  );
+  await p.route("**/api/files", (r) =>
+    r.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        files: [
+          { path: "clients/cli-northstar/eng-northstar-q4/brief.md", name: "brief.md", size: 420, mtime_ms: Date.now(), ext: "md" },
+          { path: "clients/cli-other/eng-other/other-secret.md", name: "other-secret.md", size: 310, mtime_ms: Date.now(), ext: "md" },
+        ],
+      }),
+    })
+  );
+  await p.route(/\/api\/search(\?.*)?$/, (r) => {
+    const url = new URL(r.request().url());
+    searchQueries.push({
+      q: url.searchParams.get("q") || "",
+      engagement_id: url.searchParams.get("engagement_id") || "",
+      client_id: url.searchParams.get("client_id") || "",
+    });
+    const eng = url.searchParams.get("engagement_id");
+    const hits = eng
+      ? [{ path: "clients/cli-northstar/eng-northstar-q4/brief.md", score: 0.95, chunks: [{ chunk_id: "c1", line_start: 1, line_end: 2, excerpt: "Scoped brief content" }] }]
+      : [
+          { path: "clients/cli-northstar/eng-northstar-q4/brief.md", score: 0.95, chunks: [{ chunk_id: "c1", line_start: 1, line_end: 2, excerpt: "Scoped brief content" }] },
+          { path: "clients/cli-other/eng-other/other-secret.md", score: 0.85, chunks: [{ chunk_id: "c2", line_start: 1, line_end: 2, excerpt: "Other client content" }] },
+        ];
+    return r.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        query: url.searchParams.get("q") || "",
+        file_hits: hits,
+        index_stats: { total_files: hits.length, total_chunks: hits.length, indexed_bytes: 730, semantic_enabled: true },
+      }),
+    });
+  });
+
+  await p.goto(BASE);
+  await waitWorkbench(p);
+
+  await p.locator('[data-thing="inspector-toggle"]').click();
+  await p.waitForSelector("#workspace-files-panel", { timeout: 4000 });
+  const beforeScopeCount = await p.locator("#workspace-files-panel ul li").count();
+  await p.locator("#workspace-engagement-scope-toggle").click();
+  await p.waitForTimeout(120);
+  const afterScopeCount = await p.locator("#workspace-files-panel ul li").count();
+  const scopedFileTxt = await p.locator("#workspace-files-panel ul li").first().innerText();
+
+  await p.locator('#workspace-inspector [role="tab"]', { hasText: "Audit" }).click();
+  await p.waitForSelector("#handoff-scope-status", { timeout: 4000 });
+  const handoffScopeVisible = await p.locator("#handoff-scope-status").isVisible();
+  const mScope = await p.evaluate(MEASURE);
+  await p.locator('#workspace-inspector button[aria-label="Close workspace inspector"]').click();
+  await p.locator("#workspace-inspector").waitFor({ state: "hidden", timeout: 4000 }).catch(() => {});
+
+  await p.keyboard.press("Control+k");
+  await p.waitForSelector("#command-palette-dialog", { timeout: 4000 });
+  const palScopePressed = await p.locator("#palette-engagement-scope-toggle").getAttribute("aria-pressed");
+  await p.locator('[data-cmdk-input="command-palette"]').fill("brief");
+  await p.waitForSelector('#command-palette-dialog [data-vault-path="clients/cli-northstar/eng-northstar-q4/brief.md"]', { timeout: 4000 });
+
+  ok(
+    "v0.37.0 E1 (390x844 dark) Active Engagement Scope filters WorkspaceFiles, CommandPalette search, and Inspector handoff status",
+    beforeScopeCount === 2 &&
+      afterScopeCount === 1 &&
+      scopedFileTxt.includes("brief.md") &&
+      handoffScopeVisible &&
+      palScopePressed === "true" &&
+      searchQueries.some((s) => s.q === "brief" && s.engagement_id === "eng-northstar-q4" && s.client_id === "cli-northstar") &&
+      mScope.docOverflow <= 0 &&
+      mScope.lowContrast === 0 &&
+      mScope.unnamed.length === 0,
+    `before=${beforeScopeCount} after=${afterScopeCount} handoffScope=${handoffScopeVisible} palPressed=${palScopePressed} ov=${mScope.docOverflow}`
+  );
+  await ctx.close();
+}
+
 // 7. Reduced motion & Console Cleanliness (2 checks)
 {
   const { ctx, p } = await open(1440, 900, "light", { reducedMotion: "reduce" });

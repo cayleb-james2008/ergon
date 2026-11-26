@@ -22,6 +22,17 @@ export type ServerCapabilities = {
   clients?: boolean;
   metering?: boolean;
   vault_search?: boolean;
+  client_crm?: boolean;
+  time_entries?: boolean;
+  invoicing?: boolean;
+};
+
+export type ClientContact = {
+  id: string;
+  name: string;
+  email?: string;
+  role?: string;
+  primary?: boolean;
 };
 
 export type Client = {
@@ -30,9 +41,15 @@ export type Client = {
   brand_header?: string;
   billing_currency?: string;
   default_rate_usd?: number;
+  contacts?: ClientContact[];
+  notes_md?: string;
+  tax_rate_pct?: number;
+  payment_terms?: string;
   created_ms?: number;
   updated_ms?: number;
 };
+
+export type RolloverMode = "none" | "carry_hours";
 
 export type Engagement = {
   id: string;
@@ -44,8 +61,85 @@ export type Engagement = {
   hourly_rate_usd?: number;
   period?: string;
   status?: string;
+  workspace_prefix?: string;
+  sow_rules?: string[];
+  rollover_mode?: RolloverMode;
+  period_start_ms?: number;
+  period_end_ms?: number;
+  archived_ms?: number | null;
   created_ms?: number;
   updated_ms?: number;
+};
+
+export type TimeExpenseKind = "time" | "expense" | "adjustment";
+
+export type TimeExpenseEntry = {
+  id: string;
+  ts_ms: number;
+  client_id: string;
+  engagement_id: string;
+  thread_id?: string | null;
+  receipt_id?: string | null;
+  kind: TimeExpenseKind;
+  description: string;
+  hours: number;
+  rate_usd: number;
+  amount_usd: number;
+  billable: boolean;
+  invoiced_id?: string | null;
+};
+
+export type InvoiceStatus = "draft" | "issued" | "paid" | "void";
+
+export type InvoiceLineItem = {
+  id?: string;
+  kind?: string;
+  description: string;
+  quantity?: number;
+  hours?: number;
+  unit_price_usd?: number;
+  rate_usd?: number;
+  amount_usd: number;
+};
+
+export type InvoiceRecord = {
+  id: string;
+  invoice_number: string;
+  client_id: string;
+  engagement_id: string;
+  period_label: string;
+  issued_ms: number;
+  due_ms?: number | null;
+  status: InvoiceStatus;
+  line_items: InvoiceLineItem[];
+  llm_cost_usd: number;
+  billable_subtotal_usd: number;
+  tax_usd: number;
+  total_usd: number;
+  deliverable_paths: string[];
+  pdf_path?: string | null;
+  xlsx_path?: string | null;
+  json_path?: string | null;
+  sha256: string;
+};
+
+export type EngagementContext = {
+  engagement: Engagement;
+  client?: Client | null;
+  scoped_file_count: number;
+  workspace_prefix?: string;
+  sow_rules: string[];
+  contacts: ClientContact[];
+  burn_metrics?: {
+    runs?: number;
+    cost_usd?: number;
+    retainer_budget_usd?: number;
+    retainer_burn_pct?: number;
+    billable_value_usd?: number;
+    minutes_saved?: number;
+  };
+  unbilled_entries: TimeExpenseEntry[];
+  unbilled_total_usd?: number;
 };
 
 export type RunUsage = {
@@ -465,6 +559,7 @@ export type WorkspacePolicy = {
   approval_gate_mode: string;
   redact_host_paths: boolean;
   block_outbound_fetch: boolean;
+  isolate_active_engagement?: boolean;
   updated_ms?: number;
 };
 export type HandoffLeakFinding = {
@@ -628,6 +723,8 @@ export type VaultAggregateRequest = {
   sort?: { col: string; dir: "asc" | "desc" };
   limit?: number;
   save_as?: string;
+  client_id?: string;
+  engagement_id?: string;
 };
 
 export type VaultAggregateResult = {
@@ -994,13 +1091,18 @@ export type HandoffZipDownloadResult =
   | { ok: false; blocked: boolean; status: number; error: string; scan?: HandoffLeakScan };
 
 export async function exportHandoffBundleZip(
-  opts: { title?: string; force?: boolean } = {}
+  opts: { title?: string; force?: boolean; engagement_id?: string; client_id?: string } = {}
 ): Promise<HandoffZipDownloadResult> {
   const resp = await fetch("/api/export/handoff", {
     method: "POST",
     cache: "no-store",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ title: opts.title || "Client Handoff", force: Boolean(opts.force) }),
+    body: JSON.stringify({
+      title: opts.title || "Client Handoff",
+      force: Boolean(opts.force),
+      ...(opts.engagement_id ? { engagement_id: opts.engagement_id } : {}),
+      ...(opts.client_id ? { client_id: opts.client_id } : {}),
+    }),
   });
   if (resp.status === 409) {
     const errJson = (await resp.json().catch(() => ({}))) as {
@@ -1561,6 +1663,18 @@ export function hasMeteringApi(status: Status | null | "error" | undefined): boo
   return isAtLeastMinor(status.version, 33);
 }
 
+export function hasClientCrmInvoicingApi(status: Status | null | "error" | undefined): boolean {
+  if (isWebStandalone()) return true;
+  if (!status || status === "error") return false;
+  if (typeof status.capabilities?.invoicing === "boolean") {
+    return Boolean(status.capabilities.invoicing);
+  }
+  if (typeof status.capabilities?.client_crm === "boolean") {
+    return Boolean(status.capabilities.client_crm);
+  }
+  return isAtLeastMinor(status.version, 37);
+}
+
 export type ClientsPayload = {
   clients: Client[];
   engagements: Engagement[];
@@ -1585,9 +1699,32 @@ export async function createClient(body: {
   brand_header?: string;
   default_rate_usd?: number;
   billing_currency?: string;
+  contacts?: ClientContact[];
+  notes_md?: string;
+  tax_rate_pct?: number;
+  payment_terms?: string;
 }): Promise<Res<{ client: Client }>> {
   return call<{ client: Client }>("/api/clients", {
     method: "POST",
+    body,
+  });
+}
+
+export async function updateClient(
+  id: string,
+  body: {
+    name?: string;
+    brand_header?: string;
+    billing_currency?: string;
+    default_rate_usd?: number;
+    contacts?: ClientContact[];
+    notes_md?: string;
+    tax_rate_pct?: number;
+    payment_terms?: string;
+  }
+): Promise<Res<{ client: Client }>> {
+  return call<{ client: Client }>(`/api/clients/${encodeURIComponent(id)}`, {
+    method: "PATCH",
     body,
   });
 }
@@ -1600,11 +1737,39 @@ export async function createEngagement(body: {
   retainer_budget_usd?: number;
   hourly_rate_usd?: number;
   period?: string;
+  workspace_prefix?: string;
+  sow_rules?: string[];
+  rollover_mode?: RolloverMode;
 }): Promise<Res<{ engagement: Engagement; active_engagement_id?: string }>> {
   return call<{ engagement: Engagement; active_engagement_id?: string }>("/api/engagements", {
     method: "POST",
     body,
   });
+}
+
+export async function updateEngagement(
+  id: string,
+  body: {
+    name?: string;
+    retainer_hours?: number;
+    retainer_budget_usd?: number;
+    hourly_rate_usd?: number;
+    period?: string;
+    workspace_prefix?: string;
+    sow_rules?: string[];
+    rollover_mode?: RolloverMode;
+    status?: "active" | "paused" | "archived" | string;
+    archived_ms?: number | null;
+  }
+): Promise<Res<{ engagement: Engagement }>> {
+  return call<{ engagement: Engagement }>(`/api/engagements/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body,
+  });
+}
+
+export async function fetchEngagementContext(id: string): Promise<Res<EngagementContext>> {
+  return call<EngagementContext>(`/api/engagements/${encodeURIComponent(id)}/context`);
 }
 
 export async function switchEngagement(
@@ -1613,6 +1778,92 @@ export async function switchEngagement(
   return call<{ active_engagement_id: string; engagement?: Engagement | null }>("/api/engagements/switch", {
     method: "POST",
     body: { engagement_id: engagementId },
+  });
+}
+
+export async function fetchTimeEntries(opts: {
+  engagement_id?: string;
+  client_id?: string;
+  unbilled_only?: boolean;
+} = {}): Promise<Res<{ entries: TimeExpenseEntry[]; total_usd?: number }>> {
+  const params = new URLSearchParams();
+  if (opts.engagement_id) params.set("engagement_id", opts.engagement_id);
+  if (opts.client_id) params.set("client_id", opts.client_id);
+  if (typeof opts.unbilled_only === "boolean") params.set("unbilled_only", String(opts.unbilled_only));
+  const qs = params.toString();
+  const r = await call<{ entries?: TimeExpenseEntry[]; total_usd?: number }>(`/api/time-entries${qs ? `?${qs}` : ""}`);
+  if (!r.ok) return r;
+  return {
+    ok: true,
+    data: {
+      entries: Array.isArray(r.data.entries) ? r.data.entries : [],
+      total_usd: typeof r.data.total_usd === "number" ? r.data.total_usd : undefined,
+    },
+  };
+}
+
+export async function createTimeEntry(body: {
+  client_id?: string;
+  engagement_id: string;
+  kind: TimeExpenseKind;
+  description: string;
+  hours?: number;
+  rate_usd?: number;
+  amount_usd?: number;
+  billable?: boolean;
+  thread_id?: string;
+  receipt_id?: string;
+}): Promise<Res<{ entry: TimeExpenseEntry }>> {
+  return call<{ entry: TimeExpenseEntry }>("/api/time-entries", {
+    method: "POST",
+    body,
+  });
+}
+
+export async function deleteTimeEntry(id: string): Promise<Res<{ deleted?: string; id?: string }>> {
+  return call<{ deleted?: string; id?: string }>(`/api/time-entries/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
+}
+
+export async function fetchInvoices(opts: {
+  engagement_id?: string;
+  client_id?: string;
+} = {}): Promise<Res<{ invoices: InvoiceRecord[] }>> {
+  const params = new URLSearchParams();
+  if (opts.engagement_id) params.set("engagement_id", opts.engagement_id);
+  if (opts.client_id) params.set("client_id", opts.client_id);
+  const qs = params.toString();
+  const r = await call<{ invoices?: InvoiceRecord[] }>(`/api/invoices${qs ? `?${qs}` : ""}`);
+  if (!r.ok) return r;
+  return {
+    ok: true,
+    data: {
+      invoices: Array.isArray(r.data.invoices) ? r.data.invoices : [],
+    },
+  };
+}
+
+export async function generateInvoice(body: {
+  engagement_id: string;
+  period_label: string;
+  include_llm_cost: boolean;
+  include_time_entries: boolean;
+  export_formats: Array<"pdf" | "xlsx" | "json">;
+}): Promise<Res<{ invoice: InvoiceRecord; exported_paths?: Record<string, string> }>> {
+  return call<{ invoice: InvoiceRecord; exported_paths?: Record<string, string> }>("/api/invoices/generate", {
+    method: "POST",
+    body,
+  });
+}
+
+export async function updateInvoiceStatus(
+  id: string,
+  body: { status: InvoiceStatus }
+): Promise<Res<{ invoice: InvoiceRecord }>> {
+  return call<{ invoice: InvoiceRecord }>(`/api/invoices/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body,
   });
 }
 
@@ -1644,6 +1895,8 @@ export async function searchVault(opts: {
   mode?: VaultSearchMode;
   limit?: number;
   path_prefix?: string;
+  client_id?: string;
+  engagement_id?: string;
   signal?: AbortSignal;
 }): Promise<Res<VaultSearchResponse>> {
   const params = new URLSearchParams();
@@ -1652,18 +1905,35 @@ export async function searchVault(opts: {
   if (opts.mode) params.set("mode", opts.mode);
   if (typeof opts.limit === "number") params.set("limit", String(opts.limit));
   if (opts.path_prefix) params.set("path_prefix", opts.path_prefix);
+  if (opts.client_id) params.set("client_id", opts.client_id);
+  if (opts.engagement_id) params.set("engagement_id", opts.engagement_id);
   return call<VaultSearchResponse>(`/api/search?${params.toString()}`, { signal: opts.signal });
 }
 
 export async function searchWorkspace(
   q: string,
-  opts: { limit?: number; scope?: VaultSearchScope; mode?: VaultSearchMode; signal?: AbortSignal } = {}
+  opts: { limit?: number; scope?: VaultSearchScope; mode?: VaultSearchMode; client_id?: string; engagement_id?: string; signal?: AbortSignal } = {}
 ): Promise<Res<VaultSearchResponse>> {
   return searchVault({ q, ...opts });
 }
 
 export async function reindexVault(): Promise<Res<VaultReindexResult>> {
   return call<VaultReindexResult>("/api/vault/reindex", { method: "POST", body: {} });
+}
+
+export function engagementWorkspacePrefix(eng?: Engagement | null): string {
+  if (!eng) return "";
+  const raw = String(eng.workspace_prefix ?? "").trim().replace(/^\/+|\/+$/g, "");
+  if (raw) return raw;
+  if (eng.client_id && eng.id) return `clients/${eng.client_id}/${eng.id}`;
+  return "";
+}
+
+export function isPathInEngagementScope(path: string, eng?: Engagement | null): boolean {
+  const prefix = engagementWorkspacePrefix(eng);
+  if (!prefix) return true;
+  const clean = String(path ?? "").trim().replace(/^\/+/, "");
+  return clean === prefix || clean.startsWith(`${prefix}/`) || clean.startsWith("shared/");
 }
 
 export async function aggregateVault(body: VaultAggregateRequest): Promise<Res<VaultAggregateResult>> {

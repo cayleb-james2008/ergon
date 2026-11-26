@@ -23,8 +23,11 @@ import {
 } from "@/shell/WorkspaceFiles";
 import {
   call,
+  engagementWorkspacePrefix,
   exportHandoffBundleZip,
   hasV070Api,
+  type Client,
+  type Engagement,
   type EvidenceVerificationResult,
   type FileRevision,
   type HandoffDryRunResult,
@@ -57,6 +60,11 @@ export const InspectorDrawer = memo(function InspectorDrawer({
   onUploadMany,
   onExportAuditBundle,
   onOfferAction,
+  activeClient = null,
+  activeEngagement = null,
+  engagementScopeOnly,
+  onToggleEngagementScope,
+  onWorkspacePolicyChanged,
 }: {
   open: boolean;
   tab: InspectorTab;
@@ -74,14 +82,20 @@ export const InspectorDrawer = memo(function InspectorDrawer({
   onUploadMany: (picked: FileList | File[]) => Promise<number>;
   onExportAuditBundle: (format: "json" | "md") => Promise<void>;
   onOfferAction: (url: string, msg: string) => Promise<void>;
+  activeClient?: Client | null;
+  activeEngagement?: Engagement | null;
+  engagementScopeOnly?: boolean;
+  onToggleEngagementScope?: (next: boolean) => void;
+  onWorkspacePolicyChanged?: (policy: WorkspacePolicy) => void;
 }) {
   const [exporting, setExporting] = useState<"md" | "json" | "pack" | "html" | "preflight" | "delta" | null>(null);
   const [policy, setPolicy] = useState<WorkspacePolicy | null>(null);
-  const [savingPolicy, setSavingPolicy] = useState<WorkspacePolicyProfile | null>(null);
+  const [savingPolicy, setSavingPolicy] = useState<WorkspacePolicyProfile | "isolate" | null>(null);
   const [handoffScan, setHandoffScan] = useState<HandoffLeakScan | null>(null);
   const [handoffBusy, setHandoffBusy] = useState<"check" | "export" | null>(null);
   const [handoffBlockedMsg, setHandoffBlockedMsg] = useState<string | null>(null);
   const [handoffZipSha, setHandoffZipSha] = useState<string | null>(null);
+  const [handoffScoped, setHandoffScoped] = useState(true);
   const [verifyInfo, setVerifyInfo] = useState<{ checked: number; ok: boolean } | null>(null);
   const [packPreflight, setPackPreflight] = useState<PackPreflightReport | null>(null);
   const [verifyingEvidence, setVerifyingEvidence] = useState(false);
@@ -175,7 +189,13 @@ export const InspectorDrawer = memo(function InspectorDrawer({
   const runHandoffExport = useCallback(async (force: boolean) => {
     setHandoffBusy("export");
     try {
-      const res = await exportHandoffBundleZip({ title: "Client Handoff", force });
+      const res = await exportHandoffBundleZip({
+        title: "Client Handoff",
+        force,
+        ...(handoffScoped && activeEngagement
+          ? { client_id: activeEngagement.client_id, engagement_id: activeEngagement.id }
+          : {}),
+      });
       if (!res.ok) {
         if (res.scan) setHandoffScan(res.scan);
         if (res.blocked) setHandoffBlockedMsg(res.error);
@@ -205,7 +225,7 @@ export const InspectorDrawer = memo(function InspectorDrawer({
     } finally {
       setHandoffBusy(null);
     }
-  }, []);
+  }, [handoffScoped, activeEngagement]);
 
   const reduceMotion = useReducedMotion();
 
@@ -261,6 +281,10 @@ export const InspectorDrawer = memo(function InspectorDrawer({
             onOpenFile={onOpenFile}
             onUpload={onUploadFile}
             onUploadMany={onUploadMany}
+            activeClient={activeClient}
+            activeEngagement={activeEngagement}
+            engagementScopeOnly={engagementScopeOnly}
+            onToggleEngagementScope={onToggleEngagementScope}
           />
         )}
 
@@ -337,6 +361,37 @@ export const InspectorDrawer = memo(function InspectorDrawer({
               <p className="text-xs leading-5 text-ink-2">
                 Scan workspace deliverables for host paths, keys, and tokens, then bundle a verified ZIP archive for client delivery.
               </p>
+              {activeEngagement && (
+                <div
+                  id="handoff-scope-status"
+                  className="flex flex-wrap items-center justify-between gap-2 rounded-sm border border-hairline bg-surface px-2.5 py-1.5 text-xs"
+                >
+                  <div className="min-w-0 flex-1">
+                    <span className="block truncate font-medium text-ink">
+                      {handoffScoped
+                        ? `Scoped: ${[activeClient?.name, activeEngagement.name].filter(Boolean).join(" / ")}`
+                        : "Scope: Full workspace"}
+                    </span>
+                    {handoffScoped && (
+                      <span className="mono block truncate text-[11px] text-ink-2">
+                        {engagementWorkspacePrefix(activeEngagement)}
+                        {policy?.isolate_active_engagement ? " · Isolated" : ""}
+                      </span>
+                    )}
+                  </div>
+                  <Button
+                    id="handoff-scope-toggle"
+                    type="button"
+                    size="xs"
+                    variant={handoffScoped ? "default" : "outline"}
+                    aria-pressed={handoffScoped}
+                    className="max-md:min-h-11 shrink-0 text-xs"
+                    onClick={() => setHandoffScoped((v) => !v)}
+                  >
+                    {handoffScoped ? "Scoped" : "All files"}
+                  </Button>
+                </div>
+              )}
               <div className="grid grid-cols-2 gap-1.5">
                 <Button
                   id="handoff-precheck-btn"
@@ -350,7 +405,12 @@ export const InspectorDrawer = memo(function InspectorDrawer({
                     try {
                       const r = await call<HandoffDryRunResult>("/api/export/handoff", {
                         method: "POST",
-                        body: { dry_run: true },
+                        body: {
+                          dry_run: true,
+                          ...(handoffScoped && activeEngagement
+                            ? { client_id: activeEngagement.client_id, engagement_id: activeEngagement.id }
+                            : {}),
+                        },
                       });
                       if (!r.ok) {
                         toast.error(r.error || "Could not run handoff leak pre-check.");
@@ -489,6 +549,7 @@ export const InspectorDrawer = memo(function InspectorDrawer({
                             return;
                           }
                           setPolicy(r.data);
+                          onWorkspacePolicyChanged?.(r.data);
                           toast.success(`Workspace policy set to ${r.data.label}.`);
                         } finally {
                           setSavingPolicy(null);
@@ -501,7 +562,7 @@ export const InspectorDrawer = memo(function InspectorDrawer({
                 })}
               </div>
               {policy && (
-                <div className="mono flex flex-wrap gap-1.5 text-[11px] text-ink-2">
+                <div className="mono flex flex-wrap items-center gap-1.5 text-[11px] text-ink-2">
                   <span className="rounded-chip bg-surface px-2 py-0.5 border border-hairline">
                     Cite gate: {policy.strict_citation_gate ? "block" : "warn"}
                   </span>
@@ -511,6 +572,37 @@ export const InspectorDrawer = memo(function InspectorDrawer({
                   <span className="rounded-chip bg-surface px-2 py-0.5 border border-hairline">
                     Outbound: {policy.block_outbound_fetch ? "blocked" : "allowed"}
                   </span>
+                  <Button
+                    id="policy-isolate-engagement-btn"
+                    type="button"
+                    size="xs"
+                    variant={policy.isolate_active_engagement ? "default" : "outline"}
+                    aria-pressed={Boolean(policy.isolate_active_engagement)}
+                    disabled={savingPolicy !== null}
+                    className="max-md:min-h-11 text-[11px]"
+                    onClick={async () => {
+                      setSavingPolicy("isolate");
+                      try {
+                        const r = await call<WorkspacePolicy>("/api/workspace/policy", {
+                          method: "PUT",
+                          body: { isolate_active_engagement: !policy.isolate_active_engagement },
+                        });
+                        if (r.ok && r.data) {
+                          setPolicy(r.data);
+                          onWorkspacePolicyChanged?.(r.data);
+                          toast.success(
+                            r.data.isolate_active_engagement
+                              ? "Engagement isolation enabled."
+                              : "Engagement isolation disabled."
+                          );
+                        }
+                      } finally {
+                        setSavingPolicy(null);
+                      }
+                    }}
+                  >
+                    Isolation: {policy.isolate_active_engagement ? "on" : "off"}
+                  </Button>
                 </div>
               )}
             </section>

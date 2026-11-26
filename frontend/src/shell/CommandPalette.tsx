@@ -49,10 +49,14 @@ import { SegmentedControl, SegmentedControlItem } from "@/components/ui/segmente
 import { FileGlyph } from "@/chat/Entry";
 import {
   call,
+  engagementWorkspacePrefix,
   hasV050Api,
+  isPathInEngagementScope,
   reindexVault,
   searchVault,
   type BriefJob,
+  type Client,
+  type Engagement,
   type Routine,
   type SearchHit,
   type Status,
@@ -123,6 +127,10 @@ export const CommandPalette = memo(function CommandPalette({
   onRunPrompt,
   onRunRoutine,
   onSwitchFace,
+  activeClient = null,
+  activeEngagement = null,
+  engagementScopeOnly,
+  onToggleEngagementScope,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -149,9 +157,20 @@ export const CommandPalette = memo(function CommandPalette({
   onRunPrompt?: (prompt: string) => void;
   onRunRoutine: (routine: Routine) => void;
   onSwitchFace: (face: "chat" | "paper" | "graph") => void;
+  activeClient?: Client | null;
+  activeEngagement?: Engagement | null;
+  engagementScopeOnly?: boolean;
+  onToggleEngagementScope?: (next: boolean) => void;
 }) {
   const [query, setQuery] = useState("");
   const [searchMode, setSearchMode] = useState<VaultSearchMode>("hybrid");
+  const [innerScoped, setInnerScoped] = useState(false);
+  const scoped = Boolean(activeEngagement && (engagementScopeOnly !== undefined ? engagementScopeOnly : innerScoped));
+  const setScoped = (next: boolean) => {
+    if (onToggleEngagementScope) onToggleEngagementScope(next);
+    else setInnerScoped(next);
+  };
+  const activeScopePrefix = useMemo(() => engagementWorkspacePrefix(activeEngagement), [activeEngagement]);
   const [remoteHits, setRemoteHits] = useState<SearchHit[]>([]);
   const [fileHits, setFileHits] = useState<VaultFileHit[]>([]);
   const [indexStats, setIndexStats] = useState<VaultIndexStats | null>(null);
@@ -185,7 +204,18 @@ export const CommandPalette = memo(function CommandPalette({
       }
     });
     if (hasV050Api(status, "search")) {
-      searchVault({ q: "", limit: 1, signal: controller.signal }).then((r) => {
+      searchVault({
+        q: "",
+        limit: 1,
+        ...(scoped && activeEngagement
+          ? {
+              client_id: activeEngagement.client_id,
+              engagement_id: activeEngagement.id,
+              ...(activeScopePrefix ? { path_prefix: activeScopePrefix } : {}),
+            }
+          : {}),
+        signal: controller.signal,
+      }).then((r) => {
         if (!cancelled && !controller.signal.aborted && r.ok && r.data.index_stats) {
           setIndexStats(r.data.index_stats);
         }
@@ -195,7 +225,7 @@ export const CommandPalette = memo(function CommandPalette({
       cancelled = true;
       controller.abort();
     };
-  }, [open, status]);
+  }, [open, status, scoped, activeEngagement?.id, activeEngagement?.client_id, activeScopePrefix]);
 
   // Query server indexed search (GET /api/search?q=...) on v0.5.0+ when typing >= 2 chars.
   useEffect(() => {
@@ -219,6 +249,13 @@ export const CommandPalette = memo(function CommandPalette({
         q,
         mode: searchMode,
         limit: 16,
+        ...(scoped && activeEngagement
+          ? {
+              client_id: activeEngagement.client_id,
+              engagement_id: activeEngagement.id,
+              ...(activeScopePrefix ? { path_prefix: activeScopePrefix } : {}),
+            }
+          : {}),
         signal: controller.signal,
       });
       if (cancelled || controller.signal.aborted || reqSeq !== searchSeqRef.current) return;
@@ -305,7 +342,7 @@ export const CommandPalette = memo(function CommandPalette({
       }
       window.clearTimeout(timer);
     };
-  }, [open, query, searchMode, searchNonce, status]);
+  }, [open, query, searchMode, searchNonce, status, scoped, activeEngagement?.id, activeEngagement?.client_id, activeScopePrefix]);
 
   const handleReindexVault = async () => {
     if (reindexLockRef.current || reindexing) return;
@@ -344,16 +381,21 @@ export const CommandPalette = memo(function CommandPalette({
 
   const qLower = query.trim().toLowerCase();
 
+  const scopedFiles = useMemo(() => {
+    if (!scoped || !activeEngagement) return files;
+    return files.filter((f) => isPathInEngagementScope(f.path, activeEngagement));
+  }, [files, scoped, activeEngagement]);
+
   // Pre-filter and cap large lists (500+ files, 5,000+ receipts) with fuzzy scoring so cmdk stays instant at 60fps.
   const matchedFiles = useMemo(() => {
-    if (!qLower) return files.slice(0, 12);
-    return files
+    if (!qLower) return scopedFiles.slice(0, 12);
+    return scopedFiles
       .map((f) => ({ f, score: fuzzyScore(qLower, f.path, f.ext) }))
       .filter((x) => x.score > 0)
       .sort((a, b) => b.score - a.score)
       .slice(0, 12)
       .map((x) => x.f);
-  }, [files, qLower]);
+  }, [scopedFiles, qLower]);
 
   const matchedCitations = useMemo(() => {
     const out: Array<{ raw: string; path: string; line: number; endLine?: number; sourceTask: string }> = [];
@@ -388,6 +430,7 @@ export const CommandPalette = memo(function CommandPalette({
     const combined: { id: string; title: string; subtitle: string; thread_id?: string; ts?: number; score: number }[] = [];
     const seen = new Set<string>();
     for (const r of receipts) {
+      if (scoped && activeEngagement && r.engagement_id && r.engagement_id !== activeEngagement.id) continue;
       const title = String(r.task ?? "").trim();
       if (!title) continue;
       const key = `${r.thread_id || ""}|${title}`;
@@ -555,10 +598,24 @@ export const CommandPalette = memo(function CommandPalette({
               ))}
             </SegmentedControl>
             <div className="flex flex-wrap items-center gap-1.5">
+              {activeEngagement && (
+                <Button
+                  id="palette-engagement-scope-toggle"
+                  type="button"
+                  size="xs"
+                  variant={scoped ? "default" : "outline"}
+                  aria-pressed={scoped}
+                  title={[activeClient?.name, activeEngagement.name].filter(Boolean).join(" / ")}
+                  className="min-h-11 text-xs md:min-h-7"
+                  onClick={() => setScoped(!scoped)}
+                >
+                  {scoped ? "Active Engagement Scope: On" : "Active Engagement Scope"}
+                </Button>
+              )}
               <Badge id="palette-index-stats" variant="outline" size="sm" className="text-xs text-ink-2 tabular-nums">
                 {indexStats
                   ? `${indexStats.total_chunks} chunks, ${indexStats.total_files} files`
-                  : `${files.length} files`}
+                  : `${scopedFiles.length} files`}
               </Badge>
               <Button
                 id="palette-reindex-btn"
