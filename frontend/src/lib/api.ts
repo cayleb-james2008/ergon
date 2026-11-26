@@ -19,6 +19,7 @@ export type ServerCapabilities = {
   table_query?: boolean;
   pdf_export?: boolean;
   connectors?: boolean;
+  mcp?: boolean;
   clients?: boolean;
   metering?: boolean;
   vault_search?: boolean;
@@ -808,6 +809,10 @@ export type Decision = {
   method?: string;
   payload_preview?: string;
   payload_sha256?: string;
+  server_id?: string;
+  server_name?: string;
+  tool_name?: string;
+  arguments_preview?: string;
   engagement_id?: string;
   engagement_name?: string;
   client_name?: string;
@@ -1372,7 +1377,21 @@ export function canExportPdf(path: string, extractedFormat?: "markdown" | "csv")
   return ext === "md" || ext === "markdown" || ext === "txt" || ext === "csv" || ext === "tsv";
 }
 
-export type TriggerKind = "webhook" | "folder_watch";
+export type TriggerKind = "webhook" | "folder_watch" | "imap_poll";
+
+export type ImapSecurity = "imaps" | "starttls" | "plain_loopback_test" | (string & {});
+
+export type ImapConfig = {
+  host: string;
+  port: number;
+  security: ImapSecurity;
+  folder: string;
+  poll_interval_secs: number;
+  mark_seen: boolean;
+  username_secret_key: string;
+  password_secret_key: string;
+  subject_filter?: string;
+};
 
 export type TriggerRule = {
   id: string;
@@ -1393,6 +1412,7 @@ export type TriggerRule = {
   folder_path?: string | null;
   glob_filter?: string | null;
   max_bytes?: number;
+  imap_config?: ImapConfig;
   last_triggered_ms?: number | null;
   trigger_count?: number;
   created_ms?: number;
@@ -1400,6 +1420,27 @@ export type TriggerRule = {
 };
 
 export type OutboundConnectorKind = "http_webhook" | "rest_api" | "smtp_relay";
+
+export type SmtpSecurity = "smtps" | "starttls" | "plain_loopback_test";
+
+export type SmtpConfig = {
+  host: string;
+  port: number;
+  security: SmtpSecurity;
+  username_secret_key: string;
+  password_secret_key: string;
+  from_addr: string;
+  default_to: string[];
+};
+
+export type OAuthConfig = {
+  token_url: string;
+  client_id: string;
+  client_secret_key: string;
+  refresh_token_secret_key: string;
+  scopes: string[];
+  access_token_expires_ms?: number;
+};
 
 export type OutboundConnector = {
   id: string;
@@ -1410,6 +1451,8 @@ export type OutboundConnector = {
   headers_template?: Record<string, string>;
   secret_keys?: string[];
   has_secret?: boolean;
+  smtp_config?: SmtpConfig;
+  oauth_config?: OAuthConfig;
   require_approval: boolean;
   effective_require_approval?: boolean;
   blocked_by_policy?: boolean;
@@ -1506,6 +1549,8 @@ export async function saveTriggerRule(body: {
   enabled?: boolean;
   watch_dir?: string;
   glob?: string;
+  imap_config?: ImapConfig;
+  secrets?: Record<string, string>;
 }): Promise<
   Res<{
     trigger?: TriggerRule;
@@ -1609,12 +1654,94 @@ export async function saveOutboundConnector(body: {
   secrets?: Record<string, string>;
   secret_key?: string;
   secret_value?: string;
+  smtp_config?: SmtpConfig;
+  oauth_config?: OAuthConfig;
   require_approval: boolean;
   enabled?: boolean;
 }): Promise<Res<{ connector?: OutboundConnector }>> {
   return call<{ connector?: OutboundConnector }>("/api/connectors/outbound", {
     method: "POST",
     body,
+  });
+}
+
+export type McpTransport = "stdio" | "http_sse";
+
+export type McpToolSpec = {
+  name: string;
+  description?: string;
+  input_schema?: unknown;
+};
+
+export type McpServerSpec = {
+  id: string;
+  name: string;
+  transport: McpTransport;
+  command_or_url: string;
+  args: string[];
+  env_secret_keys: string[];
+  require_approval_by_default: boolean;
+  enabled: boolean;
+  cached_tools?: McpToolSpec[];
+  last_discovered_ms?: number | null;
+  last_error?: string | null;
+  created_ms?: number;
+  updated_ms?: number;
+};
+
+export function hasMcpApi(status: Status | null | "error" | undefined): boolean {
+  if (isWebStandalone()) return true;
+  if (!status || status === "error") return false;
+  if (typeof status.capabilities?.mcp === "boolean") {
+    return Boolean(status.capabilities.mcp);
+  }
+  return isAtLeastMinor(status.version, 38);
+}
+
+export async function listMcpServers(): Promise<Res<{ servers: McpServerSpec[] }>> {
+  const r = await call<{ servers?: McpServerSpec[] }>("/api/mcp/servers");
+  if (!r.ok) return r;
+  return {
+    ok: true,
+    data: {
+      servers: Array.isArray(r.data.servers) ? r.data.servers : [],
+    },
+  };
+}
+
+export async function saveMcpServer(body: {
+  id?: string;
+  name: string;
+  transport: McpTransport;
+  command_or_url: string;
+  args: string[];
+  env_secret_keys: string[];
+  require_approval_by_default: boolean;
+  enabled: boolean;
+}): Promise<Res<{ server?: McpServerSpec; servers?: McpServerSpec[] }>> {
+  return call<{ server?: McpServerSpec; servers?: McpServerSpec[] }>("/api/mcp/servers", {
+    method: "POST",
+    body,
+  });
+}
+
+export async function discoverMcpServer(id: string): Promise<
+  Res<{
+    server?: McpServerSpec;
+    tools?: McpToolSpec[];
+    cached_tools?: McpToolSpec[];
+    discovered_count?: number;
+  }>
+> {
+  return call(`/api/mcp/servers/${encodeURIComponent(id)}/discover`, {
+    method: "POST",
+    body: {},
+  });
+}
+
+export async function deleteMcpServer(id: string): Promise<Res<{ deleted?: string }>> {
+  return call<{ deleted?: string }>(`/api/mcp/servers/${encodeURIComponent(id)}`, {
+    method: "DELETE",
   });
 }
 

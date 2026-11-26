@@ -23,16 +23,21 @@ import {
   type DeliveryLog,
   type Engagement,
   type FileRevision,
+  type ImapConfig,
   type InvoiceLineItem,
   type InvoiceRecord,
   type InvoiceStatus,
   type LiveRunStep,
+  type McpServerSpec,
+  type McpToolSpec,
+  type McpTransport,
   type MeteringByEngagement,
   type MeteringByModel,
   type MeteringDailyPoint,
   type MeteringSummary,
   type ModelPricingEntry,
   type ModelPricingMap,
+  type OAuthConfig,
   type OutboundConnector,
   type OutboundConnectorKind,
   type PipelineAgentSnapshot,
@@ -47,6 +52,8 @@ import {
   type Routine,
   type RoutineRunRecord,
   type RunUsage,
+  type SmtpConfig,
+  type SmtpSecurity,
   type TimeExpenseEntry,
   type TimeExpenseKind,
   type TriggerRule,
@@ -118,6 +125,10 @@ type WebDecision = {
   payload_preview?: string;
   payload_sha256?: string;
   delivery_id?: string;
+  server_id?: string;
+  server_name?: string;
+  tool_name?: string;
+  arguments_preview?: string;
   engagement_id?: string;
   engagement_name?: string;
   client_name?: string;
@@ -166,6 +177,7 @@ type PersonStore = {
   routineRuns: Record<string, RoutineRunRecord[]>;
   pipelineRuns?: PipelineRun[];
   connectors?: WebConnectorsState;
+  mcpServers?: McpServerSpec[];
   memory: string;
   suite: string[];
   policyProfile?: WorkspacePolicyProfile;
@@ -1378,6 +1390,13 @@ function ensureWebConnectors(st: PersonStore): WebConnectorsState {
   if (!st.connectors.webhookSecrets || typeof st.connectors.webhookSecrets !== "object") st.connectors.webhookSecrets = {};
   if (!st.connectors.outboundSecrets || typeof st.connectors.outboundSecrets !== "object") st.connectors.outboundSecrets = {};
   return st.connectors;
+}
+
+function ensureWebMcpServers(st: PersonStore): McpServerSpec[] {
+  if (!Array.isArray(st.mcpServers)) {
+    st.mcpServers = [];
+  }
+  return st.mcpServers;
 }
 
 function randomHex(byteCount = 12): string {
@@ -5216,6 +5235,7 @@ function runWebVaultAggregate(
           table_query: true,
           pdf_export: true,
           connectors: true,
+          mcp: true,
           clients: true,
           metering: true,
           vault_search: true,
@@ -7660,13 +7680,71 @@ function runWebVaultAggregate(
     }
     if (method === "POST" && path === "/api/connectors/triggers") {
       const cs = ensureWebConnectors(st);
-      const kind = body.kind === "folder_watch" ? "folder_watch" : "webhook";
+      const kind =
+        body.kind === "folder_watch"
+          ? "folder_watch"
+          : body.kind === "imap_poll"
+            ? "imap_poll"
+            : "webhook";
       const name = String(body.name ?? "").trim();
       if (!name) return jsonRes({ error: "Trigger name is required." }, 400);
       const routineId = typeof body.routine_id === "string" && body.routine_id.trim() ? body.routine_id.trim() : null;
       const targetKind = body.target_kind === "pipeline" ? "pipeline" : "routine";
       const enabled = typeof body.enabled === "boolean" ? body.enabled : true;
       const nowMs = Date.now();
+      if (kind === "imap_poll") {
+        const rawCfg = (body.imap_config && typeof body.imap_config === "object" ? body.imap_config : {}) as Record<string, unknown>;
+        const host = String(rawCfg.host ?? "").trim();
+        const port = Number(rawCfg.port ?? 993);
+        const security = String(rawCfg.security ?? "imaps").trim() || "imaps";
+        const folder = String(rawCfg.folder ?? "INBOX").trim() || "INBOX";
+        const pollIntervalSecs = Math.max(5, Number(rawCfg.poll_interval_secs ?? 60) || 60);
+        const markSeen = typeof rawCfg.mark_seen === "boolean" ? rawCfg.mark_seen : true;
+        const usernameSecretKey = String(rawCfg.username_secret_key ?? "imap_user").trim();
+        const passwordSecretKey = String(rawCfg.password_secret_key ?? "imap_pass").trim();
+        const subjectFilter = typeof rawCfg.subject_filter === "string" && rawCfg.subject_filter.trim() ? rawCfg.subject_filter.trim() : undefined;
+        if (!host || /[\s\0\r\n/@]/.test(host)) {
+          return jsonRes({ error: "Valid IMAP host is required." }, 400);
+        }
+        if (!Number.isInteger(port) || port < 1 || port > 65535) {
+          return jsonRes({ error: "IMAP port must be between 1 and 65535." }, 400);
+        }
+        if (body.secrets && typeof body.secrets === "object" && !Array.isArray(body.secrets)) {
+          for (const [k, v] of Object.entries(body.secrets as Record<string, unknown>)) {
+            const key = k.trim();
+            const val = String(v ?? "").trim();
+            if (key && val) cs.outboundSecrets[key] = val;
+          }
+        }
+        const imapConfig: ImapConfig = {
+          host,
+          port,
+          security,
+          folder,
+          poll_interval_secs: pollIntervalSecs,
+          mark_seen: markSeen,
+          username_secret_key: usernameSecretKey,
+          password_secret_key: passwordSecretKey,
+          ...(subjectFilter ? { subject_filter: subjectFilter } : {}),
+        };
+        const trg: TriggerRule = {
+          id: `trg-${nowMs}-${cs.triggers.length + 1}`,
+          name,
+          kind: "imap_poll",
+          enabled,
+          routine_id: routineId,
+          target_kind: targetKind,
+          imap_config: imapConfig,
+          has_secret: Boolean(cs.outboundSecrets[usernameSecretKey] || cs.outboundSecrets[passwordSecretKey]),
+          trigger_count: 0,
+          last_triggered_ms: null,
+          created_ms: nowMs,
+          updated_ms: nowMs,
+        };
+        cs.triggers.unshift(trg);
+        await persist();
+        return jsonRes({ trigger: trg }, 201);
+      }
       if (kind === "folder_watch") {
         const watchDir = String(body.watch_dir ?? body.folder_path ?? "").trim();
         const dirErr = validateWebWatchDir(watchDir);
@@ -7805,10 +7883,57 @@ function runWebVaultAggregate(
     if (method === "POST" && path === "/api/connectors/outbound") {
       const cs = ensureWebConnectors(st);
       const name = String(body.name ?? "").trim();
-      const url = String(body.url ?? "").trim();
       if (!name) return jsonRes({ error: "Connector name is required." }, 400);
       const kind: OutboundConnectorKind =
         body.kind === "rest_api" || body.kind === "smtp_relay" ? body.kind : "http_webhook";
+
+      let smtpConfig: SmtpConfig | undefined;
+      if (body.smtp_config && typeof body.smtp_config === "object" && !Array.isArray(body.smtp_config)) {
+        const sc = body.smtp_config as Record<string, unknown>;
+        const host = String(sc.host ?? "").trim();
+        const port = Number(sc.port ?? 465);
+        const rawSec = String(sc.security ?? "smtps").trim();
+        const security: SmtpSecurity =
+          rawSec === "starttls" || rawSec === "plain_loopback_test" ? rawSec : "smtps";
+        const fromAddr = String(sc.from_addr ?? "").trim();
+        const defaultTo = Array.isArray(sc.default_to) ? sc.default_to.map(String).map((x) => x.trim()).filter(Boolean) : [];
+        if (!host || /[\s\0\r\n/@]/.test(host)) return jsonRes({ error: "SMTP host is required." }, 400);
+        if (!Number.isInteger(port) || port < 1 || port > 65535) return jsonRes({ error: "Invalid SMTP port." }, 400);
+        if (!fromAddr || !fromAddr.includes("@")) return jsonRes({ error: "Valid SMTP sender address is required." }, 400);
+        smtpConfig = {
+          host,
+          port,
+          security,
+          username_secret_key: String(sc.username_secret_key ?? "smtp_user").trim(),
+          password_secret_key: String(sc.password_secret_key ?? "smtp_pass").trim(),
+          from_addr: fromAddr,
+          default_to: defaultTo,
+        };
+      }
+
+      let oauthConfig: OAuthConfig | undefined;
+      if (body.oauth_config && typeof body.oauth_config === "object" && !Array.isArray(body.oauth_config)) {
+        const oc = body.oauth_config as Record<string, unknown>;
+        const tokenUrl = String(oc.token_url ?? "").trim();
+        const clientId = String(oc.client_id ?? "").trim();
+        const urlErr = validateWebOutboundUrl(tokenUrl, "rest_api");
+        if (urlErr) return jsonRes({ error: `OAuth2 token URL: ${urlErr}` }, 400);
+        if (!clientId) return jsonRes({ error: "OAuth2 client ID is required." }, 400);
+        oauthConfig = {
+          token_url: tokenUrl,
+          client_id: clientId,
+          client_secret_key: String(oc.client_secret_key ?? "oauth_client_secret").trim(),
+          refresh_token_secret_key: String(oc.refresh_token_secret_key ?? "oauth_refresh_token").trim(),
+          scopes: Array.isArray(oc.scopes) ? oc.scopes.map(String).map((s) => s.trim()).filter(Boolean) : [],
+          ...(typeof oc.access_token_expires_ms === "number" ? { access_token_expires_ms: oc.access_token_expires_ms } : {}),
+        };
+      }
+
+      let url = String(body.url ?? "").trim();
+      if (!url && kind === "smtp_relay" && smtpConfig) {
+        const scheme = smtpConfig.security === "smtps" ? "smtps" : "smtp";
+        url = `${scheme}://${smtpConfig.host}:${smtpConfig.port}`;
+      }
       const urlErr = validateWebOutboundUrl(url, kind);
       if (urlErr) return jsonRes({ error: urlErr }, 400);
       const methodVal: "POST" | "PUT" = body.method === "PUT" ? "PUT" : "POST";
@@ -7841,6 +7966,22 @@ function runWebVaultAggregate(
         const m = /\{\{secret:([a-zA-Z0-9_.-]+)\}\}/.exec(hVal);
         if (m && cs.outboundSecrets[m[1]]) secretKeys.add(m[1]);
       }
+      if (smtpConfig) {
+        if (smtpConfig.username_secret_key && cs.outboundSecrets[smtpConfig.username_secret_key]) {
+          secretKeys.add(smtpConfig.username_secret_key);
+        }
+        if (smtpConfig.password_secret_key && cs.outboundSecrets[smtpConfig.password_secret_key]) {
+          secretKeys.add(smtpConfig.password_secret_key);
+        }
+      }
+      if (oauthConfig) {
+        if (oauthConfig.client_secret_key && cs.outboundSecrets[oauthConfig.client_secret_key]) {
+          secretKeys.add(oauthConfig.client_secret_key);
+        }
+        if (oauthConfig.refresh_token_secret_key && cs.outboundSecrets[oauthConfig.refresh_token_secret_key]) {
+          secretKeys.add(oauthConfig.refresh_token_secret_key);
+        }
+      }
       const nowMs = Date.now();
       const conn: OutboundConnector = {
         id: typeof body.id === "string" && body.id.trim() ? body.id.trim() : `conn-${nowMs}-${cs.outbound.length + 1}`,
@@ -7851,6 +7992,8 @@ function runWebVaultAggregate(
         headers_template: headersTemplate,
         secret_keys: Array.from(secretKeys),
         has_secret: secretKeys.size > 0,
+        ...(smtpConfig ? { smtp_config: smtpConfig } : {}),
+        ...(oauthConfig ? { oauth_config: oauthConfig } : {}),
         require_approval: typeof body.require_approval === "boolean" ? body.require_approval : true,
         enabled: typeof body.enabled === "boolean" ? body.enabled : true,
         last_delivery_ms: null,
@@ -7974,6 +8117,99 @@ function runWebVaultAggregate(
       await persist();
       return jsonRes({ ok: true, delivery, message: `Test delivery succeeded for "${conn.name}".` }, 200);
     }
+    if (method === "GET" && path === "/api/mcp/servers") {
+      const servers = ensureWebMcpServers(st);
+      return jsonRes({ servers });
+    }
+    if (method === "POST" && path === "/api/mcp/servers") {
+      const servers = ensureWebMcpServers(st);
+      const name = String(body.name ?? "").trim();
+      if (!name) return jsonRes({ error: "MCP server name is required." }, 400);
+      const transport: McpTransport = body.transport === "http_sse" ? "http_sse" : "stdio";
+      const commandOrUrl = String(body.command_or_url ?? "").trim();
+      if (!commandOrUrl) return jsonRes({ error: "Command or SSE URL is required." }, 400);
+      if (transport === "http_sse") {
+        const urlErr = validateWebOutboundUrl(commandOrUrl, "rest_api");
+        if (urlErr) return jsonRes({ error: urlErr }, 400);
+      }
+      const args = Array.isArray(body.args) ? body.args.map(String).filter(Boolean) : [];
+      const envSecretKeys = Array.isArray(body.env_secret_keys)
+        ? body.env_secret_keys.map(String).map((s) => s.trim()).filter(Boolean)
+        : [];
+      const requireApproval = typeof body.require_approval_by_default === "boolean" ? body.require_approval_by_default : true;
+      const enabled = typeof body.enabled === "boolean" ? body.enabled : true;
+      const nowMs = Date.now();
+      const reqId = typeof body.id === "string" && body.id.trim() ? body.id.trim() : "";
+      const existingIdx = reqId ? servers.findIndex((s) => s.id === reqId) : -1;
+      if (existingIdx >= 0) {
+        const prev = servers[existingIdx];
+        const updated: McpServerSpec = {
+          ...prev,
+          name,
+          transport,
+          command_or_url: commandOrUrl,
+          args,
+          env_secret_keys: envSecretKeys,
+          require_approval_by_default: requireApproval,
+          enabled,
+          updated_ms: nowMs,
+        };
+        servers[existingIdx] = updated;
+        await persist();
+        return jsonRes({ server: updated }, 200);
+      }
+      const srv: McpServerSpec = {
+        id: reqId || `mcp-${nowMs}-${servers.length + 1}`,
+        name,
+        transport,
+        command_or_url: commandOrUrl,
+        args,
+        env_secret_keys: envSecretKeys,
+        require_approval_by_default: requireApproval,
+        enabled,
+        cached_tools: [],
+        last_discovered_ms: null,
+        created_ms: nowMs,
+        updated_ms: nowMs,
+      };
+      servers.unshift(srv);
+      await persist();
+      return jsonRes({ server: srv }, 201);
+    }
+    if (method === "POST" && path.startsWith("/api/mcp/servers/") && path.endsWith("/discover")) {
+      const sid = decodeURIComponent(path.slice("/api/mcp/servers/".length, -"/discover".length));
+      const servers = ensureWebMcpServers(st);
+      const srv = servers.find((s) => s.id === sid);
+      if (!srv) return jsonRes({ error: "MCP server not found" }, 404);
+      const nowMs = Date.now();
+      const tools: McpToolSpec[] =
+        srv.cached_tools && srv.cached_tools.length > 0
+          ? srv.cached_tools
+          : [
+              {
+                name: "search_records",
+                description: `Query records exposed by ${srv.name}.`,
+              },
+              {
+                name: "get_item",
+                description: `Fetch a single record by ID from ${srv.name}.`,
+              },
+            ];
+      srv.cached_tools = tools;
+      srv.last_discovered_ms = nowMs;
+      srv.updated_ms = nowMs;
+      await persist();
+      return jsonRes({ server: srv, tools, cached_tools: tools, discovered_count: tools.length });
+    }
+    if (method === "DELETE" && path.startsWith("/api/mcp/servers/")) {
+      const sid = decodeURIComponent(path.slice("/api/mcp/servers/".length));
+      const servers = ensureWebMcpServers(st);
+      const before = servers.length;
+      st.mcpServers = servers.filter((s) => s.id !== sid);
+      if (st.mcpServers.length === before) return jsonRes({ error: "MCP server not found" }, 404);
+      await persist();
+      return jsonRes({ deleted: sid });
+    }
     if (method === "GET" && path === "/api/decisions") return jsonRes({ decisions: st.decisions });
     if (method === "POST" && path.startsWith("/api/decisions/")) {
       const [rawId, action] = path.slice("/api/decisions/".length).split("/");
@@ -8014,6 +8250,11 @@ function runWebVaultAggregate(
             log.error = dec.outcome;
           }
         }
+      } else if (dec.kind === "mcp_tool_call") {
+        const target = `${dec.tool_name || "tool"} on ${dec.server_name || "MCP server"}`;
+        dec.outcome = approve
+          ? `Approved and ran ${target}.`
+          : `Blocked ${target}; nothing ran.`;
       } else if (dec.kind === "budget_gate") {
         if (approve) {
           if (!st.budgetOverrunApproved) st.budgetOverrunApproved = {};
