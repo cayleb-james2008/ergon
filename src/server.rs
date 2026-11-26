@@ -4483,6 +4483,37 @@ fn try_route_files_and_audit(
                 }
             }
         }
+        ("POST", "/api/vault/aggregate") => {
+            let parsed: Value = match serde_json::from_slice(&req.body) {
+                Ok(v) => v,
+                Err(_) => return Some(respond_err(stream, 400, "request body is not valid JSON")),
+            };
+            match tables::execute_vault_aggregate(&runtime.cfg, &parsed) {
+                Ok(res) => {
+                    if res.saved_path.is_some() {
+                        state.search_cache.invalidate(&person.id);
+                        search::SearchCache::global()
+                            .invalidate(&runtime.cfg.data_dir.to_string_lossy());
+                    }
+                    respond_json(stream, 200, &res.to_json())
+                }
+                Err(e) => {
+                    let status = if e.contains("appears to be binary")
+                        || e.contains("is not valid UTF-8")
+                        || e.contains("cannot be parsed")
+                    {
+                        400
+                    } else if is_history_security_error(&e) || e.contains("symlink") {
+                        403
+                    } else if e.contains("not found") {
+                        404
+                    } else {
+                        400
+                    };
+                    respond_err(stream, status, &e)
+                }
+            }
+        }
         ("POST", "/api/files/export") => {
             let parsed: Value = serde_json::from_slice(&req.body).unwrap_or(Value::Null);
             let has_sheets = parsed["sheets"].as_array().is_some_and(|a| !a.is_empty());
@@ -4646,8 +4677,14 @@ fn try_route_knowledge_and_routines(
     let _ = root_cfg;
     Some(match (req.method.as_str(), req.path.as_str()) {
         ("GET", "/api/search") => {
-            let (q, scope, limit) = if req.query.is_empty() {
-                (String::new(), String::from("all"), 30usize)
+            let (q, scope, mode, limit, path_prefix) = if req.query.is_empty() {
+                (
+                    String::new(),
+                    String::from("all"),
+                    String::from("hybrid"),
+                    30usize,
+                    String::new(),
+                )
             } else {
                 (
                     query_param(&req.query, "q").unwrap_or_default(),
@@ -4655,15 +4692,43 @@ fn try_route_knowledge_and_routines(
                         .map(|s| s.to_ascii_lowercase())
                         .filter(|s| matches!(s.as_str(), "all" | "receipts" | "files" | "memory"))
                         .unwrap_or_else(|| "all".to_string()),
+                    query_param(&req.query, "mode")
+                        .map(|s| s.to_ascii_lowercase())
+                        .filter(|s| matches!(s.as_str(), "hybrid" | "bm25" | "exact"))
+                        .unwrap_or_else(|| "hybrid".to_string()),
                     query_param(&req.query, "limit")
                         .and_then(|s| s.parse::<usize>().ok())
                         .unwrap_or(30),
+                    query_param(&req.query, "path_prefix").unwrap_or_default(),
                 )
             };
             let idx = person_idx(state, person, runtime);
             respond_json_with(stream, 200, |buf| {
-                idx.write_search_json(buf, &q, &scope, limit);
+                idx.write_search_json_with(buf, &q, &scope, &mode, limit, &path_prefix);
             })
+        }
+        ("POST", "/api/vault/reindex") => {
+            let t0 = std::time::Instant::now();
+            let idx = state.search_cache.reindex(
+                &person.id,
+                &runtime.cfg.data_dir,
+                &runtime.cfg.workspace_dir,
+                &runtime.cfg.memory_path,
+            );
+            search::SearchCache::global().invalidate(&runtime.cfg.data_dir.to_string_lossy());
+            let elapsed_ms = (t0.elapsed().as_secs_f64() * 1000.0 * 100.0).round() / 100.0;
+            respond_json(
+                stream,
+                200,
+                &json!({
+                    "ok": true,
+                    "indexed_files": idx.files.len(),
+                    "total_chunks": idx.total_chunks(),
+                    "indexed_bytes": idx.indexed_bytes,
+                    "semantic_enabled": idx.semantic_enabled,
+                    "elapsed_ms": elapsed_ms,
+                }),
+            )
         }
         ("GET", "/api/receipts") => {
             let (offset, limit, q, status) = if req.query.is_empty() {

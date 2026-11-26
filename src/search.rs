@@ -1,21 +1,34 @@
-//! High-scale in-memory search index & cached receipts/files store.
+//! High-scale in-memory & persistent chunked vault search index.
 //!
 //! Designed for 5,000+ receipts and 500+ workspace files under 30+ concurrent
 //! HTTP/SSE clients: uses per-person `RwLock` caching invalidated on writes
-//! and verified via lightweight `stat()` fingerprints, plus an inverted token
-//! index so `GET /api/search?q=...`, `GET /api/receipts`, and `GET /api/files`
-//! consistently answer in single-digit milliseconds.
+//! and verified via lightweight `stat()` fingerprints, persistent incremental
+//! `<person_data_dir>/vault_index.json` keyed by `(path, mtime_ns, sha256)`,
+//! full-document chunking (zero 512-char cutoff, all `.xlsx` sheets, `.pdf`
+//! pages, `.pptx` slides, `.docx` sections, and text/CSV/Markdown files),
+//! BM25 + semantic cosine similarity fused via Reciprocal Rank Fusion (RRF),
+//! and zero-DOM streaming JSON serialization.
 
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
+use std::ops::Range;
 use std::path::Path;
-use std::sync::{Arc, Mutex, RwLock};
-use std::time::{Instant, UNIX_EPOCH};
+use std::sync::{Arc, Mutex, OnceLock, RwLock};
+use std::time::{Duration, Instant, UNIX_EPOCH};
 
+use crate::docs::{self, DocKind};
 use crate::receipts::{self, ChainedReceipt};
 use crate::records;
 
-const MAX_SNIPPET_BYTES: usize = 1024;
+const EMBED_DIM: usize = 256;
+const SEMANTIC_MIN_THRESHOLD: f64 = 0.25;
+const RRF_K: f64 = 60.0;
+const MAX_CHUNK_CHARS: usize = 1000;
+const MIN_SPLIT_CHARS: usize = 350;
+const OVERLAP_CHARS: usize = 120;
+const MAX_PLAIN_TEXT_BYTES: u64 = 5 * 1024 * 1024;
+const VAULT_INDEX_VERSION: u64 = 1;
+const VAULT_INDEX_FILE: &str = "vault_index.json";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct Fingerprint {
@@ -26,6 +39,8 @@ struct Fingerprint {
     mem_mtime: u128,
     mem_len: u64,
     ws_mtime: u128,
+    ws_meta_hash: u64,
+    cfg_mtime: u128,
 }
 
 fn stat_pair(path: &Path) -> (u128, u64) {
@@ -40,6 +55,79 @@ fn stat_pair(path: &Path) -> (u128, u64) {
             (ns, m.len())
         }
         Err(_) => (0, 0),
+    }
+}
+
+fn fnv1a_64(bytes: &[u8], seed: u64) -> u64 {
+    let mut h = 0xcbf2_9ce4_8422_2325u64 ^ seed;
+    for &b in bytes {
+        h ^= b as u64;
+        h = h.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    h
+}
+
+fn ws_metadata_hash_walk(root: &Path, dir: &Path, hash: &mut u64) {
+    let Ok(rd) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in rd.filter_map(|e| e.ok()) {
+        let name_os = entry.file_name();
+        let name = name_os.to_string_lossy();
+        if name.starts_with('.') || name.eq_ignore_ascii_case("connector_secrets.json") {
+            continue;
+        }
+        let path = entry.path();
+        let Ok(md) = std::fs::symlink_metadata(&path) else {
+            continue;
+        };
+        if md.file_type().is_symlink() {
+            continue;
+        }
+        if md.is_dir() {
+            ws_metadata_hash_walk(root, &path, hash);
+            continue;
+        }
+        if !md.is_file() {
+            continue;
+        }
+        let rel = path
+            .strip_prefix(root)
+            .map(|p| p.to_string_lossy().replace('\\', "/"))
+            .unwrap_or_else(|_| name.into_owned());
+        let ns = md
+            .modified()
+            .ok()
+            .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        // Order-independent XOR mix over per-file FNV-1a digests so directory
+        // traversal order never affects fingerprint stability.
+        let mut fh = fnv1a_64(rel.as_bytes(), 0);
+        fh = fnv1a_64(&md.len().to_le_bytes(), fh);
+        fh = fnv1a_64(&ns.to_le_bytes(), fh);
+        *hash ^= fh;
+    }
+}
+
+fn compute_fingerprint(data_dir: &Path, workspace_dir: &Path, memory_path: &Path) -> Fingerprint {
+    let (work_mtime, work_len) = stat_pair(&records::work_path(data_dir));
+    let (receipts_mtime, receipts_len) = stat_pair(&data_dir.join("receipts.json"));
+    let (mem_mtime, mem_len) = stat_pair(memory_path);
+    let (ws_mtime, _) = stat_pair(workspace_dir);
+    let (cfg_mtime, _) = stat_pair(&crate::config_file_path(data_dir));
+    let mut ws_meta_hash = 0u64;
+    ws_metadata_hash_walk(workspace_dir, workspace_dir, &mut ws_meta_hash);
+    Fingerprint {
+        work_mtime,
+        work_len,
+        receipts_mtime,
+        receipts_len,
+        mem_mtime,
+        mem_len,
+        ws_mtime,
+        ws_meta_hash,
+        cfg_mtime,
     }
 }
 
@@ -108,6 +196,14 @@ pub(crate) fn write_json_bool(out: &mut Vec<u8>, v: bool) {
     out.extend_from_slice(if v { b"true" } else { b"false" });
 }
 
+#[inline]
+fn write_json_f64(out: &mut Vec<u8>, v: f64) {
+    use std::io::Write as _;
+    let clean = if v.is_finite() { v } else { 0.0 };
+    let rounded = (clean * 10_000.0).round() / 10_000.0;
+    let _ = write!(out, "{rounded}");
+}
+
 fn write_receipt_json(out: &mut Vec<u8>, r: &ChainedReceipt) {
     out.extend_from_slice(br#"{"id":"#);
     write_json_str(out, &r.id);
@@ -136,7 +232,12 @@ fn write_receipt_json(out: &mut Vec<u8>, r: &ChainedReceipt) {
     write_json_str(out, &r.prev_hash);
     out.extend_from_slice(br#","sha256":"#);
     write_json_str(out, &r.sha256);
-    if let Some(eid) = r.engagement_id.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+    if let Some(eid) = r
+        .engagement_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
         out.extend_from_slice(br#","engagement_id":"#);
         write_json_str(out, eid);
     }
@@ -165,7 +266,42 @@ fn write_file_summary_json(out: &mut Vec<u8>, f: &IndexedFile) {
     out.push(b'}');
 }
 
-fn write_file_hit_json(out: &mut Vec<u8>, f: &IndexedFile) {
+fn write_chunk_hit_json(out: &mut Vec<u8>, hit: &ChunkHit<'_>) {
+    out.extend_from_slice(br#"{"chunk_id":"#);
+    write_json_str(out, &hit.chunk.chunk_id);
+    out.extend_from_slice(br#","score":"#);
+    write_json_f64(out, hit.score);
+    out.extend_from_slice(br#","bm25_score":"#);
+    write_json_f64(out, hit.bm25_score);
+    out.extend_from_slice(br#","semantic_score":"#);
+    write_json_f64(out, hit.semantic_score);
+    if let Some(page) = hit.chunk.page {
+        out.extend_from_slice(br#","page":"#);
+        write_json_u64(out, page as u64);
+    }
+    if let Some(sheet) = hit.chunk.sheet.as_deref() {
+        out.extend_from_slice(br#","sheet":"#);
+        write_json_str(out, sheet);
+    }
+    out.extend_from_slice(br#","line_start":"#);
+    write_json_u64(out, hit.chunk.line_start as u64);
+    out.extend_from_slice(br#","line_end":"#);
+    write_json_u64(out, hit.chunk.line_end as u64);
+    if let Some(heading) = hit.chunk.heading.as_deref() {
+        out.extend_from_slice(br#","heading":"#);
+        write_json_str(out, heading);
+    }
+    out.extend_from_slice(br#","excerpt":"#);
+    write_json_str(out, &hit.excerpt);
+    out.push(b'}');
+}
+
+fn write_file_hit_json(
+    out: &mut Vec<u8>,
+    f: &IndexedFile,
+    score: f64,
+    chunks: &[ChunkHit<'_>],
+) {
     out.extend_from_slice(br#"{"path":"#);
     write_json_str(out, &f.path);
     out.extend_from_slice(br#","name":"#);
@@ -178,23 +314,229 @@ fn write_file_hit_json(out: &mut Vec<u8>, f: &IndexedFile) {
     write_json_str(out, &f.ext);
     out.extend_from_slice(br#","preview":"#);
     write_json_str(out, &f.preview);
-    out.push(b'}');
+    out.extend_from_slice(br#","score":"#);
+    write_json_f64(out, score);
+    out.extend_from_slice(br#","chunks":["#);
+    for (i, c) in chunks.iter().enumerate() {
+        if i > 0 {
+            out.push(b',');
+        }
+        write_chunk_hit_json(out, c);
+    }
+    out.extend_from_slice(b"]}");
 }
 
-fn compute_fingerprint(data_dir: &Path, workspace_dir: &Path, memory_path: &Path) -> Fingerprint {
-    let (work_mtime, work_len) = stat_pair(&records::work_path(data_dir));
-    let (receipts_mtime, receipts_len) = stat_pair(&data_dir.join("receipts.json"));
-    let (mem_mtime, mem_len) = stat_pair(memory_path);
-    let (ws_mtime, _) = stat_pair(workspace_dir);
-    Fingerprint {
-        work_mtime,
-        work_len,
-        receipts_mtime,
-        receipts_len,
-        mem_mtime,
-        mem_len,
-        ws_mtime,
+// ---------------------------------------------------------------------------
+// Embeddings (optional OpenAI-compatible + pure-Rust deterministic fallback)
+// ---------------------------------------------------------------------------
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct EmbeddingConfig {
+    base_url: String,
+    model: String,
+    api_key: Option<String>,
+}
+
+impl EmbeddingConfig {
+    fn signature(&self) -> String {
+        format!("remote:{}:{}", self.base_url, self.model)
     }
+}
+
+fn load_embedding_config(data_dir: &Path) -> Option<EmbeddingConfig> {
+    let candidates = [
+        Some(crate::config_file_path(data_dir)),
+        data_dir
+            .parent()
+            .and_then(|p| p.parent())
+            .map(crate::config_file_path),
+    ];
+    for cand in candidates.into_iter().flatten() {
+        let Ok(raw) = std::fs::read_to_string(&cand) else {
+            continue;
+        };
+        let Ok(v) = serde_json::from_str::<Value>(&raw) else {
+            continue;
+        };
+        let base_url = v["embedding_base_url"]
+            .as_str()
+            .map(|s| s.trim().trim_end_matches('/').to_string())
+            .filter(|s| !s.is_empty());
+        let Some(base_url) = base_url else {
+            continue;
+        };
+        let policy = crate::load_workspace_policy(data_dir);
+        if (policy.block_outbound_fetch || policy.profile == "air_gapped")
+            && !crate::is_loopback_url(&base_url)
+        {
+            return None;
+        }
+        let model = v["embedding_model"]
+            .as_str()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| "text-embedding-3-small".to_string());
+        let api_key = v["embedding_api_key"]
+            .as_str()
+            .or_else(|| v["api_key"].as_str())
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty());
+        return Some(EmbeddingConfig {
+            base_url,
+            model,
+            api_key,
+        });
+    }
+    None
+}
+
+fn l2_normalize(vec: &mut [f32]) {
+    let norm_sq: f64 = vec.iter().map(|&x| (x as f64) * (x as f64)).sum();
+    if norm_sq > 0.0 {
+        let inv = (1.0 / norm_sq.sqrt()) as f32;
+        for x in vec.iter_mut() {
+            *x *= inv;
+        }
+    }
+}
+
+/// Pure-Rust deterministic hashed word + char n-gram dense vector embedder.
+/// Works 100% offline/air-gapped with zero external runtime dependencies.
+pub fn deterministic_embedding(text: &str) -> Vec<f32> {
+    let mut vec = vec![0.0f32; EMBED_DIM];
+    let mut words: Vec<String> = Vec::new();
+    let mut cur = String::new();
+    for ch in text.chars() {
+        if ch.is_alphanumeric() {
+            if ch.is_ascii() {
+                cur.push(ch.to_ascii_lowercase());
+            } else {
+                for lc in ch.to_lowercase() {
+                    cur.push(lc);
+                }
+            }
+        } else if !cur.is_empty() {
+            if cur.len() >= 2 {
+                words.push(std::mem::take(&mut cur));
+            } else {
+                cur.clear();
+            }
+        }
+    }
+    if cur.len() >= 2 {
+        words.push(cur);
+    }
+
+    let mut add_feat = |tag: u8, bytes: &[u8], weight: f32| {
+        let h = fnv1a_64(bytes, tag as u64);
+        let idx = (h as usize) % EMBED_DIM;
+        let sign = if ((h >> 32) & 1) == 0 { 1.0 } else { -1.0 };
+        vec[idx] += weight * sign;
+    };
+
+    for (i, w) in words.iter().enumerate() {
+        add_feat(1, w.as_bytes(), 1.0);
+        if i + 1 < words.len() {
+            let mut bigram = Vec::with_capacity(w.len() + 1 + words[i + 1].len());
+            bigram.extend_from_slice(w.as_bytes());
+            bigram.push(b' ');
+            bigram.extend_from_slice(words[i + 1].as_bytes());
+            add_feat(2, &bigram, 0.8);
+        }
+        let wb = w.as_bytes();
+        if wb.len() >= 3 {
+            for win in wb.windows(3) {
+                add_feat(3, win, 0.45);
+            }
+        }
+        if wb.len() >= 4 {
+            for win in wb.windows(4) {
+                add_feat(4, win, 0.55);
+            }
+        }
+    }
+
+    l2_normalize(&mut vec);
+    vec
+}
+
+fn fetch_remote_embeddings(cfg: &EmbeddingConfig, inputs: &[&str]) -> Option<Vec<Vec<f32>>> {
+    if inputs.is_empty() {
+        return Some(Vec::new());
+    }
+    let url = format!("{}/embeddings", cfg.base_url);
+    let agent = ureq::AgentBuilder::new()
+        .timeout(Duration::from_secs(5))
+        .build();
+    let mut out: Vec<Vec<f32>> = Vec::with_capacity(inputs.len());
+    for batch in inputs.chunks(32) {
+        let mut req = agent.post(&url);
+        if let Some(key) = &cfg.api_key {
+            req = req.set("Authorization", &format!("Bearer {key}"));
+        }
+        let body = json!({
+            "model": cfg.model,
+            "input": batch,
+        });
+        let resp = req.send_json(body).ok()?;
+        let val: Value = resp.into_json().ok()?;
+        let data = val["data"].as_array()?;
+        if data.len() != batch.len() {
+            return None;
+        }
+        let mut items: Vec<(usize, Vec<f32>)> = Vec::with_capacity(data.len());
+        for (fallback_idx, item) in data.iter().enumerate() {
+            let idx = item["index"].as_u64().unwrap_or(fallback_idx as u64) as usize;
+            let emb_arr = item["embedding"].as_array()?;
+            let mut vec: Vec<f32> = Vec::with_capacity(emb_arr.len());
+            for v in emb_arr {
+                let f = v.as_f64()? as f32;
+                vec.push(if f.is_finite() { f } else { 0.0 });
+            }
+            if vec.is_empty() {
+                return None;
+            }
+            l2_normalize(&mut vec);
+            items.push((idx, vec));
+        }
+        items.sort_by_key(|(idx, _)| *idx);
+        for (_, v) in items {
+            out.push(v);
+        }
+    }
+    Some(out)
+}
+
+#[inline]
+fn cosine_similarity(a: &[f32], b: &[f32]) -> f64 {
+    if a.len() != b.len() || a.is_empty() {
+        return 0.0;
+    }
+    let mut dot = 0.0f64;
+    for (&x, &y) in a.iter().zip(b.iter()) {
+        dot += (x as f64) * (y as f64);
+    }
+    dot.clamp(-1.0, 1.0)
+}
+
+// ---------------------------------------------------------------------------
+// Data Model & Chunking
+// ---------------------------------------------------------------------------
+
+#[derive(Clone, Debug)]
+pub struct VaultChunk {
+    pub chunk_id: String,
+    pub path: String,
+    pub doc_kind: String,
+    pub sheet: Option<String>,
+    pub page: Option<u32>,
+    pub line_start: usize,
+    pub line_end: usize,
+    pub heading: Option<String>,
+    pub text: String,
+    pub token_len: usize,
+    pub embedding: Vec<f32>,
+    pub file_idx: u32,
 }
 
 #[derive(Clone, Debug)]
@@ -203,9 +545,13 @@ pub struct IndexedFile {
     pub name: String,
     pub size: u64,
     pub mtime_ms: u64,
+    pub mtime_ns: u128,
+    pub sha256: String,
     pub ext: String,
-    pub snippet_lower: String,
+    pub doc_kind: String,
     pub preview: String,
+    pub indexed_bytes: u64,
+    pub chunk_range: Range<usize>,
 }
 
 impl IndexedFile {
@@ -227,19 +573,54 @@ pub struct MemoryLine {
     pub lower: String,
 }
 
+#[derive(Clone, Debug)]
+pub struct ChunkHit<'a> {
+    pub chunk: &'a VaultChunk,
+    pub score: f64,
+    pub bm25_score: f64,
+    pub semantic_score: f64,
+    pub excerpt: String,
+}
+
+#[derive(Clone, Debug)]
+pub struct OwnedChunkHit {
+    pub chunk_id: String,
+    pub path: String,
+    pub doc_kind: String,
+    pub sheet: Option<String>,
+    pub page: Option<u32>,
+    pub line_start: usize,
+    pub line_end: usize,
+    pub heading: Option<String>,
+    pub score: f64,
+    pub bm25_score: f64,
+    pub semantic_score: f64,
+    pub excerpt: String,
+}
+
 pub struct PersonIndex {
     fp: Fingerprint,
     pub chain: Vec<ChainedReceipt>,
     pub chain_valid: bool,
     pub head_hash: String,
-    /// Inverted token index mapping lowercase ASCII/alnum words -> receipt indices.
     receipt_tokens: HashMap<String, Box<[u32]>>,
     pub files: Vec<IndexedFile>,
     file_tokens: HashMap<String, Box<[u32]>>,
+    pub chunks: Vec<VaultChunk>,
+    /// Inverted BM25 posting lists: token -> sorted `[(chunk_idx, term_freq)]`.
+    chunk_tokens: HashMap<String, Box<[(u32, u16)]>>,
+    avg_chunk_len: f64,
+    pub indexed_bytes: u64,
+    pub semantic_enabled: bool,
+    embedding_cfg: Option<EmbeddingConfig>,
+    uses_remote_embeddings: bool,
     pub memory: Vec<MemoryLine>,
 }
 
-/// Zero-allocation case-insensitive substring check (`needle` must already be lowercase).
+// ---------------------------------------------------------------------------
+// Tokenization & Helpers
+// ---------------------------------------------------------------------------
+
 #[inline]
 fn contains_icase(haystack: &str, needle_lower: &str) -> bool {
     if needle_lower.is_empty() {
@@ -251,9 +632,7 @@ fn contains_icase(haystack: &str, needle_lower: &str) -> bool {
         if nb.len() > hb.len() {
             return false;
         }
-        return hb
-            .windows(nb.len())
-            .any(|w| w.eq_ignore_ascii_case(nb));
+        return hb.windows(nb.len()).any(|w| w.eq_ignore_ascii_case(nb));
     }
     haystack.to_lowercase().contains(needle_lower)
 }
@@ -274,8 +653,6 @@ fn receipt_matches(r: &ChainedReceipt, q_lower: &str, tokens: &[String]) -> bool
     !tokens.is_empty() && tokens.iter().all(|t| receipt_contains_icase(r, t.as_str()))
 }
 
-/// Collect unique lowercase >=2-char alphanumeric tokens from `s` into `set`,
-/// reusing `set` and `cur` across calls to avoid per-item allocations.
 fn tokenize_into(s: &str, set: &mut HashSet<String>, cur: &mut String) {
     set.clear();
     cur.clear();
@@ -297,29 +674,83 @@ fn tokenize_into(s: &str, set: &mut HashSet<String>, cur: &mut String) {
         }
     }
     if cur.len() >= 2 {
-        set.insert(std::mem::take(cur));
+        set.insert(cur.clone());
+    }
+    cur.clear();
+}
+
+fn tokenize_tf(s: &str, counts: &mut HashMap<String, u16>, cur: &mut String) -> usize {
+    counts.clear();
+    cur.clear();
+    let mut total = 0usize;
+    for ch in s.chars() {
+        if ch.is_alphanumeric() {
+            if ch.is_ascii() {
+                cur.push(ch.to_ascii_lowercase());
+            } else {
+                for lc in ch.to_lowercase() {
+                    cur.push(lc);
+                }
+            }
+        } else if !cur.is_empty() {
+            if cur.len() >= 2 {
+                total += 1;
+                let entry = counts.entry(std::mem::take(cur)).or_insert(0);
+                *entry = entry.saturating_add(1);
+            } else {
+                cur.clear();
+            }
+        }
+    }
+    if cur.len() >= 2 {
+        total += 1;
+        let entry = counts.entry(std::mem::take(cur)).or_insert(0);
+        *entry = entry.saturating_add(1);
     } else {
         cur.clear();
     }
+    total
 }
 
 fn tokenize_query(s: &str) -> Vec<String> {
     let mut set = HashSet::new();
     let mut cur = String::new();
     tokenize_into(s, &mut set, &mut cur);
-    set.into_iter().collect()
+    let mut v: Vec<String> = set.into_iter().collect();
+    v.sort();
+    v
 }
 
-/// Narrow sorted posting lists in `index` for `tokens` using binary-search
-/// intersection (zero temporary `HashSet` allocations). Returns `None` when
-/// fallback substring scanning is required.
+fn count_tokens(s: &str) -> usize {
+    let mut total = 0usize;
+    let mut cur_len = 0usize;
+    for ch in s.chars() {
+        if ch.is_alphanumeric() {
+            cur_len += ch.len_utf8();
+        } else {
+            if cur_len >= 2 {
+                total += 1;
+            }
+            cur_len = 0;
+        }
+    }
+    if cur_len >= 2 {
+        total += 1;
+    }
+    total
+}
+
 fn narrow_candidates(
     index: &HashMap<String, Box<[u32]>>,
     query: &str,
     tokens: &[String],
     disallow_slash: bool,
 ) -> Option<Vec<u32>> {
-    if tokens.is_empty() || query.contains('.') || query.contains('-') || (disallow_slash && query.contains('/')) {
+    if tokens.is_empty()
+        || query.contains('.')
+        || query.contains('-')
+        || (disallow_slash && query.contains('/'))
+    {
         return None;
     }
     let mut lists: Vec<&[u32]> = Vec::with_capacity(tokens.len());
@@ -337,14 +768,491 @@ fn narrow_candidates(
     Some(acc)
 }
 
-fn collect_files(root: &Path, dir: &Path, out: &mut Vec<IndexedFile>) {
+fn doc_kind_label(ext: &str, doc: Option<DocKind>) -> String {
+    match doc {
+        Some(DocKind::Pdf) => "pdf".to_string(),
+        Some(DocKind::Word) => "docx".to_string(),
+        Some(DocKind::Excel) => "xlsx".to_string(),
+        Some(DocKind::PowerPoint) => "pptx".to_string(),
+        None => match ext {
+            "md" | "markdown" => "markdown".to_string(),
+            "csv" => "csv".to_string(),
+            "tsv" => "tsv".to_string(),
+            "json" => "json".to_string(),
+            "" => "text".to_string(),
+            other => other.to_string(),
+        },
+    }
+}
+
+fn parse_page_marker(trimmed: &str) -> Option<u32> {
+    trimmed
+        .strip_prefix("## Page ")
+        .and_then(|rest| rest.trim().parse::<u32>().ok())
+}
+
+fn parse_slide_marker(trimmed: &str) -> Option<u32> {
+    trimmed
+        .strip_prefix("## Slide ")
+        .and_then(|rest| rest.trim().parse::<u32>().ok())
+}
+
+fn split_long_line_windows(line: &str) -> Vec<String> {
+    let total_chars = line.chars().count();
+    if total_chars <= MAX_CHUNK_CHARS {
+        return vec![line.to_string()];
+    }
+    let char_offsets: Vec<usize> = line.char_indices().map(|(i, _)| i).collect();
+    let step = MAX_CHUNK_CHARS.saturating_sub(OVERLAP_CHARS).max(1);
+    let mut out = Vec::new();
+    let mut start_ci = 0usize;
+    while start_ci < char_offsets.len() {
+        let end_ci = (start_ci + MAX_CHUNK_CHARS).min(char_offsets.len());
+        let start_b = char_offsets[start_ci];
+        let end_b = if end_ci >= char_offsets.len() {
+            line.len()
+        } else {
+            char_offsets[end_ci]
+        };
+        let slice = line[start_b..end_b].trim();
+        if !slice.is_empty() {
+            out.push(slice.to_string());
+        }
+        if end_ci >= char_offsets.len() {
+            break;
+        }
+        start_ci += step;
+    }
+    out
+}
+
+struct ChunkSource<'a> {
+    path: &'a str,
+    doc_kind: &'a str,
+    sheet: Option<&'a str>,
+    is_pdf: bool,
+    total_pdf_pages: usize,
+    is_pptx: bool,
+}
+
+fn chunk_text_lines(
+    src: &ChunkSource<'_>,
+    text: &str,
+    chunk_seq: &mut usize,
+    out: &mut Vec<VaultChunk>,
+) {
+    let path = src.path;
+    let doc_kind = src.doc_kind;
+    let sheet = src.sheet;
+    let is_pdf = src.is_pdf;
+    let total_pdf_pages = src.total_pdf_pages;
+    let is_pptx = src.is_pptx;
+    let mut cur_page: Option<u32> = if is_pdf { Some(1) } else { None };
+    let mut cur_heading: Option<String> = None;
+    let mut buf = String::new();
+    let mut buf_start: usize = 0;
+    let mut buf_end: usize = 0;
+    let mut buf_page: Option<u32> = cur_page;
+    let mut buf_heading: Option<String> = None;
+
+    let flush = |buf: &mut String,
+                 buf_start: &mut usize,
+                 buf_end: &mut usize,
+                 buf_page: Option<u32>,
+                 buf_heading: &Option<String>,
+                 chunk_seq: &mut usize,
+                 out: &mut Vec<VaultChunk>| {
+        let trimmed = buf.trim();
+        if !trimmed.is_empty() {
+            let seq = *chunk_seq;
+            *chunk_seq += 1;
+            let chunk_id = match sheet {
+                Some(sh) => format!("{path}#{sh}:{seq}"),
+                None => format!("{path}:{seq}"),
+            };
+            let chunk_text = trimmed.to_string();
+            let token_len = count_tokens(&chunk_text);
+            out.push(VaultChunk {
+                chunk_id,
+                path: path.to_string(),
+                doc_kind: doc_kind.to_string(),
+                sheet: sheet.map(str::to_string),
+                page: buf_page,
+                line_start: (*buf_start).max(1),
+                line_end: (*buf_end).max((*buf_start).max(1)),
+                heading: buf_heading.clone(),
+                text: chunk_text,
+                token_len,
+                embedding: Vec::new(),
+                file_idx: 0,
+            });
+        }
+        buf.clear();
+        *buf_start = 0;
+        *buf_end = 0;
+    };
+
+    for (idx, raw_line) in text.lines().enumerate() {
+        let line_no = idx + 1;
+        let trimmed = raw_line.trim();
+        let mut boundary_changed = false;
+
+        if is_pdf && total_pdf_pages > 1 {
+            if let Some(p) = parse_page_marker(trimmed) {
+                if cur_page != Some(p) {
+                    cur_page = Some(p);
+                    boundary_changed = true;
+                }
+            }
+        }
+        if is_pptx {
+            if let Some(slide) = parse_slide_marker(trimmed) {
+                let h = format!("Slide {slide}");
+                if cur_heading.as_deref() != Some(h.as_str()) {
+                    cur_heading = Some(h);
+                    boundary_changed = true;
+                }
+            }
+        } else if trimmed.starts_with('#') && !is_pdf {
+            let heading_txt: String = trimmed
+                .trim_start_matches('#')
+                .trim()
+                .chars()
+                .take(120)
+                .collect();
+            if !heading_txt.is_empty() && cur_heading.as_deref() != Some(heading_txt.as_str()) {
+                cur_heading = Some(heading_txt);
+                boundary_changed = true;
+            }
+        }
+
+        if boundary_changed && !buf.trim().is_empty() {
+            flush(
+                &mut buf,
+                &mut buf_start,
+                &mut buf_end,
+                buf_page,
+                &buf_heading,
+                chunk_seq,
+                out,
+            );
+        }
+
+        if raw_line.chars().count() > MAX_CHUNK_CHARS {
+            if !buf.trim().is_empty() {
+                flush(
+                    &mut buf,
+                    &mut buf_start,
+                    &mut buf_end,
+                    buf_page,
+                    &buf_heading,
+                    chunk_seq,
+                    out,
+                );
+            }
+            for win in split_long_line_windows(raw_line) {
+                let seq = *chunk_seq;
+                *chunk_seq += 1;
+                let chunk_id = match sheet {
+                    Some(sh) => format!("{path}#{sh}:{seq}"),
+                    None => format!("{path}:{seq}"),
+                };
+                let token_len = count_tokens(&win);
+                out.push(VaultChunk {
+                    chunk_id,
+                    path: path.to_string(),
+                    doc_kind: doc_kind.to_string(),
+                    sheet: sheet.map(str::to_string),
+                    page: cur_page,
+                    line_start: line_no,
+                    line_end: line_no,
+                    heading: cur_heading.clone(),
+                    text: win,
+                    token_len,
+                    embedding: Vec::new(),
+                    file_idx: 0,
+                });
+            }
+            continue;
+        }
+
+        if trimmed.is_empty() {
+            if buf.len() >= MIN_SPLIT_CHARS {
+                flush(
+                    &mut buf,
+                    &mut buf_start,
+                    &mut buf_end,
+                    buf_page,
+                    &buf_heading,
+                    chunk_seq,
+                    out,
+                );
+            }
+            continue;
+        }
+
+        if !buf.is_empty() && buf.len() + raw_line.len() + 1 > MAX_CHUNK_CHARS {
+            flush(
+                &mut buf,
+                &mut buf_start,
+                &mut buf_end,
+                buf_page,
+                &buf_heading,
+                chunk_seq,
+                out,
+            );
+        }
+
+        if buf.is_empty() {
+            buf_start = line_no;
+            buf_page = cur_page;
+            buf_heading = cur_heading.clone();
+        } else {
+            buf.push('\n');
+        }
+        buf.push_str(raw_line);
+        buf_end = line_no;
+    }
+
+    if !buf.trim().is_empty() {
+        flush(
+            &mut buf,
+            &mut buf_start,
+            &mut buf_end,
+            buf_page,
+            &buf_heading,
+            chunk_seq,
+            out,
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Incremental Persistence (<person_data_dir>/vault_index.json)
+// ---------------------------------------------------------------------------
+
+struct CachedFileEntry {
+    path: String,
+    name: String,
+    size: u64,
+    mtime_ms: u64,
+    mtime_ns: u128,
+    sha256: String,
+    ext: String,
+    doc_kind: String,
+    preview: String,
+    indexed_bytes: u64,
+    chunks: Vec<VaultChunk>,
+}
+
+fn load_persisted_vault(
+    data_dir: &Path,
+    expected_emb_sig: &str,
+) -> HashMap<String, CachedFileEntry> {
+    let mut map = HashMap::new();
+    let path = data_dir.join(VAULT_INDEX_FILE);
+    let Ok(raw) = std::fs::read_to_string(&path) else {
+        return map;
+    };
+    let Ok(v) = serde_json::from_str::<Value>(&raw) else {
+        return map;
+    };
+    if v["version"].as_u64() != Some(VAULT_INDEX_VERSION) {
+        return map;
+    }
+    if v["embedding_sig"].as_str() != Some(expected_emb_sig) {
+        return map;
+    }
+    let Some(files) = v["files"].as_array() else {
+        return map;
+    };
+    for f in files {
+        let Some(fpath) = f["path"].as_str().map(str::to_string) else {
+            continue;
+        };
+        let mtime_ns = f["mtime_ns"]
+            .as_str()
+            .and_then(|s| s.parse::<u128>().ok())
+            .or_else(|| f["mtime_ns"].as_u64().map(|n| n as u128))
+            .unwrap_or(0);
+        let Some(sha256) = f["sha256"].as_str().map(str::to_string) else {
+            continue;
+        };
+        let name = f["name"].as_str().unwrap_or("").to_string();
+        let size = f["size"].as_u64().unwrap_or(0);
+        let mtime_ms = f["mtime_ms"].as_u64().unwrap_or(0);
+        let ext = f["ext"].as_str().unwrap_or("").to_string();
+        let doc_kind = f["doc_kind"].as_str().unwrap_or("text").to_string();
+        let preview = f["preview"].as_str().unwrap_or("").to_string();
+        let indexed_bytes = f["indexed_bytes"].as_u64().unwrap_or(0);
+        let mut chunks = Vec::new();
+        if let Some(arr) = f["chunks"].as_array() {
+            for c in arr {
+                let Some(chunk_id) = c["chunk_id"].as_str().map(str::to_string) else {
+                    continue;
+                };
+                let Some(text) = c["text"].as_str().map(str::to_string) else {
+                    continue;
+                };
+                let embedding: Vec<f32> = c["embedding"]
+                    .as_array()
+                    .map(|ea| {
+                        ea.iter()
+                            .filter_map(|x| x.as_f64().map(|n| n as f32))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                chunks.push(VaultChunk {
+                    chunk_id,
+                    path: fpath.clone(),
+                    doc_kind: c["doc_kind"].as_str().unwrap_or(&doc_kind).to_string(),
+                    sheet: c["sheet"].as_str().map(str::to_string),
+                    page: c["page"].as_u64().map(|n| n as u32),
+                    line_start: c["line_start"].as_u64().unwrap_or(1) as usize,
+                    line_end: c["line_end"].as_u64().unwrap_or(1) as usize,
+                    heading: c["heading"].as_str().map(str::to_string),
+                    text,
+                    token_len: c["token_len"].as_u64().unwrap_or(0) as usize,
+                    embedding,
+                    file_idx: 0,
+                });
+            }
+        }
+        map.insert(
+            fpath.clone(),
+            CachedFileEntry {
+                path: fpath,
+                name,
+                size,
+                mtime_ms,
+                mtime_ns,
+                sha256,
+                ext,
+                doc_kind,
+                preview,
+                indexed_bytes,
+                chunks,
+            },
+        );
+    }
+    map
+}
+
+fn save_persisted_vault(
+    data_dir: &Path,
+    emb_sig: &str,
+    files: &[IndexedFile],
+    chunks: &[VaultChunk],
+) {
+    use std::io::Write as _;
+    let mut out = Vec::with_capacity(64 * 1024);
+    out.extend_from_slice(br#"{"version":"#);
+    write_json_u64(&mut out, VAULT_INDEX_VERSION);
+    out.extend_from_slice(br#","embedding_sig":"#);
+    write_json_str(&mut out, emb_sig);
+    out.extend_from_slice(br#","files":["#);
+    for (i, f) in files.iter().enumerate() {
+        if i > 0 {
+            out.push(b',');
+        }
+        out.extend_from_slice(br#"{"path":"#);
+        write_json_str(&mut out, &f.path);
+        out.extend_from_slice(br#","name":"#);
+        write_json_str(&mut out, &f.name);
+        out.extend_from_slice(br#","size":"#);
+        write_json_u64(&mut out, f.size);
+        out.extend_from_slice(br#","mtime_ms":"#);
+        write_json_u64(&mut out, f.mtime_ms);
+        out.extend_from_slice(br#","mtime_ns":"#);
+        write_json_str(&mut out, &f.mtime_ns.to_string());
+        out.extend_from_slice(br#","sha256":"#);
+        write_json_str(&mut out, &f.sha256);
+        out.extend_from_slice(br#","ext":"#);
+        write_json_str(&mut out, &f.ext);
+        out.extend_from_slice(br#","doc_kind":"#);
+        write_json_str(&mut out, &f.doc_kind);
+        out.extend_from_slice(br#","preview":"#);
+        write_json_str(&mut out, &f.preview);
+        out.extend_from_slice(br#","indexed_bytes":"#);
+        write_json_u64(&mut out, f.indexed_bytes);
+        out.extend_from_slice(br#","chunks":["#);
+        for (ci, c) in chunks[f.chunk_range.clone()].iter().enumerate() {
+            if ci > 0 {
+                out.push(b',');
+            }
+            out.extend_from_slice(br#"{"chunk_id":"#);
+            write_json_str(&mut out, &c.chunk_id);
+            out.extend_from_slice(br#","doc_kind":"#);
+            write_json_str(&mut out, &c.doc_kind);
+            if let Some(sh) = &c.sheet {
+                out.extend_from_slice(br#","sheet":"#);
+                write_json_str(&mut out, sh);
+            }
+            if let Some(pg) = c.page {
+                out.extend_from_slice(br#","page":"#);
+                write_json_u64(&mut out, pg as u64);
+            }
+            out.extend_from_slice(br#","line_start":"#);
+            write_json_u64(&mut out, c.line_start as u64);
+            out.extend_from_slice(br#","line_end":"#);
+            write_json_u64(&mut out, c.line_end as u64);
+            if let Some(h) = &c.heading {
+                out.extend_from_slice(br#","heading":"#);
+                write_json_str(&mut out, h);
+            }
+            out.extend_from_slice(br#","text":"#);
+            write_json_str(&mut out, &c.text);
+            out.extend_from_slice(br#","token_len":"#);
+            write_json_u64(&mut out, c.token_len as u64);
+            out.extend_from_slice(br#","embedding":["#);
+            for (ei, &val) in c.embedding.iter().enumerate() {
+                if ei > 0 {
+                    out.push(b',');
+                }
+                let clean = if val.is_finite() { val } else { 0.0 };
+                let _ = write!(&mut out, "{clean:.4}");
+            }
+            out.extend_from_slice(b"]}");
+        }
+        out.extend_from_slice(b"]}");
+    }
+    out.extend_from_slice(b"]}");
+    let _ = crate::tools::atomic_write_bytes(&data_dir.join(VAULT_INDEX_FILE), &out);
+}
+
+// ---------------------------------------------------------------------------
+// Workspace Walking & Extraction
+// ---------------------------------------------------------------------------
+
+struct DiscoveredFile {
+    entry: CachedFileEntry,
+    recomputed: bool,
+}
+
+fn first_preview_line(text: &str) -> String {
+    text.lines()
+        .map(|l| l.trim_start_matches('#').trim())
+        .find(|l| !l.is_empty())
+        .unwrap_or("")
+        .chars()
+        .take(160)
+        .collect()
+}
+
+fn collect_files(
+    root: &Path,
+    dir: &Path,
+    cached: &mut HashMap<String, CachedFileEntry>,
+    force_reindex: bool,
+    out: &mut Vec<DiscoveredFile>,
+) {
     let Ok(rd) = std::fs::read_dir(dir) else {
         return;
     };
     for entry in rd.filter_map(|e| e.ok()) {
         let name_os = entry.file_name();
         let name = name_os.to_string_lossy().into_owned();
-        if name.starts_with('.') {
+        if name.starts_with('.') || name.eq_ignore_ascii_case("connector_secrets.json") {
             continue;
         }
         let path = entry.path();
@@ -355,7 +1263,7 @@ fn collect_files(root: &Path, dir: &Path, out: &mut Vec<IndexedFile>) {
             continue;
         }
         if md.is_dir() {
-            collect_files(root, &path, out);
+            collect_files(root, &path, cached, force_reindex, out);
             continue;
         }
         if !md.is_file() {
@@ -370,82 +1278,194 @@ fn collect_files(root: &Path, dir: &Path, out: &mut Vec<IndexedFile>) {
             .and_then(|s| s.to_str())
             .unwrap_or("")
             .to_ascii_lowercase();
-        let mtime_ms = md
-            .modified()
-            .ok()
-            .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
-            .map(|d| d.as_millis() as u64)
-            .unwrap_or(0);
+        let modified = md.modified().ok().and_then(|t| t.duration_since(UNIX_EPOCH).ok());
+        let mtime_ms = modified.map(|d| d.as_millis() as u64).unwrap_or(0);
+        let mtime_ns = modified.map(|d| d.as_nanos()).unwrap_or(0);
+        let size = md.len();
 
-        // Documents (PDF, Word, Excel, PowerPoint up to 5 MB) are indexed
-        // by their extracted text — cached, so only the first build after
-        // a change pays for the parse. Larger ones are indexed by name.
-        let doc = crate::docs::doc_kind(&rel);
-        let (preview, snippet_lower) = if let Some(kind) = doc.filter(|_| md.len() <= 5 * 1024 * 1024) {
-            match crate::docs::extract(&path, kind, None) {
-                Ok(ex) => {
-                    let text: String = ex.text.chars().take(MAX_SNIPPET_BYTES).collect();
-                    let first_line = text
-                        .lines()
-                        .map(|l| l.trim_start_matches('#').trim())
-                        .find(|l| !l.is_empty())
-                        .unwrap_or("")
-                        .chars()
-                        .take(160)
-                        .collect::<String>();
-                    let snippet = text.chars().take(512).collect::<String>().to_lowercase();
-                    (first_line, format!("{} {}", rel.to_ascii_lowercase(), snippet))
-                }
-                Err(_) => (String::new(), rel.to_ascii_lowercase()),
-            }
-        } else if doc.is_some() {
-            (String::new(), rel.to_ascii_lowercase())
-        } else if md.len() <= 2 * 1024 * 1024 {
-            match std::fs::File::open(&path) {
-                Ok(mut f) => {
-                    use std::io::Read as _;
-                    let mut buf = vec![0u8; MAX_SNIPPET_BYTES.min(md.len() as usize)];
-                    let n = f.read(&mut buf).unwrap_or(0);
-                    buf.truncate(n);
-                    match String::from_utf8(buf) {
-                        Ok(s) => {
-                            let first_line = s
-                                .lines()
-                                .find(|l| !l.trim().is_empty())
-                                .unwrap_or("")
-                                .chars()
-                                .take(160)
-                                .collect::<String>();
-                            let lower = format!(
-                                "{} {}",
-                                rel.to_ascii_lowercase(),
-                                s.chars().take(512).collect::<String>().to_lowercase()
-                            );
-                            (first_line, lower)
-                        }
-                        Err(_) => (String::new(), rel.to_ascii_lowercase()),
-                    }
-                }
-                Err(_) => (String::new(), rel.to_ascii_lowercase()),
+        let doc = docs::doc_kind(&rel);
+        let kind_label = doc_kind_label(&ext, doc);
+
+        let sha256 = if size <= docs::MAX_DOC_BYTES {
+            match std::fs::read(&path) {
+                Ok(bytes) => receipts::sha256_hex(&bytes),
+                Err(_) => String::new(),
             }
         } else {
-            (String::new(), rel.to_ascii_lowercase())
+            String::new()
         };
 
-        out.push(IndexedFile {
-            path: rel,
-            name,
-            size: md.len(),
-            mtime_ms,
-            ext,
-            snippet_lower,
-            preview,
+        if !force_reindex && !sha256.is_empty() {
+            if let Some(hit) = cached.remove(&rel) {
+                if hit.mtime_ns == mtime_ns && hit.sha256 == sha256 && hit.size == size {
+                    out.push(DiscoveredFile {
+                        entry: hit,
+                        recomputed: false,
+                    });
+                    continue;
+                }
+            }
+        }
+
+        let mut chunks: Vec<VaultChunk> = Vec::new();
+        let mut chunk_seq = 0usize;
+        let mut preview = String::new();
+        let mut indexed_bytes = 0u64;
+
+        if let Some(dk) = doc.filter(|_| size <= docs::MAX_DOC_BYTES) {
+            match dk {
+                DocKind::Excel => {
+                    if let Ok(first) = docs::extract(&path, DocKind::Excel, None) {
+                        let sheets = if first.sheets.is_empty() {
+                            first.sheet.clone().into_iter().collect::<Vec<_>>()
+                        } else {
+                            first.sheets
+                        };
+                        for sheet_name in sheets {
+                            if let Ok(ex) =
+                                docs::extract(&path, DocKind::Excel, Some(&sheet_name))
+                            {
+                                if preview.is_empty() {
+                                    preview = first_preview_line(&ex.text);
+                                }
+                                indexed_bytes += ex.text.len() as u64;
+                                let src = ChunkSource {
+                                    path: &rel,
+                                    doc_kind: &kind_label,
+                                    sheet: Some(&sheet_name),
+                                    is_pdf: false,
+                                    total_pdf_pages: 0,
+                                    is_pptx: false,
+                                };
+                                chunk_text_lines(&src, &ex.text, &mut chunk_seq, &mut chunks);
+                            }
+                        }
+                    }
+                }
+                DocKind::Pdf => {
+                    if let Ok(ex) = docs::extract(&path, DocKind::Pdf, None) {
+                        preview = first_preview_line(&ex.text);
+                        indexed_bytes = ex.text.len() as u64;
+                        let src = ChunkSource {
+                            path: &rel,
+                            doc_kind: &kind_label,
+                            sheet: None,
+                            is_pdf: true,
+                            total_pdf_pages: ex.pages.max(1),
+                            is_pptx: false,
+                        };
+                        chunk_text_lines(&src, &ex.text, &mut chunk_seq, &mut chunks);
+                    }
+                }
+                DocKind::PowerPoint => {
+                    if let Ok(ex) = docs::extract(&path, DocKind::PowerPoint, None) {
+                        preview = first_preview_line(&ex.text);
+                        indexed_bytes = ex.text.len() as u64;
+                        let src = ChunkSource {
+                            path: &rel,
+                            doc_kind: &kind_label,
+                            sheet: None,
+                            is_pdf: false,
+                            total_pdf_pages: 0,
+                            is_pptx: true,
+                        };
+                        chunk_text_lines(&src, &ex.text, &mut chunk_seq, &mut chunks);
+                    }
+                }
+                DocKind::Word => {
+                    if let Ok(ex) = docs::extract(&path, DocKind::Word, None) {
+                        preview = first_preview_line(&ex.text);
+                        indexed_bytes = ex.text.len() as u64;
+                        let src = ChunkSource {
+                            path: &rel,
+                            doc_kind: &kind_label,
+                            sheet: None,
+                            is_pdf: false,
+                            total_pdf_pages: 0,
+                            is_pptx: false,
+                        };
+                        chunk_text_lines(&src, &ex.text, &mut chunk_seq, &mut chunks);
+                    }
+                }
+            }
+        } else if doc.is_none() && size <= MAX_PLAIN_TEXT_BYTES {
+            if let Ok(bytes) = std::fs::read(&path) {
+                if !bytes.contains(&0) {
+                    if let Ok(text) = String::from_utf8(bytes) {
+                        preview = first_preview_line(&text);
+                        indexed_bytes = text.len() as u64;
+                        let src = ChunkSource {
+                            path: &rel,
+                            doc_kind: &kind_label,
+                            sheet: None,
+                            is_pdf: false,
+                            total_pdf_pages: 0,
+                            is_pptx: false,
+                        };
+                        chunk_text_lines(&src, &text, &mut chunk_seq, &mut chunks);
+                    }
+                }
+            }
+        }
+
+        out.push(DiscoveredFile {
+            entry: CachedFileEntry {
+                path: rel,
+                name,
+                size,
+                mtime_ms,
+                mtime_ns,
+                sha256,
+                ext,
+                doc_kind: kind_label,
+                preview,
+                indexed_bytes,
+                chunks,
+            },
+            recomputed: true,
         });
     }
 }
 
+fn make_excerpt(text: &str, q_lower: &str, tokens: &[String]) -> String {
+    const MAX_EXCERPT: usize = 300;
+    let total_chars = text.chars().count();
+    if total_chars <= MAX_EXCERPT {
+        return text.trim().to_string();
+    }
+    let lower = text.to_lowercase();
+    let match_byte = if !q_lower.is_empty() {
+        lower.find(q_lower)
+    } else {
+        None
+    }
+    .or_else(|| tokens.iter().filter_map(|t| lower.find(t.as_str())).min());
+
+    let char_start = match match_byte {
+        Some(mb) => {
+            let prefix_chars = lower[..mb.min(lower.len())].chars().count();
+            prefix_chars.saturating_sub(80)
+        }
+        None => 0,
+    };
+    let mut slice: String = text.chars().skip(char_start).take(MAX_EXCERPT).collect();
+    if char_start > 0 {
+        slice = format!("…{}", slice.trim_start());
+    }
+    if char_start + MAX_EXCERPT < total_chars {
+        slice = format!("{}…", slice.trim_end());
+    }
+    slice
+}
+
 impl PersonIndex {
-    fn build(data_dir: &Path, workspace_dir: &Path, memory_path: &Path, fp: Fingerprint) -> Self {
+    fn build(
+        data_dir: &Path,
+        workspace_dir: &Path,
+        memory_path: &Path,
+        fp: Fingerprint,
+        force_reindex: bool,
+    ) -> Self {
         let mut chain = receipts::load_chain(data_dir);
         chain.shrink_to_fit();
         let (chain_valid, head_hash) = receipts::verify_chain(&chain);
@@ -454,7 +1474,12 @@ impl PersonIndex {
         let mut tok_buf = HashSet::new();
         let mut cur_buf = String::new();
         for (i, r) in chain.iter().enumerate() {
-            for field in [r.id.as_str(), r.task.as_str(), r.summary.as_str(), r.thread_id.as_str()] {
+            for field in [
+                r.id.as_str(),
+                r.task.as_str(),
+                r.summary.as_str(),
+                r.thread_id.as_str(),
+            ] {
                 tokenize_into(field, &mut tok_buf, &mut cur_buf);
                 for tok in tok_buf.drain() {
                     let list = receipt_tokens.entry(tok).or_default();
@@ -478,21 +1503,196 @@ impl PersonIndex {
             .map(|(k, v)| (k, v.into_boxed_slice()))
             .collect();
 
-        let mut files = Vec::new();
-        collect_files(workspace_dir, workspace_dir, &mut files);
-        files.sort_by(|a, b| b.mtime_ms.cmp(&a.mtime_ms).then_with(|| a.path.cmp(&b.path)));
-        let mut file_tokens: HashMap<String, Vec<u32>> = HashMap::new();
-        for (i, f) in files.iter().enumerate() {
-            tokenize_into(&f.snippet_lower, &mut tok_buf, &mut cur_buf);
-            for tok in tok_buf.drain() {
-                file_tokens.entry(tok).or_default().push(i as u32);
+        let embedding_cfg = load_embedding_config(data_dir);
+        let wanted_emb_sig = embedding_cfg
+            .as_ref()
+            .map(EmbeddingConfig::signature)
+            .unwrap_or_else(|| "det-256".to_string());
+
+        let mut cached = if force_reindex {
+            HashMap::new()
+        } else {
+            load_persisted_vault(data_dir, &wanted_emb_sig)
+        };
+        let initial_cached_len = cached.len();
+        let mut discovered = Vec::new();
+        collect_files(
+            workspace_dir,
+            workspace_dir,
+            &mut cached,
+            force_reindex,
+            &mut discovered,
+        );
+        let removed_any = !cached.is_empty();
+        let any_recomputed = discovered.iter().any(|d| d.recomputed);
+
+        // Compute embeddings for newly parsed/changed chunks.
+        let mut uses_remote_embeddings = embedding_cfg.is_some();
+        if any_recomputed {
+            if let Some(ecfg) = &embedding_cfg {
+                let mut missing_texts: Vec<&str> = Vec::new();
+                for d in &discovered {
+                    if d.recomputed {
+                        for c in &d.entry.chunks {
+                            missing_texts.push(c.text.as_str());
+                        }
+                    }
+                }
+                if !missing_texts.is_empty() {
+                    if let Some(remote_vecs) = fetch_remote_embeddings(ecfg, &missing_texts) {
+                        let mut vi = 0usize;
+                        for d in &mut discovered {
+                            if d.recomputed {
+                                for c in &mut d.entry.chunks {
+                                    c.embedding = remote_vecs[vi].clone();
+                                    vi += 1;
+                                }
+                            }
+                        }
+                    } else {
+                        uses_remote_embeddings = false;
+                    }
+                }
+            }
+            for d in &mut discovered {
+                if d.recomputed {
+                    for c in &mut d.entry.chunks {
+                        if c.embedding.is_empty() {
+                            c.embedding = deterministic_embedding(&c.text);
+                        }
+                    }
+                }
+            }
+        } else if let Some(first_c) = discovered.iter().flat_map(|d| d.entry.chunks.iter()).next() {
+            if first_c.embedding.len() == EMBED_DIM && embedding_cfg.is_none() {
+                uses_remote_embeddings = false;
+            }
+        } else {
+            uses_remote_embeddings = false;
+        }
+
+        // If remote embeddings fell back to deterministic for new chunks while
+        // older cached chunks had remote dims, normalize all to deterministic
+        // so cosine similarity stays dimension-consistent.
+        if !uses_remote_embeddings && embedding_cfg.is_some() {
+            for d in &mut discovered {
+                for c in &mut d.entry.chunks {
+                    if c.embedding.len() != EMBED_DIM {
+                        c.embedding = deterministic_embedding(&c.text);
+                    }
+                }
             }
         }
+
+        discovered.sort_by(|a, b| {
+            b.entry
+                .mtime_ms
+                .cmp(&a.entry.mtime_ms)
+                .then_with(|| a.entry.path.cmp(&b.entry.path))
+        });
+
+        let mut files: Vec<IndexedFile> = Vec::with_capacity(discovered.len());
+        let mut chunks: Vec<VaultChunk> = Vec::new();
+        let mut indexed_bytes = 0u64;
+
+        for (file_idx, d) in discovered.into_iter().enumerate() {
+            let e = d.entry;
+            let start = chunks.len();
+            for mut c in e.chunks {
+                c.file_idx = file_idx as u32;
+                chunks.push(c);
+            }
+            let end = chunks.len();
+            indexed_bytes += e.indexed_bytes;
+            files.push(IndexedFile {
+                path: e.path,
+                name: e.name,
+                size: e.size,
+                mtime_ms: e.mtime_ms,
+                mtime_ns: e.mtime_ns,
+                sha256: e.sha256,
+                ext: e.ext,
+                doc_kind: e.doc_kind,
+                preview: e.preview,
+                indexed_bytes: e.indexed_bytes,
+                chunk_range: start..end,
+            });
+        }
+
+        let actual_emb_sig = if uses_remote_embeddings {
+            wanted_emb_sig
+        } else {
+            "det-256".to_string()
+        };
+        let vault_path = data_dir.join(VAULT_INDEX_FILE);
+        if force_reindex
+            || any_recomputed
+            || removed_any
+            || initial_cached_len == 0 && !files.is_empty()
+            || !vault_path.exists()
+        {
+            save_persisted_vault(data_dir, &actual_emb_sig, &files, &chunks);
+        }
+
+        // Build inverted token index for files & BM25 inverted index for chunks.
+        let mut file_tokens: HashMap<String, Vec<u32>> = HashMap::new();
+        let mut chunk_tokens_raw: HashMap<String, Vec<(u32, u16)>> = HashMap::new();
+        let mut tf_buf: HashMap<String, u16> = HashMap::new();
+        let mut total_chunk_tokens = 0usize;
+
+        for (fi, f) in files.iter().enumerate() {
+            tokenize_into(&f.path, &mut tok_buf, &mut cur_buf);
+            for tok in tok_buf.drain() {
+                let list = file_tokens.entry(tok).or_default();
+                if list.last().copied() != Some(fi as u32) {
+                    list.push(fi as u32);
+                }
+            }
+            for ci in f.chunk_range.clone() {
+                let c = &chunks[ci];
+                let tok_count = tokenize_tf(&c.text, &mut tf_buf, &mut cur_buf);
+                total_chunk_tokens += tok_count;
+                for (tok, tf) in tf_buf.drain() {
+                    let flist = file_tokens.entry(tok.clone()).or_default();
+                    if flist.last().copied() != Some(fi as u32) {
+                        flist.push(fi as u32);
+                    }
+                    chunk_tokens_raw
+                        .entry(tok)
+                        .or_default()
+                        .push((ci as u32, tf));
+                }
+                if let Some(sh) = &c.sheet {
+                    tokenize_into(sh, &mut tok_buf, &mut cur_buf);
+                    for tok in tok_buf.drain() {
+                        let flist = file_tokens.entry(tok.clone()).or_default();
+                        if flist.last().copied() != Some(fi as u32) {
+                            flist.push(fi as u32);
+                        }
+                        let clist = chunk_tokens_raw.entry(tok).or_default();
+                        if clist.last().map(|x| x.0) != Some(ci as u32) {
+                            clist.push((ci as u32, 1));
+                        }
+                    }
+                }
+            }
+        }
+
         let file_tokens: HashMap<String, Box<[u32]>> = file_tokens
             .into_iter()
             .map(|(k, v)| (k, v.into_boxed_slice()))
             .collect();
+        let chunk_tokens: HashMap<String, Box<[(u32, u16)]>> = chunk_tokens_raw
+            .into_iter()
+            .map(|(k, v)| (k, v.into_boxed_slice()))
+            .collect();
+        let avg_chunk_len = if chunks.is_empty() {
+            1.0
+        } else {
+            (total_chunk_tokens as f64 / chunks.len() as f64).max(1.0)
+        };
         files.shrink_to_fit();
+        chunks.shrink_to_fit();
 
         let mut memory = Vec::new();
         if let Ok(text) = std::fs::read_to_string(memory_path) {
@@ -518,172 +1718,364 @@ impl PersonIndex {
             receipt_tokens,
             files,
             file_tokens,
+            chunks,
+            chunk_tokens,
+            avg_chunk_len,
+            indexed_bytes,
+            semantic_enabled: true,
+            embedding_cfg,
+            uses_remote_embeddings,
             memory,
         }
     }
 
-    pub fn search(&self, query: &str, scope: &str, limit: usize) -> Value {
-        let t0 = Instant::now();
-        let q = query.trim().to_lowercase();
-        let limit = limit.clamp(1, 200);
-        let tokens = tokenize_query(&q);
+    pub fn total_chunks(&self) -> usize {
+        self.chunks.len()
+    }
 
-        let want_receipts = scope == "all" || scope == "receipts";
-        let want_files = scope == "all" || scope == "files";
-        let want_memory = scope == "all" || scope == "memory";
-
-        let single_exact_token = tokens.len() == 1
-            && tokens[0] == q
-            && q.bytes().all(|b| b.is_ascii_alphanumeric());
-
-        let mut receipt_hits: Vec<Value> = Vec::new();
-        let mut total_receipt_hits = 0usize;
-        if want_receipts {
-            if q.is_empty() {
-                total_receipt_hits = self.chain.len();
-                for r in self.chain.iter().rev().take(limit) {
-                    receipt_hits.push(r.to_json());
-                }
-            } else {
-                let candidates = narrow_candidates(&self.receipt_tokens, &q, &tokens, false);
-
-                match candidates {
-                    Some(ids) if single_exact_token => {
-                        total_receipt_hits = ids.len();
-                        for &id in ids.iter().rev().take(limit) {
-                            receipt_hits.push(self.chain[id as usize].to_json());
-                        }
-                    }
-                    Some(ids) => {
-                        for &id in ids.iter().rev() {
-                            let idx = id as usize;
-                            if receipt_matches(&self.chain[idx], &q, &tokens) {
-                                total_receipt_hits += 1;
-                                if receipt_hits.len() < limit {
-                                    receipt_hits.push(self.chain[idx].to_json());
-                                }
-                            }
-                        }
-                    }
-                    None => {
-                        for r in self.chain.iter().rev() {
-                            if receipt_matches(r, &q, &tokens) {
-                                total_receipt_hits += 1;
-                                if receipt_hits.len() < limit {
-                                    receipt_hits.push(r.to_json());
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        let mut file_hits: Vec<Value> = Vec::new();
-        let mut total_file_hits = 0usize;
-        if want_files {
-            if q.is_empty() {
-                total_file_hits = self.files.len();
-                for f in self.files.iter().take(limit) {
-                    file_hits.push(json!({
-                        "path": f.path,
-                        "name": f.name,
-                        "size": f.size,
-                        "mtime_ms": f.mtime_ms,
-                        "ext": f.ext,
-                        "preview": f.preview,
-                    }));
-                }
-            } else {
-                let candidates = narrow_candidates(&self.file_tokens, &q, &tokens, true);
-
-                let check_file = |idx: usize| -> bool {
-                    let hay = &self.files[idx].snippet_lower;
-                    if hay.contains(&q) {
-                        return true;
-                    }
-                    !tokens.is_empty() && tokens.iter().all(|t| hay.contains(t.as_str()))
-                };
-
-                let mut push_file = |idx: usize| {
-                    total_file_hits += 1;
-                    if file_hits.len() < limit {
-                        let f = &self.files[idx];
-                        file_hits.push(json!({
-                            "path": f.path,
-                            "name": f.name,
-                            "size": f.size,
-                            "mtime_ms": f.mtime_ms,
-                            "ext": f.ext,
-                            "preview": f.preview,
-                        }));
-                    }
-                };
-
-                match candidates {
-                    Some(ids) if single_exact_token => {
-                        for &id in ids.iter().take(limit) {
-                            push_file(id as usize);
-                        }
-                        total_file_hits = ids.len();
-                    }
-                    Some(ids) => {
-                        for id in ids {
-                            if check_file(id as usize) {
-                                push_file(id as usize);
-                            }
-                        }
-                    }
-                    None => {
-                        for idx in 0..self.files.len() {
-                            if check_file(idx) {
-                                push_file(idx);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        let mut memory_hits: Vec<Value> = Vec::new();
-        let mut total_memory_hits = 0usize;
-        if want_memory {
-            for m in &self.memory {
-                let matched = q.is_empty()
-                    || m.lower.contains(&q)
-                    || (!tokens.is_empty() && tokens.iter().all(|t| m.lower.contains(t.as_str())));
-                if matched {
-                    total_memory_hits += 1;
-                    if memory_hits.len() < limit {
-                        memory_hits.push(json!({
-                            "line": m.line_no,
-                            "text": m.text,
-                        }));
-                    }
-                }
-            }
-        }
-
-        let elapsed_ms = t0.elapsed().as_secs_f64() * 1000.0;
+    pub fn index_stats(&self) -> Value {
         json!({
-            "query": query.trim(),
-            "scope": scope,
-            "elapsed_ms": (elapsed_ms * 100.0).round() / 100.0,
-            "total_hits": total_receipt_hits + total_file_hits + total_memory_hits,
-            "counts": {
-                "receipts": total_receipt_hits,
-                "files": total_file_hits,
-                "memory": total_memory_hits,
-            },
-            "indexed": {
-                "receipts": self.chain.len(),
-                "files": self.files.len(),
-                "memory_lines": self.memory.len(),
-            },
-            "receipts": receipt_hits,
-            "files": file_hits,
-            "memory": memory_hits,
+            "total_files": self.files.len(),
+            "total_chunks": self.chunks.len(),
+            "indexed_bytes": self.indexed_bytes,
+            "semantic_enabled": self.semantic_enabled,
         })
+    }
+
+    fn query_embedding(&self, query: &str) -> Option<Vec<f32>> {
+        if self.uses_remote_embeddings {
+            if let Some(cfg) = &self.embedding_cfg {
+                if let Some(mut vecs) = fetch_remote_embeddings(cfg, &[query]) {
+                    return vecs.pop();
+                }
+            }
+            return None;
+        }
+        Some(deterministic_embedding(query))
+    }
+
+    fn normalize_prefix(path_prefix: &str) -> String {
+        let mut p = path_prefix.trim().replace('\\', "/");
+        while let Some(rest) = p.strip_prefix("./") {
+            p = rest.to_string();
+        }
+        while let Some(rest) = p.strip_prefix('/') {
+            p = rest.to_string();
+        }
+        if p == "." {
+            p.clear();
+        }
+        p
+    }
+
+    fn file_matches_prefix(path: &str, norm_prefix: &str) -> bool {
+        if norm_prefix.is_empty() {
+            return true;
+        }
+        path.starts_with(norm_prefix)
+    }
+
+    fn score_chunks<'a>(
+        &'a self,
+        query: &str,
+        mode: &str,
+        path_prefix: &str,
+    ) -> (Vec<(usize, f64, Vec<ChunkHit<'a>>)>, usize) {
+        let q_trim = query.trim();
+        let q_low = q_trim.to_lowercase();
+        let norm_prefix = Self::normalize_prefix(path_prefix);
+        let norm_mode = match mode.trim().to_ascii_lowercase().as_str() {
+            "bm25" => "bm25",
+            "exact" => "exact",
+            _ => "hybrid",
+        };
+
+        if q_low.is_empty() {
+            let mut out = Vec::new();
+            let mut total = 0usize;
+            for (fi, f) in self.files.iter().enumerate() {
+                if Self::file_matches_prefix(&f.path, &norm_prefix) {
+                    total += 1;
+                    out.push((fi, 0.0, Vec::new()));
+                }
+            }
+            return (out, total);
+        }
+
+        let tokens = tokenize_query(&q_low);
+        let n_docs = self.chunks.len() as f64;
+
+        let mut bm25_scores: Vec<f64> = vec![0.0; self.chunks.len()];
+        let mut exact_flags: Vec<bool> = vec![false; self.chunks.len()];
+
+        if norm_mode == "exact" {
+            for (ci, c) in self.chunks.iter().enumerate() {
+                if !Self::file_matches_prefix(&c.path, &norm_prefix) {
+                    continue;
+                }
+                let in_text = contains_icase(&c.text, &q_low);
+                let in_meta = c
+                    .sheet
+                    .as_deref()
+                    .is_some_and(|s| contains_icase(s, &q_low))
+                    || c.heading
+                        .as_deref()
+                        .is_some_and(|h| contains_icase(h, &q_low));
+                if in_text || in_meta {
+                    exact_flags[ci] = true;
+                    bm25_scores[ci] = if in_text { 1.0 } else { 0.5 };
+                }
+            }
+        } else {
+            // BM25 over inverted chunk token postings.
+            const K1: f64 = 1.2;
+            const B: f64 = 0.75;
+            for tok in &tokens {
+                if let Some(postings) = self.chunk_tokens.get(tok) {
+                    let df = postings.len() as f64;
+                    let idf = (((n_docs - df + 0.5) / (df + 0.5)) + 1.0).ln().max(0.01);
+                    for &(ci_u32, tf_u16) in postings.iter() {
+                        let ci = ci_u32 as usize;
+                        if !Self::file_matches_prefix(&self.chunks[ci].path, &norm_prefix) {
+                            continue;
+                        }
+                        let tf = tf_u16 as f64;
+                        let dl = (self.chunks[ci].token_len as f64).max(1.0);
+                        let denom = tf + K1 * (1.0 - B + B * (dl / self.avg_chunk_len));
+                        bm25_scores[ci] += idf * (tf * (K1 + 1.0)) / denom;
+                    }
+                }
+            }
+
+            // Phrase match boost (and substring fallback when tokens is empty or query has punctuation).
+            let need_substring_scan =
+                tokens.is_empty() || q_low.contains('.') || q_low.contains('-');
+            for (ci, c) in self.chunks.iter().enumerate() {
+                if !Self::file_matches_prefix(&c.path, &norm_prefix) {
+                    continue;
+                }
+                if (bm25_scores[ci] > 0.0 || need_substring_scan) && contains_icase(&c.text, &q_low) {
+                    exact_flags[ci] = true;
+                    bm25_scores[ci] += 1.5;
+                }
+            }
+        }
+
+        // Semantic cosine similarity (only in hybrid mode).
+        let mut sem_scores: Vec<f64> = vec![0.0; self.chunks.len()];
+        if norm_mode == "hybrid" {
+            if let Some(q_emb) = self.query_embedding(q_trim) {
+                for (ci, c) in self.chunks.iter().enumerate() {
+                    if !Self::file_matches_prefix(&c.path, &norm_prefix) {
+                        continue;
+                    }
+                    sem_scores[ci] = cosine_similarity(&q_emb, &c.embedding);
+                }
+            }
+        }
+
+        // Select matching chunks and compute RRF (hybrid) or single-signal score.
+        let mut candidates: Vec<usize> = Vec::new();
+        for ci in 0..self.chunks.len() {
+            if !Self::file_matches_prefix(&self.chunks[ci].path, &norm_prefix) {
+                continue;
+            }
+            let matched = match norm_mode {
+                "exact" => exact_flags[ci],
+                "bm25" => bm25_scores[ci] > 0.0 || exact_flags[ci],
+                _ => {
+                    bm25_scores[ci] > 0.0
+                        || exact_flags[ci]
+                        || sem_scores[ci] >= SEMANTIC_MIN_THRESHOLD
+                }
+            };
+            if matched {
+                candidates.push(ci);
+            }
+        }
+
+        let mut final_scores: Vec<(usize, f64)> = Vec::with_capacity(candidates.len());
+        if norm_mode == "hybrid" {
+            let mut bm25_ranked: Vec<usize> = candidates
+                .iter()
+                .copied()
+                .filter(|&ci| bm25_scores[ci] > 0.0 || exact_flags[ci])
+                .collect();
+            bm25_ranked.sort_by(|&a, &b| {
+                bm25_scores[b]
+                    .partial_cmp(&bm25_scores[a])
+                    .unwrap_or(std::cmp::Ordering::Equal)
+                    .then_with(|| a.cmp(&b))
+            });
+            let mut bm25_rank_map = HashMap::with_capacity(bm25_ranked.len());
+            for (rank0, ci) in bm25_ranked.into_iter().enumerate() {
+                bm25_rank_map.insert(ci, rank0 + 1);
+            }
+
+            let mut sem_ranked: Vec<usize> = candidates
+                .iter()
+                .copied()
+                .filter(|&ci| sem_scores[ci] >= SEMANTIC_MIN_THRESHOLD)
+                .collect();
+            sem_ranked.sort_by(|&a, &b| {
+                sem_scores[b]
+                    .partial_cmp(&sem_scores[a])
+                    .unwrap_or(std::cmp::Ordering::Equal)
+                    .then_with(|| a.cmp(&b))
+            });
+            let mut sem_rank_map = HashMap::with_capacity(sem_ranked.len());
+            for (rank0, ci) in sem_ranked.into_iter().enumerate() {
+                sem_rank_map.insert(ci, rank0 + 1);
+            }
+
+            for ci in candidates {
+                let mut rrf = 0.0;
+                if let Some(&r) = bm25_rank_map.get(&ci) {
+                    rrf += 1.0 / (RRF_K + r as f64);
+                }
+                if let Some(&r) = sem_rank_map.get(&ci) {
+                    rrf += 1.0 / (RRF_K + r as f64);
+                }
+                rrf += bm25_scores[ci] * 1e-4 + sem_scores[ci].max(0.0) * 1e-4;
+                final_scores.push((ci, rrf));
+            }
+        } else {
+            for ci in candidates {
+                final_scores.push((ci, bm25_scores[ci]));
+            }
+        }
+
+        // Group chunk hits by file_idx.
+        let mut by_file: HashMap<usize, Vec<ChunkHit<'a>>> = HashMap::new();
+        for (ci, score) in final_scores {
+            let chunk = &self.chunks[ci];
+            let fi = chunk.file_idx as usize;
+            let excerpt = make_excerpt(&chunk.text, &q_low, &tokens);
+            by_file.entry(fi).or_default().push(ChunkHit {
+                chunk,
+                score,
+                bm25_score: bm25_scores[ci],
+                semantic_score: sem_scores[ci],
+                excerpt,
+            });
+        }
+
+        // Also match filenames/paths that might have 0 chunk hits (e.g. binary files or filename searches).
+        for (fi, f) in self.files.iter().enumerate() {
+            if !Self::file_matches_prefix(&f.path, &norm_prefix) {
+                continue;
+            }
+            if by_file.contains_key(&fi) {
+                continue;
+            }
+            let path_match = contains_icase(&f.path, &q_low)
+                || (norm_mode != "exact"
+                    && !tokens.is_empty()
+                    && tokens.iter().all(|t| contains_icase(&f.path, t.as_str())));
+            if path_match {
+                by_file.insert(fi, Vec::new());
+            }
+        }
+
+        let mut file_results: Vec<(usize, f64, Vec<ChunkHit<'a>>)> = Vec::with_capacity(by_file.len());
+        for (fi, mut hits) in by_file {
+            hits.sort_by(|a, b| {
+                b.score
+                    .partial_cmp(&a.score)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+                    .then_with(|| a.chunk.line_start.cmp(&b.chunk.line_start))
+            });
+            let mut file_score = hits.first().map(|h| h.score).unwrap_or(0.01);
+            if contains_icase(&self.files[fi].path, &q_low) {
+                file_score += 0.005;
+            }
+            hits.truncate(5);
+            file_results.push((fi, file_score, hits));
+        }
+
+        file_results.sort_by(|a, b| {
+            b.1.partial_cmp(&a.1)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| self.files[b.0].mtime_ms.cmp(&self.files[a.0].mtime_ms))
+                .then_with(|| self.files[a.0].path.cmp(&self.files[b.0].path))
+        });
+
+        let total_files = file_results.len();
+        (file_results, total_files)
+    }
+
+    pub fn search_vault_chunks(
+        &self,
+        query: &str,
+        path_prefix: &str,
+        mode: &str,
+        limit: usize,
+    ) -> Vec<OwnedChunkHit> {
+        let limit = limit.clamp(1, 50);
+        let (file_results, _) = self.score_chunks(query, mode, path_prefix);
+        let mut flat: Vec<OwnedChunkHit> = Vec::new();
+        for (fi, _, hits) in file_results {
+            if hits.is_empty() {
+                let f = &self.files[fi];
+                flat.push(OwnedChunkHit {
+                    chunk_id: format!("{}:0", f.path),
+                    path: f.path.clone(),
+                    doc_kind: f.doc_kind.clone(),
+                    sheet: None,
+                    page: None,
+                    line_start: 1,
+                    line_end: 1,
+                    heading: None,
+                    score: 0.01,
+                    bm25_score: 0.0,
+                    semantic_score: 0.0,
+                    excerpt: f.preview.clone(),
+                });
+            } else {
+                for h in hits {
+                    flat.push(OwnedChunkHit {
+                        chunk_id: h.chunk.chunk_id.clone(),
+                        path: h.chunk.path.clone(),
+                        doc_kind: h.chunk.doc_kind.clone(),
+                        sheet: h.chunk.sheet.clone(),
+                        page: h.chunk.page,
+                        line_start: h.chunk.line_start,
+                        line_end: h.chunk.line_end,
+                        heading: h.chunk.heading.clone(),
+                        score: h.score,
+                        bm25_score: h.bm25_score,
+                        semantic_score: h.semantic_score,
+                        excerpt: h.excerpt,
+                    });
+                }
+            }
+        }
+        flat.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| a.path.cmp(&b.path))
+                .then_with(|| a.line_start.cmp(&b.line_start))
+        });
+        flat.truncate(limit);
+        flat
+    }
+
+    pub fn search(&self, query: &str, scope: &str, limit: usize) -> Value {
+        self.search_with(query, scope, "hybrid", limit, "")
+    }
+
+    pub fn search_with(
+        &self,
+        query: &str,
+        scope: &str,
+        mode: &str,
+        limit: usize,
+        path_prefix: &str,
+    ) -> Value {
+        let mut buf = Vec::with_capacity(4096);
+        self.write_search_json_with(&mut buf, query, scope, mode, limit, path_prefix);
+        serde_json::from_slice(&buf).unwrap_or_else(|_| json!({}))
     }
 
     pub fn list_receipts(
@@ -767,6 +2159,16 @@ impl PersonIndex {
         })
     }
 
+    fn file_matches_query(&self, fi: usize, q_low: &str) -> bool {
+        let f = &self.files[fi];
+        if contains_icase(&f.path, q_low) {
+            return true;
+        }
+        self.chunks[f.chunk_range.clone()]
+            .iter()
+            .any(|c| contains_icase(&c.text, q_low) || c.sheet.as_deref().is_some_and(|s| contains_icase(s, q_low)))
+    }
+
     pub fn list_files(&self, offset: usize, limit: Option<usize>, q: &str) -> (usize, Vec<Value>) {
         let q_low = q.trim().to_lowercase();
         if q_low.is_empty() {
@@ -783,13 +2185,12 @@ impl PersonIndex {
         let filtered: Vec<&IndexedFile> = match candidates {
             Some(ids) => ids
                 .into_iter()
+                .filter(|&id| self.file_matches_query(id as usize, &q_low))
                 .map(|id| &self.files[id as usize])
-                .filter(|f| f.path.to_lowercase().contains(&q_low) || f.snippet_lower.contains(&q_low))
                 .collect(),
-            None => self
-                .files
-                .iter()
-                .filter(|f| f.path.to_lowercase().contains(&q_low) || f.snippet_lower.contains(&q_low))
+            None => (0..self.files.len())
+                .filter(|&fi| self.file_matches_query(fi, &q_low))
+                .map(|fi| &self.files[fi])
                 .collect(),
         };
         let total = filtered.len();
@@ -846,13 +2247,12 @@ impl PersonIndex {
         let filtered: Vec<&IndexedFile> = match candidates {
             Some(ids) => ids
                 .into_iter()
+                .filter(|&id| self.file_matches_query(id as usize, &q_low))
                 .map(|id| &self.files[id as usize])
-                .filter(|f| f.path.to_lowercase().contains(&q_low) || f.snippet_lower.contains(&q_low))
                 .collect(),
-            None => self
-                .files
-                .iter()
-                .filter(|f| f.path.to_lowercase().contains(&q_low) || f.snippet_lower.contains(&q_low))
+            None => (0..self.files.len())
+                .filter(|&fi| self.file_matches_query(fi, &q_low))
+                .map(|fi| &self.files[fi])
                 .collect(),
         };
         let total = filtered.len();
@@ -972,13 +2372,30 @@ impl PersonIndex {
         out.push(b'}');
     }
 
-    /// Zero-DOM streaming writer equivalent to `search`.
     pub fn write_search_json(&self, out: &mut Vec<u8>, query: &str, scope: &str, limit: usize) {
+        self.write_search_json_with(out, query, scope, "hybrid", limit, "");
+    }
+
+    /// Zero-DOM streaming writer equivalent to `search_with`.
+    pub fn write_search_json_with(
+        &self,
+        out: &mut Vec<u8>,
+        query: &str,
+        scope: &str,
+        mode: &str,
+        limit: usize,
+        path_prefix: &str,
+    ) {
         let t0 = Instant::now();
         let q_trim = query.trim();
         let q = q_trim.to_lowercase();
         let limit = limit.clamp(1, 200);
         let tokens = tokenize_query(&q);
+        let norm_mode = match mode.trim().to_ascii_lowercase().as_str() {
+            "bm25" => "bm25",
+            "exact" => "exact",
+            _ => "hybrid",
+        };
 
         let want_receipts = scope == "all" || scope == "receipts";
         let want_files = scope == "all" || scope == "files";
@@ -1030,53 +2447,11 @@ impl PersonIndex {
             }
         }
 
-        let mut file_hits: Vec<&IndexedFile> = Vec::new();
-        let mut total_file_hits = 0usize;
-        if want_files {
-            if q.is_empty() {
-                total_file_hits = self.files.len();
-                for f in self.files.iter().take(limit) {
-                    file_hits.push(f);
-                }
-            } else {
-                let candidates = narrow_candidates(&self.file_tokens, &q, &tokens, true);
-                let check_file = |idx: usize| -> bool {
-                    let hay = &self.files[idx].snippet_lower;
-                    if hay.contains(&q) {
-                        return true;
-                    }
-                    !tokens.is_empty() && tokens.iter().all(|t| hay.contains(t.as_str()))
-                };
-                let mut push_file = |idx: usize| {
-                    total_file_hits += 1;
-                    if file_hits.len() < limit {
-                        file_hits.push(&self.files[idx]);
-                    }
-                };
-                match candidates {
-                    Some(ids) if single_exact_token => {
-                        for &id in ids.iter().take(limit) {
-                            push_file(id as usize);
-                        }
-                        total_file_hits = ids.len();
-                    }
-                    Some(ids) => {
-                        for id in ids {
-                            if check_file(id as usize) {
-                                push_file(id as usize);
-                            }
-                        }
-                    }
-                    None => {
-                        for idx in 0..self.files.len() {
-                            if check_file(idx) {
-                                push_file(idx);
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        let (file_hits, total_file_hits) = if want_files {
+            self.score_chunks(q_trim, norm_mode, path_prefix)
+        } else {
+            (Vec::new(), 0)
+        };
 
         let mut memory_hits: Vec<&MemoryLine> = Vec::new();
         let mut total_memory_hits = 0usize;
@@ -1099,10 +2474,15 @@ impl PersonIndex {
         write_json_str(out, q_trim);
         out.extend_from_slice(br#","scope":"#);
         write_json_str(out, scope);
+        out.extend_from_slice(br#","mode":"#);
+        write_json_str(out, norm_mode);
         out.extend_from_slice(br#","elapsed_ms":"#);
         let _ = serde_json::to_writer(&mut *out, &elapsed_ms);
         out.extend_from_slice(br#","total_hits":"#);
-        write_json_u64(out, (total_receipt_hits + total_file_hits + total_memory_hits) as u64);
+        write_json_u64(
+            out,
+            (total_receipt_hits + total_file_hits + total_memory_hits) as u64,
+        );
         out.extend_from_slice(br#","counts":{"receipts":"#);
         write_json_u64(out, total_receipt_hits as u64);
         out.extend_from_slice(br#","files":"#);
@@ -1115,6 +2495,14 @@ impl PersonIndex {
         write_json_u64(out, self.files.len() as u64);
         out.extend_from_slice(br#","memory_lines":"#);
         write_json_u64(out, self.memory.len() as u64);
+        out.extend_from_slice(br#"},"index_stats":{"total_files":"#);
+        write_json_u64(out, self.files.len() as u64);
+        out.extend_from_slice(br#","total_chunks":"#);
+        write_json_u64(out, self.chunks.len() as u64);
+        out.extend_from_slice(br#","indexed_bytes":"#);
+        write_json_u64(out, self.indexed_bytes);
+        out.extend_from_slice(br#","semantic_enabled":"#);
+        write_json_bool(out, self.semantic_enabled);
         out.extend_from_slice(br#"},"receipts":["#);
         for (i, r) in receipt_hits.into_iter().enumerate() {
             if i > 0 {
@@ -1123,11 +2511,11 @@ impl PersonIndex {
             write_receipt_json(out, r);
         }
         out.extend_from_slice(br#"],"files":["#);
-        for (i, f) in file_hits.into_iter().enumerate() {
+        for (i, (fi, score, chunks)) in file_hits.into_iter().take(limit).enumerate() {
             if i > 0 {
                 out.push(b',');
             }
-            write_file_hit_json(out, f);
+            write_file_hit_json(out, &self.files[fi], score, &chunks);
         }
         out.extend_from_slice(br#"],"memory":["#);
         for (i, m) in memory_hits.into_iter().enumerate() {
@@ -1154,6 +2542,11 @@ pub struct SearchCache {
 impl SearchCache {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn global() -> &'static Self {
+        static CACHE: OnceLock<SearchCache> = OnceLock::new();
+        CACHE.get_or_init(SearchCache::new)
     }
 
     fn slot(&self, person_id: &str) -> PersonIndexSlot {
@@ -1184,9 +2577,7 @@ impl SearchCache {
         r.as_ref().filter(|idx| idx.fp == fp).cloned()
     }
 
-    /// Return a fresh shared `Arc<PersonIndex>` for `person_id`. Under 30+
-    /// concurrent read requests, only the read lock is acquired after initial
-    /// build, delivering zero-contention sub-5ms responses.
+    /// Return a fresh shared `Arc<PersonIndex>` for `person_id`.
     #[inline]
     pub fn get(
         &self,
@@ -1211,7 +2602,36 @@ impl SearchCache {
                 return idx.clone();
             }
         }
-        let built = Arc::new(PersonIndex::build(data_dir, workspace_dir, memory_path, fp));
+        let built = Arc::new(PersonIndex::build(
+            data_dir,
+            workspace_dir,
+            memory_path,
+            fp,
+            false,
+        ));
+        *w = Some(built.clone());
+        built
+    }
+
+    /// Force a full vault rebuild (bypassing persisted incremental cache) and
+    /// refresh `<person_data_dir>/vault_index.json`.
+    pub fn reindex(
+        &self,
+        person_id: &str,
+        data_dir: &Path,
+        workspace_dir: &Path,
+        memory_path: &Path,
+    ) -> Arc<PersonIndex> {
+        let fp = compute_fingerprint(data_dir, workspace_dir, memory_path);
+        let slot = self.slot(person_id);
+        let mut w = slot.write().unwrap();
+        let built = Arc::new(PersonIndex::build(
+            data_dir,
+            workspace_dir,
+            memory_path,
+            fp,
+            true,
+        ));
         *w = Some(built.clone());
         built
     }
@@ -1237,7 +2657,11 @@ mod tests {
 
         let mut entries = Vec::with_capacity(10_000);
         for i in 0..10_000usize {
-            let tag = if i == 9876 { "needle_quarter_audit" } else { "routine_sync" };
+            let tag = if i == 9876 {
+                "needle_quarter_audit"
+            } else {
+                "routine_sync"
+            };
             entries.push(json!({
                 "id": format!("rcpt-{i}"),
                 "ts": 1_700_000_000_000u64 + i as u64,

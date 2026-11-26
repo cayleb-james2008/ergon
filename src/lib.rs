@@ -389,12 +389,15 @@ pub fn load_saved_model_config(data_dir: &Path) -> Option<SavedModelConfig> {
 
 pub fn save_model_config(data_dir: &Path, saved: &SavedModelConfig) -> Result<(), String> {
     let path = config_file_path(data_dir);
-    let body = json!({
-        "model_base_url": saved.model_base_url,
-        "model_id": saved.model_id,
-        "api_key": saved.api_key,
-    })
-    .to_string();
+    let mut obj = std::fs::read_to_string(&path)
+        .ok()
+        .and_then(|s| serde_json::from_str::<Value>(&s).ok())
+        .and_then(|v| v.as_object().cloned())
+        .unwrap_or_default();
+    obj.insert("model_base_url".to_string(), json!(saved.model_base_url));
+    obj.insert("model_id".to_string(), json!(saved.model_id));
+    obj.insert("api_key".to_string(), json!(saved.api_key));
+    let body = Value::Object(obj).to_string();
     atomic_write_bytes_with_mode(&path, body.as_bytes(), Some(0o600))
         .map_err(|e| format!("save config.json: {e}"))
 }
@@ -1441,6 +1444,7 @@ fn system_prompt(cfg: &Config, suite_items: &[library::LibraryItem]) -> String {
          - write_file {{\"path\": \"out.txt\", \"content\": \"...\"}} — write a workspace file.\n\
          - patch_file {{\"path\": \"brief.md\", \"find\": \"...\", \"replace\": \"...\"}} — surgically replace a unique substring in an existing workspace text file (pass \"replace_all\": true to replace all occurrences; snapshots prior version to history).\n\
          - query_table {{\"path\": \"expenses.xlsx#Q4\", \"where\": [{{\"col\": \"vendor\", \"op\": \"eq\", \"value\": \"Acme\"}}], \"group_by\": [\"vendor\"], \"aggregates\": [{{\"col\": \"amount\", \"fn\": \"sum\", \"as\": \"total\"}}], \"sort\": {{\"col\": \"total\", \"dir\": \"desc\"}}, \"limit\": 50, \"save_as\": \"totals.csv\"}} — run fast deterministic exact-decimal filtering, grouping, and aggregation over workspace .csv, .tsv, .xlsx#Sheet, or .json tables.\n\
+         - aggregate_vault {{\"glob\": \"invoices/*.csv\", \"sheet\": \"optional\", \"where\": [...], \"group_by\": [\"vendor\"], \"aggregates\": [{{\"col\": \"amount\", \"fn\": \"sum\", \"as\": \"total\"}}], \"sort\": {{...}}, \"limit\": 50, \"save_as\": \"rollup.csv\"}} — exact-decimal multi-file CSV/TSV/XLSX rollup across matching workspace files and sheets.\n\
          - fetch_url {{\"url\": \"https://...\"}} — fetch a URL and read its text.\n\
          - invoke_connector {{\"connector_id\": \"...\", \"payload\": {{...}}, \"file\": \"optional-workspace-file.pdf\"}} — deliver JSON or a workspace file to a configured outbound connector (secrets are injected only by the host; may park for approval depending on workspace policy).\n\
          - export_file {{\"path\": \"Weekly Report.md\", \"format\": \"pdf\"}} — turn a finished Markdown/text file into a Word document (.docx) or native PDF (.pdf, optional \"brand_header\"), or a CSV/TSV (or multi-sheet \"sheets\": [{{\"name\": \"...\", \"path\": \"...\", \"totals_row\": true}}]) into an Excel workbook (.xlsx) with live SUM formulas, ready to share.\n\
@@ -1448,6 +1452,7 @@ fn system_prompt(cfg: &Config, suite_items: &[library::LibraryItem]) -> String {
          - make_spreadsheet {{\"title\": \"Budget\", \"columns\": [\"Item\", \"Cost\"], \"rows\": [[\"Coffee\", \"4.50\"]]}} — produce a finished CSV spreadsheet in the workspace (a Rune skill formats and writes it).\n\
          - research {{\"topic\": \"Local Prices\", \"urls\": [\"https://...\", \"https://...\"]}} — fetch several pages and compile them into one research notes document in the workspace (a Rune skill).\n\
          - search_files {{\"query\": \"quarterly\", \"path\": \".\"}} — search the workspace's text files for a phrase; returns matching lines with file and line number.\n\
+         - search_vault {{\"query\": \"renewal notice period\", \"path_prefix\": \"\", \"mode\": \"hybrid\", \"limit\": 10}} — hybrid BM25 + semantic search across 100% of every page, slide, section, and Excel sheet in the workspace, returning ranked chunks cited with [path:Lstart-Lend], #Sheet, and Page N.\n\
          - move_file {{\"from\": \"a.txt\", \"to\": \"archive/a.txt\"}} — move or rename a workspace file.\n\
          - update_memory {{\"note\": \"...\"}} — record something you learned about this person (a preference or fact) into their long-term memory (a Rune skill).\n\
          - reconcile_ledger {{\"source_files\": [\"expenses.csv\"], \"output_title\": \"Q4 Reconciliation\"}} — reconcile one or more expense/invoice ledgers (CSV or Excel; \"book.xlsx#Sheet\" for a sheet) with penny-exact totals, duplicate-reference, possible-double-charge and missing-receipt flags, and vendor rollups (Rune skill).\n\
@@ -1520,7 +1525,7 @@ fn credit_writes(
                 ledger.written.push(p.to_string());
             }
         }
-        "query_table" => {
+        "query_table" | "aggregate_vault" => {
             if let Some(p) = args["save_as"].as_str().map(str::trim).filter(|s| !s.is_empty()) {
                 ledger.written.push(p.to_string());
             }
@@ -1616,12 +1621,14 @@ fn subagent_system_prompt(
          - write_file {{\"path\": \"out.txt\", \"content\": \"...\"}} — write a workspace file.\n\
          - patch_file {{\"path\": \"brief.md\", \"find\": \"...\", \"replace\": \"...\"}} — surgically replace a unique substring in an existing workspace text file (pass \"replace_all\": true to replace all occurrences).\n\
          - query_table {{\"path\": \"expenses.xlsx#Q4\", \"where\": [...], \"group_by\": [...], \"aggregates\": [...], \"sort\": {{...}}, \"limit\": 50, \"save_as\": \"totals.csv\"}} — deterministic exact-decimal filter/group/aggregate over workspace .csv, .tsv, .xlsx#Sheet, or .json tables.\n\
+         - aggregate_vault {{\"glob\": \"invoices/*.csv\", \"sheet\": \"optional\", \"where\": [...], \"group_by\": [...], \"aggregates\": [...], \"sort\": {{...}}, \"limit\": 50, \"save_as\": \"rollup.csv\"}} — exact-decimal multi-file CSV/TSV/XLSX rollup.\n\
          - fetch_url {{\"url\": \"https://...\"}} — fetch a URL and read its text.\n\
          - export_file {{\"path\": \"Summary.md\", \"format\": \"pdf\"}} — make a Word (.docx) or native PDF (.pdf) copy of a Markdown/text file, or a single/multi-sheet Excel (.xlsx) workbook with optional \"sheets\" and \"totals_row\".\n\
          - write_document {{\"title\": \"Summary\", \"sections\": [\"...\"]}} — produce a finished markdown document.\n\
          - make_spreadsheet {{\"title\": \"Budget\", \"columns\": [\"Item\", \"Cost\"], \"rows\": [[\"Coffee\", \"4.50\"]]}} — produce a finished CSV spreadsheet.\n\
          - research {{\"topic\": \"...\", \"urls\": [\"https://...\"]}} — compile research notes from several pages.\n\
          - search_files {{\"query\": \"...\", \"path\": \".\"}} — search workspace text files.\n\
+         - search_vault {{\"query\": \"...\", \"path_prefix\": \"\", \"mode\": \"hybrid\", \"limit\": 10}} — hybrid BM25 + semantic chunk search across 100% of every page, slide, section, and Excel sheet.\n\
          - move_file {{\"from\": \"a.txt\", \"to\": \"archive/a.txt\"}} — move or rename a workspace file.\n\
          - update_memory {{\"note\": \"...\"}} — record something learned about this person.{skills}\n\n\
          RULES: Use tools to do the real work; never claim work you did not do through a tool. Your summary goes back to the main agent, so state plainly what you produced and where.\n\n\
@@ -1694,12 +1701,14 @@ pub fn task_requires_workspace_tool(task: &str) -> bool {
         "write_file",
         "patch_file",
         "query_table",
+        "aggregate_vault",
         "read_file",
         "delete_file",
         "make_spreadsheet",
         "write_document",
         "update_memory",
         "search_files",
+        "search_vault",
         "list_dir",
         "move_file",
         "fetch_url",
@@ -2171,9 +2180,14 @@ fn run_loop(
             return Err(format!("{}{reason}", tripwire::HALT_PREFIX));
         }
         messages.push(json!({"role": "assistant", "content": reply.to_string()}));
+        let spotlighted = if tool == "search_vault" && result_text.starts_with("Tool result for ") {
+            truncate(&result_text, 6000)
+        } else {
+            tripwire::spotlight(&tool, &truncate(&result_text, 6000))
+        };
         messages.push(json!({
             "role": "user",
-            "content": tripwire::spotlight(&tool, &truncate(&result_text, 6000)),
+            "content": spotlighted,
         }));
     }
     Err(if *budget >= STEP_CAP {

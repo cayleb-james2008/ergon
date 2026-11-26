@@ -587,6 +587,104 @@ pub fn execute_tool(cfg: &Config, name: &str, args: &Value) -> Result<String, St
             }
             Ok(out.trim_end().to_string())
         }
+        "aggregate_vault" => {
+            let res = crate::tables::execute_vault_aggregate(cfg, args)?;
+            let mut out = format!(
+                "aggregate_vault: {} of {} rows matched across {} source{} ({} output row{})",
+                res.matched_rows,
+                res.total_rows,
+                res.source_files.len(),
+                if res.source_files.len() == 1 { "" } else { "s" },
+                res.rows.len(),
+                if res.rows.len() == 1 { "" } else { "s" }
+            );
+            if let Some(sp) = &res.saved_path {
+                out.push_str(&format!(" — wrote {sp}"));
+            }
+            if !res.source_files.is_empty() {
+                let shown: Vec<&str> = res.source_files.iter().take(8).map(String::as_str).collect();
+                out.push_str(&format!("\nSources: {}", shown.join(", ")));
+                if res.source_files.len() > 8 {
+                    out.push_str(&format!(" (+{} more)", res.source_files.len() - 8));
+                }
+            }
+            let mut preview_rows = Vec::with_capacity(res.rows.len().min(40) + 1);
+            if !res.columns.is_empty() {
+                preview_rows.push(res.columns.clone());
+            }
+            preview_rows.extend(res.rows.iter().take(40).cloned());
+            if !preview_rows.is_empty() {
+                out.push('\n');
+                out.push_str(&docs::rows_to_csv(&preview_rows));
+                if res.rows.len() > 40 {
+                    out.push_str(&format!("... ({} more rows omitted)", res.rows.len() - 40));
+                }
+            }
+            Ok(out.trim_end().to_string())
+        }
+        "search_vault" => {
+            let query = args["query"]
+                .as_str()
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .ok_or("search_vault needs a non-empty args.query")?;
+            let raw_prefix = args["path_prefix"]
+                .as_str()
+                .or_else(|| args["path"].as_str())
+                .unwrap_or("")
+                .trim();
+            let clean_prefix = if raw_prefix.is_empty() || raw_prefix == "." {
+                String::new()
+            } else {
+                let trimmed = raw_prefix.trim_end_matches('/');
+                let clean = crate::tables::validate_workspace_rel_path(trimmed)?;
+                let cand = cfg.workspace_dir.join(&clean);
+                if cand.symlink_metadata().is_ok() {
+                    let _ = sandbox_path(&cfg.workspace_dir, &clean)?;
+                }
+                clean
+            };
+            let mode = args["mode"].as_str().unwrap_or("hybrid");
+            let limit = args["limit"].as_u64().unwrap_or(10).clamp(1, 50) as usize;
+            let key = cfg.data_dir.to_string_lossy().into_owned();
+            let idx = crate::search::SearchCache::global().get(
+                &key,
+                &cfg.data_dir,
+                &cfg.workspace_dir,
+                &cfg.memory_path,
+            );
+            let hits = idx.search_vault_chunks(query, &clean_prefix, mode, limit);
+            let body = if hits.is_empty() {
+                "(no matching chunks in vault)".to_string()
+            } else {
+                let mut lines = Vec::with_capacity(hits.len());
+                for (i, h) in hits.iter().enumerate() {
+                    let mut meta = Vec::new();
+                    if let Some(p) = h.page {
+                        meta.push(format!("Page {p}"));
+                    }
+                    if let Some(sh) = &h.sheet {
+                        meta.push(format!("#{sh}"));
+                    }
+                    if let Some(hd) = &h.heading {
+                        meta.push(hd.clone());
+                    }
+                    meta.push(format!("score {:.4}", h.score));
+                    let snippet = h.excerpt.replace('\n', " ");
+                    lines.push(format!(
+                        "{}. [{}:L{}-L{}] ({})\n   {}",
+                        i + 1,
+                        h.path,
+                        h.line_start,
+                        h.line_end,
+                        meta.join(" | "),
+                        snippet.trim()
+                    ));
+                }
+                lines.join("\n")
+            };
+            Ok(crate::tripwire::spotlight("search_vault", &body))
+        }
         "fetch_url" => {
             let policy = crate::load_workspace_policy(&cfg.data_dir);
             if policy.block_outbound_fetch || policy.profile == "air_gapped" {
@@ -734,6 +832,50 @@ pub fn execute_tool(cfg: &Config, name: &str, args: &Value) -> Result<String, St
                 }
             } else {
                 search_walk(&cfg.workspace_dir, &base, &query, &mut matches, 0, &mut stats);
+                if matches.is_empty()
+                    || stats.capped
+                    || stats.skipped > 0
+                    || query.split_whitespace().count() > 1
+                {
+                    let prefix = if rel.trim() == "." { "" } else { rel.trim() };
+                    let key = cfg.data_dir.to_string_lossy().into_owned();
+                    let idx = crate::search::SearchCache::global().get(
+                        &key,
+                        &cfg.data_dir,
+                        &cfg.workspace_dir,
+                        &cfg.memory_path,
+                    );
+                    let mode = if query.split_whitespace().count() > 1 {
+                        "hybrid"
+                    } else {
+                        "bm25"
+                    };
+                    let vault_hits = idx.search_vault_chunks(&query, prefix, mode, 25);
+                    for vh in vault_hits {
+                        if matches.len() >= 50 {
+                            stats.capped = true;
+                            break;
+                        }
+                        let loc_pfx = format!("{}:{}:", vh.path, vh.line_start);
+                        let already = matches.iter().any(|m| {
+                            m.starts_with(&loc_pfx)
+                                || (m.starts_with(&format!("{}:", vh.path))
+                                    && m.split(':')
+                                        .nth(1)
+                                        .and_then(|s| s.parse::<usize>().ok())
+                                        .is_some_and(|ln| ln >= vh.line_start && ln <= vh.line_end))
+                        });
+                        if !already {
+                            let one_line = vh.excerpt.replace('\n', " ");
+                            matches.push(format!(
+                                "{}:{}: {}",
+                                vh.path,
+                                vh.line_start,
+                                truncate(one_line.trim(), 120)
+                            ));
+                        }
+                    }
+                }
             }
             // The result must say what it did NOT search: hidden files,
             // files over 512 KB and folders deeper than 6 levels are

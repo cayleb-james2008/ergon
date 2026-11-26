@@ -71,6 +71,34 @@ impl TableQueryResult {
     }
 }
 
+#[derive(Clone, Debug)]
+pub struct VaultAggregateResult {
+    pub columns: Vec<String>,
+    pub rows: Vec<Vec<String>>,
+    pub source_files: Vec<String>,
+    pub total_rows: usize,
+    pub matched_rows: usize,
+    pub saved_path: Option<String>,
+}
+
+impl VaultAggregateResult {
+    pub fn to_json(&self) -> Value {
+        let mut v = json!({
+            "ok": true,
+            "columns": self.columns,
+            "rows": self.rows,
+            "source_files": self.source_files,
+            "total_rows": self.total_rows,
+            "matched_rows": self.matched_rows,
+            "row_count": self.rows.len(),
+        });
+        if let Some(sp) = &self.saved_path {
+            v["saved_path"] = json!(sp);
+        }
+        v
+    }
+}
+
 /// Strictly validate a workspace-relative path against traversal, absolute
 /// paths, Windows drive letters, NUL/control chars, encoded `..`, and dotfiles.
 pub fn validate_workspace_rel_path(raw: &str) -> Result<String, String> {
@@ -613,15 +641,36 @@ fn json_scalar_to_string(v: &Value) -> String {
     }
 }
 
-/// Execute a structured query (`where`, `group_by`, `aggregates`, `sort`,
-/// `limit`, `save_as`) against a workspace CSV/TSV/XLSX/JSON table.
-pub fn execute_query(cfg: &Config, args: &Value) -> Result<TableQueryResult, String> {
-    let raw_path = args["path"]
-        .as_str()
-        .ok_or("query_table needs args.path")?;
-    let sheet_override = args["sheet"].as_str();
-    let table = load_table(cfg, raw_path, sheet_override)?;
-    let total_rows = table.rows.len();
+fn normalize_table_rows(mut raw_rows: Vec<Vec<String>>) -> (Vec<String>, Vec<Vec<String>>) {
+    if raw_rows.is_empty() {
+        return (Vec::new(), Vec::new());
+    }
+    let mut columns = raw_rows.remove(0);
+    let max_row_width = raw_rows.iter().map(Vec::len).max().unwrap_or(0);
+    let width = columns.len().max(max_row_width);
+    while columns.len() < width {
+        let mut idx = columns.len() + 1;
+        let mut name = format!("col_{idx}");
+        while columns.iter().any(|c| c == &name) {
+            idx += 1;
+            name = format!("col_{idx}");
+        }
+        columns.push(name);
+    }
+    for r in &mut raw_rows {
+        r.resize(width, String::new());
+    }
+    (columns, raw_rows)
+}
+
+fn run_table_pipeline(
+    cfg: &Config,
+    columns: Vec<String>,
+    rows: Vec<Vec<String>>,
+    args: &Value,
+    revision_op: &str,
+) -> Result<TableQueryResult, String> {
+    let total_rows = rows.len();
 
     // Compile `where` filters.
     let mut filters: Vec<CompiledFilter> = Vec::new();
@@ -653,7 +702,7 @@ pub fn execute_query(cfg: &Config, args: &Value) -> Result<TableQueryResult, Str
                 }
             };
             let raw_val = json_scalar_to_string(&item["value"]);
-            let col_idx = find_col(&table.columns, col)?;
+            let col_idx = find_col(&columns, col)?;
             let dec_val = parse_decimal(&raw_val);
             filters.push(CompiledFilter {
                 col_idx,
@@ -666,8 +715,7 @@ pub fn execute_query(cfg: &Config, args: &Value) -> Result<TableQueryResult, Str
     }
 
     // Filter rows.
-    let matched_indices: Vec<usize> = table
-        .rows
+    let matched_indices: Vec<usize> = rows
         .iter()
         .enumerate()
         .filter(|(_, r)| filters.iter().all(|f| f.matches(r)))
@@ -690,9 +738,9 @@ pub fn execute_query(cfg: &Config, args: &Value) -> Result<TableQueryResult, Str
     let mut group_indices: Vec<usize> = Vec::with_capacity(group_cols_raw.len());
     let mut group_names: Vec<String> = Vec::with_capacity(group_cols_raw.len());
     for g in &group_cols_raw {
-        let idx = find_col(&table.columns, g)?;
+        let idx = find_col(&columns, g)?;
         group_indices.push(idx);
-        group_names.push(table.columns[idx].clone());
+        group_names.push(columns[idx].clone());
     }
 
     let mut agg_specs: Vec<AggSpec> = Vec::new();
@@ -723,7 +771,7 @@ pub fn execute_query(cfg: &Config, args: &Value) -> Result<TableQueryResult, Str
             {
                 None
             } else {
-                Some(find_col(&table.columns, col_raw)?)
+                Some(find_col(&columns, col_raw)?)
             };
             let alias = item["as"]
                 .as_str()
@@ -747,11 +795,11 @@ pub fn execute_query(cfg: &Config, args: &Value) -> Result<TableQueryResult, Str
     }
 
     let (out_columns, mut out_rows) = if group_indices.is_empty() && agg_specs.is_empty() {
-        let rows: Vec<Vec<String>> = matched_indices
+        let filtered_rows: Vec<Vec<String>> = matched_indices
             .iter()
-            .map(|&i| table.rows[i].clone())
+            .map(|&i| rows[i].clone())
             .collect();
-        (table.columns.clone(), rows)
+        (columns, filtered_rows)
     } else {
         let mut cols = group_names;
         for a in &agg_specs {
@@ -769,7 +817,7 @@ pub fn execute_query(cfg: &Config, args: &Value) -> Result<TableQueryResult, Str
         }
 
         for idx in matched_indices {
-            let row = &table.rows[idx];
+            let row = &rows[idx];
             let gi = if group_indices.is_empty() {
                 0
             } else {
@@ -794,14 +842,14 @@ pub fn execute_query(cfg: &Config, args: &Value) -> Result<TableQueryResult, Str
             }
         }
 
-        let mut rows = Vec::with_capacity(group_keys.len());
+        let mut aggregated_rows = Vec::with_capacity(group_keys.len());
         for (gi, mut key) in group_keys.into_iter().enumerate() {
             for (ai, spec) in agg_specs.iter().enumerate() {
                 key.push(group_aggs[gi][ai].finish(spec.func, spec.col_idx.is_none()));
             }
-            rows.push(key);
+            aggregated_rows.push(key);
         }
-        (cols, rows)
+        (cols, aggregated_rows)
     };
 
     // Sort output rows if `sort` is provided.
@@ -853,7 +901,9 @@ pub fn execute_query(cfg: &Config, args: &Value) -> Result<TableQueryResult, Str
             return Err(format!("save_as cannot overwrite symlink: {save_rel}"));
         }
         if unresolved.is_dir() {
-            return Err(format!("save_as must name a file, not a directory: {save_rel}"));
+            return Err(format!(
+                "save_as must name a file, not a directory: {save_rel}"
+            ));
         }
         let mut csv = String::with_capacity((out_rows.len() + 1) * 48);
         csv.push_str(&docs::csv_line(&out_columns));
@@ -862,7 +912,7 @@ pub fn execute_query(cfg: &Config, args: &Value) -> Result<TableQueryResult, Str
             csv.push_str(&docs::csv_line(r));
             csv.push('\n');
         }
-        let _ = file_history::record_revision(&cfg.data_dir, &cfg.workspace_dir, &save_rel, "query_table");
+        let _ = file_history::record_revision(&cfg.data_dir, &cfg.workspace_dir, &save_rel, revision_op);
         atomic_write_bytes(&unresolved, csv.as_bytes())
             .map_err(|e| format!("save_as {save_rel}: {e}"))?;
         Some(save_rel)
@@ -876,6 +926,366 @@ pub fn execute_query(cfg: &Config, args: &Value) -> Result<TableQueryResult, Str
         total_rows,
         matched_rows,
         saved_path,
+    })
+}
+
+/// Execute a structured query (`where`, `group_by`, `aggregates`, `sort`,
+/// `limit`, `save_as`) against a workspace CSV/TSV/XLSX/JSON table.
+pub fn execute_query(cfg: &Config, args: &Value) -> Result<TableQueryResult, String> {
+    let raw_path = args["path"]
+        .as_str()
+        .ok_or("query_table needs args.path")?;
+    let sheet_override = args["sheet"].as_str();
+    let table = load_table(cfg, raw_path, sheet_override)?;
+    run_table_pipeline(cfg, table.columns, table.rows, args, "query_table")
+}
+
+fn validate_glob_pattern(raw: &str) -> Result<String, String> {
+    let mut trimmed = raw.trim().to_string();
+    if trimmed.is_empty() {
+        return Err("aggregate_vault needs args.glob".to_string());
+    }
+    while let Some(rest) = trimmed.strip_prefix("./") {
+        trimmed = rest.to_string();
+    }
+    if trimmed.is_empty() || trimmed.len() > 240 {
+        return Err("glob pattern is invalid or too long".to_string());
+    }
+    let low = trimmed.to_ascii_lowercase();
+    if trimmed.contains('\0')
+        || trimmed.contains('\\')
+        || trimmed.contains(':')
+        || trimmed.chars().any(|c| c.is_control())
+        || trimmed.starts_with('/')
+        || low.contains("%2e%2e")
+        || low.contains("%252e")
+        || low.contains("%2f")
+        || low.contains("%5c")
+        || low.contains("%00")
+        || trimmed.split('/').any(|seg| {
+            seg.is_empty() || seg == "." || seg == ".." || seg.starts_with('.')
+        })
+        || low.contains("connector_secrets.json")
+    {
+        return Err(format!("glob pattern escapes the workspace: {trimmed}"));
+    }
+    Ok(trimmed)
+}
+
+fn expand_glob_braces(pattern: &str) -> Vec<String> {
+    if let Some(open) = pattern.find('{') {
+        if let Some(rel_close) = pattern[open + 1..].find('}') {
+            let close = open + 1 + rel_close;
+            let prefix = &pattern[..open];
+            let suffix = &pattern[close + 1..];
+            let mut out = Vec::new();
+            for alt in pattern[open + 1..close].split(',') {
+                for sub in expand_glob_braces(&format!("{prefix}{alt}{suffix}")) {
+                    out.push(sub);
+                }
+            }
+            return out;
+        }
+    }
+    vec![pattern.to_string()]
+}
+
+fn glob_seg_match(pat: &[char], val: &[char]) -> bool {
+    let (mut pi, mut vi) = (0usize, 0usize);
+    let mut star_pi: Option<usize> = None;
+    let mut star_vi = 0usize;
+    while vi < val.len() {
+        if pi < pat.len() && (pat[pi] == '?' || pat[pi] == val[vi]) {
+            pi += 1;
+            vi += 1;
+        } else if pi < pat.len() && pat[pi] == '*' {
+            star_pi = Some(pi);
+            star_vi = vi;
+            pi += 1;
+        } else if let Some(sp) = star_pi {
+            pi = sp + 1;
+            star_vi += 1;
+            vi = star_vi;
+        } else {
+            return false;
+        }
+    }
+    while pi < pat.len() && pat[pi] == '*' {
+        pi += 1;
+    }
+    pi == pat.len()
+}
+
+fn glob_segs_match(pat_segs: &[&str], path_segs: &[&str]) -> bool {
+    if pat_segs.is_empty() {
+        return path_segs.is_empty();
+    }
+    if pat_segs[0] == "**" {
+        if glob_segs_match(&pat_segs[1..], path_segs) {
+            return true;
+        }
+        return !path_segs.is_empty() && glob_segs_match(pat_segs, &path_segs[1..]);
+    }
+    if path_segs.is_empty() {
+        return false;
+    }
+    let p_chars: Vec<char> = pat_segs[0].chars().collect();
+    let v_chars: Vec<char> = path_segs[0].chars().collect();
+    glob_seg_match(&p_chars, &v_chars) && glob_segs_match(&pat_segs[1..], &path_segs[1..])
+}
+
+fn glob_match_any(patterns: &[String], rel_path: &str) -> bool {
+    let path_segs: Vec<&str> = rel_path.split('/').collect();
+    patterns.iter().any(|pat| {
+        let pat_segs: Vec<&str> = pat.split('/').collect();
+        glob_segs_match(&pat_segs, &path_segs)
+    })
+}
+
+fn collect_workspace_table_files(
+    root: &Path,
+    dir: &Path,
+    patterns: &[String],
+    out: &mut Vec<String>,
+) {
+    let Ok(rd) = std::fs::read_dir(dir) else {
+        return;
+    };
+    let mut entries: Vec<_> = rd.filter_map(|e| e.ok()).collect();
+    entries.sort_by_key(|e| e.file_name());
+    for entry in entries {
+        if out.len() >= 500 {
+            return;
+        }
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if name.starts_with('.') || name.eq_ignore_ascii_case("connector_secrets.json") {
+            continue;
+        }
+        let path = entry.path();
+        let Ok(md) = std::fs::symlink_metadata(&path) else {
+            continue;
+        };
+        if md.file_type().is_symlink() {
+            continue;
+        }
+        if md.is_dir() {
+            collect_workspace_table_files(root, &path, patterns, out);
+            continue;
+        }
+        if !md.is_file() {
+            continue;
+        }
+        let Ok(rel_path) = path.strip_prefix(root) else {
+            continue;
+        };
+        let rel = rel_path.to_string_lossy().replace('\\', "/");
+        let ext = path
+            .extension()
+            .and_then(|s| s.to_str())
+            .unwrap_or("")
+            .to_ascii_lowercase();
+        if !matches!(ext.as_str(), "csv" | "tsv" | "xlsx" | "xlsm" | "json") {
+            continue;
+        }
+        if glob_match_any(patterns, &rel) {
+            out.push(rel);
+        }
+    }
+}
+
+fn args_mentions_col(args: &Value, target: &str) -> bool {
+    let check_str = |s: &str| s.trim().eq_ignore_ascii_case(target);
+    if args["where"]
+        .as_array()
+        .is_some_and(|arr| arr.iter().any(|w| w["col"].as_str().is_some_and(check_str)))
+    {
+        return true;
+    }
+    if args["group_by"]
+        .as_array()
+        .is_some_and(|arr| arr.iter().any(|g| g.as_str().is_some_and(check_str)))
+    {
+        return true;
+    }
+    if args["aggregates"]
+        .as_array()
+        .is_some_and(|arr| arr.iter().any(|a| a["col"].as_str().is_some_and(check_str)))
+    {
+        return true;
+    }
+    if args["sort"]["col"].as_str().is_some_and(check_str) {
+        return true;
+    }
+    false
+}
+
+/// Execute deterministic exact-decimal multi-file aggregation across matching
+/// CSV, TSV, and XLSX files/sheets inside the sandboxed workspace.
+pub fn execute_vault_aggregate(cfg: &Config, args: &Value) -> Result<VaultAggregateResult, String> {
+    const MAX_COMBINED_ROWS: usize = 500_000;
+    let raw_glob = args["glob"]
+        .as_str()
+        .ok_or("aggregate_vault needs args.glob")?;
+    let clean_glob = validate_glob_pattern(raw_glob)?;
+    let patterns = expand_glob_braces(&clean_glob);
+    let wanted_sheet = args["sheet"]
+        .as_str()
+        .map(str::trim)
+        .filter(|s| !s.is_empty() && *s != "*");
+
+    let mut matched_files = Vec::new();
+    collect_workspace_table_files(&cfg.workspace_dir, &cfg.workspace_dir, &patterns, &mut matched_files);
+    matched_files.sort();
+    if matched_files.is_empty() {
+        return Err(format!(
+            "no CSV, TSV, or XLSX files matched glob '{clean_glob}'"
+        ));
+    }
+
+    let mut loaded_tables: Vec<LoadedTable> = Vec::new();
+    for rel in &matched_files {
+        let full = sandbox_path(&cfg.workspace_dir, rel)?;
+        let md = std::fs::metadata(&full).map_err(|_| format!("table file not found: {rel}"))?;
+        if md.len() > docs::MAX_DOC_BYTES {
+            return Err(format!(
+                "table file {rel} exceeds maximum size of {} MB",
+                docs::MAX_DOC_BYTES / (1024 * 1024)
+            ));
+        }
+        let ext = rel.rsplit('.').next().unwrap_or("").to_ascii_lowercase();
+        if ext == "xlsx" || ext == "xlsm" {
+            let bytes = std::fs::read(&full)
+                .map_err(|e| format!("could not read workbook {rel}: {e}"))?;
+            let sheets = docs::xlsx_sheets(&bytes)?;
+            if let Some(target_sheet) = wanted_sheet {
+                let selected = sheets
+                    .iter()
+                    .find(|s| s.name == target_sheet)
+                    .or_else(|| sheets.iter().find(|s| s.name.eq_ignore_ascii_case(target_sheet)))
+                    .ok_or_else(|| {
+                        let avail: Vec<&str> = sheets.iter().map(|s| s.name.as_str()).collect();
+                        format!(
+                            "no sheet named '{}' in {rel} (available: {})",
+                            target_sheet,
+                            avail.join(", ")
+                        )
+                    })?;
+                let (columns, rows) = normalize_table_rows(selected.rows.clone());
+                loaded_tables.push(LoadedTable {
+                    path: rel.clone(),
+                    sheet: Some(selected.name.clone()),
+                    columns,
+                    rows,
+                });
+            } else {
+                for s in sheets {
+                    if s.rows.is_empty() {
+                        continue;
+                    }
+                    let (columns, rows) = normalize_table_rows(s.rows);
+                    loaded_tables.push(LoadedTable {
+                        path: rel.clone(),
+                        sheet: Some(s.name),
+                        columns,
+                        rows,
+                    });
+                }
+            }
+        } else {
+            loaded_tables.push(load_table(cfg, rel, None)?);
+        }
+    }
+
+    let include_source_col = args_mentions_col(args, "_source_file");
+    let include_sheet_col = args_mentions_col(args, "_sheet");
+
+    let mut source_files: Vec<String> = Vec::with_capacity(loaded_tables.len());
+    let mut unified_columns: Vec<String> = Vec::new();
+
+    for tbl in &loaded_tables {
+        let src_label = match &tbl.sheet {
+            Some(sh) => format!("{}#{sh}", tbl.path),
+            None => tbl.path.clone(),
+        };
+        if !source_files.contains(&src_label) {
+            source_files.push(src_label);
+        }
+        for col in &tbl.columns {
+            if !unified_columns
+                .iter()
+                .any(|existing| existing.eq_ignore_ascii_case(col))
+            {
+                unified_columns.push(col.clone());
+            }
+        }
+    }
+    if include_source_col
+        && !unified_columns
+            .iter()
+            .any(|c| c.eq_ignore_ascii_case("_source_file"))
+    {
+        unified_columns.push("_source_file".to_string());
+    }
+    if include_sheet_col
+        && !unified_columns
+            .iter()
+            .any(|c| c.eq_ignore_ascii_case("_sheet"))
+    {
+        unified_columns.push("_sheet".to_string());
+    }
+
+    let width = unified_columns.len();
+    let mut unified_rows: Vec<Vec<String>> = Vec::new();
+    for tbl in loaded_tables {
+        let mut col_map: Vec<usize> = Vec::with_capacity(tbl.columns.len());
+        for c in &tbl.columns {
+            let idx = unified_columns
+                .iter()
+                .position(|u| u == c)
+                .or_else(|| {
+                    unified_columns
+                        .iter()
+                        .position(|u| u.eq_ignore_ascii_case(c))
+                })
+                .unwrap();
+            col_map.push(idx);
+        }
+        let src_idx = unified_columns
+            .iter()
+            .position(|u| u.eq_ignore_ascii_case("_source_file"));
+        let sheet_idx = unified_columns
+            .iter()
+            .position(|u| u.eq_ignore_ascii_case("_sheet"));
+        for row in tbl.rows {
+            if unified_rows.len() >= MAX_COMBINED_ROWS {
+                return Err(format!(
+                    "combined row count exceeds maximum of {MAX_COMBINED_ROWS}"
+                ));
+            }
+            let mut out_row = vec![String::new(); width];
+            for (ci, val) in row.into_iter().enumerate() {
+                if let Some(&target_idx) = col_map.get(ci) {
+                    out_row[target_idx] = val;
+                }
+            }
+            if let Some(si) = src_idx {
+                out_row[si] = tbl.path.clone();
+            }
+            if let Some(shi) = sheet_idx {
+                out_row[shi] = tbl.sheet.clone().unwrap_or_default();
+            }
+            unified_rows.push(out_row);
+        }
+    }
+
+    let query_res = run_table_pipeline(cfg, unified_columns, unified_rows, args, "aggregate_vault")?;
+    Ok(VaultAggregateResult {
+        columns: query_res.columns,
+        rows: query_res.rows,
+        source_files,
+        total_rows: query_res.total_rows,
+        matched_rows: query_res.matched_rows,
+        saved_path: query_res.saved_path,
     })
 }
 
