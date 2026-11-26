@@ -1659,6 +1659,20 @@ export function WorkspaceFilesBody({
             nextHits.push({ ...fh, chunks: Array.isArray(fh.chunks) ? fh.chunks : [] });
           }
         }
+      } else if (Array.isArray(r.data.files)) {
+        for (const f of r.data.files) {
+          const fp = String(f?.path ?? f?.name ?? "").trim();
+          if (fp) {
+            nextHits.push({
+              path: fp,
+              name: f.name,
+              size: f.size,
+              mtime_ms: f.mtime_ms,
+              ext: f.ext,
+              chunks: Array.isArray(f.chunks) ? f.chunks : [],
+            });
+          }
+        }
       } else if (Array.isArray(r.data.results)) {
         for (const h of r.data.results) {
           if (h.kind === "file" && h.path && Array.isArray(h.chunks)) {
@@ -1690,8 +1704,8 @@ export function WorkspaceFilesBody({
       setIndexStats((prev) => ({
         total_files: r.data.indexed_files,
         total_chunks: r.data.total_chunks,
-        indexed_bytes: prev?.indexed_bytes ?? 0,
-        semantic_enabled: prev?.semantic_enabled ?? true,
+        indexed_bytes: r.data.indexed_bytes ?? prev?.indexed_bytes ?? 0,
+        semantic_enabled: r.data.semantic_enabled ?? prev?.semantic_enabled ?? true,
       }));
     }
     toast.success(`Indexed ${r.data.indexed_files} files (${r.data.total_chunks} chunks) in ${r.data.elapsed_ms} ms.`);

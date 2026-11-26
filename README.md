@@ -75,6 +75,16 @@ One Rust binary serves the React web UI (`/` and `/phone`), the raw-TCP HTTP and
       </picture>
     </td>
   </tr>
+  <tr>
+    <td colspan="2">
+      Search every line, PDF page, and Excel sheet past the first 512 characters with hybrid BM25 and vector ranking, jump straight to highlighted source lines, and run exact-decimal multi-file CSV, TSV, and workbook rollups (<code>GET /api/search</code>, <code>POST /api/vault/reindex</code>, <code>POST /api/vault/aggregate</code>).
+      <br /><br />
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/vault-search-dark.png" />
+        <img src="docs/screenshots/vault-search-light.png" alt="Ergon v0.34.0 Full-Vault Chunked Search with Hybrid/BM25/Exact ranking and Multi-file table rollup dialog" width="100%" />
+      </picture>
+    </td>
+  </tr>
 </table>
 
 ---
@@ -84,26 +94,26 @@ One Rust binary serves the React web UI (`/` and `/phone`), the raw-TCP HTTP and
 ```mermaid
 flowchart LR
   UI["Desk UI (React 19 + Geist)\n/ (lazy shell), /phone, ergon-web.html"] -->|HTTP Keep-Alive + SSE| HTTP["Raw-TCP Engine (src/server.rs)\npre-gzipped /chunks/*, ETag 304, Host/413 guards"]
-  HTTP --> Agent["Agent Loop (src/lib.rs)\npatch_file, query_table, invoke_connector, Done Gate"]
+  HTTP --> Agent["Agent Loop (src/lib.rs)\npatch_file, search_vault, aggregate_vault, Done Gate"]
   HTTP --> Workflows["12 Built-In Workflows & Connectors\nsandbox FS, webhooks, folder watch, PDF 1.4 & XLSX (src/docs.rs)"]
-  HTTP --> Index["Per-Person RwLock Index (src/search.rs)\nCmd+K fuzzy search, [file:L##] verification"]
+  HTTP --> Index["Per-Person RwLock Vault Index (src/search.rs)\nHybrid BM25+vector chunks, [file:L##] verification"]
   Agent --> Ledger["Provenance and Safety\nSHA-256 receipts, usage_ledger.jsonl, .history/, Tripwires"]
 ```
 
 ---
 
-## Verified benchmarks (`v0.33.0` vs `v0.11.0`)
+## Verified benchmarks (`v0.34.0` vs `v0.11.0`)
 
 Measured against the stripped fat-LTO release binary on local loopback against a `5,000` receipts and `500` workspace files dataset:
 
-| Metric | `v0.11.0` baseline | `v0.33.0` measured | Change |
+| Metric | `v0.11.0` baseline | `v0.34.0` measured | Change |
 | --- | --- | --- | --- |
-| Release binary size | `16.0 MB` | `8.08 MiB` (`8,467,296 B`) | `-47.1%` |
-| Initial `/` shell payload | `1.15 MB` | `162.67 KiB` (`166,577 B`) raw / `37.23 KiB` (`38,119 B`) gzip (`17` `/chunks/*`) | `-96.7%` wire |
-| Cold boot to `200 OK` | `n/a` | `6.65 ms` | Sub-10 ms self-audit |
-| Peak RSS (`VmHWM`, `5k` receipts + `500` files, `5/5` SSE, `16w`) | `n/a` | `18.62 MB` (`19,072 KB`) | `18.62 MB` peak RSS |
-| Concurrent HTTP (`16w` mixed 5 routes + `5/5` SSE across `5k`/`500`) | `724 req/s` (`188.7 ms` p95) | `5,777.9 req/s` (`2.62 ms` p50, `3.46 ms` p95, `0/14,453` err) | `7.98x` under full concurrency |
-| Automated checks | `204` Rust tests | `263/263` Rust tests (`6/6` `clients_metering_v033`), `93/93` gate, `6/6` graph, `20/20` replay, `44/44` fuzz, `0/0/0` `sloplint` | Zero warnings / zero externals |
+| Release binary size | `16.0 MB` | `8.19 MiB` (`8,590,176 B`) | `-46.3%` |
+| Initial `/` shell payload | `1.15 MB` | `162.92 KiB` (`166,825 B`) raw / `37.28 KiB` (`38,172 B`) gzip (`17` `/chunks/*`) | `-96.7%` wire |
+| Cold boot to `200 OK` | `n/a` | `10.07 ms` | `10 ms` self-audit |
+| Peak RSS (`VmHWM`, `5k` receipts + `500` files, `5/5` SSE, `16w`) | `n/a` | `21.93 MB` (`22,456 KB`) | `21.93 MB` peak RSS |
+| Concurrent HTTP (`16w` mixed 5 routes + `5/5` SSE across `5k`/`500`) | `724 req/s` (`188.7 ms` p95) | `4,070.9 req/s` (`3.69 ms` p50, `8.14 ms` p95, `0/10,195` err) | `5.62x` under full concurrency |
+| Automated checks | `204` Rust tests | `268/268` Rust tests (`5/5` `vault_search_v034`), `97/97` gate, `6/6` graph, `20/20` replay, `44/44` fuzz, `0/0/0` `sloplint` | Zero warnings / zero externals |
 
 ---
 
@@ -161,6 +171,10 @@ On startup, unless `ERGON_NO_AUTO_MODEL=1` or an explicit `ERGON_MODEL_BASE_URL`
 ---
 
 ## Core capabilities
+
+### Full-vault chunked search and multi-file rollups
+
+`PersonIndex` (`src/search.rs`) indexes full documents past 512 characters across `.pdf` pages, `.xlsx` sheets, `.pptx` slides, `.docx`, and text, Markdown, CSV, TSV, and JSON files, persisting `vault_index.json` incrementally per person. `GET /api/search` supports `hybrid`, `bm25`, and `exact` modes fused via Reciprocal Rank Fusion over BM25 and deterministic 256-d n-gram (or configured OpenAI-compatible) embeddings, returning ranked passages with `page`, `sheet`, and `line_start`-`line_end` locators. `POST /api/vault/reindex` rebuilds the index, and `POST /api/vault/aggregate` (`src/tables.rs`) runs exact-decimal `i128` aggregations across glob-matched CSV, TSV, and multi-sheet `.xlsx` files. In the UI, `CommandPalette.tsx` and `WorkspaceFiles.tsx` expose mode switching, passage jumps into `FileViewerModal`, a multi-file rollup dialog, and offline `webEngine.ts` parity.
 
 ### Client engagements, retainer burn, and billable ROI
 

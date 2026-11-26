@@ -300,8 +300,8 @@ export const CommandPalette = memo(function CommandPalette({
       setIndexStats((prev) => ({
         total_files: r.data.indexed_files,
         total_chunks: r.data.total_chunks,
-        indexed_bytes: prev?.indexed_bytes ?? 0,
-        semantic_enabled: prev?.semantic_enabled ?? true,
+        indexed_bytes: r.data.indexed_bytes ?? prev?.indexed_bytes ?? 0,
+        semantic_enabled: r.data.semantic_enabled ?? prev?.semantic_enabled ?? true,
       }));
     }
     toast.success(`Indexed ${r.data.indexed_files} files (${r.data.total_chunks} chunks) in ${r.data.elapsed_ms} ms.`);

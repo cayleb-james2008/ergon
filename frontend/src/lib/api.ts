@@ -565,6 +565,8 @@ export type VaultReindexResult = {
   ok: boolean;
   indexed_files: number;
   total_chunks: number;
+  indexed_bytes?: number;
+  semantic_enabled?: boolean;
   elapsed_ms: number;
   index_stats?: VaultIndexStats;
 };

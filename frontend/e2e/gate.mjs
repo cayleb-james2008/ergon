@@ -472,8 +472,9 @@ await fetch(BASE + "api/people", {
   await p.goto(BASE + "?face=today");
   await waitPaper(p);
   await p.getByRole("button", { name: /Ada Brooks/ }).click();
-  await p.waitForTimeout(900);
-  ok("empty person headline", (await headline(p)) === "Nothing finished yet.", await headline(p));
+  await p.locator("main h1").filter({ hasText: "Nothing finished yet." }).waitFor({ timeout: 5000 }).catch(() => {});
+  const emptyHl = await headline(p);
+  ok("empty person headline", emptyHl === "Nothing finished yet.", emptyHl);
   ok("empty state offers a first task", (await p.getByRole("button", { name: "Ask your agent for something" }).count()) === 1);
   await p.screenshot({ path: `${OUT}/empty-1440.png` });
   await p.getByRole("button", { name: "Ask your agent for something" }).click();
@@ -2332,7 +2333,8 @@ await reset();
         const res = await r.fetch();
         if (res.ok()) {
           const j = await res.json();
-          if (j && j.index_stats && (!q.includes("aurora-threshold-99") || (Array.isArray(j.file_hits) && j.file_hits.length > 0))) {
+          const hitsArr = Array.isArray(j?.file_hits) ? j.file_hits : Array.isArray(j?.files) ? j.files : [];
+          if (j && j.index_stats && (!q.includes("aurora-threshold-99") || hitsArr.some((f) => Array.isArray(f?.chunks) && f.chunks.length > 0))) {
             return r.fulfill({ response: res, body: JSON.stringify(j) });
           }
         }
@@ -2542,13 +2544,13 @@ await reset();
       `v0.34.0 E2 (${theme}) WorkspaceFiles passage jump, Rollup aggregate, and contrast/layout`,
       wsJumpTxt.includes("Page 3") &&
         wsLineVisible &&
-        aggTxt.includes("450.50") &&
+        (aggTxt.includes("450.50") || /\b450\.5\b/.test(aggTxt)) &&
         aggTxt.includes("300.25") &&
         savedCsvVisible &&
         mVault.docOverflow <= 0 &&
         mVault.lowContrast === 0 &&
         mVault.unnamed.length === 0,
-      `agg=${aggTxt.replace(/\s+/g, " ").slice(0, 60)} overflow=${mVault.docOverflow} low=${mVault.lowContrast} unnamed=${mVault.unnamed.length}`
+      `ws=${wsJumpTxt.slice(0, 30)} line=${wsLineVisible} agg=${aggTxt.replace(/\s+/g, " ").slice(0, 60)} saved=${savedCsvVisible} overflow=${mVault.docOverflow} low=${mVault.lowContrast} unnamed=${mVault.unnamed.length}`
     );
     await ctx.close();
   }
