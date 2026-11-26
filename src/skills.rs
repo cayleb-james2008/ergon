@@ -12,18 +12,31 @@ use serde_json::Value;
 use std::path::Path;
 use std::sync::Arc;
 
-pub const WRITE_DOCUMENT_SCRIPT: &str = include_str!("skills/write_document.rn");
-pub const UPDATE_MEMORY_SCRIPT: &str = include_str!("skills/update_memory.rn");
-pub const MAKE_SPREADSHEET_SCRIPT: &str = include_str!("skills/make_spreadsheet.rn");
-pub const RESEARCH_SCRIPT: &str = include_str!("skills/research.rn");
-pub const RECONCILE_LEDGER_SCRIPT: &str = include_str!("skills/reconcile_ledger.rn");
-pub const SUMMARIZE_MEETING_SCRIPT: &str = include_str!("skills/summarize_meeting.rn");
-pub const AUDIT_CONTRACT_SCRIPT: &str = include_str!("skills/audit_contract.rn");
-pub const TRIAGE_INBOX_SCRIPT: &str = include_str!("skills/triage_inbox.rn");
-pub const CLEAN_DATASET_SCRIPT: &str = include_str!("skills/clean_dataset.rn");
-pub const COMPARE_DOCUMENTS_SCRIPT: &str = include_str!("skills/compare_documents.rn");
-pub const DRAFT_BRIEF_SCRIPT: &str = include_str!("skills/draft_brief.rn");
-pub const EXTRACT_TABLES_SCRIPT: &str = include_str!("skills/extract_tables.rn");
+include!(concat!(env!("OUT_DIR"), "/embedded_skills.rs"));
+
+/// Return a built-in skill script source by snake_case `id`, lazily inflating
+/// its compile-time deflated payload on first use.
+pub fn builtin_script(id: &str) -> &'static str {
+    static CACHE: std::sync::OnceLock<Box<[std::sync::OnceLock<&'static str>]>> =
+        std::sync::OnceLock::new();
+    let slots = CACHE.get_or_init(|| {
+        EMBEDDED_SKILLS
+            .iter()
+            .map(|_| std::sync::OnceLock::new())
+            .collect::<Vec<_>>()
+            .into_boxed_slice()
+    });
+    let idx = EMBEDDED_SKILLS
+        .iter()
+        .position(|e| e.id == id)
+        .unwrap_or_else(|| panic!("unknown built-in skill id: {id}"));
+    slots[idx].get_or_init(|| {
+        let raw = miniz_oxide::inflate::decompress_to_vec(EMBEDDED_SKILLS[idx].deflated)
+            .expect("built-in skill source failed deflate");
+        let s = String::from_utf8(raw).expect("built-in skill source is not utf-8");
+        Box::leak(s.into_boxed_str())
+    })
+}
 
 pub const ALL_BUILTIN_SKILL_IDS: [&str; 12] = [
     "write_document",
@@ -315,8 +328,12 @@ fn build_context(cfg: &Config, trusted: bool) -> Result<rune::Context, String> {
         .map_err(|e| format!("register host_memory_write: {e}"))?;
 
     // --- http host function ---
+    let policy_data_dir = cfg.data_dir.clone();
     module
-        .function(["host_fetch_url"], |url: String| -> String {
+        .function(["host_fetch_url"], move |url: String| -> String {
+            if crate::load_workspace_policy(&policy_data_dir).block_outbound_fetch {
+                return "error: blocked by Air-Gapped workspace policy: outbound network fetches are disabled".to_string();
+            }
             fetch_url_text(&url).unwrap_or_else(|e| format!("error: {e}"))
         })
         .build()
@@ -486,7 +503,7 @@ fn format_written_files(cfg: &Config, verb: &str, files: &[String]) -> Result<St
 /// Rune skill: format title + sections into a finished markdown document
 /// in the workspace. Returns a human-readable tool result.
 pub fn write_document(cfg: &Config, title: &str, sections: Vec<String>) -> Result<String, String> {
-    let returned = run_script(cfg, WRITE_DOCUMENT_SCRIPT, (title.to_string(), sections))?;
+    let returned = run_script(cfg, builtin_script("write_document"), (title.to_string(), sections))?;
     let filename = skill_filename(&returned)?;
     let full = sandbox_path(&cfg.workspace_dir, &filename)?;
     let len = std::fs::metadata(&full).map(|m| m.len()).unwrap_or(0);
@@ -502,7 +519,7 @@ pub fn make_spreadsheet(
     rows: Vec<Vec<String>>,
 ) -> Result<String, String> {
     let n_rows = rows.len();
-    let returned = run_script(cfg, MAKE_SPREADSHEET_SCRIPT, (title.to_string(), columns, rows))?;
+    let returned = run_script(cfg, builtin_script("make_spreadsheet"), (title.to_string(), columns, rows))?;
     let filename = skill_filename(&returned)?;
     let full = sandbox_path(&cfg.workspace_dir, &filename)?;
     let len = std::fs::metadata(&full).map(|m| m.len()).unwrap_or(0);
@@ -517,7 +534,7 @@ pub fn research(cfg: &Config, topic: &str, urls: Vec<String>) -> Result<String, 
     let filename = format!("Research - {topic}.md");
     let returned = run_script(
         cfg,
-        RESEARCH_SCRIPT,
+        builtin_script("research"),
         (topic.to_string(), filename.clone(), urls),
     )?;
     let written = skill_filename(&returned)?;
@@ -560,7 +577,7 @@ pub fn update_memory(cfg: &Config, note: &str) -> Result<String, String> {
     {
         return Ok(format!("already in memory (not added again): - {note}"));
     }
-    let entry = run_script(cfg, UPDATE_MEMORY_SCRIPT, (note.to_string(),))?;
+    let entry = run_script(cfg, builtin_script("update_memory"), (note.to_string(),))?;
     if let Some(err) = entry.strip_prefix("error:") {
         return Err(err.trim().to_string());
     }
@@ -991,7 +1008,7 @@ pub fn reconcile_ledger(
 ) -> Result<String, String> {
     let returned = run_script(
         cfg,
-        RECONCILE_LEDGER_SCRIPT,
+        builtin_script("reconcile_ledger"),
         (source_files, output_title.to_string()),
     )?;
     let files = skill_filenames(&returned)?;
@@ -1007,7 +1024,7 @@ pub fn summarize_meeting(
 ) -> Result<String, String> {
     let returned = run_script(
         cfg,
-        SUMMARIZE_MEETING_SCRIPT,
+        builtin_script("summarize_meeting"),
         (notes_file.to_string(), output_title.to_string()),
     )?;
     let files = skill_filenames(&returned)?;
@@ -1024,7 +1041,7 @@ pub fn audit_contract(
 ) -> Result<String, String> {
     let returned = run_script(
         cfg,
-        AUDIT_CONTRACT_SCRIPT,
+        builtin_script("audit_contract"),
         (
             contract_file.to_string(),
             required_clauses,
@@ -1044,7 +1061,7 @@ pub fn triage_inbox(
 ) -> Result<String, String> {
     let returned = run_script(
         cfg,
-        TRIAGE_INBOX_SCRIPT,
+        builtin_script("triage_inbox"),
         (inbox_file.to_string(), output_title.to_string()),
     )?;
     let files = skill_filenames(&returned)?;
@@ -1061,7 +1078,7 @@ pub fn clean_dataset(
 ) -> Result<String, String> {
     let returned = run_script(
         cfg,
-        CLEAN_DATASET_SCRIPT,
+        builtin_script("clean_dataset"),
         (
             input_file.to_string(),
             key_column.to_string(),
@@ -1082,7 +1099,7 @@ pub fn compare_documents(
 ) -> Result<String, String> {
     let returned = run_script(
         cfg,
-        COMPARE_DOCUMENTS_SCRIPT,
+        builtin_script("compare_documents"),
         (
             left_file.to_string(),
             right_file.to_string(),
@@ -1104,7 +1121,7 @@ pub fn draft_brief(
 ) -> Result<String, String> {
     let returned = run_script(
         cfg,
-        DRAFT_BRIEF_SCRIPT,
+        builtin_script("draft_brief"),
         (
             topic.to_string(),
             source_files,
@@ -1117,7 +1134,7 @@ pub fn draft_brief(
 }
 
 /// Rune skill: parse unstructured Markdown tables, key=value logs, TSV, or
-/// record blocks into RFC-4180 CSV spreadsheet(s).
+/// record blocks into RFC-4180 CSV spreadsheets.
 pub fn extract_tables(
     cfg: &Config,
     source_file: &str,
@@ -1125,7 +1142,7 @@ pub fn extract_tables(
 ) -> Result<String, String> {
     let returned = run_script(
         cfg,
-        EXTRACT_TABLES_SCRIPT,
+        builtin_script("extract_tables"),
         (source_file.to_string(), output_title.to_string()),
     )?;
     let files = skill_filenames(&returned)?;

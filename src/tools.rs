@@ -505,6 +505,9 @@ pub fn execute_tool(cfg: &Config, name: &str, args: &Value) -> Result<String, St
             Ok(format!("wrote {rel} ({} bytes)", content.len()))
         }
         "fetch_url" => {
+            if crate::load_workspace_policy(&cfg.data_dir).block_outbound_fetch {
+                return Err("blocked by Air-Gapped workspace policy: outbound network fetches are disabled for this workspace".to_string());
+            }
             let url = args["url"].as_str().ok_or("fetch_url needs args.url")?;
             fetch_url_text(url)
         }
@@ -520,6 +523,9 @@ pub fn execute_tool(cfg: &Config, name: &str, args: &Value) -> Result<String, St
             skills::make_spreadsheet(cfg, title, columns, rows)
         }
         "research" => {
+            if crate::load_workspace_policy(&cfg.data_dir).block_outbound_fetch {
+                return Err("blocked by Air-Gapped workspace policy: outbound network fetches are disabled for this workspace".to_string());
+            }
             let topic = args["topic"].as_str().ok_or("research needs args.topic")?;
             let urls = string_list(&args["urls"]);
             if urls.is_empty() {

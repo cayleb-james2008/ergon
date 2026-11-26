@@ -49,6 +49,160 @@ pub const NO_KEY_ERROR: &str =
 pub const STEP_CAP: usize = 24;
 
 // ---------------------------------------------------------------------------
+// Workspace Audit Policy Profiles (v0.25.0)
+// ---------------------------------------------------------------------------
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct WorkspacePolicy {
+    pub profile: &'static str,
+    pub label: &'static str,
+    pub summary: &'static str,
+    pub strict_citation_gate: bool,
+    pub approval_gate_mode: &'static str,
+    pub redact_host_paths: bool,
+    pub block_outbound_fetch: bool,
+    pub updated_ms: u64,
+}
+
+impl WorkspacePolicy {
+    pub fn for_profile(raw: &str, updated_ms: u64) -> Result<Self, &'static str> {
+        match raw.trim().to_ascii_lowercase().as_str() {
+            "fast_internal" | "fast" | "internal" => Ok(Self {
+                profile: "fast_internal",
+                label: "Fast Internal",
+                summary: "Advisory citation checks, local-speed approvals, and outbound web research enabled.",
+                strict_citation_gate: false,
+                approval_gate_mode: "deletes_and_risky",
+                redact_host_paths: false,
+                block_outbound_fetch: false,
+                updated_ms,
+            }),
+            "strict_client" | "strict" | "client" => Ok(Self {
+                profile: "strict_client",
+                label: "Strict Client",
+                summary: "Blocks pack export on stale [file:L##] citations, redacts host paths in handoffs, and enforces approval gates.",
+                strict_citation_gate: true,
+                approval_gate_mode: "all_external_and_deletes",
+                redact_host_paths: true,
+                block_outbound_fetch: false,
+                updated_ms,
+            }),
+            "air_gapped" | "airgapped" | "offline" => Ok(Self {
+                profile: "air_gapped",
+                label: "Air-Gapped",
+                summary: "Zero outbound network fetches, strict citation gate before export, and full host-path redaction.",
+                strict_citation_gate: true,
+                approval_gate_mode: "lockdown",
+                redact_host_paths: true,
+                block_outbound_fetch: true,
+                updated_ms,
+            }),
+            _ => Err("workspace policy profile must be fast_internal, strict_client, or air_gapped"),
+        }
+    }
+
+    pub fn to_json(&self, person_id: &str) -> Value {
+        json!({
+            "person_id": person_id,
+            "profile": self.profile,
+            "label": self.label,
+            "summary": self.summary,
+            "strict_citation_gate": self.strict_citation_gate,
+            "approval_gate_mode": self.approval_gate_mode,
+            "redact_host_paths": self.redact_host_paths,
+            "block_outbound_fetch": self.block_outbound_fetch,
+            "updated_ms": self.updated_ms,
+        })
+    }
+}
+
+pub fn load_workspace_policy(data_dir: &Path) -> WorkspacePolicy {
+    let path = data_dir.join("workspace_policy.json");
+    if let Ok(text) = std::fs::read_to_string(&path) {
+        if let Ok(v) = serde_json::from_str::<Value>(&text) {
+            if let Some(p) = v["profile"].as_str() {
+                let updated = v["updated_ms"].as_u64().unwrap_or(0);
+                if let Ok(policy) = WorkspacePolicy::for_profile(p, updated) {
+                    return policy;
+                }
+            }
+        }
+    }
+    WorkspacePolicy::for_profile("fast_internal", 0).unwrap()
+}
+
+pub fn save_workspace_policy(data_dir: &Path, profile: &str) -> Result<WorkspacePolicy, String> {
+    let ts = records::now_millis();
+    let policy = WorkspacePolicy::for_profile(profile, ts).map_err(|e| e.to_string())?;
+    let path = data_dir.join("workspace_policy.json");
+    let body = serde_json::to_vec(&json!({
+        "profile": policy.profile,
+        "updated_ms": policy.updated_ms,
+    }))
+    .map_err(|e| format!("serialize policy: {e}"))?;
+    atomic_write_bytes(&path, &body).map_err(|e| format!("save workspace policy: {e}"))?;
+    Ok(policy)
+}
+
+/// Redact host filesystem prefixes (`/home/<user>`, `/Users/<user>`, `C:\Users\<user>`, `/tmp/`)
+/// for client-safe handoff exports while preserving relative workspace file paths.
+pub fn redact_host_paths(input: &str) -> String {
+    if !input.contains("/home/")
+        && !input.contains("/Users/")
+        && !input.contains("C:\\Users\\")
+        && !input.contains("C:/Users/")
+        && !input.contains("/tmp/")
+    {
+        return input.to_string();
+    }
+    let mut out = String::with_capacity(input.len());
+    let mut i = 0;
+    let bytes = input.as_bytes();
+    while i < bytes.len() {
+        let rest = &input[i..];
+        let matched_prefix = if rest.starts_with("/home/") {
+            Some(("/home/", "~/"))
+        } else if rest.starts_with("/Users/") {
+            Some(("/Users/", "~/"))
+        } else if rest.starts_with("C:/Users/") {
+            Some(("C:/Users/", "~/"))
+        } else if rest.starts_with("C:\\\\Users\\\\") {
+            Some(("C:\\\\Users\\\\", "~/"))
+        } else if rest.starts_with("C:\\Users\\") {
+            Some(("C:\\Users\\", "~/"))
+        } else if rest.starts_with("/tmp/") {
+            out.push_str("[redacted-tmp]/");
+            i += 5;
+            continue;
+        } else {
+            None
+        };
+        if let Some((pfx, repl)) = matched_prefix {
+            out.push_str(repl);
+            i += pfx.len();
+            // Skip the username segment up to separator or whitespace/quote.
+            while i < bytes.len()
+                && !matches!(bytes[i], b'/' | b'\\' | b' ' | b'\t' | b'\r' | b'\n' | b'"' | b'\'' | b'`' | b')' | b']' | b'>')
+            {
+                i += 1;
+            }
+            if i < bytes.len() && (bytes[i] == b'/' || bytes[i] == b'\\') {
+                if input[i..].starts_with("\\\\") {
+                    i += 2;
+                } else {
+                    i += 1;
+                }
+            }
+            continue;
+        }
+        let ch = rest.chars().next().unwrap();
+        out.push(ch);
+        i += ch.len_utf8();
+    }
+    out
+}
+
+// ---------------------------------------------------------------------------
 // Config
 // ---------------------------------------------------------------------------
 
@@ -3496,6 +3650,83 @@ mod v010_hardening_tests {
         assert!(content.contains("- Never include executive bullet points."));
         assert!(content.contains("- Prefer Excel exports."));
         assert!(!content.contains("missing.csv"));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn workspace_policy_profiles_and_enforcement_work_end_to_end() {
+        use std::io::{Read, Write};
+        let dir = std::env::temp_dir().join(format!(
+            "ergon-policy-e2e-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let mut cfg = Config::from_env();
+        cfg.data_dir = dir.clone();
+        cfg.workspace_dir = dir.join("workspace");
+        cfg.memory_path = dir.join("memory.md");
+        cfg.ensure_dirs().unwrap();
+        std::fs::write(cfg.workspace_dir.join("brief.md"), "# Client Brief\nLine 2 ok\n").unwrap();
+        records::append_work(
+            &cfg,
+            "Prepare client brief from /home/alice/secrets/brief.md",
+            "Verified [missing-source.md:L4] against /home/alice/internal/notes.txt",
+            &["brief.md".to_string()],
+            "t-pol-1",
+            true,
+        );
+
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let cfg_srv = cfg.clone();
+        std::thread::spawn(move || {
+            let _ = serve(listener, cfg_srv);
+        });
+        std::thread::sleep(std::time::Duration::from_millis(50));
+
+        let send_http = |method: &str, target: &str, body: &str| -> String {
+            let mut s = std::net::TcpStream::connect(addr).unwrap();
+            let req = format!(
+                "{method} {target} HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                addr.port(),
+                body.len()
+            );
+            s.write_all(req.as_bytes()).unwrap();
+            let mut out = String::new();
+            s.read_to_string(&mut out).unwrap();
+            out
+        };
+
+        // 1. Default policy is fast_internal.
+        let p0 = send_http("GET", "/api/workspace/policy", "");
+        assert!(p0.starts_with("HTTP/1.1 200 OK"), "{p0}");
+        let j0: Value = serde_json::from_str(p0.split("\r\n\r\n").nth(1).unwrap()).unwrap();
+        assert_eq!(j0["profile"], json!("fast_internal"));
+        assert_eq!(j0["strict_citation_gate"], json!(false));
+
+        // 2. Switch to strict_client via PUT -> blocks pack export (409) when stale/broken citations exist, and redacts host paths in audit bundle!
+        let p1 = send_http("PUT", "/api/workspace/policy", r#"{"profile":"strict_client"}"#);
+        assert!(p1.starts_with("HTTP/1.1 200 OK"), "{p1}");
+        let j1: Value = serde_json::from_str(p1.split("\r\n\r\n").nth(1).unwrap()).unwrap();
+        assert_eq!(j1["profile"], json!("strict_client"));
+        assert_eq!(j1["strict_citation_gate"], json!(true));
+        assert_eq!(j1["redact_host_paths"], json!(true));
+
+        let pack_blocked = send_http("GET", "/api/files/pack?summary=1&format=md", "");
+        assert!(pack_blocked.starts_with("HTTP/1.1 409"), "{pack_blocked}");
+        let audit_md = send_http("GET", "/api/audit/bundle?format=md", "");
+        assert!(audit_md.starts_with("HTTP/1.1 200 OK"), "{audit_md}");
+        assert!(!audit_md.contains("/home/alice/"), "{audit_md}");
+        assert!(audit_md.contains("~/secrets/brief.md"), "{audit_md}");
+
+        // 3. Switch to air_gapped -> blocks outbound fetch_url tool!
+        let p2 = send_http("PUT", "/api/workspace/policy", r#"{"profile":"air_gapped"}"#);
+        assert!(p2.starts_with("HTTP/1.1 200 OK"), "{p2}");
+        let fetch_err = execute_tool(&cfg, "fetch_url", &json!({"url": "https://example.com"})).unwrap_err();
+        assert!(fetch_err.contains("Air-Gapped"), "{fetch_err}");
 
         let _ = std::fs::remove_dir_all(&dir);
     }

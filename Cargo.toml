@@ -1,6 +1,6 @@
 [package]
 name = "ergon-rs"
-version = "0.24.0"
+version = "0.25.0"
 edition = "2021"
 
 [[bin]]
@@ -9,9 +9,9 @@ path = "src/main.rs"
 
 [dependencies]
 serde_json = "1"
-ureq = { version = "2", features = ["json", "tls"] }
+ureq = { version = "2", default-features = false, features = ["json", "tls"] }
 rune = { version = "0.14", default-features = false, features = ["std"] }
-sha2 = "0.11"
+sha2 = "0.10"
 miniz_oxide = "0.9"
 pdf-extract = "0.12"
 
@@ -24,19 +24,10 @@ lto = "fat"
 codegen-units = 1
 strip = "symbols"
 
-# Keep cold dependencies (Rune VM, PDF parser, TLS client) size-optimized while
-# preserving opt-level = 3 on ergon-rs and hot JSON/HTTP/SHA-256 primitives.
+# Keep cold dependencies size-optimized while preserving opt-level = 3 on
+# hot JSON/HTTP/SHA-256 primitives.
 [profile.release.package."*"]
 opt-level = "z"
-
-[profile.release.package.serde]
-opt-level = 3
-
-[profile.release.package.serde_core]
-opt-level = 3
-
-[profile.release.package.serde_json]
-opt-level = 3
 
 [profile.release.package.itoa]
 opt-level = 3

@@ -221,9 +221,9 @@ pub struct PersonIndex {
     pub chain_valid: bool,
     pub head_hash: String,
     /// Inverted token index mapping lowercase ASCII/alnum words -> receipt indices.
-    receipt_tokens: HashMap<String, Vec<u32>>,
+    receipt_tokens: HashMap<String, Box<[u32]>>,
     pub files: Vec<IndexedFile>,
-    file_tokens: HashMap<String, Vec<u32>>,
+    file_tokens: HashMap<String, Box<[u32]>>,
     pub memory: Vec<MemoryLine>,
 }
 
@@ -302,7 +302,7 @@ fn tokenize_query(s: &str) -> Vec<String> {
 /// intersection (zero temporary `HashSet` allocations). Returns `None` when
 /// fallback substring scanning is required.
 fn narrow_candidates(
-    index: &HashMap<String, Vec<u32>>,
+    index: &HashMap<String, Box<[u32]>>,
     query: &str,
     tokens: &[String],
     disallow_slash: bool,
@@ -310,15 +310,15 @@ fn narrow_candidates(
     if tokens.is_empty() || query.contains('.') || query.contains('-') || (disallow_slash && query.contains('/')) {
         return None;
     }
-    let mut lists: Vec<&Vec<u32>> = Vec::with_capacity(tokens.len());
+    let mut lists: Vec<&[u32]> = Vec::with_capacity(tokens.len());
     for tok in tokens {
-        lists.push(index.get(tok)?);
+        lists.push(index.get(tok)?.as_ref());
     }
     if lists.is_empty() {
         return None;
     }
     lists.sort_by_key(|l| l.len());
-    let mut acc: Vec<u32> = lists[0].clone();
+    let mut acc: Vec<u32> = lists[0].to_vec();
     for other in &lists[1..] {
         acc.retain(|id| other.binary_search(id).is_ok());
     }
@@ -461,10 +461,10 @@ impl PersonIndex {
                 }
             }
         }
-        for list in receipt_tokens.values_mut() {
-            list.shrink_to_fit();
-        }
-        receipt_tokens.shrink_to_fit();
+        let receipt_tokens: HashMap<String, Box<[u32]>> = receipt_tokens
+            .into_iter()
+            .map(|(k, v)| (k, v.into_boxed_slice()))
+            .collect();
 
         let mut files = Vec::new();
         collect_files(workspace_dir, workspace_dir, &mut files);
@@ -476,10 +476,10 @@ impl PersonIndex {
                 file_tokens.entry(tok).or_default().push(i as u32);
             }
         }
-        for list in file_tokens.values_mut() {
-            list.shrink_to_fit();
-        }
-        file_tokens.shrink_to_fit();
+        let file_tokens: HashMap<String, Box<[u32]>> = file_tokens
+            .into_iter()
+            .map(|(k, v)| (k, v.into_boxed_slice()))
+            .collect();
         files.shrink_to_fit();
 
         let mut memory = Vec::new();

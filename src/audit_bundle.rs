@@ -768,7 +768,9 @@ pub fn build_audit_bundle_json_bytes_with_chain(
         "4. Recompute `integrity.bundle_sha256` over the canonical JSON object `{app_version, generated_at_ms, person, receipt_chain, routines, schema, standing_memory, workspace_files}` (alphabetical keys, compact JSON) to confirm zero tampering.",
     ];
 
-    let mut out = Vec::with_capacity(8192 + chain.len() * 320);
+    // Reserve conservatively so 5k-receipt bundles never double-reallocate
+    // mid-stream above the mmap threshold.
+    let mut out = Vec::with_capacity(65_536 + chain.len() * 448 + workspace_files_val.as_array().map_or(0, |a| a.len() * 256));
     let _ = (|| -> std::io::Result<()> {
         use std::io::Write as _;
         out.write_all(b"{\"schema\":")?;

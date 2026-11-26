@@ -29,6 +29,8 @@ import {
   type Status,
   type WorkspaceFile,
   type WorkspaceFileContent,
+  type WorkspacePolicy,
+  type WorkspacePolicyProfile,
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
@@ -70,6 +72,8 @@ export const InspectorDrawer = memo(function InspectorDrawer({
   onOfferAction: (url: string, msg: string) => Promise<void>;
 }) {
   const [exporting, setExporting] = useState<"md" | "json" | "pack" | "html" | "preflight" | "delta" | null>(null);
+  const [policy, setPolicy] = useState<WorkspacePolicy | null>(null);
+  const [savingPolicy, setSavingPolicy] = useState<WorkspacePolicyProfile | null>(null);
   const [verifyInfo, setVerifyInfo] = useState<{ checked: number; ok: boolean } | null>(null);
   const [packPreflight, setPackPreflight] = useState<PackPreflightReport | null>(null);
   const [recentReceipts, setRecentReceipts] = useState<Array<{ id: string; task: string; ts?: number }>>([]);
@@ -128,6 +132,11 @@ export const InspectorDrawer = memo(function InspectorDrawer({
 
   useEffect(() => {
     if (!open || tab !== "audit") return;
+    call<WorkspacePolicy>("/api/workspace/policy").then((r) => {
+      if (r.ok && r.data && typeof r.data.profile === "string") {
+        setPolicy(r.data);
+      }
+    });
     call<{ valid?: boolean; verified?: boolean; ok?: boolean; total?: number; count?: number; receipts_checked?: number; head_hash?: string }>("/api/receipts/verify").then((r) => {
       if (r.ok) {
         const isOk = typeof r.data.valid === "boolean"
@@ -254,6 +263,91 @@ export const InspectorDrawer = memo(function InspectorDrawer({
 
         {tab === "audit" && (
           <div id="inspector-audit-panel" className="flex flex-col gap-4">
+            <section
+              id="workspace-policy-card"
+              className="flex flex-col gap-2.5 rounded-card border border-hairline bg-board/40 p-3.5"
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h2 className="text-sm font-medium text-ink">Workspace policy</h2>
+                <span
+                  id="workspace-policy-badge"
+                  data-policy-active={policy?.profile ?? "fast_internal"}
+                  className={cn(
+                    "mono rounded-chip px-2 py-0.5 text-xs",
+                    policy?.profile === "air_gapped"
+                      ? "status-stopped"
+                      : policy?.profile === "strict_client"
+                        ? "status-finished"
+                        : "bg-track text-ink-2"
+                  )}
+                >
+                  {policy?.label ?? "Fast Internal"}
+                </span>
+              </div>
+              <p className="text-xs leading-5 text-ink-2">
+                {policy?.summary ?? "Switch citation enforcement, host-path redaction, and outbound network posture in one click."}
+              </p>
+              <div className="grid grid-cols-3 gap-1.5" role="group" aria-label="Workspace audit policy profile">
+                {(
+                  [
+                    ["fast_internal", "Fast Internal"],
+                    ["strict_client", "Strict Client"],
+                    ["air_gapped", "Air-Gapped"],
+                  ] as const
+                ).map(([id, label]) => {
+                  const active = (policy?.profile ?? "fast_internal") === id;
+                  return (
+                    <Button
+                      key={id}
+                      type="button"
+                      size="xs"
+                      variant={active ? "default" : "outline"}
+                      data-policy-profile={id}
+                      aria-pressed={active}
+                      disabled={savingPolicy !== null}
+                      className="max-md:min-h-11 justify-center px-2 text-xs"
+                      onClick={async () => {
+                        setSavingPolicy(id);
+                        try {
+                          const r = await call<WorkspacePolicy>("/api/workspace/policy", {
+                            method: "PUT",
+                            body: { profile: id },
+                          });
+                          if (!r.ok) {
+                            toast.error(r.error || "Could not update workspace policy.");
+                            return;
+                          }
+                          if (!r.data.profile) {
+                            toast.error("Could not update workspace policy.");
+                            return;
+                          }
+                          setPolicy(r.data);
+                          toast.success(`Workspace policy set to ${r.data.label}.`);
+                        } finally {
+                          setSavingPolicy(null);
+                        }
+                      }}
+                    >
+                      {label}
+                    </Button>
+                  );
+                })}
+              </div>
+              {policy && (
+                <div className="mono flex flex-wrap gap-1.5 text-[11px] text-ink-2">
+                  <span className="rounded-chip bg-surface px-2 py-0.5 border border-hairline">
+                    Cite gate: {policy.strict_citation_gate ? "block" : "warn"}
+                  </span>
+                  <span className="rounded-chip bg-surface px-2 py-0.5 border border-hairline">
+                    Redact paths: {policy.redact_host_paths ? "on" : "off"}
+                  </span>
+                  <span className="rounded-chip bg-surface px-2 py-0.5 border border-hairline">
+                    Outbound: {policy.block_outbound_fetch ? "blocked" : "allowed"}
+                  </span>
+                </div>
+              )}
+            </section>
+
             <section className="flex flex-col gap-2.5 rounded-card border border-hairline bg-board/40 p-3.5">
               <div className="flex items-center justify-between gap-2">
                 <h2 className="text-sm font-medium text-ink">Audit bundle</h2>

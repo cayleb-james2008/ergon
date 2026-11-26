@@ -232,7 +232,24 @@ fn print_help() {
     );
 }
 
+#[cfg(all(target_os = "linux", target_env = "gnu"))]
+fn tune_allocator_for_low_rss() {
+    // Cap glibc per-thread arenas and mmap larger allocations so 16-thread
+    // HTTP bursts do not fragment into extra multi-MB resident arenas.
+    unsafe extern "C" {
+        fn mallopt(param: std::ffi::c_int, value: std::ffi::c_int) -> std::ffi::c_int;
+    }
+    const M_MMAP_THRESHOLD: std::ffi::c_int = -3;
+    const M_ARENA_MAX: std::ffi::c_int = -8;
+    unsafe {
+        mallopt(M_ARENA_MAX, 1);
+        mallopt(M_MMAP_THRESHOLD, 32 * 1024);
+    }
+}
+
 fn main() {
+    #[cfg(all(target_os = "linux", target_env = "gnu"))]
+    tune_allocator_for_low_rss();
     let raw_args: Vec<String> = std::env::args().skip(1).collect();
     let opts = parse_cli_args(&raw_args);
     if opts.show_version {

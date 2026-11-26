@@ -75,6 +75,7 @@ type WebLibItem = {
   fields?: string[];
   template?: string;
 };
+type WorkspacePolicyProfile = "fast_internal" | "strict_client" | "air_gapped";
 type PersonStore = {
   files: Record<string, WebFile>;
   fileHistory: Record<string, FileRevision[]>;
@@ -86,6 +87,8 @@ type PersonStore = {
   routineRuns: Record<string, RoutineRunRecord[]>;
   memory: string;
   suite: string[];
+  policyProfile?: WorkspacePolicyProfile;
+  policyUpdatedMs?: number;
 };
 type RootState = {
   activePerson: string;
@@ -2104,11 +2107,57 @@ function auditWebMemoryHealth(st: PersonStore) {
   };
 }
 
-    if (method === "GET" && path === "/api/version") return jsonRes({ name: "ergon", version: "0.24.0" });
-    if (method === "GET" && path === "/api/update") return jsonRes({ current: "0.24.0", available: false, mode: "off", checked_at: Math.floor(Date.now() / 1000) });
+function buildWebPolicy(personId: string, st: PersonStore) {
+  const raw = st.policyProfile || "fast_internal";
+  const presets = {
+    fast_internal: {
+      profile: "fast_internal" as const,
+      label: "Fast Internal",
+      summary: "Advisory citation checks, local-speed approvals, and outbound web research enabled.",
+      strict_citation_gate: false,
+      approval_gate_mode: "deletes_and_risky",
+      redact_host_paths: false,
+      block_outbound_fetch: false,
+    },
+    strict_client: {
+      profile: "strict_client" as const,
+      label: "Strict Client",
+      summary: "Blocks pack export on stale [file:L##] citations, redacts host paths in handoffs, and enforces approval gates.",
+      strict_citation_gate: true,
+      approval_gate_mode: "all_external_and_deletes",
+      redact_host_paths: true,
+      block_outbound_fetch: false,
+    },
+    air_gapped: {
+      profile: "air_gapped" as const,
+      label: "Air-Gapped",
+      summary: "Zero outbound network fetches, strict citation gate before export, and full host-path redaction.",
+      strict_citation_gate: true,
+      approval_gate_mode: "lockdown",
+      redact_host_paths: true,
+      block_outbound_fetch: true,
+    },
+  };
+  return {
+    person_id: personId,
+    ...(presets[raw] || presets.fast_internal),
+    updated_ms: st.policyUpdatedMs || 0,
+  };
+}
+
+function redactWebHostPaths(input: string): string {
+  return input
+    .replace(/\/home\/[^/\s"'`)\]<>]+\//g, "~/")
+    .replace(/\/Users\/[^/\s"'`)\]<>]+\//g, "~/")
+    .replace(/C:[\\/]Users[\\/][^\\/\s"'`)\]<>]+[\\/]/g, "~/")
+    .replace(/\/tmp\//g, "[redacted-tmp]/");
+}
+
+    if (method === "GET" && path === "/api/version") return jsonRes({ name: "ergon", version: "0.25.0" });
+    if (method === "GET" && path === "/api/update") return jsonRes({ current: "0.25.0", available: false, mode: "off", checked_at: Math.floor(Date.now() / 1000) });
     if (method === "GET" && path === "/api/status") {
       return jsonRes({
-        version: "0.24.0",
+        version: "0.25.0",
         model_configured: true,
         model: byok.engine_mode === "byok" && byok.model_id ? byok.model_id : "browser-workspace-engine",
         model_base_url: byok.engine_mode === "byok" ? byok.model_base_url : "indexeddb://local",
@@ -2330,7 +2379,7 @@ function auditWebMemoryHealth(st: PersonStore) {
       const pid = decodeURIComponent(path.slice("/api/playbooks/".length, -"/export".length)).trim();
       const rt = st.routines.find((x) => x.id === pid);
       if (!rt) return jsonRes({ error: "playbook not found" }, 404);
-      const built = await buildSignedPlaybookPack(rt, "0.24.0");
+      const built = await buildSignedPlaybookPack(rt, "0.25.0");
       return new Response(built.json, {
         status: 200,
         headers: {
@@ -2653,6 +2702,20 @@ function auditWebMemoryHealth(st: PersonStore) {
           ],
         });
       }
+      const policy = buildWebPolicy(p.id, st);
+      const forcePack = ["1", "true"].includes((u.searchParams.get("force") || "").toLowerCase());
+      if (policy.strict_citation_gate && !forcePack && (citations.stale > 0 || citations.broken > 0)) {
+        return jsonRes(
+          {
+            error: `Blocked by ${policy.label} policy: ${citations.stale} stale and ${citations.broken} broken [file:L##] citation(s) must be resolved before export.`,
+            policy: policy.profile,
+            citation_gate: citations.gate_status,
+            citations_stale: citations.stale,
+            citations_broken: citations.broken,
+          },
+          409
+        );
+      }
       const deltaA = (u.searchParams.get("delta_a") || "").trim();
       const deltaB = (u.searchParams.get("delta_b") || "").trim();
       const deltaFile = (u.searchParams.get("delta_file") || "").trim();
@@ -2717,7 +2780,8 @@ function auditWebMemoryHealth(st: PersonStore) {
         const previews = sections
           .map((s) => `<section><h3><code>${escapeHtml(s.path)}</code></h3><pre>${escapeHtml(s.body)}</pre></section>`)
           .join("");
-        const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>${escapeHtml(title)}</title><style>body{font-family:sans-serif;max-width:920px;margin:32px auto;padding:0 20px;color:#111827}table{width:100%;border-collapse:collapse;font-size:13px}th,td{padding:8px;border-bottom:1px solid #e5e7eb;text-align:left}pre{background:#f9fafb;border:1px solid #e5e7eb;padding:12px;border-radius:8px;white-space:pre-wrap}.pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;font-weight:600}.pill.ok{background:#dcfce7;color:#166534}.pill.warn{background:#fef3c7;color:#92400e}</style></head><body><h1>${escapeHtml(title)}</h1><p>Prepared for <strong>${escapeHtml(p.name)}</strong> &middot; ${escapeHtml(citations.gate_status)} &middot; Citations: ${escapeHtml(ratioLabel)} &middot; Manifest SHA-256: <code>${escapeHtml(manifestSha)}</code></p>${summaryHtml}<table><thead><tr><th>File</th><th>Contents</th><th>Size</th><th>SHA-256</th></tr></thead><tbody>${filesRows}</tbody></table>${citSection}${deltaHtml}${previews}</body></html>`;
+        const rawHtml = `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>${escapeHtml(title)}</title><style>body{font-family:sans-serif;max-width:920px;margin:32px auto;padding:0 20px;color:#111827}table{width:100%;border-collapse:collapse;font-size:13px}th,td{padding:8px;border-bottom:1px solid #e5e7eb;text-align:left}pre{background:#f9fafb;border:1px solid #e5e7eb;padding:12px;border-radius:8px;white-space:pre-wrap}.pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;font-weight:600}.pill.ok{background:#dcfce7;color:#166534}.pill.warn{background:#fef3c7;color:#92400e}</style></head><body><h1>${escapeHtml(title)}</h1><p>Prepared for <strong>${escapeHtml(p.name)}</strong> &middot; ${escapeHtml(citations.gate_status)} &middot; Citations: ${escapeHtml(ratioLabel)} &middot; Manifest SHA-256: <code>${escapeHtml(manifestSha)}</code></p>${summaryHtml}<table><thead><tr><th>File</th><th>Contents</th><th>Size</th><th>SHA-256</th></tr></thead><tbody>${filesRows}</tbody></table>${citSection}${deltaHtml}${previews}</body></html>`;
+        const html = policy.redact_host_paths ? redactWebHostPaths(rawHtml) : rawHtml;
         const packSha = await sha256Hex(html);
         return new Response(html, {
           status: 200,
@@ -2778,7 +2842,8 @@ function auditWebMemoryHealth(st: PersonStore) {
         lines.push("", "---", "", `## \`${s.path}\``, "", `_SHA-256: \`${s.sha}\` · ${s.count} ${s.unit} · ${s.size_bytes} bytes_`, "", s.body);
       }
       if (deltaMd) lines.push("", "---", "", deltaMd);
-      const md = lines.join("\n") + "\n";
+      const rawMd = lines.join("\n") + "\n";
+      const md = policy.redact_host_paths ? redactWebHostPaths(rawMd) : rawMd;
       const packSha = await sha256Hex(md);
       return new Response(md, {
         status: 200,
@@ -2906,8 +2971,34 @@ function auditWebMemoryHealth(st: PersonStore) {
         file: { path: restored.path, name: restored.name, size: restored.size, mtime_ms: restored.mtime_ms, ext: restored.ext },
       });
     }
+    if (method === "GET" && path === "/api/workspace/policy") {
+      return jsonRes(buildWebPolicy(p.id, st));
+    }
+    if ((method === "PUT" || method === "POST") && path === "/api/workspace/policy") {
+      const raw = String(body.profile ?? "").trim().toLowerCase();
+      const map: Record<string, WorkspacePolicyProfile> = {
+        fast_internal: "fast_internal",
+        fast: "fast_internal",
+        internal: "fast_internal",
+        strict_client: "strict_client",
+        strict: "strict_client",
+        client: "strict_client",
+        air_gapped: "air_gapped",
+        airgapped: "air_gapped",
+        offline: "air_gapped",
+      };
+      const resolved = map[raw];
+      if (!resolved) {
+        return jsonRes({ error: "workspace policy profile must be fast_internal, strict_client, or air_gapped" }, 400);
+      }
+      st.policyProfile = resolved;
+      st.policyUpdatedMs = Date.now();
+      await persist();
+      return jsonRes(buildWebPolicy(p.id, st));
+    }
     if (method === "GET" && path === "/api/audit/bundle") {
       const format = u.searchParams.get("format") === "md" ? "md" : "json";
+      const policy = buildWebPolicy(p.id, st);
       const allRuns = Object.values(st.routineRuns).flat().sort((a, b) => b.started_ms - a.started_ms);
       const built = await buildAuditBundle({
         personName: p.name,
@@ -2930,7 +3021,9 @@ function auditWebMemoryHealth(st: PersonStore) {
         routines: st.routines,
         routineRuns: allRuns,
       });
-      return new Response(format === "md" ? built.markdown : built.json, {
+      const payload = format === "md" ? built.markdown : built.json;
+      const bodyStr = policy.redact_host_paths ? redactWebHostPaths(payload) : payload;
+      return new Response(bodyStr, {
         status: 200,
         headers: {
           "Content-Type": format === "md" ? "text/markdown; charset=utf-8" : "application/json; charset=utf-8",

@@ -132,4 +132,46 @@ fn main() {
 
     let dest = Path::new(&out_dir).join("embedded_chunks.rs");
     fs::write(dest, code).unwrap();
+
+    // Pre-compress built-in `.rn` skill sources (`~107 KB` raw -> `~25 KB`
+    // deflated) so `.rodata` stays lean while runtime inflates lazily on use.
+    println!("cargo:rerun-if-changed=src/skills");
+    let skills_dir = Path::new("src/skills");
+    let skills_out_dir = Path::new(&out_dir).join("skills_deflate");
+    fs::create_dir_all(&skills_out_dir).unwrap();
+    let mut skill_entries: Vec<(String, String)> = Vec::new();
+    if skills_dir.is_dir() {
+        for entry in fs::read_dir(skills_dir).unwrap() {
+            let entry = entry.unwrap();
+            let path = entry.path();
+            if path.extension().and_then(|s| s.to_str()) != Some("rn") {
+                continue;
+            }
+            let id = path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .expect("valid utf-8 skill stem")
+                .to_string();
+            println!("cargo:rerun-if-changed={}", path.display());
+            let raw = fs::read(&path).unwrap();
+            let deflated = miniz_oxide::deflate::compress_to_vec(&raw, 9);
+            let out_file = skills_out_dir.join(format!("{id}.deflate"));
+            fs::write(&out_file, &deflated).unwrap();
+            let abs = fs::canonicalize(&out_file).unwrap();
+            skill_entries.push((id, abs.to_string_lossy().into_owned()));
+        }
+    }
+    skill_entries.sort_by(|a, b| a.0.cmp(&b.0));
+
+    let mut skills_code = String::from(
+        "pub struct EmbeddedSkillDeflate { pub id: &'static str, pub deflated: &'static [u8] }\n\
+         pub static EMBEDDED_SKILLS: &[EmbeddedSkillDeflate] = &[\n",
+    );
+    for (id, abs) in skill_entries {
+        skills_code.push_str(&format!(
+            "    EmbeddedSkillDeflate {{ id: {id:?}, deflated: include_bytes!({abs:?}) }},\n",
+        ));
+    }
+    skills_code.push_str("];\n");
+    fs::write(Path::new(&out_dir).join("embedded_skills.rs"), skills_code).unwrap();
 }

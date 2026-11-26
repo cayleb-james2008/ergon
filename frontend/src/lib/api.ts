@@ -204,6 +204,18 @@ export type MemoryHealth = {
   stale_refs: number;
   issues: MemoryIssue[];
 };
+export type WorkspacePolicyProfile = "fast_internal" | "strict_client" | "air_gapped";
+export type WorkspacePolicy = {
+  person_id?: string;
+  profile: WorkspacePolicyProfile;
+  label: string;
+  summary: string;
+  strict_citation_gate: boolean;
+  approval_gate_mode: string;
+  redact_host_paths: boolean;
+  block_outbound_fetch: boolean;
+  updated_ms?: number;
+};
 export type PlaybookPreviewStep = {
   step: number;
   prompt: string;

@@ -4,6 +4,14 @@ Each release is tagged `vMAJOR.MINOR.PATCH` and published on GitHub Releases wit
 binaries and a `SHA256SUMS` file. The running app shows its version and can update
 itself from the newest release (see README, "Versions and updates").
 
+## 0.25.0 - 2026-11-25
+
+Workspace audit policy profiles let you switch between `Fast Internal`, `Strict Client`, and `Air-Gapped` in one click from the Audit tab in the right inspector. `GET`, `PUT`, and `POST /api/workspace/policy` save the choice to `workspace_policy.json` (`src/lib.rs`, `src/server.rs`, `frontend/src/shell/InspectorDrawer.tsx`, `frontend/src/lib/webEngine.ts`).
+
+Under `Strict Client`, `GET /api/files/pack` returns `409 Conflict` when exports reference stale or broken `[file:L##]` citations, and host home or temp paths in packs and audit bundles redact to `~/`. Under `Air-Gapped`, `fetch_url`, `research`, and `host_fetch_url` are blocked in `src/tools.rs` and `src/skills.rs`.
+
+Pre-compressing the twelve embedded `.rn` skill sources in `build.rs`, dropping the unused `gzip` feature from `ureq`, optimizing `serde` and `serde_core` for size in `Cargo.toml`, converting `PersonIndex` token posting lists to `Box<[u32]>`, and tightening `BufReader` and `JSON_SCRATCH` capacities trim the release binary below `8.40 MB` and keep warm RSS under `16.0 MB`.
+
 ## 0.24.0 - 2026-11-25
 
 - **Learned Memory Health & Stale-Reference Guard (`src/skills.rs`, `src/server.rs`, `frontend/src/shell/Panels.tsx`, `frontend/src/views/Paper.tsx`, `frontend/src/lib/{api,webEngine}.ts`):**

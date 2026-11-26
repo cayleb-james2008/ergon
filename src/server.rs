@@ -802,7 +802,7 @@ pub(crate) struct Request {
 
 thread_local! {
     static KEEP_ALIVE_CONN: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
-    static JSON_SCRATCH: std::cell::RefCell<Vec<u8>> = std::cell::RefCell::new(Vec::with_capacity(4096));
+    static JSON_SCRATCH: std::cell::RefCell<Vec<u8>> = std::cell::RefCell::new(Vec::with_capacity(2048));
 }
 
 /// Bodies are small JSON. A request claiming a larger one is dropped
@@ -840,7 +840,7 @@ impl SockStream for &mut std::net::TcpStream {
 
 #[cfg(test)]
 pub(crate) fn read_request(stream: &mut std::net::TcpStream) -> Option<Request> {
-    let mut reader = BufReader::with_capacity(4096, stream);
+    let mut reader = BufReader::with_capacity(2048, stream);
     read_request_from(&mut reader, std::time::Duration::from_secs(30))
 }
 
@@ -1380,6 +1380,16 @@ fn respond_json_with<F: FnOnce(&mut Vec<u8>)>(
     })
 }
 
+#[cold]
+#[inline(never)]
+fn respond_err(stream: &mut std::net::TcpStream, status: u16, msg: &str) -> std::io::Result<()> {
+    respond_json_with(stream, status, |buf| {
+        buf.extend_from_slice(br#"{"error":"#);
+        search::write_json_str(buf, msg);
+        buf.push(b'}');
+    })
+}
+
 fn respond_json(stream: &mut std::net::TcpStream, status: u16, v: &Value) -> std::io::Result<()> {
     JSON_SCRATCH.with(|cell| {
         let mut buf = cell.borrow_mut();
@@ -1598,7 +1608,7 @@ fn etag_matches(if_none_match: Option<&str>, etag: &str) -> bool {
 
 fn serve_chunk(stream: &mut std::net::TcpStream, req: &Request, path: &str) -> std::io::Result<()> {
     let Some(chunk) = ui::chunk(path) else {
-        return respond_json(stream, 404, &json!({"error": "chunk not found"}));
+        return respond_err(stream, 404, "chunk not found");
     };
     let wants_gzip = chunk.pre_gzipped && accepts_gzip(req.accept_encoding.as_deref());
     let etag = if wants_gzip { chunk.etag_gzip } else { chunk.etag_raw };
@@ -1673,7 +1683,7 @@ fn handle_connection(stream: std::net::TcpStream, state: &AppState) -> std::io::
         let _ = stream.shutdown(std::net::Shutdown::Both);
         return Ok(());
     }
-    let mut reader = BufReader::with_capacity(4096, stream);
+    let mut reader = BufReader::with_capacity(2048, stream);
     const MAX_KEEP_ALIVE_REQUESTS: usize = 10_000;
     for req_idx in 0..MAX_KEEP_ALIVE_REQUESTS {
         let initial_wait = if req_idx == 0 {
@@ -1759,7 +1769,7 @@ fn handle_connection(stream: std::net::TcpStream, state: &AppState) -> std::io::
             if let Some(res) = try_route_runs_and_chat(stream, state, &req, &person, &runtime, &ctx) {
                 res
             } else {
-                respond_json(stream, 404, &json!({"error": "not found"}))
+                respond_err(stream, 404, "not found")
             }
         };
         let continue_loop = KEEP_ALIVE_CONN.get() && !is_sse && res.is_ok();
@@ -1807,12 +1817,12 @@ fn try_route_system(
                         snap["applied"] = json!(v);
                         respond_json(stream, 200, &snap)
                     }
-                    Err(e) => respond_json(stream, 409, &json!({"error": e})),
+                    Err(e) => respond_err(stream, 409, &e),
                 }
             } else if let Err(e) = state.updater.snapshot()["staged"].as_str().map(|_| ()).ok_or("no update is waiting for a restart") {
-                respond_json(stream, 409, &json!({"error": e}))
+                respond_err(stream, 409, e)
             } else if RUNS_IN_FLIGHT.load(std::sync::atomic::Ordering::SeqCst) > 0 {
-                respond_json(stream, 409, &json!({"error": "a task is still running; restart when it has finished"}))
+                respond_err(stream, 409, "a task is still running; restart when it has finished")
             } else {
                 let _ = respond_json(stream, 200, &json!({"restarting": true}));
                 let up = state.updater.clone();
@@ -3072,12 +3082,16 @@ fn try_route_files_and_audit(
                 .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
                 .unwrap_or(false);
             let security = tripwire::audit_section(&root_cfg.data_dir, &person.id);
+            let policy = crate::load_workspace_policy(&runtime.cfg.data_dir);
             if format == "md" || format == "markdown" {
                 let mut bundle = audit_bundle::build_audit_bundle(&runtime.cfg, person);
                 bundle["integrity"]["security_events_sha256"] = security["events_sha256"].clone();
                 bundle["security"] = security;
                 let mut md = audit_bundle::render_audit_bundle_markdown(&bundle);
                 md.push_str(&render_security_markdown(&bundle["security"]));
+                if policy.redact_host_paths {
+                    md = crate::redact_host_paths(&md);
+                }
                 let mut headers = vec![("X-Content-Type-Options", "nosniff".to_string())];
                 if download {
                     headers.push((
@@ -3099,7 +3113,7 @@ fn try_route_files_and_audit(
                     &runtime.cfg.workspace_dir,
                     &runtime.cfg.memory_path,
                 );
-                let bytes = audit_bundle::build_audit_bundle_json_bytes_with_chain(
+                let mut bytes = audit_bundle::build_audit_bundle_json_bytes_with_chain(
                     &runtime.cfg,
                     person,
                     &security,
@@ -3107,6 +3121,18 @@ fn try_route_files_and_audit(
                         .as_ref()
                         .map(|idx| (idx.chain.as_slice(), idx.chain_valid, idx.head_hash.as_str())),
                 );
+                if policy.redact_host_paths {
+                    let s = String::from_utf8_lossy(&bytes);
+                    if s.contains("/home/")
+                        || s.contains("/Users/")
+                        || s.contains("/tmp/")
+                        || s.contains("/var/folders/")
+                        || s.contains("C:\\Users\\")
+                        || s.contains("C:/Users/")
+                    {
+                        bytes = crate::redact_host_paths(&s).into_bytes();
+                    }
+                }
                 let mut headers = vec![("X-Content-Type-Options", "nosniff".to_string())];
                 if download {
                     headers.push((
@@ -3258,9 +3284,34 @@ fn try_route_files_and_audit(
                 }
                 return Some(respond_json(stream, 200, &out));
             }
+            let policy = crate::load_workspace_policy(&runtime.cfg.data_dir);
+            let force_pack = query_param(&req.query, "force")
+                .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+                .unwrap_or(false);
             let preflight_ok = preflight.ok();
             let ready_count = preflight.ready_count;
             let gate_label = preflight.citation_gate();
+            if policy.strict_citation_gate
+                && !force_pack
+                && (preflight.citations_stale > 0 || preflight.citations_broken > 0)
+            {
+                return Some(respond_json(
+                    stream,
+                    409,
+                    &json!({
+                        "error": format!(
+                            "Blocked by {} policy: {} stale and {} broken [file:L##] citation(s) must be resolved before export.",
+                            policy.label,
+                            preflight.citations_stale,
+                            preflight.citations_broken
+                        ),
+                        "policy": policy.profile,
+                        "citation_gate": gate_label,
+                        "citations_stale": preflight.citations_stale,
+                        "citations_broken": preflight.citations_broken,
+                    }),
+                ));
+            }
             let delta_a = query_param(&req.query, "delta_a").unwrap_or_default();
             let delta_b = query_param(&req.query, "delta_b").unwrap_or_default();
             let delta_file = query_param(&req.query, "delta_file").unwrap_or_default();
@@ -3280,10 +3331,10 @@ fn try_route_files_and_audit(
                     }
                 };
                 let Some(ra) = receipts::find_receipt(&idx.chain, delta_a.trim()) else {
-                    return Some(respond_json(stream, 404, &json!({"error": "delta receipt a not found"})));
+                    return Some(respond_err(stream, 404, "delta receipt a not found"));
                 };
                 let Some(rb) = receipts::find_receipt(&idx.chain, delta_b.trim()) else {
-                    return Some(respond_json(stream, 404, &json!({"error": "delta receipt b not found"})));
+                    return Some(respond_err(stream, 404, "delta receipt b not found"));
                 };
                 let (_, delta_md) = build_receipt_compare(ra, rb);
                 delta_md_opt = Some(delta_md);
@@ -3326,13 +3377,17 @@ fn try_route_files_and_audit(
             let summary_cits_hdr = format!("{}/{}", preflight.citations_verified, total_cits);
             let summary_stale_hdr = (preflight.citations_stale + preflight.citations_broken).to_string();
             if format == "html" {
-                let (html, pack_sha) = build_workspace_handoff_html(
+                let (mut html, mut pack_sha) = build_workspace_handoff_html(
                     &preflight,
                     &person.name,
                     &title,
                     delta_md_opt.as_deref(),
                     &summary_gates,
                 );
+                if policy.redact_host_paths {
+                    html = crate::redact_host_paths(&html);
+                    pack_sha = receipts::sha256_hex(html.as_bytes());
+                }
                 let mut headers = vec![
                     ("X-Content-Type-Options", "nosniff".to_string()),
                     (
@@ -3382,6 +3437,9 @@ fn try_route_files_and_audit(
                 md.push_str("\n---\n\n");
                 md.push_str(&delta_md);
             }
+            if policy.redact_host_paths {
+                md = crate::redact_host_paths(&md);
+            }
             let pack_sha = receipts::sha256_hex(md.as_bytes());
             let mut headers = vec![
                 ("X-Content-Type-Options", "nosniff".to_string()),
@@ -3417,6 +3475,18 @@ fn try_route_files_and_audit(
                 md.as_bytes(),
                 &headers,
             )
+        }
+        ("GET", "/api/workspace/policy") => {
+            let policy = crate::load_workspace_policy(&runtime.cfg.data_dir);
+            respond_json(stream, 200, &policy.to_json(&person.id))
+        }
+        ("PUT", "/api/workspace/policy") | ("POST", "/api/workspace/policy") => {
+            let parsed: Value = serde_json::from_slice(&req.body).unwrap_or(Value::Null);
+            let raw_profile = parsed["profile"].as_str().unwrap_or("");
+            match crate::save_workspace_policy(&runtime.cfg.data_dir, raw_profile) {
+                Ok(policy) => respond_json(stream, 200, &policy.to_json(&person.id)),
+                Err(e) => respond_err(stream, 400, &e),
+            }
         }
         ("POST", "/api/citations/verify") => {
             let parsed: Value = serde_json::from_slice(&req.body).unwrap_or(Value::Null);
@@ -3873,10 +3943,10 @@ fn try_route_knowledge_and_routines(
                 &runtime.cfg.memory_path,
             );
             let Some(ra) = receipts::find_receipt(&idx.chain, a_id.trim()) else {
-                return Some(respond_json(stream, 404, &json!({"error": "receipt a not found"})));
+                return Some(respond_err(stream, 404, "receipt a not found"));
             };
             let Some(rb) = receipts::find_receipt(&idx.chain, b_id.trim()) else {
-                return Some(respond_json(stream, 404, &json!({"error": "receipt b not found"})));
+                return Some(respond_err(stream, 404, "receipt b not found"));
             };
             let (payload, _) = build_receipt_compare(ra, rb);
             respond_json(stream, 200, &payload)

@@ -1060,10 +1060,10 @@ export const PaperFace = memo(function PaperFace({
                         return (
                           <li
                             key={(x.id ?? x.thread_id ?? taskTitle) + "-" + globalIdx}
-                            className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-1 px-4 py-3.5 md:grid-cols-[104px_minmax(0,1fr)_auto]"
+                            className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3.5"
                           >
-                            <span className="mono col-span-2 text-xs text-ink-2 md:col-span-1">{when(x)}</span>
-                            <div className="min-w-0">
+                            <span className="mono w-full shrink-0 text-xs text-ink-2 sm:w-[96px]">{when(x)}</span>
+                            <div className="min-w-[13rem] flex-1">
                               <p className="text-ui font-medium leading-6 text-ink [overflow-wrap:anywhere]">{taskTitle}</p>
                               <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5 text-xs text-ink-2">
                                 {jobFiles.length ? (
@@ -1088,7 +1088,7 @@ export const PaperFace = memo(function PaperFace({
                                 )}
                               </div>
                             </div>
-                            <div className="flex flex-wrap items-center justify-end gap-1">
+                            <div className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-1">
                               {onSaveRoutine && taskTitle && (
                                 <Button
                                   type="button"

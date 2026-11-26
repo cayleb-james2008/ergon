@@ -229,7 +229,7 @@ pub fn all_skills() -> Vec<SkillMetadata> {
                 "Write a weekly status report covering shipped items and next week's priorities.",
                 "Compile our onboarding checklist into a clean workspace document.",
             ],
-            skills::WRITE_DOCUMENT_SCRIPT,
+            skills::builtin_script("write_document"),
         ),
         meta(
             "make_spreadsheet",
@@ -248,7 +248,7 @@ pub fn all_skills() -> Vec<SkillMetadata> {
                 "Turn my Q4 software expenses into a clean CSV spreadsheet with Vendor, Category, and Cost columns.",
                 "Build a structured inventory CSV from the items listed in my notes.",
             ],
-            skills::MAKE_SPREADSHEET_SCRIPT,
+            skills::builtin_script("make_spreadsheet"),
         ),
         meta(
             "research",
@@ -266,7 +266,7 @@ pub fn all_skills() -> Vec<SkillMetadata> {
                 "Research vendor compliance documentation across these three URLs and compile sourced notes.",
                 "Fetch these release-note pages and save a single cited research summary.",
             ],
-            skills::RESEARCH_SCRIPT,
+            skills::builtin_script("research"),
         ),
         meta(
             "update_memory",
@@ -283,7 +283,7 @@ pub fn all_skills() -> Vec<SkillMetadata> {
                 "Remember that I prefer concise bullet summaries before detailed tables.",
                 "Record in standing memory that all finance exports use USD with two decimal places.",
             ],
-            skills::UPDATE_MEMORY_SCRIPT,
+            skills::builtin_script("update_memory"),
         ),
         meta(
             "reconcile_ledger",
@@ -301,7 +301,7 @@ pub fn all_skills() -> Vec<SkillMetadata> {
                 "Reconcile invoices.csv and expenses.csv, flag duplicate invoice numbers and missing receipts, and total spend by vendor and category.",
                 "Audit Q4-expenses.csv for missing receipts, duplicate references, and anomalous amounts.",
             ],
-            skills::RECONCILE_LEDGER_SCRIPT,
+            skills::builtin_script("reconcile_ledger"),
         ),
         meta(
             "summarize_meeting",
@@ -319,7 +319,7 @@ pub fn all_skills() -> Vec<SkillMetadata> {
                 "Summarize standup-notes.md into decisions, action items with owners and due dates, and follow-up drafts.",
                 "Extract every commitment, owner, deadline, and open blocker from q4-planning-transcript.txt.",
             ],
-            skills::SUMMARIZE_MEETING_SCRIPT,
+            skills::builtin_script("summarize_meeting"),
         ),
         meta(
             "audit_contract",
@@ -338,7 +338,7 @@ pub fn all_skills() -> Vec<SkillMetadata> {
                 "Audit vendor-msa.md for auto-renewal traps, unlimited liability, missing confidentiality/data-protection clauses, and produce a line-cited risk table.",
                 "Review supplier-agreement.txt against termination, indemnification, payment, and governing law requirements.",
             ],
-            skills::AUDIT_CONTRACT_SCRIPT,
+            skills::builtin_script("audit_contract"),
         ),
         meta(
             "triage_inbox",
@@ -356,7 +356,7 @@ pub fn all_skills() -> Vec<SkillMetadata> {
                 "Triage inbox.md into Urgent, Action, and FYI queues with concrete next steps for every item.",
                 "Prioritize support-tickets.csv so critical outages and overdue billing alerts float to the top.",
             ],
-            skills::TRIAGE_INBOX_SCRIPT,
+            skills::builtin_script("triage_inbox"),
         ),
         meta(
             "clean_dataset",
@@ -375,7 +375,7 @@ pub fn all_skills() -> Vec<SkillMetadata> {
                 "Clean raw-orders.csv: normalize headers, deduplicate on order_id, standardize N/A values, flag numeric outliers, and produce a diff report.",
                 "Normalize crm-export.json into a deduplicated snake_case CSV with a column-level null and outlier audit.",
             ],
-            skills::CLEAN_DATASET_SCRIPT,
+            skills::builtin_script("clean_dataset"),
         ),
         meta(
             "compare_documents",
@@ -394,7 +394,7 @@ pub fn all_skills() -> Vec<SkillMetadata> {
                 "Compare policy-v1.md against policy-v2.md and summarize every added, removed, or modified clause.",
                 "Diff contract-draft-1.txt and contract-draft-2.txt with line-numbered hunks.",
             ],
-            skills::COMPARE_DOCUMENTS_SCRIPT,
+            skills::builtin_script("compare_documents"),
         ),
         meta(
             "draft_brief",
@@ -414,7 +414,7 @@ pub fn all_skills() -> Vec<SkillMetadata> {
                 "Draft an executive brief on Q4 Spend Controls grounded in reconciliation.md and meeting-notes.md using my standing preferences.",
                 "Turn ops-notes.md and audit.md into a cited SOP brief for the operations team.",
             ],
-            skills::DRAFT_BRIEF_SCRIPT,
+            skills::builtin_script("draft_brief"),
         ),
         meta(
             "extract_tables",
@@ -432,7 +432,7 @@ pub fn all_skills() -> Vec<SkillMetadata> {
                 "Extract the structured key=value records from service.log into a clean CSV spreadsheet.",
                 "Pull all Markdown tables out of quarterly-review.md into separate CSV files.",
             ],
-            skills::EXTRACT_TABLES_SCRIPT,
+            skills::builtin_script("extract_tables"),
         ),
     ]
 }
