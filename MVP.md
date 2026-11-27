@@ -1,6 +1,6 @@
 # Ergon Minimum Viable Product (`MVP.md`)
 
-**Baseline & Rollup:** `cayleb-james2008/ergon` `v0.39.0` (`main` @ `03396eba8`), consolidated **2026-11-26** in [PR #11](https://github.com/cayleb-james2008/ergon/pull/11) across open PRs [#9](https://github.com/cayleb-james2008/ergon/pull/9)–[#22](https://github.com/cayleb-james2008/ergon/pull/22) (baseline timing audit [PR #9](https://github.com/cayleb-james2008/ergon/pull/9) & 19-surface uncut video inventory `evidence/video/INDEX.md` [PR #10](https://github.com/cayleb-james2008/ergon/pull/10); PRs #12–#18 & #20 synced to `v0.39.0`; PR #22 cut from `v0.39.0`; PRs #9–#11, #19 & #21 cleanly mergeable onto `v0.39.0`). Every implementation PR is individually cold-verified (`cargo test`, `cargo xwin check`, and uncut screen recordings where UI-facing) and remains open pending sequential merge into `main` plus one integrated post-merge smoke test.
+**Baseline & Rollup:** `cayleb-james2008/ergon` `v0.40.0` (`main` @ `48fea71e4`, released 2026-11-27). Rollup consolidated **2026-11-26** in [PR #11](https://github.com/cayleb-james2008/ergon/pull/11) against `v0.39.0` (`03396eba8`); merge status re-checked against `v0.40.0` on **2026-11-27** (see [Section 2a](#2a-pr-merge-status-checked-2026-11-27)). **None of PRs #9–#22 are merged into `main` yet.** Every implementation PR is individually cold-verified (`cargo test`, `cargo xwin check`, and uncut screen recordings where UI-facing). Row statuses below describe the code on each PR branch, not what ships on `main` today.
 
 ---
 
@@ -29,9 +29,34 @@ A **~25-person regional field-services and installation company**: **project man
 
 ---
 
+## 2a. PR Merge Status (Checked 2026-11-27)
+
+Checked against `main` @ `48fea71e4` (`v0.40.0`) using GitHub PR state plus `git merge-tree` against `origin/main`. All 14 PRs are **open and unmerged**. 6 merge cleanly; 8 conflict after `v0.40.0` landed. Five of the eight conflict only on committed build output (`assets/index.html`, `assets/chunks/*`), so rebasing and re-running `npm run build` in `frontend/` should clear them; #15, #17 and #19 also need hand-resolved source conflicts.
+
+| PR | Branch | Scope | Merged? | vs `main` (`v0.40.0`) | Conflicting files |
+|---|---|---|---|---|---|
+| [#9](https://github.com/cayleb-james2008/ergon/pull/9) | `evidence/timing-audit-2026-11-26` | Timing audit protocol & baseline (`n=0`) | No (open) | Clean | — |
+| [#10](https://github.com/cayleb-james2008/ergon/pull/10) | `evidence/video-proof-2026-11-26` | Uncut video inventory (19 surfaces) | No (open) | Clean | — |
+| [#11](https://github.com/cayleb-james2008/ergon/pull/11) | `docs/ergon-mvp-definition` | This `MVP.md` | No (open) | Clean | — |
+| [#12](https://github.com/cayleb-james2008/ergon/pull/12) | `feat/mvp-backup-restore` | Backup & verified restore (Row 8) | No (open) | **Conflicts** | `assets/index.html` + 18 built `assets/chunks/*` (rebuild frontend) |
+| [#13](https://github.com/cayleb-james2008/ergon/pull/13) | `feat/mvp-logging-crash-help` | Logging, crash capture & Help UI (Row 9) | No (open) | **Conflicts** | `assets/index.html` + 16 built `assets/chunks/*` (rebuild frontend) |
+| [#14](https://github.com/cayleb-james2008/ergon/pull/14) | `feat/mvp-auth-tls-rbac` | Auth, TLS & RBAC (Row 6) | No (open) | **Conflicts** | `assets/index.html` + 16 built `assets/chunks/*` (rebuild frontend) |
+| [#15](https://github.com/cayleb-james2008/ergon/pull/15) | `fix/mvp-video-bugs` | PDF export, PipelineBuilder, `HEAD /phone` (Rows 1, 3) | No (open) | **Conflicts** | `frontend/src/shell/PipelineBuilder.tsx` (source), `assets/index.html` + 26 built chunks |
+| [#16](https://github.com/cayleb-james2008/ergon/pull/16) | `fix/mvp-routines-scheduler-catchup` | Offline routines & Catch-Up fix (Row 3) | No (open) | Clean | — |
+| [#17](https://github.com/cayleb-james2008/ergon/pull/17) | `feat/mvp-llm-resilience` | Crash-resumable runs & SSE fix (Row 4) | No (open) | **Conflicts** | `src/lib.rs`, `frontend/src/state.ts` (source), `assets/index.html` |
+| [#18](https://github.com/cayleb-james2008/ergon/pull/18) | `feat/mvp-timing-kit-and-estimate-labels` | Timing kit & `est.` labels (Row 10) | No (open) | **Conflicts** | `assets/index.html` + 18 built `assets/chunks/*` (rebuild frontend) |
+| [#19](https://github.com/cayleb-james2008/ergon/pull/19) | `fix/mvp-connectors-secrets-race` | Secret vault & MCP race fix (Row 5) | No (open) | **Conflicts** | `src/connectors.rs`, `src/mcp.rs`, `src/tripwire.rs` (source) |
+| [#20](https://github.com/cayleb-james2008/ergon/pull/20) | `feat/mvp-installers-signing-updates` | Installers, signing & admin updates (Row 7) | No (open) | **Conflicts** | `assets/index.html` + 18 built `assets/chunks/*` (rebuild frontend) |
+| [#21](https://github.com/cayleb-james2008/ergon/pull/21) | `ci/pr-checks-workflow` | PR CI workflow | No (open) | Clean | — |
+| [#22](https://github.com/cayleb-james2008/ergon/pull/22) | `fix/mvp-deploy-hardening` | Deploy hardening (Rows 2, 4, 6, 7) | No (open) | Clean | — |
+
+Also open but outside the MVP set: [#7](https://github.com/cayleb-james2008/ergon/pull/7) (`ponytail/ergon-ci-cargo-test`) and [#8](https://github.com/cayleb-james2008/ergon/pull/8) (`ponytail/ergon-one-sha256-hex`), both unmerged and clean against `main`.
+
+---
+
 ## 3. Deployment Basics Audit (Post-PR State)
 
-> **Merge & Integration Note:** PRs [#9](https://github.com/cayleb-james2008/ergon/pull/9)–[#22](https://github.com/cayleb-james2008/ergon/pull/22) are all open and individually `MERGEABLE` against `origin/main` (`03396eba8`), but have **not yet been merged into `main`**. Sequential review/merge (reconciling shared edits in `src/server.rs`, `frontend/`, `assets/`, and keeping [PR #11](https://github.com/cayleb-james2008/ergon/pull/11)'s `MVP.md` as canonical) followed by one integrated multi-PR smoke test is required before first customer deployment.
+> **Merge & Integration Note (updated 2026-11-27):** PRs [#9](https://github.com/cayleb-james2008/ergon/pull/9)–[#22](https://github.com/cayleb-james2008/ergon/pull/22) are all open and **not yet merged into `main`**. Since `v0.40.0` landed, only 6 of 14 merge cleanly ([#9](https://github.com/cayleb-james2008/ergon/pull/9), [#10](https://github.com/cayleb-james2008/ergon/pull/10), [#11](https://github.com/cayleb-james2008/ergon/pull/11), [#16](https://github.com/cayleb-james2008/ergon/pull/16), [#21](https://github.com/cayleb-james2008/ergon/pull/21), [#22](https://github.com/cayleb-james2008/ergon/pull/22)); the other 8 conflict (see [Section 2a](#2a-pr-merge-status-checked-2026-11-27)). Sequential rebase/merge (reconciling shared edits in `src/server.rs`, `frontend/`, `assets/`, and keeping [PR #11](https://github.com/cayleb-james2008/ergon/pull/11)'s `MVP.md` as canonical) followed by one integrated multi-PR smoke test is required before first customer deployment.
 
 1. **Install & update path (`Done (code/tests) / Blocked: needs signing certs & native Win/macOS hosts`):** [PR #20](https://github.com/cayleb-james2008/ergon/pull/20) adds `ergon service`, WiX v4 MSI + Windows Service, macOS `.pkg`/`.dmg`, `.github/workflows/release.yml` Authenticode/Apple signing hooks + `docs/SIGNING.md`, and authenticated admin update management; [PR #22](https://github.com/cayleb-james2008/ergon/pull/22) hardens `install.sh` (`--locked`, `0600` `ergon.env`, `0700` `ergon-serve`, `loginctl` linger check) and fixes fresh-clone frontend builds + Windows `--all-targets`. Live signed releases & native Windows/macOS install checks await certificates and hosts.
 2. **Sign-in & permissions (`Done` in [PR #14](https://github.com/cayleb-james2008/ergon/pull/14), [PR #19](https://github.com/cayleb-james2008/ergon/pull/19), [PR #22](https://github.com/cayleb-james2008/ergon/pull/22)):** PBKDF2-HMAC-SHA256 (`120k`) per-person accounts, optional OIDC Discovery + PKCE `S256`, `HttpOnly` sessions backed by OS CSPRNG (`ring::rand::SystemRandom`, PR #22), `rustls` HTTPS/TLS covering `/phone`, centralized RBAC across all routes (incl. v0.39.0 routes + `GET /api/graph` & `GET /api/time-entries`), audited break-glass admin token, and AES-256-GCM + OS keychain secret encryption at rest (PR #19).
@@ -78,8 +103,29 @@ A **~25-person regional field-services and installation company**: **project man
 
 ## 6. Remaining Before First Customer Deploy (Top 5)
 
-1. **Merge PRs [#9](https://github.com/cayleb-james2008/ergon/pull/9)–[#22](https://github.com/cayleb-james2008/ergon/pull/22) into `main` and run an integrated multi-PR smoke test** (all `14/14` are `MERGEABLE` / `CLEAN`; reconcile shared edits in `src/server.rs`, `frontend/`, `assets/`, keeping [PR #11](https://github.com/cayleb-james2008/ergon/pull/11)'s `MVP.md` as canonical).
+1. **Rebase the 8 conflicting PRs onto `v0.40.0`, merge PRs [#9](https://github.com/cayleb-james2008/ergon/pull/9)–[#22](https://github.com/cayleb-james2008/ergon/pull/22) into `main`, and run an integrated multi-PR smoke test** (as of 2026-11-27: 6/14 clean, 8/14 conflicting, 0/14 merged; most conflicts are rebuilt `assets/` output, #15/#17/#19 need source fixes; keep [PR #11](https://github.com/cayleb-james2008/ergon/pull/11)'s `MVP.md` as canonical).
 2. **Execute live LLM E2E (`tests/live_llm_e2e.rs`)** once `ERGON_LIVE_LLM_API_KEY` is provisioned ([PR #17](https://github.com/cayleb-james2008/ergon/pull/17)).
 3. **Add Windows Authenticode & Apple Developer ID secrets to GitHub Actions and verify signed installers on native Windows/macOS hosts** ([PR #20](https://github.com/cayleb-james2008/ergon/pull/20)).
 4. **Verify live external Gmail/M365 SMTP/IMAP/OAuth2 connectors** with dedicated test accounts ([PR #19](https://github.com/cayleb-james2008/ergon/pull/19)).
 5. **Run real employee stopwatch trials (`n >= 3` manual + `n >= 3` Ergon across 4 roles) and calibrate ROI formulas** ([PR #9](https://github.com/cayleb-james2008/ergon/pull/9), [PR #18](https://github.com/cayleb-james2008/ergon/pull/18)).
+
+---
+
+## 7. Stale Branch Cleanup Candidates (Checked 2026-11-27)
+
+`main` was rebuilt on a fresh history (root commit 2026-11-25), so the branches below share no history with `main` (each is 67 behind). Every one of them is fully contained in the release tags (`v0.10.0` and later), so deleting the branch loses no commits. **Nothing has been deleted; each needs the owner's go-ahead.**
+
+| Branch | Last commit | Ahead of `main` | Why it's stale | Covered by tag |
+|---|---|---|---|---|
+| `loop/work` | 2026-11-18 | 32 (unrelated history) | Old agent loop ledger, no PR | `v0.10.0`+ |
+| `goal/20261118-ergon` | 2026-11-19 | 55 (unrelated history) | Head of merged [#1](https://github.com/cayleb-james2008/ergon/pull/1) | `v0.10.0`+ |
+| `ccr-63dd7152-ne5o7k` | 2026-11-24 | 118 (unrelated history) | Head of merged [#5](https://github.com/cayleb-james2008/ergon/pull/5) and [#6](https://github.com/cayleb-james2008/ergon/pull/6) | `v0.10.0`+ |
+| `quality/ergon-file-glyphs` | 2026-11-21 | 92 (unrelated history) | Head of merged [#3](https://github.com/cayleb-james2008/ergon/pull/3) | `v0.10.0`+ |
+| `release/0.2.0` | 2026-11-19 | 63 (unrelated history) | Head of merged [#2](https://github.com/cayleb-james2008/ergon/pull/2) | `v0.10.0`+ |
+| `release/0.3.0` | 2026-11-21 | 94 (unrelated history) | Head of merged [#4](https://github.com/cayleb-james2008/ergon/pull/4); tip tagged | `v0.3.0` |
+| `release/0.4.0` | 2026-11-22 | 97 (unrelated history) | Old release line; tip tagged | `v0.4.0` |
+| `release/0.5.0` | 2026-11-22 | 104 (unrelated history) | Old release line; tip tagged | `v0.5.0` |
+| `release/0.6.0` | 2026-11-22 | 105 (unrelated history) | Old release line; tip tagged | `v0.6.0` |
+| `release/0.7.0` | 2026-11-22 | 114 (unrelated history) | Old release line; tip tagged | `v0.7.0` |
+
+**Keep:** `team` (also unrelated history, but still receiving commits as of 2026-11-27), every open PR head listed in Section 2a plus `ponytail/*` for [#7](https://github.com/cayleb-james2008/ergon/pull/7)/[#8](https://github.com/cayleb-james2008/ergon/pull/8), and `main`.
