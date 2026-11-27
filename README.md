@@ -111,6 +111,42 @@ One Rust binary serves the React web UI (`/` and `/phone`), the raw-TCP HTTP and
       </picture>
     </td>
   </tr>
+  <tr>
+    <td width="50%">
+      Run concurrent chat and scheduled pipeline runs side by side in <code>LiveRunTimeline</code> with per-run Stop controls, pause and resume parallel DAG branch checkpoints individually (<code>pending_checkpoints[]</code>), configure step timeouts, retries, error jumps, and nested subpipelines, and schedule 5-field Cron jobs with explicit timezones.
+      <br /><br />
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/dag-scheduler-c4e3-dark.png" />
+        <img src="docs/screenshots/dag-scheduler-c4e3-light.png" alt="Ergon v0.39.0 concurrent multi-run timeline and parallel DAG branch checkpoint cards" width="100%" />
+      </picture>
+    </td>
+    <td width="50%">
+      Compose 5-field Cron schedules with timezone offsets, offline deterministic badges, per-step timeout, retry, backoff, and <code>on_error</code> policies, and nested subpipeline steps inside Routines and Pipeline Builder without horizontal overflow across desktop and mobile viewports.
+      <br /><br />
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/dag-scheduler-c4e3-390-dark.png" />
+        <img src="docs/screenshots/dag-scheduler-builder-c4e3-light.png" alt="Ergon v0.39.0 Pipeline Builder step resilience, subpipeline composer, and mobile responsive modal" width="100%" />
+      </picture>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%">
+      Hardened dialogs keep sticky headers and Close or Save controls pinned across desktop and <code>390x844</code> mobile viewports with zero horizontal overflow, while live SSE streams reconcile concurrent runs cleanly with inline retry recovery.
+      <br /><br />
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/hardening-c4h1-dark.png" />
+        <img src="docs/screenshots/hardening-c4h1-light.png" alt="Ergon v0.40.0 hardened Recurring routines modal with starter playbooks and sticky header" width="100%" />
+      </picture>
+    </td>
+    <td width="50%">
+      Mobile Connectors, Client CRM, and Pipeline Builder modals wrap long URLs, Cron expressions, and MCP stdio commands cleanly inside <code>390x844</code> Light and Dark sheets without horizontal scroll.
+      <br /><br />
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/hardening-c4h1-390-dark.png" />
+        <img src="docs/screenshots/hardening-c4h1-390-light.png" alt="Ergon v0.40.0 mobile 390x844 Connectors modal with sticky Close header and zero overflow" width="100%" />
+      </picture>
+    </td>
+  </tr>
 </table>
 
 ---
@@ -128,18 +164,18 @@ flowchart LR
 
 ---
 
-## Verified benchmarks (`v0.38.0` vs `v0.11.0`)
+## Verified benchmarks (`v0.40.0` vs `v0.11.0`)
 
 Measured against the stripped fat-LTO release binary on local loopback against a `5,000` receipts and `500` workspace files dataset:
 
-| Metric | `v0.11.0` baseline | `v0.38.0` measured | Change |
+| Metric | `v0.11.0` baseline | `v0.40.0` measured | Change |
 | --- | --- | --- | --- |
-| Release binary size | `16.0 MB` | `8.67 MiB` (`9,093,984 B`) | `-45.8%` |
-| Initial `/` shell payload | `1.15 MB` | `168.41 KiB` (`172,449 B`) raw / `38.56 KiB` (`39,487 B`) gzip (`17` `/chunks/*`) | `-96.7%` wire |
-| Cold boot to `200 OK` | `n/a` | `7.61 ms` | `7.6 ms` self-audit |
-| Peak RSS (`VmHWM`, `5k` receipts + `500` files, `5/5` SSE, `16w`) | `n/a` | `22.11 MB` (`22,644 KB`) | `22.11 MB` peak RSS |
-| Concurrent HTTP (`16w` mixed 5 routes + `5/5` SSE across `5k`/`500`) | `724 req/s` (`188.7 ms` p95) | `3,475.1 req/s` (`4.24 ms` p50, `9.70 ms` p95, `0/8,705` err) | `4.80x` under full concurrency |
-| Automated checks | `204` Rust tests | `291/291` Rust tests (`5/5` `connectors_protocols_mcp_v038`), `110/110` gate, `6/6` graph, `20/20` replay, `44/44` fuzz, `0/0/0` `sloplint` | Zero warnings / zero externals |
+| Release binary size | `16.0 MB` | `8.83 MiB` (`9,257,832 B`) | `-44.8%` |
+| Initial `/` shell payload | `1.15 MB` | `179.72 KiB` (`184,037 B`) raw / `41.31 KiB` (`42,306 B`) gzip (`17` `/chunks/*`) | `-96.5%` wire |
+| Cold boot to `200 OK` | `n/a` | `6.08 ms` | `6.1 ms` self-audit |
+| Peak RSS (`VmHWM`, `5k` receipts + `500` files, `5/5` SSE, `16w`) | `n/a` | `22.19 MB` (`22,724 KB`) | `22.19 MB` peak RSS |
+| Concurrent HTTP (`16w` mixed 5 routes + `5/5` SSE across `5k`/`500`) | `724 req/s` (`188.7 ms` p95) | `4,009.2 req/s` (`3.84 ms` p50, `8.62 ms` p95, `0/10,036` err) | `5.54x` under full concurrency |
+| Automated checks | `204` Rust tests | `303/303` Rust tests (`7/7` `hardening_c4h1`), `118/118` gate, `6/6` graph, `20/20` replay, `44/44` fuzz, `0/0/0` `sloplint` | Zero warnings / zero externals |
 
 ---
 
