@@ -118,6 +118,12 @@ impl RunEventBus {
         guard.next_seq.saturating_sub(1)
     }
 
+    pub fn wake_all(&self) {
+        let (lock, cvar) = &*self.inner;
+        let _guard = lock.lock().unwrap_or_else(|p| p.into_inner());
+        cvar.notify_all();
+    }
+
     pub fn wait_since(&self, after_seq: u64, timeout: Duration) -> Vec<RunEvent> {
         let (lock, cvar) = &*self.inner;
         let mut guard = lock.lock().unwrap();
@@ -172,7 +178,13 @@ pub fn stream_sse(
     }
 
     loop {
+        if crate::server::shutdown_requested() {
+            return Ok(());
+        }
         let batch = bus.wait_since(cursor, Duration::from_secs(10));
+        if crate::server::shutdown_requested() {
+            return Ok(());
+        }
         if batch.is_empty() {
             // Heartbeat detects dead peers promptly so idle threads exit cleanly.
             if stream.write_all(b": heartbeat\n\n").is_err() || stream.flush().is_err() {

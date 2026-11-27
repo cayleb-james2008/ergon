@@ -64,7 +64,7 @@ else
     exit 1
   fi
   echo "Building Ergon (release)…"
-  (cd "$ROOT" && "$CARGO" build --release)
+  (cd "$ROOT" && "$CARGO" build --release --locked)
   BIN_SRC="$ROOT/target/release/ergon"
 fi
 
@@ -73,23 +73,48 @@ install -m 0755 "$BIN_SRC" "$PREFIX/bin/ergon"
 echo "Installed: $PREFIX/bin/ergon"
 echo "Data dir:  $DATA_DIR (people, library, suites and work records live here)"
 
-# A launcher that carries the configuration in one obvious place.
+# Dedicated owner-only secrets/environment file (mode 0600) sourced by
+# ergon-serve and loaded by systemd via EnvironmentFile=-...
+ENV_FILE="$DATA_DIR/ergon.env"
+if [ ! -f "$ENV_FILE" ]; then
+  (
+    umask 077
+    cat > "$ENV_FILE" <<'EOF'
+# Ergon runtime environment & secrets (mode 0600 — owner-readable only).
+# Format: KEY=VALUE (compatible with both systemd EnvironmentFile and ergon-serve).
+# ERGON_MODEL_API_KEY=
+# ERGON_GATE_TOKEN=
+# ERGON_ALLOWED_HOSTS=
+# ERGON_SHUTDOWN_GRACE_SECS=10
+EOF
+  )
+fi
+chmod 0600 "$ENV_FILE"
+echo "Env file:  $ENV_FILE (mode 0600 — keep API keys and tokens here)"
+
+# A private launcher (mode 0700) that sources $DATA_DIR/ergon.env.
 # Values are embedded single-quoted (see shq) — never interpolated
 # raw into the script.
-{
-  printf '%s\n' '#!/usr/bin/env bash'
-  printf '%s\n' '# Ergon launcher — set the model key here (or in the service unit).'
-  printf '%s\n' '# The key is never stored by Ergon itself; it is read from the'
-  printf '%s\n' '# environment at start.'
-  printf 'export ERGON_DATA_DIR=%s\n' "$(shq "$DATA_DIR")"
-  printf '%s\n' 'export ERGON_PORT="${ERGON_PORT:-8787}"'
-  printf '%s\n' 'export ERGON_NO_OPEN="${ERGON_NO_OPEN:-1}"'
-  printf '%s\n' '# export ERGON_MODEL_API_KEY=""        # DeepSeek V4.1 Flash via OpenCode Go'
-  printf '%s\n' '# export ERGON_GATE_TOKEN=""           # optional hosting-layer gate token'
-  printf 'exec %s "$@"\n' "$(shq "$PREFIX/bin/ergon")"
-} > "$PREFIX/bin/ergon-serve"
-chmod 0755 "$PREFIX/bin/ergon-serve"
-echo "Launcher:  $PREFIX/bin/ergon-serve"
+(
+  umask 077
+  {
+    printf '%s\n' '#!/usr/bin/env bash'
+    printf '%s\n' '# Ergon launcher — secrets live in $ERGON_ENV_FILE (mode 0600), not here.'
+    printf 'ERGON_ENV_FILE=%s\n' "$(shq "$ENV_FILE")"
+    printf '%s\n' 'if [ -f "$ERGON_ENV_FILE" ]; then'
+    printf '%s\n' '  set -a'
+    printf '%s\n' '  # shellcheck disable=SC1090'
+    printf '%s\n' '  . "$ERGON_ENV_FILE"'
+    printf '%s\n' '  set +a'
+    printf '%s\n' 'fi'
+    printf 'export ERGON_DATA_DIR=%s\n' "$(shq "$DATA_DIR")"
+    printf '%s\n' 'export ERGON_PORT="${ERGON_PORT:-8787}"'
+    printf '%s\n' 'export ERGON_NO_OPEN="${ERGON_NO_OPEN:-1}"'
+    printf 'exec %s "$@"\n' "$(shq "$PREFIX/bin/ergon")"
+  } > "$PREFIX/bin/ergon-serve"
+)
+chmod 0700 "$PREFIX/bin/ergon-serve"
+echo "Launcher:  $PREFIX/bin/ergon-serve (mode 0700)"
 
 SERVICE_READY=0
 if [ "$SERVICE" = "1" ] && command -v systemctl >/dev/null 2>&1; then
@@ -101,10 +126,9 @@ Description=Ergon — an AI agent for every employee
 After=network.target
 
 [Service]
+EnvironmentFile=-$ENV_FILE
 ExecStart="$PREFIX/bin/ergon-serve"
 Restart=on-failure
-# Environment=ERGON_MODEL_API_KEY=
-# Environment=ERGON_GATE_TOKEN=
 
 [Install]
 WantedBy=default.target
@@ -120,13 +144,23 @@ EOF
     echo "           verified ready. From a logged-in session run: systemctl --user enable --now ergon"
     echo "           — or just start Ergon directly with ergon-serve."
   fi
+  if command -v loginctl >/dev/null 2>&1; then
+    CUR_USER="${USER:-$(id -un)}"
+    LINGER_LINE="$(loginctl show-user "$CUR_USER" -p Linger 2>/dev/null || true)"
+    LINGER_VAL="${LINGER_LINE#Linger=}"
+    if [ "$LINGER_VAL" != "yes" ]; then
+      echo "           NOTE: systemd user linger is not enabled for $CUR_USER (Linger=${LINGER_VAL:-unknown})."
+      echo "           On headless Linux servers, user services stop when you log out."
+      echo "           Enable linger once with: sudo loginctl enable-linger $CUR_USER"
+    fi
+  fi
 fi
 
 cat <<EOF
 
 Next steps:
-  1. Add the model key: edit ERGON_MODEL_API_KEY into $PREFIX/bin/ergon-serve
-     (or the service unit), from your OpenCode Go account. Without a key
+  1. Add the model key: edit ERGON_MODEL_API_KEY in $ENV_FILE
+     (mode 0600, owner-readable only), from your OpenCode Go account. Without a key
      Ergon runs but honestly refuses to invent answers.
   2. Start it:  ergon-serve   (or: systemctl --user enable --now ergon)
   3. Open http://127.0.0.1:8787 — desktop faces (Work Graph, Conversation,
