@@ -15,7 +15,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{mpsc, Condvar, Mutex, OnceLock};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 static MCP_SEQ: AtomicU64 = AtomicU64::new(0);
 static MCP_LOCK: Mutex<()> = Mutex::new(());
@@ -24,6 +24,9 @@ static SETTLED_MCP_OUTCOMES: OnceLock<Mutex<HashMap<String, String>>> = OnceLock
 
 const MAX_MCP_TOOLS_PER_SERVER: usize = 256;
 const MAX_MCP_RESPONSE_CHARS: usize = 16_000;
+const MAX_MCP_STDIO_ARGS: usize = 64;
+const MAX_MCP_STDIO_ARG_LEN: usize = 32_768;
+const MAX_MCP_STDIO_LINE_BYTES: usize = 1_048_576;
 const MCP_IO_TIMEOUT: Duration = Duration::from_secs(12);
 
 fn with_mcp_lock<T>(f: impl FnOnce() -> T) -> T {
@@ -365,6 +368,43 @@ impl McpStore {
     }
 }
 
+fn validate_env_var_name(name: &str) -> Result<(), String> {
+    if name.is_empty()
+        || name.len() > 64
+        || name.starts_with(|c: char| c.is_ascii_digit())
+        || !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+    {
+        return Err(format!("invalid environment variable name '{name}'"));
+    }
+    let upper = name.to_ascii_uppercase();
+    if upper.starts_with("ERGON_")
+        || matches!(
+            upper.as_str(),
+            "LD_PRELOAD"
+                | "LD_LIBRARY_PATH"
+                | "LD_AUDIT"
+                | "DYLD_INSERT_LIBRARIES"
+                | "DYLD_LIBRARY_PATH"
+                | "DYLD_FRAMEWORK_PATH"
+                | "BASH_ENV"
+                | "ENV"
+                | "IFS"
+                | "PROMPT_COMMAND"
+                | "NODE_OPTIONS"
+                | "PYTHONPATH"
+                | "PYTHONSTARTUP"
+                | "PERL5OPT"
+                | "RUBYOPT"
+                | "PATH"
+        )
+    {
+        return Err(format!(
+            "env_secret_keys cannot override protected variable '{name}'"
+        ));
+    }
+    Ok(())
+}
+
 fn parse_env_secret_keys(val: &Value) -> Result<Vec<String>, String> {
     let mut out = Vec::new();
     match val {
@@ -379,6 +419,8 @@ fn parse_env_secret_keys(val: &Value) -> Result<Vec<String>, String> {
                     if s.contains(['\r', '\n', '\0']) {
                         return Err("env_secret_keys contains invalid characters".to_string());
                     }
+                    let env_name = s.split_once('=').map(|(e, _)| e.trim()).unwrap_or(s);
+                    validate_env_var_name(env_name)?;
                     out.push(s.to_string());
                 }
             }
@@ -397,6 +439,7 @@ fn parse_env_secret_keys(val: &Value) -> Result<Vec<String>, String> {
                 {
                     return Err(format!("invalid env_secret_keys mapping for '{env_name}'"));
                 }
+                validate_env_var_name(env_name)?;
                 out.push(format!("{env_name}={sec_key}"));
             }
         }
@@ -441,10 +484,22 @@ fn validate_server_command_or_url(
     transport: &str,
     command_or_url: &str,
 ) -> Result<(), String> {
-    if command_or_url.is_empty() || command_or_url.contains(['\r', '\n', '\0']) {
-        return Err("command_or_url must be non-empty and cannot contain control characters".to_string());
+    if command_or_url.is_empty()
+        || command_or_url
+            .chars()
+            .any(|c| c.is_control() || c == '\0')
+    {
+        return Err(
+            "command_or_url must be non-empty and cannot contain control characters".to_string(),
+        );
     }
     if transport == "stdio" {
+        if command_or_url.starts_with('-') {
+            return Err("stdio MCP command cannot start with '-'".to_string());
+        }
+        if command_or_url.contains("{{secret:") {
+            return Err("stdio MCP command cannot contain secret placeholders".to_string());
+        }
         if tripwire::sensitive_target(command_or_url).is_some() {
             return Err("stdio MCP command cannot target a sensitive path".to_string());
         }
@@ -457,7 +512,7 @@ fn validate_server_command_or_url(
         if command_or_url.contains("{{secret:") {
             return Err("command_or_url cannot contain secret placeholders".to_string());
         }
-        tripwire::check_egress(command_or_url, "connector_config")?;
+        tripwire::check_egress_for(person_data_dir, command_or_url, "connector_config")?;
         let default_port = if lower.starts_with("https://") { 443 } else { 80 };
         let (host, port) = connectors::parse_url_host_port_pub(command_or_url, default_port);
         tripwire::check_egress_host_for(person_data_dir, &host, port, "connector_config")?;
@@ -465,6 +520,34 @@ fn validate_server_command_or_url(
     } else {
         Err("transport must be 'stdio' or 'http_sse'".to_string())
     }
+}
+
+fn validate_stdio_args(args: &[String]) -> Result<(), String> {
+    if args.len() > MAX_MCP_STDIO_ARGS {
+        return Err(format!("stdio MCP args exceed {MAX_MCP_STDIO_ARGS} item limit"));
+    }
+    for a in args {
+        if a.len() > MAX_MCP_STDIO_ARG_LEN {
+            return Err(format!(
+                "stdio MCP arg exceeds {MAX_MCP_STDIO_ARG_LEN} byte limit"
+            ));
+        }
+        if a.chars()
+            .any(|c| c == '\0' || c == '\r' || (c.is_control() && c != '\n' && c != '\t'))
+        {
+            return Err("stdio MCP args contain disallowed control characters".to_string());
+        }
+        if a.contains("{{secret:") {
+            return Err(
+                "stdio MCP args cannot contain secret placeholders (use env_secret_keys)"
+                    .to_string(),
+            );
+        }
+        if tripwire::sensitive_target(a).is_some() {
+            return Err("stdio MCP args cannot reference a sensitive path".to_string());
+        }
+    }
+    Ok(())
 }
 
 pub fn upsert_mcp_server(
@@ -502,19 +585,21 @@ pub fn upsert_mcp_server(
     validate_server_command_or_url(person_data_dir, &transport, &command_or_url)
         .map_err(|e| (400, e))?;
 
-    let args = body["args"]
-        .as_array()
-        .map(|a| {
-            a.iter()
-                .filter_map(|x| x.as_str().map(str::to_string))
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
-    for a in &args {
-        if a.contains('\0') {
-            return Err((400, "args cannot contain null bytes".to_string()));
+    let args = match body.get("args") {
+        None | Some(Value::Null) => Vec::new(),
+        Some(Value::Array(a)) => {
+            let mut out = Vec::with_capacity(a.len());
+            for x in a {
+                let s = x
+                    .as_str()
+                    .ok_or_else(|| (400, "args entries must be strings".to_string()))?;
+                out.push(s.to_string());
+            }
+            out
         }
-    }
+        Some(_) => return Err((400, "args must be an array of strings".to_string())),
+    };
+    validate_stdio_args(&args).map_err(|e| (400, e))?;
     let env_secret_keys = parse_env_secret_keys(&body["env_secret_keys"]).map_err(|e| (400, e))?;
     let auth_secret_key = body["auth_secret_key"]
         .as_str()
@@ -655,10 +740,10 @@ fn resolve_server_env(
 fn read_stdio_jsonrpc_response(
     rx: &mpsc::Receiver<String>,
     expected_id: u64,
+    deadline: Instant,
 ) -> Result<Value, String> {
-    let deadline = std::time::Instant::now() + MCP_IO_TIMEOUT;
     loop {
-        let rem = deadline.saturating_duration_since(std::time::Instant::now());
+        let rem = deadline.saturating_duration_since(Instant::now());
         if rem.is_zero() {
             return Err("stdio MCP server timed out waiting for JSON-RPC response".to_string());
         }
@@ -684,6 +769,8 @@ fn run_stdio_mcp_session(
     followup_method: &str,
     followup_params: Value,
 ) -> Result<Value, String> {
+    validate_server_command_or_url(&cfg.data_dir, &server.transport, &server.command_or_url)?;
+    validate_stdio_args(&server.args)?;
     let env_pairs = resolve_server_env(&cfg.data_dir, server)?;
     let mut cmd = Command::new(&server.command_or_url);
     cmd.args(&server.args)
@@ -697,6 +784,7 @@ fn run_stdio_mcp_session(
         .env_remove("ERGON_MCP_INBOUND_TOKEN")
         .env_remove("ERGON_SECRET_KEY");
     for (k, v) in env_pairs {
+        validate_env_var_name(&k)?;
         cmd.env(k, v);
     }
 
@@ -712,16 +800,57 @@ fn run_stdio_mcp_session(
         .take()
         .ok_or_else(|| "stdio MCP server missing stdout".to_string())?;
 
-    let (tx, rx) = mpsc::channel();
+    let (tx, rx) = mpsc::sync_channel::<String>(256);
     std::thread::spawn(move || {
-        let reader = BufReader::new(stdout);
-        for line in reader.lines().map_while(Result::ok) {
-            if tx.send(line).is_err() {
+        let mut reader = BufReader::new(stdout);
+        let mut buf = Vec::new();
+        loop {
+            buf.clear();
+            let mut total = 0usize;
+            let mut hit_eof = false;
+            loop {
+                let Ok(avail) = reader.fill_buf() else {
+                    hit_eof = true;
+                    break;
+                };
+                if avail.is_empty() {
+                    hit_eof = true;
+                    break;
+                }
+                if let Some(pos) = avail.iter().position(|&b| b == b'\n') {
+                    let take = pos + 1;
+                    if total + take <= MAX_MCP_STDIO_LINE_BYTES {
+                        buf.extend_from_slice(&avail[..take]);
+                    }
+                    reader.consume(take);
+                    break;
+                }
+                let take = avail.len();
+                if total + take <= MAX_MCP_STDIO_LINE_BYTES {
+                    buf.extend_from_slice(avail);
+                    total += take;
+                }
+                reader.consume(take);
+                if total >= MAX_MCP_STDIO_LINE_BYTES {
+                    break;
+                }
+            }
+            if buf.is_empty() && hit_eof {
+                break;
+            }
+            if !buf.is_empty() && buf.len() <= MAX_MCP_STDIO_LINE_BYTES {
+                let line = String::from_utf8_lossy(&buf).to_string();
+                if tx.send(line).is_err() {
+                    break;
+                }
+            }
+            if hit_eof {
                 break;
             }
         }
     });
 
+    let deadline = Instant::now() + MCP_IO_TIMEOUT;
     let session_res = (|| -> Result<Value, String> {
         let init_req = json!({
             "jsonrpc": "2.0",
@@ -738,7 +867,7 @@ fn run_stdio_mcp_session(
         });
         writeln!(stdin, "{init_req}").map_err(|e| format!("write MCP initialize: {e}"))?;
         stdin.flush().map_err(|e| format!("flush MCP initialize: {e}"))?;
-        let init_resp = read_stdio_jsonrpc_response(&rx, 1)?;
+        let init_resp = read_stdio_jsonrpc_response(&rx, 1, deadline)?;
         if let Some(err) = init_resp.get("error").filter(|v| !v.is_null()) {
             return Err(format!("MCP initialize error: {err}"));
         }
@@ -759,7 +888,7 @@ fn run_stdio_mcp_session(
         });
         writeln!(stdin, "{call_req}").map_err(|e| format!("write MCP {followup_method}: {e}"))?;
         stdin.flush().map_err(|e| format!("flush MCP {followup_method}: {e}"))?;
-        let call_resp = read_stdio_jsonrpc_response(&rx, 2)?;
+        let call_resp = read_stdio_jsonrpc_response(&rx, 2, deadline)?;
         if let Some(err) = call_resp.get("error").filter(|v| !v.is_null()) {
             return Err(format!("MCP {followup_method} error: {err}"));
         }
@@ -847,7 +976,7 @@ fn run_http_mcp_session(
     followup_method: &str,
     followup_params: Value,
 ) -> Result<Value, String> {
-    tripwire::check_egress(&server.command_or_url, "connector")?;
+    tripwire::check_egress_for(&cfg.data_dir, &server.command_or_url, "connector")?;
     let default_port = if server.command_or_url.to_ascii_lowercase().starts_with("https://") {
         443
     } else {
@@ -867,7 +996,18 @@ fn run_http_mcp_session(
         None
     };
 
-    let agent = tripwire::guarded_connector_agent_for(&cfg.data_dir, MCP_IO_TIMEOUT);
+    let deadline = Instant::now() + MCP_IO_TIMEOUT;
+    let remaining_agent = |dl: Instant| -> Result<ureq::Agent, String> {
+        let rem = dl.saturating_duration_since(Instant::now());
+        if rem.is_zero() {
+            return Err("HTTP MCP session timed out".to_string());
+        }
+        Ok(tripwire::guarded_connector_agent_for(
+            &cfg.data_dir,
+            rem.max(Duration::from_millis(50)),
+        ))
+    };
+
     let init_req = json!({
         "jsonrpc": "2.0",
         "id": 1,
@@ -881,8 +1021,9 @@ fn run_http_mcp_session(
             }
         }
     });
+    let agent1 = remaining_agent(deadline)?;
     let (init_resp, sid) = post_http_mcp_jsonrpc(
-        &agent,
+        &agent1,
         &server.command_or_url,
         None,
         bearer_token.as_deref(),
@@ -893,19 +1034,21 @@ fn run_http_mcp_session(
         return Err(format!("MCP initialize error: {err}"));
     }
 
-    let notif = json!({
-        "jsonrpc": "2.0",
-        "method": "notifications/initialized",
-        "params": {}
-    });
-    let _ = post_http_mcp_jsonrpc(
-        &agent,
-        &server.command_or_url,
-        sid.as_deref(),
-        bearer_token.as_deref(),
-        &notif,
-        None,
-    );
+    if let Ok(agent2) = remaining_agent(deadline) {
+        let notif = json!({
+            "jsonrpc": "2.0",
+            "method": "notifications/initialized",
+            "params": {}
+        });
+        let _ = post_http_mcp_jsonrpc(
+            &agent2,
+            &server.command_or_url,
+            sid.as_deref(),
+            bearer_token.as_deref(),
+            &notif,
+            None,
+        );
+    }
 
     let call_req = json!({
         "jsonrpc": "2.0",
@@ -913,8 +1056,9 @@ fn run_http_mcp_session(
         "method": followup_method,
         "params": followup_params,
     });
+    let agent3 = remaining_agent(deadline)?;
     let (call_resp, _) = post_http_mcp_jsonrpc(
-        &agent,
+        &agent3,
         &server.command_or_url,
         sid.as_deref(),
         bearer_token.as_deref(),
@@ -1088,6 +1232,13 @@ fn execute_mcp_tool_call(
         );
     }
     let clean_args = clean_mcp_args(args);
+    let redact_err = |e: String| -> String {
+        let mut safe = connectors::redact_for_person(&cfg.data_dir, &e);
+        if policy.redact_host_paths {
+            safe = crate::redact_host_paths(&safe);
+        }
+        crate::truncate(&safe, MAX_MCP_RESPONSE_CHARS)
+    };
     let raw_res = run_mcp_session(
         cfg,
         server,
@@ -1096,8 +1247,9 @@ fn execute_mcp_tool_call(
             "name": tool_name,
             "arguments": clean_args,
         }),
-    )?;
-    let formatted = format_mcp_call_result(&raw_res)?;
+    )
+    .map_err(redact_err)?;
+    let formatted = format_mcp_call_result(&raw_res).map_err(redact_err)?;
     let mut redacted = connectors::redact_for_person(&cfg.data_dir, &formatted);
     if policy.redact_host_paths {
         redacted = crate::redact_host_paths(&redacted);
@@ -1141,7 +1293,7 @@ pub fn invoke_mcp_tool(
         if policy.block_outbound_fetch || policy.profile == "air_gapped" {
             return Err("blocked by Air-Gapped workspace policy: HTTP MCP calls are disabled".to_string());
         }
-        tripwire::check_egress(&server.command_or_url, "connector")?;
+        tripwire::check_egress_for(&cfg.data_dir, &server.command_or_url, "connector")?;
         let default_port = if server.command_or_url.to_ascii_lowercase().starts_with("https://") {
             443
         } else {

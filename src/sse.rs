@@ -66,6 +66,9 @@ impl RunEventBus {
         let mut guard = lock.lock().unwrap();
         let seq = guard.next_seq;
         guard.next_seq += 1;
+        if !data.is_object() {
+            data = json!({ "payload": data });
+        }
         if let Some(obj) = data.as_object_mut() {
             obj.entry("seq".to_string()).or_insert_with(|| json!(seq));
             obj.entry("event".to_string()).or_insert_with(|| json!(event));
@@ -113,6 +116,12 @@ impl RunEventBus {
         let (lock, _) = &*self.inner;
         let guard = lock.lock().unwrap();
         guard.next_seq.saturating_sub(1)
+    }
+
+    pub fn wake_all(&self) {
+        let (lock, cvar) = &*self.inner;
+        let _guard = lock.lock().unwrap_or_else(|p| p.into_inner());
+        cvar.notify_all();
     }
 
     pub fn wait_since(&self, after_seq: u64, timeout: Duration) -> Vec<RunEvent> {
@@ -169,7 +178,13 @@ pub fn stream_sse(
     }
 
     loop {
+        if crate::server::shutdown_requested() {
+            return Ok(());
+        }
         let batch = bus.wait_since(cursor, Duration::from_secs(10));
+        if crate::server::shutdown_requested() {
+            return Ok(());
+        }
         if batch.is_empty() {
             // Heartbeat detects dead peers promptly so idle threads exit cleanly.
             if stream.write_all(b": heartbeat\n\n").is_err() || stream.flush().is_err() {

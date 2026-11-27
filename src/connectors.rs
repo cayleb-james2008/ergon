@@ -18,7 +18,14 @@ use std::net::TcpStream;
 use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex, OnceLock};
-use std::time::{Duration, UNIX_EPOCH};
+use std::time::{Duration, Instant, UNIX_EPOCH};
+
+const MAX_SMTP_LINE_BYTES: usize = 16 * 1024;
+const MAX_SMTP_CONT_LINES: usize = 128;
+const SMTP_SESSION_TIMEOUT: Duration = Duration::from_secs(20);
+const MAX_IMAP_LINE_BYTES: usize = 64 * 1024;
+const MAX_IMAP_UNTAGGED_LINES: usize = 512;
+const IMAP_SESSION_TIMEOUT: Duration = Duration::from_secs(25);
 
 pub const MAX_WEBHOOK_BYTES: usize = 1_048_576;
 pub const MAX_FOLDER_WATCH_BYTES: u64 = 25 * 1024 * 1024;
@@ -1376,14 +1383,44 @@ pub fn parse_url_host_port_pub(raw_url: &str, default_port: u16) -> (String, u16
     parse_url_host_port(raw_url, default_port)
 }
 
+/// Scrub inline `user:pass@` authority credentials from a URL before logging
+/// or returning it in error payloads.
+pub fn redact_url_userinfo(raw_url: &str) -> String {
+    let Some((scheme, rest)) = raw_url.split_once("://") else {
+        return raw_url.to_string();
+    };
+    let auth_end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
+    let authority = &rest[..auth_end];
+    if let Some((_, host_part)) = authority.rsplit_once('@') {
+        format!("{scheme}://***@{host_part}{}", &rest[auth_end..])
+    } else {
+        raw_url.to_string()
+    }
+}
+
 /// Redact any known connector secret values (including partial and JSON-escaped
-/// echoes) from `text`.
-pub fn redact_with_store(text: &str, secrets: &ConnectorSecretsStore) -> String {
+/// echoes) from `text`, plus any extra transient tokens (e.g. AUTH blobs).
+pub fn redact_with_store_extra(
+    text: &str,
+    secrets: &ConnectorSecretsStore,
+    extras: &[String],
+) -> String {
     let mut out = tripwire::redact(text);
     for val in secrets.all_values() {
         tripwire::redact_secret_value(&mut out, &val, false);
     }
+    for extra in extras {
+        if extra.trim().len() >= 4 {
+            tripwire::redact_secret_value(&mut out, extra, false);
+        }
+    }
     out
+}
+
+/// Redact any known connector secret values (including partial and JSON-escaped
+/// echoes) from `text`.
+pub fn redact_with_store(text: &str, secrets: &ConnectorSecretsStore) -> String {
+    redact_with_store_extra(text, secrets, &[])
 }
 
 pub fn redact_for_person(person_data_dir: &Path, text: &str) -> String {
@@ -2085,7 +2122,7 @@ pub fn upsert_outbound_connector(
         if parsed_oauth.token_url.contains("{{secret:") {
             return Err((400, "oauth_config.token_url cannot contain secret placeholders".to_string()));
         }
-        tripwire::check_egress(&parsed_oauth.token_url, "connector_config")
+        tripwire::check_egress_for(person_data_dir, &parsed_oauth.token_url, "connector_config")
             .map_err(|e| (400, e))?;
         let (thost, tport) = parse_url_host_port(&parsed_oauth.token_url, 443);
         tripwire::check_egress_host_for(person_data_dir, &thost, tport, "connector_config")
@@ -2121,7 +2158,7 @@ pub fn upsert_outbound_connector(
                 .to_string(),
         ));
     }
-    tripwire::check_egress(&url, "connector_config").map_err(|e| (400, e))?;
+    tripwire::check_egress_for(person_data_dir, &url, "connector_config").map_err(|e| (400, e))?;
     let default_port = if url.to_ascii_lowercase().starts_with("https://") {
         443
     } else if url.to_ascii_lowercase().starts_with("smtps://") {
@@ -2928,7 +2965,7 @@ pub fn ensure_fresh_oauth_token(
         ));
     }
 
-    tripwire::check_egress(&oauth.token_url, "connector")?;
+    tripwire::check_egress_for(person_data_dir, &oauth.token_url, "connector")?;
     let (thost, tport) = parse_url_host_port(&oauth.token_url, 443);
     tripwire::check_egress_host_for(person_data_dir, &thost, tport, "connector")?;
 
@@ -2946,6 +2983,18 @@ pub fn ensure_fresh_oauth_token(
     }
     let form_body = form_parts.join("&");
 
+    let mut oauth_extras = vec![refresh_token.clone()];
+    if let Some(ref cs) = client_secret {
+        oauth_extras.push(cs.clone());
+    }
+    if let Some(ref ex) = existing_token {
+        oauth_extras.push(ex.clone());
+    }
+    let redact_oauth_err = |msg: String| -> String {
+        let store_snap = with_connectors_lock(|| ConnectorSecretsStore::load_unlocked(person_data_dir));
+        redact_with_store_extra(&msg, &store_snap, &oauth_extras)
+    };
+
     let agent = tripwire::guarded_connector_agent_for(person_data_dir, Duration::from_secs(15));
     let resp = agent
         .post(&oauth.token_url)
@@ -2957,18 +3006,18 @@ pub fn ensure_fresh_oauth_token(
                 let mut buf = Vec::new();
                 let _ = r.into_reader().take(1024).read_to_end(&mut buf);
                 let msg = String::from_utf8_lossy(&buf);
-                format!("OAuth2 token refresh failed with HTTP {code}: {msg}")
+                redact_oauth_err(format!("OAuth2 token refresh failed with HTTP {code}: {msg}"))
             }
-            other => tripwire::explain_fetch_error(&oauth.token_url, &other),
+            other => redact_oauth_err(tripwire::explain_fetch_error(&oauth.token_url, &other)),
         })?;
 
     let mut raw = Vec::new();
     resp.into_reader()
         .take(65_536)
         .read_to_end(&mut raw)
-        .map_err(|e| format!("read OAuth2 token response: {e}"))?;
+        .map_err(|e| redact_oauth_err(format!("read OAuth2 token response: {e}")))?;
     let parsed: Value = serde_json::from_slice(&raw)
-        .map_err(|e| format!("parse OAuth2 token JSON: {e}"))?;
+        .map_err(|e| redact_oauth_err(format!("parse OAuth2 token JSON: {e}")))?;
     let access_token = parsed["access_token"]
         .as_str()
         .map(str::trim)
@@ -2986,6 +3035,11 @@ pub fn ensure_fresh_oauth_token(
         .map(str::trim)
         .filter(|s| !s.is_empty() && !s.contains('\r') && !s.contains('\n'))
         .map(str::to_string);
+
+    let mut reg_secrets = vec![access_token.clone()];
+    if let Some(ref rt) = rotated_refresh {
+        reg_secrets.push(rt.clone());
+    }
 
     with_connectors_lock(|| {
         let mut secrets = ConnectorSecretsStore::load_result_unlocked(person_data_dir)?;
@@ -3019,7 +3073,7 @@ pub fn ensure_fresh_oauth_token(
         Ok::<(), String>(())
     })?;
 
-    tripwire::register_redaction_secrets(std::slice::from_ref(&access_token));
+    tripwire::register_redaction_secrets(&reg_secrets);
     Ok(Some(access_token))
 }
 
@@ -3036,7 +3090,7 @@ fn execute_http_delivery(
     let now_ms = records::now_millis();
     let del_id = format!("del-{now_ms}-{}", next_seq());
     let mut secrets = with_connectors_lock(|| ConnectorSecretsStore::load_result_unlocked(&cfg.data_dir))?;
-    let safe_url = redact_with_store(&connector.url, &secrets);
+    let safe_url = redact_with_store(&redact_url_userinfo(&connector.url), &secrets);
 
     if policy.block_outbound_fetch || policy.profile == "air_gapped" {
         let err_msg = "blocked by Air-Gapped workspace policy: outbound connector delivery is disabled for this workspace".to_string();
@@ -3062,7 +3116,7 @@ fn execute_http_delivery(
     }
 
     let (uhost, uport) = parse_url_host_port(&connector.url, 443);
-    if let Err(e) = tripwire::check_egress(&connector.url, "connector")
+    if let Err(e) = tripwire::check_egress_for(&cfg.data_dir, &connector.url, "connector")
         .and_then(|_| tripwire::check_egress_host_for(&cfg.data_dir, &uhost, uport, "connector"))
         .and_then(|_| {
             let p_str = String::from_utf8_lossy(&payload_bytes);
@@ -3265,6 +3319,25 @@ enum ProtoStream {
 }
 
 impl ProtoStream {
+    fn tcp_ref(&self) -> &TcpStream {
+        match self {
+            Self::Plain(s) => s,
+            Self::Tls(s) => s.get_ref(),
+        }
+    }
+
+    fn apply_deadline(&self, deadline: Instant, proto: &str) -> Result<(), String> {
+        let rem = deadline.saturating_duration_since(Instant::now());
+        if rem.is_zero() {
+            return Err(format!("{proto} session timed out"));
+        }
+        let bounded = rem.max(Duration::from_millis(1));
+        let tcp = self.tcp_ref();
+        let _ = tcp.set_read_timeout(Some(bounded));
+        let _ = tcp.set_write_timeout(Some(bounded));
+        Ok(())
+    }
+
     fn connect(data_dir: &Path, host: &str, port: u16, use_tls: bool) -> Result<Self, String> {
         let addrs = tripwire::guard_resolve_connector_for(data_dir, host, port)
             .map_err(|e| format!("resolve {host}:{port}: {e}"))?;
@@ -3342,17 +3415,52 @@ impl Write for ProtoStream {
     }
 }
 
-fn read_smtp_response(reader: &mut BufReader<ProtoStream>) -> Result<(u16, String), String> {
+fn read_line_bounded(
+    reader: &mut BufReader<ProtoStream>,
+    max_bytes: usize,
+    deadline: Instant,
+    proto: &str,
+) -> Result<Vec<u8>, String> {
+    reader.get_ref().apply_deadline(deadline, proto)?;
+    let mut out = Vec::new();
+    loop {
+        let avail = reader
+            .fill_buf()
+            .map_err(|e| format!("{proto} read error: {e}"))?;
+        if avail.is_empty() {
+            if out.is_empty() {
+                return Err(format!("{proto} server closed connection unexpectedly"));
+            }
+            return Ok(out);
+        }
+        if let Some(pos) = avail.iter().position(|&b| b == b'\n') {
+            let take = pos + 1;
+            if out.len() + take > max_bytes {
+                return Err(format!("{proto} response line exceeds {max_bytes} byte limit"));
+            }
+            out.extend_from_slice(&avail[..take]);
+            reader.consume(take);
+            return Ok(out);
+        }
+        if out.len() + avail.len() > max_bytes {
+            return Err(format!("{proto} response line exceeds {max_bytes} byte limit"));
+        }
+        out.extend_from_slice(avail);
+        let len = avail.len();
+        reader.consume(len);
+        reader.get_ref().apply_deadline(deadline, proto)?;
+    }
+}
+
+fn read_smtp_response(
+    reader: &mut BufReader<ProtoStream>,
+    deadline: Instant,
+) -> Result<(u16, String), String> {
     let mut full = String::new();
     let mut final_code = 0u16;
-    loop {
-        let mut line = String::new();
-        let n = reader
-            .read_line(&mut line)
-            .map_err(|e| format!("SMTP read error: {e}"))?;
-        if n == 0 {
-            return Err("SMTP server closed connection unexpectedly".to_string());
-        }
+    for _ in 0..MAX_SMTP_CONT_LINES {
+        let raw = read_line_bounded(reader, MAX_SMTP_LINE_BYTES, deadline, "SMTP")?;
+        let line = String::from_utf8_lossy(&raw);
         let trimmed = line.trim_end_matches(['\r', '\n']);
         if trimmed.len() >= 3 {
             if let Ok(code) = trimmed[..3].parse::<u16>() {
@@ -3362,27 +3470,29 @@ fn read_smtp_response(reader: &mut BufReader<ProtoStream>) -> Result<(u16, Strin
                 if trimmed.as_bytes().get(3) == Some(&b'-') {
                     continue;
                 }
-                break;
+                return Ok((final_code, full));
             }
         }
         full.push_str(trimmed);
         full.push('\n');
-        break;
+        return Ok((final_code, full));
     }
-    Ok((final_code, full))
+    Err("SMTP response exceeded maximum continuation lines".to_string())
 }
 
 fn smtp_cmd(
     reader: &mut BufReader<ProtoStream>,
     cmd: &str,
     expected_codes: &[u16],
+    deadline: Instant,
 ) -> Result<(u16, String), String> {
+    reader.get_ref().apply_deadline(deadline, "SMTP")?;
     reader
         .get_mut()
         .write_all(cmd.as_bytes())
         .and_then(|_| reader.get_mut().flush())
         .map_err(|e| format!("SMTP write error: {e}"))?;
-    let (code, resp) = read_smtp_response(reader)?;
+    let (code, resp) = read_smtp_response(reader, deadline)?;
     if !expected_codes.contains(&code) {
         return Err(format!("SMTP unexpected status {code}: {}", resp.trim()));
     }
@@ -3581,7 +3691,7 @@ pub fn execute_smtp_delivery(
     let seq = next_seq();
     let del_id = format!("del-{now_ms}-{seq}");
     let mut secrets = with_connectors_lock(|| ConnectorSecretsStore::load_result_unlocked(&cfg.data_dir))?;
-    let safe_url = redact_with_store(&connector.url, &secrets);
+    let safe_url = redact_with_store(&redact_url_userinfo(&connector.url), &secrets);
 
     let Some(smtp) = &connector.smtp_config else {
         return Err("smtp_relay connector is missing smtp_config".to_string());
@@ -3729,20 +3839,43 @@ pub fn execute_smtp_delivery(
         Err(e) => return Err(record_fail("error", e, &secrets)),
     };
 
+    let mut smtp_extras: Vec<String> = Vec::new();
+    if !username.is_empty() {
+        smtp_extras.push(username.clone());
+    }
+    if !password.is_empty() {
+        smtp_extras.push(password.clone());
+    }
+    if !username.is_empty() || !password.is_empty() {
+        let mut raw_plain = Vec::with_capacity(username.len() + password.len() + 2);
+        raw_plain.push(0);
+        raw_plain.extend_from_slice(username.as_bytes());
+        raw_plain.push(0);
+        raw_plain.extend_from_slice(password.as_bytes());
+        smtp_extras.push(tripwire::base64_encode(&raw_plain));
+        smtp_extras.push(tripwire::base64_encode(
+            format!("user={username}\x01auth=Bearer {password}\x01\x01").as_bytes(),
+        ));
+        smtp_extras.push(tripwire::base64_encode(password.as_bytes()));
+    }
+
     let run_smtp = || -> Result<String, String> {
+        let deadline = Instant::now() + SMTP_SESSION_TIMEOUT;
         let initial_tls = smtp.security == "smtps";
         let stream = ProtoStream::connect(&cfg.data_dir, &smtp.host, smtp.port, initial_tls)?;
+        stream.apply_deadline(deadline, "SMTP")?;
         let mut reader = BufReader::new(stream);
-        let (greet_code, _) = read_smtp_response(&mut reader)?;
+        let (greet_code, _) = read_smtp_response(&mut reader, deadline)?;
         if greet_code != 220 {
             return Err(format!("SMTP server rejected greeting ({greet_code})"));
         }
-        let (_, mut ehlo_caps) = smtp_cmd(&mut reader, "EHLO ergon.local\r\n", &[250])?;
+        let (_, mut ehlo_caps) = smtp_cmd(&mut reader, "EHLO ergon.local\r\n", &[250], deadline)?;
         if smtp.security == "starttls" {
-            smtp_cmd(&mut reader, "STARTTLS\r\n", &[220])?;
+            smtp_cmd(&mut reader, "STARTTLS\r\n", &[220], deadline)?;
             let inner = reader.into_inner().upgrade_starttls(&smtp.host)?;
+            inner.apply_deadline(deadline, "SMTP")?;
             reader = BufReader::new(inner);
-            let (_, caps_after) = smtp_cmd(&mut reader, "EHLO ergon.local\r\n", &[250])?;
+            let (_, caps_after) = smtp_cmd(&mut reader, "EHLO ergon.local\r\n", &[250], deadline)?;
             ehlo_caps = caps_after;
         }
         if !username.is_empty() || !password.is_empty() {
@@ -3750,13 +3883,13 @@ pub fn execute_smtp_delivery(
             if smtp.password_secret_key == "oauth_access_token" && caps_upper.contains("XOAUTH2") {
                 let auth_str = format!("user={username}\x01auth=Bearer {password}\x01\x01");
                 let b64 = tripwire::base64_encode(auth_str.as_bytes());
-                smtp_cmd(&mut reader, &format!("AUTH XOAUTH2 {b64}\r\n"), &[235])?;
+                smtp_cmd(&mut reader, &format!("AUTH XOAUTH2 {b64}\r\n"), &[235], deadline)?;
             } else if caps_upper.contains("LOGIN") && !caps_upper.contains("PLAIN") {
-                smtp_cmd(&mut reader, "AUTH LOGIN\r\n", &[334])?;
+                smtp_cmd(&mut reader, "AUTH LOGIN\r\n", &[334], deadline)?;
                 let u64 = tripwire::base64_encode(username.as_bytes());
-                smtp_cmd(&mut reader, &format!("{u64}\r\n"), &[334])?;
+                smtp_cmd(&mut reader, &format!("{u64}\r\n"), &[334], deadline)?;
                 let p64 = tripwire::base64_encode(password.as_bytes());
-                smtp_cmd(&mut reader, &format!("{p64}\r\n"), &[235])?;
+                smtp_cmd(&mut reader, &format!("{p64}\r\n"), &[235], deadline)?;
             } else {
                 let mut raw_auth = Vec::with_capacity(username.len() + password.len() + 2);
                 raw_auth.push(0);
@@ -3764,21 +3897,22 @@ pub fn execute_smtp_delivery(
                 raw_auth.push(0);
                 raw_auth.extend_from_slice(password.as_bytes());
                 let b64 = tripwire::base64_encode(&raw_auth);
-                smtp_cmd(&mut reader, &format!("AUTH PLAIN {b64}\r\n"), &[235])?;
+                smtp_cmd(&mut reader, &format!("AUTH PLAIN {b64}\r\n"), &[235], deadline)?;
             }
         }
-        smtp_cmd(&mut reader, &format!("MAIL FROM:<{from_addr}>\r\n"), &[250])?;
+        smtp_cmd(&mut reader, &format!("MAIL FROM:<{from_addr}>\r\n"), &[250], deadline)?;
         for rcpt in &to_addrs {
-            smtp_cmd(&mut reader, &format!("RCPT TO:<{rcpt}>\r\n"), &[250, 251])?;
+            smtp_cmd(&mut reader, &format!("RCPT TO:<{rcpt}>\r\n"), &[250, 251], deadline)?;
         }
-        smtp_cmd(&mut reader, "DATA\r\n", &[354])?;
+        smtp_cmd(&mut reader, "DATA\r\n", &[354], deadline)?;
         let stuffed = dot_stuff_smtp_data(&mime_bytes);
+        reader.get_ref().apply_deadline(deadline, "SMTP")?;
         reader
             .get_mut()
             .write_all(&stuffed)
             .and_then(|_| reader.get_mut().flush())
             .map_err(|e| format!("SMTP write DATA error: {e}"))?;
-        let (data_code, data_resp) = read_smtp_response(&mut reader)?;
+        let (data_code, data_resp) = read_smtp_response(&mut reader, deadline)?;
         if data_code != 250 {
             return Err(format!("SMTP DATA rejected ({data_code}): {}", data_resp.trim()));
         }
@@ -3790,7 +3924,7 @@ pub fn execute_smtp_delivery(
     match run_smtp() {
         Ok(resp_text) => {
             let preview = crate::truncate(
-                &redact_with_store(&resp_text, &secrets),
+                &redact_with_store_extra(&resp_text, &secrets, &smtp_extras),
                 MAX_RESPONSE_PREVIEW,
             );
             let log = DeliveryLog {
@@ -3813,7 +3947,10 @@ pub fn execute_smtp_delivery(
             record_delivery_log(&cfg.data_dir, &connector.id, log.clone());
             Ok(log)
         }
-        Err(e) => Err(record_fail("error", e, &secrets)),
+        Err(e) => {
+            let safe_err = redact_with_store_extra(&e, &secrets, &smtp_extras);
+            Err(record_fail("error", safe_err, &secrets))
+        }
     }
 }
 
@@ -3842,15 +3979,11 @@ fn imap_quote(s: &str) -> Result<String, String> {
     Ok(format!("\"{escaped}\""))
 }
 
-fn read_line_bytes(reader: &mut BufReader<ProtoStream>) -> Result<Vec<u8>, String> {
-    let mut line = Vec::new();
-    let n = reader
-        .read_until(b'\n', &mut line)
-        .map_err(|e| format!("IMAP read error: {e}"))?;
-    if n == 0 {
-        return Err("IMAP server closed connection unexpectedly".to_string());
-    }
-    Ok(line)
+fn read_line_bytes(
+    reader: &mut BufReader<ProtoStream>,
+    deadline: Instant,
+) -> Result<Vec<u8>, String> {
+    read_line_bounded(reader, MAX_IMAP_LINE_BYTES, deadline, "IMAP")
 }
 
 fn parse_imap_literal_len(line: &[u8]) -> Option<usize> {
@@ -3866,11 +3999,12 @@ fn parse_imap_literal_len(line: &[u8]) -> Option<usize> {
 fn read_imap_tagged(
     reader: &mut BufReader<ProtoStream>,
     tag: &str,
+    deadline: Instant,
 ) -> Result<(Vec<String>, Vec<Vec<u8>>), String> {
     let mut lines = Vec::new();
     let mut literals = Vec::new();
-    loop {
-        let line = read_line_bytes(reader)?;
+    for _ in 0..MAX_IMAP_UNTAGGED_LINES {
+        let line = read_line_bytes(reader, deadline)?;
         let lit_len = parse_imap_literal_len(&line);
         let text = String::from_utf8_lossy(&line)
             .trim_end_matches(['\r', '\n'])
@@ -3879,13 +4013,14 @@ fn read_imap_tagged(
             if len > MAX_IMAP_MESSAGE_BYTES {
                 return Err(format!("IMAP literal exceeds {MAX_IMAP_MESSAGE_BYTES} byte limit"));
             }
+            reader.get_ref().apply_deadline(deadline, "IMAP")?;
             let mut buf = vec![0u8; len];
             reader
                 .read_exact(&mut buf)
                 .map_err(|e| format!("IMAP literal read error: {e}"))?;
             literals.push(buf);
             // Consume trailing response line after literal if present
-            let trailing = read_line_bytes(reader)?;
+            let trailing = read_line_bytes(reader, deadline)?;
             let tr_text = String::from_utf8_lossy(&trailing)
                 .trim_end_matches(['\r', '\n'])
                 .to_string();
@@ -3915,6 +4050,7 @@ fn read_imap_tagged(
         }
         lines.push(text);
     }
+    Err(format!("IMAP {tag} exceeded {MAX_IMAP_UNTAGGED_LINES} response lines"))
 }
 
 fn unfold_rfc5322_headers(header_block: &str) -> Vec<(String, String)> {
@@ -4153,197 +4289,220 @@ fn poll_one_imap_trigger(cfg: &Config, trg: &TriggerRule) -> Result<Vec<ImapInge
     let secrets = with_connectors_lock(|| ConnectorSecretsStore::load_result_unlocked(&cfg.data_dir))?;
     let username = resolve_smtp_secret(&imap.username_secret_key, &secrets)?;
     let password = resolve_smtp_secret(&imap.password_secret_key, &secrets)?;
-
-    let initial_tls = imap.security == "imaps";
-    let stream = ProtoStream::connect(&cfg.data_dir, &imap.host, imap.port, initial_tls)?;
-    let mut reader = BufReader::new(stream);
-
-    // Untagged greeting (* OK ...)
-    let greeting = String::from_utf8_lossy(&read_line_bytes(&mut reader)?).to_string();
-    if !greeting.trim_start().starts_with('*') {
-        return Err(format!("unexpected IMAP greeting: {}", greeting.trim()));
+    let mut imap_extras: Vec<String> = Vec::new();
+    if !username.is_empty() {
+        imap_extras.push(username.clone());
+    }
+    if !password.is_empty() {
+        imap_extras.push(password.clone());
     }
 
-    if imap.security == "starttls" {
+    let run_imap = || -> Result<Vec<ImapIngestEvent>, String> {
+        let deadline = Instant::now() + IMAP_SESSION_TIMEOUT;
+        let initial_tls = imap.security == "imaps";
+        let stream = ProtoStream::connect(&cfg.data_dir, &imap.host, imap.port, initial_tls)?;
+        stream.apply_deadline(deadline, "IMAP")?;
+        let mut reader = BufReader::new(stream);
+
+        // Untagged greeting (* OK ...)
+        let greeting =
+            String::from_utf8_lossy(&read_line_bytes(&mut reader, deadline)?).to_string();
+        if !greeting.trim_start().starts_with('*') {
+            return Err(format!("unexpected IMAP greeting: {}", greeting.trim()));
+        }
+
+        if imap.security == "starttls" {
+            reader.get_ref().apply_deadline(deadline, "IMAP")?;
+            reader
+                .get_mut()
+                .write_all(b"A001 STARTTLS\r\n")
+                .and_then(|_| reader.get_mut().flush())
+                .map_err(|e| format!("IMAP STARTTLS write: {e}"))?;
+            let _ = read_imap_tagged(&mut reader, "A001", deadline)?;
+            let inner = reader.into_inner().upgrade_starttls(&imap.host)?;
+            inner.apply_deadline(deadline, "IMAP")?;
+            reader = BufReader::new(inner);
+        }
+
+        let login_cmd = format!(
+            "A002 LOGIN {} {}\r\n",
+            imap_quote(&username)?,
+            imap_quote(&password)?
+        );
+        reader.get_ref().apply_deadline(deadline, "IMAP")?;
         reader
             .get_mut()
-            .write_all(b"A001 STARTTLS\r\n")
+            .write_all(login_cmd.as_bytes())
             .and_then(|_| reader.get_mut().flush())
-            .map_err(|e| format!("IMAP STARTTLS write: {e}"))?;
-        let _ = read_imap_tagged(&mut reader, "A001")?;
-        let inner = reader.into_inner().upgrade_starttls(&imap.host)?;
-        reader = BufReader::new(inner);
-    }
+            .map_err(|e| format!("IMAP LOGIN write: {e}"))?;
+        let _ = read_imap_tagged(&mut reader, "A002", deadline)?;
 
-    let login_cmd = format!(
-        "A002 LOGIN {} {}\r\n",
-        imap_quote(&username)?,
-        imap_quote(&password)?
-    );
-    reader
-        .get_mut()
-        .write_all(login_cmd.as_bytes())
-        .and_then(|_| reader.get_mut().flush())
-        .map_err(|e| format!("IMAP LOGIN write: {e}"))?;
-    let _ = read_imap_tagged(&mut reader, "A002")?;
+        let select_cmd = format!("A003 SELECT {}\r\n", imap_quote(&imap.folder)?);
+        reader.get_ref().apply_deadline(deadline, "IMAP")?;
+        reader
+            .get_mut()
+            .write_all(select_cmd.as_bytes())
+            .and_then(|_| reader.get_mut().flush())
+            .map_err(|e| format!("IMAP SELECT write: {e}"))?;
+        let _ = read_imap_tagged(&mut reader, "A003", deadline)?;
 
-    let select_cmd = format!("A003 SELECT {}\r\n", imap_quote(&imap.folder)?);
-    reader
-        .get_mut()
-        .write_all(select_cmd.as_bytes())
-        .and_then(|_| reader.get_mut().flush())
-        .map_err(|e| format!("IMAP SELECT write: {e}"))?;
-    let _ = read_imap_tagged(&mut reader, "A003")?;
-
-    reader
-        .get_mut()
-        .write_all(b"A004 UID SEARCH UNSEEN\r\n")
-        .and_then(|_| reader.get_mut().flush())
-        .map_err(|e| format!("IMAP SEARCH write: {e}"))?;
-    let (search_lines, _) = read_imap_tagged(&mut reader, "A004")?;
-    let mut uids: Vec<String> = Vec::new();
-    for line in search_lines {
-        if let Some(rest) = line.strip_prefix("* SEARCH") {
-            for tok in rest.split_whitespace() {
-                if tok.bytes().all(|b| b.is_ascii_digit()) {
-                    uids.push(tok.to_string());
+        reader.get_ref().apply_deadline(deadline, "IMAP")?;
+        reader
+            .get_mut()
+            .write_all(b"A004 UID SEARCH UNSEEN\r\n")
+            .and_then(|_| reader.get_mut().flush())
+            .map_err(|e| format!("IMAP SEARCH write: {e}"))?;
+        let (search_lines, _) = read_imap_tagged(&mut reader, "A004", deadline)?;
+        let mut uids: Vec<String> = Vec::new();
+        for line in search_lines {
+            if let Some(rest) = line.strip_prefix("* SEARCH") {
+                for tok in rest.split_whitespace() {
+                    if tok.bytes().all(|b| b.is_ascii_digit()) {
+                        uids.push(tok.to_string());
+                    }
                 }
             }
         }
-    }
 
-    let mut events = Vec::new();
-    let mut seq_num = 5u32;
-    for uid in uids.into_iter().take(MAX_IMAP_MESSAGES_PER_POLL) {
-        let tag = format!("A{seq_num:03}");
-        seq_num += 1;
-        let fetch_cmd = format!("{tag} UID FETCH {uid} BODY.PEEK[]\r\n");
-        reader
-            .get_mut()
-            .write_all(fetch_cmd.as_bytes())
-            .and_then(|_| reader.get_mut().flush())
-            .map_err(|e| format!("IMAP FETCH write: {e}"))?;
-        let (_, literals) = read_imap_tagged(&mut reader, &tag)?;
-        let Some(raw_msg) = literals.into_iter().next() else {
-            continue;
-        };
-        let raw_sha = tripwire::sha256_hex(&raw_msg);
-        let parsed = parse_rfc5322_email(&raw_msg);
+        let mut events = Vec::new();
+        let mut seq_num = 5u32;
+        for uid in uids.into_iter().take(MAX_IMAP_MESSAGES_PER_POLL) {
+            let tag = format!("A{seq_num:03}");
+            seq_num += 1;
+            let fetch_cmd = format!("{tag} UID FETCH {uid} BODY.PEEK[]\r\n");
+            reader.get_ref().apply_deadline(deadline, "IMAP")?;
+            reader
+                .get_mut()
+                .write_all(fetch_cmd.as_bytes())
+                .and_then(|_| reader.get_mut().flush())
+                .map_err(|e| format!("IMAP FETCH write: {e}"))?;
+            let (_, literals) = read_imap_tagged(&mut reader, &tag, deadline)?;
+            let Some(raw_msg) = literals.into_iter().next() else {
+                continue;
+            };
+            let raw_sha = tripwire::sha256_hex(&raw_msg);
+            let parsed = parse_rfc5322_email(&raw_msg);
 
-        if let Some(filter) = imap.subject_filter.as_deref() {
-            if !parsed
-                .subject
-                .to_ascii_lowercase()
-                .contains(&filter.to_ascii_lowercase())
-            {
+            if let Some(filter) = imap.subject_filter.as_deref() {
+                if !parsed
+                    .subject
+                    .to_ascii_lowercase()
+                    .contains(&filter.to_ascii_lowercase())
+                {
+                    continue;
+                }
+            }
+
+            let already_ingested = with_connectors_lock(|| {
+                ConnectorsStore::load_unlocked(&cfg.data_dir)
+                    .intake_manifest
+                    .iter()
+                    .any(|m| m.sha256 == raw_sha)
+            });
+            if already_ingested {
                 continue;
             }
-        }
 
-        let already_ingested = with_connectors_lock(|| {
-            ConnectorsStore::load_unlocked(&cfg.data_dir)
-                .intake_manifest
-                .iter()
-                .any(|m| m.sha256 == raw_sha)
-        });
-        if already_ingested {
-            continue;
-        }
+            let now_ms = records::now_millis();
+            let slug: String = parsed
+                .subject
+                .chars()
+                .map(|c| {
+                    if c.is_ascii_alphanumeric() || matches!(c, '-' | '_') {
+                        c
+                    } else {
+                        '_'
+                    }
+                })
+                .take(48)
+                .collect();
+            let slug = slug.trim_matches('_');
+            let md_filename = if slug.is_empty() {
+                format!("imap-{now_ms}-uid{uid}.md")
+            } else {
+                format!("imap-{now_ms}-{slug}.md")
+            };
+            let md_content = format!(
+                "# {}\n\nFrom: {}\nDate: {}\nMessage-ID: {}\nFolder: {}\n\n---\n\n{}\n",
+                parsed.subject.trim(),
+                parsed.from.trim(),
+                parsed.date.trim(),
+                parsed.message_id.trim(),
+                imap.folder,
+                parsed.body_text.trim()
+            );
 
-        let now_ms = records::now_millis();
-        let slug: String = parsed
-            .subject
-            .chars()
-            .map(|c| {
-                if c.is_ascii_alphanumeric() || matches!(c, '-' | '_') {
-                    c
-                } else {
-                    '_'
+            let (trigger_file, _) =
+                write_intake_file_unique(&cfg.workspace_dir, &md_filename, md_content.as_bytes())?;
+            let mut written_attachments = Vec::new();
+            let mut att_manifest = Vec::new();
+            for (att_name, att_bytes) in &parsed.attachments {
+                if let Ok((att_rel, att_sha)) =
+                    write_intake_file_unique(&cfg.workspace_dir, att_name, att_bytes)
+                {
+                    written_attachments.push(att_rel.clone());
+                    att_manifest.push(IntakeManifestEntry {
+                        sha256: att_sha,
+                        filename: att_rel,
+                        source_path: format!(
+                            "imap://{}/{}/uid/{uid}/{}",
+                            imap.host, imap.folder, att_name
+                        ),
+                        trigger_id: trg.id.clone(),
+                        ingested_ms: now_ms,
+                    });
                 }
-            })
-            .take(48)
-            .collect();
-        let slug = slug.trim_matches('_');
-        let md_filename = if slug.is_empty() {
-            format!("imap-{now_ms}-uid{uid}.md")
-        } else {
-            format!("imap-{now_ms}-{slug}.md")
-        };
-        let md_content = format!(
-            "# {}\n\nFrom: {}\nDate: {}\nMessage-ID: {}\nFolder: {}\n\n---\n\n{}\n",
-            parsed.subject.trim(),
-            parsed.from.trim(),
-            parsed.date.trim(),
-            parsed.message_id.trim(),
-            imap.folder,
-            parsed.body_text.trim()
-        );
+            }
 
-        let (trigger_file, _) =
-            write_intake_file_unique(&cfg.workspace_dir, &md_filename, md_content.as_bytes())?;
-        let mut written_attachments = Vec::new();
-        let mut att_manifest = Vec::new();
-        for (att_name, att_bytes) in &parsed.attachments {
-            if let Ok((att_rel, att_sha)) =
-                write_intake_file_unique(&cfg.workspace_dir, att_name, att_bytes)
-            {
-                written_attachments.push(att_rel.clone());
-                att_manifest.push(IntakeManifestEntry {
-                    sha256: att_sha,
-                    filename: att_rel,
-                    source_path: format!("imap://{}/{}/uid/{uid}/{}", imap.host, imap.folder, att_name),
+            with_connectors_lock(|| {
+                let mut store = ConnectorsStore::load_unlocked(&cfg.data_dir);
+                store.push_manifest(IntakeManifestEntry {
+                    sha256: raw_sha.clone(),
+                    filename: trigger_file.clone(),
+                    source_path: format!("imap://{}/{}/uid/{uid}", imap.host, imap.folder),
                     trigger_id: trg.id.clone(),
                     ingested_ms: now_ms,
                 });
-            }
-        }
+                for entry in att_manifest {
+                    store.push_manifest(entry);
+                }
+                if let Some(t) = store.triggers.iter_mut().find(|t| t.id == trg.id) {
+                    t.trigger_count = t.trigger_count.saturating_add(1);
+                    t.last_triggered_ms = Some(now_ms);
+                    t.updated_ms = now_ms;
+                }
+                store.save_unlocked(&cfg.data_dir)
+            })?;
 
-        with_connectors_lock(|| {
-            let mut store = ConnectorsStore::load_unlocked(&cfg.data_dir);
-            store.push_manifest(IntakeManifestEntry {
-                sha256: raw_sha.clone(),
-                filename: trigger_file.clone(),
-                source_path: format!("imap://{}/{}/uid/{uid}", imap.host, imap.folder),
+            if imap.mark_seen {
+                let stag = format!("A{seq_num:03}");
+                seq_num += 1;
+                let store_cmd = format!("{stag} UID STORE {uid} +FLAGS.SILENT (\\Seen)\r\n");
+                let _ = reader
+                    .get_mut()
+                    .write_all(store_cmd.as_bytes())
+                    .and_then(|_| reader.get_mut().flush());
+                let _ = read_imap_tagged(&mut reader, &stag, deadline);
+            }
+
+            events.push(ImapIngestEvent {
                 trigger_id: trg.id.clone(),
-                ingested_ms: now_ms,
+                trigger_name: trg.name.clone(),
+                routine_id: trg.routine_id.clone(),
+                target_kind: trg.target_kind.clone(),
+                trigger_file,
+                attachments: written_attachments,
+                subject: parsed.subject,
+                from: parsed.from,
             });
-            for entry in att_manifest {
-                store.push_manifest(entry);
-            }
-            if let Some(t) = store.triggers.iter_mut().find(|t| t.id == trg.id) {
-                t.trigger_count = t.trigger_count.saturating_add(1);
-                t.last_triggered_ms = Some(now_ms);
-                t.updated_ms = now_ms;
-            }
-            store.save_unlocked(&cfg.data_dir)
-        })?;
-
-        if imap.mark_seen {
-            let stag = format!("A{seq_num:03}");
-            seq_num += 1;
-            let store_cmd = format!("{stag} UID STORE {uid} +FLAGS.SILENT (\\Seen)\r\n");
-            let _ = reader
-                .get_mut()
-                .write_all(store_cmd.as_bytes())
-                .and_then(|_| reader.get_mut().flush());
-            let _ = read_imap_tagged(&mut reader, &stag);
         }
 
-        events.push(ImapIngestEvent {
-            trigger_id: trg.id.clone(),
-            trigger_name: trg.name.clone(),
-            routine_id: trg.routine_id.clone(),
-            target_kind: trg.target_kind.clone(),
-            trigger_file,
-            attachments: written_attachments,
-            subject: parsed.subject,
-            from: parsed.from,
-        });
-    }
+        let _ = reader.get_mut().write_all(b"A999 LOGOUT\r\n");
+        let _ = reader.get_mut().flush();
+        Ok(events)
+    };
 
-    let _ = reader.get_mut().write_all(b"A999 LOGOUT\r\n");
-    let _ = reader.get_mut().flush();
-    Ok(events)
+    run_imap().map_err(|e| redact_with_store_extra(&e, &secrets, &imap_extras))
 }
 
 /// Poll all enabled `imap_poll` triggers whose `poll_interval_secs` has elapsed.
@@ -4474,7 +4633,7 @@ pub fn invoke_connector(
 
     // Validate target URL/host and payload before parking or delivering.
     let payload_text = String::from_utf8_lossy(&payload_bytes);
-    tripwire::check_egress(&connector.url, "connector")
+    tripwire::check_egress_for(&cfg.data_dir, &connector.url, "connector")
         .and_then(|_| {
             if let Some(smtp) = &connector.smtp_config {
                 tripwire::check_egress_host_for(&cfg.data_dir, &smtp.host, smtp.port, "connector")

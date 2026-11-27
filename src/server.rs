@@ -4,8 +4,8 @@ use crate::tools::{atomic_write_bytes, string_list};
 use crate::*;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpListener;
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
-use std::sync::{Arc, Condvar, Mutex, RwLock};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use std::sync::{Arc, Condvar, Mutex, Once, RwLock};
 
 // ---------------------------------------------------------------------------
 // HTTP server (hand-rolled, std TcpListener)
@@ -90,30 +90,100 @@ pub struct AppState {
 }
 
 static SESSION_COUNTER: AtomicU64 = AtomicU64::new(0);
+static SHUTDOWN_REQUESTED: AtomicBool = AtomicBool::new(false);
+static SIGNAL_HANDLERS_INSTALLED: Once = Once::new();
+
+/// Default bounded drain window after `SIGTERM`/`SIGINT` before exiting.
+const DEFAULT_SHUTDOWN_GRACE_SECS: u64 = 10;
+const MAX_SHUTDOWN_GRACE_SECS: u64 = 300;
+
+/// Returns `true` once a graceful shutdown signal (`SIGTERM`/`SIGINT` on Unix,
+/// console control event on Windows) or explicit shutdown request has arrived.
+pub fn shutdown_requested() -> bool {
+    SHUTDOWN_REQUESTED.load(Ordering::Acquire)
+}
+
+/// Request a graceful shutdown drain programmatically (useful in supervisors or tests).
+pub fn request_shutdown() {
+    SHUTDOWN_REQUESTED.store(true, Ordering::SeqCst);
+}
+
+fn parse_shutdown_grace_secs(raw: Option<&str>) -> u64 {
+    raw.and_then(|s| s.trim().parse::<u64>().ok())
+        .map(|s| s.min(MAX_SHUTDOWN_GRACE_SECS))
+        .unwrap_or(DEFAULT_SHUTDOWN_GRACE_SECS)
+}
+
+/// Configured graceful shutdown drain window (`ERGON_SHUTDOWN_GRACE_SECS`, default 10s, max 300s).
+pub fn shutdown_grace_secs() -> u64 {
+    let raw = std::env::var("ERGON_SHUTDOWN_GRACE_SECS").ok();
+    parse_shutdown_grace_secs(raw.as_deref())
+}
+
+/// Install OS signal handlers (`SIGTERM`/`SIGINT` on Unix, `SetConsoleCtrlHandler` on Windows)
+/// so the server stops accepting new connections, drains in-flight requests/runs, and exits 0.
+pub fn install_shutdown_handlers() {
+    SIGNAL_HANDLERS_INSTALLED.call_once(|| {
+        #[cfg(unix)]
+        install_unix_signal_handlers();
+        #[cfg(windows)]
+        install_windows_signal_handlers();
+    });
+}
+
+#[cfg(unix)]
+fn install_unix_signal_handlers() {
+    extern "C" fn on_signal(_sig: libc::c_int) {
+        SHUTDOWN_REQUESTED.store(true, Ordering::SeqCst);
+    }
+    // SAFETY: `on_signal` only performs an async-signal-safe atomic store.
+    // `sigaction` struct is zero-initialized and populated with a valid signal mask.
+    unsafe {
+        let mut sa: libc::sigaction = std::mem::zeroed();
+        sa.sa_sigaction = on_signal as *const () as usize;
+        libc::sigemptyset(&mut sa.sa_mask);
+        sa.sa_flags = 0;
+        let _ = libc::sigaction(libc::SIGTERM, &sa, std::ptr::null_mut());
+        let _ = libc::sigaction(libc::SIGINT, &sa, std::ptr::null_mut());
+    }
+}
+
+#[cfg(windows)]
+fn install_windows_signal_handlers() {
+    type HandlerRoutine = unsafe extern "system" fn(u32) -> i32;
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn SetConsoleCtrlHandler(handler: Option<HandlerRoutine>, add: i32) -> i32;
+    }
+    unsafe extern "system" fn on_ctrl(ctrl_type: u32) -> i32 {
+        // CTRL_C_EVENT=0, CTRL_BREAK_EVENT=1, CTRL_CLOSE_EVENT=2,
+        // CTRL_LOGOFF_EVENT=5, CTRL_SHUTDOWN_EVENT=6
+        match ctrl_type {
+            0 | 1 | 2 | 5 | 6 => {
+                SHUTDOWN_REQUESTED.store(true, Ordering::SeqCst);
+                1
+            }
+            _ => 0,
+        }
+    }
+    // SAFETY: `on_ctrl` is a static `extern "system"` callback that only flips an AtomicBool.
+    unsafe {
+        let _ = SetConsoleCtrlHandler(Some(on_ctrl), 1);
+    }
+}
 
 /// Session ids are the only credential a browser presents, so they
-/// must be unguessable: random bytes from the OS, not a timestamp and
-/// a counter (an early version's ids were predictable to within a few
-/// guesses of a victim's visit time).
+/// must be unguessable: 128 bits from the OS CSPRNG (`ring::rand::SystemRandom`)
+/// on both Unix and Windows, with zero predictable timestamp fallback.
 fn new_session_id() -> String {
+    use ring::rand::{SecureRandom, SystemRandom};
     let n = SESSION_COUNTER.fetch_add(1, Ordering::SeqCst);
     let mut bytes = [0u8; 16];
-    let filled = std::fs::File::open("/dev/urandom")
-        .and_then(|mut f| std::io::Read::read_exact(&mut f, &mut bytes))
-        .is_ok();
-    if filled {
-        let hex: String = bytes.iter().map(|b| format!("{b:02x}")).collect();
-        format!("s{hex}-{n}")
-    } else {
-        // No OS randomness available: fall back to a wide mix of
-        // time, pid and counter — still far harder to bracket than a
-        // bare millisecond timestamp.
-        let nanos = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_nanos())
-            .unwrap_or(0);
-        format!("s{:x}-{:x}-{n}", nanos, std::process::id())
-    }
+    SystemRandom::new()
+        .fill(&mut bytes)
+        .expect("OS CSPRNG unavailable for session id generation");
+    let hex: String = bytes.iter().map(|b| format!("{b:02x}")).collect();
+    format!("s{hex}-{n}")
 }
 
 /// Whether this session id is one the server actually issued. A
@@ -173,6 +243,7 @@ pub fn serve(listener: TcpListener, cfg: Config) -> std::io::Result<()> {
 /// What the `ergon` binary runs: `serve` plus the periodic check for a newer
 /// GitHub release (see `update`). Tests use `serve`, which never calls out.
 pub fn serve_with_updates(listener: TcpListener, cfg: Config) -> std::io::Result<()> {
+    install_shutdown_handlers();
     serve_env(listener, cfg, true)
 }
 
@@ -405,6 +476,54 @@ fn substitute_trigger_input(text: &str, trigger_file: Option<&str>) -> String {
     }
 }
 
+fn build_routine_deliverable_pack(
+    state: &AppState,
+    person: &Person,
+    runtime: &Arc<PersonRuntime>,
+    name: &str,
+    thread_id: &str,
+) {
+    let idx = person_idx(state, person, runtime);
+    let (_, items) = idx.list_files(0, Some(15), "");
+    let pack_files: Vec<String> = items
+        .iter()
+        .filter_map(|item| item["path"].as_str().map(|s| s.to_string()))
+        .filter(|p| p != "Playbook Deliverable Pack.md")
+        .collect();
+    if let Ok((md, pack_sha, _, _)) = build_workspace_pack(
+        &runtime.cfg.workspace_dir,
+        &person.name,
+        &format!("{name} — Deliverable Pack"),
+        &pack_files,
+        false,
+    ) {
+        if let Ok(full) = sandbox_path(&runtime.cfg.workspace_dir, "Playbook Deliverable Pack.md") {
+            if !full
+                .symlink_metadata()
+                .is_ok_and(|m| m.file_type().is_symlink())
+            {
+                let _ = file_history::record_revision(
+                    &runtime.cfg.data_dir,
+                    &runtime.cfg.workspace_dir,
+                    "Playbook Deliverable Pack.md",
+                    "playbook",
+                );
+                if atomic_write_bytes(&full, md.as_bytes()).is_ok() {
+                    state.search_cache.invalidate(&person.id);
+                    runtime.store.lock().unwrap().push(
+                        thread_id,
+                        "step",
+                        &format!(
+                            "wrote Playbook Deliverable Pack.md ({} bytes, sha256:{pack_sha})",
+                            md.len()
+                        ),
+                    );
+                }
+            }
+        }
+    }
+}
+
 fn execute_routine_run_with_inputs(
     state: &AppState,
     person: &Person,
@@ -452,6 +571,36 @@ fn execute_routine_run_with_inputs(
         }
     }
     let _slot_guard = RunSlotGuard(&state.running_routines, lock_key);
+    // Re-read after acquiring the per-routine slot so rapid scheduler ticks cannot
+    // execute the same cadence window twice.
+    let routine = routines::get_routine(&runtime.cfg.data_dir, id)?;
+    if trigger == "scheduled" && !scheduler::is_routine_due(&routine, records::now_millis()) {
+        return None;
+    }
+
+    if pipelines::has_running_pipeline_for_routine(&runtime.cfg.data_dir, id) {
+        let now_ms = records::now_millis();
+        let rec = scheduler::new_run_record(
+            id,
+            routine["name"].as_str().unwrap_or("Routine"),
+            now_ms,
+            now_ms,
+            "error",
+            None,
+            None,
+            "Routine is already running.",
+            trigger,
+            Some("routine is already running".to_string()),
+        );
+        return Some(RoutineExecResult {
+            http_status: 409,
+            routine,
+            thread_id: String::new(),
+            thread: Value::Null,
+            run_record: rec,
+            error: Some("routine is already running".to_string()),
+        });
+    }
 
     let name = routine["name"].as_str().unwrap_or("Routine").to_string();
     let raw_prompt = routine["prompt"].as_str().unwrap_or("").to_string();
@@ -489,56 +638,173 @@ fn execute_routine_run_with_inputs(
         root_data_dir: state.cfg.data_dir.clone(),
         person_id: person.id.clone(),
     };
-    let thread_id = {
-        let mut store = runtime.store.lock().unwrap();
-        let tid = store.create_thread();
-        store.push(&tid, "user", &format!("{name} — {prompt}"));
-        tid
-    };
 
     if let Some(v2_raw) = routine
         .get("steps_v2")
         .filter(|v| v.as_array().is_some_and(|a| !a.is_empty()))
     {
         if let Ok(steps_v2) = pipelines::parse_steps_v2(v2_raw) {
-            let deterministic_only = steps_v2
-                .iter()
-                .all(|s| matches!(s.kind.as_str(), "skill" | "export"));
-            if deterministic_only {
-                let mut pipe_inputs = HashMap::new();
-                if let Some(tf) = trigger_file {
-                    pipe_inputs.insert("trigger_file".to_string(), tf.to_string());
-                }
-                let outcome = pipelines::execute_deterministic_steps_sync(
-                    &cfg,
-                    Some(id),
-                    &name,
-                    &steps_v2,
-                    pipe_inputs,
-                );
-                state.search_cache.invalidate(&person.id);
+            let needs_llm = pipelines::steps_require_llm(&runtime.cfg.data_dir, &steps_v2);
+            if needs_llm && !cfg.model_configured() {
+                let thread_id = {
+                    let mut store = runtime.store.lock().unwrap();
+                    let tid = store.create_thread();
+                    store.push(&tid, "user", &format!("{name} — {prompt}"));
+                    store.push(&tid, "error", NO_KEY_ERROR);
+                    tid
+                };
                 let finished_ms = records::now_millis();
-                match outcome {
-                    Ok(prun) => {
+                let updated =
+                    routines::record_run(&runtime.cfg.data_dir, id, &thread_id, "no_model")
+                        .unwrap_or(routine);
+                let rec = scheduler::new_run_record(
+                    id,
+                    &name,
+                    started_ms,
+                    finished_ms,
+                    "error",
+                    None,
+                    Some(thread_id.clone()),
+                    NO_KEY_ERROR,
+                    trigger,
+                    Some(NO_KEY_ERROR.to_string()),
+                );
+                let _ = scheduler::record_run_history(&runtime.cfg.data_dir, rec.clone());
+                let hist = scheduler::list_run_history(&runtime.cfg.data_dir, Some(id), 20);
+                let idx = person_idx(state, person, runtime);
+                let mut enriched = scheduler::enrich_routine_with_verification(
+                    &updated,
+                    finished_ms,
+                    &hist,
+                    &idx.chain,
+                    idx.chain_valid,
+                );
+                if let Some(obj) = enriched.as_object_mut() {
+                    obj.insert(
+                        "offline_deterministic".to_string(),
+                        json!(!pipelines::routine_value_requires_llm(
+                            &runtime.cfg.data_dir,
+                            &updated
+                        )),
+                    );
+                }
+                return Some(RoutineExecResult {
+                    http_status: 503,
+                    routine: enriched,
+                    thread_id: thread_id.clone(),
+                    thread: json!({"id": thread_id}),
+                    run_record: rec,
+                    error: Some(NO_KEY_ERROR.to_string()),
+                });
+            }
+
+            let sync_exec = matches!(trigger, "manual" | "catchup");
+            let async_exec = !sync_exec;
+            let mut pipe_inputs = serde_json::Map::new();
+            if let Some(tf) = trigger_file {
+                pipe_inputs.insert("trigger_file".to_string(), json!(tf));
+            }
+            let mut pipe_body = json!({
+                "routine_id": id,
+                "inputs": Value::Object(pipe_inputs),
+            });
+            if async_exec {
+                pipe_body["trigger"] = json!(trigger);
+            }
+            let env = pipelines::PipelineExecEnv {
+                cfg: cfg.clone(),
+                ctx: ctx.clone(),
+                store: runtime.store.clone(),
+                live_runs: state.live_runs.clone(),
+                events: state.events.clone(),
+                search_cache: state.search_cache.clone(),
+            };
+            let outcome = pipelines::create_and_start_pipeline(env, &pipe_body, async_exec);
+            state.search_cache.invalidate(&person.id);
+            let finished_ms = records::now_millis();
+            match outcome {
+                Ok(prun) if async_exec => {
+                    let rec = scheduler::new_run_record(
+                        id,
+                        &name,
+                        started_ms,
+                        finished_ms,
+                        "running",
+                        None,
+                        Some(prun.thread_id.clone()),
+                        &format!("Started async pipeline {}", prun.run_id),
+                        trigger,
+                        None,
+                    );
+                    let hist = scheduler::list_run_history(&runtime.cfg.data_dir, Some(id), 20);
+                    let enriched = scheduler::enrich_routine_json(&routine, finished_ms, &hist);
+                    return Some(RoutineExecResult {
+                        http_status: 202,
+                        routine: enriched,
+                        thread_id: prun.thread_id.clone(),
+                        thread: json!({"id": prun.thread_id, "pipeline_run_id": prun.run_id}),
+                        run_record: rec,
+                        error: None,
+                    });
+                }
+                Ok(prun) => {
+                    if prun.status == "completed" {
+                        if pack_deliverables {
+                            build_routine_deliverable_pack(
+                                state,
+                                person,
+                                runtime,
+                                &name,
+                                &prun.thread_id,
+                            );
+                        }
                         let summary: String = prun
                             .step_states
                             .iter()
+                            .filter(|s| s.status == "ok" && !s.output.is_empty())
                             .map(|s| s.output.as_str())
-                            .filter(|s| !s.is_empty())
                             .collect::<Vec<_>>()
                             .join("\n");
-                        let updated =
-                            routines::record_run(&runtime.cfg.data_dir, id, &thread_id, "finished")
-                                .unwrap_or(routine);
-                        let receipt_id = latest_receipt_id_for_thread(&runtime.cfg.data_dir, &thread_id);
+                        if !summary.is_empty() {
+                            runtime
+                                .store
+                                .lock()
+                                .unwrap()
+                                .push(&prun.thread_id, "assistant", &summary);
+                        }
+                        let updated = routines::get_routine(&runtime.cfg.data_dir, id)
+                            .unwrap_or(routine);
+                        let mut receipt_id = latest_receipt_id_for_thread(
+                            &runtime.cfg.data_dir,
+                            &prun.thread_id,
+                        );
+                        if receipt_id.is_none() {
+                            records::append_work(
+                                &runtime.cfg,
+                                &name,
+                                if summary.is_empty() {
+                                    "Completed deterministic routine."
+                                } else {
+                                    &summary
+                                },
+                                &[],
+                                &prun.thread_id,
+                                true,
+                            );
+                            receipt_id = latest_receipt_id_for_thread(
+                                &runtime.cfg.data_dir,
+                                &prun.thread_id,
+                            );
+                        }
+                        state.search_cache.invalidate(&person.id);
                         let rec = scheduler::new_run_record(
                             id,
                             &name,
                             started_ms,
                             finished_ms,
                             "ok",
-                            receipt_id,
-                            Some(thread_id.clone()),
+                            receipt_id.clone(),
+                            Some(prun.thread_id.clone()),
                             &summary,
                             trigger,
                             None,
@@ -546,43 +812,116 @@ fn execute_routine_run_with_inputs(
                         let _ = scheduler::record_run_history(&runtime.cfg.data_dir, rec.clone());
                         let hist = scheduler::list_run_history(&runtime.cfg.data_dir, Some(id), 20);
                         let idx = person_idx(state, person, runtime);
-                        let enriched = scheduler::enrich_routine_with_verification(
+                        let mut enriched = scheduler::enrich_routine_with_verification(
                             &updated,
                             finished_ms,
                             &hist,
                             &idx.chain,
                             idx.chain_valid,
                         );
-                        runtime.store.lock().unwrap().push(&thread_id, "assistant", &summary);
+                        if let Some(obj) = enriched.as_object_mut() {
+                            obj.insert(
+                                "offline_deterministic".to_string(),
+                                json!(!pipelines::routine_value_requires_llm(
+                                    &runtime.cfg.data_dir,
+                                    &updated
+                                )),
+                            );
+                        }
+                        state.events.publish(
+                            "routine_fired",
+                            &person.id,
+                            &rec.run_id,
+                            &prun.thread_id,
+                            json!({
+                                "routine_id": id,
+                                "routine_name": name,
+                                "trigger": trigger,
+                                "status": "ok",
+                                "thread_id": prun.thread_id,
+                                "pipeline_run_id": prun.run_id,
+                                "receipt_id": receipt_id,
+                                "duration_ms": rec.duration_ms,
+                                "summary": truncate(&summary, 240),
+                                "next_run_ms": enriched["next_run_ms"],
+                                "ts_ms": finished_ms,
+                            }),
+                        );
                         let store = runtime.store.lock().unwrap();
                         let thread_v = store
-                            .thread_json(&thread_id)
-                            .unwrap_or_else(|| json!({"id": thread_id}));
+                            .thread_json(&prun.thread_id)
+                            .unwrap_or_else(|| json!({"id": prun.thread_id}));
                         return Some(RoutineExecResult {
                             http_status: 200,
                             routine: enriched,
-                            thread_id,
+                            thread_id: prun.thread_id,
                             thread: thread_v,
                             run_record: rec,
                             error: None,
                         });
-                    }
-                    Err(e) => {
-                        runtime.store.lock().unwrap().push(&thread_id, "error", &e);
-                        let updated =
-                            routines::record_run(&runtime.cfg.data_dir, id, &thread_id, "error")
-                                .unwrap_or(routine);
+                    } else if prun.status == "paused_checkpoint" {
+                        let updated = routines::record_run(
+                            &runtime.cfg.data_dir,
+                            id,
+                            &prun.thread_id,
+                            "paused_checkpoint",
+                        )
+                        .unwrap_or(routine);
+                        let summary = "Paused at human checkpoint.".to_string();
                         let rec = scheduler::new_run_record(
                             id,
                             &name,
                             started_ms,
                             finished_ms,
-                            "error",
+                            "paused_checkpoint",
                             None,
-                            Some(thread_id.clone()),
-                            &e,
+                            Some(prun.thread_id.clone()),
+                            &summary,
                             trigger,
-                            Some(e.clone()),
+                            None,
+                        );
+                        let _ = scheduler::record_run_history(&runtime.cfg.data_dir, rec.clone());
+                        let hist = scheduler::list_run_history(&runtime.cfg.data_dir, Some(id), 20);
+                        let enriched = scheduler::enrich_routine_json(&updated, finished_ms, &hist);
+                        let store = runtime.store.lock().unwrap();
+                        let thread_v = store
+                            .thread_json(&prun.thread_id)
+                            .unwrap_or_else(|| json!({"id": prun.thread_id}));
+                        return Some(RoutineExecResult {
+                            http_status: 200,
+                            routine: enriched,
+                            thread_id: prun.thread_id,
+                            thread: thread_v,
+                            run_record: rec,
+                            error: None,
+                        });
+                    } else {
+                        let err = prun
+                            .error
+                            .unwrap_or_else(|| format!("pipeline ended with status '{}'", prun.status));
+                        let st_label = if prun.status == "cancelled" {
+                            "cancelled"
+                        } else {
+                            "error"
+                        };
+                        let updated = routines::record_run(
+                            &runtime.cfg.data_dir,
+                            id,
+                            &prun.thread_id,
+                            st_label,
+                        )
+                        .unwrap_or(routine);
+                        let rec = scheduler::new_run_record(
+                            id,
+                            &name,
+                            started_ms,
+                            finished_ms,
+                            st_label,
+                            None,
+                            Some(prun.thread_id.clone()),
+                            &err,
+                            trigger,
+                            Some(err.clone()),
                         );
                         let _ = scheduler::record_run_history(&runtime.cfg.data_dir, rec.clone());
                         let hist = scheduler::list_run_history(&runtime.cfg.data_dir, Some(id), 20);
@@ -590,16 +929,58 @@ fn execute_routine_run_with_inputs(
                         return Some(RoutineExecResult {
                             http_status: 500,
                             routine: enriched,
-                            thread_id: thread_id.clone(),
-                            thread: json!({"id": thread_id}),
+                            thread_id: prun.thread_id.clone(),
+                            thread: json!({"id": prun.thread_id}),
                             run_record: rec,
-                            error: Some(e),
+                            error: Some(err),
                         });
                     }
+                }
+                Err((_, e)) => {
+                    let thread_id = {
+                        let mut store = runtime.store.lock().unwrap();
+                        let tid = store.create_thread();
+                        store.push(&tid, "user", &format!("{name} — {prompt}"));
+                        store.push(&tid, "error", &e);
+                        tid
+                    };
+                    let updated =
+                        routines::record_run(&runtime.cfg.data_dir, id, &thread_id, "error")
+                            .unwrap_or(routine);
+                    let rec = scheduler::new_run_record(
+                        id,
+                        &name,
+                        started_ms,
+                        finished_ms,
+                        "error",
+                        None,
+                        Some(thread_id.clone()),
+                        &e,
+                        trigger,
+                        Some(e.clone()),
+                    );
+                    let _ = scheduler::record_run_history(&runtime.cfg.data_dir, rec.clone());
+                    let hist = scheduler::list_run_history(&runtime.cfg.data_dir, Some(id), 20);
+                    let enriched = scheduler::enrich_routine_json(&updated, finished_ms, &hist);
+                    return Some(RoutineExecResult {
+                        http_status: 500,
+                        routine: enriched,
+                        thread_id: thread_id.clone(),
+                        thread: json!({"id": thread_id}),
+                        run_record: rec,
+                        error: Some(e),
+                    });
                 }
             }
         }
     }
+
+    let thread_id = {
+        let mut store = runtime.store.lock().unwrap();
+        let tid = store.create_thread();
+        store.push(&tid, "user", &format!("{name} — {prompt}"));
+        tid
+    };
 
     if !cfg.model_configured() {
         runtime
@@ -918,6 +1299,9 @@ fn start_folder_watch_thread(state: &Arc<AppState>) {
         let mut poll_states: HashMap<String, connectors::FolderWatchPollState> = HashMap::new();
         loop {
             std::thread::sleep(std::time::Duration::from_millis(tick_ms));
+            if shutdown_requested() {
+                break;
+            }
             let Some(st) = weak.upgrade() else {
                 break;
             };
@@ -969,6 +1353,9 @@ fn start_imap_poll_thread(state: &Arc<AppState>) {
         let mut poll_states: HashMap<String, connectors::ImapPollState> = HashMap::new();
         loop {
             std::thread::sleep(std::time::Duration::from_millis(tick_ms));
+            if shutdown_requested() {
+                break;
+            }
             let Some(st) = weak.upgrade() else {
                 break;
             };
@@ -1009,6 +1396,9 @@ fn start_scheduler_thread(state: &Arc<AppState>) {
     std::thread::spawn(move || {
         loop {
             std::thread::sleep(std::time::Duration::from_millis(tick_ms));
+            if shutdown_requested() {
+                break;
+            }
             let Some(st) = weak.upgrade() else {
                 break;
             };
@@ -1026,15 +1416,21 @@ fn start_scheduler_thread(state: &Arc<AppState>) {
                 }
                 let rt = runtime_for(&st, &person);
                 let eff = effective_cfg(&st, &rt);
-                if !eff.model_configured() {
-                    continue;
-                }
+                let model_ok = eff.model_configured();
                 let list = routines::list_routines(&rt.cfg.data_dir);
                 let due = scheduler::find_due_routines(&list, now_ms);
                 for r in due {
                     let Some(rid) = r["id"].as_str().map(|s| s.to_string()) else {
                         continue;
                     };
+                    // Deterministic zero-LLM `steps_v2` routines run offline without a model key;
+                    // LLM-requiring routines wait until a model is configured instead of spamming errors.
+                    if !model_ok && pipelines::routine_value_requires_llm(&rt.cfg.data_dir, &r) {
+                        continue;
+                    }
+                    if pipelines::has_running_pipeline_for_routine(&rt.cfg.data_dir, &rid) {
+                        continue;
+                    }
                     let lock_key = format!("{}:{}", person.id, rid);
                     let already = st
                         .running_routines
@@ -1122,29 +1518,38 @@ fn serve_inner(
     struct ConnGuard(Arc<AtomicUsize>);
     impl Drop for ConnGuard {
         fn drop(&mut self) {
-            self.0.fetch_sub(1, Ordering::Relaxed);
+            self.0.fetch_sub(1, Ordering::SeqCst);
         }
     }
     struct PoolInner {
         queue: VecDeque<(std::net::TcpStream, ConnGuard)>,
         idle_workers: usize,
+        starting_workers: usize,
         total_workers: usize,
+        shutting_down: bool,
     }
     let pool = Arc::new((
         Mutex::new(PoolInner {
             queue: VecDeque::with_capacity(64),
             idle_workers: 0,
+            starting_workers: 0,
             total_workers: 0,
+            shutting_down: false,
         }),
         Condvar::new(),
     ));
 
-    for stream in listener.incoming() {
-        match stream {
-            Ok(mut stream) => {
-                let prev = active_conns.fetch_add(1, Ordering::Relaxed);
+    listener.set_nonblocking(true)?;
+
+    while !shutdown_requested() {
+        match listener.accept() {
+            Ok((mut stream, _)) => {
+                // Ensure accepted client sockets use blocking I/O with explicit
+                // per-phase timeouts even on OSes where accept inherits O_NONBLOCK.
+                let _ = stream.set_nonblocking(false);
+                let prev = active_conns.fetch_add(1, Ordering::SeqCst);
                 if prev >= MAX_ACTIVE_CONNS {
-                    active_conns.fetch_sub(1, Ordering::Relaxed);
+                    active_conns.fetch_sub(1, Ordering::SeqCst);
                     let body = r#"{"error":"server busy — too many concurrent connections"}"#;
                     let resp = format!(
                         "HTTP/1.1 503 Service Unavailable\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
@@ -1158,58 +1563,128 @@ fn serve_inner(
                 let (lock, cvar) = &*pool;
                 let mut inner = lock.lock().unwrap_or_else(|p| p.into_inner());
                 inner.queue.push_back((stream, guard));
-                if inner.idle_workers == 0 && inner.total_workers < MAX_ACTIVE_CONNS {
+                if inner.queue.len() > inner.idle_workers + inner.starting_workers
+                    && inner.total_workers < MAX_ACTIVE_CONNS
+                {
                     inner.total_workers += 1;
+                    inner.starting_workers += 1;
                     let pool_w = pool.clone();
                     let state_w = state.clone();
-                    let _ = std::thread::Builder::new()
+                    if std::thread::Builder::new()
                         .name("ergon-http".to_string())
                         .stack_size(2 * 1024 * 1024)
                         .spawn(move || {
-                        struct ExitGuard<'a>(&'a (Mutex<PoolInner>, Condvar));
-                        impl Drop for ExitGuard<'_> {
-                            fn drop(&mut self) {
-                                let (l, _) = self.0;
-                                let mut g = l.lock().unwrap_or_else(|p| p.into_inner());
-                                g.total_workers = g.total_workers.saturating_sub(1);
-                            }
-                        }
-                        let _exit = ExitGuard(&pool_w);
-                        let (l, cv) = &*pool_w;
-                        loop {
-                            let job = {
-                                let mut g = l.lock().unwrap_or_else(|p| p.into_inner());
-                                loop {
-                                    if let Some(item) = g.queue.pop_front() {
-                                        break Some(item);
-                                    }
-                                    g.idle_workers += 1;
-                                    let (next_g, wait_res) = cv
-                                        .wait_timeout(g, std::time::Duration::from_secs(10))
-                                        .unwrap_or_else(|p| p.into_inner());
-                                    g = next_g;
-                                    g.idle_workers = g.idle_workers.saturating_sub(1);
-                                    if g.queue.is_empty()
-                                        && wait_res.timed_out()
-                                        && g.total_workers > WARM_WORKER_FLOOR
-                                    {
-                                        break None;
-                                    }
+                            struct ExitGuard<'a>(&'a (Mutex<PoolInner>, Condvar));
+                            impl Drop for ExitGuard<'_> {
+                                fn drop(&mut self) {
+                                    let (l, _) = self.0;
+                                    let mut g = l.lock().unwrap_or_else(|p| p.into_inner());
+                                    g.total_workers = g.total_workers.saturating_sub(1);
                                 }
-                            };
-                            let Some((conn, conn_guard)) = job else {
-                                break;
-                            };
-                            let _ = handle_connection(conn, &state_w);
-                            drop(conn_guard);
-                        }
-                    });
+                            }
+                            let _exit = ExitGuard(&pool_w);
+                            let (l, cv) = &*pool_w;
+                            let mut first_iter = true;
+                            loop {
+                                let job = {
+                                    let mut g = l.lock().unwrap_or_else(|p| p.into_inner());
+                                    if first_iter {
+                                        g.starting_workers = g.starting_workers.saturating_sub(1);
+                                        first_iter = false;
+                                    }
+                                    loop {
+                                        if let Some(item) = g.queue.pop_front() {
+                                            break Some(item);
+                                        }
+                                        if g.shutting_down {
+                                            break None;
+                                        }
+                                        g.idle_workers += 1;
+                                        let (next_g, wait_res) = cv
+                                            .wait_timeout(g, std::time::Duration::from_secs(10))
+                                            .unwrap_or_else(|p| p.into_inner());
+                                        g = next_g;
+                                        g.idle_workers = g.idle_workers.saturating_sub(1);
+                                        if g.queue.is_empty()
+                                            && (g.shutting_down
+                                                || (wait_res.timed_out()
+                                                    && g.total_workers > WARM_WORKER_FLOOR))
+                                        {
+                                            break None;
+                                        }
+                                    }
+                                };
+                                let Some((conn, conn_guard)) = job else {
+                                    break;
+                                };
+                                let _ = handle_connection(conn, &state_w);
+                                drop(conn_guard);
+                            }
+                        })
+                        .is_err()
+                    {
+                        inner.total_workers = inner.total_workers.saturating_sub(1);
+                        inner.starting_workers = inner.starting_workers.saturating_sub(1);
+                    }
                 }
                 cvar.notify_one();
             }
-            Err(_) => continue,
+            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(_) => {
+                if shutdown_requested() {
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
         }
     }
+
+    // Stop accepting new connections immediately and wake idle SSE / pool threads.
+    drop(listener);
+    state.events.wake_all();
+    {
+        let (lock, cvar) = &*pool;
+        let mut inner = lock.lock().unwrap_or_else(|p| p.into_inner());
+        inner.shutting_down = true;
+        cvar.notify_all();
+    }
+
+    // Drain in-flight HTTP requests, agent runs, and running routines up to the
+    // configured grace window before exiting cleanly with status 0.
+    let grace = std::time::Duration::from_secs(shutdown_grace_secs());
+    let deadline = std::time::Instant::now() + grace;
+    let mut logged_drain = false;
+    loop {
+        let conns = active_conns.load(Ordering::SeqCst);
+        let runs = RUNS_IN_FLIGHT.load(Ordering::SeqCst);
+        let routines = state
+            .running_routines
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .len();
+        if conns == 0 && runs == 0 && routines == 0 {
+            break;
+        }
+        if !logged_drain {
+            eprintln!(
+                "ergon: shutdown requested, draining {conns} active connection(s), {runs} in-flight run(s), {routines} routine(s) (grace {}s)...",
+                grace.as_secs()
+            );
+            logged_drain = true;
+        }
+        if std::time::Instant::now() >= deadline {
+            eprintln!(
+                "ergon: shutdown grace window ({}s) elapsed with {conns} active connection(s), {runs} in-flight run(s), {routines} routine(s); exiting",
+                grace.as_secs()
+            );
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(25));
+    }
+
     Ok(())
 }
 
@@ -1284,13 +1759,14 @@ impl SockStream for &mut std::net::TcpStream {
 #[cfg(test)]
 pub(crate) fn read_request(stream: &mut std::net::TcpStream) -> Option<Request> {
     let mut reader = BufReader::with_capacity(2048, stream);
-    read_request_from(&mut reader, std::time::Duration::from_secs(30))
+    read_request_from(&mut reader, std::time::Duration::from_secs(30), false)
 }
 
 #[inline]
 fn read_request_from<S: SockStream>(
     reader: &mut BufReader<S>,
     initial_timeout: std::time::Duration,
+    idle_keep_alive: bool,
 ) -> Option<Request> {
     let deadline = std::cell::Cell::new(std::time::Instant::now() + initial_timeout);
     let arm = |s: &S| -> Option<()> {
@@ -1299,12 +1775,53 @@ fn read_request_from<S: SockStream>(
         Some(())
     };
     let mut line_buf = Vec::with_capacity(256);
-    arm(reader.get_ref())?;
-    let n_req = match head_line_into(reader, MAX_HEAD_BYTES, &mut line_buf) {
-        Ok(Some(0)) => return None,
-        Ok(Some(n)) => n,
-        Ok(None) => return refuse_head(reader),
-        Err(_) => return None,
+    let n_req = loop {
+        if idle_keep_alive && line_buf.is_empty() && shutdown_requested() {
+            return None;
+        }
+        let remain = deadline.get().checked_duration_since(std::time::Instant::now())?;
+        let slice = if idle_keep_alive && line_buf.is_empty() {
+            remain.min(std::time::Duration::from_millis(100))
+        } else {
+            remain
+        };
+        reader.get_ref().set_rt(slice).ok()?;
+        let room = MAX_HEAD_BYTES.saturating_sub(line_buf.len());
+        let before = line_buf.len();
+        match (&mut *reader)
+            .take(room as u64 + 1)
+            .read_until(b'\n', &mut line_buf)
+        {
+            Ok(0) => return None,
+            Ok(_) => {
+                if line_buf.len() > MAX_HEAD_BYTES {
+                    return refuse_head(reader);
+                }
+                if line_buf.ends_with(b"\n") {
+                    break line_buf.len();
+                }
+                if line_buf.len() >= MAX_HEAD_BYTES {
+                    return refuse_head(reader);
+                }
+                return None;
+            }
+            Err(e)
+                if matches!(
+                    e.kind(),
+                    std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+                ) =>
+            {
+                if line_buf.len() > before {
+                    deadline.set(std::time::Instant::now() + std::time::Duration::from_secs(30));
+                    continue;
+                }
+                if idle_keep_alive && line_buf.is_empty() {
+                    continue;
+                }
+                return None;
+            }
+            Err(_) => return None,
+        }
     };
     // Once request-line bytes arrived, give the remaining head up to 30s total.
     deadline.set(std::time::Instant::now() + std::time::Duration::from_secs(30));
@@ -1658,7 +2175,7 @@ fn respond_bytes(
         _ => "OK",
     };
     let body_len = if status == 304 { 0 } else { body.len() };
-    let keep_open = KEEP_ALIVE_CONN.get() && status < 400;
+    let keep_open = KEEP_ALIVE_CONN.get() && status < 400 && !shutdown_requested();
     if !keep_open {
         KEEP_ALIVE_CONN.set(false);
     }
@@ -2226,7 +2743,7 @@ fn handle_connection(stream: std::net::TcpStream, state: &Arc<AppState>) -> std:
         } else {
             std::time::Duration::from_secs(2)
         };
-        let req = match read_request_from(&mut reader, initial_wait) {
+        let req = match read_request_from(&mut reader, initial_wait, req_idx > 0) {
             Some(r) => r,
             None => break,
         };
@@ -2289,7 +2806,7 @@ fn handle_connection(stream: std::net::TcpStream, state: &Arc<AppState>) -> std:
             return respond_err(reader.get_mut(), status, message);
         }
         let is_sse = req.path == "/api/runs/stream";
-        KEEP_ALIVE_CONN.set(req.keep_alive && !is_sse);
+        KEEP_ALIVE_CONN.set(req.keep_alive && !is_sse && !shutdown_requested());
         // The person this request acts for (session-pinned when the caller
         // has a session cookie, else the global active person).
         let person = effective_person(state, &req.session);
@@ -2313,7 +2830,7 @@ fn handle_connection(stream: std::net::TcpStream, state: &Arc<AppState>) -> std:
                 respond_err(stream, 404, "not found")
             }
         };
-        let continue_loop = KEEP_ALIVE_CONN.get() && !is_sse && res.is_ok();
+        let continue_loop = KEEP_ALIVE_CONN.get() && !is_sse && res.is_ok() && !shutdown_requested();
         KEEP_ALIVE_CONN.set(false);
         res?;
         if !continue_loop {
@@ -4477,7 +4994,7 @@ fn try_route_files_and_audit(
             respond_json(stream, 200, &report.to_json())
         }
         ("GET", "/api/files") => {
-            let (offset, limit, q, client_id, engagement_id) = if req.query.is_empty() {
+            let (offset, limit, q, mut client_id, mut engagement_id) = if req.query.is_empty() {
                 (0usize, None, String::new(), None, None)
             } else {
                 (
@@ -4494,6 +5011,17 @@ fn try_route_files_and_audit(
                         .filter(|s| !s.is_empty()),
                 )
             };
+            if client_id.is_none() && engagement_id.is_none() {
+                let policy = crate::load_workspace_policy(&runtime.cfg.data_dir);
+                if policy.isolate_active_engagement {
+                    if let Some((eng, _)) =
+                        records::active_engagement_for(&state.cfg.data_dir, &person.id)
+                    {
+                        engagement_id = Some(eng.id);
+                        client_id = Some(eng.client_id);
+                    }
+                }
+            }
             let idx = person_idx(state, person, runtime);
             respond_json_with(stream, 200, |buf| {
                 idx.write_files_json_scoped(
@@ -5233,13 +5761,20 @@ fn try_route_knowledge_and_routines(
             let enriched: Vec<Value> = raw
                 .iter()
                 .map(|r| {
-                    scheduler::enrich_routine_with_verification(
+                    let mut v = scheduler::enrich_routine_with_verification(
                         r,
                         now_ms,
                         &history,
                         &idx.chain,
                         idx.chain_valid,
-                    )
+                    );
+                    if let Some(obj) = v.as_object_mut() {
+                        obj.insert(
+                            "offline_deterministic".to_string(),
+                            json!(!pipelines::routine_value_requires_llm(&runtime.cfg.data_dir, r)),
+                        );
+                    }
+                    v
                 })
                 .collect();
             let tick_secs = (scheduler_tick_ms() / 1000).max(1);
@@ -5297,12 +5832,36 @@ fn try_route_knowledge_and_routines(
             } else {
                 Vec::new()
             };
-            match routines::create_pipeline_routine(
+            let tz_offset_mins = if parsed.get("tz_offset_mins").is_some()
+                && !parsed["tz_offset_mins"].is_null()
+            {
+                match parsed["tz_offset_mins"].as_i64() {
+                    Some(v) if (-720..=840).contains(&v) => Some(v as i32),
+                    _ => {
+                        return Some(respond_err(
+                            stream,
+                            400,
+                            "tz_offset_mins must be an integer between -720 and 840",
+                        ))
+                    }
+                }
+            } else {
+                None
+            };
+            let tz_val = parsed.get("tz").or_else(|| parsed.get("timezone"));
+            let tz = match tz_val {
+                None | Some(Value::Null) => None,
+                Some(Value::String(s)) => Some(s.as_str()),
+                Some(_) => return Some(respond_err(stream, 400, "tz must be a string")),
+            };
+            match routines::create_pipeline_routine_with_tz(
                 &runtime.cfg.data_dir,
                 name,
                 prompt,
                 schedule,
                 interval_secs,
+                tz_offset_mins,
+                tz,
                 skill_id,
                 enabled,
                 &playbook,
@@ -5310,7 +5869,16 @@ fn try_route_knowledge_and_routines(
             ) {
                 Ok(routine) => {
                     let now_ms = records::now_millis();
-                    let enriched = scheduler::enrich_routine_json(&routine, now_ms, &[]);
+                    let mut enriched = scheduler::enrich_routine_json(&routine, now_ms, &[]);
+                    if let Some(obj) = enriched.as_object_mut() {
+                        obj.insert(
+                            "offline_deterministic".to_string(),
+                            json!(!pipelines::routine_value_requires_llm(
+                                &runtime.cfg.data_dir,
+                                &routine
+                            )),
+                        );
+                    }
                     respond_json(stream, 201, &json!({"routine": enriched}))
                 }
                 Err(e) => respond_err(stream, 400, &e),
@@ -5360,7 +5928,23 @@ fn try_route_knowledge_and_routines(
                 Ok(Some(routine)) => {
                     let now_ms = records::now_millis();
                     let hist = scheduler::list_run_history(&runtime.cfg.data_dir, Some(&id), 20);
-                    let enriched = scheduler::enrich_routine_json(&routine, now_ms, &hist);
+                    let idx = person_idx(state, person, runtime);
+                    let mut enriched = scheduler::enrich_routine_with_verification(
+                        &routine,
+                        now_ms,
+                        &hist,
+                        &idx.chain,
+                        idx.chain_valid,
+                    );
+                    if let Some(obj) = enriched.as_object_mut() {
+                        obj.insert(
+                            "offline_deterministic".to_string(),
+                            json!(!pipelines::routine_value_requires_llm(
+                                &runtime.cfg.data_dir,
+                                &routine
+                            )),
+                        );
+                    }
                     respond_json(stream, 200, &json!({"routine": enriched}))
                 }
                 Ok(None) => respond_err(stream, 404, "routine not found"),
@@ -6524,6 +7108,139 @@ fn pipeline_exec_env(
     }
 }
 
+fn live_runs_status_payload(
+    live_runs: &LiveRuns,
+    data_dir: &std::path::Path,
+    person_id: &str,
+) -> Value {
+    let now_ms = records::now_millis();
+    let mut runs: Vec<LiveRun> = {
+        let map = live_runs.lock().unwrap();
+        map.values()
+            .filter(|r| r.person_id == person_id)
+            .cloned()
+            .collect()
+    };
+    runs.sort_by(|a, b| a.started_ms.cmp(&b.started_ms).then_with(|| a.run_id.cmp(&b.run_id)));
+    let running_pipes = pipelines::list_runs(data_dir, Some("running"), 50);
+    let pipe_by_id: std::collections::HashMap<&str, &pipelines::PipelineRun> = running_pipes
+        .iter()
+        .map(|pr| (pr.run_id.as_str(), pr))
+        .collect();
+    let mut seen_pipe_ids = std::collections::HashSet::new();
+    let mut runs_json: Vec<Value> = runs
+        .iter()
+        .map(|run| {
+            let linked_pipe = run
+                .pipeline_run_id
+                .as_deref()
+                .and_then(|pid| {
+                    seen_pipe_ids.insert(pid.to_string());
+                    pipe_by_id.get(pid).copied()
+                });
+            let mut obj = json!({
+                "run_id": run.run_id,
+                "person_id": run.person_id,
+                "thread_id": run.thread_id,
+                "pipeline_run_id": run.pipeline_run_id,
+                "step_id": run.step_id,
+                "task": run.task,
+                "started_ms": run.started_ms,
+                "elapsed_ms": now_ms.saturating_sub(run.started_ms),
+                "steps": run.steps,
+            });
+            if let Some(pr) = linked_pipe {
+                obj["kind"] = json!(if pr.routine_id.is_some() { "routine" } else { "pipeline" });
+                obj["routine_id"] = json!(pr.routine_id);
+                obj["routine_name"] = json!(pr.routine_name);
+            }
+            obj
+        })
+        .collect();
+    for pr in &running_pipes {
+        if seen_pipe_ids.contains(&pr.run_id) {
+            continue;
+        }
+        let steps_json: Vec<Value> = pr
+            .step_states
+            .iter()
+            .enumerate()
+            .map(|(idx, ss)| {
+                let st = match ss.status.as_str() {
+                    "failed" => "error",
+                    "ok" | "skipped" => "done",
+                    "waiting_human" => "waiting",
+                    _ => "running",
+                };
+                json!({
+                    "id": if ss.step_id.is_empty() { format!("step-{idx}") } else { ss.step_id.clone() },
+                    "step_id": ss.step_id,
+                    "tool": ss.kind,
+                    "label": ss.label,
+                    "status": st,
+                    "raw": ss.label,
+                    "child_items": ss.child_items().into_iter().map(|c| c.to_json()).collect::<Vec<_>>(),
+                })
+            })
+            .collect();
+        runs_json.push(json!({
+            "active": true,
+            "run_id": pr.run_id,
+            "person_id": person_id,
+            "thread_id": pr.thread_id,
+            "pipeline_run_id": pr.run_id,
+            "step_id": pr.steps.get(pr.current_step_index).map(|s| s.id.as_str()),
+            "task": pr.routine_name,
+            "started_ms": pr.created_ms,
+            "elapsed_ms": now_ms.saturating_sub(pr.created_ms),
+            "kind": if pr.routine_id.is_some() { "routine" } else { "pipeline" },
+            "routine_id": pr.routine_id,
+            "routine_name": pr.routine_name,
+            "steps": steps_json,
+        }));
+    }
+    if let Some(latest) = runs.last() {
+        json!({
+            "active": true,
+            "runs": runs_json,
+            "run_id": latest.run_id,
+            "thread_id": latest.thread_id,
+            "pipeline_run_id": latest.pipeline_run_id,
+            "step_id": latest.step_id,
+            "task": latest.task,
+            "started_ms": latest.started_ms,
+            "elapsed_ms": now_ms.saturating_sub(latest.started_ms),
+            "steps": latest.steps,
+        })
+    } else if let Some(first_pipe) = runs_json.last() {
+        json!({
+            "active": true,
+            "runs": runs_json,
+            "run_id": first_pipe["run_id"],
+            "thread_id": first_pipe["thread_id"],
+            "pipeline_run_id": first_pipe["pipeline_run_id"],
+            "step_id": first_pipe["step_id"],
+            "task": first_pipe["task"],
+            "started_ms": first_pipe["started_ms"],
+            "elapsed_ms": first_pipe["elapsed_ms"],
+            "steps": first_pipe["steps"],
+        })
+    } else {
+        json!({
+            "active": false,
+            "runs": [],
+            "run_id": "",
+            "thread_id": "",
+            "pipeline_run_id": Value::Null,
+            "step_id": Value::Null,
+            "task": "",
+            "started_ms": 0,
+            "elapsed_ms": 0,
+            "steps": [],
+        })
+    }
+}
+
 /// Routes live run status/SSE/cancel, pipelines, apps execution, threads, and chat.
 fn try_route_runs_and_chat(
     stream: &mut std::net::TcpStream,
@@ -6656,65 +7373,15 @@ fn try_route_runs_and_chat(
             }
         }
         ("GET", "/api/runs/status") => {
-            let active = state.live_runs.lock().unwrap().get(&person.id).cloned();
-            match active {
-                Some(run) => {
-                    let elapsed_ms = records::now_millis().saturating_sub(run.started_ms);
-                    respond_json(
-                        stream,
-                        200,
-                        &json!({
-                            "active": true,
-                            "run_id": run.run_id,
-                            "thread_id": run.thread_id,
-                            "task": run.task,
-                            "started_ms": run.started_ms,
-                            "elapsed_ms": elapsed_ms,
-                            "steps": run.steps,
-                        }),
-                    )
-                }
-                None => respond_json(
-                    stream,
-                    200,
-                    &json!({
-                        "active": false,
-                        "run_id": "",
-                        "thread_id": "",
-                        "task": "",
-                        "started_ms": 0,
-                        "elapsed_ms": 0,
-                        "steps": [],
-                    }),
-                ),
-            }
+            let payload = live_runs_status_payload(&state.live_runs, &runtime.cfg.data_dir, &person.id);
+            respond_json(stream, 200, &payload)
         }
         ("GET", "/api/runs/stream") => {
             let thread_filter = query_param(&req.query, "thread_id");
             let once = query_param(&req.query, "once")
                 .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
                 .unwrap_or(false);
-            let active = state.live_runs.lock().unwrap().get(&person.id).cloned();
-            let initial = match active {
-                Some(run) => json!({
-                    "active": true,
-                    "run_id": run.run_id,
-                    "thread_id": run.thread_id,
-                    "task": run.task,
-                    "started_ms": run.started_ms,
-                    "elapsed_ms": records::now_millis().saturating_sub(run.started_ms),
-                    "steps": run.steps,
-                }),
-                None => json!({
-                    "active": false,
-                    "run_id": "",
-                    "thread_id": "",
-                    "task": "",
-                    "started_ms": 0,
-                    "elapsed_ms": 0,
-                    "steps": [],
-                }),
-            };
+            let initial = live_runs_status_payload(&state.live_runs, &runtime.cfg.data_dir, &person.id);
             sse::stream_sse(
                 stream,
                 &state.events,
@@ -6725,39 +7392,87 @@ fn try_route_runs_and_chat(
             )
         }
         ("POST", path) if path.starts_with("/api/runs/") && path.ends_with("/cancel") => {
-            let id = path
+            let raw_id = path
                 .strip_prefix("/api/runs/")
                 .and_then(|r| r.strip_suffix("/cancel"))
                 .unwrap_or("")
-                .trim()
-                .to_string();
-            let found = {
+                .trim();
+            let id = percent_decode(raw_id).trim().to_string();
+            let matched: Vec<(String, String)> = {
                 let map = state.live_runs.lock().unwrap();
-                map.get(&person.id).and_then(|run| {
-                    if id == "active" || id.is_empty() || run.run_id == id || run.thread_id == id {
+                let mut list: Vec<(u64, String, String)> = map
+                    .values()
+                    .filter(|run| {
+                        run.person_id == person.id
+                            && (id == "active"
+                                || id.is_empty()
+                                || run.run_id == id
+                                || run.thread_id == id
+                                || run.pipeline_run_id.as_deref() == Some(id.as_str()))
+                    })
+                    .map(|run| {
                         run.cancel.store(true, Ordering::SeqCst);
-                        Some((run.run_id.clone(), run.thread_id.clone()))
-                    } else {
-                        None
-                    }
-                })
+                        (run.started_ms, run.run_id.clone(), run.thread_id.clone())
+                    })
+                    .collect();
+                list.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.cmp(&b.1)));
+                list.into_iter().map(|(_, rid, tid)| (rid, tid)).collect()
             };
-            match found {
-                Some((run_id, thread_id)) => {
+            let mut candidate_pipes = pipelines::list_runs(&runtime.cfg.data_dir, Some("running"), 50);
+            if id != "active" && !id.is_empty() {
+                candidate_pipes.extend(pipelines::list_runs(&runtime.cfg.data_dir, Some("paused_checkpoint"), 50));
+                candidate_pipes.extend(pipelines::list_runs(&runtime.cfg.data_dir, Some("interrupted"), 50));
+            }
+            let matching_pipes: Vec<(String, String)> = candidate_pipes
+                .into_iter()
+                .filter(|pr| {
+                    id == "active"
+                        || id.is_empty()
+                        || pr.run_id == id
+                        || (!pr.thread_id.is_empty() && pr.thread_id == id)
+                })
+                .map(|pr| (pr.run_id, pr.thread_id))
+                .collect();
+            if !matching_pipes.is_empty() {
+                let env = pipeline_exec_env(state, person, runtime, ctx);
+                for (pr_id, _) in &matching_pipes {
+                    let _ = pipelines::cancel_pipeline(&env, pr_id);
+                }
+            }
+            if matched.is_empty() && matching_pipes.is_empty() {
+                respond_err(stream, 404, "no matching active run")
+            } else {
+                let ts_ms = records::now_millis();
+                let mut cancelled_run_ids = Vec::with_capacity(matched.len() + matching_pipes.len());
+                for (run_id, thread_id) in &matched {
+                    cancelled_run_ids.push(run_id.clone());
                     state.events.publish(
                         "run_cancelling",
                         &person.id,
-                        &run_id,
-                        &thread_id,
-                        json!({"ts_ms": records::now_millis()}),
+                        run_id,
+                        thread_id,
+                        json!({"ts_ms": ts_ms}),
                     );
-                    respond_json(
-                        stream,
-                        200,
-                        &json!({"cancelled": true, "run_id": run_id, "thread_id": thread_id}),
-                    )
                 }
-                None => respond_err(stream, 404, "no matching active run"),
+                for (pr_id, _) in &matching_pipes {
+                    if !cancelled_run_ids.contains(pr_id) {
+                        cancelled_run_ids.push(pr_id.clone());
+                    }
+                }
+                let (first_run_id, first_thread_id) = matched
+                    .first()
+                    .or_else(|| matching_pipes.first())
+                    .expect("non-empty matched or matching_pipes");
+                respond_json(
+                    stream,
+                    200,
+                    &json!({
+                        "cancelled": true,
+                        "run_id": first_run_id,
+                        "thread_id": first_thread_id,
+                        "cancelled_run_ids": cancelled_run_ids,
+                    }),
+                )
             }
         }
         ("POST", path) if path.starts_with("/api/apps/") && path.ends_with("/run") => {
@@ -6989,4 +7704,83 @@ fn try_route_runs_and_chat(
         }
         _ => return None,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashSet;
+
+    #[test]
+    fn new_session_id_uses_csprng_with_32_hex_high_entropy_and_uniqueness() {
+        let mut full_ids = HashSet::new();
+        let mut random_hexes = HashSet::new();
+        let mut nibble_counts = [0usize; 16];
+        let mut prev_counter: Option<u64> = None;
+
+        for _ in 0..256 {
+            let sid = new_session_id();
+            assert!(
+                sid.starts_with('s'),
+                "session id must start with 's': {sid}"
+            );
+            let rest = &sid[1..];
+            let (hex, suffix) = rest
+                .split_once('-')
+                .unwrap_or_else(|| panic!("session id missing counter separator: {sid}"));
+            assert_eq!(
+                hex.len(),
+                32,
+                "session id random payload must be 32 hex chars (128-bit CSPRNG): {sid}"
+            );
+            assert!(
+                hex.bytes()
+                    .all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')),
+                "session id payload must be lowercase hex: {sid}"
+            );
+            let counter: u64 = suffix
+                .parse()
+                .unwrap_or_else(|e| panic!("invalid counter suffix in {sid}: {e}"));
+            if let Some(prev) = prev_counter {
+                assert!(counter > prev, "counter must strictly increase");
+            }
+            prev_counter = Some(counter);
+
+            assert!(
+                random_hexes.insert(hex.to_string()),
+                "duplicate 128-bit random payload generated"
+            );
+            for b in hex.bytes() {
+                let idx = match b {
+                    b'0'..=b'9' => (b - b'0') as usize,
+                    b'a'..=b'f' => (b - b'a' + 10) as usize,
+                    _ => unreachable!(),
+                };
+                nibble_counts[idx] += 1;
+            }
+            assert!(full_ids.insert(sid), "duplicate session id generated");
+        }
+
+        // Across 256 * 32 = 8192 nibbles, all 16 hex digits should appear generously.
+        for (digit, count) in nibble_counts.iter().enumerate() {
+            assert!(
+                *count >= 250,
+                "suspiciously low entropy for hex digit {digit:x}: count={count}"
+            );
+        }
+    }
+
+    #[test]
+    fn shutdown_grace_secs_parses_bounds_and_defaults() {
+        assert_eq!(parse_shutdown_grace_secs(None), DEFAULT_SHUTDOWN_GRACE_SECS);
+        assert_eq!(parse_shutdown_grace_secs(Some("")), DEFAULT_SHUTDOWN_GRACE_SECS);
+        assert_eq!(
+            parse_shutdown_grace_secs(Some("not-a-num")),
+            DEFAULT_SHUTDOWN_GRACE_SECS
+        );
+        assert_eq!(parse_shutdown_grace_secs(Some("0")), 0);
+        assert_eq!(parse_shutdown_grace_secs(Some("15")), 15);
+        assert_eq!(parse_shutdown_grace_secs(Some(" 25 ")), 25);
+        assert_eq!(parse_shutdown_grace_secs(Some("9999")), MAX_SHUTDOWN_GRACE_SECS);
+    }
 }

@@ -1,11 +1,15 @@
 {
   "name": "ergon-frontend",
   "private": true,
-  "version": "0.38.0",
+  "version": "0.40.0",
   "type": "module",
   "scripts": {
+    "postinstall": "node scripts/ensure-rune-link.mjs",
+    "predev": "node scripts/ensure-rune-link.mjs",
     "dev": "vite",
+    "prebuild": "node scripts/ensure-rune-link.mjs",
     "build": "tsc --noEmit && vite build",
+    "prebuild:web": "node scripts/ensure-rune-link.mjs",
     "build:web": "VITE_WEB_STANDALONE=1 tsc --noEmit && VITE_WEB_STANDALONE=1 vite build",
     "sync-used": "node scripts/sync-used.mjs",
     "check:ui": "node e2e/check.mjs"

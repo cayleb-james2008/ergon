@@ -7,21 +7,26 @@
 //! and `{{steps.<id>.files[0]}}` template resolution.
 
 use crate::connectors;
+use crate::receipts;
 use crate::records;
 use crate::routines;
+use crate::scheduler;
 use crate::search::SearchCache;
 use crate::skills;
 use crate::sse::RunEventBus;
-use crate::tools::{self, sandbox_path, sandbox_path_resolving, ToolCtx};
+use crate::tools::{
+    self, atomic_write_bytes_with_mode, sandbox_path, sandbox_path_resolving, ToolCtx,
+};
 use crate::{
-    atomic_write_bytes, run_agent_for_pipeline_with_options, AgentLoopOptions, AgentSnapshot,
-    CheckpointPause, Config, LiveRuns, SharedStore,
+    run_agent_for_pipeline_step, AgentLoopOptions, AgentSnapshot, CheckpointPause, Config,
+    LiveRuns, SharedStore,
 };
 use serde_json::{json, Map, Value};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
+use std::time::{Duration, Instant};
 
 pub const MAX_PIPELINE_STEPS: usize = 24;
 pub const MAX_FANOUT_ITEMS: usize = 50;
@@ -30,16 +35,27 @@ const MAX_STORED_RUNS: usize = 200;
 pub const MAX_TEMPLATE_DEPTH: usize = 16;
 pub const MAX_TEMPLATE_EXPANSIONS: usize = 128;
 pub const MAX_TEMPLATE_OUTPUT_BYTES: usize = 256 * 1024;
+const MAX_SUBPIPELINE_DEPTH: usize = 8;
 
 const DAG_META_KEY: &str = "__ergon_dag";
 const CHILD_ITEMS_KEY: &str = "__child_items";
 const SNAPSHOT_INPUT_KEY: &str = "__ergon_agent_snapshot";
+const SNAPSHOTS_INPUT_KEY: &str = "__ergon_step_snapshots";
+const CHECKPOINTS_INPUT_KEY: &str = "__ergon_pending_checkpoints";
+const SUBPIPELINE_DEPTH_KEY: &str = "__ergon_subpipeline_depth";
+const SUBPIPELINE_STACK_KEY: &str = "__ergon_subpipeline_stack";
+const ROUTINE_TRIGGER_KEY: &str = "__ergon_routine_trigger";
 const ITEM_INPUT_KEY: &str = "__ergon_item";
 const ITEM_INDEX_INPUT_KEY: &str = "__ergon_item_index";
 
 static PIPELINE_SEQ: AtomicU64 = AtomicU64::new(0);
+static CANCEL_GEN_SEQ: AtomicU64 = AtomicU64::new(1);
 static PIPELINES_LOCK: Mutex<()> = Mutex::new(());
-static ACTIVE_CANCELS: std::sync::OnceLock<Mutex<HashMap<String, Arc<AtomicBool>>>> =
+type ActiveCancelMap = HashMap<String, (u64, Arc<AtomicBool>)>;
+
+static ACTIVE_CANCELS: std::sync::OnceLock<Mutex<ActiveCancelMap>> =
+    std::sync::OnceLock::new();
+static ACTIVE_SUBPIPELINE_CHILDREN: std::sync::OnceLock<Mutex<HashMap<String, Vec<String>>>> =
     std::sync::OnceLock::new();
 static RECOVERED_DIRS: std::sync::OnceLock<Mutex<HashSet<PathBuf>>> =
     std::sync::OnceLock::new();
@@ -51,8 +67,12 @@ fn with_pipelines_lock<T>(f: impl FnOnce() -> T) -> T {
     f()
 }
 
-fn cancel_registry() -> &'static Mutex<HashMap<String, Arc<AtomicBool>>> {
+fn cancel_registry() -> &'static Mutex<HashMap<String, (u64, Arc<AtomicBool>)>> {
     ACTIVE_CANCELS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn subpipeline_children_registry() -> &'static Mutex<HashMap<String, Vec<String>>> {
+    ACTIVE_SUBPIPELINE_CHILDREN.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
 fn recovered_dirs() -> &'static Mutex<HashSet<PathBuf>> {
@@ -192,6 +212,10 @@ pub enum PipelineStepKind {
     Checkpoint,
     Export,
     Deliver,
+    Subpipeline {
+        routine_id: String,
+        inputs: HashMap<String, String>,
+    },
 }
 
 impl PipelineStepKind {
@@ -202,6 +226,10 @@ impl PipelineStepKind {
             "checkpoint" => Some(Self::Checkpoint),
             "export" => Some(Self::Export),
             "deliver" => Some(Self::Deliver),
+            "subpipeline" => Some(Self::Subpipeline {
+                routine_id: String::new(),
+                inputs: HashMap::new(),
+            }),
             _ => None,
         }
     }
@@ -213,7 +241,42 @@ impl PipelineStepKind {
             Self::Checkpoint => "checkpoint",
             Self::Export => "export",
             Self::Deliver => "deliver",
+            Self::Subpipeline { .. } => "subpipeline",
         }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PipelineSubpipelineSpec {
+    pub routine_id: String,
+    pub inputs: HashMap<String, String>,
+}
+
+impl PipelineSubpipelineSpec {
+    pub fn to_json(&self) -> Value {
+        json!({
+            "routine_id": self.routine_id,
+            "inputs": self.inputs,
+        })
+    }
+
+    pub fn from_json(v: &Value) -> Result<Self, String> {
+        let Some(obj) = v.as_object() else {
+            return Err("subpipeline must be a JSON object".to_string());
+        };
+        let routine_id = obj
+            .get("routine_id")
+            .and_then(|s| s.as_str())
+            .unwrap_or("")
+            .trim()
+            .chars()
+            .take(128)
+            .collect::<String>();
+        if routine_id.is_empty() {
+            return Err("subpipeline.routine_id is required".to_string());
+        }
+        let inputs = parse_inputs(obj.get("inputs").unwrap_or(&Value::Null), true);
+        Ok(Self { routine_id, inputs })
     }
 }
 
@@ -316,6 +379,44 @@ impl PipelineStepSpec {
             .and_then(|d| if d.is_null() { None } else { PipelineDeliverSpec::from_json(d).ok() })
     }
 
+    pub fn timeout_secs(&self) -> Option<u64> {
+        self.args
+            .get(DAG_META_KEY)
+            .and_then(|m| m.get("timeout_secs"))
+            .and_then(|v| v.as_u64())
+    }
+
+    pub fn retry_max(&self) -> Option<u32> {
+        self.args
+            .get(DAG_META_KEY)
+            .and_then(|m| m.get("retry_max"))
+            .and_then(|v| v.as_u64())
+            .map(|n| n as u32)
+    }
+
+    pub fn retry_backoff_ms(&self) -> Option<u64> {
+        self.args
+            .get(DAG_META_KEY)
+            .and_then(|m| m.get("retry_backoff_ms"))
+            .and_then(|v| v.as_u64())
+    }
+
+    pub fn on_error(&self) -> Option<String> {
+        self.args
+            .get(DAG_META_KEY)
+            .and_then(|m| m.get("on_error"))
+            .and_then(|v| v.as_str())
+            .map(str::to_string)
+            .filter(|s| !s.trim().is_empty())
+    }
+
+    pub fn subpipeline(&self) -> Option<PipelineSubpipelineSpec> {
+        self.args
+            .get(DAG_META_KEY)
+            .and_then(|m| m.get("subpipeline"))
+            .and_then(|s| if s.is_null() { None } else { PipelineSubpipelineSpec::from_json(s).ok() })
+    }
+
     pub fn clean_args(&self) -> Value {
         let Some(obj) = self.args.as_object() else {
             return self.args.clone();
@@ -334,11 +435,43 @@ impl PipelineStepSpec {
         for_each: Option<String>,
         deliver: Option<PipelineDeliverSpec>,
     ) {
+        self.set_step_meta(
+            depends_on,
+            for_each,
+            deliver,
+            self.timeout_secs(),
+            self.retry_max(),
+            self.retry_backoff_ms(),
+            self.on_error(),
+            self.subpipeline(),
+        );
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn set_step_meta(
+        &mut self,
+        depends_on: Vec<String>,
+        for_each: Option<String>,
+        deliver: Option<PipelineDeliverSpec>,
+        timeout_secs: Option<u64>,
+        retry_max: Option<u32>,
+        retry_backoff_ms: Option<u64>,
+        on_error: Option<String>,
+        subpipeline: Option<PipelineSubpipelineSpec>,
+    ) {
         if !self.args.is_object() {
             self.args = json!({});
         }
         let obj = self.args.as_object_mut().unwrap();
-        if depends_on.is_empty() && for_each.is_none() && deliver.is_none() {
+        if depends_on.is_empty()
+            && for_each.is_none()
+            && deliver.is_none()
+            && timeout_secs.is_none()
+            && retry_max.is_none()
+            && retry_backoff_ms.is_none()
+            && on_error.is_none()
+            && subpipeline.is_none()
+        {
             obj.remove(DAG_META_KEY);
             return;
         }
@@ -351,6 +484,21 @@ impl PipelineStepSpec {
         }
         if let Some(del) = deliver {
             meta.insert("deliver".to_string(), del.to_json());
+        }
+        if let Some(ts) = timeout_secs {
+            meta.insert("timeout_secs".to_string(), json!(ts));
+        }
+        if let Some(rm) = retry_max {
+            meta.insert("retry_max".to_string(), json!(rm));
+        }
+        if let Some(rb) = retry_backoff_ms {
+            meta.insert("retry_backoff_ms".to_string(), json!(rb));
+        }
+        if let Some(oe) = on_error {
+            meta.insert("on_error".to_string(), json!(oe));
+        }
+        if let Some(sub) = subpipeline {
+            meta.insert("subpipeline".to_string(), sub.to_json());
         }
         obj.insert(DAG_META_KEY.to_string(), Value::Object(meta));
     }
@@ -386,6 +534,23 @@ impl PipelineStepSpec {
         if let Some(del) = self.deliver() {
             obj.insert("deliver".to_string(), del.to_json());
         }
+        if let Some(ts) = self.timeout_secs() {
+            obj.insert("timeout_secs".to_string(), json!(ts));
+        }
+        if let Some(rm) = self.retry_max() {
+            obj.insert("retry_max".to_string(), json!(rm));
+        }
+        if let Some(rb) = self.retry_backoff_ms() {
+            obj.insert("retry_backoff_ms".to_string(), json!(rb));
+        }
+        if let Some(oe) = self.on_error() {
+            obj.insert("on_error".to_string(), json!(oe));
+        }
+        if let Some(sub) = self.subpipeline() {
+            obj.insert("subpipeline".to_string(), sub.to_json());
+            obj.insert("routine_id".to_string(), json!(sub.routine_id));
+            obj.insert("inputs".to_string(), json!(sub.inputs));
+        }
         obj.insert("when".to_string(), json!(self.when));
         Value::Object(obj)
     }
@@ -402,7 +567,7 @@ impl PipelineStepSpec {
             .to_ascii_lowercase();
         if PipelineStepKind::parse(&raw_kind).is_none() {
             return Err(format!(
-                "steps_v2[{index}].kind '{raw_kind}' must be skill, agent, checkpoint, export, or deliver"
+                "steps_v2[{index}].kind '{raw_kind}' must be skill, agent, checkpoint, export, deliver, or subpipeline"
             ));
         }
         let raw_id = obj
@@ -452,6 +617,86 @@ impl PipelineStepSpec {
         let deliver = match obj.get("deliver") {
             None | Some(Value::Null) => None,
             Some(del_val) => Some(PipelineDeliverSpec::from_json(del_val)?),
+        };
+        let subpipeline = if raw_kind == "subpipeline" {
+            if let Some(sub_val) = obj.get("subpipeline").filter(|v| !v.is_null()) {
+                Some(PipelineSubpipelineSpec::from_json(sub_val)?)
+            } else {
+                let mut tmp = Map::new();
+                if let Some(rid) = obj.get("routine_id") {
+                    tmp.insert("routine_id".to_string(), rid.clone());
+                }
+                if let Some(inp) = obj.get("inputs") {
+                    tmp.insert("inputs".to_string(), inp.clone());
+                }
+                Some(PipelineSubpipelineSpec::from_json(&Value::Object(tmp))?)
+            }
+        } else {
+            None
+        };
+
+        let timeout_secs: Option<u64> = match obj.get("timeout_secs") {
+            None | Some(Value::Null) => None,
+            Some(v) => {
+                let Some(n) = v.as_u64() else {
+                    return Err(format!("steps_v2[{index}].timeout_secs must be a positive integer"));
+                };
+                if n == 0 || n > 86_400 {
+                    return Err(format!("steps_v2[{index}].timeout_secs must be between 1 and 86400"));
+                }
+                Some(n)
+            }
+        };
+        let retry_max: Option<u32> = match obj.get("retry_max") {
+            None | Some(Value::Null) => None,
+            Some(v) => {
+                let Some(n) = v.as_u64() else {
+                    return Err(format!("steps_v2[{index}].retry_max must be a non-negative integer"));
+                };
+                if n > 20 {
+                    return Err(format!("steps_v2[{index}].retry_max cannot exceed 20"));
+                }
+                Some(n as u32)
+            }
+        };
+        let retry_backoff_ms: Option<u64> = match obj.get("retry_backoff_ms") {
+            None | Some(Value::Null) => None,
+            Some(v) => {
+                let Some(n) = v.as_u64() else {
+                    return Err(format!("steps_v2[{index}].retry_backoff_ms must be a non-negative integer"));
+                };
+                if n > 300_000 {
+                    return Err(format!("steps_v2[{index}].retry_backoff_ms cannot exceed 300000"));
+                }
+                Some(n)
+            }
+        };
+        let on_error: Option<String> = match obj.get("on_error") {
+            None | Some(Value::Null) => None,
+            Some(v) => {
+                let Some(raw) = v.as_str() else {
+                    return Err(format!("steps_v2[{index}].on_error must be a string"));
+                };
+                let trimmed = raw.trim();
+                if trimmed.is_empty() {
+                    None
+                } else {
+                    let low = trimmed.to_ascii_lowercase();
+                    if low == "fail" || low == "continue" {
+                        Some(low)
+                    } else if let Some(target) = trimmed.strip_prefix("goto:") {
+                        let t = target.trim();
+                        if t.is_empty() {
+                            return Err(format!("steps_v2[{index}].on_error 'goto:' requires target step_id"));
+                        }
+                        Some(format!("goto:{t}"))
+                    } else {
+                        return Err(format!(
+                            "steps_v2[{index}].on_error '{trimmed}' must be fail, continue, or goto:<step_id>"
+                        ));
+                    }
+                }
+            }
         };
 
         let depends_on: Vec<String> = match obj.get("depends_on") {
@@ -536,6 +781,11 @@ impl PipelineStepSpec {
                     "steps_v2[{index}] of kind 'deliver' requires deliver.connector_id"
                 ));
             }
+            "subpipeline" if subpipeline.is_none() => {
+                return Err(format!(
+                    "steps_v2[{index}] of kind 'subpipeline' requires routine_id"
+                ));
+            }
             "agent" if prompt.is_none() => {
                 // Allow label as fallback prompt only if non-empty
                 let lbl = obj
@@ -571,6 +821,10 @@ impl PipelineStepSpec {
                     .as_ref()
                     .map(|d| format!("Deliver via {}", d.connector_id))
                     .unwrap_or_else(|| "Deliver".to_string()),
+                "subpipeline" => subpipeline
+                    .as_ref()
+                    .map(|s| format!("Subpipeline {}", s.routine_id))
+                    .unwrap_or_else(|| "Subpipeline".to_string()),
                 _ => prompt
                     .as_ref()
                     .map(|p| p.chars().take(80).collect())
@@ -615,7 +869,16 @@ impl PipelineStepSpec {
             export,
             when,
         };
-        spec.set_dag_meta(depends_on, for_each, deliver);
+        spec.set_step_meta(
+            depends_on,
+            for_each,
+            deliver,
+            timeout_secs,
+            retry_max,
+            retry_backoff_ms,
+            on_error,
+            subpipeline,
+        );
         Ok(spec)
     }
 }
@@ -946,11 +1209,83 @@ pub struct PipelineRun {
 }
 
 impl PipelineRun {
+    pub fn step_snapshots(&self) -> HashMap<String, AgentSnapshot> {
+        let mut out: HashMap<String, AgentSnapshot> = self
+            .inputs
+            .get(SNAPSHOTS_INPUT_KEY)
+            .and_then(|s| serde_json::from_str::<Value>(s).ok())
+            .and_then(|v| {
+                v.as_object().map(|obj| {
+                    obj.iter()
+                        .filter_map(|(k, val)| AgentSnapshot::from_json(val).map(|s| (k.clone(), s)))
+                        .collect()
+                })
+            })
+            .unwrap_or_default();
+        if out.is_empty() {
+            if let Some(legacy) = self
+                .inputs
+                .get(SNAPSHOT_INPUT_KEY)
+                .and_then(|s| serde_json::from_str::<Value>(s).ok())
+                .and_then(|v| AgentSnapshot::from_json(&v))
+            {
+                let key = self
+                    .steps
+                    .get(self.current_step_index)
+                    .map(|s| s.id.clone())
+                    .unwrap_or_else(|| "default".to_string());
+                out.insert(key, legacy);
+            }
+        }
+        out
+    }
+
+    pub fn step_snapshot(&self, step_id: &str) -> Option<AgentSnapshot> {
+        self.step_snapshots().get(step_id).cloned()
+    }
+
+    pub fn set_step_snapshot(&mut self, step_id: &str, snap: Option<AgentSnapshot>) {
+        let mut map = self
+            .inputs
+            .get(SNAPSHOTS_INPUT_KEY)
+            .and_then(|s| serde_json::from_str::<Value>(s).ok())
+            .and_then(|v| v.as_object().cloned())
+            .unwrap_or_default();
+        match snap {
+            Some(s) => {
+                map.insert(step_id.to_string(), s.to_json());
+                self.inputs.insert(
+                    SNAPSHOTS_INPUT_KEY.to_string(),
+                    Value::Object(map).to_string(),
+                );
+                self.inputs
+                    .insert(SNAPSHOT_INPUT_KEY.to_string(), s.to_json().to_string());
+            }
+            None => {
+                map.remove(step_id);
+                if map.is_empty() {
+                    self.inputs.remove(SNAPSHOTS_INPUT_KEY);
+                    self.inputs.remove(SNAPSHOT_INPUT_KEY);
+                } else {
+                    self.inputs.insert(
+                        SNAPSHOTS_INPUT_KEY.to_string(),
+                        Value::Object(map.clone()).to_string(),
+                    );
+                    if let Some(first_val) = map.values().next() {
+                        self.inputs
+                            .insert(SNAPSHOT_INPUT_KEY.to_string(), first_val.to_string());
+                    }
+                }
+            }
+        }
+    }
+
     pub fn agent_snapshot(&self) -> Option<AgentSnapshot> {
         self.inputs
             .get(SNAPSHOT_INPUT_KEY)
             .and_then(|s| serde_json::from_str::<Value>(s).ok())
             .and_then(|v| AgentSnapshot::from_json(&v))
+            .or_else(|| self.step_snapshots().into_values().next())
     }
 
     pub fn set_agent_snapshot(&mut self, snap: Option<AgentSnapshot>) {
@@ -958,11 +1293,87 @@ impl PipelineRun {
             Some(s) => {
                 self.inputs
                     .insert(SNAPSHOT_INPUT_KEY.to_string(), s.to_json().to_string());
+                let key = self
+                    .steps
+                    .get(self.current_step_index)
+                    .map(|st| st.id.clone())
+                    .unwrap_or_else(|| "default".to_string());
+                let mut map = self
+                    .inputs
+                    .get(SNAPSHOTS_INPUT_KEY)
+                    .and_then(|raw| serde_json::from_str::<Value>(raw).ok())
+                    .and_then(|v| v.as_object().cloned())
+                    .unwrap_or_default();
+                map.insert(key, s.to_json());
+                self.inputs.insert(
+                    SNAPSHOTS_INPUT_KEY.to_string(),
+                    Value::Object(map).to_string(),
+                );
             }
             None => {
                 self.inputs.remove(SNAPSHOT_INPUT_KEY);
+                self.inputs.remove(SNAPSHOTS_INPUT_KEY);
             }
         }
+    }
+
+    pub fn pending_checkpoints(&self) -> Vec<PendingCheckpoint> {
+        let mut cps: Vec<PendingCheckpoint> = self
+            .inputs
+            .get(CHECKPOINTS_INPUT_KEY)
+            .and_then(|s| serde_json::from_str::<Value>(s).ok())
+            .and_then(|v| {
+                v.as_array().map(|arr| {
+                    arr.iter()
+                        .filter_map(PendingCheckpoint::from_json)
+                        .collect()
+                })
+            })
+            .unwrap_or_default();
+        if cps.is_empty() {
+            if let Some(cp) = &self.pending_checkpoint {
+                cps.push(cp.clone());
+            }
+        }
+        cps
+    }
+
+    pub fn set_pending_checkpoints(&mut self, cps: Vec<PendingCheckpoint>) {
+        self.pending_checkpoint = cps.first().cloned();
+        if cps.is_empty() {
+            self.inputs.remove(CHECKPOINTS_INPUT_KEY);
+        } else {
+            let arr: Vec<Value> = cps.iter().map(|c| c.to_json()).collect();
+            self.inputs
+                .insert(CHECKPOINTS_INPUT_KEY.to_string(), Value::Array(arr).to_string());
+        }
+    }
+
+    pub fn add_pending_checkpoint(&mut self, cp: PendingCheckpoint) {
+        let mut cps = self.pending_checkpoints();
+        if let Some(pos) = cps
+            .iter()
+            .position(|existing| existing.checkpoint_id == cp.checkpoint_id || existing.step_id == cp.step_id)
+        {
+            cps[pos] = cp;
+        } else {
+            cps.push(cp);
+        }
+        self.set_pending_checkpoints(cps);
+    }
+
+    pub fn remove_pending_checkpoint(&mut self, checkpoint_id: &str) -> Option<PendingCheckpoint> {
+        let mut cps = self.pending_checkpoints();
+        let pos = cps.iter().position(|c| c.checkpoint_id == checkpoint_id)?;
+        let removed = cps.remove(pos);
+        self.set_pending_checkpoints(cps);
+        Some(removed)
+    }
+
+    pub fn take_pending_checkpoints(&mut self) -> Vec<PendingCheckpoint> {
+        let cps = self.pending_checkpoints();
+        self.set_pending_checkpoints(Vec::new());
+        cps
     }
 
     pub fn is_dag(&self) -> bool {
@@ -976,7 +1387,14 @@ impl PipelineRun {
             .filter(|(k, _)| {
                 !matches!(
                     k.as_str(),
-                    SNAPSHOT_INPUT_KEY | ITEM_INPUT_KEY | ITEM_INDEX_INPUT_KEY
+                    SNAPSHOT_INPUT_KEY
+                        | SNAPSHOTS_INPUT_KEY
+                        | CHECKPOINTS_INPUT_KEY
+                        | SUBPIPELINE_DEPTH_KEY
+                        | SUBPIPELINE_STACK_KEY
+                        | ROUTINE_TRIGGER_KEY
+                        | ITEM_INPUT_KEY
+                        | ITEM_INDEX_INPUT_KEY
                 )
             })
             .map(|(k, v)| (k.clone(), v.clone()))
@@ -991,11 +1409,22 @@ impl PipelineRun {
                 );
             }
         }
+        let step_snaps = self.step_snapshots();
+        let mut step_snaps_json = Map::new();
+        for (sid, snap) in &step_snaps {
+            step_snaps_json.insert(sid.clone(), snap.to_json());
+        }
         let snapshot_val = self
             .agent_snapshot()
             .map(|s| s.to_json())
             .unwrap_or(Value::Null);
-        json!({
+        let cps = self.pending_checkpoints();
+        let primary_cp = self
+            .pending_checkpoint
+            .as_ref()
+            .or_else(|| cps.first())
+            .map(|c| c.to_json());
+        let mut out = json!({
             "run_id": self.run_id,
             "routine_id": self.routine_id,
             "routine_name": self.routine_name,
@@ -1008,12 +1437,24 @@ impl PipelineRun {
             "steps": self.steps.iter().map(|s| s.to_json()).collect::<Vec<_>>(),
             "step_states": self.step_states.iter().map(|s| s.to_json()).collect::<Vec<_>>(),
             "child_items": Value::Object(child_items_map),
-            "pending_checkpoint": self.pending_checkpoint.as_ref().map(|c| c.to_json()),
+            "pending_checkpoints": cps.iter().map(|c| c.to_json()).collect::<Vec<_>>(),
+            "pending_checkpoint": primary_cp,
+            "step_snapshots": Value::Object(step_snaps_json),
             "agent_snapshot": snapshot_val,
             "error": self.error,
             "engagement_id": self.engagement_id,
             "usage": self.usage.to_json(),
-        })
+        });
+        if let Some(trig) = self.inputs.get(ROUTINE_TRIGGER_KEY) {
+            out["routine_trigger"] = json!(trig);
+        }
+        if let Some(depth) = self.inputs.get(SUBPIPELINE_DEPTH_KEY) {
+            out["subpipeline_depth"] = json!(depth);
+        }
+        if let Some(stack) = self.inputs.get(SUBPIPELINE_STACK_KEY) {
+            out["subpipeline_stack"] = json!(stack);
+        }
+        out
     }
 
     pub fn from_json(v: &Value) -> Option<Self> {
@@ -1023,7 +1464,14 @@ impl PipelineRun {
             for (k, val) in obj {
                 if matches!(
                     k.as_str(),
-                    SNAPSHOT_INPUT_KEY | ITEM_INPUT_KEY | ITEM_INDEX_INPUT_KEY
+                    SNAPSHOT_INPUT_KEY
+                        | SNAPSHOTS_INPUT_KEY
+                        | CHECKPOINTS_INPUT_KEY
+                        | SUBPIPELINE_DEPTH_KEY
+                        | SUBPIPELINE_STACK_KEY
+                        | ROUTINE_TRIGGER_KEY
+                        | ITEM_INPUT_KEY
+                        | ITEM_INDEX_INPUT_KEY
                 ) {
                     continue;
                 }
@@ -1034,10 +1482,45 @@ impl PipelineRun {
                 inputs.insert(k.clone(), s);
             }
         }
+        if let Some(snaps_obj) = v.get("step_snapshots").and_then(|s| s.as_object()) {
+            let mut valid_snaps = Map::new();
+            for (k, val) in snaps_obj {
+                if let Some(snap) = AgentSnapshot::from_json(val) {
+                    valid_snaps.insert(k.clone(), snap.to_json());
+                }
+            }
+            if !valid_snaps.is_empty() {
+                inputs.insert(
+                    SNAPSHOTS_INPUT_KEY.to_string(),
+                    Value::Object(valid_snaps).to_string(),
+                );
+            }
+        }
         if let Some(snap_val) = v.get("agent_snapshot").filter(|s| s.is_object()) {
             if let Some(snap) = AgentSnapshot::from_json(snap_val) {
                 inputs.insert(SNAPSHOT_INPUT_KEY.to_string(), snap.to_json().to_string());
             }
+        }
+        if let Some(trig) = v
+            .get("routine_trigger")
+            .and_then(|s| s.as_str())
+            .filter(|s| !s.is_empty())
+        {
+            inputs.insert(ROUTINE_TRIGGER_KEY.to_string(), trig.to_string());
+        }
+        if let Some(depth) = v
+            .get("subpipeline_depth")
+            .and_then(|s| s.as_str())
+            .filter(|s| !s.is_empty())
+        {
+            inputs.insert(SUBPIPELINE_DEPTH_KEY.to_string(), depth.to_string());
+        }
+        if let Some(stack) = v
+            .get("subpipeline_stack")
+            .and_then(|s| s.as_str())
+            .filter(|s| !s.is_empty())
+        {
+            inputs.insert(SUBPIPELINE_STACK_KEY.to_string(), stack.to_string());
         }
         let steps: Vec<PipelineStepSpec> = v["steps"]
             .as_array()
@@ -1056,9 +1539,24 @@ impl PipelineRun {
                     .collect()
             })
             .unwrap_or_default();
-        let pending_checkpoint = v
+        let mut cps: Vec<PendingCheckpoint> = v
+            .get("pending_checkpoints")
+            .and_then(|p| p.as_array())
+            .map(|arr| arr.iter().filter_map(PendingCheckpoint::from_json).collect())
+            .unwrap_or_default();
+        let legacy_cp = v
             .get("pending_checkpoint")
             .and_then(|p| if p.is_null() { None } else { PendingCheckpoint::from_json(p) });
+        if cps.is_empty() {
+            if let Some(ref cp) = legacy_cp {
+                cps.push(cp.clone());
+            }
+        }
+        if !cps.is_empty() {
+            let arr: Vec<Value> = cps.iter().map(|c| c.to_json()).collect();
+            inputs.insert(CHECKPOINTS_INPUT_KEY.to_string(), Value::Array(arr).to_string());
+        }
+        let pending_checkpoint = cps.first().cloned().or(legacy_cp);
 
         Some(Self {
             run_id,
@@ -1094,26 +1592,52 @@ pub fn find_run_by_checkpoint_id(person_data_dir: &Path, checkpoint_id: &str) ->
             .into_iter()
             .rev()
             .find(|r| {
-                r.status == "paused_checkpoint"
-                    && r.pending_checkpoint
-                        .as_ref()
-                        .is_some_and(|cp| cp.checkpoint_id == checkpoint_id)
+                (r.status == "paused_checkpoint" || r.status == "running")
+                    && (r
+                        .pending_checkpoints()
+                        .iter()
+                        .any(|cp| cp.checkpoint_id == checkpoint_id)
+                        || r.pending_checkpoint
+                            .as_ref()
+                            .is_some_and(|cp| cp.checkpoint_id == checkpoint_id))
             })
     })
 }
 
 fn load_runs_unlocked(person_data_dir: &Path) -> Vec<PipelineRun> {
     let path = pipeline_runs_path(person_data_dir);
-    let Ok(text) = std::fs::read_to_string(&path) else {
+    let Ok(bytes) = std::fs::read(&path) else {
         return Vec::new();
     };
-    let Ok(v) = serde_json::from_str::<Value>(&text) else {
+    let Ok(text) = std::str::from_utf8(&bytes) else {
+        let _ = crate::backup_corrupt(&path);
         return Vec::new();
     };
-    v["runs"]
-        .as_array()
-        .map(|arr| arr.iter().filter_map(PipelineRun::from_json).collect())
-        .unwrap_or_default()
+    let Ok(v) = serde_json::from_str::<Value>(text) else {
+        let _ = crate::backup_corrupt(&path);
+        return Vec::new();
+    };
+    let Some(arr) = v.as_object().and_then(|m| m.get("runs")).and_then(|x| x.as_array()) else {
+        let _ = crate::backup_corrupt(&path);
+        return Vec::new();
+    };
+    let mut out = Vec::with_capacity(arr.len());
+    let mut had_corrupt = false;
+    for item in arr {
+        match PipelineRun::from_json(item) {
+            Some(r) => out.push(r),
+            None => had_corrupt = true,
+        }
+    }
+    if had_corrupt {
+        if out.is_empty() {
+            let _ = crate::backup_corrupt(&path);
+        } else {
+            let _ = crate::backup_corrupt_copy(&path);
+            let _ = save_runs_unlocked(person_data_dir, &out);
+        }
+    }
+    out
 }
 
 fn save_runs_unlocked(person_data_dir: &Path, runs: &[PipelineRun]) -> Result<(), String> {
@@ -1127,7 +1651,8 @@ fn save_runs_unlocked(person_data_dir: &Path, runs: &[PipelineRun]) -> Result<()
         obj
     }).collect();
     let body = json!({ "runs": slice }).to_string();
-    atomic_write_bytes(&path, body.as_bytes()).map_err(|e| format!("write pipeline_runs: {e}"))
+    atomic_write_bytes_with_mode(&path, body.as_bytes(), Some(0o600))
+        .map_err(|e| format!("write pipeline_runs: {e}"))
 }
 
 pub fn load_runs(person_data_dir: &Path) -> Vec<PipelineRun> {
@@ -1220,7 +1745,8 @@ pub fn force_recover_stale_runs(person_data_dir: &Path) -> usize {
         let now_ms = records::now_millis();
         let mut changed = 0usize;
         for run in &mut runs {
-            if run.status == "paused_checkpoint" && run.pending_checkpoint.is_none() {
+            let cps = run.pending_checkpoints();
+            if run.status == "paused_checkpoint" && cps.is_empty() {
                 changed += 1;
                 run.updated_ms = now_ms;
                 run.status = "interrupted".to_string();
@@ -1236,6 +1762,23 @@ pub fn force_recover_stale_runs(person_data_dir: &Path) -> usize {
                 }
                 continue;
             }
+            if run.status == "paused_checkpoint" && !cps.is_empty() {
+                let cp_indices: HashSet<usize> = cps.iter().map(|c| c.step_index).collect();
+                let mut reset_any = false;
+                for i in 0..run.step_states.len() {
+                    if run.step_states[i].status == "running" && !cp_indices.contains(&i) {
+                        if let Some(spec) = run.steps.get(i) {
+                            run.step_states[i] = PipelineStepState::pending_for(spec);
+                            reset_any = true;
+                        }
+                    }
+                }
+                if reset_any {
+                    run.updated_ms = now_ms;
+                    changed += 1;
+                }
+                continue;
+            }
             if run.status != "running" {
                 continue;
             }
@@ -1243,7 +1786,7 @@ pub fn force_recover_stale_runs(person_data_dir: &Path) -> usize {
             run.updated_ms = now_ms;
             if run.cancel_requested {
                 run.status = "cancelled".to_string();
-                run.pending_checkpoint = None;
+                run.set_pending_checkpoints(Vec::new());
                 run.error = Some("Cancelled before server restart.".to_string());
                 for st in &mut run.step_states {
                     if st.status == "running" || st.status == "waiting_human" {
@@ -1252,12 +1795,22 @@ pub fn force_recover_stale_runs(person_data_dir: &Path) -> usize {
                         st.error = Some("Cancelled before server restart.".to_string());
                     }
                 }
-            } else if let Some(cp) = run.pending_checkpoint.clone() {
+            } else if !cps.is_empty() {
                 run.status = "paused_checkpoint".to_string();
-                if let Some(st) = run.step_states.get_mut(cp.step_index) {
-                    if st.status != "waiting_human" {
-                        st.status = "waiting_human".to_string();
-                        st.checkpoint_id = Some(cp.checkpoint_id);
+                let cp_indices: HashSet<usize> = cps.iter().map(|c| c.step_index).collect();
+                for cp in cps {
+                    if let Some(st) = run.step_states.get_mut(cp.step_index) {
+                        if st.status != "waiting_human" {
+                            st.status = "waiting_human".to_string();
+                            st.checkpoint_id = Some(cp.checkpoint_id);
+                        }
+                    }
+                }
+                for i in 0..run.step_states.len() {
+                    if run.step_states[i].status == "running" && !cp_indices.contains(&i) {
+                        if let Some(spec) = run.steps.get(i) {
+                            run.step_states[i] = PipelineStepState::pending_for(spec);
+                        }
                     }
                 }
             } else {
@@ -1880,7 +2433,10 @@ pub fn validate_pipeline_payload(
     let is_dag = steps.iter().any(|s| !s.depends_on().is_empty());
     let step_ids: HashSet<&str> = steps.iter().map(|s| s.id.as_str()).collect();
     let ancestors_map = compute_ancestors_map(&steps);
-    let inputs = parse_inputs(&body["inputs"]);
+    let mut inputs = parse_inputs(&body["inputs"], true);
+    if let Some(trig) = body.get("trigger").and_then(|v| v.as_str()).map(str::trim).filter(|s| !s.is_empty()) {
+        inputs.insert(ROUTINE_TRIGGER_KEY.to_string(), trig.to_string());
+    }
     let dummy_run = PipelineRun {
         run_id: String::new(),
         routine_id: None,
@@ -1966,6 +2522,54 @@ pub fn validate_pipeline_payload(
                     if !exists_in_lib {
                         errors.push(format!("step '{}': unknown skill '{sk}'", step.id));
                     }
+                }
+            }
+        }
+        if step.kind == "subpipeline" {
+            if let Some(sub) = step.subpipeline() {
+                scan_templates_in_str(&sub.routine_id, &step.id, &step_ids, anc_ref, &mut errors);
+                for val in sub.inputs.values() {
+                    scan_templates_in_str(val, &step.id, &step_ids, anc_ref, &mut errors);
+                }
+                if !sub.routine_id.contains("{{") {
+                    let root_rid = body["routine_id"].as_str().map(str::trim);
+                    if root_rid == Some(sub.routine_id.as_str()) {
+                        errors.push(format!(
+                            "step '{}': subpipeline cannot reference itself ('{}')",
+                            step.id, sub.routine_id
+                        ));
+                    } else if routines::get_routine(&cfg.data_dir, &sub.routine_id).is_none() {
+                        errors.push(format!(
+                            "step '{}': unknown subpipeline routine '{}'",
+                            step.id, sub.routine_id
+                        ));
+                    } else {
+                        let mut stack: Vec<String> = Vec::new();
+                        if let Some(rrid) = root_rid.filter(|s| !s.is_empty()) {
+                            stack.push(rrid.to_string());
+                        }
+                        if let Some(cycle) = find_subpipeline_cycle(&cfg.data_dir, &sub.routine_id, &mut stack, 0) {
+                            errors.push(format!(
+                                "step '{}': cyclic subpipeline reference detected ({})",
+                                step.id, cycle.join(" -> ")
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+        if let Some(oe) = step.on_error() {
+            if let Some(target) = oe.strip_prefix("goto:") {
+                if !step_ids.contains(target) {
+                    errors.push(format!(
+                        "step '{}': on_error goto targets unknown step '{target}'",
+                        step.id
+                    ));
+                } else if target == step.id {
+                    errors.push(format!(
+                        "step '{}': on_error goto cannot target itself",
+                        step.id
+                    ));
                 }
             }
         }
@@ -2061,6 +2665,112 @@ pub fn validate_pipeline_payload(
             }),
         )
     }
+}
+
+fn find_subpipeline_cycle(
+    person_data_dir: &Path,
+    routine_id: &str,
+    stack: &mut Vec<String>,
+    depth: usize,
+) -> Option<Vec<String>> {
+    if depth >= MAX_SUBPIPELINE_DEPTH {
+        return None;
+    }
+    if stack.iter().any(|id| id == routine_id) {
+        let mut cycle = stack.clone();
+        cycle.push(routine_id.to_string());
+        return Some(cycle);
+    }
+    let rt = routines::get_routine(person_data_dir, routine_id)?;
+    let v2_raw = rt.get("steps_v2").filter(|v| v.as_array().is_some_and(|a| !a.is_empty()))?;
+    let steps = parse_steps_v2(v2_raw).ok()?;
+    stack.push(routine_id.to_string());
+    for step in &steps {
+        if step.kind == "subpipeline" {
+            if let Some(sub) = step.subpipeline() {
+                if !sub.routine_id.contains("{{") {
+                    if let Some(cycle) =
+                        find_subpipeline_cycle(person_data_dir, &sub.routine_id, stack, depth + 1)
+                    {
+                        return Some(cycle);
+                    }
+                }
+            }
+        }
+    }
+    stack.pop();
+    None
+}
+
+/// Whether executing `steps_v2` (and any reachable `subpipeline` routines) can
+/// reach an `"agent"` step requiring an LLM.
+pub fn steps_require_llm(person_data_dir: &Path, steps_v2: &[PipelineStepSpec]) -> bool {
+    let mut visited = HashSet::new();
+    steps_require_llm_inner(person_data_dir, steps_v2, &mut visited)
+}
+
+fn steps_require_llm_inner(
+    person_data_dir: &Path,
+    steps_v2: &[PipelineStepSpec],
+    visited: &mut HashSet<String>,
+) -> bool {
+    for step in steps_v2 {
+        match step.kind.as_str() {
+            "agent" => return true,
+            "subpipeline" => {
+                if let Some(sub) = step.subpipeline() {
+                    if sub.routine_id.contains("{{") {
+                        return true;
+                    }
+                    if !visited.insert(sub.routine_id.clone()) {
+                        continue;
+                    }
+                    let Some(rt) = routines::get_routine(person_data_dir, &sub.routine_id) else {
+                        return true;
+                    };
+                    if routine_value_requires_llm_inner(person_data_dir, &rt, visited) {
+                        return true;
+                    }
+                } else {
+                    return true;
+                }
+            }
+            _ => {}
+        }
+    }
+    false
+}
+
+/// Whether a persisted routine JSON record requires an LLM to run.
+pub fn routine_value_requires_llm(person_data_dir: &Path, routine: &Value) -> bool {
+    let mut visited = HashSet::new();
+    if let Some(id) = routine.get("id").and_then(|v| v.as_str()) {
+        visited.insert(id.to_string());
+    }
+    routine_value_requires_llm_inner(person_data_dir, routine, &mut visited)
+}
+
+fn routine_value_requires_llm_inner(
+    person_data_dir: &Path,
+    routine: &Value,
+    visited: &mut HashSet<String>,
+) -> bool {
+    if let Some(v2_raw) = routine
+        .get("steps_v2")
+        .filter(|v| v.as_array().is_some_and(|a| !a.is_empty()))
+    {
+        if let Ok(steps_v2) = parse_steps_v2(v2_raw) {
+            return steps_require_llm_inner(person_data_dir, &steps_v2, visited);
+        }
+    }
+    true
+}
+
+/// Whether `routine_id` already has an active `"running"` pipeline run persisted.
+pub fn has_running_pipeline_for_routine(person_data_dir: &Path, routine_id: &str) -> bool {
+    load_runs(person_data_dir)
+        .into_iter()
+        .any(|r| r.status == "running" && r.routine_id.as_deref() == Some(routine_id))
 }
 
 // ---------------------------------------------------------------------------
@@ -2181,6 +2891,29 @@ fn execute_skill_step(
     Err(format!("unknown deterministic skill '{skill_id}'"))
 }
 
+/// Returns parsed `steps_v2` when a routine consists strictly of deterministic
+/// zero-LLM steps (`skill` / `export`) that can execute without a model API key.
+pub fn parse_deterministic_steps_v2(routine: &Value) -> Option<Vec<PipelineStepSpec>> {
+    let raw = routine
+        .get("steps_v2")
+        .filter(|v| v.as_array().is_some_and(|a| !a.is_empty()))?;
+    let steps = parse_steps_v2(raw).ok()?;
+    if steps
+        .iter()
+        .all(|s| matches!(s.kind.as_str(), "skill" | "export"))
+    {
+        Some(steps)
+    } else {
+        None
+    }
+}
+
+/// Whether a routine consists solely of deterministic zero-LLM `steps_v2`
+/// (`skill` / `export`) and can therefore fire on schedule without a model key.
+pub fn routine_is_deterministic_zero_llm(routine: &Value) -> bool {
+    parse_deterministic_steps_v2(routine).is_some()
+}
+
 /// Synchronously run a deterministic (`skill` / `export`) pipeline without
 /// requiring an HTTP `AppState` or LLM key (used by `launch_starter_playbook`
 /// and offline tests). Persists the `PipelineRun` into `pipeline_runs.json`.
@@ -2191,10 +2924,38 @@ pub fn execute_deterministic_steps_sync(
     steps: &[PipelineStepSpec],
     inputs: HashMap<String, String>,
 ) -> Result<PipelineRun, String> {
+    execute_deterministic_steps_sync_with_options(
+        cfg,
+        routine_id,
+        routine_name,
+        steps,
+        inputs,
+        None,
+        true,
+    )
+}
+
+/// Variant of `execute_deterministic_steps_sync` that lets callers (such as
+/// `server::execute_routine_run_with_inputs`) supply the authoritative
+/// `thread_id` for receipt linkage and opt out of an internal
+/// `routines::record_run` call when the caller records the run itself.
+pub fn execute_deterministic_steps_sync_with_options(
+    cfg: &Config,
+    routine_id: Option<&str>,
+    routine_name: &str,
+    steps: &[PipelineStepSpec],
+    inputs: HashMap<String, String>,
+    thread_id_override: Option<&str>,
+    record_routine_run: bool,
+) -> Result<PipelineRun, String> {
     let now_ms = records::now_millis();
     let seq = PIPELINE_SEQ.fetch_add(1, Ordering::SeqCst);
     let run_id = format!("prun-{now_ms}-{seq}");
-    let thread_id = format!("starter-{}", routine_id.unwrap_or(&run_id));
+    let thread_id = thread_id_override
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(|| format!("starter-{}", routine_id.unwrap_or(&run_id)));
     let mut run = PipelineRun {
         run_id: run_id.clone(),
         routine_id: routine_id.map(str::to_string),
@@ -2293,8 +3054,10 @@ pub fn execute_deterministic_steps_sync(
     run.current_step_index = run.steps.len();
     run.updated_ms = records::now_millis();
     save_run(&cfg.data_dir, &run)?;
-    if let Some(rid) = routine_id {
-        let _ = routines::record_run(&cfg.data_dir, rid, &thread_id, "finished");
+    if record_routine_run {
+        if let Some(rid) = routine_id {
+            let _ = routines::record_run(&cfg.data_dir, rid, &thread_id, "finished");
+        }
     }
     Ok(run)
 }
@@ -2333,6 +3096,31 @@ fn park_pipeline_at_checkpoint_with_options(
     prior_output: Option<String>,
     existing_decision_id: Option<String>,
     updated_snapshot: Option<AgentSnapshot>,
+) -> Result<PipelineRun, String> {
+    park_pipeline_checkpoint_inner(
+        env,
+        run_id,
+        step_idx,
+        cp_spec,
+        prior_files,
+        prior_output,
+        existing_decision_id,
+        updated_snapshot,
+        true,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn park_pipeline_checkpoint_inner(
+    env: &PipelineExecEnv,
+    run_id: &str,
+    step_idx: usize,
+    cp_spec: PipelineCheckpointSpec,
+    prior_files: Vec<String>,
+    prior_output: Option<String>,
+    existing_decision_id: Option<String>,
+    updated_snapshot: Option<AgentSnapshot>,
+    set_paused_status: bool,
 ) -> Result<PipelineRun, String> {
     let safe_inspect: Vec<String> = cp_spec
         .inspect_files
@@ -2380,12 +3168,14 @@ fn park_pipeline_at_checkpoint_with_options(
     };
 
     let updated = mutate_run(&env.cfg.data_dir, run_id, |r| {
-        r.status = "paused_checkpoint".to_string();
+        if set_paused_status {
+            r.status = "paused_checkpoint".to_string();
+        }
         r.current_step_index = step_idx;
         r.updated_ms = now_ms;
-        r.pending_checkpoint = Some(pending.clone());
+        r.add_pending_checkpoint(pending.clone());
         if let Some(ref snap) = updated_snapshot {
-            r.set_agent_snapshot(Some(snap.clone()));
+            r.set_step_snapshot(&step_id, Some(snap.clone()));
         }
         if let Some(st) = r.step_states.get_mut(step_idx) {
             st.status = "waiting_human".to_string();
@@ -2408,8 +3198,13 @@ fn park_pipeline_at_checkpoint_with_options(
         &format!("Paused at checkpoint ({decision_id}): {}", pending.prompt),
     );
     env.search_cache.invalidate(&env.ctx.person_id);
+    let event_name = if set_paused_status {
+        "pipeline_paused"
+    } else {
+        "pipeline_step_parked"
+    };
     env.events.publish(
-        "pipeline_paused",
+        event_name,
         &env.ctx.person_id,
         &updated.run_id,
         &updated.thread_id,
@@ -2418,6 +3213,7 @@ fn park_pipeline_at_checkpoint_with_options(
             "step_index": step_idx,
             "step_id": step_id,
             "checkpoint": pending.to_json(),
+            "pending_checkpoints": updated.pending_checkpoints().iter().map(|c| c.to_json()).collect::<Vec<_>>(),
             "run": updated.to_json(),
             "ts_ms": now_ms,
         }),
@@ -2425,16 +3221,61 @@ fn park_pipeline_at_checkpoint_with_options(
     Ok(updated)
 }
 
-fn register_cancel_flag(run_id: &str) -> Arc<AtomicBool> {
-    let flag = Arc::new(AtomicBool::new(false));
+fn claim_worker_slot(run_id: &str, initial_cancelled: bool) -> Option<(u64, Arc<AtomicBool>)> {
     let mut map = cancel_registry().lock().unwrap_or_else(|p| p.into_inner());
-    map.insert(run_id.to_string(), flag.clone());
-    flag
+    if map.contains_key(run_id) {
+        return None;
+    }
+    let gen_id = CANCEL_GEN_SEQ.fetch_add(1, Ordering::SeqCst);
+    let flag = Arc::new(AtomicBool::new(initial_cancelled));
+    map.insert(run_id.to_string(), (gen_id, flag.clone()));
+    Some((gen_id, flag))
 }
 
-fn unregister_cancel_flag(run_id: &str) {
+fn register_or_replace_cancel_flag(run_id: &str, initial_cancelled: bool) -> (u64, Arc<AtomicBool>) {
     let mut map = cancel_registry().lock().unwrap_or_else(|p| p.into_inner());
-    map.remove(run_id);
+    let gen_id = CANCEL_GEN_SEQ.fetch_add(1, Ordering::SeqCst);
+    let was_cancelled = initial_cancelled
+        || map
+            .get(run_id)
+            .is_some_and(|(_, f)| f.load(Ordering::SeqCst));
+    let flag = Arc::new(AtomicBool::new(was_cancelled));
+    map.insert(run_id.to_string(), (gen_id, flag.clone()));
+    (gen_id, flag)
+}
+
+fn unregister_cancel_flag(run_id: &str, gen_id: u64) {
+    let mut map = cancel_registry().lock().unwrap_or_else(|p| p.into_inner());
+    if map.get(run_id).is_some_and(|(g, _)| *g == gen_id) {
+        map.remove(run_id);
+    }
+}
+
+fn register_subpipeline_child(parent_run_id: &str, child_run_id: &str) {
+    if parent_run_id.is_empty() || child_run_id.is_empty() {
+        return;
+    }
+    let mut map = subpipeline_children_registry()
+        .lock()
+        .unwrap_or_else(|p| p.into_inner());
+    map.entry(parent_run_id.to_string())
+        .or_default()
+        .push(child_run_id.to_string());
+}
+
+fn unregister_subpipeline_child(parent_run_id: &str, child_run_id: &str) {
+    if parent_run_id.is_empty() || child_run_id.is_empty() {
+        return;
+    }
+    let mut map = subpipeline_children_registry()
+        .lock()
+        .unwrap_or_else(|p| p.into_inner());
+    if let Some(children) = map.get_mut(parent_run_id) {
+        children.retain(|id| id != child_run_id);
+        if children.is_empty() {
+            map.remove(parent_run_id);
+        }
+    }
 }
 
 fn is_run_cancelled(person_data_dir: &Path, run_id: &str, flag: &AtomicBool) -> bool {
@@ -2631,6 +3472,7 @@ fn execute_single_step_core(
     env: &PipelineExecEnv,
     step: &PipelineStepSpec,
     run_snap: &PipelineRun,
+    cancel_flag: &Arc<AtomicBool>,
 ) -> StepCoreOutcome {
     match step.kind.as_str() {
         "checkpoint" => {
@@ -2782,11 +3624,173 @@ fn execute_single_step_core(
                 },
             }
         }
+        "subpipeline" => {
+            let Some(sub) = step.subpipeline() else {
+                return StepCoreOutcome::Failed {
+                    error: "subpipeline step missing subpipeline spec".to_string(),
+                    usage: None,
+                    is_cancel: false,
+                    child_items: Vec::new(),
+                };
+            };
+            let cur_depth: usize = run_snap
+                .inputs
+                .get(SUBPIPELINE_DEPTH_KEY)
+                .and_then(|s| s.parse::<usize>().ok())
+                .unwrap_or(0);
+            if cur_depth >= MAX_SUBPIPELINE_DEPTH {
+                return StepCoreOutcome::Failed {
+                    error: format!(
+                        "subpipeline recursion depth limit ({MAX_SUBPIPELINE_DEPTH}) exceeded"
+                    ),
+                    usage: None,
+                    is_cancel: false,
+                    child_items: Vec::new(),
+                };
+            }
+            let resolved_rid = resolve_template_str(&sub.routine_id, run_snap)
+                .trim()
+                .to_string();
+            if resolved_rid.is_empty() {
+                return StepCoreOutcome::Failed {
+                    error: "subpipeline.routine_id resolved to empty string".to_string(),
+                    usage: None,
+                    is_cancel: false,
+                    child_items: Vec::new(),
+                };
+            }
+            let mut stack: Vec<String> = run_snap
+                .inputs
+                .get(SUBPIPELINE_STACK_KEY)
+                .and_then(|s| serde_json::from_str::<Vec<String>>(s).ok())
+                .unwrap_or_default();
+            if let Some(cur_rid) = run_snap.routine_id.as_deref().filter(|s| !s.is_empty()) {
+                if !stack.iter().any(|x| x == cur_rid) {
+                    stack.push(cur_rid.to_string());
+                }
+            }
+            if stack.iter().any(|x| x == &resolved_rid) {
+                return StepCoreOutcome::Failed {
+                    error: format!(
+                        "cyclic subpipeline detected: {} -> {resolved_rid}",
+                        stack.join(" -> ")
+                    ),
+                    usage: None,
+                    is_cancel: false,
+                    child_items: Vec::new(),
+                };
+            }
+            stack.push(resolved_rid.clone());
+            let mut child_inputs = Map::new();
+            for (k, v) in &sub.inputs {
+                if !k.starts_with("__ergon_") {
+                    child_inputs.insert(k.clone(), json!(resolve_template_str(v, run_snap)));
+                }
+            }
+            child_inputs.insert(
+                SUBPIPELINE_DEPTH_KEY.to_string(),
+                json!((cur_depth + 1).to_string()),
+            );
+            child_inputs.insert(
+                SUBPIPELINE_STACK_KEY.to_string(),
+                json!(serde_json::to_string(&stack).unwrap_or_else(|_| "[]".to_string())),
+            );
+            let child_body = json!({
+                "routine_id": resolved_rid,
+                "inputs": Value::Object(child_inputs),
+                "engagement_id": run_snap.engagement_id,
+            });
+            match create_and_start_pipeline_internal(
+                env.clone(),
+                &child_body,
+                false,
+                true,
+                Some((&run_snap.run_id, cancel_flag.clone())),
+            ) {
+                Ok(child_run) => {
+                    if child_run.status == "completed" {
+                        let output = child_run
+                            .step_states
+                            .iter()
+                            .filter(|s| s.status == "ok" && !s.output.is_empty())
+                            .map(|s| s.output.as_str())
+                            .collect::<Vec<_>>()
+                            .join("\n");
+                        let mut files = Vec::new();
+                        for st in &child_run.step_states {
+                            for f in &st.files {
+                                if !files.contains(f) {
+                                    files.push(f.clone());
+                                }
+                            }
+                        }
+                        let metrics = json!({
+                            "subpipeline_run_id": child_run.run_id,
+                            "subpipeline_routine_id": resolved_rid,
+                            "steps_count": child_run.step_states.len(),
+                            "files_count": files.len(),
+                            "anomalies": 0,
+                            "has_anomaly": false,
+                        });
+                        StepCoreOutcome::Ok {
+                            output,
+                            files,
+                            metrics,
+                            usage: child_run.usage,
+                            usage_source: "pipeline_subpipeline",
+                            child_items: child_run.step_states,
+                            consume_snapshot: false,
+                        }
+                    } else if child_run.status == "cancelled" {
+                        StepCoreOutcome::Failed {
+                            error: child_run
+                                .error
+                                .unwrap_or_else(|| "subpipeline cancelled".to_string()),
+                            usage: Some(child_run.usage),
+                            is_cancel: true,
+                            child_items: child_run.step_states,
+                        }
+                    } else {
+                        StepCoreOutcome::Failed {
+                            error: child_run.error.unwrap_or_else(|| {
+                                format!(
+                                    "subpipeline '{}' ended with status '{}'",
+                                    resolved_rid, child_run.status
+                                )
+                            }),
+                            usage: Some(child_run.usage),
+                            is_cancel: false,
+                            child_items: child_run.step_states,
+                        }
+                    }
+                }
+                Err((_, e)) => StepCoreOutcome::Failed {
+                    error: format!("subpipeline '{resolved_rid}' failed: {e}"),
+                    usage: None,
+                    is_cancel: false,
+                    child_items: Vec::new(),
+                },
+            }
+        }
         _ => {
             // "agent" step
             let raw_prompt = step.prompt.as_deref().unwrap_or(&step.label);
-            let resolved_prompt = resolve_template_str(raw_prompt, run_snap);
-            let snapshot = run_snap.agent_snapshot();
+            let mut resolved_prompt = resolve_template_str(raw_prompt, run_snap);
+            let snapshot = run_snap
+                .step_snapshot(&step.id)
+                .or_else(|| run_snap.agent_snapshot());
+            if snapshot.is_some() {
+                if let Some(ans) = run_snap
+                    .step_states
+                    .iter()
+                    .find(|s| s.step_id == step.id)
+                    .and_then(|s| s.human_answer.as_deref())
+                {
+                    resolved_prompt = format!(
+                        "Human responded to checkpoint: {ans}. Continue and complete: {resolved_prompt}"
+                    );
+                }
+            }
             let history = if snapshot.is_some() {
                 Vec::new()
             } else {
@@ -2795,13 +3799,16 @@ fn execute_single_step_core(
             };
             let opts = AgentLoopOptions {
                 snapshot,
+                external_cancel: Some(cancel_flag.clone()),
                 ..AgentLoopOptions::default()
             };
-            match run_agent_for_pipeline_with_options(
+            match run_agent_for_pipeline_step(
                 &env.cfg,
                 &env.ctx,
                 &env.store,
                 &run_snap.thread_id,
+                &run_snap.run_id,
+                &step.id,
                 &resolved_prompt,
                 &history,
                 Some((&env.live_runs, &env.events, &env.ctx.person_id)),
@@ -2861,9 +3868,10 @@ fn execute_step_with_for_each(
     env: &PipelineExecEnv,
     step: &PipelineStepSpec,
     run_snap: &PipelineRun,
+    cancel_flag: &Arc<AtomicBool>,
 ) -> StepCoreOutcome {
     let Some(fe_tpl) = step.for_each() else {
-        return execute_single_step_core(env, step, run_snap);
+        return execute_single_step_core(env, step, run_snap, cancel_flag);
     };
     let items = match resolve_for_each_items(&fe_tpl, run_snap) {
         Ok(it) => it,
@@ -2905,7 +3913,8 @@ fn execute_step_with_for_each(
                       tx_item: mpsc::Sender<(usize, u64, u64, StepCoreOutcome)>,
                       env_c: PipelineExecEnv,
                       step_c: PipelineStepSpec,
-                      mut item_run: PipelineRun| {
+                      mut item_run: PipelineRun,
+                      cancel_c: Arc<AtomicBool>| {
         item_run
             .inputs
             .insert(ITEM_INPUT_KEY.to_string(), item_val.to_string());
@@ -2917,7 +3926,7 @@ fn execute_step_with_for_each(
             .stack_size(4 * 1024 * 1024)
             .spawn(move || {
                 let s_ms = records::now_millis();
-                let res = execute_single_step_core(&env_c, &step_c, &item_run);
+                let res = execute_single_step_core(&env_c, &step_c, &item_run, &cancel_c);
                 let f_ms = records::now_millis();
                 let _ = tx_item.send((idx, s_ms, f_ms, res));
             });
@@ -2925,6 +3934,9 @@ fn execute_step_with_for_each(
 
     let mut abort_rest = false;
     while next_to_spawn < n || in_flight > 0 {
+        if is_run_cancelled(&env.cfg.data_dir, &run_snap.run_id, cancel_flag) {
+            abort_rest = true;
+        }
         while !abort_rest && in_flight < max_workers && next_to_spawn < n {
             let idx = next_to_spawn;
             next_to_spawn += 1;
@@ -2936,6 +3948,7 @@ fn execute_step_with_for_each(
                 env.clone(),
                 step.clone(),
                 run_snap.clone(),
+                cancel_flag.clone(),
             );
         }
         if in_flight > 0 {
@@ -3100,6 +4113,142 @@ fn execute_step_with_for_each(
     }
 }
 
+fn execute_step_attempt_with_timeout(
+    env: &PipelineExecEnv,
+    step: &PipelineStepSpec,
+    run_snap: &PipelineRun,
+    cancel_flag: &Arc<AtomicBool>,
+) -> StepCoreOutcome {
+    let Some(secs) = step.timeout_secs() else {
+        return execute_step_with_for_each(env, step, run_snap, cancel_flag);
+    };
+    let (tx, rx) = mpsc::channel::<StepCoreOutcome>();
+    let env_c = env.clone();
+    let step_c = step.clone();
+    let snap_c = run_snap.clone();
+    let cancel_c = cancel_flag.clone();
+    let _ = std::thread::Builder::new()
+        .name(format!("ergon-step-to-{}", step.id))
+        .stack_size(4 * 1024 * 1024)
+        .spawn(move || {
+            let res = execute_step_with_for_each(&env_c, &step_c, &snap_c, &cancel_c);
+            let _ = tx.send(res);
+        });
+    let deadline = Instant::now() + Duration::from_secs(secs);
+    loop {
+        if is_run_cancelled(&env.cfg.data_dir, &run_snap.run_id, cancel_flag) {
+            return StepCoreOutcome::Failed {
+                error: "run cancelled by user".to_string(),
+                usage: None,
+                is_cancel: true,
+                child_items: Vec::new(),
+            };
+        }
+        let rem = deadline.saturating_duration_since(Instant::now());
+        if rem.is_zero() {
+            return StepCoreOutcome::Failed {
+                error: format!("step '{}' timed out after {}s", step.id, secs),
+                usage: None,
+                is_cancel: false,
+                child_items: Vec::new(),
+            };
+        }
+        match rx.recv_timeout(rem.min(Duration::from_millis(50))) {
+            Ok(outcome) => return outcome,
+            Err(mpsc::RecvTimeoutError::Timeout) => continue,
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                return StepCoreOutcome::Failed {
+                    error: format!("step '{}' worker exited unexpectedly", step.id),
+                    usage: None,
+                    is_cancel: false,
+                    child_items: Vec::new(),
+                };
+            }
+        }
+    }
+}
+
+fn execute_step_with_policy(
+    env: &PipelineExecEnv,
+    step: &PipelineStepSpec,
+    run_snap: &PipelineRun,
+    cancel_flag: &Arc<AtomicBool>,
+) -> StepCoreOutcome {
+    let max_retries = step.retry_max().unwrap_or(0).min(20);
+    let backoff_ms = step.retry_backoff_ms().unwrap_or(0).min(300_000);
+    let mut attempt: u32 = 0;
+    loop {
+        if is_run_cancelled(&env.cfg.data_dir, &run_snap.run_id, cancel_flag) {
+            return StepCoreOutcome::Failed {
+                error: "run cancelled by user".to_string(),
+                usage: None,
+                is_cancel: true,
+                child_items: Vec::new(),
+            };
+        }
+        let outcome = execute_step_attempt_with_timeout(env, step, run_snap, cancel_flag);
+        match outcome {
+            StepCoreOutcome::Ok {
+                output,
+                files,
+                mut metrics,
+                usage,
+                usage_source,
+                child_items,
+                consume_snapshot,
+            } => {
+                if attempt > 0 {
+                    if let Some(obj) = metrics.as_object_mut() {
+                        obj.insert("attempts".to_string(), json!(attempt + 1));
+                    }
+                }
+                return StepCoreOutcome::Ok {
+                    output,
+                    files,
+                    metrics,
+                    usage,
+                    usage_source,
+                    child_items,
+                    consume_snapshot,
+                };
+            }
+            held @ StepCoreOutcome::HeldCheckpoint { .. } => return held,
+            StepCoreOutcome::Failed {
+                error,
+                usage,
+                is_cancel,
+                child_items,
+            } => {
+                if is_cancel || attempt >= max_retries {
+                    return StepCoreOutcome::Failed {
+                        error,
+                        usage,
+                        is_cancel,
+                        child_items,
+                    };
+                }
+                attempt += 1;
+                if backoff_ms > 0 {
+                    let mut remaining = backoff_ms;
+                    while remaining > 0 {
+                        if is_run_cancelled(&env.cfg.data_dir, &run_snap.run_id, cancel_flag) {
+                            return StepCoreOutcome::Failed {
+                                error: "run cancelled by user".to_string(),
+                                usage,
+                                is_cancel: true,
+                                child_items,
+                            };
+                        }
+                        let chunk = remaining.min(25);
+                        std::thread::sleep(Duration::from_millis(chunk));
+                        remaining -= chunk;
+                    }
+                }
+            }
+        }
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn record_step_success(
     env: &PipelineExecEnv,
@@ -3120,7 +4269,10 @@ fn record_step_success(
         r.updated_ms = finished_ms;
         r.usage.accumulate(&step_usage);
         if consume_snapshot {
-            r.set_agent_snapshot(None);
+            r.set_step_snapshot(&step.id, None);
+            if !r.is_dag() {
+                r.set_agent_snapshot(None);
+            }
         }
         if let Some(st) = r.step_states.get_mut(idx) {
             st.status = "ok".to_string();
@@ -3264,6 +4416,7 @@ fn record_step_failure(
         }),
     );
     if finalize_run {
+        record_async_routine_completion(env, &failed, next_status, finished_ms);
         env.events.publish(
             "pipeline_finished",
             &env.ctx.person_id,
@@ -3280,6 +4433,98 @@ fn record_step_failure(
         );
     }
     Ok(failed)
+}
+
+fn record_async_routine_completion(
+    env: &PipelineExecEnv,
+    run: &PipelineRun,
+    status: &str,
+    finished_ms: u64,
+) {
+    let Some(rid) = run.routine_id.as_deref() else {
+        return;
+    };
+    let Some(trigger) = run.inputs.get(ROUTINE_TRIGGER_KEY).map(String::as_str) else {
+        return;
+    };
+    let rt_status = match status {
+        "completed" | "ok" => "finished",
+        "cancelled" => "cancelled",
+        _ => "error",
+    };
+    let summary: String = if status == "completed" || status == "ok" {
+        run.step_states
+            .iter()
+            .filter(|s| s.status == "ok" && !s.output.is_empty())
+            .map(|s| s.output.as_str())
+            .collect::<Vec<_>>()
+            .join("\n")
+    } else {
+        run.error.clone().unwrap_or_else(|| status.to_string())
+    };
+    let mut receipt_id = receipts::load_chain(&env.cfg.data_dir)
+        .iter()
+        .rev()
+        .find(|r| r.thread_id == run.thread_id)
+        .map(|r| r.id.clone());
+    if (status == "completed" || status == "ok") && receipt_id.is_none() {
+        records::append_work(
+            &env.cfg,
+            &run.routine_name,
+            if summary.is_empty() {
+                "Completed deterministic routine."
+            } else {
+                &summary
+            },
+            &[],
+            &run.thread_id,
+            true,
+        );
+        receipt_id = receipts::load_chain(&env.cfg.data_dir)
+            .iter()
+            .rev()
+            .find(|r| r.thread_id == run.thread_id)
+            .map(|r| r.id.clone());
+    }
+    env.search_cache.invalidate(&env.ctx.person_id);
+    let hist_status = if status == "completed" { "ok" } else { status };
+    let rec = scheduler::new_run_record(
+        rid,
+        &run.routine_name,
+        run.created_ms,
+        finished_ms,
+        hist_status,
+        receipt_id.clone(),
+        Some(run.thread_id.clone()),
+        &summary,
+        trigger,
+        run.error.clone(),
+    );
+    let _ = scheduler::record_run_history(&env.cfg.data_dir, rec.clone());
+    let updated = routines::record_run(&env.cfg.data_dir, rid, &run.thread_id, rt_status);
+    let next_ms = updated
+        .as_ref()
+        .and_then(|u| scheduler::compute_routine_next_run_ms(u, finished_ms));
+    env.events.publish(
+        "routine_fired",
+        &env.ctx.person_id,
+        &rec.run_id,
+        &run.thread_id,
+        json!({
+            "routine_id": rid,
+            "routine_name": run.routine_name,
+            "trigger": trigger,
+            "status": hist_status,
+            "thread_id": run.thread_id,
+            "pipeline_run_id": run.run_id,
+            "receipt_id": receipt_id,
+            "duration_ms": rec.duration_ms,
+            "summary": summary.chars().take(240).collect::<String>(),
+            "error": run.error,
+            "next_run_ms": next_ms,
+            "ts_ms": finished_ms,
+        }),
+    );
 }
 
 fn emit_step_skipped(
@@ -3328,9 +4573,10 @@ fn finalize_cancelled_run(env: &PipelineExecEnv, run_id: &str) -> Result<Pipelin
     let cancelled = mutate_run(&env.cfg.data_dir, run_id, |r| {
         r.status = "cancelled".to_string();
         r.updated_ms = now_ms;
-        r.pending_checkpoint = None;
+        r.set_pending_checkpoints(Vec::new());
         Ok(r.clone())
     })?;
+    record_async_routine_completion(env, &cancelled, "cancelled", now_ms);
     env.events.publish(
         "pipeline_finished",
         &env.ctx.person_id,
@@ -3348,15 +4594,31 @@ fn finalize_cancelled_run(env: &PipelineExecEnv, run_id: &str) -> Result<Pipelin
     Ok(cancelled)
 }
 
-fn execute_pipeline_loop(env: &PipelineExecEnv, run_id: &str, start_index: usize) -> Result<PipelineRun, String> {
-    let cancel_flag = register_cancel_flag(run_id);
-    struct CancelGuard<'a>(&'a str);
+fn execute_pipeline_loop(
+    env: &PipelineExecEnv,
+    run_id: &str,
+    start_index: usize,
+) -> Result<PipelineRun, String> {
+    let initial_cancelled = get_run(&env.cfg.data_dir, run_id)
+        .is_some_and(|r| r.cancel_requested || r.status == "cancelled");
+    let slot = register_or_replace_cancel_flag(run_id, initial_cancelled);
+    execute_pipeline_loop_with_slot(env, run_id, start_index, slot)
+}
+
+fn execute_pipeline_loop_with_slot(
+    env: &PipelineExecEnv,
+    run_id: &str,
+    start_index: usize,
+    slot: (u64, Arc<AtomicBool>),
+) -> Result<PipelineRun, String> {
+    let (gen_id, cancel_flag) = slot;
+    struct CancelGuard<'a>(&'a str, u64);
     impl Drop for CancelGuard<'_> {
         fn drop(&mut self) {
-            unregister_cancel_flag(self.0);
+            unregister_cancel_flag(self.0, self.1);
         }
     }
-    let _cg = CancelGuard(run_id);
+    let _cg = CancelGuard(run_id, gen_id);
 
     let initial = get_run(&env.cfg.data_dir, run_id)
         .ok_or_else(|| "pipeline run not found".to_string())?;
@@ -3366,7 +4628,10 @@ fn execute_pipeline_loop(env: &PipelineExecEnv, run_id: &str, start_index: usize
         return execute_dag_pipeline_loop(env, run_id, &cancel_flag);
     }
 
-    for idx in start_index..total_steps {
+    let mut idx = start_index;
+    let mut goto_hops = 0usize;
+    let mut force_next = false;
+    while idx < total_steps {
         if is_run_cancelled(&env.cfg.data_dir, run_id, &cancel_flag) {
             return finalize_cancelled_run(env, run_id);
         }
@@ -3375,11 +4640,15 @@ fn execute_pipeline_loop(env: &PipelineExecEnv, run_id: &str, start_index: usize
             .ok_or_else(|| "pipeline run not found".to_string())?;
         let step = run_snap.steps[idx].clone();
 
-        let (should_run, skip_reason) = should_run_step_for_run(&step, idx, &run_snap);
-        if !should_run {
-            emit_step_skipped(env, run_id, idx, &step, skip_reason)?;
-            continue;
+        if !force_next {
+            let (should_run, skip_reason) = should_run_step_for_run(&step, idx, &run_snap);
+            if !should_run {
+                emit_step_skipped(env, run_id, idx, &step, skip_reason)?;
+                idx += 1;
+                continue;
+            }
         }
+        force_next = false;
 
         let started_ms = records::now_millis();
         let run_snap = mutate_run(&env.cfg.data_dir, run_id, |r| {
@@ -3412,7 +4681,7 @@ fn execute_pipeline_loop(env: &PipelineExecEnv, run_id: &str, start_index: usize
         );
 
         let step_t0 = std::time::Instant::now();
-        match execute_step_with_for_each(env, &step, &run_snap) {
+        match execute_step_with_policy(env, &step, &run_snap, &cancel_flag) {
             StepCoreOutcome::Ok {
                 output,
                 files,
@@ -3437,6 +4706,7 @@ fn execute_pipeline_loop(env: &PipelineExecEnv, run_id: &str, start_index: usize
                     child_items,
                     consume_snapshot,
                 )?;
+                idx += 1;
             }
             StepCoreOutcome::HeldCheckpoint {
                 cp_spec,
@@ -3473,6 +4743,78 @@ fn execute_pipeline_loop(env: &PipelineExecEnv, run_id: &str, start_index: usize
                 child_items,
             } => {
                 let elapsed_ms = step_t0.elapsed().as_millis() as u64;
+                let on_error = step.on_error();
+                if !is_cancel {
+                    if matches!(on_error.as_deref(), Some("continue")) {
+                        record_step_failure(
+                            env,
+                            run_id,
+                            idx,
+                            &step,
+                            elapsed_ms,
+                            error,
+                            usage,
+                            false,
+                            child_items,
+                            false,
+                        )?;
+                        idx += 1;
+                        continue;
+                    }
+                    if let Some(target_id) = on_error.as_deref().and_then(|s| s.strip_prefix("goto:")) {
+                        let target_id = target_id.trim();
+                        if let Some(target_idx) = run_snap.steps.iter().position(|s| s.id == target_id) {
+                            goto_hops += 1;
+                            if goto_hops > MAX_PIPELINE_STEPS * 2 {
+                                return record_step_failure(
+                                    env,
+                                    run_id,
+                                    idx,
+                                    &step,
+                                    elapsed_ms,
+                                    format!("on_error goto exceeded max hops: {error}"),
+                                    usage,
+                                    false,
+                                    child_items,
+                                    true,
+                                );
+                            }
+                            record_step_failure(
+                                env,
+                                run_id,
+                                idx,
+                                &step,
+                                elapsed_ms,
+                                error,
+                                usage,
+                                false,
+                                child_items,
+                                false,
+                            )?;
+                            if target_idx > idx {
+                                for mid in (idx + 1)..target_idx {
+                                    let mid_step = run_snap.steps[mid].clone();
+                                    emit_step_skipped(
+                                        env,
+                                        run_id,
+                                        mid,
+                                        &mid_step,
+                                        "Skipped by on_error goto.",
+                                    )?;
+                                }
+                            }
+                            let _ = mutate_run(&env.cfg.data_dir, run_id, |r| {
+                                if let Some(st) = r.step_states.get_mut(target_idx) {
+                                    *st = PipelineStepState::pending_for(&r.steps[target_idx]);
+                                }
+                                Ok(())
+                            });
+                            idx = target_idx;
+                            force_next = true;
+                            continue;
+                        }
+                    }
+                }
                 return record_step_failure(
                     env,
                     run_id,
@@ -3498,25 +4840,45 @@ struct DagStepDoneMsg {
     outcome: StepCoreOutcome,
 }
 
-struct PendingDagPause {
-    idx: usize,
-    cp_spec: PipelineCheckpointSpec,
-    prior_files: Vec<String>,
-    prior_output: Option<String>,
-    existing_decision_id: Option<String>,
-    usage: Option<records::RunUsage>,
-    updated_snapshot: Option<AgentSnapshot>,
+fn dag_deps_ready(
+    deps: &[String],
+    state_map: &HashMap<String, String>,
+    settled_error_steps: &HashSet<String>,
+) -> bool {
+    deps.iter().all(|d| {
+        matches!(state_map.get(d.as_str()).map(String::as_str), Some("ok" | "skipped"))
+            || (state_map.get(d.as_str()).map(String::as_str) == Some("failed")
+                && settled_error_steps.contains(d))
+    })
 }
 
 fn execute_dag_pipeline_loop(
     env: &PipelineExecEnv,
     run_id: &str,
-    cancel_flag: &AtomicBool,
+    cancel_flag: &Arc<AtomicBool>,
 ) -> Result<PipelineRun, String> {
     let (tx, rx) = mpsc::channel::<DagStepDoneMsg>();
     let mut in_flight: HashSet<usize> = HashSet::new();
     let mut draining_failure: Option<(String, bool)> = None;
-    let mut pending_pause: Option<PendingDagPause> = None;
+    let mut settled_error_steps: HashSet<String> = HashSet::new();
+    let mut goto_redirected_steps: HashMap<String, String> = HashMap::new();
+    let mut goto_forced: HashSet<String> = HashSet::new();
+    let mut goto_hops: usize = 0;
+
+    if let Some(init_snap) = get_run(&env.cfg.data_dir, run_id) {
+        for (i, st) in init_snap.step_states.iter().enumerate() {
+            if st.status == "failed" {
+                if let Some(oe) = init_snap.steps[i].on_error() {
+                    if oe == "continue" {
+                        settled_error_steps.insert(st.step_id.clone());
+                    } else if let Some(target) = oe.strip_prefix("goto:") {
+                        settled_error_steps.insert(st.step_id.clone());
+                        goto_redirected_steps.insert(st.step_id.clone(), target.trim().to_string());
+                    }
+                }
+            }
+        }
+    }
 
     loop {
         if is_run_cancelled(&env.cfg.data_dir, run_id, cancel_flag) && draining_failure.is_none() {
@@ -3527,32 +4889,52 @@ fn execute_dag_pipeline_loop(
             .ok_or_else(|| "pipeline run not found".to_string())?;
         let total_steps = run_snap.steps.len();
 
-        if draining_failure.is_none() && pending_pause.is_none() {
-            // Find ready pending steps whose depends_on are all "ok" or "skipped".
+        if draining_failure.is_none() {
+            // Find ready pending steps and evaluate skips (`when` / goto redirects).
             loop {
                 let mut skipped_any = false;
-                let state_map: HashMap<&str, &str> = run_snap
+                let state_map: HashMap<String, String> = run_snap
                     .step_states
                     .iter()
-                    .map(|s| (s.step_id.as_str(), s.status.as_str()))
+                    .map(|s| (s.step_id.clone(), s.status.clone()))
                     .collect();
                 for idx in 0..total_steps {
                     if in_flight.contains(&idx) || run_snap.step_states[idx].status != "pending" {
                         continue;
                     }
-                    let deps = run_snap.steps[idx].depends_on();
-                    let ready = deps.iter().all(|d| {
-                        matches!(state_map.get(d.as_str()).copied(), Some("ok" | "skipped"))
-                    });
-                    if !ready {
+                    let step = run_snap.steps[idx].clone();
+                    let deps = step.depends_on();
+                    if !dag_deps_ready(&deps, &state_map, &settled_error_steps) {
                         continue;
                     }
-                    let step = run_snap.steps[idx].clone();
-                    let (should_run, skip_reason) = should_run_step_for_run(&step, idx, &run_snap);
-                    if !should_run {
-                        run_snap = emit_step_skipped(env, run_id, idx, &step, skip_reason)?;
+                    // If an upstream dep failed with goto:<target> and this step is NOT the goto target
+                    // (nor forced), skip it.
+                    let redirected_away = !goto_forced.contains(&step.id)
+                        && deps.iter().any(|d| {
+                            state_map.get(d).map(String::as_str) == Some("failed")
+                                && goto_redirected_steps
+                                    .get(d)
+                                    .is_some_and(|t| t != &step.id)
+                        });
+                    if redirected_away {
+                        run_snap = emit_step_skipped(
+                            env,
+                            run_id,
+                            idx,
+                            &step,
+                            "Skipped because upstream dependency redirected via on_error goto.",
+                        )?;
                         skipped_any = true;
                         break;
+                    }
+                    if !goto_forced.contains(&step.id) {
+                        let (should_run, skip_reason) =
+                            should_run_step_for_run(&step, idx, &run_snap);
+                        if !should_run {
+                            run_snap = emit_step_skipped(env, run_id, idx, &step, skip_reason)?;
+                            skipped_any = true;
+                            break;
+                        }
                     }
                 }
                 if !skipped_any {
@@ -3573,19 +4955,16 @@ fn execute_dag_pipeline_loop(
                 if in_flight.contains(&idx) || run_snap.step_states[idx].status != "pending" {
                     continue;
                 }
-                let deps = run_snap.steps[idx].depends_on();
-                let ready = deps.iter().all(|d| {
-                    matches!(state_map.get(d.as_str()).map(String::as_str), Some("ok" | "skipped"))
-                });
-                if !ready {
+                let step = run_snap.steps[idx].clone();
+                let deps = step.depends_on();
+                if !goto_forced.contains(&step.id)
+                    && !dag_deps_ready(&deps, &state_map, &settled_error_steps)
+                {
                     continue;
                 }
-                let step = run_snap.steps[idx].clone();
+                goto_forced.remove(&step.id);
+
                 if step.kind == "checkpoint" {
-                    if !in_flight.is_empty() {
-                        // Drain current wave before parking checkpoint
-                        break;
-                    }
                     let started_ms = records::now_millis();
                     let snap_now = mutate_run(&env.cfg.data_dir, run_id, |r| {
                         r.status = "running".to_string();
@@ -3599,7 +4978,7 @@ fn execute_dag_pipeline_loop(
                         Ok(r.clone())
                     })?;
                     let cp_spec = build_checkpoint_from_step(&step, &snap_now);
-                    return park_pipeline_at_checkpoint_with_options(
+                    run_snap = park_pipeline_checkpoint_inner(
                         env,
                         run_id,
                         idx,
@@ -3608,7 +4987,9 @@ fn execute_dag_pipeline_loop(
                         None,
                         None,
                         None,
-                    );
+                        false,
+                    )?;
+                    continue;
                 }
 
                 let started_ms = records::now_millis();
@@ -3645,12 +5026,13 @@ fn execute_dag_pipeline_loop(
                 let env_w = env.clone();
                 let snap_w = run_snap.clone();
                 let tx_w = tx.clone();
+                let cancel_w = cancel_flag.clone();
                 let _ = std::thread::Builder::new()
                     .name(format!("ergon-dag-{}-{}", run_id, step.id))
                     .stack_size(4 * 1024 * 1024)
                     .spawn(move || {
                         let t0 = std::time::Instant::now();
-                        let outcome = execute_step_with_for_each(&env_w, &step, &snap_w);
+                        let outcome = execute_step_with_policy(&env_w, &step, &snap_w, &cancel_w);
                         let elapsed_ms = t0.elapsed().as_millis() as u64;
                         let _ = tx_w.send(DagStepDoneMsg {
                             idx,
@@ -3662,27 +5044,6 @@ fn execute_dag_pipeline_loop(
         }
 
         if in_flight.is_empty() {
-            if let Some(pause) = pending_pause.take() {
-                if let Some(u) = pause.usage {
-                    let _ = mutate_run(&env.cfg.data_dir, run_id, |r| {
-                        r.usage.accumulate(&u);
-                        if let Some(st) = r.step_states.get_mut(pause.idx) {
-                            st.usage = Some(u);
-                        }
-                        Ok(())
-                    });
-                }
-                return park_pipeline_at_checkpoint_with_options(
-                    env,
-                    run_id,
-                    pause.idx,
-                    pause.cp_spec,
-                    pause.prior_files,
-                    pause.prior_output,
-                    pause.existing_decision_id,
-                    pause.updated_snapshot,
-                );
-            }
             if let Some((err, is_cancel)) = draining_failure {
                 if is_cancel {
                     return finalize_cancelled_run(env, run_id);
@@ -3694,6 +5055,7 @@ fn execute_dag_pipeline_loop(
                     r.updated_ms = finished_ms;
                     Ok(r.clone())
                 })?;
+                record_async_routine_completion(env, &failed, "failed", finished_ms);
                 env.events.publish(
                     "pipeline_finished",
                     &env.ctx.person_id,
@@ -3711,16 +5073,80 @@ fn execute_dag_pipeline_loop(
                 return Ok(failed);
             }
 
-            let latest = get_run(&env.cfg.data_dir, run_id)
-                .ok_or_else(|| "pipeline run not found".to_string())?;
-            if latest
-                .step_states
-                .iter()
-                .all(|s| matches!(s.status.as_str(), "ok" | "skipped"))
-            {
-                return finalize_completed_or_cancelled(env, run_id, total_steps, cancel_flag);
+            enum BarrierDecision {
+                ContinueLoop,
+                Paused(Box<PipelineRun>),
+                Complete,
+                Stalled,
             }
-            return Err("DAG scheduler stalled: unresolvable pending dependencies".to_string());
+            let settled_clone = settled_error_steps.clone();
+            let forced_clone = goto_forced.clone();
+            let now_ms = records::now_millis();
+            let decision = mutate_run(&env.cfg.data_dir, run_id, |r| {
+                let s_map: HashMap<String, String> = r
+                    .step_states
+                    .iter()
+                    .map(|s| (s.step_id.clone(), s.status.clone()))
+                    .collect();
+                let has_ready = (0..r.steps.len()).any(|i| {
+                    r.step_states[i].status == "pending"
+                        && (forced_clone.contains(&r.steps[i].id)
+                            || dag_deps_ready(
+                                &r.steps[i].depends_on(),
+                                &s_map,
+                                &settled_clone,
+                            ))
+                });
+                if has_ready {
+                    r.status = "running".to_string();
+                    return Ok(BarrierDecision::ContinueLoop);
+                }
+                let cps = r.pending_checkpoints();
+                if !cps.is_empty() {
+                    r.status = "paused_checkpoint".to_string();
+                    r.pending_checkpoint = cps.first().cloned();
+                    r.updated_ms = now_ms;
+                    return Ok(BarrierDecision::Paused(Box::new(r.clone())));
+                }
+                let all_settled = r.step_states.iter().all(|s| {
+                    matches!(s.status.as_str(), "ok" | "skipped")
+                        || (s.status == "failed" && settled_clone.contains(&s.step_id))
+                });
+                if all_settled {
+                    return Ok(BarrierDecision::Complete);
+                }
+                Ok(BarrierDecision::Stalled)
+            })?;
+
+            match decision {
+                BarrierDecision::ContinueLoop => continue,
+                BarrierDecision::Paused(paused_run) => {
+                    let cps = paused_run.pending_checkpoints();
+                    let first_cp = cps.first().cloned();
+                    env.events.publish(
+                        "pipeline_paused",
+                        &env.ctx.person_id,
+                        &paused_run.run_id,
+                        &paused_run.thread_id,
+                        json!({
+                            "routine_name": paused_run.routine_name,
+                            "step_index": first_cp.as_ref().map(|c| c.step_index).unwrap_or(0),
+                            "step_id": first_cp.as_ref().map(|c| c.step_id.clone()).unwrap_or_default(),
+                            "checkpoint": first_cp.as_ref().map(|c| c.to_json()),
+                            "pending_checkpoints": cps.iter().map(|c| c.to_json()).collect::<Vec<_>>(),
+                            "run": paused_run.to_json(),
+                            "ts_ms": now_ms,
+                        }),
+                    );
+                    return Ok(*paused_run);
+                }
+                BarrierDecision::Complete => {
+                    return finalize_completed_or_cancelled(env, run_id, total_steps, cancel_flag);
+                }
+                BarrierDecision::Stalled => {
+                    return Err("DAG scheduler stalled: unresolvable pending dependencies".to_string());
+                }
+            }
         }
 
         let msg = rx
@@ -3761,17 +5187,26 @@ fn execute_dag_pipeline_loop(
                 usage,
                 updated_snapshot,
             } => {
-                if pending_pause.is_none() {
-                    pending_pause = Some(PendingDagPause {
-                        idx: msg.idx,
-                        cp_spec,
-                        prior_files,
-                        prior_output,
-                        existing_decision_id,
-                        usage,
-                        updated_snapshot,
+                if let Some(u) = usage {
+                    let _ = mutate_run(&env.cfg.data_dir, run_id, |r| {
+                        r.usage.accumulate(&u);
+                        if let Some(st) = r.step_states.get_mut(msg.idx) {
+                            st.usage = Some(u);
+                        }
+                        Ok(())
                     });
                 }
+                park_pipeline_checkpoint_inner(
+                    env,
+                    run_id,
+                    msg.idx,
+                    cp_spec,
+                    prior_files,
+                    prior_output,
+                    existing_decision_id,
+                    updated_snapshot,
+                    false,
+                )?;
             }
             StepCoreOutcome::Failed {
                 error,
@@ -3779,7 +5214,39 @@ fn execute_dag_pipeline_loop(
                 is_cancel,
                 child_items,
             } => {
-                if draining_failure.is_none() {
+                let on_error = step.on_error();
+                let mut handled = false;
+                if !is_cancel {
+                    if matches!(on_error.as_deref(), Some("continue")) {
+                        settled_error_steps.insert(step.id.clone());
+                        handled = true;
+                    } else if let Some(target_id) =
+                        on_error.as_deref().and_then(|s| s.strip_prefix("goto:"))
+                    {
+                        let target_id = target_id.trim();
+                        if let Some(target_idx) =
+                            run_snap.steps.iter().position(|s| s.id == target_id)
+                        {
+                            goto_hops += 1;
+                            if goto_hops <= MAX_PIPELINE_STEPS * 2 {
+                                settled_error_steps.insert(step.id.clone());
+                                goto_redirected_steps
+                                    .insert(step.id.clone(), target_id.to_string());
+                                goto_forced.insert(target_id.to_string());
+                                let _ = mutate_run(&env.cfg.data_dir, run_id, |r| {
+                                    if let Some(st) = r.step_states.get_mut(target_idx) {
+                                        if st.status != "running" {
+                                            *st = PipelineStepState::pending_for(&r.steps[target_idx]);
+                                        }
+                                    }
+                                    Ok(())
+                                });
+                                handled = true;
+                            }
+                        }
+                    }
+                }
+                if !handled && draining_failure.is_none() {
                     draining_failure = Some((error.clone(), is_cancel));
                 }
                 record_step_failure(
@@ -3810,17 +5277,18 @@ fn finalize_completed_or_cancelled(
     let completed = mutate_run(&env.cfg.data_dir, run_id, |r| {
         if final_cancelled || r.cancel_requested || r.status == "cancelled" {
             r.status = "cancelled".to_string();
-            r.pending_checkpoint = None;
+            r.set_pending_checkpoints(Vec::new());
         } else {
             r.status = "completed".to_string();
             r.current_step_index = total_steps;
-            r.pending_checkpoint = None;
+            r.set_pending_checkpoints(Vec::new());
             r.error = None;
         }
         r.updated_ms = finished_ms;
         Ok(r.clone())
     })?;
     if completed.status == "cancelled" {
+        record_async_routine_completion(env, &completed, "cancelled", finished_ms);
         env.events.publish(
             "pipeline_finished",
             &env.ctx.person_id,
@@ -3837,7 +5305,9 @@ fn finalize_completed_or_cancelled(
         );
         return Ok(completed);
     }
-    if let Some(rid) = completed.routine_id.as_deref() {
+    if completed.inputs.contains_key(ROUTINE_TRIGGER_KEY) {
+        record_async_routine_completion(env, &completed, "completed", finished_ms);
+    } else if let Some(rid) = completed.routine_id.as_deref() {
         let _ = routines::record_run(&env.cfg.data_dir, rid, &completed.thread_id, "finished");
     }
     env.events.publish(
@@ -3857,12 +5327,17 @@ fn finalize_completed_or_cancelled(
     Ok(completed)
 }
 
-fn spawn_pipeline_worker(env: PipelineExecEnv, run_id: String, start_index: usize) {
+fn spawn_pipeline_worker_with_slot(
+    env: PipelineExecEnv,
+    run_id: String,
+    start_index: usize,
+    slot: (u64, Arc<AtomicBool>),
+) {
     let _ = std::thread::Builder::new()
         .name(format!("ergon-pipe-{run_id}"))
         .stack_size(4 * 1024 * 1024)
         .spawn(move || {
-            if let Err(err) = execute_pipeline_loop(&env, &run_id, start_index) {
+            if let Err(err) = execute_pipeline_loop_with_slot(&env, &run_id, start_index, slot) {
                 let now_ms = records::now_millis();
                 if let Ok(failed) = mutate_run(&env.cfg.data_dir, &run_id, |r| {
                     if r.status == "running" {
@@ -3873,6 +5348,7 @@ fn spawn_pipeline_worker(env: PipelineExecEnv, run_id: String, start_index: usiz
                     Ok(r.clone())
                 }) {
                     if failed.status == "failed" {
+                        record_async_routine_completion(&env, &failed, "failed", now_ms);
                         env.events.publish(
                             "pipeline_finished",
                             &env.ctx.person_id,
@@ -3893,10 +5369,13 @@ fn spawn_pipeline_worker(env: PipelineExecEnv, run_id: String, start_index: usiz
         });
 }
 
-fn parse_inputs(val: &Value) -> HashMap<String, String> {
+fn parse_inputs(val: &Value, strip_internal: bool) -> HashMap<String, String> {
     let mut map = HashMap::new();
     if let Some(obj) = val.as_object() {
         for (k, v) in obj {
+            if strip_internal && k.starts_with("__ergon_") {
+                continue;
+            }
             let s = match v {
                 Value::String(s) => s.clone(),
                 Value::Null => String::new(),
@@ -3912,6 +5391,16 @@ pub fn create_and_start_pipeline(
     env: PipelineExecEnv,
     body: &Value,
     async_exec: bool,
+) -> Result<PipelineRun, (u16, String)> {
+    create_and_start_pipeline_internal(env, body, async_exec, false, None)
+}
+
+fn create_and_start_pipeline_internal(
+    env: PipelineExecEnv,
+    body: &Value,
+    async_exec: bool,
+    allow_internal_inputs: bool,
+    parent_sub: Option<(&str, Arc<AtomicBool>)>,
 ) -> Result<PipelineRun, (u16, String)> {
     let routine_id = body["routine_id"]
         .as_str()
@@ -3964,7 +5453,10 @@ pub fn create_and_start_pipeline(
     if routine_name.is_empty() {
         routine_name = "Pipeline".to_string();
     }
-    let inputs = parse_inputs(&body["inputs"]);
+    let mut inputs = parse_inputs(&body["inputs"], !allow_internal_inputs);
+    if let Some(trig) = body.get("trigger").and_then(|v| v.as_str()).map(str::trim).filter(|s| !s.is_empty()) {
+        inputs.insert(ROUTINE_TRIGGER_KEY.to_string(), trig.to_string());
+    }
     let tmp_check_run = PipelineRun {
         run_id: String::new(),
         routine_id: None,
@@ -4040,8 +5532,28 @@ pub fn create_and_start_pipeline(
     }
     save_run(&env.cfg.data_dir, &run).map_err(|e| (500, e))?;
 
+    if let Some((parent_run_id, parent_cancel)) = &parent_sub {
+        if parent_cancel.load(Ordering::SeqCst) {
+            let _ = cancel_pipeline(&env, &run_id);
+            return get_run(&env.cfg.data_dir, &run_id)
+                .ok_or_else(|| (500, "pipeline run not found".to_string()));
+        }
+        register_subpipeline_child(parent_run_id, &run_id);
+    }
+
+    struct SubChildGuard<'a>(Option<&'a str>, &'a str);
+    impl Drop for SubChildGuard<'_> {
+        fn drop(&mut self) {
+            if let Some(pid) = self.0 {
+                unregister_subpipeline_child(pid, self.1);
+            }
+        }
+    }
+    let _child_guard = SubChildGuard(parent_sub.as_ref().map(|(pid, _)| *pid), &run_id);
+
     if async_exec {
-        spawn_pipeline_worker(env, run_id, 0);
+        let slot = register_or_replace_cancel_flag(&run_id, false);
+        spawn_pipeline_worker_with_slot(env, run_id.clone(), 0, slot);
         Ok(run)
     } else {
         execute_pipeline_loop(&env, &run_id, 0).map_err(|e| (500, e))
@@ -4054,13 +5566,22 @@ pub fn resume_pipeline(
     body: &Value,
     async_exec: bool,
 ) -> Result<PipelineRun, (u16, String)> {
+    let checkpoint_id_filter = body["checkpoint_id"]
+        .as_str()
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
     let action = body["action"]
         .as_str()
+        .or_else(|| body["decision"].as_str())
         .unwrap_or("approve")
         .trim()
         .to_ascii_lowercase();
     let choice = body["choice"].as_str().map(str::trim).filter(|s| !s.is_empty());
-    let answer = body["answer"].as_str().map(str::trim).filter(|s| !s.is_empty());
+    let answer = body["answer"]
+        .as_str()
+        .or_else(|| body["text"].as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
     let override_args = body.get("override_args").and_then(|v| v.as_object()).cloned();
     let now_ms = records::now_millis();
 
@@ -4069,10 +5590,12 @@ pub fn resume_pipeline(
             run: PipelineRun,
             start_idx: usize,
             completed_now: bool,
+            worker_slot: Option<(u64, Arc<AtomicBool>)>,
         },
         Rejected {
             run: PipelineRun,
             checkpoint_id: String,
+            extra_checkpoint_ids: Vec<String>,
             resolved_answer: String,
         },
         CheckpointApproved {
@@ -4080,13 +5603,15 @@ pub fn resume_pipeline(
             checkpoint_id: String,
             cp_step_index: usize,
             next_index: usize,
-            has_more_steps: bool,
+            worker_slot: Option<(u64, Arc<AtomicBool>)>,
+            completed_now: bool,
             resolved_answer: String,
         },
     }
 
     let transition = mutate_run_http(&env.cfg.data_dir, run_id, |r| {
-        if r.status == "interrupted" && r.pending_checkpoint.is_none() {
+        let cps = r.pending_checkpoints();
+        if r.status == "interrupted" && cps.is_empty() {
             let start_idx = r.current_step_index.min(r.steps.len());
             let is_dag = r.is_dag();
             let completed_now = if is_dag {
@@ -4114,23 +5639,41 @@ pub fn resume_pipeline(
                     *st = PipelineStepState::pending_for(&r.steps[start_idx]);
                 }
             }
+            let worker_slot = if async_exec && !completed_now {
+                claim_worker_slot(run_id, false)
+            } else {
+                None
+            };
             return Ok(ResumeTransition::Interrupted {
                 run: r.clone(),
                 start_idx,
                 completed_now,
+                worker_slot,
             });
         }
 
-        if r.status != "paused_checkpoint" {
+        if r.status != "paused_checkpoint" && !(r.is_dag() && r.status == "running" && !cps.is_empty()) {
             return Err((
                 409,
                 format!("pipeline run is '{}', not paused at a checkpoint", r.status),
             ));
         }
-        let cp = r
-            .pending_checkpoint
-            .clone()
-            .ok_or_else(|| (409, "pipeline run has no pending checkpoint".to_string()))?;
+        let cp = match checkpoint_id_filter {
+            Some(target_id) => cps
+                .iter()
+                .find(|c| c.checkpoint_id == target_id)
+                .cloned()
+                .ok_or_else(|| {
+                    (
+                        404,
+                        format!("checkpoint '{target_id}' is not pending on this pipeline run"),
+                    )
+                })?,
+            None => cps
+                .first()
+                .cloned()
+                .ok_or_else(|| (409, "pipeline run has no pending checkpoint".to_string()))?,
+        };
 
         if !matches!(action.as_str(), "approve" | "reject" | "answer") {
             return Err((400, "action must be approve, reject, or answer".to_string()));
@@ -4161,46 +5704,104 @@ pub fn resume_pipeline(
         if action == "reject" {
             r.status = "cancelled".to_string();
             r.updated_ms = now_ms;
-            r.pending_checkpoint = None;
+            let all_cps = r.take_pending_checkpoints();
+            let extra_checkpoint_ids: Vec<String> = all_cps
+                .into_iter()
+                .map(|c| c.checkpoint_id)
+                .filter(|cid| cid != &cp.checkpoint_id)
+                .collect();
             r.cancel_requested = true;
             r.error = Some("Aborted at human checkpoint.".to_string());
+            for st in &mut r.step_states {
+                if st.status == "waiting_human" || st.status == "running" {
+                    st.status = "failed".to_string();
+                    st.finished_ms = now_ms;
+                    st.error = Some("Aborted by user at checkpoint.".to_string());
+                }
+            }
             if let Some(st) = r.step_states.get_mut(cp.step_index) {
-                st.status = "failed".to_string();
-                st.finished_ms = now_ms;
                 st.human_action = Some(action.clone());
                 st.human_answer = Some(resolved_answer.clone());
-                st.error = Some("Aborted by user at checkpoint.".to_string());
             }
             return Ok(ResumeTransition::Rejected {
                 run: r.clone(),
                 checkpoint_id: cp.checkpoint_id,
+                extra_checkpoint_ids,
                 resolved_answer,
             });
         }
 
         let is_dag = r.is_dag();
         let next_index = cp.step_index + 1;
+        let is_agent_cp = r
+            .steps
+            .get(cp.step_index)
+            .is_some_and(|s| s.kind == "agent")
+            && r.step_snapshot(&cp.step_id).is_some();
+
         if let Some(st) = r.step_states.get_mut(cp.step_index) {
-            st.status = "ok".to_string();
-            st.finished_ms = now_ms;
+            if is_agent_cp {
+                st.status = "pending".to_string();
+            } else {
+                st.status = "ok".to_string();
+                st.finished_ms = now_ms;
+                st.output = resolved_answer.clone();
+            }
             st.human_action = Some(action.clone());
             st.human_answer = Some(resolved_answer.clone());
-            st.output = resolved_answer.clone();
             st.error = None;
         }
-        let has_more_steps = if is_dag {
-            r.step_states.iter().any(|s| s.status == "pending")
+        r.remove_pending_checkpoint(&cp.checkpoint_id);
+        let remaining_cps = r.pending_checkpoints();
+
+        let (completed_now, should_run_worker) = if is_dag {
+            let s_map: HashMap<String, String> = r
+                .step_states
+                .iter()
+                .map(|s| (s.step_id.clone(), s.status.clone()))
+                .collect();
+            let settled_err: HashSet<String> = r
+                .steps
+                .iter()
+                .enumerate()
+                .filter(|&(i, s)| {
+                    r.step_states.get(i).is_some_and(|st| st.status == "failed")
+                        && s.on_error().is_some()
+                })
+                .map(|(_, s)| s.id.clone())
+                .collect();
+            let any_pending = r.step_states.iter().any(|s| s.status == "pending");
+            let any_running = r.step_states.iter().any(|s| s.status == "running");
+            let any_ready = (0..r.steps.len()).any(|i| {
+                r.step_states[i].status == "pending"
+                    && dag_deps_ready(&r.steps[i].depends_on(), &s_map, &settled_err)
+            });
+            let worker_already_running = cancel_registry()
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .contains_key(run_id);
+            if !any_pending && !any_running && remaining_cps.is_empty() {
+                r.status = "completed".to_string();
+                (true, false)
+            } else if any_ready || any_running || worker_already_running {
+                r.status = "running".to_string();
+                (false, !worker_already_running)
+            } else {
+                r.status = "paused_checkpoint".to_string();
+                (false, false)
+            }
         } else {
-            next_index < r.steps.len()
+            let has_more = is_agent_cp || next_index < r.steps.len();
+            r.status = if has_more {
+                "running".to_string()
+            } else {
+                "completed".to_string()
+            };
+            (!has_more, has_more)
         };
-        r.status = if has_more_steps {
-            "running".to_string()
-        } else {
-            "completed".to_string()
-        };
-        r.current_step_index = next_index;
+
+        r.current_step_index = if is_agent_cp { cp.step_index } else { next_index };
         r.updated_ms = now_ms;
-        r.pending_checkpoint = None;
         r.error = None;
         r.cancel_requested = false;
         if let Some(overrides) = &override_args {
@@ -4212,12 +5813,18 @@ pub fn resume_pipeline(
                 }
             }
         }
+        let worker_slot = if async_exec && should_run_worker {
+            claim_worker_slot(run_id, false)
+        } else {
+            None
+        };
         Ok(ResumeTransition::CheckpointApproved {
             run: r.clone(),
             checkpoint_id: cp.checkpoint_id,
             cp_step_index: cp.step_index,
-            next_index,
-            has_more_steps,
+            next_index: if is_agent_cp { cp.step_index } else { next_index },
+            worker_slot,
+            completed_now,
             resolved_answer,
         })
     })?;
@@ -4227,6 +5834,7 @@ pub fn resume_pipeline(
             run,
             start_idx,
             completed_now,
+            worker_slot,
         } => {
             env.events.publish(
                 "pipeline_resumed",
@@ -4257,7 +5865,9 @@ pub fn resume_pipeline(
                 return Ok(run);
             }
             if async_exec {
-                spawn_pipeline_worker(env, run_id.to_string(), start_idx);
+                if let Some(slot) = worker_slot {
+                    spawn_pipeline_worker_with_slot(env, run_id.to_string(), start_idx, slot);
+                }
                 Ok(run)
             } else {
                 execute_pipeline_loop(&env, run_id, start_idx).map_err(|e| (500, e))
@@ -4266,6 +5876,7 @@ pub fn resume_pipeline(
         ResumeTransition::Rejected {
             run,
             checkpoint_id,
+            extra_checkpoint_ids,
             resolved_answer,
         } => {
             if !checkpoint_id.is_empty() {
@@ -4278,6 +5889,11 @@ pub fn resume_pipeline(
                             &outcome_text,
                         );
                     }
+                }
+            }
+            for extra_id in extra_checkpoint_ids {
+                if !extra_id.is_empty() {
+                    let _ = records::resolve_decision(&env.cfg, &extra_id, false);
                 }
             }
             env.store.lock().unwrap().push(
@@ -4304,7 +5920,8 @@ pub fn resume_pipeline(
             checkpoint_id,
             cp_step_index,
             next_index,
-            has_more_steps,
+            worker_slot,
+            completed_now,
             resolved_answer,
         } => {
             let mut delivery_error: Option<String> = None;
@@ -4411,6 +6028,7 @@ pub fn resume_pipeline(
                 &run.thread_id,
                 json!({
                     "step_index": next_index,
+                    "checkpoint_id": checkpoint_id,
                     "action": action,
                     "human_answer": resolved_answer,
                     "run": run.to_json(),
@@ -4418,7 +6036,7 @@ pub fn resume_pipeline(
                 }),
             );
 
-            if !has_more_steps {
+            if completed_now {
                 env.events.publish(
                     "pipeline_finished",
                     &env.ctx.person_id,
@@ -4435,7 +6053,9 @@ pub fn resume_pipeline(
             }
 
             if async_exec {
-                spawn_pipeline_worker(env, run_id.to_string(), next_index);
+                if let Some(slot) = worker_slot {
+                    spawn_pipeline_worker_with_slot(env, run_id.to_string(), next_index, slot);
+                }
                 Ok(run)
             } else {
                 execute_pipeline_loop(&env, run_id, next_index).map_err(|e| (500, e))
@@ -4451,7 +6071,7 @@ pub fn retry_pipeline(
     async_exec: bool,
 ) -> Result<PipelineRun, (u16, String)> {
     let now_ms = records::now_millis();
-    let (updated, idx) = mutate_run_http(&env.cfg.data_dir, run_id, |r| {
+    let (updated, idx, worker_slot) = mutate_run_http(&env.cfg.data_dir, run_id, |r| {
         if !matches!(r.status.as_str(), "failed" | "interrupted" | "cancelled") {
             return Err((
                 409,
@@ -4471,7 +6091,7 @@ pub fn retry_pipeline(
         r.status = "running".to_string();
         r.current_step_index = idx;
         r.updated_ms = now_ms;
-        r.pending_checkpoint = None;
+        r.set_pending_checkpoints(Vec::new());
         r.error = None;
         r.cancel_requested = false;
         if is_dag {
@@ -4501,7 +6121,12 @@ pub fn retry_pipeline(
                 r.step_states[i] = PipelineStepState::pending_for(&r.steps[i]);
             }
         }
-        Ok((r.clone(), idx))
+        let worker_slot = if async_exec {
+            claim_worker_slot(run_id, false)
+        } else {
+            None
+        };
+        Ok((r.clone(), idx, worker_slot))
     })?;
 
     env.store.lock().unwrap().push(
@@ -4524,7 +6149,9 @@ pub fn retry_pipeline(
     );
 
     if async_exec {
-        spawn_pipeline_worker(env, run_id.to_string(), idx);
+        if let Some(slot) = worker_slot {
+            spawn_pipeline_worker_with_slot(env, run_id.to_string(), idx, slot);
+        }
         Ok(updated)
     } else {
         execute_pipeline_loop(&env, run_id, idx).map_err(|e| (500, e))
@@ -4532,7 +6159,7 @@ pub fn retry_pipeline(
 }
 
 pub fn cancel_pipeline(env: &PipelineExecEnv, run_id: &str) -> Result<PipelineRun, (u16, String)> {
-    if let Some(flag) = cancel_registry()
+    if let Some((_, flag)) = cancel_registry()
         .lock()
         .unwrap_or_else(|p| p.into_inner())
         .get(run_id)
@@ -4540,23 +6167,33 @@ pub fn cancel_pipeline(env: &PipelineExecEnv, run_id: &str) -> Result<PipelineRu
         flag.store(true, Ordering::SeqCst);
     }
 
+    let child_ids: Vec<String> = subpipeline_children_registry()
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .get(run_id)
+        .cloned()
+        .unwrap_or_default();
+    for cid in child_ids {
+        let _ = cancel_pipeline(env, &cid);
+    }
+
     let now_ms = records::now_millis();
-    let (updated, was_paused_or_interrupted, linked_cp_id) =
+    let (updated, was_paused_or_interrupted, linked_cp_ids) =
         mutate_run_http(&env.cfg.data_dir, run_id, |r| {
             if matches!(r.status.as_str(), "completed" | "failed" | "cancelled") {
-                return Ok((r.clone(), false, None));
+                return Ok((r.clone(), false, Vec::new()));
             }
             r.cancel_requested = true;
             r.updated_ms = now_ms;
             let mut transitioned = false;
-            let mut cp_id = None;
+            let mut cp_ids = Vec::new();
+            for cp in r.take_pending_checkpoints() {
+                cp_ids.push(cp.checkpoint_id);
+            }
             if matches!(r.status.as_str(), "paused_checkpoint" | "interrupted") {
                 transitioned = true;
                 r.status = "cancelled".to_string();
-                if let Some(cp) = r.pending_checkpoint.take() {
-                    cp_id = Some(cp.checkpoint_id);
-                }
-                if let Some(st) = r.step_states.get_mut(r.current_step_index) {
+                for st in &mut r.step_states {
                     if st.status == "waiting_human" || st.status == "running" {
                         st.status = "failed".to_string();
                         st.finished_ms = now_ms;
@@ -4564,15 +6201,20 @@ pub fn cancel_pipeline(env: &PipelineExecEnv, run_id: &str) -> Result<PipelineRu
                     }
                 }
             }
-            Ok((r.clone(), transitioned, cp_id))
+            Ok((r.clone(), transitioned, cp_ids))
         })?;
 
-    if let Some(did) = linked_cp_id {
+    for did in linked_cp_ids {
         let _ = records::resolve_decision(&env.cfg, &did, false);
     }
     if let Ok(runs) = env.live_runs.lock() {
-        if let Some(live) = runs.get(&env.ctx.person_id) {
-            if live.thread_id == updated.thread_id {
+        for live in runs.values() {
+            if live.person_id == env.ctx.person_id
+                && (live.pipeline_run_id.as_deref() == Some(run_id)
+                    || (live.pipeline_run_id.is_none()
+                        && !updated.thread_id.is_empty()
+                        && live.thread_id == updated.thread_id))
+            {
                 live.cancel.store(true, Ordering::SeqCst);
             }
         }
@@ -4758,8 +6400,10 @@ pub fn park_adhoc_checkpoint_with_snapshot(
         engagement_id: None,
         usage: records::RunUsage::default(),
     };
+    run.set_pending_checkpoints(vec![pending.clone()]);
     if let Some(snap) = agent_snapshot {
-        run.set_agent_snapshot(Some(snap));
+        run.set_agent_snapshot(Some(snap.clone()));
+        run.set_step_snapshot("continue", Some(snap));
     }
     save_run(&cfg.data_dir, &run)?;
 
