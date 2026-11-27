@@ -995,29 +995,41 @@ fn execute_tool_with_scope(
             let payload = if let Some(p) = args.get("payload").filter(|v| !v.is_null()) {
                 p.clone()
             } else if let Some(rel) = attachment_rel {
-                let full = sandbox_path(&cfg.workspace_dir, rel)?;
-                let md = std::fs::metadata(&full)
-                    .map_err(|e| format!("invoke_connector cannot read file '{rel}': {e}"))?;
-                if md.len() > 512 * 1024 {
-                    return Err(format!("invoke_connector file '{rel}' exceeds 512 KB limit"));
-                }
-                let bytes = std::fs::read(&full)
-                    .map_err(|e| format!("invoke_connector cannot read file '{rel}': {e}"))?;
-                if bytes.len() > 512 * 1024 {
-                    return Err(format!("invoke_connector file '{rel}' exceeds 512 KB limit"));
-                }
-                if rel.to_ascii_lowercase().ends_with(".json") {
-                    serde_json::from_slice::<Value>(&bytes).unwrap_or_else(|_| {
+                let is_smtp = crate::connectors::load_connector_kind(&cfg.data_dir, connector_id)
+                    .as_deref()
+                    == Some("smtp_relay");
+                if is_smtp {
+                    serde_json::json!({
+                        "file": rel,
+                        "to": args["to"],
+                        "subject": args["subject"],
+                        "body": args["body"],
+                    })
+                } else {
+                    let full = sandbox_path(&cfg.workspace_dir, rel)?;
+                    let md = std::fs::metadata(&full)
+                        .map_err(|e| format!("invoke_connector cannot read file '{rel}': {e}"))?;
+                    if md.len() > 512 * 1024 {
+                        return Err(format!("invoke_connector file '{rel}' exceeds 512 KB limit"));
+                    }
+                    let bytes = std::fs::read(&full)
+                        .map_err(|e| format!("invoke_connector cannot read file '{rel}': {e}"))?;
+                    if bytes.len() > 512 * 1024 {
+                        return Err(format!("invoke_connector file '{rel}' exceeds 512 KB limit"));
+                    }
+                    if rel.to_ascii_lowercase().ends_with(".json") {
+                        serde_json::from_slice::<Value>(&bytes).unwrap_or_else(|_| {
+                            serde_json::json!({
+                                "file": rel,
+                                "content": String::from_utf8_lossy(&bytes).to_string(),
+                            })
+                        })
+                    } else {
                         serde_json::json!({
                             "file": rel,
                             "content": String::from_utf8_lossy(&bytes).to_string(),
                         })
-                    })
-                } else {
-                    serde_json::json!({
-                        "file": rel,
-                        "content": String::from_utf8_lossy(&bytes).to_string(),
-                    })
+                    }
                 }
             } else {
                 serde_json::json!({})
@@ -1283,6 +1295,10 @@ fn execute_tool_with_scope(
                 .or_else(|| args["text"].as_str())
                 .ok_or("update_memory needs args.note")?;
             skills::update_memory(cfg, note)
+        }
+        other if other.starts_with("mcp.") => {
+            let thread_id = args["_thread"].as_str().unwrap_or("");
+            crate::mcp::invoke_mcp_tool(cfg, other, args, thread_id)
         }
         other => {
             if let Some(res) = skills::dispatch_builtin_skill(cfg, other, args) {

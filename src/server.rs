@@ -953,6 +953,56 @@ fn start_folder_watch_thread(state: &Arc<AppState>) {
     });
 }
 
+fn imap_poll_tick_ms() -> u64 {
+    std::env::var("ERGON_IMAP_POLL_TICK_MS")
+        .or_else(|_| std::env::var("ERGON_SCHEDULER_TICK_MS"))
+        .ok()
+        .and_then(|s| s.trim().parse::<u64>().ok())
+        .map(|ms| ms.clamp(50, 300_000))
+        .unwrap_or(5_000)
+}
+
+fn start_imap_poll_thread(state: &Arc<AppState>) {
+    let weak = Arc::downgrade(state);
+    let tick_ms = imap_poll_tick_ms();
+    std::thread::spawn(move || {
+        let mut poll_states: HashMap<String, connectors::ImapPollState> = HashMap::new();
+        loop {
+            std::thread::sleep(std::time::Duration::from_millis(tick_ms));
+            let Some(st) = weak.upgrade() else {
+                break;
+            };
+            let people: Vec<Person> = st
+                .people
+                .read()
+                .unwrap_or_else(|p| p.into_inner())
+                .people
+                .clone();
+            for person in people {
+                let p_cfg = st.cfg.person_config(&person);
+                if !connectors::connectors_path(&p_cfg.data_dir).exists() {
+                    continue;
+                }
+                let rt = runtime_for(&st, &person);
+                let poll_state = poll_states.entry(person.id.clone()).or_default();
+                let ingested = connectors::poll_imap_once(&rt.cfg, poll_state);
+                for ev in ingested {
+                    st.search_cache.invalidate(&person.id);
+                    let _ = fire_linked_trigger_target(
+                        &st,
+                        &person,
+                        &rt,
+                        ev.routine_id.as_deref(),
+                        &ev.target_kind,
+                        &ev.trigger_file,
+                        "imap_poll",
+                    );
+                }
+            }
+        }
+    });
+}
+
 fn start_scheduler_thread(state: &Arc<AppState>) {
     let weak = Arc::downgrade(state);
     let tick_ms = scheduler_tick_ms();
@@ -1063,6 +1113,7 @@ fn serve_inner(
     if state.scheduler_enabled {
         start_scheduler_thread(&state);
         start_folder_watch_thread(&state);
+        start_imap_poll_thread(&state);
     }
     const MAX_ACTIVE_CONNS: usize = 128;
     const WARM_WORKER_FLOOR: usize = 2;
@@ -2379,7 +2430,7 @@ fn try_route_system(
                 );
                 search::write_json_bool(buf, state.scheduler_enabled);
                 buf.extend_from_slice(
-                    br#","file_history":true,"audit_bundle":true,"tripwire":true,"file_edit":true,"table_query":true,"pdf_export":true,"connectors":true,"clients":true,"metering":true,"vault_search":true,"client_crm":true,"time_entries":true,"invoicing":true},"scheduler_enabled":"#,
+                    br#","file_history":true,"audit_bundle":true,"tripwire":true,"file_edit":true,"table_query":true,"pdf_export":true,"connectors":true,"mcp":true,"clients":true,"metering":true,"vault_search":true,"client_crm":true,"time_entries":true,"invoicing":true},"scheduler_enabled":"#,
                 );
                 search::write_json_bool(buf, state.scheduler_enabled);
                 buf.extend_from_slice(br#","person":{"id":"#);
@@ -5759,6 +5810,119 @@ fn try_route_knowledge_and_routines(
                 connectors::test_outbound_connector(&runtime.cfg, &id, &parsed);
             respond_json(stream, status, &payload)
         }
+        ("GET", "/api/mcp/servers") => {
+            let policy = crate::load_workspace_policy(&runtime.cfg.data_dir);
+            respond_json(
+                stream,
+                200,
+                &mcp::list_mcp_servers_json(&runtime.cfg.data_dir, &policy),
+            )
+        }
+        ("POST", "/api/mcp/servers") => {
+            let parsed: Value = match serde_json::from_slice(&req.body) {
+                Ok(v) => v,
+                Err(_) => return Some(respond_err(stream, 400, "request body is not valid JSON")),
+            };
+            let is_stdio = parsed["transport"]
+                .as_str()
+                .unwrap_or("stdio")
+                .trim()
+                .eq_ignore_ascii_case("stdio");
+            if is_stdio
+                && (state.gate_token.is_some()
+                    || !host_allowed(req.host.as_deref().unwrap_or(""), &[]))
+            {
+                return Some(respond_json(
+                    stream,
+                    403,
+                    &json!({"error": "stdio MCP servers can only be configured from this machine (loopback-only)"}),
+                ));
+            }
+            let policy = crate::load_workspace_policy(&runtime.cfg.data_dir);
+            match mcp::upsert_mcp_server(&runtime.cfg.data_dir, &parsed, &policy) {
+                Ok((server, created)) => respond_json(
+                    stream,
+                    if created { 201 } else { 200 },
+                    &json!({"server": server}),
+                ),
+                Err((status, msg)) => respond_err(stream, status, &msg),
+            }
+        }
+        ("POST", path)
+            if path.starts_with("/api/mcp/servers/") && path.ends_with("/discover") =>
+        {
+            let raw_id = path
+                .strip_prefix("/api/mcp/servers/")
+                .and_then(|r| r.strip_suffix("/discover"))
+                .unwrap_or("")
+                .trim();
+            let id = percent_decode(raw_id).trim().to_string();
+            if id.is_empty() || id.contains('/') || id.contains("..") {
+                return Some(respond_err(stream, 400, "invalid MCP server id"));
+            }
+            match mcp::discover_mcp_server(&runtime.cfg, &id) {
+                Ok(v) => respond_json(stream, 200, &v),
+                Err((status, msg)) => respond_err(stream, status, &msg),
+            }
+        }
+        ("DELETE", path)
+            if path == "/api/mcp/servers" || path.starts_with("/api/mcp/servers/") =>
+        {
+            let path_id = path
+                .strip_prefix("/api/mcp/servers/")
+                .map(|s| percent_decode(s).trim().to_string())
+                .filter(|s| !s.is_empty());
+            let body_id = if req.body.is_empty() {
+                None
+            } else {
+                serde_json::from_slice::<Value>(&req.body)
+                    .ok()
+                    .and_then(|v| v["id"].as_str().map(|s| s.trim().to_string()))
+                    .filter(|s| !s.is_empty())
+            };
+            let id = path_id
+                .or_else(|| query_param(&req.query, "id").filter(|s| !s.is_empty()))
+                .or(body_id)
+                .unwrap_or_default();
+            if id.is_empty() || id.contains('/') || id.contains("..") {
+                return Some(respond_err(stream, 400, "MCP server id is required"));
+            }
+            match mcp::delete_mcp_server(&runtime.cfg.data_dir, &id) {
+                Ok(true) => respond_json(stream, 200, &json!({"deleted": id})),
+                Ok(false) => respond_err(stream, 404, "MCP server not found"),
+                Err(e) => respond_err(stream, 500, &e),
+            }
+        }
+        ("POST", "/api/mcp/inbound/config") => {
+            if state.gate_token.is_some()
+                || !host_allowed(req.host.as_deref().unwrap_or(""), &[])
+            {
+                return Some(respond_json(
+                    stream,
+                    403,
+                    &json!({"error": "MCP inbound settings can only be changed from this machine (loopback-only)"}),
+                ));
+            }
+            let parsed: Value = match serde_json::from_slice(&req.body) {
+                Ok(v) => v,
+                Err(_) => return Some(respond_err(stream, 400, "request body is not valid JSON")),
+            };
+            let enabled = parsed["enabled"].as_bool().unwrap_or(false);
+            match mcp::set_inbound_enabled(&runtime.cfg.data_dir, enabled) {
+                Ok(v) => respond_json(stream, 200, &v),
+                Err(e) => respond_err(stream, 500, &e),
+            }
+        }
+        ("POST", "/api/mcp/inbound") => {
+            let (status, payload) = mcp::handle_inbound_mcp(
+                &runtime.cfg,
+                &root_cfg.data_dir,
+                &person.id,
+                req.authorization.as_deref(),
+                &req.body,
+            );
+            respond_json(stream, status, &payload)
+        }
         ("GET", "/api/clients") => {
             let store = records::load_clients_store(&root_cfg.data_dir);
             let client_filter = query_param(&req.query, "client_id")
@@ -6174,6 +6338,22 @@ fn try_route_knowledge_and_routines(
                     // need app state the records lock must not span).
                     let (decision, outcome) = settle_tripwire_decision(state, runtime, person, &decision, action == "approve")
                         .unwrap_or((decision, outcome));
+                    let (decision, outcome) = if decision["kind"].as_str() == Some("mcp_tool_call") {
+                        let final_outcome = if action == "approve" {
+                            mcp::settle_mcp_decision(&runtime.cfg, &decision)
+                        } else {
+                            "You said no - MCP tool call was cancelled.".to_string()
+                        };
+                        let updated = records::set_decision_outcome(
+                            &runtime.cfg.data_dir,
+                            &id,
+                            &final_outcome,
+                        )
+                        .unwrap_or(decision);
+                        (updated, final_outcome)
+                    } else {
+                        (decision, outcome)
+                    };
                     if decision["kind"].as_str() == Some("checkpoint") {
                         if let Some(prun_id) = decision["pipeline_run_id"].as_str().filter(|s| !s.is_empty()) {
                             let env = pipeline_exec_env(

@@ -13,6 +13,7 @@ pub mod connectors;
 pub mod docs;
 pub mod file_history;
 pub mod library;
+pub mod mcp;
 pub mod pipelines;
 pub mod receipts;
 pub mod records;
@@ -1853,6 +1854,20 @@ fn system_prompt_for(
             suite_block.push_str(&format!("         - {} — {}\n", s.id, s.description));
         }
     }
+    let mcp_tools = mcp::load_enabled_mcp_tools(&cfg.data_dir);
+    if !mcp_tools.is_empty() {
+        suite_block.push_str("\n         MCP TOOLS (call like any tool, by full mcp.<server_id>.<tool_name> id):\n");
+        for (full_name, desc, param_keys) in mcp_tools {
+            let params = param_keys
+                .iter()
+                .map(|p| format!("\"{p}\": \"...\""))
+                .collect::<Vec<_>>()
+                .join(", ");
+            suite_block.push_str(&format!(
+                "         - {full_name} {{{params}}}: {desc}\n"
+            ));
+        }
+    }
     format!(
         "You are Ergon, a personal AI agent for one employee. Your job is to FINISH their digital work autonomously, end to end — not to prepare drafts for approval, not to ask for confirmation. You act through tools and you keep going until the work is done.\n\n\
          PROTOCOL: Reply with exactly ONE JSON object per message, nothing else.\n\
@@ -2778,7 +2793,8 @@ fn run_loop(
             if matches!(
                 tool.as_str(),
                 "delete_file" | "flag_decision" | "request_checkpoint" | "invoke_connector"
-            ) {
+            ) || tool.starts_with("mcp.")
+            {
                 args["_thread"] = json!(thread_id);
             }
             if tool == "request_checkpoint" {
@@ -2850,7 +2866,7 @@ fn run_loop(
             }
             if ok
                 && (matches!(tool.as_str(), "delete_file" | "flag_decision" | "request_checkpoint")
-                    || (tool == "invoke_connector"
+                    || ((tool == "invoke_connector" || tool.starts_with("mcp."))
                         && result_text.starts_with("parked for your person's approval")))
             {
                 lctx.events.publish(

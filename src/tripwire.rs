@@ -211,6 +211,12 @@ fn base64_decode_lenient(s: &str) -> Option<Vec<u8>> {
     Some(out)
 }
 
+/// Decode base64 bytes, ignoring ASCII whitespace (such as MIME 76-char line wraps).
+pub fn base64_decode(s: &str) -> Option<Vec<u8>> {
+    let compact: String = s.chars().filter(|c| !c.is_ascii_whitespace()).collect();
+    base64_decode_lenient(&compact)
+}
+
 fn hex_decode(s: &str) -> Option<Vec<u8>> {
     if !s.len().is_multiple_of(2) {
         return None;
@@ -977,6 +983,10 @@ fn private_allowed(host: &str) -> bool {
     .unwrap_or(false)
 }
 
+fn private_allowed_for_connector(host: &str) -> bool {
+    env_truthy("ERGON_ALLOW_LOCAL_CONNECTORS") || private_allowed(host)
+}
+
 fn split_netloc(netloc: &str) -> (String, u16) {
     if let Some(rest) = netloc.strip_prefix('[') {
         let host = rest.split(']').next().unwrap_or("").to_string();
@@ -989,11 +999,7 @@ fn split_netloc(netloc: &str) -> (String, u16) {
     }
 }
 
-/// The ureq resolver every agent fetch goes through: resolve, then keep
-/// only addresses this run may reach. Validating the RESOLVED address
-/// (not the URL text) closes DNS rebinding; ureq calls this again for
-/// every redirect hop, so a public page cannot bounce the agent inward.
-pub fn guard_resolve(netloc: &str) -> std::io::Result<Vec<SocketAddr>> {
+fn guard_resolve_inner(netloc: &str, allow_local_connectors: bool) -> std::io::Result<Vec<SocketAddr>> {
     let (host, port) = split_netloc(netloc);
     // Ergon reached by a name it serves under (ERGON_ALLOWED_HOSTS, e.g.
     // a LAN name for /phone) is still Ergon's own API, whatever it resolves to.
@@ -1020,7 +1026,12 @@ pub fn guard_resolve(netloc: &str) -> std::io::Result<Vec<SocketAddr>> {
                 "AE2-NETWORK",
             )),
             AddrClass::Private(why) => {
-                if private_allowed(&host) {
+                let ok = if allow_local_connectors {
+                    private_allowed_for_connector(&host)
+                } else {
+                    private_allowed(&host)
+                };
+                if ok {
                     Ok(())
                 } else {
                     Err((Severity::Notice, format!("{host} is on {why} ({}) and that address did not come from you", a.ip()), "AE2-NETWORK"))
@@ -1045,6 +1056,31 @@ pub fn guard_resolve(netloc: &str) -> std::io::Result<Vec<SocketAddr>> {
         return Err(std::io::Error::new(std::io::ErrorKind::PermissionDenied, msg));
     }
     Ok(kept)
+}
+
+/// The ureq resolver every agent fetch goes through: resolve, then keep
+/// only addresses this run may reach. Validating the RESOLVED address
+/// (not the URL text) closes DNS rebinding; ureq calls this again for
+/// every redirect hop, so a public page cannot bounce the agent inward.
+pub fn guard_resolve(netloc: &str) -> std::io::Result<Vec<SocketAddr>> {
+    guard_resolve_inner(netloc, false)
+}
+
+/// Connector-aware socket resolver supporting `ERGON_ALLOW_LOCAL_CONNECTORS=1`
+/// in addition to `ERGON_FETCH_ALLOW_PRIVATE=1` while preserving all SSRF,
+/// metadata, self-port, and DNS-rebinding protections.
+pub fn guard_resolve_connector(host: &str, port: u16) -> std::io::Result<Vec<SocketAddr>> {
+    let trimmed = host.trim().trim_start_matches('[').trim_end_matches(']');
+    let netloc = if trimmed.contains(':') {
+        format!("[{trimmed}]:{port}")
+    } else {
+        format!("{trimmed}:{port}")
+    };
+    guard_resolve_inner(&netloc, true)
+}
+
+fn guard_resolve_connector_netloc(netloc: &str) -> std::io::Result<Vec<SocketAddr>> {
+    guard_resolve_inner(netloc, true)
 }
 
 fn on_network_block(host: &str, port: u16, sev: Severity, why: &str) {
@@ -1073,6 +1109,15 @@ pub fn guarded_agent(timeout: std::time::Duration) -> ureq::Agent {
         .build()
 }
 
+/// A ureq agent for outbound connectors, OAuth2 refresh, and HTTP MCP servers.
+pub fn guarded_connector_agent(timeout: std::time::Duration) -> ureq::Agent {
+    ureq::AgentBuilder::new()
+        .resolver(guard_resolve_connector_netloc)
+        .timeout(timeout)
+        .redirects(5)
+        .build()
+}
+
 /// Turn a fetch failure into words: the guard's own reason when it refused.
 pub fn explain_fetch_error(url: &str, e: &ureq::Error) -> String {
     if let Some(msg) = LAST_BLOCK.with(|l| l.borrow_mut().take()) {
@@ -1081,14 +1126,94 @@ pub fn explain_fetch_error(url: &str, e: &ureq::Error) -> String {
     format!("fetch {url} failed: {e}")
 }
 
+/// Validate a raw host and port for protocol connectors (SMTP, IMAP, HTTP MCP),
+/// blocking SSRF, metadata services, self-ports, and private/loopback IPs in
+/// production unless explicitly allowed (`ERGON_ALLOW_LOCAL_CONNECTORS=1` or
+/// `ERGON_FETCH_ALLOW_PRIVATE=1`).
+pub fn check_egress_host(host: &str, port: u16, channel: &str) -> Result<(), String> {
+    LAST_BLOCK.with(|l| *l.borrow_mut() = None);
+    let trimmed = host.trim();
+    if trimmed.is_empty() || trimmed.chars().any(|c| c.is_control() || c.is_whitespace()) {
+        return Err("connector host must be a valid hostname or IP address".to_string());
+    }
+    let norm = normalize_host(trimmed);
+    if norm.is_empty() {
+        return Err("connector host cannot be empty".to_string());
+    }
+    if let Some(r) = with_current(|t| t.check_url(trimmed, &norm, channel)).flatten() {
+        return Err(r);
+    }
+    if is_self_port(port) {
+        return Err(format!(
+            "blocked by Ergon's egress guard: {norm}:{port} targets Ergon's own control port"
+        ));
+    }
+    if METADATA_HOSTS.contains(&norm.as_str()) {
+        let _ = with_current(|t| {
+            t.trip(
+                Trip::new("AE2-NETWORK", Severity::Critical, "Your agent tried to reach a cloud metadata service", format!("Blocked a request to {norm}, which hands out machine credentials."))
+                    .action("blocked")
+                    .source(json!({"kind": "host", "value": norm})),
+                STOP_SCORE,
+            )
+        });
+        return Err(format!("blocked by Ergon's egress guard: {norm} is a cloud metadata service"));
+    }
+    if let Ok(ip) = norm.parse::<IpAddr>() {
+        match classify_ip(ip) {
+            AddrClass::Blocked(why) => {
+                let _ = with_current(|t| {
+                    t.trip(
+                        Trip::new("AE2-NETWORK", Severity::Critical, "Your agent tried to reach a protected address", format!("Blocked a request to {norm} ({why})."))
+                            .action("blocked")
+                            .source(json!({"kind": "host", "value": norm})),
+                        STOP_SCORE,
+                    )
+                });
+                return Err(format!("blocked by Ergon's egress guard: {norm} is {why}"));
+            }
+            AddrClass::Private(why) => {
+                if !private_allowed_for_connector(&norm) {
+                    return Err(format!(
+                        "blocked by Ergon's egress guard: {norm} is on {why} (set ERGON_ALLOW_LOCAL_CONNECTORS=1 only for local tests)"
+                    ));
+                }
+            }
+            AddrClass::Public => {}
+        }
+    } else if (norm == "localhost" || norm.ends_with(".localhost") || norm.ends_with(".local"))
+        && !private_allowed_for_connector(&norm)
+    {
+        return Err(format!(
+            "blocked by Ergon's egress guard: {norm} is a local/private host (set ERGON_ALLOW_LOCAL_CONNECTORS=1 only for local tests)"
+        ));
+    }
+    Ok(())
+}
+
 /// URL-level checks before any connection: a stopped run refuses all
 /// egress; honeytokens and real secrets never leave; blocked and
 /// metadata host names are refused by name.
 pub fn check_egress(url: &str, channel: &str) -> Result<(), String> {
     LAST_BLOCK.with(|l| *l.borrow_mut() = None);
     let lower = url.trim().to_ascii_lowercase();
-    if !(lower.starts_with("http://") || lower.starts_with("https://")) {
-        return Err(format!("only http:// and https:// addresses can be fetched: {url}"));
+    let is_connector_channel = matches!(channel, "connector" | "connector_config");
+    let scheme_ok = if is_connector_channel {
+        lower.starts_with("http://")
+            || lower.starts_with("https://")
+            || lower.starts_with("smtp://")
+            || lower.starts_with("smtps://")
+            || lower.starts_with("imap://")
+            || lower.starts_with("imaps://")
+    } else {
+        lower.starts_with("http://") || lower.starts_with("https://")
+    };
+    if !scheme_ok {
+        return Err(if is_connector_channel {
+            format!("connector URL must use http://, https://, smtp://, or smtps://: {url}")
+        } else {
+            format!("only http:// and https:// addresses can be fetched: {url}")
+        });
     }
     let host = normalize_host(&lower);
     if let Some(r) = with_current(|t| t.check_url(url, &host, channel)).flatten() {
@@ -1891,6 +2016,7 @@ pub fn sensitive_target(path: &str) -> Option<&'static str> {
         ("decisions.json", "the decisions inbox"),
         ("connectors.json", "connector settings"),
         ("connector_secrets.json", "connector secrets"),
+        ("mcp_servers.json", "MCP server settings"),
         ("library.json", "the company library"),
         ("people/", "another person's workspace"),
         (".history", "file version history"),
@@ -1940,6 +2066,9 @@ fn source_from_args(tool: &str, args: &Value) -> Option<(&'static str, String)> 
     }
     if tool == "browse_library" {
         return Some(("library", "company library listing".to_string()));
+    }
+    if tool.starts_with("mcp.") {
+        return Some(("mcp", tool.to_string()));
     }
     None
 }
@@ -2077,7 +2206,7 @@ impl RunTraps {
             return PreTool::Refuse(format!("{HALT_PREFIX}{r}"));
         }
         let blob = args.to_string();
-        let egress = EGRESS_TOOLS.contains(&tool) || library_skill;
+        let egress = EGRESS_TOOLS.contains(&tool) || library_skill || tool.starts_with("mcp.");
         if contains_secret(&blob, &self.honey_key) {
             let (sev, pts, title) = if egress {
                 (Severity::Critical, STOP_SCORE, "Your agent tried to send its bait key out")
