@@ -7,9 +7,9 @@
 //! config or `Strict Client` policy.
 
 use crate::tools::{atomic_write_bytes_with_mode, sandbox_path, sandbox_path_resolving};
-use crate::{connectors, docs, records, search, tables, tools, tripwire, Config, WorkspacePolicy};
+use crate::{connectors, docs, records, search, secret_store, tables, tools, tripwire, Config, WorkspacePolicy};
 use serde_json::{json, Value};
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -100,6 +100,7 @@ pub struct McpServerSpec {
     pub command_or_url: String,
     pub args: Vec<String>,
     pub env_secret_keys: Vec<String>,
+    pub auth_secret_key: Option<String>,
     pub require_approval_by_default: bool,
     pub enabled: bool,
     pub cached_tools: Vec<McpToolSpec>,
@@ -110,11 +111,36 @@ pub struct McpServerSpec {
 }
 
 impl McpServerSpec {
-    pub fn to_public_json(&self, policy: &WorkspacePolicy) -> Value {
+    fn referenced_secret_keys(&self) -> Vec<String> {
+        let mut keys = Vec::new();
+        for entry in &self.env_secret_keys {
+            let sec_key = match entry.split_once('=') {
+                Some((_, k)) => k.trim(),
+                None => entry.trim(),
+            };
+            if !sec_key.is_empty() && !keys.iter().any(|k| k == sec_key) {
+                keys.push(sec_key.to_string());
+            }
+        }
+        if let Some(auth_k) = self.auth_secret_key.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+            if !keys.iter().any(|k| k == auth_k) {
+                keys.push(auth_k.to_string());
+            }
+        }
+        keys
+    }
+
+    pub fn to_public_json_with_secrets(
+        &self,
+        policy: &WorkspacePolicy,
+        stored_secret_keys: &HashSet<String>,
+    ) -> Value {
         let effective_require_approval =
             self.require_approval_by_default || policy.profile == "strict_client";
         let blocked_by_policy = self.transport == "http_sse"
             && (policy.block_outbound_fetch || policy.profile == "air_gapped");
+        let refs = self.referenced_secret_keys();
+        let has_secret = !refs.is_empty() && refs.iter().all(|k| stored_secret_keys.contains(k));
         json!({
             "id": self.id,
             "name": self.name,
@@ -122,6 +148,8 @@ impl McpServerSpec {
             "command_or_url": self.command_or_url,
             "args": self.args,
             "env_secret_keys": self.env_secret_keys,
+            "auth_secret_key": self.auth_secret_key,
+            "has_secret": has_secret,
             "require_approval_by_default": self.require_approval_by_default,
             "effective_require_approval": effective_require_approval,
             "blocked_by_policy": blocked_by_policy,
@@ -134,6 +162,10 @@ impl McpServerSpec {
         })
     }
 
+    pub fn to_public_json(&self, policy: &WorkspacePolicy) -> Value {
+        self.to_public_json_with_secrets(policy, &HashSet::new())
+    }
+
     fn to_stored_json(&self) -> Value {
         json!({
             "id": self.id,
@@ -142,6 +174,7 @@ impl McpServerSpec {
             "command_or_url": self.command_or_url,
             "args": self.args,
             "env_secret_keys": self.env_secret_keys,
+            "auth_secret_key": self.auth_secret_key,
             "require_approval_by_default": self.require_approval_by_default,
             "enabled": self.enabled,
             "cached_tools": self.cached_tools.iter().map(|t| t.to_json()).collect::<Vec<_>>(),
@@ -175,6 +208,11 @@ impl McpServerSpec {
             })
             .unwrap_or_default();
         let env_secret_keys = parse_env_secret_keys(&v["env_secret_keys"]).unwrap_or_default();
+        let auth_secret_key = v["auth_secret_key"]
+            .as_str()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string);
         let cached_tools = v["cached_tools"]
             .as_array()
             .map(|a| a.iter().filter_map(McpToolSpec::from_json).collect())
@@ -186,6 +224,7 @@ impl McpServerSpec {
             command_or_url,
             args,
             env_secret_keys,
+            auth_secret_key,
             require_approval_by_default: v["require_approval_by_default"].as_bool().unwrap_or(true),
             enabled: v["enabled"].as_bool().unwrap_or(true),
             cached_tools,
@@ -203,22 +242,113 @@ struct McpStore {
     inbound_enabled: bool,
 }
 
+fn migrate_legacy_mcp_plaintext_secrets(person_data_dir: &Path, doc: &mut Value) -> bool {
+    let mut new_secrets: BTreeMap<String, String> = BTreeMap::new();
+    let mut changed = false;
+    if let Some(servers) = doc.get_mut("servers").and_then(|v| v.as_array_mut()) {
+        for (idx, srv) in servers.iter_mut().enumerate() {
+            let Some(obj) = srv.as_object_mut() else {
+                continue;
+            };
+            let sid: String = obj
+                .get("id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("mcp")
+                .chars()
+                .map(|c| if c.is_ascii_alphanumeric() || matches!(c, '_' | '-') { c } else { '_' })
+                .take(24)
+                .collect();
+            let sid = if sid.is_empty() { format!("mcp_{idx}") } else { sid };
+
+            for bearer_field in ["bearer_token", "api_key", "secret_value"] {
+                if let Some(tok) = obj
+                    .get(bearer_field)
+                    .and_then(|v| v.as_str())
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty() && !secret_store::is_vault_ref(s))
+                    .map(str::to_string)
+                {
+                    changed = true;
+                    obj.remove(bearer_field);
+                    let key = obj
+                        .get("auth_secret_key")
+                        .and_then(|v| v.as_str())
+                        .map(str::trim)
+                        .filter(|s| !s.is_empty())
+                        .map(str::to_string)
+                        .unwrap_or_else(|| format!("mcp_auth_{sid}"));
+                    obj.insert("auth_secret_key".to_string(), json!(key));
+                    new_secrets.insert(key, tok);
+                }
+            }
+
+            if let Some(env_map) = obj.get("env").and_then(|v| v.as_object()).cloned() {
+                let mut migrated_env_keys =
+                    parse_env_secret_keys(obj.get("env_secret_keys").unwrap_or(&Value::Null))
+                        .unwrap_or_default();
+                let mut any_env = false;
+                for (env_name, env_val) in env_map {
+                    if let Some(raw_val) = env_val
+                        .as_str()
+                        .map(str::trim)
+                        .filter(|s| !s.is_empty() && !secret_store::is_vault_ref(s))
+                    {
+                        any_env = true;
+                        let env_frag: String = env_name
+                            .chars()
+                            .map(|c| {
+                                if c.is_ascii_alphanumeric() || matches!(c, '_' | '-') {
+                                    c.to_ascii_lowercase()
+                                } else {
+                                    '_'
+                                }
+                            })
+                            .take(24)
+                            .collect();
+                        let sec_key = format!("mcp_env_{sid}_{env_frag}");
+                        let mapping = format!("{env_name}={sec_key}");
+                        if !migrated_env_keys.contains(&mapping) {
+                            migrated_env_keys.push(mapping);
+                        }
+                        new_secrets.insert(sec_key, raw_val.to_string());
+                    }
+                }
+                if any_env {
+                    changed = true;
+                    obj.remove("env");
+                    obj.insert("env_secret_keys".to_string(), json!(migrated_env_keys));
+                }
+            }
+        }
+    }
+
+    if !changed {
+        return false;
+    }
+    connectors::store_connector_secrets(person_data_dir, &new_secrets).is_ok()
+}
+
 impl McpStore {
     fn load_unlocked(person_data_dir: &Path) -> Self {
         let path = mcp_servers_path(person_data_dir);
         let Ok(text) = std::fs::read_to_string(&path) else {
             return Self::default();
         };
-        let Ok(v) = serde_json::from_str::<Value>(&text) else {
+        let Ok(mut v) = serde_json::from_str::<Value>(&text) else {
             return Self::default();
         };
-        Self {
+        let migrated = migrate_legacy_mcp_plaintext_secrets(person_data_dir, &mut v);
+        let store = Self {
             servers: v["servers"]
                 .as_array()
                 .map(|a| a.iter().filter_map(McpServerSpec::from_json).collect())
                 .unwrap_or_default(),
             inbound_enabled: v["inbound_enabled"].as_bool().unwrap_or(false),
+        };
+        if migrated {
+            let _ = store.save_unlocked(person_data_dir);
         }
+        store
     }
 
     fn save_unlocked(&self, person_data_dir: &Path) -> Result<(), String> {
@@ -276,12 +406,15 @@ fn parse_env_secret_keys(val: &Value) -> Result<Vec<String>, String> {
 }
 
 pub fn list_mcp_servers_json(person_data_dir: &Path, policy: &WorkspacePolicy) -> Value {
+    let stored_keys: HashSet<String> = connectors::get_connector_secret_map(person_data_dir)
+        .into_keys()
+        .collect();
     with_mcp_lock(|| {
         let store = McpStore::load_unlocked(person_data_dir);
         let servers: Vec<Value> = store
             .servers
             .iter()
-            .map(|s| s.to_public_json(policy))
+            .map(|s| s.to_public_json_with_secrets(policy, &stored_keys))
             .collect();
         json!({
             "servers": servers,
@@ -303,7 +436,11 @@ pub fn set_inbound_enabled(person_data_dir: &Path, enabled: bool) -> Result<Valu
     })
 }
 
-fn validate_server_command_or_url(transport: &str, command_or_url: &str) -> Result<(), String> {
+fn validate_server_command_or_url(
+    person_data_dir: &Path,
+    transport: &str,
+    command_or_url: &str,
+) -> Result<(), String> {
     if command_or_url.is_empty() || command_or_url.contains(['\r', '\n', '\0']) {
         return Err("command_or_url must be non-empty and cannot contain control characters".to_string());
     }
@@ -323,7 +460,7 @@ fn validate_server_command_or_url(transport: &str, command_or_url: &str) -> Resu
         tripwire::check_egress(command_or_url, "connector_config")?;
         let default_port = if lower.starts_with("https://") { 443 } else { 80 };
         let (host, port) = connectors::parse_url_host_port_pub(command_or_url, default_port);
-        tripwire::check_egress_host(&host, port, "connector_config")?;
+        tripwire::check_egress_host_for(person_data_dir, &host, port, "connector_config")?;
         Ok(())
     } else {
         Err("transport must be 'stdio' or 'http_sse'".to_string())
@@ -362,7 +499,8 @@ pub fn upsert_mcp_server(
         .unwrap_or("")
         .trim()
         .to_string();
-    validate_server_command_or_url(&transport, &command_or_url).map_err(|e| (400, e))?;
+    validate_server_command_or_url(person_data_dir, &transport, &command_or_url)
+        .map_err(|e| (400, e))?;
 
     let args = body["args"]
         .as_array()
@@ -378,6 +516,46 @@ pub fn upsert_mcp_server(
         }
     }
     let env_secret_keys = parse_env_secret_keys(&body["env_secret_keys"]).map_err(|e| (400, e))?;
+    let auth_secret_key = body["auth_secret_key"]
+        .as_str()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string);
+    if let Some(ref ak) = auth_secret_key {
+        if ak.len() > 64 || !ak.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.')) {
+            return Err((400, format!("invalid auth_secret_key '{ak}'")));
+        }
+    }
+    let mut new_secrets: BTreeMap<String, String> = BTreeMap::new();
+    if let Some(sec_obj) = body["secrets"].as_object() {
+        for (k, v) in sec_obj {
+            let sk = k.trim();
+            let sv = v
+                .as_str()
+                .ok_or_else(|| (400, format!("secret '{sk}' must be a string")))?;
+            if !sv.is_empty() {
+                new_secrets.insert(sk.to_string(), sv.to_string());
+            }
+        }
+    }
+    if let (Some(sk), Some(sv)) = (
+        body["secret_key"].as_str().map(str::trim).filter(|s| !s.is_empty()),
+        body["secret_value"].as_str(),
+    ) {
+        if !sv.is_empty() {
+            new_secrets.insert(sk.to_string(), sv.to_string());
+        }
+    }
+    if !new_secrets.is_empty() {
+        connectors::store_connector_secrets(person_data_dir, &new_secrets).map_err(|e| {
+            if e.contains("invalid secret key") || e.contains("newlines") {
+                (400, e)
+            } else {
+                (500, e)
+            }
+        })?;
+    }
+
     let require_approval_by_default = body["require_approval_by_default"].as_bool().unwrap_or(true);
     let enabled = body["enabled"].as_bool().unwrap_or(true);
     let requested_id = body["id"]
@@ -390,6 +568,9 @@ pub fn upsert_mcp_server(
         }
     }
     let now_ms = records::now_millis();
+    let stored_keys: HashSet<String> = connectors::get_connector_secret_map(person_data_dir)
+        .into_keys()
+        .collect();
 
     with_mcp_lock(|| {
         let mut store = McpStore::load_unlocked(person_data_dir);
@@ -401,6 +582,9 @@ pub fn upsert_mcp_server(
             updated.command_or_url = command_or_url;
             updated.args = args;
             updated.env_secret_keys = env_secret_keys;
+            if auth_secret_key.is_some() {
+                updated.auth_secret_key = auth_secret_key;
+            }
             updated.require_approval_by_default = require_approval_by_default;
             updated.enabled = enabled;
             updated.updated_ms = now_ms;
@@ -417,6 +601,7 @@ pub fn upsert_mcp_server(
                 command_or_url,
                 args,
                 env_secret_keys,
+                auth_secret_key,
                 require_approval_by_default,
                 enabled,
                 cached_tools: Vec::new(),
@@ -429,7 +614,7 @@ pub fn upsert_mcp_server(
             (srv, true)
         };
         store.save_unlocked(person_data_dir).map_err(|e| (500, e))?;
-        Ok((srv.to_public_json(policy), created))
+        Ok((srv.to_public_json_with_secrets(policy, &stored_keys), created))
     })
 }
 
@@ -449,8 +634,11 @@ pub fn delete_mcp_server(person_data_dir: &Path, id: &str) -> Result<bool, Strin
 fn resolve_server_env(
     person_data_dir: &Path,
     server: &McpServerSpec,
-) -> Vec<(String, String)> {
-    let secrets = connectors::get_connector_secret_map(person_data_dir);
+) -> Result<Vec<(String, String)>, String> {
+    if server.env_secret_keys.is_empty() {
+        return Ok(Vec::new());
+    }
+    let secrets = connectors::get_connector_secret_map_result(person_data_dir)?;
     let mut env_pairs = Vec::new();
     for entry in &server.env_secret_keys {
         let (env_var, secret_key) = match entry.split_once('=') {
@@ -461,7 +649,7 @@ fn resolve_server_env(
             env_pairs.push((env_var.to_string(), val.clone()));
         }
     }
-    env_pairs
+    Ok(env_pairs)
 }
 
 fn read_stdio_jsonrpc_response(
@@ -496,7 +684,7 @@ fn run_stdio_mcp_session(
     followup_method: &str,
     followup_params: Value,
 ) -> Result<Value, String> {
-    let env_pairs = resolve_server_env(&cfg.data_dir, server);
+    let env_pairs = resolve_server_env(&cfg.data_dir, server)?;
     let mut cmd = Command::new(&server.command_or_url);
     cmd.args(&server.args)
         .current_dir(&cfg.workspace_dir)
@@ -506,7 +694,8 @@ fn run_stdio_mcp_session(
         .env_remove("ERGON_MODEL_API_KEY")
         .env_remove("ERGON_API_KEY")
         .env_remove("ERGON_GATE_TOKEN")
-        .env_remove("ERGON_MCP_INBOUND_TOKEN");
+        .env_remove("ERGON_MCP_INBOUND_TOKEN")
+        .env_remove("ERGON_SECRET_KEY");
     for (k, v) in env_pairs {
         cmd.env(k, v);
     }
@@ -611,6 +800,7 @@ fn post_http_mcp_jsonrpc(
     agent: &ureq::Agent,
     url: &str,
     session_id: Option<&str>,
+    bearer_token: Option<&str>,
     body: &Value,
     expected_id: Option<u64>,
 ) -> Result<(Value, Option<String>), String> {
@@ -620,6 +810,9 @@ fn post_http_mcp_jsonrpc(
         .set("Accept", "application/json, text/event-stream");
     if let Some(sid) = session_id {
         req = req.set("Mcp-Session-Id", sid);
+    }
+    if let Some(tok) = bearer_token.map(str::trim).filter(|s| !s.is_empty()) {
+        req = req.set("Authorization", &format!("Bearer {tok}"));
     }
     let resp = req
         .send_json(body.clone())
@@ -649,6 +842,7 @@ fn post_http_mcp_jsonrpc(
 }
 
 fn run_http_mcp_session(
+    cfg: &Config,
     server: &McpServerSpec,
     followup_method: &str,
     followup_params: Value,
@@ -660,9 +854,20 @@ fn run_http_mcp_session(
         80
     };
     let (host, port) = connectors::parse_url_host_port_pub(&server.command_or_url, default_port);
-    tripwire::check_egress_host(&host, port, "connector")?;
+    tripwire::check_egress_host_for(&cfg.data_dir, &host, port, "connector")?;
 
-    let agent = tripwire::guarded_connector_agent(MCP_IO_TIMEOUT);
+    let bearer_token = if let Some(ref auth_key) = server.auth_secret_key {
+        let secrets = connectors::get_connector_secret_map_result(&cfg.data_dir)?;
+        let tok = secrets
+            .get(auth_key)
+            .cloned()
+            .ok_or_else(|| format!("missing MCP auth secret '{auth_key}'"))?;
+        Some(tok)
+    } else {
+        None
+    };
+
+    let agent = tripwire::guarded_connector_agent_for(&cfg.data_dir, MCP_IO_TIMEOUT);
     let init_req = json!({
         "jsonrpc": "2.0",
         "id": 1,
@@ -676,8 +881,14 @@ fn run_http_mcp_session(
             }
         }
     });
-    let (init_resp, sid) =
-        post_http_mcp_jsonrpc(&agent, &server.command_or_url, None, &init_req, Some(1))?;
+    let (init_resp, sid) = post_http_mcp_jsonrpc(
+        &agent,
+        &server.command_or_url,
+        None,
+        bearer_token.as_deref(),
+        &init_req,
+        Some(1),
+    )?;
     if let Some(err) = init_resp.get("error").filter(|v| !v.is_null()) {
         return Err(format!("MCP initialize error: {err}"));
     }
@@ -691,6 +902,7 @@ fn run_http_mcp_session(
         &agent,
         &server.command_or_url,
         sid.as_deref(),
+        bearer_token.as_deref(),
         &notif,
         None,
     );
@@ -705,6 +917,7 @@ fn run_http_mcp_session(
         &agent,
         &server.command_or_url,
         sid.as_deref(),
+        bearer_token.as_deref(),
         &call_req,
         Some(2),
     )?;
@@ -723,7 +936,7 @@ fn run_mcp_session(
     if server.transport == "stdio" {
         run_stdio_mcp_session(cfg, server, method, params)
     } else if server.transport == "http_sse" {
-        run_http_mcp_session(server, method, params)
+        run_http_mcp_session(cfg, server, method, params)
     } else {
         Err(format!("unsupported MCP transport '{}'", server.transport))
     }
@@ -760,6 +973,9 @@ pub fn discover_mcp_server(
                 .take(MAX_MCP_TOOLS_PER_SERVER)
                 .collect();
             let now_ms = records::now_millis();
+            let stored_keys: HashSet<String> = connectors::get_connector_secret_map(&cfg.data_dir)
+                .into_keys()
+                .collect();
             let updated = with_mcp_lock(|| {
                 let mut store = McpStore::load_unlocked(&cfg.data_dir);
                 let Some(s) = store.servers.iter_mut().find(|s| s.id == server_id) else {
@@ -769,7 +985,7 @@ pub fn discover_mcp_server(
                 s.last_discovered_ms = Some(now_ms);
                 s.last_error = None;
                 s.updated_ms = now_ms;
-                let out = s.to_public_json(&policy);
+                let out = s.to_public_json_with_secrets(&policy, &stored_keys);
                 store.save_unlocked(&cfg.data_dir).map_err(|e| (500, e))?;
                 Ok(out)
             })?;
@@ -932,7 +1148,7 @@ pub fn invoke_mcp_tool(
             80
         };
         let (host, port) = connectors::parse_url_host_port_pub(&server.command_or_url, default_port);
-        tripwire::check_egress_host(&host, port, "connector")?;
+        tripwire::check_egress_host_for(&cfg.data_dir, &host, port, "connector")?;
     }
 
     let clean_args = clean_mcp_args(args);

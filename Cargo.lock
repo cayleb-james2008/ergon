@@ -254,6 +254,7 @@ version = "0.38.0"
 dependencies = [
  "miniz_oxide",
  "pdf-extract",
+ "ring",
  "rune",
  "rustls",
  "rustls-pki-types",
