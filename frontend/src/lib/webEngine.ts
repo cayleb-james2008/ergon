@@ -5564,6 +5564,7 @@ function runWebVaultAggregate(
         latest
           ? {
               active: true,
+              status: "running",
               runs: allActive,
               run_id: latest.run_id,
               thread_id: latest.thread_id,
@@ -5571,9 +5572,28 @@ function runWebVaultAggregate(
               started_ms: latest.started_ms,
               elapsed_ms: latest.elapsed_ms ?? nowMs - latest.started_ms,
               steps: latest.steps,
+              model_configured: true,
+              recoverable_runs: [],
+              recent_runs: [],
             }
-          : { active: false, runs: [], thread_id: "", task: "", started_ms: 0, steps: [] }
+          : {
+              active: false,
+              status: "idle",
+              runs: [],
+              run_id: "",
+              thread_id: "",
+              task: "",
+              started_ms: 0,
+              elapsed_ms: 0,
+              steps: [],
+              model_configured: true,
+              recoverable_runs: [],
+              recent_runs: [],
+            }
       );
+    }
+    if (method === "POST" && (path === "/api/runs/resume" || (path.startsWith("/api/runs/") && path.endsWith("/resume")))) {
+      return jsonRes({ error: "no interrupted run available to resume" }, 404);
     }
     if (method === "POST" && path.startsWith("/api/runs/") && path.endsWith("/cancel")) {
       const targetId = decodeURIComponent(path.slice("/api/runs/".length, -"/cancel".length)).trim();

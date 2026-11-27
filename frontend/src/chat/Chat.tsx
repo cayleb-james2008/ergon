@@ -10,6 +10,7 @@ import {
   FileText,
   FolderOpen,
   Paperclip,
+  RotateCcw,
   Send,
   ShieldCheck,
   Sparkles,
@@ -39,6 +40,7 @@ import {
   type Msg,
   type PipelineResumePayload,
   type PipelineRun,
+  type RecoverableRun,
 } from "@/lib/api";
 import { detectBatchWorkflow, detectWorkflowForFile, type StarterCard } from "@/lib/words";
 
@@ -86,6 +88,11 @@ export function Chat({
   onResumePipeline,
   onRetryPipeline,
   onCancelPipeline,
+  recoverableRuns = [],
+  resumingRunId = null,
+  modelConfigured = false,
+  onResumeInterruptedRun,
+  onOpenThread,
   inputRef,
 }: {
   threadId: string | null;
@@ -133,6 +140,11 @@ export function Chat({
   onResumePipeline?: (runId: string, payload: PipelineResumePayload) => Promise<void>;
   onRetryPipeline?: (runId: string) => Promise<void>;
   onCancelPipeline?: (runId: string) => Promise<void>;
+  recoverableRuns?: RecoverableRun[];
+  resumingRunId?: string | null;
+  modelConfigured?: boolean;
+  onResumeInterruptedRun?: (runId: string) => void;
+  onOpenThread?: (threadId: string) => void;
   inputRef: React.RefObject<HTMLTextAreaElement | null>;
 }) {
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -409,6 +421,69 @@ export function Chat({
 
   const composerNode = (
     <div className="flex w-full flex-col gap-2">
+      {!busy && recoverableRuns.length > 0 && (
+        <div
+          id="interrupted-runs-banner"
+          role="status"
+          className="flex flex-col gap-2 rounded-card border border-hairline bg-surface px-3.5 py-2.5 text-xs shadow-card"
+        >
+          {recoverableRuns.slice(0, 3).map((run) => {
+            const canResume = Boolean(run.can_resume ?? modelConfigured);
+            const isResuming = resumingRunId === run.run_id;
+            const stepCount = Array.isArray(run.steps) ? run.steps.length : 0;
+            return (
+              <div
+                key={run.run_id}
+                data-recoverable-run-id={run.run_id}
+                className="flex flex-wrap items-center justify-between gap-2"
+              >
+                <div className="flex min-w-0 flex-1 items-start gap-2">
+                  <span className="mt-1 size-2 shrink-0 rounded-full bg-dot-amber" aria-hidden />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate font-medium text-ink">
+                      Interrupted task: {run.task || "Unfinished chat run"}
+                    </p>
+                    <p className="text-ink-2">
+                      {stepCount > 0
+                        ? `${stepCount} completed ${stepCount === 1 ? "step" : "steps"} saved.`
+                        : "Interrupted before the first step finished."}{" "}
+                      {canResume
+                        ? "Resume to continue from saved thread state."
+                        : "Configure a model in Settings to resume."}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex shrink-0 items-center gap-1.5">
+                  {run.thread_id && run.thread_id !== threadId && onOpenThread && (
+                    <Button
+                      type="button"
+                      size="xs"
+                      variant="ghost"
+                      className="max-md:min-h-11"
+                      onClick={() => onOpenThread(run.thread_id)}
+                    >
+                      View thread
+                    </Button>
+                  )}
+                  {onResumeInterruptedRun && (
+                    <Button
+                      id="resume-run-btn"
+                      type="button"
+                      size="xs"
+                      disabled={!canResume || isResuming}
+                      className="max-md:min-h-11 gap-1.5"
+                      onClick={() => onResumeInterruptedRun(run.run_id)}
+                    >
+                      <RotateCcw className="size-3" strokeWidth={1.75} aria-hidden />
+                      {isResuming ? "Resuming…" : "Resume"}
+                    </Button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
       {pendingNote && (
         <p className="text-xs text-ink-2">
           Your previous draft was restored below because the connection interrupted before it reached the server.
