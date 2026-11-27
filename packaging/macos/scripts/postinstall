@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# macOS Installer postinstall script for Ergon.pkg.
+# Ensures executable permissions, links /usr/local/bin/ergon, initializes the console
+# user's Application Support directory, and loads the com.ergon.agent LaunchAgent.
+set -euo pipefail
+
+APP_BIN="/Applications/Ergon.app/Contents/MacOS/ergon"
+APP_LAUNCHER="/Applications/Ergon.app/Contents/MacOS/ergon-launcher"
+PLIST="/Library/LaunchAgents/com.ergon.agent.plist"
+
+chmod 0755 "$APP_BIN" "$APP_LAUNCHER"
+if [ -f "$PLIST" ]; then
+  chmod 0644 "$PLIST"
+fi
+
+# Expose the CLI at /usr/local/bin/ergon when /usr/local/bin is writable.
+if mkdir -p /usr/local/bin 2>/dev/null; then
+  ln -sf "$APP_BIN" /usr/local/bin/ergon
+fi
+
+# Determine the active GUI console user (when installing interactively on macOS).
+CONSOLE_USER="$(stat -f '%Su' /dev/console 2>/dev/null || true)"
+if [ -n "$CONSOLE_USER" ] && [ "$CONSOLE_USER" != "root" ] && [ "$CONSOLE_USER" != "loginwindow" ]; then
+  CONSOLE_UID="$(id -u "$CONSOLE_USER" 2>/dev/null || true)"
+  USER_HOME="$(dscl . -read "/Users/$CONSOLE_USER" NFSHomeDirectory 2>/dev/null | awk '{print $2}' || true)"
+  if [ -n "$USER_HOME" ] && [ -d "$USER_HOME" ]; then
+    DATA_DIR="$USER_HOME/Library/Application Support/Ergon"
+    mkdir -p "$DATA_DIR/logs"
+    chown -R "$CONSOLE_USER" "$DATA_DIR" || true
+  fi
+  if [ -n "$CONSOLE_UID" ] && [ -f "$PLIST" ] && command -v launchctl >/dev/null 2>&1; then
+    launchctl bootout "gui/$CONSOLE_UID" "$PLIST" 2>/dev/null || true
+    launchctl bootstrap "gui/$CONSOLE_UID" "$PLIST" 2>/dev/null || true
+    launchctl kickstart -k "gui/$CONSOLE_UID/com.ergon.agent" 2>/dev/null || true
+  fi
+fi
+
+exit 0

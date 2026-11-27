@@ -16,7 +16,7 @@ import { Pill } from "@/components/kibo-ui/pill";
 import { WorkspaceSwitcherList } from "@/shell/PersonSelect";
 import { BackupsSection } from "@/shell/BackupsSection";
 import { SecuritySection } from "@/shell/SecuritySection";
-import { VersionRow, type useUpdate } from "@/shell/Update";
+import { UpdateSettingsSection, type useUpdate } from "@/shell/Update";
 import {
   call,
   downloadDiagnosticBundle,
@@ -871,9 +871,7 @@ function SettingsBody({
       </section>
 
       {/* 6. Version & Updates */}
-      <section aria-label="Version and updates" className="rounded-card border border-hairline bg-board/40 px-2 py-2">
-        <VersionRow u={u} />
-      </section>
+      <UpdateSettingsSection u={u} />
     </div>
   );
 }

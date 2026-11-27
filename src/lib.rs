@@ -24,10 +24,11 @@ pub mod routines;
 pub mod scheduler;
 pub mod search;
 pub mod secret_store;
+pub mod service;
 pub mod server;
 pub use server::{
-    allowed_hosts_from, parked_note, serve, serve_with_gate, serve_with_hosts, serve_with_updates,
-    AppState, LiveModelConfig, PersonRuntime,
+    allowed_hosts_from, parked_note, serve, serve_with_gate, serve_with_hosts, serve_with_updater,
+    serve_with_updates, AppState, LiveModelConfig, PersonRuntime,
 };
 pub mod skill_catalog;
 pub mod skills;
@@ -4236,6 +4237,9 @@ mod v010_hardening_tests {
             body: b"{}".to_vec(),
             session: None,
             gate: None,
+            api_token: None,
+            admin_token: None,
+            actor_role: None,
             content_type: "application/json".into(),
             origin: Some("http://LocalHost:8787".into()),
             host: Some("localhost:8787".into()),

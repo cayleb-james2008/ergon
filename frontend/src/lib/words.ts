@@ -307,8 +307,11 @@ export function plainUpdateError(raw: string): string {
   if (/could not reach|Connection/i.test(r)) return "Could not reach GitHub. Check your internet connection, then try again.";
   if (/checksum/i.test(r)) return "The download did not pass its safety check, so it was not installed. Nothing changed. Try again in a few minutes.";
   if (/answered HTTP/i.test(r)) return "GitHub had a problem. Nothing changed. Try again in a few minutes.";
-  if (/only allowed from this machine/i.test(r)) return "Updating works only on the computer Ergon runs on. Open it there to update.";
+  if (/admin privileges|admin role|only its operator/i.test(r)) return "Admin privileges are required to change update settings or install updates on this host.";
+  if (/gate header|unauthorized/i.test(r)) return "Sign in or provide a valid admin token before managing updates.";
+  if (/only allowed from this machine/i.test(r)) return "Updating requires local access or an authenticated administrator session.";
   if (/does not run on this machine/i.test(r)) return "The new version does not run on this computer, so it was not installed. Nothing changed.";
+  if (/mode must be|mode is required/i.test(r)) return "Choose Off, Notify, or Auto for the update mode.";
   return "The update did not finish. Nothing changed. Try again in a few minutes.";
 }
 
