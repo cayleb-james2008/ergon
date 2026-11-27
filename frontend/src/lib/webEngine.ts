@@ -15,6 +15,13 @@ import { extractCitations } from "@/lib/words";
 import { buildAuditBundle } from "@/lib/auditBundle";
 import { computeLineDiff } from "@/lib/diff";
 import {
+  computeBillableValueUsd,
+  computeMinutesSaved,
+  resolveEffectiveHourlyRate,
+  round2,
+  round4,
+} from "@/lib/meteringFormula";
+import {
   engagementWorkspacePrefix,
   estimateNextRunMs,
   isPathInEngagementScope,
@@ -260,17 +267,14 @@ function computeUsageCostUsd(
   return Math.round(cost * 1_000_000) / 1_000_000;
 }
 
-function estimateMinutesSaved(promptOrSkill: string, stepCount: number): number {
-  const s = promptOrSkill.toLowerCase();
-  if (/reconcil|ledger|invoice|expense/.test(s)) return 28;
-  if (/audit|contract|clause/.test(s)) return 35;
-  if (/clean_dataset|dedup|normaliz/.test(s)) return 24;
-  if (/extract_table|spreadsheet/.test(s)) return 20;
-  if (/compare|diff/.test(s)) return 22;
-  if (/summar|meeting|triage|inbox/.test(s)) return 18;
-  if (/brief|research|draft/.test(s)) return 25;
-  return Math.max(10, Math.min(40, 8 + stepCount * 4));
-}
+// Parity note: minutes saved & billable value use `computeMinutesSaved` and
+// `computeBillableValueUsd` from `@/lib/meteringFormula` (exact mirror of
+// `src/records.rs:2143-2179` with `$0/hr` unassigned fallback).
+export {
+  computeBillableValueUsd,
+  computeMinutesSaved,
+  resolveEffectiveHourlyRate,
+};
 
 function ensureClientsAndPricing(state: RootState, now = Date.now()) {
   if (!Array.isArray(state.clients) || state.clients.length === 0) {
@@ -1075,6 +1079,8 @@ function buildInitialState(): RootState {
     "Format expense reconciliations with normalized totals and receipt status flags.",
   ];
   const recon = runCsvReconciliation("expenses-q3.csv", expensesCsv, initialRules);
+  const seededMinsSaved = computeMinutesSaved(true, false, 3, 1, 480);
+  const seededBillableUsd = computeBillableValueUsd(seededMinsSaved, 220);
   const t1 = `t${now - 24 * 60_000}-1`;
   const t2 = `t${now - 90 * 60_000}-2`;
 
@@ -1222,8 +1228,8 @@ function buildInitialState(): RootState {
           total_tokens: 1900,
           cost_usd: 0.000477,
           latency_ms: 340,
-          estimated_minutes_saved: 28,
-          billable_value_usd: 102.67,
+          estimated_minutes_saved: seededMinsSaved,
+          billable_value_usd: seededBillableUsd,
           engagement_id: "eng-northstar-q4",
         },
       },
@@ -1256,8 +1262,8 @@ function buildInitialState(): RootState {
           total_tokens: 1900,
           cost_usd: 0.000477,
           latency_ms: 340,
-          estimated_minutes_saved: 28,
-          billable_value_usd: 102.67,
+          estimated_minutes_saved: seededMinsSaved,
+          billable_value_usd: seededBillableUsd,
           engagement_id: "eng-northstar-q4",
         },
       },
@@ -1712,14 +1718,8 @@ export async function installBrowserEngine(): Promise<void> {
   }
 
   function effectiveHourlyRate(pid: string, engagement: Engagement | null, client: Client | null): number {
-    if (engagement && typeof engagement.hourly_rate_usd === "number" && engagement.hourly_rate_usd > 0) {
-      return engagement.hourly_rate_usd;
-    }
-    if (client && typeof client.default_rate_usd === "number" && client.default_rate_usd > 0) {
-      return client.default_rate_usd;
-    }
     void pid;
-    return 150;
+    return resolveEffectiveHourlyRate(engagement, client);
   }
 
   function engagementSpentUsd(engagementId: string): number {
@@ -1869,8 +1869,8 @@ export async function installBrowserEngine(): Promise<void> {
       engRow.runs += 1;
       engRow.total_tokens += tt;
       engRow.cost_usd = Math.round((engRow.cost_usd + cost) * 1_000_000) / 1_000_000;
-      engRow.minutes_saved += mins;
-      engRow.billable_value_usd = Math.round((engRow.billable_value_usd + bill) * 100) / 100;
+      engRow.minutes_saved = round2(engRow.minutes_saved + mins);
+      engRow.billable_value_usd = round4(engRow.billable_value_usd + bill);
       if (engRow.retainer_budget_usd && engRow.retainer_budget_usd > 0) {
         engRow.retainer_burn_pct = Math.round((engRow.cost_usd / engRow.retainer_budget_usd) * 10000) / 100;
       }
@@ -1904,8 +1904,8 @@ export async function installBrowserEngine(): Promise<void> {
       dayRow.runs += 1;
       dayRow.total_tokens += tt;
       dayRow.cost_usd = Math.round((dayRow.cost_usd + cost) * 1_000_000) / 1_000_000;
-      dayRow.minutes_saved += mins;
-      dayRow.billable_value_usd = Math.round((dayRow.billable_value_usd + bill) * 100) / 100;
+      dayRow.minutes_saved = round2(dayRow.minutes_saved + mins);
+      dayRow.billable_value_usd = round4(dayRow.billable_value_usd + bill);
       byDayMap.set(day, dayRow);
     }
 
@@ -1925,8 +1925,8 @@ export async function installBrowserEngine(): Promise<void> {
         cached_tokens: cachedTokens,
         total_tokens: totalTokens,
         cost_usd: Math.round(costUsd * 1_000_000) / 1_000_000,
-        minutes_saved: Math.round(minutesSaved),
-        billable_value_usd: Math.round(billableValueUsd * 100) / 100,
+        minutes_saved: round2(minutesSaved),
+        billable_value_usd: round4(billableValueUsd),
         retainer_burn_pct: burnPct,
         retainer_budget_usd: retainerBudget,
         net_roi_usd: netRoi,
@@ -2691,9 +2691,6 @@ export async function installBrowserEngine(): Promise<void> {
           content: `Note: ${outcome.parkedFile} has NOT been deleted yet; the deletion is waiting for your approval in Decisions.`,
         });
       }
-      const stepCount = th.messages.filter((m) => m.role === "step").length;
-      const minsSaved = estimateMinutesSaved(prompt, stepCount);
-      const billableVal = Math.round((minsSaved / 60) * hourlyRate * 100) / 100;
       const rawU =
         "rawUsage" in outcome && outcome.rawUsage
           ? (outcome.rawUsage as {
@@ -2708,6 +2705,11 @@ export async function installBrowserEngine(): Promise<void> {
       const finalCompletion = rawU ? rawU.completion_tokens : stepCompletionAcc + Math.max(60, Math.round(outcome.summary.length / 4));
       const finalCached = rawU ? rawU.cached_tokens : Math.round(finalPrompt * 0.22);
       const finalModel = rawU ? rawU.model_id : modelId;
+      const stepCount = th.messages.filter((m) => m.role === "step").length;
+      const filesWritten = outcome.written.length;
+      const answeredOnly = stepCount === 0 && filesWritten === 0;
+      const minsSaved = computeMinutesSaved(true, answeredOnly, stepCount, filesWritten, finalCompletion);
+      const billableVal = computeBillableValueUsd(minsSaved, hourlyRate);
       const runUsage: RunUsage = {
         model_id: finalModel,
         prompt_tokens: finalPrompt,
@@ -3673,7 +3675,9 @@ export async function installBrowserEngine(): Promise<void> {
       const pTok = Math.max(120, Math.round(((spec.label || "").length + (stState.output || "").length) / 3) + 180);
       const cTok = Math.max(40, Math.round((stState.output || "").length / 4) + 35);
       const cachedTok = Math.round(pTok * 0.2);
-      const stepMins = spec.kind === "skill" ? estimateMinutesSaved(spec.skill_id || spec.label || "", 1) : 10;
+      const stepFilesWritten = Array.isArray(stState.files) ? stState.files.length : 0;
+      const isDeterministicStep = spec.kind === "skill" || spec.kind === "export" || spec.kind === "deliver";
+      const stepMins = computeMinutesSaved(true, false, 1, stepFilesWritten, isDeterministicStep ? 0 : cTok);
       const stepUsage: RunUsage = {
         model_id: stepModelId,
         prompt_tokens: pTok,
@@ -3683,7 +3687,7 @@ export async function installBrowserEngine(): Promise<void> {
         cost_usd: computeUsageCostUsd(pricingMap, stepModelId, pTok, cTok, cachedTok),
         latency_ms: stState.finished_ms && stState.started_ms ? Math.max(1, stState.finished_ms - stState.started_ms) : 1,
         estimated_minutes_saved: stepMins,
-        billable_value_usd: Math.round((stepMins / 60) * pRate * 100) / 100,
+        billable_value_usd: computeBillableValueUsd(stepMins, pRate),
         engagement_id: actEng?.id,
       };
       stState.usage = stepUsage;
@@ -3839,8 +3843,8 @@ export async function installBrowserEngine(): Promise<void> {
           total_tokens: acc.total_tokens + (u.total_tokens || 0),
           cost_usd: Math.round((acc.cost_usd + (u.cost_usd || 0)) * 1_000_000) / 1_000_000,
           latency_ms: (acc.latency_ms || 0) + (u.latency_ms || 0),
-          estimated_minutes_saved: (acc.estimated_minutes_saved || 0) + (u.estimated_minutes_saved || 0),
-          billable_value_usd: Math.round(((acc.billable_value_usd || 0) + (u.billable_value_usd || 0)) * 100) / 100,
+          estimated_minutes_saved: round2((acc.estimated_minutes_saved || 0) + (u.estimated_minutes_saved || 0)),
+          billable_value_usd: round4((acc.billable_value_usd || 0) + (u.billable_value_usd || 0)),
           engagement_id: pipeEng?.id,
         };
       },

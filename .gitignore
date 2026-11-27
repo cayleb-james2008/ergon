@@ -3,3 +3,5 @@
 /smoke-data
 /smoke.log
 /smoke.pid
+__pycache__/
+*.py[cod]
