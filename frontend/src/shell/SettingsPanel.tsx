@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Pill } from "@/components/kibo-ui/pill";
 import { WorkspaceSwitcherList } from "@/shell/PersonSelect";
+import { BackupsSection } from "@/shell/BackupsSection";
 import { SecuritySection } from "@/shell/SecuritySection";
 import { VersionRow, type useUpdate } from "@/shell/Update";
 import {
@@ -45,6 +46,7 @@ function SettingsBody({
   onAddPerson,
   onExportAuditBundle,
   onConfigSaved,
+  onRestored,
   onOpenHelp,
   onHelpConfigSaved,
   u,
@@ -59,6 +61,7 @@ function SettingsBody({
   onAddPerson: () => void;
   onExportAuditBundle: (format: "json" | "md") => Promise<void>;
   onConfigSaved: () => void;
+  onRestored?: () => void;
   onOpenHelp?: () => void;
   onHelpConfigSaved?: (cfg: HelpConfigPayload) => void;
   u: ReturnType<typeof useUpdate>;
@@ -398,6 +401,9 @@ function SettingsBody({
         </div>
       </section>
 
+      {/* Backups & Recovery (native) */}
+      <BackupsSection status={status} onRestored={onRestored} />
+
       {/* Security tripwires (native v0.8.0+) */}
       <SecuritySection status={status} />
 
@@ -615,7 +621,7 @@ function SettingsBody({
             </div>
           </div>
           <p className="text-xs leading-5 text-ink-2">
-            Set input, output, and cached token rates per model ID for retainer burn and billable ROI metering.
+            Set input, output, and cached token rates per model ID for retainer burn and estimated billable value metering.
           </p>
 
           <form noValidate onSubmit={savePricing} className="flex flex-col gap-2.5">
@@ -883,6 +889,7 @@ export function SettingsPanel({
   onAddPerson,
   onExportAuditBundle,
   onConfigSaved,
+  onRestored,
   onOpenHelp,
   onHelpConfigSaved,
   u,
@@ -900,6 +907,7 @@ export function SettingsPanel({
   onAddPerson: () => void;
   onExportAuditBundle: (format: "json" | "md") => Promise<void>;
   onConfigSaved: () => void;
+  onRestored?: () => void;
   onOpenHelp?: () => void;
   onHelpConfigSaved?: (cfg: HelpConfigPayload) => void;
   u: ReturnType<typeof useUpdate>;
@@ -912,7 +920,7 @@ export function SettingsPanel({
       open={open}
       onOpenChange={onOpenChange}
       title="Settings"
-      description="Appearance, workspaces, model configuration, security, IT support contact, and diagnostics."
+      description="Appearance, workspaces, backups, model configuration, security, IT support contact, diagnostics, and audit bundle export."
       className="max-w-xl"
       trigger={
         !hideTrigger ? (
@@ -936,6 +944,7 @@ export function SettingsPanel({
         onAddPerson={onAddPerson}
         onExportAuditBundle={onExportAuditBundle}
         onConfigSaved={onConfigSaved}
+        onRestored={onRestored}
         onOpenHelp={onOpenHelp}
         onHelpConfigSaved={onHelpConfigSaved}
         u={u}

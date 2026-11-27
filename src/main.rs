@@ -28,8 +28,13 @@ struct CliOpts {
     export_out: Option<String>,
     export_title: Option<String>,
     export_force: bool,
-    diagnostics_mode: bool,
+    backup_mode: bool,
+    restore_mode: bool,
+    restore_archive: Option<String>,
     data_dir: Option<String>,
+    backup_offsite: Option<String>,
+    backup_keep: Option<usize>,
+    diagnostics_mode: bool,
     test_crash: bool,
     json_output: bool,
     host: Option<String>,
@@ -40,6 +45,11 @@ fn parse_cli_args(args: &[String]) -> CliOpts {
     let mut opts = CliOpts::default();
     let mut i = 0;
     while i < args.len() {
+        let no_subcmd = !opts.verify_mode
+            && !opts.export_handoff_mode
+            && !opts.backup_mode
+            && !opts.restore_mode
+            && !opts.diagnostics_mode;
         match args[i].as_str() {
             "--version" | "-V" => opts.show_version = true,
             "--help" | "-h" => opts.show_help = true,
@@ -48,18 +58,16 @@ fn parse_cli_args(args: &[String]) -> CliOpts {
             "--json" => opts.json_output = true,
             "--force" => opts.export_force = true,
             "--test-crash" => opts.test_crash = true,
-            "verify" if !opts.verify_mode && !opts.export_handoff_mode && !opts.diagnostics_mode => {
-                opts.verify_mode = true
-            }
-            "export-handoff"
-                if !opts.verify_mode && !opts.export_handoff_mode && !opts.diagnostics_mode =>
-            {
-                opts.export_handoff_mode = true
-            }
-            "diagnostics"
-                if !opts.verify_mode && !opts.export_handoff_mode && !opts.diagnostics_mode =>
-            {
-                opts.diagnostics_mode = true
+            "verify" if no_subcmd => opts.verify_mode = true,
+            "export-handoff" if no_subcmd => opts.export_handoff_mode = true,
+            "backup" if no_subcmd => opts.backup_mode = true,
+            "restore" if no_subcmd => opts.restore_mode = true,
+            "diagnostics" if no_subcmd => opts.diagnostics_mode = true,
+            "--workspace" => {
+                if let Some(v) = args.get(i + 1) {
+                    opts.verify_workspace = Some(v.clone());
+                    i += 1;
+                }
             }
             "--data" => {
                 if let Some(v) = args.get(i + 1) {
@@ -67,15 +75,21 @@ fn parse_cli_args(args: &[String]) -> CliOpts {
                     i += 1;
                 }
             }
-            "--workspace" => {
-                if let Some(v) = args.get(i + 1) {
-                    opts.verify_workspace = Some(v.clone());
-                    i += 1;
-                }
-            }
             "--out" => {
                 if let Some(v) = args.get(i + 1) {
                     opts.export_out = Some(v.clone());
+                    i += 1;
+                }
+            }
+            "--offsite" => {
+                if let Some(v) = args.get(i + 1) {
+                    opts.backup_offsite = Some(v.clone());
+                    i += 1;
+                }
+            }
+            "--keep" => {
+                if let Some(v) = args.get(i + 1).and_then(|s| s.parse::<usize>().ok()) {
+                    opts.backup_keep = Some(v);
                     i += 1;
                 }
             }
@@ -116,13 +130,24 @@ fn parse_cli_args(args: &[String]) -> CliOpts {
                     if !v.is_empty() {
                         opts.export_out = Some(v.to_string());
                     }
+                } else if let Some(v) = other.strip_prefix("--offsite=") {
+                    if !v.is_empty() {
+                        opts.backup_offsite = Some(v.to_string());
+                    }
+                } else if let Some(v) = other.strip_prefix("--keep=").and_then(|s| s.parse::<usize>().ok()) {
+                    opts.backup_keep = Some(v);
                 } else if let Some(v) = other.strip_prefix("--title=") {
                     if !v.is_empty() {
                         opts.export_title = Some(v.to_string());
                     }
                 } else if opts.verify_mode && !other.starts_with('-') && opts.verify_target.is_none() {
                     opts.verify_target = Some(other.to_string());
-                } else if (opts.export_handoff_mode || opts.diagnostics_mode)
+                } else if opts.restore_mode
+                    && !other.starts_with('-')
+                    && opts.restore_archive.is_none()
+                {
+                    opts.restore_archive = Some(other.to_string());
+                } else if (opts.export_handoff_mode || opts.backup_mode || opts.diagnostics_mode)
                     && !other.starts_with('-')
                     && opts.export_out.is_none()
                 {
@@ -402,6 +427,12 @@ fn run_export_handoff_cli(opts: &CliOpts) -> i32 {
 }
 
 fn load_cli_config(opts: &CliOpts) -> ergon_rs::Config {
+    if let Some(dir) = &opts.data_dir {
+        // `--data` must also drive the saved model config (`config.json`, vault)
+        // that `Config::from_env` reads from `ERGON_DATA_DIR`. Set once at CLI
+        // startup, before any other threads exist.
+        std::env::set_var("ERGON_DATA_DIR", dir);
+    }
     let mut cfg = ergon_rs::Config::from_env();
     if let Some(dir) = &opts.data_dir {
         let data_dir = std::path::PathBuf::from(dir);
@@ -471,18 +502,22 @@ fn print_help() {
     println!(
         "ergon {} - Personal Employee Agent Desk\n\n\
          USAGE:\n  ergon [--app | --no-open] [--host HOST] [--port PORT] [--data DIR] [--version] [--help]\n  \
+         ergon verify <BUNDLE_PACK_OR_BACKUP_ZIP> [--workspace DIR] [--data DIR] [--json]\n  \
+         ergon backup [--data DIR] [--out FILE_OR_DIR] [--offsite DIR_OR_S3_URL] [--keep N] [--json]\n  \
+         ergon restore <ARCHIVE.ZIP> [--data DIR] [--force] [--json]\n  \
          ergon diagnostics [--data DIR] [--out BUNDLE.zip] [--json]\n  \
-         ergon verify <BUNDLE_OR_PACK> [--workspace DIR] [--json]\n  \
          ergon export-handoff [--out PATH] [--title TITLE] [--workspace DIR] [--force] [--json]\n\n\
          FLAGS:\n  --app, --open       Open chromeless desktop app window (Chromium/Edge --app)\n  \
          --no-open           Run headless without opening a desktop window\n  \
          --host HOST         Bind address (default: ERGON_HOST or 127.0.0.1)\n  \
          --port PORT         Bind port (default: ERGON_PORT or 8787)\n  \
-         --data DIR          Override ERGON_DATA_DIR\n  \
+         --data DIR          Override ERGON_DATA_DIR (server, backup, restore, verify, diagnostics)\n  \
          --workspace DIR     Cross-check bundle/pack or override workspace directory\n  \
-         --out PATH          Output .zip file or directory\n  \
+         --out PATH          Output .zip file or directory for backup, diagnostics, or handoff\n  \
+         --offsite TARGET    Offsite folder path or s3://bucket/prefix URL for backup\n  \
+         --keep N            Number of local/offsite backups to retain\n  \
          --title TITLE       Handoff bundle title (default: Client Handoff)\n  \
-         --force             Override Strict Client leak pre-check block\n  \
+         --force             Override non-empty restore guard or Strict Client leak block\n  \
          --json              Emit machine-readable JSON\n  \
          -V, --version       Print version and exit\n  \
          -h, --help          Print this help and exit",
@@ -490,21 +525,151 @@ fn print_help() {
     );
 }
 
+fn resolve_cli_data_dir(opts: &CliOpts) -> std::path::PathBuf {
+    opts.data_dir
+        .as_deref()
+        .map(std::path::PathBuf::from)
+        .or_else(|| std::env::var("ERGON_DATA_DIR").ok().map(std::path::PathBuf::from))
+        .unwrap_or_else(|| std::path::PathBuf::from("data"))
+}
+
+#[cold]
+fn run_backup_cli(opts: &CliOpts) -> i32 {
+    let data_dir = resolve_cli_data_dir(opts);
+    let mut cfg = ergon_rs::backup::load_backup_config(&data_dir);
+    if let Some(keep) = opts.backup_keep {
+        cfg.retention_count = keep;
+    }
+    if let Some(ref offsite_raw) = opts.backup_offsite {
+        match ergon_rs::backup::parse_offsite_target(offsite_raw) {
+            Ok(off) => cfg.offsite = off,
+            Err(e) => {
+                if opts.json_output {
+                    println!("{}", serde_json::json!({"ok": false, "error": e}));
+                } else {
+                    eprintln!("ergon backup: invalid --offsite target: {e}");
+                }
+                return 2;
+            }
+        }
+    }
+    let out_path = opts.export_out.as_deref().map(std::path::Path::new);
+    match ergon_rs::backup::run_backup_with_config(&data_dir, &cfg, out_path) {
+        Ok(report) => {
+            if opts.json_output {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&report.to_json()).unwrap_or_default()
+                );
+            } else {
+                println!(
+                    "PASS [backup] {} ({} files, {} bytes raw, {} bytes zip)",
+                    report.path.display(),
+                    report.file_count,
+                    report.total_bytes,
+                    report.zip_bytes
+                );
+                println!("sha256: {}", report.sha256);
+                println!("manifest_sha256: {}", report.manifest_sha256);
+                if !report.pruned_local.is_empty() {
+                    println!("pruned: {} old backup(s)", report.pruned_local.len());
+                }
+                if let Some(ref off) = report.offsite {
+                    println!("offsite [{}]: {} ({})", off.kind, off.detail, off.target);
+                }
+            }
+            0
+        }
+        Err(e) => {
+            if opts.json_output {
+                println!("{}", serde_json::json!({"ok": false, "error": e}));
+            } else {
+                eprintln!("ergon backup: FAIL: {e}");
+            }
+            1
+        }
+    }
+}
+
+#[cold]
+fn run_restore_cli(opts: &CliOpts) -> i32 {
+    let Some(archive) = opts.restore_archive.as_deref() else {
+        let msg = "ergon restore requires a path to a backup archive (.zip).";
+        if opts.json_output {
+            println!("{}", serde_json::json!({"ok": false, "error": msg}));
+        } else {
+            eprintln!("{msg}");
+        }
+        return 2;
+    };
+    let data_dir = resolve_cli_data_dir(opts);
+    match ergon_rs::backup::restore_backup(
+        std::path::Path::new(archive),
+        &data_dir,
+        opts.export_force,
+    ) {
+        Ok(summary) => {
+            if opts.json_output {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&summary.to_json()).unwrap_or_default()
+                );
+            } else {
+                println!(
+                    "PASS [restore] restored {} files ({} bytes) into {} (verified on disk)",
+                    summary.restored_files,
+                    summary.total_bytes,
+                    data_dir.display()
+                );
+                println!("archive_sha256: {}", summary.archive_sha256);
+                println!("manifest_sha256: {}", summary.manifest_sha256);
+                if let Some(ref snap) = summary.pre_restore_snapshot {
+                    println!("pre_restore_snapshot: {snap}");
+                }
+            }
+            0
+        }
+        Err(e) => {
+            if opts.json_output {
+                println!("{}", serde_json::json!({"ok": false, "error": e}));
+            } else {
+                eprintln!("ergon restore: FAIL: {e}");
+            }
+            1
+        }
+    }
+}
+
 #[cold]
 fn run_verify_cli(opts: &CliOpts) -> i32 {
     let Some(target) = opts.verify_target.as_deref() else {
-        eprintln!("ergon verify requires a path to an audit bundle (.json), client pack (.md), or playbook pack (.json).");
+        eprintln!("ergon verify requires a path to a backup archive (.zip), audit bundle (.json), client pack (.md), or playbook pack (.json).");
         return 2;
     };
-    let content = match std::fs::read_to_string(target) {
-        Ok(c) => c,
+    let raw = match std::fs::read(target) {
+        Ok(b) => b,
         Err(e) => {
             eprintln!("ergon verify: cannot read {target}: {e}");
             return 2;
         }
     };
-    let ws = opts.verify_workspace.as_deref().map(std::path::Path::new);
-    let res = ergon_rs::audit_bundle::verify_evidence(&content, Some(target), ws);
+    let is_zip = target.to_ascii_lowercase().ends_with(".zip")
+        || raw.starts_with(b"PK\x03\x04")
+        || raw.starts_with(b"PK\x05\x06");
+    let res = if is_zip {
+        let data_check = opts.data_dir.as_deref().map(std::path::Path::new);
+        ergon_rs::backup::verify_backup_file(std::path::Path::new(target), data_check)
+    } else {
+        let content = match String::from_utf8(raw) {
+            Ok(c) => c,
+            Err(e) => {
+                eprintln!("ergon verify: cannot read {target} as UTF-8: {e}");
+                return 2;
+            }
+        };
+        let ws = opts.verify_workspace.as_deref().map(std::path::Path::new);
+        ergon_rs::audit_bundle::verify_evidence(&content, Some(target), ws)
+    };
     if opts.json_output {
         println!("{}", res.to_json());
     } else {
@@ -567,6 +732,12 @@ fn main() {
     }
     if opts.verify_mode {
         std::process::exit(run_verify_cli(&opts));
+    }
+    if opts.backup_mode {
+        std::process::exit(run_backup_cli(&opts));
+    }
+    if opts.restore_mode {
+        std::process::exit(run_restore_cli(&opts));
     }
     if opts.export_handoff_mode {
         std::process::exit(run_export_handoff_cli(&opts));
@@ -631,6 +802,7 @@ fn main() {
         }
     );
     maybe_open_desktop_window(&opts, &host, port);
+    ergon_rs::server::install_shutdown_handlers();
     if let Err(e) = ergon_rs::serve_with_updates(listener, cfg) {
         ergon_rs::logging::error("ergon::cli", &format!("ergon: server error: {e}"));
         std::process::exit(1);
@@ -739,6 +911,54 @@ mod tests {
         assert_eq!(opts.verify_workspace.as_deref(), Some("./ws"));
         assert!(opts.export_force);
         assert!(opts.json_output);
+    }
+
+    #[test]
+    fn cli_parses_backup_and_restore_flags() {
+        let b_args: Vec<String> = [
+            "backup",
+            "--data",
+            "./data-dir",
+            "--out",
+            "./out/snap.zip",
+            "--offsite=s3://company-backups/prod",
+            "--keep",
+            "7",
+            "--json",
+        ]
+        .into_iter()
+        .map(String::from)
+        .collect();
+        let b = parse_cli_args(&b_args);
+        assert!(b.backup_mode);
+        assert_eq!(b.data_dir.as_deref(), Some("./data-dir"));
+        assert_eq!(b.export_out.as_deref(), Some("./out/snap.zip"));
+        assert_eq!(
+            b.backup_offsite.as_deref(),
+            Some("s3://company-backups/prod")
+        );
+        assert_eq!(b.backup_keep, Some(7));
+        assert!(b.json_output);
+
+        let r_args: Vec<String> = [
+            "restore",
+            "ergon-backup-20261126.zip",
+            "--data=./restored",
+            "--force",
+            "--json",
+        ]
+        .into_iter()
+        .map(String::from)
+        .collect();
+        let r = parse_cli_args(&r_args);
+        assert!(r.restore_mode);
+        assert_eq!(
+            r.restore_archive.as_deref(),
+            Some("ergon-backup-20261126.zip")
+        );
+        assert_eq!(r.data_dir.as_deref(), Some("./restored"));
+        assert!(r.export_force);
+        assert!(r.json_output);
     }
 
     #[test]

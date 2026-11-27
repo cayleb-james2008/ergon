@@ -1078,6 +1078,25 @@ fn collect_known_secrets(root_data_dir: &Path) -> Vec<String> {
             }
         }
     }
+    // Connector secrets are encrypted at rest (AES-256-GCM vault), so also ask
+    // the connectors store for the decrypted values of each workspace.
+    let mut secret_dirs = vec![root_data_dir.to_path_buf()];
+    if let Ok(rd) = fs::read_dir(&people_dir) {
+        for ent in rd.flatten() {
+            let p = ent.path();
+            if p.is_dir() {
+                secret_dirs.push(p);
+            }
+        }
+    }
+    for dir in &secret_dirs {
+        for val in connectors::collect_all_secret_values(dir) {
+            let t = val.trim();
+            if t.len() >= 4 {
+                set.insert(t.to_string());
+            }
+        }
+    }
     for sf in secret_files {
         if let Ok(raw) = fs::read_to_string(&sf) {
             if let Ok(v) = serde_json::from_str::<Value>(&raw) {

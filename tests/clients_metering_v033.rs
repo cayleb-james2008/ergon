@@ -174,12 +174,27 @@ fn spawn_sse_collector(addr: SocketAddr, stop_event: &'static str) -> std::threa
     stream.write_all(req.as_bytes()).unwrap();
     stream.flush().unwrap();
     let mut reader = BufReader::new(stream);
-    // Drain HTTP response headers + initial status frame before returning handle
+    // Drain HTTP response headers first.
     let mut line = String::new();
     loop {
         line.clear();
         let n = reader.read_line(&mut line).unwrap();
         if n == 0 || line == "\r\n" || line == "\n" {
+            break;
+        }
+    }
+    // Synchronize on the initial `event: status` frame so the server's SSE cursor
+    // is guaranteed active before the caller starts the chat or pipeline run.
+    let mut saw_status_data = false;
+    loop {
+        line.clear();
+        let n = reader.read_line(&mut line).unwrap();
+        if n == 0 {
+            break;
+        }
+        if line.starts_with("data: ") {
+            saw_status_data = true;
+        } else if saw_status_data && (line == "\r\n" || line == "\n") {
             break;
         }
     }

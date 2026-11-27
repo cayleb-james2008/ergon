@@ -983,6 +983,10 @@ export function App() {
               streamMode={desk.streamMode}
               liveSteps={desk.liveSteps}
               liveTimeline={desk.liveTimeline}
+              liveRuns={desk.liveRuns}
+              liveStreamError={desk.liveStreamError}
+              onRetrySync={desk.reconcileLiveRuns}
+              cancellingRunIds={desk.cancellingRunIds}
               draft={desk.draft}
               setDraft={desk.setDraft}
               pendingNote={desk.pendingNote}
@@ -999,6 +1003,7 @@ export function App() {
                 requestAnimationFrame(() => inputRef.current?.focus());
               }}
               onCancel={desk.cancelRun}
+              onCancelRun={desk.cancelRun}
               onReview={() => switchFace("paper")}
               onResolveDecision={handleResolveDecision}
               onOpenFile={(p) => setViewerPath(p)}
@@ -1010,6 +1015,11 @@ export function App() {
               onResumePipeline={desk.resumePipeline}
               onRetryPipeline={desk.retryPipeline}
               onCancelPipeline={desk.cancelPipeline}
+              recoverableRuns={desk.recoverableRuns}
+              resumingRunId={desk.resumingRunId}
+              modelConfigured={desk.status !== null && desk.status !== "error" ? Boolean(desk.status.model_configured) : false}
+              onResumeInterruptedRun={(id) => void desk.resumeInterruptedRun(id)}
+              onOpenThread={(tid) => void desk.openThread(tid)}
               showOnboarding={Boolean(helpConfig && !helpConfig.onboarding_completed)}
               onboardingSaving={onboardingSaving}
               adminContact={helpConfig?.admin_contact ?? null}
@@ -1342,6 +1352,9 @@ export function App() {
         onLaunchStarter={desk.launchStarterPlaybook}
         workspaceFiles={desk.files}
         pipelineRuns={desk.pipelineRuns}
+        loading={desk.routinesLoading}
+        loadError={desk.routinesError}
+        createError={desk.routineSaveError}
         onResumePipeline={desk.resumePipeline}
         onRetryPipeline={desk.retryPipeline}
         onCancelPipeline={desk.cancelPipeline}
@@ -1393,6 +1406,11 @@ export function App() {
           desk.loadStatus();
           desk.loadMetering();
           paper.load();
+        }}
+        onRestored={() => {
+          desk.loadPeople();
+          desk.loadStatus();
+          runAfterPersonChange();
         }}
         onOpenHelp={() => setHelpOpen(true)}
         onHelpConfigSaved={(cfg) => setHelpConfig(cfg)}

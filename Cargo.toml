@@ -1,6 +1,6 @@
 [package]
 name = "ergon-rs"
-version = "0.39.0"
+version = "0.40.0"
 edition = "2021"
 
 [[bin]]
@@ -15,8 +15,12 @@ rustls-pki-types = "1"
 webpki-roots = "0.26"
 rune = { version = "0.14", default-features = false, features = ["std"] }
 sha2 = "0.10"
+ring = "0.17"
 miniz_oxide = "0.9"
 pdf-extract = "0.12"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
 
 [build-dependencies]
 miniz_oxide = "0.9"

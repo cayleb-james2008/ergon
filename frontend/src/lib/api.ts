@@ -12,6 +12,7 @@ export type ServerCapabilities = {
   file_history?: boolean;
   scheduler?: boolean;
   audit_bundle?: boolean;
+  backups?: boolean;
   people_switch?: boolean;
   tripwire?: boolean;
   pipelines?: boolean;
@@ -351,6 +352,20 @@ export type LiveRunStep = {
   depends_on?: string[];
   child_items?: PipelineChildItemState[];
 };
+export type RecoverableRun = {
+  run_id: string;
+  thread_id: string;
+  person_id: string;
+  task: string;
+  started_ms: number;
+  updated_ms: number;
+  steps: string[];
+  written_files?: string[];
+  status: string;
+  error?: string | null;
+  resume_count?: number;
+  can_resume?: boolean;
+};
 export type LiveRun = {
   active: boolean;
   run_id: string;
@@ -366,6 +381,7 @@ export type LiveRun = {
 };
 export type LiveRunStatus = {
   active: boolean;
+  status?: string;
   run_id?: string;
   thread_id: string;
   task: string;
@@ -373,6 +389,8 @@ export type LiveRunStatus = {
   elapsed_ms?: number;
   steps: (string | LiveRunStep)[];
   cancelled?: boolean;
+  model_configured?: boolean;
+  recoverable_runs?: RecoverableRun[];
   runs?: LiveRun[];
 };
 export type FileRevision = {
@@ -438,7 +456,7 @@ export type PipelineStepSpec = {
   label: string;
   kind: PipelineStepKind;
   skill_id?: string;
-  args?: Record<string, string>;
+  args?: Record<string, unknown>;
   prompt?: string;
   checkpoint?: PipelineCheckpointSpec;
   export?: PipelineExportSpec;
@@ -964,6 +982,90 @@ export function hasTripwire(status: Status | null | "error" | undefined): boolea
   if (isWebStandalone() || !status || status === "error") return false;
   return status.capabilities?.tripwire === true;
 }
+
+export type BackupOffsiteConfig = {
+  kind: "none" | "folder" | "s3";
+  folder_path: string;
+  s3_endpoint: string;
+  s3_bucket: string;
+  s3_region: string;
+  s3_prefix: string;
+  s3_path_style: boolean;
+  s3_credentials_configured?: boolean;
+};
+
+export type BackupConfig = {
+  enabled: boolean;
+  interval_hours: number;
+  retention_count: number;
+  local_dir: string;
+  effective_local_dir?: string;
+  offsite: BackupOffsiteConfig;
+};
+
+export type BackupRuntimeState = {
+  last_run_ms: number | null;
+  last_backup_name: string | null;
+  last_backup_sha256: string | null;
+  last_file_count: number | null;
+  last_zip_bytes: number | null;
+  last_offsite_status: string | null;
+  last_error: string | null;
+};
+
+export type BackupListEntry = {
+  name: string;
+  size_bytes: number;
+  modified_ms: number;
+  sha256: string | null;
+  created_at_utc: string | null;
+  file_count: number | null;
+  kind: "backup" | "pre_restore";
+};
+
+export type BackupsPayload = {
+  config: BackupConfig;
+  state: BackupRuntimeState;
+  backups: BackupListEntry[];
+  can_edit: boolean;
+};
+
+export type BackupRunResponse = {
+  ok: boolean;
+  backup: {
+    filename: string;
+    sha256: string;
+    manifest_sha256: string;
+    file_count: number;
+    total_bytes: number;
+    zip_bytes: number;
+    created_at_utc: string;
+    pruned_local: string[];
+    offsite?: { kind: string; ok: boolean; target: string; detail: string } | null;
+  };
+  state: BackupRuntimeState;
+  backups: BackupListEntry[];
+};
+
+export type BackupRestoreResponse = {
+  ok: boolean;
+  restore: {
+    archive: string;
+    restored_files: number;
+    total_bytes: number;
+    archive_sha256: string;
+    manifest_sha256: string;
+    verified_on_disk: boolean;
+    pre_restore_snapshot: string | null;
+  };
+  backups: BackupListEntry[];
+};
+
+/** Full-instance backups exist on native Ergon (never in standalone browser mode). */
+export function hasBackups(status: Status | null | "error" | undefined): boolean {
+  if (isWebStandalone() || !status || status === "error") return false;
+  return status.capabilities?.backups === true;
+}
 export type TodayPayload = { date?: string; events?: TodayEvent[] };
 export type GraphNode = { id: string; kind: string; label?: string; detail?: string };
 export type GraphEdge = { from: string; to: string; kind?: string };
@@ -1136,6 +1238,56 @@ export function validateCronExpression(expr: string): { valid: boolean; error?: 
     return { valid: false, error: "Invalid 5-field cron syntax (check ranges like 0-59, 0-23, 1-31, 1-12, 0-6)." };
   }
   return { valid: true, summary: `Valid 5-field cron (${parts.join(" ")})` };
+}
+
+export function validateRoutineSchedule(schedule: string): { valid: boolean; error?: string } {
+  const trimmed = String(schedule || "").trim();
+  if (!trimmed) return { valid: false, error: "Schedule cannot be empty." };
+  const raw = trimmed.toLowerCase();
+  if (raw === "manual" || raw === "hourly" || raw === "every hour") {
+    return { valid: true };
+  }
+  const everyMatch = /^every\s+(\d+)\s*(s|sec|secs|seconds?|m|min|mins|minutes?|h|hr|hrs|hours?|d|day|days?)$/.exec(raw);
+  if (everyMatch) {
+    return Number(everyMatch[1]) >= 1
+      ? { valid: true }
+      : { valid: false, error: "Interval must be at least 1." };
+  }
+  const dailyMatch = /^(?:daily|every\s+day|every\s+weekday)(?:\s+(\d{1,2}):(\d{2}))?$/.exec(raw);
+  if (dailyMatch) {
+    if (dailyMatch[1] !== undefined) {
+      const hh = Number(dailyMatch[1]);
+      const mm = Number(dailyMatch[2]);
+      if (hh > 23 || mm > 59) {
+        return { valid: false, error: "Time must use 24-hour HH:MM (00:00 to 23:59)." };
+      }
+    }
+    return { valid: true };
+  }
+  const weeklyMatch = /^(?:weekly|every)\s+(sun|mon|tue|wed|thu|fri|sat)[a-z]*(?:\s+(\d{1,2}):(\d{2}))?$/.exec(raw);
+  if (weeklyMatch) {
+    if (weeklyMatch[2] !== undefined) {
+      const hh = Number(weeklyMatch[2]);
+      const mm = Number(weeklyMatch[3]);
+      if (hh > 23 || mm > 59) {
+        return { valid: false, error: "Time must use 24-hour HH:MM (00:00 to 23:59)." };
+      }
+    }
+    return { valid: true };
+  }
+  return validateCronExpression(trimmed);
+}
+
+export function validateRoutineTimezone(tz: string): { valid: boolean; error?: string } {
+  const zone = String(tz || "").trim();
+  if (!zone) return { valid: false, error: "Select a timezone." };
+  if (zone.toUpperCase() === "UTC") return { valid: true };
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: zone }).format(0);
+    return { valid: true };
+  } catch {
+    return { valid: false, error: `Unknown IANA timezone "${zone}".` };
+  }
 }
 
 export function resolveTzOffsetMins(tz?: string, tzOffsetMins?: number | null, atMs = Date.now()): number {
@@ -1682,8 +1834,7 @@ export async function exportFile(body: ExportFileRequest): Promise<Res<ExportFil
   return call<ExportFileResult>("/api/files/export", { method: "POST", body });
 }
 
-export function canExportPdf(path: string, extractedFormat?: "markdown" | "csv"): boolean {
-  if (extractedFormat === "markdown" || extractedFormat === "csv") return true;
+export function canExportPdf(path: string, _extractedFormat?: "markdown" | "csv"): boolean {
   const ext = (path.split(".").pop() || "").toLowerCase();
   return ext === "md" || ext === "markdown" || ext === "txt" || ext === "csv" || ext === "tsv";
 }
