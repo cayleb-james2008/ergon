@@ -66,6 +66,9 @@ impl RunEventBus {
         let mut guard = lock.lock().unwrap();
         let seq = guard.next_seq;
         guard.next_seq += 1;
+        if !data.is_object() {
+            data = json!({ "payload": data });
+        }
         if let Some(obj) = data.as_object_mut() {
             obj.entry("seq".to_string()).or_insert_with(|| json!(seq));
             obj.entry("event".to_string()).or_insert_with(|| json!(event));
