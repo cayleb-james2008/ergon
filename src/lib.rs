@@ -20,6 +20,7 @@ pub mod records;
 pub mod routines;
 pub mod scheduler;
 pub mod search;
+pub mod secret_store;
 pub mod server;
 pub use server::{
     allowed_hosts_from, parked_note, serve, serve_with_gate, serve_with_hosts, serve_with_updates,
@@ -401,13 +402,16 @@ pub struct SavedModelConfig {
     pub api_key: Option<String>,
 }
 
+pub const MODEL_API_KEY_VAULT_KEY: &str = "model:api_key";
+
 pub fn config_file_path(data_dir: &Path) -> PathBuf {
     data_dir.join("config.json")
 }
 
 pub fn load_saved_model_config(data_dir: &Path) -> Option<SavedModelConfig> {
-    let raw = std::fs::read_to_string(config_file_path(data_dir)).ok()?;
-    let v: Value = serde_json::from_str(&raw).ok()?;
+    let path = config_file_path(data_dir);
+    let raw = std::fs::read_to_string(&path).ok()?;
+    let mut v: Value = serde_json::from_str(&raw).ok()?;
     let base = v["model_base_url"]
         .as_str()
         .map(|s| s.trim().trim_end_matches('/').to_string())
@@ -417,10 +421,44 @@ pub fn load_saved_model_config(data_dir: &Path) -> Option<SavedModelConfig> {
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| DEFAULT_MODEL_ID.to_string());
-    let key = v["api_key"]
+
+    let raw_api_key = v["api_key"]
         .as_str()
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty());
+    let api_key_ref = v["api_key_ref"]
+        .as_str()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string);
+
+    let key = if let Some(ref raw_key) = raw_api_key {
+        if let Some(vault_key) = secret_store::parse_vault_ref(raw_key) {
+            secret_store::get_secret(data_dir, vault_key).ok().flatten()
+        } else {
+            // Transparent legacy migration: move plaintext api_key from config.json into the
+            // encrypted vault and scrub plaintext from disk.
+            if secret_store::set_secret(data_dir, MODEL_API_KEY_VAULT_KEY, raw_key).is_ok() {
+                if let Some(obj) = v.as_object_mut() {
+                    obj.remove("api_key");
+                    obj.insert(
+                        "api_key_ref".to_string(),
+                        json!(secret_store::vault_ref(MODEL_API_KEY_VAULT_KEY)),
+                    );
+                    obj.insert("has_api_key".to_string(), json!(true));
+                    let scrubbed = Value::Object(obj.clone()).to_string();
+                    let _ = atomic_write_bytes_with_mode(&path, scrubbed.as_bytes(), Some(0o600));
+                }
+            }
+            Some(raw_key.clone())
+        }
+    } else if let Some(ref r) = api_key_ref {
+        let vault_key = secret_store::parse_vault_ref(r).unwrap_or(MODEL_API_KEY_VAULT_KEY);
+        secret_store::get_secret(data_dir, vault_key).ok().flatten()
+    } else {
+        None
+    };
+
     Some(SavedModelConfig {
         model_base_url: base,
         model_id: model,
@@ -437,7 +475,19 @@ pub fn save_model_config(data_dir: &Path, saved: &SavedModelConfig) -> Result<()
         .unwrap_or_default();
     obj.insert("model_base_url".to_string(), json!(saved.model_base_url));
     obj.insert("model_id".to_string(), json!(saved.model_id));
-    obj.insert("api_key".to_string(), json!(saved.api_key));
+    obj.remove("api_key");
+    if let Some(key) = saved.api_key.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+        secret_store::set_secret(data_dir, MODEL_API_KEY_VAULT_KEY, key)?;
+        obj.insert(
+            "api_key_ref".to_string(),
+            json!(secret_store::vault_ref(MODEL_API_KEY_VAULT_KEY)),
+        );
+        obj.insert("has_api_key".to_string(), json!(true));
+    } else {
+        let _ = secret_store::delete_secret(data_dir, MODEL_API_KEY_VAULT_KEY);
+        obj.remove("api_key_ref");
+        obj.insert("has_api_key".to_string(), json!(false));
+    }
     let body = Value::Object(obj).to_string();
     atomic_write_bytes_with_mode(&path, body.as_bytes(), Some(0o600))
         .map_err(|e| format!("save config.json: {e}"))
@@ -641,6 +691,24 @@ pub fn backup_corrupt(path: &Path) -> Option<PathBuf> {
     std::fs::rename(path, &candidate).ok()?;
     eprintln!(
         "ergon: {} was corrupt; backed up to {} and starting fresh",
+        path.display(),
+        candidate.display()
+    );
+    Some(candidate)
+}
+
+/// Copy a partially corrupt store aside without deleting the original so valid
+/// recovered entries can be preserved while raw corrupt bytes survive.
+pub fn backup_corrupt_copy(path: &Path) -> Option<PathBuf> {
+    let mut candidate = path.with_extension("json.bak");
+    let mut n = 2;
+    while candidate.exists() {
+        candidate = path.with_extension(format!("json.bak{n}"));
+        n += 1;
+    }
+    std::fs::copy(path, &candidate).ok()?;
+    eprintln!(
+        "ergon: {} had corrupt entries; backed up copy to {} before recovery",
         path.display(),
         candidate.display()
     );
@@ -1970,6 +2038,7 @@ pub struct AgentLoopOptions {
     pub context_budget_chars: usize,
     pub max_steps: usize,
     pub snapshot: Option<AgentSnapshot>,
+    pub external_cancel: Option<Arc<std::sync::atomic::AtomicBool>>,
 }
 
 impl Default for AgentLoopOptions {
@@ -1978,6 +2047,7 @@ impl Default for AgentLoopOptions {
             context_budget_chars: env_context_budget_chars(),
             max_steps: STEP_CAP,
             snapshot: None,
+            external_cancel: None,
         }
     }
 }
@@ -3253,7 +3323,13 @@ fn run_agent_inner(
     let run_started = records::now_millis();
     let run_t0 = std::time::Instant::now();
     let run_id = format!("run-{run_started}-{}", RUN_ID_SEQ.fetch_add(1, Ordering::SeqCst));
-    let cancel = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let cancel = options
+        .external_cancel
+        .clone()
+        .unwrap_or_else(|| Arc::new(std::sync::atomic::AtomicBool::new(false)));
+    if cancel.load(Ordering::SeqCst) {
+        return Err("run cancelled by user".to_string());
+    }
     let _in_flight = RunGuard::new(
         live,
         &run_id,

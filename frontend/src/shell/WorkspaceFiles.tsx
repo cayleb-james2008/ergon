@@ -1277,9 +1277,9 @@ export function FileViewerModal({
     <Dialog open={!!filePath} onOpenChange={(open) => { if (!open) requestClose(); }}>
       <DialogContent
         id="file-viewer-dialog"
-        className={cn("max-h-[88vh] overflow-hidden", tab === "edit" ? "max-w-5xl" : "max-w-3xl")}
+        className={cn("flex max-h-[88dvh] flex-col gap-3 overflow-hidden", tab === "edit" ? "max-w-5xl" : "max-w-3xl")}
       >
-        <DialogHeader className="pr-10 text-left">
+        <DialogHeader className="shrink-0 pr-10 text-left">
           <DialogTitle className="flex min-w-0 items-center gap-2 text-title font-medium text-ink">
             {cleanPath && <FileGlyph name={cleanPath} className="size-4 shrink-0" />}
             <span className="mono min-w-0 truncate">{cleanPath ?? ""}</span>
@@ -1312,7 +1312,7 @@ export function FileViewerModal({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex flex-wrap items-center justify-between gap-2 border-y border-hairline py-2.5">
+        <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-y border-hairline py-2.5">
           <SegmentedControl aria-label="File viewer mode">
             <SegmentedControlItem
               data-id="preview"
@@ -1375,11 +1375,32 @@ export function FileViewerModal({
                 {savingAs ? "Saving…" : expTarget === "docx" ? "Save as Word" : "Save as Excel"}
               </Button>
             )}
-            {canPdf && data && !err && (
-              <Button id="file-save-pdf" size="sm" variant="outline" className="max-md:min-h-11" disabled={savingPdf} onClick={handleSaveAsPdf}>
-                <FileDown className="size-3.5" strokeWidth={1.5} aria-hidden />
-                {savingPdf ? "Exporting…" : "Save as PDF"}
-              </Button>
+            {data && !err && (
+              <span
+                className="inline-flex"
+                title={
+                  canPdf
+                    ? "Export a formatted PDF 1.4 copy to your workspace"
+                    : `PDF export is only available for .md, .txt, .csv, and .tsv files (not .${ext || "binary"})`
+                }
+              >
+                <Button
+                  id="file-save-pdf"
+                  size="sm"
+                  variant="outline"
+                  className="max-md:min-h-11"
+                  disabled={savingPdf || !canPdf}
+                  title={
+                    canPdf
+                      ? "Export a formatted PDF 1.4 copy to your workspace"
+                      : `PDF export is only available for .md, .txt, .csv, and .tsv files (not .${ext || "binary"})`
+                  }
+                  onClick={handleSaveAsPdf}
+                >
+                  <FileDown className="size-3.5" strokeWidth={1.5} aria-hidden />
+                  {savingPdf ? "Exporting…" : "Save as PDF"}
+                </Button>
+              </span>
             )}
             {data && !data.is_binary && (
               <Button size="sm" variant="outline" className="max-md:min-h-11" onClick={copyContent}>
@@ -1480,7 +1501,7 @@ export function FileViewerModal({
           </div>
         )}
 
-        <div id="file-viewer-body" className="max-h-[58vh] min-h-24 overflow-y-auto pr-1">
+        <div id="file-viewer-body" className="min-h-24 min-w-0 flex-1 overflow-x-hidden overflow-y-auto pr-1">
           {tab === "edit" && cleanPath && data && !data.is_binary && !err ? (
             <FileEditor
               filePath={cleanPath}
@@ -2320,20 +2341,20 @@ export function WorkspaceFilesBody({
           if (next) setAggErr("");
         }}
       >
-        <DialogContent id="vault-aggregate-dialog" className="max-h-[88vh] max-w-3xl overflow-y-auto">
-          <DialogHeader className="pr-10 text-left">
-            <DialogTitle className="flex items-center gap-2 text-title font-medium text-ink">
+        <DialogContent id="vault-aggregate-dialog" className="flex max-h-[88dvh] max-w-3xl flex-col gap-0 overflow-hidden p-0">
+          <DialogHeader className="shrink-0 border-b border-hairline px-5 pt-5 pb-3.5 pr-12 text-left sm:px-6">
+            <DialogTitle className="flex min-w-0 items-center gap-2 text-title font-medium text-ink">
               <Layers className="size-4 shrink-0 text-icon" strokeWidth={1.5} aria-hidden />
-              <span>Multi-file table rollup</span>
+              <span className="min-w-0 [overflow-wrap:anywhere]">Multi-file table rollup</span>
             </DialogTitle>
             <DialogDescription className="text-xs text-ink-2">
               Aggregate CSV, TSV, and workbook sheets across matching workspace files with exact decimal totals.
             </DialogDescription>
           </DialogHeader>
 
-          <div className="flex flex-col gap-3">
+          <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-x-hidden overflow-y-auto px-5 pt-4 pb-5 sm:px-6 sm:pb-6">
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-              <div className="flex flex-col gap-1">
+              <div className="flex min-w-0 flex-col gap-1">
                 <label htmlFor="vault-agg-glob" className="text-xs text-ink-2">
                   File glob
                 </label>
@@ -2342,10 +2363,10 @@ export function WorkspaceFilesBody({
                   value={aggGlob}
                   onChange={(e) => setAggGlob(e.target.value)}
                   placeholder="e.g. *.csv or invoices/*.csv"
-                  className="h-9 text-xs max-md:min-h-11"
+                  className="h-9 w-full min-w-0 text-xs max-md:min-h-11"
                 />
               </div>
-              <div className="flex flex-col gap-1">
+              <div className="flex min-w-0 flex-col gap-1">
                 <label htmlFor="vault-agg-sheet" className="text-xs text-ink-2">
                   Workbook sheet (optional)
                 </label>
@@ -2354,10 +2375,10 @@ export function WorkspaceFilesBody({
                   value={aggSheet}
                   onChange={(e) => setAggSheet(e.target.value)}
                   placeholder="All sheets"
-                  className="h-9 text-xs max-md:min-h-11"
+                  className="h-9 w-full min-w-0 text-xs max-md:min-h-11"
                 />
               </div>
-              <div className="flex flex-col gap-1">
+              <div className="flex min-w-0 flex-col gap-1">
                 <label htmlFor="vault-agg-group-by" className="text-xs text-ink-2">
                   Group by columns
                 </label>
@@ -2366,13 +2387,13 @@ export function WorkspaceFilesBody({
                   value={aggGroupBy}
                   onChange={(e) => setAggGroupBy(e.target.value)}
                   placeholder="e.g. Vendor, Region"
-                  className="h-9 text-xs max-md:min-h-11"
+                  className="h-9 w-full min-w-0 text-xs max-md:min-h-11"
                 />
               </div>
             </div>
 
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-              <div className="flex flex-col gap-1">
+              <div className="flex min-w-0 flex-col gap-1">
                 <label htmlFor="vault-agg-fn" className="text-xs text-ink-2">
                   Aggregate
                 </label>
@@ -2381,7 +2402,7 @@ export function WorkspaceFilesBody({
                   aria-label="Rollup aggregate function"
                   value={aggFn}
                   onChange={(e) => setAggFn(e.target.value as TableAggregateFn)}
-                  className="focus-ring h-9 min-h-9 rounded-sm border border-input bg-surface px-2 text-xs text-ink outline-none max-md:min-h-11"
+                  className="focus-ring h-9 min-h-9 w-full min-w-0 rounded-sm border border-input bg-surface px-2 text-xs text-ink outline-none max-md:min-h-11"
                 >
                   <option value="sum">SUM</option>
                   <option value="avg">AVG</option>
@@ -2390,7 +2411,7 @@ export function WorkspaceFilesBody({
                   <option value="count">COUNT</option>
                 </select>
               </div>
-              <div className="flex flex-col gap-1">
+              <div className="flex min-w-0 flex-col gap-1">
                 <label htmlFor="vault-agg-col" className="text-xs text-ink-2">
                   Target column
                 </label>
@@ -2399,10 +2420,10 @@ export function WorkspaceFilesBody({
                   value={aggCol}
                   onChange={(e) => setAggCol(e.target.value)}
                   placeholder="e.g. Amount"
-                  className="h-9 text-xs max-md:min-h-11"
+                  className="h-9 w-full min-w-0 text-xs max-md:min-h-11"
                 />
               </div>
-              <div className="flex flex-col gap-1">
+              <div className="flex min-w-0 flex-col gap-1">
                 <label htmlFor="vault-agg-alias" className="text-xs text-ink-2">
                   Output column name
                 </label>
@@ -2411,13 +2432,13 @@ export function WorkspaceFilesBody({
                   value={aggAlias}
                   onChange={(e) => setAggAlias(e.target.value)}
                   placeholder="e.g. total_amount"
-                  className="h-9 text-xs max-md:min-h-11"
+                  className="h-9 w-full min-w-0 text-xs max-md:min-h-11"
                 />
               </div>
             </div>
 
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-              <div className="flex flex-col gap-1">
+              <div className="flex min-w-0 flex-col gap-1">
                 <label htmlFor="vault-agg-where-col" className="text-xs text-ink-2">
                   Filter column (optional)
                 </label>
@@ -2426,10 +2447,10 @@ export function WorkspaceFilesBody({
                   value={aggWhereCol}
                   onChange={(e) => setAggWhereCol(e.target.value)}
                   placeholder="e.g. Status"
-                  className="h-9 text-xs max-md:min-h-11"
+                  className="h-9 w-full min-w-0 text-xs max-md:min-h-11"
                 />
               </div>
-              <div className="flex flex-col gap-1">
+              <div className="flex min-w-0 flex-col gap-1">
                 <label htmlFor="vault-agg-where-op" className="text-xs text-ink-2">
                   Filter operator
                 </label>
@@ -2438,7 +2459,7 @@ export function WorkspaceFilesBody({
                   aria-label="Rollup filter operator"
                   value={aggWhereOp}
                   onChange={(e) => setAggWhereOp(e.target.value as TableWhereOp)}
-                  className="focus-ring h-9 min-h-9 rounded-sm border border-input bg-surface px-2 text-xs text-ink outline-none max-md:min-h-11"
+                  className="focus-ring h-9 min-h-9 w-full min-w-0 rounded-sm border border-input bg-surface px-2 text-xs text-ink outline-none max-md:min-h-11"
                 >
                   <option value="contains">contains</option>
                   <option value="eq">equals (=)</option>
@@ -2449,7 +2470,7 @@ export function WorkspaceFilesBody({
                   <option value="lte">at most (&lt;=)</option>
                 </select>
               </div>
-              <div className="flex flex-col gap-1">
+              <div className="flex min-w-0 flex-col gap-1">
                 <label htmlFor="vault-agg-where-val" className="text-xs text-ink-2">
                   Filter value
                 </label>
@@ -2458,7 +2479,7 @@ export function WorkspaceFilesBody({
                   value={aggWhereVal}
                   onChange={(e) => setAggWhereVal(e.target.value)}
                   placeholder="Match value…"
-                  className="h-9 text-xs max-md:min-h-11"
+                  className="h-9 w-full min-w-0 text-xs max-md:min-h-11"
                 />
               </div>
             </div>
@@ -2475,14 +2496,14 @@ export function WorkspaceFilesBody({
                 <Play className="size-3.5" strokeWidth={1.5} aria-hidden />
                 {aggBusy ? "Running…" : "Run Rollup"}
               </Button>
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
                 <Input
                   id="vault-agg-save-as"
                   aria-label="Save rollup CSV path"
                   value={aggSaveAs}
                   onChange={(e) => setAggSaveAs(e.target.value)}
                   placeholder="vault-rollup.csv"
-                  className="h-9 w-44 text-xs max-md:min-h-11"
+                  className="h-9 w-44 max-w-full min-w-0 text-xs max-md:min-h-11"
                 />
                 <Button
                   id="vault-agg-save-btn"
@@ -2542,7 +2563,7 @@ export function WorkspaceFilesBody({
                       type="button"
                       size="xs"
                       variant="outline"
-                      className="max-md:min-h-11"
+                      className="max-md:min-h-11 max-w-full"
                       onClick={() => {
                         const saved = aggResult.saved_path!;
                         setAggOpen(false);
@@ -2550,7 +2571,7 @@ export function WorkspaceFilesBody({
                         setTimeout(() => onOpenFile(saved), 40);
                       }}
                     >
-                      Open {aggResult.saved_path}
+                      <span className="truncate">Open {aggResult.saved_path}</span>
                     </Button>
                   )}
                 </div>

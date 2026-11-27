@@ -167,7 +167,9 @@ for (const m of measures) {
 await reset();
 {
   const { ctx, p } = await open(1440, 900);
+  const statusLoaded = p.waitForResponse((r) => r.url().includes("/api/status"));
   await p.goto(BASE);
+  await statusLoaded;
   await waitWorkbench(p);
 
   const starterCount0 = await p.locator('section[aria-label="Start a task"] button[data-starter-card]').count();
@@ -570,7 +572,9 @@ await reset();
       }),
     })
   );
+  const statusLoaded = p.waitForResponse((r) => r.url().includes("/api/status"));
   await p.goto(BASE);
+  await statusLoaded;
   await waitWorkbench(p);
   ok("update banner shows Update now on loopback", (await p.getByRole("button", { name: "Update now" }).count()) === 1);
   await p.getByRole("button", { name: "Dismiss" }).click();
@@ -590,7 +594,9 @@ await reset();
       body: JSON.stringify({ current: "0.3.0", available: false, error: "could not reach https://api.github.com: Connection refused" }),
     })
   );
+  const statusLoaded = p.waitForResponse((r) => r.url().includes("/api/status"));
   await p.goto(BASE);
+  await statusLoaded;
   await waitWorkbench(p);
   const bannerTxt = await p.locator("#update-banner").innerText();
   ok(
@@ -608,7 +614,9 @@ await reset();
       body: JSON.stringify({ current: "0.3.0", latest: "0.4.0", staged: "0.4.0", available: false, can_apply: true }),
     })
   );
+  const statusLoaded = p.waitForResponse((r) => r.url().includes("/api/status"));
   await p.goto(BASE);
+  await statusLoaded;
   await waitWorkbench(p);
   const bannerTxt = await p.locator("#update-banner").innerText();
   const occurrences = (bannerTxt.match(/installed\. Restart to use it\./g) || []).length;
@@ -696,7 +704,9 @@ await reset();
 // 6b. Compact phone 320x568 real non-forced Menu -> Settings -> Dark test
 {
   const { ctx, p } = await open(320, 568);
+  const statusLoaded = p.waitForResponse((r) => r.url().includes("/api/status"));
   await p.goto(BASE);
+  await statusLoaded;
   await waitWorkbench(p);
   await p.getByRole("button", { name: "Open menu" }).click();
   await p.waitForSelector('[data-thing="settings-btn"]', { timeout: 4000 });
@@ -1076,7 +1086,9 @@ await reset();
     await new Promise((res) => setTimeout(res, 6000));
     await r.abort();
   });
+  const statusLoaded = p.waitForResponse((r) => r.url().includes("/api/status"));
   await p.goto(BASE);
+  await statusLoaded;
   await waitWorkbench(p);
   await p.waitForSelector("#composer-input", { timeout: 4000 });
   await p.locator("#composer-input").fill("Run live SSE test task");
@@ -1151,7 +1163,9 @@ await reset();
       body: JSON.stringify({ run: { ...pausedRun, status: "completed", pending_checkpoint: null } }),
     });
   });
+  const statusLoaded = p.waitForResponse((r) => r.url().includes("/api/status"));
   await p.goto(BASE);
+  await statusLoaded;
   await waitWorkbench(p);
   await p.locator('[data-thing="routines-btn"]').click();
   await p.waitForSelector("#routines-panel", { timeout: 4000 });
@@ -1282,7 +1296,9 @@ await reset();
     });
   });
 
+  const statusLoaded = p.waitForResponse((r) => r.url().includes("/api/status"));
   await p.goto(BASE);
+  await statusLoaded;
   await waitWorkbench(p);
   if (!(await p.locator("#workspace-files-panel").isVisible())) {
     await p.locator('[data-thing="inspector-toggle"]').click();
@@ -1575,7 +1591,9 @@ await reset();
 
   const { ctx, p } = await open(1440, 900);
   await setupConnectorRoutes(p);
+  const statusLoaded = p.waitForResponse((r) => r.url().includes("/api/status"));
   await p.goto(BASE);
+  await statusLoaded;
   await waitWorkbench(p);
 
   // 1. Open Connectors modal -> Inbound Webhooks create, rotate secret, simulate payload
@@ -1758,7 +1776,9 @@ await reset();
     });
   });
 
+  const statusLoaded = p.waitForResponse((r) => r.url().includes("/api/status"));
   await p.goto(BASE);
+  await statusLoaded;
   await waitWorkbench(p);
 
   // Check PipelineBuilder blocks invalid template & empty agent prompt
@@ -1881,7 +1901,9 @@ await reset();
     });
   });
 
+  const statusLoaded = p.waitForResponse((r) => r.url().includes("/api/status"));
   await p.goto(BASE);
+  await statusLoaded;
   await waitWorkbench(p);
   if (!(await p.locator("#workspace-files-panel").isVisible())) {
     await p.locator('[data-thing="inspector-toggle"]').click();
@@ -1985,7 +2007,9 @@ await reset();
     return r.fulfill({ status: 400, contentType: "application/json", body: JSON.stringify({ error: "bad" }) });
   });
 
+  const statusLoaded = p.waitForResponse((r) => r.url().includes("/api/status"));
   await p.goto(BASE);
+  await statusLoaded;
   await waitWorkbench(p);
   await p.locator('[data-thing="connectors-btn"]').click();
   await p.waitForSelector("#connectors-panel", { timeout: 4000 });
@@ -2243,7 +2267,9 @@ await reset();
     });
   });
 
+  const statusLoaded = p.waitForResponse((r) => r.url().includes("/api/status"));
   await p.goto(BASE);
+  await statusLoaded;
   await waitWorkbench(p);
 
   // 1. Client -> Engagement selector & quick-create modal
@@ -2522,7 +2548,9 @@ await reset();
       });
     });
 
+    const statusLoaded = p.waitForResponse((r) => r.url().includes("/api/status"));
     await p.goto(BASE);
+    await statusLoaded;
     await waitWorkbench(p);
 
     if (theme === "light") {
@@ -2853,7 +2881,9 @@ for (const [theme, vw, vh] of [
     })
   );
 
+  const statusLoaded = p.waitForResponse((r) => r.url().includes("/api/status"));
   await p.goto(BASE);
+  await statusLoaded;
   await waitWorkbench(p);
 
   // Open Routines -> New routine -> PipelineBuilder
@@ -3366,7 +3396,9 @@ for (const [theme, vw, vh] of [
     });
   });
 
+  const statusLoaded = p.waitForResponse((r) => r.url().includes("/api/status"));
   await p.goto(BASE);
+  await statusLoaded;
   await waitWorkbench(p);
 
   await p.locator('[data-thing="inspector-toggle"]').click();
@@ -3600,7 +3632,9 @@ for (const [theme, vw, vh] of [
 
   const { ctx, p } = await open(1440, 900);
   await setupProtocolsRoutes(p);
+  const statusLoaded = p.waitForResponse((r) => r.url().includes("/api/status"));
   await p.goto(BASE);
+  await statusLoaded;
   await waitWorkbench(p);
 
   // 1. Outbound Actions -> SMTP Relay + OAuth2 Credentials config helper + masked secret handling
@@ -3857,6 +3891,13 @@ for (const [theme, vw, vh] of [
         }),
       })
     );
+    await p.route("**/api/runs/stream", (r) =>
+      r.fulfill({
+        status: 200,
+        contentType: "text/event-stream",
+        body: `event: status\ndata: ${JSON.stringify({ active: liveList.length > 0, runs: liveList })}\n\n`,
+      })
+    );
     await p.route("**/api/runs/*/cancel", async (r) => {
       const url = r.request().url();
       const m = /\/api\/runs\/([^/]+)\/cancel/.exec(url);
@@ -3865,7 +3906,9 @@ for (const [theme, vw, vh] of [
       liveList = liveList.filter((x) => x.run_id !== tid && x.thread_id !== tid);
       return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ cancelled: true, run_id: tid }) });
     });
+    const statusLoaded = p.waitForResponse((r) => r.url().includes("/api/status"));
     await p.goto(BASE);
+    await statusLoaded;
     await waitWorkbench(p);
     await p.waitForSelector('#live-run-timeline [data-live-run="run-sched-e3"]', { timeout: 4000 });
     await p.waitForSelector('#live-run-timeline [data-live-run="run-chat-e3"]', { timeout: 4000 });
@@ -3933,7 +3976,9 @@ for (const [theme, vw, vh] of [
     await p.route("**/api/pipelines/validate", (r) =>
       r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true, valid: true, errors: [], topological_order: ["skill_1", "sub_2"], stages: [["skill_1"], ["sub_2"]] }) })
     );
+    const statusLoaded = p.waitForResponse((r) => r.url().includes("/api/status"));
     await p.goto(BASE);
+    await statusLoaded;
     await waitWorkbench(p);
     await p.locator('[data-thing="routines-btn"]').click();
     await p.waitForSelector("#routines-panel", { timeout: 4000 });
@@ -4047,7 +4092,9 @@ for (const [theme, vw, vh] of [
       pendingList = pendingList.filter((c) => c.checkpoint_id !== b.checkpoint_id);
       return r.fulfill({ status: 202, contentType: "application/json", body: JSON.stringify({ run: makeRunPayload() }) });
     });
+    const statusLoaded = p.waitForResponse((r) => r.url().includes("/api/status"));
     await p.goto(BASE);
+    await statusLoaded;
     await waitWorkbench(p);
     await p.getByRole("tab", { name: "Today" }).click();
     await p.waitForSelector('#decisions-list [data-pipeline-checkpoint="prun-e3-multi"]', { timeout: 4000 });
@@ -4079,7 +4126,9 @@ for (const [theme, vw, vh] of [
   // 5. Mobile 390x844 dark check on RoutinesPanel + PipelineBuilder (0px dialog overflow)
   {
     const { ctx, p } = await open(390, 844, "dark");
+    const statusLoaded = p.waitForResponse((r) => r.url().includes("/api/status"));
     await p.goto(BASE);
+    await statusLoaded;
     await waitWorkbench(p);
     await p.getByRole("button", { name: "Open menu" }).click();
     await p.waitForSelector('[data-thing="routines-btn"]', { timeout: 4000 });
@@ -4105,10 +4154,333 @@ for (const [theme, vw, vh] of [
   }
 }
 
+// 6k. v0.40.0 Wave H1 Hardening: 390x844 sticky modal close/save, long-token overflow, SSE reconciliation & error retry
+{
+  const longCron = "0,5,10,15,20,25,30,35,40,45,50,55 1,2,3,4,5,6,7,8,9,10,11,12 * * 1,2,3,4,5";
+  const longUrl = `https://hooks.example.com/ingest/${"segment_".repeat(25)}webhook`;
+
+  // 1. 390x844 RoutinesPanel + PipelineBuilder sticky header/Close + sticky Save routine + 0px overflow with long Cron & arg
+  {
+    const { ctx, p } = await open(390, 844, "light");
+    await p.route("**/api/status", async (r) => {
+      const res = await r.fetch();
+      const j = await res.json();
+      await r.fulfill({
+        response: res,
+        body: JSON.stringify({ ...j, version: "0.40.0", capabilities: { ...(j.capabilities || {}), routines: true, scheduler: true, pipelines: true } }),
+      });
+    });
+    await p.route("**/api/routines", (r) =>
+      r.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          routines: [
+            {
+              id: "rt-h1-long",
+              name: "Long_Cron_Schedule_Reconciliation_Routine_Without_Spaces",
+              schedule: longCron,
+              tz: "America/New_York",
+              prompt: "Reconcile long ledger paths cleanly",
+              enabled: true,
+              run_count: 1,
+              created_ts: Date.now() - 60_000,
+            },
+          ],
+          scheduler: { enabled: true, running: true, tick_secs: 15 },
+        }),
+      })
+    );
+    const statusLoaded = p.waitForResponse((r) => r.url().includes("/api/status"));
+    await p.goto(BASE);
+    await statusLoaded;
+    await waitWorkbench(p);
+    await p.getByRole("button", { name: "Open menu" }).click();
+    await p.waitForSelector('[data-thing="routines-btn"]', { timeout: 4000 });
+    await p.locator('[data-thing="routines-btn"]').click();
+    await p.waitForSelector("#routines-panel", { timeout: 4000 });
+    await p.locator("#routines-panel").getByRole("button", { name: "New routine" }).click();
+    await p.locator("#routine-schedule").fill(longCron);
+    await p.locator("[data-toggle-pipeline-builder]").click();
+    await p.locator('#pipeline-builder [data-add-pipeline-step="agent"]').click();
+    await p.locator('#pipeline-builder [data-add-pipeline-step="deliver"]').click();
+    await p.locator('#pipeline-builder input[aria-label="Step 1 arg input_file"]').fill(`clients/very_long_${"path_".repeat(20)}file.csv`);
+    await p.waitForTimeout(100);
+    const metrics = await p.evaluate(() => {
+      const dlg = document.querySelector('[role="dialog"]');
+      const scroller = dlg?.querySelector(".overflow-y-auto");
+      if (scroller) scroller.scrollTop = 360;
+      const closeBtn = dlg?.querySelector("button[aria-label='Close'], button:has(> span.sr-only)");
+      const saveBtn = [...(dlg?.querySelectorAll("button[type='submit']") || [])].find((b) => /Save routine/.test(b.textContent || ""));
+      const closeRect = closeBtn?.getBoundingClientRect();
+      const saveRect = saveBtn?.getBoundingClientRect();
+      return {
+        overflow: dlg ? dlg.scrollWidth - dlg.clientWidth : 999,
+        closeVisible: Boolean(closeRect && closeRect.top >= 0 && closeRect.bottom <= window.innerHeight && closeRect.width >= 30),
+        saveVisible: Boolean(saveRect && saveRect.top >= 0 && saveRect.bottom <= window.innerHeight && saveRect.width >= 60),
+      };
+    });
+    ok(
+      "v0.40.0 H1 (390x844) RoutinesPanel + PipelineBuilder keep sticky Close/Save visible and 0px overflow with long Cron + args",
+      metrics.overflow <= 1 && metrics.closeVisible && metrics.saveVisible,
+      JSON.stringify(metrics)
+    );
+    await ctx.close();
+  }
+
+  // 2. 390x844 Clients CRM/SOW modal & ConnectorsPanel sticky Close/Save + 0px overflow with long URL
+  {
+    const { ctx, p } = await open(390, 844, "dark");
+    await p.route("**/api/status", async (r) => {
+      const res = await r.fetch();
+      const j = await res.json();
+      await r.fulfill({
+        response: res,
+        body: JSON.stringify({
+          ...j,
+          version: "0.40.0",
+          capabilities: { ...(j.capabilities || {}), clients: true, client_crm: true, connectors: true, mcp: true },
+        }),
+      });
+    });
+    await p.route("**/api/clients", (r) =>
+      r.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          clients: [{ id: "cli-h1", name: "Northstar_Very_Long_Advisory_Holdings_LLP", default_rate_usd: 250, contacts: [{ id: "c1", name: "Alex", email: "ap@northstar-very-long-domain-example.com", primary: true }] }],
+          engagements: [{ id: "eng-h1", client_id: "cli-h1", name: "Q4_Compliance_Audit_Retainer", hourly_rate_usd: 250, retainer_budget_usd: 5000, workspace_prefix: "clients/cli-h1/eng-h1", sow_rules: ["Cite sources", "Never guess"] }],
+          active_engagement_id: "eng-h1",
+        }),
+      })
+    );
+    await p.route("**/api/engagements/eng-h1/context", (r) =>
+      r.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          engagement: { id: "eng-h1", client_id: "cli-h1", name: "Q4_Compliance_Audit_Retainer", workspace_prefix: "clients/cli-h1/eng-h1", sow_rules: ["Cite sources", "Never guess"] },
+          client: { id: "cli-h1", name: "Northstar_Very_Long_Advisory_Holdings_LLP" },
+          scoped_file_count: 0,
+        }),
+      })
+    );
+    await p.route("**/api/connectors", (r) =>
+      r.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          triggers: [],
+          outbound: [{ id: "out-h1", name: "LongWebhook", kind: "http_webhook", url: longUrl, method: "POST", require_approval: true, enabled: true }],
+          deliveries: [],
+          secrets: [],
+        }),
+      })
+    );
+    const statusLoaded = p.waitForResponse((r) => r.url().includes("/api/status"));
+    await p.goto(BASE);
+    await statusLoaded;
+    await waitWorkbench(p);
+    await p.waitForSelector("#person-select", { timeout: 4000 });
+    await p.locator("#person-select").click();
+    await p.waitForSelector("#client-crm-drawer-toggle", { timeout: 4000 });
+    await p.locator("#client-crm-drawer-toggle").click();
+    await p.waitForSelector("#crm-save-engagement-btn", { timeout: 4000 });
+    const cliMetrics = await p.evaluate(() => {
+      const dlg = document.querySelector('[role="dialog"]');
+      const scroller = dlg?.querySelector(".overflow-y-auto");
+      if (scroller) scroller.scrollTop = 220;
+      const closeBtn = dlg?.querySelector("button:has(> span.sr-only)");
+      const saveBtn = document.querySelector("#crm-save-engagement-btn");
+      const cr = closeBtn?.getBoundingClientRect();
+      const sr = saveBtn?.getBoundingClientRect();
+      return {
+        overflow: dlg ? dlg.scrollWidth - dlg.clientWidth : 999,
+        closeVisible: Boolean(cr && cr.top >= 0 && cr.bottom <= window.innerHeight),
+        saveVisible: Boolean(sr && sr.top >= 0 && sr.bottom <= window.innerHeight),
+      };
+    });
+    await p.keyboard.press("Escape");
+    await p.waitForSelector('[role="dialog"]', { state: "hidden", timeout: 4000 });
+
+    await p.getByRole("button", { name: "Open menu" }).click();
+    await p.waitForSelector('[data-thing="connectors-btn"]', { timeout: 4000 });
+    await p.locator('[data-thing="connectors-btn"]').click();
+    await p.waitForSelector("#connectors-panel", { timeout: 4000 });
+    await p.locator('#connectors-panel [role="tab"][data-id="outbound"]').click();
+    await p.locator("#connectors-panel").getByRole("button", { name: "New connector" }).click();
+    await p.locator("#outbound-url").fill(longUrl);
+    await p.locator("#outbound-oauth-enabled").check();
+    await p.waitForTimeout(100);
+    const connMetrics = await p.evaluate(() => {
+      const dlg = document.querySelector('[role="dialog"]');
+      const scroller = dlg?.querySelector(".overflow-y-auto");
+      if (scroller) scroller.scrollTop = 320;
+      const closeBtn = dlg?.querySelector("button:has(> span.sr-only)");
+      const saveBtn = [...(dlg?.querySelectorAll("button[type='submit']") || [])].find((b) => /Save connector/.test(b.textContent || ""));
+      const cr = closeBtn?.getBoundingClientRect();
+      const sr = saveBtn?.getBoundingClientRect();
+      return {
+        overflow: dlg ? dlg.scrollWidth - dlg.clientWidth : 999,
+        closeVisible: Boolean(cr && cr.top >= 0 && cr.bottom <= window.innerHeight),
+        saveVisible: Boolean(sr && sr.top >= 0 && sr.bottom <= window.innerHeight),
+      };
+    });
+    ok(
+      "v0.40.0 H1 (390x844) Clients CRM/SOW & ConnectorsPanel keep sticky Close/Save visible and 0px overflow with long URLs",
+      cliMetrics.overflow <= 1 && cliMetrics.closeVisible && cliMetrics.saveVisible && connMetrics.overflow <= 1 && connMetrics.closeVisible && connMetrics.saveVisible,
+      `cli=${JSON.stringify(cliMetrics)} conn=${JSON.stringify(connMetrics)}`
+    );
+    await ctx.close();
+  }
+
+  // 3. LiveRunTimeline SSE disconnect + Retry sync, CheckpointCard resume failure + retry, RoutinesPanel history error + retry
+  {
+    const { ctx, p } = await open(1280, 820, "light");
+    p.__expect500 = true;
+    let allowStatusRecover = false;
+    let resumeCalls = 0;
+    let historyCalls = 0;
+    let cpResolved = false;
+
+    await p.route("**/api/status", async (r) => {
+      const res = await r.fetch();
+      const j = await res.json();
+      await r.fulfill({
+        response: res,
+        body: JSON.stringify({
+          ...j,
+          version: "0.40.0",
+          capabilities: { ...(j.capabilities || {}), sse: true, cancel: true, routines: true, scheduler: true, pipelines: true },
+        }),
+      });
+    });
+    await p.route("**/api/runs/stream", (r) =>
+      r.fulfill({ status: 500, contentType: "text/plain", body: "stream disconnected" })
+    );
+    await p.route("**/api/runs/status", (r) => {
+      if (!allowStatusRecover) {
+        return r.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ error: "Stream reconciliation unavailable" }) });
+      }
+      return r.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          active: true,
+          runs: [{ active: true, run_id: "run-h1-sync", thread_id: "", task: "Reconciled run", started_ms: Date.now() - 2000, steps: [] }],
+        }),
+      });
+    });
+    await p.route("**/api/chat", async (r) => {
+      await new Promise((res) => setTimeout(res, 6000));
+      await r.abort();
+    });
+    await p.route(/\/api\/pipelines\/runs(\?.*)?$/, (r) =>
+      r.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          runs: cpResolved
+            ? []
+            : [
+                {
+                  run_id: "prun-h1-retry",
+                  routine_name: "Retryable Checkpoint Pipeline",
+                  status: "paused_checkpoint",
+                  current_step_index: 0,
+                  created_ms: Date.now() - 5000,
+                  updated_ms: Date.now() - 1000,
+                  step_states: [{ step_id: "review", kind: "checkpoint", status: "waiting_human" }],
+                  pending_checkpoint: { checkpoint_id: "cp-h1-1", step_index: 0, prompt: "Approve deployment?", input_mode: "approve_reject" },
+                },
+              ],
+        }),
+      })
+    );
+    await p.route("**/api/pipelines/runs/prun-h1-retry/resume", (r) => {
+      resumeCalls++;
+      if (resumeCalls === 1) {
+        return r.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ error: "Temporary checkpoint lock conflict" }) });
+      }
+      cpResolved = true;
+      return r.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          run: { run_id: "prun-h1-retry", routine_name: "Retryable Checkpoint Pipeline", status: "completed", current_step_index: 1, step_states: [{ step_id: "review", kind: "checkpoint", status: "ok" }] },
+        }),
+      });
+    });
+    await p.route("**/api/routines", (r) =>
+      r.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          routines: [{ id: "rt-h1-hist", name: "History Retry Routine", schedule: "daily 09:00", prompt: "Audit daily", enabled: true, run_count: 1, created_ts: Date.now() - 60_000 }],
+          scheduler: { enabled: true, running: true, tick_secs: 15 },
+        }),
+      })
+    );
+    await p.route("**/api/routines/rt-h1-hist/history", (r) => {
+      historyCalls++;
+      if (historyCalls === 1) {
+        return r.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ error: "History store locked" }) });
+      }
+      return r.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ runs: [{ run_id: "hrun-1", routine_id: "rt-h1-hist", status: "finished", started_ms: Date.now() - 30_000, finished_ms: Date.now() - 28_000, summary: "Recovered OK" }] }),
+      });
+    });
+
+    const statusLoaded = p.waitForResponse((r) => r.url().includes("/api/status"));
+    await p.goto(BASE);
+    await statusLoaded;
+    await waitWorkbench(p);
+
+    // Trigger chat run -> SSE 500 -> fallback poll 500 -> reconciliation alert -> Retry sync succeeds
+    await p.locator("#composer-input").fill("Trigger SSE reconciliation check");
+    await p.keyboard.press("Enter");
+    await p.waitForSelector('#live-run-timeline [data-live-stream-error="true"]', { timeout: 5000 });
+    const sseErrText = await p.locator('#live-run-timeline [data-live-stream-error="true"]').innerText();
+    allowStatusRecover = true;
+    await p.locator('#live-run-timeline [data-action="retry-live-sync"]').click();
+    await p.locator('#live-run-timeline [data-live-stream-error="true"]').waitFor({ state: "hidden", timeout: 4000 });
+
+    // CheckpointCard failure surfaces inline alert and allows retry
+    await p.getByRole("tab", { name: "Today" }).click();
+    await p.waitForSelector('#decisions-list [data-pipeline-checkpoint="prun-h1-retry"]', { timeout: 4000 });
+    const cpCard = p.locator('#decisions-list [data-pipeline-checkpoint="prun-h1-retry"]');
+    await cpCard.locator('[data-action="resume-pipeline"]').click();
+    await cpCard.locator('[role="alert"]').waitFor({ state: "visible", timeout: 4000 });
+    const cpErrText = await cpCard.locator('[role="alert"]').innerText();
+    await cpCard.locator('[data-action="resume-pipeline"]').click();
+    await cpCard.waitFor({ state: "hidden", timeout: 4000 });
+
+    // RoutinesPanel history error surfaces Retry and recovers
+    await p.locator('[data-thing="routines-btn"]').click();
+    await p.waitForSelector("#routines-panel", { timeout: 4000 });
+    await p.locator('#routines-panel [data-routine-id="rt-h1-hist"] [data-action="routine-history"]').click();
+    await p.waitForSelector('#routines-panel [data-history-error="rt-h1-hist"]', { timeout: 4000 });
+    await p.locator('#routines-panel [data-history-error="rt-h1-hist"] [data-action="retry-routine-history"]').click();
+    await p.waitForSelector('#routines-panel [data-run-id="hrun-1"]', { timeout: 4000 });
+    const histRecovered = await p.locator('#routines-panel [data-run-id="hrun-1"]').isVisible();
+
+    ok(
+      "v0.40.0 H1 LiveRunTimeline SSE reconciliation, CheckpointCard error/retry, and RoutinesPanel history retry recover cleanly",
+      sseErrText.includes("reconciliation") && cpErrText.includes("lock conflict") && cpResolved && histRecovered,
+      `sse=${sseErrText} cp=${cpErrText} resolved=${cpResolved} hist=${histRecovered}`
+    );
+    await ctx.close();
+  }
+}
+
 // 7. Reduced motion & Console Cleanliness (2 checks)
 {
   const { ctx, p } = await open(1440, 900, "light", { reducedMotion: "reduce" });
+  const statusLoaded = p.waitForResponse((r) => r.url().includes("/api/status"));
   await p.goto(BASE);
+  await statusLoaded;
   await waitWorkbench(p);
   await p.waitForTimeout(1200);
   const moving = await p.evaluate(() =>

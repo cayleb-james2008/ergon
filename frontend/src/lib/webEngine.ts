@@ -524,7 +524,7 @@ function runCsvReconciliation(
   if (rows.length < 2) {
     return {
       reconciledCsv: csvText,
-      reportMd: `# Reconciliation Report — ${sourcePath}\n\nNo data rows were found in \`${sourcePath}\`.\n`,
+      reportMd: `# Reconciliation Report: ${sourcePath}\n\nNo data rows were found in \`${sourcePath}\`.\n`,
       rowCount: 0,
       grandTotal: 0,
       missingCount: 0,
@@ -611,7 +611,7 @@ function runCsvReconciliation(
   const avg = data.length ? grandTotal / data.length : 0;
 
   const mdLines: string[] = [
-    `# Expense Reconciliation — ${sourcePath}`,
+    `# Expense Reconciliation: ${sourcePath}`,
     "",
     "## Executive Summary",
     `- Source file: \`${sourcePath}\``,
@@ -697,7 +697,7 @@ function runDocumentSummary(sources: WebFile[], prompt: string, rules: string[])
     ...(blockers.length ? blockers.slice(0, 8).map((b) => `- ${b}`) : ["- No open blockers identified."]),
     "",
     "## Follow-Up Draft",
-    `Team — here is the recap from ${sources.map((s) => s.name).join(", ")}: ${actions.length} action item(s) and ${blockers.length} open blocker(s) are tracked above. Please confirm owner dates by EOD.`,
+    `Team: here is the recap from ${sources.map((s) => s.name).join(", ")} (${actions.length} action item(s) and ${blockers.length} open blocker(s) tracked above). Please confirm owner dates by EOD.`,
   ];
 
   if (highlights.length) {
@@ -737,7 +737,7 @@ function runContractAudit(src: WebFile, rules: string[]) {
       if (isAutoRenewTrap) renewalHits.push(`Auto-renewal clause detected at \`${src.name}:L${hitIdx + 1}\`: ${lines[hitIdx].trim()}`);
     } else {
       missing.push(ck.clause);
-      rows.push(`| ${ck.clause} | **MISSING** | — | ${ck.riskIfMissing} |`);
+      rows.push(`| ${ck.clause} | **MISSING** | none | ${ck.riskIfMissing} |`);
     }
   }
 
@@ -750,7 +750,7 @@ function runContractAudit(src: WebFile, rules: string[]) {
 
   const outName = `${src.name.replace(/\.[^.]+$/, "")}-contract-audit.md`;
   const md = [
-    `# Contract Audit — ${src.path}`,
+    `# Contract Audit: ${src.path}`,
     "",
     "## Audit Summary",
     `- Source file: \`${src.path}\` (${lines.length} lines)`,
@@ -780,9 +780,9 @@ function runInboxTriage(src: WebFile, rules: string[]) {
     const clean = line.replace(/^[-*]\s*/, "");
     const tag = `[${src.name}:L${idx + 1}]`;
     if (/\b(urgent|sev1|p0|outage|down|security|breach|asap|blocked|failed|overdue|escalation|critical)\b/i.test(clean)) {
-      urgent.push(`${clean} ${tag} — Next step: assign owner & respond within 30 min.`);
+      urgent.push(`${clean} ${tag} (Next step: assign owner & respond within 30 min.)`);
     } else if (/\b(please|review|approve|action|due|confirm|send|update|schedule|follow[- ]?up|request|ticket|invoice)\b/i.test(clean)) {
-      action.push(`${clean} ${tag} — Next step: complete in today's work block.`);
+      action.push(`${clean} ${tag} (Next step: complete in today's work block.)`);
     } else {
       fyi.push(`${clean} ${tag}`);
     }
@@ -790,7 +790,7 @@ function runInboxTriage(src: WebFile, rules: string[]) {
 
   const outName = `${src.name.replace(/\.[^.]+$/, "")}-triage.md`;
   const md = [
-    `# Inbox Triage — ${src.path}`,
+    `# Inbox Triage: ${src.path}`,
     "",
     `- Items processed: **${lines.length}** (Urgent: **${urgent.length}**, Action: **${action.length}**, FYI: **${fyi.length}**)`,
     "",
@@ -834,13 +834,13 @@ function runCleanDataset(src: WebFile) {
     }
     const outFile = `${stem}-cleaned.json`;
     const reportFile = `${stem}-clean-report.md`;
-    const reportMd = `# Dataset Clean Metrics — ${src.path}\n\n- Input records: **${arr.length}**\n- Output records: **${cleanArr.length}**\n- Duplicates removed: **${dups}**\n- Empty/null fields flagged: **${nulls}**\n`;
+    const reportMd = `# Dataset Clean Metrics: ${src.path}\n\n- Input records: **${arr.length}**\n- Output records: **${cleanArr.length}**\n- Duplicates removed: **${dups}**\n- Empty/null fields flagged: **${nulls}**\n`;
     return { outFile, outBody: JSON.stringify(cleanArr, null, 2) + "\n", reportFile, reportMd, removedDups: dups, nullCells: nulls, rowCount: cleanArr.length };
   }
 
   const rows = parseCsv(src.content);
   if (rows.length < 2) {
-    return { outFile: `${stem}-cleaned.csv`, outBody: src.content, reportFile: `${stem}-clean-report.md`, reportMd: `# Dataset Clean Metrics — ${src.path}\n\nNo rows to clean.\n`, removedDups: 0, nullCells: 0, rowCount: 0 };
+    return { outFile: `${stem}-cleaned.csv`, outBody: src.content, reportFile: `${stem}-clean-report.md`, reportMd: `# Dataset Clean Metrics: ${src.path}\n\nNo rows to clean.\n`, removedDups: 0, nullCells: 0, rowCount: 0 };
   }
   const header = rows[0].map((h) => h.trim().replace(/\s+/g, "_"));
   const body = rows.slice(1);
@@ -869,7 +869,7 @@ function runCleanDataset(src: WebFile) {
   const outFile = `${stem}-cleaned.csv`;
   const reportFile = `${stem}-clean-report.md`;
   const reportMd = [
-    `# Dataset Clean Metrics — ${src.path}`,
+    `# Dataset Clean Metrics: ${src.path}`,
     "",
     `- Input rows: **${body.length}**`,
     `- Output rows: **${cleaned.length - 1}**`,
@@ -1051,9 +1051,9 @@ function buildInitialState(): RootState {
     "",
     "## Updates",
     "- Decided: Ship Ergon v0.5.0 with 12 built-in workflows and SHA-256 receipts.",
-    "- Owner: Maya Chen — finalize Q3 vendor reconciliation before Friday close.",
-    "- [ ] Owner: Tomas Ruiz — chase missing $240.00 CloudHost Backup receipt by Thursday.",
-    "- [ ] Owner: Priya Raman — publish dark-mode accessibility checklist for Settings.",
+    "- Owner: Maya Chen: finalize Q3 vendor reconciliation before Friday close.",
+    "- [ ] Owner: Tomas Ruiz: chase missing $240.00 CloudHost Backup receipt by Thursday.",
+    "- [ ] Owner: Priya Raman: publish dark-mode accessibility checklist for Settings.",
     "- Blocker: Q2 archived vendor draft (old-vendor-draft.txt) still sitting in active workspace.",
   ].join("\n") + "\n";
 
@@ -1069,14 +1069,14 @@ function buildInitialState(): RootState {
 
   const supportInbox = [
     "# Operations Inbox Feed",
-    "- URGENT: Payment webhook returned 502 error on billing-eu — customer invoices delayed.",
+    "- URGENT: Payment webhook returned 502 error on billing-eu (customer invoices delayed).",
     "- Action: Please approve Q4 Freight renewal quote from Northstar Logistics by Friday.",
     "- Action: Review draft contract clauses before legal sign-off.",
     "- FYI: Quarterly office badge audit completed with zero findings.",
   ].join("\n") + "\n";
 
   const oldDraft = [
-    "SUPERSEDED Q2 VENDOR DRAFT — DO NOT USE FOR FILING",
+    "SUPERSEDED Q2 VENDOR DRAFT: DO NOT USE FOR FILING",
     "Replaced by expenses-q3.csv on 2026-11-01.",
   ].join("\n") + "\n";
 
@@ -3522,7 +3522,13 @@ export async function installBrowserEngine(): Promise<void> {
     if (spec.kind === "skill") {
       const resolvedArgs: Record<string, string> = {};
       for (const [k, v] of Object.entries(spec.args ?? {})) {
-        resolvedArgs[k] = resolvePipelineTemplate(String(v ?? ""), inputs, run.step_states, extraVars);
+        if (typeof v === "string") {
+          resolvedArgs[k] = resolvePipelineTemplate(v, inputs, run.step_states, extraVars);
+        } else if (v !== undefined && v !== null) {
+          resolvedArgs[k] = JSON.stringify(resolvePipelineValue(v, inputs, run.step_states, extraVars));
+        } else {
+          resolvedArgs[k] = "";
+        }
       }
       const res = runPipelineSkillStep(st, spec.skill_id || "draft_brief", resolvedArgs);
       const bytesTotal = res.files.reduce((acc, f) => acc + (st.files[f]?.size ?? 0), 0);

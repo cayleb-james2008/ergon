@@ -2337,8 +2337,8 @@ export const PaperFace = memo(function PaperFace({
                     <li key={inv.id} data-invoice-id={inv.id} className={cn("flex flex-wrap items-center justify-between gap-2 px-3 py-2.5 text-xs", isSel && "bg-blue-soft/40")}>
                       <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-1.5">
-                          <span className="mono font-medium text-ink">{inv.invoice_number}</span>
-                          <span className="text-ink-2">{inv.period_label}</span>
+                          <span className="mono min-w-0 [overflow-wrap:anywhere] font-medium text-ink">{inv.invoice_number}</span>
+                          <span className="min-w-0 [overflow-wrap:anywhere] text-ink-2">{inv.period_label}</span>
                           <span
                             data-invoice-status={inv.status}
                             className={cn(

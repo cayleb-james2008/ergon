@@ -224,8 +224,19 @@ fn build_context(cfg: &Config, trusted: bool) -> Result<rune::Context, String> {
     // --- workspace fs host functions (sandboxed inside the workspace) ---
     let ws = cfg.workspace_dir.clone();
     let hist_data_dir = cfg.data_dir.clone();
+    let root_data_dir_w = crate::records::infer_root_data_dir(&cfg.data_dir);
+    let person_id_w = crate::records::infer_person_id(&cfg.data_dir);
     module
         .function(["host_workspace_write"], move |path: String, content: String| -> String {
+            if let Some((_, pfx)) =
+                crate::tools::active_isolation_scope(&root_data_dir_w, &hist_data_dir, &person_id_w)
+            {
+                if let Err(e) =
+                    crate::tools::check_engagement_path_allowed(&ws, &pfx, &path, false)
+                {
+                    return format!("error: {e}");
+                }
+            }
             match sandbox_path(&ws, &path) {
                 Ok(full) => {
                     if let Some(parent) = full.parent() {
@@ -251,11 +262,23 @@ fn build_context(cfg: &Config, trusted: bool) -> Result<rune::Context, String> {
         .map_err(|e| format!("register host_workspace_write: {e}"))?;
 
     let ws = cfg.workspace_dir.clone();
+    let data_dir_r = cfg.data_dir.clone();
+    let root_data_dir_r = crate::records::infer_root_data_dir(&cfg.data_dir);
+    let person_id_r = crate::records::infer_person_id(&cfg.data_dir);
     module
         .function(["host_workspace_read"], move |path: String| -> String {
             // Workflows read PDF, Word, Excel (`book.xlsx#Sheet`) and
             // PowerPoint as text, exactly like .md and .csv files.
             let (base, sheet) = crate::docs::split_sheet(&path);
+            if let Some((_, pfx)) =
+                crate::tools::active_isolation_scope(&root_data_dir_r, &data_dir_r, &person_id_r)
+            {
+                if let Err(e) =
+                    crate::tools::check_engagement_path_allowed(&ws, &pfx, base, false)
+                {
+                    return format!("error: {e}");
+                }
+            }
             match sandbox_path(&ws, base) {
                 Ok(full) => match crate::docs::doc_kind(base) {
                     Some(kind) => crate::docs::extract(&full, kind, sheet)
@@ -271,8 +294,32 @@ fn build_context(cfg: &Config, trusted: bool) -> Result<rune::Context, String> {
         .map_err(|e| format!("register host_workspace_read: {e}"))?;
 
     let ws = cfg.workspace_dir.clone();
+    let data_dir_l = cfg.data_dir.clone();
+    let root_data_dir_l = crate::records::infer_root_data_dir(&cfg.data_dir);
+    let person_id_l = crate::records::infer_person_id(&cfg.data_dir);
     module
         .function(["host_workspace_list"], move |path: String| -> String {
+            if let Some((_, pfx)) =
+                crate::tools::active_isolation_scope(&root_data_dir_l, &data_dir_l, &person_id_l)
+            {
+                let clean = path.trim().replace('\\', "/");
+                if clean.is_empty() || clean == "." {
+                    let mut names = Vec::new();
+                    if ws.join(&pfx).is_dir() {
+                        names.push(format!("{pfx}/"));
+                    }
+                    if ws.join("shared").is_dir() {
+                        names.push("shared/".to_string());
+                    }
+                    names.sort();
+                    return names.join("\n");
+                }
+                if let Err(e) =
+                    crate::tools::check_engagement_path_allowed(&ws, &pfx, &path, false)
+                {
+                    return format!("error: {e}");
+                }
+            }
             match sandbox_path(&ws, &path) {
                 Ok(full) => match std::fs::read_dir(&full) {
                     Ok(rd) => {
@@ -354,6 +401,13 @@ fn build_context(cfg: &Config, trusted: bool) -> Result<rune::Context, String> {
         })
         .build()
         .map_err(|e| format!("register host_parse_json_table: {e}"))?;
+
+    module
+        .function(["host_escape_formula_cell"], |cell: String| -> String {
+            crate::docs::escape_formula_cell(&cell).into_owned()
+        })
+        .build()
+        .map_err(|e| format!("register host_escape_formula_cell: {e}"))?;
 
     context
         .install(module)
@@ -1175,27 +1229,132 @@ fn arg_str<'a>(args: &'a Value, keys: &[&str]) -> Option<&'a str> {
     None
 }
 
-fn arg_string_list(args: &Value, keys: &[&str]) -> Vec<String> {
-    for k in keys {
-        if let Some(v) = args.get(*k) {
-            match v {
-                Value::Array(items) => {
-                    return items
-                        .iter()
-                        .map(|item| match item {
-                            Value::String(s) => s.clone(),
-                            other => other.to_string(),
-                        })
-                        .collect();
+pub(crate) fn parse_string_list_value(v: &Value) -> Vec<String> {
+    match v {
+        Value::Array(items) => items.iter().map(json_cell_to_string).collect(),
+        Value::String(s) => {
+            let trimmed = s.trim();
+            if trimmed.is_empty() {
+                return Vec::new();
+            }
+            if trimmed.starts_with('[') {
+                if let Ok(Value::Array(items)) = serde_json::from_str::<Value>(trimmed) {
+                    return items.iter().map(json_cell_to_string).collect();
                 }
-                Value::String(s) if !s.trim().is_empty() => {
-                    return s
-                        .split(',')
+            }
+            if trimmed.contains('\n') {
+                return trimmed
+                    .lines()
+                    .map(|l| l.trim().to_string())
+                    .filter(|l| !l.is_empty())
+                    .collect();
+            }
+            if trimmed.contains('"') {
+                if let Some(first_row) = parse_csv_rows(trimmed).into_iter().next() {
+                    return first_row
+                        .into_iter()
                         .map(|p| p.trim().to_string())
                         .filter(|p| !p.is_empty())
                         .collect();
                 }
-                _ => {}
+            }
+            trimmed
+                .split(',')
+                .map(|p| p.trim().to_string())
+                .filter(|p| !p.is_empty())
+                .collect()
+        }
+        _ => Vec::new(),
+    }
+}
+
+pub(crate) fn parse_sections_value(v: &Value) -> Vec<String> {
+    match v {
+        Value::Array(items) => items
+            .iter()
+            .map(|item| match item {
+                Value::String(s) => s.clone(),
+                Value::Object(o) => {
+                    let heading = o.get("heading").and_then(|x| x.as_str()).unwrap_or("");
+                    let body = o.get("body").and_then(|x| x.as_str()).unwrap_or("");
+                    if heading.is_empty() {
+                        body.to_string()
+                    } else {
+                        format!("## {heading}\n\n{body}")
+                    }
+                }
+                other => json_cell_to_string(other),
+            })
+            .collect(),
+        Value::String(s) => {
+            let trimmed = s.trim();
+            if trimmed.is_empty() {
+                return Vec::new();
+            }
+            if trimmed.starts_with('[') {
+                if let Ok(Value::Array(items)) = serde_json::from_str::<Value>(trimmed) {
+                    return parse_sections_value(&Value::Array(items));
+                }
+            }
+            vec![s.clone()]
+        }
+        _ => Vec::new(),
+    }
+}
+
+pub(crate) fn parse_string_rows_value(v: &Value) -> Vec<Vec<String>> {
+    match v {
+        Value::Array(rows) => rows
+            .iter()
+            .filter_map(|r| match r {
+                Value::Array(cells) => Some(cells.iter().map(json_cell_to_string).collect()),
+                Value::String(s) => {
+                    let trimmed = s.trim();
+                    if trimmed.starts_with('[') {
+                        if let Ok(Value::Array(cells)) = serde_json::from_str::<Value>(trimmed) {
+                            return Some(cells.iter().map(json_cell_to_string).collect());
+                        }
+                    }
+                    Some(vec![s.clone()])
+                }
+                Value::Null => None,
+                other => Some(vec![json_cell_to_string(other)]),
+            })
+            .collect(),
+        Value::String(s) => {
+            let trimmed = s.trim();
+            if trimmed.is_empty() {
+                return Vec::new();
+            }
+            if trimmed.starts_with('[') {
+                if let Ok(Value::Array(rows)) = serde_json::from_str::<Value>(trimmed) {
+                    return parse_string_rows_value(&Value::Array(rows));
+                }
+            }
+            parse_csv_rows(trimmed)
+        }
+        _ => Vec::new(),
+    }
+}
+
+fn arg_string_list(args: &Value, keys: &[&str]) -> Vec<String> {
+    for k in keys {
+        if let Some(v) = args.get(*k) {
+            let parsed = parse_string_list_value(v);
+            if !parsed.is_empty() {
+                return parsed;
+            }
+        }
+    }
+    Vec::new()
+}
+
+fn arg_sections(args: &Value, keys: &[&str]) -> Vec<String> {
+    for k in keys {
+        if let Some(v) = args.get(*k) {
+            let parsed = parse_sections_value(v);
+            if !parsed.is_empty() {
+                return parsed;
             }
         }
     }
@@ -1204,21 +1363,8 @@ fn arg_string_list(args: &Value, keys: &[&str]) -> Vec<String> {
 
 fn arg_string_rows(args: &Value, key: &str) -> Vec<Vec<String>> {
     match args.get(key) {
-        Some(Value::Array(rows)) => rows
-            .iter()
-            .map(|r| match r {
-                Value::Array(cells) => cells
-                    .iter()
-                    .map(|c| match c {
-                        Value::String(s) => s.clone(),
-                        other => other.to_string(),
-                    })
-                    .collect(),
-                Value::String(s) => vec![s.clone()],
-                _ => Vec::new(),
-            })
-            .collect(),
-        _ => Vec::new(),
+        Some(v) => parse_string_rows_value(v),
+        None => Vec::new(),
     }
 }
 
@@ -1236,7 +1382,7 @@ pub fn dispatch_builtin_skill(
                 Some(t) if !t.trim().is_empty() => t,
                 _ => return Some(Err("write_document needs args.title".to_string())),
             };
-            let sections = arg_string_list(args, &["sections", "body", "content"]);
+            let sections = arg_sections(args, &["sections", "body", "content"]);
             if sections.is_empty() {
                 return Some(Err("write_document needs args.sections".to_string()));
             }

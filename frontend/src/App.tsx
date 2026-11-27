@@ -914,6 +914,10 @@ export function App() {
               streamMode={desk.streamMode}
               liveSteps={desk.liveSteps}
               liveTimeline={desk.liveTimeline}
+              liveRuns={desk.liveRuns}
+              liveStreamError={desk.liveStreamError}
+              onRetrySync={desk.reconcileLiveRuns}
+              cancellingRunIds={desk.cancellingRunIds}
               draft={desk.draft}
               setDraft={desk.setDraft}
               pendingNote={desk.pendingNote}
@@ -930,6 +934,7 @@ export function App() {
                 requestAnimationFrame(() => inputRef.current?.focus());
               }}
               onCancel={desk.cancelRun}
+              onCancelRun={desk.cancelRun}
               onReview={() => switchFace("paper")}
               onResolveDecision={handleResolveDecision}
               onOpenFile={(p) => setViewerPath(p)}
@@ -1264,6 +1269,9 @@ export function App() {
         onLaunchStarter={desk.launchStarterPlaybook}
         workspaceFiles={desk.files}
         pipelineRuns={desk.pipelineRuns}
+        loading={desk.routinesLoading}
+        loadError={desk.routinesError}
+        createError={desk.routineSaveError}
         onResumePipeline={desk.resumePipeline}
         onRetryPipeline={desk.retryPipeline}
         onCancelPipeline={desk.cancelPipeline}
