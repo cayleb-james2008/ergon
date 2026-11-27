@@ -9,9 +9,20 @@
 use serde_json::{json, Value};
 use std::collections::VecDeque;
 use std::io::Write;
-use std::net::TcpStream;
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::Duration;
+
+pub trait SseSocket: Write {
+    fn prepare_sse(&self);
+}
+
+impl SseSocket for std::net::TcpStream {
+    fn prepare_sse(&self) {
+        let _ = self.set_nodelay(true);
+        let _ = self.set_write_timeout(Some(Duration::from_secs(10)));
+        let _ = self.set_read_timeout(Some(Duration::from_secs(10)));
+    }
+}
 
 const MAX_BUFFERED_EVENTS: usize = 1024;
 
@@ -63,9 +74,12 @@ impl RunEventBus {
         mut data: Value,
     ) -> u64 {
         let (lock, cvar) = &*self.inner;
-        let mut guard = lock.lock().unwrap();
+        let mut guard = lock.lock().unwrap_or_else(|p| p.into_inner());
         let seq = guard.next_seq;
         guard.next_seq += 1;
+        if !data.is_object() {
+            data = json!({ "payload": data });
+        }
         if let Some(obj) = data.as_object_mut() {
             obj.entry("seq".to_string()).or_insert_with(|| json!(seq));
             obj.entry("event".to_string()).or_insert_with(|| json!(event));
@@ -111,13 +125,19 @@ impl RunEventBus {
 
     pub fn head_seq(&self) -> u64 {
         let (lock, _) = &*self.inner;
-        let guard = lock.lock().unwrap();
+        let guard = lock.lock().unwrap_or_else(|p| p.into_inner());
         guard.next_seq.saturating_sub(1)
+    }
+
+    pub fn wake_all(&self) {
+        let (lock, cvar) = &*self.inner;
+        let _guard = lock.lock().unwrap_or_else(|p| p.into_inner());
+        cvar.notify_all();
     }
 
     pub fn wait_since(&self, after_seq: u64, timeout: Duration) -> Vec<RunEvent> {
         let (lock, cvar) = &*self.inner;
-        let mut guard = lock.lock().unwrap();
+        let mut guard = lock.lock().unwrap_or_else(|p| p.into_inner());
         let collect = |g: &BusInner| -> Vec<RunEvent> {
             g.events
                 .iter()
@@ -129,56 +149,91 @@ impl RunEventBus {
         if !immediate.is_empty() {
             return immediate;
         }
-        let (next_guard, _) = cvar.wait_timeout(guard, timeout).unwrap();
+        let (next_guard, _) = cvar
+            .wait_timeout(guard, timeout)
+            .unwrap_or_else(|p| p.into_inner());
         guard = next_guard;
         collect(&guard)
+    }
+
+    /// Return all buffered events strictly after `after_seq` without waiting.
+    pub fn events_since(&self, after_seq: u64) -> Vec<RunEvent> {
+        let (lock, _) = &*self.inner;
+        let guard = lock.lock().unwrap_or_else(|p| p.into_inner());
+        guard
+            .events
+            .iter()
+            .filter(|e| e.seq > after_seq)
+            .cloned()
+            .collect()
     }
 }
 
 /// Serve a long-lived `text/event-stream` response until the client disconnects
-/// (or `max_events` is reached when testing).
-pub fn stream_sse(
-    stream: &mut TcpStream,
+/// (or after the initial status frame when `once` is true).
+///
+/// Captures `bus.head_seq()` BEFORE sending HTTP response headers so a client
+/// that begins work as soon as headers arrive can never outrun cursor setup.
+pub fn stream_sse<S: SseSocket>(
+    stream: &mut S,
     bus: &RunEventBus,
     person_id: &str,
     thread_filter: Option<&str>,
     initial_status: &Value,
     once: bool,
 ) -> std::io::Result<()> {
-    let _ = stream.set_nodelay(true);
-    let _ = stream.set_write_timeout(Some(Duration::from_secs(10)));
-    let _ = stream.set_read_timeout(Some(Duration::from_secs(10)));
+    let cursor = bus.head_seq();
+    stream_sse_from(
+        stream,
+        bus,
+        person_id,
+        thread_filter,
+        initial_status,
+        cursor,
+        once,
+    )
+}
 
-    let header = "HTTP/1.1 200 OK\r\n\
-                  Content-Type: text/event-stream; charset=utf-8\r\n\
-                  Cache-Control: no-cache, no-transform\r\n\
-                  Connection: keep-alive\r\n\
-                  X-Accel-Buffering: no\r\n\
-                  X-Content-Type-Options: nosniff\r\n\
-                  X-Frame-Options: DENY\r\n\
-                  Referrer-Policy: no-referrer\r\n\r\n";
-    stream.write_all(header.as_bytes())?;
+/// Serve a long-lived `text/event-stream` response starting from an explicit
+/// event-bus cursor (`initial_cursor`).
+///
+/// Callers should capture `initial_cursor` (either from `Last-Event-ID`/`since`
+/// or from `bus.head_seq()`) BEFORE snapshotting run state and BEFORE writing
+/// any bytes to `stream`. Headers and the initial `event: status` frame are
+/// flushed atomically in a single write so subscribers are guaranteed zero gap
+/// between handshake and live delivery.
+pub fn stream_sse_from<S: SseSocket>(
+    stream: &mut S,
+    bus: &RunEventBus,
+    person_id: &str,
+    thread_filter: Option<&str>,
+    initial_status: &Value,
+    initial_cursor: u64,
+    once: bool,
+) -> std::io::Result<()> {
+    stream.prepare_sse();
 
-    let mut cursor = bus.head_seq();
-    let init_payload = format!("event: status\ndata: {initial_status}\n\n");
-    stream.write_all(init_payload.as_bytes())?;
+    let mut cursor = initial_cursor;
+    let status_id = bus.head_seq().max(cursor);
+    let initial_response = format!(
+        "HTTP/1.1 200 OK\r\n\
+         Content-Type: text/event-stream; charset=utf-8\r\n\
+         Cache-Control: no-cache, no-transform\r\n\
+         Connection: keep-alive\r\n\
+         X-Accel-Buffering: no\r\n\
+         X-Content-Type-Options: nosniff\r\n\
+         X-Frame-Options: DENY\r\n\
+         Referrer-Policy: no-referrer\r\n\r\n\
+         id: {status_id}\n\
+         event: status\n\
+         data: {initial_status}\n\n"
+    );
+    stream.write_all(initial_response.as_bytes())?;
     stream.flush()?;
 
     if once {
-        return Ok(());
-    }
-
-    loop {
-        let batch = bus.wait_since(cursor, Duration::from_secs(10));
-        if batch.is_empty() {
-            // Heartbeat detects dead peers promptly so idle threads exit cleanly.
-            if stream.write_all(b": heartbeat\n\n").is_err() || stream.flush().is_err() {
-                return Ok(());
-            }
-            continue;
-        }
-        for ev in batch {
-            cursor = cursor.max(ev.seq);
+        let replay = bus.events_since(cursor);
+        for ev in replay {
             if ev.person_id != person_id {
                 continue;
             }
@@ -191,6 +246,43 @@ pub fn stream_sse(
             if stream.write_all(frame.as_bytes()).is_err() || stream.flush().is_err() {
                 return Ok(());
             }
+        }
+        return Ok(());
+    }
+
+    loop {
+        if crate::server::shutdown_requested() {
+            return Ok(());
+        }
+        let batch = bus.wait_since(cursor, Duration::from_secs(5));
+        if crate::server::shutdown_requested() {
+            return Ok(());
+        }
+        if batch.is_empty() {
+            // Heartbeat detects dead peers promptly so idle threads exit cleanly.
+            if stream.write_all(b": heartbeat\n\n").is_err() || stream.flush().is_err() {
+                return Ok(());
+            }
+            continue;
+        }
+        let mut out = String::new();
+        for ev in batch {
+            cursor = cursor.max(ev.seq);
+            if ev.person_id != person_id {
+                continue;
+            }
+            if let Some(tf) = thread_filter {
+                if !tf.is_empty() && ev.thread_id != tf {
+                    continue;
+                }
+            }
+            out.push_str(&format!(
+                "id: {}\nevent: {}\ndata: {}\n\n",
+                ev.seq, ev.event, ev.data
+            ));
+        }
+        if !out.is_empty() && (stream.write_all(out.as_bytes()).is_err() || stream.flush().is_err()) {
+            return Ok(());
         }
     }
 }

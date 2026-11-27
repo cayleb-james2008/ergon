@@ -12,12 +12,15 @@ import {
   CalendarClock,
   Command as CommandIcon,
   FolderOpen,
+  HelpCircle,
+  LogOut,
   Menu,
   PanelLeft,
   PanelRight,
   Play,
   Plus,
   Search,
+  ShieldCheck,
   SlidersHorizontal,
   Sparkles,
   UserPlus,
@@ -33,6 +36,7 @@ import { usePaper } from "@/views/usePaper";
 import { RailPanelButton } from "@/shell/RailPanelButton";
 import type { InspectorTab } from "@/shell/InspectorDrawer";
 import { PersonSelect, WorkspaceSwitcherPanel } from "@/shell/PersonSelect";
+import { AuthScreen } from "@/shell/AuthScreen";
 import type { Theme } from "@/shell/SettingsPanel";
 import { UpdateStrip, VersionRow, useUpdate } from "@/shell/Update";
 
@@ -47,9 +51,24 @@ const SettingsPanel = lazy(() => import("@/shell/SettingsPanel").then((mod) => (
 const SkillsPanel = lazy(() => import("@/shell/SkillsPanel").then((mod) => ({ default: mod.SkillsPanel })));
 const RoutinesPanel = lazy(() => import("@/shell/RoutinesPanel").then((mod) => ({ default: mod.RoutinesPanel })));
 const ConnectorsPanel = lazy(() => import("@/shell/ConnectorsPanel").then((mod) => ({ default: mod.ConnectorsPanel })));
+const HelpPanel = lazy(() => import("@/shell/HelpPanel").then((mod) => ({ default: mod.HelpPanel })));
+const OnboardingModal = lazy(() => import("@/shell/OnboardingCard").then((mod) => ({ default: mod.OnboardingModal })));
 const CommandPalette = lazy(() => import("@/shell/CommandPalette").then((mod) => ({ default: mod.CommandPalette })));
 import { useErgon } from "@/state";
-import { call, hasClientsApi, hasV050Api, type Routine } from "@/lib/api";
+import {
+  call,
+  downloadDiagnosticBundle,
+  fetchAuthMe,
+  fetchHelpConfig,
+  hasClientsApi,
+  hasV050Api,
+  isWebStandalone,
+  logoutSession,
+  saveHelpConfig,
+  type AuthMePayload,
+  type HelpConfigPayload,
+  type Routine,
+} from "@/lib/api";
 import { exportAuditBundleDownload } from "@/lib/auditBundle";
 import { exportReceiptDownload } from "@/lib/receiptExport";
 import { cn } from "@/lib/utils";
@@ -116,18 +135,23 @@ function Banner({
   );
 }
 
-function NoKeyBanner({ onOpenSettings }: { onOpenSettings: () => void }) {
+function NoKeyBanner({ onOpenSettings, onOpenHelp }: { onOpenSettings: () => void; onOpenHelp: () => void }) {
   return (
     <Banner id="no-key-banner" tone="warn">
       <div className="flex min-w-0 flex-1 flex-wrap items-baseline gap-2">
         <span className="font-medium text-ink">Your agent is not connected to a model yet.</span>
         <span className="text-ink-2">
-          Connect a local or hosted AI model in Settings (or set ERGON_MODEL_API_KEY) to run tasks live.
+          Connect a local or hosted AI model in Settings (or ask your admin to configure ERGON_MODEL_API_KEY) to run tasks live.
         </span>
       </div>
-      <Button size="xs" variant="outline" className="max-md:min-h-11 shrink-0" onClick={onOpenSettings}>
-        Open Settings
-      </Button>
+      <div className="flex shrink-0 items-center gap-1.5">
+        <Button size="xs" variant="ghost" className="max-md:min-h-11 shrink-0" onClick={onOpenHelp}>
+          Open Help
+        </Button>
+        <Button size="xs" variant="outline" className="max-md:min-h-11 shrink-0" onClick={onOpenSettings}>
+          Open Settings
+        </Button>
+      </div>
     </Banner>
   );
 }
@@ -145,9 +169,25 @@ function RecoveredBanner({ files, onDismiss }: { files: string[]; onDismiss: () 
   );
 }
 
-export function App() {
-  const desk = useErgon();
-  const [theme, setTheme] = useTheme();
+function WorkspaceApp({
+  auth,
+  theme,
+  setTheme,
+  onSignOut,
+  onRefreshAuth,
+}: {
+  auth: AuthMePayload | null;
+  theme: Theme;
+  setTheme: (t: Theme) => void;
+  onSignOut: () => Promise<void>;
+  onRefreshAuth: () => Promise<void>;
+}) {
+  const isAdminOrLegacy = !auth?.auth_required || Boolean(auth?.user?.is_admin);
+  const desk = useErgon({
+    authRequired: Boolean(auth?.auth_required),
+    role: auth?.user?.role,
+    isAdmin: Boolean(auth?.user?.is_admin),
+  });
   const u = useUpdate();
   const reduceMotion = useReducedMotion();
   const [face, setFace] = useState<Face>(initialFace);
@@ -167,6 +207,10 @@ export function App() {
 
   const [switcherOpen, setSwitcherOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
+  const [onboardingModalOpen, setOnboardingModalOpen] = useState(false);
+  const [helpConfig, setHelpConfig] = useState<HelpConfigPayload | null>(null);
+  const [onboardingSaving, setOnboardingSaving] = useState(false);
   const [skillsOpen, setSkillsOpen] = useState(false);
   const [routinesOpen, setRoutinesOpen] = useState(false);
   const [connectorsOpen, setConnectorsOpen] = useState(false);
@@ -404,14 +448,48 @@ export function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, [desk, railOpen, isXl, inspectorOpen]);
 
+  const loadHelpConfig = useCallback(async () => {
+    const r = await fetchHelpConfig();
+    if (r.ok) setHelpConfig(r.data);
+  }, []);
+
+  useEffect(() => {
+    void loadHelpConfig();
+  }, [loadHelpConfig]);
+
+  const handleCompleteOnboarding = useCallback(async () => {
+    setOnboardingSaving(true);
+    const r = await saveHelpConfig({ onboarding_completed: true });
+    setOnboardingSaving(false);
+    if (r.ok) {
+      setHelpConfig(r.data);
+      toast.success("Getting started guide saved. You can replay it anytime from Help.");
+    } else {
+      // Optimistically dismiss locally even if offline
+      setHelpConfig((prev) =>
+        prev ? { ...prev, onboarding_completed: true } : prev
+      );
+    }
+  }, []);
+
+  const handleDownloadDiagnostics = useCallback(async () => {
+    const res = await downloadDiagnosticBundle();
+    if (!res.ok) {
+      toast.error(res.error);
+      return;
+    }
+    toast.success(`Downloaded ${res.filename} (secrets automatically removed).`);
+  }, []);
+
   const runAfterPersonChange = useCallback(() => {
     paper.load();
     desk.loadFiles();
     desk.loadRoutines();
     desk.loadClients();
     desk.loadMetering();
+    void loadHelpConfig();
     setGraphSeed((s) => s + 1);
-  }, [desk, paper]);
+  }, [desk, loadHelpConfig, paper]);
 
   const dateLabel = paper.data?.brief.date || new Date().toLocaleDateString("en-US", {
     weekday: "short",
@@ -650,15 +728,17 @@ export function App() {
             setSkillsOpen(true);
           }}
         />
-        <RailPanelButton
-          id="connectors-btn"
-          label="Connectors"
-          icon={<Webhook className="size-3.5 shrink-0 text-icon" strokeWidth={1.5} aria-hidden />}
-          onClick={() => {
-            setMobileOpen(false);
-            setConnectorsOpen(true);
-          }}
-        />
+        {isAdminOrLegacy && (
+          <RailPanelButton
+            id="connectors-btn"
+            label="Connectors"
+            icon={<Webhook className="size-3.5 shrink-0 text-icon" strokeWidth={1.5} aria-hidden />}
+            onClick={() => {
+              setMobileOpen(false);
+              setConnectorsOpen(true);
+            }}
+          />
+        )}
         <RailPanelButton
           id="memory-btn"
           label="What my agent has learned"
@@ -680,13 +760,26 @@ export function App() {
             setSuiteOpen(true);
           }}
         />
+        {isAdminOrLegacy && (
+          <RailPanelButton
+            id="add-person-btn"
+            label="Add a person"
+            icon={<UserPlus className="size-3.5 shrink-0 text-icon" strokeWidth={1.5} aria-hidden />}
+            onClick={() => {
+              setMobileOpen(false);
+              setAddPersonOpen(true);
+            }}
+          />
+        )}
         <RailPanelButton
-          id="add-person-btn"
-          label="Add a person"
-          icon={<UserPlus className="size-3.5 shrink-0 text-icon" strokeWidth={1.5} aria-hidden />}
+          id="help-btn"
+          domId="help-btn"
+          label="Help & support"
+          icon={<HelpCircle className="size-3.5 shrink-0 text-icon" strokeWidth={1.5} aria-hidden />}
+          expanded={helpOpen}
           onClick={() => {
             setMobileOpen(false);
-            setAddPersonOpen(true);
+            setHelpOpen(true);
           }}
         />
         <RailPanelButton
@@ -698,6 +791,17 @@ export function App() {
             setSettingsOpen(true);
           }}
         />
+        {auth?.authenticated && auth.user && (
+          <RailPanelButton
+            id="sign-out-btn"
+            label={`Sign out (@${auth.user.username})`}
+            icon={<LogOut className="size-3.5 shrink-0 text-icon" strokeWidth={1.5} aria-hidden />}
+            onClick={() => {
+              setMobileOpen(false);
+              void onSignOut();
+            }}
+          />
+        )}
         <div className="pt-1">
           <VersionRow u={u} />
         </div>
@@ -747,7 +851,10 @@ export function App() {
       />
 
       {statusObj && !statusObj.model_configured && (
-        <NoKeyBanner onOpenSettings={() => setSettingsOpen(true)} />
+        <NoKeyBanner
+          onOpenSettings={() => setSettingsOpen(true)}
+          onOpenHelp={() => setHelpOpen(true)}
+        />
       )}
       {desk.recovered.length > 0 && (
         <RecoveredBanner files={desk.recovered} onDismiss={() => desk.setRecovered([])} />
@@ -914,6 +1021,10 @@ export function App() {
               streamMode={desk.streamMode}
               liveSteps={desk.liveSteps}
               liveTimeline={desk.liveTimeline}
+              liveRuns={desk.liveRuns}
+              liveStreamError={desk.liveStreamError}
+              onRetrySync={desk.reconcileLiveRuns}
+              cancellingRunIds={desk.cancellingRunIds}
               draft={desk.draft}
               setDraft={desk.setDraft}
               pendingNote={desk.pendingNote}
@@ -930,6 +1041,7 @@ export function App() {
                 requestAnimationFrame(() => inputRef.current?.focus());
               }}
               onCancel={desk.cancelRun}
+              onCancelRun={desk.cancelRun}
               onReview={() => switchFace("paper")}
               onResolveDecision={handleResolveDecision}
               onOpenFile={(p) => setViewerPath(p)}
@@ -941,6 +1053,17 @@ export function App() {
               onResumePipeline={desk.resumePipeline}
               onRetryPipeline={desk.retryPipeline}
               onCancelPipeline={desk.cancelPipeline}
+              recoverableRuns={desk.recoverableRuns}
+              resumingRunId={desk.resumingRunId}
+              modelConfigured={desk.status !== null && desk.status !== "error" ? Boolean(desk.status.model_configured) : false}
+              onResumeInterruptedRun={(id) => void desk.resumeInterruptedRun(id)}
+              onOpenThread={(tid) => void desk.openThread(tid)}
+              showOnboarding={Boolean(helpConfig && !helpConfig.onboarding_completed)}
+              onboardingSaving={onboardingSaving}
+              adminContact={helpConfig?.admin_contact ?? null}
+              onCompleteOnboarding={() => void handleCompleteOnboarding()}
+              onOpenSkills={() => setSkillsOpen(true)}
+              onOpenHelp={() => setHelpOpen(true)}
               inputRef={inputRef}
             />
           )}
@@ -1119,6 +1242,9 @@ export function App() {
         onExportAuditBundle={(fmt) => void handleExportAuditBundle(fmt)}
         onOpenWorkspaceSwitcher={() => setSwitcherOpen(true)}
         onOpenSettings={() => setSettingsOpen(true)}
+        onOpenHelp={() => setHelpOpen(true)}
+        onDownloadDiagnostics={() => void handleDownloadDiagnostics()}
+        onReplayOnboarding={() => setOnboardingModalOpen(true)}
         onOpenFiles={openFilesInspector}
         onOpenHistory={openHistoryInspector}
         onOpenSkills={() => setSkillsOpen(true)}
@@ -1264,6 +1390,9 @@ export function App() {
         onLaunchStarter={desk.launchStarterPlaybook}
         workspaceFiles={desk.files}
         pipelineRuns={desk.pipelineRuns}
+        loading={desk.routinesLoading}
+        loadError={desk.routinesError}
+        createError={desk.routineSaveError}
         onResumePipeline={desk.resumePipeline}
         onRetryPipeline={desk.retryPipeline}
         onCancelPipeline={desk.cancelPipeline}
@@ -1302,6 +1431,9 @@ export function App() {
         theme={theme}
         onTheme={setTheme}
         status={desk.status}
+        auth={auth}
+        onSignOut={onSignOut}
+        onRefreshAuth={onRefreshAuth}
         people={peopleList}
         activePerson={activePersonId}
         onRefreshPeople={desk.loadPeople}
@@ -1316,10 +1448,42 @@ export function App() {
           desk.loadMetering();
           paper.load();
         }}
+        onRestored={() => {
+          desk.loadPeople();
+          desk.loadStatus();
+          runAfterPersonChange();
+        }}
+        onOpenHelp={() => setHelpOpen(true)}
+        onHelpConfigSaved={(cfg) => setHelpConfig(cfg)}
         u={u}
         open={settingsOpen}
         onOpenChange={setSettingsOpen}
         hideTrigger
+      />
+      )}
+
+      {helpOpen && (
+      <HelpPanel
+        open={helpOpen}
+        onOpenChange={setHelpOpen}
+        helpConfig={helpConfig}
+        onRefreshHelpConfig={loadHelpConfig}
+        onOpenSettings={() => setSettingsOpen(true)}
+        onReplayOnboarding={() => setOnboardingModalOpen(true)}
+        onOpenToday={() => switchFace("paper")}
+      />
+      )}
+
+      {onboardingModalOpen && (
+      <OnboardingModal
+        open={onboardingModalOpen}
+        onOpenChange={setOnboardingModalOpen}
+        adminContact={helpConfig?.admin_contact ?? null}
+        saving={onboardingSaving}
+        onComplete={() => void handleCompleteOnboarding()}
+        onOpenFiles={openFilesInspector}
+        onOpenSkills={() => setSkillsOpen(true)}
+        onOpenHelp={() => setHelpOpen(true)}
       />
       )}
 
@@ -1351,6 +1515,73 @@ export function App() {
     </div>
     </MotionConfig>
     </LazyMotion>
+  );
+}
+
+export function App() {
+  const [theme, setTheme] = useTheme();
+  const [auth, setAuth] = useState<AuthMePayload | null>(null);
+  const [authLoading, setAuthLoading] = useState(!isWebStandalone());
+
+  const refreshAuth = useCallback(async () => {
+    if (isWebStandalone()) {
+      setAuth(null);
+      setAuthLoading(false);
+      return;
+    }
+    const r = await fetchAuthMe();
+    if (r.ok && r.data && typeof r.data.auth_required === "boolean") {
+      setAuth(r.data);
+    } else {
+      // Fallback for older backends without /api/auth/me
+      setAuth({
+        authenticated: false,
+        auth_required: false,
+        needs_setup: false,
+        oidc_enabled: false,
+        tls: window.location.protocol === "https:",
+        user: null,
+      });
+    }
+    setAuthLoading(false);
+  }, []);
+
+  useEffect(() => {
+    void refreshAuth();
+  }, [refreshAuth]);
+
+  const handleSignOut = useCallback(async () => {
+    await logoutSession();
+    try {
+      sessionStorage.removeItem("ergon-thread");
+    } catch { /* ignore */ }
+    await refreshAuth();
+  }, [refreshAuth]);
+
+  if (authLoading) {
+    return (
+      <div className="flex min-h-dvh items-center justify-center bg-canvas text-ink">
+        <div className="flex items-center gap-2 text-sm text-ink-2">
+          <ShieldCheck className="size-4 text-icon" strokeWidth={1.5} aria-hidden />
+          <span>Checking session…</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (auth?.auth_required && !auth.authenticated) {
+    return <AuthScreen auth={auth} onAuthenticated={refreshAuth} />;
+  }
+
+  return (
+    <WorkspaceApp
+      key={auth?.user?.id ?? "local"}
+      auth={auth}
+      theme={theme}
+      setTheme={setTheme}
+      onSignOut={handleSignOut}
+      onRefreshAuth={refreshAuth}
+    />
   );
 }
 export default App;

@@ -50,6 +50,14 @@ impl Mode {
             _ => Mode::Notify,
         }
     }
+    pub fn parse_strict(s: &str) -> Option<Mode> {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "off" => Some(Mode::Off),
+            "notify" => Some(Mode::Notify),
+            "auto" => Some(Mode::Auto),
+            _ => None,
+        }
+    }
     pub fn label(self) -> &'static str {
         match self {
             Mode::Off => "off",
@@ -91,8 +99,9 @@ pub struct Release {
     pub digest: Option<String>,
 }
 
-#[derive(Default, Debug)]
+#[derive(Debug)]
 struct State {
+    mode: Mode,
     checked_at: Option<u64>,
     latest: Option<Release>,
     error: Option<String>,
@@ -102,6 +111,7 @@ struct State {
 
 pub struct Updater {
     pub cfg: Config,
+    mode_path: Option<PathBuf>,
     state: Mutex<State>,
     /// Held for a whole apply (download, prove, swap): two callers never race on the staging file.
     apply_lock: Mutex<()>,
@@ -299,32 +309,100 @@ fn short_url(url: &str) -> String {
 
 // --------------------------------------------------------------- updater
 
+fn load_persisted_mode(path: &Path) -> Option<Mode> {
+    let raw = std::fs::read_to_string(path).ok()?;
+    let v: Value = serde_json::from_str(&raw).ok()?;
+    v.get("mode").and_then(Value::as_str).and_then(Mode::parse_strict)
+}
+
 impl Updater {
     /// Builds the updater from the environment. `prefix` is the app's name in
     /// capitals; `may_apply` is false when the process is shared (gated).
     pub fn from_env(prefix: &str, bin: &'static str, current: &'static str, default_repo: &str, may_apply: bool) -> Arc<Updater> {
+        Self::from_env_in_dir(prefix, bin, current, default_repo, may_apply, None)
+    }
+
+    /// Builds the updater from the environment with optional persistence under `data_dir`.
+    pub fn from_env_in_dir(
+        prefix: &str,
+        bin: &'static str,
+        current: &'static str,
+        default_repo: &str,
+        may_apply: bool,
+        data_dir: Option<&Path>,
+    ) -> Arc<Updater> {
         let var = |k: &str| std::env::var(format!("{prefix}_UPDATE_{k}")).ok().map(|v| v.trim().to_string()).filter(|v| !v.is_empty());
+        let mode_path = data_dir.map(|d| d.join("update_config.json"));
+        let persisted = mode_path.as_deref().and_then(load_persisted_mode);
+        let mode = var("MODE")
+            .map(|m| Mode::parse(&m))
+            .or(persisted)
+            .unwrap_or(Mode::Notify);
         let cfg = Config {
             bin,
             current,
             repo: var("REPO").unwrap_or_else(|| default_repo.to_string()),
             api: var("API").unwrap_or_else(|| "https://api.github.com".to_string()).trim_end_matches('/').to_string(),
-            mode: var("MODE").map(|m| Mode::parse(&m)).unwrap_or(Mode::Notify),
+            mode,
             exe: std::env::current_exe().unwrap_or_else(|_| PathBuf::from(bin)),
             allow_dev: var("DEV").as_deref() == Some("1"),
             may_apply,
         };
-        Arc::new(Updater::new(cfg))
+        let mut up = Updater::new(cfg);
+        up.mode_path = mode_path;
+        Arc::new(up)
     }
 
     pub fn new(cfg: Config) -> Updater {
         cleanup_leftovers(&cfg.exe);
-        Updater { cfg, state: Mutex::new(State::default()), apply_lock: Mutex::new(()) }
+        let initial_mode = cfg.mode;
+        Updater {
+            cfg,
+            mode_path: None,
+            state: Mutex::new(State {
+                mode: initial_mode,
+                checked_at: None,
+                latest: None,
+                error: None,
+                applied: None,
+            }),
+            apply_lock: Mutex::new(()),
+        }
+    }
+
+    pub fn with_mode_path(mut self, path: PathBuf) -> Self {
+        if let Some(m) = load_persisted_mode(&path) {
+            self.state.lock().unwrap().mode = m;
+        }
+        self.mode_path = Some(path);
+        self
+    }
+
+    pub fn mode(&self) -> Mode {
+        self.state.lock().unwrap().mode
+    }
+
+    /// Updates the live update policy (`off`, `notify`, `auto`) and persists it if configured.
+    pub fn set_mode(&self, mode: Mode) -> Result<Value, String> {
+        {
+            let mut s = self.state.lock().unwrap();
+            s.mode = mode;
+        }
+        if let Some(path) = &self.mode_path {
+            if let Some(parent) = path.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            let payload = serde_json::to_vec_pretty(&json!({ "mode": mode.label() }))
+                .map_err(|e| format!("failed to serialize update config: {e}"))?;
+            crate::tools::atomic_write_bytes_with_mode(path, &payload, Some(0o600))
+                .map_err(|e| format!("failed to save update config: {e}"))?;
+        }
+        Ok(self.snapshot())
     }
 
     /// Fetches the newest release and records whether it is newer.
     pub fn check_now(&self) -> Value {
-        if self.cfg.mode == Mode::Off {
+        if self.mode() == Mode::Off {
             return self.snapshot();
         }
         let result = self.fetch_latest();
@@ -348,14 +426,14 @@ impl Updater {
         parse_release(&v, self.cfg.bin)
     }
 
-    /// What the page shows.
+    /// What the page shows (default single-machine visibility).
     pub fn snapshot(&self) -> Value {
         let s = self.state.lock().unwrap();
         let available = s.latest.as_ref().map(|r| is_newer(&r.version, self.cfg.current)).unwrap_or(false);
         json!({
             "name": self.cfg.bin,
             "current": self.cfg.current,
-            "mode": self.cfg.mode.label(),
+            "mode": s.mode.label(),
             "repo": self.cfg.repo,
             "platform": target(),
             "checked_at": s.checked_at,
@@ -365,8 +443,35 @@ impl Updater {
             "release_url": s.latest.as_ref().filter(|_| available).map(|r| r.url.clone()),
             "error": s.error,
             "staged": s.applied,
-            "can_apply": self.cfg.may_apply && self.cfg.mode != Mode::Off && available && s.applied.is_none() && !self.is_dev_build(),
+            "can_apply": self.cfg.may_apply && s.mode != Mode::Off && available && s.applied.is_none() && !self.is_dev_build(),
             "dev_build": self.is_dev_build(),
+        })
+    }
+
+    /// Caller-scoped snapshot including admin & gate metadata so authenticated admins
+    /// behind a hosting gate can manage updates while non-admins see read-only status.
+    pub fn snapshot_for_caller(&self, is_admin: bool, gated: bool) -> Value {
+        let s = self.state.lock().unwrap();
+        let available = s.latest.as_ref().map(|r| is_newer(&r.version, self.cfg.current)).unwrap_or(false);
+        let dev_build = self.is_dev_build();
+        json!({
+            "name": self.cfg.bin,
+            "current": self.cfg.current,
+            "mode": s.mode.label(),
+            "repo": self.cfg.repo,
+            "platform": target(),
+            "checked_at": s.checked_at,
+            "available": available,
+            "latest": s.latest.as_ref().map(|r| r.version.clone()),
+            "notes": s.latest.as_ref().filter(|_| available).map(|r| r.notes.clone()),
+            "release_url": s.latest.as_ref().filter(|_| available).map(|r| r.url.clone()),
+            "error": s.error,
+            "staged": s.applied,
+            "is_admin": is_admin,
+            "can_manage": is_admin,
+            "gated": gated,
+            "can_apply": is_admin && s.mode != Mode::Off && available && s.applied.is_none() && !dev_build,
+            "dev_build": dev_build,
         })
     }
 
@@ -377,10 +482,20 @@ impl Updater {
     /// Downloads, verifies and installs the newest release. Returns the new
     /// version; the running process keeps running the old build until restart.
     pub fn apply(&self) -> Result<String, String> {
-        if !self.cfg.may_apply {
+        self.apply_inner(self.cfg.may_apply)
+    }
+
+    /// Downloads, verifies and installs the newest release on behalf of an
+    /// already-authenticated administrator (including behind a hosting gate).
+    pub fn apply_authorized(&self) -> Result<String, String> {
+        self.apply_inner(true)
+    }
+
+    fn apply_inner(&self, authorized_admin: bool) -> Result<String, String> {
+        if !authorized_admin {
             return Err("this installation is shared, so only its operator can update it".to_string());
         }
-        if self.cfg.mode == Mode::Off {
+        if self.mode() == Mode::Off {
             return Err("updates are turned off".to_string());
         }
         let _one_at_a_time = self.apply_lock.lock().unwrap_or_else(|e| e.into_inner());
@@ -408,7 +523,16 @@ impl Updater {
 
     /// Starts the new build in place of this process. Does not return on success.
     pub fn restart(&self) -> Result<(), String> {
-        if !self.cfg.may_apply {
+        self.restart_inner(self.cfg.may_apply)
+    }
+
+    /// Starts the new build in place of this process on behalf of an authenticated admin.
+    pub fn restart_authorized(&self) -> Result<(), String> {
+        self.restart_inner(true)
+    }
+
+    fn restart_inner(&self, authorized_admin: bool) -> Result<(), String> {
+        if !authorized_admin {
             return Err("this installation is shared, so only its operator can restart it".to_string());
         }
         if self.state.lock().unwrap().applied.is_none() {
@@ -421,17 +545,17 @@ impl Updater {
     /// Checks soon after start and then every few hours. In `auto` mode a
     /// newer release is also installed (a restart is still the user's call).
     pub fn start_background(self: &Arc<Self>) {
-        if self.cfg.mode == Mode::Off {
-            return;
-        }
         let me = self.clone();
         std::thread::spawn(move || {
             std::thread::sleep(FIRST_CHECK_AFTER);
             loop {
-                let snap = me.check_now();
-                if me.cfg.mode == Mode::Auto && snap["available"] == json!(true) {
-                    if let Err(e) = me.apply() {
-                        me.state.lock().unwrap().error = Some(e);
+                let mode = me.mode();
+                if mode != Mode::Off {
+                    let snap = me.check_now();
+                    if mode == Mode::Auto && snap["available"] == json!(true) {
+                        if let Err(e) = me.apply() {
+                            me.state.lock().unwrap().error = Some(e);
+                        }
                     }
                 }
                 std::thread::sleep(CHECK_EVERY);

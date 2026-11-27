@@ -14,7 +14,9 @@ import {
   FileDown,
   FolderOpen,
   GitBranch,
+  HelpCircle,
   History,
+  LifeBuoy,
   MessageSquarePlus,
   Newspaper,
   Play,
@@ -116,6 +118,9 @@ export const CommandPalette = memo(function CommandPalette({
   onExportAuditBundle,
   onOpenWorkspaceSwitcher,
   onOpenSettings,
+  onOpenHelp,
+  onDownloadDiagnostics,
+  onReplayOnboarding,
   onOpenFiles,
   onOpenHistory,
   onOpenSkills,
@@ -146,6 +151,9 @@ export const CommandPalette = memo(function CommandPalette({
   onExportAuditBundle?: (format: "json" | "md") => void;
   onOpenWorkspaceSwitcher?: () => void;
   onOpenSettings: () => void;
+  onOpenHelp?: () => void;
+  onDownloadDiagnostics?: () => void;
+  onReplayOnboarding?: () => void;
   onOpenFiles: () => void;
   onOpenHistory?: () => void;
   onOpenSkills: () => void;
@@ -515,6 +523,15 @@ export const CommandPalette = memo(function CommandPalette({
         ? [{ id: "action-switch-workspace", keywords: "switch workspace person employee desk team", label: "Switch employee workspace", badge: "Desk", icon: Users, run: onOpenWorkspaceSwitcher }]
         : []),
       { id: "action-open-settings", keywords: "open settings appearance theme model", label: "Open Settings (Model & Appearance)", badge: "Panel", icon: SlidersHorizontal, run: onOpenSettings },
+      ...(onOpenHelp
+        ? [{ id: "action-open-help", keywords: "help support troubleshooting admin contact faq", label: "Open Help & IT Support", badge: "Help", icon: HelpCircle, run: onOpenHelp }]
+        : []),
+      ...(onDownloadDiagnostics
+        ? [{ id: "action-download-diagnostics", keywords: "download diagnostics bundle logs crash zip it support", label: "Download IT Diagnostic Bundle (.zip)", badge: ".zip", icon: LifeBuoy, run: onDownloadDiagnostics }]
+        : []),
+      ...(onReplayOnboarding
+        ? [{ id: "action-replay-onboarding", keywords: "onboarding tour guide getting started welcome", label: "Replay 3-step getting started guide", badge: "Tour", icon: Sparkles, run: onReplayOnboarding }]
+        : []),
       { id: "action-open-skills", keywords: "browse workflows skills catalog 12", label: `Browse all ${skills.length} built-in workflows`, badge: String(skills.length), icon: Sparkles, run: onOpenSkills },
       { id: "action-open-routines", keywords: "routines recurring schedule cron automate", label: "Manage recurring routines", badge: String(routines.length), icon: CalendarClock, run: onOpenRoutines },
       ...(onOpenConnectors
@@ -529,7 +546,7 @@ export const CommandPalette = memo(function CommandPalette({
     ];
     if (!qLower) return all;
     return all.filter((a) => a.keywords.toLowerCase().includes(qLower) || a.label.toLowerCase().includes(qLower));
-  }, [qLower, recommended, onRunPrompt, onNewTask, onUploadFile, onExportLatestReceipt, onExportAuditBundle, onOpenWorkspaceSwitcher, onOpenSettings, skills.length, onOpenSkills, routines.length, onOpenRoutines, onOpenFiles, onOpenHistory, onSwitchFace]);
+  }, [qLower, recommended, onRunPrompt, onNewTask, onUploadFile, onExportLatestReceipt, onExportAuditBundle, onOpenWorkspaceSwitcher, onOpenSettings, onOpenHelp, onDownloadDiagnostics, onReplayOnboarding, skills.length, onOpenSkills, routines.length, onOpenRoutines, onOpenFiles, onOpenHistory, onSwitchFace]);
 
   const uniqueRemoteHits = useMemo(() => {
     const filePaths = new Set(matchedFiles.map((f) => f.path));

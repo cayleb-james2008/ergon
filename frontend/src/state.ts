@@ -6,11 +6,14 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   call,
+  cancelLiveRun,
   cancelPipelineRun,
   createClient,
   createEngagement,
   createTimeEntry,
   deleteTimeEntry,
+  deleteMcpServer,
+  discoverMcpServer,
   estimateNextRunMs,
   fetchClients,
   fetchEngagementContext,
@@ -22,14 +25,17 @@ import {
   getPipelineRun,
   hasClientCrmInvoicingApi,
   hasClientsApi,
+  hasMcpApi,
   hasMeteringApi,
   hasPipelinesApi,
   MAX_UPLOAD_BYTES,
   hasV050Api,
   hasV070Api,
+  listMcpServers,
   listPipelineRuns,
   resumePipelineRun,
   retryPipelineRun,
+  saveMcpServer,
   startPipelineRun,
   switchEngagement,
   updateClient,
@@ -39,23 +45,35 @@ import {
   type ClientContact,
   type Engagement,
   type EngagementContext,
+  type ImapConfig,
+  type ImapSecurity,
   type InvoiceRecord,
   type InvoiceStatus,
+  type LiveRun,
   type LiveRunStatus,
   type LiveRunStep,
+  type McpServerSpec,
+  type McpToolSpec,
+  type McpTransport,
   type MemoryHealth,
   type MeteringSummary,
   type Msg,
+  type OAuthConfig,
+  type OutboundConnector,
+  type OutboundConnectorKind,
   type Person,
   type PipelineResumePayload,
   type PipelineRun,
   type PipelineStepSpec,
+  type RecoverableRun,
   type PlaybookPreviewResult,
   type RolloverMode,
   type Routine,
   type RoutineRunRecord,
   type RunUsage,
   type SchedulerStatus,
+  type SmtpConfig,
+  type SmtpSecurity,
   type StarterLaunchResult,
   type StarterPlaybook,
   type Status,
@@ -64,10 +82,25 @@ import {
   type ThreadRow,
   type TimeExpenseEntry,
   type TimeExpenseKind,
+  type TriggerRule,
   type WorkspaceFile,
   type WorkspacePolicy,
   type WorkspacePolicyProfile,
 } from "@/lib/api";
+
+export type {
+  ImapConfig,
+  ImapSecurity,
+  McpServerSpec,
+  McpToolSpec,
+  McpTransport,
+  OAuthConfig,
+  OutboundConnector,
+  OutboundConnectorKind,
+  SmtpConfig,
+  SmtpSecurity,
+  TriggerRule,
+};
 import {
   CANONICAL_SKILLS,
   CANONICAL_STARTER_PLAYBOOKS,
@@ -116,6 +149,29 @@ function countLearnedLines(md: string): number {
       const t = l.trim();
       return t.startsWith("- ") && !t.startsWith("- Name:") && !t.startsWith("- Role:");
     }).length;
+}
+
+function normalizeLiveRunItem(raw: unknown, fallbackStarted = Date.now()): LiveRun | null {
+  if (!raw || typeof raw !== "object") return null;
+  const o = raw as Record<string, unknown>;
+  const runId = String(o.run_id ?? o.id ?? "").trim();
+  const threadId = String(o.thread_id ?? "").trim();
+  if (!runId && !threadId) return null;
+  const startedMs = typeof o.started_ms === "number" && o.started_ms > 0 ? o.started_ms : fallbackStarted;
+  const rawSteps = Array.isArray(o.steps) ? (o.steps as (string | LiveRunStep)[]) : [];
+  return {
+    active: o.active !== false && !o.cancelled,
+    run_id: runId || threadId,
+    thread_id: threadId,
+    task: String(o.task ?? o.routine_name ?? "Active run"),
+    started_ms: startedMs,
+    elapsed_ms: typeof o.elapsed_ms === "number" ? o.elapsed_ms : Math.max(0, Date.now() - startedMs),
+    steps: rawSteps.map((s, idx) => normalizeStepItem(s, idx, startedMs)),
+    cancelled: Boolean(o.cancelled),
+    kind: typeof o.kind === "string" ? o.kind : undefined,
+    routine_id: typeof o.routine_id === "string" ? o.routine_id : null,
+    routine_name: typeof o.routine_name === "string" ? o.routine_name : null,
+  };
 }
 
 function normalizeStepItem(raw: string | LiveRunStep, idx: number, runStarted: number): LiveRunStep {
@@ -194,6 +250,11 @@ function normalizeRoutine(raw: unknown): Routine | null {
   const schedule = String(o.schedule ?? o.cadence ?? "daily 09:00").trim();
   const enabled = typeof o.enabled === "boolean" ? o.enabled : true;
   const intervalSecs = typeof o.interval_secs === "number" ? o.interval_secs : null;
+  const tz = typeof o.tz === "string" && o.tz.trim() ? o.tz.trim() : undefined;
+  const tzOffsetMins =
+    typeof o.tz_offset_mins === "number" && Number.isFinite(o.tz_offset_mins)
+      ? o.tz_offset_mins
+      : null;
   const lastRunTs =
     typeof o.last_run_ms === "number"
       ? o.last_run_ms
@@ -206,7 +267,7 @@ function normalizeRoutine(raw: unknown): Routine | null {
       : typeof o.next_due_ms === "number"
         ? o.next_due_ms
         : enabled
-          ? estimateNextRunMs(schedule, lastRunTs || Date.now(), intervalSecs)
+          ? estimateNextRunMs(schedule, lastRunTs || Date.now(), intervalSecs, tzOffsetMins, tz)
           : null;
   const rawRuns = Array.isArray(o.recent_runs)
     ? o.recent_runs
@@ -226,6 +287,8 @@ function normalizeRoutine(raw: unknown): Routine | null {
     schedule,
     cadence: typeof o.cadence === "string" ? o.cadence : schedule,
     interval_secs: intervalSecs,
+    tz,
+    tz_offset_mins: tzOffsetMins,
     skill_id: typeof o.skill_id === "string" && o.skill_id ? o.skill_id : undefined,
     enabled,
     last_run_ts: lastRunTs,
@@ -267,7 +330,14 @@ function parseRunUsage(raw: unknown): RunUsage | null {
   };
 }
 
-export function useErgon() {
+export function useErgon(opts?: { authRequired?: boolean; role?: string; isAdmin?: boolean }) {
+  const canAdmin = !opts?.authRequired || Boolean(opts?.isAdmin);
+  const canViewInvoices =
+    !opts?.authRequired ||
+    Boolean(opts?.isAdmin) ||
+    opts?.role === "pm" ||
+    opts?.role === "ae" ||
+    opts?.role === "office";
   const [status, setStatus] = useState<Status | null | "error">(null);
   const statusRef = useRef<Status | null | "error">(null);
   const [runFailed, setRunFailed] = useState(false);
@@ -286,8 +356,14 @@ export function useErgon() {
   const [liveElapsedMs, setLiveElapsedMs] = useState<number>(0);
   const [streamMode, setStreamMode] = useState<"sse" | "poll">("poll");
   const [cancelling, setCancelling] = useState(false);
+  const [cancellingRunIds, setCancellingRunIds] = useState<Record<string, boolean>>({});
+  const [liveRuns, setLiveRuns] = useState<LiveRun[]>([]);
+  const liveRunsRef = useRef<LiveRun[]>([]);
+  const [liveStreamError, setLiveStreamError] = useState("");
   const [liveSteps, setLiveSteps] = useState<string[]>([]);
   const [liveTimeline, setLiveTimeline] = useState<LiveRunStep[]>([]);
+  const [recoverableRuns, setRecoverableRuns] = useState<RecoverableRun[]>([]);
+  const [resumingRunId, setResumingRunId] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const [draft, setDraftState] = useState("");
   const [pendingNote, setPendingNote] = useState(false);
@@ -305,7 +381,11 @@ export function useErgon() {
   const [skills, setSkills] = useState<SkillMeta[]>(() => CANONICAL_SKILLS);
   const [starterPlaybooks, setStarterPlaybooks] = useState<StarterPlaybook[]>(() => CANONICAL_STARTER_PLAYBOOKS);
   const [routines, setRoutines] = useState<Routine[]>(() => loadLocalRoutines());
+  const [routinesLoading, setRoutinesLoading] = useState(false);
+  const [routinesError, setRoutinesError] = useState("");
+  const [routineSaveError, setRoutineSaveError] = useState("");
   const [pipelineRuns, setPipelineRuns] = useState<PipelineRun[]>([]);
+  const pipelineRunsRef = useRef<PipelineRun[]>([]);
   const [scheduler, setScheduler] = useState<SchedulerStatus | null>(null);
   const [routineHistoryRev, setRoutineHistoryRev] = useState(0);
   const [clients, setClients] = useState<Client[]>([]);
@@ -318,6 +398,7 @@ export function useErgon() {
   const [engagementScopeOnly, setEngagementScopeOnly] = useState(false);
   const [metering, setMetering] = useState<MeteringSummary | null>(null);
   const [liveRunUsage, setLiveRunUsage] = useState<RunUsage | null>(null);
+  const [mcpServers, setMcpServers] = useState<McpServerSpec[]>([]);
   const onRoutineFiredRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
@@ -327,6 +408,14 @@ export function useErgon() {
   useEffect(() => {
     filesRef.current = files;
   }, [files]);
+
+  useEffect(() => {
+    liveRunsRef.current = liveRuns;
+  }, [liveRuns]);
+
+  useEffect(() => {
+    pipelineRunsRef.current = pipelineRuns;
+  }, [pipelineRuns]);
 
   const setThread = (id: string | null) => { threadRef.current = id; setThreadIdState(id); };
   const draftKey = (id: string | null) => DRAFT + (id || "new");
@@ -383,6 +472,65 @@ export function useErgon() {
     }
   }, []);
 
+  const loadMcpServers = useCallback(async () => {
+    if (!canAdmin || !hasMcpApi(statusRef.current)) {
+      setMcpServers([]);
+      return;
+    }
+    const r = await listMcpServers();
+    if (r.ok) {
+      setMcpServers(r.data.servers);
+    }
+  }, [canAdmin]);
+
+  const saveMcpServerConfig = useCallback(
+    async (body: {
+      id?: string;
+      name: string;
+      transport: McpTransport;
+      command_or_url: string;
+      args: string[];
+      env_secret_keys: string[];
+      require_approval_by_default: boolean;
+      enabled: boolean;
+    }): Promise<McpServerSpec | null> => {
+      const r = await saveMcpServer(body);
+      if (!r.ok) {
+        toast.error(r.error || "Could not save MCP server.");
+        return null;
+      }
+      await loadMcpServers();
+      return r.data.server ?? null;
+    },
+    [loadMcpServers]
+  );
+
+  const discoverMcpServerTools = useCallback(
+    async (id: string): Promise<McpToolSpec[] | null> => {
+      const r = await discoverMcpServer(id);
+      if (!r.ok) {
+        toast.error(r.error || "Could not discover MCP server tools.");
+        return null;
+      }
+      await loadMcpServers();
+      return r.data.server?.cached_tools ?? r.data.tools ?? r.data.cached_tools ?? [];
+    },
+    [loadMcpServers]
+  );
+
+  const removeMcpServer = useCallback(
+    async (id: string): Promise<boolean> => {
+      const r = await deleteMcpServer(id);
+      if (!r.ok) {
+        toast.error(r.error || "Could not delete MCP server.");
+        return false;
+      }
+      setMcpServers((prev) => prev.filter((s) => s.id !== id));
+      return true;
+    },
+    []
+  );
+
   const loadWorkspacePolicy = useCallback(async () => {
     const r = await call<WorkspacePolicy>("/api/workspace/policy");
     if (r.ok && r.data && typeof r.data.profile === "string") {
@@ -432,7 +580,7 @@ export function useErgon() {
   }, []);
 
   const loadInvoices = useCallback(async (opts: { engagement_id?: string; client_id?: string; force?: boolean } = {}) => {
-    if (!opts.force && !hasClientCrmInvoicingApi(statusRef.current)) {
+    if (!canViewInvoices || (!opts.force && !hasClientCrmInvoicingApi(statusRef.current))) {
       setInvoices([]);
       return;
     }
@@ -440,7 +588,7 @@ export function useErgon() {
     if (r.ok) {
       setInvoices(r.data.invoices);
     }
-  }, []);
+  }, [canViewInvoices]);
 
   const createNewClient = useCallback(
     async (input: {
@@ -656,19 +804,36 @@ export function useErgon() {
 
   const loadRoutines = useCallback(async () => {
     if (!hasV050Api(statusRef.current, "routines")) {
+      setRoutinesError("");
       setRoutines(loadLocalRoutines());
       return;
     }
-    const r = await call<{ routines?: unknown[]; scheduler?: SchedulerStatus }>("/api/routines");
-    if (r.ok && Array.isArray(r.data.routines)) {
-      const clean = r.data.routines.map(normalizeRoutine).filter((x): x is Routine => x !== null);
-      setRoutines(clean);
-      if (r.data.scheduler && typeof r.data.scheduler === "object") {
-        setScheduler(r.data.scheduler);
+    setRoutinesLoading(true);
+    try {
+      const r = await call<{ routines?: unknown[]; scheduler?: SchedulerStatus }>("/api/routines");
+      if (!r.ok) {
+        if (r.status === 404 || r.status === 405) {
+          setRoutinesError("");
+          setRoutines(loadLocalRoutines());
+          return;
+        }
+        setRoutinesError(r.error || "Could not load recurring routines.");
+        return;
       }
-      return;
+      if (Array.isArray(r.data.routines)) {
+        const clean = r.data.routines.map(normalizeRoutine).filter((x): x is Routine => x !== null);
+        setRoutines(clean);
+        setRoutinesError("");
+        if (r.data.scheduler && typeof r.data.scheduler === "object") {
+          setScheduler(r.data.scheduler);
+        }
+        return;
+      }
+      setRoutinesError("");
+      setRoutines(loadLocalRoutines());
+    } finally {
+      setRoutinesLoading(false);
     }
-    setRoutines(loadLocalRoutines());
   }, []);
 
   const toggleRoutine = useCallback(
@@ -727,6 +892,9 @@ export function useErgon() {
           .filter((x): x is RoutineRunRecord => x !== null)
           .sort((a, b) => b.started_ms - a.started_ms);
       }
+      if (r.status !== 404 && r.status !== 405) {
+        throw new Error(r.error || "Could not load routine execution history.");
+      }
     }
     const local = loadLocalRoutines().find((x) => x.id === id);
     return local?.recent_runs ?? [];
@@ -737,12 +905,15 @@ export function useErgon() {
       name: string;
       schedule: string;
       prompt: string;
+      tz?: string;
+      tz_offset_mins?: number | null;
       skill_id?: string;
       steps?: string[];
       steps_v2?: PipelineStepSpec[];
       expected_inputs?: string[];
       pack_deliverables?: boolean;
     }): Promise<boolean> => {
+      setRoutineSaveError("");
       if (hasV050Api(statusRef.current, "routines")) {
         const r = await call<{ routine?: unknown } & Record<string, unknown>>("/api/routines", {
           method: "POST",
@@ -751,6 +922,8 @@ export function useErgon() {
             title: input.name,
             schedule: input.schedule,
             cadence: input.schedule,
+            ...(input.tz ? { tz: input.tz } : {}),
+            ...(typeof input.tz_offset_mins === "number" ? { tz_offset_mins: input.tz_offset_mins } : {}),
             prompt: input.prompt,
             skill_id: input.skill_id,
             steps: input.steps,
@@ -761,12 +934,15 @@ export function useErgon() {
           },
         });
         if (r.ok) {
+          setRoutineSaveError("");
           toast.success(`Saved routine "${input.name}".`);
           await loadRoutines();
           return true;
         }
         if (r.status !== 404 && r.status !== 405) {
-          toast.error(r.error || "Could not create routine.");
+          const msg = r.error || "Could not create routine.";
+          setRoutineSaveError(msg);
+          toast.error(msg);
           return false;
         }
       }
@@ -774,12 +950,15 @@ export function useErgon() {
         id: `rt-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
         name: input.name,
         schedule: input.schedule,
+        tz: input.tz,
+        tz_offset_mins: input.tz_offset_mins ?? null,
         prompt: input.prompt,
         skill_id: input.skill_id,
         steps: input.steps,
         steps_v2: input.steps_v2,
         enabled: true,
         last_run_ts: null,
+        next_run_ms: estimateNextRunMs(input.schedule, Date.now(), null, input.tz_offset_mins, input.tz),
         run_count: 0,
         created_ts: Date.now(),
       };
@@ -1081,8 +1260,9 @@ export function useErgon() {
       try {
         const r = await resumePipelineRun(runId, payload);
         if (!r.ok) {
-          toast.error(r.error || "Could not resume pipeline.");
-          return;
+          const msg = r.error || "Could not resume pipeline.";
+          toast.error(msg);
+          throw new Error(msg);
         }
         if (r.data.run) {
           upsertPipelineRun(r.data.run);
@@ -1104,8 +1284,9 @@ export function useErgon() {
       try {
         const r = await retryPipelineRun(runId, { from_step_index: fromStepIndex });
         if (!r.ok) {
-          toast.error(r.error || "Could not retry failed step.");
-          return;
+          const msg = r.error || "Could not retry failed step.";
+          toast.error(msg);
+          throw new Error(msg);
         }
         if (r.data.run) {
           upsertPipelineRun(r.data.run);
@@ -1127,8 +1308,9 @@ export function useErgon() {
       try {
         const r = await cancelPipelineRun(runId);
         if (!r.ok) {
-          toast.error(r.error || "Could not abort pipeline.");
-          return;
+          const msg = r.error || "Could not abort pipeline.";
+          toast.error(msg);
+          throw new Error(msg);
         }
         if (r.data.run) {
           upsertPipelineRun(r.data.run);
@@ -1374,6 +1556,7 @@ export function useErgon() {
   );
 
   // Live SSE (/api/runs/stream) subscription with automatic fallback to /api/runs/status polling + live elapsed timer.
+  const sseReady = hasV050Api(status, "sse");
   useEffect(() => {
     if (!busy) {
       setLiveSteps([]);
@@ -1383,6 +1566,7 @@ export function useErgon() {
       activeRunIdRef.current = null;
       setLiveRunUsage(null);
       setCancelling(false);
+      setLiveStreamError("");
       return;
     }
 
@@ -1390,9 +1574,39 @@ export function useErgon() {
     let cancelled = false;
     let pollTimer: number | null = null;
     let es: EventSource | null = null;
+    let consecutivePollErrors = 0;
 
     const applyStatusPayload = (payload: Partial<LiveRunStatus>) => {
       if (cancelled) return;
+      if (Array.isArray(payload.runs)) {
+        const normalizedRuns = payload.runs
+          .map((item) => normalizeLiveRunItem(item, started))
+          .filter((x): x is LiveRun => x !== null && x.active && !x.cancelled);
+        setLiveRuns(normalizedRuns);
+        const primary =
+          normalizedRuns.find(
+            (r) =>
+              (activeRunIdRef.current && r.run_id === activeRunIdRef.current) ||
+              (threadRef.current && r.thread_id === threadRef.current)
+          ) || normalizedRuns[0];
+        if (primary) {
+          activeRunIdRef.current = primary.run_id;
+          setActiveRunId(primary.run_id);
+          if (typeof primary.elapsed_ms === "number") setLiveElapsedMs(primary.elapsed_ms);
+          const stepsArr = primary.steps as LiveRunStep[];
+          setLiveTimeline(stepsArr);
+          setLiveSteps(stepsArr.map((s) => s.raw));
+          return;
+        }
+      } else if (payload.active) {
+        const single = normalizeLiveRunItem(payload, started);
+        if (single) {
+          setLiveRuns((prev) => {
+            const idx = prev.findIndex((r) => r.run_id === single.run_id);
+            return idx >= 0 ? prev.map((r, i) => (i === idx ? single : r)) : [single, ...prev];
+          });
+        }
+      }
       if (typeof payload.run_id === "string" && payload.run_id) {
         activeRunIdRef.current = payload.run_id;
         setActiveRunId(payload.run_id);
@@ -1412,8 +1626,20 @@ export function useErgon() {
       setStreamMode("poll");
       const tick = async () => {
         const r = await call<LiveRunStatus>("/api/runs/status");
-        if (!cancelled && r.ok && r.data.active) {
-          applyStatusPayload(r.data);
+        if (cancelled) return;
+        if (r.ok) {
+          consecutivePollErrors = 0;
+          setLiveStreamError("");
+          if (r.data.active) {
+            applyStatusPayload(r.data);
+          } else if (Array.isArray(r.data.runs)) {
+            setLiveRuns([]);
+          }
+          return;
+        }
+        consecutivePollErrors += 1;
+        if (consecutivePollErrors >= 2) {
+          setLiveStreamError(r.error || "Live connection lost. Could not reconcile active run status.");
         }
       };
       void tick();
@@ -1422,6 +1648,7 @@ export function useErgon() {
 
     const handleSsePayload = (rawData: string, eventKind?: string) => {
       if (cancelled || !rawData) return;
+      setLiveStreamError("");
       let parsed: Record<string, unknown> | null = null;
       try {
         const j = JSON.parse(rawData);
@@ -1431,9 +1658,16 @@ export function useErgon() {
       }
       if (!parsed) return;
 
-      if (typeof parsed.run_id === "string" && parsed.run_id) {
-        activeRunIdRef.current = parsed.run_id;
-        setActiveRunId(parsed.run_id);
+      const evRunId = typeof parsed.run_id === "string" ? parsed.run_id : "";
+      const evThreadId = typeof parsed.thread_id === "string" ? parsed.thread_id : "";
+      if (eventKind === "run_finished" || eventKind === "done" || eventKind === "cancelled") {
+        if (evRunId) {
+          setLiveRuns((prev) => prev.filter((r) => r.run_id !== evRunId));
+        }
+      }
+      if (evRunId && (!activeRunIdRef.current || activeRunIdRef.current === evRunId || (evThreadId && evThreadId === threadRef.current))) {
+        activeRunIdRef.current = evRunId;
+        setActiveRunId(evRunId);
       }
       if (typeof parsed.elapsed_ms === "number") {
         setLiveElapsedMs(parsed.elapsed_ms);
@@ -1442,14 +1676,25 @@ export function useErgon() {
       if (uDelta) {
         setLiveRunUsage(uDelta);
       }
-      if (Array.isArray(parsed.steps)) {
+      if (Array.isArray(parsed.runs) || Array.isArray(parsed.steps)) {
         applyStatusPayload(parsed as Partial<LiveRunStatus>);
         return;
       }
 
       const tool = String(parsed.tool ?? "").trim();
       const rawStep = String(parsed.raw ?? parsed.detail ?? parsed.message ?? (tool ? `Tool: ${tool}` : "")).trim();
-      if (!tool && !rawStep) return;
+      if (!tool && !rawStep) {
+        if (eventKind === "run_started" && evRunId) {
+          const startedRun = normalizeLiveRunItem(parsed, started);
+          if (startedRun) {
+            setLiveRuns((prev) => {
+              const idx = prev.findIndex((r) => r.run_id === startedRun.run_id);
+              return idx >= 0 ? prev : [startedRun, ...prev];
+            });
+          }
+        }
+        return;
+      }
 
       const stepStatus: LiveRunStep["status"] =
         eventKind === "tool_start" || eventKind === "step_start" || eventKind === "run_started" || parsed.status === "running"
@@ -1470,15 +1715,43 @@ export function useErgon() {
         file: typeof parsed.file === "string" ? parsed.file : typeof parsed.path === "string" ? parsed.path : undefined,
       };
 
-      setLiveTimeline((prev) => {
-        const idx = prev.findIndex((p) => (incoming.id && p.id === incoming.id) || (p.status === "running" && p.tool === incoming.tool));
-        const next = idx >= 0 ? prev.map((item, i) => (i === idx ? { ...item, ...incoming } : item)) : [...prev, incoming];
-        setLiveSteps(next.map((s) => s.raw));
-        return next;
-      });
+      if (evRunId) {
+        setLiveRuns((prev) => {
+          const rIdx = prev.findIndex((r) => r.run_id === evRunId);
+          if (rIdx < 0) {
+            return [
+              {
+                active: true,
+                run_id: evRunId,
+                thread_id: evThreadId,
+                task: String(parsed.task ?? parsed.routine_name ?? "Active run"),
+                started_ms: started,
+                steps: [incoming],
+              },
+              ...prev,
+            ];
+          }
+          return prev.map((r, i) => {
+            if (i !== rIdx) return r;
+            const curSteps = r.steps as LiveRunStep[];
+            const sIdx = curSteps.findIndex((p) => (incoming.id && p.id === incoming.id) || (p.status === "running" && p.tool === incoming.tool));
+            const nextSteps = sIdx >= 0 ? curSteps.map((it, j) => (j === sIdx ? { ...it, ...incoming } : it)) : [...curSteps, incoming];
+            return { ...r, steps: nextSteps };
+          });
+        });
+      }
+
+      if (!evRunId || !activeRunIdRef.current || evRunId === activeRunIdRef.current) {
+        setLiveTimeline((prev) => {
+          const idx = prev.findIndex((p) => (incoming.id && p.id === incoming.id) || (p.status === "running" && p.tool === incoming.tool));
+          const next = idx >= 0 ? prev.map((item, i) => (i === idx ? { ...item, ...incoming } : item)) : [...prev, incoming];
+          setLiveSteps(next.map((s) => s.raw));
+          return next;
+        });
+      }
     };
 
-    if (hasV050Api(statusRef.current, "sse") && typeof EventSource !== "undefined") {
+    if (sseReady && typeof EventSource !== "undefined") {
       try {
         es = new EventSource("/api/runs/stream");
         setStreamMode("sse");
@@ -1531,21 +1804,47 @@ export function useErgon() {
       if (pollTimer !== null) window.clearInterval(pollTimer);
       if (es) es.close();
     };
-  }, [busy, runStartedMs]);
+  }, [busy, runStartedMs, sseReady]);
 
-  const cancelRun = useCallback(async () => {
-    if (!busyRef.current) return;
-    setCancelling(true);
-    const runTarget = activeRunIdRef.current || threadRef.current || "active";
-    if (hasV050Api(statusRef.current, "cancel")) {
-      await call(`/api/runs/${encodeURIComponent(runTarget)}/cancel`, { method: "POST", body: {} });
+  const cancelRun = useCallback(async (targetRunId?: string) => {
+    const specificId = typeof targetRunId === "string" && targetRunId.trim() ? targetRunId.trim() : "";
+    const runTarget = specificId || activeRunIdRef.current || threadRef.current || "active";
+    const isPrimaryChatRun =
+      !specificId ||
+      specificId === "active" ||
+      specificId === activeRunIdRef.current ||
+      specificId === threadRef.current;
+
+    if (!specificId && !busyRef.current) return;
+    if (isPrimaryChatRun) setCancelling(true);
+    setCancellingRunIds((prev) => ({ ...prev, [runTarget]: true }));
+    try {
+      if (hasV050Api(statusRef.current, "cancel") || specificId) {
+        const r = await cancelLiveRun(runTarget);
+        if (!r.ok && r.status !== 404) {
+          const msg = r.error || "Could not stop the active run. Try again.";
+          setLiveStreamError(msg);
+          toast.error(msg);
+          return;
+        }
+      }
+      setLiveStreamError("");
+      setLiveRuns((prev) => prev.filter((r) => r.run_id !== runTarget && r.thread_id !== runTarget));
+      if (isPrimaryChatRun && busyRef.current) {
+        abortRef.current?.abort();
+        abortRef.current = null;
+        busyRef.current = false;
+        setBusy(false);
+      }
+      toast("Run cancelled.");
+    } finally {
+      if (isPrimaryChatRun) setCancelling(false);
+      setCancellingRunIds((prev) => {
+        const next = { ...prev };
+        delete next[runTarget];
+        return next;
+      });
     }
-    abortRef.current?.abort();
-    abortRef.current = null;
-    busyRef.current = false;
-    setBusy(false);
-    setCancelling(false);
-    toast("Run cancelled.");
   }, []);
 
   const sendPrompt = useCallback(
@@ -1610,6 +1909,71 @@ export function useErgon() {
       loadMetering();
     },
     [loadThreads, loadRecent, refreshCounts, loadFiles, loadPipelineRuns, loadMetering]
+  );
+
+  const loadRunStatus = useCallback(async () => {
+    const r = await call<LiveRunStatus>("/api/runs/status");
+    if (r.ok) {
+      setRecoverableRuns(Array.isArray(r.data.recoverable_runs) ? r.data.recoverable_runs : []);
+    }
+  }, []);
+
+  const resumeInterruptedRun = useCallback(
+    async (runId: string) => {
+      if (busyRef.current) return;
+      const target = recoverableRuns.find((r) => r.run_id === runId);
+      if (target?.thread_id && target.thread_id !== threadRef.current) {
+        await openThread(target.thread_id);
+      }
+      const ctrl = new AbortController();
+      abortRef.current = ctrl;
+      busyRef.current = true;
+      setBusy(true);
+      setResumingRunId(runId);
+      setRunStartedMs(target?.started_ms || Date.now());
+      setLiveElapsedMs(0);
+      setLiveSteps(target?.steps ?? []);
+      setLiveTimeline(
+        (target?.steps ?? []).map((s, idx) =>
+          normalizeStepItem(s, idx, target?.started_ms || Date.now())
+        )
+      );
+      const r = await call<Thread & { thread_id?: string; run_id?: string }>("/api/runs/resume", {
+        method: "POST",
+        body: { run_id: runId },
+        signal: ctrl.signal,
+      });
+      abortRef.current = null;
+      busyRef.current = false;
+      setBusy(false);
+      setResumingRunId(null);
+      setLiveSteps([]);
+      setLiveTimeline([]);
+      if (r.ok && Array.isArray(r.data.messages)) {
+        const id = r.data.id || r.data.thread_id || target?.thread_id || threadRef.current;
+        if (id) {
+          setThread(id);
+          store.set(THREAD_KEY, id);
+        }
+        setMessages(r.data.messages);
+        setRunFailed(false);
+        toast.success("Resumed and completed the interrupted task.");
+      } else if (!r.ok && r.status === 499) {
+        toast("Run cancelled.");
+      } else {
+        const errMsg = !r.ok
+          ? r.error || `Could not resume task (HTTP ${r.status}).`
+          : "Unexpected response while resuming task.";
+        toast.error(errMsg);
+      }
+      await loadRunStatus();
+      loadThreads();
+      loadRecent();
+      refreshCounts();
+      loadFiles();
+      loadMetering();
+    },
+    [recoverableRuns, openThread, loadRunStatus, loadThreads, loadRecent, refreshCounts, loadFiles, loadMetering]
   );
 
   const send = useCallback(async () => {
@@ -1739,6 +2103,7 @@ export function useErgon() {
       loadSkills();
       loadRoutines();
       loadPipelineRuns();
+      loadRunStatus();
       const pend = (() => { try { const v = JSON.parse(store.get(PENDING) || "null"); return v && typeof v.text === "string" ? v : null; } catch { return null; } })();
       const reopen = store.get(THREAD_KEY);
       if (reopen) await openThread(reopen);
@@ -1761,67 +2126,186 @@ export function useErgon() {
     onRoutineFiredRef.current = fn;
   }, []);
 
+  const reconcileLiveRuns = useCallback(async () => {
+    const r = await call<LiveRunStatus>("/api/runs/status");
+    if (!r.ok) {
+      setLiveStreamError(r.error || "Could not reconcile live run status.");
+      return;
+    }
+    setLiveStreamError("");
+    if (Array.isArray(r.data.runs)) {
+      const normalizedRuns = r.data.runs
+        .map((item) => normalizeLiveRunItem(item, Date.now()))
+        .filter((x): x is LiveRun => x !== null && x.active && !x.cancelled);
+      setLiveRuns(normalizedRuns);
+    } else if (!r.data.active) {
+      setLiveRuns([]);
+    }
+    await Promise.all([loadPipelineRuns(), loadRoutines()]);
+  }, [loadPipelineRuns, loadRoutines]);
+
   // Listen for background scheduler `routine_fired` and `pipeline_*` SSE notifications when idle.
   useEffect(() => {
     if (busy || (!hasV070Api(status, "scheduler") && !hasPipelinesApi(status)) || typeof EventSource === "undefined") return;
     let closed = false;
     let es: EventSource | null = null;
-    try {
-      es = new EventSource("/api/runs/stream");
-      const onFired = (ev: Event) => {
-        if (closed) return;
-        let label = "Scheduled routine";
-        try {
-          const parsed = JSON.parse((ev as MessageEvent).data || "{}") as Record<string, unknown>;
-          if (typeof parsed.name === "string" && parsed.name) label = parsed.name;
-          else if (typeof parsed.routine_name === "string" && parsed.routine_name) label = parsed.routine_name;
-        } catch { /* ignore */ }
-        toast.success(`Background routine "${label}" finished.`);
-        setRoutineHistoryRev((n) => n + 1);
-        loadRoutines();
-        loadFiles();
-        loadThreads();
-        loadRecent();
-        refreshCounts();
-        onRoutineFiredRef.current?.();
-      };
-      es.addEventListener("routine_fired", onFired);
-      for (const uEv of ["step_done", "run_finished", "done"]) {
-        es.addEventListener(uEv, (ev) => {
+    let reconnectTimer: number | null = null;
+    let fallbackPollTimer: number | null = null;
+    let backoffMs = 2000;
+
+    const reconcileIdle = async () => {
+      if (closed) return;
+      const r = await call<LiveRunStatus>("/api/runs/status");
+      if (closed) return;
+      if (r.ok) {
+        setLiveStreamError("");
+        if (Array.isArray(r.data.runs)) {
+          const normalizedRuns = r.data.runs
+            .map((item) => normalizeLiveRunItem(item, Date.now()))
+            .filter((x): x is LiveRun => x !== null && x.active && !x.cancelled);
+          setLiveRuns(normalizedRuns);
+        } else if (!r.data.active) {
+          setLiveRuns([]);
+        }
+      } else if (
+        liveRunsRef.current.length > 0 ||
+        pipelineRunsRef.current.some((p) => p.status === "running")
+      ) {
+        setLiveStreamError(r.error || "Live stream disconnected. Could not refresh active run status.");
+      }
+      if (hasPipelinesApi(statusRef.current)) {
+        await loadPipelineRuns();
+      }
+    };
+
+    const stopFallbackPoll = () => {
+      if (fallbackPollTimer !== null) {
+        window.clearInterval(fallbackPollTimer);
+        fallbackPollTimer = null;
+      }
+    };
+
+    const startFallbackPoll = () => {
+      if (closed || fallbackPollTimer !== null) return;
+      fallbackPollTimer = window.setInterval(() => {
+        if (
+          liveRunsRef.current.length > 0 ||
+          pipelineRunsRef.current.some((p) => p.status === "running")
+        ) {
+          void reconcileIdle();
+        }
+      }, 2000);
+    };
+
+    const openIdleStream = () => {
+      if (closed) return;
+      try {
+        es = new EventSource("/api/runs/stream");
+        es.onopen = () => {
+          backoffMs = 2000;
+          setLiveStreamError("");
+          stopFallbackPoll();
+        };
+        const onFired = (ev: Event) => {
           if (closed) return;
+          setLiveStreamError("");
+          let label = "Scheduled routine";
           try {
             const parsed = JSON.parse((ev as MessageEvent).data || "{}") as Record<string, unknown>;
-            const uDelta = parseRunUsage(parsed.usage);
-            if (uDelta) setLiveRunUsage(uDelta);
-            if (uEv === "run_finished" || uEv === "done") {
-              void loadMetering();
-            }
+            if (typeof parsed.name === "string" && parsed.name) label = parsed.name;
+            else if (typeof parsed.routine_name === "string" && parsed.routine_name) label = parsed.routine_name;
           } catch { /* ignore */ }
-        });
-      }
-      for (const pEv of [
-        "pipeline_step_started",
-        "pipeline_step_done",
-        "pipeline_paused",
-        "pipeline_resumed",
-        "pipeline_finished",
-      ]) {
-        es.addEventListener(pEv, (ev) => {
-          if (!closed) handlePipelineSseEvent(pEv, (ev as MessageEvent).data);
-        });
-      }
-      es.onerror = () => {
-        if (es) {
-          es.close();
-          es = null;
+          toast.success(`Background routine "${label}" finished.`);
+          setRoutineHistoryRev((n) => n + 1);
+          loadRoutines();
+          loadFiles();
+          loadThreads();
+          loadRecent();
+          refreshCounts();
+          onRoutineFiredRef.current?.();
+        };
+        es.addEventListener("routine_fired", onFired);
+        for (const rEv of ["run_recovered", "run_resumed"]) {
+          es.addEventListener(rEv, () => {
+            if (closed) return;
+            setLiveStreamError("");
+            void loadRunStatus();
+            loadThreads();
+          });
         }
-      };
-    } catch { /* ignore */ }
+        for (const uEv of ["status", "run_started", "step", "step_start", "step_done", "tool_start", "tool_done", "run_finished", "done", "cancelled"]) {
+          es.addEventListener(uEv, (ev) => {
+            if (closed) return;
+            setLiveStreamError("");
+            try {
+              const parsed = JSON.parse((ev as MessageEvent).data || "{}") as Record<string, unknown>;
+              if (Array.isArray(parsed.runs)) {
+                const normalizedRuns = parsed.runs
+                  .map((item) => normalizeLiveRunItem(item, Date.now()))
+                  .filter((x): x is LiveRun => x !== null && x.active && !x.cancelled);
+                setLiveRuns(normalizedRuns);
+              } else if (uEv === "run_finished" || uEv === "done" || uEv === "cancelled") {
+                const rid = typeof parsed.run_id === "string" ? parsed.run_id : "";
+                if (rid) setLiveRuns((prev) => prev.filter((r) => r.run_id !== rid));
+              } else if (uEv === "run_started" || uEv === "status") {
+                const startedRun = normalizeLiveRunItem(parsed, Date.now());
+                if (startedRun && startedRun.active) {
+                  setLiveRuns((prev) => {
+                    const idx = prev.findIndex((r) => r.run_id === startedRun.run_id);
+                    return idx >= 0 ? prev.map((r, i) => (i === idx ? startedRun : r)) : [startedRun, ...prev];
+                  });
+                }
+              }
+              const uDelta = parseRunUsage(parsed.usage);
+              if (uDelta) setLiveRunUsage(uDelta);
+              if (uEv === "run_finished" || uEv === "done") {
+                void loadMetering();
+                void loadRunStatus();
+                loadThreads();
+                loadFiles();
+              }
+            } catch { /* ignore */ }
+          });
+        }
+        for (const pEv of [
+          "pipeline_step_started",
+          "pipeline_step_done",
+          "pipeline_paused",
+          "pipeline_resumed",
+          "pipeline_finished",
+        ]) {
+          es.addEventListener(pEv, (ev) => {
+            if (!closed) {
+              setLiveStreamError("");
+              handlePipelineSseEvent(pEv, (ev as MessageEvent).data);
+            }
+          });
+        }
+        es.onerror = () => {
+          if (es) {
+            es.close();
+            es = null;
+          }
+          if (closed) return;
+          void reconcileIdle();
+          startFallbackPoll();
+          const waitMs = backoffMs;
+          backoffMs = Math.min(10_000, backoffMs * 2);
+          reconnectTimer = window.setTimeout(openIdleStream, waitMs);
+        };
+      } catch {
+        startFallbackPoll();
+      }
+    };
+
+    openIdleStream();
     return () => {
       closed = true;
+      if (reconnectTimer !== null) window.clearTimeout(reconnectTimer);
+      stopFallbackPoll();
       if (es) es.close();
     };
-  }, [busy, status, loadRoutines, loadFiles, loadThreads, loadRecent, refreshCounts, loadMetering, handlePipelineSseEvent]);
+  }, [busy, status, loadRoutines, loadFiles, loadThreads, loadRecent, refreshCounts, loadMetering, loadRunStatus, handlePipelineSseEvent, loadPipelineRuns]);
 
   useEffect(() => {
     if (status && status !== "error") {
@@ -1834,8 +2318,10 @@ export function useErgon() {
       loadWorkspacePolicy();
       loadTimeEntries();
       loadInvoices();
+      loadMcpServers();
+      loadRunStatus();
     }
-  }, [status, files, loadStarters, loadSkills, loadRoutines, loadPipelineRuns, loadClients, loadMetering, loadWorkspacePolicy, loadTimeEntries, loadInvoices]);
+  }, [status, files, loadStarters, loadSkills, loadRoutines, loadPipelineRuns, loadClients, loadMetering, loadWorkspacePolicy, loadTimeEntries, loadInvoices, loadMcpServers, loadRunStatus]);
 
   useEffect(() => {
     if (status && status !== "error" && activeEngagementId) {
@@ -1849,12 +2335,14 @@ export function useErgon() {
 
   return {
     status, runFailed, people, threads, threadsError, states, threadId, messages,
-    busy, activeRunId, runStartedMs, liveElapsedMs, streamMode, cancelling, liveSteps, liveTimeline,
+    busy, activeRunId, runStartedMs, liveElapsedMs, streamMode, cancelling, cancellingRunIds, liveRuns, liveStreamError, reconcileLiveRuns, liveSteps, liveTimeline,
+    recoverableRuns, resumingRunId, loadRunStatus, resumeInterruptedRun,
     clients, engagements, activeEngagementId, activeEngagementContext, timeEntries, invoices, workspacePolicy, engagementScopeOnly, setEngagementScopeOnly, metering, liveRunUsage,
     draft, setDraft, pendingNote, sideError, starters, recovered, recent,
-    todayCount, learnedCount, memoryHealth, suiteCount, files, lastUploaded, setLastUploaded, skills, routines, pipelineRuns, scheduler, routineHistoryRev,
+    todayCount, learnedCount, memoryHealth, suiteCount, files, lastUploaded, setLastUploaded, skills, routines, routinesLoading, routinesError, routineSaveError, pipelineRuns, scheduler, routineHistoryRev,
     send, sendPrompt, cancelRun, openThread, newThread, switchPerson, refreshPerson, showRun,
     loadThreads, loadStatus, loadPeople, loadClients, loadMetering, loadWorkspacePolicy, updateWorkspacePolicyState,
+    mcpServers, loadMcpServers, saveMcpServerConfig, discoverMcpServerTools, removeMcpServer,
     loadEngagementContext, loadTimeEntries, loadInvoices,
     createNewClient, saveClientCrm, createNewEngagement, saveEngagementSow, switchActiveEngagement,
     addTimeEntry, removeTimeEntry, createGeneratedInvoice, setInvoiceStatus,

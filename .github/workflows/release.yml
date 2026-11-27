@@ -1,10 +1,11 @@
 name: release
 
 # Every push to main that carries a NEW version in Cargo.toml (and its CHANGELOG.md
-# entry) is built for each platform and published as a GitHub Release `vX.Y.Z` with
-# the binaries and a SHA256SUMS file. Pushing a tag `vX.Y.Z` by hand does the same.
-# The running app reads that release to offer (or install) the update; see the
-# README, "Versions and updates". A push that does not change the version does nothing.
+# entry) runs the locked test suite, builds release binaries and platform installers
+# (Windows .msi/.zip, macOS .pkg/.dmg, Linux binaries), signs/notarizes when secrets
+# are provisioned, and publishes a GitHub Release `vX.Y.Z` with SHA256SUMS.
+# Pushing a tag `vX.Y.Z` by hand does the same. A push that does not change the
+# version does nothing.
 on:
   push:
     branches: [main]
@@ -45,8 +46,19 @@ jobs:
           grep -qE "^## \[?$crate\]?( |$)" CHANGELOG.md || { echo "CHANGELOG.md has no entry for version $crate"; exit 1; }
           echo "publish=true" >> "$GITHUB_OUTPUT"
 
-  build:
+  test:
     needs: plan
+    if: ${{ needs.plan.outputs.publish == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Toolchain
+        run: rustup toolchain install stable --profile minimal && rustup default stable
+      - name: Run locked test suite
+        run: cargo test --locked -- --test-threads=1
+
+  build:
+    needs: [plan, test]
     if: ${{ needs.plan.outputs.publish == 'true' }}
     strategy:
       fail-fast: false
@@ -68,11 +80,115 @@ jobs:
         run: cargo build --release --locked --bin "$BIN" --target ${{ matrix.target }}
       - name: Stage and check the asset
         run: |
-          mkdir dist
+          mkdir -p dist
           cp "target/${{ matrix.target }}/release/${BIN}${{ matrix.ext }}" "dist/${BIN}-${{ matrix.target }}${{ matrix.ext }}"
           out="$("dist/${BIN}-${{ matrix.target }}${{ matrix.ext }}" --version)"
           echo "$out"
           case "$out" in *"${{ needs.plan.outputs.version }}"*) ;; *) echo "binary does not report version ${{ needs.plan.outputs.version }}"; exit 1;; esac
+
+      - name: Sign standalone Windows binary and build MSI + ZIP
+        if: ${{ matrix.target == 'x86_64-pc-windows-msvc' }}
+        shell: pwsh
+        env:
+          WINDOWS_SIGN_PFX_BASE64: ${{ secrets.WINDOWS_SIGN_PFX_BASE64 }}
+          WINDOWS_SIGN_PFX_PASSWORD: ${{ secrets.WINDOWS_SIGN_PFX_PASSWORD }}
+          WINDOWS_SIGN_TIMESTAMP_URL: ${{ secrets.WINDOWS_SIGN_TIMESTAMP_URL }}
+          VERSION: ${{ needs.plan.outputs.version }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $exePath = "dist/$env:BIN-x86_64-pc-windows-msvc.exe"
+          $tsUrl = if ([string]::IsNullOrWhiteSpace($env:WINDOWS_SIGN_TIMESTAMP_URL)) { "http://timestamp.digicert.com" } else { $env:WINDOWS_SIGN_TIMESTAMP_URL }
+
+          if (-not [string]::IsNullOrWhiteSpace($env:WINDOWS_SIGN_PFX_BASE64)) {
+            $kitsRoot = "${env:ProgramFiles(x86)}\Windows Kits\10\bin"
+            $signTool = (Get-Command signtool.exe -ErrorAction SilentlyContinue)?.Source
+            if (-not $signTool -and (Test-Path $kitsRoot)) {
+              $signTool = (Get-ChildItem -Path $kitsRoot -Filter signtool.exe -Recurse -ErrorAction SilentlyContinue |
+                Where-Object { $_.FullName -match "\\x64\\" } |
+                Sort-Object FullName -Descending |
+                Select-Object -First 1)?.FullName
+            }
+            if (-not $signTool) { throw "signtool.exe not found while WINDOWS_SIGN_PFX_BASE64 is configured." }
+            $pfx = Join-Path $env:RUNNER_TEMP "ergon-win-sign.pfx"
+            try {
+              [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:WINDOWS_SIGN_PFX_BASE64))
+              & $signTool sign /fd SHA256 /f $pfx /p $env:WINDOWS_SIGN_PFX_PASSWORD /tr $tsUrl /td SHA256 /d "Ergon" $exePath
+              if ($LASTEXITCODE -ne 0) { throw "signtool failed signing $exePath" }
+              & $signTool verify /pa /v $exePath | Out-Null
+              if ($LASTEXITCODE -ne 0) { throw "signtool verify failed for $exePath" }
+            } finally {
+              if (Test-Path $pfx) { Remove-Item -LiteralPath $pfx -Force -ErrorAction SilentlyContinue }
+            }
+          } else {
+            Write-Output "::warning::WINDOWS_SIGN_PFX_BASE64 not set; publishing unsigned Windows binary and MSI."
+          }
+
+          pwsh -File packaging/windows/build-msi.ps1 `
+            -Version $env:VERSION `
+            -BinaryPath $exePath `
+            -OutDir dist `
+            -Arch x86_64 `
+            -TimestampUrl $tsUrl
+
+      - name: Import Apple signing certificates (ephemeral keychain)
+        if: ${{ matrix.target == 'aarch64-apple-darwin' }}
+        env:
+          APPLE_CERT_P12_BASE64: ${{ secrets.APPLE_CERT_P12_BASE64 }}
+          APPLE_CERT_PASSWORD: ${{ secrets.APPLE_CERT_PASSWORD }}
+        run: |
+          if [ -z "$APPLE_CERT_P12_BASE64" ]; then
+            echo "::warning::APPLE_CERT_P12_BASE64 not set; macOS binary, .pkg, and .dmg will be unsigned."
+            exit 0
+          fi
+          KEYCHAIN_PATH="$RUNNER_TEMP/ergon-signing.keychain-db"
+          KEYCHAIN_PASS="$(openssl rand -hex 24)"
+          CERT_PATH="$RUNNER_TEMP/apple-certs.p12"
+          echo "$APPLE_CERT_P12_BASE64" | base64 --decode > "$CERT_PATH"
+          security create-keychain -p "$KEYCHAIN_PASS" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASS" "$KEYCHAIN_PATH"
+          security import "$CERT_PATH" -P "$APPLE_CERT_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASS" "$KEYCHAIN_PATH"
+          security list-keychains -d user -s "$KEYCHAIN_PATH" login.keychain-db
+          rm -f "$CERT_PATH"
+
+      - name: Sign macOS binary and build .pkg + .dmg
+        if: ${{ matrix.target == 'aarch64-apple-darwin' }}
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_INSTALLER_IDENTITY: ${{ secrets.APPLE_INSTALLER_IDENTITY }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
+          APPLE_NOTARY_ISSUER_ID: ${{ secrets.APPLE_NOTARY_ISSUER_ID }}
+          APPLE_NOTARY_KEY_P8: ${{ secrets.APPLE_NOTARY_KEY_P8 }}
+          VERSION: ${{ needs.plan.outputs.version }}
+        run: |
+          BIN_PATH="dist/${BIN}-aarch64-apple-darwin"
+          if [ -n "$APPLE_SIGNING_IDENTITY" ]; then
+            codesign --force --options runtime --timestamp --sign "$APPLE_SIGNING_IDENTITY" "$BIN_PATH"
+            codesign --verify --strict --verbose=2 "$BIN_PATH"
+          else
+            echo "::warning::APPLE_SIGNING_IDENTITY not set; standalone macOS binary will be unsigned."
+          fi
+          bash packaging/macos/build-pkg.sh \
+            --binary "$BIN_PATH" \
+            --version "$VERSION" \
+            --arch "aarch64-apple-darwin" \
+            --out-dir dist
+          bash packaging/macos/build-dmg.sh \
+            --binary "$BIN_PATH" \
+            --version "$VERSION" \
+            --arch "aarch64-apple-darwin" \
+            --out-dir dist
+
+      - name: Clean up ephemeral Apple signing keychain
+        if: ${{ always() && matrix.target == 'aarch64-apple-darwin' }}
+        run: |
+          rm -f "$RUNNER_TEMP/apple-certs.p12"
+          if [ -f "$RUNNER_TEMP/ergon-signing.keychain-db" ]; then
+            security delete-keychain "$RUNNER_TEMP/ergon-signing.keychain-db" || true
+          fi
+
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ env.BIN }}-${{ matrix.target }}

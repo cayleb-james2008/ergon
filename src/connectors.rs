@@ -1,23 +1,37 @@
 //! Unattended Intake Triggers & Policy-Gated Outbound Action Connectors.
 //!
 //! Persists non-secret connector metadata and delivery logs in
-//! `<person_data_dir>/connectors.json` (0600 POSIX) and isolates all webhook
-//! signing secrets, hook tokens, and outbound API secrets in a separate
-//! `<person_data_dir>/connector_secrets.json` (0600 POSIX) that is never
-//! readable from the workspace or injected into LLM prompts.
+//! `<person_data_dir>/connectors.json` (0600 POSIX), stores opaque vault
+//! references and timestamps in `<person_data_dir>/connector_secrets.json`
+//! (0600 POSIX), and encrypts all webhook signing secrets, hook tokens, SMTP/IMAP
+//! credentials, OAuth2 secrets/tokens, and outbound/MCP API secrets at rest via
+//! `secret_store` (`<person_data_dir>/secrets.enc.json`, AES-256-GCM + optional
+//! OS keychain envelope).
 
 use crate::tools::{atomic_write_bytes, atomic_write_bytes_with_mode, sandbox_path, sandbox_path_resolving};
-use crate::{records, tripwire, Config, WorkspacePolicy};
+use crate::{records, secret_store, tripwire, Config, WorkspacePolicy};
+use rustls::pki_types::ServerName;
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, HashMap, HashSet};
-use std::io::Read as _;
+use std::io::{BufRead, BufReader, Read, Write};
+use std::net::TcpStream;
 use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Condvar, Mutex, OnceLock};
-use std::time::{Duration, UNIX_EPOCH};
+use std::sync::{Arc, Condvar, Mutex, OnceLock};
+use std::time::{Duration, Instant, UNIX_EPOCH};
+
+const MAX_SMTP_LINE_BYTES: usize = 16 * 1024;
+const MAX_SMTP_CONT_LINES: usize = 128;
+const SMTP_SESSION_TIMEOUT: Duration = Duration::from_secs(20);
+const MAX_IMAP_LINE_BYTES: usize = 64 * 1024;
+const MAX_IMAP_UNTAGGED_LINES: usize = 512;
+const IMAP_SESSION_TIMEOUT: Duration = Duration::from_secs(25);
 
 pub const MAX_WEBHOOK_BYTES: usize = 1_048_576;
 pub const MAX_FOLDER_WATCH_BYTES: u64 = 25 * 1024 * 1024;
+pub const MAX_SMTP_ATTACHMENT_BYTES: usize = 10 * 1024 * 1024;
+pub const MAX_IMAP_MESSAGE_BYTES: usize = 25 * 1024 * 1024;
+const MAX_IMAP_MESSAGES_PER_POLL: usize = 25;
 pub const MAX_WEBHOOK_SKEW_MS: u64 = 5 * 60 * 1000;
 const MAX_WEBHOOK_REPLAY_ENTRIES: usize = 4096;
 const MAX_DELIVERY_LOG: usize = 500;
@@ -47,6 +61,145 @@ pub fn connector_secrets_path(person_data_dir: &Path) -> PathBuf {
     person_data_dir.join("connector_secrets.json")
 }
 
+pub fn legacy_oauth_path(person_data_dir: &Path) -> PathBuf {
+    person_data_dir.join("oauth.json")
+}
+
+const VAULT_CONNECTOR_PREFIX: &str = "connector:";
+const VAULT_SECRET_PREFIX: &str = "connector:secret:";
+const VAULT_WEBHOOK_PREFIX: &str = "connector:webhook:";
+
+fn vault_key_for_secret(key: &str) -> String {
+    format!("{VAULT_SECRET_PREFIX}{key}")
+}
+
+fn vault_key_for_webhook_signing(trigger_id: &str) -> String {
+    format!("{VAULT_WEBHOOK_PREFIX}{trigger_id}:signing_secret")
+}
+
+fn vault_key_for_webhook_token(trigger_id: &str) -> String {
+    format!("{VAULT_WEBHOOK_PREFIX}{trigger_id}:hook_token")
+}
+
+fn sanitize_secret_key_fragment(raw: &str) -> String {
+    let mut out: String = raw
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.') {
+                c
+            } else {
+                '_'
+            }
+        })
+        .take(36)
+        .collect();
+    if out.is_empty() {
+        out.push_str("legacy");
+    }
+    out
+}
+
+#[derive(Clone, Debug)]
+pub struct ImapTarget {
+    pub host: String,
+    pub port: u16,
+    pub security: String,
+    pub folder: String,
+    pub poll_interval_secs: u64,
+    pub mark_seen: bool,
+    pub username_secret_key: String,
+    pub password_secret_key: String,
+    pub subject_filter: Option<String>,
+}
+
+impl ImapTarget {
+    pub fn to_json(&self) -> Value {
+        json!({
+            "host": self.host,
+            "port": self.port,
+            "security": self.security,
+            "folder": self.folder,
+            "poll_interval_secs": self.poll_interval_secs,
+            "mark_seen": self.mark_seen,
+            "username_secret_key": self.username_secret_key,
+            "password_secret_key": self.password_secret_key,
+            "subject_filter": self.subject_filter,
+        })
+    }
+
+    fn from_json(v: &Value) -> Option<Self> {
+        let obj = v.as_object()?;
+        let host = obj.get("host")?.as_str()?.trim().to_string();
+        if host.is_empty() {
+            return None;
+        }
+        let security = obj
+            .get("security")
+            .and_then(|s| s.as_str())
+            .unwrap_or("imaps")
+            .trim()
+            .to_ascii_lowercase();
+        if !matches!(
+            security.as_str(),
+            "imaps" | "starttls" | "plain_loopback_test"
+        ) {
+            return None;
+        }
+        let default_port = if security == "imaps" { 993 } else { 143 };
+        let port = obj
+            .get("port")
+            .and_then(|p| p.as_u64())
+            .and_then(|p| u16::try_from(p).ok())
+            .filter(|&p| p > 0)
+            .unwrap_or(default_port);
+        let folder = obj
+            .get("folder")
+            .and_then(|s| s.as_str())
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .unwrap_or("INBOX")
+            .to_string();
+        let poll_interval_secs = obj
+            .get("poll_interval_secs")
+            .and_then(|n| n.as_u64())
+            .unwrap_or(60)
+            .clamp(1, 86_400);
+        let mark_seen = obj
+            .get("mark_seen")
+            .and_then(|b| b.as_bool())
+            .unwrap_or(true);
+        let username_secret_key = obj
+            .get("username_secret_key")
+            .and_then(|s| s.as_str())
+            .unwrap_or("")
+            .trim()
+            .to_string();
+        let password_secret_key = obj
+            .get("password_secret_key")
+            .and_then(|s| s.as_str())
+            .unwrap_or("")
+            .trim()
+            .to_string();
+        let subject_filter = obj
+            .get("subject_filter")
+            .and_then(|s| s.as_str())
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string);
+        Some(Self {
+            host,
+            port,
+            security,
+            folder,
+            poll_interval_secs,
+            mark_seen,
+            username_secret_key,
+            password_secret_key,
+            subject_filter,
+        })
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct TriggerRule {
     pub id: String,
@@ -59,6 +212,7 @@ pub struct TriggerRule {
     pub watch_dir: Option<String>,
     pub glob: Option<String>,
     pub max_bytes: u64,
+    pub imap_config: Option<ImapTarget>,
     pub trigger_count: u64,
     pub last_triggered_ms: Option<u64>,
     pub created_ms: u64,
@@ -83,6 +237,7 @@ impl TriggerRule {
             "watch_dir": self.watch_dir,
             "glob": self.glob,
             "max_bytes": self.max_bytes,
+            "imap_config": self.imap_config.as_ref().map(|i| i.to_json()),
             "has_secret": has_secret,
             "trigger_count": self.trigger_count,
             "last_triggered_ms": self.last_triggered_ms,
@@ -95,9 +250,14 @@ impl TriggerRule {
         let id = v["id"].as_str()?.trim().to_string();
         let name = v["name"].as_str().unwrap_or("Trigger").to_string();
         let kind = v["kind"].as_str()?.trim().to_string();
-        if id.is_empty() || (kind != "webhook" && kind != "folder_watch") {
+        if id.is_empty() || !matches!(kind.as_str(), "webhook" | "folder_watch" | "imap_poll") {
             return None;
         }
+        let imap_config = if kind == "imap_poll" {
+            Some(ImapTarget::from_json(&v["imap_config"])?)
+        } else {
+            ImapTarget::from_json(&v["imap_config"])
+        };
         Some(Self {
             id,
             name,
@@ -133,10 +293,169 @@ impl TriggerRule {
                 .as_u64()
                 .unwrap_or(MAX_FOLDER_WATCH_BYTES)
                 .clamp(1, MAX_FOLDER_WATCH_BYTES),
+            imap_config,
             trigger_count: v["trigger_count"].as_u64().unwrap_or(0),
             last_triggered_ms: v["last_triggered_ms"].as_u64(),
             created_ms: v["created_ms"].as_u64().unwrap_or(0),
             updated_ms: v["updated_ms"].as_u64().unwrap_or(0),
+        })
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct SmtpTarget {
+    pub host: String,
+    pub port: u16,
+    pub security: String,
+    pub username_secret_key: String,
+    pub password_secret_key: String,
+    pub from_addr: String,
+    pub default_to: Vec<String>,
+}
+
+impl SmtpTarget {
+    pub fn to_json(&self) -> Value {
+        json!({
+            "host": self.host,
+            "port": self.port,
+            "security": self.security,
+            "username_secret_key": self.username_secret_key,
+            "password_secret_key": self.password_secret_key,
+            "from_addr": self.from_addr,
+            "default_to": self.default_to,
+        })
+    }
+
+    fn from_json(v: &Value) -> Option<Self> {
+        let obj = v.as_object()?;
+        let host = obj.get("host")?.as_str()?.trim().to_string();
+        if host.is_empty() {
+            return None;
+        }
+        let security = obj
+            .get("security")
+            .and_then(|s| s.as_str())
+            .unwrap_or("smtps")
+            .trim()
+            .to_ascii_lowercase();
+        if !matches!(
+            security.as_str(),
+            "smtps" | "starttls" | "plain_loopback_test"
+        ) {
+            return None;
+        }
+        let default_port = match security.as_str() {
+            "smtps" => 465,
+            "starttls" => 587,
+            _ => 2525,
+        };
+        let port = obj
+            .get("port")
+            .and_then(|p| p.as_u64())
+            .and_then(|p| u16::try_from(p).ok())
+            .filter(|&p| p > 0)
+            .unwrap_or(default_port);
+        let username_secret_key = obj
+            .get("username_secret_key")
+            .and_then(|s| s.as_str())
+            .unwrap_or("")
+            .trim()
+            .to_string();
+        let password_secret_key = obj
+            .get("password_secret_key")
+            .and_then(|s| s.as_str())
+            .unwrap_or("")
+            .trim()
+            .to_string();
+        let from_addr = obj
+            .get("from_addr")
+            .and_then(|s| s.as_str())
+            .unwrap_or("")
+            .trim()
+            .to_string();
+        let default_to = obj
+            .get("default_to")
+            .and_then(|a| a.as_array())
+            .map(|items| {
+                items
+                    .iter()
+                    .filter_map(|x| x.as_str().map(str::trim).filter(|s| !s.is_empty()))
+                    .map(str::to_string)
+                    .collect()
+            })
+            .unwrap_or_default();
+        Some(Self {
+            host,
+            port,
+            security,
+            username_secret_key,
+            password_secret_key,
+            from_addr,
+            default_to,
+        })
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct OAuth2Config {
+    pub token_url: String,
+    pub client_id: String,
+    pub client_secret_key: String,
+    pub refresh_token_secret_key: String,
+    pub scopes: Vec<String>,
+    pub access_token_expires_ms: Option<u64>,
+}
+
+impl OAuth2Config {
+    pub fn to_json(&self) -> Value {
+        json!({
+            "token_url": self.token_url,
+            "client_id": self.client_id,
+            "client_secret_key": self.client_secret_key,
+            "refresh_token_secret_key": self.refresh_token_secret_key,
+            "scopes": self.scopes,
+            "access_token_expires_ms": self.access_token_expires_ms,
+        })
+    }
+
+    fn from_json(v: &Value) -> Option<Self> {
+        let obj = v.as_object()?;
+        let token_url = obj.get("token_url")?.as_str()?.trim().to_string();
+        let client_id = obj.get("client_id")?.as_str()?.trim().to_string();
+        if token_url.is_empty() || client_id.is_empty() {
+            return None;
+        }
+        let client_secret_key = obj
+            .get("client_secret_key")
+            .and_then(|s| s.as_str())
+            .unwrap_or("")
+            .trim()
+            .to_string();
+        let refresh_token_secret_key = obj
+            .get("refresh_token_secret_key")
+            .and_then(|s| s.as_str())
+            .unwrap_or("")
+            .trim()
+            .to_string();
+        let scopes = obj
+            .get("scopes")
+            .and_then(|a| a.as_array())
+            .map(|items| {
+                items
+                    .iter()
+                    .filter_map(|x| x.as_str().map(str::trim).filter(|s| !s.is_empty()))
+                    .map(str::to_string)
+                    .collect()
+            })
+            .unwrap_or_default();
+        let access_token_expires_ms = obj.get("access_token_expires_ms").and_then(|n| n.as_u64());
+        Some(Self {
+            token_url,
+            client_id,
+            client_secret_key,
+            refresh_token_secret_key,
+            scopes,
+            access_token_expires_ms,
         })
     }
 }
@@ -151,6 +470,8 @@ pub struct OutboundConnector {
     pub headers_template: BTreeMap<String, String>,
     pub require_approval: bool,
     pub secret_keys: Vec<String>,
+    pub smtp_config: Option<SmtpTarget>,
+    pub oauth_config: Option<OAuth2Config>,
     pub enabled: bool,
     pub last_delivery_ms: Option<u64>,
     pub last_status: Option<String>,
@@ -168,6 +489,20 @@ impl OutboundConnector {
                 }
             }
         }
+        if let Some(smtp) = &self.smtp_config {
+            for k in [&smtp.username_secret_key, &smtp.password_secret_key] {
+                if !k.is_empty() && !keys.contains(k) {
+                    keys.push(k.clone());
+                }
+            }
+        }
+        if let Some(oauth) = &self.oauth_config {
+            for k in [&oauth.client_secret_key, &oauth.refresh_token_secret_key] {
+                if !k.is_empty() && !keys.contains(k) {
+                    keys.push(k.clone());
+                }
+            }
+        }
         keys
     }
 
@@ -177,7 +512,14 @@ impl OutboundConnector {
         policy: &WorkspacePolicy,
     ) -> Value {
         let keys = self.referenced_secret_keys();
-        let has_secret = !keys.is_empty() && keys.iter().all(|k| secrets.secrets.contains_key(k));
+        let has_secret = !keys.is_empty()
+            && keys
+                .iter()
+                .filter(|k| {
+                    // oauth_access_token may be populated lazily on first refresh
+                    k.as_str() != "oauth_access_token" || self.oauth_config.is_none()
+                })
+                .all(|k| secrets.secrets.contains_key(k));
         let effective_require_approval =
             self.require_approval || policy.profile == "strict_client";
         let blocked_by_policy = policy.block_outbound_fetch || policy.profile == "air_gapped";
@@ -193,6 +535,8 @@ impl OutboundConnector {
             "blocked_by_policy": blocked_by_policy,
             "has_secret": has_secret,
             "secret_keys": keys,
+            "smtp_config": self.smtp_config.as_ref().map(|s| s.to_json()),
+            "oauth_config": self.oauth_config.as_ref().map(|o| o.to_json()),
             "enabled": self.enabled,
             "last_delivery_ms": self.last_delivery_ms,
             "last_status": self.last_status,
@@ -211,6 +555,8 @@ impl OutboundConnector {
             "headers_template": self.headers_template,
             "require_approval": self.require_approval,
             "secret_keys": self.secret_keys,
+            "smtp_config": self.smtp_config.as_ref().map(|s| s.to_json()),
+            "oauth_config": self.oauth_config.as_ref().map(|o| o.to_json()),
             "enabled": self.enabled,
             "last_delivery_ms": self.last_delivery_ms,
             "last_status": self.last_status,
@@ -223,8 +569,10 @@ impl OutboundConnector {
         let id = v["id"].as_str()?.trim().to_string();
         let name = v["name"].as_str().unwrap_or("Connector").to_string();
         let kind = v["kind"].as_str()?.trim().to_string();
-        let url = v["url"].as_str()?.trim().to_string();
-        if id.is_empty() || url.is_empty() {
+        let url = v["url"].as_str().unwrap_or("").trim().to_string();
+        let smtp_config = SmtpTarget::from_json(&v["smtp_config"]);
+        let oauth_config = OAuth2Config::from_json(&v["oauth_config"]);
+        if id.is_empty() || (url.is_empty() && smtp_config.is_none()) {
             return None;
         }
         let mut headers_template = BTreeMap::new();
@@ -256,6 +604,8 @@ impl OutboundConnector {
             headers_template,
             require_approval: v["require_approval"].as_bool().unwrap_or(true),
             secret_keys,
+            smtp_config,
+            oauth_config,
             enabled: v["enabled"].as_bool().unwrap_or(true),
             last_delivery_ms: v["last_delivery_ms"].as_u64(),
             last_status: v["last_status"].as_str().map(str::to_string),
@@ -376,10 +726,11 @@ impl ConnectorsStore {
         let Ok(text) = std::fs::read_to_string(&path) else {
             return Self::default();
         };
-        let Ok(v) = serde_json::from_str::<Value>(&text) else {
+        let Ok(mut v) = serde_json::from_str::<Value>(&text) else {
             return Self::default();
         };
-        Self {
+        let migrated = migrate_legacy_inline_connector_secrets(person_data_dir, &mut v);
+        let store = Self {
             triggers: v["triggers"]
                 .as_array()
                 .map(|a| a.iter().filter_map(TriggerRule::from_json).collect())
@@ -396,7 +747,11 @@ impl ConnectorsStore {
                 .as_array()
                 .map(|a| a.iter().filter_map(IntakeManifestEntry::from_json).collect())
                 .unwrap_or_default(),
+        };
+        if migrated {
+            let _ = store.save_unlocked(person_data_dir);
         }
+        store
     }
 
     fn save_unlocked(&self, person_data_dir: &Path) -> Result<(), String> {
@@ -458,79 +813,499 @@ pub struct ConnectorSecretsStore {
     pub webhook_secrets: BTreeMap<String, WebhookSecretEntry>,
 }
 
-impl ConnectorSecretsStore {
-    fn load_unlocked(person_data_dir: &Path) -> Self {
-        let path = connector_secrets_path(person_data_dir);
-        let Ok(text) = std::fs::read_to_string(&path) else {
-            return Self::default();
-        };
-        let Ok(v) = serde_json::from_str::<Value>(&text) else {
-            return Self::default();
-        };
-        let mut secrets = BTreeMap::new();
-        if let Some(obj) = v["secrets"].as_object() {
-            for (k, val) in obj {
-                if let Some(s) = val.as_str() {
-                    secrets.insert(k.clone(), s.to_string());
+fn extract_legacy_plaintext_field(obj: &mut serde_json::Map<String, Value>, field: &str) -> Option<String> {
+    let val = obj
+        .get(field)
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty() && !secret_store::is_vault_ref(s))
+        .map(str::to_string)?;
+    obj.remove(field);
+    Some(val)
+}
+
+fn migrate_legacy_inline_connector_secrets(person_data_dir: &Path, doc: &mut Value) -> bool {
+    let mut new_secrets: BTreeMap<String, String> = BTreeMap::new();
+    let mut new_webhooks: BTreeMap<String, WebhookSecretEntry> = BTreeMap::new();
+    let now_ms = records::now_millis();
+    let mut changed = false;
+
+    if let Some(triggers) = doc.get_mut("triggers").and_then(|v| v.as_array_mut()) {
+        for (idx, trg) in triggers.iter_mut().enumerate() {
+            let Some(tobj) = trg.as_object_mut() else {
+                continue;
+            };
+            let tid_raw = tobj
+                .get("id")
+                .and_then(|v| v.as_str())
+                .map(str::to_string)
+                .unwrap_or_else(|| format!("trg-{idx}"));
+            let tid_frag = sanitize_secret_key_fragment(&tid_raw);
+
+            let sig = extract_legacy_plaintext_field(tobj, "signing_secret");
+            let tok = extract_legacy_plaintext_field(tobj, "hook_token");
+            if sig.is_some() || tok.is_some() {
+                changed = true;
+                new_webhooks.insert(
+                    tid_raw.clone(),
+                    WebhookSecretEntry {
+                        signing_secret: sig.unwrap_or_default(),
+                        hook_token: tok.unwrap_or_default(),
+                        updated_ms: now_ms,
+                    },
+                );
+            }
+
+            if let Some(imap) = tobj.get_mut("imap_config").and_then(|v| v.as_object_mut()) {
+                if let Some(pass) = extract_legacy_plaintext_field(imap, "password") {
+                    changed = true;
+                    let key = imap
+                        .get("password_secret_key")
+                        .and_then(|v| v.as_str())
+                        .map(str::trim)
+                        .filter(|s| !s.is_empty() && is_valid_secret_key(s))
+                        .map(str::to_string)
+                        .unwrap_or_else(|| format!("imap_pass_{tid_frag}"));
+                    imap.insert("password_secret_key".to_string(), json!(key));
+                    new_secrets.insert(key, pass);
+                }
+                if let Some(user) = extract_legacy_plaintext_field(imap, "username") {
+                    changed = true;
+                    let key = imap
+                        .get("username_secret_key")
+                        .and_then(|v| v.as_str())
+                        .map(str::trim)
+                        .filter(|s| !s.is_empty() && is_valid_secret_key(s))
+                        .map(str::to_string)
+                        .unwrap_or_else(|| format!("imap_user_{tid_frag}"));
+                    imap.insert("username_secret_key".to_string(), json!(key));
+                    new_secrets.insert(key, user);
                 }
             }
-        }
-        let mut secret_updated_ms = BTreeMap::new();
-        if let Some(obj) = v["secret_updated_ms"].as_object() {
-            for (k, val) in obj {
-                if let Some(ts) = val.as_u64() {
-                    secret_updated_ms.insert(k.clone(), ts);
-                }
-            }
-        }
-        let mut webhook_secrets = BTreeMap::new();
-        if let Some(obj) = v["webhook_secrets"].as_object() {
-            for (k, val) in obj {
-                if let (Some(sig), Some(tok)) = (
-                    val["signing_secret"].as_str(),
-                    val["hook_token"].as_str(),
-                ) {
-                    webhook_secrets.insert(
-                        k.clone(),
-                        WebhookSecretEntry {
-                            signing_secret: sig.to_string(),
-                            hook_token: tok.to_string(),
-                            updated_ms: val["updated_ms"].as_u64().unwrap_or(0),
-                        },
-                    );
-                }
-            }
-        }
-        Self {
-            secrets,
-            secret_updated_ms,
-            webhook_secrets,
         }
     }
 
-    fn save_unlocked(&self, person_data_dir: &Path) -> Result<(), String> {
-        let wh: BTreeMap<String, Value> = self
+    if let Some(outbound) = doc.get_mut("outbound").and_then(|v| v.as_array_mut()) {
+        for (idx, conn) in outbound.iter_mut().enumerate() {
+            let Some(cobj) = conn.as_object_mut() else {
+                continue;
+            };
+            let oid_raw = cobj
+                .get("id")
+                .and_then(|v| v.as_str())
+                .map(str::to_string)
+                .unwrap_or_else(|| format!("conn-{idx}"));
+            let oid_frag = sanitize_secret_key_fragment(&oid_raw);
+            let mut added_keys: Vec<String> = Vec::new();
+
+            if let Some(smtp) = cobj.get_mut("smtp_config").and_then(|v| v.as_object_mut()) {
+                if let Some(pass) = extract_legacy_plaintext_field(smtp, "password") {
+                    changed = true;
+                    let key = smtp
+                        .get("password_secret_key")
+                        .and_then(|v| v.as_str())
+                        .map(str::trim)
+                        .filter(|s| !s.is_empty() && is_valid_secret_key(s))
+                        .map(str::to_string)
+                        .unwrap_or_else(|| format!("smtp_pass_{oid_frag}"));
+                    smtp.insert("password_secret_key".to_string(), json!(key));
+                    added_keys.push(key.clone());
+                    new_secrets.insert(key, pass);
+                }
+                if let Some(user) = extract_legacy_plaintext_field(smtp, "username") {
+                    changed = true;
+                    let key = smtp
+                        .get("username_secret_key")
+                        .and_then(|v| v.as_str())
+                        .map(str::trim)
+                        .filter(|s| !s.is_empty() && is_valid_secret_key(s))
+                        .map(str::to_string)
+                        .unwrap_or_else(|| format!("smtp_user_{oid_frag}"));
+                    smtp.insert("username_secret_key".to_string(), json!(key));
+                    added_keys.push(key.clone());
+                    new_secrets.insert(key, user);
+                }
+            }
+
+            if let Some(oauth) = cobj.get_mut("oauth_config").and_then(|v| v.as_object_mut()) {
+                if let Some(csec) = extract_legacy_plaintext_field(oauth, "client_secret") {
+                    changed = true;
+                    let key = oauth
+                        .get("client_secret_key")
+                        .and_then(|v| v.as_str())
+                        .map(str::trim)
+                        .filter(|s| !s.is_empty() && is_valid_secret_key(s))
+                        .map(str::to_string)
+                        .unwrap_or_else(|| format!("oauth_client_secret_{oid_frag}"));
+                    oauth.insert("client_secret_key".to_string(), json!(key));
+                    added_keys.push(key.clone());
+                    new_secrets.insert(key, csec);
+                }
+                if let Some(rt) = extract_legacy_plaintext_field(oauth, "refresh_token") {
+                    changed = true;
+                    let key = oauth
+                        .get("refresh_token_secret_key")
+                        .and_then(|v| v.as_str())
+                        .map(str::trim)
+                        .filter(|s| !s.is_empty() && is_valid_secret_key(s))
+                        .map(str::to_string)
+                        .unwrap_or_else(|| format!("oauth_refresh_token_{oid_frag}"));
+                    oauth.insert("refresh_token_secret_key".to_string(), json!(key));
+                    added_keys.push(key.clone());
+                    new_secrets.insert(key, rt);
+                }
+                if let Some(at) = extract_legacy_plaintext_field(oauth, "access_token") {
+                    changed = true;
+                    let key = "oauth_access_token".to_string();
+                    added_keys.push(key.clone());
+                    new_secrets.insert(key, at);
+                }
+            }
+
+            for legacy_field in ["secret_value", "api_key", "bearer_token"] {
+                if let Some(sec) = extract_legacy_plaintext_field(cobj, legacy_field) {
+                    changed = true;
+                    let key = cobj
+                        .get("secret_key")
+                        .and_then(|v| v.as_str())
+                        .map(str::trim)
+                        .filter(|s| !s.is_empty() && is_valid_secret_key(s))
+                        .map(str::to_string)
+                        .unwrap_or_else(|| format!("conn_{legacy_field}_{oid_frag}"));
+                    added_keys.push(key.clone());
+                    new_secrets.insert(key, sec);
+                }
+            }
+
+            if !added_keys.is_empty() {
+                let mut keys: Vec<Value> = cobj
+                    .get("secret_keys")
+                    .and_then(|v| v.as_array())
+                    .cloned()
+                    .unwrap_or_default();
+                for k in added_keys {
+                    if !keys.iter().any(|x| x.as_str() == Some(k.as_str())) {
+                        keys.push(json!(k));
+                    }
+                }
+                cobj.insert("secret_keys".to_string(), Value::Array(keys));
+            }
+        }
+    }
+
+    if !changed {
+        return false;
+    }
+
+    let Ok(mut secrets) = ConnectorSecretsStore::load_result_unlocked(person_data_dir) else {
+        return false;
+    };
+    for (k, v) in new_secrets {
+        secrets.secrets.insert(k.clone(), v);
+        secrets.secret_updated_ms.insert(k, now_ms);
+    }
+    for (tid, entry) in new_webhooks {
+        let mut merged = secrets
             .webhook_secrets
-            .iter()
-            .map(|(k, e)| {
-                (
-                    k.clone(),
-                    json!({
-                        "signing_secret": e.signing_secret,
-                        "hook_token": e.hook_token,
-                        "updated_ms": e.updated_ms,
-                    }),
-                )
-            })
-            .collect();
+            .get(&tid)
+            .cloned()
+            .unwrap_or(WebhookSecretEntry {
+                signing_secret: String::new(),
+                hook_token: String::new(),
+                updated_ms: now_ms,
+            });
+        if !entry.signing_secret.is_empty() {
+            merged.signing_secret = entry.signing_secret;
+        }
+        if !entry.hook_token.is_empty() {
+            merged.hook_token = entry.hook_token;
+        }
+        merged.updated_ms = now_ms;
+        secrets.webhook_secrets.insert(tid, merged);
+    }
+    secrets.save_unlocked(person_data_dir).is_ok()
+}
+
+fn migrate_legacy_oauth_object(
+    obj: &mut serde_json::Map<String, Value>,
+    scope: Option<&str>,
+    out_secrets: &mut BTreeMap<String, String>,
+) -> bool {
+    const SECRET_FIELDS: &[&str] = &[
+        "client_secret",
+        "refresh_token",
+        "access_token",
+        "password",
+        "api_key",
+        "bearer_token",
+    ];
+    let mut changed = false;
+    for &field in SECRET_FIELDS {
+        let plain = obj
+            .get(field)
+            .and_then(|v| v.as_str())
+            .map(str::trim)
+            .filter(|s| !s.is_empty() && !secret_store::is_vault_ref(s))
+            .map(str::to_string);
+        if let Some(secret_val) = plain {
+            changed = true;
+            let key = match (scope, field) {
+                (None, "access_token") => "oauth_access_token".to_string(),
+                (None, f) => format!("oauth_{f}"),
+                (Some(sc), f) => format!("oauth_{}_{f}", sanitize_secret_key_fragment(sc)),
+            };
+            let vref = secret_store::vault_ref(&vault_key_for_secret(&key));
+            obj.insert(field.to_string(), json!(vref));
+            obj.insert(format!("has_{field}"), json!(true));
+            out_secrets.insert(key, secret_val);
+        }
+    }
+    changed
+}
+
+fn migrate_legacy_oauth_json_unlocked(
+    person_data_dir: &Path,
+) -> Result<BTreeMap<String, String>, String> {
+    let path = legacy_oauth_path(person_data_dir);
+    let Ok(text) = std::fs::read_to_string(&path) else {
+        return Ok(BTreeMap::new());
+    };
+    let Ok(mut v) = serde_json::from_str::<Value>(&text) else {
+        return Ok(BTreeMap::new());
+    };
+    let mut extracted = BTreeMap::new();
+    let mut changed = false;
+
+    if let Some(obj) = v.as_object_mut() {
+        if migrate_legacy_oauth_object(obj, None, &mut extracted) {
+            changed = true;
+        }
+        let child_keys: Vec<String> = obj.keys().cloned().collect();
+        for ck in child_keys {
+            if let Some(sub) = obj.get_mut(&ck).and_then(|x| x.as_object_mut()) {
+                if migrate_legacy_oauth_object(sub, Some(&ck), &mut extracted) {
+                    changed = true;
+                }
+            } else if let Some(arr) = obj.get_mut(&ck).and_then(|x| x.as_array_mut()) {
+                for (i, item) in arr.iter_mut().enumerate() {
+                    if let Some(sub) = item.as_object_mut() {
+                        let scope = sub
+                            .get("id")
+                            .or_else(|| sub.get("name"))
+                            .and_then(|s| s.as_str())
+                            .map(str::to_string)
+                            .unwrap_or_else(|| format!("{ck}_{i}"));
+                        if migrate_legacy_oauth_object(sub, Some(&scope), &mut extracted) {
+                            changed = true;
+                        }
+                    }
+                }
+            }
+        }
+    } else if let Some(arr) = v.as_array_mut() {
+        for (i, item) in arr.iter_mut().enumerate() {
+            if let Some(sub) = item.as_object_mut() {
+                let scope = sub
+                    .get("id")
+                    .or_else(|| sub.get("name"))
+                    .and_then(|s| s.as_str())
+                    .map(str::to_string)
+                    .unwrap_or_else(|| format!("entry_{i}"));
+                if migrate_legacy_oauth_object(sub, Some(&scope), &mut extracted) {
+                    changed = true;
+                }
+            }
+        }
+    }
+
+    if changed {
+        let bytes = serde_json::to_vec_pretty(&v)
+            .map_err(|e| format!("serialize migrated oauth.json: {e}"))?;
+        atomic_write_bytes_with_mode(&path, &bytes, Some(0o600))
+            .map_err(|e| format!("rewrite migrated oauth.json: {e}"))?;
+    }
+    Ok(extracted)
+}
+
+impl ConnectorSecretsStore {
+    fn load_result_unlocked(person_data_dir: &Path) -> Result<Self, String> {
+        let path = connector_secrets_path(person_data_dir);
+        let oauth_migrated = migrate_legacy_oauth_json_unlocked(person_data_dir)?;
+        let vault_map = secret_store::load_prefix_secrets(person_data_dir, VAULT_CONNECTOR_PREFIX)?;
+
+        let mut secrets = BTreeMap::new();
+        let mut secret_updated_ms = BTreeMap::new();
+        let mut webhook_secrets: BTreeMap<String, WebhookSecretEntry> = BTreeMap::new();
+
+        // Populate decrypted secrets from the authenticated encrypted vault.
+        for (vk, plain) in &vault_map {
+            if let Some(key) = vk.strip_prefix(VAULT_SECRET_PREFIX) {
+                secrets.insert(key.to_string(), plain.clone());
+            } else if let Some(rest) = vk.strip_prefix(VAULT_WEBHOOK_PREFIX) {
+                if let Some(tid) = rest.strip_suffix(":signing_secret") {
+                    let entry = webhook_secrets
+                        .entry(tid.to_string())
+                        .or_insert_with(|| WebhookSecretEntry {
+                            signing_secret: String::new(),
+                            hook_token: String::new(),
+                            updated_ms: 0,
+                        });
+                    entry.signing_secret = plain.clone();
+                } else if let Some(tid) = rest.strip_suffix(":hook_token") {
+                    let entry = webhook_secrets
+                        .entry(tid.to_string())
+                        .or_insert_with(|| WebhookSecretEntry {
+                            signing_secret: String::new(),
+                            hook_token: String::new(),
+                            updated_ms: 0,
+                        });
+                    entry.hook_token = plain.clone();
+                }
+            }
+        }
+
+        let mut needs_migration = !oauth_migrated.is_empty();
+        let now_ms = records::now_millis();
+        for (k, val) in oauth_migrated {
+            secrets.insert(k.clone(), val);
+            secret_updated_ms.insert(k, now_ms);
+        }
+
+        let mut referenced_secret_keys: Vec<String> = Vec::new();
+        let mut referenced_webhook_ids: Vec<String> = Vec::new();
+
+        if path.exists() {
+            let text = std::fs::read_to_string(&path)
+                .map_err(|e| format!("read connector_secrets.json: {e}"))?;
+            if let Ok(v) = serde_json::from_str::<Value>(&text) {
+                if let Some(obj) = v["secret_updated_ms"].as_object() {
+                    for (k, val) in obj {
+                        if let Some(ts) = val.as_u64() {
+                            secret_updated_ms.insert(k.clone(), ts);
+                        }
+                    }
+                }
+                if let Some(obj) = v["secret_refs"].as_object() {
+                    for k in obj.keys() {
+                        referenced_secret_keys.push(k.clone());
+                    }
+                }
+                if let Some(obj) = v["webhook_secret_refs"].as_object() {
+                    for (tid, val) in obj {
+                        referenced_webhook_ids.push(tid.clone());
+                        if let Some(ts) = val["updated_ms"].as_u64() {
+                            if let Some(entry) = webhook_secrets.get_mut(tid) {
+                                entry.updated_ms = ts;
+                            }
+                        }
+                    }
+                }
+                // Detect legacy v1 plaintext connector_secrets.json and migrate automatically.
+                if let Some(obj) = v["secrets"].as_object() {
+                    for (k, val) in obj {
+                        if let Some(s) = val.as_str() {
+                            if !secret_store::is_vault_ref(s) {
+                                needs_migration = true;
+                                secrets.entry(k.clone()).or_insert_with(|| s.to_string());
+                                secret_updated_ms.entry(k.clone()).or_insert(now_ms);
+                            } else {
+                                referenced_secret_keys.push(k.clone());
+                            }
+                        }
+                    }
+                }
+                if let Some(obj) = v["webhook_secrets"].as_object() {
+                    for (tid, val) in obj {
+                        let sig = val["signing_secret"].as_str();
+                        let tok = val["hook_token"].as_str();
+                        let ts = val["updated_ms"].as_u64().unwrap_or(0);
+                        if let (Some(sig_s), Some(tok_s)) = (sig, tok) {
+                            if !secret_store::is_vault_ref(sig_s) || !secret_store::is_vault_ref(tok_s)
+                            {
+                                needs_migration = true;
+                                webhook_secrets
+                                    .entry(tid.clone())
+                                    .or_insert(WebhookSecretEntry {
+                                        signing_secret: sig_s.to_string(),
+                                        hook_token: tok_s.to_string(),
+                                        updated_ms: ts,
+                                    });
+                            } else {
+                                referenced_webhook_ids.push(tid.clone());
+                                if let Some(entry) = webhook_secrets.get_mut(tid) {
+                                    entry.updated_ms = ts;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Fail closed if metadata declares vaulted secrets that are absent from secrets.enc.json.
+        if !needs_migration
+            && (!referenced_secret_keys.is_empty() || !referenced_webhook_ids.is_empty())
+            && !secret_store::vault_path(person_data_dir).exists()
+        {
+            return Err(
+                "encrypted secret vault (secrets.enc.json) is missing for referenced connector secrets"
+                    .to_string(),
+            );
+        }
+
+        let store = Self {
+            secrets,
+            secret_updated_ms,
+            webhook_secrets,
+        };
+        if needs_migration {
+            store.save_unlocked(person_data_dir)?;
+        }
+        Ok(store)
+    }
+
+    fn load_unlocked(person_data_dir: &Path) -> Self {
+        Self::load_result_unlocked(person_data_dir).unwrap_or_default()
+    }
+
+    fn save_unlocked(&self, person_data_dir: &Path) -> Result<(), String> {
+        let mut desired: BTreeMap<String, String> = BTreeMap::new();
+        let mut secret_refs: BTreeMap<String, String> = BTreeMap::new();
+        for (k, val) in &self.secrets {
+            let vkey = vault_key_for_secret(k);
+            desired.insert(vkey.clone(), val.clone());
+            secret_refs.insert(k.clone(), secret_store::vault_ref(&vkey));
+        }
+        let mut wh_refs: BTreeMap<String, Value> = BTreeMap::new();
+        for (tid, e) in &self.webhook_secrets {
+            let sig_key = vault_key_for_webhook_signing(tid);
+            let tok_key = vault_key_for_webhook_token(tid);
+            desired.insert(sig_key.clone(), e.signing_secret.clone());
+            desired.insert(tok_key.clone(), e.hook_token.clone());
+            wh_refs.insert(
+                tid.clone(),
+                json!({
+                    "signing_secret": secret_store::vault_ref(&sig_key),
+                    "hook_token": secret_store::vault_ref(&tok_key),
+                    "has_signing_secret": !e.signing_secret.is_empty(),
+                    "has_hook_token": !e.hook_token.is_empty(),
+                    "updated_ms": e.updated_ms,
+                }),
+            );
+        }
+
+        secret_store::sync_prefix_secrets(person_data_dir, VAULT_CONNECTOR_PREFIX, &desired)?;
+
+        // Write ONLY non-secret metadata & opaque `vault:` references to connector_secrets.json.
         let doc = json!({
-            "version": 1,
-            "secrets": self.secrets,
+            "version": 2,
+            "storage": "vault",
+            "secret_refs": secret_refs,
             "secret_updated_ms": self.secret_updated_ms,
-            "webhook_secrets": wh,
+            "webhook_secret_refs": wh_refs,
         });
         let bytes = serde_json::to_vec_pretty(&doc)
-            .map_err(|e| format!("serialize connector secrets: {e}"))?;
+            .map_err(|e| format!("serialize connector secrets metadata: {e}"))?;
         atomic_write_bytes_with_mode(&connector_secrets_path(person_data_dir), &bytes, Some(0o600))
             .map_err(|e| format!("save connector_secrets.json: {e}"))
     }
@@ -560,14 +1335,92 @@ pub fn collect_all_secret_values(person_data_dir: &Path) -> Vec<String> {
     with_connectors_lock(|| ConnectorSecretsStore::load_unlocked(person_data_dir).all_values())
 }
 
+pub fn get_connector_secret_map(person_data_dir: &Path) -> BTreeMap<String, String> {
+    with_connectors_lock(|| ConnectorSecretsStore::load_unlocked(person_data_dir).secrets)
+}
+
+/// Strictly decrypt and load all named connector secrets, surfacing AEAD
+/// authentication or vault tampering errors instead of returning an empty map.
+pub fn get_connector_secret_map_result(
+    person_data_dir: &Path,
+) -> Result<BTreeMap<String, String>, String> {
+    with_connectors_lock(|| Ok(ConnectorSecretsStore::load_result_unlocked(person_data_dir)?.secrets))
+}
+
+/// Strictly decrypt and load the full connector secrets store.
+pub fn load_connector_secrets(person_data_dir: &Path) -> Result<ConnectorSecretsStore, String> {
+    with_connectors_lock(|| ConnectorSecretsStore::load_result_unlocked(person_data_dir))
+}
+
+/// Store one or more named secrets in the encrypted connector secret vault.
+pub fn store_connector_secrets(
+    person_data_dir: &Path,
+    entries: &BTreeMap<String, String>,
+) -> Result<(), String> {
+    if entries.is_empty() {
+        return Ok(());
+    }
+    let now_ms = records::now_millis();
+    with_connectors_lock(|| {
+        let mut secrets = ConnectorSecretsStore::load_result_unlocked(person_data_dir)?;
+        for (k, v) in entries {
+            if !is_valid_secret_key(k) {
+                return Err(format!("invalid secret key '{k}'"));
+            }
+            if v.contains('\r') || v.contains('\n') {
+                return Err(format!("secret '{k}' cannot contain newlines"));
+            }
+            if !v.is_empty() {
+                secrets.secrets.insert(k.clone(), v.clone());
+                secrets.secret_updated_ms.insert(k.clone(), now_ms);
+            }
+        }
+        secrets.save_unlocked(person_data_dir)
+    })
+}
+
+pub fn parse_url_host_port_pub(raw_url: &str, default_port: u16) -> (String, u16) {
+    parse_url_host_port(raw_url, default_port)
+}
+
+/// Scrub inline `user:pass@` authority credentials from a URL before logging
+/// or returning it in error payloads.
+pub fn redact_url_userinfo(raw_url: &str) -> String {
+    let Some((scheme, rest)) = raw_url.split_once("://") else {
+        return raw_url.to_string();
+    };
+    let auth_end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
+    let authority = &rest[..auth_end];
+    if let Some((_, host_part)) = authority.rsplit_once('@') {
+        format!("{scheme}://***@{host_part}{}", &rest[auth_end..])
+    } else {
+        raw_url.to_string()
+    }
+}
+
 /// Redact any known connector secret values (including partial and JSON-escaped
-/// echoes) from `text`.
-pub fn redact_with_store(text: &str, secrets: &ConnectorSecretsStore) -> String {
+/// echoes) from `text`, plus any extra transient tokens (e.g. AUTH blobs).
+pub fn redact_with_store_extra(
+    text: &str,
+    secrets: &ConnectorSecretsStore,
+    extras: &[String],
+) -> String {
     let mut out = tripwire::redact(text);
     for val in secrets.all_values() {
         tripwire::redact_secret_value(&mut out, &val, false);
     }
+    for extra in extras {
+        if extra.trim().len() >= 4 {
+            tripwire::redact_secret_value(&mut out, extra, false);
+        }
+    }
     out
+}
+
+/// Redact any known connector secret values (including partial and JSON-escaped
+/// echoes) from `text`.
+pub fn redact_with_store(text: &str, secrets: &ConnectorSecretsStore) -> String {
+    redact_with_store_extra(text, secrets, &[])
 }
 
 pub fn redact_for_person(person_data_dir: &Path, text: &str) -> String {
@@ -631,6 +1484,18 @@ pub fn list_connectors_json(person_data_dir: &Path, policy: &WorkspacePolicy) ->
             .map(|t| {
                 let has_sec = if t.kind == "webhook" {
                     secrets.webhook_secrets.contains_key(&t.id)
+                } else if t.kind == "imap_poll" {
+                    t.imap_config.as_ref().is_some_and(|imap| {
+                        let keys: Vec<&str> = [
+                            imap.username_secret_key.as_str(),
+                            imap.password_secret_key.as_str(),
+                        ]
+                        .into_iter()
+                        .filter(|k| !k.is_empty())
+                        .collect();
+                        !keys.is_empty()
+                            && keys.iter().all(|k| secrets.secrets.contains_key(*k))
+                    })
                 } else {
                     false
                 };
@@ -665,6 +1530,7 @@ pub fn list_connectors_json(person_data_dir: &Path, policy: &WorkspacePolicy) ->
             "secrets": masked_secrets,
             "delivery_log": delivery_log,
             "policy_profile": policy.profile,
+            "secret_storage": secret_store::active_backend_info(person_data_dir),
         })
     })
 }
@@ -764,6 +1630,128 @@ pub fn validate_watch_dir(
     Ok(canon)
 }
 
+fn is_loopback_host(host: &str) -> bool {
+    let h = host.trim().trim_start_matches('[').trim_end_matches(']');
+    h.eq_ignore_ascii_case("localhost")
+        || h.parse::<std::net::IpAddr>()
+            .is_ok_and(|ip| ip.is_loopback())
+}
+
+fn local_connectors_env_allowed() -> bool {
+    let truthy = |k: &str| {
+        std::env::var(k)
+            .map(|v| matches!(v.trim().to_ascii_lowercase().as_str(), "1" | "true" | "yes"))
+            .unwrap_or(false)
+    };
+    truthy("ERGON_ALLOW_LOCAL_CONNECTORS") || truthy("ERGON_FETCH_ALLOW_PRIVATE")
+}
+
+fn local_connectors_allowed_for(data_dir: &Path) -> bool {
+    tripwire::local_connectors_override(data_dir).unwrap_or_else(local_connectors_env_allowed)
+}
+
+fn validate_plain_loopback_security(
+    data_dir: &Path,
+    host: &str,
+    security: &str,
+    proto: &str,
+) -> Result<(), String> {
+    if security == "plain_loopback_test" {
+        if !is_loopback_host(host) {
+            return Err(format!(
+                "{proto} security 'plain_loopback_test' is only allowed on loopback hosts (127.0.0.1, ::1, localhost)"
+            ));
+        }
+        if !local_connectors_allowed_for(data_dir) {
+            return Err(format!(
+                "{proto} security 'plain_loopback_test' requires ERGON_ALLOW_LOCAL_CONNECTORS=1"
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn parse_url_host_port(raw_url: &str, default_port: u16) -> (String, u16) {
+    let after_scheme = raw_url
+        .split_once("://")
+        .map(|(_, r)| r)
+        .unwrap_or(raw_url);
+    let authority = after_scheme
+        .split(['/', '?', '#'])
+        .next()
+        .unwrap_or("");
+    let host_port = authority.rsplit('@').next().unwrap_or(authority);
+    if let Some(rest) = host_port.strip_prefix('[') {
+        let host = rest.split(']').next().unwrap_or("").to_string();
+        let port = rest
+            .split("]:")
+            .nth(1)
+            .and_then(|p| p.parse::<u16>().ok())
+            .unwrap_or(default_port);
+        return (host, port);
+    }
+    if let Some((h, p)) = host_port.rsplit_once(':') {
+        if let Ok(port) = p.parse::<u16>() {
+            return (h.to_string(), port);
+        }
+    }
+    (host_port.to_string(), default_port)
+}
+
+fn validate_email_addr(addr: &str, field: &str) -> Result<String, String> {
+    let trimmed = addr.trim();
+    if trimmed.is_empty()
+        || trimmed.len() > 254
+        || trimmed.contains(['\r', '\n', '\0', '<', '>'])
+        || !trimmed.contains('@')
+    {
+        return Err(format!("{field} must be a valid email address"));
+    }
+    let Some((local, domain)) = trimmed.split_once('@') else {
+        return Err(format!("{field} must be a valid email address"));
+    };
+    if local.is_empty() || domain.is_empty() || domain.contains(char::is_whitespace) {
+        return Err(format!("{field} must be a valid email address"));
+    }
+    Ok(trimmed.to_string())
+}
+
+fn parse_secrets_map_from_body(body: &Value) -> Result<BTreeMap<String, String>, (u16, String)> {
+    let mut new_secrets = BTreeMap::new();
+    if let Some(sec_obj) = body["secrets"].as_object() {
+        for (k, v) in sec_obj {
+            let sk = k.trim();
+            if !is_valid_secret_key(sk) {
+                return Err((400, format!("invalid secret key '{sk}'")));
+            }
+            let sv = v
+                .as_str()
+                .ok_or_else(|| (400, format!("secret '{sk}' must be a string")))?;
+            if sv.contains('\r') || sv.contains('\n') {
+                return Err((400, format!("secret '{sk}' cannot contain newlines")));
+            }
+            if !sv.is_empty() {
+                new_secrets.insert(sk.to_string(), sv.to_string());
+            }
+        }
+    }
+    if let (Some(sk), Some(sv)) = (
+        body["secret_key"].as_str().map(str::trim).filter(|s| !s.is_empty()),
+        body["secret_value"].as_str(),
+    ) {
+        if !is_valid_secret_key(sk) {
+            return Err((400, format!("invalid secret_key '{sk}'")));
+        }
+        if sv.contains('\r') || sv.contains('\n') {
+            return Err((400, "secret_value cannot contain newlines".to_string()));
+        }
+        if !sv.is_empty() {
+            new_secrets.insert(sk.to_string(), sv.to_string());
+        }
+    }
+    Ok(new_secrets)
+}
+
 pub fn create_trigger(
     person_data_dir: &Path,
     root_data_dir: &Path,
@@ -782,18 +1770,18 @@ pub fn create_trigger(
         .unwrap_or("")
         .trim()
         .to_ascii_lowercase();
-    if kind != "webhook" && kind != "folder_watch" {
+    if !matches!(kind.as_str(), "webhook" | "folder_watch" | "imap_poll") {
         return Err((
             400,
-            "trigger kind must be 'webhook' or 'folder_watch'".to_string(),
+            "trigger kind must be 'webhook', 'folder_watch', or 'imap_poll'".to_string(),
         ));
     }
     let name: String = body["name"]
         .as_str()
-        .unwrap_or(if kind == "webhook" {
-            "Webhook Trigger"
-        } else {
-            "Folder Watch Trigger"
+        .unwrap_or(match kind.as_str() {
+            "webhook" => "Webhook Trigger",
+            "imap_poll" => "IMAP Inbox Trigger",
+            _ => "Folder Watch Trigger",
         })
         .replace(['\r', '\n'], " ")
         .trim()
@@ -849,6 +1837,7 @@ pub fn create_trigger(
             watch_dir: None,
             glob: None,
             max_bytes: MAX_WEBHOOK_BYTES as u64,
+            imap_config: None,
             trigger_count: 0,
             last_triggered_ms: None,
             created_ms: now_ms,
@@ -856,7 +1845,8 @@ pub fn create_trigger(
         };
         with_connectors_lock(|| {
             let mut store = ConnectorsStore::load_unlocked(person_data_dir);
-            let mut secrets = ConnectorSecretsStore::load_unlocked(person_data_dir);
+            let mut secrets = ConnectorSecretsStore::load_result_unlocked(person_data_dir)
+                .map_err(|e| (500, e))?;
             secrets
                 .webhook_secrets
                 .insert(id.clone(), wh_secret.clone());
@@ -870,6 +1860,74 @@ pub fn create_trigger(
                 "signing_secret": wh_secret.signing_secret,
                 "hook_token": wh_secret.hook_token,
                 "hook_path": format!("/api/hooks/{hook_id}"),
+            }))
+        })
+    } else if kind == "imap_poll" {
+        let imap_val = if body["imap_config"].is_object() {
+            &body["imap_config"]
+        } else {
+            body
+        };
+        let imap = ImapTarget::from_json(imap_val).ok_or_else(|| {
+            (
+                400,
+                "imap_poll trigger requires imap_config with valid host and security ('imaps', 'starttls', or 'plain_loopback_test')".to_string(),
+            )
+        })?;
+        if imap.folder.contains(['\r', '\n', '\0']) {
+            return Err((400, "imap folder contains invalid characters".to_string()));
+        }
+        if !imap.username_secret_key.is_empty() && !is_valid_secret_key(&imap.username_secret_key) {
+            return Err((400, "invalid imap username_secret_key".to_string()));
+        }
+        if !imap.password_secret_key.is_empty() && !is_valid_secret_key(&imap.password_secret_key) {
+            return Err((400, "invalid imap password_secret_key".to_string()));
+        }
+        validate_plain_loopback_security(person_data_dir, &imap.host, &imap.security, "IMAP")
+            .map_err(|e| (400, e))?;
+        tripwire::check_egress_host_for(person_data_dir, &imap.host, imap.port, "connector_config")
+            .map_err(|e| (400, e))?;
+
+        let new_secrets = parse_secrets_map_from_body(body)?;
+        let rule = TriggerRule {
+            id,
+            name,
+            kind: "imap_poll".to_string(),
+            enabled,
+            routine_id,
+            target_kind,
+            hook_id: None,
+            watch_dir: None,
+            glob: None,
+            max_bytes: MAX_IMAP_MESSAGE_BYTES as u64,
+            imap_config: Some(imap.clone()),
+            trigger_count: 0,
+            last_triggered_ms: None,
+            created_ms: now_ms,
+            updated_ms: now_ms,
+        };
+        with_connectors_lock(|| {
+            let mut store = ConnectorsStore::load_unlocked(person_data_dir);
+            let mut secrets = ConnectorSecretsStore::load_result_unlocked(person_data_dir)
+                .map_err(|e| (500, e))?;
+            if !new_secrets.is_empty() {
+                for (k, v) in &new_secrets {
+                    secrets.secrets.insert(k.clone(), v.clone());
+                    secrets.secret_updated_ms.insert(k.clone(), now_ms);
+                }
+                secrets
+                    .save_unlocked(person_data_dir)
+                    .map_err(|e| (500, e))?;
+            }
+            let has_sec = [&imap.username_secret_key, &imap.password_secret_key]
+                .into_iter()
+                .filter(|k| !k.is_empty())
+                .all(|k| secrets.secrets.contains_key(k))
+                && (!imap.username_secret_key.is_empty() || !imap.password_secret_key.is_empty());
+            store.triggers.push(rule.clone());
+            store.save_unlocked(person_data_dir).map_err(|e| (500, e))?;
+            Ok(json!({
+                "trigger": rule.to_json(has_sec),
             }))
         })
     } else {
@@ -901,6 +1959,7 @@ pub fn create_trigger(
             watch_dir: Some(canon_dir.to_string_lossy().to_string()),
             glob: Some(glob),
             max_bytes,
+            imap_config: None,
             trigger_count: 0,
             last_triggered_ms: None,
             created_ms: now_ms,
@@ -941,7 +2000,8 @@ pub fn rotate_webhook_secret(
             .as_deref()
             .map(|h| format!("/api/hooks/{h}"))
             .unwrap_or_default();
-        let mut secrets = ConnectorSecretsStore::load_unlocked(person_data_dir);
+        let mut secrets = ConnectorSecretsStore::load_result_unlocked(person_data_dir)
+            .map_err(|e| (500, e))?;
         secrets
             .webhook_secrets
             .insert(trigger_id.to_string(), new_wh.clone());
@@ -966,7 +2026,7 @@ pub fn delete_trigger(person_data_dir: &Path, trigger_id: &str) -> Result<bool, 
         if store.triggers.len() == before {
             return Ok(false);
         }
-        let mut secrets = ConnectorSecretsStore::load_unlocked(person_data_dir);
+        let mut secrets = ConnectorSecretsStore::load_result_unlocked(person_data_dir)?;
         if secrets.webhook_secrets.remove(trigger_id).is_some() {
             secrets.save_unlocked(person_data_dir)?;
         }
@@ -1005,15 +2065,112 @@ pub fn upsert_outbound_connector(
             "connector kind must be 'http_webhook', 'rest_api', or 'smtp_relay'".to_string(),
         ));
     }
-    let url = body["url"].as_str().unwrap_or("").trim().to_string();
+    let mut smtp_config: Option<SmtpTarget> = None;
+    if body.get("smtp_config").is_some_and(|v| !v.is_null()) {
+        let mut parsed_smtp = SmtpTarget::from_json(&body["smtp_config"]).ok_or_else(|| {
+            (
+                400,
+                "smtp_config must include valid host and security ('smtps', 'starttls', or 'plain_loopback_test')".to_string(),
+            )
+        })?;
+        validate_plain_loopback_security(
+            person_data_dir,
+            &parsed_smtp.host,
+            &parsed_smtp.security,
+            "SMTP",
+        )
+        .map_err(|e| (400, e))?;
+        tripwire::check_egress_host_for(
+            person_data_dir,
+            &parsed_smtp.host,
+            parsed_smtp.port,
+            "connector_config",
+        )
+        .map_err(|e| (400, e))?;
+        if !parsed_smtp.username_secret_key.is_empty()
+            && !is_valid_secret_key(&parsed_smtp.username_secret_key)
+        {
+            return Err((400, "invalid smtp username_secret_key".to_string()));
+        }
+        if !parsed_smtp.password_secret_key.is_empty()
+            && !is_valid_secret_key(&parsed_smtp.password_secret_key)
+        {
+            return Err((400, "invalid smtp password_secret_key".to_string()));
+        }
+        if !parsed_smtp.from_addr.is_empty() {
+            parsed_smtp.from_addr = validate_email_addr(&parsed_smtp.from_addr, "smtp_config.from_addr")
+                .map_err(|e| (400, e))?;
+        }
+        let mut clean_to = Vec::with_capacity(parsed_smtp.default_to.len());
+        for rcpt in &parsed_smtp.default_to {
+            clean_to.push(validate_email_addr(rcpt, "smtp_config.default_to").map_err(|e| (400, e))?);
+        }
+        parsed_smtp.default_to = clean_to;
+        smtp_config = Some(parsed_smtp);
+    } else if kind == "smtp_relay" {
+        return Err((400, "smtp_relay connector requires smtp_config".to_string()));
+    }
+
+    let mut oauth_config: Option<OAuth2Config> = None;
+    if body.get("oauth_config").is_some_and(|v| !v.is_null()) {
+        let parsed_oauth = OAuth2Config::from_json(&body["oauth_config"]).ok_or_else(|| {
+            (
+                400,
+                "oauth_config must include valid token_url and client_id".to_string(),
+            )
+        })?;
+        if parsed_oauth.token_url.contains("{{secret:") {
+            return Err((400, "oauth_config.token_url cannot contain secret placeholders".to_string()));
+        }
+        tripwire::check_egress_for(person_data_dir, &parsed_oauth.token_url, "connector_config")
+            .map_err(|e| (400, e))?;
+        let (thost, tport) = parse_url_host_port(&parsed_oauth.token_url, 443);
+        tripwire::check_egress_host_for(person_data_dir, &thost, tport, "connector_config")
+            .map_err(|e| (400, e))?;
+        if !parsed_oauth.client_secret_key.is_empty()
+            && !is_valid_secret_key(&parsed_oauth.client_secret_key)
+        {
+            return Err((400, "invalid oauth_config.client_secret_key".to_string()));
+        }
+        if !parsed_oauth.refresh_token_secret_key.is_empty()
+            && !is_valid_secret_key(&parsed_oauth.refresh_token_secret_key)
+        {
+            return Err((400, "invalid oauth_config.refresh_token_secret_key".to_string()));
+        }
+        oauth_config = Some(parsed_oauth);
+    }
+
+    let mut url = body["url"].as_str().unwrap_or("").trim().to_string();
+    if url.is_empty() {
+        if let Some(smtp) = &smtp_config {
+            let scheme = if smtp.security == "smtps" {
+                "smtps"
+            } else {
+                "smtp"
+            };
+            url = format!("{scheme}://{}:{}", smtp.host, smtp.port);
+        }
+    }
     if url.is_empty() || url.contains("{{secret:") {
         return Err((
             400,
-            "connector url must be a valid http:// or https:// URL without secret placeholders"
+            "connector url must be a valid http://, https://, smtp://, or smtps:// URL without secret placeholders"
                 .to_string(),
         ));
     }
-    tripwire::check_egress(&url, "connector_config").map_err(|e| (400, e))?;
+    tripwire::check_egress_for(person_data_dir, &url, "connector_config").map_err(|e| (400, e))?;
+    let default_port = if url.to_ascii_lowercase().starts_with("https://") {
+        443
+    } else if url.to_ascii_lowercase().starts_with("smtps://") {
+        465
+    } else if url.to_ascii_lowercase().starts_with("smtp://") {
+        587
+    } else {
+        80
+    };
+    let (uhost, uport) = parse_url_host_port(&url, default_port);
+    tripwire::check_egress_host_for(person_data_dir, &uhost, uport, "connector_config")
+        .map_err(|e| (400, e))?;
 
     let method = body["method"]
         .as_str()
@@ -1051,45 +2208,15 @@ pub fn upsert_outbound_connector(
         }
     }
 
-    let mut new_secrets: BTreeMap<String, String> = BTreeMap::new();
-    if let Some(sec_obj) = body["secrets"].as_object() {
-        for (k, v) in sec_obj {
-            let sk = k.trim();
-            if !is_valid_secret_key(sk) {
-                return Err((400, format!("invalid secret key '{sk}'")));
-            }
-            let sv = v
-                .as_str()
-                .ok_or_else(|| (400, format!("secret '{sk}' must be a string")))?;
-            if sv.contains('\r') || sv.contains('\n') {
-                return Err((400, format!("secret '{sk}' cannot contain newlines")));
-            }
-            if !sv.is_empty() {
-                new_secrets.insert(sk.to_string(), sv.to_string());
-            }
-        }
-    }
-    if let (Some(sk), Some(sv)) = (
-        body["secret_key"].as_str().map(str::trim).filter(|s| !s.is_empty()),
-        body["secret_value"].as_str(),
-    ) {
-        if !is_valid_secret_key(sk) {
-            return Err((400, format!("invalid secret_key '{sk}'")));
-        }
-        if sv.contains('\r') || sv.contains('\n') {
-            return Err((400, "secret_value cannot contain newlines".to_string()));
-        }
-        if !sv.is_empty() {
-            new_secrets.insert(sk.to_string(), sv.to_string());
-        }
-    }
+    let new_secrets = parse_secrets_map_from_body(body)?;
 
     let require_approval = body["require_approval"].as_bool().unwrap_or(true);
     let enabled = body["enabled"].as_bool().unwrap_or(true);
 
     with_connectors_lock(|| {
         let mut store = ConnectorsStore::load_unlocked(person_data_dir);
-        let mut secrets = ConnectorSecretsStore::load_unlocked(person_data_dir);
+        let mut secrets = ConnectorSecretsStore::load_result_unlocked(person_data_dir)
+            .map_err(|e| (500, e))?;
         if !new_secrets.is_empty() {
             for (k, v) in &new_secrets {
                 secrets.secrets.insert(k.clone(), v.clone());
@@ -1112,6 +2239,20 @@ pub fn upsert_outbound_connector(
                 secret_keys.push(k.clone());
             }
         }
+        if let Some(smtp) = &smtp_config {
+            for k in [&smtp.username_secret_key, &smtp.password_secret_key] {
+                if !k.is_empty() && !secret_keys.contains(k) {
+                    secret_keys.push(k.clone());
+                }
+            }
+        }
+        if let Some(oauth) = &oauth_config {
+            for k in [&oauth.client_secret_key, &oauth.refresh_token_secret_key] {
+                if !k.is_empty() && !secret_keys.contains(k) {
+                    secret_keys.push(k.clone());
+                }
+            }
+        }
 
         let existing_idx = requested_id
             .and_then(|rid| store.outbound.iter().position(|c| c.id == rid));
@@ -1127,6 +2268,12 @@ pub fn upsert_outbound_connector(
                 if !updated.secret_keys.contains(&k) {
                     updated.secret_keys.push(k);
                 }
+            }
+            if smtp_config.is_some() {
+                updated.smtp_config = smtp_config;
+            }
+            if oauth_config.is_some() {
+                updated.oauth_config = oauth_config;
             }
             updated.enabled = enabled;
             updated.updated_ms = now_ms;
@@ -1145,6 +2292,8 @@ pub fn upsert_outbound_connector(
                 headers_template,
                 require_approval,
                 secret_keys,
+                smtp_config,
+                oauth_config,
                 enabled,
                 last_delivery_ms: None,
                 last_status: None,
@@ -1296,7 +2445,8 @@ pub fn verify_and_ingest_webhook_with_meta(
     let (trigger_id, trigger_name, routine_id, target_kind, wh_secret) =
         with_connectors_lock(|| {
             let store = ConnectorsStore::load_unlocked(&cfg.data_dir);
-            let secrets = ConnectorSecretsStore::load_unlocked(&cfg.data_dir);
+            let secrets = ConnectorSecretsStore::load_result_unlocked(&cfg.data_dir)
+                .map_err(|e| (500, e))?;
             let Some(trg) = store
                 .triggers
                 .iter()
@@ -1728,6 +2878,205 @@ fn build_delivery_payload_bytes(payload: &Value) -> Vec<u8> {
     }
 }
 
+fn form_urlencode_component(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for b in s.bytes() {
+        if b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.' | b'~') {
+            out.push(b as char);
+        } else if b == b' ' {
+            out.push('+');
+        } else {
+            out.push_str(&format!("%{b:02X}"));
+        }
+    }
+    out
+}
+
+fn format_rfc2822_utc(ms: u64) -> String {
+    let secs = (ms / 1000) as i64;
+    let days = secs.div_euclid(86_400);
+    let rem = secs.rem_euclid(86_400);
+    let hour = rem / 3600;
+    let min = (rem % 3600) / 60;
+    let sec = rem % 60;
+    // Howard Hinnant's civil-from-days algorithm (epoch 1970-01-01 = Thursday)
+    let z = days + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = mp + if mp < 10 { 3 } else { -9 };
+    let year = y + if m <= 2 { 1 } else { 0 };
+    const DOW: [&str; 7] = ["Thu", "Fri", "Sat", "Sun", "Mon", "Tue", "Wed"];
+    const MON: [&str; 12] = [
+        "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+    ];
+    let dow = DOW[days.rem_euclid(7) as usize];
+    let mon = MON[(m - 1).clamp(0, 11) as usize];
+    format!("{dow}, {d:02} {mon} {year:04} {hour:02}:{min:02}:{sec:02} +0000")
+}
+
+/// Refresh an OAuth2 access token into `0o600` `connector_secrets.json` under
+/// key `"oauth_access_token"` if `connector_id` defines `oauth_config` and the
+/// cached token is missing or within 30 seconds of expiry.
+pub fn ensure_fresh_oauth_token(
+    person_data_dir: &Path,
+    connector_id: &str,
+) -> Result<Option<String>, String> {
+    let now_ms = records::now_millis();
+    let (oauth, refresh_token, client_secret, existing_token) = with_connectors_lock(|| {
+        let store = ConnectorsStore::load_unlocked(person_data_dir);
+        let secrets = ConnectorSecretsStore::load_result_unlocked(person_data_dir)?;
+        let Some(conn) = store.outbound.iter().find(|c| c.id == connector_id) else {
+            return Err(format!("unknown outbound connector '{connector_id}'"));
+        };
+        let Some(oauth) = conn.oauth_config.clone() else {
+            return Ok((None, String::new(), None, None));
+        };
+        let existing = secrets.secrets.get("oauth_access_token").cloned();
+        let refresh = secrets
+            .secrets
+            .get(&oauth.refresh_token_secret_key)
+            .cloned()
+            .unwrap_or_default();
+        let csec = if oauth.client_secret_key.is_empty() {
+            None
+        } else {
+            secrets.secrets.get(&oauth.client_secret_key).cloned()
+        };
+        Ok((Some(oauth), refresh, csec, existing))
+    })?;
+
+    let Some(oauth) = oauth else {
+        return Ok(None);
+    };
+    if let (Some(exp), Some(tok)) = (oauth.access_token_expires_ms, existing_token.as_ref()) {
+        if !tok.is_empty() && now_ms.saturating_add(30_000) < exp {
+            return Ok(Some(tok.clone()));
+        }
+    }
+    if refresh_token.trim().is_empty() {
+        return Err(format!(
+            "missing OAuth2 refresh token secret '{}'",
+            oauth.refresh_token_secret_key
+        ));
+    }
+
+    tripwire::check_egress_for(person_data_dir, &oauth.token_url, "connector")?;
+    let (thost, tport) = parse_url_host_port(&oauth.token_url, 443);
+    tripwire::check_egress_host_for(person_data_dir, &thost, tport, "connector")?;
+
+    let mut form_parts = vec![
+        format!("grant_type=refresh_token"),
+        format!("refresh_token={}", form_urlencode_component(&refresh_token)),
+        format!("client_id={}", form_urlencode_component(&oauth.client_id)),
+    ];
+    if let Some(cs) = client_secret.as_deref().filter(|s| !s.is_empty()) {
+        form_parts.push(format!("client_secret={}", form_urlencode_component(cs)));
+    }
+    if !oauth.scopes.is_empty() {
+        let joined = oauth.scopes.join(" ");
+        form_parts.push(format!("scope={}", form_urlencode_component(&joined)));
+    }
+    let form_body = form_parts.join("&");
+
+    let mut oauth_extras = vec![refresh_token.clone()];
+    if let Some(ref cs) = client_secret {
+        oauth_extras.push(cs.clone());
+    }
+    if let Some(ref ex) = existing_token {
+        oauth_extras.push(ex.clone());
+    }
+    let redact_oauth_err = |msg: String| -> String {
+        let store_snap = with_connectors_lock(|| ConnectorSecretsStore::load_unlocked(person_data_dir));
+        redact_with_store_extra(&msg, &store_snap, &oauth_extras)
+    };
+
+    let agent = tripwire::guarded_connector_agent_for(person_data_dir, Duration::from_secs(15));
+    let resp = agent
+        .post(&oauth.token_url)
+        .set("Content-Type", "application/x-www-form-urlencoded")
+        .set("Accept", "application/json")
+        .send_string(&form_body)
+        .map_err(|e| match e {
+            ureq::Error::Status(code, r) => {
+                let mut buf = Vec::new();
+                let _ = r.into_reader().take(1024).read_to_end(&mut buf);
+                let msg = String::from_utf8_lossy(&buf);
+                redact_oauth_err(format!("OAuth2 token refresh failed with HTTP {code}: {msg}"))
+            }
+            other => redact_oauth_err(tripwire::explain_fetch_error(&oauth.token_url, &other)),
+        })?;
+
+    let mut raw = Vec::new();
+    resp.into_reader()
+        .take(65_536)
+        .read_to_end(&mut raw)
+        .map_err(|e| redact_oauth_err(format!("read OAuth2 token response: {e}")))?;
+    let parsed: Value = serde_json::from_slice(&raw)
+        .map_err(|e| redact_oauth_err(format!("parse OAuth2 token JSON: {e}")))?;
+    let access_token = parsed["access_token"]
+        .as_str()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| "OAuth2 token response missing access_token".to_string())?
+        .to_string();
+    if access_token.contains('\r') || access_token.contains('\n') {
+        return Err("OAuth2 access_token contains invalid newline".to_string());
+    }
+    let expires_in_secs = parsed["expires_in"].as_u64().unwrap_or(3600).clamp(60, 86_400 * 30);
+    let updated_ms = records::now_millis();
+    let expires_ms = updated_ms.saturating_add(expires_in_secs.saturating_mul(1000));
+    let rotated_refresh = parsed["refresh_token"]
+        .as_str()
+        .map(str::trim)
+        .filter(|s| !s.is_empty() && !s.contains('\r') && !s.contains('\n'))
+        .map(str::to_string);
+
+    let mut reg_secrets = vec![access_token.clone()];
+    if let Some(ref rt) = rotated_refresh {
+        reg_secrets.push(rt.clone());
+    }
+
+    with_connectors_lock(|| {
+        let mut secrets = ConnectorSecretsStore::load_result_unlocked(person_data_dir)?;
+        secrets
+            .secrets
+            .insert("oauth_access_token".to_string(), access_token.clone());
+        secrets
+            .secret_updated_ms
+            .insert("oauth_access_token".to_string(), updated_ms);
+        if let Some(new_rt) = rotated_refresh {
+            secrets
+                .secrets
+                .insert(oauth.refresh_token_secret_key.clone(), new_rt);
+            secrets
+                .secret_updated_ms
+                .insert(oauth.refresh_token_secret_key.clone(), updated_ms);
+        }
+        secrets.save_unlocked(person_data_dir)?;
+
+        let mut store = ConnectorsStore::load_unlocked(person_data_dir);
+        if let Some(c) = store.outbound.iter_mut().find(|c| c.id == connector_id) {
+            if let Some(oc) = c.oauth_config.as_mut() {
+                oc.access_token_expires_ms = Some(expires_ms);
+            }
+            if !c.secret_keys.iter().any(|k| k == "oauth_access_token") {
+                c.secret_keys.push("oauth_access_token".to_string());
+            }
+            c.updated_ms = updated_ms;
+            store.save_unlocked(person_data_dir)?;
+        }
+        Ok::<(), String>(())
+    })?;
+
+    tripwire::register_redaction_secrets(&reg_secrets);
+    Ok(Some(access_token))
+}
+
 fn execute_http_delivery(
     cfg: &Config,
     connector: &OutboundConnector,
@@ -1740,8 +3089,8 @@ fn execute_http_delivery(
     let payload_sha256 = tripwire::sha256_hex(&payload_bytes);
     let now_ms = records::now_millis();
     let del_id = format!("del-{now_ms}-{}", next_seq());
-    let secrets = with_connectors_lock(|| ConnectorSecretsStore::load_unlocked(&cfg.data_dir));
-    let safe_url = redact_with_store(&connector.url, &secrets);
+    let mut secrets = with_connectors_lock(|| ConnectorSecretsStore::load_result_unlocked(&cfg.data_dir))?;
+    let safe_url = redact_with_store(&redact_url_userinfo(&connector.url), &secrets);
 
     if policy.block_outbound_fetch || policy.profile == "air_gapped" {
         let err_msg = "blocked by Air-Gapped workspace policy: outbound connector delivery is disabled for this workspace".to_string();
@@ -1766,7 +3115,9 @@ fn execute_http_delivery(
         return Err(err_msg);
     }
 
-    if let Err(e) = tripwire::check_egress(&connector.url, "connector")
+    let (uhost, uport) = parse_url_host_port(&connector.url, 443);
+    if let Err(e) = tripwire::check_egress_for(&cfg.data_dir, &connector.url, "connector")
+        .and_then(|_| tripwire::check_egress_host_for(&cfg.data_dir, &uhost, uport, "connector"))
         .and_then(|_| {
             let p_str = String::from_utf8_lossy(&payload_bytes);
             tripwire::check_egress_payload(&p_str, "connector")
@@ -1792,6 +3143,32 @@ fn execute_http_delivery(
         };
         record_delivery_log(&cfg.data_dir, &connector.id, log);
         return Err(safe_err);
+    }
+
+    if connector.oauth_config.is_some() {
+        if let Err(e) = ensure_fresh_oauth_token(&cfg.data_dir, &connector.id) {
+            let safe_err = redact_with_store(&e, &secrets);
+            let log = DeliveryLog {
+                id: del_id,
+                connector_id: connector.id.clone(),
+                connector_name: connector.name.clone(),
+                kind: connector.kind.clone(),
+                method: connector.method.clone(),
+                url: safe_url,
+                status: "error".to_string(),
+                http_status: None,
+                decision_id: decision_id.map(str::to_string),
+                thread_id: (!thread_id.is_empty()).then(|| thread_id.to_string()),
+                payload_sha256,
+                payload_bytes: payload_bytes.len(),
+                response_preview: String::new(),
+                error: Some(safe_err.clone()),
+                ts_ms: now_ms,
+            };
+            record_delivery_log(&cfg.data_dir, &connector.id, log);
+            return Err(safe_err);
+        }
+        secrets = with_connectors_lock(|| ConnectorSecretsStore::load_result_unlocked(&cfg.data_dir))?;
     }
 
     // Substitute {{secret:key}} strictly inside Rust host code AFTER tripwire checks.
@@ -1821,7 +3198,7 @@ fn execute_http_delivery(
         }
     };
 
-    let agent = tripwire::guarded_agent(Duration::from_secs(15));
+    let agent = tripwire::guarded_connector_agent_for(&cfg.data_dir, Duration::from_secs(15));
     let mut req = if connector.method == "PUT" {
         agent.put(&connector.url)
     } else {
@@ -1923,6 +3300,1266 @@ fn execute_http_delivery(
     }
 }
 
+fn build_rustls_config() -> Result<Arc<rustls::ClientConfig>, String> {
+    let mut root_store = rustls::RootCertStore::empty();
+    root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+    let cfg = rustls::ClientConfig::builder_with_provider(Arc::new(
+        rustls::crypto::ring::default_provider(),
+    ))
+    .with_safe_default_protocol_versions()
+    .map_err(|e| format!("configure TLS versions: {e}"))?
+    .with_root_certificates(root_store)
+    .with_no_client_auth();
+    Ok(Arc::new(cfg))
+}
+
+enum ProtoStream {
+    Plain(TcpStream),
+    Tls(Box<rustls::StreamOwned<rustls::ClientConnection, TcpStream>>),
+}
+
+impl ProtoStream {
+    fn tcp_ref(&self) -> &TcpStream {
+        match self {
+            Self::Plain(s) => s,
+            Self::Tls(s) => s.get_ref(),
+        }
+    }
+
+    fn apply_deadline(&self, deadline: Instant, proto: &str) -> Result<(), String> {
+        let rem = deadline.saturating_duration_since(Instant::now());
+        if rem.is_zero() {
+            return Err(format!("{proto} session timed out"));
+        }
+        let bounded = rem.max(Duration::from_millis(1));
+        let tcp = self.tcp_ref();
+        let _ = tcp.set_read_timeout(Some(bounded));
+        let _ = tcp.set_write_timeout(Some(bounded));
+        Ok(())
+    }
+
+    fn connect(data_dir: &Path, host: &str, port: u16, use_tls: bool) -> Result<Self, String> {
+        let addrs = tripwire::guard_resolve_connector_for(data_dir, host, port)
+            .map_err(|e| format!("resolve {host}:{port}: {e}"))?;
+        let mut last_err = None;
+        let mut connected = None;
+        for addr in addrs {
+            match TcpStream::connect_timeout(&addr, Duration::from_secs(15)) {
+                Ok(s) => {
+                    connected = Some(s);
+                    break;
+                }
+                Err(e) => last_err = Some(e),
+            }
+        }
+        let stream = connected.ok_or_else(|| {
+            format!(
+                "connect to {host}:{port} failed: {}",
+                last_err
+                    .map(|e| e.to_string())
+                    .unwrap_or_else(|| "no reachable address".to_string())
+            )
+        })?;
+        let _ = stream.set_read_timeout(Some(Duration::from_secs(15)));
+        let _ = stream.set_write_timeout(Some(Duration::from_secs(15)));
+        if use_tls {
+            Self::upgrade_tcp(stream, host)
+        } else {
+            Ok(Self::Plain(stream))
+        }
+    }
+
+    fn upgrade_tcp(tcp: TcpStream, host: &str) -> Result<Self, String> {
+        let tls_cfg = build_rustls_config()?;
+        let server_name = ServerName::try_from(host.trim().to_string())
+            .map_err(|_| format!("invalid TLS server name '{host}'"))?;
+        let conn = rustls::ClientConnection::new(tls_cfg, server_name)
+            .map_err(|e| format!("TLS handshake init for {host}: {e}"))?;
+        let mut tls_stream = rustls::StreamOwned::new(conn, tcp);
+        tls_stream
+            .flush()
+            .map_err(|e| format!("TLS handshake flush for {host}: {e}"))?;
+        Ok(Self::Tls(Box::new(tls_stream)))
+    }
+
+    fn upgrade_starttls(self, host: &str) -> Result<Self, String> {
+        match self {
+            Self::Plain(tcp) => Self::upgrade_tcp(tcp, host),
+            already_tls => Ok(already_tls),
+        }
+    }
+}
+
+impl Read for ProtoStream {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        match self {
+            Self::Plain(s) => s.read(buf),
+            Self::Tls(s) => s.read(buf),
+        }
+    }
+}
+
+impl Write for ProtoStream {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        match self {
+            Self::Plain(s) => s.write(buf),
+            Self::Tls(s) => s.write(buf),
+        }
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        match self {
+            Self::Plain(s) => s.flush(),
+            Self::Tls(s) => s.flush(),
+        }
+    }
+}
+
+fn read_line_bounded(
+    reader: &mut BufReader<ProtoStream>,
+    max_bytes: usize,
+    deadline: Instant,
+    proto: &str,
+) -> Result<Vec<u8>, String> {
+    reader.get_ref().apply_deadline(deadline, proto)?;
+    let mut out = Vec::new();
+    loop {
+        let avail = reader
+            .fill_buf()
+            .map_err(|e| format!("{proto} read error: {e}"))?;
+        if avail.is_empty() {
+            if out.is_empty() {
+                return Err(format!("{proto} server closed connection unexpectedly"));
+            }
+            return Ok(out);
+        }
+        if let Some(pos) = avail.iter().position(|&b| b == b'\n') {
+            let take = pos + 1;
+            if out.len() + take > max_bytes {
+                return Err(format!("{proto} response line exceeds {max_bytes} byte limit"));
+            }
+            out.extend_from_slice(&avail[..take]);
+            reader.consume(take);
+            return Ok(out);
+        }
+        if out.len() + avail.len() > max_bytes {
+            return Err(format!("{proto} response line exceeds {max_bytes} byte limit"));
+        }
+        out.extend_from_slice(avail);
+        let len = avail.len();
+        reader.consume(len);
+        reader.get_ref().apply_deadline(deadline, proto)?;
+    }
+}
+
+fn read_smtp_response(
+    reader: &mut BufReader<ProtoStream>,
+    deadline: Instant,
+) -> Result<(u16, String), String> {
+    let mut full = String::new();
+    let mut final_code = 0u16;
+    for _ in 0..MAX_SMTP_CONT_LINES {
+        let raw = read_line_bounded(reader, MAX_SMTP_LINE_BYTES, deadline, "SMTP")?;
+        let line = String::from_utf8_lossy(&raw);
+        let trimmed = line.trim_end_matches(['\r', '\n']);
+        if trimmed.len() >= 3 {
+            if let Ok(code) = trimmed[..3].parse::<u16>() {
+                final_code = code;
+                full.push_str(trimmed);
+                full.push('\n');
+                if trimmed.as_bytes().get(3) == Some(&b'-') {
+                    continue;
+                }
+                return Ok((final_code, full));
+            }
+        }
+        full.push_str(trimmed);
+        full.push('\n');
+        return Ok((final_code, full));
+    }
+    Err("SMTP response exceeded maximum continuation lines".to_string())
+}
+
+fn smtp_cmd(
+    reader: &mut BufReader<ProtoStream>,
+    cmd: &str,
+    expected_codes: &[u16],
+    deadline: Instant,
+) -> Result<(u16, String), String> {
+    reader.get_ref().apply_deadline(deadline, "SMTP")?;
+    reader
+        .get_mut()
+        .write_all(cmd.as_bytes())
+        .and_then(|_| reader.get_mut().flush())
+        .map_err(|e| format!("SMTP write error: {e}"))?;
+    let (code, resp) = read_smtp_response(reader, deadline)?;
+    if !expected_codes.contains(&code) {
+        return Err(format!("SMTP unexpected status {code}: {}", resp.trim()));
+    }
+    Ok((code, resp))
+}
+
+fn mime_type_for_filename(name: &str) -> &'static str {
+    let lower = name.to_ascii_lowercase();
+    if lower.ends_with(".pdf") {
+        "application/pdf"
+    } else if lower.ends_with(".xlsx") {
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    } else if lower.ends_with(".docx") {
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    } else if lower.ends_with(".pptx") {
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+    } else if lower.ends_with(".csv") {
+        "text/csv"
+    } else if lower.ends_with(".json") {
+        "application/json"
+    } else if lower.ends_with(".png") {
+        "image/png"
+    } else if lower.ends_with(".jpg") || lower.ends_with(".jpeg") {
+        "image/jpeg"
+    } else if lower.ends_with(".md") || lower.ends_with(".txt") || lower.ends_with(".log") {
+        "text/plain"
+    } else {
+        "application/octet-stream"
+    }
+}
+
+fn wrap_base64_76(b64: &str) -> String {
+    let mut out = String::with_capacity(b64.len() + (b64.len() / 76) * 2 + 2);
+    for chunk in b64.as_bytes().chunks(76) {
+        if let Ok(s) = std::str::from_utf8(chunk) {
+            out.push_str(s);
+            out.push_str("\r\n");
+        }
+    }
+    out
+}
+
+fn dot_stuff_smtp_data(raw: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(raw.len() + 64);
+    let mut at_line_start = true;
+    let mut i = 0;
+    while i < raw.len() {
+        let b = raw[i];
+        if at_line_start && b == b'.' {
+            out.push(b'.');
+        }
+        if b == b'\n' {
+            if out.last().copied() != Some(b'\r') {
+                out.push(b'\r');
+            }
+            out.push(b'\n');
+            at_line_start = true;
+        } else {
+            out.push(b);
+            at_line_start = false;
+        }
+        i += 1;
+    }
+    if !out.ends_with(b"\r\n") {
+        out.extend_from_slice(b"\r\n");
+    }
+    out.extend_from_slice(b".\r\n");
+    out
+}
+
+fn read_smtp_workspace_attachment(
+    workspace_dir: &Path,
+    rel: &str,
+) -> Result<(String, Vec<u8>), String> {
+    let clean = crate::tables::validate_workspace_rel_path(rel)?;
+    let unresolved = sandbox_path_resolving(workspace_dir, &clean, false)?;
+    if unresolved
+        .symlink_metadata()
+        .is_ok_and(|md| md.file_type().is_symlink())
+    {
+        return Err(format!("SMTP attachment cannot be a symlink: '{rel}'"));
+    }
+    let full = sandbox_path(workspace_dir, &clean)?;
+    let md = std::fs::metadata(&full)
+        .map_err(|e| format!("cannot read SMTP attachment '{rel}': {e}"))?;
+    if !md.is_file() {
+        return Err(format!("SMTP attachment '{rel}' is not a regular file"));
+    }
+    if md.len() > MAX_SMTP_ATTACHMENT_BYTES as u64 {
+        return Err(format!(
+            "SMTP attachment '{rel}' exceeds 10 MB limit ({} bytes)",
+            md.len()
+        ));
+    }
+    let bytes = std::fs::read(&full)
+        .map_err(|e| format!("cannot read SMTP attachment '{rel}': {e}"))?;
+    if bytes.len() > MAX_SMTP_ATTACHMENT_BYTES {
+        return Err(format!(
+            "SMTP attachment '{rel}' exceeds 10 MB limit ({} bytes)",
+            bytes.len()
+        ));
+    }
+    let fname = full
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| "attachment.bin".to_string())
+        .replace(['"', '\r', '\n', '/', '\\'], "_");
+    Ok((fname, bytes))
+}
+
+fn build_rfc5322_mime_message(
+    from_addr: &str,
+    to_addrs: &[String],
+    subject: &str,
+    text_body: &str,
+    attachments: &[(String, Vec<u8>)],
+    now_ms: u64,
+    seq: u64,
+) -> Vec<u8> {
+    let safe_subject: String = subject
+        .replace(['\r', '\n'], " ")
+        .trim()
+        .chars()
+        .take(240)
+        .collect();
+    let boundary = format!("----=_ErgonBoundary_{now_ms}_{seq}");
+    let date_hdr = format_rfc2822_utc(now_ms);
+    let to_hdr = to_addrs.join(", ");
+
+    let mut msg = Vec::new();
+    msg.extend_from_slice(format!("From: <{from_addr}>\r\n").as_bytes());
+    msg.extend_from_slice(format!("To: {to_hdr}\r\n").as_bytes());
+    msg.extend_from_slice(format!("Subject: {safe_subject}\r\n").as_bytes());
+    msg.extend_from_slice(format!("Date: {date_hdr}\r\n").as_bytes());
+    msg.extend_from_slice(format!("Message-ID: <{now_ms}.{seq}@ergon.local>\r\n").as_bytes());
+    msg.extend_from_slice(b"MIME-Version: 1.0\r\n");
+    msg.extend_from_slice(
+        format!("Content-Type: multipart/mixed; boundary=\"{boundary}\"\r\n\r\n").as_bytes(),
+    );
+
+    // Text body part
+    msg.extend_from_slice(format!("--{boundary}\r\n").as_bytes());
+    msg.extend_from_slice(b"Content-Type: text/plain; charset=utf-8\r\n");
+    msg.extend_from_slice(b"Content-Transfer-Encoding: 8bit\r\n\r\n");
+    msg.extend_from_slice(text_body.replace("\r\n", "\n").replace('\n', "\r\n").as_bytes());
+    msg.extend_from_slice(b"\r\n");
+
+    for (fname, bytes) in attachments {
+        let mime = mime_type_for_filename(fname);
+        let b64 = wrap_base64_76(&tripwire::base64_encode(bytes));
+        msg.extend_from_slice(format!("--{boundary}\r\n").as_bytes());
+        msg.extend_from_slice(format!("Content-Type: {mime}; name=\"{fname}\"\r\n").as_bytes());
+        msg.extend_from_slice(
+            format!("Content-Disposition: attachment; filename=\"{fname}\"\r\n").as_bytes(),
+        );
+        msg.extend_from_slice(b"Content-Transfer-Encoding: base64\r\n\r\n");
+        msg.extend_from_slice(b64.as_bytes());
+    }
+    msg.extend_from_slice(format!("--{boundary}--\r\n").as_bytes());
+    msg
+}
+
+fn resolve_smtp_secret(val_or_key: &str, secrets: &ConnectorSecretsStore) -> Result<String, String> {
+    let trimmed = val_or_key.trim();
+    if trimmed.is_empty() {
+        return Ok(String::new());
+    }
+    if let Some(start) = trimmed.find("{{secret:") {
+        let after = &trimmed[start + 9..];
+        if let Some(end) = after.find("}}") {
+            let key = after[..end].trim();
+            return secrets
+                .secrets
+                .get(key)
+                .cloned()
+                .ok_or_else(|| format!("missing connector secret '{key}'"));
+        }
+    }
+    secrets
+        .secrets
+        .get(trimmed)
+        .cloned()
+        .ok_or_else(|| format!("missing connector secret '{trimmed}'"))
+}
+
+pub fn execute_smtp_delivery(
+    cfg: &Config,
+    connector: &OutboundConnector,
+    payload: &Value,
+    attachment_rel: Option<&str>,
+    thread_id: &str,
+    decision_id: Option<&str>,
+) -> Result<DeliveryLog, String> {
+    let policy = crate::load_workspace_policy(&cfg.data_dir);
+    let now_ms = records::now_millis();
+    let seq = next_seq();
+    let del_id = format!("del-{now_ms}-{seq}");
+    let mut secrets = with_connectors_lock(|| ConnectorSecretsStore::load_result_unlocked(&cfg.data_dir))?;
+    let safe_url = redact_with_store(&redact_url_userinfo(&connector.url), &secrets);
+
+    let Some(smtp) = &connector.smtp_config else {
+        return Err("smtp_relay connector is missing smtp_config".to_string());
+    };
+
+    let mut attachment_paths: Vec<String> = Vec::new();
+    if let Some(rel) = attachment_rel.map(str::trim).filter(|s| !s.is_empty()) {
+        attachment_paths.push(rel.to_string());
+    }
+    if let Some(f) = payload["file"].as_str().map(str::trim).filter(|s| !s.is_empty()) {
+        if !attachment_paths.iter().any(|p| p == f) {
+            attachment_paths.push(f.to_string());
+        }
+    }
+    if let Some(arr) = payload["attachments"].as_array() {
+        for item in arr {
+            if let Some(p) = item.as_str().map(str::trim).filter(|s| !s.is_empty()) {
+                if !attachment_paths.iter().any(|existing| existing == p) {
+                    attachment_paths.push(p.to_string());
+                }
+            }
+        }
+    }
+
+    let mut attachments = Vec::with_capacity(attachment_paths.len());
+    for rel in &attachment_paths {
+        attachments.push(read_smtp_workspace_attachment(&cfg.workspace_dir, rel)?);
+    }
+
+    let from_addr = payload["from"]
+        .as_str()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or(smtp.from_addr.as_str());
+    let from_addr = validate_email_addr(from_addr, "smtp from_addr")?;
+
+    let mut to_addrs: Vec<String> = Vec::new();
+    if let Some(s) = payload["to"].as_str() {
+        for part in s.split(',') {
+            let t = part.trim();
+            if !t.is_empty() {
+                to_addrs.push(validate_email_addr(t, "to")?);
+            }
+        }
+    } else if let Some(arr) = payload["to"].as_array() {
+        for item in arr {
+            if let Some(s) = item.as_str().map(str::trim).filter(|s| !s.is_empty()) {
+                to_addrs.push(validate_email_addr(s, "to")?);
+            }
+        }
+    }
+    if to_addrs.is_empty() {
+        for rcpt in &smtp.default_to {
+            to_addrs.push(validate_email_addr(rcpt, "default_to")?);
+        }
+    }
+    if to_addrs.is_empty() {
+        return Err("SMTP delivery requires at least one recipient ('to' or smtp_config.default_to)".to_string());
+    }
+
+    let subject = payload["subject"]
+        .as_str()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or(connector.name.as_str())
+        .to_string();
+    let text_body = payload["body"]
+        .as_str()
+        .or_else(|| payload["text"].as_str())
+        .or_else(|| payload["message"].as_str())
+        .map(str::to_string)
+        .unwrap_or_else(|| {
+            if payload.is_null() {
+                String::new()
+            } else {
+                serde_json::to_string_pretty(payload).unwrap_or_default()
+            }
+        });
+
+    let mime_bytes = build_rfc5322_mime_message(
+        &from_addr,
+        &to_addrs,
+        &subject,
+        &text_body,
+        &attachments,
+        now_ms,
+        seq,
+    );
+    let payload_sha256 = tripwire::sha256_hex(&mime_bytes);
+
+    let record_fail = |status: &str, err_msg: String, secrets_ref: &ConnectorSecretsStore| {
+        let safe_err = redact_with_store(&err_msg, secrets_ref);
+        let log = DeliveryLog {
+            id: del_id.clone(),
+            connector_id: connector.id.clone(),
+            connector_name: connector.name.clone(),
+            kind: connector.kind.clone(),
+            method: "SMTP".to_string(),
+            url: safe_url.clone(),
+            status: status.to_string(),
+            http_status: None,
+            decision_id: decision_id.map(str::to_string),
+            thread_id: (!thread_id.is_empty()).then(|| thread_id.to_string()),
+            payload_sha256: payload_sha256.clone(),
+            payload_bytes: mime_bytes.len(),
+            response_preview: String::new(),
+            error: Some(safe_err.clone()),
+            ts_ms: now_ms,
+        };
+        record_delivery_log(&cfg.data_dir, &connector.id, log);
+        safe_err
+    };
+
+    if policy.block_outbound_fetch || policy.profile == "air_gapped" {
+        return Err(record_fail(
+            "blocked",
+            "blocked by Air-Gapped workspace policy: outbound connector delivery is disabled for this workspace".to_string(),
+            &secrets,
+        ));
+    }
+
+    if let Err(e) = validate_plain_loopback_security(&cfg.data_dir, &smtp.host, &smtp.security, "SMTP")
+        .and_then(|_| tripwire::check_egress_host_for(&cfg.data_dir, &smtp.host, smtp.port, "connector"))
+        .and_then(|_| {
+            let p_str = String::from_utf8_lossy(&mime_bytes);
+            tripwire::check_egress_payload(&p_str, "connector")
+        })
+    {
+        return Err(record_fail("blocked", e, &secrets));
+    }
+
+    if connector.oauth_config.is_some() {
+        if let Err(e) = ensure_fresh_oauth_token(&cfg.data_dir, &connector.id) {
+            return Err(record_fail("error", e, &secrets));
+        }
+        secrets = with_connectors_lock(|| ConnectorSecretsStore::load_result_unlocked(&cfg.data_dir))?;
+    }
+
+    let username = match resolve_smtp_secret(&smtp.username_secret_key, &secrets) {
+        Ok(u) => u,
+        Err(e) => return Err(record_fail("error", e, &secrets)),
+    };
+    let password = match resolve_smtp_secret(&smtp.password_secret_key, &secrets) {
+        Ok(p) => p,
+        Err(e) => return Err(record_fail("error", e, &secrets)),
+    };
+
+    let mut smtp_extras: Vec<String> = Vec::new();
+    if !username.is_empty() {
+        smtp_extras.push(username.clone());
+    }
+    if !password.is_empty() {
+        smtp_extras.push(password.clone());
+    }
+    if !username.is_empty() || !password.is_empty() {
+        let mut raw_plain = Vec::with_capacity(username.len() + password.len() + 2);
+        raw_plain.push(0);
+        raw_plain.extend_from_slice(username.as_bytes());
+        raw_plain.push(0);
+        raw_plain.extend_from_slice(password.as_bytes());
+        smtp_extras.push(tripwire::base64_encode(&raw_plain));
+        smtp_extras.push(tripwire::base64_encode(
+            format!("user={username}\x01auth=Bearer {password}\x01\x01").as_bytes(),
+        ));
+        smtp_extras.push(tripwire::base64_encode(password.as_bytes()));
+    }
+
+    let run_smtp = || -> Result<String, String> {
+        let deadline = Instant::now() + SMTP_SESSION_TIMEOUT;
+        let initial_tls = smtp.security == "smtps";
+        let stream = ProtoStream::connect(&cfg.data_dir, &smtp.host, smtp.port, initial_tls)?;
+        stream.apply_deadline(deadline, "SMTP")?;
+        let mut reader = BufReader::new(stream);
+        let (greet_code, _) = read_smtp_response(&mut reader, deadline)?;
+        if greet_code != 220 {
+            return Err(format!("SMTP server rejected greeting ({greet_code})"));
+        }
+        let (_, mut ehlo_caps) = smtp_cmd(&mut reader, "EHLO ergon.local\r\n", &[250], deadline)?;
+        if smtp.security == "starttls" {
+            smtp_cmd(&mut reader, "STARTTLS\r\n", &[220], deadline)?;
+            let inner = reader.into_inner().upgrade_starttls(&smtp.host)?;
+            inner.apply_deadline(deadline, "SMTP")?;
+            reader = BufReader::new(inner);
+            let (_, caps_after) = smtp_cmd(&mut reader, "EHLO ergon.local\r\n", &[250], deadline)?;
+            ehlo_caps = caps_after;
+        }
+        if !username.is_empty() || !password.is_empty() {
+            let caps_upper = ehlo_caps.to_ascii_uppercase();
+            if smtp.password_secret_key == "oauth_access_token" && caps_upper.contains("XOAUTH2") {
+                let auth_str = format!("user={username}\x01auth=Bearer {password}\x01\x01");
+                let b64 = tripwire::base64_encode(auth_str.as_bytes());
+                smtp_cmd(&mut reader, &format!("AUTH XOAUTH2 {b64}\r\n"), &[235], deadline)?;
+            } else if caps_upper.contains("LOGIN") && !caps_upper.contains("PLAIN") {
+                smtp_cmd(&mut reader, "AUTH LOGIN\r\n", &[334], deadline)?;
+                let u64 = tripwire::base64_encode(username.as_bytes());
+                smtp_cmd(&mut reader, &format!("{u64}\r\n"), &[334], deadline)?;
+                let p64 = tripwire::base64_encode(password.as_bytes());
+                smtp_cmd(&mut reader, &format!("{p64}\r\n"), &[235], deadline)?;
+            } else {
+                let mut raw_auth = Vec::with_capacity(username.len() + password.len() + 2);
+                raw_auth.push(0);
+                raw_auth.extend_from_slice(username.as_bytes());
+                raw_auth.push(0);
+                raw_auth.extend_from_slice(password.as_bytes());
+                let b64 = tripwire::base64_encode(&raw_auth);
+                smtp_cmd(&mut reader, &format!("AUTH PLAIN {b64}\r\n"), &[235], deadline)?;
+            }
+        }
+        smtp_cmd(&mut reader, &format!("MAIL FROM:<{from_addr}>\r\n"), &[250], deadline)?;
+        for rcpt in &to_addrs {
+            smtp_cmd(&mut reader, &format!("RCPT TO:<{rcpt}>\r\n"), &[250, 251], deadline)?;
+        }
+        smtp_cmd(&mut reader, "DATA\r\n", &[354], deadline)?;
+        let stuffed = dot_stuff_smtp_data(&mime_bytes);
+        reader.get_ref().apply_deadline(deadline, "SMTP")?;
+        reader
+            .get_mut()
+            .write_all(&stuffed)
+            .and_then(|_| reader.get_mut().flush())
+            .map_err(|e| format!("SMTP write DATA error: {e}"))?;
+        let (data_code, data_resp) = read_smtp_response(&mut reader, deadline)?;
+        if data_code != 250 {
+            return Err(format!("SMTP DATA rejected ({data_code}): {}", data_resp.trim()));
+        }
+        let _ = reader.get_mut().write_all(b"QUIT\r\n");
+        let _ = reader.get_mut().flush();
+        Ok(data_resp.trim().to_string())
+    };
+
+    match run_smtp() {
+        Ok(resp_text) => {
+            let preview = crate::truncate(
+                &redact_with_store_extra(&resp_text, &secrets, &smtp_extras),
+                MAX_RESPONSE_PREVIEW,
+            );
+            let log = DeliveryLog {
+                id: del_id,
+                connector_id: connector.id.clone(),
+                connector_name: connector.name.clone(),
+                kind: connector.kind.clone(),
+                method: "SMTP".to_string(),
+                url: safe_url,
+                status: "ok".to_string(),
+                http_status: Some(250),
+                decision_id: decision_id.map(str::to_string),
+                thread_id: (!thread_id.is_empty()).then(|| thread_id.to_string()),
+                payload_sha256,
+                payload_bytes: mime_bytes.len(),
+                response_preview: preview,
+                error: None,
+                ts_ms: now_ms,
+            };
+            record_delivery_log(&cfg.data_dir, &connector.id, log.clone());
+            Ok(log)
+        }
+        Err(e) => {
+            let safe_err = redact_with_store_extra(&e, &secrets, &smtp_extras);
+            Err(record_fail("error", safe_err, &secrets))
+        }
+    }
+}
+
+#[derive(Default)]
+pub struct ImapPollState {
+    last_poll_ms: HashMap<String, u64>,
+}
+
+#[derive(Clone, Debug)]
+pub struct ImapIngestEvent {
+    pub trigger_id: String,
+    pub trigger_name: String,
+    pub routine_id: Option<String>,
+    pub target_kind: String,
+    pub trigger_file: String,
+    pub attachments: Vec<String>,
+    pub subject: String,
+    pub from: String,
+}
+
+fn imap_quote(s: &str) -> Result<String, String> {
+    if s.contains(['\r', '\n', '\0']) {
+        return Err("IMAP argument contains invalid control characters".to_string());
+    }
+    let escaped = s.replace('\\', "\\\\").replace('"', "\\\"");
+    Ok(format!("\"{escaped}\""))
+}
+
+fn read_line_bytes(
+    reader: &mut BufReader<ProtoStream>,
+    deadline: Instant,
+) -> Result<Vec<u8>, String> {
+    read_line_bounded(reader, MAX_IMAP_LINE_BYTES, deadline, "IMAP")
+}
+
+fn parse_imap_literal_len(line: &[u8]) -> Option<usize> {
+    let s = std::str::from_utf8(line).ok()?.trim_end_matches(['\r', '\n']);
+    if !s.ends_with('}') {
+        return None;
+    }
+    let open = s.rfind('{')?;
+    let inner = s[open + 1..s.len() - 1].trim().trim_end_matches('+');
+    inner.parse::<usize>().ok()
+}
+
+fn read_imap_tagged(
+    reader: &mut BufReader<ProtoStream>,
+    tag: &str,
+    deadline: Instant,
+) -> Result<(Vec<String>, Vec<Vec<u8>>), String> {
+    let mut lines = Vec::new();
+    let mut literals = Vec::new();
+    for _ in 0..MAX_IMAP_UNTAGGED_LINES {
+        let line = read_line_bytes(reader, deadline)?;
+        let lit_len = parse_imap_literal_len(&line);
+        let text = String::from_utf8_lossy(&line)
+            .trim_end_matches(['\r', '\n'])
+            .to_string();
+        if let Some(len) = lit_len {
+            if len > MAX_IMAP_MESSAGE_BYTES {
+                return Err(format!("IMAP literal exceeds {MAX_IMAP_MESSAGE_BYTES} byte limit"));
+            }
+            reader.get_ref().apply_deadline(deadline, "IMAP")?;
+            let mut buf = vec![0u8; len];
+            reader
+                .read_exact(&mut buf)
+                .map_err(|e| format!("IMAP literal read error: {e}"))?;
+            literals.push(buf);
+            // Consume trailing response line after literal if present
+            let trailing = read_line_bytes(reader, deadline)?;
+            let tr_text = String::from_utf8_lossy(&trailing)
+                .trim_end_matches(['\r', '\n'])
+                .to_string();
+            lines.push(text);
+            if !tr_text.is_empty() {
+                if let Some(rest) = tr_text.strip_prefix(tag) {
+                    let rest_trim = rest.trim_start();
+                    if rest_trim.starts_with("OK") {
+                        return Ok((lines, literals));
+                    }
+                    if rest_trim.starts_with("NO") || rest_trim.starts_with("BAD") {
+                        return Err(format!("IMAP {tag} failed: {rest_trim}"));
+                    }
+                }
+                lines.push(tr_text);
+            }
+            continue;
+        }
+        if let Some(rest) = text.strip_prefix(tag) {
+            let rest_trim = rest.trim_start();
+            if rest_trim.starts_with("OK") {
+                return Ok((lines, literals));
+            }
+            if rest_trim.starts_with("NO") || rest_trim.starts_with("BAD") {
+                return Err(format!("IMAP {tag} failed: {rest_trim}"));
+            }
+        }
+        lines.push(text);
+    }
+    Err(format!("IMAP {tag} exceeded {MAX_IMAP_UNTAGGED_LINES} response lines"))
+}
+
+fn unfold_rfc5322_headers(header_block: &str) -> Vec<(String, String)> {
+    let mut out: Vec<(String, String)> = Vec::new();
+    for raw_line in header_block.replace("\r\n", "\n").lines() {
+        if raw_line.starts_with(' ') || raw_line.starts_with('\t') {
+            if let Some((_, val)) = out.last_mut() {
+                val.push(' ');
+                val.push_str(raw_line.trim());
+            }
+        } else if let Some((k, v)) = raw_line.split_once(':') {
+            out.push((k.trim().to_ascii_lowercase(), v.trim().to_string()));
+        }
+    }
+    out
+}
+
+fn header_val<'a>(headers: &'a [(String, String)], key: &str) -> Option<&'a str> {
+    headers
+        .iter()
+        .find(|(k, _)| k == key)
+        .map(|(_, v)| v.as_str())
+}
+
+fn parse_header_param(header: &str, param_name: &str) -> Option<String> {
+    let target = format!("{param_name}=");
+    for part in header.split(';').skip(1) {
+        let trimmed = part.trim();
+        let low = trimmed.to_ascii_lowercase();
+        if low.starts_with(&target) {
+            let val = trimmed[target.len()..].trim();
+            return Some(val.trim_matches('"').trim_matches('\'').to_string());
+        }
+    }
+    None
+}
+
+fn decode_quoted_printable(input: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(input.len());
+    let mut i = 0;
+    while i < input.len() {
+        if input[i] == b'=' {
+            if i + 2 <= input.len() && input[i + 1] == b'\r' && input.get(i + 2) == Some(&b'\n') {
+                i += 3;
+                continue;
+            }
+            if i + 1 < input.len() && input[i + 1] == b'\n' {
+                i += 2;
+                continue;
+            }
+            if i + 2 < input.len() {
+                if let (Some(hi), Some(lo)) = (hex_nibble(input[i + 1]), hex_nibble(input[i + 2])) {
+                    out.push((hi << 4) | lo);
+                    i += 3;
+                    continue;
+                }
+            }
+        }
+        out.push(input[i]);
+        i += 1;
+    }
+    out
+}
+
+fn decode_transfer_body(raw: &[u8], encoding: &str) -> Vec<u8> {
+    match encoding.trim().to_ascii_lowercase().as_str() {
+        "base64" => {
+            let s = String::from_utf8_lossy(raw);
+            tripwire::base64_decode(&s).unwrap_or_else(|| raw.to_vec())
+        }
+        "quoted-printable" => decode_quoted_printable(raw),
+        _ => raw.to_vec(),
+    }
+}
+
+struct ParsedEmail {
+    from: String,
+    subject: String,
+    date: String,
+    message_id: String,
+    body_text: String,
+    attachments: Vec<(String, Vec<u8>)>,
+}
+
+fn split_headers_and_body(raw: &[u8]) -> (String, &[u8]) {
+    if let Some(pos) = raw.windows(4).position(|w| w == b"\r\n\r\n") {
+        let hdr = String::from_utf8_lossy(&raw[..pos]).to_string();
+        return (hdr, &raw[pos + 4..]);
+    }
+    if let Some(pos) = raw.windows(2).position(|w| w == b"\n\n") {
+        let hdr = String::from_utf8_lossy(&raw[..pos]).to_string();
+        return (hdr, &raw[pos + 2..]);
+    }
+    (String::new(), raw)
+}
+
+fn collect_mime_parts(
+    raw: &[u8],
+    text_parts: &mut Vec<String>,
+    html_parts: &mut Vec<String>,
+    attachments: &mut Vec<(String, Vec<u8>)>,
+    depth: u8,
+) {
+    if depth > 6 {
+        return;
+    }
+    let (hdr_str, body) = split_headers_and_body(raw);
+    let headers = unfold_rfc5322_headers(&hdr_str);
+    let ct = header_val(&headers, "content-type").unwrap_or("text/plain; charset=utf-8");
+    let ct_low = ct.to_ascii_lowercase();
+    let cte = header_val(&headers, "content-transfer-encoding").unwrap_or("7bit");
+    let disp = header_val(&headers, "content-disposition").unwrap_or("");
+
+    if ct_low.contains("multipart/") {
+        if let Some(boundary) = parse_header_param(ct, "boundary") {
+            let marker = format!("--{boundary}");
+            let body_str = String::from_utf8_lossy(body);
+            for section in body_str.split(&marker).skip(1) {
+                if section.starts_with("--") {
+                    break;
+                }
+                let trimmed = section
+                    .strip_prefix("\r\n")
+                    .or_else(|| section.strip_prefix('\n'))
+                    .unwrap_or(section);
+                let trimmed = trimmed
+                    .strip_suffix("\r\n")
+                    .or_else(|| trimmed.strip_suffix('\n'))
+                    .unwrap_or(trimmed);
+                if !trimmed.is_empty() {
+                    collect_mime_parts(
+                        trimmed.as_bytes(),
+                        text_parts,
+                        html_parts,
+                        attachments,
+                        depth + 1,
+                    );
+                }
+            }
+            return;
+        }
+    }
+
+    let decoded = decode_transfer_body(body, cte);
+    let filename = parse_header_param(disp, "filename")
+        .or_else(|| parse_header_param(ct, "name"));
+    let is_attachment = disp.to_ascii_lowercase().starts_with("attachment")
+        || (filename.is_some()
+            && !ct_low.starts_with("text/plain")
+            && !ct_low.starts_with("text/html"));
+
+    if is_attachment {
+        if decoded.len() <= MAX_SMTP_ATTACHMENT_BYTES {
+            let fname = filename.unwrap_or_else(|| format!("attachment-{}.bin", next_seq()));
+            attachments.push((fname, decoded));
+        }
+    } else if ct_low.starts_with("text/html") {
+        html_parts.push(String::from_utf8_lossy(&decoded).to_string());
+    } else {
+        text_parts.push(String::from_utf8_lossy(&decoded).to_string());
+    }
+}
+
+fn parse_rfc5322_email(raw: &[u8]) -> ParsedEmail {
+    let (hdr_str, _) = split_headers_and_body(raw);
+    let headers = unfold_rfc5322_headers(&hdr_str);
+    let from = header_val(&headers, "from")
+        .unwrap_or("(unknown sender)")
+        .to_string();
+    let subject = header_val(&headers, "subject")
+        .unwrap_or("(no subject)")
+        .to_string();
+    let date = header_val(&headers, "date").unwrap_or("").to_string();
+    let message_id = header_val(&headers, "message-id")
+        .unwrap_or("")
+        .to_string();
+
+    let mut text_parts = Vec::new();
+    let mut html_parts = Vec::new();
+    let mut attachments = Vec::new();
+    collect_mime_parts(raw, &mut text_parts, &mut html_parts, &mut attachments, 0);
+
+    let body_text = if !text_parts.is_empty() {
+        text_parts.join("\n\n")
+    } else if !html_parts.is_empty() {
+        crate::tools::html_to_text(&html_parts.join("\n"))
+    } else {
+        String::new()
+    };
+
+    ParsedEmail {
+        from,
+        subject,
+        date,
+        message_id,
+        body_text,
+        attachments,
+    }
+}
+
+fn write_intake_file_unique(
+    workspace_dir: &Path,
+    raw_name: &str,
+    bytes: &[u8],
+) -> Result<(String, String), String> {
+    let sha = tripwire::sha256_hex(bytes);
+    let safe_name = sanitize_intake_filename(raw_name);
+    let mut rel = format!("intake/{safe_name}");
+    let mut dest = sandbox_path_resolving(workspace_dir, &rel, false)?;
+    if dest
+        .symlink_metadata()
+        .is_ok_and(|md| md.file_type().is_symlink())
+        || dest.exists()
+    {
+        rel = format!("intake/{}", disambiguate_filename(&safe_name, &sha));
+        dest = sandbox_path_resolving(workspace_dir, &rel, false)?;
+        if dest
+            .symlink_metadata()
+            .is_ok_and(|md| md.file_type().is_symlink())
+        {
+            return Err("cannot overwrite symlink in intake".to_string());
+        }
+    }
+    sandbox_path(workspace_dir, &rel)?;
+    atomic_write_bytes(&dest, bytes).map_err(|e| format!("write intake file: {e}"))?;
+    Ok((rel, sha))
+}
+
+fn poll_one_imap_trigger(cfg: &Config, trg: &TriggerRule) -> Result<Vec<ImapIngestEvent>, String> {
+    let Some(imap) = &trg.imap_config else {
+        return Ok(Vec::new());
+    };
+    validate_plain_loopback_security(&cfg.data_dir, &imap.host, &imap.security, "IMAP")?;
+    tripwire::check_egress_host_for(&cfg.data_dir, &imap.host, imap.port, "connector")?;
+
+    let secrets = with_connectors_lock(|| ConnectorSecretsStore::load_result_unlocked(&cfg.data_dir))?;
+    let username = resolve_smtp_secret(&imap.username_secret_key, &secrets)?;
+    let password = resolve_smtp_secret(&imap.password_secret_key, &secrets)?;
+    let mut imap_extras: Vec<String> = Vec::new();
+    if !username.is_empty() {
+        imap_extras.push(username.clone());
+    }
+    if !password.is_empty() {
+        imap_extras.push(password.clone());
+    }
+
+    let run_imap = || -> Result<Vec<ImapIngestEvent>, String> {
+        let deadline = Instant::now() + IMAP_SESSION_TIMEOUT;
+        let initial_tls = imap.security == "imaps";
+        let stream = ProtoStream::connect(&cfg.data_dir, &imap.host, imap.port, initial_tls)?;
+        stream.apply_deadline(deadline, "IMAP")?;
+        let mut reader = BufReader::new(stream);
+
+        // Untagged greeting (* OK ...)
+        let greeting =
+            String::from_utf8_lossy(&read_line_bytes(&mut reader, deadline)?).to_string();
+        if !greeting.trim_start().starts_with('*') {
+            return Err(format!("unexpected IMAP greeting: {}", greeting.trim()));
+        }
+
+        if imap.security == "starttls" {
+            reader.get_ref().apply_deadline(deadline, "IMAP")?;
+            reader
+                .get_mut()
+                .write_all(b"A001 STARTTLS\r\n")
+                .and_then(|_| reader.get_mut().flush())
+                .map_err(|e| format!("IMAP STARTTLS write: {e}"))?;
+            let _ = read_imap_tagged(&mut reader, "A001", deadline)?;
+            let inner = reader.into_inner().upgrade_starttls(&imap.host)?;
+            inner.apply_deadline(deadline, "IMAP")?;
+            reader = BufReader::new(inner);
+        }
+
+        let login_cmd = format!(
+            "A002 LOGIN {} {}\r\n",
+            imap_quote(&username)?,
+            imap_quote(&password)?
+        );
+        reader.get_ref().apply_deadline(deadline, "IMAP")?;
+        reader
+            .get_mut()
+            .write_all(login_cmd.as_bytes())
+            .and_then(|_| reader.get_mut().flush())
+            .map_err(|e| format!("IMAP LOGIN write: {e}"))?;
+        let _ = read_imap_tagged(&mut reader, "A002", deadline)?;
+
+        let select_cmd = format!("A003 SELECT {}\r\n", imap_quote(&imap.folder)?);
+        reader.get_ref().apply_deadline(deadline, "IMAP")?;
+        reader
+            .get_mut()
+            .write_all(select_cmd.as_bytes())
+            .and_then(|_| reader.get_mut().flush())
+            .map_err(|e| format!("IMAP SELECT write: {e}"))?;
+        let _ = read_imap_tagged(&mut reader, "A003", deadline)?;
+
+        reader.get_ref().apply_deadline(deadline, "IMAP")?;
+        reader
+            .get_mut()
+            .write_all(b"A004 UID SEARCH UNSEEN\r\n")
+            .and_then(|_| reader.get_mut().flush())
+            .map_err(|e| format!("IMAP SEARCH write: {e}"))?;
+        let (search_lines, _) = read_imap_tagged(&mut reader, "A004", deadline)?;
+        let mut uids: Vec<String> = Vec::new();
+        for line in search_lines {
+            if let Some(rest) = line.strip_prefix("* SEARCH") {
+                for tok in rest.split_whitespace() {
+                    if tok.bytes().all(|b| b.is_ascii_digit()) {
+                        uids.push(tok.to_string());
+                    }
+                }
+            }
+        }
+
+        let mut events = Vec::new();
+        let mut seq_num = 5u32;
+        for uid in uids.into_iter().take(MAX_IMAP_MESSAGES_PER_POLL) {
+            let tag = format!("A{seq_num:03}");
+            seq_num += 1;
+            let fetch_cmd = format!("{tag} UID FETCH {uid} BODY.PEEK[]\r\n");
+            reader.get_ref().apply_deadline(deadline, "IMAP")?;
+            reader
+                .get_mut()
+                .write_all(fetch_cmd.as_bytes())
+                .and_then(|_| reader.get_mut().flush())
+                .map_err(|e| format!("IMAP FETCH write: {e}"))?;
+            let (_, literals) = read_imap_tagged(&mut reader, &tag, deadline)?;
+            let Some(raw_msg) = literals.into_iter().next() else {
+                continue;
+            };
+            let raw_sha = tripwire::sha256_hex(&raw_msg);
+            let parsed = parse_rfc5322_email(&raw_msg);
+
+            if let Some(filter) = imap.subject_filter.as_deref() {
+                if !parsed
+                    .subject
+                    .to_ascii_lowercase()
+                    .contains(&filter.to_ascii_lowercase())
+                {
+                    continue;
+                }
+            }
+
+            let already_ingested = with_connectors_lock(|| {
+                ConnectorsStore::load_unlocked(&cfg.data_dir)
+                    .intake_manifest
+                    .iter()
+                    .any(|m| m.sha256 == raw_sha)
+            });
+            if already_ingested {
+                continue;
+            }
+
+            let now_ms = records::now_millis();
+            let slug: String = parsed
+                .subject
+                .chars()
+                .map(|c| {
+                    if c.is_ascii_alphanumeric() || matches!(c, '-' | '_') {
+                        c
+                    } else {
+                        '_'
+                    }
+                })
+                .take(48)
+                .collect();
+            let slug = slug.trim_matches('_');
+            let md_filename = if slug.is_empty() {
+                format!("imap-{now_ms}-uid{uid}.md")
+            } else {
+                format!("imap-{now_ms}-{slug}.md")
+            };
+            let md_content = format!(
+                "# {}\n\nFrom: {}\nDate: {}\nMessage-ID: {}\nFolder: {}\n\n---\n\n{}\n",
+                parsed.subject.trim(),
+                parsed.from.trim(),
+                parsed.date.trim(),
+                parsed.message_id.trim(),
+                imap.folder,
+                parsed.body_text.trim()
+            );
+
+            let (trigger_file, _) =
+                write_intake_file_unique(&cfg.workspace_dir, &md_filename, md_content.as_bytes())?;
+            let mut written_attachments = Vec::new();
+            let mut att_manifest = Vec::new();
+            for (att_name, att_bytes) in &parsed.attachments {
+                if let Ok((att_rel, att_sha)) =
+                    write_intake_file_unique(&cfg.workspace_dir, att_name, att_bytes)
+                {
+                    written_attachments.push(att_rel.clone());
+                    att_manifest.push(IntakeManifestEntry {
+                        sha256: att_sha,
+                        filename: att_rel,
+                        source_path: format!(
+                            "imap://{}/{}/uid/{uid}/{}",
+                            imap.host, imap.folder, att_name
+                        ),
+                        trigger_id: trg.id.clone(),
+                        ingested_ms: now_ms,
+                    });
+                }
+            }
+
+            with_connectors_lock(|| {
+                let mut store = ConnectorsStore::load_unlocked(&cfg.data_dir);
+                store.push_manifest(IntakeManifestEntry {
+                    sha256: raw_sha.clone(),
+                    filename: trigger_file.clone(),
+                    source_path: format!("imap://{}/{}/uid/{uid}", imap.host, imap.folder),
+                    trigger_id: trg.id.clone(),
+                    ingested_ms: now_ms,
+                });
+                for entry in att_manifest {
+                    store.push_manifest(entry);
+                }
+                if let Some(t) = store.triggers.iter_mut().find(|t| t.id == trg.id) {
+                    t.trigger_count = t.trigger_count.saturating_add(1);
+                    t.last_triggered_ms = Some(now_ms);
+                    t.updated_ms = now_ms;
+                }
+                store.save_unlocked(&cfg.data_dir)
+            })?;
+
+            if imap.mark_seen {
+                let stag = format!("A{seq_num:03}");
+                seq_num += 1;
+                let store_cmd = format!("{stag} UID STORE {uid} +FLAGS.SILENT (\\Seen)\r\n");
+                let _ = reader
+                    .get_mut()
+                    .write_all(store_cmd.as_bytes())
+                    .and_then(|_| reader.get_mut().flush());
+                let _ = read_imap_tagged(&mut reader, &stag, deadline);
+            }
+
+            events.push(ImapIngestEvent {
+                trigger_id: trg.id.clone(),
+                trigger_name: trg.name.clone(),
+                routine_id: trg.routine_id.clone(),
+                target_kind: trg.target_kind.clone(),
+                trigger_file,
+                attachments: written_attachments,
+                subject: parsed.subject,
+                from: parsed.from,
+            });
+        }
+
+        let _ = reader.get_mut().write_all(b"A999 LOGOUT\r\n");
+        let _ = reader.get_mut().flush();
+        Ok(events)
+    };
+
+    run_imap().map_err(|e| redact_with_store_extra(&e, &secrets, &imap_extras))
+}
+
+/// Poll all enabled `imap_poll` triggers whose `poll_interval_secs` has elapsed.
+pub fn poll_imap_once(cfg: &Config, poll_state: &mut ImapPollState) -> Vec<ImapIngestEvent> {
+    let policy = crate::load_workspace_policy(&cfg.data_dir);
+    if policy.block_outbound_fetch || policy.profile == "air_gapped" {
+        return Vec::new();
+    }
+    let triggers: Vec<TriggerRule> = with_connectors_lock(|| {
+        ConnectorsStore::load_unlocked(&cfg.data_dir)
+            .triggers
+            .into_iter()
+            .filter(|t| t.kind == "imap_poll" && t.enabled)
+            .collect()
+    });
+    let mut events = Vec::new();
+    let now_ms = records::now_millis();
+    for trg in triggers {
+        let interval_ms = trg
+            .imap_config
+            .as_ref()
+            .map(|i| i.poll_interval_secs.saturating_mul(1000))
+            .unwrap_or(60_000);
+        let due = poll_state
+            .last_poll_ms
+            .get(&trg.id)
+            .is_none_or(|last| now_ms.saturating_sub(*last) >= interval_ms);
+        if !due {
+            continue;
+        }
+        poll_state.last_poll_ms.insert(trg.id.clone(), now_ms);
+        if let Ok(mut evs) = poll_one_imap_trigger(cfg, &trg) {
+            events.append(&mut evs);
+        }
+    }
+    events
+}
+
+/// Immediately poll one `imap_poll` trigger by id (used by tests and manual triggers).
+pub fn poll_imap_trigger_now(
+    cfg: &Config,
+    trigger_id: &str,
+) -> Result<Vec<ImapIngestEvent>, String> {
+    let policy = crate::load_workspace_policy(&cfg.data_dir);
+    if policy.block_outbound_fetch || policy.profile == "air_gapped" {
+        return Err("blocked by Air-Gapped workspace policy: IMAP polling is disabled".to_string());
+    }
+    let trg = with_connectors_lock(|| {
+        ConnectorsStore::load_unlocked(&cfg.data_dir)
+            .triggers
+            .into_iter()
+            .find(|t| t.id == trigger_id && t.kind == "imap_poll")
+    })
+    .ok_or_else(|| format!("unknown imap_poll trigger '{trigger_id}'"))?;
+    poll_one_imap_trigger(cfg, &trg)
+}
+
 fn record_delivery_log(person_data_dir: &Path, connector_id: &str, log: DeliveryLog) {
     with_connectors_lock(|| {
         let mut store = ConnectorsStore::load_unlocked(person_data_dir);
@@ -1946,6 +4583,12 @@ fn load_connector(person_data_dir: &Path, connector_id: &str) -> Result<Outbound
     })
 }
 
+pub fn load_connector_kind(person_data_dir: &Path, connector_id: &str) -> Option<String> {
+    load_connector(person_data_dir, connector_id)
+        .ok()
+        .map(|c| c.kind)
+}
+
 /// Execute or park an outbound connector delivery according to workspace policy.
 pub fn invoke_connector(
     cfg: &Config,
@@ -1959,7 +4602,7 @@ pub fn invoke_connector(
         return Err(format!("connector '{}' is disabled", connector.name));
     }
     let policy = crate::load_workspace_policy(&cfg.data_dir);
-    let secrets = with_connectors_lock(|| ConnectorSecretsStore::load_unlocked(&cfg.data_dir));
+    let secrets = with_connectors_lock(|| ConnectorSecretsStore::load_result_unlocked(&cfg.data_dir))?;
     let safe_url = redact_with_store(&connector.url, &secrets);
     let payload_bytes = build_delivery_payload_bytes(payload);
     let payload_sha256 = tripwire::sha256_hex(&payload_bytes);
@@ -1988,9 +4631,17 @@ pub fn invoke_connector(
         return Err(err_msg);
     }
 
-    // Validate target URL and payload before parking or delivering.
+    // Validate target URL/host and payload before parking or delivering.
     let payload_text = String::from_utf8_lossy(&payload_bytes);
-    tripwire::check_egress(&connector.url, "connector")
+    tripwire::check_egress_for(&cfg.data_dir, &connector.url, "connector")
+        .and_then(|_| {
+            if let Some(smtp) = &connector.smtp_config {
+                tripwire::check_egress_host_for(&cfg.data_dir, &smtp.host, smtp.port, "connector")
+            } else {
+                let (uhost, uport) = parse_url_host_port(&connector.url, 443);
+                tripwire::check_egress_host_for(&cfg.data_dir, &uhost, uport, "connector")
+            }
+        })
         .and_then(|_| tripwire::check_egress_payload(&payload_text, "connector"))
         .map_err(|e| redact_with_store(&e, &secrets))?;
 
@@ -2008,7 +4659,9 @@ pub fn invoke_connector(
             .unwrap_or_else(|_| json!(payload_preview));
         let summary = format!(
             "Send outbound {} via \"{}\" ({})",
-            connector.method, connector.name, safe_url
+            if connector.kind == "smtp_relay" { "SMTP" } else { connector.method.as_str() },
+            connector.name,
+            safe_url
         );
         let mut detail = if policy.profile == "strict_client" {
             format!(
@@ -2035,8 +4688,9 @@ pub fn invoke_connector(
                 "connector_id": connector.id,
                 "connector_name": connector.name,
                 "connector_kind": connector.kind,
-                "method": connector.method,
+                "method": if connector.kind == "smtp_relay" { "SMTP" } else { connector.method.as_str() },
                 "url": safe_url,
+                "attachment_rel": attachment_rel,
                 "payload": safe_payload,
                 "payload_preview": payload_preview,
                 "payload_sha256": payload_sha256,
@@ -2047,7 +4701,7 @@ pub fn invoke_connector(
             connector_id: connector.id.clone(),
             connector_name: connector.name.clone(),
             kind: connector.kind.clone(),
-            method: connector.method.clone(),
+            method: if connector.kind == "smtp_relay" { "SMTP".to_string() } else { connector.method.clone() },
             url: safe_url,
             status: "held".to_string(),
             http_status: None,
@@ -2066,7 +4720,11 @@ pub fn invoke_connector(
         });
     }
 
-    let log = execute_http_delivery(cfg, &connector, payload, thread_id, None)?;
+    let log = if connector.kind == "smtp_relay" {
+        execute_smtp_delivery(cfg, &connector, payload, attachment_rel, thread_id, None)?
+    } else {
+        execute_http_delivery(cfg, &connector, payload, thread_id, None)?
+    };
     Ok(InvokeOutcome::Delivered(log))
 }
 
@@ -2234,7 +4892,17 @@ pub fn settle_delivery_decision(cfg: &Config, decision: &Value) -> String {
     if !connector.enabled {
         return format!("Approved, but connector \"{}\" is disabled.", connector.name);
     }
-    match execute_http_delivery(cfg, &connector, payload, thread_id, Some(decision_id)) {
+    let attachment_rel = decision["attachment_rel"]
+        .as_str()
+        .or_else(|| decision["path"].as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+    let res = if connector.kind == "smtp_relay" {
+        execute_smtp_delivery(cfg, &connector, payload, attachment_rel, thread_id, Some(decision_id))
+    } else {
+        execute_http_delivery(cfg, &connector, payload, thread_id, Some(decision_id))
+    };
+    match res {
         Ok(log) => format!(
             "Approved and delivered via \"{}\" (HTTP {}, {} bytes).",
             connector.name,

@@ -12,6 +12,7 @@ export type ServerCapabilities = {
   file_history?: boolean;
   scheduler?: boolean;
   audit_bundle?: boolean;
+  backups?: boolean;
   people_switch?: boolean;
   tripwire?: boolean;
   pipelines?: boolean;
@@ -19,12 +20,48 @@ export type ServerCapabilities = {
   table_query?: boolean;
   pdf_export?: boolean;
   connectors?: boolean;
+  mcp?: boolean;
   clients?: boolean;
   metering?: boolean;
   vault_search?: boolean;
   client_crm?: boolean;
   time_entries?: boolean;
   invoicing?: boolean;
+  diagnostics?: boolean;
+  help?: boolean;
+  auth?: boolean;
+  oidc?: boolean;
+  tls?: boolean;
+};
+
+export type AdminContactConfig = {
+  name: string;
+  email: string;
+  phone: string;
+  channel_url: string;
+  notes: string;
+  configured: boolean;
+  source?: string;
+  updated_ms?: number;
+};
+
+export type HelpConfigPayload = {
+  onboarding_completed: boolean;
+  onboarding_completed_at_ms?: number | null;
+  admin_contact: AdminContactConfig;
+  can_edit_admin_contact: boolean;
+  diagnostics_url?: string;
+};
+
+export type DiagnosticsSummary = {
+  app_version: string;
+  os: string;
+  arch: string;
+  uptime_secs: number;
+  workspace_count: number;
+  model_configured: boolean;
+  log_files: number;
+  crash_reports: number;
 };
 
 export type ClientContact = {
@@ -318,8 +355,36 @@ export type LiveRunStep = {
   depends_on?: string[];
   child_items?: PipelineChildItemState[];
 };
+export type RecoverableRun = {
+  run_id: string;
+  thread_id: string;
+  person_id: string;
+  task: string;
+  started_ms: number;
+  updated_ms: number;
+  steps: string[];
+  written_files?: string[];
+  status: string;
+  error?: string | null;
+  resume_count?: number;
+  can_resume?: boolean;
+};
+export type LiveRun = {
+  active: boolean;
+  run_id: string;
+  thread_id: string;
+  task: string;
+  started_ms: number;
+  elapsed_ms?: number;
+  steps: (string | LiveRunStep)[];
+  cancelled?: boolean;
+  kind?: string;
+  routine_id?: string | null;
+  routine_name?: string | null;
+};
 export type LiveRunStatus = {
   active: boolean;
+  status?: string;
   run_id?: string;
   thread_id: string;
   task: string;
@@ -327,6 +392,9 @@ export type LiveRunStatus = {
   elapsed_ms?: number;
   steps: (string | LiveRunStep)[];
   cancelled?: boolean;
+  model_configured?: boolean;
+  recoverable_runs?: RecoverableRun[];
+  runs?: LiveRun[];
 };
 export type FileRevision = {
   rev_id: string;
@@ -362,9 +430,10 @@ export type FileDiffPayload = {
   hunks: FileDiffHunk[];
   unified?: string;
 };
-export type PipelineStepKind = "skill" | "agent" | "checkpoint" | "export" | "deliver";
+export type PipelineStepKind = "skill" | "agent" | "checkpoint" | "export" | "deliver" | "subpipeline";
 export type PipelineCheckpointInputMode = "approve_reject" | "choice" | "text";
 export type PipelineWhen = "always" | "on_anomaly" | "on_previous_ok" | "on_all_ok" | (string & {});
+export type PipelineOnError = "fail" | "continue" | `goto:${string}`;
 
 export type PipelineCheckpointSpec = {
   prompt: string;
@@ -390,14 +459,20 @@ export type PipelineStepSpec = {
   label: string;
   kind: PipelineStepKind;
   skill_id?: string;
-  args?: Record<string, string>;
+  args?: Record<string, unknown>;
   prompt?: string;
   checkpoint?: PipelineCheckpointSpec;
   export?: PipelineExportSpec;
   deliver?: PipelineDeliverSpec;
+  routine_id?: string;
+  inputs?: Record<string, string>;
   when?: PipelineWhen;
   depends_on?: string[];
   for_each?: string;
+  timeout_secs?: number;
+  retry_max?: number;
+  retry_backoff_ms?: number;
+  on_error?: PipelineOnError;
 };
 
 export type PipelineChildItemState = {
@@ -430,6 +505,8 @@ export type PipelineStepState = {
   usage?: RunUsage;
   depends_on?: string[];
   child_items?: PipelineChildItemState[];
+  attempts?: number;
+  subpipeline_run_id?: string;
 };
 
 export type PipelinePendingCheckpoint = {
@@ -449,11 +526,15 @@ export type PipelinePendingCheckpoint = {
   payload_preview?: string;
 };
 
+export type PendingCheckpoint = PipelinePendingCheckpoint;
+
 export type PipelineAgentSnapshot = {
   messages: unknown[];
   written: string[];
   budget_used: number;
 };
+
+export type AgentSnapshot = PipelineAgentSnapshot;
 
 export type PipelineRunStatus =
   | "running"
@@ -477,11 +558,29 @@ export type PipelineRun = {
   steps_v2?: PipelineStepSpec[];
   step_states: PipelineStepState[];
   pending_checkpoint?: PipelinePendingCheckpoint | null;
+  pending_checkpoints?: PipelinePendingCheckpoint[];
   agent_snapshot?: PipelineAgentSnapshot | null;
+  step_snapshots?: Record<string, PipelineAgentSnapshot>;
   error?: string | null;
   engagement_id?: string | null;
   usage?: RunUsage;
 };
+
+export function getPendingCheckpoints(run: PipelineRun): PipelinePendingCheckpoint[] {
+  const list: PipelinePendingCheckpoint[] = [];
+  const seen = new Set<string>();
+  const add = (cp: PipelinePendingCheckpoint | null | undefined) => {
+    if (!cp || typeof cp !== "object" || !cp.checkpoint_id) return;
+    if (seen.has(cp.checkpoint_id)) return;
+    seen.add(cp.checkpoint_id);
+    list.push(cp);
+  };
+  if (Array.isArray(run.pending_checkpoints)) {
+    for (const cp of run.pending_checkpoints) add(cp);
+  }
+  add(run.pending_checkpoint);
+  return list;
+}
 
 export type PipelineValidationResult = {
   ok: boolean;
@@ -492,7 +591,10 @@ export type PipelineValidationResult = {
 };
 
 export type PipelineResumePayload = {
-  action: "approve" | "reject" | "answer";
+  checkpoint_id?: string;
+  decision?: "approve" | "reject" | "answer";
+  text?: string;
+  action?: "approve" | "reject" | "answer";
   answer?: string;
   choice?: string;
   override_args?: Record<string, unknown>;
@@ -515,6 +617,8 @@ export type Routine = {
   schedule: string;
   cadence?: string;
   interval_secs?: number | null;
+  tz?: string;
+  tz_offset_mins?: number | null;
   skill_id?: string;
   enabled: boolean;
   last_run_ts?: number | null;
@@ -532,6 +636,15 @@ export type Routine = {
   pack_deliverables?: boolean;
   recent_runs?: RoutineRunRecord[];
 };
+
+export function isDeterministicRoutine(rt: Pick<Routine, "skill_id" | "steps_v2">): boolean {
+  if (Array.isArray(rt.steps_v2) && rt.steps_v2.length > 0) {
+    return rt.steps_v2.every(
+      (s) => s.kind === "skill" || s.kind === "export" || s.kind === "checkpoint" || s.kind === "subpipeline"
+    );
+  }
+  return Boolean(rt.skill_id && rt.skill_id.trim());
+}
 export type MemoryIssue = {
   line: number;
   kind: "conflict" | "duplicate" | "stale_ref";
@@ -772,8 +885,13 @@ export type Update = {
   latest?: string;
   available?: boolean;
   staged?: string;
-  mode?: string;
+  applied?: string;
+  installed?: string;
+  mode?: "off" | "notify" | "auto" | string;
   can_apply?: boolean;
+  can_manage?: boolean;
+  is_admin?: boolean;
+  gated?: boolean;
   dev_build?: boolean;
   notes?: string;
   release_url?: string;
@@ -808,6 +926,11 @@ export type Decision = {
   method?: string;
   payload_preview?: string;
   payload_sha256?: string;
+  server_id?: string;
+  server_name?: string;
+  tool_name?: string;
+  arguments_preview?: string;
+  args_preview?: string;
   engagement_id?: string;
   engagement_name?: string;
   client_name?: string;
@@ -866,6 +989,90 @@ export type SecurityPayload = {
 export function hasTripwire(status: Status | null | "error" | undefined): boolean {
   if (isWebStandalone() || !status || status === "error") return false;
   return status.capabilities?.tripwire === true;
+}
+
+export type BackupOffsiteConfig = {
+  kind: "none" | "folder" | "s3";
+  folder_path: string;
+  s3_endpoint: string;
+  s3_bucket: string;
+  s3_region: string;
+  s3_prefix: string;
+  s3_path_style: boolean;
+  s3_credentials_configured?: boolean;
+};
+
+export type BackupConfig = {
+  enabled: boolean;
+  interval_hours: number;
+  retention_count: number;
+  local_dir: string;
+  effective_local_dir?: string;
+  offsite: BackupOffsiteConfig;
+};
+
+export type BackupRuntimeState = {
+  last_run_ms: number | null;
+  last_backup_name: string | null;
+  last_backup_sha256: string | null;
+  last_file_count: number | null;
+  last_zip_bytes: number | null;
+  last_offsite_status: string | null;
+  last_error: string | null;
+};
+
+export type BackupListEntry = {
+  name: string;
+  size_bytes: number;
+  modified_ms: number;
+  sha256: string | null;
+  created_at_utc: string | null;
+  file_count: number | null;
+  kind: "backup" | "pre_restore";
+};
+
+export type BackupsPayload = {
+  config: BackupConfig;
+  state: BackupRuntimeState;
+  backups: BackupListEntry[];
+  can_edit: boolean;
+};
+
+export type BackupRunResponse = {
+  ok: boolean;
+  backup: {
+    filename: string;
+    sha256: string;
+    manifest_sha256: string;
+    file_count: number;
+    total_bytes: number;
+    zip_bytes: number;
+    created_at_utc: string;
+    pruned_local: string[];
+    offsite?: { kind: string; ok: boolean; target: string; detail: string } | null;
+  };
+  state: BackupRuntimeState;
+  backups: BackupListEntry[];
+};
+
+export type BackupRestoreResponse = {
+  ok: boolean;
+  restore: {
+    archive: string;
+    restored_files: number;
+    total_bytes: number;
+    archive_sha256: string;
+    manifest_sha256: string;
+    verified_on_disk: boolean;
+    pre_restore_snapshot: string | null;
+  };
+  backups: BackupListEntry[];
+};
+
+/** Full-instance backups exist on native Ergon (never in standalone browser mode). */
+export function hasBackups(status: Status | null | "error" | undefined): boolean {
+  if (isWebStandalone() || !status || status === "error") return false;
+  return status.capabilities?.backups === true;
 }
 export type TodayPayload = { date?: string; events?: TodayEvent[] };
 export type GraphNode = { id: string; kind: string; label?: string; detail?: string };
@@ -927,18 +1134,258 @@ export function hasV070Api(
   return isAtLeastMinor(status.version, 7);
 }
 
-/** Parses v0.7.0 routine cadence strings ("every 15m", "hourly", "daily 09:00", "weekly mon",
- *  or interval_secs) to estimate the next scheduled execution epoch ms when the server omits it. */
+const CRON_MONTHS: Record<string, number> = {
+  jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6,
+  jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12,
+};
+const CRON_DOW: Record<string, number> = {
+  sun: 0, mon: 1, tue: 2, wed: 3, thu: 4, fri: 5, sat: 6,
+};
+
+function parseCronToken(token: string, min: number, max: number, names?: Record<string, number>): number | null {
+  const clean = token.trim().toLowerCase();
+  if (!clean) return null;
+  if (names && clean in names) return names[clean];
+  if (!/^\d+$/.test(clean)) return null;
+  const n = Number(clean);
+  if (!Number.isInteger(n) || n < min || n > max) return null;
+  return n;
+}
+
+function parseCronField(
+  raw: string,
+  min: number,
+  max: number,
+  names?: Record<string, number>,
+  wrapSevenToZero = false
+): Set<number> | null {
+  const field = raw.trim().toLowerCase();
+  if (!field) return null;
+  const out = new Set<number>();
+  for (const part of field.split(",")) {
+    const seg = part.trim();
+    if (!seg) return null;
+    const slashParts = seg.split("/");
+    if (slashParts.length > 2) return null;
+    const [rangePart, stepPart] = slashParts;
+    let step = 1;
+    if (stepPart !== undefined) {
+      if (!/^\d+$/.test(stepPart)) return null;
+      step = Number(stepPart);
+      if (!Number.isInteger(step) || step <= 0) return null;
+    }
+    let start = min;
+    let end = max;
+    if (rangePart === "*") {
+      start = min;
+      end = max;
+    } else if (rangePart.includes("-")) {
+      const dashParts = rangePart.split("-");
+      if (dashParts.length !== 2) return null;
+      const a = parseCronToken(dashParts[0], min, max, names);
+      const b = parseCronToken(dashParts[1], min, max, names);
+      if (a === null || b === null || a > b) return null;
+      start = a;
+      end = b;
+    } else {
+      const single = parseCronToken(rangePart, min, max, names);
+      if (single === null) return null;
+      start = single;
+      end = stepPart !== undefined ? max : single;
+    }
+    for (let v = start; v <= end; v += step) {
+      out.add(wrapSevenToZero && v === 7 ? 0 : v);
+    }
+  }
+  return out.size > 0 ? out : null;
+}
+
+export type ParsedCron = {
+  minutes: Set<number>;
+  hours: Set<number>;
+  dom: Set<number>;
+  months: Set<number>;
+  dow: Set<number>;
+  domWildcard: boolean;
+  dowWildcard: boolean;
+};
+
+export function parseCronExpression(expr: string): ParsedCron | null {
+  const parts = String(expr || "").trim().split(/\s+/);
+  if (parts.length !== 5) return null;
+  const minutes = parseCronField(parts[0], 0, 59);
+  const hours = parseCronField(parts[1], 0, 23);
+  const dom = parseCronField(parts[2], 1, 31);
+  const months = parseCronField(parts[3], 1, 12, CRON_MONTHS);
+  const dow = parseCronField(parts[4], 0, 7, CRON_DOW, true);
+  if (!minutes || !hours || !dom || !months || !dow) return null;
+  return {
+    minutes,
+    hours,
+    dom,
+    months,
+    dow,
+    domWildcard: parts[2].trim() === "*",
+    dowWildcard: parts[4].trim() === "*",
+  };
+}
+
+export function isCronExpression(expr: string): boolean {
+  return String(expr || "").trim().split(/\s+/).length === 5;
+}
+
+export function validateCronExpression(expr: string): { valid: boolean; error?: string; summary?: string } {
+  const trimmed = String(expr || "").trim();
+  if (!trimmed) return { valid: false, error: "Schedule cannot be empty." };
+  const parts = trimmed.split(/\s+/);
+  if (parts.length !== 5) {
+    return { valid: false, error: "Cron expression must have 5 fields: min hour day month weekday." };
+  }
+  const parsed = parseCronExpression(trimmed);
+  if (!parsed) {
+    return { valid: false, error: "Invalid 5-field cron syntax (check ranges like 0-59, 0-23, 1-31, 1-12, 0-6)." };
+  }
+  return { valid: true, summary: `Valid 5-field cron (${parts.join(" ")})` };
+}
+
+export function validateRoutineSchedule(schedule: string): { valid: boolean; error?: string } {
+  const trimmed = String(schedule || "").trim();
+  if (!trimmed) return { valid: false, error: "Schedule cannot be empty." };
+  const raw = trimmed.toLowerCase();
+  if (raw === "manual" || raw === "hourly" || raw === "every hour") {
+    return { valid: true };
+  }
+  const everyMatch = /^every\s+(\d+)\s*(s|sec|secs|seconds?|m|min|mins|minutes?|h|hr|hrs|hours?|d|day|days?)$/.exec(raw);
+  if (everyMatch) {
+    return Number(everyMatch[1]) >= 1
+      ? { valid: true }
+      : { valid: false, error: "Interval must be at least 1." };
+  }
+  const dailyMatch = /^(?:daily|every\s+day|every\s+weekday)(?:\s+(\d{1,2}):(\d{2}))?$/.exec(raw);
+  if (dailyMatch) {
+    if (dailyMatch[1] !== undefined) {
+      const hh = Number(dailyMatch[1]);
+      const mm = Number(dailyMatch[2]);
+      if (hh > 23 || mm > 59) {
+        return { valid: false, error: "Time must use 24-hour HH:MM (00:00 to 23:59)." };
+      }
+    }
+    return { valid: true };
+  }
+  const weeklyMatch = /^(?:weekly|every)\s+(sun|mon|tue|wed|thu|fri|sat)[a-z]*(?:\s+(\d{1,2}):(\d{2}))?$/.exec(raw);
+  if (weeklyMatch) {
+    if (weeklyMatch[2] !== undefined) {
+      const hh = Number(weeklyMatch[2]);
+      const mm = Number(weeklyMatch[3]);
+      if (hh > 23 || mm > 59) {
+        return { valid: false, error: "Time must use 24-hour HH:MM (00:00 to 23:59)." };
+      }
+    }
+    return { valid: true };
+  }
+  return validateCronExpression(trimmed);
+}
+
+export function validateRoutineTimezone(tz: string): { valid: boolean; error?: string } {
+  const zone = String(tz || "").trim();
+  if (!zone) return { valid: false, error: "Select a timezone." };
+  if (zone.toUpperCase() === "UTC") return { valid: true };
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: zone }).format(0);
+    return { valid: true };
+  } catch {
+    return { valid: false, error: `Unknown IANA timezone "${zone}".` };
+  }
+}
+
+export function resolveTzOffsetMins(tz?: string, tzOffsetMins?: number | null, atMs = Date.now()): number {
+  if (typeof tzOffsetMins === "number" && Number.isFinite(tzOffsetMins)) {
+    return Math.round(tzOffsetMins);
+  }
+  const zone = String(tz || "").trim();
+  if (zone.toUpperCase() === "UTC") return 0;
+  if (zone && typeof Intl !== "undefined" && Intl.DateTimeFormat) {
+    try {
+      const parts = new Intl.DateTimeFormat("en-US", {
+        timeZone: zone,
+        timeZoneName: "shortOffset",
+      }).formatToParts(new Date(atMs));
+      const tzPart = parts.find((p) => p.type === "timeZoneName")?.value ?? "";
+      if (tzPart === "GMT" || tzPart === "UTC") return 0;
+      const m = /^GMT([+-])(\d{1,2})(?::?(\d{2}))?$/i.exec(tzPart);
+      if (m) {
+        const sign = m[1] === "-" ? -1 : 1;
+        return sign * (Number(m[2]) * 60 + Number(m[3] || 0));
+      }
+    } catch {
+      // Fallback to local offset below
+    }
+  }
+  return -new Date(atMs).getTimezoneOffset();
+}
+
+function nextCronRunMs(cron: ParsedCron, fromMs: number, offsetMins: number): number | null {
+  const offsetMs = offsetMins * 60_000;
+  const startMinute = Math.floor((fromMs + offsetMs) / 60_000) + 1;
+  const cursor = new Date(startMinute * 60_000);
+  const limitMs = startMinute * 60_000 + 366 * 86_400_000;
+  while (cursor.getTime() <= limitMs) {
+    const mon = cursor.getUTCMonth() + 1;
+    if (!cron.months.has(mon)) {
+      cursor.setUTCMonth(cursor.getUTCMonth() + 1, 1);
+      cursor.setUTCHours(0, 0, 0, 0);
+      continue;
+    }
+    const dom = cursor.getUTCDate();
+    const dow = cursor.getUTCDay();
+    const dayMatches =
+      cron.domWildcard && cron.dowWildcard
+        ? true
+        : cron.domWildcard
+          ? cron.dow.has(dow)
+          : cron.dowWildcard
+            ? cron.dom.has(dom)
+            : cron.dom.has(dom) || cron.dow.has(dow);
+    if (!dayMatches) {
+      cursor.setUTCDate(dom + 1);
+      cursor.setUTCHours(0, 0, 0, 0);
+      continue;
+    }
+    const hr = cursor.getUTCHours();
+    if (!cron.hours.has(hr)) {
+      cursor.setUTCHours(hr + 1, 0, 0, 0);
+      continue;
+    }
+    const min = cursor.getUTCMinutes();
+    if (!cron.minutes.has(min)) {
+      cursor.setUTCMinutes(min + 1, 0, 0);
+      continue;
+    }
+    return cursor.getTime() - offsetMs;
+  }
+  return null;
+}
+
+/** Parses routine cadence strings ("every 15m", "hourly", "daily 09:00", "weekly mon",
+ *  5-field cron, or interval_secs) with optional timezone offset to estimate next execution epoch ms. */
 export function estimateNextRunMs(
   schedule: string,
   fromMs = Date.now(),
-  intervalSecs?: number | null
+  intervalSecs?: number | null,
+  tzOffsetMins?: number | null,
+  tz?: string
 ): number | null {
   if (typeof intervalSecs === "number" && Number.isFinite(intervalSecs) && intervalSecs > 0) {
     return fromMs + intervalSecs * 1000;
   }
-  const raw = String(schedule || "").trim().toLowerCase();
-  if (!raw) return null;
+  const trimmed = String(schedule || "").trim();
+  const raw = trimmed.toLowerCase();
+  if (!raw || raw === "manual") return null;
+  const cron = parseCronExpression(trimmed);
+  if (cron) {
+    const offset = resolveTzOffsetMins(tz, tzOffsetMins, fromMs);
+    return nextCronRunMs(cron, fromMs, offset);
+  }
   const everyMatch = /^every\s+(\d+)\s*(s|sec|secs|seconds?|m|min|mins|minutes?|h|hr|hrs|hours?|d|day|days?)$/.exec(raw);
   if (everyMatch) {
     const n = Math.max(1, Number(everyMatch[1]));
@@ -957,6 +1404,18 @@ export function estimateNextRunMs(
   if (dailyMatch) {
     const hh = Math.min(23, Number(dailyMatch[1] ?? 9));
     const mm = Math.min(59, Number(dailyMatch[2] ?? 0));
+    const offset = tz || typeof tzOffsetMins === "number" ? resolveTzOffsetMins(tz, tzOffsetMins, fromMs) : null;
+    if (offset !== null) {
+      const offsetMs = offset * 60_000;
+      const next = new Date(fromMs + offsetMs);
+      next.setUTCSeconds(0, 0);
+      next.setUTCHours(hh, mm, 0, 0);
+      if (next.getTime() <= fromMs + offsetMs) next.setUTCDate(next.getUTCDate() + 1);
+      if (raw.includes("weekday")) {
+        while (next.getUTCDay() === 0 || next.getUTCDay() === 6) next.setUTCDate(next.getUTCDate() + 1);
+      }
+      return next.getTime() - offsetMs;
+    }
     const next = new Date(fromMs);
     next.setSeconds(0, 0);
     next.setHours(hh, mm, 0, 0);
@@ -1000,14 +1459,18 @@ export function formatCountdown(targetMs: number | null | undefined, nowMs = Dat
 
 export async function call<T>(
   path: string,
-  opts: { method?: string; body?: unknown; signal?: AbortSignal } = {}
+  opts: { method?: string; body?: unknown; signal?: AbortSignal; headers?: Record<string, string> } = {}
 ): Promise<Res<T>> {
   try {
+    const headers: Record<string, string> = { ...(opts.headers ?? {}) };
+    if (opts.body !== undefined && !("Content-Type" in headers)) {
+      headers["Content-Type"] = "application/json";
+    }
     const r = await fetch(path, {
       method: opts.method ?? "GET",
       cache: "no-store",
       signal: opts.signal,
-      headers: opts.body !== undefined ? { "Content-Type": "application/json" } : undefined,
+      headers: Object.keys(headers).length > 0 ? headers : undefined,
       body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
     });
     const raw = await r.text();
@@ -1227,13 +1690,30 @@ export async function getPipelineRun(runId: string): Promise<Res<{ run: Pipeline
   return call<{ run: PipelineRun }>(`/api/pipelines/runs/${encodeURIComponent(runId)}`);
 }
 
+export async function cancelLiveRun(runId: string): Promise<Res<{ cancelled?: boolean; run_id?: string }>> {
+  return call<{ cancelled?: boolean; run_id?: string }>(`/api/runs/${encodeURIComponent(runId || "active")}/cancel`, {
+    method: "POST",
+    body: {},
+  });
+}
+
 export async function resumePipelineRun(
   runId: string,
   body: PipelineResumePayload
 ): Promise<Res<{ run: PipelineRun }>> {
+  const decision = body.decision ?? body.action ?? "approve";
+  const text = body.text ?? body.choice ?? body.answer;
   return call<{ run: PipelineRun }>(`/api/pipelines/runs/${encodeURIComponent(runId)}/resume`, {
     method: "POST",
-    body,
+    body: {
+      ...(body.checkpoint_id ? { checkpoint_id: body.checkpoint_id } : {}),
+      decision,
+      ...(text !== undefined ? { text } : {}),
+      action: body.action ?? decision,
+      ...(body.answer !== undefined ? { answer: body.answer } : text !== undefined ? { answer: text } : {}),
+      ...(body.choice !== undefined ? { choice: body.choice } : {}),
+      ...(body.override_args !== undefined ? { override_args: body.override_args } : {}),
+    },
   });
 }
 
@@ -1366,13 +1846,26 @@ export async function exportFile(body: ExportFileRequest): Promise<Res<ExportFil
   return call<ExportFileResult>("/api/files/export", { method: "POST", body });
 }
 
-export function canExportPdf(path: string, extractedFormat?: "markdown" | "csv"): boolean {
-  if (extractedFormat === "markdown" || extractedFormat === "csv") return true;
+export function canExportPdf(path: string, _extractedFormat?: "markdown" | "csv"): boolean {
   const ext = (path.split(".").pop() || "").toLowerCase();
   return ext === "md" || ext === "markdown" || ext === "txt" || ext === "csv" || ext === "tsv";
 }
 
-export type TriggerKind = "webhook" | "folder_watch";
+export type TriggerKind = "webhook" | "folder_watch" | "imap_poll";
+
+export type ImapSecurity = "imaps" | "starttls" | "plain_loopback_test" | (string & {});
+
+export type ImapConfig = {
+  host: string;
+  port: number;
+  security: ImapSecurity;
+  folder: string;
+  poll_interval_secs: number;
+  mark_seen: boolean;
+  username_secret_key: string;
+  password_secret_key: string;
+  subject_filter?: string;
+};
 
 export type TriggerRule = {
   id: string;
@@ -1393,6 +1886,7 @@ export type TriggerRule = {
   folder_path?: string | null;
   glob_filter?: string | null;
   max_bytes?: number;
+  imap_config?: ImapConfig;
   last_triggered_ms?: number | null;
   trigger_count?: number;
   created_ms?: number;
@@ -1400,6 +1894,27 @@ export type TriggerRule = {
 };
 
 export type OutboundConnectorKind = "http_webhook" | "rest_api" | "smtp_relay";
+
+export type SmtpSecurity = "smtps" | "starttls" | "plain_loopback_test";
+
+export type SmtpConfig = {
+  host: string;
+  port: number;
+  security: SmtpSecurity;
+  username_secret_key: string;
+  password_secret_key: string;
+  from_addr: string;
+  default_to: string[];
+};
+
+export type OAuthConfig = {
+  token_url: string;
+  client_id: string;
+  client_secret_key: string;
+  refresh_token_secret_key: string;
+  scopes: string[];
+  access_token_expires_ms?: number;
+};
 
 export type OutboundConnector = {
   id: string;
@@ -1410,6 +1925,8 @@ export type OutboundConnector = {
   headers_template?: Record<string, string>;
   secret_keys?: string[];
   has_secret?: boolean;
+  smtp_config?: SmtpConfig;
+  oauth_config?: OAuthConfig;
   require_approval: boolean;
   effective_require_approval?: boolean;
   blocked_by_policy?: boolean;
@@ -1506,6 +2023,8 @@ export async function saveTriggerRule(body: {
   enabled?: boolean;
   watch_dir?: string;
   glob?: string;
+  imap_config?: ImapConfig;
+  secrets?: Record<string, string>;
 }): Promise<
   Res<{
     trigger?: TriggerRule;
@@ -1609,12 +2128,94 @@ export async function saveOutboundConnector(body: {
   secrets?: Record<string, string>;
   secret_key?: string;
   secret_value?: string;
+  smtp_config?: SmtpConfig;
+  oauth_config?: OAuthConfig;
   require_approval: boolean;
   enabled?: boolean;
 }): Promise<Res<{ connector?: OutboundConnector }>> {
   return call<{ connector?: OutboundConnector }>("/api/connectors/outbound", {
     method: "POST",
     body,
+  });
+}
+
+export type McpTransport = "stdio" | "http_sse";
+
+export type McpToolSpec = {
+  name: string;
+  description?: string;
+  input_schema?: unknown;
+};
+
+export type McpServerSpec = {
+  id: string;
+  name: string;
+  transport: McpTransport;
+  command_or_url: string;
+  args: string[];
+  env_secret_keys: string[];
+  require_approval_by_default: boolean;
+  enabled: boolean;
+  cached_tools?: McpToolSpec[];
+  last_discovered_ms?: number | null;
+  last_error?: string | null;
+  created_ms?: number;
+  updated_ms?: number;
+};
+
+export function hasMcpApi(status: Status | null | "error" | undefined): boolean {
+  if (isWebStandalone()) return true;
+  if (!status || status === "error") return false;
+  if (typeof status.capabilities?.mcp === "boolean") {
+    return Boolean(status.capabilities.mcp);
+  }
+  return isAtLeastMinor(status.version, 38);
+}
+
+export async function listMcpServers(): Promise<Res<{ servers: McpServerSpec[] }>> {
+  const r = await call<{ servers?: McpServerSpec[] }>("/api/mcp/servers");
+  if (!r.ok) return r;
+  return {
+    ok: true,
+    data: {
+      servers: Array.isArray(r.data.servers) ? r.data.servers : [],
+    },
+  };
+}
+
+export async function saveMcpServer(body: {
+  id?: string;
+  name: string;
+  transport: McpTransport;
+  command_or_url: string;
+  args: string[];
+  env_secret_keys: string[];
+  require_approval_by_default: boolean;
+  enabled: boolean;
+}): Promise<Res<{ server?: McpServerSpec; servers?: McpServerSpec[] }>> {
+  return call<{ server?: McpServerSpec; servers?: McpServerSpec[] }>("/api/mcp/servers", {
+    method: "POST",
+    body,
+  });
+}
+
+export async function discoverMcpServer(id: string): Promise<
+  Res<{
+    server?: McpServerSpec;
+    tools?: McpToolSpec[];
+    cached_tools?: McpToolSpec[];
+    discovered_count?: number;
+  }>
+> {
+  return call(`/api/mcp/servers/${encodeURIComponent(id)}/discover`, {
+    method: "POST",
+    body: {},
+  });
+}
+
+export async function deleteMcpServer(id: string): Promise<Res<{ deleted?: string }>> {
+  return call<{ deleted?: string }>(`/api/mcp/servers/${encodeURIComponent(id)}`, {
+    method: "DELETE",
   });
 }
 
@@ -2079,4 +2680,294 @@ export function isPathInEngagementScope(path: string, eng?: Engagement | null): 
 
 export async function aggregateVault(body: VaultAggregateRequest): Promise<Res<VaultAggregateResult>> {
   return call<VaultAggregateResult>("/api/vault/aggregate", { method: "POST", body });
+}
+
+const LOCAL_HELP_PREFS_KEY = "ergon-help-prefs-v1";
+
+function loadLocalHelpFallback(): HelpConfigPayload {
+  try {
+    const raw = localStorage.getItem(LOCAL_HELP_PREFS_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      return {
+        onboarding_completed: Boolean(parsed?.onboarding_completed),
+        onboarding_completed_at_ms: typeof parsed?.onboarding_completed_at_ms === "number" ? parsed.onboarding_completed_at_ms : null,
+        admin_contact: {
+          name: String(parsed?.admin_contact?.name ?? ""),
+          email: String(parsed?.admin_contact?.email ?? ""),
+          phone: String(parsed?.admin_contact?.phone ?? ""),
+          channel_url: String(parsed?.admin_contact?.channel_url ?? ""),
+          notes: String(parsed?.admin_contact?.notes ?? ""),
+          configured: Boolean(
+            parsed?.admin_contact?.name ||
+            parsed?.admin_contact?.email ||
+            parsed?.admin_contact?.phone ||
+            parsed?.admin_contact?.channel_url ||
+            parsed?.admin_contact?.notes
+          ),
+          source: "local",
+        },
+        can_edit_admin_contact: true,
+        diagnostics_url: "/api/diagnostics/bundle",
+      };
+    }
+  } catch { /* ignore */ }
+  return {
+    onboarding_completed: false,
+    onboarding_completed_at_ms: null,
+    admin_contact: {
+      name: "",
+      email: "",
+      phone: "",
+      channel_url: "",
+      notes: "",
+      configured: false,
+      source: "default",
+    },
+    can_edit_admin_contact: true,
+    diagnostics_url: "/api/diagnostics/bundle",
+  };
+}
+
+export async function fetchHelpConfig(): Promise<Res<HelpConfigPayload>> {
+  if (isWebStandalone()) {
+    return { ok: true, data: loadLocalHelpFallback() };
+  }
+  return call<HelpConfigPayload>("/api/help/config");
+}
+
+export async function saveHelpConfig(body: {
+  onboarding_completed?: boolean;
+  admin_contact?: Partial<Pick<AdminContactConfig, "name" | "email" | "phone" | "channel_url" | "notes">>;
+}): Promise<Res<HelpConfigPayload>> {
+  if (isWebStandalone()) {
+    const cur = loadLocalHelpFallback();
+    const nextContact = {
+      ...cur.admin_contact,
+      ...(body.admin_contact ?? {}),
+    };
+    nextContact.configured = Boolean(
+      nextContact.name.trim() ||
+      nextContact.email.trim() ||
+      nextContact.phone.trim() ||
+      nextContact.channel_url.trim() ||
+      nextContact.notes.trim()
+    );
+    const next: HelpConfigPayload = {
+      ...cur,
+      onboarding_completed:
+        typeof body.onboarding_completed === "boolean" ? body.onboarding_completed : cur.onboarding_completed,
+      onboarding_completed_at_ms:
+        typeof body.onboarding_completed === "boolean"
+          ? body.onboarding_completed
+            ? Date.now()
+            : null
+          : cur.onboarding_completed_at_ms,
+      admin_contact: nextContact,
+    };
+    try {
+      localStorage.setItem(LOCAL_HELP_PREFS_KEY, JSON.stringify(next));
+    } catch { /* ignore */ }
+    return { ok: true, data: next };
+  }
+  return call<HelpConfigPayload>("/api/help/config", { method: "POST", body });
+}
+
+export async function fetchDiagnosticsSummary(): Promise<Res<DiagnosticsSummary>> {
+  if (isWebStandalone()) {
+    return {
+      ok: true,
+      data: {
+        app_version: "0.38.0",
+        os: "browser",
+        arch: "web",
+        uptime_secs: 0,
+        workspace_count: 1,
+        model_configured: false,
+        log_files: 0,
+        crash_reports: 0,
+      },
+    };
+  }
+  return call<DiagnosticsSummary>("/api/diagnostics/summary");
+}
+
+export async function downloadDiagnosticBundle(): Promise<
+  | { ok: true; filename: string; sha256: string; bytes: number }
+  | { ok: false; error: string }
+> {
+  if (isWebStandalone()) {
+    return { ok: false, error: "Diagnostic bundles are generated by the local Ergon desktop/server binary." };
+  }
+  try {
+    const resp = await fetch("/api/diagnostics/bundle", {
+      method: "GET",
+      credentials: "same-origin",
+    });
+    if (!resp.ok) {
+      let msg = `Download failed (HTTP ${resp.status})`;
+      try {
+        const j = await resp.json();
+        if (typeof j?.error === "string" && j.error.trim()) msg = j.error;
+      } catch { /* ignore */ }
+      return { ok: false, error: msg };
+    }
+    const blob = await resp.blob();
+    const cd = resp.headers.get("content-disposition") || "";
+    const match = /filename="?([^";\r\n]+)"?/i.exec(cd);
+    const filename = match?.[1] || `ergon-diagnostics-${new Date().toISOString().slice(0, 10)}.zip`;
+    const sha256 = resp.headers.get("x-ergon-diagnostics-sha256") || "";
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1500);
+    return { ok: true, filename, sha256, bytes: blob.size };
+  } catch (e) {
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : "Could not download diagnostic bundle.",
+    };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Multi-user Auth, Sessions, OIDC & RBAC API
+// ---------------------------------------------------------------------------
+
+export type AuthRole = "admin" | "pm" | "ae" | "office" | "installer" | "member";
+
+export type AuthPrincipal = {
+  id: string;
+  username: string;
+  display_name: string;
+  email?: string | null;
+  role: AuthRole;
+  person_id: string;
+  active_person_id: string;
+  auth_method?: string;
+  is_admin: boolean;
+  break_glass?: boolean;
+};
+
+export type AuthMePayload = {
+  authenticated: boolean;
+  auth_required: boolean;
+  needs_setup: boolean;
+  oidc_enabled: boolean;
+  tls: boolean;
+  user: AuthPrincipal | null;
+  roles?: AuthRole[];
+};
+
+export type AuthUserRecord = {
+  id: string;
+  username: string;
+  email?: string | null;
+  display_name: string;
+  role: AuthRole;
+  person_id: string;
+  has_password: boolean;
+  oidc_linked: boolean;
+  disabled: boolean;
+  created_ms?: number;
+  updated_ms?: number;
+  last_login_ms?: number | null;
+};
+
+export type OidcConfigPayload = {
+  enabled: boolean;
+  configured: boolean;
+  issuer: string;
+  client_id: string;
+  has_client_secret: boolean;
+  redirect_uri: string;
+  scopes: string;
+  default_role: AuthRole;
+  role_claim: string;
+  auto_provision: boolean;
+};
+
+export async function fetchAuthMe(): Promise<Res<AuthMePayload>> {
+  return call<AuthMePayload>("/api/auth/me");
+}
+
+export async function setupInitialAdmin(body: {
+  username: string;
+  password: string;
+  display_name?: string;
+  email?: string;
+}): Promise<Res<{ ok: boolean; user: AuthUserRecord; token: string; expires_at_ms: number }>> {
+  return call("/api/auth/setup", { method: "POST", body });
+}
+
+export async function loginLocal(body: {
+  username: string;
+  password: string;
+}): Promise<Res<{ ok: boolean; user: AuthUserRecord; token: string; expires_at_ms: number }>> {
+  return call("/api/auth/login", { method: "POST", body });
+}
+
+export async function logoutSession(): Promise<Res<{ ok: boolean }>> {
+  return call("/api/auth/logout", { method: "POST", body: {} });
+}
+
+export async function changeOwnPassword(body: {
+  current_password: string;
+  new_password: string;
+}): Promise<Res<{ ok: boolean }>> {
+  return call("/api/auth/password", { method: "POST", body });
+}
+
+export async function listAuthUsers(): Promise<Res<{ users: AuthUserRecord[]; roles: AuthRole[] }>> {
+  return call("/api/auth/users");
+}
+
+export async function createAuthUser(body: {
+  username: string;
+  password: string;
+  role: AuthRole;
+  display_name?: string;
+  email?: string;
+}): Promise<Res<{ user: AuthUserRecord }>> {
+  return call("/api/auth/users", { method: "POST", body });
+}
+
+export async function updateAuthUser(
+  id: string,
+  patch: {
+    role?: AuthRole;
+    display_name?: string;
+    email?: string;
+    disabled?: boolean;
+    password?: string;
+  }
+): Promise<Res<{ user: AuthUserRecord }>> {
+  return call(`/api/auth/users/${encodeURIComponent(id)}`, { method: "PATCH", body: patch });
+}
+
+export async function deleteAuthUser(id: string): Promise<Res<{ ok: boolean }>> {
+  return call(`/api/auth/users/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
+export async function fetchOidcConfig(): Promise<Res<OidcConfigPayload>> {
+  return call<OidcConfigPayload>("/api/auth/oidc/config");
+}
+
+export async function saveOidcConfig(body: {
+  enabled?: boolean;
+  issuer?: string;
+  client_id?: string;
+  client_secret?: string;
+  clear_client_secret?: boolean;
+  redirect_uri?: string;
+  scopes?: string;
+  default_role?: AuthRole;
+  role_claim?: string;
+  auto_provision?: boolean;
+}): Promise<Res<OidcConfigPayload>> {
+  return call<OidcConfigPayload>("/api/auth/oidc/config", { method: "PUT", body });
 }

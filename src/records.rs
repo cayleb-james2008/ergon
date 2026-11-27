@@ -1160,6 +1160,7 @@ pub struct ClientRecord {
     pub notes_md: String,
     pub tax_rate_pct: f64,
     pub payment_terms: String,
+    pub owner_person_id: Option<String>,
     pub created_ms: u64,
     pub updated_ms: u64,
 }
@@ -1173,7 +1174,7 @@ impl ClientRecord {
     }
 
     pub fn to_json(&self) -> Value {
-        json!({
+        let mut v = json!({
             "id": self.id,
             "name": self.name,
             "brand_header": self.brand_header,
@@ -1185,7 +1186,11 @@ impl ClientRecord {
             "payment_terms": self.payment_terms,
             "created_ms": self.created_ms,
             "updated_ms": self.updated_ms,
-        })
+        });
+        if let Some(ref owner) = self.owner_person_id {
+            v["owner_person_id"] = json!(owner);
+        }
+        v
     }
 
     pub fn from_json(v: &Value) -> Option<Self> {
@@ -1205,6 +1210,11 @@ impl ClientRecord {
             Some(s) => clean_single_line(s, 120),
             None => "Net 30".to_string(),
         };
+        let owner_person_id = v["owner_person_id"]
+            .as_str()
+            .map(str::trim)
+            .filter(|s| !s.is_empty() && crate::valid_person_id(s))
+            .map(String::from);
         Some(Self {
             id,
             name,
@@ -1225,6 +1235,7 @@ impl ClientRecord {
                 .filter(|n| n.is_finite() && (0.0..=100.0).contains(n))
                 .unwrap_or(0.0),
             payment_terms,
+            owner_person_id,
             created_ms: v["created_ms"].as_u64().unwrap_or(0),
             updated_ms: v["updated_ms"].as_u64().unwrap_or(0),
         })
@@ -1384,6 +1395,28 @@ impl ClientsStore {
             "active_engagement_by_person": self.active_engagement_by_person,
         })
     }
+
+    /// True if `person_id` owns this client or has at least one engagement for it.
+    pub fn person_can_access_client(&self, client_id: &str, person_id: &str) -> bool {
+        let Some(client) = self.clients.iter().find(|c| c.id == client_id) else {
+            return false;
+        };
+        if client.owner_person_id.as_deref() == Some(person_id) {
+            return true;
+        }
+        self.engagements
+            .iter()
+            .any(|e| e.client_id == client_id && e.person_id == person_id)
+    }
+
+    /// Returns `Some(true)` if the engagement exists and belongs to `person_id`,
+    /// `Some(false)` if it exists and belongs to someone else, or `None` if not found.
+    pub fn person_owns_engagement(&self, engagement_id: &str, person_id: &str) -> Option<bool> {
+        self.engagements
+            .iter()
+            .find(|e| e.id == engagement_id)
+            .map(|e| e.person_id == person_id)
+    }
 }
 
 pub fn clients_path(root_data_dir: &Path) -> PathBuf {
@@ -1468,6 +1501,14 @@ fn mint_unique_id(desired: Option<&str>, fallback_name: &str, existing: &[&str])
 }
 
 pub fn create_client(root_data_dir: &Path, body: &Value) -> Result<ClientRecord, (u16, String)> {
+    create_client_for_person(root_data_dir, None, body)
+}
+
+pub fn create_client_for_person(
+    root_data_dir: &Path,
+    owner_person_id: Option<&str>,
+    body: &Value,
+) -> Result<ClientRecord, (u16, String)> {
     if !body.is_object() {
         return Err((400, "request body must be a JSON object".to_string()));
     }
@@ -1510,6 +1551,10 @@ pub fn create_client(root_data_dir: &Path, body: &Value) -> Result<ClientRecord,
             notes_md,
             tax_rate_pct,
             payment_terms,
+            owner_person_id: owner_person_id
+                .map(str::trim)
+                .filter(|s| !s.is_empty() && crate::valid_person_id(s))
+                .map(String::from),
             created_ms: ts,
             updated_ms: ts,
         };
@@ -2436,16 +2481,48 @@ pub fn append_usage_ledger(person_data_dir: &Path, entry: &UsageLedgerEntry) {
     });
 }
 
-pub fn load_usage_ledger(person_data_dir: &Path) -> Vec<UsageLedgerEntry> {
+fn load_usage_ledger_unlocked(person_data_dir: &Path) -> Vec<UsageLedgerEntry> {
     let path = usage_ledger_path(person_data_dir);
-    let Ok(text) = std::fs::read_to_string(&path) else {
+    let Ok(bytes) = std::fs::read(&path) else {
         return Vec::new();
     };
-    text.lines()
-        .filter(|l| !l.trim().is_empty())
-        .filter_map(|l| serde_json::from_str::<Value>(l).ok())
-        .filter_map(|v| UsageLedgerEntry::from_json(&v))
-        .collect()
+    let Ok(text) = std::str::from_utf8(&bytes) else {
+        let _ = crate::backup_corrupt(&path);
+        return Vec::new();
+    };
+    let mut entries = Vec::new();
+    let mut had_corrupt = false;
+    for line in text.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        match serde_json::from_str::<Value>(trimmed)
+            .ok()
+            .and_then(|v| UsageLedgerEntry::from_json(&v))
+        {
+            Some(entry) => entries.push(entry),
+            None => had_corrupt = true,
+        }
+    }
+    if had_corrupt {
+        if entries.is_empty() {
+            let _ = crate::backup_corrupt(&path);
+        } else {
+            let _ = crate::backup_corrupt_copy(&path);
+            let mut clean_buf = String::new();
+            for e in &entries {
+                clean_buf.push_str(&e.to_json().to_string());
+                clean_buf.push('\n');
+            }
+            let _ = atomic_write_bytes_with_mode(&path, clean_buf.as_bytes(), Some(0o600));
+        }
+    }
+    entries
+}
+
+pub fn load_usage_ledger(person_data_dir: &Path) -> Vec<UsageLedgerEntry> {
+    with_records_lock(|| load_usage_ledger_unlocked(person_data_dir))
 }
 
 pub fn engagement_spent_usd(
@@ -2977,14 +3054,37 @@ pub fn time_entries_path(person_data_dir: &Path) -> PathBuf {
 
 fn load_time_entries_unlocked(person_data_dir: &Path) -> Vec<TimeExpenseEntry> {
     let path = time_entries_path(person_data_dir);
-    let Ok(text) = std::fs::read_to_string(&path) else {
+    let Ok(bytes) = std::fs::read(&path) else {
         return Vec::new();
     };
-    text.lines()
-        .filter(|l| !l.trim().is_empty())
-        .filter_map(|l| serde_json::from_str::<Value>(l).ok())
-        .filter_map(|v| TimeExpenseEntry::from_json(&v))
-        .collect()
+    let Ok(text) = std::str::from_utf8(&bytes) else {
+        let _ = crate::backup_corrupt(&path);
+        return Vec::new();
+    };
+    let mut entries = Vec::new();
+    let mut had_corrupt = false;
+    for line in text.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        match serde_json::from_str::<Value>(trimmed)
+            .ok()
+            .and_then(|v| TimeExpenseEntry::from_json(&v))
+        {
+            Some(entry) => entries.push(entry),
+            None => had_corrupt = true,
+        }
+    }
+    if had_corrupt {
+        if entries.is_empty() {
+            let _ = crate::backup_corrupt(&path);
+        } else {
+            let _ = crate::backup_corrupt_copy(&path);
+            let _ = save_time_entries_unlocked(person_data_dir, &entries);
+        }
+    }
+    entries
 }
 
 fn save_time_entries_unlocked(
@@ -3410,10 +3510,27 @@ fn load_invoices_unlocked(person_data_dir: &Path) -> Vec<InvoiceRecord> {
         let _ = crate::backup_corrupt(&path);
         return Vec::new();
     };
-    v["invoices"]
-        .as_array()
-        .map(|arr| arr.iter().filter_map(InvoiceRecord::from_json).collect())
-        .unwrap_or_default()
+    let Some(arr) = v.as_object().and_then(|m| m.get("invoices")).and_then(|x| x.as_array()) else {
+        let _ = crate::backup_corrupt(&path);
+        return Vec::new();
+    };
+    let mut out = Vec::with_capacity(arr.len());
+    let mut had_corrupt = false;
+    for item in arr {
+        match InvoiceRecord::from_json(item) {
+            Some(rec) => out.push(rec),
+            None => had_corrupt = true,
+        }
+    }
+    if had_corrupt {
+        if out.is_empty() {
+            let _ = crate::backup_corrupt(&path);
+        } else {
+            let _ = crate::backup_corrupt_copy(&path);
+            let _ = save_invoices_unlocked(person_data_dir, &out);
+        }
+    }
+    out
 }
 
 fn save_invoices_unlocked(person_data_dir: &Path, invoices: &[InvoiceRecord]) -> Result<(), String> {
@@ -3430,6 +3547,13 @@ pub fn load_invoices(person_data_dir: &Path) -> Vec<InvoiceRecord> {
     with_records_lock(|| load_invoices_unlocked(person_data_dir))
 }
 
+fn md_safe_inline(raw: &str) -> String {
+    raw.replace(['\r', '\n', '\0'], " ")
+        .replace('|', "/")
+        .trim()
+        .to_string()
+}
+
 fn render_invoice_markdown(inv: &InvoiceRecord, client: &ClientRecord) -> String {
     let mut md = format!(
         "# Invoice {}\n\n\
@@ -3439,21 +3563,23 @@ fn render_invoice_markdown(inv: &InvoiceRecord, client: &ClientRecord) -> String
          Status: {}\n\
          Payment Terms: {}\n\
          Currency: {}\n",
-        inv.invoice_number,
-        inv.client_name,
-        inv.engagement_name,
-        inv.period_label,
-        inv.status,
-        inv.payment_terms,
-        inv.currency
+        md_safe_inline(&inv.invoice_number),
+        md_safe_inline(&inv.client_name),
+        md_safe_inline(&inv.engagement_name),
+        md_safe_inline(&inv.period_label),
+        md_safe_inline(&inv.status),
+        md_safe_inline(&inv.payment_terms),
+        md_safe_inline(&inv.currency)
     );
     if let Some(c) = client.primary_contact() {
-        let contact_line = if c.email.is_empty() {
-            c.name.clone()
-        } else if c.name.is_empty() {
-            c.email.clone()
+        let cname = md_safe_inline(&c.name);
+        let cemail = md_safe_inline(&c.email);
+        let contact_line = if cemail.is_empty() {
+            cname
+        } else if cname.is_empty() {
+            cemail
         } else {
-            format!("{} ({})", c.name, c.email)
+            format!("{cname} ({cemail})")
         };
         md.push_str(&format!("Primary Contact: {contact_line}\n"));
     }
@@ -3464,10 +3590,14 @@ fn render_invoice_markdown(inv: &InvoiceRecord, client: &ClientRecord) -> String
         md.push_str("| Kind | Description | Qty | Unit | Rate | Amount |\n");
         md.push_str("| --- | --- | ---: | --- | ---: | ---: |\n");
         for li in &inv.line_items {
-            let desc = li.description.replace('|', "/");
             md.push_str(&format!(
                 "| {} | {} | {:.2} | {} | {:.2} | {:.2} |\n",
-                li.kind, desc, li.quantity, li.unit_label, li.unit_price_usd, li.amount_usd
+                md_safe_inline(&li.kind),
+                md_safe_inline(&li.description),
+                li.quantity,
+                md_safe_inline(&li.unit_label),
+                li.unit_price_usd,
+                li.amount_usd
             ));
         }
         md.push('\n');
@@ -3564,6 +3694,16 @@ pub fn generate_invoice(
     let Some(client) = store.clients.iter().find(|c| c.id == eng.client_id).cloned() else {
         return Err((404, "client not found".to_string()));
     };
+    let req_client_id = body["client_id"].as_str().map(str::trim).unwrap_or("");
+    if !req_client_id.is_empty() && req_client_id != eng.client_id {
+        return Err((
+            400,
+            format!(
+                "client_id '{req_client_id}' does not match engagement's client '{}'",
+                eng.client_id
+            ),
+        ));
+    }
 
     let ts = now_millis();
     let default_period = {
@@ -3608,7 +3748,16 @@ pub fn generate_invoice(
 
     with_records_lock(|| {
         let mut invoices = load_invoices_unlocked(root_data_dir_or_person(&cfg.data_dir));
-        let inv_seq = invoices.len() + 1;
+        let max_inv_num = invoices
+            .iter()
+            .filter_map(|inv| {
+                inv.invoice_number
+                    .strip_prefix("INV-")
+                    .and_then(|s| s.parse::<usize>().ok())
+            })
+            .max()
+            .unwrap_or(0);
+        let inv_seq = (max_inv_num + 1).max(invoices.len() + 1);
         let id = format!("inv-{ts}-{}", next_seq());
         let invoice_number = format!("INV-{inv_seq:04}");
 
@@ -3616,7 +3765,7 @@ pub fn generate_invoice(
         let mut billed_entry_ids: Vec<String> = Vec::new();
 
         if include_llm_cost {
-            let ledger = load_usage_ledger(&cfg.data_dir);
+            let ledger = load_usage_ledger_unlocked(&cfg.data_dir);
             let mut runs = 0u64;
             let mut total_tokens = 0u64;
             let mut llm_cost = 0.0f64;
@@ -3750,6 +3899,7 @@ pub fn generate_invoice(
             .then_some(client.brand_header.trim());
         let md_text = render_invoice_markdown(&invoice, &client);
 
+        let mut pending_writes: Vec<(PathBuf, String, Vec<u8>)> = Vec::with_capacity(export_formats.len());
         for fmt in &export_formats {
             let rel = format!("{deliverables_dir}/{base_name}.{fmt}");
             let unresolved = sandbox_path_resolving(&cfg.workspace_dir, &rel, false)
@@ -3761,6 +3911,7 @@ pub fn generate_invoice(
             {
                 return Err((403, format!("cannot write invoice deliverable across symlink: {rel}")));
             }
+            invoice.deliverable_paths.push(rel.clone());
             let bytes: Vec<u8> = match fmt.as_str() {
                 "pdf" => crate::docs::markdown_to_pdf(
                     &md_text,
@@ -3768,30 +3919,57 @@ pub fn generate_invoice(
                     brand_hdr,
                 ),
                 "xlsx" => render_invoice_xlsx(&invoice),
-                _ => {
-                    invoice.deliverable_paths.push(rel.clone());
-                    serde_json::to_vec_pretty(&invoice.to_json())
-                        .map_err(|e| (500, format!("serialize invoice json: {e}")))?
-                }
+                _ => serde_json::to_vec_pretty(&invoice.to_json())
+                    .map_err(|e| (500, format!("serialize invoice json: {e}")))?,
             };
-            if fmt != "json" {
-                invoice.deliverable_paths.push(rel.clone());
-            }
-            crate::tools::atomic_write_bytes(&unresolved, &bytes)
-                .map_err(|e| (500, format!("write invoice {rel}: {e}")))?;
+            pending_writes.push((unresolved, rel, bytes));
         }
 
-        if !billed_entry_ids.is_empty() {
+        let orig_time_entries = if !billed_entry_ids.is_empty() {
+            let prev = all_time_entries.clone();
             for te in &mut all_time_entries {
                 if billed_entry_ids.contains(&te.id) {
                     te.invoiced_invoice_id = Some(id.clone());
                 }
             }
-            save_time_entries_unlocked(&cfg.data_dir, &all_time_entries).map_err(|e| (500, e))?;
+            Some(prev)
+        } else {
+            None
+        };
+
+        let mut written_paths: Vec<PathBuf> = Vec::with_capacity(pending_writes.len());
+        for (dest, rel, bytes) in pending_writes {
+            let existed = dest.exists();
+            if let Err(e) = crate::tools::atomic_write_bytes(&dest, &bytes) {
+                for p in written_paths {
+                    let _ = std::fs::remove_file(p);
+                }
+                return Err((500, format!("write invoice {rel}: {e}")));
+            }
+            if !existed {
+                written_paths.push(dest);
+            }
+        }
+
+        if orig_time_entries.is_some() {
+            if let Err(e) = save_time_entries_unlocked(&cfg.data_dir, &all_time_entries) {
+                for p in written_paths {
+                    let _ = std::fs::remove_file(p);
+                }
+                return Err((500, e));
+            }
         }
 
         invoices.push(invoice.clone());
-        save_invoices_unlocked(&cfg.data_dir, &invoices).map_err(|e| (500, e))?;
+        if let Err(e) = save_invoices_unlocked(&cfg.data_dir, &invoices) {
+            if let Some(prev) = orig_time_entries {
+                let _ = save_time_entries_unlocked(&cfg.data_dir, &prev);
+            }
+            for p in written_paths {
+                let _ = std::fs::remove_file(p);
+            }
+            return Err((500, e));
+        }
         Ok(invoice)
     })
 }
