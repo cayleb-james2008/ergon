@@ -1581,8 +1581,8 @@ await reset();
   // 1. Open Connectors modal -> Inbound Webhooks create, rotate secret, simulate payload
   await p.locator('[data-thing="connectors-btn"]').click();
   await p.waitForSelector("#connectors-panel", { timeout: 4000 });
-  const hasThreeTabs =
-    (await p.locator('#connectors-panel [role="tab"]').count()) === 3;
+  const hasFourTabs =
+    (await p.locator('#connectors-panel [role="tab"]').count()) === 4;
   await p.locator("#connectors-panel").getByRole("button", { name: "New webhook" }).click();
   await p.locator("#webhook-name").fill("Invoice Intake Hook");
   await p.locator("#webhook-create-form").getByRole("button", { name: "Create webhook" }).click();
@@ -1599,9 +1599,9 @@ await reset();
   await p.waitForSelector('#connectors-panel [data-simulate-panel="trg-e2e-1"] [role="status"]', { timeout: 4000 });
   const simStatusTxt = await p.locator('#connectors-panel [data-simulate-panel="trg-e2e-1"] [role="status"]').innerText();
   ok(
-    "v0.31.0 Connectors panel opens from rail with 3 tabs and creates, rotates, and simulates Inbound Webhooks",
-    hasThreeTabs && initialSecretVisible && simStatusTxt.includes("inbox/hook-e2e-1.json") && Boolean(hookSimPayload),
-    `tabs=${hasThreeTabs} secret=${initialSecretVisible} sim=${simStatusTxt}`
+    "v0.31.0 Connectors panel opens from rail with 4 tabs and creates, rotates, and simulates Inbound Webhooks",
+    hasFourTabs && initialSecretVisible && simStatusTxt.includes("inbox/hook-e2e-1.json") && Boolean(hookSimPayload),
+    `tabs=${hasFourTabs} secret=${initialSecretVisible} sim=${simStatusTxt}`
   );
 
   // 2. Watched Folders tab
@@ -1669,7 +1669,7 @@ await reset();
     const drawerOpen = Boolean(document.querySelector('[data-vaul-drawer][data-state="open"]'));
     const overflow = document.documentElement.scrollWidth - document.documentElement.clientWidth;
     const tabs = [...document.querySelectorAll('#connectors-panel [role="tab"]')];
-    return Boolean(panel) && !drawerOpen && overflow <= 0 && tabs.length === 3 && tabs.every((t) => t.getBoundingClientRect().height >= 44);
+    return Boolean(panel) && !drawerOpen && overflow <= 0 && tabs.length === 4 && tabs.every((t) => t.getBoundingClientRect().height >= 44);
   });
   ok("v0.31.0 mobile Menu -> Connectors opens outside Vaul drawer with 0px overflow", mobileConnectorsOk);
   await mctx.close();
@@ -3404,6 +3404,339 @@ for (const [theme, vw, vh] of [
     `before=${beforeScopeCount} after=${afterScopeCount} handoffScope=${handoffScopeVisible} palPressed=${palScopePressed} ov=${mScope.docOverflow}`
   );
   await ctx.close();
+}
+
+// 6l. v0.38.0 Wave E2 Protocols (SMTP Relay + OAuth2, IMAP Inbox trigger, MCP Tools tab + discover/approval/delete, Today mcp_tool_call approval card, 390px dark layout) (5 checks)
+{
+  const triggers = [];
+  const outbound = [];
+  const mcpServers = [];
+  const decisions = [
+    {
+      id: "dec-mcp-e2e-1",
+      kind: "mcp_tool_call",
+      summary: "Run search_invoices on Billing MCP",
+      status: "pending",
+      severity: "warning",
+      server_id: "mcp-e2e-seed",
+      server_name: "Billing MCP",
+      tool_name: "search_invoices",
+      arguments_preview: '{"client":"Northstar Advisory","status":"open"}',
+      ts: Date.now(),
+    },
+  ];
+  let savedSmtpPayload = null;
+  let savedImapPayload = null;
+  let mcpDiscoverCalls = 0;
+  let mcpApprovalUpdates = [];
+  let mcpDeleteCalls = 0;
+
+  const setupProtocolsRoutes = async (p) => {
+    await p.route("**/api/status", async (r) => {
+      const res = await r.fetch();
+      const j = await res.json();
+      await r.fulfill({
+        response: res,
+        body: JSON.stringify({
+          ...j,
+          version: "0.38.0",
+          capabilities: { ...(j.capabilities || {}), routines: true, connectors: true, mcp: true },
+        }),
+      });
+    });
+    await p.route("**/api/routines", (r) =>
+      r.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          routines: [
+            { id: "rt-e2-1", name: "Daily Mail Intake", prompt: "Process incoming client mail", schedule: "daily 09:00", enabled: true },
+          ],
+        }),
+      })
+    );
+    await p.route("**/api/workspace/policy", (r) =>
+      r.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          profile: "fast_internal",
+          label: "Fast Internal",
+          summary: "Default",
+          strict_citation_gate: false,
+          approval_gate_mode: "balanced",
+          redact_host_paths: false,
+          block_outbound_fetch: false,
+        }),
+      })
+    );
+    await p.route("**/api/connectors", (r) =>
+      r.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          triggers,
+          outbound,
+          secrets: [{ key: "smtp_pass", has_secret: true, updated_ms: Date.now() }],
+          delivery_log: [],
+          policy_profile: "fast_internal",
+        }),
+      })
+    );
+    await p.route("**/api/connectors/triggers", async (r) => {
+      if (r.request().method() === "POST") {
+        const b = JSON.parse(r.request().postData() || "{}");
+        savedImapPayload = b;
+        const trg = {
+          id: `trg-e2-${triggers.length + 1}`,
+          name: b.name,
+          kind: b.kind,
+          enabled: true,
+          routine_id: b.routine_id || "rt-e2-1",
+          imap_config: b.imap_config,
+          trigger_count: 0,
+          created_ms: Date.now(),
+        };
+        triggers.unshift(trg);
+        return r.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ trigger: trg }) });
+      }
+      return r.continue();
+    });
+    await p.route("**/api/connectors/outbound", async (r) => {
+      if (r.request().method() === "POST") {
+        const b = JSON.parse(r.request().postData() || "{}");
+        savedSmtpPayload = b;
+        const conn = {
+          id: `conn-e2-${outbound.length + 1}`,
+          name: b.name,
+          kind: b.kind,
+          url: b.url,
+          method: b.method || "POST",
+          secret_keys: b.secrets ? Object.keys(b.secrets) : [],
+          has_secret: Boolean(b.secrets && Object.keys(b.secrets).length > 0),
+          smtp_config: b.smtp_config,
+          oauth_config: b.oauth_config,
+          require_approval: Boolean(b.require_approval),
+          effective_require_approval: Boolean(b.require_approval),
+          enabled: true,
+          created_ms: Date.now(),
+        };
+        outbound.unshift(conn);
+        return r.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ connector: conn }) });
+      }
+      return r.continue();
+    });
+    await p.route(/\/api\/mcp\/servers\/[^/]+\/discover$/, (r) => {
+      const id = decodeURIComponent(new URL(r.request().url()).pathname.split("/")[4] || "");
+      mcpDiscoverCalls += 1;
+      const srv = mcpServers.find((s) => s.id === id);
+      const tools = [
+        { name: "list_clients", description: "List active client accounts." },
+        { name: "create_invoice_draft", description: "Create a draft invoice record." },
+      ];
+      if (srv) {
+        srv.cached_tools = tools;
+        srv.last_discovered_ms = Date.now();
+      }
+      return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ server: srv, tools, cached_tools: tools }) });
+    });
+    await p.route(/\/api\/mcp\/servers\/[^/]+$/, (r) => {
+      if (r.request().method() === "DELETE") {
+        const id = decodeURIComponent(new URL(r.request().url()).pathname.split("/")[4] || "");
+        mcpDeleteCalls += 1;
+        const idx = mcpServers.findIndex((s) => s.id === id);
+        if (idx >= 0) mcpServers.splice(idx, 1);
+        return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ deleted: id }) });
+      }
+      return r.continue();
+    });
+    await p.route("**/api/mcp/servers", async (r) => {
+      if (r.request().method() === "GET") {
+        return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ servers: mcpServers }) });
+      }
+      if (r.request().method() === "POST") {
+        const b = JSON.parse(r.request().postData() || "{}");
+        if (b.id) {
+          const existing = mcpServers.find((s) => s.id === b.id);
+          if (existing) {
+            existing.require_approval_by_default = Boolean(b.require_approval_by_default);
+            existing.enabled = Boolean(b.enabled);
+            mcpApprovalUpdates.push(existing.require_approval_by_default);
+            return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ server: existing }) });
+          }
+        }
+        const srv = {
+          id: `mcp-e2-${mcpServers.length + 1}`,
+          name: b.name,
+          transport: b.transport,
+          command_or_url: b.command_or_url,
+          args: b.args || [],
+          env_secret_keys: b.env_secret_keys || [],
+          require_approval_by_default: Boolean(b.require_approval_by_default),
+          enabled: Boolean(b.enabled),
+          cached_tools: [],
+          created_ms: Date.now(),
+        };
+        mcpServers.unshift(srv);
+        return r.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ server: srv }) });
+      }
+      return r.continue();
+    });
+    await p.route("**/api/decisions", (r) =>
+      r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ decisions }) })
+    );
+    await p.route(/\/api\/decisions\/[^/]+\/(approve|deny)$/, (r) => {
+      const parts = new URL(r.request().url()).pathname.split("/");
+      const did = decodeURIComponent(parts[3] || "");
+      const act = parts[4];
+      const dec = decisions.find((d) => d.id === did);
+      if (dec) {
+        dec.status = act === "approve" ? "approved" : "denied";
+        dec.outcome = act === "approve" ? `Approved and ran ${dec.tool_name} on ${dec.server_name}.` : "MCP tool call blocked.";
+      }
+      return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ decision: dec, outcome: dec?.outcome }) });
+    });
+  };
+
+  const { ctx, p } = await open(1440, 900);
+  await setupProtocolsRoutes(p);
+  await p.goto(BASE);
+  await waitWorkbench(p);
+
+  // 1. Outbound Actions -> SMTP Relay + OAuth2 Credentials config helper + masked secret handling
+  await p.locator('[data-thing="connectors-btn"]').click();
+  await p.waitForSelector("#connectors-panel", { timeout: 4000 });
+  await p.locator('#connectors-panel [role="tab"][data-id="outbound"]').click();
+  await p.locator("#connectors-panel").getByRole("button", { name: "New connector" }).click();
+  await p.locator("#outbound-name").fill("Client Mail Relay");
+  await p.locator("#outbound-kind").selectOption("smtp_relay");
+  await p.waitForSelector("#smtp-config-section", { timeout: 4000 });
+  await p.locator("#smtp-host").fill("smtp.example.com");
+  await p.locator("#smtp-security").selectOption("starttls");
+  await p.locator("#smtp-from-addr").fill("billing@example.com");
+  await p.locator("#smtp-default-to").fill("ap@acme.com, controller@acme.com");
+  await p.locator("#smtp-password-secret").fill("smtp-secret-value-e2");
+  await p.locator("#outbound-oauth-enabled").check();
+  await p.waitForSelector("#oauth-config-section", { timeout: 4000 });
+  await p.locator("#oauth-token-url").fill("https://auth.example.com/oauth/token");
+  await p.locator("#oauth-client-id").fill("ergon-mailer-client");
+  await p.locator("#oauth-scopes").fill("mail.send, offline_access");
+  await p.locator("#outbound-create-form").getByRole("button", { name: "Save connector" }).click();
+  await p.waitForSelector('#connectors-panel [data-outbound-id="conn-e2-1"]', { timeout: 4000 });
+  const smtpCardText = await p.locator('#connectors-panel [data-outbound-id="conn-e2-1"]').innerText();
+  const smtpSecretLeaked = await p.evaluate(() => document.body.innerText.includes("smtp-secret-value-e2"));
+  ok(
+    "v0.38.0 E2 Outbound SMTP Relay and OAuth2 Credentials save smtp_config/oauth_config without exposing secrets",
+    !smtpSecretLeaked &&
+      Boolean(savedSmtpPayload?.smtp_config) &&
+      savedSmtpPayload.smtp_config.host === "smtp.example.com" &&
+      savedSmtpPayload.smtp_config.port === 587 &&
+      savedSmtpPayload.smtp_config.security === "starttls" &&
+      savedSmtpPayload.smtp_config.default_to.length === 2 &&
+      Boolean(savedSmtpPayload?.oauth_config) &&
+      savedSmtpPayload.oauth_config.client_id === "ergon-mailer-client" &&
+      savedSmtpPayload.oauth_config.scopes.length === 2 &&
+      smtpCardText.includes("OAuth2") &&
+      smtpCardText.includes("billing@example.com"),
+    `leaked=${smtpSecretLeaked} port=${savedSmtpPayload?.smtp_config?.port} scopes=${savedSmtpPayload?.oauth_config?.scopes?.length}`
+  );
+
+  // 2. Folders & IMAP tab -> IMAP Inbox trigger option
+  await p.locator('#connectors-panel [role="tab"][data-id="folders"]').click();
+  await p.locator("#imap-add-btn").click();
+  await p.waitForSelector("#imap-poll-form", { timeout: 4000 });
+  await p.locator("#imap-name").fill("Invoices Inbox");
+  await p.locator("#imap-host").fill("imap.example.com");
+  await p.locator("#imap-folder").fill("INBOX/Invoices");
+  await p.locator("#imap-poll-interval").fill("45");
+  await p.locator("#imap-subject-filter").fill("Invoice");
+  await p.locator("#imap-poll-form").getByRole("button", { name: "Save IMAP inbox" }).click();
+  await p.waitForSelector('#connectors-panel [data-trigger-kind="imap_poll"]', { timeout: 4000 });
+  const imapCardTxt = await p.locator('#connectors-panel [data-trigger-kind="imap_poll"]').innerText();
+  ok(
+    "v0.38.0 E2 Folders & IMAP tab creates imap_poll trigger with imap_config",
+    Boolean(savedImapPayload?.imap_config) &&
+      savedImapPayload.kind === "imap_poll" &&
+      savedImapPayload.imap_config.host === "imap.example.com" &&
+      savedImapPayload.imap_config.folder === "INBOX/Invoices" &&
+      savedImapPayload.imap_config.poll_interval_secs === 45 &&
+      savedImapPayload.imap_config.mark_seen === true &&
+      savedImapPayload.imap_config.subject_filter === "Invoice" &&
+      imapCardTxt.includes("INBOX/Invoices"),
+    imapCardTxt.slice(0, 90).replace(/\n/g, " ")
+  );
+
+  // 3. MCP Tools tab -> Add stdio server, Discover Tools (cached_tools), Toggle Require approval, Delete
+  await p.locator('#connectors-panel [role="tab"][data-id="mcp"]').click();
+  await p.locator("#mcp-add-btn").click();
+  await p.waitForSelector("#mcp-create-form", { timeout: 4000 });
+  await p.locator("#mcp-name").fill("Billing MCP");
+  await p.locator("#mcp-transport").selectOption("stdio");
+  await p.locator("#mcp-command-or-url").fill("npx");
+  await p.locator("#mcp-args").fill("-y @ergon/billing-mcp");
+  await p.locator("#mcp-env-secret-keys").fill("BILLING_API_KEY");
+  await p.locator("#mcp-create-form").getByRole("button", { name: "Save server" }).click();
+  await p.waitForSelector('#connectors-panel [data-mcp-id="mcp-e2-1"]', { timeout: 4000 });
+  await p.locator('#connectors-panel [data-mcp-id="mcp-e2-1"] [data-action="discover-mcp"]').click();
+  await p.waitForFunction(
+    () => (document.querySelector('[data-mcp-tools="mcp-e2-1"]')?.textContent || "").includes("list_clients"),
+    null,
+    { timeout: 4000 }
+  );
+  const mcpToolsTxt = await p.locator('[data-mcp-tools="mcp-e2-1"]').innerText();
+  await p.locator('#connectors-panel [data-mcp-id="mcp-e2-1"] [data-action="toggle-mcp-approval"]').click();
+  await p.waitForTimeout(150);
+  await p.locator('#connectors-panel [data-mcp-id="mcp-e2-1"] button[aria-label="Delete MCP server Billing MCP"]').click();
+  await p.waitForFunction(() => !document.querySelector('[data-mcp-id="mcp-e2-1"]'), null, { timeout: 4000 });
+  ok(
+    "v0.38.0 E2 MCP Tools tab creates server, discovers cached_tools, toggles require_approval_by_default, and deletes server",
+    mcpDiscoverCalls === 1 &&
+      mcpToolsTxt.includes("list_clients") &&
+      mcpToolsTxt.includes("create_invoice_draft") &&
+      mcpApprovalUpdates.includes(false) &&
+      mcpDeleteCalls === 1,
+    `discover=${mcpDiscoverCalls} updates=${JSON.stringify(mcpApprovalUpdates)} del=${mcpDeleteCalls}`
+  );
+
+  // 4. Today approval card for mcp_tool_call
+  await p.keyboard.press("Escape");
+  await p.locator("#connectors-panel").waitFor({ state: "hidden", timeout: 4000 }).catch(() => {});
+  await p.locator('[role="tab"][data-id="paper"]').click();
+  await waitPaper(p);
+  await p.waitForSelector('#decisions-list [data-mcp-consequence="dec-mcp-e2e-1"]', { timeout: 4000 });
+  const mcpLeadText = await p.locator('section[aria-labelledby="lead-h"]').innerText();
+  const mcpCleanProse = !/[—–]|\bRune\b|\bRHL\b/.test(mcpLeadText);
+  await p.locator('section[aria-labelledby="lead-h"]').getByRole("button", { name: "Run tool" }).click();
+  const mcpApprovedToast = await p.waitForSelector("text=Approved and ran search_invoices on Billing MCP", { timeout: 4000 }).then(() => true, () => false);
+  ok(
+    "v0.38.0 E2 Today renders mcp_tool_call approval card cleanly and settles on Run tool",
+    mcpLeadText.includes("Billing MCP") && mcpLeadText.includes("search_invoices") && mcpCleanProse && mcpApprovedToast,
+    `clean=${mcpCleanProse} toast=${mcpApprovedToast}`
+  );
+  await ctx.close();
+
+  // 5. Mobile 390x844 dark check on ConnectorsPanel 4-tab layout & MCP tab
+  const { ctx: mctx, p: mp } = await open(390, 844, "dark");
+  await setupProtocolsRoutes(mp);
+  await mp.goto(BASE);
+  await waitWorkbench(mp);
+  await mp.getByRole("button", { name: "Open menu" }).click();
+  await mp.waitForSelector('[data-thing="connectors-btn"]', { timeout: 4000 });
+  await mp.locator('[data-thing="connectors-btn"]').click();
+  await mp.waitForSelector("#connectors-panel", { timeout: 4000 });
+  await mp.locator('#connectors-panel [role="tab"][data-id="mcp"]').click();
+  await mp.waitForTimeout(200);
+  const mE2 = await mp.evaluate(MEASURE);
+  const mobileTabCheck = await mp.evaluate(() => {
+    const tabs = [...document.querySelectorAll('#connectors-panel [role="tab"]')];
+    return tabs.length === 4 && tabs.every((t) => t.getBoundingClientRect().height >= 44 && t.getBoundingClientRect().right <= window.innerWidth + 1);
+  });
+  ok(
+    "v0.38.0 E2 (390x844 dark) ConnectorsPanel 4-tab bar and MCP Tools tab fit with 0px overflow and >=44px targets",
+    mobileTabCheck && mE2.docOverflow <= 0 && mE2.lowContrast === 0 && mE2.unnamed.length === 0,
+    `tabs=${mobileTabCheck} ov=${mE2.docOverflow} low=${mE2.lowContrast} unnamed=${mE2.unnamed.length}`
+  );
+  await mctx.close();
 }
 
 // 7. Reduced motion & Console Cleanliness (2 checks)

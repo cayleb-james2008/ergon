@@ -11,6 +11,8 @@ import {
   createEngagement,
   createTimeEntry,
   deleteTimeEntry,
+  deleteMcpServer,
+  discoverMcpServer,
   estimateNextRunMs,
   fetchClients,
   fetchEngagementContext,
@@ -22,14 +24,17 @@ import {
   getPipelineRun,
   hasClientCrmInvoicingApi,
   hasClientsApi,
+  hasMcpApi,
   hasMeteringApi,
   hasPipelinesApi,
   MAX_UPLOAD_BYTES,
   hasV050Api,
   hasV070Api,
+  listMcpServers,
   listPipelineRuns,
   resumePipelineRun,
   retryPipelineRun,
+  saveMcpServer,
   startPipelineRun,
   switchEngagement,
   updateClient,
@@ -39,13 +44,21 @@ import {
   type ClientContact,
   type Engagement,
   type EngagementContext,
+  type ImapConfig,
+  type ImapSecurity,
   type InvoiceRecord,
   type InvoiceStatus,
   type LiveRunStatus,
   type LiveRunStep,
+  type McpServerSpec,
+  type McpToolSpec,
+  type McpTransport,
   type MemoryHealth,
   type MeteringSummary,
   type Msg,
+  type OAuthConfig,
+  type OutboundConnector,
+  type OutboundConnectorKind,
   type Person,
   type PipelineResumePayload,
   type PipelineRun,
@@ -56,6 +69,8 @@ import {
   type RoutineRunRecord,
   type RunUsage,
   type SchedulerStatus,
+  type SmtpConfig,
+  type SmtpSecurity,
   type StarterLaunchResult,
   type StarterPlaybook,
   type Status,
@@ -64,10 +79,25 @@ import {
   type ThreadRow,
   type TimeExpenseEntry,
   type TimeExpenseKind,
+  type TriggerRule,
   type WorkspaceFile,
   type WorkspacePolicy,
   type WorkspacePolicyProfile,
 } from "@/lib/api";
+
+export type {
+  ImapConfig,
+  ImapSecurity,
+  McpServerSpec,
+  McpToolSpec,
+  McpTransport,
+  OAuthConfig,
+  OutboundConnector,
+  OutboundConnectorKind,
+  SmtpConfig,
+  SmtpSecurity,
+  TriggerRule,
+};
 import {
   CANONICAL_SKILLS,
   CANONICAL_STARTER_PLAYBOOKS,
@@ -318,6 +348,7 @@ export function useErgon() {
   const [engagementScopeOnly, setEngagementScopeOnly] = useState(false);
   const [metering, setMetering] = useState<MeteringSummary | null>(null);
   const [liveRunUsage, setLiveRunUsage] = useState<RunUsage | null>(null);
+  const [mcpServers, setMcpServers] = useState<McpServerSpec[]>([]);
   const onRoutineFiredRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
@@ -382,6 +413,65 @@ export function useErgon() {
       setMetering(r.data);
     }
   }, []);
+
+  const loadMcpServers = useCallback(async () => {
+    if (!hasMcpApi(statusRef.current)) {
+      setMcpServers([]);
+      return;
+    }
+    const r = await listMcpServers();
+    if (r.ok) {
+      setMcpServers(r.data.servers);
+    }
+  }, []);
+
+  const saveMcpServerConfig = useCallback(
+    async (body: {
+      id?: string;
+      name: string;
+      transport: McpTransport;
+      command_or_url: string;
+      args: string[];
+      env_secret_keys: string[];
+      require_approval_by_default: boolean;
+      enabled: boolean;
+    }): Promise<McpServerSpec | null> => {
+      const r = await saveMcpServer(body);
+      if (!r.ok) {
+        toast.error(r.error || "Could not save MCP server.");
+        return null;
+      }
+      await loadMcpServers();
+      return r.data.server ?? null;
+    },
+    [loadMcpServers]
+  );
+
+  const discoverMcpServerTools = useCallback(
+    async (id: string): Promise<McpToolSpec[] | null> => {
+      const r = await discoverMcpServer(id);
+      if (!r.ok) {
+        toast.error(r.error || "Could not discover MCP server tools.");
+        return null;
+      }
+      await loadMcpServers();
+      return r.data.server?.cached_tools ?? r.data.tools ?? r.data.cached_tools ?? [];
+    },
+    [loadMcpServers]
+  );
+
+  const removeMcpServer = useCallback(
+    async (id: string): Promise<boolean> => {
+      const r = await deleteMcpServer(id);
+      if (!r.ok) {
+        toast.error(r.error || "Could not delete MCP server.");
+        return false;
+      }
+      setMcpServers((prev) => prev.filter((s) => s.id !== id));
+      return true;
+    },
+    []
+  );
 
   const loadWorkspacePolicy = useCallback(async () => {
     const r = await call<WorkspacePolicy>("/api/workspace/policy");
@@ -1834,8 +1924,9 @@ export function useErgon() {
       loadWorkspacePolicy();
       loadTimeEntries();
       loadInvoices();
+      loadMcpServers();
     }
-  }, [status, files, loadStarters, loadSkills, loadRoutines, loadPipelineRuns, loadClients, loadMetering, loadWorkspacePolicy, loadTimeEntries, loadInvoices]);
+  }, [status, files, loadStarters, loadSkills, loadRoutines, loadPipelineRuns, loadClients, loadMetering, loadWorkspacePolicy, loadTimeEntries, loadInvoices, loadMcpServers]);
 
   useEffect(() => {
     if (status && status !== "error" && activeEngagementId) {
@@ -1855,6 +1946,7 @@ export function useErgon() {
     todayCount, learnedCount, memoryHealth, suiteCount, files, lastUploaded, setLastUploaded, skills, routines, pipelineRuns, scheduler, routineHistoryRev,
     send, sendPrompt, cancelRun, openThread, newThread, switchPerson, refreshPerson, showRun,
     loadThreads, loadStatus, loadPeople, loadClients, loadMetering, loadWorkspacePolicy, updateWorkspacePolicyState,
+    mcpServers, loadMcpServers, saveMcpServerConfig, discoverMcpServerTools, removeMcpServer,
     loadEngagementContext, loadTimeEntries, loadInvoices,
     createNewClient, saveClientCrm, createNewEngagement, saveEngagementSow, switchActiveEngagement,
     addTimeEntry, removeTimeEntry, createGeneratedInvoice, setInvoiceStatus,

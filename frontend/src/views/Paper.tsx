@@ -22,6 +22,7 @@ import {
   TrendingUp,
   Upload,
   Wallet,
+  Wrench,
   X,
   XCircle,
 } from "lucide-react";
@@ -191,6 +192,20 @@ function decisionCopy(d: Decision): DecisionCopy {
       deny: "Block delivery",
       approvedToast: "Delivery approved and sent.",
       deniedToast: "Delivery blocked; nothing left your workspace.",
+      security: true,
+    };
+  }
+  if (kind === "mcp_tool_call") {
+    const serverLabel = d.server_name || d.connector_name || d.server_id || "the MCP server";
+    const toolName = d.tool_name || "this tool";
+    return {
+      body:
+        detail ||
+        `Approving runs ${toolName} on ${serverLabel} using your saved environment credentials. Blocking cancels the call and keeps your workspace unchanged.`,
+      approve: "Run tool",
+      deny: "Block tool call",
+      approvedToast: "MCP tool call approved.",
+      deniedToast: "MCP tool call blocked; nothing ran.",
       security: true,
     };
   }
@@ -1482,6 +1497,12 @@ export const PaperFace = memo(function PaperFace({
                               strokeWidth={1.5}
                               aria-label="Outbound delivery"
                             />
+                          ) : lead.kind === "mcp_tool_call" ? (
+                            <Wrench
+                              className="mt-1 size-5 shrink-0 text-dot-amber"
+                              strokeWidth={1.5}
+                              aria-label="MCP tool call"
+                            />
                           ) : lead.kind === "budget_gate" ? (
                             <Wallet
                               className="mt-1 size-5 shrink-0 text-dot-amber"
@@ -1549,6 +1570,27 @@ export const PaperFace = memo(function PaperFace({
                                 Inspect {lead.path}
                               </Button>
                             </div>
+                          )}
+                        </div>
+                      )}
+                      {lead.kind === "mcp_tool_call" && (lead.server_name || lead.connector_name || lead.server_id || lead.tool_name || lead.arguments_preview || lead.payload_preview) && (
+                        <div data-mcp-consequence={lead.id} className="flex flex-col gap-1.5 rounded-sm border border-hairline bg-surface px-3 py-2.5 text-xs text-ink-2">
+                          <div className="flex flex-wrap items-center gap-2">
+                            {(lead.server_name || lead.connector_name || lead.server_id) && (
+                              <span className="font-medium text-ink">
+                                {lead.server_name || lead.connector_name || lead.server_id}
+                              </span>
+                            )}
+                            {lead.tool_name && (
+                              <code className="mono rounded-chip bg-track px-1.5 py-0.5 text-xs text-ink">
+                                {lead.tool_name}
+                              </code>
+                            )}
+                          </div>
+                          {(lead.arguments_preview || lead.payload_preview) && (
+                            <pre className="mono overflow-x-auto whitespace-pre-wrap break-words text-xs text-ink">
+                              {lead.arguments_preview || lead.payload_preview}
+                            </pre>
                           )}
                         </div>
                       )}
