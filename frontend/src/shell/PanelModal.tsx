@@ -52,7 +52,7 @@ export function PanelModal({
         {trigger && <DialogTrigger asChild>{trigger}</DialogTrigger>}
         <DialogContent
           className={cn(
-            "max-h-[85vh] max-w-2xl overflow-y-auto rounded-dialog border border-hairline bg-surface p-5 text-ink shadow-lift focus:outline-none motion-safe:transition-opacity motion-safe:duration-(--dur-reveal) motion-safe:ease-(--ease-house) sm:p-6",
+            "max-h-[85vh] max-w-2xl overflow-x-hidden overflow-y-auto rounded-dialog border border-hairline bg-surface p-5 text-ink shadow-lift focus:outline-none motion-safe:transition-opacity motion-safe:duration-(--dur-reveal) motion-safe:ease-(--ease-house) sm:p-6",
             className
           )}
         >

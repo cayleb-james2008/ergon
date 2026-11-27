@@ -1573,7 +1573,7 @@ export const PaperFace = memo(function PaperFace({
                           )}
                         </div>
                       )}
-                      {lead.kind === "mcp_tool_call" && (lead.server_name || lead.connector_name || lead.server_id || lead.tool_name || lead.arguments_preview || lead.payload_preview) && (
+                      {lead.kind === "mcp_tool_call" && (lead.server_name || lead.connector_name || lead.server_id || lead.tool_name || lead.arguments_preview || lead.args_preview || lead.payload_preview) && (
                         <div data-mcp-consequence={lead.id} className="flex flex-col gap-1.5 rounded-sm border border-hairline bg-surface px-3 py-2.5 text-xs text-ink-2">
                           <div className="flex flex-wrap items-center gap-2">
                             {(lead.server_name || lead.connector_name || lead.server_id) && (
@@ -1587,9 +1587,9 @@ export const PaperFace = memo(function PaperFace({
                               </code>
                             )}
                           </div>
-                          {(lead.arguments_preview || lead.payload_preview) && (
+                          {(lead.arguments_preview || lead.args_preview || lead.payload_preview) && (
                             <pre className="mono overflow-x-auto whitespace-pre-wrap break-words text-xs text-ink">
-                              {lead.arguments_preview || lead.payload_preview}
+                              {lead.arguments_preview || lead.args_preview || lead.payload_preview}
                             </pre>
                           )}
                         </div>

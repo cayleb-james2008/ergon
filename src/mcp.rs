@@ -981,6 +981,7 @@ pub fn invoke_mcp_tool(
                 "transport": server.transport,
                 "arguments": safe_args,
                 "args_preview": args_preview,
+                "arguments_preview": args_preview,
             }),
         );
         return Ok(format!(

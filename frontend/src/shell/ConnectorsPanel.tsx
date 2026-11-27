@@ -1002,7 +1002,7 @@ function ConnectorsBody({
   };
 
   return (
-    <div id="connectors-panel" className="flex flex-col gap-4 pt-1">
+    <div className="flex min-w-0 flex-col gap-4 pt-1">
       <p className="text-sm text-ink-2">
         Receive signed webhooks, watched host files, or IMAP emails into a routine, send outbound payloads, and inspect MCP tool servers.
       </p>
@@ -1027,26 +1027,26 @@ function ConnectorsBody({
           setTab(v as ConnectorTab);
         }}
       >
-        <TabsList aria-label="Connector categories" className="w-full sm:w-fit">
-          <TabsTrigger value="webhooks" data-id="webhooks" className="max-md:min-h-11 gap-1 px-1.5 text-xs sm:gap-1.5 sm:px-3 sm:text-sm">
+        <TabsList aria-label="Connector categories" className="h-auto w-full max-w-full flex-wrap sm:w-fit">
+          <TabsTrigger value="webhooks" data-id="webhooks" className="max-md:min-h-11 gap-1 px-1.5 text-xs sm:gap-1.5 sm:px-2.5 sm:text-sm">
             <Webhook className="hidden size-3.5 shrink-0 sm:inline" strokeWidth={1.5} aria-hidden />
             <span className="sm:hidden">Hooks</span>
             <span className="hidden sm:inline">Inbound Webhooks</span>
             <span className="mono rounded-chip bg-track px-1.5 py-0.5 text-xs text-ink-2">{webhookTriggers.length}</span>
           </TabsTrigger>
-          <TabsTrigger value="folders" data-id="folders" className="max-md:min-h-11 gap-1 px-1.5 text-xs sm:gap-1.5 sm:px-3 sm:text-sm">
+          <TabsTrigger value="folders" data-id="folders" className="max-md:min-h-11 gap-1 px-1.5 text-xs sm:gap-1.5 sm:px-2.5 sm:text-sm">
             <FolderInput className="hidden size-3.5 shrink-0 sm:inline" strokeWidth={1.5} aria-hidden />
             <span className="sm:hidden">Folders</span>
             <span className="hidden sm:inline">Folders & IMAP</span>
             <span className="mono rounded-chip bg-track px-1.5 py-0.5 text-xs text-ink-2">{folderAndImapTriggers.length}</span>
           </TabsTrigger>
-          <TabsTrigger value="outbound" data-id="outbound" className="max-md:min-h-11 gap-1 px-1.5 text-xs sm:gap-1.5 sm:px-3 sm:text-sm">
+          <TabsTrigger value="outbound" data-id="outbound" className="max-md:min-h-11 gap-1 px-1.5 text-xs sm:gap-1.5 sm:px-2.5 sm:text-sm">
             <Send className="hidden size-3.5 shrink-0 sm:inline" strokeWidth={1.5} aria-hidden />
             <span className="sm:hidden">Outbound</span>
             <span className="hidden sm:inline">Outbound Actions</span>
             <span className="mono rounded-chip bg-track px-1.5 py-0.5 text-xs text-ink-2">{outbound.length}</span>
           </TabsTrigger>
-          <TabsTrigger value="mcp" data-id="mcp" className="max-md:min-h-11 gap-1 px-1.5 text-xs sm:gap-1.5 sm:px-3 sm:text-sm">
+          <TabsTrigger value="mcp" data-id="mcp" className="max-md:min-h-11 gap-1 px-1.5 text-xs sm:gap-1.5 sm:px-2.5 sm:text-sm">
             <Plug className="hidden size-3.5 shrink-0 sm:inline" strokeWidth={1.5} aria-hidden />
             <span className="sm:hidden">MCP</span>
             <span className="hidden sm:inline">MCP Tools</span>
@@ -2637,8 +2637,9 @@ export function ConnectorsPanel({
       open={open}
       onOpenChange={onOpenChange}
       title="Connectors"
-      description="Configure inbound webhooks, watched folders, and credential-isolated outbound actions."
+      description="Configure inbound webhooks, watched folders, IMAP inboxes, outbound actions, and MCP tool servers."
       panelId="connectors-panel"
+      className="max-w-3xl"
     >
       <ConnectorsBody
         routines={routines}

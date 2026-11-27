@@ -813,6 +813,7 @@ export type Decision = {
   server_name?: string;
   tool_name?: string;
   arguments_preview?: string;
+  args_preview?: string;
   engagement_id?: string;
   engagement_name?: string;
   client_name?: string;

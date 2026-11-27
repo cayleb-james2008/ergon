@@ -94,12 +94,20 @@ One Rust binary serves the React web UI (`/` and `/phone`), the raw-TCP HTTP and
     </td>
   </tr>
   <tr>
-    <td colspan="2">
+    <td width="50%">
       Isolate client vaults by engagement prefix with strict cross-client leak blocking (<code>HTTP 409</code>), manage client contacts, tax rates, SOW rules, and rollover retainers in the CRM drawer, log billable time and expenses, and generate PDF, XLSX, and JSON invoices straight from Today.
       <br /><br />
       <picture>
         <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/client-vaults-invoicing-c4e1-dark.png" />
         <img src="docs/screenshots/client-vaults-invoicing-c4e1-light.png" alt="Ergon v0.37.0 Client CRM and SOW drawer, billable time tracking, and Invoices and billing drawer in Today" width="100%" />
+      </picture>
+    </td>
+    <td width="50%">
+      Deliver signed MIME emails over SMTPS or STARTTLS with OAuth2 token refresh, ingest IMAP mailboxes into <code>workspace/intake/</code>, register stdio and HTTP/SSE MCP servers (<code>/api/mcp/servers</code>), and settle <code>mcp_tool_call</code> approvals in Today.
+      <br /><br />
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/protocols-mcp-c4e2-dark.png" />
+        <img src="docs/screenshots/protocols-mcp-c4e2-light.png" alt="Ergon v0.38.0 Connectors dialog showing MCP Tools server discovery and Today mcp_tool_call approval card" width="100%" />
       </picture>
     </td>
   </tr>
@@ -120,18 +128,18 @@ flowchart LR
 
 ---
 
-## Verified benchmarks (`v0.37.0` vs `v0.11.0`)
+## Verified benchmarks (`v0.38.0` vs `v0.11.0`)
 
 Measured against the stripped fat-LTO release binary on local loopback against a `5,000` receipts and `500` workspace files dataset:
 
-| Metric | `v0.11.0` baseline | `v0.37.0` measured | Change |
+| Metric | `v0.11.0` baseline | `v0.38.0` measured | Change |
 | --- | --- | --- | --- |
-| Release binary size | `16.0 MB` | `8.48 MiB` (`8,889,184 B`) | `-44.4%` |
-| Initial `/` shell payload | `1.15 MB` | `167.42 KiB` (`171,443 B`) raw / `38.31 KiB` (`39,225 B`) gzip (`17` `/chunks/*`) | `-96.7%` wire |
-| Cold boot to `200 OK` | `n/a` | `16.83 ms` | `16.8 ms` self-audit |
-| Peak RSS (`VmHWM`, `5k` receipts + `500` files, `5/5` SSE, `16w`) | `n/a` | `21.62 MB` (`22,144 KB`) | `21.62 MB` peak RSS |
-| Concurrent HTTP (`16w` mixed 5 routes + `5/5` SSE across `5k`/`500`) | `724 req/s` (`188.7 ms` p95) | `3,501.0 req/s` (`4.2 ms` p50, `9.54 ms` p95, `0/8,769` err) | `4.84x` under full concurrency |
-| Automated checks | `204` Rust tests | `286/286` Rust tests (`5/5` `client_vault_invoicing_v040`), `104/104` gate, `6/6` graph, `20/20` replay, `44/44` fuzz, `0/0/0` `sloplint` | Zero warnings / zero externals |
+| Release binary size | `16.0 MB` | `8.67 MiB` (`9,093,984 B`) | `-45.8%` |
+| Initial `/` shell payload | `1.15 MB` | `168.27 KiB` (`172,308 B`) raw / `38.52 KiB` (`39,447 B`) gzip (`17` `/chunks/*`) | `-96.7%` wire |
+| Cold boot to `200 OK` | `n/a` | `237.79 ms` | `237.8 ms` self-audit |
+| Peak RSS (`VmHWM`, `5k` receipts + `500` files, `5/5` SSE, `16w`) | `n/a` | `22.66 MB` (`23,204 KB`) | `22.66 MB` peak RSS |
+| Concurrent HTTP (`16w` mixed 5 routes + `5/5` SSE across `5k`/`500`) | `724 req/s` (`188.7 ms` p95) | `4,057.5 req/s` (`3.61 ms` p50, `8.30 ms` p95, `0/10,158` err) | `5.60x` under full concurrency |
+| Automated checks | `204` Rust tests | `291/291` Rust tests (`5/5` `connectors_protocols_mcp_v038`), `109/109` gate, `6/6` graph, `20/20` replay, `44/44` fuzz, `0/0/0` `sloplint` | Zero warnings / zero externals |
 
 ---
 
@@ -214,9 +222,13 @@ Run `ergon export-handoff`, call `POST /api/export/handoff`, or use **Client han
 
 `ergon verify <bundle-or-pack> [--workspace <dir>] [--json]`, `POST /api/verify/evidence`, and the Verify evidence card in the Audit tab verify exported audit bundles (`.json`), client deliverable packs (`.md`), and signed playbook packs (`.ergon-playbook.json`) against SHA-256 digests and Field-Book receipt chains without starting a server or model endpoint.
 
-### Inbound triggers and outbound connectors
+### Inbound triggers, mail protocols, and outbound connectors
 
-`src/connectors.rs` and the Connectors dialog (`ConnectorsPanel.tsx`) add unattended intake triggers and policy-gated outbound actions. Signed webhooks (`POST /api/hooks/:hook_id`) verify `X-Ergon-Signature` (`sha256=<hex>`) or `X-Ergon-Hook-Token`, write payloads up to `1 MB` into `workspace/inbox/`, and start linked routines or pipelines. Loopback-only watched folders validate host directories outside system and credential paths, wait for two steady `(size, mtime)` polls up to `25 MB`, deduplicate by SHA-256 manifest, and copy matching files into `workspace/intake/`. Outbound `http_webhook`, `rest_api`, and `smtp_relay` connectors keep credentials in `0600` `connector_secrets.json`, substitute `{{secret:key}}` headers on the host only after `tripwire::check_egress` passes, block all deliveries under `Air-Gapped`, and park deliveries as `connector_delivery` approval cards in Today under `Strict Client` or when approval is enabled.
+`src/connectors.rs` and the Connectors dialog (`ConnectorsPanel.tsx`) add unattended intake triggers, email protocol transports, and policy-gated outbound actions. Signed webhooks (`POST /api/hooks/:hook_id`) verify `X-Ergon-Signature` (`sha256=<hex>`) or `X-Ergon-Hook-Token`, write payloads up to `1 MB` into `workspace/inbox/`, and start linked routines or pipelines. Loopback-only watched folders validate host directories outside system and credential paths, wait for two steady `(size, mtime)` polls up to `25 MB`, deduplicate by SHA-256 manifest, and copy matching files into `workspace/intake/`. `imap_poll` triggers (`ImapTarget`) poll `imaps` or `starttls` mailboxes, write parsed messages and safe attachments into `workspace/intake/`, and launch linked routines. Outbound `http_webhook`, `rest_api`, and `smtp_relay` (`SmtpTarget` with `smtps`/`starttls`, RFC 5322 + MIME `multipart/mixed` attachments up to `10 MB`, and `OAuth2Config` token refresh) connectors keep credentials in `0600` `connector_secrets.json`, substitute `{{secret:key}}` headers on the host only after `tripwire::check_egress` passes, block all deliveries under `Air-Gapped`, and park deliveries as `connector_delivery` approval cards in Today under `Strict Client` or when approval is enabled.
+
+### MCP tool servers and Today approvals
+
+`src/mcp.rs` persists local `stdio` (loopback-configured) and remote `http_sse` MCP servers in `0600` `mcp_servers.json` (`GET`, `POST`, and `DELETE /api/mcp/servers`, `POST /api/mcp/servers/:id/discover`), exposes discovered `mcp.<server_id>.<tool_name>` tools inside agent runs under Tripwire egress and secret guards, and parks calls as `mcp_tool_call` approval cards in Today (`Paper.tsx`) when server approval or `Strict Client` policy applies. A gated read-only inbound endpoint (`POST /api/mcp/inbound` and `/api/mcp/inbound/config`) lets local tools query workspace metadata under bearer token checks.
 
 ### Workspace audit policy profiles
 
