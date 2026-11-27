@@ -56,13 +56,13 @@ export function PanelModal({
             className
           )}
         >
-          <DialogTitle className="pr-10 text-title font-medium text-ink">{title}</DialogTitle>
+          <DialogTitle className="min-w-0 pr-10 text-title font-medium text-ink">{title}</DialogTitle>
           {description ? (
-            <DialogDescription className="text-sm text-ink-2">{description}</DialogDescription>
+            <DialogDescription className="min-w-0 text-sm text-ink-2">{description}</DialogDescription>
           ) : (
-            <DialogDescription className="sr-only">{title}</DialogDescription>
+            <DialogDescription className="sr-only min-w-0">{title}</DialogDescription>
           )}
-          <div id={panelId} className="mt-1">
+          <div id={panelId} className="mt-1 min-w-0 w-full">
             {children}
           </div>
         </DialogContent>

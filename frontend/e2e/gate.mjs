@@ -3724,19 +3724,87 @@ for (const [theme, vw, vh] of [
   await mp.waitForSelector('[data-thing="connectors-btn"]', { timeout: 4000 });
   await mp.locator('[data-thing="connectors-btn"]').click();
   await mp.waitForSelector("#connectors-panel", { timeout: 4000 });
+  await mp.locator('#connectors-panel [role="tab"][data-id="folders"]').click();
+  await mp.waitForTimeout(150);
+  const mobileImapDialogOk = await mp.evaluate(() => {
+    const dlg = document.querySelector('[role="dialog"]');
+    return Boolean(dlg && dlg.scrollWidth <= dlg.clientWidth + 1);
+  });
   await mp.locator('#connectors-panel [role="tab"][data-id="mcp"]').click();
   await mp.waitForTimeout(200);
   const mE2 = await mp.evaluate(MEASURE);
   const mobileTabCheck = await mp.evaluate(() => {
+    const dlg = document.querySelector('[role="dialog"]');
     const tabs = [...document.querySelectorAll('#connectors-panel [role="tab"]')];
-    return tabs.length === 4 && tabs.every((t) => t.getBoundingClientRect().height >= 44 && t.getBoundingClientRect().right <= window.innerWidth + 1);
+    return (
+      Boolean(dlg && dlg.scrollWidth <= dlg.clientWidth + 1) &&
+      tabs.length === 4 &&
+      tabs.every((t) => t.getBoundingClientRect().height >= 44 && t.getBoundingClientRect().right <= window.innerWidth + 1)
+    );
   });
   ok(
-    "v0.38.0 E2 (390x844 dark) ConnectorsPanel 4-tab bar and MCP Tools tab fit with 0px overflow and >=44px targets",
-    mobileTabCheck && mE2.docOverflow <= 0 && mE2.lowContrast === 0 && mE2.unnamed.length === 0,
-    `tabs=${mobileTabCheck} ov=${mE2.docOverflow} low=${mE2.lowContrast} unnamed=${mE2.unnamed.length}`
+    "v0.38.0 E2 (390x844 dark) ConnectorsPanel 4-tab bar, IMAP, and MCP Tools tab fit with 0px dialog overflow and >=44px targets",
+    mobileImapDialogOk && mobileTabCheck && mE2.docOverflow <= 0 && mE2.lowContrast === 0 && mE2.unnamed.length === 0,
+    `imap=${mobileImapDialogOk} tabs=${mobileTabCheck} ov=${mE2.docOverflow} low=${mE2.lowContrast} unnamed=${mE2.unnamed.length}`
   );
   await mctx.close();
+
+  // 6. Long 500-char stdio MCP command regression: dialog.scrollWidth <= dialog.clientWidth and Discover Tools visible on 1440x900 + 390x844
+  mcpServers.push({
+    id: "mcp-long-e2e",
+    name: "Long Command MCP",
+    transport: "stdio",
+    command_or_url: "/opt/ergon/bin/custom-mcp-runner",
+    args: ["--workspace", `/srv/clients/northstar/${"segment_".repeat(60)}config.json`],
+    env_secret_keys: ["LONG_MCP_SECRET_TOKEN_KEY"],
+    require_approval_by_default: true,
+    enabled: true,
+    cached_tools: [{ name: "audit_ledger", description: "Audit ledger entries." }],
+    created_ms: Date.now(),
+  });
+  const checkLongMcpBounds = async (vpW, vpH) => {
+    const { ctx: lctx, p: lp } = await open(vpW, vpH, "light");
+    await setupProtocolsRoutes(lp);
+    await lp.goto(BASE);
+    await waitWorkbench(lp);
+    if (vpW < 768) {
+      await lp.getByRole("button", { name: "Open menu" }).click();
+      await lp.waitForSelector('[data-thing="connectors-btn"]', { timeout: 4000 });
+    }
+    await lp.locator('[data-thing="connectors-btn"]').click();
+    await lp.waitForSelector("#connectors-panel", { timeout: 4000 });
+    await lp.locator('#connectors-panel [role="tab"][data-id="mcp"]').click();
+    await lp.waitForSelector('#connectors-panel [data-mcp-id="mcp-long-e2e"] [data-action="discover-mcp"]', { timeout: 4000 });
+    await lp.waitForTimeout(150);
+    const res = await lp.evaluate(() => {
+      const dlg = document.querySelector('[role="dialog"]');
+      const btn = document.querySelector('#connectors-panel [data-mcp-id="mcp-long-e2e"] [data-action="discover-mcp"]');
+      if (!dlg || !btn) return { ok: false, reason: "missing" };
+      const dr = dlg.getBoundingClientRect();
+      const br = btn.getBoundingClientRect();
+      return {
+        ok:
+          dlg.scrollWidth <= dlg.clientWidth + 1 &&
+          br.width > 0 &&
+          br.left >= dr.left - 1 &&
+          br.right <= dr.right + 1 &&
+          br.right <= window.innerWidth + 1,
+        sw: dlg.scrollWidth,
+        cw: dlg.clientWidth,
+        brRight: Math.round(br.right),
+        drRight: Math.round(dr.right),
+      };
+    });
+    await lctx.close();
+    return res;
+  };
+  const longDesktop = await checkLongMcpBounds(1440, 900);
+  const longMobile = await checkLongMcpBounds(390, 844);
+  ok(
+    "v0.38.0 E2 Long stdio MCP command stays within dialog.clientWidth and keeps Discover Tools visible on 1440x900 and 390x844",
+    longDesktop.ok && longMobile.ok,
+    `desktop=${JSON.stringify(longDesktop)} mobile=${JSON.stringify(longMobile)}`
+  );
 }
 
 // 7. Reduced motion & Console Cleanliness (2 checks)

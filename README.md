@@ -135,11 +135,11 @@ Measured against the stripped fat-LTO release binary on local loopback against a
 | Metric | `v0.11.0` baseline | `v0.38.0` measured | Change |
 | --- | --- | --- | --- |
 | Release binary size | `16.0 MB` | `8.67 MiB` (`9,093,984 B`) | `-45.8%` |
-| Initial `/` shell payload | `1.15 MB` | `168.27 KiB` (`172,308 B`) raw / `38.52 KiB` (`39,447 B`) gzip (`17` `/chunks/*`) | `-96.7%` wire |
-| Cold boot to `200 OK` | `n/a` | `237.79 ms` | `237.8 ms` self-audit |
-| Peak RSS (`VmHWM`, `5k` receipts + `500` files, `5/5` SSE, `16w`) | `n/a` | `22.66 MB` (`23,204 KB`) | `22.66 MB` peak RSS |
-| Concurrent HTTP (`16w` mixed 5 routes + `5/5` SSE across `5k`/`500`) | `724 req/s` (`188.7 ms` p95) | `4,057.5 req/s` (`3.61 ms` p50, `8.30 ms` p95, `0/10,158` err) | `5.60x` under full concurrency |
-| Automated checks | `204` Rust tests | `291/291` Rust tests (`5/5` `connectors_protocols_mcp_v038`), `109/109` gate, `6/6` graph, `20/20` replay, `44/44` fuzz, `0/0/0` `sloplint` | Zero warnings / zero externals |
+| Initial `/` shell payload | `1.15 MB` | `168.41 KiB` (`172,449 B`) raw / `38.56 KiB` (`39,487 B`) gzip (`17` `/chunks/*`) | `-96.7%` wire |
+| Cold boot to `200 OK` | `n/a` | `7.61 ms` | `7.6 ms` self-audit |
+| Peak RSS (`VmHWM`, `5k` receipts + `500` files, `5/5` SSE, `16w`) | `n/a` | `22.11 MB` (`22,644 KB`) | `22.11 MB` peak RSS |
+| Concurrent HTTP (`16w` mixed 5 routes + `5/5` SSE across `5k`/`500`) | `724 req/s` (`188.7 ms` p95) | `3,475.1 req/s` (`4.24 ms` p50, `9.70 ms` p95, `0/8,705` err) | `4.80x` under full concurrency |
+| Automated checks | `204` Rust tests | `291/291` Rust tests (`5/5` `connectors_protocols_mcp_v038`), `110/110` gate, `6/6` graph, `20/20` replay, `44/44` fuzz, `0/0/0` `sloplint` | Zero warnings / zero externals |
 
 ---
 

@@ -1002,7 +1002,7 @@ function ConnectorsBody({
   };
 
   return (
-    <div className="flex min-w-0 flex-col gap-4 pt-1">
+    <div className="flex min-w-0 w-full max-w-full flex-col gap-4 pt-1">
       <p className="text-sm text-ink-2">
         Receive signed webhooks, watched host files, or IMAP emails into a routine, send outbound payloads, and inspect MCP tool servers.
       </p>
@@ -1016,6 +1016,7 @@ function ConnectorsBody({
 
       <Tabs
         value={tab}
+        className="min-w-0 w-full"
         onValueChange={(v) => {
           setErr("");
           setHookFormErr("");
@@ -1027,35 +1028,35 @@ function ConnectorsBody({
           setTab(v as ConnectorTab);
         }}
       >
-        <TabsList aria-label="Connector categories" className="h-auto w-full max-w-full flex-wrap sm:w-fit">
-          <TabsTrigger value="webhooks" data-id="webhooks" className="max-md:min-h-11 gap-1 px-1.5 text-xs sm:gap-1.5 sm:px-2.5 sm:text-sm">
+        <TabsList aria-label="Connector categories" className="grid h-auto w-full min-w-0 grid-cols-2 gap-1 p-1 sm:flex sm:w-fit sm:max-w-full sm:flex-wrap">
+          <TabsTrigger value="webhooks" data-id="webhooks" className="min-w-0 w-full sm:w-auto justify-center max-md:min-h-11 gap-1 px-1.5 text-xs sm:gap-1.5 sm:px-2.5 sm:text-sm">
             <Webhook className="hidden size-3.5 shrink-0 sm:inline" strokeWidth={1.5} aria-hidden />
             <span className="sm:hidden">Hooks</span>
             <span className="hidden sm:inline">Inbound Webhooks</span>
-            <span className="mono rounded-chip bg-track px-1.5 py-0.5 text-xs text-ink-2">{webhookTriggers.length}</span>
+            <span className="mono shrink-0 rounded-chip bg-track px-1.5 py-0.5 text-xs text-ink-2">{webhookTriggers.length}</span>
           </TabsTrigger>
-          <TabsTrigger value="folders" data-id="folders" className="max-md:min-h-11 gap-1 px-1.5 text-xs sm:gap-1.5 sm:px-2.5 sm:text-sm">
+          <TabsTrigger value="folders" data-id="folders" className="min-w-0 w-full sm:w-auto justify-center max-md:min-h-11 gap-1 px-1.5 text-xs sm:gap-1.5 sm:px-2.5 sm:text-sm">
             <FolderInput className="hidden size-3.5 shrink-0 sm:inline" strokeWidth={1.5} aria-hidden />
             <span className="sm:hidden">Folders</span>
             <span className="hidden sm:inline">Folders & IMAP</span>
-            <span className="mono rounded-chip bg-track px-1.5 py-0.5 text-xs text-ink-2">{folderAndImapTriggers.length}</span>
+            <span className="mono shrink-0 rounded-chip bg-track px-1.5 py-0.5 text-xs text-ink-2">{folderAndImapTriggers.length}</span>
           </TabsTrigger>
-          <TabsTrigger value="outbound" data-id="outbound" className="max-md:min-h-11 gap-1 px-1.5 text-xs sm:gap-1.5 sm:px-2.5 sm:text-sm">
+          <TabsTrigger value="outbound" data-id="outbound" className="min-w-0 w-full sm:w-auto justify-center max-md:min-h-11 gap-1 px-1.5 text-xs sm:gap-1.5 sm:px-2.5 sm:text-sm">
             <Send className="hidden size-3.5 shrink-0 sm:inline" strokeWidth={1.5} aria-hidden />
             <span className="sm:hidden">Outbound</span>
             <span className="hidden sm:inline">Outbound Actions</span>
-            <span className="mono rounded-chip bg-track px-1.5 py-0.5 text-xs text-ink-2">{outbound.length}</span>
+            <span className="mono shrink-0 rounded-chip bg-track px-1.5 py-0.5 text-xs text-ink-2">{outbound.length}</span>
           </TabsTrigger>
-          <TabsTrigger value="mcp" data-id="mcp" className="max-md:min-h-11 gap-1 px-1.5 text-xs sm:gap-1.5 sm:px-2.5 sm:text-sm">
+          <TabsTrigger value="mcp" data-id="mcp" className="min-w-0 w-full sm:w-auto justify-center max-md:min-h-11 gap-1 px-1.5 text-xs sm:gap-1.5 sm:px-2.5 sm:text-sm">
             <Plug className="hidden size-3.5 shrink-0 sm:inline" strokeWidth={1.5} aria-hidden />
             <span className="sm:hidden">MCP</span>
             <span className="hidden sm:inline">MCP Tools</span>
-            <span className="mono rounded-chip bg-track px-1.5 py-0.5 text-xs text-ink-2">{mcpServers.length}</span>
+            <span className="mono shrink-0 rounded-chip bg-track px-1.5 py-0.5 text-xs text-ink-2">{mcpServers.length}</span>
           </TabsTrigger>
         </TabsList>
 
         {/* Tab 1: Inbound Webhooks */}
-        <TabsContent value="webhooks" className="flex flex-col gap-3 pt-2">
+        <TabsContent value="webhooks" className="flex min-w-0 w-full flex-col gap-3 pt-2">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <span className="text-xs text-ink-2">
               External tools post JSON to a signed endpoint and trigger a routine automatically.
@@ -1129,7 +1130,7 @@ function ConnectorsBody({
               No inbound webhooks yet. Create one to accept signed payloads into your workspace inbox.
             </div>
           ) : (
-            <ul className="flex flex-col gap-2.5">
+            <ul className="flex min-w-0 w-full flex-col gap-2.5">
               {webhookTriggers.map((rule) => {
                 const url = fullHookUrl(rule);
                 const oneTimeSecret = ephemeralSecrets[rule.id];
@@ -1141,10 +1142,10 @@ function ConnectorsBody({
                     key={rule.id}
                     data-trigger-id={rule.id}
                     data-trigger-kind="webhook"
-                    className="flex flex-col gap-2.5 rounded-card border border-hairline bg-surface p-3.5"
+                    className="flex min-w-0 w-full max-w-full flex-col gap-2.5 rounded-card border border-hairline bg-surface p-3.5"
                   >
-                    <div className="flex flex-wrap items-start justify-between gap-2">
-                      <div className="min-w-0 flex-1">
+                    <div className="flex min-w-0 w-full flex-wrap items-start justify-between gap-2">
+                      <div className="min-w-[min(100%,14rem)] flex-1 overflow-hidden">
                         <div className="flex flex-wrap items-center gap-2">
                           <span className="text-sm font-medium text-ink">{rule.name}</span>
                           <Pill
@@ -1360,7 +1361,7 @@ function ConnectorsBody({
         </TabsContent>
 
         {/* Tab 2: Watched Folders & IMAP Inbox */}
-        <TabsContent value="folders" className="flex flex-col gap-3 pt-2">
+        <TabsContent value="folders" className="flex min-w-0 w-full flex-col gap-3 pt-2">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <span className="text-xs text-ink-2">
               Ingest new files from an approved host folder or poll an IMAP inbox into a routine.
@@ -1639,7 +1640,7 @@ function ConnectorsBody({
               No watched folders or IMAP inbox pollers configured yet. Add an approved local folder or IMAP inbox to trigger a routine automatically.
             </div>
           ) : (
-            <ul className="flex flex-col gap-2.5">
+            <ul className="flex min-w-0 w-full flex-col gap-2.5">
               {folderAndImapTriggers.map((rule) => {
                 const targetName = (rule.routine_id && routineNameMap.get(rule.routine_id)) || rule.routine_id || "default handler";
                 if (rule.kind === "imap_poll") {
@@ -1649,9 +1650,9 @@ function ConnectorsBody({
                       key={rule.id}
                       data-trigger-id={rule.id}
                       data-trigger-kind="imap_poll"
-                      className="flex flex-wrap items-start justify-between gap-3 rounded-card border border-hairline bg-surface p-3.5"
+                      className="flex min-w-0 w-full max-w-full flex-wrap items-start justify-between gap-3 rounded-card border border-hairline bg-surface p-3.5"
                     >
-                      <div className="min-w-0 flex-1">
+                      <div className="min-w-0 flex-1 overflow-hidden">
                         <div className="flex flex-wrap items-center gap-2">
                           <span className="text-sm font-medium text-ink">{rule.name}</span>
                           <Pill
@@ -1668,13 +1669,13 @@ function ConnectorsBody({
                             IMAP Inbox
                           </Badge>
                           {cfg && (
-                            <Badge variant="secondary" size="sm" className="mono text-xs">
+                            <Badge variant="secondary" size="sm" className="mono h-auto max-w-full whitespace-normal break-all py-0.5 text-left text-xs">
                               {cfg.folder} · every {cfg.poll_interval_secs}s
                             </Badge>
                           )}
                         </div>
                         {cfg && (
-                          <p className="mono mt-1 truncate text-xs text-ink-2">
+                          <p className="mono mt-1 min-w-0 max-w-full break-all text-xs text-ink-2">
                             {cfg.security}://{cfg.host}:{cfg.port}
                             {cfg.subject_filter ? ` · subject "${cfg.subject_filter}"` : ""}
                             {cfg.mark_seen ? " · mark seen" : ""}
@@ -1692,7 +1693,7 @@ function ConnectorsBody({
                         size="icon-sm"
                         variant="ghost"
                         aria-label={`Delete IMAP trigger ${rule.name}`}
-                        className="max-md:min-h-11 max-md:min-w-11 text-ink-2 hover:text-destructive-foreground"
+                        className="shrink-0 max-md:min-h-11 max-md:min-w-11 text-ink-2 hover:text-destructive-foreground"
                         onClick={() => void handleDeleteTrigger(rule)}
                       >
                         <Trash2 className="size-4" strokeWidth={1.5} aria-hidden />
@@ -1707,9 +1708,9 @@ function ConnectorsBody({
                     key={rule.id}
                     data-trigger-id={rule.id}
                     data-trigger-kind="folder_watch"
-                    className="flex flex-wrap items-start justify-between gap-3 rounded-card border border-hairline bg-surface p-3.5"
+                    className="flex min-w-0 w-full max-w-full flex-wrap items-start justify-between gap-3 rounded-card border border-hairline bg-surface p-3.5"
                   >
-                    <div className="min-w-0 flex-1">
+                    <div className="min-w-0 flex-1 overflow-hidden">
                       <div className="flex flex-wrap items-center gap-2">
                         <span className="text-sm font-medium text-ink">{rule.name}</span>
                         <Pill
@@ -1725,7 +1726,7 @@ function ConnectorsBody({
                           {globText}
                         </Badge>
                       </div>
-                      <p className="mono mt-1 truncate text-xs text-ink-2">{dirPath}</p>
+                      <p className="mono mt-1 min-w-0 max-w-full break-all text-xs text-ink-2">{dirPath}</p>
                       <p className="mt-1 text-xs text-ink-2">
                         Target routine: <span className="font-medium text-ink">{targetName}</span>
                         {typeof rule.trigger_count === "number" && (
@@ -1738,7 +1739,7 @@ function ConnectorsBody({
                       size="icon-sm"
                       variant="ghost"
                       aria-label={`Delete watched folder ${rule.name}`}
-                      className="max-md:min-h-11 max-md:min-w-11 text-ink-2 hover:text-destructive-foreground"
+                      className="shrink-0 max-md:min-h-11 max-md:min-w-11 text-ink-2 hover:text-destructive-foreground"
                       onClick={() => void handleDeleteTrigger(rule)}
                     >
                       <Trash2 className="size-4" strokeWidth={1.5} aria-hidden />
@@ -1751,7 +1752,7 @@ function ConnectorsBody({
         </TabsContent>
 
         {/* Tab 3: Outbound Actions & Delivery Log */}
-        <TabsContent value="outbound" className="flex flex-col gap-4 pt-2">
+        <TabsContent value="outbound" className="flex min-w-0 w-full flex-col gap-4 pt-2">
           {policyProfile === "air_gapped" && (
             <div className="flex items-start gap-2 rounded-sm border border-hairline bg-status-stopped-bg px-3 py-2 text-xs text-status-stopped-fg">
               <ShieldAlert className="mt-0.5 size-3.5 shrink-0" strokeWidth={1.5} aria-hidden />
@@ -2149,7 +2150,7 @@ function ConnectorsBody({
               No outbound connectors configured yet. Add one to send approved deliverables or webhook events.
             </div>
           ) : (
-            <ul className="flex flex-col gap-2.5">
+            <ul className="flex min-w-0 w-full flex-col gap-2.5">
               {outbound.map((c) => {
                 const secretStored = Boolean(c.has_secret || (c.secret_keys && c.secret_keys.length > 0));
                 const approvalRequired = Boolean(c.effective_require_approval ?? c.require_approval) || policyProfile === "strict_client";
@@ -2157,10 +2158,10 @@ function ConnectorsBody({
                   <li
                     key={c.id}
                     data-outbound-id={c.id}
-                    className="flex flex-col gap-2 rounded-card border border-hairline bg-surface p-3.5"
+                    className="flex min-w-0 w-full max-w-full flex-col gap-2 rounded-card border border-hairline bg-surface p-3.5"
                   >
-                    <div className="flex flex-wrap items-start justify-between gap-2">
-                      <div className="min-w-0 flex-1">
+                    <div className="flex min-w-0 w-full flex-wrap items-start justify-between gap-2">
+                      <div className="min-w-[min(100%,14rem)] flex-1 overflow-hidden">
                         <div className="flex flex-wrap items-center gap-2">
                           <span className="text-sm font-medium text-ink">{c.name}</span>
                           <Badge variant="outline" size="sm" className="text-xs">
@@ -2196,24 +2197,24 @@ function ConnectorsBody({
                             </Badge>
                           )}
                         </div>
-                        <p className="mono mt-1 truncate text-xs text-ink-2">
+                        <p className="mono mt-1 min-w-0 max-w-full break-all text-xs text-ink-2">
                           {c.kind === "smtp_relay" && c.smtp_config
                             ? `${c.smtp_config.security}://${c.smtp_config.host}:${c.smtp_config.port} · from ${c.smtp_config.from_addr}`
                             : `${c.method} ${c.url}`}
                         </p>
                         {c.smtp_config?.default_to && c.smtp_config.default_to.length > 0 && (
-                          <p className="mt-0.5 truncate text-xs text-ink-2">
-                            Default recipients: <span className="mono">{c.smtp_config.default_to.join(", ")}</span>
+                          <p className="mt-0.5 min-w-0 max-w-full break-words text-xs text-ink-2">
+                            Default recipients: <span className="mono break-all">{c.smtp_config.default_to.join(", ")}</span>
                           </p>
                         )}
                         {c.oauth_config && (
-                          <p className="mt-0.5 truncate text-xs text-ink-2">
-                            OAuth2 client <span className="mono">{c.oauth_config.client_id}</span>
+                          <p className="mt-0.5 min-w-0 max-w-full break-words text-xs text-ink-2">
+                            OAuth2 client <span className="mono break-all">{c.oauth_config.client_id}</span>
                             {c.oauth_config.scopes.length > 0 ? ` (${c.oauth_config.scopes.join(", ")})` : ""}
                           </p>
                         )}
                       </div>
-                      <div className="flex items-center gap-1.5">
+                      <div className="flex shrink-0 items-center gap-1.5">
                         <Button
                           type="button"
                           size="xs"
@@ -2342,7 +2343,7 @@ function ConnectorsBody({
         </TabsContent>
 
         {/* Tab 4: MCP Tools */}
-        <TabsContent value="mcp" className="flex flex-col gap-3 pt-2">
+        <TabsContent value="mcp" className="flex min-w-0 w-full flex-col gap-3 pt-2">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <span className="text-xs text-ink-2">
               Connect local stdio or remote HTTP/SSE MCP servers, discover tools, and gate execution with Today approvals.
@@ -2489,7 +2490,7 @@ function ConnectorsBody({
               No MCP tool servers configured yet. Add a stdio or HTTP/SSE server to discover external tools.
             </div>
           ) : (
-            <ul className="flex flex-col gap-2.5">
+            <ul className="flex min-w-0 w-full flex-col gap-2.5">
               {mcpServers.map((srv) => {
                 const tools = Array.isArray(srv.cached_tools) ? srv.cached_tools : [];
                 const approvalForced = policyProfile === "strict_client";
@@ -2498,10 +2499,10 @@ function ConnectorsBody({
                   <li
                     key={srv.id}
                     data-mcp-id={srv.id}
-                    className="flex flex-col gap-2.5 rounded-card border border-hairline bg-surface p-3.5"
+                    className="flex min-w-0 w-full max-w-full flex-col gap-2.5 rounded-card border border-hairline bg-surface p-3.5"
                   >
-                    <div className="flex flex-wrap items-start justify-between gap-2">
-                      <div className="min-w-0 flex-1">
+                    <div className="flex min-w-0 w-full flex-wrap items-start justify-between gap-2">
+                      <div className="min-w-[min(100%,14rem)] flex-1 overflow-hidden">
                         <div className="flex flex-wrap items-center gap-2">
                           <span className="text-sm font-medium text-ink">{srv.name}</span>
                           <Badge variant="outline" size="sm" className="mono text-xs">
@@ -2526,17 +2527,17 @@ function ConnectorsBody({
                             {requiresApproval ? "Approval required" : "Auto-run"}
                           </Pill>
                         </div>
-                        <p className="mono mt-1 truncate text-xs text-ink-2">
+                        <p className="mono mt-1 min-w-0 max-w-full break-all text-xs text-ink-2">
                           {srv.command_or_url}
                           {srv.args && srv.args.length > 0 ? ` ${srv.args.join(" ")}` : ""}
                         </p>
                         {srv.env_secret_keys && srv.env_secret_keys.length > 0 && (
-                          <p className="mt-1 text-xs text-ink-2">
-                            Env secrets: <span className="mono">{srv.env_secret_keys.join(", ")}</span>
+                          <p className="mt-1 min-w-0 max-w-full break-words text-xs text-ink-2">
+                            Env secrets: <span className="mono break-all">{srv.env_secret_keys.join(", ")}</span>
                           </p>
                         )}
                       </div>
-                      <div className="flex flex-wrap items-center gap-1.5">
+                      <div className="flex shrink-0 flex-wrap items-center gap-1.5">
                         <Button
                           type="button"
                           size="xs"
