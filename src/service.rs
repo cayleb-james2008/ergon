@@ -308,7 +308,13 @@ pub fn render_launchd_plist(cfg: &ServiceConfig) -> Result<String, String> {
 pub fn render_windows_sc_commands(cfg: &ServiceConfig) -> Result<Vec<Vec<String>>, String> {
     validate_service_config(cfg)?;
     let exe = cfg.exe_path.to_string_lossy().replace('"', "");
-    let data = cfg.data_dir.to_string_lossy().replace('"', "");
+    // Avoid trailing backslash before closing quote under Win32 CommandLineToArgvW.
+    let raw_data = cfg.data_dir.to_string_lossy().replace('"', "");
+    let data = if raw_data.ends_with('\\') {
+        format!("{raw_data}.")
+    } else {
+        raw_data
+    };
     let bin_path = format!(
         "\"{exe}\" service run --name {} --data \"{data}\" --host {} --port {}",
         cfg.service_name,

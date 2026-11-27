@@ -71,7 +71,7 @@
                         Start="auto"
                         Account="LocalSystem"
                         ErrorControl="normal"
-                        Arguments="service run --name ErgonService --data &quot;[DATAFOLDER]&quot; --host [ERGON_HOST] --port [ERGON_PORT]">
+                        Arguments="service run --name ErgonService --data &quot;[DATAFOLDER].&quot; --host [ERGON_HOST] --port [ERGON_PORT]">
           <util:ServiceConfig FirstFailureActionType="restart"
                               SecondFailureActionType="restart"
                               ThirdFailureActionType="restart"

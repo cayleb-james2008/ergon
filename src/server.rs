@@ -1254,11 +1254,10 @@ pub(crate) struct Request {
     /// The hosting layer's gate header, if presented.
     pub(crate) gate: Option<String>,
     /// Explicit API token (`X-Ergon-Token`) / admin token (`X-Ergon-Admin-Token`)
-    /// / hosting-layer role (`X-Ergon-Role`) / admin opt-in (`X-Ergon-Admin`).
+    /// / hosting-layer role (`X-Ergon-Role`).
     pub(crate) api_token: Option<String>,
     pub(crate) admin_token: Option<String>,
     pub(crate) actor_role: Option<String>,
-    pub(crate) admin_opt_in: bool,
     /// Browser-set headers the cross-site checks read (lowercased).
     pub(crate) content_type: String,
     pub(crate) origin: Option<String>,
@@ -1369,7 +1368,6 @@ fn read_request_from<S: SockStream>(
     let mut api_token: Option<String> = None;
     let mut admin_token: Option<String> = None;
     let mut actor_role: Option<String> = None;
-    let mut admin_opt_in = false;
     let mut content_type = String::new();
     let mut origin: Option<String> = None;
     let mut host: Option<String> = None;
@@ -1470,9 +1468,6 @@ fn read_request_from<S: SockStream>(
             admin_token = Some(val.to_string());
         } else if name.eq_ignore_ascii_case("x-ergon-role") && !val.is_empty() {
             actor_role = Some(val.to_string());
-        } else if name.eq_ignore_ascii_case("x-ergon-admin") && !val.is_empty() {
-            let low = val.to_ascii_lowercase();
-            admin_opt_in = matches!(low.as_str(), "1" | "true" | "yes" | "on");
         } else if name.eq_ignore_ascii_case("x-ergon-signature") && !val.is_empty() {
             hook_signature = Some(val.to_string());
         } else if name.eq_ignore_ascii_case("x-ergon-hook-token") && !val.is_empty() {
@@ -1562,7 +1557,6 @@ fn read_request_from<S: SockStream>(
         api_token,
         admin_token,
         actor_role,
-        admin_opt_in,
         content_type,
         origin,
         host,
@@ -1703,12 +1697,12 @@ fn gate_authenticated(state: &AppState, req: &Request) -> bool {
 /// `install`/`apply`, `restart`) on this Ergon instance:
 /// - Explicit non-admin `X-Ergon-Role` always denies (`403`).
 /// - Dedicated `ERGON_ADMIN_TOKEN`, if set, must match.
-/// - Behind `ERGON_GATE_TOKEN`, allows authenticated admins presenting `Authorization: Bearer` /
-///   `X-Ergon-Token` / `X-Ergon-Admin-Token` matching the gate token, or a trusted proxy's
-///   `X-Ergon-Role: admin` / `X-Ergon-Admin: 1`, or an active admin person profile, while
-///   strictly refusing regular non-admin gated requests (`403`).
+/// - Behind `ERGON_GATE_TOKEN`, allows ONLY authenticated admins presenting
+///   `Authorization: Bearer` / `X-Ergon-Token` / `X-Ergon-Admin-Token` matching the gate token,
+///   or a trusted hosting proxy's `X-Ergon-Role: admin` header. Never trusts editable
+///   `person.role` fields or standalone client-supplied `X-Ergon-Admin` headers.
 /// - Without `ERGON_GATE_TOKEN`, allows loopback local admins and refuses non-loopback LAN hosts.
-fn is_update_admin(state: &AppState, req: &Request, person: &Person) -> bool {
+fn is_update_admin(state: &AppState, req: &Request) -> bool {
     let bearer = bearer_token(req);
     let x_token = req.api_token.as_deref();
     let x_admin_token = req.admin_token.as_deref();
@@ -1740,8 +1734,7 @@ fn is_update_admin(state: &AppState, req: &Request, person: &Person) -> bool {
             .as_deref()
             .map(str::trim)
             .is_some_and(is_admin_role_label);
-        let person_admin = is_admin_role_label(&person.role);
-        return token_admin || role_admin || req.admin_opt_in || person_admin;
+        return token_admin || role_admin;
     }
 
     if x_admin_token.is_some() {
@@ -2497,7 +2490,7 @@ fn try_route_system(
             respond_bytes(stream, 200, "application/json", VERSION_JSON_BYTES, &[])
         }
         ("GET", "/api/update") => {
-            let is_admin = is_update_admin(state, req, person);
+            let is_admin = is_update_admin(state, req);
             respond_json(
                 stream,
                 200,
@@ -2507,7 +2500,7 @@ fn try_route_system(
             )
         }
         ("POST", "/api/update/check") => {
-            let is_admin = is_update_admin(state, req, person);
+            let is_admin = is_update_admin(state, req);
             if !is_admin {
                 return Some(respond_json(
                     stream,
@@ -2525,7 +2518,7 @@ fn try_route_system(
             )
         }
         ("POST", "/api/update/mode") => {
-            let is_admin = is_update_admin(state, req, person);
+            let is_admin = is_update_admin(state, req);
             if !is_admin {
                 return Some(respond_json(
                     stream,
@@ -2557,7 +2550,7 @@ fn try_route_system(
             // Local loopback admins (when ungated) and authenticated admins behind a
             // hosting gate may install updates and restart; non-admins and unauthenticated
             // LAN callers are strictly refused with 403.
-            let is_admin = is_update_admin(state, req, person);
+            let is_admin = is_update_admin(state, req);
             if !is_admin {
                 let msg = if state.gate_token.is_some() {
                     "admin privileges are required to install updates or restart a gated Ergon host"

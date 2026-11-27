@@ -3809,7 +3809,6 @@ mod v010_hardening_tests {
             api_token: None,
             admin_token: None,
             actor_role: None,
-            admin_opt_in: false,
             content_type: "application/json".into(),
             origin: Some("http://LocalHost:8787".into()),
             host: Some("localhost:8787".into()),

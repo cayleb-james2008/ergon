@@ -286,6 +286,93 @@ fn gated_admin_can_check_configure_mode_and_install_while_non_admins_get_403_and
     );
     assert_eq!(st, 403, "valid gate + wrong admin token must return 403");
 
+    // Client-supplied X-Ergon-Admin: 1 behind X-Ergon-Gate alone MUST be rejected with 403.
+    let (st, snap_optin) = req_http(
+        port,
+        "GET",
+        "/api/update",
+        &remote_host,
+        &[
+            ("X-Ergon-Gate", "GateSecret-99"),
+            ("X-Ergon-Admin", "1"),
+        ],
+        None,
+    );
+    assert_eq!(st, 200);
+    assert_eq!(snap_optin["is_admin"], json!(false), "standalone X-Ergon-Admin must not grant admin");
+    for (path, body) in [
+        ("/api/update/mode", r#"{"mode":"auto"}"#),
+        ("/api/update/install", "{}"),
+    ] {
+        let (st, _) = req_http(
+            port,
+            "POST",
+            path,
+            &remote_host,
+            &[
+                ("X-Ergon-Gate", "GateSecret-99"),
+                ("X-Ergon-Admin", "1"),
+            ],
+            Some(body),
+        );
+        assert_eq!(st, 403, "X-Ergon-Gate + X-Ergon-Admin: 1 alone must return 403 on {path}");
+    }
+
+    // Self-escalation via user-editable person.role="admin" MUST be rejected with 403.
+    let (st, created) = req_http(
+        port,
+        "POST",
+        "/api/people",
+        &remote_host,
+        &[("X-Ergon-Gate", "GateSecret-99")],
+        Some(r#"{"name":"Self Escalator","role":"admin"}"#),
+    );
+    assert_eq!(st, 201, "create person failed: {created}");
+    let created_id = created["person"]["id"]
+        .as_str()
+        .or_else(|| created["id"].as_str())
+        .expect("created person id");
+    let (st, _) = req_http(
+        port,
+        "POST",
+        "/api/people/switch",
+        &remote_host,
+        &[("X-Ergon-Gate", "GateSecret-99")],
+        Some(&json!({"id": created_id}).to_string()),
+    );
+    assert_eq!(st, 200, "switch person failed");
+    let (st, snap_person) = req_http(
+        port,
+        "GET",
+        "/api/update",
+        &remote_host,
+        &[("X-Ergon-Gate", "GateSecret-99")],
+        None,
+    );
+    assert_eq!(st, 200);
+    assert_eq!(
+        snap_person["is_admin"],
+        json!(false),
+        "editable person.role='admin' must NEVER grant update admin behind gate"
+    );
+    for (path, body) in [
+        ("/api/update/mode", r#"{"mode":"auto"}"#),
+        ("/api/update/install", "{}"),
+    ] {
+        let (st, _) = req_http(
+            port,
+            "POST",
+            path,
+            &remote_host,
+            &[("X-Ergon-Gate", "GateSecret-99")],
+            Some(body),
+        );
+        assert_eq!(
+            st, 403,
+            "plain X-Ergon-Gate caller switched to role='admin' profile must still get 403 on {path}"
+        );
+    }
+
     // 3. Authenticated admin via Authorization: Bearer <gate_token> gets full access (even over non-loopback Host!).
     let bearer = &[("Authorization", "Bearer GateSecret-99")];
     let (st, snap) = req_http(port, "GET", "/api/update", &remote_host, bearer, None);
@@ -509,6 +596,14 @@ fn service_manifests_generate_and_validate_for_linux_macos_and_windows() {
     let sc = render_windows_sc_commands(&win_cfg).unwrap();
     assert_eq!(sc.len(), 4);
     assert!(sc[0][3].contains("service run --name ErgonService"));
+    let mut trailing_slash_cfg = win_cfg.clone();
+    trailing_slash_cfg.data_dir = PathBuf::from(r"C:\ProgramData\Ergon\data\");
+    let sc_slash = render_windows_sc_commands(&trailing_slash_cfg).unwrap();
+    assert!(
+        sc_slash[0][3].contains(r#"--data "C:\ProgramData\Ergon\data\.""#),
+        "trailing backslash must not escape closing quote: {}",
+        sc_slash[0][3]
+    );
     let win_json: Value =
         serde_json::from_str(&render_windows_service_manifest_json(&win_cfg).unwrap()).unwrap();
     assert_eq!(win_json["service_name"], json!("ErgonService"));
@@ -549,6 +644,7 @@ fn packaging_scripts_xml_manifests_release_workflow_and_signing_docs_are_valid()
         "util:ServiceConfig",
         "ErgonService",
         "MajorUpgrade",
+        "&quot;[DATAFOLDER].&quot;",
     ] {
         assert!(wxs.contains(needle), "ergon.wxs missing required element: {needle}");
     }
