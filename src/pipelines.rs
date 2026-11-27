@@ -2181,6 +2181,29 @@ fn execute_skill_step(
     Err(format!("unknown deterministic skill '{skill_id}'"))
 }
 
+/// Returns parsed `steps_v2` when a routine consists strictly of deterministic
+/// zero-LLM steps (`skill` / `export`) that can execute without a model API key.
+pub fn parse_deterministic_steps_v2(routine: &Value) -> Option<Vec<PipelineStepSpec>> {
+    let raw = routine
+        .get("steps_v2")
+        .filter(|v| v.as_array().is_some_and(|a| !a.is_empty()))?;
+    let steps = parse_steps_v2(raw).ok()?;
+    if steps
+        .iter()
+        .all(|s| matches!(s.kind.as_str(), "skill" | "export"))
+    {
+        Some(steps)
+    } else {
+        None
+    }
+}
+
+/// Whether a routine consists solely of deterministic zero-LLM `steps_v2`
+/// (`skill` / `export`) and can therefore fire on schedule without a model key.
+pub fn routine_is_deterministic_zero_llm(routine: &Value) -> bool {
+    parse_deterministic_steps_v2(routine).is_some()
+}
+
 /// Synchronously run a deterministic (`skill` / `export`) pipeline without
 /// requiring an HTTP `AppState` or LLM key (used by `launch_starter_playbook`
 /// and offline tests). Persists the `PipelineRun` into `pipeline_runs.json`.
@@ -2191,10 +2214,38 @@ pub fn execute_deterministic_steps_sync(
     steps: &[PipelineStepSpec],
     inputs: HashMap<String, String>,
 ) -> Result<PipelineRun, String> {
+    execute_deterministic_steps_sync_with_options(
+        cfg,
+        routine_id,
+        routine_name,
+        steps,
+        inputs,
+        None,
+        true,
+    )
+}
+
+/// Variant of `execute_deterministic_steps_sync` that lets callers (such as
+/// `server::execute_routine_run_with_inputs`) supply the authoritative
+/// `thread_id` for receipt linkage and opt out of an internal
+/// `routines::record_run` call when the caller records the run itself.
+pub fn execute_deterministic_steps_sync_with_options(
+    cfg: &Config,
+    routine_id: Option<&str>,
+    routine_name: &str,
+    steps: &[PipelineStepSpec],
+    inputs: HashMap<String, String>,
+    thread_id_override: Option<&str>,
+    record_routine_run: bool,
+) -> Result<PipelineRun, String> {
     let now_ms = records::now_millis();
     let seq = PIPELINE_SEQ.fetch_add(1, Ordering::SeqCst);
     let run_id = format!("prun-{now_ms}-{seq}");
-    let thread_id = format!("starter-{}", routine_id.unwrap_or(&run_id));
+    let thread_id = thread_id_override
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(|| format!("starter-{}", routine_id.unwrap_or(&run_id)));
     let mut run = PipelineRun {
         run_id: run_id.clone(),
         routine_id: routine_id.map(str::to_string),
@@ -2293,8 +2344,10 @@ pub fn execute_deterministic_steps_sync(
     run.current_step_index = run.steps.len();
     run.updated_ms = records::now_millis();
     save_run(&cfg.data_dir, &run)?;
-    if let Some(rid) = routine_id {
-        let _ = routines::record_run(&cfg.data_dir, rid, &thread_id, "finished");
+    if record_routine_run {
+        if let Some(rid) = routine_id {
+            let _ = routines::record_run(&cfg.data_dir, rid, &thread_id, "finished");
+        }
     }
     Ok(run)
 }

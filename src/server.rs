@@ -452,6 +452,12 @@ fn execute_routine_run_with_inputs(
         }
     }
     let _slot_guard = RunSlotGuard(&state.running_routines, lock_key);
+    // Re-read after acquiring the per-routine slot so rapid scheduler ticks cannot
+    // execute the same cadence window twice.
+    let routine = routines::get_routine(&runtime.cfg.data_dir, id)?;
+    if trigger == "scheduled" && !scheduler::is_routine_due(&routine, records::now_millis()) {
+        return None;
+    }
 
     let name = routine["name"].as_str().unwrap_or("Routine").to_string();
     let raw_prompt = routine["prompt"].as_str().unwrap_or("").to_string();
@@ -496,107 +502,155 @@ fn execute_routine_run_with_inputs(
         tid
     };
 
-    if let Some(v2_raw) = routine
-        .get("steps_v2")
-        .filter(|v| v.as_array().is_some_and(|a| !a.is_empty()))
-    {
-        if let Ok(steps_v2) = pipelines::parse_steps_v2(v2_raw) {
-            let deterministic_only = steps_v2
-                .iter()
-                .all(|s| matches!(s.kind.as_str(), "skill" | "export"));
-            if deterministic_only {
-                let mut pipe_inputs = HashMap::new();
-                if let Some(tf) = trigger_file {
-                    pipe_inputs.insert("trigger_file".to_string(), tf.to_string());
+    if let Some(steps_v2) = pipelines::parse_deterministic_steps_v2(&routine) {
+        let mut pipe_inputs = HashMap::new();
+        if let Some(tf) = trigger_file {
+            pipe_inputs.insert("trigger_file".to_string(), tf.to_string());
+        }
+        let outcome = pipelines::execute_deterministic_steps_sync_with_options(
+            &cfg,
+            Some(id),
+            &name,
+            &steps_v2,
+            pipe_inputs,
+            Some(&thread_id),
+            false,
+        );
+        let finished_ms = records::now_millis();
+        match outcome {
+            Ok(prun) => {
+                let summary: String = prun
+                    .step_states
+                    .iter()
+                    .map(|s| s.output.as_str())
+                    .filter(|s| !s.is_empty())
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                let mut receipt_id = latest_receipt_id_for_thread(&runtime.cfg.data_dir, &thread_id);
+                if receipt_id.is_none() {
+                    records::append_work(
+                        &runtime.cfg,
+                        &name,
+                        if summary.is_empty() { "Completed deterministic routine." } else { &summary },
+                        &[],
+                        &thread_id,
+                        true,
+                    );
+                    receipt_id = latest_receipt_id_for_thread(&runtime.cfg.data_dir, &thread_id);
                 }
-                let outcome = pipelines::execute_deterministic_steps_sync(
-                    &cfg,
-                    Some(id),
-                    &name,
-                    &steps_v2,
-                    pipe_inputs,
-                );
                 state.search_cache.invalidate(&person.id);
-                let finished_ms = records::now_millis();
-                match outcome {
-                    Ok(prun) => {
-                        let summary: String = prun
-                            .step_states
-                            .iter()
-                            .map(|s| s.output.as_str())
-                            .filter(|s| !s.is_empty())
-                            .collect::<Vec<_>>()
-                            .join("\n");
-                        let updated =
-                            routines::record_run(&runtime.cfg.data_dir, id, &thread_id, "finished")
-                                .unwrap_or(routine);
-                        let receipt_id = latest_receipt_id_for_thread(&runtime.cfg.data_dir, &thread_id);
-                        let rec = scheduler::new_run_record(
-                            id,
-                            &name,
-                            started_ms,
-                            finished_ms,
-                            "ok",
-                            receipt_id,
-                            Some(thread_id.clone()),
-                            &summary,
-                            trigger,
-                            None,
-                        );
-                        let _ = scheduler::record_run_history(&runtime.cfg.data_dir, rec.clone());
-                        let hist = scheduler::list_run_history(&runtime.cfg.data_dir, Some(id), 20);
-                        let idx = person_idx(state, person, runtime);
-                        let enriched = scheduler::enrich_routine_with_verification(
-                            &updated,
-                            finished_ms,
-                            &hist,
-                            &idx.chain,
-                            idx.chain_valid,
-                        );
-                        runtime.store.lock().unwrap().push(&thread_id, "assistant", &summary);
-                        let store = runtime.store.lock().unwrap();
-                        let thread_v = store
-                            .thread_json(&thread_id)
-                            .unwrap_or_else(|| json!({"id": thread_id}));
-                        return Some(RoutineExecResult {
-                            http_status: 200,
-                            routine: enriched,
-                            thread_id,
-                            thread: thread_v,
-                            run_record: rec,
-                            error: None,
-                        });
-                    }
-                    Err(e) => {
-                        runtime.store.lock().unwrap().push(&thread_id, "error", &e);
-                        let updated =
-                            routines::record_run(&runtime.cfg.data_dir, id, &thread_id, "error")
-                                .unwrap_or(routine);
-                        let rec = scheduler::new_run_record(
-                            id,
-                            &name,
-                            started_ms,
-                            finished_ms,
-                            "error",
-                            None,
-                            Some(thread_id.clone()),
-                            &e,
-                            trigger,
-                            Some(e.clone()),
-                        );
-                        let _ = scheduler::record_run_history(&runtime.cfg.data_dir, rec.clone());
-                        let hist = scheduler::list_run_history(&runtime.cfg.data_dir, Some(id), 20);
-                        let enriched = scheduler::enrich_routine_json(&updated, finished_ms, &hist);
-                        return Some(RoutineExecResult {
-                            http_status: 500,
-                            routine: enriched,
-                            thread_id: thread_id.clone(),
-                            thread: json!({"id": thread_id}),
-                            run_record: rec,
-                            error: Some(e),
-                        });
-                    }
-                }
+                let updated =
+                    routines::record_run(&runtime.cfg.data_dir, id, &thread_id, "finished")
+                        .unwrap_or(routine);
+                let rec = scheduler::new_run_record(
+                    id,
+                    &name,
+                    started_ms,
+                    finished_ms,
+                    "ok",
+                    receipt_id.clone(),
+                    Some(thread_id.clone()),
+                    &summary,
+                    trigger,
+                    None,
+                );
+                let _ = scheduler::record_run_history(&runtime.cfg.data_dir, rec.clone());
+                let hist = scheduler::list_run_history(&runtime.cfg.data_dir, Some(id), 20);
+                let idx = person_idx(state, person, runtime);
+                let enriched = scheduler::enrich_routine_with_verification(
+                    &updated,
+                    finished_ms,
+                    &hist,
+                    &idx.chain,
+                    idx.chain_valid,
+                );
+                state.events.publish(
+                    "routine_fired",
+                    &person.id,
+                    &rec.run_id,
+                    &thread_id,
+                    json!({
+                        "routine_id": id,
+                        "routine_name": name,
+                        "trigger": trigger,
+                        "status": "ok",
+                        "thread_id": thread_id,
+                        "receipt_id": receipt_id,
+                        "duration_ms": rec.duration_ms,
+                        "summary": truncate(&summary, 240),
+                        "next_run_ms": enriched["next_run_ms"],
+                        "ts_ms": finished_ms,
+                    }),
+                );
+                runtime.store.lock().unwrap().push(&thread_id, "assistant", &summary);
+                let store = runtime.store.lock().unwrap();
+                let thread_v = store
+                    .thread_json(&thread_id)
+                    .unwrap_or_else(|| json!({"id": thread_id}));
+                return Some(RoutineExecResult {
+                    http_status: 200,
+                    routine: enriched,
+                    thread_id,
+                    thread: thread_v,
+                    run_record: rec,
+                    error: None,
+                });
+            }
+            Err(e) => {
+                state.search_cache.invalidate(&person.id);
+                runtime.store.lock().unwrap().push(&thread_id, "error", &e);
+                let updated =
+                    routines::record_run(&runtime.cfg.data_dir, id, &thread_id, "error")
+                        .unwrap_or(routine);
+                let receipt_id = latest_receipt_id_for_thread(&runtime.cfg.data_dir, &thread_id);
+                let rec = scheduler::new_run_record(
+                    id,
+                    &name,
+                    started_ms,
+                    finished_ms,
+                    "error",
+                    receipt_id.clone(),
+                    Some(thread_id.clone()),
+                    &e,
+                    trigger,
+                    Some(e.clone()),
+                );
+                let _ = scheduler::record_run_history(&runtime.cfg.data_dir, rec.clone());
+                let hist = scheduler::list_run_history(&runtime.cfg.data_dir, Some(id), 20);
+                let idx = person_idx(state, person, runtime);
+                let enriched = scheduler::enrich_routine_with_verification(
+                    &updated,
+                    finished_ms,
+                    &hist,
+                    &idx.chain,
+                    idx.chain_valid,
+                );
+                state.events.publish(
+                    "routine_fired",
+                    &person.id,
+                    &rec.run_id,
+                    &thread_id,
+                    json!({
+                        "routine_id": id,
+                        "routine_name": name,
+                        "trigger": trigger,
+                        "status": "error",
+                        "thread_id": thread_id,
+                        "receipt_id": receipt_id,
+                        "duration_ms": rec.duration_ms,
+                        "error": truncate(&e, 240),
+                        "next_run_ms": enriched["next_run_ms"],
+                        "ts_ms": finished_ms,
+                    }),
+                );
+                return Some(RoutineExecResult {
+                    http_status: 500,
+                    routine: enriched,
+                    thread_id: thread_id.clone(),
+                    thread: json!({"id": thread_id}),
+                    run_record: rec,
+                    error: Some(e),
+                });
             }
         }
     }
@@ -1026,12 +1080,15 @@ fn start_scheduler_thread(state: &Arc<AppState>) {
                 }
                 let rt = runtime_for(&st, &person);
                 let eff = effective_cfg(&st, &rt);
-                if !eff.model_configured() {
-                    continue;
-                }
+                let model_ready = eff.model_configured();
                 let list = routines::list_routines(&rt.cfg.data_dir);
                 let due = scheduler::find_due_routines(&list, now_ms);
                 for r in due {
+                    // Deterministic zero-LLM `steps_v2` routines run offline without a model key;
+                    // LLM-requiring routines wait until a model is configured instead of spamming errors.
+                    if !model_ready && !pipelines::routine_is_deterministic_zero_llm(&r) {
+                        continue;
+                    }
                     let Some(rid) = r["id"].as_str().map(|s| s.to_string()) else {
                         continue;
                     };
@@ -5359,7 +5416,14 @@ fn try_route_knowledge_and_routines(
                 Ok(Some(routine)) => {
                     let now_ms = records::now_millis();
                     let hist = scheduler::list_run_history(&runtime.cfg.data_dir, Some(&id), 20);
-                    let enriched = scheduler::enrich_routine_json(&routine, now_ms, &hist);
+                    let idx = person_idx(state, person, runtime);
+                    let enriched = scheduler::enrich_routine_with_verification(
+                        &routine,
+                        now_ms,
+                        &hist,
+                        &idx.chain,
+                        idx.chain_valid,
+                    );
                     respond_json(stream, 200, &json!({"routine": enriched}))
                 }
                 Ok(None) => respond_err(stream, 404, "routine not found"),
