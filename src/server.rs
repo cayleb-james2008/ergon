@@ -3091,24 +3091,31 @@ fn try_route_system(
         }
         ("GET", "/api/status") => {
             let mut recovered: Vec<String> = Vec::new();
-            {
-                let people = state.people.read().unwrap();
-                if !people.recovered.is_empty() {
-                    recovered.extend(people.recovered.iter().cloned());
-                }
-            }
-            {
-                let lib = state.library.lock().unwrap();
-                if let Some(s) = &lib.recovered {
+            if auth_enforced && !principal.is_some_and(|p| p.role.is_admin()) {
+                let st = runtime.store.lock().unwrap();
+                if let Some(s) = &st.recovered {
                     recovered.push(s.clone());
                 }
-            }
-            {
-                let runtimes = state.runtimes.read().unwrap();
-                for rt in runtimes.values() {
-                    let st = rt.store.lock().unwrap();
-                    if let Some(s) = &st.recovered {
+            } else {
+                {
+                    let people = state.people.read().unwrap();
+                    if !people.recovered.is_empty() {
+                        recovered.extend(people.recovered.iter().cloned());
+                    }
+                }
+                {
+                    let lib = state.library.lock().unwrap();
+                    if let Some(s) = &lib.recovered {
                         recovered.push(s.clone());
+                    }
+                }
+                {
+                    let runtimes = state.runtimes.read().unwrap();
+                    for rt in runtimes.values() {
+                        let st = rt.store.lock().unwrap();
+                        if let Some(s) = &st.recovered {
+                            recovered.push(s.clone());
+                        }
                     }
                 }
             }
@@ -6948,6 +6955,30 @@ fn try_route_knowledge_and_routines(
             let cli_filter = query_param(&req.query, "client_id")
                 .map(|s| s.trim().to_string())
                 .filter(|s| !s.is_empty());
+            let is_restricted_user = auth_enforced && !principal.is_some_and(|p| p.role.is_admin());
+            if is_restricted_user {
+                let store = records::load_clients_store(&root_cfg.data_dir);
+                if let Some(ref eid) = eng_filter {
+                    if store.person_owns_engagement(eid, &person.id) == Some(false) {
+                        return Some(respond_err(
+                            stream,
+                            403,
+                            "forbidden: cannot view time entries for another user's engagement",
+                        ));
+                    }
+                }
+                if let Some(ref cid) = cli_filter {
+                    if store.clients.iter().any(|c| c.id == *cid)
+                        && !store.person_can_access_client(cid, &person.id)
+                    {
+                        return Some(respond_err(
+                            stream,
+                            403,
+                            "forbidden: cannot view time entries for another user's client",
+                        ));
+                    }
+                }
+            }
             let kind_filter = query_param(&req.query, "kind")
                 .map(|s| s.trim().to_ascii_lowercase())
                 .filter(|s| !s.is_empty());
@@ -7261,9 +7292,15 @@ fn try_route_knowledge_and_routines(
         }
         ("GET", "/api/graph") => {
             // Cloned snapshots, locks dropped: build_graph reads
-            // every person's files from disk and must not hold the
+            // workspace files from disk and must not hold the
             // people/library locks across that I/O.
-            let people_snapshot = state.people.read().unwrap().people.clone();
+            // In auth-enforced mode, non-admins see ONLY their own
+            // isolated node/work/files — never other employees' data.
+            let people_snapshot = if auth_enforced && !principal.is_some_and(|p| p.role.is_admin()) {
+                vec![person.clone()]
+            } else {
+                state.people.read().unwrap().people.clone()
+            };
             let lib = state.library.lock().unwrap().clone();
             respond_json(
                 stream,

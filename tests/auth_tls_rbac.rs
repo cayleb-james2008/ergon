@@ -440,7 +440,7 @@ fn rbac_and_cross_user_isolation_across_workspaces_crm_invoices_and_admin_routes
     assert_eq!(arr.len(), 1, "non-admin /api/people must return only self: {alice_people}");
     assert_eq!(arr[0]["id"], json!(alice_pid));
 
-    // 3. Cross-user workspace file & thread isolation
+    // 3. Cross-user workspace file, thread & work graph isolation
     let put_f = http_req(
         port,
         "PUT",
@@ -451,6 +451,52 @@ fn rbac_and_cross_user_isolation_across_workspaces_crm_invoices_and_admin_routes
     assert_eq!(put_f.status, 200, "alice write file: {}", put_f.body);
     let new_th = http_req(port, "POST", "/api/threads", Some("{}"), &[("Cookie", &alice_cookie)]);
     assert_eq!(new_th.status, 201);
+    // Record a real work receipt in Alice's isolated data_dir so /api/graph has Alice's work node + file node.
+    {
+        let alice_data_dir = root.join("data").join("people").join(&alice_pid);
+        let alice_cfg = Config {
+            data_dir: alice_data_dir.clone(),
+            workspace_dir: alice_data_dir.join("workspace"),
+            memory_path: alice_data_dir.join("memory.md"),
+            model_base_url: "http://127.0.0.1:9/v1".to_string(),
+            model_id: "stub".to_string(),
+            api_key: None,
+        };
+        ergon_rs::records::append_work(
+            &alice_cfg,
+            "Alice Confidential Q4 Bid Audit",
+            "Reconciled private bid sheet",
+            &["alice-private.md".to_string()],
+            "t-alice-1",
+            true,
+        );
+    }
+
+    // Bob and Carl calling GET /api/graph MUST NOT see Alice's person node, task title, or filename!
+    for (who, ck) in [("bob-ae", &bob_cookie), ("carl-installer", &carl_cookie)] {
+        let g = http_req(port, "GET", "/api/graph", None, &[("Cookie", ck)]);
+        assert_eq!(g.status, 200, "{who} /api/graph: {}", g.body);
+        assert!(
+            !g.body.contains(&format!("person:{alice_pid}")),
+            "{who} /api/graph leaked Alice person node: {}",
+            g.body
+        );
+        assert!(
+            !g.body.contains("Alice Confidential Q4 Bid Audit"),
+            "{who} /api/graph leaked Alice task title: {}",
+            g.body
+        );
+        assert!(
+            !g.body.contains("alice-private.md"),
+            "{who} /api/graph leaked Alice filename: {}",
+            g.body
+        );
+    }
+    // Admin DOES see the full org work graph including Alice.
+    let admin_graph = http_req(port, "GET", "/api/graph", None, &[("Cookie", &admin_cookie)]);
+    assert_eq!(admin_graph.status, 200);
+    assert!(admin_graph.body.contains(&format!("person:{alice_pid}")));
+    assert!(admin_graph.body.contains("alice-private.md"));
 
     // Bob cannot see Alice's file or thread
     let bob_files = http_req(port, "GET", "/api/files", None, &[("Cookie", &bob_cookie)]).json();
@@ -560,6 +606,28 @@ fn rbac_and_cross_user_isolation_across_workspaces_crm_invoices_and_admin_routes
             "POST",
             "/api/engagements/switch",
             Some(&json!({"engagement_id": eng_a_id}).to_string()),
+            &[("Cookie", &bob_cookie)],
+        )
+        .status,
+        403
+    );
+    assert_eq!(
+        http_req(
+            port,
+            "GET",
+            &format!("/api/time-entries?engagement_id={eng_a_id}"),
+            None,
+            &[("Cookie", &bob_cookie)],
+        )
+        .status,
+        403
+    );
+    assert_eq!(
+        http_req(
+            port,
+            "GET",
+            &format!("/api/time-entries?client_id={client_a_id}"),
+            None,
             &[("Cookie", &bob_cookie)],
         )
         .status,
