@@ -5583,10 +5583,12 @@ fn try_route_knowledge_and_routines(
             } else {
                 None
             };
-            let tz = parsed
-                .get("tz")
-                .or_else(|| parsed.get("timezone"))
-                .and_then(|v| v.as_str());
+            let tz_val = parsed.get("tz").or_else(|| parsed.get("timezone"));
+            let tz = match tz_val {
+                None | Some(Value::Null) => None,
+                Some(Value::String(s)) => Some(s.as_str()),
+                Some(_) => return Some(respond_err(stream, 400, "tz must be a string")),
+            };
             match routines::create_pipeline_routine_with_tz(
                 &runtime.cfg.data_dir,
                 name,

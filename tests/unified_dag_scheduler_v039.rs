@@ -911,4 +911,62 @@ fn five_field_cron_and_timezone_scheduling_unit_and_http() {
     assert_eq!(pr["tz_offset_mins"], json!(330));
     // 08:30 +05:30 = 03:00:00Z
     assert_eq!(pr["next_run_ms"].as_u64().unwrap() % 86_400_000, 3 * 3_600_000);
+
+    // POST /api/routines rejects invalid cron expressions and invalid tz with HTTP 400,
+    // while keeping legacy descriptive schedules ("weekly") and Asia/Singapore cron working.
+    for bad_sched in ["99 9 * * *", "cron * * * * *", "* * * *"] {
+        let (st_bad, res_bad) = http_req(
+            addr,
+            "POST",
+            "/api/routines",
+            &json!({
+                "name": "Bad Cron",
+                "prompt": "Should fail",
+                "schedule": bad_sched,
+            })
+            .to_string(),
+        );
+        assert_eq!(st_bad, 400, "expected 400 for bad schedule '{bad_sched}': {res_bad}");
+    }
+    let (st_bad_tz, res_bad_tz) = http_req(
+        addr,
+        "POST",
+        "/api/routines",
+        &json!({
+            "name": "Bad TZ",
+            "prompt": "Should fail",
+            "schedule": "0 9 * * 1-5",
+            "tz": "Mars/Olympus",
+        })
+        .to_string(),
+    );
+    assert_eq!(st_bad_tz, 400, "expected 400 for bad tz: {res_bad_tz}");
+
+    let (st_sg, res_sg) = http_req(
+        addr,
+        "POST",
+        "/api/routines",
+        &json!({
+            "name": "SG Morning",
+            "prompt": "Run check",
+            "schedule": "15 9 * * 1-5",
+            "tz": "Asia/Singapore",
+        })
+        .to_string(),
+    );
+    assert_eq!(st_sg, 201, "expected 201 for Asia/Singapore: {res_sg}");
+    assert_eq!(res_sg["routine"]["tz_offset_mins"], json!(480));
+
+    let (st_wk, res_wk) = http_req(
+        addr,
+        "POST",
+        "/api/routines",
+        &json!({
+            "name": "Legacy Weekly",
+            "prompt": "Run weekly check",
+            "schedule": "weekly",
+        })
+        .to_string(),
+    );
+    assert_eq!(st_wk, 201, "expected 201 for legacy weekly: {res_wk}");
 }

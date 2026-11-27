@@ -146,6 +146,25 @@ pub fn create_pipeline_routine(
     )
 }
 
+fn looks_like_cron_schedule(spec: &str) -> bool {
+    let trimmed = spec.trim();
+    if trimmed.is_empty() {
+        return false;
+    }
+    let low = trimmed.to_ascii_lowercase();
+    if low == "cron" || low.starts_with("cron ") || low.starts_with("cron:") {
+        return true;
+    }
+    let tokens: Vec<&str> = trimmed.split_whitespace().collect();
+    if tokens.len() >= 5 {
+        return true;
+    }
+    if trimmed.contains('*') || trimmed.contains('/') || trimmed.contains(',') {
+        return true;
+    }
+    tokens.len() >= 2 && tokens[0].bytes().next().is_some_and(|b| b.is_ascii_digit())
+}
+
 /// Create a routine/playbook with optional typed `steps_v2` and optional cron
 /// timezone offset (`tz_offset_mins` or `tz`).
 #[allow(clippy::too_many_arguments)]
@@ -231,16 +250,20 @@ pub fn create_pipeline_routine_with_tz(
         (cadence.canonical_label(), cadence.explicit_interval_secs(), None)
     } else if clean_sched.is_empty() {
         ("manual".to_string(), None, None)
-    } else if let Ok(cadence) = crate::scheduler::parse_cadence_with_tz(&clean_sched, explicit_tz) {
-        match cadence {
-            crate::scheduler::Cadence::Cron {
+    } else {
+        match crate::scheduler::parse_cadence_with_tz(&clean_sched, explicit_tz) {
+            Ok(crate::scheduler::Cadence::Cron {
                 expr,
                 tz_offset_mins,
-            } => (expr, None, Some(tz_offset_mins)),
-            other => (other.canonical_label(), other.explicit_interval_secs(), None),
+            }) => (expr, None, Some(tz_offset_mins)),
+            Ok(other) => (other.canonical_label(), other.explicit_interval_secs(), None),
+            Err(err) => {
+                if explicit_tz.is_some() || looks_like_cron_schedule(&clean_sched) {
+                    return Err(err);
+                }
+                (clean_sched, None, None)
+            }
         }
-    } else {
-        (clean_sched, None, None)
     };
     let skill = skill_id
         .map(|s| s.trim().chars().take(64).collect::<String>())
