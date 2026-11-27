@@ -28,8 +28,9 @@ import {
 } from "@/chat/Entry";
 import { LiveRunTimeline } from "@/chat/LiveRunTimeline";
 import { PipelineRunStrip } from "@/shell/CheckpointCard";
+import { OnboardingCard } from "@/shell/OnboardingCard";
 import { cn } from "@/lib/utils";
-import type { Decision, LiveRunStep, Msg, PipelineResumePayload, PipelineRun } from "@/lib/api";
+import type { AdminContactConfig, Decision, LiveRunStep, Msg, PipelineResumePayload, PipelineRun } from "@/lib/api";
 import { detectBatchWorkflow, detectWorkflowForFile, type StarterCard } from "@/lib/words";
 
 export type Recent = { task: string; date: string; files: string[] };
@@ -71,6 +72,12 @@ export function Chat({
   onResumePipeline,
   onRetryPipeline,
   onCancelPipeline,
+  showOnboarding = false,
+  onboardingSaving = false,
+  adminContact = null,
+  onCompleteOnboarding,
+  onOpenSkills,
+  onOpenHelp,
   inputRef,
 }: {
   threadId: string | null;
@@ -113,6 +120,12 @@ export function Chat({
   onResumePipeline?: (runId: string, payload: PipelineResumePayload) => Promise<void>;
   onRetryPipeline?: (runId: string) => Promise<void>;
   onCancelPipeline?: (runId: string) => Promise<void>;
+  showOnboarding?: boolean;
+  onboardingSaving?: boolean;
+  adminContact?: AdminContactConfig | null;
+  onCompleteOnboarding?: () => void;
+  onOpenSkills?: () => void;
+  onOpenHelp?: () => void;
   inputRef: React.RefObject<HTMLTextAreaElement | null>;
 }) {
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -396,6 +409,17 @@ export function Chat({
               </div>
 
               {composerNode}
+
+              {showOnboarding && onCompleteOnboarding && (
+                <OnboardingCard
+                  adminContact={adminContact}
+                  saving={onboardingSaving}
+                  onComplete={onCompleteOnboarding}
+                  onOpenFiles={onOpenFiles}
+                  onOpenSkills={onOpenSkills}
+                  onOpenHelp={onOpenHelp}
+                />
+              )}
 
               {onResumePipeline && onCancelPipeline && visiblePipelineRuns.length > 0 && (
                 <PipelineRunStrip

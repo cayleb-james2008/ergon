@@ -25,7 +25,7 @@ miniz_oxide = "0.9"
 opt-level = "z"
 lto = "fat"
 codegen-units = 1
-panic = "abort"
+panic = "unwind"
 strip = "symbols"
 
 # Keep cold dependencies size-optimized while preserving opt-level = 3 on

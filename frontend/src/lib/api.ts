@@ -26,6 +26,38 @@ export type ServerCapabilities = {
   client_crm?: boolean;
   time_entries?: boolean;
   invoicing?: boolean;
+  diagnostics?: boolean;
+  help?: boolean;
+};
+
+export type AdminContactConfig = {
+  name: string;
+  email: string;
+  phone: string;
+  channel_url: string;
+  notes: string;
+  configured: boolean;
+  source?: string;
+  updated_ms?: number;
+};
+
+export type HelpConfigPayload = {
+  onboarding_completed: boolean;
+  onboarding_completed_at_ms?: number | null;
+  admin_contact: AdminContactConfig;
+  can_edit_admin_contact: boolean;
+  diagnostics_url?: string;
+};
+
+export type DiagnosticsSummary = {
+  app_version: string;
+  os: string;
+  arch: string;
+  uptime_secs: number;
+  workspace_count: number;
+  model_configured: boolean;
+  log_files: number;
+  crash_reports: number;
 };
 
 export type ClientContact = {
@@ -2207,4 +2239,156 @@ export function isPathInEngagementScope(path: string, eng?: Engagement | null): 
 
 export async function aggregateVault(body: VaultAggregateRequest): Promise<Res<VaultAggregateResult>> {
   return call<VaultAggregateResult>("/api/vault/aggregate", { method: "POST", body });
+}
+
+const LOCAL_HELP_PREFS_KEY = "ergon-help-prefs-v1";
+
+function loadLocalHelpFallback(): HelpConfigPayload {
+  try {
+    const raw = localStorage.getItem(LOCAL_HELP_PREFS_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      return {
+        onboarding_completed: Boolean(parsed?.onboarding_completed),
+        onboarding_completed_at_ms: typeof parsed?.onboarding_completed_at_ms === "number" ? parsed.onboarding_completed_at_ms : null,
+        admin_contact: {
+          name: String(parsed?.admin_contact?.name ?? ""),
+          email: String(parsed?.admin_contact?.email ?? ""),
+          phone: String(parsed?.admin_contact?.phone ?? ""),
+          channel_url: String(parsed?.admin_contact?.channel_url ?? ""),
+          notes: String(parsed?.admin_contact?.notes ?? ""),
+          configured: Boolean(
+            parsed?.admin_contact?.name ||
+            parsed?.admin_contact?.email ||
+            parsed?.admin_contact?.phone ||
+            parsed?.admin_contact?.channel_url ||
+            parsed?.admin_contact?.notes
+          ),
+          source: "local",
+        },
+        can_edit_admin_contact: true,
+        diagnostics_url: "/api/diagnostics/bundle",
+      };
+    }
+  } catch { /* ignore */ }
+  return {
+    onboarding_completed: false,
+    onboarding_completed_at_ms: null,
+    admin_contact: {
+      name: "",
+      email: "",
+      phone: "",
+      channel_url: "",
+      notes: "",
+      configured: false,
+      source: "default",
+    },
+    can_edit_admin_contact: true,
+    diagnostics_url: "/api/diagnostics/bundle",
+  };
+}
+
+export async function fetchHelpConfig(): Promise<Res<HelpConfigPayload>> {
+  if (isWebStandalone()) {
+    return { ok: true, data: loadLocalHelpFallback() };
+  }
+  return call<HelpConfigPayload>("/api/help/config");
+}
+
+export async function saveHelpConfig(body: {
+  onboarding_completed?: boolean;
+  admin_contact?: Partial<Pick<AdminContactConfig, "name" | "email" | "phone" | "channel_url" | "notes">>;
+}): Promise<Res<HelpConfigPayload>> {
+  if (isWebStandalone()) {
+    const cur = loadLocalHelpFallback();
+    const nextContact = {
+      ...cur.admin_contact,
+      ...(body.admin_contact ?? {}),
+    };
+    nextContact.configured = Boolean(
+      nextContact.name.trim() ||
+      nextContact.email.trim() ||
+      nextContact.phone.trim() ||
+      nextContact.channel_url.trim() ||
+      nextContact.notes.trim()
+    );
+    const next: HelpConfigPayload = {
+      ...cur,
+      onboarding_completed:
+        typeof body.onboarding_completed === "boolean" ? body.onboarding_completed : cur.onboarding_completed,
+      onboarding_completed_at_ms:
+        typeof body.onboarding_completed === "boolean"
+          ? body.onboarding_completed
+            ? Date.now()
+            : null
+          : cur.onboarding_completed_at_ms,
+      admin_contact: nextContact,
+    };
+    try {
+      localStorage.setItem(LOCAL_HELP_PREFS_KEY, JSON.stringify(next));
+    } catch { /* ignore */ }
+    return { ok: true, data: next };
+  }
+  return call<HelpConfigPayload>("/api/help/config", { method: "POST", body });
+}
+
+export async function fetchDiagnosticsSummary(): Promise<Res<DiagnosticsSummary>> {
+  if (isWebStandalone()) {
+    return {
+      ok: true,
+      data: {
+        app_version: "0.38.0",
+        os: "browser",
+        arch: "web",
+        uptime_secs: 0,
+        workspace_count: 1,
+        model_configured: false,
+        log_files: 0,
+        crash_reports: 0,
+      },
+    };
+  }
+  return call<DiagnosticsSummary>("/api/diagnostics/summary");
+}
+
+export async function downloadDiagnosticBundle(): Promise<
+  | { ok: true; filename: string; sha256: string; bytes: number }
+  | { ok: false; error: string }
+> {
+  if (isWebStandalone()) {
+    return { ok: false, error: "Diagnostic bundles are generated by the local Ergon desktop/server binary." };
+  }
+  try {
+    const resp = await fetch("/api/diagnostics/bundle", {
+      method: "GET",
+      credentials: "same-origin",
+    });
+    if (!resp.ok) {
+      let msg = `Download failed (HTTP ${resp.status})`;
+      try {
+        const j = await resp.json();
+        if (typeof j?.error === "string" && j.error.trim()) msg = j.error;
+      } catch { /* ignore */ }
+      return { ok: false, error: msg };
+    }
+    const blob = await resp.blob();
+    const cd = resp.headers.get("content-disposition") || "";
+    const match = /filename="?([^";\r\n]+)"?/i.exec(cd);
+    const filename = match?.[1] || `ergon-diagnostics-${new Date().toISOString().slice(0, 10)}.zip`;
+    const sha256 = resp.headers.get("x-ergon-diagnostics-sha256") || "";
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1500);
+    return { ok: true, filename, sha256, bytes: blob.size };
+  } catch (e) {
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : "Could not download diagnostic bundle.",
+    };
+  }
 }

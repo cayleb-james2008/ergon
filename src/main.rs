@@ -28,6 +28,9 @@ struct CliOpts {
     export_out: Option<String>,
     export_title: Option<String>,
     export_force: bool,
+    diagnostics_mode: bool,
+    data_dir: Option<String>,
+    test_crash: bool,
     json_output: bool,
     host: Option<String>,
     port: Option<u16>,
@@ -44,9 +47,25 @@ fn parse_cli_args(args: &[String]) -> CliOpts {
             "--no-open" => opts.no_open = true,
             "--json" => opts.json_output = true,
             "--force" => opts.export_force = true,
-            "verify" if !opts.verify_mode && !opts.export_handoff_mode => opts.verify_mode = true,
-            "export-handoff" if !opts.verify_mode && !opts.export_handoff_mode => {
+            "--test-crash" => opts.test_crash = true,
+            "verify" if !opts.verify_mode && !opts.export_handoff_mode && !opts.diagnostics_mode => {
+                opts.verify_mode = true
+            }
+            "export-handoff"
+                if !opts.verify_mode && !opts.export_handoff_mode && !opts.diagnostics_mode =>
+            {
                 opts.export_handoff_mode = true
+            }
+            "diagnostics"
+                if !opts.verify_mode && !opts.export_handoff_mode && !opts.diagnostics_mode =>
+            {
+                opts.diagnostics_mode = true
+            }
+            "--data" => {
+                if let Some(v) = args.get(i + 1) {
+                    opts.data_dir = Some(v.clone());
+                    i += 1;
+                }
             }
             "--workspace" => {
                 if let Some(v) = args.get(i + 1) {
@@ -85,6 +104,10 @@ fn parse_cli_args(args: &[String]) -> CliOpts {
                     }
                 } else if let Some(v) = other.strip_prefix("--port=").and_then(|s| s.parse::<u16>().ok()) {
                     opts.port = Some(v);
+                } else if let Some(v) = other.strip_prefix("--data=") {
+                    if !v.is_empty() {
+                        opts.data_dir = Some(v.to_string());
+                    }
                 } else if let Some(v) = other.strip_prefix("--workspace=") {
                     if !v.is_empty() {
                         opts.verify_workspace = Some(v.to_string());
@@ -99,7 +122,7 @@ fn parse_cli_args(args: &[String]) -> CliOpts {
                     }
                 } else if opts.verify_mode && !other.starts_with('-') && opts.verify_target.is_none() {
                     opts.verify_target = Some(other.to_string());
-                } else if opts.export_handoff_mode
+                } else if (opts.export_handoff_mode || opts.diagnostics_mode)
                     && !other.starts_with('-')
                     && opts.export_out.is_none()
                 {
@@ -378,18 +401,86 @@ fn run_export_handoff_cli(opts: &CliOpts) -> i32 {
     }
 }
 
+fn load_cli_config(opts: &CliOpts) -> ergon_rs::Config {
+    let mut cfg = ergon_rs::Config::from_env();
+    if let Some(dir) = &opts.data_dir {
+        let data_dir = std::path::PathBuf::from(dir);
+        if std::env::var_os("ERGON_WORKSPACE").is_none() {
+            cfg.workspace_dir = data_dir.join("workspace");
+        }
+        cfg.memory_path = data_dir.join("memory.md");
+        cfg.data_dir = data_dir;
+    }
+    cfg
+}
+
+#[cold]
+fn run_diagnostics_cli(opts: &CliOpts) -> i32 {
+    let cfg = load_cli_config(opts);
+    ergon_rs::logging::init(&cfg.data_dir);
+    ergon_rs::logging::info("ergon::diagnostics", "generating IT diagnostic bundle via CLI");
+    let scheduler_enabled = !ergon_rs::scheduler::is_scheduler_disabled_by_env();
+    let res = match ergon_rs::logging::build_diagnostic_bundle_zip(&cfg, 0, scheduler_enabled, None) {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("ergon diagnostics: failed to build bundle: {e}");
+            return 2;
+        }
+    };
+    let out_arg = opts.export_out.clone().unwrap_or_else(|| res.filename.clone());
+    let out_path = std::path::Path::new(&out_arg);
+    if let Some(parent) = out_path.parent().filter(|p| !p.as_os_str().is_empty()) {
+        if let Err(e) = std::fs::create_dir_all(parent) {
+            eprintln!("ergon diagnostics: cannot create {}: {e}", parent.display());
+            return 2;
+        }
+    }
+    if let Err(e) = std::fs::write(out_path, &res.zip_bytes) {
+        eprintln!("ergon diagnostics: cannot write {}: {e}", out_path.display());
+        return 2;
+    }
+    if opts.json_output {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&serde_json::json!({
+                "ok": true,
+                "output": out_arg,
+                "sha256": res.sha256,
+                "zip_bytes": res.zip_bytes.len(),
+                "log_files": res.log_files,
+                "crash_reports": res.crash_reports,
+                "security_events": res.security_events,
+            }))
+            .unwrap_or_default()
+        );
+    } else {
+        println!(
+            "ergon diagnostics: PASS -> {} ({} bytes, sha256:{}, logs:{}, crashes:{}, security_events:{})",
+            out_arg,
+            res.zip_bytes.len(),
+            &res.sha256[..12.min(res.sha256.len())],
+            res.log_files,
+            res.crash_reports,
+            res.security_events
+        );
+    }
+    0
+}
+
 fn print_help() {
     println!(
         "ergon {} - Personal Employee Agent Desk\n\n\
-         USAGE:\n  ergon [--app | --no-open] [--host HOST] [--port PORT] [--version] [--help]\n  \
+         USAGE:\n  ergon [--app | --no-open] [--host HOST] [--port PORT] [--data DIR] [--version] [--help]\n  \
+         ergon diagnostics [--data DIR] [--out BUNDLE.zip] [--json]\n  \
          ergon verify <BUNDLE_OR_PACK> [--workspace DIR] [--json]\n  \
          ergon export-handoff [--out PATH] [--title TITLE] [--workspace DIR] [--force] [--json]\n\n\
          FLAGS:\n  --app, --open       Open chromeless desktop app window (Chromium/Edge --app)\n  \
          --no-open           Run headless without opening a desktop window\n  \
          --host HOST         Bind address (default: ERGON_HOST or 127.0.0.1)\n  \
          --port PORT         Bind port (default: ERGON_PORT or 8787)\n  \
+         --data DIR          Override ERGON_DATA_DIR\n  \
          --workspace DIR     Cross-check bundle/pack or override workspace directory\n  \
-         --out PATH          Handoff output .zip file or directory (default: ergon-client-handoff.zip)\n  \
+         --out PATH          Output .zip file or directory\n  \
          --title TITLE       Handoff bundle title (default: Client Handoff)\n  \
          --force             Override Strict Client leak pre-check block\n  \
          --json              Emit machine-readable JSON\n  \
@@ -480,7 +571,28 @@ fn main() {
     if opts.export_handoff_mode {
         std::process::exit(run_export_handoff_cli(&opts));
     }
-    let cfg = ergon_rs::Config::from_env();
+    if opts.diagnostics_mode {
+        std::process::exit(run_diagnostics_cli(&opts));
+    }
+    if opts.test_crash {
+        if !env_truthy("ERGON_ALLOW_TEST_CRASH") {
+            eprintln!("ergon: --test-crash is disabled unless ERGON_ALLOW_TEST_CRASH=1 is set");
+            std::process::exit(2);
+        }
+        let cfg = load_cli_config(&opts);
+        let _ = cfg.ensure_dirs();
+        ergon_rs::logging::init(&cfg.data_dir);
+        ergon_rs::logging::install_panic_hook(&cfg.data_dir);
+        let msg = std::env::var("ERGON_TEST_CRASH_MSG")
+            .ok()
+            .filter(|s| !s.trim().is_empty())
+            .unwrap_or_else(|| "simulated crash test (Bearer tok-crash-secret-9999)".to_string());
+        panic!("{msg}");
+    }
+    let cfg = load_cli_config(&opts);
+    let _ = cfg.ensure_dirs();
+    ergon_rs::logging::init(&cfg.data_dir);
+    ergon_rs::logging::install_panic_hook(&cfg.data_dir);
     let host = opts
         .host
         .clone()
@@ -493,10 +605,18 @@ fn main() {
     let listener = match TcpListener::bind((host.as_str(), port)) {
         Ok(l) => l,
         Err(e) => {
-            eprintln!("ergon: cannot bind {host}:{port}: {e}");
+            ergon_rs::logging::error("ergon::cli", &format!("ergon: cannot bind {host}:{port}: {e}"));
             std::process::exit(1);
         }
     };
+    ergon_rs::logging::info(
+        "ergon::server",
+        &format!(
+            "ergon {} listening on http://{host}:{port} (model_configured={})",
+            env!("CARGO_PKG_VERSION"),
+            cfg.model_configured()
+        ),
+    );
     println!("ergon listening on http://{host}:{port}");
     println!(
         "model: {} @ {} ({})",
@@ -512,7 +632,7 @@ fn main() {
     );
     maybe_open_desktop_window(&opts, &host, port);
     if let Err(e) = ergon_rs::serve_with_updates(listener, cfg) {
-        eprintln!("ergon: server error: {e}");
+        ergon_rs::logging::error("ergon::cli", &format!("ergon: server error: {e}"));
         std::process::exit(1);
     }
 }
@@ -619,5 +739,38 @@ mod tests {
         assert_eq!(opts.verify_workspace.as_deref(), Some("./ws"));
         assert!(opts.export_force);
         assert!(opts.json_output);
+    }
+
+    #[test]
+    fn cli_parses_diagnostics_and_data_flags() {
+        let args: Vec<String> = [
+            "diagnostics",
+            "--data",
+            "./my-data",
+            "--out",
+            "./diag.zip",
+            "--json",
+        ]
+        .into_iter()
+        .map(String::from)
+        .collect();
+        let opts = parse_cli_args(&args);
+        assert!(opts.diagnostics_mode);
+        assert_eq!(opts.data_dir.as_deref(), Some("./my-data"));
+        assert_eq!(opts.export_out.as_deref(), Some("./diag.zip"));
+        assert!(opts.json_output);
+
+        let eq_args: Vec<String> = [
+            "diagnostics",
+            "--data=./alt-data",
+            "--out=./alt.zip",
+        ]
+        .into_iter()
+        .map(String::from)
+        .collect();
+        let eq_opts = parse_cli_args(&eq_args);
+        assert!(eq_opts.diagnostics_mode);
+        assert_eq!(eq_opts.data_dir.as_deref(), Some("./alt-data"));
+        assert_eq!(eq_opts.export_out.as_deref(), Some("./alt.zip"));
     }
 }
