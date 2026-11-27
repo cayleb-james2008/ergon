@@ -2858,7 +2858,6 @@ const DECOYS: &[(&str, u32, &str)] = &[
     ("/api/token", 8, "login"),
     ("/api/session", 8, "login"),
     ("/api/users", 8, "internal"),
-    ("/api/keys", 10, "internal"),
     ("/api/admin", 12, "internal"),
     ("/api/admin/*", 12, "internal"),
     ("/api/internal", 12, "internal"),

@@ -979,6 +979,13 @@ export type BriefJob = {
   sha256?: string;
   engagement_id?: string;
   usage?: RunUsage;
+  task_family?: string;
+  quality_bar?: {
+    task_family: string;
+    status: string;
+    score: number;
+    best_score: number;
+  } | null;
 };
 export type Brief = {
   date?: string;
@@ -989,6 +996,7 @@ export type Brief = {
   suite_size?: number;
   library_size?: number;
   learned_recently?: string[];
+  quality_bars?: QualityBar[];
 };
 export type TodayEvent = { ts?: number; kind?: string; title?: string; detail?: string; files?: string[]; severity?: string; action?: string };
 export type SecurityEvent = {
@@ -3246,4 +3254,151 @@ export async function resolveOffer(
     `/api/offers/${encodeURIComponent(id)}/${action}`,
     { method: "POST", body: {} }
   );
+}
+
+export type QualityRunRecord = {
+  run_id: string;
+  ts_ms: number;
+  task: string;
+  summary: string;
+  files: string[];
+  score: number;
+  delta_vs_prev: number;
+  criteria_met: number;
+  criteria_total: number;
+  feedback_action?: string | null;
+  feedback_note?: string | null;
+};
+
+export type QualityBar = {
+  task_family: string;
+  label: string;
+  status: "improving" | "accepted_good_enough" | string;
+  criteria: string[];
+  runs: QualityRunRecord[];
+  best_run_id?: string | null;
+  best_score: number;
+  accepted_run_id?: string | null;
+  accepted_digest?: string | null;
+  accepted_recipe?: string | null;
+  accepted_ts_ms?: number | null;
+  updated_ms: number;
+};
+
+export type EvolutionArtifactVersion = {
+  version: number;
+  status: string;
+  replay_score: number;
+  author: string;
+  note: string;
+  created_ms: number;
+};
+
+export type EvolutionArtifactScore = {
+  id: string;
+  kind: string;
+  active_version: number;
+  previous_stable_version?: number | null;
+  baseline_live_score: number;
+  active_replay_score: number;
+  live_mean_score?: number | null;
+  live_outcome_count: number;
+  total_outcomes: number;
+  approval_rate?: number | null;
+  versions_count: number;
+  versions?: EvolutionArtifactVersion[];
+};
+
+export type EvolutionLogEntry = {
+  ts_ms: number;
+  event: string;
+  artifact_id: string;
+  kind: string;
+  from_version?: number | null;
+  to_version?: number | null;
+  champion_score?: number | null;
+  candidate_score?: number | null;
+  detail?: string;
+};
+
+export type EvolutionScoreSummary = {
+  artifacts: EvolutionArtifactScore[];
+  total_outcomes: number;
+  recent_log: EvolutionLogEntry[];
+};
+
+const QUALITY_STOPWORDS = new Set([
+  "the", "a", "an", "my", "please", "into", "and", "of", "to", "for", "me", "in", "on", "with",
+  "from", "this", "write", "create", "make", "draft",
+]);
+
+export function qualityFamilyKey(task: string): string {
+  const tokens = task
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((w) => w.length >= 2 && !QUALITY_STOPWORDS.has(w));
+  if (tokens.length >= 2) return tokens.slice(0, 3).join("-");
+  const slug = task
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 48);
+  return slug || "general";
+}
+
+export async function fetchQualityBars(): Promise<Res<{ quality_bars: QualityBar[] }>> {
+  const r = await call<{ quality_bars?: QualityBar[]; bars?: QualityBar[] } | QualityBar[]>(
+    "/api/quality-bars"
+  );
+  if (!r.ok) return r;
+  const raw = Array.isArray(r.data)
+    ? r.data
+    : Array.isArray(r.data?.quality_bars)
+      ? r.data.quality_bars
+      : Array.isArray(r.data?.bars)
+        ? r.data.bars
+        : [];
+  return {
+    ok: true,
+    data: {
+      quality_bars: raw.filter((x): x is QualityBar => !!x && typeof x === "object"),
+    },
+  };
+}
+
+export async function submitQualityFeedback(
+  family: string,
+  action: "accept_good_enough" | "improve",
+  note?: string,
+  addCriteria?: string[]
+): Promise<Res<{ quality_bar?: QualityBar; bar?: QualityBar }>> {
+  const cleanNote = note?.trim();
+  const cleanCriteria = (addCriteria ?? []).map((c) => c.trim()).filter(Boolean);
+  const r = await call<{ quality_bar?: QualityBar; bar?: QualityBar }>(
+    `/api/quality-bars/${encodeURIComponent(family)}/feedback`,
+    {
+      method: "POST",
+      body: {
+        action,
+        ...(cleanNote ? { note: cleanNote } : {}),
+        ...(cleanCriteria.length > 0 ? { add_criteria: cleanCriteria } : {}),
+      },
+    }
+  );
+  if (!r.ok) return r;
+  const bar = r.data.quality_bar ?? r.data.bar;
+  return { ok: true, data: { quality_bar: bar, bar } };
+}
+
+export async function fetchEvolutionScores(): Promise<Res<EvolutionScoreSummary>> {
+  const r = await call<Partial<EvolutionScoreSummary>>("/api/evolution/scores");
+  if (!r.ok) return r;
+  return {
+    ok: true,
+    data: {
+      artifacts: Array.isArray(r.data.artifacts) ? r.data.artifacts : [],
+      total_outcomes: typeof r.data.total_outcomes === "number" ? r.data.total_outcomes : 0,
+      recent_log: Array.isArray(r.data.recent_log) ? r.data.recent_log : [],
+    },
+  };
 }

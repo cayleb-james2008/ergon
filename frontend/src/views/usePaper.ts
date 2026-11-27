@@ -2,11 +2,13 @@ import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import {
   call,
+  fetchQualityBars,
   hasV050Api,
   type Brief,
   type BriefJob,
   type Decision,
   type Offer,
+  type QualityBar,
   type Status,
   type ThreadRow,
   type TodayEvent,
@@ -21,6 +23,7 @@ export type PaperData = {
   threads: ThreadRow[];
   extraReceipts: BriefJob[];
   receiptTotal: number;
+  qualityBars: QualityBar[];
 };
 
 export function usePaper(onChanged: () => void, status?: Status | null | "error") {
@@ -58,6 +61,13 @@ export function usePaper(onChanged: () => void, status?: Status | null | "error"
       }
     }
 
+    const qRes = await fetchQualityBars();
+    const barMap = new Map<string, QualityBar>();
+    for (const bar of b.data.quality_bars ?? []) barMap.set(bar.task_family, bar);
+    if (qRes.ok) {
+      for (const bar of qRes.data.quality_bars) barMap.set(bar.task_family, bar);
+    }
+
     setFailed(false);
     setData({
       brief: b.data,
@@ -67,6 +77,7 @@ export function usePaper(onChanged: () => void, status?: Status | null | "error"
       threads: (t.data.threads ?? []).filter((x): x is ThreadRow => !!x && typeof x === "object"),
       extraReceipts,
       receiptTotal,
+      qualityBars: Array.from(barMap.values()),
     });
   }, [status]);
 

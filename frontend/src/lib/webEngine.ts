@@ -27,6 +27,7 @@ import {
   getPendingCheckpoints,
   isCronExpression,
   isPathInEngagementScope,
+  qualityFamilyKey,
   resolveTzOffsetMins,
   validateCronExpression,
   type Client,
@@ -64,6 +65,8 @@ import {
   type PipelineStepState,
   type PipelineValidationResult,
   type PushSubscriptionItem,
+  type QualityBar,
+  type QualityRunRecord,
   type RolloverMode,
   type Routine,
   type RoutineRunRecord,
@@ -206,6 +209,7 @@ type PersonStore = {
   invoices?: InvoiceRecord[];
   notifications?: NotificationItem[];
   pushSubscriptions?: PushSubscriptionItem[];
+  qualityBars?: QualityBar[];
 };
 type RootState = {
   activePerson: string;
@@ -2053,7 +2057,62 @@ export async function installBrowserEngine(): Promise<void> {
       suite_size: st.suite.length,
       library_size: state.library.length,
       learned_recently: learnedLines(st.memory).slice(-5).reverse(),
+      quality_bars: st.qualityBars ?? [],
     };
+  }
+
+  function recordWebQualityRun(st: PersonStore, task: string, runId: string, summary: string, files: string[]) {
+    const family = qualityFamilyKey(task);
+    const bars = (st.qualityBars ??= []);
+    let bar = bars.find((b) => b.task_family === family);
+    const now = Date.now();
+    if (!bar) {
+      bar = {
+        task_family: family,
+        label: task.trim().slice(0, 120) || family,
+        status: "improving",
+        criteria: [],
+        runs: [],
+        best_run_id: null,
+        best_score: 0,
+        accepted_run_id: null,
+        accepted_digest: null,
+        accepted_recipe: null,
+        accepted_ts_ms: null,
+        updated_ms: now,
+      };
+      bars.push(bar);
+    }
+    const corpus = `${summary}\n${files.map((f) => st.files[f]?.content ?? "").join("\n")}`.toLowerCase();
+    const criteriaTotal = bar.criteria.length;
+    const criteriaMet = criteriaTotal === 0
+      ? 0
+      : bar.criteria.filter((c) => corpus.includes(c.toLowerCase())).length;
+    const baseScore = (summary.trim() ? 0.25 : 0) + (files.length > 0 ? 0.25 : 0) + (/\[[^\]]+:L\d+\]|^#/m.test(corpus) ? 0.15 : 0);
+    const criteriaScore = criteriaTotal === 0 ? 0.15 : 0.35 * (criteriaMet / criteriaTotal);
+    const score = Math.round(Math.min(1, Math.max(0, baseScore + criteriaScore)) * 10000) / 10000;
+    const prevScore = bar.runs.length ? bar.runs[bar.runs.length - 1].score : 0;
+    const rec: QualityRunRecord = {
+      run_id: runId,
+      ts_ms: now,
+      task,
+      summary,
+      files,
+      score,
+      delta_vs_prev: Math.round((score - prevScore) * 10000) / 10000,
+      criteria_met: criteriaMet,
+      criteria_total: criteriaTotal,
+      feedback_action: null,
+      feedback_note: null,
+    };
+    bar.runs.push(rec);
+    if (bar.status !== "accepted_good_enough") {
+      if (!bar.best_run_id || score >= bar.best_score) {
+        bar.best_score = score;
+        bar.best_run_id = runId;
+      }
+      bar.updated_ms = now;
+    }
   }
 
   function buildToday() {
@@ -2761,6 +2820,7 @@ export async function installBrowserEngine(): Promise<void> {
         engagement_id: engagement?.id,
         usage: runUsage,
       });
+      recordWebQualityRun(st, th.title, runId, outcome.summary, outcome.written.filter((f) => f !== "memory.md"));
       await persist();
       broadcastSse("run_finished", { run_id: runId, thread_id: th.id, elapsed_ms: Date.now() - startedMs, usage: runUsage });
       broadcastSse("done", { run_id: runId, thread_id: th.id, elapsed_ms: Date.now() - startedMs, usage: runUsage });
@@ -8766,6 +8826,54 @@ function runWebVaultAggregate(
       st.pushSubscriptions = (st.pushSubscriptions ?? []).filter((s) => s.id !== id);
       await persist();
       return jsonRes({ removed: (st.pushSubscriptions?.length ?? 0) < before });
+    }
+    if (method === "GET" && path === "/api/quality-bars") {
+      return jsonRes({ quality_bars: st.qualityBars ?? [] });
+    }
+    if (method === "GET" && path.startsWith("/api/quality-bars/")) {
+      const family = decodeURIComponent(path.slice("/api/quality-bars/".length));
+      const bar = (st.qualityBars ?? []).find((b) => b.task_family === family);
+      if (!bar) return jsonRes({ error: "quality bar not found" }, 404);
+      return jsonRes({ quality_bar: bar });
+    }
+    if (method === "POST" && path.startsWith("/api/quality-bars/") && path.endsWith("/feedback")) {
+      const family = decodeURIComponent(path.slice("/api/quality-bars/".length, -"/feedback".length));
+      const bar = (st.qualityBars ?? []).find((b) => b.task_family === family);
+      if (!bar) return jsonRes({ error: "quality bar not found" }, 404);
+      const action = String(body.action ?? "").trim().toLowerCase();
+      if (action !== "accept_good_enough" && action !== "accepted_good_enough" && action !== "improve") {
+        return jsonRes({ error: "invalid feedback action" }, 400);
+      }
+      const note = typeof body.note === "string" ? body.note.trim() : "";
+      const addCriteria = Array.isArray(body.add_criteria) ? body.add_criteria.map((c) => String(c).trim()).filter(Boolean) : [];
+      for (const c of addCriteria) {
+        if (!bar.criteria.some((x) => x.toLowerCase() === c.toLowerCase())) bar.criteria.push(c);
+      }
+      const now = Date.now();
+      const last = bar.runs[bar.runs.length - 1];
+      if (action === "improve") {
+        bar.status = "improving";
+        if (note && !bar.criteria.some((x) => x.toLowerCase() === note.toLowerCase())) bar.criteria.push(note);
+        if (last) {
+          last.feedback_action = "improve";
+          if (note) last.feedback_note = note;
+        }
+      } else {
+        bar.status = "accepted_good_enough";
+        bar.accepted_run_id = last?.run_id ?? bar.best_run_id ?? null;
+        bar.accepted_ts_ms = now;
+        if (typeof body.recipe === "string" && body.recipe.trim()) bar.accepted_recipe = body.recipe.trim();
+        if (last) {
+          last.feedback_action = "accept_good_enough";
+          if (note) last.feedback_note = note;
+        }
+      }
+      bar.updated_ms = now;
+      await persist();
+      return jsonRes({ quality_bar: bar });
+    }
+    if (method === "GET" && path === "/api/evolution/scores") {
+      return jsonRes({ artifacts: [], total_outcomes: 0, recent_log: [] });
     }
     if (method === "GET" && path === "/api/brief") return jsonRes(buildBrief());
     if (method === "GET" && path === "/api/today") return jsonRes(buildToday());

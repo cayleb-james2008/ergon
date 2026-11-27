@@ -1926,6 +1926,7 @@ pub(crate) struct Request {
     /// Explicit API token (`X-Ergon-Token`) / admin token (`X-Ergon-Admin-Token`)
     /// / hosting-layer role (`X-Ergon-Role`).
     pub(crate) api_token: Option<String>,
+    pub(crate) api_key_header: Option<String>,
     pub(crate) admin_token: Option<String>,
     pub(crate) actor_role: Option<String>,
     /// Browser-set headers the cross-site checks read (lowercased).
@@ -2142,6 +2143,7 @@ fn read_request_from<S: SockStream>(
     let mut session: Option<String> = None;
     let mut gate: Option<String> = None;
     let mut api_token: Option<String> = None;
+    let mut api_key_header: Option<String> = None;
     let mut admin_token: Option<String> = None;
     let mut actor_role: Option<String> = None;
     let mut content_type = String::new();
@@ -2243,6 +2245,8 @@ fn read_request_from<S: SockStream>(
             gate = Some(val.to_string());
         } else if name.eq_ignore_ascii_case("x-ergon-token") && !val.is_empty() {
             api_token = Some(val.to_string());
+        } else if name.eq_ignore_ascii_case("x-ergon-api-key") && !val.is_empty() {
+            api_key_header = Some(val.to_string());
         } else if name.eq_ignore_ascii_case("x-ergon-admin-token") && !val.is_empty() {
             admin_token = Some(val.to_string());
         } else if name.eq_ignore_ascii_case("x-ergon-role") && !val.is_empty() {
@@ -2334,6 +2338,7 @@ fn read_request_from<S: SockStream>(
         session,
         gate,
         api_token,
+        api_key_header,
         admin_token,
         actor_role,
         content_type,
@@ -3266,6 +3271,114 @@ fn mcp_inbound_bearer_valid(authorization: Option<&str>) -> bool {
     tripwire::ct_eq(&h1, &h2)
 }
 
+fn enforce_api_key_scope(p: &auth::AuthPrincipal, method: &str, path: &str) -> Result<(), String> {
+    if p.api_key_scopes.is_none() {
+        return Ok(());
+    }
+    if matches!(
+        (method, path),
+        ("GET" | "HEAD", "/" | "/phone" | "/api/health")
+            | ("GET", "/api/auth/me")
+            | ("POST", "/api/auth/login" | "/api/auth/logout")
+    ) || path.starts_with("/chunks/")
+    {
+        return Ok(());
+    }
+
+    if path == "/api/keys"
+        || path.starts_with("/api/keys/")
+        || path == "/api/auth/users"
+        || path.starts_with("/api/auth/users/")
+        || path == "/api/auth/oidc/config"
+        || path == "/api/config"
+        || path == "/api/people"
+        || path == "/api/connectors"
+        || path.starts_with("/api/connectors/")
+        || path == "/api/mcp/servers"
+        || path.starts_with("/api/mcp/servers/")
+        || path == "/api/mcp/inbound/config"
+        || matches!(
+            path,
+            "/api/update/check" | "/api/update/apply" | "/api/update/restart" | "/api/security" | "/api/security/policy"
+        )
+    {
+        return if p.has_scope("admin") {
+            Ok(())
+        } else {
+            Err("forbidden: API key lacks required scope 'admin'".to_string())
+        };
+    }
+
+    if method == "POST" && path == "/api/mcp/inbound" {
+        return if p.has_scope("mcp") {
+            Ok(())
+        } else {
+            Err("forbidden: API key lacks required scope 'mcp'".to_string())
+        };
+    }
+
+    if path == "/api/webhooks/subscriptions" || path.starts_with("/api/webhooks/subscriptions/") {
+        return if p.has_scope("webhooks") {
+            Ok(())
+        } else {
+            Err("forbidden: API key lacks required scope 'webhooks'".to_string())
+        };
+    }
+
+    if path == "/api/company/memory" || path.starts_with("/api/company/memory/") {
+        return if method == "GET" {
+            if p.has_scope("read") || p.has_scope("company_db") {
+                Ok(())
+            } else {
+                Err("forbidden: API key lacks required scope 'read' or 'company_db'".to_string())
+            }
+        } else if p.has_scope("company_db") || p.has_scope("write") {
+            Ok(())
+        } else {
+            Err("forbidden: API key lacks required scope 'company_db' or 'write'".to_string())
+        };
+    }
+
+    if path == "/api/company/db" || path == "/api/company/db/query" {
+        return if p.has_scope("company_db") {
+            Ok(())
+        } else {
+            Err("forbidden: API key lacks required scope 'company_db'".to_string())
+        };
+    }
+
+    if path == "/api/tools" {
+        return if p.has_scope("tools") || p.has_scope("read") {
+            Ok(())
+        } else {
+            Err("forbidden: API key lacks required scope 'tools' or 'read'".to_string())
+        };
+    }
+
+    if path == "/api/tools/test"
+        || path == "/api/tools/build"
+        || (path.starts_with("/api/tools/") && path.ends_with("/run"))
+    {
+        return if p.has_scope("tools") {
+            Ok(())
+        } else {
+            Err("forbidden: API key lacks required scope 'tools'".to_string())
+        };
+    }
+
+    if matches!(method, "GET" | "HEAD") {
+        if p.has_scope("read") {
+            Ok(())
+        } else {
+            Err("forbidden: API key lacks required scope 'read'".to_string())
+        }
+    } else if p.has_scope("write") {
+        Ok(())
+    } else {
+        Err("forbidden: API key lacks required scope 'write'".to_string())
+    }
+}
+
 fn person_by_id(state: &AppState, id: &str) -> Person {
     let people = state.people.read().unwrap();
     if let Some(p) = people.people.iter().find(|p| p.id == id) {
@@ -3371,7 +3484,37 @@ fn handle_connection(mut stream: std::net::TcpStream, state: &Arc<AppState>) -> 
             .is_enforced(state.tls.is_some(), state.non_loopback_bind);
         let raw_auth_token = auth::extract_bearer_token(req.authorization.as_deref())
             .or(req.session.as_deref());
-        let session_principal = raw_auth_token.and_then(|t| state.auth.validate_session_token(t));
+        let presented_api_key = req
+            .api_key_header
+            .as_deref()
+            .or_else(|| {
+                auth::extract_bearer_token(req.authorization.as_deref())
+                    .filter(|t| t.starts_with(auth::API_KEY_PREFIX))
+            });
+        let mut api_key_verified = false;
+        let api_key_principal = if let Some(raw_key) = presented_api_key {
+            match auth::authenticate_api_key(&state.cfg.data_dir, raw_key, &state.people) {
+                Some(p) => {
+                    api_key_verified = true;
+                    Some(p)
+                }
+                None => {
+                    KEEP_ALIVE_CONN.set(false);
+                    return respond_json(
+                        reader.get_mut(),
+                        401,
+                        &json!({"error": "invalid or expired API key"}),
+                    );
+                }
+            }
+        } else {
+            None
+        };
+        let session_principal = if api_key_principal.is_some() {
+            None
+        } else {
+            raw_auth_token.and_then(|t| state.auth.validate_session_token(t))
+        };
 
         let mut break_glass_verified = false;
         let principal: Option<auth::AuthPrincipal> = if !auth_enforced {
@@ -3392,7 +3535,7 @@ fn handle_connection(mut stream: std::net::TcpStream, state: &Arc<AppState>) -> 
                 }
                 break_glass_verified = true;
             }
-            session_principal
+            api_key_principal.or(session_principal)
         } else {
             // Multi-user / TLS / non-loopback auth-enforced mode:
             // ERGON_GATE_TOKEN is an audited admin-only break-glass token and
@@ -3413,7 +3556,9 @@ fn handle_connection(mut stream: std::net::TcpStream, state: &Arc<AppState>) -> 
                 }
                 break_glass_verified = true;
             }
-            if let Some(user_p) = session_principal {
+            if let Some(key_p) = api_key_principal {
+                Some(key_p)
+            } else if let Some(user_p) = session_principal {
                 // Never allow X-Ergon-Gate to elevate a non-admin user session.
                 Some(user_p)
             } else if break_glass_verified {
@@ -3430,6 +3575,7 @@ fn handle_connection(mut stream: std::net::TcpStream, state: &Arc<AppState>) -> 
                     auth_method: "gate_token".to_string(),
                     is_break_glass: true,
                     session_token_hash: None,
+                    api_key_scopes: None,
                 })
             } else {
                 None
@@ -3437,9 +3583,9 @@ fn handle_connection(mut stream: std::net::TcpStream, state: &Arc<AppState>) -> 
         };
 
         let host_gate_exempt = if !auth_enforced {
-            state.gate_token.is_some()
+            state.gate_token.is_some() || api_key_verified
         } else {
-            break_glass_verified
+            break_glass_verified || api_key_verified
         };
         if let Some((status, message)) = refusal(&req, host_gate_exempt, &state.allowed_hosts) {
             // RE1: a page on another site (CSRF) or a rebound DNS name tried
@@ -3453,9 +3599,9 @@ fn handle_connection(mut stream: std::net::TcpStream, state: &Arc<AppState>) -> 
         // Centralized authentication & RBAC guard for ALL routes.
         if auth_enforced {
             let access = auth::route_access(&req.method, &req.path);
-            let mcp_token_bypass = req.method == "POST"
-                && req.path == "/api/mcp/inbound"
-                && mcp_inbound_bearer_valid(req.authorization.as_deref());
+            let is_inbound_mcp = req.method == "POST" && req.path == "/api/mcp/inbound";
+            let mcp_token_bypass =
+                is_inbound_mcp && mcp_inbound_bearer_valid(req.authorization.as_deref());
             match access {
                 auth::RouteAccess::Public => {}
                 auth::RouteAccess::PublicSetupOnly => {
@@ -3482,7 +3628,16 @@ fn handle_connection(mut stream: std::net::TcpStream, state: &Arc<AppState>) -> 
                             }),
                         );
                     };
-                    if !p.role.satisfies(other) {
+                    if is_inbound_mcp && p.api_key_scopes.is_some() {
+                        if !p.has_scope("mcp") {
+                            KEEP_ALIVE_CONN.set(false);
+                            return respond_err(
+                                reader.get_mut(),
+                                403,
+                                "forbidden: API key lacks required scope 'mcp'",
+                            );
+                        }
+                    } else if !p.role.satisfies(other) {
                         KEEP_ALIVE_CONN.set(false);
                         return respond_err(
                             reader.get_mut(),
@@ -3491,6 +3646,12 @@ fn handle_connection(mut stream: std::net::TcpStream, state: &Arc<AppState>) -> 
                         );
                     }
                 }
+            }
+        }
+        if let Some(ref p) = principal {
+            if let Err(msg) = enforce_api_key_scope(p, &req.method, &req.path) {
+                KEEP_ALIVE_CONN.set(false);
+                return respond_err(reader.get_mut(), 403, &msg);
             }
         }
 
@@ -6681,6 +6842,30 @@ fn try_route_files_and_audit(
                 Err(e) => return Some(respond_checked_write_err(stream, e)),
             };
             state.search_cache.invalidate(&person.id);
+            let edit_summaries = {
+                let mut lib = state.library.lock().unwrap();
+                self_improve::increment_edits_for_run(
+                    &state.cfg.data_dir,
+                    Some(&mut lib),
+                    &person.id,
+                    &outcome.rel,
+                )
+            };
+            for s in edit_summaries {
+                if let Some(prev_v) = s.rolled_back_to {
+                    connectors::dispatch_event_webhooks(
+                        &state.cfg.data_dir,
+                        "evolution.rolled_back",
+                        json!({
+                            "artifact_id": s.record.artifact_id,
+                            "kind": s.record.artifact_kind,
+                            "rolled_back_to": prev_v,
+                            "reason": s.rollback_reason,
+                            "person_id": person.id,
+                        }),
+                    );
+                }
+            }
             let mtime_ms = sandbox_path_resolving(&runtime.cfg.workspace_dir, &outcome.rel, true)
                 .ok()
                 .and_then(|p| std::fs::metadata(p).ok())
@@ -6722,6 +6907,30 @@ fn try_route_files_and_audit(
                 Err(e) => return Some(respond_checked_write_err(stream, e)),
             };
             state.search_cache.invalidate(&person.id);
+            let edit_summaries = {
+                let mut lib = state.library.lock().unwrap();
+                self_improve::increment_edits_for_run(
+                    &state.cfg.data_dir,
+                    Some(&mut lib),
+                    &person.id,
+                    &outcome.rel,
+                )
+            };
+            for s in edit_summaries {
+                if let Some(prev_v) = s.rolled_back_to {
+                    connectors::dispatch_event_webhooks(
+                        &state.cfg.data_dir,
+                        "evolution.rolled_back",
+                        json!({
+                            "artifact_id": s.record.artifact_id,
+                            "kind": s.record.artifact_kind,
+                            "rolled_back_to": prev_v,
+                            "reason": s.rollback_reason,
+                            "person_id": person.id,
+                        }),
+                    );
+                }
+            }
             let stats = file_history::diff_texts(
                 &format!("{} (before)", outcome.rel),
                 &format!("{} (after)", outcome.rel),
@@ -7981,13 +8190,46 @@ fn try_route_knowledge_and_routines(
             }
         }
         ("POST", "/api/mcp/inbound") => {
-            let (status, payload) = mcp::handle_inbound_mcp(
-                &runtime.cfg,
-                &root_cfg.data_dir,
-                &person.id,
+            let token_valid = mcp_inbound_bearer_valid(req.authorization.as_deref());
+            let caller_role = if auth_enforced {
+                principal.map(|p| p.role).unwrap_or(auth::Role::Member)
+            } else {
+                principal.map(|p| p.role).unwrap_or(auth::Role::Admin)
+            };
+            let authenticated = auth_enforced || principal.is_some() || token_valid;
+            let bypass_enabled_gate = principal.is_some_and(|p| {
+                p.role.is_admin() || (p.api_key_scopes.is_some() && p.has_scope("mcp"))
+            });
+            let can_read = principal.is_none_or(|p| p.has_scope("read") || p.has_scope("mcp"));
+            let can_write = if let Some(p) = principal {
+                if p.api_key_scopes.is_some() {
+                    p.has_scope("write") && p.has_scope("mcp")
+                } else {
+                    p.role.is_admin()
+                }
+            } else {
+                token_valid
+            };
+            let people_snap = state.people.read().unwrap().clone();
+            let mcp_ctx = mcp::InboundMcpContext {
+                cfg: &runtime.cfg,
+                root_cfg,
+                person_id: &person.id,
+                role: caller_role,
+                authenticated,
+                can_read,
+                can_write,
+                bypass_enabled_gate,
+                people: Some(&people_snap),
+                library: Some(&state.library),
+                store: Some(&runtime.store),
+            };
+            let (status, payload) = mcp::handle_inbound_mcp_with_auth(
+                &mcp_ctx,
                 req.authorization.as_deref(),
                 &req.body,
             );
+            state.search_cache.invalidate(&person.id);
             respond_json(stream, status, &payload)
         }
         ("GET", "/api/clients") => {
@@ -8719,6 +8961,79 @@ fn try_route_knowledge_and_routines(
                         }
                     }
                     state.search_cache.invalidate(&person.id);
+                    let approved = action == "approve";
+                    let dec_artifact_id = decision["artifact_id"]
+                        .as_str()
+                        .map(str::trim)
+                        .filter(|s| !s.is_empty())
+                        .map(str::to_string)
+                        .or_else(|| {
+                            if decision["kind"].as_str() == Some("tool_offer") {
+                                decision["tool_name"]
+                                    .as_str()
+                                    .map(crate::slugify)
+                                    .filter(|s| !s.is_empty())
+                            } else {
+                                None
+                            }
+                        });
+                    if let Some(ref art_id) = dec_artifact_id {
+                        let art_kind = decision["artifact_kind"]
+                            .as_str()
+                            .unwrap_or("tool")
+                            .to_string();
+                        let sum = {
+                            let mut lib = state.library.lock().unwrap();
+                            let art_ver = lib.get(art_id).map(|i| i.version).unwrap_or(1);
+                            self_improve::record_outcome(
+                                &root_cfg.data_dir,
+                                Some(&mut lib),
+                                self_improve::OutcomeRecord {
+                                    id: String::new(),
+                                    ts_ms: records::now_millis(),
+                                    person_id: person.id.clone(),
+                                    artifact_kind: art_kind,
+                                    artifact_id: art_id.clone(),
+                                    artifact_version: art_ver,
+                                    run_id: tid.to_string(),
+                                    task: decision["summary"].as_str().unwrap_or("").to_string(),
+                                    approved: Some(approved),
+                                    edits_needed: 0,
+                                    reruns: 0,
+                                    time_saved_mins: 0.0,
+                                    explicit_score: None,
+                                    quality_score: 0.0,
+                                    feedback: Some(outcome.clone()),
+                                },
+                            )
+                        };
+                        if let Some(prev_v) = sum.rolled_back_to {
+                            connectors::dispatch_event_webhooks(
+                                &root_cfg.data_dir,
+                                "evolution.rolled_back",
+                                json!({
+                                    "artifact_id": sum.record.artifact_id,
+                                    "kind": sum.record.artifact_kind,
+                                    "rolled_back_to": prev_v,
+                                    "reason": sum.rollback_reason,
+                                    "person_id": person.id,
+                                }),
+                            );
+                        }
+                    }
+                    connectors::dispatch_event_webhooks(
+                        &root_cfg.data_dir,
+                        "decision.settled",
+                        json!({
+                            "decision_id": decision["id"],
+                            "kind": decision["kind"],
+                            "status": decision["status"],
+                            "approved": approved,
+                            "outcome": outcome,
+                            "person_id": person.id,
+                            "thread_id": tid,
+                        }),
+                    );
                     respond_json(
                         stream,
                         200,
@@ -9318,6 +9633,373 @@ fn try_route_knowledge_and_routines(
             match proactive_offers::remove_push_subscription(&runtime.cfg.data_dir, &id) {
                 Ok(true) => respond_json(stream, 200, &json!({ "deleted": true, "id": id })),
                 Ok(false) => respond_err(stream, 404, "push subscription not found"),
+                Err(e) => respond_err(stream, 400, &e),
+            }
+        }
+        // Scoped API Keys (/api/keys*)
+        ("GET", "/api/keys") => {
+            let keys: Vec<Value> = auth::list_api_keys(&root_cfg.data_dir)
+                .into_iter()
+                .map(|k| k.to_public_json())
+                .collect();
+            respond_json(stream, 200, &json!({ "keys": keys }))
+        }
+        ("POST", "/api/keys") => {
+            let parsed: Value = match serde_json::from_slice(&req.body) {
+                Ok(v) => v,
+                Err(_) => return Some(respond_err(stream, 400, "request body is not valid JSON")),
+            };
+            let name = parsed["name"].as_str().unwrap_or("");
+            let scopes = string_list(&parsed["scopes"]);
+            let target_person_id = parsed["person_id"]
+                .as_str()
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .unwrap_or(&person.id);
+            let role = if let Some(r_str) = parsed["role"].as_str().filter(|s| !s.trim().is_empty()) {
+                match auth::Role::parse_strict(r_str) {
+                    Some(r) => r,
+                    None => return Some(respond_err(stream, 400, "invalid role")),
+                }
+            } else {
+                let users = state.auth.list_users();
+                if let Some(u) = users.iter().find(|u| u.person_id == target_person_id) {
+                    u.role
+                } else {
+                    let people = state.people.read().unwrap();
+                    people
+                        .people
+                        .iter()
+                        .find(|p| p.id == target_person_id)
+                        .map(|p| auth::Role::parse_lenient(&p.role))
+                        .unwrap_or(auth::Role::Admin)
+                }
+            };
+            let expires_at_ms = parsed["expires_at_ms"].as_u64();
+            match auth::create_api_key(
+                &root_cfg.data_dir,
+                name,
+                target_person_id,
+                role,
+                &scopes,
+                expires_at_ms,
+            ) {
+                Ok((rec, raw_key)) => {
+                    let mut out = rec.to_public_json();
+                    out["key"] = json!(raw_key);
+                    out["api_key"] = rec.to_public_json();
+                    respond_json(stream, 201, &out)
+                }
+                Err((status, msg)) => respond_err(stream, status, &msg),
+            }
+        }
+        ("DELETE", path) if path.starts_with("/api/keys/") => {
+            let id = percent_decode(path.trim_start_matches("/api/keys/"))
+                .trim()
+                .to_string();
+            match auth::revoke_api_key(&root_cfg.data_dir, &id) {
+                Ok(true) => respond_json(stream, 200, &json!({ "deleted": true, "id": id })),
+                Ok(false) => respond_err(stream, 404, "API key not found"),
+                Err(e) => respond_err(stream, 400, &e),
+            }
+        }
+        // Outbound Webhook Subscriptions (/api/webhooks/subscriptions*)
+        ("GET", "/api/webhooks/subscriptions") => {
+            let subs: Vec<Value> = connectors::list_webhook_subscriptions(&root_cfg.data_dir)
+                .into_iter()
+                .map(|s| s.to_public_json())
+                .collect();
+            respond_json(stream, 200, &json!({ "subscriptions": subs }))
+        }
+        ("POST", "/api/webhooks/subscriptions") => {
+            let parsed: Value = match serde_json::from_slice(&req.body) {
+                Ok(v) => v,
+                Err(_) => return Some(respond_err(stream, 400, "request body is not valid JSON")),
+            };
+            match connectors::create_webhook_subscription(&root_cfg.data_dir, &parsed) {
+                Ok((sub, signing_secret)) => respond_json(
+                    stream,
+                    201,
+                    &json!({
+                        "subscription": sub.to_public_json(),
+                        "signing_secret": signing_secret,
+                    }),
+                ),
+                Err((status, msg)) => respond_err(stream, status, &msg),
+            }
+        }
+        ("DELETE", "/api/webhooks/subscriptions") => {
+            let parsed: Value = serde_json::from_slice(&req.body).unwrap_or(Value::Null);
+            let id = parsed["id"]
+                .as_str()
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(str::to_string)
+                .or_else(|| query_param(&req.query, "id"))
+                .unwrap_or_default();
+            match connectors::delete_webhook_subscription(&root_cfg.data_dir, &id) {
+                Ok(true) => respond_json(stream, 200, &json!({ "deleted": true, "id": id })),
+                Ok(false) => respond_err(stream, 404, "webhook subscription not found"),
+                Err(e) => respond_err(stream, 400, &e),
+            }
+        }
+        ("DELETE", path) if path.starts_with("/api/webhooks/subscriptions/") => {
+            let id = percent_decode(path.trim_start_matches("/api/webhooks/subscriptions/"))
+                .trim()
+                .to_string();
+            match connectors::delete_webhook_subscription(&root_cfg.data_dir, &id) {
+                Ok(true) => respond_json(stream, 200, &json!({ "deleted": true, "id": id })),
+                Ok(false) => respond_err(stream, 404, "webhook subscription not found"),
+                Err(e) => respond_err(stream, 400, &e),
+            }
+        }
+        // Self-Improvement / Evolution (/api/evolution/*)
+        ("GET", "/api/evolution/scores") => {
+            respond_json(stream, 200, &self_improve::score_summary(&root_cfg.data_dir))
+        }
+        ("GET", path) if path.starts_with("/api/evolution/history/") => {
+            let id = percent_decode(path.trim_start_matches("/api/evolution/history/"))
+                .trim()
+                .to_string();
+            if id.is_empty() {
+                return Some(respond_err(stream, 400, "artifact_id is required"));
+            }
+            respond_json(
+                stream,
+                200,
+                &self_improve::artifact_history(&root_cfg.data_dir, &id),
+            )
+        }
+        ("POST", "/api/evolution/outcomes") => {
+            let mut parsed: Value = match serde_json::from_slice(&req.body) {
+                Ok(v) => v,
+                Err(_) => return Some(respond_err(stream, 400, "request body is not valid JSON")),
+            };
+            if (auth_enforced && !principal.is_some_and(|p| p.role.is_admin()))
+                || parsed
+                    .get("person_id")
+                    .and_then(|v| v.as_str())
+                    .map(str::trim)
+                    .is_none_or(|s| s.is_empty())
+            {
+                parsed["person_id"] = json!(person.id);
+            }
+            let Some(rec) = self_improve::OutcomeRecord::from_json(&parsed) else {
+                return Some(respond_err(
+                    stream,
+                    400,
+                    "invalid outcome payload: artifact_id is required",
+                ));
+            };
+            let sum = {
+                let mut lib = state.library.lock().unwrap();
+                self_improve::record_outcome(&root_cfg.data_dir, Some(&mut lib), rec)
+            };
+            if let Some(prev_v) = sum.rolled_back_to {
+                connectors::dispatch_event_webhooks(
+                    &root_cfg.data_dir,
+                    "evolution.rolled_back",
+                    json!({
+                        "artifact_id": sum.record.artifact_id,
+                        "kind": sum.record.artifact_kind,
+                        "rolled_back_to": prev_v,
+                        "reason": sum.rollback_reason,
+                        "person_id": sum.record.person_id,
+                    }),
+                );
+            }
+            respond_json(stream, 200, &sum.to_json())
+        }
+        ("POST", "/api/evolution/cases") => {
+            let parsed: Value = match serde_json::from_slice(&req.body) {
+                Ok(v) => v,
+                Err(_) => return Some(respond_err(stream, 400, "request body is not valid JSON")),
+            };
+            let Some(case) = self_improve::ReplayCase::from_json(&parsed) else {
+                return Some(respond_err(
+                    stream,
+                    400,
+                    "invalid replay case: artifact_id is required",
+                ));
+            };
+            match self_improve::add_replay_case(&root_cfg.data_dir, case) {
+                Ok(saved) => respond_json(stream, 201, &json!({ "case": saved.to_json() })),
+                Err(e) => respond_err(stream, 400, &e),
+            }
+        }
+        ("POST", "/api/evolution/propose") => {
+            let parsed: Value = match serde_json::from_slice(&req.body) {
+                Ok(v) => v,
+                Err(_) => return Some(respond_err(stream, 400, "request body is not valid JSON")),
+            };
+            let artifact_id = parsed["artifact_id"].as_str().unwrap_or("").trim();
+            if artifact_id.is_empty() {
+                return Some(respond_err(stream, 400, "artifact_id is required"));
+            }
+            let eff = effective_cfg(state, runtime);
+            let candidate_content = parsed["candidate_content"]
+                .as_str()
+                .map(str::trim)
+                .filter(|s| !s.is_empty());
+            let res = if let Some(cand) = candidate_content {
+                let kind = parsed["kind"]
+                    .as_str()
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .map(str::to_string)
+                    .unwrap_or_else(|| {
+                        state
+                            .library
+                            .lock()
+                            .unwrap()
+                            .get(artifact_id)
+                            .map(|i| i.kind)
+                            .unwrap_or_else(|| {
+                                if artifact_id == self_improve::DEFAULT_IMPROVER_ID {
+                                    "improver".to_string()
+                                } else {
+                                    "tool".to_string()
+                                }
+                            })
+                    });
+                let params = {
+                    let p = string_list(&parsed["candidate_params"]);
+                    if p.is_empty() {
+                        string_list(&parsed["params"])
+                    } else {
+                        p
+                    }
+                };
+                let note = parsed["note"]
+                    .as_str()
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .unwrap_or("API proposed improvement");
+                let mut lib = state.library.lock().unwrap();
+                self_improve::evaluate_and_maybe_promote(
+                    &root_cfg.data_dir,
+                    &eff,
+                    Some(&mut lib),
+                    artifact_id,
+                    &kind,
+                    cand,
+                    params,
+                    &person.id,
+                    note,
+                )
+            } else {
+                let mut lib = state.library.lock().unwrap();
+                self_improve::propose_improvement_with_model(
+                    &eff,
+                    &root_cfg.data_dir,
+                    Some(&mut lib),
+                    artifact_id,
+                )
+            };
+            match res {
+                Ok(ev) => {
+                    if ev.promoted {
+                        connectors::dispatch_event_webhooks(
+                            &root_cfg.data_dir,
+                            "evolution.promoted",
+                            ev.to_json(),
+                        );
+                    }
+                    respond_json(stream, 200, &ev.to_json())
+                }
+                Err(e) if e == NO_KEY_ERROR => respond_err(stream, 503, &e),
+                Err(e) => respond_err(stream, 400, &e),
+            }
+        }
+        ("POST", "/api/evolution/rollback") => {
+            let parsed: Value = match serde_json::from_slice(&req.body) {
+                Ok(v) => v,
+                Err(_) => return Some(respond_err(stream, 400, "request body is not valid JSON")),
+            };
+            let artifact_id = parsed["artifact_id"].as_str().unwrap_or("").trim();
+            if artifact_id.is_empty() {
+                return Some(respond_err(stream, 400, "artifact_id is required"));
+            }
+            let res = {
+                let mut lib = state.library.lock().unwrap();
+                self_improve::manual_rollback(&root_cfg.data_dir, Some(&mut lib), artifact_id)
+            };
+            match res {
+                Ok(val) => {
+                    connectors::dispatch_event_webhooks(
+                        &root_cfg.data_dir,
+                        "evolution.rolled_back",
+                        json!({
+                            "artifact_id": artifact_id,
+                            "from_version": val["from_version"],
+                            "to_version": val["to_version"],
+                            "person_id": person.id,
+                        }),
+                    );
+                    respond_json(stream, 200, &val)
+                }
+                Err(e) => respond_err(stream, 400, &e),
+            }
+        }
+        // Per-Task Quality Bars (/api/quality-bars*)
+        ("GET", "/api/quality-bars") => {
+            let bars: Vec<Value> = quality_bar::load_quality_bars(&runtime.cfg.data_dir)
+                .into_iter()
+                .map(|b| b.to_json())
+                .collect();
+            respond_json(stream, 200, &json!({ "quality_bars": bars }))
+        }
+        ("GET", path) if path.starts_with("/api/quality-bars/") && !path.ends_with("/feedback") => {
+            let family = percent_decode(path.trim_start_matches("/api/quality-bars/"))
+                .trim()
+                .to_string();
+            match quality_bar::get_quality_bar(&runtime.cfg.data_dir, &family) {
+                Some(bar) => respond_json(stream, 200, &json!({ "quality_bar": bar.to_json() })),
+                None => respond_err(stream, 404, "quality bar not found"),
+            }
+        }
+        ("POST", path)
+            if path.starts_with("/api/quality-bars/") && path.ends_with("/feedback") =>
+        {
+            let raw_fam = path
+                .strip_prefix("/api/quality-bars/")
+                .and_then(|rest| rest.strip_suffix("/feedback"))
+                .unwrap_or("");
+            let family = percent_decode(raw_fam).trim().to_string();
+            let parsed: Value = match serde_json::from_slice(&req.body) {
+                Ok(v) => v,
+                Err(_) => return Some(respond_err(stream, 400, "request body is not valid JSON")),
+            };
+            let action = parsed["action"].as_str().unwrap_or("");
+            let note = parsed["note"].as_str();
+            let add_criteria = string_list(&parsed["add_criteria"]);
+            let recipe = parsed["recipe"].as_str();
+            match quality_bar::apply_feedback(
+                &runtime.cfg.data_dir,
+                &family,
+                action,
+                note,
+                add_criteria,
+                recipe,
+            ) {
+                Ok(bar) => {
+                    if bar.status == quality_bar::STATUS_ACCEPTED {
+                        connectors::dispatch_event_webhooks(
+                            &root_cfg.data_dir,
+                            "quality_bar.accepted",
+                            json!({
+                                "task_family": bar.task_family,
+                                "label": bar.label,
+                                "person_id": person.id,
+                                "accepted_run_id": bar.accepted_run_id,
+                                "best_score": bar.best_score,
+                                "accepted_recipe": bar.accepted_recipe,
+                            }),
+                        );
+                    }
+                    respond_json(stream, 200, &json!({ "quality_bar": bar.to_json() }))
+                }
+                Err(e) if e.starts_with("quality bar not found") => respond_err(stream, 404, &e),
                 Err(e) => respond_err(stream, 400, &e),
             }
         }
@@ -10137,6 +10819,9 @@ fn try_route_runs_and_chat(
                         v["budget_gated"] = json!(true);
                         v["decision_id"] = json!(outcome.decision_id);
                     }
+                    if let Some(qb) = outcome.quality_bar {
+                        v["quality_bar"] = qb;
+                    }
                     respond_json(stream, 200, &v)
                 }
                 Err(e) if e.starts_with(tripwire::HALT_PREFIX) => {
@@ -10234,6 +10919,9 @@ fn try_route_runs_and_chat(
                     if outcome.budget_gated {
                         v["budget_gated"] = json!(true);
                         v["decision_id"] = json!(outcome.decision_id);
+                    }
+                    if let Some(qb) = outcome.quality_bar {
+                        v["quality_bar"] = qb;
                     }
                     respond_json(stream, 200, &v)
                 }

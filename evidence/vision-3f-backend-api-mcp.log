@@ -1,0 +1,10 @@
+Admin setup -> 201: person_id=alice-admin
+Created scoped API keys: ro=ergk_FiReloJ..., mcp_rw=ergk_8sscL9o...
+Read-only key blocked on POST /api/company/memory -> 403
+Registered outbound webhook subscription id=whsub-1795792241919-0
+MCP write_workspace_file('status.md') -> 200 ok
+MCP write_company_memory -> 200 ok
+MCP resources/read('ergon://company/memory') -> 200 ok
+Live Ollama chat via scoped API key -> 200 (quality_bar family=read-status-md)
+Verified HMAC-SHA256 outbound webhooks delivered: ['work.completed', 'quality_bar.accepted']
+File modes verified: api_keys.json=0o600, webhook_subscriptions.json=0o600, zero plaintext secrets

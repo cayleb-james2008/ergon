@@ -21,12 +21,14 @@ pub mod logging;
 pub mod mcp;
 pub mod pipelines;
 pub mod proactive_offers;
+pub mod quality_bar;
 pub mod receipts;
 pub mod records;
 pub mod routines;
 pub mod scheduler;
 pub mod search;
 pub mod secret_store;
+pub mod self_improve;
 pub mod service;
 pub mod server;
 pub use server::{
@@ -2168,6 +2170,7 @@ pub struct AgentOutcome {
     pub budget_gated: bool,
     pub decision_id: Option<String>,
     pub agent_snapshot: Option<AgentSnapshot>,
+    pub quality_bar: Option<Value>,
 }
 
 /// The files one run actually wrote — the evidence a "done" summary's
@@ -2182,6 +2185,8 @@ pub struct WriteLedger {
     pub consumed: Vec<String>,
     /// Tool steps that succeeded (a failed step is not work, EB2b).
     pub ok_steps: usize,
+    /// Non-builtin library skills, tools, or subagents invoked during this run.
+    pub used_artifacts: Vec<String>,
 }
 
 fn credit_writes(
@@ -3084,6 +3089,11 @@ fn run_loop(
                     dynamic_skills.insert(id.to_string());
                 }
             }
+            if dynamic_skills.contains(&tool)
+                && !ledger.used_artifacts.iter().any(|a| a == &tool)
+            {
+                ledger.used_artifacts.push(tool.clone());
+            }
         }
         let result_text = tripwire::redact(&result_text);
         let step_elapsed_ms = step_t0.elapsed().as_millis() as u64;
@@ -3321,6 +3331,9 @@ fn run_delegation(
     let delegated_line = format!("Delegated to {}: {}", profile.name, truncate(task, 300));
     push_live_step(live, delegated_line.clone());
     store.lock().unwrap().push(thread_id, "step", &delegated_line);
+    if !profile.builtin && !ledger.used_artifacts.iter().any(|a| a == &profile.id) {
+        ledger.used_artifacts.push(profile.id.clone());
+    }
     let system = subagent_system_prompt(cfg, ctx, &profile, suite_items);
     match run_loop(
         cfg,
@@ -3803,7 +3816,11 @@ fn run_agent_inner(
         .filter(|i| matches!(i.kind.as_str(), "skill" | "tool") && !i.builtin)
         .map(|i| i.id.clone())
         .collect();
-    let system = system_prompt_for(cfg, Some(ctx), &suite_items);
+    let mut system = system_prompt_for(cfg, Some(ctx), &suite_items);
+    if let Some(guidance) = quality_bar::prompt_guidance_for_task(&cfg.data_dir, task, None) {
+        system.push_str("\n\n         ");
+        system.push_str(&guidance);
+    }
     let context_budget_chars = options.context_budget_chars.max(256);
     let max_steps = options.max_steps.clamp(1, MAX_COMPACTED_STEPS);
     let mut ledger = WriteLedger {
@@ -3935,6 +3952,7 @@ fn run_agent_inner(
                 budget_gated: true,
                 decision_id: Some(did),
                 agent_snapshot: None,
+                quality_bar: None,
             });
         }
     }
@@ -4077,6 +4095,7 @@ fn run_agent_inner(
             budget_gated: true,
             decision_id: Some(bg_id),
             agent_snapshot: None,
+            quality_bar: None,
         });
     }
     if let Some(cp_pause) = loop_out.paused_checkpoint {
@@ -4148,6 +4167,7 @@ fn run_agent_inner(
                 budget_gated: false,
                 decision_id: None,
                 agent_snapshot: loop_out.snapshot,
+                quality_bar: None,
             });
         }
         in_flight.finish("completed", &ledger.written, Some(summary.clone()), None);
@@ -4162,6 +4182,7 @@ fn run_agent_inner(
             budget_gated: false,
             decision_id: None,
             agent_snapshot: loop_out.snapshot,
+            quality_bar: None,
         });
     }
     store
@@ -4235,6 +4256,8 @@ fn run_agent_inner(
     // product (brief, graph, today, offers) is built from.
     // Work means a tool step that succeeded or a written file; a run whose
     // steps all failed is an answer, not finished work (EB2, EB2b).
+    let mut quality_bar_val: Option<Value> = None;
+    let mut finished_work = false;
     if unverified_zero_tool {
         run_usage.finalize_attribution(false, false, 0, 0, hourly_rate_usd);
         record_ledger(&run_usage, false, false);
@@ -4260,6 +4283,7 @@ fn run_agent_inner(
             Some(&run_usage),
         );
     } else {
+        finished_work = true;
         run_usage.finalize_attribution(
             true,
             false,
@@ -4278,9 +4302,59 @@ fn run_agent_inner(
             engagement_id.as_deref(),
             Some(&run_usage),
         );
+        quality_bar_val = Some(quality_bar::record_task_run(
+            &cfg.data_dir,
+            &cfg.workspace_dir,
+            task,
+            None,
+            &run_id,
+            &summary,
+            &ledger.written,
+        ));
     }
+    let mut rollback_events: Vec<Value> = Vec::new();
     {
-        let lib = ctx.library.lock().unwrap();
+        let mut lib = ctx.library.lock().unwrap();
+        if finished_work && !ledger.used_artifacts.is_empty() {
+            for art_id in &ledger.used_artifacts {
+                if let Some(item) = lib.get(art_id) {
+                    if !item.builtin && matches!(item.kind.as_str(), "skill" | "tool" | "subagent") {
+                        let rec = self_improve::OutcomeRecord {
+                            id: String::new(),
+                            ts_ms: records::now_millis(),
+                            person_id: ctx.person_id.clone(),
+                            artifact_kind: item.kind.clone(),
+                            artifact_id: item.id.clone(),
+                            artifact_version: item.version.max(1),
+                            run_id: run_id.clone(),
+                            task: task.to_string(),
+                            approved: None,
+                            edits_needed: 0,
+                            reruns: 0,
+                            time_saved_mins: 0.0,
+                            explicit_score: None,
+                            quality_score: 0.0,
+                            feedback: None,
+                        };
+                        let sum = self_improve::record_outcome(
+                            &ctx.root_data_dir,
+                            Some(&mut lib),
+                            rec,
+                        );
+                        if let Some(prev_v) = sum.rolled_back_to {
+                            rollback_events.push(json!({
+                                "artifact_id": item.id,
+                                "kind": item.kind,
+                                "rolled_back_to": prev_v,
+                                "reason": sum.rollback_reason,
+                                "run_id": run_id,
+                                "person_id": ctx.person_id,
+                            }));
+                        }
+                    }
+                }
+            }
+        }
         let suite_now = library::load_suite(&cfg.data_dir);
         refresh_offers_and_notify(
             cfg,
@@ -4288,6 +4362,24 @@ fn run_agent_inner(
             &lib,
             live_ctx.as_ref().map(|l| l.events),
             &ctx.person_id,
+        );
+    }
+    for rb in rollback_events {
+        connectors::dispatch_event_webhooks(&ctx.root_data_dir, "evolution.rolled_back", rb);
+    }
+    if finished_work {
+        connectors::dispatch_event_webhooks(
+            &ctx.root_data_dir,
+            "work.completed",
+            json!({
+                "run_id": run_id,
+                "thread_id": thread_id,
+                "person_id": ctx.person_id,
+                "task": task,
+                "summary": truncate(&summary, 500),
+                "files": ledger.written,
+                "quality_bar": quality_bar_val,
+            }),
         );
     }
     // Anything the traps blocked or held during an otherwise finished
@@ -4330,6 +4422,7 @@ fn run_agent_inner(
         budget_gated: false,
         decision_id: None,
         agent_snapshot: None,
+        quality_bar: quality_bar_val,
     })
 }
 
@@ -4377,6 +4470,7 @@ mod v010_hardening_tests {
             session: None,
             gate: None,
             api_token: None,
+            api_key_header: None,
             admin_token: None,
             actor_role: None,
             content_type: "application/json".into(),

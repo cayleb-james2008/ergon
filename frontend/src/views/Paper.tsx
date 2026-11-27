@@ -35,6 +35,7 @@ import { LiveRunTimeline } from "@/chat/LiveRunTimeline";
 import { CheckpointCard, PipelineRunStrip } from "@/shell/CheckpointCard";
 import { PanelModal } from "@/shell/PanelModal";
 import { personInitials } from "@/shell/PersonSelect";
+import { QualityBarControls, matchQualityBar } from "@/shell/QualityBarControl";
 import { StarterPlaybooksBar } from "@/shell/StarterPlaybooksBar";
 import { usePaper } from "@/views/usePaper";
 import { FORMULA_ESTIMATE_TOOLTIP, resolveEffectiveHourlyRate } from "@/lib/meteringFormula";
@@ -1103,6 +1104,30 @@ export const PaperFace = memo(function PaperFace({
     }
   };
 
+  const qualityBars = useMemo(() => data?.qualityBars ?? [], [data?.qualityBars]);
+
+  const { rowQualityMap, unmatchedQualityBars } = useMemo(() => {
+    const map = new Map<number, (typeof qualityBars)[number]>();
+    const usedFamilies = new Set<string>();
+    if (qualityBars.length > 0) {
+      visibleFinished.forEach((job, idx) => {
+        const bar = matchQualityBar(job, qualityBars);
+        if (bar && !usedFamilies.has(bar.task_family)) {
+          usedFamilies.add(bar.task_family);
+          map.set(idx, bar);
+        }
+      });
+    }
+    return {
+      rowQualityMap: map,
+      unmatchedQualityBars: qualityBars.filter((b) => !usedFamilies.has(b.task_family)),
+    };
+  }, [qualityBars, visibleFinished]);
+
+  const handleQualityUpdated = useCallback(async () => {
+    await load();
+  }, [load]);
+
   const handleRowReceiptExport = async (job: BriefJob, idx: number, format: "md" | "json") => {
     const id = job.id || job.thread_id || `receipt-${idx}`;
     const res = await exportReceiptDownload(
@@ -1870,6 +1895,7 @@ export const PaperFace = memo(function PaperFace({
                         const id = threadOf(x);
                         const jobFiles = normalizeFiles(x.files);
                         const taskTitle = String(x.task ?? "Completed task");
+                        const rowBar = rowQualityMap.get(i);
                         return (
                           <li
                             key={(x.id ?? x.thread_id ?? taskTitle) + "-" + globalIdx}
@@ -1952,18 +1978,27 @@ export const PaperFace = memo(function PaperFace({
                                 <FileDown className="size-3.5" strokeWidth={1.5} aria-hidden />
                                 <span>Receipt</span>
                               </Button>
-                              {id && (
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  className="min-h-11"
-                                  aria-label={`Open the conversation: ${taskTitle}`}
-                                  onClick={() => onOpen(id)}
-                                >
-                                  Open
-                                </Button>
+                                {id && (
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="min-h-11"
+                                    aria-label={`Open the conversation: ${taskTitle}`}
+                                    onClick={() => onOpen(id)}
+                                  >
+                                    Open
+                                  </Button>
+                                )}
+                              </div>
+                              {rowBar && (
+                                <div className="basis-full border-t border-hairline pt-2.5">
+                                  <QualityBarControls
+                                    bar={rowBar}
+                                    compact
+                                    onUpdated={handleQualityUpdated}
+                                  />
+                                </div>
                               )}
-                            </div>
                           </li>
                         );
                       })}
@@ -2002,6 +2037,29 @@ export const PaperFace = memo(function PaperFace({
                       </div>
                     </div>
                   )}
+                </section>
+              )}
+
+              {unmatchedQualityBars.length > 0 && (
+                <section id="paper-quality-bars" aria-labelledby="paper-quality-h" className="grid gap-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <h2 id="paper-quality-h" className="text-title font-medium text-ink">Quality bars</h2>
+                    <span className="mono text-xs text-ink-2">
+                      {unmatchedQualityBars.length}
+                    </span>
+                  </div>
+                  <ol className="divide-y divide-hairline rounded-card border border-hairline bg-surface">
+                    {unmatchedQualityBars.map((bar) => (
+                      <li key={bar.task_family} className="flex flex-col gap-2 px-4 py-3.5">
+                        <p className="text-ui font-medium leading-6 text-ink [overflow-wrap:anywhere]">{bar.label}</p>
+                        <QualityBarControls
+                          bar={bar}
+                          compact
+                          onUpdated={handleQualityUpdated}
+                        />
+                      </li>
+                    ))}
+                  </ol>
                 </section>
               )}
 

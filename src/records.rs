@@ -382,7 +382,7 @@ pub fn add_decision_with(
     thread_id: &str,
     extra: Value,
 ) -> String {
-    with_records_lock(|| {
+    let id = with_records_lock(|| {
         let mut items = load_decisions(person_data_dir);
         let ts = now_millis();
         let id = format!("d{ts}-{}", next_seq());
@@ -408,7 +408,20 @@ pub fn add_decision_with(
         items.push(item);
         save_array(&decisions_path(person_data_dir), "decisions", &items);
         id
-    })
+    });
+    crate::connectors::dispatch_event_webhooks(
+        &infer_root_data_dir(person_data_dir),
+        "decision.created",
+        json!({
+            "decision_id": id,
+            "kind": kind,
+            "summary": summary,
+            "path": path,
+            "thread_id": thread_id,
+            "person_id": infer_person_id(person_data_dir),
+        }),
+    );
+    id
 }
 
 /// Replace a settled decision's outcome text — for approvals whose
@@ -725,18 +738,62 @@ pub fn build_brief(cfg: &Config, person_name: &str, suite: &Suite, library: &Lib
         .filter(|e| !e["thread_id"].as_str().is_some_and(|t| waiting.contains(&t)))
         .filter(|e| now.saturating_sub(e["ts"].as_u64().unwrap_or(0)) <= 48 * 3_600_000)
         .collect();
+    let quality_bars = crate::quality_bar::load_quality_bars(&cfg.data_dir);
     let finished: Vec<Value> = recent
         .iter()
         .rev()
         .take(8)
         .map(|e| {
-            json!({
+            let task_str = e["task"].as_str().unwrap_or("");
+            let fam = crate::quality_bar::task_family_key(task_str);
+            let mut item = json!({
                 "date": date_string_local(e["ts"].as_u64().unwrap_or(0)),
                 "task": e["task"],
                 "summary": e["summary"],
                 "files": e["files"],
                 "thread_id": e["thread_id"],
                 "ts": e["ts"],
+            });
+            if let Some(bar) = quality_bars.iter().find(|b| b.task_family == fam) {
+                let latest_score = bar
+                    .runs
+                    .iter()
+                    .rev()
+                    .find(|r| r.summary == e["summary"].as_str().unwrap_or(""))
+                    .or_else(|| bar.runs.last())
+                    .map(|r| r.score)
+                    .unwrap_or(bar.best_score);
+                item["quality_bar"] = json!({
+                    "task_family": bar.task_family,
+                    "label": bar.label,
+                    "status": bar.status,
+                    "score": latest_score,
+                    "best_score": bar.best_score,
+                    "criteria": bar.criteria,
+                    "accepted_recipe": bar.accepted_recipe,
+                });
+            }
+            item
+        })
+        .collect();
+    let mut qb_sorted = quality_bars;
+    qb_sorted.sort_by(|a, b| b.updated_ms.cmp(&a.updated_ms));
+    let quality_bars_summary: Vec<Value> = qb_sorted
+        .into_iter()
+        .take(12)
+        .map(|b| {
+            let latest_score = b.runs.last().map(|r| r.score).unwrap_or(0.0);
+            json!({
+                "task_family": b.task_family,
+                "label": b.label,
+                "status": b.status,
+                "latest_score": latest_score,
+                "best_score": b.best_score,
+                "runs_count": b.runs.len(),
+                "criteria": b.criteria,
+                "accepted_run_id": b.accepted_run_id,
+                "accepted_recipe": b.accepted_recipe,
+                "updated_ms": b.updated_ms,
             })
         })
         .collect();
@@ -779,6 +836,7 @@ pub fn build_brief(cfg: &Config, person_name: &str, suite: &Suite, library: &Lib
         "pending_decisions": pending_decisions,
         "pending_offers": pending_offers,
         "learned_recently": learned,
+        "quality_bars": quality_bars_summary,
         // Resolved count: a suite entry whose library item is gone
         // is a ghost and must not inflate the brief (the suite API
         // already hides it).

@@ -1,0 +1,7 @@
+Admin setup -> 201, seeded notes.md in alice-admin workspace
+Live Ollama Run 1 -> status=improving family=weekly-client-brief score=0.65
+Posted improve feedback -> criteria=['Risk Register', 'Owner Actions', 'Risk Register, Owner Actions, [notes.md:L2]']
+Live Ollama Run 2 attempt 1 -> score=1.0 prev=0.65 delta=0.35
+Accepted quality bar -> status=accepted_good_enough accepted_run=run-1795792214840-1
+Live Ollama Run 3 -> status=accepted_good_enough stable_at_bar=True changes_stopped=True
+Brief quality_bars=1, quality_bars.json mode=0o600

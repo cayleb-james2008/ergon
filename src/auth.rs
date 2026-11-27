@@ -368,6 +368,27 @@ pub fn route_access(method: &str, path: &str) -> RouteAccess {
             RouteAccess::AuthenticatedSelf
         }
 
+        // Scoped API keys, Outbound Webhooks, Self-Improvement & Quality Bars (Wave 3)
+        ("GET" | "POST" | "DELETE", p) if p == "/api/keys" || p.starts_with("/api/keys/") => {
+            RouteAccess::RequireAdmin
+        }
+        ("GET" | "POST" | "DELETE", p)
+            if p == "/api/webhooks/subscriptions"
+                || p.starts_with("/api/webhooks/subscriptions/") =>
+        {
+            RouteAccess::RequireClientManage
+        }
+        ("GET", "/api/evolution/scores") => RouteAccess::AuthenticatedSelf,
+        ("GET", p) if p.starts_with("/api/evolution/history/") => RouteAccess::AuthenticatedSelf,
+        ("POST", "/api/evolution/outcomes") => RouteAccess::AuthenticatedSelf,
+        ("POST", "/api/evolution/cases" | "/api/evolution/propose" | "/api/evolution/rollback") => {
+            RouteAccess::RequireClientManage
+        }
+        ("GET", "/api/quality-bars") => RouteAccess::AuthenticatedSelf,
+        ("GET" | "POST", p) if p.starts_with("/api/quality-bars/") => {
+            RouteAccess::AuthenticatedSelf
+        }
+
         // Every other /api/* route requires authentication and is strictly scoped to caller's workspace
         _ => RouteAccess::AuthenticatedSelf,
     }
@@ -427,11 +448,19 @@ pub struct AuthPrincipal {
     pub auth_method: String,
     pub is_break_glass: bool,
     pub session_token_hash: Option<String>,
+    pub api_key_scopes: Option<Vec<String>>,
 }
 
 impl AuthPrincipal {
+    pub fn has_scope(&self, required: &str) -> bool {
+        match &self.api_key_scopes {
+            None => true,
+            Some(scopes) => scopes.iter().any(|s| s == "admin" || s == required),
+        }
+    }
+
     pub fn to_json(&self) -> Value {
-        json!({
+        let mut obj = json!({
             "id": self.user_id,
             "username": self.username,
             "display_name": self.display_name,
@@ -442,7 +471,11 @@ impl AuthPrincipal {
             "auth_method": self.auth_method,
             "is_admin": self.role.is_admin(),
             "break_glass": self.is_break_glass,
-        })
+        });
+        if let Some(ref scopes) = self.api_key_scopes {
+            obj["scopes"] = json!(scopes);
+        }
+        obj
     }
 }
 
@@ -1692,6 +1725,7 @@ impl AuthStore {
             auth_method: sess.auth_method.clone(),
             is_break_glass: false,
             session_token_hash: Some(hash),
+            api_key_scopes: None,
         })
     }
 
@@ -2094,6 +2128,293 @@ pub fn record_break_glass_audit(
     );
 }
 
+// ---------------------------------------------------------------------------
+// Scoped API Keys (<root_data_dir>/api_keys.json, 0600 POSIX)
+// ---------------------------------------------------------------------------
+
+pub const API_KEY_PREFIX: &str = "ergk_";
+pub const VALID_API_KEY_SCOPES: [&str; 7] = [
+    "read",
+    "write",
+    "webhooks",
+    "mcp",
+    "company_db",
+    "tools",
+    "admin",
+];
+
+static API_KEYS_LOCK: Mutex<()> = Mutex::new(());
+
+fn with_api_keys_lock<T>(f: impl FnOnce() -> T) -> T {
+    let _guard = API_KEYS_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    f()
+}
+
+pub fn api_keys_path(root_data_dir: &Path) -> PathBuf {
+    root_data_dir.join("api_keys.json")
+}
+
+#[derive(Clone, Debug)]
+pub struct ApiKeyRecord {
+    pub id: String,
+    pub name: String,
+    pub key_sha256: String,
+    pub prefix: String,
+    pub person_id: String,
+    pub role: Role,
+    pub scopes: Vec<String>,
+    pub created_ms: u64,
+    pub last_used_ms: Option<u64>,
+    pub expires_at_ms: Option<u64>,
+}
+
+impl ApiKeyRecord {
+    pub fn to_public_json(&self) -> Value {
+        json!({
+            "id": self.id,
+            "name": self.name,
+            "prefix": self.prefix,
+            "person_id": self.person_id,
+            "role": self.role.as_str(),
+            "scopes": self.scopes,
+            "created_ms": self.created_ms,
+            "last_used_ms": self.last_used_ms,
+            "expires_at_ms": self.expires_at_ms,
+        })
+    }
+
+    fn to_storage_json(&self) -> Value {
+        json!({
+            "id": self.id,
+            "name": self.name,
+            "key_sha256": self.key_sha256,
+            "prefix": self.prefix,
+            "person_id": self.person_id,
+            "role": self.role.as_str(),
+            "scopes": self.scopes,
+            "created_ms": self.created_ms,
+            "last_used_ms": self.last_used_ms,
+            "expires_at_ms": self.expires_at_ms,
+        })
+    }
+
+    fn from_storage_json(v: &Value) -> Option<Self> {
+        let id = v["id"].as_str()?.trim().to_string();
+        let name = v["name"].as_str()?.trim().to_string();
+        let key_sha256 = v["key_sha256"].as_str()?.trim().to_string();
+        let prefix = v["prefix"].as_str().unwrap_or("").to_string();
+        let person_id = v["person_id"].as_str().unwrap_or("default").trim().to_string();
+        if id.is_empty() || name.is_empty() || key_sha256.len() != 64 {
+            return None;
+        }
+        let role = Role::parse_lenient(v["role"].as_str().unwrap_or("member"));
+        let scopes = v["scopes"]
+            .as_array()
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|s| s.as_str().map(str::trim).filter(|s| !s.is_empty()).map(str::to_string))
+                    .collect()
+            })
+            .unwrap_or_default();
+        Some(Self {
+            id,
+            name,
+            key_sha256,
+            prefix,
+            person_id,
+            role,
+            scopes,
+            created_ms: v["created_ms"].as_u64().unwrap_or(0),
+            last_used_ms: v["last_used_ms"].as_u64(),
+            expires_at_ms: v["expires_at_ms"].as_u64(),
+        })
+    }
+}
+
+fn load_api_keys_unlocked(root_data_dir: &Path) -> Vec<ApiKeyRecord> {
+    let path = api_keys_path(root_data_dir);
+    let Ok(text) = std::fs::read_to_string(&path) else {
+        return Vec::new();
+    };
+    let Ok(v) = serde_json::from_str::<Value>(&text) else {
+        return Vec::new();
+    };
+    v["keys"]
+        .as_array()
+        .map(|arr| {
+            arr.iter()
+                .filter_map(ApiKeyRecord::from_storage_json)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn save_api_keys_unlocked(root_data_dir: &Path, keys: &[ApiKeyRecord]) -> Result<(), String> {
+    let payload = json!({
+        "version": 1,
+        "keys": keys.iter().map(ApiKeyRecord::to_storage_json).collect::<Vec<_>>(),
+    });
+    let bytes = serde_json::to_vec_pretty(&payload)
+        .map_err(|e| format!("serialize api_keys.json: {e}"))?;
+    atomic_write_bytes_with_mode(&api_keys_path(root_data_dir), &bytes, Some(0o600))
+        .map_err(|e| format!("write api_keys.json: {e}"))
+}
+
+pub fn create_api_key(
+    root_data_dir: &Path,
+    name: &str,
+    person_id: &str,
+    role: Role,
+    scopes: &[String],
+    expires_at_ms: Option<u64>,
+) -> Result<(ApiKeyRecord, String), (u16, String)> {
+    let clean_name = name.trim();
+    if clean_name.is_empty() || clean_name.len() > 80 {
+        return Err((400, "name must be 1 to 80 characters".to_string()));
+    }
+    let clean_person = person_id.trim();
+    if clean_person.is_empty() || !crate::valid_person_id(clean_person) {
+        return Err((400, "invalid person_id".to_string()));
+    }
+    if scopes.is_empty() {
+        return Err((400, "scopes array must not be empty".to_string()));
+    }
+    let mut norm_scopes = Vec::new();
+    for raw in scopes {
+        let s = raw.trim().to_ascii_lowercase();
+        if !VALID_API_KEY_SCOPES.contains(&s.as_str()) {
+            return Err((
+                400,
+                format!(
+                    "unsupported API key scope '{raw}'; valid scopes: {}",
+                    VALID_API_KEY_SCOPES.join(", ")
+                ),
+            ));
+        }
+        if !norm_scopes.contains(&s) {
+            norm_scopes.push(s);
+        }
+    }
+
+    let raw_secret = secure_random_bytes(32).map_err(|e| (500, e))?;
+    let raw_key = format!("{API_KEY_PREFIX}{}", base64url_encode_nopad(&raw_secret));
+    let key_sha256 = token_sha256(&raw_key);
+    let prefix = raw_key.chars().take(12).collect::<String>();
+    let id_rand = base64url_encode_nopad(&secure_random_bytes(9).map_err(|e| (500, e))?);
+    let created_ms = now_millis();
+
+    let rec = ApiKeyRecord {
+        id: format!("key_{id_rand}"),
+        name: clean_name.to_string(),
+        key_sha256,
+        prefix,
+        person_id: clean_person.to_string(),
+        role,
+        scopes: norm_scopes,
+        created_ms,
+        last_used_ms: None,
+        expires_at_ms,
+    };
+
+    with_api_keys_lock(|| {
+        let mut keys = load_api_keys_unlocked(root_data_dir);
+        keys.push(rec.clone());
+        save_api_keys_unlocked(root_data_dir, &keys).map_err(|e| (500, e))?;
+        Ok((rec, raw_key))
+    })
+}
+
+pub fn list_api_keys(root_data_dir: &Path) -> Vec<ApiKeyRecord> {
+    with_api_keys_lock(|| load_api_keys_unlocked(root_data_dir))
+}
+
+pub fn revoke_api_key(root_data_dir: &Path, id: &str) -> Result<bool, String> {
+    let target = id.trim();
+    if target.is_empty() {
+        return Err("key id is required".to_string());
+    }
+    with_api_keys_lock(|| {
+        let mut keys = load_api_keys_unlocked(root_data_dir);
+        let before = keys.len();
+        keys.retain(|k| k.id != target);
+        if keys.len() == before {
+            return Ok(false);
+        }
+        save_api_keys_unlocked(root_data_dir, &keys)?;
+        Ok(true)
+    })
+}
+
+pub fn authenticate_api_key(
+    root_data_dir: &Path,
+    raw_key: &str,
+    people: &RwLock<PeopleState>,
+) -> Option<AuthPrincipal> {
+    let trimmed = raw_key.trim();
+    if !trimmed.starts_with(API_KEY_PREFIX) {
+        return None;
+    }
+    let presented_hash = token_sha256(trimmed);
+    let now = now_millis();
+
+    let matched = with_api_keys_lock(|| {
+        let mut keys = load_api_keys_unlocked(root_data_dir);
+        let idx = keys.iter().position(|k| {
+            tripwire::ct_eq(k.key_sha256.as_bytes(), presented_hash.as_bytes())
+        })?;
+        if keys[idx].expires_at_ms.is_some_and(|exp| exp <= now) {
+            return None;
+        }
+        keys[idx].last_used_ms = Some(now);
+        let cloned = keys[idx].clone();
+        let _ = save_api_keys_unlocked(root_data_dir, &keys);
+        Some(cloned)
+    })?;
+
+    let users = AuthStore::load_users_file(&AuthStore::users_path(root_data_dir));
+    if let Some(u) = users.iter().find(|u| u.person_id == matched.person_id) {
+        if u.disabled {
+            return None;
+        }
+        return Some(AuthPrincipal {
+            user_id: u.id.clone(),
+            username: u.username.clone(),
+            display_name: u.display_name.clone(),
+            email: u.email.clone(),
+            role: u.role,
+            home_person_id: u.person_id.clone(),
+            active_person_id: u.person_id.clone(),
+            auth_method: format!("api_key:{}", matched.id),
+            is_break_glass: false,
+            session_token_hash: None,
+            api_key_scopes: Some(matched.scopes),
+        });
+    }
+
+    let person_name = people
+        .read()
+        .unwrap()
+        .people
+        .iter()
+        .find(|p| p.id == matched.person_id)
+        .map(|p| p.name.clone())
+        .unwrap_or_else(|| matched.name.clone());
+
+    Some(AuthPrincipal {
+        user_id: matched.id.clone(),
+        username: matched.name,
+        display_name: person_name,
+        email: None,
+        role: matched.role,
+        home_person_id: matched.person_id.clone(),
+        active_person_id: matched.person_id,
+        auth_method: format!("api_key:{}", matched.id),
+        is_break_glass: false,
+        session_token_hash: None,
+        api_key_scopes: Some(matched.scopes),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2203,5 +2524,93 @@ mod tests {
             route_access("DELETE", "/api/push/subscribe/psub-1"),
             RouteAccess::AuthenticatedSelf
         );
+        assert_eq!(route_access("GET", "/api/keys"), RouteAccess::RequireAdmin);
+        assert_eq!(route_access("POST", "/api/keys"), RouteAccess::RequireAdmin);
+        assert_eq!(
+            route_access("DELETE", "/api/keys/key_1"),
+            RouteAccess::RequireAdmin
+        );
+        assert_eq!(
+            route_access("POST", "/api/webhooks/subscriptions"),
+            RouteAccess::RequireClientManage
+        );
+        assert_eq!(
+            route_access("GET", "/api/evolution/scores"),
+            RouteAccess::AuthenticatedSelf
+        );
+        assert_eq!(
+            route_access("POST", "/api/evolution/propose"),
+            RouteAccess::RequireClientManage
+        );
+        assert_eq!(
+            route_access("POST", "/api/evolution/outcomes"),
+            RouteAccess::AuthenticatedSelf
+        );
+        assert_eq!(
+            route_access("GET", "/api/quality-bars"),
+            RouteAccess::AuthenticatedSelf
+        );
+        assert_eq!(
+            route_access("POST", "/api/quality-bars/weekly-brief/feedback"),
+            RouteAccess::AuthenticatedSelf
+        );
+    }
+
+    #[test]
+    fn scoped_api_key_lifecycle_and_scope_checks() {
+        let dir = std::env::temp_dir().join(format!(
+            "ergon-apikey-test-{}-{}",
+            std::process::id(),
+            now_millis()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let cfg = Config {
+            data_dir: dir.clone(),
+            workspace_dir: dir.join("workspace"),
+            memory_path: dir.join("memory.md"),
+            model_base_url: "http://127.0.0.1:9/v1".to_string(),
+            model_id: "test".to_string(),
+            api_key: None,
+        };
+        cfg.ensure_dirs().unwrap();
+        let people = RwLock::new(PeopleState::load(&cfg));
+
+        let (rec, raw) = create_api_key(
+            &dir,
+            "ci-reader",
+            "default",
+            Role::Pm,
+            &["read".to_string(), "mcp".to_string()],
+            None,
+        )
+        .unwrap();
+        assert!(raw.starts_with(API_KEY_PREFIX));
+        assert_eq!(rec.scopes, vec!["read".to_string(), "mcp".to_string()]);
+        assert_eq!(list_api_keys(&dir).len(), 1);
+
+        let principal = authenticate_api_key(&dir, &raw, &people).unwrap();
+        assert_eq!(principal.role, Role::Pm);
+        assert!(principal.has_scope("read"));
+        assert!(principal.has_scope("mcp"));
+        assert!(!principal.has_scope("write"));
+        assert!(!principal.has_scope("admin"));
+        assert!(authenticate_api_key(&dir, "ergk_wrong_secret", &people).is_none());
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(api_keys_path(&dir))
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o777;
+            assert_eq!(mode, 0o600);
+        }
+
+        assert!(revoke_api_key(&dir, &rec.id).unwrap());
+        assert!(authenticate_api_key(&dir, &raw, &people).is_none());
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

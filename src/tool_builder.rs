@@ -632,6 +632,18 @@ pub fn settle_tool_offer_decision(
                 }
                 let _ = save_unlocked(root_data_dir, &pkgs);
             });
+            crate::connectors::dispatch_event_webhooks(
+                root_data_dir,
+                "tool.published",
+                json!({
+                    "id": item.id,
+                    "name": item.name,
+                    "kind": item.kind,
+                    "version": item.version,
+                    "author": item.author,
+                    "tool_package_id": pkg_id,
+                }),
+            );
             format!(
                 "Approved and installed \"{}\" into your suite and the company library.",
                 item.name

@@ -4687,6 +4687,84 @@ for (const [theme, vw, vh] of [
     ok("?face=phone renders Phone view and Desktop link returns to Workbench", onDesktop);
     await ctx.close();
   }
+
+  // 6. Per-Task Quality Bar rendering + Improve & Good enough on /phone (390x844)
+  {
+    const { ctx, p } = await open(390, 844, "light");
+    let barState = {
+      task_family: "weekly-client-brief",
+      label: "Weekly client brief for Acme",
+      status: "improving",
+      criteria: ["Include line citations"],
+      runs: [
+        {
+          run_id: "run-qb-1",
+          ts_ms: Date.now() - 2000,
+          task: "Weekly client brief for Acme",
+          summary: "Drafted weekly brief.",
+          files: ["brief.md"],
+          score: 0.72,
+          delta_vs_prev: 0.0,
+          criteria_met: 1,
+          criteria_total: 1,
+        },
+      ],
+      best_run_id: "run-qb-1",
+      best_score: 0.72,
+      updated_ms: Date.now(),
+    };
+    const fbActions = [];
+
+    await p.route("**/api/quality-bars", (r) =>
+      r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ quality_bars: [barState] }) })
+    );
+    await p.route(/\/api\/quality-bars\/[^/]+\/feedback$/, async (r) => {
+      const body = JSON.parse(r.request().postData() || "{}");
+      fbActions.push({ action: body.action, note: body.note || "" });
+      if (body.action === "accept_good_enough") {
+        barState = { ...barState, status: "accepted_good_enough", accepted_run_id: "run-qb-1", accepted_ts_ms: Date.now() };
+      } else if (body.action === "improve") {
+        const note = String(body.note || "").trim();
+        barState = {
+          ...barState,
+          status: "improving",
+          criteria: note ? [...barState.criteria, note] : barState.criteria,
+        };
+      }
+      return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ quality_bar: barState }) });
+    });
+
+    await p.goto(`${BASE}phone`);
+    await waitPhone(p);
+    await p.waitForSelector('[data-phone-quality-card="weekly-client-brief"]', { timeout: 5000 });
+    const cardText = await p.locator('[data-phone-quality-card="weekly-client-brief"]').innerText();
+    const initialOk = /Improving/i.test(cardText) && /0\.72/.test(cardText);
+    const m = await p.evaluate(MEASURE);
+
+    await p.locator('[data-quality-improve="weekly-client-brief"]').click();
+    await p.locator('[data-quality-note-input="weekly-client-brief"]').fill("Add executive TLDR");
+    await p.locator('[data-quality-note-submit="weekly-client-brief"]').click();
+    await p.waitForSelector('[data-phone-quality-card="weekly-client-brief"]', { timeout: 4000 });
+
+    await p.locator('[data-quality-accept="weekly-client-brief"]').click();
+    await p.waitForSelector('[data-quality-bar="weekly-client-brief"][data-quality-status="accepted_good_enough"]', { timeout: 4000 });
+    const afterText = await p.locator('[data-phone-quality-card="weekly-client-brief"]').innerText();
+    const lockedOk = /Good enough/i.test(afterText);
+
+    ok(
+      "phone Quality Bar renders Improving + score, submits Improve note, and locks Good enough cleanly",
+      initialOk &&
+        lockedOk &&
+        m.docOverflow <= 0 &&
+        m.smallTargets === 0 &&
+        m.lowContrast === 0 &&
+        m.minFont >= 12 &&
+        fbActions.some((a) => a.action === "improve" && a.note === "Add executive TLDR") &&
+        fbActions.some((a) => a.action === "accept_good_enough"),
+      `initial=${initialOk} locked=${lockedOk} overflow=${m.docOverflow} small=${m.smallTargets} actions=${JSON.stringify(fbActions)}`
+    );
+    await ctx.close();
+  }
 }
 
 // 7. Reduced motion & Console Cleanliness (2 checks)

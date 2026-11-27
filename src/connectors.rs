@@ -4952,3 +4952,287 @@ pub fn record_denied_delivery(cfg: &Config, decision: &Value) {
     };
     record_delivery_log(&cfg.data_dir, connector_id, log);
 }
+
+// ---------------------------------------------------------------------------
+// Outbound Event Webhook Subscriptions (Step 3f)
+// ---------------------------------------------------------------------------
+
+pub const OUTBOUND_WEBHOOK_EVENTS: [&str; 7] = [
+    "work.completed",
+    "decision.created",
+    "decision.settled",
+    "tool.published",
+    "evolution.promoted",
+    "evolution.rolled_back",
+    "quality_bar.accepted",
+];
+
+static WEBHOOK_SUB_LOCK: Mutex<()> = Mutex::new(());
+static WEBHOOK_DELIVERY_SEQ: AtomicU64 = AtomicU64::new(0);
+
+fn with_webhook_sub_lock<T>(f: impl FnOnce() -> T) -> T {
+    let _guard = WEBHOOK_SUB_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    f()
+}
+
+pub fn webhook_subscriptions_path(root_data_dir: &Path) -> PathBuf {
+    root_data_dir.join("webhook_subscriptions.json")
+}
+
+#[derive(Clone, Debug)]
+pub struct OutboundWebhookSubscription {
+    pub id: String,
+    pub url: String,
+    pub label: String,
+    pub events: Vec<String>,
+    pub secret_ref: String,
+    pub created_ms: u64,
+}
+
+impl OutboundWebhookSubscription {
+    pub fn to_public_json(&self) -> Value {
+        json!({
+            "id": self.id,
+            "url": redact_url_userinfo(&self.url),
+            "label": self.label,
+            "events": self.events,
+            "has_secret": !self.secret_ref.is_empty(),
+            "created_ms": self.created_ms,
+        })
+    }
+
+    fn to_stored_json(&self) -> Value {
+        json!({
+            "id": self.id,
+            "url": self.url,
+            "label": self.label,
+            "events": self.events,
+            "secret_ref": self.secret_ref,
+            "created_ms": self.created_ms,
+        })
+    }
+
+    fn from_json(v: &Value) -> Option<Self> {
+        let id = v["id"].as_str()?.trim().to_string();
+        let url = v["url"].as_str()?.trim().to_string();
+        if id.is_empty() || url.is_empty() {
+            return None;
+        }
+        let events = v["events"]
+            .as_array()
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|item| item.as_str().map(str::trim).filter(|s| !s.is_empty()).map(str::to_string))
+                    .collect()
+            })
+            .unwrap_or_default();
+        Some(Self {
+            id,
+            url,
+            label: v["label"].as_str().unwrap_or("").to_string(),
+            events,
+            secret_ref: v["secret_ref"].as_str().unwrap_or("").to_string(),
+            created_ms: v["created_ms"].as_u64().unwrap_or(0),
+        })
+    }
+}
+
+fn load_webhook_subs_unlocked(root_data_dir: &Path) -> Vec<OutboundWebhookSubscription> {
+    let path = webhook_subscriptions_path(root_data_dir);
+    let Ok(text) = std::fs::read_to_string(&path) else {
+        return Vec::new();
+    };
+    let Ok(v) = serde_json::from_str::<Value>(&text) else {
+        return Vec::new();
+    };
+    v["subscriptions"]
+        .as_array()
+        .map(|arr| {
+            arr.iter()
+                .filter_map(OutboundWebhookSubscription::from_json)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn save_webhook_subs_unlocked(
+    root_data_dir: &Path,
+    subs: &[OutboundWebhookSubscription],
+) -> Result<(), String> {
+    let payload = json!({
+        "version": 1,
+        "subscriptions": subs.iter().map(OutboundWebhookSubscription::to_stored_json).collect::<Vec<_>>(),
+    });
+    let bytes = serde_json::to_vec_pretty(&payload)
+        .map_err(|e| format!("serialize webhook_subscriptions.json: {e}"))?;
+    atomic_write_bytes_with_mode(&webhook_subscriptions_path(root_data_dir), &bytes, Some(0o600))
+        .map_err(|e| format!("write webhook_subscriptions.json: {e}"))
+}
+
+pub fn list_webhook_subscriptions(root_data_dir: &Path) -> Vec<OutboundWebhookSubscription> {
+    with_webhook_sub_lock(|| load_webhook_subs_unlocked(root_data_dir))
+}
+
+pub fn create_webhook_subscription(
+    root_data_dir: &Path,
+    body: &Value,
+) -> Result<(OutboundWebhookSubscription, String), (u16, String)> {
+    if !body.is_object() {
+        return Err((400, "request body must be a JSON object".to_string()));
+    }
+    let url = body["url"].as_str().unwrap_or("").trim().to_string();
+    if url.is_empty() || url.chars().any(|c| c.is_control() || c.is_whitespace()) {
+        return Err((400, "url must be a valid non-empty HTTP(S) URL".to_string()));
+    }
+    tripwire::check_egress_for(root_data_dir, &url, "connector_config").map_err(|e| (400, e))?;
+
+    let raw_events = body["events"]
+        .as_array()
+        .ok_or_else(|| (400, "events array is required".to_string()))?;
+    let mut events = Vec::new();
+    for item in raw_events {
+        let ev = item
+            .as_str()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .ok_or_else(|| (400, "events entries must be non-empty strings".to_string()))?;
+        if ev != "*" && !OUTBOUND_WEBHOOK_EVENTS.contains(&ev) {
+            return Err((
+                400,
+                format!(
+                    "unsupported webhook event '{ev}'; supported: {}",
+                    OUTBOUND_WEBHOOK_EVENTS.join(", ")
+                ),
+            ));
+        }
+        if !events.iter().any(|existing: &String| existing == ev) {
+            events.push(ev.to_string());
+        }
+    }
+    if events.is_empty() {
+        return Err((400, "events must contain at least one event name".to_string()));
+    }
+
+    let label = body["label"]
+        .as_str()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or("Outbound Webhook")
+        .to_string();
+
+    let raw_secret = body["secret"]
+        .as_str()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string);
+    let signing_secret = match raw_secret {
+        Some(s) => {
+            if s.contains(['\r', '\n', '\0']) {
+                return Err((400, "secret cannot contain control characters".to_string()));
+            }
+            s
+        }
+        None => {
+            let rand = crate::auth::secure_random_bytes(24).map_err(|e| (500, e))?;
+            format!("whsec_{}", crate::auth::base64url_encode_nopad(&rand))
+        }
+    };
+
+    let created_ms = records::now_millis();
+    let id = format!("whsub-{created_ms}-{}", next_seq());
+    let vault_key = format!("event_whsec_{id}");
+    secret_store::set_secret(root_data_dir, &vault_key, &signing_secret).map_err(|e| (500, e))?;
+
+    let sub = OutboundWebhookSubscription {
+        id,
+        url,
+        label,
+        events,
+        secret_ref: secret_store::vault_ref(&vault_key),
+        created_ms,
+    };
+
+    with_webhook_sub_lock(|| {
+        let mut subs = load_webhook_subs_unlocked(root_data_dir);
+        subs.push(sub.clone());
+        save_webhook_subs_unlocked(root_data_dir, &subs).map_err(|e| (500, e))?;
+        Ok((sub, signing_secret))
+    })
+}
+
+pub fn delete_webhook_subscription(root_data_dir: &Path, id: &str) -> Result<bool, String> {
+    let target = id.trim();
+    if target.is_empty() {
+        return Err("subscription id is required".to_string());
+    }
+    let removed = with_webhook_sub_lock(|| -> Result<Option<OutboundWebhookSubscription>, String> {
+        let mut subs = load_webhook_subs_unlocked(root_data_dir);
+        let Some(pos) = subs.iter().position(|s| s.id == target) else {
+            return Ok(None);
+        };
+        let item = subs.remove(pos);
+        save_webhook_subs_unlocked(root_data_dir, &subs)?;
+        Ok(Some(item))
+    })?;
+    if let Some(item) = removed {
+        if let Some(vault_key) = secret_store::parse_vault_ref(&item.secret_ref) {
+            let _ = secret_store::delete_secret(root_data_dir, vault_key);
+        }
+        Ok(true)
+    } else {
+        Ok(false)
+    }
+}
+
+/// Dispatch an outbound event webhook to all matching registered subscriptions.
+/// Checks Tripwire SSRF egress guards, signs the raw JSON body with HMAC-SHA256
+/// (`X-Ergon-Signature: sha256=<hex>`), and delivers with a bounded 3s timeout.
+pub fn dispatch_event_webhooks(root_data_dir: &Path, event_name: &str, payload: Value) {
+    let subs: Vec<OutboundWebhookSubscription> = with_webhook_sub_lock(|| {
+        load_webhook_subs_unlocked(root_data_dir)
+            .into_iter()
+            .filter(|s| s.events.iter().any(|e| e == "*" || e == event_name))
+            .collect()
+    });
+    if subs.is_empty() {
+        return;
+    }
+
+    let ts_ms = records::now_millis();
+    let seq = WEBHOOK_DELIVERY_SEQ.fetch_add(1, Ordering::SeqCst);
+    let delivery_id = format!("whdel-{ts_ms}-{seq}");
+    let envelope = json!({
+        "event": event_name,
+        "delivery_id": delivery_id,
+        "ts_ms": ts_ms,
+        "data": payload,
+    });
+    let Ok(body_bytes) = serde_json::to_vec(&envelope) else {
+        return;
+    };
+
+    let agent = tripwire::guarded_connector_agent_for(root_data_dir, Duration::from_secs(3));
+    for sub in subs {
+        let (uhost, uport) = parse_url_host_port(&sub.url, 443);
+        if tripwire::check_egress_for(root_data_dir, &sub.url, "connector").is_err()
+            || tripwire::check_egress_host_for(root_data_dir, &uhost, uport, "connector").is_err()
+        {
+            continue;
+        }
+        let secret = secret_store::parse_vault_ref(&sub.secret_ref)
+            .and_then(|k| secret_store::get_secret(root_data_dir, k).ok().flatten())
+            .unwrap_or_default();
+        if secret.is_empty() {
+            continue;
+        }
+        let sig_hex = tripwire::hex(&tripwire::hmac_sha256(secret.as_bytes(), &body_bytes));
+        let sig_header = format!("sha256={sig_hex}");
+        let _ = agent
+            .post(&sub.url)
+            .set("Content-Type", "application/json")
+            .set("X-Ergon-Event", event_name)
+            .set("X-Ergon-Delivery", &delivery_id)
+            .set("X-Ergon-Signature", &sig_header)
+            .send_bytes(&body_bytes);
+    }
+}

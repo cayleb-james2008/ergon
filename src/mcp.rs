@@ -7,14 +7,17 @@
 //! config or `Strict Client` policy.
 
 use crate::tools::{atomic_write_bytes_with_mode, sandbox_path, sandbox_path_resolving};
-use crate::{connectors, docs, records, search, secret_store, tables, tools, tripwire, Config, WorkspacePolicy};
+use crate::{
+    auth, company_db, connectors, docs, file_history, library, records, search, secret_store,
+    skills, tables, tools, tripwire, Config, PeopleState, SharedStore, WorkspacePolicy,
+};
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{mpsc, Condvar, Mutex, OnceLock};
+use std::sync::{mpsc, Arc, Condvar, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 static MCP_SEQ: AtomicU64 = AtomicU64::new(0);
@@ -1458,7 +1461,177 @@ fn jsonrpc_err(id: Value, code: i64, message: &str) -> Value {
     })
 }
 
-/// Handle gated read-only inbound MCP JSON-RPC requests (`POST /api/mcp/inbound`).
+/// Caller authorization & runtime context for inbound MCP JSON-RPC requests.
+pub struct InboundMcpContext<'a> {
+    pub cfg: &'a Config,
+    pub root_cfg: &'a Config,
+    pub person_id: &'a str,
+    pub role: auth::Role,
+    pub authenticated: bool,
+    pub can_read: bool,
+    pub can_write: bool,
+    pub bypass_enabled_gate: bool,
+    pub people: Option<&'a PeopleState>,
+    pub library: Option<&'a Arc<Mutex<library::Library>>>,
+    pub store: Option<&'a SharedStore>,
+}
+
+fn inbound_read_tools_schema() -> Vec<Value> {
+    vec![
+        json!({
+            "name": "search_vault",
+            "description": "Read-only hybrid search across workspace files.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "query": { "type": "string" },
+                    "path_prefix": { "type": "string" },
+                    "mode": { "type": "string" },
+                    "limit": { "type": "integer" }
+                },
+                "required": ["query"]
+            }
+        }),
+        json!({
+            "name": "query_table",
+            "description": "Read-only deterministic filtering, grouping, and aggregation over workspace tables.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "path": { "type": "string" },
+                    "where": { "type": "array" },
+                    "group_by": { "type": "array" },
+                    "aggregates": { "type": "array" },
+                    "sort": { "type": "object" },
+                    "limit": { "type": "integer" }
+                },
+                "required": ["path"]
+            }
+        }),
+        json!({
+            "name": "company_db_query",
+            "description": "Query authorized tables in the shared company database.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "table": { "type": "string" },
+                    "query": { "type": "string" },
+                    "limit": { "type": "integer" }
+                },
+                "required": ["table"]
+            }
+        }),
+        json!({
+            "name": "read_memory",
+            "description": "Read authorized shared company memory entries.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "scope": { "type": "string" },
+                    "category": { "type": "string" }
+                }
+            }
+        }),
+        json!({
+            "name": "list_tools",
+            "description": "List shared company library tools and caller-installed tools.",
+            "inputSchema": { "type": "object", "properties": {} }
+        }),
+        json!({
+            "name": "get_decisions",
+            "description": "List pending and settled decisions for the active workspace.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "status": { "type": "string" }
+                }
+            }
+        }),
+    ]
+}
+
+fn inbound_write_tools_schema() -> Vec<Value> {
+    vec![
+        json!({
+            "name": "write_workspace_file",
+            "description": "Write or update a file inside the caller's sandboxed workspace.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "path": { "type": "string" },
+                    "content": { "type": "string" }
+                },
+                "required": ["path", "content"]
+            }
+        }),
+        json!({
+            "name": "write_company_memory",
+            "description": "Append a shared company memory entry (admin, pm, ae, office roles only).",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "category": { "type": "string" },
+                    "scope": { "type": "string" },
+                    "content": { "type": "string" }
+                },
+                "required": ["content"]
+            }
+        }),
+        json!({
+            "name": "run_tool",
+            "description": "Execute an installed tool from the caller's suite.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "id": { "type": "string" },
+                    "args": {}
+                },
+                "required": ["id"]
+            }
+        }),
+        json!({
+            "name": "create_task",
+            "description": "Start or queue a task thread in the caller's workspace.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "message": { "type": "string" },
+                    "thread_id": { "type": "string" }
+                },
+                "required": ["message"]
+            }
+        }),
+    ]
+}
+
+fn legacy_inbound_tools_schema() -> Vec<Value> {
+    inbound_read_tools_schema().into_iter().take(2).collect()
+}
+
+fn inbound_resources_list() -> Vec<Value> {
+    vec![
+        json!({
+            "uri": "ergon://company/memory",
+            "name": "Shared Company Memory",
+            "mimeType": "application/json",
+            "description": "Authorized shared company memory entries for the caller's role."
+        }),
+        json!({
+            "uri": "ergon://company/tools",
+            "name": "Company Library Tools",
+            "mimeType": "application/json",
+            "description": "Shared company library tool and skill catalog."
+        }),
+        json!({
+            "uri": "ergon://workspace/files",
+            "name": "Workspace Files",
+            "mimeType": "application/json",
+            "description": "Files in the caller's isolated workspace."
+        }),
+    ]
+}
+
+/// Handle gated inbound MCP JSON-RPC requests (`POST /api/mcp/inbound`).
 pub fn handle_inbound_mcp(
     cfg: &Config,
     root_data_dir: &Path,
@@ -1466,6 +1639,34 @@ pub fn handle_inbound_mcp(
     auth_header: Option<&str>,
     body: &[u8],
 ) -> (u16, Value) {
+    let mut root_cfg = cfg.clone();
+    root_cfg.data_dir = root_data_dir.to_path_buf();
+    let ctx = InboundMcpContext {
+        cfg,
+        root_cfg: &root_cfg,
+        person_id,
+        role: auth::Role::Admin,
+        authenticated: false,
+        can_read: true,
+        can_write: false,
+        bypass_enabled_gate: false,
+        people: None,
+        library: None,
+        store: None,
+    };
+    handle_inbound_mcp_with_auth(&ctx, auth_header, body)
+}
+
+/// Handle authenticated full read/write inbound MCP JSON-RPC 2.0 requests (`POST /api/mcp/inbound`).
+pub fn handle_inbound_mcp_with_auth(
+    ctx: &InboundMcpContext<'_>,
+    auth_header: Option<&str>,
+    body: &[u8],
+) -> (u16, Value) {
+    let cfg = ctx.cfg;
+    let root_data_dir = &ctx.root_cfg.data_dir;
+    let person_id = ctx.person_id;
+
     let parsed: Value = match serde_json::from_slice(body) {
         Ok(v) => v,
         Err(_) => return (400, jsonrpc_err(Value::Null, -32700, "invalid JSON payload")),
@@ -1476,27 +1677,29 @@ pub fn handle_inbound_mcp(
         let store = McpStore::load_unlocked(&cfg.data_dir);
         is_inbound_enabled_unlocked(&store)
     });
-    if !enabled {
+    if !ctx.bypass_enabled_gate && !enabled {
         return (
             403,
             jsonrpc_err(req_id, -32001, "MCP inbound server is disabled"),
         );
     }
 
-    if let Ok(expected) = std::env::var("ERGON_MCP_INBOUND_TOKEN") {
-        let expected = expected.trim();
-        if !expected.is_empty() {
-            let presented = auth_header
-                .and_then(|h| h.strip_prefix("Bearer ").or_else(|| h.strip_prefix("bearer ")))
-                .map(str::trim)
-                .unwrap_or("");
-            let h1 = tripwire::sha256(presented.as_bytes());
-            let h2 = tripwire::sha256(expected.as_bytes());
-            if !tripwire::ct_eq(&h1, &h2) {
-                return (
-                    401,
-                    jsonrpc_err(req_id, -32002, "invalid or missing MCP inbound bearer token"),
-                );
+    if !ctx.bypass_enabled_gate {
+        if let Ok(expected) = std::env::var("ERGON_MCP_INBOUND_TOKEN") {
+            let expected = expected.trim();
+            if !expected.is_empty() {
+                let presented = auth_header
+                    .and_then(|h| h.strip_prefix("Bearer ").or_else(|| h.strip_prefix("bearer ")))
+                    .map(str::trim)
+                    .unwrap_or("");
+                let h1 = tripwire::sha256(presented.as_bytes());
+                let h2 = tripwire::sha256(expected.as_bytes());
+                if !tripwire::ct_eq(&h1, &h2) {
+                    return (
+                        401,
+                        jsonrpc_err(req_id, -32002, "invalid or missing MCP inbound bearer token"),
+                    );
+                }
             }
         }
     }
@@ -1512,8 +1715,10 @@ pub fn handle_inbound_mcp(
                 "id": req_id,
                 "result": {
                     "protocolVersion": "2024-11-05",
-                    "capabilities": {
-                        "tools": {}
+                    "capabilities": if ctx.authenticated {
+                        json!({ "tools": {}, "resources": {} })
+                    } else {
+                        json!({ "tools": {} })
                     },
                     "serverInfo": {
                         "name": "ergon-inbound-mcp",
@@ -1530,47 +1735,144 @@ pub fn handle_inbound_mcp(
                 "result": {}
             }),
         ),
-        "tools/list" => (
-            200,
-            json!({
-                "jsonrpc": "2.0",
-                "id": req_id,
-                "result": {
-                    "tools": [
-                        {
-                            "name": "search_vault",
-                            "description": "Read-only hybrid search across workspace files.",
-                            "inputSchema": {
-                                "type": "object",
-                                "properties": {
-                                    "query": { "type": "string" },
-                                    "path_prefix": { "type": "string" },
-                                    "mode": { "type": "string" },
-                                    "limit": { "type": "integer" }
-                                },
-                                "required": ["query"]
-                            }
-                        },
-                        {
-                            "name": "query_table",
-                            "description": "Read-only deterministic filtering, grouping, and aggregation over workspace tables.",
-                            "inputSchema": {
-                                "type": "object",
-                                "properties": {
-                                    "path": { "type": "string" },
-                                    "where": { "type": "array" },
-                                    "group_by": { "type": "array" },
-                                    "aggregates": { "type": "array" },
-                                    "sort": { "type": "object" },
-                                    "limit": { "type": "integer" }
-                                },
-                                "required": ["path"]
-                            }
-                        }
-                    ]
+        "tools/list" => {
+            if !ctx.authenticated {
+                return (
+                    200,
+                    json!({
+                        "jsonrpc": "2.0",
+                        "id": req_id,
+                        "result": { "tools": legacy_inbound_tools_schema() }
+                    }),
+                );
+            }
+            if !ctx.can_read {
+                return (
+                    403,
+                    jsonrpc_err(req_id, -32003, "MCP permission denied: read or mcp scope required"),
+                );
+            }
+            let mut tools = inbound_read_tools_schema();
+            if ctx.can_write {
+                tools.extend(inbound_write_tools_schema());
+            }
+            (
+                200,
+                json!({
+                    "jsonrpc": "2.0",
+                    "id": req_id,
+                    "result": { "tools": tools }
+                }),
+            )
+        }
+        "resources/list" => {
+            if !ctx.authenticated {
+                return (
+                    200,
+                    jsonrpc_err(req_id, -32601, "unsupported MCP method 'resources/list'"),
+                );
+            }
+            if !ctx.can_read {
+                return (
+                    403,
+                    jsonrpc_err(req_id, -32003, "MCP permission denied: read or mcp scope required"),
+                );
+            }
+            (
+                200,
+                json!({
+                    "jsonrpc": "2.0",
+                    "id": req_id,
+                    "result": { "resources": inbound_resources_list() }
+                }),
+            )
+        }
+        "resources/read" => {
+            if !ctx.authenticated {
+                return (
+                    200,
+                    jsonrpc_err(req_id, -32601, "unsupported MCP method 'resources/read'"),
+                );
+            }
+            if !ctx.can_read {
+                return (
+                    403,
+                    jsonrpc_err(req_id, -32003, "MCP permission denied: read or mcp scope required"),
+                );
+            }
+            let uri = params["uri"].as_str().unwrap_or("").trim();
+            let policy = crate::load_workspace_policy(&cfg.data_dir);
+            let iso_scope = tools::active_isolation_scope(root_data_dir, &cfg.data_dir, person_id);
+            let iso_eng_id = iso_scope.as_ref().map(|(eng, _)| eng.id.as_str());
+
+            let content_res: Result<String, (u16, i64, String)> = match uri {
+                "ergon://company/memory" => {
+                    let allowed = company_db::allowed_client_ids_for_memory(
+                        root_data_dir,
+                        person_id,
+                        ctx.role,
+                    );
+                    let entries: Vec<Value> =
+                        company_db::list_company_memory_for(root_data_dir, ctx.role, &allowed)
+                            .into_iter()
+                            .map(|e| e.to_json())
+                            .collect();
+                    serde_json::to_string_pretty(&json!({ "entries": entries }))
+                        .map_err(|e| (500, -32603, format!("serialize company memory: {e}")))
                 }
-            }),
-        ),
+                "ergon://company/tools" => {
+                    let lib = ctx
+                        .library
+                        .map(|l| l.lock().unwrap().clone())
+                        .unwrap_or_else(|| library::Library::load(root_data_dir));
+                    let items: Vec<Value> = lib
+                        .items
+                        .iter()
+                        .filter(|i| matches!(i.kind.as_str(), "tool" | "skill"))
+                        .map(|i| i.to_json())
+                        .collect();
+                    serde_json::to_string_pretty(&json!({ "tools": items }))
+                        .map_err(|e| (500, -32603, format!("serialize company tools: {e}")))
+                }
+                "ergon://workspace/files" => {
+                    let key = cfg.data_dir.to_string_lossy().into_owned();
+                    let idx = search::SearchCache::global().get(
+                        &key,
+                        &cfg.data_dir,
+                        &cfg.workspace_dir,
+                        &cfg.memory_path,
+                    );
+                    let (total, files) = idx.list_files_scoped(0, Some(200), "", None, iso_eng_id);
+                    serde_json::to_string_pretty(&json!({ "total": total, "files": files }))
+                        .map_err(|e| (500, -32603, format!("serialize workspace files: {e}")))
+                }
+                _ => Err((200, -32602, format!("unknown MCP resource URI '{uri}'"))),
+            };
+
+            match content_res {
+                Ok(text) => {
+                    let mut safe_text = connectors::redact_for_person(&cfg.data_dir, &text);
+                    if policy.redact_host_paths {
+                        safe_text = crate::redact_host_paths(&safe_text);
+                    }
+                    (
+                        200,
+                        json!({
+                            "jsonrpc": "2.0",
+                            "id": req_id,
+                            "result": {
+                                "contents": [{
+                                    "uri": uri,
+                                    "mimeType": "application/json",
+                                    "text": safe_text,
+                                }]
+                            }
+                        }),
+                    )
+                }
+                Err((status, code, msg)) => (status, jsonrpc_err(req_id, code, &msg)),
+            }
+        }
         "tools/call" => {
             let tool_name = params["name"].as_str().unwrap_or("");
             let args = &params["arguments"];
@@ -1578,6 +1880,62 @@ pub fn handle_inbound_mcp(
             let iso_eng_id = iso_scope.as_ref().map(|(eng, _)| eng.id.as_str());
             let iso_prefix = iso_scope.as_ref().map(|(_, p)| p.as_str());
             let policy = crate::load_workspace_policy(&cfg.data_dir);
+
+            let is_write_tool = matches!(
+                tool_name,
+                "write_workspace_file" | "write_company_memory" | "run_tool" | "create_task"
+            );
+            let is_known_read_tool = matches!(
+                tool_name,
+                "search_vault"
+                    | "query_table"
+                    | "company_db_query"
+                    | "read_memory"
+                    | "list_tools"
+                    | "get_decisions"
+            );
+
+            if !ctx.authenticated && !matches!(tool_name, "search_vault" | "query_table") {
+                return (
+                    200,
+                    jsonrpc_err(
+                        req_id,
+                        -32601,
+                        &format!("tool '{tool_name}' is not permitted on read-only inbound MCP server"),
+                    ),
+                );
+            }
+
+            if ctx.authenticated && is_known_read_tool && !ctx.can_read {
+                return (
+                    403,
+                    jsonrpc_err(
+                        req_id,
+                        -32003,
+                        "MCP permission denied: read or mcp scope required",
+                    ),
+                );
+            }
+
+            if ctx.authenticated && is_write_tool && !ctx.can_write {
+                return (
+                    403,
+                    jsonrpc_err(
+                        req_id,
+                        -32003,
+                        &format!(
+                            "MCP permission denied: write and mcp scopes are required for '{tool_name}'"
+                        ),
+                    ),
+                );
+            }
+
+            if ctx.authenticated && !is_known_read_tool && !is_write_tool {
+                return (
+                    200,
+                    jsonrpc_err(req_id, -32601, &format!("unknown MCP tool '{tool_name}'")),
+                );
+            }
 
             let res: Result<String, String> = match tool_name {
                 "search_vault" => {
@@ -1678,14 +2036,252 @@ pub fn handle_inbound_mcp(
                         .map_err(|e| format!("serialize table query: {e}"))
                     })
                 }
+                "company_db_query" => {
+                    let table = args["table"].as_str().unwrap_or("summary");
+                    let query = args["query"]
+                        .as_str()
+                        .or_else(|| args["q"].as_str())
+                        .filter(|s| !s.trim().is_empty());
+                    let limit = args["limit"].as_u64().unwrap_or(50) as usize;
+                    let people_owned;
+                    let people_ref = match ctx.people {
+                        Some(p) => p,
+                        None => {
+                            people_owned = PeopleState::load(ctx.root_cfg);
+                            &people_owned
+                        }
+                    };
+                    let lib = ctx
+                        .library
+                        .map(|l| l.lock().unwrap().clone())
+                        .unwrap_or_else(|| library::Library::load(root_data_dir));
+                    match company_db::query_company_db(
+                        root_data_dir,
+                        ctx.root_cfg,
+                        people_ref,
+                        &lib,
+                        person_id,
+                        ctx.role,
+                        table,
+                        query,
+                        limit,
+                    ) {
+                        Ok(val) => serde_json::to_string_pretty(&val)
+                            .map_err(|e| format!("serialize company_db: {e}")),
+                        Err((403, msg)) => {
+                            return (403, jsonrpc_err(req_id, -32003, &msg));
+                        }
+                        Err((_, msg)) => Err(msg),
+                    }
+                }
+                "read_memory" => {
+                    let scope_filter = args["scope"]
+                        .as_str()
+                        .map(str::trim)
+                        .filter(|s| !s.is_empty());
+                    let cat_filter = args["category"]
+                        .as_str()
+                        .map(str::trim)
+                        .filter(|s| !s.is_empty());
+                    let allowed = company_db::allowed_client_ids_for_memory(
+                        root_data_dir,
+                        person_id,
+                        ctx.role,
+                    );
+                    let entries: Vec<Value> =
+                        company_db::list_company_memory_for(root_data_dir, ctx.role, &allowed)
+                            .into_iter()
+                            .filter(|e| scope_filter.is_none_or(|s| e.scope == s))
+                            .filter(|e| cat_filter.is_none_or(|c| e.category == c))
+                            .map(|e| e.to_json())
+                            .collect();
+                    serde_json::to_string_pretty(&json!({ "entries": entries }))
+                        .map_err(|e| format!("serialize company memory: {e}"))
+                }
+                "list_tools" => {
+                    let lib = ctx
+                        .library
+                        .map(|l| l.lock().unwrap().clone())
+                        .unwrap_or_else(|| library::Library::load(root_data_dir));
+                    let suite = library::load_suite(&cfg.data_dir);
+                    let library_tools: Vec<Value> = lib
+                        .items
+                        .iter()
+                        .filter(|i| matches!(i.kind.as_str(), "tool" | "skill"))
+                        .map(|i| i.to_json())
+                        .collect();
+                    let installed_tool_ids: Vec<String> = suite
+                        .resolved(&lib)
+                        .into_iter()
+                        .filter(|i| matches!(i.kind.as_str(), "tool" | "skill"))
+                        .map(|i| i.id)
+                        .collect();
+                    serde_json::to_string_pretty(&json!({
+                        "library_tools": library_tools,
+                        "installed_tool_ids": installed_tool_ids,
+                    }))
+                    .map_err(|e| format!("serialize list_tools: {e}"))
+                }
+                "get_decisions" => {
+                    let status_filter = args["status"]
+                        .as_str()
+                        .map(str::trim)
+                        .filter(|s| !s.is_empty());
+                    let decisions: Vec<Value> = records::load_decisions(&cfg.data_dir)
+                        .into_iter()
+                        .filter(|d| status_filter.is_none_or(|s| d["status"].as_str() == Some(s)))
+                        .collect();
+                    serde_json::to_string_pretty(&json!({ "decisions": decisions }))
+                        .map_err(|e| format!("serialize decisions: {e}"))
+                }
+                "write_workspace_file" => {
+                    let raw_path = args["path"]
+                        .as_str()
+                        .map(str::trim)
+                        .filter(|s| !s.is_empty())
+                        .ok_or_else(|| "write_workspace_file requires arguments.path".to_string());
+                    let content = args["content"]
+                        .as_str()
+                        .ok_or_else(|| "write_workspace_file requires arguments.content".to_string());
+                    raw_path.and_then(|rp| {
+                        let c = content?;
+                        let clean_rel = tables::validate_workspace_rel_path(rp)?;
+                        if let Some(pfx) = iso_prefix {
+                            tools::check_engagement_path_allowed(&cfg.workspace_dir, pfx, &clean_rel, true)?;
+                        }
+                        if c.len() as u64 > docs::MAX_DOC_BYTES {
+                            return Err("file exceeds the 25 MB limit".to_string());
+                        }
+                        let outcome = file_history::atomic_checked_write_workspace(
+                            &cfg.data_dir,
+                            &cfg.workspace_dir,
+                            &clean_rel,
+                            c.as_bytes(),
+                            None,
+                            "mcp-write",
+                        )
+                        .map_err(|e| format!("write_workspace_file failed: {e:?}"))?;
+                        search::SearchCache::global().invalidate(&cfg.data_dir.to_string_lossy());
+                        serde_json::to_string_pretty(&json!({
+                            "ok": true,
+                            "path": outcome.rel,
+                            "size": outcome.size_bytes,
+                            "sha256": outcome.new_sha256,
+                        }))
+                        .map_err(|e| format!("serialize write_workspace_file: {e}"))
+                    })
+                }
+                "write_company_memory" => {
+                    let category = args["category"].as_str().unwrap_or("fact");
+                    let scope = args["scope"].as_str().unwrap_or("company");
+                    let content = args["content"].as_str().unwrap_or("");
+                    match company_db::add_company_memory(
+                        root_data_dir,
+                        ctx.role,
+                        person_id,
+                        category,
+                        scope,
+                        content,
+                    ) {
+                        Ok(entry) => serde_json::to_string_pretty(&json!({
+                            "ok": true,
+                            "entry": entry.to_json(),
+                        }))
+                        .map_err(|e| format!("serialize company memory: {e}")),
+                        Err((403, msg)) => {
+                            return (403, jsonrpc_err(req_id, -32003, &msg));
+                        }
+                        Err((_, msg)) => Err(msg),
+                    }
+                }
+                "run_tool" => {
+                    let tool_id = args["id"]
+                        .as_str()
+                        .map(str::trim)
+                        .filter(|s| !s.is_empty())
+                        .ok_or_else(|| "run_tool requires arguments.id".to_string());
+                    tool_id.and_then(|id| {
+                        let lib = ctx
+                            .library
+                            .map(|l| l.lock().unwrap().clone())
+                            .unwrap_or_else(|| library::Library::load(root_data_dir));
+                        let Some(item) = lib.get(id) else {
+                            return Err(format!("tool '{id}' not found"));
+                        };
+                        if !matches!(item.kind.as_str(), "tool" | "skill") || item.builtin {
+                            return Err(format!("library item '{id}' is not a runnable tool"));
+                        }
+                        let suite = library::load_suite(&cfg.data_dir);
+                        if !suite.installed.iter().any(|x| x == &item.id) {
+                            return Err(format!("forbidden: tool '{id}' is not installed in caller's suite"));
+                        }
+                        let scalar_str = |v: &Value| -> String {
+                            match v {
+                                Value::String(s) => s.clone(),
+                                Value::Number(n) => n.to_string(),
+                                Value::Bool(b) => b.to_string(),
+                                _ => String::new(),
+                            }
+                        };
+                        let values: Vec<String> = if let Some(arr) = args["args"].as_array() {
+                            arr.iter().map(scalar_str).collect()
+                        } else if let Some(obj) = args["args"].as_object() {
+                            item.params
+                                .iter()
+                                .map(|p| obj.get(p).map(scalar_str).unwrap_or_default())
+                                .collect()
+                        } else {
+                            item.params
+                                .iter()
+                                .map(|p| scalar_str(&args[p.as_str()]))
+                                .collect()
+                        };
+                        let output = skills::run_library_skill(cfg, &item.source, &values)?;
+                        serde_json::to_string_pretty(&json!({
+                            "ok": true,
+                            "id": item.id,
+                            "output": output,
+                        }))
+                        .map_err(|e| format!("serialize run_tool: {e}"))
+                    })
+                }
+                "create_task" => {
+                    let message = args["message"]
+                        .as_str()
+                        .map(str::trim)
+                        .filter(|s| !s.is_empty())
+                        .ok_or_else(|| "create_task requires non-empty arguments.message".to_string());
+                    message.and_then(|msg| {
+                        let requested_tid = args["thread_id"].as_str().unwrap_or("").trim();
+                        let tid = if let Some(store_arc) = ctx.store {
+                            let mut store = store_arc.lock().unwrap();
+                            if !requested_tid.is_empty() && store.thread_json(requested_tid).is_none() {
+                                return Err(format!("thread '{requested_tid}' not found"));
+                            }
+                            let tid = store.ensure_thread(requested_tid);
+                            store.push(&tid, "user", msg);
+                            tid
+                        } else {
+                            let mut store = crate::Store::load(&cfg.data_dir.join("threads.json"));
+                            if !requested_tid.is_empty() && store.thread_json(requested_tid).is_none() {
+                                return Err(format!("thread '{requested_tid}' not found"));
+                            }
+                            let tid = store.ensure_thread(requested_tid);
+                            store.push(&tid, "user", msg);
+                            tid
+                        };
+                        serde_json::to_string_pretty(&json!({
+                            "ok": true,
+                            "thread_id": tid,
+                            "status": "queued",
+                        }))
+                        .map_err(|e| format!("serialize create_task: {e}"))
+                    })
+                }
                 _ => {
                     return (
                         200,
-                        jsonrpc_err(
-                            req_id,
-                            -32601,
-                            &format!("tool '{tool_name}' is not permitted on read-only inbound MCP server"),
-                        ),
+                        jsonrpc_err(req_id, -32601, &format!("unknown MCP tool '{tool_name}'")),
                     );
                 }
             };
@@ -1708,6 +2304,7 @@ pub fn handle_inbound_mcp(
                         }),
                     )
                 }
+                Err(e) if e.starts_with("forbidden: ") => (403, jsonrpc_err(req_id, -32003, &e)),
                 Err(e) => (
                     200,
                     json!({

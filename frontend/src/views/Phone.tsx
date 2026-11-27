@@ -31,6 +31,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { SegmentedControl, SegmentedControlItem } from "@/components/ui/segmented-control";
 import { Pill } from "@/components/kibo-ui/pill";
 import { PanelModal } from "@/shell/PanelModal";
+import { QualityBarControls, matchQualityBar } from "@/shell/QualityBarControl";
 import {
   addCompanyMemory,
   analyzeOffers,
@@ -38,6 +39,7 @@ import {
   deleteCompanyMemory,
   fetchCompanyMemory,
   fetchNotifications,
+  fetchQualityBars,
   fetchTools,
   markNotificationRead,
   resolveOffer,
@@ -53,6 +55,7 @@ import {
   type NotificationItem,
   type Offer,
   type Person,
+  type QualityBar,
   type Status,
   type SuiteItem,
   type Thread,
@@ -161,6 +164,7 @@ export function PhoneFace({
   const [tab, setTab] = useState<PhoneTab>("decisions");
   const [decisions, setDecisions] = useState<Decision[]>([]);
   const [offers, setOffers] = useState<Offer[]>([]);
+  const [qualityBars, setQualityBars] = useState<QualityBar[]>([]);
   const [brief, setBrief] = useState<Brief | null>(null);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -199,6 +203,13 @@ export function PhoneFace({
     };
   }, []);
 
+  const effectiveQualityBars = useMemo(() => {
+    const map = new Map<string, QualityBar>();
+    for (const b of brief?.quality_bars ?? []) map.set(b.task_family, b);
+    for (const b of qualityBars) map.set(b.task_family, b);
+    return Array.from(map.values());
+  }, [brief?.quality_bars, qualityBars]);
+
   const activePerson = useMemo(
     () => people.find((p) => p.id === activePersonId) ?? people[0] ?? null,
     [people, activePersonId]
@@ -208,11 +219,19 @@ export function PhoneFace({
   const canWriteCompanyMemory =
     !auth?.auth_required || ["admin", "pm", "ae", "office"].includes(auth?.user?.role ?? "");
 
+  const loadQualityBars = useCallback(async () => {
+    const r = await fetchQualityBars();
+    if (mountedRef.current && r.ok) {
+      setQualityBars(r.data.quality_bars);
+    }
+  }, []);
+
   const loadDecisionsAndOffers = useCallback(async () => {
-    const [d, o, n] = await Promise.all([
+    const [d, o, n, q] = await Promise.all([
       call<{ decisions?: Decision[] }>("/api/decisions"),
       call<{ offers?: Offer[] }>("/api/offers"),
       fetchNotifications(),
+      fetchQualityBars(),
     ]);
     if (!mountedRef.current) return;
     if (d.ok && Array.isArray(d.data.decisions)) {
@@ -225,6 +244,9 @@ export function PhoneFace({
       setNotifications(n.data.notifications);
       setUnreadCount(n.data.unread_count);
     }
+    if (q.ok) {
+      setQualityBars(q.data.quality_bars);
+    }
   }, []);
 
   const loadBrief = useCallback(async () => {
@@ -233,6 +255,21 @@ export function PhoneFace({
       setBrief(r.data);
     }
   }, []);
+
+  const handleQualityUpdated = useCallback(
+    async (updated?: QualityBar) => {
+      if (updated) {
+        setQualityBars((prev) => {
+          const exists = prev.some((b) => b.task_family === updated.task_family);
+          return exists
+            ? prev.map((b) => (b.task_family === updated.task_family ? updated : b))
+            : [updated, ...prev];
+        });
+      }
+      await Promise.all([loadQualityBars(), loadBrief()]);
+    },
+    [loadQualityBars, loadBrief]
+  );
 
   const loadThreads = useCallback(async () => {
     const r = await call<{ threads?: ThreadRow[] }>("/api/threads");
@@ -898,6 +935,35 @@ export function PhoneFace({
                 })
               )}
             </section>
+
+            {effectiveQualityBars.length > 0 && (
+              <section id="phone-quality-check" aria-labelledby="phone-quality-h" className="flex flex-col gap-3">
+                <div className="flex items-center justify-between gap-2">
+                  <h2 id="phone-quality-h" className="text-base font-medium text-ink">
+                    Quality check
+                  </h2>
+                  <span className="mono text-xs text-ink-2">
+                    {effectiveQualityBars.length}
+                  </span>
+                </div>
+                {effectiveQualityBars.map((bar) => (
+                  <article
+                    key={bar.task_family}
+                    data-phone-quality-card={bar.task_family}
+                    className="flex flex-col gap-2.5 rounded-card border border-hairline bg-surface p-4"
+                  >
+                    <h3 className="text-base font-medium text-ink [overflow-wrap:anywhere]">
+                      {bar.label}
+                    </h3>
+                    <QualityBarControls
+                      bar={bar}
+                      mobile
+                      onUpdated={handleQualityUpdated}
+                    />
+                  </article>
+                ))}
+              </section>
+            )}
           </div>
         )}
 
@@ -924,22 +990,40 @@ export function PhoneFace({
                   No finished jobs yet today.
                 </div>
               ) : (
-                brief.finished.slice(0, 12).map((job, idx) => (
-                  <div key={job.id || `${job.task}-${idx}`} className="flex flex-col gap-1.5 rounded-card border border-hairline bg-surface p-3.5">
-                    <div className="flex items-start justify-between gap-2">
-                      <p className="text-sm font-medium text-ink [overflow-wrap:anywhere]">{job.task}</p>
-                      {typeof job.ts === "number" && (
-                        <span className="mono shrink-0 text-xs text-ink-2">{relTime(job.ts)}</span>
-                      )}
-                    </div>
-                    {job.summary && <p className="text-sm text-ink-2 [overflow-wrap:anywhere]">{job.summary}</p>}
-                    {job.files && job.files.length > 0 && (
-                      <span className="mono text-xs text-ink-2">
-                        {job.files.length} {job.files.length === 1 ? "file" : "files"}
-                      </span>
-                    )}
-                  </div>
-                ))
+                (() => {
+                  const shownFamilies = new Set<string>();
+                  return brief.finished.slice(0, 12).map((job, idx) => {
+                    const bar = matchQualityBar(job, effectiveQualityBars);
+                    const showControls = bar && !shownFamilies.has(bar.task_family);
+                    if (bar) shownFamilies.add(bar.task_family);
+                    return (
+                      <div key={job.id || `${job.task}-${idx}`} className="flex flex-col gap-1.5 rounded-card border border-hairline bg-surface p-3.5">
+                        <div className="flex items-start justify-between gap-2">
+                          <p className="text-sm font-medium text-ink [overflow-wrap:anywhere]">{job.task}</p>
+                          {typeof job.ts === "number" && (
+                            <span className="mono shrink-0 text-xs text-ink-2">{relTime(job.ts)}</span>
+                          )}
+                        </div>
+                        {job.summary && <p className="text-sm text-ink-2 [overflow-wrap:anywhere]">{job.summary}</p>}
+                        {job.files && job.files.length > 0 && (
+                          <span className="mono text-xs text-ink-2">
+                            {job.files.length} {job.files.length === 1 ? "file" : "files"}
+                          </span>
+                        )}
+                        {showControls && bar && (
+                          <div className="mt-1 border-t border-hairline pt-2">
+                            <QualityBarControls
+                              bar={bar}
+                              mobile
+                              compact
+                              onUpdated={handleQualityUpdated}
+                            />
+                          </div>
+                        )}
+                      </div>
+                    );
+                  });
+                })()
               )}
             </section>
 
