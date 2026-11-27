@@ -647,6 +647,24 @@ pub fn backup_corrupt(path: &Path) -> Option<PathBuf> {
     Some(candidate)
 }
 
+/// Copy a partially corrupt store aside without deleting the original so valid
+/// recovered entries can be preserved while raw corrupt bytes survive.
+pub fn backup_corrupt_copy(path: &Path) -> Option<PathBuf> {
+    let mut candidate = path.with_extension("json.bak");
+    let mut n = 2;
+    while candidate.exists() {
+        candidate = path.with_extension(format!("json.bak{n}"));
+        n += 1;
+    }
+    std::fs::copy(path, &candidate).ok()?;
+    eprintln!(
+        "ergon: {} had corrupt entries; backed up copy to {} before recovery",
+        path.display(),
+        candidate.display()
+    );
+    Some(candidate)
+}
+
 /// Backs up a corrupt store and returns its file name, for the
 /// "earlier conversations were moved" notice (GET /api/status).
 pub fn backed_up_name(path: &Path) -> Option<String> {
@@ -1970,6 +1988,7 @@ pub struct AgentLoopOptions {
     pub context_budget_chars: usize,
     pub max_steps: usize,
     pub snapshot: Option<AgentSnapshot>,
+    pub external_cancel: Option<Arc<std::sync::atomic::AtomicBool>>,
 }
 
 impl Default for AgentLoopOptions {
@@ -1978,6 +1997,7 @@ impl Default for AgentLoopOptions {
             context_budget_chars: env_context_budget_chars(),
             max_steps: STEP_CAP,
             snapshot: None,
+            external_cancel: None,
         }
     }
 }
@@ -2146,7 +2166,10 @@ fn subagent_system_prompt(
 #[derive(Clone, Debug)]
 pub struct LiveRun {
     pub run_id: String,
+    pub person_id: String,
     pub thread_id: String,
+    pub pipeline_run_id: Option<String>,
+    pub step_id: Option<String>,
     pub task: String,
     pub started_ms: u64,
     pub steps: Vec<String>,
@@ -2171,7 +2194,7 @@ const MAX_LIVE_STEPS: usize = 128;
 fn push_live_step(live: Option<LiveStreamCtx<'_>>, step: String) {
     if let Some(ctx) = live {
         if let Ok(mut map) = ctx.runs.lock() {
-            if let Some(run) = map.get_mut(ctx.person_id) {
+            if let Some(run) = map.get_mut(ctx.run_id) {
                 if run.steps.len() >= MAX_LIVE_STEPS {
                     run.steps.remove(0);
                 }
@@ -2654,6 +2677,9 @@ fn run_loop(
             }
             Err(e) => return Err(e),
         };
+        if is_cancelled(live) {
+            return Err("run cancelled by user".to_string());
+        }
         let price = records::resolve_model_price(pricing, &call_usage.model_id);
         let call_cost = records::compute_call_cost_usd(
             &price,
@@ -3075,10 +3101,13 @@ struct RunGuard {
 }
 
 impl RunGuard {
+    #[allow(clippy::too_many_arguments)]
     fn new(
         live: Option<(&LiveRuns, &sse::RunEventBus, &str)>,
         run_id: &str,
         thread_id: &str,
+        pipeline_run_id: Option<&str>,
+        step_id: Option<&str>,
         task: &str,
         started_ms: u64,
         cancel: Arc<std::sync::atomic::AtomicBool>,
@@ -3087,10 +3116,13 @@ impl RunGuard {
         let stored = live.map(|(runs, events, pid)| {
             if let Ok(mut map) = runs.lock() {
                 map.insert(
-                    pid.to_string(),
+                    run_id.to_string(),
                     LiveRun {
                         run_id: run_id.to_string(),
+                        person_id: pid.to_string(),
                         thread_id: thread_id.to_string(),
+                        pipeline_run_id: pipeline_run_id.map(str::to_string),
+                        step_id: step_id.map(str::to_string),
                         task: task.to_string(),
                         started_ms,
                         steps: Vec::new(),
@@ -3104,12 +3136,15 @@ impl RunGuard {
                 run_id,
                 thread_id,
                 json!({
+                    "person_id": pid,
+                    "pipeline_run_id": pipeline_run_id,
+                    "step_id": step_id,
                     "task": truncate(task, 240),
                     "started_ms": started_ms,
                     "ts_ms": started_ms,
                 }),
             );
-            (runs.clone(), pid.to_string())
+            (runs.clone(), run_id.to_string())
         });
         RunGuard { live: stored }
     }
@@ -3118,9 +3153,9 @@ impl RunGuard {
 impl Drop for RunGuard {
     fn drop(&mut self) {
         RUNS_IN_FLIGHT.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
-        if let Some((runs, pid)) = &self.live {
+        if let Some((runs, run_id)) = &self.live {
             if let Ok(mut map) = runs.lock() {
-                map.remove(pid);
+                map.remove(run_id);
             }
         }
     }
@@ -3146,7 +3181,7 @@ pub fn run_agent_live(
     history: &[Value],
     live: Option<(&LiveRuns, &sse::RunEventBus, &str)>,
 ) -> Result<AgentOutcome, String> {
-    run_agent_inner(cfg, ctx, store, thread_id, task, history, live, false, AgentLoopOptions::default())
+    run_agent_inner(cfg, ctx, store, thread_id, task, history, live, false, None, None, AgentLoopOptions::default())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -3160,7 +3195,7 @@ pub fn run_agent_with_options(
     live: Option<(&LiveRuns, &sse::RunEventBus, &str)>,
     options: AgentLoopOptions,
 ) -> Result<AgentOutcome, String> {
-    run_agent_inner(cfg, ctx, store, thread_id, task, history, live, false, options)
+    run_agent_inner(cfg, ctx, store, thread_id, task, history, live, false, None, None, options)
 }
 
 pub fn run_agent_for_pipeline(
@@ -3172,7 +3207,7 @@ pub fn run_agent_for_pipeline(
     history: &[Value],
     live: Option<(&LiveRuns, &sse::RunEventBus, &str)>,
 ) -> Result<AgentOutcome, String> {
-    run_agent_inner(cfg, ctx, store, thread_id, task, history, live, true, AgentLoopOptions::default())
+    run_agent_inner(cfg, ctx, store, thread_id, task, history, live, true, None, None, AgentLoopOptions::default())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -3186,7 +3221,35 @@ pub fn run_agent_for_pipeline_with_options(
     live: Option<(&LiveRuns, &sse::RunEventBus, &str)>,
     options: AgentLoopOptions,
 ) -> Result<AgentOutcome, String> {
-    run_agent_inner(cfg, ctx, store, thread_id, task, history, live, true, options)
+    run_agent_inner(cfg, ctx, store, thread_id, task, history, live, true, None, None, options)
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn run_agent_for_pipeline_step(
+    cfg: &Config,
+    ctx: &ToolCtx,
+    store: &SharedStore,
+    thread_id: &str,
+    pipeline_run_id: &str,
+    step_id: &str,
+    task: &str,
+    history: &[Value],
+    live: Option<(&LiveRuns, &sse::RunEventBus, &str)>,
+    options: AgentLoopOptions,
+) -> Result<AgentOutcome, String> {
+    run_agent_inner(
+        cfg,
+        ctx,
+        store,
+        thread_id,
+        task,
+        history,
+        live,
+        true,
+        Some(pipeline_run_id),
+        Some(step_id),
+        options,
+    )
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -3199,6 +3262,8 @@ fn run_agent_inner(
     history: &[Value],
     live: Option<(&LiveRuns, &sse::RunEventBus, &str)>,
     from_pipeline: bool,
+    pipeline_run_id: Option<&str>,
+    step_id: Option<&str>,
     options: AgentLoopOptions,
 ) -> Result<AgentOutcome, String> {
     if !cfg.model_configured() {
@@ -3208,8 +3273,23 @@ fn run_agent_inner(
     let run_started = records::now_millis();
     let run_t0 = std::time::Instant::now();
     let run_id = format!("run-{run_started}-{}", RUN_ID_SEQ.fetch_add(1, Ordering::SeqCst));
-    let cancel = Arc::new(std::sync::atomic::AtomicBool::new(false));
-    let _in_flight = RunGuard::new(live, &run_id, thread_id, task, run_started, cancel.clone());
+    let cancel = options
+        .external_cancel
+        .clone()
+        .unwrap_or_else(|| Arc::new(std::sync::atomic::AtomicBool::new(false)));
+    if cancel.load(Ordering::SeqCst) {
+        return Err("run cancelled by user".to_string());
+    }
+    let _in_flight = RunGuard::new(
+        live,
+        &run_id,
+        thread_id,
+        pipeline_run_id,
+        step_id,
+        task,
+        run_started,
+        cancel.clone(),
+    );
     // Arm this run's honeytraps BEFORE the system prompt is built (it
     // carries the run's bait key and content boundary). Provenance is the
     // person's own words: this task plus their earlier messages here.
