@@ -1,0 +1,69 @@
+   Compiling ergon-rs v0.40.0 (/home/cayleb/Work/projects/ergon)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 37.62s
+     Running tests/auth_tls_rbac.rs (/home/cayleb/Work/scratch/2026-11-27-ergon-full/target/debug/deps/auth_tls_rbac-4c7dd7f77f944d86)
+
+running 6 tests
+test break_glass_gate_token_is_admin_audited_and_never_elevates_non_admin_session ... ok
+test cli_user_and_tls_init_commands ... ok
+test oidc_discovery_pkce_callback_end_to_end ... ok
+test rbac_and_cross_user_isolation_across_workspaces_crm_invoices_and_admin_routes ... ok
+test real_tls_https_handshake_and_phone_behind_tls_login_gate ... ok
+test setup_login_sessions_persistence_logout_and_0600_storage ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 18.25s
+
+     Running tests/backup_restore.rs (/home/cayleb/Work/scratch/2026-11-27-ergon-full/target/debug/deps/backup_restore-982ebe1f4ef0f864)
+
+running 8 tests
+test background_scheduler_triggers_automatic_verified_backup_when_due ... ok
+test backslash_traversal_drive_prefix_and_unmanifested_entries_rejected ... ok
+test backup_http_api_end_to_end_and_gate_confinement ... ok
+test full_backup_verify_wipe_restore_and_reverify_roundtrip ... ok
+test offsite_s3_sigv4_put_verified_against_loopback_server ... ok
+test retention_pruning_and_offsite_folder_replication ... ok
+test scheduled_backup_due_logic_respects_enabled_and_interval ... ok
+test tampered_archive_zip_slip_and_symlinks_rejected_without_touching_data_dir ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.65s
+
+     Running tests/deploy_hardening.rs (/home/cayleb/Work/scratch/2026-11-27-ergon-full/target/debug/deps/deploy_hardening-5b7fd61247b4ac41)
+
+running 5 tests
+test server_session_cookies_are_high_entropy_and_unique ... ok
+test unix_deploy_tests::install_sh_creates_0600_env_0700_launcher_and_preserves_secrets ... ok
+test unix_deploy_tests::install_sh_systemd_unit_uses_environment_file_and_checks_linger ... ok
+test unix_deploy_tests::sigterm_drains_inflight_chat_request_and_exits_zero ... ok
+test unix_deploy_tests::sigterm_exits_cleanly_with_status_zero_when_idle ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.57s
+
+     Running tests/installers_and_admin_updates.rs (/home/cayleb/Work/scratch/2026-11-27-ergon-full/target/debug/deps/installers_and_admin_updates-52df79b938d3bb5a)
+
+running 4 tests
+test dedicated_admin_token_and_local_loopback_admin_rules_are_enforced ... ok
+test gated_admin_can_check_configure_mode_and_install_while_non_admins_get_403_and_unauth_gets_401 ... ok
+test packaging_scripts_xml_manifests_release_workflow_and_signing_docs_are_valid ... ok
+test service_manifests_generate_and_validate_for_linux_macos_and_windows ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.60s
+
+     Running tests/logging_crash_help.rs (/home/cayleb/Work/scratch/2026-11-27-ergon-full/target/debug/deps/logging_crash_help-4f1b2f80d1b094d7)
+
+running 5 tests
+test binary_boot_creates_log_file_and_reads_admin_contact_env ... ok
+test diagnostic_bundle_api_and_cli_zip_contents_and_zero_secret_leaks ... ok
+test help_config_onboarding_and_admin_contact_roundtrip_and_gate_protection ... ok
+test real_panic_writes_redacted_crash_report_and_error_log ... ok
+test rotating_logger_rotates_bounded_files_and_redacts_secrets ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.19s
+
+     Running tests/timing_parity_and_labels.rs (/home/cayleb/Work/scratch/2026-11-27-ergon-full/target/debug/deps/timing_parity_and_labels-88c118876ab1daf1)
+
+running 3 tests
+test embedded_assets_contain_estimate_labels_and_uncalibrated_tooltip ... ok
+test rust_and_browser_metering_formula_exact_parity ... ok
+test timing_measurement_kit_files_and_analyzer_n0_blocked ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.74s
+

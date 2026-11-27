@@ -1,0 +1,71 @@
+   Compiling ergon-rs v0.40.0 (/home/cayleb/Work/projects/ergon)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 9.63s
+     Running tests/documents_v090.rs (/home/cayleb/Work/scratch/2026-11-27-ergon-full/target/debug/deps/documents_v090-ce2c2730a08e5ea6)
+
+running 16 tests
+test a_bad_request_is_not_retried ... ok
+test a_busy_model_costs_a_retry_not_the_task ... ok
+test broken_and_hostile_documents_fail_cleanly ... ok
+test built_in_workflows_run_on_word_and_excel_files ... ok
+test different_references_are_not_duplicate_charges ... ok
+test excel_workbooks_read_as_csv_with_real_dates_and_cached_formulas ... ok
+test export_file_makes_word_and_excel_copies ... ok
+test long_memory_is_trimmed_for_prompts_keeping_identity_and_recent_learning ... ok
+test pdfs_read_page_by_page_including_cid_fonts ... ok
+test powerpoint_decks_read_slide_by_slide_with_notes ... ok
+test read_file_reads_documents_sheets_and_pages_long_files ... ok
+test retry_policy ... ok
+test search_files_looks_inside_documents ... ok
+test the_same_lesson_is_remembered_once ... ok
+test uploads_are_byte_exact_preview_as_text_and_export ... ok
+test word_documents_read_as_structured_markdown ... ok
+
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.82s
+
+     Running tests/skills_v050.rs (/home/cayleb/Work/scratch/2026-11-27-ergon-full/target/debug/deps/skills_v050-53494e29448f5f7d)
+
+running 19 tests
+test audit_contract_flags_missing_clauses_renewals_and_line_cited_risks ... ok
+test catalog_exposes_all_12_skills_and_compiles_every_rune_script ... ok
+test clean_dataset_handles_empty_key_duplicate_headers_and_ragged_rows ... ok
+test clean_dataset_normalizes_json_and_csv_dedupes_flags_nulls_and_outliers ... ok
+test clean_dataset_parses_accounting_parenthesized_negatives ... ok
+test compare_documents_detects_added_removed_and_heading_changes ... ok
+test compare_documents_identical_and_triage_json_and_dispatcher_and_library_seed ... ok
+test csv_and_json_parsers_handle_rfc4180_bom_newlines_and_wrappers ... ok
+test draft_brief_grounds_in_sources_and_memory_and_halts_on_missing_sources ... ok
+test dry_run_harness_executes_all_12_skills_with_default_fixtures ... ok
+test extract_tables_parses_markdown_tables_and_structured_kv_logs ... ok
+test extract_tables_supports_tsv_colon_blocks_and_500_line_kv_logs ... ok
+test handle_skill_test_request_supports_builtin_custom_and_validate_all ... ok
+test large_500_row_csv_and_doc_scale_under_strict_rune_budget ... ok
+test reconcile_ledger_catches_second_file_duplicates_and_accounting_negatives ... ok
+test reconcile_ledger_multi_csv_matching_anomalies_and_exact_totals ... ok
+test strict_sandbox_bounds_block_traversal_symlinks_and_runaway_loops ... ok
+test summarize_meeting_extracts_decisions_owners_dates_and_followup_drafts ... ok
+test triage_inbox_prioritizes_urgent_action_and_fyi_across_formats ... ok
+
+test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 8.03s
+
+     Running tests/studio_tables_pdf.rs (/home/cayleb/Work/scratch/2026-11-27-ergon-full/target/debug/deps/studio_tables_pdf-bd585d59862a7023)
+
+running 6 tests
+test cwe22_and_cwe59_traversal_refused_across_new_endpoints ... ok
+test multisheet_xlsx_export_emits_sum_formulas_and_cached_totals ... ok
+test patch_file_tool_handles_unique_ambiguous_and_replace_all ... ok
+test pdf_export_round_trips_through_pdf_to_text_and_api ... ok
+test put_and_patch_content_enforce_optimistic_lock_and_history_restore ... ok
+test query_table_10k_row_rollup_and_multisource_formats ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.56s
+
+     Running tests/video_bug_fixes.rs (/home/cayleb/Work/scratch/2026-11-27-ergon-full/target/debug/deps/video_bug_fixes-9f85a00f70988e96)
+
+running 4 tests
+test csv_and_tsv_export_to_valid_pdf_14_and_reject_unsupported_extensions ... ok
+test head_phone_and_root_return_200_with_matching_headers_and_empty_body ... ok
+test make_spreadsheet_accepts_native_2d_stringified_json_and_csv_rows ... ok
+test write_document_preserves_commas_in_sections_native_stringified_and_plain ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.78s
+

@@ -1,0 +1,23 @@
+=== live_llm_e2e ===
+   Compiling ergon-rs v0.40.0 (/home/cayleb/Work/projects/ergon)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 4.23s
+     Running tests/live_llm_e2e.rs (/home/cayleb/Work/scratch/2026-11-27-ergon-full/target/debug/deps/live_llm_e2e-807a0024598caefc)
+
+running 1 test
+test live_llm_chat_writes_workspace_file_and_verifies_receipt ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 18.15s
+
+=== llm_resilience ===
+   Compiling ergon-rs v0.40.0 (/home/cayleb/Work/projects/ergon)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 4.93s
+     Running tests/llm_resilience.rs (/home/cayleb/Work/scratch/2026-11-27-ergon-full/target/debug/deps/llm_resilience-abaa0ee20abca0b4)
+
+running 4 tests
+test mid_run_sigkill_crash_auto_resumes_on_restart_and_completes ... ok
+test persisted_live_runs_tracks_cancelled_failed_and_corrupt_quarantine ... ok
+test sse_last_event_id_replays_buffered_events_without_gaps ... ok
+test unconfigured_boot_recovery_is_honest_and_manual_resume_api_completes ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.30s
+

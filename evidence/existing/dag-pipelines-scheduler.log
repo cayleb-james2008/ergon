@@ -1,0 +1,61 @@
+   Compiling ergon-rs v0.40.0 (/home/cayleb/Work/projects/ergon)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 10.48s
+     Running tests/dag_pipelines_v035.rs (/home/cayleb/Work/scratch/2026-11-27-ergon-full/target/debug/deps/dag_pipelines_v035-744f36f6605fa86f)
+
+running 6 tests
+test adhoc_agent_snapshot_preserves_context_across_pause_resume ... ok
+test dag_parallel_fanout_join_validate_and_cycle_rejection ... ok
+test deliver_step_immediate_fast_and_strict_client_checkpoint_hold ... ok
+test for_each_batch_execution_and_cap_rejection ... ok
+test run_loop_compacts_under_tight_budget_and_continues_past_24_steps ... ok
+test sse_token_delta_streaming_and_json_fallback ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.11s
+
+     Running tests/pipelines_v029.rs (/home/cayleb/Work/scratch/2026-11-27-ergon-full/target/debug/deps/pipelines_v029-1c8e26339759de3c)
+
+running 6 tests
+test boot_recovery_converts_stale_running_runs_to_interrupted_and_paused ... ok
+test checkpoint_pause_survives_restart_and_resumes_with_human_answer ... ok
+test deterministic_zero_llm_pipeline_runs_skill_to_export_and_emits_sse ... ok
+test request_checkpoint_tool_parks_adhoc_chat_and_resumes_with_human_answer ... ok
+test starter_playbook_launches_real_skill_and_respects_existing_workspace_inputs ... ok
+test step_failure_and_retry_resumes_from_failed_step ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.23s
+
+     Running tests/routines_mvp_fixes.rs (/home/cayleb/Work/scratch/2026-11-27-ergon-full/target/debug/deps/routines_mvp_fixes-34835c9dd2056a77)
+
+running 4 tests
+test background_scheduler_runs_zero_llm_steps_v2_without_model_and_records_single_verified_run ... ok
+test deterministic_zero_llm_detector_classifies_routines_accurately ... ok
+test llm_requiring_routine_without_model_does_not_crash_scheduler_and_reports_cleanly ... ok
+test single_catchup_on_missed_deterministic_routine_records_exactly_one_verified_run ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.38s
+
+     Running tests/scheduler_history_v070.rs (/home/cayleb/Work/scratch/2026-11-27-ergon-full/target/debug/deps/scheduler_history_v070-b747489665f12d87)
+
+running 8 tests
+test audit_bundle_builds_verifies_detects_tampering_and_renders_clean_markdown ... ok
+test audit_bundle_empty_workspace_and_scale_performance ... ok
+test file_history_binary_large_diff_tamper_and_retention_cap ... ok
+test file_history_blocks_symlinked_parent_dir_and_tracks_deleted_files ... ok
+test file_history_blocks_traversal_symlinks_and_hostile_rev_ids ... ok
+test file_history_record_list_diff_and_restore_roundtrip ... ok
+test scheduler_parses_cadences_and_computes_exact_utc_next_run_ms ... ok
+test scheduler_pause_resume_due_detection_and_atomic_run_history ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.43s
+
+     Running tests/unified_dag_scheduler_v039.rs (/home/cayleb/Work/scratch/2026-11-27-ergon-full/target/debug/deps/unified_dag_scheduler_v039-612113924901ceee)
+
+running 5 tests
+test concurrent_live_runs_isolation_sse_run_id_and_per_run_cancellation ... ok
+test five_field_cron_and_timezone_scheduling_unit_and_http ... ok
+test offline_zero_llm_steps_v2_scheduled_routine_executes_without_model ... ok
+test parallel_dag_branch_checkpoints_resume_individually_and_preserve_step_snapshots ... ok
+test retry_timeout_on_error_and_subpipeline_execution ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.39s
+

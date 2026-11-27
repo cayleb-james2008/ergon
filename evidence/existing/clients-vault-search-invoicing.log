@@ -1,0 +1,36 @@
+   Compiling ergon-rs v0.40.0 (/home/cayleb/Work/projects/ergon)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 08s
+     Running tests/client_vault_invoicing_v040.rs (/home/cayleb/Work/scratch/2026-11-27-ergon-full/target/debug/deps/client_vault_invoicing_v040-2bfae193edd5995b)
+
+running 5 tests
+test client_crm_engagement_sow_patch_and_context_e2e ... ok
+test handoff_pack_and_zip_cross_client_409_under_strict_client ... ok
+test system_prompt_injection_and_tool_prefix_containment ... ok
+test time_entries_and_invoicing_lifecycle_with_pdf_xlsx_json ... ok
+test vault_search_and_aggregate_scoping_e2e ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.65s
+
+     Running tests/clients_metering_v033.rs (/home/cayleb/Work/scratch/2026-11-27-ergon-full/target/debug/deps/clients_metering_v033-ea3ffee2a9602892)
+
+running 6 tests
+test chained_receipt_legacy_and_v2_hash_verification_and_tamper_detection ... ok
+test clients_engagements_crud_switch_and_permissions ... ok
+test metering_summary_rollup_and_filters ... ok
+test mock_openai_usage_capture_pricing_sse_and_work_persistence ... ok
+test pipeline_accumulates_step_and_run_usage_and_emits_sse_deltas ... ok
+test retainer_budget_gate_parks_decision_and_stops_spend ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.72s
+
+     Running tests/vault_search_v034.rs (/home/cayleb/Work/scratch/2026-11-27-ergon-full/target/debug/deps/vault_search_v034-64bcbe1327e47821)
+
+running 5 tests
+test aggregate_vault_and_http_endpoints_enforce_exact_decimals_and_security ... ok
+test incremental_vault_index_persists_and_skips_unchanged_files ... ok
+test indexes_past_512_chars_and_multi_page_pdf_with_exact_citations ... ok
+test multisheet_xlsx_indexes_all_sheets_past_sheet1 ... ok
+test search_vault_spotlights_and_excludes_symlinks_dotfiles_and_secrets ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.20s
+

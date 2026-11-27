@@ -1,0 +1,41 @@
+Ethereal inbox provisioned: smtp=smtp.ethereal.email:587 (STARTTLS) imap=imap.ethereal.email:993 (IMAPS)
+SERVER READY on 18112: {"version":"0.40.0","model_configured":true,"model":"qwen2.5:3b","model_base_url":"http://127.0.0.1:11434/v1","is_loopback_model":true,"auto_detected":true,"auth_required":false,"t
+PUT reports/ethereal-probe.csv: 200 {"mtime_ms":1795786301032,"path":"reports/ethereal-probe.csv","rev_id":null,"sha256":"394dd0f5185b461a3037c277e7b8a49b9b81324e441cc27ce478ab478678e07d","size":62}
+POST /api/routines: 201 {"routine":{"cadence_label":"manual","cadence_valid":true,"created_ms":1795786301044,"due_now":false,"enabled":true,"history_count":0,"id":"rtn-1795786301044-0","in_seconds":null,"interval_secs":null,"last_receipt_id":null,"last_run_ms":null,"last_status":null,"last_thread_id":null,"missed_windows":0,"name":"Ethereal IMAP Intake Routine","next_run_ms":null,"offline_deterministic":true,"prompt":"Summarize ingested email from Ethereal IMAP.","run_count":0,"schedule":"manual","skill_id":null,"steps":["Write intake confirmation note"],"steps_v2":[{"args":{"sections":["## Ingested\nTrigger file: {{inputs.trigger_file}}\nSource: live Ethereal IMAPS poll"],"title":"Ethereal Intake Note"},"id":"doc","kind":"skill","label":"Write intake confirmation note","skill_id":"write_document","when":"always"}]}}
+POST /api/connectors/outbound: 201 {"connector":{"blocked_by_policy":false,"created_ms":1795786301053,"effective_require_approval":true,"enabled":true,"has_secret":true,"headers_template":{},"id":"conn-1795786301053-0","kind":"smtp_relay","last_delivery_ms":null,"last_status":null,"method":"POST","name":"Ethereal Live SMTP Relay","oauth_config":null,"require_approval":true,"secret_keys":["eth_smtp_pass","eth_smtp_user"],"smtp_config":{"default_to":["<REDACTED_ETHEREAL_EMAIL>"],"from_addr":"<REDACTED_ETHEREAL_EMAIL>","host":"smtp.ethereal.email","password_secret_key":"eth_smtp_pass","port":587,"security":"starttls","username_secret_key":"eth_smtp_user"},"updated_ms":1795786301053,"url":"smtp://smtp.ethereal.email:587"}}
+POST /api/connectors/triggers: 201 {"trigger":{"created_ms":1795786301063,"enabled":true,"glob":null,"has_secret":true,"hook_id":null,"hook_path":null,"id":"trg-1795786301063-1","imap_config":{"folder":"INBOX","host":"imap.ethereal.email","mark_seen":true,"password_secret_key":"eth_imap_pass","poll_interval_secs":3,"port":993,"security":"imaps","subject_filter":"Ergon Live Proof","username_secret_key":"eth_imap_user"},"kind":"imap_poll","last_triggered_ms":null,"max_bytes":26214400,"name":"Ethereal Live IMAP Poll","routine_id":"rtn-1795786301044-0","target_kind":"pipeline","trigger_count":0,"updated_ms":1795786301063,"watch_dir":null}}
+secrets.enc.json mode: 0o600
+Recursive DATA_DIR scan for plaintext password: 0 hits
+POST /api/connectors/outbound/{id}/test: 202 {"decision_id":"d1795786301074-0","delivery":{"connector_id":"conn-1795786301053-0","connector_name":"Ethereal Live SMTP Relay","decision_id":"d1795786301074-0","error":null,"http_status":null,"id":"del-1795786301074-2","kind":"smtp_relay","method":"SMTP","payload_bytes":146,"payload_sha256":"a4150687187e17fbe03cded07b0e3e14463ef5b83bcf43de99162091bf18ff33","response_preview":"","status":"held","thread_id":null,"ts_ms":1795786301074,"url":"smtp://smtp.[redacted]:587"},"held":true,"ok":false,"status":"held"}
+POST /api/decisions/{id}/approve: 200 {"decision":{"attachment_rel":null,"connector_id":"conn-1795786301053-0","connector_kind":"smtp_relay","connector_name":"Ethereal Live SMTP Relay","detail":"Connector \"Ethereal Live SMTP Relay\" requires approval before sending data to smtp://smtp.[redacted]:587. Payload SHA-256: a4150687187e17fbe03cded07b0e3e14463ef5b83bcf43de99162091bf18ff33.","id":"d1795786301074-0","kind":"connector_delivery","method":"SMTP","outcome":"Approved and delivered via \"Ethereal Live SMTP Relay\" (HTTP 250, 794 bytes).","path":null,"payload":{"body":"Automated live Ethereal STARTTLS + IMAPS proof from Ergon.","file":"reports/ethereal-probe.csv","subject":"Ergon Live Proof 6b STARTTLS"},"payload_preview":"{\"body\":\"Automated live Ethereal STARTTLS + IMAPS proof from Ergon.\",\"file\":\"reports/ethereal-probe.csv\",\"subject\":\"Ergon Live Proof 6b STARTTLS\"}","payload_sha256":"a4150687187e17fbe03cded07b0e3e14463ef5b83bcf43de99162091bf18ff33","resolved_ts":1795786301083,"severity":"warning","status":"approved","summary":"Send outbound SMTP via \"Ethereal Live SMTP Relay\" (smtp://smtp.[redacted]:587)","thread_id":"","ts":1795786301074,"url":"smtp://smtp.[redacted]:587"},"outcome":"Approved and delivered via \"Ethereal Live SMTP Relay\" (HTTP 250, 794 bytes)."}
+GET /api/connectors (delivery log check): 200 {"delivery_log":[{"connector_id":"conn-1795786301053-0","connector_name":"Ethereal Live SMTP Relay","decision_id":"d1795786301074-0","error":null,"http_status":250,"id":"del-1795786301084-3","kind":"smtp_relay","method":"SMTP","payload_bytes":794,"payload_sha256":"0d53ea40fb4dee49cfd7d4659a5ebb685db1684522cc013fe128211dae23b43e","response_preview":"250 Accepted [STATUS=new MSGID=awmGPDsrpuHBWYn3awmGPnxXAa9Zb9owAAAAAawyjsNY5f38nznsVGTQYZE]","status":"ok","thread_id":null,"ts_ms":1795786301084,"url":"smtp://smtp.[redacted]:587"},{"connector_id":"conn-1795786301053-0","connector_name":"Ethereal Live SMTP Relay","decision_id":"d1795786301074-0","error":null,"http_status":null,"id":"del-179578630
+IMAP INTAKE MD FILE: intake/imap-1795786306487-Ergon_Live_Proof_6b_STARTTLS.md
+--- IMAP INTAKE MD CONTENT ---
+# Ergon Live Proof 6b STARTTLS
+
+From: <<REDACTED_ETHEREAL_EMAIL>>
+Date: Fri, 27 Nov 2026 13:31:41 +0000
+Message-ID: <1795786301084.3@ergon.local>
+Folder: INBOX
+
+---
+
+Automated live Ethereal STARTTLS + IMAPS proof from Ergon.
+
+--- INGESTED ATTACHMENT CONTENT ---
+item,status,amount
+alpha,verified,125.50
+beta,verified,274.50
+
+--- LINKED ROUTINE OUTPUT (Ethereal Intake Note.md) ---
+# Ethereal Intake Note
+
+## Ingested
+Trigger file: intake/imap-1795786306487-Ergon_Live_Proof_6b_STARTTLS.md
+Source: live Ethereal IMAPS poll
+
+
+GET /api/pipelines/runs: 200 {"runs":[{"agent_snapshot":null,"child_items":{},"created_ms":1795786306604,"current_step_index":1,"engagement_id":null,"error":null,"inputs":{"trigger_file":"intake/imap-1795786306487-Ergon_Live_Proof_6b_STARTTLS.md"},"pending_checkpoint":null,"pending_checkpoints":[],"routine_id":"rtn-1795786301044-0","routine_name":"Ethereal IMAP Intake Routine","run_id":"prun-1795786306604-0","status":"completed","step_snapshots":{},"step_states":[{"checkpoint_id":null,"child_items":[],"error":null,"files":["Ethereal Intake Note.md"],"finished_ms":1795786306706,"human_action":null,"human_answer":null,"kind
+GET /api/receipts/verify: 200 {"head_hash":"f71efc155bb66789ff013698050d5e18f57477e4dbecd58d813e6ed6e94a9892","total":1,"valid":true}
+PROOF 6B COMPLETE: LIVE ETHEREAL STARTTLS + IMAPS + INTAKE + ROUTINE PASSED
+SERVER SHUTDOWN rc= 0

@@ -1,0 +1,223 @@
+
+> ergon-frontend@0.40.0 check:ui
+> node e2e/check.mjs --lints
+
+
+> ergon-frontend@0.40.0 prebuild
+> node scripts/ensure-rune-link.mjs
+
+
+> ergon-frontend@0.40.0 build
+> tsc --noEmit && vite build
+
+vite v8.3.7 building client environment for production...
+transforming...
+✓ 2767 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                                 1.34 kB │ gzip:   0.76 kB
+dist/chunks/GeistMono-Regular-CeHGjpI8.woff2   29.30 kB
+dist/chunks/Geist-Regular-BIzsjh8M.woff2       45.28 kB
+dist/chunks/Geist-Medium-BhzvC5vs.woff2        46.51 kB
+dist/chunks/style-Be9UlN1x.css                100.20 kB │ gzip:  17.31 kB
+dist/chunks/rolldown-runtime-XKyaHtl9.js        0.72 kB │ gzip:   0.42 kB
+dist/chunks/StarterPlaybooksBar-Dsa6REOn.js     4.35 kB │ gzip:   1.47 kB
+dist/chunks/SkillsPanel-BjVqBMj7.js             6.57 kB │ gzip:   2.37 kB
+dist/chunks/Graph-DCauDrte.js                   9.63 kB │ gzip:   3.52 kB
+dist/chunks/HelpPanel-Dslvy40i.js              10.96 kB │ gzip:   3.36 kB
+dist/chunks/Panels-ul9Pwl4b.js                 12.40 kB │ gzip:   3.82 kB
+dist/chunks/CommandPalette-CBF86aCf.js         21.36 kB │ gzip:   6.37 kB
+dist/chunks/InspectorDrawer-Bs-8cqoX.js        27.03 kB │ gzip:   6.98 kB
+dist/chunks/SettingsPanel-BknA5SXB.js          56.64 kB │ gzip:  12.58 kB
+dist/chunks/Paper-DfqOfoQt.js                  61.59 kB │ gzip:  15.41 kB
+dist/chunks/ConnectorsPanel-CIT-BbeB.js        71.52 kB │ gzip:  13.80 kB
+dist/chunks/RoutinesPanel-CXOBMMgp.js          77.77 kB │ gzip:  18.12 kB
+dist/chunks/WorkspaceFiles-1SpeUhsY.js         84.81 kB │ gzip:  21.03 kB
+dist/index-z2h5I5qQ.js                         98.29 kB │ gzip:  28.19 kB
+dist/chunks/shared-iyoBAFod.js                719.04 kB │ gzip: 220.03 kB
+
+✓ built in 870ms
+single shell: /home/cayleb/Work/projects/ergon/assets/index.html (195 kB) + 18 embedded chunks
+   Compiling ergon-rs v0.40.0 (/home/cayleb/Work/projects/ergon)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 10.46s
+
+== gate on http://127.0.0.1:18780/
+PASS measure 1440 light  overflow 0/0 small 0  low 0  unnamed 0 minFont 12 minRatio 5.28 clipped 0 
+PASS measure 1280 light  overflow 0/0 small 0  low 0  unnamed 0 minFont 12 minRatio 5.28 clipped 0 
+PASS measure 768 light  overflow 0/0 small 0  low 0  unnamed 0 minFont 12 minRatio 5.28 clipped 0 
+PASS measure 390 light  overflow 0/0 small 0  low 0  unnamed 0 minFont 12 minRatio 5.28 clipped 0 
+PASS measure 320 light  overflow 0/0 small 0  low 0  unnamed 0 minFont 12 minRatio 5.28 clipped 0 
+PASS measure 1440-today light  overflow 0/0 small 0  low 0  unnamed 0 minFont 12 minRatio 4.54 clipped 0 
+PASS measure 1440 dark  overflow 0/0 small 0  low 0  unnamed 0 minFont 12 minRatio 4.76 clipped 0 
+PASS measure 1280 dark  overflow 0/0 small 0  low 0  unnamed 0 minFont 12 minRatio 4.76 clipped 0 
+PASS measure 768 dark  overflow 0/0 small 0  low 0  unnamed 0 minFont 12 minRatio 4.76 clipped 0 
+PASS measure 390 dark  overflow 0/0 small 0  low 0  unnamed 0 minFont 12 minRatio 4.76 clipped 0 
+PASS measure 320 dark  overflow 0/0 small 0  low 0  unnamed 0 minFont 12 minRatio 4.76 clipped 0 
+PASS measure 1440-today dark  overflow 0/0 small 0  low 0  unnamed 0 minFont 12 minRatio 4.76 clipped 0 
+PASS workbench lands in Chat with 4 starter chips, hidden right drawer, and Cmd/Ctrl+I toggle  starters=4 initHidden=true opened=true files=true closed=true
+PASS waiting job not filed as finished
+PASS inline chat approve toast
+PASS inline approval card renders inside Chat without switching tabs
+PASS headline counts  4 things finished, nothing waits on you.
+PASS today so far stream renders
+PASS tab chip clears
+PASS open goes to the conversation
+PASS inspect steps expandable opens raw tool output
+PASS graph face renders
+PASS desk rail stays visible across Today, Chat, and Work Graph
+PASS slash shortcut focuses filter and narrows conversation list
+PASS empty chat renders 4 rich starter cards and fills composer
+PASS ctrl+k opens Command Palette, searches 12 built-in workflows, and runs New task  focused=true skill=true composer=true
+PASS workflows morphing dialog lists all 12 built-in workflows without Rune jargon and tests cleanly  count=12 zeroRune=true
+PASS routines morphing dialog creates and deletes recurring routines
+PASS learned and suite morphing dialogs open and close cleanly
+PASS dateline follows the team switch
+PASS Maya has an offer
+PASS offer accept toast
+PASS offer leaves the list
+PASS theme switcher is tucked inside Settings, not main rail
+PASS no fixture demo pill rendered
+PASS workspace file viewer sorts/filters CSV and exports SHA-256 receipt  first=Delta Corp	180.00	missing rows=1 toast=true
+PASS file viewer supports Markdown section jump and JSON collapsible tree  mdJump=3 json=true
+PASS right inspector switches between Files, History, and Audit tabs cleanly
+PASS drag-and-drop multi-file upload onto Today saves both files
+PASS settings dialog shows Model connection, toggles Dark theme, and styles dark toasts  dark=true toast=true
+PASS keep toast
+PASS keep clears the wait  4 things finished, nothing waits on you.
+PASS add person via API  201
+PASS empty person headline  Nothing finished yet.
+PASS empty state offers a first task
+PASS empty CTA opens a new conversation
+PASS ask button on a full paper
+PASS stopped run listed under Did not finish
+PASS the paper reprints after a run  4 things finished, 1 waits on you.
+PASS repeated titles keep their own threads  t1795134956439-2 t1795134953122-1 t1795134951920-0
+PASS error state
+PASS retry recovers
+PASS loading state
+PASS update banner shows Update now on loopback
+PASS dismiss focuses Show update and restores banner on click
+PASS failed update check with no available release shows plain error banner without raw URL
+PASS staged update states single restart sentence once
+PASS phone drawer opens
+PASS settings trigger in phone drawer
+PASS focus returns to Menu
+PASS phone Menu -> Settings -> Dark toggles cleanly without drawer interception
+PASS phone Menu -> Workflows & Routines dialogs open cleanly without drawer blocking
+PASS phone side column under the paper
+PASS phone Workspace Switcher switches desk cleanly without interception
+PASS /phone route serves unified responsive desk cleanly
+PASS 320x568 phone Menu -> Settings -> Dark toggles cleanly with 0px overflow
+PASS 320x568 phone Settings renders Workspace Switcher and Audit Bundle export with 0px overflow
+PASS v0.7.0 FileViewerModal History & Diff renders unified highlights and restores revision  adds=1 restore={"path":"ledger.csv","rev_id":"rev-20261122-001","revision_id":"rev-20261122-001","id":"rev-20261122-001"}
+PASS v0.7.0 RoutinesPanel shows scheduler pill, Next run countdown, Pause/Resume PATCH, and Run History  sched=Scheduler active (15s tick) patch=false,true next=Next run in 14m->Paused
+PASS v0.7.0 Export Full Audit Bundle and Workspace Switcher hit GET /api/audit/bundle & POST /api/people/switch  audit=true toast=true switch=true
+PASS 5,000 receipts and 500 files stay paginated and filter instantaneously  recRows=20->1 fileRows=25->1
+PASS live SSE step timeline displays tool progress, elapsed ms, and cancels cleanly  cancel=true txt=Agent is working on it POLL 59ms Stop Reconciled expense ledger 48ms
+PASS v0.29.0 PipelineBuilder composes typed steps and CheckpointCard resumes paused pipeline with structured choice  builder=true choice=Exclude flagged rows
+PASS v0.30.0 Edit tab saves Markdown edits persistently via PUT /api/files/content  reopened=Jump to section: Updated Client Brief Verified Rollup Update
+PASS v0.30.0 Save as PDF export triggers POST /api/files/export with format pdf  payload={"path":"studio-brief.md","format":"pdf"} toast=true
+PASS v0.30.0 Edit tab edits CSV cells and runs inline Table Query group-by rollup + Save query as CSV  saveAs=studio-expenses-query.csv query=Query result 2 rows (3 of 3 matched) Vendor	sum_amount Acme 
+PASS v0.30.0 upload inputs include .pdf, .docx, .xlsx, .pptx in accept attribute  ws=.csv,.md,.txt,.json,.log,.tsv,.pdf,.docx,.xlsx,.pptx,.py,.ts,.tsx,.js,.rs,.toml,.yaml,.yml,.html today=.csv,.md,.txt,.json,.log,.tsv,.pdf,.docx,.xlsx,.pptx,.py,.ts,.tsx,.js,.rs,.toml,.yaml,.yml,.html
+PASS v0.31.0 Connectors panel opens from rail with 4 tabs and creates, rotates, and simulates Inbound Webhooks  tabs=true secret=true sim=Saved payload to inbox/hook-e2e-1.json and triggered routine.
+PASS v0.31.0 Watched Folders tab creates folder watch rule with host path and glob filter  Vendor Dropbox Watching *.pdf,*.csv  /home/cayleb/Documents/VendorDropbox  Target routine:
+PASS v0.31.0 Outbound Actions tab keeps secrets masked, runs Test Delivery, and logs delivery  exposed=false log=Delivery log 1 Client Webhook Waiting approval Test  Waiting for approval in Tod
+PASS v0.31.0 Today renders plain-language connector_delivery consequence card and settles on Send delivery  clean=true toast=true
+PASS v0.31.0 mobile Menu -> Connectors opens outside Vaul drawer with 0px overflow
+PASS v0.32.0 E1 PipelineBuilder blocks empty agent prompt and invalid {{steps.*}} template  s3=true s4=true posts=0
+PASS v0.32.0 E1 CheckpointCard and PipelineRunStrip double-submit guards send single requests  resume=1 cancel=1
+PASS v0.32.0 E2 FileEditor 409 conflict banner recovers via Overwrite anyway and unsaved-changes guard protects edits  kept=true shas=sha-v1,sha-v2
+PASS v0.32.0 E2 FileEditor malformed CSV shows error state and allows raw text fallback  gridHidden=true rawVisible=true
+PASS v0.32.0 E3 ConnectorsPanel enforces URL/watch_dir validation, strict secret masking, and delivery log error recovery  cleared=true leaked=false trig=false out=false
+PASS v0.33.0 E1 Client -> Engagement selector and quick-create updates active engagement and switches cross-client  creates=1 switches=4 Y You Acme Advisory / Q1 Audit -> Y You Northstar Advisory / Q4 Operations Retainer
+PASS v0.33.0 E1 Paper surfaces retainer burn progress bar, tokens, USD spend, time saved, and billable ROI  burn=$125.00 of $3,000.00 (5.0%) tok=5,500 time=~1h 35m (est.) roi=~$395.83 (est.)
+PASS v0.33.0 E1 Paper renders budget_gate card and settles Approve overrun  approves=1
+PASS v0.33.0 E1 SettingsPanel validates and saves model pricing overrides  {"gpt-4o-mini":{"input_per_1m_usd":0.15,"output_per_1m_usd":0.6,"cached_input_per_1m_usd":0.075},"gpt-4o":{"input_per_1m_usd":2.5,"output_per_1m_usd":1.5,"cached_input_per_1m_usd":0.25}}
+PASS v0.34.0 E2 (light) Command Palette reindexes, searches past char 512, and jumps to active line  bytes=2538 stats=12 chunks, 7 files line=31
+## Page 3
+PASS v0.34.0 E2 (light) WorkspaceFiles passage jump, Rollup aggregate, and contrast/layout  reindex=1 clamped=35 aggErr=true ws=L31-L33
+Page 3
+## Page 3 Escal line=true agg=Rollup result 2 rows from 2 files Sources: rollup-north.csv, saved=true overflow=0 low=0 unnamed=0
+PASS v0.34.0 E2 (dark) Command Palette reindexes, searches past char 512, and jumps to active line  bytes=2538 stats=13 chunks, 8 files line=31
+## Page 3
+PASS v0.34.0 E2 (dark) WorkspaceFiles passage jump, Rollup aggregate, and contrast/layout  reindex=1 clamped=35 aggErr=true ws=L31-L33
+Page 3
+## Page 3 Escal line=true agg=Rollup result 2 rows from 2 files Sources: rollup-north.csv, saved=true overflow=0 low=0 unnamed=0
+PASS v0.35.0 DAG builder, Validate DAG + cycle, deliver hold, child_items, token_delta (1440x900 light)  valid=DAG valid
+Stages: Stage 1: skill_1 -> Stage 2 cycle=pipeline steps contain a circular depend hold=true child=true snap=true delta=true ov=0/0 low=0/0 un=0()/0
+PASS v0.35.0 DAG builder, Validate DAG + cycle, deliver hold, child_items, token_delta (1440x900 dark)  valid=DAG valid
+Stages: Stage 1: skill_1 -> Stage 2 cycle=pipeline steps contain a circular depend hold=true child=true snap=true delta=true ov=0/0 low=0/0 un=0()/0
+PASS v0.35.0 DAG builder, Validate DAG + cycle, deliver hold, child_items, token_delta (390x844 light)  valid=DAG valid
+Stages: Stage 1: skill_1 -> Stage 2 cycle=pipeline steps contain a circular depend hold=true child=true snap=true delta=true ov=0/0 low=0/0 un=0()/0
+PASS v0.35.0 DAG builder, Validate DAG + cycle, deliver hold, child_items, token_delta (390x844 dark)  valid=DAG valid
+Stages: Stage 1: skill_1 -> Stage 2 cycle=pipeline steps contain a circular depend hold=true child=true snap=true delta=true ov=0/0 low=0/0 un=0()/0
+PASS v0.37.0 E1 Client CRM & SOW drawer saves contacts, tax rate, workspace prefix, SOW rules, pause, and isolation  iso=true engPatches=2 cliPatches=1 ov=0 low=0
+PASS v0.37.0 E1 Paper retainer card supports time entries, scoped handoff ZIP, and invoice generation/status lifecycle  time=Quarterly compliance review
+
+time · handoffs=1 invStatus=paid ov=0
+PASS v0.37.0 E1 (390x844 dark) Active Engagement Scope filters WorkspaceFiles, CommandPalette search, and Inspector handoff status  before=2 after=1 handoffScope=true palPressed=true ov=0
+PASS v0.38.0 E2 Outbound SMTP Relay and OAuth2 Credentials save smtp_config/oauth_config without exposing secrets  leaked=false port=587 scopes=2
+PASS v0.38.0 E2 Folders & IMAP tab creates imap_poll trigger with imap_config  Invoices Inbox Polling IMAP Inbox INBOX/Invoices · every 45s  imaps://imap.example.com:993
+PASS v0.38.0 E2 MCP Tools tab creates server, discovers cached_tools, toggles require_approval_by_default, and deletes server  discover=1 updates=[false] del=1
+PASS v0.38.0 E2 Today renders mcp_tool_call approval card cleanly and settles on Run tool  clean=true toast=true
+PASS v0.38.0 E2 (390x844 dark) ConnectorsPanel 4-tab bar, IMAP, and MCP Tools tab fit with 0px dialog overflow and >=44px targets  imap=true tabs=true ov=0 low=0 unnamed=0
+PASS v0.38.0 E2 Long stdio MCP command stays within dialog.clientWidth and keeps Discover Tools visible on 1440x900 and 390x844  desktop={"ok":true,"sw":766,"cw":766,"brRight":1026,"drRight":1104} mobile={"ok":true,"sw":356,"cw":356,"brRight":181,"drRight":374}
+PASS v0.39.0 E3 LiveRunTimeline renders concurrent runs and scopes Stop to run_id  both=true stayed=true cancelled=run-sched-e3
+PASS v0.39.0 E3 RoutinesPanel supports 5-field cron, timezone selector, and offline deterministic badge  preview=true tz=America/New_York det=true tzBadge=true
+PASS v0.39.0 E3 PipelineBuilder composes Timeout/Retry/on_error and Subpipeline steps within dialog bounds  bounds=true steps=[{"k":"skill","r":2,"oe":"continue"},{"k":"subpipeline","rid":"rt-existing-e3"}]
+PASS v0.39.0 E3 CheckpointCard renders and resumes multiple simultaneous parallel branch checkpoints by checkpoint_id  both=true snap=true calls=[{"checkpoint_id":"cp-branch-a","decision":"answer","text":"Exclude outliers","action":"answer","answer":"Exclude outliers","choice":"Exclude outliers"},{"checkpoint_id":"cp-branch-b","decision":"answer","text":"Signed off by legal","action":"answer","answer":"Signed off by legal"}]
+PASS v0.39.0 E3 (390x844 dark) RoutinesPanel Cron/TZ + PipelineBuilder Resilience/Subpipeline fit with 0px dialog overflow  dlg=true ov=0 low=0 unnamed=0
+PASS v0.40.0 H1 (390x844) RoutinesPanel + PipelineBuilder keep sticky Close/Save visible and 0px overflow with long Cron + args  {"overflow":0,"closeVisible":true,"saveVisible":true}
+PASS v0.40.0 H1 (390x844) Clients CRM/SOW & ConnectorsPanel keep sticky Close/Save visible and 0px overflow with long URLs  cli={"overflow":0,"closeVisible":true,"saveVisible":true} conn={"overflow":0,"closeVisible":true,"saveVisible":true}
+PASS v0.40.0 H1 LiveRunTimeline SSE reconciliation, CheckpointCard error/retry, and RoutinesPanel history retry recover cleanly  sse=Stream reconciliation unavailable
+Retry sync cp=Temporary checkpoint lock conflict resolved=true hist=true
+PASS reduced motion: no endless motion  0
+PASS no console errors
+
+gate: 118/118 pass
+
+== probe-graph on http://127.0.0.1:18780/
+1440 light [light] {"svgW":1070,"scale":1,"fontPx":13,"bandXs":[22,283,543,804],"out":[],"over":[],"backs":["1"],"labels":30} ok
+1440 dark [dark] {"svgW":1070,"scale":1,"fontPx":13,"bandXs":[22,283,543,804],"out":[],"over":[],"backs":["1"],"labels":30} ok
+1100 light [light] {"svgW":730,"scale":1,"fontPx":13,"bandXs":[22,198,373,549],"out":[],"over":[],"backs":["1"],"labels":30} ok
+900 light [light] {"svgW":786,"scale":1,"fontPx":13,"bandXs":[22,212,401,591],"out":[],"over":[],"backs":["1"],"labels":30} ok
+768 light [light] {"svgW":654,"scale":1,"fontPx":13,"bandXs":[22,179,335,492],"out":[],"over":[],"backs":["1"],"labels":30} ok
+list-only toggle: ok
+
+graph: 6/6 pass
+
+== replay on http://127.0.0.1:18780/
+PASS ergon 1440: null and numeric person names do not blank the desk
+PASS ergon 1440: long unbroken decision, finished task, and today event titles stay inside boxes
+PASS ergon 1440: malformed brief shows plain error with Retry
+PASS ergon 1440: unreachable brief shows plain error with Retry
+PASS ergon 1440: a question decision states answer is recorded and offers Decline
+PASS ergon 1440: malformed conversation list shows its error state
+PASS ergon 1440: malformed people list shows error alert in Team card
+PASS ergon 1440: many long saved-file names wrap cleanly with file-type glyphs
+PASS ergon 1440: non-array or null files values do not crash Finished or Today stream
+PASS ergon 1440: malformed work graph shows plain error with Retry
+PASS ergon 390: null and numeric person names do not blank the desk
+PASS ergon 390: long unbroken decision, finished task, and today event titles stay inside boxes
+PASS ergon 390: malformed brief shows plain error with Retry
+PASS ergon 390: unreachable brief shows plain error with Retry
+PASS ergon 390: a question decision states answer is recorded and offers Decline
+PASS ergon 390: malformed conversation list shows its error state
+PASS ergon 390: malformed people list shows error alert in Team card
+PASS ergon 390: many long saved-file names wrap cleanly with file-type glyphs
+PASS ergon 390: non-array or null files values do not crash Finished or Today stream
+PASS ergon 390: malformed work graph shows plain error with Retry
+
+replay: 20/20 pass
+
+== lints (report only) on http://127.0.0.1:18780/
+SKIP lint: /home/cayleb/refskills/taste/skills/taste-skill/scripts/lint.mjs not found
+SKIP inspect: /home/cayleb/refskills/taste/skills/taste-skill/scripts/inspect.mjs not found
+DETECT []
+SLOP {'fails': 0, 'reflex': 0, 'warns': 0, 'waived': 0, 'rejected': 0, 'answered': 0, 'dismissed': 0, 'notes': 0, 'files': 1, 'render': 'ran'}
+  reflex {}
+
+== check:ui
+ok   gate 118/118
+ok   graph 6/6
+ok   replay 20/20

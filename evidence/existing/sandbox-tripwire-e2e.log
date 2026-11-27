@@ -1,0 +1,171 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.32s
+     Running tests/e2e.rs (/home/cayleb/Work/scratch/2026-11-27-ergon-full/target/debug/deps/e2e-ccf1b9111c17cd7b)
+
+running 97 tests
+test a_delete_parked_in_an_earlier_run_gets_no_new_note ... ok
+test a_dishonest_delete_claim_is_flagged_while_the_deletion_is_only_parked ... ok
+test a_run_waiting_on_a_decision_is_not_finished_in_the_brief ... ok
+test a_run_whose_tool_steps_all_failed_is_not_finished_work ... ok
+test agent_publishes_a_skill_and_another_persons_agent_runs_it ... ok
+test approved_delete_of_a_symlink_deletes_the_link_not_the_target ... ok
+test approved_delete_rewrites_its_parked_note ... ok
+test brief_today_and_graph_reflect_real_work ... ok
+test chat_with_an_unknown_thread_id_is_refused ... ok
+test corrupt_threads_json_is_preserved_as_a_backup ... ok
+test created_persons_learning_reaches_the_prompt ... ok
+test cross_site_requests_are_refused_and_change_nothing ... ok
+test dangling_symlink_write_is_refused ... ok
+test delegate_runs_a_suite_subagent_and_refuses_others ... ok
+test delegation_draws_from_one_shared_step_budget ... ok
+test delete_parks_a_decision_and_only_approval_deletes ... ok
+test denied_delete_rewrites_its_parked_note ... ok
+test document_titled_error_still_reports_success ... ok
+test done_claim_without_writes_is_flagged_in_the_ledger ... ok
+test done_gate_checks_named_files_against_the_write_ledger ... ok
+test done_gate_handles_spaced_filenames_and_full_ledger ... ok
+test each_parked_delete_gets_exactly_one_note ... ok
+test empty_summary_is_stored_as_task_complete ... ok
+test end_to_end_messy_notes_become_summary_document ... ok
+test faces_and_phone_are_served ... ok
+test fetch_url_extracts_text_and_workspace_is_sandboxed ... ok
+test forged_cookies_are_replaced_and_sessions_do_not_leak_globally ... ok
+test gate_token_blocks_without_and_allows_with ... ok
+test honest_done_summaries_are_not_flagged ... ok
+test huge_content_length_does_not_kill_the_server ... ok
+test identity_bullets_are_excluded_in_any_casing ... ok
+test identity_bullets_with_fullwidth_colons_are_excluded ... ok
+test install_then_call_in_one_run_is_credited ... ok
+test installed_library_skill_runs_end_to_end ... ok
+test installer_installs_and_the_installed_binary_boots ... ok
+test invalid_json_chat_body_is_named_as_such ... ok
+test keyless_loopback_model_works_and_config_api_persists ... ok
+test lan_host_needs_allowed_hosts_and_gate_skips_the_rule ... ok
+test learned_preferences_shape_the_next_task ... ok
+test library_is_seeded_and_suites_are_role_shaped ... ok
+test library_skill_runner_and_compile_gate_directly ... ok
+test live_runs_status_reports_idle_cleanly ... ok
+test mention_matching_edges ... ok
+test move_file_handles_dangling_links_symmetrically ... ok
+test move_file_moves_the_symlink_not_its_target ... ok
+test move_file_refuses_to_overwrite ... ok
+test names_and_notes_cannot_forge_memory_structure ... ok
+test no_key_chat_keeps_the_users_message ... ok
+test no_key_chat_refuses_honestly ... ok
+test offers_appear_after_repeated_work_and_acceptance_builds_the_app ... ok
+test over_long_header_line_is_refused_and_server_survives ... ok
+test oversized_request_gets_a_413_response ... ok
+test oversized_upload_with_body_in_flight_still_gets_its_413 ... ok
+test parked_delete_note_does_not_depend_on_summary_wording ... ok
+test parked_delete_note_survives_an_unrelated_approval_word ... ok
+test parked_note_rewrite_survives_a_restart ... ok
+test people_are_isolated ... ok
+test people_json_corruption_in_any_shape_is_backed_up ... ok
+test plain_answers_are_not_counted_as_finished_work ... ok
+test publish_app_never_returns_a_skill ... ok
+test publish_skill_cannot_overwrite_another_authors_item ... ok
+test receipts_sha256_chain_verify_and_md_json_export ... ok
+test records_survive_concurrent_writers ... ok
+test recovered_stores_are_named_in_status ... ok
+test repeated_and_semantic_corruption_keep_every_backup ... ok
+test research_skill_compiles_notes_from_pages ... ok
+test routines_crud_and_execution_persist_atomically ... ok
+test runaway_library_skill_is_stopped_by_the_budget ... ok
+test sandbox_refuses_symlink_escape ... ok
+test scale_5000_receipts_and_500_files_search_p95_under_30_concurrent_clients ... ok
+test search_and_move_tools_work ... ok
+test search_cap_note_is_exact_and_single_files_search ... ok
+test search_files_reports_what_it_skipped ... ok
+test security_fuzz_20_vectors_fail_closed_with_zero_500s ... ok
+test sessions_pin_the_person_per_browser ... ok
+test shell_accessibility_and_contrast_pins ... ok
+test shell_has_sidebar_thread_and_composer ... ok
+test shell_has_themes_settings_people_and_memory_view ... ok
+test single_file_search_discloses_unreadable_files ... ok
+test skills_catalog_http_api_test_harness_and_agent_dispatch_work_end_to_end ... ok
+test spreadsheet_skill_writes_real_csv ... ok
+test sse_runs_stream_emits_live_events_and_cancel_stops_active_run ... ok
+test standing_preferences_excludes_only_identity_lines ... ok
+test subagent_cannot_publish_or_park_decisions ... ok
+test suite_apps_run_from_their_fields ... ok
+test symlink_target_containing_a_symlink_is_rewalked ... ok
+test theme_choice_is_saved_and_read_with_the_same_key ... ok
+test thread_history_reaches_the_model ... ok
+test threads_survive_restart ... ok
+test tool_results_report_success_not_failure ... ok
+test tz_offsets_come_from_the_zone_file ... ok
+test v070_scheduler_file_history_audit_bundle_and_people_switch_http_e2e ... ok
+test v070_wall_clock_schedules_preserve_utc_slots_and_cadence_labels ... ok
+test version_endpoints_report_the_running_build_and_updating_is_local_only ... ok
+test workflow_tool_errors_never_leak_host_filesystem_paths ... ok
+test workspace_files_upload_list_preview_download_and_jail_security ... ok
+test zero_tool_premature_done_is_retried_and_flagged_if_unverified ... ok
+
+test result: ok. 97 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 9.08s
+
+     Running tests/hardening_c4h1.rs (/home/cayleb/Work/scratch/2026-11-27-ergon-full/target/debug/deps/hardening_c4h1-d21a2c0c8f96c8b8)
+
+running 7 tests
+test h1_concurrent_resume_crash_recovery_and_cyclic_subpipeline ... ok
+test h1_connectors_and_mcp_redaction_stdio_sanitization_and_timeouts ... ok
+test h1_corrupt_ledger_invoice_recovery_and_zero_partial_writes ... ok
+test h1_cron_year_boundary_century_leap_day_and_tz_override ... ok
+test h1_formula_injection_escaping_in_xlsx_csv_and_invoice_exports ... ok
+test h1_ssrf_ipv6_nonstandard_ipv4_and_redirect_rejection ... ok
+test h1_strict_client_blocks_rune_skills_and_scopes_api_files ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.67s
+
+     Running tests/hardening_v032.rs (/home/cayleb/Work/scratch/2026-11-27-ergon-full/target/debug/deps/hardening_v032-cb27a91f0f36d8e0)
+
+running 11 tests
+test air_gapped_and_strict_client_policy_edge_cases ... ok
+test docs_broken_xlsx_xml_and_zip_guards ... ok
+test docs_pdf_huge_line_wrap_and_pagination_guards ... ok
+test folder_watch_rejects_symlinked_dir_parent_and_symlink_files_cwe59 ... ok
+test pipeline_concurrent_resume_retry_and_cancel_idempotency ... ok
+test pipeline_restart_recovery_handles_interrupted_cancelled_and_corrupt_checkpoint ... ok
+test pipeline_template_caps_circular_self_forward_deep_and_utf8_metrics ... ok
+test put_and_patch_concurrent_expected_sha256_409_and_history_integrity ... ok
+test secret_redaction_catches_partial_json_escaped_url_b64_and_preserves_hints ... ok
+test tables_rejects_malformed_utf8_binary_and_handles_ragged_csv ... ok
+test webhook_rejects_over_1mb_413_and_enforces_timestamp_replay_and_hmac ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 7.54s
+
+     Running tests/hardening_v036.rs (/home/cayleb/Work/scratch/2026-11-27-ergon-full/target/debug/deps/hardening_v036-6a3c2c882c3a172a)
+
+running 7 tests
+test e1_corrupt_clients_json_recovers_without_500 ... ok
+test e1_pricing_retainer_orphan_and_saturating_math_hardening ... ok
+test e2_corrupt_vault_index_recovers_and_reindex_stays_bounded ... ok
+test e2_vault_aggregate_edge_cases_and_cwe22_cwe59_checks ... ok
+test e3_dag_validation_edge_cases_and_disconnected_execution ... ok
+test e3_deliver_checkpoint_settlement_is_idempotent_under_repeated_and_racing_posts ... ok
+test e3_sse_malformed_frames_early_eof_and_compaction_edge_cases ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.76s
+
+     Running tests/tripwire.rs (/home/cayleb/Work/scratch/2026-11-27-ergon-full/target/debug/deps/tripwire-3fd62edb42cf1e9b)
+
+running 18 tests
+test a_web_page_driving_the_desk_is_refused_and_reported ... ok
+test breadcrumbs_headers_and_decoy_cookie_on_the_desk ... ok
+test cloud_metadata_is_unreachable ... ok
+test decoy_env_hands_out_a_traceable_key_and_using_it_is_refused ... ok
+test exfil_capable_skill_waits_before_reaching_colleagues ... ok
+test hijacked_agent_sending_its_bait_key_is_blocked_and_stopped ... ok
+test honest_mistakes_stay_silent ... ok
+test injected_memory_note_waits_for_you ... ok
+test library_skills_cannot_rewrite_memory ... ok
+test naming_the_address_yourself_is_permission ... ok
+test ordinary_learning_is_not_held ... ok
+test private_addresses_need_the_persons_own_words_or_one_tap ... ok
+test reaching_outside_the_workspace_for_the_api_key_stops_the_run ... ok
+test remote_scanners_are_banned_and_dropped_but_this_computer_never_is ... ok
+test security_log_travels_with_the_audit_bundle ... ok
+test security_policy_is_local_only_and_round_trips ... ok
+test tampered_role_cookie_is_caught ... ok
+test the_agent_can_never_call_ergons_own_api ... ok
+
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.00s
+
