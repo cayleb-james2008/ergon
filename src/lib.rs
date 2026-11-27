@@ -10,6 +10,7 @@
 
 pub mod audit_bundle;
 pub mod backup;
+pub mod auth;
 pub mod connectors;
 pub mod docs;
 pub mod file_history;
@@ -27,13 +28,15 @@ pub mod secret_store;
 pub mod service;
 pub mod server;
 pub use server::{
-    allowed_hosts_from, parked_note, serve, serve_with_gate, serve_with_hosts, serve_with_updater,
+    allowed_hosts_from, parked_note, serve, serve_with_gate, serve_with_hosts, serve_with_tls,
+    serve_with_updater,
     serve_with_updates, AppState, LiveModelConfig, PersonRuntime,
 };
 pub mod skill_catalog;
 pub mod skills;
 pub mod sse;
 pub mod tables;
+pub mod tls;
 pub mod tools;
 pub mod tripwire;
 pub use tools::{

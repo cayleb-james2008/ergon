@@ -1160,6 +1160,7 @@ pub struct ClientRecord {
     pub notes_md: String,
     pub tax_rate_pct: f64,
     pub payment_terms: String,
+    pub owner_person_id: Option<String>,
     pub created_ms: u64,
     pub updated_ms: u64,
 }
@@ -1173,7 +1174,7 @@ impl ClientRecord {
     }
 
     pub fn to_json(&self) -> Value {
-        json!({
+        let mut v = json!({
             "id": self.id,
             "name": self.name,
             "brand_header": self.brand_header,
@@ -1185,7 +1186,11 @@ impl ClientRecord {
             "payment_terms": self.payment_terms,
             "created_ms": self.created_ms,
             "updated_ms": self.updated_ms,
-        })
+        });
+        if let Some(ref owner) = self.owner_person_id {
+            v["owner_person_id"] = json!(owner);
+        }
+        v
     }
 
     pub fn from_json(v: &Value) -> Option<Self> {
@@ -1205,6 +1210,11 @@ impl ClientRecord {
             Some(s) => clean_single_line(s, 120),
             None => "Net 30".to_string(),
         };
+        let owner_person_id = v["owner_person_id"]
+            .as_str()
+            .map(str::trim)
+            .filter(|s| !s.is_empty() && crate::valid_person_id(s))
+            .map(String::from);
         Some(Self {
             id,
             name,
@@ -1225,6 +1235,7 @@ impl ClientRecord {
                 .filter(|n| n.is_finite() && (0.0..=100.0).contains(n))
                 .unwrap_or(0.0),
             payment_terms,
+            owner_person_id,
             created_ms: v["created_ms"].as_u64().unwrap_or(0),
             updated_ms: v["updated_ms"].as_u64().unwrap_or(0),
         })
@@ -1384,6 +1395,28 @@ impl ClientsStore {
             "active_engagement_by_person": self.active_engagement_by_person,
         })
     }
+
+    /// True if `person_id` owns this client or has at least one engagement for it.
+    pub fn person_can_access_client(&self, client_id: &str, person_id: &str) -> bool {
+        let Some(client) = self.clients.iter().find(|c| c.id == client_id) else {
+            return false;
+        };
+        if client.owner_person_id.as_deref() == Some(person_id) {
+            return true;
+        }
+        self.engagements
+            .iter()
+            .any(|e| e.client_id == client_id && e.person_id == person_id)
+    }
+
+    /// Returns `Some(true)` if the engagement exists and belongs to `person_id`,
+    /// `Some(false)` if it exists and belongs to someone else, or `None` if not found.
+    pub fn person_owns_engagement(&self, engagement_id: &str, person_id: &str) -> Option<bool> {
+        self.engagements
+            .iter()
+            .find(|e| e.id == engagement_id)
+            .map(|e| e.person_id == person_id)
+    }
 }
 
 pub fn clients_path(root_data_dir: &Path) -> PathBuf {
@@ -1468,6 +1501,14 @@ fn mint_unique_id(desired: Option<&str>, fallback_name: &str, existing: &[&str])
 }
 
 pub fn create_client(root_data_dir: &Path, body: &Value) -> Result<ClientRecord, (u16, String)> {
+    create_client_for_person(root_data_dir, None, body)
+}
+
+pub fn create_client_for_person(
+    root_data_dir: &Path,
+    owner_person_id: Option<&str>,
+    body: &Value,
+) -> Result<ClientRecord, (u16, String)> {
     if !body.is_object() {
         return Err((400, "request body must be a JSON object".to_string()));
     }
@@ -1510,6 +1551,10 @@ pub fn create_client(root_data_dir: &Path, body: &Value) -> Result<ClientRecord,
             notes_md,
             tax_rate_pct,
             payment_terms,
+            owner_person_id: owner_person_id
+                .map(str::trim)
+                .filter(|s| !s.is_empty() && crate::valid_person_id(s))
+                .map(String::from),
             created_ms: ts,
             updated_ms: ts,
         };

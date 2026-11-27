@@ -9,9 +9,20 @@
 use serde_json::{json, Value};
 use std::collections::VecDeque;
 use std::io::Write;
-use std::net::TcpStream;
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::Duration;
+
+pub trait SseSocket: Write {
+    fn prepare_sse(&self);
+}
+
+impl SseSocket for std::net::TcpStream {
+    fn prepare_sse(&self) {
+        let _ = self.set_nodelay(true);
+        let _ = self.set_write_timeout(Some(Duration::from_secs(10)));
+        let _ = self.set_read_timeout(Some(Duration::from_secs(10)));
+    }
+}
 
 const MAX_BUFFERED_EVENTS: usize = 1024;
 
@@ -163,8 +174,8 @@ impl RunEventBus {
 ///
 /// Captures `bus.head_seq()` BEFORE sending HTTP response headers so a client
 /// that begins work as soon as headers arrive can never outrun cursor setup.
-pub fn stream_sse(
-    stream: &mut TcpStream,
+pub fn stream_sse<S: SseSocket>(
+    stream: &mut S,
     bus: &RunEventBus,
     person_id: &str,
     thread_filter: Option<&str>,
@@ -191,8 +202,8 @@ pub fn stream_sse(
 /// any bytes to `stream`. Headers and the initial `event: status` frame are
 /// flushed atomically in a single write so subscribers are guaranteed zero gap
 /// between handshake and live delivery.
-pub fn stream_sse_from(
-    stream: &mut TcpStream,
+pub fn stream_sse_from<S: SseSocket>(
+    stream: &mut S,
     bus: &RunEventBus,
     person_id: &str,
     thread_filter: Option<&str>,
@@ -200,9 +211,7 @@ pub fn stream_sse_from(
     initial_cursor: u64,
     once: bool,
 ) -> std::io::Result<()> {
-    let _ = stream.set_nodelay(true);
-    let _ = stream.set_write_timeout(Some(Duration::from_secs(10)));
-    let _ = stream.set_read_timeout(Some(Duration::from_secs(10)));
+    stream.prepare_sse();
 
     let mut cursor = initial_cursor;
     let status_id = bus.head_seq().max(cursor);

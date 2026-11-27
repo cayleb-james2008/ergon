@@ -59,8 +59,12 @@ pub struct AppState {
     /// The company library — one shared store of skills, subagents
     /// and apps that the agents themselves maintain.
     pub library: Arc<Mutex<library::Library>>,
-    /// The hosting-layer gate token (ERGON_GATE_TOKEN), when set:
-    /// every request must carry it via `X-Ergon-Gate`, `Authorization: Bearer`,
+    /// Admin-only break-glass gate token (`ERGON_GATE_TOKEN`).
+    /// When multi-user auth is enabled, this token acts strictly as an
+    /// audited admin break-glass credential and never bypasses cross-user
+    /// isolation for non-admin sessions. In legacy single-user loopback mode
+    /// (zero accounts, no TLS), it continues to gate all requests as before.
+    /// Every request must carry it via `X-Ergon-Gate`, `Authorization: Bearer`,
     /// or `X-Ergon-Token`.
     pub gate_token: Option<String>,
     /// Optional dedicated admin token (ERGON_ADMIN_TOKEN) for update management
@@ -68,6 +72,12 @@ pub struct AppState {
     pub admin_token: Option<String>,
     /// Extra Host names accepted without a gate token (ERGON_ALLOWED_HOSTS).
     pub allowed_hosts: Vec<String>,
+    /// Multi-user accounts, persisted sessions, optional OIDC, and RBAC store.
+    pub auth: Arc<auth::AuthStore>,
+    /// Optional HTTPS/TLS server configuration (rustls).
+    pub tls: Option<tls::TlsConfig>,
+    /// True when the listener is bound to a non-loopback address.
+    pub non_loopback_bind: bool,
     pub people: Arc<RwLock<PeopleState>>,
     pub runtimes: Arc<RwLock<HashMap<String, Arc<PersonRuntime>>>>,
     /// In-flight runs per person for live step progress streaming (`GET /api/runs/status` & `/api/runs/stream`).
@@ -245,17 +255,32 @@ fn runtime_for(state: &AppState, person: &Person) -> Arc<PersonRuntime> {
 }
 
 pub fn serve(listener: TcpListener, cfg: Config) -> std::io::Result<()> {
-    serve_env(listener, cfg, false)
+    serve_env(listener, cfg, None, false)
 }
 
 /// What the `ergon` binary runs: `serve` plus the periodic check for a newer
 /// GitHub release (see `update`). Tests use `serve`, which never calls out.
 pub fn serve_with_updates(listener: TcpListener, cfg: Config) -> std::io::Result<()> {
     install_shutdown_handlers();
-    serve_env(listener, cfg, true)
+    serve_env(listener, cfg, None, true)
 }
 
-fn serve_env(listener: TcpListener, cfg: Config, background_updates: bool) -> std::io::Result<()> {
+/// Serve with an explicit TLS configuration (HTTPS via rustls).
+pub fn serve_with_tls(
+    listener: TcpListener,
+    cfg: Config,
+    tls_config: Option<tls::TlsConfig>,
+    background_updates: bool,
+) -> std::io::Result<()> {
+    serve_env(listener, cfg, tls_config, background_updates)
+}
+
+fn serve_env(
+    listener: TcpListener,
+    cfg: Config,
+    tls_override: Option<tls::TlsConfig>,
+    background_updates: bool,
+) -> std::io::Result<()> {
     let gate = std::env::var("ERGON_GATE_TOKEN")
         .ok()
         .map(|t| t.trim().to_string())
@@ -265,7 +290,12 @@ fn serve_env(listener: TcpListener, cfg: Config, background_updates: bool) -> st
         .map(|t| t.trim().to_string())
         .filter(|t| !t.is_empty());
     let hosts = allowed_hosts_from(&std::env::var("ERGON_ALLOWED_HOSTS").unwrap_or_default());
-    serve_inner(listener, cfg, gate, admin, hosts, None, background_updates)
+    let tls_cfg = match tls_override {
+        Some(t) => Some(t),
+        None => tls::resolve_tls(&cfg.data_dir, false, None, None, &hosts)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))?,
+    };
+    serve_inner(listener, cfg, gate, admin, hosts, tls_cfg, None, background_updates)
 }
 
 /// Parses ERGON_ALLOWED_HOSTS: comma-separated host names, with or without
@@ -293,7 +323,7 @@ pub fn serve_with_hosts(
     gate_token: Option<String>,
     allowed_hosts: Vec<String>,
 ) -> std::io::Result<()> {
-    serve_inner(listener, cfg, gate_token, None, allowed_hosts, None, false)
+    serve_inner(listener, cfg, gate_token, None, allowed_hosts, None, None, false)
 }
 
 /// Serves with explicit gate token, optional admin token, allowed hosts, and custom updater
@@ -306,7 +336,7 @@ pub fn serve_with_updater(
     allowed_hosts: Vec<String>,
     updater: Arc<update::Updater>,
 ) -> std::io::Result<()> {
-    serve_inner(listener, cfg, gate_token, admin_token, allowed_hosts, Some(updater), false)
+    serve_inner(listener, cfg, gate_token, admin_token, allowed_hosts, None, Some(updater), false)
 }
 
 fn scheduler_tick_ms() -> u64 {
@@ -333,7 +363,7 @@ fn is_history_security_error(err: &str) -> bool {
 }
 
 fn respond_checked_write_err(
-    stream: &mut std::net::TcpStream,
+    stream: &mut ConnStream,
     err: file_history::CheckedWriteErr,
 ) -> std::io::Result<()> {
     match err {
@@ -1568,15 +1598,20 @@ fn serve_inner(
     gate_token: Option<String>,
     admin_token: Option<String>,
     allowed_hosts: Vec<String>,
+    tls: Option<tls::TlsConfig>,
     custom_updater: Option<Arc<update::Updater>>,
     background_updates: bool,
 ) -> std::io::Result<()> {
     cfg.ensure_dirs()?;
     logging::init_if_unset(&cfg.data_dir);
     // The agent may never fetch this server's own API (egress guard).
-    if let Ok(addr) = listener.local_addr() {
-        tripwire::register_self_port(addr.port());
-    }
+    let non_loopback_bind = listener
+        .local_addr()
+        .map(|addr| {
+            tripwire::register_self_port(addr.port());
+            !addr.ip().is_loopback()
+        })
+        .unwrap_or(false);
     let perimeter = tripwire::Perimeter::new(&cfg.data_dir);
     let gate_token_is_none = gate_token.is_none();
     let updater = custom_updater.unwrap_or_else(|| {
@@ -1589,7 +1624,11 @@ fn serve_inner(
             Some(&cfg.data_dir),
         )
     });
-    let people = PeopleState::load(&cfg);
+    let people = Arc::new(RwLock::new(PeopleState::load(&cfg)));
+    let auth_store = Arc::new(auth::AuthStore::load(&cfg.data_dir));
+    if let Err(e) = auth_store.bootstrap_admin_from_env(&people, &cfg) {
+        crate::logging::error("ergon::server", &format!("ergon: ERGON_ADMIN_USER bootstrap error: {e}"));
+    }
     let library = library::Library::load(&cfg.data_dir);
     let auto_detected = cfg.api_key.is_none() && cfg.model_configured();
     let boot_model_configured =
@@ -1611,7 +1650,10 @@ fn serve_inner(
         gate_token,
         admin_token,
         allowed_hosts,
-        people: Arc::new(RwLock::new(people)),
+        auth: auth_store,
+        tls,
+        non_loopback_bind,
+        people,
         runtimes: Arc::new(RwLock::new(HashMap::new())),
         live_runs: Arc::new(Mutex::new(HashMap::new())),
         live_runs_recovered,
@@ -1910,6 +1952,7 @@ pub(crate) struct Request {
 
 thread_local! {
     static KEEP_ALIVE_CONN: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    static TLS_CONN: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     static JSON_SCRATCH: std::cell::RefCell<Vec<u8>> = std::cell::RefCell::new(Vec::with_capacity(2048));
 }
 
@@ -1923,9 +1966,70 @@ const MAX_BODY_BYTES: usize = 1_048_576;
 const MAX_UPLOAD_BODY_BYTES: usize = 36 * 1_048_576;
 const MAX_HEAD_BYTES: usize = 32_768;
 
+enum ConnStream {
+    Plain(std::net::TcpStream),
+    Tls(Box<rustls::StreamOwned<rustls::ServerConnection, std::net::TcpStream>>),
+}
+
+impl ConnStream {
+    fn tcp(&self) -> &std::net::TcpStream {
+        match self {
+            ConnStream::Plain(s) => s,
+            ConnStream::Tls(t) => t.get_ref(),
+        }
+    }
+
+    fn shutdown_both(&self) {
+        let _ = self.tcp().shutdown(std::net::Shutdown::Both);
+    }
+}
+
+impl Read for ConnStream {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        match self {
+            ConnStream::Plain(s) => s.read(buf),
+            ConnStream::Tls(t) => t.read(buf),
+        }
+    }
+}
+
+impl Write for ConnStream {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        match self {
+            ConnStream::Plain(s) => s.write(buf),
+            ConnStream::Tls(t) => t.write(buf),
+        }
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        match self {
+            ConnStream::Plain(s) => s.flush(),
+            ConnStream::Tls(t) => t.flush(),
+        }
+    }
+}
+
+impl sse::SseSocket for ConnStream {
+    fn prepare_sse(&self) {
+        let s = self.tcp();
+        let _ = s.set_nodelay(true);
+        let _ = s.set_write_timeout(Some(std::time::Duration::from_secs(10)));
+        let _ = s.set_read_timeout(Some(std::time::Duration::from_secs(10)));
+    }
+}
+
 trait SockStream: Read + Write {
     fn set_rt(&self, dur: std::time::Duration) -> std::io::Result<()>;
     fn shutdown_write(&self);
+}
+
+impl SockStream for ConnStream {
+    fn set_rt(&self, dur: std::time::Duration) -> std::io::Result<()> {
+        self.tcp().set_read_timeout(Some(dur))
+    }
+    fn shutdown_write(&self) {
+        let _ = self.tcp().shutdown(std::net::Shutdown::Write);
+    }
 }
 
 impl SockStream for std::net::TcpStream {
@@ -2368,6 +2472,21 @@ fn gate_authenticated(state: &AppState, req: &Request) -> bool {
     false
 }
 
+/// Update management is admin-only: in multi-user auth mode an authenticated
+/// `Role::Admin` principal (including audited break-glass) qualifies; otherwise
+/// fall back to the hosting-layer token / loopback rules in `is_update_admin`.
+fn update_admin_ok(
+    state: &AppState,
+    req: &Request,
+    principal: Option<&auth::AuthPrincipal>,
+    auth_enforced: bool,
+) -> bool {
+    if auth_enforced && principal.is_some_and(|p| p.role == auth::Role::Admin) {
+        return true;
+    }
+    is_update_admin(state, req)
+}
+
 /// Determines whether the caller is authorized to manage updates (`check`, `mode`,
 /// `install`/`apply`, `restart`) on this Ergon instance:
 /// - Explicit non-admin `X-Ergon-Role` always denies (`403`).
@@ -2451,7 +2570,7 @@ pub(crate) fn refusal(req: &Request, gated: bool, allowed: &[String]) -> Option<
 }
 
 fn respond(
-    stream: &mut std::net::TcpStream,
+    stream: &mut ConnStream,
     status: u16,
     content_type: &str,
     body: &str,
@@ -2461,28 +2580,63 @@ fn respond(
 
 #[inline]
 fn respond_bytes(
-    stream: &mut std::net::TcpStream,
+    stream: &mut ConnStream,
     status: u16,
     content_type: &str,
     body: &[u8],
     extra_headers: &[(&str, String)],
 ) -> std::io::Result<()> {
-    respond_bytes_with_head(stream, status, content_type, body, extra_headers, false)
+    respond_bytes_inner(stream, status, content_type, body, extra_headers, false)
 }
 
-#[inline]
-fn respond_bytes_with_head(
-    stream: &mut std::net::TcpStream,
+fn respond_head(
+    stream: &mut ConnStream,
     status: u16,
     content_type: &str,
-    body: &[u8],
+    content_length: usize,
     extra_headers: &[(&str, String)],
-    head_only: bool,
 ) -> std::io::Result<()> {
     use std::fmt::Write as _;
-    let reason = match status {
+    let reason = status_reason(status);
+    let keep_open = KEEP_ALIVE_CONN.get() && status < 400 && !shutdown_requested();
+    if !keep_open {
+        KEEP_ALIVE_CONN.set(false);
+    }
+    let conn_hdr = if keep_open { "keep-alive" } else { "close" };
+    let mut head = String::with_capacity(384);
+    let _ = write!(
+        &mut head,
+        "HTTP/1.1 {status} {reason}\r\nContent-Type: {content_type}\r\nContent-Length: {content_length}\r\nConnection: {conn_hdr}\r\n"
+    );
+    if keep_open {
+        head.push_str("Keep-Alive: timeout=2, max=10000\r\n");
+    }
+    for (name, value) in extra_headers {
+        let _ = write!(&mut head, "{name}: {value}\r\n");
+    }
+    let has = |n: &str| extra_headers.iter().any(|(h, _)| h.eq_ignore_ascii_case(n));
+    for (name, value) in tripwire::BASE_HEADERS {
+        if !has(name) {
+            let _ = write!(&mut head, "{name}: {value}\r\n");
+        }
+    }
+    if TLS_CONN.get() && !has("Strict-Transport-Security") {
+        head.push_str("Strict-Transport-Security: max-age=31536000; includeSubDomains\r\n");
+    }
+    if content_type.starts_with("application/json") && !has("Cache-Control") {
+        head.push_str("Cache-Control: no-store\r\n");
+    }
+    head.push_str("\r\n");
+    stream.write_all(head.as_bytes())?;
+    stream.flush()
+}
+
+fn status_reason(status: u16) -> &'static str {
+    match status {
         200 => "OK",
         201 => "Created",
+        202 => "Accepted",
+        302 => "Found",
         304 => "Not Modified",
         400 => "Bad Request",
         401 => "Unauthorized",
@@ -2492,11 +2646,26 @@ fn respond_bytes_with_head(
         409 => "Conflict",
         413 => "Content Too Large",
         415 => "Unsupported Media Type",
+        429 => "Too Many Requests",
         431 => "Request Header Fields Too Large",
         500 => "Internal Server Error",
+        502 => "Bad Gateway",
         503 => "Service Unavailable",
         _ => "OK",
-    };
+    }
+}
+
+#[inline]
+fn respond_bytes_inner(
+    stream: &mut ConnStream,
+    status: u16,
+    content_type: &str,
+    body: &[u8],
+    extra_headers: &[(&str, String)],
+    omit_body: bool,
+) -> std::io::Result<()> {
+    use std::fmt::Write as _;
+    let reason = status_reason(status);
     let body_len = if status == 304 { 0 } else { body.len() };
     let keep_open = KEEP_ALIVE_CONN.get() && status < 400 && !shutdown_requested();
     if !keep_open {
@@ -2521,6 +2690,9 @@ fn respond_bytes_with_head(
     // Hardening on every response (unless the caller set its own).
     if extra_headers.is_empty() {
         head.push_str(tripwire::BASE_HEADERS_BLOCK);
+        if TLS_CONN.get() {
+            head.push_str("Strict-Transport-Security: max-age=31536000; includeSubDomains\r\n");
+        }
         if content_type.starts_with("application/json") {
             head.push_str("Cache-Control: no-store\r\n");
         }
@@ -2531,29 +2703,47 @@ fn respond_bytes_with_head(
                 let _ = write!(&mut head, "{name}: {value}\r\n");
             }
         }
+        if TLS_CONN.get() && !has("Strict-Transport-Security") {
+            head.push_str("Strict-Transport-Security: max-age=31536000; includeSubDomains\r\n");
+        }
         if content_type.starts_with("application/json") && !has("Cache-Control") {
             head.push_str("Cache-Control: no-store\r\n");
         }
     }
     head.push_str("\r\n");
-    if status != 304 && !head_only && !body.is_empty() {
-        let mut bufs = [std::io::IoSlice::new(head.as_bytes()), std::io::IoSlice::new(body)];
-        let mut slice_ref: &mut [std::io::IoSlice<'_>] = &mut bufs;
-        while !slice_ref.is_empty() {
-            let n = stream.write_vectored(slice_ref)?;
-            if n == 0 {
-                return Err(std::io::Error::new(std::io::ErrorKind::WriteZero, "write_vectored 0"));
+    if omit_body || status == 304 || body.is_empty() {
+        stream.write_all(head.as_bytes())?;
+        return stream.flush();
+    }
+    match stream {
+        ConnStream::Plain(tcp) => {
+            let mut bufs = [
+                std::io::IoSlice::new(head.as_bytes()),
+                std::io::IoSlice::new(body),
+            ];
+            let mut slice_ref: &mut [std::io::IoSlice<'_>] = &mut bufs;
+            while !slice_ref.is_empty() {
+                let n = tcp.write_vectored(slice_ref)?;
+                if n == 0 {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::WriteZero,
+                        "write_vectored 0",
+                    ));
+                }
+                std::io::IoSlice::advance_slices(&mut slice_ref, n);
             }
-            std::io::IoSlice::advance_slices(&mut slice_ref, n);
+            Ok(())
         }
-        Ok(())
-    } else {
-        stream.write_all(head.as_bytes())
+        ConnStream::Tls(_) => {
+            stream.write_all(head.as_bytes())?;
+            stream.write_all(body)?;
+            stream.flush()
+        }
     }
 }
 
 fn respond_h(
-    stream: &mut std::net::TcpStream,
+    stream: &mut ConnStream,
     status: u16,
     content_type: &str,
     body: &str,
@@ -2667,7 +2857,7 @@ const VERSION_JSON_BYTES: &[u8] = concat!(
 
 #[inline]
 fn respond_json_with<F: FnOnce(&mut Vec<u8>)>(
-    stream: &mut std::net::TcpStream,
+    stream: &mut ConnStream,
     status: u16,
     fill: F,
 ) -> std::io::Result<()> {
@@ -2695,7 +2885,7 @@ fn person_idx(state: &AppState, person: &Person, runtime: &PersonRuntime) -> Arc
 
 #[cold]
 #[inline(never)]
-fn respond_err(stream: &mut std::net::TcpStream, status: u16, msg: &str) -> std::io::Result<()> {
+fn respond_err(stream: &mut ConnStream, status: u16, msg: &str) -> std::io::Result<()> {
     respond_json_with(stream, status, |buf| {
         buf.extend_from_slice(br#"{"error":"#);
         search::write_json_str(buf, msg);
@@ -2703,7 +2893,7 @@ fn respond_err(stream: &mut std::net::TcpStream, status: u16, msg: &str) -> std:
     })
 }
 
-fn respond_json(stream: &mut std::net::TcpStream, status: u16, v: &Value) -> std::io::Result<()> {
+fn respond_json(stream: &mut ConnStream, status: u16, v: &Value) -> std::io::Result<()> {
     JSON_SCRATCH.with(|cell| {
         let mut buf = cell.borrow_mut();
         buf.clear();
@@ -2858,7 +3048,7 @@ fn quarantine_file(cfg: &Config, rel: &str) -> String {
 /// plainly what happened and where the details are, and the response is
 /// the thread (200) marked `stopped_for_safety`.
 fn respond_safety_stop(
-    stream: &mut std::net::TcpStream,
+    stream: &mut ConnStream,
     runtime: &PersonRuntime,
     thread_id: &str,
     err: &str,
@@ -2919,7 +3109,7 @@ fn etag_matches(if_none_match: Option<&str>, etag: &str) -> bool {
     false
 }
 
-fn serve_chunk(stream: &mut std::net::TcpStream, req: &Request, path: &str) -> std::io::Result<()> {
+fn serve_chunk(stream: &mut ConnStream, req: &Request, path: &str) -> std::io::Result<()> {
     let Some(chunk) = ui::chunk(path) else {
         return respond_err(stream, 404, "chunk not found");
     };
@@ -2933,27 +3123,28 @@ fn serve_chunk(stream: &mut std::net::TcpStream, req: &Request, path: &str) -> s
     if etag_matches(req.if_none_match.as_deref(), etag) {
         return respond_bytes(stream, 304, chunk.mime, &[], &headers);
     }
+    let omit_body = req.method == "HEAD";
     if wants_gzip {
         headers.push(("Content-Encoding", "gzip".to_string()));
-        respond_bytes(stream, 200, chunk.mime, chunk.bytes, &headers)
+        respond_bytes_inner(stream, 200, chunk.mime, chunk.bytes, &headers, omit_body)
     } else {
         let raw = ui::chunk_raw(chunk);
-        respond_bytes(stream, 200, chunk.mime, raw.as_ref(), &headers)
+        respond_bytes_inner(stream, 200, chunk.mime, raw.as_ref(), &headers, omit_body)
     }
 }
 
-/// Serve a desk page (`/` or `/phone`). First visit (or an unknown,
-/// forged or stale cookie) gets a fresh server-generated session pinned
-/// to the current active person — so this browser keeps its own person
-/// even if another client switches the global one — plus the decoy
-/// `ergon_role` cookie (HT1). Supports gzip (`Accept-Encoding: gzip`),
-/// strong `ETag` + `304 Not Modified`, `Vary: Accept-Encoding`, and strict CSP.
+/// Serve a desk page (`/` or `/phone`). When multi-user auth is enforced and
+/// the caller is not yet signed in, no session cookie is minted (the SPA renders
+/// the sign-in / first-admin setup screen and all `/api/*` data endpoints remain
+/// gated with 401). In legacy single-user loopback mode, preserves existing
+/// per-browser session cookie behavior.
 fn serve_page(
-    stream: &mut std::net::TcpStream,
+    stream: &mut ConnStream,
     state: &AppState,
     req: &Request,
     person: &Person,
     page: &'static str,
+    auth_enforced: bool,
 ) -> std::io::Result<()> {
     let bundle = state.tripwire.decorate_html_bundle(page);
     let wants_gzip = accepts_gzip(req.accept_encoding.as_deref());
@@ -2964,39 +3155,40 @@ fn serve_page(
         ("Vary", "Accept-Encoding".to_string()),
         ("Cache-Control", "no-cache".to_string()),
     ];
-    if !session_known(state, &req.session) {
+    if !auth_enforced && !session_known(state, &req.session) {
         let sid = new_session_id();
         insert_session(state, sid.clone(), person.id.clone());
+        let secure = if state.tls.is_some() { "; Secure" } else { "" };
         headers.push((
             "Set-Cookie",
-            format!("ergon_session={sid}; Path=/; HttpOnly; SameSite=Lax"),
+            format!("ergon_session={sid}; Path=/; HttpOnly; SameSite=Lax{secure}"),
         ));
         headers.push((
             "Set-Cookie",
             format!("ergon_role={}; Path=/; SameSite=Strict", tripwire::ROLE_COOKIE_VALUE),
         ));
     }
-    let head_only = req.method == "HEAD";
     if etag_matches(req.if_none_match.as_deref(), etag) {
-        return respond_bytes_with_head(stream, 304, "text/html; charset=utf-8", &[], &headers, true);
+        return respond_bytes_inner(stream, 304, "text/html; charset=utf-8", &[], &headers, true);
     }
+    let omit_body = req.method == "HEAD";
     if wants_gzip {
         headers.push(("Content-Encoding", "gzip".to_string()));
-        respond_bytes_with_head(stream, 200, "text/html; charset=utf-8", &bundle.gzip, &headers, head_only)
+        respond_bytes_inner(stream, 200, "text/html; charset=utf-8", &bundle.gzip, &headers, omit_body)
     } else {
-        respond_bytes_with_head(
+        respond_bytes_inner(
             stream,
             200,
             "text/html; charset=utf-8",
             bundle.html.as_bytes(),
             &headers,
-            head_only,
+            omit_body,
         )
     }
 }
 
 fn handle_webhook_hook_request(
-    stream: &mut std::net::TcpStream,
+    stream: &mut ConnStream,
     state: &Arc<AppState>,
     req: &Request,
 ) -> std::io::Result<()> {
@@ -3057,7 +3249,31 @@ fn handle_webhook_hook_request(
     respond_err(stream, 401, "invalid or missing webhook authentication")
 }
 
-fn handle_connection(stream: std::net::TcpStream, state: &Arc<AppState>) -> std::io::Result<()> {
+fn mcp_inbound_bearer_valid(authorization: Option<&str>) -> bool {
+    let Ok(expected) = std::env::var("ERGON_MCP_INBOUND_TOKEN") else {
+        return false;
+    };
+    let expected = expected.trim();
+    if expected.is_empty() {
+        return false;
+    }
+    let Some(presented) = auth::extract_bearer_token(authorization) else {
+        return false;
+    };
+    let h1 = tripwire::sha256(presented.as_bytes());
+    let h2 = tripwire::sha256(expected.as_bytes());
+    tripwire::ct_eq(&h1, &h2)
+}
+
+fn person_by_id(state: &AppState, id: &str) -> Person {
+    let people = state.people.read().unwrap();
+    if let Some(p) = people.people.iter().find(|p| p.id == id) {
+        return p.clone();
+    }
+    people.active_person()
+}
+
+fn handle_connection(mut stream: std::net::TcpStream, state: &Arc<AppState>) -> std::io::Result<()> {
     let _ = stream.set_nodelay(true);
     // A banned scanner is dropped before one byte of its request is read
     // (never this computer: loopback is never banned).
@@ -3066,7 +3282,43 @@ fn handle_connection(stream: std::net::TcpStream, state: &Arc<AppState>) -> std:
         let _ = stream.shutdown(std::net::Shutdown::Both);
         return Ok(());
     }
-    let mut reader = BufReader::with_capacity(2048, stream);
+    struct TlsResetGuard;
+    impl Drop for TlsResetGuard {
+        fn drop(&mut self) {
+            TLS_CONN.set(false);
+        }
+    }
+    let _tls_reset = TlsResetGuard;
+    let conn_stream = if let Some(ref tls_cfg) = state.tls {
+        let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(10)));
+        let mut first = [0u8; 1];
+        match stream.peek(&mut first) {
+            Ok(0) | Err(_) => return Ok(()),
+            Ok(_) if first[0] != 0x16 => {
+                // Plaintext HTTP hit a TLS port: reject cleanly without serving any app data.
+                let body = r#"{"error":"HTTPS is required on this port — reconnect using https://"}"#;
+                let resp = format!(
+                    "HTTP/1.1 400 Bad Request\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                let _ = stream.write_all(resp.as_bytes());
+                let _ = stream.flush();
+                let _ = stream.shutdown(std::net::Shutdown::Both);
+                return Ok(());
+            }
+            Ok(_) => {}
+        }
+        let Ok(tls_conn) = rustls::ServerConnection::new(tls_cfg.server_config.clone()) else {
+            return Ok(());
+        };
+        TLS_CONN.set(true);
+        ConnStream::Tls(Box::new(rustls::StreamOwned::new(tls_conn, stream)))
+    } else {
+        TLS_CONN.set(false);
+        ConnStream::Plain(stream)
+    };
+
+    let mut reader = BufReader::with_capacity(2048, conn_stream);
     const MAX_KEEP_ALIVE_REQUESTS: usize = 10_000;
     for req_idx in 0..MAX_KEEP_ALIVE_REQUESTS {
         let initial_wait = if req_idx == 0 {
@@ -3080,7 +3332,7 @@ fn handle_connection(stream: std::net::TcpStream, state: &Arc<AppState>) -> std:
         };
         let client = state.tripwire.client_ip(peer, req.forwarded_for.as_deref());
         if client != peer && client.map(|ip| state.tripwire.is_banned(ip)).unwrap_or(false) {
-            let _ = reader.get_ref().shutdown(std::net::Shutdown::Both);
+            reader.get_ref().shutdown_both();
             break;
         }
         let view = tripwire::RequestView {
@@ -3113,19 +3365,82 @@ fn handle_connection(stream: std::net::TcpStream, state: &Arc<AppState>) -> std:
             return handle_webhook_hook_request(reader.get_mut(), state, &req);
         }
         let root_cfg = &state.cfg;
-        // Hosting-layer gate: when a gate token is configured, every request
-        // must present a valid gate or admin credential (`X-Ergon-Gate`,
-        // `Authorization: Bearer`, or `X-Ergon-Token`).
-        if !gate_authenticated(state, &req) {
-            state.tripwire.note_refusal("gate", &view, client);
-            KEEP_ALIVE_CONN.set(false);
-            return respond_json(
-                reader.get_mut(),
-                401,
-                &json!({"error": "this Ergon is gated by its hosting layer — the gate header is missing or wrong"}),
-            );
-        }
-        if let Some((status, message)) = refusal(&req, state.gate_token.is_some(), &state.allowed_hosts) {
+        let auth_enforced = state
+            .auth
+            .is_enforced(state.tls.is_some(), state.non_loopback_bind);
+        let raw_auth_token = auth::extract_bearer_token(req.authorization.as_deref())
+            .or(req.session.as_deref());
+        let session_principal = raw_auth_token.and_then(|t| state.auth.validate_session_token(t));
+
+        let mut break_glass_verified = false;
+        let principal: Option<auth::AuthPrincipal> = if !auth_enforced {
+            // Classic single-user loopback dev/test mode (0 accounts, no TLS,
+            // no ERGON_AUTH_REQUIRED): preserve legacy gate_token check.
+            // Hosting-layer gate: when a gate token is configured, every request
+            // must present a valid gate or admin credential (`X-Ergon-Gate`,
+            // `Authorization: Bearer`, or `X-Ergon-Token`).
+            if state.gate_token.is_some() {
+                if !gate_authenticated(state, &req) {
+                    state.tripwire.note_refusal("gate", &view, client);
+                    KEEP_ALIVE_CONN.set(false);
+                    return respond_json(
+                        reader.get_mut(),
+                        401,
+                        &json!({"error": "this Ergon is gated by its hosting layer — the gate header is missing or wrong"}),
+                    );
+                }
+                break_glass_verified = true;
+            }
+            session_principal
+        } else {
+            // Multi-user / TLS / non-loopback auth-enforced mode:
+            // ERGON_GATE_TOKEN is an audited admin-only break-glass token and
+            // NEVER bypasses cross-user isolation for a non-admin session.
+            if let Some(presented) = req.gate.as_deref() {
+                let matched = state
+                    .gate_token
+                    .as_deref()
+                    .is_some_and(|exp| tripwire::ct_eq(presented.as_bytes(), exp.as_bytes()));
+                if !matched {
+                    state.tripwire.note_refusal("gate", &view, client);
+                    KEEP_ALIVE_CONN.set(false);
+                    return respond_json(
+                        reader.get_mut(),
+                        401,
+                        &json!({"error": "invalid break-glass gate token"}),
+                    );
+                }
+                break_glass_verified = true;
+            }
+            if let Some(user_p) = session_principal {
+                // Never allow X-Ergon-Gate to elevate a non-admin user session.
+                Some(user_p)
+            } else if break_glass_verified {
+                auth::record_break_glass_audit(&state.cfg.data_dir, &req.method, &req.path, client);
+                let active = state.people.read().unwrap().active_person();
+                Some(auth::AuthPrincipal {
+                    user_id: "break-glass".to_string(),
+                    username: "break-glass".to_string(),
+                    display_name: "Admin Break-Glass".to_string(),
+                    email: None,
+                    role: auth::Role::Admin,
+                    home_person_id: active.id.clone(),
+                    active_person_id: active.id,
+                    auth_method: "gate_token".to_string(),
+                    is_break_glass: true,
+                    session_token_hash: None,
+                })
+            } else {
+                None
+            }
+        };
+
+        let host_gate_exempt = if !auth_enforced {
+            state.gate_token.is_some()
+        } else {
+            break_glass_verified
+        };
+        if let Some((status, message)) = refusal(&req, host_gate_exempt, &state.allowed_hosts) {
             // RE1: a page on another site (CSRF) or a rebound DNS name tried
             // to drive this desk. Refused as before — and now the person hears of it.
             let kind = if message.starts_with("requests must address") { "host" } else { "cross-site" };
@@ -3133,18 +3448,86 @@ fn handle_connection(stream: std::net::TcpStream, state: &Arc<AppState>) -> std:
             KEEP_ALIVE_CONN.set(false);
             return respond_err(reader.get_mut(), status, message);
         }
+
+        // Centralized authentication & RBAC guard for ALL routes.
+        if auth_enforced {
+            let access = auth::route_access(&req.method, &req.path);
+            let mcp_token_bypass = req.method == "POST"
+                && req.path == "/api/mcp/inbound"
+                && mcp_inbound_bearer_valid(req.authorization.as_deref());
+            match access {
+                auth::RouteAccess::Public => {}
+                auth::RouteAccess::PublicSetupOnly => {
+                    if state.auth.has_users() {
+                        KEEP_ALIVE_CONN.set(false);
+                        return respond_err(
+                            reader.get_mut(),
+                            403,
+                            "initial admin setup already completed",
+                        );
+                    }
+                }
+                _ if mcp_token_bypass => {}
+                other => {
+                    let Some(ref p) = principal else {
+                        KEEP_ALIVE_CONN.set(false);
+                        return respond_json(
+                            reader.get_mut(),
+                            401,
+                            &json!({
+                                "error": "authentication required",
+                                "auth_required": true,
+                                "needs_setup": !state.auth.has_users(),
+                            }),
+                        );
+                    };
+                    if !p.role.satisfies(other) {
+                        KEEP_ALIVE_CONN.set(false);
+                        return respond_err(
+                            reader.get_mut(),
+                            403,
+                            &auth::access_denied_reason(other, p.role),
+                        );
+                    }
+                }
+            }
+        }
+
         let is_sse = req.path == "/api/runs/stream";
         KEEP_ALIVE_CONN.set(req.keep_alive && !is_sse && !shutdown_requested());
-        // The person this request acts for (session-pinned when the caller
-        // has a session cookie, else the global active person).
-        let person = effective_person(state, &req.session);
+        // Resolve the person strictly from the authenticated principal when auth
+        // is enforced (non-admins are pinned to their own home workspace).
+        let person = if let Some(ref p) = principal {
+            person_by_id(state, &p.active_person_id)
+        } else if !auth_enforced {
+            effective_person(state, &req.session)
+        } else {
+            state.people.read().unwrap().active_person()
+        };
         let runtime = runtime_for(state, &person);
         let stream = reader.get_mut();
-        let res = if let Some(res) = try_route_system(stream, state, &req, &person, &runtime) {
+        let res = if let Some(res) = try_route_system(
+            stream,
+            state,
+            &req,
+            &person,
+            &runtime,
+            principal.as_ref(),
+            auth_enforced,
+            client,
+        ) {
             res
         } else if let Some(res) = try_route_files_and_audit(stream, state, &req, &person, &runtime) {
             res
-        } else if let Some(res) = try_route_knowledge_and_routines(stream, state, &req, &person, &runtime) {
+        } else if let Some(res) = try_route_knowledge_and_routines(
+            stream,
+            state,
+            &req,
+            &person,
+            &runtime,
+            principal.as_ref(),
+            auth_enforced,
+        ) {
             res
         } else {
             let ctx = ToolCtx {
@@ -3168,24 +3551,352 @@ fn handle_connection(stream: std::net::TcpStream, state: &Arc<AppState>) -> std:
     Ok(())
 }
 
-/// Routes UI pages, server status/config, updates, people, library/suite, and security.
+/// Routes UI pages, auth/OIDC/RBAC, server status/config, updates, people, library/suite, and security.
+#[allow(clippy::too_many_arguments)]
 fn try_route_system(
-    stream: &mut std::net::TcpStream,
+    stream: &mut ConnStream,
     state: &AppState,
     req: &Request,
     person: &Person,
     runtime: &Arc<PersonRuntime>,
+    principal: Option<&auth::AuthPrincipal>,
+    auth_enforced: bool,
+    client_ip: Option<std::net::IpAddr>,
 ) -> Option<std::io::Result<()>> {
     let root_cfg = &state.cfg;
-    let _ = root_cfg;
+    let tls_enabled = state.tls.is_some();
+    let max_age_secs = std::env::var("ERGON_SESSION_TTL_SECS")
+        .ok()
+        .and_then(|s| s.trim().parse::<u64>().ok())
+        .unwrap_or(12 * 3600)
+        .clamp(300, 30 * 86_400);
     Some(match (req.method.as_str(), req.path.as_str()) {
-        ("GET" | "HEAD", "/") => serve_page(stream, state, req, person, ui::index_html()),
-        ("GET", path) if path.starts_with("/chunks/") => serve_chunk(stream, req, path),
+        ("GET" | "HEAD", "/") => {
+            serve_page(stream, state, req, person, ui::index_html(), auth_enforced)
+        }
+        ("GET" | "HEAD", "/phone") => {
+            serve_page(stream, state, req, person, ui::index_html(), auth_enforced)
+        }
+        ("GET" | "HEAD", path) if path.starts_with("/chunks/") => serve_chunk(stream, req, path),
+        ("GET" | "HEAD", "/api/health") => {
+            let body = json!({
+                "ok": true,
+                "name": "ergon",
+                "version": env!("CARGO_PKG_VERSION"),
+                "auth_required": auth_enforced,
+                "needs_setup": !state.auth.has_users(),
+                "oidc_enabled": state.auth.oidc_enabled(),
+                "tls": tls_enabled,
+            })
+            .to_string();
+            if req.method == "HEAD" {
+                respond_head(stream, 200, "application/json", body.len(), &[])
+            } else {
+                respond_bytes(stream, 200, "application/json", body.as_bytes(), &[])
+            }
+        }
+        ("GET", "/api/auth/me") => respond_json(
+            stream,
+            200,
+            &json!({
+                "authenticated": principal.is_some(),
+                "auth_required": auth_enforced,
+                "needs_setup": !state.auth.has_users(),
+                "oidc_enabled": state.auth.oidc_enabled(),
+                "tls": tls_enabled,
+                "user": principal.map(auth::AuthPrincipal::to_json),
+                "roles": auth::Role::ALL,
+            }),
+        ),
+        ("POST", "/api/auth/setup") => {
+            if state.auth.has_users() {
+                return Some(respond_err(
+                    stream,
+                    403,
+                    "initial admin setup already completed",
+                ));
+            }
+            let parsed: Value = match serde_json::from_slice(&req.body) {
+                Ok(v) => v,
+                Err(_) => return Some(respond_err(stream, 400, "request body is not valid JSON")),
+            };
+            let username = parsed["username"].as_str().unwrap_or("").trim();
+            let password = parsed["password"].as_str().unwrap_or("");
+            let display_name = parsed["display_name"]
+                .as_str()
+                .or_else(|| parsed["name"].as_str());
+            let email = parsed["email"].as_str();
+            let user = match state.auth.setup_initial_admin(
+                username,
+                password,
+                display_name,
+                email,
+                &state.people,
+                root_cfg,
+            ) {
+                Ok(u) => u,
+                Err(msg) => {
+                    let st = if msg.contains("already completed") { 403 } else { 400 };
+                    return Some(respond_err(stream, st, &msg));
+                }
+            };
+            let linked_person = person_by_id(state, &user.person_id);
+            let _ = runtime_for(state, &linked_person);
+            let (raw_token, expires_at_ms) = match state.auth.create_session(&user, "password") {
+                Ok(s) => s,
+                Err(e) => return Some(respond_err(stream, 500, &e)),
+            };
+            let cookie = auth::session_cookie_header(&raw_token, tls_enabled, max_age_secs);
+            let body = json!({
+                "ok": true,
+                "user": user.to_public_json(),
+                "token": raw_token,
+                "expires_at_ms": expires_at_ms,
+            })
+            .to_string();
+            respond_h(
+                stream,
+                201,
+                "application/json",
+                &body,
+                &[("Set-Cookie", cookie)],
+            )
+        }
+        ("POST", "/api/auth/login") => {
+            let parsed: Value = match serde_json::from_slice(&req.body) {
+                Ok(v) => v,
+                Err(_) => return Some(respond_err(stream, 400, "request body is not valid JSON")),
+            };
+            let username = parsed["username"]
+                .as_str()
+                .or_else(|| parsed["email"].as_str())
+                .or_else(|| parsed["identifier"].as_str())
+                .unwrap_or("");
+            let password = parsed["password"].as_str().unwrap_or("");
+            let client_key = client_ip
+                .map(|ip| ip.to_string())
+                .unwrap_or_else(|| "local".to_string());
+            match state.auth.login_local(username, password, &client_key) {
+                Ok((user, raw_token, expires_at_ms)) => {
+                    let linked_person = person_by_id(state, &user.person_id);
+                    let _ = runtime_for(state, &linked_person);
+                    let cookie = auth::session_cookie_header(&raw_token, tls_enabled, max_age_secs);
+                    let body = json!({
+                        "ok": true,
+                        "user": user.to_public_json(),
+                        "token": raw_token,
+                        "expires_at_ms": expires_at_ms,
+                    })
+                    .to_string();
+                    respond_h(
+                        stream,
+                        200,
+                        "application/json",
+                        &body,
+                        &[("Set-Cookie", cookie)],
+                    )
+                }
+                Err((status, msg)) => respond_err(stream, status, &msg),
+            }
+        }
+        ("POST", "/api/auth/logout") => {
+            if let Some(tok) = auth::extract_bearer_token(req.authorization.as_deref())
+                .or(req.session.as_deref())
+            {
+                state.auth.revoke_session(tok);
+            }
+            let cookie = auth::clear_session_cookie_header(tls_enabled);
+            respond_h(
+                stream,
+                200,
+                "application/json",
+                r#"{"ok":true}"#,
+                &[("Set-Cookie", cookie)],
+            )
+        }
+        ("POST", "/api/auth/password") => {
+            let Some(p) = principal else {
+                return Some(respond_err(stream, 401, "authentication required"));
+            };
+            if p.is_break_glass {
+                return Some(respond_err(
+                    stream,
+                    400,
+                    "break-glass sessions cannot change a user password via /api/auth/password; use PATCH /api/auth/users/:id",
+                ));
+            }
+            let parsed: Value = match serde_json::from_slice(&req.body) {
+                Ok(v) => v,
+                Err(_) => return Some(respond_err(stream, 400, "request body is not valid JSON")),
+            };
+            let cur = parsed["current_password"].as_str().unwrap_or("");
+            let next = parsed["new_password"].as_str().unwrap_or("");
+            match state.auth.change_own_password(
+                &p.user_id,
+                cur,
+                next,
+                p.session_token_hash.as_deref(),
+            ) {
+                Ok(()) => respond_json(stream, 200, &json!({"ok": true})),
+                Err((status, msg)) => respond_err(stream, status, &msg),
+            }
+        }
+        ("GET", "/api/auth/users") => respond_json(
+            stream,
+            200,
+            &json!({
+                "users": state.auth.list_users_public(),
+                "roles": auth::Role::ALL,
+            }),
+        ),
+        ("POST", "/api/auth/users") => {
+            let parsed: Value = match serde_json::from_slice(&req.body) {
+                Ok(v) => v,
+                Err(_) => return Some(respond_err(stream, 400, "request body is not valid JSON")),
+            };
+            let username = parsed["username"].as_str().unwrap_or("");
+            let password = parsed["password"].as_str().unwrap_or("");
+            let role = parsed["role"].as_str().unwrap_or("member");
+            let display_name = parsed["display_name"]
+                .as_str()
+                .or_else(|| parsed["name"].as_str());
+            let email = parsed["email"].as_str();
+            match state.auth.create_user(
+                username,
+                password,
+                role,
+                display_name,
+                email,
+                &state.people,
+                root_cfg,
+            ) {
+                Ok(user) => {
+                    let linked_person = person_by_id(state, &user.person_id);
+                    let _ = runtime_for(state, &linked_person);
+                    respond_json(stream, 201, &json!({"user": user.to_public_json()}))
+                }
+                Err((status, msg)) => respond_err(stream, status, &msg),
+            }
+        }
+        ("PATCH", path) if path.starts_with("/api/auth/users/") => {
+            let raw_id = path.strip_prefix("/api/auth/users/").unwrap_or("").trim();
+            let id = percent_decode(raw_id).trim().to_string();
+            if id.is_empty() || id.contains('/') || id.contains("..") {
+                return Some(respond_err(stream, 404, "user not found"));
+            }
+            let parsed: Value = match serde_json::from_slice(&req.body) {
+                Ok(v) => v,
+                Err(_) => return Some(respond_err(stream, 400, "request body is not valid JSON")),
+            };
+            match state.auth.update_user(&id, &parsed, &state.people, root_cfg) {
+                Ok(user) => respond_json(stream, 200, &json!({"user": user.to_public_json()})),
+                Err((status, msg)) => respond_err(stream, status, &msg),
+            }
+        }
+        ("DELETE", path) if path.starts_with("/api/auth/users/") => {
+            let raw_id = path.strip_prefix("/api/auth/users/").unwrap_or("").trim();
+            let id = percent_decode(raw_id).trim().to_string();
+            if id.is_empty() || id.contains('/') || id.contains("..") {
+                return Some(respond_err(stream, 404, "user not found"));
+            }
+            match state.auth.delete_user(&id) {
+                Ok(user) => respond_json(
+                    stream,
+                    200,
+                    &json!({"ok": true, "deleted": user.to_public_json()}),
+                ),
+                Err((status, msg)) => respond_err(stream, status, &msg),
+            }
+        }
+        ("GET", "/api/auth/oidc/config") => {
+            respond_json(stream, 200, &state.auth.oidc_config_public())
+        }
+        ("PUT", "/api/auth/oidc/config") | ("POST", "/api/auth/oidc/config") => {
+            let parsed: Value = match serde_json::from_slice(&req.body) {
+                Ok(v) => v,
+                Err(_) => return Some(respond_err(stream, 400, "request body is not valid JSON")),
+            };
+            match state.auth.update_oidc_config(&parsed) {
+                Ok(cfg_json) => respond_json(stream, 200, &cfg_json),
+                Err((status, msg)) => respond_err(stream, status, &msg),
+            }
+        }
+        ("GET", "/api/auth/oidc/login") => {
+            let next = query_param(&req.query, "next").unwrap_or_else(|| "/".to_string());
+            let scheme = if tls_enabled { "https" } else { "http" };
+            let host = req.host.as_deref().unwrap_or("127.0.0.1");
+            let origin = format!("{scheme}://{host}");
+            match state.auth.start_oidc_login(&next, &origin) {
+                Ok(auth_url) => {
+                    if query_param(&req.query, "json").as_deref() == Some("1") {
+                        respond_json(stream, 200, &json!({"authorization_url": auth_url}))
+                    } else {
+                        respond_h(
+                            stream,
+                            302,
+                            "text/plain; charset=utf-8",
+                            "",
+                            &[("Location", auth_url)],
+                        )
+                    }
+                }
+                Err((status, msg)) => respond_err(stream, status, &msg),
+            }
+        }
+        ("GET", "/api/auth/oidc/callback") => {
+            if let Some(err) = query_param(&req.query, "error").filter(|s| !s.is_empty()) {
+                let desc = query_param(&req.query, "error_description").unwrap_or_default();
+                let msg = if desc.is_empty() {
+                    format!("OIDC provider rejected sign-in: {err}")
+                } else {
+                    format!("OIDC provider rejected sign-in: {err} ({desc})")
+                };
+                return Some(respond_err(stream, 400, &msg));
+            }
+            let code = query_param(&req.query, "code").unwrap_or_default();
+            let state_param = query_param(&req.query, "state").unwrap_or_default();
+            match state
+                .auth
+                .complete_oidc_callback(&code, &state_param, &state.people, root_cfg)
+            {
+                Ok((user, raw_token, expires_at_ms, redirect_after)) => {
+                    let linked_person = person_by_id(state, &user.person_id);
+                    let _ = runtime_for(state, &linked_person);
+                    let cookie = auth::session_cookie_header(&raw_token, tls_enabled, max_age_secs);
+                    if query_param(&req.query, "json").as_deref() == Some("1") {
+                        let body = json!({
+                            "ok": true,
+                            "user": user.to_public_json(),
+                            "token": raw_token,
+                            "expires_at_ms": expires_at_ms,
+                            "redirect": redirect_after,
+                        })
+                        .to_string();
+                        respond_h(
+                            stream,
+                            200,
+                            "application/json",
+                            &body,
+                            &[("Set-Cookie", cookie)],
+                        )
+                    } else {
+                        respond_h(
+                            stream,
+                            302,
+                            "text/plain; charset=utf-8",
+                            "",
+                            &[("Location", redirect_after), ("Set-Cookie", cookie)],
+                        )
+                    }
+                }
+                Err((status, msg)) => respond_err(stream, status, &msg),
+            }
+        }
         ("GET", "/api/version") => {
             respond_bytes(stream, 200, "application/json", VERSION_JSON_BYTES, &[])
         }
         ("GET", "/api/update") => {
-            let is_admin = is_update_admin(state, req);
+            let is_admin = update_admin_ok(state, req, principal, auth_enforced);
             respond_json(
                 stream,
                 200,
@@ -3195,7 +3906,7 @@ fn try_route_system(
             )
         }
         ("POST", "/api/update/check") => {
-            let is_admin = is_update_admin(state, req);
+            let is_admin = update_admin_ok(state, req, principal, auth_enforced);
             if !is_admin {
                 return Some(respond_json(
                     stream,
@@ -3213,7 +3924,7 @@ fn try_route_system(
             )
         }
         ("POST", "/api/update/mode") => {
-            let is_admin = is_update_admin(state, req);
+            let is_admin = update_admin_ok(state, req, principal, auth_enforced);
             if !is_admin {
                 return Some(respond_json(
                     stream,
@@ -3245,7 +3956,7 @@ fn try_route_system(
             // Local loopback admins (when ungated) and authenticated admins behind a
             // hosting gate may install updates and restart; non-admins and unauthenticated
             // LAN callers are strictly refused with 403.
-            let is_admin = is_update_admin(state, req);
+            let is_admin = update_admin_ok(state, req, principal, auth_enforced);
             if !is_admin {
                 let msg = if state.gate_token.is_some() {
                     "admin privileges are required to install updates or restart a gated Ergon host"
@@ -3284,24 +3995,31 @@ fn try_route_system(
         }
         ("GET", "/api/status") => {
             let mut recovered: Vec<String> = Vec::new();
-            {
-                let people = state.people.read().unwrap();
-                if !people.recovered.is_empty() {
-                    recovered.extend(people.recovered.iter().cloned());
-                }
-            }
-            {
-                let lib = state.library.lock().unwrap();
-                if let Some(s) = &lib.recovered {
+            if auth_enforced && !principal.is_some_and(|p| p.role.is_admin()) {
+                let st = runtime.store.lock().unwrap();
+                if let Some(s) = &st.recovered {
                     recovered.push(s.clone());
                 }
-            }
-            {
-                let runtimes = state.runtimes.read().unwrap();
-                for rt in runtimes.values() {
-                    let st = rt.store.lock().unwrap();
-                    if let Some(s) = &st.recovered {
+            } else {
+                {
+                    let people = state.people.read().unwrap();
+                    if !people.recovered.is_empty() {
+                        recovered.extend(people.recovered.iter().cloned());
+                    }
+                }
+                {
+                    let lib = state.library.lock().unwrap();
+                    if let Some(s) = &lib.recovered {
                         recovered.push(s.clone());
+                    }
+                }
+                {
+                    let runtimes = state.runtimes.read().unwrap();
+                    for rt in runtimes.values() {
+                        let st = rt.store.lock().unwrap();
+                        if let Some(s) = &st.recovered {
+                            recovered.push(s.clone());
+                        }
                     }
                 }
             }
@@ -3322,6 +4040,7 @@ fn try_route_system(
                 )
             };
             let is_loopback = is_loopback_url(&model_base_url);
+            let oidc_enabled = state.auth.oidc_enabled();
             respond_json_with(stream, 200, |buf| {
                 buf.extend_from_slice(br#"{"version":"#);
                 search::write_json_str(buf, env!("CARGO_PKG_VERSION"));
@@ -3335,13 +4054,21 @@ fn try_route_system(
                 search::write_json_bool(buf, is_loopback);
                 buf.extend_from_slice(br#","auto_detected":"#);
                 search::write_json_bool(buf, auto_detected);
+                buf.extend_from_slice(br#","auth_required":"#);
+                search::write_json_bool(buf, auth_enforced);
+                buf.extend_from_slice(br#","tls":"#);
+                search::write_json_bool(buf, tls_enabled);
                 buf.extend_from_slice(
                     br#","capabilities":{"sse":true,"skills":true,"routines":true,"playbooks":true,"pipelines":true,"search":true,"receipts_export":true,"cancel":true,"scheduler":"#,
                 );
                 search::write_json_bool(buf, state.scheduler_enabled);
                 buf.extend_from_slice(
-                    br#","file_history":true,"audit_bundle":true,"backups":true,"tripwire":true,"file_edit":true,"table_query":true,"pdf_export":true,"connectors":true,"mcp":true,"clients":true,"metering":true,"vault_search":true,"client_crm":true,"time_entries":true,"invoicing":true,"run_resume":true,"diagnostics":true,"help":true},"scheduler_enabled":"#,
+                    br#","file_history":true,"audit_bundle":true,"backups":true,"tripwire":true,"file_edit":true,"table_query":true,"pdf_export":true,"connectors":true,"mcp":true,"clients":true,"metering":true,"vault_search":true,"client_crm":true,"time_entries":true,"invoicing":true,"run_resume":true,"diagnostics":true,"help":true,"auth":true,"oidc":"#,
                 );
+                search::write_json_bool(buf, oidc_enabled);
+                buf.extend_from_slice(br#","tls":"#);
+                search::write_json_bool(buf, tls_enabled);
+                buf.extend_from_slice(br#"},"scheduler_enabled":"#);
                 search::write_json_bool(buf, state.scheduler_enabled);
                 buf.extend_from_slice(br#","person":{"id":"#);
                 search::write_json_str(buf, &person.id);
@@ -3360,7 +4087,10 @@ fn try_route_system(
             })
         }
         ("GET", "/api/config") => {
-            if state.gate_token.is_some() || !host_allowed(req.host.as_deref().unwrap_or(""), &[]) {
+            if !auth_enforced
+                && (state.gate_token.is_some()
+                    || !host_allowed(req.host.as_deref().unwrap_or(""), &[]))
+            {
                 return Some(respond_json(
                     stream,
                     403,
@@ -3390,7 +4120,10 @@ fn try_route_system(
             )
         }
         ("PUT", "/api/config") | ("POST", "/api/config") => {
-            if state.gate_token.is_some() || !host_allowed(req.host.as_deref().unwrap_or(""), &[]) {
+            if !auth_enforced
+                && (state.gate_token.is_some()
+                    || !host_allowed(req.host.as_deref().unwrap_or(""), &[]))
+            {
                 return Some(respond_json(
                     stream,
                     403,
@@ -3479,6 +4212,16 @@ fn try_route_system(
             )
         }
         ("GET", "/api/people") => {
+            if auth_enforced && !principal.is_some_and(|p| p.role.is_admin()) {
+                return Some(respond_json(
+                    stream,
+                    200,
+                    &json!({
+                        "people": [person.to_json()],
+                        "active": person.id,
+                    }),
+                ));
+            }
             let people = state.people.read().unwrap();
             let mut v = people.to_json();
             v["active"] = json!(person.id);
@@ -3508,19 +4251,56 @@ fn try_route_system(
                 .as_str()
                 .or_else(|| parsed["person_id"].as_str())
                 .unwrap_or("")
+                .trim()
                 .to_string();
+            if auth_enforced {
+                let Some(p) = principal else {
+                    return Some(respond_err(stream, 401, "authentication required"));
+                };
+                if !p.role.is_admin() && id != p.home_person_id {
+                    return Some(respond_err(
+                        stream,
+                        403,
+                        "forbidden: non-admin users cannot switch into another person's workspace",
+                    ));
+                }
+                {
+                    let people = state.people.read().unwrap();
+                    if !people.people.iter().any(|item| item.id == id) {
+                        return Some(respond_err(stream, 404, "person not found"));
+                    }
+                }
+                if p.role.is_admin() {
+                    if let Some(ref tok_hash) = p.session_token_hash {
+                        if let Err(e) = state.auth.switch_admin_session_person(tok_hash, &id) {
+                            return Some(respond_err(stream, 500, &e));
+                        }
+                    }
+                }
+                if p.role.is_admin() {
+                    let people = state.people.read().unwrap();
+                    let mut v = people.to_json();
+                    v["active"] = json!(id);
+                    return Some(respond_json(stream, 200, &v));
+                }
+                return Some(respond_json(
+                    stream,
+                    200,
+                    &json!({
+                        "people": [person.to_json()],
+                        "active": person.id,
+                    }),
+                ));
+            }
             {
                 let people = state.people.read().unwrap();
                 if !people.people.iter().any(|p| p.id == id) {
                     return Some(respond_err(stream, 404, "person not found"));
                 }
             }
-            // Who does this switch move? A browser with a known session
-            // moves ONLY its own session — never the global pointer
-            // every other client inherits. A cookie-less API client
-            // moves the global default (and is issued a session pinned
-            // to it). A forged/unknown cookie is treated as no cookie:
-            // the server issues its own id, never the client's.
+            // Legacy single-user loopback mode (zero accounts, no TLS):
+            // move only this browser session, or the global pointer for
+            // cookie-less API clients.
             let mut set_cookie: Option<String> = None;
             if session_known(state, &req.session) {
                 let sid = req.session.clone().unwrap();
@@ -3581,7 +4361,6 @@ fn try_route_system(
                 Err(e) => respond_err(stream, 400, &e),
             }
         }
-        ("GET" | "HEAD", "/phone") => serve_page(stream, state, req, person, ui::index_html()),
         ("GET", "/api/library") => {
             let lib = state.library.lock().unwrap();
             respond_json(
@@ -4412,7 +5191,7 @@ pub fn build_handoff_summary_markdown(cfg: &Config, person: &Person, title: &str
 #[cold]
 #[inline(never)]
 fn handle_export_handoff(
-    stream: &mut std::net::TcpStream,
+    stream: &mut ConnStream,
     state: &AppState,
     req: &Request,
     person: &Person,
@@ -4999,7 +5778,7 @@ fn build_receipt_compare(a: &receipts::ChainedReceipt, b: &receipts::ChainedRece
 
 /// Routes workspace file listing/content/upload/export, file history/restore, and audit bundles.
 fn try_route_files_and_audit(
-    stream: &mut std::net::TcpStream,
+    stream: &mut ConnStream,
     state: &AppState,
     req: &Request,
     person: &Person,
@@ -6250,12 +7029,15 @@ fn try_route_files_and_audit(
 }
 
 /// Routes search, receipts, skills, routines, decisions, offers, brief, today, and graph.
+#[allow(clippy::too_many_arguments)]
 fn try_route_knowledge_and_routines(
-    stream: &mut std::net::TcpStream,
+    stream: &mut ConnStream,
     state: &AppState,
     req: &Request,
     person: &Person,
     runtime: &Arc<PersonRuntime>,
+    principal: Option<&auth::AuthPrincipal>,
+    auth_enforced: bool,
 ) -> Option<std::io::Result<()>> {
     let root_cfg = &state.cfg;
     let _ = root_cfg;
@@ -7211,19 +7993,39 @@ fn try_route_knowledge_and_routines(
             respond_json(stream, status, &payload)
         }
         ("GET", "/api/clients") => {
+            let is_restricted_user = auth_enforced && !principal.is_some_and(|p| p.role.is_admin());
             let store = records::load_clients_store(&root_cfg.data_dir);
             let client_filter = query_param(&req.query, "client_id")
                 .map(|s| s.trim().to_string())
                 .filter(|s| !s.is_empty());
-            let person_filter = query_param(&req.query, "person_id")
+            let mut person_filter = query_param(&req.query, "person_id")
                 .map(|s| s.trim().to_string())
                 .filter(|s| !s.is_empty());
+            if is_restricted_user {
+                if let Some(ref pf) = person_filter {
+                    if pf != &person.id {
+                        return Some(respond_err(
+                            stream,
+                            403,
+                            "forbidden: cannot list clients or engagements belonging to another user",
+                        ));
+                    }
+                }
+                person_filter = Some(person.id.clone());
+            }
             let engagements: Vec<Value> = store
                 .engagements
                 .iter()
                 .filter(|e| client_filter.as_deref().is_none_or(|c| e.client_id == c))
                 .filter(|e| person_filter.as_deref().is_none_or(|p| e.person_id == p))
                 .map(|e| e.to_json())
+                .collect();
+            let clients: Vec<Value> = store
+                .clients
+                .iter()
+                .filter(|c| !is_restricted_user || store.person_can_access_client(&c.id, &person.id))
+                .filter(|c| client_filter.as_deref().is_none_or(|cf| c.id == cf))
+                .map(|c| c.to_json())
                 .collect();
             let active_engagement_id = store
                 .active_engagement_by_person
@@ -7233,7 +8035,7 @@ fn try_route_knowledge_and_routines(
                 stream,
                 200,
                 &json!({
-                    "clients": store.clients.iter().map(|c| c.to_json()).collect::<Vec<_>>(),
+                    "clients": clients,
                     "engagements": engagements,
                     "active_engagement_id": active_engagement_id,
                 }),
@@ -7244,7 +8046,7 @@ fn try_route_knowledge_and_routines(
                 Ok(v) => v,
                 Err(_) => return Some(respond_err(stream, 400, "request body is not valid JSON")),
             };
-            match records::create_client(&root_cfg.data_dir, &parsed) {
+            match records::create_client_for_person(&root_cfg.data_dir, Some(&person.id), &parsed) {
                 Ok(client) => respond_json(stream, 201, &json!({ "client": client.to_json() })),
                 Err((status, msg)) => respond_err(stream, status, &msg),
             }
@@ -7254,6 +8056,30 @@ fn try_route_knowledge_and_routines(
                 Ok(v) => v,
                 Err(_) => return Some(respond_err(stream, 400, "request body is not valid JSON")),
             };
+            let is_restricted_user = auth_enforced && !principal.is_some_and(|p| p.role.is_admin());
+            if is_restricted_user {
+                if let Some(req_pid) = parsed["person_id"].as_str().map(str::trim).filter(|s| !s.is_empty()) {
+                    if req_pid != person.id {
+                        return Some(respond_err(
+                            stream,
+                            403,
+                            "forbidden: cannot create an engagement for another user",
+                        ));
+                    }
+                }
+                if let Some(cid) = parsed["client_id"].as_str().map(str::trim).filter(|s| !s.is_empty()) {
+                    let store = records::load_clients_store(&root_cfg.data_dir);
+                    if store.clients.iter().any(|c| c.id == cid)
+                        && !store.person_can_access_client(cid, &person.id)
+                    {
+                        return Some(respond_err(
+                            stream,
+                            403,
+                            "forbidden: you do not have access to this client",
+                        ));
+                    }
+                }
+            }
             match records::create_engagement(&root_cfg.data_dir, &person.id, &parsed) {
                 Ok(engagement) => {
                     state.search_cache.invalidate(&person.id);
@@ -7267,6 +8093,24 @@ fn try_route_knowledge_and_routines(
                 Ok(v) => v,
                 Err(_) => return Some(respond_err(stream, 400, "request body is not valid JSON")),
             };
+            let is_restricted_user = auth_enforced && !principal.is_some_and(|p| p.role.is_admin());
+            if is_restricted_user {
+                if let Some(eid) = parsed["engagement_id"]
+                    .as_str()
+                    .or_else(|| parsed["id"].as_str())
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                {
+                    let store = records::load_clients_store(&root_cfg.data_dir);
+                    if store.person_owns_engagement(eid, &person.id) == Some(false) {
+                        return Some(respond_err(
+                            stream,
+                            403,
+                            "forbidden: cannot switch to another user's engagement",
+                        ));
+                    }
+                }
+            }
             match records::switch_engagement(&root_cfg.data_dir, &person.id, &parsed) {
                 Ok((active_engagement_id, engagement)) => respond_json(
                     stream,
@@ -7284,6 +8128,19 @@ fn try_route_knowledge_and_routines(
             let id = percent_decode(raw_id).trim().to_string();
             if id.is_empty() || id.contains('/') || id.contains("..") {
                 return Some(respond_err(stream, 404, "client not found"));
+            }
+            let is_restricted_user = auth_enforced && !principal.is_some_and(|p| p.role.is_admin());
+            if is_restricted_user {
+                let store = records::load_clients_store(&root_cfg.data_dir);
+                if store.clients.iter().any(|c| c.id == id)
+                    && !store.person_can_access_client(&id, &person.id)
+                {
+                    return Some(respond_err(
+                        stream,
+                        403,
+                        "forbidden: cannot modify another user's client",
+                    ));
+                }
             }
             let parsed: Value = match serde_json::from_slice(&req.body) {
                 Ok(v) => v,
@@ -7305,6 +8162,17 @@ fn try_route_knowledge_and_routines(
             let id = percent_decode(raw_id).trim().to_string();
             if id.is_empty() || id.contains('/') || id.contains("..") {
                 return Some(respond_err(stream, 404, "engagement not found"));
+            }
+            let is_restricted_user = auth_enforced && !principal.is_some_and(|p| p.role.is_admin());
+            if is_restricted_user {
+                let store = records::load_clients_store(&root_cfg.data_dir);
+                if store.person_owns_engagement(&id, &person.id) == Some(false) {
+                    return Some(respond_err(
+                        stream,
+                        403,
+                        "forbidden: cannot inspect another user's engagement",
+                    ));
+                }
             }
             match records::compute_engagement_context(
                 &root_cfg.data_dir,
@@ -7341,6 +8209,17 @@ fn try_route_knowledge_and_routines(
             if id.is_empty() || id.contains('/') || id.contains("..") {
                 return Some(respond_err(stream, 404, "engagement not found"));
             }
+            let is_restricted_user = auth_enforced && !principal.is_some_and(|p| p.role.is_admin());
+            if is_restricted_user {
+                let store = records::load_clients_store(&root_cfg.data_dir);
+                if store.person_owns_engagement(&id, &person.id) == Some(false) {
+                    return Some(respond_err(
+                        stream,
+                        403,
+                        "forbidden: cannot modify another user's engagement",
+                    ));
+                }
+            }
             let parsed: Value = match serde_json::from_slice(&req.body) {
                 Ok(v) => v,
                 Err(_) => return Some(respond_err(stream, 400, "request body is not valid JSON")),
@@ -7360,6 +8239,30 @@ fn try_route_knowledge_and_routines(
             let cli_filter = query_param(&req.query, "client_id")
                 .map(|s| s.trim().to_string())
                 .filter(|s| !s.is_empty());
+            let is_restricted_user = auth_enforced && !principal.is_some_and(|p| p.role.is_admin());
+            if is_restricted_user {
+                let store = records::load_clients_store(&root_cfg.data_dir);
+                if let Some(ref eid) = eng_filter {
+                    if store.person_owns_engagement(eid, &person.id) == Some(false) {
+                        return Some(respond_err(
+                            stream,
+                            403,
+                            "forbidden: cannot view time entries for another user's engagement",
+                        ));
+                    }
+                }
+                if let Some(ref cid) = cli_filter {
+                    if store.clients.iter().any(|c| c.id == *cid)
+                        && !store.person_can_access_client(cid, &person.id)
+                    {
+                        return Some(respond_err(
+                            stream,
+                            403,
+                            "forbidden: cannot view time entries for another user's client",
+                        ));
+                    }
+                }
+            }
             let kind_filter = query_param(&req.query, "kind")
                 .map(|s| s.trim().to_ascii_lowercase())
                 .filter(|s| !s.is_empty());
@@ -7418,6 +8321,19 @@ fn try_route_knowledge_and_routines(
                 Ok(v) => v,
                 Err(_) => return Some(respond_err(stream, 400, "request body is not valid JSON")),
             };
+            let is_restricted_user = auth_enforced && !principal.is_some_and(|p| p.role.is_admin());
+            if is_restricted_user {
+                if let Some(eid) = parsed["engagement_id"].as_str().map(str::trim).filter(|s| !s.is_empty()) {
+                    let store = records::load_clients_store(&root_cfg.data_dir);
+                    if store.person_owns_engagement(eid, &person.id) == Some(false) {
+                        return Some(respond_err(
+                            stream,
+                            403,
+                            "forbidden: cannot log time against another user's engagement",
+                        ));
+                    }
+                }
+            }
             match records::create_time_entry(
                 &root_cfg.data_dir,
                 &runtime.cfg.data_dir,
@@ -7464,6 +8380,30 @@ fn try_route_knowledge_and_routines(
             let cli_filter = query_param(&req.query, "client_id")
                 .map(|s| s.trim().to_string())
                 .filter(|s| !s.is_empty());
+            let is_restricted_user = auth_enforced && !principal.is_some_and(|p| p.role.is_admin());
+            if is_restricted_user {
+                let store = records::load_clients_store(&root_cfg.data_dir);
+                if let Some(ref eid) = eng_filter {
+                    if store.person_owns_engagement(eid, &person.id) == Some(false) {
+                        return Some(respond_err(
+                            stream,
+                            403,
+                            "forbidden: cannot view invoices for another user's engagement",
+                        ));
+                    }
+                }
+                if let Some(ref cid) = cli_filter {
+                    if store.clients.iter().any(|c| c.id == *cid)
+                        && !store.person_can_access_client(cid, &person.id)
+                    {
+                        return Some(respond_err(
+                            stream,
+                            403,
+                            "forbidden: cannot view invoices for another user's client",
+                        ));
+                    }
+                }
+            }
             let status_filter = query_param(&req.query, "status")
                 .map(|s| s.trim().to_ascii_lowercase())
                 .filter(|s| !s.is_empty());
@@ -7487,6 +8427,19 @@ fn try_route_knowledge_and_routines(
                 Ok(v) => v,
                 Err(_) => return Some(respond_err(stream, 400, "request body is not valid JSON")),
             };
+            let is_restricted_user = auth_enforced && !principal.is_some_and(|p| p.role.is_admin());
+            if is_restricted_user {
+                if let Some(eid) = parsed["engagement_id"].as_str().map(str::trim).filter(|s| !s.is_empty()) {
+                    let store = records::load_clients_store(&root_cfg.data_dir);
+                    if store.person_owns_engagement(eid, &person.id) == Some(false) {
+                        return Some(respond_err(
+                            stream,
+                            403,
+                            "forbidden: cannot generate an invoice for another user's engagement",
+                        ));
+                    }
+                }
+            }
             match records::generate_invoice(&root_cfg.data_dir, &runtime.cfg, &person.id, &parsed) {
                 Ok(invoice) => {
                     state.search_cache.invalidate(&person.id);
@@ -7520,6 +8473,31 @@ fn try_route_knowledge_and_routines(
         ("GET", "/api/metering/summary") => {
             let engagement_id = query_param(&req.query, "engagement_id");
             let client_id = query_param(&req.query, "client_id");
+            let is_restricted_user = auth_enforced && !principal.is_some_and(|p| p.role.is_admin());
+            if is_restricted_user {
+                let store = records::load_clients_store(&root_cfg.data_dir);
+                if let Some(ref eid) = engagement_id {
+                    if store.person_owns_engagement(eid.trim(), &person.id) == Some(false) {
+                        return Some(respond_err(
+                            stream,
+                            403,
+                            "forbidden: cannot view metering for another user's engagement",
+                        ));
+                    }
+                }
+                if let Some(ref cid) = client_id {
+                    let cid_t = cid.trim();
+                    if store.clients.iter().any(|c| c.id == cid_t)
+                        && !store.person_can_access_client(cid_t, &person.id)
+                    {
+                        return Some(respond_err(
+                            stream,
+                            403,
+                            "forbidden: cannot view metering for another user's client",
+                        ));
+                    }
+                }
+            }
             let window_days = query_param(&req.query, "window_days")
                 .and_then(|s| s.trim().parse::<u64>().ok())
                 .unwrap_or(30);
@@ -7598,9 +8576,15 @@ fn try_route_knowledge_and_routines(
         }
         ("GET", "/api/graph") => {
             // Cloned snapshots, locks dropped: build_graph reads
-            // every person's files from disk and must not hold the
+            // workspace files from disk and must not hold the
             // people/library locks across that I/O.
-            let people_snapshot = state.people.read().unwrap().people.clone();
+            // In auth-enforced mode, non-admins see ONLY their own
+            // isolated node/work/files — never other employees' data.
+            let people_snapshot = if auth_enforced && !principal.is_some_and(|p| p.role.is_admin()) {
+                vec![person.clone()]
+            } else {
+                state.people.read().unwrap().people.clone()
+            };
             let lib = state.library.lock().unwrap().clone();
             respond_json(
                 stream,
@@ -8125,7 +9109,7 @@ fn execute_resumed_run(
 
 /// Routes live run status/SSE/cancel/resume, pipelines, apps execution, threads, and chat.
 fn try_route_runs_and_chat(
-    stream: &mut std::net::TcpStream,
+    stream: &mut ConnStream,
     state: &Arc<AppState>,
     req: &Request,
     person: &Person,

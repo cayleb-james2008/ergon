@@ -382,6 +382,9 @@ mod unix_deploy_tests {
                 "--data",
                 data.to_str().unwrap(),
                 "--no-service",
+                // This test probes the launcher over plain HTTP; TLS defaults are
+                // covered by tests/auth_tls_rbac.rs.
+                "--no-tls",
             ])
             .env("HOME", &home)
             .output()
@@ -435,6 +438,9 @@ mod unix_deploy_tests {
                 "--data",
                 data.to_str().unwrap(),
                 "--no-service",
+                // This test probes the launcher over plain HTTP; TLS defaults are
+                // covered by tests/auth_tls_rbac.rs.
+                "--no-tls",
             ])
             .env("HOME", &home)
             .output()

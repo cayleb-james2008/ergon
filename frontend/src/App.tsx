@@ -13,12 +13,14 @@ import {
   Command as CommandIcon,
   FolderOpen,
   HelpCircle,
+  LogOut,
   Menu,
   PanelLeft,
   PanelRight,
   Play,
   Plus,
   Search,
+  ShieldCheck,
   SlidersHorizontal,
   Sparkles,
   UserPlus,
@@ -34,6 +36,7 @@ import { usePaper } from "@/views/usePaper";
 import { RailPanelButton } from "@/shell/RailPanelButton";
 import type { InspectorTab } from "@/shell/InspectorDrawer";
 import { PersonSelect, WorkspaceSwitcherPanel } from "@/shell/PersonSelect";
+import { AuthScreen } from "@/shell/AuthScreen";
 import type { Theme } from "@/shell/SettingsPanel";
 import { UpdateStrip, VersionRow, useUpdate } from "@/shell/Update";
 
@@ -55,10 +58,14 @@ import { useErgon } from "@/state";
 import {
   call,
   downloadDiagnosticBundle,
+  fetchAuthMe,
   fetchHelpConfig,
   hasClientsApi,
   hasV050Api,
+  isWebStandalone,
+  logoutSession,
   saveHelpConfig,
+  type AuthMePayload,
   type HelpConfigPayload,
   type Routine,
 } from "@/lib/api";
@@ -162,9 +169,25 @@ function RecoveredBanner({ files, onDismiss }: { files: string[]; onDismiss: () 
   );
 }
 
-export function App() {
-  const desk = useErgon();
-  const [theme, setTheme] = useTheme();
+function WorkspaceApp({
+  auth,
+  theme,
+  setTheme,
+  onSignOut,
+  onRefreshAuth,
+}: {
+  auth: AuthMePayload | null;
+  theme: Theme;
+  setTheme: (t: Theme) => void;
+  onSignOut: () => Promise<void>;
+  onRefreshAuth: () => Promise<void>;
+}) {
+  const isAdminOrLegacy = !auth?.auth_required || Boolean(auth?.user?.is_admin);
+  const desk = useErgon({
+    authRequired: Boolean(auth?.auth_required),
+    role: auth?.user?.role,
+    isAdmin: Boolean(auth?.user?.is_admin),
+  });
   const u = useUpdate();
   const reduceMotion = useReducedMotion();
   const [face, setFace] = useState<Face>(initialFace);
@@ -705,15 +728,17 @@ export function App() {
             setSkillsOpen(true);
           }}
         />
-        <RailPanelButton
-          id="connectors-btn"
-          label="Connectors"
-          icon={<Webhook className="size-3.5 shrink-0 text-icon" strokeWidth={1.5} aria-hidden />}
-          onClick={() => {
-            setMobileOpen(false);
-            setConnectorsOpen(true);
-          }}
-        />
+        {isAdminOrLegacy && (
+          <RailPanelButton
+            id="connectors-btn"
+            label="Connectors"
+            icon={<Webhook className="size-3.5 shrink-0 text-icon" strokeWidth={1.5} aria-hidden />}
+            onClick={() => {
+              setMobileOpen(false);
+              setConnectorsOpen(true);
+            }}
+          />
+        )}
         <RailPanelButton
           id="memory-btn"
           label="What my agent has learned"
@@ -735,15 +760,17 @@ export function App() {
             setSuiteOpen(true);
           }}
         />
-        <RailPanelButton
-          id="add-person-btn"
-          label="Add a person"
-          icon={<UserPlus className="size-3.5 shrink-0 text-icon" strokeWidth={1.5} aria-hidden />}
-          onClick={() => {
-            setMobileOpen(false);
-            setAddPersonOpen(true);
-          }}
-        />
+        {isAdminOrLegacy && (
+          <RailPanelButton
+            id="add-person-btn"
+            label="Add a person"
+            icon={<UserPlus className="size-3.5 shrink-0 text-icon" strokeWidth={1.5} aria-hidden />}
+            onClick={() => {
+              setMobileOpen(false);
+              setAddPersonOpen(true);
+            }}
+          />
+        )}
         <RailPanelButton
           id="help-btn"
           domId="help-btn"
@@ -764,6 +791,17 @@ export function App() {
             setSettingsOpen(true);
           }}
         />
+        {auth?.authenticated && auth.user && (
+          <RailPanelButton
+            id="sign-out-btn"
+            label={`Sign out (@${auth.user.username})`}
+            icon={<LogOut className="size-3.5 shrink-0 text-icon" strokeWidth={1.5} aria-hidden />}
+            onClick={() => {
+              setMobileOpen(false);
+              void onSignOut();
+            }}
+          />
+        )}
         <div className="pt-1">
           <VersionRow u={u} />
         </div>
@@ -1393,6 +1431,9 @@ export function App() {
         theme={theme}
         onTheme={setTheme}
         status={desk.status}
+        auth={auth}
+        onSignOut={onSignOut}
+        onRefreshAuth={onRefreshAuth}
         people={peopleList}
         activePerson={activePersonId}
         onRefreshPeople={desk.loadPeople}
@@ -1474,6 +1515,73 @@ export function App() {
     </div>
     </MotionConfig>
     </LazyMotion>
+  );
+}
+
+export function App() {
+  const [theme, setTheme] = useTheme();
+  const [auth, setAuth] = useState<AuthMePayload | null>(null);
+  const [authLoading, setAuthLoading] = useState(!isWebStandalone());
+
+  const refreshAuth = useCallback(async () => {
+    if (isWebStandalone()) {
+      setAuth(null);
+      setAuthLoading(false);
+      return;
+    }
+    const r = await fetchAuthMe();
+    if (r.ok && r.data && typeof r.data.auth_required === "boolean") {
+      setAuth(r.data);
+    } else {
+      // Fallback for older backends without /api/auth/me
+      setAuth({
+        authenticated: false,
+        auth_required: false,
+        needs_setup: false,
+        oidc_enabled: false,
+        tls: window.location.protocol === "https:",
+        user: null,
+      });
+    }
+    setAuthLoading(false);
+  }, []);
+
+  useEffect(() => {
+    void refreshAuth();
+  }, [refreshAuth]);
+
+  const handleSignOut = useCallback(async () => {
+    await logoutSession();
+    try {
+      sessionStorage.removeItem("ergon-thread");
+    } catch { /* ignore */ }
+    await refreshAuth();
+  }, [refreshAuth]);
+
+  if (authLoading) {
+    return (
+      <div className="flex min-h-dvh items-center justify-center bg-canvas text-ink">
+        <div className="flex items-center gap-2 text-sm text-ink-2">
+          <ShieldCheck className="size-4 text-icon" strokeWidth={1.5} aria-hidden />
+          <span>Checking session…</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (auth?.auth_required && !auth.authenticated) {
+    return <AuthScreen auth={auth} onAuthenticated={refreshAuth} />;
+  }
+
+  return (
+    <WorkspaceApp
+      key={auth?.user?.id ?? "local"}
+      auth={auth}
+      theme={theme}
+      setTheme={setTheme}
+      onSignOut={handleSignOut}
+      onRefreshAuth={refreshAuth}
+    />
   );
 }
 export default App;

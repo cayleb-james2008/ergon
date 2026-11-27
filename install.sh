@@ -1,18 +1,20 @@
 #!/usr/bin/env bash
-# Ergon installer — installs the binary, creates the data directory,
-# and (on systemd user hosts) registers a user service.
+# Ergon installer — installs the binary, initializes TLS certificates in the
+# data directory, creates the launcher, and (on systemd user hosts) registers
+# a user service.
 #
-#   ./install.sh [--prefix DIR] [--data DIR] [--no-service]
+#   ./install.sh [--prefix DIR] [--data DIR] [--no-service] [--no-tls]
 #
-# Defaults: prefix ~/.local, data ~/.local/share/ergon.
-# Ergon itself has no accounts and no passwords: access is gated by
-# whoever hosts it. To require the hosting layer's gate header, set
-# ERGON_GATE_TOKEN in the service environment (see the printed unit).
+# Defaults: prefix ~/.local, data ~/.local/share/ergon, HTTPS/TLS enabled with
+# an auto-generated self-signed cert in $DATA_DIR/tls/{cert.pem,key.pem} and
+# multi-user login enabled. Set ERGON_TLS_CERT + ERGON_TLS_KEY for CA-signed
+# certificates, or ERGON_OIDC_* for SSO.
 set -euo pipefail
 
 PREFIX="${HOME}/.local"
 DATA_DIR="${HOME}/.local/share/ergon"
 SERVICE=1
+TLS=1
 while [ $# -gt 0 ]; do
   case "$1" in
     --prefix)
@@ -22,6 +24,7 @@ while [ $# -gt 0 ]; do
       [ $# -ge 2 ] || { echo "error: --data needs a value" >&2; exit 2; }
       DATA_DIR="$2"; shift 2 ;;
     --no-service) SERVICE=0; shift ;;
+    --no-tls) TLS=0; shift ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
 done
@@ -71,7 +74,11 @@ fi
 mkdir -p "$PREFIX/bin" "$DATA_DIR"
 install -m 0755 "$BIN_SRC" "$PREFIX/bin/ergon"
 echo "Installed: $PREFIX/bin/ergon"
-echo "Data dir:  $DATA_DIR (people, library, suites and work records live here)"
+echo "Data dir:  $DATA_DIR (people, accounts, TLS certs, library and work records live here)"
+
+if [ "$TLS" = "1" ]; then
+  ERGON_DATA_DIR="$DATA_DIR" "$PREFIX/bin/ergon" tls init
+fi
 
 # Dedicated owner-only secrets/environment file (mode 0600) sourced by
 # ergon-serve and loaded by systemd via EnvironmentFile=-...
@@ -86,6 +93,10 @@ if [ ! -f "$ENV_FILE" ]; then
 # ERGON_GATE_TOKEN=
 # ERGON_ALLOWED_HOSTS=
 # ERGON_SHUTDOWN_GRACE_SECS=10
+# ERGON_TLS_CERT=            # optional CA-signed PEM certificate path
+# ERGON_TLS_KEY=             # optional CA-signed PEM private key path
+# ERGON_OIDC_ISSUER=         # optional OIDC SSO issuer URL
+# ERGON_OIDC_CLIENT_ID=      # optional OIDC client ID
 EOF
   )
 fi
@@ -100,6 +111,7 @@ echo "Env file:  $ENV_FILE (mode 0600 — keep API keys and tokens here)"
   {
     printf '%s\n' '#!/usr/bin/env bash'
     printf '%s\n' '# Ergon launcher — secrets live in $ERGON_ENV_FILE (mode 0600), not here.'
+    printf '%s\n' '# Credentials are never hardcoded into the binary; read from env or 0600 data files.'
     printf 'ERGON_ENV_FILE=%s\n' "$(shq "$ENV_FILE")"
     printf '%s\n' 'if [ -f "$ERGON_ENV_FILE" ]; then'
     printf '%s\n' '  set -a'
@@ -110,6 +122,12 @@ echo "Env file:  $ENV_FILE (mode 0600 — keep API keys and tokens here)"
     printf 'export ERGON_DATA_DIR=%s\n' "$(shq "$DATA_DIR")"
     printf '%s\n' 'export ERGON_PORT="${ERGON_PORT:-8787}"'
     printf '%s\n' 'export ERGON_NO_OPEN="${ERGON_NO_OPEN:-1}"'
+    if [ "$TLS" = "1" ]; then
+      printf '%s\n' 'export ERGON_TLS="${ERGON_TLS:-1}"'
+      printf '%s\n' 'export ERGON_AUTH_REQUIRED="${ERGON_AUTH_REQUIRED:-1}"'
+    else
+      printf '%s\n' 'export ERGON_TLS="${ERGON_TLS:-0}"'
+    fi
     printf 'exec %s "$@"\n' "$(shq "$PREFIX/bin/ergon")"
   } > "$PREFIX/bin/ergon-serve"
 )
@@ -156,16 +174,21 @@ EOF
   fi
 fi
 
+SCHEME="https"
+[ "$TLS" = "1" ] || SCHEME="http"
 cat <<EOF
 
 Next steps:
   1. Add the model key: edit ERGON_MODEL_API_KEY in $ENV_FILE
-     (mode 0600, owner-readable only), from your OpenCode Go account. Without a key
-     Ergon runs but honestly refuses to invent answers.
+     (mode 0600, owner-readable only). TLS cert paths (ERGON_TLS_CERT/ERGON_TLS_KEY)
+     and OIDC settings (ERGON_OIDC_ISSUER/ERGON_OIDC_CLIENT_ID) go there too.
+     Without a key Ergon runs deterministic workflows and refuses to fabricate
+     LLM answers.
   2. Start it:  ergon-serve   (or: systemctl --user enable --now ergon)
-  3. Open http://127.0.0.1:8787 — desktop faces (Work Graph, Conversation,
-     Today). The phone app is the same server at http://127.0.0.1:8787/phone —
-     bookmark it on each phone; there are no Ergon passwords to manage.
+  3. Open ${SCHEME}://127.0.0.1:8787 to create the initial admin account (or run
+     ERGON_DATA_DIR="$DATA_DIR" ergon user add admin --role admin --password ...).
+     The field phone view is at ${SCHEME}://127.0.0.1:8787/phone behind the same
+     HTTPS/TLS and login gate.
 EOF
 if [ "$SERVICE" = "1" ] && [ "$SERVICE_READY" = "0" ]; then
   echo "  (Reminder: the systemd service above was written but not verified against a live user bus.)"

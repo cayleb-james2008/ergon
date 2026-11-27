@@ -330,7 +330,14 @@ function parseRunUsage(raw: unknown): RunUsage | null {
   };
 }
 
-export function useErgon() {
+export function useErgon(opts?: { authRequired?: boolean; role?: string; isAdmin?: boolean }) {
+  const canAdmin = !opts?.authRequired || Boolean(opts?.isAdmin);
+  const canViewInvoices =
+    !opts?.authRequired ||
+    Boolean(opts?.isAdmin) ||
+    opts?.role === "pm" ||
+    opts?.role === "ae" ||
+    opts?.role === "office";
   const [status, setStatus] = useState<Status | null | "error">(null);
   const statusRef = useRef<Status | null | "error">(null);
   const [runFailed, setRunFailed] = useState(false);
@@ -466,7 +473,7 @@ export function useErgon() {
   }, []);
 
   const loadMcpServers = useCallback(async () => {
-    if (!hasMcpApi(statusRef.current)) {
+    if (!canAdmin || !hasMcpApi(statusRef.current)) {
       setMcpServers([]);
       return;
     }
@@ -474,7 +481,7 @@ export function useErgon() {
     if (r.ok) {
       setMcpServers(r.data.servers);
     }
-  }, []);
+  }, [canAdmin]);
 
   const saveMcpServerConfig = useCallback(
     async (body: {
@@ -573,7 +580,7 @@ export function useErgon() {
   }, []);
 
   const loadInvoices = useCallback(async (opts: { engagement_id?: string; client_id?: string; force?: boolean } = {}) => {
-    if (!opts.force && !hasClientCrmInvoicingApi(statusRef.current)) {
+    if (!canViewInvoices || (!opts.force && !hasClientCrmInvoicingApi(statusRef.current))) {
       setInvoices([]);
       return;
     }
@@ -581,7 +588,7 @@ export function useErgon() {
     if (r.ok) {
       setInvoices(r.data.invoices);
     }
-  }, []);
+  }, [canViewInvoices]);
 
   const createNewClient = useCallback(
     async (input: {

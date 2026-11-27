@@ -29,6 +29,9 @@ export type ServerCapabilities = {
   invoicing?: boolean;
   diagnostics?: boolean;
   help?: boolean;
+  auth?: boolean;
+  oidc?: boolean;
+  tls?: boolean;
 };
 
 export type AdminContactConfig = {
@@ -2829,4 +2832,142 @@ export async function downloadDiagnosticBundle(): Promise<
       error: e instanceof Error ? e.message : "Could not download diagnostic bundle.",
     };
   }
+}
+
+// ---------------------------------------------------------------------------
+// Multi-user Auth, Sessions, OIDC & RBAC API
+// ---------------------------------------------------------------------------
+
+export type AuthRole = "admin" | "pm" | "ae" | "office" | "installer" | "member";
+
+export type AuthPrincipal = {
+  id: string;
+  username: string;
+  display_name: string;
+  email?: string | null;
+  role: AuthRole;
+  person_id: string;
+  active_person_id: string;
+  auth_method?: string;
+  is_admin: boolean;
+  break_glass?: boolean;
+};
+
+export type AuthMePayload = {
+  authenticated: boolean;
+  auth_required: boolean;
+  needs_setup: boolean;
+  oidc_enabled: boolean;
+  tls: boolean;
+  user: AuthPrincipal | null;
+  roles?: AuthRole[];
+};
+
+export type AuthUserRecord = {
+  id: string;
+  username: string;
+  email?: string | null;
+  display_name: string;
+  role: AuthRole;
+  person_id: string;
+  has_password: boolean;
+  oidc_linked: boolean;
+  disabled: boolean;
+  created_ms?: number;
+  updated_ms?: number;
+  last_login_ms?: number | null;
+};
+
+export type OidcConfigPayload = {
+  enabled: boolean;
+  configured: boolean;
+  issuer: string;
+  client_id: string;
+  has_client_secret: boolean;
+  redirect_uri: string;
+  scopes: string;
+  default_role: AuthRole;
+  role_claim: string;
+  auto_provision: boolean;
+};
+
+export async function fetchAuthMe(): Promise<Res<AuthMePayload>> {
+  return call<AuthMePayload>("/api/auth/me");
+}
+
+export async function setupInitialAdmin(body: {
+  username: string;
+  password: string;
+  display_name?: string;
+  email?: string;
+}): Promise<Res<{ ok: boolean; user: AuthUserRecord; token: string; expires_at_ms: number }>> {
+  return call("/api/auth/setup", { method: "POST", body });
+}
+
+export async function loginLocal(body: {
+  username: string;
+  password: string;
+}): Promise<Res<{ ok: boolean; user: AuthUserRecord; token: string; expires_at_ms: number }>> {
+  return call("/api/auth/login", { method: "POST", body });
+}
+
+export async function logoutSession(): Promise<Res<{ ok: boolean }>> {
+  return call("/api/auth/logout", { method: "POST", body: {} });
+}
+
+export async function changeOwnPassword(body: {
+  current_password: string;
+  new_password: string;
+}): Promise<Res<{ ok: boolean }>> {
+  return call("/api/auth/password", { method: "POST", body });
+}
+
+export async function listAuthUsers(): Promise<Res<{ users: AuthUserRecord[]; roles: AuthRole[] }>> {
+  return call("/api/auth/users");
+}
+
+export async function createAuthUser(body: {
+  username: string;
+  password: string;
+  role: AuthRole;
+  display_name?: string;
+  email?: string;
+}): Promise<Res<{ user: AuthUserRecord }>> {
+  return call("/api/auth/users", { method: "POST", body });
+}
+
+export async function updateAuthUser(
+  id: string,
+  patch: {
+    role?: AuthRole;
+    display_name?: string;
+    email?: string;
+    disabled?: boolean;
+    password?: string;
+  }
+): Promise<Res<{ user: AuthUserRecord }>> {
+  return call(`/api/auth/users/${encodeURIComponent(id)}`, { method: "PATCH", body: patch });
+}
+
+export async function deleteAuthUser(id: string): Promise<Res<{ ok: boolean }>> {
+  return call(`/api/auth/users/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
+export async function fetchOidcConfig(): Promise<Res<OidcConfigPayload>> {
+  return call<OidcConfigPayload>("/api/auth/oidc/config");
+}
+
+export async function saveOidcConfig(body: {
+  enabled?: boolean;
+  issuer?: string;
+  client_id?: string;
+  client_secret?: string;
+  clear_client_secret?: boolean;
+  redirect_uri?: string;
+  scopes?: string;
+  default_role?: AuthRole;
+  role_claim?: string;
+  auto_provision?: boolean;
+}): Promise<Res<OidcConfigPayload>> {
+  return call<OidcConfigPayload>("/api/auth/oidc/config", { method: "PUT", body });
 }

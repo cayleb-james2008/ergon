@@ -16,6 +16,7 @@ import { Pill } from "@/components/kibo-ui/pill";
 import { WorkspaceSwitcherList } from "@/shell/PersonSelect";
 import { BackupsSection } from "@/shell/BackupsSection";
 import { SecuritySection } from "@/shell/SecuritySection";
+import { UsersAuthSection } from "@/shell/UsersAuthSection";
 import { UpdateSettingsSection, type useUpdate } from "@/shell/Update";
 import {
   call,
@@ -23,6 +24,7 @@ import {
   fetchHelpConfig,
   isWebStandalone,
   saveHelpConfig,
+  type AuthMePayload,
   type DetectedGateway,
   type HelpConfigPayload,
   type ModelConfigPayload,
@@ -39,6 +41,9 @@ function SettingsBody({
   theme,
   onTheme,
   status,
+  auth,
+  onSignOut,
+  onRefreshAuth,
   people,
   activePerson,
   onRefreshPeople,
@@ -54,6 +59,9 @@ function SettingsBody({
   theme: Theme;
   onTheme: (t: Theme) => void;
   status: Status | null | "error";
+  auth?: AuthMePayload | null;
+  onSignOut?: () => Promise<void> | void;
+  onRefreshAuth?: () => Promise<void> | void;
   people: Person[];
   activePerson: string;
   onRefreshPeople: () => void;
@@ -68,6 +76,7 @@ function SettingsBody({
 }) {
   const { isOpen, setIsOpen } = usePanelModalClose();
   const webMode = isWebStandalone();
+  const isAdminOrLegacy = !auth?.auth_required || Boolean(auth?.user?.is_admin);
   const [cfg, setCfg] = useState<ModelConfigPayload | null>(null);
   const [baseUrl, setBaseUrl] = useState("");
   const [modelId, setModelId] = useState("");
@@ -109,6 +118,10 @@ function SettingsBody({
       setAdminNotes(r.data.admin_contact.notes || "");
       setCanEditAdmin(Boolean(r.data.can_edit_admin_contact));
     });
+    if (!isAdminOrLegacy) {
+      setLockedRemote(true);
+      return;
+    }
     call<ModelConfigPayload>("/api/config").then((r) => {
       if (!r.ok) {
         if (r.status === 403) setLockedRemote(true);
@@ -130,7 +143,7 @@ function SettingsBody({
       }));
       setPricingRows(rows);
     });
-  }, [isOpen, onRefreshPeople]);
+  }, [isOpen, isAdminOrLegacy, onRefreshPeople]);
 
   const applyGateway = (gw: DetectedGateway) => {
     setBaseUrl(gw.base_url);
@@ -282,6 +295,14 @@ function SettingsBody({
 
   return (
     <div id="settings-panel" className="flex flex-col gap-5 pt-1">
+      {/* 0. Account, RBAC Team Accounts & Optional OIDC */}
+      <UsersAuthSection
+        auth={auth ?? null}
+        onSignOut={onSignOut ?? (() => {})}
+        onRefreshAuth={onRefreshAuth ?? (() => {})}
+        onUsersChanged={onRefreshPeople}
+      />
+
       {/* 1. Appearance (Light / Dark SegmentedControl) */}
       <section aria-labelledby="settings-appearance-h" className="flex flex-col gap-2.5 rounded-card border border-hairline bg-board/40 p-3.5">
         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -323,19 +344,21 @@ function SettingsBody({
             <Users className="size-4 text-icon" strokeWidth={1.5} aria-hidden />
             <h3 id="settings-workspace-h" className="text-sm font-medium text-ink">Workspace switcher</h3>
           </div>
-          <Button
-            type="button"
-            size="xs"
-            variant="outline"
-            className="max-md:min-h-11"
-            onClick={() => {
-              setIsOpen(false);
-              setTimeout(onAddPerson, 30);
-            }}
-          >
-            <UserPlus className="size-3.5" strokeWidth={1.5} aria-hidden />
-            Add workspace
-          </Button>
+          {isAdminOrLegacy && (
+            <Button
+              type="button"
+              size="xs"
+              variant="outline"
+              className="max-md:min-h-11"
+              onClick={() => {
+                setIsOpen(false);
+                setTimeout(onAddPerson, 30);
+              }}
+            >
+              <UserPlus className="size-3.5" strokeWidth={1.5} aria-hidden />
+              Add workspace
+            </Button>
+          )}
         </div>
         <WorkspaceSwitcherList
           people={people}
@@ -401,11 +424,11 @@ function SettingsBody({
         </div>
       </section>
 
-      {/* Backups & Recovery (native) */}
-      <BackupsSection status={status} onRestored={onRestored} />
+      {/* Backups & Recovery (native, admin only when auth enabled) */}
+      {isAdminOrLegacy && <BackupsSection status={status} onRestored={onRestored} />}
 
-      {/* Security tripwires (native v0.8.0+) */}
-      <SecuritySection status={status} />
+      {/* Security tripwires (native v0.8.0+, admin only when auth enabled) */}
+      {isAdminOrLegacy && <SecuritySection status={status} />}
 
       {/* 4. Model Provider & Runtime */}
       <section aria-labelledby="settings-model-h" className="flex flex-col gap-3 rounded-card border border-hairline bg-board/40 p-3.5">
@@ -880,6 +903,9 @@ export function SettingsPanel({
   theme,
   onTheme,
   status,
+  auth,
+  onSignOut,
+  onRefreshAuth,
   people,
   activePerson,
   onRefreshPeople,
@@ -898,6 +924,9 @@ export function SettingsPanel({
   theme: Theme;
   onTheme: (t: Theme) => void;
   status: Status | null | "error";
+  auth?: AuthMePayload | null;
+  onSignOut?: () => Promise<void> | void;
+  onRefreshAuth?: () => Promise<void> | void;
   people: Person[];
   activePerson: string;
   onRefreshPeople: () => void;
@@ -918,7 +947,7 @@ export function SettingsPanel({
       open={open}
       onOpenChange={onOpenChange}
       title="Settings"
-      description="Appearance, workspaces, backups, model configuration, security, IT support contact, diagnostics, and audit bundle export."
+      description="Account & roles, appearance, workspaces, backups, model configuration, security, IT support contact, diagnostics, and audit bundle export."
       className="max-w-xl"
       trigger={
         !hideTrigger ? (
@@ -935,6 +964,9 @@ export function SettingsPanel({
         theme={theme}
         onTheme={onTheme}
         status={status}
+        auth={auth}
+        onSignOut={onSignOut}
+        onRefreshAuth={onRefreshAuth}
         people={people}
         activePerson={activePerson}
         onRefreshPeople={onRefreshPeople}
