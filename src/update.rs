@@ -23,7 +23,6 @@
 //!   `<PREFIX>_UPDATE_DEV`   `1` allows replacing a cargo-built binary (tests)
 
 use serde_json::{json, Value};
-use sha2::{Digest, Sha256};
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -248,10 +247,7 @@ pub fn hash_from_sums(sums: &str, asset: &str) -> Option<String> {
     })
 }
 
-pub fn sha256_hex(bytes: &[u8]) -> String {
-    let d = Sha256::digest(bytes);
-    d.iter().map(|b| format!("{b:02x}")).collect()
-}
+pub use crate::tripwire::sha256_hex;
 
 // ---------------------------------------------------------------- network
 
