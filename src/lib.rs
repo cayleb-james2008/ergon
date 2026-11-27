@@ -9,6 +9,7 @@
 //! the document-writing and memory-update skills.
 
 pub mod audit_bundle;
+pub mod backup;
 pub mod connectors;
 pub mod docs;
 pub mod file_history;

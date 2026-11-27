@@ -3219,6 +3219,11 @@ impl SearchCache {
         *w = None;
     }
 
+    pub fn invalidate_all(&self) {
+        let mut map = self.per_person.lock().unwrap_or_else(|p| p.into_inner());
+        map.clear();
+    }
+
     /// Return an already-cached `Arc<PersonIndex>` if its fingerprint is still fresh,
     /// without building a full token index when cold.
     pub fn get_if_fresh(
