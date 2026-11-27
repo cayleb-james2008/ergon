@@ -7,6 +7,7 @@
 //! and `{{steps.<id>.files[0]}}` template resolution.
 
 use crate::connectors;
+use crate::receipts;
 use crate::records;
 use crate::routines;
 use crate::scheduler;
@@ -2890,6 +2891,29 @@ fn execute_skill_step(
     Err(format!("unknown deterministic skill '{skill_id}'"))
 }
 
+/// Returns parsed `steps_v2` when a routine consists strictly of deterministic
+/// zero-LLM steps (`skill` / `export`) that can execute without a model API key.
+pub fn parse_deterministic_steps_v2(routine: &Value) -> Option<Vec<PipelineStepSpec>> {
+    let raw = routine
+        .get("steps_v2")
+        .filter(|v| v.as_array().is_some_and(|a| !a.is_empty()))?;
+    let steps = parse_steps_v2(raw).ok()?;
+    if steps
+        .iter()
+        .all(|s| matches!(s.kind.as_str(), "skill" | "export"))
+    {
+        Some(steps)
+    } else {
+        None
+    }
+}
+
+/// Whether a routine consists solely of deterministic zero-LLM `steps_v2`
+/// (`skill` / `export`) and can therefore fire on schedule without a model key.
+pub fn routine_is_deterministic_zero_llm(routine: &Value) -> bool {
+    parse_deterministic_steps_v2(routine).is_some()
+}
+
 /// Synchronously run a deterministic (`skill` / `export`) pipeline without
 /// requiring an HTTP `AppState` or LLM key (used by `launch_starter_playbook`
 /// and offline tests). Persists the `PipelineRun` into `pipeline_runs.json`.
@@ -2900,10 +2924,38 @@ pub fn execute_deterministic_steps_sync(
     steps: &[PipelineStepSpec],
     inputs: HashMap<String, String>,
 ) -> Result<PipelineRun, String> {
+    execute_deterministic_steps_sync_with_options(
+        cfg,
+        routine_id,
+        routine_name,
+        steps,
+        inputs,
+        None,
+        true,
+    )
+}
+
+/// Variant of `execute_deterministic_steps_sync` that lets callers (such as
+/// `server::execute_routine_run_with_inputs`) supply the authoritative
+/// `thread_id` for receipt linkage and opt out of an internal
+/// `routines::record_run` call when the caller records the run itself.
+pub fn execute_deterministic_steps_sync_with_options(
+    cfg: &Config,
+    routine_id: Option<&str>,
+    routine_name: &str,
+    steps: &[PipelineStepSpec],
+    inputs: HashMap<String, String>,
+    thread_id_override: Option<&str>,
+    record_routine_run: bool,
+) -> Result<PipelineRun, String> {
     let now_ms = records::now_millis();
     let seq = PIPELINE_SEQ.fetch_add(1, Ordering::SeqCst);
     let run_id = format!("prun-{now_ms}-{seq}");
-    let thread_id = format!("starter-{}", routine_id.unwrap_or(&run_id));
+    let thread_id = thread_id_override
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(|| format!("starter-{}", routine_id.unwrap_or(&run_id)));
     let mut run = PipelineRun {
         run_id: run_id.clone(),
         routine_id: routine_id.map(str::to_string),
@@ -3002,8 +3054,10 @@ pub fn execute_deterministic_steps_sync(
     run.current_step_index = run.steps.len();
     run.updated_ms = records::now_millis();
     save_run(&cfg.data_dir, &run)?;
-    if let Some(rid) = routine_id {
-        let _ = routines::record_run(&cfg.data_dir, rid, &thread_id, "finished");
+    if record_routine_run {
+        if let Some(rid) = routine_id {
+            let _ = routines::record_run(&cfg.data_dir, rid, &thread_id, "finished");
+        }
     }
     Ok(run)
 }
@@ -4398,7 +4452,6 @@ fn record_async_routine_completion(
         "cancelled" => "cancelled",
         _ => "error",
     };
-    let updated = routines::record_run(&env.cfg.data_dir, rid, &run.thread_id, rt_status);
     let summary: String = if status == "completed" || status == "ok" {
         run.step_states
             .iter()
@@ -4409,6 +4462,31 @@ fn record_async_routine_completion(
     } else {
         run.error.clone().unwrap_or_else(|| status.to_string())
     };
+    let mut receipt_id = receipts::load_chain(&env.cfg.data_dir)
+        .iter()
+        .rev()
+        .find(|r| r.thread_id == run.thread_id)
+        .map(|r| r.id.clone());
+    if (status == "completed" || status == "ok") && receipt_id.is_none() {
+        records::append_work(
+            &env.cfg,
+            &run.routine_name,
+            if summary.is_empty() {
+                "Completed deterministic routine."
+            } else {
+                &summary
+            },
+            &[],
+            &run.thread_id,
+            true,
+        );
+        receipt_id = receipts::load_chain(&env.cfg.data_dir)
+            .iter()
+            .rev()
+            .find(|r| r.thread_id == run.thread_id)
+            .map(|r| r.id.clone());
+    }
+    env.search_cache.invalidate(&env.ctx.person_id);
     let hist_status = if status == "completed" { "ok" } else { status };
     let rec = scheduler::new_run_record(
         rid,
@@ -4416,13 +4494,14 @@ fn record_async_routine_completion(
         run.created_ms,
         finished_ms,
         hist_status,
-        None,
+        receipt_id.clone(),
         Some(run.thread_id.clone()),
         &summary,
         trigger,
         run.error.clone(),
     );
     let _ = scheduler::record_run_history(&env.cfg.data_dir, rec.clone());
+    let updated = routines::record_run(&env.cfg.data_dir, rid, &run.thread_id, rt_status);
     let next_ms = updated
         .as_ref()
         .and_then(|u| scheduler::compute_routine_next_run_ms(u, finished_ms));
@@ -4438,6 +4517,7 @@ fn record_async_routine_completion(
             "status": hist_status,
             "thread_id": run.thread_id,
             "pipeline_run_id": run.run_id,
+            "receipt_id": receipt_id,
             "duration_ms": rec.duration_ms,
             "summary": summary.chars().take(240).collect::<String>(),
             "error": run.error,

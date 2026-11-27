@@ -571,6 +571,12 @@ fn execute_routine_run_with_inputs(
         }
     }
     let _slot_guard = RunSlotGuard(&state.running_routines, lock_key);
+    // Re-read after acquiring the per-routine slot so rapid scheduler ticks cannot
+    // execute the same cadence window twice.
+    let routine = routines::get_routine(&runtime.cfg.data_dir, id)?;
+    if trigger == "scheduled" && !scheduler::is_routine_due(&routine, records::now_millis()) {
+        return None;
+    }
 
     if pipelines::has_running_pipeline_for_routine(&runtime.cfg.data_dir, id) {
         let now_ms = records::now_millis();
@@ -665,7 +671,23 @@ fn execute_routine_run_with_inputs(
                 );
                 let _ = scheduler::record_run_history(&runtime.cfg.data_dir, rec.clone());
                 let hist = scheduler::list_run_history(&runtime.cfg.data_dir, Some(id), 20);
-                let enriched = scheduler::enrich_routine_json(&updated, finished_ms, &hist);
+                let idx = person_idx(state, person, runtime);
+                let mut enriched = scheduler::enrich_routine_with_verification(
+                    &updated,
+                    finished_ms,
+                    &hist,
+                    &idx.chain,
+                    idx.chain_valid,
+                );
+                if let Some(obj) = enriched.as_object_mut() {
+                    obj.insert(
+                        "offline_deterministic".to_string(),
+                        json!(!pipelines::routine_value_requires_llm(
+                            &runtime.cfg.data_dir,
+                            &updated
+                        )),
+                    );
+                }
                 return Some(RoutineExecResult {
                     http_status: 503,
                     routine: enriched,
@@ -752,10 +774,29 @@ fn execute_routine_run_with_inputs(
                         }
                         let updated = routines::get_routine(&runtime.cfg.data_dir, id)
                             .unwrap_or(routine);
-                        let receipt_id = latest_receipt_id_for_thread(
+                        let mut receipt_id = latest_receipt_id_for_thread(
                             &runtime.cfg.data_dir,
                             &prun.thread_id,
                         );
+                        if receipt_id.is_none() {
+                            records::append_work(
+                                &runtime.cfg,
+                                &name,
+                                if summary.is_empty() {
+                                    "Completed deterministic routine."
+                                } else {
+                                    &summary
+                                },
+                                &[],
+                                &prun.thread_id,
+                                true,
+                            );
+                            receipt_id = latest_receipt_id_for_thread(
+                                &runtime.cfg.data_dir,
+                                &prun.thread_id,
+                            );
+                        }
+                        state.search_cache.invalidate(&person.id);
                         let rec = scheduler::new_run_record(
                             id,
                             &name,
@@ -771,13 +812,22 @@ fn execute_routine_run_with_inputs(
                         let _ = scheduler::record_run_history(&runtime.cfg.data_dir, rec.clone());
                         let hist = scheduler::list_run_history(&runtime.cfg.data_dir, Some(id), 20);
                         let idx = person_idx(state, person, runtime);
-                        let enriched = scheduler::enrich_routine_with_verification(
+                        let mut enriched = scheduler::enrich_routine_with_verification(
                             &updated,
                             finished_ms,
                             &hist,
                             &idx.chain,
                             idx.chain_valid,
                         );
+                        if let Some(obj) = enriched.as_object_mut() {
+                            obj.insert(
+                                "offline_deterministic".to_string(),
+                                json!(!pipelines::routine_value_requires_llm(
+                                    &runtime.cfg.data_dir,
+                                    &updated
+                                )),
+                            );
+                        }
                         state.events.publish(
                             "routine_fired",
                             &person.id,
@@ -1373,6 +1423,8 @@ fn start_scheduler_thread(state: &Arc<AppState>) {
                     let Some(rid) = r["id"].as_str().map(|s| s.to_string()) else {
                         continue;
                     };
+                    // Deterministic zero-LLM `steps_v2` routines run offline without a model key;
+                    // LLM-requiring routines wait until a model is configured instead of spamming errors.
                     if !model_ok && pipelines::routine_value_requires_llm(&rt.cfg.data_dir, &r) {
                         continue;
                     }
@@ -5875,7 +5927,14 @@ fn try_route_knowledge_and_routines(
                 Ok(Some(routine)) => {
                     let now_ms = records::now_millis();
                     let hist = scheduler::list_run_history(&runtime.cfg.data_dir, Some(&id), 20);
-                    let mut enriched = scheduler::enrich_routine_json(&routine, now_ms, &hist);
+                    let idx = person_idx(state, person, runtime);
+                    let mut enriched = scheduler::enrich_routine_with_verification(
+                        &routine,
+                        now_ms,
+                        &hist,
+                        &idx.chain,
+                        idx.chain_valid,
+                    );
                     if let Some(obj) = enriched.as_object_mut() {
                         obj.insert(
                             "offline_deterministic".to_string(),
