@@ -1329,6 +1329,11 @@ export function App() {
           desk.loadMetering();
           paper.load();
         }}
+        onRestored={() => {
+          desk.loadPeople();
+          desk.loadStatus();
+          runAfterPersonChange();
+        }}
         u={u}
         open={settingsOpen}
         onOpenChange={setSettingsOpen}

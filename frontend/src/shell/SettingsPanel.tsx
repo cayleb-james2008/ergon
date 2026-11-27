@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Pill } from "@/components/kibo-ui/pill";
 import { WorkspaceSwitcherList } from "@/shell/PersonSelect";
+import { BackupsSection } from "@/shell/BackupsSection";
 import { SecuritySection } from "@/shell/SecuritySection";
 import { VersionRow, type useUpdate } from "@/shell/Update";
 import {
@@ -41,6 +42,7 @@ function SettingsBody({
   onAddPerson,
   onExportAuditBundle,
   onConfigSaved,
+  onRestored,
   u,
 }: {
   theme: Theme;
@@ -53,6 +55,7 @@ function SettingsBody({
   onAddPerson: () => void;
   onExportAuditBundle: (format: "json" | "md") => Promise<void>;
   onConfigSaved: () => void;
+  onRestored?: () => void;
   u: ReturnType<typeof useUpdate>;
 }) {
   const { isOpen, setIsOpen } = usePanelModalClose();
@@ -337,6 +340,9 @@ function SettingsBody({
           </Button>
         </div>
       </section>
+
+      {/* Backups & Recovery (native) */}
+      <BackupsSection status={status} onRestored={onRestored} />
 
       {/* Security tripwires (native v0.8.0+) */}
       <SecuritySection status={status} />
@@ -695,6 +701,7 @@ export function SettingsPanel({
   onAddPerson,
   onExportAuditBundle,
   onConfigSaved,
+  onRestored,
   u,
   open,
   onOpenChange,
@@ -710,6 +717,7 @@ export function SettingsPanel({
   onAddPerson: () => void;
   onExportAuditBundle: (format: "json" | "md") => Promise<void>;
   onConfigSaved: () => void;
+  onRestored?: () => void;
   u: ReturnType<typeof useUpdate>;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
@@ -720,7 +728,7 @@ export function SettingsPanel({
       open={open}
       onOpenChange={onOpenChange}
       title="Settings"
-      description="Appearance, workspaces, model configuration, security, and audit bundle export."
+      description="Appearance, workspaces, backups, model configuration, security, and audit bundle export."
       className="max-w-xl"
       trigger={
         !hideTrigger ? (
@@ -744,6 +752,7 @@ export function SettingsPanel({
         onAddPerson={onAddPerson}
         onExportAuditBundle={onExportAuditBundle}
         onConfigSaved={onConfigSaved}
+        onRestored={onRestored}
         u={u}
       />
     </PanelModal>

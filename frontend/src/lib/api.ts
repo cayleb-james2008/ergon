@@ -12,6 +12,7 @@ export type ServerCapabilities = {
   file_history?: boolean;
   scheduler?: boolean;
   audit_bundle?: boolean;
+  backups?: boolean;
   people_switch?: boolean;
   tripwire?: boolean;
   pipelines?: boolean;
@@ -948,6 +949,90 @@ export type SecurityPayload = {
 export function hasTripwire(status: Status | null | "error" | undefined): boolean {
   if (isWebStandalone() || !status || status === "error") return false;
   return status.capabilities?.tripwire === true;
+}
+
+export type BackupOffsiteConfig = {
+  kind: "none" | "folder" | "s3";
+  folder_path: string;
+  s3_endpoint: string;
+  s3_bucket: string;
+  s3_region: string;
+  s3_prefix: string;
+  s3_path_style: boolean;
+  s3_credentials_configured?: boolean;
+};
+
+export type BackupConfig = {
+  enabled: boolean;
+  interval_hours: number;
+  retention_count: number;
+  local_dir: string;
+  effective_local_dir?: string;
+  offsite: BackupOffsiteConfig;
+};
+
+export type BackupRuntimeState = {
+  last_run_ms: number | null;
+  last_backup_name: string | null;
+  last_backup_sha256: string | null;
+  last_file_count: number | null;
+  last_zip_bytes: number | null;
+  last_offsite_status: string | null;
+  last_error: string | null;
+};
+
+export type BackupListEntry = {
+  name: string;
+  size_bytes: number;
+  modified_ms: number;
+  sha256: string | null;
+  created_at_utc: string | null;
+  file_count: number | null;
+  kind: "backup" | "pre_restore";
+};
+
+export type BackupsPayload = {
+  config: BackupConfig;
+  state: BackupRuntimeState;
+  backups: BackupListEntry[];
+  can_edit: boolean;
+};
+
+export type BackupRunResponse = {
+  ok: boolean;
+  backup: {
+    filename: string;
+    sha256: string;
+    manifest_sha256: string;
+    file_count: number;
+    total_bytes: number;
+    zip_bytes: number;
+    created_at_utc: string;
+    pruned_local: string[];
+    offsite?: { kind: string; ok: boolean; target: string; detail: string } | null;
+  };
+  state: BackupRuntimeState;
+  backups: BackupListEntry[];
+};
+
+export type BackupRestoreResponse = {
+  ok: boolean;
+  restore: {
+    archive: string;
+    restored_files: number;
+    total_bytes: number;
+    archive_sha256: string;
+    manifest_sha256: string;
+    verified_on_disk: boolean;
+    pre_restore_snapshot: string | null;
+  };
+  backups: BackupListEntry[];
+};
+
+/** Full-instance backups exist on native Ergon (never in standalone browser mode). */
+export function hasBackups(status: Status | null | "error" | undefined): boolean {
+  if (isWebStandalone() || !status || status === "error") return false;
+  return status.capabilities?.backups === true;
 }
 export type TodayPayload = { date?: string; events?: TodayEvent[] };
 export type GraphNode = { id: string; kind: string; label?: string; detail?: string };

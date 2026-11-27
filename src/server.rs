@@ -87,6 +87,8 @@ pub struct AppState {
     pub scheduler_enabled: bool,
     /// Per-routine in-flight guard so overlapping ticks never double-fire the same routine.
     pub running_routines: Arc<Mutex<std::collections::HashSet<String>>>,
+    /// Serializes scheduled/manual backups and full-instance restores.
+    pub backup_lock: Arc<Mutex<()>>,
     /// Perimeter honeytraps: decoys, breadcrumbs, honeytoken use, bans.
     pub tripwire: Arc<tripwire::Perimeter>,
 }
@@ -1454,6 +1456,89 @@ fn start_scheduler_thread(state: &Arc<AppState>) {
     });
 }
 
+fn backup_scheduler_tick_ms() -> u64 {
+    std::env::var("ERGON_BACKUP_TICK_MS")
+        .ok()
+        .and_then(|s| s.trim().parse::<u64>().ok())
+        .map(|ms| ms.clamp(250, 3_600_000))
+        .unwrap_or(60_000)
+}
+
+fn is_backup_scheduler_disabled() -> bool {
+    std::env::var("ERGON_DISABLE_BACKUP_SCHEDULER")
+        .map(|v| {
+            let low = v.trim().to_ascii_lowercase();
+            matches!(low.as_str(), "1" | "true" | "yes" | "on")
+        })
+        .unwrap_or(false)
+}
+
+fn start_backup_scheduler_thread(state: &Arc<AppState>) {
+    if is_backup_scheduler_disabled() {
+        return;
+    }
+    let weak = Arc::downgrade(state);
+    let tick_ms = backup_scheduler_tick_ms();
+    std::thread::spawn(move || {
+        loop {
+            std::thread::sleep(std::time::Duration::from_millis(tick_ms));
+            let Some(st) = weak.upgrade() else {
+                break;
+            };
+            let cfg = backup::load_backup_config(&st.cfg.data_dir);
+            if !cfg.enabled {
+                continue;
+            }
+            let rt_state = backup::load_backup_state(&st.cfg.data_dir);
+            let now_ms = records::now_millis();
+            if !backup::is_scheduled_backup_due(&cfg, &rt_state, now_ms) {
+                continue;
+            }
+            let Ok(_guard) = st.backup_lock.try_lock() else {
+                continue;
+            };
+            match backup::run_backup_with_config(&st.cfg.data_dir, &cfg, None) {
+                Ok(report) => {
+                    eprintln!(
+                        "ergon: scheduled backup complete: {} ({} files, {} bytes, sha256:{})",
+                        report.filename,
+                        report.file_count,
+                        report.zip_bytes,
+                        &report.sha256[..12.min(report.sha256.len())]
+                    );
+                }
+                Err(err) => {
+                    eprintln!("ergon: scheduled backup failed: {err}");
+                }
+            }
+        }
+    });
+}
+
+fn reload_state_after_restore(state: &AppState) {
+    let people = PeopleState::load(&state.cfg);
+    {
+        let mut p_lock = state.people.write().unwrap_or_else(|p| p.into_inner());
+        *p_lock = people;
+    }
+    {
+        let mut rt_lock = state.runtimes.write().unwrap_or_else(|p| p.into_inner());
+        rt_lock.clear();
+    }
+    {
+        let mut lib_lock = state.library.lock().unwrap_or_else(|p| p.into_inner());
+        *lib_lock = library::Library::load(&state.cfg.data_dir);
+    }
+    state.search_cache.invalidate_all();
+    if let Some(saved) = crate::load_saved_model_config(&state.cfg.data_dir) {
+        let mut mc = state.model_cfg.lock().unwrap_or_else(|p| p.into_inner());
+        mc.model_base_url = saved.model_base_url;
+        mc.model_id = saved.model_id;
+        mc.api_key = saved.api_key;
+        mc.auto_detected = false;
+    }
+}
+
 /// `background_updates` starts the periodic release check; only the real
 /// binary does (tests must not call out to GitHub).
 fn serve_inner(
@@ -1501,6 +1586,7 @@ fn serve_inner(
         updater: update::Updater::from_env("ERGON", "ergon", env!("CARGO_PKG_VERSION"), "cayleb-james2008/ergon", gate_token_is_none),
         scheduler_enabled: !scheduler_disabled,
         running_routines: Arc::new(Mutex::new(std::collections::HashSet::new())),
+        backup_lock: Arc::new(Mutex::new(())),
         tripwire: perimeter,
     });
     // Recover any stale "running" pipeline runs left behind by a prior server exit.
@@ -1571,6 +1657,7 @@ fn serve_inner(
         start_scheduler_thread(&state);
         start_folder_watch_thread(&state);
         start_imap_poll_thread(&state);
+        start_backup_scheduler_thread(&state);
     }
     const MAX_ACTIVE_CONNS: usize = 128;
     const WARM_WORKER_FLOOR: usize = 2;
@@ -3037,7 +3124,7 @@ fn try_route_system(
                 );
                 search::write_json_bool(buf, state.scheduler_enabled);
                 buf.extend_from_slice(
-                    br#","file_history":true,"audit_bundle":true,"tripwire":true,"file_edit":true,"table_query":true,"pdf_export":true,"connectors":true,"mcp":true,"clients":true,"metering":true,"vault_search":true,"client_crm":true,"time_entries":true,"invoicing":true,"run_resume":true},"scheduler_enabled":"#,
+                    br#","file_history":true,"audit_bundle":true,"backups":true,"tripwire":true,"file_edit":true,"table_query":true,"pdf_export":true,"connectors":true,"mcp":true,"clients":true,"metering":true,"vault_search":true,"client_crm":true,"time_entries":true,"invoicing":true,"run_resume":true},"scheduler_enabled":"#,
                 );
                 search::write_json_bool(buf, state.scheduler_enabled);
                 buf.extend_from_slice(br#","person":{"id":"#);
@@ -3384,6 +3471,197 @@ fn try_route_system(
             match tripwire::update_policy(&root_cfg.data_dir, list, host, add) {
                 Ok(p) => respond_json(stream, 200, &json!({"policy": {"allow_hosts": p.allow_hosts, "block_hosts": p.block_hosts}})),
                 Err(e) => respond_err(stream, 400, &e),
+            }
+        }
+        ("GET", "/api/backups") => {
+            if state.gate_token.is_some() || !host_allowed(req.host.as_deref().unwrap_or(""), &[]) {
+                return Some(respond_json(
+                    stream,
+                    403,
+                    &json!({"error": "backups can only be managed directly from this machine, not through a shared address"}),
+                ));
+            }
+            let bcfg = backup::load_backup_config(&root_cfg.data_dir);
+            let bst = backup::load_backup_state(&root_cfg.data_dir);
+            let local_dir = bcfg.effective_local_dir(&root_cfg.data_dir);
+            let backups: Vec<Value> = backup::list_backups(&local_dir)
+                .iter()
+                .map(backup::BackupListEntry::to_json)
+                .collect();
+            respond_json(
+                stream,
+                200,
+                &json!({
+                    "config": bcfg.to_json(&root_cfg.data_dir),
+                    "state": bst.to_json(),
+                    "backups": backups,
+                    "can_edit": true,
+                }),
+            )
+        }
+        ("POST", "/api/backups/config") => {
+            if state.gate_token.is_some() || !host_allowed(req.host.as_deref().unwrap_or(""), &[]) {
+                return Some(respond_json(
+                    stream,
+                    403,
+                    &json!({"error": "backup settings can only be changed directly from this machine, not through a shared address"}),
+                ));
+            }
+            let parsed: Value = serde_json::from_slice(&req.body).unwrap_or(Value::Null);
+            if !parsed.is_object() {
+                return Some(respond_err(stream, 400, "backup config body must be a JSON object"));
+            }
+            match backup::update_backup_config_from_json(&root_cfg.data_dir, &parsed) {
+                Ok(bcfg) => respond_json(
+                    stream,
+                    200,
+                    &json!({
+                        "ok": true,
+                        "config": bcfg.to_json(&root_cfg.data_dir),
+                    }),
+                ),
+                Err(e) => respond_err(stream, 400, &e),
+            }
+        }
+        ("POST", "/api/backups/run") => {
+            if state.gate_token.is_some() || !host_allowed(req.host.as_deref().unwrap_or(""), &[]) {
+                return Some(respond_json(
+                    stream,
+                    403,
+                    &json!({"error": "running backups is only allowed directly from this machine, not through a shared address"}),
+                ));
+            }
+            let _guard = state.backup_lock.lock().unwrap_or_else(|p| p.into_inner());
+            let bcfg = backup::load_backup_config(&root_cfg.data_dir);
+            match backup::run_backup_with_config(&root_cfg.data_dir, &bcfg, None) {
+                Ok(report) => {
+                    let local_dir = bcfg.effective_local_dir(&root_cfg.data_dir);
+                    let backups: Vec<Value> = backup::list_backups(&local_dir)
+                        .iter()
+                        .map(backup::BackupListEntry::to_json)
+                        .collect();
+                    let bst = backup::load_backup_state(&root_cfg.data_dir);
+                    respond_json(
+                        stream,
+                        200,
+                        &json!({
+                            "ok": true,
+                            "backup": report.to_json(),
+                            "state": bst.to_json(),
+                            "backups": backups,
+                        }),
+                    )
+                }
+                Err(e) => respond_err(stream, 500, &e),
+            }
+        }
+        ("GET", "/api/backups/download") => {
+            if state.gate_token.is_some() || !host_allowed(req.host.as_deref().unwrap_or(""), &[]) {
+                return Some(respond_json(
+                    stream,
+                    403,
+                    &json!({"error": "downloading backups is only allowed directly from this machine, not through a shared address"}),
+                ));
+            }
+            let Some(name) = query_param(&req.query, "name").filter(|s| !s.is_empty()) else {
+                return Some(respond_err(stream, 400, "missing required query parameter 'name'"));
+            };
+            let bcfg = backup::load_backup_config(&root_cfg.data_dir);
+            let local_dir = bcfg.effective_local_dir(&root_cfg.data_dir);
+            let resolved = match backup::resolve_confined_backup_path(&local_dir, &name) {
+                Ok(p) => p,
+                Err(e) => {
+                    let code = if e.contains("not found") || e.contains("does not exist") {
+                        404
+                    } else {
+                        403
+                    };
+                    return Some(respond_err(stream, code, &e));
+                }
+            };
+            let bytes = match std::fs::read(&resolved) {
+                Ok(b) => b,
+                Err(_) => return Some(respond_err(stream, 404, "backup archive not found")),
+            };
+            let sha = receipts::sha256_hex(&bytes);
+            let headers = vec![
+                ("X-Content-Type-Options", "nosniff".to_string()),
+                (
+                    "Content-Disposition",
+                    format!("attachment; filename=\"{name}\""),
+                ),
+                ("X-Ergon-Backup-SHA256", sha),
+            ];
+            respond_bytes(stream, 200, "application/zip", &bytes, &headers)
+        }
+        ("POST", "/api/backups/restore") => {
+            if state.gate_token.is_some() || !host_allowed(req.host.as_deref().unwrap_or(""), &[]) {
+                return Some(respond_json(
+                    stream,
+                    403,
+                    &json!({"error": "restoring backups is only allowed directly from this machine, not through a shared address"}),
+                ));
+            }
+            let parsed: Value = serde_json::from_slice(&req.body).unwrap_or(Value::Null);
+            let name = parsed["name"].as_str().unwrap_or("").trim();
+            if name.is_empty() {
+                return Some(respond_err(stream, 400, "restore requires backup 'name'"));
+            }
+            if !parsed["confirm"].as_bool().unwrap_or(false) {
+                return Some(respond_err(
+                    stream,
+                    400,
+                    "restore requires explicit confirmation (\"confirm\": true)",
+                ));
+            }
+            if RUNS_IN_FLIGHT.load(std::sync::atomic::Ordering::SeqCst) > 0 {
+                return Some(respond_err(
+                    stream,
+                    409,
+                    "a task is still running; wait for it to finish before restoring a backup",
+                ));
+            }
+            let bcfg = backup::load_backup_config(&root_cfg.data_dir);
+            let local_dir = bcfg.effective_local_dir(&root_cfg.data_dir);
+            let resolved = match backup::resolve_confined_backup_path(&local_dir, name) {
+                Ok(p) => p,
+                Err(e) => {
+                    let code = if e.contains("not found") || e.contains("does not exist") {
+                        404
+                    } else {
+                        403
+                    };
+                    return Some(respond_err(stream, code, &e));
+                }
+            };
+            let _guard = state.backup_lock.lock().unwrap_or_else(|p| p.into_inner());
+            match backup::restore_backup(&resolved, &root_cfg.data_dir, true) {
+                Ok(summary) => {
+                    reload_state_after_restore(state);
+                    let next_cfg = backup::load_backup_config(&root_cfg.data_dir);
+                    let next_dir = next_cfg.effective_local_dir(&root_cfg.data_dir);
+                    let backups: Vec<Value> = backup::list_backups(&next_dir)
+                        .iter()
+                        .map(backup::BackupListEntry::to_json)
+                        .collect();
+                    respond_json(
+                        stream,
+                        200,
+                        &json!({
+                            "ok": true,
+                            "restore": summary.to_json(),
+                            "backups": backups,
+                        }),
+                    )
+                }
+                Err(e) => {
+                    let status = if e.contains("failed verification") {
+                        400
+                    } else {
+                        500
+                    };
+                    respond_err(stream, status, &e)
+                }
             }
         }
         _ => return None,
