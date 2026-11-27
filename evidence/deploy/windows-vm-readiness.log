@@ -1,0 +1,200 @@
+=== Ergon Windows 11 Home VM Deploy-Readiness Log ===
+Date: 2026-11-27
+Repo HEAD: df3857ea4f04031a7718add6b8c90788413febe3
+Target: x86_64-pc-windows-msvc (static CRT via .cargo/config.toml: -C target-feature=+crt-static)
+Build cmd: CARGO_TARGET_DIR=/home/cayleb/Work/scratch/2026-11-27-ergon-full/target CARGO_BUILD_JOBS=2 cargo xwin build --release --locked --target x86_64-pc-windows-msvc --bin ergon
+Artifact: 5a69e632ac691e0a91e04443941414fb286bad5289c4606f79709d666b1770ac  /home/cayleb/Work/scratch/2026-11-27-ergon-full/target/x86_64-pc-windows-msvc/release/ergon.exe
+Artifact bytes: 14220800
+go.ps1 sha256: cdf82ebda152fee13919e69a3aac46c072820518a4b3e23a75b4939cb5315b26  /home/cayleb/.winvm-scratch/win11/share/go.ps1
+
+=== [1] Cross-Build Output ===
+    Blocking waiting for file lock on build directory
+   Compiling cfg-if v1.0.5
+   Compiling generic-array v0.14.7
+   Compiling zerofrom v0.1.8
+   Compiling stable_deref_trait v1.2.1
+   Compiling typenum v1.20.1
+   Compiling yoke v0.8.4
+   Compiling zerovec v0.11.9
+   Compiling num-traits v0.2.19
+   Compiling crypto-common v0.1.7
+   Compiling portable-atomic v1.15.0
+   Compiling tinystr v0.8.5
+   Compiling writeable v0.6.4
+   Compiling litemap v0.8.3
+   Compiling utf_types v1.0.0
+   Compiling icu_locale_core v2.4.0
+   Compiling utf8_iter v1.1.0
+   Compiling serde_core v1.0.229
+   Compiling ring v0.17.14
+   Compiling block-padding v0.3.3
+   Compiling zerotrie v0.2.5
+   Compiling potential_utf v0.1.6
+   Compiling critical-section v1.2.0
+   Compiling zeroize v1.9.2
+   Compiling icu_normalizer_data v2.4.0
+   Compiling rustls-pki-types v1.16.0
+   Compiling once_cell v1.21.4
+   Compiling icu_properties_data v2.4.0
+   Compiling icu_collections v2.4.0
+   Compiling icu_provider v2.4.0
+   Compiling inout v0.1.4
+   Compiling memchr v2.8.3
+   Compiling serde v1.0.229
+   Compiling cipher v0.4.4
+   Compiling num-integer v0.1.47
+   Compiling block-buffer v0.10.4
+   Compiling zerocopy v0.8.63
+   Compiling getrandom v0.2.17
+   Compiling rand_core v0.10.1
+   Compiling untrusted v0.9.0
+   Compiling smallvec v1.16.6
+   Compiling itoa v1.0.19
+   Compiling crc32fast v1.5.5
+   Compiling icu_normalizer v2.4.0
+   Compiling getrandom v0.4.3
+   Compiling digest v0.10.7
+   Compiling icu_properties v2.4.0
+   Compiling ahash v0.8.12
+   Compiling cpufeatures v0.3.1
+   Compiling simd-adler32 v0.3.10
+   Compiling log v0.4.35
+   Compiling adler2 v2.0.1
+   Compiling tinyvec v1.13.3
+   Compiling cpufeatures v0.2.17
+   Compiling thiserror v2.0.21
+   Compiling unicode-normalization v0.1.26
+   Compiling zmij v1.0.23
+   Compiling miniz_oxide v0.9.1
+   Compiling idna_adapter v1.2.2
+   Compiling chacha20 v0.10.2
+   Compiling musli-core v0.0.124
+   Compiling encoding_rs v0.8.44
+   Compiling num-bigint v0.4.8
+   Compiling pin-project v1.1.13
+   Compiling scopeguard v1.2.0
+   Compiling simdutf8 v0.1.5
+   Compiling time-core v0.1.9
+   Compiling core_detect v1.0.0
+   Compiling unicode-properties v0.1.5
+   Compiling percent-encoding v2.3.2
+   Compiling unicode-bidi v0.3.18
+   Compiling powerfmt v0.2.1
+   Compiling num-conv v0.2.2
+   Compiling deranged v0.5.9
+   Compiling pom v1.1.0
+   Compiling hashbrown v0.17.2
+   Compiling equivalent v1.0.3
+   Compiling indexmap v2.14.2
+   Compiling time v0.3.55
+   Compiling anyhow v1.0.104
+   Compiling stringprep v0.1.5
+   Compiling form_urlencoded v1.2.2
+   Compiling num-rational v0.4.2
+   Compiling serde_json v1.0.154
+   Compiling rustls v0.23.46
+   Compiling rune-alloc v0.14.2
+   Compiling musli v0.0.124
+   Compiling flate2 v1.1.11
+   Compiling rand v0.10.4
+   Compiling idna v1.1.0
+   Compiling aes v0.8.4
+   Compiling sha2 v0.10.9
+   Compiling md-5 v0.10.6
+   Compiling rustls-webpki v0.103.17
+   Compiling num-iter v0.1.46
+   Compiling cbc v0.1.2
+   Compiling ecb v0.1.2
+   Compiling nom v8.0.0
+   Compiling webpki-roots v1.0.12
+   Compiling num-complex v0.4.6
+   Compiling rangemap v1.9.0
+   Compiling weezl v0.1.12
+   Compiling ttf-parser v0.25.1
+   Compiling slab v0.4.12
+   Compiling subtle v2.6.1
+   Compiling base64 v0.23.1
+   Compiling twox-hash v2.1.5
+   Compiling pin-project-lite v0.2.17
+   Compiling bitflags v2.13.2
+   Compiling futures-core v0.3.34
+   Compiling futures-task v0.3.34
+   Compiling futures-util v0.3.34
+   Compiling lopdf v0.42.0
+   Compiling rune-core v0.14.2
+   Compiling pem v4.0.0
+   Compiling rune-tracing v0.14.2
+   Compiling num v0.4.3
+   Compiling webpki-roots v0.26.11
+   Compiling url v2.5.8
+   Compiling yasna v0.6.0
+   Compiling type1-encoding-parser v0.1.1
+   Compiling adobe-cmap-parser v0.4.1
+   Compiling euclid v0.20.14
+   Compiling base64 v0.22.1
+   Compiling syntree v0.18.0
+   Compiling ryu v1.0.23
+   Compiling cff-parser v0.2.0
+   Compiling postscript v0.14.1
+   Compiling unicode-ident v1.0.27
+   Compiling rune v0.14.2
+   Compiling pdf-extract v0.12.1
+   Compiling ureq v2.12.1
+   Compiling rcgen v0.14.10
+   Compiling ergon-rs v0.40.0 (/home/cayleb/Work/projects/ergon)
+    Finished `release` profile [optimized] target(s) in 7m 30s
+
+=== [2] Windows 11 Home VM Report Lines (report.txt lines 80+) ===
+2026-11-27T10:43:23 ERGON-W11 poll-alive user=ergon elevated=True os=Microsoft Windows 11 Home
+2026-11-27T10:43:36-05:00 ===== HOST: Wave 4 Win11 deploy-readiness run (HEAD df3857ea4, go.ps1 sha256=CDF82EBDA152FEE13919E69A3AAC46C072820518A4B3E23A75B4939CB5315B26) =====
+2026-11-27T10:44:00 ERGON-W11 go.ps1 start sha256=CDF82EBDA152FEE13919E69A3AAC46C072820518A4B3E23A75B4939CB5315B26
+2026-11-27T10:44:21 G00 staged ergon.exe bytes=14220800 sha256=5A69E632AC691E0A91E04443941414FB286BAD5289C4606F79709D666B1770AC
+2026-11-27T10:44:26 G01 Set-AuthenticodeSignature : Status=UnknownError StatusMessage=A certificate chain processed, but terminated in a root certificate which is not trusted by the trust provider Signer=CN="Ergon Test Signing (self-signed, NOT FOR RELEASE)" Timestamper=CN=DigiCert SHA256 RSA4096 Timestamp Responder 2026 1, O="DigiCert, Inc.", C=US Thumbprint=FC415C2BFA54E49E887DCD5C112594A85CAF6F3A
+2026-11-27T10:44:27 G02 pfx deleted from guest: True
+2026-11-27T10:44:37 S01 ==== ERGON WINDOWS VM SMOKE TEST ====
+2026-11-27T10:44:40 S02 Microsoft Windows 11 Home Microsoft Windows NT 10.0.26300.0
+2026-11-27T10:44:41 S03 [PASS] ergon.exe present C:\ergon-test\ergon.exe
+2026-11-27T10:44:47 S04 signature before trusting test root: UnknownError / signer=CN="Ergon Test Signing (self-signed, NOT FOR RELEASE)"
+2026-11-27T10:44:48 S05 [PASS] exe carries an Authenticode signature 
+2026-11-27T10:44:53 S06 [PASS] signature Valid once test root is trusted status=Valid
+2026-11-27T10:45:18 S07   install> Installing Ergon from: C:\ergon-test\ergon.exe
+2026-11-27T10:45:19 S08   install> Installed binary: C:\Program Files\Ergon\ergon.exe (ergon 0.40.0)
+2026-11-27T10:45:19 S09   install> Registering Windows Service 'ErgonService'...
+2026-11-27T10:45:19 S10   install> ergon service install: installed Windows service 'ErgonService' (data dir: C:\ProgramData\Ergon\data)
+2026-11-27T10:45:20 S11   install> Service 'ErgonService' configured with auto-start and automatic restart recovery.
+2026-11-27T10:45:20 S12   install> 
+2026-11-27T10:45:20 S13   install> Ergon installation complete.
+2026-11-27T10:45:21 S14   install>   Binary:   C:\Program Files\Ergon\ergon.exe
+2026-11-27T10:45:21 S15   install>   Data dir: C:\ProgramData\Ergon\data
+2026-11-27T10:45:21 S16   install>   Launcher: C:\Program Files\Ergon\ergon-serve.cmd
+2026-11-27T10:45:22 S17   install>   Web UI:   http://127.0.0.1:8787/
+2026-11-27T10:45:22 S18   install>   Service:  ErgonService (check status: "C:\Program Files\Ergon\ergon.exe" service status --name ErgonService)
+2026-11-27T10:45:23 S19 [PASS] install-windows.ps1 exit code 0 exit=0
+2026-11-27T10:45:23 S20 [PASS] service registered 
+2026-11-27T10:45:24 S21 [PASS] service running status=Running
+2026-11-27T10:45:27 S22 [PASS] service start mode Auto mode=Auto
+2026-11-27T10:45:27 S23 sc qfailure: [SC] QueryServiceConfig2 SUCCESS |  | SERVICE_NAME: ErgonService |         RESET_PERIOD (in seconds)    : 86400 |         REBOOT_MESSAGE               :  |         COMMAND_LINE                 :  |         FAILURE_ACTIONS              : RESTART -- Delay = 5000 milliseconds. |                                        RESTART -- Delay = 15000 milliseconds. |                                        RESTART -- Delay = 30000 milliseconds. | 
+2026-11-27T10:45:28 S24 [PASS] GET /api/status answers code=200
+2026-11-27T10:45:28 S25 ergon service status> service: ErgonService [windows] state=running installed=true running=true | detail:  SERVICE_NAME: ErgonService  |         TYPE               : 10  WIN32_OWN_PROCESS   |         STATE              : 4  RUNNING  |                                 (STOPPABLE, NOT_PAUSABLE, ACCEPTS_SHUTDOWN) |         WIN32_EXIT_CODE    : 0  (0x0) |         SERVICE_EXIT_CODE  : 0  (0x0) |         CHECKPOINT         : 0x0 |         WAIT_HINT          : 0x0
+2026-11-27T10:45:38 S26 [PASS] service auto-restarts after crash 
+2026-11-27T10:46:03 S27   uninstall> Stopping and removing Windows Service 'ErgonService'...
+2026-11-27T10:46:03 S28   uninstall> Removing installation directory: C:\Program Files\Ergon
+2026-11-27T10:46:04 S29   uninstall> Preserved data directory: C:\ProgramData\Ergon\data (pass -PurgeData to delete workspace data).
+2026-11-27T10:46:04 S30   uninstall> Ergon uninstall complete.
+2026-11-27T10:46:07 S31 [PASS] service removed 
+2026-11-27T10:46:07 S32 [PASS] binary removed 
+2026-11-27T10:46:08 S33 ==== END: 0 failure(s) ====
+2026-11-27T10:46:09 V00 [PASS] ergon.exe --version exit=0 out=ergon 0.40.0
+2026-11-27T10:46:11 V00 [PASS] ergon.exe backup exit=0 PASS [backup] C:\ergon-test\cli-tmp\out\ergon-test-backup.zip (3 files, 225 bytes raw, 1123 bytes zip) | sha256: 63b8d0eea7a5343a6805d8b6dec4fec1210bb8cfe1e2e87b30fb5899e670e5ec | manifest_sha256: 3f8980a20145ddc5136e03797421df860d4fc31e8ca654d0080333fea3f00830
+2026-11-27T10:46:11 V00 [PASS] ergon.exe verify exit=0 PASS [backup_archive] Backup archive passed offline SHA-256 verification (3 files, 225 bytes, Ergon 0.40.0). | sha256: 63b8d0eea7a5343a6805d8b6dec4fec1210bb8cfe1e2e87b30fb5899e670e5ec
+2026-11-27T10:46:11 V00 [PASS] ergon.exe restore exit=0 marker_match=True PASS [restore] restored 3 files (225 bytes) into C:\ergon-test\cli-tmp\restored (verified on disk) | archive_sha256: 63b8d0eea7a5343a6805d8b6dec4fec1210bb8cfe1e2e87b30fb5899e670e5ec | manifest_sha256: 3f8980a20145ddc5136e03797421df860d4fc31e8ca654d0080333fea3f00830
+2026-11-27T10:46:13 V00 [PASS] ergon.exe diagnostics build exit=0 ergon diagnostics: PASS -> C:\ergon-test\cli-tmp\out\ergon-test-diagnostics.zip (1580 bytes, sha256:5525cc514ae1, logs:1, crashes:0, security_events:0)
+2026-11-27T10:46:13 V00 [PASS] ergon.exe diagnostics secret-free entries=README.txt,system.json,security_events.json,connectors.json,logs/ergon.log leaked=0
+2026-11-27T10:46:14 C01 test root removed: Root remaining=0 TrustedPublisher remaining=0 ; ergon.exe signature now=UnknownError
+2026-11-27T10:46:14 V99 cli_failures=0 cleanup_complete=True
+2026-11-27T10:46:14 ERGON-W11 go.ps1 done sha256=CDF82EBDA152FEE13919E69A3AAC46C072820518A4B3E23A75B4939CB5315B26 exit=0
+
+=== [3] Host Teardown Verification ===
+QEMU PID 257169: exited cleanly via monitor.sock system_powerdown
+serve3.py PID 257022: stopped
+port 8899 clear

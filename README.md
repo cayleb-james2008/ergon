@@ -12,9 +12,9 @@
   </picture>
 </p>
 
-Ergon is a local agent desk for individual employees. Describe a task in plain words, and the agent works against files inside a per-person workspace using built-in workflows, verifies citations against exact line numbers (`[file:L##]`), and records each finished run as a SHA-256 chained Field-Book receipt.
+Ergon is a local agent desk and company workforce server. Employees describe tasks in plain words, and their personal agent works inside an isolated per-person workspace using built-in workflows, verifies citations against exact line numbers (`[file:L##]`), and records each finished run as a SHA-256 chained Field-Book receipt.
 
-One Rust binary serves the React web UI (`/` and `/phone`), the raw-TCP HTTP and SSE engine, sandboxed document readers and exporters, standing memory (`memory.md`), the routine scheduler, and the `.history/` snapshot store without an external database or runtime.
+Across a company, one Rust binary serves the React web UI (`/` and `/phone`), raw-TCP HTTP and SSE engine, sandboxed document readers and exporters, standing memory (`memory.md`), routine scheduler, shared company database and memory, proactive tool builder, replay-gated self-improvement loop, and scoped backend APIs, webhooks, and MCP without an external database or runtime. See [CLAIMS.md](CLAIMS.md) for the full verification ledger and [docs/BACKEND_API.md](docs/BACKEND_API.md) for external API details.
 
 ---
 
@@ -59,7 +59,7 @@ One Rust binary serves the React web UI (`/` and `/phone`), the raw-TCP HTTP and
   </tr>
   <tr>
     <td width="50%">
-      Accept signed inbound webhooks (<code>POST /api/hooks/:hook_id</code>) and local watched folders into routines, keep credentials isolated inside <code>connector_secrets.json</code>, and gate outbound HTTP deliveries through Today approval cards and workspace policies.
+      Accept signed inbound webhooks (<code>POST /api/hooks/:hook_id</code>) and local watched folders into routines, encrypt credentials inside <code>secrets.enc.json</code>, and gate outbound HTTP deliveries through Today approval cards and workspace policies.
       <br /><br />
       <picture>
         <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/connectors-dark.png" />
@@ -177,6 +177,8 @@ Measured against the stripped fat-LTO release binary on local loopback against a
 | Concurrent HTTP (`16w` mixed 5 routes + `5/5` SSE across `5k`/`500`) | `724 req/s` (`188.7 ms` p95) | `4,009.2 req/s` (`3.84 ms` p50, `8.62 ms` p95, `0/10,036` err) | `5.54x` under full concurrency |
 | Automated checks | `204` Rust tests | `303/303` Rust tests (`7/7` `hardening_c4h1`), `118/118` gate, `6/6` graph, `20/20` replay, `44/44` fuzz, `0/0/0` `sloplint` | Zero warnings / zero externals |
 
+`v0.41.0` automated checks pass `394/394` serial Rust tests across `36` non-zero suites, `clippy --locked --all-targets -- -D warnings` with 0 warnings, `cargo xwin check --locked --target x86_64-pc-windows-msvc --lib --bins` with 0 errors, and `npm run check:ui -- --skip-build --lints` (`gate 124/124`, `graph 6/6`, `replay 20/20`, `sloplint 0/0/0` rendered).
+
 ---
 
 ## Quick start
@@ -232,6 +234,34 @@ On startup, unless `ERGON_NO_AUTO_MODEL=1` or an explicit `ERGON_MODEL_BASE_URL`
 
 ---
 
+## Company workforce layer
+
+### Personal agent and quality bar
+
+Each employee has an isolated personal agent with a private workspace, threads, `memory.md`, `work.json` log, and `suite.json` of installed skills, subagents, and apps. Standing preferences from `memory.md` inject into subsequent runs, and `quality_bars.json` tracks per-task quality bars across repeated task families. Employees steer output on Today or `/phone` with **Improve** and **Good enough** actions: **Improve** feeds prior scores and criteria back as beat-last-run guidance, while **Good enough** locks the accepted recipe so later runs stay steady without drifting.
+
+### `/phone` decision cards and push alerts
+
+`GET /phone` serves a mobile web face over the same HTTPS, login, and RBAC layer. Routine tasks execute autonomously, while consequential actions (`delete_file`, `flag_decision`, `connector_delivery`, `mcp_tool_call`, `budget_gate`, and `tool_offer`) park as concise Approve or Deny cards. Live `push_notification` SSE frames, the notification bell, and registered push subscriptions alert employees on their phones as soon as a decision or offer needs attention.
+
+### Proactive offers ("Would this help?") and sandboxed tool builder
+
+Ergon inspects each employee's `work.json` log and cross-team company library (`POST /api/offers/analyze` and `GET /api/offers`) to spot repeated manual tasks or helpful tools built by teammates. When a new capability fits, the agent synthesizes a sandboxed workflow script and automated fixture tests (`src/tool_builder.rs`, `/api/tools/test`, `/api/tools/build`), runs the test suite in an isolated scratch sandbox, and sends a `"Would this help?"` card to `/phone`. Approving the card installs the verified tool into the employee's `suite.json` and publishes it with version, author, and test evidence to the shared company library, where other employees can install and run it in their own workspaces.
+
+### Self-improvement loop
+
+Skills, subagents, tools, and improvers keep version history (`versions.json`) scored by live outcomes in `outcomes.jsonl` (approvals, denials, deliverable edits, reruns, and time saved). Before any candidate revision ships, `POST /api/evolution/propose` replays both the active champion and the candidate against recorded historical cases (`replay_cases.json`) inside scratch sandboxes and promotes only when the candidate passes with zero regressions and beats the baseline by more than `0.01`. If a promoted version drops in live quality or exceeds the denial threshold across subsequent runs, Ergon rolls back automatically to the previous stable version. The `default-improver` strategy is itself versioned, replayed, promoted, and rolled back through the same loop.
+
+### Shared company database and company memory
+
+`src/company_db.rs` exposes `/api/company/db` and `/api/company/db/query` for structured read queries across people, roles, clients, work logs, receipts, library tools, and evolution outcomes, filtered by caller role and workspace assignment. Alongside each person's private `memory.md`, `/api/company/memory` manages shared operational notes in `company_memory.json` with `company`, `role:<role>`, and `client:<id>` visibility scopes, `admin`/`pm`/`ae`/`office` write RBAC, secret and host-path rejection, and zero cross-person or cross-client leaks.
+
+### Company backend APIs, webhooks, and read+write MCP
+
+External scripts and services integrate over scoped `ergk_*` API keys (`POST /api/keys` with `read`, `write`, `webhooks`, `mcp`, `company_db`, `tools`, and `admin` scopes), HMAC-SHA256 outbound event webhooks (`POST /api/webhooks/subscriptions` across `work.completed`, `decision.created`, `decision.settled`, `tool.published`, `evolution.promoted`, `evolution.rolled_back`, and `quality_bar.accepted`), and an authenticated inbound JSON-RPC 2.0 MCP server at `POST /api/mcp/inbound` exposing 6 read tools, 4 RBAC-gated write tools, and 3 resources. See [docs/BACKEND_API.md](docs/BACKEND_API.md) for request schemas and [CLAIMS.md](CLAIMS.md) for the complete verification matrix.
+
+---
+
 ## Core capabilities
 
 ### DAG parallel pipelines and live token streaming
@@ -260,11 +290,11 @@ Run `ergon export-handoff`, call `POST /api/export/handoff`, or use **Client han
 
 ### Inbound triggers, mail protocols, and outbound connectors
 
-`src/connectors.rs` and the Connectors dialog (`ConnectorsPanel.tsx`) add unattended intake triggers, email protocol transports, and policy-gated outbound actions. Signed webhooks (`POST /api/hooks/:hook_id`) verify `X-Ergon-Signature` (`sha256=<hex>`) or `X-Ergon-Hook-Token`, write payloads up to `1 MB` into `workspace/inbox/`, and start linked routines or pipelines. Loopback-only watched folders validate host directories outside system and credential paths, wait for two steady `(size, mtime)` polls up to `25 MB`, deduplicate by SHA-256 manifest, and copy matching files into `workspace/intake/`. `imap_poll` triggers (`ImapTarget`) poll `imaps` or `starttls` mailboxes, write parsed messages and safe attachments into `workspace/intake/`, and launch linked routines. Outbound `http_webhook`, `rest_api`, and `smtp_relay` (`SmtpTarget` with `smtps`/`starttls`, RFC 5322 + MIME `multipart/mixed` attachments up to `10 MB`, and `OAuth2Config` token refresh) connectors keep credentials in `0600` `connector_secrets.json`, substitute `{{secret:key}}` headers on the host only after `tripwire::check_egress` passes, block all deliveries under `Air-Gapped`, and park deliveries as `connector_delivery` approval cards in Today under `Strict Client` or when approval is enabled.
+`src/connectors.rs` and the Connectors dialog (`ConnectorsPanel.tsx`) add unattended intake triggers, email protocol transports, and policy-gated outbound actions. Signed webhooks (`POST /api/hooks/:hook_id`) verify `X-Ergon-Signature` (`sha256=<hex>`) or `X-Ergon-Hook-Token`, write payloads up to `1 MB` into `workspace/inbox/`, and start linked routines or pipelines. Loopback-only watched folders validate host directories outside system and credential paths, wait for two steady `(size, mtime)` polls up to `25 MB`, deduplicate by SHA-256 manifest, and copy matching files into `workspace/intake/`. `imap_poll` triggers (`ImapTarget`) poll `imaps` or `starttls` mailboxes, write parsed messages and safe attachments into `workspace/intake/`, and launch linked routines. Outbound `http_webhook`, `rest_api`, and `smtp_relay` (`SmtpTarget` with `smtps`/`starttls`, RFC 5322 + MIME `multipart/mixed` attachments up to `10 MB`, and `OAuth2Config` token refresh) connectors keep credentials encrypted in `0600` `secrets.enc.json`, substitute `{{secret:key}}` headers on the host only after `tripwire::check_egress` passes, block all deliveries under `Air-Gapped`, and park deliveries as `connector_delivery` approval cards in Today under `Strict Client` or when approval is enabled.
 
 ### MCP tool servers and Today approvals
 
-`src/mcp.rs` persists local `stdio` (loopback-configured) and remote `http_sse` MCP servers in `0600` `mcp_servers.json` (`GET`, `POST`, and `DELETE /api/mcp/servers`, `POST /api/mcp/servers/:id/discover`), exposes discovered `mcp.<server_id>.<tool_name>` tools inside agent runs under Tripwire egress and secret guards, and parks calls as `mcp_tool_call` approval cards in Today (`Paper.tsx`) when server approval or `Strict Client` policy applies. A gated read-only inbound endpoint (`POST /api/mcp/inbound` and `/api/mcp/inbound/config`) lets local tools query workspace metadata under bearer token checks.
+`src/mcp.rs` persists local `stdio` (loopback-configured) and remote `http_sse` MCP servers in `0600` `mcp_servers.json` (`GET`, `POST`, and `DELETE /api/mcp/servers`, `POST /api/mcp/servers/:id/discover`), exposes discovered `mcp.<server_id>.<tool_name>` tools inside agent runs under Tripwire egress and secret guards, and parks calls as `mcp_tool_call` approval cards in Today (`Paper.tsx`) when server approval or `Strict Client` policy applies. The inbound MCP endpoint (`POST /api/mcp/inbound` and `/api/mcp/inbound/config`) serves external clients with read tools, RBAC-gated write tools, and workspace or company resources via scoped `ergk_*` API keys, `admin` sessions, or bearer tokens ([docs/BACKEND_API.md](docs/BACKEND_API.md)).
 
 ### Workspace audit policy profiles
 
