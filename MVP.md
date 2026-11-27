@@ -111,11 +111,11 @@ Also open but outside the MVP set: [#7](https://github.com/cayleb-james2008/ergo
 
 ---
 
-## 7. Stale Branch Cleanup Candidates (Checked 2026-11-27)
+## 7. Stale Branch Cleanup (Done 2026-11-27)
 
-`main` was rebuilt on a fresh history (root commit 2026-11-25), so the branches below share no history with `main` (each is 67 behind). Every one of them is fully contained in the release tags (`v0.10.0` and later), so deleting the branch loses no commits. **Nothing has been deleted; each needs the owner's go-ahead.**
+`main` was rebuilt on a fresh history (root commit 2026-11-25), so the branches below share no history with `main` (each is 67 behind). Every one of them is fully contained in the release tags (`v0.10.0` and later), so deleting the branch loses no commits. **All 10 were deleted on 2026-11-27 with the owner's approval; all 39 release tags were kept.**
 
-| Branch | Last commit | Ahead of `main` | Why it's stale | Covered by tag |
+| Deleted branch | Last commit | Ahead of `main` | Why it was stale | Covered by tag |
 |---|---|---|---|---|
 | `loop/work` | 2026-11-18 | 32 (unrelated history) | Old agent loop ledger, no PR | `v0.10.0`+ |
 | `goal/20261118-ergon` | 2026-11-19 | 55 (unrelated history) | Head of merged [#1](https://github.com/cayleb-james2008/ergon/pull/1) | `v0.10.0`+ |
