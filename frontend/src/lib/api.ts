@@ -773,8 +773,13 @@ export type Update = {
   latest?: string;
   available?: boolean;
   staged?: string;
-  mode?: string;
+  applied?: string;
+  installed?: string;
+  mode?: "off" | "notify" | "auto" | string;
   can_apply?: boolean;
+  can_manage?: boolean;
+  is_admin?: boolean;
+  gated?: boolean;
   dev_build?: boolean;
   notes?: string;
   release_url?: string;
@@ -1006,14 +1011,18 @@ export function formatCountdown(targetMs: number | null | undefined, nowMs = Dat
 
 export async function call<T>(
   path: string,
-  opts: { method?: string; body?: unknown; signal?: AbortSignal } = {}
+  opts: { method?: string; body?: unknown; signal?: AbortSignal; headers?: Record<string, string> } = {}
 ): Promise<Res<T>> {
   try {
+    const headers: Record<string, string> = { ...(opts.headers ?? {}) };
+    if (opts.body !== undefined && !("Content-Type" in headers)) {
+      headers["Content-Type"] = "application/json";
+    }
     const r = await fetch(path, {
       method: opts.method ?? "GET",
       cache: "no-store",
       signal: opts.signal,
-      headers: opts.body !== undefined ? { "Content-Type": "application/json" } : undefined,
+      headers: Object.keys(headers).length > 0 ? headers : undefined,
       body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
     });
     const raw = await r.text();

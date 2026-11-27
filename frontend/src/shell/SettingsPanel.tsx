@@ -15,7 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Pill } from "@/components/kibo-ui/pill";
 import { WorkspaceSwitcherList } from "@/shell/PersonSelect";
 import { SecuritySection } from "@/shell/SecuritySection";
-import { VersionRow, type useUpdate } from "@/shell/Update";
+import { UpdateSettingsSection, type useUpdate } from "@/shell/Update";
 import {
   call,
   isWebStandalone,
@@ -677,9 +677,7 @@ function SettingsBody({
       )}
 
       {/* 6. Version & Updates */}
-      <section aria-label="Version and updates" className="rounded-card border border-hairline bg-board/40 px-2 py-2">
-        <VersionRow u={u} />
-      </section>
+      <UpdateSettingsSection u={u} />
     </div>
   );
 }

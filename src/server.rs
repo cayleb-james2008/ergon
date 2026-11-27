@@ -60,10 +60,12 @@ pub struct AppState {
     /// and apps that the agents themselves maintain.
     pub library: Arc<Mutex<library::Library>>,
     /// The hosting-layer gate token (ERGON_GATE_TOKEN), when set:
-    /// every request must carry it as the `X-Ergon-Gate` header. The
-    /// hosting layer authenticates people; Ergon itself has no
-    /// accounts and no passwords.
+    /// every request must carry it via `X-Ergon-Gate`, `Authorization: Bearer`,
+    /// or `X-Ergon-Token`.
     pub gate_token: Option<String>,
+    /// Optional dedicated admin token (ERGON_ADMIN_TOKEN) for update management
+    /// and administrative operations on gated/shared hosts.
+    pub admin_token: Option<String>,
     /// Extra Host names accepted without a gate token (ERGON_ALLOWED_HOSTS).
     pub allowed_hosts: Vec<String>,
     pub people: Arc<RwLock<PeopleState>>,
@@ -181,8 +183,12 @@ fn serve_env(listener: TcpListener, cfg: Config, background_updates: bool) -> st
         .ok()
         .map(|t| t.trim().to_string())
         .filter(|t| !t.is_empty());
+    let admin = std::env::var("ERGON_ADMIN_TOKEN")
+        .ok()
+        .map(|t| t.trim().to_string())
+        .filter(|t| !t.is_empty());
     let hosts = allowed_hosts_from(&std::env::var("ERGON_ALLOWED_HOSTS").unwrap_or_default());
-    serve_inner(listener, cfg, gate, hosts, background_updates)
+    serve_inner(listener, cfg, gate, admin, hosts, None, background_updates)
 }
 
 /// Parses ERGON_ALLOWED_HOSTS: comma-separated host names, with or without
@@ -210,7 +216,20 @@ pub fn serve_with_hosts(
     gate_token: Option<String>,
     allowed_hosts: Vec<String>,
 ) -> std::io::Result<()> {
-    serve_inner(listener, cfg, gate_token, allowed_hosts, false)
+    serve_inner(listener, cfg, gate_token, None, allowed_hosts, None, false)
+}
+
+/// Serves with explicit gate token, optional admin token, allowed hosts, and custom updater
+/// (used by tests and embedded hosting layers).
+pub fn serve_with_updater(
+    listener: TcpListener,
+    cfg: Config,
+    gate_token: Option<String>,
+    admin_token: Option<String>,
+    allowed_hosts: Vec<String>,
+    updater: Arc<update::Updater>,
+) -> std::io::Result<()> {
+    serve_inner(listener, cfg, gate_token, admin_token, allowed_hosts, Some(updater), false)
 }
 
 fn scheduler_tick_ms() -> u64 {
@@ -1062,7 +1081,9 @@ fn serve_inner(
     listener: TcpListener,
     cfg: Config,
     gate_token: Option<String>,
+    admin_token: Option<String>,
     allowed_hosts: Vec<String>,
+    custom_updater: Option<Arc<update::Updater>>,
     background_updates: bool,
 ) -> std::io::Result<()> {
     cfg.ensure_dirs()?;
@@ -1072,6 +1093,16 @@ fn serve_inner(
     }
     let perimeter = tripwire::Perimeter::new(&cfg.data_dir);
     let gate_token_is_none = gate_token.is_none();
+    let updater = custom_updater.unwrap_or_else(|| {
+        update::Updater::from_env_in_dir(
+            "ERGON",
+            "ergon",
+            env!("CARGO_PKG_VERSION"),
+            "cayleb-james2008/ergon",
+            gate_token_is_none,
+            Some(&cfg.data_dir),
+        )
+    });
     let people = PeopleState::load(&cfg);
     let library = library::Library::load(&cfg.data_dir);
     let auto_detected = cfg.api_key.is_none() && cfg.model_configured();
@@ -1087,6 +1118,7 @@ fn serve_inner(
         model_cfg,
         library: Arc::new(Mutex::new(library)),
         gate_token,
+        admin_token,
         allowed_hosts,
         people: Arc::new(RwLock::new(people)),
         runtimes: Arc::new(RwLock::new(HashMap::new())),
@@ -1094,7 +1126,7 @@ fn serve_inner(
         events: sse::RunEventBus::new(),
         search_cache: search::SearchCache::new(),
         sessions: Arc::new(RwLock::new(HashMap::new())),
-        updater: update::Updater::from_env("ERGON", "ergon", env!("CARGO_PKG_VERSION"), "cayleb-james2008/ergon", gate_token_is_none),
+        updater,
         scheduler_enabled: !scheduler_disabled,
         running_routines: Arc::new(Mutex::new(std::collections::HashSet::new())),
         tripwire: perimeter,
@@ -1221,6 +1253,12 @@ pub(crate) struct Request {
     pub(crate) session: Option<String>,
     /// The hosting layer's gate header, if presented.
     pub(crate) gate: Option<String>,
+    /// Explicit API token (`X-Ergon-Token`) / admin token (`X-Ergon-Admin-Token`)
+    /// / hosting-layer role (`X-Ergon-Role`) / admin opt-in (`X-Ergon-Admin`).
+    pub(crate) api_token: Option<String>,
+    pub(crate) admin_token: Option<String>,
+    pub(crate) actor_role: Option<String>,
+    pub(crate) admin_opt_in: bool,
     /// Browser-set headers the cross-site checks read (lowercased).
     pub(crate) content_type: String,
     pub(crate) origin: Option<String>,
@@ -1328,6 +1366,10 @@ fn read_request_from<S: SockStream>(
     let mut chunked = false;
     let mut session: Option<String> = None;
     let mut gate: Option<String> = None;
+    let mut api_token: Option<String> = None;
+    let mut admin_token: Option<String> = None;
+    let mut actor_role: Option<String> = None;
+    let mut admin_opt_in = false;
     let mut content_type = String::new();
     let mut origin: Option<String> = None;
     let mut host: Option<String> = None;
@@ -1422,6 +1464,15 @@ fn read_request_from<S: SockStream>(
             }
         } else if name.eq_ignore_ascii_case("x-ergon-gate") && !val.is_empty() {
             gate = Some(val.to_string());
+        } else if name.eq_ignore_ascii_case("x-ergon-token") && !val.is_empty() {
+            api_token = Some(val.to_string());
+        } else if name.eq_ignore_ascii_case("x-ergon-admin-token") && !val.is_empty() {
+            admin_token = Some(val.to_string());
+        } else if name.eq_ignore_ascii_case("x-ergon-role") && !val.is_empty() {
+            actor_role = Some(val.to_string());
+        } else if name.eq_ignore_ascii_case("x-ergon-admin") && !val.is_empty() {
+            let low = val.to_ascii_lowercase();
+            admin_opt_in = matches!(low.as_str(), "1" | "true" | "yes" | "on");
         } else if name.eq_ignore_ascii_case("x-ergon-signature") && !val.is_empty() {
             hook_signature = Some(val.to_string());
         } else if name.eq_ignore_ascii_case("x-ergon-hook-token") && !val.is_empty() {
@@ -1508,6 +1559,10 @@ fn read_request_from<S: SockStream>(
         body,
         session,
         gate,
+        api_token,
+        admin_token,
+        actor_role,
+        admin_opt_in,
         content_type,
         origin,
         host,
@@ -1587,6 +1642,112 @@ pub(crate) fn host_allowed(host: &str, allowed: &[String]) -> bool {
     let name = host_name(host);
     matches!(name.as_str(), "localhost" | "127.0.0.1" | "[::1]")
         || allowed.iter().any(|a| a.eq_ignore_ascii_case(&name))
+}
+
+fn ct_eq(a: &str, b: &str) -> bool {
+    let (ab, bb) = (a.as_bytes(), b.as_bytes());
+    if ab.len() != bb.len() {
+        return false;
+    }
+    let mut diff = 0u8;
+    for (&x, &y) in ab.iter().zip(bb.iter()) {
+        diff |= x ^ y;
+    }
+    diff == 0
+}
+
+fn bearer_token(req: &Request) -> Option<&str> {
+    let raw = req.authorization.as_deref()?.trim();
+    if raw.len() < 7 || !raw[..7].eq_ignore_ascii_case("bearer ") {
+        return None;
+    }
+    let tok = raw[7..].trim();
+    if tok.is_empty() { None } else { Some(tok) }
+}
+
+fn is_admin_role_label(role: &str) -> bool {
+    matches!(
+        role.trim().to_ascii_lowercase().as_str(),
+        "admin" | "administrator" | "owner" | "it_admin" | "it-admin" | "it admin" | "operator" | "superuser"
+    )
+}
+
+/// Checks whether a request authenticates past `ERGON_GATE_TOKEN` (when configured).
+/// Accepts `X-Ergon-Gate`, `Authorization: Bearer`, `X-Ergon-Token`, or a matching
+/// dedicated `ERGON_ADMIN_TOKEN`. If `X-Ergon-Gate` is present, it must match.
+fn gate_authenticated(state: &AppState, req: &Request) -> bool {
+    let Some(expected) = &state.gate_token else {
+        return true;
+    };
+    if let Some(g) = req.gate.as_deref() {
+        return ct_eq(g, expected);
+    }
+    let bearer = bearer_token(req);
+    let x_token = req.api_token.as_deref();
+    if bearer.is_some_and(|t| ct_eq(t, expected)) || x_token.is_some_and(|t| ct_eq(t, expected)) {
+        return true;
+    }
+    if let Some(adm) = &state.admin_token {
+        let x_admin = req.admin_token.as_deref();
+        if bearer.is_some_and(|t| ct_eq(t, adm))
+            || x_token.is_some_and(|t| ct_eq(t, adm))
+            || x_admin.is_some_and(|t| ct_eq(t, adm))
+        {
+            return true;
+        }
+    }
+    false
+}
+
+/// Determines whether the caller is authorized to manage updates (`check`, `mode`,
+/// `install`/`apply`, `restart`) on this Ergon instance:
+/// - Explicit non-admin `X-Ergon-Role` always denies (`403`).
+/// - Dedicated `ERGON_ADMIN_TOKEN`, if set, must match.
+/// - Behind `ERGON_GATE_TOKEN`, allows authenticated admins presenting `Authorization: Bearer` /
+///   `X-Ergon-Token` / `X-Ergon-Admin-Token` matching the gate token, or a trusted proxy's
+///   `X-Ergon-Role: admin` / `X-Ergon-Admin: 1`, or an active admin person profile, while
+///   strictly refusing regular non-admin gated requests (`403`).
+/// - Without `ERGON_GATE_TOKEN`, allows loopback local admins and refuses non-loopback LAN hosts.
+fn is_update_admin(state: &AppState, req: &Request, person: &Person) -> bool {
+    let bearer = bearer_token(req);
+    let x_token = req.api_token.as_deref();
+    let x_admin_token = req.admin_token.as_deref();
+
+    if let Some(role) = req.actor_role.as_deref().map(str::trim).filter(|r| !r.is_empty()) {
+        if !is_admin_role_label(role) {
+            return false;
+        }
+    }
+
+    if let Some(adm) = &state.admin_token {
+        return x_admin_token.is_some_and(|t| ct_eq(t, adm))
+            || bearer.is_some_and(|t| ct_eq(t, adm))
+            || x_token.is_some_and(|t| ct_eq(t, adm));
+    }
+
+    if let Some(gate_expected) = &state.gate_token {
+        if x_admin_token.is_some_and(|t| !ct_eq(t, gate_expected))
+            || x_token.is_some_and(|t| !ct_eq(t, gate_expected))
+            || bearer.is_some_and(|t| !ct_eq(t, gate_expected))
+        {
+            return false;
+        }
+        let token_admin = bearer.is_some_and(|t| ct_eq(t, gate_expected))
+            || x_token.is_some_and(|t| ct_eq(t, gate_expected))
+            || x_admin_token.is_some_and(|t| ct_eq(t, gate_expected));
+        let role_admin = req
+            .actor_role
+            .as_deref()
+            .map(str::trim)
+            .is_some_and(is_admin_role_label);
+        let person_admin = is_admin_role_label(&person.role);
+        return token_admin || role_admin || req.admin_opt_in || person_admin;
+    }
+
+    if x_admin_token.is_some() {
+        return false;
+    }
+    host_allowed(req.host.as_deref().unwrap_or(""), &[])
 }
 
 /// Refuses a request a page on another site could have sent (E1), with
@@ -2264,20 +2425,17 @@ fn handle_connection(stream: std::net::TcpStream, state: &Arc<AppState>) -> std:
             return handle_webhook_hook_request(reader.get_mut(), state, &req);
         }
         let root_cfg = &state.cfg;
-        // Hosting-layer gate: when a gate token is configured, the
-        // hosting layer (which authenticates people its own way) must
-        // present it on every request. Ergon itself keeps no accounts
-        // and no passwords — this is a deployment gate, not a login.
-        if let Some(expected) = &state.gate_token {
-            if req.gate.as_deref() != Some(expected.as_str()) {
-                state.tripwire.note_refusal("gate", &view, client);
-                KEEP_ALIVE_CONN.set(false);
-                return respond_json(
-                    reader.get_mut(),
-                    401,
-                    &json!({"error": "this Ergon is gated by its hosting layer — the gate header is missing or wrong"}),
-                );
-            }
+        // Hosting-layer gate: when a gate token is configured, every request
+        // must present a valid gate or admin credential (`X-Ergon-Gate`,
+        // `Authorization: Bearer`, or `X-Ergon-Token`).
+        if !gate_authenticated(state, &req) {
+            state.tripwire.note_refusal("gate", &view, client);
+            KEEP_ALIVE_CONN.set(false);
+            return respond_json(
+                reader.get_mut(),
+                401,
+                &json!({"error": "this Ergon is gated by its hosting layer — the gate header is missing or wrong"}),
+            );
         }
         if let Some((status, message)) = refusal(&req, state.gate_token.is_some(), &state.allowed_hosts) {
             // RE1: a page on another site (CSRF) or a rebound DNS name tried
@@ -2338,29 +2496,90 @@ fn try_route_system(
         ("GET", "/api/version") => {
             respond_bytes(stream, 200, "application/json", VERSION_JSON_BYTES, &[])
         }
-        ("GET", "/api/update") => respond_json(stream, 200, &state.updater.snapshot()),
-        ("POST", "/api/update/check") => respond_json(stream, 200, &state.updater.check_now()),
-        ("POST", "/api/update/apply") | ("POST", "/api/update/restart") => {
-            // Replacing the program is for whoever sits at this machine: not
-            // through a LAN host name, not through the shared gate.
-            if state.gate_token.is_some() || !host_allowed(req.host.as_deref().unwrap_or(""), &[]) {
+        ("GET", "/api/update") => {
+            let is_admin = is_update_admin(state, req, person);
+            respond_json(
+                stream,
+                200,
+                &state
+                    .updater
+                    .snapshot_for_caller(is_admin, state.gate_token.is_some()),
+            )
+        }
+        ("POST", "/api/update/check") => {
+            let is_admin = is_update_admin(state, req, person);
+            if !is_admin {
                 return Some(respond_json(
                     stream,
                     403,
-                    &json!({"error": "updating is only allowed from this machine, not through a shared address"}),
+                    &json!({"error": "admin privileges are required to check for updates on a shared host"}),
                 ));
             }
-            if req.path == "/api/update/apply" {
-                match state.updater.apply() {
+            let _ = state.updater.check_now();
+            respond_json(
+                stream,
+                200,
+                &state
+                    .updater
+                    .snapshot_for_caller(true, state.gate_token.is_some()),
+            )
+        }
+        ("POST", "/api/update/mode") => {
+            let is_admin = is_update_admin(state, req, person);
+            if !is_admin {
+                return Some(respond_json(
+                    stream,
+                    403,
+                    &json!({"error": "admin privileges are required to change update mode"}),
+                ));
+            }
+            let parsed: Value = serde_json::from_slice(&req.body).unwrap_or(Value::Null);
+            let Some(raw_mode) = parsed["mode"].as_str() else {
+                return Some(respond_err(stream, 400, "mode is required (off, notify, or auto)"));
+            };
+            let Some(mode) = update::Mode::parse_strict(raw_mode) else {
+                return Some(respond_err(stream, 400, "mode must be off, notify, or auto"));
+            };
+            match state.updater.set_mode(mode) {
+                Ok(_) => respond_json(
+                    stream,
+                    200,
+                    &state
+                        .updater
+                        .snapshot_for_caller(true, state.gate_token.is_some()),
+                ),
+                Err(e) => respond_err(stream, 500, &e),
+            }
+        }
+        ("POST", "/api/update/apply")
+        | ("POST", "/api/update/install")
+        | ("POST", "/api/update/restart") => {
+            // Local loopback admins (when ungated) and authenticated admins behind a
+            // hosting gate may install updates and restart; non-admins and unauthenticated
+            // LAN callers are strictly refused with 403.
+            let is_admin = is_update_admin(state, req, person);
+            if !is_admin {
+                let msg = if state.gate_token.is_some() {
+                    "admin privileges are required to install updates or restart a gated Ergon host"
+                } else {
+                    "updating is only allowed from this machine, not through a shared address"
+                };
+                return Some(respond_json(stream, 403, &json!({"error": msg})));
+            }
+            if req.path == "/api/update/apply" || req.path == "/api/update/install" {
+                match state.updater.apply_authorized() {
                     Ok(v) => {
-                        let mut snap = state.updater.snapshot();
+                        let mut snap = state
+                            .updater
+                            .snapshot_for_caller(true, state.gate_token.is_some());
                         snap["applied"] = json!(v);
+                        snap["installed"] = json!(v);
                         respond_json(stream, 200, &snap)
                     }
                     Err(e) => respond_err(stream, 409, &e),
                 }
-            } else if let Err(e) = state.updater.snapshot()["staged"].as_str().map(|_| ()).ok_or("no update is waiting for a restart") {
-                respond_err(stream, 409, e)
+            } else if state.updater.snapshot()["staged"].as_str().is_none() {
+                respond_err(stream, 409, "no update is waiting for a restart")
             } else if RUNS_IN_FLIGHT.load(std::sync::atomic::Ordering::SeqCst) > 0 {
                 respond_err(stream, 409, "a task is still running; restart when it has finished")
             } else {
@@ -2368,7 +2587,7 @@ fn try_route_system(
                 let up = state.updater.clone();
                 std::thread::spawn(move || {
                     std::thread::sleep(std::time::Duration::from_millis(400));
-                    if let Err(e) = up.restart() {
+                    if let Err(e) = up.restart_authorized() {
                         eprintln!("ergon: restart failed: {e}");
                     }
                 });

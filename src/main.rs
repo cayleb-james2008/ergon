@@ -28,6 +28,12 @@ struct CliOpts {
     export_out: Option<String>,
     export_title: Option<String>,
     export_force: bool,
+    service_mode: bool,
+    service_action: Option<String>,
+    service_name: Option<String>,
+    service_data_dir: Option<String>,
+    service_format: Option<String>,
+    service_system: bool,
     json_output: bool,
     host: Option<String>,
     port: Option<u16>,
@@ -44,13 +50,39 @@ fn parse_cli_args(args: &[String]) -> CliOpts {
             "--no-open" => opts.no_open = true,
             "--json" => opts.json_output = true,
             "--force" => opts.export_force = true,
-            "verify" if !opts.verify_mode && !opts.export_handoff_mode => opts.verify_mode = true,
-            "export-handoff" if !opts.verify_mode && !opts.export_handoff_mode => {
+            "--system" => opts.service_system = true,
+            "verify" if !opts.verify_mode && !opts.export_handoff_mode && !opts.service_mode => {
+                opts.verify_mode = true
+            }
+            "export-handoff"
+                if !opts.verify_mode && !opts.export_handoff_mode && !opts.service_mode =>
+            {
                 opts.export_handoff_mode = true
+            }
+            "service" if !opts.verify_mode && !opts.export_handoff_mode && !opts.service_mode => {
+                opts.service_mode = true
             }
             "--workspace" => {
                 if let Some(v) = args.get(i + 1) {
                     opts.verify_workspace = Some(v.clone());
+                    i += 1;
+                }
+            }
+            "--name" => {
+                if let Some(v) = args.get(i + 1) {
+                    opts.service_name = Some(v.clone());
+                    i += 1;
+                }
+            }
+            "--data" => {
+                if let Some(v) = args.get(i + 1) {
+                    opts.service_data_dir = Some(v.clone());
+                    i += 1;
+                }
+            }
+            "--format" => {
+                if let Some(v) = args.get(i + 1) {
+                    opts.service_format = Some(v.clone());
                     i += 1;
                 }
             }
@@ -89,6 +121,18 @@ fn parse_cli_args(args: &[String]) -> CliOpts {
                     if !v.is_empty() {
                         opts.verify_workspace = Some(v.to_string());
                     }
+                } else if let Some(v) = other.strip_prefix("--name=") {
+                    if !v.is_empty() {
+                        opts.service_name = Some(v.to_string());
+                    }
+                } else if let Some(v) = other.strip_prefix("--data=") {
+                    if !v.is_empty() {
+                        opts.service_data_dir = Some(v.to_string());
+                    }
+                } else if let Some(v) = other.strip_prefix("--format=") {
+                    if !v.is_empty() {
+                        opts.service_format = Some(v.to_string());
+                    }
                 } else if let Some(v) = other.strip_prefix("--out=") {
                     if !v.is_empty() {
                         opts.export_out = Some(v.to_string());
@@ -104,6 +148,9 @@ fn parse_cli_args(args: &[String]) -> CliOpts {
                     && opts.export_out.is_none()
                 {
                     opts.export_out = Some(other.to_string());
+                } else if opts.service_mode && !other.starts_with('-') && opts.service_action.is_none()
+                {
+                    opts.service_action = Some(other.to_string());
                 }
             }
         }
@@ -382,12 +429,17 @@ fn print_help() {
     println!(
         "ergon {} - Personal Employee Agent Desk\n\n\
          USAGE:\n  ergon [--app | --no-open] [--host HOST] [--port PORT] [--version] [--help]\n  \
+         ergon service <install|uninstall|status|run|print-manifest> [--name NAME] [--data DIR] [--host HOST] [--port PORT] [--system] [--format systemd|launchd|windows] [--json]\n  \
          ergon verify <BUNDLE_OR_PACK> [--workspace DIR] [--json]\n  \
          ergon export-handoff [--out PATH] [--title TITLE] [--workspace DIR] [--force] [--json]\n\n\
          FLAGS:\n  --app, --open       Open chromeless desktop app window (Chromium/Edge --app)\n  \
          --no-open           Run headless without opening a desktop window\n  \
          --host HOST         Bind address (default: ERGON_HOST or 127.0.0.1)\n  \
          --port PORT         Bind port (default: ERGON_PORT or 8787)\n  \
+         --data DIR          Data directory for `ergon service`\n  \
+         --name NAME         Service name/label for `ergon service`\n  \
+         --system            Install or inspect system-wide daemon instead of user service\n  \
+         --format FMT        Manifest format for `ergon service print-manifest` (systemd|launchd|windows)\n  \
          --workspace DIR     Cross-check bundle/pack or override workspace directory\n  \
          --out PATH          Handoff output .zip file or directory (default: ergon-client-handoff.zip)\n  \
          --title TITLE       Handoff bundle title (default: Client Handoff)\n  \
@@ -397,6 +449,137 @@ fn print_help() {
          -h, --help          Print this help and exit",
         env!("CARGO_PKG_VERSION")
     );
+}
+
+#[cold]
+fn run_service_cli(opts: &CliOpts) -> i32 {
+    let action = opts
+        .service_action
+        .as_deref()
+        .unwrap_or("")
+        .trim()
+        .to_ascii_lowercase();
+    let format = match opts.service_format.as_deref() {
+        Some(raw) => match ergon_rs::service::ManifestFormat::parse(raw) {
+            Some(f) => f,
+            None => {
+                eprintln!("ergon service: unsupported --format '{raw}' (use systemd, launchd, or windows)");
+                return 2;
+            }
+        },
+        None => ergon_rs::service::ManifestFormat::host_default(),
+    };
+    let cfg = ergon_rs::service::ServiceConfig::from_host_env(
+        opts.service_name.clone(),
+        opts.service_data_dir.as_deref().map(std::path::PathBuf::from),
+        opts.host.clone(),
+        opts.port,
+        opts.service_system,
+        &format,
+    );
+    match action.as_str() {
+        "install" => match ergon_rs::service::install_service(&cfg) {
+            Ok(msg) => {
+                if opts.json_output {
+                    println!(
+                        "{}",
+                        serde_json::json!({
+                            "ok": true,
+                            "action": "install",
+                            "service_name": cfg.service_name,
+                            "message": msg,
+                        })
+                    );
+                } else {
+                    println!("ergon service install: {msg}");
+                }
+                0
+            }
+            Err(e) => {
+                eprintln!("ergon service install: {e}");
+                1
+            }
+        },
+        "uninstall" => match ergon_rs::service::uninstall_service(&cfg) {
+            Ok(msg) => {
+                if opts.json_output {
+                    println!(
+                        "{}",
+                        serde_json::json!({
+                            "ok": true,
+                            "action": "uninstall",
+                            "service_name": cfg.service_name,
+                            "message": msg,
+                        })
+                    );
+                } else {
+                    println!("ergon service uninstall: {msg}");
+                }
+                0
+            }
+            Err(e) => {
+                eprintln!("ergon service uninstall: {e}");
+                1
+            }
+        },
+        "status" => match ergon_rs::service::service_status(&cfg) {
+            Ok(rep) => {
+                if opts.json_output {
+                    println!("{}", serde_json::to_string_pretty(&rep.to_json()).unwrap_or_default());
+                } else {
+                    println!(
+                        "service: {} [{}] state={} installed={} running={}",
+                        rep.service_name, rep.platform, rep.state, rep.installed, rep.running
+                    );
+                    if let Some(p) = &rep.unit_path {
+                        println!("unit:    {p}");
+                    }
+                    if !rep.detail.is_empty() {
+                        println!("detail:  {}", rep.detail);
+                    }
+                }
+                0
+            }
+            Err(e) => {
+                eprintln!("ergon service status: {e}");
+                1
+            }
+        },
+        "run" => match ergon_rs::service::run_service(&cfg) {
+            Ok(()) => 0,
+            Err(e) => {
+                eprintln!("ergon service run: {e}");
+                1
+            }
+        },
+        "print-manifest" => match ergon_rs::service::render_manifest(&cfg, &format) {
+            Ok(body) => {
+                if opts.json_output {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&serde_json::json!({
+                            "ok": true,
+                            "format": format.label(),
+                            "service_name": cfg.service_name,
+                            "manifest": body,
+                        }))
+                        .unwrap_or_default()
+                    );
+                } else {
+                    print!("{body}");
+                }
+                0
+            }
+            Err(e) => {
+                eprintln!("ergon service print-manifest: {e}");
+                1
+            }
+        },
+        _ => {
+            eprintln!("usage: ergon service <install|uninstall|status|run|print-manifest> [--name NAME] [--data DIR] [--host HOST] [--port PORT] [--system] [--format systemd|launchd|windows] [--json]");
+            2
+        }
+    }
 }
 
 #[cold]
@@ -479,6 +662,9 @@ fn main() {
     }
     if opts.export_handoff_mode {
         std::process::exit(run_export_handoff_cli(&opts));
+    }
+    if opts.service_mode {
+        std::process::exit(run_service_cli(&opts));
     }
     let cfg = ergon_rs::Config::from_env();
     let host = opts
@@ -618,6 +804,37 @@ mod tests {
         assert_eq!(opts.export_title.as_deref(), Some("Q4 Review"));
         assert_eq!(opts.verify_workspace.as_deref(), Some("./ws"));
         assert!(opts.export_force);
+        assert!(opts.json_output);
+    }
+
+    #[test]
+    fn cli_parses_service_subcommand_and_flags() {
+        let args: Vec<String> = [
+            "service",
+            "print-manifest",
+            "--name",
+            "ErgonService",
+            "--data=/var/lib/ergon",
+            "--host",
+            "127.0.0.1",
+            "--port=8787",
+            "--format",
+            "windows",
+            "--system",
+            "--json",
+        ]
+        .into_iter()
+        .map(String::from)
+        .collect();
+        let opts = parse_cli_args(&args);
+        assert!(opts.service_mode);
+        assert_eq!(opts.service_action.as_deref(), Some("print-manifest"));
+        assert_eq!(opts.service_name.as_deref(), Some("ErgonService"));
+        assert_eq!(opts.service_data_dir.as_deref(), Some("/var/lib/ergon"));
+        assert_eq!(opts.host.as_deref(), Some("127.0.0.1"));
+        assert_eq!(opts.port, Some(8787));
+        assert_eq!(opts.service_format.as_deref(), Some("windows"));
+        assert!(opts.service_system);
         assert!(opts.json_output);
     }
 }
