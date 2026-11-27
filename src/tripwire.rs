@@ -822,19 +822,80 @@ pub fn update_policy(root: &Path, list: &str, host: &str, add: bool) -> Result<P
     Ok(p)
 }
 
+fn strip_zone_id(h: &str) -> &str {
+    if let Some(pos) = h.find("%25") {
+        &h[..pos]
+    } else if let Some(pos) = h.find('%') {
+        &h[..pos]
+    } else {
+        h
+    }
+}
+
 pub fn normalize_host(h: &str) -> String {
     let h = h.trim().trim_end_matches('.').to_ascii_lowercase();
-    let h = h.strip_prefix("http://").or_else(|| h.strip_prefix("https://")).unwrap_or(&h).to_string();
+    let h = h
+        .strip_prefix("http://")
+        .or_else(|| h.strip_prefix("https://"))
+        .or_else(|| h.strip_prefix("smtp://"))
+        .or_else(|| h.strip_prefix("smtps://"))
+        .or_else(|| h.strip_prefix("imap://"))
+        .or_else(|| h.strip_prefix("imaps://"))
+        .unwrap_or(&h)
+        .to_string();
     let h = h.split(['/', '?', '#']).next().unwrap_or("").to_string();
     // Drop userinfo: in http://user@site/ the host is `site`.
     let h = h.rsplit('@').next().unwrap_or("").to_string();
     if let Some(rest) = h.strip_prefix('[') {
-        return rest.split(']').next().unwrap_or("").to_string();
+        let inner = rest.split(']').next().unwrap_or("");
+        return strip_zone_id(inner).to_string();
     }
     if h.matches(':').count() == 1 {
-        return h.split(':').next().unwrap_or("").to_string();
+        let bare = h.split(':').next().unwrap_or("");
+        return strip_zone_id(bare).to_string();
     }
-    h
+    strip_zone_id(&h).to_string()
+}
+
+fn parse_inet_aton_part(part: &str) -> Option<u32> {
+    if part.is_empty() {
+        return None;
+    }
+    if let Some(hex_digits) = part.strip_prefix("0x").or_else(|| part.strip_prefix("0X")) {
+        if hex_digits.is_empty() {
+            return None;
+        }
+        return u32::from_str_radix(hex_digits, 16).ok();
+    }
+    if part.len() > 1 && part.starts_with('0') {
+        return u32::from_str_radix(&part[1..], 8).ok();
+    }
+    part.parse::<u32>().ok()
+}
+
+pub fn parse_ip_for_ssrf(host: &str) -> Option<IpAddr> {
+    let clean = strip_zone_id(host.trim());
+    if let Ok(ip) = clean.parse::<IpAddr>() {
+        return Some(ip);
+    }
+    let parts: Vec<&str> = clean.split('.').collect();
+    if parts.is_empty() || parts.len() > 4 {
+        return None;
+    }
+    let vals: Vec<u32> = parts
+        .iter()
+        .map(|p| parse_inet_aton_part(p))
+        .collect::<Option<Vec<_>>>()?;
+    let v4_u32 = match vals.as_slice() {
+        [a] => *a,
+        [a, b] if *a <= 0xFF && *b <= 0x00FF_FFFF => (*a << 24) | *b,
+        [a, b, c] if *a <= 0xFF && *b <= 0xFF && *c <= 0xFFFF => (*a << 24) | (*b << 16) | *c,
+        [a, b, c, d] if *a <= 0xFF && *b <= 0xFF && *c <= 0xFF && *d <= 0xFF => {
+            (*a << 24) | (*b << 16) | (*c << 8) | *d
+        }
+        _ => return None,
+    };
+    Some(IpAddr::V4(std::net::Ipv4Addr::from(v4_u32)))
 }
 
 /// Whether `text` names `host` as a whole host name: "10.0.0.5" is not
@@ -918,20 +979,38 @@ pub fn classify_ip(ip: IpAddr) -> AddrClass {
             }
         }
         IpAddr::V6(v6) => {
-            if let Some(v4) = v6.to_ipv4_mapped() {
-                return classify_ip(IpAddr::V4(v4));
-            }
-            let seg = v6.segments();
             if v6.is_unspecified() {
                 return AddrClass::Blocked("the unspecified address");
             }
             if v6.is_loopback() {
                 return AddrClass::Private("this computer (loopback)");
             }
+            if let Some(v4) = v6.to_ipv4_mapped().or_else(|| v6.to_ipv4()) {
+                return classify_ip(IpAddr::V4(v4));
+            }
+            let seg = v6.segments();
             // NAT64 (64:ff9b::/96) embeds an IPv4 address.
             if seg[0] == 0x64 && seg[1] == 0xff9b && seg[2..6] == [0, 0, 0, 0] {
                 let o = v6.octets();
                 return classify_ip(IpAddr::V4(std::net::Ipv4Addr::new(o[12], o[13], o[14], o[15])));
+            }
+            // NAT64 local-use (64:ff9b:1::/48)
+            if seg[0] == 0x64 && seg[1] == 0xff9b && seg[2] == 1 {
+                return AddrClass::Private("a local-use NAT64 network");
+            }
+            // 6to4 (2002::/16) embeds an IPv4 address in segments 1..=2.
+            if seg[0] == 0x2002 {
+                let o = v6.octets();
+                return classify_ip(IpAddr::V4(std::net::Ipv4Addr::new(o[2], o[3], o[4], o[5])));
+            }
+            // Discard-Only (100::/64) & Documentation (2001:db8::/32)
+            if (seg[0] == 0x0100 && seg[1] == 0 && seg[2] == 0 && seg[3] == 0)
+                || (seg[0] == 0x2001 && seg[1] == 0x0db8)
+            {
+                return AddrClass::Blocked("a reserved non-routable IPv6 range");
+            }
+            if seg[0] == 0x2001 && seg[1] == 0 {
+                return AddrClass::Private("a Teredo tunnel address");
             }
             if seg[0] == 0xfd00 && seg[1] == 0x0ec2 {
                 return AddrClass::Blocked("a cloud metadata service");
@@ -984,7 +1063,18 @@ fn private_allowed(host: &str) -> bool {
 }
 
 fn private_allowed_for_connector(host: &str) -> bool {
-    env_truthy("ERGON_ALLOW_LOCAL_CONNECTORS") || private_allowed(host)
+    if env_truthy("ERGON_ALLOW_LOCAL_CONNECTORS") || env_truthy("ERGON_FETCH_ALLOW_PRIVATE") {
+        return true;
+    }
+    let env_hosts = std::env::var("ERGON_FETCH_ALLOW_HOSTS").unwrap_or_default();
+    if env_hosts
+        .split(',')
+        .map(normalize_host)
+        .any(|h| !h.is_empty() && host_matches(host, &h))
+    {
+        return true;
+    }
+    with_current(|t| t.policy.allow_hosts.iter().any(|h| host_matches(host, h))).unwrap_or(false)
 }
 
 fn split_netloc(netloc: &str) -> (String, u16) {
@@ -1159,7 +1249,7 @@ pub fn check_egress_host(host: &str, port: u16, channel: &str) -> Result<(), Str
         });
         return Err(format!("blocked by Ergon's egress guard: {norm} is a cloud metadata service"));
     }
-    if let Ok(ip) = norm.parse::<IpAddr>() {
+    if let Ok(ip) = norm.parse::<IpAddr>().or_else(|_| parse_ip_for_ssrf(&norm).ok_or(())) {
         match classify_ip(ip) {
             AddrClass::Blocked(why) => {
                 let _ = with_current(|t| {
@@ -1230,18 +1320,35 @@ pub fn check_egress(url: &str, channel: &str) -> Result<(), String> {
         });
         return Err(format!("blocked by Ergon's egress guard: {host} is a cloud metadata service"));
     }
-    if let Ok(ip) = host.parse::<IpAddr>() {
-        if let AddrClass::Blocked(why) = classify_ip(ip) {
-            let _ = with_current(|t| {
-                t.trip(
-                    Trip::new("AE2-NETWORK", Severity::Critical, "Your agent tried to reach a protected address", format!("Blocked a request to {host} ({why})."))
-                        .action("blocked")
-                        .source(json!({"kind": "host", "value": host})),
-                    STOP_SCORE,
-                )
-            });
-            return Err(format!("blocked by Ergon's egress guard: {host} is {why}"));
+    if let Some(ip) = parse_ip_for_ssrf(&host) {
+        match classify_ip(ip) {
+            AddrClass::Blocked(why) => {
+                let _ = with_current(|t| {
+                    t.trip(
+                        Trip::new("AE2-NETWORK", Severity::Critical, "Your agent tried to reach a protected address", format!("Blocked a request to {host} ({why})."))
+                            .action("blocked")
+                            .source(json!({"kind": "host", "value": host})),
+                        STOP_SCORE,
+                    )
+                });
+                return Err(format!("blocked by Ergon's egress guard: {host} is {why}"));
+            }
+            AddrClass::Private(why) if is_connector_channel => {
+                if !private_allowed_for_connector(&host) {
+                    return Err(format!(
+                        "blocked by Ergon's egress guard: {host} is on {why} (set ERGON_ALLOW_LOCAL_CONNECTORS=1 only for local tests)"
+                    ));
+                }
+            }
+            AddrClass::Private(_) | AddrClass::Public => {}
         }
+    } else if is_connector_channel
+        && (host == "localhost" || host.ends_with(".localhost") || host.ends_with(".local"))
+        && !private_allowed_for_connector(&host)
+    {
+        return Err(format!(
+            "blocked by Ergon's egress guard: {host} is a local/private host (set ERGON_ALLOW_LOCAL_CONNECTORS=1 only for local tests)"
+        ));
     }
     Ok(())
 }
