@@ -7,6 +7,7 @@ import {
   CheckCircle2,
   FileDown,
   GitBranch,
+  Layers,
   PauseCircle,
   Plus,
   Send,
@@ -22,10 +23,12 @@ import {
   validatePipeline,
   type OutboundConnector,
   type PipelineCheckpointInputMode,
+  type PipelineOnError,
   type PipelineStepKind,
   type PipelineStepSpec,
   type PipelineValidationResult as ApiPipelineValidationResult,
   type PipelineWhen,
+  type Routine,
   type WorkspaceFile,
 } from "@/lib/api";
 import type { SkillMeta } from "@/lib/skillsCatalog";
@@ -40,6 +43,7 @@ const KIND_META: Record<
   checkpoint: { label: "Human Checkpoint", badge: "Pause & resume", icon: PauseCircle },
   export: { label: "Export", badge: "Deliverable", icon: FileDown },
   deliver: { label: "Deliver", badge: "Outbound webhook", icon: Send },
+  subpipeline: { label: "Subpipeline", badge: "Nested routine", icon: Layers },
 };
 
 function sanitizeStepId(raw: string, fallback: string): string {
@@ -475,6 +479,34 @@ export function validatePipelineSteps(steps: PipelineStepSpec[]): PipelineValida
       } else if (st.deliver?.payload && typeof st.deliver.payload === "object") {
         stringsToCheck.push(JSON.stringify(st.deliver.payload));
       }
+    } else if (st.kind === "subpipeline") {
+      const rid = String(st.routine_id ?? "").trim();
+      if (!rid) {
+        stepErrs.push("Select or enter a routine for this subpipeline step.");
+      }
+      for (const v of Object.values(st.inputs ?? {})) {
+        stringsToCheck.push(String(v ?? ""));
+      }
+    }
+
+    if (st.timeout_secs !== undefined && (!Number.isFinite(st.timeout_secs) || st.timeout_secs <= 0 || st.timeout_secs > 86400)) {
+      stepErrs.push("Timeout must be between 1 and 86400 seconds.");
+    }
+    if (st.retry_max !== undefined && (!Number.isInteger(st.retry_max) || st.retry_max < 0 || st.retry_max > 10)) {
+      stepErrs.push("Max retries must be between 0 and 10.");
+    }
+    if (st.retry_backoff_ms !== undefined && (!Number.isFinite(st.retry_backoff_ms) || st.retry_backoff_ms < 0 || st.retry_backoff_ms > 300000)) {
+      stepErrs.push("Retry backoff must be between 0 and 300000 ms.");
+    }
+    if (typeof st.on_error === "string" && st.on_error.startsWith("goto:")) {
+      const targetId = st.on_error.slice("goto:".length).trim();
+      if (!targetId) {
+        stepErrs.push("Select a target step ID for on_error goto.");
+      } else if (targetId === id) {
+        stepErrs.push(`Step "${id}" cannot jump to itself on error.`);
+      } else if (!steps.some((other) => other.id.trim() === targetId)) {
+        stepErrs.push(`on_error target step "${targetId}" does not exist.`);
+      }
     }
 
     for (const s of stringsToCheck) {
@@ -551,6 +583,17 @@ export function makeDefaultStep(kind: PipelineStepKind, index: number, prevId?: 
       ...(prevId ? { depends_on: [prevId] } : {}),
     };
   }
+  if (kind === "subpipeline") {
+    return {
+      id: `sub_${n}`,
+      label: "Run subpipeline",
+      kind: "subpipeline",
+      routine_id: "",
+      inputs: {},
+      when: "always",
+      ...(prevId ? { depends_on: [prevId] } : {}),
+    };
+  }
   return {
     id: `export_${n}`,
     label: "Export deliverable",
@@ -593,15 +636,19 @@ export function PipelineBuilder({
   skills,
   workspaceFiles = [],
   outboundConnectors,
+  routines = [],
 }: {
   steps: PipelineStepSpec[];
   onChange: (next: PipelineStepSpec[]) => void;
   skills: SkillMeta[];
   workspaceFiles?: WorkspaceFile[];
   outboundConnectors?: OutboundConnector[];
+  routines?: Routine[];
 }) {
   const [newArgKey, setNewArgKey] = useState<Record<number, string>>({});
   const [rawArgDrafts, setRawArgDrafts] = useState<Record<string, string>>({});
+  const [newSubInputKey, setNewSubInputKey] = useState<Record<number, string>>({});
+  const [resilienceOpen, setResilienceOpen] = useState<Record<number, boolean>>({});
   const [fetchedConnectors, setFetchedConnectors] = useState<OutboundConnector[]>([]);
   const [connectorsErr, setConnectorsErr] = useState(false);
   const [validatingDag, setValidatingDag] = useState(false);
@@ -792,6 +839,14 @@ export function PipelineBuilder({
         const cur = serializeDeliverPayload(del.payload);
         updateStep(idx, { deliver: { ...del, payload: cur ? `${cur} ${token}` : token } });
       }
+      return;
+    }
+    if (st.kind === "subpipeline") {
+      const inputs = { ...(st.inputs ?? {}) };
+      const firstKey = Object.keys(inputs)[0] || "file";
+      const curVal = String(inputs[firstKey] ?? "");
+      inputs[firstKey] = curVal && !curVal.includes("{{") ? token : curVal ? `${curVal} ${token}` : token;
+      updateStep(idx, { inputs });
     }
   };
 
@@ -855,13 +910,13 @@ export function PipelineBuilder({
   };
 
   return (
-    <div id="pipeline-builder" className="flex flex-col gap-3">
+    <div id="pipeline-builder" className="flex min-w-0 flex-col gap-3">
       {steps.length === 0 ? (
         <div className="rounded-sm border border-dashed border-hairline bg-surface px-3 py-4 text-center text-xs text-ink-2">
-          Add typed steps below to compose a resumable DAG pipeline with skills, AI agents, parallel batch fan-out, checkpoints, exports, and outbound deliveries.
+          Add typed steps below to compose a resumable DAG pipeline with skills, AI agents, nested subpipelines, parallel batch fan-out, checkpoints, exports, and outbound deliveries.
         </div>
       ) : (
-        <ol className="flex flex-col gap-2.5">
+        <ol className="flex min-w-0 flex-col gap-2.5">
           {steps.map((st, idx) => {
             const meta = KIND_META[st.kind] ?? KIND_META.skill;
             const KindIcon = meta.icon;
@@ -881,11 +936,26 @@ export function PipelineBuilder({
             }
 
             const argEntries = Object.entries(st.args ?? {});
+            const subInputEntries = Object.entries(st.inputs ?? {});
             const stepErrs = validation.errorsByStep[idx] ?? [];
             const selectedDeps = Array.isArray(st.depends_on) ? st.depends_on : [];
             const isExprWhen = typeof st.when === "string" && st.when.startsWith("expr:");
             const whenSelectVal = isExprWhen ? "expr" : st.when || "always";
             const forEachActive = st.for_each !== undefined;
+            const hasResilience =
+              st.timeout_secs !== undefined ||
+              st.retry_max !== undefined ||
+              st.retry_backoff_ms !== undefined ||
+              (st.on_error !== undefined && st.on_error !== "fail");
+            const showResilience = Boolean(resilienceOpen[idx] || hasResilience);
+            const onErrorMode =
+              typeof st.on_error === "string" && st.on_error.startsWith("goto:")
+                ? "goto"
+                : st.on_error || "fail";
+            const gotoTarget =
+              typeof st.on_error === "string" && st.on_error.startsWith("goto:")
+                ? st.on_error.slice("goto:".length)
+                : "";
 
             return (
               <li
@@ -893,34 +963,35 @@ export function PipelineBuilder({
                 data-pipeline-step-index={idx}
                 data-pipeline-step-kind={st.kind}
                 className={cn(
-                  "flex flex-col gap-2.5 rounded-card border bg-surface p-3",
+                  "flex min-w-0 flex-col gap-2.5 rounded-card border bg-surface p-3",
                   stepErrs.length > 0 ? "border-dot-red" : "border-hairline"
                 )}
               >
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <span className="mono inline-flex size-5 items-center justify-center rounded-full bg-board text-xs font-medium text-ink">
+                  <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                    <span className="mono inline-flex size-5 shrink-0 items-center justify-center rounded-full bg-board text-xs font-medium text-ink">
                       {idx + 1}
                     </span>
-                    <KindIcon className="size-3.5 text-icon" strokeWidth={1.5} aria-hidden />
+                    <KindIcon className="size-3.5 shrink-0 text-icon" strokeWidth={1.5} aria-hidden />
                     <select
                       aria-label={`Step ${idx + 1} type`}
                       value={st.kind}
                       onChange={(e) => changeKind(idx, e.target.value as PipelineStepKind)}
-                      className="focus-ring h-8 rounded-sm border border-input bg-board/60 px-2 text-xs font-medium text-ink outline-none max-md:min-h-11"
+                      className="focus-ring h-8 min-w-0 max-w-full rounded-sm border border-input bg-board/60 px-2 text-xs font-medium text-ink outline-none max-md:min-h-11"
                     >
                       <option value="skill">Skill</option>
                       <option value="agent">AI Agent</option>
                       <option value="checkpoint">Human Checkpoint</option>
                       <option value="export">Export</option>
                       <option value="deliver">Deliver</option>
+                      <option value="subpipeline">Subpipeline</option>
                     </select>
                     <Badge variant="outline" size="sm" className="text-xs text-ink-2">
                       {meta.badge}
                     </Badge>
                   </div>
 
-                  <div className="flex items-center gap-1">
+                  <div className="flex shrink-0 items-center gap-1">
                     <Button
                       type="button"
                       size="icon-xs"
@@ -957,27 +1028,27 @@ export function PipelineBuilder({
                 </div>
 
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-                  <div className="flex flex-col gap-1">
+                  <div className="flex min-w-0 flex-col gap-1">
                     <label className="text-xs font-medium text-ink-2">Step ID</label>
                     <Input
                       value={st.id}
                       aria-label={`Step ${idx + 1} ID`}
                       placeholder={`step_${idx + 1}`}
                       onChange={(e) => updateStep(idx, { id: sanitizeStepId(e.target.value, `step_${idx + 1}`) })}
-                      className="h-8 text-xs max-md:min-h-11"
+                      className="h-8 w-full min-w-0 text-xs max-md:min-h-11"
                     />
                   </div>
-                  <div className="flex flex-col gap-1">
+                  <div className="flex min-w-0 flex-col gap-1">
                     <label className="text-xs font-medium text-ink-2">Step label</label>
                     <Input
                       value={st.label}
                       aria-label={`Step ${idx + 1} label`}
                       placeholder="Short plain label"
                       onChange={(e) => updateStep(idx, { label: e.target.value })}
-                      className="h-8 text-xs max-md:min-h-11"
+                      className="h-8 w-full min-w-0 text-xs max-md:min-h-11"
                     />
                   </div>
-                  <div className="flex flex-col gap-1">
+                  <div className="flex min-w-0 flex-col gap-1">
                     <label className="text-xs font-medium text-ink-2">Run condition</label>
                     <select
                       aria-label={`Step ${idx + 1} condition`}
@@ -988,7 +1059,7 @@ export function PipelineBuilder({
                           when: v === "expr" ? (isExprWhen ? st.when : "expr:steps.clean.metrics.anomalies == 0") : (v as PipelineWhen),
                         });
                       }}
-                      className="focus-ring h-8 rounded-sm border border-input bg-surface px-2 text-xs text-ink outline-none max-md:min-h-11"
+                      className="focus-ring h-8 w-full min-w-0 rounded-sm border border-input bg-surface px-2 text-xs text-ink outline-none max-md:min-h-11"
                     >
                       <option value="always">Always run</option>
                       <option value="on_previous_ok">Only if previous succeeded</option>
@@ -1046,30 +1117,49 @@ export function PipelineBuilder({
                 )}
 
                 {st.kind !== "checkpoint" && (
-                  <div className="flex flex-col gap-1.5 border-t border-hairline pt-2">
+                  <div className="flex min-w-0 flex-col gap-1.5 border-t border-hairline pt-2">
                     <div className="flex flex-wrap items-center justify-between gap-2">
-                      <button
-                        type="button"
-                        aria-pressed={forEachActive}
-                        aria-label={`Step ${idx + 1} batch fan-out`}
-                        data-toggle-for-each={idx}
-                        onClick={() => {
-                          if (forEachActive) {
-                            updateStep(idx, { for_each: undefined });
-                          } else {
-                            const prev = idx > 0 ? steps[idx - 1]?.id : undefined;
-                            updateStep(idx, { for_each: prev ? `{{steps.${prev}.files}}` : "{{inputs.items}}" });
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <button
+                          type="button"
+                          aria-pressed={forEachActive}
+                          aria-label={`Step ${idx + 1} batch fan-out`}
+                          data-toggle-for-each={idx}
+                          onClick={() => {
+                            if (forEachActive) {
+                              updateStep(idx, { for_each: undefined });
+                            } else {
+                              const prev = idx > 0 ? steps[idx - 1]?.id : undefined;
+                              updateStep(idx, { for_each: prev ? `{{steps.${prev}.files}}` : "{{inputs.items}}" });
+                            }
+                          }}
+                          className={cn(
+                            "inline-flex items-center gap-1.5 rounded-chip border px-2.5 py-0.5 text-xs transition-[color,background-color,border-color] max-md:min-h-11",
+                            forEachActive
+                              ? "border-blue bg-blue-soft font-medium text-ink"
+                              : "border-hairline bg-board/60 text-ink-2 hover:bg-board hover:text-ink"
+                          )}
+                        >
+                          Batch fan-out (for_each)
+                        </button>
+                        <button
+                          type="button"
+                          aria-pressed={showResilience}
+                          aria-label={`Step ${idx + 1} retry and error policy`}
+                          data-toggle-resilience={idx}
+                          onClick={() =>
+                            setResilienceOpen((prev) => ({ ...prev, [idx]: !showResilience }))
                           }
-                        }}
-                        className={cn(
-                          "inline-flex items-center gap-1.5 rounded-chip border px-2.5 py-0.5 text-xs transition-[color,background-color,border-color] max-md:min-h-11",
-                          forEachActive
-                            ? "border-blue bg-blue-soft font-medium text-ink"
-                            : "border-hairline bg-board/60 text-ink-2 hover:bg-board hover:text-ink"
-                        )}
-                      >
-                        Batch fan-out (for_each)
-                      </button>
+                          className={cn(
+                            "inline-flex items-center gap-1.5 rounded-chip border px-2.5 py-0.5 text-xs transition-[color,background-color,border-color] max-md:min-h-11",
+                            hasResilience || showResilience
+                              ? "border-blue bg-blue-soft font-medium text-ink"
+                              : "border-hairline bg-board/60 text-ink-2 hover:bg-board hover:text-ink"
+                          )}
+                        >
+                          Retry & timeout
+                        </button>
+                      </div>
                       {forEachActive && (
                         <span className="text-xs text-ink-3">
                           Runs once per item via {`{{item}}`} (max 50).
@@ -1082,15 +1172,131 @@ export function PipelineBuilder({
                         aria-label={`Step ${idx + 1} for_each template`}
                         placeholder="{{steps.prev.files}} or JSON array / newline list"
                         onChange={(e) => updateStep(idx, { for_each: e.target.value })}
-                        className="h-8 text-xs max-md:min-h-11"
+                        className="h-8 w-full min-w-0 text-xs max-md:min-h-11"
                       />
+                    )}
+                    {showResilience && (
+                      <div
+                        data-step-resilience={idx}
+                        className="grid grid-cols-1 gap-2 rounded-sm border border-hairline bg-board/40 p-2.5 sm:grid-cols-2 lg:grid-cols-4"
+                      >
+                        <div className="flex min-w-0 flex-col gap-1">
+                          <label className="text-xs font-medium text-ink-2">Timeout (secs)</label>
+                          <Input
+                            type="number"
+                            min={1}
+                            max={86400}
+                            value={st.timeout_secs ?? ""}
+                            aria-label={`Step ${idx + 1} timeout secs`}
+                            data-step-timeout={idx}
+                            placeholder="e.g. 60"
+                            onChange={(e) => {
+                              const raw = e.target.value.trim();
+                              updateStep(idx, { timeout_secs: raw ? Number(raw) : undefined });
+                            }}
+                            className="h-8 w-full min-w-0 text-xs max-md:min-h-11"
+                          />
+                        </div>
+                        <div className="flex min-w-0 flex-col gap-1">
+                          <label className="text-xs font-medium text-ink-2">Max retries</label>
+                          <Input
+                            type="number"
+                            min={0}
+                            max={10}
+                            value={st.retry_max ?? ""}
+                            aria-label={`Step ${idx + 1} max retries`}
+                            data-step-retry-max={idx}
+                            placeholder="0"
+                            onChange={(e) => {
+                              const raw = e.target.value.trim();
+                              updateStep(idx, { retry_max: raw ? Math.floor(Number(raw)) : undefined });
+                            }}
+                            className="h-8 w-full min-w-0 text-xs max-md:min-h-11"
+                          />
+                        </div>
+                        <div className="flex min-w-0 flex-col gap-1">
+                          <label className="text-xs font-medium text-ink-2">Backoff (ms)</label>
+                          <Input
+                            type="number"
+                            min={0}
+                            max={300000}
+                            value={st.retry_backoff_ms ?? ""}
+                            aria-label={`Step ${idx + 1} retry backoff ms`}
+                            data-step-retry-backoff={idx}
+                            placeholder="500"
+                            onChange={(e) => {
+                              const raw = e.target.value.trim();
+                              updateStep(idx, { retry_backoff_ms: raw ? Math.floor(Number(raw)) : undefined });
+                            }}
+                            className="h-8 w-full min-w-0 text-xs max-md:min-h-11"
+                          />
+                        </div>
+                        <div className="flex min-w-0 flex-col gap-1">
+                          <label className="text-xs font-medium text-ink-2">On error</label>
+                          <select
+                            aria-label={`Step ${idx + 1} on_error`}
+                            data-step-on-error={idx}
+                            value={onErrorMode}
+                            onChange={(e) => {
+                              const mode = e.target.value;
+                              if (mode === "goto") {
+                                const fallbackTarget = otherSteps[0]?.id ?? "";
+                                updateStep(idx, {
+                                  on_error: fallbackTarget ? (`goto:${fallbackTarget}` as PipelineOnError) : "goto:",
+                                });
+                              } else {
+                                updateStep(idx, { on_error: mode as PipelineOnError });
+                              }
+                            }}
+                            className="focus-ring h-8 w-full min-w-0 rounded-sm border border-input bg-surface px-2 text-xs text-ink outline-none max-md:min-h-11"
+                          >
+                            <option value="fail">Fail pipeline</option>
+                            <option value="continue">Continue next step</option>
+                            <option value="goto">Jump to step (goto)</option>
+                          </select>
+                        </div>
+                        {onErrorMode === "goto" && (
+                          <div className="flex min-w-0 flex-col gap-1 sm:col-span-2 lg:col-span-4">
+                            <label className="text-xs font-medium text-ink-2">Jump to step on error</label>
+                            {otherSteps.length > 0 ? (
+                              <select
+                                aria-label={`Step ${idx + 1} on_error goto target`}
+                                data-step-on-error-goto={idx}
+                                value={gotoTarget}
+                                onChange={(e) =>
+                                  updateStep(idx, { on_error: `goto:${e.target.value}` as PipelineOnError })
+                                }
+                                className="focus-ring h-8 w-full min-w-0 rounded-sm border border-input bg-surface px-2 text-xs text-ink outline-none max-md:min-h-11"
+                              >
+                                <option value="">Select fallback step…</option>
+                                {otherSteps.map((o) => (
+                                  <option key={o.id} value={o.id}>
+                                    {o.label ? `${o.id} (${o.label})` : o.id}
+                                  </option>
+                                ))}
+                              </select>
+                            ) : (
+                              <Input
+                                value={gotoTarget}
+                                aria-label={`Step ${idx + 1} on_error goto target`}
+                                data-step-on-error-goto={idx}
+                                placeholder="target_step_id"
+                                onChange={(e) =>
+                                  updateStep(idx, { on_error: `goto:${e.target.value.trim()}` as PipelineOnError })
+                                }
+                                className="h-8 w-full min-w-0 text-xs max-md:min-h-11"
+                              />
+                            )}
+                          </div>
+                        )}
+                      </div>
                     )}
                   </div>
                 )}
 
                 {st.kind === "skill" && (
-                  <div className="flex flex-col gap-2 rounded-sm border border-hairline bg-board/40 p-2.5">
-                    <div className="flex flex-col gap-1">
+                  <div className="flex min-w-0 flex-col gap-2 rounded-sm border border-hairline bg-board/40 p-2.5">
+                    <div className="flex min-w-0 flex-col gap-1">
                       <label className="text-xs font-medium text-ink">Built-in skill</label>
                       <select
                         aria-label={`Step ${idx + 1} skill`}
@@ -1103,7 +1309,7 @@ export function PipelineBuilder({
                             args: defaultArgsForSkill(nextSkillId),
                           });
                         }}
-                        className="focus-ring h-8 rounded-sm border border-input bg-surface px-2 text-xs text-ink outline-none max-md:min-h-11"
+                        className="focus-ring h-8 w-full min-w-0 rounded-sm border border-input bg-surface px-2 text-xs text-ink outline-none max-md:min-h-11"
                       >
                         {skills.map((sk) => (
                           <option key={sk.id} value={sk.id}>
@@ -1113,7 +1319,7 @@ export function PipelineBuilder({
                       </select>
                     </div>
 
-                    <div className="flex flex-col gap-1.5">
+                    <div className="flex min-w-0 flex-col gap-1.5">
                       <span className="text-xs font-medium text-ink-2">Arguments</span>
                       {argEntries.map(([k, v]) => {
                         const structured = isStructuredSkillArg(k, v);
@@ -1124,14 +1330,14 @@ export function PipelineBuilder({
                           return (
                             <div
                               key={k}
-                              className="flex flex-col gap-1 rounded-sm border border-hairline/70 bg-surface/70 p-2"
+                              className="flex min-w-0 flex-col gap-1 rounded-sm border border-hairline/70 bg-surface/70 p-2"
                             >
-                              <div className="flex flex-wrap items-center justify-between gap-1.5">
-                                <div className="flex flex-wrap items-center gap-1.5">
-                                  <span className="text-xs font-medium text-ink">{k}</span>
+                              <div className="flex min-w-0 flex-wrap items-center justify-between gap-1.5">
+                                <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                                  <span className="text-xs font-medium text-ink [overflow-wrap:anywhere]">{k}</span>
                                   <span className="text-[11px] text-ink-3">{structuredArgHint(k)}</span>
                                 </div>
-                                <div className="flex flex-wrap items-center gap-1.5">
+                                <div className="flex min-w-0 flex-wrap items-center gap-1.5">
                                   {workspaceFiles.length > 0 && k.includes("file") && (
                                     <select
                                       aria-label={`Pick workspace file for ${k}`}
@@ -1151,7 +1357,7 @@ export function PipelineBuilder({
                                         });
                                         updateStep(idx, { args: { ...(st.args ?? {}), [k]: nextArr } });
                                       }}
-                                      className="focus-ring h-7 rounded-sm border border-input bg-surface px-2 text-xs text-ink-2 outline-none max-md:min-h-11"
+                                      className="focus-ring h-7 min-w-0 max-w-full rounded-sm border border-input bg-surface px-2 text-xs text-ink-2 outline-none max-md:min-h-11"
                                     >
                                       <option value="">Add workspace file…</option>
                                       {workspaceFiles.slice(0, 20).map((f) => (
@@ -1217,8 +1423,8 @@ export function PipelineBuilder({
                           );
                         }
                         return (
-                          <div key={k} className="flex flex-wrap items-center gap-1.5">
-                            <span className="min-w-[96px] text-xs font-medium text-ink-2">{k}</span>
+                          <div key={k} className="flex min-w-0 flex-wrap items-center gap-1.5">
+                            <span className="min-w-[96px] text-xs font-medium text-ink-2 [overflow-wrap:anywhere]">{k}</span>
                             <Input
                               value={String(v ?? "")}
                               aria-label={`Step ${idx + 1} arg ${k}`}
@@ -1226,7 +1432,7 @@ export function PipelineBuilder({
                               onChange={(e) =>
                                 updateStep(idx, { args: { ...(st.args ?? {}), [k]: e.target.value } })
                               }
-                              className="h-8 min-w-[140px] flex-1 text-xs max-md:min-h-11"
+                              className="h-8 min-w-[120px] flex-1 text-xs max-md:min-h-11"
                             />
                             {workspaceFiles.length > 0 && k.includes("file") && (
                               <select
@@ -1236,7 +1442,7 @@ export function PipelineBuilder({
                                   if (!e.target.value) return;
                                   updateStep(idx, { args: { ...(st.args ?? {}), [k]: e.target.value } });
                                 }}
-                                className="focus-ring h-8 rounded-sm border border-input bg-surface px-2 text-xs text-ink-2 outline-none max-md:min-h-11"
+                                className="focus-ring h-8 min-w-0 max-w-full rounded-sm border border-input bg-surface px-2 text-xs text-ink-2 outline-none max-md:min-h-11"
                               >
                                 <option value="">Workspace file…</option>
                                 {workspaceFiles.slice(0, 20).map((f) => (
@@ -1262,13 +1468,13 @@ export function PipelineBuilder({
                           </div>
                         );
                       })}
-                      <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                      <div className="flex min-w-0 flex-wrap items-center gap-1.5 pt-0.5">
                         <Input
                           value={newArgKey[idx] ?? ""}
                           placeholder="Add arg name (e.g. output_title)"
                           aria-label={`New arg key for step ${idx + 1}`}
                           onChange={(e) => setNewArgKey((prev) => ({ ...prev, [idx]: e.target.value }))}
-                          className="h-8 w-48 text-xs max-md:min-h-11"
+                          className="h-8 w-48 max-w-full min-w-0 text-xs max-md:min-h-11"
                         />
                         <Button
                           type="button"
@@ -1291,7 +1497,7 @@ export function PipelineBuilder({
                 )}
 
                 {st.kind === "agent" && (
-                  <div className="flex flex-col gap-1.5 rounded-sm border border-hairline bg-board/40 p-2.5">
+                  <div className="flex min-w-0 flex-col gap-1.5 rounded-sm border border-hairline bg-board/40 p-2.5">
                     <label className="text-xs font-medium text-ink">Agent instruction</label>
                     <Textarea
                       rows={2}
@@ -1299,14 +1505,14 @@ export function PipelineBuilder({
                       aria-label={`Step ${idx + 1} agent prompt`}
                       placeholder="What should the AI agent produce using prior outputs?"
                       onChange={(e) => updateStep(idx, { prompt: e.target.value })}
-                      className="text-xs"
+                      className="w-full min-w-0 text-xs"
                     />
                   </div>
                 )}
 
                 {st.kind === "checkpoint" && (
-                  <div className="flex flex-col gap-2 rounded-sm border border-hairline bg-blue-soft/45 p-2.5">
-                    <div className="flex flex-col gap-1">
+                  <div className="flex min-w-0 flex-col gap-2 rounded-sm border border-hairline bg-blue-soft/45 p-2.5">
+                    <div className="flex min-w-0 flex-col gap-1">
                       <label className="text-xs font-medium text-ink">Question or review prompt</label>
                       <Input
                         value={st.checkpoint?.prompt ?? ""}
@@ -1322,11 +1528,11 @@ export function PipelineBuilder({
                             },
                           })
                         }
-                        className="text-xs max-md:min-h-11"
+                        className="w-full min-w-0 text-xs max-md:min-h-11"
                       />
                     </div>
                     <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                      <div className="flex flex-col gap-1">
+                      <div className="flex min-w-0 flex-col gap-1">
                         <label className="text-xs font-medium text-ink-2">Input mode</label>
                         <select
                           aria-label={`Step ${idx + 1} checkpoint mode`}
@@ -1341,14 +1547,14 @@ export function PipelineBuilder({
                               },
                             })
                           }
-                          className="focus-ring h-8 rounded-sm border border-input bg-surface px-2 text-xs text-ink outline-none max-md:min-h-11"
+                          className="focus-ring h-8 w-full min-w-0 rounded-sm border border-input bg-surface px-2 text-xs text-ink outline-none max-md:min-h-11"
                         >
                           <option value="approve_reject">Approve or reject</option>
                           <option value="choice">Structured choices</option>
                           <option value="text">Free-text answer</option>
                         </select>
                       </div>
-                      <div className="flex flex-col gap-1">
+                      <div className="flex min-w-0 flex-col gap-1">
                         <label className="text-xs font-medium text-ink-2">Files to inspect (comma-separated)</label>
                         <Input
                           value={(st.checkpoint?.inspect_files ?? []).join(", ")}
@@ -1367,7 +1573,7 @@ export function PipelineBuilder({
                               },
                             })
                           }
-                          className="h-8 text-xs max-md:min-h-11"
+                          className="h-8 w-full min-w-0 text-xs max-md:min-h-11"
                         />
                       </div>
                     </div>
@@ -1399,8 +1605,8 @@ export function PipelineBuilder({
                 )}
 
                 {st.kind === "export" && (
-                  <div className="grid grid-cols-1 gap-2 rounded-sm border border-hairline bg-board/40 p-2.5 sm:grid-cols-[minmax(0,1fr)_140px]">
-                    <div className="flex flex-col gap-1">
+                  <div className="grid min-w-0 grid-cols-1 gap-2 rounded-sm border border-hairline bg-board/40 p-2.5 sm:grid-cols-[minmax(0,1fr)_140px]">
+                    <div className="flex min-w-0 flex-col gap-1">
                       <label className="text-xs font-medium text-ink">Source file path</label>
                       <Input
                         value={st.export?.path ?? ""}
@@ -1414,10 +1620,10 @@ export function PipelineBuilder({
                             },
                           })
                         }
-                        className="h-8 text-xs max-md:min-h-11"
+                        className="h-8 w-full min-w-0 text-xs max-md:min-h-11"
                       />
                     </div>
-                    <div className="flex flex-col gap-1">
+                    <div className="flex min-w-0 flex-col gap-1">
                       <label className="text-xs font-medium text-ink">Format</label>
                       <select
                         aria-label={`Step ${idx + 1} export format`}
@@ -1430,7 +1636,7 @@ export function PipelineBuilder({
                             },
                           })
                         }
-                        className="focus-ring h-8 rounded-sm border border-input bg-surface px-2 text-xs text-ink outline-none max-md:min-h-11"
+                        className="focus-ring h-8 w-full min-w-0 rounded-sm border border-input bg-surface px-2 text-xs text-ink outline-none max-md:min-h-11"
                       >
                         <option value="docx">Word (.docx)</option>
                         <option value="xlsx">Excel (.xlsx)</option>
@@ -1440,9 +1646,9 @@ export function PipelineBuilder({
                 )}
 
                 {st.kind === "deliver" && (
-                  <div className="flex flex-col gap-2 rounded-sm border border-hairline bg-board/40 p-2.5">
+                  <div className="flex min-w-0 flex-col gap-2 rounded-sm border border-hairline bg-board/40 p-2.5">
                     <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                      <div className="flex flex-col gap-1">
+                      <div className="flex min-w-0 flex-col gap-1">
                         <label className="text-xs font-medium text-ink">Outbound connector</label>
                         {connectors.length > 0 ? (
                           <select
@@ -1457,7 +1663,7 @@ export function PipelineBuilder({
                                 },
                               })
                             }
-                            className="focus-ring h-8 rounded-sm border border-input bg-surface px-2 text-xs text-ink outline-none max-md:min-h-11"
+                            className="focus-ring h-8 w-full min-w-0 rounded-sm border border-input bg-surface px-2 text-xs text-ink outline-none max-md:min-h-11"
                           >
                             <option value="">Select connector…</option>
                             {connectors.map((c) => (
@@ -1500,7 +1706,7 @@ export function PipelineBuilder({
                           </>
                         )}
                       </div>
-                      <div className="flex flex-col gap-1">
+                      <div className="flex min-w-0 flex-col gap-1">
                         <label className="text-xs font-medium text-ink-2">Deliver file (optional)</label>
                         <Input
                           value={st.deliver?.file ?? ""}
@@ -1515,11 +1721,11 @@ export function PipelineBuilder({
                               },
                             })
                           }
-                          className="h-8 text-xs max-md:min-h-11"
+                          className="h-8 w-full min-w-0 text-xs max-md:min-h-11"
                         />
                       </div>
                     </div>
-                    <div className="flex flex-col gap-1">
+                    <div className="flex min-w-0 flex-col gap-1">
                       <label className="text-xs font-medium text-ink-2">Payload JSON or template (optional)</label>
                       <Textarea
                         rows={2}
@@ -1535,8 +1741,98 @@ export function PipelineBuilder({
                             },
                           })
                         }
-                        className="text-xs"
+                        className="w-full min-w-0 text-xs"
                       />
+                    </div>
+                  </div>
+                )}
+
+                {st.kind === "subpipeline" && (
+                  <div className="flex min-w-0 flex-col gap-2 rounded-sm border border-hairline bg-board/40 p-2.5">
+                    <div className="flex min-w-0 flex-col gap-1">
+                      <label className="text-xs font-medium text-ink">Target routine (subpipeline)</label>
+                      {routines.length > 0 ? (
+                        <select
+                          aria-label={`Step ${idx + 1} subpipeline routine`}
+                          data-subpipeline-routine={idx}
+                          value={st.routine_id ?? ""}
+                          onChange={(e) => updateStep(idx, { routine_id: e.target.value })}
+                          className="focus-ring h-8 w-full min-w-0 rounded-sm border border-input bg-surface px-2 text-xs text-ink outline-none max-md:min-h-11"
+                        >
+                          <option value="">Select routine…</option>
+                          {routines.map((rt) => (
+                            <option key={rt.id} value={rt.id}>
+                              {rt.name} ({rt.schedule})
+                            </option>
+                          ))}
+                          {st.routine_id && !routines.some((rt) => rt.id === st.routine_id) && (
+                            <option value={st.routine_id}>{st.routine_id}</option>
+                          )}
+                        </select>
+                      ) : (
+                        <Input
+                          value={st.routine_id ?? ""}
+                          aria-label={`Step ${idx + 1} subpipeline routine`}
+                          data-subpipeline-routine={idx}
+                          placeholder="Routine ID to invoke as subpipeline"
+                          onChange={(e) => updateStep(idx, { routine_id: e.target.value })}
+                          className="h-8 w-full min-w-0 text-xs max-md:min-h-11"
+                        />
+                      )}
+                    </div>
+
+                    <div className="flex min-w-0 flex-col gap-1.5">
+                      <span className="text-xs font-medium text-ink-2">Subpipeline inputs (optional)</span>
+                      {subInputEntries.map(([k, v]) => (
+                        <div key={k} className="flex min-w-0 flex-wrap items-center gap-1.5">
+                          <span className="min-w-[80px] text-xs font-medium text-ink-2 [overflow-wrap:anywhere]">{k}</span>
+                          <Input
+                            value={String(v ?? "")}
+                            aria-label={`Step ${idx + 1} subpipeline input ${k}`}
+                            placeholder="{{steps.prev.output}}"
+                            onChange={(e) =>
+                              updateStep(idx, { inputs: { ...(st.inputs ?? {}), [k]: e.target.value } })
+                            }
+                            className="h-8 min-w-[120px] flex-1 text-xs max-md:min-h-11"
+                          />
+                          <Button
+                            type="button"
+                            size="xs"
+                            variant="ghost"
+                            aria-label={`Remove subpipeline input ${k}`}
+                            onClick={() => {
+                              const nextInputs = { ...(st.inputs ?? {}) };
+                              delete nextInputs[k];
+                              updateStep(idx, { inputs: nextInputs });
+                            }}
+                          >
+                            Remove
+                          </Button>
+                        </div>
+                      ))}
+                      <div className="flex min-w-0 flex-wrap items-center gap-1.5 pt-0.5">
+                        <Input
+                          value={newSubInputKey[idx] ?? ""}
+                          placeholder="Add input key (e.g. file)"
+                          aria-label={`New input key for subpipeline step ${idx + 1}`}
+                          onChange={(e) => setNewSubInputKey((prev) => ({ ...prev, [idx]: e.target.value }))}
+                          className="h-8 min-w-0 w-44 max-w-full text-xs max-md:min-h-11"
+                        />
+                        <Button
+                          type="button"
+                          size="xs"
+                          variant="outline"
+                          className="max-md:min-h-11"
+                          onClick={() => {
+                            const key = (newSubInputKey[idx] ?? "").trim().replace(/\s+/g, "_");
+                            if (!key) return;
+                            updateStep(idx, { inputs: { ...(st.inputs ?? {}), [key]: "" } });
+                            setNewSubInputKey((prev) => ({ ...prev, [idx]: "" }));
+                          }}
+                        >
+                          Add input
+                        </Button>
+                      </div>
                     </div>
                   </div>
                 )}
@@ -1670,6 +1966,17 @@ export function PipelineBuilder({
           >
             <Plus className="size-3" strokeWidth={1.5} aria-hidden />
             Deliver
+          </Button>
+          <Button
+            type="button"
+            size="xs"
+            variant="outline"
+            data-add-pipeline-step="subpipeline"
+            className="max-md:min-h-11 gap-1"
+            onClick={() => addStep("subpipeline")}
+          >
+            <Plus className="size-3" strokeWidth={1.5} aria-hidden />
+            Subpipeline
           </Button>
         </div>
 

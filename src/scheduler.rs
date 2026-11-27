@@ -35,13 +35,25 @@ pub enum Cadence {
     Daily { hour: u8, minute: u8 },
     /// `weekday`: 0 = Mon, 1 = Tue, 2 = Wed, 3 = Thu, 4 = Fri, 5 = Sat, 6 = Sun.
     Weekly { weekday: u8, hour: u8, minute: u8 },
+    Cron { expr: String, tz_offset_mins: i32 },
+}
+
+pub fn format_tz_offset(mins: i32) -> String {
+    if mins == 0 {
+        "UTC".to_string()
+    } else {
+        let sign = if mins >= 0 { '+' } else { '-' };
+        let abs = mins.abs();
+        format!("{sign}{:02}:{:02}", abs / 60, abs % 60)
+    }
 }
 
 impl Cadence {
     pub fn canonical_label(&self) -> String {
-        match *self {
+        match self {
             Cadence::Manual => "manual".to_string(),
             Cadence::IntervalSecs(s) => {
+                let s = *s;
                 if s % 86_400 == 0 {
                     format!("every {}d", s / 86_400)
                 } else if s % 3_600 == 0 {
@@ -60,32 +72,43 @@ impl Cadence {
                 hour,
                 minute,
             } => {
-                let day = weekday_short(weekday);
-                if hour == 9 && minute == 0 {
+                let day = weekday_short(*weekday);
+                if *hour == 9 && *minute == 0 {
                     format!("weekly {day}")
                 } else {
                     format!("weekly {day} {hour:02}:{minute:02}")
+                }
+            }
+            Cadence::Cron {
+                expr,
+                tz_offset_mins,
+            } => {
+                if *tz_offset_mins == 0 {
+                    expr.clone()
+                } else {
+                    format!("{expr} {}", format_tz_offset(*tz_offset_mins))
                 }
             }
         }
     }
 
     pub fn interval_secs(&self) -> Option<u64> {
-        match *self {
+        match self {
             Cadence::Manual => None,
-            Cadence::IntervalSecs(s) => Some(s),
+            Cadence::IntervalSecs(s) => Some(*s),
             Cadence::Hourly { .. } => Some(3_600),
             Cadence::Daily { .. } => Some(86_400),
             Cadence::Weekly { .. } => Some(7 * 86_400),
+            Cadence::Cron { .. } => Some(60),
         }
     }
 
     /// Returns `Some(secs)` ONLY for relative `IntervalSecs` cadences (never for
-    /// wall-clock `Hourly`/`Daily`/`Weekly` schedules, so persisted JSON never
+    /// wall-clock `Hourly`/`Daily`/`Weekly`/`Cron` schedules, so persisted JSON never
     /// degrades wall-clock slots into relative intervals).
     pub fn explicit_interval_secs(&self) -> Option<u64> {
-        match *self {
-            Cadence::IntervalSecs(s) => Some(s),
+        match self {
+            Cadence::IntervalSecs(s) => Some(*s),
             _ => None,
         }
     }
@@ -93,7 +116,10 @@ impl Cadence {
     pub fn is_wall_clock(&self) -> bool {
         matches!(
             self,
-            Cadence::Hourly { .. } | Cadence::Daily { .. } | Cadence::Weekly { .. }
+            Cadence::Hourly { .. }
+                | Cadence::Daily { .. }
+                | Cadence::Weekly { .. }
+                | Cadence::Cron { .. }
         )
     }
 
@@ -187,14 +213,297 @@ fn parse_duration_secs(tokens: &[&str]) -> Result<u64, String> {
     Ok(secs)
 }
 
+pub fn parse_tz_offset_mins(raw: &str) -> Result<i32, String> {
+    let mut s = raw.trim();
+    if let Some(rest) = s
+        .strip_prefix("tz:")
+        .or_else(|| s.strip_prefix("TZ:"))
+        .or_else(|| s.strip_prefix("tz="))
+        .or_else(|| s.strip_prefix("TZ="))
+    {
+        s = rest.trim();
+    }
+    if s.is_empty() {
+        return Err("timezone offset cannot be empty".to_string());
+    }
+    let low = s.to_ascii_lowercase();
+    let named = match low.as_str() {
+        "z" | "utc" | "gmt" => Some(0),
+        "est" | "america/new_york" => Some(-300),
+        "edt" => Some(-240),
+        "cst" | "america/chicago" => Some(-360),
+        "cdt" => Some(-300),
+        "mst" | "america/denver" => Some(-420),
+        "mdt" => Some(-360),
+        "pst" | "america/los_angeles" => Some(-480),
+        "pdt" => Some(-420),
+        "europe/london" => Some(0),
+        "cet" | "europe/berlin" | "europe/paris" => Some(60),
+        "cest" => Some(120),
+        "ist" | "asia/kolkata" => Some(330),
+        "sgt" | "asia/singapore" => Some(480),
+        "jst" | "asia/tokyo" => Some(540),
+        "aest" | "australia/sydney" => Some(600),
+        _ => None,
+    };
+    if let Some(m) = named {
+        return Ok(m);
+    }
+
+    let trimmed = if let Some(rest) = low.strip_prefix("utc").or_else(|| low.strip_prefix("gmt")) {
+        rest.trim()
+    } else {
+        s
+    };
+    if trimmed == "0" || trimmed == "+0" || trimmed == "-0" {
+        return Ok(0);
+    }
+    let (sign, rest) = if let Some(r) = trimmed.strip_prefix('+') {
+        (1i32, r)
+    } else if let Some(r) = trimmed.strip_prefix('-') {
+        (-1i32, r)
+    } else {
+        return Err(format!("unsupported timezone '{raw}'"));
+    };
+    let (h, m) = if let Some((hs, ms)) = rest.split_once(':') {
+        let h: i32 = hs
+            .parse()
+            .map_err(|_| format!("invalid timezone hour in '{raw}'"))?;
+        let m: i32 = ms
+            .parse()
+            .map_err(|_| format!("invalid timezone minute in '{raw}'"))?;
+        (h, m)
+    } else if rest.len() == 4 && rest.bytes().all(|b| b.is_ascii_digit()) {
+        let h: i32 = rest[..2]
+            .parse()
+            .map_err(|_| format!("invalid timezone hour in '{raw}'"))?;
+        let m: i32 = rest[2..]
+            .parse()
+            .map_err(|_| format!("invalid timezone minute in '{raw}'"))?;
+        (h, m)
+    } else if !rest.is_empty() && rest.len() <= 2 && rest.bytes().all(|b| b.is_ascii_digit()) {
+        let h: i32 = rest
+            .parse()
+            .map_err(|_| format!("invalid timezone hour in '{raw}'"))?;
+        (h, 0)
+    } else {
+        return Err(format!("invalid timezone offset '{raw}'"));
+    };
+    if !(0..=14).contains(&h) || !(0..=59).contains(&m) {
+        return Err(format!("timezone offset '{raw}' out of range (-12:00..+14:00)"));
+    }
+    let total = sign * (h * 60 + m);
+    if !(-720..=840).contains(&total) {
+        return Err(format!("timezone offset '{raw}' out of range (-12:00..+14:00)"));
+    }
+    Ok(total)
+}
+
+#[derive(Clone, Debug)]
+struct CronSpec {
+    minutes: u64,   // bits 0..=59
+    hours: u32,     // bits 0..=23
+    doms: u32,      // bits 1..=31
+    months: u16,    // bits 1..=12
+    dows: u8,       // bits 0..=6 (0 = Sun, 1 = Mon .. 6 = Sat)
+    dom_restricted: bool,
+    dow_restricted: bool,
+}
+
+fn parse_cron_atom(tok: &str, min: u8, max: u8, is_month: bool, is_dow: bool) -> Result<u8, String> {
+    let low = tok.trim().to_ascii_lowercase();
+    if is_month {
+        match low.as_str() {
+            "jan" => return Ok(1),
+            "feb" => return Ok(2),
+            "mar" => return Ok(3),
+            "apr" => return Ok(4),
+            "may" => return Ok(5),
+            "jun" => return Ok(6),
+            "jul" => return Ok(7),
+            "aug" => return Ok(8),
+            "sep" => return Ok(9),
+            "oct" => return Ok(10),
+            "nov" => return Ok(11),
+            "dec" => return Ok(12),
+            _ => {}
+        }
+    }
+    if is_dow {
+        match low.as_str() {
+            "sun" => return Ok(0),
+            "mon" => return Ok(1),
+            "tue" => return Ok(2),
+            "wed" => return Ok(3),
+            "thu" => return Ok(4),
+            "fri" => return Ok(5),
+            "sat" => return Ok(6),
+            _ => {}
+        }
+    }
+    let val: u8 = low
+        .parse()
+        .map_err(|_| format!("invalid cron token '{tok}'"))?;
+    let norm = if is_dow && val == 7 { 0 } else { val };
+    if norm < min || norm > max {
+        return Err(format!(
+            "cron value '{tok}' out of range ({min}..={max})"
+        ));
+    }
+    Ok(norm)
+}
+
+fn parse_cron_field(
+    field: &str,
+    min: u8,
+    max: u8,
+    is_month: bool,
+    is_dow: bool,
+) -> Result<(u64, bool), String> {
+    let trimmed = field.trim();
+    if trimmed.is_empty() {
+        return Err("empty cron field".to_string());
+    }
+    let restricted = trimmed != "*";
+    let mut mask: u64 = 0;
+    for part in trimmed.split(',') {
+        let part = part.trim();
+        if part.is_empty() {
+            return Err(format!("empty list element in cron field '{field}'"));
+        }
+        let (range_part, step) = if let Some((l, r)) = part.split_once('/') {
+            let st: u8 = r
+                .trim()
+                .parse()
+                .map_err(|_| format!("invalid cron step in '{part}'"))?;
+            if st == 0 {
+                return Err(format!("cron step must be > 0 in '{part}'"));
+            }
+            (l.trim(), st)
+        } else {
+            (part, 1u8)
+        };
+        if range_part == "*" {
+            let mut v = min;
+            while v <= max {
+                mask |= 1u64 << v;
+                v = match v.checked_add(step) {
+                    Some(n) => n,
+                    None => break,
+                };
+            }
+        } else if let Some((a_s, b_s)) = range_part.split_once('-') {
+            let a = parse_cron_atom(a_s, min, max, is_month, is_dow)?;
+            let mut b = parse_cron_atom(b_s, min, max, is_month, is_dow)?;
+            if is_dow && b == 0 && a > 0 && b_s.trim() == "7" {
+                // Allow 1-7 or 5-7 where 7 means Sunday.
+                b = 7;
+            }
+            if a > b {
+                return Err(format!("cron range start > end in '{part}'"));
+            }
+            let mut v = a;
+            while v <= b {
+                let bit = if is_dow && v == 7 { 0 } else { v };
+                mask |= 1u64 << bit;
+                v = match v.checked_add(step) {
+                    Some(n) => n,
+                    None => break,
+                };
+            }
+        } else {
+            let a = parse_cron_atom(range_part, min, max, is_month, is_dow)?;
+            if part.contains('/') {
+                let mut v = a;
+                while v <= max {
+                    mask |= 1u64 << v;
+                    v = match v.checked_add(step) {
+                        Some(n) => n,
+                        None => break,
+                    };
+                }
+            } else {
+                mask |= 1u64 << a;
+            }
+        }
+    }
+    if mask == 0 {
+        return Err(format!("cron field '{field}' matched no values"));
+    }
+    Ok((mask, restricted))
+}
+
+impl CronSpec {
+    fn parse(expr: &str) -> Result<Self, String> {
+        let parts: Vec<&str> = expr.split_whitespace().collect();
+        if parts.len() != 5 {
+            return Err(format!(
+                "cron expression must have 5 fields (min hour dom month dow), got '{expr}'"
+            ));
+        }
+        let (min_mask, _) = parse_cron_field(parts[0], 0, 59, false, false)?;
+        let (hour_mask, _) = parse_cron_field(parts[1], 0, 23, false, false)?;
+        let (dom_mask, dom_restricted) = parse_cron_field(parts[2], 1, 31, false, false)?;
+        let (month_mask, _) = parse_cron_field(parts[3], 1, 12, true, false)?;
+        let (dow_mask, dow_restricted) = parse_cron_field(parts[4], 0, 6, false, true)?;
+
+        let spec = Self {
+            minutes: min_mask,
+            hours: hour_mask as u32,
+            doms: dom_mask as u32,
+            months: month_mask as u16,
+            dows: dow_mask as u8,
+            dom_restricted,
+            dow_restricted,
+        };
+
+        // Reject impossible fixed month/day combinations like Feb 30 or Apr 31 when dow isn't open.
+        if dom_restricted && !dow_restricted {
+            let max_days = [0u8, 31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+            let mut any_valid = false;
+            for m in 1u8..=12 {
+                if (spec.months & (1u16 << m)) == 0 {
+                    continue;
+                }
+                for d in 1u8..=max_days[m as usize] {
+                    if (spec.doms & (1u32 << d)) != 0 {
+                        any_valid = true;
+                        break;
+                    }
+                }
+                if any_valid {
+                    break;
+                }
+            }
+            if !any_valid {
+                return Err(format!("cron expression '{expr}' matches no calendar date"));
+            }
+        }
+        Ok(spec)
+    }
+
+    fn day_matches(&self, dom: u8, cron_dow: u8) -> bool {
+        let dom_ok = (self.doms & (1u32 << dom)) != 0;
+        let dow_ok = (self.dows & (1u8 << cron_dow)) != 0;
+        if self.dom_restricted && self.dow_restricted {
+            dom_ok || dow_ok
+        } else {
+            dom_ok && dow_ok
+        }
+    }
+}
+
 /// Parse a schedule string (`manual`, `every 15m`, `every 30s`, `hourly`,
-/// `daily 09:00`, `weekly mon`, `weekly fri 17:30`, or raw seconds).
+/// `daily 09:00`, `weekly mon`, `weekly fri 17:30`, raw seconds, or 5-field
+/// cron `min hour dom month dow` with optional timezone offset).
 pub fn parse_cadence(spec: &str) -> Result<Cadence, String> {
-    let lower = spec.trim().to_ascii_lowercase();
+    let trimmed = spec.trim();
+    let lower = trimmed.to_ascii_lowercase();
     if lower.is_empty() || matches!(lower.as_str(), "manual" | "off" | "none" | "on-demand") {
         return Ok(Cadence::Manual);
     }
 
+    let tokens_orig: Vec<&str> = trimmed.split_whitespace().collect();
     let tokens: Vec<&str> = lower.split_whitespace().collect();
     match tokens[0] {
         "every" => {
@@ -255,16 +564,53 @@ pub fn parse_cadence(spec: &str) -> Result<Cadence, String> {
             Err(format!("invalid weekly cadence: '{spec}'"))
         }
         _ => {
+            if tokens_orig.len() == 5 {
+                let expr = tokens_orig.join(" ");
+                CronSpec::parse(&expr)?;
+                return Ok(Cadence::Cron {
+                    expr,
+                    tz_offset_mins: 0,
+                });
+            }
+            if tokens_orig.len() == 6 {
+                let expr = tokens_orig[..5].join(" ");
+                if CronSpec::parse(&expr).is_ok() {
+                    let tz_offset_mins = parse_tz_offset_mins(tokens_orig[5])?;
+                    return Ok(Cadence::Cron {
+                        expr,
+                        tz_offset_mins,
+                    });
+                }
+            }
             // Support compact forms like "15m", "300s", "900".
             if tokens.len() == 1 {
                 let secs = parse_duration_secs(&tokens)?;
                 return Ok(Cadence::IntervalSecs(secs));
             }
             Err(format!(
-                "unsupported cadence '{spec}' (use 'manual', 'every 15m', 'hourly', 'daily 09:00', or 'weekly mon')"
+                "unsupported cadence '{spec}' (use 'manual', 'every 15m', 'hourly', 'daily 09:00', 'weekly mon', or 5-field cron)"
             ))
         }
     }
+}
+
+pub fn parse_cadence_with_tz(spec: &str, tz_offset_mins: Option<i32>) -> Result<Cadence, String> {
+    let mut cadence = parse_cadence(spec)?;
+    if let Some(tz) = tz_offset_mins {
+        if !(-720..=840).contains(&tz) {
+            return Err("tz_offset_mins must be between -720 and 840".to_string());
+        }
+        if let Cadence::Cron {
+            tz_offset_mins: ref mut cur,
+            ..
+        } = cadence
+        {
+            if *cur == 0 || tz != 0 {
+                *cur = tz;
+            }
+        }
+    }
+    Ok(cadence)
 }
 
 /// Resolve cadence from an optional `schedule` string and/or explicit
@@ -272,6 +618,14 @@ pub fn parse_cadence(spec: &str) -> Result<Cadence, String> {
 pub fn parse_cadence_or_interval(
     schedule: Option<&str>,
     interval_secs: Option<u64>,
+) -> Result<Cadence, String> {
+    parse_cadence_or_interval_with_tz(schedule, interval_secs, None)
+}
+
+pub fn parse_cadence_or_interval_with_tz(
+    schedule: Option<&str>,
+    interval_secs: Option<u64>,
+    tz_offset_mins: Option<i32>,
 ) -> Result<Cadence, String> {
     if let Some(secs) = interval_secs {
         if !(MIN_INTERVAL_SECS..=MAX_INTERVAL_SECS).contains(&secs) {
@@ -281,7 +635,7 @@ pub fn parse_cadence_or_interval(
         }
         return Ok(Cadence::IntervalSecs(secs));
     }
-    parse_cadence(schedule.unwrap_or("manual"))
+    parse_cadence_with_tz(schedule.unwrap_or("manual"), tz_offset_mins)
 }
 
 /// Howard Hinnant's exact civil date -> days since 1970-01-01 (UTC).
@@ -294,6 +648,21 @@ fn days_from_civil(year: i64, month: u32, day: u32) -> i64 {
     let doy = (153 * (if m > 2 { m - 3 } else { m + 9 }) + 2) / 5 + d - 1;
     let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
     era * 146_097 + (doe as i64) - 719_468
+}
+
+/// Howard Hinnant's exact days since 1970-01-01 -> (year, month, day).
+fn civil_from_days(days_since_epoch: i64) -> (i64, u32, u32) {
+    let z = days_since_epoch + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = (z - era * 146_097) as u64;
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146_096) / 365;
+    let y = (yoe as i64) + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = if m <= 2 { y + 1 } else { y };
+    (y, m as u32, d as u32)
 }
 
 /// Day of week from days since Unix epoch: 0 = Monday .. 6 = Sunday.
@@ -317,13 +686,13 @@ fn utc_day_ms(days: i64, hour: u8, minute: u8) -> u64 {
 /// after `anchor = last_run_ms.unwrap_or(now_ms)`. Returns `None` for `Manual`.
 pub fn next_run_ms(cadence: &Cadence, last_run_ms: Option<u64>, now_ms: u64) -> Option<u64> {
     let anchor = last_run_ms.filter(|&t| t > 0).unwrap_or(now_ms);
-    match *cadence {
+    match cadence {
         Cadence::Manual => None,
         Cadence::IntervalSecs(secs) => Some(anchor.saturating_add(secs.saturating_mul(1_000))),
         Cadence::Hourly { minute } => {
             let hour_ms: u64 = 3_600_000;
             let hour_floor = (anchor / hour_ms) * hour_ms;
-            let candidate = hour_floor.saturating_add((minute as u64) * 60_000);
+            let candidate = hour_floor.saturating_add((*minute as u64) * 60_000);
             if candidate > anchor {
                 Some(candidate)
             } else {
@@ -333,11 +702,11 @@ pub fn next_run_ms(cadence: &Cadence, last_run_ms: Option<u64>, now_ms: u64) -> 
         Cadence::Daily { hour, minute } => {
             let (y, m, d) = records::civil_from_millis(anchor);
             let day = days_from_civil(y, m, d);
-            let today_slot = utc_day_ms(day, hour, minute);
+            let today_slot = utc_day_ms(day, *hour, *minute);
             if today_slot > anchor {
                 Some(today_slot)
             } else {
-                Some(utc_day_ms(day + 1, hour, minute))
+                Some(utc_day_ms(day + 1, *hour, *minute))
             }
         }
         Cadence::Weekly {
@@ -348,31 +717,102 @@ pub fn next_run_ms(cadence: &Cadence, last_run_ms: Option<u64>, now_ms: u64) -> 
             let (y, m, d) = records::civil_from_millis(anchor);
             let day = days_from_civil(y, m, d);
             let cur_w = weekday_from_days(day);
-            let delta = ((weekday as i64) - (cur_w as i64)).rem_euclid(7);
-            let candidate = utc_day_ms(day + delta, hour, minute);
+            let delta = ((*weekday as i64) - (cur_w as i64)).rem_euclid(7);
+            let candidate = utc_day_ms(day + delta, *hour, *minute);
             if candidate > anchor {
                 Some(candidate)
             } else {
-                Some(utc_day_ms(day + delta + 7, hour, minute))
+                Some(utc_day_ms(day + delta + 7, *hour, *minute))
             }
+        }
+        Cadence::Cron {
+            expr,
+            tz_offset_mins,
+        } => {
+            let spec = CronSpec::parse(expr).ok()?;
+            let offset_ms = (*tz_offset_mins as i64) * 60_000;
+            let local_anchor_min = (anchor as i64)
+                .saturating_add(offset_ms)
+                .div_euclid(60_000)
+                .saturating_add(1);
+            let start_day = local_anchor_min.div_euclid(1_440);
+            let start_min_of_day = local_anchor_min.rem_euclid(1_440);
+
+            for day_offset in 0..=2922i64 {
+                let day = start_day + day_offset;
+                let (_y, m, d) = civil_from_days(day);
+                if (spec.months & (1u16 << (m as u8))) == 0 {
+                    continue;
+                }
+                let cron_dow = (weekday_from_days(day) + 1) % 7;
+                if !spec.day_matches(d as u8, cron_dow) {
+                    continue;
+                }
+                let first_min = if day_offset == 0 {
+                    start_min_of_day
+                } else {
+                    0
+                };
+                let h_start = (first_min / 60) as u8;
+                for h in h_start..24 {
+                    if (spec.hours & (1u32 << h)) == 0 {
+                        continue;
+                    }
+                    let m_start = if day_offset == 0 && h == h_start {
+                        (first_min % 60) as u8
+                    } else {
+                        0
+                    };
+                    for min in m_start..60 {
+                        if (spec.minutes & (1u64 << min)) != 0 {
+                            let local_ms =
+                                (day * 86_400 + (h as i64) * 3_600 + (min as i64) * 60) * 1_000;
+                            let utc_ms = local_ms - offset_ms;
+                            if utc_ms >= 0 {
+                                return Some(utc_ms as u64);
+                            }
+                        }
+                    }
+                }
+            }
+            None
         }
     }
 }
 
+fn routine_tz_offset_mins(routine: &Value) -> Option<i32> {
+    if let Some(v) = routine.get("tz_offset_mins").and_then(|x| x.as_i64()) {
+        if (-720..=840).contains(&v) {
+            return Some(v as i32);
+        }
+    }
+    for key in ["tz", "timezone"] {
+        if let Some(s) = routine.get(key).and_then(|x| x.as_str()) {
+            if let Ok(m) = parse_tz_offset_mins(s) {
+                return Some(m);
+            }
+        }
+    }
+    None
+}
+
 /// Resolve a persisted routine's cadence. Prefers a wall-clock `schedule`
-/// (`hourly`, `daily 09:00`, `weekly mon`) even if a legacy record also carries
-/// a stale `interval_secs` field, otherwise resolves via `parse_cadence_or_interval`.
+/// (`hourly`, `daily 09:00`, `weekly mon`, 5-field cron) even if a legacy record
+/// also carries a stale `interval_secs` field, otherwise resolves via
+/// `parse_cadence_or_interval_with_tz`.
 pub fn parse_routine_cadence(routine: &Value) -> Result<Cadence, String> {
+    let tz_opt = routine_tz_offset_mins(routine);
     if let Some(sched) = routine["schedule"].as_str() {
-        if let Ok(c) = parse_cadence(sched) {
+        if let Ok(c) = parse_cadence_with_tz(sched, tz_opt) {
             if c.is_wall_clock() {
                 return Ok(c);
             }
         }
     }
-    parse_cadence_or_interval(
+    parse_cadence_or_interval_with_tz(
         routine["schedule"].as_str(),
         routine["interval_secs"].as_u64(),
+        tz_opt,
     )
 }
 
@@ -427,6 +867,48 @@ pub fn is_scheduler_disabled_by_env() -> bool {
         .unwrap_or(false)
 }
 
+/// Helper to resolve optional timezone offset from patch or existing routine object.
+pub fn resolve_tz_from_patch(
+    patch: &Value,
+    existing: &serde_json::Map<String, Value>,
+) -> Result<Option<i32>, String> {
+    if let Some(v) = patch.get("tz_offset_mins") {
+        if v.is_null() {
+            return Ok(None);
+        }
+        let Some(n) = v.as_i64() else {
+            return Err("tz_offset_mins must be an integer".to_string());
+        };
+        if !(-720..=840).contains(&n) {
+            return Err("tz_offset_mins must be between -720 and 840".to_string());
+        }
+        return Ok(Some(n as i32));
+    }
+    for key in ["tz", "timezone"] {
+        if let Some(v) = patch.get(key) {
+            if v.is_null() {
+                return Ok(None);
+            }
+            let Some(s) = v.as_str() else {
+                return Err(format!("{key} must be a string"));
+            };
+            let trimmed = s.trim();
+            if trimmed.is_empty() {
+                return Ok(None);
+            }
+            return Ok(Some(parse_tz_offset_mins(trimmed)?));
+        }
+    }
+    if patch.get("schedule").is_none() {
+        if let Some(n) = existing.get("tz_offset_mins").and_then(|v| v.as_i64()) {
+            if (-720..=840).contains(&n) {
+                return Ok(Some(n as i32));
+            }
+        }
+    }
+    Ok(None)
+}
+
 /// Apply a `PATCH /api/routines/:id` JSON payload to a routine object in-place.
 /// Supports `enabled`, `schedule`, `interval_secs`, `name`, `prompt`, `skill_id`.
 pub fn apply_routine_patch(routine: &mut Value, patch: &Value) -> Result<(), String> {
@@ -455,20 +937,55 @@ pub fn apply_routine_patch(routine: &mut Value, patch: &Value) -> Result<(), Str
         }
         obj.insert("prompt".to_string(), json!(clean));
     }
-    if patch.get("schedule").is_some() || patch.get("interval_secs").is_some() {
+    if patch.get("schedule").is_some()
+        || patch.get("interval_secs").is_some()
+        || patch.get("tz_offset_mins").is_some()
+        || patch.get("tz").is_some()
+        || patch.get("timezone").is_some()
+    {
         let interval = patch.get("interval_secs").and_then(|v| v.as_u64());
-        let sched = patch.get("schedule").and_then(|v| v.as_str());
-        if patch.get("interval_secs").is_some() && interval.is_none() && !patch["interval_secs"].is_null() {
+        let sched = patch
+            .get("schedule")
+            .and_then(|v| v.as_str())
+            .or_else(|| obj.get("schedule").and_then(|v| v.as_str()));
+        if patch.get("interval_secs").is_some()
+            && interval.is_none()
+            && !patch["interval_secs"].is_null()
+        {
             return Err("interval_secs must be a positive integer".to_string());
         }
-        let cadence = parse_cadence_or_interval(sched, interval)?;
-        obj.insert("schedule".to_string(), json!(cadence.canonical_label()));
-        match cadence.explicit_interval_secs() {
-            Some(secs) => {
-                obj.insert("interval_secs".to_string(), json!(secs));
-            }
-            None => {
+        let tz_opt = resolve_tz_from_patch(patch, obj)?;
+        let cadence = parse_cadence_or_interval_with_tz(sched, interval, tz_opt)?;
+        match &cadence {
+            Cadence::Cron {
+                expr,
+                tz_offset_mins,
+            } => {
+                obj.insert("schedule".to_string(), json!(expr));
+                obj.insert("tz_offset_mins".to_string(), json!(tz_offset_mins));
+                let tz_str = patch
+                    .get("tz")
+                    .or_else(|| patch.get("timezone"))
+                    .and_then(|v| v.as_str())
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .map(str::to_string)
+                    .unwrap_or_else(|| format_tz_offset(*tz_offset_mins));
+                obj.insert("tz".to_string(), json!(tz_str));
                 obj.remove("interval_secs");
+            }
+            _ => {
+                obj.insert("schedule".to_string(), json!(cadence.canonical_label()));
+                obj.remove("tz_offset_mins");
+                obj.remove("tz");
+                match cadence.explicit_interval_secs() {
+                    Some(secs) => {
+                        obj.insert("interval_secs".to_string(), json!(secs));
+                    }
+                    None => {
+                        obj.remove("interval_secs");
+                    }
+                }
             }
         }
     }
@@ -691,11 +1208,20 @@ pub fn enrich_routine_json(routine: &Value, now_ms: u64, history: &[RoutineRunRe
     let mut out = routine.clone();
     let enabled = routine["enabled"].as_bool().unwrap_or(true);
     let parsed = parse_routine_cadence(routine);
-    let (cadence_valid, cadence_label, interval_secs) = match parsed {
-        Ok(c) => (true, c.canonical_label(), c.explicit_interval_secs()),
+    let (cadence_valid, cadence_label, interval_secs, cron_tz) = match &parsed {
+        Ok(c) => (
+            true,
+            c.canonical_label(),
+            c.explicit_interval_secs(),
+            match c {
+                Cadence::Cron { tz_offset_mins, .. } => Some(*tz_offset_mins),
+                _ => None,
+            },
+        ),
         Err(_) => (
             false,
             routine["schedule"].as_str().unwrap_or("manual").to_string(),
+            None,
             None,
         ),
     };
@@ -713,6 +1239,12 @@ pub fn enrich_routine_json(routine: &Value, now_ms: u64, history: &[RoutineRunRe
         obj.insert("cadence_valid".to_string(), json!(cadence_valid));
         obj.insert("cadence_label".to_string(), json!(cadence_label));
         obj.insert("interval_secs".to_string(), json!(interval_secs));
+        if let Some(tz_mins) = cron_tz {
+            obj.insert("tz_offset_mins".to_string(), json!(tz_mins));
+            if obj.get("tz").and_then(|v| v.as_str()).is_none() {
+                obj.insert("tz".to_string(), json!(format_tz_offset(tz_mins)));
+            }
+        }
         obj.insert("next_run_ms".to_string(), json!(next));
         obj.insert("due_now".to_string(), json!(due_now));
         obj.insert("missed_windows".to_string(), json!(missed_windows));
