@@ -1,0 +1,129 @@
+name: ci
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  rust-linux:
+    name: Rust clippy & tests (Linux)
+    runs-on: ubuntu-latest
+    env:
+      ERGON_NO_OPEN: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust toolchain
+        run: rustup toolchain install stable --profile minimal --component clippy && rustup default stable
+      - name: Cache Cargo dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-linux-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-linux-
+      # Note: `cargo fmt --check` is intentionally omitted because baseline `main`
+      # is not rustfmt-clean yet.
+      - name: Clippy
+        run: cargo clippy --locked --all-targets -- -D warnings
+      - name: Test
+        run: cargo test --locked -- --test-threads=1
+
+  frontend-assets:
+    name: Frontend build & embedded assets
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+      # frontend/tsconfig.json includes ../rune/used, while rune/node_modules is gitignored.
+      - name: Link shared node_modules for TypeScript
+        run: ln -sfn ../frontend/node_modules rune/node_modules
+      - name: Typecheck and build assets
+        working-directory: frontend
+        run: npm run build
+      - name: Verify embedded assets exist
+        run: |
+          test -s assets/index.html
+          test -n "$(ls -A assets/chunks)"
+      - name: Install Rust toolchain
+        run: rustup toolchain install stable --profile minimal && rustup default stable
+      - name: Cache Cargo dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-assets-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-assets-
+            ${{ runner.os }}-cargo-linux-
+      - name: Verify embedded assets compile cleanly
+        run: |
+          touch build.rs src/lib.rs
+          cargo check --locked --lib --bins
+
+  rust-windows:
+    name: Rust check (Windows x86_64-msvc)
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust toolchain
+        run: rustup toolchain install stable --profile minimal --target x86_64-pc-windows-msvc && rustup default stable
+      - name: Cache Cargo dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-win-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-win-
+      # Checks library and ergon.exe binary targets (`--lib --bins`).
+      # `--all-targets` is deferred because tests/e2e.rs contains Unix-only symlink calls.
+      - name: Check Windows target
+        run: cargo check --locked --target x86_64-pc-windows-msvc --lib --bins
+
+  hygiene:
+    name: Repository hygiene
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Ensure no .mp4 files are tracked in git
+        run: |
+          tracked="$(git ls-files '*.mp4' '*.MP4')"
+          if [ -n "$tracked" ]; then
+            echo "ERROR: tracked .mp4 files are not allowed in git:"
+            echo "$tracked"
+            exit 1
+          fi
+          echo "OK: 0 tracked .mp4 files"
