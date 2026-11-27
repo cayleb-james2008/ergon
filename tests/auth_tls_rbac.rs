@@ -744,6 +744,153 @@ fn rbac_and_cross_user_isolation_across_workspaces_crm_invoices_and_admin_routes
     // Carl CAN use his own desk endpoints & /phone
     assert_eq!(http_req(port, "GET", "/api/today", None, &[("Cookie", &carl_cookie)]).status, 200);
     assert_eq!(http_req(port, "GET", "/phone", None, &[("Cookie", &carl_cookie)]).status, 200);
+
+    // v0.39.0 DAG/scheduler/cron/live-run routes are covered by centralized auth (401 unauthenticated)
+    for (method, path, body) in [
+        ("GET", "/api/routines", None),
+        ("POST", "/api/routines", Some(r#"{"name":"unauth","schedule":"0 9 * * 1-5"}"#)),
+        ("POST", "/api/scheduler/catchup", Some("{}")),
+        ("POST", "/api/pipelines/validate", Some(r#"{"steps_v2":[]}"#)),
+        ("POST", "/api/pipelines/run", Some(r#"{"steps_v2":[]}"#)),
+        ("GET", "/api/pipelines/runs", None),
+        ("GET", "/api/runs/status", None),
+        ("GET", "/api/runs/stream?once=1", None),
+        ("POST", "/api/runs/active/cancel", Some("{}")),
+    ] {
+        let unauth = http_req(port, method, path, body, &[]);
+        assert_eq!(
+            unauth.status, 401,
+            "unauthenticated {method} {path} must return 401, got {}: {}",
+            unauth.status, unauth.body
+        );
+    }
+
+    // Cross-user isolation on v0.39.0 cron routines and DAG pipeline runs:
+    // Bob creates a cron routine + paused checkpoint pipeline; Carl cannot see, validate, resume, or cancel it.
+    let bob_rt = http_req(
+        port,
+        "POST",
+        "/api/routines",
+        Some(
+            &json!({
+                "name": "Bob Private Cron DAG",
+                "schedule": "0 9 * * 1-5",
+                "tz": "UTC",
+                "enabled": false,
+                "steps_v2": [
+                    {
+                        "id": "gate",
+                        "label": "Bob Approval",
+                        "kind": "checkpoint",
+                        "checkpoint": { "prompt": "Approve Bob's job?" }
+                    }
+                ]
+            })
+            .to_string(),
+        ),
+        &[("Cookie", &bob_cookie)],
+    );
+    assert_eq!(bob_rt.status, 201, "bob creates cron routine: {}", bob_rt.body);
+    let bob_rt_id = bob_rt.json()["routine"]["id"].as_str().unwrap().to_string();
+
+    let bob_pipe = http_req(
+        port,
+        "POST",
+        "/api/pipelines/run",
+        Some(&json!({"routine_id": bob_rt_id}).to_string()),
+        &[("Cookie", &bob_cookie)],
+    );
+    assert_eq!(bob_pipe.status, 202, "bob starts pipeline run: {}", bob_pipe.body);
+    let bob_run_id = bob_pipe.json()["run"]["run_id"].as_str().unwrap().to_string();
+
+    // Carl cannot see Bob's routine or pipeline run, and cannot mutate/cancel them
+    let carl_rts = http_req(port, "GET", "/api/routines", None, &[("Cookie", &carl_cookie)]);
+    assert_eq!(carl_rts.status, 200);
+    assert!(!carl_rts.body.contains(&bob_rt_id), "carl must not see bob's cron routine");
+
+    let carl_runs = http_req(port, "GET", "/api/pipelines/runs", None, &[("Cookie", &carl_cookie)]);
+    assert_eq!(carl_runs.status, 200);
+    assert!(!carl_runs.body.contains(&bob_run_id), "carl must not see bob's pipeline run");
+
+    assert_eq!(
+        http_req(
+            port,
+            "GET",
+            &format!("/api/pipelines/runs/{bob_run_id}"),
+            None,
+            &[("Cookie", &carl_cookie)],
+        )
+        .status,
+        404
+    );
+    assert_eq!(
+        http_req(
+            port,
+            "POST",
+            &format!("/api/pipelines/runs/{bob_run_id}/resume"),
+            Some(r#"{"decision":"approve"}"#),
+            &[("Cookie", &carl_cookie)],
+        )
+        .status,
+        404
+    );
+    assert_eq!(
+        http_req(
+            port,
+            "POST",
+            &format!("/api/pipelines/runs/{bob_run_id}/cancel"),
+            Some("{}"),
+            &[("Cookie", &carl_cookie)],
+        )
+        .status,
+        404
+    );
+    assert_eq!(
+        http_req(
+            port,
+            "POST",
+            &format!("/api/runs/{bob_run_id}/cancel"),
+            Some("{}"),
+            &[("Cookie", &carl_cookie)],
+        )
+        .status,
+        404
+    );
+    assert_eq!(
+        http_req(
+            port,
+            "POST",
+            &format!("/api/routines/{bob_rt_id}/run"),
+            Some("{}"),
+            &[("Cookie", &carl_cookie)],
+        )
+        .status,
+        404
+    );
+    // Bob's own run remains accessible to Bob
+    assert_eq!(
+        http_req(
+            port,
+            "GET",
+            &format!("/api/pipelines/runs/{bob_run_id}"),
+            None,
+            &[("Cookie", &bob_cookie)],
+        )
+        .status,
+        200
+    );
+    // Cancel Bob's run cleanly as Bob
+    assert_eq!(
+        http_req(
+            port,
+            "POST",
+            &format!("/api/pipelines/runs/{bob_run_id}/cancel"),
+            Some("{}"),
+            &[("Cookie", &bob_cookie)],
+        )
+        .status,
+        200
+    );
 }
 
 #[test]
