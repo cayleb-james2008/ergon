@@ -615,7 +615,7 @@ function WorkspaceSwitcherBody({
                   </div>
 
                   <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                    <div className="flex flex-col gap-1">
+                    <div className="flex min-w-0 flex-col gap-1">
                       <label htmlFor="crm-eng-prefix" className="text-xs font-medium text-ink">
                         Workspace prefix
                       </label>
@@ -624,10 +624,10 @@ function WorkspaceSwitcherBody({
                         value={sowPrefix}
                         onChange={(e) => setSowPrefix(e.target.value)}
                         placeholder={`clients/${editingEngagement.client_id}/${editingEngagement.id}`}
-                        className="mono text-xs max-md:min-h-11"
+                        className="mono w-full min-w-0 text-xs max-md:min-h-11"
                       />
                     </div>
-                    <div className="flex flex-col gap-1">
+                    <div className="flex min-w-0 flex-col gap-1">
                       <label htmlFor="crm-eng-rollover" className="text-xs font-medium text-ink">
                         Retainer rollover
                       </label>
@@ -635,7 +635,7 @@ function WorkspaceSwitcherBody({
                         id="crm-eng-rollover"
                         value={sowRollover}
                         onChange={(e) => setSowRollover(e.target.value === "carry_hours" ? "carry_hours" : "none")}
-                        className="h-9 w-full rounded-sm border border-input bg-surface px-2.5 text-xs text-ink outline-none focus-visible:ring-2 focus-visible:ring-ring max-md:min-h-11"
+                        className="h-9 w-full min-w-0 rounded-sm border border-input bg-surface px-2.5 text-xs text-ink outline-none focus-visible:ring-2 focus-visible:ring-ring max-md:min-h-11"
                       >
                         <option value="none">None (reset period)</option>
                         <option value="carry_hours">Carry unused hours</option>
@@ -643,18 +643,18 @@ function WorkspaceSwitcherBody({
                     </div>
                   </div>
 
-                  <div className="flex flex-col gap-1.5">
+                  <div className="flex min-w-0 flex-col gap-1.5">
                     <label htmlFor="crm-sow-rule-input" className="text-xs font-medium text-ink">
                       SOW rules ({sowRules.length})
                     </label>
                     {sowRules.length > 0 && (
-                      <ul id="crm-sow-rules-list" className="flex flex-col gap-1">
+                      <ul id="crm-sow-rules-list" className="flex min-w-0 flex-col gap-1">
                         {sowRules.map((rule, idx) => (
                           <li
                             key={`${idx}-${rule}`}
-                            className="flex items-center justify-between gap-2 rounded-sm border border-hairline bg-surface px-2.5 py-1.5 text-xs text-ink"
+                            className="flex min-w-0 items-center justify-between gap-2 rounded-sm border border-hairline bg-surface px-2.5 py-1.5 text-xs text-ink"
                           >
-                            <span className="min-w-0 flex-1 break-words">{rule}</span>
+                            <span className="min-w-0 flex-1 [overflow-wrap:anywhere]">{rule}</span>
                             <Button
                               type="button"
                               size="icon-xs"
@@ -669,13 +669,13 @@ function WorkspaceSwitcherBody({
                         ))}
                       </ul>
                     )}
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex min-w-0 items-center gap-1.5">
                       <Input
                         id="crm-sow-rule-input"
                         value={sowRuleInput}
                         onChange={(e) => setSowRuleInput(e.target.value)}
                         placeholder="Add SOW constraint (e.g. Cite sources on every brief)"
-                        className="flex-1 text-xs max-md:min-h-11"
+                        className="min-w-0 flex-1 text-xs max-md:min-h-11"
                       />
                       <Button
                         id="crm-add-sow-rule-btn"
@@ -695,7 +695,7 @@ function WorkspaceSwitcherBody({
                     </div>
                   </div>
 
-                  <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                  <div className="sticky bottom-0 z-10 -mx-3 -mb-3 mt-1 flex flex-wrap items-center justify-between gap-2 rounded-b-sm border-t border-hairline bg-surface/95 px-3 py-2 backdrop-blur-xs">
                     <div className="flex flex-wrap items-center gap-1.5">
                       {onUpdateEngagement && (
                         <>
@@ -777,9 +777,9 @@ function WorkspaceSwitcherBody({
               )}
 
               {crmTab === "crm" && (
-                <div id="crm-client-panel" className="flex flex-col gap-2.5">
+                <div id="crm-client-panel" className="flex min-w-0 flex-col gap-2.5">
                   <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-                    <div className="flex flex-col gap-1">
+                    <div className="flex min-w-0 flex-col gap-1">
                       <label htmlFor="crm-brand-header" className="text-xs font-medium text-ink">
                         Brand header
                       </label>
@@ -788,10 +788,10 @@ function WorkspaceSwitcherBody({
                         value={crmBrandHeader}
                         onChange={(e) => setCrmBrandHeader(e.target.value)}
                         placeholder={selectedClient.name}
-                        className="text-xs max-md:min-h-11"
+                        className="w-full min-w-0 text-xs max-md:min-h-11"
                       />
                     </div>
-                    <div className="flex flex-col gap-1">
+                    <div className="flex min-w-0 flex-col gap-1">
                       <label htmlFor="crm-tax-rate" className="text-xs font-medium text-ink">
                         Tax rate (%)
                       </label>
@@ -803,10 +803,10 @@ function WorkspaceSwitcherBody({
                         step="any"
                         value={crmTaxRate}
                         onChange={(e) => setCrmTaxRate(e.target.value)}
-                        className="mono text-xs max-md:min-h-11"
+                        className="mono w-full min-w-0 text-xs max-md:min-h-11"
                       />
                     </div>
-                    <div className="flex flex-col gap-1">
+                    <div className="flex min-w-0 flex-col gap-1">
                       <label htmlFor="crm-payment-terms" className="text-xs font-medium text-ink">
                         Payment terms
                       </label>
@@ -815,21 +815,21 @@ function WorkspaceSwitcherBody({
                         value={crmPaymentTerms}
                         onChange={(e) => setCrmPaymentTerms(e.target.value)}
                         placeholder="Net 30"
-                        className="text-xs max-md:min-h-11"
+                        className="w-full min-w-0 text-xs max-md:min-h-11"
                       />
                     </div>
                   </div>
 
-                  <div className="flex flex-col gap-1.5">
+                  <div className="flex min-w-0 flex-col gap-1.5">
                     <span className="text-xs font-medium text-ink">Contacts ({crmContacts.length})</span>
                     {crmContacts.length > 0 && (
-                      <ul id="crm-contacts-list" className="flex flex-col gap-1">
+                      <ul id="crm-contacts-list" className="flex min-w-0 flex-col gap-1">
                         {crmContacts.map((c) => (
                           <li
                             key={c.id}
-                            className="flex flex-wrap items-center justify-between gap-2 rounded-sm border border-hairline bg-surface px-2.5 py-1.5 text-xs"
+                            className="flex min-w-0 flex-wrap items-center justify-between gap-2 rounded-sm border border-hairline bg-surface px-2.5 py-1.5 text-xs"
                           >
-                            <span className="min-w-0 flex-1">
+                            <span className="min-w-0 flex-1 [overflow-wrap:anywhere]">
                               <span className="font-medium text-ink">{c.name}</span>
                               {c.role ? <span className="text-ink-2"> ({c.role})</span> : null}
                               {c.email ? <span className="mono block truncate text-ink-2">{c.email}</span> : null}
@@ -932,7 +932,7 @@ function WorkspaceSwitcherBody({
                   </div>
 
                   {onUpdateClient && (
-                    <div className="flex justify-end">
+                    <div className="sticky bottom-0 z-10 -mx-3 -mb-3 mt-1 flex justify-end rounded-b-sm border-t border-hairline bg-surface/95 px-3 py-2 backdrop-blur-xs">
                       <Button
                         id="crm-save-client-btn"
                         type="button"
@@ -995,24 +995,24 @@ function WorkspaceSwitcherBody({
               )}
 
               {createNewClientMode || clients.length === 0 ? (
-                <div className="flex flex-col gap-1">
+                <div className="flex min-w-0 flex-col gap-1">
                   <label htmlFor="quick-client-name" className="text-xs font-medium text-ink">Client name</label>
                   <Input
                     id="quick-client-name"
                     value={clientNameInput}
                     onChange={(e) => setClientNameInput(e.target.value)}
                     placeholder="Acme Legal LLP"
-                    className="max-md:min-h-11"
+                    className="w-full min-w-0 max-md:min-h-11"
                   />
                 </div>
               ) : (
-                <div className="flex flex-col gap-1">
+                <div className="flex min-w-0 flex-col gap-1">
                   <label htmlFor="quick-client-select" className="text-xs font-medium text-ink">Client</label>
                   <select
                     id="quick-client-select"
                     value={selectedClientId}
                     onChange={(e) => setSelectedClientId(e.target.value)}
-                    className="h-9 w-full rounded-sm border border-input bg-surface px-2.5 text-sm text-ink outline-none focus-visible:ring-2 focus-visible:ring-ring max-md:min-h-11"
+                    className="h-9 w-full min-w-0 rounded-sm border border-input bg-surface px-2.5 text-sm text-ink outline-none focus-visible:ring-2 focus-visible:ring-ring max-md:min-h-11"
                   >
                     {clients.map((c) => (
                       <option key={c.id} value={c.id}>{c.name}</option>
@@ -1021,19 +1021,19 @@ function WorkspaceSwitcherBody({
                 </div>
               )}
 
-              <div className="flex flex-col gap-1">
+              <div className="flex min-w-0 flex-col gap-1">
                 <label htmlFor="quick-engagement-name" className="text-xs font-medium text-ink">Engagement name</label>
                 <Input
                   id="quick-engagement-name"
                   value={engagementNameInput}
                   onChange={(e) => setEngagementNameInput(e.target.value)}
                   placeholder="Q1 Compliance Retainer"
-                  className="max-md:min-h-11"
+                  className="w-full min-w-0 max-md:min-h-11"
                 />
               </div>
 
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                <div className="flex flex-col gap-1">
+                <div className="flex min-w-0 flex-col gap-1">
                   <label htmlFor="quick-engagement-rate" className="text-xs font-medium text-ink">Hourly rate (USD)</label>
                   <Input
                     id="quick-engagement-rate"
@@ -1042,10 +1042,10 @@ function WorkspaceSwitcherBody({
                     step="any"
                     value={hourlyRateInput}
                     onChange={(e) => setHourlyRateInput(e.target.value)}
-                    className="mono max-md:min-h-11"
+                    className="mono w-full min-w-0 max-md:min-h-11"
                   />
                 </div>
-                <div className="flex flex-col gap-1">
+                <div className="flex min-w-0 flex-col gap-1">
                   <label htmlFor="quick-engagement-budget" className="text-xs font-medium text-ink">Retainer budget (USD)</label>
                   <Input
                     id="quick-engagement-budget"
@@ -1054,7 +1054,7 @@ function WorkspaceSwitcherBody({
                     step="any"
                     value={retainerBudgetInput}
                     onChange={(e) => setRetainerBudgetInput(e.target.value)}
-                    className="mono max-md:min-h-11"
+                    className="mono w-full min-w-0 max-md:min-h-11"
                   />
                 </div>
               </div>
@@ -1065,7 +1065,7 @@ function WorkspaceSwitcherBody({
                 </p>
               )}
 
-              <div className="flex items-center justify-end gap-2">
+              <div className="sticky bottom-0 z-10 -mx-3 -mb-3 mt-1 flex items-center justify-end gap-2 rounded-b-sm border-t border-hairline bg-surface/95 px-3 py-2 backdrop-blur-xs">
                 <Button id="quick-engagement-submit" type="submit" size="sm" className="max-md:min-h-11" disabled={creating}>
                   {creating ? "Creating…" : "Create engagement"}
                 </Button>
@@ -1074,7 +1074,7 @@ function WorkspaceSwitcherBody({
           )}
 
           {clients.length > 0 && (
-            <div className="flex flex-wrap gap-1.5" role="group" aria-label="Clients">
+            <div className="flex min-w-0 flex-wrap gap-1.5" role="group" aria-label="Clients">
               {clients.map((c) => {
                 const isSel = c.id === selectedClientId;
                 return (
@@ -1085,10 +1085,10 @@ function WorkspaceSwitcherBody({
                     variant={isSel ? "default" : "outline"}
                     data-client-id={c.id}
                     disabled={isBusyOp}
-                    className="max-md:min-h-11"
+                    className="max-md:min-h-11 max-w-full"
                     onClick={() => setSelectedClientId(c.id)}
                   >
-                    {c.name}
+                    <span className="truncate">{c.name}</span>
                   </Button>
                 );
               })}

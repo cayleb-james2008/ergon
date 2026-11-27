@@ -203,8 +203,8 @@ export function CheckpointCard({
           answer: ans,
         });
       }
-    } catch {
-      setLocalErr("Could not resume pipeline. Try again.");
+    } catch (e) {
+      setLocalErr(e instanceof Error && e.message ? e.message : "Could not resume pipeline. Try again.");
     } finally {
       actionLockRef.current = false;
       setBusyAction(null);
@@ -220,8 +220,8 @@ export function CheckpointCard({
     setLocalErr("");
     try {
       await onRetry(run.run_id);
-    } catch {
-      setLocalErr("Could not retry failed step. Try again.");
+    } catch (e) {
+      setLocalErr(e instanceof Error && e.message ? e.message : "Could not retry failed step. Try again.");
     } finally {
       actionLockRef.current = false;
       setBusyAction(null);
@@ -235,8 +235,8 @@ export function CheckpointCard({
     setLocalErr("");
     try {
       await onCancel(run.run_id);
-    } catch {
-      setLocalErr("Could not abort pipeline. Try again.");
+    } catch (e) {
+      setLocalErr(e instanceof Error && e.message ? e.message : "Could not abort pipeline. Try again.");
     } finally {
       actionLockRef.current = false;
       setBusyAction(null);
@@ -364,7 +364,7 @@ export function CheckpointCard({
                 ) : (
                   <span className="size-1.5 rounded-full bg-icon" aria-hidden />
                 )}
-                <span>{st.step_id}</span>
+                <span className="min-w-0 max-w-full [overflow-wrap:anywhere]">{st.step_id}</span>
                 {typeof st.attempts === "number" && st.attempts > 1 && (
                   <span className="mono text-ink-3">x{st.attempts}</span>
                 )}
@@ -434,7 +434,7 @@ export function CheckpointCard({
               >
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-                    <Badge variant="outline" size="sm" className="mono text-xs text-ink">
+                    <Badge variant="outline" size="sm" className="mono h-auto max-w-full whitespace-normal break-all text-left text-xs text-ink">
                       {cp.step_id || `Step ${cp.step_index + 1}`}
                     </Badge>
                     <span className="text-xs text-ink-2">Branch checkpoint</span>
@@ -483,9 +483,10 @@ export function CheckpointCard({
                           type="button"
                           role="radio"
                           aria-checked={active}
-                          onClick={() =>
-                            setSelectedChoiceByCp((prev) => ({ ...prev, [cpKey]: ch }))
-                          }
+                          onClick={() => {
+                            if (localErr) setLocalErr("");
+                            setSelectedChoiceByCp((prev) => ({ ...prev, [cpKey]: ch }));
+                          }}
                           className={cn(
                             "flex min-h-10 items-center justify-between gap-2 rounded-sm border px-3 py-2 text-left text-sm transition-[color,background-color,border-color] max-md:min-h-11",
                             active
@@ -510,9 +511,10 @@ export function CheckpointCard({
                       id={`cp-answer-${cp.checkpoint_id}`}
                       rows={2}
                       value={cpText}
-                      onChange={(e) =>
-                        setTextAnswerByCp((prev) => ({ ...prev, [cpKey]: e.target.value }))
-                      }
+                      onChange={(e) => {
+                        if (localErr) setLocalErr("");
+                        setTextAnswerByCp((prev) => ({ ...prev, [cpKey]: e.target.value }));
+                      }}
                       placeholder="Enter instructions or decision details..."
                       className="bg-surface text-sm"
                     />
@@ -598,9 +600,10 @@ export function CheckpointCard({
                     type="button"
                     role="radio"
                     aria-checked={active}
-                    onClick={() =>
-                      setSelectedChoiceByCp((prev) => ({ ...prev, [singleCpKey]: ch }))
-                    }
+                    onClick={() => {
+                      if (localErr) setLocalErr("");
+                      setSelectedChoiceByCp((prev) => ({ ...prev, [singleCpKey]: ch }));
+                    }}
                     className={cn(
                       "flex min-h-10 items-center justify-between gap-2 rounded-sm border px-3 py-2 text-left text-sm transition-[color,background-color,border-color] max-md:min-h-11",
                       active
@@ -625,9 +628,10 @@ export function CheckpointCard({
                 id={`cp-answer-${run.run_id}`}
                 rows={2}
                 value={singleText}
-                onChange={(e) =>
-                  setTextAnswerByCp((prev) => ({ ...prev, [singleCpKey]: e.target.value }))
-                }
+                onChange={(e) => {
+                  if (localErr) setLocalErr("");
+                  setTextAnswerByCp((prev) => ({ ...prev, [singleCpKey]: e.target.value }));
+                }}
                 placeholder="Enter instructions or decision details..."
                 className="bg-surface text-sm"
               />
@@ -637,24 +641,27 @@ export function CheckpointCard({
       )}
 
       {localErr && (
-        <p role="alert" className="rounded-sm border border-hairline bg-status-stopped-bg px-3 py-1.5 text-xs text-status-stopped-fg">
+        <p role="alert" className="rounded-sm border border-hairline bg-status-stopped-bg px-3 py-1.5 text-xs text-status-stopped-fg [overflow-wrap:anywhere]">
           {localErr}
         </p>
       )}
 
       <div className="flex flex-wrap items-center gap-2 pt-0.5">
         {!isMultiCheckpoint &&
-          (isFailed && onRetry ? (
-            <Button
-              type="button"
-              size="sm"
-              className="max-md:min-h-11 gap-1.5"
-              disabled={busyAction !== null}
-              onClick={() => void handleRetry()}
-            >
-              <RotateCcw className="size-3.5" strokeWidth={1.5} aria-hidden />
-              {busyAction === "retry" ? "Retrying..." : "Retry failed step"}
-            </Button>
+          (isFailed ? (
+            onRetry ? (
+              <Button
+                type="button"
+                size="sm"
+                data-action="retry-pipeline"
+                className="max-md:min-h-11 gap-1.5"
+                disabled={busyAction !== null}
+                onClick={() => void handleRetry()}
+              >
+                <RotateCcw className="size-3.5" strokeWidth={1.5} aria-hidden />
+                {busyAction === "retry" ? "Retrying..." : "Retry failed step"}
+              </Button>
+            ) : null
           ) : (
             <Button
               type="button"
@@ -716,6 +723,7 @@ export function PipelineRunStrip({
   showPausedCards?: boolean;
 }) {
   const [cancellingIds, setCancellingIds] = useState<Record<string, boolean>>({});
+  const [stripErr, setStripErr] = useState("");
   const cancelLockRef = useRef<Set<string>>(new Set());
 
   const activeOrPaused = runs.filter(
@@ -735,9 +743,12 @@ export function PipelineRunStrip({
   const handleStripCancel = async (runId: string) => {
     if (cancelLockRef.current.has(runId)) return;
     cancelLockRef.current.add(runId);
+    setStripErr("");
     setCancellingIds((prev) => ({ ...prev, [runId]: true }));
     try {
       await onCancel(runId);
+    } catch (e) {
+      setStripErr(e instanceof Error && e.message ? e.message : "Could not abort running pipeline. Try again.");
     } finally {
       cancelLockRef.current.delete(runId);
       setCancellingIds((prev) => {
@@ -750,6 +761,11 @@ export function PipelineRunStrip({
 
   return (
     <div id="pipeline-runs-strip" className="flex flex-col gap-2.5">
+      {stripErr && (
+        <p role="alert" className="rounded-sm border border-hairline bg-status-stopped-bg px-3 py-1.5 text-xs text-status-stopped-fg [overflow-wrap:anywhere]">
+          {stripErr}
+        </p>
+      )}
       {running.map((run) => {
         const doneCount = run.step_states.filter((s) => s.status === "ok").length;
         const activeBranches = run.step_states.filter((s) => s.status === "running").length;

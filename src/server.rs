@@ -4941,7 +4941,7 @@ fn try_route_files_and_audit(
             respond_json(stream, 200, &report.to_json())
         }
         ("GET", "/api/files") => {
-            let (offset, limit, q, client_id, engagement_id) = if req.query.is_empty() {
+            let (offset, limit, q, mut client_id, mut engagement_id) = if req.query.is_empty() {
                 (0usize, None, String::new(), None, None)
             } else {
                 (
@@ -4958,6 +4958,17 @@ fn try_route_files_and_audit(
                         .filter(|s| !s.is_empty()),
                 )
             };
+            if client_id.is_none() && engagement_id.is_none() {
+                let policy = crate::load_workspace_policy(&runtime.cfg.data_dir);
+                if policy.isolate_active_engagement {
+                    if let Some((eng, _)) =
+                        records::active_engagement_for(&state.cfg.data_dir, &person.id)
+                    {
+                        engagement_id = Some(eng.id);
+                        client_id = Some(eng.client_id);
+                    }
+                }
+            }
             let idx = person_idx(state, person, runtime);
             respond_json_with(stream, 200, |buf| {
                 idx.write_files_json_scoped(
@@ -7347,8 +7358,12 @@ fn try_route_runs_and_chat(
                 list.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.cmp(&b.1)));
                 list.into_iter().map(|(_, rid, tid)| (rid, tid)).collect()
             };
-            let running_pipes = pipelines::list_runs(&runtime.cfg.data_dir, Some("running"), 50);
-            let matching_pipes: Vec<(String, String)> = running_pipes
+            let mut candidate_pipes = pipelines::list_runs(&runtime.cfg.data_dir, Some("running"), 50);
+            if id != "active" && !id.is_empty() {
+                candidate_pipes.extend(pipelines::list_runs(&runtime.cfg.data_dir, Some("paused_checkpoint"), 50));
+                candidate_pipes.extend(pipelines::list_runs(&runtime.cfg.data_dir, Some("interrupted"), 50));
+            }
+            let matching_pipes: Vec<(String, String)> = candidate_pipes
                 .into_iter()
                 .filter(|pr| {
                     id == "active"

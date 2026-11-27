@@ -1077,25 +1077,26 @@ function ConnectorsBody({
             <form
               id="webhook-create-form"
               onSubmit={handleCreateWebhook}
-              className="flex flex-col gap-3 rounded-card border border-hairline bg-board/40 p-3.5"
+              className="flex min-w-0 w-full flex-col gap-3 rounded-card border border-hairline bg-board/40 p-3.5"
             >
               <div className="grid gap-3 sm:grid-cols-2">
-                <div className="flex flex-col gap-1">
+                <div className="flex min-w-0 flex-col gap-1">
                   <label htmlFor="webhook-name" className="text-xs font-medium text-ink">Webhook name</label>
                   <Input
                     id="webhook-name"
                     value={hookName}
                     onChange={(e) => setHookName(e.target.value)}
                     placeholder="Stripe invoice intake"
+                    className="w-full min-w-0"
                   />
                 </div>
-                <div className="flex flex-col gap-1">
+                <div className="flex min-w-0 flex-col gap-1">
                   <label htmlFor="webhook-routine" className="text-xs font-medium text-ink">Target routine</label>
                   <select
                     id="webhook-routine"
                     value={hookRoutineId}
                     onChange={(e) => setHookRoutineId(e.target.value)}
-                    className="h-9 rounded-lg border border-input bg-background px-2.5 text-sm text-ink outline-none focus-visible:ring-2 focus-visible:ring-ring max-md:min-h-11"
+                    className="h-9 w-full min-w-0 rounded-lg border border-input bg-background px-2.5 text-sm text-ink outline-none focus-visible:ring-2 focus-visible:ring-ring max-md:min-h-11"
                   >
                     {routines.length === 0 ? (
                       <option value="">No routines available yet</option>
@@ -1108,11 +1109,11 @@ function ConnectorsBody({
                 </div>
               </div>
               {hookFormErr && (
-                <p id="webhook-form-error" role="alert" className="rounded-sm border border-hairline bg-status-stopped-bg px-2.5 py-1.5 text-xs text-status-stopped-fg">
+                <p id="webhook-form-error" role="alert" className="rounded-sm border border-hairline bg-status-stopped-bg px-2.5 py-1.5 text-xs text-status-stopped-fg [overflow-wrap:anywhere]">
                   {hookFormErr}
                 </p>
               )}
-              <div className="flex flex-wrap items-center justify-end gap-2">
+              <div className="sticky bottom-0 z-10 -mx-3.5 -mb-3.5 mt-1 flex flex-wrap items-center justify-end gap-2 rounded-b-sm border-t border-hairline bg-surface/95 px-3.5 py-2.5 backdrop-blur-xs">
                 <Button type="button" size="sm" variant="ghost" className="max-md:min-h-11" onClick={() => { setHookFormErr(""); setAddingHook(false); }}>
                   Cancel
                 </Button>
@@ -1147,7 +1148,7 @@ function ConnectorsBody({
                     <div className="flex min-w-0 w-full flex-wrap items-start justify-between gap-2">
                       <div className="min-w-[min(100%,14rem)] flex-1 overflow-hidden">
                         <div className="flex flex-wrap items-center gap-2">
-                          <span className="text-sm font-medium text-ink">{rule.name}</span>
+                          <span className="min-w-0 text-sm font-medium text-ink [overflow-wrap:anywhere]">{rule.name}</span>
                           <Pill
                             variant="secondary"
                             className={cn(
@@ -1186,8 +1187,8 @@ function ConnectorsBody({
                       </Button>
                     </div>
 
-                    <div className="flex flex-wrap items-center gap-2 rounded-sm border border-hairline bg-board/50 px-2.5 py-1.5">
-                      <code className="mono min-w-0 flex-1 truncate text-xs text-ink">{url}</code>
+                    <div className="flex min-w-0 w-full flex-wrap items-center gap-2 rounded-sm border border-hairline bg-board/50 px-2.5 py-1.5">
+                      <code className="mono min-w-0 max-w-full flex-1 break-all text-xs text-ink">{url}</code>
                       <Button
                         type="button"
                         size="xs"
@@ -1401,25 +1402,26 @@ function ConnectorsBody({
             <form
               id="folder-watch-form"
               onSubmit={handleCreateFolderWatch}
-              className="flex flex-col gap-3 rounded-card border border-hairline bg-board/40 p-3.5"
+              className="flex min-w-0 w-full flex-col gap-3 rounded-card border border-hairline bg-board/40 p-3.5"
             >
               <div className="grid gap-3 sm:grid-cols-2">
-                <div className="flex flex-col gap-1">
+                <div className="flex min-w-0 flex-col gap-1">
                   <label htmlFor="folder-watch-name" className="text-xs font-medium text-ink">Rule name</label>
                   <Input
                     id="folder-watch-name"
                     value={folderName}
                     onChange={(e) => setFolderName(e.target.value)}
                     placeholder="Vendor statements dropbox"
+                    className="w-full min-w-0"
                   />
                 </div>
-                <div className="flex flex-col gap-1">
+                <div className="flex min-w-0 flex-col gap-1">
                   <label htmlFor="folder-watch-routine" className="text-xs font-medium text-ink">Target routine</label>
                   <select
                     id="folder-watch-routine"
                     value={folderRoutineId}
                     onChange={(e) => setFolderRoutineId(e.target.value)}
-                    className="h-9 rounded-lg border border-input bg-background px-2.5 text-sm text-ink outline-none focus-visible:ring-2 focus-visible:ring-ring max-md:min-h-11"
+                    className="h-9 w-full min-w-0 rounded-lg border border-input bg-background px-2.5 text-sm text-ink outline-none focus-visible:ring-2 focus-visible:ring-ring max-md:min-h-11"
                   >
                     {routines.length === 0 ? (
                       <option value="">No routines available yet</option>
@@ -1432,21 +1434,21 @@ function ConnectorsBody({
                 </div>
               </div>
               <div className="grid gap-3 sm:grid-cols-3">
-                <div className="flex flex-col gap-1 sm:col-span-2">
+                <div className="flex min-w-0 flex-col gap-1 sm:col-span-2">
                   <label htmlFor="folder-watch-path" className="text-xs font-medium text-ink">Host directory path</label>
                   <Input
                     id="folder-watch-path"
-                    className="mono text-xs"
+                    className="mono w-full min-w-0 text-xs"
                     value={folderPath}
                     onChange={(e) => setFolderPath(e.target.value)}
                     placeholder="/home/you/Documents/VendorInbox"
                   />
                 </div>
-                <div className="flex flex-col gap-1">
+                <div className="flex min-w-0 flex-col gap-1">
                   <label htmlFor="folder-watch-glob" className="text-xs font-medium text-ink">Glob filter</label>
                   <Input
                     id="folder-watch-glob"
-                    className="mono text-xs"
+                    className="mono w-full min-w-0 text-xs"
                     value={folderGlob}
                     onChange={(e) => setFolderGlob(e.target.value)}
                     placeholder="*.pdf,*.csv"
@@ -1457,11 +1459,11 @@ function ConnectorsBody({
                 Sensitive system and credential folders are blocked automatically. Only files under 25 MB with steady size and timestamp are ingested.
               </p>
               {folderFormErr && (
-                <p id="folder-watch-error" role="alert" className="rounded-sm border border-hairline bg-status-stopped-bg px-2.5 py-1.5 text-xs text-status-stopped-fg">
+                <p id="folder-watch-error" role="alert" className="rounded-sm border border-hairline bg-status-stopped-bg px-2.5 py-1.5 text-xs text-status-stopped-fg [overflow-wrap:anywhere]">
                   {folderFormErr}
                 </p>
               )}
-              <div className="flex flex-wrap items-center justify-end gap-2">
+              <div className="sticky bottom-0 z-10 -mx-3.5 -mb-3.5 mt-1 flex flex-wrap items-center justify-end gap-2 rounded-b-sm border-t border-hairline bg-surface/95 px-3.5 py-2.5 backdrop-blur-xs">
                 <Button type="button" size="sm" variant="ghost" className="max-md:min-h-11" onClick={() => { setFolderFormErr(""); setAddingFolder(false); }}>
                   Cancel
                 </Button>
@@ -1476,29 +1478,30 @@ function ConnectorsBody({
             <form
               id="imap-poll-form"
               onSubmit={handleCreateImap}
-              className="flex flex-col gap-3 rounded-card border border-hairline bg-board/40 p-3.5"
+              className="flex min-w-0 w-full flex-col gap-3 rounded-card border border-hairline bg-board/40 p-3.5"
             >
               <div className="flex items-center gap-2 text-xs font-medium text-ink">
                 <Mail className="size-3.5 text-icon" strokeWidth={1.5} aria-hidden />
                 <span>IMAP Inbox trigger</span>
               </div>
               <div className="grid gap-3 sm:grid-cols-2">
-                <div className="flex flex-col gap-1">
+                <div className="flex min-w-0 flex-col gap-1">
                   <label htmlFor="imap-name" className="text-xs font-medium text-ink">Trigger name</label>
                   <Input
                     id="imap-name"
                     value={imapName}
                     onChange={(e) => setImapName(e.target.value)}
                     placeholder="Client invoices inbox"
+                    className="w-full min-w-0"
                   />
                 </div>
-                <div className="flex flex-col gap-1">
+                <div className="flex min-w-0 flex-col gap-1">
                   <label htmlFor="imap-routine" className="text-xs font-medium text-ink">Target routine</label>
                   <select
                     id="imap-routine"
                     value={imapRoutineId}
                     onChange={(e) => setImapRoutineId(e.target.value)}
-                    className="h-9 rounded-lg border border-input bg-background px-2.5 text-sm text-ink outline-none focus-visible:ring-2 focus-visible:ring-ring max-md:min-h-11"
+                    className="h-9 w-full min-w-0 rounded-lg border border-input bg-background px-2.5 text-sm text-ink outline-none focus-visible:ring-2 focus-visible:ring-ring max-md:min-h-11"
                   >
                     {routines.length === 0 ? (
                       <option value="">No routines available yet</option>
@@ -1511,17 +1514,17 @@ function ConnectorsBody({
                 </div>
               </div>
               <div className="grid gap-3 sm:grid-cols-4">
-                <div className="flex flex-col gap-1 sm:col-span-2">
+                <div className="flex min-w-0 flex-col gap-1 sm:col-span-2">
                   <label htmlFor="imap-host" className="text-xs font-medium text-ink">IMAP host</label>
                   <Input
                     id="imap-host"
-                    className="mono text-xs"
+                    className="mono w-full min-w-0 text-xs"
                     value={imapHost}
                     onChange={(e) => setImapHost(e.target.value)}
                     placeholder="imap.example.com"
                   />
                 </div>
-                <div className="flex flex-col gap-1">
+                <div className="flex min-w-0 flex-col gap-1">
                   <label htmlFor="imap-security" className="text-xs font-medium text-ink">Security</label>
                   <select
                     id="imap-security"
@@ -1531,76 +1534,77 @@ function ConnectorsBody({
                       setImapSecurity(nextSec);
                       setImapPort(defaultImapPort(nextSec));
                     }}
-                    className="h-9 rounded-lg border border-input bg-background px-2.5 text-sm text-ink outline-none focus-visible:ring-2 focus-visible:ring-ring max-md:min-h-11"
+                    className="h-9 w-full min-w-0 rounded-lg border border-input bg-background px-2.5 text-sm text-ink outline-none focus-visible:ring-2 focus-visible:ring-ring max-md:min-h-11"
                   >
                     <option value="imaps">IMAPS (TLS)</option>
                     <option value="starttls">STARTTLS</option>
                     <option value="plain_loopback_test">Plain loopback test</option>
                   </select>
                 </div>
-                <div className="flex flex-col gap-1">
+                <div className="flex min-w-0 flex-col gap-1">
                   <label htmlFor="imap-port" className="text-xs font-medium text-ink">Port</label>
                   <Input
                     id="imap-port"
                     type="number"
                     min={1}
                     max={65535}
-                    className="mono text-xs"
+                    className="mono w-full min-w-0 text-xs"
                     value={imapPort}
                     onChange={(e) => setImapPort(e.target.value)}
                   />
                 </div>
               </div>
               <div className="grid gap-3 sm:grid-cols-3">
-                <div className="flex flex-col gap-1">
+                <div className="flex min-w-0 flex-col gap-1">
                   <label htmlFor="imap-folder" className="text-xs font-medium text-ink">Mailbox folder</label>
                   <Input
                     id="imap-folder"
-                    className="mono text-xs"
+                    className="mono w-full min-w-0 text-xs"
                     value={imapFolder}
                     onChange={(e) => setImapFolder(e.target.value)}
                     placeholder="INBOX"
                   />
                 </div>
-                <div className="flex flex-col gap-1">
+                <div className="flex min-w-0 flex-col gap-1">
                   <label htmlFor="imap-poll-interval" className="text-xs font-medium text-ink">Poll interval (seconds)</label>
                   <Input
                     id="imap-poll-interval"
                     type="number"
                     min={5}
-                    className="mono text-xs"
+                    className="mono w-full min-w-0 text-xs"
                     value={imapPollInterval}
                     onChange={(e) => setImapPollInterval(e.target.value)}
                   />
                 </div>
-                <div className="flex flex-col gap-1">
+                <div className="flex min-w-0 flex-col gap-1">
                   <label htmlFor="imap-subject-filter" className="text-xs font-medium text-ink">Subject filter (optional)</label>
                   <Input
                     id="imap-subject-filter"
                     value={imapSubjectFilter}
                     onChange={(e) => setImapSubjectFilter(e.target.value)}
                     placeholder="Invoice"
+                    className="w-full min-w-0"
                   />
                 </div>
               </div>
               <div className="grid gap-3 sm:grid-cols-2">
-                <div className="flex flex-col gap-1">
+                <div className="flex min-w-0 flex-col gap-1">
                   <label htmlFor="imap-username-secret-key" className="text-xs font-medium text-ink">Username secret key</label>
                   <Input
                     id="imap-username-secret-key"
                     list="connector-secret-keys"
-                    className="mono text-xs"
+                    className="mono w-full min-w-0 text-xs"
                     value={imapUserKey}
                     onChange={(e) => setImapUserKey(e.target.value)}
                     placeholder="imap_user"
                   />
                 </div>
-                <div className="flex flex-col gap-1">
+                <div className="flex min-w-0 flex-col gap-1">
                   <label htmlFor="imap-password-secret-key" className="text-xs font-medium text-ink">Password secret key</label>
                   <Input
                     id="imap-password-secret-key"
                     list="connector-secret-keys"
-                    className="mono text-xs"
+                    className="mono w-full min-w-0 text-xs"
                     value={imapPassKey}
                     onChange={(e) => setImapPassKey(e.target.value)}
                     placeholder="imap_pass"
@@ -1618,11 +1622,11 @@ function ConnectorsBody({
                 <span>Mark matched messages as seen after ingesting</span>
               </label>
               {imapFormErr && (
-                <p id="imap-poll-error" role="alert" className="rounded-sm border border-hairline bg-status-stopped-bg px-2.5 py-1.5 text-xs text-status-stopped-fg">
+                <p id="imap-poll-error" role="alert" className="rounded-sm border border-hairline bg-status-stopped-bg px-2.5 py-1.5 text-xs text-status-stopped-fg [overflow-wrap:anywhere]">
                   {imapFormErr}
                 </p>
               )}
-              <div className="flex flex-wrap items-center justify-end gap-2">
+              <div className="sticky bottom-0 z-10 -mx-3.5 -mb-3.5 mt-1 flex flex-wrap items-center justify-end gap-2 rounded-b-sm border-t border-hairline bg-surface/95 px-3.5 py-2.5 backdrop-blur-xs">
                 <Button type="button" size="sm" variant="ghost" className="max-md:min-h-11" onClick={() => { setImapFormErr(""); setAddingImap(false); }}>
                   Cancel
                 </Button>
@@ -1654,7 +1658,7 @@ function ConnectorsBody({
                     >
                       <div className="min-w-0 flex-1 overflow-hidden">
                         <div className="flex flex-wrap items-center gap-2">
-                          <span className="text-sm font-medium text-ink">{rule.name}</span>
+                          <span className="min-w-0 text-sm font-medium text-ink [overflow-wrap:anywhere]">{rule.name}</span>
                           <Pill
                             variant="secondary"
                             className={cn(
@@ -1712,7 +1716,7 @@ function ConnectorsBody({
                   >
                     <div className="min-w-0 flex-1 overflow-hidden">
                       <div className="flex flex-wrap items-center gap-2">
-                        <span className="text-sm font-medium text-ink">{rule.name}</span>
+                        <span className="min-w-0 text-sm font-medium text-ink [overflow-wrap:anywhere]">{rule.name}</span>
                         <Pill
                           variant="secondary"
                           className={cn(
@@ -1722,7 +1726,7 @@ function ConnectorsBody({
                         >
                           {rule.enabled ? "Watching" : "Paused"}
                         </Pill>
-                        <Badge variant="outline" size="sm" className="mono text-xs">
+                        <Badge variant="outline" size="sm" className="mono h-auto max-w-full whitespace-normal break-all text-left text-xs">
                           {globText}
                         </Badge>
                       </div>
@@ -1786,25 +1790,26 @@ function ConnectorsBody({
             <form
               id="outbound-create-form"
               onSubmit={handleCreateOutbound}
-              className="flex flex-col gap-3 rounded-card border border-hairline bg-board/40 p-3.5"
+              className="flex min-w-0 w-full flex-col gap-3 rounded-card border border-hairline bg-board/40 p-3.5"
             >
               <div className="grid gap-3 sm:grid-cols-3">
-                <div className="flex flex-col gap-1">
+                <div className="flex min-w-0 flex-col gap-1">
                   <label htmlFor="outbound-name" className="text-xs font-medium text-ink">Connector name</label>
                   <Input
                     id="outbound-name"
                     value={outName}
                     onChange={(e) => setOutName(e.target.value)}
                     placeholder={outKind === "smtp_relay" ? "Client billing email" : "Billing webhook"}
+                    className="w-full min-w-0"
                   />
                 </div>
-                <div className="flex flex-col gap-1">
+                <div className="flex min-w-0 flex-col gap-1">
                   <label htmlFor="outbound-kind" className="text-xs font-medium text-ink">Connector kind</label>
                   <select
                     id="outbound-kind"
                     value={outKind}
                     onChange={(e) => setOutKind(e.target.value as OutboundConnectorKind)}
-                    className="h-9 rounded-lg border border-input bg-background px-2.5 text-sm text-ink outline-none focus-visible:ring-2 focus-visible:ring-ring max-md:min-h-11"
+                    className="h-9 w-full min-w-0 rounded-lg border border-input bg-background px-2.5 text-sm text-ink outline-none focus-visible:ring-2 focus-visible:ring-ring max-md:min-h-11"
                   >
                     <option value="http_webhook">HTTP Webhook</option>
                     <option value="rest_api">REST API</option>
@@ -1812,13 +1817,13 @@ function ConnectorsBody({
                   </select>
                 </div>
                 {outKind !== "smtp_relay" && (
-                  <div className="flex flex-col gap-1">
+                  <div className="flex min-w-0 flex-col gap-1">
                     <label htmlFor="outbound-method" className="text-xs font-medium text-ink">HTTP method</label>
                     <select
                       id="outbound-method"
                       value={outMethod}
                       onChange={(e) => setOutMethod(e.target.value === "PUT" ? "PUT" : "POST")}
-                      className="h-9 rounded-lg border border-input bg-background px-2.5 text-sm text-ink outline-none focus-visible:ring-2 focus-visible:ring-ring max-md:min-h-11"
+                      className="h-9 w-full min-w-0 rounded-lg border border-input bg-background px-2.5 text-sm text-ink outline-none focus-visible:ring-2 focus-visible:ring-ring max-md:min-h-11"
                     >
                       <option value="POST">POST</option>
                       <option value="PUT">PUT</option>
@@ -1828,23 +1833,23 @@ function ConnectorsBody({
               </div>
 
               {outKind === "smtp_relay" ? (
-                <div id="smtp-config-section" className="flex flex-col gap-3 rounded-sm border border-hairline bg-surface p-3">
+                <div id="smtp-config-section" className="flex min-w-0 flex-col gap-3 rounded-sm border border-hairline bg-surface p-3">
                   <div className="flex items-center gap-2 text-xs font-medium text-ink">
                     <Mail className="size-3.5 text-icon" strokeWidth={1.5} aria-hidden />
                     <span>SMTP Relay configuration</span>
                   </div>
                   <div className="grid gap-3 sm:grid-cols-4">
-                    <div className="flex flex-col gap-1 sm:col-span-2">
+                    <div className="flex min-w-0 flex-col gap-1 sm:col-span-2">
                       <label htmlFor="smtp-host" className="text-xs font-medium text-ink">SMTP host</label>
                       <Input
                         id="smtp-host"
-                        className="mono text-xs"
+                        className="mono w-full min-w-0 text-xs"
                         value={smtpHost}
                         onChange={(e) => setSmtpHost(e.target.value)}
                         placeholder="smtp.example.com"
                       />
                     </div>
-                    <div className="flex flex-col gap-1">
+                    <div className="flex min-w-0 flex-col gap-1">
                       <label htmlFor="smtp-security" className="text-xs font-medium text-ink">Security</label>
                       <select
                         id="smtp-security"
@@ -1854,43 +1859,43 @@ function ConnectorsBody({
                           setSmtpSecurity(nextSec);
                           setSmtpPort(defaultSmtpPort(nextSec));
                         }}
-                        className="h-9 rounded-lg border border-input bg-background px-2.5 text-sm text-ink outline-none focus-visible:ring-2 focus-visible:ring-ring max-md:min-h-11"
+                        className="h-9 w-full min-w-0 rounded-lg border border-input bg-background px-2.5 text-sm text-ink outline-none focus-visible:ring-2 focus-visible:ring-ring max-md:min-h-11"
                       >
                         <option value="smtps">SMTPS (TLS)</option>
                         <option value="starttls">STARTTLS</option>
                         <option value="plain_loopback_test">Plain loopback test</option>
                       </select>
                     </div>
-                    <div className="flex flex-col gap-1">
+                    <div className="flex min-w-0 flex-col gap-1">
                       <label htmlFor="smtp-port" className="text-xs font-medium text-ink">Port</label>
                       <Input
                         id="smtp-port"
                         type="number"
                         min={1}
                         max={65535}
-                        className="mono text-xs"
+                        className="mono w-full min-w-0 text-xs"
                         value={smtpPort}
                         onChange={(e) => setSmtpPort(e.target.value)}
                       />
                     </div>
                   </div>
                   <div className="grid gap-3 sm:grid-cols-2">
-                    <div className="flex flex-col gap-1">
+                    <div className="flex min-w-0 flex-col gap-1">
                       <label htmlFor="smtp-from-addr" className="text-xs font-medium text-ink">Sender address</label>
                       <Input
                         id="smtp-from-addr"
                         type="email"
-                        className="mono text-xs"
+                        className="mono w-full min-w-0 text-xs"
                         value={smtpFromAddr}
                         onChange={(e) => setSmtpFromAddr(e.target.value)}
                         placeholder="billing@example.com"
                       />
                     </div>
-                    <div className="flex flex-col gap-1">
+                    <div className="flex min-w-0 flex-col gap-1">
                       <label htmlFor="smtp-default-to" className="text-xs font-medium text-ink">Default recipients (comma-separated)</label>
                       <Input
                         id="smtp-default-to"
-                        className="mono text-xs"
+                        className="mono w-full min-w-0 text-xs"
                         value={smtpDefaultTo}
                         onChange={(e) => setSmtpDefaultTo(e.target.value)}
                         placeholder="client@acme.com, finance@acme.com"
@@ -1898,23 +1903,24 @@ function ConnectorsBody({
                     </div>
                   </div>
                   <div className="grid gap-3 sm:grid-cols-2">
-                    <div className="flex flex-col gap-1">
+                    <div className="flex min-w-0 flex-col gap-1">
                       <label htmlFor="smtp-username-key" className="text-xs font-medium text-ink">Username secret key</label>
                       <Input
                         id="smtp-username-key"
                         list="connector-secret-keys"
-                        className="mono text-xs"
+                        className="mono w-full min-w-0 text-xs"
                         value={smtpUserKey}
                         onChange={(e) => setSmtpUserKey(e.target.value)}
                         placeholder="smtp_user"
                       />
                     </div>
-                    <div className="flex flex-col gap-1">
+                    <div className="flex min-w-0 flex-col gap-1">
                       <label htmlFor="smtp-username-secret" className="text-xs font-medium text-ink">Username value (write-only, optional)</label>
                       <Input
                         id="smtp-username-secret"
                         type="password"
                         autoComplete="new-password"
+                        className="w-full min-w-0"
                         value={smtpUserSecret}
                         onChange={(e) => setSmtpUserSecret(e.target.value)}
                         placeholder="Leave blank if key already saved"
@@ -1922,23 +1928,24 @@ function ConnectorsBody({
                     </div>
                   </div>
                   <div className="grid gap-3 sm:grid-cols-2">
-                    <div className="flex flex-col gap-1">
+                    <div className="flex min-w-0 flex-col gap-1">
                       <label htmlFor="smtp-password-key" className="text-xs font-medium text-ink">Password secret key</label>
                       <Input
                         id="smtp-password-key"
                         list="connector-secret-keys"
-                        className="mono text-xs"
+                        className="mono w-full min-w-0 text-xs"
                         value={smtpPassKey}
                         onChange={(e) => setSmtpPassKey(e.target.value)}
                         placeholder="smtp_pass"
                       />
                     </div>
-                    <div className="flex flex-col gap-1">
+                    <div className="flex min-w-0 flex-col gap-1">
                       <label htmlFor="smtp-password-secret" className="text-xs font-medium text-ink">Password value (write-only, optional)</label>
                       <Input
                         id="smtp-password-secret"
                         type="password"
                         autoComplete="new-password"
+                        className="w-full min-w-0"
                         value={smtpPassSecret}
                         onChange={(e) => setSmtpPassSecret(e.target.value)}
                         placeholder="Paste SMTP app password"
@@ -1948,25 +1955,25 @@ function ConnectorsBody({
                 </div>
               ) : (
                 <>
-                  <div className="flex flex-col gap-1">
+                  <div className="flex min-w-0 flex-col gap-1">
                     <label htmlFor="outbound-url" className="text-xs font-medium text-ink">Destination URL</label>
                     <Input
                       id="outbound-url"
-                      className="mono text-xs"
+                      className="mono w-full min-w-0 text-xs"
                       value={outUrl}
                       onChange={(e) => setOutUrl(e.target.value)}
                       placeholder="https://hooks.example.com/ergon"
                     />
                   </div>
 
-                  <div className="flex flex-col gap-1">
+                  <div className="flex min-w-0 flex-col gap-1">
                     <label htmlFor="outbound-headers" className="text-xs font-medium text-ink">
                       Headers template (one Header: Value per line)
                     </label>
                     <Textarea
                       id="outbound-headers"
                       rows={2}
-                      className="mono text-xs"
+                      className="mono w-full min-w-0 text-xs"
                       value={outHeadersText}
                       onChange={(e) => setOutHeadersText(e.target.value)}
                       placeholder="Authorization: Bearer {{secret:api_token}}"
@@ -1974,18 +1981,18 @@ function ConnectorsBody({
                   </div>
 
                   <div className="grid gap-3 sm:grid-cols-2">
-                    <div className="flex flex-col gap-1">
+                    <div className="flex min-w-0 flex-col gap-1">
                       <label htmlFor="outbound-secret-key" className="text-xs font-medium text-ink">Secret key name</label>
                       <Input
                         id="outbound-secret-key"
                         list="connector-secret-keys"
-                        className="mono text-xs"
+                        className="mono w-full min-w-0 text-xs"
                         value={outSecretKey}
                         onChange={(e) => setOutSecretKey(e.target.value)}
                         placeholder="api_token"
                       />
                     </div>
-                    <div className="flex flex-col gap-1">
+                    <div className="flex min-w-0 flex-col gap-1">
                       <label htmlFor="outbound-secret-value" className="text-xs font-medium text-ink">
                         Secret value (write-only, never read back)
                       </label>
@@ -1993,6 +2000,7 @@ function ConnectorsBody({
                         id="outbound-secret-value"
                         type="password"
                         autoComplete="new-password"
+                        className="w-full min-w-0"
                         value={outSecretValue}
                         onChange={(e) => setOutSecretValue(e.target.value)}
                         placeholder="Paste bearer token or API secret"
@@ -2014,61 +2022,62 @@ function ConnectorsBody({
               </label>
 
               {oauthEnabled && (
-                <div id="oauth-config-section" className="flex flex-col gap-3 rounded-sm border border-hairline bg-surface p-3">
+                <div id="oauth-config-section" className="flex min-w-0 flex-col gap-3 rounded-sm border border-hairline bg-surface p-3">
                   <div className="flex items-center gap-2 text-xs font-medium text-ink">
                     <KeyRound className="size-3.5 text-icon" strokeWidth={1.5} aria-hidden />
                     <span>OAuth2 Credentials</span>
                   </div>
                   <div className="grid gap-3 sm:grid-cols-2">
-                    <div className="flex flex-col gap-1">
+                    <div className="flex min-w-0 flex-col gap-1">
                       <label htmlFor="oauth-token-url" className="text-xs font-medium text-ink">Token URL</label>
                       <Input
                         id="oauth-token-url"
-                        className="mono text-xs"
+                        className="mono w-full min-w-0 text-xs"
                         value={oauthTokenUrl}
                         onChange={(e) => setOauthTokenUrl(e.target.value)}
                         placeholder="https://oauth2.example.com/token"
                       />
                     </div>
-                    <div className="flex flex-col gap-1">
+                    <div className="flex min-w-0 flex-col gap-1">
                       <label htmlFor="oauth-client-id" className="text-xs font-medium text-ink">Client ID</label>
                       <Input
                         id="oauth-client-id"
-                        className="mono text-xs"
+                        className="mono w-full min-w-0 text-xs"
                         value={oauthClientId}
                         onChange={(e) => setOauthClientId(e.target.value)}
                         placeholder="ergon-client-id"
                       />
                     </div>
                   </div>
-                  <div className="flex flex-col gap-1">
+                  <div className="flex min-w-0 flex-col gap-1">
                     <label htmlFor="oauth-scopes" className="text-xs font-medium text-ink">Scopes (comma or space-separated)</label>
                     <Input
                       id="oauth-scopes"
-                      className="mono text-xs"
+                      className="mono w-full min-w-0 text-xs"
                       value={oauthScopes}
                       onChange={(e) => setOauthScopes(e.target.value)}
                       placeholder="mail.send, offline_access"
                     />
                   </div>
                   <div className="grid gap-3 sm:grid-cols-2">
-                    <div className="flex flex-col gap-1">
+                    <div className="flex min-w-0 flex-col gap-1">
                       <label htmlFor="oauth-client-secret-key" className="text-xs font-medium text-ink">Client secret key ref</label>
                       <Input
                         id="oauth-client-secret-key"
                         list="connector-secret-keys"
-                        className="mono text-xs"
+                        className="mono w-full min-w-0 text-xs"
                         value={oauthClientSecretKey}
                         onChange={(e) => setOauthClientSecretKey(e.target.value)}
                         placeholder="oauth_client_secret"
                       />
                     </div>
-                    <div className="flex flex-col gap-1">
+                    <div className="flex min-w-0 flex-col gap-1">
                       <label htmlFor="oauth-client-secret-value" className="text-xs font-medium text-ink">Client secret value (write-only, optional)</label>
                       <Input
                         id="oauth-client-secret-value"
                         type="password"
                         autoComplete="new-password"
+                        className="w-full min-w-0"
                         value={oauthClientSecretValue}
                         onChange={(e) => setOauthClientSecretValue(e.target.value)}
                         placeholder="Leave blank if key already saved"
@@ -2076,23 +2085,24 @@ function ConnectorsBody({
                     </div>
                   </div>
                   <div className="grid gap-3 sm:grid-cols-2">
-                    <div className="flex flex-col gap-1">
+                    <div className="flex min-w-0 flex-col gap-1">
                       <label htmlFor="oauth-refresh-secret-key" className="text-xs font-medium text-ink">Refresh token secret key ref</label>
                       <Input
                         id="oauth-refresh-secret-key"
                         list="connector-secret-keys"
-                        className="mono text-xs"
+                        className="mono w-full min-w-0 text-xs"
                         value={oauthRefreshKey}
                         onChange={(e) => setOauthRefreshKey(e.target.value)}
                         placeholder="oauth_refresh_token"
                       />
                     </div>
-                    <div className="flex flex-col gap-1">
+                    <div className="flex min-w-0 flex-col gap-1">
                       <label htmlFor="oauth-refresh-secret-value" className="text-xs font-medium text-ink">Refresh token value (write-only, optional)</label>
                       <Input
                         id="oauth-refresh-secret-value"
                         type="password"
                         autoComplete="new-password"
+                        className="w-full min-w-0"
                         value={oauthRefreshValue}
                         onChange={(e) => setOauthRefreshValue(e.target.value)}
                         placeholder="Leave blank if key already saved"
@@ -2117,7 +2127,12 @@ function ConnectorsBody({
                 </span>
               </label>
 
-              <div className="flex flex-wrap items-center justify-end gap-2">
+              {outboundFormErr && (
+                <p id="outbound-form-error" role="alert" className="rounded-sm border border-hairline bg-status-stopped-bg px-2.5 py-1.5 text-xs text-status-stopped-fg [overflow-wrap:anywhere]">
+                  {outboundFormErr}
+                </p>
+              )}
+              <div className="sticky bottom-0 z-10 -mx-3.5 -mb-3.5 mt-1 flex flex-wrap items-center justify-end gap-2 rounded-b-sm border-t border-hairline bg-surface/95 px-3.5 py-2.5 backdrop-blur-xs">
                 <Button
                   type="button"
                   size="sm"
@@ -2135,11 +2150,6 @@ function ConnectorsBody({
                   {savingOutbound ? "Saving…" : "Save connector"}
                 </Button>
               </div>
-              {outboundFormErr && (
-                <p id="outbound-form-error" role="alert" className="rounded-sm border border-hairline bg-status-stopped-bg px-2.5 py-1.5 text-xs text-status-stopped-fg">
-                  {outboundFormErr}
-                </p>
-              )}
             </form>
           )}
 
@@ -2163,7 +2173,7 @@ function ConnectorsBody({
                     <div className="flex min-w-0 w-full flex-wrap items-start justify-between gap-2">
                       <div className="min-w-[min(100%,14rem)] flex-1 overflow-hidden">
                         <div className="flex flex-wrap items-center gap-2">
-                          <span className="text-sm font-medium text-ink">{c.name}</span>
+                          <span className="min-w-0 text-sm font-medium text-ink [overflow-wrap:anywhere]">{c.name}</span>
                           <Badge variant="outline" size="sm" className="text-xs">
                             {kindLabel(c.kind)}
                           </Badge>
@@ -2381,25 +2391,26 @@ function ConnectorsBody({
             <form
               id="mcp-create-form"
               onSubmit={handleCreateMcpServer}
-              className="flex flex-col gap-3 rounded-card border border-hairline bg-board/40 p-3.5"
+              className="flex min-w-0 w-full flex-col gap-3 rounded-card border border-hairline bg-board/40 p-3.5"
             >
               <div className="grid gap-3 sm:grid-cols-2">
-                <div className="flex flex-col gap-1">
+                <div className="flex min-w-0 flex-col gap-1">
                   <label htmlFor="mcp-name" className="text-xs font-medium text-ink">Server name</label>
                   <Input
                     id="mcp-name"
                     value={mcpName}
                     onChange={(e) => setMcpName(e.target.value)}
                     placeholder="Workspace SQLite MCP"
+                    className="w-full min-w-0"
                   />
                 </div>
-                <div className="flex flex-col gap-1">
+                <div className="flex min-w-0 flex-col gap-1">
                   <label htmlFor="mcp-transport" className="text-xs font-medium text-ink">Transport</label>
                   <select
                     id="mcp-transport"
                     value={mcpTransport}
                     onChange={(e) => setMcpTransport(e.target.value === "http_sse" ? "http_sse" : "stdio")}
-                    className="h-9 rounded-lg border border-input bg-background px-2.5 text-sm text-ink outline-none focus-visible:ring-2 focus-visible:ring-ring max-md:min-h-11"
+                    className="h-9 w-full min-w-0 rounded-lg border border-input bg-background px-2.5 text-sm text-ink outline-none focus-visible:ring-2 focus-visible:ring-ring max-md:min-h-11"
                   >
                     <option value="stdio">stdio (local process)</option>
                     <option value="http_sse">http_sse (remote SSE)</option>
@@ -2407,35 +2418,35 @@ function ConnectorsBody({
                 </div>
               </div>
               <div className="grid gap-3 sm:grid-cols-2">
-                <div className="flex flex-col gap-1">
+                <div className="flex min-w-0 flex-col gap-1">
                   <label htmlFor="mcp-command-or-url" className="text-xs font-medium text-ink">
                     {mcpTransport === "http_sse" ? "SSE endpoint URL" : "Command"}
                   </label>
                   <Input
                     id="mcp-command-or-url"
-                    className="mono text-xs"
+                    className="mono w-full min-w-0 text-xs"
                     value={mcpCommandOrUrl}
                     onChange={(e) => setMcpCommandOrUrl(e.target.value)}
                     placeholder={mcpTransport === "http_sse" ? "https://mcp.example.com/sse" : "npx"}
                   />
                 </div>
-                <div className="flex flex-col gap-1">
+                <div className="flex min-w-0 flex-col gap-1">
                   <label htmlFor="mcp-args" className="text-xs font-medium text-ink">Arguments (space-separated)</label>
                   <Input
                     id="mcp-args"
-                    className="mono text-xs"
+                    className="mono w-full min-w-0 text-xs"
                     value={mcpArgsText}
                     onChange={(e) => setMcpArgsText(e.target.value)}
                     placeholder="-y @modelcontextprotocol/server-filesystem /path"
                   />
                 </div>
               </div>
-              <div className="flex flex-col gap-1">
+              <div className="flex min-w-0 flex-col gap-1">
                 <label htmlFor="mcp-env-secret-keys" className="text-xs font-medium text-ink">Environment secret keys (comma-separated)</label>
                 <Input
                   id="mcp-env-secret-keys"
                   list="connector-secret-keys"
-                  className="mono text-xs"
+                  className="mono w-full min-w-0 text-xs"
                   value={mcpEnvSecretKeys}
                   onChange={(e) => setMcpEnvSecretKeys(e.target.value)}
                   placeholder="GITHUB_TOKEN, DATABASE_URL"
@@ -2468,11 +2479,11 @@ function ConnectorsBody({
                 </label>
               </div>
               {mcpFormErr && (
-                <p id="mcp-form-error" role="alert" className="rounded-sm border border-hairline bg-status-stopped-bg px-2.5 py-1.5 text-xs text-status-stopped-fg">
+                <p id="mcp-form-error" role="alert" className="rounded-sm border border-hairline bg-status-stopped-bg px-2.5 py-1.5 text-xs text-status-stopped-fg [overflow-wrap:anywhere]">
                   {mcpFormErr}
                 </p>
               )}
-              <div className="flex flex-wrap items-center justify-end gap-2">
+              <div className="sticky bottom-0 z-10 -mx-3.5 -mb-3.5 mt-1 flex flex-wrap items-center justify-end gap-2 rounded-b-sm border-t border-hairline bg-surface/95 px-3.5 py-2.5 backdrop-blur-xs">
                 <Button type="button" size="sm" variant="ghost" className="max-md:min-h-11" onClick={() => { setMcpFormErr(""); setAddingMcp(false); }}>
                   Cancel
                 </Button>
@@ -2504,7 +2515,7 @@ function ConnectorsBody({
                     <div className="flex min-w-0 w-full flex-wrap items-start justify-between gap-2">
                       <div className="min-w-[min(100%,14rem)] flex-1 overflow-hidden">
                         <div className="flex flex-wrap items-center gap-2">
-                          <span className="text-sm font-medium text-ink">{srv.name}</span>
+                          <span className="min-w-0 text-sm font-medium text-ink [overflow-wrap:anywhere]">{srv.name}</span>
                           <Badge variant="outline" size="sm" className="mono text-xs">
                             {srv.transport}
                           </Badge>
@@ -2585,15 +2596,15 @@ function ConnectorsBody({
                       {tools.length === 0 ? (
                         <p className="text-ink-2">No cached tools yet. Click Discover Tools to query this server.</p>
                       ) : (
-                        <ul className="flex flex-col gap-1.5">
+                          <ul className="flex min-w-0 flex-col gap-1.5">
                           {tools.map((tool) => (
-                            <li key={tool.name} className="flex flex-wrap items-baseline gap-2">
-                              <span className="inline-flex items-center gap-1 font-medium text-ink">
-                                <Wrench className="size-3 text-icon" strokeWidth={1.5} aria-hidden />
-                                <code className="mono">{tool.name}</code>
+                            <li key={tool.name} className="flex min-w-0 flex-wrap items-baseline gap-2">
+                              <span className="inline-flex min-w-0 max-w-full items-center gap-1 font-medium text-ink">
+                                <Wrench className="size-3 shrink-0 text-icon" strokeWidth={1.5} aria-hidden />
+                                <code className="mono min-w-0 break-all">{tool.name}</code>
                               </span>
                               {tool.description && (
-                                <span className="text-ink-2">{tool.description}</span>
+                                <span className="min-w-0 text-ink-2 [overflow-wrap:anywhere]">{tool.description}</span>
                               )}
                             </li>
                           ))}

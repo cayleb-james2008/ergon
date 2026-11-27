@@ -517,6 +517,8 @@ export function PipelineBuilder({
   const [resilienceOpen, setResilienceOpen] = useState<Record<number, boolean>>({});
   const [fetchedConnectors, setFetchedConnectors] = useState<OutboundConnector[]>([]);
   const [connectorsErr, setConnectorsErr] = useState(false);
+  const [connectorsLoading, setConnectorsLoading] = useState(false);
+  const [connectorsRetryNonce, setConnectorsRetryNonce] = useState(0);
   const [validatingDag, setValidatingDag] = useState(false);
   const [dagResult, setDagResult] = useState<ApiPipelineValidationResult | null>(null);
   const validateLockRef = useRef(false);
@@ -528,12 +530,15 @@ export function PipelineBuilder({
   useEffect(() => {
     if (outboundConnectors !== undefined) {
       setConnectorsErr(false);
+      setConnectorsLoading(false);
       return;
     }
     let active = true;
+    setConnectorsLoading(true);
     void listConnectors()
       .then((res) => {
         if (!active) return;
+        setConnectorsLoading(false);
         if (!res.ok) {
           setConnectorsErr(true);
           setFetchedConnectors([]);
@@ -544,13 +549,14 @@ export function PipelineBuilder({
       })
       .catch(() => {
         if (!active) return;
+        setConnectorsLoading(false);
         setConnectorsErr(true);
         setFetchedConnectors([]);
       });
     return () => {
       active = false;
     };
-  }, [outboundConnectors, steps.length]);
+  }, [outboundConnectors, steps.length, connectorsRetryNonce]);
 
   useEffect(() => {
     if (validatedSigRef.current !== null && validatedSigRef.current !== stepsSig) {
@@ -699,8 +705,8 @@ export function PipelineBuilder({
     setValidatingDag(true);
     const reqSeq = ++validateSeqRef.current;
     const reqSig = stepsSig;
+    const localCheck = validatePipelineSteps(steps);
     try {
-      const localCheck = validatePipelineSteps(steps);
       const apiRes = await validatePipeline(steps);
       if (reqSeq !== validateSeqRef.current) return;
       validatedSigRef.current = reqSig;
@@ -746,6 +752,24 @@ export function PipelineBuilder({
           stages: localCheck.stages,
         });
       }
+    } catch {
+      if (reqSeq !== validateSeqRef.current) return;
+      const fallbackErrs = [
+        ...localCheck.globalErrors,
+        ...Object.entries(localCheck.errorsByStep).flatMap(([k, msgs]) =>
+          msgs.map((m) => `Step ${Number(k) + 1}: ${m}`)
+        ),
+      ];
+      setDagResult({
+        ok: false,
+        valid: false,
+        errors:
+          fallbackErrs.length > 0
+            ? fallbackErrs
+            : ["Could not reach the server to validate this DAG. Try again."],
+        topological_order: [],
+        stages: [],
+      });
     } finally {
       validateLockRef.current = false;
       setValidatingDag(false);
@@ -914,7 +938,7 @@ export function PipelineBuilder({
                 </div>
 
                 {isExprWhen && (
-                  <div className="flex flex-col gap-1">
+                  <div className="flex min-w-0 flex-col gap-1">
                     <label className="text-xs font-medium text-ink-2">Condition expression</label>
                     <Input
                       value={st.when ?? "expr:"}
@@ -924,13 +948,13 @@ export function PipelineBuilder({
                         const val = e.target.value;
                         updateStep(idx, { when: val.startsWith("expr:") ? val : `expr:${val}` });
                       }}
-                      className="h-8 text-xs max-md:min-h-11"
+                      className="h-8 w-full min-w-0 text-xs max-md:min-h-11"
                     />
                   </div>
                 )}
 
                 {otherSteps.length > 0 && (
-                  <div className="flex flex-wrap items-center gap-1.5 border-t border-hairline pt-2">
+                  <div className="flex min-w-0 flex-wrap items-center gap-1.5 border-t border-hairline pt-2">
                     <span className="flex items-center gap-1 text-xs font-medium text-ink-2">
                       <GitBranch className="size-3.5 text-icon" strokeWidth={1.5} aria-hidden />
                       Depends on:
@@ -946,7 +970,7 @@ export function PipelineBuilder({
                           data-dep-chip={`${idx}:${dep.id}`}
                           onClick={() => toggleDependency(idx, dep.id)}
                           className={cn(
-                            "rounded-chip border px-2 py-0.5 text-xs transition-[color,background-color,border-color] max-md:min-h-11",
+                            "max-w-full rounded-chip border px-2 py-0.5 text-left text-xs [overflow-wrap:anywhere] transition-[color,background-color,border-color] max-md:min-h-11",
                             active
                               ? "border-blue bg-blue-soft font-medium text-ink"
                               : "border-hairline bg-board/60 text-ink-2 hover:bg-board hover:text-ink"
@@ -1159,7 +1183,7 @@ export function PipelineBuilder({
                       <span className="text-xs font-medium text-ink-2">Arguments</span>
                       {argEntries.map(([k, v]) => (
                         <div key={k} className="flex min-w-0 flex-wrap items-center gap-1.5">
-                          <span className="min-w-[96px] text-xs font-medium text-ink-2 [overflow-wrap:anywhere]">{k}</span>
+                          <span className="min-w-[80px] max-w-full text-xs font-medium text-ink-2 [overflow-wrap:anywhere]">{k}</span>
                           <Input
                             value={String(v ?? "")}
                             aria-label={`Step ${idx + 1} arg ${k}`}
@@ -1167,7 +1191,7 @@ export function PipelineBuilder({
                             onChange={(e) =>
                               updateStep(idx, { args: { ...(st.args ?? {}), [k]: e.target.value } })
                             }
-                            className="h-8 min-w-[120px] flex-1 text-xs max-md:min-h-11"
+                            className="h-8 min-w-0 flex-1 basis-32 text-xs max-md:min-h-11"
                           />
                           {workspaceFiles.length > 0 && k.includes("file") && (
                             <select
@@ -1177,7 +1201,7 @@ export function PipelineBuilder({
                                 if (!e.target.value) return;
                                 updateStep(idx, { args: { ...(st.args ?? {}), [k]: e.target.value } });
                               }}
-                              className="focus-ring h-8 min-w-0 max-w-full rounded-sm border border-input bg-surface px-2 text-xs text-ink-2 outline-none max-md:min-h-11"
+                              className="focus-ring h-8 w-full min-w-0 max-w-full rounded-sm border border-input bg-surface px-2 text-xs text-ink-2 outline-none sm:w-auto max-md:min-h-11"
                             >
                               <option value="">Workspace file…</option>
                               {workspaceFiles.slice(0, 20).map((f) => (
@@ -1311,7 +1335,7 @@ export function PipelineBuilder({
                       </div>
                     </div>
                     {st.checkpoint?.input_mode === "choice" && (
-                      <div className="flex flex-col gap-1">
+                      <div className="flex min-w-0 flex-col gap-1">
                         <label className="text-xs font-medium text-ink-2">Choices (comma-separated)</label>
                         <Input
                           value={(st.checkpoint?.choices ?? []).join(", ")}
@@ -1330,7 +1354,7 @@ export function PipelineBuilder({
                               },
                             })
                           }
-                          className="text-xs max-md:min-h-11"
+                          className="w-full min-w-0 text-xs max-md:min-h-11"
                         />
                       </div>
                     )}
@@ -1426,16 +1450,31 @@ export function PipelineBuilder({
                                   },
                                 })
                               }
-                              className="h-8 text-xs max-md:min-h-11"
+                              className="h-8 w-full min-w-0 text-xs max-md:min-h-11"
                             />
-                            <span
+                            <div
                               data-missing-connectors-hint="true"
-                              className="text-xs text-ink-3"
+                              className="flex flex-wrap items-center gap-1.5 text-xs text-ink-3"
                             >
-                              {connectorsErr
-                                ? "Could not load outbound connectors. Enter an ID manually or retry."
-                                : "No outbound connectors configured yet. Create one in Connectors or enter an ID."}
-                            </span>
+                              <span className="[overflow-wrap:anywhere]">
+                                {connectorsErr
+                                  ? "Could not load outbound connectors. Enter an ID manually or retry."
+                                  : "No outbound connectors configured yet. Create one in Connectors or enter an ID."}
+                              </span>
+                              {connectorsErr && (
+                                <Button
+                                  type="button"
+                                  size="xs"
+                                  variant="outline"
+                                  data-action="retry-load-connectors"
+                                  disabled={connectorsLoading}
+                                  className="max-md:min-h-11"
+                                  onClick={() => setConnectorsRetryNonce((n) => n + 1)}
+                                >
+                                  {connectorsLoading ? "Retrying…" : "Retry"}
+                                </Button>
+                              )}
+                            </div>
                           </>
                         )}
                       </div>
@@ -1518,7 +1557,7 @@ export function PipelineBuilder({
                       <span className="text-xs font-medium text-ink-2">Subpipeline inputs (optional)</span>
                       {subInputEntries.map(([k, v]) => (
                         <div key={k} className="flex min-w-0 flex-wrap items-center gap-1.5">
-                          <span className="min-w-[80px] text-xs font-medium text-ink-2 [overflow-wrap:anywhere]">{k}</span>
+                          <span className="min-w-[80px] max-w-full text-xs font-medium text-ink-2 [overflow-wrap:anywhere]">{k}</span>
                           <Input
                             value={String(v ?? "")}
                             aria-label={`Step ${idx + 1} subpipeline input ${k}`}
@@ -1526,7 +1565,7 @@ export function PipelineBuilder({
                             onChange={(e) =>
                               updateStep(idx, { inputs: { ...(st.inputs ?? {}), [k]: e.target.value } })
                             }
-                            className="h-8 min-w-[120px] flex-1 text-xs max-md:min-h-11"
+                            className="h-8 min-w-0 flex-1 basis-32 text-xs max-md:min-h-11"
                           />
                           <Button
                             type="button"
@@ -1574,10 +1613,10 @@ export function PipelineBuilder({
                   <div
                     role="alert"
                     data-step-validation-error={idx}
-                    className="flex items-start gap-1.5 rounded-sm border border-hairline bg-status-stopped-bg px-2.5 py-1.5 text-xs text-status-stopped-fg"
+                    className="flex min-w-0 items-start gap-1.5 rounded-sm border border-hairline bg-status-stopped-bg px-2.5 py-1.5 text-xs text-status-stopped-fg"
                   >
                     <AlertTriangle className="mt-0.5 size-3.5 shrink-0" strokeWidth={1.5} aria-hidden />
-                    <ul className="flex flex-col gap-0.5">
+                    <ul className="flex min-w-0 flex-col gap-0.5 [overflow-wrap:anywhere]">
                       {stepErrs.map((msg, eIdx) => (
                         <li key={eIdx}>{msg}</li>
                       ))}
@@ -1585,14 +1624,14 @@ export function PipelineBuilder({
                   </div>
                 )}
 
-                <div className="flex flex-wrap items-center gap-1.5">
+                <div className="flex min-w-0 flex-wrap items-center gap-1.5">
                   <span className="text-xs text-ink-3">Insert variable:</span>
                   {varChips.map((chip) => (
                     <button
                       key={chip}
                       type="button"
                       onClick={() => insertTokenIntoStep(idx, chip)}
-                      className="rounded-chip border border-hairline bg-board/60 px-2 py-0.5 text-xs text-ink-2 transition-[color,background-color,border-color] hover:border-ink-3 hover:bg-board hover:text-ink"
+                      className="max-w-full truncate rounded-chip border border-hairline bg-board/60 px-2 py-0.5 text-left text-xs text-ink-2 transition-[color,background-color,border-color] hover:border-ink-3 hover:bg-board hover:text-ink"
                       title={`Insert ${chip}`}
                     >
                       {chip}
@@ -1632,10 +1671,10 @@ export function PipelineBuilder({
         <div
           role="alert"
           data-dag-validation-error="true"
-          className="flex items-start gap-1.5 rounded-sm border border-hairline bg-status-stopped-bg px-3 py-2 text-xs text-status-stopped-fg"
+          className="flex min-w-0 items-start gap-1.5 rounded-sm border border-hairline bg-status-stopped-bg px-3 py-2 text-xs text-status-stopped-fg"
         >
           <AlertTriangle className="mt-0.5 size-3.5 shrink-0" strokeWidth={1.5} aria-hidden />
-          <ul className="flex flex-col gap-0.5">
+          <ul className="flex min-w-0 flex-col gap-0.5 [overflow-wrap:anywhere]">
             {dagResult.errors.map((msg, eIdx) => (
               <li key={eIdx}>{msg}</li>
             ))}
