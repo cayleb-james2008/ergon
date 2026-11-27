@@ -7,15 +7,15 @@
 //! config or `Strict Client` policy.
 
 use crate::tools::{atomic_write_bytes_with_mode, sandbox_path, sandbox_path_resolving};
-use crate::{connectors, docs, records, search, tables, tools, tripwire, Config, WorkspacePolicy};
+use crate::{connectors, docs, records, search, secret_store, tables, tools, tripwire, Config, WorkspacePolicy};
 use serde_json::{json, Value};
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{mpsc, Condvar, Mutex, OnceLock};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 static MCP_SEQ: AtomicU64 = AtomicU64::new(0);
 static MCP_LOCK: Mutex<()> = Mutex::new(());
@@ -24,6 +24,9 @@ static SETTLED_MCP_OUTCOMES: OnceLock<Mutex<HashMap<String, String>>> = OnceLock
 
 const MAX_MCP_TOOLS_PER_SERVER: usize = 256;
 const MAX_MCP_RESPONSE_CHARS: usize = 16_000;
+const MAX_MCP_STDIO_ARGS: usize = 64;
+const MAX_MCP_STDIO_ARG_LEN: usize = 32_768;
+const MAX_MCP_STDIO_LINE_BYTES: usize = 1_048_576;
 const MCP_IO_TIMEOUT: Duration = Duration::from_secs(12);
 
 fn with_mcp_lock<T>(f: impl FnOnce() -> T) -> T {
@@ -100,6 +103,7 @@ pub struct McpServerSpec {
     pub command_or_url: String,
     pub args: Vec<String>,
     pub env_secret_keys: Vec<String>,
+    pub auth_secret_key: Option<String>,
     pub require_approval_by_default: bool,
     pub enabled: bool,
     pub cached_tools: Vec<McpToolSpec>,
@@ -110,11 +114,36 @@ pub struct McpServerSpec {
 }
 
 impl McpServerSpec {
-    pub fn to_public_json(&self, policy: &WorkspacePolicy) -> Value {
+    fn referenced_secret_keys(&self) -> Vec<String> {
+        let mut keys = Vec::new();
+        for entry in &self.env_secret_keys {
+            let sec_key = match entry.split_once('=') {
+                Some((_, k)) => k.trim(),
+                None => entry.trim(),
+            };
+            if !sec_key.is_empty() && !keys.iter().any(|k| k == sec_key) {
+                keys.push(sec_key.to_string());
+            }
+        }
+        if let Some(auth_k) = self.auth_secret_key.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+            if !keys.iter().any(|k| k == auth_k) {
+                keys.push(auth_k.to_string());
+            }
+        }
+        keys
+    }
+
+    pub fn to_public_json_with_secrets(
+        &self,
+        policy: &WorkspacePolicy,
+        stored_secret_keys: &HashSet<String>,
+    ) -> Value {
         let effective_require_approval =
             self.require_approval_by_default || policy.profile == "strict_client";
         let blocked_by_policy = self.transport == "http_sse"
             && (policy.block_outbound_fetch || policy.profile == "air_gapped");
+        let refs = self.referenced_secret_keys();
+        let has_secret = !refs.is_empty() && refs.iter().all(|k| stored_secret_keys.contains(k));
         json!({
             "id": self.id,
             "name": self.name,
@@ -122,6 +151,8 @@ impl McpServerSpec {
             "command_or_url": self.command_or_url,
             "args": self.args,
             "env_secret_keys": self.env_secret_keys,
+            "auth_secret_key": self.auth_secret_key,
+            "has_secret": has_secret,
             "require_approval_by_default": self.require_approval_by_default,
             "effective_require_approval": effective_require_approval,
             "blocked_by_policy": blocked_by_policy,
@@ -134,6 +165,10 @@ impl McpServerSpec {
         })
     }
 
+    pub fn to_public_json(&self, policy: &WorkspacePolicy) -> Value {
+        self.to_public_json_with_secrets(policy, &HashSet::new())
+    }
+
     fn to_stored_json(&self) -> Value {
         json!({
             "id": self.id,
@@ -142,6 +177,7 @@ impl McpServerSpec {
             "command_or_url": self.command_or_url,
             "args": self.args,
             "env_secret_keys": self.env_secret_keys,
+            "auth_secret_key": self.auth_secret_key,
             "require_approval_by_default": self.require_approval_by_default,
             "enabled": self.enabled,
             "cached_tools": self.cached_tools.iter().map(|t| t.to_json()).collect::<Vec<_>>(),
@@ -175,6 +211,11 @@ impl McpServerSpec {
             })
             .unwrap_or_default();
         let env_secret_keys = parse_env_secret_keys(&v["env_secret_keys"]).unwrap_or_default();
+        let auth_secret_key = v["auth_secret_key"]
+            .as_str()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string);
         let cached_tools = v["cached_tools"]
             .as_array()
             .map(|a| a.iter().filter_map(McpToolSpec::from_json).collect())
@@ -186,6 +227,7 @@ impl McpServerSpec {
             command_or_url,
             args,
             env_secret_keys,
+            auth_secret_key,
             require_approval_by_default: v["require_approval_by_default"].as_bool().unwrap_or(true),
             enabled: v["enabled"].as_bool().unwrap_or(true),
             cached_tools,
@@ -203,22 +245,113 @@ struct McpStore {
     inbound_enabled: bool,
 }
 
+fn migrate_legacy_mcp_plaintext_secrets(person_data_dir: &Path, doc: &mut Value) -> bool {
+    let mut new_secrets: BTreeMap<String, String> = BTreeMap::new();
+    let mut changed = false;
+    if let Some(servers) = doc.get_mut("servers").and_then(|v| v.as_array_mut()) {
+        for (idx, srv) in servers.iter_mut().enumerate() {
+            let Some(obj) = srv.as_object_mut() else {
+                continue;
+            };
+            let sid: String = obj
+                .get("id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("mcp")
+                .chars()
+                .map(|c| if c.is_ascii_alphanumeric() || matches!(c, '_' | '-') { c } else { '_' })
+                .take(24)
+                .collect();
+            let sid = if sid.is_empty() { format!("mcp_{idx}") } else { sid };
+
+            for bearer_field in ["bearer_token", "api_key", "secret_value"] {
+                if let Some(tok) = obj
+                    .get(bearer_field)
+                    .and_then(|v| v.as_str())
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty() && !secret_store::is_vault_ref(s))
+                    .map(str::to_string)
+                {
+                    changed = true;
+                    obj.remove(bearer_field);
+                    let key = obj
+                        .get("auth_secret_key")
+                        .and_then(|v| v.as_str())
+                        .map(str::trim)
+                        .filter(|s| !s.is_empty())
+                        .map(str::to_string)
+                        .unwrap_or_else(|| format!("mcp_auth_{sid}"));
+                    obj.insert("auth_secret_key".to_string(), json!(key));
+                    new_secrets.insert(key, tok);
+                }
+            }
+
+            if let Some(env_map) = obj.get("env").and_then(|v| v.as_object()).cloned() {
+                let mut migrated_env_keys =
+                    parse_env_secret_keys(obj.get("env_secret_keys").unwrap_or(&Value::Null))
+                        .unwrap_or_default();
+                let mut any_env = false;
+                for (env_name, env_val) in env_map {
+                    if let Some(raw_val) = env_val
+                        .as_str()
+                        .map(str::trim)
+                        .filter(|s| !s.is_empty() && !secret_store::is_vault_ref(s))
+                    {
+                        any_env = true;
+                        let env_frag: String = env_name
+                            .chars()
+                            .map(|c| {
+                                if c.is_ascii_alphanumeric() || matches!(c, '_' | '-') {
+                                    c.to_ascii_lowercase()
+                                } else {
+                                    '_'
+                                }
+                            })
+                            .take(24)
+                            .collect();
+                        let sec_key = format!("mcp_env_{sid}_{env_frag}");
+                        let mapping = format!("{env_name}={sec_key}");
+                        if !migrated_env_keys.contains(&mapping) {
+                            migrated_env_keys.push(mapping);
+                        }
+                        new_secrets.insert(sec_key, raw_val.to_string());
+                    }
+                }
+                if any_env {
+                    changed = true;
+                    obj.remove("env");
+                    obj.insert("env_secret_keys".to_string(), json!(migrated_env_keys));
+                }
+            }
+        }
+    }
+
+    if !changed {
+        return false;
+    }
+    connectors::store_connector_secrets(person_data_dir, &new_secrets).is_ok()
+}
+
 impl McpStore {
     fn load_unlocked(person_data_dir: &Path) -> Self {
         let path = mcp_servers_path(person_data_dir);
         let Ok(text) = std::fs::read_to_string(&path) else {
             return Self::default();
         };
-        let Ok(v) = serde_json::from_str::<Value>(&text) else {
+        let Ok(mut v) = serde_json::from_str::<Value>(&text) else {
             return Self::default();
         };
-        Self {
+        let migrated = migrate_legacy_mcp_plaintext_secrets(person_data_dir, &mut v);
+        let store = Self {
             servers: v["servers"]
                 .as_array()
                 .map(|a| a.iter().filter_map(McpServerSpec::from_json).collect())
                 .unwrap_or_default(),
             inbound_enabled: v["inbound_enabled"].as_bool().unwrap_or(false),
+        };
+        if migrated {
+            let _ = store.save_unlocked(person_data_dir);
         }
+        store
     }
 
     fn save_unlocked(&self, person_data_dir: &Path) -> Result<(), String> {
@@ -235,6 +368,43 @@ impl McpStore {
     }
 }
 
+fn validate_env_var_name(name: &str) -> Result<(), String> {
+    if name.is_empty()
+        || name.len() > 64
+        || name.starts_with(|c: char| c.is_ascii_digit())
+        || !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+    {
+        return Err(format!("invalid environment variable name '{name}'"));
+    }
+    let upper = name.to_ascii_uppercase();
+    if upper.starts_with("ERGON_")
+        || matches!(
+            upper.as_str(),
+            "LD_PRELOAD"
+                | "LD_LIBRARY_PATH"
+                | "LD_AUDIT"
+                | "DYLD_INSERT_LIBRARIES"
+                | "DYLD_LIBRARY_PATH"
+                | "DYLD_FRAMEWORK_PATH"
+                | "BASH_ENV"
+                | "ENV"
+                | "IFS"
+                | "PROMPT_COMMAND"
+                | "NODE_OPTIONS"
+                | "PYTHONPATH"
+                | "PYTHONSTARTUP"
+                | "PERL5OPT"
+                | "RUBYOPT"
+                | "PATH"
+        )
+    {
+        return Err(format!(
+            "env_secret_keys cannot override protected variable '{name}'"
+        ));
+    }
+    Ok(())
+}
+
 fn parse_env_secret_keys(val: &Value) -> Result<Vec<String>, String> {
     let mut out = Vec::new();
     match val {
@@ -249,6 +419,8 @@ fn parse_env_secret_keys(val: &Value) -> Result<Vec<String>, String> {
                     if s.contains(['\r', '\n', '\0']) {
                         return Err("env_secret_keys contains invalid characters".to_string());
                     }
+                    let env_name = s.split_once('=').map(|(e, _)| e.trim()).unwrap_or(s);
+                    validate_env_var_name(env_name)?;
                     out.push(s.to_string());
                 }
             }
@@ -267,6 +439,7 @@ fn parse_env_secret_keys(val: &Value) -> Result<Vec<String>, String> {
                 {
                     return Err(format!("invalid env_secret_keys mapping for '{env_name}'"));
                 }
+                validate_env_var_name(env_name)?;
                 out.push(format!("{env_name}={sec_key}"));
             }
         }
@@ -276,12 +449,15 @@ fn parse_env_secret_keys(val: &Value) -> Result<Vec<String>, String> {
 }
 
 pub fn list_mcp_servers_json(person_data_dir: &Path, policy: &WorkspacePolicy) -> Value {
+    let stored_keys: HashSet<String> = connectors::get_connector_secret_map(person_data_dir)
+        .into_keys()
+        .collect();
     with_mcp_lock(|| {
         let store = McpStore::load_unlocked(person_data_dir);
         let servers: Vec<Value> = store
             .servers
             .iter()
-            .map(|s| s.to_public_json(policy))
+            .map(|s| s.to_public_json_with_secrets(policy, &stored_keys))
             .collect();
         json!({
             "servers": servers,
@@ -303,11 +479,27 @@ pub fn set_inbound_enabled(person_data_dir: &Path, enabled: bool) -> Result<Valu
     })
 }
 
-fn validate_server_command_or_url(transport: &str, command_or_url: &str) -> Result<(), String> {
-    if command_or_url.is_empty() || command_or_url.contains(['\r', '\n', '\0']) {
-        return Err("command_or_url must be non-empty and cannot contain control characters".to_string());
+fn validate_server_command_or_url(
+    person_data_dir: &Path,
+    transport: &str,
+    command_or_url: &str,
+) -> Result<(), String> {
+    if command_or_url.is_empty()
+        || command_or_url
+            .chars()
+            .any(|c| c.is_control() || c == '\0')
+    {
+        return Err(
+            "command_or_url must be non-empty and cannot contain control characters".to_string(),
+        );
     }
     if transport == "stdio" {
+        if command_or_url.starts_with('-') {
+            return Err("stdio MCP command cannot start with '-'".to_string());
+        }
+        if command_or_url.contains("{{secret:") {
+            return Err("stdio MCP command cannot contain secret placeholders".to_string());
+        }
         if tripwire::sensitive_target(command_or_url).is_some() {
             return Err("stdio MCP command cannot target a sensitive path".to_string());
         }
@@ -320,14 +512,42 @@ fn validate_server_command_or_url(transport: &str, command_or_url: &str) -> Resu
         if command_or_url.contains("{{secret:") {
             return Err("command_or_url cannot contain secret placeholders".to_string());
         }
-        tripwire::check_egress(command_or_url, "connector_config")?;
+        tripwire::check_egress_for(person_data_dir, command_or_url, "connector_config")?;
         let default_port = if lower.starts_with("https://") { 443 } else { 80 };
         let (host, port) = connectors::parse_url_host_port_pub(command_or_url, default_port);
-        tripwire::check_egress_host(&host, port, "connector_config")?;
+        tripwire::check_egress_host_for(person_data_dir, &host, port, "connector_config")?;
         Ok(())
     } else {
         Err("transport must be 'stdio' or 'http_sse'".to_string())
     }
+}
+
+fn validate_stdio_args(args: &[String]) -> Result<(), String> {
+    if args.len() > MAX_MCP_STDIO_ARGS {
+        return Err(format!("stdio MCP args exceed {MAX_MCP_STDIO_ARGS} item limit"));
+    }
+    for a in args {
+        if a.len() > MAX_MCP_STDIO_ARG_LEN {
+            return Err(format!(
+                "stdio MCP arg exceeds {MAX_MCP_STDIO_ARG_LEN} byte limit"
+            ));
+        }
+        if a.chars()
+            .any(|c| c == '\0' || c == '\r' || (c.is_control() && c != '\n' && c != '\t'))
+        {
+            return Err("stdio MCP args contain disallowed control characters".to_string());
+        }
+        if a.contains("{{secret:") {
+            return Err(
+                "stdio MCP args cannot contain secret placeholders (use env_secret_keys)"
+                    .to_string(),
+            );
+        }
+        if tripwire::sensitive_target(a).is_some() {
+            return Err("stdio MCP args cannot reference a sensitive path".to_string());
+        }
+    }
+    Ok(())
 }
 
 pub fn upsert_mcp_server(
@@ -362,22 +582,65 @@ pub fn upsert_mcp_server(
         .unwrap_or("")
         .trim()
         .to_string();
-    validate_server_command_or_url(&transport, &command_or_url).map_err(|e| (400, e))?;
+    validate_server_command_or_url(person_data_dir, &transport, &command_or_url)
+        .map_err(|e| (400, e))?;
 
-    let args = body["args"]
-        .as_array()
-        .map(|a| {
-            a.iter()
-                .filter_map(|x| x.as_str().map(str::to_string))
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
-    for a in &args {
-        if a.contains('\0') {
-            return Err((400, "args cannot contain null bytes".to_string()));
+    let args = match body.get("args") {
+        None | Some(Value::Null) => Vec::new(),
+        Some(Value::Array(a)) => {
+            let mut out = Vec::with_capacity(a.len());
+            for x in a {
+                let s = x
+                    .as_str()
+                    .ok_or_else(|| (400, "args entries must be strings".to_string()))?;
+                out.push(s.to_string());
+            }
+            out
+        }
+        Some(_) => return Err((400, "args must be an array of strings".to_string())),
+    };
+    validate_stdio_args(&args).map_err(|e| (400, e))?;
+    let env_secret_keys = parse_env_secret_keys(&body["env_secret_keys"]).map_err(|e| (400, e))?;
+    let auth_secret_key = body["auth_secret_key"]
+        .as_str()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string);
+    if let Some(ref ak) = auth_secret_key {
+        if ak.len() > 64 || !ak.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.')) {
+            return Err((400, format!("invalid auth_secret_key '{ak}'")));
         }
     }
-    let env_secret_keys = parse_env_secret_keys(&body["env_secret_keys"]).map_err(|e| (400, e))?;
+    let mut new_secrets: BTreeMap<String, String> = BTreeMap::new();
+    if let Some(sec_obj) = body["secrets"].as_object() {
+        for (k, v) in sec_obj {
+            let sk = k.trim();
+            let sv = v
+                .as_str()
+                .ok_or_else(|| (400, format!("secret '{sk}' must be a string")))?;
+            if !sv.is_empty() {
+                new_secrets.insert(sk.to_string(), sv.to_string());
+            }
+        }
+    }
+    if let (Some(sk), Some(sv)) = (
+        body["secret_key"].as_str().map(str::trim).filter(|s| !s.is_empty()),
+        body["secret_value"].as_str(),
+    ) {
+        if !sv.is_empty() {
+            new_secrets.insert(sk.to_string(), sv.to_string());
+        }
+    }
+    if !new_secrets.is_empty() {
+        connectors::store_connector_secrets(person_data_dir, &new_secrets).map_err(|e| {
+            if e.contains("invalid secret key") || e.contains("newlines") {
+                (400, e)
+            } else {
+                (500, e)
+            }
+        })?;
+    }
+
     let require_approval_by_default = body["require_approval_by_default"].as_bool().unwrap_or(true);
     let enabled = body["enabled"].as_bool().unwrap_or(true);
     let requested_id = body["id"]
@@ -390,6 +653,9 @@ pub fn upsert_mcp_server(
         }
     }
     let now_ms = records::now_millis();
+    let stored_keys: HashSet<String> = connectors::get_connector_secret_map(person_data_dir)
+        .into_keys()
+        .collect();
 
     with_mcp_lock(|| {
         let mut store = McpStore::load_unlocked(person_data_dir);
@@ -401,6 +667,9 @@ pub fn upsert_mcp_server(
             updated.command_or_url = command_or_url;
             updated.args = args;
             updated.env_secret_keys = env_secret_keys;
+            if auth_secret_key.is_some() {
+                updated.auth_secret_key = auth_secret_key;
+            }
             updated.require_approval_by_default = require_approval_by_default;
             updated.enabled = enabled;
             updated.updated_ms = now_ms;
@@ -417,6 +686,7 @@ pub fn upsert_mcp_server(
                 command_or_url,
                 args,
                 env_secret_keys,
+                auth_secret_key,
                 require_approval_by_default,
                 enabled,
                 cached_tools: Vec::new(),
@@ -429,7 +699,7 @@ pub fn upsert_mcp_server(
             (srv, true)
         };
         store.save_unlocked(person_data_dir).map_err(|e| (500, e))?;
-        Ok((srv.to_public_json(policy), created))
+        Ok((srv.to_public_json_with_secrets(policy, &stored_keys), created))
     })
 }
 
@@ -449,8 +719,11 @@ pub fn delete_mcp_server(person_data_dir: &Path, id: &str) -> Result<bool, Strin
 fn resolve_server_env(
     person_data_dir: &Path,
     server: &McpServerSpec,
-) -> Vec<(String, String)> {
-    let secrets = connectors::get_connector_secret_map(person_data_dir);
+) -> Result<Vec<(String, String)>, String> {
+    if server.env_secret_keys.is_empty() {
+        return Ok(Vec::new());
+    }
+    let secrets = connectors::get_connector_secret_map_result(person_data_dir)?;
     let mut env_pairs = Vec::new();
     for entry in &server.env_secret_keys {
         let (env_var, secret_key) = match entry.split_once('=') {
@@ -461,16 +734,16 @@ fn resolve_server_env(
             env_pairs.push((env_var.to_string(), val.clone()));
         }
     }
-    env_pairs
+    Ok(env_pairs)
 }
 
 fn read_stdio_jsonrpc_response(
     rx: &mpsc::Receiver<String>,
     expected_id: u64,
+    deadline: Instant,
 ) -> Result<Value, String> {
-    let deadline = std::time::Instant::now() + MCP_IO_TIMEOUT;
     loop {
-        let rem = deadline.saturating_duration_since(std::time::Instant::now());
+        let rem = deadline.saturating_duration_since(Instant::now());
         if rem.is_zero() {
             return Err("stdio MCP server timed out waiting for JSON-RPC response".to_string());
         }
@@ -496,7 +769,9 @@ fn run_stdio_mcp_session(
     followup_method: &str,
     followup_params: Value,
 ) -> Result<Value, String> {
-    let env_pairs = resolve_server_env(&cfg.data_dir, server);
+    validate_server_command_or_url(&cfg.data_dir, &server.transport, &server.command_or_url)?;
+    validate_stdio_args(&server.args)?;
+    let env_pairs = resolve_server_env(&cfg.data_dir, server)?;
     let mut cmd = Command::new(&server.command_or_url);
     cmd.args(&server.args)
         .current_dir(&cfg.workspace_dir)
@@ -506,8 +781,10 @@ fn run_stdio_mcp_session(
         .env_remove("ERGON_MODEL_API_KEY")
         .env_remove("ERGON_API_KEY")
         .env_remove("ERGON_GATE_TOKEN")
-        .env_remove("ERGON_MCP_INBOUND_TOKEN");
+        .env_remove("ERGON_MCP_INBOUND_TOKEN")
+        .env_remove("ERGON_SECRET_KEY");
     for (k, v) in env_pairs {
+        validate_env_var_name(&k)?;
         cmd.env(k, v);
     }
 
@@ -523,16 +800,57 @@ fn run_stdio_mcp_session(
         .take()
         .ok_or_else(|| "stdio MCP server missing stdout".to_string())?;
 
-    let (tx, rx) = mpsc::channel();
+    let (tx, rx) = mpsc::sync_channel::<String>(256);
     std::thread::spawn(move || {
-        let reader = BufReader::new(stdout);
-        for line in reader.lines().map_while(Result::ok) {
-            if tx.send(line).is_err() {
+        let mut reader = BufReader::new(stdout);
+        let mut buf = Vec::new();
+        loop {
+            buf.clear();
+            let mut total = 0usize;
+            let mut hit_eof = false;
+            loop {
+                let Ok(avail) = reader.fill_buf() else {
+                    hit_eof = true;
+                    break;
+                };
+                if avail.is_empty() {
+                    hit_eof = true;
+                    break;
+                }
+                if let Some(pos) = avail.iter().position(|&b| b == b'\n') {
+                    let take = pos + 1;
+                    if total + take <= MAX_MCP_STDIO_LINE_BYTES {
+                        buf.extend_from_slice(&avail[..take]);
+                    }
+                    reader.consume(take);
+                    break;
+                }
+                let take = avail.len();
+                if total + take <= MAX_MCP_STDIO_LINE_BYTES {
+                    buf.extend_from_slice(avail);
+                    total += take;
+                }
+                reader.consume(take);
+                if total >= MAX_MCP_STDIO_LINE_BYTES {
+                    break;
+                }
+            }
+            if buf.is_empty() && hit_eof {
+                break;
+            }
+            if !buf.is_empty() && buf.len() <= MAX_MCP_STDIO_LINE_BYTES {
+                let line = String::from_utf8_lossy(&buf).to_string();
+                if tx.send(line).is_err() {
+                    break;
+                }
+            }
+            if hit_eof {
                 break;
             }
         }
     });
 
+    let deadline = Instant::now() + MCP_IO_TIMEOUT;
     let session_res = (|| -> Result<Value, String> {
         let init_req = json!({
             "jsonrpc": "2.0",
@@ -549,7 +867,7 @@ fn run_stdio_mcp_session(
         });
         writeln!(stdin, "{init_req}").map_err(|e| format!("write MCP initialize: {e}"))?;
         stdin.flush().map_err(|e| format!("flush MCP initialize: {e}"))?;
-        let init_resp = read_stdio_jsonrpc_response(&rx, 1)?;
+        let init_resp = read_stdio_jsonrpc_response(&rx, 1, deadline)?;
         if let Some(err) = init_resp.get("error").filter(|v| !v.is_null()) {
             return Err(format!("MCP initialize error: {err}"));
         }
@@ -570,7 +888,7 @@ fn run_stdio_mcp_session(
         });
         writeln!(stdin, "{call_req}").map_err(|e| format!("write MCP {followup_method}: {e}"))?;
         stdin.flush().map_err(|e| format!("flush MCP {followup_method}: {e}"))?;
-        let call_resp = read_stdio_jsonrpc_response(&rx, 2)?;
+        let call_resp = read_stdio_jsonrpc_response(&rx, 2, deadline)?;
         if let Some(err) = call_resp.get("error").filter(|v| !v.is_null()) {
             return Err(format!("MCP {followup_method} error: {err}"));
         }
@@ -611,6 +929,7 @@ fn post_http_mcp_jsonrpc(
     agent: &ureq::Agent,
     url: &str,
     session_id: Option<&str>,
+    bearer_token: Option<&str>,
     body: &Value,
     expected_id: Option<u64>,
 ) -> Result<(Value, Option<String>), String> {
@@ -620,6 +939,9 @@ fn post_http_mcp_jsonrpc(
         .set("Accept", "application/json, text/event-stream");
     if let Some(sid) = session_id {
         req = req.set("Mcp-Session-Id", sid);
+    }
+    if let Some(tok) = bearer_token.map(str::trim).filter(|s| !s.is_empty()) {
+        req = req.set("Authorization", &format!("Bearer {tok}"));
     }
     let resp = req
         .send_json(body.clone())
@@ -649,20 +971,43 @@ fn post_http_mcp_jsonrpc(
 }
 
 fn run_http_mcp_session(
+    cfg: &Config,
     server: &McpServerSpec,
     followup_method: &str,
     followup_params: Value,
 ) -> Result<Value, String> {
-    tripwire::check_egress(&server.command_or_url, "connector")?;
+    tripwire::check_egress_for(&cfg.data_dir, &server.command_or_url, "connector")?;
     let default_port = if server.command_or_url.to_ascii_lowercase().starts_with("https://") {
         443
     } else {
         80
     };
     let (host, port) = connectors::parse_url_host_port_pub(&server.command_or_url, default_port);
-    tripwire::check_egress_host(&host, port, "connector")?;
+    tripwire::check_egress_host_for(&cfg.data_dir, &host, port, "connector")?;
 
-    let agent = tripwire::guarded_connector_agent(MCP_IO_TIMEOUT);
+    let bearer_token = if let Some(ref auth_key) = server.auth_secret_key {
+        let secrets = connectors::get_connector_secret_map_result(&cfg.data_dir)?;
+        let tok = secrets
+            .get(auth_key)
+            .cloned()
+            .ok_or_else(|| format!("missing MCP auth secret '{auth_key}'"))?;
+        Some(tok)
+    } else {
+        None
+    };
+
+    let deadline = Instant::now() + MCP_IO_TIMEOUT;
+    let remaining_agent = |dl: Instant| -> Result<ureq::Agent, String> {
+        let rem = dl.saturating_duration_since(Instant::now());
+        if rem.is_zero() {
+            return Err("HTTP MCP session timed out".to_string());
+        }
+        Ok(tripwire::guarded_connector_agent_for(
+            &cfg.data_dir,
+            rem.max(Duration::from_millis(50)),
+        ))
+    };
+
     let init_req = json!({
         "jsonrpc": "2.0",
         "id": 1,
@@ -676,24 +1021,34 @@ fn run_http_mcp_session(
             }
         }
     });
-    let (init_resp, sid) =
-        post_http_mcp_jsonrpc(&agent, &server.command_or_url, None, &init_req, Some(1))?;
+    let agent1 = remaining_agent(deadline)?;
+    let (init_resp, sid) = post_http_mcp_jsonrpc(
+        &agent1,
+        &server.command_or_url,
+        None,
+        bearer_token.as_deref(),
+        &init_req,
+        Some(1),
+    )?;
     if let Some(err) = init_resp.get("error").filter(|v| !v.is_null()) {
         return Err(format!("MCP initialize error: {err}"));
     }
 
-    let notif = json!({
-        "jsonrpc": "2.0",
-        "method": "notifications/initialized",
-        "params": {}
-    });
-    let _ = post_http_mcp_jsonrpc(
-        &agent,
-        &server.command_or_url,
-        sid.as_deref(),
-        &notif,
-        None,
-    );
+    if let Ok(agent2) = remaining_agent(deadline) {
+        let notif = json!({
+            "jsonrpc": "2.0",
+            "method": "notifications/initialized",
+            "params": {}
+        });
+        let _ = post_http_mcp_jsonrpc(
+            &agent2,
+            &server.command_or_url,
+            sid.as_deref(),
+            bearer_token.as_deref(),
+            &notif,
+            None,
+        );
+    }
 
     let call_req = json!({
         "jsonrpc": "2.0",
@@ -701,10 +1056,12 @@ fn run_http_mcp_session(
         "method": followup_method,
         "params": followup_params,
     });
+    let agent3 = remaining_agent(deadline)?;
     let (call_resp, _) = post_http_mcp_jsonrpc(
-        &agent,
+        &agent3,
         &server.command_or_url,
         sid.as_deref(),
+        bearer_token.as_deref(),
         &call_req,
         Some(2),
     )?;
@@ -723,7 +1080,7 @@ fn run_mcp_session(
     if server.transport == "stdio" {
         run_stdio_mcp_session(cfg, server, method, params)
     } else if server.transport == "http_sse" {
-        run_http_mcp_session(server, method, params)
+        run_http_mcp_session(cfg, server, method, params)
     } else {
         Err(format!("unsupported MCP transport '{}'", server.transport))
     }
@@ -760,6 +1117,9 @@ pub fn discover_mcp_server(
                 .take(MAX_MCP_TOOLS_PER_SERVER)
                 .collect();
             let now_ms = records::now_millis();
+            let stored_keys: HashSet<String> = connectors::get_connector_secret_map(&cfg.data_dir)
+                .into_keys()
+                .collect();
             let updated = with_mcp_lock(|| {
                 let mut store = McpStore::load_unlocked(&cfg.data_dir);
                 let Some(s) = store.servers.iter_mut().find(|s| s.id == server_id) else {
@@ -769,7 +1129,7 @@ pub fn discover_mcp_server(
                 s.last_discovered_ms = Some(now_ms);
                 s.last_error = None;
                 s.updated_ms = now_ms;
-                let out = s.to_public_json(&policy);
+                let out = s.to_public_json_with_secrets(&policy, &stored_keys);
                 store.save_unlocked(&cfg.data_dir).map_err(|e| (500, e))?;
                 Ok(out)
             })?;
@@ -872,6 +1232,13 @@ fn execute_mcp_tool_call(
         );
     }
     let clean_args = clean_mcp_args(args);
+    let redact_err = |e: String| -> String {
+        let mut safe = connectors::redact_for_person(&cfg.data_dir, &e);
+        if policy.redact_host_paths {
+            safe = crate::redact_host_paths(&safe);
+        }
+        crate::truncate(&safe, MAX_MCP_RESPONSE_CHARS)
+    };
     let raw_res = run_mcp_session(
         cfg,
         server,
@@ -880,8 +1247,9 @@ fn execute_mcp_tool_call(
             "name": tool_name,
             "arguments": clean_args,
         }),
-    )?;
-    let formatted = format_mcp_call_result(&raw_res)?;
+    )
+    .map_err(redact_err)?;
+    let formatted = format_mcp_call_result(&raw_res).map_err(redact_err)?;
     let mut redacted = connectors::redact_for_person(&cfg.data_dir, &formatted);
     if policy.redact_host_paths {
         redacted = crate::redact_host_paths(&redacted);
@@ -925,14 +1293,14 @@ pub fn invoke_mcp_tool(
         if policy.block_outbound_fetch || policy.profile == "air_gapped" {
             return Err("blocked by Air-Gapped workspace policy: HTTP MCP calls are disabled".to_string());
         }
-        tripwire::check_egress(&server.command_or_url, "connector")?;
+        tripwire::check_egress_for(&cfg.data_dir, &server.command_or_url, "connector")?;
         let default_port = if server.command_or_url.to_ascii_lowercase().starts_with("https://") {
             443
         } else {
             80
         };
         let (host, port) = connectors::parse_url_host_port_pub(&server.command_or_url, default_port);
-        tripwire::check_egress_host(&host, port, "connector")?;
+        tripwire::check_egress_host_for(&cfg.data_dir, &host, port, "connector")?;
     }
 
     let clean_args = clean_mcp_args(args);

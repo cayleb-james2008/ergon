@@ -1036,6 +1036,7 @@ fn e3_sse_malformed_frames_early_eof_and_compaction_edge_cases() {
             context_budget_chars: 1400,
             max_steps: 5,
             snapshot: None,
+            ..AgentLoopOptions::default()
         },
     )
     .unwrap();
@@ -1058,6 +1059,7 @@ fn e3_sse_malformed_frames_early_eof_and_compaction_edge_cases() {
             context_budget_chars: 1400,
             max_steps: 5,
             snapshot: None,
+            ..AgentLoopOptions::default()
         },
     )
     .unwrap();

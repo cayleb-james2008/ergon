@@ -121,6 +121,9 @@ pub fn validate_workspace_rel_path(raw: &str) -> Result<String, String> {
         || low.contains("%00")
         || low.contains("%25")
         || low.contains("connector_secrets.json")
+        || low.contains("secrets.enc.json")
+        || low.contains(".vault.key")
+        || low.contains("oauth.json")
         || trimmed
             .split('/')
             .any(|seg| seg.is_empty() || seg == "." || seg == ".." || seg.starts_with('.'))
@@ -981,6 +984,9 @@ fn validate_glob_pattern(raw: &str) -> Result<String, String> {
         || low.contains("%00")
         || low.contains("%25")
         || low.contains("connector_secrets.json")
+        || low.contains("secrets.enc.json")
+        || low.contains(".vault.key")
+        || low.contains("oauth.json")
     {
         return Err(format!("glob pattern escapes the workspace: {trimmed}"));
     }
@@ -1125,7 +1131,11 @@ fn collect_workspace_table_files(
             return;
         }
         let name = entry.file_name().to_string_lossy().into_owned();
-        if name.starts_with('.') || name.eq_ignore_ascii_case("connector_secrets.json") {
+        if name.starts_with('.')
+            || name.eq_ignore_ascii_case("connector_secrets.json")
+            || name.eq_ignore_ascii_case("secrets.enc.json")
+            || name.eq_ignore_ascii_case("oauth.json")
+        {
             continue;
         }
         let path = entry.path();
