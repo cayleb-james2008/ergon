@@ -131,6 +131,37 @@ pub fn create_pipeline_routine(
     playbook: &PlaybookOptions,
     steps_v2: &[crate::pipelines::PipelineStepSpec],
 ) -> Result<Value, String> {
+    create_pipeline_routine_with_tz(
+        person_data_dir,
+        name,
+        prompt,
+        schedule,
+        interval_secs,
+        None,
+        None,
+        skill_id,
+        enabled,
+        playbook,
+        steps_v2,
+    )
+}
+
+/// Create a routine/playbook with optional typed `steps_v2` and optional cron
+/// timezone offset (`tz_offset_mins` or `tz`).
+#[allow(clippy::too_many_arguments)]
+pub fn create_pipeline_routine_with_tz(
+    person_data_dir: &Path,
+    name: &str,
+    prompt: &str,
+    schedule: &str,
+    interval_secs: Option<u64>,
+    tz_offset_mins: Option<i32>,
+    tz: Option<&str>,
+    skill_id: Option<&str>,
+    enabled: bool,
+    playbook: &PlaybookOptions,
+    steps_v2: &[crate::pipelines::PipelineStepSpec],
+) -> Result<Value, String> {
     let clean_name: String = name
         .replace(['\r', '\n'], " ")
         .trim()
@@ -179,20 +210,37 @@ pub fn create_pipeline_routine(
         .replace(['\r', '\n'], " ")
         .trim()
         .chars()
-        .take(64)
+        .take(128)
         .collect();
-    let (sched, resolved_interval) = if let Some(iv) = interval_secs {
-        let cadence = crate::scheduler::parse_cadence_or_interval(
+    let explicit_tz = if let Some(m) = tz_offset_mins {
+        if !(-720..=840).contains(&m) {
+            return Err("tz_offset_mins must be between -720 and 840".to_string());
+        }
+        Some(m)
+    } else if let Some(t) = tz.map(str::trim).filter(|s| !s.is_empty()) {
+        Some(crate::scheduler::parse_tz_offset_mins(t)?)
+    } else {
+        None
+    };
+    let (sched, resolved_interval, resolved_tz) = if let Some(iv) = interval_secs {
+        let cadence = crate::scheduler::parse_cadence_or_interval_with_tz(
             if clean_sched.is_empty() { None } else { Some(clean_sched.as_str()) },
             Some(iv),
+            explicit_tz,
         )?;
-        (cadence.canonical_label(), cadence.explicit_interval_secs())
+        (cadence.canonical_label(), cadence.explicit_interval_secs(), None)
     } else if clean_sched.is_empty() {
-        ("manual".to_string(), None)
-    } else if let Ok(cadence) = crate::scheduler::parse_cadence(&clean_sched) {
-        (cadence.canonical_label(), cadence.explicit_interval_secs())
+        ("manual".to_string(), None, None)
+    } else if let Ok(cadence) = crate::scheduler::parse_cadence_with_tz(&clean_sched, explicit_tz) {
+        match cadence {
+            crate::scheduler::Cadence::Cron {
+                expr,
+                tz_offset_mins,
+            } => (expr, None, Some(tz_offset_mins)),
+            other => (other.canonical_label(), other.explicit_interval_secs(), None),
+        }
     } else {
-        (clean_sched, None)
+        (clean_sched, None, None)
     };
     let skill = skill_id
         .map(|s| s.trim().chars().take(64).collect::<String>())
@@ -219,6 +267,15 @@ pub fn create_pipeline_routine(
         });
         if let Some(iv) = resolved_interval {
             item["interval_secs"] = json!(iv);
+        }
+        if let Some(tz_mins) = resolved_tz {
+            item["tz_offset_mins"] = json!(tz_mins);
+            let tz_label = tz
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(str::to_string)
+                .unwrap_or_else(|| crate::scheduler::format_tz_offset(tz_mins));
+            item["tz"] = json!(tz_label);
         }
         if !clean_steps.is_empty() {
             item["steps"] = json!(clean_steps);
@@ -959,6 +1016,7 @@ pub fn preview_playbook_routine(
             let mode = match st.kind.as_str() {
                 "checkpoint" => "human_checkpoint",
                 "export" | "skill" => "read_and_write",
+                "subpipeline" => "subpipeline",
                 _ => "agent",
             };
             let step_text = st
