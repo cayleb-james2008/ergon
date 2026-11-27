@@ -319,6 +319,19 @@ export type LiveRunStep = {
   depends_on?: string[];
   child_items?: PipelineChildItemState[];
 };
+export type LiveRun = {
+  active: boolean;
+  run_id: string;
+  thread_id: string;
+  task: string;
+  started_ms: number;
+  elapsed_ms?: number;
+  steps: (string | LiveRunStep)[];
+  cancelled?: boolean;
+  kind?: string;
+  routine_id?: string | null;
+  routine_name?: string | null;
+};
 export type LiveRunStatus = {
   active: boolean;
   run_id?: string;
@@ -328,6 +341,7 @@ export type LiveRunStatus = {
   elapsed_ms?: number;
   steps: (string | LiveRunStep)[];
   cancelled?: boolean;
+  runs?: LiveRun[];
 };
 export type FileRevision = {
   rev_id: string;
@@ -363,9 +377,10 @@ export type FileDiffPayload = {
   hunks: FileDiffHunk[];
   unified?: string;
 };
-export type PipelineStepKind = "skill" | "agent" | "checkpoint" | "export" | "deliver";
+export type PipelineStepKind = "skill" | "agent" | "checkpoint" | "export" | "deliver" | "subpipeline";
 export type PipelineCheckpointInputMode = "approve_reject" | "choice" | "text";
 export type PipelineWhen = "always" | "on_anomaly" | "on_previous_ok" | "on_all_ok" | (string & {});
+export type PipelineOnError = "fail" | "continue" | `goto:${string}`;
 
 export type PipelineCheckpointSpec = {
   prompt: string;
@@ -396,9 +411,15 @@ export type PipelineStepSpec = {
   checkpoint?: PipelineCheckpointSpec;
   export?: PipelineExportSpec;
   deliver?: PipelineDeliverSpec;
+  routine_id?: string;
+  inputs?: Record<string, string>;
   when?: PipelineWhen;
   depends_on?: string[];
   for_each?: string;
+  timeout_secs?: number;
+  retry_max?: number;
+  retry_backoff_ms?: number;
+  on_error?: PipelineOnError;
 };
 
 export type PipelineChildItemState = {
@@ -431,6 +452,8 @@ export type PipelineStepState = {
   usage?: RunUsage;
   depends_on?: string[];
   child_items?: PipelineChildItemState[];
+  attempts?: number;
+  subpipeline_run_id?: string;
 };
 
 export type PipelinePendingCheckpoint = {
@@ -450,11 +473,15 @@ export type PipelinePendingCheckpoint = {
   payload_preview?: string;
 };
 
+export type PendingCheckpoint = PipelinePendingCheckpoint;
+
 export type PipelineAgentSnapshot = {
   messages: unknown[];
   written: string[];
   budget_used: number;
 };
+
+export type AgentSnapshot = PipelineAgentSnapshot;
 
 export type PipelineRunStatus =
   | "running"
@@ -478,11 +505,29 @@ export type PipelineRun = {
   steps_v2?: PipelineStepSpec[];
   step_states: PipelineStepState[];
   pending_checkpoint?: PipelinePendingCheckpoint | null;
+  pending_checkpoints?: PipelinePendingCheckpoint[];
   agent_snapshot?: PipelineAgentSnapshot | null;
+  step_snapshots?: Record<string, PipelineAgentSnapshot>;
   error?: string | null;
   engagement_id?: string | null;
   usage?: RunUsage;
 };
+
+export function getPendingCheckpoints(run: PipelineRun): PipelinePendingCheckpoint[] {
+  const list: PipelinePendingCheckpoint[] = [];
+  const seen = new Set<string>();
+  const add = (cp: PipelinePendingCheckpoint | null | undefined) => {
+    if (!cp || typeof cp !== "object" || !cp.checkpoint_id) return;
+    if (seen.has(cp.checkpoint_id)) return;
+    seen.add(cp.checkpoint_id);
+    list.push(cp);
+  };
+  if (Array.isArray(run.pending_checkpoints)) {
+    for (const cp of run.pending_checkpoints) add(cp);
+  }
+  add(run.pending_checkpoint);
+  return list;
+}
 
 export type PipelineValidationResult = {
   ok: boolean;
@@ -493,7 +538,10 @@ export type PipelineValidationResult = {
 };
 
 export type PipelineResumePayload = {
-  action: "approve" | "reject" | "answer";
+  checkpoint_id?: string;
+  decision?: "approve" | "reject" | "answer";
+  text?: string;
+  action?: "approve" | "reject" | "answer";
   answer?: string;
   choice?: string;
   override_args?: Record<string, unknown>;
@@ -516,6 +564,8 @@ export type Routine = {
   schedule: string;
   cadence?: string;
   interval_secs?: number | null;
+  tz?: string;
+  tz_offset_mins?: number | null;
   skill_id?: string;
   enabled: boolean;
   last_run_ts?: number | null;
@@ -533,6 +583,15 @@ export type Routine = {
   pack_deliverables?: boolean;
   recent_runs?: RoutineRunRecord[];
 };
+
+export function isDeterministicRoutine(rt: Pick<Routine, "skill_id" | "steps_v2">): boolean {
+  if (Array.isArray(rt.steps_v2) && rt.steps_v2.length > 0) {
+    return rt.steps_v2.every(
+      (s) => s.kind === "skill" || s.kind === "export" || s.kind === "checkpoint" || s.kind === "subpipeline"
+    );
+  }
+  return Boolean(rt.skill_id && rt.skill_id.trim());
+}
 export type MemoryIssue = {
   line: number;
   kind: "conflict" | "duplicate" | "stale_ref";
@@ -938,18 +997,208 @@ export function hasV070Api(
   return isAtLeastMinor(status.version, 7);
 }
 
-/** Parses v0.7.0 routine cadence strings ("every 15m", "hourly", "daily 09:00", "weekly mon",
- *  or interval_secs) to estimate the next scheduled execution epoch ms when the server omits it. */
+const CRON_MONTHS: Record<string, number> = {
+  jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6,
+  jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12,
+};
+const CRON_DOW: Record<string, number> = {
+  sun: 0, mon: 1, tue: 2, wed: 3, thu: 4, fri: 5, sat: 6,
+};
+
+function parseCronToken(token: string, min: number, max: number, names?: Record<string, number>): number | null {
+  const clean = token.trim().toLowerCase();
+  if (!clean) return null;
+  if (names && clean in names) return names[clean];
+  if (!/^\d+$/.test(clean)) return null;
+  const n = Number(clean);
+  if (!Number.isInteger(n) || n < min || n > max) return null;
+  return n;
+}
+
+function parseCronField(
+  raw: string,
+  min: number,
+  max: number,
+  names?: Record<string, number>,
+  wrapSevenToZero = false
+): Set<number> | null {
+  const field = raw.trim().toLowerCase();
+  if (!field) return null;
+  const out = new Set<number>();
+  for (const part of field.split(",")) {
+    const seg = part.trim();
+    if (!seg) return null;
+    const slashParts = seg.split("/");
+    if (slashParts.length > 2) return null;
+    const [rangePart, stepPart] = slashParts;
+    let step = 1;
+    if (stepPart !== undefined) {
+      if (!/^\d+$/.test(stepPart)) return null;
+      step = Number(stepPart);
+      if (!Number.isInteger(step) || step <= 0) return null;
+    }
+    let start = min;
+    let end = max;
+    if (rangePart === "*") {
+      start = min;
+      end = max;
+    } else if (rangePart.includes("-")) {
+      const dashParts = rangePart.split("-");
+      if (dashParts.length !== 2) return null;
+      const a = parseCronToken(dashParts[0], min, max, names);
+      const b = parseCronToken(dashParts[1], min, max, names);
+      if (a === null || b === null || a > b) return null;
+      start = a;
+      end = b;
+    } else {
+      const single = parseCronToken(rangePart, min, max, names);
+      if (single === null) return null;
+      start = single;
+      end = stepPart !== undefined ? max : single;
+    }
+    for (let v = start; v <= end; v += step) {
+      out.add(wrapSevenToZero && v === 7 ? 0 : v);
+    }
+  }
+  return out.size > 0 ? out : null;
+}
+
+export type ParsedCron = {
+  minutes: Set<number>;
+  hours: Set<number>;
+  dom: Set<number>;
+  months: Set<number>;
+  dow: Set<number>;
+  domWildcard: boolean;
+  dowWildcard: boolean;
+};
+
+export function parseCronExpression(expr: string): ParsedCron | null {
+  const parts = String(expr || "").trim().split(/\s+/);
+  if (parts.length !== 5) return null;
+  const minutes = parseCronField(parts[0], 0, 59);
+  const hours = parseCronField(parts[1], 0, 23);
+  const dom = parseCronField(parts[2], 1, 31);
+  const months = parseCronField(parts[3], 1, 12, CRON_MONTHS);
+  const dow = parseCronField(parts[4], 0, 7, CRON_DOW, true);
+  if (!minutes || !hours || !dom || !months || !dow) return null;
+  return {
+    minutes,
+    hours,
+    dom,
+    months,
+    dow,
+    domWildcard: parts[2].trim() === "*",
+    dowWildcard: parts[4].trim() === "*",
+  };
+}
+
+export function isCronExpression(expr: string): boolean {
+  return String(expr || "").trim().split(/\s+/).length === 5;
+}
+
+export function validateCronExpression(expr: string): { valid: boolean; error?: string; summary?: string } {
+  const trimmed = String(expr || "").trim();
+  if (!trimmed) return { valid: false, error: "Schedule cannot be empty." };
+  const parts = trimmed.split(/\s+/);
+  if (parts.length !== 5) {
+    return { valid: false, error: "Cron expression must have 5 fields: min hour day month weekday." };
+  }
+  const parsed = parseCronExpression(trimmed);
+  if (!parsed) {
+    return { valid: false, error: "Invalid 5-field cron syntax (check ranges like 0-59, 0-23, 1-31, 1-12, 0-6)." };
+  }
+  return { valid: true, summary: `Valid 5-field cron (${parts.join(" ")})` };
+}
+
+export function resolveTzOffsetMins(tz?: string, tzOffsetMins?: number | null, atMs = Date.now()): number {
+  if (typeof tzOffsetMins === "number" && Number.isFinite(tzOffsetMins)) {
+    return Math.round(tzOffsetMins);
+  }
+  const zone = String(tz || "").trim();
+  if (zone.toUpperCase() === "UTC") return 0;
+  if (zone && typeof Intl !== "undefined" && Intl.DateTimeFormat) {
+    try {
+      const parts = new Intl.DateTimeFormat("en-US", {
+        timeZone: zone,
+        timeZoneName: "shortOffset",
+      }).formatToParts(new Date(atMs));
+      const tzPart = parts.find((p) => p.type === "timeZoneName")?.value ?? "";
+      if (tzPart === "GMT" || tzPart === "UTC") return 0;
+      const m = /^GMT([+-])(\d{1,2})(?::?(\d{2}))?$/i.exec(tzPart);
+      if (m) {
+        const sign = m[1] === "-" ? -1 : 1;
+        return sign * (Number(m[2]) * 60 + Number(m[3] || 0));
+      }
+    } catch {
+      // Fallback to local offset below
+    }
+  }
+  return -new Date(atMs).getTimezoneOffset();
+}
+
+function nextCronRunMs(cron: ParsedCron, fromMs: number, offsetMins: number): number | null {
+  const offsetMs = offsetMins * 60_000;
+  const startMinute = Math.floor((fromMs + offsetMs) / 60_000) + 1;
+  const cursor = new Date(startMinute * 60_000);
+  const limitMs = startMinute * 60_000 + 366 * 86_400_000;
+  while (cursor.getTime() <= limitMs) {
+    const mon = cursor.getUTCMonth() + 1;
+    if (!cron.months.has(mon)) {
+      cursor.setUTCMonth(cursor.getUTCMonth() + 1, 1);
+      cursor.setUTCHours(0, 0, 0, 0);
+      continue;
+    }
+    const dom = cursor.getUTCDate();
+    const dow = cursor.getUTCDay();
+    const dayMatches =
+      cron.domWildcard && cron.dowWildcard
+        ? true
+        : cron.domWildcard
+          ? cron.dow.has(dow)
+          : cron.dowWildcard
+            ? cron.dom.has(dom)
+            : cron.dom.has(dom) || cron.dow.has(dow);
+    if (!dayMatches) {
+      cursor.setUTCDate(dom + 1);
+      cursor.setUTCHours(0, 0, 0, 0);
+      continue;
+    }
+    const hr = cursor.getUTCHours();
+    if (!cron.hours.has(hr)) {
+      cursor.setUTCHours(hr + 1, 0, 0, 0);
+      continue;
+    }
+    const min = cursor.getUTCMinutes();
+    if (!cron.minutes.has(min)) {
+      cursor.setUTCMinutes(min + 1, 0, 0);
+      continue;
+    }
+    return cursor.getTime() - offsetMs;
+  }
+  return null;
+}
+
+/** Parses routine cadence strings ("every 15m", "hourly", "daily 09:00", "weekly mon",
+ *  5-field cron, or interval_secs) with optional timezone offset to estimate next execution epoch ms. */
 export function estimateNextRunMs(
   schedule: string,
   fromMs = Date.now(),
-  intervalSecs?: number | null
+  intervalSecs?: number | null,
+  tzOffsetMins?: number | null,
+  tz?: string
 ): number | null {
   if (typeof intervalSecs === "number" && Number.isFinite(intervalSecs) && intervalSecs > 0) {
     return fromMs + intervalSecs * 1000;
   }
-  const raw = String(schedule || "").trim().toLowerCase();
-  if (!raw) return null;
+  const trimmed = String(schedule || "").trim();
+  const raw = trimmed.toLowerCase();
+  if (!raw || raw === "manual") return null;
+  const cron = parseCronExpression(trimmed);
+  if (cron) {
+    const offset = resolveTzOffsetMins(tz, tzOffsetMins, fromMs);
+    return nextCronRunMs(cron, fromMs, offset);
+  }
   const everyMatch = /^every\s+(\d+)\s*(s|sec|secs|seconds?|m|min|mins|minutes?|h|hr|hrs|hours?|d|day|days?)$/.exec(raw);
   if (everyMatch) {
     const n = Math.max(1, Number(everyMatch[1]));
@@ -968,6 +1217,18 @@ export function estimateNextRunMs(
   if (dailyMatch) {
     const hh = Math.min(23, Number(dailyMatch[1] ?? 9));
     const mm = Math.min(59, Number(dailyMatch[2] ?? 0));
+    const offset = tz || typeof tzOffsetMins === "number" ? resolveTzOffsetMins(tz, tzOffsetMins, fromMs) : null;
+    if (offset !== null) {
+      const offsetMs = offset * 60_000;
+      const next = new Date(fromMs + offsetMs);
+      next.setUTCSeconds(0, 0);
+      next.setUTCHours(hh, mm, 0, 0);
+      if (next.getTime() <= fromMs + offsetMs) next.setUTCDate(next.getUTCDate() + 1);
+      if (raw.includes("weekday")) {
+        while (next.getUTCDay() === 0 || next.getUTCDay() === 6) next.setUTCDate(next.getUTCDate() + 1);
+      }
+      return next.getTime() - offsetMs;
+    }
     const next = new Date(fromMs);
     next.setSeconds(0, 0);
     next.setHours(hh, mm, 0, 0);
@@ -1242,13 +1503,30 @@ export async function getPipelineRun(runId: string): Promise<Res<{ run: Pipeline
   return call<{ run: PipelineRun }>(`/api/pipelines/runs/${encodeURIComponent(runId)}`);
 }
 
+export async function cancelLiveRun(runId: string): Promise<Res<{ cancelled?: boolean; run_id?: string }>> {
+  return call<{ cancelled?: boolean; run_id?: string }>(`/api/runs/${encodeURIComponent(runId || "active")}/cancel`, {
+    method: "POST",
+    body: {},
+  });
+}
+
 export async function resumePipelineRun(
   runId: string,
   body: PipelineResumePayload
 ): Promise<Res<{ run: PipelineRun }>> {
+  const decision = body.decision ?? body.action ?? "approve";
+  const text = body.text ?? body.choice ?? body.answer;
   return call<{ run: PipelineRun }>(`/api/pipelines/runs/${encodeURIComponent(runId)}/resume`, {
     method: "POST",
-    body,
+    body: {
+      ...(body.checkpoint_id ? { checkpoint_id: body.checkpoint_id } : {}),
+      decision,
+      ...(text !== undefined ? { text } : {}),
+      action: body.action ?? decision,
+      ...(body.answer !== undefined ? { answer: body.answer } : text !== undefined ? { answer: text } : {}),
+      ...(body.choice !== undefined ? { choice: body.choice } : {}),
+      ...(body.override_args !== undefined ? { override_args: body.override_args } : {}),
+    },
   });
 }
 
