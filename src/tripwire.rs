@@ -1460,6 +1460,7 @@ fn check_egress_with_override(
     LAST_BLOCK.with(|l| *l.borrow_mut() = None);
     let lower = url.trim().to_ascii_lowercase();
     let is_connector_channel = matches!(channel, "connector" | "connector_config");
+    let block_private = is_connector_channel || channel == "push";
     let scheme_ok = if is_connector_channel {
         lower.starts_with("http://")
             || lower.starts_with("https://")
@@ -1505,7 +1506,7 @@ fn check_egress_with_override(
                 });
                 return Err(format!("blocked by Ergon's egress guard: {host} is {why}"));
             }
-            AddrClass::Private(why) if is_connector_channel => {
+            AddrClass::Private(why) if block_private => {
                 if !private_allowed_for_connector_with_override(&host, local_override) {
                     return Err(format!(
                         "blocked by Ergon's egress guard: {host} is on {why} (set ERGON_ALLOW_LOCAL_CONNECTORS=1 only for local tests)"
@@ -1514,7 +1515,7 @@ fn check_egress_with_override(
             }
             AddrClass::Private(_) | AddrClass::Public => {}
         }
-    } else if is_connector_channel
+    } else if block_private
         && (host == "localhost" || host.ends_with(".localhost") || host.ends_with(".local"))
         && !private_allowed_for_connector_with_override(&host, local_override)
     {

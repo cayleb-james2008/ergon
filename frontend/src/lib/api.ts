@@ -938,10 +938,36 @@ export type Decision = {
   spent_usd?: number;
   projected_usd?: number;
   estimated_cost_usd?: number;
+  tool_package_id?: string;
+  description?: string;
+  params?: string[];
+  test_report?: ToolTestReport;
 };
-export type Offer = { id: string; title: string; detail: string; status: string; item_id?: string; ts?: number };
-export type SuiteItem = { id: string; kind: string; name: string; description: string; fields?: string[] };
-export type LibraryItem = { id: string; kind: string; name: string; description: string; author: string; builtin?: boolean };
+export type Offer = {
+  id: string;
+  title: string;
+  detail: string;
+  status: string;
+  item_id?: string;
+  ts?: number;
+  kind?: string;
+  key?: string;
+  template?: string;
+  author?: string;
+};
+export type SuiteItem = { id: string; kind: string; name: string; description: string; fields?: string[]; params?: string[] };
+export type LibraryItem = {
+  id: string;
+  kind: string;
+  name: string;
+  description: string;
+  author: string;
+  builtin?: boolean;
+  params?: string[];
+  tests?: ToolTestCase[];
+  test_report?: ToolTestReport | null;
+  version?: number;
+};
 export type BriefJob = {
   id?: string;
   task: string;
@@ -2970,4 +2996,254 @@ export async function saveOidcConfig(body: {
   auto_provision?: boolean;
 }): Promise<Res<OidcConfigPayload>> {
   return call<OidcConfigPayload>("/api/auth/oidc/config", { method: "PUT", body });
+}
+
+// ---------------------------------------------------------------------------
+// Wave 2: Company Memory & Database, Tool Builder, Notifications & Proactive Offers
+// ---------------------------------------------------------------------------
+
+export type CompanyMemoryCategory = "fact" | "procedure" | "preference" | "policy";
+
+export type CompanyMemoryEntry = {
+  id: string;
+  category: CompanyMemoryCategory | string;
+  scope: string;
+  content: string;
+  author_person_id: string;
+  created_ms: number;
+  updated_ms: number;
+};
+
+export type CompanyDbTable =
+  | "people"
+  | "roles"
+  | "clients"
+  | "work"
+  | "receipts"
+  | "tools"
+  | "outcomes"
+  | "memory"
+  | "summary";
+
+export type CompanyDbQueryResult = {
+  table: string;
+  total?: number;
+  limit?: number;
+  rows?: Record<string, unknown>[];
+  engagements?: Record<string, unknown>[];
+  counts?: Record<string, number | null>;
+  role?: string;
+  person_id?: string;
+};
+
+export type ToolTestCase = {
+  name: string;
+  setup_files?: Record<string, string>;
+  args?: string[];
+  expect_ok?: boolean;
+  expect_output_contains?: string | null;
+  expect_files?: Record<string, string>;
+};
+
+export type ToolTestCaseResult = {
+  name: string;
+  passed: boolean;
+  ok: boolean;
+  output: string;
+  error?: string | null;
+};
+
+export type ToolTestReport = {
+  passed: number;
+  total: number;
+  all_passed: boolean;
+  duration_ms: number;
+  source_sha256: string;
+  ran_at_ms: number;
+  cases: ToolTestCaseResult[];
+};
+
+export type ToolPackage = {
+  id: string;
+  name: string;
+  description: string;
+  author: string;
+  params: string[];
+  source: string;
+  tests: ToolTestCase[];
+  test_report: ToolTestReport;
+  status: string;
+  decision_id: string;
+  created_ms: number;
+  updated_ms: number;
+};
+
+export type NotificationItem = {
+  id: string;
+  ts_ms: number;
+  kind: string;
+  title: string;
+  body: string;
+  card_type: string;
+  card_id: string;
+  read: boolean;
+};
+
+export type PushSubscriptionItem = {
+  id: string;
+  channel: "web_push" | "webhook" | string;
+  endpoint: string;
+  label: string;
+  created_ms: number;
+};
+
+export type ProactiveOfferAnalysis = {
+  generated: Offer[];
+  all_offers: Offer[];
+  proposed_tool?: Record<string, unknown> | null;
+  staged_package?: ToolPackage | null;
+};
+
+export async function fetchCompanyMemory(): Promise<Res<{ entries: CompanyMemoryEntry[] }>> {
+  const r = await call<{ entries?: CompanyMemoryEntry[] }>("/api/company/memory");
+  if (!r.ok) return r;
+  return {
+    ok: true,
+    data: {
+      entries: Array.isArray(r.data.entries) ? r.data.entries : [],
+    },
+  };
+}
+
+export async function addCompanyMemory(body: {
+  category: CompanyMemoryCategory | string;
+  scope: string;
+  content: string;
+}): Promise<Res<{ entry?: CompanyMemoryEntry }>> {
+  return call<{ entry?: CompanyMemoryEntry }>("/api/company/memory", {
+    method: "POST",
+    body,
+  });
+}
+
+export async function deleteCompanyMemory(id: string): Promise<Res<{ deleted?: boolean }>> {
+  return call<{ deleted?: boolean }>(`/api/company/memory/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
+}
+
+export async function queryCompanyDb(
+  table: CompanyDbTable | string,
+  query?: string,
+  limit?: number
+): Promise<Res<CompanyDbQueryResult>> {
+  return call<CompanyDbQueryResult>("/api/company/db/query", {
+    method: "POST",
+    body: {
+      table,
+      ...(query ? { query } : {}),
+      ...(typeof limit === "number" ? { limit } : {}),
+    },
+  });
+}
+
+export async function fetchTools(): Promise<Res<{ tools: LibraryItem[]; packages: ToolPackage[] }>> {
+  const r = await call<{ tools?: LibraryItem[]; items?: LibraryItem[]; packages?: ToolPackage[] }>("/api/tools");
+  if (!r.ok) return r;
+  const tools = Array.isArray(r.data.tools)
+    ? r.data.tools
+    : Array.isArray(r.data.items)
+      ? r.data.items
+      : [];
+  const packages = Array.isArray(r.data.packages) ? r.data.packages : [];
+  return { ok: true, data: { tools, packages } };
+}
+
+export async function testTool(body: {
+  params: string[];
+  source: string;
+  tests: ToolTestCase[];
+}): Promise<Res<{ report?: ToolTestReport; test_report?: ToolTestReport }>> {
+  return call("/api/tools/test", { method: "POST", body });
+}
+
+export async function buildTool(body: {
+  name: string;
+  description: string;
+  params: string[];
+  source: string;
+  tests: ToolTestCase[];
+  thread_id?: string;
+}): Promise<Res<{ package?: ToolPackage; decision_id?: string }>> {
+  return call("/api/tools/build", { method: "POST", body });
+}
+
+export async function runTool(
+  id: string,
+  args: string[] = []
+): Promise<Res<{ ok?: boolean; output?: string; error?: string; files?: string[] }>> {
+  return call(`/api/tools/${encodeURIComponent(id)}/run`, {
+    method: "POST",
+    body: { args },
+  });
+}
+
+export async function fetchNotifications(): Promise<
+  Res<{ notifications: NotificationItem[]; unread_count: number }>
+> {
+  const r = await call<{ notifications?: NotificationItem[]; unread_count?: number }>("/api/notifications");
+  if (!r.ok) return r;
+  const notifications = Array.isArray(r.data.notifications) ? r.data.notifications : [];
+  const unread_count =
+    typeof r.data.unread_count === "number"
+      ? r.data.unread_count
+      : notifications.filter((n) => !n.read).length;
+  return { ok: true, data: { notifications, unread_count } };
+}
+
+export async function markNotificationRead(
+  id: string
+): Promise<Res<{ notification?: NotificationItem }>> {
+  return call<{ notification?: NotificationItem }>(
+    `/api/notifications/${encodeURIComponent(id)}/read`,
+    { method: "POST", body: {} }
+  );
+}
+
+export async function subscribePush(body: {
+  channel: "web_push" | "webhook";
+  endpoint: string;
+  label?: string;
+}): Promise<Res<{ subscription?: PushSubscriptionItem }>> {
+  return call<{ subscription?: PushSubscriptionItem }>("/api/push/subscribe", {
+    method: "POST",
+    body,
+  });
+}
+
+export async function analyzeOffers(): Promise<Res<ProactiveOfferAnalysis>> {
+  const r = await call<Partial<ProactiveOfferAnalysis>>("/api/offers/analyze", {
+    method: "POST",
+    body: {},
+  });
+  if (!r.ok) return r;
+  return {
+    ok: true,
+    data: {
+      generated: Array.isArray(r.data.generated) ? r.data.generated : [],
+      all_offers: Array.isArray(r.data.all_offers) ? r.data.all_offers : [],
+      proposed_tool: r.data.proposed_tool ?? null,
+      staged_package: r.data.staged_package ?? null,
+    },
+  };
+}
+
+export async function resolveOffer(
+  id: string,
+  action: "accept" | "dismiss" | "approve" | "deny"
+): Promise<Res<{ offer?: Offer; outcome?: string }>> {
+  return call<{ offer?: Offer; outcome?: string }>(
+    `/api/offers/${encodeURIComponent(id)}/${action}`,
+    { method: "POST", body: {} }
+  );
 }

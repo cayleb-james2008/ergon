@@ -9,8 +9,9 @@
 //! the document-writing and memory-update skills.
 
 pub mod audit_bundle;
-pub mod backup;
 pub mod auth;
+pub mod backup;
+pub mod company_db;
 pub mod connectors;
 pub mod docs;
 pub mod file_history;
@@ -19,6 +20,7 @@ pub mod live_runs;
 pub mod logging;
 pub mod mcp;
 pub mod pipelines;
+pub mod proactive_offers;
 pub mod receipts;
 pub mod records;
 pub mod routines;
@@ -37,6 +39,7 @@ pub mod skills;
 pub mod sse;
 pub mod tables;
 pub mod tls;
+pub mod tool_builder;
 pub mod tools;
 pub mod tripwire;
 pub use tools::{
@@ -1946,30 +1949,59 @@ fn system_prompt_for(
             .collect::<Vec<_>>()
             .join("\n")
     };
-    // The person's suite: installed library skills are callable tools
+    // The person's suite: installed library skills and tools are callable
     // (by item id, with their declared parameters); installed
     // subagents are delegable by id. Apps are run by the person from
     // their suite panel, not called as tools.
     let mut suite_block = String::new();
-    let skills: Vec<&library::LibraryItem> = suite_items
-        .iter()
-        .filter(|i| i.kind == "skill" && !i.builtin)
-        .collect();
-    if !skills.is_empty() {
-        suite_block.push_str("\n         LIBRARY SKILLS IN THIS PERSON'S SUITE (call like any tool, by id):\n");
-        for s in skills {
+    let format_suite_items = |out: &mut String, heading: &str, items: &[&library::LibraryItem]| {
+        if items.is_empty() {
+            return;
+        }
+        out.push_str(heading);
+        for s in items {
             let params = s
                 .params
                 .iter()
                 .map(|p| format!("\"{p}\": \"...\""))
                 .collect::<Vec<_>>()
                 .join(", ");
-            suite_block.push_str(&format!(
+            out.push_str(&format!(
                 "         - {} {{{}}} — {}\n",
                 s.id, params, s.description
             ));
         }
-    }
+    };
+    let skills: Vec<&library::LibraryItem> = suite_items
+        .iter()
+        .filter(|i| i.kind == "skill" && !i.builtin)
+        .collect();
+    format_suite_items(
+        &mut suite_block,
+        "\n         LIBRARY SKILLS IN THIS PERSON'S SUITE (call like any tool, by id):\n",
+        &skills,
+    );
+    let suite_tools: Vec<&library::LibraryItem> = suite_items
+        .iter()
+        .filter(|i| i.kind == "tool" && !i.builtin)
+        .collect();
+    format_suite_items(
+        &mut suite_block,
+        "\n         TOOLS IN THIS PERSON'S SUITE (call like any tool, by id):\n",
+        &suite_tools,
+    );
+    let caller_role = auth::resolve_person_role(&root_dir, &person_id);
+    let allowed_clients =
+        company_db::allowed_client_ids_for_memory(&root_dir, &person_id, caller_role);
+    let company_mem =
+        company_db::render_company_memory_for_prompt(&root_dir, caller_role, &allowed_clients);
+    let company_memory_block = if company_mem.trim().is_empty() {
+        String::new()
+    } else {
+        format!(
+            "\n\n         COMPANY-WIDE SHARED MEMORY (authorized for your role — separate from private memory.md):\n{company_mem}"
+        )
+    };
     let subagents: Vec<&library::LibraryItem> = suite_items
         .iter()
         .filter(|i| i.kind == "subagent")
@@ -2027,15 +2059,21 @@ fn system_prompt_for(
          - browse_library {{\"query\": \"spreadsheet\"}} — search the company-wide library of skills, subagents and apps shared by every person's agent.\n\
          - install_item {{\"item_id\": \"daily-log\"}} — add a library item to this person's suite, so it is yours to use from the next task on.\n\
          - publish_skill {{\"name\": \"...\", \"description\": \"...\", \"params\": [\"entry\"], \"source\": \"<Rune script>\"}} — contribute a reusable skill you wrote to the company library, so every person's agent can use it. Library skills are Rune scripts whose main takes the declared params as strings in order and returns a string (or \"file:<name>\" after writing a file through host_workspace_write). A script that does not compile is refused.\n\
+         - read_company_memory {{\"query\": \"optional\"}} — read authorized company-wide shared memory entries (separate from this person's private memory.md).\n\
+         - write_company_memory {{\"category\": \"fact|procedure|preference|policy\", \"scope\": \"company|role:<role>|client:<client_id>\", \"content\": \"...\"}} — add a shared entry to company memory (admin, pm, ae, office roles only; never include secrets or host paths).\n\
+         - query_company_db {{\"table\": \"people|roles|clients|work|receipts|tools|outcomes|memory|summary\", \"query\": \"optional\", \"limit\": 50}} — query company-wide structured database tables scoped to your role.\n\
+         - test_tool {{\"params\": [\"p1\"], \"source\": \"<script>\", \"tests\": [{{\"name\": \"...\", \"setup_files\": {{}}, \"args\": [\"...\"], \"expect_ok\": true, \"expect_output_contains\": \"...\", \"expect_files\": {{}}}}]}} — compile-check and execute real sandboxed test cases for a tool before staging it.\n\
+         - build_tool {{\"name\": \"...\", \"description\": \"...\", \"params\": [\"p1\"], \"source\": \"<script>\", \"tests\": [...]}} — verify and test a new reusable tool in the isolated sandbox, then stage it as an approval card so your person can approve installing it into their suite and sharing with the company library.\n\
          - delegate {{\"subagent\": \"researcher\", \"task\": \"...\"}} — hand a focused sub-task to a specialist subagent from the suite; it works with the same tools and returns its result to you.\n\
          - delete_file {{\"path\": \"old.txt\"}} — CONSEQUENTIAL: deleting is permanent, so this does not delete immediately — it parks the deletion as a decision for your person to approve. Never claim a file was deleted when it was only parked.\n\
          - flag_decision {{\"summary\": \"...\"}} — raise a question as a decision in your person's inbox when a choice is genuinely theirs to make.\n\
          - request_checkpoint {{\"prompt\": \"...\", \"input_mode\": \"approve_reject|choice|text\", \"choices\": [...], \"inspect_files\": [...]}} — pause this run cleanly at a structured human checkpoint so your person can inspect files and provide a decision or answer, after which the run resumes automatically.{suite_block}\n\n\
          RULES: Use tools to do the real work; never claim work you did not do through a tool. When you learn a durable preference or fact about this person, record it with update_memory before finishing. When you build something reusable, publish it to the library so the whole company benefits. Finish with done only when the task is actually complete.{security_block}{engagement_block}\n\n\
          PREFERENCES AND FACTS THIS PERSON HAS TAUGHT YOU — apply them in every task:\n{prefs_block}\n\n\
-         WHAT YOU KNOW ABOUT THIS PERSON (their memory file — treat it as true and use it):\n{memory}",
+         WHAT YOU KNOW ABOUT THIS PERSON (their memory file — treat it as true and use it):\n{memory}{company_memory_block}",
         security_block = security_block(),
-        engagement_block = engagement_block
+        engagement_block = engagement_block,
+        company_memory_block = company_memory_block
     )
 }
 
@@ -2238,7 +2276,10 @@ fn subagent_system_prompt(
             .join("\n")
     };
     let mut skills_block = String::new();
-    for s in suite_items.iter().filter(|i| i.kind == "skill" && !i.builtin) {
+    for s in suite_items
+        .iter()
+        .filter(|i| matches!(i.kind.as_str(), "skill" | "tool") && !i.builtin)
+    {
         let params = s
             .params
             .iter()
@@ -2639,6 +2680,40 @@ fn compact_messages_if_needed(
     true
 }
 
+pub(crate) fn refresh_offers_and_notify(
+    cfg: &Config,
+    suite: &library::Suite,
+    lib: &library::Library,
+    events: Option<&sse::RunEventBus>,
+    person_id: &str,
+) -> Vec<Value> {
+    let before_ids: std::collections::HashSet<String> = records::load_offers(&cfg.data_dir)
+        .into_iter()
+        .filter_map(|o| o["id"].as_str().map(str::to_string))
+        .collect();
+    let offers = records::refresh_offers(cfg, suite, lib);
+    for offer in &offers {
+        let Some(id) = offer["id"].as_str() else {
+            continue;
+        };
+        if !before_ids.contains(id) {
+            let title = offer["title"].as_str().unwrap_or("Would this help?");
+            let detail = offer["detail"].as_str().unwrap_or("");
+            proactive_offers::emit_notification(
+                &cfg.data_dir,
+                events,
+                person_id,
+                "proactive_offer",
+                title,
+                detail,
+                "offer",
+                id,
+            );
+        }
+    }
+    offers
+}
+
 fn park_budget_gate_decision(
     cfg: &Config,
     thread_id: &str,
@@ -2646,8 +2721,10 @@ fn park_budget_gate_decision(
     spent_usd: f64,
     live: Option<LiveStreamCtx<'_>>,
 ) -> (String, String) {
+    let mut created = false;
     let did = records::find_pending_budget_gate(&cfg.data_dir, &gate.engagement_id, thread_id)
         .unwrap_or_else(|| {
+            created = true;
             let summary = format!(
                 "Retainer budget gate reached for '{}' (${:.4} spent of ${:.2} budget)",
                 gate.engagement_name, spent_usd, gate.retainer_budget_usd
@@ -2671,6 +2748,22 @@ fn park_budget_gate_decision(
         "Paused at retainer budget gate for '{}' (${:.4} spent of ${:.2} budget) — approve decision {} in Decisions to continue.",
         gate.engagement_name, spent_usd, gate.retainer_budget_usd, did
     );
+    if created {
+        let person_id = live
+            .as_ref()
+            .map(|l| l.person_id.to_string())
+            .unwrap_or_else(|| records::infer_person_id(&cfg.data_dir));
+        proactive_offers::emit_notification(
+            &cfg.data_dir,
+            live.as_ref().map(|l| l.events),
+            &person_id,
+            "approval_parked",
+            &format!("Budget gate: {}", gate.engagement_name),
+            &truncate(&msg, 200),
+            "decision",
+            &did,
+        );
+    }
     if let Some(lctx) = live {
         lctx.events.publish(
             "approval_parked",
@@ -2923,6 +3016,9 @@ fn run_loop(
                     | "flag_decision"
                     | "request_checkpoint"
                     | "browse_library"
+                    | "write_company_memory"
+                    | "build_tool"
+                    | "test_tool"
             )
         {
             // The subagent toolset restriction is enforced HERE, not
@@ -2942,7 +3038,11 @@ fn run_loop(
             // settled decision can report back into it.
             if matches!(
                 tool.as_str(),
-                "delete_file" | "flag_decision" | "request_checkpoint" | "invoke_connector"
+                "delete_file"
+                    | "flag_decision"
+                    | "request_checkpoint"
+                    | "invoke_connector"
+                    | "build_tool"
             ) || tool.starts_with("mcp.")
             {
                 args["_thread"] = json!(thread_id);
@@ -2994,6 +3094,33 @@ fn run_loop(
         steps.push(step_line.clone());
         let rendered_step = format!("{step_line}\n{}", truncate(&result_text, 500));
         push_live_step(live, rendered_step.clone());
+        let newly_parked_decision = ok
+            && ((tool == "delete_file"
+                && result_text.starts_with("parked for your person's approval"))
+                || matches!(tool.as_str(), "flag_decision" | "build_tool")
+                || ((tool == "invoke_connector" || tool.starts_with("mcp."))
+                    && result_text.starts_with("parked for your person's approval")));
+        if newly_parked_decision {
+            let notif_title = match tool.as_str() {
+                "delete_file" => "Approval needed: delete file".to_string(),
+                "flag_decision" => "Decision needed".to_string(),
+                "build_tool" => format!(
+                    "Would this help? New tool: {}",
+                    args["name"].as_str().unwrap_or("custom tool")
+                ),
+                _ => "Approval needed".to_string(),
+            };
+            proactive_offers::emit_notification(
+                &cfg.data_dir,
+                live.as_ref().map(|l| l.events),
+                &ctx.person_id,
+                "approval_parked",
+                &notif_title,
+                &truncate(&result_text, 200),
+                "decision",
+                "",
+            );
+        }
         if let Some(lctx) = live {
             let newly_written: Vec<String> = ledger.written[prev_written_len..].to_vec();
             for p in &newly_written {
@@ -3015,7 +3142,10 @@ fn run_loop(
                 );
             }
             if ok
-                && (matches!(tool.as_str(), "delete_file" | "flag_decision" | "request_checkpoint")
+                && (matches!(
+                    tool.as_str(),
+                    "delete_file" | "flag_decision" | "request_checkpoint" | "build_tool"
+                )
                     || ((tool == "invoke_connector" || tool.starts_with("mcp."))
                         && result_text.starts_with("parked for your person's approval")))
             {
@@ -3670,7 +3800,7 @@ fn run_agent_inner(
     };
     let mut dynamic_skills: std::collections::HashSet<String> = suite_items
         .iter()
-        .filter(|i| i.kind == "skill" && !i.builtin)
+        .filter(|i| matches!(i.kind.as_str(), "skill" | "tool") && !i.builtin)
         .map(|i| i.id.clone())
         .collect();
     let system = system_prompt_for(cfg, Some(ctx), &suite_items);
@@ -4152,7 +4282,13 @@ fn run_agent_inner(
     {
         let lib = ctx.library.lock().unwrap();
         let suite_now = library::load_suite(&cfg.data_dir);
-        records::refresh_offers(cfg, &suite_now, &lib);
+        refresh_offers_and_notify(
+            cfg,
+            &suite_now,
+            &lib,
+            live_ctx.as_ref().map(|l| l.events),
+            &ctx.person_id,
+        );
     }
     // Anything the traps blocked or held during an otherwise finished
     // run becomes one plain notice in Today.

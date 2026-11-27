@@ -28,17 +28,19 @@ use std::path::Path;
 #[derive(Clone, Debug)]
 pub struct LibraryItem {
     pub id: String,
-    pub kind: String, // "skill" | "subagent" | "app"
+    pub kind: String, // "skill" | "subagent" | "app" | "tool"
     pub name: String,
     pub description: String,
     pub author: String, // person id, or "ergon" for seeds
     pub version: u32,
     pub builtin: bool,
-    pub params: Vec<String>, // skill: ordered parameter names
-    pub source: String,      // skill: Rune source
+    pub params: Vec<String>, // skill/tool: ordered parameter names
+    pub source: String,      // skill/tool: Rune source
     pub instructions: String, // subagent: system instructions
     pub template: String,    // app: task template with {field} slots
     pub fields: Vec<String>, // app: input field names
+    pub tests: Vec<Value>,   // tool: test case definitions
+    pub test_report: Option<Value>, // tool/evolution: latest verification report
 }
 
 impl LibraryItem {
@@ -59,12 +61,14 @@ impl LibraryItem {
             // company's shared knowledge, and a person inspecting an
             // item should see exactly what would run.
             "source": self.source,
+            "tests": self.tests,
+            "test_report": self.test_report,
         })
     }
 
     pub fn from_json(v: &Value) -> Option<LibraryItem> {
         let kind = v["kind"].as_str()?.to_string();
-        if !matches!(kind.as_str(), "skill" | "subagent" | "app") {
+        if !matches!(kind.as_str(), "skill" | "subagent" | "app" | "tool") {
             return None;
         }
         let strings = |key: &str| -> Vec<String> {
@@ -78,6 +82,8 @@ impl LibraryItem {
                 })
                 .unwrap_or_default()
         };
+        let tests = v["tests"].as_array().cloned().unwrap_or_default();
+        let test_report = v.get("test_report").filter(|r| !r.is_null()).cloned();
         Some(LibraryItem {
             id: v["id"].as_str()?.to_string(),
             kind,
@@ -91,6 +97,8 @@ impl LibraryItem {
             instructions: v["instructions"].as_str().unwrap_or("").to_string(),
             template: v["template"].as_str().unwrap_or("").to_string(),
             fields: strings("fields"),
+            tests,
+            test_report,
         })
     }
 }
@@ -115,6 +123,8 @@ fn item(
         instructions: String::new(),
         template: String::new(),
         fields: Vec::new(),
+        tests: Vec::new(),
+        test_report: None,
     }
 }
 
@@ -386,6 +396,73 @@ impl Library {
             .collect()
     }
 
+    fn clean_text(s: &str, cap: usize) -> String {
+        let flat: String = s
+            .replace(['\n', '\r'], " ")
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ");
+        flat.chars().take(cap).collect()
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn publish_code_item(
+        &mut self,
+        kind: &str,
+        method: &str,
+        name: &str,
+        description: &str,
+        params: Vec<String>,
+        source: String,
+        tests: Vec<Value>,
+        test_report: Option<Value>,
+        author: &str,
+    ) -> Result<LibraryItem, String> {
+        let name = Self::clean_text(name, 80);
+        if name.is_empty() {
+            return Err(format!("{method} needs a name"));
+        }
+        // Cap the id at the loader's validity bound (64 chars), so a
+        // long-named skill or tool is never published in a shape the
+        // loader would drop on the next boot.
+        let id: String = slugify(&name).chars().take(64).collect();
+        let id = id.trim_end_matches('-').to_string();
+        if let Some(existing) = self.items.iter_mut().find(|i| i.id == id) {
+            if existing.builtin {
+                return Err(format!(
+                    "'{name}' is a built-in item and cannot be overwritten — publish under a different name"
+                ));
+            }
+            if existing.kind != kind {
+                return Err(format!(
+                    "'{name}' already exists in the library as a {} — pick another name",
+                    existing.kind
+                ));
+            }
+            if existing.author != author {
+                return Err(format!(
+                    "'{name}' is {}'s {} (v{}) — you cannot overwrite another person's library item. Publish your version under a different name",
+                    existing.author, kind, existing.version
+                ));
+            }
+            existing.description = Self::clean_text(description, 300);
+            existing.params = params;
+            existing.source = source;
+            existing.tests = tests;
+            existing.test_report = test_report;
+            existing.author = author.to_string();
+            existing.version += 1;
+            return Ok(existing.clone());
+        }
+        let mut it = item(&id, kind, &name, &Self::clean_text(description, 300), author);
+        it.params = params;
+        it.source = source;
+        it.tests = tests;
+        it.test_report = test_report;
+        self.items.push(it.clone());
+        Ok(it)
+    }
+
     /// Publish a skill into the library — how agents maintain it.
     /// A new name creates version 1; re-publishing the same name by
     /// the SAME author updates it in place with a version bump.
@@ -403,53 +480,76 @@ impl Library {
         source: String,
         author: &str,
     ) -> Result<LibraryItem, String> {
-        let clean = |s: &str, cap: usize| -> String {
-            let flat: String = s
-                .replace(['\n', '\r'], " ")
-                .split_whitespace()
-                .collect::<Vec<_>>()
-                .join(" ");
-            flat.chars().take(cap).collect()
-        };
-        let name = clean(name, 80);
-        if name.is_empty() {
-            return Err("publish_skill needs a name".to_string());
+        self.publish_code_item(
+            "skill",
+            "publish_skill",
+            name,
+            description,
+            params,
+            source,
+            Vec::new(),
+            None,
+            author,
+        )
+    }
+
+    /// Publish a verified tool into the shared library with its test suite
+    /// and latest verification report. Shares the same slugify and
+    /// author/builtin collision guarantees as `publish_skill`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn publish_tool(
+        &mut self,
+        name: &str,
+        description: &str,
+        params: Vec<String>,
+        source: String,
+        tests: Vec<Value>,
+        test_report: Value,
+        author: &str,
+    ) -> Result<LibraryItem, String> {
+        let report = (!test_report.is_null()).then_some(test_report);
+        self.publish_code_item(
+            "tool",
+            "publish_tool",
+            name,
+            description,
+            params,
+            source,
+            tests,
+            report,
+            author,
+        )
+    }
+
+    /// Update an existing non-builtin library item's implementation,
+    /// version, and optional test report (for self-improvement promotion
+    /// or rollback).
+    pub fn update_item_for_evolution(
+        &mut self,
+        id: &str,
+        new_source_or_instructions: &str,
+        new_version: u32,
+        test_report: Option<Value>,
+    ) -> Result<LibraryItem, String> {
+        let existing = self
+            .items
+            .iter_mut()
+            .find(|i| i.id == id)
+            .ok_or_else(|| format!("library item '{id}' not found"))?;
+        if existing.builtin {
+            return Err(format!(
+                "'{id}' is a built-in item and cannot be overwritten"
+            ));
         }
-        // Cap the id at the loader's validity bound (64 chars), so a
-        // long-named skill is never published in a shape the loader
-        // would drop on the next boot.
-        let id: String = slugify(&name).chars().take(64).collect();
-        let id = id.trim_end_matches('-').to_string();
-        if let Some(existing) = self.items.iter_mut().find(|i| i.id == id) {
-            if existing.builtin {
-                return Err(format!(
-                    "'{name}' is a built-in item and cannot be overwritten — publish under a different name"
-                ));
-            }
-            if existing.kind != "skill" {
-                return Err(format!(
-                    "'{name}' already exists in the library as a {} — pick another name",
-                    existing.kind
-                ));
-            }
-            if existing.author != author {
-                return Err(format!(
-                    "'{name}' is {}'s skill (v{}) — you cannot overwrite another person's library item. Publish your version under a different name",
-                    existing.author, existing.version
-                ));
-            }
-            existing.description = clean(description, 300);
-            existing.params = params;
-            existing.source = source;
-            existing.author = author.to_string();
-            existing.version += 1;
-            return Ok(existing.clone());
+        match existing.kind.as_str() {
+            "skill" | "tool" => existing.source = new_source_or_instructions.to_string(),
+            "subagent" => existing.instructions = new_source_or_instructions.to_string(),
+            "app" => existing.template = new_source_or_instructions.to_string(),
+            other => return Err(format!("unsupported library item kind '{other}'")),
         }
-        let mut it = item(&id, "skill", &name, &clean(description, 300), author);
-        it.params = params;
-        it.source = source;
-        self.items.push(it.clone());
-        Ok(it)
+        existing.version = new_version;
+        existing.test_report = test_report.filter(|v| !v.is_null());
+        Ok(existing.clone())
     }
 
     /// Publish an app component into the library (used when a person
@@ -597,5 +697,100 @@ impl Suite {
             .iter()
             .filter_map(|id| library.get(id))
             .collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn library_item_backward_compatible_and_tool_round_trip() {
+        let legacy = json!({
+            "id": "legacy-skill",
+            "kind": "skill",
+            "name": "Legacy",
+            "description": "Old schema without tests",
+            "author": "alice",
+            "version": 1,
+            "builtin": false,
+            "params": ["x"],
+            "source": "pub fn main(x) { x }"
+        });
+        let parsed = LibraryItem::from_json(&legacy).unwrap();
+        assert!(parsed.tests.is_empty());
+        assert!(parsed.test_report.is_none());
+
+        let mut lib = Library::default();
+        let tool = lib
+            .publish_tool(
+                "CSV Helper",
+                "Parses CSVs",
+                vec!["file".into()],
+                "pub fn main(file) { file }".into(),
+                vec![json!({"name": "t1"})],
+                json!({"passed": 1, "total": 1, "all_passed": true}),
+                "alice",
+            )
+            .unwrap();
+        assert_eq!(tool.kind, "tool");
+        assert_eq!(tool.version, 1);
+
+        let rt = LibraryItem::from_json(&tool.to_json()).unwrap();
+        assert_eq!(rt.kind, "tool");
+        assert_eq!(rt.tests.len(), 1);
+        assert_eq!(rt.test_report.unwrap()["all_passed"], json!(true));
+
+        let cross = lib.publish_tool(
+            "CSV Helper",
+            "Hijack",
+            vec![],
+            "pub fn main() { \"x\" }".into(),
+            vec![],
+            Value::Null,
+            "bob",
+        );
+        assert!(cross.is_err());
+    }
+
+    #[test]
+    fn update_item_for_evolution_promotes_and_rolls_back() {
+        let mut lib = Library {
+            items: seed_items(),
+            recovered: None,
+        };
+        assert!(lib
+            .update_item_for_evolution("write-document", "x", 2, None)
+            .is_err());
+
+        lib.publish_tool(
+            "Evo Tool",
+            "Evolves",
+            vec![],
+            "pub fn main() { \"v1\" }".into(),
+            vec![],
+            json!({"passed": 1, "total": 1}),
+            "alice",
+        )
+        .unwrap();
+
+        let promoted = lib
+            .update_item_for_evolution(
+                "evo-tool",
+                "pub fn main() { \"v2\" }",
+                2,
+                Some(json!({"passed": 2, "total": 2})),
+            )
+            .unwrap();
+        assert_eq!(promoted.version, 2);
+        assert!(promoted.source.contains("v2"));
+        assert_eq!(promoted.test_report.unwrap()["total"], json!(2));
+
+        let rolled_back = lib
+            .update_item_for_evolution("evo-tool", "pub fn main() { \"v1\" }", 1, None)
+            .unwrap();
+        assert_eq!(rolled_back.version, 1);
+        assert!(rolled_back.source.contains("v1"));
+        assert!(rolled_back.test_report.is_none());
     }
 }

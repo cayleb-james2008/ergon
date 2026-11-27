@@ -694,10 +694,10 @@ await reset();
   ok("phone Workspace Switcher switches desk cleanly without interception", mobileSwitchOk);
 
   await p.goto(BASE + "phone");
-  await waitWorkbench(p);
+  await p.waitForSelector("#phone-shell #phone-bottom-nav", { timeout: 15000 });
   await p.waitForTimeout(500);
   const pm = await p.evaluate(MEASURE);
-  ok("/phone route serves unified responsive desk cleanly", pm.docOverflow <= 0 && pm.smallTargets === 0 && pm.lowContrast === 0 && pm.textClipped === 0);
+  ok("/phone route serves phone-first surface cleanly", pm.docOverflow <= 0 && pm.smallTargets === 0 && pm.lowContrast === 0 && pm.textClipped === 0);
   await ctx.close();
 }
 
@@ -4471,6 +4471,220 @@ for (const [theme, vw, vh] of [
       sseErrText.includes("reconciliation") && cpErrText.includes("lock conflict") && cpResolved && histRecovered,
       `sse=${sseErrText} cp=${cpErrText} resolved=${cpResolved} hist=${histRecovered}`
     );
+    await ctx.close();
+  }
+}
+
+// 6l. Phone-First /phone surface (390x844 light & dark measure, Decisions default, tool_offer + offers Approve/Deny, push subscribe, tabs, Settings-only theme, ?face=phone) (5 checks)
+{
+  const waitPhone = (p) => p.waitForSelector("#phone-shell #phone-bottom-nav", { timeout: 15000 });
+
+  // 1. 390x844 Light: measure + Decisions default tab + Settings-only Light/Dark toggle
+  {
+    const { ctx, p } = await open(390, 844, "light");
+    await p.goto(`${BASE}phone`);
+    await waitPhone(p);
+    await p.waitForSelector("#phone-tab-decisions", { timeout: 5000 });
+    await p.waitForTimeout(500);
+    const m = await p.evaluate(MEASURE);
+    await p.screenshot({ path: `${OUT}/phone-390-light.png` });
+    const decisionsDefault = await p.locator('[data-phone-tab="decisions"][aria-selected="true"]').isVisible();
+    const themeHiddenOutside = (await p.locator('[aria-label="Appearance"]').count()) === 0;
+    await p.locator("#phone-settings-btn").click();
+    await p.waitForSelector('#phone-settings-panel [aria-label="Appearance"]', { timeout: 4000 });
+    await p.locator('#phone-settings-panel [aria-label="Appearance"] [data-id="dark"]').click();
+    await p.waitForTimeout(200);
+    const switchedDark = (await p.evaluate(() => document.documentElement.dataset.theme)) === "dark";
+    await p.keyboard.press("Escape");
+    await p.waitForTimeout(200);
+    ok(
+      "phone 390x844 light measure, Decisions default tab, and Settings-only Light/Dark toggle",
+      m.docOverflow <= 0 &&
+        m.smallTargets === 0 &&
+        m.lowContrast === 0 &&
+        m.unnamed.length === 0 &&
+        m.minFont >= 12 &&
+        m.textClipped === 0 &&
+        decisionsDefault &&
+        themeHiddenOutside &&
+        switchedDark,
+      `overflow=${m.docOverflow} small=${m.smallTargets} (${m.smallSample.join(",")}) low=${m.lowContrast} clipped=${m.textClipped} default=${decisionsDefault} hidden=${themeHiddenOutside} dark=${switchedDark}`
+    );
+    await ctx.close();
+  }
+
+  // 2. 390x844 Dark: measure + Push Alerts subscribe
+  {
+    const { ctx, p } = await open(390, 844, "dark");
+    await p.goto(`${BASE}phone`);
+    await waitPhone(p);
+    await p.waitForSelector("#phone-tab-decisions", { timeout: 5000 });
+    await p.waitForTimeout(500);
+    const m = await p.evaluate(MEASURE);
+    await p.screenshot({ path: `${OUT}/phone-390-dark.png` });
+    const pushReq = p.waitForResponse((r) => r.url().includes("/api/push/subscribe") && r.request().method() === "POST");
+    await p.locator("#phone-push-btn").click();
+    const pushRes = await pushReq;
+    const alertsOn = await p.locator("#phone-push-btn").innerText();
+    ok(
+      "phone 390x844 dark measure and Push Alerts subscription",
+      m.docOverflow <= 0 &&
+        m.smallTargets === 0 &&
+        m.lowContrast === 0 &&
+        m.unnamed.length === 0 &&
+        m.minFont >= 12 &&
+        m.textClipped === 0 &&
+        pushRes.ok() &&
+        /Alerts on/i.test(alertsOn),
+      `overflow=${m.docOverflow} small=${m.smallTargets} low=${m.lowContrast} push=${pushRes.status()} label=${alertsOn}`
+    );
+    await ctx.close();
+  }
+
+  // 3. Decisions (tool_offer + standard decision Approve/Deny) + Proactive Offers ("Would this help?") + Scan work for offers
+  {
+    const { ctx, p } = await open(390, 844, "light");
+    let decisionsState = [
+      {
+        id: "dec-tool-1",
+        kind: "tool_offer",
+        summary: "Would this help? New tool: csv_totals",
+        description: "Summarizes CSV numeric columns cleanly.",
+        status: "pending",
+        params: ["file"],
+        test_report: { passed: 2, total: 2, all_passed: true, duration_ms: 14, source_sha256: "abc", ran_at_ms: Date.now(), cases: [] },
+        ts: Date.now() - 2000,
+      },
+      {
+        id: "dec-del-1",
+        kind: "delete",
+        summary: "Delete draft-notes.txt?",
+        path: "draft-notes.txt",
+        status: "pending",
+        ts: Date.now() - 1000,
+      },
+    ];
+    let offersState = [
+      {
+        id: "off-1",
+        kind: "install_library_tool",
+        title: "Would this help? Use weekly_digest (tool)",
+        detail: "Matches 3 recent weekly digest tasks.",
+        author: "maya",
+        status: "pending",
+        ts: Date.now() - 3000,
+      },
+    ];
+    const actions = [];
+
+    await p.route("**/api/decisions", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ decisions: decisionsState }) }));
+    await p.route(/\/api\/decisions\/[^/]+\/(approve|deny)$/, (r) => {
+      const url = r.request().url();
+      const m = url.match(/\/api\/decisions\/([^/]+)\/(approve|deny)$/);
+      if (m) {
+        const [, id, act] = m;
+        actions.push(`dec:${id}:${act}`);
+        decisionsState = decisionsState.map((d) => (d.id === id ? { ...d, status: act === "approve" ? "approved" : "denied" } : d));
+      }
+      return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true, outcome: "Updated." }) });
+    });
+    await p.route("**/api/offers", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ offers: offersState }) }));
+    await p.route("**/api/offers/analyze", (r) => {
+      actions.push("offers:analyze");
+      const scanned = {
+        id: "off-2",
+        kind: "repeat_task",
+        title: "Would this help? Automate Friday audit",
+        detail: "Repeated 2 times in recent work.",
+        status: "pending",
+        ts: Date.now(),
+      };
+      offersState = [...offersState, scanned];
+      return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ generated: [scanned], all_offers: offersState, proposed_tool: null }) });
+    });
+    await p.route(/\/api\/offers\/[^/]+\/(approve|deny|accept|dismiss)$/, (r) => {
+      const url = r.request().url();
+      const m = url.match(/\/api\/offers\/([^/]+)\/(approve|deny|accept|dismiss)$/);
+      if (m) {
+        const [, id, act] = m;
+        actions.push(`offer:${id}:${act}`);
+        offersState = offersState.map((o) => (o.id === id ? { ...o, status: act === "approve" || act === "accept" ? "accepted" : "dismissed" } : o));
+      }
+      return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true, outcome: "Offer updated." }) });
+    });
+
+    await p.goto(`${BASE}phone`);
+    await waitPhone(p);
+    await p.waitForSelector('[data-phone-decision="dec-tool-1"]', { timeout: 5000 });
+    const toolText = await p.locator('[data-phone-decision="dec-tool-1"]').innerText();
+    const hasToolOfferCopy = toolText.includes("Would this help?") && toolText.includes("2/2 sandbox tests passed");
+
+    await p.locator('[data-phone-decision-approve="dec-tool-1"]').click();
+    await p.locator('[data-phone-decision="dec-tool-1"]').waitFor({ state: "hidden", timeout: 4000 });
+    await p.locator('[data-phone-decision-deny="dec-del-1"]').click();
+    await p.locator('[data-phone-decision="dec-del-1"]').waitFor({ state: "hidden", timeout: 4000 });
+
+    await p.locator('[data-phone-offer-approve="off-1"]').click();
+    await p.locator('[data-phone-offer="off-1"]').waitFor({ state: "hidden", timeout: 4000 });
+
+    await p.locator("#phone-scan-offers-btn").click();
+    await p.waitForSelector('[data-phone-offer="off-2"]', { timeout: 4000 });
+    await p.locator('[data-phone-offer-deny="off-2"]').click();
+    await p.locator('[data-phone-offer="off-2"]').waitFor({ state: "hidden", timeout: 4000 });
+
+    ok(
+      "phone Decisions (tool_offer + delete Approve/Deny) and Proactive Offers (Approve/Deny + Scan work) complete cleanly",
+      hasToolOfferCopy &&
+        actions.includes("dec:dec-tool-1:approve") &&
+        actions.includes("dec:dec-del-1:deny") &&
+        actions.includes("offer:off-1:approve") &&
+        actions.includes("offers:analyze") &&
+        actions.includes("offer:off-2:deny"),
+      `actions=${actions.join(",")}`
+    );
+    await ctx.close();
+  }
+
+  // 4. Bottom tab switching across Brief, Chat, Suite + Company Memory with 0px overflow
+  {
+    const { ctx, p } = await open(390, 844, "light");
+    await p.goto(`${BASE}phone`);
+    await waitPhone(p);
+
+    await p.locator('[data-phone-tab="brief"]').click();
+    await p.waitForSelector("#phone-tab-brief #phone-brief-headline", { timeout: 4000 });
+    const briefOk = (await p.locator("#phone-brief-headline").isVisible()) && (await p.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
+
+    await p.locator('[data-phone-tab="chat"]').click();
+    await p.waitForSelector("#phone-tab-chat #phone-chat-input", { timeout: 4000 });
+    const chatBox = await p.locator("#phone-chat-send").boundingBox();
+    const chatOk = Boolean(chatBox && chatBox.height >= 44) && (await p.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
+
+    await p.locator('[data-phone-tab="suite"]').click();
+    await p.waitForSelector("#phone-tab-suite #phone-company-memory", { timeout: 4000 });
+    const suiteOk =
+      (await p.locator("#phone-suite-installed").isVisible()) &&
+      (await p.locator("#phone-company-library").isVisible()) &&
+      (await p.locator("#phone-company-memory").isVisible()) &&
+      (await p.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
+
+    ok(
+      "phone bottom tabs switch cleanly across Brief, Chat, and Suite/Company Memory with 0px overflow",
+      briefOk && chatOk && suiteOk,
+      `brief=${briefOk} chat=${chatOk} suite=${suiteOk}`
+    );
+    await ctx.close();
+  }
+
+  // 5. ?face=phone query route & Desktop link navigation
+  {
+    const { ctx, p } = await open(390, 844, "light");
+    await p.goto(`${BASE}?face=phone`);
+    await waitPhone(p);
+    await p.locator("#phone-desktop-link").click();
+    await waitWorkbench(p);
+    const onDesktop = await p.locator("#composer-input").isVisible();
+    ok("?face=phone renders Phone view and Desktop link returns to Workbench", onDesktop);
     await ctx.close();
   }
 }

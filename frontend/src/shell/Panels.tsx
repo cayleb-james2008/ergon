@@ -3,15 +3,18 @@
 // 2. SuitePanel ("My suite and the library" + count chip, install/remove/run built-in workflows)
 // 3. AddPersonPanel ("Add a person" MorphingDialog form with clean close & focus return)
 import { useEffect, useState } from "react";
-import { Blocks, BookOpen, CheckCircle2, ShieldAlert, UserPlus } from "lucide-react";
+import { Blocks, BookOpen, CheckCircle2, Database, Lock, ShieldAlert, UserPlus } from "lucide-react";
 import { toast } from "sonner";
 import { PanelModal, usePanelModalClose } from "@/shell/PanelModal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { SegmentedControl, SegmentedControlItem } from "@/components/ui/segmented-control";
 import { Details } from "@/chat/Entry";
 import {
   call,
+  fetchCompanyMemory,
+  type CompanyMemoryEntry,
   type LibraryItem,
   type MemoryHealth,
   type Msg,
@@ -129,10 +132,13 @@ function PanelShell({
 
 function LearnedBody({ onHealed }: { onHealed?: () => void }) {
   const { isOpen } = usePanelModalClose();
+  const [scopeTab, setScopeTab] = useState<"personal" | "company">("personal");
   const [text, setText] = useState<string | null>(null);
   const [health, setHealth] = useState<MemoryHealth | null>(null);
   const [healing, setHealing] = useState(false);
   const [failed, setFailed] = useState(false);
+  const [companyEntries, setCompanyEntries] = useState<CompanyMemoryEntry[] | null>(null);
+  const [companyErr, setCompanyErr] = useState(false);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -143,6 +149,15 @@ function LearnedBody({ onHealed }: { onHealed?: () => void }) {
         setHealth(r.data.health ?? null);
       } else {
         setFailed(true);
+      }
+    });
+    fetchCompanyMemory().then((r) => {
+      if (r.ok) {
+        setCompanyErr(false);
+        setCompanyEntries(r.data.entries);
+      } else {
+        setCompanyErr(true);
+        setCompanyEntries([]);
       }
     });
   }, [isOpen]);
@@ -180,11 +195,75 @@ function LearnedBody({ onHealed }: { onHealed?: () => void }) {
     return t.startsWith("- ") && !t.startsWith("- Name:") && !t.startsWith("- Role:");
   });
 
+  const scopeHeader = (
+    <div className="flex flex-wrap items-center justify-between gap-2 pb-1">
+      <SegmentedControl aria-label="Memory scope" className="max-w-full flex-wrap">
+        <SegmentedControlItem
+          data-memory-scope="personal"
+          aria-pressed={scopeTab === "personal"}
+          data-checked={scopeTab === "personal" ? "" : undefined}
+          className="min-h-11 gap-1.5 px-2.5 md:min-h-8"
+          onClick={() => setScopeTab("personal")}
+        >
+          <Lock className="size-3.5" strokeWidth={1.5} aria-hidden />
+          <span>Personal</span>
+          <Badge variant="outline" className="text-xs">Private</Badge>
+        </SegmentedControlItem>
+        <SegmentedControlItem
+          data-memory-scope="company"
+          aria-pressed={scopeTab === "company"}
+          data-checked={scopeTab === "company" ? "" : undefined}
+          className="min-h-11 gap-1.5 px-2.5 md:min-h-8"
+          onClick={() => setScopeTab("company")}
+        >
+          <Database className="size-3.5" strokeWidth={1.5} aria-hidden />
+          <span>Company</span>
+          <Badge variant="secondary" className="text-xs">Shared</Badge>
+        </SegmentedControlItem>
+      </SegmentedControl>
+    </div>
+  );
+
+  if (scopeTab === "company") {
+    return (
+      <div id="memory-panel" className="flex flex-col gap-3">
+        {scopeHeader}
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-entry border border-hairline bg-board px-3 py-2">
+          <span className="text-xs text-ink-2">
+            Shared company facts, procedures, and policies authorized for your role.
+          </span>
+          <Badge variant="secondary" className="text-xs">Shared</Badge>
+        </div>
+        {companyErr && (
+          <p className="text-sm text-ink-2">Company memory could not be loaded.</p>
+        )}
+        {companyEntries === null ? (
+          <p>Loading…</p>
+        ) : companyEntries.length === 0 ? (
+          <p className="text-sm text-ink-2">No shared company memory entries are visible for your role yet.</p>
+        ) : (
+          <ul id="company-memory-list" className="flex flex-col gap-2">
+            {companyEntries.map((entry) => (
+              <li key={entry.id} className="flex flex-col gap-1 rounded-sm border border-hairline bg-surface px-3 py-2.5">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <Badge variant="outline" className="text-xs">{entry.category}</Badge>
+                  <span className="mono rounded-chip bg-track px-1.5 py-0.5 text-xs text-ink-2">{entry.scope}</span>
+                </div>
+                <p className="text-sm text-ink [overflow-wrap:anywhere]">{entry.content}</p>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    );
+  }
+
   if (failed) return <p role="alert">Memory could not be loaded. Is the Ergon server running?</p>;
   if (text === null) return <p>Loading…</p>;
   if (!learned) {
     return (
       <div id="memory-panel" className="flex flex-col gap-3">
+        {scopeHeader}
         <div
           id="memory-health-banner"
           className="flex flex-wrap items-center justify-between gap-2 rounded-entry border border-hairline bg-board px-3 py-2"
@@ -203,7 +282,12 @@ function LearnedBody({ onHealed }: { onHealed?: () => void }) {
       </div>
     );
   }
-  return <LearnedList content={text} health={health} healing={healing} onHeal={handleHeal} />;
+  return (
+    <div className="flex flex-col gap-3">
+      {scopeHeader}
+      <LearnedList content={text} health={health} healing={healing} onHeal={handleHeal} />
+    </div>
+  );
 }
 
 export function LearnedPanel({

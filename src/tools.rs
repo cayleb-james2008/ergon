@@ -1594,6 +1594,128 @@ pub fn execute_tool_full(
                 item.name, item.id, item.version
             ))
         }
+        "read_company_memory" => {
+            let role = auth::resolve_person_role(&ctx.root_data_dir, &ctx.person_id);
+            let allowed = company_db::allowed_client_ids_for_memory(
+                &ctx.root_data_dir,
+                &ctx.person_id,
+                role,
+            );
+            let query = args["query"]
+                .as_str()
+                .map(|s| s.trim().to_ascii_lowercase())
+                .filter(|s| !s.is_empty());
+            let entries: Vec<Value> = company_db::list_company_memory_for(
+                &ctx.root_data_dir,
+                role,
+                &allowed,
+            )
+            .into_iter()
+            .filter(|e| {
+                query.as_deref().is_none_or(|q| {
+                    e.category.to_ascii_lowercase().contains(q)
+                        || e.scope.to_ascii_lowercase().contains(q)
+                        || e.content.to_ascii_lowercase().contains(q)
+                })
+            })
+            .map(|e| e.to_json())
+            .collect();
+            Ok(serde_json::json!({
+                "role": role.as_str(),
+                "count": entries.len(),
+                "entries": entries,
+            })
+            .to_string())
+        }
+        "write_company_memory" => {
+            let category = args["category"].as_str().unwrap_or("fact");
+            let scope = args["scope"].as_str().unwrap_or("company");
+            let content = args["content"]
+                .as_str()
+                .ok_or("write_company_memory needs args.content")?;
+            let role = auth::resolve_person_role(&ctx.root_data_dir, &ctx.person_id);
+            let entry = company_db::add_company_memory(
+                &ctx.root_data_dir,
+                role,
+                &ctx.person_id,
+                category,
+                scope,
+                content,
+            )
+            .map_err(|(_, msg)| msg)?;
+            Ok(serde_json::json!({
+                "ok": true,
+                "entry": entry.to_json(),
+            })
+            .to_string())
+        }
+        "query_company_db" => {
+            let table = args["table"].as_str().unwrap_or("summary");
+            let query = args["query"].as_str();
+            let limit = args["limit"].as_u64().unwrap_or(50) as usize;
+            let role = auth::resolve_person_role(&ctx.root_data_dir, &ctx.person_id);
+            let root_cfg = Config {
+                data_dir: ctx.root_data_dir.clone(),
+                workspace_dir: ctx.root_data_dir.join("workspace"),
+                memory_path: ctx.root_data_dir.join("memory.md"),
+                model_base_url: cfg.model_base_url.clone(),
+                model_id: cfg.model_id.clone(),
+                api_key: cfg.api_key.clone(),
+            };
+            let people = PeopleState::load(&root_cfg);
+            let lib = ctx.library.lock().unwrap().clone();
+            let result = company_db::query_company_db(
+                &ctx.root_data_dir,
+                &root_cfg,
+                &people,
+                &lib,
+                &ctx.person_id,
+                role,
+                table,
+                query,
+                limit,
+            )
+            .map_err(|(_, msg)| msg)?;
+            Ok(result.to_string())
+        }
+        "test_tool" => {
+            let params = string_list(&args["params"]);
+            let source = args["source"]
+                .as_str()
+                .ok_or("test_tool needs args.source")?;
+            let tests = parse_tool_tests(&args["tests"])?;
+            let report =
+                tool_builder::verify_and_test_tool(&ctx.root_data_dir, &params, source, &tests)?;
+            Ok(report.to_json().to_string())
+        }
+        "build_tool" => {
+            let name = args["name"]
+                .as_str()
+                .ok_or("build_tool needs args.name")?;
+            let description = args["description"].as_str().unwrap_or("");
+            let params = string_list(&args["params"]);
+            let source = args["source"]
+                .as_str()
+                .ok_or("build_tool needs args.source")?
+                .to_string();
+            let tests = parse_tool_tests(&args["tests"])?;
+            let thread_id = args["_thread"].as_str().unwrap_or("");
+            let pkg = tool_builder::stage_tool_for_approval(
+                &ctx.root_data_dir,
+                cfg,
+                &ctx.person_id,
+                thread_id,
+                name,
+                description,
+                params,
+                source,
+                tests,
+            )?;
+            Ok(format!(
+                "staged tool '{}' for your person's approval (decision {}, package {}): passed {}/{} sandbox tests. It is NOT installed or shared yet — it will be installed into your suite and published to the company library only if they approve it.",
+                pkg.name, pkg.decision_id, pkg.id, pkg.test_report.passed, pkg.test_report.total
+            ))
+        }
         "delete_file" => {
             let rel = args["path"]
                 .as_str()
@@ -1711,15 +1833,15 @@ pub fn execute_tool_full(
                 let runnable = {
                     let lib = ctx.library.lock().unwrap();
                     lib.get(name).and_then(|item| {
-                        if item.kind == "skill" && !item.builtin {
+                        if matches!(item.kind.as_str(), "skill" | "tool") && !item.builtin {
                             let values: Vec<String> = item
                                 .params
                                 .iter()
-                                .map(|p| {
-                                    args[p.as_str()]
-                                        .as_str()
-                                        .map(|s| s.to_string())
-                                        .unwrap_or_default()
+                                .map(|p| match &args[p.as_str()] {
+                                    Value::String(s) => s.clone(),
+                                    Value::Number(n) => n.to_string(),
+                                    Value::Bool(b) => b.to_string(),
+                                    _ => String::new(),
                                 })
                                 .collect();
                             Some((item.source.clone(), values))
@@ -1735,6 +1857,22 @@ pub fn execute_tool_full(
             execute_tool_with_scope(cfg, &ctx.root_data_dir, &ctx.person_id, name, args)
         }
     }
+}
+
+pub(crate) fn parse_tool_tests(v: &Value) -> Result<Vec<tool_builder::ToolTestCase>, String> {
+    let arr = v
+        .as_array()
+        .ok_or("tests must be a non-empty JSON array of test cases")?;
+    if arr.is_empty() {
+        return Err("at least 1 test case is required".to_string());
+    }
+    let mut out = Vec::with_capacity(arr.len());
+    for (idx, item) in arr.iter().enumerate() {
+        let tc = tool_builder::ToolTestCase::from_json(item)
+            .ok_or_else(|| format!("tests[{idx}] must be an object with a string 'name'"))?;
+        out.push(tc);
+    }
+    Ok(out)
 }
 
 pub(crate) fn string_list(v: &Value) -> Vec<String> {

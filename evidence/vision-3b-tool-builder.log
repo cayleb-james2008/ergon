@@ -1,0 +1,8 @@
+Compile error rejected -> 400
+Failing test rejected -> 400
+Staged tool package tp-word-counter-1795788911702-0 -> decision d1795788911703-0 (2/2 sandbox tests passed)
+Unapproved tool run refused -> 404
+Approved decision d1795788911703-0 -> Approved and installed "Word Counter" into your suite and the company library.
+Employee A ran word-counter -> words=5
+Employee B live Ollama qwen2.5:3b run using word-counter -> 200: [{"content": "Call the word-counter tool with {\"path\": \"bob_notes.txt\"}, then state the exact words=... output in your summary.", "role": "user"}, {"content": "Tool: word-counter\nwords=5", "role": "step"}, {"content": "The word-counter tool processed 'bob_notes.txt' and returned 5 words.", "role": "assistant"}, {"content": "Note: this run wrote no files; the summary also names bob_notes.txt, which this run did not write.", "role": "step"}]
+Denied decision d1795788919439-1 -> never published to library

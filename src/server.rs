@@ -1,6 +1,6 @@
 //! Embedded HTTP server, request parser, security gates, and API route handlers.
 
-use crate::tools::{atomic_write_bytes, string_list};
+use crate::tools::{atomic_write_bytes, parse_tool_tests, string_list};
 use crate::*;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpListener;
@@ -8520,13 +8520,25 @@ fn try_route_knowledge_and_routines(
             // the mutex guards the in-memory items, nothing slower.
             let lib = state.library.lock().unwrap().clone();
             let suite = library::load_suite(&runtime.cfg.data_dir);
-            let offers = records::refresh_offers(&runtime.cfg, &suite, &lib);
+            let offers = refresh_offers_and_notify(
+                &runtime.cfg,
+                &suite,
+                &lib,
+                Some(&state.events),
+                &person.id,
+            );
             respond_json(stream, 200, &json!({"offers": offers}))
         }
         ("GET", "/api/brief") => {
             let lib = state.library.lock().unwrap().clone();
             let suite = library::load_suite(&runtime.cfg.data_dir);
-            records::refresh_offers(&runtime.cfg, &suite, &lib);
+            refresh_offers_and_notify(
+                &runtime.cfg,
+                &suite,
+                &lib,
+                Some(&state.events),
+                &person.id,
+            );
             let brief = records::build_brief(&runtime.cfg, &person.name, &suite, &lib);
             respond_json(stream, 200, &brief)
         }
@@ -8620,6 +8632,24 @@ fn try_route_knowledge_and_routines(
                         )
                         .unwrap_or(decision);
                         (updated, final_outcome)
+                    } else if decision["kind"].as_str() == Some("tool_offer") {
+                        let final_outcome = {
+                            let mut lib = state.library.lock().unwrap();
+                            tool_builder::settle_tool_offer_decision(
+                                &root_cfg.data_dir,
+                                &runtime.cfg.data_dir,
+                                &mut lib,
+                                &decision,
+                                action == "approve",
+                            )
+                        };
+                        let updated = records::set_decision_outcome(
+                            &runtime.cfg.data_dir,
+                            &id,
+                            &final_outcome,
+                        )
+                        .unwrap_or(decision);
+                        (updated, final_outcome)
                     } else {
                         (decision, outcome)
                     };
@@ -8698,6 +8728,60 @@ fn try_route_knowledge_and_routines(
                 Err(e) => respond_err(stream, 400, &e),
             }
         }
+        ("POST", "/api/offers/analyze") => {
+            let eff = effective_cfg(state, runtime);
+            let lib = state.library.lock().unwrap().clone();
+            let suite = library::load_suite(&runtime.cfg.data_dir);
+            let analysis = proactive_offers::analyze_proactive_offers(
+                &eff,
+                &person.id,
+                &suite,
+                &lib,
+                Some(&state.events),
+            );
+            let mut resp = analysis.to_json();
+            if let Some(ref spec) = analysis.proposed_tool {
+                let name = spec["tool_name"].as_str().unwrap_or("");
+                let description = spec["tool_description"].as_str().unwrap_or("");
+                let params = string_list(&spec["params"]);
+                let source = spec["source"].as_str().unwrap_or("").to_string();
+                match parse_tool_tests(&spec["tests"]).and_then(|tests| {
+                    tool_builder::stage_tool_for_approval(
+                        &root_cfg.data_dir,
+                        &runtime.cfg,
+                        &person.id,
+                        "",
+                        name,
+                        description,
+                        params,
+                        source,
+                        tests,
+                    )
+                }) {
+                    Ok(pkg) => {
+                        proactive_offers::emit_notification(
+                            &runtime.cfg.data_dir,
+                            Some(&state.events),
+                            &person.id,
+                            "approval_parked",
+                            &format!("Would this help? New tool: {}", pkg.name),
+                            &format!(
+                                "{}/{} sandbox tests passed. Approve to install and share.",
+                                pkg.test_report.passed, pkg.test_report.total
+                            ),
+                            "decision",
+                            &pkg.decision_id,
+                        );
+                        resp["staged_tool"] = pkg.to_json();
+                        resp["staged_decision_id"] = json!(pkg.decision_id);
+                    }
+                    Err(e) => {
+                        resp["staged_error"] = json!(e);
+                    }
+                }
+            }
+            respond_json(stream, 200, &resp)
+        }
         ("POST", path) if path.starts_with("/api/offers/") => {
             let rest = path.trim_start_matches("/api/offers/");
             let (id, action) = match rest.rsplit_once('/') {
@@ -8706,15 +8790,15 @@ fn try_route_knowledge_and_routines(
                     return Some(respond_err(stream, 404, "not found"))}
             };
             match action.as_str() {
-                "dismiss" => match records::set_offer_status(&runtime.cfg.data_dir, &id, "dismissed") {
+                "dismiss" | "deny" => match records::set_offer_status(&runtime.cfg.data_dir, &id, "dismissed") {
                     Ok(offer) => respond_json(stream, 200, &json!({"offer": offer})),
                     Err(e) => respond_err(stream, 400, &e),
                 },
-                "accept" => {
+                "accept" | "approve" => {
                     // Look the offer up first; acceptance DOES the
-                    // thing offered (install the app / create the
-                    // one-tap app from the repeated task), then marks
-                    // the offer settled.
+                    // thing offered (install the app / library tool /
+                    // stage or install built tool / create one-tap app),
+                    // then marks the offer settled.
                     let offers = records::load_offers(&runtime.cfg.data_dir);
                     let Some(offer) = offers.iter().find(|o| o["id"].as_str() == Some(id.as_str())).cloned() else {
                         return Some(respond_err(stream, 404, "offer not found"));
@@ -8724,8 +8808,15 @@ fn try_route_knowledge_and_routines(
                     }
                     let kind = offer["kind"].as_str().unwrap_or("");
                     let mut made: Option<Value> = None;
-                    if kind == "install_app" {
+                    if kind == "install_app" || kind == "install_library_tool" {
                         let item_id = offer["item_id"].as_str().unwrap_or("");
+                        let exists = {
+                            let lib = state.library.lock().unwrap();
+                            lib.get(item_id).is_some()
+                        };
+                        if !exists {
+                            return Some(respond_err(stream, 404, "library item not found"));
+                        }
                         library::with_suite_lock(|| {
                             let mut suite = library::load_suite(&runtime.cfg.data_dir);
                             if suite.install(item_id) {
@@ -8733,6 +8824,104 @@ fn try_route_knowledge_and_routines(
                             }
                         });
                         made = Some(json!({"installed": item_id}));
+                    } else if kind == "build_tool" {
+                        if let Some(pkg_id) = offer["tool_package_id"]
+                            .as_str()
+                            .filter(|s| !s.is_empty())
+                        {
+                            let Some(pkg) = tool_builder::get_tool_package(&root_cfg.data_dir, pkg_id) else {
+                                return Some(respond_err(stream, 404, "tool package not found"));
+                            };
+                            if !pkg.test_report.all_passed {
+                                return Some(respond_err(stream, 400, "tool package failed tests"));
+                            }
+                            let outcome = if !pkg.decision_id.is_empty() {
+                                if let Ok((dec, _)) =
+                                    records::resolve_decision(&runtime.cfg, &pkg.decision_id, true)
+                                {
+                                    let mut lib = state.library.lock().unwrap();
+                                    let out = tool_builder::settle_tool_offer_decision(
+                                        &root_cfg.data_dir,
+                                        &runtime.cfg.data_dir,
+                                        &mut lib,
+                                        &dec,
+                                        true,
+                                    );
+                                    let _ = records::set_decision_outcome(
+                                        &runtime.cfg.data_dir,
+                                        &pkg.decision_id,
+                                        &out,
+                                    );
+                                    out
+                                } else {
+                                    let mut lib = state.library.lock().unwrap();
+                                    tool_builder::settle_tool_offer_decision(
+                                        &root_cfg.data_dir,
+                                        &runtime.cfg.data_dir,
+                                        &mut lib,
+                                        &json!({ "tool_package_id": pkg.id }),
+                                        true,
+                                    )
+                                }
+                            } else {
+                                let mut lib = state.library.lock().unwrap();
+                                tool_builder::settle_tool_offer_decision(
+                                    &root_cfg.data_dir,
+                                    &runtime.cfg.data_dir,
+                                    &mut lib,
+                                    &json!({ "tool_package_id": pkg.id }),
+                                    true,
+                                )
+                            };
+                            made = Some(json!({"tool_package_id": pkg.id, "outcome": outcome}));
+                        } else {
+                            let name = offer["tool_name"]
+                                .as_str()
+                                .or_else(|| offer["name"].as_str())
+                                .unwrap_or("");
+                            let description = offer["tool_description"]
+                                .as_str()
+                                .or_else(|| offer["detail"].as_str())
+                                .unwrap_or("");
+                            let params = string_list(&offer["params"]);
+                            let source = offer["source"].as_str().unwrap_or("").to_string();
+                            let tests = match parse_tool_tests(&offer["tests"]) {
+                                Ok(t) => t,
+                                Err(e) => return Some(respond_err(stream, 400, &e)),
+                            };
+                            match tool_builder::stage_tool_for_approval(
+                                &root_cfg.data_dir,
+                                &runtime.cfg,
+                                &person.id,
+                                "",
+                                name,
+                                description,
+                                params,
+                                source,
+                                tests,
+                            ) {
+                                Ok(pkg) => {
+                                    proactive_offers::emit_notification(
+                                        &runtime.cfg.data_dir,
+                                        Some(&state.events),
+                                        &person.id,
+                                        "approval_parked",
+                                        &format!("Would this help? New tool: {}", pkg.name),
+                                        &format!(
+                                            "{}/{} sandbox tests passed. Approve to install and share.",
+                                            pkg.test_report.passed, pkg.test_report.total
+                                        ),
+                                        "decision",
+                                        &pkg.decision_id,
+                                    );
+                                    made = Some(json!({
+                                        "staged_tool": pkg.to_json(),
+                                        "decision_id": pkg.decision_id,
+                                    }));
+                                }
+                                Err(e) => return Some(respond_err(stream, 400, &e)),
+                            }
+                        }
                     } else if kind == "repeat_task" {
                         let template = offer["template"].as_str().unwrap_or("");
                         let short: String = template.chars().take(48).collect();
@@ -8769,6 +8958,367 @@ fn try_route_knowledge_and_routines(
                     }
                 }
                 _ => respond_err(stream, 404, "not found"),
+            }
+        }
+        ("GET", "/api/company/memory") => {
+            let caller_role = if auth_enforced {
+                principal.map(|p| p.role).unwrap_or(auth::Role::Member)
+            } else {
+                auth::Role::Admin
+            };
+            let allowed = company_db::allowed_client_ids_for_memory(
+                &root_cfg.data_dir,
+                &person.id,
+                caller_role,
+            );
+            let entries: Vec<Value> =
+                company_db::list_company_memory_for(&root_cfg.data_dir, caller_role, &allowed)
+                    .into_iter()
+                    .map(|e| e.to_json())
+                    .collect();
+            respond_json(
+                stream,
+                200,
+                &json!({
+                    "entries": entries,
+                    "role": caller_role.as_str(),
+                    "can_write": caller_role.can_manage_clients(),
+                }),
+            )
+        }
+        ("POST", "/api/company/memory") => {
+            let parsed: Value = match serde_json::from_slice(&req.body) {
+                Ok(v) => v,
+                Err(_) => return Some(respond_err(stream, 400, "request body is not valid JSON")),
+            };
+            let caller_role = if auth_enforced {
+                principal.map(|p| p.role).unwrap_or(auth::Role::Member)
+            } else {
+                auth::Role::Admin
+            };
+            let category = parsed["category"].as_str().unwrap_or("fact");
+            let scope = parsed["scope"].as_str().unwrap_or("company");
+            let content = parsed["content"].as_str().unwrap_or("");
+            match company_db::add_company_memory(
+                &root_cfg.data_dir,
+                caller_role,
+                &person.id,
+                category,
+                scope,
+                content,
+            ) {
+                Ok(entry) => respond_json(stream, 201, &json!({ "entry": entry.to_json() })),
+                Err((status, msg)) => respond_err(stream, status, &msg),
+            }
+        }
+        ("DELETE", path) if path.starts_with("/api/company/memory/") => {
+            let id = percent_decode(path.trim_start_matches("/api/company/memory/"))
+                .trim()
+                .to_string();
+            let caller_role = if auth_enforced {
+                principal.map(|p| p.role).unwrap_or(auth::Role::Member)
+            } else {
+                auth::Role::Admin
+            };
+            match company_db::delete_company_memory(&root_cfg.data_dir, caller_role, &id) {
+                Ok(true) => respond_json(stream, 200, &json!({ "deleted": true, "id": id })),
+                Ok(false) => respond_err(stream, 404, "company memory entry not found"),
+                Err((status, msg)) => respond_err(stream, status, &msg),
+            }
+        }
+        ("GET", "/api/company/db") => {
+            let table = query_param(&req.query, "table").unwrap_or_else(|| "summary".to_string());
+            let q = query_param(&req.query, "q")
+                .or_else(|| query_param(&req.query, "query"))
+                .filter(|s| !s.trim().is_empty());
+            let limit = query_param(&req.query, "limit")
+                .and_then(|s| s.trim().parse::<usize>().ok())
+                .unwrap_or(50);
+            let caller_role = if auth_enforced {
+                principal.map(|p| p.role).unwrap_or(auth::Role::Member)
+            } else {
+                auth::Role::Admin
+            };
+            let people = state.people.read().unwrap().clone();
+            let lib = state.library.lock().unwrap().clone();
+            match company_db::query_company_db(
+                &root_cfg.data_dir,
+                root_cfg,
+                &people,
+                &lib,
+                &person.id,
+                caller_role,
+                &table,
+                q.as_deref(),
+                limit,
+            ) {
+                Ok(res) => respond_json(stream, 200, &res),
+                Err((status, msg)) => respond_err(stream, status, &msg),
+            }
+        }
+        ("POST", "/api/company/db/query") => {
+            let parsed: Value = match serde_json::from_slice(&req.body) {
+                Ok(v) => v,
+                Err(_) => return Some(respond_err(stream, 400, "request body is not valid JSON")),
+            };
+            let table = parsed["table"].as_str().unwrap_or("summary");
+            let q = parsed["query"]
+                .as_str()
+                .or_else(|| parsed["q"].as_str())
+                .filter(|s| !s.trim().is_empty());
+            let limit = parsed["limit"].as_u64().unwrap_or(50) as usize;
+            let caller_role = if auth_enforced {
+                principal.map(|p| p.role).unwrap_or(auth::Role::Member)
+            } else {
+                auth::Role::Admin
+            };
+            let people = state.people.read().unwrap().clone();
+            let lib = state.library.lock().unwrap().clone();
+            match company_db::query_company_db(
+                &root_cfg.data_dir,
+                root_cfg,
+                &people,
+                &lib,
+                &person.id,
+                caller_role,
+                table,
+                q,
+                limit,
+            ) {
+                Ok(res) => respond_json(stream, 200, &res),
+                Err((status, msg)) => respond_err(stream, status, &msg),
+            }
+        }
+        ("GET", "/api/tools") => {
+            let packages: Vec<Value> = tool_builder::list_tool_packages(&root_cfg.data_dir)
+                .into_iter()
+                .map(|p| p.to_json())
+                .collect();
+            let lib = state.library.lock().unwrap().clone();
+            let suite = library::load_suite(&runtime.cfg.data_dir);
+            let library_tools: Vec<Value> = lib
+                .items
+                .iter()
+                .filter(|i| i.kind == "tool")
+                .map(|i| i.to_json())
+                .collect();
+            let installed_tool_ids: Vec<String> = suite
+                .resolved(&lib)
+                .into_iter()
+                .filter(|i| i.kind == "tool")
+                .map(|i| i.id)
+                .collect();
+            respond_json(
+                stream,
+                200,
+                &json!({
+                    "packages": packages,
+                    "library_tools": library_tools,
+                    "installed_tool_ids": installed_tool_ids,
+                }),
+            )
+        }
+        ("POST", "/api/tools/test") => {
+            let parsed: Value = match serde_json::from_slice(&req.body) {
+                Ok(v) => v,
+                Err(_) => return Some(respond_err(stream, 400, "request body is not valid JSON")),
+            };
+            let params = string_list(&parsed["params"]);
+            let source = parsed["source"].as_str().unwrap_or("");
+            let tests = match parse_tool_tests(&parsed["tests"]) {
+                Ok(t) => t,
+                Err(e) => return Some(respond_err(stream, 400, &e)),
+            };
+            match tool_builder::verify_and_test_tool(&root_cfg.data_dir, &params, source, &tests) {
+                Ok(report) => respond_json(stream, 200, &json!({ "report": report.to_json() })),
+                Err(e) => respond_err(stream, 400, &e),
+            }
+        }
+        ("POST", "/api/tools/build") => {
+            let parsed: Value = match serde_json::from_slice(&req.body) {
+                Ok(v) => v,
+                Err(_) => return Some(respond_err(stream, 400, "request body is not valid JSON")),
+            };
+            let name = parsed["name"].as_str().unwrap_or("");
+            let description = parsed["description"].as_str().unwrap_or("");
+            let params = string_list(&parsed["params"]);
+            let source = parsed["source"].as_str().unwrap_or("").to_string();
+            let thread_id = parsed["thread_id"].as_str().unwrap_or("");
+            let tests = match parse_tool_tests(&parsed["tests"]) {
+                Ok(t) => t,
+                Err(e) => return Some(respond_err(stream, 400, &e)),
+            };
+            match tool_builder::stage_tool_for_approval(
+                &root_cfg.data_dir,
+                &runtime.cfg,
+                &person.id,
+                thread_id,
+                name,
+                description,
+                params,
+                source,
+                tests,
+            ) {
+                Ok(pkg) => {
+                    proactive_offers::emit_notification(
+                        &runtime.cfg.data_dir,
+                        Some(&state.events),
+                        &person.id,
+                        "approval_parked",
+                        &format!("Would this help? New tool: {}", pkg.name),
+                        &format!(
+                            "{}/{} sandbox tests passed. Approve to install and share.",
+                            pkg.test_report.passed, pkg.test_report.total
+                        ),
+                        "decision",
+                        &pkg.decision_id,
+                    );
+                    respond_json(
+                        stream,
+                        201,
+                        &json!({ "package": pkg.to_json(), "decision_id": pkg.decision_id }),
+                    )
+                }
+                Err(e) => respond_err(stream, 400, &e),
+            }
+        }
+        ("POST", path) if path.starts_with("/api/tools/") && path.ends_with("/run") => {
+            let raw_id = path
+                .strip_prefix("/api/tools/")
+                .and_then(|rest| rest.strip_suffix("/run"))
+                .unwrap_or("");
+            let id = percent_decode(raw_id).trim().to_string();
+            if id.is_empty() {
+                return Some(respond_err(stream, 404, "tool not found"));
+            }
+            let item = {
+                let lib = state.library.lock().unwrap();
+                lib.get(&id)
+            };
+            let Some(item) = item else {
+                return Some(respond_err(stream, 404, "tool not found"));
+            };
+            if !matches!(item.kind.as_str(), "tool" | "skill") || item.builtin {
+                return Some(respond_err(stream, 400, "that library item is not a runnable tool"));
+            }
+            let suite = library::load_suite(&runtime.cfg.data_dir);
+            if !suite.installed.iter().any(|x| x == &item.id) {
+                return Some(respond_err(stream, 403, "that tool is not installed in your suite"));
+            }
+            let parsed: Value = if req.body.iter().all(u8::is_ascii_whitespace) {
+                json!({})
+            } else {
+                match serde_json::from_slice(&req.body) {
+                    Ok(v) => v,
+                    Err(_) => {
+                        return Some(respond_err(stream, 400, "request body is not valid JSON"));
+                    }
+                }
+            };
+            let scalar_str = |v: &Value| -> String {
+                match v {
+                    Value::String(s) => s.clone(),
+                    Value::Number(n) => n.to_string(),
+                    Value::Bool(b) => b.to_string(),
+                    _ => String::new(),
+                }
+            };
+            let values: Vec<String> = if let Some(arr) = parsed["args"].as_array() {
+                arr.iter().map(scalar_str).collect()
+            } else {
+                let arg_obj = if parsed["args"].is_object() {
+                    &parsed["args"]
+                } else {
+                    &parsed
+                };
+                item.params
+                    .iter()
+                    .map(|p| scalar_str(&arg_obj[p.as_str()]))
+                    .collect()
+            };
+            match skills::run_library_skill(&runtime.cfg, &item.source, &values) {
+                Ok(output) => {
+                    state.search_cache.invalidate(&person.id);
+                    respond_json(
+                        stream,
+                        200,
+                        &json!({ "ok": true, "id": item.id, "output": output }),
+                    )
+                }
+                Err(e) => respond_err(stream, 400, &e),
+            }
+        }
+        ("GET", "/api/notifications") => {
+            let mut items = proactive_offers::load_notifications(&runtime.cfg.data_dir);
+            items.reverse();
+            let unread_count = items.iter().filter(|n| !n.read).count();
+            let list: Vec<Value> = items.into_iter().map(|n| n.to_json()).collect();
+            respond_json(
+                stream,
+                200,
+                &json!({ "notifications": list, "unread_count": unread_count }),
+            )
+        }
+        ("POST", path) if path.starts_with("/api/notifications/") && path.ends_with("/read") => {
+            let raw_id = path
+                .strip_prefix("/api/notifications/")
+                .and_then(|rest| rest.strip_suffix("/read"))
+                .unwrap_or("");
+            let id = percent_decode(raw_id).trim().to_string();
+            match proactive_offers::mark_notification_read(&runtime.cfg.data_dir, &id) {
+                Ok(item) => respond_json(stream, 200, &json!({ "notification": item.to_json() })),
+                Err(e) if e == "notification not found" => respond_err(stream, 404, &e),
+                Err(e) => respond_err(stream, 400, &e),
+            }
+        }
+        ("GET", "/api/push/subscriptions") => {
+            let subs: Vec<Value> = proactive_offers::list_push_subscriptions(&runtime.cfg.data_dir)
+                .into_iter()
+                .map(|s| s.to_json())
+                .collect();
+            respond_json(stream, 200, &json!({ "subscriptions": subs }))
+        }
+        ("POST", "/api/push/subscribe") => {
+            let parsed: Value = match serde_json::from_slice(&req.body) {
+                Ok(v) => v,
+                Err(_) => return Some(respond_err(stream, 400, "request body is not valid JSON")),
+            };
+            let channel = parsed["channel"].as_str().unwrap_or("web_push");
+            let endpoint = parsed["endpoint"].as_str().unwrap_or("");
+            let label = parsed["label"].as_str().unwrap_or("");
+            match proactive_offers::add_push_subscription(
+                &runtime.cfg.data_dir,
+                channel,
+                endpoint,
+                label,
+            ) {
+                Ok(sub) => respond_json(stream, 201, &json!({ "subscription": sub.to_json() })),
+                Err(e) => respond_err(stream, 400, &e),
+            }
+        }
+        ("DELETE", "/api/push/subscribe") => {
+            let parsed: Value = serde_json::from_slice(&req.body).unwrap_or(Value::Null);
+            let id = parsed["id"]
+                .as_str()
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(str::to_string)
+                .or_else(|| query_param(&req.query, "id"))
+                .unwrap_or_default();
+            match proactive_offers::remove_push_subscription(&runtime.cfg.data_dir, &id) {
+                Ok(true) => respond_json(stream, 200, &json!({ "deleted": true, "id": id })),
+                Ok(false) => respond_err(stream, 404, "push subscription not found"),
+                Err(e) => respond_err(stream, 400, &e),
+            }
+        }
+        ("DELETE", path) if path.starts_with("/api/push/subscribe/") => {
+            let id = percent_decode(path.trim_start_matches("/api/push/subscribe/"))
+                .trim()
+                .to_string();
+            match proactive_offers::remove_push_subscription(&runtime.cfg.data_dir, &id) {
+                Ok(true) => respond_json(stream, 200, &json!({ "deleted": true, "id": id })),
+                Ok(false) => respond_err(stream, 404, "push subscription not found"),
+                Err(e) => respond_err(stream, 400, &e),
             }
         }
         _ => return None,

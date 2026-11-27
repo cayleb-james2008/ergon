@@ -31,6 +31,7 @@ import {
   validateCronExpression,
   type Client,
   type ClientContact,
+  type CompanyMemoryEntry,
   type DeliveryLog,
   type Engagement,
   type FileRevision,
@@ -49,6 +50,7 @@ import {
   type MeteringSummary,
   type ModelPricingEntry,
   type ModelPricingMap,
+  type NotificationItem,
   type OAuthConfig,
   type OutboundConnector,
   type OutboundConnectorKind,
@@ -61,6 +63,7 @@ import {
   type PipelineStepSpec,
   type PipelineStepState,
   type PipelineValidationResult,
+  type PushSubscriptionItem,
   type RolloverMode,
   type Routine,
   type RoutineRunRecord,
@@ -69,6 +72,7 @@ import {
   type SmtpSecurity,
   type TimeExpenseEntry,
   type TimeExpenseKind,
+  type ToolPackage,
   type TriggerRule,
   type VaultChunkHit,
   type VaultFileHit,
@@ -200,6 +204,8 @@ type PersonStore = {
   budgetOverrunApproved?: Record<string, number>;
   timeEntries?: TimeExpenseEntry[];
   invoices?: InvoiceRecord[];
+  notifications?: NotificationItem[];
+  pushSubscriptions?: PushSubscriptionItem[];
 };
 type RootState = {
   activePerson: string;
@@ -210,6 +216,8 @@ type RootState = {
   engagements?: Engagement[];
   activeEngagementByPerson?: Record<string, string>;
   modelPricing?: ModelPricingMap;
+  companyMemory?: CompanyMemoryEntry[];
+  toolPackages?: ToolPackage[];
 };
 type ByokConfig = {
   engine_mode: "browser" | "byok";
@@ -8627,15 +8635,137 @@ function runWebVaultAggregate(
       return jsonRes({ decision: dec, outcome: dec.outcome });
     }
     if (method === "GET" && path === "/api/offers") return jsonRes({ offers: st.offers });
+    if (method === "POST" && path === "/api/offers/analyze") {
+      return jsonRes({ generated: [], all_offers: st.offers, proposed_tool: null });
+    }
     if (method === "POST" && path.startsWith("/api/offers/")) {
       const [rawId, action] = path.slice("/api/offers/".length).split("/");
       const oid = decodeURIComponent(rawId || "");
       const off = st.offers.find((o) => o.id === oid);
       if (!off) return jsonRes({ error: "offer not found" }, 404);
-      off.status = action === "accept" ? "accepted" : "dismissed";
-      if (action === "accept" && off.item_id && !st.suite.includes(off.item_id)) st.suite.push(off.item_id);
+      const isAccept = action === "accept" || action === "approve";
+      off.status = isAccept ? "accepted" : "dismissed";
+      if (isAccept && off.item_id && !st.suite.includes(off.item_id)) st.suite.push(off.item_id);
       await persist();
-      return jsonRes({ offer: off, outcome: action === "accept" ? "Added to your suite as a one-tap app." : "Offer dismissed." });
+      return jsonRes({ offer: off, outcome: isAccept ? "Added to your suite as a one-tap app." : "Offer dismissed." });
+    }
+    if (method === "GET" && path === "/api/company/memory") {
+      return jsonRes({ entries: state.companyMemory ?? [] });
+    }
+    if (method === "POST" && path === "/api/company/memory") {
+      const content = String(body.content ?? "").trim();
+      if (!content) return jsonRes({ error: "content is required" }, 400);
+      const now = Date.now();
+      const entry: CompanyMemoryEntry = {
+        id: `cmem-${now}-${(state.companyMemory?.length ?? 0) + 1}`,
+        category: String(body.category ?? "fact"),
+        scope: String(body.scope ?? "company"),
+        content,
+        author_person_id: p.id,
+        created_ms: now,
+        updated_ms: now,
+      };
+      state.companyMemory = [...(state.companyMemory ?? []), entry];
+      await persist();
+      return jsonRes({ entry }, 201);
+    }
+    if (method === "DELETE" && path.startsWith("/api/company/memory/")) {
+      const id = decodeURIComponent(path.slice("/api/company/memory/".length));
+      const before = state.companyMemory?.length ?? 0;
+      state.companyMemory = (state.companyMemory ?? []).filter((e) => e.id !== id);
+      await persist();
+      return jsonRes({ deleted: (state.companyMemory?.length ?? 0) < before });
+    }
+    if (method === "GET" && path === "/api/company/db") {
+      const table = u.searchParams.get("table") || "summary";
+      return jsonRes({
+        table,
+        rows: table === "memory" ? (state.companyMemory ?? []) : [],
+        counts: {
+          people: state.people.length,
+          tools: state.library.length,
+          memory: (state.companyMemory ?? []).length,
+        },
+      });
+    }
+    if (method === "POST" && path === "/api/company/db/query") {
+      const table = String(body.table ?? "summary");
+      return jsonRes({
+        table,
+        rows: table === "memory" ? (state.companyMemory ?? []) : [],
+        counts: {
+          people: state.people.length,
+          tools: state.library.length,
+          memory: (state.companyMemory ?? []).length,
+        },
+      });
+    }
+    if (method === "GET" && path === "/api/tools") {
+      return jsonRes({
+        tools: state.library.filter((x) => x.kind === "tool" || !x.builtin),
+        packages: state.toolPackages ?? [],
+      });
+    }
+    if (method === "POST" && path === "/api/tools/test") {
+      const tests = Array.isArray(body.tests) ? body.tests : [];
+      return jsonRes({
+        report: {
+          passed: tests.length,
+          total: tests.length,
+          all_passed: tests.length > 0,
+          duration_ms: 1,
+          source_sha256: "browser",
+          ran_at_ms: Date.now(),
+          cases: [],
+        },
+      });
+    }
+    if (method === "POST" && path === "/api/tools/build") {
+      return jsonRes({ error: "Custom compiled tools require the native Ergon desktop/server runtime." }, 400);
+    }
+    if (method === "POST" && path.startsWith("/api/tools/") && path.endsWith("/run")) {
+      return jsonRes({ error: "Custom compiled tools require the native Ergon desktop/server runtime." }, 400);
+    }
+    if (method === "GET" && path === "/api/notifications") {
+      const list = st.notifications ?? [];
+      return jsonRes({
+        notifications: list,
+        unread_count: list.filter((n) => !n.read).length,
+      });
+    }
+    if (method === "POST" && path.startsWith("/api/notifications/") && path.endsWith("/read")) {
+      const id = decodeURIComponent(path.slice("/api/notifications/".length, -"/read".length));
+      const item = (st.notifications ?? []).find((n) => n.id === id);
+      if (!item) return jsonRes({ error: "notification not found" }, 404);
+      item.read = true;
+      await persist();
+      return jsonRes({ notification: item });
+    }
+    if (method === "GET" && path === "/api/push/subscriptions") {
+      return jsonRes({ subscriptions: st.pushSubscriptions ?? [] });
+    }
+    if (method === "POST" && path === "/api/push/subscribe") {
+      const endpoint = String(body.endpoint ?? "").trim();
+      if (!endpoint) return jsonRes({ error: "endpoint is required" }, 400);
+      const sub: PushSubscriptionItem = {
+        id: `push-${Date.now()}`,
+        channel: String(body.channel ?? "web_push"),
+        endpoint,
+        label: String(body.label ?? "Browser"),
+        created_ms: Date.now(),
+      };
+      st.pushSubscriptions = [...(st.pushSubscriptions ?? []), sub];
+      await persist();
+      return jsonRes({ subscription: sub });
+    }
+    if (method === "DELETE" && path.startsWith("/api/push/subscribe")) {
+      const id = path === "/api/push/subscribe"
+        ? String(body.id ?? "")
+        : decodeURIComponent(path.slice("/api/push/subscribe/".length));
+      const before = st.pushSubscriptions?.length ?? 0;
+      st.pushSubscriptions = (st.pushSubscriptions ?? []).filter((s) => s.id !== id);
+      await persist();
+      return jsonRes({ removed: (st.pushSubscriptions?.length ?? 0) < before });
     }
     if (method === "GET" && path === "/api/brief") return jsonRes(buildBrief());
     if (method === "GET" && path === "/api/today") return jsonRes(buildToday());

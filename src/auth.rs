@@ -341,6 +341,33 @@ pub fn route_access(method: &str, path: &str) -> RouteAccess {
         ("PATCH", p) if p.starts_with("/api/invoices/") => RouteAccess::RequireInvoiceManage,
         ("PUT" | "POST", "/api/workspace/policy") => RouteAccess::RequireWorkspacePolicyManage,
 
+        // Shared Company Memory, Company DB, Tool Builder, Proactive Offers & Push Notifications
+        ("GET", "/api/company/memory") => RouteAccess::AuthenticatedSelf,
+        ("POST" | "DELETE", p)
+            if p == "/api/company/memory" || p.starts_with("/api/company/memory/") =>
+        {
+            RouteAccess::RequireClientManage
+        }
+        ("GET" | "POST", p) if p == "/api/company/db" || p == "/api/company/db/query" => {
+            RouteAccess::AuthenticatedSelf
+        }
+        ("GET", "/api/tools") => RouteAccess::AuthenticatedSelf,
+        ("POST", p)
+            if p == "/api/tools/test"
+                || p == "/api/tools/build"
+                || (p.starts_with("/api/tools/") && p.ends_with("/run")) =>
+        {
+            RouteAccess::AuthenticatedSelf
+        }
+        ("POST", "/api/offers/analyze") => RouteAccess::AuthenticatedSelf,
+        ("GET", "/api/notifications") => RouteAccess::AuthenticatedSelf,
+        ("POST", p) if p.starts_with("/api/notifications/") && p.ends_with("/read") => {
+            RouteAccess::AuthenticatedSelf
+        }
+        ("GET" | "POST" | "DELETE", p) if p.starts_with("/api/push/") => {
+            RouteAccess::AuthenticatedSelf
+        }
+
         // Every other /api/* route requires authentication and is strictly scoped to caller's workspace
         _ => RouteAccess::AuthenticatedSelf,
     }
@@ -873,6 +900,25 @@ pub struct AuthStore {
     session_ttl_ms: u64,
 }
 
+fn role_from_users(users: &[AuthUser], auth_required_env: bool, person_id: &str) -> Role {
+    if users.is_empty() {
+        if auth_required_env {
+            return Role::Member;
+        }
+        return Role::Admin;
+    }
+    users
+        .iter()
+        .find(|u| !u.disabled && u.person_id == person_id)
+        .map(|u| u.role)
+        .unwrap_or(Role::Member)
+}
+
+pub fn resolve_person_role(root_data_dir: &Path, person_id: &str) -> Role {
+    let users = AuthStore::load_users_file(&AuthStore::users_path(root_data_dir));
+    role_from_users(&users, env_truthy("ERGON_AUTH_REQUIRED"), person_id)
+}
+
 fn env_truthy(name: &str) -> bool {
     std::env::var(name)
         .ok()
@@ -1298,6 +1344,11 @@ impl AuthStore {
             .iter()
             .find(|u| u.username == low)
             .cloned()
+    }
+
+    pub fn role_for_person(&self, person_id: &str) -> Role {
+        let inner = self.inner.read().unwrap();
+        role_from_users(&inner.users, self.auth_required_env, person_id)
     }
 
     /// Update an existing user (role, display_name, email, disabled, or password reset).
@@ -2095,5 +2146,62 @@ mod tests {
         assert!(!Role::Installer.satisfies(RouteAccess::RequireClientManage));
         assert!(!Role::Installer.satisfies(RouteAccess::RequireInvoiceView));
         assert!(!Role::Member.satisfies(RouteAccess::RequireInvoiceView));
+
+        assert_eq!(
+            route_access("GET", "/api/company/memory"),
+            RouteAccess::AuthenticatedSelf
+        );
+        assert_eq!(
+            route_access("POST", "/api/company/memory"),
+            RouteAccess::RequireClientManage
+        );
+        assert_eq!(
+            route_access("DELETE", "/api/company/memory/cmem-1"),
+            RouteAccess::RequireClientManage
+        );
+        assert_eq!(
+            route_access("GET", "/api/company/db"),
+            RouteAccess::AuthenticatedSelf
+        );
+        assert_eq!(
+            route_access("POST", "/api/company/db/query"),
+            RouteAccess::AuthenticatedSelf
+        );
+        assert_eq!(
+            route_access("GET", "/api/tools"),
+            RouteAccess::AuthenticatedSelf
+        );
+        assert_eq!(
+            route_access("POST", "/api/tools/test"),
+            RouteAccess::AuthenticatedSelf
+        );
+        assert_eq!(
+            route_access("POST", "/api/tools/build"),
+            RouteAccess::AuthenticatedSelf
+        );
+        assert_eq!(
+            route_access("POST", "/api/tools/my-tool/run"),
+            RouteAccess::AuthenticatedSelf
+        );
+        assert_eq!(
+            route_access("POST", "/api/offers/analyze"),
+            RouteAccess::AuthenticatedSelf
+        );
+        assert_eq!(
+            route_access("GET", "/api/notifications"),
+            RouteAccess::AuthenticatedSelf
+        );
+        assert_eq!(
+            route_access("POST", "/api/notifications/notif-1/read"),
+            RouteAccess::AuthenticatedSelf
+        );
+        assert_eq!(
+            route_access("POST", "/api/push/subscribe"),
+            RouteAccess::AuthenticatedSelf
+        );
+        assert_eq!(
+            route_access("DELETE", "/api/push/subscribe/psub-1"),
+            RouteAccess::AuthenticatedSelf
+        );
     }
 }

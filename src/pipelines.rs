@@ -3218,6 +3218,16 @@ fn park_pipeline_checkpoint_inner(
             "ts_ms": now_ms,
         }),
     );
+    crate::proactive_offers::emit_notification(
+        &env.cfg.data_dir,
+        Some(&env.events),
+        &env.ctx.person_id,
+        "approval_parked",
+        "Checkpoint awaiting your input",
+        &crate::truncate(&pending.prompt, 200),
+        "decision",
+        &decision_id,
+    );
     Ok(updated)
 }
 
@@ -6423,6 +6433,19 @@ pub fn park_adhoc_checkpoint_with_snapshot(
             }),
         );
     }
+    let notif_person = live
+        .map(|(_, pid)| pid.to_string())
+        .unwrap_or_else(|| records::infer_person_id(&cfg.data_dir));
+    crate::proactive_offers::emit_notification(
+        &cfg.data_dir,
+        live.map(|(bus, _)| bus),
+        &notif_person,
+        "approval_parked",
+        "Checkpoint awaiting your input",
+        &crate::truncate(&pending.prompt, 200),
+        "decision",
+        &decision_id,
+    );
 
     Ok((run_id, pending))
 }

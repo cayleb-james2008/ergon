@@ -1,0 +1,9 @@
+GET /phone -> 200 (199476 bytes)
+POST /api/push/subscribe (browser://local) -> 201 id=psub-1795788948373-0
+Push SSRF metadata URL rejected -> 400
+Alice published shared tool invoice-parser
+POST /api/offers/analyze (live Ollama qwen2.5:3b) -> 200: generated=2, proposed_tool=False, staged_tool=False, staged_error=None
+Analysis payload: {"all_offers": [{"author": "alice", "detail": "Shared by alice \u2014 Parses vendor invoice receipts and totals. Matched 3 recent finished jobs; add it to your suite?", "id": "o1795788948576-2", "item_id": "invoice-parser", "key": "libtool:invoice-parser", "kind": "install_library_tool", "status": "pending", "title": "Would this help? Use Invoice Parser (tool)", "ts": 1795788948576}, {"detail": "Automate the parsing of multiple vendor invoice batches with a single command.", "id": "o1795788955957-4", "key": "invoice-parser-batch", "kind": "repeat_task", "status": "pending", "template": "Parse vendor invoice parser batch {batch_number} using the new helper.", "title": "Would this help? Parse multiple vendor invoice batches", "ts": 1795788955957}], "generated": [{"author": "alice", "detail":
+Live SSE push_notification delivered (1 event captured)
+Approved offer o1795788948576-2 via /approve alias -> made={'installed': 'invoice-parser'}
+GET /api/notifications -> unread=2; marked notif-1795788955958-5 read

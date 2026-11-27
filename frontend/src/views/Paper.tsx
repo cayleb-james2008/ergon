@@ -156,6 +156,23 @@ function decisionCopy(d: Decision): DecisionCopy {
       security,
     };
   }
+  if (kind === "tool_offer") {
+    const toolName = d.tool_name || "New tool";
+    const passed = d.test_report?.passed;
+    const total = d.test_report?.total;
+    const testsLine =
+      typeof passed === "number" && typeof total === "number"
+        ? `${passed}/${total} sandbox tests passed.`
+        : "Sandbox tests passed.";
+    return {
+      body: `Would this help? ${d.description || detail || `Install ${toolName} into your suite and share it with the company library.`} ${testsLine}`,
+      approve: "Approve & Install",
+      deny: "Deny",
+      approvedToast: `Installed "${toolName}" into your suite and the company library.`,
+      deniedToast: "You said no — tool was not installed or shared.",
+      security: false,
+    };
+  }
   if (kind === "security_notice") {
     return {
       body: detail || "Ergon's tripwires caught something and handled it. Nothing real was exposed.",
@@ -389,32 +406,57 @@ export function PaperSide({
           </p>
         )}
         <div className="flex flex-col gap-3">
-          {(offers ?? []).map((o) => (
-            <div
-              key={o.id}
-              className="flex flex-col gap-2.5 rounded-sm border border-hairline bg-board/60 p-3.5"
-            >
-              <p className="text-sm font-medium leading-5 text-ink">{String(o.title ?? "Suggested capability")}</p>
-              <p className="text-sm leading-5 text-ink-2">{String(o.detail ?? "")}</p>
-              <div className="flex flex-wrap gap-2 pt-0.5">
-                <Button
-                  size="sm"
-                  className="max-md:min-h-11"
-                  onClick={() => onAct(`/api/offers/${encodeURIComponent(o.id)}/accept`, "Added to your suite as a one-tap app.")}
-                >
-                  Make it one tap
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="max-md:min-h-11"
-                  onClick={() => onAct(`/api/offers/${encodeURIComponent(o.id)}/dismiss`, "Offer dismissed.")}
-                >
-                  No, thanks
-                </Button>
+          {(offers ?? []).map((o) => {
+            const isProactiveTool =
+              o.kind === "install_library_tool" ||
+              o.kind === "build_tool" ||
+              /^Would this help\?/i.test(String(o.title ?? ""));
+            return (
+              <div
+                key={o.id}
+                className="flex flex-col gap-2.5 rounded-sm border border-hairline bg-board/60 p-3.5"
+              >
+                {isProactiveTool && (
+                  <span className="text-xs font-medium text-ink-2">Would this help?</span>
+                )}
+                <p className="text-sm font-medium leading-5 text-ink">{String(o.title ?? "Suggested capability")}</p>
+                <p className="text-sm leading-5 text-ink-2">{String(o.detail ?? "")}</p>
+                <div className="flex flex-wrap gap-2 pt-0.5">
+                  <Button
+                    size="sm"
+                    className="max-md:min-h-11"
+                    onClick={() =>
+                      onAct(
+                        isProactiveTool
+                          ? `/api/offers/${encodeURIComponent(o.id)}/approve`
+                          : `/api/offers/${encodeURIComponent(o.id)}/accept`,
+                        isProactiveTool
+                          ? "Approved and added to your suite."
+                          : "Added to your suite as a one-tap app."
+                      )
+                    }
+                  >
+                    {isProactiveTool ? "Approve" : "Make it one tap"}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="max-md:min-h-11"
+                    onClick={() =>
+                      onAct(
+                        isProactiveTool
+                          ? `/api/offers/${encodeURIComponent(o.id)}/deny`
+                          : `/api/offers/${encodeURIComponent(o.id)}/dismiss`,
+                        "Offer dismissed."
+                      )
+                    }
+                  >
+                    {isProactiveTool ? "Deny" : "No, thanks"}
+                  </Button>
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
         {offers && !offers.length && (
           <p className="text-sm leading-5 text-ink-2">
@@ -1525,6 +1567,12 @@ export const PaperFace = memo(function PaperFace({
                               strokeWidth={1.5}
                               aria-label="Retainer budget gate"
                             />
+                          ) : lead.kind === "tool_offer" ? (
+                            <Sparkles
+                              className="mt-1 size-5 shrink-0 text-dot-blue"
+                              strokeWidth={1.5}
+                              aria-label="Would this help?"
+                            />
                           ) : leadCopy?.security ? (
                             <ShieldAlert
                               className={cn("mt-1 size-5 shrink-0", lead.severity === "critical" ? "text-dot-red" : "text-dot-amber")}
@@ -1586,6 +1634,22 @@ export const PaperFace = memo(function PaperFace({
                                 Inspect {lead.path}
                               </Button>
                             </div>
+                          )}
+                        </div>
+                      )}
+                      {lead.kind === "tool_offer" && (
+                        <div data-tool-offer={lead.id} className="flex flex-col gap-1.5 rounded-sm border border-hairline bg-surface px-3 py-2.5 text-xs text-ink-2">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <span className="font-medium text-ink">Would this help?</span>
+                            <span className="mono rounded-chip bg-pill-active-bg px-2 py-0.5 text-xs font-medium text-pill-active-fg">
+                              {typeof lead.test_report?.passed === "number" && typeof lead.test_report?.total === "number"
+                                ? `${lead.test_report.passed}/${lead.test_report.total} sandbox tests passed`
+                                : "Sandbox tests passed"}
+                            </span>
+                          </div>
+                          {lead.description && <p className="text-sm text-ink-2">{lead.description}</p>}
+                          {Array.isArray(lead.params) && lead.params.length > 0 && (
+                            <span className="mono text-xs text-ink-2">Parameters: {lead.params.join(", ")}</span>
                           )}
                         </div>
                       )}

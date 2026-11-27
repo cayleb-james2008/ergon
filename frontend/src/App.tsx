@@ -41,6 +41,7 @@ import type { Theme } from "@/shell/SettingsPanel";
 import { UpdateStrip, VersionRow, useUpdate } from "@/shell/Update";
 
 const PaperFace = lazy(() => import("@/views/Paper"));
+const PhoneFace = lazy(() => import("@/views/Phone"));
 const GraphFace = lazy(() => import("@/views/Graph").then((mod) => ({ default: mod.GraphFace })));
 const AddPersonPanel = lazy(() => import("@/shell/Panels").then((mod) => ({ default: mod.AddPersonPanel })));
 const LearnedPanel = lazy(() => import("@/shell/Panels").then((mod) => ({ default: mod.LearnedPanel })));
@@ -110,6 +111,17 @@ function initialFace(): Face {
     if (q === "chat") return "chat";
   } catch { /* ignore */ }
   return "chat";
+}
+
+function isPhoneRoute(): boolean {
+  try {
+    const path = window.location.pathname;
+    if (path === "/phone" || path === "/phone/") return true;
+    const q = new URLSearchParams(window.location.search).get("face");
+    return q === "phone";
+  } catch {
+    return false;
+  }
 }
 
 function Banner({
@@ -824,6 +836,39 @@ function WorkspaceApp({
     (path: string) => desk.setLastUploaded((prev) => prev.filter((p) => p !== path)),
     [desk.setLastUploaded]
   );
+
+  if (isPhoneRoute()) {
+    return (
+      <LazyMotion features={domAnimation} strict>
+        <MotionConfig reducedMotion="user">
+          <Toaster
+            position="bottom-right"
+            theme={theme}
+            toastOptions={{
+              className: "!bg-surface !text-ink !border !border-hairline !shadow-lift",
+            }}
+          />
+          <Suspense
+            fallback={
+              <div className="flex min-h-dvh items-center justify-center bg-canvas text-sm text-ink-2">
+                Loading phone view…
+              </div>
+            }
+          >
+            <PhoneFace
+              auth={auth}
+              theme={theme}
+              setTheme={setTheme}
+              status={desk.status}
+              people={peopleList}
+              activePersonId={activePersonId}
+              onSignOut={onSignOut}
+            />
+          </Suspense>
+        </MotionConfig>
+      </LazyMotion>
+    );
+  }
 
   return (
     <LazyMotion features={domAnimation} strict>
