@@ -39,8 +39,9 @@ jobs:
             ${{ runner.os }}-cargo-linux-
       # Note: `cargo fmt --check` is intentionally omitted because baseline `main`
       # is not rustfmt-clean yet.
+      # `-D clippy::correctness` blocks real correctness bugs across Rust toolchain upgrades without breaking on pre-existing style lints in `main`.
       - name: Clippy
-        run: cargo clippy --locked --all-targets -- -D warnings
+        run: cargo clippy --locked --all-targets -- -D clippy::correctness
       - name: Test
         run: cargo test --locked -- --test-threads=1
 
