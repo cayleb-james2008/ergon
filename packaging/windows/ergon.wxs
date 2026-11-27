@@ -1,0 +1,133 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
+  <!--
+    WiX v4 MSI definition for Ergon.
+    Build with:
+      wix extension add -g WixToolset.Util.wixext/4.0.5
+      wix build packaging\windows\ergon.wxs -ext WixToolset.Util.wixext \
+        -d ProductVersion=0.38.0 -d BinaryPath=path\to\ergon.exe \
+        -d InstallScriptPath=packaging\windows\install-windows.ps1 \
+        -d UninstallScriptPath=packaging\windows\uninstall-windows.ps1 \
+        -arch x64 -o dist\ergon-0.38.0-x86_64.msi
+  -->
+  <Package Name="Ergon"
+           Manufacturer="Ergon"
+           Version="$(var.ProductVersion)"
+           UpgradeCode="7A9B3B2E-4E4F-4D88-9F5B-8C7E2D6F4A10"
+           Scope="perMachine">
+
+    <SummaryInformation Description="Ergon — Personal Employee Agent Desk and Background Service"
+                        Manufacturer="Ergon" />
+
+    <MajorUpgrade DowngradeErrorMessage="A newer version of [ProductName] is already installed."
+                  AllowSameVersionUpgrades="yes" />
+
+    <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
+
+    <Property Id="ERGON_HOST" Value="127.0.0.1" />
+    <Property Id="ERGON_PORT" Value="8787" />
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="Ergon" />
+    </StandardDirectory>
+
+    <StandardDirectory Id="CommonAppDataFolder">
+      <Directory Id="ErgonProgramData" Name="Ergon">
+        <Directory Id="DATAFOLDER" Name="data" />
+      </Directory>
+    </StandardDirectory>
+
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="ApplicationProgramsFolder" Name="Ergon" />
+    </StandardDirectory>
+
+    <StandardDirectory Id="DesktopFolder" />
+
+    <Feature Id="MainApplication"
+             Title="Ergon Server and Windows Service"
+             Description="Installs ergon.exe, %ProgramData%\Ergon\data, the ErgonService Windows Service, and Start Menu shortcuts."
+             Level="1">
+      <ComponentGroupRef Id="ErgonBinaryAndService" />
+      <ComponentGroupRef Id="ErgonDataAndShortcuts" />
+    </Feature>
+
+    <Feature Id="DesktopShortcutFeature"
+             Title="Desktop Shortcut"
+             Description="Adds an Ergon shortcut on the Public Desktop."
+             Level="1">
+      <ComponentRef Id="ErgonDesktopShortcut" />
+    </Feature>
+
+    <ComponentGroup Id="ErgonBinaryAndService" Directory="INSTALLFOLDER">
+      <Component Id="ErgonExecutableAndService" Guid="4B7F1E92-C214-4C9C-9D31-51E2E3A6B701" Bitness="always64">
+        <File Id="ErgonExe" Source="$(var.BinaryPath)" Name="ergon.exe" KeyPath="yes" />
+
+        <ServiceInstall Id="ErgonServiceInstall"
+                        Type="ownProcess"
+                        Name="ErgonService"
+                        DisplayName="Ergon Personal Agent Server"
+                        Description="Ergon — local-first employee agent desk and workflow server."
+                        Start="auto"
+                        Account="LocalSystem"
+                        ErrorControl="normal"
+                        Arguments="service run --name ErgonService --data &quot;[DATAFOLDER].&quot; --host [ERGON_HOST] --port [ERGON_PORT]">
+          <util:ServiceConfig FirstFailureActionType="restart"
+                              SecondFailureActionType="restart"
+                              ThirdFailureActionType="restart"
+                              RestartServiceDelayInSeconds="5"
+                              ResetPeriodInDays="1" />
+        </ServiceInstall>
+
+        <ServiceControl Id="ErgonServiceControl"
+                        Name="ErgonService"
+                        Start="install"
+                        Stop="both"
+                        Remove="uninstall"
+                        Wait="yes" />
+      </Component>
+
+      <Component Id="ErgonHelperScripts" Guid="9C3D5A11-62D7-4C2B-B4E8-219A0F4D7C02" Bitness="always64">
+        <File Id="InstallWindowsPs1" Source="$(var.InstallScriptPath)" Name="install-windows.ps1" KeyPath="yes" />
+        <File Id="UninstallWindowsPs1" Source="$(var.UninstallScriptPath)" Name="uninstall-windows.ps1" />
+      </Component>
+    </ComponentGroup>
+
+    <ComponentGroup Id="ErgonDataAndShortcuts">
+      <Component Id="ErgonDataDirectory" Directory="DATAFOLDER" Guid="2F8A9B74-8D61-4E21-81AA-6F4B9E3C1D03" Bitness="always64">
+        <CreateFolder />
+      </Component>
+
+      <Component Id="ErgonStartMenuShortcut" Directory="ApplicationProgramsFolder" Guid="6E1C4D85-3A92-47F5-9B2C-38D7F1E2A404" Bitness="always64">
+        <Shortcut Id="StartMenuErgonApp"
+                  Name="Ergon"
+                  Description="Open Ergon in your browser (http://127.0.0.1:8787)"
+                  Target="[INSTALLFOLDER]ergon.exe"
+                  Arguments="--app --host [ERGON_HOST] --port [ERGON_PORT]"
+                  WorkingDirectory="INSTALLFOLDER" />
+        <RemoveFolder Id="RemoveApplicationProgramsFolder" On="uninstall" />
+        <RegistryValue Root="HKLM"
+                       Key="Software\Ergon"
+                       Name="StartMenuShortcut"
+                       Type="integer"
+                       Value="1"
+                       KeyPath="yes" />
+      </Component>
+
+      <Component Id="ErgonDesktopShortcut" Directory="DesktopFolder" Guid="8D4E7F16-5B03-41A9-A6D4-47C9E2F5B805" Bitness="always64">
+        <Shortcut Id="DesktopErgonApp"
+                  Name="Ergon"
+                  Description="Open Ergon in your browser (http://127.0.0.1:8787)"
+                  Target="[INSTALLFOLDER]ergon.exe"
+                  Arguments="--app --host [ERGON_HOST] --port [ERGON_PORT]"
+                  WorkingDirectory="INSTALLFOLDER" />
+        <RegistryValue Root="HKLM"
+                       Key="Software\Ergon"
+                       Name="DesktopShortcut"
+                       Type="integer"
+                       Value="1"
+                       KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+  </Package>
+</Wix>

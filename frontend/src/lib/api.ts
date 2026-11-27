@@ -12,6 +12,7 @@ export type ServerCapabilities = {
   file_history?: boolean;
   scheduler?: boolean;
   audit_bundle?: boolean;
+  backups?: boolean;
   people_switch?: boolean;
   tripwire?: boolean;
   pipelines?: boolean;
@@ -26,9 +27,41 @@ export type ServerCapabilities = {
   client_crm?: boolean;
   time_entries?: boolean;
   invoicing?: boolean;
+  diagnostics?: boolean;
+  help?: boolean;
   auth?: boolean;
   oidc?: boolean;
   tls?: boolean;
+};
+
+export type AdminContactConfig = {
+  name: string;
+  email: string;
+  phone: string;
+  channel_url: string;
+  notes: string;
+  configured: boolean;
+  source?: string;
+  updated_ms?: number;
+};
+
+export type HelpConfigPayload = {
+  onboarding_completed: boolean;
+  onboarding_completed_at_ms?: number | null;
+  admin_contact: AdminContactConfig;
+  can_edit_admin_contact: boolean;
+  diagnostics_url?: string;
+};
+
+export type DiagnosticsSummary = {
+  app_version: string;
+  os: string;
+  arch: string;
+  uptime_secs: number;
+  workspace_count: number;
+  model_configured: boolean;
+  log_files: number;
+  crash_reports: number;
 };
 
 export type ClientContact = {
@@ -322,6 +355,20 @@ export type LiveRunStep = {
   depends_on?: string[];
   child_items?: PipelineChildItemState[];
 };
+export type RecoverableRun = {
+  run_id: string;
+  thread_id: string;
+  person_id: string;
+  task: string;
+  started_ms: number;
+  updated_ms: number;
+  steps: string[];
+  written_files?: string[];
+  status: string;
+  error?: string | null;
+  resume_count?: number;
+  can_resume?: boolean;
+};
 export type LiveRun = {
   active: boolean;
   run_id: string;
@@ -337,6 +384,7 @@ export type LiveRun = {
 };
 export type LiveRunStatus = {
   active: boolean;
+  status?: string;
   run_id?: string;
   thread_id: string;
   task: string;
@@ -344,6 +392,8 @@ export type LiveRunStatus = {
   elapsed_ms?: number;
   steps: (string | LiveRunStep)[];
   cancelled?: boolean;
+  model_configured?: boolean;
+  recoverable_runs?: RecoverableRun[];
   runs?: LiveRun[];
 };
 export type FileRevision = {
@@ -409,7 +459,7 @@ export type PipelineStepSpec = {
   label: string;
   kind: PipelineStepKind;
   skill_id?: string;
-  args?: Record<string, string>;
+  args?: Record<string, unknown>;
   prompt?: string;
   checkpoint?: PipelineCheckpointSpec;
   export?: PipelineExportSpec;
@@ -835,8 +885,13 @@ export type Update = {
   latest?: string;
   available?: boolean;
   staged?: string;
-  mode?: string;
+  applied?: string;
+  installed?: string;
+  mode?: "off" | "notify" | "auto" | string;
   can_apply?: boolean;
+  can_manage?: boolean;
+  is_admin?: boolean;
+  gated?: boolean;
   dev_build?: boolean;
   notes?: string;
   release_url?: string;
@@ -934,6 +989,90 @@ export type SecurityPayload = {
 export function hasTripwire(status: Status | null | "error" | undefined): boolean {
   if (isWebStandalone() || !status || status === "error") return false;
   return status.capabilities?.tripwire === true;
+}
+
+export type BackupOffsiteConfig = {
+  kind: "none" | "folder" | "s3";
+  folder_path: string;
+  s3_endpoint: string;
+  s3_bucket: string;
+  s3_region: string;
+  s3_prefix: string;
+  s3_path_style: boolean;
+  s3_credentials_configured?: boolean;
+};
+
+export type BackupConfig = {
+  enabled: boolean;
+  interval_hours: number;
+  retention_count: number;
+  local_dir: string;
+  effective_local_dir?: string;
+  offsite: BackupOffsiteConfig;
+};
+
+export type BackupRuntimeState = {
+  last_run_ms: number | null;
+  last_backup_name: string | null;
+  last_backup_sha256: string | null;
+  last_file_count: number | null;
+  last_zip_bytes: number | null;
+  last_offsite_status: string | null;
+  last_error: string | null;
+};
+
+export type BackupListEntry = {
+  name: string;
+  size_bytes: number;
+  modified_ms: number;
+  sha256: string | null;
+  created_at_utc: string | null;
+  file_count: number | null;
+  kind: "backup" | "pre_restore";
+};
+
+export type BackupsPayload = {
+  config: BackupConfig;
+  state: BackupRuntimeState;
+  backups: BackupListEntry[];
+  can_edit: boolean;
+};
+
+export type BackupRunResponse = {
+  ok: boolean;
+  backup: {
+    filename: string;
+    sha256: string;
+    manifest_sha256: string;
+    file_count: number;
+    total_bytes: number;
+    zip_bytes: number;
+    created_at_utc: string;
+    pruned_local: string[];
+    offsite?: { kind: string; ok: boolean; target: string; detail: string } | null;
+  };
+  state: BackupRuntimeState;
+  backups: BackupListEntry[];
+};
+
+export type BackupRestoreResponse = {
+  ok: boolean;
+  restore: {
+    archive: string;
+    restored_files: number;
+    total_bytes: number;
+    archive_sha256: string;
+    manifest_sha256: string;
+    verified_on_disk: boolean;
+    pre_restore_snapshot: string | null;
+  };
+  backups: BackupListEntry[];
+};
+
+/** Full-instance backups exist on native Ergon (never in standalone browser mode). */
+export function hasBackups(status: Status | null | "error" | undefined): boolean {
+  if (isWebStandalone() || !status || status === "error") return false;
+  return status.capabilities?.backups === true;
 }
 export type TodayPayload = { date?: string; events?: TodayEvent[] };
 export type GraphNode = { id: string; kind: string; label?: string; detail?: string };
@@ -1109,6 +1248,56 @@ export function validateCronExpression(expr: string): { valid: boolean; error?: 
   return { valid: true, summary: `Valid 5-field cron (${parts.join(" ")})` };
 }
 
+export function validateRoutineSchedule(schedule: string): { valid: boolean; error?: string } {
+  const trimmed = String(schedule || "").trim();
+  if (!trimmed) return { valid: false, error: "Schedule cannot be empty." };
+  const raw = trimmed.toLowerCase();
+  if (raw === "manual" || raw === "hourly" || raw === "every hour") {
+    return { valid: true };
+  }
+  const everyMatch = /^every\s+(\d+)\s*(s|sec|secs|seconds?|m|min|mins|minutes?|h|hr|hrs|hours?|d|day|days?)$/.exec(raw);
+  if (everyMatch) {
+    return Number(everyMatch[1]) >= 1
+      ? { valid: true }
+      : { valid: false, error: "Interval must be at least 1." };
+  }
+  const dailyMatch = /^(?:daily|every\s+day|every\s+weekday)(?:\s+(\d{1,2}):(\d{2}))?$/.exec(raw);
+  if (dailyMatch) {
+    if (dailyMatch[1] !== undefined) {
+      const hh = Number(dailyMatch[1]);
+      const mm = Number(dailyMatch[2]);
+      if (hh > 23 || mm > 59) {
+        return { valid: false, error: "Time must use 24-hour HH:MM (00:00 to 23:59)." };
+      }
+    }
+    return { valid: true };
+  }
+  const weeklyMatch = /^(?:weekly|every)\s+(sun|mon|tue|wed|thu|fri|sat)[a-z]*(?:\s+(\d{1,2}):(\d{2}))?$/.exec(raw);
+  if (weeklyMatch) {
+    if (weeklyMatch[2] !== undefined) {
+      const hh = Number(weeklyMatch[2]);
+      const mm = Number(weeklyMatch[3]);
+      if (hh > 23 || mm > 59) {
+        return { valid: false, error: "Time must use 24-hour HH:MM (00:00 to 23:59)." };
+      }
+    }
+    return { valid: true };
+  }
+  return validateCronExpression(trimmed);
+}
+
+export function validateRoutineTimezone(tz: string): { valid: boolean; error?: string } {
+  const zone = String(tz || "").trim();
+  if (!zone) return { valid: false, error: "Select a timezone." };
+  if (zone.toUpperCase() === "UTC") return { valid: true };
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: zone }).format(0);
+    return { valid: true };
+  } catch {
+    return { valid: false, error: `Unknown IANA timezone "${zone}".` };
+  }
+}
+
 export function resolveTzOffsetMins(tz?: string, tzOffsetMins?: number | null, atMs = Date.now()): number {
   if (typeof tzOffsetMins === "number" && Number.isFinite(tzOffsetMins)) {
     return Math.round(tzOffsetMins);
@@ -1270,14 +1459,18 @@ export function formatCountdown(targetMs: number | null | undefined, nowMs = Dat
 
 export async function call<T>(
   path: string,
-  opts: { method?: string; body?: unknown; signal?: AbortSignal } = {}
+  opts: { method?: string; body?: unknown; signal?: AbortSignal; headers?: Record<string, string> } = {}
 ): Promise<Res<T>> {
   try {
+    const headers: Record<string, string> = { ...(opts.headers ?? {}) };
+    if (opts.body !== undefined && !("Content-Type" in headers)) {
+      headers["Content-Type"] = "application/json";
+    }
     const r = await fetch(path, {
       method: opts.method ?? "GET",
       cache: "no-store",
       signal: opts.signal,
-      headers: opts.body !== undefined ? { "Content-Type": "application/json" } : undefined,
+      headers: Object.keys(headers).length > 0 ? headers : undefined,
       body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
     });
     const raw = await r.text();
@@ -1653,8 +1846,7 @@ export async function exportFile(body: ExportFileRequest): Promise<Res<ExportFil
   return call<ExportFileResult>("/api/files/export", { method: "POST", body });
 }
 
-export function canExportPdf(path: string, extractedFormat?: "markdown" | "csv"): boolean {
-  if (extractedFormat === "markdown" || extractedFormat === "csv") return true;
+export function canExportPdf(path: string, _extractedFormat?: "markdown" | "csv"): boolean {
   const ext = (path.split(".").pop() || "").toLowerCase();
   return ext === "md" || ext === "markdown" || ext === "txt" || ext === "csv" || ext === "tsv";
 }
@@ -2488,6 +2680,158 @@ export function isPathInEngagementScope(path: string, eng?: Engagement | null): 
 
 export async function aggregateVault(body: VaultAggregateRequest): Promise<Res<VaultAggregateResult>> {
   return call<VaultAggregateResult>("/api/vault/aggregate", { method: "POST", body });
+}
+
+const LOCAL_HELP_PREFS_KEY = "ergon-help-prefs-v1";
+
+function loadLocalHelpFallback(): HelpConfigPayload {
+  try {
+    const raw = localStorage.getItem(LOCAL_HELP_PREFS_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      return {
+        onboarding_completed: Boolean(parsed?.onboarding_completed),
+        onboarding_completed_at_ms: typeof parsed?.onboarding_completed_at_ms === "number" ? parsed.onboarding_completed_at_ms : null,
+        admin_contact: {
+          name: String(parsed?.admin_contact?.name ?? ""),
+          email: String(parsed?.admin_contact?.email ?? ""),
+          phone: String(parsed?.admin_contact?.phone ?? ""),
+          channel_url: String(parsed?.admin_contact?.channel_url ?? ""),
+          notes: String(parsed?.admin_contact?.notes ?? ""),
+          configured: Boolean(
+            parsed?.admin_contact?.name ||
+            parsed?.admin_contact?.email ||
+            parsed?.admin_contact?.phone ||
+            parsed?.admin_contact?.channel_url ||
+            parsed?.admin_contact?.notes
+          ),
+          source: "local",
+        },
+        can_edit_admin_contact: true,
+        diagnostics_url: "/api/diagnostics/bundle",
+      };
+    }
+  } catch { /* ignore */ }
+  return {
+    onboarding_completed: false,
+    onboarding_completed_at_ms: null,
+    admin_contact: {
+      name: "",
+      email: "",
+      phone: "",
+      channel_url: "",
+      notes: "",
+      configured: false,
+      source: "default",
+    },
+    can_edit_admin_contact: true,
+    diagnostics_url: "/api/diagnostics/bundle",
+  };
+}
+
+export async function fetchHelpConfig(): Promise<Res<HelpConfigPayload>> {
+  if (isWebStandalone()) {
+    return { ok: true, data: loadLocalHelpFallback() };
+  }
+  return call<HelpConfigPayload>("/api/help/config");
+}
+
+export async function saveHelpConfig(body: {
+  onboarding_completed?: boolean;
+  admin_contact?: Partial<Pick<AdminContactConfig, "name" | "email" | "phone" | "channel_url" | "notes">>;
+}): Promise<Res<HelpConfigPayload>> {
+  if (isWebStandalone()) {
+    const cur = loadLocalHelpFallback();
+    const nextContact = {
+      ...cur.admin_contact,
+      ...(body.admin_contact ?? {}),
+    };
+    nextContact.configured = Boolean(
+      nextContact.name.trim() ||
+      nextContact.email.trim() ||
+      nextContact.phone.trim() ||
+      nextContact.channel_url.trim() ||
+      nextContact.notes.trim()
+    );
+    const next: HelpConfigPayload = {
+      ...cur,
+      onboarding_completed:
+        typeof body.onboarding_completed === "boolean" ? body.onboarding_completed : cur.onboarding_completed,
+      onboarding_completed_at_ms:
+        typeof body.onboarding_completed === "boolean"
+          ? body.onboarding_completed
+            ? Date.now()
+            : null
+          : cur.onboarding_completed_at_ms,
+      admin_contact: nextContact,
+    };
+    try {
+      localStorage.setItem(LOCAL_HELP_PREFS_KEY, JSON.stringify(next));
+    } catch { /* ignore */ }
+    return { ok: true, data: next };
+  }
+  return call<HelpConfigPayload>("/api/help/config", { method: "POST", body });
+}
+
+export async function fetchDiagnosticsSummary(): Promise<Res<DiagnosticsSummary>> {
+  if (isWebStandalone()) {
+    return {
+      ok: true,
+      data: {
+        app_version: "0.38.0",
+        os: "browser",
+        arch: "web",
+        uptime_secs: 0,
+        workspace_count: 1,
+        model_configured: false,
+        log_files: 0,
+        crash_reports: 0,
+      },
+    };
+  }
+  return call<DiagnosticsSummary>("/api/diagnostics/summary");
+}
+
+export async function downloadDiagnosticBundle(): Promise<
+  | { ok: true; filename: string; sha256: string; bytes: number }
+  | { ok: false; error: string }
+> {
+  if (isWebStandalone()) {
+    return { ok: false, error: "Diagnostic bundles are generated by the local Ergon desktop/server binary." };
+  }
+  try {
+    const resp = await fetch("/api/diagnostics/bundle", {
+      method: "GET",
+      credentials: "same-origin",
+    });
+    if (!resp.ok) {
+      let msg = `Download failed (HTTP ${resp.status})`;
+      try {
+        const j = await resp.json();
+        if (typeof j?.error === "string" && j.error.trim()) msg = j.error;
+      } catch { /* ignore */ }
+      return { ok: false, error: msg };
+    }
+    const blob = await resp.blob();
+    const cd = resp.headers.get("content-disposition") || "";
+    const match = /filename="?([^";\r\n]+)"?/i.exec(cd);
+    const filename = match?.[1] || `ergon-diagnostics-${new Date().toISOString().slice(0, 10)}.zip`;
+    const sha256 = resp.headers.get("x-ergon-diagnostics-sha256") || "";
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1500);
+    return { ok: true, filename, sha256, bytes: blob.size };
+  } catch (e) {
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : "Could not download diagnostic bundle.",
+    };
+  }
 }
 
 // ---------------------------------------------------------------------------

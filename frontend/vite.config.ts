@@ -124,6 +124,7 @@ export default defineConfig({
                 normalized.endsWith("/src/chat/LiveRunTimeline.tsx") ||
                 normalized.endsWith("/src/shell/PersonSelect.tsx") ||
                 normalized.endsWith("/src/shell/CheckpointCard.tsx") ||
+                normalized.endsWith("/src/shell/OnboardingCard.tsx") ||
                 normalized.endsWith("/src/shell/Update.tsx") ||
                 normalized.endsWith("/src/views/usePaper.ts")
               ) {

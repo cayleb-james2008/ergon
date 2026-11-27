@@ -361,6 +361,7 @@ fn fetch_url_extracts_text_and_workspace_is_sandboxed() {
     assert!(err.is_err(), "absolute path must be refused, got: {err:?}");
 }
 
+#[cfg(unix)]
 #[test]
 fn sandbox_refuses_symlink_escape() {
     let root = test_root("symlink");
@@ -775,6 +776,7 @@ fn created_persons_learning_reaches_the_prompt() {
 /// Defect: the sandbox's symlink defence probed with exists(), which is
 /// false for a dangling link — writing through one escaped the
 /// workspace and created the outside file.
+#[cfg(unix)]
 #[test]
 fn dangling_symlink_write_is_refused() {
     let root = test_root("dangle");
@@ -2613,6 +2615,7 @@ fn publish_skill_cannot_overwrite_another_authors_item() {
 /// F1: an approved delete of a symlink deleted the file it POINTED
 /// AT and reported the link's name. The gate must delete exactly
 /// what the person approved: the link.
+#[cfg(unix)]
 #[test]
 fn approved_delete_of_a_symlink_deletes_the_link_not_the_target() {
     let root = test_root("symlink-delete");

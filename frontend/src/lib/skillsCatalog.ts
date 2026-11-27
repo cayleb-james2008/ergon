@@ -50,7 +50,7 @@ export const CANONICAL_SKILLS: SkillMeta[] = [
       "Reconcile expenses-q3.csv, compute vendor and category totals, and flag missing receipts or duplicates.",
       "Cross-check all workspace expense CSVs and write a reconciled ledger plus audit summary.",
     ],
-    source: `// reconcile_ledger — deterministic multi-CSV expense & invoice audit
+    source: `// reconcile_ledger: deterministic multi-CSV expense & invoice audit
 pub fn run(args) {
   let rows = ergon::parse_csv(ergon::read_file(args.path)?);
   let audit = ergon::reconcile_rows(rows);
@@ -74,7 +74,7 @@ pub fn run(args) {
       "Summarize tuesday-sync-notes.md into decisions, action owners, due dates, and a follow-up draft.",
       "Extract all unchecked action items and owners from my latest meeting notes.",
     ],
-    source: `// summarize_meeting — structured decisions, owners, due dates & follow-up
+    source: `// summarize_meeting: structured decisions, owners, due dates & follow-up
 pub fn run(args) {
   let notes = ergon::read_file(args.notes_file)?;
   let digest = ergon::extract_meeting_digest(notes);
@@ -97,7 +97,7 @@ pub fn run(args) {
       "Audit the vendor agreement in my workspace for renewal windows, liability terms, and missing clauses with line citations.",
       "Check workspace agreements for auto-renewal traps and output a line-cited risk table.",
     ],
-    source: `// audit_contract — clause presence check, renewal dates & line-cited risk table
+    source: `// audit_contract: clause presence check, renewal dates & line-cited risk table
 pub fn run(args) {
   let text = ergon::read_file(args.contract_file)?;
   let findings = ergon::scan_contract_clauses(text, args.required_clauses);
@@ -120,7 +120,7 @@ pub fn run(args) {
       "Triage workspace tickets and messages into Urgent, Action, and FYI queues with concrete next steps.",
       "Prioritize open support notes and draft a morning triage queue.",
     ],
-    source: `// triage_inbox — Urgent / Action / FYI priority routing
+    source: `// triage_inbox: Urgent / Action / FYI priority routing
 pub fn run(args) {
   let items = ergon::read_file(args.source_file)?;
   let queue = ergon::classify_triage(items);
@@ -143,7 +143,7 @@ pub fn run(args) {
       "Clean and deduplicate expenses-q3.csv, flag nulls or numeric outliers, and save a diff metrics report.",
       "Normalize whitespace and schema headers across my uploaded CSV dataset.",
     ],
-    source: `// clean_dataset — schema normalization, deduplication & outlier metrics
+    source: `// clean_dataset: schema normalization, deduplication & outlier metrics
 pub fn run(args) {
   let raw = ergon::read_file(args.dataset_file)?;
   let cleaned = ergon::normalize_dataset(raw);
@@ -167,7 +167,7 @@ pub fn run(args) {
       "Compare two documents in my workspace line by line and write a structured change summary.",
       "Diff old-vendor-draft.txt against tuesday-sync-notes.md and summarize every change.",
     ],
-    source: `// compare_documents — deterministic line-by-line diff & change summary
+    source: `// compare_documents: deterministic line-by-line diff & change summary
 pub fn run(args) {
   let a = ergon::read_file(args.left_file)?;
   let b = ergon::read_file(args.right_file)?;
@@ -191,7 +191,7 @@ pub fn run(args) {
       "Draft an executive brief grounded in my workspace files and standing preferences.",
       "Write a concise operational SOP from the notes in my workspace.",
     ],
-    source: `// draft_brief — workspace-grounded executive memo & SOP author
+    source: `// draft_brief: workspace-grounded executive memo & SOP author
 pub fn run(args) {
   let mem = ergon::read_memory()?;
   let files = ergon::collect_sources(args.sources)?;
@@ -215,7 +215,7 @@ pub fn run(args) {
       "Extract structured tables from my workspace notes into a clean CSV spreadsheet.",
       "Parse key-value lines from logs or notes into extracted-table.csv.",
     ],
-    source: `// extract_tables — unstructured Markdown/log text -> verified CSV
+    source: `// extract_tables: unstructured Markdown/log text -> verified CSV
 pub fn run(args) {
   let text = ergon::read_file(args.source_file)?;
   let table = ergon::extract_structured_rows(text);
@@ -238,7 +238,7 @@ pub fn run(args) {
       "Make a clean Q4 budget spreadsheet in CSV format with checked column totals.",
       "Build a vendor tracking CSV from my workspace files.",
     ],
-    source: `// make_spreadsheet — verified CSV authoring with checked column totals
+    source: `// make_spreadsheet: verified CSV authoring with checked column totals
 pub fn run(args) {
   let csv = ergon::format_csv(args.columns, args.rows);
   ergon::write_file(args.title, csv)?;
@@ -260,7 +260,7 @@ pub fn run(args) {
       "Write a structured weekly status document summarizing finished workspace deliverables.",
       "Tidy my workspace notes into a clear Markdown summary document.",
     ],
-    source: `// write_document — structured Markdown report writer
+    source: `// write_document: structured Markdown report writer
 pub fn run(args) {
   let body = ergon::format_markdown(args.title, args.sections);
   ergon::write_file(args.title, body)?;
@@ -282,7 +282,7 @@ pub fn run(args) {
       "Research all workspace files for vendor risks and deadlines, and save a cited findings brief.",
       "Search workspace files for Q3/Q4 deliverables and compile sourced research notes.",
     ],
-    source: `// research — sourced multi-file workspace research & citation compiler
+    source: `// research: sourced multi-file workspace research & citation compiler
 pub fn run(args) {
   let hits = ergon::search_files(args.query)?;
   let brief = ergon::compile_research(args.topic, hits);
@@ -305,7 +305,7 @@ pub fn run(args) {
       "Remember to lead every executive brief with top risks, owners, and exact dates.",
       "Always flag expense variances over $250 in reconciliations.",
     ],
-    source: `// update_memory — standing personal preferences persisted in memory.md
+    source: `// update_memory: standing personal preferences persisted in memory.md
 pub fn run(args) {
   ergon::append_memory_rule(args.note)?;
   Ok("recorded")

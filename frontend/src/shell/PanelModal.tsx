@@ -52,17 +52,19 @@ export function PanelModal({
         {trigger && <DialogTrigger asChild>{trigger}</DialogTrigger>}
         <DialogContent
           className={cn(
-            "max-h-[85vh] max-w-2xl overflow-x-hidden overflow-y-auto rounded-dialog border border-hairline bg-surface p-5 text-ink shadow-lift focus:outline-none motion-safe:transition-opacity motion-safe:duration-(--dur-reveal) motion-safe:ease-(--ease-house) sm:p-6",
+            "flex max-h-[85dvh] max-w-2xl flex-col gap-0 overflow-hidden rounded-dialog border border-hairline bg-surface p-0 text-ink shadow-lift focus:outline-none motion-safe:transition-opacity motion-safe:duration-(--dur-reveal) motion-safe:ease-(--ease-house)",
             className
           )}
         >
-          <DialogTitle className="min-w-0 pr-10 text-title font-medium text-ink">{title}</DialogTitle>
-          {description ? (
-            <DialogDescription className="min-w-0 text-sm text-ink-2">{description}</DialogDescription>
-          ) : (
-            <DialogDescription className="sr-only min-w-0">{title}</DialogDescription>
-          )}
-          <div id={panelId} className="mt-1 min-w-0 w-full">
+          <div className="shrink-0 border-b border-hairline px-5 pt-5 pb-3.5 pr-12 sm:px-6 sm:pt-5 sm:pb-4 sm:pr-12">
+            <DialogTitle className="min-w-0 text-title font-medium text-ink [overflow-wrap:anywhere]">{title}</DialogTitle>
+            {description ? (
+              <DialogDescription className="mt-1 min-w-0 text-sm text-ink-2 [overflow-wrap:anywhere]">{description}</DialogDescription>
+            ) : (
+              <DialogDescription className="sr-only min-w-0">{title}</DialogDescription>
+            )}
+          </div>
+          <div id={panelId} className="min-h-0 w-full flex-1 overflow-x-hidden overflow-y-auto px-5 pt-4 pb-5 sm:px-6 sm:pb-6">
             {children}
           </div>
         </DialogContent>

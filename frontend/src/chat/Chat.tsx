@@ -3,13 +3,14 @@
 // - Inline Approval & File-Diff cards directly inside the thread (Approve / Hold / Revise)
 // - Live SSE / poll run status banner (#live-run-timeline) with TextShimmer + BorderTrail (live work only) + cancel
 // - Elevated floating composer (#composer-input) with multi-file upload & drag-drop
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   FileCheck2,
   FileSpreadsheet,
   FileText,
   FolderOpen,
   Paperclip,
+  RotateCcw,
   Send,
   ShieldCheck,
   Sparkles,
@@ -28,10 +29,12 @@ import {
 } from "@/chat/Entry";
 import { LiveRunTimeline } from "@/chat/LiveRunTimeline";
 import { PipelineRunStrip } from "@/shell/CheckpointCard";
+import { OnboardingCard } from "@/shell/OnboardingCard";
 import { cn } from "@/lib/utils";
 import {
   call,
   cancelLiveRun,
+  type AdminContactConfig,
   type Decision,
   type LiveRun,
   type LiveRunStatus,
@@ -39,6 +42,7 @@ import {
   type Msg,
   type PipelineResumePayload,
   type PipelineRun,
+  type RecoverableRun,
 } from "@/lib/api";
 import { detectBatchWorkflow, detectWorkflowForFile, type StarterCard } from "@/lib/words";
 
@@ -59,6 +63,8 @@ export function Chat({
   liveSteps,
   liveTimeline,
   liveRuns,
+  liveStreamError,
+  onRetrySync,
   cancellingRunIds,
   draft,
   setDraft,
@@ -84,6 +90,17 @@ export function Chat({
   onResumePipeline,
   onRetryPipeline,
   onCancelPipeline,
+  recoverableRuns = [],
+  resumingRunId = null,
+  modelConfigured = false,
+  onResumeInterruptedRun,
+  onOpenThread,
+  showOnboarding = false,
+  onboardingSaving = false,
+  adminContact = null,
+  onCompleteOnboarding,
+  onOpenSkills,
+  onOpenHelp,
   inputRef,
 }: {
   threadId: string | null;
@@ -99,6 +116,8 @@ export function Chat({
   liveSteps: string[];
   liveTimeline: LiveRunStep[];
   liveRuns?: LiveRun[];
+  liveStreamError?: string;
+  onRetrySync?: () => Promise<void> | void;
   cancellingRunIds?: Record<string, boolean>;
   draft: string;
   setDraft: (s: string) => void;
@@ -129,13 +148,29 @@ export function Chat({
   onResumePipeline?: (runId: string, payload: PipelineResumePayload) => Promise<void>;
   onRetryPipeline?: (runId: string) => Promise<void>;
   onCancelPipeline?: (runId: string) => Promise<void>;
+  recoverableRuns?: RecoverableRun[];
+  resumingRunId?: string | null;
+  modelConfigured?: boolean;
+  onResumeInterruptedRun?: (runId: string) => void;
+  onOpenThread?: (threadId: string) => void;
+  showOnboarding?: boolean;
+  onboardingSaving?: boolean;
+  adminContact?: AdminContactConfig | null;
+  onCompleteOnboarding?: () => void;
+  onOpenSkills?: () => void;
+  onOpenHelp?: () => void;
   inputRef: React.RefObject<HTMLTextAreaElement | null>;
 }) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const attachRef = useRef<HTMLInputElement>(null);
   const [dragOver, setDragOver] = useState(false);
   const [polledRuns, setPolledRuns] = useState<LiveRun[]>([]);
+  const [localStreamError, setLocalStreamError] = useState("");
   const [localCancellingIds, setLocalCancellingIds] = useState<Record<string, boolean>>({});
+  const polledRunsRef = useRef<LiveRun[]>([]);
+  useEffect(() => {
+    polledRunsRef.current = polledRuns;
+  }, [polledRuns]);
 
   const items = buildItems(messages);
   const cards = starters;
@@ -156,32 +191,39 @@ export function Chat({
     [pipelineRuns, threadId]
   );
 
+  const syncRunsStatus = useCallback(async () => {
+    const r = await call<LiveRunStatus>("/api/runs/status");
+    if (!r.ok) {
+      if (busy || polledRunsRef.current.length > 0 || visiblePipelineRuns.some((p) => p.status === "running")) {
+        setLocalStreamError(r.error || "Live updates paused. Could not reconcile run status.");
+      }
+      return;
+    }
+    setLocalStreamError("");
+    if (Array.isArray(r.data.runs)) {
+      setPolledRuns(r.data.runs.filter((run) => run && run.active !== false && !run.cancelled));
+    } else if (r.data.active && (r.data.run_id || r.data.thread_id)) {
+      setPolledRuns([
+        {
+          active: true,
+          run_id: r.data.run_id || r.data.thread_id || "active",
+          thread_id: r.data.thread_id || "",
+          task: r.data.task || "Active run",
+          started_ms: r.data.started_ms || Date.now(),
+          elapsed_ms: r.data.elapsed_ms,
+          steps: r.data.steps ?? [],
+        },
+      ]);
+    } else {
+      setPolledRuns([]);
+    }
+  }, [busy, visiblePipelineRuns]);
+
   useEffect(() => {
     let active = true;
-    const syncRunsStatus = async () => {
-      const r = await call<LiveRunStatus>("/api/runs/status");
-      if (!active || !r.ok) return;
-      if (Array.isArray(r.data.runs)) {
-        setPolledRuns(r.data.runs.filter((run) => run && run.active !== false && !run.cancelled));
-      } else if (r.data.active && (r.data.run_id || r.data.thread_id)) {
-        setPolledRuns([
-          {
-            active: true,
-            run_id: r.data.run_id || r.data.thread_id || "active",
-            thread_id: r.data.thread_id || "",
-            task: r.data.task || "Active run",
-            started_ms: r.data.started_ms || Date.now(),
-            elapsed_ms: r.data.elapsed_ms,
-            steps: r.data.steps ?? [],
-          },
-        ]);
-      } else {
-        setPolledRuns([]);
-      }
-    };
     void syncRunsStatus();
     const timer = window.setInterval(() => {
-      if (busy || visiblePipelineRuns.some((r) => r.status === "running")) {
+      if (busy || polledRunsRef.current.length > 0 || visiblePipelineRuns.some((r) => r.status === "running")) {
         void syncRunsStatus();
       }
     }, 1000);
@@ -191,6 +233,7 @@ export function Chat({
         es = new EventSource("/api/runs/stream");
         const onRunEvent = (ev: Event, kind: string) => {
           if (!active) return;
+          setLocalStreamError("");
           try {
             const parsed = JSON.parse((ev as MessageEvent).data || "{}") as Record<string, unknown>;
             if (Array.isArray(parsed.runs)) {
@@ -234,6 +277,7 @@ export function Chat({
             es.close();
             es = null;
           }
+          if (active) void syncRunsStatus();
         };
       } catch {
         // ignore
@@ -244,7 +288,7 @@ export function Chat({
       window.clearInterval(timer);
       if (es) es.close();
     };
-  }, [busy, visiblePipelineRuns.length]);
+  }, [busy, visiblePipelineRuns.length, syncRunsStatus]);
 
   const activeLiveRuns = useMemo(() => {
     const map = new Map<string, LiveRun>();
@@ -297,12 +341,19 @@ export function Chat({
           (!threadId || polledRuns.some((r) => r.run_id === targetRunId && r.thread_id === threadId && !r.routine_id)));
       if (isPrimary) {
         onCancel();
+        setPolledRuns((prev) => prev.filter((r) => r.run_id !== targetRunId && r.thread_id !== targetRunId));
       } else if (onCancelRun) {
         await onCancelRun(targetRunId);
+        await syncRunsStatus();
       } else {
-        await cancelLiveRun(targetRunId);
+        const res = await cancelLiveRun(targetRunId);
+        if (!res.ok && res.status !== 404) {
+          setLocalStreamError(res.error || "Could not stop the active run. Try again.");
+          return;
+        }
+        setLocalStreamError("");
+        setPolledRuns((prev) => prev.filter((r) => r.run_id !== targetRunId && r.thread_id !== targetRunId));
       }
-      setPolledRuns((prev) => prev.filter((r) => r.run_id !== targetRunId && r.thread_id !== targetRunId));
     } finally {
       setLocalCancellingIds((prev) => {
         const next = { ...prev };
@@ -310,6 +361,11 @@ export function Chat({
         return next;
       });
     }
+  };
+
+  const effectiveStreamError = liveStreamError || localStreamError;
+  const handleRetrySync = async () => {
+    await Promise.all([syncRunsStatus(), Promise.resolve(onRetrySync?.())]);
   };
   const uploadSuggestion = useMemo(() => {
     if (!lastUploaded || lastUploaded.length === 0) return null;
@@ -379,6 +435,69 @@ export function Chat({
 
   const composerNode = (
     <div className="flex w-full flex-col gap-2">
+      {!busy && recoverableRuns.length > 0 && (
+        <div
+          id="interrupted-runs-banner"
+          role="status"
+          className="flex flex-col gap-2 rounded-card border border-hairline bg-surface px-3.5 py-2.5 text-xs shadow-card"
+        >
+          {recoverableRuns.slice(0, 3).map((run) => {
+            const canResume = Boolean(run.can_resume ?? modelConfigured);
+            const isResuming = resumingRunId === run.run_id;
+            const stepCount = Array.isArray(run.steps) ? run.steps.length : 0;
+            return (
+              <div
+                key={run.run_id}
+                data-recoverable-run-id={run.run_id}
+                className="flex flex-wrap items-center justify-between gap-2"
+              >
+                <div className="flex min-w-0 flex-1 items-start gap-2">
+                  <span className="mt-1 size-2 shrink-0 rounded-full bg-dot-amber" aria-hidden />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate font-medium text-ink">
+                      Interrupted task: {run.task || "Unfinished chat run"}
+                    </p>
+                    <p className="text-ink-2">
+                      {stepCount > 0
+                        ? `${stepCount} completed ${stepCount === 1 ? "step" : "steps"} saved.`
+                        : "Interrupted before the first step finished."}{" "}
+                      {canResume
+                        ? "Resume to continue from saved thread state."
+                        : "Configure a model in Settings to resume."}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex shrink-0 items-center gap-1.5">
+                  {run.thread_id && run.thread_id !== threadId && onOpenThread && (
+                    <Button
+                      type="button"
+                      size="xs"
+                      variant="ghost"
+                      className="max-md:min-h-11"
+                      onClick={() => onOpenThread(run.thread_id)}
+                    >
+                      View thread
+                    </Button>
+                  )}
+                  {onResumeInterruptedRun && (
+                    <Button
+                      id="resume-run-btn"
+                      type="button"
+                      size="xs"
+                      disabled={!canResume || isResuming}
+                      className="max-md:min-h-11 gap-1.5"
+                      onClick={() => onResumeInterruptedRun(run.run_id)}
+                    >
+                      <RotateCcw className="size-3" strokeWidth={1.75} aria-hidden />
+                      {isResuming ? "Resuming…" : "Resume"}
+                    </Button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
       {pendingNote && (
         <p className="text-xs text-ink-2">
           Your previous draft was restored below because the connection interrupted before it reached the server.
@@ -575,6 +694,17 @@ export function Chat({
 
               {composerNode}
 
+              {showOnboarding && onCompleteOnboarding && (
+                <OnboardingCard
+                  adminContact={adminContact}
+                  saving={onboardingSaving}
+                  onComplete={onCompleteOnboarding}
+                  onOpenFiles={onOpenFiles}
+                  onOpenSkills={onOpenSkills}
+                  onOpenHelp={onOpenHelp}
+                />
+              )}
+
               {!busy && activeLiveRuns.length > 0 && (
                 <LiveRunTimeline
                   steps={liveTimeline}
@@ -584,6 +714,8 @@ export function Chat({
                   cancelling={cancelling}
                   runs={activeLiveRuns}
                   cancellingRunIds={mergedCancellingIds}
+                  streamError={effectiveStreamError}
+                  onRetrySync={handleRetrySync}
                   onCancel={onCancel}
                   onCancelRun={handleCancelSpecific}
                 />
@@ -718,6 +850,8 @@ export function Chat({
               cancelling={cancelling}
               runs={activeLiveRuns}
               cancellingRunIds={mergedCancellingIds}
+              streamError={effectiveStreamError}
+              onRetrySync={handleRetrySync}
               onCancel={onCancel}
               onCancelRun={handleCancelSpecific}
             />
