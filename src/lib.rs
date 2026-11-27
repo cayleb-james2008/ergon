@@ -15,6 +15,7 @@ pub mod docs;
 pub mod file_history;
 pub mod library;
 pub mod live_runs;
+pub mod logging;
 pub mod mcp;
 pub mod pipelines;
 pub mod receipts;
@@ -691,10 +692,13 @@ pub fn backup_corrupt(path: &Path) -> Option<PathBuf> {
         n += 1;
     }
     std::fs::rename(path, &candidate).ok()?;
-    eprintln!(
-        "ergon: {} was corrupt; backed up to {} and starting fresh",
-        path.display(),
-        candidate.display()
+    crate::logging::warn(
+        "ergon::store",
+        &format!(
+            "ergon: {} was corrupt; backed up to {} and starting fresh",
+            path.display(),
+            candidate.display()
+        ),
     );
     Some(candidate)
 }
@@ -1459,7 +1463,14 @@ pub fn call_model_with_usage_streaming(
             Ok(r) => break r,
             Err(ureq::Error::Status(code, r)) if can_retry && retryable_status(code) => {
                 let wait = retry_delay(attempt, r.header("retry-after"));
-                eprintln!("ergon: model endpoint returned HTTP {code}; retrying in {} ms (attempt {}/{MODEL_ATTEMPTS})", wait.as_millis(), attempt + 1);
+                crate::logging::warn(
+                    "ergon::model",
+                    &format!(
+                        "ergon: model endpoint returned HTTP {code}; retrying in {} ms (attempt {}/{MODEL_ATTEMPTS})",
+                        wait.as_millis(),
+                        attempt + 1
+                    ),
+                );
                 std::thread::sleep(wait);
             }
             Err(ureq::Error::Status(code, r)) => {
@@ -1471,7 +1482,14 @@ pub fn call_model_with_usage_streaming(
                 if can_retry && remote && matches!(t.kind(), ureq::ErrorKind::Io | ureq::ErrorKind::ConnectionFailed) =>
             {
                 let wait = retry_delay(attempt, None);
-                eprintln!("ergon: model call failed ({t}); retrying in {} ms (attempt {}/{MODEL_ATTEMPTS})", wait.as_millis(), attempt + 1);
+                crate::logging::warn(
+                    "ergon::model",
+                    &format!(
+                        "ergon: model call failed ({t}); retrying in {} ms (attempt {}/{MODEL_ATTEMPTS})",
+                        wait.as_millis(),
+                        attempt + 1
+                    ),
+                );
                 std::thread::sleep(wait);
             }
             Err(e) => return Err(format!("model call failed: {e}")),

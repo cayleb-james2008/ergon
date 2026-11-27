@@ -706,7 +706,15 @@ pub fn record(root: &Path, trip: &Trip) -> Option<Value> {
         &events_path(root),
         json!({"anchor": anchor, "events": events}).to_string().as_bytes(),
     );
-    eprintln!("ergon tripwire [{}] {}: {}", trip.severity.label(), trip.code, trip.title);
+    crate::logging::warn(
+        "ergon::tripwire",
+        &format!(
+            "ergon tripwire [{}] {}: {}",
+            trip.severity.label(),
+            trip.code,
+            trip.title
+        ),
+    );
     Some(ev)
 }
 

@@ -29,10 +29,12 @@ import {
 } from "@/chat/Entry";
 import { LiveRunTimeline } from "@/chat/LiveRunTimeline";
 import { PipelineRunStrip } from "@/shell/CheckpointCard";
+import { OnboardingCard } from "@/shell/OnboardingCard";
 import { cn } from "@/lib/utils";
 import {
   call,
   cancelLiveRun,
+  type AdminContactConfig,
   type Decision,
   type LiveRun,
   type LiveRunStatus,
@@ -93,6 +95,12 @@ export function Chat({
   modelConfigured = false,
   onResumeInterruptedRun,
   onOpenThread,
+  showOnboarding = false,
+  onboardingSaving = false,
+  adminContact = null,
+  onCompleteOnboarding,
+  onOpenSkills,
+  onOpenHelp,
   inputRef,
 }: {
   threadId: string | null;
@@ -145,6 +153,12 @@ export function Chat({
   modelConfigured?: boolean;
   onResumeInterruptedRun?: (runId: string) => void;
   onOpenThread?: (threadId: string) => void;
+  showOnboarding?: boolean;
+  onboardingSaving?: boolean;
+  adminContact?: AdminContactConfig | null;
+  onCompleteOnboarding?: () => void;
+  onOpenSkills?: () => void;
+  onOpenHelp?: () => void;
   inputRef: React.RefObject<HTMLTextAreaElement | null>;
 }) {
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -679,6 +693,17 @@ export function Chat({
               </div>
 
               {composerNode}
+
+              {showOnboarding && onCompleteOnboarding && (
+                <OnboardingCard
+                  adminContact={adminContact}
+                  saving={onboardingSaving}
+                  onComplete={onCompleteOnboarding}
+                  onOpenFiles={onOpenFiles}
+                  onOpenSkills={onOpenSkills}
+                  onOpenHelp={onOpenHelp}
+                />
+              )}
 
               {!busy && activeLiveRuns.length > 0 && (
                 <LiveRunTimeline

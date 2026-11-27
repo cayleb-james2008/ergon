@@ -91,6 +91,8 @@ pub struct AppState {
     pub backup_lock: Arc<Mutex<()>>,
     /// Perimeter honeytraps: decoys, breadcrumbs, honeytoken use, bans.
     pub tripwire: Arc<tripwire::Perimeter>,
+    /// Server startup instant for uptime reporting in diagnostics.
+    pub started_at: std::time::Instant,
 }
 
 static SESSION_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -1549,6 +1551,7 @@ fn serve_inner(
     background_updates: bool,
 ) -> std::io::Result<()> {
     cfg.ensure_dirs()?;
+    logging::init_if_unset(&cfg.data_dir);
     // The agent may never fetch this server's own API (egress guard).
     if let Ok(addr) = listener.local_addr() {
         tripwire::register_self_port(addr.port());
@@ -1588,6 +1591,7 @@ fn serve_inner(
         running_routines: Arc::new(Mutex::new(std::collections::HashSet::new())),
         backup_lock: Arc::new(Mutex::new(())),
         tripwire: perimeter,
+        started_at: std::time::Instant::now(),
     });
     // Recover any stale "running" pipeline runs left behind by a prior server exit.
     {
@@ -3060,7 +3064,7 @@ fn try_route_system(
                 std::thread::spawn(move || {
                     std::thread::sleep(std::time::Duration::from_millis(400));
                     if let Err(e) = up.restart() {
-                        eprintln!("ergon: restart failed: {e}");
+                        crate::logging::error("ergon::server", &format!("ergon: restart failed: {e}"));
                     }
                 });
                 Ok(())
@@ -3124,7 +3128,7 @@ fn try_route_system(
                 );
                 search::write_json_bool(buf, state.scheduler_enabled);
                 buf.extend_from_slice(
-                    br#","file_history":true,"audit_bundle":true,"backups":true,"tripwire":true,"file_edit":true,"table_query":true,"pdf_export":true,"connectors":true,"mcp":true,"clients":true,"metering":true,"vault_search":true,"client_crm":true,"time_entries":true,"invoicing":true,"run_resume":true},"scheduler_enabled":"#,
+                    br#","file_history":true,"audit_bundle":true,"backups":true,"tripwire":true,"file_edit":true,"table_query":true,"pdf_export":true,"connectors":true,"mcp":true,"clients":true,"metering":true,"vault_search":true,"client_crm":true,"time_entries":true,"invoicing":true,"run_resume":true,"diagnostics":true,"help":true},"scheduler_enabled":"#,
                 );
                 search::write_json_bool(buf, state.scheduler_enabled);
                 buf.extend_from_slice(br#","person":{"id":"#);
@@ -3663,6 +3667,125 @@ fn try_route_system(
                     respond_err(stream, status, &e)
                 }
             }
+        }
+        ("GET", "/api/diagnostics/summary") => {
+            let model_configured = {
+                let live = state.model_cfg.lock().unwrap();
+                crate::model_configured_for(&live.model_base_url, live.api_key.is_some())
+            };
+            let uptime = state.started_at.elapsed().as_secs();
+            respond_json(
+                stream,
+                200,
+                &logging::diagnostic_summary_json(root_cfg, uptime, model_configured),
+            )
+        }
+        ("GET", "/api/diagnostics/bundle") => {
+            let live_meta = {
+                let live = state.model_cfg.lock().unwrap();
+                (
+                    crate::model_configured_for(&live.model_base_url, live.api_key.is_some()),
+                    live.model_id.clone(),
+                    is_loopback_url(&live.model_base_url),
+                )
+            };
+            let uptime = state.started_at.elapsed().as_secs();
+            logging::info(
+                "ergon::diagnostics",
+                &format!("generating IT diagnostic bundle for workspace '{}'", person.id),
+            );
+            match logging::build_diagnostic_bundle_zip(
+                root_cfg,
+                uptime,
+                state.scheduler_enabled,
+                Some(live_meta),
+            ) {
+                Ok(res) => {
+                    let headers = vec![
+                        ("X-Content-Type-Options", "nosniff".to_string()),
+                        ("Cache-Control", "no-store".to_string()),
+                        (
+                            "Content-Disposition",
+                            format!("attachment; filename=\"{}\"", res.filename),
+                        ),
+                        ("X-Ergon-Diagnostics-SHA256", res.sha256),
+                        ("X-Ergon-Diagnostics-Logs", res.log_files.to_string()),
+                        ("X-Ergon-Diagnostics-Crashes", res.crash_reports.to_string()),
+                    ];
+                    respond_bytes(stream, 200, "application/zip", &res.zip_bytes, &headers)
+                }
+                Err(e) => {
+                    logging::error("ergon::diagnostics", &format!("failed to build diagnostic bundle: {e}"));
+                    respond_err(stream, 500, &format!("could not build diagnostic bundle: {e}"))
+                }
+            }
+        }
+        ("GET", "/api/help/config") => {
+            let local = state.gate_token.is_none()
+                && host_allowed(req.host.as_deref().unwrap_or(""), &[]);
+            respond_json(
+                stream,
+                200,
+                &logging::help_config_json(&root_cfg.data_dir, &runtime.cfg.data_dir, local),
+            )
+        }
+        ("PUT", "/api/help/config") | ("POST", "/api/help/config") => {
+            let local = state.gate_token.is_none()
+                && host_allowed(req.host.as_deref().unwrap_or(""), &[]);
+            let parsed: Value = serde_json::from_slice(&req.body).unwrap_or(Value::Null);
+            if !parsed.is_object() {
+                return Some(respond_err(stream, 400, "JSON object body is required"));
+            }
+            if let Some(done) = parsed["onboarding_completed"].as_bool() {
+                if let Err(e) = logging::save_help_prefs(&runtime.cfg.data_dir, done) {
+                    return Some(respond_err(stream, 500, &e));
+                }
+            }
+            if let Some(contact_obj) = parsed.get("admin_contact").and_then(|v| v.as_object()) {
+                if !local {
+                    return Some(respond_json(
+                        stream,
+                        403,
+                        &json!({"error": "admin contact settings can only be changed from this machine, not through a shared address"}),
+                    ));
+                }
+                let current = logging::load_admin_contact(&root_cfg.data_dir);
+                let name = contact_obj
+                    .get("name")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or(&current.name);
+                let email = contact_obj
+                    .get("email")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or(&current.email);
+                let phone = contact_obj
+                    .get("phone")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or(&current.phone);
+                let channel_url = contact_obj
+                    .get("channel_url")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or(&current.channel_url);
+                let notes = contact_obj
+                    .get("notes")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or(&current.notes);
+                if let Err(e) = logging::save_admin_contact(
+                    &root_cfg.data_dir,
+                    name,
+                    email,
+                    phone,
+                    channel_url,
+                    notes,
+                ) {
+                    return Some(respond_err(stream, 400, &e));
+                }
+            }
+            respond_json(
+                stream,
+                200,
+                &logging::help_config_json(&root_cfg.data_dir, &runtime.cfg.data_dir, local),
+            )
         }
         _ => return None,
     })
