@@ -6,10 +6,11 @@
 //! Returns the file name (or an "error: ..." string from the host).
 
 fn esc(cell) {
-    if !cell.contains(",") && !cell.contains("\"") && !cell.contains("\n") && !cell.contains("\r") {
-        return cell;
+    let safe = host_escape_formula_cell(cell);
+    if !safe.contains(",") && !safe.contains("\"") && !safe.contains("\n") && !safe.contains("\r") {
+        return safe;
     }
-    let doubled = cell.replace("\"", "\"\"");
+    let doubled = safe.replace("\"", "\"\"");
     `"${doubled}"`
 }
 

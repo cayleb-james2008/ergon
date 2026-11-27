@@ -3,7 +3,7 @@
 // - Inline Approval & File-Diff cards directly inside the thread (Approve / Hold / Revise)
 // - Live SSE / poll run status banner (#live-run-timeline) with TextShimmer + BorderTrail (live work only) + cancel
 // - Elevated floating composer (#composer-input) with multi-file upload & drag-drop
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   FileCheck2,
   FileSpreadsheet,
@@ -29,7 +29,17 @@ import {
 import { LiveRunTimeline } from "@/chat/LiveRunTimeline";
 import { PipelineRunStrip } from "@/shell/CheckpointCard";
 import { cn } from "@/lib/utils";
-import type { Decision, LiveRunStep, Msg, PipelineResumePayload, PipelineRun } from "@/lib/api";
+import {
+  call,
+  cancelLiveRun,
+  type Decision,
+  type LiveRun,
+  type LiveRunStatus,
+  type LiveRunStep,
+  type Msg,
+  type PipelineResumePayload,
+  type PipelineRun,
+} from "@/lib/api";
 import { detectBatchWorkflow, detectWorkflowForFile, type StarterCard } from "@/lib/words";
 
 export type Recent = { task: string; date: string; files: string[] };
@@ -48,6 +58,10 @@ export function Chat({
   streamMode,
   liveSteps,
   liveTimeline,
+  liveRuns,
+  liveStreamError,
+  onRetrySync,
+  cancellingRunIds,
   draft,
   setDraft,
   pendingNote,
@@ -60,6 +74,7 @@ export function Chat({
   onSend,
   onRunPrompt,
   onCancel,
+  onCancelRun,
   onReview,
   onResolveDecision,
   onOpenFile,
@@ -85,6 +100,10 @@ export function Chat({
   streamMode: "sse" | "poll" | null;
   liveSteps: string[];
   liveTimeline: LiveRunStep[];
+  liveRuns?: LiveRun[];
+  liveStreamError?: string;
+  onRetrySync?: () => Promise<void> | void;
+  cancellingRunIds?: Record<string, boolean>;
   draft: string;
   setDraft: (s: string) => void;
   pendingNote: boolean;
@@ -97,6 +116,7 @@ export function Chat({
   onSend: () => void;
   onRunPrompt?: (prompt: string) => void;
   onCancel: () => void;
+  onCancelRun?: (runId: string) => Promise<void> | void;
   onReview: () => void;
   onResolveDecision: (id: string, action: "approve" | "deny", label: string) => Promise<void>;
   onOpenFile: (path: string) => void;
@@ -118,6 +138,13 @@ export function Chat({
   const bottomRef = useRef<HTMLDivElement>(null);
   const attachRef = useRef<HTMLInputElement>(null);
   const [dragOver, setDragOver] = useState(false);
+  const [polledRuns, setPolledRuns] = useState<LiveRun[]>([]);
+  const [localStreamError, setLocalStreamError] = useState("");
+  const [localCancellingIds, setLocalCancellingIds] = useState<Record<string, boolean>>({});
+  const polledRunsRef = useRef<LiveRun[]>([]);
+  useEffect(() => {
+    polledRunsRef.current = polledRuns;
+  }, [polledRuns]);
 
   const items = buildItems(messages);
   const cards = starters;
@@ -129,10 +156,191 @@ export function Chat({
             r.status === "paused_checkpoint" ||
             r.status === "interrupted" ||
             r.status === "failed") &&
-          (!threadId || !r.thread_id || r.thread_id === threadId)
+          (!threadId ||
+            !r.thread_id ||
+            r.thread_id === threadId ||
+            r.status === "running" ||
+            r.status === "paused_checkpoint")
       ),
     [pipelineRuns, threadId]
   );
+
+  const syncRunsStatus = useCallback(async () => {
+    const r = await call<LiveRunStatus>("/api/runs/status");
+    if (!r.ok) {
+      if (busy || polledRunsRef.current.length > 0 || visiblePipelineRuns.some((p) => p.status === "running")) {
+        setLocalStreamError(r.error || "Live updates paused. Could not reconcile run status.");
+      }
+      return;
+    }
+    setLocalStreamError("");
+    if (Array.isArray(r.data.runs)) {
+      setPolledRuns(r.data.runs.filter((run) => run && run.active !== false && !run.cancelled));
+    } else if (r.data.active && (r.data.run_id || r.data.thread_id)) {
+      setPolledRuns([
+        {
+          active: true,
+          run_id: r.data.run_id || r.data.thread_id || "active",
+          thread_id: r.data.thread_id || "",
+          task: r.data.task || "Active run",
+          started_ms: r.data.started_ms || Date.now(),
+          elapsed_ms: r.data.elapsed_ms,
+          steps: r.data.steps ?? [],
+        },
+      ]);
+    } else {
+      setPolledRuns([]);
+    }
+  }, [busy, visiblePipelineRuns]);
+
+  useEffect(() => {
+    let active = true;
+    void syncRunsStatus();
+    const timer = window.setInterval(() => {
+      if (busy || polledRunsRef.current.length > 0 || visiblePipelineRuns.some((r) => r.status === "running")) {
+        void syncRunsStatus();
+      }
+    }, 1000);
+    let es: EventSource | null = null;
+    if (typeof EventSource !== "undefined") {
+      try {
+        es = new EventSource("/api/runs/stream");
+        const onRunEvent = (ev: Event, kind: string) => {
+          if (!active) return;
+          setLocalStreamError("");
+          try {
+            const parsed = JSON.parse((ev as MessageEvent).data || "{}") as Record<string, unknown>;
+            if (Array.isArray(parsed.runs)) {
+              setPolledRuns(
+                (parsed.runs as LiveRun[]).filter((run) => run && run.active !== false && !run.cancelled)
+              );
+              return;
+            }
+            const rid = typeof parsed.run_id === "string" ? parsed.run_id : "";
+            if (kind === "run_finished" || kind === "done" || kind === "cancelled") {
+              if (rid) setPolledRuns((prev) => prev.filter((x) => x.run_id !== rid));
+              return;
+            }
+            if ((kind === "run_started" || (kind === "status" && parsed.active)) && rid) {
+              const incomingRun: LiveRun = {
+                active: true,
+                run_id: rid,
+                thread_id: typeof parsed.thread_id === "string" ? parsed.thread_id : "",
+                task: String(parsed.task ?? parsed.routine_name ?? "Active run"),
+                started_ms: typeof parsed.started_ms === "number" ? parsed.started_ms : Date.now(),
+                elapsed_ms: typeof parsed.elapsed_ms === "number" ? parsed.elapsed_ms : 0,
+                steps: Array.isArray(parsed.steps) ? (parsed.steps as (string | LiveRunStep)[]) : [],
+                kind: typeof parsed.kind === "string" ? parsed.kind : undefined,
+                routine_id: typeof parsed.routine_id === "string" ? parsed.routine_id : null,
+                routine_name: typeof parsed.routine_name === "string" ? parsed.routine_name : null,
+              };
+              setPolledRuns((prev) => {
+                const idx = prev.findIndex((x) => x.run_id === rid);
+                return idx >= 0 ? prev.map((x, i) => (i === idx ? incomingRun : x)) : [incomingRun, ...prev];
+              });
+            }
+          } catch {
+            // ignore
+          }
+        };
+        for (const evName of ["status", "run_started", "run_finished", "done", "cancelled"]) {
+          es.addEventListener(evName, (ev) => onRunEvent(ev, evName));
+        }
+        es.onerror = () => {
+          if (es) {
+            es.close();
+            es = null;
+          }
+          if (active) void syncRunsStatus();
+        };
+      } catch {
+        // ignore
+      }
+    }
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+      if (es) es.close();
+    };
+  }, [busy, visiblePipelineRuns.length, syncRunsStatus]);
+
+  const activeLiveRuns = useMemo(() => {
+    const map = new Map<string, LiveRun>();
+    const addRun = (r: LiveRun) => {
+      if (!r || !r.active || r.cancelled) return;
+      const key = r.run_id || r.thread_id || "active";
+      map.set(key, r);
+    };
+    for (const r of liveRuns ?? []) addRun(r);
+    for (const r of polledRuns) addRun(r);
+    if (busy) {
+      const existingMatch = Array.from(map.values()).find(
+        (r) => !r.routine_id && (!threadId || !r.thread_id || r.thread_id === threadId)
+      );
+      if (existingMatch) {
+        map.set(existingMatch.run_id, {
+          ...existingMatch,
+          steps: liveTimeline.length > 0 ? liveTimeline : existingMatch.steps,
+          elapsed_ms: liveElapsedMs || existingMatch.elapsed_ms,
+          started_ms: runStartedMs || existingMatch.started_ms,
+        });
+      } else {
+        map.set("__primary__", {
+          active: true,
+          run_id: "__primary__",
+          thread_id: threadId || "",
+          task: "Agent is working on it",
+          started_ms: runStartedMs || Date.now(),
+          elapsed_ms: liveElapsedMs,
+          steps: liveTimeline,
+          kind: "chat",
+        });
+      }
+    }
+    return Array.from(map.values());
+  }, [liveRuns, polledRuns, busy, threadId, liveTimeline, liveElapsedMs, runStartedMs]);
+
+  const mergedCancellingIds = useMemo(
+    () => ({ ...(cancellingRunIds ?? {}), ...localCancellingIds }),
+    [cancellingRunIds, localCancellingIds]
+  );
+
+  const handleCancelSpecific = async (targetRunId: string) => {
+    setLocalCancellingIds((prev) => ({ ...prev, [targetRunId]: true }));
+    try {
+      const isPrimary =
+        targetRunId === "__primary__" ||
+        (busy &&
+          polledRuns.length <= 1 &&
+          (!threadId || polledRuns.some((r) => r.run_id === targetRunId && r.thread_id === threadId && !r.routine_id)));
+      if (isPrimary) {
+        onCancel();
+        setPolledRuns((prev) => prev.filter((r) => r.run_id !== targetRunId && r.thread_id !== targetRunId));
+      } else if (onCancelRun) {
+        await onCancelRun(targetRunId);
+        await syncRunsStatus();
+      } else {
+        const res = await cancelLiveRun(targetRunId);
+        if (!res.ok && res.status !== 404) {
+          setLocalStreamError(res.error || "Could not stop the active run. Try again.");
+          return;
+        }
+        setLocalStreamError("");
+        setPolledRuns((prev) => prev.filter((r) => r.run_id !== targetRunId && r.thread_id !== targetRunId));
+      }
+    } finally {
+      setLocalCancellingIds((prev) => {
+        const next = { ...prev };
+        delete next[targetRunId];
+        return next;
+      });
+    }
+  };
+
+  const effectiveStreamError = liveStreamError || localStreamError;
+  const handleRetrySync = async () => {
+    await Promise.all([syncRunsStatus(), Promise.resolve(onRetrySync?.())]);
+  };
   const uploadSuggestion = useMemo(() => {
     if (!lastUploaded || lastUploaded.length === 0) return null;
     if (lastUploaded.length >= 2) return detectBatchWorkflow(lastUploaded);
@@ -397,6 +605,22 @@ export function Chat({
 
               {composerNode}
 
+              {!busy && activeLiveRuns.length > 0 && (
+                <LiveRunTimeline
+                  steps={liveTimeline}
+                  elapsedMs={liveElapsedMs}
+                  startedMs={runStartedMs}
+                  streamMode={streamMode}
+                  cancelling={cancelling}
+                  runs={activeLiveRuns}
+                  cancellingRunIds={mergedCancellingIds}
+                  streamError={effectiveStreamError}
+                  onRetrySync={handleRetrySync}
+                  onCancel={onCancel}
+                  onCancelRun={handleCancelSpecific}
+                />
+              )}
+
               {onResumePipeline && onCancelPipeline && visiblePipelineRuns.length > 0 && (
                 <PipelineRunStrip
                   runs={visiblePipelineRuns}
@@ -517,14 +741,19 @@ export function Chat({
             </div>
           )}
 
-          {busy && (
+          {(busy || (!empty && activeLiveRuns.length > 0)) && (
             <LiveRunTimeline
               steps={liveTimeline}
               elapsedMs={liveElapsedMs}
               startedMs={runStartedMs}
               streamMode={streamMode}
               cancelling={cancelling}
+              runs={activeLiveRuns}
+              cancellingRunIds={mergedCancellingIds}
+              streamError={effectiveStreamError}
+              onRetrySync={handleRetrySync}
               onCancel={onCancel}
+              onCancelRun={handleCancelSpecific}
             />
           )}
 

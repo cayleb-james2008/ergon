@@ -170,7 +170,7 @@ export async function buildAuditBundle(input: AuditBundleInput): Promise<BuiltAu
   md.push("", "## Verified Receipt Chain", "");
   if (receiptEntries.length) {
     for (const r of receiptEntries) {
-      md.push(`- **${r.task}** (\`${r.id}\`, ${r.timestamp}) — SHA-256 \`${r.sha256}\` (prev \`${r.prev_sha256.slice(0, 12)}…\`)`);
+      md.push(`- **${r.task}** (\`${r.id}\`, ${r.timestamp}): SHA-256 \`${r.sha256}\` (prev \`${r.prev_sha256.slice(0, 12)}…\`)`);
     }
   } else {
     md.push("_No completed receipts recorded yet._");
@@ -179,7 +179,7 @@ export async function buildAuditBundle(input: AuditBundleInput): Promise<BuiltAu
   md.push("", "## Routine Run History", "");
   if (routineHistory.length) {
     for (const run of routineHistory) {
-      md.push(`- \`${run.run_id}\` (${run.routine_id}) — **${run.status}** at ${new Date(run.started_ms).toISOString()}${run.receipt_id ? ` · receipt \`${run.receipt_id}\`` : ""}${run.summary ? ` — ${run.summary}` : ""}`);
+      md.push(`- \`${run.run_id}\` (${run.routine_id}): **${run.status}** at ${new Date(run.started_ms).toISOString()}${run.receipt_id ? ` · receipt \`${run.receipt_id}\`` : ""}${run.summary ? ` (${run.summary})` : ""}`);
     }
   } else {
     md.push("_No routine executions recorded yet._");
