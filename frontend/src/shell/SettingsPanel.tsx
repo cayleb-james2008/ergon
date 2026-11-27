@@ -6,7 +6,7 @@
 //    Browser IndexedDB Engine / BYOK OpenAI-compatible in sessionStorage / Connect to Local Ergon in Web mode)
 // 4. Version & Update check
 import { useEffect, useState } from "react";
-import { Coins, Cpu, ExternalLink, FileCheck2, Moon, Plus, SlidersHorizontal, Sun, Trash2, UserPlus, Users } from "lucide-react";
+import { Coins, Cpu, Download, ExternalLink, FileCheck2, LifeBuoy, Moon, Plus, SlidersHorizontal, Sun, Trash2, UserPlus, Users } from "lucide-react";
 import { toast } from "sonner";
 import { PanelModal, usePanelModalClose } from "@/shell/PanelModal";
 import { SegmentedControl, SegmentedControlItem } from "@/components/ui/segmented-control";
@@ -14,12 +14,17 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Pill } from "@/components/kibo-ui/pill";
 import { WorkspaceSwitcherList } from "@/shell/PersonSelect";
+import { BackupsSection } from "@/shell/BackupsSection";
 import { SecuritySection } from "@/shell/SecuritySection";
 import { UpdateSettingsSection, type useUpdate } from "@/shell/Update";
 import {
   call,
+  downloadDiagnosticBundle,
+  fetchHelpConfig,
   isWebStandalone,
+  saveHelpConfig,
   type DetectedGateway,
+  type HelpConfigPayload,
   type ModelConfigPayload,
   type ModelPricingMap,
   type Person,
@@ -41,6 +46,9 @@ function SettingsBody({
   onAddPerson,
   onExportAuditBundle,
   onConfigSaved,
+  onRestored,
+  onOpenHelp,
+  onHelpConfigSaved,
   u,
 }: {
   theme: Theme;
@@ -53,6 +61,9 @@ function SettingsBody({
   onAddPerson: () => void;
   onExportAuditBundle: (format: "json" | "md") => Promise<void>;
   onConfigSaved: () => void;
+  onRestored?: () => void;
+  onOpenHelp?: () => void;
+  onHelpConfigSaved?: (cfg: HelpConfigPayload) => void;
   u: ReturnType<typeof useUpdate>;
 }) {
   const { isOpen, setIsOpen } = usePanelModalClose();
@@ -72,13 +83,32 @@ function SettingsBody({
   const [newPricingModel, setNewPricingModel] = useState("");
   const [savingPricing, setSavingPricing] = useState(false);
   const [pricingErr, setPricingErr] = useState("");
+  const [adminName, setAdminName] = useState("");
+  const [adminEmail, setAdminEmail] = useState("");
+  const [adminPhone, setAdminPhone] = useState("");
+  const [adminUrl, setAdminUrl] = useState("");
+  const [adminNotes, setAdminNotes] = useState("");
+  const [canEditAdmin, setCanEditAdmin] = useState(true);
+  const [savingAdmin, setSavingAdmin] = useState(false);
+  const [adminErr, setAdminErr] = useState("");
+  const [downloadingDiag, setDownloadingDiag] = useState(false);
 
   useEffect(() => {
     if (!isOpen) return;
     setErr("");
     setPricingErr("");
+    setAdminErr("");
     setLockedRemote(false);
     onRefreshPeople();
+    fetchHelpConfig().then((r) => {
+      if (!r.ok) return;
+      setAdminName(r.data.admin_contact.name || "");
+      setAdminEmail(r.data.admin_contact.email || "");
+      setAdminPhone(r.data.admin_contact.phone || "");
+      setAdminUrl(r.data.admin_contact.channel_url || "");
+      setAdminNotes(r.data.admin_contact.notes || "");
+      setCanEditAdmin(Boolean(r.data.can_edit_admin_contact));
+    });
     call<ModelConfigPayload>("/api/config").then((r) => {
       if (!r.ok) {
         if (r.status === 403) setLockedRemote(true);
@@ -214,6 +244,39 @@ function SettingsBody({
     setLocalProbe("missing");
   };
 
+  const saveAdminContact = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAdminErr("");
+    setSavingAdmin(true);
+    const r = await saveHelpConfig({
+      admin_contact: {
+        name: adminName.trim(),
+        email: adminEmail.trim(),
+        phone: adminPhone.trim(),
+        channel_url: adminUrl.trim(),
+        notes: adminNotes.trim(),
+      },
+    });
+    setSavingAdmin(false);
+    if (!r.ok) {
+      setAdminErr(r.error || "Could not save IT admin contact details.");
+      return;
+    }
+    onHelpConfigSaved?.(r.data);
+    toast.success("IT admin contact details saved.");
+  };
+
+  const handleDownloadDiagnostics = async () => {
+    setDownloadingDiag(true);
+    const res = await downloadDiagnosticBundle();
+    setDownloadingDiag(false);
+    if (!res.ok) {
+      toast.error(res.error);
+      return;
+    }
+    toast.success(`Downloaded ${res.filename} (secrets automatically removed).`);
+  };
+
   const gateways = cfg?.detected_gateways ?? [];
   const activeModel = status && status !== "error" ? status.model : cfg?.model_id;
 
@@ -337,6 +400,9 @@ function SettingsBody({
           </Button>
         </div>
       </section>
+
+      {/* Backups & Recovery (native) */}
+      <BackupsSection status={status} onRestored={onRestored} />
 
       {/* Security tripwires (native v0.8.0+) */}
       <SecuritySection status={status} />
@@ -555,7 +621,7 @@ function SettingsBody({
             </div>
           </div>
           <p className="text-xs leading-5 text-ink-2">
-            Set input, output, and cached token rates per model ID for retainer burn and billable ROI metering.
+            Set input, output, and cached token rates per model ID for retainer burn and estimated billable value metering.
           </p>
 
           <form noValidate onSubmit={savePricing} className="flex flex-col gap-2.5">
@@ -676,6 +742,134 @@ function SettingsBody({
         </section>
       )}
 
+      {/* 5b. IT Support Contact & Diagnostics */}
+      <section
+        id="settings-help-section"
+        aria-labelledby="settings-help-h"
+        className="flex flex-col gap-3 rounded-card border border-hairline bg-board/40 p-3.5"
+      >
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <LifeBuoy className="size-4 text-icon" strokeWidth={1.5} aria-hidden />
+            <h3 id="settings-help-h" className="text-sm font-medium text-ink">IT Support Contact &amp; Diagnostics</h3>
+          </div>
+          {onOpenHelp && (
+            <Button
+              id="settings-open-help-btn"
+              type="button"
+              size="xs"
+              variant="outline"
+              className="max-md:min-h-11"
+              onClick={() => {
+                setIsOpen(false);
+                setTimeout(onOpenHelp, 30);
+              }}
+            >
+              Open Help &amp; Troubleshooting
+            </Button>
+          )}
+        </div>
+        <p className="text-xs leading-5 text-ink-2">
+          Configure who employees should contact when they need help, or download a redacted IT diagnostic ZIP bundle (logs, crash reports, security events, and system info).
+        </p>
+
+        {canEditAdmin ? (
+          <form onSubmit={saveAdminContact} className="flex flex-col gap-2.5">
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <div className="flex flex-col gap-1">
+                <label htmlFor="admin-contact-name" className="text-xs font-medium text-ink">Admin / Helpdesk name</label>
+                <Input
+                  id="admin-contact-name"
+                  value={adminName}
+                  onChange={(e) => setAdminName(e.target.value)}
+                  placeholder="IT Support Desk"
+                  autoComplete="off"
+                />
+              </div>
+              <div className="flex flex-col gap-1">
+                <label htmlFor="admin-contact-email" className="text-xs font-medium text-ink">Support email</label>
+                <Input
+                  id="admin-contact-email"
+                  type="email"
+                  value={adminEmail}
+                  onChange={(e) => setAdminEmail(e.target.value)}
+                  placeholder="it-help@company.example"
+                  autoComplete="off"
+                />
+              </div>
+              <div className="flex flex-col gap-1">
+                <label htmlFor="admin-contact-phone" className="text-xs font-medium text-ink">Phone (optional)</label>
+                <Input
+                  id="admin-contact-phone"
+                  value={adminPhone}
+                  onChange={(e) => setAdminPhone(e.target.value)}
+                  placeholder="+1 (555) 010-2000"
+                  autoComplete="off"
+                />
+              </div>
+              <div className="flex flex-col gap-1">
+                <label htmlFor="admin-contact-url" className="text-xs font-medium text-ink">Slack / Ticket portal URL</label>
+                <Input
+                  id="admin-contact-url"
+                  value={adminUrl}
+                  onChange={(e) => setAdminUrl(e.target.value)}
+                  placeholder="https://helpdesk.company.example"
+                  autoComplete="off"
+                />
+              </div>
+            </div>
+            <div className="flex flex-col gap-1">
+              <label htmlFor="admin-contact-notes" className="text-xs font-medium text-ink">Support hours / notes (optional)</label>
+              <Input
+                id="admin-contact-notes"
+                value={adminNotes}
+                onChange={(e) => setAdminNotes(e.target.value)}
+                placeholder="Mon-Fri 8am-6pm; attach the IT Diagnostic Bundle when reporting an error."
+                autoComplete="off"
+              />
+            </div>
+            {adminErr && (
+              <p id="settings-admin-error" role="alert" className="text-xs text-destructive-foreground">
+                {adminErr}
+              </p>
+            )}
+            <div className="flex flex-wrap items-center gap-2 pt-0.5">
+              <Button id="settings-save-admin-btn" type="submit" size="sm" variant="outline" className="max-md:min-h-11" disabled={savingAdmin}>
+                {savingAdmin ? "Saving…" : "Save IT contact"}
+              </Button>
+              <Button
+                id="settings-download-diagnostics-btn"
+                type="button"
+                size="sm"
+                className="max-md:min-h-11 gap-1.5"
+                disabled={downloadingDiag}
+                onClick={() => void handleDownloadDiagnostics()}
+              >
+                <Download className="size-3.5" strokeWidth={1.5} aria-hidden />
+                {downloadingDiag ? "Preparing ZIP…" : "Download IT Diagnostic Bundle"}
+              </Button>
+            </div>
+          </form>
+        ) : (
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-xs text-ink-2">
+              Admin contact details can only be edited from the host machine.
+            </p>
+            <Button
+              id="settings-download-diagnostics-btn"
+              type="button"
+              size="sm"
+              className="max-md:min-h-11 gap-1.5"
+              disabled={downloadingDiag}
+              onClick={() => void handleDownloadDiagnostics()}
+            >
+              <Download className="size-3.5" strokeWidth={1.5} aria-hidden />
+              {downloadingDiag ? "Preparing ZIP…" : "Download IT Diagnostic Bundle"}
+            </Button>
+          </div>
+        )}
+      </section>
+
       {/* 6. Version & Updates */}
       <UpdateSettingsSection u={u} />
     </div>
@@ -693,6 +887,9 @@ export function SettingsPanel({
   onAddPerson,
   onExportAuditBundle,
   onConfigSaved,
+  onRestored,
+  onOpenHelp,
+  onHelpConfigSaved,
   u,
   open,
   onOpenChange,
@@ -708,6 +905,9 @@ export function SettingsPanel({
   onAddPerson: () => void;
   onExportAuditBundle: (format: "json" | "md") => Promise<void>;
   onConfigSaved: () => void;
+  onRestored?: () => void;
+  onOpenHelp?: () => void;
+  onHelpConfigSaved?: (cfg: HelpConfigPayload) => void;
   u: ReturnType<typeof useUpdate>;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
@@ -718,7 +918,7 @@ export function SettingsPanel({
       open={open}
       onOpenChange={onOpenChange}
       title="Settings"
-      description="Appearance, workspaces, model configuration, security, and audit bundle export."
+      description="Appearance, workspaces, backups, model configuration, security, IT support contact, diagnostics, and audit bundle export."
       className="max-w-xl"
       trigger={
         !hideTrigger ? (
@@ -742,6 +942,9 @@ export function SettingsPanel({
         onAddPerson={onAddPerson}
         onExportAuditBundle={onExportAuditBundle}
         onConfigSaved={onConfigSaved}
+        onRestored={onRestored}
+        onOpenHelp={onOpenHelp}
+        onHelpConfigSaved={onHelpConfigSaved}
         u={u}
       />
     </PanelModal>

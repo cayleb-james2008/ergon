@@ -12,6 +12,7 @@ import {
   CalendarClock,
   Command as CommandIcon,
   FolderOpen,
+  HelpCircle,
   Menu,
   PanelLeft,
   PanelRight,
@@ -47,9 +48,20 @@ const SettingsPanel = lazy(() => import("@/shell/SettingsPanel").then((mod) => (
 const SkillsPanel = lazy(() => import("@/shell/SkillsPanel").then((mod) => ({ default: mod.SkillsPanel })));
 const RoutinesPanel = lazy(() => import("@/shell/RoutinesPanel").then((mod) => ({ default: mod.RoutinesPanel })));
 const ConnectorsPanel = lazy(() => import("@/shell/ConnectorsPanel").then((mod) => ({ default: mod.ConnectorsPanel })));
+const HelpPanel = lazy(() => import("@/shell/HelpPanel").then((mod) => ({ default: mod.HelpPanel })));
+const OnboardingModal = lazy(() => import("@/shell/OnboardingCard").then((mod) => ({ default: mod.OnboardingModal })));
 const CommandPalette = lazy(() => import("@/shell/CommandPalette").then((mod) => ({ default: mod.CommandPalette })));
 import { useErgon } from "@/state";
-import { call, hasClientsApi, hasV050Api, type Routine } from "@/lib/api";
+import {
+  call,
+  downloadDiagnosticBundle,
+  fetchHelpConfig,
+  hasClientsApi,
+  hasV050Api,
+  saveHelpConfig,
+  type HelpConfigPayload,
+  type Routine,
+} from "@/lib/api";
 import { exportAuditBundleDownload } from "@/lib/auditBundle";
 import { exportReceiptDownload } from "@/lib/receiptExport";
 import { cn } from "@/lib/utils";
@@ -116,18 +128,23 @@ function Banner({
   );
 }
 
-function NoKeyBanner({ onOpenSettings }: { onOpenSettings: () => void }) {
+function NoKeyBanner({ onOpenSettings, onOpenHelp }: { onOpenSettings: () => void; onOpenHelp: () => void }) {
   return (
     <Banner id="no-key-banner" tone="warn">
       <div className="flex min-w-0 flex-1 flex-wrap items-baseline gap-2">
         <span className="font-medium text-ink">Your agent is not connected to a model yet.</span>
         <span className="text-ink-2">
-          Connect a local or hosted AI model in Settings (or set ERGON_MODEL_API_KEY) to run tasks live.
+          Connect a local or hosted AI model in Settings (or ask your admin to configure ERGON_MODEL_API_KEY) to run tasks live.
         </span>
       </div>
-      <Button size="xs" variant="outline" className="max-md:min-h-11 shrink-0" onClick={onOpenSettings}>
-        Open Settings
-      </Button>
+      <div className="flex shrink-0 items-center gap-1.5">
+        <Button size="xs" variant="ghost" className="max-md:min-h-11 shrink-0" onClick={onOpenHelp}>
+          Open Help
+        </Button>
+        <Button size="xs" variant="outline" className="max-md:min-h-11 shrink-0" onClick={onOpenSettings}>
+          Open Settings
+        </Button>
+      </div>
     </Banner>
   );
 }
@@ -167,6 +184,10 @@ export function App() {
 
   const [switcherOpen, setSwitcherOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
+  const [onboardingModalOpen, setOnboardingModalOpen] = useState(false);
+  const [helpConfig, setHelpConfig] = useState<HelpConfigPayload | null>(null);
+  const [onboardingSaving, setOnboardingSaving] = useState(false);
   const [skillsOpen, setSkillsOpen] = useState(false);
   const [routinesOpen, setRoutinesOpen] = useState(false);
   const [connectorsOpen, setConnectorsOpen] = useState(false);
@@ -404,14 +425,48 @@ export function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, [desk, railOpen, isXl, inspectorOpen]);
 
+  const loadHelpConfig = useCallback(async () => {
+    const r = await fetchHelpConfig();
+    if (r.ok) setHelpConfig(r.data);
+  }, []);
+
+  useEffect(() => {
+    void loadHelpConfig();
+  }, [loadHelpConfig]);
+
+  const handleCompleteOnboarding = useCallback(async () => {
+    setOnboardingSaving(true);
+    const r = await saveHelpConfig({ onboarding_completed: true });
+    setOnboardingSaving(false);
+    if (r.ok) {
+      setHelpConfig(r.data);
+      toast.success("Getting started guide saved. You can replay it anytime from Help.");
+    } else {
+      // Optimistically dismiss locally even if offline
+      setHelpConfig((prev) =>
+        prev ? { ...prev, onboarding_completed: true } : prev
+      );
+    }
+  }, []);
+
+  const handleDownloadDiagnostics = useCallback(async () => {
+    const res = await downloadDiagnosticBundle();
+    if (!res.ok) {
+      toast.error(res.error);
+      return;
+    }
+    toast.success(`Downloaded ${res.filename} (secrets automatically removed).`);
+  }, []);
+
   const runAfterPersonChange = useCallback(() => {
     paper.load();
     desk.loadFiles();
     desk.loadRoutines();
     desk.loadClients();
     desk.loadMetering();
+    void loadHelpConfig();
     setGraphSeed((s) => s + 1);
-  }, [desk, paper]);
+  }, [desk, loadHelpConfig, paper]);
 
   const dateLabel = paper.data?.brief.date || new Date().toLocaleDateString("en-US", {
     weekday: "short",
@@ -690,6 +745,17 @@ export function App() {
           }}
         />
         <RailPanelButton
+          id="help-btn"
+          domId="help-btn"
+          label="Help & support"
+          icon={<HelpCircle className="size-3.5 shrink-0 text-icon" strokeWidth={1.5} aria-hidden />}
+          expanded={helpOpen}
+          onClick={() => {
+            setMobileOpen(false);
+            setHelpOpen(true);
+          }}
+        />
+        <RailPanelButton
           id="settings-btn"
           label="Settings"
           icon={<SlidersHorizontal className="size-3.5 shrink-0 text-icon" strokeWidth={1.5} aria-hidden />}
@@ -747,7 +813,10 @@ export function App() {
       />
 
       {statusObj && !statusObj.model_configured && (
-        <NoKeyBanner onOpenSettings={() => setSettingsOpen(true)} />
+        <NoKeyBanner
+          onOpenSettings={() => setSettingsOpen(true)}
+          onOpenHelp={() => setHelpOpen(true)}
+        />
       )}
       {desk.recovered.length > 0 && (
         <RecoveredBanner files={desk.recovered} onDismiss={() => desk.setRecovered([])} />
@@ -914,6 +983,10 @@ export function App() {
               streamMode={desk.streamMode}
               liveSteps={desk.liveSteps}
               liveTimeline={desk.liveTimeline}
+              liveRuns={desk.liveRuns}
+              liveStreamError={desk.liveStreamError}
+              onRetrySync={desk.reconcileLiveRuns}
+              cancellingRunIds={desk.cancellingRunIds}
               draft={desk.draft}
               setDraft={desk.setDraft}
               pendingNote={desk.pendingNote}
@@ -930,6 +1003,7 @@ export function App() {
                 requestAnimationFrame(() => inputRef.current?.focus());
               }}
               onCancel={desk.cancelRun}
+              onCancelRun={desk.cancelRun}
               onReview={() => switchFace("paper")}
               onResolveDecision={handleResolveDecision}
               onOpenFile={(p) => setViewerPath(p)}
@@ -941,6 +1015,17 @@ export function App() {
               onResumePipeline={desk.resumePipeline}
               onRetryPipeline={desk.retryPipeline}
               onCancelPipeline={desk.cancelPipeline}
+              recoverableRuns={desk.recoverableRuns}
+              resumingRunId={desk.resumingRunId}
+              modelConfigured={desk.status !== null && desk.status !== "error" ? Boolean(desk.status.model_configured) : false}
+              onResumeInterruptedRun={(id) => void desk.resumeInterruptedRun(id)}
+              onOpenThread={(tid) => void desk.openThread(tid)}
+              showOnboarding={Boolean(helpConfig && !helpConfig.onboarding_completed)}
+              onboardingSaving={onboardingSaving}
+              adminContact={helpConfig?.admin_contact ?? null}
+              onCompleteOnboarding={() => void handleCompleteOnboarding()}
+              onOpenSkills={() => setSkillsOpen(true)}
+              onOpenHelp={() => setHelpOpen(true)}
               inputRef={inputRef}
             />
           )}
@@ -1119,6 +1204,9 @@ export function App() {
         onExportAuditBundle={(fmt) => void handleExportAuditBundle(fmt)}
         onOpenWorkspaceSwitcher={() => setSwitcherOpen(true)}
         onOpenSettings={() => setSettingsOpen(true)}
+        onOpenHelp={() => setHelpOpen(true)}
+        onDownloadDiagnostics={() => void handleDownloadDiagnostics()}
+        onReplayOnboarding={() => setOnboardingModalOpen(true)}
         onOpenFiles={openFilesInspector}
         onOpenHistory={openHistoryInspector}
         onOpenSkills={() => setSkillsOpen(true)}
@@ -1264,6 +1352,9 @@ export function App() {
         onLaunchStarter={desk.launchStarterPlaybook}
         workspaceFiles={desk.files}
         pipelineRuns={desk.pipelineRuns}
+        loading={desk.routinesLoading}
+        loadError={desk.routinesError}
+        createError={desk.routineSaveError}
         onResumePipeline={desk.resumePipeline}
         onRetryPipeline={desk.retryPipeline}
         onCancelPipeline={desk.cancelPipeline}
@@ -1316,10 +1407,42 @@ export function App() {
           desk.loadMetering();
           paper.load();
         }}
+        onRestored={() => {
+          desk.loadPeople();
+          desk.loadStatus();
+          runAfterPersonChange();
+        }}
+        onOpenHelp={() => setHelpOpen(true)}
+        onHelpConfigSaved={(cfg) => setHelpConfig(cfg)}
         u={u}
         open={settingsOpen}
         onOpenChange={setSettingsOpen}
         hideTrigger
+      />
+      )}
+
+      {helpOpen && (
+      <HelpPanel
+        open={helpOpen}
+        onOpenChange={setHelpOpen}
+        helpConfig={helpConfig}
+        onRefreshHelpConfig={loadHelpConfig}
+        onOpenSettings={() => setSettingsOpen(true)}
+        onReplayOnboarding={() => setOnboardingModalOpen(true)}
+        onOpenToday={() => switchFace("paper")}
+      />
+      )}
+
+      {onboardingModalOpen && (
+      <OnboardingModal
+        open={onboardingModalOpen}
+        onOpenChange={setOnboardingModalOpen}
+        adminContact={helpConfig?.admin_contact ?? null}
+        saving={onboardingSaving}
+        onComplete={() => void handleCompleteOnboarding()}
+        onOpenFiles={openFilesInspector}
+        onOpenSkills={() => setSkillsOpen(true)}
+        onOpenHelp={() => setHelpOpen(true)}
       />
       )}
 

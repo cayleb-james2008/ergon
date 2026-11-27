@@ -724,7 +724,9 @@ export function Failure({ raw }: { raw: string }) {
   return (
     <div role="alert" className="rounded-entry border border-hairline bg-surface px-4 py-3.5">
       <p className="text-sm font-medium text-destructive-foreground">The agent could not finish this.</p>
-      <p className="mt-1 text-sm text-ink-2">Try again, or ask whoever runs Ergon to check the model connection.</p>
+      <p className="mt-1 text-sm text-ink-2">
+        Try again, or open Help &amp; support in the sidebar to contact your admin or download an IT diagnostic bundle.
+      </p>
       <div className="mt-3">
         <Details label="Details">
           <pre className="whitespace-pre-wrap break-words font-mono text-xs text-ink-3">{raw}</pre>
