@@ -1477,7 +1477,8 @@ fn serve_inner(
         api_key: cfg.api_key.clone(),
         auto_detected,
     }));
-    let scheduler_disabled = scheduler::is_scheduler_disabled_by_env();
+    let scheduler_disabled = tripwire::scheduler_disabled_override(&cfg.data_dir)
+        .unwrap_or_else(scheduler::is_scheduler_disabled_by_env);
     let state = Arc::new(AppState {
         cfg,
         model_cfg,

@@ -934,6 +934,95 @@ fn host_matches(host: &str, rule: &str) -> bool {
 // ---------------------------------------------------------------------------
 
 static SELF_PORTS: OnceLock<Mutex<HashSet<u16>>> = OnceLock::new();
+static LOCAL_POLICIES: OnceLock<RwLock<HashMap<PathBuf, LocalRuntimePolicy>>> = OnceLock::new();
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct LocalRuntimePolicy {
+    pub allow_local_connectors: Option<bool>,
+    pub disable_scheduler: Option<bool>,
+}
+
+fn canonical_policy_path(path: &Path) -> PathBuf {
+    path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
+}
+
+fn local_policies_map() -> &'static RwLock<HashMap<PathBuf, LocalRuntimePolicy>> {
+    LOCAL_POLICIES.get_or_init(|| RwLock::new(HashMap::new()))
+}
+
+fn lookup_local_policy(data_dir: &Path) -> Option<LocalRuntimePolicy> {
+    let map = local_policies_map()
+        .read()
+        .unwrap_or_else(|p| p.into_inner());
+    if map.is_empty() {
+        return None;
+    }
+    let canon = canonical_policy_path(data_dir);
+    if let Some(p) = map.get(&canon) {
+        return Some(*p);
+    }
+    if let Some(p) = map.get(data_dir) {
+        return Some(*p);
+    }
+    for (base, policy) in map.iter() {
+        if canon.starts_with(base) || data_dir.starts_with(base) {
+            return Some(*policy);
+        }
+    }
+    None
+}
+
+/// Look up any per-`data_dir` local-connector override registered via `ScopedLocalPolicy`.
+pub fn local_connectors_override(data_dir: &Path) -> Option<bool> {
+    lookup_local_policy(data_dir).and_then(|p| p.allow_local_connectors)
+}
+
+/// Look up any per-`data_dir` scheduler-disabled override registered via `ScopedLocalPolicy`.
+pub fn scheduler_disabled_override(data_dir: &Path) -> Option<bool> {
+    lookup_local_policy(data_dir).and_then(|p| p.disable_scheduler)
+}
+
+/// RAII guard that scopes local-connector and scheduler policy strictly to one
+/// Ergon `data_dir` (and its per-person subdirectories), eliminating process-wide
+/// `std::env::set_var` races across concurrent instances and parallel tests.
+pub struct ScopedLocalPolicy {
+    key: PathBuf,
+    prev: Option<LocalRuntimePolicy>,
+}
+
+impl ScopedLocalPolicy {
+    pub fn new(
+        data_dir: &Path,
+        allow_local_connectors: Option<bool>,
+        disable_scheduler: Option<bool>,
+    ) -> Self {
+        let key = canonical_policy_path(data_dir);
+        let mut map = local_policies_map()
+            .write()
+            .unwrap_or_else(|p| p.into_inner());
+        let prev = map.insert(
+            key.clone(),
+            LocalRuntimePolicy {
+                allow_local_connectors,
+                disable_scheduler,
+            },
+        );
+        Self { key, prev }
+    }
+}
+
+impl Drop for ScopedLocalPolicy {
+    fn drop(&mut self) {
+        let mut map = local_policies_map()
+            .write()
+            .unwrap_or_else(|p| p.into_inner());
+        if let Some(prev) = self.prev.take() {
+            map.insert(self.key.clone(), prev);
+        } else {
+            map.remove(&self.key);
+        }
+    }
+}
 
 /// Ergon's own listening ports: the agent may never call its own API.
 pub fn register_self_port(port: u16) {
@@ -1077,6 +1166,17 @@ fn private_allowed_for_connector(host: &str) -> bool {
     with_current(|t| t.policy.allow_hosts.iter().any(|h| host_matches(host, h))).unwrap_or(false)
 }
 
+fn private_allowed_for_connector_with_override(host: &str, local_override: Option<bool>) -> bool {
+    match local_override {
+        Some(true) => true,
+        Some(false) => {
+            with_current(|t| t.policy.allow_hosts.iter().any(|h| host_matches(host, h)))
+                .unwrap_or(false)
+        }
+        None => private_allowed_for_connector(host),
+    }
+}
+
 fn split_netloc(netloc: &str) -> (String, u16) {
     if let Some(rest) = netloc.strip_prefix('[') {
         let host = rest.split(']').next().unwrap_or("").to_string();
@@ -1089,7 +1189,11 @@ fn split_netloc(netloc: &str) -> (String, u16) {
     }
 }
 
-fn guard_resolve_inner(netloc: &str, allow_local_connectors: bool) -> std::io::Result<Vec<SocketAddr>> {
+fn guard_resolve_inner(
+    netloc: &str,
+    allow_local_connectors: bool,
+    local_override: Option<bool>,
+) -> std::io::Result<Vec<SocketAddr>> {
     let (host, port) = split_netloc(netloc);
     // Ergon reached by a name it serves under (ERGON_ALLOWED_HOSTS, e.g.
     // a LAN name for /phone) is still Ergon's own API, whatever it resolves to.
@@ -1117,7 +1221,7 @@ fn guard_resolve_inner(netloc: &str, allow_local_connectors: bool) -> std::io::R
             )),
             AddrClass::Private(why) => {
                 let ok = if allow_local_connectors {
-                    private_allowed_for_connector(&host)
+                    private_allowed_for_connector_with_override(&host, local_override)
                 } else {
                     private_allowed(&host)
                 };
@@ -1153,24 +1257,41 @@ fn guard_resolve_inner(netloc: &str, allow_local_connectors: bool) -> std::io::R
 /// (not the URL text) closes DNS rebinding; ureq calls this again for
 /// every redirect hop, so a public page cannot bounce the agent inward.
 pub fn guard_resolve(netloc: &str) -> std::io::Result<Vec<SocketAddr>> {
-    guard_resolve_inner(netloc, false)
+    guard_resolve_inner(netloc, false, None)
 }
 
 /// Connector-aware socket resolver supporting `ERGON_ALLOW_LOCAL_CONNECTORS=1`
 /// in addition to `ERGON_FETCH_ALLOW_PRIVATE=1` while preserving all SSRF,
 /// metadata, self-port, and DNS-rebinding protections.
 pub fn guard_resolve_connector(host: &str, port: u16) -> std::io::Result<Vec<SocketAddr>> {
+    guard_resolve_connector_with_override(host, port, None)
+}
+
+/// Data-dir-scoped connector socket resolver honoring `ScopedLocalPolicy`.
+pub fn guard_resolve_connector_for(
+    data_dir: &Path,
+    host: &str,
+    port: u16,
+) -> std::io::Result<Vec<SocketAddr>> {
+    guard_resolve_connector_with_override(host, port, local_connectors_override(data_dir))
+}
+
+fn guard_resolve_connector_with_override(
+    host: &str,
+    port: u16,
+    local_override: Option<bool>,
+) -> std::io::Result<Vec<SocketAddr>> {
     let trimmed = host.trim().trim_start_matches('[').trim_end_matches(']');
     let netloc = if trimmed.contains(':') {
         format!("[{trimmed}]:{port}")
     } else {
         format!("{trimmed}:{port}")
     };
-    guard_resolve_inner(&netloc, true)
+    guard_resolve_inner(&netloc, true, local_override)
 }
 
 fn guard_resolve_connector_netloc(netloc: &str) -> std::io::Result<Vec<SocketAddr>> {
-    guard_resolve_inner(netloc, true)
+    guard_resolve_inner(netloc, true, None)
 }
 
 fn on_network_block(host: &str, port: u16, sev: Severity, why: &str) {
@@ -1208,6 +1329,16 @@ pub fn guarded_connector_agent(timeout: std::time::Duration) -> ureq::Agent {
         .build()
 }
 
+/// Data-dir-scoped ureq agent for connectors and HTTP MCP servers honoring `ScopedLocalPolicy`.
+pub fn guarded_connector_agent_for(data_dir: &Path, timeout: std::time::Duration) -> ureq::Agent {
+    let local_override = local_connectors_override(data_dir);
+    ureq::AgentBuilder::new()
+        .resolver(move |netloc: &str| guard_resolve_inner(netloc, true, local_override))
+        .timeout(timeout)
+        .redirects(5)
+        .build()
+}
+
 /// Turn a fetch failure into words: the guard's own reason when it refused.
 pub fn explain_fetch_error(url: &str, e: &ureq::Error) -> String {
     if let Some(msg) = LAST_BLOCK.with(|l| l.borrow_mut().take()) {
@@ -1221,6 +1352,25 @@ pub fn explain_fetch_error(url: &str, e: &ureq::Error) -> String {
 /// production unless explicitly allowed (`ERGON_ALLOW_LOCAL_CONNECTORS=1` or
 /// `ERGON_FETCH_ALLOW_PRIVATE=1`).
 pub fn check_egress_host(host: &str, port: u16, channel: &str) -> Result<(), String> {
+    check_egress_host_with_override(host, port, channel, None)
+}
+
+/// Data-dir-scoped connector host validation honoring `ScopedLocalPolicy`.
+pub fn check_egress_host_for(
+    data_dir: &Path,
+    host: &str,
+    port: u16,
+    channel: &str,
+) -> Result<(), String> {
+    check_egress_host_with_override(host, port, channel, local_connectors_override(data_dir))
+}
+
+fn check_egress_host_with_override(
+    host: &str,
+    port: u16,
+    channel: &str,
+    local_override: Option<bool>,
+) -> Result<(), String> {
     LAST_BLOCK.with(|l| *l.borrow_mut() = None);
     let trimmed = host.trim();
     if trimmed.is_empty() || trimmed.chars().any(|c| c.is_control() || c.is_whitespace()) {
@@ -1263,7 +1413,7 @@ pub fn check_egress_host(host: &str, port: u16, channel: &str) -> Result<(), Str
                 return Err(format!("blocked by Ergon's egress guard: {norm} is {why}"));
             }
             AddrClass::Private(why) => {
-                if !private_allowed_for_connector(&norm) {
+                if !private_allowed_for_connector_with_override(&norm, local_override) {
                     return Err(format!(
                         "blocked by Ergon's egress guard: {norm} is on {why} (set ERGON_ALLOW_LOCAL_CONNECTORS=1 only for local tests)"
                     ));
@@ -1272,7 +1422,7 @@ pub fn check_egress_host(host: &str, port: u16, channel: &str) -> Result<(), Str
             AddrClass::Public => {}
         }
     } else if (norm == "localhost" || norm.ends_with(".localhost") || norm.ends_with(".local"))
-        && !private_allowed_for_connector(&norm)
+        && !private_allowed_for_connector_with_override(&norm, local_override)
     {
         return Err(format!(
             "blocked by Ergon's egress guard: {norm} is a local/private host (set ERGON_ALLOW_LOCAL_CONNECTORS=1 only for local tests)"
@@ -1285,6 +1435,20 @@ pub fn check_egress_host(host: &str, port: u16, channel: &str) -> Result<(), Str
 /// egress; honeytokens and real secrets never leave; blocked and
 /// metadata host names are refused by name.
 pub fn check_egress(url: &str, channel: &str) -> Result<(), String> {
+    check_egress_with_override(url, channel, None)
+}
+
+/// [`check_egress`] honoring the per-`data_dir` local-connector override
+/// registered via `ScopedLocalPolicy` (no process-wide env races).
+pub fn check_egress_for(data_dir: &Path, url: &str, channel: &str) -> Result<(), String> {
+    check_egress_with_override(url, channel, local_connectors_override(data_dir))
+}
+
+fn check_egress_with_override(
+    url: &str,
+    channel: &str,
+    local_override: Option<bool>,
+) -> Result<(), String> {
     LAST_BLOCK.with(|l| *l.borrow_mut() = None);
     let lower = url.trim().to_ascii_lowercase();
     let is_connector_channel = matches!(channel, "connector" | "connector_config");
@@ -1334,7 +1498,7 @@ pub fn check_egress(url: &str, channel: &str) -> Result<(), String> {
                 return Err(format!("blocked by Ergon's egress guard: {host} is {why}"));
             }
             AddrClass::Private(why) if is_connector_channel => {
-                if !private_allowed_for_connector(&host) {
+                if !private_allowed_for_connector_with_override(&host, local_override) {
                     return Err(format!(
                         "blocked by Ergon's egress guard: {host} is on {why} (set ERGON_ALLOW_LOCAL_CONNECTORS=1 only for local tests)"
                     ));
@@ -1344,7 +1508,7 @@ pub fn check_egress(url: &str, channel: &str) -> Result<(), String> {
         }
     } else if is_connector_channel
         && (host == "localhost" || host.ends_with(".localhost") || host.ends_with(".local"))
-        && !private_allowed_for_connector(&host)
+        && !private_allowed_for_connector_with_override(&host, local_override)
     {
         return Err(format!(
             "blocked by Ergon's egress guard: {host} is a local/private host (set ERGON_ALLOW_LOCAL_CONNECTORS=1 only for local tests)"
@@ -2123,6 +2287,9 @@ pub fn sensitive_target(path: &str) -> Option<&'static str> {
         ("decisions.json", "the decisions inbox"),
         ("connectors.json", "connector settings"),
         ("connector_secrets.json", "connector secrets"),
+        ("secrets.enc.json", "encrypted secret vault"),
+        (".vault.key", "secret vault master key"),
+        ("oauth.json", "OAuth credentials"),
         ("mcp_servers.json", "MCP server settings"),
         ("library.json", "the company library"),
         ("people/", "another person's workspace"),

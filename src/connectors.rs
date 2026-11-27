@@ -1,13 +1,15 @@
 //! Unattended Intake Triggers & Policy-Gated Outbound Action Connectors.
 //!
 //! Persists non-secret connector metadata and delivery logs in
-//! `<person_data_dir>/connectors.json` (0600 POSIX) and isolates all webhook
-//! signing secrets, hook tokens, and outbound API secrets in a separate
-//! `<person_data_dir>/connector_secrets.json` (0600 POSIX) that is never
-//! readable from the workspace or injected into LLM prompts.
+//! `<person_data_dir>/connectors.json` (0600 POSIX), stores opaque vault
+//! references and timestamps in `<person_data_dir>/connector_secrets.json`
+//! (0600 POSIX), and encrypts all webhook signing secrets, hook tokens, SMTP/IMAP
+//! credentials, OAuth2 secrets/tokens, and outbound/MCP API secrets at rest via
+//! `secret_store` (`<person_data_dir>/secrets.enc.json`, AES-256-GCM + optional
+//! OS keychain envelope).
 
 use crate::tools::{atomic_write_bytes, atomic_write_bytes_with_mode, sandbox_path, sandbox_path_resolving};
-use crate::{records, tripwire, Config, WorkspacePolicy};
+use crate::{records, secret_store, tripwire, Config, WorkspacePolicy};
 use rustls::pki_types::ServerName;
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -57,6 +59,44 @@ pub fn connectors_path(person_data_dir: &Path) -> PathBuf {
 
 pub fn connector_secrets_path(person_data_dir: &Path) -> PathBuf {
     person_data_dir.join("connector_secrets.json")
+}
+
+pub fn legacy_oauth_path(person_data_dir: &Path) -> PathBuf {
+    person_data_dir.join("oauth.json")
+}
+
+const VAULT_CONNECTOR_PREFIX: &str = "connector:";
+const VAULT_SECRET_PREFIX: &str = "connector:secret:";
+const VAULT_WEBHOOK_PREFIX: &str = "connector:webhook:";
+
+fn vault_key_for_secret(key: &str) -> String {
+    format!("{VAULT_SECRET_PREFIX}{key}")
+}
+
+fn vault_key_for_webhook_signing(trigger_id: &str) -> String {
+    format!("{VAULT_WEBHOOK_PREFIX}{trigger_id}:signing_secret")
+}
+
+fn vault_key_for_webhook_token(trigger_id: &str) -> String {
+    format!("{VAULT_WEBHOOK_PREFIX}{trigger_id}:hook_token")
+}
+
+fn sanitize_secret_key_fragment(raw: &str) -> String {
+    let mut out: String = raw
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.') {
+                c
+            } else {
+                '_'
+            }
+        })
+        .take(36)
+        .collect();
+    if out.is_empty() {
+        out.push_str("legacy");
+    }
+    out
 }
 
 #[derive(Clone, Debug)]
@@ -686,10 +726,11 @@ impl ConnectorsStore {
         let Ok(text) = std::fs::read_to_string(&path) else {
             return Self::default();
         };
-        let Ok(v) = serde_json::from_str::<Value>(&text) else {
+        let Ok(mut v) = serde_json::from_str::<Value>(&text) else {
             return Self::default();
         };
-        Self {
+        let migrated = migrate_legacy_inline_connector_secrets(person_data_dir, &mut v);
+        let store = Self {
             triggers: v["triggers"]
                 .as_array()
                 .map(|a| a.iter().filter_map(TriggerRule::from_json).collect())
@@ -706,7 +747,11 @@ impl ConnectorsStore {
                 .as_array()
                 .map(|a| a.iter().filter_map(IntakeManifestEntry::from_json).collect())
                 .unwrap_or_default(),
+        };
+        if migrated {
+            let _ = store.save_unlocked(person_data_dir);
         }
+        store
     }
 
     fn save_unlocked(&self, person_data_dir: &Path) -> Result<(), String> {
@@ -768,79 +813,499 @@ pub struct ConnectorSecretsStore {
     pub webhook_secrets: BTreeMap<String, WebhookSecretEntry>,
 }
 
-impl ConnectorSecretsStore {
-    fn load_unlocked(person_data_dir: &Path) -> Self {
-        let path = connector_secrets_path(person_data_dir);
-        let Ok(text) = std::fs::read_to_string(&path) else {
-            return Self::default();
-        };
-        let Ok(v) = serde_json::from_str::<Value>(&text) else {
-            return Self::default();
-        };
-        let mut secrets = BTreeMap::new();
-        if let Some(obj) = v["secrets"].as_object() {
-            for (k, val) in obj {
-                if let Some(s) = val.as_str() {
-                    secrets.insert(k.clone(), s.to_string());
+fn extract_legacy_plaintext_field(obj: &mut serde_json::Map<String, Value>, field: &str) -> Option<String> {
+    let val = obj
+        .get(field)
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty() && !secret_store::is_vault_ref(s))
+        .map(str::to_string)?;
+    obj.remove(field);
+    Some(val)
+}
+
+fn migrate_legacy_inline_connector_secrets(person_data_dir: &Path, doc: &mut Value) -> bool {
+    let mut new_secrets: BTreeMap<String, String> = BTreeMap::new();
+    let mut new_webhooks: BTreeMap<String, WebhookSecretEntry> = BTreeMap::new();
+    let now_ms = records::now_millis();
+    let mut changed = false;
+
+    if let Some(triggers) = doc.get_mut("triggers").and_then(|v| v.as_array_mut()) {
+        for (idx, trg) in triggers.iter_mut().enumerate() {
+            let Some(tobj) = trg.as_object_mut() else {
+                continue;
+            };
+            let tid_raw = tobj
+                .get("id")
+                .and_then(|v| v.as_str())
+                .map(str::to_string)
+                .unwrap_or_else(|| format!("trg-{idx}"));
+            let tid_frag = sanitize_secret_key_fragment(&tid_raw);
+
+            let sig = extract_legacy_plaintext_field(tobj, "signing_secret");
+            let tok = extract_legacy_plaintext_field(tobj, "hook_token");
+            if sig.is_some() || tok.is_some() {
+                changed = true;
+                new_webhooks.insert(
+                    tid_raw.clone(),
+                    WebhookSecretEntry {
+                        signing_secret: sig.unwrap_or_default(),
+                        hook_token: tok.unwrap_or_default(),
+                        updated_ms: now_ms,
+                    },
+                );
+            }
+
+            if let Some(imap) = tobj.get_mut("imap_config").and_then(|v| v.as_object_mut()) {
+                if let Some(pass) = extract_legacy_plaintext_field(imap, "password") {
+                    changed = true;
+                    let key = imap
+                        .get("password_secret_key")
+                        .and_then(|v| v.as_str())
+                        .map(str::trim)
+                        .filter(|s| !s.is_empty() && is_valid_secret_key(s))
+                        .map(str::to_string)
+                        .unwrap_or_else(|| format!("imap_pass_{tid_frag}"));
+                    imap.insert("password_secret_key".to_string(), json!(key));
+                    new_secrets.insert(key, pass);
+                }
+                if let Some(user) = extract_legacy_plaintext_field(imap, "username") {
+                    changed = true;
+                    let key = imap
+                        .get("username_secret_key")
+                        .and_then(|v| v.as_str())
+                        .map(str::trim)
+                        .filter(|s| !s.is_empty() && is_valid_secret_key(s))
+                        .map(str::to_string)
+                        .unwrap_or_else(|| format!("imap_user_{tid_frag}"));
+                    imap.insert("username_secret_key".to_string(), json!(key));
+                    new_secrets.insert(key, user);
                 }
             }
-        }
-        let mut secret_updated_ms = BTreeMap::new();
-        if let Some(obj) = v["secret_updated_ms"].as_object() {
-            for (k, val) in obj {
-                if let Some(ts) = val.as_u64() {
-                    secret_updated_ms.insert(k.clone(), ts);
-                }
-            }
-        }
-        let mut webhook_secrets = BTreeMap::new();
-        if let Some(obj) = v["webhook_secrets"].as_object() {
-            for (k, val) in obj {
-                if let (Some(sig), Some(tok)) = (
-                    val["signing_secret"].as_str(),
-                    val["hook_token"].as_str(),
-                ) {
-                    webhook_secrets.insert(
-                        k.clone(),
-                        WebhookSecretEntry {
-                            signing_secret: sig.to_string(),
-                            hook_token: tok.to_string(),
-                            updated_ms: val["updated_ms"].as_u64().unwrap_or(0),
-                        },
-                    );
-                }
-            }
-        }
-        Self {
-            secrets,
-            secret_updated_ms,
-            webhook_secrets,
         }
     }
 
-    fn save_unlocked(&self, person_data_dir: &Path) -> Result<(), String> {
-        let wh: BTreeMap<String, Value> = self
+    if let Some(outbound) = doc.get_mut("outbound").and_then(|v| v.as_array_mut()) {
+        for (idx, conn) in outbound.iter_mut().enumerate() {
+            let Some(cobj) = conn.as_object_mut() else {
+                continue;
+            };
+            let oid_raw = cobj
+                .get("id")
+                .and_then(|v| v.as_str())
+                .map(str::to_string)
+                .unwrap_or_else(|| format!("conn-{idx}"));
+            let oid_frag = sanitize_secret_key_fragment(&oid_raw);
+            let mut added_keys: Vec<String> = Vec::new();
+
+            if let Some(smtp) = cobj.get_mut("smtp_config").and_then(|v| v.as_object_mut()) {
+                if let Some(pass) = extract_legacy_plaintext_field(smtp, "password") {
+                    changed = true;
+                    let key = smtp
+                        .get("password_secret_key")
+                        .and_then(|v| v.as_str())
+                        .map(str::trim)
+                        .filter(|s| !s.is_empty() && is_valid_secret_key(s))
+                        .map(str::to_string)
+                        .unwrap_or_else(|| format!("smtp_pass_{oid_frag}"));
+                    smtp.insert("password_secret_key".to_string(), json!(key));
+                    added_keys.push(key.clone());
+                    new_secrets.insert(key, pass);
+                }
+                if let Some(user) = extract_legacy_plaintext_field(smtp, "username") {
+                    changed = true;
+                    let key = smtp
+                        .get("username_secret_key")
+                        .and_then(|v| v.as_str())
+                        .map(str::trim)
+                        .filter(|s| !s.is_empty() && is_valid_secret_key(s))
+                        .map(str::to_string)
+                        .unwrap_or_else(|| format!("smtp_user_{oid_frag}"));
+                    smtp.insert("username_secret_key".to_string(), json!(key));
+                    added_keys.push(key.clone());
+                    new_secrets.insert(key, user);
+                }
+            }
+
+            if let Some(oauth) = cobj.get_mut("oauth_config").and_then(|v| v.as_object_mut()) {
+                if let Some(csec) = extract_legacy_plaintext_field(oauth, "client_secret") {
+                    changed = true;
+                    let key = oauth
+                        .get("client_secret_key")
+                        .and_then(|v| v.as_str())
+                        .map(str::trim)
+                        .filter(|s| !s.is_empty() && is_valid_secret_key(s))
+                        .map(str::to_string)
+                        .unwrap_or_else(|| format!("oauth_client_secret_{oid_frag}"));
+                    oauth.insert("client_secret_key".to_string(), json!(key));
+                    added_keys.push(key.clone());
+                    new_secrets.insert(key, csec);
+                }
+                if let Some(rt) = extract_legacy_plaintext_field(oauth, "refresh_token") {
+                    changed = true;
+                    let key = oauth
+                        .get("refresh_token_secret_key")
+                        .and_then(|v| v.as_str())
+                        .map(str::trim)
+                        .filter(|s| !s.is_empty() && is_valid_secret_key(s))
+                        .map(str::to_string)
+                        .unwrap_or_else(|| format!("oauth_refresh_token_{oid_frag}"));
+                    oauth.insert("refresh_token_secret_key".to_string(), json!(key));
+                    added_keys.push(key.clone());
+                    new_secrets.insert(key, rt);
+                }
+                if let Some(at) = extract_legacy_plaintext_field(oauth, "access_token") {
+                    changed = true;
+                    let key = "oauth_access_token".to_string();
+                    added_keys.push(key.clone());
+                    new_secrets.insert(key, at);
+                }
+            }
+
+            for legacy_field in ["secret_value", "api_key", "bearer_token"] {
+                if let Some(sec) = extract_legacy_plaintext_field(cobj, legacy_field) {
+                    changed = true;
+                    let key = cobj
+                        .get("secret_key")
+                        .and_then(|v| v.as_str())
+                        .map(str::trim)
+                        .filter(|s| !s.is_empty() && is_valid_secret_key(s))
+                        .map(str::to_string)
+                        .unwrap_or_else(|| format!("conn_{legacy_field}_{oid_frag}"));
+                    added_keys.push(key.clone());
+                    new_secrets.insert(key, sec);
+                }
+            }
+
+            if !added_keys.is_empty() {
+                let mut keys: Vec<Value> = cobj
+                    .get("secret_keys")
+                    .and_then(|v| v.as_array())
+                    .cloned()
+                    .unwrap_or_default();
+                for k in added_keys {
+                    if !keys.iter().any(|x| x.as_str() == Some(k.as_str())) {
+                        keys.push(json!(k));
+                    }
+                }
+                cobj.insert("secret_keys".to_string(), Value::Array(keys));
+            }
+        }
+    }
+
+    if !changed {
+        return false;
+    }
+
+    let Ok(mut secrets) = ConnectorSecretsStore::load_result_unlocked(person_data_dir) else {
+        return false;
+    };
+    for (k, v) in new_secrets {
+        secrets.secrets.insert(k.clone(), v);
+        secrets.secret_updated_ms.insert(k, now_ms);
+    }
+    for (tid, entry) in new_webhooks {
+        let mut merged = secrets
             .webhook_secrets
-            .iter()
-            .map(|(k, e)| {
-                (
-                    k.clone(),
-                    json!({
-                        "signing_secret": e.signing_secret,
-                        "hook_token": e.hook_token,
-                        "updated_ms": e.updated_ms,
-                    }),
-                )
-            })
-            .collect();
+            .get(&tid)
+            .cloned()
+            .unwrap_or(WebhookSecretEntry {
+                signing_secret: String::new(),
+                hook_token: String::new(),
+                updated_ms: now_ms,
+            });
+        if !entry.signing_secret.is_empty() {
+            merged.signing_secret = entry.signing_secret;
+        }
+        if !entry.hook_token.is_empty() {
+            merged.hook_token = entry.hook_token;
+        }
+        merged.updated_ms = now_ms;
+        secrets.webhook_secrets.insert(tid, merged);
+    }
+    secrets.save_unlocked(person_data_dir).is_ok()
+}
+
+fn migrate_legacy_oauth_object(
+    obj: &mut serde_json::Map<String, Value>,
+    scope: Option<&str>,
+    out_secrets: &mut BTreeMap<String, String>,
+) -> bool {
+    const SECRET_FIELDS: &[&str] = &[
+        "client_secret",
+        "refresh_token",
+        "access_token",
+        "password",
+        "api_key",
+        "bearer_token",
+    ];
+    let mut changed = false;
+    for &field in SECRET_FIELDS {
+        let plain = obj
+            .get(field)
+            .and_then(|v| v.as_str())
+            .map(str::trim)
+            .filter(|s| !s.is_empty() && !secret_store::is_vault_ref(s))
+            .map(str::to_string);
+        if let Some(secret_val) = plain {
+            changed = true;
+            let key = match (scope, field) {
+                (None, "access_token") => "oauth_access_token".to_string(),
+                (None, f) => format!("oauth_{f}"),
+                (Some(sc), f) => format!("oauth_{}_{f}", sanitize_secret_key_fragment(sc)),
+            };
+            let vref = secret_store::vault_ref(&vault_key_for_secret(&key));
+            obj.insert(field.to_string(), json!(vref));
+            obj.insert(format!("has_{field}"), json!(true));
+            out_secrets.insert(key, secret_val);
+        }
+    }
+    changed
+}
+
+fn migrate_legacy_oauth_json_unlocked(
+    person_data_dir: &Path,
+) -> Result<BTreeMap<String, String>, String> {
+    let path = legacy_oauth_path(person_data_dir);
+    let Ok(text) = std::fs::read_to_string(&path) else {
+        return Ok(BTreeMap::new());
+    };
+    let Ok(mut v) = serde_json::from_str::<Value>(&text) else {
+        return Ok(BTreeMap::new());
+    };
+    let mut extracted = BTreeMap::new();
+    let mut changed = false;
+
+    if let Some(obj) = v.as_object_mut() {
+        if migrate_legacy_oauth_object(obj, None, &mut extracted) {
+            changed = true;
+        }
+        let child_keys: Vec<String> = obj.keys().cloned().collect();
+        for ck in child_keys {
+            if let Some(sub) = obj.get_mut(&ck).and_then(|x| x.as_object_mut()) {
+                if migrate_legacy_oauth_object(sub, Some(&ck), &mut extracted) {
+                    changed = true;
+                }
+            } else if let Some(arr) = obj.get_mut(&ck).and_then(|x| x.as_array_mut()) {
+                for (i, item) in arr.iter_mut().enumerate() {
+                    if let Some(sub) = item.as_object_mut() {
+                        let scope = sub
+                            .get("id")
+                            .or_else(|| sub.get("name"))
+                            .and_then(|s| s.as_str())
+                            .map(str::to_string)
+                            .unwrap_or_else(|| format!("{ck}_{i}"));
+                        if migrate_legacy_oauth_object(sub, Some(&scope), &mut extracted) {
+                            changed = true;
+                        }
+                    }
+                }
+            }
+        }
+    } else if let Some(arr) = v.as_array_mut() {
+        for (i, item) in arr.iter_mut().enumerate() {
+            if let Some(sub) = item.as_object_mut() {
+                let scope = sub
+                    .get("id")
+                    .or_else(|| sub.get("name"))
+                    .and_then(|s| s.as_str())
+                    .map(str::to_string)
+                    .unwrap_or_else(|| format!("entry_{i}"));
+                if migrate_legacy_oauth_object(sub, Some(&scope), &mut extracted) {
+                    changed = true;
+                }
+            }
+        }
+    }
+
+    if changed {
+        let bytes = serde_json::to_vec_pretty(&v)
+            .map_err(|e| format!("serialize migrated oauth.json: {e}"))?;
+        atomic_write_bytes_with_mode(&path, &bytes, Some(0o600))
+            .map_err(|e| format!("rewrite migrated oauth.json: {e}"))?;
+    }
+    Ok(extracted)
+}
+
+impl ConnectorSecretsStore {
+    fn load_result_unlocked(person_data_dir: &Path) -> Result<Self, String> {
+        let path = connector_secrets_path(person_data_dir);
+        let oauth_migrated = migrate_legacy_oauth_json_unlocked(person_data_dir)?;
+        let vault_map = secret_store::load_prefix_secrets(person_data_dir, VAULT_CONNECTOR_PREFIX)?;
+
+        let mut secrets = BTreeMap::new();
+        let mut secret_updated_ms = BTreeMap::new();
+        let mut webhook_secrets: BTreeMap<String, WebhookSecretEntry> = BTreeMap::new();
+
+        // Populate decrypted secrets from the authenticated encrypted vault.
+        for (vk, plain) in &vault_map {
+            if let Some(key) = vk.strip_prefix(VAULT_SECRET_PREFIX) {
+                secrets.insert(key.to_string(), plain.clone());
+            } else if let Some(rest) = vk.strip_prefix(VAULT_WEBHOOK_PREFIX) {
+                if let Some(tid) = rest.strip_suffix(":signing_secret") {
+                    let entry = webhook_secrets
+                        .entry(tid.to_string())
+                        .or_insert_with(|| WebhookSecretEntry {
+                            signing_secret: String::new(),
+                            hook_token: String::new(),
+                            updated_ms: 0,
+                        });
+                    entry.signing_secret = plain.clone();
+                } else if let Some(tid) = rest.strip_suffix(":hook_token") {
+                    let entry = webhook_secrets
+                        .entry(tid.to_string())
+                        .or_insert_with(|| WebhookSecretEntry {
+                            signing_secret: String::new(),
+                            hook_token: String::new(),
+                            updated_ms: 0,
+                        });
+                    entry.hook_token = plain.clone();
+                }
+            }
+        }
+
+        let mut needs_migration = !oauth_migrated.is_empty();
+        let now_ms = records::now_millis();
+        for (k, val) in oauth_migrated {
+            secrets.insert(k.clone(), val);
+            secret_updated_ms.insert(k, now_ms);
+        }
+
+        let mut referenced_secret_keys: Vec<String> = Vec::new();
+        let mut referenced_webhook_ids: Vec<String> = Vec::new();
+
+        if path.exists() {
+            let text = std::fs::read_to_string(&path)
+                .map_err(|e| format!("read connector_secrets.json: {e}"))?;
+            if let Ok(v) = serde_json::from_str::<Value>(&text) {
+                if let Some(obj) = v["secret_updated_ms"].as_object() {
+                    for (k, val) in obj {
+                        if let Some(ts) = val.as_u64() {
+                            secret_updated_ms.insert(k.clone(), ts);
+                        }
+                    }
+                }
+                if let Some(obj) = v["secret_refs"].as_object() {
+                    for k in obj.keys() {
+                        referenced_secret_keys.push(k.clone());
+                    }
+                }
+                if let Some(obj) = v["webhook_secret_refs"].as_object() {
+                    for (tid, val) in obj {
+                        referenced_webhook_ids.push(tid.clone());
+                        if let Some(ts) = val["updated_ms"].as_u64() {
+                            if let Some(entry) = webhook_secrets.get_mut(tid) {
+                                entry.updated_ms = ts;
+                            }
+                        }
+                    }
+                }
+                // Detect legacy v1 plaintext connector_secrets.json and migrate automatically.
+                if let Some(obj) = v["secrets"].as_object() {
+                    for (k, val) in obj {
+                        if let Some(s) = val.as_str() {
+                            if !secret_store::is_vault_ref(s) {
+                                needs_migration = true;
+                                secrets.entry(k.clone()).or_insert_with(|| s.to_string());
+                                secret_updated_ms.entry(k.clone()).or_insert(now_ms);
+                            } else {
+                                referenced_secret_keys.push(k.clone());
+                            }
+                        }
+                    }
+                }
+                if let Some(obj) = v["webhook_secrets"].as_object() {
+                    for (tid, val) in obj {
+                        let sig = val["signing_secret"].as_str();
+                        let tok = val["hook_token"].as_str();
+                        let ts = val["updated_ms"].as_u64().unwrap_or(0);
+                        if let (Some(sig_s), Some(tok_s)) = (sig, tok) {
+                            if !secret_store::is_vault_ref(sig_s) || !secret_store::is_vault_ref(tok_s)
+                            {
+                                needs_migration = true;
+                                webhook_secrets
+                                    .entry(tid.clone())
+                                    .or_insert(WebhookSecretEntry {
+                                        signing_secret: sig_s.to_string(),
+                                        hook_token: tok_s.to_string(),
+                                        updated_ms: ts,
+                                    });
+                            } else {
+                                referenced_webhook_ids.push(tid.clone());
+                                if let Some(entry) = webhook_secrets.get_mut(tid) {
+                                    entry.updated_ms = ts;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Fail closed if metadata declares vaulted secrets that are absent from secrets.enc.json.
+        if !needs_migration
+            && (!referenced_secret_keys.is_empty() || !referenced_webhook_ids.is_empty())
+            && !secret_store::vault_path(person_data_dir).exists()
+        {
+            return Err(
+                "encrypted secret vault (secrets.enc.json) is missing for referenced connector secrets"
+                    .to_string(),
+            );
+        }
+
+        let store = Self {
+            secrets,
+            secret_updated_ms,
+            webhook_secrets,
+        };
+        if needs_migration {
+            store.save_unlocked(person_data_dir)?;
+        }
+        Ok(store)
+    }
+
+    fn load_unlocked(person_data_dir: &Path) -> Self {
+        Self::load_result_unlocked(person_data_dir).unwrap_or_default()
+    }
+
+    fn save_unlocked(&self, person_data_dir: &Path) -> Result<(), String> {
+        let mut desired: BTreeMap<String, String> = BTreeMap::new();
+        let mut secret_refs: BTreeMap<String, String> = BTreeMap::new();
+        for (k, val) in &self.secrets {
+            let vkey = vault_key_for_secret(k);
+            desired.insert(vkey.clone(), val.clone());
+            secret_refs.insert(k.clone(), secret_store::vault_ref(&vkey));
+        }
+        let mut wh_refs: BTreeMap<String, Value> = BTreeMap::new();
+        for (tid, e) in &self.webhook_secrets {
+            let sig_key = vault_key_for_webhook_signing(tid);
+            let tok_key = vault_key_for_webhook_token(tid);
+            desired.insert(sig_key.clone(), e.signing_secret.clone());
+            desired.insert(tok_key.clone(), e.hook_token.clone());
+            wh_refs.insert(
+                tid.clone(),
+                json!({
+                    "signing_secret": secret_store::vault_ref(&sig_key),
+                    "hook_token": secret_store::vault_ref(&tok_key),
+                    "has_signing_secret": !e.signing_secret.is_empty(),
+                    "has_hook_token": !e.hook_token.is_empty(),
+                    "updated_ms": e.updated_ms,
+                }),
+            );
+        }
+
+        secret_store::sync_prefix_secrets(person_data_dir, VAULT_CONNECTOR_PREFIX, &desired)?;
+
+        // Write ONLY non-secret metadata & opaque `vault:` references to connector_secrets.json.
         let doc = json!({
-            "version": 1,
-            "secrets": self.secrets,
+            "version": 2,
+            "storage": "vault",
+            "secret_refs": secret_refs,
             "secret_updated_ms": self.secret_updated_ms,
-            "webhook_secrets": wh,
+            "webhook_secret_refs": wh_refs,
         });
         let bytes = serde_json::to_vec_pretty(&doc)
-            .map_err(|e| format!("serialize connector secrets: {e}"))?;
+            .map_err(|e| format!("serialize connector secrets metadata: {e}"))?;
         atomic_write_bytes_with_mode(&connector_secrets_path(person_data_dir), &bytes, Some(0o600))
             .map_err(|e| format!("save connector_secrets.json: {e}"))
     }
@@ -872,6 +1337,46 @@ pub fn collect_all_secret_values(person_data_dir: &Path) -> Vec<String> {
 
 pub fn get_connector_secret_map(person_data_dir: &Path) -> BTreeMap<String, String> {
     with_connectors_lock(|| ConnectorSecretsStore::load_unlocked(person_data_dir).secrets)
+}
+
+/// Strictly decrypt and load all named connector secrets, surfacing AEAD
+/// authentication or vault tampering errors instead of returning an empty map.
+pub fn get_connector_secret_map_result(
+    person_data_dir: &Path,
+) -> Result<BTreeMap<String, String>, String> {
+    with_connectors_lock(|| Ok(ConnectorSecretsStore::load_result_unlocked(person_data_dir)?.secrets))
+}
+
+/// Strictly decrypt and load the full connector secrets store.
+pub fn load_connector_secrets(person_data_dir: &Path) -> Result<ConnectorSecretsStore, String> {
+    with_connectors_lock(|| ConnectorSecretsStore::load_result_unlocked(person_data_dir))
+}
+
+/// Store one or more named secrets in the encrypted connector secret vault.
+pub fn store_connector_secrets(
+    person_data_dir: &Path,
+    entries: &BTreeMap<String, String>,
+) -> Result<(), String> {
+    if entries.is_empty() {
+        return Ok(());
+    }
+    let now_ms = records::now_millis();
+    with_connectors_lock(|| {
+        let mut secrets = ConnectorSecretsStore::load_result_unlocked(person_data_dir)?;
+        for (k, v) in entries {
+            if !is_valid_secret_key(k) {
+                return Err(format!("invalid secret key '{k}'"));
+            }
+            if v.contains('\r') || v.contains('\n') {
+                return Err(format!("secret '{k}' cannot contain newlines"));
+            }
+            if !v.is_empty() {
+                secrets.secrets.insert(k.clone(), v.clone());
+                secrets.secret_updated_ms.insert(k.clone(), now_ms);
+            }
+        }
+        secrets.save_unlocked(person_data_dir)
+    })
 }
 
 pub fn parse_url_host_port_pub(raw_url: &str, default_port: u16) -> (String, u16) {
@@ -1025,6 +1530,7 @@ pub fn list_connectors_json(person_data_dir: &Path, policy: &WorkspacePolicy) ->
             "secrets": masked_secrets,
             "delivery_log": delivery_log,
             "policy_profile": policy.profile,
+            "secret_storage": secret_store::active_backend_info(person_data_dir),
         })
     })
 }
@@ -1140,14 +1646,23 @@ fn local_connectors_env_allowed() -> bool {
     truthy("ERGON_ALLOW_LOCAL_CONNECTORS") || truthy("ERGON_FETCH_ALLOW_PRIVATE")
 }
 
-fn validate_plain_loopback_security(host: &str, security: &str, proto: &str) -> Result<(), String> {
+fn local_connectors_allowed_for(data_dir: &Path) -> bool {
+    tripwire::local_connectors_override(data_dir).unwrap_or_else(local_connectors_env_allowed)
+}
+
+fn validate_plain_loopback_security(
+    data_dir: &Path,
+    host: &str,
+    security: &str,
+    proto: &str,
+) -> Result<(), String> {
     if security == "plain_loopback_test" {
         if !is_loopback_host(host) {
             return Err(format!(
                 "{proto} security 'plain_loopback_test' is only allowed on loopback hosts (127.0.0.1, ::1, localhost)"
             ));
         }
-        if !local_connectors_env_allowed() {
+        if !local_connectors_allowed_for(data_dir) {
             return Err(format!(
                 "{proto} security 'plain_loopback_test' requires ERGON_ALLOW_LOCAL_CONNECTORS=1"
             ));
@@ -1330,7 +1845,8 @@ pub fn create_trigger(
         };
         with_connectors_lock(|| {
             let mut store = ConnectorsStore::load_unlocked(person_data_dir);
-            let mut secrets = ConnectorSecretsStore::load_unlocked(person_data_dir);
+            let mut secrets = ConnectorSecretsStore::load_result_unlocked(person_data_dir)
+                .map_err(|e| (500, e))?;
             secrets
                 .webhook_secrets
                 .insert(id.clone(), wh_secret.clone());
@@ -1367,9 +1883,9 @@ pub fn create_trigger(
         if !imap.password_secret_key.is_empty() && !is_valid_secret_key(&imap.password_secret_key) {
             return Err((400, "invalid imap password_secret_key".to_string()));
         }
-        validate_plain_loopback_security(&imap.host, &imap.security, "IMAP")
+        validate_plain_loopback_security(person_data_dir, &imap.host, &imap.security, "IMAP")
             .map_err(|e| (400, e))?;
-        tripwire::check_egress_host(&imap.host, imap.port, "connector_config")
+        tripwire::check_egress_host_for(person_data_dir, &imap.host, imap.port, "connector_config")
             .map_err(|e| (400, e))?;
 
         let new_secrets = parse_secrets_map_from_body(body)?;
@@ -1392,7 +1908,8 @@ pub fn create_trigger(
         };
         with_connectors_lock(|| {
             let mut store = ConnectorsStore::load_unlocked(person_data_dir);
-            let mut secrets = ConnectorSecretsStore::load_unlocked(person_data_dir);
+            let mut secrets = ConnectorSecretsStore::load_result_unlocked(person_data_dir)
+                .map_err(|e| (500, e))?;
             if !new_secrets.is_empty() {
                 for (k, v) in &new_secrets {
                     secrets.secrets.insert(k.clone(), v.clone());
@@ -1483,7 +2000,8 @@ pub fn rotate_webhook_secret(
             .as_deref()
             .map(|h| format!("/api/hooks/{h}"))
             .unwrap_or_default();
-        let mut secrets = ConnectorSecretsStore::load_unlocked(person_data_dir);
+        let mut secrets = ConnectorSecretsStore::load_result_unlocked(person_data_dir)
+            .map_err(|e| (500, e))?;
         secrets
             .webhook_secrets
             .insert(trigger_id.to_string(), new_wh.clone());
@@ -1508,7 +2026,7 @@ pub fn delete_trigger(person_data_dir: &Path, trigger_id: &str) -> Result<bool, 
         if store.triggers.len() == before {
             return Ok(false);
         }
-        let mut secrets = ConnectorSecretsStore::load_unlocked(person_data_dir);
+        let mut secrets = ConnectorSecretsStore::load_result_unlocked(person_data_dir)?;
         if secrets.webhook_secrets.remove(trigger_id).is_some() {
             secrets.save_unlocked(person_data_dir)?;
         }
@@ -1555,10 +2073,20 @@ pub fn upsert_outbound_connector(
                 "smtp_config must include valid host and security ('smtps', 'starttls', or 'plain_loopback_test')".to_string(),
             )
         })?;
-        validate_plain_loopback_security(&parsed_smtp.host, &parsed_smtp.security, "SMTP")
-            .map_err(|e| (400, e))?;
-        tripwire::check_egress_host(&parsed_smtp.host, parsed_smtp.port, "connector_config")
-            .map_err(|e| (400, e))?;
+        validate_plain_loopback_security(
+            person_data_dir,
+            &parsed_smtp.host,
+            &parsed_smtp.security,
+            "SMTP",
+        )
+        .map_err(|e| (400, e))?;
+        tripwire::check_egress_host_for(
+            person_data_dir,
+            &parsed_smtp.host,
+            parsed_smtp.port,
+            "connector_config",
+        )
+        .map_err(|e| (400, e))?;
         if !parsed_smtp.username_secret_key.is_empty()
             && !is_valid_secret_key(&parsed_smtp.username_secret_key)
         {
@@ -1594,10 +2122,10 @@ pub fn upsert_outbound_connector(
         if parsed_oauth.token_url.contains("{{secret:") {
             return Err((400, "oauth_config.token_url cannot contain secret placeholders".to_string()));
         }
-        tripwire::check_egress(&parsed_oauth.token_url, "connector_config")
+        tripwire::check_egress_for(person_data_dir, &parsed_oauth.token_url, "connector_config")
             .map_err(|e| (400, e))?;
         let (thost, tport) = parse_url_host_port(&parsed_oauth.token_url, 443);
-        tripwire::check_egress_host(&thost, tport, "connector_config")
+        tripwire::check_egress_host_for(person_data_dir, &thost, tport, "connector_config")
             .map_err(|e| (400, e))?;
         if !parsed_oauth.client_secret_key.is_empty()
             && !is_valid_secret_key(&parsed_oauth.client_secret_key)
@@ -1630,7 +2158,7 @@ pub fn upsert_outbound_connector(
                 .to_string(),
         ));
     }
-    tripwire::check_egress(&url, "connector_config").map_err(|e| (400, e))?;
+    tripwire::check_egress_for(person_data_dir, &url, "connector_config").map_err(|e| (400, e))?;
     let default_port = if url.to_ascii_lowercase().starts_with("https://") {
         443
     } else if url.to_ascii_lowercase().starts_with("smtps://") {
@@ -1641,7 +2169,8 @@ pub fn upsert_outbound_connector(
         80
     };
     let (uhost, uport) = parse_url_host_port(&url, default_port);
-    tripwire::check_egress_host(&uhost, uport, "connector_config").map_err(|e| (400, e))?;
+    tripwire::check_egress_host_for(person_data_dir, &uhost, uport, "connector_config")
+        .map_err(|e| (400, e))?;
 
     let method = body["method"]
         .as_str()
@@ -1686,7 +2215,8 @@ pub fn upsert_outbound_connector(
 
     with_connectors_lock(|| {
         let mut store = ConnectorsStore::load_unlocked(person_data_dir);
-        let mut secrets = ConnectorSecretsStore::load_unlocked(person_data_dir);
+        let mut secrets = ConnectorSecretsStore::load_result_unlocked(person_data_dir)
+            .map_err(|e| (500, e))?;
         if !new_secrets.is_empty() {
             for (k, v) in &new_secrets {
                 secrets.secrets.insert(k.clone(), v.clone());
@@ -1915,7 +2445,8 @@ pub fn verify_and_ingest_webhook_with_meta(
     let (trigger_id, trigger_name, routine_id, target_kind, wh_secret) =
         with_connectors_lock(|| {
             let store = ConnectorsStore::load_unlocked(&cfg.data_dir);
-            let secrets = ConnectorSecretsStore::load_unlocked(&cfg.data_dir);
+            let secrets = ConnectorSecretsStore::load_result_unlocked(&cfg.data_dir)
+                .map_err(|e| (500, e))?;
             let Some(trg) = store
                 .triggers
                 .iter()
@@ -2398,7 +2929,7 @@ pub fn ensure_fresh_oauth_token(
     let now_ms = records::now_millis();
     let (oauth, refresh_token, client_secret, existing_token) = with_connectors_lock(|| {
         let store = ConnectorsStore::load_unlocked(person_data_dir);
-        let secrets = ConnectorSecretsStore::load_unlocked(person_data_dir);
+        let secrets = ConnectorSecretsStore::load_result_unlocked(person_data_dir)?;
         let Some(conn) = store.outbound.iter().find(|c| c.id == connector_id) else {
             return Err(format!("unknown outbound connector '{connector_id}'"));
         };
@@ -2434,9 +2965,9 @@ pub fn ensure_fresh_oauth_token(
         ));
     }
 
-    tripwire::check_egress(&oauth.token_url, "connector")?;
+    tripwire::check_egress_for(person_data_dir, &oauth.token_url, "connector")?;
     let (thost, tport) = parse_url_host_port(&oauth.token_url, 443);
-    tripwire::check_egress_host(&thost, tport, "connector")?;
+    tripwire::check_egress_host_for(person_data_dir, &thost, tport, "connector")?;
 
     let mut form_parts = vec![
         format!("grant_type=refresh_token"),
@@ -2464,7 +2995,7 @@ pub fn ensure_fresh_oauth_token(
         redact_with_store_extra(&msg, &store_snap, &oauth_extras)
     };
 
-    let agent = tripwire::guarded_connector_agent(Duration::from_secs(15));
+    let agent = tripwire::guarded_connector_agent_for(person_data_dir, Duration::from_secs(15));
     let resp = agent
         .post(&oauth.token_url)
         .set("Content-Type", "application/x-www-form-urlencoded")
@@ -2511,7 +3042,7 @@ pub fn ensure_fresh_oauth_token(
     }
 
     with_connectors_lock(|| {
-        let mut secrets = ConnectorSecretsStore::load_unlocked(person_data_dir);
+        let mut secrets = ConnectorSecretsStore::load_result_unlocked(person_data_dir)?;
         secrets
             .secrets
             .insert("oauth_access_token".to_string(), access_token.clone());
@@ -2558,7 +3089,7 @@ fn execute_http_delivery(
     let payload_sha256 = tripwire::sha256_hex(&payload_bytes);
     let now_ms = records::now_millis();
     let del_id = format!("del-{now_ms}-{}", next_seq());
-    let mut secrets = with_connectors_lock(|| ConnectorSecretsStore::load_unlocked(&cfg.data_dir));
+    let mut secrets = with_connectors_lock(|| ConnectorSecretsStore::load_result_unlocked(&cfg.data_dir))?;
     let safe_url = redact_with_store(&redact_url_userinfo(&connector.url), &secrets);
 
     if policy.block_outbound_fetch || policy.profile == "air_gapped" {
@@ -2585,8 +3116,8 @@ fn execute_http_delivery(
     }
 
     let (uhost, uport) = parse_url_host_port(&connector.url, 443);
-    if let Err(e) = tripwire::check_egress(&connector.url, "connector")
-        .and_then(|_| tripwire::check_egress_host(&uhost, uport, "connector"))
+    if let Err(e) = tripwire::check_egress_for(&cfg.data_dir, &connector.url, "connector")
+        .and_then(|_| tripwire::check_egress_host_for(&cfg.data_dir, &uhost, uport, "connector"))
         .and_then(|_| {
             let p_str = String::from_utf8_lossy(&payload_bytes);
             tripwire::check_egress_payload(&p_str, "connector")
@@ -2637,7 +3168,7 @@ fn execute_http_delivery(
             record_delivery_log(&cfg.data_dir, &connector.id, log);
             return Err(safe_err);
         }
-        secrets = with_connectors_lock(|| ConnectorSecretsStore::load_unlocked(&cfg.data_dir));
+        secrets = with_connectors_lock(|| ConnectorSecretsStore::load_result_unlocked(&cfg.data_dir))?;
     }
 
     // Substitute {{secret:key}} strictly inside Rust host code AFTER tripwire checks.
@@ -2667,7 +3198,7 @@ fn execute_http_delivery(
         }
     };
 
-    let agent = tripwire::guarded_connector_agent(Duration::from_secs(15));
+    let agent = tripwire::guarded_connector_agent_for(&cfg.data_dir, Duration::from_secs(15));
     let mut req = if connector.method == "PUT" {
         agent.put(&connector.url)
     } else {
@@ -2807,8 +3338,8 @@ impl ProtoStream {
         Ok(())
     }
 
-    fn connect(host: &str, port: u16, use_tls: bool) -> Result<Self, String> {
-        let addrs = tripwire::guard_resolve_connector(host, port)
+    fn connect(data_dir: &Path, host: &str, port: u16, use_tls: bool) -> Result<Self, String> {
+        let addrs = tripwire::guard_resolve_connector_for(data_dir, host, port)
             .map_err(|e| format!("resolve {host}:{port}: {e}"))?;
         let mut last_err = None;
         let mut connected = None;
@@ -3159,7 +3690,7 @@ pub fn execute_smtp_delivery(
     let now_ms = records::now_millis();
     let seq = next_seq();
     let del_id = format!("del-{now_ms}-{seq}");
-    let mut secrets = with_connectors_lock(|| ConnectorSecretsStore::load_unlocked(&cfg.data_dir));
+    let mut secrets = with_connectors_lock(|| ConnectorSecretsStore::load_result_unlocked(&cfg.data_dir))?;
     let safe_url = redact_with_store(&redact_url_userinfo(&connector.url), &secrets);
 
     let Some(smtp) = &connector.smtp_config else {
@@ -3282,8 +3813,8 @@ pub fn execute_smtp_delivery(
         ));
     }
 
-    if let Err(e) = validate_plain_loopback_security(&smtp.host, &smtp.security, "SMTP")
-        .and_then(|_| tripwire::check_egress_host(&smtp.host, smtp.port, "connector"))
+    if let Err(e) = validate_plain_loopback_security(&cfg.data_dir, &smtp.host, &smtp.security, "SMTP")
+        .and_then(|_| tripwire::check_egress_host_for(&cfg.data_dir, &smtp.host, smtp.port, "connector"))
         .and_then(|_| {
             let p_str = String::from_utf8_lossy(&mime_bytes);
             tripwire::check_egress_payload(&p_str, "connector")
@@ -3296,7 +3827,7 @@ pub fn execute_smtp_delivery(
         if let Err(e) = ensure_fresh_oauth_token(&cfg.data_dir, &connector.id) {
             return Err(record_fail("error", e, &secrets));
         }
-        secrets = with_connectors_lock(|| ConnectorSecretsStore::load_unlocked(&cfg.data_dir));
+        secrets = with_connectors_lock(|| ConnectorSecretsStore::load_result_unlocked(&cfg.data_dir))?;
     }
 
     let username = match resolve_smtp_secret(&smtp.username_secret_key, &secrets) {
@@ -3331,7 +3862,7 @@ pub fn execute_smtp_delivery(
     let run_smtp = || -> Result<String, String> {
         let deadline = Instant::now() + SMTP_SESSION_TIMEOUT;
         let initial_tls = smtp.security == "smtps";
-        let stream = ProtoStream::connect(&smtp.host, smtp.port, initial_tls)?;
+        let stream = ProtoStream::connect(&cfg.data_dir, &smtp.host, smtp.port, initial_tls)?;
         stream.apply_deadline(deadline, "SMTP")?;
         let mut reader = BufReader::new(stream);
         let (greet_code, _) = read_smtp_response(&mut reader, deadline)?;
@@ -3752,10 +4283,10 @@ fn poll_one_imap_trigger(cfg: &Config, trg: &TriggerRule) -> Result<Vec<ImapInge
     let Some(imap) = &trg.imap_config else {
         return Ok(Vec::new());
     };
-    validate_plain_loopback_security(&imap.host, &imap.security, "IMAP")?;
-    tripwire::check_egress_host(&imap.host, imap.port, "connector")?;
+    validate_plain_loopback_security(&cfg.data_dir, &imap.host, &imap.security, "IMAP")?;
+    tripwire::check_egress_host_for(&cfg.data_dir, &imap.host, imap.port, "connector")?;
 
-    let secrets = with_connectors_lock(|| ConnectorSecretsStore::load_unlocked(&cfg.data_dir));
+    let secrets = with_connectors_lock(|| ConnectorSecretsStore::load_result_unlocked(&cfg.data_dir))?;
     let username = resolve_smtp_secret(&imap.username_secret_key, &secrets)?;
     let password = resolve_smtp_secret(&imap.password_secret_key, &secrets)?;
     let mut imap_extras: Vec<String> = Vec::new();
@@ -3769,7 +4300,7 @@ fn poll_one_imap_trigger(cfg: &Config, trg: &TriggerRule) -> Result<Vec<ImapInge
     let run_imap = || -> Result<Vec<ImapIngestEvent>, String> {
         let deadline = Instant::now() + IMAP_SESSION_TIMEOUT;
         let initial_tls = imap.security == "imaps";
-        let stream = ProtoStream::connect(&imap.host, imap.port, initial_tls)?;
+        let stream = ProtoStream::connect(&cfg.data_dir, &imap.host, imap.port, initial_tls)?;
         stream.apply_deadline(deadline, "IMAP")?;
         let mut reader = BufReader::new(stream);
 
@@ -4071,7 +4602,7 @@ pub fn invoke_connector(
         return Err(format!("connector '{}' is disabled", connector.name));
     }
     let policy = crate::load_workspace_policy(&cfg.data_dir);
-    let secrets = with_connectors_lock(|| ConnectorSecretsStore::load_unlocked(&cfg.data_dir));
+    let secrets = with_connectors_lock(|| ConnectorSecretsStore::load_result_unlocked(&cfg.data_dir))?;
     let safe_url = redact_with_store(&connector.url, &secrets);
     let payload_bytes = build_delivery_payload_bytes(payload);
     let payload_sha256 = tripwire::sha256_hex(&payload_bytes);
@@ -4102,13 +4633,13 @@ pub fn invoke_connector(
 
     // Validate target URL/host and payload before parking or delivering.
     let payload_text = String::from_utf8_lossy(&payload_bytes);
-    tripwire::check_egress(&connector.url, "connector")
+    tripwire::check_egress_for(&cfg.data_dir, &connector.url, "connector")
         .and_then(|_| {
             if let Some(smtp) = &connector.smtp_config {
-                tripwire::check_egress_host(&smtp.host, smtp.port, "connector")
+                tripwire::check_egress_host_for(&cfg.data_dir, &smtp.host, smtp.port, "connector")
             } else {
                 let (uhost, uport) = parse_url_host_port(&connector.url, 443);
-                tripwire::check_egress_host(&uhost, uport, "connector")
+                tripwire::check_egress_host_for(&cfg.data_dir, &uhost, uport, "connector")
             }
         })
         .and_then(|_| tripwire::check_egress_payload(&payload_text, "connector"))
