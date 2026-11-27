@@ -1062,7 +1062,7 @@ fn execute_tool_with_scope(
             let title = args["title"]
                 .as_str()
                 .ok_or("make_spreadsheet needs args.title")?;
-            let columns = string_list(&args["columns"]);
+            let columns = skills::parse_string_list_value(&args["columns"]);
             let rows = string_rows(&args["rows"]);
             if columns.is_empty() && rows.is_empty() {
                 return Err("make_spreadsheet needs args.columns or args.rows".to_string());
@@ -1349,6 +1349,7 @@ pub fn export_workspace_file_with_options(
     enum ExportTarget {
         Docx,
         Pdf,
+        PdfTable,
         XlsxSingle,
         XlsxMulti,
     }
@@ -1356,13 +1357,14 @@ pub fn export_workspace_file_with_options(
     let target = match (fmt.as_str(), src_ext, has_sheets) {
         ("docx" | "word", "md" | "markdown" | "txt", _) => ExportTarget::Docx,
         ("pdf", "md" | "markdown" | "txt", _) => ExportTarget::Pdf,
+        ("pdf", "csv" | "tsv", _) => ExportTarget::PdfTable,
         ("xlsx" | "excel", _, true) => ExportTarget::XlsxMulti,
         ("xlsx" | "excel", "csv" | "tsv", false) => ExportTarget::XlsxSingle,
         ("docx" | "word", _, _) => {
             return Err(format!("export_file: Word export takes a .md or .txt file, not {clean_rel}"))
         }
         ("pdf", _, _) => {
-            return Err(format!("export_file: PDF export takes a .md or .txt file, not {clean_rel}"))
+            return Err(format!("export_file: PDF export takes a .md, .txt, .csv, or .tsv file, not {clean_rel}"))
         }
         ("xlsx" | "excel", _, false) => {
             return Err(format!("export_file: Excel export takes a .csv or .tsv file (or a sheets array), not {clean_rel}"))
@@ -1376,7 +1378,7 @@ pub fn export_workspace_file_with_options(
     let stem_name = stem_rel.rsplit('/').next().unwrap_or(stem_rel).to_string();
     let want_ext = match target {
         ExportTarget::Docx => "docx",
-        ExportTarget::Pdf => "pdf",
+        ExportTarget::Pdf | ExportTarget::PdfTable => "pdf",
         ExportTarget::XlsxSingle | ExportTarget::XlsxMulti => "xlsx",
     };
     let out = match output.map(|o| o.trim()).filter(|o| !o.is_empty()) {
@@ -1411,6 +1413,20 @@ pub fn export_workspace_file_with_options(
             } else {
                 (docs::markdown_to_docx(&md, &title), "a Word document")
             }
+        }
+        ExportTarget::PdfTable => {
+            let full = sandbox_path(&cfg.workspace_dir, &clean_rel)?;
+            let text = std::fs::read_to_string(&full)
+                .map_err(|e| format!("export_file {clean_rel}: {e}"))?;
+            let rows: Vec<Vec<String>> = if src_ext == "tsv" {
+                text.lines().map(|l| l.split('\t').map(|c| c.to_string()).collect()).collect()
+            } else {
+                skills::parse_csv_rows(&text)
+            };
+            if rows.is_empty() {
+                return Err(format!("export_file: {clean_rel} has no rows"));
+            }
+            (docs::rows_to_pdf(&rows, &stem_name, brand_header), "a PDF document")
         }
         ExportTarget::XlsxSingle => {
             let full = sandbox_path(&cfg.workspace_dir, &clean_rel)?;
@@ -1736,10 +1752,7 @@ pub(crate) fn string_list(v: &Value) -> Vec<String> {
 }
 
 fn string_rows(v: &Value) -> Vec<Vec<String>> {
-    match v {
-        Value::Array(rows) => rows.iter().map(string_list).collect(),
-        _ => Vec::new(),
-    }
+    skills::parse_string_rows_value(v)
 }
 
 pub(crate) fn parse_checkpoint_tool_args(
@@ -1897,26 +1910,7 @@ fn search_walk(
 }
 
 fn normalize_sections(v: &Value) -> Vec<String> {
-    match v {
-        Value::Array(items) => items
-            .iter()
-            .map(|item| match item {
-                Value::String(s) => s.clone(),
-                Value::Object(o) => {
-                    let heading = o["heading"].as_str().unwrap_or("");
-                    let body = o["body"].as_str().unwrap_or("");
-                    if heading.is_empty() {
-                        body.to_string()
-                    } else {
-                        format!("## {heading}\n\n{body}")
-                    }
-                }
-                other => other.to_string(),
-            })
-            .collect(),
-        Value::String(s) => vec![s.clone()],
-        _ => Vec::new(),
-    }
+    skills::parse_sections_value(v)
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

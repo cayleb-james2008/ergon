@@ -2156,6 +2156,18 @@ fn respond_bytes(
     body: &[u8],
     extra_headers: &[(&str, String)],
 ) -> std::io::Result<()> {
+    respond_bytes_with_head(stream, status, content_type, body, extra_headers, false)
+}
+
+#[inline]
+fn respond_bytes_with_head(
+    stream: &mut std::net::TcpStream,
+    status: u16,
+    content_type: &str,
+    body: &[u8],
+    extra_headers: &[(&str, String)],
+    head_only: bool,
+) -> std::io::Result<()> {
     use std::fmt::Write as _;
     let reason = match status {
         200 => "OK",
@@ -2213,7 +2225,7 @@ fn respond_bytes(
         }
     }
     head.push_str("\r\n");
-    if status != 304 && !body.is_empty() {
+    if status != 304 && !head_only && !body.is_empty() {
         let mut bufs = [std::io::IoSlice::new(head.as_bytes()), std::io::IoSlice::new(body)];
         let mut slice_ref: &mut [std::io::IoSlice<'_>] = &mut bufs;
         while !slice_ref.is_empty() {
@@ -2653,14 +2665,22 @@ fn serve_page(
             format!("ergon_role={}; Path=/; SameSite=Strict", tripwire::ROLE_COOKIE_VALUE),
         ));
     }
+    let head_only = req.method == "HEAD";
     if etag_matches(req.if_none_match.as_deref(), etag) {
-        return respond_bytes(stream, 304, "text/html; charset=utf-8", &[], &headers);
+        return respond_bytes_with_head(stream, 304, "text/html; charset=utf-8", &[], &headers, true);
     }
     if wants_gzip {
         headers.push(("Content-Encoding", "gzip".to_string()));
-        respond_bytes(stream, 200, "text/html; charset=utf-8", &bundle.gzip, &headers)
+        respond_bytes_with_head(stream, 200, "text/html; charset=utf-8", &bundle.gzip, &headers, head_only)
     } else {
-        respond_bytes(stream, 200, "text/html; charset=utf-8", bundle.html.as_bytes(), &headers)
+        respond_bytes_with_head(
+            stream,
+            200,
+            "text/html; charset=utf-8",
+            bundle.html.as_bytes(),
+            &headers,
+            head_only,
+        )
     }
 }
 
@@ -2851,7 +2871,7 @@ fn try_route_system(
     let root_cfg = &state.cfg;
     let _ = root_cfg;
     Some(match (req.method.as_str(), req.path.as_str()) {
-        ("GET", "/") => serve_page(stream, state, req, person, ui::index_html()),
+        ("GET" | "HEAD", "/") => serve_page(stream, state, req, person, ui::index_html()),
         ("GET", path) if path.starts_with("/chunks/") => serve_chunk(stream, req, path),
         ("GET", "/api/version") => {
             respond_bytes(stream, 200, "application/json", VERSION_JSON_BYTES, &[])
@@ -3189,7 +3209,7 @@ fn try_route_system(
                 Err(e) => respond_err(stream, 400, &e),
             }
         }
-        ("GET", "/phone") => serve_page(stream, state, req, person, ui::index_html()),
+        ("GET" | "HEAD", "/phone") => serve_page(stream, state, req, person, ui::index_html()),
         ("GET", "/api/library") => {
             let lib = state.library.lock().unwrap();
             respond_json(
