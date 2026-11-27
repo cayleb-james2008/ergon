@@ -3,7 +3,7 @@ import { build, start, stop, results, BASE, E2E, OUT } from "./fixture.mjs";
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 
-const EXPECT = { gate: 110, graph: 6, replay: 20 };
+const EXPECT = { gate: 115, graph: 6, replay: 20 };
 const args = new Set(process.argv.slice(2));
 await stop();
 for (const sig of ["SIGINT", "SIGTERM"]) process.on(sig, () => stop().finally(() => process.exit(130)));
