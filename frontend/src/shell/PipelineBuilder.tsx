@@ -1138,14 +1138,14 @@ export function PipelineBuilder({
                 )}
 
                 {st.kind === "skill" && (
-                  <div className="flex flex-col gap-2 rounded-sm border border-hairline bg-board/40 p-2.5">
-                    <div className="flex flex-col gap-1">
+                  <div className="flex min-w-0 flex-col gap-2 rounded-sm border border-hairline bg-board/40 p-2.5">
+                    <div className="flex min-w-0 flex-col gap-1">
                       <label className="text-xs font-medium text-ink">Built-in skill</label>
                       <select
                         aria-label={`Step ${idx + 1} skill`}
                         value={st.skill_id ?? ""}
                         onChange={(e) => updateStep(idx, { skill_id: e.target.value })}
-                        className="focus-ring h-8 rounded-sm border border-input bg-surface px-2 text-xs text-ink outline-none max-md:min-h-11"
+                        className="focus-ring h-8 w-full min-w-0 rounded-sm border border-input bg-surface px-2 text-xs text-ink outline-none max-md:min-h-11"
                       >
                         {skills.map((sk) => (
                           <option key={sk.id} value={sk.id}>
@@ -1155,11 +1155,11 @@ export function PipelineBuilder({
                       </select>
                     </div>
 
-                    <div className="flex flex-col gap-1.5">
+                    <div className="flex min-w-0 flex-col gap-1.5">
                       <span className="text-xs font-medium text-ink-2">Arguments</span>
                       {argEntries.map(([k, v]) => (
-                        <div key={k} className="flex flex-wrap items-center gap-1.5">
-                          <span className="min-w-[96px] text-xs font-medium text-ink-2">{k}</span>
+                        <div key={k} className="flex min-w-0 flex-wrap items-center gap-1.5">
+                          <span className="min-w-[96px] text-xs font-medium text-ink-2 [overflow-wrap:anywhere]">{k}</span>
                           <Input
                             value={String(v ?? "")}
                             aria-label={`Step ${idx + 1} arg ${k}`}
@@ -1167,7 +1167,7 @@ export function PipelineBuilder({
                             onChange={(e) =>
                               updateStep(idx, { args: { ...(st.args ?? {}), [k]: e.target.value } })
                             }
-                            className="h-8 min-w-[140px] flex-1 text-xs max-md:min-h-11"
+                            className="h-8 min-w-[120px] flex-1 text-xs max-md:min-h-11"
                           />
                           {workspaceFiles.length > 0 && k.includes("file") && (
                             <select
@@ -1177,7 +1177,7 @@ export function PipelineBuilder({
                                 if (!e.target.value) return;
                                 updateStep(idx, { args: { ...(st.args ?? {}), [k]: e.target.value } });
                               }}
-                              className="focus-ring h-8 rounded-sm border border-input bg-surface px-2 text-xs text-ink-2 outline-none max-md:min-h-11"
+                              className="focus-ring h-8 min-w-0 max-w-full rounded-sm border border-input bg-surface px-2 text-xs text-ink-2 outline-none max-md:min-h-11"
                             >
                               <option value="">Workspace file…</option>
                               {workspaceFiles.slice(0, 20).map((f) => (
@@ -1202,13 +1202,13 @@ export function PipelineBuilder({
                           </Button>
                         </div>
                       ))}
-                      <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                      <div className="flex min-w-0 flex-wrap items-center gap-1.5 pt-0.5">
                         <Input
                           value={newArgKey[idx] ?? ""}
                           placeholder="Add arg name (e.g. output_title)"
                           aria-label={`New arg key for step ${idx + 1}`}
                           onChange={(e) => setNewArgKey((prev) => ({ ...prev, [idx]: e.target.value }))}
-                          className="h-8 w-48 text-xs max-md:min-h-11"
+                          className="h-8 w-48 max-w-full min-w-0 text-xs max-md:min-h-11"
                         />
                         <Button
                           type="button"
@@ -1230,7 +1230,7 @@ export function PipelineBuilder({
                 )}
 
                 {st.kind === "agent" && (
-                  <div className="flex flex-col gap-1.5 rounded-sm border border-hairline bg-board/40 p-2.5">
+                  <div className="flex min-w-0 flex-col gap-1.5 rounded-sm border border-hairline bg-board/40 p-2.5">
                     <label className="text-xs font-medium text-ink">Agent instruction</label>
                     <Textarea
                       rows={2}
@@ -1238,7 +1238,7 @@ export function PipelineBuilder({
                       aria-label={`Step ${idx + 1} agent prompt`}
                       placeholder="What should the AI agent produce using prior outputs?"
                       onChange={(e) => updateStep(idx, { prompt: e.target.value })}
-                      className="text-xs"
+                      className="w-full min-w-0 text-xs"
                     />
                   </div>
                 )}

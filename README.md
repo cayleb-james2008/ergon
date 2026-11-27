@@ -111,6 +111,24 @@ One Rust binary serves the React web UI (`/` and `/phone`), the raw-TCP HTTP and
       </picture>
     </td>
   </tr>
+  <tr>
+    <td width="50%">
+      Run concurrent chat and scheduled pipeline runs side by side in <code>LiveRunTimeline</code> with per-run Stop controls, pause and resume parallel DAG branch checkpoints individually (<code>pending_checkpoints[]</code>), configure step timeouts, retries, error jumps, and nested subpipelines, and schedule 5-field Cron jobs with explicit timezones.
+      <br /><br />
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/dag-scheduler-c4e3-dark.png" />
+        <img src="docs/screenshots/dag-scheduler-c4e3-light.png" alt="Ergon v0.39.0 concurrent multi-run timeline and parallel DAG branch checkpoint cards" width="100%" />
+      </picture>
+    </td>
+    <td width="50%">
+      Compose 5-field Cron schedules with timezone offsets, offline deterministic badges, per-step timeout, retry, backoff, and <code>on_error</code> policies, and nested subpipeline steps inside Routines and Pipeline Builder without horizontal overflow across desktop and mobile viewports.
+      <br /><br />
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/dag-scheduler-c4e3-390-dark.png" />
+        <img src="docs/screenshots/dag-scheduler-builder-c4e3-light.png" alt="Ergon v0.39.0 Pipeline Builder step resilience, subpipeline composer, and mobile responsive modal" width="100%" />
+      </picture>
+    </td>
+  </tr>
 </table>
 
 ---
@@ -128,18 +146,18 @@ flowchart LR
 
 ---
 
-## Verified benchmarks (`v0.38.0` vs `v0.11.0`)
+## Verified benchmarks (`v0.39.0` vs `v0.11.0`)
 
 Measured against the stripped fat-LTO release binary on local loopback against a `5,000` receipts and `500` workspace files dataset:
 
-| Metric | `v0.11.0` baseline | `v0.38.0` measured | Change |
+| Metric | `v0.11.0` baseline | `v0.39.0` measured | Change |
 | --- | --- | --- | --- |
-| Release binary size | `16.0 MB` | `8.67 MiB` (`9,093,984 B`) | `-45.8%` |
-| Initial `/` shell payload | `1.15 MB` | `168.41 KiB` (`172,449 B`) raw / `38.56 KiB` (`39,487 B`) gzip (`17` `/chunks/*`) | `-96.7%` wire |
-| Cold boot to `200 OK` | `n/a` | `7.61 ms` | `7.6 ms` self-audit |
-| Peak RSS (`VmHWM`, `5k` receipts + `500` files, `5/5` SSE, `16w`) | `n/a` | `22.11 MB` (`22,644 KB`) | `22.11 MB` peak RSS |
-| Concurrent HTTP (`16w` mixed 5 routes + `5/5` SSE across `5k`/`500`) | `724 req/s` (`188.7 ms` p95) | `3,475.1 req/s` (`4.24 ms` p50, `9.70 ms` p95, `0/8,705` err) | `4.80x` under full concurrency |
-| Automated checks | `204` Rust tests | `291/291` Rust tests (`5/5` `connectors_protocols_mcp_v038`), `110/110` gate, `6/6` graph, `20/20` replay, `44/44` fuzz, `0/0/0` `sloplint` | Zero warnings / zero externals |
+| Release binary size | `16.0 MB` | `8.78 MiB` (`9,208,672 B`) | `-45.1%` |
+| Initial `/` shell payload | `1.15 MB` | `174.41 KiB` (`178,592 B`) raw / `40.20 KiB` (`41,167 B`) gzip (`17` `/chunks/*`) | `-96.5%` wire |
+| Cold boot to `200 OK` | `n/a` | `14.96 ms` | `15.0 ms` self-audit |
+| Peak RSS (`VmHWM`, `5k` receipts + `500` files, `5/5` SSE, `16w`) | `n/a` | `22.52 MB` (`23,056 KB`) | `22.52 MB` peak RSS |
+| Concurrent HTTP (`16w` mixed 5 routes + `5/5` SSE across `5k`/`500`) | `724 req/s` (`188.7 ms` p95) | `3,187.8 req/s` (`4.47 ms` p50, `10.30 ms` p95, `0/7,981` err) | `4.40x` under full concurrency |
+| Automated checks | `204` Rust tests | `296/296` Rust tests (`5/5` `unified_dag_scheduler_v039`), `115/115` gate, `6/6` graph, `20/20` replay, `44/44` fuzz, `0/0/0` `sloplint` | Zero warnings / zero externals |
 
 ---
 

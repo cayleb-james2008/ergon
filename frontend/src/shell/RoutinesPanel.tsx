@@ -561,7 +561,7 @@ function RoutinesBody({
         <form
           id="routine-create-form"
           onSubmit={handleSubmit}
-          className="flex flex-col gap-3 rounded-card border border-hairline bg-board/50 p-3.5"
+          className="flex min-w-0 flex-col gap-3 rounded-card border border-hairline bg-board/50 p-3.5"
         >
           <div className="flex flex-col gap-1">
             <label htmlFor="routine-name" className="text-xs font-medium text-ink">
@@ -863,7 +863,7 @@ function RoutinesBody({
                 key={rt.id}
                 data-routine-id={rt.id}
                 data-routine-enabled={rt.enabled ? "true" : "false"}
-                className="flex flex-col gap-2.5 rounded-card border border-hairline bg-surface p-3.5"
+                className="flex min-w-0 flex-col gap-2.5 rounded-card border border-hairline bg-surface p-3.5"
               >
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="flex min-w-0 flex-wrap items-center gap-2">

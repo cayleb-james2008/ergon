@@ -6834,7 +6834,11 @@ fn pipeline_exec_env(
     }
 }
 
-fn live_runs_status_payload(live_runs: &LiveRuns, person_id: &str) -> Value {
+fn live_runs_status_payload(
+    live_runs: &LiveRuns,
+    data_dir: &std::path::Path,
+    person_id: &str,
+) -> Value {
     let now_ms = records::now_millis();
     let mut runs: Vec<LiveRun> = {
         let map = live_runs.lock().unwrap();
@@ -6844,10 +6848,23 @@ fn live_runs_status_payload(live_runs: &LiveRuns, person_id: &str) -> Value {
             .collect()
     };
     runs.sort_by(|a, b| a.started_ms.cmp(&b.started_ms).then_with(|| a.run_id.cmp(&b.run_id)));
-    let runs_json: Vec<Value> = runs
+    let running_pipes = pipelines::list_runs(data_dir, Some("running"), 50);
+    let pipe_by_id: std::collections::HashMap<&str, &pipelines::PipelineRun> = running_pipes
+        .iter()
+        .map(|pr| (pr.run_id.as_str(), pr))
+        .collect();
+    let mut seen_pipe_ids = std::collections::HashSet::new();
+    let mut runs_json: Vec<Value> = runs
         .iter()
         .map(|run| {
-            json!({
+            let linked_pipe = run
+                .pipeline_run_id
+                .as_deref()
+                .and_then(|pid| {
+                    seen_pipe_ids.insert(pid.to_string());
+                    pipe_by_id.get(pid).copied()
+                });
+            let mut obj = json!({
                 "run_id": run.run_id,
                 "person_id": run.person_id,
                 "thread_id": run.thread_id,
@@ -6857,9 +6874,57 @@ fn live_runs_status_payload(live_runs: &LiveRuns, person_id: &str) -> Value {
                 "started_ms": run.started_ms,
                 "elapsed_ms": now_ms.saturating_sub(run.started_ms),
                 "steps": run.steps,
-            })
+            });
+            if let Some(pr) = linked_pipe {
+                obj["kind"] = json!(if pr.routine_id.is_some() { "routine" } else { "pipeline" });
+                obj["routine_id"] = json!(pr.routine_id);
+                obj["routine_name"] = json!(pr.routine_name);
+            }
+            obj
         })
         .collect();
+    for pr in &running_pipes {
+        if seen_pipe_ids.contains(&pr.run_id) {
+            continue;
+        }
+        let steps_json: Vec<Value> = pr
+            .step_states
+            .iter()
+            .enumerate()
+            .map(|(idx, ss)| {
+                let st = match ss.status.as_str() {
+                    "failed" => "error",
+                    "ok" | "skipped" => "done",
+                    "waiting_human" => "waiting",
+                    _ => "running",
+                };
+                json!({
+                    "id": if ss.step_id.is_empty() { format!("step-{idx}") } else { ss.step_id.clone() },
+                    "step_id": ss.step_id,
+                    "tool": ss.kind,
+                    "label": ss.label,
+                    "status": st,
+                    "raw": ss.label,
+                    "child_items": ss.child_items().into_iter().map(|c| c.to_json()).collect::<Vec<_>>(),
+                })
+            })
+            .collect();
+        runs_json.push(json!({
+            "active": true,
+            "run_id": pr.run_id,
+            "person_id": person_id,
+            "thread_id": pr.thread_id,
+            "pipeline_run_id": pr.run_id,
+            "step_id": pr.steps.get(pr.current_step_index).map(|s| s.id.as_str()),
+            "task": pr.routine_name,
+            "started_ms": pr.created_ms,
+            "elapsed_ms": now_ms.saturating_sub(pr.created_ms),
+            "kind": if pr.routine_id.is_some() { "routine" } else { "pipeline" },
+            "routine_id": pr.routine_id,
+            "routine_name": pr.routine_name,
+            "steps": steps_json,
+        }));
+    }
     if let Some(latest) = runs.last() {
         json!({
             "active": true,
@@ -6872,6 +6937,19 @@ fn live_runs_status_payload(live_runs: &LiveRuns, person_id: &str) -> Value {
             "started_ms": latest.started_ms,
             "elapsed_ms": now_ms.saturating_sub(latest.started_ms),
             "steps": latest.steps,
+        })
+    } else if let Some(first_pipe) = runs_json.last() {
+        json!({
+            "active": true,
+            "runs": runs_json,
+            "run_id": first_pipe["run_id"],
+            "thread_id": first_pipe["thread_id"],
+            "pipeline_run_id": first_pipe["pipeline_run_id"],
+            "step_id": first_pipe["step_id"],
+            "task": first_pipe["task"],
+            "started_ms": first_pipe["started_ms"],
+            "elapsed_ms": first_pipe["elapsed_ms"],
+            "steps": first_pipe["steps"],
         })
     } else {
         json!({
@@ -7021,7 +7099,7 @@ fn try_route_runs_and_chat(
             }
         }
         ("GET", "/api/runs/status") => {
-            let payload = live_runs_status_payload(&state.live_runs, &person.id);
+            let payload = live_runs_status_payload(&state.live_runs, &runtime.cfg.data_dir, &person.id);
             respond_json(stream, 200, &payload)
         }
         ("GET", "/api/runs/stream") => {
@@ -7029,7 +7107,7 @@ fn try_route_runs_and_chat(
             let once = query_param(&req.query, "once")
                 .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
                 .unwrap_or(false);
-            let initial = live_runs_status_payload(&state.live_runs, &person.id);
+            let initial = live_runs_status_payload(&state.live_runs, &runtime.cfg.data_dir, &person.id);
             sse::stream_sse(
                 stream,
                 &state.events,
@@ -7066,11 +7144,28 @@ fn try_route_runs_and_chat(
                 list.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.cmp(&b.1)));
                 list.into_iter().map(|(_, rid, tid)| (rid, tid)).collect()
             };
-            if matched.is_empty() {
+            let running_pipes = pipelines::list_runs(&runtime.cfg.data_dir, Some("running"), 50);
+            let matching_pipes: Vec<(String, String)> = running_pipes
+                .into_iter()
+                .filter(|pr| {
+                    id == "active"
+                        || id.is_empty()
+                        || pr.run_id == id
+                        || (!pr.thread_id.is_empty() && pr.thread_id == id)
+                })
+                .map(|pr| (pr.run_id, pr.thread_id))
+                .collect();
+            if !matching_pipes.is_empty() {
+                let env = pipeline_exec_env(state, person, runtime, ctx);
+                for (pr_id, _) in &matching_pipes {
+                    let _ = pipelines::cancel_pipeline(&env, pr_id);
+                }
+            }
+            if matched.is_empty() && matching_pipes.is_empty() {
                 respond_err(stream, 404, "no matching active run")
             } else {
                 let ts_ms = records::now_millis();
-                let mut cancelled_run_ids = Vec::with_capacity(matched.len());
+                let mut cancelled_run_ids = Vec::with_capacity(matched.len() + matching_pipes.len());
                 for (run_id, thread_id) in &matched {
                     cancelled_run_ids.push(run_id.clone());
                     state.events.publish(
@@ -7081,7 +7176,15 @@ fn try_route_runs_and_chat(
                         json!({"ts_ms": ts_ms}),
                     );
                 }
-                let (first_run_id, first_thread_id) = &matched[0];
+                for (pr_id, _) in &matching_pipes {
+                    if !cancelled_run_ids.contains(pr_id) {
+                        cancelled_run_ids.push(pr_id.clone());
+                    }
+                }
+                let (first_run_id, first_thread_id) = matched
+                    .first()
+                    .or_else(|| matching_pipes.first())
+                    .expect("non-empty matched or matching_pipes");
                 respond_json(
                     stream,
                     200,

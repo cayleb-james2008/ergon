@@ -241,6 +241,7 @@ pub fn parse_tz_offset_mins(raw: &str) -> Result<i32, String> {
         "cet" | "europe/berlin" | "europe/paris" => Some(60),
         "cest" => Some(120),
         "ist" | "asia/kolkata" => Some(330),
+        "sgt" | "asia/singapore" => Some(480),
         "jst" | "asia/tokyo" => Some(540),
         "aest" | "australia/sydney" => Some(600),
         _ => None,
