@@ -1457,13 +1457,23 @@ pub fn call_model_with_usage_streaming(
     // that is not running should say so at once.
     let started = std::time::Instant::now();
     let remote = !is_loopback_url(&cfg.model_base_url);
+    let read_timeout_secs = std::env::var("ERGON_MODEL_TIMEOUT_SECS")
+        .ok()
+        .and_then(|v| v.trim().parse::<u64>().ok())
+        .map(|s| s.clamp(10, 900))
+        .unwrap_or(300);
+    let agent = ureq::AgentBuilder::new()
+        .timeout_connect(std::time::Duration::from_secs(15))
+        .timeout_read(std::time::Duration::from_secs(read_timeout_secs))
+        .timeout_write(std::time::Duration::from_secs(60))
+        .build();
     let mut attempt: u32 = 0;
     let resp = loop {
         attempt += 1;
-        let mut req = ureq::post(&url)
+        let mut req = agent
+            .post(&url)
             .set("x-opencode-session", session)
-            .set("User-Agent", BROWSER_UA)
-            .timeout(std::time::Duration::from_secs(120));
+            .set("User-Agent", BROWSER_UA);
         if let Some(key) = cfg.api_key.as_deref().filter(|k| !k.is_empty()) {
             req = req.set("Authorization", &format!("Bearer {key}"));
         }

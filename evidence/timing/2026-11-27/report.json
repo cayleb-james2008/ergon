@@ -1,0 +1,390 @@
+{
+  "source": "timings.csv",
+  "status": "READY",
+  "min_runs_per_mode": 3,
+  "total_runs": 30,
+  "manual_runs": 15,
+  "ergon_runs": 15,
+  "tasks_ready": 5,
+  "tasks_total": 5,
+  "roles_ready": 4,
+  "roles_total": 4,
+  "warnings": [],
+  "by_task": {
+    "ledger-reconcile": {
+      "name": "ledger-reconcile",
+      "status": "READY",
+      "meets_min_n": true,
+      "observed_roles": [
+        "Office/Admin"
+      ],
+      "manual": {
+        "n": 3,
+        "meets_min_n": true,
+        "median_minutes": 2.25,
+        "min_minutes": 2.23,
+        "max_minutes": 2.38,
+        "median_seconds": 135.0,
+        "min_seconds": 134,
+        "max_seconds": 143,
+        "total_errors": 0,
+        "runs_with_errors": 0,
+        "error_rate_per_run": 0.0,
+        "defect_free_rate": 1.0,
+        "median_formula_minutes_saved": null
+      },
+      "ergon": {
+        "n": 3,
+        "meets_min_n": true,
+        "median_minutes": 2.82,
+        "min_minutes": 2.02,
+        "max_minutes": 5.37,
+        "median_seconds": 169.0,
+        "min_seconds": 121,
+        "max_seconds": 322,
+        "total_errors": 0,
+        "runs_with_errors": 0,
+        "error_rate_per_run": 0.0,
+        "defect_free_rate": 1.0,
+        "median_formula_minutes_saved": 27.0
+      },
+      "median_delta_minutes": -0.57,
+      "error_rate_delta": 0.0,
+      "formula_vs_measured_delta_minutes": 27.57
+    },
+    "contract-risk-audit": {
+      "name": "contract-risk-audit",
+      "status": "READY",
+      "meets_min_n": true,
+      "observed_roles": [
+        "Account Executive"
+      ],
+      "manual": {
+        "n": 3,
+        "meets_min_n": true,
+        "median_minutes": 2.05,
+        "min_minutes": 1.42,
+        "max_minutes": 2.38,
+        "median_seconds": 123.0,
+        "min_seconds": 85,
+        "max_seconds": 143,
+        "total_errors": 0,
+        "runs_with_errors": 0,
+        "error_rate_per_run": 0.0,
+        "defect_free_rate": 1.0,
+        "median_formula_minutes_saved": null
+      },
+      "ergon": {
+        "n": 3,
+        "meets_min_n": true,
+        "median_minutes": 1.53,
+        "min_minutes": 0.77,
+        "max_minutes": 2.65,
+        "median_seconds": 92.0,
+        "min_seconds": 46,
+        "max_seconds": 159,
+        "total_errors": 0,
+        "runs_with_errors": 0,
+        "error_rate_per_run": 0.0,
+        "defect_free_rate": 1.0,
+        "median_formula_minutes_saved": 15.0
+      },
+      "median_delta_minutes": 0.52,
+      "error_rate_delta": 0.0,
+      "formula_vs_measured_delta_minutes": 14.48
+    },
+    "quote-sheet-build": {
+      "name": "quote-sheet-build",
+      "status": "READY",
+      "meets_min_n": true,
+      "observed_roles": [
+        "Account Executive",
+        "Project Manager"
+      ],
+      "manual": {
+        "n": 3,
+        "meets_min_n": true,
+        "median_minutes": 1.27,
+        "min_minutes": 1.25,
+        "max_minutes": 1.27,
+        "median_seconds": 76.0,
+        "min_seconds": 75,
+        "max_seconds": 76,
+        "total_errors": 0,
+        "runs_with_errors": 0,
+        "error_rate_per_run": 0.0,
+        "defect_free_rate": 1.0,
+        "median_formula_minutes_saved": null
+      },
+      "ergon": {
+        "n": 3,
+        "meets_min_n": true,
+        "median_minutes": 4.8,
+        "min_minutes": 3.37,
+        "max_minutes": 5.52,
+        "median_seconds": 288.0,
+        "min_seconds": 202,
+        "max_seconds": 331,
+        "total_errors": 1,
+        "runs_with_errors": 1,
+        "error_rate_per_run": 0.3333,
+        "defect_free_rate": 0.6667,
+        "median_formula_minutes_saved": 15.0
+      },
+      "median_delta_minutes": -3.53,
+      "error_rate_delta": 0.3333,
+      "formula_vs_measured_delta_minutes": 18.53
+    },
+    "inbox-triage": {
+      "name": "inbox-triage",
+      "status": "READY",
+      "meets_min_n": true,
+      "observed_roles": [
+        "Installer/Field Ops",
+        "Office/Admin"
+      ],
+      "manual": {
+        "n": 3,
+        "meets_min_n": true,
+        "median_minutes": 4.05,
+        "min_minutes": 3.73,
+        "max_minutes": 5.52,
+        "median_seconds": 243.0,
+        "min_seconds": 224,
+        "max_seconds": 331,
+        "total_errors": 0,
+        "runs_with_errors": 0,
+        "error_rate_per_run": 0.0,
+        "defect_free_rate": 1.0,
+        "median_formula_minutes_saved": null
+      },
+      "ergon": {
+        "n": 3,
+        "meets_min_n": true,
+        "median_minutes": 0.9,
+        "min_minutes": 0.65,
+        "max_minutes": 1.63,
+        "median_seconds": 54.0,
+        "min_seconds": 39,
+        "max_seconds": 98,
+        "total_errors": 0,
+        "runs_with_errors": 0,
+        "error_rate_per_run": 0.0,
+        "defect_free_rate": 1.0,
+        "median_formula_minutes_saved": 15.0
+      },
+      "median_delta_minutes": 3.15,
+      "error_rate_delta": 0.0,
+      "formula_vs_measured_delta_minutes": 11.85
+    },
+    "meeting-action-log": {
+      "name": "meeting-action-log",
+      "status": "READY",
+      "meets_min_n": true,
+      "observed_roles": [
+        "Installer/Field Ops",
+        "Project Manager"
+      ],
+      "manual": {
+        "n": 3,
+        "meets_min_n": true,
+        "median_minutes": 0.27,
+        "min_minutes": 0.22,
+        "max_minutes": 0.27,
+        "median_seconds": 16.0,
+        "min_seconds": 13,
+        "max_seconds": 16,
+        "total_errors": 0,
+        "runs_with_errors": 0,
+        "error_rate_per_run": 0.0,
+        "defect_free_rate": 1.0,
+        "median_formula_minutes_saved": null
+      },
+      "ergon": {
+        "n": 3,
+        "meets_min_n": true,
+        "median_minutes": 1.55,
+        "min_minutes": 1.3,
+        "max_minutes": 1.9,
+        "median_seconds": 93.0,
+        "min_seconds": 78,
+        "max_seconds": 114,
+        "total_errors": 0,
+        "runs_with_errors": 0,
+        "error_rate_per_run": 0.0,
+        "defect_free_rate": 1.0,
+        "median_formula_minutes_saved": 15.0
+      },
+      "median_delta_minutes": -1.28,
+      "error_rate_delta": 0.0,
+      "formula_vs_measured_delta_minutes": 16.28
+    }
+  },
+  "by_role": {
+    "Office/Admin": {
+      "name": "Office/Admin",
+      "status": "READY",
+      "meets_min_n": true,
+      "observed_roles": [
+        "Office/Admin"
+      ],
+      "manual": {
+        "n": 4,
+        "meets_min_n": true,
+        "median_minutes": 2.32,
+        "min_minutes": 2.23,
+        "max_minutes": 5.52,
+        "median_seconds": 139.0,
+        "min_seconds": 134,
+        "max_seconds": 331,
+        "total_errors": 0,
+        "runs_with_errors": 0,
+        "error_rate_per_run": 0.0,
+        "defect_free_rate": 1.0,
+        "median_formula_minutes_saved": null
+      },
+      "ergon": {
+        "n": 4,
+        "meets_min_n": true,
+        "median_minutes": 2.42,
+        "min_minutes": 0.9,
+        "max_minutes": 5.37,
+        "median_seconds": 145.0,
+        "min_seconds": 54,
+        "max_seconds": 322,
+        "total_errors": 0,
+        "runs_with_errors": 0,
+        "error_rate_per_run": 0.0,
+        "defect_free_rate": 1.0,
+        "median_formula_minutes_saved": 25.0
+      },
+      "median_delta_minutes": -0.1,
+      "error_rate_delta": 0.0,
+      "formula_vs_measured_delta_minutes": 25.1
+    },
+    "Account Executive": {
+      "name": "Account Executive",
+      "status": "READY",
+      "meets_min_n": true,
+      "observed_roles": [
+        "Account Executive"
+      ],
+      "manual": {
+        "n": 4,
+        "meets_min_n": true,
+        "median_minutes": 1.73,
+        "min_minutes": 1.25,
+        "max_minutes": 2.38,
+        "median_seconds": 104.0,
+        "min_seconds": 75,
+        "max_seconds": 143,
+        "total_errors": 0,
+        "runs_with_errors": 0,
+        "error_rate_per_run": 0.0,
+        "defect_free_rate": 1.0,
+        "median_formula_minutes_saved": null
+      },
+      "ergon": {
+        "n": 4,
+        "meets_min_n": true,
+        "median_minutes": 2.09,
+        "min_minutes": 0.77,
+        "max_minutes": 4.8,
+        "median_seconds": 125.5,
+        "min_seconds": 46,
+        "max_seconds": 288,
+        "total_errors": 0,
+        "runs_with_errors": 0,
+        "error_rate_per_run": 0.0,
+        "defect_free_rate": 1.0,
+        "median_formula_minutes_saved": 15.0
+      },
+      "median_delta_minutes": -0.36,
+      "error_rate_delta": 0.0,
+      "formula_vs_measured_delta_minutes": 15.36
+    },
+    "Project Manager": {
+      "name": "Project Manager",
+      "status": "READY",
+      "meets_min_n": true,
+      "observed_roles": [
+        "Project Manager"
+      ],
+      "manual": {
+        "n": 4,
+        "meets_min_n": true,
+        "median_minutes": 0.77,
+        "min_minutes": 0.22,
+        "max_minutes": 1.27,
+        "median_seconds": 46.0,
+        "min_seconds": 13,
+        "max_seconds": 76,
+        "total_errors": 0,
+        "runs_with_errors": 0,
+        "error_rate_per_run": 0.0,
+        "defect_free_rate": 1.0,
+        "median_formula_minutes_saved": null
+      },
+      "ergon": {
+        "n": 4,
+        "meets_min_n": true,
+        "median_minutes": 2.63,
+        "min_minutes": 1.55,
+        "max_minutes": 5.52,
+        "median_seconds": 158.0,
+        "min_seconds": 93,
+        "max_seconds": 331,
+        "total_errors": 1,
+        "runs_with_errors": 1,
+        "error_rate_per_run": 0.25,
+        "defect_free_rate": 0.75,
+        "median_formula_minutes_saved": 15.0
+      },
+      "median_delta_minutes": -1.87,
+      "error_rate_delta": 0.25,
+      "formula_vs_measured_delta_minutes": 16.87
+    },
+    "Installer/Field Ops": {
+      "name": "Installer/Field Ops",
+      "status": "READY",
+      "meets_min_n": true,
+      "observed_roles": [
+        "Installer/Field Ops"
+      ],
+      "manual": {
+        "n": 3,
+        "meets_min_n": true,
+        "median_minutes": 3.73,
+        "min_minutes": 0.27,
+        "max_minutes": 4.05,
+        "median_seconds": 224.0,
+        "min_seconds": 16,
+        "max_seconds": 243,
+        "total_errors": 0,
+        "runs_with_errors": 0,
+        "error_rate_per_run": 0.0,
+        "defect_free_rate": 1.0,
+        "median_formula_minutes_saved": null
+      },
+      "ergon": {
+        "n": 3,
+        "meets_min_n": true,
+        "median_minutes": 1.3,
+        "min_minutes": 0.65,
+        "max_minutes": 1.63,
+        "median_seconds": 78.0,
+        "min_seconds": 39,
+        "max_seconds": 98,
+        "total_errors": 0,
+        "runs_with_errors": 0,
+        "error_rate_per_run": 0.0,
+        "defect_free_rate": 1.0,
+        "median_formula_minutes_saved": 15.0
+      },
+      "median_delta_minutes": 2.43,
+      "error_rate_delta": 0.0,
+      "formula_vs_measured_delta_minutes": 12.57
+    }
+  },
+  "projections_est": null
+}

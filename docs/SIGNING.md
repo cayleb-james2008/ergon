@@ -57,9 +57,8 @@ signtool verify /pa /v .\ergon-0.38.0-x86_64.msi
 
 ---
 
-## 4. Current Status & What Remains Blocked
+## 4. Current Status & Owner Decision
 
 - **Ready in repository:** Windows WiX v4 `.wxs` MSI + PowerShell installer/uninstaller + `ErgonService` Windows Service (`ergon service`), authenticated admin update flow behind `ERGON_GATE_TOKEN`, and full CI Windows signing wiring in `.github/workflows/release.yml`.
-- **Blocked pending external provisioning:**
-  1. **Windows Authenticode signing certificate** (OV/EV `.pfx` or Azure Trusted Signing account) uploaded to GitHub Secrets (`WINDOWS_SIGN_PFX_BASE64`, `WINDOWS_SIGN_PFX_PASSWORD`).
-  2. ~~Native Windows 11 verification run~~ Done 2026-11-27 on a clean Windows 11 Home VM with a self-signed test cert (`packaging/windows/vm-smoke-test.ps1`): install, ErgonService auto-start, restart-on-crash, `/api/status` and uninstall all pass. A real-cert run still needs item 1.
+- **Verified without commercial CA cert:** On 2026-11-27, a clean Windows 11 Home VM run (`packaging/windows/vm-smoke-test.ps1` using a temporary self-signed test cert, cleaned up after exit) verified `.msi` install, `ErgonService` auto-start, restart-on-crash, `/api/status`, backup/restore, diagnostics, and uninstall (`evidence/deploy/windows-vm-readiness.md`).
+- **Owner decision (`SIGN-01` declined 2026-11-27):** The project owner explicitly decided not to purchase or provision a commercial Windows Authenticode signing certificate (`WINDOWS_SIGN_PFX_BASE64` / Azure Trusted Signing). Windows artifacts on GitHub Releases (`ergon-x86_64-pc-windows-msvc.exe`, `.msi`, `.zip`) ship **unsigned** alongside verified `SHA256SUMS`, and Windows SmartScreen prompts are accepted by the owner. Signing hooks in `.github/workflows/release.yml` remain intact if signing credentials are ever supplied later.

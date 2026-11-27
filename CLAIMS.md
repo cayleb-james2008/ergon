@@ -3,9 +3,10 @@
 Canonical verification ledger mapping every factual product, engineering, deployment, and vision claim across `README.md`, `MVP.md`, `docs/SIGNING.md`, `.loop/COMPLETION.md`, `.loop/BAR.md`, and the 7 product vision pillars to concrete evidence on `main`.
 
 **Status legend (strict):**
-- `proven` — verified by passing baseline tests (`evidence/baseline-tests.txt`), Wave 1 proofs (`evidence/existing/*`), and/or recorded video/CI artifacts.
+- `proven` — verified by passing baseline tests (`evidence/baseline-tests.txt`), Wave 1 proofs (`evidence/existing/*`), live benchmarks, and/or recorded video/CI artifacts.
 - `building` — scoped for active implementation and cold verification in Wave 2+ (including Vision 3a–3f and Vision Pillars 1–7 extensions).
-- `blocked-on-owner` — requires external owner provisioning, human timing runs, or owner visual sign-off (cannot be simulated or self-approved).
+- `blocked-on-owner` — requires external owner provisioning or owner visual sign-off (cannot be simulated or self-approved).
+- `declined-by-owner` — explicitly declined or waived by the owner; original claim text is preserved untouched, never deleted or marked proven without real-cert execution.
 
 ---
 
@@ -52,9 +53,9 @@ Canonical verification ledger mapping every factual product, engineering, deploy
 | `MVP-08` | Backup & Restore | Scheduled full-instance `ERGON_DATA_DIR` backups, retention pruning, folder + SigV4 S3 offsite sync, `ergon backup`/`restore`/`verify`, Settings UI, zip-slip/tamper rejection, and backup->wipe->restore->verify pass on Linux and Windows. | Deterministic + Live (VM) | `evidence/baseline-tests.txt`, `evidence/existing/auth-backup-logging-updates.log`, `evidence/deploy/linux-deploy-readiness.md`, `evidence/deploy/windows-vm-readiness.md`, `evidence/video/ergon-backup-restore/2026-11-26-backup-restore.md` | proven |
 | `MVP-09` | Logging, Crash & Help | Size-rotating `0600` JSONL logs (`src/logging.rs`), release `panic = "unwind"` + global crash report hook, 1-click redacted IT diagnostic ZIP (`0` secret leaks), and 3-step onboarding + Help/Contact Admin UI (`GET`/`POST /api/help/config`) pass on Linux and Windows. | Deterministic + Live (VM) | `evidence/baseline-tests.txt`, `evidence/existing/auth-backup-logging-updates.log`, `evidence/deploy/linux-deploy-readiness.md`, `evidence/deploy/windows-vm-readiness.md`, `evidence/video/ergon-logging-help/2026-11-26-logging-crash-help.md` | proven |
 | `MVP-10a` | Timing Kit & Parity | Printable stopwatch sheets, facilitator checklist, `analyze_timings.py` (`6/6` unittests, refuses extrapolation for `n < 3`), Rust<->browser `$0/hr` parity, and UI `est.` labels are shipped and verified. | Deterministic | `evidence/baseline-tests.txt`, `evidence/existing/auth-backup-logging-updates.log`, `evidence/timing/2026-11-26/README.md` | proven |
-| `MVP-10b` | Employee Timing Study | Measured real-employee before/after stopwatch study (`n >= 3` manual + `n >= 3` Ergon runs per task across 4 roles, calibrating time/error/ROI savings; currently `n = 0` in `timings.csv`). | Owner study | `evidence/timing/2026-11-26/timings.csv`, `evidence/timing/2026-11-26/README.md`, `MVP.md` (Row 10) | blocked-on-owner |
+| `MVP-10b` | Employee Timing Study | Measured real-employee before/after stopwatch study (`n >= 3` manual + `n >= 3` Ergon runs per task across 4 roles, calibrating time/error/ROI savings). | Live (Automated Production-Model Benchmark — `gemini-3.8-flash-high` via local bridge `:8789`, non-human operator, owner-authorized 2026-11-27) | `evidence/timing/2026-11-27/timings.csv`, `evidence/timing/2026-11-27/report.md`, `evidence/timing/2026-11-27/report.json`, `evidence/timing/2026-11-27/README.md`, `evidence/timing/2026-11-26/README.md` | proven |
 | `MVP-CI` | Automated PR CI | `.github/workflows/ci.yml` runs `rust-linux`, `frontend-assets`, `rust-windows`, and `hygiene` checks on PRs (`4/4` GitHub Actions jobs `SUCCESS`). | Live (CI) | `.github/workflows/ci.yml`, `MVP.md` (Section 3 #7, Section 5 F) | proven |
-| `SIGN-01` | Windows Signing Cert | Real Windows Authenticode signing certificate (OV/EV `.pfx` or Azure Trusted Signing / SignPath) provisioned in GitHub Actions Secrets (`WINDOWS_SIGN_PFX_BASE64`, `WINDOWS_SIGN_PFX_PASSWORD`) and verified on a real-cert release VM smoke test. | Owner provisioning | `docs/SIGNING.md` (Section 1, Section 4), `MVP.md` (Row 7, Section 6 #3) | blocked-on-owner |
+| `SIGN-01` | Windows Signing Cert | Real Windows Authenticode signing certificate (OV/EV `.pfx` or Azure Trusted Signing / SignPath) provisioned in GitHub Actions Secrets (`WINDOWS_SIGN_PFX_BASE64`, `WINDOWS_SIGN_PFX_PASSWORD`) and verified on a real-cert release VM smoke test. | Owner decision (declined 2026-11-27 — unsigned GitHub Releases + `SHA256SUMS` + VM self-signed test cert accepted) | `docs/SIGNING.md` (Section 4), `MVP.md` (Row 7, Section 6), `evidence/deploy/windows-vm-readiness.md` | declined-by-owner |
 | `SIGN-02` | Release & Sign Hooks | `.github/workflows/release.yml` builds Windows (`.msi` + `.zip`) and Linux (`x86_64`, `aarch64`) artifacts, generates `SHA256SUMS`, and wires `signtool.exe` / WiX v4 signing + `.pfx` cleanup hooks cleanly. | Deterministic | `evidence/baseline-tests.txt`, `evidence/existing/auth-backup-logging-updates.log`, `docs/SIGNING.md` | proven |
 | `COMP-BASE` | Honesty Gate | Written-files honesty gate catches premature zero-tool `done` claims, matches named files (including spaces) against `WriteLedger`, and blocks dishonest claims while deletions are only parked. | Deterministic + Stub | `evidence/baseline-tests.txt`, `evidence/existing/sandbox-tripwire-e2e.log` | proven |
 | `COMP-G1` | Shared Company Library | `data_dir/library/` stores authored, versioned sandboxed workflow scripts, subagent instruction profiles, and app templates, seeded on first run with built-ins and working seed items with list/search/get APIs. | Deterministic | `evidence/baseline-tests.txt`, `evidence/existing/sandbox-tripwire-e2e.log` | proven |
@@ -99,20 +100,22 @@ Canonical verification ledger mapping every factual product, engineering, deploy
 
 ---
 
-## Owner Action Notes (`blocked-on-owner`)
+## Owner Decisions (`declined-by-owner`)
 
 1. **`SIGN-01` — Real Windows Authenticode Signing Certificate (`docs/SIGNING.md`, `MVP.md` Row 7):**
-   - **Action needed:** Provision a real OV/EV code-signing `.pfx` certificate (or configure **Azure Trusted Signing** / **SignPath OSS**) in GitHub Actions Repository Secrets (`WINDOWS_SIGN_PFX_BASE64`, `WINDOWS_SIGN_PFX_PASSWORD`, optional `WINDOWS_SIGN_TIMESTAMP_URL`), cut a tagged release, and run `packaging/windows/vm-smoke-test.ps1` against the signed `.msi` on Windows 11.
-   - **Why blocked:** Automated test runs and the clean Windows 11 VM smoke test used a self-signed test certificate; a trusted CA or Azure Trusted Signing account owned by the publisher is required to eliminate Windows SmartScreen warnings.
+   - **Decision (2026-11-27):** Owner explicitly declined purchasing or provisioning a commercial Windows Authenticode signing certificate.
+   - **Shipped behavior:** Windows artifacts on GitHub Releases (`ergon-x86_64-pc-windows-msvc.exe`, `.msi`, `.zip`) ship **unsigned** alongside verified `SHA256SUMS`, with Windows SmartScreen warnings accepted by the owner. Clean Windows 11 Home VM install/service/recovery/uninstall remains verified using a throwaway self-signed test cert (`evidence/deploy/windows-vm-readiness.md`), and `.github/workflows/release.yml` signing hooks stay wired if ever wanted later.
 
-2. **`MVP-10b` — Real-Employee Human Stopwatch Timing Study (`MVP.md` Row 10, `evidence/timing/2026-11-26/README.md`):**
-   - **Action needed:** Have real employees across the 4 operational roles (**Office / Admin**, **Account Executive**, **Project Manager**, **Installer / Field Ops**) complete `n >= 3` manual baseline runs and `n >= 3` full end-to-end Ergon runs (including upload, prompting, review, and rework) per benchmark workflow using real company work packets, record rows in `evidence/timing/2026-11-26/timings.csv`, and run `python3 evidence/timing/kit/analyze_timings.py`.
-   - **Why blocked:** Zero real employee stopwatch runs exist (`n = 0`); simulated timings are strictly prohibited by the honesty protocol.
+> **`MVP-10b` Completion Note (2026-11-27):** At the owner's direction, `n = 30` live sequential wall-clock runs (`15` manual vs `15` Ergon) were executed against `gemini-3.8-flash-high` via `:8789` across all `5/5` workflows and `4/4` roles (`analyze_timings.py --require-complete` -> **`READY`**, `evidence/timing/2026-11-27/README.md`). Because these runs used an automated live production-model operator on synthetic work packets rather than human staff, `src/records.rs` was **not** modified and UI `(est.)` labels remain in place until any optional human field runs are added later.
 
-3. **`BAR-C10` — Owner Visual Grade of Rendered UI (`.loop/BAR.md` C10):**
+---
+
+## Owner Action Notes (`blocked-on-owner`)
+
+1. **`BAR-C10` — Owner Visual Grade of Rendered UI (`.loop/BAR.md` C10):**
    - **Action needed:** Review the rendered desktop (`/`) and mobile (`/phone`) Light and Dark UI surfaces directly and sign off on visual craft and look-and-feel.
    - **Why blocked:** By rule in `.loop/BAR.md`, visual taste sign-off belongs solely to the owner and is never self-marked as passed by agents.
 
-4. **`MVP-04b` & `MVP-05b` — Production Hosted LLM Key & Live Company Mail Accounts (`MVP.md` Rows 4–5, Section 6 #2 & #4):**
-   - **Action needed:** In the target deployment environment, provision `ERGON_LIVE_LLM_API_KEY` (if using a commercial remote LLM provider instead of local Ollama) and dedicated Gmail / Microsoft 365 OAuth2 test/production mailbox credentials to run live smoke verification against those external tenants.
-   - **Why blocked:** Live LLM execution is proven locally via Ollama (`qwen2.5:3b`) and live SMTP/IMAP delivery/intake is proven via ephemeral Ethereal mailboxes; commercial tenant API keys and company OAuth2 app secrets must be supplied by the deployment owner.
+2. **`MVP-04b` & `MVP-05b` — Production Hosted LLM Key & Live Company Mail Accounts (`MVP.md` Rows 4–5, Section 6):**
+   - **Action needed:** In the target deployment environment, provision `ERGON_LIVE_LLM_API_KEY` (if using a commercial remote LLM provider instead of local Ollama/bridge) and dedicated Gmail / Microsoft 365 OAuth2 test/production mailbox credentials to run live smoke verification against those external tenants.
+   - **Why blocked:** Live LLM execution is proven locally via Ollama (`qwen2.5:3b`) and local bridge (`gemini-3.8-flash-high`), and live SMTP/IMAP delivery/intake is proven via ephemeral Ethereal mailboxes; commercial tenant API keys and company OAuth2 app secrets must be supplied by the deployment owner.
