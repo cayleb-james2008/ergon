@@ -4,8 +4,8 @@ use crate::tools::{atomic_write_bytes, string_list};
 use crate::*;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpListener;
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
-use std::sync::{Arc, Condvar, Mutex, RwLock};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use std::sync::{Arc, Condvar, Mutex, Once, RwLock};
 
 // ---------------------------------------------------------------------------
 // HTTP server (hand-rolled, std TcpListener)
@@ -92,30 +92,100 @@ pub struct AppState {
 }
 
 static SESSION_COUNTER: AtomicU64 = AtomicU64::new(0);
+static SHUTDOWN_REQUESTED: AtomicBool = AtomicBool::new(false);
+static SIGNAL_HANDLERS_INSTALLED: Once = Once::new();
+
+/// Default bounded drain window after `SIGTERM`/`SIGINT` before exiting.
+const DEFAULT_SHUTDOWN_GRACE_SECS: u64 = 10;
+const MAX_SHUTDOWN_GRACE_SECS: u64 = 300;
+
+/// Returns `true` once a graceful shutdown signal (`SIGTERM`/`SIGINT` on Unix,
+/// console control event on Windows) or explicit shutdown request has arrived.
+pub fn shutdown_requested() -> bool {
+    SHUTDOWN_REQUESTED.load(Ordering::Acquire)
+}
+
+/// Request a graceful shutdown drain programmatically (useful in supervisors or tests).
+pub fn request_shutdown() {
+    SHUTDOWN_REQUESTED.store(true, Ordering::SeqCst);
+}
+
+fn parse_shutdown_grace_secs(raw: Option<&str>) -> u64 {
+    raw.and_then(|s| s.trim().parse::<u64>().ok())
+        .map(|s| s.min(MAX_SHUTDOWN_GRACE_SECS))
+        .unwrap_or(DEFAULT_SHUTDOWN_GRACE_SECS)
+}
+
+/// Configured graceful shutdown drain window (`ERGON_SHUTDOWN_GRACE_SECS`, default 10s, max 300s).
+pub fn shutdown_grace_secs() -> u64 {
+    let raw = std::env::var("ERGON_SHUTDOWN_GRACE_SECS").ok();
+    parse_shutdown_grace_secs(raw.as_deref())
+}
+
+/// Install OS signal handlers (`SIGTERM`/`SIGINT` on Unix, `SetConsoleCtrlHandler` on Windows)
+/// so the server stops accepting new connections, drains in-flight requests/runs, and exits 0.
+pub fn install_shutdown_handlers() {
+    SIGNAL_HANDLERS_INSTALLED.call_once(|| {
+        #[cfg(unix)]
+        install_unix_signal_handlers();
+        #[cfg(windows)]
+        install_windows_signal_handlers();
+    });
+}
+
+#[cfg(unix)]
+fn install_unix_signal_handlers() {
+    extern "C" fn on_signal(_sig: libc::c_int) {
+        SHUTDOWN_REQUESTED.store(true, Ordering::SeqCst);
+    }
+    // SAFETY: `on_signal` only performs an async-signal-safe atomic store.
+    // `sigaction` struct is zero-initialized and populated with a valid signal mask.
+    unsafe {
+        let mut sa: libc::sigaction = std::mem::zeroed();
+        sa.sa_sigaction = on_signal as *const () as usize;
+        libc::sigemptyset(&mut sa.sa_mask);
+        sa.sa_flags = 0;
+        let _ = libc::sigaction(libc::SIGTERM, &sa, std::ptr::null_mut());
+        let _ = libc::sigaction(libc::SIGINT, &sa, std::ptr::null_mut());
+    }
+}
+
+#[cfg(windows)]
+fn install_windows_signal_handlers() {
+    type HandlerRoutine = unsafe extern "system" fn(u32) -> i32;
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn SetConsoleCtrlHandler(handler: Option<HandlerRoutine>, add: i32) -> i32;
+    }
+    unsafe extern "system" fn on_ctrl(ctrl_type: u32) -> i32 {
+        // CTRL_C_EVENT=0, CTRL_BREAK_EVENT=1, CTRL_CLOSE_EVENT=2,
+        // CTRL_LOGOFF_EVENT=5, CTRL_SHUTDOWN_EVENT=6
+        match ctrl_type {
+            0 | 1 | 2 | 5 | 6 => {
+                SHUTDOWN_REQUESTED.store(true, Ordering::SeqCst);
+                1
+            }
+            _ => 0,
+        }
+    }
+    // SAFETY: `on_ctrl` is a static `extern "system"` callback that only flips an AtomicBool.
+    unsafe {
+        let _ = SetConsoleCtrlHandler(Some(on_ctrl), 1);
+    }
+}
 
 /// Session ids are the only credential a browser presents, so they
-/// must be unguessable: random bytes from the OS, not a timestamp and
-/// a counter (an early version's ids were predictable to within a few
-/// guesses of a victim's visit time).
+/// must be unguessable: 128 bits from the OS CSPRNG (`ring::rand::SystemRandom`)
+/// on both Unix and Windows, with zero predictable timestamp fallback.
 fn new_session_id() -> String {
+    use ring::rand::{SecureRandom, SystemRandom};
     let n = SESSION_COUNTER.fetch_add(1, Ordering::SeqCst);
     let mut bytes = [0u8; 16];
-    let filled = std::fs::File::open("/dev/urandom")
-        .and_then(|mut f| std::io::Read::read_exact(&mut f, &mut bytes))
-        .is_ok();
-    if filled {
-        let hex: String = bytes.iter().map(|b| format!("{b:02x}")).collect();
-        format!("s{hex}-{n}")
-    } else {
-        // No OS randomness available: fall back to a wide mix of
-        // time, pid and counter — still far harder to bracket than a
-        // bare millisecond timestamp.
-        let nanos = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_nanos())
-            .unwrap_or(0);
-        format!("s{:x}-{:x}-{n}", nanos, std::process::id())
-    }
+    SystemRandom::new()
+        .fill(&mut bytes)
+        .expect("OS CSPRNG unavailable for session id generation");
+    let hex: String = bytes.iter().map(|b| format!("{b:02x}")).collect();
+    format!("s{hex}-{n}")
 }
 
 /// Whether this session id is one the server actually issued. A
@@ -175,6 +245,7 @@ pub fn serve(listener: TcpListener, cfg: Config) -> std::io::Result<()> {
 /// What the `ergon` binary runs: `serve` plus the periodic check for a newer
 /// GitHub release (see `update`). Tests use `serve`, which never calls out.
 pub fn serve_with_updates(listener: TcpListener, cfg: Config) -> std::io::Result<()> {
+    install_shutdown_handlers();
     serve_env(listener, cfg, true)
 }
 
@@ -502,6 +573,12 @@ fn execute_routine_run_with_inputs(
         }
     }
     let _slot_guard = RunSlotGuard(&state.running_routines, lock_key);
+    // Re-read after acquiring the per-routine slot so rapid scheduler ticks cannot
+    // execute the same cadence window twice.
+    let routine = routines::get_routine(&runtime.cfg.data_dir, id)?;
+    if trigger == "scheduled" && !scheduler::is_routine_due(&routine, records::now_millis()) {
+        return None;
+    }
 
     if pipelines::has_running_pipeline_for_routine(&runtime.cfg.data_dir, id) {
         let now_ms = records::now_millis();
@@ -596,7 +673,23 @@ fn execute_routine_run_with_inputs(
                 );
                 let _ = scheduler::record_run_history(&runtime.cfg.data_dir, rec.clone());
                 let hist = scheduler::list_run_history(&runtime.cfg.data_dir, Some(id), 20);
-                let enriched = scheduler::enrich_routine_json(&updated, finished_ms, &hist);
+                let idx = person_idx(state, person, runtime);
+                let mut enriched = scheduler::enrich_routine_with_verification(
+                    &updated,
+                    finished_ms,
+                    &hist,
+                    &idx.chain,
+                    idx.chain_valid,
+                );
+                if let Some(obj) = enriched.as_object_mut() {
+                    obj.insert(
+                        "offline_deterministic".to_string(),
+                        json!(!pipelines::routine_value_requires_llm(
+                            &runtime.cfg.data_dir,
+                            &updated
+                        )),
+                    );
+                }
                 return Some(RoutineExecResult {
                     http_status: 503,
                     routine: enriched,
@@ -683,10 +776,29 @@ fn execute_routine_run_with_inputs(
                         }
                         let updated = routines::get_routine(&runtime.cfg.data_dir, id)
                             .unwrap_or(routine);
-                        let receipt_id = latest_receipt_id_for_thread(
+                        let mut receipt_id = latest_receipt_id_for_thread(
                             &runtime.cfg.data_dir,
                             &prun.thread_id,
                         );
+                        if receipt_id.is_none() {
+                            records::append_work(
+                                &runtime.cfg,
+                                &name,
+                                if summary.is_empty() {
+                                    "Completed deterministic routine."
+                                } else {
+                                    &summary
+                                },
+                                &[],
+                                &prun.thread_id,
+                                true,
+                            );
+                            receipt_id = latest_receipt_id_for_thread(
+                                &runtime.cfg.data_dir,
+                                &prun.thread_id,
+                            );
+                        }
+                        state.search_cache.invalidate(&person.id);
                         let rec = scheduler::new_run_record(
                             id,
                             &name,
@@ -702,13 +814,22 @@ fn execute_routine_run_with_inputs(
                         let _ = scheduler::record_run_history(&runtime.cfg.data_dir, rec.clone());
                         let hist = scheduler::list_run_history(&runtime.cfg.data_dir, Some(id), 20);
                         let idx = person_idx(state, person, runtime);
-                        let enriched = scheduler::enrich_routine_with_verification(
+                        let mut enriched = scheduler::enrich_routine_with_verification(
                             &updated,
                             finished_ms,
                             &hist,
                             &idx.chain,
                             idx.chain_valid,
                         );
+                        if let Some(obj) = enriched.as_object_mut() {
+                            obj.insert(
+                                "offline_deterministic".to_string(),
+                                json!(!pipelines::routine_value_requires_llm(
+                                    &runtime.cfg.data_dir,
+                                    &updated
+                                )),
+                            );
+                        }
                         state.events.publish(
                             "routine_fired",
                             &person.id,
@@ -1180,6 +1301,9 @@ fn start_folder_watch_thread(state: &Arc<AppState>) {
         let mut poll_states: HashMap<String, connectors::FolderWatchPollState> = HashMap::new();
         loop {
             std::thread::sleep(std::time::Duration::from_millis(tick_ms));
+            if shutdown_requested() {
+                break;
+            }
             let Some(st) = weak.upgrade() else {
                 break;
             };
@@ -1231,6 +1355,9 @@ fn start_imap_poll_thread(state: &Arc<AppState>) {
         let mut poll_states: HashMap<String, connectors::ImapPollState> = HashMap::new();
         loop {
             std::thread::sleep(std::time::Duration::from_millis(tick_ms));
+            if shutdown_requested() {
+                break;
+            }
             let Some(st) = weak.upgrade() else {
                 break;
             };
@@ -1271,6 +1398,9 @@ fn start_scheduler_thread(state: &Arc<AppState>) {
     std::thread::spawn(move || {
         loop {
             std::thread::sleep(std::time::Duration::from_millis(tick_ms));
+            if shutdown_requested() {
+                break;
+            }
             let Some(st) = weak.upgrade() else {
                 break;
             };
@@ -1295,6 +1425,8 @@ fn start_scheduler_thread(state: &Arc<AppState>) {
                     let Some(rid) = r["id"].as_str().map(|s| s.to_string()) else {
                         continue;
                     };
+                    // Deterministic zero-LLM `steps_v2` routines run offline without a model key;
+                    // LLM-requiring routines wait until a model is configured instead of spamming errors.
                     if !model_ok && pipelines::routine_value_requires_llm(&rt.cfg.data_dir, &r) {
                         continue;
                     }
@@ -1351,7 +1483,8 @@ fn serve_inner(
         api_key: cfg.api_key.clone(),
         auto_detected,
     }));
-    let scheduler_disabled = scheduler::is_scheduler_disabled_by_env();
+    let scheduler_disabled = tripwire::scheduler_disabled_override(&cfg.data_dir)
+        .unwrap_or_else(scheduler::is_scheduler_disabled_by_env);
     let state = Arc::new(AppState {
         cfg,
         model_cfg,
@@ -1445,29 +1578,38 @@ fn serve_inner(
     struct ConnGuard(Arc<AtomicUsize>);
     impl Drop for ConnGuard {
         fn drop(&mut self) {
-            self.0.fetch_sub(1, Ordering::Relaxed);
+            self.0.fetch_sub(1, Ordering::SeqCst);
         }
     }
     struct PoolInner {
         queue: VecDeque<(std::net::TcpStream, ConnGuard)>,
         idle_workers: usize,
+        starting_workers: usize,
         total_workers: usize,
+        shutting_down: bool,
     }
     let pool = Arc::new((
         Mutex::new(PoolInner {
             queue: VecDeque::with_capacity(64),
             idle_workers: 0,
+            starting_workers: 0,
             total_workers: 0,
+            shutting_down: false,
         }),
         Condvar::new(),
     ));
 
-    for stream in listener.incoming() {
-        match stream {
-            Ok(mut stream) => {
-                let prev = active_conns.fetch_add(1, Ordering::Relaxed);
+    listener.set_nonblocking(true)?;
+
+    while !shutdown_requested() {
+        match listener.accept() {
+            Ok((mut stream, _)) => {
+                // Ensure accepted client sockets use blocking I/O with explicit
+                // per-phase timeouts even on OSes where accept inherits O_NONBLOCK.
+                let _ = stream.set_nonblocking(false);
+                let prev = active_conns.fetch_add(1, Ordering::SeqCst);
                 if prev >= MAX_ACTIVE_CONNS {
-                    active_conns.fetch_sub(1, Ordering::Relaxed);
+                    active_conns.fetch_sub(1, Ordering::SeqCst);
                     let body = r#"{"error":"server busy — too many concurrent connections"}"#;
                     let resp = format!(
                         "HTTP/1.1 503 Service Unavailable\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
@@ -1481,58 +1623,128 @@ fn serve_inner(
                 let (lock, cvar) = &*pool;
                 let mut inner = lock.lock().unwrap_or_else(|p| p.into_inner());
                 inner.queue.push_back((stream, guard));
-                if inner.idle_workers == 0 && inner.total_workers < MAX_ACTIVE_CONNS {
+                if inner.queue.len() > inner.idle_workers + inner.starting_workers
+                    && inner.total_workers < MAX_ACTIVE_CONNS
+                {
                     inner.total_workers += 1;
+                    inner.starting_workers += 1;
                     let pool_w = pool.clone();
                     let state_w = state.clone();
-                    let _ = std::thread::Builder::new()
+                    if std::thread::Builder::new()
                         .name("ergon-http".to_string())
                         .stack_size(2 * 1024 * 1024)
                         .spawn(move || {
-                        struct ExitGuard<'a>(&'a (Mutex<PoolInner>, Condvar));
-                        impl Drop for ExitGuard<'_> {
-                            fn drop(&mut self) {
-                                let (l, _) = self.0;
-                                let mut g = l.lock().unwrap_or_else(|p| p.into_inner());
-                                g.total_workers = g.total_workers.saturating_sub(1);
-                            }
-                        }
-                        let _exit = ExitGuard(&pool_w);
-                        let (l, cv) = &*pool_w;
-                        loop {
-                            let job = {
-                                let mut g = l.lock().unwrap_or_else(|p| p.into_inner());
-                                loop {
-                                    if let Some(item) = g.queue.pop_front() {
-                                        break Some(item);
-                                    }
-                                    g.idle_workers += 1;
-                                    let (next_g, wait_res) = cv
-                                        .wait_timeout(g, std::time::Duration::from_secs(10))
-                                        .unwrap_or_else(|p| p.into_inner());
-                                    g = next_g;
-                                    g.idle_workers = g.idle_workers.saturating_sub(1);
-                                    if g.queue.is_empty()
-                                        && wait_res.timed_out()
-                                        && g.total_workers > WARM_WORKER_FLOOR
-                                    {
-                                        break None;
-                                    }
+                            struct ExitGuard<'a>(&'a (Mutex<PoolInner>, Condvar));
+                            impl Drop for ExitGuard<'_> {
+                                fn drop(&mut self) {
+                                    let (l, _) = self.0;
+                                    let mut g = l.lock().unwrap_or_else(|p| p.into_inner());
+                                    g.total_workers = g.total_workers.saturating_sub(1);
                                 }
-                            };
-                            let Some((conn, conn_guard)) = job else {
-                                break;
-                            };
-                            let _ = handle_connection(conn, &state_w);
-                            drop(conn_guard);
-                        }
-                    });
+                            }
+                            let _exit = ExitGuard(&pool_w);
+                            let (l, cv) = &*pool_w;
+                            let mut first_iter = true;
+                            loop {
+                                let job = {
+                                    let mut g = l.lock().unwrap_or_else(|p| p.into_inner());
+                                    if first_iter {
+                                        g.starting_workers = g.starting_workers.saturating_sub(1);
+                                        first_iter = false;
+                                    }
+                                    loop {
+                                        if let Some(item) = g.queue.pop_front() {
+                                            break Some(item);
+                                        }
+                                        if g.shutting_down {
+                                            break None;
+                                        }
+                                        g.idle_workers += 1;
+                                        let (next_g, wait_res) = cv
+                                            .wait_timeout(g, std::time::Duration::from_secs(10))
+                                            .unwrap_or_else(|p| p.into_inner());
+                                        g = next_g;
+                                        g.idle_workers = g.idle_workers.saturating_sub(1);
+                                        if g.queue.is_empty()
+                                            && (g.shutting_down
+                                                || (wait_res.timed_out()
+                                                    && g.total_workers > WARM_WORKER_FLOOR))
+                                        {
+                                            break None;
+                                        }
+                                    }
+                                };
+                                let Some((conn, conn_guard)) = job else {
+                                    break;
+                                };
+                                let _ = handle_connection(conn, &state_w);
+                                drop(conn_guard);
+                            }
+                        })
+                        .is_err()
+                    {
+                        inner.total_workers = inner.total_workers.saturating_sub(1);
+                        inner.starting_workers = inner.starting_workers.saturating_sub(1);
+                    }
                 }
                 cvar.notify_one();
             }
-            Err(_) => continue,
+            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(_) => {
+                if shutdown_requested() {
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
         }
     }
+
+    // Stop accepting new connections immediately and wake idle SSE / pool threads.
+    drop(listener);
+    state.events.wake_all();
+    {
+        let (lock, cvar) = &*pool;
+        let mut inner = lock.lock().unwrap_or_else(|p| p.into_inner());
+        inner.shutting_down = true;
+        cvar.notify_all();
+    }
+
+    // Drain in-flight HTTP requests, agent runs, and running routines up to the
+    // configured grace window before exiting cleanly with status 0.
+    let grace = std::time::Duration::from_secs(shutdown_grace_secs());
+    let deadline = std::time::Instant::now() + grace;
+    let mut logged_drain = false;
+    loop {
+        let conns = active_conns.load(Ordering::SeqCst);
+        let runs = RUNS_IN_FLIGHT.load(Ordering::SeqCst);
+        let routines = state
+            .running_routines
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .len();
+        if conns == 0 && runs == 0 && routines == 0 {
+            break;
+        }
+        if !logged_drain {
+            eprintln!(
+                "ergon: shutdown requested, draining {conns} active connection(s), {runs} in-flight run(s), {routines} routine(s) (grace {}s)...",
+                grace.as_secs()
+            );
+            logged_drain = true;
+        }
+        if std::time::Instant::now() >= deadline {
+            eprintln!(
+                "ergon: shutdown grace window ({}s) elapsed with {conns} active connection(s), {runs} in-flight run(s), {routines} routine(s); exiting",
+                grace.as_secs()
+            );
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(25));
+    }
+
     Ok(())
 }
 
@@ -1609,13 +1821,14 @@ impl SockStream for &mut std::net::TcpStream {
 #[cfg(test)]
 pub(crate) fn read_request(stream: &mut std::net::TcpStream) -> Option<Request> {
     let mut reader = BufReader::with_capacity(2048, stream);
-    read_request_from(&mut reader, std::time::Duration::from_secs(30))
+    read_request_from(&mut reader, std::time::Duration::from_secs(30), false)
 }
 
 #[inline]
 fn read_request_from<S: SockStream>(
     reader: &mut BufReader<S>,
     initial_timeout: std::time::Duration,
+    idle_keep_alive: bool,
 ) -> Option<Request> {
     let deadline = std::cell::Cell::new(std::time::Instant::now() + initial_timeout);
     let arm = |s: &S| -> Option<()> {
@@ -1624,12 +1837,53 @@ fn read_request_from<S: SockStream>(
         Some(())
     };
     let mut line_buf = Vec::with_capacity(256);
-    arm(reader.get_ref())?;
-    let n_req = match head_line_into(reader, MAX_HEAD_BYTES, &mut line_buf) {
-        Ok(Some(0)) => return None,
-        Ok(Some(n)) => n,
-        Ok(None) => return refuse_head(reader),
-        Err(_) => return None,
+    let n_req = loop {
+        if idle_keep_alive && line_buf.is_empty() && shutdown_requested() {
+            return None;
+        }
+        let remain = deadline.get().checked_duration_since(std::time::Instant::now())?;
+        let slice = if idle_keep_alive && line_buf.is_empty() {
+            remain.min(std::time::Duration::from_millis(100))
+        } else {
+            remain
+        };
+        reader.get_ref().set_rt(slice).ok()?;
+        let room = MAX_HEAD_BYTES.saturating_sub(line_buf.len());
+        let before = line_buf.len();
+        match (&mut *reader)
+            .take(room as u64 + 1)
+            .read_until(b'\n', &mut line_buf)
+        {
+            Ok(0) => return None,
+            Ok(_) => {
+                if line_buf.len() > MAX_HEAD_BYTES {
+                    return refuse_head(reader);
+                }
+                if line_buf.ends_with(b"\n") {
+                    break line_buf.len();
+                }
+                if line_buf.len() >= MAX_HEAD_BYTES {
+                    return refuse_head(reader);
+                }
+                return None;
+            }
+            Err(e)
+                if matches!(
+                    e.kind(),
+                    std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+                ) =>
+            {
+                if line_buf.len() > before {
+                    deadline.set(std::time::Instant::now() + std::time::Duration::from_secs(30));
+                    continue;
+                }
+                if idle_keep_alive && line_buf.is_empty() {
+                    continue;
+                }
+                return None;
+            }
+            Err(_) => return None,
+        }
     };
     // Once request-line bytes arrived, give the remaining head up to 30s total.
     deadline.set(std::time::Instant::now() + std::time::Duration::from_secs(30));
@@ -1968,6 +2222,18 @@ fn respond_bytes(
     body: &[u8],
     extra_headers: &[(&str, String)],
 ) -> std::io::Result<()> {
+    respond_bytes_with_head(stream, status, content_type, body, extra_headers, false)
+}
+
+#[inline]
+fn respond_bytes_with_head(
+    stream: &mut std::net::TcpStream,
+    status: u16,
+    content_type: &str,
+    body: &[u8],
+    extra_headers: &[(&str, String)],
+    head_only: bool,
+) -> std::io::Result<()> {
     use std::fmt::Write as _;
     let reason = match status {
         200 => "OK",
@@ -1987,7 +2253,7 @@ fn respond_bytes(
         _ => "OK",
     };
     let body_len = if status == 304 { 0 } else { body.len() };
-    let keep_open = KEEP_ALIVE_CONN.get() && status < 400;
+    let keep_open = KEEP_ALIVE_CONN.get() && status < 400 && !shutdown_requested();
     if !keep_open {
         KEEP_ALIVE_CONN.set(false);
     }
@@ -2025,7 +2291,7 @@ fn respond_bytes(
         }
     }
     head.push_str("\r\n");
-    if status != 304 && !body.is_empty() {
+    if status != 304 && !head_only && !body.is_empty() {
         let mut bufs = [std::io::IoSlice::new(head.as_bytes()), std::io::IoSlice::new(body)];
         let mut slice_ref: &mut [std::io::IoSlice<'_>] = &mut bufs;
         while !slice_ref.is_empty() {
@@ -2465,14 +2731,22 @@ fn serve_page(
             format!("ergon_role={}; Path=/; SameSite=Strict", tripwire::ROLE_COOKIE_VALUE),
         ));
     }
+    let head_only = req.method == "HEAD";
     if etag_matches(req.if_none_match.as_deref(), etag) {
-        return respond_bytes(stream, 304, "text/html; charset=utf-8", &[], &headers);
+        return respond_bytes_with_head(stream, 304, "text/html; charset=utf-8", &[], &headers, true);
     }
     if wants_gzip {
         headers.push(("Content-Encoding", "gzip".to_string()));
-        respond_bytes(stream, 200, "text/html; charset=utf-8", &bundle.gzip, &headers)
+        respond_bytes_with_head(stream, 200, "text/html; charset=utf-8", &bundle.gzip, &headers, head_only)
     } else {
-        respond_bytes(stream, 200, "text/html; charset=utf-8", bundle.html.as_bytes(), &headers)
+        respond_bytes_with_head(
+            stream,
+            200,
+            "text/html; charset=utf-8",
+            bundle.html.as_bytes(),
+            &headers,
+            head_only,
+        )
     }
 }
 
@@ -2555,7 +2829,7 @@ fn handle_connection(stream: std::net::TcpStream, state: &Arc<AppState>) -> std:
         } else {
             std::time::Duration::from_secs(2)
         };
-        let req = match read_request_from(&mut reader, initial_wait) {
+        let req = match read_request_from(&mut reader, initial_wait, req_idx > 0) {
             Some(r) => r,
             None => break,
         };
@@ -2618,7 +2892,7 @@ fn handle_connection(stream: std::net::TcpStream, state: &Arc<AppState>) -> std:
             return respond_err(reader.get_mut(), status, message);
         }
         let is_sse = req.path == "/api/runs/stream";
-        KEEP_ALIVE_CONN.set(req.keep_alive && !is_sse);
+        KEEP_ALIVE_CONN.set(req.keep_alive && !is_sse && !shutdown_requested());
         // The person this request acts for (session-pinned when the caller
         // has a session cookie, else the global active person).
         let person = effective_person(state, &req.session);
@@ -2642,7 +2916,7 @@ fn handle_connection(stream: std::net::TcpStream, state: &Arc<AppState>) -> std:
                 respond_err(stream, 404, "not found")
             }
         };
-        let continue_loop = KEEP_ALIVE_CONN.get() && !is_sse && res.is_ok();
+        let continue_loop = KEEP_ALIVE_CONN.get() && !is_sse && res.is_ok() && !shutdown_requested();
         KEEP_ALIVE_CONN.set(false);
         res?;
         if !continue_loop {
@@ -2663,7 +2937,7 @@ fn try_route_system(
     let root_cfg = &state.cfg;
     let _ = root_cfg;
     Some(match (req.method.as_str(), req.path.as_str()) {
-        ("GET", "/") => serve_page(stream, state, req, person, ui::index_html()),
+        ("GET" | "HEAD", "/") => serve_page(stream, state, req, person, ui::index_html()),
         ("GET", path) if path.starts_with("/chunks/") => serve_chunk(stream, req, path),
         ("GET", "/api/version") => {
             respond_bytes(stream, 200, "application/json", VERSION_JSON_BYTES, &[])
@@ -3004,7 +3278,7 @@ fn try_route_system(
                 Err(e) => respond_err(stream, 400, &e),
             }
         }
-        ("GET", "/phone") => serve_page(stream, state, req, person, ui::index_html()),
+        ("GET" | "HEAD", "/phone") => serve_page(stream, state, req, person, ui::index_html()),
         ("GET", "/api/library") => {
             let lib = state.library.lock().unwrap();
             respond_json(
@@ -4809,7 +5083,7 @@ fn try_route_files_and_audit(
             respond_json(stream, 200, &report.to_json())
         }
         ("GET", "/api/files") => {
-            let (offset, limit, q, client_id, engagement_id) = if req.query.is_empty() {
+            let (offset, limit, q, mut client_id, mut engagement_id) = if req.query.is_empty() {
                 (0usize, None, String::new(), None, None)
             } else {
                 (
@@ -4826,6 +5100,17 @@ fn try_route_files_and_audit(
                         .filter(|s| !s.is_empty()),
                 )
             };
+            if client_id.is_none() && engagement_id.is_none() {
+                let policy = crate::load_workspace_policy(&runtime.cfg.data_dir);
+                if policy.isolate_active_engagement {
+                    if let Some((eng, _)) =
+                        records::active_engagement_for(&state.cfg.data_dir, &person.id)
+                    {
+                        engagement_id = Some(eng.id);
+                        client_id = Some(eng.client_id);
+                    }
+                }
+            }
             let idx = person_idx(state, person, runtime);
             respond_json_with(stream, 200, |buf| {
                 idx.write_files_json_scoped(
@@ -5732,7 +6017,14 @@ fn try_route_knowledge_and_routines(
                 Ok(Some(routine)) => {
                     let now_ms = records::now_millis();
                     let hist = scheduler::list_run_history(&runtime.cfg.data_dir, Some(&id), 20);
-                    let mut enriched = scheduler::enrich_routine_json(&routine, now_ms, &hist);
+                    let idx = person_idx(state, person, runtime);
+                    let mut enriched = scheduler::enrich_routine_with_verification(
+                        &routine,
+                        now_ms,
+                        &hist,
+                        &idx.chain,
+                        idx.chain_valid,
+                    );
                     if let Some(obj) = enriched.as_object_mut() {
                         obj.insert(
                             "offline_deterministic".to_string(),
@@ -7542,8 +7834,12 @@ fn try_route_runs_and_chat(
                 list.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.cmp(&b.1)));
                 list.into_iter().map(|(_, rid, tid)| (rid, tid)).collect()
             };
-            let running_pipes = pipelines::list_runs(&runtime.cfg.data_dir, Some("running"), 50);
-            let matching_pipes: Vec<(String, String)> = running_pipes
+            let mut candidate_pipes = pipelines::list_runs(&runtime.cfg.data_dir, Some("running"), 50);
+            if id != "active" && !id.is_empty() {
+                candidate_pipes.extend(pipelines::list_runs(&runtime.cfg.data_dir, Some("paused_checkpoint"), 50));
+                candidate_pipes.extend(pipelines::list_runs(&runtime.cfg.data_dir, Some("interrupted"), 50));
+            }
+            let matching_pipes: Vec<(String, String)> = candidate_pipes
                 .into_iter()
                 .filter(|pr| {
                     id == "active"
@@ -7824,4 +8120,83 @@ fn try_route_runs_and_chat(
         }
         _ => return None,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashSet;
+
+    #[test]
+    fn new_session_id_uses_csprng_with_32_hex_high_entropy_and_uniqueness() {
+        let mut full_ids = HashSet::new();
+        let mut random_hexes = HashSet::new();
+        let mut nibble_counts = [0usize; 16];
+        let mut prev_counter: Option<u64> = None;
+
+        for _ in 0..256 {
+            let sid = new_session_id();
+            assert!(
+                sid.starts_with('s'),
+                "session id must start with 's': {sid}"
+            );
+            let rest = &sid[1..];
+            let (hex, suffix) = rest
+                .split_once('-')
+                .unwrap_or_else(|| panic!("session id missing counter separator: {sid}"));
+            assert_eq!(
+                hex.len(),
+                32,
+                "session id random payload must be 32 hex chars (128-bit CSPRNG): {sid}"
+            );
+            assert!(
+                hex.bytes()
+                    .all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')),
+                "session id payload must be lowercase hex: {sid}"
+            );
+            let counter: u64 = suffix
+                .parse()
+                .unwrap_or_else(|e| panic!("invalid counter suffix in {sid}: {e}"));
+            if let Some(prev) = prev_counter {
+                assert!(counter > prev, "counter must strictly increase");
+            }
+            prev_counter = Some(counter);
+
+            assert!(
+                random_hexes.insert(hex.to_string()),
+                "duplicate 128-bit random payload generated"
+            );
+            for b in hex.bytes() {
+                let idx = match b {
+                    b'0'..=b'9' => (b - b'0') as usize,
+                    b'a'..=b'f' => (b - b'a' + 10) as usize,
+                    _ => unreachable!(),
+                };
+                nibble_counts[idx] += 1;
+            }
+            assert!(full_ids.insert(sid), "duplicate session id generated");
+        }
+
+        // Across 256 * 32 = 8192 nibbles, all 16 hex digits should appear generously.
+        for (digit, count) in nibble_counts.iter().enumerate() {
+            assert!(
+                *count >= 250,
+                "suspiciously low entropy for hex digit {digit:x}: count={count}"
+            );
+        }
+    }
+
+    #[test]
+    fn shutdown_grace_secs_parses_bounds_and_defaults() {
+        assert_eq!(parse_shutdown_grace_secs(None), DEFAULT_SHUTDOWN_GRACE_SECS);
+        assert_eq!(parse_shutdown_grace_secs(Some("")), DEFAULT_SHUTDOWN_GRACE_SECS);
+        assert_eq!(
+            parse_shutdown_grace_secs(Some("not-a-num")),
+            DEFAULT_SHUTDOWN_GRACE_SECS
+        );
+        assert_eq!(parse_shutdown_grace_secs(Some("0")), 0);
+        assert_eq!(parse_shutdown_grace_secs(Some("15")), 15);
+        assert_eq!(parse_shutdown_grace_secs(Some(" 25 ")), 25);
+        assert_eq!(parse_shutdown_grace_secs(Some("9999")), MAX_SHUTDOWN_GRACE_SECS);
+    }
 }

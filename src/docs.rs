@@ -21,6 +21,7 @@
 //! its own thread behind `catch_unwind` and a timeout: a malformed PDF can
 //! fail its own read, never the server.
 
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
@@ -1057,14 +1058,45 @@ pub fn xlsx_sheets(bytes: &[u8]) -> Result<Vec<Sheet>, String> {
     Ok(sheets)
 }
 
+fn is_plain_negative_decimal(s: &str) -> bool {
+    let Some(rest) = s.strip_prefix('-') else {
+        return false;
+    };
+    !rest.is_empty()
+        && rest.bytes().all(|b| b.is_ascii_digit() || b == b'.')
+        && rest.bytes().filter(|&b| b == b'.').count() <= 1
+        && rest.bytes().any(|b| b.is_ascii_digit())
+}
+
+/// Neutralize CSV/spreadsheet formula-injection prefixes (`=`, `+`, `-`, `@`,
+/// leading `\t`/`\r`, or leading whitespace followed by `=`, `+`, `-`, `@`)
+/// while preserving plain negative numbers such as `-25.00`.
+pub fn escape_formula_cell(raw: &str) -> Cow<'_, str> {
+    if raw.is_empty() {
+        return Cow::Borrowed(raw);
+    }
+    let trimmed = raw.trim();
+    if is_plain_negative_decimal(trimmed) {
+        return Cow::Borrowed(raw);
+    }
+    let starts_ctrl = raw.starts_with('\t') || raw.starts_with('\r');
+    let trimmed_start = raw.trim_start_matches([' ', '\t', '\r', '\n']);
+    if starts_ctrl || trimmed_start.starts_with(['=', '+', '-', '@']) {
+        Cow::Owned(format!("'{raw}"))
+    } else {
+        Cow::Borrowed(raw)
+    }
+}
+
 pub fn csv_line(cells: &[String]) -> String {
     cells
         .iter()
         .map(|c| {
-            if c.contains([',', '"', '\n', '\r']) {
-                format!("\"{}\"", c.replace('"', "\"\""))
+            let safe = escape_formula_cell(c);
+            if safe.contains([',', '"', '\n', '\r']) {
+                format!("\"{}\"", safe.replace('"', "\"\""))
             } else {
-                c.clone()
+                safe.into_owned()
             }
         })
         .collect::<Vec<_>>()
@@ -1979,8 +2011,9 @@ pub fn sheets_to_xlsx(sheets: &[ExportSheet], title: &str) -> Vec<u8> {
                 }
                 let col_n = &col_names[ci];
                 if ri == 0 {
+                    let safe_hdr = escape_formula_cell(cell);
                     let _ = write!(data, r#"<c r="{col_n}{row_num}" t="inlineStr" s="1"><is><t xml:space="preserve">"#);
-                    push_xml_escaped(&mut data, cell);
+                    push_xml_escaped(&mut data, &safe_hdr);
                     data.push_str("</t></is></c>");
                     continue;
                 }
@@ -2003,9 +2036,10 @@ pub fn sheets_to_xlsx(sheets: &[ExportSheet], title: &str) -> Vec<u8> {
                         let _ = write!(data, r#"<c r="{col_n}{row_num}" s="{s}"><v>{v}</v></c>"#);
                     }
                     CellValue::Text(t) => {
+                        let safe_t = escape_formula_cell(&t);
                         col_aggs[ci].has_text = true;
                         let _ = write!(data, r#"<c r="{col_n}{row_num}" t="inlineStr"><is><t xml:space="preserve">"#);
-                        push_xml_escaped(&mut data, &t);
+                        push_xml_escaped(&mut data, &safe_t);
                         data.push_str("</t></is></c>");
                     }
                 }
@@ -2537,6 +2571,10 @@ impl PdfCanvas {
     }
 
     fn draw_table(&mut self, rows: &[Vec<String>], aligns: &[&str]) {
+        self.draw_table_inner(rows, aligns, true);
+    }
+
+    fn draw_table_inner(&mut self, rows: &[Vec<String>], aligns: &[&str], parse_markdown: bool) {
         if rows.is_empty() || self.page_limit_hit {
             return;
         }
@@ -2570,12 +2608,20 @@ impl PdfCanvas {
             *w *= scale;
         }
 
+        let cell_spans = |cell_txt: &str, base_font: PdfFont| -> Vec<PdfSpan> {
+            if parse_markdown {
+                parse_md_inline_spans(cell_txt, base_font)
+            } else {
+                vec![PdfSpan { text: cell_txt.to_string(), font: base_font }]
+            }
+        };
+
         let measure_row = |ri: usize, row: &[String]| -> f64 {
             let base_font = if ri == 0 { PdfFont::Bold } else { PdfFont::Regular };
             let max_lines = (0..ncols)
                 .map(|ci| {
                     let cell_txt = row.get(ci).map(String::as_str).unwrap_or("");
-                    let spans = parse_md_inline_spans(cell_txt, base_font);
+                    let spans = cell_spans(cell_txt, base_font);
                     wrap_spans(&spans, font_sz, (col_ws[ci] - 2.0 * pad_x).max(16.0))
                         .len()
                         .min(MAX_CELL_LINES)
@@ -2602,7 +2648,7 @@ impl PdfCanvas {
             let mut cx = Self::MARGIN_L;
             for (ci, &cw) in col_ws.iter().enumerate() {
                 let cell_txt = row.get(ci).map(String::as_str).unwrap_or("");
-                let spans = parse_md_inline_spans(cell_txt, base_font);
+                let spans = cell_spans(cell_txt, base_font);
                 let mut lines = wrap_spans(&spans, font_sz, (cw - 2.0 * pad_x).max(16.0));
                 if lines.len() > MAX_CELL_LINES {
                     lines.truncate(MAX_CELL_LINES);
@@ -3021,6 +3067,119 @@ pub fn markdown_to_pdf(md: &str, title: &str, brand_header: Option<&str>) -> Vec
     flush_para(&mut c, &mut para_buf);
 
     let page_streams = c.finish(title, brand_header);
+    build_pdf_14(&page_streams, title)
+}
+
+fn looks_numeric_table_cell(raw: &str) -> bool {
+    let mut s = raw.trim();
+    if s.is_empty() {
+        return true;
+    }
+    if s.starts_with('(') && s.ends_with(')') && s.len() >= 2 {
+        s = &s[1..s.len() - 1].trim();
+    }
+    s = s.trim_start_matches(['+', '-']);
+    s = s.trim_start_matches(['$', '€', '£']);
+    s = s.trim_end_matches('%');
+    let mut dots = 0usize;
+    let mut digits = 0usize;
+    for ch in s.chars() {
+        if ch.is_ascii_digit() {
+            digits += 1;
+        } else if ch == '.' {
+            dots += 1;
+            if dots > 1 {
+                return false;
+            }
+        } else if ch == ',' {
+            continue;
+        } else {
+            return false;
+        }
+    }
+    digits > 0
+}
+
+/// Render tabular rows (first row = header, subsequent rows = data) into a
+/// clean multi-page pure-Rust PDF 1.4 table with right-aligned numeric columns,
+/// repeating headers across page breaks, and running page headers/footers.
+pub fn rows_to_pdf(rows: &[Vec<String>], title: &str, brand_header: Option<&str>) -> Vec<u8> {
+    const MAX_TABLE_PDF_ROWS: usize = 20_000;
+    let mut c = PdfCanvas::new();
+    let heading = title.trim();
+    if !heading.is_empty() {
+        let spans = vec![PdfSpan { text: heading.to_string(), font: PdfFont::Bold }];
+        let wrapped = wrap_spans(&spans, 19.0, PdfCanvas::CONTENT_W);
+        for wl in &wrapped {
+            if !c.ensure_space(25.0) {
+                break;
+            }
+            c.draw_line_spans(PdfCanvas::MARGIN_L, c.y, wl, 19.0, (0.08, 0.10, 0.14));
+            c.y -= 24.0;
+        }
+        c.draw_stroke_line(
+            PdfCanvas::MARGIN_L,
+            c.y + 8.0,
+            PdfCanvas::MARGIN_L + PdfCanvas::CONTENT_W,
+            c.y + 8.0,
+            0.8,
+            (0.75, 0.78, 0.84),
+        );
+        c.y -= 8.0;
+    }
+
+    if !rows.is_empty() {
+        let total_cols = rows.iter().map(|r| r.len()).max().unwrap_or(1);
+        let ncols = total_cols.clamp(1, 24);
+        let data_rows = rows.len().saturating_sub(1);
+        let mut meta = format!(
+            "{} data {} · {} {}",
+            data_rows,
+            if data_rows == 1 { "row" } else { "rows" },
+            total_cols,
+            if total_cols == 1 { "column" } else { "columns" }
+        );
+        if total_cols > 24 {
+            meta.push_str(" (showing first 24 columns)");
+        }
+        if rows.len() > MAX_TABLE_PDF_ROWS {
+            meta.push_str(&format!(" (showing first {} rows)", MAX_TABLE_PDF_ROWS - 1));
+        }
+        if c.ensure_space(16.0) {
+            c.draw_plain_text(PdfCanvas::MARGIN_L, c.y, &meta, PdfFont::Regular, 9.0, (0.42, 0.45, 0.52));
+            c.y -= 16.0;
+        }
+
+        let mut aligns: Vec<&str> = Vec::with_capacity(ncols);
+        for ci in 0..ncols {
+            let mut saw_non_empty = false;
+            let mut all_num = true;
+            for r in rows.iter().skip(1).take(500) {
+                let val = r.get(ci).map(String::as_str).unwrap_or("").trim();
+                if !val.is_empty() {
+                    saw_non_empty = true;
+                    if !looks_numeric_table_cell(val) {
+                        all_num = false;
+                        break;
+                    }
+                }
+            }
+            aligns.push(if saw_non_empty && all_num { "right" } else { "left" });
+        }
+
+        let capped = if rows.len() > MAX_TABLE_PDF_ROWS {
+            &rows[..MAX_TABLE_PDF_ROWS]
+        } else {
+            rows
+        };
+        c.draw_table_inner(capped, &aligns, false);
+    }
+
+    let page_streams = c.finish(title, brand_header);
+    build_pdf_14(&page_streams, title)
+}
+
+fn build_pdf_14(page_streams: &[Vec<u8>], title: &str) -> Vec<u8> {
     let n_pages = page_streams.len();
     let first_page_content_id = 8usize;
     let total_objs = 7 + n_pages * 2;

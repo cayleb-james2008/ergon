@@ -15,6 +15,13 @@ import { extractCitations } from "@/lib/words";
 import { buildAuditBundle } from "@/lib/auditBundle";
 import { computeLineDiff } from "@/lib/diff";
 import {
+  computeBillableValueUsd,
+  computeMinutesSaved,
+  resolveEffectiveHourlyRate,
+  round2,
+  round4,
+} from "@/lib/meteringFormula";
+import {
   engagementWorkspacePrefix,
   estimateNextRunMs,
   getPendingCheckpoints,
@@ -266,17 +273,14 @@ function computeUsageCostUsd(
   return Math.round(cost * 1_000_000) / 1_000_000;
 }
 
-function estimateMinutesSaved(promptOrSkill: string, stepCount: number): number {
-  const s = promptOrSkill.toLowerCase();
-  if (/reconcil|ledger|invoice|expense/.test(s)) return 28;
-  if (/audit|contract|clause/.test(s)) return 35;
-  if (/clean_dataset|dedup|normaliz/.test(s)) return 24;
-  if (/extract_table|spreadsheet/.test(s)) return 20;
-  if (/compare|diff/.test(s)) return 22;
-  if (/summar|meeting|triage|inbox/.test(s)) return 18;
-  if (/brief|research|draft/.test(s)) return 25;
-  return Math.max(10, Math.min(40, 8 + stepCount * 4));
-}
+// Parity note: minutes saved & billable value use `computeMinutesSaved` and
+// `computeBillableValueUsd` from `@/lib/meteringFormula` (exact mirror of
+// `src/records.rs:2143-2179` with `$0/hr` unassigned fallback).
+export {
+  computeBillableValueUsd,
+  computeMinutesSaved,
+  resolveEffectiveHourlyRate,
+};
 
 function ensureClientsAndPricing(state: RootState, now = Date.now()) {
   if (!Array.isArray(state.clients) || state.clients.length === 0) {
@@ -520,7 +524,7 @@ function runCsvReconciliation(
   if (rows.length < 2) {
     return {
       reconciledCsv: csvText,
-      reportMd: `# Reconciliation Report — ${sourcePath}\n\nNo data rows were found in \`${sourcePath}\`.\n`,
+      reportMd: `# Reconciliation Report: ${sourcePath}\n\nNo data rows were found in \`${sourcePath}\`.\n`,
       rowCount: 0,
       grandTotal: 0,
       missingCount: 0,
@@ -607,7 +611,7 @@ function runCsvReconciliation(
   const avg = data.length ? grandTotal / data.length : 0;
 
   const mdLines: string[] = [
-    `# Expense Reconciliation — ${sourcePath}`,
+    `# Expense Reconciliation: ${sourcePath}`,
     "",
     "## Executive Summary",
     `- Source file: \`${sourcePath}\``,
@@ -693,7 +697,7 @@ function runDocumentSummary(sources: WebFile[], prompt: string, rules: string[])
     ...(blockers.length ? blockers.slice(0, 8).map((b) => `- ${b}`) : ["- No open blockers identified."]),
     "",
     "## Follow-Up Draft",
-    `Team — here is the recap from ${sources.map((s) => s.name).join(", ")}: ${actions.length} action item(s) and ${blockers.length} open blocker(s) are tracked above. Please confirm owner dates by EOD.`,
+    `Team: here is the recap from ${sources.map((s) => s.name).join(", ")} (${actions.length} action item(s) and ${blockers.length} open blocker(s) tracked above). Please confirm owner dates by EOD.`,
   ];
 
   if (highlights.length) {
@@ -733,7 +737,7 @@ function runContractAudit(src: WebFile, rules: string[]) {
       if (isAutoRenewTrap) renewalHits.push(`Auto-renewal clause detected at \`${src.name}:L${hitIdx + 1}\`: ${lines[hitIdx].trim()}`);
     } else {
       missing.push(ck.clause);
-      rows.push(`| ${ck.clause} | **MISSING** | — | ${ck.riskIfMissing} |`);
+      rows.push(`| ${ck.clause} | **MISSING** | none | ${ck.riskIfMissing} |`);
     }
   }
 
@@ -746,7 +750,7 @@ function runContractAudit(src: WebFile, rules: string[]) {
 
   const outName = `${src.name.replace(/\.[^.]+$/, "")}-contract-audit.md`;
   const md = [
-    `# Contract Audit — ${src.path}`,
+    `# Contract Audit: ${src.path}`,
     "",
     "## Audit Summary",
     `- Source file: \`${src.path}\` (${lines.length} lines)`,
@@ -776,9 +780,9 @@ function runInboxTriage(src: WebFile, rules: string[]) {
     const clean = line.replace(/^[-*]\s*/, "");
     const tag = `[${src.name}:L${idx + 1}]`;
     if (/\b(urgent|sev1|p0|outage|down|security|breach|asap|blocked|failed|overdue|escalation|critical)\b/i.test(clean)) {
-      urgent.push(`${clean} ${tag} — Next step: assign owner & respond within 30 min.`);
+      urgent.push(`${clean} ${tag} (Next step: assign owner & respond within 30 min.)`);
     } else if (/\b(please|review|approve|action|due|confirm|send|update|schedule|follow[- ]?up|request|ticket|invoice)\b/i.test(clean)) {
-      action.push(`${clean} ${tag} — Next step: complete in today's work block.`);
+      action.push(`${clean} ${tag} (Next step: complete in today's work block.)`);
     } else {
       fyi.push(`${clean} ${tag}`);
     }
@@ -786,7 +790,7 @@ function runInboxTriage(src: WebFile, rules: string[]) {
 
   const outName = `${src.name.replace(/\.[^.]+$/, "")}-triage.md`;
   const md = [
-    `# Inbox Triage — ${src.path}`,
+    `# Inbox Triage: ${src.path}`,
     "",
     `- Items processed: **${lines.length}** (Urgent: **${urgent.length}**, Action: **${action.length}**, FYI: **${fyi.length}**)`,
     "",
@@ -830,13 +834,13 @@ function runCleanDataset(src: WebFile) {
     }
     const outFile = `${stem}-cleaned.json`;
     const reportFile = `${stem}-clean-report.md`;
-    const reportMd = `# Dataset Clean Metrics — ${src.path}\n\n- Input records: **${arr.length}**\n- Output records: **${cleanArr.length}**\n- Duplicates removed: **${dups}**\n- Empty/null fields flagged: **${nulls}**\n`;
+    const reportMd = `# Dataset Clean Metrics: ${src.path}\n\n- Input records: **${arr.length}**\n- Output records: **${cleanArr.length}**\n- Duplicates removed: **${dups}**\n- Empty/null fields flagged: **${nulls}**\n`;
     return { outFile, outBody: JSON.stringify(cleanArr, null, 2) + "\n", reportFile, reportMd, removedDups: dups, nullCells: nulls, rowCount: cleanArr.length };
   }
 
   const rows = parseCsv(src.content);
   if (rows.length < 2) {
-    return { outFile: `${stem}-cleaned.csv`, outBody: src.content, reportFile: `${stem}-clean-report.md`, reportMd: `# Dataset Clean Metrics — ${src.path}\n\nNo rows to clean.\n`, removedDups: 0, nullCells: 0, rowCount: 0 };
+    return { outFile: `${stem}-cleaned.csv`, outBody: src.content, reportFile: `${stem}-clean-report.md`, reportMd: `# Dataset Clean Metrics: ${src.path}\n\nNo rows to clean.\n`, removedDups: 0, nullCells: 0, rowCount: 0 };
   }
   const header = rows[0].map((h) => h.trim().replace(/\s+/g, "_"));
   const body = rows.slice(1);
@@ -865,7 +869,7 @@ function runCleanDataset(src: WebFile) {
   const outFile = `${stem}-cleaned.csv`;
   const reportFile = `${stem}-clean-report.md`;
   const reportMd = [
-    `# Dataset Clean Metrics — ${src.path}`,
+    `# Dataset Clean Metrics: ${src.path}`,
     "",
     `- Input rows: **${body.length}**`,
     `- Output rows: **${cleaned.length - 1}**`,
@@ -1047,9 +1051,9 @@ function buildInitialState(): RootState {
     "",
     "## Updates",
     "- Decided: Ship Ergon v0.5.0 with 12 built-in workflows and SHA-256 receipts.",
-    "- Owner: Maya Chen — finalize Q3 vendor reconciliation before Friday close.",
-    "- [ ] Owner: Tomas Ruiz — chase missing $240.00 CloudHost Backup receipt by Thursday.",
-    "- [ ] Owner: Priya Raman — publish dark-mode accessibility checklist for Settings.",
+    "- Owner: Maya Chen: finalize Q3 vendor reconciliation before Friday close.",
+    "- [ ] Owner: Tomas Ruiz: chase missing $240.00 CloudHost Backup receipt by Thursday.",
+    "- [ ] Owner: Priya Raman: publish dark-mode accessibility checklist for Settings.",
     "- Blocker: Q2 archived vendor draft (old-vendor-draft.txt) still sitting in active workspace.",
   ].join("\n") + "\n";
 
@@ -1065,14 +1069,14 @@ function buildInitialState(): RootState {
 
   const supportInbox = [
     "# Operations Inbox Feed",
-    "- URGENT: Payment webhook returned 502 error on billing-eu — customer invoices delayed.",
+    "- URGENT: Payment webhook returned 502 error on billing-eu (customer invoices delayed).",
     "- Action: Please approve Q4 Freight renewal quote from Northstar Logistics by Friday.",
     "- Action: Review draft contract clauses before legal sign-off.",
     "- FYI: Quarterly office badge audit completed with zero findings.",
   ].join("\n") + "\n";
 
   const oldDraft = [
-    "SUPERSEDED Q2 VENDOR DRAFT — DO NOT USE FOR FILING",
+    "SUPERSEDED Q2 VENDOR DRAFT: DO NOT USE FOR FILING",
     "Replaced by expenses-q3.csv on 2026-11-01.",
   ].join("\n") + "\n";
 
@@ -1081,6 +1085,8 @@ function buildInitialState(): RootState {
     "Format expense reconciliations with normalized totals and receipt status flags.",
   ];
   const recon = runCsvReconciliation("expenses-q3.csv", expensesCsv, initialRules);
+  const seededMinsSaved = computeMinutesSaved(true, false, 3, 1, 480);
+  const seededBillableUsd = computeBillableValueUsd(seededMinsSaved, 220);
   const t1 = `t${now - 24 * 60_000}-1`;
   const t2 = `t${now - 90 * 60_000}-2`;
 
@@ -1228,8 +1234,8 @@ function buildInitialState(): RootState {
           total_tokens: 1900,
           cost_usd: 0.000477,
           latency_ms: 340,
-          estimated_minutes_saved: 28,
-          billable_value_usd: 102.67,
+          estimated_minutes_saved: seededMinsSaved,
+          billable_value_usd: seededBillableUsd,
           engagement_id: "eng-northstar-q4",
         },
       },
@@ -1262,8 +1268,8 @@ function buildInitialState(): RootState {
           total_tokens: 1900,
           cost_usd: 0.000477,
           latency_ms: 340,
-          estimated_minutes_saved: 28,
-          billable_value_usd: 102.67,
+          estimated_minutes_saved: seededMinsSaved,
+          billable_value_usd: seededBillableUsd,
           engagement_id: "eng-northstar-q4",
         },
       },
@@ -1711,14 +1717,8 @@ export async function installBrowserEngine(): Promise<void> {
   }
 
   function effectiveHourlyRate(pid: string, engagement: Engagement | null, client: Client | null): number {
-    if (engagement && typeof engagement.hourly_rate_usd === "number" && engagement.hourly_rate_usd > 0) {
-      return engagement.hourly_rate_usd;
-    }
-    if (client && typeof client.default_rate_usd === "number" && client.default_rate_usd > 0) {
-      return client.default_rate_usd;
-    }
     void pid;
-    return 150;
+    return resolveEffectiveHourlyRate(engagement, client);
   }
 
   function engagementSpentUsd(engagementId: string): number {
@@ -1868,8 +1868,8 @@ export async function installBrowserEngine(): Promise<void> {
       engRow.runs += 1;
       engRow.total_tokens += tt;
       engRow.cost_usd = Math.round((engRow.cost_usd + cost) * 1_000_000) / 1_000_000;
-      engRow.minutes_saved += mins;
-      engRow.billable_value_usd = Math.round((engRow.billable_value_usd + bill) * 100) / 100;
+      engRow.minutes_saved = round2(engRow.minutes_saved + mins);
+      engRow.billable_value_usd = round4(engRow.billable_value_usd + bill);
       if (engRow.retainer_budget_usd && engRow.retainer_budget_usd > 0) {
         engRow.retainer_burn_pct = Math.round((engRow.cost_usd / engRow.retainer_budget_usd) * 10000) / 100;
       }
@@ -1903,8 +1903,8 @@ export async function installBrowserEngine(): Promise<void> {
       dayRow.runs += 1;
       dayRow.total_tokens += tt;
       dayRow.cost_usd = Math.round((dayRow.cost_usd + cost) * 1_000_000) / 1_000_000;
-      dayRow.minutes_saved += mins;
-      dayRow.billable_value_usd = Math.round((dayRow.billable_value_usd + bill) * 100) / 100;
+      dayRow.minutes_saved = round2(dayRow.minutes_saved + mins);
+      dayRow.billable_value_usd = round4(dayRow.billable_value_usd + bill);
       byDayMap.set(day, dayRow);
     }
 
@@ -1924,8 +1924,8 @@ export async function installBrowserEngine(): Promise<void> {
         cached_tokens: cachedTokens,
         total_tokens: totalTokens,
         cost_usd: Math.round(costUsd * 1_000_000) / 1_000_000,
-        minutes_saved: Math.round(minutesSaved),
-        billable_value_usd: Math.round(billableValueUsd * 100) / 100,
+        minutes_saved: round2(minutesSaved),
+        billable_value_usd: round4(billableValueUsd),
         retainer_burn_pct: burnPct,
         retainer_budget_usd: retainerBudget,
         net_roi_usd: netRoi,
@@ -2702,9 +2702,6 @@ export async function installBrowserEngine(): Promise<void> {
           content: `Note: ${outcome.parkedFile} has NOT been deleted yet; the deletion is waiting for your approval in Decisions.`,
         });
       }
-      const stepCount = th.messages.filter((m) => m.role === "step").length;
-      const minsSaved = estimateMinutesSaved(prompt, stepCount);
-      const billableVal = Math.round((minsSaved / 60) * hourlyRate * 100) / 100;
       const rawU =
         "rawUsage" in outcome && outcome.rawUsage
           ? (outcome.rawUsage as {
@@ -2719,6 +2716,11 @@ export async function installBrowserEngine(): Promise<void> {
       const finalCompletion = rawU ? rawU.completion_tokens : stepCompletionAcc + Math.max(60, Math.round(outcome.summary.length / 4));
       const finalCached = rawU ? rawU.cached_tokens : Math.round(finalPrompt * 0.22);
       const finalModel = rawU ? rawU.model_id : modelId;
+      const stepCount = th.messages.filter((m) => m.role === "step").length;
+      const filesWritten = outcome.written.length;
+      const answeredOnly = stepCount === 0 && filesWritten === 0;
+      const minsSaved = computeMinutesSaved(true, answeredOnly, stepCount, filesWritten, finalCompletion);
+      const billableVal = computeBillableValueUsd(minsSaved, hourlyRate);
       const runUsage: RunUsage = {
         model_id: finalModel,
         prompt_tokens: finalPrompt,
@@ -3520,7 +3522,13 @@ export async function installBrowserEngine(): Promise<void> {
     if (spec.kind === "skill") {
       const resolvedArgs: Record<string, string> = {};
       for (const [k, v] of Object.entries(spec.args ?? {})) {
-        resolvedArgs[k] = resolvePipelineTemplate(String(v ?? ""), inputs, run.step_states, extraVars);
+        if (typeof v === "string") {
+          resolvedArgs[k] = resolvePipelineTemplate(v, inputs, run.step_states, extraVars);
+        } else if (v !== undefined && v !== null) {
+          resolvedArgs[k] = JSON.stringify(resolvePipelineValue(v, inputs, run.step_states, extraVars));
+        } else {
+          resolvedArgs[k] = "";
+        }
       }
       const res = runPipelineSkillStep(st, spec.skill_id || "draft_brief", resolvedArgs);
       const bytesTotal = res.files.reduce((acc, f) => acc + (st.files[f]?.size ?? 0), 0);
@@ -3790,7 +3798,9 @@ export async function installBrowserEngine(): Promise<void> {
         const pTok = Math.max(120, Math.round(((spec.label || "").length + (stState.output || "").length) / 3) + 180);
         const cTok = Math.max(40, Math.round((stState.output || "").length / 4) + 35);
         const cachedTok = Math.round(pTok * 0.2);
-        const stepMins = spec.kind === "skill" ? estimateMinutesSaved(spec.skill_id || spec.label || "", 1) : 10;
+        const stepFilesWritten = Array.isArray(stState.files) ? stState.files.length : 0;
+        const isDeterministicStep = spec.kind === "skill" || spec.kind === "export" || spec.kind === "deliver";
+        const stepMins = computeMinutesSaved(true, false, 1, stepFilesWritten, isDeterministicStep ? 0 : cTok);
         const stepUsage: RunUsage = {
           model_id: stepModelId,
           prompt_tokens: pTok,
@@ -3800,7 +3810,7 @@ export async function installBrowserEngine(): Promise<void> {
           cost_usd: computeUsageCostUsd(pricingMap, stepModelId, pTok, cTok, cachedTok),
           latency_ms: stState.finished_ms && stState.started_ms ? Math.max(1, stState.finished_ms - stState.started_ms) : 1,
           estimated_minutes_saved: stepMins,
-          billable_value_usd: Math.round((stepMins / 60) * pRate * 100) / 100,
+          billable_value_usd: computeBillableValueUsd(stepMins, pRate),
           engagement_id: actEng?.id,
         };
         stState.usage = stepUsage;
@@ -4024,8 +4034,8 @@ export async function installBrowserEngine(): Promise<void> {
           total_tokens: acc.total_tokens + (u.total_tokens || 0),
           cost_usd: Math.round((acc.cost_usd + (u.cost_usd || 0)) * 1_000_000) / 1_000_000,
           latency_ms: (acc.latency_ms || 0) + (u.latency_ms || 0),
-          estimated_minutes_saved: (acc.estimated_minutes_saved || 0) + (u.estimated_minutes_saved || 0),
-          billable_value_usd: Math.round(((acc.billable_value_usd || 0) + (u.billable_value_usd || 0)) * 100) / 100,
+          estimated_minutes_saved: round2((acc.estimated_minutes_saved || 0) + (u.estimated_minutes_saved || 0)),
+          billable_value_usd: round4((acc.billable_value_usd || 0) + (u.billable_value_usd || 0)),
           engagement_id: pipeEng?.id,
         };
       },

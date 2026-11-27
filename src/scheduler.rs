@@ -228,12 +228,12 @@ pub fn parse_tz_offset_mins(raw: &str) -> Result<i32, String> {
     }
     let low = s.to_ascii_lowercase();
     let named = match low.as_str() {
-        "z" | "utc" | "gmt" => Some(0),
-        "est" | "america/new_york" => Some(-300),
+        "z" | "utc" | "gmt" | "etc/utc" | "etc/gmt" => Some(0),
+        "est" | "america/new_york" | "america/toronto" => Some(-300),
         "edt" => Some(-240),
         "cst" | "america/chicago" => Some(-360),
         "cdt" => Some(-300),
-        "mst" | "america/denver" => Some(-420),
+        "mst" | "america/denver" | "america/phoenix" => Some(-420),
         "mdt" => Some(-360),
         "pst" | "america/los_angeles" => Some(-480),
         "pdt" => Some(-420),
@@ -244,6 +244,7 @@ pub fn parse_tz_offset_mins(raw: &str) -> Result<i32, String> {
         "sgt" | "asia/singapore" => Some(480),
         "jst" | "asia/tokyo" => Some(540),
         "aest" | "australia/sydney" => Some(600),
+        "nzst" | "pacific/auckland" => Some(720),
         _ => None,
     };
     if let Some(m) = named {
@@ -574,8 +575,8 @@ pub fn parse_cadence(spec: &str) -> Result<Cadence, String> {
             }
             if tokens_orig.len() == 6 {
                 let expr = tokens_orig[..5].join(" ");
-                if CronSpec::parse(&expr).is_ok() {
-                    let tz_offset_mins = parse_tz_offset_mins(tokens_orig[5])?;
+                if let Ok(tz_offset_mins) = parse_tz_offset_mins(tokens_orig[5]) {
+                    CronSpec::parse(&expr)?;
                     return Ok(Cadence::Cron {
                         expr,
                         tz_offset_mins,
@@ -605,9 +606,7 @@ pub fn parse_cadence_with_tz(spec: &str, tz_offset_mins: Option<i32>) -> Result<
             ..
         } = cadence
         {
-            if *cur == 0 || tz != 0 {
-                *cur = tz;
-            }
+            *cur = tz;
         }
     }
     Ok(cadence)
@@ -738,8 +737,8 @@ pub fn next_run_ms(cadence: &Cadence, last_run_ms: Option<u64>, now_ms: u64) -> 
             let start_day = local_anchor_min.div_euclid(1_440);
             let start_min_of_day = local_anchor_min.rem_euclid(1_440);
 
-            for day_offset in 0..=2922i64 {
-                let day = start_day + day_offset;
+            for day_offset in 0..=14_640i64 {
+                let day = start_day.saturating_add(day_offset);
                 let (_y, m, d) = civil_from_days(day);
                 if (spec.months & (1u16 << (m as u8))) == 0 {
                     continue;
@@ -765,10 +764,13 @@ pub fn next_run_ms(cadence: &Cadence, last_run_ms: Option<u64>, now_ms: u64) -> 
                     };
                     for min in m_start..60 {
                         if (spec.minutes & (1u64 << min)) != 0 {
-                            let local_ms =
-                                (day * 86_400 + (h as i64) * 3_600 + (min as i64) * 60) * 1_000;
-                            let utc_ms = local_ms - offset_ms;
-                            if utc_ms >= 0 {
+                            let local_secs = day
+                                .checked_mul(86_400)
+                                .and_then(|s| s.checked_add((h as i64) * 3_600))
+                                .and_then(|s| s.checked_add((min as i64) * 60));
+                            let local_ms = local_secs.and_then(|s| s.checked_mul(1_000))?;
+                            let utc_ms = local_ms.saturating_sub(offset_ms);
+                            if utc_ms >= 0 && (utc_ms as u64) > anchor {
                                 return Some(utc_ms as u64);
                             }
                         }
@@ -899,7 +901,11 @@ pub fn resolve_tz_from_patch(
             return Ok(Some(parse_tz_offset_mins(trimmed)?));
         }
     }
-    if patch.get("schedule").is_none() {
+    let embedded_tz = patch
+        .get("schedule")
+        .and_then(|v| v.as_str())
+        .is_some_and(|s| s.split_whitespace().count() == 6);
+    if !embedded_tz {
         if let Some(n) = existing.get("tz_offset_mins").and_then(|v| v.as_i64()) {
             if (-720..=840).contains(&n) {
                 return Ok(Some(n as i32));
@@ -1104,10 +1110,14 @@ pub fn history_path(person_data_dir: &Path) -> PathBuf {
 }
 
 fn load_history_unlocked(path: &Path) -> Vec<RoutineRunRecord> {
-    let Ok(text) = std::fs::read_to_string(path) else {
+    let Ok(bytes) = std::fs::read(path) else {
         return Vec::new();
     };
-    let parsed = serde_json::from_str::<Value>(&text);
+    let Ok(text) = std::str::from_utf8(&bytes) else {
+        let _ = backup_corrupt(path);
+        return Vec::new();
+    };
+    let parsed = serde_json::from_str::<Value>(text);
     let arr = parsed
         .as_ref()
         .ok()

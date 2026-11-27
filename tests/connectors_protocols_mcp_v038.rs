@@ -7,7 +7,7 @@
 //! - Tripwire SSRF blocking across SMTP, IMAP, OAuth2, and HTTP MCP
 
 use ergon_rs::{
-    connectors, execute_tool, records, serve, system_prompt, tripwire, Config,
+    connectors, execute_tool, records, secret_store, serve, system_prompt, tripwire, Config,
 };
 use serde_json::{json, Value};
 use std::io::{BufRead, BufReader, Read, Write};
@@ -52,35 +52,6 @@ impl TestDir {
 impl Drop for TestDir {
     fn drop(&mut self) {
         let _ = std::fs::remove_dir_all(&self.root);
-    }
-}
-
-struct EnvGuard {
-    saved: Vec<(&'static str, Option<String>)>,
-}
-
-impl EnvGuard {
-    fn set(pairs: &[(&'static str, Option<&str>)]) -> Self {
-        let mut saved = Vec::with_capacity(pairs.len());
-        for (k, v) in pairs {
-            saved.push((*k, std::env::var(k).ok()));
-            match v {
-                Some(val) => std::env::set_var(k, val),
-                None => std::env::remove_var(k),
-            }
-        }
-        Self { saved }
-    }
-}
-
-impl Drop for EnvGuard {
-    fn drop(&mut self) {
-        for (k, orig) in &self.saved {
-            match orig {
-                Some(val) => std::env::set_var(k, val),
-                None => std::env::remove_var(k),
-            }
-        }
     }
 }
 
@@ -249,12 +220,8 @@ fn spawn_mock_smtp_server() -> (SocketAddr, Arc<Mutex<Vec<CapturedSmtpMessage>>>
 
 #[test]
 fn smtp_loopback_mime_binary_attachment_and_strict_client_approval() {
-    let _env = EnvGuard::set(&[
-        ("ERGON_DISABLE_SCHEDULER", Some("1")),
-        ("ERGON_ALLOW_LOCAL_CONNECTORS", Some("1")),
-        ("ERGON_FETCH_ALLOW_PRIVATE", Some("1")),
-    ]);
     let td = TestDir::new("smtp-mime");
+    let _policy = tripwire::ScopedLocalPolicy::new(&td.cfg.data_dir, Some(true), Some(true));
     let addr = spawn_server(td.cfg.clone());
     let (smtp_addr, captured) = spawn_mock_smtp_server();
 
@@ -508,12 +475,8 @@ fn spawn_mock_imap_server() -> (SocketAddr, Arc<Mutex<Vec<String>>>) {
 
 #[test]
 fn imap_poll_writes_markdown_and_attachments_into_intake_with_subject_filter() {
-    let _env = EnvGuard::set(&[
-        ("ERGON_DISABLE_SCHEDULER", Some("1")),
-        ("ERGON_ALLOW_LOCAL_CONNECTORS", Some("1")),
-        ("ERGON_FETCH_ALLOW_PRIVATE", Some("1")),
-    ]);
     let td = TestDir::new("imap-poll");
+    let _policy = tripwire::ScopedLocalPolicy::new(&td.cfg.data_dir, Some(true), Some(true));
     let addr = spawn_server(td.cfg.clone());
     let (imap_addr, seen_uids) = spawn_mock_imap_server();
 
@@ -572,12 +535,8 @@ fn imap_poll_writes_markdown_and_attachments_into_intake_with_subject_filter() {
 
 #[test]
 fn oauth2_refresh_persists_access_token_and_caches_until_expiry() {
-    let _env = EnvGuard::set(&[
-        ("ERGON_DISABLE_SCHEDULER", Some("1")),
-        ("ERGON_ALLOW_LOCAL_CONNECTORS", Some("1")),
-        ("ERGON_FETCH_ALLOW_PRIVATE", Some("1")),
-    ]);
     let td = TestDir::new("oauth2");
+    let _policy = tripwire::ScopedLocalPolicy::new(&td.cfg.data_dir, Some(true), Some(true));
     let addr = spawn_server(td.cfg.clone());
 
     let refresh_calls = Arc::new(AtomicUsize::new(0));
@@ -678,21 +637,31 @@ fn oauth2_refresh_persists_access_token_and_caches_until_expiry() {
     assert!(auths[0].contains("Bearer oa2-fresh-token-abc123"));
     assert!(auths[1].contains("Bearer oa2-fresh-token-abc123"));
 
-    // Verify secrets file updated on disk with 0600 permissions and rotated refresh token.
+    // Verify secrets persist encrypted at rest (zero plaintext in connector_secrets.json or secrets.enc.json)
+    // and decrypt cleanly to the refreshed access token + rotated refresh token.
     let sec_text =
         std::fs::read_to_string(connectors::connector_secrets_path(&td.cfg.data_dir)).unwrap();
-    assert!(sec_text.contains("oa2-fresh-token-abc123"));
-    assert!(sec_text.contains("rt-rotated-002"));
+    let vault_text =
+        std::fs::read_to_string(secret_store::vault_path(&td.cfg.data_dir)).unwrap();
+    assert!(!sec_text.contains("oa2-fresh-token-abc123"));
+    assert!(!sec_text.contains("rt-rotated-002"));
+    assert!(!vault_text.contains("oa2-fresh-token-abc123"));
+    assert!(!vault_text.contains("rt-rotated-002"));
+    let decrypted = connectors::get_connector_secret_map_result(&td.cfg.data_dir).unwrap();
+    assert_eq!(
+        decrypted.get("oauth_access_token").map(String::as_str),
+        Some("oa2-fresh-token-abc123")
+    );
+    assert_eq!(
+        decrypted.get("oa2_refresh_token").map(String::as_str),
+        Some("rt-rotated-002")
+    );
 }
 
 #[test]
 fn mcp_stdio_http_discover_call_strict_client_and_inbound_server() {
-    let _env = EnvGuard::set(&[
-        ("ERGON_DISABLE_SCHEDULER", Some("1")),
-        ("ERGON_ALLOW_LOCAL_CONNECTORS", Some("1")),
-        ("ERGON_FETCH_ALLOW_PRIVATE", Some("1")),
-    ]);
     let td = TestDir::new("mcp-e2e");
+    let _policy = tripwire::ScopedLocalPolicy::new(&td.cfg.data_dir, Some(true), Some(true));
     let addr = spawn_server(td.cfg.clone());
 
     // Store a connector secret to inject into stdio MCP server env.
@@ -958,13 +927,8 @@ for line in sys.stdin:
 
 #[test]
 fn tripwire_ssrf_blocks_private_and_metadata_for_smtp_imap_oauth_and_mcp() {
-    let _env = EnvGuard::set(&[
-        ("ERGON_DISABLE_SCHEDULER", Some("1")),
-        ("ERGON_ALLOW_LOCAL_CONNECTORS", None),
-        ("ERGON_FETCH_ALLOW_PRIVATE", None),
-        ("ERGON_FETCH_ALLOW_HOSTS", None),
-    ]);
     let td = TestDir::new("ssrf-block");
+    let _policy = tripwire::ScopedLocalPolicy::new(&td.cfg.data_dir, Some(false), Some(true));
     let addr = spawn_server(td.cfg.clone());
 
     // Private IPs & metadata IPs blocked on SMTP config in production mode.
@@ -1028,7 +992,7 @@ fn tripwire_ssrf_blocks_private_and_metadata_for_smtp_imap_oauth_and_mcp() {
 
     // plain_loopback_test rejected on non-loopback host even if local connectors enabled.
     {
-        let _local = EnvGuard::set(&[("ERGON_ALLOW_LOCAL_CONNECTORS", Some("1"))]);
+        let _local = tripwire::ScopedLocalPolicy::new(&td.cfg.data_dir, Some(true), Some(true));
         let (st_non_lb, _, raw_non_lb) = http_req(
             addr,
             "POST",
