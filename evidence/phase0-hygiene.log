@@ -1,0 +1,27 @@
+# Wave 0 Open-Files & Watcher Audit
+Date: 2026-11-27
+Host: Linux (user: cayleb)
+Repo: /home/cayleb/Work/projects/ergon
+
+## 1. System File Descriptor & Inotify Limits
+- `ulimit -Sn`: 524288
+- `ulimit -Hn`: 524288
+- `/proc/sys/fs/inotify/max_user_watches`: 524288
+- `/proc/sys/fs/inotify/max_user_instances`: 1024
+- Current user inotify FD count (`lsof -u "$USER" | grep -c inotify` / `/proc/*/fd` `anon_inode:inotify`): 123
+
+## 2. Source Inspection: `src/connectors.rs` (`folder_watch`)
+- No `inotify` / `notify` crate or OS filesystem watcher FDs are allocated anywhere in `src/connectors.rs` (nor in `Cargo.toml`).
+- `poll_folder_watch_once` (`src/connectors.rs:2682-2825`) polls enabled `folder_watch` triggers using `std::fs::read_dir(&canon_dir)` and `std::fs::symlink_metadata(&path)`. Directory handles (`ReadDir`) are scoped to each trigger loop iteration and dropped immediately.
+- `read_watched_file_no_symlink` (`src/connectors.rs:2610-2635`) opens files via `std::fs::File::open(path)` inside a bounded helper function; the `File` handle is dropped immediately upon returning `Option<Vec<u8>>` (and bounded by `file.take(max_bytes + 1)` where `max_bytes <= MAX_FOLDER_WATCH_BYTES`).
+- `poll_state.observations.retain(|k, _| active_keys.contains(k))` (`src/connectors.rs:2821-2823`) prunes stale observation keys on every poll tick, preventing unbounded map growth.
+
+## 3. Source Inspection: `src/server.rs`
+- `start_folder_watch_thread` (`src/server.rs:1350-1393`) spawns a single background polling thread holding a `Weak<AppState>` (`Arc::downgrade(state)`). It exits cleanly when `shutdown_requested()` becomes true or when `weak.upgrade()` returns `None`.
+- `serve_inner` (`src/server.rs:1600-1900`) runs a bounded HTTP worker thread pool (`MAX_ACTIVE_CONNS = 128`, `WARM_WORKER_FLOOR = 2`), tracking active connections with RAII `ConnGuard` and worker lifecycle with `ExitGuard`. Excess connections (>128) immediately receive HTTP 503 and are dropped/closed.
+- `handle_connection` (`src/server.rs:3276-3350+`) uses RAII `TlsResetGuard`, sets explicit read/write timeouts on `TcpStream`/`ConnStream`, caps keep-alive requests at `MAX_KEEP_ALIVE_REQUESTS = 10_000`, calls `shutdown(Shutdown::Both)` on banned peers / TLS-mismatch / errors, and drops the stream when the loop exits.
+- Shutdown path (`src/server.rs:1871-1900`) drops the `TcpListener`, wakes SSE streams (`state.events.wake_all()`), sets `pool.shutting_down = true` with `cvar.notify_all()`, and drains active connections, in-flight runs, and running routines within the grace window.
+
+## 4. Conclusion
+- Zero watcher/FD leaks found in `src/connectors.rs` or `src/server.rs`. No code fix required.
+- Note: User `max_user_instances` is 1024 with 123 currently in use on the host, which is healthy; Ergon consumes 0 inotify instances.

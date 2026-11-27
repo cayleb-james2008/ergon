@@ -1,0 +1,869 @@
+=== cargo clippy --locked --all-targets -- -D warnings ===
+   Compiling proc-macro2 v1.0.107
+   Compiling quote v1.0.47
+   Compiling unicode-ident v1.0.27
+   Compiling version_check v0.9.5
+    Checking cfg-if v1.0.5
+   Compiling generic-array v0.14.7
+    Checking stable_deref_trait v1.2.1
+   Compiling syn v3.0.10
+   Compiling syn v2.0.119
+   Compiling synstructure v0.14.0
+   Compiling zerofrom-derive v0.1.8
+   Compiling yoke-derive v0.8.4
+    Checking zerofrom v0.1.8
+    Checking typenum v1.20.1
+    Checking yoke v0.8.4
+   Compiling zerovec-derive v0.11.7
+   Compiling autocfg v1.5.1
+   Compiling libc v0.2.191
+   Compiling num-traits v0.2.19
+    Checking zerovec v0.11.9
+   Compiling displaydoc v0.2.7
+   Compiling zerocopy v0.8.63
+   Compiling shlex v2.0.1
+   Compiling find-msvc-tools v0.1.15
+   Compiling cc v1.11.2
+    Checking crypto-common v0.1.7
+   Compiling serde_derive v1.0.229
+   Compiling ahash v0.8.12
+   Compiling portable-atomic v1.15.0
+   Compiling ring v0.17.14
+    Checking tinystr v0.8.5
+   Compiling pin-project-internal v1.1.13
+   Compiling serde_core v1.0.229
+    Checking litemap v0.8.3
+    Checking utf_types v1.0.0
+    Checking writeable v0.6.4
+    Checking utf8_iter v1.1.0
+    Checking icu_locale_core v2.4.0
+    Checking zerotrie v0.2.5
+    Checking potential_utf v0.1.6
+    Checking block-padding v0.3.3
+    Checking critical-section v1.2.0
+    Checking zeroize v1.9.2
+   Compiling icu_properties_data v2.4.0
+   Compiling icu_normalizer_data v2.4.0
+   Compiling rustversion v1.0.23
+    Checking rustls-pki-types v1.16.0
+    Checking once_cell v1.21.4
+    Checking inout v0.1.4
+    Checking icu_collections v2.4.0
+    Checking icu_provider v2.4.0
+   Compiling rune-alloc-macros v0.14.2
+    Checking memchr v2.8.3
+   Compiling serde v1.0.229
+    Checking cipher v0.4.4
+    Checking num-integer v0.1.47
+    Checking getrandom v0.2.17
+    Checking block-buffer v0.10.4
+    Checking itoa v1.0.19
+   Compiling getrandom v0.4.3
+    Checking smallvec v1.16.6
+   Compiling crc32fast v1.5.5
+    Checking rand_core v0.10.1
+    Checking untrusted v0.9.0
+    Checking icu_normalizer v2.4.0
+    Checking digest v0.10.7
+   Compiling encoding_rs v0.8.44
+    Checking icu_properties v2.4.0
+   Compiling pin-project v1.1.13
+   Compiling musli-macros v0.0.124
+   Compiling thiserror v2.0.21
+   Compiling zmij v1.0.23
+    Checking tinyvec v1.13.3
+    Checking adler2 v2.0.1
+    Checking cpufeatures v0.3.1
+    Checking log v0.4.35
+    Checking cpufeatures v0.2.17
+    Checking simd-adler32 v0.3.10
+    Checking miniz_oxide v0.9.1
+    Checking chacha20 v0.10.2
+    Checking unicode-normalization v0.1.26
+    Checking musli-core v0.0.124
+    Checking idna_adapter v1.2.2
+   Compiling rune-alloc v0.14.2
+    Checking num-bigint v0.4.8
+   Compiling thiserror-impl v2.0.21
+    Checking pom v1.1.0
+   Compiling serde_json v1.0.154
+    Checking percent-encoding v2.3.2
+   Compiling anyhow v1.0.104
+   Compiling rustls v0.23.46
+    Checking scopeguard v1.2.0
+    Checking powerfmt v0.2.1
+    Checking time-core v0.1.9
+    Checking core_detect v1.0.0
+    Checking deranged v0.5.9
+   Compiling twox-hash v2.1.5
+    Checking simdutf8 v0.1.5
+    Checking unicode-bidi v0.3.18
+    Checking num-conv v0.2.2
+    Checking equivalent v1.0.3
+    Checking hashbrown v0.17.2
+    Checking unicode-properties v0.1.5
+   Compiling multiversion_no_op v1.0.0
+    Checking indexmap v2.14.2
+    Checking stringprep v0.1.5
+    Checking time v0.3.55
+   Compiling rune-core v0.14.2
+    Checking form_urlencoded v1.2.2
+    Checking num-rational v0.4.2
+    Checking flate2 v1.1.11
+    Checking rand v0.10.4
+    Checking musli v0.0.124
+    Checking idna v1.1.0
+    Checking aes v0.8.4
+    Checking sha2 v0.10.9
+    Checking md-5 v0.10.6
+    Checking rustls-webpki v0.103.17
+    Checking num-iter v0.1.46
+    Checking cbc v0.1.2
+    Checking ecb v0.1.2
+    Checking nom v8.0.0
+    Checking webpki-roots v1.0.12
+    Checking num-complex v0.4.6
+   Compiling rune-tracing-macros v0.14.2
+    Checking futures-core v0.3.34
+    Checking ttf-parser v0.25.1
+    Checking pin-project-lite v0.2.17
+    Checking futures-task v0.3.34
+    Checking weezl v0.1.12
+    Checking rangemap v1.9.0
+    Checking base64 v0.23.1
+    Checking slab v0.4.12
+    Checking bitflags v2.13.2
+    Checking subtle v2.6.1
+    Checking lopdf v0.42.0
+    Checking futures-util v0.3.34
+    Checking pem v4.0.0
+    Checking rune-tracing v0.14.2
+    Checking num v0.4.3
+    Checking webpki-roots v0.26.11
+    Checking url v2.5.8
+   Compiling ergon-rs v0.40.0 (/home/cayleb/Work/projects/ergon)
+   Compiling rune-macros v0.14.2
+    Checking yasna v0.6.0
+    Checking type1-encoding-parser v0.1.1
+    Checking adobe-cmap-parser v0.4.1
+    Checking euclid v0.20.14
+    Checking ryu v1.0.23
+    Checking cff-parser v0.2.0
+    Checking syntree v0.18.0
+    Checking base64 v0.22.1
+    Checking postscript v0.14.1
+    Checking ureq v2.12.1
+    Checking pdf-extract v0.12.1
+    Checking rune v0.14.2
+    Checking rcgen v0.14.10
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1m 51s
+CLIPPY_EXIT=0
+
+=== cargo test --locked -- --test-threads=1 ===
+   Compiling unicode-ident v1.0.27
+   Compiling cfg-if v1.0.5
+   Compiling typenum v1.20.1
+   Compiling proc-macro2 v1.0.107
+   Compiling quote v1.0.47
+   Compiling stable_deref_trait v1.2.1
+   Compiling generic-array v0.14.7
+   Compiling syn v3.0.10
+   Compiling syn v2.0.119
+   Compiling synstructure v0.14.0
+   Compiling zerofrom-derive v0.1.8
+   Compiling zerofrom v0.1.8
+   Compiling yoke-derive v0.8.4
+   Compiling zerovec-derive v0.11.7
+   Compiling yoke v0.8.4
+   Compiling displaydoc v0.2.7
+   Compiling zerovec v0.11.9
+   Compiling libc v0.2.191
+   Compiling num-traits v0.2.19
+   Compiling serde_derive v1.0.229
+   Compiling crypto-common v0.1.7
+   Compiling zerocopy v0.8.63
+   Compiling tinystr v0.8.5
+   Compiling utf_types v1.0.0
+   Compiling litemap v0.8.3
+   Compiling writeable v0.6.4
+   Compiling icu_locale_core v2.4.0
+   Compiling utf8_iter v1.1.0
+   Compiling portable-atomic v1.15.0
+   Compiling potential_utf v0.1.6
+   Compiling zerotrie v0.2.5
+   Compiling pin-project-internal v1.1.13
+   Compiling block-padding v0.3.3
+   Compiling zeroize v1.9.2
+   Compiling adler2 v2.0.1
+   Compiling critical-section v1.2.0
+   Compiling once_cell v1.21.4
+   Compiling rustls-pki-types v1.16.0
+   Compiling pin-project v1.1.13
+   Compiling inout v0.1.4
+   Compiling icu_provider v2.4.0
+   Compiling icu_collections v2.4.0
+   Compiling serde_core v1.0.229
+   Compiling rune-alloc-macros v0.14.2
+   Compiling memchr v2.8.3
+   Compiling cipher v0.4.4
+   Compiling icu_properties_data v2.4.0
+   Compiling icu_normalizer_data v2.4.0
+   Compiling num-integer v0.1.47
+   Compiling getrandom v0.2.17
+   Compiling block-buffer v0.10.4
+   Compiling smallvec v1.16.6
+   Compiling rand_core v0.10.1
+   Compiling untrusted v0.9.0
+   Compiling itoa v1.0.19
+   Compiling ring v0.17.14
+   Compiling icu_normalizer v2.4.0
+   Compiling ahash v0.8.12
+   Compiling digest v0.10.7
+   Compiling serde v1.0.229
+   Compiling icu_properties v2.4.0
+   Compiling musli-macros v0.0.124
+   Compiling twox-hash v2.1.5
+   Compiling simd-adler32 v0.3.10
+   Compiling cpufeatures v0.3.1
+   Compiling log v0.4.35
+   Compiling cpufeatures v0.2.17
+   Compiling tinyvec v1.13.3
+   Compiling unicode-normalization v0.1.26
+   Compiling chacha20 v0.10.2
+   Compiling musli-core v0.0.124
+   Compiling miniz_oxide v0.9.1
+   Compiling idna_adapter v1.2.2
+   Compiling rune-alloc v0.14.2
+   Compiling getrandom v0.4.3
+   Compiling crc32fast v1.5.5
+   Compiling num-bigint v0.4.8
+   Compiling thiserror-impl v2.0.21
+   Compiling simdutf8 v0.1.5
+   Compiling core_detect v1.0.0
+   Compiling equivalent v1.0.3
+   Compiling unicode-bidi v0.3.18
+   Compiling percent-encoding v2.3.2
+   Compiling time-core v0.1.9
+   Compiling deranged v0.5.9
+   Compiling powerfmt v0.2.1
+   Compiling hashbrown v0.17.2
+   Compiling unicode-properties v0.1.5
+   Compiling pom v1.1.0
+   Compiling scopeguard v1.2.0
+   Compiling num-conv v0.2.2
+   Compiling encoding_rs v0.8.44
+   Compiling time v0.3.55
+   Compiling stringprep v0.1.5
+   Compiling indexmap v2.14.2
+   Compiling form_urlencoded v1.2.2
+   Compiling thiserror v2.0.21
+   Compiling num-rational v0.4.2
+   Compiling rune-core v0.14.2
+   Compiling flate2 v1.1.11
+   Compiling rand v0.10.4
+   Compiling musli v0.0.124
+   Compiling idna v1.1.0
+   Compiling zmij v1.0.23
+   Compiling aes v0.8.4
+   Compiling sha2 v0.10.9
+   Compiling rustls-webpki v0.103.17
+   Compiling md-5 v0.10.6
+   Compiling num-iter v0.1.46
+   Compiling ecb v0.1.2
+   Compiling cbc v0.1.2
+   Compiling nom v8.0.0
+   Compiling webpki-roots v1.0.12
+   Compiling num-complex v0.4.6
+   Compiling rune-tracing-macros v0.14.2
+   Compiling bitflags v2.13.2
+   Compiling ttf-parser v0.25.1
+   Compiling base64 v0.23.1
+   Compiling slab v0.4.12
+   Compiling weezl v0.1.12
+   Compiling rangemap v1.9.0
+   Compiling subtle v2.6.1
+   Compiling futures-core v0.3.34
+   Compiling futures-task v0.3.34
+   Compiling pin-project-lite v0.2.17
+   Compiling futures-util v0.3.34
+   Compiling lopdf v0.42.0
+   Compiling rustls v0.23.46
+   Compiling pem v4.0.0
+   Compiling rune-tracing v0.14.2
+   Compiling num v0.4.3
+   Compiling ergon-rs v0.40.0 (/home/cayleb/Work/projects/ergon)
+   Compiling webpki-roots v0.26.11
+   Compiling serde_json v1.0.154
+   Compiling url v2.5.8
+   Compiling rune-macros v0.14.2
+   Compiling anyhow v1.0.104
+   Compiling yasna v0.6.0
+   Compiling type1-encoding-parser v0.1.1
+   Compiling adobe-cmap-parser v0.4.1
+   Compiling euclid v0.20.14
+   Compiling syntree v0.18.0
+   Compiling cff-parser v0.2.0
+   Compiling base64 v0.22.1
+   Compiling ryu v1.0.23
+   Compiling postscript v0.14.1
+   Compiling rune v0.14.2
+   Compiling pdf-extract v0.12.1
+   Compiling ureq v2.12.1
+   Compiling rcgen v0.14.10
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 4m 24s
+     Running unittests src/lib.rs (/home/cayleb/Work/scratch/2026-11-27-ergon-full/target/debug/deps/ergon_rs-3729296f89cd715a)
+
+running 82 tests
+test audit_bundle::tests::handoff_leak_scanner_blocks_secrets_and_paths_under_strict_client_and_builds_valid_zip ... ok
+test audit_bundle::tests::verify_evidence_covers_bundles_packs_and_playbooks ... ok
+test auth::tests::password_hash_uses_unique_salt_and_verifies_constant_time ... ok
+test auth::tests::pbkdf2_hmac_sha256_matches_known_rfc_vector ... ok
+test auth::tests::rbac_matrix_enforces_role_boundaries ... ok
+test backup::tests::sigv4_produces_valid_aws4_authorization_header ... ok
+test backup::tests::validate_safe_rel_path_blocks_traversal_and_drive_prefixes ... ok
+test docs::tests::crc32_known_value ... ok
+test docs::tests::markdown_docx_round_trip_keeps_structure ... ok
+test docs::tests::markdown_pdf_round_trips_and_paginates ... ok
+test docs::tests::multi_sheet_xlsx_has_formulas_and_cached_totals ... ok
+test docs::tests::serial_dates_convert ... ok
+test docs::tests::sheet_suffix_only_for_workbooks ... ok
+test docs::tests::typed_cells_are_conservative ... ok
+test docs::tests::xlsx_round_trip_types_cells ... ok
+test docs::tests::xml_scanner_and_entities ... ok
+test docs::tests::zip_round_trip_and_bomb_guard ... ok
+test logging::tests::channel_url_rejects_javascript_scheme ... ok
+test logging::tests::redacts_common_secret_patterns_and_preserves_json ... ok
+test search::tests::inverted_index_handles_10k_receipts_and_500_files_sub_5ms ... ok
+test server::tests::new_session_id_uses_csprng_with_32_hex_high_entropy_and_uniqueness ... ok
+test server::tests::shutdown_grace_secs_parses_bounds_and_defaults ... ok
+test service::tests::launchd_plist_renders_and_escapes_xml_safely ... ok
+test service::tests::service_validation_rejects_bad_names_ports_and_control_chars ... ok
+test service::tests::systemd_unit_renders_valid_user_and_system_units ... ok
+test service::tests::windows_sc_commands_include_auto_start_and_failure_recovery ... ok
+test tables::tests::decimal_parsing_and_formatting_are_exact ... ok
+test tls::tests::generates_and_loads_self_signed_cert_with_0600_key ... ok
+test tripwire::tests::address_classes ... ok
+test tripwire::tests::base64_round_trips_and_matches_known_value ... ok
+test tripwire::tests::contact_tokens_find_new_addresses ... ok
+test tripwire::tests::contains_secret_sees_through_encodings ... ok
+test tripwire::tests::csp_hashes_inline_scripts ... ok
+test tripwire::tests::decoy_matching_is_exact_enough ... ok
+test tripwire::tests::decoy_tokens_are_traceable_when_used ... ok
+test tripwire::tests::event_log_chains_coalesces_and_detects_tampering ... ok
+test tripwire::tests::hmac_matches_rfc4231_case_2 ... ok
+test tripwire::tests::injection_markers_catch_classics_and_spare_ordinary_text ... ok
+test tripwire::tests::remote_scanners_are_banned_but_loopback_never ... ok
+test tripwire::tests::self_review_regressions ... ok
+test tripwire::tests::sensitive_targets_need_an_escape ... ok
+test tripwire::tests::tokens_verify_and_forgeries_do_not ... ok
+test update::tests::a_bad_checksum_leaves_the_installed_file_alone ... ok
+test update::tests::a_build_that_reports_the_wrong_version_is_not_installed ... ok
+test update::tests::a_file_that_is_briefly_still_open_for_writing_is_retried_not_refused ... ok
+test update::tests::a_newer_release_is_reported_downloaded_verified_and_swapped_in ... ok
+test update::tests::a_release_without_checksums_a_size_mismatch_and_old_releases_are_refused ... ok
+test update::tests::an_unreachable_or_insecure_api_reports_an_error_and_changes_nothing ... ok
+test update::tests::errors_name_files_never_folders ... ok
+test update::tests::off_mode_never_calls_out_and_shared_or_dev_installs_never_apply ... ok
+test update::tests::redirects_are_followed_by_hand_and_every_hop_is_checked ... ok
+test update::tests::release_json_needs_a_platform_asset_and_ignores_prereleases ... ok
+test update::tests::sums_parse_and_hashes_are_sha256 ... ok
+test update::tests::the_real_github_api_only_lets_github_hosts_through ... ok
+test update::tests::the_release_page_link_is_only_ever_an_http_or_https_url ... ok
+test update::tests::two_simultaneous_applies_install_once_and_both_succeed ... ok
+test update::tests::updating_through_the_real_github_api_refuses_every_other_host ... ok
+test update::tests::urls_must_be_https_or_loopback_http ... ok
+test update::tests::versions_compare_and_odd_tags_are_ignored ... ok
+test v010_hardening_tests::atomic_write_bytes_with_mode_sets_private_permissions ... ok
+test v010_hardening_tests::atomic_write_bytes_writes_and_replaces_cleanly ... ok
+test v010_hardening_tests::citation_freshness_stale_drift_and_html_handoff_work_end_to_end ... ok
+test v010_hardening_tests::citations_verify_and_streaming_audit_bundle_json_bytes_work_end_to_end ... ok
+test v010_hardening_tests::embedded_chunks_serve_with_gzip_etag_304_and_immutable_headers ... ok
+test v010_hardening_tests::fast_json_writers_match_value_builders ... ok
+test v010_hardening_tests::files_pack_endpoint_builds_sha256_pack_and_enforces_sandbox ... ok
+test v010_hardening_tests::gzip_compress_and_serve_page_etag_304_work_end_to_end ... ok
+test v010_hardening_tests::handoff_export_endpoint_prechecks_blocks_and_builds_zip ... ok
+test v010_hardening_tests::history_and_export_reject_hidden_dotfiles_and_symlinks ... ok
+test v010_hardening_tests::host_and_origin_checks_are_case_insensitive ... ok
+test v010_hardening_tests::memory_health_and_heal_work_end_to_end ... ok
+test v010_hardening_tests::playbook_dry_run_preview_reports_steps_impacts_and_rollback_without_writes ... ok
+test v010_hardening_tests::playbook_pack_export_import_verifies_sha256_schema_and_size_cap ... ok
+test v010_hardening_tests::playbook_routine_chains_steps_and_packs_deliverables ... ok
+test v010_hardening_tests::read_request_rejects_conflicting_content_length_and_chunked ... ok
+test v010_hardening_tests::read_request_rejects_duplicate_host_header ... ok
+test v010_hardening_tests::read_request_returns_413_promptly_on_overflow_content_length_with_open_write_half ... ok
+test v010_hardening_tests::receipts_compare_and_delta_pack_work_end_to_end ... ok
+test v010_hardening_tests::receipts_load_chain_streaming_matches_build_chain ... ok
+test v010_hardening_tests::routine_catchup_and_sha256_verification_badge_work_end_to_end ... ok
+test v010_hardening_tests::store_list_json_computes_accurate_thread_states ... ok
+test v010_hardening_tests::workspace_policy_profiles_and_enforcement_work_end_to_end ... ok
+
+test result: ok. 82 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 10.39s
+
+     Running unittests src/main.rs (/home/cayleb/Work/scratch/2026-11-27-ergon-full/target/debug/deps/ergon-b61331dcab4c6165)
+
+running 9 tests
+test tests::cli_parses_backup_and_restore_flags ... ok
+test tests::cli_parses_desktop_flags_and_overrides ... ok
+test tests::cli_parses_diagnostics_and_data_flags ... ok
+test tests::cli_parses_export_handoff_flags ... ok
+test tests::cli_parses_service_subcommand_and_flags ... ok
+test tests::cli_parses_tls_and_user_subcommands ... ok
+test tests::cli_parses_verify_subcommand_and_flags ... ok
+test tests::desktop_url_normalizes_wildcard_binds ... ok
+test tests::desktop_window_gating_respects_no_open_headless_ci_and_systemd ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/auth_tls_rbac.rs (/home/cayleb/Work/scratch/2026-11-27-ergon-full/target/debug/deps/auth_tls_rbac-4c7dd7f77f944d86)
+
+running 6 tests
+test break_glass_gate_token_is_admin_audited_and_never_elevates_non_admin_session ... ok
+test cli_user_and_tls_init_commands ... ok
+test oidc_discovery_pkce_callback_end_to_end ... ok
+test rbac_and_cross_user_isolation_across_workspaces_crm_invoices_and_admin_routes ... ok
+test real_tls_https_handshake_and_phone_behind_tls_login_gate ... ok
+test setup_login_sessions_persistence_logout_and_0600_storage ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 19.19s
+
+     Running tests/backup_restore.rs (/home/cayleb/Work/scratch/2026-11-27-ergon-full/target/debug/deps/backup_restore-982ebe1f4ef0f864)
+
+running 8 tests
+test background_scheduler_triggers_automatic_verified_backup_when_due ... ok
+test backslash_traversal_drive_prefix_and_unmanifested_entries_rejected ... ok
+test backup_http_api_end_to_end_and_gate_confinement ... ok
+test full_backup_verify_wipe_restore_and_reverify_roundtrip ... ok
+test offsite_s3_sigv4_put_verified_against_loopback_server ... ok
+test retention_pruning_and_offsite_folder_replication ... ok
+test scheduled_backup_due_logic_respects_enabled_and_interval ... ok
+test tampered_archive_zip_slip_and_symlinks_rejected_without_touching_data_dir ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.61s
+
+     Running tests/client_vault_invoicing_v040.rs (/home/cayleb/Work/scratch/2026-11-27-ergon-full/target/debug/deps/client_vault_invoicing_v040-2bfae193edd5995b)
+
+running 5 tests
+test client_crm_engagement_sow_patch_and_context_e2e ... ok
+test handoff_pack_and_zip_cross_client_409_under_strict_client ... ok
+test system_prompt_injection_and_tool_prefix_containment ... ok
+test time_entries_and_invoicing_lifecycle_with_pdf_xlsx_json ... ok
+test vault_search_and_aggregate_scoping_e2e ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.57s
+
+     Running tests/clients_metering_v033.rs (/home/cayleb/Work/scratch/2026-11-27-ergon-full/target/debug/deps/clients_metering_v033-ea3ffee2a9602892)
+
+running 6 tests
+test chained_receipt_legacy_and_v2_hash_verification_and_tamper_detection ... ok
+test clients_engagements_crud_switch_and_permissions ... ok
+test metering_summary_rollup_and_filters ... ok
+test mock_openai_usage_capture_pricing_sse_and_work_persistence ... ok
+test pipeline_accumulates_step_and_run_usage_and_emits_sse_deltas ... ok
+test retainer_budget_gate_parks_decision_and_stops_spend ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.65s
+
+     Running tests/connectors_protocols_mcp_v038.rs (/home/cayleb/Work/scratch/2026-11-27-ergon-full/target/debug/deps/connectors_protocols_mcp_v038-9e43d6196ee2f2c3)
+
+running 5 tests
+test imap_poll_writes_markdown_and_attachments_into_intake_with_subject_filter ... ok
+test mcp_stdio_http_discover_call_strict_client_and_inbound_server ... ok
+test oauth2_refresh_persists_access_token_and_caches_until_expiry ... ok
+test smtp_loopback_mime_binary_attachment_and_strict_client_approval ... ok
+test tripwire_ssrf_blocks_private_and_metadata_for_smtp_imap_oauth_and_mcp ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.72s
+
+     Running tests/connectors_secrets_vault.rs (/home/cayleb/Work/scratch/2026-11-27-ergon-full/target/debug/deps/connectors_secrets_vault-27690393d69442de)
+
+running 4 tests
+test all_connector_mcp_and_model_secrets_encrypted_at_rest_zero_plaintext_on_disk ... ok
+test env_secret_key_mode_and_headless_keychain_fallback_work_cleanly ... ok
+test legacy_plaintext_migration_scrubs_all_files_and_preserves_functionality ... ok
+test tampering_ciphertext_nonce_aad_or_json_fails_authentication_cleanly ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.20s
+
+     Running tests/connectors_v031.rs (/home/cayleb/Work/scratch/2026-11-27-ergon-full/target/debug/deps/connectors_v031-7f4ebcbdbce11e5b)
+
+running 3 tests
+test folder_watch_ingest_stability_dedup_and_security ... ok
+test outbound_delivery_secret_isolation_strict_client_hold_and_air_gapped_block ... ok
+test signed_webhook_202_pipeline_trigger_and_invalid_hmac_401 ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.40s
+
+     Running tests/dag_pipelines_v035.rs (/home/cayleb/Work/scratch/2026-11-27-ergon-full/target/debug/deps/dag_pipelines_v035-744f36f6605fa86f)
+
+running 6 tests
+test adhoc_agent_snapshot_preserves_context_across_pause_resume ... ok
+test dag_parallel_fanout_join_validate_and_cycle_rejection ... ok
+test deliver_step_immediate_fast_and_strict_client_checkpoint_hold ... ok
+test for_each_batch_execution_and_cap_rejection ... ok
+test run_loop_compacts_under_tight_budget_and_continues_past_24_steps ... ok
+test sse_token_delta_streaming_and_json_fallback ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.81s
+
+     Running tests/deploy_hardening.rs (/home/cayleb/Work/scratch/2026-11-27-ergon-full/target/debug/deps/deploy_hardening-5b7fd61247b4ac41)
+
+running 5 tests
+test server_session_cookies_are_high_entropy_and_unique ... ok
+test unix_deploy_tests::install_sh_creates_0600_env_0700_launcher_and_preserves_secrets ... ok
+test unix_deploy_tests::install_sh_systemd_unit_uses_environment_file_and_checks_linger ... ok
+test unix_deploy_tests::sigterm_drains_inflight_chat_request_and_exits_zero ... ok
+test unix_deploy_tests::sigterm_exits_cleanly_with_status_zero_when_idle ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.44s
+
+     Running tests/documents_v090.rs (/home/cayleb/Work/scratch/2026-11-27-ergon-full/target/debug/deps/documents_v090-ce2c2730a08e5ea6)
+
+running 16 tests
+test a_bad_request_is_not_retried ... ok
+test a_busy_model_costs_a_retry_not_the_task ... ok
+test broken_and_hostile_documents_fail_cleanly ... ok
+test built_in_workflows_run_on_word_and_excel_files ... ok
+test different_references_are_not_duplicate_charges ... ok
+test excel_workbooks_read_as_csv_with_real_dates_and_cached_formulas ... ok
+test export_file_makes_word_and_excel_copies ... ok
+test long_memory_is_trimmed_for_prompts_keeping_identity_and_recent_learning ... ok
+test pdfs_read_page_by_page_including_cid_fonts ... ok
+test powerpoint_decks_read_slide_by_slide_with_notes ... ok
+test read_file_reads_documents_sheets_and_pages_long_files ... ok
+test retry_policy ... ok
+test search_files_looks_inside_documents ... ok
+test the_same_lesson_is_remembered_once ... ok
+test uploads_are_byte_exact_preview_as_text_and_export ... ok
+test word_documents_read_as_structured_markdown ... ok
+
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.86s
+
+     Running tests/e2e.rs (/home/cayleb/Work/scratch/2026-11-27-ergon-full/target/debug/deps/e2e-ccf1b9111c17cd7b)
+
+running 97 tests
+test a_delete_parked_in_an_earlier_run_gets_no_new_note ... ok
+test a_dishonest_delete_claim_is_flagged_while_the_deletion_is_only_parked ... ok
+test a_run_waiting_on_a_decision_is_not_finished_in_the_brief ... ok
+test a_run_whose_tool_steps_all_failed_is_not_finished_work ... ok
+test agent_publishes_a_skill_and_another_persons_agent_runs_it ... ok
+test approved_delete_of_a_symlink_deletes_the_link_not_the_target ... ok
+test approved_delete_rewrites_its_parked_note ... ok
+test brief_today_and_graph_reflect_real_work ... ok
+test chat_with_an_unknown_thread_id_is_refused ... ok
+test corrupt_threads_json_is_preserved_as_a_backup ... ok
+test created_persons_learning_reaches_the_prompt ... ok
+test cross_site_requests_are_refused_and_change_nothing ... ok
+test dangling_symlink_write_is_refused ... ok
+test delegate_runs_a_suite_subagent_and_refuses_others ... ok
+test delegation_draws_from_one_shared_step_budget ... ok
+test delete_parks_a_decision_and_only_approval_deletes ... ok
+test denied_delete_rewrites_its_parked_note ... ok
+test document_titled_error_still_reports_success ... ok
+test done_claim_without_writes_is_flagged_in_the_ledger ... ok
+test done_gate_checks_named_files_against_the_write_ledger ... ok
+test done_gate_handles_spaced_filenames_and_full_ledger ... ok
+test each_parked_delete_gets_exactly_one_note ... ok
+test empty_summary_is_stored_as_task_complete ... ok
+test end_to_end_messy_notes_become_summary_document ... ok
+test faces_and_phone_are_served ... ok
+test fetch_url_extracts_text_and_workspace_is_sandboxed ... ok
+test forged_cookies_are_replaced_and_sessions_do_not_leak_globally ... ok
+test gate_token_blocks_without_and_allows_with ... ok
+test honest_done_summaries_are_not_flagged ... ok
+test huge_content_length_does_not_kill_the_server ... ok
+test identity_bullets_are_excluded_in_any_casing ... ok
+test identity_bullets_with_fullwidth_colons_are_excluded ... ok
+test install_then_call_in_one_run_is_credited ... ok
+test installed_library_skill_runs_end_to_end ... ok
+test installer_installs_and_the_installed_binary_boots ... ok
+test invalid_json_chat_body_is_named_as_such ... ok
+test keyless_loopback_model_works_and_config_api_persists ... ok
+test lan_host_needs_allowed_hosts_and_gate_skips_the_rule ... ok
+test learned_preferences_shape_the_next_task ... ok
+test library_is_seeded_and_suites_are_role_shaped ... ok
+test library_skill_runner_and_compile_gate_directly ... ok
+test live_runs_status_reports_idle_cleanly ... ok
+test mention_matching_edges ... ok
+test move_file_handles_dangling_links_symmetrically ... ok
+test move_file_moves_the_symlink_not_its_target ... ok
+test move_file_refuses_to_overwrite ... ok
+test names_and_notes_cannot_forge_memory_structure ... ok
+test no_key_chat_keeps_the_users_message ... ok
+test no_key_chat_refuses_honestly ... ok
+test offers_appear_after_repeated_work_and_acceptance_builds_the_app ... ok
+test over_long_header_line_is_refused_and_server_survives ... ok
+test oversized_request_gets_a_413_response ... ok
+test oversized_upload_with_body_in_flight_still_gets_its_413 ... ok
+test parked_delete_note_does_not_depend_on_summary_wording ... ok
+test parked_delete_note_survives_an_unrelated_approval_word ... ok
+test parked_note_rewrite_survives_a_restart ... ok
+test people_are_isolated ... ok
+test people_json_corruption_in_any_shape_is_backed_up ... ok
+test plain_answers_are_not_counted_as_finished_work ... ok
+test publish_app_never_returns_a_skill ... ok
+test publish_skill_cannot_overwrite_another_authors_item ... ok
+test receipts_sha256_chain_verify_and_md_json_export ... ok
+test records_survive_concurrent_writers ... ok
+test recovered_stores_are_named_in_status ... ok
+test repeated_and_semantic_corruption_keep_every_backup ... ok
+test research_skill_compiles_notes_from_pages ... ok
+test routines_crud_and_execution_persist_atomically ... ok
+test runaway_library_skill_is_stopped_by_the_budget ... ok
+test sandbox_refuses_symlink_escape ... ok
+test scale_5000_receipts_and_500_files_search_p95_under_30_concurrent_clients ... ok
+test search_and_move_tools_work ... ok
+test search_cap_note_is_exact_and_single_files_search ... ok
+test search_files_reports_what_it_skipped ... ok
+test security_fuzz_20_vectors_fail_closed_with_zero_500s ... ok
+test sessions_pin_the_person_per_browser ... ok
+test shell_accessibility_and_contrast_pins ... ok
+test shell_has_sidebar_thread_and_composer ... ok
+test shell_has_themes_settings_people_and_memory_view ... ok
+test single_file_search_discloses_unreadable_files ... ok
+test skills_catalog_http_api_test_harness_and_agent_dispatch_work_end_to_end ... ok
+test spreadsheet_skill_writes_real_csv ... ok
+test sse_runs_stream_emits_live_events_and_cancel_stops_active_run ... ok
+test standing_preferences_excludes_only_identity_lines ... ok
+test subagent_cannot_publish_or_park_decisions ... ok
+test suite_apps_run_from_their_fields ... ok
+test symlink_target_containing_a_symlink_is_rewalked ... ok
+test theme_choice_is_saved_and_read_with_the_same_key ... ok
+test thread_history_reaches_the_model ... ok
+test threads_survive_restart ... ok
+test tool_results_report_success_not_failure ... ok
+test tz_offsets_come_from_the_zone_file ... ok
+test v070_scheduler_file_history_audit_bundle_and_people_switch_http_e2e ... ok
+test v070_wall_clock_schedules_preserve_utc_slots_and_cadence_labels ... ok
+test version_endpoints_report_the_running_build_and_updating_is_local_only ... ok
+test workflow_tool_errors_never_leak_host_filesystem_paths ... ok
+test workspace_files_upload_list_preview_download_and_jail_security ... ok
+test zero_tool_premature_done_is_retried_and_flagged_if_unverified ... ok
+
+test result: ok. 97 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 10.09s
+
+     Running tests/hardening_c4h1.rs (/home/cayleb/Work/scratch/2026-11-27-ergon-full/target/debug/deps/hardening_c4h1-d21a2c0c8f96c8b8)
+
+running 7 tests
+test h1_concurrent_resume_crash_recovery_and_cyclic_subpipeline ... ok
+test h1_connectors_and_mcp_redaction_stdio_sanitization_and_timeouts ... ok
+test h1_corrupt_ledger_invoice_recovery_and_zero_partial_writes ... ok
+test h1_cron_year_boundary_century_leap_day_and_tz_override ... ok
+test h1_formula_injection_escaping_in_xlsx_csv_and_invoice_exports ... ok
+test h1_ssrf_ipv6_nonstandard_ipv4_and_redirect_rejection ... ok
+test h1_strict_client_blocks_rune_skills_and_scopes_api_files ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.85s
+
+     Running tests/hardening_v032.rs (/home/cayleb/Work/scratch/2026-11-27-ergon-full/target/debug/deps/hardening_v032-cb27a91f0f36d8e0)
+
+running 11 tests
+test air_gapped_and_strict_client_policy_edge_cases ... ok
+test docs_broken_xlsx_xml_and_zip_guards ... ok
+test docs_pdf_huge_line_wrap_and_pagination_guards ... ok
+test folder_watch_rejects_symlinked_dir_parent_and_symlink_files_cwe59 ... ok
+test pipeline_concurrent_resume_retry_and_cancel_idempotency ... ok
+test pipeline_restart_recovery_handles_interrupted_cancelled_and_corrupt_checkpoint ... ok
+test pipeline_template_caps_circular_self_forward_deep_and_utf8_metrics ... ok
+test put_and_patch_concurrent_expected_sha256_409_and_history_integrity ... ok
+test secret_redaction_catches_partial_json_escaped_url_b64_and_preserves_hints ... ok
+test tables_rejects_malformed_utf8_binary_and_handles_ragged_csv ... ok
+test webhook_rejects_over_1mb_413_and_enforces_timestamp_replay_and_hmac ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 9.09s
+
+     Running tests/hardening_v036.rs (/home/cayleb/Work/scratch/2026-11-27-ergon-full/target/debug/deps/hardening_v036-6a3c2c882c3a172a)
+
+running 7 tests
+test e1_corrupt_clients_json_recovers_without_500 ... ok
+test e1_pricing_retainer_orphan_and_saturating_math_hardening ... ok
+test e2_corrupt_vault_index_recovers_and_reindex_stays_bounded ... ok
+test e2_vault_aggregate_edge_cases_and_cwe22_cwe59_checks ... ok
+test e3_dag_validation_edge_cases_and_disconnected_execution ... ok
+test e3_deliver_checkpoint_settlement_is_idempotent_under_repeated_and_racing_posts ... ok
+test e3_sse_malformed_frames_early_eof_and_compaction_edge_cases ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.51s
+
+     Running tests/installers_and_admin_updates.rs (/home/cayleb/Work/scratch/2026-11-27-ergon-full/target/debug/deps/installers_and_admin_updates-52df79b938d3bb5a)
+
+running 4 tests
+test dedicated_admin_token_and_local_loopback_admin_rules_are_enforced ... ok
+test gated_admin_can_check_configure_mode_and_install_while_non_admins_get_403_and_unauth_gets_401 ... ok
+test packaging_scripts_xml_manifests_release_workflow_and_signing_docs_are_valid ... ok
+test service_manifests_generate_and_validate_for_linux_macos_and_windows ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.75s
+
+     Running tests/live_llm_e2e.rs (/home/cayleb/Work/scratch/2026-11-27-ergon-full/target/debug/deps/live_llm_e2e-807a0024598caefc)
+
+running 1 test
+test live_llm_chat_writes_workspace_file_and_verifies_receipt ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/llm_resilience.rs (/home/cayleb/Work/scratch/2026-11-27-ergon-full/target/debug/deps/llm_resilience-abaa0ee20abca0b4)
+
+running 4 tests
+test mid_run_sigkill_crash_auto_resumes_on_restart_and_completes ... ok
+test persisted_live_runs_tracks_cancelled_failed_and_corrupt_quarantine ... ok
+test sse_last_event_id_replays_buffered_events_without_gaps ... ok
+test unconfigured_boot_recovery_is_honest_and_manual_resume_api_completes ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.29s
+
+     Running tests/logging_crash_help.rs (/home/cayleb/Work/scratch/2026-11-27-ergon-full/target/debug/deps/logging_crash_help-4f1b2f80d1b094d7)
+
+running 5 tests
+test binary_boot_creates_log_file_and_reads_admin_contact_env ... ok
+test diagnostic_bundle_api_and_cli_zip_contents_and_zero_secret_leaks ... ok
+test help_config_onboarding_and_admin_contact_roundtrip_and_gate_protection ... ok
+test real_panic_writes_redacted_crash_report_and_error_log ... ok
+test rotating_logger_rotates_bounded_files_and_redacts_secrets ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.18s
+
+     Running tests/pipelines_v029.rs (/home/cayleb/Work/scratch/2026-11-27-ergon-full/target/debug/deps/pipelines_v029-1c8e26339759de3c)
+
+running 6 tests
+test boot_recovery_converts_stale_running_runs_to_interrupted_and_paused ... ok
+test checkpoint_pause_survives_restart_and_resumes_with_human_answer ... ok
+test deterministic_zero_llm_pipeline_runs_skill_to_export_and_emits_sse ... ok
+test request_checkpoint_tool_parks_adhoc_chat_and_resumes_with_human_answer ... ok
+test starter_playbook_launches_real_skill_and_respects_existing_workspace_inputs ... ok
+test step_failure_and_retry_resumes_from_failed_step ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.98s
+
+     Running tests/routines_mvp_fixes.rs (/home/cayleb/Work/scratch/2026-11-27-ergon-full/target/debug/deps/routines_mvp_fixes-34835c9dd2056a77)
+
+running 4 tests
+test background_scheduler_runs_zero_llm_steps_v2_without_model_and_records_single_verified_run ... ok
+test deterministic_zero_llm_detector_classifies_routines_accurately ... ok
+test llm_requiring_routine_without_model_does_not_crash_scheduler_and_reports_cleanly ... ok
+test single_catchup_on_missed_deterministic_routine_records_exactly_one_verified_run ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.27s
+
+     Running tests/scheduler_history_v070.rs (/home/cayleb/Work/scratch/2026-11-27-ergon-full/target/debug/deps/scheduler_history_v070-b747489665f12d87)
+
+running 8 tests
+test audit_bundle_builds_verifies_detects_tampering_and_renders_clean_markdown ... ok
+test audit_bundle_empty_workspace_and_scale_performance ... ok
+test file_history_binary_large_diff_tamper_and_retention_cap ... ok
+test file_history_blocks_symlinked_parent_dir_and_tracks_deleted_files ... ok
+test file_history_blocks_traversal_symlinks_and_hostile_rev_ids ... ok
+test file_history_record_list_diff_and_restore_roundtrip ... ok
+test scheduler_parses_cadences_and_computes_exact_utc_next_run_ms ... ok
+test scheduler_pause_resume_due_detection_and_atomic_run_history ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.35s
+
+     Running tests/skills_v050.rs (/home/cayleb/Work/scratch/2026-11-27-ergon-full/target/debug/deps/skills_v050-53494e29448f5f7d)
+
+running 19 tests
+test audit_contract_flags_missing_clauses_renewals_and_line_cited_risks ... ok
+test catalog_exposes_all_12_skills_and_compiles_every_rune_script ... ok
+test clean_dataset_handles_empty_key_duplicate_headers_and_ragged_rows ... ok
+test clean_dataset_normalizes_json_and_csv_dedupes_flags_nulls_and_outliers ... ok
+test clean_dataset_parses_accounting_parenthesized_negatives ... ok
+test compare_documents_detects_added_removed_and_heading_changes ... ok
+test compare_documents_identical_and_triage_json_and_dispatcher_and_library_seed ... ok
+test csv_and_json_parsers_handle_rfc4180_bom_newlines_and_wrappers ... ok
+test draft_brief_grounds_in_sources_and_memory_and_halts_on_missing_sources ... ok
+test dry_run_harness_executes_all_12_skills_with_default_fixtures ... ok
+test extract_tables_parses_markdown_tables_and_structured_kv_logs ... ok
+test extract_tables_supports_tsv_colon_blocks_and_500_line_kv_logs ... ok
+test handle_skill_test_request_supports_builtin_custom_and_validate_all ... ok
+test large_500_row_csv_and_doc_scale_under_strict_rune_budget ... ok
+test reconcile_ledger_catches_second_file_duplicates_and_accounting_negatives ... ok
+test reconcile_ledger_multi_csv_matching_anomalies_and_exact_totals ... ok
+test strict_sandbox_bounds_block_traversal_symlinks_and_runaway_loops ... ok
+test summarize_meeting_extracts_decisions_owners_dates_and_followup_drafts ... ok
+test triage_inbox_prioritizes_urgent_action_and_fyi_across_formats ... ok
+
+test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 8.48s
+
+     Running tests/studio_tables_pdf.rs (/home/cayleb/Work/scratch/2026-11-27-ergon-full/target/debug/deps/studio_tables_pdf-bd585d59862a7023)
+
+running 6 tests
+test cwe22_and_cwe59_traversal_refused_across_new_endpoints ... ok
+test multisheet_xlsx_export_emits_sum_formulas_and_cached_totals ... ok
+test patch_file_tool_handles_unique_ambiguous_and_replace_all ... ok
+test pdf_export_round_trips_through_pdf_to_text_and_api ... ok
+test put_and_patch_content_enforce_optimistic_lock_and_history_restore ... ok
+test query_table_10k_row_rollup_and_multisource_formats ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.56s
+
+     Running tests/timing_parity_and_labels.rs (/home/cayleb/Work/scratch/2026-11-27-ergon-full/target/debug/deps/timing_parity_and_labels-88c118876ab1daf1)
+
+running 3 tests
+test embedded_assets_contain_estimate_labels_and_uncalibrated_tooltip ... ok
+test rust_and_browser_metering_formula_exact_parity ... ok
+test timing_measurement_kit_files_and_analyzer_n0_blocked ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.67s
+
+     Running tests/tripwire.rs (/home/cayleb/Work/scratch/2026-11-27-ergon-full/target/debug/deps/tripwire-3fd62edb42cf1e9b)
+
+running 18 tests
+test a_web_page_driving_the_desk_is_refused_and_reported ... ok
+test breadcrumbs_headers_and_decoy_cookie_on_the_desk ... ok
+test cloud_metadata_is_unreachable ... ok
+test decoy_env_hands_out_a_traceable_key_and_using_it_is_refused ... ok
+test exfil_capable_skill_waits_before_reaching_colleagues ... ok
+test hijacked_agent_sending_its_bait_key_is_blocked_and_stopped ... ok
+test honest_mistakes_stay_silent ... ok
+test injected_memory_note_waits_for_you ... ok
+test library_skills_cannot_rewrite_memory ... ok
+test naming_the_address_yourself_is_permission ... ok
+test ordinary_learning_is_not_held ... ok
+test private_addresses_need_the_persons_own_words_or_one_tap ... ok
+test reaching_outside_the_workspace_for_the_api_key_stops_the_run ... ok
+test remote_scanners_are_banned_and_dropped_but_this_computer_never_is ... ok
+test security_log_travels_with_the_audit_bundle ... ok
+test security_policy_is_local_only_and_round_trips ... ok
+test tampered_role_cookie_is_caught ... ok
+test the_agent_can_never_call_ergons_own_api ... ok
+
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.02s
+
+     Running tests/unified_dag_scheduler_v039.rs (/home/cayleb/Work/scratch/2026-11-27-ergon-full/target/debug/deps/unified_dag_scheduler_v039-612113924901ceee)
+
+running 5 tests
+test concurrent_live_runs_isolation_sse_run_id_and_per_run_cancellation ... ok
+test five_field_cron_and_timezone_scheduling_unit_and_http ... ok
+test offline_zero_llm_steps_v2_scheduled_routine_executes_without_model ... ok
+test parallel_dag_branch_checkpoints_resume_individually_and_preserve_step_snapshots ... ok
+test retry_timeout_on_error_and_subpipeline_execution ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.45s
+
+     Running tests/vault_search_v034.rs (/home/cayleb/Work/scratch/2026-11-27-ergon-full/target/debug/deps/vault_search_v034-64bcbe1327e47821)
+
+running 5 tests
+test aggregate_vault_and_http_endpoints_enforce_exact_decimals_and_security ... ok
+test incremental_vault_index_persists_and_skips_unchanged_files ... ok
+test indexes_past_512_chars_and_multi_page_pdf_with_exact_citations ... ok
+test multisheet_xlsx_indexes_all_sheets_past_sheet1 ... ok
+test search_vault_spotlights_and_excludes_symlinks_dotfiles_and_secrets ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.18s
+
+     Running tests/video_bug_fixes.rs (/home/cayleb/Work/scratch/2026-11-27-ergon-full/target/debug/deps/video_bug_fixes-9f85a00f70988e96)
+
+running 4 tests
+test csv_and_tsv_export_to_valid_pdf_14_and_reject_unsupported_extensions ... ok
+test head_phone_and_root_return_200_with_matching_headers_and_empty_body ... ok
+test make_spreadsheet_accepts_native_2d_stringified_json_and_csv_rows ... ok
+test write_document_preserves_commas_in_sections_native_stringified_and_plain ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.62s
+
+   Doc-tests ergon_rs
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+TEST_EXIT=0
