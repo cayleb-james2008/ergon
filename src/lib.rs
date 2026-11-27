@@ -2190,7 +2190,10 @@ fn subagent_system_prompt(
 #[derive(Clone, Debug)]
 pub struct LiveRun {
     pub run_id: String,
+    pub person_id: String,
     pub thread_id: String,
+    pub pipeline_run_id: Option<String>,
+    pub step_id: Option<String>,
     pub task: String,
     pub started_ms: u64,
     pub status: String,
@@ -2216,7 +2219,7 @@ const MAX_LIVE_STEPS: usize = 128;
 fn push_live_step(live: Option<LiveStreamCtx<'_>>, step: String) {
     if let Some(ctx) = live {
         if let Ok(mut map) = ctx.runs.lock() {
-            if let Some(run) = map.get_mut(ctx.person_id) {
+            if let Some(run) = map.get_mut(ctx.run_id) {
                 if run.steps.len() >= MAX_LIVE_STEPS {
                     run.steps.remove(0);
                 }
@@ -2702,6 +2705,9 @@ fn run_loop(
             }
             Err(e) => return Err(e),
         };
+        if is_cancelled(live) {
+            return Err("run cancelled by user".to_string());
+        }
         let price = records::resolve_model_price(pricing, &call_usage.model_id);
         let call_cost = records::compute_call_cost_usd(
             &price,
@@ -3142,7 +3148,7 @@ fn run_delegation(
 pub(crate) static RUNS_IN_FLIGHT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
 struct RunGuard {
-    live: Option<(LiveRuns, String, String)>,
+    live: Option<(LiveRuns, String)>,
     persist_root: Option<PathBuf>,
     run_id: String,
     finished: bool,
@@ -3155,6 +3161,8 @@ impl RunGuard {
         persist_root: Option<&Path>,
         run_id: &str,
         thread_id: &str,
+        pipeline_run_id: Option<&str>,
+        step_id: Option<&str>,
         task: &str,
         started_ms: u64,
         prior_steps: &[String],
@@ -3190,10 +3198,13 @@ impl RunGuard {
             }
             if let Ok(mut map) = runs.lock() {
                 map.insert(
-                    pid.to_string(),
+                    run_id.to_string(),
                     LiveRun {
                         run_id: run_id.to_string(),
+                        person_id: pid.to_string(),
                         thread_id: thread_id.to_string(),
+                        pipeline_run_id: pipeline_run_id.map(str::to_string),
+                        step_id: step_id.map(str::to_string),
                         task: task.to_string(),
                         started_ms,
                         status: initial_status.to_string(),
@@ -3223,6 +3234,9 @@ impl RunGuard {
                 run_id,
                 thread_id,
                 json!({
+                    "person_id": pid,
+                    "pipeline_run_id": pipeline_run_id,
+                    "step_id": step_id,
                     "task": truncate(task, 240),
                     "started_ms": started_ms,
                     "resumed": is_resuming,
@@ -3230,7 +3244,7 @@ impl RunGuard {
                     "ts_ms": now,
                 }),
             );
-            (runs.clone(), pid.to_string(), run_id.to_string())
+            (runs.clone(), run_id.to_string())
         });
         RunGuard {
             live: stored,
@@ -3261,11 +3275,9 @@ impl RunGuard {
                 error,
             );
         }
-        if let Some((runs, pid, rid)) = &self.live {
+        if let Some((runs, rid)) = &self.live {
             if let Ok(mut map) = runs.lock() {
-                if map.get(pid).map(|r| r.run_id.as_str()) == Some(rid.as_str()) {
-                    map.remove(pid);
-                }
+                map.remove(rid);
             }
         }
     }
@@ -3305,7 +3317,20 @@ pub fn run_agent_live(
     history: &[Value],
     live: Option<(&LiveRuns, &sse::RunEventBus, &str)>,
 ) -> Result<AgentOutcome, String> {
-    run_agent_inner(cfg, ctx, store, thread_id, task, history, live, false, AgentLoopOptions::default(), None)
+    run_agent_inner(
+        cfg,
+        ctx,
+        store,
+        thread_id,
+        task,
+        history,
+        live,
+        false,
+        None,
+        None,
+        AgentLoopOptions::default(),
+        None,
+    )
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -3319,7 +3344,20 @@ pub fn run_agent_with_options(
     live: Option<(&LiveRuns, &sse::RunEventBus, &str)>,
     options: AgentLoopOptions,
 ) -> Result<AgentOutcome, String> {
-    run_agent_inner(cfg, ctx, store, thread_id, task, history, live, false, options, None)
+    run_agent_inner(
+        cfg,
+        ctx,
+        store,
+        thread_id,
+        task,
+        history,
+        live,
+        false,
+        None,
+        None,
+        options,
+        None,
+    )
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -3334,7 +3372,20 @@ pub fn run_agent_resumed(
     options: AgentLoopOptions,
     resume: ResumeRunOptions,
 ) -> Result<AgentOutcome, String> {
-    run_agent_inner(cfg, ctx, store, thread_id, task, history, live, false, options, Some(resume))
+    run_agent_inner(
+        cfg,
+        ctx,
+        store,
+        thread_id,
+        task,
+        history,
+        live,
+        false,
+        None,
+        None,
+        options,
+        Some(resume),
+    )
 }
 
 pub fn run_agent_for_pipeline(
@@ -3346,7 +3397,20 @@ pub fn run_agent_for_pipeline(
     history: &[Value],
     live: Option<(&LiveRuns, &sse::RunEventBus, &str)>,
 ) -> Result<AgentOutcome, String> {
-    run_agent_inner(cfg, ctx, store, thread_id, task, history, live, true, AgentLoopOptions::default(), None)
+    run_agent_inner(
+        cfg,
+        ctx,
+        store,
+        thread_id,
+        task,
+        history,
+        live,
+        true,
+        None,
+        None,
+        AgentLoopOptions::default(),
+        None,
+    )
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -3360,7 +3424,49 @@ pub fn run_agent_for_pipeline_with_options(
     live: Option<(&LiveRuns, &sse::RunEventBus, &str)>,
     options: AgentLoopOptions,
 ) -> Result<AgentOutcome, String> {
-    run_agent_inner(cfg, ctx, store, thread_id, task, history, live, true, options, None)
+    run_agent_inner(
+        cfg,
+        ctx,
+        store,
+        thread_id,
+        task,
+        history,
+        live,
+        true,
+        None,
+        None,
+        options,
+        None,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn run_agent_for_pipeline_step(
+    cfg: &Config,
+    ctx: &ToolCtx,
+    store: &SharedStore,
+    thread_id: &str,
+    pipeline_run_id: &str,
+    step_id: &str,
+    task: &str,
+    history: &[Value],
+    live: Option<(&LiveRuns, &sse::RunEventBus, &str)>,
+    options: AgentLoopOptions,
+) -> Result<AgentOutcome, String> {
+    run_agent_inner(
+        cfg,
+        ctx,
+        store,
+        thread_id,
+        task,
+        history,
+        live,
+        true,
+        Some(pipeline_run_id),
+        Some(step_id),
+        options,
+        None,
+    )
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -3373,6 +3479,8 @@ fn run_agent_inner(
     history: &[Value],
     live: Option<(&LiveRuns, &sse::RunEventBus, &str)>,
     from_pipeline: bool,
+    pipeline_run_id: Option<&str>,
+    step_id: Option<&str>,
     options: AgentLoopOptions,
     resume: Option<ResumeRunOptions>,
 ) -> Result<AgentOutcome, String> {
@@ -3411,6 +3519,8 @@ fn run_agent_inner(
         persist_root,
         &run_id,
         thread_id,
+        pipeline_run_id,
+        step_id,
         task,
         run_started,
         &prior_steps,
