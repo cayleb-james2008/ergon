@@ -1953,11 +1953,9 @@ pub struct CitationReport {
 
 impl CitationReport {
     pub fn freshness_pct(&self) -> u8 {
-        if self.total == 0 {
-            100
-        } else {
-            ((self.verified * 100) / self.total) as u8
-        }
+        (self.verified * 100)
+            .checked_div(self.total)
+            .map_or(100, |p| p as u8)
     }
 
     pub fn gate_status(&self) -> &'static str {

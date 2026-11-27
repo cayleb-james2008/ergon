@@ -2642,7 +2642,7 @@ impl PdfCanvas {
             let y_bot = y_top - row_h;
             if is_hdr {
                 canvas.draw_rect_fill(Self::MARGIN_L, y_bot, Self::CONTENT_W, row_h, (0.93, 0.94, 0.96));
-            } else if ri % 2 == 0 {
+            } else if ri.is_multiple_of(2) {
                 canvas.draw_rect_fill(Self::MARGIN_L, y_bot, Self::CONTENT_W, row_h, (0.98, 0.98, 0.99));
             }
             let mut cx = Self::MARGIN_L;
@@ -3076,7 +3076,7 @@ fn looks_numeric_table_cell(raw: &str) -> bool {
         return true;
     }
     if s.starts_with('(') && s.ends_with(')') && s.len() >= 2 {
-        s = &s[1..s.len() - 1].trim();
+        s = s[1..s.len() - 1].trim();
     }
     s = s.trim_start_matches(['+', '-']);
     s = s.trim_start_matches(['$', '€', '£']);

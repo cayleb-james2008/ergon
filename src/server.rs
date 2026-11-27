@@ -1592,6 +1592,7 @@ fn reload_state_after_restore(state: &AppState) {
 
 /// `background_updates` starts the periodic release check; only the real
 /// binary does (tests must not call out to GitHub).
+#[allow(clippy::too_many_arguments)] // internal entry point shared by the serve* wrappers
 fn serve_inner(
     listener: TcpListener,
     cfg: Config,
@@ -4806,12 +4807,9 @@ struct PackPreflight {
 
 impl PackPreflight {
     fn freshness_pct(&self) -> u8 {
-        let total = self.citations.len();
-        if total == 0 {
-            100
-        } else {
-            ((self.citations_verified * 100) / total) as u8
-        }
+        (self.citations_verified * 100)
+            .checked_div(self.citations.len())
+            .map_or(100, |p| p as u8)
     }
 
     fn citation_gate(&self) -> &'static str {

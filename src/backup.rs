@@ -1729,10 +1729,11 @@ pub fn prune_backups_in_dir(dir: &Path, keep: usize) -> Vec<String> {
     let mut zips: Vec<(String, PathBuf)> = Vec::new();
     for entry in rd.flatten() {
         let name = entry.file_name().to_string_lossy().into_owned();
-        if name.starts_with("ergon-backup-") && name.ends_with(".zip") {
-            if entry.file_type().map(|ft| ft.is_file()).unwrap_or(false) {
-                zips.push((name, entry.path()));
-            }
+        if name.starts_with("ergon-backup-")
+            && name.ends_with(".zip")
+            && entry.file_type().map(|ft| ft.is_file()).unwrap_or(false)
+        {
+            zips.push((name, entry.path()));
         }
     }
     // Filenames include UTC timestamp YYYYMMDD-HHMMSS-mmmZ, so descending sort puts newest first.
@@ -1839,6 +1840,7 @@ fn parse_s3_endpoint(
 }
 
 /// Build an AWS Signature Version 4 signed PUT request for an S3-compatible endpoint.
+#[allow(clippy::too_many_arguments)] // each arg is a distinct SigV4 input
 pub fn build_sigv4_s3_put(
     endpoint: Option<&str>,
     bucket: &str,
@@ -2507,7 +2509,7 @@ pub fn restore_backup(
         let backups_dir = target_abs.join("backups");
         std::fs::create_dir_all(&backups_dir)
             .map_err(|e| format!("create pre-restore backups dir: {e}"))?;
-        let pre = build_backup_archive(&target_abs, &[backups_dir.clone()])?;
+        let pre = build_backup_archive(&target_abs, std::slice::from_ref(&backups_dir))?;
         let (pre_name, pre_path) =
             pick_unique_backup_path(&backups_dir, pre.manifest.created_at_ms, "pre-restore");
         atomic_write_bytes(&pre_path, &pre.zip_bytes)
@@ -2538,10 +2540,11 @@ pub fn restore_backup(
                 // Carry over existing backups/ directory (including pre-restore snapshot).
                 let old_backups = old_dir.join("backups");
                 let new_backups = target_abs.join("backups");
-                if old_backups.exists() && !new_backups.exists() {
-                    if std::fs::rename(&old_backups, &new_backups).is_err() {
-                        let _ = copy_dir_recursive_no_symlinks(&old_backups, &new_backups);
-                    }
+                if old_backups.exists()
+                    && !new_backups.exists()
+                    && std::fs::rename(&old_backups, &new_backups).is_err()
+                {
+                    let _ = copy_dir_recursive_no_symlinks(&old_backups, &new_backups);
                 }
                 let _ = std::fs::remove_dir_all(&old_dir);
             }

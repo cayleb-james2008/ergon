@@ -203,7 +203,7 @@ fn base64_decode(input: &str) -> Result<Vec<u8>, String> {
     if clean.is_empty() {
         return Ok(Vec::new());
     }
-    if clean.len() % 4 != 0 {
+    if !clean.len().is_multiple_of(4) {
         return Err("invalid base64 length".to_string());
     }
     let val = |b: u8| -> Result<u8, String> {

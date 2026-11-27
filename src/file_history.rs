@@ -440,7 +440,7 @@ pub fn list_tracked_files(person_data_dir: &Path) -> Vec<Value> {
                 }),
             ));
         }
-        rows.sort_by(|a, b| b.0.cmp(&a.0));
+        rows.sort_by_key(|r| std::cmp::Reverse(r.0));
         rows.into_iter().map(|(_, v)| v).collect()
     })
 }
@@ -766,11 +766,9 @@ pub fn diff_texts(label_a: &str, label_b: &str, text_a: &str, text_b: &str) -> T
     }
 
     let max_lines = left.len().max(right.len());
-    let similarity_pct = if max_lines == 0 {
-        100u8
-    } else {
-        ((unchanged * 100) / max_lines).min(100) as u8
-    };
+    let similarity_pct = (unchanged * 100)
+        .checked_div(max_lines)
+        .map_or(100u8, |p| p.min(100) as u8);
 
     let hunks = build_hunks(&ops, &left, &right, 3);
     let mut unified = String::new();

@@ -582,7 +582,7 @@ fn large_500_row_csv_and_doc_scale_under_strict_rune_budget() {
     let d_str = dollars.to_string();
     let mut formatted = String::new();
     for (idx, ch) in d_str.chars().enumerate() {
-        if idx > 0 && (d_str.len() - idx) % 3 == 0 {
+        if idx > 0 && (d_str.len() - idx).is_multiple_of(3) {
             formatted.push(',');
         }
         formatted.push(ch);

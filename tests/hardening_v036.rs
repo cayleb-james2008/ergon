@@ -910,9 +910,7 @@ fn e3_sse_malformed_frames_early_eof_and_compaction_edge_cases() {
                     "data: {\"choices\":[{\"delta\":{\"content\":\"\\\"summary\\\":\\\"recovered\\\"}\"}}]}\n\n",
                     "data: {\"choices\":[{\"delta\":{\"content\":\"\n" // truncated partial frame at EOF
                 ),
-                1 => concat!(
-                    "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"name\":\"write_file\",\"arguments\":\"{\\\"path\\\":\\\"a.txt\\\"\"}}]}}]}\n\n"
-                ),
+                1 => "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"name\":\"write_file\",\"arguments\":\"{\\\"path\\\":\\\"a.txt\\\"\"}}]}}]}\n\n",
                 _ => "data: {\"error\":{\"message\":\"upstream aborted\"}}\n\n",
             };
             let resp = format!(

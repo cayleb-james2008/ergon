@@ -768,9 +768,8 @@ fn url_encode_component(s: &str) -> String {
 
 fn sanitize_redirect_after(raw: &str) -> String {
     let trimmed = raw.trim();
-    if trimmed == "/phone" || trimmed.starts_with("/phone?") {
-        trimmed.to_string()
-    } else if trimmed.starts_with('/') && !trimmed.starts_with("//") && !trimmed.contains('\\') {
+    // "/phone" and "/phone?..." are plain same-origin paths, so this one rule covers them.
+    if trimmed.starts_with('/') && !trimmed.starts_with("//") && !trimmed.contains('\\') {
         trimmed.to_string()
     } else {
         "/".to_string()

@@ -1109,7 +1109,7 @@ fn collect_known_secrets(root_data_dir: &Path) -> Vec<String> {
 
     // Longest first so substring secrets don't leave fragments behind.
     let mut list: Vec<String> = set.into_iter().collect();
-    list.sort_by(|a, b| b.len().cmp(&a.len()));
+    list.sort_by_key(|s| std::cmp::Reverse(s.len()));
     list
 }
 
@@ -1477,11 +1477,12 @@ pub fn build_diagnostic_bundle_zip(
         arch = std::env::consts::ARCH,
     );
 
-    let mut owned_files: Vec<(String, Vec<u8>)> = Vec::new();
-    owned_files.push(("README.txt".to_string(), readme.into_bytes()));
-    owned_files.push(("system.json".to_string(), system_str.into_bytes()));
-    owned_files.push(("security_events.json".to_string(), sec_str.into_bytes()));
-    owned_files.push(("connectors.json".to_string(), conn_str.into_bytes()));
+    let mut owned_files: Vec<(String, Vec<u8>)> = vec![
+        ("README.txt".to_string(), readme.into_bytes()),
+        ("system.json".to_string(), system_str.into_bytes()),
+        ("security_events.json".to_string(), sec_str.into_bytes()),
+        ("connectors.json".to_string(), conn_str.into_bytes()),
+    ];
     let log_files = log_entries.len();
     let crash_reports = crash_entries.len();
     owned_files.extend(log_entries);

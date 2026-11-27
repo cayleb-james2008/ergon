@@ -237,9 +237,9 @@ fn prune_runs(runs: &mut Vec<PersistedLiveRun>) {
             terminal.push(r);
         }
     }
-    terminal.sort_by(|a, b| b.updated_ms.cmp(&a.updated_ms));
+    terminal.sort_by_key(|r| std::cmp::Reverse(r.updated_ms));
     terminal.truncate(MAX_LIVE_RUNS_HISTORY);
-    keep_active.sort_by(|a, b| b.updated_ms.cmp(&a.updated_ms));
+    keep_active.sort_by_key(|r| std::cmp::Reverse(r.updated_ms));
     keep_active.extend(terminal);
     *runs = keep_active;
 }
@@ -264,7 +264,7 @@ pub fn list_for_person(root_data_dir: &Path, person_id: &str) -> Vec<PersistedLi
     with_io_lock(|| {
         let (mut runs, _) = load_unlocked(root_data_dir);
         runs.retain(|r| r.person_id == person_id);
-        runs.sort_by(|a, b| b.updated_ms.cmp(&a.updated_ms));
+        runs.sort_by_key(|r| std::cmp::Reverse(r.updated_ms));
         runs
     })
 }
@@ -454,7 +454,7 @@ pub fn claim_for_resume(
                 })
                 .map(|(idx, r)| (idx, r.updated_ms))
                 .collect();
-            candidates.sort_by(|a, b| b.1.cmp(&a.1));
+            candidates.sort_by_key(|c| std::cmp::Reverse(c.1));
             match candidates.first() {
                 Some((idx, _)) => *idx,
                 None => return Err((404, "no interrupted run available to resume".to_string())),
