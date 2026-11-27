@@ -822,6 +822,7 @@ fn run_loop_compacts_under_tight_budget_and_continues_past_24_steps() {
             context_budget_chars: 1400,
             max_steps: 30,
             snapshot: None,
+            ..AgentLoopOptions::default()
         },
     )
     .expect("compacted 26-step run should succeed");

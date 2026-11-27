@@ -647,6 +647,24 @@ pub fn backup_corrupt(path: &Path) -> Option<PathBuf> {
     Some(candidate)
 }
 
+/// Copy a partially corrupt store aside without deleting the original so valid
+/// recovered entries can be preserved while raw corrupt bytes survive.
+pub fn backup_corrupt_copy(path: &Path) -> Option<PathBuf> {
+    let mut candidate = path.with_extension("json.bak");
+    let mut n = 2;
+    while candidate.exists() {
+        candidate = path.with_extension(format!("json.bak{n}"));
+        n += 1;
+    }
+    std::fs::copy(path, &candidate).ok()?;
+    eprintln!(
+        "ergon: {} had corrupt entries; backed up copy to {} before recovery",
+        path.display(),
+        candidate.display()
+    );
+    Some(candidate)
+}
+
 /// Backs up a corrupt store and returns its file name, for the
 /// "earlier conversations were moved" notice (GET /api/status).
 pub fn backed_up_name(path: &Path) -> Option<String> {
@@ -1970,6 +1988,7 @@ pub struct AgentLoopOptions {
     pub context_budget_chars: usize,
     pub max_steps: usize,
     pub snapshot: Option<AgentSnapshot>,
+    pub external_cancel: Option<Arc<std::sync::atomic::AtomicBool>>,
 }
 
 impl Default for AgentLoopOptions {
@@ -1978,6 +1997,7 @@ impl Default for AgentLoopOptions {
             context_budget_chars: env_context_budget_chars(),
             max_steps: STEP_CAP,
             snapshot: None,
+            external_cancel: None,
         }
     }
 }
@@ -3253,7 +3273,13 @@ fn run_agent_inner(
     let run_started = records::now_millis();
     let run_t0 = std::time::Instant::now();
     let run_id = format!("run-{run_started}-{}", RUN_ID_SEQ.fetch_add(1, Ordering::SeqCst));
-    let cancel = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let cancel = options
+        .external_cancel
+        .clone()
+        .unwrap_or_else(|| Arc::new(std::sync::atomic::AtomicBool::new(false)));
+    if cancel.load(Ordering::SeqCst) {
+        return Err("run cancelled by user".to_string());
+    }
     let _in_flight = RunGuard::new(
         live,
         &run_id,
