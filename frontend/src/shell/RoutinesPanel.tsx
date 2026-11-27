@@ -37,6 +37,10 @@ import {
   formatCountdown,
   hasV050Api,
   hasV070Api,
+  isCronExpression,
+  isDeterministicRoutine,
+  resolveTzOffsetMins,
+  validateCronExpression,
   type PipelineResumePayload,
   type PipelineRun,
   type PipelineStepSpec,
@@ -61,6 +65,43 @@ const SCHEDULES = [
   "weekly mon",
   "every 30m",
 ];
+
+const CRON_PRESETS = [
+  { expr: "0 9 * * 1-5", label: "Weekdays 09:00" },
+  { expr: "*/15 * * * *", label: "Every 15m cron" },
+  { expr: "0 8 1 * *", label: "Monthly 1st" },
+];
+
+const COMMON_TIMEZONES = [
+  "UTC",
+  "America/New_York",
+  "America/Chicago",
+  "America/Denver",
+  "America/Los_Angeles",
+  "Europe/London",
+  "Europe/Berlin",
+  "Asia/Tokyo",
+  "Asia/Singapore",
+  "Australia/Sydney",
+];
+
+function defaultLocalTz(): string {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+  } catch {
+    return "UTC";
+  }
+}
+
+function formatUtcOffset(offsetMins?: number | null): string {
+  if (typeof offsetMins !== "number" || !Number.isFinite(offsetMins)) return "";
+  if (offsetMins === 0) return "UTC";
+  const sign = offsetMins < 0 ? "-" : "+";
+  const abs = Math.abs(Math.round(offsetMins));
+  const hh = String(Math.floor(abs / 60)).padStart(2, "0");
+  const mm = String(abs % 60).padStart(2, "0");
+  return `UTC${sign}${hh}:${mm}`;
+}
 
 function fmtDuration(startMs: number, endMs?: number | null): string {
   if (!endMs || endMs < startMs) return "";
@@ -111,6 +152,8 @@ function RoutinesBody({
     name: string;
     schedule: string;
     prompt: string;
+    tz?: string;
+    tz_offset_mins?: number | null;
     skill_id?: string;
     steps?: string[];
     steps_v2?: PipelineStepSpec[];
@@ -146,6 +189,7 @@ function RoutinesBody({
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState("");
   const [schedule, setSchedule] = useState(SCHEDULES[2]);
+  const [tz, setTz] = useState(() => defaultLocalTz());
   const [skillId, setSkillId] = useState("");
   const [prompt, setPrompt] = useState("");
   const [extraSteps, setExtraSteps] = useState<string[]>([]);
@@ -291,6 +335,14 @@ function RoutinesBody({
       setErr("Enter both a routine name and the task prompt or pipeline steps your agent should run.");
       return;
     }
+    const cleanSchedule = schedule.trim() || SCHEDULES[2];
+    if (isCronExpression(cleanSchedule) || cleanSchedule.includes("*")) {
+      const cronCheck = validateCronExpression(cleanSchedule);
+      if (!cronCheck.valid) {
+        setErr(cronCheck.error || "Invalid 5-field cron expression.");
+        return;
+      }
+    }
     if (typedSteps.length > 0) {
       const check = validatePipelineSteps(typedSteps);
       if (!check.valid) {
@@ -307,10 +359,13 @@ function RoutinesBody({
         : [derivedPrompt, ...extraSteps.map((s) => s.trim()).filter(Boolean)];
     setSaving(true);
     setErr("");
+    const tzOffsetMins = resolveTzOffsetMins(tz);
     const ok = await onCreate({
       name: name.trim(),
-      schedule: schedule.trim() || SCHEDULES[2],
+      schedule: cleanSchedule,
       prompt: derivedPrompt,
+      tz,
+      tz_offset_mins: tzOffsetMins,
       skill_id: skillId || (typedSteps[0]?.kind === "skill" ? typedSteps[0].skill_id : undefined),
       steps: cleanChain.length > 1 ? cleanChain : undefined,
       steps_v2: typedSteps.length > 0 ? typedSteps : undefined,
@@ -467,6 +522,7 @@ function RoutinesBody({
                 ref={importInputRef}
                 id="playbook-import-input"
                 type="file"
+                aria-label="Import playbook pack JSON"
                 accept=".json,.ergon-playbook.json,application/json"
                 className="sr-only"
                 onChange={handleImportFile}
@@ -521,21 +577,43 @@ function RoutinesBody({
             />
           </div>
 
-          <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
-            <div className="flex flex-col gap-1">
+          <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
+            <div className="flex min-w-0 flex-col gap-1">
               <label htmlFor="routine-schedule" className="text-xs font-medium text-ink">
-                Cadence
+                Cadence or 5-field cron
               </label>
               <Input
                 id="routine-schedule"
                 value={schedule}
                 onChange={(e) => setSchedule(e.target.value)}
-                placeholder="daily 09:00 or every 15m"
+                placeholder="daily 09:00 or 0 9 * * 1-5"
                 autoComplete="off"
+                className="w-full min-w-0"
               />
             </div>
 
-            <div className="flex flex-col gap-1">
+            <div className="flex min-w-0 flex-col gap-1">
+              <label htmlFor="routine-timezone" className="text-xs font-medium text-ink">
+                Timezone
+              </label>
+              <select
+                id="routine-timezone"
+                value={tz}
+                onChange={(e) => setTz(e.target.value)}
+                className="focus-ring h-9 min-h-11 w-full min-w-0 rounded-sm border border-input bg-surface px-2.5 text-sm text-ink outline-none md:min-h-9"
+              >
+                {!COMMON_TIMEZONES.includes(tz) && (
+                  <option value={tz}>{tz}</option>
+                )}
+                {COMMON_TIMEZONES.map((zone) => (
+                  <option key={zone} value={zone}>
+                    {zone}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex min-w-0 flex-col gap-1">
               <label htmlFor="routine-skill" className="text-xs font-medium text-ink">
                 Built-in workflow (optional)
               </label>
@@ -543,7 +621,7 @@ function RoutinesBody({
                 id="routine-skill"
                 value={skillId}
                 onChange={(e) => handleSkillPick(e.target.value)}
-                className="focus-ring h-9 min-h-11 w-full rounded-sm border border-input bg-surface px-2.5 text-sm text-ink outline-none md:min-h-9"
+                className="focus-ring h-9 min-h-11 w-full min-w-0 rounded-sm border border-input bg-surface px-2.5 text-sm text-ink outline-none md:min-h-9"
               >
                 <option value="">Auto-select from prompt</option>
                 {skills.map((sk) => (
@@ -555,7 +633,7 @@ function RoutinesBody({
             </div>
           </div>
 
-          <div className="flex flex-wrap gap-1.5">
+          <div className="flex flex-wrap items-center gap-1.5">
             {SCHEDULES.map((preset) => (
               <Button
                 key={preset}
@@ -568,7 +646,43 @@ function RoutinesBody({
                 {preset}
               </Button>
             ))}
+            {CRON_PRESETS.map((cp) => (
+              <Button
+                key={cp.expr}
+                type="button"
+                size="xs"
+                variant={schedule === cp.expr ? "default" : "outline"}
+                data-cron-preset={cp.expr}
+                className="max-md:min-h-11 text-xs"
+                onClick={() => setSchedule(cp.expr)}
+              >
+                {cp.label}
+              </Button>
+            ))}
           </div>
+
+          {(() => {
+            const trimmed = schedule.trim();
+            if (!trimmed) return null;
+            const looksCron = isCronExpression(trimmed) || trimmed.includes("*");
+            if (looksCron) {
+              const check = validateCronExpression(trimmed);
+              if (!check.valid) {
+                return (
+                  <p data-cron-validation="invalid" className="text-xs text-status-stopped-fg">
+                    {check.error}
+                  </p>
+                );
+              }
+            }
+            const previewMs = estimateNextRunMs(trimmed, nowMs, null, resolveTzOffsetMins(tz), tz);
+            if (!previewMs) return null;
+            return (
+              <p data-cron-validation="valid" className="mono text-xs text-ink-2">
+                Next match ({tz}): {formatCountdown(previewMs, nowMs)}
+              </p>
+            );
+          })()}
 
           <div className="flex flex-col gap-1.5">
             <div className="flex flex-wrap items-center justify-between gap-2">
@@ -635,6 +749,7 @@ function RoutinesBody({
                 }}
                 skills={skills}
                 workspaceFiles={workspaceFiles}
+                routines={routines}
               />
             )}
 
@@ -730,9 +845,12 @@ function RoutinesBody({
         <ul className="flex flex-col gap-2.5">
           {routines.map((rt) => {
             const nextMs = rt.enabled
-              ? (rt.next_run_ms ?? estimateNextRunMs(rt.schedule, rt.last_run_ts || nowMs, rt.interval_secs))
+              ? (rt.next_run_ms ??
+                estimateNextRunMs(rt.schedule, rt.last_run_ts || nowMs, rt.interval_secs, rt.tz_offset_mins, rt.tz))
               : null;
             const nextLabel = rt.enabled ? `Next run ${formatCountdown(nextMs, nowMs)}` : "Paused";
+            const tzLabel = rt.tz || formatUtcOffset(rt.tz_offset_mins);
+            const deterministic = isDeterministicRoutine(rt);
             const histOpen = Boolean(expandedHistory[rt.id]);
             const runs = historyByRoutine[rt.id] ?? rt.recent_runs ?? [];
             const loadingRuns = Boolean(historyLoading[rt.id]);
@@ -763,6 +881,16 @@ function RoutinesBody({
                     {rt.skill_id && (
                       <Badge variant="outline" size="sm" className="mono text-xs">
                         {rt.skill_id}
+                      </Badge>
+                    )}
+                    {deterministic && (
+                      <Badge
+                        variant="outline"
+                        size="sm"
+                        data-routine-deterministic={rt.id}
+                        className="text-xs text-ink-2"
+                      >
+                        Offline deterministic
                       </Badge>
                     )}
                     {rt.steps_v2 && rt.steps_v2.length > 0 ? (
@@ -809,6 +937,16 @@ function RoutinesBody({
                     <Pill variant="secondary" className="border border-hairline bg-board px-2 py-0.5 text-xs text-ink-2">
                       <span className="mono">{rt.schedule}</span>
                     </Pill>
+                    {tzLabel && (
+                      <Badge
+                        variant="outline"
+                        size="sm"
+                        data-routine-tz={rt.id}
+                        className="mono text-xs text-ink-2"
+                      >
+                        {tzLabel}
+                      </Badge>
+                    )}
                     <Badge
                       variant="outline"
                       size="sm"
@@ -1245,6 +1383,8 @@ export function RoutinesPanel({
     name: string;
     schedule: string;
     prompt: string;
+    tz?: string;
+    tz_offset_mins?: number | null;
     skill_id?: string;
     steps?: string[];
     steps_v2?: PipelineStepSpec[];

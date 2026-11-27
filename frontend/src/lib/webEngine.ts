@@ -17,7 +17,11 @@ import { computeLineDiff } from "@/lib/diff";
 import {
   engagementWorkspacePrefix,
   estimateNextRunMs,
+  getPendingCheckpoints,
+  isCronExpression,
   isPathInEngagementScope,
+  resolveTzOffsetMins,
+  validateCronExpression,
   type Client,
   type ClientContact,
   type DeliveryLog,
@@ -27,6 +31,7 @@ import {
   type InvoiceLineItem,
   type InvoiceRecord,
   type InvoiceStatus,
+  type LiveRun,
   type LiveRunStep,
   type McpServerSpec,
   type McpToolSpec,
@@ -44,6 +49,7 @@ import {
   type PipelineCheckpointInputMode,
   type PipelineChildItemState,
   type PipelineDeliverSpec,
+  type PipelinePendingCheckpoint,
   type PipelineRun,
   type PipelineStepSpec,
   type PipelineStepState,
@@ -1587,15 +1593,8 @@ export async function installBrowserEngine(): Promise<void> {
   let state: RootState = (await idbLoad()) || buildInitialState();
   await idbSave(state);
 
-  const liveRuns: Record<string, {
-    active: boolean;
-    run_id: string;
-    thread_id: string;
-    task: string;
-    started_ms: number;
-    steps: LiveRunStep[];
-    cancelled: boolean;
-  }> = {};
+  type WebLiveRun = LiveRun & { person_id: string };
+  const liveRuns = new Map<string, WebLiveRun>();
 
   // Local EventSource listeners for /api/runs/stream (zero network traffic on static web hosting!).
   const sseListeners = new Set<(event: string, payload: unknown) => void>();
@@ -1963,7 +1962,7 @@ export async function installBrowserEngine(): Promise<void> {
     if (!cur || cur >= nowMs) return 0;
     let missed = 0;
     while (missed < 99) {
-      const slot = estimateNextRunMs(rt.schedule, cur, rt.interval_secs);
+      const slot = estimateNextRunMs(rt.schedule, cur, rt.interval_secs, rt.tz_offset_mins, rt.tz);
       if (slot === null || slot > nowMs || slot <= cur) break;
       missed += 1;
       cur = slot;
@@ -2004,7 +2003,7 @@ export async function installBrowserEngine(): Promise<void> {
     const nowMs = Date.now();
     const activeRoutines = st.routines.filter((r) => r.enabled);
     const dueCandidates = activeRoutines
-      .map((r) => r.next_run_ms ?? estimateNextRunMs(r.schedule, r.last_run_ts || nowMs, r.interval_secs))
+      .map((r) => r.next_run_ms ?? estimateNextRunMs(r.schedule, r.last_run_ts || nowMs, r.interval_secs, r.tz_offset_mins, r.tz))
       .filter((n): n is number => typeof n === "number" && Number.isFinite(n));
     const missedTotal = activeRoutines.reduce((acc, r) => acc + countMissedWindowsWeb(r, nowMs), 0);
     return {
@@ -2633,7 +2632,18 @@ export async function installBrowserEngine(): Promise<void> {
     let stepPromptAcc = Math.max(240, Math.round(prompt.length / 4) + 180);
     let stepCompletionAcc = 0;
 
-    liveRuns[p.id] = { active: true, run_id: runId, thread_id: th.id, task: prompt, started_ms: startedMs, steps: [], cancelled: false };
+    liveRuns.set(runId, {
+      person_id: p.id,
+      active: true,
+      run_id: runId,
+      thread_id: th.id,
+      task: prompt,
+      started_ms: startedMs,
+      steps: [],
+      cancelled: false,
+      kind: "chat",
+    });
+    broadcastSse("run_started", { run_id: runId, thread_id: th.id, active: true, task: prompt, started_ms: startedMs, steps: [], kind: "chat" });
     broadcastSse("status", { run_id: runId, thread_id: th.id, active: true, elapsed_ms: 0, steps: [] });
 
     const pushStep = (tool: string, stepStr: string) => {
@@ -2651,18 +2661,19 @@ export async function installBrowserEngine(): Promise<void> {
         latency_ms: Math.max(1, Date.now() - startedMs),
         engagement_id: engagement?.id,
       };
+      const curLive = liveRuns.get(runId);
       const stepObj: LiveRunStep = {
-        id: `${runId}-s${(liveRuns[p.id]?.steps.length ?? 0) + 1}`,
+        id: `${runId}-s${(curLive?.steps.length ?? 0) + 1}`,
         tool,
         status: /has NOT been deleted yet/.test(stepStr) ? "waiting" : "done",
         elapsed_ms: Math.max(1, Date.now() - startedMs),
         raw: stepStr,
       };
-      liveRuns[p.id]?.steps.push(stepObj);
+      curLive?.steps.push(stepObj);
       broadcastSse("step_done", { run_id: runId, thread_id: th!.id, ...stepObj, usage: stepUsage });
     };
 
-    const isCancelled = () => Boolean(liveRuns[p.id]?.cancelled);
+    const isCancelled = () => Boolean(liveRuns.get(runId)?.cancelled);
 
     const emitTokenDeltas = (text: string, stepId?: string) => {
       const clean = String(text || "");
@@ -2743,10 +2754,10 @@ export async function installBrowserEngine(): Promise<void> {
       await persist();
       broadcastSse("run_finished", { run_id: runId, thread_id: th.id, elapsed_ms: Date.now() - startedMs, usage: runUsage });
       broadcastSse("done", { run_id: runId, thread_id: th.id, elapsed_ms: Date.now() - startedMs, usage: runUsage });
-      delete liveRuns[p.id];
+      liveRuns.delete(runId);
       return jsonRes(th, 200);
     } catch (e) {
-      delete liveRuns[p.id];
+      liveRuns.delete(runId);
       const msg = e instanceof Error ? e.message : String(e);
       if (/cancelled/i.test(msg)) {
         th.messages.push({ role: "step", content: "Note: Run cancelled by user." });
@@ -2894,6 +2905,27 @@ export async function installBrowserEngine(): Promise<void> {
           errors.push(`Step "${id || idx + 1}" requires deliver.connector_id.`);
         } else if (outbound.length > 0 && !outbound.some((c) => c.id === cid)) {
           errors.push(`Step "${id || idx + 1}" references unknown outbound connector "${cid}".`);
+        }
+      } else if (st.kind === "subpipeline") {
+        if (!String(st.routine_id ?? "").trim()) {
+          errors.push(`Step "${id || idx + 1}" of kind "subpipeline" requires routine_id.`);
+        }
+      }
+      if (st.timeout_secs !== undefined && (!Number.isFinite(st.timeout_secs) || st.timeout_secs <= 0)) {
+        errors.push(`Step "${id || idx + 1}" timeout_secs must be positive.`);
+      }
+      if (st.retry_max !== undefined && (!Number.isInteger(st.retry_max) || st.retry_max < 0 || st.retry_max > 10)) {
+        errors.push(`Step "${id || idx + 1}" retry_max must be an integer between 0 and 10.`);
+      }
+      if (st.retry_backoff_ms !== undefined && (!Number.isFinite(st.retry_backoff_ms) || st.retry_backoff_ms < 0)) {
+        errors.push(`Step "${id || idx + 1}" retry_backoff_ms must be >= 0.`);
+      }
+      if (typeof st.on_error === "string" && st.on_error.startsWith("goto:")) {
+        const targetId = st.on_error.slice("goto:".length).trim();
+        if (!targetId) {
+          errors.push(`Step "${id || idx + 1}" on_error goto target cannot be empty.`);
+        } else if (targetId === id) {
+          errors.push(`Step "${id || idx + 1}" on_error cannot goto itself.`);
         }
       }
     });
@@ -3111,7 +3143,9 @@ export async function installBrowserEngine(): Promise<void> {
       steps: opts.steps_v2,
       step_states: stepStates,
       pending_checkpoint: null,
+      pending_checkpoints: [],
       agent_snapshot: null,
+      step_snapshots: {},
       error: null,
     };
     st.pipelineRuns.unshift(run);
@@ -3262,6 +3296,16 @@ export async function installBrowserEngine(): Promise<void> {
     };
   }
 
+  function attachPendingCheckpoint(run: PipelineRun, cp: PipelinePendingCheckpoint) {
+    const existing = Array.isArray(run.pending_checkpoints) ? run.pending_checkpoints : [];
+    if (!existing.some((x) => x.checkpoint_id === cp.checkpoint_id)) {
+      run.pending_checkpoints = [...existing, cp];
+    } else {
+      run.pending_checkpoints = existing;
+    }
+    run.pending_checkpoint = run.pending_checkpoints[0] ?? cp;
+  }
+
   async function executeSinglePipelineItem(
     p: WebPerson,
     st: PersonStore,
@@ -3270,7 +3314,8 @@ export async function installBrowserEngine(): Promise<void> {
     stepIndex: number,
     spec: PipelineStepSpec,
     stState: PipelineStepState,
-    extraVars?: Record<string, string>
+    extraVars?: Record<string, string>,
+    depth = 0
   ): Promise<{ paused?: boolean; output: string; files: string[]; metrics?: Record<string, unknown> }> {
     const inputs = run.inputs ?? {};
 
@@ -3309,7 +3354,7 @@ export async function installBrowserEngine(): Promise<void> {
         created_ms: Date.now(),
         kind: "checkpoint",
       };
-      run.pending_checkpoint = pendingCp;
+      attachPendingCheckpoint(run, pendingCp);
       run.updated_ms = Date.now();
       await persist();
       broadcastSse("pipeline_paused", {
@@ -3433,7 +3478,7 @@ export async function installBrowserEngine(): Promise<void> {
           delivery_url: conn.url,
           payload_preview: payloadStr.slice(0, 200),
         };
-        run.pending_checkpoint = pendingCp;
+        attachPendingCheckpoint(run, pendingCp);
         run.updated_ms = ts;
         await persist();
         broadcastSse("pipeline_paused", {
@@ -3507,6 +3552,51 @@ export async function installBrowserEngine(): Promise<void> {
       };
     }
 
+    if (spec.kind === "subpipeline") {
+      if (depth >= 5) throw new Error("Maximum subpipeline nesting depth (5) exceeded.");
+      const targetRid = resolvePipelineTemplate(spec.routine_id || "", inputs, run.step_states, extraVars).trim();
+      const subRt = st.routines.find((r) => r.id === targetRid || r.name === targetRid);
+      if (!subRt) throw new Error(`Subpipeline routine "${targetRid || "(empty)"}" not found.`);
+      const subInputs: Record<string, string> = {};
+      for (const [k, v] of Object.entries(spec.inputs ?? {})) {
+        subInputs[k] = resolvePipelineTemplate(String(v ?? ""), inputs, run.step_states, extraVars);
+      }
+      const subSteps: PipelineStepSpec[] =
+        subRt.steps_v2 && subRt.steps_v2.length > 0
+          ? subRt.steps_v2
+          : (subRt.steps && subRt.steps.length > 0 ? subRt.steps : [subRt.prompt]).map((txt, idx) => ({
+              id: `sub_step_${idx + 1}`,
+              label: txt.slice(0, 48),
+              kind: idx === 0 && subRt.skill_id ? "skill" : "agent",
+              skill_id: idx === 0 ? subRt.skill_id : undefined,
+              prompt: txt,
+              when: "always",
+            }));
+      const subRun = createPipelineRunRecord(st, {
+        routine_id: subRt.id,
+        name: subRt.name,
+        steps_v2: subSteps,
+        inputs: subInputs,
+        thread_id: run.thread_id,
+      });
+      stState.subpipeline_run_id = subRun.run_id;
+      await executeWebPipelineFrom(p, st, byok, subRun, 0, depth + 1);
+      if (subRun.status === "failed") {
+        throw new Error(subRun.error || `Subpipeline "${subRt.name}" failed.`);
+      }
+      const subFiles = Array.from(new Set(subRun.step_states.flatMap((s) => s.files ?? [])));
+      const subOut =
+        subRun.step_states
+          .map((s) => s.output)
+          .filter(Boolean)
+          .slice(-1)[0] || `Completed subpipeline "${subRt.name}".`;
+      return {
+        output: subOut,
+        files: subFiles,
+        metrics: { subpipeline_run_id: subRun.run_id, subpipeline_status: subRun.status },
+      };
+    }
+
     // "agent" step
     const resolvedPrompt = resolvePipelineTemplate(spec.prompt || spec.label || "Complete task", inputs, run.step_states, extraVars);
     const snapshotMsgs = Array.isArray(run.agent_snapshot?.messages)
@@ -3537,14 +3627,17 @@ export async function installBrowserEngine(): Promise<void> {
         });
       }
     }
-    run.agent_snapshot = {
+    const stepWritten = outcome.written.filter((f) => f !== "memory.md");
+    const stepSnapshot: PipelineAgentSnapshot = {
       messages: [...snapshotMsgs, { role: "user", content: resolvedPrompt }, { role: "assistant", content: summaryText }].slice(-24),
       written: Array.from(new Set([...(run.agent_snapshot?.written ?? []), ...outcome.written])),
       budget_used: (run.agent_snapshot?.budget_used ?? 0) + resolvedPrompt.length + summaryText.length,
     };
+    run.agent_snapshot = stepSnapshot;
+    run.step_snapshots = { ...(run.step_snapshots ?? {}), [spec.id]: stepSnapshot };
     return {
       output: summaryText,
-      files: outcome.written.filter((f) => f !== "memory.md"),
+      files: stepWritten,
     };
   }
 
@@ -3553,8 +3646,9 @@ export async function installBrowserEngine(): Promise<void> {
     st: PersonStore,
     byok: ByokConfig,
     run: PipelineRun,
-    i: number
-  ): Promise<"ok" | "skipped" | "paused" | "failed" | "cancelled"> {
+    i: number,
+    depth = 0
+  ): Promise<"ok" | "skipped" | "paused" | "failed" | "cancelled" | "continue" | "goto"> {
     if ((run.status as string) === "cancelled") return "cancelled";
     const steps = run.steps ?? run.steps_v2 ?? [];
     const inputs = run.inputs ?? {};
@@ -3610,84 +3704,142 @@ export async function installBrowserEngine(): Promise<void> {
       total_steps: steps.length,
     });
 
-    try {
-      if (spec.for_each && spec.for_each.trim() && spec.kind !== "checkpoint") {
-        const items = expandForEachItems(spec.for_each, inputs, run.step_states);
-        const childItems: PipelineChildItemState[] = items.map((item, idx) => ({
-          step_id: `${spec.id}[${idx}]`,
-          index: idx,
-          item,
-          status: "pending",
-          files: [],
-        }));
-        stState.child_items = childItems;
-        const allChildFiles: string[] = [];
-        const childOutputs: string[] = [];
-        for (let idx = 0; idx < items.length; idx += 1) {
-          if ((run.status as string) === "cancelled") return "cancelled";
-          const child = childItems[idx];
-          child.status = "running";
-          child.started_ms = Date.now();
-          const res = await executeSinglePipelineItem(p, st, byok, run, i, spec, stState, {
-            item: items[idx],
-            "inputs.item": items[idx],
-          });
-          if (res.paused) {
-            child.status = "waiting_human";
-            return "paused";
-          }
-          child.status = "ok";
-          child.finished_ms = Date.now();
-          child.output = res.output;
-          child.files = res.files;
-          child.metrics = res.metrics;
-          for (const f of res.files) {
-            if (!allChildFiles.includes(f)) allChildFiles.push(f);
-          }
-          if (res.output) childOutputs.push(res.output);
-        }
-        stState.status = "ok";
-        stState.finished_ms = Date.now();
-        stState.files = allChildFiles;
-        stState.output = childOutputs.join("\n") || `Processed ${items.length} batch item(s).`;
-        stState.metrics = {
-          items,
-          items_count: items.length,
-          files_count: allChildFiles.length,
-        };
-      } else {
-        const res = await executeSinglePipelineItem(p, st, byok, run, i, spec, stState);
-        if ((run.status as string) === "cancelled") return "cancelled";
-        if (res.paused) return "paused";
-        stState.status = "ok";
-        stState.finished_ms = Date.now();
-        stState.output = res.output;
-        stState.files = res.files;
-        if (res.metrics) stState.metrics = res.metrics;
-      }
+    const maxAttempts = 1 + Math.max(0, Math.min(10, spec.retry_max ?? 0));
+    const backoffMs = Math.max(0, Math.min(250, spec.retry_backoff_ms ?? 0));
+    let lastErr: unknown = null;
 
-      const pricingMap = mergeModelPricing(state.modelPricing);
-      const { engagement: actEng, client: actCli } = activeEngagementFor(p.id);
-      const pRate = effectiveHourlyRate(p.id, actEng, actCli);
-      const stepModelId = byok.engine_mode === "byok" && byok.model_id ? byok.model_id : "browser-workspace-engine";
-      const pTok = Math.max(120, Math.round(((spec.label || "").length + (stState.output || "").length) / 3) + 180);
-      const cTok = Math.max(40, Math.round((stState.output || "").length / 4) + 35);
-      const cachedTok = Math.round(pTok * 0.2);
-      const stepMins = spec.kind === "skill" ? estimateMinutesSaved(spec.skill_id || spec.label || "", 1) : 10;
-      const stepUsage: RunUsage = {
-        model_id: stepModelId,
-        prompt_tokens: pTok,
-        completion_tokens: cTok,
-        cached_tokens: cachedTok,
-        total_tokens: pTok + cTok,
-        cost_usd: computeUsageCostUsd(pricingMap, stepModelId, pTok, cTok, cachedTok),
-        latency_ms: stState.finished_ms && stState.started_ms ? Math.max(1, stState.finished_ms - stState.started_ms) : 1,
-        estimated_minutes_saved: stepMins,
-        billable_value_usd: Math.round((stepMins / 60) * pRate * 100) / 100,
-        engagement_id: actEng?.id,
-      };
-      stState.usage = stepUsage;
-      run.updated_ms = Date.now();
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      stState.attempts = attempt;
+      try {
+        const runStepAttempt = async () => {
+          if (spec.for_each && spec.for_each.trim() && spec.kind !== "checkpoint") {
+            const items = expandForEachItems(spec.for_each, inputs, run.step_states);
+            const childItems: PipelineChildItemState[] = items.map((item, idx) => ({
+              step_id: `${spec.id}[${idx}]`,
+              index: idx,
+              item,
+              status: "pending",
+              files: [],
+            }));
+            stState.child_items = childItems;
+            const allChildFiles: string[] = [];
+            const childOutputs: string[] = [];
+            for (let idx = 0; idx < items.length; idx += 1) {
+              if ((run.status as string) === "cancelled") return "cancelled" as const;
+              const child = childItems[idx];
+              child.status = "running";
+              child.started_ms = Date.now();
+              const res = await executeSinglePipelineItem(p, st, byok, run, i, spec, stState, {
+                item: items[idx],
+                "inputs.item": items[idx],
+              }, depth);
+              if (res.paused) {
+                child.status = "waiting_human";
+                return "paused" as const;
+              }
+              child.status = "ok";
+              child.finished_ms = Date.now();
+              child.output = res.output;
+              child.files = res.files;
+              child.metrics = res.metrics;
+              for (const f of res.files) {
+                if (!allChildFiles.includes(f)) allChildFiles.push(f);
+              }
+              if (res.output) childOutputs.push(res.output);
+            }
+            stState.status = "ok";
+            stState.finished_ms = Date.now();
+            stState.files = allChildFiles;
+            stState.output = childOutputs.join("\n") || `Processed ${items.length} batch item(s).`;
+            stState.metrics = {
+              items,
+              items_count: items.length,
+              files_count: allChildFiles.length,
+            };
+          } else {
+            const res = await executeSinglePipelineItem(p, st, byok, run, i, spec, stState, undefined, depth);
+            if ((run.status as string) === "cancelled") return "cancelled" as const;
+            if (res.paused) return "paused" as const;
+            stState.status = "ok";
+            stState.finished_ms = Date.now();
+            stState.output = res.output;
+            stState.files = res.files;
+            if (res.metrics) stState.metrics = res.metrics;
+          }
+          return "ok" as const;
+        };
+
+        const timeoutMs = spec.timeout_secs && spec.timeout_secs > 0 ? spec.timeout_secs * 1000 : 0;
+        const attemptRes = timeoutMs > 0
+          ? await Promise.race([
+              runStepAttempt(),
+              new Promise<never>((_, reject) =>
+                window.setTimeout(() => reject(new Error(`Step "${spec.id}" timed out after ${spec.timeout_secs}s.`)), timeoutMs)
+              ),
+            ])
+          : await runStepAttempt();
+
+        if (attemptRes === "cancelled" || attemptRes === "paused") {
+          return attemptRes;
+        }
+
+        const pricingMap = mergeModelPricing(state.modelPricing);
+        const { engagement: actEng, client: actCli } = activeEngagementFor(p.id);
+        const pRate = effectiveHourlyRate(p.id, actEng, actCli);
+        const stepModelId = byok.engine_mode === "byok" && byok.model_id ? byok.model_id : "browser-workspace-engine";
+        const pTok = Math.max(120, Math.round(((spec.label || "").length + (stState.output || "").length) / 3) + 180);
+        const cTok = Math.max(40, Math.round((stState.output || "").length / 4) + 35);
+        const cachedTok = Math.round(pTok * 0.2);
+        const stepMins = spec.kind === "skill" ? estimateMinutesSaved(spec.skill_id || spec.label || "", 1) : 10;
+        const stepUsage: RunUsage = {
+          model_id: stepModelId,
+          prompt_tokens: pTok,
+          completion_tokens: cTok,
+          cached_tokens: cachedTok,
+          total_tokens: pTok + cTok,
+          cost_usd: computeUsageCostUsd(pricingMap, stepModelId, pTok, cTok, cachedTok),
+          latency_ms: stState.finished_ms && stState.started_ms ? Math.max(1, stState.finished_ms - stState.started_ms) : 1,
+          estimated_minutes_saved: stepMins,
+          billable_value_usd: Math.round((stepMins / 60) * pRate * 100) / 100,
+          engagement_id: actEng?.id,
+        };
+        stState.usage = stepUsage;
+        run.updated_ms = Date.now();
+        await persist();
+        broadcastSse("pipeline_step_done", {
+          run_id: run.run_id,
+          thread_id: run.thread_id ?? null,
+          step_index: i,
+          step_id: spec.id,
+          label: spec.label,
+          kind: spec.kind,
+          status: stState.status,
+          output: stState.output ?? "",
+          files: stState.files ?? [],
+          metrics: stState.metrics ?? {},
+          child_items: stState.child_items,
+          usage: stepUsage,
+          error: null,
+          elapsed_ms: stState.finished_ms && stState.started_ms ? stState.finished_ms - stState.started_ms : 1,
+        });
+        return "ok";
+      } catch (err) {
+        lastErr = err;
+        if (attempt < maxAttempts) {
+          if (backoffMs > 0) await sleep(backoffMs);
+          continue;
+        }
+      }
+    }
+
+    const msg = lastErr instanceof Error ? lastErr.message : String(lastErr);
+    stState.status = "failed";
+    stState.finished_ms = Date.now();
+    stState.error = msg;
+    run.current_step_index = i;
+    run.updated_ms = Date.now();
+
+    if (spec.on_error === "continue") {
       await persist();
       broadcastSse("pipeline_step_done", {
         run_id: run.run_id,
@@ -3696,35 +3848,45 @@ export async function installBrowserEngine(): Promise<void> {
         step_id: spec.id,
         label: spec.label,
         kind: spec.kind,
-        status: stState.status,
-        output: stState.output ?? "",
-        files: stState.files ?? [],
-        metrics: stState.metrics ?? {},
-        child_items: stState.child_items,
-        usage: stepUsage,
-        error: null,
+        status: "failed",
+        output: "",
+        files: [],
+        metrics: {},
+        error: msg,
         elapsed_ms: stState.finished_ms && stState.started_ms ? stState.finished_ms - stState.started_ms : 1,
       });
-      return "ok";
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      stState.status = "failed";
-      stState.finished_ms = Date.now();
-      stState.error = msg;
-      run.status = "failed";
-      run.error = msg;
-      run.current_step_index = i;
-      run.updated_ms = Date.now();
+      return "continue";
+    }
+    if (typeof spec.on_error === "string" && spec.on_error.startsWith("goto:")) {
       await persist();
-      broadcastSse("pipeline_finished", {
+      broadcastSse("pipeline_step_done", {
         run_id: run.run_id,
         thread_id: run.thread_id ?? null,
+        step_index: i,
+        step_id: spec.id,
+        label: spec.label,
+        kind: spec.kind,
         status: "failed",
+        output: "",
+        files: [],
+        metrics: {},
         error: msg,
-        run,
+        elapsed_ms: stState.finished_ms && stState.started_ms ? stState.finished_ms - stState.started_ms : 1,
       });
-      return "failed";
+      return "goto";
     }
+
+    run.status = "failed";
+    run.error = msg;
+    await persist();
+    broadcastSse("pipeline_finished", {
+      run_id: run.run_id,
+      thread_id: run.thread_id ?? null,
+      status: "failed",
+      error: msg,
+      run,
+    });
+    return "failed";
   }
 
   async function executeWebPipelineFrom(
@@ -3732,11 +3894,13 @@ export async function installBrowserEngine(): Promise<void> {
     st: PersonStore,
     byok: ByokConfig,
     run: PipelineRun,
-    startIndex: number
+    startIndex: number,
+    depth = 0
   ): Promise<void> {
     const steps = run.steps ?? run.steps_v2 ?? [];
     run.status = "running";
     run.pending_checkpoint = null;
+    run.pending_checkpoints = [];
     run.error = null;
     run.updated_ms = Date.now();
     await persist();
@@ -3771,7 +3935,13 @@ export async function installBrowserEngine(): Promise<void> {
           const deps = Array.isArray(steps[i].depends_on) ? steps[i].depends_on! : [];
           const allDone = deps.every((depId) => {
             const depState = run.step_states.find((s) => s.step_id === depId);
-            return depState && (depState.status === "ok" || depState.status === "skipped");
+            const depSpec = steps.find((s) => s.id === depId);
+            return (
+              depState &&
+              (depState.status === "ok" ||
+                depState.status === "skipped" ||
+                (depState.status === "failed" && depSpec?.on_error === "continue"))
+            );
           });
           if (allDone) {
             readyIndices.push(i);
@@ -3795,21 +3965,36 @@ export async function installBrowserEngine(): Promise<void> {
           }
           break;
         }
-        // Checkpoints run alone so parallel branches don't race past pause state
-        const cpIdx = readyIndices.find((idx) => steps[idx]?.kind === "checkpoint");
-        const batch = cpIdx !== undefined ? [cpIdx] : readyIndices;
         const outcomes = await Promise.all(
-          batch.map((idx) => executeWebPipelineStepAt(p, st, byok, run, idx))
+          readyIndices.map((idx) => executeWebPipelineStepAt(p, st, byok, run, idx, depth))
         );
         if (outcomes.includes("paused") || outcomes.includes("failed") || outcomes.includes("cancelled")) {
           return;
         }
       }
     } else {
+      let gotoCount = 0;
       for (let i = startIndex; i < steps.length; i += 1) {
-        const outcome = await executeWebPipelineStepAt(p, st, byok, run, i);
+        const outcome = await executeWebPipelineStepAt(p, st, byok, run, i, depth);
         if (outcome === "paused" || outcome === "failed" || outcome === "cancelled") {
           return;
+        }
+        if (outcome === "goto") {
+          gotoCount += 1;
+          if (gotoCount > 10) {
+            run.status = "failed";
+            run.error = "Exceeded maximum on_error goto jumps (10).";
+            await persist();
+            return;
+          }
+          const targetId = String(steps[i]?.on_error ?? "").slice("goto:".length).trim();
+          const targetIdx = steps.findIndex((s) => s.id === targetId);
+          if (targetIdx >= 0) {
+            if (run.step_states[targetIdx]) {
+              run.step_states[targetIdx].status = "pending";
+            }
+            i = targetIdx - 1;
+          }
         }
       }
     }
@@ -5329,19 +5514,83 @@ function runWebVaultAggregate(
       });
     }
     if (method === "GET" && path === "/api/runs/status") {
-      const run = liveRuns[p.id];
+      const nowMs = Date.now();
+      const chatRuns: LiveRun[] = Array.from(liveRuns.values())
+        .filter((r) => r.person_id === p.id && r.active && !r.cancelled)
+        .map(({ person_id: _pid, ...r }) => ({ ...r, elapsed_ms: nowMs - r.started_ms }));
+      const pipeRuns: LiveRun[] = (st.pipelineRuns ?? [])
+        .filter((pr) => pr.status === "running")
+        .map((pr) => ({
+          active: true,
+          run_id: pr.run_id,
+          thread_id: pr.thread_id || "",
+          task: pr.routine_name || "Pipeline run",
+          started_ms: pr.created_ms,
+          elapsed_ms: nowMs - pr.created_ms,
+          kind: pr.routine_id ? "routine" : "pipeline",
+          routine_id: pr.routine_id ?? null,
+          routine_name: pr.routine_name ?? null,
+          steps: pr.step_states.map((ss, idx) => ({
+            id: ss.step_id || `step-${idx}`,
+            step_id: ss.step_id,
+            tool: ss.kind,
+            label: ss.label || ss.step_id,
+            status:
+              ss.status === "failed"
+                ? "error"
+                : ss.status === "ok" || ss.status === "skipped"
+                  ? "done"
+                  : ss.status === "waiting_human"
+                    ? "waiting"
+                    : "running",
+            raw: ss.label || ss.step_id,
+            depends_on: ss.depends_on,
+            child_items: ss.child_items,
+          })),
+        }));
+      const allActive = [...chatRuns, ...pipeRuns].sort((a, b) => b.started_ms - a.started_ms);
+      const latest = allActive[0];
       return jsonRes(
-        run
-          ? { active: run.active, run_id: run.run_id, thread_id: run.thread_id, task: run.task, started_ms: run.started_ms, elapsed_ms: Date.now() - run.started_ms, steps: run.steps }
-          : { active: false, thread_id: "", task: "", started_ms: 0, steps: [] }
+        latest
+          ? {
+              active: true,
+              runs: allActive,
+              run_id: latest.run_id,
+              thread_id: latest.thread_id,
+              task: latest.task,
+              started_ms: latest.started_ms,
+              elapsed_ms: latest.elapsed_ms ?? nowMs - latest.started_ms,
+              steps: latest.steps,
+            }
+          : { active: false, runs: [], thread_id: "", task: "", started_ms: 0, steps: [] }
       );
     }
     if (method === "POST" && path.startsWith("/api/runs/") && path.endsWith("/cancel")) {
-      if (liveRuns[p.id]) {
-        liveRuns[p.id].cancelled = true;
-        broadcastSse("cancelled", { run_id: liveRuns[p.id].run_id, cancelled: true });
+      const targetId = decodeURIComponent(path.slice("/api/runs/".length, -"/cancel".length)).trim();
+      const cancelledIds: string[] = [];
+      for (const r of liveRuns.values()) {
+        if (r.person_id !== p.id || !r.active) continue;
+        if (targetId === "active" || r.run_id === targetId || r.thread_id === targetId) {
+          r.cancelled = true;
+          r.active = false;
+          cancelledIds.push(r.run_id);
+          broadcastSse("cancelled", { run_id: r.run_id, thread_id: r.thread_id, cancelled: true });
+        }
       }
-      return jsonRes({ cancelled: true });
+      let pipeTouched = false;
+      for (const pr of st.pipelineRuns ?? []) {
+        if (pr.status === "running" && (targetId === "active" || pr.run_id === targetId || pr.thread_id === targetId)) {
+          pr.status = "cancelled";
+          pr.pending_checkpoint = null;
+          pr.pending_checkpoints = [];
+          pr.updated_ms = Date.now();
+          cancelledIds.push(pr.run_id);
+          pipeTouched = true;
+          broadcastSse("pipeline_finished", { run_id: pr.run_id, thread_id: pr.thread_id ?? null, status: "cancelled", error: null, run: pr });
+        }
+      }
+      if (pipeTouched) await persist();
+      return jsonRes({ cancelled: true, run_id: cancelledIds[0] ?? targetId, cancelled_run_ids: cancelledIds });
     }
     if (method === "GET" && path === "/api/skills") {
       return jsonRes({
@@ -5478,6 +5727,17 @@ function runWebVaultAggregate(
         (rawStepsV2 ?? []).map((s) => s.label || s.skill_id || s.kind).join(" -> ");
       if (!name || !prompt) return jsonRes({ error: "name and prompt are required" }, 400);
       const schedule = String(body.schedule ?? body.cadence ?? "daily 09:00").trim();
+      if (isCronExpression(schedule) || schedule.includes("*")) {
+        const cronCheck = validateCronExpression(schedule);
+        if (!cronCheck.valid) return jsonRes({ error: cronCheck.error || "invalid cron expression" }, 400);
+      }
+      const tz = typeof body.tz === "string" && body.tz.trim() ? body.tz.trim() : undefined;
+      const tzOffsetMins =
+        typeof body.tz_offset_mins === "number" && Number.isFinite(body.tz_offset_mins)
+          ? Math.round(body.tz_offset_mins)
+          : tz
+            ? resolveTzOffsetMins(tz)
+            : null;
       const enabled = typeof body.enabled === "boolean" ? body.enabled : true;
       const expectedInputs = Array.isArray(body.expected_inputs)
         ? body.expected_inputs.map((s) => String(s ?? "").trim()).filter(Boolean).slice(0, 8)
@@ -5488,6 +5748,8 @@ function runWebVaultAggregate(
         prompt,
         schedule,
         cadence: schedule,
+        tz,
+        tz_offset_mins: tzOffsetMins,
         skill_id: typeof body.skill_id === "string" && body.skill_id ? body.skill_id : undefined,
         steps: rawSteps.length > 1 ? rawSteps : undefined,
         steps_v2: rawStepsV2 && rawStepsV2.length > 0 ? rawStepsV2 : undefined,
@@ -5495,7 +5757,7 @@ function runWebVaultAggregate(
         pack_deliverables: body.pack_deliverables === true ? true : undefined,
         enabled,
         last_run_ts: null,
-        next_run_ms: enabled ? estimateNextRunMs(schedule, Date.now()) : null,
+        next_run_ms: enabled ? estimateNextRunMs(schedule, Date.now(), null, tzOffsetMins, tz) : null,
         run_count: 0,
         created_ts: Date.now(),
       };
@@ -5509,16 +5771,30 @@ function runWebVaultAggregate(
       if (!rt) return jsonRes({ error: "routine not found" }, 404);
       if (typeof body.enabled === "boolean") rt.enabled = body.enabled;
       if (typeof body.schedule === "string" && body.schedule.trim()) {
-        rt.schedule = body.schedule.trim();
+        const nextSched = body.schedule.trim();
+        if (isCronExpression(nextSched) || nextSched.includes("*")) {
+          const cronCheck = validateCronExpression(nextSched);
+          if (!cronCheck.valid) return jsonRes({ error: cronCheck.error || "invalid cron expression" }, 400);
+        }
+        rt.schedule = nextSched;
         rt.cadence = rt.schedule;
       }
       if (typeof body.cadence === "string" && body.cadence.trim()) {
-        rt.schedule = body.cadence.trim();
+        const nextCadence = body.cadence.trim();
+        if (isCronExpression(nextCadence) || nextCadence.includes("*")) {
+          const cronCheck = validateCronExpression(nextCadence);
+          if (!cronCheck.valid) return jsonRes({ error: cronCheck.error || "invalid cron expression" }, 400);
+        }
+        rt.schedule = nextCadence;
         rt.cadence = rt.schedule;
+      }
+      if (typeof body.tz === "string" && body.tz.trim()) rt.tz = body.tz.trim();
+      if (typeof body.tz_offset_mins === "number" && Number.isFinite(body.tz_offset_mins)) {
+        rt.tz_offset_mins = Math.round(body.tz_offset_mins);
       }
       if (typeof body.name === "string" && body.name.trim()) rt.name = body.name.trim();
       if (typeof body.prompt === "string" && body.prompt.trim()) rt.prompt = body.prompt.trim();
-      rt.next_run_ms = rt.enabled ? estimateNextRunMs(rt.schedule, Date.now(), rt.interval_secs) : null;
+      rt.next_run_ms = rt.enabled ? estimateNextRunMs(rt.schedule, Date.now(), rt.interval_secs, rt.tz_offset_mins, rt.tz) : null;
       await persist();
       return jsonRes({ routine: rt, scheduler: buildSchedulerStatus(st) });
     }
@@ -5738,17 +6014,26 @@ function runWebVaultAggregate(
         }, 15);
         return jsonRes({ run }, 202);
       }
-      const cpIdx = run.pending_checkpoint?.step_index ?? run.current_step_index;
-      const cpId = run.pending_checkpoint?.checkpoint_id;
-      const action = String(body.action ?? "approve");
+      const pendingList = getPendingCheckpoints(run);
+      const reqCpId = typeof body.checkpoint_id === "string" ? body.checkpoint_id.trim() : "";
+      const targetCp =
+        (reqCpId ? pendingList.find((c) => c.checkpoint_id === reqCpId) : undefined) ??
+        pendingList[0] ??
+        run.pending_checkpoint ??
+        null;
+      const cpIdx = targetCp?.step_index ?? run.current_step_index;
+      const cpId = targetCp?.checkpoint_id;
+      const action = String(body.decision ?? body.action ?? "approve");
       const humanAnswer =
-        typeof body.choice === "string" && body.choice
-          ? body.choice
-          : typeof body.answer === "string" && body.answer
-            ? body.answer
-            : action === "reject"
-              ? "rejected"
-              : "approved";
+        typeof body.text === "string" && body.text
+          ? body.text
+          : typeof body.choice === "string" && body.choice
+            ? body.choice
+            : typeof body.answer === "string" && body.answer
+              ? body.answer
+              : action === "reject"
+                ? "rejected"
+                : "approved";
       if (cpId) {
         const dec = st.decisions.find((d) => d.id === cpId);
         if (dec) {
@@ -5791,7 +6076,7 @@ function runWebVaultAggregate(
         }
       }
       if (run.step_states[cpIdx]) {
-        const isDeliveryHold = run.pending_checkpoint?.kind === "deliver" || run.step_states[cpIdx].kind === "deliver";
+        const isDeliveryHold = targetCp?.kind === "deliver" || run.step_states[cpIdx].kind === "deliver";
         run.step_states[cpIdx].status = isDeliveryHold && action === "reject" ? "skipped" : "ok";
         run.step_states[cpIdx].finished_ms = Date.now();
         run.step_states[cpIdx].human_answer = humanAnswer;
@@ -5800,7 +6085,7 @@ function runWebVaultAggregate(
         run.step_states[cpIdx].output = isDeliveryHold
           ? action === "reject"
             ? "Delivery rejected at approval checkpoint."
-            : `Delivered via ${run.pending_checkpoint?.connector_name || "connector"} (approved).`
+            : `Delivered via ${targetCp?.connector_name || "connector"} (approved).`
           : `Human response: ${humanAnswer}`;
       }
       if (body.override_args && typeof body.override_args === "object") {
@@ -5809,14 +6094,31 @@ function runWebVaultAggregate(
           nextSpec.args = { ...(nextSpec.args ?? {}), ...(body.override_args as Record<string, string>) };
         }
       }
-      run.pending_checkpoint = null;
+      const remainingCps = cpId ? pendingList.filter((c) => c.checkpoint_id !== cpId) : [];
+      run.pending_checkpoints = remainingCps;
+      run.pending_checkpoint = remainingCps[0] ?? null;
+      run.updated_ms = Date.now();
+      if (remainingCps.length > 0) {
+        run.status = "paused_checkpoint";
+        await persist();
+        broadcastSse("pipeline_resumed", {
+          run_id: run.run_id,
+          thread_id: run.thread_id ?? null,
+          checkpoint_id: cpId ?? null,
+          step_index: cpIdx,
+          action,
+          human_answer: humanAnswer,
+          run,
+        });
+        return jsonRes({ run }, 202);
+      }
       run.status = "running";
       run.current_step_index = cpIdx + 1;
-      run.updated_ms = Date.now();
       await persist();
       broadcastSse("pipeline_resumed", {
         run_id: run.run_id,
         thread_id: run.thread_id ?? null,
+        checkpoint_id: cpId ?? null,
         step_index: cpIdx + 1,
         action,
         human_answer: humanAnswer,
@@ -5853,6 +6155,7 @@ function runWebVaultAggregate(
       }
       run.current_step_index = fromIdx;
       run.pending_checkpoint = null;
+      run.pending_checkpoints = [];
       run.status = "running";
       run.error = null;
       run.updated_ms = Date.now();
@@ -5872,9 +6175,8 @@ function runWebVaultAggregate(
       if (run.status === "completed") {
         return jsonRes({ error: "pipeline run already completed" }, 409);
       }
-      const cpId = run.pending_checkpoint?.checkpoint_id;
-      if (cpId) {
-        const dec = st.decisions.find((d) => d.id === cpId && d.status === "pending");
+      for (const cp of getPendingCheckpoints(run)) {
+        const dec = st.decisions.find((d) => d.id === cp.checkpoint_id && d.status === "pending");
         if (dec) {
           dec.status = "denied";
           dec.resolved_ts = Date.now();
@@ -5883,6 +6185,7 @@ function runWebVaultAggregate(
       }
       run.status = "cancelled";
       run.pending_checkpoint = null;
+      run.pending_checkpoints = [];
       run.updated_ms = Date.now();
       await persist();
       broadcastSse("pipeline_finished", {
