@@ -2572,8 +2572,6 @@ const DECOYS: &[(&str, u32, &str)] = &[
     ("/.aws/credentials", 8, "aws"),
     ("/.ssh/*", 8, "none"),
     ("/api/login", 8, "login"),
-    ("/api/auth", 8, "login"),
-    ("/api/auth/*", 8, "login"),
     ("/api/token", 8, "login"),
     ("/api/session", 8, "login"),
     ("/api/users", 8, "internal"),

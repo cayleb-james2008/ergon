@@ -9,6 +9,7 @@
 //! the document-writing and memory-update skills.
 
 pub mod audit_bundle;
+pub mod auth;
 pub mod connectors;
 pub mod docs;
 pub mod file_history;
@@ -22,13 +23,14 @@ pub mod scheduler;
 pub mod search;
 pub mod server;
 pub use server::{
-    allowed_hosts_from, parked_note, serve, serve_with_gate, serve_with_hosts, serve_with_updates,
-    AppState, LiveModelConfig, PersonRuntime,
+    allowed_hosts_from, parked_note, serve, serve_with_gate, serve_with_hosts, serve_with_tls,
+    serve_with_updates, AppState, LiveModelConfig, PersonRuntime,
 };
 pub mod skill_catalog;
 pub mod skills;
 pub mod sse;
 pub mod tables;
+pub mod tls;
 pub mod tools;
 pub mod tripwire;
 pub use tools::{

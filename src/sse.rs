@@ -9,9 +9,20 @@
 use serde_json::{json, Value};
 use std::collections::VecDeque;
 use std::io::Write;
-use std::net::TcpStream;
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::Duration;
+
+pub trait SseSocket: Write {
+    fn prepare_sse(&self);
+}
+
+impl SseSocket for std::net::TcpStream {
+    fn prepare_sse(&self) {
+        let _ = self.set_nodelay(true);
+        let _ = self.set_write_timeout(Some(Duration::from_secs(10)));
+        let _ = self.set_read_timeout(Some(Duration::from_secs(10)));
+    }
+}
 
 const MAX_BUFFERED_EVENTS: usize = 1024;
 
@@ -137,17 +148,15 @@ impl RunEventBus {
 
 /// Serve a long-lived `text/event-stream` response until the client disconnects
 /// (or `max_events` is reached when testing).
-pub fn stream_sse(
-    stream: &mut TcpStream,
+pub fn stream_sse<S: SseSocket>(
+    stream: &mut S,
     bus: &RunEventBus,
     person_id: &str,
     thread_filter: Option<&str>,
     initial_status: &Value,
     once: bool,
 ) -> std::io::Result<()> {
-    let _ = stream.set_nodelay(true);
-    let _ = stream.set_write_timeout(Some(Duration::from_secs(10)));
-    let _ = stream.set_read_timeout(Some(Duration::from_secs(10)));
+    stream.prepare_sse();
 
     let header = "HTTP/1.1 200 OK\r\n\
                   Content-Type: text/event-stream; charset=utf-8\r\n\

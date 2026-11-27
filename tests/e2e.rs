@@ -2499,7 +2499,10 @@ fn installer_installs_and_the_installed_binary_boots() {
         .unwrap();
     assert!(out3.status.success());
 
-    // Boot the installed launcher on a free port and talk to it.
+    // Boot the installed launcher on a free port and talk to it over default HTTPS/TLS.
+    let data = home.join(".local/share/ergon");
+    assert!(data.join("tls/cert.pem").is_file(), "install.sh generates self-signed TLS cert");
+    assert!(data.join("tls/key.pem").is_file(), "install.sh generates TLS private key");
     let probe = TcpListener::bind("127.0.0.1:0").unwrap();
     let port = probe.local_addr().unwrap().port();
     drop(probe);
@@ -2510,21 +2513,51 @@ fn installer_installs_and_the_installed_binary_boots() {
         .stderr(std::process::Stdio::null())
         .spawn()
         .unwrap();
-    let mut ok = false;
+    let mut ok_tls = false;
+    let mut plain_rejected = false;
+    let cert_bytes = std::fs::read(data.join("tls/cert.pem")).unwrap();
+    let mut roots = rustls::RootCertStore::empty();
+    for c in rustls_pki_types::pem::PemObject::pem_slice_iter(&cert_bytes) {
+        roots.add(c.unwrap()).unwrap();
+    }
+    let client_cfg = std::sync::Arc::new(
+        rustls::ClientConfig::builder_with_provider(std::sync::Arc::new(
+            rustls::crypto::ring::default_provider(),
+        ))
+        .with_safe_default_protocol_versions()
+        .unwrap()
+        .with_root_certificates(roots)
+        .with_no_client_auth(),
+    );
     for _ in 0..50 {
         std::thread::sleep(std::time::Duration::from_millis(100));
-        if let Ok((status, _)) = std::panic::catch_unwind(|| http(port, "GET", "/", None)) {
-            if status == 200 {
-                ok = true;
-                break;
+        if let Ok(tcp) = std::net::TcpStream::connect(("127.0.0.1", port)) {
+            let server_name = rustls_pki_types::ServerName::try_from("localhost").unwrap();
+            let conn = rustls::ClientConnection::new(client_cfg.clone(), server_name).unwrap();
+            let mut tls_stream = rustls::StreamOwned::new(conn, tcp);
+            let req = format!(
+                "GET /api/health HTTP/1.1\r\nHost: localhost:{port}\r\nConnection: close\r\n\r\n"
+            );
+            if std::io::Write::write_all(&mut tls_stream, req.as_bytes()).is_ok()
+                && std::io::Write::flush(&mut tls_stream).is_ok()
+            {
+                let mut resp = String::new();
+                let _ = std::io::Read::read_to_string(&mut tls_stream, &mut resp);
+                if resp.starts_with("HTTP/1.1 200") && resp.contains("\"tls\":true") {
+                    ok_tls = true;
+                    break;
+                }
             }
         }
     }
-    let data = home.join(".local/share/ergon");
+    if let Ok((st, _)) = std::panic::catch_unwind(|| http(port, "GET", "/", None)) {
+        plain_rejected = st == 400;
+    }
     let library_seeded = data.join("library.json").exists();
     let _ = child.kill();
     let _ = child.wait();
-    assert!(ok, "the installed binary serves the app");
+    assert!(ok_tls, "the installed binary serves real HTTPS/TLS by default");
+    assert!(plain_rejected, "plaintext HTTP to TLS port is rejected with 400");
     assert!(library_seeded, "first boot seeds the company library");
 }
 
