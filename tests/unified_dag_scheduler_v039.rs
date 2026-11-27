@@ -610,13 +610,29 @@ fn offline_zero_llm_steps_v2_scheduled_routine_executes_without_model() {
         "scheduled offline export output missing"
     );
 
-    // 3. Also verify sync POST /api/routines/:id/run routes steps_v2 through create_and_start_pipeline.
-    let (st_sync, sync_res) = http_req(
+    // 3. Disable recurring 1s ticks before testing manual POST /api/routines/:id/run
+    //    so a wall-clock scheduler tick cannot race the manual trigger with HTTP 409.
+    let (st_patch, patch_res) = http_req(
         addr,
-        "POST",
-        &format!("/api/routines/{rid_offline}/run"),
-        "{}",
+        "PATCH",
+        &format!("/api/routines/{rid_offline}"),
+        r#"{"enabled":false}"#,
     );
+    assert_eq!(st_patch, 200, "disable offline schedule: {patch_res}");
+
+    let sync_deadline = Instant::now() + Duration::from_secs(4);
+    let (st_sync, sync_res) = loop {
+        let (st, res) = http_req(
+            addr,
+            "POST",
+            &format!("/api/routines/{rid_offline}/run"),
+            "{}",
+        );
+        if st != 409 || Instant::now() >= sync_deadline {
+            break (st, res);
+        }
+        std::thread::sleep(Duration::from_millis(80));
+    };
     assert_eq!(st_sync, 200, "sync run offline steps_v2: {sync_res}");
     assert_eq!(sync_res["run"]["status"], json!("ok"));
 }
