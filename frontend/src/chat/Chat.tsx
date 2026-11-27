@@ -3,7 +3,7 @@
 // - Inline Approval & File-Diff cards directly inside the thread (Approve / Hold / Revise)
 // - Live SSE / poll run status banner (#live-run-timeline) with TextShimmer + BorderTrail (live work only) + cancel
 // - Elevated floating composer (#composer-input) with multi-file upload & drag-drop
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   FileCheck2,
   FileSpreadsheet,
@@ -59,6 +59,8 @@ export function Chat({
   liveSteps,
   liveTimeline,
   liveRuns,
+  liveStreamError,
+  onRetrySync,
   cancellingRunIds,
   draft,
   setDraft,
@@ -99,6 +101,8 @@ export function Chat({
   liveSteps: string[];
   liveTimeline: LiveRunStep[];
   liveRuns?: LiveRun[];
+  liveStreamError?: string;
+  onRetrySync?: () => Promise<void> | void;
   cancellingRunIds?: Record<string, boolean>;
   draft: string;
   setDraft: (s: string) => void;
@@ -135,7 +139,12 @@ export function Chat({
   const attachRef = useRef<HTMLInputElement>(null);
   const [dragOver, setDragOver] = useState(false);
   const [polledRuns, setPolledRuns] = useState<LiveRun[]>([]);
+  const [localStreamError, setLocalStreamError] = useState("");
   const [localCancellingIds, setLocalCancellingIds] = useState<Record<string, boolean>>({});
+  const polledRunsRef = useRef<LiveRun[]>([]);
+  useEffect(() => {
+    polledRunsRef.current = polledRuns;
+  }, [polledRuns]);
 
   const items = buildItems(messages);
   const cards = starters;
@@ -156,32 +165,39 @@ export function Chat({
     [pipelineRuns, threadId]
   );
 
+  const syncRunsStatus = useCallback(async () => {
+    const r = await call<LiveRunStatus>("/api/runs/status");
+    if (!r.ok) {
+      if (busy || polledRunsRef.current.length > 0 || visiblePipelineRuns.some((p) => p.status === "running")) {
+        setLocalStreamError(r.error || "Live updates paused. Could not reconcile run status.");
+      }
+      return;
+    }
+    setLocalStreamError("");
+    if (Array.isArray(r.data.runs)) {
+      setPolledRuns(r.data.runs.filter((run) => run && run.active !== false && !run.cancelled));
+    } else if (r.data.active && (r.data.run_id || r.data.thread_id)) {
+      setPolledRuns([
+        {
+          active: true,
+          run_id: r.data.run_id || r.data.thread_id || "active",
+          thread_id: r.data.thread_id || "",
+          task: r.data.task || "Active run",
+          started_ms: r.data.started_ms || Date.now(),
+          elapsed_ms: r.data.elapsed_ms,
+          steps: r.data.steps ?? [],
+        },
+      ]);
+    } else {
+      setPolledRuns([]);
+    }
+  }, [busy, visiblePipelineRuns]);
+
   useEffect(() => {
     let active = true;
-    const syncRunsStatus = async () => {
-      const r = await call<LiveRunStatus>("/api/runs/status");
-      if (!active || !r.ok) return;
-      if (Array.isArray(r.data.runs)) {
-        setPolledRuns(r.data.runs.filter((run) => run && run.active !== false && !run.cancelled));
-      } else if (r.data.active && (r.data.run_id || r.data.thread_id)) {
-        setPolledRuns([
-          {
-            active: true,
-            run_id: r.data.run_id || r.data.thread_id || "active",
-            thread_id: r.data.thread_id || "",
-            task: r.data.task || "Active run",
-            started_ms: r.data.started_ms || Date.now(),
-            elapsed_ms: r.data.elapsed_ms,
-            steps: r.data.steps ?? [],
-          },
-        ]);
-      } else {
-        setPolledRuns([]);
-      }
-    };
     void syncRunsStatus();
     const timer = window.setInterval(() => {
-      if (busy || visiblePipelineRuns.some((r) => r.status === "running")) {
+      if (busy || polledRunsRef.current.length > 0 || visiblePipelineRuns.some((r) => r.status === "running")) {
         void syncRunsStatus();
       }
     }, 1000);
@@ -191,6 +207,7 @@ export function Chat({
         es = new EventSource("/api/runs/stream");
         const onRunEvent = (ev: Event, kind: string) => {
           if (!active) return;
+          setLocalStreamError("");
           try {
             const parsed = JSON.parse((ev as MessageEvent).data || "{}") as Record<string, unknown>;
             if (Array.isArray(parsed.runs)) {
@@ -234,6 +251,7 @@ export function Chat({
             es.close();
             es = null;
           }
+          if (active) void syncRunsStatus();
         };
       } catch {
         // ignore
@@ -244,7 +262,7 @@ export function Chat({
       window.clearInterval(timer);
       if (es) es.close();
     };
-  }, [busy, visiblePipelineRuns.length]);
+  }, [busy, visiblePipelineRuns.length, syncRunsStatus]);
 
   const activeLiveRuns = useMemo(() => {
     const map = new Map<string, LiveRun>();
@@ -297,12 +315,19 @@ export function Chat({
           (!threadId || polledRuns.some((r) => r.run_id === targetRunId && r.thread_id === threadId && !r.routine_id)));
       if (isPrimary) {
         onCancel();
+        setPolledRuns((prev) => prev.filter((r) => r.run_id !== targetRunId && r.thread_id !== targetRunId));
       } else if (onCancelRun) {
         await onCancelRun(targetRunId);
+        await syncRunsStatus();
       } else {
-        await cancelLiveRun(targetRunId);
+        const res = await cancelLiveRun(targetRunId);
+        if (!res.ok && res.status !== 404) {
+          setLocalStreamError(res.error || "Could not stop the active run. Try again.");
+          return;
+        }
+        setLocalStreamError("");
+        setPolledRuns((prev) => prev.filter((r) => r.run_id !== targetRunId && r.thread_id !== targetRunId));
       }
-      setPolledRuns((prev) => prev.filter((r) => r.run_id !== targetRunId && r.thread_id !== targetRunId));
     } finally {
       setLocalCancellingIds((prev) => {
         const next = { ...prev };
@@ -310,6 +335,11 @@ export function Chat({
         return next;
       });
     }
+  };
+
+  const effectiveStreamError = liveStreamError || localStreamError;
+  const handleRetrySync = async () => {
+    await Promise.all([syncRunsStatus(), Promise.resolve(onRetrySync?.())]);
   };
   const uploadSuggestion = useMemo(() => {
     if (!lastUploaded || lastUploaded.length === 0) return null;
@@ -584,6 +614,8 @@ export function Chat({
                   cancelling={cancelling}
                   runs={activeLiveRuns}
                   cancellingRunIds={mergedCancellingIds}
+                  streamError={effectiveStreamError}
+                  onRetrySync={handleRetrySync}
                   onCancel={onCancel}
                   onCancelRun={handleCancelSpecific}
                 />
@@ -718,6 +750,8 @@ export function Chat({
               cancelling={cancelling}
               runs={activeLiveRuns}
               cancellingRunIds={mergedCancellingIds}
+              streamError={effectiveStreamError}
+              onRetrySync={handleRetrySync}
               onCancel={onCancel}
               onCancelRun={handleCancelSpecific}
             />
