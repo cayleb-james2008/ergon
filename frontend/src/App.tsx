@@ -941,6 +941,11 @@ export function App() {
               onResumePipeline={desk.resumePipeline}
               onRetryPipeline={desk.retryPipeline}
               onCancelPipeline={desk.cancelPipeline}
+              recoverableRuns={desk.recoverableRuns}
+              resumingRunId={desk.resumingRunId}
+              modelConfigured={desk.status !== null && desk.status !== "error" ? Boolean(desk.status.model_configured) : false}
+              onResumeInterruptedRun={(id) => void desk.resumeInterruptedRun(id)}
+              onOpenThread={(tid) => void desk.openThread(tid)}
               inputRef={inputRef}
             />
           )}

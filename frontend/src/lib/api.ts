@@ -319,8 +319,23 @@ export type LiveRunStep = {
   depends_on?: string[];
   child_items?: PipelineChildItemState[];
 };
+export type RecoverableRun = {
+  run_id: string;
+  thread_id: string;
+  person_id: string;
+  task: string;
+  started_ms: number;
+  updated_ms: number;
+  steps: string[];
+  written_files?: string[];
+  status: string;
+  error?: string | null;
+  resume_count?: number;
+  can_resume?: boolean;
+};
 export type LiveRunStatus = {
   active: boolean;
+  status?: string;
   run_id?: string;
   thread_id: string;
   task: string;
@@ -328,6 +343,8 @@ export type LiveRunStatus = {
   elapsed_ms?: number;
   steps: (string | LiveRunStep)[];
   cancelled?: boolean;
+  model_configured?: boolean;
+  recoverable_runs?: RecoverableRun[];
 };
 export type FileRevision = {
   rev_id: string;

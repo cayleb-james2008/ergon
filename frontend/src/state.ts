@@ -63,6 +63,7 @@ import {
   type PipelineResumePayload,
   type PipelineRun,
   type PipelineStepSpec,
+  type RecoverableRun,
   type PlaybookPreviewResult,
   type RolloverMode,
   type Routine,
@@ -318,6 +319,8 @@ export function useErgon() {
   const [cancelling, setCancelling] = useState(false);
   const [liveSteps, setLiveSteps] = useState<string[]>([]);
   const [liveTimeline, setLiveTimeline] = useState<LiveRunStep[]>([]);
+  const [recoverableRuns, setRecoverableRuns] = useState<RecoverableRun[]>([]);
+  const [resumingRunId, setResumingRunId] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const [draft, setDraftState] = useState("");
   const [pendingNote, setPendingNote] = useState(false);
@@ -1702,6 +1705,71 @@ export function useErgon() {
     [loadThreads, loadRecent, refreshCounts, loadFiles, loadPipelineRuns, loadMetering]
   );
 
+  const loadRunStatus = useCallback(async () => {
+    const r = await call<LiveRunStatus>("/api/runs/status");
+    if (r.ok) {
+      setRecoverableRuns(Array.isArray(r.data.recoverable_runs) ? r.data.recoverable_runs : []);
+    }
+  }, []);
+
+  const resumeInterruptedRun = useCallback(
+    async (runId: string) => {
+      if (busyRef.current) return;
+      const target = recoverableRuns.find((r) => r.run_id === runId);
+      if (target?.thread_id && target.thread_id !== threadRef.current) {
+        await openThread(target.thread_id);
+      }
+      const ctrl = new AbortController();
+      abortRef.current = ctrl;
+      busyRef.current = true;
+      setBusy(true);
+      setResumingRunId(runId);
+      setRunStartedMs(target?.started_ms || Date.now());
+      setLiveElapsedMs(0);
+      setLiveSteps(target?.steps ?? []);
+      setLiveTimeline(
+        (target?.steps ?? []).map((s, idx) =>
+          normalizeStepItem(s, idx, target?.started_ms || Date.now())
+        )
+      );
+      const r = await call<Thread & { thread_id?: string; run_id?: string }>("/api/runs/resume", {
+        method: "POST",
+        body: { run_id: runId },
+        signal: ctrl.signal,
+      });
+      abortRef.current = null;
+      busyRef.current = false;
+      setBusy(false);
+      setResumingRunId(null);
+      setLiveSteps([]);
+      setLiveTimeline([]);
+      if (r.ok && Array.isArray(r.data.messages)) {
+        const id = r.data.id || r.data.thread_id || target?.thread_id || threadRef.current;
+        if (id) {
+          setThread(id);
+          store.set(THREAD_KEY, id);
+        }
+        setMessages(r.data.messages);
+        setRunFailed(false);
+        toast.success("Resumed and completed the interrupted task.");
+      } else if (!r.ok && r.status === 499) {
+        toast("Run cancelled.");
+      } else {
+        const errMsg = !r.ok
+          ? r.error || `Could not resume task (HTTP ${r.status}).`
+          : "Unexpected response while resuming task.";
+        toast.error(errMsg);
+      }
+      await loadRunStatus();
+      loadThreads();
+      loadRecent();
+      refreshCounts();
+      loadFiles();
+      loadMetering();
+    },
+    [recoverableRuns, openThread, loadRunStatus, loadThreads, loadRecent, refreshCounts, loadFiles, loadMetering]
+  );
+
   const send = useCallback(async () => {
     await sendPrompt(draft);
   }, [draft, sendPrompt]);
@@ -1829,6 +1897,7 @@ export function useErgon() {
       loadSkills();
       loadRoutines();
       loadPipelineRuns();
+      loadRunStatus();
       const pend = (() => { try { const v = JSON.parse(store.get(PENDING) || "null"); return v && typeof v.text === "string" ? v : null; } catch { return null; } })();
       const reopen = store.get(THREAD_KEY);
       if (reopen) await openThread(reopen);
@@ -1876,6 +1945,13 @@ export function useErgon() {
         onRoutineFiredRef.current?.();
       };
       es.addEventListener("routine_fired", onFired);
+      for (const rEv of ["run_recovered", "run_resumed"]) {
+        es.addEventListener(rEv, () => {
+          if (closed) return;
+          void loadRunStatus();
+          loadThreads();
+        });
+      }
       for (const uEv of ["step_done", "run_finished", "done"]) {
         es.addEventListener(uEv, (ev) => {
           if (closed) return;
@@ -1885,6 +1961,9 @@ export function useErgon() {
             if (uDelta) setLiveRunUsage(uDelta);
             if (uEv === "run_finished" || uEv === "done") {
               void loadMetering();
+              void loadRunStatus();
+              loadThreads();
+              loadFiles();
             }
           } catch { /* ignore */ }
         });
@@ -1911,7 +1990,7 @@ export function useErgon() {
       closed = true;
       if (es) es.close();
     };
-  }, [busy, status, loadRoutines, loadFiles, loadThreads, loadRecent, refreshCounts, loadMetering, handlePipelineSseEvent]);
+  }, [busy, status, loadRoutines, loadFiles, loadThreads, loadRecent, refreshCounts, loadMetering, loadRunStatus, handlePipelineSseEvent]);
 
   useEffect(() => {
     if (status && status !== "error") {
@@ -1925,8 +2004,9 @@ export function useErgon() {
       loadTimeEntries();
       loadInvoices();
       loadMcpServers();
+      loadRunStatus();
     }
-  }, [status, files, loadStarters, loadSkills, loadRoutines, loadPipelineRuns, loadClients, loadMetering, loadWorkspacePolicy, loadTimeEntries, loadInvoices, loadMcpServers]);
+  }, [status, files, loadStarters, loadSkills, loadRoutines, loadPipelineRuns, loadClients, loadMetering, loadWorkspacePolicy, loadTimeEntries, loadInvoices, loadMcpServers, loadRunStatus]);
 
   useEffect(() => {
     if (status && status !== "error" && activeEngagementId) {
@@ -1941,6 +2021,7 @@ export function useErgon() {
   return {
     status, runFailed, people, threads, threadsError, states, threadId, messages,
     busy, activeRunId, runStartedMs, liveElapsedMs, streamMode, cancelling, liveSteps, liveTimeline,
+    recoverableRuns, resumingRunId, loadRunStatus, resumeInterruptedRun,
     clients, engagements, activeEngagementId, activeEngagementContext, timeEntries, invoices, workspacePolicy, engagementScopeOnly, setEngagementScopeOnly, metering, liveRunUsage,
     draft, setDraft, pendingNote, sideError, starters, recovered, recent,
     todayCount, learnedCount, memoryHealth, suiteCount, files, lastUploaded, setLastUploaded, skills, routines, pipelineRuns, scheduler, routineHistoryRev,

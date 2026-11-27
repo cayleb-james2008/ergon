@@ -70,6 +70,8 @@ pub struct AppState {
     pub runtimes: Arc<RwLock<HashMap<String, Arc<PersonRuntime>>>>,
     /// In-flight runs per person for live step progress streaming (`GET /api/runs/status` & `/api/runs/stream`).
     pub live_runs: LiveRuns,
+    /// Backup filename if corrupt `live_runs.json` was quarantined on boot.
+    pub live_runs_recovered: Option<String>,
     /// Broadcast SSE event bus for real-time run events (`GET /api/runs/stream`).
     pub events: sse::RunEventBus,
     /// Per-person RwLock-cached search index, SHA-256 receipt chain, and file listing.
@@ -1075,6 +1077,10 @@ fn serve_inner(
     let people = PeopleState::load(&cfg);
     let library = library::Library::load(&cfg.data_dir);
     let auto_detected = cfg.api_key.is_none() && cfg.model_configured();
+    let boot_model_configured =
+        crate::model_configured_for(&cfg.model_base_url, cfg.api_key.is_some());
+    let (boot_recovered_runs, live_runs_recovered) =
+        live_runs::recover_stale_runs_on_boot(&cfg.data_dir, boot_model_configured);
     let model_cfg = Arc::new(Mutex::new(LiveModelConfig {
         model_base_url: cfg.model_base_url.clone(),
         model_id: cfg.model_id.clone(),
@@ -1091,6 +1097,7 @@ fn serve_inner(
         people: Arc::new(RwLock::new(people)),
         runtimes: Arc::new(RwLock::new(HashMap::new())),
         live_runs: Arc::new(Mutex::new(HashMap::new())),
+        live_runs_recovered,
         events: sse::RunEventBus::new(),
         search_cache: search::SearchCache::new(),
         sessions: Arc::new(RwLock::new(HashMap::new())),
@@ -1105,6 +1112,59 @@ fn serve_inner(
         for p in &ppl {
             let p_cfg = state.cfg.person_config(p);
             let _ = pipelines::recover_stale_runs_on_boot(&p_cfg.data_dir);
+        }
+    }
+    // Publish boot-recovery events for interrupted ad-hoc chat runs and optionally
+    // auto-resume them when a model is configured and auto-resume is enabled.
+    if !boot_recovered_runs.is_empty() {
+        let auto_resume = boot_model_configured && live_runs::auto_resume_enabled();
+        let ppl = state.people.read().unwrap().people.clone();
+        let mut by_person: HashMap<String, Vec<(Person, live_runs::PersistedLiveRun)>> =
+            HashMap::new();
+        for run in boot_recovered_runs {
+            let eligible_auto =
+                auto_resume && run.resume_count < live_runs::MAX_AUTO_RESUMES;
+            state.events.publish(
+                "run_recovered",
+                &run.person_id,
+                &run.run_id,
+                &run.thread_id,
+                json!({
+                    "task": truncate(&run.task, 240),
+                    "steps_count": run.steps.len(),
+                    "status": "interrupted",
+                    "auto_resume": eligible_auto,
+                    "can_resume": boot_model_configured,
+                    "ts_ms": records::now_millis(),
+                }),
+            );
+            if eligible_auto {
+                if let Some(person) = ppl.iter().find(|p| p.id == run.person_id).cloned() {
+                    if let Ok(claimed) = live_runs::claim_for_resume(
+                        &state.cfg.data_dir,
+                        &person.id,
+                        Some(&run.run_id),
+                        None,
+                        false,
+                    ) {
+                        by_person
+                            .entry(person.id.clone())
+                            .or_default()
+                            .push((person, claimed));
+                    }
+                }
+            }
+        }
+        for (_, queue) in by_person {
+            let st_bg = state.clone();
+            let _ = std::thread::Builder::new()
+                .name("ergon-boot-resume".to_string())
+                .stack_size(2 * 1024 * 1024)
+                .spawn(move || {
+                    for (person, claimed) in queue {
+                        let _ = execute_resumed_run(&st_bg, &person, &claimed);
+                    }
+                });
         }
     }
     if background_updates {
@@ -1234,6 +1294,8 @@ pub(crate) struct Request {
     /// Content negotiation & conditional GET headers.
     pub(crate) accept_encoding: Option<String>,
     pub(crate) if_none_match: Option<String>,
+    /// SSE resume header (`Last-Event-ID`).
+    pub(crate) last_event_id: Option<String>,
     /// Webhook authentication headers for `POST /api/hooks/:hook_id`.
     pub(crate) hook_signature: Option<String>,
     pub(crate) hook_token: Option<String>,
@@ -1338,6 +1400,7 @@ fn read_request_from<S: SockStream>(
     let mut forwarded_for: Option<String> = None;
     let mut accept_encoding: Option<String> = None;
     let mut if_none_match: Option<String> = None;
+    let mut last_event_id: Option<String> = None;
     let mut hook_signature: Option<String> = None;
     let mut hook_token: Option<String> = None;
     let mut hook_timestamp: Option<String> = None;
@@ -1394,6 +1457,8 @@ fn read_request_from<S: SockStream>(
             accept_encoding = Some(val.to_string());
         } else if name.eq_ignore_ascii_case("if-none-match") {
             if_none_match = Some(val.to_string());
+        } else if name.eq_ignore_ascii_case("last-event-id") && !val.is_empty() {
+            last_event_id = Some(val.to_string());
         } else if name.eq_ignore_ascii_case("authorization") {
             authorization = Some(val.to_string());
         } else if name.eq_ignore_ascii_case("user-agent") {
@@ -1518,6 +1583,7 @@ fn read_request_from<S: SockStream>(
         forwarded_for,
         accept_encoding,
         if_none_match,
+        last_event_id,
         hook_signature,
         hook_token,
         hook_timestamp,
@@ -2398,6 +2464,9 @@ fn try_route_system(
                     }
                 }
             }
+            if let Some(s) = &state.live_runs_recovered {
+                recovered.push(s.clone());
+            }
             if recovered.len() > 1 {
                 recovered.sort();
                 recovered.dedup();
@@ -2430,7 +2499,7 @@ fn try_route_system(
                 );
                 search::write_json_bool(buf, state.scheduler_enabled);
                 buf.extend_from_slice(
-                    br#","file_history":true,"audit_bundle":true,"tripwire":true,"file_edit":true,"table_query":true,"pdf_export":true,"connectors":true,"mcp":true,"clients":true,"metering":true,"vault_search":true,"client_crm":true,"time_entries":true,"invoicing":true},"scheduler_enabled":"#,
+                    br#","file_history":true,"audit_bundle":true,"tripwire":true,"file_edit":true,"table_query":true,"pdf_export":true,"connectors":true,"mcp":true,"clients":true,"metering":true,"vault_search":true,"client_crm":true,"time_entries":true,"invoicing":true,"run_resume":true},"scheduler_enabled":"#,
                 );
                 search::write_json_bool(buf, state.scheduler_enabled);
                 buf.extend_from_slice(br#","person":{"id":"#);
@@ -6523,10 +6592,217 @@ fn pipeline_exec_env(
     }
 }
 
-/// Routes live run status/SSE/cancel, pipelines, apps execution, threads, and chat.
+/// Build the JSON snapshot returned by `GET /api/runs/status` and the initial
+/// `event: status` frame of `GET /api/runs/stream`.
+fn runs_status_json(state: &AppState, person: &Person) -> Value {
+    let model_configured = {
+        let live = state.model_cfg.lock().unwrap_or_else(|p| p.into_inner());
+        crate::model_configured_for(&live.model_base_url, live.api_key.is_some())
+    };
+    let active = state
+        .live_runs
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .get(&person.id)
+        .cloned();
+    let persisted = live_runs::list_for_person(&state.cfg.data_dir, &person.id);
+    let recoverable_runs: Vec<Value> = persisted
+        .iter()
+        .filter(|r| r.is_recoverable())
+        .map(|r| r.to_api_json(model_configured))
+        .collect();
+    let recent_runs: Vec<Value> = persisted
+        .iter()
+        .take(10)
+        .map(|r| r.to_api_json(model_configured))
+        .collect();
+    match active {
+        Some(run) => {
+            let elapsed_ms = records::now_millis().saturating_sub(run.started_ms);
+            json!({
+                "active": true,
+                "status": run.status,
+                "run_id": run.run_id,
+                "thread_id": run.thread_id,
+                "task": run.task,
+                "started_ms": run.started_ms,
+                "elapsed_ms": elapsed_ms,
+                "steps": run.steps,
+                "model_configured": model_configured,
+                "recoverable_runs": recoverable_runs,
+                "recent_runs": recent_runs,
+            })
+        }
+        None => json!({
+            "active": false,
+            "status": if recoverable_runs.is_empty() { "idle" } else { "interrupted" },
+            "run_id": "",
+            "thread_id": "",
+            "task": "",
+            "started_ms": 0,
+            "elapsed_ms": 0,
+            "steps": [],
+            "model_configured": model_configured,
+            "recoverable_runs": recoverable_runs,
+            "recent_runs": recent_runs,
+        }),
+    }
+}
+
+enum ResumedRunResult {
+    Completed(Value),
+    Cancelled(Value),
+    SafetyStop { thread_id: String, err: String },
+    Failed { status: u16, thread_id: String, err: String },
+}
+
+/// Execute a previously claimed persisted live run (`status == "resuming"`) from
+/// its saved thread and optional step snapshot. Used by both boot auto-resume
+/// and `POST /api/runs/resume`.
+fn execute_resumed_run(
+    state: &Arc<AppState>,
+    person: &Person,
+    claimed: &live_runs::PersistedLiveRun,
+) -> ResumedRunResult {
+    let runtime = runtime_for(state, person);
+    let cfg = effective_cfg(state, &runtime);
+    if !cfg.model_configured() {
+        live_runs::revert_resume_claim(&state.cfg.data_dir, &claimed.run_id, NO_KEY_ERROR);
+        return ResumedRunResult::Failed {
+            status: 503,
+            thread_id: claimed.thread_id.clone(),
+            err: NO_KEY_ERROR.to_string(),
+        };
+    }
+
+    let (thread_id, history) = {
+        let mut store = runtime.store.lock().unwrap();
+        let tid = store.ensure_thread_preserving_id(&claimed.thread_id, &claimed.task);
+        let mut hist = if claimed.snapshot.is_some() {
+            Vec::new()
+        } else {
+            store.history_json(&tid)
+        };
+        if claimed.snapshot.is_none() {
+            if let Some(last) = hist.last() {
+                if last["role"].as_str() == Some("user")
+                    && last["content"].as_str().map(str::trim) == Some(claimed.task.trim())
+                {
+                    hist.pop();
+                }
+            }
+        }
+        store.push(
+            &tid,
+            "step",
+            &format!(
+                "Resuming interrupted task (attempt {}, {} prior step(s) preserved).",
+                claimed.resume_count,
+                claimed.steps.len()
+            ),
+        );
+        (tid, hist)
+    };
+
+    let resume_prompt = if claimed.snapshot.is_some() {
+        Some(
+            "The server restarted while you were working on this task. Continue from your completed steps above and finish the task without repeating already-completed file writes."
+                .to_string(),
+        )
+    } else {
+        None
+    };
+
+    let opts = AgentLoopOptions {
+        snapshot: claimed.snapshot.clone(),
+        ..AgentLoopOptions::default()
+    };
+    let resume_opts = ResumeRunOptions {
+        run_id: claimed.run_id.clone(),
+        prior_steps: claimed.steps.clone(),
+        prior_started_ms: claimed.started_ms,
+        resume_prompt,
+    };
+
+    let ctx = ToolCtx {
+        library: state.library.clone(),
+        root_data_dir: state.cfg.data_dir.clone(),
+        person_id: person.id.clone(),
+    };
+
+    let outcome = run_agent_resumed(
+        &cfg,
+        &ctx,
+        &runtime.store,
+        &thread_id,
+        &claimed.task,
+        &history,
+        Some((&state.live_runs, &state.events, &person.id)),
+        opts,
+        resume_opts,
+    );
+    state.search_cache.invalidate(&person.id);
+
+    match outcome {
+        Ok(outcome) => {
+            let store = runtime.store.lock().unwrap();
+            let mut v = store
+                .thread_json(&thread_id)
+                .unwrap_or_else(|| json!({"thread_id": thread_id}));
+            if let Some(prun_id) = outcome.paused_run_id {
+                v["paused_pipeline_run_id"] = json!(prun_id);
+            }
+            if let Some(cp) = outcome.paused_checkpoint {
+                v["pending_checkpoint"] = json!({
+                    "prompt": cp.prompt,
+                    "input_mode": cp.input_mode,
+                    "choices": cp.choices,
+                    "inspect_files": cp.inspect_files,
+                });
+            }
+            v["resumed"] = json!(true);
+            v["run_id"] = json!(claimed.run_id);
+            v["status"] = json!("completed");
+            v["written_files"] = json!(outcome.written_files);
+            v["usage"] = outcome.usage.to_json();
+            v["engagement_id"] = json!(outcome.engagement_id);
+            if outcome.budget_gated {
+                v["budget_gated"] = json!(true);
+                v["decision_id"] = json!(outcome.decision_id);
+            }
+            ResumedRunResult::Completed(v)
+        }
+        Err(e) if e == "run cancelled by user" => {
+            let mut store = runtime.store.lock().unwrap();
+            store.push(&thread_id, "step", "Run cancelled by user.");
+            let mut v = store
+                .thread_json(&thread_id)
+                .unwrap_or_else(|| json!({"thread_id": thread_id}));
+            v["resumed"] = json!(true);
+            v["run_id"] = json!(claimed.run_id);
+            v["cancelled"] = json!(true);
+            v["status"] = json!("cancelled");
+            ResumedRunResult::Cancelled(v)
+        }
+        Err(e) if e.starts_with(tripwire::HALT_PREFIX) => ResumedRunResult::SafetyStop {
+            thread_id,
+            err: e,
+        },
+        Err(e) => {
+            runtime.store.lock().unwrap().push(&thread_id, "error", &e);
+            ResumedRunResult::Failed {
+                status: 500,
+                thread_id,
+                err: e,
+            }
+        }
+    }
+}
+
+/// Routes live run status/SSE/cancel/resume, pipelines, apps execution, threads, and chat.
 fn try_route_runs_and_chat(
     stream: &mut std::net::TcpStream,
-    state: &AppState,
+    state: &Arc<AppState>,
     req: &Request,
     person: &Person,
     runtime: &Arc<PersonRuntime>,
@@ -6655,73 +6931,169 @@ fn try_route_runs_and_chat(
             }
         }
         ("GET", "/api/runs/status") => {
-            let active = state.live_runs.lock().unwrap().get(&person.id).cloned();
-            match active {
-                Some(run) => {
-                    let elapsed_ms = records::now_millis().saturating_sub(run.started_ms);
-                    respond_json(
-                        stream,
-                        200,
-                        &json!({
-                            "active": true,
-                            "run_id": run.run_id,
-                            "thread_id": run.thread_id,
-                            "task": run.task,
-                            "started_ms": run.started_ms,
-                            "elapsed_ms": elapsed_ms,
-                            "steps": run.steps,
-                        }),
-                    )
-                }
-                None => respond_json(
-                    stream,
-                    200,
-                    &json!({
-                        "active": false,
-                        "run_id": "",
-                        "thread_id": "",
-                        "task": "",
-                        "started_ms": 0,
-                        "elapsed_ms": 0,
-                        "steps": [],
-                    }),
-                ),
-            }
+            respond_json(stream, 200, &runs_status_json(state, person))
         }
         ("GET", "/api/runs/stream") => {
             let thread_filter = query_param(&req.query, "thread_id");
             let once = query_param(&req.query, "once")
                 .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
                 .unwrap_or(false);
-            let active = state.live_runs.lock().unwrap().get(&person.id).cloned();
-            let initial = match active {
-                Some(run) => json!({
-                    "active": true,
-                    "run_id": run.run_id,
-                    "thread_id": run.thread_id,
-                    "task": run.task,
-                    "started_ms": run.started_ms,
-                    "elapsed_ms": records::now_millis().saturating_sub(run.started_ms),
-                    "steps": run.steps,
-                }),
-                None => json!({
-                    "active": false,
-                    "run_id": "",
-                    "thread_id": "",
-                    "task": "",
-                    "started_ms": 0,
-                    "elapsed_ms": 0,
-                    "steps": [],
-                }),
-            };
-            sse::stream_sse(
+            let requested_since = query_param(&req.query, "since")
+                .and_then(|s| s.trim().parse::<u64>().ok())
+                .or_else(|| {
+                    req.last_event_id
+                        .as_deref()
+                        .and_then(|s| s.trim().parse::<u64>().ok())
+                });
+            // Capture cursor BEFORE snapshotting run state and BEFORE writing any
+            // bytes to the socket so no event published concurrently is ever skipped.
+            let cursor = requested_since.unwrap_or_else(|| state.events.head_seq());
+            let initial = runs_status_json(state, person);
+            sse::stream_sse_from(
                 stream,
                 &state.events,
                 &person.id,
                 thread_filter.as_deref(),
                 &initial,
+                cursor,
                 once,
             )
+        }
+        ("POST", "/api/runs/resume")
+        | ("POST", _) if req.path == "/api/runs/resume" || (req.path.starts_with("/api/runs/") && req.path.ends_with("/resume")) => {
+            let parsed: Value = if req.body.iter().all(u8::is_ascii_whitespace) {
+                json!({})
+            } else {
+                match serde_json::from_slice(&req.body) {
+                    Ok(v) => v,
+                    Err(_) => {
+                        return Some(respond_err(stream, 400, "request body is not valid JSON"));
+                    }
+                }
+            };
+            let path_run_id = if req.path != "/api/runs/resume" {
+                req.path
+                    .strip_prefix("/api/runs/")
+                    .and_then(|r| r.strip_suffix("/resume"))
+                    .map(|s| percent_decode(s).trim().to_string())
+                    .filter(|s| !s.is_empty())
+            } else {
+                None
+            };
+            let body_run_id = parsed["run_id"]
+                .as_str()
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(str::to_string);
+            let target_run_id = path_run_id.or(body_run_id);
+            let target_thread_id = parsed["thread_id"]
+                .as_str()
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(str::to_string);
+            let allow_failed = parsed["allow_failed"].as_bool().unwrap_or(false);
+            let async_mode = parsed["async"].as_bool().unwrap_or(false);
+
+            let eff = effective_cfg(state, runtime);
+            if !eff.model_configured() {
+                let candidate = {
+                    let all = live_runs::list_for_person(&state.cfg.data_dir, &person.id);
+                    if let Some(ref rid) = target_run_id {
+                        all.into_iter().find(|r| r.run_id == *rid)
+                    } else {
+                        all.into_iter().find(|r| {
+                            r.is_recoverable()
+                                && target_thread_id
+                                    .as_deref()
+                                    .map(|t| r.thread_id == t)
+                                    .unwrap_or(true)
+                        })
+                    }
+                };
+                return Some(match candidate {
+                    Some(run) => respond_json(
+                        stream,
+                        503,
+                        &json!({
+                            "error": NO_KEY_ERROR,
+                            "run_id": run.run_id,
+                            "thread_id": run.thread_id,
+                            "status": run.status,
+                        }),
+                    ),
+                    None => respond_err(stream, 404, "no interrupted run available to resume"),
+                });
+            }
+
+            let busy_now = state
+                .live_runs
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .contains_key(&person.id);
+            if busy_now {
+                return Some(respond_err(
+                    stream,
+                    409,
+                    "another run is already active for this person",
+                ));
+            }
+
+            let claimed = match live_runs::claim_for_resume(
+                &state.cfg.data_dir,
+                &person.id,
+                target_run_id.as_deref(),
+                target_thread_id.as_deref(),
+                allow_failed,
+            ) {
+                Ok(c) => c,
+                Err((status, msg)) => return Some(respond_err(stream, status, &msg)),
+            };
+
+            if async_mode {
+                let st_bg = state.clone();
+                let person_bg = person.clone();
+                let claimed_bg = claimed.clone();
+                let _ = std::thread::Builder::new()
+                    .name("ergon-resume".to_string())
+                    .stack_size(2 * 1024 * 1024)
+                    .spawn(move || {
+                        let _ = execute_resumed_run(&st_bg, &person_bg, &claimed_bg);
+                    });
+                return Some(respond_json(
+                    stream,
+                    202,
+                    &json!({
+                        "resuming": true,
+                        "run_id": claimed.run_id,
+                        "thread_id": claimed.thread_id,
+                        "status": "resuming",
+                        "prior_steps": claimed.steps.len(),
+                    }),
+                ));
+            }
+
+            match execute_resumed_run(state, person, &claimed) {
+                ResumedRunResult::Completed(v) | ResumedRunResult::Cancelled(v) => {
+                    respond_json(stream, 200, &v)
+                }
+                ResumedRunResult::SafetyStop { thread_id, err } => {
+                    respond_safety_stop(stream, runtime, &thread_id, &err)
+                }
+                ResumedRunResult::Failed {
+                    status,
+                    thread_id,
+                    err,
+                } => respond_json(
+                    stream,
+                    status,
+                    &json!({
+                        "error": err,
+                        "run_id": claimed.run_id,
+                        "thread_id": thread_id,
+                        "status": if status == 503 { "interrupted" } else { "failed" },
+                    }),
+                ),
+            }
         }
         ("POST", path) if path.starts_with("/api/runs/") && path.ends_with("/cancel") => {
             let id = path

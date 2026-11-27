@@ -5332,9 +5332,12 @@ function runWebVaultAggregate(
       const run = liveRuns[p.id];
       return jsonRes(
         run
-          ? { active: run.active, run_id: run.run_id, thread_id: run.thread_id, task: run.task, started_ms: run.started_ms, elapsed_ms: Date.now() - run.started_ms, steps: run.steps }
-          : { active: false, thread_id: "", task: "", started_ms: 0, steps: [] }
+          ? { active: run.active, status: run.active ? "running" : "idle", run_id: run.run_id, thread_id: run.thread_id, task: run.task, started_ms: run.started_ms, elapsed_ms: Date.now() - run.started_ms, steps: run.steps, model_configured: true, recoverable_runs: [], recent_runs: [] }
+          : { active: false, status: "idle", run_id: "", thread_id: "", task: "", started_ms: 0, elapsed_ms: 0, steps: [], model_configured: true, recoverable_runs: [], recent_runs: [] }
       );
+    }
+    if (method === "POST" && (path === "/api/runs/resume" || (path.startsWith("/api/runs/") && path.endsWith("/resume")))) {
+      return jsonRes({ error: "no interrupted run available to resume" }, 404);
     }
     if (method === "POST" && path.startsWith("/api/runs/") && path.endsWith("/cancel")) {
       if (liveRuns[p.id]) {
