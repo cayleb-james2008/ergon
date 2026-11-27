@@ -2,7 +2,7 @@ name: release
 
 # Every push to main that carries a NEW version in Cargo.toml (and its CHANGELOG.md
 # entry) runs the locked test suite, builds release binaries and platform installers
-# (Windows .msi/.zip, macOS .pkg/.dmg, Linux binaries), signs/notarizes when secrets
+# (Windows .msi/.zip, Linux binaries), signs Windows artifacts when secrets
 # are provisioned, and publishes a GitHub Release `vX.Y.Z` with SHA256SUMS.
 # Pushing a tag `vX.Y.Z` by hand does the same. A push that does not change the
 # version does nothing.
@@ -66,7 +66,6 @@ jobs:
         include:
           - { os: ubuntu-latest, target: x86_64-unknown-linux-gnu, ext: '' }
           - { os: ubuntu-24.04-arm, target: aarch64-unknown-linux-gnu, ext: '' }
-          - { os: macos-latest, target: aarch64-apple-darwin, ext: '' }
           - { os: windows-latest, target: x86_64-pc-windows-msvc, ext: '.exe' }
     runs-on: ${{ matrix.os }}
     defaults:
@@ -129,65 +128,6 @@ jobs:
             -OutDir dist `
             -Arch x86_64 `
             -TimestampUrl $tsUrl
-
-      - name: Import Apple signing certificates (ephemeral keychain)
-        if: ${{ matrix.target == 'aarch64-apple-darwin' }}
-        env:
-          APPLE_CERT_P12_BASE64: ${{ secrets.APPLE_CERT_P12_BASE64 }}
-          APPLE_CERT_PASSWORD: ${{ secrets.APPLE_CERT_PASSWORD }}
-        run: |
-          if [ -z "$APPLE_CERT_P12_BASE64" ]; then
-            echo "::warning::APPLE_CERT_P12_BASE64 not set; macOS binary, .pkg, and .dmg will be unsigned."
-            exit 0
-          fi
-          KEYCHAIN_PATH="$RUNNER_TEMP/ergon-signing.keychain-db"
-          KEYCHAIN_PASS="$(openssl rand -hex 24)"
-          CERT_PATH="$RUNNER_TEMP/apple-certs.p12"
-          echo "$APPLE_CERT_P12_BASE64" | base64 --decode > "$CERT_PATH"
-          security create-keychain -p "$KEYCHAIN_PASS" "$KEYCHAIN_PATH"
-          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
-          security unlock-keychain -p "$KEYCHAIN_PASS" "$KEYCHAIN_PATH"
-          security import "$CERT_PATH" -P "$APPLE_CERT_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
-          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASS" "$KEYCHAIN_PATH"
-          security list-keychains -d user -s "$KEYCHAIN_PATH" login.keychain-db
-          rm -f "$CERT_PATH"
-
-      - name: Sign macOS binary and build .pkg + .dmg
-        if: ${{ matrix.target == 'aarch64-apple-darwin' }}
-        env:
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_INSTALLER_IDENTITY: ${{ secrets.APPLE_INSTALLER_IDENTITY }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          APPLE_NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
-          APPLE_NOTARY_ISSUER_ID: ${{ secrets.APPLE_NOTARY_ISSUER_ID }}
-          APPLE_NOTARY_KEY_P8: ${{ secrets.APPLE_NOTARY_KEY_P8 }}
-          VERSION: ${{ needs.plan.outputs.version }}
-        run: |
-          BIN_PATH="dist/${BIN}-aarch64-apple-darwin"
-          if [ -n "$APPLE_SIGNING_IDENTITY" ]; then
-            codesign --force --options runtime --timestamp --sign "$APPLE_SIGNING_IDENTITY" "$BIN_PATH"
-            codesign --verify --strict --verbose=2 "$BIN_PATH"
-          else
-            echo "::warning::APPLE_SIGNING_IDENTITY not set; standalone macOS binary will be unsigned."
-          fi
-          bash packaging/macos/build-pkg.sh \
-            --binary "$BIN_PATH" \
-            --version "$VERSION" \
-            --arch "aarch64-apple-darwin" \
-            --out-dir dist
-          bash packaging/macos/build-dmg.sh \
-            --binary "$BIN_PATH" \
-            --version "$VERSION" \
-            --arch "aarch64-apple-darwin" \
-            --out-dir dist
-
-      - name: Clean up ephemeral Apple signing keychain
-        if: ${{ always() && matrix.target == 'aarch64-apple-darwin' }}
-        run: |
-          rm -f "$RUNNER_TEMP/apple-certs.p12"
-          if [ -f "$RUNNER_TEMP/ergon-signing.keychain-db" ]; then
-            security delete-keychain "$RUNNER_TEMP/ergon-signing.keychain-db" || true
-          fi
 
       - uses: actions/upload-artifact@v4
         with:

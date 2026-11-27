@@ -2,7 +2,7 @@
 //! 1. Admin update flow behind `ERGON_GATE_TOKEN` / `ERGON_ADMIN_TOKEN` (no blanket 403 for admins,
 //!    strict 401 for unauthenticated callers, strict 403 for non-admin/wrong-token callers).
 //! 2. Cross-platform `ergon service` manifest generation, validation, and CLI execution.
-//! 3. Windows MSI/PowerShell, macOS .pkg/.dmg, `.github/workflows/release.yml`, and `docs/SIGNING.md` integrity.
+//! 3. Windows MSI/PowerShell, `.github/workflows/release.yml`, and `docs/SIGNING.md` integrity.
 
 use ergon_rs::service::{
     render_launchd_plist, render_systemd_unit, render_windows_sc_commands,
@@ -666,85 +666,25 @@ fn packaging_scripts_xml_manifests_release_workflow_and_signing_docs_are_valid()
     assert!(build_msi.contains("signtool"));
     assert!(build_msi.contains("WINDOWS_SIGN_PFX_BASE64"));
 
-    // macOS packaging templates & scripts
-    let info_plist =
-        std::fs::read_to_string(repo_root.join("packaging/macos/Info.plist.template")).unwrap();
-    assert!(info_plist.contains("com.ergon.app"));
-    let agent_plist =
-        std::fs::read_to_string(repo_root.join("packaging/macos/com.ergon.agent.plist.template"))
-            .unwrap();
-    assert!(agent_plist.contains("com.ergon.agent"));
-    let dist_xml =
-        std::fs::read_to_string(repo_root.join("packaging/macos/distribution.xml.template"))
-            .unwrap();
-    assert!(dist_xml.contains("installer-gui-script"));
-
-    let build_pkg =
-        std::fs::read_to_string(repo_root.join("packaging/macos/build-pkg.sh")).unwrap();
-    assert!(build_pkg.contains("pkgbuild"));
-    assert!(build_pkg.contains("productbuild"));
-    assert!(build_pkg.contains("notarytool"));
-    assert!(build_pkg.contains("stapler"));
-
-    let build_dmg =
-        std::fs::read_to_string(repo_root.join("packaging/macos/build-dmg.sh")).unwrap();
-    assert!(build_dmg.contains("hdiutil create"));
-    assert!(build_dmg.contains("codesign"));
-    assert!(build_dmg.contains("notarytool"));
-
-    let postinstall =
-        std::fs::read_to_string(repo_root.join("packaging/macos/scripts/postinstall")).unwrap();
-    assert!(postinstall.contains("com.ergon.agent.plist"));
-
-    #[cfg(unix)]
-    {
-        for rel in [
-            "packaging/macos/build-pkg.sh",
-            "packaging/macos/build-dmg.sh",
-            "packaging/macos/scripts/postinstall",
-        ] {
-            let status = std::process::Command::new("bash")
-                .args(["-n", &repo_root.join(rel).to_string_lossy()])
-                .status()
-                .expect("bash -n");
-            assert!(status.success(), "bash -n failed for {rel}");
-        }
-    }
-
     // Release workflow & signing docs
     let workflow =
         std::fs::read_to_string(repo_root.join(".github/workflows/release.yml")).unwrap();
     for needle in [
         "cargo test --locked",
         "packaging/windows/build-msi.ps1",
-        "packaging/macos/build-pkg.sh",
-        "packaging/macos/build-dmg.sh",
         "WINDOWS_SIGN_PFX_BASE64",
         "WINDOWS_SIGN_PFX_PASSWORD",
-        "APPLE_CERT_P12_BASE64",
-        "APPLE_SIGNING_IDENTITY",
-        "APPLE_INSTALLER_IDENTITY",
-        "APPLE_NOTARY_KEY_ID",
-        "APPLE_NOTARY_ISSUER_ID",
-        "APPLE_NOTARY_KEY_P8",
         "SHA256SUMS",
     ] {
         assert!(workflow.contains(needle), "release.yml missing: {needle}");
     }
+    assert!(!workflow.contains("apple-darwin"), "release.yml must not build macOS (Windows/Linux only)");
 
     let signing_doc = std::fs::read_to_string(repo_root.join("docs/SIGNING.md")).unwrap();
     for secret in [
         "WINDOWS_SIGN_PFX_BASE64",
         "WINDOWS_SIGN_PFX_PASSWORD",
         "WINDOWS_SIGN_TIMESTAMP_URL",
-        "APPLE_CERT_P12_BASE64",
-        "APPLE_CERT_PASSWORD",
-        "APPLE_SIGNING_IDENTITY",
-        "APPLE_INSTALLER_IDENTITY",
-        "APPLE_TEAM_ID",
-        "APPLE_NOTARY_KEY_ID",
-        "APPLE_NOTARY_ISSUER_ID",
-        "APPLE_NOTARY_KEY_P8",
         "SHA256SUMS",
     ] {
         assert!(signing_doc.contains(secret), "docs/SIGNING.md missing: {secret}");
