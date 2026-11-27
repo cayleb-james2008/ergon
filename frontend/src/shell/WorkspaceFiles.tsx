@@ -1375,11 +1375,32 @@ export function FileViewerModal({
                 {savingAs ? "Saving…" : expTarget === "docx" ? "Save as Word" : "Save as Excel"}
               </Button>
             )}
-            {canPdf && data && !err && (
-              <Button id="file-save-pdf" size="sm" variant="outline" className="max-md:min-h-11" disabled={savingPdf} onClick={handleSaveAsPdf}>
-                <FileDown className="size-3.5" strokeWidth={1.5} aria-hidden />
-                {savingPdf ? "Exporting…" : "Save as PDF"}
-              </Button>
+            {data && !err && (
+              <span
+                className="inline-flex"
+                title={
+                  canPdf
+                    ? "Export a formatted PDF 1.4 copy to your workspace"
+                    : `PDF export is only available for .md, .txt, .csv, and .tsv files (not .${ext || "binary"})`
+                }
+              >
+                <Button
+                  id="file-save-pdf"
+                  size="sm"
+                  variant="outline"
+                  className="max-md:min-h-11"
+                  disabled={savingPdf || !canPdf}
+                  title={
+                    canPdf
+                      ? "Export a formatted PDF 1.4 copy to your workspace"
+                      : `PDF export is only available for .md, .txt, .csv, and .tsv files (not .${ext || "binary"})`
+                  }
+                  onClick={handleSaveAsPdf}
+                >
+                  <FileDown className="size-3.5" strokeWidth={1.5} aria-hidden />
+                  {savingPdf ? "Exporting…" : "Save as PDF"}
+                </Button>
+              </span>
             )}
             {data && !data.is_binary && (
               <Button size="sm" variant="outline" className="max-md:min-h-11" onClick={copyContent}>

@@ -232,6 +232,133 @@ function validateTemplateText(
   return errs;
 }
 
+const STRUCTURED_2D_ARG_KEYS = new Set(["rows"]);
+const STRUCTURED_LIST_ARG_KEYS = new Set([
+  "sections",
+  "columns",
+  "headers",
+  "urls",
+  "source_files",
+  "required_clauses",
+  "clauses",
+]);
+
+function isStructuredSkillArg(key: string, value: unknown): boolean {
+  if (Array.isArray(value)) return true;
+  if (typeof value === "object" && value !== null) return true;
+  const k = key.trim().toLowerCase();
+  return STRUCTURED_2D_ARG_KEYS.has(k) || STRUCTURED_LIST_ARG_KEYS.has(k);
+}
+
+function collectStringsFromArgValue(value: unknown, out: string[]): void {
+  if (typeof value === "string") {
+    out.push(value);
+  } else if (Array.isArray(value)) {
+    for (const item of value) {
+      collectStringsFromArgValue(item, out);
+    }
+  } else if (value && typeof value === "object") {
+    for (const v of Object.values(value as Record<string, unknown>)) {
+      collectStringsFromArgValue(v, out);
+    }
+  }
+}
+
+function serializeStructuredArg(value: unknown): string {
+  if (value === undefined || value === null) return "";
+  if (typeof value === "string") return value;
+  if (Array.isArray(value)) {
+    if (value.length === 0) return "[]";
+    if (value.every((row) => Array.isArray(row))) {
+      return `[\n${value.map((row) => `  ${JSON.stringify(row)}`).join(",\n")}\n]`;
+    }
+  }
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
+}
+
+function parseStructuredArgInput(raw: string): { value: unknown; jsonError?: string } {
+  const trimmed = raw.trim();
+  if (!trimmed) return { value: "" };
+  if (trimmed.startsWith("{{") && trimmed.endsWith("}}")) {
+    return { value: raw };
+  }
+  if (trimmed.startsWith("[") || trimmed.startsWith("{")) {
+    try {
+      return { value: JSON.parse(trimmed) };
+    } catch {
+      return { value: raw, jsonError: "Invalid JSON syntax — check brackets and quotes." };
+    }
+  }
+  return { value: raw };
+}
+
+function structuredArgPlaceholder(key: string): string {
+  const k = key.trim().toLowerCase();
+  if (k === "rows") {
+    return '[\n  ["Widget A", "2", "100.00"],\n  ["Acme, Inc.", "5", "250.00"]\n]';
+  }
+  if (k === "sections") {
+    return '[\n  "## Summary\\nKey findings, risks, and owners.",\n  "## Next Steps\\nFollow up by Friday."\n]';
+  }
+  if (k === "columns" || k === "headers") {
+    return '["Item", "Qty", "Amount"]';
+  }
+  return '["value_1", "value_2"]';
+}
+
+function structuredArgHint(key: string): string {
+  const k = key.trim().toLowerCase();
+  if (k === "rows") return "2D JSON array or CSV lines";
+  if (k === "sections") return "JSON array or Markdown (commas preserved)";
+  if (k === "columns" || k === "headers") return "JSON array of headers";
+  return "JSON array (commas preserved)";
+}
+
+function defaultArgsForSkill(skillId: string): Record<string, unknown> {
+  switch (skillId) {
+    case "make_spreadsheet":
+      return {
+        title: "Q4 Report",
+        columns: ["Item", "Qty", "Amount"],
+        rows: [
+          ["Widget A", "2", "100.00"],
+          ["Widget B", "5", "250.00"],
+        ],
+      };
+    case "write_document":
+      return {
+        title: "Summary Memo",
+        sections: ["## Overview\nKey findings, decisions, and next steps."],
+      };
+    case "reconcile_ledger":
+      return { source_files: ["{{inputs.file}}"], output_title: "Ledger Reconciliation" };
+    case "summarize_meeting":
+      return { notes_file: "{{inputs.file}}", output_title: "Meeting Summary" };
+    case "audit_contract":
+      return { contract_file: "{{inputs.file}}", output_title: "Contract Audit" };
+    case "triage_inbox":
+      return { inbox_file: "{{inputs.file}}", output_title: "Inbox Triage" };
+    case "clean_dataset":
+      return { input_file: "{{inputs.file}}" };
+    case "compare_documents":
+      return { left_file: "", right_file: "", output_title: "Document Comparison" };
+    case "draft_brief":
+      return { topic: "", source_files: ["{{inputs.file}}"], output_title: "Executive Brief" };
+    case "extract_tables":
+      return { source_file: "{{inputs.file}}", output_title: "Extracted Table" };
+    case "research":
+      return { topic: "", urls: ["https://example.org"] };
+    case "update_memory":
+      return { note: "" };
+    default:
+      return { input_file: "{{inputs.file}}" };
+  }
+}
+
 /** Validate typed pipeline steps for empty prompts, duplicate IDs, DAG cycles, and broken templates. */
 export function validatePipelineSteps(steps: PipelineStepSpec[]): PipelineValidationResult {
   const errorsByStep: Record<number, string[]> = {};
@@ -301,8 +428,14 @@ export function validatePipelineSteps(steps: PipelineStepSpec[]): PipelineValida
       if (!String(st.skill_id ?? "").trim()) {
         stepErrs.push("Select a built-in skill.");
       }
-      for (const v of Object.values(st.args ?? {})) {
-        stringsToCheck.push(String(v ?? ""));
+      for (const [k, v] of Object.entries(st.args ?? {})) {
+        collectStringsFromArgValue(v, stringsToCheck);
+        if (isStructuredSkillArg(k, v) && typeof v === "string") {
+          const parsed = parseStructuredArgInput(v);
+          if (parsed.jsonError) {
+            stepErrs.push(`Argument "${k}": ${parsed.jsonError}`);
+          }
+        }
       }
     } else if (st.kind === "agent") {
       const p = String(st.prompt ?? "");
@@ -468,6 +601,7 @@ export function PipelineBuilder({
   outboundConnectors?: OutboundConnector[];
 }) {
   const [newArgKey, setNewArgKey] = useState<Record<number, string>>({});
+  const [rawArgDrafts, setRawArgDrafts] = useState<Record<string, string>>({});
   const [fetchedConnectors, setFetchedConnectors] = useState<OutboundConnector[]>([]);
   const [connectorsErr, setConnectorsErr] = useState(false);
   const [validatingDag, setValidatingDag] = useState(false);
@@ -477,6 +611,26 @@ export function PipelineBuilder({
   const validatedSigRef = useRef<string | null>(null);
   const validation = useMemo(() => validatePipelineSteps(steps), [steps]);
   const stepsSig = useMemo(() => JSON.stringify(steps), [steps]);
+
+  const clearStepDrafts = (stepIdx?: number) => {
+    if (stepIdx === undefined) {
+      setRawArgDrafts({});
+      return;
+    }
+    const prefix = `${stepIdx}:`;
+    setRawArgDrafts((prev) => {
+      let changed = false;
+      const next: Record<string, string> = {};
+      for (const [k, v] of Object.entries(prev)) {
+        if (k.startsWith(prefix)) {
+          changed = true;
+        } else {
+          next[k] = v;
+        }
+      }
+      return changed ? next : prev;
+    });
+  };
 
   useEffect(() => {
     if (outboundConnectors !== undefined) {
@@ -532,6 +686,7 @@ export function PipelineBuilder({
   };
 
   const changeKind = (idx: number, kind: PipelineStepKind) => {
+    clearStepDrafts(idx);
     const cur = steps[idx];
     const prevId = idx > 0 ? steps[idx - 1].id : undefined;
     const template = makeDefaultStep(kind, idx, prevId);
@@ -558,6 +713,7 @@ export function PipelineBuilder({
   const moveStep = (idx: number, dir: -1 | 1) => {
     const target = idx + dir;
     if (target < 0 || target >= steps.length) return;
+    clearStepDrafts();
     const copy = steps.slice();
     const [item] = copy.splice(idx, 1);
     copy.splice(target, 0, item);
@@ -565,6 +721,7 @@ export function PipelineBuilder({
   };
 
   const removeStep = (idx: number) => {
+    clearStepDrafts();
     const removedId = steps[idx]?.id;
     const next = steps
       .filter((_, i) => i !== idx)
@@ -938,7 +1095,14 @@ export function PipelineBuilder({
                       <select
                         aria-label={`Step ${idx + 1} skill`}
                         value={st.skill_id ?? ""}
-                        onChange={(e) => updateStep(idx, { skill_id: e.target.value })}
+                        onChange={(e) => {
+                          const nextSkillId = e.target.value;
+                          clearStepDrafts(idx);
+                          updateStep(idx, {
+                            skill_id: nextSkillId,
+                            args: defaultArgsForSkill(nextSkillId),
+                          });
+                        }}
                         className="focus-ring h-8 rounded-sm border border-input bg-surface px-2 text-xs text-ink outline-none max-md:min-h-11"
                       >
                         {skills.map((sk) => (
@@ -951,51 +1115,153 @@ export function PipelineBuilder({
 
                     <div className="flex flex-col gap-1.5">
                       <span className="text-xs font-medium text-ink-2">Arguments</span>
-                      {argEntries.map(([k, v]) => (
-                        <div key={k} className="flex flex-wrap items-center gap-1.5">
-                          <span className="min-w-[96px] text-xs font-medium text-ink-2">{k}</span>
-                          <Input
-                            value={String(v ?? "")}
-                            aria-label={`Step ${idx + 1} arg ${k}`}
-                            placeholder="Value or {{steps.prev.files[0]}}"
-                            onChange={(e) =>
-                              updateStep(idx, { args: { ...(st.args ?? {}), [k]: e.target.value } })
-                            }
-                            className="h-8 min-w-[140px] flex-1 text-xs max-md:min-h-11"
-                          />
-                          {workspaceFiles.length > 0 && k.includes("file") && (
-                            <select
-                              aria-label={`Pick workspace file for ${k}`}
-                              value=""
-                              onChange={(e) => {
-                                if (!e.target.value) return;
-                                updateStep(idx, { args: { ...(st.args ?? {}), [k]: e.target.value } });
-                              }}
-                              className="focus-ring h-8 rounded-sm border border-input bg-surface px-2 text-xs text-ink-2 outline-none max-md:min-h-11"
+                      {argEntries.map(([k, v]) => {
+                        const structured = isStructuredSkillArg(k, v);
+                        const draftKey = `${idx}:${k}`;
+                        if (structured) {
+                          const displayVal = rawArgDrafts[draftKey] ?? serializeStructuredArg(v);
+                          const parsedPreview = parseStructuredArgInput(displayVal);
+                          return (
+                            <div
+                              key={k}
+                              className="flex flex-col gap-1 rounded-sm border border-hairline/70 bg-surface/70 p-2"
                             >
-                              <option value="">Workspace file…</option>
-                              {workspaceFiles.slice(0, 20).map((f) => (
-                                <option key={f.path} value={f.path}>
-                                  {f.path}
-                                </option>
-                              ))}
-                            </select>
-                          )}
-                          <Button
-                            type="button"
-                            size="xs"
-                            variant="ghost"
-                            aria-label={`Remove argument ${k}`}
-                            onClick={() => {
-                              const nextArgs = { ...(st.args ?? {}) };
-                              delete nextArgs[k];
-                              updateStep(idx, { args: nextArgs });
-                            }}
-                          >
-                            Remove
-                          </Button>
-                        </div>
-                      ))}
+                              <div className="flex flex-wrap items-center justify-between gap-1.5">
+                                <div className="flex flex-wrap items-center gap-1.5">
+                                  <span className="text-xs font-medium text-ink">{k}</span>
+                                  <span className="text-[11px] text-ink-3">{structuredArgHint(k)}</span>
+                                </div>
+                                <div className="flex flex-wrap items-center gap-1.5">
+                                  {workspaceFiles.length > 0 && k.includes("file") && (
+                                    <select
+                                      aria-label={`Pick workspace file for ${k}`}
+                                      value=""
+                                      onChange={(e) => {
+                                        const picked = e.target.value;
+                                        if (!picked) return;
+                                        const curArr = Array.isArray(v)
+                                          ? v.map((x) => String(x)).filter((x) => x && x !== "{{inputs.file}}")
+                                          : [];
+                                        const nextArr = curArr.includes(picked) ? curArr : [...curArr, picked];
+                                        setRawArgDrafts((prev) => {
+                                          if (!(draftKey in prev)) return prev;
+                                          const copy = { ...prev };
+                                          delete copy[draftKey];
+                                          return copy;
+                                        });
+                                        updateStep(idx, { args: { ...(st.args ?? {}), [k]: nextArr } });
+                                      }}
+                                      className="focus-ring h-7 rounded-sm border border-input bg-surface px-2 text-xs text-ink-2 outline-none max-md:min-h-11"
+                                    >
+                                      <option value="">Add workspace file…</option>
+                                      {workspaceFiles.slice(0, 20).map((f) => (
+                                        <option key={f.path} value={f.path}>
+                                          {f.path}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  )}
+                                  <Button
+                                    type="button"
+                                    size="xs"
+                                    variant="ghost"
+                                    aria-label={`Remove argument ${k}`}
+                                    onClick={() => {
+                                      setRawArgDrafts((prev) => {
+                                        if (!(draftKey in prev)) return prev;
+                                        const copy = { ...prev };
+                                        delete copy[draftKey];
+                                        return copy;
+                                      });
+                                      const nextArgs = { ...(st.args ?? {}) };
+                                      delete nextArgs[k];
+                                      updateStep(idx, { args: nextArgs });
+                                    }}
+                                  >
+                                    Remove
+                                  </Button>
+                                </div>
+                              </div>
+                              <Textarea
+                                rows={k === "rows" || k === "sections" ? 4 : 2}
+                                value={displayVal}
+                                aria-label={`Step ${idx + 1} arg ${k}`}
+                                data-structured-arg={k}
+                                placeholder={structuredArgPlaceholder(k)}
+                                onChange={(e) => {
+                                  const raw = e.target.value;
+                                  setRawArgDrafts((prev) => ({ ...prev, [draftKey]: raw }));
+                                  const parsed = parseStructuredArgInput(raw);
+                                  updateStep(idx, { args: { ...(st.args ?? {}), [k]: parsed.value } });
+                                }}
+                                onBlur={() => {
+                                  const raw = rawArgDrafts[draftKey];
+                                  if (raw === undefined) return;
+                                  const parsed = parseStructuredArgInput(raw);
+                                  if (!parsed.jsonError) {
+                                    setRawArgDrafts((prev) => {
+                                      const copy = { ...prev };
+                                      delete copy[draftKey];
+                                      return copy;
+                                    });
+                                  }
+                                }}
+                                className="mono text-xs"
+                              />
+                              {parsedPreview.jsonError && (
+                                <span className="text-[11px] text-status-stopped-fg">
+                                  {parsedPreview.jsonError}
+                                </span>
+                              )}
+                            </div>
+                          );
+                        }
+                        return (
+                          <div key={k} className="flex flex-wrap items-center gap-1.5">
+                            <span className="min-w-[96px] text-xs font-medium text-ink-2">{k}</span>
+                            <Input
+                              value={String(v ?? "")}
+                              aria-label={`Step ${idx + 1} arg ${k}`}
+                              placeholder="Value or {{steps.prev.files[0]}}"
+                              onChange={(e) =>
+                                updateStep(idx, { args: { ...(st.args ?? {}), [k]: e.target.value } })
+                              }
+                              className="h-8 min-w-[140px] flex-1 text-xs max-md:min-h-11"
+                            />
+                            {workspaceFiles.length > 0 && k.includes("file") && (
+                              <select
+                                aria-label={`Pick workspace file for ${k}`}
+                                value=""
+                                onChange={(e) => {
+                                  if (!e.target.value) return;
+                                  updateStep(idx, { args: { ...(st.args ?? {}), [k]: e.target.value } });
+                                }}
+                                className="focus-ring h-8 rounded-sm border border-input bg-surface px-2 text-xs text-ink-2 outline-none max-md:min-h-11"
+                              >
+                                <option value="">Workspace file…</option>
+                                {workspaceFiles.slice(0, 20).map((f) => (
+                                  <option key={f.path} value={f.path}>
+                                    {f.path}
+                                  </option>
+                                ))}
+                              </select>
+                            )}
+                            <Button
+                              type="button"
+                              size="xs"
+                              variant="ghost"
+                              aria-label={`Remove argument ${k}`}
+                              onClick={() => {
+                                const nextArgs = { ...(st.args ?? {}) };
+                                delete nextArgs[k];
+                                updateStep(idx, { args: nextArgs });
+                              }}
+                            >
+                              Remove
+                            </Button>
+                          </div>
+                        );
+                      })}
                       <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
                         <Input
                           value={newArgKey[idx] ?? ""}
@@ -1012,7 +1278,8 @@ export function PipelineBuilder({
                           onClick={() => {
                             const key = (newArgKey[idx] ?? "").trim().replace(/\s+/g, "_");
                             if (!key) return;
-                            updateStep(idx, { args: { ...(st.args ?? {}), [key]: "" } });
+                            const initVal = isStructuredSkillArg(key, undefined) ? [] : "";
+                            updateStep(idx, { args: { ...(st.args ?? {}), [key]: initVal } });
                             setNewArgKey((prev) => ({ ...prev, [idx]: "" }));
                           }}
                         >

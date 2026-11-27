@@ -391,7 +391,7 @@ export type PipelineStepSpec = {
   label: string;
   kind: PipelineStepKind;
   skill_id?: string;
-  args?: Record<string, string>;
+  args?: Record<string, unknown>;
   prompt?: string;
   checkpoint?: PipelineCheckpointSpec;
   export?: PipelineExportSpec;
@@ -1372,8 +1372,7 @@ export async function exportFile(body: ExportFileRequest): Promise<Res<ExportFil
   return call<ExportFileResult>("/api/files/export", { method: "POST", body });
 }
 
-export function canExportPdf(path: string, extractedFormat?: "markdown" | "csv"): boolean {
-  if (extractedFormat === "markdown" || extractedFormat === "csv") return true;
+export function canExportPdf(path: string, _extractedFormat?: "markdown" | "csv"): boolean {
   const ext = (path.split(".").pop() || "").toLowerCase();
   return ext === "md" || ext === "markdown" || ext === "txt" || ext === "csv" || ext === "tsv";
 }

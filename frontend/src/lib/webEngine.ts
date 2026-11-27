@@ -3475,7 +3475,13 @@ export async function installBrowserEngine(): Promise<void> {
     if (spec.kind === "skill") {
       const resolvedArgs: Record<string, string> = {};
       for (const [k, v] of Object.entries(spec.args ?? {})) {
-        resolvedArgs[k] = resolvePipelineTemplate(String(v ?? ""), inputs, run.step_states, extraVars);
+        if (typeof v === "string") {
+          resolvedArgs[k] = resolvePipelineTemplate(v, inputs, run.step_states, extraVars);
+        } else if (v !== undefined && v !== null) {
+          resolvedArgs[k] = JSON.stringify(resolvePipelineValue(v, inputs, run.step_states, extraVars));
+        } else {
+          resolvedArgs[k] = "";
+        }
       }
       const res = runPipelineSkillStep(st, spec.skill_id || "draft_brief", resolvedArgs);
       const bytesTotal = res.files.reduce((acc, f) => acc + (st.files[f]?.size ?? 0), 0);

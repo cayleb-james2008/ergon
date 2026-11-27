@@ -3,3 +3,4 @@
 /smoke-data
 /smoke.log
 /smoke.pid
+evidence/video/**/*.mp4
