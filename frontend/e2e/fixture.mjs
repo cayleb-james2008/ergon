@@ -31,8 +31,6 @@ export function report(name, checks) {
 
 export function build() {
   const run = (cmd, args, cwd) => execFileSync(cmd, args, { cwd, stdio: 'inherit' })
-  const link = path.join(ROOT, 'rune/node_modules')
-  if (!fs.existsSync(link)) fs.symlinkSync('../frontend/node_modules', link)
   run('npm', ['run', 'build'], path.join(ROOT, 'frontend'))
   // the binary embeds assets/index.html with include_str: touch the sources so cargo rebuilds
   const now = new Date()

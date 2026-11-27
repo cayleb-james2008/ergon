@@ -6,21 +6,21 @@
 @import "./theme.css";
 
 @source "../src";
-@source "../../rune/used/components/ui/avatar.tsx";
-@source "../../rune/used/components/ui/badge.tsx";
-@source "../../rune/used/components/ui/border-trail.tsx";
-@source "../../rune/used/components/ui/button.tsx";
-@source "../../rune/used/components/ui/command.tsx";
-@source "../../rune/used/components/ui/dialog.tsx";
-@source "../../rune/used/components/ui/input-group.tsx";
-@source "../../rune/used/components/ui/input.tsx";
-@source "../../rune/used/components/ui/kbd.tsx";
-@source "../../rune/used/components/ui/segmented-control.tsx";
-@source "../../rune/used/components/ui/spinner.tsx";
-@source "../../rune/used/components/ui/tabs.tsx";
-@source "../../rune/used/components/ui/text-shimmer.tsx";
-@source "../../rune/used/components/ui/textarea.tsx";
-@source "../../rune/used/components/kibo-ui/pill/index.tsx";
+@source "../vendor/ui/components/ui/avatar.tsx";
+@source "../vendor/ui/components/ui/badge.tsx";
+@source "../vendor/ui/components/ui/border-trail.tsx";
+@source "../vendor/ui/components/ui/button.tsx";
+@source "../vendor/ui/components/ui/command.tsx";
+@source "../vendor/ui/components/ui/dialog.tsx";
+@source "../vendor/ui/components/ui/input-group.tsx";
+@source "../vendor/ui/components/ui/input.tsx";
+@source "../vendor/ui/components/ui/kbd.tsx";
+@source "../vendor/ui/components/ui/segmented-control.tsx";
+@source "../vendor/ui/components/ui/spinner.tsx";
+@source "../vendor/ui/components/ui/tabs.tsx";
+@source "../vendor/ui/components/ui/text-shimmer.tsx";
+@source "../vendor/ui/components/ui/textarea.tsx";
+@source "../vendor/ui/components/kibo-ui/pill/index.tsx";
 
 @layer base {
   * {

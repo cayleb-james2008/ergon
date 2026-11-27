@@ -1,6 +1,6 @@
 # Ergon Claims Ledger (`CLAIMS.md`)
 
-Canonical verification ledger mapping every factual product, engineering, deployment, and vision claim across `README.md`, `MVP.md`, `docs/SIGNING.md`, `.loop/COMPLETION.md`, `.loop/BAR.md`, and the 7 product vision pillars to concrete evidence on `main`.
+Canonical verification ledger mapping every factual product, engineering, deployment, and vision claim across `README.md`, `MVP.md`, `docs/SIGNING.md`, and the 7 product vision pillars to concrete evidence on `main`.
 
 **Status legend (strict):**
 - `proven` — verified by passing baseline tests (`evidence/baseline-tests.txt`), Wave 1 proofs (`evidence/existing/*`), live benchmarks, and/or recorded video/CI artifacts.
@@ -76,7 +76,7 @@ Canonical verification ledger mapping every factual product, engineering, deploy
 | `BAR-C5` | Learning in Prompts | Learned preferences appear in the standing-preferences section of subsequent system prompts, shape later tasks, and display in the UI Memory view. | Deterministic + Stub | `evidence/baseline-tests.txt`, `evidence/existing/sandbox-tripwire-e2e.log` | proven |
 | `BAR-C8` | Themes & Settings | Served shell provides sidebar, thread list, composer, Settings-only appearance toggle (`localStorage` persisted, dark default, light+dark themes), and actual person memory view (`BAR` C8 & C11). | Deterministic | `evidence/baseline-tests.txt`, `evidence/existing/sandbox-tripwire-e2e.log`, `evidence/existing/frontend-ui-gate.log` | proven |
 | `BAR-C9` | Quiet Workmanlike UI | Rendered UI across both themes stays quiet and workmanlike with zero AI-slop (`sloplint` `0` FAIL across source and rendered app) and plain ledger tool steps. | Deterministic | `evidence/existing/frontend-ui-gate.log`, `evidence/baseline-tests.txt` | proven |
-| `BAR-C10` | Owner UI Visual Grade | Owner visual grading of the rendered UI's look and feel (`.loop/BAR.md` C10: owner-only sign-off). | Owner review | `.loop/BAR.md` (C10) | blocked-on-owner |
+| `BAR-C10` | Owner UI Visual Grade | Owner visual grading of the rendered UI's look and feel (owner-only sign-off across desktop `/` and `/phone`). | Owner review | `docs/screenshots/hero-dark.png`, `evidence/screenshots/phone-decisions-dark.png` | blocked-on-owner |
 | `VIS-1a` | Pillar 1: Personal Agent | Each employee gets an isolated personal agent with private `memory.md`, workspace, threads, `suite.json` (skills, subagents, apps), `work.json`, and standing-preference prompt injection. | Deterministic + Live | `evidence/baseline-tests.txt`, `evidence/existing/sandbox-tripwire-e2e.log`, `evidence/simulation/multi-employee-week.md` | proven |
 | `VIS-1b` | Pillar 1: Run/Edit Learning | Personal agent learns preferences, formatting rules, quality bars, and outcome signals from completed runs, decision approvals/denials, and employee edits to deliverables (`update_memory`, `increment_edits_for_run`, `quality_bar`). | Deterministic + Live | `evidence/vision-3d-self-improvement.md`, `evidence/vision-3e-quality-bar.md`, `evidence/simulation/multi-employee-week.md`, `tests/self_improvement.rs`, `tests/quality_bar.rs` | proven |
 | `VIS-2a` | Pillar 2: Phone Approvals | `/phone` serves the mobile web face with Approve/Deny cards for consequential moments (`delete_file`, `flag_decision`, `connector_delivery`, `mcp_tool_call`, `budget_gate`) and offers while routine work runs autonomously. | Deterministic + Live | `evidence/baseline-tests.txt`, `evidence/existing/sandbox-tripwire-e2e.log`, `evidence/existing/auth-backup-logging-updates.log`, `evidence/simulation/multi-employee-week.md`, `evidence/screenshots/sim-cara-phone-delete.png` | proven |
@@ -112,9 +112,9 @@ Canonical verification ledger mapping every factual product, engineering, deploy
 
 ## Owner Action Notes (`blocked-on-owner`)
 
-1. **`BAR-C10` — Owner Visual Grade of Rendered UI (`.loop/BAR.md` C10):**
+1. **`BAR-C10` — Owner Visual Grade of Rendered UI:**
    - **Action needed:** Review the rendered desktop (`/`) and mobile (`/phone`) Light and Dark UI surfaces directly and sign off on visual craft and look-and-feel.
-   - **Why blocked:** By rule in `.loop/BAR.md`, visual taste sign-off belongs solely to the owner and is never self-marked as passed by agents.
+   - **Why blocked:** Visual taste sign-off belongs solely to the owner and is never self-marked as passed by agents.
 
 2. **`MVP-04b` & `MVP-05b` — Production Hosted LLM Key & Live Company Mail Accounts (`MVP.md` Rows 4–5, Section 6):**
    - **Action needed:** In the target deployment environment, provision `ERGON_LIVE_LLM_API_KEY` (if using a commercial remote LLM provider instead of local Ollama/bridge) and dedicated Gmail / Microsoft 365 OAuth2 test/production mailbox credentials to run live smoke verification against those external tenants.

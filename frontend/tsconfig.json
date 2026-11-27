@@ -10,7 +10,7 @@
     "skipLibCheck": true,
     "isolatedModules": true,
     "types": ["vite/client"],
-    "paths": { "@/*": ["./src/*", "../rune/used/*"] }
+    "paths": { "@/*": ["./src/*", "./vendor/ui/*"] }
   },
-  "include": ["src", "../rune/used", "vite.config.ts"]
+  "include": ["src", "vendor/ui", "vite.config.ts"]
 }

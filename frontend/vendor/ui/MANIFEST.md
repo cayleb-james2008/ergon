@@ -1,6 +1,6 @@
-# rune/used: the library parts this app uses
+# frontend/vendor/ui: the library parts this app uses
 
-Copied from the house-frontend starter and tailored for Ergon v0.10.0 (local Hallmark-clean edits recorded in `rune/used/LOCAL-EDITS.md`). Unused bloat wrappers (`morphing-dialog.tsx`, `sliding-number.tsx`, `animated-background.tsx`, `expandable.tsx`, `Tracker.tsx`) remain pruned.
+Copied from the house-frontend starter and tailored for Ergon (local Hallmark-clean edits recorded in `frontend/vendor/ui/LOCAL-EDITS.md`). Unused bloat wrappers (`morphing-dialog.tsx`, `sliding-number.tsx`, `animated-background.tsx`, `expandable.tsx`, `Tracker.tsx`) remain pruned.
 
 | Part | Library | Licence |
 | --- | --- | --- |

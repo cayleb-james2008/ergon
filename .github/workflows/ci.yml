@@ -59,9 +59,6 @@ jobs:
       - name: Install frontend dependencies
         working-directory: frontend
         run: npm ci
-      # frontend/tsconfig.json includes ../rune/used, while rune/node_modules is gitignored.
-      - name: Link shared node_modules for TypeScript
-        run: ln -sfn ../frontend/node_modules rune/node_modules
       - name: Typecheck and build assets
         working-directory: frontend
         run: npm run build

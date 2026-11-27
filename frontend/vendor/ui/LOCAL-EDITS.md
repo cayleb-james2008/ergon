@@ -1,4 +1,4 @@
-# rune/used local edits
+# frontend/vendor/ui local edits
 
 These parts were edited in place after `sync-used` copied them. `frontend/scripts/sync-used.mjs` skips any path listed here, so a sync never reverts these edits.
 

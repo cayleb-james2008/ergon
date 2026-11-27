@@ -1,8 +1,8 @@
-# Ergon Front End — v0.4.0 Design & Verification
+# Ergon Front End — Design & Verification
 
-## 1. The Job (`JOB.md`)
+## 1. The Job
 
-Ergon is a personal employee agent desk where each person states digital work in plain words, the agent finishes it end to end with sandboxed workspace tools and Rune skills, and every saved file and consequential hold is reported honestly.
+Ergon is a personal employee agent desk where each person states digital work in plain words, the agent finishes it end to end with sandboxed workspace tools and built-in workflows, and every saved file and consequential hold is reported honestly.
 
 First-screen questions answered within five seconds:
 1. Is my agent ready, and is anything waiting on my approval right now?
@@ -37,7 +37,7 @@ First-screen questions answered within five seconds:
 - **Side Column**: `Offers from your agent` (`Make it one tap` / `No, thanks`), `What your agent has learned` (`standing_preferences`), and `Team` workspace switcher.
 
 ### Chat & Field-Book Entries (`chat/Chat.tsx`, `chat/Entry.tsx`)
-- **Empty State Starter Task Cards**: role-tailored rich cards (never plain text boxes) pairing category `Badge`, Rune skill/subagent `Pill` (`Bookkeeper`, `Meeting actions`, `Write document`, `Researcher`), prompt title, outcome description, and `Fill task box` footer, above `Finished recently`.
+- **Empty State Starter Task Cards**: role-tailored rich cards (never plain text boxes) pairing category `Badge`, workflow/subagent `Pill` (`Bookkeeper`, `Meeting actions`, `Write document`, `Researcher`), prompt title, outcome description, and `Fill task box` footer, above `Finished recently`.
 - **Live Active Run Ledger**: `Motion Primitives BorderTrail` + `TextShimmer` (`Agent is working on it`) while tools execute.
 - **Field-Book Result Cards**: dark/deep-step ink header with `Geist Mono` timestamp, ruled metadata cells (`Task`, `Saved to` with `FileGlyph` chips, `Steps` count in `Geist Mono`, `Finished` `Pill`), plain result prose, and `Cult UI Expandable` (`Inspect tool steps (N)`) revealing verbatim tool calls and workspace file paths.
 - **Parked Deletion Card (`WaitingEntry`)**: amber `Waiting on you` `Pill` and `Review in Today` action when `delete_file` parks a decision.
@@ -52,8 +52,8 @@ First-screen questions answered within five seconds:
 - **Light-First Furrow Palette + Full Dark Theme (`src/theme.css`)**:
   - Light: `--canvas: #f5f4ee`, `--surface: #fdfcfa`, `--board: #edebe2`, `--hairline: #e3e1d6`, `--ink: #141413`, `--ink-2: #4a4843`, `--ink-3: #66635b`, `--blue: #d97757` (clay accent).
   - Dark: `--canvas: #141413`, `--surface: #1f1e1c`, `--board: #282724`, `--hairline: #33322f`, `--ink: #f5f4ee`, `--ink-2: #c2c0b6`, `--ink-3: #96938a`, `--blue: #d97757`.
-- **Library Role Coverage (`ROLE-COVERAGE.md`)**: all 8 House Frontend libraries (`Motion Primitives`, `COSS UI`, `Cult UI`, `Kibo UI`, `Tremor`, `Vaul`, `Sonner`, `Motion`) serve genuine operational needs (`0` "no need here" rows).
-- **Motion Contract (`src/motion.ts` & `ALIVE.md`)**: every duration and easing maps to `src/tokens.css`, verified by `motion-source.mjs` and `prefers-reduced-motion: reduce`.
+- **Library Role Coverage:** COSS UI, Cult UI, Kibo UI, Tremor, Vaul, Sonner, and Motion primitives in `frontend/vendor/ui/` serve active operational UI needs.
+- **Motion Contract (`src/motion.ts`):** every duration and easing maps to `src/tokens.css` and honors `prefers-reduced-motion: reduce`.
 
 ## 4. Verification Summary (v0.3.0)
 

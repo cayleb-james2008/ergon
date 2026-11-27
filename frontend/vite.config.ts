@@ -1,4 +1,4 @@
-// House-frontend build for a Rune (Rust) app: React + Tailwind 4, the library parts live in ../rune/used.
+// Ergon frontend build: React + Tailwind 4, shared UI primitives live in vendor/ui.
 // Standard builds emit a slim embedded shell at ../assets/index.html plus lazy-loaded /chunks/* assets
 // embedded at compile time; VITE_WEB_STANDALONE=1 inlines everything into dist/ergon-web.html.
 import fs from "node:fs";
@@ -8,15 +8,15 @@ import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 
 const root = import.meta.dirname;
-const used = path.resolve(root, "../rune/used");
+const used = path.resolve(root, "vendor/ui");
 const isStandaloneWeb = process.env.VITE_WEB_STANDALONE === "1";
 
-// "@/x" is the app's own src/x first, then the copied library part rune/used/x.
-function runeUsed(): Plugin {
+// "@/x" is the app's own src/x first, then the shared vendor UI library vendor/ui/x.
+function vendorUi(): Plugin {
   const exts = ["", ".tsx", ".ts", ".css", "/index.tsx", "/index.ts"];
   const VIRTUAL_BOOT = "\0ergon-boot";
   return {
-    name: "rune-used",
+    name: "vendor-ui",
     enforce: "pre",
     resolveId(id) {
       if (id === "virtual:ergon-boot") return VIRTUAL_BOOT;
@@ -97,7 +97,7 @@ function singleFile(): Plugin {
 }
 
 export default defineConfig({
-  plugins: [runeUsed(), react(), tailwindcss(), singleFile()],
+  plugins: [vendorUi(), react(), tailwindcss(), singleFile()],
   base: isStandaloneWeb ? "./" : "/",
   build: {
     target: "es2022",
@@ -116,7 +116,7 @@ export default defineConfig({
               const normalized = id.replaceAll("\\", "/");
               if (
                 normalized.includes("/node_modules/") ||
-                normalized.includes("/rune/used/") ||
+                normalized.includes("/vendor/ui/") ||
                 normalized.includes("/src/lib/") ||
                 normalized.includes("/src/components/") ||
                 normalized.endsWith("/src/motion.ts") ||

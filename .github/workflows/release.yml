@@ -129,6 +129,8 @@ jobs:
             -Arch x86_64 `
             -TimestampUrl $tsUrl
 
+          Get-ChildItem -Path dist -Filter *.wixpdb -ErrorAction SilentlyContinue | Remove-Item -Force
+
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ env.BIN }}-${{ matrix.target }}

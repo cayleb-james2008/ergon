@@ -1,10 +1,10 @@
-// sync-used.mjs: copies the library parts this app imports from the house-frontend starter into ../rune/used,
-// follows both @/ and relative imports of every copied part, and writes rune/used/MANIFEST.md.
+// sync-used.mjs: copies the UI library parts this app imports into frontend/vendor/ui,
+// follows both @/ and relative imports of every copied part, and writes vendor/ui/MANIFEST.md.
 // Run after adding or removing a part import: npm run sync-used
 import fs from "node:fs";
 import path from "node:path";
 const root = path.resolve(import.meta.dirname, "..");
-const used = path.resolve(root, "../rune/used");
+const used = path.resolve(root, "vendor/ui");
 const HOUSE = process.env.HOUSE_SRC
   || (fs.existsSync("/home/cayleb/.claude/skills/house-frontend/starter/src")
     ? "/home/cayleb/.claude/skills/house-frontend/starter/src"
@@ -43,10 +43,10 @@ while (queue.length) {
   const local = fs.existsSync(path.join(used, "LOCAL-EDITS.md")) ? fs.readFileSync(path.join(used, "LOCAL-EDITS.md"), "utf8") : "";
   if (!(fs.existsSync(dest) && local.includes("`" + rel + "`"))) fs.copyFileSync(src, dest);
   for (const sub of importsOf(fs.existsSync(dest) ? dest : src)) {
-    if (sub.startsWith("@/")) queue.push([sub.slice(2), "rune/used/" + rel]);
+    if (sub.startsWith("@/")) queue.push([sub.slice(2), "frontend/vendor/ui/" + rel]);
     else if (sub.startsWith(".")) {
       const resolved = find(path.dirname(src), sub);
-      if (resolved && resolved.startsWith(HOUSE)) queue.push([path.relative(HOUSE, resolved).replace(/\.(tsx?)$/, ""), "rune/used/" + rel]);
+      if (resolved && resolved.startsWith(HOUSE)) queue.push([path.relative(HOUSE, resolved).replace(/\.(tsx?)$/, ""), "frontend/vendor/ui/" + rel]);
     }
   }
 }
@@ -54,12 +54,12 @@ const have = (d) => (fs.existsSync(d) ? walkSrc(d) : []);
 for (const f of have(used)) { const rel = path.relative(used, f); if (!seen.has(rel)) { fs.rmSync(f); console.log("removed unused part", rel); } }
 const rows = [...seen.keys()].sort().map((rel) => { const [, l, lic] = lib(rel); return `| \`${rel}\` | ${l} | ${lic} | ${[...seen.get(rel)].sort().join(", ")} |`; });
 fs.mkdirSync(used, { recursive: true });
-fs.writeFileSync(path.join(used, "MANIFEST.md"), `# rune/used: the library parts this app uses
+fs.writeFileSync(path.join(used, "MANIFEST.md"), `# frontend/vendor/ui: the library parts this app uses
 
-Copied from the owner's house-frontend starter by \`frontend/scripts/sync-used.mjs\` (local Hallmark-clean edits recorded in \`rune/used/LOCAL-EDITS.md\`). Only parts the screens import are here; \`npm run sync-used\` refreshes this folder and this table.
+Copied from the owner's house-frontend starter by \`frontend/scripts/sync-used.mjs\` (local Hallmark-clean edits recorded in \`frontend/vendor/ui/LOCAL-EDITS.md\`). Only parts the screens import are here; \`npm run sync-used\` refreshes this folder and this table.
 
 | Part | Library | Licence | Imported by |
 | --- | --- | --- | --- |
 ${rows.join("\n")}
 `);
-console.log(`rune/used: ${seen.size} parts`);
+console.log(`frontend/vendor/ui: ${seen.size} parts`);
