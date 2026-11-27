@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Check, Clock, GitBranch, Square, XCircle } from "lucide-react";
+import { AlertTriangle, Check, Clock, GitBranch, RefreshCw, Square, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { BorderTrail } from "@/components/ui/border-trail";
 import { TextShimmer } from "@/components/ui/text-shimmer";
@@ -64,20 +64,25 @@ export function LiveRunTimeline({
   runs,
   cancellingRunIds,
   onCancelRun,
+  streamError,
+  onRetrySync,
 }: {
   steps: LiveRunStep[];
   elapsedMs: number;
   startedMs?: number;
   streamMode: "sse" | "poll" | null;
   cancelling: boolean;
-  onCancel: (runId?: string) => void;
+  onCancel: (runId?: string) => Promise<void> | void;
   runId?: string | null;
   runs?: LiveRun[];
   cancellingRunIds?: Record<string, boolean>;
   onCancelRun?: (runId: string) => void | Promise<void>;
+  streamError?: string;
+  onRetrySync?: () => void | Promise<void>;
 }) {
   const [tokenPreviewByRun, setTokenPreviewByRun] = useState<Record<string, string>>({});
   const [childItemsByKey, setChildItemsByKey] = useState<Record<string, PipelineChildItemState[]>>({});
+  const [retryingSync, setRetryingSync] = useState(false);
   const cancelLockRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
@@ -198,10 +203,22 @@ export function LiveRunTimeline({
     const isRunCancelling = Boolean(cancellingRunIds?.[targetRunId]) || (normalizedRuns.length === 1 && cancelling);
     if (isRunCancelling) return;
     cancelLockRef.current.add(targetRunId);
-    if (onCancelRun && targetRunId !== "__default__") {
-      void onCancelRun(targetRunId);
-    } else {
-      onCancel(targetRunId === "__default__" ? undefined : targetRunId);
+    const p =
+      onCancelRun && targetRunId !== "__default__"
+        ? onCancelRun(targetRunId)
+        : onCancel(targetRunId === "__default__" ? undefined : targetRunId);
+    void Promise.resolve(p).finally(() => {
+      cancelLockRef.current.delete(targetRunId);
+    });
+  };
+
+  const handleRetrySync = async () => {
+    if (!onRetrySync || retryingSync) return;
+    setRetryingSync(true);
+    try {
+      await onRetrySync();
+    } finally {
+      setRetryingSync(false);
     }
   };
 
@@ -213,6 +230,32 @@ export function LiveRunTimeline({
       className="relative flex min-w-0 flex-col gap-3 overflow-hidden rounded-card border border-hairline bg-surface p-4 shadow-card"
     >
       <BorderTrail size={56} className="opacity-70" />
+      {streamError && (
+        <div
+          role="alert"
+          data-live-stream-error="true"
+          className="flex flex-wrap items-center justify-between gap-2 rounded-sm border border-hairline bg-status-stopped-bg px-3 py-2 text-xs text-status-stopped-fg"
+        >
+          <span className="flex min-w-0 items-center gap-1.5 [overflow-wrap:anywhere]">
+            <AlertTriangle className="size-3.5 shrink-0" strokeWidth={1.5} aria-hidden />
+            <span>{streamError}</span>
+          </span>
+          {onRetrySync && (
+            <Button
+              type="button"
+              size="xs"
+              variant="outline"
+              data-action="retry-live-sync"
+              disabled={retryingSync}
+              className="max-md:min-h-11 gap-1 bg-surface text-ink"
+              onClick={() => void handleRetrySync()}
+            >
+              <RefreshCw className={retryingSync ? "size-3 motion-safe:animate-spin" : "size-3"} strokeWidth={1.5} aria-hidden />
+              {retryingSync ? "Syncing…" : "Retry sync"}
+            </Button>
+          )}
+        </div>
+      )}
       {normalizedRuns.map((run, runIdx) => {
         const runSteps = run.steps as LiveRunStep[];
         const runningBranches = runSteps.filter((st) => st.status === "running").length;
@@ -245,7 +288,7 @@ export function LiveRunTimeline({
               <div className="flex min-w-0 flex-wrap items-center gap-2">
                 <span className="pulse-dot size-2.5 shrink-0 rounded-full bg-blue" aria-hidden />
                 {runIdx === 0 && normalizedRuns.length === 1 ? (
-                  <TextShimmer as="span" className="text-sm font-medium">
+                  <TextShimmer as="span" className="min-w-0 max-w-full text-sm font-medium [overflow-wrap:anywhere]">
                     {displayTitle}
                   </TextShimmer>
                 ) : (
@@ -306,7 +349,7 @@ export function LiveRunTimeline({
                   const childTotal = childItems?.length ?? 0;
                   const childDone = childItems?.filter((c) => c.status === "ok").length ?? 0;
                   return (
-                    <li key={(st.id || "step") + idx} className="flex items-center justify-between gap-2">
+                    <li key={(st.id || "step") + idx} className="flex min-w-0 items-center justify-between gap-2">
                       <span className="flex min-w-0 items-center gap-2 text-ink">
                         {st.status === "error" ? (
                           <XCircle className="size-3.5 shrink-0 text-dot-red" strokeWidth={1.75} aria-hidden />

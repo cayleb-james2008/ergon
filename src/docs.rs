@@ -21,6 +21,7 @@
 //! its own thread behind `catch_unwind` and a timeout: a malformed PDF can
 //! fail its own read, never the server.
 
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
@@ -1057,14 +1058,45 @@ pub fn xlsx_sheets(bytes: &[u8]) -> Result<Vec<Sheet>, String> {
     Ok(sheets)
 }
 
+fn is_plain_negative_decimal(s: &str) -> bool {
+    let Some(rest) = s.strip_prefix('-') else {
+        return false;
+    };
+    !rest.is_empty()
+        && rest.bytes().all(|b| b.is_ascii_digit() || b == b'.')
+        && rest.bytes().filter(|&b| b == b'.').count() <= 1
+        && rest.bytes().any(|b| b.is_ascii_digit())
+}
+
+/// Neutralize CSV/spreadsheet formula-injection prefixes (`=`, `+`, `-`, `@`,
+/// leading `\t`/`\r`, or leading whitespace followed by `=`, `+`, `-`, `@`)
+/// while preserving plain negative numbers such as `-25.00`.
+pub fn escape_formula_cell(raw: &str) -> Cow<'_, str> {
+    if raw.is_empty() {
+        return Cow::Borrowed(raw);
+    }
+    let trimmed = raw.trim();
+    if is_plain_negative_decimal(trimmed) {
+        return Cow::Borrowed(raw);
+    }
+    let starts_ctrl = raw.starts_with('\t') || raw.starts_with('\r');
+    let trimmed_start = raw.trim_start_matches([' ', '\t', '\r', '\n']);
+    if starts_ctrl || trimmed_start.starts_with(['=', '+', '-', '@']) {
+        Cow::Owned(format!("'{raw}"))
+    } else {
+        Cow::Borrowed(raw)
+    }
+}
+
 pub fn csv_line(cells: &[String]) -> String {
     cells
         .iter()
         .map(|c| {
-            if c.contains([',', '"', '\n', '\r']) {
-                format!("\"{}\"", c.replace('"', "\"\""))
+            let safe = escape_formula_cell(c);
+            if safe.contains([',', '"', '\n', '\r']) {
+                format!("\"{}\"", safe.replace('"', "\"\""))
             } else {
-                c.clone()
+                safe.into_owned()
             }
         })
         .collect::<Vec<_>>()
@@ -1979,8 +2011,9 @@ pub fn sheets_to_xlsx(sheets: &[ExportSheet], title: &str) -> Vec<u8> {
                 }
                 let col_n = &col_names[ci];
                 if ri == 0 {
+                    let safe_hdr = escape_formula_cell(cell);
                     let _ = write!(data, r#"<c r="{col_n}{row_num}" t="inlineStr" s="1"><is><t xml:space="preserve">"#);
-                    push_xml_escaped(&mut data, cell);
+                    push_xml_escaped(&mut data, &safe_hdr);
                     data.push_str("</t></is></c>");
                     continue;
                 }
@@ -2003,9 +2036,10 @@ pub fn sheets_to_xlsx(sheets: &[ExportSheet], title: &str) -> Vec<u8> {
                         let _ = write!(data, r#"<c r="{col_n}{row_num}" s="{s}"><v>{v}</v></c>"#);
                     }
                     CellValue::Text(t) => {
+                        let safe_t = escape_formula_cell(&t);
                         col_aggs[ci].has_text = true;
                         let _ = write!(data, r#"<c r="{col_n}{row_num}" t="inlineStr"><is><t xml:space="preserve">"#);
-                        push_xml_escaped(&mut data, &t);
+                        push_xml_escaped(&mut data, &safe_t);
                         data.push_str("</t></is></c>");
                     }
                 }
