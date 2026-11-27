@@ -3807,6 +3807,304 @@ for (const [theme, vw, vh] of [
   );
 }
 
+// 6j. v0.39.0 Wave E3: Multi-Run LiveRunTimeline + Scoped Cancel, PipelineBuilder Resilience + Subpipeline,
+//     Multi-Checkpoint Parallel Branch Cards, and Cron + Timezone + Offline Deterministic Badge (5 checks)
+{
+  // 1. Concurrent active runs in LiveRunTimeline with run_id-scoped cancel
+  {
+    const { ctx, p } = await open(1440, 900);
+    let liveList = [
+      {
+        active: true,
+        run_id: "run-sched-e3",
+        thread_id: "th-sched-e3",
+        task: "Morning ledger cron",
+        routine_id: "rt-e3-seed",
+        routine_name: "Morning ledger cron",
+        kind: "routine",
+        started_ms: Date.now() - 4000,
+        elapsed_ms: 4000,
+        steps: [{ id: "s1", tool: "reconcile_ledger", label: "Reconcile Q1 CSV", status: "running", raw: "Tool: reconcile_ledger" }],
+      },
+      {
+        active: true,
+        run_id: "run-chat-e3",
+        thread_id: "th-chat-e3",
+        task: "Interactive contract audit",
+        kind: "chat",
+        started_ms: Date.now() - 1500,
+        elapsed_ms: 1500,
+        steps: [{ id: "s2", tool: "audit_contract", label: "Scan MSA clauses", status: "running", raw: "Tool: audit_contract" }],
+      },
+    ];
+    const cancelledTargets = [];
+    await p.route("**/api/status", async (r) => {
+      const res = await r.fetch();
+      const j = await res.json();
+      await r.fulfill({
+        response: res,
+        body: JSON.stringify({ ...j, version: "0.39.0", capabilities: { ...(j.capabilities || {}), sse: true, cancel: true, routines: true, pipelines: true } }),
+      });
+    });
+    await p.route("**/api/runs/status", (r) =>
+      r.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          active: liveList.length > 0,
+          runs: liveList,
+          ...(liveList[0] || { thread_id: "", task: "", started_ms: 0, steps: [] }),
+        }),
+      })
+    );
+    await p.route("**/api/runs/*/cancel", async (r) => {
+      const url = r.request().url();
+      const m = /\/api\/runs\/([^/]+)\/cancel/.exec(url);
+      const tid = m ? decodeURIComponent(m[1]) : "";
+      cancelledTargets.push(tid);
+      liveList = liveList.filter((x) => x.run_id !== tid && x.thread_id !== tid);
+      return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ cancelled: true, run_id: tid }) });
+    });
+    await p.goto(BASE);
+    await waitWorkbench(p);
+    await p.waitForSelector('#live-run-timeline [data-live-run="run-sched-e3"]', { timeout: 4000 });
+    await p.waitForSelector('#live-run-timeline [data-live-run="run-chat-e3"]', { timeout: 4000 });
+    const bothVisible =
+      (await p.locator('#live-run-timeline [data-live-run="run-sched-e3"]').isVisible()) &&
+      (await p.locator('#live-run-timeline [data-live-run="run-chat-e3"]').isVisible());
+    await p.locator('#live-run-timeline [data-live-run="run-sched-e3"] [data-action="cancel-live-run"]').click();
+    await p.locator('#live-run-timeline [data-live-run="run-sched-e3"]').waitFor({ state: "hidden", timeout: 4000 });
+    const secondStayed = await p.locator('#live-run-timeline [data-live-run="run-chat-e3"]').isVisible();
+    ok(
+      "v0.39.0 E3 LiveRunTimeline renders concurrent runs and scopes Stop to run_id",
+      bothVisible && secondStayed && cancelledTargets.includes("run-sched-e3") && !cancelledTargets.includes("run-chat-e3"),
+      `both=${bothVisible} stayed=${secondStayed} cancelled=${cancelledTargets.join(",")}`
+    );
+    await ctx.close();
+  }
+
+  // 2 & 3. RoutinesPanel 5-field Cron + Timezone + Offline deterministic badge + PipelineBuilder Resilience & Subpipeline
+  {
+    const { ctx, p } = await open(1440, 900);
+    const savedRoutines = [
+      {
+        id: "rt-existing-e3",
+        name: "Base Ledger Clean",
+        prompt: "Clean workspace CSV",
+        schedule: "daily 09:00",
+        skill_id: "clean_dataset",
+        enabled: true,
+        run_count: 1,
+      },
+    ];
+    let lastCreatedBody = null;
+    await p.route("**/api/status", async (r) => {
+      const res = await r.fetch();
+      const j = await res.json();
+      await r.fulfill({
+        response: res,
+        body: JSON.stringify({ ...j, version: "0.39.0", capabilities: { ...(j.capabilities || {}), routines: true, scheduler: true, pipelines: true } }),
+      });
+    });
+    await p.route("**/api/routines", async (r) => {
+      if (r.request().method() === "POST") {
+        lastCreatedBody = JSON.parse(r.request().postData() || "{}");
+        const created = {
+          id: "rt-cron-e3",
+          name: lastCreatedBody.name,
+          prompt: lastCreatedBody.prompt,
+          schedule: lastCreatedBody.schedule,
+          tz: lastCreatedBody.tz,
+          tz_offset_mins: lastCreatedBody.tz_offset_mins,
+          skill_id: lastCreatedBody.skill_id,
+          steps_v2: lastCreatedBody.steps_v2,
+          enabled: true,
+          run_count: 0,
+        };
+        savedRoutines.unshift(created);
+        return r.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ routine: created }) });
+      }
+      return r.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ routines: savedRoutines, scheduler: { enabled: true, running: true, tick_secs: 15 } }),
+      });
+    });
+    await p.route("**/api/pipelines/validate", (r) =>
+      r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true, valid: true, errors: [], topological_order: ["skill_1", "sub_2"], stages: [["skill_1"], ["sub_2"]] }) })
+    );
+    await p.goto(BASE);
+    await waitWorkbench(p);
+    await p.locator('[data-thing="routines-btn"]').click();
+    await p.waitForSelector("#routines-panel", { timeout: 4000 });
+    await p.locator("#routines-panel").getByRole("button", { name: "New routine" }).click();
+    await p.locator("#routine-name").fill("Weekday Cron Subpipeline");
+    await p.locator("#routine-schedule").fill("0 9 * * 1-5");
+    await p.locator("#routine-timezone").selectOption("America/New_York");
+    await p.locator("#routine-skill").selectOption("clean_dataset");
+    const cronPreviewOk = await p.locator('#routine-create-form [data-cron-validation="valid"]').isVisible();
+
+    await p.locator("[data-toggle-pipeline-builder]").click();
+    await p.waitForSelector('#pipeline-builder [data-pipeline-step-index="0"]', { timeout: 4000 });
+    await p.locator('#pipeline-builder [data-toggle-resilience="0"]').click();
+    await p.locator('#pipeline-builder [data-step-timeout="0"]').fill("45");
+    await p.locator('#pipeline-builder [data-step-retry-max="0"]').fill("2");
+    await p.locator('#pipeline-builder [data-step-retry-backoff="0"]').fill("500");
+    await p.locator('#pipeline-builder [data-step-on-error="0"]').selectOption("continue");
+    await p.locator('#pipeline-builder [data-add-pipeline-step="subpipeline"]').click();
+    await p.waitForSelector('#pipeline-builder [data-pipeline-step-index="1"][data-pipeline-step-kind="subpipeline"]', { timeout: 4000 });
+    await p.locator('#pipeline-builder [data-subpipeline-routine="1"]').selectOption("rt-existing-e3");
+    await p.locator('#pipeline-builder [data-action="validate-dag"]').click();
+    await p.waitForSelector('#pipeline-builder [data-dag-validation-result="valid"]', { timeout: 4000 });
+    const desktopDlgBoundsOk = await p.evaluate(() => {
+      const dlg = document.querySelector('[role="dialog"]');
+      return Boolean(dlg && dlg.scrollWidth <= dlg.clientWidth + 1);
+    });
+    await p.locator("#routine-create-form").getByRole("button", { name: "Save routine" }).click();
+    await p.waitForSelector('[data-routine-id="rt-cron-e3"]', { timeout: 4000 });
+    const cardTxt = await p.locator('[data-routine-id="rt-cron-e3"]').innerText();
+    const detBadgeOk = await p.locator('[data-routine-deterministic="rt-cron-e3"]').isVisible();
+    const tzBadgeOk = await p.locator('[data-routine-tz="rt-cron-e3"]').isVisible();
+    ok(
+      "v0.39.0 E3 RoutinesPanel supports 5-field cron, timezone selector, and offline deterministic badge",
+      cronPreviewOk &&
+        lastCreatedBody?.schedule === "0 9 * * 1-5" &&
+        lastCreatedBody?.tz === "America/New_York" &&
+        typeof lastCreatedBody?.tz_offset_mins === "number" &&
+        detBadgeOk &&
+        tzBadgeOk &&
+        cardTxt.includes("0 9 * * 1-5"),
+      `preview=${cronPreviewOk} tz=${lastCreatedBody?.tz} det=${detBadgeOk} tzBadge=${tzBadgeOk}`
+    );
+    ok(
+      "v0.39.0 E3 PipelineBuilder composes Timeout/Retry/on_error and Subpipeline steps within dialog bounds",
+      desktopDlgBoundsOk &&
+        lastCreatedBody?.steps_v2?.[0]?.retry_max === 2 &&
+        lastCreatedBody?.steps_v2?.[0]?.timeout_secs === 45 &&
+        lastCreatedBody?.steps_v2?.[0]?.on_error === "continue" &&
+        lastCreatedBody?.steps_v2?.[1]?.kind === "subpipeline" &&
+        lastCreatedBody?.steps_v2?.[1]?.routine_id === "rt-existing-e3",
+      `bounds=${desktopDlgBoundsOk} steps=${JSON.stringify(lastCreatedBody?.steps_v2?.map((s) => ({ k: s.kind, r: s.retry_max, oe: s.on_error, rid: s.routine_id })))}`
+    );
+    await ctx.close();
+  }
+
+  // 4. Multi-checkpoint parallel branches in CheckpointCard (pending_checkpoints[] + checkpoint_id resume)
+  {
+    const { ctx, p } = await open(1440, 900);
+    const resumeCalls = [];
+    const cpA = {
+      checkpoint_id: "cp-branch-a",
+      step_index: 1,
+      step_id: "review_a",
+      prompt: "Approve Branch A ledger adjustments",
+      input_mode: "choice",
+      choices: ["Keep all rows", "Exclude outliers"],
+      inspect_files: ["branch-a.csv"],
+    };
+    const cpB = {
+      checkpoint_id: "cp-branch-b",
+      step_index: 2,
+      step_id: "review_b",
+      prompt: "Provide Branch B compliance signoff note",
+      input_mode: "text",
+      inspect_files: ["branch-b.md"],
+    };
+    let pendingList = [cpA, cpB];
+    const makeRunPayload = () => ({
+      run_id: "prun-e3-multi",
+      routine_id: "rt-e3-multi",
+      routine_name: "Parallel Branch Audit",
+      status: pendingList.length > 0 ? "paused_checkpoint" : "completed",
+      current_step_index: 1,
+      created_ms: Date.now() - 3000,
+      updated_ms: Date.now(),
+      step_states: [
+        { step_id: "ingest", kind: "skill", status: "ok", files: ["branch-a.csv", "branch-b.md"] },
+        { step_id: "review_a", kind: "checkpoint", status: pendingList.some((c) => c.checkpoint_id === "cp-branch-a") ? "waiting_human" : "ok" },
+        { step_id: "review_b", kind: "checkpoint", status: pendingList.some((c) => c.checkpoint_id === "cp-branch-b") ? "waiting_human" : "ok" },
+      ],
+      pending_checkpoint: pendingList[0] ?? null,
+      pending_checkpoints: pendingList,
+      step_snapshots: {
+        ingest: { messages: ["turn1"], written: ["branch-a.csv"], budget_used: 120 },
+      },
+    });
+    await p.route("**/api/status", async (r) => {
+      const res = await r.fetch();
+      const j = await res.json();
+      await r.fulfill({
+        response: res,
+        body: JSON.stringify({ ...j, version: "0.39.0", capabilities: { ...(j.capabilities || {}), routines: true, pipelines: true } }),
+      });
+    });
+    await p.route(/\/api\/pipelines\/runs(\?.*)?$/, (r) =>
+      r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ runs: [makeRunPayload()] }) })
+    );
+    await p.route("**/api/pipelines/runs/prun-e3-multi/resume", async (r) => {
+      const b = JSON.parse(r.request().postData() || "{}");
+      resumeCalls.push(b);
+      pendingList = pendingList.filter((c) => c.checkpoint_id !== b.checkpoint_id);
+      return r.fulfill({ status: 202, contentType: "application/json", body: JSON.stringify({ run: makeRunPayload() }) });
+    });
+    await p.goto(BASE);
+    await waitWorkbench(p);
+    await p.getByRole("tab", { name: "Today" }).click();
+    await p.waitForSelector('#decisions-list [data-pipeline-checkpoint="prun-e3-multi"]', { timeout: 4000 });
+    const card = p.locator('#decisions-list [data-pipeline-checkpoint="prun-e3-multi"]');
+    const bothBranchesVisible =
+      (await card.locator('[data-checkpoint-id="cp-branch-a"]').isVisible()) &&
+      (await card.locator('[data-checkpoint-id="cp-branch-b"]').isVisible());
+    const snapBadgeVisible = await card.locator('[data-agent-snapshot-badge="true"]').isVisible();
+    await card.locator('[data-checkpoint-id="cp-branch-a"]').getByRole("radio", { name: "Exclude outliers" }).click();
+    await card.locator('[data-checkpoint-id="cp-branch-a"] [data-action="resume-checkpoint"]').click();
+    await card.locator('[data-checkpoint-id="cp-branch-a"]').waitFor({ state: "hidden", timeout: 4000 });
+    await card.locator('[data-checkpoint-id="cp-branch-b"] textarea').fill("Signed off by legal");
+    await card.locator('[data-action="resume-pipeline"]').click();
+    await card.waitFor({ state: "hidden", timeout: 4000 });
+    ok(
+      "v0.39.0 E3 CheckpointCard renders and resumes multiple simultaneous parallel branch checkpoints by checkpoint_id",
+      bothBranchesVisible &&
+        snapBadgeVisible &&
+        resumeCalls.length === 2 &&
+        resumeCalls[0]?.checkpoint_id === "cp-branch-a" &&
+        resumeCalls[0]?.text === "Exclude outliers" &&
+        resumeCalls[1]?.checkpoint_id === "cp-branch-b" &&
+        resumeCalls[1]?.text === "Signed off by legal",
+      `both=${bothBranchesVisible} snap=${snapBadgeVisible} calls=${JSON.stringify(resumeCalls)}`
+    );
+    await ctx.close();
+  }
+
+  // 5. Mobile 390x844 dark check on RoutinesPanel + PipelineBuilder (0px dialog overflow)
+  {
+    const { ctx, p } = await open(390, 844, "dark");
+    await p.goto(BASE);
+    await waitWorkbench(p);
+    await p.getByRole("button", { name: "Open menu" }).click();
+    await p.waitForSelector('[data-thing="routines-btn"]', { timeout: 4000 });
+    await p.locator('[data-thing="routines-btn"]').click();
+    await p.waitForSelector("#routines-panel", { timeout: 4000 });
+    await p.locator("#routines-panel").getByRole("button", { name: "New routine" }).click();
+    await p.locator("[data-toggle-pipeline-builder]").click();
+    await p.waitForSelector('#pipeline-builder [data-toggle-resilience="0"]', { timeout: 4000 });
+    await p.locator('#pipeline-builder [data-toggle-resilience="0"]').click();
+    await p.locator('#pipeline-builder [data-add-pipeline-step="subpipeline"]').click();
+    await p.waitForTimeout(150);
+    const mobileE3 = await p.evaluate(MEASURE);
+    const mobileDlgOk = await p.evaluate(() => {
+      const dlg = document.querySelector('[role="dialog"]');
+      return Boolean(dlg && dlg.scrollWidth <= dlg.clientWidth + 1);
+    });
+    ok(
+      "v0.39.0 E3 (390x844 dark) RoutinesPanel Cron/TZ + PipelineBuilder Resilience/Subpipeline fit with 0px dialog overflow",
+      mobileDlgOk && mobileE3.docOverflow <= 0 && mobileE3.lowContrast === 0 && mobileE3.unnamed.length === 0,
+      `dlg=${mobileDlgOk} ov=${mobileE3.docOverflow} low=${mobileE3.lowContrast} unnamed=${mobileE3.unnamed.length}`
+    );
+    await ctx.close();
+  }
+}
+
 // 7. Reduced motion & Console Cleanliness (2 checks)
 {
   const { ctx, p } = await open(1440, 900, "light", { reducedMotion: "reduce" });
