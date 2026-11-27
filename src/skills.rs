@@ -565,6 +565,192 @@ pub fn write_document(cfg: &Config, title: &str, sections: Vec<String>) -> Resul
     Ok(format!("wrote document {filename} ({len} bytes)"))
 }
 
+/// Parse a dollar/decimal string into exact integer cents (`$1,234.50` -> `123450`, `($85.00)` -> `-8500`).
+fn parse_money_cents_i128(raw: &str) -> Option<i128> {
+    let mut s = raw.trim().to_string();
+    if s.is_empty() {
+        return None;
+    }
+    let mut neg = false;
+    if s.starts_with('(') && s.ends_with(')') && s.len() >= 2 {
+        neg = true;
+        s = s[1..s.len() - 1].trim().to_string();
+    }
+    let mut clean = s
+        .replace(['$', ','], "")
+        .replace("USD", "")
+        .replace("usd", "")
+        .replace(' ', "");
+    if let Some(rest) = clean.strip_prefix('-') {
+        neg = !neg;
+        clean = rest.to_string();
+    } else if let Some(rest) = clean.strip_prefix('+') {
+        clean = rest.to_string();
+    }
+    if clean.is_empty() {
+        return None;
+    }
+    let val: f64 = clean.parse().ok()?;
+    if !val.is_finite() {
+        return None;
+    }
+    let cents = (val * 100.0).round() as i128;
+    Some(if neg { -cents } else { cents })
+}
+
+fn fmt_cents_decimal(cents: i128) -> String {
+    let neg = cents < 0;
+    let abs_c = cents.unsigned_abs();
+    let whole = abs_c / 100;
+    let frac = abs_c % 100;
+    if neg {
+        format!("-{whole}.{frac:02}")
+    } else {
+        format!("{whole}.{frac:02}")
+    }
+}
+
+fn is_blank_or_na(cell: &str) -> bool {
+    let low = cell.trim().to_ascii_lowercase();
+    matches!(
+        low.as_str(),
+        "" | "na" | "n/a" | "none" | "null" | "nil" | "nan" | "-" | "--"
+    )
+}
+
+fn find_csv_header_idx(headers: &[String], candidates: &[&str]) -> Option<usize> {
+    let norm: Vec<String> = headers
+        .iter()
+        .map(|h| {
+            h.trim()
+                .to_ascii_lowercase()
+                .chars()
+                .filter(|c| c.is_ascii_alphanumeric())
+                .collect()
+        })
+        .collect();
+    for cand in candidates {
+        let c_norm: String = cand
+            .to_ascii_lowercase()
+            .chars()
+            .filter(|c| c.is_ascii_alphanumeric())
+            .collect();
+        if let Some(pos) = norm.iter().position(|h| h == &c_norm) {
+            return Some(pos);
+        }
+    }
+    for cand in candidates {
+        let c_norm: String = cand
+            .to_ascii_lowercase()
+            .chars()
+            .filter(|c| c.is_ascii_alphanumeric())
+            .collect();
+        if let Some(pos) = norm.iter().position(|h| h.contains(&c_norm)) {
+            return Some(pos);
+        }
+    }
+    None
+}
+
+/// Deterministic CSV BOM / quote spreadsheet builder: reads a workspace CSV,
+/// deduplicates repeated rows by key column, fills blank/`N/A` extended cells
+/// using exact integer-cent arithmetic (`qty * unit_cost`), appends a penny-exact
+/// `TOTAL` row, and writes `<title>.csv` through the `make_spreadsheet` skill.
+pub fn build_spreadsheet_from_csv(
+    cfg: &Config,
+    title: &str,
+    from_csv: &str,
+    dedup_key: Option<&str>,
+    append_total: bool,
+) -> Result<String, String> {
+    let rel = from_csv.trim();
+    if rel.is_empty() {
+        return Err("make_spreadsheet from_csv path cannot be empty".to_string());
+    }
+    let src_full = sandbox_path(&cfg.workspace_dir, rel)?;
+    let raw = std::fs::read_to_string(&src_full)
+        .map_err(|e| format!("reading workspace CSV `{rel}`: {e}"))?;
+    let parsed = parse_csv_rows(&raw);
+    if parsed.len() < 2 {
+        return Err(format!("CSV `{rel}` must have a header row and data rows"));
+    }
+
+    let mut columns = parsed[0].clone();
+    let dedup_idx = match dedup_key.map(str::trim).filter(|s| !s.is_empty()) {
+        Some(k) => find_csv_header_idx(&columns, &[k]),
+        None => find_csv_header_idx(
+            &columns,
+            &["sku", "item_code", "part_number", "part", "item", "id", "code"],
+        ),
+    };
+    let qty_idx = find_csv_header_idx(&columns, &["qty", "quantity", "count"]);
+    let unit_idx = find_csv_header_idx(
+        &columns,
+        &["unit_cost", "unitcost", "unit_price", "unitprice", "price", "rate", "cost"],
+    );
+    let mut ext_idx = find_csv_header_idx(
+        &columns,
+        &["extended", "extended_raw", "extended_price", "extended_cost", "line_total", "total", "amount"],
+    );
+    if ext_idx.is_none() && qty_idx.is_some() && unit_idx.is_some() {
+        columns.push("Extended".to_string());
+        ext_idx = Some(columns.len() - 1);
+    }
+
+    let mut seen_keys = std::collections::HashSet::new();
+    let mut out_rows: Vec<Vec<String>> = Vec::new();
+    let mut grand_cents: i128 = 0;
+    let mut saw_numeric_ext = false;
+
+    for raw_row in parsed.iter().skip(1) {
+        let mut row = raw_row.clone();
+        while row.len() < columns.len() {
+            row.push(String::new());
+        }
+        if let Some(k_idx) = dedup_idx {
+            let key_val = row.get(k_idx).map(|s| s.trim().to_ascii_lowercase()).unwrap_or_default();
+            if !key_val.is_empty() && matches!(key_val.as_str(), "total" | "totals" | "subtotal" | "grand total") {
+                continue;
+            }
+            if !key_val.is_empty() && !seen_keys.insert(key_val) {
+                continue;
+            }
+        }
+        if let (Some(q_i), Some(u_i), Some(e_i)) = (qty_idx, unit_idx, ext_idx) {
+            if let (Ok(qty), Some(unit_cents)) = (
+                row[q_i].trim().parse::<f64>(),
+                parse_money_cents_i128(&row[u_i]),
+            ) {
+                if qty.is_finite() {
+                    let computed = ((qty * unit_cents as f64).round()) as i128;
+                    if is_blank_or_na(&row[e_i]) {
+                        row[e_i] = fmt_cents_decimal(computed);
+                    }
+                }
+            }
+        }
+        if let Some(e_i) = ext_idx {
+            if let Some(c) = parse_money_cents_i128(&row[e_i]) {
+                grand_cents += c;
+                saw_numeric_ext = true;
+            }
+        }
+        out_rows.push(row);
+    }
+
+    if append_total && saw_numeric_ext {
+        if let Some(e_i) = ext_idx {
+            let mut total_row = vec![String::new(); columns.len()];
+            let label_col = if dedup_idx == Some(0) || e_i > 0 { 0 } else { e_i };
+            total_row[label_col] = "TOTAL".to_string();
+            total_row[e_i] = fmt_cents_decimal(grand_cents);
+            out_rows.push(total_row);
+        }
+    }
+
+    make_spreadsheet(cfg, title, columns, out_rows)
+}
+
 /// Rune skill: format columns + rows into a CSV spreadsheet file in the
 /// workspace. Returns a human-readable tool result.
 pub fn make_spreadsheet(
@@ -1393,14 +1579,23 @@ pub fn dispatch_builtin_skill(
                 Some(t) if !t.trim().is_empty() => t,
                 _ => return Some(Err("make_spreadsheet needs args.title".to_string())),
             };
-            let columns = arg_string_list(args, &["columns", "headers"]);
-            let rows = arg_string_rows(args, "rows");
-            if columns.is_empty() && rows.is_empty() {
-                return Some(Err(
-                    "make_spreadsheet needs args.columns or args.rows".to_string(),
-                ));
+            if let Some(from_csv) = arg_str(args, &["from_csv", "source_csv", "input_csv"])
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+            {
+                let dedup_key = arg_str(args, &["dedup_key", "key_column", "key"]);
+                let append_total = args.get("append_total").and_then(|v| v.as_bool()).unwrap_or(true);
+                build_spreadsheet_from_csv(cfg, title, from_csv, dedup_key, append_total)
+            } else {
+                let columns = arg_string_list(args, &["columns", "headers"]);
+                let rows = arg_string_rows(args, "rows");
+                if columns.is_empty() && rows.is_empty() {
+                    return Some(Err(
+                        "make_spreadsheet needs args.columns or args.rows (or args.from_csv)".to_string(),
+                    ));
+                }
+                make_spreadsheet(cfg, title, columns, rows)
             }
-            make_spreadsheet(cfg, title, columns, rows)
         }
         "research" => {
             let topic = match arg_str(args, &["topic", "title"]) {

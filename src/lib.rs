@@ -17,6 +17,12 @@ pub mod docs;
 pub mod file_history;
 pub mod library;
 pub mod live_runs;
+pub mod llm;
+pub use llm::{
+    build_anthropic_payload, call_model, call_model_with_usage, call_model_with_usage_streaming,
+    is_anthropic_url, parse_model_reply, retry_delay, retryable_status, ModelCallUsage,
+    ModelStreamTarget,
+};
 pub mod logging;
 pub mod mcp;
 pub mod pipelines;
@@ -266,6 +272,8 @@ pub fn redact_host_paths(input: &str) -> String {
 
 pub const DEFAULT_MODEL_BASE_URL: &str = "https://opencode.ai/zen/go/v1";
 pub const DEFAULT_MODEL_ID: &str = "deepseek-v4.1-flash";
+pub const DEFAULT_ANTHROPIC_BASE_URL: &str = "https://api.anthropic.com/v1";
+pub const DEFAULT_ANTHROPIC_MODEL_ID: &str = "claude-sonnet-4-20250514";
 
 #[derive(Clone, Debug)]
 pub struct DetectedGateway {
@@ -295,7 +303,7 @@ pub fn model_configured_for(model_base_url: &str, has_api_key: bool) -> bool {
 }
 
 /// Extract (host, port) from an http(s) URL authority.
-fn parse_url_host_port(url: &str) -> Option<(String, u16)> {
+pub(crate) fn parse_url_host_port(url: &str) -> Option<(String, u16)> {
     let (scheme, rest) = url.trim().split_once("://")?;
     let default_port = match scheme.to_ascii_lowercase().as_str() {
         "http" => 80,
@@ -537,6 +545,10 @@ impl Config {
             .ok()
             .map(|k| k.trim().to_string())
             .filter(|k| !k.is_empty());
+        let anthropic_key = std::env::var("ANTHROPIC_API_KEY")
+            .ok()
+            .map(|k| k.trim().to_string())
+            .filter(|k| !k.is_empty());
         let no_auto = std::env::var("ERGON_NO_AUTO_MODEL")
             .map(|v| v.trim() == "1" || v.trim().eq_ignore_ascii_case("true"))
             .unwrap_or(false);
@@ -548,22 +560,37 @@ impl Config {
                 let base = env_base
                     .or_else(|| saved.as_ref().map(|s| s.model_base_url.clone()))
                     .unwrap_or_else(|| DEFAULT_MODEL_BASE_URL.to_string());
+                let default_for_base = if llm::is_anthropic_url(&base) {
+                    DEFAULT_ANTHROPIC_MODEL_ID
+                } else {
+                    DEFAULT_MODEL_ID
+                };
                 let model = env_model
                     .or_else(|| saved.as_ref().map(|s| s.model_id.clone()))
-                    .unwrap_or_else(|| DEFAULT_MODEL_ID.to_string());
-                let key = env_key.or_else(|| saved.and_then(|s| s.api_key));
+                    .unwrap_or_else(|| default_for_base.to_string());
+                let key = env_key
+                    .or_else(|| saved.and_then(|s| s.api_key))
+                    .or_else(|| if llm::is_anthropic_url(&base) { anthropic_key.clone() } else { None });
                 (base, model, key)
             } else if !no_auto {
-                let gateways = detect_local_gateways();
-                if let Some(gw) = gateways.first() {
-                    let model = env_model.unwrap_or_else(|| gw.model_id.clone());
-                    (gw.base_url.clone(), model, None)
-                } else {
+                if let Some(akey) = anthropic_key {
                     (
-                        DEFAULT_MODEL_BASE_URL.to_string(),
-                        env_model.unwrap_or_else(|| DEFAULT_MODEL_ID.to_string()),
-                        None,
+                        DEFAULT_ANTHROPIC_BASE_URL.to_string(),
+                        env_model.unwrap_or_else(|| DEFAULT_ANTHROPIC_MODEL_ID.to_string()),
+                        Some(akey),
                     )
+                } else {
+                    let gateways = detect_local_gateways();
+                    if let Some(gw) = gateways.first() {
+                        let model = env_model.unwrap_or_else(|| gw.model_id.clone());
+                        (gw.base_url.clone(), model, None)
+                    } else {
+                        (
+                            DEFAULT_MODEL_BASE_URL.to_string(),
+                            env_model.unwrap_or_else(|| DEFAULT_MODEL_ID.to_string()),
+                            None,
+                        )
+                    }
                 }
             } else {
                 (
@@ -1137,602 +1164,6 @@ impl Store {
 }
 
 // ---------------------------------------------------------------------------
-// Model client (OpenCode Go / OpenAI-compatible chat completions)
-// ---------------------------------------------------------------------------
-
-/// One model call. Carries the proven wire requirements: bearer key (when set
-/// or required for non-loopback endpoints), `x-opencode-session` header, and a
-/// browser-like User-Agent. Loopback gateways work without a bearer key.
-/// HTTP statuses worth another try: timeouts, rate limits, overloads and
-/// gateway hiccups. Anything else (400s, auth) fails at once.
-pub fn retryable_status(code: u16) -> bool {
-    matches!(code, 408 | 425 | 429 | 500 | 502 | 503 | 504 | 520..=529)
-}
-
-/// How long to wait before attempt `attempt + 1` (1-based attempts):
-/// the server's `Retry-After` seconds when given (capped), else 1.5 s, 4 s, 9 s.
-pub fn retry_delay(attempt: u32, retry_after: Option<&str>) -> std::time::Duration {
-    if let Some(secs) = retry_after.and_then(|v| v.trim().parse::<f64>().ok()).filter(|s| s.is_finite() && *s >= 0.0) {
-        return std::time::Duration::from_millis((secs.min(20.0) * 1000.0) as u64);
-    }
-    std::time::Duration::from_millis(match attempt {
-        1 => 1_500,
-        2 => 4_000,
-        _ => 9_000,
-    })
-}
-
-const MODEL_ATTEMPTS: u32 = 4;
-const MODEL_RETRY_BUDGET: std::time::Duration = std::time::Duration::from_secs(150);
-
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct ModelCallUsage {
-    pub model_id: String,
-    pub prompt_tokens: u64,
-    pub completion_tokens: u64,
-    pub total_tokens: u64,
-    pub cached_tokens: u64,
-    pub latency_ms: u64,
-}
-
-impl ModelCallUsage {
-    pub fn to_json(&self, cost_usd: f64) -> Value {
-        json!({
-            "model_id": self.model_id,
-            "prompt_tokens": self.prompt_tokens,
-            "completion_tokens": self.completion_tokens,
-            "total_tokens": self.total_tokens,
-            "cached_tokens": self.cached_tokens,
-            "latency_ms": self.latency_ms,
-            "cost_usd": records::round_usd_8(cost_usd),
-        })
-    }
-}
-
-#[derive(Clone, Copy)]
-pub struct ModelStreamTarget<'a> {
-    pub events: &'a sse::RunEventBus,
-    pub person_id: &'a str,
-    pub run_id: &'a str,
-    pub thread_id: &'a str,
-    pub step_index: usize,
-}
-
-#[derive(Default)]
-struct SseToolCallAccum {
-    name: String,
-    arguments: String,
-}
-
-fn parse_usage_from_value(usage_obj: Option<&Value>, model_id: String, latency_ms: u64) -> ModelCallUsage {
-    let prompt_tokens = usage_obj
-        .and_then(|u| {
-            u.get("prompt_tokens")
-                .or_else(|| u.get("input_tokens"))
-                .and_then(|x| x.as_u64())
-        })
-        .unwrap_or(0);
-    let completion_tokens = usage_obj
-        .and_then(|u| {
-            u.get("completion_tokens")
-                .or_else(|| u.get("output_tokens"))
-                .and_then(|x| x.as_u64())
-        })
-        .unwrap_or(0);
-    let total_tokens = usage_obj
-        .and_then(|u| u.get("total_tokens").and_then(|x| x.as_u64()))
-        .unwrap_or_else(|| prompt_tokens.saturating_add(completion_tokens));
-    let cached_tokens = usage_obj
-        .and_then(|u| {
-            u.get("cached_tokens")
-                .or_else(|| u.get("prompt_tokens_details").and_then(|d| d.get("cached_tokens")))
-                .or_else(|| u.get("input_tokens_details").and_then(|d| d.get("cached_tokens")))
-                .or_else(|| u.get("cache_read_input_tokens"))
-                .and_then(|x| x.as_u64())
-        })
-        .unwrap_or(0);
-    ModelCallUsage {
-        model_id,
-        prompt_tokens,
-        completion_tokens,
-        total_tokens,
-        cached_tokens,
-        latency_ms,
-    }
-}
-
-const MAX_SSE_STREAM_BYTES: usize = 2 * 1024 * 1024;
-
-fn consume_sse_data_line(
-    line: &str,
-    content_buf: &mut String,
-    tool_calls: &mut std::collections::BTreeMap<usize, SseToolCallAccum>,
-    model_id: &mut Option<String>,
-    usage_val: &mut Option<Value>,
-    sse_error: &mut Option<String>,
-    stream_target: Option<ModelStreamTarget<'_>>,
-) -> bool {
-    let trimmed = line.trim();
-    if trimmed.is_empty() || trimmed.starts_with(':') {
-        return false;
-    }
-    let Some(data_raw) = trimmed.strip_prefix("data:") else {
-        return false;
-    };
-    let data = data_raw.trim();
-    if data.is_empty() {
-        return false;
-    }
-    if data == "[DONE]" {
-        return true;
-    }
-    let Ok(chunk) = serde_json::from_str::<Value>(data) else {
-        return false;
-    };
-    if let Some(err_obj) = chunk.get("error").filter(|e| !e.is_null()) {
-        let msg = err_obj
-            .get("message")
-            .and_then(|m| m.as_str())
-            .map(str::to_string)
-            .unwrap_or_else(|| err_obj.to_string());
-        *sse_error = Some(truncate(&msg, 400));
-    }
-    if let Some(m) = chunk["model"].as_str().map(str::trim).filter(|s| !s.is_empty()) {
-        *model_id = Some(m.to_string());
-    }
-    if let Some(u) = chunk.get("usage").filter(|u| u.is_object()) {
-        *usage_val = Some(u.clone());
-    }
-    let Some(delta) = chunk
-        .get("choices")
-        .and_then(|c| c.get(0))
-        .and_then(|c0| c0.get("delta"))
-    else {
-        return false;
-    };
-    if let Some(text) = delta.get("content").and_then(|c| c.as_str()) {
-        if !text.is_empty() && content_buf.len() < MAX_SSE_STREAM_BYTES {
-            content_buf.push_str(text);
-            if let Some(target) = stream_target {
-                target.events.publish_token_delta(
-                    target.person_id,
-                    target.run_id,
-                    target.thread_id,
-                    text,
-                    target.step_index,
-                );
-            }
-        }
-    }
-    if let Some(tc_arr) = delta.get("tool_calls").and_then(|t| t.as_array()) {
-        for tc in tc_arr {
-            let idx = tc.get("index").and_then(|i| i.as_u64()).unwrap_or(0) as usize;
-            let entry = tool_calls.entry(idx).or_default();
-            if let Some(func) = tc.get("function") {
-                if let Some(name) = func.get("name").and_then(|n| n.as_str()) {
-                    if entry.name.len() < 256 {
-                        entry.name.push_str(name);
-                    }
-                }
-                if let Some(args) = func.get("arguments").and_then(|a| a.as_str()) {
-                    if entry.arguments.len() < MAX_SSE_STREAM_BYTES {
-                        entry.arguments.push_str(args);
-                    }
-                    if !args.is_empty() {
-                        if let Some(target) = stream_target {
-                            target.events.publish_token_delta(
-                                target.person_id,
-                                target.run_id,
-                                target.thread_id,
-                                args,
-                                target.step_index,
-                            );
-                        }
-                    }
-                }
-            }
-        }
-    }
-    false
-}
-
-fn finalize_sse_reply(
-    content_buf: &str,
-    tool_calls: &std::collections::BTreeMap<usize, SseToolCallAccum>,
-    sse_error: Option<&str>,
-) -> Result<Value, String> {
-    if !content_buf.trim().is_empty() {
-        return parse_model_reply(content_buf);
-    }
-    if let Some((_, tc)) = tool_calls.iter().next() {
-        if !tc.name.trim().is_empty() {
-            let raw_args = tc.arguments.trim();
-            let args_val = if raw_args.is_empty() {
-                json!({})
-            } else {
-                match serde_json::from_str::<Value>(raw_args) {
-                    Ok(v) if v.is_object() => v,
-                    Ok(_) | Err(_) => {
-                        return Err(format!(
-                            "model SSE tool_call arguments were incomplete or malformed JSON: {}",
-                            truncate(raw_args, 200)
-                        ));
-                    }
-                }
-            };
-            return Ok(normalize_model_reply(json!({
-                "tool": tc.name.trim(),
-                "args": args_val,
-            })));
-        }
-    }
-    if let Some(err) = sse_error {
-        return Err(format!("model SSE stream error: {err}"));
-    }
-    Err("model SSE stream ended with no assistant content or tool_calls".to_string())
-}
-
-fn parse_single_json_model_response(
-    cfg: &Config,
-    v: &Value,
-    latency_ms: u64,
-) -> Result<(Value, ModelCallUsage), String> {
-    let model_id = v["model"]
-        .as_str()
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .unwrap_or(&cfg.model_id)
-        .to_string();
-    let usage = parse_usage_from_value(v.get("usage"), model_id, latency_ms);
-    let msg = &v["choices"][0]["message"];
-    let content = &msg["content"];
-    let parsed = match content {
-        Value::String(s) if !s.trim().is_empty() => parse_model_reply(s)?,
-        Value::Object(_) => normalize_model_reply(content.clone()),
-        _ => {
-            if let Some(tc0) = msg.get("tool_calls").and_then(|t| t.get(0)) {
-                let name = tc0["function"]["name"].as_str().unwrap_or("").trim();
-                if !name.is_empty() {
-                    let args_raw = &tc0["function"]["arguments"];
-                    let args_val = match args_raw {
-                        Value::String(s) => serde_json::from_str::<Value>(s)
-                            .unwrap_or_else(|_| Value::String(s.clone())),
-                        other => other.clone(),
-                    };
-                    normalize_model_reply(json!({ "tool": name, "args": args_val }))
-                } else {
-                    return Err(format!(
-                        "model response had no message content: {}",
-                        truncate(&v.to_string(), 400)
-                    ));
-                }
-            } else {
-                return Err(format!(
-                    "model response had no message content: {}",
-                    truncate(&v.to_string(), 400)
-                ));
-            }
-        }
-    };
-    Ok((parsed, usage))
-}
-
-pub fn call_model(cfg: &Config, session: &str, messages: &[Value]) -> Result<Value, String> {
-    call_model_with_usage(cfg, session, messages).map(|(v, _)| v)
-}
-
-pub fn call_model_with_usage(
-    cfg: &Config,
-    session: &str,
-    messages: &[Value],
-) -> Result<(Value, ModelCallUsage), String> {
-    call_model_with_usage_streaming(cfg, session, messages, None)
-}
-
-pub fn call_model_with_usage_streaming(
-    cfg: &Config,
-    session: &str,
-    messages: &[Value],
-    stream_target: Option<ModelStreamTarget<'_>>,
-) -> Result<(Value, ModelCallUsage), String> {
-    if !cfg.model_configured() {
-        return Err(NO_KEY_ERROR.to_string());
-    }
-    let url = format!("{}/chat/completions", cfg.model_base_url);
-    let mut payload = json!({
-        "model": cfg.model_id,
-        "messages": messages,
-        "temperature": 0.2,
-    });
-    if stream_target.is_some() {
-        payload["stream"] = json!(true);
-    }
-    if cfg.model_base_url.contains(":11434") {
-        payload["response_format"] = json!({"type": "json_object"});
-    }
-    // A rate limit, an overloaded provider or a dropped connection costs a
-    // short wait, not the whole task: transient failures are retried with
-    // backoff (honouring Retry-After) inside a fixed time budget. Dropped
-    // connections are retried for remote endpoints only — a local gateway
-    // that is not running should say so at once.
-    let started = std::time::Instant::now();
-    let remote = !is_loopback_url(&cfg.model_base_url);
-    let read_timeout_secs = std::env::var("ERGON_MODEL_TIMEOUT_SECS")
-        .ok()
-        .and_then(|v| v.trim().parse::<u64>().ok())
-        .map(|s| s.clamp(10, 900))
-        .unwrap_or(300);
-    let agent = ureq::AgentBuilder::new()
-        .timeout_connect(std::time::Duration::from_secs(15))
-        .timeout_read(std::time::Duration::from_secs(read_timeout_secs))
-        .timeout_write(std::time::Duration::from_secs(60))
-        .build();
-    let mut attempt: u32 = 0;
-    let resp = loop {
-        attempt += 1;
-        let mut req = agent
-            .post(&url)
-            .set("x-opencode-session", session)
-            .set("User-Agent", BROWSER_UA);
-        if let Some(key) = cfg.api_key.as_deref().filter(|k| !k.is_empty()) {
-            req = req.set("Authorization", &format!("Bearer {key}"));
-        }
-        let can_retry = attempt < MODEL_ATTEMPTS && started.elapsed() < MODEL_RETRY_BUDGET;
-        match req.send_json(payload.clone()) {
-            Ok(r) => break r,
-            Err(ureq::Error::Status(code, r)) if can_retry && retryable_status(code) => {
-                let wait = retry_delay(attempt, r.header("retry-after"));
-                crate::logging::warn(
-                    "ergon::model",
-                    &format!(
-                        "ergon: model endpoint returned HTTP {code}; retrying in {} ms (attempt {}/{MODEL_ATTEMPTS})",
-                        wait.as_millis(),
-                        attempt + 1
-                    ),
-                );
-                std::thread::sleep(wait);
-            }
-            Err(ureq::Error::Status(code, r)) => {
-                let body = r.into_string().unwrap_or_default();
-                let tries = if attempt > 1 { format!(" (after {attempt} attempts)") } else { String::new() };
-                return Err(format!("model endpoint returned HTTP {code}{tries}: {}", truncate(&body, 400)));
-            }
-            Err(ureq::Error::Transport(t))
-                if can_retry && remote && matches!(t.kind(), ureq::ErrorKind::Io | ureq::ErrorKind::ConnectionFailed) =>
-            {
-                let wait = retry_delay(attempt, None);
-                crate::logging::warn(
-                    "ergon::model",
-                    &format!(
-                        "ergon: model call failed ({t}); retrying in {} ms (attempt {}/{MODEL_ATTEMPTS})",
-                        wait.as_millis(),
-                        attempt + 1
-                    ),
-                );
-                std::thread::sleep(wait);
-            }
-            Err(e) => return Err(format!("model call failed: {e}")),
-        }
-    };
-
-    let content_type = resp.header("content-type").unwrap_or("").to_ascii_lowercase();
-    if content_type.contains("text/event-stream") {
-        use std::io::BufRead as _;
-        let mut reader = std::io::BufReader::new(resp.into_reader());
-        let mut content_buf = String::new();
-        let mut tool_calls: std::collections::BTreeMap<usize, SseToolCallAccum> =
-            std::collections::BTreeMap::new();
-        let mut model_id: Option<String> = None;
-        let mut usage_val: Option<Value> = None;
-        let mut sse_error: Option<String> = None;
-        let mut line = String::new();
-        let mut bytes_seen = 0usize;
-        loop {
-            line.clear();
-            let n = reader
-                .read_line(&mut line)
-                .map_err(|e| format!("reading model SSE stream failed: {e}"))?;
-            if n == 0 {
-                break;
-            }
-            bytes_seen = bytes_seen.saturating_add(n);
-            if bytes_seen > MAX_SSE_STREAM_BYTES * 2 {
-                return Err("model SSE stream exceeded maximum size".to_string());
-            }
-            if consume_sse_data_line(
-                &line,
-                &mut content_buf,
-                &mut tool_calls,
-                &mut model_id,
-                &mut usage_val,
-                &mut sse_error,
-                stream_target,
-            ) {
-                break;
-            }
-        }
-        let latency_ms = started.elapsed().as_millis() as u64;
-        let parsed = finalize_sse_reply(&content_buf, &tool_calls, sse_error.as_deref())?;
-        let usage = parse_usage_from_value(
-            usage_val.as_ref(),
-            model_id.unwrap_or_else(|| cfg.model_id.clone()),
-            latency_ms,
-        );
-        return Ok((parsed, usage));
-    }
-
-    let raw_body = resp
-        .into_string()
-        .map_err(|e| format!("reading model response failed: {e}"))?;
-    let latency_ms = started.elapsed().as_millis() as u64;
-    let looks_like_sse = raw_body.trim_start().starts_with("data:")
-        || (!raw_body.trim_start().starts_with('{')
-            && raw_body
-                .lines()
-                .any(|l| l.trim_start().starts_with("data:")));
-    if looks_like_sse {
-        let mut content_buf = String::new();
-        let mut tool_calls: std::collections::BTreeMap<usize, SseToolCallAccum> =
-            std::collections::BTreeMap::new();
-        let mut model_id: Option<String> = None;
-        let mut usage_val: Option<Value> = None;
-        let mut sse_error: Option<String> = None;
-        for line in raw_body.lines() {
-            if consume_sse_data_line(
-                line,
-                &mut content_buf,
-                &mut tool_calls,
-                &mut model_id,
-                &mut usage_val,
-                &mut sse_error,
-                stream_target,
-            ) {
-                break;
-            }
-        }
-        let parsed = finalize_sse_reply(&content_buf, &tool_calls, sse_error.as_deref())?;
-        let usage = parse_usage_from_value(
-            usage_val.as_ref(),
-            model_id.unwrap_or_else(|| cfg.model_id.clone()),
-            latency_ms,
-        );
-        return Ok((parsed, usage));
-    }
-
-    let v: Value = serde_json::from_str(&raw_body)
-        .map_err(|e| format!("model response was not JSON: {e}"))?;
-    parse_single_json_model_response(cfg, &v, latency_ms)
-}
-
-fn normalize_model_reply(mut v: Value) -> Value {
-    if let Some(obj) = v.as_object_mut() {
-        // Common local-model / OpenAI-function-call aliases:
-        // {"name": "write_file", "arguments": {...}} -> {"tool": "write_file", "args": {...}}
-        if !obj.contains_key("tool") {
-            if let Some(name) = obj.get("name").and_then(|n| n.as_str()).map(|s| s.to_string()) {
-                obj.remove("name");
-                obj.insert("tool".to_string(), Value::String(name));
-            }
-        }
-        if obj.contains_key("tool") && !obj.contains_key("args") {
-            if let Some(arguments) = obj.remove("arguments") {
-                obj.insert("args".to_string(), arguments);
-            }
-        }
-        if let Some(Value::String(s)) = obj.get("args").cloned() {
-            if let Ok(parsed) = serde_json::from_str::<Value>(&s) {
-                if parsed.is_object() {
-                    obj.insert("args".to_string(), parsed);
-                }
-            }
-        }
-        if obj.contains_key("tool") && !obj.get("args").is_some_and(|a| a.is_object()) {
-            let mut extra = serde_json::Map::new();
-            let keys: Vec<String> = obj
-                .keys()
-                .filter(|k| k.as_str() != "tool" && k.as_str() != "args")
-                .cloned()
-                .collect();
-            for k in keys {
-                if let Some(val) = obj.remove(&k) {
-                    extra.insert(k, val);
-                }
-            }
-            obj.insert("args".to_string(), Value::Object(extra));
-        }
-        if obj.get("done").and_then(|d| d.as_str()) == Some("true") {
-            obj.insert("done".to_string(), Value::Bool(true));
-        }
-        if !obj.contains_key("tool")
-            && !obj.contains_key("done")
-            && !obj.contains_key("path")
-            && obj.get("summary").and_then(|s| s.as_str()).is_some_and(|s| !s.trim().is_empty())
-        {
-            obj.insert("done".to_string(), Value::Bool(true));
-        }
-    }
-    v
-}
-
-/// Extract the first balanced JSON object from a text blob that may include prose
-/// or code fences around it.
-fn extract_first_json_object(s: &str) -> Option<Value> {
-    let bytes = s.as_bytes();
-    let mut i = 0;
-    while i < bytes.len() {
-        if bytes[i] == b'{' {
-            let mut depth = 0usize;
-            let mut in_str = false;
-            let mut esc = false;
-            let mut j = i;
-            while j < bytes.len() {
-                let b = bytes[j];
-                if in_str {
-                    if esc {
-                        esc = false;
-                    } else if b == b'\\' {
-                        esc = true;
-                    } else if b == b'"' {
-                        in_str = false;
-                    }
-                } else {
-                    match b {
-                        b'"' => in_str = true,
-                        b'{' => depth += 1,
-                        b'}' => {
-                            depth -= 1;
-                            if depth == 0 {
-                                if let Ok(v) = serde_json::from_str::<Value>(&s[i..=j]) {
-                                    if v.is_object() {
-                                        return Some(v);
-                                    }
-                                }
-                                break;
-                            }
-                        }
-                        _ => {}
-                    }
-                }
-                j += 1;
-            }
-        }
-        i += 1;
-    }
-    None
-}
-
-/// Parse one model reply: exactly one JSON object, either a tool call or
-/// done. Tolerates ```json fences or brief wrapper prose around the object.
-pub fn parse_model_reply(raw: &str) -> Result<Value, String> {
-    let trimmed = raw.trim();
-    let unfenced = trimmed
-        .strip_prefix("```json")
-        .or_else(|| trimmed.strip_prefix("```"))
-        .map(|s| s.strip_suffix("```").unwrap_or(s))
-        .unwrap_or(trimmed)
-        .trim();
-    if let Ok(v) = serde_json::from_str::<Value>(unfenced) {
-        if v.is_object() {
-            return Ok(normalize_model_reply(v));
-        }
-    }
-    if let Some(v) = extract_first_json_object(unfenced) {
-        return Ok(normalize_model_reply(v));
-    }
-    // Last resort: first { .. last } slice.
-    if let (Some(a), Some(b)) = (unfenced.find('{'), unfenced.rfind('}')) {
-        if a < b {
-            if let Ok(v) = serde_json::from_str::<Value>(&unfenced[a..=b]) {
-                if v.is_object() {
-                    return Ok(normalize_model_reply(v));
-                }
-            }
-        }
-    }
-    Err(format!("model reply was not a JSON object: {}", truncate(raw, 300)))
-}
-
-// ---------------------------------------------------------------------------
 // Agent loop
 // ---------------------------------------------------------------------------
 
@@ -2054,7 +1485,7 @@ fn system_prompt_for(
          - invoke_connector {{\"connector_id\": \"...\", \"payload\": {{...}}, \"file\": \"optional-workspace-file.pdf\"}} — deliver JSON or a workspace file to a configured outbound connector (secrets are injected only by the host; may park for approval depending on workspace policy).\n\
          - export_file {{\"path\": \"Weekly Report.md\", \"format\": \"pdf\"}} — turn a finished Markdown/text file into a Word document (.docx) or native PDF (.pdf, optional \"brand_header\"), or a CSV/TSV (or multi-sheet \"sheets\": [{{\"name\": \"...\", \"path\": \"...\", \"totals_row\": true}}]) into an Excel workbook (.xlsx) with live SUM formulas, ready to share.\n\
          - write_document {{\"title\": \"Summary\", \"sections\": [\"section text\", ...]}} — produce a finished markdown document in the workspace (a Rune skill formats and writes it).\n\
-         - make_spreadsheet {{\"title\": \"Budget\", \"columns\": [\"Item\", \"Cost\"], \"rows\": [[\"Coffee\", \"4.50\"]]}} — produce a finished CSV spreadsheet in the workspace (a Rune skill formats and writes it).\n\
+         - make_spreadsheet {{\"title\": \"Budget\", \"columns\": [\"Item\", \"Cost\"], \"rows\": [[\"Coffee\", \"4.50\"]]}} (or deterministic quote/BOM build from a workspace CSV: {{\"title\": \"Quote\", \"from_csv\": \"pricing.csv\", \"dedup_key\": \"SKU\", \"append_total\": true}}) — produce a finished CSV spreadsheet in the workspace.\n\
          - research {{\"topic\": \"Local Prices\", \"urls\": [\"https://...\", \"https://...\"]}} — fetch several pages and compile them into one research notes document in the workspace (a Rune skill).\n\
          - search_files {{\"query\": \"quarterly\", \"path\": \".\"}} — search the workspace's text files for a phrase; returns matching lines with file and line number.\n\
          - search_vault {{\"query\": \"renewal notice period\", \"path_prefix\": \"\", \"mode\": \"hybrid\", \"limit\": 10}} — hybrid BM25 + semantic search across 100% of every page, slide, section, and Excel sheet in the workspace, returning ranked chunks cited with [path:Lstart-Lend], #Sheet, and Page N.\n\
@@ -2080,7 +1511,7 @@ fn system_prompt_for(
          - delete_file {{\"path\": \"old.txt\"}} — CONSEQUENTIAL: deleting is permanent, so this does not delete immediately — it parks the deletion as a decision for your person to approve. Never claim a file was deleted when it was only parked.\n\
          - flag_decision {{\"summary\": \"...\"}} — raise a question as a decision in your person's inbox when a choice is genuinely theirs to make.\n\
          - request_checkpoint {{\"prompt\": \"...\", \"input_mode\": \"approve_reject|choice|text\", \"choices\": [...], \"inspect_files\": [...]}} — pause this run cleanly at a structured human checkpoint so your person can inspect files and provide a decision or answer, after which the run resumes automatically.{suite_block}\n\n\
-         RULES: Use tools to do the real work; never claim work you did not do through a tool. When you learn a durable preference or fact about this person, record it with update_memory before finishing. When you build something reusable, publish it to the library so the whole company benefits. Finish with done only when the task is actually complete.{security_block}{engagement_block}\n\n\
+         RULES: Use tools to do the real work; never claim work you did not do through a tool. When the user names workspace files for a built-in workflow, invoke that workflow tool directly without unnecessary extra reads. When you learn a durable preference or fact about this person, record it with update_memory before finishing. When you build something reusable, publish it to the library so the whole company benefits. Finish with done only when the task is actually complete.{security_block}{engagement_block}\n\n\
          PREFERENCES AND FACTS THIS PERSON HAS TAUGHT YOU — apply them in every task:\n{prefs_block}\n\n\
          WHAT YOU KNOW ABOUT THIS PERSON (their memory file — treat it as true and use it):\n{memory}{company_memory_block}",
         security_block = security_block(),
