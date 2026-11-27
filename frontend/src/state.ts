@@ -1546,6 +1546,7 @@ export function useErgon() {
   );
 
   // Live SSE (/api/runs/stream) subscription with automatic fallback to /api/runs/status polling + live elapsed timer.
+  const sseReady = hasV050Api(status, "sse");
   useEffect(() => {
     if (!busy) {
       setLiveSteps([]);
@@ -1740,7 +1741,7 @@ export function useErgon() {
       }
     };
 
-    if (hasV050Api(statusRef.current, "sse") && typeof EventSource !== "undefined") {
+    if (sseReady && typeof EventSource !== "undefined") {
       try {
         es = new EventSource("/api/runs/stream");
         setStreamMode("sse");
@@ -1793,7 +1794,7 @@ export function useErgon() {
       if (pollTimer !== null) window.clearInterval(pollTimer);
       if (es) es.close();
     };
-  }, [busy, runStartedMs]);
+  }, [busy, runStartedMs, sseReady]);
 
   const cancelRun = useCallback(async (targetRunId?: string) => {
     const specificId = typeof targetRunId === "string" && targetRunId.trim() ? targetRunId.trim() : "";

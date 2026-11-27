@@ -167,7 +167,9 @@ for (const m of measures) {
 await reset();
 {
   const { ctx, p } = await open(1440, 900);
+  const statusLoaded = p.waitForResponse((r) => r.url().includes("/api/status"));
   await p.goto(BASE);
+  await statusLoaded;
   await waitWorkbench(p);
 
   const starterCount0 = await p.locator('section[aria-label="Start a task"] button[data-starter-card]').count();
@@ -570,7 +572,9 @@ await reset();
       }),
     })
   );
+  const statusLoaded = p.waitForResponse((r) => r.url().includes("/api/status"));
   await p.goto(BASE);
+  await statusLoaded;
   await waitWorkbench(p);
   ok("update banner shows Update now on loopback", (await p.getByRole("button", { name: "Update now" }).count()) === 1);
   await p.getByRole("button", { name: "Dismiss" }).click();
@@ -590,7 +594,9 @@ await reset();
       body: JSON.stringify({ current: "0.3.0", available: false, error: "could not reach https://api.github.com: Connection refused" }),
     })
   );
+  const statusLoaded = p.waitForResponse((r) => r.url().includes("/api/status"));
   await p.goto(BASE);
+  await statusLoaded;
   await waitWorkbench(p);
   const bannerTxt = await p.locator("#update-banner").innerText();
   ok(
@@ -608,7 +614,9 @@ await reset();
       body: JSON.stringify({ current: "0.3.0", latest: "0.4.0", staged: "0.4.0", available: false, can_apply: true }),
     })
   );
+  const statusLoaded = p.waitForResponse((r) => r.url().includes("/api/status"));
   await p.goto(BASE);
+  await statusLoaded;
   await waitWorkbench(p);
   const bannerTxt = await p.locator("#update-banner").innerText();
   const occurrences = (bannerTxt.match(/installed\. Restart to use it\./g) || []).length;
@@ -696,7 +704,9 @@ await reset();
 // 6b. Compact phone 320x568 real non-forced Menu -> Settings -> Dark test
 {
   const { ctx, p } = await open(320, 568);
+  const statusLoaded = p.waitForResponse((r) => r.url().includes("/api/status"));
   await p.goto(BASE);
+  await statusLoaded;
   await waitWorkbench(p);
   await p.getByRole("button", { name: "Open menu" }).click();
   await p.waitForSelector('[data-thing="settings-btn"]', { timeout: 4000 });
@@ -1076,7 +1086,9 @@ await reset();
     await new Promise((res) => setTimeout(res, 6000));
     await r.abort();
   });
+  const statusLoaded = p.waitForResponse((r) => r.url().includes("/api/status"));
   await p.goto(BASE);
+  await statusLoaded;
   await waitWorkbench(p);
   await p.waitForSelector("#composer-input", { timeout: 4000 });
   await p.locator("#composer-input").fill("Run live SSE test task");
@@ -1151,7 +1163,9 @@ await reset();
       body: JSON.stringify({ run: { ...pausedRun, status: "completed", pending_checkpoint: null } }),
     });
   });
+  const statusLoaded = p.waitForResponse((r) => r.url().includes("/api/status"));
   await p.goto(BASE);
+  await statusLoaded;
   await waitWorkbench(p);
   await p.locator('[data-thing="routines-btn"]').click();
   await p.waitForSelector("#routines-panel", { timeout: 4000 });
@@ -1282,7 +1296,9 @@ await reset();
     });
   });
 
+  const statusLoaded = p.waitForResponse((r) => r.url().includes("/api/status"));
   await p.goto(BASE);
+  await statusLoaded;
   await waitWorkbench(p);
   if (!(await p.locator("#workspace-files-panel").isVisible())) {
     await p.locator('[data-thing="inspector-toggle"]').click();
@@ -1575,7 +1591,9 @@ await reset();
 
   const { ctx, p } = await open(1440, 900);
   await setupConnectorRoutes(p);
+  const statusLoaded = p.waitForResponse((r) => r.url().includes("/api/status"));
   await p.goto(BASE);
+  await statusLoaded;
   await waitWorkbench(p);
 
   // 1. Open Connectors modal -> Inbound Webhooks create, rotate secret, simulate payload
@@ -1758,7 +1776,9 @@ await reset();
     });
   });
 
+  const statusLoaded = p.waitForResponse((r) => r.url().includes("/api/status"));
   await p.goto(BASE);
+  await statusLoaded;
   await waitWorkbench(p);
 
   // Check PipelineBuilder blocks invalid template & empty agent prompt
@@ -1881,7 +1901,9 @@ await reset();
     });
   });
 
+  const statusLoaded = p.waitForResponse((r) => r.url().includes("/api/status"));
   await p.goto(BASE);
+  await statusLoaded;
   await waitWorkbench(p);
   if (!(await p.locator("#workspace-files-panel").isVisible())) {
     await p.locator('[data-thing="inspector-toggle"]').click();
@@ -1985,7 +2007,9 @@ await reset();
     return r.fulfill({ status: 400, contentType: "application/json", body: JSON.stringify({ error: "bad" }) });
   });
 
+  const statusLoaded = p.waitForResponse((r) => r.url().includes("/api/status"));
   await p.goto(BASE);
+  await statusLoaded;
   await waitWorkbench(p);
   await p.locator('[data-thing="connectors-btn"]').click();
   await p.waitForSelector("#connectors-panel", { timeout: 4000 });
@@ -2243,7 +2267,9 @@ await reset();
     });
   });
 
+  const statusLoaded = p.waitForResponse((r) => r.url().includes("/api/status"));
   await p.goto(BASE);
+  await statusLoaded;
   await waitWorkbench(p);
 
   // 1. Client -> Engagement selector & quick-create modal
@@ -2522,7 +2548,9 @@ await reset();
       });
     });
 
+    const statusLoaded = p.waitForResponse((r) => r.url().includes("/api/status"));
     await p.goto(BASE);
+    await statusLoaded;
     await waitWorkbench(p);
 
     if (theme === "light") {
@@ -2853,7 +2881,9 @@ for (const [theme, vw, vh] of [
     })
   );
 
+  const statusLoaded = p.waitForResponse((r) => r.url().includes("/api/status"));
   await p.goto(BASE);
+  await statusLoaded;
   await waitWorkbench(p);
 
   // Open Routines -> New routine -> PipelineBuilder
@@ -3366,7 +3396,9 @@ for (const [theme, vw, vh] of [
     });
   });
 
+  const statusLoaded = p.waitForResponse((r) => r.url().includes("/api/status"));
   await p.goto(BASE);
+  await statusLoaded;
   await waitWorkbench(p);
 
   await p.locator('[data-thing="inspector-toggle"]').click();
@@ -3600,7 +3632,9 @@ for (const [theme, vw, vh] of [
 
   const { ctx, p } = await open(1440, 900);
   await setupProtocolsRoutes(p);
+  const statusLoaded = p.waitForResponse((r) => r.url().includes("/api/status"));
   await p.goto(BASE);
+  await statusLoaded;
   await waitWorkbench(p);
 
   // 1. Outbound Actions -> SMTP Relay + OAuth2 Credentials config helper + masked secret handling
@@ -3857,6 +3891,13 @@ for (const [theme, vw, vh] of [
         }),
       })
     );
+    await p.route("**/api/runs/stream", (r) =>
+      r.fulfill({
+        status: 200,
+        contentType: "text/event-stream",
+        body: `event: status\ndata: ${JSON.stringify({ active: liveList.length > 0, runs: liveList })}\n\n`,
+      })
+    );
     await p.route("**/api/runs/*/cancel", async (r) => {
       const url = r.request().url();
       const m = /\/api\/runs\/([^/]+)\/cancel/.exec(url);
@@ -3865,7 +3906,9 @@ for (const [theme, vw, vh] of [
       liveList = liveList.filter((x) => x.run_id !== tid && x.thread_id !== tid);
       return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ cancelled: true, run_id: tid }) });
     });
+    const statusLoaded = p.waitForResponse((r) => r.url().includes("/api/status"));
     await p.goto(BASE);
+    await statusLoaded;
     await waitWorkbench(p);
     await p.waitForSelector('#live-run-timeline [data-live-run="run-sched-e3"]', { timeout: 4000 });
     await p.waitForSelector('#live-run-timeline [data-live-run="run-chat-e3"]', { timeout: 4000 });
@@ -3933,7 +3976,9 @@ for (const [theme, vw, vh] of [
     await p.route("**/api/pipelines/validate", (r) =>
       r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true, valid: true, errors: [], topological_order: ["skill_1", "sub_2"], stages: [["skill_1"], ["sub_2"]] }) })
     );
+    const statusLoaded = p.waitForResponse((r) => r.url().includes("/api/status"));
     await p.goto(BASE);
+    await statusLoaded;
     await waitWorkbench(p);
     await p.locator('[data-thing="routines-btn"]').click();
     await p.waitForSelector("#routines-panel", { timeout: 4000 });
@@ -4047,7 +4092,9 @@ for (const [theme, vw, vh] of [
       pendingList = pendingList.filter((c) => c.checkpoint_id !== b.checkpoint_id);
       return r.fulfill({ status: 202, contentType: "application/json", body: JSON.stringify({ run: makeRunPayload() }) });
     });
+    const statusLoaded = p.waitForResponse((r) => r.url().includes("/api/status"));
     await p.goto(BASE);
+    await statusLoaded;
     await waitWorkbench(p);
     await p.getByRole("tab", { name: "Today" }).click();
     await p.waitForSelector('#decisions-list [data-pipeline-checkpoint="prun-e3-multi"]', { timeout: 4000 });
@@ -4079,7 +4126,9 @@ for (const [theme, vw, vh] of [
   // 5. Mobile 390x844 dark check on RoutinesPanel + PipelineBuilder (0px dialog overflow)
   {
     const { ctx, p } = await open(390, 844, "dark");
+    const statusLoaded = p.waitForResponse((r) => r.url().includes("/api/status"));
     await p.goto(BASE);
+    await statusLoaded;
     await waitWorkbench(p);
     await p.getByRole("button", { name: "Open menu" }).click();
     await p.waitForSelector('[data-thing="routines-btn"]', { timeout: 4000 });
@@ -4142,7 +4191,9 @@ for (const [theme, vw, vh] of [
         }),
       })
     );
+    const statusLoaded = p.waitForResponse((r) => r.url().includes("/api/status"));
     await p.goto(BASE);
+    await statusLoaded;
     await waitWorkbench(p);
     await p.getByRole("button", { name: "Open menu" }).click();
     await p.waitForSelector('[data-thing="routines-btn"]', { timeout: 4000 });
@@ -4226,7 +4277,9 @@ for (const [theme, vw, vh] of [
         }),
       })
     );
+    const statusLoaded = p.waitForResponse((r) => r.url().includes("/api/status"));
     await p.goto(BASE);
+    await statusLoaded;
     await waitWorkbench(p);
     await p.waitForSelector("#person-select", { timeout: 4000 });
     await p.locator("#person-select").click();
@@ -4380,7 +4433,9 @@ for (const [theme, vw, vh] of [
       });
     });
 
+    const statusLoaded = p.waitForResponse((r) => r.url().includes("/api/status"));
     await p.goto(BASE);
+    await statusLoaded;
     await waitWorkbench(p);
 
     // Trigger chat run -> SSE 500 -> fallback poll 500 -> reconciliation alert -> Retry sync succeeds
@@ -4423,7 +4478,9 @@ for (const [theme, vw, vh] of [
 // 7. Reduced motion & Console Cleanliness (2 checks)
 {
   const { ctx, p } = await open(1440, 900, "light", { reducedMotion: "reduce" });
+  const statusLoaded = p.waitForResponse((r) => r.url().includes("/api/status"));
   await p.goto(BASE);
+  await statusLoaded;
   await waitWorkbench(p);
   await p.waitForTimeout(1200);
   const moving = await p.evaluate(() =>
