@@ -37,6 +37,7 @@ import { PanelModal } from "@/shell/PanelModal";
 import { personInitials } from "@/shell/PersonSelect";
 import { StarterPlaybooksBar } from "@/shell/StarterPlaybooksBar";
 import { usePaper } from "@/views/usePaper";
+import { FORMULA_ESTIMATE_TOOLTIP, resolveEffectiveHourlyRate } from "@/lib/meteringFormula";
 import {
   call,
   downloadWorkspaceFile,
@@ -919,8 +920,7 @@ export const PaperFace = memo(function PaperFace({
         : (meteringTotals?.retainer_burn_pct ?? (retainerSpentUsd / retainerBudgetUsd) * 100)
       : 0;
   const retainerBurnPct = retainerBudgetUsd > 0 && Number.isFinite(Number(rawBurn)) ? Math.max(0, Number(rawBurn)) : 0;
-  const rawRate = activeEng?.hourly_rate_usd ?? activeCli?.default_rate_usd ?? 0;
-  const hourlyRateUsd = Number.isFinite(Number(rawRate)) ? Math.max(0, Number(rawRate)) : 0;
+  const hourlyRateUsd = resolveEffectiveHourlyRate(activeEng, activeCli);
 
   const engagementEntries = useMemo(() => {
     if (!activeEng) return timeEntries;
@@ -1239,7 +1239,7 @@ export const PaperFace = memo(function PaperFace({
                     <div className="flex min-w-0 flex-wrap items-center gap-2">
                       <TrendingUp className="size-4 shrink-0 text-icon" strokeWidth={1.5} aria-hidden />
                       <h2 id="retainer-roi-h" className="text-base font-medium text-ink">
-                        Retainer burn and billable ROI
+                        Retainer burn and est. billable value
                       </h2>
                       {(activeCli || activeEng) && (
                         <span className="inline-flex items-center gap-1 rounded-chip bg-board px-2 py-0.5 text-xs font-medium text-ink-2">
@@ -1314,7 +1314,7 @@ export const PaperFace = memo(function PaperFace({
                       className="rounded-sm border border-hairline bg-board/40 px-3 py-2 text-xs text-ink-2"
                     >
                       {activeEng
-                        ? "No retainer cap set ($0 or uncapped). Tracking token spend and billable value."
+                        ? "No retainer cap set ($0 or uncapped). Tracking token spend and est. billable value."
                         : "No engagement retainer selected. Tracking workspace usage totals."}
                     </p>
                   )}
@@ -1338,20 +1338,36 @@ export const PaperFace = memo(function PaperFace({
                         {meteringTotals?.runs ?? 0} {(meteringTotals?.runs ?? 0) === 1 ? "metered run" : "metered runs"}
                       </span>
                     </div>
-                    <div className="flex flex-col gap-0.5 rounded-sm bg-board/60 p-3">
-                      <span className="text-xs text-ink-2">Time saved</span>
-                      <span id="metering-time-val" className="mono text-base font-medium text-ink">
-                        {formatMinutesSaved(meteringTotals?.minutes_saved ?? 0)}
+                    <div
+                      className="flex flex-col gap-0.5 rounded-sm bg-board/60 p-3"
+                      title={FORMULA_ESTIMATE_TOOLTIP}
+                    >
+                      <span className="text-xs text-ink-2">Est. minutes saved</span>
+                      <span
+                        id="metering-time-val"
+                        className="mono text-base font-medium text-ink"
+                        title={FORMULA_ESTIMATE_TOOLTIP}
+                      >
+                        ~{formatMinutesSaved(meteringTotals?.minutes_saved ?? 0)} (est.)
                       </span>
-                      <span className="text-xs text-ink-2">Estimated work hours</span>
+                      <span className="text-xs text-ink-2">
+                        Formula estimate — not yet calibrated to stopwatch timings
+                      </span>
                     </div>
-                    <div className="flex flex-col gap-0.5 rounded-sm bg-board/60 p-3">
-                      <span className="text-xs text-ink-2">Billable ROI</span>
-                      <span id="metering-roi-val" className="mono text-base font-medium text-ink">
-                        {formatUsd(meteringTotals?.billable_value_usd ?? 0)}
+                    <div
+                      className="flex flex-col gap-0.5 rounded-sm bg-board/60 p-3"
+                      title={FORMULA_ESTIMATE_TOOLTIP}
+                    >
+                      <span className="text-xs text-ink-2">Est. billable value</span>
+                      <span
+                        id="metering-roi-val"
+                        className="mono text-base font-medium text-ink"
+                        title={FORMULA_ESTIMATE_TOOLTIP}
+                      >
+                        ~{formatUsd(meteringTotals?.billable_value_usd ?? 0)} (est.)
                       </span>
                       <span className="mono text-xs text-ink-2">
-                        {hourlyRateUsd > 0 ? `At $${hourlyRateUsd}/hr` : "Attributed value"}
+                        {hourlyRateUsd > 0 ? `At $${hourlyRateUsd}/hr (est.)` : "No rate set ($0/hr)"}
                       </span>
                     </div>
                   </div>
@@ -1421,8 +1437,8 @@ export const PaperFace = memo(function PaperFace({
                                   <span className="min-w-0 truncate text-ink">
                                     {row.client_name ? `${row.client_name} / ` : ""}{row.engagement_name || row.engagement_id}
                                   </span>
-                                  <span className="mono text-ink-2">
-                                    {row.total_tokens.toLocaleString()} tok, {formatUsd(row.cost_usd)}, {formatUsd(row.billable_value_usd)} ROI
+                                  <span className="mono text-ink-2" title={FORMULA_ESTIMATE_TOOLTIP}>
+                                    {row.total_tokens.toLocaleString()} tok, {formatUsd(row.cost_usd)}, ~{formatUsd(row.billable_value_usd)} est. value
                                   </span>
                                 </li>
                               ))}
@@ -1801,9 +1817,13 @@ export const PaperFace = memo(function PaperFace({
                               {x.usage && x.usage.total_tokens > 0 && (
                                 <p className="mono mt-0.5 text-xs text-ink-2">
                                   {x.usage.total_tokens.toLocaleString()} tokens, {formatUsd(x.usage.cost_usd)}
-                                  {typeof x.usage.estimated_minutes_saved === "number" && x.usage.estimated_minutes_saved > 0
-                                    ? `, ${formatMinutesSaved(x.usage.estimated_minutes_saved)} saved`
-                                    : ""}
+                                  {typeof x.usage.estimated_minutes_saved === "number" && x.usage.estimated_minutes_saved > 0 ? (
+                                    <span title={FORMULA_ESTIMATE_TOOLTIP}>
+                                      {`, ~${formatMinutesSaved(x.usage.estimated_minutes_saved)} saved (est.)`}
+                                    </span>
+                                  ) : (
+                                    ""
+                                  )}
                                 </p>
                               )}
                               <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5 text-xs text-ink-2">
@@ -2317,8 +2337,8 @@ export const PaperFace = memo(function PaperFace({
                     <li key={inv.id} data-invoice-id={inv.id} className={cn("flex flex-wrap items-center justify-between gap-2 px-3 py-2.5 text-xs", isSel && "bg-blue-soft/40")}>
                       <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-1.5">
-                          <span className="mono font-medium text-ink">{inv.invoice_number}</span>
-                          <span className="text-ink-2">{inv.period_label}</span>
+                          <span className="mono min-w-0 [overflow-wrap:anywhere] font-medium text-ink">{inv.invoice_number}</span>
+                          <span className="min-w-0 [overflow-wrap:anywhere] text-ink-2">{inv.period_label}</span>
                           <span
                             data-invoice-status={inv.status}
                             className={cn(

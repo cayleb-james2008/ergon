@@ -695,6 +695,7 @@ fn main() {
         }
     );
     maybe_open_desktop_window(&opts, &host, port);
+    ergon_rs::server::install_shutdown_handlers();
     if let Err(e) = ergon_rs::serve_with_updates(listener, cfg) {
         eprintln!("ergon: server error: {e}");
         std::process::exit(1);

@@ -37,10 +37,10 @@ import {
   formatCountdown,
   hasV050Api,
   hasV070Api,
-  isCronExpression,
   isDeterministicRoutine,
   resolveTzOffsetMins,
-  validateCronExpression,
+  validateRoutineSchedule,
+  validateRoutineTimezone,
   type PipelineResumePayload,
   type PipelineRun,
   type PipelineStepSpec,
@@ -138,6 +138,9 @@ function RoutinesBody({
   onRetryPipeline,
   onCancelPipeline,
   onOpenFile,
+  loading = false,
+  loadError = "",
+  createError = "",
 }: {
   routines: Routine[];
   skills: SkillMeta[];
@@ -177,6 +180,9 @@ function RoutinesBody({
   onRetryPipeline?: (runId: string) => Promise<void>;
   onCancelPipeline?: (runId: string) => Promise<void>;
   onOpenFile?: (path: string) => void;
+  loading?: boolean;
+  loadError?: string;
+  createError?: string;
 }) {
   const { isOpen, setIsOpen } = usePanelModalClose();
   const importInputRef = useRef<HTMLInputElement | null>(null);
@@ -184,6 +190,7 @@ function RoutinesBody({
   const [catchingId, setCatchingId] = useState<string | null>(null);
   const [catchingAll, setCatchingAll] = useState(false);
   const [previewById, setPreviewById] = useState<Record<string, PlaybookPreviewResult>>({});
+  const [previewErrById, setPreviewErrById] = useState<Record<string, string>>({});
   const [previewOpenId, setPreviewOpenId] = useState<string | null>(null);
   const [previewLoadingId, setPreviewLoadingId] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
@@ -202,6 +209,7 @@ function RoutinesBody({
   const [expandedHistory, setExpandedHistory] = useState<Record<string, boolean>>({});
   const [historyByRoutine, setHistoryByRoutine] = useState<Record<string, RoutineRunRecord[]>>({});
   const [historyLoading, setHistoryLoading] = useState<Record<string, boolean>>({});
+  const [historyErrByRoutine, setHistoryErrByRoutine] = useState<Record<string, string>>({});
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [err, setErr] = useState("");
 
@@ -223,9 +231,18 @@ function RoutinesBody({
   const refreshExpandedHistory = useCallback(
     async (id: string) => {
       setHistoryLoading((prev) => ({ ...prev, [id]: true }));
-      const runs = await onLoadHistory(id);
-      setHistoryByRoutine((prev) => ({ ...prev, [id]: runs }));
-      setHistoryLoading((prev) => ({ ...prev, [id]: false }));
+      setHistoryErrByRoutine((prev) => ({ ...prev, [id]: "" }));
+      try {
+        const runs = await onLoadHistory(id);
+        setHistoryByRoutine((prev) => ({ ...prev, [id]: runs }));
+      } catch (e) {
+        setHistoryErrByRoutine((prev) => ({
+          ...prev,
+          [id]: e instanceof Error && e.message ? e.message : "Could not load run history.",
+        }));
+      } finally {
+        setHistoryLoading((prev) => ({ ...prev, [id]: false }));
+      }
     },
     [onLoadHistory]
   );
@@ -336,12 +353,15 @@ function RoutinesBody({
       return;
     }
     const cleanSchedule = schedule.trim() || SCHEDULES[2];
-    if (isCronExpression(cleanSchedule) || cleanSchedule.includes("*")) {
-      const cronCheck = validateCronExpression(cleanSchedule);
-      if (!cronCheck.valid) {
-        setErr(cronCheck.error || "Invalid 5-field cron expression.");
-        return;
-      }
+    const schedCheck = validateRoutineSchedule(cleanSchedule);
+    if (!schedCheck.valid) {
+      setErr(schedCheck.error || "Invalid schedule or 5-field cron expression.");
+      return;
+    }
+    const tzCheck = validateRoutineTimezone(tz);
+    if (!tzCheck.valid) {
+      setErr(tzCheck.error || "Select a valid timezone.");
+      return;
     }
     if (typedSteps.length > 0) {
       const check = validatePipelineSteps(typedSteps);
@@ -373,7 +393,7 @@ function RoutinesBody({
     });
     setSaving(false);
     if (!ok) {
-      setErr("Could not save routine. Check the fields and try again.");
+      setErr(createError || "Could not save routine. Check the fields and try again.");
       return;
     }
     setName("");
@@ -428,24 +448,37 @@ function RoutinesBody({
     }
   };
 
+  const loadPreviewForRoutine = async (rt: Routine) => {
+    if (!onPreviewPlaybook) return;
+    setPreviewLoadingId(rt.id);
+    setPreviewErrById((prev) => ({ ...prev, [rt.id]: "" }));
+    try {
+      const res = await onPreviewPlaybook(rt);
+      if (res) {
+        setPreviewById((prev) => ({ ...prev, [rt.id]: res }));
+      } else {
+        setPreviewErrById((prev) => ({
+          ...prev,
+          [rt.id]: "Could not generate playbook preview. Try again.",
+        }));
+      }
+    } catch (e) {
+      setPreviewErrById((prev) => ({
+        ...prev,
+        [rt.id]: e instanceof Error && e.message ? e.message : "Could not generate playbook preview. Try again.",
+      }));
+    } finally {
+      setPreviewLoadingId(null);
+    }
+  };
+
   const handleTogglePreview = async (rt: Routine) => {
     if (previewOpenId === rt.id) {
       setPreviewOpenId(null);
       return;
     }
     setPreviewOpenId(rt.id);
-    if (!onPreviewPlaybook) return;
-    setPreviewLoadingId(rt.id);
-    try {
-      const res = await onPreviewPlaybook(rt);
-      if (res) {
-        setPreviewById((prev) => ({ ...prev, [rt.id]: res }));
-      } else {
-        setPreviewOpenId(null);
-      }
-    } finally {
-      setPreviewLoadingId(null);
-    }
+    await loadPreviewForRoutine(rt);
   };
 
   const activeCount = routines.filter((r) => r.enabled).length;
@@ -557,23 +590,47 @@ function RoutinesBody({
         </div>
       </div>
 
+      {loadError && (
+        <div
+          id="routines-load-error"
+          role="alert"
+          className="flex flex-wrap items-center justify-between gap-2 rounded-sm border border-hairline bg-status-stopped-bg px-3 py-2 text-xs text-status-stopped-fg"
+        >
+          <span className="min-w-0 [overflow-wrap:anywhere]">{loadError}</span>
+          <Button
+            type="button"
+            size="xs"
+            variant="outline"
+            data-action="retry-routines-load"
+            className="max-md:min-h-11 bg-surface text-ink"
+            onClick={onRefresh}
+          >
+            Retry
+          </Button>
+        </div>
+      )}
+
       {adding && (
         <form
           id="routine-create-form"
           onSubmit={handleSubmit}
           className="flex min-w-0 flex-col gap-3 rounded-card border border-hairline bg-board/50 p-3.5"
         >
-          <div className="flex flex-col gap-1">
+          <div className="flex min-w-0 flex-col gap-1">
             <label htmlFor="routine-name" className="text-xs font-medium text-ink">
               Routine name
             </label>
             <Input
               id="routine-name"
               value={name}
-              onChange={(e) => setName(e.target.value)}
+              onChange={(e) => {
+                setName(e.target.value);
+                if (err) setErr("");
+              }}
               placeholder="e.g. Morning expense reconciliation"
               autoComplete="off"
               maxLength={96}
+              className="w-full min-w-0"
             />
           </div>
 
@@ -585,7 +642,10 @@ function RoutinesBody({
               <Input
                 id="routine-schedule"
                 value={schedule}
-                onChange={(e) => setSchedule(e.target.value)}
+                onChange={(e) => {
+                  setSchedule(e.target.value);
+                  if (err) setErr("");
+                }}
                 placeholder="daily 09:00 or 0 9 * * 1-5"
                 autoComplete="off"
                 className="w-full min-w-0"
@@ -599,7 +659,10 @@ function RoutinesBody({
               <select
                 id="routine-timezone"
                 value={tz}
-                onChange={(e) => setTz(e.target.value)}
+                onChange={(e) => {
+                  setTz(e.target.value);
+                  if (err) setErr("");
+                }}
                 className="focus-ring h-9 min-h-11 w-full min-w-0 rounded-sm border border-input bg-surface px-2.5 text-sm text-ink outline-none md:min-h-9"
               >
                 {!COMMON_TIMEZONES.includes(tz) && (
@@ -664,21 +727,26 @@ function RoutinesBody({
           {(() => {
             const trimmed = schedule.trim();
             if (!trimmed) return null;
-            const looksCron = isCronExpression(trimmed) || trimmed.includes("*");
-            if (looksCron) {
-              const check = validateCronExpression(trimmed);
-              if (!check.valid) {
-                return (
-                  <p data-cron-validation="invalid" className="text-xs text-status-stopped-fg">
-                    {check.error}
-                  </p>
-                );
-              }
+            const schedCheck = validateRoutineSchedule(trimmed);
+            if (!schedCheck.valid) {
+              return (
+                <p data-cron-validation="invalid" className="text-xs text-status-stopped-fg [overflow-wrap:anywhere]">
+                  {schedCheck.error}
+                </p>
+              );
+            }
+            const tzCheck = validateRoutineTimezone(tz);
+            if (!tzCheck.valid) {
+              return (
+                <p data-cron-validation="invalid" className="text-xs text-status-stopped-fg [overflow-wrap:anywhere]">
+                  {tzCheck.error}
+                </p>
+              );
             }
             const previewMs = estimateNextRunMs(trimmed, nowMs, null, resolveTzOffsetMins(tz), tz);
             if (!previewMs) return null;
             return (
-              <p data-cron-validation="valid" className="mono text-xs text-ink-2">
+              <p data-cron-validation="valid" className="mono text-xs text-ink-2 [overflow-wrap:anywhere]">
                 Next match ({tz}): {formatCountdown(previewMs, nowMs)}
               </p>
             );
@@ -760,8 +828,12 @@ function RoutinesBody({
               id="routine-prompt"
               rows={3}
               value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
+              onChange={(e) => {
+                setPrompt(e.target.value);
+                if (err) setErr("");
+              }}
               placeholder="Describe what your agent should finish each time this routine runs…"
+              className="w-full min-w-0"
             />
             {extraSteps.map((stepVal, sIdx) => (
               <div key={sIdx} className="flex items-start gap-2 pt-1">
@@ -809,12 +881,24 @@ function RoutinesBody({
           </div>
 
           {err && (
-            <p role="alert" className="text-xs text-destructive-foreground">
+            <p role="alert" className="rounded-sm border border-hairline bg-status-stopped-bg px-2.5 py-1.5 text-xs text-status-stopped-fg [overflow-wrap:anywhere]">
               {err}
             </p>
           )}
 
-          <div className="flex justify-end">
+          <div className="sticky bottom-0 z-10 -mx-3.5 -mb-3.5 mt-1 flex flex-wrap items-center justify-end gap-2 rounded-b-sm border-t border-hairline bg-surface/95 px-3.5 py-2.5 backdrop-blur-xs">
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              className="max-md:min-h-11"
+              onClick={() => {
+                setAdding(false);
+                setErr("");
+              }}
+            >
+              Close form
+            </Button>
             <Button type="submit" size="sm" className="max-md:min-h-11" disabled={saving}>
               {saving ? "Saving…" : "Save routine"}
             </Button>
@@ -837,7 +921,11 @@ function RoutinesBody({
         <StarterPlaybooksBar starters={starterPlaybooks} onLaunch={onLaunchStarter} />
       )}
 
-      {routines.length === 0 ? (
+      {loading && routines.length === 0 ? (
+        <div className="rounded-card border border-hairline bg-board/40 p-4 text-sm text-ink-2">
+          Loading recurring routines…
+        </div>
+      ) : routines.length === 0 ? (
         <div className="rounded-card border border-hairline bg-board/40 p-4 text-sm text-ink-2">
           No recurring routines yet. Create one above for scheduled expense audits, meeting digests, or contract checks.
         </div>
@@ -854,8 +942,10 @@ function RoutinesBody({
             const histOpen = Boolean(expandedHistory[rt.id]);
             const runs = historyByRoutine[rt.id] ?? rt.recent_runs ?? [];
             const loadingRuns = Boolean(historyLoading[rt.id]);
+            const historyErr = historyErrByRoutine[rt.id] ?? "";
             const previewOpen = previewOpenId === rt.id;
             const previewData = previewById[rt.id];
+            const previewErr = previewErrById[rt.id] ?? "";
             const loadingPreview = previewLoadingId === rt.id;
 
             return (
@@ -865,10 +955,10 @@ function RoutinesBody({
                 data-routine-enabled={rt.enabled ? "true" : "false"}
                 className="flex min-w-0 flex-col gap-2.5 rounded-card border border-hairline bg-surface p-3.5"
               >
-                <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
                   <div className="flex min-w-0 flex-wrap items-center gap-2">
                     <CalendarClock className="size-4 shrink-0 text-icon" strokeWidth={1.5} aria-hidden />
-                    <span className="truncate text-sm font-medium text-ink">{rt.name}</span>
+                    <span className="min-w-0 max-w-full truncate text-sm font-medium text-ink">{rt.name}</span>
                     <Pill
                       variant="secondary"
                       className={cn(
@@ -879,7 +969,7 @@ function RoutinesBody({
                       {rt.enabled ? "Active" : "Paused"}
                     </Pill>
                     {rt.skill_id && (
-                      <Badge variant="outline" size="sm" className="mono text-xs">
+                      <Badge variant="outline" size="sm" className="mono h-auto max-w-full whitespace-normal break-all text-left text-xs">
                         {rt.skill_id}
                       </Badge>
                     )}
@@ -933,8 +1023,8 @@ function RoutinesBody({
                       </Badge>
                     )}
                   </div>
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <Pill variant="secondary" className="border border-hairline bg-board px-2 py-0.5 text-xs text-ink-2">
+                  <div className="flex min-w-0 max-w-full flex-wrap items-center gap-1.5">
+                    <Pill variant="secondary" className="h-auto max-w-full whitespace-normal break-all border border-hairline bg-board px-2 py-0.5 text-left text-xs text-ink-2">
                       <span className="mono">{rt.schedule}</span>
                     </Pill>
                     {tzLabel && (
@@ -942,7 +1032,7 @@ function RoutinesBody({
                         variant="outline"
                         size="sm"
                         data-routine-tz={rt.id}
-                        className="mono text-xs text-ink-2"
+                        className="mono h-auto max-w-full whitespace-normal break-all text-left text-xs text-ink-2"
                       >
                         {tzLabel}
                       </Badge>
@@ -951,37 +1041,37 @@ function RoutinesBody({
                       variant="outline"
                       size="sm"
                       data-next-run={rt.id}
-                      className="mono gap-1 text-xs text-ink-2"
+                      className="mono h-auto max-w-full whitespace-normal break-all gap-1 text-left text-xs text-ink-2"
                     >
-                      <Clock className="size-3 text-icon" strokeWidth={1.5} aria-hidden />
+                      <Clock className="size-3 shrink-0 text-icon" strokeWidth={1.5} aria-hidden />
                       {nextLabel}
                     </Badge>
                   </div>
                 </div>
 
                 {rt.steps_v2 && rt.steps_v2.length > 0 ? (
-                  <ol className="flex flex-col gap-1 text-xs leading-5 text-ink-2">
+                  <ol className="flex min-w-0 flex-col gap-1 text-xs leading-5 text-ink-2">
                     {rt.steps_v2.map((st, sIdx) => (
-                      <li key={`${st.id}-${sIdx}`} className="flex flex-wrap items-center gap-1.5">
+                      <li key={`${st.id}-${sIdx}`} className="flex min-w-0 flex-wrap items-center gap-1.5">
                         <span className="mono shrink-0 text-ink-3">{sIdx + 1}.</span>
                         <Badge variant="outline" size="sm" className="mono text-xs text-ink-2">
                           {st.kind}
                         </Badge>
-                        <span className="text-ink">{st.label || st.skill_id || st.prompt || st.checkpoint?.prompt || st.id}</span>
+                        <span className="min-w-0 text-ink [overflow-wrap:anywhere]">{st.label || st.skill_id || st.prompt || st.checkpoint?.prompt || st.id}</span>
                       </li>
                     ))}
                   </ol>
                 ) : rt.steps && rt.steps.length > 1 ? (
-                  <ol className="flex flex-col gap-1 text-xs leading-5 text-ink-2">
+                  <ol className="flex min-w-0 flex-col gap-1 text-xs leading-5 text-ink-2">
                     {rt.steps.map((stText, sIdx) => (
-                      <li key={sIdx} className="flex gap-1.5">
+                      <li key={sIdx} className="flex min-w-0 gap-1.5">
                         <span className="mono shrink-0 text-ink-3">{sIdx + 1}.</span>
-                        <span>{stText}</span>
+                        <span className="min-w-0 [overflow-wrap:anywhere]">{stText}</span>
                       </li>
                     ))}
                   </ol>
                 ) : (
-                  <p className="text-sm leading-5 text-ink-2">{rt.prompt}</p>
+                  <p className="text-sm leading-5 text-ink-2 [overflow-wrap:anywhere]">{rt.prompt}</p>
                 )}
 
                 <div className="flex flex-wrap items-center justify-between gap-2 border-t border-hairline pt-2.5">
@@ -1144,6 +1234,23 @@ function RoutinesBody({
 
                     {loadingPreview && !previewData ? (
                       <p className="text-xs text-ink-2">Inspecting playbook steps and workspace files…</p>
+                    ) : previewErr ? (
+                      <div
+                        role="alert"
+                        data-preview-error={rt.id}
+                        className="flex flex-wrap items-center justify-between gap-2 rounded-sm border border-hairline bg-status-stopped-bg px-2.5 py-2 text-xs text-status-stopped-fg"
+                      >
+                        <span className="min-w-0 [overflow-wrap:anywhere]">{previewErr}</span>
+                        <Button
+                          type="button"
+                          size="xs"
+                          variant="outline"
+                          className="max-md:min-h-11 bg-surface text-ink"
+                          onClick={() => void loadPreviewForRoutine(rt)}
+                        >
+                          Retry
+                        </Button>
+                      </div>
                     ) : previewData ? (
                       <>
                         <div className="flex flex-col gap-1.5">
@@ -1194,7 +1301,7 @@ function RoutinesBody({
                                   key={imp.path}
                                   className="flex flex-wrap items-center justify-between gap-2 px-2.5 py-1.5"
                                 >
-                                  <span className="mono truncate font-medium text-ink">{imp.path}</span>
+                                  <span className="mono min-w-0 max-w-full truncate font-medium text-ink">{imp.path}</span>
                                   <div className="flex flex-wrap items-center gap-1.5">
                                     <Badge variant="outline" size="sm" className="mono text-xs text-ink-2">
                                       {imp.role.replace(/_/g, " ")}
@@ -1254,6 +1361,24 @@ function RoutinesBody({
                     </div>
                     {loadingRuns ? (
                       <p className="text-xs text-ink-2">Loading run history…</p>
+                    ) : historyErr ? (
+                      <div
+                        role="alert"
+                        data-history-error={rt.id}
+                        className="flex flex-wrap items-center justify-between gap-2 rounded-sm border border-hairline bg-status-stopped-bg px-2.5 py-2 text-xs text-status-stopped-fg"
+                      >
+                        <span className="min-w-0 [overflow-wrap:anywhere]">{historyErr}</span>
+                        <Button
+                          type="button"
+                          size="xs"
+                          variant="outline"
+                          data-action="retry-routine-history"
+                          className="max-md:min-h-11 bg-surface text-ink"
+                          onClick={() => void refreshExpandedHistory(rt.id)}
+                        >
+                          Retry
+                        </Button>
+                      </div>
                     ) : runs.length === 0 ? (
                       <p className="text-xs text-ink-2">
                         No runs recorded yet. Click Run now or wait for the next scheduled tick.
@@ -1367,6 +1492,9 @@ export function RoutinesPanel({
   onRetryPipeline,
   onCancelPipeline,
   onOpenFile,
+  loading,
+  loadError,
+  createError,
 }: {
   routines: Routine[];
   skills: SkillMeta[];
@@ -1408,6 +1536,9 @@ export function RoutinesPanel({
   onRetryPipeline?: (runId: string) => Promise<void>;
   onCancelPipeline?: (runId: string) => Promise<void>;
   onOpenFile?: (path: string) => void;
+  loading?: boolean;
+  loadError?: string;
+  createError?: string;
 }) {
   return (
     <PanelModal
@@ -1445,6 +1576,9 @@ export function RoutinesPanel({
         onRetryPipeline={onRetryPipeline}
         onCancelPipeline={onCancelPipeline}
         onOpenFile={onOpenFile}
+        loading={loading}
+        loadError={loadError}
+        createError={createError}
       />
     </PanelModal>
   );

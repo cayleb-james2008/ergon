@@ -105,6 +105,8 @@ fn ws_metadata_hash_walk(root: &Path, dir: &Path, hash: &mut u64) {
         let name = name_os.to_string_lossy();
         if (name.starts_with('.') && name != ".ergon-scope.json")
             || name.eq_ignore_ascii_case("connector_secrets.json")
+            || name.eq_ignore_ascii_case("secrets.enc.json")
+            || name.eq_ignore_ascii_case("oauth.json")
         {
             continue;
         }
@@ -1678,7 +1680,11 @@ fn collect_files(
     for entry in rd.filter_map(|e| e.ok()) {
         let name_os = entry.file_name();
         let name = name_os.to_string_lossy().into_owned();
-        if name.starts_with('.') || name.eq_ignore_ascii_case("connector_secrets.json") {
+        if name.starts_with('.')
+            || name.eq_ignore_ascii_case("connector_secrets.json")
+            || name.eq_ignore_ascii_case("secrets.enc.json")
+            || name.eq_ignore_ascii_case("oauth.json")
+        {
             continue;
         }
         let path = entry.path();

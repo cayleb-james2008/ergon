@@ -561,7 +561,7 @@ function SettingsBody({
             </div>
           </div>
           <p className="text-xs leading-5 text-ink-2">
-            Set input, output, and cached token rates per model ID for retainer burn and billable ROI metering.
+            Set input, output, and cached token rates per model ID for retainer burn and estimated billable value metering.
           </p>
 
           <form noValidate onSubmit={savePricing} className="flex flex-col gap-2.5">
