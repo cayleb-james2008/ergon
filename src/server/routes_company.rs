@@ -382,7 +382,14 @@ pub(super) fn try_route_company_work(
             };
             match action.as_str() {
                 "dismiss" | "deny" => match records::set_offer_status(&runtime.cfg.data_dir, &id, "dismissed") {
-                    Ok(offer) => respond_json(stream, 200, &json!({"offer": offer})),
+                    Ok(offer) => {
+                        if offer["kind"].as_str() == Some("plugin_setup") {
+                            if let Some(pid) = offer["plugin_id"].as_str().filter(|s| !s.is_empty()) {
+                                let _ = crate::plugins::dismiss_recommendation(&runtime.cfg.data_dir, pid);
+                            }
+                        }
+                        respond_json(stream, 200, &json!({"offer": offer}))
+                    }
                     Err(e) => respond_err(stream, 400, &e),
                 },
                 "accept" | "approve" => {
@@ -512,6 +519,23 @@ pub(super) fn try_route_company_work(
                                 }
                                 Err(e) => return Some(respond_err(stream, 400, &e)),
                             }
+                        }
+                    } else if kind == "plugin_setup" {
+                        let pid = offer["plugin_id"].as_str().unwrap_or("").trim();
+                        if !pid.is_empty() {
+                            if let Some(spec) =
+                                crate::plugins::find_plugin_for_person(&runtime.cfg.data_dir, pid)
+                            {
+                                if spec.local_ready {
+                                    let _ = crate::plugins::toggle_plugin(
+                                        &runtime.cfg.data_dir,
+                                        pid,
+                                        Some(true),
+                                        None,
+                                    );
+                                }
+                            }
+                            made = Some(json!({ "plugin_id": pid, "open_plugins": true }));
                         }
                     } else if kind == "repeat_task" {
                         let template = offer["template"].as_str().unwrap_or("");

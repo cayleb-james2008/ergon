@@ -312,6 +312,8 @@ function WorkspaceApp({
   const [connectorsOpen, setConnectorsOpen] = useState(false);
   const [pluginsOpen, setPluginsOpen] = useState(false);
   const [pluginsCount, setPluginsCount] = useState<number | undefined>(undefined);
+  const [pluginsRecCount, setPluginsRecCount] = useState<number>(0);
+  const [focusPluginId, setFocusPluginId] = useState<string | null>(null);
   const [liveActivityOpen, setLiveActivityOpen] = useState(false);
   const [learnedOpen, setLearnedOpen] = useState(false);
   const [suiteOpen, setSuiteOpen] = useState(false);
@@ -334,13 +336,24 @@ function WorkspaceApp({
   const searchRef = useRef<HTMLInputElement>(null);
   const fileUploadRef = useRef<HTMLInputElement>(null);
 
+  const refreshPluginsCount = useCallback(async () => {
+    const r = await listPlugins();
+    if (r.ok) {
+      setPluginsCount(r.data.summary.enabled_count);
+      setPluginsRecCount(
+        r.data.summary.recommended_count ?? r.data.recommendations?.length ?? 0
+      );
+    }
+  }, []);
+
   const onPaperChanged = useCallback(() => {
     desk.loadThreads();
     desk.loadRecent();
     desk.refreshCounts();
     desk.loadFiles();
+    void refreshPluginsCount();
     setGraphSeed((s) => s + 1);
-  }, [desk]);
+  }, [desk, refreshPluginsCount]);
 
   const paper = usePaper(onPaperChanged, desk.status);
 
@@ -586,11 +599,6 @@ function WorkspaceApp({
       return;
     }
     toast.success(`Downloaded ${res.filename} (secrets automatically removed).`);
-  }, []);
-
-  const refreshPluginsCount = useCallback(async () => {
-    const r = await listPlugins();
-    if (r.ok) setPluginsCount(r.data.summary.enabled_count);
   }, []);
 
   const runAfterPersonChange = useCallback(() => {
@@ -888,6 +896,12 @@ function WorkspaceApp({
           label="Connected apps"
           icon={<Blocks className="size-3.5 shrink-0 text-icon" strokeWidth={1.5} aria-hidden />}
           count={pluginsCount}
+          accentDotCount={pluginsRecCount}
+          accentDotLabel={
+            pluginsRecCount > 0
+              ? `${pluginsRecCount} suggested ${pluginsRecCount === 1 ? "app" : "apps"}`
+              : undefined
+          }
           onClick={() => {
             setMobileOpen(false);
             setPluginsOpen(true);
@@ -1410,6 +1424,10 @@ function WorkspaceApp({
                 onLoadInvoices={desk.loadInvoices}
                 onGenerateInvoice={desk.createGeneratedInvoice}
                 onUpdateInvoiceStatus={desk.setInvoiceStatus}
+                onOpenPluginSetup={(pid) => {
+                  setFocusPluginId(pid);
+                  setPluginsOpen(true);
+                }}
               />
               </Suspense>
             </div>
@@ -1717,8 +1735,13 @@ function WorkspaceApp({
         onOpenChange={setPluginsOpen}
         canManageConnectors={isAdminOrLegacy}
         uiMode={uiMode}
+        focusPluginId={focusPluginId}
+        onFocusHandled={() => setFocusPluginId(null)}
         onOpenConnectors={() => setConnectorsOpen(true)}
-        onChanged={(n) => setPluginsCount(n)}
+        onChanged={(n, recs) => {
+          setPluginsCount(n);
+          if (typeof recs === "number") setPluginsRecCount(recs);
+        }}
       />
       )}
 

@@ -97,6 +97,7 @@ impl InstalledPluginRecord {
 pub struct PluginsStore {
     pub settings: BTreeMap<String, PluginPersonSetting>,
     pub installed: BTreeMap<String, InstalledPluginRecord>,
+    pub dismissed_recommendations: Vec<String>,
 }
 
 impl PluginsStore {
@@ -133,7 +134,21 @@ impl PluginsStore {
                 settings.insert(k.clone(), PluginPersonSetting::from_json(v, default_enabled));
             }
         }
-        Self { settings, installed }
+        let mut seen_dismissed = HashSet::new();
+        let dismissed_recommendations = val["dismissed_recommendations"]
+            .as_array()
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|x| x.as_str().map(|s| s.trim().to_string()))
+                    .filter(|s| !s.is_empty() && seen_dismissed.insert(s.clone()))
+                    .collect()
+            })
+            .unwrap_or_default();
+        Self {
+            settings,
+            installed,
+            dismissed_recommendations,
+        }
     }
 
     fn save_unlocked(&self, person_data_dir: &Path) -> Result<(), String> {
@@ -148,6 +163,7 @@ impl PluginsStore {
         let body = serde_json::to_string_pretty(&json!({
             "settings": settings_obj,
             "installed": installed_obj,
+            "dismissed_recommendations": self.dismissed_recommendations,
         }))
         .map_err(|e| format!("serialize plugins: {e}"))?;
         atomic_write_bytes_with_mode(&plugins_path(person_data_dir), body.as_bytes(), Some(0o600))
@@ -406,6 +422,10 @@ fn resolve_plugin_json(
 }
 
 pub fn list_plugins_json(person_data_dir: &Path) -> Value {
+    list_plugins_with_scan(person_data_dir, false)
+}
+
+fn list_plugins_with_scan(person_data_dir: &Path, rescan_host: bool) -> Value {
     let policy = crate::load_workspace_policy(person_data_dir);
     let connectors_snap = connectors::list_connectors_json(person_data_dir, &policy);
     let mcp_snap = mcp::list_mcp_servers_json(person_data_dir, &policy);
@@ -455,16 +475,73 @@ pub fn list_plugins_json(person_data_dir: &Path) -> Value {
     }
 
     let root = records::infer_root_data_dir(person_data_dir);
+    let dismissed_set: HashSet<String> = store.dismissed_recommendations.iter().cloned().collect();
+    let google_oauth_configured = plugin_cloud::is_provider_configured(&root, "google");
+    let ms_oauth_configured = plugin_cloud::is_provider_configured(&root, "microsoft");
+    let recs: Vec<Value> = crate::plugin_detect::detect_recommendations_for_plugins(
+        person_data_dir,
+        &plugins,
+        &dismissed_set,
+        google_oauth_configured,
+        ms_oauth_configured,
+        policy.block_outbound_fetch,
+        rescan_host,
+    )
+    .into_iter()
+    .map(|r| r.to_json())
+    .collect();
+
     json!({
         "plugins": plugins,
+        "recommendations": recs,
         "summary": {
             "total": catalog.len(),
             "enabled_count": enabled_count,
             "local_active": local_active,
             "cloud_connected": cloud_connected,
+            "recommended_count": recs.len(),
         },
         "registry": plugin_registry::registry_status_json(&root),
     })
+}
+
+pub fn recommendations_json(person_data_dir: &Path, rescan_host: bool) -> Value {
+    let full = list_plugins_with_scan(person_data_dir, rescan_host);
+    let dismissed_count = with_plugins_lock(|| {
+        PluginsStore::load_unlocked(person_data_dir)
+            .dismissed_recommendations
+            .len()
+    });
+    let recs = full["recommendations"].as_array().cloned().unwrap_or_default();
+    json!({
+        "recommendations": recs,
+        "count": recs.len(),
+        "dismissed_count": dismissed_count,
+    })
+}
+
+pub fn dismiss_recommendation(person_data_dir: &Path, plugin_id: &str) -> Result<Value, String> {
+    let key = plugin_id.trim().to_string();
+    if key.is_empty() {
+        return Err("plugin_id is required".to_string());
+    }
+    with_plugins_lock(|| {
+        let mut store = PluginsStore::load_unlocked(person_data_dir);
+        if !store.dismissed_recommendations.iter().any(|x| x == &key) {
+            store.dismissed_recommendations.push(key);
+        }
+        store.save_unlocked(person_data_dir)
+    })?;
+    Ok(recommendations_json(person_data_dir, false))
+}
+
+pub fn reset_dismissed_recommendations(person_data_dir: &Path) -> Result<Value, String> {
+    with_plugins_lock(|| {
+        let mut store = PluginsStore::load_unlocked(person_data_dir);
+        store.dismissed_recommendations.clear();
+        store.save_unlocked(person_data_dir)
+    })?;
+    Ok(recommendations_json(person_data_dir, false))
 }
 
 pub fn toggle_plugin(

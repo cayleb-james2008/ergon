@@ -549,8 +549,19 @@ pub fn analyze_proactive_offers(
 
     let mut generated: Vec<Value> = Vec::new();
     let mut pending_notifs: Vec<(String, String, String)> = Vec::new();
+    let rec_snapshot = crate::plugins::recommendations_json(&cfg.data_dir, false);
+    let high_plugin_recs: Vec<Value> = rec_snapshot["recommendations"]
+        .as_array()
+        .map(|arr| {
+            arr.iter()
+                .filter(|r| r["confidence"].as_str() == Some("high"))
+                .take(2)
+                .cloned()
+                .collect()
+        })
+        .unwrap_or_default();
 
-    // Step 1: Cross-team library tool/skill matching under OFFERS_LOCK.
+    // Step 1: Cross-team library tool/skill + high-confidence app setup matching under OFFERS_LOCK.
     let known_after_lib = {
         let _guard = OFFERS_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         let mut offers = load_offers(&cfg.data_dir);
@@ -594,6 +605,45 @@ pub fn analyze_proactive_offers(
                 "key": key,
                 "item_id": item.id,
                 "author": item.author,
+                "title": title,
+                "detail": detail,
+                "status": "pending",
+            });
+            offers.push(offer.clone());
+            generated.push(offer);
+            pending_notifs.push((id, title, detail));
+            known.insert(key);
+            changed = true;
+        }
+
+        for rec in &high_plugin_recs {
+            let pid = rec["plugin_id"].as_str().unwrap_or("");
+            let name = rec["name"].as_str().unwrap_or(pid);
+            if pid.is_empty() {
+                continue;
+            }
+            let key = format!("plugin_setup:{pid}");
+            if known.contains(&key) {
+                continue;
+            }
+            let reason = rec["reason_summary"]
+                .as_str()
+                .unwrap_or("Recognized from your recent work");
+            let setup_kind = rec["setup_kind"].as_str().unwrap_or("one_click_connect");
+            let setup_label = rec["setup_label"].as_str().unwrap_or("Set up app");
+            let id = format!("o{ts}-{}", next_seq());
+            let title = sanitize_user_text(&format!("Would this help? Connect {name}"));
+            let detail = sanitize_user_text(&format!(
+                "{reason}. Connect {name} so your assistant can work with it directly."
+            ));
+            let offer = json!({
+                "id": id,
+                "ts": ts,
+                "kind": "plugin_setup",
+                "key": key,
+                "plugin_id": pid,
+                "setup_kind": setup_kind,
+                "setup_label": setup_label,
                 "title": title,
                 "detail": detail,
                 "status": "pending",

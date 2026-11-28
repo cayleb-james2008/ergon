@@ -957,6 +957,9 @@ export type Offer = {
   key?: string;
   template?: string;
   author?: string;
+  plugin_id?: string;
+  setup_kind?: string;
+  setup_label?: string;
 };
 export type SuiteItem = { id: string; kind: string; name: string; description: string; fields?: string[]; params?: string[] };
 export type LibraryItem = {
@@ -3524,13 +3527,42 @@ export type PluginOAuthSuite = {
   plugin_ids: string[];
 };
 
+export type PluginRecommendation = {
+  plugin_id: string;
+  name: string;
+  suite: string;
+  suite_label: string;
+  tagline: string;
+  score: number;
+  confidence: "high" | "medium" | string;
+  sources: string[];
+  reasons: string[];
+  reason_summary: string;
+  setup_kind:
+    | "oauth_google"
+    | "oauth_google_setup"
+    | "oauth_microsoft"
+    | "oauth_microsoft_setup"
+    | "one_click_connect"
+    | "enable_local"
+    | "connector"
+    | string;
+  setup_label: string;
+  setup_note?: string | null;
+  oauth_provider?: "google" | "microsoft" | null;
+  has_install_spec?: boolean;
+  local_ready?: boolean;
+};
+
 export type PluginsResponse = {
   plugins: PluginSpecItem[];
+  recommendations?: PluginRecommendation[];
   summary: {
     total: number;
     enabled_count: number;
     local_active: number;
     cloud_connected: number;
+    recommended_count?: number;
   };
   registry?: PluginRegistryStatus;
 };
@@ -3539,20 +3571,58 @@ export async function listPlugins(): Promise<Res<PluginsResponse>> {
   const r = await call<Partial<PluginsResponse>>("/api/plugins");
   if (!r.ok) return r;
   const plugins = Array.isArray(r.data.plugins) ? r.data.plugins : [];
+  const recommendations = Array.isArray(r.data.recommendations) ? r.data.recommendations : [];
   const summary = r.data.summary ?? {
     total: plugins.length,
     enabled_count: plugins.filter((p) => p.enabled).length,
     local_active: plugins.filter((p) => p.status === "active_local" || p.status === "connected_hybrid").length,
     cloud_connected: plugins.filter((p) => p.cloud_connected).length,
+    recommended_count: recommendations.length,
   };
   return {
     ok: true,
     data: {
       plugins,
+      recommendations,
       summary,
       ...(r.data.registry ? { registry: r.data.registry } : {}),
     },
   };
+}
+
+export async function listPluginRecommendations(): Promise<
+  Res<{ recommendations: PluginRecommendation[]; count: number; dismissed_count: number }>
+> {
+  return call<{ recommendations: PluginRecommendation[]; count: number; dismissed_count: number }>(
+    "/api/plugins/recommendations"
+  );
+}
+
+export async function scanPluginRecommendations(): Promise<
+  Res<{ recommendations: PluginRecommendation[]; count: number; dismissed_count: number }>
+> {
+  return call<{ recommendations: PluginRecommendation[]; count: number; dismissed_count: number }>(
+    "/api/plugins/recommendations/scan",
+    { method: "POST", body: {} }
+  );
+}
+
+export async function dismissPluginRecommendation(
+  pluginId: string
+): Promise<Res<{ recommendations: PluginRecommendation[]; count: number; dismissed_count: number }>> {
+  return call<{ recommendations: PluginRecommendation[]; count: number; dismissed_count: number }>(
+    "/api/plugins/recommendations/dismiss",
+    { method: "POST", body: { plugin_id: pluginId } }
+  );
+}
+
+export async function resetDismissedPluginRecommendations(): Promise<
+  Res<{ recommendations: PluginRecommendation[]; count: number; dismissed_count: number }>
+> {
+  return call<{ recommendations: PluginRecommendation[]; count: number; dismissed_count: number }>(
+    "/api/plugins/recommendations/dismiss",
+    { method: "POST", body: { reset: true } }
+  );
 }
 
 export async function getPluginRegistry(): Promise<Res<PluginRegistryStatus>> {

@@ -253,6 +253,7 @@ export function PaperSide({
   onOpenFile,
   onOpenFilesPanel,
   onUploadMany,
+  onOpenPluginSetup,
 }: {
   people: Person[] | null;
   teamError?: string;
@@ -268,6 +269,7 @@ export function PaperSide({
   onOpenFile: (path: string) => void;
   onOpenFilesPanel: () => void;
   onUploadMany: (files: FileList | File[]) => Promise<number>;
+  onOpenPluginSetup?: (pluginId: string) => void;
 }) {
   const [fileQuery, setFileQuery] = useState("");
   const [healingMemory, setHealingMemory] = useState(false);
@@ -408,17 +410,21 @@ export function PaperSide({
         )}
         <div className="flex flex-col gap-3">
           {(offers ?? []).map((o) => {
+            const isPluginSetup = o.kind === "plugin_setup";
             const isProactiveTool =
-              o.kind === "install_library_tool" ||
-              o.kind === "build_tool" ||
-              /^Would this help\?/i.test(String(o.title ?? ""));
+              !isPluginSetup &&
+              (o.kind === "install_library_tool" ||
+                o.kind === "build_tool" ||
+                /^Would this help\?/i.test(String(o.title ?? "")));
             return (
               <div
                 key={o.id}
                 className="flex flex-col gap-2.5 rounded-sm border border-hairline bg-board/60 p-3.5"
               >
-                {isProactiveTool && (
-                  <span className="text-xs font-medium text-ink-2">Would this help?</span>
+                {(isProactiveTool || isPluginSetup) && (
+                  <span className="text-xs font-medium text-ink-2">
+                    {isPluginSetup ? "Suggested app" : "Would this help?"}
+                  </span>
                 )}
                 <p className="text-sm font-medium leading-5 text-ink">{String(o.title ?? "Suggested capability")}</p>
                 <p className="text-sm leading-5 text-ink-2">{String(o.detail ?? "")}</p>
@@ -426,18 +432,23 @@ export function PaperSide({
                   <Button
                     size="sm"
                     className="max-md:min-h-11"
-                    onClick={() =>
+                    onClick={() => {
+                      if (isPluginSetup && o.plugin_id && onOpenPluginSetup) {
+                        onOpenPluginSetup(o.plugin_id);
+                      }
                       onAct(
                         isProactiveTool
                           ? `/api/offers/${encodeURIComponent(o.id)}/approve`
                           : `/api/offers/${encodeURIComponent(o.id)}/accept`,
-                        isProactiveTool
-                          ? "Approved and added to your suite."
-                          : "Added to your suite as a one-tap app."
-                      )
-                    }
+                        isPluginSetup
+                          ? "Opened Connected Apps to finish setup."
+                          : isProactiveTool
+                            ? "Approved and added to your suite."
+                            : "Added to your suite as a one-tap app."
+                      );
+                    }}
                   >
-                    {isProactiveTool ? "Approve" : "Make it one tap"}
+                    {isPluginSetup ? "Set up app" : isProactiveTool ? "Approve" : "Make it one tap"}
                   </Button>
                   <Button
                     size="sm"
@@ -452,7 +463,7 @@ export function PaperSide({
                       )
                     }
                   >
-                    {isProactiveTool ? "Deny" : "No, thanks"}
+                    {isPluginSetup ? "Not now" : isProactiveTool ? "Deny" : "No, thanks"}
                   </Button>
                 </div>
               </div>
@@ -613,6 +624,7 @@ export const PaperFace = memo(function PaperFace({
   onLoadInvoices,
   onGenerateInvoice,
   onUpdateInvoiceStatus,
+  onOpenPluginSetup,
 }: {
   paper: ReturnType<typeof usePaper>;
   status: Status | null | "error";
@@ -680,6 +692,7 @@ export const PaperFace = memo(function PaperFace({
     export_formats: Array<"pdf" | "xlsx" | "json">;
   }) => Promise<InvoiceRecord | null>;
   onUpdateInvoiceStatus?: (id: string, status: InvoiceStatus, engagementId?: string) => Promise<InvoiceRecord | null>;
+  onOpenPluginSetup?: (pluginId: string) => void;
 }) {
   const { data, failed, load, loadAllReceipts, act } = paper;
   const [dragOver, setDragOver] = useState(false);
@@ -1161,6 +1174,7 @@ export const PaperFace = memo(function PaperFace({
       onOpenFile={onOpenFile}
       onOpenFilesPanel={onOpenFilesPanel}
       onUploadMany={onUploadMany}
+      onOpenPluginSetup={onOpenPluginSetup}
     />
   );
 

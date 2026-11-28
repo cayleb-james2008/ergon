@@ -4,6 +4,13 @@ Each release is tagged `vMAJOR.MINOR.PATCH` and published on GitHub Releases wit
 binaries and a `SHA256SUMS` file. The running app shows its version and can update
 itself from the newest release (see README, "Versions and updates").
 
+## 0.46.0 - 2026-11-28
+
+Added **Proactive App Recognition & Auto-Recommended Plugin Setups** so Ergon detects which workplace apps an employee actually uses—safely and locally without touching secrets or credentials—and suggests 1-click plugin setups in `Connected Apps`, `Today`, `/phone`, and the offline browser demo.
+
+- **Privacy-Safe App Recognition Engine (`src/plugin_detect.rs`, `src/plugins.rs`, `src/server/routes_system.rs`, `src/auth.rs`, `tests/plugin_recommendations.rs`):** Scans non-sensitive workspace files and links, recent conversations (`threads.json`), work log (`work.json`), personal notes (`memory.md`), and standard desktop app launchers/CLIs (skipping `.env`, keys, tokens, credentials, and dotfiles, and using context-safe word boundaries to avoid prose false positives) to surface up to 6 plain-English recommendations via `GET /api/plugins`, `GET /api/plugins/recommendations`, `POST /api/plugins/recommendations/scan`, and `POST /api/plugins/recommendations/dismiss` (`0600` persistence in `plugins.json`, RBAC-guarded, `Air-Gapped`-aware).
+- **1-Click Setup UX & Proactive `"Would this help?"` Integration (`src/proactive_offers.rs`, `src/server/routes_company.rs`, `frontend/src/shell/PluginsPanel.tsx`, `frontend/src/shell/RailPanelButton.tsx`, `frontend/src/App.tsx`, `frontend/src/views/Paper.tsx`, `frontend/src/views/Phone.tsx`, `frontend/src/lib/webEngine.ts`):** Added the `Suggested from your work` strip in `Connected Apps` with inline 1-click OAuth, credential-form, and offline-enable actions, a subtle dot badge on the `Connected apps` rail trigger, high-confidence `plugin_setup` offers (`Set up app` / `Not now`) with bidirectional dismissal sync on `Today` and `/phone`, and full browser-engine parity in `ergon-web.html`.
+
 ## 0.45.0 - 2026-11-28
 
 Expanded Ergon's built-in app library into an auto-updating 32-app + Official MCP Registry platform and introduced **Simple vs Advanced UI mode (defaulting to Simple)** so non-technical employees experience Ergon as simply talking to their computer and watching magic happen in real time.

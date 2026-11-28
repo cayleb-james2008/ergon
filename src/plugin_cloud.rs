@@ -507,6 +507,15 @@ fn http_raw_bytes_write(
     read_ureq_result(res, ctx)
 }
 
+/// Lightweight check used by proactive app recommendations to know whether
+/// single-click Google Workspace / Microsoft 365 OAuth sign-in is configured.
+pub fn is_provider_configured(root_data_dir: &Path, provider: &str) -> bool {
+    let Some(norm) = normalize_provider(provider) else {
+        return false;
+    };
+    !resolve_app_config(root_data_dir, norm).client_id.is_empty()
+}
+
 /// Public label shown on Google/Microsoft plugin cards when connected via OAuth2.
 pub fn connected_account_label(person_data_dir: &Path, provider: &str) -> Option<String> {
     let conns = with_cloud_lock(|| load_connections_unlocked(person_data_dir));

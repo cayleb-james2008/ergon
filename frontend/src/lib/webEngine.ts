@@ -8,7 +8,7 @@
 // stream, cooperative run cancellation, Web Crypto SHA-256 receipt export, approval-gated
 // deletion, and optional BYOK OpenAI-compatible LLM (sessionStorage only).
 // ZERO hardcoded fixture replies, ZERO fixture demo pills, ZERO Rune jargon.
-import type { PluginRegistrySource, PluginRegistryStatus, PluginSpecItem } from "@/lib/api";
+import type { PluginRecommendation, PluginRegistrySource, PluginRegistryStatus, PluginSpecItem } from "@/lib/api";
 import { WEB_BASELINE_PLUGINS, WEB_COMMUNITY_DIRECTORY, type BaselinePluginEntry } from "@/lib/pluginsBaseline";
 import { inspectDelimited, parseCsv, parseDelimited } from "@/shell/FileEditor";
 import { CANONICAL_SKILLS, CANONICAL_STARTER_PLAYBOOKS } from "@/lib/skillsCatalog";
@@ -205,6 +205,7 @@ type PersonStore = {
   policyProfile?: WorkspacePolicyProfile;
   policyUpdatedMs?: number;
   isolateActiveEngagement?: boolean;
+  dismissedPluginRecommendations?: string[];
   usageLedger?: UsageLedgerEntry[];
   budgetOverrunApproved?: Record<string, number>;
   timeEntries?: TimeExpenseEntry[];
@@ -8167,9 +8168,211 @@ function listWebOAuthSuites(st: PersonStore) {
   return { suites: [make("google"), make("microsoft")] };
 }
 
+const WEB_PLUGIN_DOMAIN_RULES: Array<{ id: string; label: string; patterns: string[] }> = [
+  { id: "google-gmail", label: "Gmail", patterns: ["mail.google.com", "gmail.com"] },
+  { id: "google-calendar", label: "Google Calendar", patterns: ["calendar.google.com", "meet.google.com"] },
+  { id: "google-drive", label: "Google Drive", patterns: ["drive.google.com"] },
+  { id: "google-docs", label: "Google Docs", patterns: ["docs.google.com/document"] },
+  { id: "google-sheets", label: "Google Sheets", patterns: ["docs.google.com/spreadsheets", "sheets.google.com"] },
+  { id: "google-slides", label: "Google Slides", patterns: ["docs.google.com/presentation", "slides.google.com"] },
+  { id: "outlook-mail", label: "Outlook Mail", patterns: ["outlook.office.com", "outlook.office365.com", "outlook.live.com"] },
+  { id: "onedrive-sharepoint", label: "OneDrive & SharePoint", patterns: ["onedrive.live.com", "sharepoint.com"] },
+  { id: "microsoft-teams", label: "Microsoft Teams", patterns: ["teams.microsoft.com", "teams.live.com"] },
+  { id: "slack", label: "Slack", patterns: ["slack.com", "app.slack.com"] },
+  { id: "notion", label: "Notion", patterns: ["notion.so", "notion.site"] },
+  { id: "github", label: "GitHub", patterns: ["github.com"] },
+  { id: "linear", label: "Linear", patterns: ["linear.app"] },
+  { id: "jira", label: "Jira", patterns: ["atlassian.net/jira", "atlassian.net/browse/"] },
+  { id: "confluence", label: "Confluence", patterns: ["atlassian.net/wiki"] },
+  { id: "asana", label: "Asana", patterns: ["app.asana.com", "asana.com/0/"] },
+  { id: "figma", label: "Figma", patterns: ["figma.com"] },
+  { id: "zoom", label: "Zoom", patterns: ["zoom.us"] },
+  { id: "hubspot", label: "HubSpot", patterns: ["hubspot.com"] },
+  { id: "salesforce", label: "Salesforce", patterns: ["salesforce.com", "lightning.force.com"] },
+  { id: "stripe", label: "Stripe", patterns: ["dashboard.stripe.com", "stripe.com/"] },
+  { id: "quickbooks", label: "QuickBooks Online", patterns: ["quickbooks.intuit.com", "qbo.intuit.com"] },
+  { id: "zendesk", label: "Zendesk", patterns: ["zendesk.com"] },
+  { id: "airtable", label: "Airtable", patterns: ["airtable.com"] },
+  { id: "shopify", label: "Shopify", patterns: ["myshopify.com", "admin.shopify.com"] },
+  { id: "postgres-sqlite", label: "Postgres & SQLite", patterns: ["postgres://", "postgresql://", "supabase.co", "neon.tech"] },
+];
+
+const WEB_PLUGIN_PHRASE_RULES: Array<{ id: string; label: string; phrases: string[] }> = [
+  { id: "google-gmail", label: "Gmail", phrases: ["gmail"] },
+  { id: "google-calendar", label: "Google Calendar", phrases: ["google calendar", "gcal"] },
+  { id: "google-drive", label: "Google Drive", phrases: ["google drive", "gdrive"] },
+  { id: "google-docs", label: "Google Docs", phrases: ["google docs", "google doc"] },
+  { id: "google-sheets", label: "Google Sheets", phrases: ["google sheets", "google sheet", "gsheet"] },
+  { id: "google-slides", label: "Google Slides", phrases: ["google slides", "google slide deck"] },
+  { id: "outlook-mail", label: "Outlook Mail", phrases: ["in outlook", "outlook mail", "outlook email", "outlook inbox", "microsoft outlook"] },
+  { id: "outlook-calendar", label: "Outlook Calendar", phrases: ["outlook calendar", "teams invite"] },
+  { id: "onedrive-sharepoint", label: "OneDrive & SharePoint", phrases: ["onedrive", "sharepoint"] },
+  { id: "microsoft-teams", label: "Microsoft Teams", phrases: ["microsoft teams", "ms teams", "teams channel", "teams meeting"] },
+  { id: "slack", label: "Slack", phrases: ["in slack", "on slack", "via slack", "to slack", "from slack", "slack channel", "slack message", "slack dm", "slack thread", "slack workspace"] },
+  { id: "notion", label: "Notion", phrases: ["in notion", "on notion", "notion page", "notion doc", "notion wiki", "notion database", "notion workspace"] },
+  { id: "github", label: "GitHub", phrases: ["github"] },
+  { id: "linear", label: "Linear", phrases: ["in linear", "on linear", "linear issue", "linear ticket", "linear board", "linear project", "linear sprint"] },
+  { id: "jira", label: "Jira", phrases: ["jira"] },
+  { id: "confluence", label: "Confluence", phrases: ["confluence"] },
+  { id: "asana", label: "Asana", phrases: ["in asana", "on asana", "asana task", "asana project", "asana board"] },
+  { id: "figma", label: "Figma", phrases: ["figma", "figjam"] },
+  { id: "zoom", label: "Zoom", phrases: ["on zoom", "via zoom", "zoom call", "zoom meeting", "zoom link", "zoom recording"] },
+  { id: "hubspot", label: "HubSpot", phrases: ["hubspot"] },
+  { id: "salesforce", label: "Salesforce", phrases: ["salesforce", "sfdc"] },
+  { id: "stripe", label: "Stripe", phrases: ["in stripe", "on stripe", "stripe invoice", "stripe payment", "stripe payout", "stripe customer", "stripe subscription"] },
+  { id: "quickbooks", label: "QuickBooks Online", phrases: ["quickbooks", "quickbooks online"] },
+  { id: "zendesk", label: "Zendesk", phrases: ["zendesk"] },
+  { id: "airtable", label: "Airtable", phrases: ["airtable"] },
+  { id: "shopify", label: "Shopify", phrases: ["shopify"] },
+  { id: "postgres-sqlite", label: "Postgres & SQLite", phrases: ["postgresql", "postgres", "sqlite", "duckdb"] },
+];
+
+function containsAsciiWordWeb(haystackLower: string, phraseLower: string): boolean {
+  let start = 0;
+  while (start <= haystackLower.length - phraseLower.length) {
+    const idx = haystackLower.indexOf(phraseLower, start);
+    if (idx === -1) return false;
+    const before = idx === 0 ? "" : haystackLower[idx - 1];
+    const afterIdx = idx + phraseLower.length;
+    const after = afterIdx >= haystackLower.length ? "" : haystackLower[afterIdx];
+    const isAlnum = (c: string) => /^[a-z0-9]$/.test(c);
+    if ((!before || !isAlnum(before)) && (!after || !isAlnum(after))) return true;
+    start = idx + 1;
+  }
+  return false;
+}
+
+function isSensitiveWebPath(path: string): boolean {
+  const base = (path.split("/").pop() ?? path).toLowerCase();
+  if (base.startsWith(".")) return true;
+  if (["secret", "credential", "token", "password", ".env", "id_rsa", "id_ed25519"].some((t) => base.includes(t))) {
+    return true;
+  }
+  return [".pem", ".key", ".p12", ".pfx"].some((ext) => base.endsWith(ext));
+}
+
+function detectWebPluginRecommendations(
+  st: PersonStore,
+  plugins: PluginSpecItem[],
+  airGapped: boolean
+): PluginRecommendation[] {
+  const accums = new Map<string, { score: number; sources: Set<string>; reasons: string[] }>();
+  const addSig = (id: string, pts: number, source: string, reason: string) => {
+    let cur = accums.get(id);
+    if (!cur) {
+      cur = { score: 0, sources: new Set(), reasons: [] };
+      accums.set(id, cur);
+    }
+    cur.score += pts;
+    cur.sources.add(source);
+    if (!cur.reasons.includes(reason) && cur.reasons.length < 4) cur.reasons.push(reason);
+  };
+  const scanText = (text: string, source: "workspace" | "conversations" | "work_log" | "memory") => {
+    if (!text.trim()) return;
+    const low = text.toLowerCase();
+    const origin =
+      source === "workspace"
+        ? "your workspace files"
+        : source === "conversations"
+          ? "your recent conversations"
+          : source === "work_log"
+            ? "your recent tasks"
+            : "your saved notes";
+    for (const rule of WEB_PLUGIN_DOMAIN_RULES) {
+      const hit = rule.patterns.find((p) => low.includes(p));
+      if (hit) addSig(rule.id, 60, source, `Found ${rule.label} (${hit}) in ${origin}`);
+    }
+    for (const rule of WEB_PLUGIN_PHRASE_RULES) {
+      if (accums.get(rule.id)?.sources.has(source)) continue;
+      if (rule.phrases.some((ph) => containsAsciiWordWeb(low, ph))) {
+        addSig(rule.id, 40, source, `${rule.label} mentioned in ${origin}`);
+      }
+    }
+  };
+
+  for (const f of Object.values(st.files ?? {})) {
+    if (isSensitiveWebPath(f.path)) continue;
+    const ext = (f.path.split(".").pop() ?? "").toLowerCase();
+    if (ext === "fig") addSig("figma", 45, "workspace", `Found Figma file "${f.path}" in workspace`);
+    else if (["sql", "sqlite", "sqlite3", "db", "duckdb"].includes(ext)) {
+      addSig("postgres-sqlite", 45, "workspace", `Found database file "${f.path}" in workspace`);
+    } else if (ext === "gsheet") addSig("google-sheets", 50, "workspace", `Found Google Sheet "${f.path}" in workspace`);
+    else if (ext === "gdoc") addSig("google-docs", 50, "workspace", `Found Google Doc "${f.path}" in workspace`);
+    else if (ext === "gslides") addSig("google-slides", 50, "workspace", `Found Google Slides "${f.path}" in workspace`);
+    else if (ext === "eml" || ext === "mbox") addSig("outlook-mail", 35, "workspace", `Found email archive "${f.path}" in workspace`);
+    if (typeof f.content === "string") scanText(f.content.slice(0, 32768), "workspace");
+  }
+
+  for (const th of (st.threads ?? []).slice(-30)) {
+    if (th.title) scanText(th.title, "conversations");
+    for (const msg of (th.messages ?? []).slice(-24)) {
+      scanText(String(msg.content ?? "").slice(0, 4096), "conversations");
+    }
+  }
+  for (const w of (st.work ?? []).slice(-40)) {
+    scanText(`${w.task ?? ""} ${w.summary ?? ""} ${(w.files ?? []).join(" ")}`, "work_log");
+  }
+  if (st.memory) scanText(st.memory.slice(0, 32768), "memory");
+
+  const dismissed = new Set(st.dismissedPluginRecommendations ?? []);
+  const out: PluginRecommendation[] = [];
+  for (const p of plugins) {
+    if (dismissed.has(p.id)) continue;
+    const acc = accums.get(p.id);
+    if (!acc) continue;
+    if (p.cloud_connected || p.installed || (p.local_ready && p.enabled)) continue;
+    const sources = Array.from(acc.sources);
+    const confidence = acc.score >= 55 || sources.length >= 2 ? "high" : "medium";
+    const setup_kind =
+      p.oauth_provider === "google"
+        ? "oauth_google"
+        : p.oauth_provider === "microsoft"
+          ? "oauth_microsoft"
+          : p.install_spec
+            ? "one_click_connect"
+            : p.local_ready
+              ? "enable_local"
+              : "connector";
+    const setup_label =
+      setup_kind === "oauth_google"
+        ? "Sign in with Google"
+        : setup_kind === "oauth_microsoft"
+          ? "Sign in with Microsoft"
+          : setup_kind === "one_click_connect"
+            ? `Connect ${p.name}`
+            : setup_kind === "enable_local"
+              ? "Turn on"
+              : `Set up ${p.name}`;
+    out.push({
+      plugin_id: p.id,
+      name: p.name,
+      suite: p.suite,
+      suite_label: p.suite_label,
+      tagline: p.tagline,
+      score: acc.score,
+      confidence,
+      sources,
+      reasons: acc.reasons,
+      reason_summary: acc.reasons[0] ?? "Matched your recent work",
+      setup_kind,
+      setup_label,
+      setup_note:
+        airGapped && !p.local_ready
+          ? "Air-Gapped mode is active — cloud sync pauses until your workspace allows outbound apps."
+          : null,
+      oauth_provider: p.oauth_provider ?? null,
+      has_install_spec: Boolean(p.install_spec),
+      local_ready: p.local_ready,
+    });
+  }
+  out.sort((a, b) => b.score - a.score || a.plugin_id.localeCompare(b.plugin_id));
+  return out.slice(0, 6);
+}
+
 function resolveWebPlugins(st: PersonStore): {
   plugins: PluginSpecItem[];
-  summary: { total: number; enabled_count: number; local_active: number; cloud_connected: number };
+  recommendations: PluginRecommendation[];
+  summary: { total: number; enabled_count: number; local_active: number; cloud_connected: number; recommended_count: number };
   registry: PluginRegistryStatus;
 } {
   const bag = (st as unknown as { pluginSettings?: Record<string, { enabled: boolean; preferred_mode: "auto" | "local" | "cloud" }> }).pluginSettings ?? {};
@@ -8234,13 +8437,17 @@ function resolveWebPlugins(st: PersonStore): {
       connect_preset: spec.transport === "smtp_imap_xoauth2" || spec.transport === "oauth2_rest" || spec.transport === "mcp" ? { connector_tab: spec.transport === "mcp" ? "mcp" : "outbound" } : null,
     };
   });
+  const airGapped = st.policyProfile === "air_gapped";
+  const recommendations = detectWebPluginRecommendations(st, plugins, airGapped);
   return {
     plugins,
+    recommendations,
     summary: {
       total: plugins.length,
       enabled_count: plugins.filter((p) => p.enabled).length,
       local_active: plugins.filter((p) => p.status === "active_local" || p.status === "connected_hybrid").length,
       cloud_connected: plugins.filter((p) => p.cloud_connected).length,
+      recommended_count: recommendations.length,
     },
     registry: webRegistryStatus(st),
   };
@@ -8248,6 +8455,41 @@ function resolveWebPlugins(st: PersonStore): {
 
     if (method === "GET" && path === "/api/library") return jsonRes({ items: state.library });
     if (method === "GET" && path === "/api/plugins") return jsonRes(resolveWebPlugins(st));
+    if (method === "GET" && path === "/api/plugins/recommendations") {
+      const res = resolveWebPlugins(st);
+      return jsonRes({
+        recommendations: res.recommendations,
+        count: res.recommendations.length,
+        dismissed_count: (st.dismissedPluginRecommendations ?? []).length,
+      });
+    }
+    if (method === "POST" && path === "/api/plugins/recommendations/scan") {
+      const res = resolveWebPlugins(st);
+      return jsonRes({
+        recommendations: res.recommendations,
+        count: res.recommendations.length,
+        dismissed_count: (st.dismissedPluginRecommendations ?? []).length,
+      });
+    }
+    if (method === "POST" && path === "/api/plugins/recommendations/dismiss") {
+      if (!Array.isArray(st.dismissedPluginRecommendations)) st.dismissedPluginRecommendations = [];
+      if (body.reset === true) {
+        st.dismissedPluginRecommendations = [];
+      } else {
+        const pid = String(body.plugin_id ?? "").trim();
+        if (!pid) return jsonRes({ error: "plugin_id is required" }, 400);
+        if (!st.dismissedPluginRecommendations.includes(pid)) {
+          st.dismissedPluginRecommendations.push(pid);
+        }
+      }
+      await persist();
+      const res = resolveWebPlugins(st);
+      return jsonRes({
+        recommendations: res.recommendations,
+        count: res.recommendations.length,
+        dismissed_count: st.dismissedPluginRecommendations.length,
+      });
+    }
     if (method === "GET" && path === "/api/plugins/registry") return jsonRes(webRegistryStatus(st));
     if ((method === "PUT" || method === "POST") && path === "/api/plugins/registry/config") {
       const reg = ensureWebRegistry(st);

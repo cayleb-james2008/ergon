@@ -14,7 +14,9 @@ import {
   RefreshCw,
   Search,
   ShieldCheck,
+  Sparkles,
   Trash2,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { PanelModal } from "@/shell/PanelModal";
@@ -23,11 +25,13 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import {
   disconnectPluginOAuth,
+  dismissPluginRecommendation,
   installRegistryPlugin,
   listPluginOAuthSuites,
   listPlugins,
   runPluginAction,
   savePluginOAuthApp,
+  scanPluginRecommendations,
   searchPluginRegistry,
   startPluginOAuth,
   syncPluginRegistry,
@@ -35,6 +39,7 @@ import {
   uninstallRegistryPlugin,
   updatePluginRegistryConfig,
   type PluginOAuthSuite,
+  type PluginRecommendation,
   type PluginRegistryStatus,
   type PluginSpecItem,
 } from "@/lib/api";
@@ -82,6 +87,8 @@ export function PluginsPanel({
   onOpenChange,
   canManageConnectors,
   uiMode = "simple",
+  focusPluginId = null,
+  onFocusHandled,
   onOpenConnectors,
   onChanged,
 }: {
@@ -89,11 +96,16 @@ export function PluginsPanel({
   onOpenChange: (open: boolean) => void;
   canManageConnectors: boolean;
   uiMode?: "simple" | "advanced";
+  focusPluginId?: string | null;
+  onFocusHandled?: () => void;
   onOpenConnectors: () => void;
-  onChanged?: (enabledCount: number) => void;
+  onChanged?: (enabledCount: number, recommendedCount?: number) => void;
 }) {
   const simpleMode = uiMode === "simple";
   const [plugins, setPlugins] = useState<PluginSpecItem[]>([]);
+  const [recommendations, setRecommendations] = useState<PluginRecommendation[]>([]);
+  const [scanningRecs, setScanningRecs] = useState(false);
+  const [inlineRecSetupId, setInlineRecSetupId] = useState<string | null>(null);
   const [registry, setRegistry] = useState<PluginRegistryStatus | null>(null);
   const [suites, setSuites] = useState<PluginOAuthSuite[]>([]);
   const [loading, setLoading] = useState(false);
@@ -133,8 +145,10 @@ export function PluginsPanel({
         return;
       }
       setPlugins(r.data.plugins);
+      const recs = Array.isArray(r.data.recommendations) ? r.data.recommendations : [];
+      setRecommendations(recs);
       if (r.data.registry) setRegistry(r.data.registry);
-      onChanged?.(r.data.summary.enabled_count);
+      onChanged?.(r.data.summary.enabled_count, recs.length);
       if (oauthRes.ok) {
         setSuites(oauthRes.data.suites);
       }
@@ -146,6 +160,26 @@ export function PluginsPanel({
   useEffect(() => {
     if (open) void refresh();
   }, [open, refresh]);
+
+  useEffect(() => {
+    if (!open || !focusPluginId || plugins.length === 0) return;
+    const match = plugins.find((p) => p.id === focusPluginId);
+    if (match) {
+      setSuite("all");
+      setQuery("");
+      if (match.install_spec && !match.installed) {
+        setInstallTarget(match);
+        setCredDrafts({});
+      }
+      requestAnimationFrame(() => {
+        const el = document.querySelector<HTMLElement>(
+          `#plugins-panel [data-plugin-id="${match.id}"]`
+        );
+        el?.scrollIntoView({ behavior: "smooth", block: "center" });
+      });
+    }
+    onFocusHandled?.();
+  }, [open, focusPluginId, plugins, onFocusHandled]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -240,12 +274,93 @@ export function PluginsPanel({
         return;
       }
       setInstallTarget(null);
+      setInlineRecSetupId(null);
       setCredDrafts({});
       setRemoteResults((prev) => prev.filter((x) => x.id !== p.id));
       await refresh();
       toast.success(`Connected ${p.name} for your agent.`);
     } finally {
       setBusyId(null);
+    }
+  };
+
+  const handleRescanRecommendations = async () => {
+    setScanningRecs(true);
+    try {
+      const r = await scanPluginRecommendations();
+      if (!r.ok) {
+        toast.error(r.error || "Could not scan for apps.");
+        return;
+      }
+      setRecommendations(r.data.recommendations);
+      const enabledCount = plugins.filter((p) => p.enabled).length;
+      onChanged?.(enabledCount, r.data.recommendations.length);
+      toast.success(
+        r.data.recommendations.length > 0
+          ? `Found ${r.data.recommendations.length} suggested ${r.data.recommendations.length === 1 ? "app" : "apps"} from your work.`
+          : "All detected apps are already set up."
+      );
+    } finally {
+      setScanningRecs(false);
+    }
+  };
+
+  const handleDismissRecommendation = async (rec: PluginRecommendation) => {
+    setBusyId(rec.plugin_id);
+    try {
+      const r = await dismissPluginRecommendation(rec.plugin_id);
+      if (!r.ok) {
+        toast.error(r.error || "Could not dismiss suggestion.");
+        return;
+      }
+      setRecommendations(r.data.recommendations);
+      if (inlineRecSetupId === rec.plugin_id) setInlineRecSetupId(null);
+      const enabledCount = plugins.filter((p) => p.enabled).length;
+      onChanged?.(enabledCount, r.data.recommendations.length);
+      toast(`Dismissed ${rec.name} suggestion.`);
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const handleRecommendationSetup = async (rec: PluginRecommendation) => {
+    const match = plugins.find((p) => p.id === rec.plugin_id);
+    if (rec.setup_kind === "oauth_google" || rec.setup_kind === "oauth_microsoft") {
+      await handleOAuthConnect(rec.setup_kind === "oauth_google" ? "google" : "microsoft");
+      return;
+    }
+    if (rec.setup_kind === "oauth_google_setup" || rec.setup_kind === "oauth_microsoft_setup") {
+      const prov = rec.setup_kind === "oauth_google_setup" ? "google" : "microsoft";
+      const s = suiteByProvider[prov];
+      if (canManageConnectors && s) {
+        openOAuthEditor(s);
+        toast(`Enter your company ${s.label} sign-in ID below.`);
+      } else {
+        toast("Ask your workspace admin to configure single sign-in in Connected Apps.");
+      }
+      return;
+    }
+    if (rec.setup_kind === "one_click_connect" && match) {
+      const fields = match.install_spec?.credential_fields ?? [];
+      if (fields.length > 0) {
+        setInlineRecSetupId(match.id);
+        setCredDrafts({});
+        return;
+      }
+      await handleInstallSubmit(match);
+      return;
+    }
+    if (rec.setup_kind === "enable_local" && match) {
+      await handleToggle(match);
+      return;
+    }
+    if (canManageConnectors && rec.setup_kind === "connector") {
+      onOpenChange(false);
+      onOpenConnectors();
+      return;
+    }
+    if (match) {
+      await handleToggle(match);
     }
   };
 
@@ -831,6 +946,157 @@ export function PluginsPanel({
               </Button>
             </div>
           </div>
+        )}
+
+        {recommendations.length > 0 && (
+          <section
+            id="plugins-recommendations"
+            aria-label="Suggested app setups"
+            className="flex flex-col gap-2.5 rounded-card border border-hairline bg-blue-soft/60 p-3"
+          >
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-1.5">
+                <Sparkles className="size-4 text-accent" strokeWidth={1.5} aria-hidden />
+                <h3 className="text-sm font-semibold text-ink">
+                  Suggested from your work
+                </h3>
+                <Badge variant="secondary" size="sm">
+                  {recommendations.length}
+                </Badge>
+              </div>
+              <Button
+                id="plugins-rescan-btn"
+                type="button"
+                size="xs"
+                variant="ghost"
+                disabled={scanningRecs}
+                onClick={() => void handleRescanRecommendations()}
+                className="max-md:min-h-11 gap-1"
+              >
+                <RefreshCw
+                  className={scanningRecs ? "size-3 motion-safe:animate-spin" : "size-3"}
+                  strokeWidth={1.5}
+                  aria-hidden
+                />
+                <span>{scanningRecs ? "Scanning…" : "Rescan"}</span>
+              </Button>
+            </div>
+            <div className="grid min-w-0 gap-2.5 md:grid-cols-2">
+              {recommendations.map((rec) => {
+                const matchPlugin = plugins.find((p) => p.id === rec.plugin_id);
+                const fields = matchPlugin?.install_spec?.credential_fields ?? [];
+                const inlineOpen = inlineRecSetupId === rec.plugin_id && matchPlugin;
+                const isBusy = busyId === rec.plugin_id;
+                return (
+                  <article
+                    key={rec.plugin_id}
+                    data-recommended-plugin={rec.plugin_id}
+                    className="flex min-w-0 flex-col justify-between gap-2 rounded-card border border-hairline bg-surface p-3"
+                  >
+                    <div className="flex flex-col gap-1">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-semibold text-ink">{rec.name}</p>
+                          <p className="truncate text-xs text-ink-3">{rec.suite_label}</p>
+                        </div>
+                        <Badge
+                          variant={rec.confidence === "high" ? "info" : "secondary"}
+                          size="sm"
+                        >
+                          {rec.confidence === "high" ? "Detected" : "Suggested"}
+                        </Badge>
+                      </div>
+                      <p className="text-xs leading-5 text-ink-2">{rec.reason_summary}</p>
+                      {rec.setup_note && (
+                        <p className="text-xs text-ink-3">{rec.setup_note}</p>
+                      )}
+                      {inlineOpen && (
+                        <div className="mt-1 flex flex-col gap-2 rounded-sm border border-hairline bg-board/50 p-2.5">
+                          {fields.map((f) => (
+                            <div key={f.key} className="flex flex-col gap-1">
+                              <label
+                                htmlFor={`rec-cred-${rec.plugin_id}-${f.key}`}
+                                className="text-xs font-medium text-ink"
+                              >
+                                {f.label}
+                                {f.is_required === false ? " (optional)" : ""}
+                              </label>
+                              <Input
+                                id={`rec-cred-${rec.plugin_id}-${f.key}`}
+                                type={f.is_secret !== false ? "password" : "text"}
+                                value={credDrafts[f.key] ?? ""}
+                                onChange={(e) =>
+                                  setCredDrafts((prev) => ({ ...prev, [f.key]: e.target.value }))
+                                }
+                                placeholder={f.description || `Enter ${f.label}`}
+                                className="h-9 text-xs max-md:min-h-11"
+                              />
+                            </div>
+                          ))}
+                          <div className="flex items-center justify-end gap-1.5 pt-0.5">
+                            <Button
+                              type="button"
+                              size="xs"
+                              variant="ghost"
+                              className="max-md:min-h-11"
+                              onClick={() => {
+                                setInlineRecSetupId(null);
+                                setCredDrafts({});
+                              }}
+                            >
+                              Cancel
+                            </Button>
+                            <Button
+                              type="button"
+                              size="xs"
+                              variant="default"
+                              disabled={isBusy}
+                              className="max-md:min-h-11 gap-1"
+                              onClick={() => void handleInstallSubmit(matchPlugin)}
+                            >
+                              <Check className="size-3" strokeWidth={1.75} aria-hidden />
+                              <span>{isBusy ? "Connecting…" : "Connect securely"}</span>
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex flex-wrap items-center justify-between gap-1.5 border-t border-hairline pt-2">
+                      {!inlineOpen ? (
+                        <Button
+                          type="button"
+                          size="xs"
+                          variant="default"
+                          disabled={isBusy}
+                          data-setup-recommended={rec.plugin_id}
+                          onClick={() => void handleRecommendationSetup(rec)}
+                          className="max-md:min-h-11 gap-1"
+                        >
+                          <Plug className="size-3" strokeWidth={1.5} aria-hidden />
+                          <span>{rec.setup_label}</span>
+                        </Button>
+                      ) : (
+                        <span className="text-xs text-ink-2">Ready to connect</span>
+                      )}
+                      <Button
+                        type="button"
+                        size="xs"
+                        variant="ghost"
+                        disabled={isBusy}
+                        data-dismiss-recommended={rec.plugin_id}
+                        aria-label={`Dismiss ${rec.name} recommendation`}
+                        onClick={() => void handleDismissRecommendation(rec)}
+                        className="max-md:min-h-11 gap-1 text-ink-2 hover:text-ink"
+                      >
+                        <X className="size-3" strokeWidth={1.5} aria-hidden />
+                        <span>Dismiss</span>
+                      </Button>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          </section>
         )}
 
         {suites.length > 0 && (

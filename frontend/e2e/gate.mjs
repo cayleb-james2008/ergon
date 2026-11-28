@@ -218,6 +218,35 @@ await reset();
     `simple=${defaultIsSimple} clean=${simpleTabsClean} apps=${appCardsCount} sync=${hasSyncBtn} adv=${switchedAdv} backSimple=${backSimple}`
   );
 
+  // Proactive app recognition auto-recommends plugins from workspace context, supports 1-click inline setup and dismiss
+  await p.evaluate(async () => {
+    await fetch("/api/files/upload", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        path: "team-tools-note.md",
+        content: "Track issues at https://linear.app/acme/ENG-1 and post summaries in https://app.slack.com/client/T1/C1\n",
+      }),
+    });
+  });
+  await p.locator('[data-thing="plugins-btn"]').click();
+  await p.waitForSelector("#plugins-recommendations [data-recommended-plugin='linear']", { timeout: 4000 });
+  await p.waitForSelector("#plugins-recommendations [data-recommended-plugin='slack']", { timeout: 4000 });
+  await p.locator('#plugins-recommendations [data-setup-recommended="slack"]').click();
+  await p.waitForSelector("#rec-cred-slack-SLACK_TOKEN", { timeout: 4000 });
+  const slackInlineSetupOk = await p.locator("#rec-cred-slack-SLACK_TOKEN").isVisible();
+  await p.locator('#plugins-recommendations [data-dismiss-recommended="linear"]').click();
+  await p.locator('#plugins-recommendations [data-recommended-plugin="linear"]').waitFor({ state: "hidden", timeout: 4000 });
+  const linearDismissedOk =
+    (await p.locator('#plugins-recommendations [data-recommended-plugin="linear"]').count()) === 0;
+  await p.keyboard.press("Escape");
+  await p.locator("#plugins-panel").waitFor({ state: "hidden", timeout: 4000 }).catch(() => {});
+  ok(
+    "proactive app detection recommends Linear & Slack, opens 1-click inline setup, and persists dismiss",
+    slackInlineSetupOk && linearDismissedOk,
+    `slackSetup=${slackInlineSetupOk} linearDismissed=${linearDismissedOk}`
+  );
+
   const starterCount0 = await p.locator('section[aria-label="Start a task"] button[data-starter-card]').count();
   const inspectorInitiallyHidden = !(await p.locator("#workspace-inspector").isVisible());
   await p.locator('[data-thing="inspector-toggle"]').click();

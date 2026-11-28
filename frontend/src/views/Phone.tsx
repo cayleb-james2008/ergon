@@ -454,7 +454,7 @@ export function PhoneFace({
     await Promise.all([loadDecisionsAndOffers(), loadSuiteAndMemory()]);
   };
 
-  const handleOffer = async (id: string, action: "approve" | "deny") => {
+  const handleOffer = async (id: string, action: "approve" | "deny", isPluginSetup = false) => {
     setBusyOfferId(id);
     const r = await resolveOffer(id, action);
     setBusyOfferId(null);
@@ -462,7 +462,13 @@ export function PhoneFace({
       toast.error(r.error || "Could not update offer.");
       return;
     }
-    toast.success(r.data.outcome || (action === "approve" ? "Offer approved." : "Offer dismissed."));
+    const defaultMsg =
+      action === "approve"
+        ? isPluginSetup
+          ? "Saved — open Connected Apps on Desktop to finish sign-in if needed."
+          : "Offer approved."
+        : "Offer dismissed.";
+    toast.success(r.data.outcome || defaultMsg);
     await Promise.all([loadDecisionsAndOffers(), loadSuiteAndMemory()]);
   };
 
@@ -897,6 +903,7 @@ export function PhoneFace({
               ) : (
                 pendingOffers.map((o) => {
                   const busy = busyOfferId === o.id;
+                  const isPluginSetup = o.kind === "plugin_setup";
                   return (
                     <article
                       key={o.id}
@@ -905,7 +912,7 @@ export function PhoneFace({
                     >
                       <div className="flex items-center justify-between gap-2">
                         <Pill variant="secondary" className="bg-tag-plan-bg px-2 py-0.5 text-xs font-medium text-tag-plan-fg">
-                          Would this help?
+                          {isPluginSetup ? "Suggested app" : "Would this help?"}
                         </Pill>
                         {o.author && <span className="mono text-xs text-ink-2">by {o.author}</span>}
                       </div>
@@ -917,9 +924,9 @@ export function PhoneFace({
                           className="min-h-11 flex-1"
                           disabled={busy}
                           data-phone-offer-approve={o.id}
-                          onClick={() => void handleOffer(o.id, "approve")}
+                          onClick={() => void handleOffer(o.id, "approve", isPluginSetup)}
                         >
-                          Approve
+                          {isPluginSetup ? "Set up app" : "Approve"}
                         </Button>
                         <Button
                           type="button"
@@ -927,9 +934,9 @@ export function PhoneFace({
                           className="min-h-11 flex-1"
                           disabled={busy}
                           data-phone-offer-deny={o.id}
-                          onClick={() => void handleOffer(o.id, "deny")}
+                          onClick={() => void handleOffer(o.id, "deny", isPluginSetup)}
                         >
-                          Deny
+                          {isPluginSetup ? "Not now" : "Deny"}
                         </Button>
                       </div>
                     </article>

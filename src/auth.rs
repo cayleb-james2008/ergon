@@ -305,6 +305,10 @@ pub fn route_access(method: &str, path: &str) -> RouteAccess {
         // Authenticated self password change & per-person plugins catalog
         ("POST", "/api/auth/password") => RouteAccess::AuthenticatedSelf,
         ("GET", "/api/plugins") => RouteAccess::AuthenticatedSelf,
+        ("GET", "/api/plugins/recommendations") => RouteAccess::AuthenticatedSelf,
+        ("POST", "/api/plugins/recommendations/dismiss" | "/api/plugins/recommendations/scan") => {
+            RouteAccess::AuthenticatedSelf
+        }
         ("POST", "/api/plugins/toggle" | "/api/plugins/action") => RouteAccess::AuthenticatedSelf,
         ("GET", "/api/plugins/oauth/callback") => RouteAccess::Public,
         ("GET", "/api/plugins/oauth/apps") => RouteAccess::AuthenticatedSelf,

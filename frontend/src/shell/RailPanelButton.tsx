@@ -9,6 +9,8 @@ export function RailPanelButton({
   icon,
   count,
   issueCount,
+  accentDotCount,
+  accentDotLabel,
   answers,
   expanded,
   onClick,
@@ -19,6 +21,8 @@ export function RailPanelButton({
   icon: React.ReactNode;
   count?: number;
   issueCount?: number;
+  accentDotCount?: number;
+  accentDotLabel?: string;
   answers?: string;
   expanded?: boolean;
   onClick: () => void;
@@ -44,6 +48,13 @@ export function RailPanelButton({
             data-memory-rail-badge="issues"
             aria-label={`${issueCount} issues`}
             className="size-2 shrink-0 rounded-full bg-dot-amber"
+          />
+        )}
+        {typeof accentDotCount === "number" && accentDotCount > 0 && (
+          <span
+            data-plugins-rec-badge={accentDotCount}
+            aria-label={accentDotLabel || `${accentDotCount} suggested apps`}
+            className="size-2 shrink-0 rounded-full bg-dot-blue"
           />
         )}
         {typeof count === "number" && (

@@ -27,6 +27,7 @@ pub mod logging;
 pub mod mcp;
 pub mod pipelines;
 pub mod plugin_cloud;
+pub mod plugin_detect;
 pub mod plugin_registry;
 pub mod plugins;
 pub mod proactive_offers;

@@ -829,6 +829,26 @@ pub(super) fn try_route_system(
         ("GET", "/api/plugins") => {
             respond_json(stream, 200, &crate::plugins::list_plugins_json(&runtime.cfg.data_dir))
         }
+        ("GET", "/api/plugins/recommendations") => {
+            respond_json(stream, 200, &crate::plugins::recommendations_json(&runtime.cfg.data_dir, false))
+        }
+        ("POST", "/api/plugins/recommendations/scan") => {
+            crate::plugin_detect::invalidate_host_app_cache();
+            respond_json(stream, 200, &crate::plugins::recommendations_json(&runtime.cfg.data_dir, true))
+        }
+        ("POST", "/api/plugins/recommendations/dismiss") => {
+            let parsed: Value = serde_json::from_slice(&req.body).unwrap_or(Value::Null);
+            let res = if parsed["reset"].as_bool() == Some(true) {
+                crate::plugins::reset_dismissed_recommendations(&runtime.cfg.data_dir)
+            } else {
+                let id = parsed["plugin_id"].as_str().unwrap_or("");
+                crate::plugins::dismiss_recommendation(&runtime.cfg.data_dir, id)
+            };
+            match res {
+                Ok(v) => respond_json(stream, 200, &v),
+                Err(e) => respond_err(stream, 400, &e),
+            }
+        }
         ("POST", "/api/plugins/toggle") => {
             let parsed: Value = serde_json::from_slice(&req.body).unwrap_or(Value::Null);
             let id = parsed["plugin_id"].as_str().unwrap_or("");
