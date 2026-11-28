@@ -54,7 +54,13 @@ fn make_spreadsheet_from_csv_deduplicates_50_skus_with_penny_exact_total() {
         } else {
             format!("${:.2}", ext_cents as f64 / 100.0)
         };
-        let desc = if i == 1 { "=EVIL_FORMULA()" } else { "Hardware Item" };
+        let desc = if i == 1 {
+            "=EVIL_FORMULA()"
+        } else if i == 2 {
+            ""
+        } else {
+            "Hardware Item"
+        };
         let row = format!(
             "SKU-{i:03},{desc},Materials,{qty},${:.2},{ext_cell}\n",
             unit_cents as f64 / 100.0
@@ -93,7 +99,23 @@ fn make_spreadsheet_from_csv_deduplicates_50_skus_with_penny_exact_total() {
     );
     assert!(!out.contains("999999.00"), "prior TOTAL row must be ignored");
     assert!(out.contains("'=EVIL_FORMULA()"), "formula injection must be escaped");
+    assert!(out.contains("SKU-002,N/A,"), "blank description must fill N/A");
     assert_eq!(out.matches("SKU-019,").count(), 1, "duplicate SKU collapsed");
+
+    // Direct execute_tool routing must also accept from_csv cleanly
+    let tool_res = ergon_rs::tools::execute_tool(
+        &cfg,
+        "make_spreadsheet",
+        &json!({
+            "title": "Clean Quote Via Tool",
+            "from_csv": "raw_pricing.csv",
+            "dedup_key": "SKU",
+            "append_total": true
+        }),
+    )
+    .expect("execute_tool make_spreadsheet from_csv succeeded");
+    assert!(tool_res.contains("Clean Quote Via Tool.csv"), "{tool_res}");
+    assert!(cfg.workspace_dir.join("Clean Quote Via Tool.csv").exists());
 
     // Traversal must be rejected
     let err = dispatch_builtin_skill(

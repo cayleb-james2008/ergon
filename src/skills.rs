@@ -735,6 +735,11 @@ pub fn build_spreadsheet_from_csv(
                 saw_numeric_ext = true;
             }
         }
+        for cell in row.iter_mut() {
+            if cell.trim().is_empty() {
+                *cell = "N/A".to_string();
+            }
+        }
         out_rows.push(row);
     }
 

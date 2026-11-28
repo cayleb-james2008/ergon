@@ -1058,17 +1058,8 @@ fn execute_tool_with_scope(
                 )),
             }
         }
-        "make_spreadsheet" => {
-            let title = args["title"]
-                .as_str()
-                .ok_or("make_spreadsheet needs args.title")?;
-            let columns = skills::parse_string_list_value(&args["columns"]);
-            let rows = string_rows(&args["rows"]);
-            if columns.is_empty() && rows.is_empty() {
-                return Err("make_spreadsheet needs args.columns or args.rows".to_string());
-            }
-            skills::make_spreadsheet(cfg, title, columns, rows)
-        }
+        "make_spreadsheet" => skills::dispatch_builtin_skill(cfg, "make_spreadsheet", args)
+            .unwrap_or_else(|| Err("make_spreadsheet dispatch unavailable".to_string())),
         "research" => {
             let policy = crate::load_workspace_policy(&cfg.data_dir);
             if policy.block_outbound_fetch || policy.profile == "air_gapped" {
