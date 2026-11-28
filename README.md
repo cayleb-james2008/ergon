@@ -7,9 +7,9 @@
   </picture>
 </p>
 
-**A single-binary Rust + React workforce backend and agent desk for teams.**
+**A personal AI agent for every employee, self-hosted by your company in one binary.**
 
-Every employee gets an isolated workspace, phone-first Approve/Deny triage, sandboxed workflow & tool execution, and a shared company database backed by offline-verifiable SHA-256 receipts.
+Every employee talks to their agent in plain English while it finishes digital work in real time, recognizes and connects their apps, builds reusable tools around repeat tasks, and asks for a tap on `/phone` before risky actions.
 
 [![CI](https://github.com/cayleb-james2008/ergon/actions/workflows/ci.yml/badge.svg)](https://github.com/cayleb-james2008/ergon/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/cayleb-james2008/ergon?label=release)](https://github.com/cayleb-james2008/ergon/releases)
@@ -42,9 +42,11 @@ Every employee gets an isolated workspace, phone-first Approve/Deny triage, sand
 
 ## Why Ergon
 
-Instead of wiring together a Node/Python server, Postgres, Redis, and background workers just to run internal agents safely, Ergon compiles into **one static binary** (`12.11 MiB` on Linux) serving desktop (`/`), mobile triage (`/phone`), crash-resumable DAG pipelines, encrypted secrets, and authenticated company APIs/MCP out of the box.
+Most AI tools ask non-technical staff to learn prompting, copy data between tabs, or stitch integrations together themselves. Ergon gives every employee an isolated personal agent shaped around the work they already do. In default **Simple mode**, using it feels like talking to your computer: type what you need in plain English, watch each step finish live on screen, and review the resulting spreadsheets, documents, or briefs. Power users can switch to **Advanced mode** in one click for multi-branch DAG workflows, Work Graph views, schedules, and custom connectors.
 
-Routine analysis finishes autonomously — default **Simple mode** lets any employee talk to their computer in plain English and watch live step-by-step narration happen in real time, with 1-click switching to **Advanced mode** for DAG workflows, Work Graph, connectors, and schedules. Every workspace includes an **auto-updating 32-app baseline & Official MCP Registry library** with **proactive app recognition & 1-click setup recommendations** spanning **Google Workspace** (Gmail, Calendar, Drive, Docs, Sheets, Slides), **Microsoft 365 & Outlook** (Outlook Mail/Calendar, OneDrive/SharePoint, Teams, local Excel & Word/PDF), **Business Apps** (Slack, Notion, GitHub, CRM & Billing, Linear, Jira, Asana, Confluence, Figma, Zoom, HubSpot, Salesforce, Stripe, QuickBooks, Zendesk, Airtable, Shopify, Postgres & SQLite), and **On-Device Local** tools—plus live directory search, one-click browser OAuth2 (PKCE `S256`) sign-in, encrypted credential installs, and native Google Workspace / Microsoft Graph REST adapters alongside offline local execution. Consequential actions—deletes, outbound emails or webhooks, retainer budget caps, MCP calls, external plugin writes, and newly synthesized tools (`"Would this help?"`)—park as Approve/Deny cards on `/phone` and `/`.
+Ergon also spots which apps a person uses across their workspace files and conversations and suggests 1-click setups from an auto-updating 32-app library (Google Workspace, Microsoft 365 & Outlook, Slack, Notion, Linear, Jira, GitHub, Figma, HubSpot, Stripe, QuickBooks, plus live Official MCP Registry search) with browser OAuth2 (PKCE `S256`) or encrypted API keys. When an employee repeats a task, their agent writes and sandbox-tests a reusable tool and sends a `"Would this help?"` card to install it for themselves or share with the company library. Deletions, outbound emails and webhooks, retainer budget caps, MCP writes, and new tool installs always pause for an Approve/Deny tap on `/phone` or desktop.
+
+The entire server compiles into one `12.11 MiB` static Rust binary (or a multi-arch `linux/amd64` and `linux/arm64` container) with no Postgres, Redis, or separate worker cluster to maintain. Deploying on an office mini-PC or small VPS through **Coolify** ([`docker-compose.coolify.yml`](docker-compose.coolify.yml)) gives your team automatic HTTPS, mobile `/phone` access, and `/data` volume backups, leaving model usage as the main ongoing cost: default **OpenCode Go** (`$20`/employee plans on `deepseek-v4.1-flash`, either as a shared key or per-employee encrypted personal seat keys), or Anthropic Claude, OpenAI, and local Ollama.
 
 ---
 
@@ -93,23 +95,29 @@ Routine analysis finishes autonomously — default **Simple mode** lets any empl
 
 ## Quick Start
 
-Deploy in 2 minutes on **Coolify** (automatic HTTPS, `/phone` triage, persistent `/data`, `$20`/employee **OpenCode Go** `deepseek-v4.1-flash` seats), download a release archive for **Linux (`x86_64` / `aarch64`)** or **Windows (`x86_64`)** from [Releases](https://github.com/cayleb-james2008/ergon/releases), or build from source (`Rust` + `Node.js 20+`):
+### 1. Self-Host with Coolify (Recommended for Teams)
 
-- **Self-Host with Coolify:** Use [`docker-compose.coolify.yml`](docker-compose.coolify.yml) (`ghcr.io/cayleb-james2008/ergon:latest`) or follow [`docs/COOLIFY.md`](docs/COOLIFY.md). Default provider is **OpenCode Go** (`https://opencode.ai/zen/go/v1`, `deepseek-v4.1-flash`), supporting either a shared company key or per-employee seat keys in **Settings → Model connection**.
+Deploy [`docker-compose.coolify.yml`](docker-compose.coolify.yml) (`ghcr.io/cayleb-james2008/ergon:latest`) in Coolify for automatic HTTPS, `/phone` approvals, persistent `/data` storage, and **OpenCode Go** (`https://opencode.ai/zen/go/v1`, `deepseek-v4.1-flash`) with either a shared company key or per-employee seat keys in **Settings → Model connection**. Full setup walkthrough: [`docs/COOLIFY.md`](docs/COOLIFY.md).
+
+### 2. Single Binary or Build from Source
+
+Download an archive for **Linux (`x86_64` / `aarch64`)** or **Windows (`x86_64`)** from [Releases](https://github.com/cayleb-james2008/ergon/releases), or build from source (`Rust` + `Node.js 20+`):
 
 ```sh
-# 1. Build (Linux / Windows)
+# Build from source (Linux / Windows)
 cd frontend && npm ci && npm run build && cd ..
 cargo build --release --locked
 
-# 2. Run with OpenCode Go (deepseek-v4.1-flash default)
+# Run with OpenCode Go (deepseek-v4.1-flash default)
 ERGON_MODEL_API_KEY=... ./target/release/ergon
 
-# 3. Or Anthropic Claude (native /v1/messages + prompt caching) / OpenAI / local Ollama
+# Or Anthropic Claude (native /v1/messages + prompt caching) / OpenAI / local Ollama
 ANTHROPIC_API_KEY=sk-ant-... ./target/release/ergon
 ```
 
-Also available right in your browser with zero install via the [GitHub Pages Live Demo](https://cayleb-james2008.github.io/ergon/) (runs the standalone offline engine in-browser).
+### 3. Live Browser Demo
+
+Try workflows directly in your browser with zero install on the [GitHub Pages Live Demo](https://cayleb-james2008.github.io/ergon/) (runs the standalone offline engine over IndexedDB).
 
 ---
 
@@ -142,11 +150,11 @@ Ergon separates probabilistic LLM routing from deterministic computation (`i128`
         ▼                          ▼                          ▼
   Agent Loop & Clients       DAG & Routine Engine      Company & Safety Core
   src/lib.rs, src/llm.rs     src/pipelines/,           src/company_db.rs, src/tool_builder.rs,
-  (Anthropic /v1/messages,   src/scheduler.rs          src/self_improve.rs, src/tripwire.rs,
-   OpenAI /v1/chat)          (4-way DAG, crash resume) src/receipts.rs, src/secret_store.rs
+  (OpenCode Go, Claude       src/scheduler.rs          src/self_improve.rs, src/tripwire.rs,
+   /v1/messages, OpenAI)     (4-way DAG, crash resume) src/receipts.rs, src/secret_store.rs
 ```
 
-- **Deep dives:** [`ARCHITECTURE.md`](ARCHITECTURE.md) · [`SECURITY.md`](SECURITY.md) · [`docs/BACKEND_API.md`](docs/BACKEND_API.md) · [`evals/README.md`](evals/README.md) · [`CLAIMS.md`](CLAIMS.md) · [`MVP.md`](MVP.md) · [`CHANGELOG.md`](CHANGELOG.md)
+- **Deep dives:** [`docs/COOLIFY.md`](docs/COOLIFY.md) · [`ARCHITECTURE.md`](ARCHITECTURE.md) · [`SECURITY.md`](SECURITY.md) · [`docs/BACKEND_API.md`](docs/BACKEND_API.md) · [`evals/README.md`](evals/README.md) · [`CLAIMS.md`](CLAIMS.md) · [`MVP.md`](MVP.md) · [`CHANGELOG.md`](CHANGELOG.md)
 
 ## License
 
