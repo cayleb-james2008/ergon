@@ -681,7 +681,7 @@ export function GraphFace({ onOpenFile }: { onOpenFile?: (path: string) => void 
                   onMouseEnter={() => setHoveredId(n.id)}
                   onMouseLeave={() => setHoveredId(null)}
                   className={cn(
-                    "flex flex-wrap items-center justify-between gap-3 px-4 py-3 motion-safe:transition-colors",
+                    "flex flex-wrap items-center justify-between gap-3 px-4 py-3 motion-safe:transition-[background-color]",
                     isSelected ? "bg-blue-soft/60" : inLineage ? "bg-board/40" : "hover:bg-board/30"
                   )}
                 >
