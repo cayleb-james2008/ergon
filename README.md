@@ -24,13 +24,20 @@ Every employee gets an isolated workspace, phone-first Approve/Deny triage, sand
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/hero-dark.png" />
-    <img src="docs/screenshots/hero-light.png" alt="Ergon v0.42.0 Today view showing finished runs, sandbox-tested tool offer waiting for approval, team workspaces, and workspace files" width="76%" />
+    <img src="docs/screenshots/hero-light.png" alt="Ergon v0.42.1 Today view showing finished runs, sandbox-tested tool offer waiting for approval, team workspaces, and workspace files" width="76%" />
   </picture>
   &nbsp;
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/phone-dark.png" />
     <img src="docs/screenshots/phone-light.png" alt="Ergon /phone approval surface" width="21%" />
   </picture>
+</p>
+
+<p align="center">
+  <a href="https://github.com/cayleb-james2008/ergon/releases/download/v0.42.1/ergon-walkthrough.mp4">
+    <img src="docs/screenshots/walkthrough-poster.jpg" alt="Watch the Ergon v0.42.1 product walkthrough (Today, Work Graph, /phone approvals, and local-first Settings)" width="82%" />
+  </a><br />
+  <sub><a href="https://github.com/cayleb-james2008/ergon/releases/download/v0.42.1/ergon-walkthrough.mp4">Watch the 48-second walkthrough (1280×720 H.264 MP4)</a> · <a href="https://github.com/cayleb-james2008/ergon/releases/download/v0.42.1/ergon-walkthrough-chapters.vtt">Chapter markers (VTT)</a></sub>
 </p>
 
 ## Why Ergon
@@ -117,7 +124,7 @@ All claims below are backed by [`evals/run_evals.py`](evals/run_evals.py) agains
 | **5. Multi-Tenant RBAC & Memory Isolation** | `deterministic` | — | Role/workspace isolation enforced; unauthorized writes blocked (`403`) | **PASS** |
 | **6. Replay-Gated Self-Improvement** | `deterministic` | — | `v2` promoted on replay (`0` regressions), `v3` rejected, live auto-rollback -> `v1` | **PASS** |
 
-- **Server footprint (`v0.42.0` Linux release):** `11.62 MiB` single binary (`12,182,384 B`); `v0.40.0` measured `6.08 ms` cold boot, `22.19 MB` peak RSS, and `4,009.2 req/s` (`0/10,036` errors) over 16 concurrent workers.
+- **Server footprint (`v0.42.1` Linux release):** `11.62 MiB` single binary (`12,182,384 B`); `v0.40.0` measured `6.08 ms` cold boot, `22.19 MB` peak RSS, and `4,009.2 req/s` (`0/10,036` errors) over 16 concurrent workers.
 - **Sequential live model timing study (`30` runs across 4 roles):** [`evidence/timing/2026-11-27/report.md`](evidence/timing/2026-11-27/report.md).
 
 ---

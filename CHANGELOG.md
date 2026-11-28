@@ -4,6 +4,15 @@ Each release is tagged `vMAJOR.MINOR.PATCH` and published on GitHub Releases wit
 binaries and a `SHA256SUMS` file. The running app shows its version and can update
 itself from the newest release (see README, "Versions and updates").
 
+## 0.42.1 - 2026-11-27
+
+Shipped brand identity assets, redesigned Work Graph visual exploration, zero-key browser demo hardening, refreshed screenshots and walkthrough video, and Node 24 GitHub Actions upgrades.
+
+- **Ergon Brand Mark & Adaptive Lockup (`frontend/src/shell/ErgonLogo.tsx`, `docs/brand/`, `frontend/index.html`, `README.md`):** Added the geometric Ergon monochrome SVG mark and wordmark across the adaptive SVG favicon, desktop sidebar header/footer, empty Chat welcome tile, `AuthScreen`, `OnboardingCard`, `/phone` header and alert badge, and `README.md`.
+- **Work Graph UI/UX Overhaul (`frontend/src/views/Graph.tsx`):** Replaced wavy contours with a clean `20×20` dot-grid canvas, column headers with counts, hairline column dividers, pill nodes with balanced gutters, multi-hop causal lineage pinning, contextual `#graph-inspector` with clickable neighbor chips and direct file open, and search/kind filtering.
+- **Zero-Key Browser Demo Hardening (`frontend/src/shell/SettingsPanel.tsx`):** Verified zero personal API keys across frontend bundles and workflows, added an explicit zero-key privacy notice, and added zero-key BYOK presets (`OpenRouter Free (CORS)`, `Local Ollama`, `Local DSH Free Forwarder`).
+- **Release & CI Packaging (`.github/workflows/*.yml`, `docs/screenshots/`):** Refreshed desktop `hero` and `/phone` dark/light screenshots, attached the 1280×720 OpenMotion/HyperFrames product walkthrough video (`ergon-walkthrough.mp4`) and VTT chapters to the `v0.42.1` release, and upgraded GitHub Actions workflows to Node 24-native action releases.
+
 ## 0.42.0 - 2026-11-27
 
 Polished public repository hygiene, modularized the Rust server/pipeline/model layers, added native Anthropic Messages API support, wired deterministic BOM generation into `make_spreadsheet`, and shipped a reproducible benchmark and adversarial eval suite (`evals/`).
