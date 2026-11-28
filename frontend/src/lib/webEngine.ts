@@ -8,6 +8,7 @@
 // stream, cooperative run cancellation, Web Crypto SHA-256 receipt export, approval-gated
 // deletion, and optional BYOK OpenAI-compatible LLM (sessionStorage only).
 // ZERO hardcoded fixture replies, ZERO fixture demo pills, ZERO Rune jargon.
+import type { PluginSpecItem } from "@/lib/api";
 import { inspectDelimited, parseCsv, parseDelimited } from "@/shell/FileEditor";
 import { CANONICAL_SKILLS, CANONICAL_STARTER_PLAYBOOKS } from "@/lib/skillsCatalog";
 import { buildDeterministicPlaybookPreview, buildSignedPlaybookPack, buildSignedReceipt, sha256Hex, verifyAndParsePlaybookPack } from "@/lib/receiptExport";
@@ -2036,8 +2037,8 @@ export async function installBrowserEngine(): Promise<void> {
     const p = activePerson();
     const st = activeStore();
     const waitingIds = new Set(st.decisions.filter((d) => d.status === "pending").map((d) => d.thread_id));
-    const fin = st.work.filter((x) => x.finished && !x.answered && !waitingIds.has(x.thread_id)).slice().reverse();
-    const stopped = st.work.filter((x) => !x.finished).slice().reverse();
+    const fin = st.work.filter((x) => x.finished && !x.answered && !waitingIds.has(x.thread_id)).toReversed();
+    const stopped = st.work.filter((x) => !x.finished).toReversed();
     return {
       date: new Date().toISOString().slice(0, 10),
       person: p.name,
@@ -5323,7 +5324,7 @@ function searchWebVault(
   }
 
   if (qLower && (scope === "all" || scope === "receipts")) {
-    for (const wItem of st.work.slice().reverse()) {
+    for (const wItem of st.work.toReversed()) {
       if (opts.engagementId && wItem.engagement_id && wItem.engagement_id !== opts.engagementId) continue;
       if (wItem.task.toLowerCase().includes(qLower) || wItem.summary.toLowerCase().includes(qLower)) {
         results.push({
@@ -6385,7 +6386,7 @@ function runWebVaultAggregate(
       return jsonRes({ ...result, ...(saved_path ? { saved_path } : {}) });
     }
     if (method === "GET" && path === "/api/receipts") {
-      const receipts = st.work.slice().reverse().map((x, idx) => ({
+      const receipts = st.work.toReversed().map((x, idx) => ({
         id: x.id || x.thread_id || `rec-${idx}`,
         thread_id: x.thread_id,
         task: x.task,
@@ -8017,7 +8018,134 @@ function runWebVaultAggregate(
         health: auditWebMemoryHealth(st),
       });
     }
+const WEB_DEFAULT_PLUGINS: Array<
+  Omit<PluginSpecItem, "enabled" | "preferred_mode" | "effective_mode" | "status" | "cloud_connected">
+> = [
+  { id: "google-gmail", suite: "google", suite_label: "Google Workspace", name: "Gmail", tagline: "Inbox intake & approval-gated sends", description: "Polls Gmail via IMAPS XOAUTH2 into intake/ and sends outbound mail only after /phone approval.", mode: "cloud", transport: "smtp_imap_xoauth2", local_ready: false, default_enabled: false, actions: [{ name: "read_inbox", label: "Read inbox", description: "Poll unread Gmail messages.", access: "read", requires_approval: false }, { name: "draft_reply", label: "Draft reply", description: "Compose a local reply draft.", access: "read", requires_approval: false }, { name: "send_mail", label: "Send email", description: "Send email via Gmail SMTP XOAUTH2.", access: "write", requires_approval: true }] },
+  { id: "google-calendar", suite: "google", suite_label: "Google Workspace", name: "Google Calendar", tagline: "Schedules, availability & invites", description: "Reads team calendar events and proposes meeting invites with Approve/Deny gating.", mode: "cloud", transport: "oauth2_rest", local_ready: false, default_enabled: false, actions: [{ name: "list_events", label: "List events", description: "Fetch Google Calendar events.", access: "read", requires_approval: false }, { name: "create_event", label: "Create event", description: "Schedule calendar invite.", access: "write", requires_approval: true }] },
+  { id: "google-drive", suite: "google", suite_label: "Google Workspace", name: "Google Drive", tagline: "Workspace sync & Drive deliverables", description: "Reads local synced workspace files offline or connects Drive API v3 for cloud uploads.", mode: "hybrid", transport: "oauth2_rest", local_ready: true, default_enabled: false, actions: [{ name: "list_files", label: "List files", description: "List workspace or Drive files.", access: "read", requires_approval: false }, { name: "upload_deliverable", label: "Upload file", description: "Upload deliverable to Drive.", access: "write", requires_approval: true }] },
+  { id: "google-docs", suite: "google", suite_label: "Google Workspace", name: "Google Docs", tagline: "Local drafting + cloud Docs sync", description: "Drafts Markdown/Word briefs on-device immediately; optionally syncs to Google Docs with approval.", mode: "hybrid", transport: "oauth2_rest", local_ready: true, default_enabled: false, actions: [{ name: "draft_doc", label: "Draft document", description: "Draft Markdown report locally.", access: "read", requires_approval: false }, { name: "publish_doc", label: "Publish to Docs", description: "Sync to Google Docs.", access: "write", requires_approval: true }] },
+  { id: "google-sheets", suite: "google", suite_label: "Google Workspace", name: "Google Sheets", tagline: "Exact i128 rollups + cloud Sheets sync", description: "Runs penny-exact CSV/table rollups locally and pushes approved ranges to Google Sheets.", mode: "hybrid", transport: "oauth2_rest", local_ready: true, default_enabled: false, actions: [{ name: "reconcile_sheet", label: "Build / reconcile sheet", description: "Deterministic rollup in workspace.", access: "read", requires_approval: false }, { name: "update_range", label: "Push range update", description: "Push to Google Sheets.", access: "write", requires_approval: true }] },
+  { id: "google-slides", suite: "google", suite_label: "Google Workspace", name: "Google Slides", tagline: "Deck outlines locally + cloud publish", description: "Builds deck outlines locally and pushes approved slide updates via Google Slides API.", mode: "hybrid", transport: "oauth2_rest", local_ready: true, default_enabled: false, actions: [{ name: "draft_outline", label: "Draft deck outline", description: "Draft slide outline locally.", access: "read", requires_approval: false }, { name: "update_deck", label: "Publish slides", description: "Push to Google Slides.", access: "write", requires_approval: true }] },
+  { id: "outlook-mail", suite: "microsoft", suite_label: "Microsoft 365 & Outlook", name: "Outlook Mail", tagline: "Exchange / M365 IMAPS + SMTP XOAUTH2", description: "Connects company Outlook/Exchange shared or personal inboxes with XOAUTH2 intake and gated sends.", mode: "cloud", transport: "smtp_imap_xoauth2", local_ready: false, default_enabled: false, actions: [{ name: "read_inbox", label: "Read inbox", description: "Poll Outlook IMAPS XOAUTH2.", access: "read", requires_approval: false }, { name: "draft_reply", label: "Draft reply", description: "Compose reply draft locally.", access: "read", requires_approval: false }, { name: "send_mail", label: "Send email", description: "Send via smtp.office365.com XOAUTH2.", access: "write", requires_approval: true }] },
+  { id: "outlook-calendar", suite: "microsoft", suite_label: "Microsoft 365 & Outlook", name: "Outlook Calendar", tagline: "Microsoft Graph events & scheduling", description: "Reads Outlook Calendar availability and stages meeting invites for /phone approval.", mode: "cloud", transport: "oauth2_rest", local_ready: false, default_enabled: false, actions: [{ name: "list_events", label: "List events", description: "Read Microsoft Graph events.", access: "read", requires_approval: false }, { name: "schedule_meeting", label: "Schedule meeting", description: "Schedule Outlook invite.", access: "write", requires_approval: true }] },
+  { id: "onedrive-sharepoint", suite: "microsoft", suite_label: "Microsoft 365 & Outlook", name: "OneDrive & SharePoint", tagline: "Local files offline + M365 Graph sync", description: "Lists synced workspace files offline and uploads deliverables to SharePoint/OneDrive with approval.", mode: "hybrid", transport: "oauth2_rest", local_ready: true, default_enabled: false, actions: [{ name: "list_files", label: "List files", description: "List workspace or SharePoint files.", access: "read", requires_approval: false }, { name: "publish_file", label: "Publish to SharePoint", description: "Upload to OneDrive/SharePoint.", access: "write", requires_approval: true }] },
+  { id: "microsoft-teams", suite: "microsoft", suite_label: "Microsoft 365 & Outlook", name: "Microsoft Teams", tagline: "Channel updates & status posts", description: "Reads Teams channel context and routes outbound status updates through Approve/Deny.", mode: "cloud", transport: "oauth2_rest", local_ready: false, default_enabled: false, actions: [{ name: "read_channel", label: "Read channel", description: "Read Teams channel.", access: "read", requires_approval: false }, { name: "post_update", label: "Post Teams update", description: "Post to Teams channel.", access: "write", requires_approval: true }] },
+  { id: "office-excel", suite: "microsoft", suite_label: "Microsoft 365 & Outlook", name: "Excel & Spreadsheets", tagline: "On-device .xlsx/.csv + live SUM formulas", description: "Enabled out of the box locally: reads .xlsx/.csv, deduplicates BOMs with i128 math, and exports workbooks.", mode: "hybrid", transport: "local_builtin", local_ready: true, default_enabled: true, actions: [{ name: "inspect_workbook", label: "Inspect sheets", description: "Inspect workspace spreadsheets.", access: "read", requires_approval: false }, { name: "build_sheet", label: "Build spreadsheet", description: "Create exact-decimal sheet locally.", access: "read", requires_approval: false }, { name: "export_xlsx", label: "Export .xlsx workbook", description: "Export Excel workbook locally.", access: "read", requires_approval: false }] },
+  { id: "office-word-pdf", suite: "microsoft", suite_label: "Microsoft 365 & Outlook", name: "Word & PDF Suite", tagline: "On-device .docx/.pdf reading & export", description: "Enabled out of the box locally: reads Word, PowerPoint, and PDFs and exports signed reports on-device.", mode: "hybrid", transport: "local_builtin", local_ready: true, default_enabled: true, actions: [{ name: "read_document", label: "Read Word / PDF", description: "Read workspace documents.", access: "read", requires_approval: false }, { name: "draft_document", label: "Draft document", description: "Generate Markdown draft locally.", access: "read", requires_approval: false }, { name: "export_docx_pdf", label: "Export PDF / Word", description: "Export PDF/Word locally.", access: "read", requires_approval: false }] },
+  { id: "slack", suite: "business", suite_label: "Business Apps", name: "Slack", tagline: "Team notifications & channel posts", description: "Reads channels or posts approved run summaries into Slack via OAuth2 REST or webhook.", mode: "cloud", transport: "oauth2_rest", local_ready: false, default_enabled: false, actions: [{ name: "read_channel", label: "Read channel", description: "Read Slack channel.", access: "read", requires_approval: false }, { name: "post_message", label: "Post Slack message", description: "Post to Slack.", access: "write", requires_approval: true }] },
+  { id: "notion", suite: "business", suite_label: "Business Apps", name: "Notion", tagline: "Wiki search & gated database updates", description: "Queries Notion pages and routes database writes through human approval.", mode: "cloud", transport: "oauth2_rest", local_ready: false, default_enabled: false, actions: [{ name: "search_pages", label: "Search Notion", description: "Search Notion pages.", access: "read", requires_approval: false }, { name: "update_page", label: "Update page", description: "Update Notion page.", access: "write", requires_approval: true }] },
+  { id: "github", suite: "business", suite_label: "Business Apps", name: "GitHub", tagline: "Issues, PR summaries & gated comments", description: "Reads issues/PRs and parks any external comment or status post on /phone.", mode: "hybrid", transport: "oauth2_rest", local_ready: true, default_enabled: false, actions: [{ name: "list_issues", label: "List issues & PRs", description: "List GitHub issues/PRs.", access: "read", requires_approval: false }, { name: "comment_issue", label: "Comment on PR / Issue", description: "Post GitHub comment.", access: "write", requires_approval: true }] },
+  { id: "crm-billing", suite: "business", suite_label: "Business Apps", name: "CRM & Billing", tagline: "Client vaults, retainers & QuickBooks/Stripe sync", description: "Enabled out of the box locally for client vaults & retainers; supports approval-gated cloud invoice sync.", mode: "hybrid", transport: "local_builtin", local_ready: true, default_enabled: true, actions: [{ name: "list_clients", label: "List clients", description: "Read local CRM clients.", access: "read", requires_approval: false }, { name: "sync_invoice", label: "Sync external billing", description: "Sync invoice to billing API.", access: "write", requires_approval: true }] },
+  { id: "local-workspace-files", suite: "local", suite_label: "On-Device Local", name: "On-Device Files & Watched Folders", tagline: "100% offline sandboxed workspace & folder triggers", description: "Active by default on-device: reads, searches, and watches local folders inside Tripwire path confinement.", mode: "local", transport: "local_builtin", local_ready: true, default_enabled: true, actions: [{ name: "list_workspace", label: "List workspace files", description: "List files on-device.", access: "read", requires_approval: false }, { name: "search_files", label: "Search workspace", description: "Search files locally.", access: "read", requires_approval: false }, { name: "watch_folder_status", label: "Watched folders", description: "Check watched folders.", access: "read", requires_approval: false }] },
+  { id: "local-mcp-bridge", suite: "local", suite_label: "On-Device Local", name: "Local Apps & MCP Bridge", tagline: "Connect any desktop CLI, database, or MCP server", description: "Active by default on-device: discovers stdio and HTTP MCP tools with optional /phone approval gates.", mode: "local", transport: "mcp", local_ready: true, default_enabled: true, actions: [{ name: "list_mcp_tools", label: "List MCP tools", description: "List local MCP tools.", access: "read", requires_approval: false }] },
+];
+
+function resolveWebPlugins(st: PersonStore): { plugins: PluginSpecItem[]; summary: { total: number; enabled_count: number; local_active: number; cloud_connected: number } } {
+  const bag = (st as unknown as { pluginSettings?: Record<string, { enabled: boolean; preferred_mode: "auto" | "local" | "cloud" }> }).pluginSettings ?? {};
+  const cs = ensureWebConnectors(st);
+  const plugins: PluginSpecItem[] = WEB_DEFAULT_PLUGINS.map((spec) => {
+    const s = bag[spec.id] ?? { enabled: spec.default_enabled, preferred_mode: "auto" as const };
+    const matchedConn = cs.outbound.find((c) => c.enabled && (c.url.includes(spec.id.split("-")[0]) || (spec.id === "outlook-mail" && c.smtp_config?.host?.includes("office365")) || (spec.id === "google-gmail" && c.smtp_config?.host?.includes("gmail"))));
+    const cloudConnected = Boolean(matchedConn) || (spec.id === "local-mcp-bridge" && (st.mcpServers ?? []).some((m) => Boolean(m.enabled)));
+    const effective_mode: PluginSpecItem["effective_mode"] =
+      s.preferred_mode === "local" && spec.local_ready
+        ? "local"
+        : s.preferred_mode === "cloud"
+          ? "cloud"
+          : cloudConnected && spec.local_ready
+            ? "hybrid"
+            : cloudConnected
+              ? "cloud"
+              : spec.local_ready
+                ? "local"
+                : "cloud";
+    const status: PluginSpecItem["status"] =
+      !s.enabled && !cloudConnected
+        ? "available"
+        : cloudConnected && spec.local_ready
+          ? "connected_hybrid"
+          : cloudConnected
+            ? "connected_cloud"
+            : spec.local_ready
+              ? "active_local"
+              : "enabled_needs_auth";
+    return {
+      ...spec,
+      enabled: s.enabled || cloudConnected,
+      preferred_mode: s.preferred_mode,
+      effective_mode,
+      status,
+      cloud_connected: cloudConnected,
+      connected_via: matchedConn ? matchedConn.name : null,
+      linked_connector_id: matchedConn?.id ?? null,
+      connect_preset: spec.transport === "smtp_imap_xoauth2" || spec.transport === "oauth2_rest" || spec.transport === "mcp" ? { connector_tab: spec.transport === "mcp" ? "mcp" : "outbound" } : null,
+    };
+  });
+  return {
+    plugins,
+    summary: {
+      total: plugins.length,
+      enabled_count: plugins.filter((p) => p.enabled).length,
+      local_active: plugins.filter((p) => p.status === "active_local" || p.status === "connected_hybrid").length,
+      cloud_connected: plugins.filter((p) => p.cloud_connected).length,
+    },
+  };
+}
+
     if (method === "GET" && path === "/api/library") return jsonRes({ items: state.library });
+    if (method === "GET" && path === "/api/plugins") return jsonRes(resolveWebPlugins(st));
+    if (method === "POST" && path === "/api/plugins/toggle") {
+      const id = String(body.plugin_id ?? "").trim();
+      const spec = WEB_DEFAULT_PLUGINS.find((p) => p.id === id);
+      if (!spec) return jsonRes({ error: `unknown plugin id: ${id}` }, 400);
+      const holder = st as unknown as { pluginSettings?: Record<string, { enabled: boolean; preferred_mode: "auto" | "local" | "cloud" }> };
+      if (!holder.pluginSettings) holder.pluginSettings = {};
+      const cur = holder.pluginSettings[id] ?? { enabled: spec.default_enabled, preferred_mode: "auto" };
+      holder.pluginSettings[id] = {
+        enabled: typeof body.enabled === "boolean" ? body.enabled : cur.enabled,
+        preferred_mode: body.preferred_mode === "local" || body.preferred_mode === "cloud" || body.preferred_mode === "auto" ? body.preferred_mode : cur.preferred_mode,
+      };
+      await persist();
+      const plugin = resolveWebPlugins(st).plugins.find((p) => p.id === id);
+      return jsonRes({ plugin });
+    }
+    if (method === "POST" && path === "/api/plugins/action") {
+      const id = String(body.plugin_id ?? "").trim();
+      const action = String(body.action ?? "").trim();
+      const resolved = resolveWebPlugins(st).plugins.find((p) => p.id === id);
+      if (!resolved) return jsonRes({ error: `unknown plugin: ${id}` }, 400);
+      const act = resolved.actions.find((a) => a.name === action);
+      if (!act) return jsonRes({ error: `plugin '${resolved.name}' has no action '${action}'` }, 400);
+      const mode: "local" | "cloud" = resolved.local_ready && body.mode !== "cloud" ? "local" : "cloud";
+      if (act.requires_approval) {
+        const decId = `d-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+        st.decisions.push({
+          id: decId,
+          ts: Date.now(),
+          kind: "plugin_action",
+          summary: `${resolved.name} · ${act.label} (${mode})`,
+          status: "pending",
+          thread_id: String(body.thread_id ?? ""),
+          outcome: null,
+        } as unknown as PersonStore["decisions"][number]);
+        await persist();
+        return jsonRes({
+          ok: true,
+          mode,
+          output: `parked for your person's approval (decision ${decId}): ${resolved.name} · ${act.label}.`,
+        });
+      }
+      if (mode === "cloud" && !resolved.cloud_connected) {
+        return jsonRes({ error: `${resolved.name} needs OAuth2 / Connector credentials first.` }, 400);
+      }
+      const files = Object.keys(st.files);
+      const output =
+        id === "crm-billing"
+          ? `CRM local clients (${(state.clients ?? []).length}): ${(state.clients ?? []).map((c) => c.name).join(", ") || "none yet"}`
+          : `${resolved.name} (${mode}) · ${act.label}: ${files.length} workspace file(s) ready (${files.slice(0, 5).join(", ") || "empty"}).`;
+      return jsonRes({ ok: true, mode, output });
+    }
     if (method === "GET" && path === "/api/suite") {
       const installed = st.suite.map((id) => state.library.find((x) => x.id === id)).filter(Boolean);
       return jsonRes({ person_id: p.id, installed });
@@ -8656,6 +8784,10 @@ function runWebVaultAggregate(
         dec.outcome = approve
           ? `Approved and ran ${target}.`
           : `Blocked ${target}; nothing ran.`;
+      } else if (dec.kind === "plugin_action") {
+        dec.outcome = approve
+          ? `Approved ${dec.summary || "plugin action"}.`
+          : `Cancelled ${dec.summary || "plugin action"}.`;
       } else if (dec.kind === "budget_gate") {
         if (approve) {
           if (!st.budgetOverrunApproved) st.budgetOverrunApproved = {};

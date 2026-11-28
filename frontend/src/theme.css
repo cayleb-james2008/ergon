@@ -3,8 +3,14 @@
    strictly for focus rings, active selection, links, and live indicators.
    Only Settings toggles Light/Dark via <html data-theme>. */
 
-:root, :root[data-theme="light"] {
-  color-scheme: light;
+:root {
+  color-scheme: light dark;
+  &:has(> head > meta[name="color-scheme"][content="dark"]) {
+    color-scheme: dark;
+  }
+  &:has(> head > meta[name="color-scheme"][content="light"]) {
+    color-scheme: light;
+  }
   --canvas: #fbf9f6;
   --board: #f3f1ec;
   --surface: #fcfbf9;
@@ -49,6 +55,39 @@
   --graph-item: var(--dot-amber);
 
   --radius-entry: 12px;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --canvas: #fbf9f6;
+  --board: #f3f1ec;
+  --surface: #fcfbf9;
+  --hairline: #e5dfd5;
+  --track: #ece7de;
+  --raised: #fcfbf9;
+  --input: #787267;
+  --ink: #141311;
+  --ink-2: #524d46;
+  --ink-3: #635d55;
+  --icon: #6b655c;
+
+  --blue: #b54f2e;
+  --blue-fg: #fdfdfe;
+  --blue-hover: #9a4022;
+  --blue-soft: rgba(181, 79, 46, 0.10);
+  --info-foreground: #9f4325;
+
+  --ink-button: #111318;
+  --ink-button-fg: #fdfdfe;
+  --elev-primary: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 1px 2px rgba(17, 19, 24, 0.18);
+  --elev-card: 0 1px 2px rgba(20, 19, 17, 0.04), 0 4px 14px rgba(20, 19, 17, 0.03);
+
+  --entry-head: #f0ece4;
+  --entry-head-ink: #141311;
+  --status-stopped-bg: rgba(189, 65, 29, 0.12);
+  --status-stopped-fg: #9c3114;
+  --graph-edge: #9b958b;
+  --graph-file: #6b655c;
 }
 
 :root[data-theme="dark"] {
@@ -113,6 +152,37 @@
     --status-stopped-fg: #f0959c;
     --graph-edge: #656159;
     --graph-file: #aca79e;
+  }
+}
+
+@supports (color: light-dark(white, black)) {
+  :root {
+    --canvas: light-dark(#fbf9f6, #141413);
+    --board: light-dark(#f3f1ec, #1b1b19);
+    --surface: light-dark(#fcfbf9, #222220);
+    --hairline: light-dark(#e5dfd5, #32302c);
+    --track: light-dark(#ece7de, #2a2926);
+    --raised: light-dark(#fcfbf9, #302f2b);
+    --input: light-dark(#787267, #736f67);
+    --ink: light-dark(#141311, #f1efe9);
+    --ink-2: light-dark(#524d46, #aca79e);
+    --ink-3: light-dark(#635d55, #98938a);
+    --icon: light-dark(#6b655c, #928d84);
+
+    --blue: light-dark(#b54f2e, #e07a57);
+    --blue-fg: light-dark(#fdfdfe, #141413);
+    --blue-hover: light-dark(#9a4022, #ea9173);
+    --blue-soft: light-dark(rgba(181, 79, 46, 0.10), rgba(224, 122, 87, 0.15));
+    --info-foreground: light-dark(#9f4325, #e68c6d);
+
+    --ink-button: light-dark(#111318, #f3f4f6);
+    --ink-button-fg: light-dark(#fdfdfe, #111318);
+
+    --entry-head: light-dark(#f0ece4, #272623);
+    --status-stopped-bg: light-dark(rgba(189, 65, 29, 0.12), rgba(224, 96, 58, 0.18));
+    --status-stopped-fg: light-dark(#9c3114, #f0959c);
+    --graph-edge: light-dark(#9b958b, #656159);
+    --graph-file: light-dark(#6b655c, #aca79e);
   }
 }
 

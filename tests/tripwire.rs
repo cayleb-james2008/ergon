@@ -289,6 +289,8 @@ fn breadcrumbs_headers_and_decoy_cookie_on_the_desk() {
     let csp = page.header("Content-Security-Policy").join(" ");
     assert!(csp.contains("frame-ancestors 'none'") && csp.contains("'sha256-"), "{csp}");
     assert!(!csp.contains("'unsafe-eval'"));
+    let csp_ro = page.header("Content-Security-Policy-Report-Only").join(" ");
+    assert!(csp_ro.contains("require-trusted-types-for 'script'"), "{csp_ro}");
     assert_eq!(page.header("X-Frame-Options"), vec!["DENY".to_string()]);
     let cookies = page.header("Set-Cookie");
     assert!(cookies[0].starts_with("ergon_session="), "session cookie stays first: {cookies:?}");

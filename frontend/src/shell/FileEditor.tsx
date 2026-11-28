@@ -650,7 +650,7 @@ export function FileEditor({
     setSortDir(nextDir);
     const mult = nextDir === "asc" ? 1 : -1;
     setTableRows((prev) =>
-      [...prev].sort((a, b) => {
+      prev.toSorted((a, b) => {
         const av = (a[colIdx] ?? "").trim();
         const bv = (b[colIdx] ?? "").trim();
         const an = parseSortableNumber(av);

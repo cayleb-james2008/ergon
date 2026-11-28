@@ -73,21 +73,40 @@ fn env_opted_in(name: &str) -> bool {
 }
 
 fn resolve_live_llm_env() -> Option<(String, String, String)> {
+    let mut used_anthropic_env = false;
     let api_key = non_empty_env("ERGON_LIVE_LLM_API_KEY").or_else(|| {
         if env_opted_in("ERGON_RUN_LIVE_LLM_TEST") {
-            non_empty_env("ERGON_MODEL_API_KEY")
+            non_empty_env("ERGON_MODEL_API_KEY").or_else(|| {
+                let k = non_empty_env("ANTHROPIC_API_KEY")?;
+                used_anthropic_env = true;
+                Some(k)
+            })
         } else {
             None
         }
     })?;
-    let base_url = non_empty_env("ERGON_LIVE_LLM_BASE_URL")
-        .or_else(|| non_empty_env("ERGON_MODEL_BASE_URL"))
-        .unwrap_or_else(|| DEFAULT_MODEL_BASE_URL.to_string())
+    let is_anthropic = used_anthropic_env || api_key.starts_with("sk-ant-");
+    let explicit_base = non_empty_env("ERGON_LIVE_LLM_BASE_URL")
+        .or_else(|| non_empty_env("ERGON_MODEL_BASE_URL"));
+    let base_url = explicit_base
+        .unwrap_or_else(|| {
+            if is_anthropic {
+                ergon_rs::DEFAULT_ANTHROPIC_BASE_URL.to_string()
+            } else {
+                DEFAULT_MODEL_BASE_URL.to_string()
+            }
+        })
         .trim_end_matches('/')
         .to_string();
     let model_id = non_empty_env("ERGON_LIVE_LLM_MODEL")
         .or_else(|| non_empty_env("ERGON_MODEL_ID"))
-        .unwrap_or_else(|| DEFAULT_MODEL_ID.to_string());
+        .unwrap_or_else(|| {
+            if is_anthropic || ergon_rs::llm::is_anthropic_url(&base_url) {
+                "claude-haiku-5-5".to_string()
+            } else {
+                DEFAULT_MODEL_ID.to_string()
+            }
+        });
     Some((api_key, base_url, model_id))
 }
 

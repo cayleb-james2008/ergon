@@ -346,6 +346,9 @@ export type LiveRunStep = {
   step_id?: string;
   tool: string;
   label?: string;
+  plugin_id?: string;
+  plugin_name?: string;
+  mode?: "local" | "cloud";
   status: "running" | "done" | "error" | "waiting";
   elapsed_ms?: number;
   started_ms?: number;
@@ -3401,4 +3404,102 @@ export async function fetchEvolutionScores(): Promise<Res<EvolutionScoreSummary>
       recent_log: Array.isArray(r.data.recent_log) ? r.data.recent_log : [],
     },
   };
+}
+
+export type PluginActionSpec = {
+  name: string;
+  label: string;
+  description: string;
+  access: "read" | "write";
+  requires_approval: boolean;
+};
+
+export type PluginConnectPreset = {
+  api_base_url?: string | null;
+  oauth_token_url?: string | null;
+  oauth_scopes?: string | null;
+  smtp_host?: string | null;
+  smtp_port?: number | null;
+  smtp_security?: string | null;
+  imap_host?: string | null;
+  imap_port?: number | null;
+  imap_security?: string | null;
+  connector_tab?: string;
+};
+
+export type PluginSpecItem = {
+  id: string;
+  suite: "google" | "microsoft" | "business" | "local";
+  suite_label: string;
+  name: string;
+  tagline: string;
+  description: string;
+  mode: "local" | "cloud" | "hybrid";
+  transport: string;
+  local_ready: boolean;
+  default_enabled: boolean;
+  enabled: boolean;
+  preferred_mode: "auto" | "local" | "cloud";
+  effective_mode: "local" | "cloud" | "hybrid";
+  status: "active_local" | "connected_cloud" | "connected_hybrid" | "enabled_needs_auth" | "available";
+  cloud_connected: boolean;
+  connected_via?: string | null;
+  linked_connector_id?: string | null;
+  linked_trigger_id?: string | null;
+  actions: PluginActionSpec[];
+  connect_preset?: PluginConnectPreset | null;
+};
+
+export type PluginsResponse = {
+  plugins: PluginSpecItem[];
+  summary: {
+    total: number;
+    enabled_count: number;
+    local_active: number;
+    cloud_connected: number;
+  };
+};
+
+export async function listPlugins(): Promise<Res<PluginsResponse>> {
+  const r = await call<Partial<PluginsResponse>>("/api/plugins");
+  if (!r.ok) return r;
+  const plugins = Array.isArray(r.data.plugins) ? r.data.plugins : [];
+  const summary = r.data.summary ?? {
+    total: plugins.length,
+    enabled_count: plugins.filter((p) => p.enabled).length,
+    local_active: plugins.filter((p) => p.status === "active_local" || p.status === "connected_hybrid").length,
+    cloud_connected: plugins.filter((p) => p.cloud_connected).length,
+  };
+  return { ok: true, data: { plugins, summary } };
+}
+
+export async function togglePlugin(
+  pluginId: string,
+  opts: { enabled?: boolean; preferred_mode?: "auto" | "local" | "cloud" }
+): Promise<Res<{ plugin: PluginSpecItem }>> {
+  return call<{ plugin: PluginSpecItem }>("/api/plugins/toggle", {
+    method: "POST",
+    body: {
+      plugin_id: pluginId,
+      ...(typeof opts.enabled === "boolean" ? { enabled: opts.enabled } : {}),
+      ...(opts.preferred_mode ? { preferred_mode: opts.preferred_mode } : {}),
+    },
+  });
+}
+
+export async function runPluginAction(
+  pluginId: string,
+  action: string,
+  opts?: { mode?: "auto" | "local" | "cloud"; args?: Record<string, unknown>; thread_id?: string }
+): Promise<Res<{ ok: boolean; mode: "local" | "cloud"; output: string }>> {
+  return call<{ ok: boolean; mode: "local" | "cloud"; output: string }>("/api/plugins/action", {
+    method: "POST",
+    body: {
+      plugin_id: pluginId,
+      action,
+      ...(opts?.mode ? { mode: opts.mode } : {}),
+      ...(opts?.args ? { args: opts.args } : {}),
+      ...(opts?.thread_id ? { thread_id: opts.thread_id } : {}),
+    },
+  });
 }

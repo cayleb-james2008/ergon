@@ -20,7 +20,13 @@
 
 /* ---------- 1. Light theme (default) ---------- */
 :root {
-  color-scheme: light;
+  color-scheme: light dark;
+  &:has(> head > meta[name="color-scheme"][content="dark"]) {
+    color-scheme: dark;
+  }
+  &:has(> head > meta[name="color-scheme"][content="light"]) {
+    color-scheme: light;
+  }
 
   /* Surfaces: three-tone stack */
   --canvas: #f0f2f5;     /* page behind the shell. MEASURED */
@@ -230,6 +236,67 @@
   }
 }
 
+@supports (color: light-dark(white, black)) {
+  :root {
+    --canvas: light-dark(#f0f2f5, #0e1013);
+    --board: light-dark(#f5f7fa, #12151a);
+    --surface: light-dark(#ffffff, #181b21);
+    --hairline: light-dark(#e3e7eb, #272b34);
+    --track: light-dark(#eceff5, #20242c);
+    --raised: light-dark(#ffffff, #2d323c);
+    --ink: light-dark(#13151a, #eceef2);
+    --ink-2: light-dark(#616a81, #9aa1b2);
+    --ink-3: light-dark(#646977, #80889a);
+    --icon: light-dark(#828a9d, #7c8496);
+    --disabled: light-dark(#c3c7ce, #4a505c);
+    --blue: light-dark(#1562fc, #4a86ff);
+    --blue-fg: light-dark(#ffffff, #0b1220);
+    --blue-hover: light-dark(#0f52d6, #6b9bff);
+    --blue-soft: light-dark(#e8f0ff, rgba(74, 134, 255, 0.14));
+    --ink-button: light-dark(#111318, #f3f4f6);
+    --ink-button-fg: light-dark(#fdfdfe, #111318);
+    --dot-red: light-dark(#bd411d, #e0603a);
+    --unread: light-dark(#d13143, #ef5a6b);
+    --tag-plan-bg: light-dark(#faf4df, rgba(232, 115, 76, 0.16));
+    --tag-plan-fg: light-dark(#bd411d, #f08c63);
+    --tag-ops-bg: light-dark(#dcf3f5, rgba(74, 134, 255, 0.16));
+    --tag-ops-fg: light-dark(#1a56d6, #86adff);
+    --tag-design-bg: light-dark(#f5e6f8, rgba(224, 92, 160, 0.16));
+    --tag-design-fg: light-dark(#bb2b74, #f08cc0);
+    --tag-research-bg: light-dark(#f1e9fb, rgba(150, 100, 240, 0.16));
+    --tag-research-fg: light-dark(#6e1ed8, #b99cf7);
+    --tag-mint-bg: light-dark(#dcf3ee, rgba(40, 190, 165, 0.16));
+    --tag-mint-fg: light-dark(#087565, #55d3bb);
+    --tag-dev-bg: light-dark(#efddde, rgba(200, 80, 140, 0.16));
+    --tag-dev-fg: light-dark(#84255e, #e68fbd);
+    --tag-neutral-bg: light-dark(#eceff5, rgba(255, 255, 255, 0.08));
+    --tag-neutral-fg: light-dark(#333642, #c3c8d4);
+    --tag-sky-bg: light-dark(#e3eefe, rgba(74, 134, 255, 0.16));
+    --tag-sky-fg: light-dark(#1a56d6, #86adff);
+    --pill-active-bg: light-dark(#dcf7e9, rgba(49, 184, 138, 0.16));
+    --pill-active-fg: light-dark(#087d58, #56d8a9);
+    --pill-pro-bg: light-dark(#f8e2ef, rgba(224, 92, 160, 0.16));
+    --pill-pro-fg: light-dark(#903632, #f0959c);
+    --pill-inactive-bg: light-dark(#ecedef, rgba(255, 255, 255, 0.08));
+    --pill-inactive-fg: light-dark(#454751, #b4b9c6);
+    --pill-warn-bg: light-dark(#fdf0d3, rgba(245, 165, 36, 0.16));
+    --pill-warn-fg: light-dark(#8a5a00, #f5bd5a);
+    --av-rose-bg: light-dark(#f7dada, rgba(232, 110, 110, 0.2));
+    --av-rose-fg: light-dark(#903632, #f2a3a0);
+    --av-violet-bg: light-dark(#e4e2fb, rgba(130, 110, 240, 0.22));
+    --av-violet-fg: light-dark(#5520b8, #b9aef8);
+    --av-sky-bg: light-dark(#cfedf8, rgba(74, 170, 230, 0.2));
+    --av-sky-fg: light-dark(#1a56d6, #8cc9f0);
+    --av-grey-bg: light-dark(#e2e7ed, rgba(255, 255, 255, 0.1));
+    --av-grey-fg: light-dark(#454751, #c3c8d4);
+    --destructive-foreground: light-dark(#b4232f, #f2848f);
+    --info-foreground: light-dark(#1a56d6, #86adff);
+    --success-foreground: light-dark(#067a54, #56d8a9);
+    --warning-foreground: light-dark(#8a5a00, #f5bd5a);
+    --input: light-dark(#7f8696, #636b7c);
+  }
+}
+
 /* ---------- 3. Non-colour tokens (same in both themes) ---------- */
 /* Literal values live in @theme (not inline), so Tailwind both emits the variable on :root
    and builds the utility from it: rounded-shell, font-sans, and so on. */
@@ -365,12 +432,12 @@
   --shadow-primary: var(--elev-primary);
 
   /* type */
-  --text-xs: 12px;          --text-xs--line-height: 16px;   /* tags, descriptions, kbd, labels. OWNER minimum (SPEC 11px raised) */
-  --text-sm: 14px;          --text-sm--line-height: 20px;   /* body, rows, tabs. OWNER minimum for body */
-  --text-ui: 15px;          --text-ui--line-height: 22px;   /* row labels, card titles. ESTIMATED (14-16) */
-  --text-base: 16px;        --text-base--line-height: 24px; /* ESTIMATED */
-  --text-title: 20px;       --text-title--line-height: 28px; /* page / dialog titles. ESTIMATED */
-  --text-stat: 28px;        --text-stat--line-height: 34px;  /* stat numbers. DERIVED (kit shows 36-52px only on marketing) */
+  --text-xs: 0.75rem;       --text-xs--line-height: 1.3333;   /* tags, descriptions, kbd, labels. OWNER minimum (SPEC 11px raised) */
+  --text-sm: 0.875rem;      --text-sm--line-height: 1.4286;   /* body, rows, tabs. OWNER minimum for body */
+  --text-ui: 0.9375rem;     --text-ui--line-height: 1.4667;   /* row labels, card titles. ESTIMATED (14-16) */
+  --text-base: 1rem;        --text-base--line-height: 1.5;    /* ESTIMATED */
+  --text-title: 1.25rem;    --text-title--line-height: 1.4;   /* page / dialog titles. ESTIMATED */
+  --text-stat: 1.75rem;     --text-stat--line-height: 1.2143; /* stat numbers. DERIVED (kit shows 36-52px only on marketing) */
 }
 
 /* ---------- 5. Base ---------- */
@@ -385,8 +452,9 @@
     background: var(--canvas);
     color: var(--ink);
     font-family: var(--font-sans);
-    font-size: 14px;       /* OWNER: body never below 14px */
-    line-height: 20px;
+    font-size: 0.875rem;   /* OWNER: body never below 14px */
+    line-height: 1.4286;
+    font-size-adjust: from-font;
     font-weight: 400;      /* app UI uses only 400 and 500. MEASURED */
     -webkit-font-smoothing: antialiased;
   }

@@ -26,6 +26,7 @@ pub use llm::{
 pub mod logging;
 pub mod mcp;
 pub mod pipelines;
+pub mod plugins;
 pub mod proactive_offers;
 pub mod quality_bar;
 pub mod receipts;
@@ -1469,6 +1470,12 @@ fn system_prompt_for(
             ));
         }
     }
+    let plugins_summary = plugins::prompt_summary(&cfg.data_dir);
+    if !plugins_summary.is_empty() {
+        suite_block.push_str("\n         DEFAULT APP PLUGINS (Google Workspace, Microsoft 365/Outlook, Business Apps & On-Device Local):\n");
+        suite_block.push_str(&plugins_summary);
+        suite_block.push('\n');
+    }
     format!(
         "You are Ergon, a personal AI agent for one employee. Your job is to FINISH their digital work autonomously, end to end — not to prepare drafts for approval, not to ask for confirmation. You act through tools and you keep going until the work is done.\n\n\
          PROTOCOL: Reply with exactly ONE JSON object per message, nothing else.\n\
@@ -1505,6 +1512,8 @@ fn system_prompt_for(
          - read_company_memory {{\"query\": \"optional\"}} — read authorized company-wide shared memory entries (separate from this person's private memory.md).\n\
          - write_company_memory {{\"category\": \"fact|procedure|preference|policy\", \"scope\": \"company|role:<role>|client:<client_id>\", \"content\": \"...\"}} — add a shared entry to company memory (admin, pm, ae, office roles only; never include secrets or host paths).\n\
          - query_company_db {{\"table\": \"people|roles|clients|work|receipts|tools|outcomes|memory|summary\", \"query\": \"optional\", \"limit\": 50}} — query company-wide structured database tables scoped to your role.\n\
+         - list_plugins {{\"suite\": \"google|microsoft|business|local\"}} — inspect the default workplace app plugin library (Google Workspace, Microsoft 365/Outlook, Business Apps, On-Device Local) and see whether each plugin is ready locally or connected to cloud.\n\
+         - run_plugin_action {{\"plugin_id\": \"office-excel\", \"action\": \"inspect_workbook\", \"mode\": \"auto|local|cloud\", \"args\": {{...}}}} — run a capability on any enabled app plugin; consequential external writes automatically park for human approval.\n\
          - test_tool {{\"params\": [\"p1\"], \"source\": \"<script>\", \"tests\": [{{\"name\": \"...\", \"setup_files\": {{}}, \"args\": [\"...\"], \"expect_ok\": true, \"expect_output_contains\": \"...\", \"expect_files\": {{}}}}]}} — compile-check and execute real sandboxed test cases for a tool before staging it.\n\
          - build_tool {{\"name\": \"...\", \"description\": \"...\", \"params\": [\"p1\"], \"source\": \"<script>\", \"tests\": [...]}} — verify and test a new reusable tool in the isolated sandbox, then stage it as an approval card so your person can approve installing it into their suite and sharing with the company library.\n\
          - delegate {{\"subagent\": \"researcher\", \"task\": \"...\"}} — hand a focused sub-task to a specialist subagent from the suite; it works with the same tools and returns its result to you.\n\
@@ -2406,6 +2415,7 @@ fn run_loop(
             return Err("run cancelled by user".to_string());
         }
         let step_t0 = std::time::Instant::now();
+        let activity = crate::plugins::describe_tool_activity(&tool, &args);
         if let Some(lctx) = live {
             lctx.events.publish(
                 "step_start",
@@ -2416,6 +2426,9 @@ fn run_loop(
                     "step_index": local_steps,
                     "tool": tool,
                     "label": label,
+                    "plugin_id": activity.map(|a| a.0),
+                    "plugin_name": activity.map(|a| a.1),
+                    "mode": activity.map(|a| a.2),
                     "ts_ms": records::now_millis(),
                 }),
             );
@@ -2488,6 +2501,7 @@ fn run_loop(
                     | "flag_decision"
                     | "request_checkpoint"
                     | "invoke_connector"
+                    | "run_plugin_action"
                     | "build_tool"
             ) || tool.starts_with("mcp.")
             {
@@ -2597,7 +2611,9 @@ fn run_loop(
                     tool.as_str(),
                     "delete_file" | "flag_decision" | "request_checkpoint" | "build_tool"
                 )
-                    || ((tool == "invoke_connector" || tool.starts_with("mcp."))
+                    || ((tool == "invoke_connector"
+                        || tool == "run_plugin_action"
+                        || tool.starts_with("mcp."))
                         && result_text.starts_with("parked for your person's approval")))
             {
                 lctx.events.publish(
@@ -2623,6 +2639,9 @@ fn run_loop(
                     "tool": tool,
                     "ok": ok,
                     "elapsed_ms": step_elapsed_ms,
+                    "plugin_id": activity.map(|a| a.0),
+                    "plugin_name": activity.map(|a| a.1),
+                    "mode": activity.map(|a| a.2),
                     "summary": truncate(&result_text, 240),
                     "files_written": newly_written,
                     "usage": step_usage_json,

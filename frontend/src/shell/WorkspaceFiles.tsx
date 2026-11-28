@@ -138,7 +138,7 @@ function CsvTableView({ content }: { content: string }) {
     if (sortCol !== null) {
       const col = sortCol;
       const mult = sortDir === "asc" ? 1 : -1;
-      out = [...out].sort((a, b) => {
+      out = out.toSorted((a, b) => {
         const av = (a[col] ?? "").trim();
         const bv = (b[col] ?? "").trim();
         const an = parseSortableNumber(av);
@@ -1907,7 +1907,7 @@ export function WorkspaceFilesBody({
     if (q.length >= 2 && vaultHits.length > 0) {
       const rankMap = new Map<string, number>();
       vaultHits.forEach((fh, idx) => rankMap.set(fh.path, idx));
-      return [...base].sort((a, b) => {
+      return base.toSorted((a, b) => {
         const ra = rankMap.get(a.path);
         const rb = rankMap.get(b.path);
         if (ra !== undefined && rb !== undefined) return ra - rb;

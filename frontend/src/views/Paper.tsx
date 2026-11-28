@@ -760,14 +760,13 @@ export const PaperFace = memo(function PaperFace({
   };
   const pending = data
     ? data.decisions
-        .slice()
-        .reverse()
+        .toReversed()
         .filter((d) => d.status === "pending")
         .map((d, i) => ({ d, i }))
         .sort((a, b) => urgency(b.d) - urgency(a.d) || a.i - b.i)
         .map((x) => x.d)
     : [];
-  const settled = data ? data.decisions.slice().reverse().filter((d) => d.status !== "pending") : [];
+  const settled = data ? data.decisions.toReversed().filter((d) => d.status !== "pending") : [];
   const threadOf = useCallback(
     (x: BriefJob) => x.thread_id ?? data?.threads.find((t) => t.title === x.task)?.id,
     [data?.threads]
@@ -1152,7 +1151,7 @@ export const PaperFace = memo(function PaperFace({
       teamError={teamError}
       active={activePerson}
       onSwitch={onSwitchPerson}
-      offers={data ? data.offers.slice().reverse().filter((o) => o.status === "pending") : null}
+      offers={data ? data.offers.toReversed().filter((o) => o.status === "pending") : null}
       learned={data ? (Array.isArray(data.brief.learned_recently) ? data.brief.learned_recently : []) : null}
       memoryHealth={memoryHealth}
       onHealMemory={onHealMemory}

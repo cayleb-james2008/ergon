@@ -53,6 +53,7 @@ const SettingsPanel = lazy(() => import("@/shell/SettingsPanel").then((mod) => (
 const SkillsPanel = lazy(() => import("@/shell/SkillsPanel").then((mod) => ({ default: mod.SkillsPanel })));
 const RoutinesPanel = lazy(() => import("@/shell/RoutinesPanel").then((mod) => ({ default: mod.RoutinesPanel })));
 const ConnectorsPanel = lazy(() => import("@/shell/ConnectorsPanel").then((mod) => ({ default: mod.ConnectorsPanel })));
+const PluginsPanel = lazy(() => import("@/shell/PluginsPanel").then((mod) => ({ default: mod.PluginsPanel })));
 const HelpPanel = lazy(() => import("@/shell/HelpPanel").then((mod) => ({ default: mod.HelpPanel })));
 const OnboardingModal = lazy(() => import("@/shell/OnboardingCard").then((mod) => ({ default: mod.OnboardingModal })));
 const CommandPalette = lazy(() => import("@/shell/CommandPalette").then((mod) => ({ default: mod.CommandPalette })));
@@ -65,6 +66,7 @@ import {
   hasClientsApi,
   hasV050Api,
   isWebStandalone,
+  listPlugins,
   logoutSession,
   saveHelpConfig,
   type AuthMePayload,
@@ -80,25 +82,62 @@ import { instant, sheet } from "@/motion";
 type Face = "chat" | "paper" | "graph";
 const THREADS_PAGE_SIZE = 12;
 
+function readStoredTheme(): Theme {
+  try {
+    const saved = localStorage.getItem("ergon-theme");
+    if (saved === "light" || saved === "dark") return saved;
+  } catch { /* ignore */ }
+  return "system";
+}
+
+function getSystemDark(): boolean {
+  return typeof window !== "undefined" && Boolean(window.matchMedia?.("(prefers-color-scheme: dark)").matches);
+}
+
+function applyDocumentTheme(theme: Theme, osDark: boolean): void {
+  const resolved = theme === "system" ? (osDark ? "dark" : "light") : theme;
+  document.documentElement.dataset.theme = resolved;
+  const meta = document.querySelector<HTMLMetaElement>('meta[name="color-scheme"]');
+  if (meta) {
+    meta.content = theme === "system" ? "light dark" : theme;
+  }
+}
+
 function useTheme(): [Theme, (t: Theme) => void] {
-  const [theme, setTheme] = useState<Theme>(() => {
-    try {
-      const saved = localStorage.getItem("ergon-theme");
-      if (saved === "light" || saved === "dark") return saved;
-    } catch { /* ignore */ }
-    return typeof window !== "undefined" && window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light";
-  });
+  const [theme, setTheme] = useState<Theme>(readStoredTheme);
+  const [osDark, setOsDark] = useState<boolean>(getSystemDark);
 
   useEffect(() => {
-    document.documentElement.dataset.theme = theme;
-  }, [theme]);
+    applyDocumentTheme(theme, osDark);
+  }, [theme, osDark]);
+
+  useEffect(() => {
+    const mq = window.matchMedia?.("(prefers-color-scheme: dark)");
+    const onMediaChange = (e: MediaQueryListEvent) => setOsDark(e.matches);
+    mq?.addEventListener?.("change", onMediaChange);
+
+    const onStorage = (e: StorageEvent) => {
+      if (e.key !== null && e.key !== "ergon-theme") return;
+      setTheme(readStoredTheme());
+    };
+    window.addEventListener("storage", onStorage);
+
+    return () => {
+      mq?.removeEventListener?.("change", onMediaChange);
+      window.removeEventListener("storage", onStorage);
+    };
+  }, []);
 
   const set = useCallback((t: Theme) => {
     setTheme(t);
-    document.documentElement.dataset.theme = t;
     try {
-      localStorage.setItem("ergon-theme", t);
+      if (t === "system") {
+        localStorage.removeItem("ergon-theme");
+      } else {
+        localStorage.setItem("ergon-theme", t);
+      }
     } catch { /* ignore */ }
+    applyDocumentTheme(t, getSystemDark());
   }, []);
 
   return [theme, set];
@@ -227,6 +266,9 @@ function WorkspaceApp({
   const [skillsOpen, setSkillsOpen] = useState(false);
   const [routinesOpen, setRoutinesOpen] = useState(false);
   const [connectorsOpen, setConnectorsOpen] = useState(false);
+  const [pluginsOpen, setPluginsOpen] = useState(false);
+  const [pluginsCount, setPluginsCount] = useState<number | undefined>(undefined);
+  const [liveActivityOpen, setLiveActivityOpen] = useState(false);
   const [learnedOpen, setLearnedOpen] = useState(false);
   const [suiteOpen, setSuiteOpen] = useState(false);
   const [addPersonOpen, setAddPersonOpen] = useState(false);
@@ -494,6 +536,11 @@ function WorkspaceApp({
     toast.success(`Downloaded ${res.filename} (secrets automatically removed).`);
   }, []);
 
+  const refreshPluginsCount = useCallback(async () => {
+    const r = await listPlugins();
+    if (r.ok) setPluginsCount(r.data.summary.enabled_count);
+  }, []);
+
   const runAfterPersonChange = useCallback(() => {
     paper.load();
     desk.loadFiles();
@@ -501,8 +548,13 @@ function WorkspaceApp({
     desk.loadClients();
     desk.loadMetering();
     void loadHelpConfig();
+    void refreshPluginsCount();
     setGraphSeed((s) => s + 1);
-  }, [desk, loadHelpConfig, paper]);
+  }, [desk, loadHelpConfig, paper, refreshPluginsCount]);
+
+  useEffect(() => {
+    void refreshPluginsCount();
+  }, [refreshPluginsCount]);
 
   const dateLabel = paper.data?.brief.date || new Date().toLocaleDateString("en-US", {
     weekday: "short",
@@ -753,6 +805,16 @@ function WorkspaceApp({
           />
         )}
         <RailPanelButton
+          id="plugins-btn"
+          label="Plugins"
+          icon={<Blocks className="size-3.5 shrink-0 text-icon" strokeWidth={1.5} aria-hidden />}
+          count={pluginsCount}
+          onClick={() => {
+            setMobileOpen(false);
+            setPluginsOpen(true);
+          }}
+        />
+        <RailPanelButton
           id="memory-btn"
           label="What my agent has learned"
           icon={<BookOpen className="size-3.5 shrink-0 text-icon" strokeWidth={1.5} aria-hidden />}
@@ -1000,28 +1062,94 @@ function WorkspaceApp({
               {desk.files.length}
             </span>
           </Button>
-          <button
-            id="ready-chip"
-            type="button"
-            onClick={() => {
-              if (readinessState !== "Ready") setSettingsOpen(true);
-            }}
-            aria-label={`Agent status: ${readinessState}`}
-            className="focus-ring hidden items-center gap-1.5 rounded-chip border border-hairline bg-board/50 px-2.5 py-1 text-xs text-ink-2 hover:bg-board lg:inline-flex"
-          >
-            <span
-              aria-hidden
-              className={cn(
-                "size-2 rounded-full",
-                readinessState === "Ready"
-                  ? "bg-dot-online"
-                  : readinessState === "Busy"
-                    ? "pulse-dot bg-blue"
-                    : "bg-dot-amber"
-              )}
-            />
-            <span id="ready-text">{readinessState}</span>
-          </button>
+          <div className="relative">
+            <button
+              id="ready-chip"
+              type="button"
+              onClick={() => {
+                if (readinessState === "Setup needed" || readinessState === "Disconnected") {
+                  setSettingsOpen(true);
+                } else if (desk.busy || desk.liveTimeline.length > 0) {
+                  setLiveActivityOpen((v) => !v);
+                }
+              }}
+              aria-label={`Agent status: ${readinessState}`}
+              className="focus-ring hidden items-center gap-1.5 rounded-chip border border-hairline bg-board/50 px-2.5 py-1 text-xs text-ink-2 hover:bg-board lg:inline-flex"
+            >
+              <span
+                aria-hidden
+                className={cn(
+                  "size-2 rounded-full",
+                  readinessState === "Ready"
+                    ? "bg-dot-online"
+                    : readinessState === "Busy"
+                      ? "pulse-dot bg-blue"
+                      : "bg-dot-amber"
+                )}
+              />
+              <span id="ready-text">
+                {(() => {
+                  const running =
+                    desk.liveTimeline.find((s) => s.status === "running") ??
+                    desk.liveTimeline[desk.liveTimeline.length - 1];
+                  if (readinessState === "Busy" && running?.plugin_name) {
+                    const tag = running.mode === "cloud" ? "Cloud" : "Local";
+                    return `${running.plugin_name} (${tag})`;
+                  }
+                  return readinessState;
+                })()}
+              </span>
+            </button>
+            {liveActivityOpen && (desk.busy || desk.liveTimeline.length > 0) && (
+              <div
+                id="live-activity-popover"
+                role="region"
+                aria-label="Live agent plugin activity"
+                className="absolute right-0 top-full z-40 mt-2 w-80 rounded-card border border-hairline bg-surface p-3 shadow-lg"
+              >
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <div className="text-xs font-semibold text-ink">
+                    {desk.busy ? "Agent working in realtime" : "Latest plugin activity"}
+                  </div>
+                  <button
+                    type="button"
+                    aria-label="Close live activity"
+                    onClick={() => setLiveActivityOpen(false)}
+                    className="rounded-sm p-1 text-ink-3 hover:text-ink"
+                  >
+                    <X className="size-3.5" strokeWidth={1.5} aria-hidden />
+                  </button>
+                </div>
+                <ul className="flex max-h-60 flex-col gap-1.5 overflow-y-auto">
+                  {desk.liveTimeline.slice(-6).map((step, i) => (
+                    <li
+                      key={`${step.id ?? step.tool}-${i}`}
+                      className="flex items-start justify-between gap-2 rounded-sm border border-hairline bg-board/40 px-2 py-1.5 text-xs"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate font-medium text-ink">
+                          {step.plugin_name ? `${step.plugin_name} · ${step.label || step.tool}` : step.label || step.tool}
+                        </div>
+                        <div className="mono text-[11px] text-ink-3">
+                          {step.status === "running"
+                            ? "running now"
+                            : step.status === "waiting"
+                              ? "waiting approval"
+                              : step.status}
+                          {step.elapsed_ms ? ` · ${(step.elapsed_ms / 1000).toFixed(1)}s` : ""}
+                        </div>
+                      </div>
+                      {step.mode && (
+                        <span className="shrink-0 rounded-chip border border-hairline bg-surface px-1.5 py-0.5 text-[10px] font-medium uppercase text-ink-2">
+                          {step.mode}
+                        </span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
         </div>
       </header>
 
@@ -1467,8 +1595,21 @@ function WorkspaceApp({
         onOpenChange={setConnectorsOpen}
         routines={desk.routines}
         status={desk.status}
-        onChanged={onPaperChanged}
+        onChanged={() => {
+          onPaperChanged();
+          void refreshPluginsCount();
+        }}
         onOpenToday={() => switchFace("paper")}
+      />
+      )}
+
+      {pluginsOpen && (
+      <PluginsPanel
+        open={pluginsOpen}
+        onOpenChange={setPluginsOpen}
+        canManageConnectors={isAdminOrLegacy}
+        onOpenConnectors={() => setConnectorsOpen(true)}
+        onChanged={(n) => setPluginsCount(n)}
       />
       )}
 

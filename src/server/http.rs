@@ -1389,6 +1389,10 @@ pub(super) fn serve_page(
     let etag = if wants_gzip { &bundle.etag_gzip } else { &bundle.etag_raw };
     let mut headers: Vec<(&str, String)> = vec![
         ("Content-Security-Policy", page_csp(page)),
+        (
+            "Content-Security-Policy-Report-Only",
+            "require-trusted-types-for 'script'".to_string(),
+        ),
         ("ETag", etag.clone()),
         ("Vary", "Accept-Encoding".to_string()),
         ("Cache-Control", "no-cache".to_string()),

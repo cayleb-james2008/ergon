@@ -294,6 +294,7 @@ export function UsersAuthSection({
                 <Input
                   type="password"
                   placeholder="Current password"
+                  autoComplete="current-password"
                   value={curPw}
                   onChange={(e) => setCurPw(e.target.value)}
                   required
@@ -301,6 +302,7 @@ export function UsersAuthSection({
                 <Input
                   type="password"
                   placeholder="New password (8+ chars)"
+                  autoComplete="new-password"
                   value={nextPw}
                   onChange={(e) => setNextPw(e.target.value)}
                   required
@@ -337,6 +339,8 @@ export function UsersAuthSection({
                   value={setupUser}
                   onChange={(e) => setSetupUser(e.target.value)}
                   placeholder="Admin username"
+                  autoComplete="username"
+                  spellCheck={false}
                   required
                 />
                 <Input
@@ -344,6 +348,7 @@ export function UsersAuthSection({
                   value={setupPass}
                   onChange={(e) => setSetupPass(e.target.value)}
                   placeholder="Password (8+ chars)"
+                  autoComplete="new-password"
                   required
                   minLength={8}
                 />

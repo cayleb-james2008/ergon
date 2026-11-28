@@ -155,6 +155,19 @@ pub(super) fn try_route_company_work(
                         )
                         .unwrap_or(decision);
                         (updated, final_outcome)
+                    } else if decision["kind"].as_str() == Some("plugin_action") {
+                        let final_outcome = crate::plugins::settle_plugin_action_decision(
+                            &runtime.cfg,
+                            &decision,
+                            action == "approve",
+                        );
+                        let updated = records::set_decision_outcome(
+                            &runtime.cfg.data_dir,
+                            &id,
+                            &final_outcome,
+                        )
+                        .unwrap_or(decision);
+                        (updated, final_outcome)
                     } else {
                         (decision, outcome)
                     };

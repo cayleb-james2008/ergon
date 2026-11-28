@@ -302,8 +302,10 @@ pub fn route_access(method: &str, path: &str) -> RouteAccess {
         ("GET", "/api/auth/oidc/login" | "/api/auth/oidc/callback") => RouteAccess::Public,
         ("POST", "/api/auth/setup") => RouteAccess::PublicSetupOnly,
 
-        // Authenticated self password change
+        // Authenticated self password change & per-person plugins catalog
         ("POST", "/api/auth/password") => RouteAccess::AuthenticatedSelf,
+        ("GET", "/api/plugins") => RouteAccess::AuthenticatedSelf,
+        ("POST", "/api/plugins/toggle" | "/api/plugins/action") => RouteAccess::AuthenticatedSelf,
 
         // Admin-only auth & identity management
         (_, p) if p == "/api/auth/users" || p.starts_with("/api/auth/users/") => {

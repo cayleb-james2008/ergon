@@ -534,6 +534,143 @@ fn imap_poll_writes_markdown_and_attachments_into_intake_with_subject_filter() {
 }
 
 #[test]
+fn imap_poll_supports_xoauth2_for_microsoft365_and_gmail() {
+    let td = TestDir::new("imap-xoauth2");
+    let _policy = tripwire::ScopedLocalPolicy::new(&td.cfg.data_dir, Some(true), Some(true));
+    let addr = spawn_server(td.cfg.clone());
+
+    let expected_sasl =
+        tripwire::base64_encode(b"user=ops@contoso.com\x01auth=Bearer tok-m365-test\x01\x01");
+    let expected_cmd = format!("AUTHENTICATE XOAUTH2 {expected_sasl}");
+    let email_msg = "From: ap@vendor.example\r\n\
+        To: ops@contoso.com\r\n\
+        Subject: M365 Purchase Order #88\r\n\
+        Date: Thu, 27 Nov 2026 12:00:00 +0000\r\n\
+        Message-ID: <po88@vendor.example>\r\n\
+        Content-Type: text/plain; charset=utf-8\r\n\r\n\
+        Approved PO #88 attached.\r\n"
+        .to_string();
+
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let imap_addr = listener.local_addr().unwrap();
+    let seen_uids = Arc::new(Mutex::new(Vec::<String>::new()));
+    let seen_bg = seen_uids.clone();
+
+    std::thread::spawn(move || {
+        for stream in listener.incoming().flatten() {
+            let seen_conn = seen_bg.clone();
+            let expected = expected_cmd.clone();
+            let msg = email_msg.clone();
+            std::thread::spawn(move || {
+                let _ = stream.set_read_timeout(Some(Duration::from_secs(10)));
+                let mut writer = stream.try_clone().unwrap();
+                let mut reader = BufReader::new(stream);
+                let _ = writer.write_all(b"* OK Microsoft Exchange / Gmail IMAP4rev1 ready\r\n");
+                let _ = writer.flush();
+
+                let mut authed = false;
+                let mut line = String::new();
+                loop {
+                    line.clear();
+                    if reader.read_line(&mut line).unwrap_or(0) == 0 {
+                        break;
+                    }
+                    let trimmed = line.trim_end_matches(['\r', '\n']);
+                    let mut parts = trimmed.splitn(2, ' ');
+                    let tag = parts.next().unwrap_or("A0");
+                    let cmd = parts.next().unwrap_or("");
+                    let cmd_up = cmd.to_ascii_uppercase();
+
+                    if cmd == expected {
+                        authed = true;
+                        let _ = writer.write_all(
+                            format!("{tag} OK AUTHENTICATE completed\r\n").as_bytes(),
+                        );
+                    } else if cmd_up.starts_with("LOGIN ") || cmd_up.starts_with("AUTHENTICATE ") {
+                        let _ = writer.write_all(
+                            format!("{tag} NO [AUTHENTICATIONFAILED] XOAUTH2 required\r\n")
+                                .as_bytes(),
+                        );
+                    } else if !authed {
+                        let _ = writer.write_all(format!("{tag} NO authenticate first\r\n").as_bytes());
+                    } else if cmd_up.starts_with("SELECT ") {
+                        let _ = writer.write_all(
+                            format!("* 1 EXISTS\r\n{tag} OK [READ-WRITE] SELECT completed\r\n")
+                                .as_bytes(),
+                        );
+                    } else if cmd_up == "UID SEARCH UNSEEN" {
+                        let seen = seen_conn.lock().unwrap();
+                        let unseen = if seen.contains(&"201".to_string()) {
+                            ""
+                        } else {
+                            "201"
+                        };
+                        let _ = writer.write_all(
+                            format!("* SEARCH {unseen}\r\n{tag} OK SEARCH completed\r\n").as_bytes(),
+                        );
+                    } else if cmd_up.starts_with("UID FETCH 201 ") {
+                        let hdr = format!("* 1 FETCH (UID 201 BODY[] {{{}}}\r\n", msg.len());
+                        let _ = writer.write_all(hdr.as_bytes());
+                        let _ = writer.write_all(msg.as_bytes());
+                        let _ = writer.write_all(format!(")\r\n{tag} OK FETCH completed\r\n").as_bytes());
+                    } else if cmd_up.starts_with("UID STORE ") {
+                        if let Some(uid) = cmd.split_whitespace().nth(2) {
+                            seen_conn.lock().unwrap().push(uid.to_string());
+                        }
+                        let _ = writer.write_all(format!("{tag} OK STORE completed\r\n").as_bytes());
+                    } else if cmd_up == "LOGOUT" {
+                        let _ = writer.write_all(format!("* BYE\r\n{tag} OK LOGOUT completed\r\n").as_bytes());
+                        let _ = writer.flush();
+                        break;
+                    } else {
+                        let _ = writer.write_all(format!("{tag} BAD unknown\r\n").as_bytes());
+                    }
+                    let _ = writer.flush();
+                }
+            });
+        }
+    });
+
+    let (st_t, t_json, t_raw) = http_req(
+        addr,
+        "POST",
+        "/api/connectors/triggers",
+        &json!({
+            "name": "Outlook M365 Shared Inbox",
+            "kind": "imap_poll",
+            "imap_config": {
+                "host": "127.0.0.1",
+                "port": imap_addr.port(),
+                "security": "plain_loopback_test",
+                "folder": "INBOX",
+                "poll_interval_secs": 30,
+                "mark_seen": true,
+                "username_secret_key": "imap_user",
+                "password_secret_key": "oauth_access_token",
+                "subject_filter": "Purchase Order"
+            },
+            "secrets": {
+                "imap_user": "ops@contoso.com",
+                "oauth_access_token": "tok-m365-test"
+            }
+        })
+        .to_string(),
+    );
+    assert_eq!(st_t, 201, "{t_raw}");
+    assert!(!t_raw.contains("tok-m365-test"));
+    let trg_id = t_json["trigger"]["id"].as_str().unwrap().to_string();
+
+    let events = connectors::poll_imap_trigger_now(&td.cfg, &trg_id).unwrap();
+    assert_eq!(events.len(), 1);
+    assert!(events[0].trigger_file.starts_with("intake/imap-"));
+    let md_text =
+        std::fs::read_to_string(td.cfg.workspace_dir.join(&events[0].trigger_file)).unwrap();
+    assert!(md_text.contains("M365 Purchase Order #88"));
+    assert!(md_text.contains("Approved PO #88 attached."));
+    assert_eq!(*seen_uids.lock().unwrap(), vec!["201".to_string()]);
+}
+
+#[test]
 fn oauth2_refresh_persists_access_token_and_caches_until_expiry() {
     let td = TestDir::new("oauth2");
     let _policy = tripwire::ScopedLocalPolicy::new(&td.cfg.data_dir, Some(true), Some(true));

@@ -1386,9 +1386,19 @@ export function PhoneFace({
           <section aria-labelledby="phone-appearance-h" className="flex flex-wrap items-center justify-between gap-2 rounded-card border border-hairline bg-board p-3.5">
             <div>
               <h3 id="phone-appearance-h" className="text-sm font-medium text-ink">Appearance</h3>
-              <p className="text-xs text-ink-2">Light and Dark theme for this device.</p>
+              <p className="text-xs text-ink-2">Follow system appearance or choose Light / Dark for this device.</p>
             </div>
             <SegmentedControl aria-label="Appearance">
+              <SegmentedControlItem
+                data-id="system"
+                aria-pressed={theme === "system"}
+                data-checked={theme === "system" ? "" : undefined}
+                className="min-h-11 gap-1.5 px-3"
+                onClick={() => setTheme("system")}
+              >
+                <Monitor className="size-4" strokeWidth={1.5} aria-hidden />
+                <span>System</span>
+              </SegmentedControlItem>
               <SegmentedControlItem
                 data-id="light"
                 aria-pressed={theme === "light"}

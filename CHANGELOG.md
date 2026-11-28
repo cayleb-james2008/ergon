@@ -4,6 +4,15 @@ Each release is tagged `vMAJOR.MINOR.PATCH` and published on GitHub Releases wit
 binaries and a `SHA256SUMS` file. The running app shows its version and can update
 itself from the newest release (see README, "Versions and updates").
 
+## 0.43.0 - 2026-11-27
+
+Added the 18-plugin workplace starter library (Google Workspace, Microsoft 365 & Outlook, Business Apps, and On-Device Local), Outlook/Gmail IMAP `XOAUTH2` + quick-fill presets, full Anthropic `claude-haiku-5-5` compatibility with `6/6` passing live evals, and modern web standards / security hardening.
+
+- **Default 18-Plugin Workplace Library & Quiet Live Activity (`src/plugins.rs`, `src/tools.rs`, `frontend/src/shell/PluginsPanel.tsx`, `frontend/src/App.tsx`, `frontend/src/lib/webEngine.ts`, `tests/plugins_library.rs`):** Added a starter catalog spanning Google Workspace (6), Microsoft 365 & Outlook (6), Business Apps (4), and On-Device Local (2) with hybrid cloud/local execution, `/phone` Approve/Deny gating (`plugin_action`), offline browser-demo support, and a quiet header live activity popover.
+- **Outlook / Microsoft 365 & Gmail IMAP `XOAUTH2` + Presets (`src/connectors.rs`, `frontend/src/shell/ConnectorsPanel.tsx`, `tests/connectors_protocols_mcp_v038.rs`):** Added RFC 7628 `AUTHENTICATE XOAUTH2` for inbound IMAP polling alongside outbound SMTP `AUTH XOAUTH2`, plus one-click Microsoft 365 / Outlook and Google Workspace / Gmail quick-fill presets.
+- **Anthropic `claude-haiku-5-5` Compatibility & 6/6 Live Evals (`src/llm.rs`, `evals/run_evals.py`, `evals/results/report.md`, `tests/anthropic_messages_api.rs`, `tests/live_llm_e2e.rs`):** Normalized Anthropic `/v1/messages` URLs, omitted deprecated `temperature` for Claude 5.5 and reasoning models, verified live E2E (`2.80s`), and passed `6/6` reproducible evals (`2.8×` faster on 200-row ledger with `15` `[file:L##]` citations; `5.5×` faster on 50-SKU BOM; `8/8` security probes blocked).
+- **Modern Web Standards, System Theme & Security Headers (`frontend/index.html`, `frontend/src/theme.css`, `frontend/src/tokens.css`, `frontend/src/shell/SettingsPanel.tsx`, `frontend/src/views/Phone.tsx`, `src/server/http.rs`, `tests/auth_tls_rbac.rs`, `tests/tripwire.rs`):** Added OS-aware `system`/`light`/`dark` theming (`color-scheme: light dark`, `light-dark(...)`, zero dark-OS FOUC), `Content-Security-Policy-Report-Only: require-trusted-types-for 'script'`, `Clear-Site-Data` on logout, loopback Local Network Access permission probing, and ES2023 frontend build target.
+
 ## 0.42.1 - 2026-11-27
 
 Shipped brand identity assets, redesigned Work Graph visual exploration, zero-key browser demo hardening, refreshed screenshots and walkthrough video, and Node 24 GitHub Actions upgrades.

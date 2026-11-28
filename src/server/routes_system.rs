@@ -160,7 +160,13 @@ pub(super) fn try_route_system(
                 200,
                 "application/json",
                 r#"{"ok":true}"#,
-                &[("Set-Cookie", cookie)],
+                &[
+                    ("Set-Cookie", cookie),
+                    (
+                        "Clear-Site-Data",
+                        "\"cookies\", \"storage\", \"cache\"".to_string(),
+                    ),
+                ],
             )
         }
         ("POST", "/api/auth/password") => {
@@ -819,6 +825,105 @@ pub(super) fn try_route_system(
                     "items": lib.items.iter().map(|i| i.to_json()).collect::<Vec<_>>(),
                 }),
             )
+        }
+        ("GET", "/api/plugins") => {
+            respond_json(stream, 200, &crate::plugins::list_plugins_json(&runtime.cfg.data_dir))
+        }
+        ("POST", "/api/plugins/toggle") => {
+            let parsed: Value = serde_json::from_slice(&req.body).unwrap_or(Value::Null);
+            let id = parsed["plugin_id"].as_str().unwrap_or("");
+            let enabled = parsed["enabled"].as_bool();
+            let preferred_mode = parsed["preferred_mode"].as_str();
+            match crate::plugins::toggle_plugin(&runtime.cfg.data_dir, id, enabled, preferred_mode) {
+                Ok(plugin) => respond_json(stream, 200, &json!({ "plugin": plugin })),
+                Err(e) => respond_err(stream, 400, &e),
+            }
+        }
+        ("POST", "/api/plugins/action") => {
+            let parsed: Value = serde_json::from_slice(&req.body).unwrap_or(Value::Null);
+            let plugin_id = parsed["plugin_id"].as_str().unwrap_or("");
+            let action = parsed["action"].as_str().unwrap_or("");
+            let mode = parsed["mode"].as_str().filter(|s| !s.is_empty() && *s != "auto");
+            let thread_id = parsed["thread_id"].as_str().unwrap_or("");
+            let args = if parsed["args"].is_null() {
+                json!({})
+            } else {
+                parsed["args"].clone()
+            };
+            let plugin_name = crate::plugins::find_plugin(plugin_id)
+                .map(|p| p.name)
+                .unwrap_or(plugin_id);
+            let run_id = format!("plugin-{}", records::now_millis());
+            state.events.publish(
+                "tool_start",
+                &person.id,
+                &run_id,
+                thread_id,
+                json!({
+                    "tool": "run_plugin_action",
+                    "plugin_id": plugin_id,
+                    "plugin_name": plugin_name,
+                    "action": action,
+                    "mode": mode.unwrap_or("local"),
+                    "label": format!("{plugin_name} · {action}"),
+                    "ts_ms": records::now_millis(),
+                }),
+            );
+            match crate::plugins::execute_plugin_action(
+                &runtime.cfg,
+                plugin_id,
+                action,
+                mode,
+                &args,
+                thread_id,
+            ) {
+                Ok((output, resolved_mode)) => {
+                    state.events.publish(
+                        "tool_done",
+                        &person.id,
+                        &run_id,
+                        thread_id,
+                        json!({
+                            "tool": "run_plugin_action",
+                            "plugin_id": plugin_id,
+                            "plugin_name": plugin_name,
+                            "action": action,
+                            "mode": resolved_mode,
+                            "ok": true,
+                            "label": format!("{plugin_name} · {action}"),
+                            "summary": crate::truncate(&output, 240),
+                            "ts_ms": records::now_millis(),
+                        }),
+                    );
+                    respond_json(
+                        stream,
+                        200,
+                        &json!({
+                            "ok": true,
+                            "mode": resolved_mode,
+                            "output": output,
+                        }),
+                    )
+                }
+                Err(e) => {
+                    state.events.publish(
+                        "error",
+                        &person.id,
+                        &run_id,
+                        thread_id,
+                        json!({
+                            "tool": "run_plugin_action",
+                            "plugin_id": plugin_id,
+                            "plugin_name": plugin_name,
+                            "action": action,
+                            "label": format!("{plugin_name} · {action}"),
+                            "summary": crate::truncate(&e, 240),
+                            "ts_ms": records::now_millis(),
+                        }),
+                    );
+                    respond_err(stream, 400, &e)
+                }
+            }
         }
         ("GET", "/api/suite") => {
             let lib = state.library.lock().unwrap();

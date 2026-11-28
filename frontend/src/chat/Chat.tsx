@@ -608,6 +608,7 @@ export function Chat({
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey) {
+              if (e.nativeEvent.isComposing || e.keyCode === 229) return;
               e.preventDefault();
               if (!busy && draft.trim()) onSend();
             }

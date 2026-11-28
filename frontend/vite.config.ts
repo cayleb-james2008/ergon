@@ -100,7 +100,7 @@ export default defineConfig({
   plugins: [vendorUi(), react(), tailwindcss(), singleFile()],
   base: isStandaloneWeb ? "./" : "/",
   build: {
-    target: "es2022",
+    target: "es2023",
     assetsInlineLimit: isStandaloneWeb ? 100_000_000 : 0,
     cssCodeSplit: false,
     chunkSizeWarningLimit: 4000,

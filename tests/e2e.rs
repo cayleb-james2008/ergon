@@ -622,8 +622,9 @@ fn shell_has_themes_settings_people_and_memory_view() {
             bundle_text.push_str(&cb);
         }
     }
-    // Native theme is Light (Furrow, 2026-11-19): the page opens light, and the dark theme is a full second theme.
-    assert!(body.contains("data-theme=\"light\""), "light is the native default theme: page must open light");
+    // System color-scheme default with light & dark themes defined (prevents dark OS FOUC).
+    assert!(body.contains("name=\"color-scheme\" content=\"light dark\""), "meta color-scheme must default to light dark");
+    assert!(body.contains("[data-theme=\"light\"]") || body.contains("[data-theme=light]"), "a light theme must be defined");
     assert!(body.contains("[data-theme=\"dark\"]") || body.contains("[data-theme=dark]"), "a dark theme must be defined");
     assert!(bundle_text.contains("Appearance"), "appearance toggle missing from settings");
     assert!(body.contains("ergon-theme"), "theme choice must persist via localStorage");

@@ -4039,6 +4039,16 @@ fn read_imap_tagged(
             }
             continue;
         }
+        if text == "+" || text.starts_with("+ ") {
+            // Complete SASL continuation (e.g. XOAUTH2 error challenge) cleanly instead of stalling.
+            reader.get_ref().apply_deadline(deadline, "IMAP")?;
+            let _ = reader
+                .get_mut()
+                .write_all(b"\r\n")
+                .and_then(|_| reader.get_mut().flush());
+            lines.push(text);
+            continue;
+        }
         if let Some(rest) = text.strip_prefix(tag) {
             let rest_trim = rest.trim_start();
             if rest_trim.starts_with("OK") {
@@ -4324,17 +4334,23 @@ fn poll_one_imap_trigger(cfg: &Config, trg: &TriggerRule) -> Result<Vec<ImapInge
             reader = BufReader::new(inner);
         }
 
-        let login_cmd = format!(
-            "A002 LOGIN {} {}\r\n",
-            imap_quote(&username)?,
-            imap_quote(&password)?
-        );
+        let login_cmd = if imap.password_secret_key == "oauth_access_token" {
+            let auth_str = format!("user={username}\x01auth=Bearer {password}\x01\x01");
+            let b64 = tripwire::base64_encode(auth_str.as_bytes());
+            format!("A002 AUTHENTICATE XOAUTH2 {b64}\r\n")
+        } else {
+            format!(
+                "A002 LOGIN {} {}\r\n",
+                imap_quote(&username)?,
+                imap_quote(&password)?
+            )
+        };
         reader.get_ref().apply_deadline(deadline, "IMAP")?;
         reader
             .get_mut()
             .write_all(login_cmd.as_bytes())
             .and_then(|_| reader.get_mut().flush())
-            .map_err(|e| format!("IMAP LOGIN write: {e}"))?;
+            .map_err(|e| format!("IMAP auth write: {e}"))?;
         let _ = read_imap_tagged(&mut reader, "A002", deadline)?;
 
         let select_cmd = format!("A003 SELECT {}\r\n", imap_quote(&imap.folder)?);

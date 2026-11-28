@@ -73,6 +73,20 @@ def http_json(
         return e.code, resp_headers, parsed, raw
 
 
+def _model_disallows_temperature(model: str) -> bool:
+    tail = model.strip().lower().rsplit("/", 1)[-1]
+    return tail.startswith((
+        "claude-haiku-5",
+        "claude-sonnet-5",
+        "claude-opus-5",
+        "claude-5",
+        "o1",
+        "o3",
+        "o4",
+        "gpt-5",
+    ))
+
+
 def call_raw_llm(
     base_url: str,
     api_key: str,
@@ -85,14 +99,18 @@ def call_raw_llm(
     t0 = time.monotonic()
     try:
         if is_anthropic:
-            target = url if url.endswith("/v1/messages") else f"{url}/v1/messages"
+            if url.endswith("/messages"):
+                target = url
+            elif url.endswith("/v1"):
+                target = f"{url}/messages"
+            else:
+                target = f"{url}/v1/messages"
             status, _, body, _ = http_json(
                 target,
                 method="POST",
                 payload={
                     "model": model,
                     "max_tokens": 8192,
-                    "temperature": 0,
                     "messages": [{"role": "user", "content": prompt}],
                 },
                 headers={
@@ -112,14 +130,14 @@ def call_raw_llm(
             return text, elapsed, body.get("usage", {}), False, None
 
         target = url if url.endswith("/chat/completions") else f"{url}/chat/completions"
-        data = json.dumps(
-            {
-                "model": model,
-                "temperature": 0,
-                "stream": True,
-                "messages": [{"role": "user", "content": prompt}],
-            }
-        ).encode("utf-8")
+        openai_payload: dict[str, Any] = {
+            "model": model,
+            "stream": True,
+            "messages": [{"role": "user", "content": prompt}],
+        }
+        if not _model_disallows_temperature(model):
+            openai_payload["temperature"] = 0
+        data = json.dumps(openai_payload).encode("utf-8")
         req = urllib.request.Request(
             target,
             data=data,
@@ -426,12 +444,27 @@ def run_eval_1(bin_path: Path, base_url: str, model: str, api_key: str) -> dict[
             st, _, chat_resp, _ = http_json(
                 f"{erg.base}/api/chat",
                 "POST",
-                {"message": "Call reconcile_ledger on workspace file ledger_200.csv directly and then summarize with exact citations. Do not read all rows manually."},
+                {"message": "Call reconcile_ledger on workspace file ledger_200.csv with output_title=\"Reconciliation Report\" directly and then summarize with exact citations. Do not read all rows manually."},
                 timeout=480,
             )
             ergon_secs = time.monotonic() - t0
             assert st == 200, f"Ergon chat failed ({st}): {chat_resp}"
-            st_r, _, rep_body, _ = http_json(f"{erg.base}/api/files/content?path=Reconciliation%20Report.md")
+            st_f, _, files_body, _ = http_json(f"{erg.base}/api/files")
+            md_files = (
+                [
+                    f["name"]
+                    for f in files_body.get("files", [])
+                    if isinstance(f, dict) and str(f.get("name", "")).endswith(".md")
+                ]
+                if st_f == 200 and isinstance(files_body, dict)
+                else []
+            )
+            if "Reconciliation Report.md" in md_files:
+                target_report = "Reconciliation Report.md"
+            else:
+                reconcil_md = [m for m in md_files if "reconcil" in m.lower() or "ledger" in m.lower()]
+                target_report = reconcil_md[0] if reconcil_md else (md_files[0] if md_files else "Reconciliation Report.md")
+            st_r, _, rep_body, _ = http_json(f"{erg.base}/api/files/content?path={urllib.parse.quote(target_report)}")
             rep_text = rep_body.get("content", "") if isinstance(rep_body, dict) else ""
             exact_total_present = truth["total_formatted"] in rep_text
             dups_present = all(d in rep_text for d in truth["duplicate_refs"])
@@ -473,6 +506,7 @@ def run_eval_1(bin_path: Path, base_url: str, model: str, api_key: str) -> dict[
         },
         "ergon": {
             "latency_s": round(ergon_secs, 2),
+            "output_file": target_report,
             "penny_exact": exact_total_present,
             "all_duplicates_flagged": dups_present,
             "line_citations_count": citations_found,
@@ -940,9 +974,13 @@ def render_markdown(report: dict[str, Any]) -> str:
             err_s = f"off by {r_raw['error_cents']}c ({r_raw['latency_s']}s)"
         else:
             err_s = f"parse error ({r_raw['latency_s']}s)"
+        erg_str = (
+            f"penny-exact `{e1['ground_truth']['total_formatted']}`, {r_erg['line_citations_count']} `[file:L##]` citations ({r_erg['latency_s']}s)"
+            if r_erg.get("penny_exact")
+            else f"mismatch/missing report, {r_erg['line_citations_count']} `[file:L##]` citations ({r_erg['latency_s']}s)"
+        )
         lines.append(
-            f"| 1. 200-Row Messy Ledger | `live_llm` | {err_s} | "
-            f"penny-exact `{e1['ground_truth']['total_formatted']}`, {r_erg['line_citations_count']} `[file:L##]` citations ({r_erg['latency_s']}s) | "
+            f"| 1. 200-Row Messy Ledger | `live_llm` | {err_s} | {erg_str} | "
             f"{'PASS' if e1['passed'] else 'FAIL'} |"
         )
     if "eval_2_bom_50" in ev:
@@ -974,11 +1012,20 @@ def render_markdown(report: dict[str, Any]) -> str:
 
 
 def main() -> int:
+    has_anthropic_env = bool(os.environ.get("ANTHROPIC_API_KEY", "").strip())
+    default_base_url = os.environ.get(
+        "ERGON_EVAL_BASE_URL",
+        "https://api.anthropic.com/v1" if has_anthropic_env else "http://127.0.0.1:8789/v1",
+    )
+    default_model = os.environ.get(
+        "ERGON_EVAL_MODEL",
+        "claude-haiku-5-5" if has_anthropic_env else "gemini-3.8-flash-high",
+    )
     ap = argparse.ArgumentParser(description="Run reproducible Ergon evals.")
     ap.add_argument("--ergon-bin", default="target/release/ergon", help="Path to compiled ergon binary")
     ap.add_argument("--out-dir", default="evals/results", help="Directory for latest.json and report.md")
-    ap.add_argument("--base-url", default=os.environ.get("ERGON_EVAL_BASE_URL", "http://127.0.0.1:8789/v1"))
-    ap.add_argument("--model", default=os.environ.get("ERGON_EVAL_MODEL", "gemini-3.8-flash-high"))
+    ap.add_argument("--base-url", default=default_base_url)
+    ap.add_argument("--model", default=default_model)
     ap.add_argument("--api-key", default=os.environ.get("ERGON_EVAL_API_KEY", os.environ.get("ANTHROPIC_API_KEY", "local-bridge")))
     ap.add_argument("--skip-live", action="store_true", help="Skip live LLM evals and run deterministic checks only")
     args = ap.parse_args()

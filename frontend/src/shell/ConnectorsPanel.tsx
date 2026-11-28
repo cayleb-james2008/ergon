@@ -1513,6 +1513,37 @@ function ConnectorsBody({
                   </select>
                 </div>
               </div>
+              <div className="flex flex-wrap items-center gap-1.5 text-xs text-ink-soft">
+                <span>Quick fill:</span>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-7 px-2 text-xs"
+                  onClick={() => {
+                    setImapHost("outlook.office365.com");
+                    setImapSecurity("imaps");
+                    setImapPort("993");
+                    setImapPassKey("oauth_access_token");
+                  }}
+                >
+                  Microsoft 365 / Outlook
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-7 px-2 text-xs"
+                  onClick={() => {
+                    setImapHost("imap.gmail.com");
+                    setImapSecurity("imaps");
+                    setImapPort("993");
+                    setImapPassKey("oauth_access_token");
+                  }}
+                >
+                  Google Workspace / Gmail
+                </Button>
+              </div>
               <div className="grid gap-3 sm:grid-cols-4">
                 <div className="flex min-w-0 flex-col gap-1 sm:col-span-2">
                   <label htmlFor="imap-host" className="text-xs font-medium text-ink">IMAP host</label>
@@ -1837,6 +1868,45 @@ function ConnectorsBody({
                   <div className="flex items-center gap-2 text-xs font-medium text-ink">
                     <Mail className="size-3.5 text-icon" strokeWidth={1.5} aria-hidden />
                     <span>SMTP Relay configuration</span>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-1.5 text-xs text-ink-soft">
+                    <span>Quick fill:</span>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-7 px-2 text-xs"
+                      onClick={() => {
+                        setSmtpHost("smtp.office365.com");
+                        setSmtpSecurity("starttls");
+                        setSmtpPort("587");
+                        setSmtpPassKey("oauth_access_token");
+                        setOauthEnabled(true);
+                        setOauthTokenUrl("https://login.microsoftonline.com/common/oauth2/v2.0/token");
+                        setOauthScopes(
+                          "https://outlook.office365.com/SMTP.Send https://outlook.office365.com/IMAP.AccessAsUser.All offline_access",
+                        );
+                      }}
+                    >
+                      Microsoft 365 / Outlook
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-7 px-2 text-xs"
+                      onClick={() => {
+                        setSmtpHost("smtp.gmail.com");
+                        setSmtpSecurity("starttls");
+                        setSmtpPort("587");
+                        setSmtpPassKey("oauth_access_token");
+                        setOauthEnabled(true);
+                        setOauthTokenUrl("https://oauth2.googleapis.com/token");
+                        setOauthScopes("https://mail.google.com/");
+                      }}
+                    >
+                      Google Workspace / Gmail
+                    </Button>
                   </div>
                   <div className="grid gap-3 sm:grid-cols-4">
                     <div className="flex min-w-0 flex-col gap-1 sm:col-span-2">

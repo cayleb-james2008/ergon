@@ -6,7 +6,7 @@
 //    Browser IndexedDB Engine / BYOK OpenAI-compatible in sessionStorage / Connect to Local Ergon in Web mode)
 // 4. Version & Update check
 import { useEffect, useState } from "react";
-import { Coins, Cpu, Download, ExternalLink, FileCheck2, LifeBuoy, Moon, Plus, SlidersHorizontal, Sun, Trash2, UserPlus, Users } from "lucide-react";
+import { Coins, Cpu, Download, ExternalLink, FileCheck2, LifeBuoy, Monitor, Moon, Plus, SlidersHorizontal, Sun, Trash2, UserPlus, Users } from "lucide-react";
 import { toast } from "sonner";
 import { PanelModal, usePanelModalClose } from "@/shell/PanelModal";
 import { SegmentedControl, SegmentedControlItem } from "@/components/ui/segmented-control";
@@ -35,7 +35,27 @@ import {
 
 const TRIGGER = "focus-ring flex w-full min-h-11 md:min-h-9 items-center justify-between gap-1.5 rounded-sm px-1.5 text-left text-sm text-ink outline-none hover:bg-board";
 
-export type Theme = "light" | "dark";
+export type Theme = "system" | "light" | "dark";
+
+type LnaRequestInit = RequestInit & {
+  targetAddressSpace?: "loopback" | "local" | "public";
+};
+
+async function queryLnaPermissionSafe(
+  permissionName: "local-network" | "loopback-network",
+): Promise<PermissionState> {
+  if (typeof navigator === "undefined" || !navigator.permissions?.query) {
+    return "prompt";
+  }
+  try {
+    const status = await navigator.permissions.query({
+      name: permissionName as PermissionName,
+    });
+    return status.state;
+  } catch {
+    return "prompt";
+  }
+}
 
 function SettingsBody({
   theme,
@@ -82,7 +102,7 @@ function SettingsBody({
   const [modelId, setModelId] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [engineMode, setEngineMode] = useState<"browser" | "byok">("browser");
-  const [localProbe, setLocalProbe] = useState<"idle" | "checking" | "found" | "missing">("idle");
+  const [localProbe, setLocalProbe] = useState<"idle" | "checking" | "found" | "missing" | "denied">("idle");
   const [saving, setSaving] = useState(false);
   const [switchingId, setSwitchingId] = useState<string | null>(null);
   const [exportingBundle, setExportingBundle] = useState<"json" | "md" | null>(null);
@@ -238,23 +258,44 @@ function SettingsBody({
     onConfigSaved();
   };
 
+  useEffect(() => {
+    if (!isOpen || !webMode) return;
+    let cancelled = false;
+    queryLnaPermissionSafe("loopback-network").then((state) => {
+      if (!cancelled && state === "denied") {
+        setLocalProbe("denied");
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, webMode]);
+
   const probeLocalErgon = async () => {
+    const perm = await queryLnaPermissionSafe("loopback-network");
+    if (perm === "denied") {
+      setLocalProbe("denied");
+      return;
+    }
     setLocalProbe("checking");
     for (const port of [8787, 8473]) {
-      const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), 1200);
       try {
-        await fetch(`http://127.0.0.1:${port}/api/version`, { mode: "no-cors", signal: ctrl.signal });
-        clearTimeout(timer);
+        const init: LnaRequestInit = {
+          mode: "no-cors",
+          signal: AbortSignal.timeout(1200),
+          targetAddressSpace: "loopback",
+        };
+        await fetch(`http://127.0.0.1:${port}/api/version`, init);
         setLocalProbe("found");
         window.open(`http://127.0.0.1:${port}/`, "_blank", "noopener");
         toast.success(`Connected: opened your local Ergon desk on 127.0.0.1:${port}.`);
         return;
       } catch {
-        clearTimeout(timer);
+        // Probe timed out or was blocked; continue to fallback port
       }
     }
-    setLocalProbe("missing");
+    const postPerm = await queryLnaPermissionSafe("loopback-network");
+    setLocalProbe(postPerm === "denied" ? "denied" : "missing");
   };
 
   const saveAdminContact = async (e: React.FormEvent) => {
@@ -303,14 +344,23 @@ function SettingsBody({
         onUsersChanged={onRefreshPeople}
       />
 
-      {/* 1. Appearance (Light / Dark SegmentedControl) */}
+      {/* 1. Appearance (System / Light / Dark SegmentedControl) */}
       <section aria-labelledby="settings-appearance-h" className="flex flex-col gap-2.5 rounded-card border border-hairline bg-board/40 p-3.5">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
             <h3 id="settings-appearance-h" className="text-sm font-medium text-ink">Appearance</h3>
-            <p className="text-xs text-ink-2">Switch between Light and Dark themes for this desk.</p>
+            <p className="text-xs text-ink-2">Follow system appearance or choose Light / Dark for this desk.</p>
           </div>
           <SegmentedControl aria-label="Appearance">
+            <SegmentedControlItem
+              data-id="system"
+              aria-pressed={theme === "system"}
+              data-checked={theme === "system" ? "" : undefined}
+              className="min-h-11 gap-1.5 px-3 md:min-h-8"
+              onClick={() => onTheme("system")}
+            >
+              <Monitor className="size-3.5" strokeWidth={1.5} aria-hidden />System
+            </SegmentedControlItem>
             <SegmentedControlItem
               data-id="light"
               aria-pressed={theme === "light"}
@@ -578,6 +628,11 @@ function SettingsBody({
                   <span>{localProbe === "checking" ? "Checking :8787…" : "Connect to Local Ergon (127.0.0.1:8787)"}</span>
                 </Button>
               </div>
+              {localProbe === "denied" && (
+                <p role="alert" data-remediation="loopback-network" className="mt-1.5 text-xs text-destructive-foreground">
+                  Loopback network access is blocked in your browser. Open your browser&apos;s site settings for this page (click the tune/lock icon in the address bar), set <strong>Loopback network</strong> to <strong>Allow</strong>, then click again.
+                </p>
+              )}
               {localProbe === "missing" && (
                 <p className="mt-1.5 text-xs text-ink-2">
                   No local `ergon` binary responded on `127.0.0.1:8787`. Start `ergon` on your machine, then click again.

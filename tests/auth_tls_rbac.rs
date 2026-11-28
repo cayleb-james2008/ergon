@@ -330,9 +330,14 @@ fn setup_login_sessions_persistence_logout_and_0600_storage() {
     let after_restart = http_req(port2, "GET", "/api/status", None, &[("Cookie", &login_cookie)]);
     assert_eq!(after_restart.status, 200, "session must persist across restart");
 
-    // 9. Logout revokes session immediately.
+    // 9. Logout revokes session immediately and emits Clear-Site-Data.
     let logout = http_req(port2, "POST", "/api/auth/logout", Some("{}"), &[("Cookie", &login_cookie)]);
     assert_eq!(logout.status, 200);
+    assert_eq!(
+        logout.header("clear-site-data"),
+        Some("\"cookies\", \"storage\", \"cache\""),
+        "logout must emit Clear-Site-Data"
+    );
     let after_logout = http_req(port2, "GET", "/api/status", None, &[("Cookie", &login_cookie)]);
     assert_eq!(after_logout.status, 401, "revoked session must be rejected");
 }

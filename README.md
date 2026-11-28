@@ -44,7 +44,7 @@ Every employee gets an isolated workspace, phone-first Approve/Deny triage, sand
 
 Instead of wiring together a Node/Python server, Postgres, Redis, and background workers just to run internal agents safely, Ergon compiles into **one static binary** (`11.62 MiB` on Linux) serving desktop (`/`), mobile triage (`/phone`), crash-resumable DAG pipelines, encrypted secrets, and authenticated company APIs/MCP out of the box.
 
-Routine analysis finishes autonomously. Consequential actions—deletes, outbound emails or webhooks, retainer budget caps, MCP calls, and newly synthesized tools (`"Would this help?"`)—park as Approve/Deny cards on `/phone` and `/`.
+Routine analysis finishes autonomously. Every workspace also includes a **18-plugin starter catalog** spanning **Google Workspace** (Gmail, Calendar, Drive, Docs, Sheets, Slides), **Microsoft 365 & Outlook** (Outlook Mail/Calendar, OneDrive/SharePoint, Teams, local Excel & Word/PDF), **Business Apps** (Slack, Notion, GitHub, CRM & Billing), and **On-Device Local** tools—switching seamlessly between offline local execution and cloud OAuth2/XOAUTH2 while keeping an unobtrusive live activity pill in the header. Consequential actions—deletes, outbound emails or webhooks, retainer budget caps, MCP calls, external plugin writes, and newly synthesized tools (`"Would this help?"`)—park as Approve/Deny cards on `/phone` and `/`.
 
 ---
 
@@ -113,12 +113,12 @@ Also available right in your browser with zero install via the [GitHub Pages Liv
 
 ## Reproducible Benchmarks & Security Evals
 
-All claims below are backed by [`evals/run_evals.py`](evals/run_evals.py) against the compiled `v0.42.0` release binary ([`evals/results/report.md`](evals/results/report.md)) and live timing runs ([`evidence/timing/2026-11-27/`](evidence/timing/2026-11-27/README.md)):
+All claims below are backed by [`evals/run_evals.py`](evals/run_evals.py) against the compiled `v0.42.1` release binary ([`evals/results/report.md`](evals/results/report.md)) and live timing runs ([`evidence/timing/2026-11-27/`](evidence/timing/2026-11-27/README.md)):
 
-| Evaluation | Mode | Baseline (Raw LLM) | Ergon (`v0.42.0`) | Outcome |
+| Evaluation | Mode | Baseline (Raw LLM) | Ergon (`v0.42.1`) | Outcome |
 | --- | --- | --- | --- | --- |
-| **1. 200-Row Messy Ledger Reconciliation** | `live_llm` (`gemini-3.8-flash-high`) | Timed out (`180.08s`) | Exact **`$50,070.68`**, 4 dups flagged, `15` `[file:L##]` citations (`169.43s`) | **PASS** |
-| **2. 50-SKU Messy BOM Quote Builder** | `live_llm` (`gemini-3.8-flash-high`) | Timed out (`180.09s`) | **`47`** unique SKUs, exact **`$55,035.70`**, formula-escaped (`45.29s`) | **PASS** |
+| **1. 200-Row Messy Ledger Reconciliation** | `live_llm` (`claude-haiku-5-5`) | Exact (`18.69s`) | Exact **`$50,070.68`**, 4 dups flagged, `15` `[file:L##]` citations (`6.68s`, **2.8× faster**) | **PASS** |
+| **2. 50-SKU Messy BOM Quote Builder** | `live_llm` (`claude-haiku-5-5`) | `47` SKUs, exact (`12.38s`) | **`47`** unique SKUs, exact **`$55,035.70`**, formula-escaped (`2.27s`, **5.5× faster**) | **PASS** |
 | **3. Security & Prompt-Injection Probes** | `live_llm` + `deterministic` | — | **`8/8`** blocked (live injection, traversal, symlink, SSRF, secret write) | **PASS** |
 | **4. Strict Client Leak Gate & Receipt Verify** | `deterministic` | — | **`HTTP 409`** on leak, **`HTTP 200`** clean ZIP, offline `ergon verify` valid | **PASS** |
 | **5. Multi-Tenant RBAC & Memory Isolation** | `deterministic` | — | Role/workspace isolation enforced; unauthorized writes blocked (`403`) | **PASS** |

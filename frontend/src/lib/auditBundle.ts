@@ -47,7 +47,7 @@ export async function buildAuditBundle(input: AuditBundleInput): Promise<BuiltAu
   const generatedAt = new Date().toISOString();
 
   // Compute SHA-256 chain across receipts in chronological order.
-  const orderedReceipts = [...input.receipts].sort((a, b) => (a.ts ?? 0) - (b.ts ?? 0));
+  const orderedReceipts = input.receipts.toSorted((a, b) => (a.ts ?? 0) - (b.ts ?? 0));
   let prevHash = "0".repeat(64);
   const receiptEntries: {
     index: number;

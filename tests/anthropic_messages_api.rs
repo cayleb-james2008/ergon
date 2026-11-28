@@ -86,6 +86,18 @@ fn anthropic_protocol_detection_env_and_payload_translation() {
     assert!(is_anthropic_url("https://api.anthropic.com/v1"));
     assert!(is_anthropic_url("http://127.0.0.1:9000/v1/messages"));
     assert!(!is_anthropic_url("https://opencode.ai/zen/go/v1"));
+    assert_eq!(
+        ergon_rs::llm::anthropic_messages_url("https://api.anthropic.com"),
+        "https://api.anthropic.com/v1/messages"
+    );
+    assert_eq!(
+        ergon_rs::llm::anthropic_messages_url("https://api.anthropic.com/v1"),
+        "https://api.anthropic.com/v1/messages"
+    );
+    assert_eq!(
+        ergon_rs::llm::anthropic_messages_url("https://api.anthropic.com/v1/messages"),
+        "https://api.anthropic.com/v1/messages"
+    );
 
     let (root, cfg) = temp_cfg("payload", DEFAULT_ANTHROPIC_BASE_URL, Some("sk-ant-test-key"));
     let msgs = vec![
@@ -97,6 +109,7 @@ fn anthropic_protocol_detection_env_and_payload_translation() {
     let body = build_anthropic_payload(&cfg, &msgs, true);
     assert_eq!(body["model"], json!(DEFAULT_ANTHROPIC_MODEL_ID));
     assert_eq!(body["stream"], json!(true));
+    assert!(body.get("temperature").is_none());
     assert_eq!(body["system"][0]["type"], json!("text"));
     assert_eq!(body["system"][0]["text"], json!("You are Ergon."));
     assert_eq!(

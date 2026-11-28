@@ -93,12 +93,28 @@ pub fn is_anthropic_url(url: &str) -> bool {
         .unwrap_or(false)
 }
 
-fn anthropic_messages_url(base_url: &str) -> String {
+fn model_disallows_temperature(model_id: &str) -> bool {
+    let m = model_id.trim().to_ascii_lowercase();
+    let tail = m.rsplit('/').next().unwrap_or(&m);
+    tail.starts_with("claude-haiku-5")
+        || tail.starts_with("claude-sonnet-5")
+        || tail.starts_with("claude-opus-5")
+        || tail.starts_with("claude-5")
+        || tail.starts_with("o1")
+        || tail.starts_with("o3")
+        || tail.starts_with("o4")
+        || tail.starts_with("gpt-5")
+}
+
+pub fn anthropic_messages_url(base_url: &str) -> String {
     let trimmed = base_url.trim().trim_end_matches('/');
-    if trimmed.to_ascii_lowercase().ends_with("/messages") {
+    let lower = trimmed.to_ascii_lowercase();
+    if lower.ends_with("/messages") {
         trimmed.to_string()
-    } else {
+    } else if lower.ends_with("/v1") {
         format!("{trimmed}/messages")
+    } else {
+        format!("{trimmed}/v1/messages")
     }
 }
 
@@ -215,9 +231,17 @@ pub fn build_anthropic_payload(cfg: &Config, messages: &[Value], stream: bool) -
     let mut payload = json!({
         "model": cfg.model_id,
         "max_tokens": max_tokens,
-        "temperature": 0.2,
         "messages": api_messages,
     });
+    if !model_disallows_temperature(&cfg.model_id) {
+        if let Ok(raw_t) = std::env::var("ERGON_MODEL_TEMPERATURE") {
+            if let Ok(t) = raw_t.trim().parse::<f64>() {
+                if t.is_finite() {
+                    payload["temperature"] = json!(t);
+                }
+            }
+        }
+    }
     if !system_parts.is_empty() {
         payload["system"] = json!([
             {
@@ -601,8 +625,10 @@ pub fn call_model_with_usage_streaming(
         let mut p = json!({
             "model": cfg.model_id,
             "messages": messages,
-            "temperature": 0.2,
         });
+        if !model_disallows_temperature(&cfg.model_id) {
+            p["temperature"] = json!(0.2);
+        }
         if stream_target.is_some() {
             p["stream"] = json!(true);
         }

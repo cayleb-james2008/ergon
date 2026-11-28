@@ -1494,6 +1494,69 @@ pub fn execute_tool_full(
     args: &Value,
 ) -> Result<String, String> {
     match name {
+        "list_plugins" => {
+            let suite_filter = args["suite"].as_str().map(str::trim).unwrap_or("");
+            let query = args["query"].as_str().map(str::trim).unwrap_or("").to_ascii_lowercase();
+            let snap = crate::plugins::list_plugins_json(&cfg.data_dir);
+            let lines: Vec<String> = snap["plugins"]
+                .as_array()
+                .map(|arr| {
+                    arr.iter()
+                        .filter(|p| {
+                            (suite_filter.is_empty()
+                                || p["suite"].as_str() == Some(suite_filter))
+                                && (query.is_empty()
+                                    || p["name"].as_str().unwrap_or("").to_ascii_lowercase().contains(&query)
+                                    || p["id"].as_str().unwrap_or("").to_ascii_lowercase().contains(&query)
+                                    || p["description"].as_str().unwrap_or("").to_ascii_lowercase().contains(&query))
+                        })
+                        .map(|p| {
+                            format!(
+                                "- {} [{} | {} | {}]: {}",
+                                p["id"].as_str().unwrap_or(""),
+                                p["name"].as_str().unwrap_or(""),
+                                p["effective_mode"].as_str().unwrap_or(""),
+                                p["status"].as_str().unwrap_or(""),
+                                p["tagline"].as_str().unwrap_or("")
+                            )
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            Ok(if lines.is_empty() {
+                "(no plugins match filter)".to_string()
+            } else {
+                lines.join("\n")
+            })
+        }
+        "run_plugin_action" => {
+            let pid = args["plugin_id"]
+                .as_str()
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .ok_or("run_plugin_action needs args.plugin_id")?;
+            let action = args["action"]
+                .as_str()
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .ok_or("run_plugin_action needs args.action")?;
+            let mode = args["mode"].as_str().map(str::trim).filter(|s| !s.is_empty() && *s != "auto");
+            let thread_id = args["_thread"].as_str().unwrap_or("");
+            let sub_args = if args.get("args").is_some_and(|v| !v.is_null()) {
+                &args["args"]
+            } else {
+                args
+            };
+            let (out, _mode) = crate::plugins::execute_plugin_action(
+                cfg,
+                pid,
+                action,
+                mode,
+                sub_args,
+                thread_id,
+            )?;
+            Ok(out)
+        }
         "browse_library" => {
             let query = args["query"].as_str().unwrap_or("");
             let lib = ctx.library.lock().unwrap();

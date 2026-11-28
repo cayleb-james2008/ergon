@@ -1,12 +1,14 @@
 <!doctype html>
-<html lang="en" data-app="ergon" data-world="claude" data-theme="light">
+<html lang="en" data-app="ergon" data-world="claude">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="text-scale" content="scale" />
+    <script>try{var m=document.querySelector('meta[name="color-scheme"]');var t=null;try{t=localStorage.getItem("ergon-theme")}catch(e){}if(t==="light"||t==="dark"){if(m)m.content=t;document.documentElement.setAttribute("data-theme",t)}else{if(m)m.content="light dark";document.documentElement.setAttribute("data-theme",window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light")}}catch(e){}</script>
     <meta name="description" content="Ergon, an AI agent for every employee that finishes digital work end to end and says plainly what it did." />
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cstyle%3E.m%7Bfill:%231c1a17%7D@media(prefers-color-scheme:dark)%7B.m%7Bfill:%23f2efe9%7D%7D%3C/style%3E%3Cpath class='m' d='M4.25 3h15.5C20.44 3 21 3.56 21 4.25v1.5C21 6.44 20.44 7 19.75 7H7v3h6.25c.69 0 1.25.56 1.25 1.25v1.5c0 .69-.56 1.25-1.25 1.25H7v3h12.75c.69 0 1.25.56 1.25 1.25v1.5c0 .69-.56 1.25-1.25 1.25H4.25C3.56 21 3 20.44 3 19.75V4.25C3 3.56 3.56 3 4.25 3Z'/%3E%3Crect class='m' x='17' y='10' width='4' height='4' rx='1.1'/%3E%3C/svg%3E" />
     <title>Ergon: your agent that finishes the work</title>
-    <script>try{var t=localStorage.getItem("ergon-theme");if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
   </head>
   <body>
     <noscript><p>Ergon needs JavaScript to show your chat. Turn it on, then reload this page.</p></noscript>
