@@ -502,10 +502,22 @@ await reset();
   const dropToastOk = await p.waitForSelector("text=Uploaded 2 files to your workspace", { timeout: 5000 }).then(() => true, () => false);
   ok("drag-and-drop multi-file upload onto Today saves both files", dropToastOk);
 
-  // Settings dialog: Model connection + Appearance toggle + dark toast theme check
+  // Settings dialog: Model connection + OpenCode Go preset + Personal AI seat key + Appearance toggle
   await p.locator('[data-thing="settings-btn"]').click();
   await p.waitForSelector("#settings-panel", { timeout: 4000 });
   const modelHeadingVisible = await p.locator("#settings-model-h").isVisible();
+  await p.locator('#settings-model-presets [data-model-preset="opencode-go"]').click();
+  const presetFilled =
+    (await p.locator("#cfg-base-url").inputValue()) === "https://opencode.ai/zen/go/v1" &&
+    (await p.locator("#cfg-model-id").inputValue()) === "deepseek-v4.1-flash";
+  await p.locator("#personal-opencode-preset").click();
+  await p.locator("#personal-api-key").fill("sk-opencode-gate-demo");
+  await p.locator("#save-personal-model-btn").click();
+  await p.waitForSelector("#clear-personal-model-btn", { timeout: 4000 });
+  const personalSaved = await p.locator("#clear-personal-model-btn").isVisible();
+  await p.locator("#clear-personal-model-btn").click();
+  await p.locator("#clear-personal-model-btn").waitFor({ state: "hidden", timeout: 4000 });
+  ok("settings OpenCode Go preset fills DeepSeek v4.1 Flash and Personal AI seat key saves & clears cleanly", presetFilled && personalSaved, `preset=${presetFilled} personal=${personalSaved}`);
   await p.getByRole("button", { name: "Dark", exact: true }).first().click();
   const darkSet = (await p.evaluate(() => document.documentElement.getAttribute("data-theme"))) === "dark";
   await p.keyboard.press("Escape");

@@ -330,6 +330,7 @@ pub fn route_access(method: &str, path: &str) -> RouteAccess {
         (_, "/api/auth/oidc/config") => RouteAccess::RequireAdmin,
 
         // Admin-only system settings, updates, security, connectors, MCP & people creation
+        ("GET" | "PUT" | "POST" | "DELETE", "/api/config/personal") => RouteAccess::AuthenticatedSelf,
         ("GET" | "PUT" | "POST", "/api/config") => RouteAccess::RequireAdmin,
         ("POST", "/api/update/check" | "/api/update/apply" | "/api/update/restart") => {
             RouteAccess::RequireAdmin

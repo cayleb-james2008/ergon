@@ -76,6 +76,10 @@ pub struct AppState {
     pub auth: Arc<auth::AuthStore>,
     /// Optional HTTPS/TLS server configuration (rustls).
     pub tls: Option<tls::TlsConfig>,
+    /// Public externally-reachable origin behind a reverse proxy (`ERGON_PUBLIC_URL` / `SERVICE_URL_ERGON`).
+    pub public_url: Option<String>,
+    /// Whether `X-Forwarded-Proto` / `X-Forwarded-Host` from a reverse proxy are trusted (`ERGON_TRUST_PROXY=1`).
+    pub trust_proxy: bool,
     /// True when the listener is bound to a non-loopback address.
     pub non_loopback_bind: bool,
     pub people: Arc<RwLock<PeopleState>>,
@@ -367,17 +371,43 @@ pub(crate) use http::{host_allowed, refusal, Request};
 
 /// `background_updates` starts the periodic release check; only the real
 /// binary does (tests must not call out to GitHub).
+pub(super) fn resolve_public_url_from_env() -> Option<(String, String)> {
+    let raw = std::env::var("ERGON_PUBLIC_URL")
+        .ok()
+        .filter(|s| !s.trim().is_empty())
+        .or_else(|| {
+            std::env::var("SERVICE_URL_ERGON")
+                .ok()
+                .filter(|s| !s.trim().is_empty())
+        })?;
+    crate::parse_public_url(&raw).map(|(origin, host, _scheme)| (origin, host))
+}
+
+fn env_truthy_server(key: &str) -> bool {
+    std::env::var(key)
+        .map(|v| matches!(v.trim().to_ascii_lowercase().as_str(), "1" | "true" | "yes"))
+        .unwrap_or(false)
+}
+
 #[allow(clippy::too_many_arguments)] // internal entry point shared by the serve* wrappers
 pub(super) fn serve_inner(
     listener: TcpListener,
     cfg: Config,
     gate_token: Option<String>,
     admin_token: Option<String>,
-    allowed_hosts: Vec<String>,
+    mut allowed_hosts: Vec<String>,
     tls: Option<tls::TlsConfig>,
     custom_updater: Option<Arc<update::Updater>>,
     background_updates: bool,
 ) -> std::io::Result<()> {
+    let public_parsed = resolve_public_url_from_env();
+    let public_url = public_parsed.as_ref().map(|(origin, _)| origin.clone());
+    if let Some((_, ref pub_host)) = public_parsed {
+        if !allowed_hosts.iter().any(|h| h.eq_ignore_ascii_case(pub_host)) {
+            allowed_hosts.push(pub_host.clone());
+        }
+    }
+    let trust_proxy = env_truthy_server("ERGON_TRUST_PROXY");
     cfg.ensure_dirs()?;
     logging::init_if_unset(&cfg.data_dir);
     // The agent may never fetch this server's own API (egress guard).
@@ -428,6 +458,8 @@ pub(super) fn serve_inner(
         allowed_hosts,
         auth: auth_store,
         tls,
+        public_url,
+        trust_proxy,
         non_loopback_bind,
         people,
         runtimes: Arc::new(RwLock::new(HashMap::new())),

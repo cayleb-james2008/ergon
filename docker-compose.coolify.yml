@@ -1,0 +1,35 @@
+services:
+  ergon:
+    image: ghcr.io/cayleb-james2008/ergon:latest
+    restart: unless-stopped
+    ports:
+      - "8787:8787"
+    environment:
+      ERGON_HOST: "0.0.0.0"
+      ERGON_PORT: "8787"
+      ERGON_DATA_DIR: "/data"
+      ERGON_NO_OPEN: "1"
+      ERGON_TRUST_PROXY: "1"
+      ERGON_DISABLE_HOST_APP_SCAN: "1"
+      # Coolify automatically provides SERVICE_URL_ERGON and SERVICE_FQDN_ERGON when a domain is set.
+      ERGON_PUBLIC_URL: "${ERGON_PUBLIC_URL:-${SERVICE_URL_ERGON:-}}"
+      ERGON_ALLOWED_HOSTS: "${ERGON_ALLOWED_HOSTS:-${SERVICE_FQDN_ERGON:-}}"
+      # Default provider + model: OpenCode Go ($20/employee plan) with deepseek-v4.1-flash.
+      # Leave ERGON_MODEL_API_KEY blank if employees enter their own personal seat key in Settings.
+      ERGON_MODEL_BASE_URL: "${ERGON_MODEL_BASE_URL:-https://opencode.ai/zen/go/v1}"
+      ERGON_MODEL_ID: "${ERGON_MODEL_ID:-deepseek-v4.1-flash}"
+      ERGON_MODEL_API_KEY: "${ERGON_MODEL_API_KEY:-}"
+      # Optional first-boot admin bootstrap (otherwise visit / to run initial setup in browser):
+      ERGON_ADMIN_USER: "${ERGON_ADMIN_USER:-}"
+      ERGON_ADMIN_PASSWORD: "${ERGON_ADMIN_PASSWORD:-}"
+    volumes:
+      - ergon_data:/data
+    healthcheck:
+      test: ["CMD", "ergon", "healthcheck"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  ergon_data:

@@ -42,7 +42,7 @@ Every employee gets an isolated workspace, phone-first Approve/Deny triage, sand
 
 ## Why Ergon
 
-Instead of wiring together a Node/Python server, Postgres, Redis, and background workers just to run internal agents safely, Ergon compiles into **one static binary** (`12.08 MiB` on Linux) serving desktop (`/`), mobile triage (`/phone`), crash-resumable DAG pipelines, encrypted secrets, and authenticated company APIs/MCP out of the box.
+Instead of wiring together a Node/Python server, Postgres, Redis, and background workers just to run internal agents safely, Ergon compiles into **one static binary** (`12.11 MiB` on Linux) serving desktop (`/`), mobile triage (`/phone`), crash-resumable DAG pipelines, encrypted secrets, and authenticated company APIs/MCP out of the box.
 
 Routine analysis finishes autonomously — default **Simple mode** lets any employee talk to their computer in plain English and watch live step-by-step narration happen in real time, with 1-click switching to **Advanced mode** for DAG workflows, Work Graph, connectors, and schedules. Every workspace includes an **auto-updating 32-app baseline & Official MCP Registry library** with **proactive app recognition & 1-click setup recommendations** spanning **Google Workspace** (Gmail, Calendar, Drive, Docs, Sheets, Slides), **Microsoft 365 & Outlook** (Outlook Mail/Calendar, OneDrive/SharePoint, Teams, local Excel & Word/PDF), **Business Apps** (Slack, Notion, GitHub, CRM & Billing, Linear, Jira, Asana, Confluence, Figma, Zoom, HubSpot, Salesforce, Stripe, QuickBooks, Zendesk, Airtable, Shopify, Postgres & SQLite), and **On-Device Local** tools—plus live directory search, one-click browser OAuth2 (PKCE `S256`) sign-in, encrypted credential installs, and native Google Workspace / Microsoft Graph REST adapters alongside offline local execution. Consequential actions—deletes, outbound emails or webhooks, retainer budget caps, MCP calls, external plugin writes, and newly synthesized tools (`"Would this help?"`)—park as Approve/Deny cards on `/phone` and `/`.
 
@@ -93,18 +93,20 @@ Routine analysis finishes autonomously — default **Simple mode** lets any empl
 
 ## Quick Start
 
-Download a release archive for **Linux (`x86_64`)** or **Windows (`x86_64`)** from [Releases](https://github.com/cayleb-james2008/ergon/releases), or build from source (`Rust` + `Node.js 20+`):
+Deploy in 2 minutes on **Coolify** (automatic HTTPS, `/phone` triage, persistent `/data`, `$20`/employee **OpenCode Go** `deepseek-v4.1-flash` seats), download a release archive for **Linux (`x86_64` / `aarch64`)** or **Windows (`x86_64`)** from [Releases](https://github.com/cayleb-james2008/ergon/releases), or build from source (`Rust` + `Node.js 20+`):
+
+- **Self-Host with Coolify:** Use [`docker-compose.coolify.yml`](docker-compose.coolify.yml) (`ghcr.io/cayleb-james2008/ergon:latest`) or follow [`docs/COOLIFY.md`](docs/COOLIFY.md). Default provider is **OpenCode Go** (`https://opencode.ai/zen/go/v1`, `deepseek-v4.1-flash`), supporting either a shared company key or per-employee seat keys in **Settings → Model connection**.
 
 ```sh
 # 1. Build (Linux / Windows)
 cd frontend && npm ci && npm run build && cd ..
 cargo build --release --locked
 
-# 2. Run with Anthropic Claude (native /v1/messages + prompt caching)
-ANTHROPIC_API_KEY=sk-ant-... ./target/release/ergon
+# 2. Run with OpenCode Go (deepseek-v4.1-flash default)
+ERGON_MODEL_API_KEY=... ./target/release/ergon
 
-# 3. Or OpenAI-compatible / local Ollama (:11434 auto-detected)
-ERGON_MODEL_BASE_URL=https://api.openai.com/v1 ERGON_MODEL_ID=gpt-4.1 ERGON_MODEL_API_KEY=sk-... ./target/release/ergon
+# 3. Or Anthropic Claude (native /v1/messages + prompt caching) / OpenAI / local Ollama
+ANTHROPIC_API_KEY=sk-ant-... ./target/release/ergon
 ```
 
 Also available right in your browser with zero install via the [GitHub Pages Live Demo](https://cayleb-james2008.github.io/ergon/) (runs the standalone offline engine in-browser).
@@ -124,7 +126,7 @@ All claims below are backed by [`evals/run_evals.py`](evals/run_evals.py) agains
 | **5. Multi-Tenant RBAC & Memory Isolation** | `deterministic` | — | Role/workspace isolation enforced; unauthorized writes blocked (`403`) | **PASS** |
 | **6. Replay-Gated Self-Improvement** | `deterministic` | — | `v2` promoted on replay (`0` regressions), `v3` rejected, live auto-rollback -> `v1` | **PASS** |
 
-- **Server footprint (`v0.46.0` Linux release):** `12.08 MiB` single binary (`12,669,808 B`); `v0.40.0` measured `6.08 ms` cold boot, `22.19 MB` peak RSS, and `4,009.2 req/s` (`0/10,036` errors) over 16 concurrent workers.
+- **Server footprint (`v0.47.0` Linux release):** `12.11 MiB` single binary (`12,694,384 B`); `v0.40.0` measured `6.08 ms` cold boot, `22.19 MB` peak RSS, and `4,009.2 req/s` (`0/10,036` errors) over 16 concurrent workers.
 - **Sequential live model timing study (`30` runs across 4 roles):** [`evidence/timing/2026-11-27/report.md`](evidence/timing/2026-11-27/report.md).
 
 ---

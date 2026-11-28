@@ -20,20 +20,56 @@ import { UsersAuthSection } from "@/shell/UsersAuthSection";
 import { UpdateSettingsSection, type useUpdate } from "@/shell/Update";
 import {
   call,
+  clearPersonalModelConfig,
   downloadDiagnosticBundle,
   fetchHelpConfig,
+  fetchPersonalModelConfig,
   isWebStandalone,
   saveHelpConfig,
+  savePersonalModelConfig,
   type AuthMePayload,
   type DetectedGateway,
   type HelpConfigPayload,
   type ModelConfigPayload,
   type ModelPricingMap,
   type Person,
+  type PersonalModelConfigPayload,
   type Status,
 } from "@/lib/api";
 
 const TRIGGER = "focus-ring flex w-full min-h-11 md:min-h-9 items-center justify-between gap-1.5 rounded-sm px-1.5 text-left text-sm text-ink outline-none hover:bg-board";
+
+const NATIVE_PROVIDER_PRESETS: ReadonlyArray<{
+  id: string;
+  label: string;
+  url: string;
+  model: string;
+}> = [
+  {
+    id: "opencode-go",
+    label: "OpenCode Go (DeepSeek v4.1 Flash)",
+    url: "https://opencode.ai/zen/go/v1",
+    model: "deepseek-v4.1-flash",
+  },
+  {
+    id: "anthropic",
+    label: "Anthropic Claude",
+    url: "https://api.anthropic.com/v1",
+    model: "claude-haiku-5-5",
+  },
+  {
+    id: "openai",
+    label: "OpenAI",
+    url: "https://api.openai.com/v1",
+    model: "gpt-4.1-mini",
+  },
+  {
+    id: "ollama",
+    label: "Local Ollama",
+    url: "http://127.0.0.1:11434/v1",
+    model: "qwen2.5:3b",
+  },
+];
 
 export type Theme = "system" | "light" | "dark";
 
@@ -112,6 +148,12 @@ function SettingsBody({
   const [exportingBundle, setExportingBundle] = useState<"json" | "md" | null>(null);
   const [err, setErr] = useState("");
   const [lockedRemote, setLockedRemote] = useState(false);
+  const [personalCfg, setPersonalCfg] = useState<PersonalModelConfigPayload | null>(null);
+  const [personalBaseUrl, setPersonalBaseUrl] = useState("https://opencode.ai/zen/go/v1");
+  const [personalModelId, setPersonalModelId] = useState("deepseek-v4.1-flash");
+  const [personalApiKey, setPersonalApiKey] = useState("");
+  const [savingPersonal, setSavingPersonal] = useState(false);
+  const [personalErr, setPersonalErr] = useState("");
   const [pricingRows, setPricingRows] = useState<{ model: string; input: string; output: string; cached: string }[]>([]);
   const [newPricingModel, setNewPricingModel] = useState("");
   const [savingPricing, setSavingPricing] = useState(false);
@@ -129,10 +171,20 @@ function SettingsBody({
   useEffect(() => {
     if (!isOpen) return;
     setErr("");
+    setPersonalErr("");
     setPricingErr("");
     setAdminErr("");
     setLockedRemote(false);
     onRefreshPeople();
+    if (!webMode) {
+      void fetchPersonalModelConfig().then((r) => {
+        if (!r.ok) return;
+        setPersonalCfg(r.data);
+        setPersonalBaseUrl(r.data.personal_base_url || "https://opencode.ai/zen/go/v1");
+        setPersonalModelId(r.data.personal_model_id || "deepseek-v4.1-flash");
+        setPersonalApiKey("");
+      });
+    }
     fetchHelpConfig().then((r) => {
       if (!r.ok) return;
       setAdminName(r.data.admin_contact.name || "");
@@ -205,6 +257,139 @@ function SettingsBody({
     toast.success("Model settings saved.");
     onConfigSaved();
   };
+
+  const savePersonalSeat = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSavingPersonal(true);
+    setPersonalErr("");
+    const r = await savePersonalModelConfig({
+      model_base_url: personalBaseUrl.trim() || "https://opencode.ai/zen/go/v1",
+      model_id: personalModelId.trim() || "deepseek-v4.1-flash",
+      ...(personalApiKey.trim() ? { api_key: personalApiKey.trim() } : {}),
+    });
+    setSavingPersonal(false);
+    if (!r.ok) {
+      setPersonalErr(r.error || "Could not save personal seat key.");
+      return;
+    }
+    setPersonalCfg(r.data);
+    setPersonalApiKey("");
+    toast.success("Personal AI seat key saved securely.");
+    onConfigSaved();
+  };
+
+  const clearPersonalSeat = async () => {
+    setSavingPersonal(true);
+    setPersonalErr("");
+    const r = await clearPersonalModelConfig();
+    setSavingPersonal(false);
+    if (!r.ok) {
+      setPersonalErr(r.error || "Could not reset to company default.");
+      return;
+    }
+    setPersonalCfg(r.data);
+    setPersonalApiKey("");
+    toast.success("Switched back to company default model.");
+    onConfigSaved();
+  };
+
+  const personalSeatBlock = !webMode ? (
+    <form
+      id="settings-personal-model"
+      onSubmit={savePersonalSeat}
+      className="flex flex-col gap-2.5 border-t border-hairline pt-3"
+    >
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <p className="text-xs font-medium text-ink">Personal AI seat key (OpenCode Go / BYOK)</p>
+          <p className="text-xs text-ink-2">
+            Optional per-employee key encrypted in your private vault — great for $20/mo OpenCode Go seats.
+          </p>
+        </div>
+        <Pill variant="secondary" className="border border-hairline bg-surface px-2 py-0.5 text-xs text-ink">
+          {personalCfg?.using_personal ? "Personal key active" : "Using company default"}
+        </Pill>
+      </div>
+      <div className="flex flex-wrap items-center gap-1.5">
+        <Button
+          id="personal-opencode-preset"
+          type="button"
+          size="xs"
+          variant="outline"
+          className="max-md:min-h-11"
+          onClick={() => {
+            setPersonalBaseUrl("https://opencode.ai/zen/go/v1");
+            setPersonalModelId("deepseek-v4.1-flash");
+            setPersonalErr("");
+          }}
+        >
+          OpenCode Go (DeepSeek v4.1 Flash)
+        </Button>
+      </div>
+      <div className="grid gap-2 sm:grid-cols-2">
+        <div className="flex flex-col gap-1">
+          <label htmlFor="personal-base-url" className="text-xs font-medium text-ink">
+            Endpoint URL
+          </label>
+          <Input
+            id="personal-base-url"
+            value={personalBaseUrl}
+            onChange={(e) => setPersonalBaseUrl(e.target.value)}
+            placeholder="https://opencode.ai/zen/go/v1"
+            autoComplete="off"
+          />
+        </div>
+        <div className="flex flex-col gap-1">
+          <label htmlFor="personal-model-id" className="text-xs font-medium text-ink">
+            Model ID
+          </label>
+          <Input
+            id="personal-model-id"
+            value={personalModelId}
+            onChange={(e) => setPersonalModelId(e.target.value)}
+            placeholder="deepseek-v4.1-flash"
+            autoComplete="off"
+          />
+        </div>
+      </div>
+      <div className="flex flex-col gap-1">
+        <label htmlFor="personal-api-key" className="text-xs font-medium text-ink">
+          Your API key{personalCfg?.has_personal_key ? " · key saved in vault" : ""}
+        </label>
+        <Input
+          id="personal-api-key"
+          type="password"
+          value={personalApiKey}
+          onChange={(e) => setPersonalApiKey(e.target.value)}
+          placeholder={
+            personalCfg?.has_personal_key
+              ? "Leave blank to keep saved personal key"
+              : "Paste your OpenCode Go or provider key"
+          }
+          autoComplete="off"
+        />
+      </div>
+      {personalErr && <p role="alert" className="text-xs text-destructive-foreground">{personalErr}</p>}
+      <div className="flex flex-wrap items-center gap-2 pt-0.5">
+        <Button id="save-personal-model-btn" type="submit" size="sm" variant="secondary" className="max-md:min-h-11" disabled={savingPersonal}>
+          {savingPersonal ? "Saving…" : "Save personal key"}
+        </Button>
+        {personalCfg?.using_personal && (
+          <Button
+            id="clear-personal-model-btn"
+            type="button"
+            size="sm"
+            variant="ghost"
+            className="max-md:min-h-11"
+            disabled={savingPersonal}
+            onClick={() => void clearPersonalSeat()}
+          >
+            Use company default
+          </Button>
+        )}
+      </div>
+    </form>
+  ) : null;
 
   const addPricingRow = () => {
     const id = newPricingModel.trim();
@@ -533,9 +718,14 @@ function SettingsBody({
         </div>
 
         {lockedRemote ? (
-          <p className="text-sm text-ink-2">
-            Model settings can only be changed when opening Ergon directly on the machine running it (`127.0.0.1` or `localhost`).
-          </p>
+          <div className="flex flex-col gap-3">
+            <p className="text-sm text-ink-2">
+              {isAdminOrLegacy
+                ? "Company-wide model settings can only be edited from this machine or after signing in as an admin."
+                : "Company-wide defaults are managed by your admin. You can still connect your own personal AI seat key below."}
+            </p>
+            {personalSeatBlock}
+          </div>
         ) : webMode ? (
           <div className="flex flex-col gap-3">
             <p className="text-xs leading-5 text-ink-2">
@@ -571,6 +761,7 @@ function SettingsBody({
                   <span className="text-xs font-medium text-ink-2">Public / local presets (bring your own key or run local)</span>
                   <div className="flex flex-wrap gap-1.5">
                     {[
+                      { label: "OpenCode Go (DeepSeek v4.1 Flash)", url: "https://opencode.ai/zen/go/v1", model: "deepseek-v4.1-flash" },
                       { label: "OpenRouter Free (CORS)", url: "https://openrouter.ai/api/v1", model: "openrouter/free" },
                       { label: "Local Ollama", url: "http://127.0.0.1:11434/v1", model: "qwen2.5:3b" },
                       { label: "Local DSH Free Forwarder", url: "http://127.0.0.1:8789/v1", model: "deepseek-v4.1-flash-free" },
@@ -679,7 +870,30 @@ function SettingsBody({
             </div>
           </div>
         ) : (
+          <div className="flex flex-col gap-3">
           <form onSubmit={(e) => saveModel(e, false)} className="flex flex-col gap-3">
+            <div id="settings-model-presets" className="flex flex-col gap-1.5">
+              <span className="text-xs font-medium text-ink-2">Provider presets</span>
+              <div className="flex flex-wrap gap-1.5">
+                {NATIVE_PROVIDER_PRESETS.map((preset) => (
+                  <Button
+                    key={preset.id}
+                    type="button"
+                    size="xs"
+                    data-model-preset={preset.id}
+                    variant={baseUrl === preset.url && modelId === preset.model ? "default" : "outline"}
+                    className="max-md:min-h-11"
+                    onClick={() => {
+                      setBaseUrl(preset.url);
+                      setModelId(preset.model);
+                      setErr("");
+                    }}
+                  >
+                    {preset.label}
+                  </Button>
+                ))}
+              </div>
+            </div>
             {gateways.length > 0 && (
               <div className="flex flex-col gap-1.5">
                 <span className="text-xs font-medium text-ink-2">Detected local gateways (no key needed)</span>
@@ -706,7 +920,7 @@ function SettingsBody({
                 id="cfg-base-url"
                 value={baseUrl}
                 onChange={(e) => setBaseUrl(e.target.value)}
-                placeholder="http://127.0.0.1:11434/v1"
+                placeholder="https://opencode.ai/zen/go/v1"
                 autoComplete="off"
               />
             </div>
@@ -717,7 +931,7 @@ function SettingsBody({
                 id="cfg-model-id"
                 value={modelId}
                 onChange={(e) => setModelId(e.target.value)}
-                placeholder="qwen2.5:3b"
+                placeholder="deepseek-v4.1-flash"
                 autoComplete="off"
               />
             </div>
@@ -749,6 +963,8 @@ function SettingsBody({
               )}
             </div>
           </form>
+          {personalSeatBlock}
+          </div>
         )}
       </section>
 

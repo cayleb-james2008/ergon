@@ -1,5 +1,34 @@
 use super::*;
 
+fn personal_config_json(state: &AppState, runtime: &PersonRuntime) -> Value {
+    let eff = effective_cfg(state, runtime);
+    let company = state.model_cfg.lock().unwrap().clone();
+    let company_configured =
+        crate::model_configured_for(&company.model_base_url, company.api_key.is_some());
+    let ov = load_person_model_override(&runtime.cfg.data_dir);
+    let (has_personal_key, personal_base_url, personal_model_id, using_personal) = match ov {
+        Some(ref o) => (
+            o.api_key.is_some(),
+            o.model_base_url.clone(),
+            o.model_id.clone(),
+            o.api_key.is_some() || o.model_base_url.is_some() || o.model_id.is_some(),
+        ),
+        None => (false, None, None, false),
+    };
+    json!({
+        "has_personal_key": has_personal_key,
+        "personal_base_url": personal_base_url,
+        "personal_model_id": personal_model_id,
+        "using_personal": using_personal,
+        "effective_base_url": eff.model_base_url,
+        "effective_model_id": eff.model_id,
+        "effective_configured": eff.model_configured(),
+        "company_configured": company_configured,
+        "company_base_url": company.model_base_url,
+        "company_model_id": company.model_id,
+    })
+}
+
 /// Routes UI pages, auth/OIDC/RBAC, server status/config, updates, people, library/suite, and security.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn try_route_system(
@@ -13,7 +42,8 @@ pub(super) fn try_route_system(
     client_ip: Option<std::net::IpAddr>,
 ) -> Option<std::io::Result<()>> {
     let root_cfg = &state.cfg;
-    let tls_enabled = state.tls.is_some();
+    let tls_enabled = effective_https(state, req);
+    let req_origin = effective_origin(state, req);
     let max_age_secs = std::env::var("ERGON_SESSION_TTL_SECS")
         .ok()
         .and_then(|s| s.trim().parse::<u64>().ok())
@@ -36,6 +66,7 @@ pub(super) fn try_route_system(
                 "needs_setup": !state.auth.has_users(),
                 "oidc_enabled": state.auth.oidc_enabled(),
                 "tls": tls_enabled,
+                "public_url": state.public_url,
             })
             .to_string();
             if req.method == "HEAD" {
@@ -53,6 +84,7 @@ pub(super) fn try_route_system(
                 "needs_setup": !state.auth.has_users(),
                 "oidc_enabled": state.auth.oidc_enabled(),
                 "tls": tls_enabled,
+                "public_url": state.public_url,
                 "user": principal.map(auth::AuthPrincipal::to_json),
                 "roles": auth::Role::ALL,
             }),
@@ -278,10 +310,7 @@ pub(super) fn try_route_system(
         }
         ("GET", "/api/auth/oidc/login") => {
             let next = query_param(&req.query, "next").unwrap_or_else(|| "/".to_string());
-            let scheme = if tls_enabled { "https" } else { "http" };
-            let host = req.host.as_deref().unwrap_or("127.0.0.1");
-            let origin = format!("{scheme}://{host}");
-            match state.auth.start_oidc_login(&next, &origin) {
+            match state.auth.start_oidc_login(&next, &req_origin) {
                 Ok(auth_url) => {
                     if query_param(&req.query, "json").as_deref() == Some("1") {
                         respond_json(stream, 200, &json!({"authorization_url": auth_url}))
@@ -485,15 +514,14 @@ pub(super) fn try_route_system(
                 recovered.sort();
                 recovered.dedup();
             }
-            let (model_configured, model_id, model_base_url, auto_detected) = {
-                let live = state.model_cfg.lock().unwrap();
-                (
-                    crate::model_configured_for(&live.model_base_url, live.api_key.is_some()),
-                    live.model_id.clone(),
-                    live.model_base_url.clone(),
-                    live.auto_detected,
-                )
-            };
+            let eff = effective_cfg(state, runtime);
+            let live = state.model_cfg.lock().unwrap();
+            let model_configured = eff.model_configured();
+            let model_id = eff.model_id;
+            let model_base_url = eff.model_base_url;
+            let has_personal = load_person_model_override(&runtime.cfg.data_dir).is_some();
+            let auto_detected = !has_personal && live.auto_detected;
+            drop(live);
             let is_loopback = is_loopback_url(&model_base_url);
             let oidc_enabled = state.auth.oidc_enabled();
             respond_json_with(stream, 200, |buf| {
@@ -665,6 +693,69 @@ pub(super) fn try_route_system(
                     "model_pricing": model_pricing,
                 }),
             )
+        }
+        ("GET", "/api/config/personal") => {
+            respond_json(stream, 200, &personal_config_json(state, runtime))
+        }
+        ("PUT" | "POST", "/api/config/personal") => {
+            let parsed: Value = serde_json::from_slice(&req.body).unwrap_or(Value::Null);
+            if parsed["reset_to_company"].as_bool() == Some(true) {
+                if let Err(e) = clear_person_model_override(&runtime.cfg.data_dir) {
+                    return Some(respond_err(stream, 500, &e));
+                }
+                return Some(respond_json(stream, 200, &personal_config_json(state, runtime)));
+            }
+            let cur = load_person_model_override(&runtime.cfg.data_dir).unwrap_or_default();
+            let next_base = match parsed.get("model_base_url").and_then(|v| v.as_str()) {
+                Some(raw) => {
+                    let b = raw.trim().trim_end_matches('/').to_string();
+                    if b.is_empty() {
+                        None
+                    } else if !(b.starts_with("http://") || b.starts_with("https://"))
+                        || parse_url_host_port(&b).is_none()
+                    {
+                        return Some(respond_err(
+                            stream,
+                            400,
+                            "model_base_url must be a valid http:// or https:// URL",
+                        ));
+                    } else {
+                        Some(b)
+                    }
+                }
+                None => cur.model_base_url,
+            };
+            let next_model = match parsed.get("model_id").and_then(|v| v.as_str()) {
+                Some(raw) => {
+                    let m = raw.trim().to_string();
+                    if m.is_empty() { None } else { Some(m) }
+                }
+                None => cur.model_id,
+            };
+            let clear_key = parsed["clear_api_key"].as_bool().unwrap_or(false);
+            let next_key = if clear_key {
+                None
+            } else if let Some(raw_k) = parsed.get("api_key").and_then(|v| v.as_str()) {
+                let k = raw_k.trim().to_string();
+                if k.is_empty() { cur.api_key } else { Some(k) }
+            } else {
+                cur.api_key
+            };
+            let ov = PersonModelOverride {
+                model_base_url: next_base,
+                model_id: next_model,
+                api_key: next_key,
+            };
+            if let Err(e) = save_person_model_override(&runtime.cfg.data_dir, &ov) {
+                return Some(respond_err(stream, 500, &e));
+            }
+            respond_json(stream, 200, &personal_config_json(state, runtime))
+        }
+        ("DELETE", "/api/config/personal") => {
+            if let Err(e) = clear_person_model_override(&runtime.cfg.data_dir) {
+                return Some(respond_err(stream, 500, &e));
+            }
+            respond_json(stream, 200, &personal_config_json(state, runtime))
         }
         ("GET", "/api/people") => {
             if auth_enforced && !principal.is_some_and(|p| p.role.is_admin()) {
@@ -946,16 +1037,13 @@ pub(super) fn try_route_system(
             }
         }
         ("GET", "/api/plugins/oauth/apps") => {
-            let scheme = if tls_enabled { "https" } else { "http" };
-            let host = req.host.as_deref().unwrap_or("127.0.0.1");
-            let origin = format!("{scheme}://{host}");
             respond_json(
                 stream,
                 200,
                 &crate::plugin_cloud::list_oauth_suites_json(
                     &root_cfg.data_dir,
                     &runtime.cfg.data_dir,
-                    &origin,
+                    &req_origin,
                 ),
             )
         }
@@ -966,16 +1054,13 @@ pub(super) fn try_route_system(
             };
             match crate::plugin_cloud::save_oauth_app_config(&root_cfg.data_dir, &parsed) {
                 Ok(()) => {
-                    let scheme = if tls_enabled { "https" } else { "http" };
-                    let host = req.host.as_deref().unwrap_or("127.0.0.1");
-                    let origin = format!("{scheme}://{host}");
                     respond_json(
                         stream,
                         200,
                         &crate::plugin_cloud::list_oauth_suites_json(
                             &root_cfg.data_dir,
                             &runtime.cfg.data_dir,
-                            &origin,
+                            &req_origin,
                         ),
                     )
                 }
@@ -998,15 +1083,12 @@ pub(super) fn try_route_system(
                 .map(str::to_string)
                 .or_else(|| query_param(&req.query, "return_to"))
                 .unwrap_or_else(|| "/".to_string());
-            let scheme = if tls_enabled { "https" } else { "http" };
-            let host = req.host.as_deref().unwrap_or("127.0.0.1");
-            let origin = format!("{scheme}://{host}");
             match crate::plugin_cloud::start_oauth_flow(
                 &root_cfg.data_dir,
                 &person.id,
                 &runtime.cfg.data_dir,
                 &provider,
-                &origin,
+                &req_origin,
                 &return_to,
             ) {
                 Ok(auth_url) => {
@@ -1114,16 +1196,13 @@ pub(super) fn try_route_system(
             let provider = parsed["provider"].as_str().unwrap_or("");
             match crate::plugin_cloud::disconnect_provider(&runtime.cfg.data_dir, provider) {
                 Ok(()) => {
-                    let scheme = if tls_enabled { "https" } else { "http" };
-                    let host = req.host.as_deref().unwrap_or("127.0.0.1");
-                    let origin = format!("{scheme}://{host}");
                     respond_json(
                         stream,
                         200,
                         &crate::plugin_cloud::list_oauth_suites_json(
                             &root_cfg.data_dir,
                             &runtime.cfg.data_dir,
-                            &origin,
+                            &req_origin,
                         ),
                     )
                 }

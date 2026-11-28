@@ -298,6 +298,18 @@ export type ModelConfigPayload = {
   detected_gateways?: DetectedGateway[];
   model_pricing?: ModelPricingMap;
 };
+export type PersonalModelConfigPayload = {
+  has_personal_key: boolean;
+  personal_base_url: string | null;
+  personal_model_id: string | null;
+  using_personal: boolean;
+  effective_base_url: string;
+  effective_model_id: string;
+  effective_configured: boolean;
+  company_configured: boolean;
+  company_base_url: string;
+  company_model_id: string;
+};
 export type WorkspaceFile = {
   path: string;
   name: string;
@@ -3614,6 +3626,29 @@ export async function dismissPluginRecommendation(
     "/api/plugins/recommendations/dismiss",
     { method: "POST", body: { plugin_id: pluginId } }
   );
+}
+
+export async function fetchPersonalModelConfig(): Promise<Res<PersonalModelConfigPayload>> {
+  return call<PersonalModelConfigPayload>("/api/config/personal");
+}
+
+export async function savePersonalModelConfig(payload: {
+  model_base_url?: string;
+  model_id?: string;
+  api_key?: string;
+  clear_api_key?: boolean;
+  reset_to_company?: boolean;
+}): Promise<Res<PersonalModelConfigPayload>> {
+  return call<PersonalModelConfigPayload>("/api/config/personal", {
+    method: "POST",
+    body: payload,
+  });
+}
+
+export async function clearPersonalModelConfig(): Promise<Res<PersonalModelConfigPayload>> {
+  return call<PersonalModelConfigPayload>("/api/config/personal", {
+    method: "DELETE",
+  });
 }
 
 export async function resetDismissedPluginRecommendations(): Promise<

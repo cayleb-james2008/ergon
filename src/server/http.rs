@@ -171,6 +171,8 @@ pub(crate) struct Request {
     pub(crate) user_agent: Option<String>,
     pub(crate) cookie_raw: Option<String>,
     pub(crate) forwarded_for: Option<String>,
+    pub(crate) forwarded_proto: Option<String>,
+    pub(crate) forwarded_host: Option<String>,
     /// Content negotiation & conditional GET headers.
     pub(crate) accept_encoding: Option<String>,
     pub(crate) if_none_match: Option<String>,
@@ -386,6 +388,8 @@ pub(super) fn read_request_from<S: SockStream>(
     let mut user_agent: Option<String> = None;
     let mut cookie_raw: Option<String> = None;
     let mut forwarded_for: Option<String> = None;
+    let mut forwarded_proto: Option<String> = None;
+    let mut forwarded_host: Option<String> = None;
     let mut accept_encoding: Option<String> = None;
     let mut if_none_match: Option<String> = None;
     let mut last_event_id: Option<String> = None;
@@ -453,6 +457,16 @@ pub(super) fn read_request_from<S: SockStream>(
             user_agent = Some(val.to_string());
         } else if name.eq_ignore_ascii_case("x-forwarded-for") {
             forwarded_for = Some(val.to_string());
+        } else if name.eq_ignore_ascii_case("x-forwarded-proto") {
+            let first = val.split(',').next().unwrap_or("").trim().to_ascii_lowercase();
+            if !first.is_empty() {
+                forwarded_proto = Some(first);
+            }
+        } else if name.eq_ignore_ascii_case("x-forwarded-host") {
+            let first = val.split(',').next().unwrap_or("").trim().to_ascii_lowercase();
+            if !first.is_empty() {
+                forwarded_host = Some(first);
+            }
         } else if name.eq_ignore_ascii_case("cookie") {
             cookie_raw = Some(val.to_string());
             for pair in val.split(';') {
@@ -581,6 +595,8 @@ pub(super) fn read_request_from<S: SockStream>(
         user_agent,
         cookie_raw,
         forwarded_for,
+        forwarded_proto,
+        forwarded_host,
         accept_encoding,
         if_none_match,
         last_event_id,
@@ -1077,12 +1093,59 @@ pub(super) fn mime_for_ext(ext: &str) -> &'static str {
     }
 }
 
+pub(super) fn effective_https(state: &AppState, req: &Request) -> bool {
+    if state.tls.is_some() {
+        return true;
+    }
+    if state
+        .public_url
+        .as_deref()
+        .is_some_and(|u| u.starts_with("https://"))
+    {
+        return true;
+    }
+    state.trust_proxy && req.forwarded_proto.as_deref() == Some("https")
+}
+
+pub(super) fn effective_origin(state: &AppState, req: &Request) -> String {
+    if let Some(ref pub_url) = state.public_url {
+        return pub_url.clone();
+    }
+    let scheme = if effective_https(state, req) {
+        "https"
+    } else {
+        "http"
+    };
+    let host = if state.trust_proxy {
+        req.forwarded_host
+            .as_deref()
+            .or(req.host.as_deref())
+            .unwrap_or("127.0.0.1")
+    } else {
+        req.host.as_deref().unwrap_or("127.0.0.1")
+    };
+    format!("{scheme}://{host}")
+}
+
 pub(super) fn effective_cfg(state: &AppState, runtime: &PersonRuntime) -> Config {
     let mut cfg = runtime.cfg.clone();
-    let live = state.model_cfg.lock().unwrap();
-    cfg.model_base_url = live.model_base_url.clone();
-    cfg.model_id = live.model_id.clone();
-    cfg.api_key = live.api_key.clone();
+    {
+        let live = state.model_cfg.lock().unwrap();
+        cfg.model_base_url = live.model_base_url.clone();
+        cfg.model_id = live.model_id.clone();
+        cfg.api_key = live.api_key.clone();
+    }
+    if let Some(ov) = crate::load_person_model_override(&runtime.cfg.data_dir) {
+        if let Some(base) = ov.model_base_url {
+            cfg.model_base_url = base;
+        }
+        if let Some(model) = ov.model_id {
+            cfg.model_id = model;
+        }
+        if ov.api_key.is_some() {
+            cfg.api_key = ov.api_key;
+        }
+    }
     cfg
 }
 

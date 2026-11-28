@@ -335,6 +335,32 @@ pub(crate) fn parse_url_host_port(url: &str) -> Option<(String, u16)> {
     }
 }
 
+/// Validates and normalizes a public URL (`ERGON_PUBLIC_URL` / `SERVICE_URL_ERGON`)
+/// into `(normalized_origin, bare_host, scheme)`.
+pub fn parse_public_url(raw: &str) -> Option<(String, String, String)> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() || trimmed.chars().any(|c| c.is_control() || c.is_whitespace()) {
+        return None;
+    }
+    let (scheme_raw, rest) = trimmed.split_once("://")?;
+    let scheme = scheme_raw.to_ascii_lowercase();
+    if !matches!(scheme.as_str(), "http" | "https") {
+        return None;
+    }
+    let authority = rest.split('/').next().unwrap_or("").trim();
+    if authority.is_empty() || authority.contains('@') {
+        return None;
+    }
+    let (host, port) = parse_url_host_port(&format!("{scheme}://{authority}"))?;
+    let default_port = if scheme == "https" { 443 } else { 80 };
+    let origin = if authority.contains(':') && port != default_port {
+        format!("{scheme}://{host}:{port}")
+    } else {
+        format!("{scheme}://{host}")
+    };
+    Some((origin, host, scheme))
+}
+
 /// Whether `url` targets loopback (`127.0.0.1`, `localhost`, or `[::1]`).
 pub fn is_loopback_url(url: &str) -> bool {
     parse_url_host_port(url)
@@ -515,6 +541,136 @@ pub fn save_model_config(data_dir: &Path, saved: &SavedModelConfig) -> Result<()
     let body = Value::Object(obj).to_string();
     atomic_write_bytes_with_mode(&path, body.as_bytes(), Some(0o600))
         .map_err(|e| format!("save config.json: {e}"))
+}
+
+pub const PERSON_MODEL_API_KEY_VAULT_KEY: &str = "person_model:api_key";
+
+#[derive(Clone, Debug, Default)]
+pub struct PersonModelOverride {
+    pub model_base_url: Option<String>,
+    pub model_id: Option<String>,
+    pub api_key: Option<String>,
+}
+
+pub fn person_model_override_path(person_data_dir: &Path) -> PathBuf {
+    person_data_dir.join("model_override.json")
+}
+
+pub fn load_person_model_override(person_data_dir: &Path) -> Option<PersonModelOverride> {
+    let path = person_model_override_path(person_data_dir);
+    let raw = std::fs::read_to_string(&path).ok()?;
+    let mut v: Value = serde_json::from_str(&raw).ok()?;
+    let model_base_url = v["model_base_url"]
+        .as_str()
+        .map(|s| s.trim().trim_end_matches('/').to_string())
+        .filter(|s| !s.is_empty());
+    let model_id = v["model_id"]
+        .as_str()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+    let raw_api_key = v["api_key"]
+        .as_str()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+    let api_key_ref = v["api_key_ref"]
+        .as_str()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string);
+
+    let api_key = if let Some(ref raw_key) = raw_api_key {
+        if let Some(vault_key) = secret_store::parse_vault_ref(raw_key) {
+            secret_store::get_secret(person_data_dir, vault_key).ok().flatten()
+        } else {
+            if secret_store::set_secret(person_data_dir, PERSON_MODEL_API_KEY_VAULT_KEY, raw_key).is_ok() {
+                if let Some(obj) = v.as_object_mut() {
+                    obj.remove("api_key");
+                    obj.insert(
+                        "api_key_ref".to_string(),
+                        json!(secret_store::vault_ref(PERSON_MODEL_API_KEY_VAULT_KEY)),
+                    );
+                    obj.insert("has_api_key".to_string(), json!(true));
+                    let _ = atomic_write_bytes_with_mode(
+                        &path,
+                        Value::Object(obj.clone()).to_string().as_bytes(),
+                        Some(0o600),
+                    );
+                }
+            }
+            Some(raw_key.clone())
+        }
+    } else if let Some(ref r) = api_key_ref {
+        let vault_key = secret_store::parse_vault_ref(r).unwrap_or(PERSON_MODEL_API_KEY_VAULT_KEY);
+        secret_store::get_secret(person_data_dir, vault_key).ok().flatten()
+    } else {
+        None
+    };
+
+    if model_base_url.is_none() && model_id.is_none() && api_key.is_none() {
+        return None;
+    }
+    Some(PersonModelOverride {
+        model_base_url,
+        model_id,
+        api_key,
+    })
+}
+
+pub fn save_person_model_override(
+    person_data_dir: &Path,
+    ov: &PersonModelOverride,
+) -> Result<(), String> {
+    let base = ov
+        .model_base_url
+        .as_deref()
+        .map(|s| s.trim().trim_end_matches('/').to_string())
+        .filter(|s| !s.is_empty());
+    let model = ov
+        .model_id
+        .as_deref()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+    let key = ov
+        .api_key
+        .as_deref()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+
+    if base.is_none() && model.is_none() && key.is_none() {
+        return clear_person_model_override(person_data_dir);
+    }
+
+    let path = person_model_override_path(person_data_dir);
+    let mut obj = serde_json::Map::new();
+    if let Some(ref b) = base {
+        obj.insert("model_base_url".to_string(), json!(b));
+    }
+    if let Some(ref m) = model {
+        obj.insert("model_id".to_string(), json!(m));
+    }
+    if let Some(ref k) = key {
+        secret_store::set_secret(person_data_dir, PERSON_MODEL_API_KEY_VAULT_KEY, k)?;
+        obj.insert(
+            "api_key_ref".to_string(),
+            json!(secret_store::vault_ref(PERSON_MODEL_API_KEY_VAULT_KEY)),
+        );
+        obj.insert("has_api_key".to_string(), json!(true));
+    } else {
+        let _ = secret_store::delete_secret(person_data_dir, PERSON_MODEL_API_KEY_VAULT_KEY);
+        obj.insert("has_api_key".to_string(), json!(false));
+    }
+    let body = Value::Object(obj).to_string();
+    atomic_write_bytes_with_mode(&path, body.as_bytes(), Some(0o600))
+        .map_err(|e| format!("save model_override.json: {e}"))
+}
+
+pub fn clear_person_model_override(person_data_dir: &Path) -> Result<(), String> {
+    let _ = secret_store::delete_secret(person_data_dir, PERSON_MODEL_API_KEY_VAULT_KEY);
+    let path = person_model_override_path(person_data_dir);
+    if path.exists() {
+        std::fs::remove_file(&path).map_err(|e| format!("remove model_override.json: {e}"))?;
+    }
+    Ok(())
 }
 
 #[derive(Clone, Debug)]
@@ -3944,6 +4100,8 @@ mod v010_hardening_tests {
             user_agent: None,
             cookie_raw: None,
             forwarded_for: None,
+            forwarded_proto: None,
+            forwarded_host: None,
             accept_encoding: None,
             if_none_match: None,
             last_event_id: None,

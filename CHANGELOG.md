@@ -4,6 +4,13 @@ Each release is tagged `vMAJOR.MINOR.PATCH` and published on GitHub Releases wit
 binaries and a `SHA256SUMS` file. The running app shows its version and can update
 itself from the newest release (see README, "Versions and updates").
 
+## 0.47.0 - 2026-11-28
+
+Made **Coolify** a first-class self-hosted deployment option alongside the single-binary installers, added reverse-proxy HTTPS awareness, and introduced **per-employee encrypted AI seat keys** tailored for **OpenCode Go** (`$20`/employee plans defaulting to `deepseek-v4.1-flash`).
+
+- **Coolify Multi-Arch Container & Reverse-Proxy HTTPS (`Dockerfile`, `Dockerfile.release`, `.dockerignore`, `docker-compose.coolify.yml`, `docs/COOLIFY.md`, `.github/workflows/release.yml`, `src/server/mod.rs`, `src/server/http.rs`, `src/server/routes_system.rs`, `src/main.rs`):** Added multi-stage `Dockerfile`, release `Dockerfile.release` (`linux/amd64` + `linux/arm64` published to `ghcr.io/cayleb-james2008/ergon`), `docker-compose.coolify.yml` (auto-wiring `SERVICE_URL_ERGON` / `SERVICE_FQDN_ERGON`), and `ergon healthcheck [--port PORT]`. Added `ERGON_PUBLIC_URL` (auto-whitelisting Host) and `ERGON_TRUST_PROXY=1` (`X-Forwarded-Proto` / `X-Forwarded-Host` while ignoring spoofed headers when unset) so `Secure` session cookies and OAuth2/OIDC `https://` callbacks work behind Coolify Traefik TLS termination.
+- **Per-Employee Encrypted Model Keys & OpenCode Go Preset (`src/lib.rs`, `src/auth.rs`, `src/server/routes_system.rs`, `frontend/src/shell/SettingsPanel.tsx`, `frontend/src/lib/api.ts`, `frontend/src/lib/webEngine.ts`, `tests/coolify_proxy_and_personal_keys.rs`):** Added `GET`/`PUT`/`POST`/`DELETE /api/config/personal` backed by `0600` per-person `model_override.json` + AES-256-GCM `secrets.enc.json` (zero plaintext keys on disk), resolving per-employee seats ahead of the company default. Added 1-click **OpenCode Go (`deepseek-v4.1-flash`)** presets and the **Personal AI seat key** card inside **Settings → Model connection** (available to non-admin employees as well as admins).
+
 ## 0.46.0 - 2026-11-28
 
 Added **Proactive App Recognition & Auto-Recommended Plugin Setups** so Ergon detects which workplace apps an employee actually uses—safely and locally without touching secrets or credentials—and suggests 1-click plugin setups in `Connected Apps`, `Today`, `/phone`, and the offline browser demo.

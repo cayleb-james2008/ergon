@@ -47,6 +47,7 @@ struct CliOpts {
     backup_offsite: Option<String>,
     backup_keep: Option<usize>,
     diagnostics_mode: bool,
+    healthcheck_mode: bool,
     test_crash: bool,
     service_mode: bool,
     service_action: Option<String>,
@@ -67,6 +68,7 @@ fn parse_cli_args(args: &[String]) -> CliOpts {
             && !opts.backup_mode
             && !opts.restore_mode
             && !opts.diagnostics_mode
+            && !opts.healthcheck_mode
             && !opts.service_mode
             && !opts.user_mode
             && !opts.tls_init_mode;
@@ -85,6 +87,7 @@ fn parse_cli_args(args: &[String]) -> CliOpts {
             "backup" if no_subcmd => opts.backup_mode = true,
             "restore" if no_subcmd => opts.restore_mode = true,
             "diagnostics" if no_subcmd => opts.diagnostics_mode = true,
+            "healthcheck" if no_subcmd => opts.healthcheck_mode = true,
             "service" if no_subcmd => opts.service_mode = true,
             "user" if no_subcmd => opts.user_mode = true,
             "tls" if no_subcmd => {
@@ -759,6 +762,49 @@ fn run_user_cli(opts: &CliOpts) -> i32 {
 }
 
 #[cold]
+fn run_healthcheck_cli(opts: &CliOpts) -> i32 {
+    use std::io::{Read as _, Write as _};
+    let port: u16 = opts
+        .port
+        .or_else(|| std::env::var("ERGON_PORT").ok().and_then(|p| p.parse().ok()))
+        .unwrap_or(8787);
+    let addr = std::net::SocketAddr::from(([127, 0, 0, 1], port));
+    let timeout = std::time::Duration::from_secs(3);
+    let Ok(mut stream) = std::net::TcpStream::connect_timeout(&addr, timeout) else {
+        eprintln!("ergon healthcheck: failed connecting to 127.0.0.1:{port}");
+        return 1;
+    };
+    let _ = stream.set_read_timeout(Some(timeout));
+    let _ = stream.set_write_timeout(Some(timeout));
+    let req = format!(
+        "GET /api/health HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\n\r\n"
+    );
+    if stream.write_all(req.as_bytes()).is_err() {
+        eprintln!("ergon healthcheck: write failed");
+        return 1;
+    }
+    let mut buf = [0u8; 512];
+    let n = match stream.read(&mut buf) {
+        Ok(n) if n > 0 => n,
+        _ => {
+            eprintln!("ergon healthcheck: empty response from 127.0.0.1:{port}");
+            return 1;
+        }
+    };
+    let head = String::from_utf8_lossy(&buf[..n]);
+    let status_line = head.lines().next().unwrap_or("");
+    if status_line.contains(" 200 ") || status_line.ends_with(" 200") {
+        if opts.json_output {
+            println!("{{\"ok\":true,\"port\":{port}}}");
+        }
+        0
+    } else {
+        eprintln!("ergon healthcheck: unexpected status from 127.0.0.1:{port}: {status_line}");
+        1
+    }
+}
+
+#[cold]
 fn run_tls_init_cli(opts: &CliOpts) -> i32 {
     let cfg = load_cli_config(opts);
     if let Err(e) = cfg.ensure_dirs() {
@@ -766,6 +812,13 @@ fn run_tls_init_cli(opts: &CliOpts) -> i32 {
         return 1;
     }
     let mut sans = ergon_rs::allowed_hosts_from(&std::env::var("ERGON_ALLOWED_HOSTS").unwrap_or_default());
+    if let Ok(raw_pub) = std::env::var("ERGON_PUBLIC_URL").or_else(|_| std::env::var("SERVICE_URL_ERGON")) {
+        if let Some((_, h, _)) = ergon_rs::parse_public_url(&raw_pub) {
+            if !sans.iter().any(|x| x.eq_ignore_ascii_case(&h)) {
+                sans.push(h);
+            }
+        }
+    }
     if let Some(ref extra) = opts.tls_sans {
         sans.extend(ergon_rs::allowed_hosts_from(extra));
     }
@@ -815,6 +868,7 @@ fn print_help() {
          ergon backup [--data DIR] [--out FILE_OR_DIR] [--offsite DIR_OR_S3_URL] [--keep N] [--json]\n  \
          ergon restore <ARCHIVE.ZIP> [--data DIR] [--force] [--json]\n  \
          ergon diagnostics [--data DIR] [--out BUNDLE.zip] [--json]\n  \
+         ergon healthcheck [--port PORT] [--json]\n  \
          ergon export-handoff [--out PATH] [--title TITLE] [--workspace DIR] [--force] [--json]\n\n\
          FLAGS:\n  --app, --open       Open chromeless desktop app window (Chromium/Edge --app)\n  \
          --no-open           Run headless without opening a desktop window\n  \
@@ -1196,6 +1250,9 @@ fn main() {
     }
     if opts.tls_init_mode {
         std::process::exit(run_tls_init_cli(&opts));
+    }
+    if opts.healthcheck_mode {
+        std::process::exit(run_healthcheck_cli(&opts));
     }
     if opts.diagnostics_mode {
         std::process::exit(run_diagnostics_cli(&opts));

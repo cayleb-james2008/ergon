@@ -5620,6 +5620,48 @@ function runWebVaultAggregate(
         model_pricing: mergeModelPricing(state.modelPricing),
       });
     }
+    if (path === "/api/config/personal" && (method === "GET" || method === "POST" || method === "PUT" || method === "DELETE")) {
+      const storageKey = `ergon-web-personal-model-${p.id}`;
+      type PersonalSeatMem = { model_base_url?: string | null; model_id?: string | null; api_key?: string };
+      const readPersonal = (): PersonalSeatMem => {
+        try {
+          const raw = sessionStorage.getItem(storageKey);
+          return raw ? (JSON.parse(raw) as PersonalSeatMem) : {};
+        } catch {
+          return {};
+        }
+      };
+      const writePersonal = (val: PersonalSeatMem | null) => {
+        try {
+          if (!val) sessionStorage.removeItem(storageKey);
+          else sessionStorage.setItem(storageKey, JSON.stringify(val));
+        } catch { /* ignore */ }
+      };
+      if (method === "DELETE" || (method !== "GET" && body.reset_to_company === true)) {
+        writePersonal(null);
+      } else if (method === "POST" || method === "PUT") {
+        const cur = readPersonal();
+        const base = typeof body.model_base_url === "string" ? body.model_base_url.trim() : cur.model_base_url ?? null;
+        const model = typeof body.model_id === "string" ? body.model_id.trim() : cur.model_id ?? null;
+        const key = body.clear_api_key ? "" : (typeof body.api_key === "string" && body.api_key.trim() ? body.api_key.trim() : (cur.api_key ?? ""));
+        if (!base && !model && !key) writePersonal(null);
+        else writePersonal({ model_base_url: base || null, model_id: model || null, ...(key ? { api_key: key } : {}) });
+      }
+      const cur = readPersonal();
+      const usingPersonal = Boolean(cur.model_base_url || cur.model_id || cur.api_key);
+      return jsonRes({
+        has_personal_key: Boolean(cur.api_key),
+        personal_base_url: cur.model_base_url ?? null,
+        personal_model_id: cur.model_id ?? null,
+        using_personal: usingPersonal,
+        effective_base_url: cur.model_base_url || byok.model_base_url,
+        effective_model_id: cur.model_id || byok.model_id || "browser-workspace-engine",
+        effective_configured: true,
+        company_configured: true,
+        company_base_url: byok.model_base_url,
+        company_model_id: byok.model_id || "browser-workspace-engine",
+      });
+    }
     if (method === "GET" && path === "/api/runs/status") {
       const nowMs = Date.now();
       const chatRuns: LiveRun[] = Array.from(liveRuns.values())
